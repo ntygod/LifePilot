@@ -6,7 +6,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.model.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
 
 /**
  * LLM 输出解析器。
@@ -26,7 +25,6 @@ import org.springframework.stereotype.Service;
  * @author zsg
  * @since 2026-07-20
  */
-@Service
 public class ActionParser {
 
     private static final Logger log = LoggerFactory.getLogger(ActionParser.class);

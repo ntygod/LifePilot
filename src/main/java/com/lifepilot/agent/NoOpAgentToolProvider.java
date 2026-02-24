@@ -2,7 +2,6 @@ package com.lifepilot.agent;
 
 import com.lifepilot.agent.model.AgentState;
 import org.springframework.ai.tool.ToolCallback;
-import org.springframework.stereotype.Service;
 
 import java.util.List;
 
@@ -14,7 +13,6 @@ import java.util.List;
  * @author zsg
  * @since 2026-07-20
  */
-@Service
 public class NoOpAgentToolProvider implements AgentToolProvider {
 
     @Override

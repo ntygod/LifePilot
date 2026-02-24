@@ -3,8 +3,6 @@ package com.lifepilot.agent;
 import com.lifepilot.agent.model.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
-
 import java.util.ArrayList;
 import java.util.List;
 
@@ -17,7 +15,6 @@ import java.util.List;
  * @author zsg
  * @since 2026-07-20
  */
-@Service
 public class StateReducer {
 
     private static final Logger log = LoggerFactory.getLogger(StateReducer.class);

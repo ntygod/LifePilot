@@ -4,7 +4,6 @@ import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.model.AgentPhase;
 import com.lifepilot.agent.model.AgentState;
 import com.lifepilot.agent.model.StepRecord;
-import org.springframework.stereotype.Service;
 
 import java.util.List;
 
@@ -18,7 +17,6 @@ import java.util.List;
  * @author zsg
  * @since 2026-07-20
  */
-@Service
 public class ContextAssembler {
 
     private final AgentConfigProperties config;

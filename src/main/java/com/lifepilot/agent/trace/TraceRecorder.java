@@ -6,7 +6,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.lang.Nullable;
-import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -25,7 +24,6 @@ import java.util.concurrent.ConcurrentHashMap;
  * @author zsg
  * @since 2026-07-20
  */
-@Service
 public class TraceRecorder {
 
     private static final Logger log = LoggerFactory.getLogger(TraceRecorder.class);
