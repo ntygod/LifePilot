@@ -9,55 +9,74 @@
 
 ### 1.1 已实现能力矩阵
 
-| 模块 | 能力项 | 状态 | 说明 |
-|------|--------|------|------|
-| **Agent 引擎** | 控制循环（AgentLoop） | ✅ 已实现 | while 循环 + 预算检查 + 护栏 |
-| | 状态机（StateReducer） | ✅ 已实现 | 确定性状态转换 |
-| | 上下文工程（ContextAssembler） | ✅ 已实现 | 记忆检索 + 情境快照 + 对话压缩 |
-| | 主动推理（ProactiveReasoner） | ✅ 已实现 | 30 分钟定时评估 + 规则过滤 + LLM 评估 + 智能降频 |
-| | 信号收集（SignalCollector） | ✅ 已实现 | 系统信号采集 |
-| | 频率状态机（FrequencyStateMachine） | ✅ 已实现 | NORMAL → REDUCED → MUTED 三级降频 |
-| | 对话压缩（DialogCompressor） | ✅ 已实现 | 渐进式压缩 |
-| | MCP 协议支持 | ❌ 未实现 | 当前使用自定义 SkillPlugin 接口 |
-| | 多 Agent 协作 | ❌ 未实现 | 单 Agent 架构 |
-| **记忆系统** | 四层认知记忆 | ✅ 已实现 | Working / Episodic / Semantic / Procedural |
-| | 知识图谱 | ✅ 已实现 | 时序实体 + 时序关系，版本化更新 |
-| | 混合检索（HybridRetriever） | ✅ 已实现 | 向量语义 + FTS5 全文 + 图遍历，三路合并排序 |
-| | 知识提取管线 | ✅ 已实现 | 实体识别 → 关系提取 → 冲突检测 → 向量化 |
-| | 记忆巩固管线 | ✅ 已实现 | ConsolidationPipeline |
-| | 遗忘策略 | ✅ 已实现 | V2 Reflection-Summary，LLM 压缩 + 降级归档 |
-| | 向量存储（SqliteVecStore） | ✅ 已实现 | 基于 sqlite-vec 扩展 |
-| | 文档/知识库管理 | ❌ 未实现 | 仅从对话中提取知识，不支持主动上传文档 |
-| **LLM 路由** | 多模型路由（LlmRouter） | ✅ 已实现 | 场景路由 + 优先级故障转移 |
-| | 熔断器（CircuitBreakerManager） | ✅ 已实现 | 熔断器管理 |
-| | Spring AI 适配器 | ✅ 已实现 | SpringAiProviderAdapter + ProviderAdapterFactory |
-| | 输出解析（LlmOutputParser） | ✅ 已实现 | 结构化输出解析 |
-| | 多模态支持 | ❌ 未实现 | 仅支持纯文本交互 |
-| **技能插件** | 待办管理（TodoPlugin） | ✅ 已实现 | CRUD + 状态转换校验 |
-| | 日程管理（SchedulePlugin） | ✅ 已实现 | 基础日程 CRUD |
-| | 习惯养成（HabitPlugin） | ✅ 已实现 | 习惯追踪 |
-| | 记忆管理（MemoryPlugin） | ✅ 已实现 | 记忆查询与管理 |
-| | 外部数据源同步 | ❌ 未实现 | 数据完全本地，无外部同步 |
-| | 代码执行沙箱 | ❌ 未实现 | 无代码执行能力 |
-| **交互层** | CLI 命令行（CliInterface） | ✅ 已实现 | JLine 3 命令行界面 |
-| | 系统托盘（TrayNotifier） | ✅ 已实现 | 系统托盘通知 |
-| | 通知路由（NotificationRouter） | ✅ 已实现 | 重试 + 待发队列 + 通道故障检测 |
-| | 消息平台适配（ChannelAdapter） | ✅ 已实现 | 企业微信 / 钉钉 / 飞书 |
-| | Web UI | 🔧 部分实现 | 基础聊天 + 命令 + LLM 服务商管理，缺少完整管理界面 |
-| | 移动端适配 | ❌ 未实现 | 无移动端支持 |
-| **可观测性** | Trace 追踪（TraceRecorder） | ✅ 已实现 | Spring AI Advisor 模式 |
-| | 护栏引擎（GuardrailEngine） | ✅ 已实现 | GuardrailAdvisor + GuardrailPolicy |
-| | 数据脱敏（DataRedactor） | ✅ 已实现 | 敏感数据脱敏 |
-| | 轨迹查询（TraceQuery） | ✅ 已实现 | 轨迹查询与回放 |
+> 最后审计时间：2026-02-25，基于 git 提交记录和实际源码验证。
 
-### 1.2 与 OpenClaw 的差距分析
+| 模块 | 能力项 | 状态 | 说明 | 对应 Spec |
+|------|--------|------|------|-----------|
+| **项目骨架** | Maven + Spring Boot + SQLite + Flyway | ✅ 已实现 | pom.xml、LifePilotApplication、DataSourceConfig、V1 迁移 | project-skeleton |
+| **LLM 路由** | 多模型路由（LlmRouter） | ✅ 已实现 | 场景路由 + 优先级故障转移 + 指数退避重试 | llm-router |
+| | 熔断器（CircuitBreakerManager） | ✅ 已实现 | CAS 并发安全 + SQLite 持久化 + V2 迁移 | llm-router |
+| | Spring AI 适配器 | ✅ 已实现 | SpringAiProviderAdapter + ProviderAdapterFactory | llm-router |
+| | Provider 注册表 | ✅ 已实现 | ProviderRegistry + ProviderHealthChecker（Virtual Thread） | llm-router |
+| | 多模态支持 | ❌ 未实现 | 仅支持纯文本交互 | — |
+| **Agent 引擎** | 控制循环（AgentLoop） | ✅ 已实现 | while 循环 + 预算检查 + 护栏 + 硬限制 50 次 | agent-core |
+| | 状态机（StateReducer） | ✅ 已实现 | 确定性状态转换，switch 穷举 9 种 Action | agent-core |
+| | 上下文工程（ContextAssembler） | 🔧 基础版 | 阶段专用 System Prompt + Token 预算分配，记忆检索槽位为空 | agent-core |
+| | 输出解析（ActionParser） | ✅ 已实现 | JSON → Action 解析，解析失败返回 ErrorRecovery | agent-core |
+| | 轨迹记录（TraceRecorder） | ✅ 已实现 | 内存缓存 + SQLite 持久化（agent_traces + agent_trace_steps） | agent-core |
+| | 会话管理（SessionManager） | ✅ 已实现 | SQLite 持久化 + 定时清理过期会话 | agent-core |
+| | 主动推理（ProactiveReasoner） | ❌ 未实现 | 路线图规划中（Phase 3） | — |
+| | 对话压缩（DialogCompressor） | ❌ 未实现 | 路线图规划中 | — |
+| | 多 Agent 协作 | ❌ 未实现 | 路线图规划中（Phase 3） | — |
+| **工具系统** | ToolContract sealed interface | ✅ 已实现 | BuiltinTool / YamlTool / McpTool 三层工具 | tool-system |
+| | DynamicToolRegistry | ✅ 已实现 | 运行时注册/注销 + 优先级冲突解析 + 快照缓存 | tool-system |
+| | ToolExecutionPipeline | ✅ 已实现 | 参数校验 → 护栏 → 幂等 → 执行 → 重试 → 轨迹 | tool-system |
+| | GuardrailPolicy | ✅ 已实现 | 白名单/黑名单/风险审批 | tool-system |
+| | ToolBridgeAgentToolProvider | ✅ 已实现 | ToolContract → Spring AI ToolCallback 桥接 | tool-system |
+| **MCP 协议** | McpClient | ✅ 已实现 | 初始化握手 + listTools + callTool + shutdown | mcp-support |
+| | McpTransport | ✅ 已实现 | StdioTransport + StreamableHttpTransport + SseTransport（骨架） | mcp-support |
+| | McpToolAdapter | ✅ 已实现 | MCP Tool → ToolContract 适配 + 风险等级推断 | mcp-support |
+| | McpServerRegistry | ✅ 已实现 | 连接管理 + 健康检查 + 指数退避自动重连 | mcp-support |
+| | SkillToMcpBridge | ✅ 已实现 | 反向桥接 ToolContract → MCP Tool Schema | mcp-support |
+| **记忆系统** | L1 工作记忆（WorkingMemory） | ✅ 已实现 | ConcurrentHashMap + 重要度加权淘汰 + Token 预算 | memory-foundation |
+| | L2 情景记忆（EpisodicMemory） | ✅ 已实现 | conversations + messages 表 + FTS5 全文检索 | memory-foundation |
+| | L3 语义记忆（SemanticMemory） | ✅ 已实现 | 时序实体/关系 + 版本化更新 + 冲突检测 + 时间旅行查询 | semantic-memory |
+| | 知识图谱 | ✅ 已实现 | TemporalEntity + TemporalRelation + 递归 CTE 图遍历 | semantic-memory |
+| | 混合检索（HybridRetriever） | ✅ 已实现 | 向量 + FTS5 + 图遍历，加权 RRF 融合 + 时间衰减 | semantic-memory |
+| | 向量检索（VectorSearcher） | ✅ 已实现 | sqlite-vec KNN + JVM 暴力降级 | semantic-memory |
+| | 冲突检测（ConflictDetector） | ✅ 已实现 | 精确匹配 → 语义匹配 → LLM 消歧义（三级） | semantic-memory |
+| | L4 程序记忆（Procedural） | ❌ 未实现 | 路线图规划中 | — |
+| | 记忆巩固管线 | ❌ 未实现 | 路线图规划中 | — |
+| | 遗忘策略 | ❌ 未实现 | 路线图规划中 | — |
+| | 文档/知识库管理 | ❌ 未实现 | 路线图规划中（Phase 2） | — |
+| **技能插件** | 内置技能（Todo/Schedule/Habit/Memory） | ❌ 未实现 | 路线图规划中（Phase 3） | — |
+| **交互层** | CLI / Web UI / 系统托盘 / 通知路由 / 消息平台适配 | ❌ 未实现 | 路线图规划中（Phase 3~4） | — |
+| **可观测性** | DataRedactor / GuardrailAdvisor / TraceQuery | ❌ 未实现 | 路线图规划中（Phase 4） | — |
+
+### 1.2 Spec 完成进度
+
+> 基于 git 合并记录（`git log --oneline --all --graph`）验证。
+
+| Phase | Spec | 状态 | 合并提交 | 说明 |
+|-------|------|------|---------|------|
+| Phase 0 | project-skeleton | ✅ 已完成 | `505395f` | Maven 骨架 + Spring Boot + SQLite + Flyway V1 |
+| Phase 1 | llm-router | ✅ 已完成 | `3328112` | LlmRouter + CircuitBreaker + ProviderAdapter + Flyway V2 |
+| Phase 1 | agent-core | ✅ 已完成 | `9458699` | AgentLoop + StateReducer + ContextAssembler + Flyway V3~V4 |
+| Phase 1 | tool-system | ✅ 已完成 | `fae2226` | ToolContract + DynamicToolRegistry + GuardrailPolicy + Pipeline |
+| Phase 1 | mcp-support | ✅ 已完成 | `2594755` | McpClient + Transport + Adapter + Registry + Bridge |
+| Phase 2 | memory-foundation | ✅ 已完成 | `451c7ef` | WorkingMemory + EpisodicMemory + Flyway V5~V6 |
+| Phase 2 | semantic-memory | ✅ 已完成 | `8146bdd` | SemanticMemory + HybridRetriever + 知识图谱 + Flyway V7 |
+| Phase 2 | ContextAssembler 完整版 | ❌ 未开始 | — | 依赖记忆系统 + 知识图谱（已就绪） |
+| Phase 2 | 文档/知识库管理 | ❌ 未开始 | — | 依赖记忆系统（已就绪） |
+
+### 1.3 与 OpenClaw 的差距分析
 
 | 能力维度 | OpenClaw | LifePilot 现状 | 差距评估 |
 |----------|----------|----------------|----------|
-| **工具协议** | MCP 协议原生支持，可连接任意 MCP Server | 自定义 SkillPlugin 接口，工具集固定 | 🔴 重大差距 — 无法接入 MCP 生态 |
+| **工具协议** | MCP 协议原生支持，可连接任意 MCP Server | ✅ MCP Client + Transport + Adapter + Registry | 🟢 已持平 |
 | **多模型路由** | 支持多 LLM Provider 切换 | ✅ 已实现场景路由 + 优先级故障转移 | 🟢 已持平 |
-| **上下文管理** | 对话历史 + 文件上下文 | ✅ 四层认知记忆 + 知识图谱 + 混合检索 | 🟢 已超越 |
-| **知识库管理** | 支持文档上传与检索 | 仅从对话中提取知识 | 🟡 中等差距 — 缺少主动文档导入 |
+| **上下文管理** | 对话历史 + 文件上下文 | ✅ 三层认知记忆 + 知识图谱 + 混合检索 | 🟢 已超越 |
+| **知识库管理** | 支持文档上传与检索 | ❌ 未实现 | 🟡 中等差距 — 缺少主动文档导入 |
 | **Web 界面** | 完整的 Web UI（对话、设置、工具管理） | 基础聊天界面 | 🟡 中等差距 — 功能不完整 |
 | **多模态** | 支持图片理解 | 纯文本交互 | 🟡 中等差距 |
 | **代码执行** | 沙箱代码执行 | 无代码执行能力 | 🟡 中等差距 |
