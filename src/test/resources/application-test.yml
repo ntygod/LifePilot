@@ -1,0 +1,11 @@
+spring:
+  datasource:
+    url: "jdbc:sqlite:${java.io.tmpdir}/lifepilot-test.db"
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+logging:
+  level:
+    root: INFO
+    com.lifepilot: DEBUG
