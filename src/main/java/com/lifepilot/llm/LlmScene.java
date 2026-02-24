@@ -30,6 +30,12 @@ public final class LlmScene {
     public static final String EMBEDDING = "embedding";
     /** 主动推理 */
     public static final String PROACTIVE_REASONING = "proactive_reasoning";
+    /** Agent 推理（意图理解 / 任务规划 / 反思评估） */
+    public static final String AGENT_REASONING = "agent-reasoning";
+    /** Agent 工具调用 */
+    public static final String AGENT_TOOL_CALLING = "agent-tool-calling";
+    /** Agent 响应生成 */
+    public static final String AGENT_GENERATION = "agent-generation";
 
     private LlmScene() {
         // 阻止实例化
@@ -44,7 +50,8 @@ public final class LlmScene {
         return List.of(
                 INTENT_UNDERSTANDING, TASK_PLANNING, CHAT, CODE_GENERATION,
                 KNOWLEDGE_EXTRACTION, MEMORY_COMPRESSION, DOCUMENT_SUMMARY,
-                EMBEDDING, PROACTIVE_REASONING
+                EMBEDDING, PROACTIVE_REASONING,
+                AGENT_REASONING, AGENT_TOOL_CALLING, AGENT_GENERATION
         );
     }
 }
