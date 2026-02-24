@@ -127,6 +127,14 @@ lifepilot:
       retry-initial-delay-ms: 500
       retry-multiplier: 2.0
       retry-max-delay-ms: 5000
+  memory:
+    enabled: true
+    working-memory-token-budget: 8000
+    idle-session-timeout-minutes: 30
+    compression-threshold-tokens: 4000
+    consolidation-lookback-days: 7
+    forgetting-threshold: 0.7
+    max-retention-days: 180
   mcp:
     enabled: true
     server:
