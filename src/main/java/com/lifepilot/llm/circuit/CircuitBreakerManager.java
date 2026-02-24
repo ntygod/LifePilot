@@ -4,8 +4,6 @@ import com.lifepilot.llm.config.CircuitBreakerConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.stereotype.Service;
-
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
@@ -22,7 +20,6 @@ import java.util.stream.Collectors;
  * @author zsg
  * @since 2026-02-24
  */
-@Service
 public class CircuitBreakerManager {
 
     private static final Logger log = LoggerFactory.getLogger(CircuitBreakerManager.class);
