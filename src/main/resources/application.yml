@@ -1,0 +1,26 @@
+spring:
+  application:
+    name: lifepilot
+  datasource:
+    url: jdbc:sqlite:${user.home}/.lifepilot/lifepilot.db
+    driver-class-name: org.sqlite.JDBC
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    root: INFO
+    com.lifepilot: DEBUG
