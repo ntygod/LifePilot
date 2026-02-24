@@ -6,10 +6,14 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 import javax.sql.DataSource;
+import java.nio.file.Path;
 import java.sql.Connection;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -22,6 +26,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * <p>验证项目骨架配置正确：Spring 上下文加载、健康检查端点、
  * Flyway 迁移执行、SQLite PRAGMA 设置。
  *
+ * <p>使用 {@link DynamicPropertySource} 为每次测试运行生成唯一的临时数据库文件，
+ * 避免残留数据库文件导致 Flyway 迁移冲突。
+ *
  * @author zsg
  * @since 2026-02-24
  */
@@ -29,6 +36,17 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 class LifePilotApplicationTest {
+
+    private static final String DB_ID = UUID.randomUUID().toString().substring(0, 8);
+
+    @DynamicPropertySource
+    static void configureDatabase(DynamicPropertyRegistry registry) {
+        var tmpDir = System.getProperty("java.io.tmpdir");
+        var dbPath = Path.of(tmpDir, "lifepilot-test-" + DB_ID + ".db").toString().replace("\\", "/");
+        var vecDbPath = Path.of(tmpDir, "lifepilot-vec-test-" + DB_ID + ".db").toString().replace("\\", "/");
+        registry.add("spring.datasource.url", () -> "jdbc:sqlite:" + dbPath);
+        registry.add("lifepilot.memory.vector-db-url", () -> "jdbc:sqlite:" + vecDbPath);
+    }
 
     @Autowired
     private MockMvc mockMvc;
