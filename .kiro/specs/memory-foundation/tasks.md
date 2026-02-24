@@ -11,8 +11,8 @@
 
 ## Tasks
 
-- [ ] 1. 创建 Flyway 迁移脚本
-  - [ ] 1.1 创建 V5__create_memory_tables.sql
+- [x] 1. 创建 Flyway 迁移脚本
+  - [x] 1.1 创建 V5__create_memory_tables.sql
     - 在 `src/main/resources/db/migration/` 下创建 V5 迁移脚本
     - 创建 conversations 表（id, session_id, goal, summary, created_at, updated_at）
     - 创建 idx_conversations_session 索引
@@ -20,13 +20,13 @@
     - 创建 idx_messages_conversation 索引和 idx_messages_pinned 部分索引
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
 
-  - [ ] 1.2 创建 V6__create_messages_fts.sql
+  - [x] 1.2 创建 V6__create_messages_fts.sql
     - 创建 messages_fts FTS5 虚拟表，索引 content 列，tokenizer 为 unicode61 remove_diacritics 2
     - 创建 messages_fts_ai（AFTER INSERT）、messages_fts_ad（AFTER DELETE）、messages_fts_au（AFTER UPDATE）三个同步触发器
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
 
-- [ ] 2. 实现 L2 情景记忆数据模型
-  - [ ] 2.1 实现 CompressionLevel 枚举
+- [x] 2. 实现 L2 情景记忆数据模型
+  - [x] 2.1 实现 CompressionLevel 枚举
     - 创建 `com.lifepilot.memory.episodic.CompressionLevel` 枚举
     - 包含 ORIGINAL(0)、SUMMARY(1)、KEYPOINTS(2)、ARCHIVED(3) 四个值
     - 实现 level() 方法和 fromLevel(int) 静态方法，无效值抛出 IllegalArgumentException
@@ -40,7 +40,7 @@
     - **Property 8: CompressionLevel 往返属性**
     - **Validates: Requirements 7.3**
 
-  - [ ] 2.3 实现 MessageRecord record
+  - [x] 2.3 实现 MessageRecord record
     - 创建 `com.lifepilot.memory.episodic.MessageRecord` record
     - 包含 id, conversationId, role, content, compressedContent(@Nullable), compressionLevel, isPinned, toolCallJson(@Nullable), tokenCount, createdAt 字段
     - 实现 effectiveContent()、effectiveTokenCount()、isCompressed() 方法
@@ -54,7 +54,7 @@
     - **Property 9: MessageRecord 计算字段与 compressionLevel 一致性**
     - **Validates: Requirements 8.2, 8.3, 8.4**
 
-  - [ ] 2.5 实现 ConversationRecord record
+  - [x] 2.5 实现 ConversationRecord record
     - 创建 `com.lifepilot.memory.episodic.ConversationRecord` record
     - 包含 id, sessionId, goal, summary(@Nullable), messages(List<MessageRecord>), createdAt, updatedAt 字段
     - compact constructor 中使用 List.copyOf() 确保 messages 不可变
@@ -69,8 +69,8 @@
     - **Property 11: ConversationRecord 派生方法一致性**
     - **Validates: Requirements 9.2, 9.3, 9.4**
 
-- [ ] 3. 实现 L1 工作记忆类型体系
-  - [ ] 3.1 实现 WorkingMemorySlot sealed interface 及三种实现
+- [x] 3. 实现 L1 工作记忆类型体系
+  - [x] 3.1 实现 WorkingMemorySlot sealed interface 及三种实现
     - 创建 `com.lifepilot.memory.working.WorkingMemorySlot` sealed interface，声明 tokenCount()、createdAt()、importance() 方法
     - 创建 `ConversationSlot` record，包含静态工厂方法 userMessage(0.8f)、assistantMessage(0.6f)、systemMessage(0.9f, pinned=true)
     - 创建 `ToolResultSlot` record
@@ -83,7 +83,7 @@
     - **Property 3 (CP-3): WorkingMemorySlot 类型穷举** — 验证 sealed interface permits 三种类型
     - **Validates: Requirements 4.4, 4.5, 4.6, 4.9, 4.10**
 
-  - [ ] 3.3 实现 BudgetAllocation record
+  - [x] 3.3 实现 BudgetAllocation record
     - 创建 `com.lifepilot.memory.working.BudgetAllocation` record
     - compact constructor 中验证四个区域预算之和不超过 totalBudget，超过时抛出 IllegalArgumentException
     - _Requirements: 5.1, 5.2_
@@ -94,22 +94,22 @@
     - **Property 1: BudgetAllocation 预算约束不变量**
     - **Validates: Requirements 5.2**
 
-- [ ] 4. Checkpoint — 确认数据模型和类型体系
+- [x] 4. Checkpoint — 确认数据模型和类型体系
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 5. 实现配置层
-  - [ ] 5.1 实现 MemoryProperties 配置类
+- [x] 5. 实现配置层
+  - [x] 5.1 实现 MemoryProperties 配置类
     - 创建 `com.lifepilot.memory.config.MemoryProperties`，JavaBean 风格（class + getters/setters）
     - 使用 @ConfigurationProperties(prefix = "lifepilot.memory") 绑定
     - 包含 enabled(true)、workingMemoryTokenBudget(8000)、idleSessionTimeoutMinutes(30)、compressionThresholdTokens(4000)、consolidationLookbackDays(7)、forgettingThreshold(0.7)、maxRetentionDays(180) 配置项
     - _Requirements: 1.1, 1.2_
 
-  - [ ] 5.2 更新 application.yml 添加 lifepilot.memory 配置段
+  - [x] 5.2 更新 application.yml 添加 lifepilot.memory 配置段
     - 在 application.yml 中新增 lifepilot.memory 配置段及默认值
     - _Requirements: 1.2_
 
-- [ ] 6. 实现 TokenBudgetAllocator 服务
-  - [ ] 6.1 实现 TokenBudgetAllocator
+- [x] 6. 实现 TokenBudgetAllocator 服务
+  - [x] 6.1 实现 TokenBudgetAllocator
     - 创建 `com.lifepilot.memory.working.TokenBudgetAllocator`
     - 实现 allocate(contextWindowSize, conversationTurns, topRetrievalScore) 方法
     - 系统提示词区固定 10%，用户消息区固定 15%，剩余 75% 按条件动态分配工作记忆区和检索上下文区
@@ -126,8 +126,8 @@
     - **Property 3: TokenBudgetAllocator 动态分配条件正确性**
     - **Validates: Requirements 5.4, 5.5, 5.6, 5.7, 5.8**
 
-- [ ] 7. 实现 EpisodicMemory 服务
-  - [ ] 7.1 实现 EpisodicMemory
+- [x] 7. 实现 EpisodicMemory 服务
+  - [x] 7.1 实现 EpisodicMemory
     - 创建 `com.lifepilot.memory.episodic.EpisodicMemory`
     - 使用 JdbcTemplate 执行所有数据库操作
     - 实现 save(ConversationRecord)（@Transactional 事务内写入 conversations + messages）
@@ -151,8 +151,8 @@
     - **Property 15: EpisodicMemory compress 保护 pinned 消息**
     - **Validates: Requirements 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 10.7**
 
-- [ ] 8. 实现 WorkingMemory 服务
-  - [ ] 8.1 实现 WorkingMemory
+- [x] 8. 实现 WorkingMemory 服务
+  - [x] 8.1 实现 WorkingMemory
     - 创建 `com.lifepilot.memory.working.WorkingMemory`
     - 使用 ConcurrentHashMap<String, List<WorkingMemorySlot>> 管理会话槽位
     - 实现 append(sessionId, slot)，超预算时执行重要度加权淘汰（ReasoningSlot → ToolResultSlot → ConversationSlot，跳过 pinned）
@@ -177,11 +177,11 @@
     - **Property 7: WorkingMemory flush 清空属性**
     - **Validates: Requirements 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8, 6.9**
 
-- [ ] 9. Checkpoint — 确认所有服务实现
+- [x] 9. Checkpoint — 确认所有服务实现
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 10. 装配与收尾
-  - [ ] 10.1 实现 MemoryAutoConfiguration
+- [x] 10. 装配与收尾
+  - [x] 10.1 实现 MemoryAutoConfiguration
     - 创建 `com.lifepilot.memory.config.MemoryAutoConfiguration`
     - 使用 @AutoConfiguration + @EnableConfigurationProperties(MemoryProperties.class)
     - 使用 @ConditionalOnProperty(prefix = "lifepilot.memory", name = "enabled", havingValue = "true", matchIfMissing = true)
@@ -194,13 +194,13 @@
     - 验证 enabled=false 时不创建任何 Bean
     - **Validates: Requirements 1.3, 1.4, 1.5**
 
-  - [ ] 10.3 创建 package-info.java 文件
+  - [x] 10.3 创建 package-info.java 文件
     - 创建 `com.lifepilot.memory.config.package-info.java`
     - 创建 `com.lifepilot.memory.working.package-info.java`
     - 创建 `com.lifepilot.memory.episodic.package-info.java`
     - 更新已有的 `com.lifepilot.memory.package-info.java`
 
-- [ ] 11. Final Checkpoint — 确认所有测试通过
+- [x] 11. Final Checkpoint — 确认所有测试通过
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes
