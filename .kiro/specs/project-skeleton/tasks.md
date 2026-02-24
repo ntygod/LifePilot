@@ -6,7 +6,7 @@
 
 ## Tasks
 
-- [ ] 1. 创建 Maven pom.xml 项目配置
+- [x] 1. 创建 Maven pom.xml 项目配置
   - 创建 `pom.xml`，声明 `spring-boot-starter-parent` 3.5.3 作为 parent
   - groupId `com.lifepilot`、artifactId `lifepilot`、version `0.1.0-SNAPSHOT`
   - 声明所有依赖：spring-boot-starter-web、spring-boot-starter-actuator、spring-boot-starter-data-jdbc、spring-ai-spring-boot-starter（1.1.2 BOM）、xerial sqlite-jdbc（3.49.1.0+）、flyway-core（10.27.0）、jline（3.28.0）、spring-boot-starter-test
@@ -14,14 +14,14 @@
   - 添加 Spring Milestones 仓库
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6_
 
-- [ ] 2. 创建 Spring Boot 启动类和配置文件
-  - [ ] 2.1 创建 `src/main/java/com/lifepilot/LifePilotApplication.java`
+- [x] 2. 创建 Spring Boot 启动类和配置文件
+  - [x] 2.1 创建 `src/main/java/com/lifepilot/LifePilotApplication.java`
     - `@SpringBootApplication` 注解，包含 `main` 方法
     - 添加 `ApplicationStartedEvent` 监听器，启动时输出应用名称和版本
     - 中文 Javadoc，含 `@author zsg` 和 `@since 2026-02-24`
     - _Requirements: 2.1, 2.2, 2.3, 2.4_
 
-  - [ ] 2.2 创建 `src/main/resources/application.yml`
+  - [x] 2.2 创建 `src/main/resources/application.yml`
     - 应用名称 `lifepilot`，端口 8080
     - SQLite 数据源 URL：`jdbc:sqlite:${user.home}/.lifepilot/lifepilot.db`
     - Flyway 启用 + 迁移脚本位置 `classpath:db/migration`
@@ -29,7 +29,7 @@
     - 日志级别：root INFO、com.lifepilot DEBUG
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6_
 
-- [ ] 3. 创建模块包结构
+- [x] 3. 创建模块包结构
   - 创建 7 个模块包的 `package-info.java` 文件：
     - `com.lifepilot.agent` — Agent 引擎核心
     - `com.lifepilot.memory` — 四层认知记忆系统
@@ -41,7 +41,7 @@
   - 每个 `package-info.java` 包含中文 Javadoc 说明模块职责
   - _Requirements: 4.1, 4.2_
 
-- [ ] 4. 实现 SQLite DataSource 配置类
+- [x] 4. 实现 SQLite DataSource 配置类
   - 创建 `src/main/java/com/lifepilot/config/DataSourceConfig.java`
   - `@Configuration` 类，`@Bean` 方法手动创建 `SQLiteDataSource`
   - 使用 `SQLiteConfig` 设置 PRAGMA：`journal_mode=WAL`、`synchronous=NORMAL`、`foreign_keys=ON`、`busy_timeout=5000`
@@ -50,23 +50,23 @@
   - 中文 Javadoc，含 `@author zsg` 和 `@since 2026-02-24`
   - _Requirements: 5.1, 5.2, 5.3, 5.4_
 
-- [ ] 5. 创建 Flyway 初始迁移脚本
+- [x] 5. 创建 Flyway 初始迁移脚本
   - 创建 `src/main/resources/db/migration/V1__init_schema.sql`
   - 创建 `schema_version_check` 表（`id TEXT PRIMARY KEY`、`created_at TEXT`）
   - 插入 `init` 验证记录
   - _Requirements: 6.1, 6.2, 6.3_
 
-- [ ] 6. Checkpoint — 验证项目可编译
+- [x] 6. Checkpoint — 验证项目可编译
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 7. 创建测试配置和集成测试
-  - [ ] 7.1 创建 `src/test/resources/application-test.yml`
+- [x] 7. 创建测试配置和集成测试
+  - [x] 7.1 创建 `src/test/resources/application-test.yml`
     - 内存 SQLite：`jdbc:sqlite::memory:`
     - Flyway 启用 + 迁移脚本位置
     - 日志级别配置
     - _Requirements: 8.4_
 
-  - [ ] 7.2 创建集成测试类 `src/test/java/com/lifepilot/LifePilotApplicationTest.java`
+  - [x] 7.2 创建集成测试类 `src/test/java/com/lifepilot/LifePilotApplicationTest.java`
     - `@SpringBootTest` + `@ActiveProfiles("test")`
     - 测试方法：`应用上下文_正常加载()` — 验证 Spring 上下文加载成功
     - 测试方法：`健康检查端点_返回UP状态()` — 使用 MockMvc 验证 GET `/actuator/health` 返回 200 + `UP` 状态
@@ -78,7 +78,7 @@
     - **Property 2: Flyway 迁移幂等性** — _Validates: Requirements 6.1, 6.3_
     - **Property 3: 健康检查端点可用性** — _Validates: Requirements 7.1, 7.2, 7.3_
 
-- [ ] 8. Final Checkpoint — 验证所有测试通过
+- [x] 8. Final Checkpoint — 验证所有测试通过
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes
