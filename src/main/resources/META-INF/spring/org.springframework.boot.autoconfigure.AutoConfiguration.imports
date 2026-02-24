@@ -1,3 +1,4 @@
 com.lifepilot.llm.config.LlmAutoConfiguration
 com.lifepilot.agent.config.AgentAutoConfiguration
 com.lifepilot.tool.config.ToolAutoConfiguration
+com.lifepilot.memory.config.MemoryAutoConfiguration
