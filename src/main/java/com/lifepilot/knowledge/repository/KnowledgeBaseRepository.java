@@ -1,4 +1,4 @@
-﻿package com.lifepilot.knowledge.repository;
+package com.lifepilot.knowledge.repository;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
