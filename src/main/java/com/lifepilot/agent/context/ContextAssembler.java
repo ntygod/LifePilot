@@ -39,7 +39,8 @@ public class ContextAssembler {
         String userPrompt = buildUserPrompt(state);
 
         // 基础版记忆检索返回空列表
-        return new AssembledContext(systemPrompt, userPrompt, List.of(), tokenBudget);
+        return new AssembledContext(systemPrompt, userPrompt, List.of(), tokenBudget,
+                0, 0.0f, 0, false);
     }
 
     /**
