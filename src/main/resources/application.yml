@@ -21,6 +21,28 @@ management:
       show-details: always
 
 lifepilot:
+  agent:
+    enabled: true
+    loop:
+      max-iterations: 50
+      scene-mapping:
+        understanding: agent-reasoning
+        planning: agent-reasoning
+        executing: agent-tool-calling
+        reflecting: agent-reasoning
+        responding: agent-generation
+    budget:
+      default-max-tokens: 32000
+      default-max-steps: 20
+      default-max-duration-seconds: 120
+      sub-agent-budget-ratio: 0.3
+    context:
+      max-context-tokens: 32000
+      output-reserved-tokens: 4000
+    session:
+      timeout-minutes: 30
+      max-recent-turns: 10
+      cleanup-interval-ms: 300000
   llm:
     enabled: true
     providers:

@@ -1,1 +1,2 @@
 com.lifepilot.llm.config.LlmAutoConfiguration
+com.lifepilot.agent.config.AgentAutoConfiguration
