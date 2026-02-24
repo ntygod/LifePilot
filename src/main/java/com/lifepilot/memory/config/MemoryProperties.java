@@ -34,6 +34,12 @@ public class MemoryProperties {
     /** 最大保留天数，超过后自动归档，默认 180。 */
     private int maxRetentionDays = 180;
 
+    /** sqlite-vec 向量维度，默认 1024。 */
+    private int embeddingDimensions = 1024;
+
+    /** 冲突检测语义匹配阈值 [0.0, 1.0]，默认 0.92。 */
+    private float semanticMatchThreshold = 0.92f;
+
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
 
@@ -54,4 +60,10 @@ public class MemoryProperties {
 
     public int getMaxRetentionDays() { return maxRetentionDays; }
     public void setMaxRetentionDays(int maxRetentionDays) { this.maxRetentionDays = maxRetentionDays; }
+
+    public int getEmbeddingDimensions() { return embeddingDimensions; }
+    public void setEmbeddingDimensions(int embeddingDimensions) { this.embeddingDimensions = embeddingDimensions; }
+
+    public float getSemanticMatchThreshold() { return semanticMatchThreshold; }
+    public void setSemanticMatchThreshold(float semanticMatchThreshold) { this.semanticMatchThreshold = semanticMatchThreshold; }
 }
