@@ -37,7 +37,7 @@ public non-sealed class MarkdownParser implements DocumentParser {
 
     // GFM 表格：表头行 + 分隔行 + 数据行
     private static final Pattern GFM_TABLE = Pattern.compile(
-            "(\\|.+\\|\\n)(\\|[-: ]+\\|\\n)((?:\\|.+\\|\\n)*)", Pattern.MULTILINE);
+            "(\\|.+\\|\\n)(\\|[-: |]+\\|\\n)((?:\\|.+\\|\\n)*)", Pattern.MULTILINE);
 
     // YAML Front Matter：--- 包裹的元数据块
     private static final Pattern YAML_FRONT_MATTER = Pattern.compile(
