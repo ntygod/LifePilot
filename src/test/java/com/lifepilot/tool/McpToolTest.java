@@ -1,0 +1,123 @@
+package com.lifepilot.tool;
+
+import com.lifepilot.mcp.McpClient;
+import com.lifepilot.mcp.model.McpContent;
+import com.lifepilot.mcp.model.McpToolResult;
+import com.lifepilot.tool.model.RiskLevel;
+import com.lifepilot.tool.model.ToolBudget;
+import com.lifepilot.tool.model.ToolInput;
+import com.lifepilot.tool.schema.JsonSchema;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.when;
+
+/**
+ * McpTool 单元测试。
+ *
+ * <p>使用 Mock McpClient 验证 execute() 成功路径和失败路径。</p>
+ *
+ * @author zsg
+ * @since 2026-02-24
+ */
+@ExtendWith(MockitoExtension.class)
+class McpToolTest {
+
+    @Mock
+    private McpClient mockClient;
+
+    private McpTool createTool() {
+        return new McpTool(
+                "mcp.test.read_file", "read_file", "读取文件",
+                JsonSchema.empty(), JsonSchema.empty(),
+                RiskLevel.LOW, true, ToolBudget.MCP_DEFAULT,
+                List.of("mcp"), "test", "read_file",
+                mockClient
+        );
+    }
+
+    private ToolInput createInput(Map<String, Object> params) {
+        return new ToolInput("mcp.test.read_file", params, JsonSchema.empty(), null);
+    }
+
+    @Test
+    void execute_成功路径_返回ToolResult_success() {
+        var mcpResult = new McpToolResult(
+                List.of(new McpContent("text", "文件内容", null, null)),
+                false
+        );
+        when(mockClient.callTool(eq("read_file"), anyMap()))
+                .thenReturn(CompletableFuture.completedFuture(mcpResult));
+
+        var tool = createTool();
+        var result = tool.execute(createInput(Map.of("path", "/tmp/test.txt")));
+
+        assertTrue(result.ok());
+        assertEquals("文件内容", result.getData("result"));
+        assertEquals("MCP", result.meta().executorType());
+        assertEquals("test", result.meta().mcpServerName());
+    }
+
+    @Test
+    void execute_多个text内容_拼接结果() {
+        var mcpResult = new McpToolResult(
+                List.of(
+                        new McpContent("text", "第一段", null, null),
+                        new McpContent("text", "第二段", null, null)
+                ),
+                false
+        );
+        when(mockClient.callTool(eq("read_file"), anyMap()))
+                .thenReturn(CompletableFuture.completedFuture(mcpResult));
+
+        var tool = createTool();
+        var result = tool.execute(createInput(Map.of()));
+
+        assertTrue(result.ok());
+        assertEquals("第一段第二段", result.getData("result"));
+    }
+
+    @Test
+    void execute_失败路径_isError为true_返回ToolResult_error() {
+        var mcpResult = new McpToolResult(
+                List.of(new McpContent("text", "文件不存在", null, null)),
+                true
+        );
+        when(mockClient.callTool(eq("read_file"), anyMap()))
+                .thenReturn(CompletableFuture.completedFuture(mcpResult));
+
+        var tool = createTool();
+        var result = tool.execute(createInput(Map.of("path", "/nonexistent")));
+
+        assertFalse(result.ok());
+        assertEquals("文件不存在", result.error());
+        assertEquals("MCP", result.meta().executorType());
+    }
+
+    @Test
+    void execute_异常路径_返回ToolResult_error() {
+        when(mockClient.callTool(eq("read_file"), anyMap()))
+                .thenReturn(CompletableFuture.failedFuture(
+                        new RuntimeException("连接断开")));
+
+        var tool = createTool();
+        var result = tool.execute(createInput(Map.of()));
+
+        assertFalse(result.ok());
+        assertTrue(result.error().contains("连接断开"));
+    }
+
+    @Test
+    void layer_返回MCP_EXTERNAL() {
+        var tool = createTool();
+        assertEquals(com.lifepilot.tool.model.ToolLayer.MCP_EXTERNAL, tool.layer());
+    }
+}

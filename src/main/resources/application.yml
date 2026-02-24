@@ -127,6 +127,11 @@ lifepilot:
       retry-initial-delay-ms: 500
       retry-multiplier: 2.0
       retry-max-delay-ms: 5000
+  mcp:
+    enabled: true
+    server:
+      enabled: false
+    servers: []
 
 logging:
   level:
