@@ -11,8 +11,8 @@
 
 ## Tasks
 
-- [ ] 1. 创建 Flyway 迁移脚本
-  - [ ] 1.1 创建 V5__create_memory_tables.sql
+- [x] 1. 创建 Flyway 迁移脚本
+  - [x] 1.1 创建 V5__create_memory_tables.sql
     - 在 `src/main/resources/db/migration/` 下创建 V5 迁移脚本
     - 创建 conversations 表（id, session_id, goal, summary, created_at, updated_at）
     - 创建 idx_conversations_session 索引
@@ -20,13 +20,13 @@
     - 创建 idx_messages_conversation 索引和 idx_messages_pinned 部分索引
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
 
-  - [ ] 1.2 创建 V6__create_messages_fts.sql
+  - [x] 1.2 创建 V6__create_messages_fts.sql
     - 创建 messages_fts FTS5 虚拟表，索引 content 列，tokenizer 为 unicode61 remove_diacritics 2
     - 创建 messages_fts_ai（AFTER INSERT）、messages_fts_ad（AFTER DELETE）、messages_fts_au（AFTER UPDATE）三个同步触发器
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
 
-- [ ] 2. 实现 L2 情景记忆数据模型
-  - [ ] 2.1 实现 CompressionLevel 枚举
+- [x] 2. 实现 L2 情景记忆数据模型
+  - [x] 2.1 实现 CompressionLevel 枚举
     - 创建 `com.lifepilot.memory.episodic.CompressionLevel` 枚举
     - 包含 ORIGINAL(0)、SUMMARY(1)、KEYPOINTS(2)、ARCHIVED(3) 四个值
     - 实现 level() 方法和 fromLevel(int) 静态方法，无效值抛出 IllegalArgumentException
@@ -40,7 +40,7 @@
     - **Property 8: CompressionLevel 往返属性**
     - **Validates: Requirements 7.3**
 
-  - [ ] 2.3 实现 MessageRecord record
+  - [x] 2.3 实现 MessageRecord record
     - 创建 `com.lifepilot.memory.episodic.MessageRecord` record
     - 包含 id, conversationId, role, content, compressedContent(@Nullable), compressionLevel, isPinned, toolCallJson(@Nullable), tokenCount, createdAt 字段
     - 实现 effectiveContent()、effectiveTokenCount()、isCompressed() 方法
@@ -54,7 +54,7 @@
     - **Property 9: MessageRecord 计算字段与 compressionLevel 一致性**
     - **Validates: Requirements 8.2, 8.3, 8.4**
 
-  - [ ] 2.5 实现 ConversationRecord record
+  - [x] 2.5 实现 ConversationRecord record
     - 创建 `com.lifepilot.memory.episodic.ConversationRecord` record
     - 包含 id, sessionId, goal, summary(@Nullable), messages(List<MessageRecord>), createdAt, updatedAt 字段
     - compact constructor 中使用 List.copyOf() 确保 messages 不可变
@@ -69,8 +69,8 @@
     - **Property 11: ConversationRecord 派生方法一致性**
     - **Validates: Requirements 9.2, 9.3, 9.4**
 
-- [ ] 3. 实现 L1 工作记忆类型体系
-  - [ ] 3.1 实现 WorkingMemorySlot sealed interface 及三种实现
+- [x] 3. 实现 L1 工作记忆类型体系
+  - [x] 3.1 实现 WorkingMemorySlot sealed interface 及三种实现
     - 创建 `com.lifepilot.memory.working.WorkingMemorySlot` sealed interface，声明 tokenCount()、createdAt()、importance() 方法
     - 创建 `ConversationSlot` record，包含静态工厂方法 userMessage(0.8f)、assistantMessage(0.6f)、systemMessage(0.9f, pinned=true)
     - 创建 `ToolResultSlot` record
@@ -83,7 +83,7 @@
     - **Property 3 (CP-3): WorkingMemorySlot 类型穷举** — 验证 sealed interface permits 三种类型
     - **Validates: Requirements 4.4, 4.5, 4.6, 4.9, 4.10**
 
-  - [ ] 3.3 实现 BudgetAllocation record
+  - [x] 3.3 实现 BudgetAllocation record
     - 创建 `com.lifepilot.memory.working.BudgetAllocation` record
     - compact constructor 中验证四个区域预算之和不超过 totalBudget，超过时抛出 IllegalArgumentException
     - _Requirements: 5.1, 5.2_
