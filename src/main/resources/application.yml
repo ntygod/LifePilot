@@ -2,7 +2,7 @@ spring:
   application:
     name: lifepilot
   datasource:
-    url: jdbc:sqlite:${user.home}/.lifepilot/lifepilot.db
+    url: "jdbc:sqlite:${user.home}/.lifepilot/lifepilot.db"
     driver-class-name: org.sqlite.JDBC
   flyway:
     enabled: true

@@ -5,6 +5,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.data.relational.core.dialect.AnsiDialect;
+import org.springframework.data.relational.core.dialect.Dialect;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcOperations;
 import org.sqlite.SQLiteConfig;
 import org.sqlite.SQLiteDataSource;
 
@@ -51,6 +54,18 @@ public class DataSourceConfig {
 
         log.info("SQLite 数据源初始化完成: url={}", url);
         return dataSource;
+    }
+
+    /**
+     * 提供 SQLite 的 JDBC Dialect，Spring Data JDBC 默认不支持 SQLite。
+     * 使用 ANSI 标准方言作为兼容实现。
+     *
+     * @param operations JDBC 操作
+     * @return ANSI 方言
+     */
+    @Bean
+    public Dialect jdbcDialect(NamedParameterJdbcOperations operations) {
+        return AnsiDialect.INSTANCE;
     }
 
     /**
