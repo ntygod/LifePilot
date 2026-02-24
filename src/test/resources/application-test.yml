@@ -6,6 +6,8 @@ spring:
     locations: classpath:db/migration
 
 lifepilot:
+  agent:
+    enabled: false
   llm:
     enabled: false
 
