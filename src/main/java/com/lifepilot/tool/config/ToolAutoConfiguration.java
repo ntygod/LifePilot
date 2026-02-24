@@ -1,9 +1,11 @@
 package com.lifepilot.tool.config;
 
+import com.lifepilot.agent.AgentToolProvider;
 import com.lifepilot.guardrail.GuardrailPolicy;
 import com.lifepilot.interaction.NoOpUserConfirmationService;
 import com.lifepilot.interaction.UserConfirmationService;
 import com.lifepilot.tool.BuiltinTool;
+import com.lifepilot.tool.bridge.ToolBridgeAgentToolProvider;
 import com.lifepilot.tool.pipeline.IdempotencyManager;
 import com.lifepilot.tool.pipeline.ToolExecutionPipeline;
 import com.lifepilot.tool.registry.BuiltinToolRegistrar;
@@ -84,5 +86,13 @@ public class ToolAutoConfiguration {
             List<BuiltinTool> builtinTools,
             DynamicToolRegistry registry) {
         return new BuiltinToolRegistrar(builtinTools, registry);
+    }
+
+    @Bean
+    public AgentToolProvider agentToolProvider(
+            DynamicToolRegistry toolRegistry,
+            ToolExecutionPipeline pipeline) {
+        log.info("工具桥接层初始化: 覆盖 NoOpAgentToolProvider");
+        return new ToolBridgeAgentToolProvider(toolRegistry, pipeline);
     }
 }
