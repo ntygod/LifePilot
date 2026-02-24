@@ -1,0 +1,98 @@
+package com.lifepilot.tool.config;
+
+import com.lifepilot.agent.AgentToolProvider;
+import com.lifepilot.guardrail.GuardrailPolicy;
+import com.lifepilot.interaction.NoOpUserConfirmationService;
+import com.lifepilot.interaction.UserConfirmationService;
+import com.lifepilot.tool.BuiltinTool;
+import com.lifepilot.tool.bridge.ToolBridgeAgentToolProvider;
+import com.lifepilot.tool.pipeline.IdempotencyManager;
+import com.lifepilot.tool.pipeline.ToolExecutionPipeline;
+import com.lifepilot.tool.registry.BuiltinToolRegistrar;
+import com.lifepilot.tool.registry.DynamicToolRegistry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.annotation.Bean;
+
+import java.util.List;
+
+/**
+ * 工具系统 Spring Boot 自动配置。
+ *
+ * <p>通过 {@code lifepilot.tool.enabled=true}（默认）激活，
+ * 注册所有工具系统核心 Bean。</p>
+ *
+ * @author zsg
+ * @since 2026-02-24
+ */
+@AutoConfiguration
+@EnableConfigurationProperties(ToolConfigProperties.class)
+@ConditionalOnProperty(prefix = "lifepilot.tool", name = "enabled",
+        havingValue = "true", matchIfMissing = true)
+public class ToolAutoConfiguration {
+
+    private static final Logger log = LoggerFactory.getLogger(ToolAutoConfiguration.class);
+
+    @Bean
+    @ConditionalOnMissingBean
+    public GuardrailPolicy guardrailPolicy() {
+        return new GuardrailPolicy();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public UserConfirmationService userConfirmationService() {
+        return new NoOpUserConfirmationService();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public IdempotencyManager idempotencyManager() {
+        return new IdempotencyManager();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public DynamicToolRegistry dynamicToolRegistry(
+            GuardrailPolicy guardrailPolicy,
+            ApplicationEventPublisher eventPublisher) {
+        return new DynamicToolRegistry(guardrailPolicy, eventPublisher);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ToolExecutionPipeline toolExecutionPipeline(
+            DynamicToolRegistry toolRegistry,
+            GuardrailPolicy guardrailPolicy,
+            IdempotencyManager idempotencyManager,
+            UserConfirmationService confirmationService,
+            ToolConfigProperties config) {
+        var p = config.getPipeline();
+        log.info("工具执行管线初始化: timeout={}s, maxRetries={}, retryDelay={}ms",
+                p.getDefaultTimeoutSeconds(), p.getDefaultMaxRetries(), p.getRetryInitialDelayMs());
+        return new ToolExecutionPipeline(
+                toolRegistry, guardrailPolicy, idempotencyManager, confirmationService,
+                p.getRetryInitialDelayMs(), p.getRetryMultiplier(), p.getRetryMaxDelayMs());
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public BuiltinToolRegistrar builtinToolRegistrar(
+            List<BuiltinTool> builtinTools,
+            DynamicToolRegistry registry) {
+        return new BuiltinToolRegistrar(builtinTools, registry);
+    }
+
+    @Bean
+    public AgentToolProvider agentToolProvider(
+            DynamicToolRegistry toolRegistry,
+            ToolExecutionPipeline pipeline) {
+        log.info("工具桥接层初始化: 覆盖 NoOpAgentToolProvider");
+        return new ToolBridgeAgentToolProvider(toolRegistry, pipeline);
+    }
+}

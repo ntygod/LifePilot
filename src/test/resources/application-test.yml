@@ -10,6 +10,8 @@ lifepilot:
     enabled: false
   llm:
     enabled: false
+  tool:
+    enabled: false
 
 logging:
   level:

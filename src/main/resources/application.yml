@@ -119,6 +119,14 @@ lifepilot:
       retry-initial-delay-ms: 500
       retry-multiplier: 2.0
       retry-max-delay-ms: 5000
+  tool:
+    enabled: true
+    pipeline:
+      default-timeout-seconds: 30
+      default-max-retries: 2
+      retry-initial-delay-ms: 500
+      retry-multiplier: 2.0
+      retry-max-delay-ms: 5000
 
 logging:
   level:
