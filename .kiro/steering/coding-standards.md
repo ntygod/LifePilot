@@ -13,11 +13,29 @@ inclusion: always
 | 场景 | 语言 | 示例 |
 |------|------|------|
 | 代码注释 | 中文 | `// 初始化不可变状态` |
-| Javadoc | 中文 | `/** 执行 Agent 循环。 */` |
+| Javadoc | 中文 | 见下方 Javadoc 模板 |
 | 日志消息 | 中文 | `log.info("Skill 注册成功: id={}", id)` |
 | 异常消息 | 中文 | `throw new SkillActivationException("Skill 激活深度超过限制")` |
 | 测试方法名 | 中文 | `void stepCount_单调递增()` |
 | 提交消息 | 中文 | `feat(memory): 实现记忆巩固管线` |
+
+### Javadoc 模板
+
+类级别 Javadoc 必须包含 `@author` 和 `@since`：
+
+```java
+/**
+ * Agent 不可变状态快照。
+ *
+ * @author zsg
+ * @since 2026-02-24
+ */
+public record AgentState(...) {}
+```
+
+- `@author`：固定为 `zsg`
+- `@since`：填写文件创建日期，格式 `yyyy-MM-dd`
+- 方法级 Javadoc 不需要 `@author` 和 `@since`，只需中文描述 + 参数/返回值说明
 
 ### 英文使用场景
 
@@ -35,7 +53,7 @@ inclusion: always
 | Maven | 3.9.x | 构建、依赖管理 |
 | SQLite (xerial sqlite-jdbc) | 3.51+ | 结构化存储 + FTS5 全文索引，native library 内嵌于 JAR |
 | sqlite-vec | 0.1.x | 向量索引，native 扩展打包进 JAR 启动时加载 |
-| JUnit 5 + jqwik | 5.11+ / 1.9.x | 单元测试 + 属性测试 |
+| JUnit 5 | 5.11+ | 单元测试 + 集成测试 |
 | JLine 3 | 3.28+ | CLI 补全、高亮、历史记录 |
 | Vue 3 + Vite + Pinia | 3.5 / 6.x / 3.x | 前端 SPA，构建产物打包进 JAR 静态资源 |
 | Flyway | 10.x | 数据库迁移（社区版，支持 SQLite） |
@@ -97,11 +115,11 @@ inclusion: always
 
 ## 8. 测试
 
-- 框架：JUnit 5 + jqwik（属性测试）
+- 框架：JUnit 5
 - 测试方法名使用中文：`void stepCount_单调递增()`
 - 单元测试不依赖外部服务，Mock LLM / MCP / 网络
 - 集成测试使用 `@SpringBootTest` + 内存 SQLite
-- 属性测试重点：状态机不变量、熔断器状态转换、检索去重、遗忘策略安全性
+- 集成测试重点：模块间协作、端到端流程、数据库交互、Spring 上下文加载
 
 ---
 
