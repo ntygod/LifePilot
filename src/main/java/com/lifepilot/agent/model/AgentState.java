@@ -27,6 +27,7 @@ public record AgentState(
         int stepCount,
         @Nullable ExecutionPlan plan,
         int planStepIndex,
+        int revisionCount,
         List<String> shortTermMemory,
         List<String> mentionedEntities,
         Budget budget,
@@ -60,6 +61,7 @@ public record AgentState(
                 .stepCount(0)
                 .plan(null)
                 .planStepIndex(0)
+                .revisionCount(0)
                 .shortTermMemory(List.of())
                 .mentionedEntities(List.of())
                 .budget(Budget.defaultBudget())
@@ -89,6 +91,7 @@ public record AgentState(
                 .stepCount(0)
                 .plan(null)
                 .planStepIndex(0)
+                .revisionCount(0)
                 .shortTermMemory(List.of())
                 .mentionedEntities(session.mentionedEntities())
                 .budget(Budget.defaultBudget())
@@ -119,6 +122,7 @@ public record AgentState(
                 .stepCount(0)
                 .plan(null)
                 .planStepIndex(0)
+                .revisionCount(0)
                 .shortTermMemory(List.of())
                 .mentionedEntities(List.of())
                 .budget(subBudget)
