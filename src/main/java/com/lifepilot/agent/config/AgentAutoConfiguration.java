@@ -3,12 +3,17 @@ package com.lifepilot.agent.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.*;
 import com.lifepilot.agent.context.ContextAssembler;
+import com.lifepilot.agent.context.DefaultMemoryRetrievalStrategy;
 import com.lifepilot.agent.session.SessionManager;
 import com.lifepilot.agent.trace.TraceRecorder;
 import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.memory.retrieval.HybridRetriever;
+import com.lifepilot.memory.working.TokenBudgetAllocator;
+import com.lifepilot.memory.working.WorkingMemory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -40,8 +45,22 @@ public class AgentAutoConfiguration {
     }
 
     @Bean
-    @ConditionalOnMissingBean
-    public ContextAssembler contextAssembler(AgentConfigProperties config) {
+    @ConditionalOnBean({HybridRetriever.class, WorkingMemory.class})
+    @ConditionalOnMissingBean(ContextAssembler.class)
+    public ContextAssembler fullContextAssembler(AgentConfigProperties config,
+                                                  HybridRetriever hybridRetriever,
+                                                  WorkingMemory workingMemory,
+                                                  TokenBudgetAllocator tokenBudgetAllocator) {
+        log.info("Agent 引擎: 注册完整版 ContextAssembler（记忆系统已就绪）");
+        var strategy = new DefaultMemoryRetrievalStrategy();
+        return new ContextAssembler(config, hybridRetriever,
+                workingMemory, tokenBudgetAllocator, strategy);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(ContextAssembler.class)
+    public ContextAssembler basicContextAssembler(AgentConfigProperties config) {
+        log.info("Agent 引擎: 注册基础版 ContextAssembler（记忆系统不可用）");
         return new ContextAssembler(config);
     }
 
