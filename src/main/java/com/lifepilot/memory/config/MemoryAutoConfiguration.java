@@ -17,6 +17,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -80,7 +81,7 @@ public class MemoryAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean(name = "vectorDataSource")
     public DataSource vectorDataSource(@Value("${lifepilot.memory.vector-db-url:jdbc:sqlite:data/vectors.db}") String url) {
-        if (!url.contains(":memory:")) {
+        if (!url.contains(":memory:") && !url.contains("mode=memory")) {
             try {
                 var dbPath = url.replace("jdbc:sqlite:", "");
                 var parentDir = Path.of(dbPath).getParent();
@@ -121,6 +122,7 @@ public class MemoryAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnBean(LlmRouter.class)
     public VectorSearcher vectorSearcher(
             @Qualifier("vectorJdbcTemplate") JdbcTemplate vectorJdbcTemplate,
             JdbcTemplate jdbcTemplate,
@@ -135,6 +137,7 @@ public class MemoryAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnBean(VectorSearcher.class)
     public ConflictDetector conflictDetector(
             JdbcTemplate jdbcTemplate,
             VectorSearcher vectorSearcher,
@@ -148,6 +151,7 @@ public class MemoryAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnBean({ConflictDetector.class, VectorSearcher.class})
     public SemanticMemory semanticMemory(
             JdbcTemplate jdbcTemplate,
             ConflictDetector conflictDetector,
@@ -175,6 +179,7 @@ public class MemoryAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnBean(SemanticMemory.class)
     public HybridRetriever hybridRetriever(
             VectorSearcher vectorSearcher,
             FtsSearcher ftsSearcher,

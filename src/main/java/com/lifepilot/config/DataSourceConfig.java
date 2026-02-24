@@ -5,9 +5,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 import org.springframework.data.relational.core.dialect.AnsiDialect;
 import org.springframework.data.relational.core.dialect.Dialect;
-import org.springframework.jdbc.core.namedparam.NamedParameterJdbcOperations;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.sqlite.SQLiteConfig;
 import org.sqlite.SQLiteDataSource;
 
@@ -38,7 +39,7 @@ public class DataSourceConfig {
     @Bean
     public DataSource dataSource(@Value("${spring.datasource.url}") String url) {
         // 确保数据库文件目录存在（内存数据库跳过）
-        if (!url.contains(":memory:")) {
+        if (!url.contains(":memory:") && !url.contains("mode=memory")) {
             ensureDatabaseDirectory(url);
         }
 
@@ -60,12 +61,23 @@ public class DataSourceConfig {
      * 提供 SQLite 的 JDBC Dialect，Spring Data JDBC 默认不支持 SQLite。
      * 使用 ANSI 标准方言作为兼容实现。
      *
-     * @param operations JDBC 操作
      * @return ANSI 方言
      */
     @Bean
-    public Dialect jdbcDialect(NamedParameterJdbcOperations operations) {
+    public Dialect jdbcDialect() {
         return AnsiDialect.INSTANCE;
+    }
+
+    /**
+     * 主数据库 JdbcTemplate，标记为 {@link Primary} 避免与向量数据库 JdbcTemplate 冲突。
+     *
+     * @param dataSource 主数据源
+     * @return 主 JdbcTemplate
+     */
+    @Bean
+    @Primary
+    public JdbcTemplate jdbcTemplate(DataSource dataSource) {
+        return new JdbcTemplate(dataSource);
     }
 
     /**

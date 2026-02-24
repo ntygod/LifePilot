@@ -12,6 +12,8 @@ lifepilot:
     enabled: false
   tool:
     enabled: false
+  memory:
+    vector-db-url: "jdbc:sqlite:${java.io.tmpdir}/lifepilot-vec-test.db"
 
 logging:
   level:
