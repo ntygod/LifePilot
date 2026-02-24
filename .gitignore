@@ -1,0 +1,36 @@
+# === IDE ===
+.vscode/
+.idea/
+*.iml
+
+# === OS ===
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# === Java / Maven ===
+target/
+*.class
+*.jar
+*.war
+*.ear
+*.log
+hs_err_pid*
+
+# === Node / Frontend ===
+node_modules/
+dist/
+.env
+.env.local
+.env.*.local
+
+# === SQLite ===
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# === Misc ===
+*.swp
+*.swo
+*~
