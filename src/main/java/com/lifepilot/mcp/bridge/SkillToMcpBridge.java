@@ -13,7 +13,6 @@ import com.lifepilot.tool.model.ValidationResult;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Map;
@@ -30,7 +29,6 @@ import java.util.Map;
  * @author zsg
  * @since 2026-02-24
  */
-@Service
 public class SkillToMcpBridge {
 
     private static final Logger log = LoggerFactory.getLogger(SkillToMcpBridge.class);

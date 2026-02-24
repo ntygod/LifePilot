@@ -10,7 +10,6 @@ import com.lifepilot.tool.model.ToolBudget;
 import com.lifepilot.tool.schema.JsonSchema;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -32,7 +31,6 @@ import java.util.List;
  * @author zsg
  * @since 2026-02-24
  */
-@Component
 public class McpToolAdapter {
 
     private static final Logger log = LoggerFactory.getLogger(McpToolAdapter.class);

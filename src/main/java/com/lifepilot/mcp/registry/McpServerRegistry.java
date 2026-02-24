@@ -7,7 +7,6 @@ import com.lifepilot.tool.ToolContract;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -24,7 +23,6 @@ import java.util.concurrent.*;
  * @author zsg
  * @since 2026-02-24
  */
-@Service
 public class McpServerRegistry {
 
     private static final Logger log = LoggerFactory.getLogger(McpServerRegistry.class);
