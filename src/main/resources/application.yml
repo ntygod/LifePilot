@@ -135,6 +135,28 @@ lifepilot:
     consolidation-lookback-days: 7
     forgetting-threshold: 0.7
     max-retention-days: 180
+    token-budget:
+      system-prompt-ratio: 0.10
+      user-message-ratio: 0.15
+      high-relevance-working-memory: 40
+      high-relevance-retrieval: 35
+      long-conversation-working-memory: 60
+      long-conversation-retrieval: 15
+      default-working-memory: 50
+      default-retrieval: 25
+      high-relevance-threshold: 0.9
+      long-conversation-turns-threshold: 10
+  skills:
+    validation:
+      max-name-length: 128
+      max-system-prompt-length: 10000
+      auto-generated-max-tokens: 10000
+      auto-generated-max-steps: 15
+      auto-generated-max-timeout: 180
+    search:
+      default-top-k: 10
+  datasource:
+    busy-timeout: 5000
   mcp:
     enabled: true
     server:
