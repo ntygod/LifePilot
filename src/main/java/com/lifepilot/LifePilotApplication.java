@@ -2,6 +2,7 @@ package com.lifepilot;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.lifepilot.interaction.cli.FastPathRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.event.ApplicationStartedEvent;
@@ -21,6 +22,9 @@ public class LifePilotApplication {
     private static final Logger log = LoggerFactory.getLogger(LifePilotApplication.class);
 
     public static void main(String[] args) {
+        if (FastPathRunner.tryFastPath(args)) {
+            System.exit(0);
+        }
         SpringApplication.run(LifePilotApplication.class, args);
     }
 
