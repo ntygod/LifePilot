@@ -21,7 +21,7 @@
 | | 多模态支持 | ❌ 未实现 | 仅支持纯文本交互 | — |
 | **Agent 引擎** | 控制循环（AgentLoop） | ✅ 已实现 | while 循环 + 预算检查 + 护栏 + 硬限制 50 次 | agent-core |
 | | 状态机（StateReducer） | ✅ 已实现 | 确定性状态转换，switch 穷举 9 种 Action | agent-core |
-| | 上下文工程（ContextAssembler） | 🔧 基础版 | 阶段专用 System Prompt + Token 预算分配，记忆检索槽位为空 | agent-core |
+| | 上下文工程（ContextAssembler） | ✅ 完整版 | 记忆检索槽位填充 + Token 预算动态分配 + 降级容错 | context-assembler-full |
 | | 输出解析（ActionParser） | ✅ 已实现 | JSON → Action 解析，解析失败返回 ErrorRecovery | agent-core |
 | | 轨迹记录（TraceRecorder） | ✅ 已实现 | 内存缓存 + SQLite 持久化（agent_traces + agent_trace_steps） | agent-core |
 | | 会话管理（SessionManager） | ✅ 已实现 | SQLite 持久化 + 定时清理过期会话 | agent-core |
@@ -48,8 +48,9 @@
 | | L4 程序记忆（Procedural） | ❌ 未实现 | 路线图规划中 | — |
 | | 记忆巩固管线 | ❌ 未实现 | 路线图规划中 | — |
 | | 遗忘策略 | ❌ 未实现 | 路线图规划中 | — |
-| | 文档/知识库管理 | ❌ 未实现 | 路线图规划中（Phase 2） | — |
-| **技能插件** | 内置技能（Todo/Schedule/Habit/Memory） | ❌ 未实现 | 路线图规划中（Phase 3） | — |
+| | 文档/知识库管理 | ✅ 已实现 | 基础 CRUD + Markdown/TXT 解析 + 固定大小分块 | knowledge-base |
+| **技能插件** | 内置技能（Todo/Schedule/Habit/Memory） | ✅ 已实现 | 四个核心 Skill 已实现 | builtin-skills |
+| | Skill 系统（YAML 声明式 + 热加载 + 自扩展） | ✅ 已实现 | SkillRegistry + SkillActivator + 三重验证 + Gap 检测 | skill-system |
 | **交互层** | CLI / Web UI / 系统托盘 / 通知路由 / 消息平台适配 | ❌ 未实现 | 路线图规划中（Phase 3~4） | — |
 | **可观测性** | DataRedactor / GuardrailAdvisor / TraceQuery | ❌ 未实现 | 路线图规划中（Phase 4） | — |
 
@@ -66,8 +67,11 @@
 | Phase 1 | mcp-support | ✅ 已完成 | `2594755` | McpClient + Transport + Adapter + Registry + Bridge |
 | Phase 2 | memory-foundation | ✅ 已完成 | `451c7ef` | WorkingMemory + EpisodicMemory + Flyway V5~V6 |
 | Phase 2 | semantic-memory | ✅ 已完成 | `8146bdd` | SemanticMemory + HybridRetriever + 知识图谱 + Flyway V7 |
-| Phase 2 | ContextAssembler 完整版 | ❌ 未开始 | — | 依赖记忆系统 + 知识图谱（已就绪） |
-| Phase 2 | 文档/知识库管理 | ❌ 未开始 | — | 依赖记忆系统（已就绪） |
+| Phase 2 | ContextAssembler 完整版 | ✅ 已完成 | — | 记忆检索 + Token 预算动态分配 + 降级容错 |
+| Phase 2 | 文档/知识库管理 | ✅ 已完成 | — | 基础 CRUD + Markdown/TXT 解析 + 固定大小分块 |
+| Phase 3 | builtin-skills | ✅ 已完成 | — | Todo / Schedule / Habit / Memory 四个核心 Skill |
+| Phase 3 | skill-system | ✅ 已完成 | — | YAML 声明式 Skill + 热加载 + 三重验证 + 自扩展 |
+| — | eliminate-hardcoding | ✅ 已完成 | — | 硬编码常量外部化到 ConfigurationProperties |
 
 ### 1.3 与 OpenClaw 的差距分析
 
@@ -76,7 +80,7 @@
 | **工具协议** | MCP 协议原生支持，可连接任意 MCP Server | ✅ MCP Client + Transport + Adapter + Registry | 🟢 已持平 |
 | **多模型路由** | 支持多 LLM Provider 切换 | ✅ 已实现场景路由 + 优先级故障转移 | 🟢 已持平 |
 | **上下文管理** | 对话历史 + 文件上下文 | ✅ 三层认知记忆 + 知识图谱 + 混合检索 | 🟢 已超越 |
-| **知识库管理** | 支持文档上传与检索 | ❌ 未实现 | 🟡 中等差距 — 缺少主动文档导入 |
+| **知识库管理** | 支持文档上传与检索 | ✅ 基础 CRUD + 解析器 + 分块 | 🟡 部分实现 — 缺少 DocumentIngester + 高级分块 + 检索集成 |
 | **Web 界面** | 完整的 Web UI（对话、设置、工具管理） | 基础聊天界面 | 🟡 中等差距 — 功能不完整 |
 | **多模态** | 支持图片理解 | 纯文本交互 | 🟡 中等差距 |
 | **代码执行** | 沙箱代码执行 | 无代码执行能力 | 🟡 中等差距 |
