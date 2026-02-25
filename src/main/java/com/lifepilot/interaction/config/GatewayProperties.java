@@ -2,6 +2,7 @@ package com.lifepilot.interaction.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
+import org.springframework.lang.Nullable;
 
 import java.util.List;
 
@@ -25,7 +26,8 @@ public record GatewayProperties(
         @DefaultValue AuditProperties audit,
         @DefaultValue ChannelsProperties channels,
         @DefaultValue ReconnectProperties reconnect,
-        @DefaultValue SessionProperties session
+        @DefaultValue SessionProperties session,
+        @DefaultValue WebhookProperties webhook
 ) {
 
     // ── 中间件启用与排序 ──────────────────────────────────────────
@@ -182,19 +184,57 @@ public record GatewayProperties(
                 @DefaultValue("false") boolean enabled
         ) {}
 
-        /** 企微通道配置。 */
+        /**
+         * 企业微信通道配置。
+         *
+         * @param enabled        是否启用
+         * @param corpId         企业 ID
+         * @param agentId        应用 ID
+         * @param secret         应用密钥
+         * @param token          回调 Token
+         * @param encodingAesKey 回调消息加密密钥
+         */
         public record WecomChannelProperties(
-                @DefaultValue("false") boolean enabled
+                @DefaultValue("false") boolean enabled,
+                @Nullable String corpId,
+                @Nullable String agentId,
+                @Nullable String secret,
+                @Nullable String token,
+                @Nullable String encodingAesKey
         ) {}
 
-        /** 钉钉通道配置。 */
+        /**
+         * 钉钉通道配置。
+         *
+         * @param enabled   是否启用
+         * @param appKey    应用 AppKey
+         * @param appSecret 应用 AppSecret
+         * @param robotCode 机器人编码
+         */
         public record DingtalkChannelProperties(
-                @DefaultValue("false") boolean enabled
+                @DefaultValue("false") boolean enabled,
+                @Nullable String appKey,
+                @Nullable String appSecret,
+                @Nullable String robotCode
         ) {}
 
-        /** 飞书通道配置。 */
+        /**
+         * 飞书通道配置。
+         *
+         * @param enabled           是否启用
+         * @param appId             应用 ID
+         * @param appSecret         应用密钥
+         * @param verificationToken 验证 Token
+         * @param encryptKey        事件加密密钥
+         * @param eventCacheMaxSize 事件去重缓存容量上限
+         */
         public record FeishuChannelProperties(
-                @DefaultValue("false") boolean enabled
+                @DefaultValue("false") boolean enabled,
+                @Nullable String appId,
+                @Nullable String appSecret,
+                @Nullable String verificationToken,
+                @Nullable String encryptKey,
+                @DefaultValue("10000") int eventCacheMaxSize
         ) {}
     }
 
@@ -215,5 +255,20 @@ public record GatewayProperties(
             @DefaultValue("30") int idleTimeoutMinutes,
             @DefaultValue("24") int expireTimeoutHours,
             @DefaultValue("15") int cleanupIntervalMinutes
+    ) {}
+
+    // ── Webhook 配置 ──────────────────────────────────────────────
+
+    /**
+     * Webhook 通用配置。
+     *
+     * @param timestampToleranceSeconds 签名验证时间戳容忍窗口（秒）
+     * @param maxRetryCount             失败消息最大重试次数
+     * @param retryIntervalSeconds      失败消息重试间隔（秒）
+     */
+    public record WebhookProperties(
+            @DefaultValue("300") int timestampToleranceSeconds,
+            @DefaultValue("3") int maxRetryCount,
+            @DefaultValue("60") int retryIntervalSeconds
     ) {}
 }
