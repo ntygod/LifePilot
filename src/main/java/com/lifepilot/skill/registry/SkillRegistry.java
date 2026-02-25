@@ -1,5 +1,6 @@
 package com.lifepilot.skill.registry;
 
+import com.lifepilot.skill.config.SkillConfigProperties;
 import com.lifepilot.skill.event.SkillRegistryEvent;
 import com.lifepilot.skill.model.SkillDefinition;
 import com.lifepilot.skill.model.SkillSource;
@@ -26,8 +27,8 @@ public class SkillRegistry {
 
     private static final Logger log = LoggerFactory.getLogger(SkillRegistry.class);
 
-    /** 默认语义搜索返回的最大结果数。 */
-    private static final int DEFAULT_SEARCH_TOP_K = 10;
+    /** 默认语义搜索返回的最大结果数（从配置读取）。 */
+    private final int defaultSearchTopK;
 
     private final ConcurrentHashMap<String, SkillDefinition> skills = new ConcurrentHashMap<>();
     private final SkillDefinitionValidator validator;
@@ -36,10 +37,12 @@ public class SkillRegistry {
 
     public SkillRegistry(SkillDefinitionValidator validator,
                          SkillSearchIndex searchIndex,
-                         ApplicationEventPublisher eventPublisher) {
+                         ApplicationEventPublisher eventPublisher,
+                         SkillConfigProperties skillConfig) {
         this.validator = validator;
         this.searchIndex = searchIndex;
         this.eventPublisher = eventPublisher;
+        this.defaultSearchTopK = skillConfig.getSearch().getDefaultTopK();
     }
 
     /**
@@ -127,7 +130,7 @@ public class SkillRegistry {
      * @return 按相似度降序排列的 Skill 列表
      */
     public List<SkillDefinition> search(String query) {
-        var searchResults = searchIndex.search(query, DEFAULT_SEARCH_TOP_K);
+        var searchResults = searchIndex.search(query, defaultSearchTopK);
         return searchResults.stream()
                 .map(r -> skills.get(r.skillId()))
                 .filter(d -> d != null)

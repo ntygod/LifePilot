@@ -148,3 +148,57 @@ public record AgentState(...) {}
 - 类型：feat / fix / refactor / test / docs / chore
 - 范围：agent / memory / llm / skill / mcp / interaction / observability / knowledge / workflow / sync
 - 分支：`main`（发布）、`develop`（集成）、`feature/{name}`、`bugfix/{name}`
+
+
+---
+
+## 12. 配置外部化
+
+### 原则
+
+业务可调参数禁止硬编码在 Java 源码中，必须通过 `@ConfigurationProperties` + `application.yml` 外部化。纯技术常量（如数学常数、协议版本号、不可变枚举映射）允许保留为 `static final`。
+
+### 判断标准
+
+| 类别 | 是否外部化 | 示例 |
+|------|-----------|------|
+| 业务可调参数 | 必须外部化 | 超时时间、比例阈值、最大长度限制、搜索返回数量 |
+| 纯技术常量 | 允许保留 | `Math.PI`、HTTP 状态码、日志格式模板 |
+
+### 实现模式
+
+1. 在对应模块的 `@ConfigurationProperties` 类中新增字段，设置默认值等于原硬编码值
+2. 使用嵌套静态内部类组织相关配置（如 `MemoryProperties.TokenBudget`）
+3. 配置键使用 kebab-case（如 `lifepilot.memory.token-budget.system-prompt-ratio`）
+4. 在 `application.yml` 中显式声明所有配置项及默认值
+5. 消费方通过构造函数注入 Properties 类，不直接使用 `@Value`
+
+### 合规示例
+
+```java
+// ✅ 正确：从配置读取
+public class TokenBudgetAllocator {
+    private final MemoryProperties.TokenBudget budget;
+
+    public TokenBudgetAllocator(MemoryProperties properties) {
+        this.budget = properties.getTokenBudget();
+    }
+
+    public int calcSystemBudget(int windowSize) {
+        return Math.round(windowSize * budget.getSystemPromptRatio());
+    }
+}
+```
+
+### 违规示例
+
+```java
+// ❌ 错误：硬编码业务可调参数
+public class TokenBudgetAllocator {
+    private static final float SYSTEM_PROMPT_RATIO = 0.10f;
+
+    public int calcSystemBudget(int windowSize) {
+        return Math.round(windowSize * SYSTEM_PROMPT_RATIO);
+    }
+}
+```

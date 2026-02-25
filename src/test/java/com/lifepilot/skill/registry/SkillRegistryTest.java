@@ -1,5 +1,6 @@
 package com.lifepilot.skill.registry;
 
+import com.lifepilot.skill.config.SkillConfigProperties;
 import com.lifepilot.skill.event.SkillRegistryEvent;
 import com.lifepilot.skill.model.*;
 import com.lifepilot.skill.registry.SkillDefinitionValidator.ValidationResult;
@@ -36,7 +37,7 @@ class SkillRegistryTest {
         validator = mock(SkillDefinitionValidator.class);
         searchIndex = mock(SkillSearchIndex.class);
         eventPublisher = mock(ApplicationEventPublisher.class);
-        registry = new SkillRegistry(validator, searchIndex, eventPublisher);
+        registry = new SkillRegistry(validator, searchIndex, eventPublisher, new SkillConfigProperties());
 
         // 默认校验通过
         when(validator.validate(any())).thenReturn(new ValidationResult(true, List.of()));

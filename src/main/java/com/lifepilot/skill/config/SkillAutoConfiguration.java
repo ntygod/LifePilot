@@ -67,9 +67,10 @@ public class SkillAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public SkillDefinitionValidator skillDefinitionValidator(DynamicToolRegistry toolRegistry) {
+    public SkillDefinitionValidator skillDefinitionValidator(DynamicToolRegistry toolRegistry,
+                                                             SkillConfigProperties skillConfig) {
         log.info("Skill 系统: 注册 SkillDefinitionValidator");
-        return new SkillDefinitionValidator(toolRegistry);
+        return new SkillDefinitionValidator(toolRegistry, skillConfig);
     }
 
     @Bean
@@ -83,9 +84,10 @@ public class SkillAutoConfiguration {
     @ConditionalOnMissingBean
     public SkillRegistry skillRegistry(SkillDefinitionValidator validator,
                                        SkillSearchIndex searchIndex,
-                                       ApplicationEventPublisher eventPublisher) {
+                                       ApplicationEventPublisher eventPublisher,
+                                       SkillConfigProperties skillConfig) {
         log.info("Skill 系统: 注册 SkillRegistry");
-        return new SkillRegistry(validator, searchIndex, eventPublisher);
+        return new SkillRegistry(validator, searchIndex, eventPublisher, skillConfig);
     }
 
     @Bean
