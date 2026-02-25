@@ -7,3 +7,4 @@ com.lifepilot.knowledge.config.KnowledgeAutoConfiguration
 com.lifepilot.skill.config.SkillAutoConfiguration
 com.lifepilot.interaction.cli.config.CliAutoConfiguration
 com.lifepilot.agent.proactive.config.ProactiveAutoConfiguration
+com.lifepilot.interaction.config.GatewayAutoConfiguration

@@ -207,6 +207,84 @@ lifepilot:
     default-prompt: "$ "
     stream-flush-interval-ms: 50
     confirmation-timeout-seconds: 30
+  gateway:
+    enabled: true
+    middleware:
+      auth:
+        enabled: true
+        order: 100
+      rate-limit:
+        enabled: true
+        order: 200
+      security:
+        enabled: true
+        order: 300
+      router:
+        enabled: true
+        order: 400
+      execution:
+        enabled: true
+        order: 500
+      audit:
+        enabled: true
+        order: 600
+    rate-limit:
+      max-tokens-per-hour: 100000
+      max-tokens-per-day: 500000
+      estimated-tokens-per-request: 2000
+      max-requests-per-minute: 30
+    security:
+      prompt-injection:
+        enabled: true
+      sensitive-data:
+        enabled: true
+      trust-score:
+        enabled: true
+        cache-ttl-minutes: 30
+    auth:
+      web:
+        jwt:
+          enabled: false
+          expiration-hours: 24
+        session:
+          enabled: true
+          timeout-minutes: 30
+    router:
+      fast-path-commands:
+        - todo
+        - schedule
+        - habit
+        - llm
+        - mcp
+        - skill
+    execution:
+      timeout-seconds: 120
+      streaming-enabled: true
+    audit:
+      enabled: true
+      request-summary-max-length: 200
+      response-summary-max-length: 200
+      retention-days: 90
+    channels:
+      cli:
+        enabled: true
+      web:
+        enabled: false
+      wecom:
+        enabled: false
+      dingtalk:
+        enabled: false
+      feishu:
+        enabled: false
+    reconnect:
+      max-attempts: 10
+      initial-delay-ms: 1000
+      max-delay-ms: 60000
+      multiplier: 2.0
+    session:
+      idle-timeout-minutes: 30
+      expire-timeout-hours: 24
+      cleanup-interval-minutes: 15
   mcp:
     enabled: true
     server:
