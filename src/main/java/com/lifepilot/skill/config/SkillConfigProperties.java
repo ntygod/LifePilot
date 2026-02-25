@@ -153,11 +153,17 @@ public class SkillConfigProperties {
         /** 缺口检测语义匹配阈值，低于此值判定存在缺口，默认 0.6。 */
         private double gapThreshold = 0.6;
 
+        /** 自生成 Skill 的 maxCostCents 上限，默认 100。 */
+        private int maxCostCents = 100;
+
         public boolean isEnabled() { return enabled; }
         public void setEnabled(boolean enabled) { this.enabled = enabled; }
 
         public double getGapThreshold() { return gapThreshold; }
         public void setGapThreshold(double gapThreshold) { this.gapThreshold = gapThreshold; }
+
+        public int getMaxCostCents() { return maxCostCents; }
+        public void setMaxCostCents(int maxCostCents) { this.maxCostCents = maxCostCents; }
     }
 
     /**

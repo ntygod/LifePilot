@@ -157,6 +157,7 @@ lifepilot:
     auto-generation:
       enabled: true
       gap-threshold: 0.6
+      max-cost-cents: 100
     shell-action:
       max-timeout-seconds: 30
     chain-action:
