@@ -2,9 +2,9 @@
 
 > 本文档从 [FEATURES.md](../FEATURES.md) 拆分而来，对应原文 §2.2 章节。
 
-> ⚠️ 本文档描述的是目标功能设计，尚未实现。
+> ✅ Skill 系统已实现（Phase 3，模块 10），包括 SkillRegistry、SkillActivator、YAML 声明式 Skill、热加载、SubAgent 激活、Skill 自扩展（Gap 检测 + YAML 生成 + 三重验证）。详细架构设计参见 [architecture/skill-system.md](../architecture/skill-system.md)。
 
-LifePilot 将采用统一的 Agent Skills 架构。一个 Skill 不是简单的工具别名，而是一个完整的**"Agent 能力单元"**——包含专业人格、工具权限、执行策略和记忆访问权限。
+LifePilot 采用统一的 Agent Skills 架构。一个 Skill 不是简单的工具别名，而是一个完整的**"Agent 能力单元"**——包含专业人格、工具权限、执行策略和记忆访问权限。
 
 ## 1. Skill 的本质
 

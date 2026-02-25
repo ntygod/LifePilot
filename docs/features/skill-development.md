@@ -2,7 +2,7 @@
 
 > 本文档从 [FEATURES.md](../FEATURES.md) 拆分而来，对应原文第五章节。
 
-> ⚠️ 本文档描述的是目标功能设计，尚未实现。
+> ✅ Skill 开发体系已实现（Phase 3，模块 10），支持 YAML 声明式 Skill 和 Java 原生插件两种扩展方式。
 
 ## 1. YAML 声明式 Skill（推荐入门）
 

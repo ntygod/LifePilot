@@ -2,7 +2,7 @@
 
 > 本文档从 [FEATURES.md](../FEATURES.md) 拆分而来，对应原文 §2.7 / §2.8 / §2.9 章节。
 
-> ⚠️ 本文档描述的是目标功能设计，尚未实现。
+> ✅ 四个内置 Skill（Todo / Schedule / Habit / Memory）已实现（Phase 3，模块 9）。详细架构设计参见 [architecture/builtin-skills.md](../architecture/builtin-skills.md)。
 
 ## 1. 待办管理
 

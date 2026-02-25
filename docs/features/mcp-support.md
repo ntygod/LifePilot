@@ -2,9 +2,9 @@
 
 > 本文档从 [FEATURES.md](../FEATURES.md) 拆分而来，对应原文 §2.5 章节。
 
-> ⚠️ 本文档描述的是目标功能设计，尚未实现。
+> ✅ MCP 协议支持已实现（Phase 1，模块 4），包括 McpClient、StdioTransport、StreamableHttpTransport、McpToolAdapter、McpServerRegistry、SkillToMcpBridge。
 
-LifePilot 将实现 MCP（Model Context Protocol）客户端，可以连接任意 MCP Server，接入日益丰富的 MCP 工具生态。
+LifePilot 已实现 MCP（Model Context Protocol）客户端，可以连接任意 MCP Server，接入日益丰富的 MCP 工具生态。
 
 ## 1. 为什么需要 MCP？
 

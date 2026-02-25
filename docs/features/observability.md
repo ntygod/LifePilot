@@ -2,11 +2,11 @@
 
 > 本文档从 [FEATURES.md](../FEATURES.md) 拆分而来，对应原文 §2.17 / §2.18 章节。
 
-> ⚠️ 本文档描述的是目标功能设计，尚未实现。
+> ✅ 基础可观测性已实现：TraceRecorder（内存缓存 + SQLite 持久化）、GuardrailPolicy（白名单/黑名单/风险审批）、DataRedactor（敏感数据脱敏）。高级功能（TraceQuery API、GuardrailAdvisor Spring AI Advisor 横切注入、轨迹评估）在 Phase 5 规划中。
 
 ## 1. 可观测性与护栏
 
-LifePilot 将提供 Trace 级的行为可观测性和多层护栏保护，确保 Agent 行为透明、安全、可审计。
+LifePilot 提供 Trace 级的行为可观测性和多层护栏保护，确保 Agent 行为透明、安全、可审计。
 
 ### 1.1 Trace 追踪
 

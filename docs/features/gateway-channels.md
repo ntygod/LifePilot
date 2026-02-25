@@ -2,7 +2,7 @@
 
 > 本文档从 [FEATURES.md](../FEATURES.md) 拆分而来，对应原文 §2.13 / §2.14 / §2.15 章节。
 
-> ⚠️ 本文档描述的是目标功能设计，尚未实现。
+> ✅ Gateway + 中间件管道 + Channel 适配器已实现（Phase 3，模块 13）。详细架构设计参见 [architecture/gateway-middleware.md](../architecture/gateway-middleware.md)。
 
 ## 1. Gateway + 中间件管道
 

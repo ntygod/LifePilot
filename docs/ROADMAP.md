@@ -9,7 +9,7 @@
 
 ### 1.1 已实现能力矩阵
 
-> 最后审计时间：2026-02-25，基于 git 提交记录和实际源码验证。
+> 最后审计时间：2026-02-26，基于 git 提交记录和实际源码验证。Phase 0~3（模块 1~13）全部完成。
 
 | 模块 | 能力项 | 状态 | 说明 | 对应 Spec |
 |------|--------|------|------|-----------|
@@ -25,9 +25,9 @@
 | | 输出解析（ActionParser） | ✅ 已实现 | JSON → Action 解析，解析失败返回 ErrorRecovery | agent-core |
 | | 轨迹记录（TraceRecorder） | ✅ 已实现 | 内存缓存 + SQLite 持久化（agent_traces + agent_trace_steps） | agent-core |
 | | 会话管理（SessionManager） | ✅ 已实现 | SQLite 持久化 + 定时清理过期会话 | agent-core |
-| | 主动推理（ProactiveReasoner） | ❌ 未实现 | 路线图规划中（Phase 3） | — |
+| | 主动推理（ProactiveReasoner） | ✅ 已实现 | 两阶段推理 + 智能降频 + 信号采集 + 通知分发 | proactive-reasoning |
 | | 对话压缩（DialogCompressor） | ❌ 未实现 | 路线图规划中 | — |
-| | 多 Agent 协作 | ❌ 未实现 | 路线图规划中（Phase 3） | — |
+| | 多 Agent 协作 | ❌ 未实现 | 路线图规划中（Phase 6） | — |
 | **工具系统** | ToolContract sealed interface | ✅ 已实现 | BuiltinTool / YamlTool / McpTool 三层工具 | tool-system |
 | | DynamicToolRegistry | ✅ 已实现 | 运行时注册/注销 + 优先级冲突解析 + 快照缓存 | tool-system |
 | | ToolExecutionPipeline | ✅ 已实现 | 参数校验 → 护栏 → 幂等 → 执行 → 重试 → 轨迹 | tool-system |
@@ -51,8 +51,14 @@
 | | 文档/知识库管理 | ✅ 已实现 | 基础 CRUD + Markdown/TXT 解析 + 固定大小分块 | knowledge-base |
 | **技能插件** | 内置技能（Todo/Schedule/Habit/Memory） | ✅ 已实现 | 四个核心 Skill 已实现 | builtin-skills |
 | | Skill 系统（YAML 声明式 + 热加载 + 自扩展） | ✅ 已实现 | SkillRegistry + SkillActivator + 三重验证 + Gap 检测 | skill-system |
-| **交互层** | CLI / Web UI / 系统托盘 / 通知路由 / 消息平台适配 | ❌ 未实现 | 路线图规划中（Phase 3~4） | — |
-| **可观测性** | DataRedactor / GuardrailAdvisor / TraceQuery | ❌ 未实现 | 路线图规划中（Phase 4） | — |
+| **交互层** | CLI 交互（JLine 3 REPL + 快捷命令 + 快速路径） | ✅ 已实现 | CliShell + CommandRouter + FastPathRunner + ResponseRenderer | cli-interaction |
+| | Gateway + 中间件管道 | ✅ 已实现 | 6 层中间件（Auth→RateLimit→Security→Router→Execution→Audit） | gateway-implementation, gateway-middleware |
+| | Channel 适配器（企微/钉钉/飞书/Webhook） | ✅ 已实现 | AbstractChannelAdapter + 4 个通道实现 + 指数退避重连 | channel-adapters |
+| | Web UI | ❌ 未实现 | 路线图规划中（Phase 5） | — |
+| | 系统托盘通知 | ❌ 未实现 | 路线图规划中（Phase 5） | — |
+| **可观测性** | TraceRecorder | ✅ 已实现 | 内存缓存 + SQLite 持久化（agent_traces + agent_trace_steps） | agent-core |
+| | GuardrailPolicy | ✅ 已实现 | 白名单/黑名单/风险审批 | tool-system |
+| | DataRedactor / GuardrailAdvisor / TraceQuery | ❌ 未实现 | 高级可观测性，路线图规划中（Phase 5） | — |
 
 ### 1.2 Spec 完成进度
 
@@ -71,6 +77,11 @@
 | Phase 2 | 文档/知识库管理 | ✅ 已完成 | — | 基础 CRUD + Markdown/TXT 解析 + 固定大小分块 |
 | Phase 3 | builtin-skills | ✅ 已完成 | — | Todo / Schedule / Habit / Memory 四个核心 Skill |
 | Phase 3 | skill-system | ✅ 已完成 | — | YAML 声明式 Skill + 热加载 + 三重验证 + 自扩展 |
+| Phase 3 | cli-interaction | ✅ 已完成 | — | JLine 3 REPL + 快捷命令 + 快速路径 + CJK 渲染 |
+| Phase 3 | proactive-reasoning | ✅ 已完成 | — | 两阶段推理 + 智能降频 + 信号采集 + 通知分发 |
+| Phase 3 | gateway-implementation | ✅ 已完成 | — | MessageGateway + 6 层中间件管道 |
+| Phase 3 | gateway-middleware | ✅ 已完成 | — | Auth + RateLimit + Security + Router + Execution + Audit |
+| Phase 3 | channel-adapters | ✅ 已完成 | — | 企微/钉钉/飞书/Webhook 适配器 + 指数退避重连 |
 | — | eliminate-hardcoding | ✅ 已完成 | — | 硬编码常量外部化到 ConfigurationProperties |
 
 ### 1.3 与 OpenClaw 的差距分析
@@ -81,12 +92,17 @@
 | **多模型路由** | 支持多 LLM Provider 切换 | ✅ 已实现场景路由 + 优先级故障转移 | 🟢 已持平 |
 | **上下文管理** | 对话历史 + 文件上下文 | ✅ 三层认知记忆 + 知识图谱 + 混合检索 | 🟢 已超越 |
 | **知识库管理** | 支持文档上传与检索 | ✅ 基础 CRUD + 解析器 + 分块 | 🟡 部分实现 — 缺少 DocumentIngester + 高级分块 + 检索集成 |
-| **Web 界面** | 完整的 Web UI（对话、设置、工具管理） | 基础聊天界面 | 🟡 中等差距 — 功能不完整 |
-| **多模态** | 支持图片理解 | 纯文本交互 | 🟡 中等差距 |
-| **代码执行** | 沙箱代码执行 | 无代码执行能力 | 🟡 中等差距 |
-| **工作流编排** | 基于 Agent 循环的任务编排 | ProactiveReasoner 仅支持系统预设场景 | 🟡 中等差距 |
-| **多 Agent** | 单 Agent + 工具委托 | 单 Agent 架构 | 🟢 基本持平 |
+| **Web 界面** | 完整的 Web UI（对话、设置、工具管理） | ❌ 未实现 | 🟡 中等差距 — Phase 5 规划中 |
+| **多模态** | 支持图片理解 | 纯文本交互 | 🟡 中等差距 — Phase 4 规划中 |
+| **代码执行** | 沙箱代码执行 | 无代码执行能力 | 🟡 中等差距 — Phase 4 规划中 |
+| **工作流编排** | 基于 Agent 循环的任务编排 | ✅ ProactiveReasoner 两阶段推理 + 智能降频 | 🟡 部分实现 — 缺少通用工作流引擎（Phase 4） |
+| **多 Agent** | 单 Agent + 工具委托 | 单 Agent + SubAgent 激活模式 | 🟢 基本持平 |
 | **本地优先** | 云端为主 | ✅ 完全本地运行，隐私优先 | 🟢 差异化优势 |
+| **记忆系统** | 基础对话历史 | ✅ 三层认知记忆 + 知识图谱 + 混合检索 | 🟢 显著优势 |
+| **主动推理** | 被动响应为主 | ✅ 两阶段推理 + 三态降频 + 信号采集 | 🟢 差异化优势 |
+| **CLI 交互** | ❌ 无 CLI | ✅ JLine 3 REPL + 快捷命令 + 快速路径 | 🟢 差异化优势 |
+| **多渠道接入** | Web UI only | ✅ CLI + 企微 + 钉钉 + 飞书 + Webhook | 🟢 显著优势 |
+| **可观测性** | 基础日志 | ✅ TraceRecorder + GuardrailPolicy | 🟢 显著优势 |
 | **记忆系统** | 基础对话历史 | ✅ 四层认知记忆 + 遗忘策略 + 记忆巩固 | 🟢 显著优势 |
 | **主动推理** | 被动响应为主 | ✅ 主动推理 + 智能降频 | 🟢 差异化优势 |
 | **可观测性** | 基础日志 | ✅ Trace + 护栏 + 数据脱敏 | 🟢 显著优势 |

@@ -2,7 +2,7 @@
 
 > 本文档从 [FEATURES.md](../FEATURES.md) 拆分而来，对应原文 §2.11 / §2.12 章节。
 
-> ⚠️ 本文档描述的是目标功能设计，尚未实现。
+> ✅ 主动推理引擎已实现（Phase 3，模块 12）。详细架构设计参见 [architecture/proactive-reasoning.md](../architecture/proactive-reasoning.md)。
 
 ## 1. 主动推理与智能提醒 (ProactiveReasoner)
 
