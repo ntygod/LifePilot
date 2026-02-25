@@ -201,7 +201,13 @@ public class SkillConfigProperties {
         /** SSRF 防护开关，默认 true。 */
         private boolean ssrfProtectionEnabled = true;
 
+        /** HTTP 请求超时时间（秒），默认 30。 */
+        private int timeoutSeconds = 30;
+
         public boolean isSsrfProtectionEnabled() { return ssrfProtectionEnabled; }
         public void setSsrfProtectionEnabled(boolean ssrfProtectionEnabled) { this.ssrfProtectionEnabled = ssrfProtectionEnabled; }
+
+        public int getTimeoutSeconds() { return timeoutSeconds; }
+        public void setTimeoutSeconds(int timeoutSeconds) { this.timeoutSeconds = timeoutSeconds; }
     }
 }

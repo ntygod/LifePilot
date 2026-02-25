@@ -163,6 +163,7 @@ lifepilot:
       max-steps: 5
     http-action:
       ssrf-protection-enabled: true
+      timeout-seconds: 30
     validation:
       max-name-length: 128
       max-system-prompt-length: 10000
