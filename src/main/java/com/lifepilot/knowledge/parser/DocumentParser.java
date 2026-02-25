@@ -13,7 +13,7 @@ import java.util.List;
  * @since 2026-02-25
  */
 public sealed interface DocumentParser
-        permits MarkdownParser, PlainTextParser {
+        permits MarkdownParser, PlainTextParser, PdfParser, WordParser {
 
     /**
      * 返回此解析器支持的文件扩展名列表（不含点号）。

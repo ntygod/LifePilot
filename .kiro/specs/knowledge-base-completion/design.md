@@ -112,12 +112,12 @@ flowchart LR
 
 ### 跨模块接口变更
 
-| 变更接口 | 所属模块 | 变更内容 | 影响模块 | 兼容性 |
-|---------|---------|---------|---------|--------|
-| DocumentParser | knowledge.parser | 扩展 permits 添加 PdfParser, WordParser | knowledge（内部） | 向后兼容（新增 permit） |
-| ChunkingStrategy | knowledge.chunking | 扩展 permits 添加 RecursiveChunker, HeadingChunker, SmartChunker | knowledge（内部） | 向后兼容（新增 permit） |
-| FormatDetector Bean | knowledge.config | 构造参数从 2 个解析器扩展为 4 个 | knowledge（内部） | 向后兼容 |
-| KnowledgeBaseProperties | knowledge.config | 新增 recursive, heading, smartChunker, vectorIndexer, ftsIndexer, retrieval, reranker, contextEnricher, extraction 配置段 | knowledge（内部） | 向后兼容（新增字段有默认值） |
+| 变更接口 | 所属模块 | 变更内容 | 影响模块 |
+|---------|---------|---------|---------|
+| DocumentParser | knowledge.parser | 扩展 permits 添加 PdfParser, WordParser | knowledge（内部） |
+| ChunkingStrategy | knowledge.chunking | 扩展 permits 添加 RecursiveChunker, HeadingChunker, SmartChunker | knowledge（内部） |
+| FormatDetector Bean | knowledge.config | 构造参数从 2 个解析器扩展为 4 个 | knowledge（内部） |
+| KnowledgeBaseProperties | knowledge.config | 新增 recursive, heading, smartChunker, vectorIndexer, ftsIndexer, retrieval, reranker, contextEnricher, extraction 配置段 | knowledge（内部） |
 
 ## Components and Interfaces
 
