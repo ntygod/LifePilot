@@ -12,7 +12,8 @@ import com.lifepilot.interaction.model.GatewayMessage;
  * @author zsg
  * @since 2026-02-25
  */
-public sealed interface AuthStrategy permits CliAuthStrategy {
+public sealed interface AuthStrategy
+        permits CliAuthStrategy, WecomAuthStrategy, DingtalkAuthStrategy, FeishuAuthStrategy {
 
     /**
      * 对网关消息执行认证。
