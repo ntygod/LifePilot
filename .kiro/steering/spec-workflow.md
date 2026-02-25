@@ -12,7 +12,7 @@ inclusion: always
 
 ### 1.1 模块依赖图
 
-> 最后更新：2026-02-25
+> 最后更新：2026-02-26
 > 已完成模块标注 ✅，进行中标注 🔧
 
 ```
@@ -108,11 +108,18 @@ Phase 5 — Web UI + 可观测性
   │     ├─ Skill / MCP 管理页
   │     ├─ 轨迹回放页
   │     └─ 工作流管理页
-  └─ 20. 可观测性完善（依赖 Agent 引擎 + 工具系统）
-        ├─ TraceQuery 轨迹查询 API
-        ├─ GuardrailAdvisor Spring AI Advisor 横切注入
-        ├─ DataRedactor 自动脱敏
-        └─ 轨迹评估（工具选择正确性 + 步骤效率）
+  ├─ 20. 可观测性完善（依赖 Agent 引擎 + 工具系统）
+  │     ├─ TraceQuery 轨迹查询 API
+  │     ├─ GuardrailAdvisor Spring AI Advisor 横切注入
+  │     ├─ DataRedactor 自动脱敏
+  │     └─ 轨迹评估（工具选择正确性 + 步骤效率）
+  └─ 20.5 Agentic Evals 评估框架（依赖 Agent 引擎 + 工具系统 + LLM Router）📋 spec 已创建
+        ├─ BenchmarkScenario YAML 声明式场景定义
+        ├─ TrajectoryEvaluator 五维规则评估（工具选择 / 参数合法性 / 步骤效率 / 策略合规 / Token 效率）
+        ├─ LLM-as-a-Judge 语义评估
+        ├─ JUnit 5 集成（@EvalTest / @EvalSuite 注解）
+        ├─ EvalStore 评估结果持久化 + Flyway V14
+        └─ EvalReport 退化告警 + 趋势对比
 
 Phase 6 — 生态与进阶（远期）
   ├─ 21. 多 Agent 协作（依赖 Agent 引擎 + Skill 系统）
