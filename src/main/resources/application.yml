@@ -198,6 +198,37 @@ lifepilot:
         overlap-size: 128
         max-chunk-tokens: 512
         respect-sentences: true
+      recursive:
+        separators: ["\n\n", "\n", "。", "！", "？", ".", "!", "?", " "]
+        max-chunk-size: 1024
+        min-chunk-size: 100
+        overlap-size: 128
+      heading:
+        max-heading-level: 3
+        max-chunk-size: 2048
+      smart-chunker:
+        heading-density-threshold: 0.1
+        short-document-threshold: 2000
+    vector-indexer:
+      batch-size: 32
+      max-retries: 2
+      embedding-dimension: 1536
+    retrieval:
+      default-top-k: 10
+      vector-weight: 0.6
+      fts-weight: 0.4
+      rrf-k: 60
+    context-enricher:
+      enabled: true
+      max-prefix-tokens: 100
+    extraction:
+      enabled: true
+      batch-size: 5
+    reranker:
+      enabled: false
+      type: llm
+      model: ""
+      top-k: 5
   datasource:
     busy-timeout: 5000
   cli:
