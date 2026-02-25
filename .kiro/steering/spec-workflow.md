@@ -53,7 +53,7 @@ Phase 2 — 记忆与知识 ✅
         ├─ 多知识库实例管理
         └─ 可选 Reranker 精排
 
-Phase 3 — 交互与技能
+Phase 3 — 交互与技能 ✅
   ├─ 9. 内置技能插件 ✅（依赖工具系统 + 记忆系统）
   │     └─ Todo / Schedule / Habit / Memory 四个核心 Skill
   ├─ 10. Skill 系统 ✅（依赖工具系统 + MCP）
@@ -69,7 +69,7 @@ Phase 3 — 交互与技能
   │     ├─ ProactiveReasoner 两阶段推理
   │     ├─ FrequencyStateMachine 智能降频
   │     └─ SignalCollector 信号采集
-  └─ 13. Gateway + Channel 适配器（依赖 Agent 引擎）
+  └─ 13. Gateway + Channel 适配器 ✅（依赖 Agent 引擎）
         ├─ MessageGateway 统一消息入口
         ├─ 6 层中间件管道（Auth → RateLimit → Security → Router → Execution → Audit）
         ├─ 三层工具安全策略（Global → Agent → Tool）
