@@ -1,5 +1,6 @@
 package com.lifepilot.skill.registry;
 
+import com.lifepilot.skill.config.SkillConfigProperties;
 import com.lifepilot.skill.model.*;
 import com.lifepilot.skill.registry.SkillDefinitionValidator.ValidationResult;
 import com.lifepilot.tool.BuiltinTool;
@@ -30,7 +31,7 @@ class SkillDefinitionValidatorTest {
     @BeforeEach
     void setUp() {
         toolRegistry = mock(DynamicToolRegistry.class);
-        validator = new SkillDefinitionValidator(toolRegistry);
+        validator = new SkillDefinitionValidator(toolRegistry, new SkillConfigProperties());
         // 默认所有工具都存在，返回一个真实的 BuiltinTool 实例
         var dummyTool = BuiltinTool.builder()
                 .id("dummy").name("dummy").description("dummy")
