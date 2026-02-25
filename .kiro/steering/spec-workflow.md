@@ -33,7 +33,7 @@ Phase 1 — 核心引擎（自底向上）✅
   │     └─ GuardrailEngine
   └─ 4. MCP 协议支持 ✅（依赖工具系统）
 
-Phase 2 — 记忆与知识
+Phase 2 — 记忆与知识 ✅
   ├─ 5. 记忆系统基础 ✅（依赖 LLM Router）
   │     ├─ L1 工作记忆 + L2 情景记忆
   │     ├─ SqliteVecStore + VectorSearcher
@@ -43,11 +43,11 @@ Phase 2 — 记忆与知识
   │     ├─ HybridRetriever（向量 + FTS5 + 图遍历）
   │     ├─ ConflictDetector（三级冲突检测）
   │     └─ Flyway V7
-  ├─ 7. ContextAssembler 完整版（依赖语义记忆）
+  ├─ 7. ContextAssembler 完整版 ✅（依赖记忆系统基础 + 语义记忆）
   │     ├─ 记忆检索槽位填充
   │     ├─ 对话压缩（DialogCompressor）
   │     └─ Token 预算动态分配
-  └─ 8. 文档/知识库管理（依赖语义记忆）
+  └─ 8. 文档/知识库管理 ✅（依赖语义记忆）
         ├─ DocumentIngester + 多格式解析（PDF/Word/Markdown/TXT）
         ├─ 分块策略（FixedSize / Semantic / Heading）
         ├─ 多知识库实例管理
@@ -61,11 +61,11 @@ Phase 3 — 交互与技能
   │     ├─ YAML 声明式 Skill + 热加载
   │     ├─ SubAgent 激活模式
   │     └─ Skill 自扩展（Gap 检测 + YAML 生成 + 三重验证）
-  ├─ 11. CLI 交互层（依赖 Agent 引擎）
+  ├─ 11. CLI 交互层（依赖 Agent 引擎 + Skill 系统 + MCP + LLM）
   │     ├─ JLine 3 交互式对话
   │     ├─ 快捷命令（todo/schedule/habit/llm/mcp/skill）
   │     └─ CLI 快速路径（简单命令跳过完整 Spring 初始化）
-  ├─ 12. 主动推理引擎（依赖 Agent 引擎 + 记忆系统）
+  ├─ 12. 主动推理引擎（依赖 Agent 引擎 + 记忆系统 + Skill 系统）
   │     ├─ ProactiveReasoner 两阶段推理
   │     ├─ FrequencyStateMachine 智能降频
   │     └─ SignalCollector 信号采集
