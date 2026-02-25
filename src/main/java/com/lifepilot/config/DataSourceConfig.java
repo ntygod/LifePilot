@@ -3,6 +3,7 @@ package com.lifepilot.config;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
@@ -26,6 +27,7 @@ import java.nio.file.Path;
  * @since 2026-02-24
  */
 @Configuration
+@EnableConfigurationProperties(DataSourceProperties.class)
 public class DataSourceConfig {
 
     private static final Logger log = LoggerFactory.getLogger(DataSourceConfig.class);
@@ -34,10 +36,12 @@ public class DataSourceConfig {
      * 创建 SQLite 数据源，设置 PRAGMA 并确保数据库目录存在。
      *
      * @param url JDBC 连接 URL
+     * @param dsProperties 数据源外部化配置
      * @return 配置完成的数据源
      */
     @Bean
-    public DataSource dataSource(@Value("${spring.datasource.url}") String url) {
+    public DataSource dataSource(@Value("${spring.datasource.url}") String url,
+                                 DataSourceProperties dsProperties) {
         // 确保数据库文件目录存在（内存数据库跳过）
         if (!url.contains(":memory:") && !url.contains("mode=memory")) {
             ensureDatabaseDirectory(url);
@@ -48,7 +52,7 @@ public class DataSourceConfig {
         config.setJournalMode(SQLiteConfig.JournalMode.WAL);
         config.setSynchronous(SQLiteConfig.SynchronousMode.NORMAL);
         config.enforceForeignKeys(true);
-        config.setBusyTimeout(5000);
+        config.setBusyTimeout(dsProperties.getBusyTimeout());
 
         var dataSource = new SQLiteDataSource(config);
         dataSource.setUrl(url);
