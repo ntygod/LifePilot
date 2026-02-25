@@ -2,42 +2,42 @@
 
 ## 任务
 
-- [ ] 1. 实现工具模型层（model 包）
-  - [ ] 1.1 实现 ToolLayer 枚举（三层优先级）
-  - [ ] 1.2 实现 RiskLevel 枚举（四级风险 + 审批方法）
-  - [ ] 1.3 实现 ToolBudget record（三维预算）
-  - [ ] 1.4 实现 ValidationError record 和 ValidationResult sealed interface
-  - [ ] 1.5 实现 ToolResultMeta record（执行元信息）
-  - [ ] 1.6 实现 ToolResult record（结构化结果信封）
-  - [ ] 1.7 实现 JsonSchema 轻量校验类
-  - [ ] 1.8 实现 ToolInput record（类型安全输入 + Schema 校验）
-- [ ] 2. 实现 ToolContract sealed interface 及三种实现
-  - [ ] 2.1 实现 ToolExecutor 函数式接口
-  - [ ] 2.2 实现 ToolContract sealed interface
-  - [ ] 2.3 实现 BuiltinTool record（Layer 3）
-  - [ ] 2.4 实现 YamlTool record（Layer 2 骨架）
-  - [ ] 2.5 实现 McpTool record（Layer 1 骨架）
-- [ ] 3. 实现护栏引擎
-  - [ ] 3.1 实现 GuardrailResult record
-  - [ ] 3.2 实现 GuardrailPolicy（白名单/黑名单/风险审批）
-  - [ ] 3.3 实现 UserConfirmationService 接口 + NoOp 实现
-- [ ] 4. 实现工具注册事件体系
-  - [ ] 4.1 实现 ToolRegistryEvent sealed interface 及三个 record
-- [ ] 5. 实现 DynamicToolRegistry
-  - [ ] 5.1 实现 DynamicToolRegistry 核心（注册/注销/冲突解析/快照缓存）
-  - [ ] 5.2 实现 BuiltinToolRegistrar（ApplicationReadyEvent 自动注册）
-- [ ] 6. 实现 ToolExecutionPipeline
-  - [ ] 6.1 实现 IdempotencyManager（内存版）
-  - [ ] 6.2 实现 ToolExecutionPipeline（参数校验→护栏→幂等→执行→重试→轨迹）
-- [ ] 7. 实现配置与自动装配
-  - [ ] 7.1 实现 ToolConfigProperties
-  - [ ] 7.2 实现 ToolAutoConfiguration
-  - [ ] 7.3 更新 application.yml 添加 tool 配置段
-  - [ ] 7.4 更新 META-INF/spring AutoConfiguration imports
-- [ ] 8. 实现 AgentToolProvider 桥接
-  - [ ] 8.1 实现 ToolBridgeAgentToolProvider（ToolContract → Spring AI ToolCallback）
-- [ ] 9. 单元测试
-  - [ ] 9.1 DynamicToolRegistry 测试（优先级覆盖/冲突/快照不可变）
-  - [ ] 9.2 ToolExecutionPipeline 测试（校验失败/护栏拦截/超时/重试）
-  - [ ] 9.3 GuardrailPolicy 测试（白名单/黑名单/风险等级）
-  - [ ] 9.4 JsonSchema 校验测试
+- [x] 1. 实现工具模型层（model 包）
+  - [x] 1.1 实现 ToolLayer 枚举（三层优先级）
+  - [x] 1.2 实现 RiskLevel 枚举（四级风险 + 审批方法）
+  - [x] 1.3 实现 ToolBudget record（三维预算）
+  - [x] 1.4 实现 ValidationError record 和 ValidationResult sealed interface
+  - [x] 1.5 实现 ToolResultMeta record（执行元信息）
+  - [x] 1.6 实现 ToolResult record（结构化结果信封）
+  - [x] 1.7 实现 JsonSchema 轻量校验类
+  - [x] 1.8 实现 ToolInput record（类型安全输入 + Schema 校验）
+- [x] 2. 实现 ToolContract sealed interface 及三种实现
+  - [x] 2.1 实现 ToolExecutor 函数式接口
+  - [x] 2.2 实现 ToolContract sealed interface
+  - [x] 2.3 实现 BuiltinTool record（Layer 3）
+  - [x] 2.4 实现 YamlTool record（Layer 2 骨架）
+  - [x] 2.5 实现 McpTool record（Layer 1 骨架）
+- [x] 3. 实现护栏引擎
+  - [x] 3.1 实现 GuardrailResult record
+  - [x] 3.2 实现 GuardrailPolicy（白名单/黑名单/风险审批）
+  - [x] 3.3 实现 UserConfirmationService 接口 + NoOp 实现
+- [x] 4. 实现工具注册事件体系
+  - [x] 4.1 实现 ToolRegistryEvent sealed interface 及三个 record
+- [x] 5. 实现 DynamicToolRegistry
+  - [x] 5.1 实现 DynamicToolRegistry 核心（注册/注销/冲突解析/快照缓存）
+  - [x] 5.2 实现 BuiltinToolRegistrar（ApplicationReadyEvent 自动注册）
+- [x] 6. 实现 ToolExecutionPipeline
+  - [x] 6.1 实现 IdempotencyManager（内存版）
+  - [x] 6.2 实现 ToolExecutionPipeline（参数校验→护栏→幂等→执行→重试→轨迹）
+- [x] 7. 实现配置与自动装配
+  - [x] 7.1 实现 ToolConfigProperties
+  - [x] 7.2 实现 ToolAutoConfiguration
+  - [x] 7.3 更新 application.yml 添加 tool 配置段
+  - [x] 7.4 更新 META-INF/spring AutoConfiguration imports
+- [x] 8. 实现 AgentToolProvider 桥接
+  - [x] 8.1 实现 ToolBridgeAgentToolProvider（ToolContract → Spring AI ToolCallback）
+- [x] 9. 单元测试
+  - [x] 9.1 DynamicToolRegistry 测试（优先级覆盖/冲突/快照不可变）
+  - [x] 9.2 ToolExecutionPipeline 测试（校验失败/护栏拦截/超时/重试）
+  - [x] 9.3 GuardrailPolicy 测试（白名单/黑名单/风险等级）
+  - [x] 9.4 JsonSchema 校验测试
