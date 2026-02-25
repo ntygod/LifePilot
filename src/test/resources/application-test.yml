@@ -8,11 +8,22 @@ spring:
 lifepilot:
   agent:
     enabled: false
+    proactive:
+      enabled: false
   llm:
     enabled: false
   tool:
     enabled: false
+  cli:
+    enabled: false
+  knowledge:
+    enabled: false
+  skills:
+    enabled: false
+  mcp:
+    enabled: false
   memory:
+    enabled: false
     vector-db-url: "jdbc:sqlite:${java.io.tmpdir}/lifepilot-vec-test.db"
 
 logging:
