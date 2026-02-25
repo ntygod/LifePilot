@@ -333,6 +333,32 @@ lifepilot:
       timestamp-tolerance-seconds: 300
       max-retry-count: 3
       retry-interval-seconds: 60
+  media:
+    image:
+      max-size-bytes: 10485760
+      max-dimension: 2048
+      jpeg-quality: 0.85
+      max-per-request: 5
+      supported-formats: png,jpeg,gif,webp,bmp
+    document:
+      max-size-bytes: 52428800
+      supported-formats: pdf,docx,doc,md,txt
+    audio:
+      max-size-bytes: 26214400
+      max-duration-seconds: 300
+      supported-formats: wav,mp3,ogg,m4a,flac,webm
+      whisper-cli-path: auto
+      whisper-model: base
+    video:
+      max-size-bytes: 524288000
+      max-duration-seconds: 1800
+      max-key-frames: 120
+      supported-formats: mp4,avi,mov,mkv,webm,flv
+    tts:
+      voice: alloy
+      speed: 1.0
+      output-format: mp3
+      max-text-length: 4096
   mcp:
     enabled: true
     server:
