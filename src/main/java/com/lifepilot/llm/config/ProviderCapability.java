@@ -18,5 +18,10 @@ public enum ProviderCapability {
     /** 流式输出能力 */
     STREAMING,
     /** 视觉理解能力 */
-    VISION
+    VISION,
+    /** 文字转语音能力 */
+    TTS,
+    /** 语音转文字能力 */
+    STT
 }
+
