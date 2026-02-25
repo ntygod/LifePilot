@@ -65,7 +65,7 @@ Phase 3 — 交互与技能
   │     ├─ JLine 3 交互式对话
   │     ├─ 快捷命令（todo/schedule/habit/llm/mcp/skill）
   │     └─ CLI 快速路径（简单命令跳过完整 Spring 初始化）
-  ├─ 12. 主动推理引擎（依赖 Agent 引擎 + 记忆系统 + Skill 系统）
+  ├─ 12. 主动推理引擎 ✅（依赖 Agent 引擎 + 记忆系统 + Skill 系统）
   │     ├─ ProactiveReasoner 两阶段推理
   │     ├─ FrequencyStateMachine 智能降频
   │     └─ SignalCollector 信号采集
