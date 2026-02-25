@@ -202,3 +202,20 @@ public class TokenBudgetAllocator {
     }
 }
 ```
+
+---
+
+## 13. 新项目无需向后兼容
+
+### 原则
+
+LifePilot 是全新项目（greenfield），尚无外部消费者或生产数据。因此所有开发任务无需考虑向后兼容性。
+
+### 具体规则
+
+- `sealed interface` 的 `permits` 列表可自由增删，无需担心已有 `switch` 穷举
+- `record` 字段可自由增删改，无需保留旧构造函数或提供默认值
+- 方法签名可自由修改，无需保留旧重载
+- Flyway 迁移脚本无需与旧版 schema 前向兼容
+- 配置键可自由重命名，无需保留旧键别名
+- Spec 规划和 design 文档中不需要「兼容性」列或兼容性分析

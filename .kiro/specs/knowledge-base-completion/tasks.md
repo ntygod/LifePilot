@@ -124,7 +124,7 @@
     - 创建 `chunk_embeddings` sqlite-vec 虚拟表（vec0，float[1536]）
     - _Requirements: 15.1, 15.2, 15.3_
   - [ ]* 7.2 编写 Flyway V13 集成测试
-    - 验证迁移脚本执行、FTS5 表创建、sqlite-vec 表创建、与 V8 schema 兼容
+    - 验证迁移脚本执行、FTS5 表创建、sqlite-vec 表创建
     - _Requirements: 15.1, 15.2, 15.3_
 
 - [ ] 8. 实现索引服务

@@ -215,4 +215,3 @@
 
 1. THE Flyway migration V13 SHALL create the document_chunks_fts FTS5 virtual table for full-text search on document chunk content
 2. THE Flyway migration V13 SHALL create the chunk_embeddings virtual table (sqlite-vec) for storing chunk embedding vectors
-3. THE migration SHALL be forward-compatible with existing V8 schema (no breaking changes to existing tables)
