@@ -190,6 +190,13 @@ lifepilot:
         respect-sentences: true
   datasource:
     busy-timeout: 5000
+  cli:
+    history-file: "${user.home}/.lifepilot/cli-history"
+    max-history-size: 1000
+    chat-prompt: "lifepilot> "
+    default-prompt: "$ "
+    stream-flush-interval-ms: 50
+    confirmation-timeout-seconds: 30
   mcp:
     enabled: true
     server:
