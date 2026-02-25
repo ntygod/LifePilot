@@ -1,11 +1,13 @@
 package com.lifepilot.llm.adapter;
 
 import com.lifepilot.llm.LlmResponse;
+import com.lifepilot.llm.multimodal.MediaContent;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.lang.Nullable;
 import reactor.core.publisher.Flux;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -69,4 +71,25 @@ public sealed interface ProviderAdapter permits SpringAiProviderAdapter {
      * @return 健康返回 true
      */
     boolean healthCheck();
+
+    /**
+     * 执行多模态调用（携带媒体内容）。
+     *
+     * @param prompt        文本提示词
+     * @param mediaContents 媒体内容列表
+     * @param timeout       超时时间
+     * @return 统一响应
+     * @throws UnsupportedOperationException 若 Provider 不支持 VISION 能力
+     */
+    LlmResponse callWithMedia(String prompt, List<MediaContent> mediaContents, Duration timeout);
+
+    /**
+     * 执行多模态流式调用（携带媒体内容）。
+     *
+     * @param prompt        文本提示词
+     * @param mediaContents 媒体内容列表
+     * @return 流式文本响应
+     * @throws UnsupportedOperationException 若 Provider 不支持 VISION 能力
+     */
+    Flux<String> streamWithMedia(String prompt, List<MediaContent> mediaContents);
 }
