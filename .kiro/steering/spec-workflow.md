@@ -101,7 +101,8 @@ Phase 5 — Web UI + 可观测性
   ├─ 18. Web UI 框架搭建（Vue 3 + Vite + Pinia）
   │     ├─ frontend-maven-plugin 集成
   │     ├─ 对话页 + 设置页
-  │     └─ SSE 流式响应
+  │     ├─ SSE 流式响应
+  │     └─ 📌 待评估：Generative UI 协议（Agent 返回结构化 UI 组件描述，前端动态渲染交互式组件）
   ├─ 19. Web UI 功能页面（依赖知识库 + Skill 系统 + Gateway）
   │     ├─ 知识库管理页
   │     ├─ Skill / MCP 管理页
@@ -126,7 +127,9 @@ Phase 6 — 生态与进阶（远期）
   ├─ 23. 记忆系统进阶（依赖语义记忆）
   │     ├─ L4 程序记忆（Procedural Memory）
   │     ├─ 记忆巩固管线（情景→语义 / 情景→程序）
-  │     └─ MaRS 认知遗忘策略（FIFO / LRU / Priority Decay / Reflection-Summary / Hybrid）
+  │     ├─ MaRS 认知遗忘策略（FIFO / LRU / Priority Decay / Reflection-Summary / Hybrid）
+  │     ├─ 📌 待评估：Agentic GraphRAG（图检索 Skill 替代 SQL CTE 穷举遍历，评估 SQLite CTE 性能瓶颈后决定）
+  │     └─ 📌 待评估：Idle-Driven 记忆巩固（空闲事件驱动替代定时触发，IdleDetector + 空闲触发策略）
   ├─ 24. 部署体验优化
   │     ├─ Docker 镜像 + docker-compose.yml
   │     ├─ GraalVM native image 探索
