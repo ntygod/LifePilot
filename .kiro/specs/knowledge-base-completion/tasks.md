@@ -150,7 +150,7 @@
     - 测试批量索引、删除、重试逻辑、BM25 搜索
     - _Requirements: 7.1, 7.2, 7.3, 7.5, 8.1, 8.2, 8.3_
 
-- [ ] 9. Checkpoint - 确认索引服务实现
+- [x] 9. Checkpoint - 确认索引服务实现
   - Ensure all tests pass, ask the user if questions arise.
 
 - [x] 10. 实现重复检测 + 文档导入管线
@@ -185,16 +185,16 @@
     - 测试完整管线成功、各阶段失败、resume 恢复
     - _Requirements: 9.1, 9.3, 9.4, 9.5_
 
-- [ ] 11. Checkpoint - 确认导入管线实现
+- [x] 11. Checkpoint - 确认导入管线实现
   - Ensure all tests pass, ask the user if questions arise.
 
-- [-] 12. 实现文档检索 + Reranker + 知识提取
+- [x] 12. 实现文档检索 + Reranker + 知识提取
   - [x] 12.1 实现 Reranker sealed interface + LlmReranker + ApiReranker
     - Reranker sealed interface：rerank(query, candidates, topK)
     - LlmReranker：通过 LlmRouter 评分 query-document 对
     - ApiReranker：调用外部 Reranker API（Jina, Cohere）
     - _Requirements: 12.1, 12.2, 12.3, 12.5_
-  - [ ] 12.2 实现 DocumentRetriever
+  - [x] 12.2 实现 DocumentRetriever
     - 并行执行 VectorIndexer.searchSimilar() 和 FtsIndexer.search()
     - RRF 融合：score(d) = Σ 1/(k + rank_i(d))，k = rrfK（默认 60）
     - 可选 Reranker 精排，不可用时 graceful degradation
@@ -206,7 +206,7 @@
   - [ ]* 12.4 编写 DocumentRetriever 单元测试
     - 测试 RRF 融合计算、Reranker 降级、跨 KB 搜索
     - _Requirements: 11.1, 11.2, 11.4, 12.4_
-  - [ ] 12.5 实现 KnowledgeExtractionPipeline
+  - [x] 12.5 实现 KnowledgeExtractionPipeline
     - 使用 `LlmRouter.callEntity("knowledge_extraction", prompt, ExtractionResponse.class)` 结构化输出
     - 提取实体通过 `SemanticMemory.upsertWithConflictDetection()` 写入
     - 提取关系通过 `SemanticMemory.addRelation()` 写入
@@ -217,15 +217,15 @@
     - 测试实体提取、关系提取、LLM 不可用降级
     - _Requirements: 13.1, 13.2, 13.3, 13.4_
 
-- [ ] 13. 配置外部化 + AutoConfiguration 更新
-  - [ ] 13.1 扩展 KnowledgeBaseProperties
+- [x] 13. 配置外部化 + AutoConfiguration 更新
+  - [x] 13.1 扩展 KnowledgeBaseProperties
     - 新增 recursive、heading、smartChunker、vectorIndexer、retrieval、contextEnricher、extraction、reranker 配置段
     - 所有新增字段设置合理默认值
     - _Requirements: 14.1_
-  - [ ] 13.2 更新 application.yml
+  - [x] 13.2 更新 application.yml
     - 在 `lifepilot.knowledge` 前缀下声明所有新配置键及默认值
     - _Requirements: 14.2_
-  - [ ] 13.3 更新 KnowledgeAutoConfiguration
+  - [x] 13.3 更新 KnowledgeAutoConfiguration
     - 注册所有新 Bean：PdfParser, WordParser, RecursiveChunker, HeadingChunker, SmartChunker, VectorIndexer, FtsIndexer, DocumentIngester, DocumentRetriever, ChunkContextEnricher, DuplicateDetector, Reranker（条件注册）, KnowledgeExtractionPipeline
     - 更新 FormatDetector Bean 注册传入新解析器
     - 使用 `@ConditionalOnProperty` 控制可选组件（Reranker、ContextEnricher、ExtractionPipeline）
@@ -239,7 +239,7 @@
     - 端到端测试：Markdown 文件导入（解析→分块→FTS 索引→检索）
     - _Requirements: 9.1, 8.1, 11.1_
 
-- [ ] 15. Final checkpoint - 确认所有测试通过
+- [x] 15. Final checkpoint - 确认所有测试通过
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes
