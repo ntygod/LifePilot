@@ -61,7 +61,7 @@ Phase 3 — 交互与技能
   │     ├─ YAML 声明式 Skill + 热加载
   │     ├─ SubAgent 激活模式
   │     └─ Skill 自扩展（Gap 检测 + YAML 生成 + 三重验证）
-  ├─ 11. CLI 交互层（依赖 Agent 引擎 + Skill 系统 + MCP + LLM）
+  ├─ 11. CLI 交互层 ✅（依赖 Agent 引擎 + Skill 系统 + MCP + LLM）
   │     ├─ JLine 3 交互式对话
   │     ├─ 快捷命令（todo/schedule/habit/llm/mcp/skill）
   │     └─ CLI 快速路径（简单命令跳过完整 Spring 初始化）
