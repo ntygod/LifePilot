@@ -5,7 +5,6 @@ import org.jline.reader.LineReader;
 import org.jline.reader.LineReaderBuilder;
 import org.jline.reader.UserInterruptException;
 import org.jline.terminal.Terminal;
-import org.jline.terminal.TerminalBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.CommandLineRunner;
@@ -36,7 +35,7 @@ public class CliShell implements CommandLineRunner {
 
     /** 欢迎横幅。 */
     private static final String WELCOME_BANNER = """
-            
+
             ╔══════════════════════════════════════╗
             ║         LifePilot CLI v0.1.0         ║
             ║   输入命令开始，/exit 或 Ctrl+D 退出   ║
@@ -45,63 +44,57 @@ public class CliShell implements CommandLineRunner {
 
     private final CommandRouter commandRouter;
     private final CliConfigProperties config;
+    private final Terminal terminal;
+    private final ResponseRenderer renderer;
 
     /**
      * 创建 CLI Shell。
      *
      * @param commandRouter 命令路由器
      * @param config        CLI 配置属性
+     * @param terminal      JLine 终端实例
+     * @param renderer      响应渲染器
      */
-    public CliShell(CommandRouter commandRouter, CliConfigProperties config) {
+    public CliShell(CommandRouter commandRouter, CliConfigProperties config,
+                    Terminal terminal, ResponseRenderer renderer) {
         this.commandRouter = commandRouter;
         this.config = config;
+        this.terminal = terminal;
+        this.renderer = renderer;
     }
 
     @Override
     public void run(String... args) throws Exception {
-        // 1. 初始化 JLine Terminal
-        Terminal terminal = TerminalBuilder.builder()
-                .system(true)
+        // 1. 创建命令历史
+        var historyConfig = CliHistoryFactory.createHistory(config);
+
+        // 2. 构建 LineReader（含补全、高亮、历史）
+        LineReader lineReader = LineReaderBuilder.builder()
+                .terminal(terminal)
+                .completer(new CliCompleter())
+                .highlighter(new CliHighlighter())
+                .history(historyConfig.history())
                 .build();
 
-        try {
-            // 2. 创建响应渲染器
-            var renderer = new ResponseRenderer(terminal);
-
-            // 3. 创建命令历史
-            var historyConfig = CliHistoryFactory.createHistory(config);
-
-            // 4. 构建 LineReader（含补全、高亮、历史）
-            LineReader lineReader = LineReaderBuilder.builder()
-                    .terminal(terminal)
-                    .completer(new CliCompleter())
-                    .highlighter(new CliHighlighter())
-                    .history(historyConfig.history())
-                    .build();
-
-            // 5. 配置历史持久化
-            if (historyConfig.persistent()) {
-                lineReader.setVariable(LineReader.HISTORY_FILE, historyConfig.historyFile());
-                lineReader.setVariable(LineReader.HISTORY_SIZE, historyConfig.maxSize());
-            }
-
-            // 6. 过滤 Spring Boot 内部参数，提取用户命令参数
-            String[] userArgs = filterSpringArgs(args);
-
-            // 7. 有用户命令参数 → 执行单次命令后退出
-            if (userArgs.length > 0) {
-                log.info("单次命令模式: args={}", Arrays.toString(userArgs));
-                commandRouter.route(userArgs, lineReader, renderer);
-                return;
-            }
-
-            // 8. 无参数 → 进入交互式命令循环
-            log.info("进入交互式命令循环");
-            enterInteractiveLoop(lineReader, renderer);
-
-        } finally {
-            terminal.close();
+        // 3. 配置历史持久化
+        if (historyConfig.persistent()) {
+            lineReader.setVariable(LineReader.HISTORY_FILE, historyConfig.historyFile());
+            lineReader.setVariable(LineReader.HISTORY_SIZE, historyConfig.maxSize());
         }
+
+        // 4. 过滤 Spring Boot 内部参数，提取用户命令参数
+        String[] userArgs = filterSpringArgs(args);
+
+        // 5. 有用户命令参数 → 执行单次命令后退出
+        if (userArgs.length > 0) {
+            log.info("单次命令模式: args={}", Arrays.toString(userArgs));
+            commandRouter.route(userArgs, lineReader, renderer);
+            return;
+        }
+
+        // 6. 无参数 → 进入交互式命令循环
+        log.info("进入交互式命令循环");
+        enterInteractiveLoop(lineReader, renderer);
     }
 
     /**
@@ -163,3 +156,4 @@ public class CliShell implements CommandLineRunner {
                 .toArray(String[]::new);
     }
 }
+
