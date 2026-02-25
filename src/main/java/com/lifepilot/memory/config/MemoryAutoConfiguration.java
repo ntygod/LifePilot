@@ -66,10 +66,9 @@ public class MemoryAutoConfiguration {
     @ConditionalOnMissingBean
     public WorkingMemory workingMemory(
             MemoryProperties properties,
-            TokenBudgetAllocator allocator,
             EpisodicMemory episodicMemory) {
         log.info("记忆系统: 注册 WorkingMemory, Token 预算={}", properties.getWorkingMemoryTokenBudget());
-        return new WorkingMemory(properties, allocator, episodicMemory);
+        return new WorkingMemory(properties, episodicMemory);
     }
 
     // --- 向量数据库 ---

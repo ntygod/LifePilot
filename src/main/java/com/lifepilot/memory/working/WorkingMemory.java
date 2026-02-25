@@ -25,7 +25,6 @@ public class WorkingMemory {
     private static final Logger log = LoggerFactory.getLogger(WorkingMemory.class);
 
     private final MemoryProperties properties;
-    private final TokenBudgetAllocator allocator;
     private final EpisodicMemory episodicMemory;
 
     /** 会话槽位列表。 */
@@ -37,9 +36,8 @@ public class WorkingMemory {
     /** 会话最后活动时间。 */
     private final ConcurrentHashMap<String, Instant> lastActivity = new ConcurrentHashMap<>();
 
-    public WorkingMemory(MemoryProperties properties, TokenBudgetAllocator allocator, EpisodicMemory episodicMemory) {
+    public WorkingMemory(MemoryProperties properties, EpisodicMemory episodicMemory) {
         this.properties = properties;
-        this.allocator = allocator;
         this.episodicMemory = episodicMemory;
     }
 
@@ -54,7 +52,7 @@ public class WorkingMemory {
         var slots = sessions.get(sessionId);
 
         slots.add(slot);
-        tokenUsage.merge(sessionId, slot.tokenCount(), Integer::sum);
+        tokenUsage.compute(sessionId, (k, v) -> (v == null ? 0 : v) + slot.tokenCount());
         lastActivity.put(sessionId, Instant.now());
 
         // 超预算时执行淘汰
@@ -66,7 +64,7 @@ public class WorkingMemory {
                 break;
             }
             slots.remove(victim);
-            tokenUsage.merge(sessionId, -victim.tokenCount(), Integer::sum);
+            tokenUsage.compute(sessionId, (k, v) -> (v == null ? 0 : v) - victim.tokenCount());
             log.debug("淘汰槽位: sessionId={}, 类型={}, tokenCount={}", sessionId, victim.getClass().getSimpleName(), victim.tokenCount());
         }
     }
