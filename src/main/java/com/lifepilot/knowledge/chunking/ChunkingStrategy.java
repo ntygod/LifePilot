@@ -13,7 +13,7 @@ import java.util.Map;
  * @since 2026-02-25
  */
 public sealed interface ChunkingStrategy
-        permits FixedSizeChunker {
+        permits FixedSizeChunker, RecursiveChunker, HeadingChunker, SmartChunker {
 
     /**
      * 将文本切分为文档分块列表。
