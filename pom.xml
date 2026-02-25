@@ -108,6 +108,27 @@
             <version>5.3.0</version>
         </dependency>
 
+        <!-- Apache Tika — MIME 类型检测（仅 tika-core，不引入 tika-parsers） -->
+        <dependency>
+            <groupId>org.apache.tika</groupId>
+            <artifactId>tika-core</artifactId>
+            <version>2.9.2</version>
+        </dependency>
+
+        <!-- Thumbnailator — 图片压缩和缩放 -->
+        <dependency>
+            <groupId>net.coobird</groupId>
+            <artifactId>thumbnailator</artifactId>
+            <version>0.4.20</version>
+        </dependency>
+
+        <!-- JavaCV Platform — 视频帧提取/音轨分离（内嵌 FFmpeg native library） -->
+        <dependency>
+            <groupId>org.bytedeco</groupId>
+            <artifactId>javacv-platform</artifactId>
+            <version>1.5.10</version>
+        </dependency>
+
         <!-- Lombok -->
         <dependency>
             <groupId>org.projectlombok</groupId>
