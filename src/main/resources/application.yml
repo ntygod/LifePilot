@@ -169,6 +169,8 @@ lifepilot:
       auto-generated-max-tokens: 10000
       auto-generated-max-steps: 15
       auto-generated-max-timeout: 180
+      schema-max-steps: 50
+      schema-max-timeout-seconds: 600
     search:
       default-top-k: 10
   knowledge:
