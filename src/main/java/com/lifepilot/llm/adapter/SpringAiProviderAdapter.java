@@ -3,17 +3,23 @@ package com.lifepilot.llm.adapter;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.config.ProviderCapability;
 import com.lifepilot.llm.config.ProviderConfig;
+import com.lifepilot.llm.multimodal.MediaContent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.content.Media;
 import org.springframework.ai.embedding.EmbeddingModel;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.lang.Nullable;
+import org.springframework.util.MimeTypeUtils;
 import reactor.core.publisher.Flux;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -124,6 +130,71 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
             log.warn("Provider 健康检查失败: id={}, error={}", config.id(), e.getMessage());
             return false;
         }
+    }
+
+    @Override
+    public LlmResponse callWithMedia(String prompt, List<MediaContent> mediaContents, Duration timeout) {
+        if (!config.hasCapability(ProviderCapability.VISION)) {
+            throw new UnsupportedOperationException("Provider 不支持 VISION 能力: " + config.id());
+        }
+
+        // 将 MediaContent 列表转换为 Spring AI Media 对象列表
+        List<Media> mediaList = mediaContents.stream()
+                .map(mc -> new Media(MimeTypeUtils.parseMimeType(mc.mimeType()), new ByteArrayResource(mc.data())))
+                .toList();
+
+        // 构建多模态消息
+        var builder = UserMessage.builder().text(prompt);
+        for (Media media : mediaList) {
+            builder.media(media);
+        }
+        UserMessage userMessage = builder.build();
+
+        long start = System.currentTimeMillis();
+        ChatResponse response = chatModel.call(new Prompt(userMessage));
+        long latencyMs = System.currentTimeMillis() - start;
+
+        var usage = response.getMetadata().getUsage();
+        int inputTokens = usage.getPromptTokens() != null ? usage.getPromptTokens() : 0;
+        int outputTokens = usage.getCompletionTokens() != null ? usage.getCompletionTokens() : 0;
+        String content = response.getResult().getOutput().getText();
+
+        return new LlmResponse(
+                content,
+                inputTokens,
+                outputTokens,
+                config.id(),
+                config.modelName(),
+                latencyMs,
+                false
+        );
+    }
+
+    @Override
+    public Flux<String> streamWithMedia(String prompt, List<MediaContent> mediaContents) {
+        if (!config.hasCapability(ProviderCapability.VISION)) {
+            throw new UnsupportedOperationException("Provider 不支持 VISION 能力: " + config.id());
+        }
+
+        // 将 MediaContent 列表转换为 Spring AI Media 对象列表
+        List<Media> mediaList = mediaContents.stream()
+                .map(mc -> new Media(MimeTypeUtils.parseMimeType(mc.mimeType()), new ByteArrayResource(mc.data())))
+                .toList();
+
+        // 构建多模态消息
+        var builder = UserMessage.builder().text(prompt);
+        for (Media media : mediaList) {
+            builder.media(media);
+        }
+        UserMessage userMessage = builder.build();
+
+        return chatModel.stream(new Prompt(userMessage))
+                .map(response -> {
+                    var result = response.getResult();
+                    return result != null && result.getOutput() != null
+                            ? result.getOutput().getText() : "";
+                })
+                .filter(text -> text != null && !text.isEmpty());
     }
 
     /**
