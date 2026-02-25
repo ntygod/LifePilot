@@ -6,14 +6,14 @@
 
 ## Tasks
 
-- [ ] 1. 项目配置与 PBT 依赖
-  - [ ] 1.1 在 pom.xml 中添加 jqwik 依赖
+- [x] 1. 项目配置与 PBT 依赖
+  - [x] 1.1 在 pom.xml 中添加 jqwik 依赖
     - 添加 `net.jqwik:jqwik:1.9.2`，scope 为 test
     - 创建 `src/test/resources/jqwik.properties`，设置 `jqwik.tries.default=100`
     - _Requirements: 无（基础设施）_
 
-- [ ] 2. 统一消息模型 — 枚举与基础类型
-  - [ ] 2.1 实现 ChannelType 枚举
+- [x] 2. 统一消息模型 — 枚举与基础类型
+  - [x] 2.1 实现 ChannelType 枚举
     - 包路径 `com.lifepilot.interaction.model`
     - 五个枚举值：CLI("cli", false)、WEB("web", false)、WECOM("wecom", true)、DINGTALK("dingtalk", true)、FEISHU("feishu", true)
     - 字段：value（String）、requiresWebhook（boolean）
@@ -26,7 +26,7 @@
     - **Property 2: ChannelType fromValue 拒绝无效值**
     - **Validates: Requirements 1.2, 1.3, 1.4**
 
-  - [ ] 2.3 实现 MessageContent sealed interface 及其 5 个 permits
+  - [x] 2.3 实现 MessageContent sealed interface 及其 5 个 permits
     - 包路径 `com.lifepilot.interaction.model`
     - sealed interface 声明 toPlainText() 方法
     - TextMessage(String text)：紧凑构造器验证非空非 blank
@@ -44,7 +44,7 @@
     - **Property 7: Record 集合字段防御性拷贝**（CommandMessage.args、CardMessage.actions、EventMessage.payload）
     - **Validates: Requirements 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8**
 
-  - [ ] 2.5 实现 ChannelMetadata sealed interface 及其 5 个 permits
+  - [x] 2.5 实现 ChannelMetadata sealed interface 及其 5 个 permits
     - 包路径 `com.lifepilot.interaction.model`
     - sealed interface 声明 channelType() 方法
     - CliMetadata(String terminalType, int terminalWidth, boolean colorSupported)
@@ -58,8 +58,8 @@
     - **Property 8: ChannelMetadata 与 ChannelType 一致**
     - **Validates: Requirements 3.2**
 
-- [ ] 3. 统一消息模型 — ResponseContent、TokenUsage
-  - [ ] 3.1 实现 ResponseContent sealed interface 及其 4 个 permits
+- [x] 3. 统一消息模型 — ResponseContent、TokenUsage
+  - [x] 3.1 实现 ResponseContent sealed interface 及其 4 个 permits
     - 包路径 `com.lifepilot.interaction.model`
     - sealed interface 声明 toPlainText() 方法
     - TextContent(String text)
@@ -68,14 +68,14 @@
     - StreamingContent(String streamId)
     - _Requirements: 6.1, 6.2, 6.3_
 
-  - [ ] 3.2 实现 TokenUsage record
+  - [x] 3.2 实现 TokenUsage record
     - 包路径 `com.lifepilot.interaction.model`
     - 字段：promptTokens、completionTokens、totalTokens、modelId
     - 静态常量 ZERO = new TokenUsage(0, 0, 0, "none")
     - _Requirements: 6.4, 6.5_
 
-- [ ] 4. 统一消息模型 — GatewayMessage 与 GatewayResponse
-  - [ ] 4.1 实现 GatewayMessage record
+- [x] 4. 统一消息模型 — GatewayMessage 与 GatewayResponse
+  - [x] 4.1 实现 GatewayMessage record
     - 包路径 `com.lifepilot.interaction.model`
     - 字段：messageId、channelType、userId、sessionId、content（MessageContent）、attachments（List<Attachment>）、channelMetadata（ChannelMetadata）、timestamp（Instant）、traceHeaders（Map<String, String>）
     - 紧凑构造器：messageId 默认 UUID.randomUUID().toString()，timestamp 默认 Instant.now()，集合 List.copyOf / Map.copyOf
@@ -91,7 +91,7 @@
     - **Property 7: Record 集合字段防御性拷贝**（attachments、traceHeaders）
     - **Validates: Requirements 4.2, 4.3, 4.4, 4.5, 4.6**
 
-  - [ ] 4.3 实现 GatewayResponse record
+  - [x] 4.3 实现 GatewayResponse record
     - 包路径 `com.lifepilot.interaction.model`
     - 字段：responseId、channelType、content（ResponseContent）、attachments（List<Attachment>）、metadata（Map<String, Object>）、latency（Duration）、tokenUsage（@Nullable TokenUsage）、statusCode（int）、errorMessage（@Nullable String）
     - 紧凑构造器：responseId 默认 UUID，集合 List.copyOf / Map.copyOf
@@ -107,17 +107,17 @@
     - **Property 7: Record 集合字段防御性拷贝**（attachments、metadata）
     - **Validates: Requirements 5.2, 5.4, 5.7, 5.8**
 
-- [ ] 5. Checkpoint — 确认统一消息模型编译通过
+- [x] 5. Checkpoint — 确认统一消息模型编译通过
   - 确保所有消息模型类编译通过，getDiagnostics 无错误，ask the user if questions arise.
 
-- [ ] 6. 中间件管道引擎
-  - [ ] 6.1 实现 GatewayMiddleware 接口
+- [x] 6. 中间件管道引擎
+  - [x] 6.1 实现 GatewayMiddleware 接口
     - 包路径 `com.lifepilot.interaction.middleware`
     - 方法：process(GatewayMessage, MiddlewareChain) → GatewayResponse、order() → int、name() → String
     - 默认方法：enabled() 默认返回 true
     - _Requirements: 7.1, 7.2, 7.3, 7.4_
 
-  - [ ] 6.2 实现 MiddlewareContext
+  - [x] 6.2 实现 MiddlewareContext
     - 包路径 `com.lifepilot.interaction.middleware`
     - ConcurrentHashMap<String, Object> 存储属性
     - 方法：set(String, Object)、get(String, Class<T>) → Optional<T>、require(String, Class<T>) → T、has(String) → boolean、remove(String)、snapshot() → Map<String, Object>（不可变）
@@ -130,7 +130,7 @@
     - **Property 18: MiddlewareContext snapshot 不可变性**
     - **Validates: Requirements 9.2, 9.3, 9.4, 9.5**
 
-  - [ ] 6.4 实现 MiddlewareChain
+  - [x] 6.4 实现 MiddlewareChain
     - 包路径 `com.lifepilot.interaction.middleware`
     - 持有有序中间件列表、MiddlewareContext、当前索引（AtomicInteger 或 int）
     - next(GatewayMessage)：索引推进，跳过 enabled()==false 的中间件，执行下一个启用的中间件
@@ -143,7 +143,7 @@
     - **Property 15: MiddlewareChain 耗尽后返回 500**
     - **Validates: Requirements 8.2, 8.3, 8.4**
 
-  - [ ] 6.6 实现 MiddlewarePipeline
+  - [x] 6.6 实现 MiddlewarePipeline
     - 包路径 `com.lifepilot.interaction.middleware`
     - 构造时收集 List<GatewayMiddleware>，按 order() 排序，存入 CopyOnWriteArrayList
     - execute(GatewayMessage)：每次创建新 MiddlewareContext + MiddlewareChain
@@ -158,21 +158,21 @@
     - **Property 21: MiddlewarePipeline 动态注销**
     - **Validates: Requirements 10.1, 10.2, 10.3, 10.4**
 
-- [ ] 7. Checkpoint — 确认中间件管道引擎编译通过
+- [x] 7. Checkpoint — 确认中间件管道引擎编译通过
   - 确保 GatewayMiddleware、MiddlewareContext、MiddlewareChain、MiddlewarePipeline 编译通过，getDiagnostics 无错误，ask the user if questions arise.
 
-- [ ] 8. 通道适配器接口与消息网关
-  - [ ] 8.1 实现 ChannelAdapter 接口
+- [x] 8. 通道适配器接口与消息网关
+  - [x] 8.1 实现 ChannelAdapter 接口
     - 包路径 `com.lifepilot.interaction.channel`
     - 方法：channelType() → ChannelType、normalize(Object rawMessage) → GatewayMessage、sendResponse(String userId, GatewayResponse response)、start()、stop()
     - _Requirements: 13.1, 13.2, 13.3, 13.4_
 
-  - [ ] 8.2 实现 MessageGateway 接口
+  - [x] 8.2 实现 MessageGateway 接口
     - 包路径 `com.lifepilot.interaction.gateway`
     - 方法：process(GatewayMessage) → GatewayResponse、registerChannel(ChannelAdapter)、unregisterChannel(ChannelType)、getChannel(ChannelType) → Optional<ChannelAdapter>、getAllChannels() → List<ChannelAdapter>、start()、stop()、isRunning() → boolean
     - _Requirements: 11.1, 11.2, 11.3, 11.4, 11.5_
 
-  - [ ] 8.3 实现 DefaultMessageGateway
+  - [x] 8.3 实现 DefaultMessageGateway
     - 包路径 `com.lifepilot.interaction.gateway`
     - ConcurrentHashMap<ChannelType, ChannelAdapter> 通道注册表
     - AtomicBoolean 运行状态
@@ -193,11 +193,11 @@
     - **Property 26: DefaultMessageGateway 通道故障隔离**
     - **Validates: Requirements 12.2, 12.3, 12.4, 12.5, 12.7, 12.8**
 
-- [ ] 9. Checkpoint — 确认通道适配器和消息网关编译通过
+- [x] 9. Checkpoint — 确认通道适配器和消息网关编译通过
   - 确保 ChannelAdapter、MessageGateway、DefaultMessageGateway 编译通过，getDiagnostics 无错误，ask the user if questions arise.
 
-- [ ] 10. 配置属性与数据库迁移
-  - [ ] 10.1 实现 GatewayProperties 配置属性
+- [x] 10. 配置属性与数据库迁移
+  - [x] 10.1 实现 GatewayProperties 配置属性
     - 包路径 `com.lifepilot.interaction.config`
     - @ConfigurationProperties(prefix = "lifepilot.gateway")
     - 顶层 enabled 属性默认 true
@@ -205,12 +205,12 @@
     - 所有字段使用 @DefaultValue 提供默认值
     - _Requirements: 14.1, 14.2, 14.3, 14.4_
 
-  - [ ] 10.2 在 application.yml 中声明所有 Gateway 配置项及默认值
+  - [x] 10.2 在 application.yml 中声明所有 Gateway 配置项及默认值
     - 配置前缀 `lifepilot.gateway`，键名使用 kebab-case
     - 包含所有嵌套配置的默认值
     - _Requirements: 14.3_
 
-  - [ ] 10.3 创建 Flyway 迁移脚本 V12__create_gateway_tables.sql
+  - [x] 10.3 创建 Flyway 迁移脚本 V12__create_gateway_tables.sql
     - 创建 gateway_sessions 表（session_id PK、user_id、channel_type CHECK、state CHECK、total_tokens、total_requests、metadata_json、created_at、updated_at、last_active_at）
     - 创建 gateway_audit_log 表（audit_id PK、message_id、session_id、channel_type、user_id、request_content_hash、request_summary、response_status_code、response_summary、route_type CHECK、latency_ms、prompt_tokens、completion_tokens、total_tokens、model_id、middleware_results_json、created_at）
     - 创建 rate_limit_counters 表（counter_id PK、user_id、channel_type、counter_type CHECK、window_start、window_end、current_count、max_count、created_at、updated_at）
@@ -221,8 +221,8 @@
     - 遵循 LifePilot 数据库规范（TEXT UUID、TEXT ISO 8601、INTEGER 布尔、TEXT _json 后缀）
     - _Requirements: 15.1, 15.2, 15.3, 15.4, 15.5, 15.6, 15.7, 15.8, 15.9_
 
-- [ ] 11. Spring 自动配置
-  - [ ] 11.1 实现 GatewayAutoConfiguration
+- [x] 11. Spring 自动配置
+  - [x] 11.1 实现 GatewayAutoConfiguration
     - 包路径 `com.lifepilot.interaction.config`
     - @Configuration + @ConditionalOnProperty(name = "lifepilot.gateway.enabled", matchIfMissing = true)
     - @EnableConfigurationProperties(GatewayProperties.class)
@@ -230,7 +230,7 @@
     - @EventListener(ApplicationReadyEvent.class) 启动 MessageGateway
     - _Requirements: 16.1, 16.2, 16.3, 16.4, 16.5_
 
-  - [ ] 11.2 在 META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports 中注册 GatewayAutoConfiguration
+  - [x] 11.2 在 META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports 中注册 GatewayAutoConfiguration
     - _Requirements: 16.6_
 
 - [ ] 12. 集成测试
@@ -251,7 +251,7 @@
     - 验证 MiddlewareContext 跨中间件数据传递
     - _Requirements: 10.2, 12.3_
 
-- [ ] 13. Final checkpoint — 确保所有测试通过
+- [x] 13. Final checkpoint — 确保所有测试通过
   - 确保所有编译通过，所有单元测试和集成测试通过，ask the user if questions arise.
 
 ## Notes
