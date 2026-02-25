@@ -251,7 +251,7 @@
     - 验证 MiddlewareContext 跨中间件数据传递
     - _Requirements: 10.2, 12.3_
 
-- [x] 13. Final checkpoint — 确保所有测试通过
+- [ ] 13. Final checkpoint — 确保所有测试通过
   - 确保所有编译通过，所有单元测试和集成测试通过，ask the user if questions arise.
 
 ## Notes
