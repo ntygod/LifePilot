@@ -15,7 +15,6 @@ import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -80,7 +79,8 @@ public class MemoryAutoConfiguration {
      */
     @Bean
     @ConditionalOnMissingBean(name = "vectorDataSource")
-    public DataSource vectorDataSource(@Value("${lifepilot.memory.vector-db-url:jdbc:sqlite:data/vectors.db}") String url) {
+    public DataSource vectorDataSource(MemoryProperties properties) {
+        String url = properties.getVectorDbUrl();
         if (!url.contains(":memory:") && !url.contains("mode=memory")) {
             try {
                 var dbPath = url.replace("jdbc:sqlite:", "");

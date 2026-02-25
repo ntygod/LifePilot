@@ -60,7 +60,7 @@ public class AgentAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean(ContextAssembler.class)
     public ContextAssembler basicContextAssembler(AgentConfigProperties config) {
-        log.info("Agent 引擎: 注册基础版 ContextAssembler（记忆系统不可用）");
+        log.warn("Agent 引擎: 注册基础版 ContextAssembler（记忆系统不可用，记忆检索功能已降级）");
         return new ContextAssembler(config);
     }
 

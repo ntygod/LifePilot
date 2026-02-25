@@ -74,6 +74,9 @@ public class LlmAutoConfiguration {
                 }
             }
         });
+        if (registry.registeredIds().isEmpty()) {
+            log.warn("LLM Router: 无可用 Provider，所有 LLM 依赖功能将不可用");
+        }
         return registry;
     }
 

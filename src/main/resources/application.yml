@@ -135,6 +135,9 @@ lifepilot:
     consolidation-lookback-days: 7
     forgetting-threshold: 0.7
     max-retention-days: 180
+    embedding-dimensions: 1024
+    semantic-match-threshold: 0.92
+    vector-db-url: "jdbc:sqlite:${user.home}/.lifepilot/vectors.db"
     token-budget:
       system-prompt-ratio: 0.10
       user-message-ratio: 0.15
@@ -155,6 +158,18 @@ lifepilot:
       auto-generated-max-timeout: 180
     search:
       default-top-k: 10
+  knowledge:
+    enabled: true
+    data-dir: "${user.home}/.lifepilot/data"
+    max-file-size: 104857600
+    chunking:
+      default-strategy: smart
+      fixed-size:
+        chunk-size: 1024
+        min-chunk-size: 100
+        overlap-size: 128
+        max-chunk-tokens: 512
+        respect-sentences: true
   datasource:
     busy-timeout: 5000
   mcp:
