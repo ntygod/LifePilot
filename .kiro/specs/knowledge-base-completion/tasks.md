@@ -6,18 +6,18 @@
 
 ## Tasks
 
-- [ ] 1. 基础设施准备：Maven 依赖 + sealed interface 扩展
-  - [ ] 1.1 添加 Maven 依赖（Apache PDFBox 3.0.4、Apache POI 5.3.0、jqwik 1.9.2 test scope）到 pom.xml
+- [x] 1. 基础设施准备：Maven 依赖 + sealed interface 扩展
+  - [x] 1.1 添加 Maven 依赖（Apache PDFBox 3.0.4、Apache POI 5.3.0、jqwik 1.9.2 test scope）到 pom.xml
     - _Requirements: 1.1, 2.1_
-  - [ ] 1.2 扩展 DocumentParser sealed interface 的 permits 列表，添加 PdfParser、WordParser
+  - [x] 1.2 扩展 DocumentParser sealed interface 的 permits 列表，添加 PdfParser、WordParser
     - 修改 `com.lifepilot.knowledge.parser.DocumentParser`
     - _Requirements: 1.6, 2.6_
-  - [ ] 1.3 扩展 ChunkingStrategy sealed interface 的 permits 列表，添加 RecursiveChunker、HeadingChunker、SmartChunker
+  - [x] 1.3 扩展 ChunkingStrategy sealed interface 的 permits 列表，添加 RecursiveChunker、HeadingChunker、SmartChunker
     - 修改 `com.lifepilot.knowledge.chunking.ChunkingStrategy`
     - _Requirements: 3.5, 4.5, 5.6_
 
-- [ ] 2. 实现 PDF 和 Word 文档解析器
-  - [ ] 2.1 实现 PdfParser
+- [x] 2. 实现 PDF 和 Word 文档解析器
+  - [x] 2.1 实现 PdfParser
     - 基于 Apache PDFBox 3.x（`Loader.loadPDF()` API）逐页提取文本
     - 提取元数据（title, author, createdAt, pageCount）
     - 加密 PDF 抛出 `DocumentParseException(Phase.FORMAT_DECODE)`
@@ -28,7 +28,7 @@
     - 测试正常 PDF 解析、加密 PDF 异常、损坏 PDF 异常、空白 PDF 警告、元数据提取、supportedExtensions
     - 测试 PDF 文件放在 `src/test/resources/knowledge/`
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5_
-  - [ ] 2.3 实现 WordParser
+  - [x] 2.3 实现 WordParser
     - 基于 Apache POI，仅支持 DOCX（Office 2007+）
     - 通过 `XWPFParagraph.getStyle()` 识别 Heading1-6
     - 表格提取为 `DocumentElement.Table`（第一行为表头）
@@ -39,11 +39,11 @@
     - 测试 DOCX 文件放在 `src/test/resources/knowledge/`
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
 
-- [ ] 3. Checkpoint - 确认解析器实现
+- [x] 3. Checkpoint - 确认解析器实现
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 4. 实现高级分块策略
-  - [ ] 4.1 实现 RecursiveChunker
+- [x] 4. 实现高级分块策略
+  - [x] 4.1 实现 RecursiveChunker
     - 分隔符优先级：段落（\n\n）→ 句子（。！？.!?）→ 词（空格/中文字符边界）
     - 分隔符列表从 `KnowledgeBaseProperties.Recursive` 读取
     - 递归逻辑：尝试当前分隔符切分 → 子块超过 maxChunkSize 则用下一级分隔符继续切分
@@ -62,7 +62,7 @@
   - [ ]* 4.5 编写 RecursiveChunker 单元测试
     - 测试空文本、短文本（< minChunkSize）、纯中文文本、纯英文文本、混合语言
     - _Requirements: 3.1, 3.2, 3.3_
-  - [ ] 4.6 实现 HeadingChunker
+  - [x] 4.6 实现 HeadingChunker
     - 通过正则 `^#{1,N}\s+(.+)` 识别 ATX 标题（N = maxHeadingLevel，默认 3）
     - 每个分块的 headingHierarchy 填充祖先标题路径
     - 无标题文档整体委托 RecursiveChunker
@@ -77,7 +77,7 @@
   - [ ]* 4.9 编写 HeadingChunker 单元测试
     - 测试无标题文本委托、超长节二次切分、嵌套标题层级
     - _Requirements: 4.1, 4.2, 4.3, 4.4_
-  - [ ] 4.10 实现 SmartChunker
+  - [x] 4.10 实现 SmartChunker
     - 分析文档特征（标题密度、文本长度）自动选择策略
     - 标题密度 > headingDensityThreshold → HeadingChunker
     - 文本长度 > shortDocumentThreshold → RecursiveChunker
@@ -90,11 +90,11 @@
     - 测试各阈值边界值
     - _Requirements: 5.1, 5.2, 5.3, 5.4_
 
-- [ ] 5. Checkpoint - 确认分块策略实现
+- [x] 5. Checkpoint - 确认分块策略实现
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 6. 实现分块上下文增强 + 新增 record 类型 + 异常类型
-  - [ ] 6.1 创建新增 record 类型和异常类型
+- [x] 6. 实现分块上下文增强 + 新增 record 类型 + 异常类型
+  - [x] 6.1 创建新增 record 类型和异常类型
     - 创建 `IndexingResult` record（vectorCount, ftsCount, durationMs）
     - 创建 `DocumentSearchResult` record（chunkId, documentId, knowledgeBaseId, content, contextPrefix, headingHierarchy, score, sourcePath, metadata）
     - 创建 `IngestionProgress` record（documentId, knowledgeBaseId, stage, progressPercent, message）
@@ -102,7 +102,7 @@
     - 创建 `ExtractionResult` record（entityCount, relationCount, warnings）
     - 创建 `DuplicateDocumentException`、`IndexingException`、`ExtractionException` 异常类
     - _Requirements: 9.10, 10.1, 13.1_
-  - [ ] 6.2 实现 ChunkContextEnricher
+  - [x] 6.2 实现 ChunkContextEnricher
     - 通过 `LlmRouter.call("knowledge_extraction", prompt, null)` 生成上下文前缀
     - 前缀长度限制在 maxPrefixTokens（默认 100）Token
     - LLM 不可用时跳过增强，返回原始分块（graceful degradation）
@@ -117,8 +117,8 @@
     - **Property 8: embeddingText 拼接** — contextPrefix 存在时拼接，不存在时仅 content
     - **Validates: Requirements 6.5**
 
-- [ ] 7. Flyway V13 数据库迁移
-  - [ ] 7.1 创建 Flyway V13 迁移脚本 `V13__create_knowledge_search_tables.sql`
+- [x] 7. Flyway V13 数据库迁移
+  - [x] 7.1 创建 Flyway V13 迁移脚本 `V13__create_knowledge_search_tables.sql`
     - 创建 `document_chunks_fts` FTS5 虚拟表（外部内容表模式，关联 document_chunks）
     - 创建 FTS5 同步触发器（INSERT / DELETE）
     - 创建 `chunk_embeddings` sqlite-vec 虚拟表（vec0，float[1536]）
@@ -127,8 +127,8 @@
     - 验证迁移脚本执行、FTS5 表创建、sqlite-vec 表创建
     - _Requirements: 15.1, 15.2, 15.3_
 
-- [ ] 8. 实现索引服务
-  - [ ] 8.1 实现 VectorIndexer
+- [x] 8. 实现索引服务
+  - [x] 8.1 实现 VectorIndexer
     - 批量向量化：每批 batchSize（默认 32）个分块调用 `LlmRouter.embed()`
     - 使用 `DocumentChunk.embeddingText()` 作为 Embedding 输入
     - 失败重试：指数退避（500ms → 1s → 2s），最多 maxRetries（默认 2）次
@@ -137,7 +137,7 @@
   - [ ]* 8.2 编写 VectorIndexer 属性测试
     - **Property 9: 向量索引完整性** — 索引后 chunk_embeddings 表条目数匹配分块数
     - **Validates: Requirements 7.1, 7.2**
-  - [ ] 8.3 实现 FtsIndexer
+  - [x] 8.3 实现 FtsIndexer
     - 实现 indexChunks（插入 FTS5 虚拟表）、removeByDocumentId、search（BM25 排序）
     - _Requirements: 8.1, 8.2, 8.3_
   - [ ]* 8.4 编写 FtsIndexer 属性测试
@@ -153,8 +153,8 @@
 - [ ] 9. Checkpoint - 确认索引服务实现
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 10. 实现重复检测 + 文档导入管线
-  - [ ] 10.1 实现 DuplicateDetector
+- [x] 10. 实现重复检测 + 文档导入管线
+  - [x] 10.1 实现 DuplicateDetector
     - 基于 SHA-256 内容哈希检测重复
     - 同 KB 内重复阻止导入，跨 KB 允许
     - _Requirements: 10.1, 10.2, 10.3_
@@ -167,7 +167,7 @@
   - [ ]* 10.4 编写 DuplicateDetector 单元测试
     - 测试同 KB 重复、跨 KB 允许、空文件
     - _Requirements: 10.1, 10.2, 10.3_
-  - [ ] 10.5 实现 DocumentIngester
+  - [x] 10.5 实现 DocumentIngester
     - 编排管线：parse → duplicate check → chunk → context enrich（可选）→ index（vector ‖ FTS5 并行）→ extract（异步）
     - 使用 `CompletableFuture.supplyAsync(..., Executors.newVirtualThreadPerTaskExecutor())` 异步执行
     - 每个阶段更新 Document.status 和 lastProcessedStage
@@ -188,8 +188,8 @@
 - [ ] 11. Checkpoint - 确认导入管线实现
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 12. 实现文档检索 + Reranker + 知识提取
-  - [ ] 12.1 实现 Reranker sealed interface + LlmReranker + ApiReranker
+- [-] 12. 实现文档检索 + Reranker + 知识提取
+  - [x] 12.1 实现 Reranker sealed interface + LlmReranker + ApiReranker
     - Reranker sealed interface：rerank(query, candidates, topK)
     - LlmReranker：通过 LlmRouter 评分 query-document 对
     - ApiReranker：调用外部 Reranker API（Jina, Cohere）
