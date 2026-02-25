@@ -12,10 +12,13 @@ import com.lifepilot.skill.builtin.BuiltinSkillProvider;
 import com.lifepilot.skill.builtin.BuiltinSkillRegistrar;
 import com.lifepilot.skill.builtin.habit.HabitRepository;
 import com.lifepilot.skill.builtin.habit.HabitSkillProvider;
+import com.lifepilot.skill.builtin.memory.MemorySkillProvider;
 import com.lifepilot.skill.builtin.schedule.ScheduleRepository;
 import com.lifepilot.skill.builtin.schedule.ScheduleSkillProvider;
 import com.lifepilot.skill.builtin.todo.TodoRepository;
 import com.lifepilot.skill.builtin.todo.TodoSkillProvider;
+import com.lifepilot.memory.retrieval.HybridRetriever;
+import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.skill.generation.SkillGapDetector;
 import com.lifepilot.skill.generation.SkillGenerator;
 import com.lifepilot.skill.memory.MemoryAccessEnforcer;
@@ -181,6 +184,14 @@ public class SkillAutoConfiguration {
     public HabitSkillProvider habitSkillProvider(HabitRepository habitRepository) {
         log.info("Skill 系统: 注册 HabitSkillProvider");
         return new HabitSkillProvider(habitRepository);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public MemorySkillProvider memorySkillProvider(HybridRetriever hybridRetriever,
+                                                   SemanticMemory semanticMemory) {
+        log.info("Skill 系统: 注册 MemorySkillProvider");
+        return new MemorySkillProvider(hybridRetriever, semanticMemory);
     }
 
     // --- 注册器 ---
