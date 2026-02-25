@@ -150,6 +150,19 @@ lifepilot:
       high-relevance-threshold: 0.9
       long-conversation-turns-threshold: 10
   skills:
+    enabled: true
+    max-concurrent-activations: 5
+    directory: "${user.home}/.lifepilot/skills"
+    hot-reload-debounce-ms: 500
+    auto-generation:
+      enabled: true
+      gap-threshold: 0.6
+    shell-action:
+      max-timeout-seconds: 30
+    chain-action:
+      max-steps: 5
+    http-action:
+      ssrf-protection-enabled: true
     validation:
       max-name-length: 128
       max-system-prompt-length: 10000
