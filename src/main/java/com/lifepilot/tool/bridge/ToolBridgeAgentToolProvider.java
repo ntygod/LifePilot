@@ -21,7 +21,7 @@ import java.util.UUID;
 /**
  * 工具桥接层 — 将 ToolContract 转换为 Spring AI ToolCallback。
  *
- * <p>实现 AgentToolProvider 接口，覆盖 agent 模块的 NoOpAgentToolProvider。
+ * <p>实现 AgentToolProvider 接口，覆盖 agent 模块的空实现兜底 Bean。
  * 通过 ToolExecutionPipeline 执行工具调用，确保护栏、幂等、重试等机制生效。</p>
  *
  * @author zsg

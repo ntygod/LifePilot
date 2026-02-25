@@ -1,7 +1,10 @@
 package com.lifepilot.agent.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lifepilot.agent.*;
+import com.lifepilot.agent.ActionParser;
+import com.lifepilot.agent.AgentLoop;
+import com.lifepilot.agent.AgentToolProvider;
+import com.lifepilot.agent.StateReducer;
 import com.lifepilot.agent.context.ContextAssembler;
 import com.lifepilot.agent.context.DefaultMemoryRetrievalStrategy;
 import com.lifepilot.agent.session.SessionManager;
@@ -87,7 +90,8 @@ public class AgentAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public AgentToolProvider agentToolProvider() {
-        return new NoOpAgentToolProvider();
+        // 空实现兜底：工具系统未启用时返回空工具列表
+        return state -> java.util.List.of();
     }
 
     @Bean

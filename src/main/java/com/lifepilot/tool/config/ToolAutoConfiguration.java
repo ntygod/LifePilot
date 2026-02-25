@@ -92,7 +92,7 @@ public class ToolAutoConfiguration {
     public AgentToolProvider agentToolProvider(
             DynamicToolRegistry toolRegistry,
             ToolExecutionPipeline pipeline) {
-        log.info("工具桥接层初始化: 覆盖 NoOpAgentToolProvider");
+        log.info("工具桥接层初始化: 覆盖 agent 模块空实现兜底 Bean");
         return new ToolBridgeAgentToolProvider(toolRegistry, pipeline);
     }
 }
