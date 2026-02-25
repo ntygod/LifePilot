@@ -12,45 +12,130 @@ inclusion: always
 
 ### 1.1 模块依赖图
 
+> 最后更新：2026-02-25
+> 已完成模块标注 ✅，进行中标注 🔧
+
 ```
-Phase 0 — 项目骨架
+Phase 0 — 项目骨架 ✅
   └─ Maven 项目结构 + Spring Boot 启动类 + 基础配置
 
-Phase 1 — 核心引擎（自底向上）
-  ├─ 1. LLM Router（无依赖，其他模块的基础设施）
-  ├─ 2. Agent 引擎核心（依赖 LLM Router）
+Phase 1 — 核心引擎（自底向上）✅
+  ├─ 1. LLM Router ✅（无依赖，其他模块的基础设施）
+  ├─ 2. Agent 引擎核心 ✅（依赖 LLM Router）
   │     ├─ AgentState / AgentPhase / AgentAction
   │     ├─ StateReducer
   │     ├─ Budget
   │     ├─ TraceRecorder
   │     ├─ ContextAssembler（基础版，不含记忆检索）
   │     └─ AgentLoop
-  ├─ 3. 工具系统（依赖 Agent 引擎）
+  ├─ 3. 工具系统 ✅（依赖 Agent 引擎）
   │     ├─ ToolContract / DynamicToolRegistry
   │     └─ GuardrailEngine
-  └─ 4. MCP 协议支持（依赖工具系统）
+  └─ 4. MCP 协议支持 ✅（依赖工具系统）
 
 Phase 2 — 记忆与知识
-  ├─ 5. 记忆系统（依赖 LLM Router）
-  │     ├─ 四层认知记忆
-  │     ├─ SqliteVecStore
-  │     ├─ HybridRetriever
-  │     └─ 记忆巩固 + 遗忘策略
-  ├─ 6. 知识图谱（依赖记忆系统）
-  ├─ 7. ContextAssembler 完整版（依赖记忆系统 + 知识图谱）
-  └─ 8. 文档/知识库管理（依赖记忆系统）
+  ├─ 5. 记忆系统基础 ✅（依赖 LLM Router）
+  │     ├─ L1 工作记忆 + L2 情景记忆
+  │     ├─ SqliteVecStore + VectorSearcher
+  │     └─ Flyway V5~V6
+  ├─ 6. 语义记忆 + 知识图谱 ✅（依赖记忆系统基础）
+  │     ├─ L3 语义记忆 + 时序知识图谱
+  │     ├─ HybridRetriever（向量 + FTS5 + 图遍历）
+  │     ├─ ConflictDetector（三级冲突检测）
+  │     └─ Flyway V7
+  ├─ 7. ContextAssembler 完整版（依赖语义记忆）
+  │     ├─ 记忆检索槽位填充
+  │     ├─ 对话压缩（DialogCompressor）
+  │     └─ Token 预算动态分配
+  └─ 8. 文档/知识库管理（依赖语义记忆）
+        ├─ DocumentIngester + 多格式解析（PDF/Word/Markdown/TXT）
+        ├─ 分块策略（FixedSize / Semantic / Heading）
+        ├─ 多知识库实例管理
+        └─ 可选 Reranker 精排
 
 Phase 3 — 交互与技能
-  ├─ 9. 内置技能插件（依赖工具系统 + 记忆系统）
-  ├─ 10. Skill 系统（依赖工具系统 + MCP）
+  ├─ 9. 内置技能插件 ✅（依赖工具系统 + 记忆系统）
+  │     └─ Todo / Schedule / Habit / Memory 四个核心 Skill
+  ├─ 10. Skill 系统 ✅（依赖工具系统 + MCP）
+  │     ├─ SkillRegistry + SkillActivator
+  │     ├─ YAML 声明式 Skill + 热加载
+  │     ├─ SubAgent 激活模式
+  │     └─ Skill 自扩展（Gap 检测 + YAML 生成 + 三重验证）
   ├─ 11. CLI 交互层（依赖 Agent 引擎）
+  │     ├─ JLine 3 交互式对话
+  │     ├─ 快捷命令（todo/schedule/habit/llm/mcp/skill）
+  │     └─ CLI 快速路径（简单命令跳过完整 Spring 初始化）
   ├─ 12. 主动推理引擎（依赖 Agent 引擎 + 记忆系统）
+  │     ├─ ProactiveReasoner 两阶段推理
+  │     ├─ FrequencyStateMachine 智能降频
+  │     └─ SignalCollector 信号采集
   └─ 13. Gateway + Channel 适配器（依赖 Agent 引擎）
+        ├─ MessageGateway 统一消息入口
+        ├─ 6 层中间件管道（Auth → RateLimit → Security → Router → Execution → Audit）
+        ├─ 三层工具安全策略（Global → Agent → Tool）
+        └─ Channel 适配器（企微 / 钉钉 / 飞书 / Telegram）
 
-Phase 4 — Web UI + 可观测性
-  ├─ 14. Web UI 框架搭建（Vue 3 + Vite）
-  ├─ 15. Web UI 功能页面
-  └─ 16. 可观测性完善
+Phase 4 — 高级能力
+  ├─ 14. 多模态能力（依赖 LLM Router）
+  │     ├─ LlmRouter 多模态路由扩展
+  │     ├─ MediaProcessor 图片预处理
+  │     ├─ ProviderCapability 能力声明（Chat / Embedding / Vision / Rerank / TTS / STT）
+  │     └─ Apache Tika 文档格式检测
+  ├─ 15. 工作流/自动化编排（依赖 Agent 引擎 + Skill 系统 + 主动推理）
+  │     ├─ WorkflowEngine 执行引擎
+  │     ├─ YAML 声明式工作流定义
+  │     ├─ 触发器（Cron / Event / Condition / Signal）
+  │     └─ 工作流状态持久化 + 崩溃恢复
+  ├─ 16. 代码执行沙箱（依赖工具系统）
+  │     ├─ SandboxBooter 抽象（Process / Docker / Remote）
+  │     ├─ 会话级沙箱实例复用
+  │     ├─ CodeValidator 危险操作预检
+  │     └─ 护栏集成（CRITICAL 风险级别）
+  └─ 17. 外部数据源同步（依赖 Skill 系统 + 记忆系统）
+        ├─ SyncEngine + SyncConnector 抽象
+        ├─ CalDAV / Todoist / 滴答清单 / Obsidian 连接器
+        ├─ 冲突解决策略（Last-Write-Wins / 用户确认）
+        └─ OAuth Token 安全存储
+
+Phase 5 — Web UI + 可观测性
+  ├─ 18. Web UI 框架搭建（Vue 3 + Vite + Pinia）
+  │     ├─ frontend-maven-plugin 集成
+  │     ├─ 对话页 + 设置页
+  │     └─ SSE 流式响应
+  ├─ 19. Web UI 功能页面（依赖知识库 + Skill 系统 + Gateway）
+  │     ├─ 知识库管理页
+  │     ├─ Skill / MCP 管理页
+  │     ├─ 轨迹回放页
+  │     └─ 工作流管理页
+  └─ 20. 可观测性完善（依赖 Agent 引擎 + 工具系统）
+        ├─ TraceQuery 轨迹查询 API
+        ├─ GuardrailAdvisor Spring AI Advisor 横切注入
+        ├─ DataRedactor 自动脱敏
+        └─ 轨迹评估（工具选择正确性 + 步骤效率）
+
+Phase 6 — 生态与进阶（远期）
+  ├─ 21. 多 Agent 协作（依赖 Agent 引擎 + Skill 系统）
+  │     ├─ AgentRegistry + AgentDefinition
+  │     ├─ HandoffTool 委托工具模式（借鉴 AstrBot/OpenClaw）
+  │     ├─ SubAgent 独立预算 + 独立上下文 + 差异化模型
+  │     └─ 预设专家 Agent（写作 / 分析 / 调研）
+  ├─ 22. A2A 协议支持（依赖多 Agent 协作）
+  │     ├─ A2A Client/Server 实现
+  │     ├─ Agent Card 能力声明
+  │     └─ 跨系统 Agent 互操作
+  ├─ 23. 记忆系统进阶（依赖语义记忆）
+  │     ├─ L4 程序记忆（Procedural Memory）
+  │     ├─ 记忆巩固管线（情景→语义 / 情景→程序）
+  │     └─ MaRS 认知遗忘策略（FIFO / LRU / Priority Decay / Reflection-Summary / Hybrid）
+  ├─ 24. 部署体验优化
+  │     ├─ Docker 镜像 + docker-compose.yml
+  │     ├─ GraalVM native image 探索
+  │     ├─ start.bat / start.sh 一键启动脚本
+  │     └─ 配置版本迁移机制
+  └─ 25. 插件市场 / 社区生态（依赖 MCP + Skill 系统）
+        ├─ Skill 发布 / 发现 / 安装机制
+        ├─ GitHub 仓库索引
+        └─ 安全审核 + 版本管理
 ```
 
 ### 1.2 执行原则
@@ -71,6 +156,7 @@ Phase 4 — Web UI + 可观测性
 1. 前置依赖模块已完成并合并到 develop
 2. 当前在 develop 分支上，工作区干净（无未提交变更）
 3. 已阅读对应的架构文档和特性文档
+4. **接口假设验证**：对 design 文档中引用的所有外部模块接口，基于实际源码核对签名、字段和 Bean 注册（详见 #[[file:.kiro/steering/integration-checklist.md]] §1）
 
 ### 2.2 Spec 创建流程
 
@@ -78,7 +164,9 @@ Phase 4 — Web UI + 可观测性
 2. spec 的 feature_name 与模块名一致（如 `llm-router`、`agent-core`）
 3. requirements 文档引用对应的架构文档和特性文档作为输入
 4. design 文档聚焦于实现方案，不重复架构文档已有的内容
-5. tasks 拆分到可独立提交的粒度
+5. design 文档必须包含「依赖接口验证」表格，列出所有引用的外部接口及其源码验证状态（详见 #[[file:.kiro/steering/integration-checklist.md]] §1.4）
+6. design 文档涉及跨模块接口变更时，必须包含「跨模块接口变更」表格（详见 #[[file:.kiro/steering/integration-checklist.md]] §4.2）
+7. tasks 拆分到可独立提交的粒度
 
 ### 2.3 Spec 文档引用规范
 
@@ -144,9 +232,16 @@ Phase 4 — Web UI + 可观测性
 ### 4.2 每个 spec 完成时
 
 - [ ] 所有任务已完成
-- [ ] 完整测试套件通过
+- [ ] 完整测试套件通过（`mvn test`）
+- [ ] 跨模块集成验证通过（详见 #[[file:.kiro/steering/integration-checklist.md]] §2）
 - [ ] 代码已合并到 develop
 - [ ] feature 分支已清理
+
+### 4.3 每个 Phase 完成时
+
+- [ ] 架构对齐审计通过（详见 #[[file:.kiro/steering/integration-checklist.md]] §3）
+- [ ] 架构文档与实际代码一致，偏差已处理
+- [ ] 特性文档与实际功能一致，偏差已记录
 
 ---
 
@@ -195,7 +290,8 @@ Kiro 在整个 spec 生命周期中完全自主执行，无需等待用户确认
 
 1. 阅读下一个模块对应的架构文档（`docs/architecture/{module}.md`）和特性文档（`docs/features/{module}.md`）
 2. 检查已完成模块中是否有该模块需要依赖的接口、类型或配置
-3. 确认 develop 分支上工作区干净
+3. **基于实际源码验证接口**：对所有跨模块依赖，读取实际 Java 源码核对方法签名、record 字段、sealed interface permits（不仅依赖架构文档）
+4. 确认 develop 分支上工作区干净
 
 ### 7.3 自动启动 Spec 创建
 
