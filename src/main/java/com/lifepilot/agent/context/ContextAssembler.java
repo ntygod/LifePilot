@@ -16,6 +16,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * 完整版上下文组装器 — 集成记忆检索、会话上下文、动态预算分配。
@@ -88,16 +89,22 @@ public class ContextAssembler {
         var startTime = Instant.now();
         boolean degraded = false;
 
+        // isFullMode() 已确认所有记忆系统依赖非 null
+        var retriever = Objects.requireNonNull(hybridRetriever);
+        var memory = Objects.requireNonNull(workingMemory);
+        var allocator = Objects.requireNonNull(tokenBudgetAllocator);
+        var strategy = Objects.requireNonNull(retrievalStrategy);
+
         try {
             // 1. 获取检索策略
-            var strategyConfig = retrievalStrategy.getStrategy(state.phase());
+            var strategyConfig = strategy.getStrategy(state.phase());
 
             if (strategyConfig.skip()) {
                 return buildMinimalContext(state);
             }
 
             // 2. 执行记忆检索（降级容错）
-            var retrievalResults = safeRetrieve(state.goal(), strategyConfig);
+            var retrievalResults = safeRetrieve(retriever, state.goal(), strategyConfig);
             int retrievalCount = retrievalResults.size();
             float topScore = retrievalResults.isEmpty() ? 0.0f
                     : retrievalResults.getFirst().fusedScore();
@@ -107,11 +114,11 @@ public class ContextAssembler {
             }
 
             // 3. 获取会话槽位（降级容错）
-            var slots = safeGetContext(state.sessionId());
+            var slots = safeGetContext(memory, state.sessionId());
 
             // 4. 动态预算分配（降级容错）
             int conversationTurns = countConversationTurns(slots);
-            var budgetAllocation = safeAllocate(conversationTurns, topScore);
+            var budgetAllocation = safeAllocate(allocator, conversationTurns, topScore);
 
             // 5. 按预算截断
             var truncatedMemories = truncateByBudget(retrievalResults, budgetAllocation.retrievalBudget());
@@ -180,12 +187,12 @@ public class ContextAssembler {
     // --- 降级容错方法 ---
 
     /** 安全执行记忆检索，异常时返回空列表。 */
-    private List<RetrievalResult> safeRetrieve(String query, RetrievalStrategyConfig config) {
+    private List<RetrievalResult> safeRetrieve(HybridRetriever retriever, String query, RetrievalStrategyConfig config) {
         try {
             if (query == null || query.isBlank()) {
                 return List.of();
             }
-            return hybridRetriever.retrieve(query, config.topK(), config.weights());
+            return retriever.retrieve(query, config.topK(), config.weights());
         } catch (Exception e) {
             log.warn("记忆检索降级: query={}, error={}", truncate(query, 50), e.getMessage());
             return List.of();
@@ -193,9 +200,9 @@ public class ContextAssembler {
     }
 
     /** 安全获取会话槽位，异常时返回空列表。 */
-    private List<WorkingMemorySlot> safeGetContext(String sessionId) {
+    private List<WorkingMemorySlot> safeGetContext(WorkingMemory memory, String sessionId) {
         try {
-            return workingMemory.getContext(sessionId);
+            return memory.getContext(sessionId);
         } catch (Exception e) {
             log.warn("工作记忆降级: sessionId={}, error={}", sessionId, e.getMessage());
             return List.of();
@@ -203,10 +210,10 @@ public class ContextAssembler {
     }
 
     /** 安全执行预算分配，异常时使用静态分配降级。 */
-    private BudgetAllocation safeAllocate(int conversationTurns, float topScore) {
+    private BudgetAllocation safeAllocate(TokenBudgetAllocator allocator, int conversationTurns, float topScore) {
         try {
             int windowSize = config.getContext().getMaxContextTokens();
-            return tokenBudgetAllocator.allocate(windowSize, conversationTurns, topScore);
+            return allocator.allocate(windowSize, conversationTurns, topScore);
         } catch (Exception e) {
             log.warn("预算分配降级: error={}", e.getMessage());
             int total = config.getContext().getMaxContextTokens();
