@@ -28,8 +28,6 @@ import java.util.concurrent.Executors;
 public class AgentLoop {
 
     private static final Logger log = LoggerFactory.getLogger(AgentLoop.class);
-    private static final int MAX_LOOP_ITERATIONS = 50;
-    private static final int MAX_CONSECUTIVE_BLOCKS = 3;
 
     private final StateReducer stateReducer;
     private final ContextAssembler contextAssembler;
@@ -37,6 +35,8 @@ public class AgentLoop {
     private final TraceRecorder traceRecorder;
     private final SessionManager sessionManager;
     private final ActionParser actionParser;
+    // 预留：工具回调将在 LLM 调用集成 Function Calling 时使用
+    @SuppressWarnings("unused")
     private final AgentToolProvider agentToolProvider;
     private final AgentConfigProperties config;
 
@@ -79,12 +79,14 @@ public class AgentLoop {
 
             Instant startTime = Instant.now();
             int consecutiveBlocks = 0;
+            int maxIterations = config.getLoop().getMaxIterations();
+            int maxConsecutiveBlocks = config.getLoop().getMaxConsecutiveBlocks();
 
             // 核心循环
             for (int iteration = 0; !state.isDone(); iteration++) {
                 // 硬限制检查
-                if (iteration >= MAX_LOOP_ITERATIONS) {
-                    var action = new Action.BudgetExhausted("循环次数达到硬限制: " + MAX_LOOP_ITERATIONS);
+                if (iteration >= maxIterations) {
+                    var action = new Action.BudgetExhausted("循环次数达到硬限制: " + maxIterations);
                     state = reduceAndRecord(state, action, traceContext, startTime);
                     break;
                 }
@@ -120,10 +122,10 @@ public class AgentLoop {
                 // 连续护栏阻断检查
                 if (action instanceof Action.Blocked) {
                     consecutiveBlocks++;
-                    if (consecutiveBlocks >= MAX_CONSECUTIVE_BLOCKS) {
+                    if (consecutiveBlocks >= maxConsecutiveBlocks) {
                         log.warn("连续护栏阻断达到上限: count={}", consecutiveBlocks);
                         var forceTerminate = new Action.BudgetExhausted(
-                                "连续护栏阻断达到上限: " + MAX_CONSECUTIVE_BLOCKS);
+                                "连续护栏阻断达到上限: " + maxConsecutiveBlocks);
                         state = reduceAndRecord(state, forceTerminate, traceContext, startTime);
                         break;
                     }

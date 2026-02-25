@@ -36,6 +36,7 @@ public class AgentConfigProperties {
     /** 循环配置。 */
     public static class LoopConfig {
         private int maxIterations = 50;
+        private int maxConsecutiveBlocks = 3;
         private Map<String, String> sceneMapping = Map.of(
                 "understanding", "agent-reasoning",
                 "planning", "agent-reasoning",
@@ -46,6 +47,8 @@ public class AgentConfigProperties {
 
         public int getMaxIterations() { return maxIterations; }
         public void setMaxIterations(int maxIterations) { this.maxIterations = maxIterations; }
+        public int getMaxConsecutiveBlocks() { return maxConsecutiveBlocks; }
+        public void setMaxConsecutiveBlocks(int maxConsecutiveBlocks) { this.maxConsecutiveBlocks = maxConsecutiveBlocks; }
         public Map<String, String> getSceneMapping() { return sceneMapping; }
         public void setSceneMapping(Map<String, String> sceneMapping) { this.sceneMapping = sceneMapping; }
     }

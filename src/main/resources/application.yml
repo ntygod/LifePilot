@@ -25,6 +25,7 @@ lifepilot:
     enabled: true
     loop:
       max-iterations: 50
+      max-consecutive-blocks: 3
       scene-mapping:
         understanding: agent-reasoning
         planning: agent-reasoning
