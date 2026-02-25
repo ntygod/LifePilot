@@ -303,10 +303,23 @@ lifepilot:
         enabled: false
       wecom:
         enabled: false
+        corp-id:
+        agent-id:
+        secret:
+        token:
+        encoding-aes-key:
       dingtalk:
         enabled: false
+        app-key:
+        app-secret:
+        robot-code:
       feishu:
         enabled: false
+        app-id:
+        app-secret:
+        verification-token:
+        encrypt-key:
+        event-cache-max-size: 10000
     reconnect:
       max-attempts: 10
       initial-delay-ms: 1000
@@ -316,6 +329,10 @@ lifepilot:
       idle-timeout-minutes: 30
       expire-timeout-hours: 24
       cleanup-interval-minutes: 15
+    webhook:
+      timestamp-tolerance-seconds: 300
+      max-retry-count: 3
+      retry-interval-seconds: 60
   mcp:
     enabled: true
     server:
