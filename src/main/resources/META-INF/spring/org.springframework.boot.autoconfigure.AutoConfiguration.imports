@@ -9,3 +9,4 @@ com.lifepilot.interaction.cli.config.CliAutoConfiguration
 com.lifepilot.agent.proactive.config.ProactiveAutoConfiguration
 com.lifepilot.interaction.config.GatewayAutoConfiguration
 com.lifepilot.interaction.config.GatewayMiddlewareAutoConfiguration
+com.lifepilot.interaction.config.ChannelAdapterAutoConfiguration
