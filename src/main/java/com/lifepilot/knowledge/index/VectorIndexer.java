@@ -42,8 +42,26 @@ public class VectorIndexer {
         this.llmRouter = llmRouter;
         this.jdbcTemplate = jdbcTemplate;
         this.config = config;
+
+        // 程序化创建 chunk_embeddings vec0 虚拟表（sqlite-vec 可用时）
+        initVec0Table();
+
         log.info("VectorIndexer 初始化完成: batchSize={}, maxRetries={}, dimension={}",
                 config.batchSize(), config.maxRetries(), config.embeddingDimension());
+    }
+
+    /** 程序化创建 chunk_embeddings vec0 虚拟表，sqlite-vec 不可用时跳过。 */
+    private void initVec0Table() {
+        try {
+            jdbcTemplate.execute(
+                    "CREATE VIRTUAL TABLE IF NOT EXISTS chunk_embeddings USING vec0(" +
+                    "chunk_id TEXT PRIMARY KEY, " +
+                    "embedding float[" + config.embeddingDimension() + "]" +
+                    ")");
+            log.info("向量索引: chunk_embeddings vec0 表初始化完成, dimension={}", config.embeddingDimension());
+        } catch (Exception e) {
+            log.warn("向量索引: chunk_embeddings vec0 表创建失败，sqlite-vec 可能未加载", e);
+        }
     }
 
     /**

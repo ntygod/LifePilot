@@ -22,9 +22,6 @@ CREATE TRIGGER IF NOT EXISTS document_chunks_ad AFTER DELETE ON document_chunks 
     VALUES ('delete', old.rowid, old.content, old.knowledge_base_id, old.document_id, old.id);
 END;
 
--- sqlite-vec 向量索引虚拟表
--- 维度默认 1536（OpenAI text-embedding-3-small），可通过配置调整
-CREATE VIRTUAL TABLE IF NOT EXISTS chunk_embeddings USING vec0(
-    chunk_id TEXT PRIMARY KEY,
-    embedding float[1536]
-);
+-- sqlite-vec 向量索引虚拟表（chunk_embeddings）
+-- 已迁移至 VectorIndexer 程序化创建，与 VectorSearcher 的 entity_embeddings 保持一致
+-- sqlite-vec 不可用时降级为 JVM 暴力搜索，不阻塞 Flyway 迁移
