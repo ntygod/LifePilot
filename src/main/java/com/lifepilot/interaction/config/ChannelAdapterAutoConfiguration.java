@@ -17,7 +17,6 @@ import com.lifepilot.interaction.channel.wecom.WecomChannelAdapter;
 import com.lifepilot.interaction.channel.wecom.WecomCrypto;
 import com.lifepilot.interaction.channel.wecom.WecomMessageConverter;
 import com.lifepilot.interaction.channel.wecom.WecomSignatureVerifier;
-import com.lifepilot.interaction.channel.webhook.WebhookController;
 import com.lifepilot.interaction.gateway.MessageGateway;
 import com.lifepilot.interaction.middleware.auth.DingtalkAuthStrategy;
 import com.lifepilot.interaction.middleware.auth.FeishuAuthStrategy;
@@ -28,6 +27,7 @@ import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.web.client.RestClient;
@@ -81,7 +81,7 @@ public class ChannelAdapterAutoConfiguration {
 
     @Bean
     @ConditionalOnBean(WecomCrypto.class)
-    public WecomChannelAdapter wecomChannelAdapter(MessageGateway gateway, GatewayProperties properties,
+    public WecomChannelAdapter wecomChannelAdapter(@Lazy MessageGateway gateway, GatewayProperties properties,
                                                    WecomCrypto crypto, WecomSignatureVerifier verifier,
                                                    WecomApiClient apiClient, WecomMessageConverter converter) {
         log.info("注册 WecomChannelAdapter");
@@ -116,7 +116,7 @@ public class ChannelAdapterAutoConfiguration {
 
     @Bean
     @ConditionalOnBean(DingtalkSignatureVerifier.class)
-    public DingtalkChannelAdapter dingtalkChannelAdapter(MessageGateway gateway, GatewayProperties properties,
+    public DingtalkChannelAdapter dingtalkChannelAdapter(@Lazy MessageGateway gateway, GatewayProperties properties,
                                                          DingtalkSignatureVerifier verifier,
                                                          DingtalkApiClient apiClient,
                                                          DingtalkMessageConverter converter) {
@@ -158,7 +158,7 @@ public class ChannelAdapterAutoConfiguration {
 
     @Bean
     @ConditionalOnBean(FeishuCrypto.class)
-    public FeishuChannelAdapter feishuChannelAdapter(MessageGateway gateway, GatewayProperties properties,
+    public FeishuChannelAdapter feishuChannelAdapter(@Lazy MessageGateway gateway, GatewayProperties properties,
                                                      FeishuCrypto crypto, FeishuApiClient apiClient,
                                                      FeishuMessageConverter converter) {
         log.info("注册 FeishuChannelAdapter");
@@ -171,17 +171,7 @@ public class ChannelAdapterAutoConfiguration {
         return new FeishuAuthStrategy(properties);
     }
 
-    // ── WebhookController + 重试调度器 ────────────────────────
-
-    @Bean
-    @ConditionalOnBean(AbstractChannelAdapter.class)
-    public WebhookController webhookController(
-            @org.springframework.lang.Nullable WecomChannelAdapter wecomAdapter,
-            @org.springframework.lang.Nullable DingtalkChannelAdapter dingtalkAdapter,
-            @org.springframework.lang.Nullable FeishuChannelAdapter feishuAdapter) {
-        log.info("注册 WebhookController");
-        return new WebhookController(wecomAdapter, dingtalkAdapter, feishuAdapter);
-    }
+    // ── WebhookController 由 @RestController 组件扫描注册，重试调度器 ──
 
     @Bean
     @ConditionalOnBean(AbstractChannelAdapter.class)
