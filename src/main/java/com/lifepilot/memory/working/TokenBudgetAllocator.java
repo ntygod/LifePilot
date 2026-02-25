@@ -21,16 +21,10 @@ public class TokenBudgetAllocator {
 
     private static final Logger log = LoggerFactory.getLogger(TokenBudgetAllocator.class);
 
-    /** 系统提示词区固定比例。 */
-    private static final float SYSTEM_PROMPT_RATIO = 0.10f;
-
-    /** 用户消息区固定比例。 */
-    private static final float USER_MESSAGE_RATIO = 0.15f;
-
-    private final MemoryProperties properties;
+    private final MemoryProperties.TokenBudget budgetConfig;
 
     public TokenBudgetAllocator(MemoryProperties properties) {
-        this.properties = properties;
+        this.budgetConfig = properties.getTokenBudget();
     }
 
     /**
@@ -42,27 +36,30 @@ public class TokenBudgetAllocator {
      * @return 四区域预算分配结果
      */
     public BudgetAllocation allocate(int contextWindowSize, int conversationTurns, float topRetrievalScore) {
-        int systemPromptBudget = Math.round(contextWindowSize * SYSTEM_PROMPT_RATIO);
-        int userMessageBudget = Math.round(contextWindowSize * USER_MESSAGE_RATIO);
+        int systemPromptBudget = Math.round(contextWindowSize * budgetConfig.getSystemPromptRatio());
+        int userMessageBudget = Math.round(contextWindowSize * budgetConfig.getUserMessageRatio());
 
-        // 剩余 75% 在工作记忆区和检索上下文区之间动态分配
+        // 剩余部分在工作记忆区和检索上下文区之间动态分配
         int remaining = contextWindowSize - systemPromptBudget - userMessageBudget;
+
+        // 归一化基数 = (1 - 固定比例之和) × 100
+        float remainingBase = (1.0f - budgetConfig.getSystemPromptRatio() - budgetConfig.getUserMessageRatio()) * 100.0f;
 
         float workingMemoryRatio;
         float retrievalRatio;
 
-        if (topRetrievalScore > 0.9f) {
-            // 高相关度检索结果：检索区扩展到 35%，工作记忆压缩到 40%
-            workingMemoryRatio = 40.0f / 75.0f;
-            retrievalRatio = 35.0f / 75.0f;
-        } else if (conversationTurns > 10) {
-            // 长对话：工作记忆扩展到 60%，检索压缩到 15%（原文 20% 归一化到 75%）
-            workingMemoryRatio = 60.0f / 75.0f;
-            retrievalRatio = 15.0f / 75.0f;
+        if (topRetrievalScore > budgetConfig.getHighRelevanceThreshold()) {
+            // 高相关度检索结果
+            workingMemoryRatio = budgetConfig.getHighRelevanceWorkingMemory() / remainingBase;
+            retrievalRatio = budgetConfig.getHighRelevanceRetrieval() / remainingBase;
+        } else if (conversationTurns > budgetConfig.getLongConversationTurnsThreshold()) {
+            // 长对话
+            workingMemoryRatio = budgetConfig.getLongConversationWorkingMemory() / remainingBase;
+            retrievalRatio = budgetConfig.getLongConversationRetrieval() / remainingBase;
         } else {
-            // 默认：工作记忆 50%，检索 25%
-            workingMemoryRatio = 50.0f / 75.0f;
-            retrievalRatio = 25.0f / 75.0f;
+            // 默认场景
+            workingMemoryRatio = budgetConfig.getDefaultWorkingMemory() / remainingBase;
+            retrievalRatio = budgetConfig.getDefaultRetrieval() / remainingBase;
         }
 
         int workingMemoryBudget = Math.round(remaining * workingMemoryRatio);
