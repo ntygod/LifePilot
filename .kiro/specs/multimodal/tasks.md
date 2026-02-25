@@ -360,7 +360,7 @@
     - Mock ChatModel，验证纯文本委托和多模态调用两条路径
     - _Requirements: 8.1, 8.5_
 
-- [-] 17. Final checkpoint - 确保所有测试通过
+- [x] 17. Final checkpoint - 确保所有测试通过
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes
