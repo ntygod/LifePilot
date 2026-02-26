@@ -210,8 +210,8 @@ Web UI 模块（Phase 5 — 模块 18）采用前后端分离架构实现。后�
     - 测试流式状态管理
     - _Requirements: 11.1, 11.4_
 
-- [ ] 12. 实现 composable（useChat、useA2uiSignal、useSettings）
-  - [ ] 12.1 创建 useChat composable
+- [x] 12. 实现 composable（useChat、useA2uiSignal、useSettings）
+  - [x] 12.1 创建 useChat composable
     - 在 src/composables/useChat.ts 中封装 fetch + ReadableStream SSE 逻辑
     - POST /api/chat/messages/stream，逐行解析 SSE 事件
     - token 事件 → chatStore.streamingContent 增量拼接
@@ -221,12 +221,12 @@ Web UI 模块（Phase 5 — 模块 18）采用前后端分离架构实现。后�
     - 提供 abort() 方法取消流式请求
     - _Requirements: 10.1, 10.2, 10.3, 10.4, 10.5, 10.6_
 
-  - [ ] 12.2 创建 useA2uiSignal composable
+  - [x] 12.2 创建 useA2uiSignal composable
     - 在 src/composables/useA2uiSignal.ts 中封装信号发送逻辑
     - 调用 POST /api/chat/signals，携带 name、payload、sessionId
     - _Requirements: 12.3_
 
-  - [ ] 12.3 创建 useSettings composable
+  - [x] 12.3 创建 useSettings composable
     - 在 src/composables/useSettings.ts 中封装设置读写逻辑
     - 调用 GET/PUT /api/settings，同步 settingsStore
     - _Requirements: 13.3, 13.4_
