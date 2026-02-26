@@ -22,6 +22,8 @@ management:
       show-details: always
 
 lifepilot:
+  app:
+    launch-mode: full
   agent:
     enabled: true
     loop:
