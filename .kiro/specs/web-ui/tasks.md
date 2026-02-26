@@ -6,8 +6,8 @@ Web UI 模块（Phase 5 — 模块 18）采用前后端分离架构实现。后�
 
 ## Tasks
 
-- [ ] 1. 实现后端 A2UI 数据模型和 REST 请求/响应模型
-  - [ ] 1.1 创建 A2UI 核心 record（A2uiComponent、A2uiSignal、A2uiComponentTree）
+- [x] 1. 实现后端 A2UI 数据模型和 REST 请求/响应模型
+  - [x] 1.1 创建 A2UI 核心 record（A2uiComponent、A2uiSignal、A2uiComponentTree）
     - 在 `com.lifepilot.interaction.web.model` 包下创建三个 record
     - A2uiComponent 包含 id、type、properties（Map）、children（List）、signal（@Nullable A2uiSignal）
     - A2uiSignal 包含 name、payload（Map）
@@ -21,27 +21,27 @@ Web UI 模块（Phase 5 — 模块 18）采用前后端分离架构实现。后�
     - Tag: `Feature: web-ui, Property 2: A2uiComponentTree 序列化 round-trip`
     - **Validates: Requirements 4.5**
 
-  - [ ] 1.3 创建 REST 请求/响应 record（ChatRequest、ChatResponse、SignalRequest、SessionInfo、MessageInfo、UserSettings、SseEvent）
+  - [x] 1.3 创建 REST 请求/响应 record（ChatRequest、ChatResponse、SignalRequest、SessionInfo、MessageInfo、UserSettings、SseEvent）
     - 在 `com.lifepilot.interaction.web.model` 包下创建所有 REST 模型 record
     - SignalRequest 紧凑构造器中 payload 使用 Map.copyOf() 防御性拷贝
     - 创建 ErrorResponse record 用于统一错误响应
     - _Requirements: 2.1, 2.2, 2.3, 2.7, 5.1, 13.1, 13.2_
 
-- [ ] 2. 实现 WebProperties 配置属性和 application.yml 更新
-  - [ ] 2.1 创建 WebProperties record
+- [x] 2. 实现 WebProperties 配置属性和 application.yml 更新
+  - [x] 2.1 创建 WebProperties record
     - 在 `com.lifepilot.interaction.web.config` 包下创建 WebProperties
     - 使用 `@ConfigurationProperties("lifepilot.web")` 绑定
     - 嵌套 SseProperties（timeout=300000, heartbeatInterval=30000）
     - 嵌套 CorsProperties（allowedOrigins=["http://localhost:5173"], allowCredentials=true）
     - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5_
 
-  - [ ] 2.2 更新 application.yml 声明 Web 配置项
+  - [x] 2.2 更新 application.yml 声明 Web 配置项
     - 在 application.yml 中添加 `lifepilot.web.sse` 和 `lifepilot.web.cors` 配置段
     - 显式声明所有配置项及默认值
     - _Requirements: 7.6_
 
-- [ ] 3. 实现 WebChannelAdapter 通道适配器
-  - [ ] 3.1 创建 WebChannelAdapter 类
+- [x] 3. 实现 WebChannelAdapter 通道适配器
+  - [x] 3.1 创建 WebChannelAdapter 类
     - 在 `com.lifepilot.interaction.web.adapter` 包下创建 WebChannelAdapter
     - 继承 AbstractChannelAdapter，channelType() 返回 ChannelType.WEB
     - 实现 normalize() 方法：ChatRequest → GatewayMessage（TextMessage）、SignalRequest → GatewayMessage（EventMessage）
@@ -67,8 +67,8 @@ Web UI 模块（Phase 5 — 模块 18）采用前后端分离架构实现。后�
     - Mock MessageGateway 验证交互
     - _Requirements: 1.1, 1.2, 1.3_
 
-- [ ] 4. 实现 SseSessionManager
-  - [ ] 4.1 创建 SseSessionManager 类
+- [x] 4. 实现 SseSessionManager
+  - [x] 4.1 创建 SseSessionManager 类
     - 在 `com.lifepilot.interaction.web.sse` 包下创建 SseSessionManager
     - 使用 ConcurrentHashMap 管理 streamId → SseEmitter 映射
     - 实现 createEmitter()（从 WebProperties 读取 timeout）、sendEvent()、closeEmitter()
@@ -83,11 +83,11 @@ Web UI 模块（Phase 5 — 模块 18）采用前后端分离架构实现。后�
     - 测试心跳调度逻辑
     - _Requirements: 3.6, 3.7_
 
-- [ ] 5. Checkpoint — 后端核心组件验证
+- [x] 5. Checkpoint — 后端核心组件验证
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 6. 实现 ChatController 和 SettingsController
-  - [ ] 6.1 创建 ChatController
+- [x] 6. 实现 ChatController 和 SettingsController
+  - [x] 6.1 创建 ChatController
     - 在 `com.lifepilot.interaction.web.controller` 包下创建 ChatController
     - POST /api/chat/messages — 非流式发送消息，调用 WebChannelAdapter.processMessage()
     - POST /api/chat/messages/stream — SSE 流式端点，返回 SseEmitter，调用 processMessageStreaming()
@@ -98,13 +98,13 @@ Web UI 模块（Phase 5 — 模块 18）采用前后端分离架构实现。后�
     - 会话 ID 不存在返回 404，信号参数无效返回 400
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.7, 3.1, 3.2, 3.3, 3.4, 3.5, 5.1, 5.2, 5.3, 5.4_
 
-  - [ ] 6.2 创建 SettingsController
+  - [x] 6.2 创建 SettingsController
     - 在 `com.lifepilot.interaction.web.controller` 包下创建 SettingsController
     - GET /api/settings — 获取用户设置
     - PUT /api/settings — 更新用户设置
     - _Requirements: 2.5, 2.6_
 
-  - [ ] 6.3 创建全局异常处理器 WebExceptionHandler
+  - [x] 6.3 创建全局异常处理器 WebExceptionHandler
     - 使用 @RestControllerAdvice 统一处理异常
     - 返回标准化 ErrorResponse（code, message, timestamp）
     - _Requirements: 2.7, 5.3, 5.4_
@@ -135,8 +135,8 @@ Web UI 模块（Phase 5 — 模块 18）采用前后端分离架构实现。后�
     - Tag: `Feature: web-ui, Property 9: 非流式消息处理完整性`
     - **Validates: Requirements 2.1**
 
-- [ ] 7. 实现 WebAutoConfiguration 和 CORS 配置
-  - [ ] 7.1 创建 WebAutoConfiguration
+- [x] 7. 实现 WebAutoConfiguration 和 CORS 配置
+  - [x] 7.1 创建 WebAutoConfiguration
     - 在 `com.lifepilot.interaction.web.config` 包下创建 WebAutoConfiguration
     - @ConditionalOnProperty(name = "lifepilot.gateway.channels.web.enabled", havingValue = "true")
     - 注册 WebChannelAdapter、SseSessionManager、ChatController、SettingsController Bean
@@ -152,11 +152,11 @@ Web UI 模块（Phase 5 — 模块 18）采用前后端分离架构实现。后�
     - 测试 WebProperties 默认值正确绑定
     - _Requirements: 1.4, 1.5, 6.1, 6.5, 14.1, 14.3_
 
-- [ ] 8. Checkpoint — 后端完整验证
+- [x] 8. Checkpoint — 后端完整验证
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 9. 搭建前端项目脚手架（lifepilot-web）
-  - [ ] 9.1 初始化 Vue 3 + Vite + TypeScript 项目
+- [x] 9. 搭建前端项目脚手架（lifepilot-web）
+  - [x] 9.1 初始化 Vue 3 + Vite + TypeScript 项目
     - 在工作区根目录创建 lifepilot-web/ 项目
     - 配置 package.json（Vue 3、Vite、TypeScript、Pinia、Vue Router）
     - 配置 vite.config.ts（/api 代理到 VITE_API_BASE，默认 http://localhost:8080）
@@ -164,43 +164,43 @@ Web UI 模块（Phase 5 — 模块 18）采用前后端分离架构实现。后�
     - 创建 .env 文件声明 VITE_API_BASE 环境变量
     - _Requirements: 8.1, 8.5, 8.6_
 
-  - [ ] 9.2 集成 Tailwind CSS 和 shadcn-vue
+  - [x] 9.2 集成 Tailwind CSS 和 shadcn-vue
     - 安装 Tailwind CSS 及依赖，配置 tailwind.config.ts 和 main.css
     - 安装 shadcn-vue 组件库，初始化配置
     - _Requirements: 8.2_
 
-  - [ ] 9.3 创建路由和布局组件
+  - [x] 9.3 创建路由和布局组件
     - 配置 Vue Router（/ → ChatView，/settings → SettingsView）
     - 创建 AppLayout.vue（侧边栏 + 主内容区）
     - 创建 Sidebar.vue（会话列表占位）
     - 创建 App.vue 和 main.ts 入口
     - _Requirements: 8.3, 8.4_
 
-- [ ] 10. 实现前端类型定义和 API 客户端
-  - [ ] 10.1 创建 TypeScript 类型定义
+- [x] 10. 实现前端类型定义和 API 客户端
+  - [x] 10.1 创建 TypeScript 类型定义
     - 在 src/types/index.ts 中定义所有接口：ChatSession、Message、A2uiComponent、A2uiSignal、TokenUsage、UserSettings、SseTokenEvent、SseDoneEvent、SseErrorEvent
     - _Requirements: 4.1, 4.2, 9.1, 10.1, 11.1, 13.1_
 
-  - [ ] 10.2 创建 API 客户端
+  - [x] 10.2 创建 API 客户端
     - 在 src/api/client.ts 中封装 fetch 请求
     - 统一拦截非 2xx 响应，抛出包含 ErrorResponse 的异常
     - 提供 chatApi（sendMessage、sendMessageStream、listSessions、getSessionMessages、deleteSession、sendSignal）
     - 提供 settingsApi（getSettings、updateSettings）
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 5.1_
 
-- [ ] 11. 实现 Pinia Store
-  - [ ] 11.1 创建 chatStore
+- [x] 11. 实现 Pinia Store
+  - [x] 11.1 创建 chatStore
     - 在 src/stores/chat.ts 中定义 chatStore
     - 管理 sessions、activeSessionId、messages、isStreaming、streamingContent
     - activeSessionId 变更时清空 messages 并从后端加载历史消息
     - _Requirements: 11.1, 11.4_
 
-  - [ ] 11.2 创建 a2uiStore
+  - [x] 11.2 创建 a2uiStore
     - 在 src/stores/a2ui.ts 中定义 a2uiStore
     - 管理 components（A2uiComponent[]），提供 updateComponents 和 clearComponents 方法
     - _Requirements: 11.2, 11.5_
 
-  - [ ] 11.3 创建 settingsStore
+  - [x] 11.3 创建 settingsStore
     - 在 src/stores/settings.ts 中定义 settingsStore
     - 管理 theme、language、llmProvider 设置
     - _Requirements: 11.3_
@@ -210,8 +210,8 @@ Web UI 模块（Phase 5 — 模块 18）采用前后端分离架构实现。后�
     - 测试流式状态管理
     - _Requirements: 11.1, 11.4_
 
-- [ ] 12. 实现 composable（useChat、useA2uiSignal、useSettings）
-  - [ ] 12.1 创建 useChat composable
+- [x] 12. 实现 composable（useChat、useA2uiSignal、useSettings）
+  - [x] 12.1 创建 useChat composable
     - 在 src/composables/useChat.ts 中封装 fetch + ReadableStream SSE 逻辑
     - POST /api/chat/messages/stream，逐行解析 SSE 事件
     - token 事件 → chatStore.streamingContent 增量拼接
@@ -221,12 +221,12 @@ Web UI 模块（Phase 5 — 模块 18）采用前后端分离架构实现。后�
     - 提供 abort() 方法取消流式请求
     - _Requirements: 10.1, 10.2, 10.3, 10.4, 10.5, 10.6_
 
-  - [ ] 12.2 创建 useA2uiSignal composable
+  - [x] 12.2 创建 useA2uiSignal composable
     - 在 src/composables/useA2uiSignal.ts 中封装信号发送逻辑
     - 调用 POST /api/chat/signals，携带 name、payload、sessionId
     - _Requirements: 12.3_
 
-  - [ ] 12.3 创建 useSettings composable
+  - [x] 12.3 创建 useSettings composable
     - 在 src/composables/useSettings.ts 中封装设置读写逻辑
     - 调用 GET/PUT /api/settings，同步 settingsStore
     - _Requirements: 13.3, 13.4_
@@ -237,22 +237,22 @@ Web UI 模块（Phase 5 — 模块 18）采用前后端分离架构实现。后�
     - Tag: `Feature: web-ui, Property 5: Token 事件增量拼接`
     - **Validates: Requirements 10.2**
 
-- [ ] 13. Checkpoint — 前端核心逻辑验证
+- [x] 13. Checkpoint — 前端核心逻辑验证
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 14. 实现对话页面组件
-  - [ ] 14.1 创建 ChatInput 组件
+- [x] 14. 实现对话页面组件
+  - [x] 14.1 创建 ChatInput 组件
     - 在 src/components/chat/ChatInput.vue 中实现消息输入框
     - 支持 Enter 发送消息，Shift+Enter 换行
     - 流式进行中禁用发送按钮
     - _Requirements: 9.2, 9.4_
 
-  - [ ] 14.2 创建 StreamingText 组件
+  - [x] 14.2 创建 StreamingText 组件
     - 在 src/components/chat/StreamingText.vue 中实现流式 Markdown 渲染
     - 支持增量 Markdown 渲染和代码高亮
     - _Requirements: 9.5_
 
-  - [ ] 14.3 创建 MessageBubble 和 MessageList 组件
+  - [x] 14.3 创建 MessageBubble 和 MessageList 组件
     - MessageBubble：根据 role 渲染用户消息或 Agent 响应（含 StreamingText + A2uiRenderer）
     - MessageList：按 timestamp 升序渲染消息列表
     - _Requirements: 9.1_
@@ -263,25 +263,25 @@ Web UI 模块（Phase 5 — 模块 18）采用前后端分离架构实现。后�
     - Tag: `Feature: web-ui, Property 4: 消息列表按时间顺序排列`
     - **Validates: Requirements 9.1**
 
-  - [ ] 14.5 创建 ChatView 页面
+  - [x] 14.5 创建 ChatView 页面
     - 在 src/views/ChatView.vue 中组装 MessageList + ChatInput + useChat
     - 发送消息时调用 useChat.sendMessage()
     - 显示加载指示器和错误提示
     - _Requirements: 9.1, 9.2, 9.3, 9.4, 9.7, 9.8_
 
-  - [ ] 14.6 完善 Sidebar 组件
+  - [x] 14.6 完善 Sidebar 组件
     - 显示会话列表（从 chatStore.sessions 读取）
     - 支持切换当前会话和删除会话
     - _Requirements: 9.6, 9.7_
 
-- [ ] 15. 实现 A2UI 前端渲染器
-  - [ ] 15.1 创建 10 个 A2UI 基础组件
+- [x] 15. 实现 A2UI 前端渲染器
+  - [x] 15.1 创建 10 个 A2UI 基础组件
     - 在 src/components/a2ui/ 下创建：A2uiText、A2uiCard、A2uiButton、A2uiTextField、A2uiList、A2uiListItem、A2uiDatePicker、A2uiChip、A2uiDivider、A2uiImage
     - 每个组件接收 properties prop 和可选 signal prop
     - 含 signal 的组件在用户交互时调用 useA2uiSignal
     - _Requirements: 12.2, 12.3_
 
-  - [ ] 15.2 创建 componentCatalog 和 A2uiRenderer
+  - [x] 15.2 创建 componentCatalog 和 A2uiRenderer
     - componentCatalog.ts：维护 type → Vue 组件映射注册表
     - A2uiRenderer.vue：递归遍历邻接表，通过 `<component :is>` 动态渲染
     - 未注册 type 渲染 A2uiFallback 占位符组件 + console.warn
@@ -294,8 +294,8 @@ Web UI 模块（Phase 5 — 模块 18）采用前后端分离架构实现。后�
     - Tag: `Feature: web-ui, Property 7: A2UI 组件树更新与渲染完整性`
     - **Validates: Requirements 11.5, 12.1**
 
-- [ ] 16. 实现设置页面
-  - [ ] 16.1 创建 SettingsView 页面
+- [x] 16. 实现设置页面
+  - [x] 16.1 创建 SettingsView 页面
     - 在 src/views/SettingsView.vue 中实现设置表单
     - 主题切换（亮色 / 暗色 / 跟随系统）
     - LLM Provider 选择
@@ -316,7 +316,7 @@ Web UI 模块（Phase 5 — 模块 18）采用前后端分离架构实现。后�
     - Tag: `Feature: web-ui, Property 6: 会话切换清空并重载消息`
     - **Validates: Requirements 11.4**
 
-- [ ] 18. Final checkpoint — 全量验证
+- [x] 18. Final checkpoint — 全量验证
   - Ensure all tests pass, ask the user if questions arise.
   - 后端：`mvn test` 全量测试通过
   - 前端：`npm run test -- --run` 全量测试通过
