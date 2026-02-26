@@ -637,6 +637,7 @@ public class QuickCommand {
                 }
                 skillInfo(subArgs[1], renderer);
             }
+            case "reload" -> skillReload(renderer);
             default -> {
                 renderer.error("未知子命令: skill " + subCommand);
                 printSkillUsage(renderer);
@@ -686,6 +687,14 @@ public class QuickCommand {
     }
 
     /**
+     * 重新加载所有 YAML Skill。
+     */
+    private void skillReload(ResponseRenderer renderer) {
+        int count = yamlSkillLoader.loadAll();
+        renderer.success("YAML Skill 重新加载完成，共加载 " + count + " 个 Skill");
+    }
+
+    /**
      * 输出 skill 命令的用法帮助。
      */
     private void printSkillUsage(ResponseRenderer renderer) {
@@ -695,5 +704,6 @@ public class QuickCommand {
         renderer.info("可用子命令:");
         renderer.info("  list              列出所有已注册 Skill");
         renderer.info("  info <id>         查看 Skill 详细信息");
+        renderer.info("  reload            重新加载 YAML Skill");
     }
 }
