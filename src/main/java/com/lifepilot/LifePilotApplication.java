@@ -22,6 +22,11 @@ public class LifePilotApplication {
     private static final Logger log = LoggerFactory.getLogger(LifePilotApplication.class);
 
     public static void main(String[] args) {
+        // Windows 控制台默认编码可能不是 UTF-8，显式设置避免中文输入丢字
+        System.setProperty("stdout.encoding", "UTF-8");
+        System.setProperty("stderr.encoding", "UTF-8");
+        System.setProperty("stdin.encoding", "UTF-8");
+
         if (FastPathRunner.tryFastPath(args)) {
             System.exit(0);
         }

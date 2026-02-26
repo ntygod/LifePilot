@@ -36,10 +36,27 @@ public class CliShell implements CommandLineRunner {
     /** 欢迎横幅。 */
     private static final String WELCOME_BANNER = """
 
-            ╔══════════════════════════════════════╗
-            ║         LifePilot CLI v0.1.0         ║
-            ║   输入命令开始，/exit 或 Ctrl+D 退出   ║
-            ╚══════════════════════════════════════╝
+            ╔══════════════════════════════════════════════════════════╗
+            ║              LifePilot CLI v0.1.0                       ║
+            ║          你的 AI 生活助手，随时待命                        ║
+            ╚══════════════════════════════════════════════════════════╝
+
+              可用命令:
+                直接输入文字    与 AI 对话（默认模式）
+                chat            进入交互式对话模式
+                todo            管理待办事项（list / add）
+                schedule        管理日程安排（list）
+                habit           管理习惯打卡（list）
+                llm             管理 LLM 服务商（list / test）
+                mcp             管理 MCP Server（list）
+                skill           管理 Skill 技能（list / info）
+                /exit           退出程序（或按 Ctrl+D）
+
+              提示:
+                • 按 Tab 自动补全命令
+                • 以 \\ 结尾可多行输入，\"\"\" 开启文本块
+                • 输入 /new 开始新对话
+                • 日志文件: ~/.lifepilot/logs/lifepilot.log
             """;
 
     private final CommandRouter commandRouter;

@@ -477,7 +477,4 @@ lifepilot:
     store:
       default-query-limit: 50
 
-logging:
-  level:
-    root: INFO
-    com.lifepilot: DEBUG
+# 日志配置见 logback-spring.xml（CLI 模式输出到文件，避免干扰 JLine 终端输入）

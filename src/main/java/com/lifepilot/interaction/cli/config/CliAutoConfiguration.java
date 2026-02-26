@@ -55,8 +55,8 @@ public class CliAutoConfiguration {
     /**
      * 创建 JLine 3 终端实例。
      *
-     * <p>使用系统终端，共享给 {@link ResponseRenderer}、
-     * {@link CliUserConfirmationService} 和 {@link CliShell}。</p>
+     * <p>使用系统终端，显式指定 UTF-8 编码避免 Windows 下中文输入丢字。
+     * 共享给 {@link ResponseRenderer}、{@link CliUserConfirmationService} 和 {@link CliShell}。</p>
      *
      * @return JLine Terminal 实例
      * @throws IOException 终端创建失败时抛出
@@ -66,6 +66,7 @@ public class CliAutoConfiguration {
         log.info("CLI 终端初始化");
         return TerminalBuilder.builder()
                 .system(true)
+                .encoding(java.nio.charset.StandardCharsets.UTF_8)
                 .build();
     }
 
