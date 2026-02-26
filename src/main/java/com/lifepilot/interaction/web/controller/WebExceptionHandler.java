@@ -3,6 +3,8 @@ package com.lifepilot.interaction.web.controller;
 import java.time.Instant;
 
 import com.lifepilot.interaction.web.model.ErrorResponse;
+import com.lifepilot.knowledge.exception.DocumentNotFoundException;
+import com.lifepilot.knowledge.exception.KnowledgeBaseNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -22,6 +24,40 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 public class WebExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(WebExceptionHandler.class);
+
+    /**
+     * 处理知识库不存在异常，返回 404 Not Found。
+     *
+     * @param ex 异常
+     * @return 标准化错误响应
+     */
+    @ExceptionHandler(KnowledgeBaseNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleKbNotFound(KnowledgeBaseNotFoundException ex) {
+        log.warn("知识库不存在: {}", ex.getMessage());
+        var error = new ErrorResponse(
+                HttpStatus.NOT_FOUND.value(),
+                ex.getMessage(),
+                Instant.now()
+        );
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
+    }
+
+    /**
+     * 处理文档不存在异常，返回 404 Not Found。
+     *
+     * @param ex 异常
+     * @return 标准化错误响应
+     */
+    @ExceptionHandler(DocumentNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleDocNotFound(DocumentNotFoundException ex) {
+        log.warn("文档不存在: {}", ex.getMessage());
+        var error = new ErrorResponse(
+                HttpStatus.NOT_FOUND.value(),
+                ex.getMessage(),
+                Instant.now()
+        );
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
+    }
 
     /**
      * 处理参数校验异常，返回 400 Bad Request。
