@@ -7,7 +7,7 @@
 ## Tasks
 
 - [ ] 1. 数据模型与配置基础
-  - [ ] 1.1 创建数据模型（model 包）
+  - [x] 1.1 创建数据模型（model 包）
     - 创建 `com.lifepilot.sandbox.model` 包
     - 实现 Language 枚举（PYTHON / JAVASCRIPT / SHELL，含 runtimeCommand、fileExtension、fromString）
     - 实现 ExecutionState 枚举（COMPLETED / TIMEOUT / FAILED）
@@ -23,7 +23,7 @@
     - **Property 12: Language.fromString round-trip**
     - **Validates: Requirements 10.4**
 
-  - [ ] 1.3 创建 SandboxConfigProperties 配置类
+  - [x] 1.3 创建 SandboxConfigProperties 配置类
     - 创建 `com.lifepilot.sandbox.config` 包
     - 实现 SandboxConfigProperties（@ConfigurationProperties prefix "lifepilot.sandbox"）
     - 实现嵌套类 Session（ttlSeconds, maxActiveSessions, cleanupIntervalSeconds）
@@ -32,15 +32,15 @@
     - 所有字段设置默认值
     - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7, 8.8, 8.9, 8.10, 8.11, 8.12, 8.13, 8.14, 8.15_
 
-  - [ ] 1.4 更新 application.yml 添加沙箱配置
+  - [x] 1.4 更新 application.yml 添加沙箱配置
     - 在 application.yml 中声明所有 lifepilot.sandbox.* 配置键及默认值
     - _Requirements: 8.16_
 
-- [ ] 2. Checkpoint — 确认数据模型和配置编译通过
+- [x] 2. Checkpoint — 确认数据模型和配置编译通过
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 3. CodeValidator 代码预检器
-  - [ ] 3.1 实现 CodeValidator
+  - [x] 3.1 实现 CodeValidator
     - 创建 `com.lifepilot.sandbox.validator` 包
     - 实现 CodeValidator 类，注入 SandboxConfigProperties
     - 实现 Python 危险模式检测（CRITICAL: os.system, subprocess.call, os.exec*, eval, exec, compile, \_\_import\_\_; HIGH: os.remove, shutil.rmtree, open('/etc/'); MEDIUM: urllib.request, requests.get, socket.connect）
@@ -66,13 +66,13 @@
     - _Requirements: 4.1 ~ 4.11_
 
 - [ ] 4. SandboxBooter 沙箱启动器
-  - [ ] 4.1 定义 SandboxBooter sealed interface
+  - [x] 4.1 定义 SandboxBooter sealed interface
     - 创建 `com.lifepilot.sandbox.booter` 包
     - 定义 SandboxBooter sealed interface，permits ProcessBooter, DockerBooter
     - 声明方法：boot(Path), available(), execute(ExecutionRequest), shutdown(), type()
     - _Requirements: 1.1, 1.2, 1.3_
 
-  - [ ] 4.2 实现 ProcessBooter
+  - [x] 4.2 实现 ProcessBooter
     - 实现 ProcessBuilder 进程沙箱
     - 代码写入临时脚本文件（.py / .js / .sh）
     - 环境变量清洗（clear + 仅保留 PATH）
@@ -84,7 +84,7 @@
     - available() 始终返回 true
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9_
 
-  - [ ] 4.3 实现 DockerBooter
+  - [x] 4.3 实现 DockerBooter
     - 实现 Docker CLI 容器沙箱
     - 构建 docker run 命令（--rm, --network none, --read-only, --user 1000:1000, --memory, --cpus, -v）
     - 通过 ProcessBuilder 执行 docker run
@@ -114,11 +114,11 @@
     - DockerBooter: available() 返回 false 当 Docker 不可用、Docker 命令构建验证（Mock ProcessBuilder）
     - _Requirements: 2.1 ~ 2.9, 3.1 ~ 3.8_
 
-- [ ] 5. Checkpoint — 确认 CodeValidator 和 SandboxBooter 测试通过
+- [x] 5. Checkpoint — 确认 CodeValidator 和 SandboxBooter 测试通过
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 6. SandboxSessionManager 会话管理
-  - [ ] 6.1 实现 SandboxSessionManager
+  - [x] 6.1 实现 SandboxSessionManager
     - 创建 `com.lifepilot.sandbox.session` 包
     - 实现 SandboxEntry record（booter, lastAccessTime, workingDirectory）
     - 实现 ConcurrentHashMap<String, SandboxEntry> 会话存储
@@ -148,13 +148,13 @@
     - _Requirements: 5.1 ~ 5.7_
 
 - [ ] 7. SandboxRepository 审计持久化
-  - [ ] 7.1 创建 Flyway V16 迁移脚本
+  - [x] 7.1 创建 Flyway V16 迁移脚本
     - 创建 `V16__create_sandbox_executions.sql`
     - 创建 sandbox_executions 表（id, session_id, language, code_hash, code_length, booter_type, validation_passed, violation_count, exit_code, stdout_length, stderr_length, duration_ms, state, error_message, created_at, updated_at）
     - 创建索引（session_id, state, created_at）
     - _Requirements: 7.1, 7.2_
 
-  - [ ] 7.2 实现 SandboxRepository
+  - [x] 7.2 实现 SandboxRepository
     - 创建 `com.lifepilot.sandbox.repository` 包
     - 实现 SandboxRepository 类，注入 JdbcTemplate
     - 实现 insert(ExecutionRecord)：SHA-256 哈希存储代码、仅存 stdout/stderr 字节长度
@@ -170,11 +170,11 @@
     - SHA-256 哈希验证
     - _Requirements: 7.1 ~ 7.5_
 
-- [ ] 8. Checkpoint — 确认 SessionManager 和 Repository 测试通过
+- [x] 8. Checkpoint — 确认 SessionManager 和 Repository 测试通过
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 9. CodeExecuteTool 工具注册与集成
-  - [ ] 9.1 实现 CodeExecuteTool
+  - [x] 9.1 实现 CodeExecuteTool
     - 创建 `com.lifepilot.sandbox.tool` 包
     - 实现 CodeExecuteTool 类，注入 CodeValidator、SandboxSessionManager、SandboxRepository、SandboxConfigProperties
     - 实现 buildTool()：构建 BuiltinTool（id="code.execute", riskLevel=CRITICAL, idempotent=false, inputSchema 定义 language/code/sessionId）
@@ -197,7 +197,7 @@
     - _Requirements: 6.1 ~ 6.7_
 
 - [ ] 10. SandboxAutoConfiguration 与 Bean 注册
-  - [ ] 10.1 实现 SandboxAutoConfiguration
+  - [x] 10.1 实现 SandboxAutoConfiguration
     - 实现 @AutoConfiguration + @ConditionalOnProperty(lifepilot.sandbox.enabled)
     - 注册 SandboxBooter Bean（根据 config.booter 选择 ProcessBooter 或 DockerBooter）
     - 注册 CodeValidator、SandboxSessionManager、SandboxRepository、CodeExecuteTool Bean
@@ -205,11 +205,11 @@
     - Docker 模式下检查可用性，不可用则启动失败
     - _Requirements: 9.1, 9.2, 9.3, 9.4, 9.6_
 
-  - [ ] 10.2 注册 AutoConfiguration imports
+  - [x] 10.2 注册 AutoConfiguration imports
     - 在 META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports 中添加 SandboxAutoConfiguration
     - _Requirements: 9.5_
 
-- [ ] 11. Checkpoint — 确认所有组件编译通过
+- [x] 11. Checkpoint — 确认所有组件编译通过
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 12. 集成测试
@@ -228,7 +228,7 @@
     - CRUD 操作端到端验证
     - _Requirements: 7.1, 7.2_
 
-- [ ] 13. Final checkpoint — 确认所有测试通过
+- [x] 13. Final checkpoint — 确认所有测试通过
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes

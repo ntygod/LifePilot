@@ -87,7 +87,7 @@ Phase 4 — 高级能力
   │     ├─ YAML 声明式工作流定义
   │     ├─ 触发器（Cron / Event / Condition / Signal）
   │     └─ 工作流状态持久化 + 崩溃恢复
-  ├─ 16. 代码执行沙箱（依赖工具系统）
+  ├─ 16. 代码执行沙箱 ✅（依赖工具系统）
   │     ├─ SandboxBooter 抽象（Process / Docker / Remote）
   │     ├─ 会话级沙箱实例复用
   │     ├─ CodeValidator 危险操作预检
