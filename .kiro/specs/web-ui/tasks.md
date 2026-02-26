@@ -237,22 +237,22 @@ Web UI 模块（Phase 5 — 模块 18）采用前后端分离架构实现。后�
     - Tag: `Feature: web-ui, Property 5: Token 事件增量拼接`
     - **Validates: Requirements 10.2**
 
-- [ ] 13. Checkpoint — 前端核心逻辑验证
+- [x] 13. Checkpoint — 前端核心逻辑验证
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 14. 实现对话页面组件
-  - [ ] 14.1 创建 ChatInput 组件
+- [x] 14. 实现对话页面组件
+  - [x] 14.1 创建 ChatInput 组件
     - 在 src/components/chat/ChatInput.vue 中实现消息输入框
     - 支持 Enter 发送消息，Shift+Enter 换行
     - 流式进行中禁用发送按钮
     - _Requirements: 9.2, 9.4_
 
-  - [ ] 14.2 创建 StreamingText 组件
+  - [x] 14.2 创建 StreamingText 组件
     - 在 src/components/chat/StreamingText.vue 中实现流式 Markdown 渲染
     - 支持增量 Markdown 渲染和代码高亮
     - _Requirements: 9.5_
 
-  - [ ] 14.3 创建 MessageBubble 和 MessageList 组件
+  - [x] 14.3 创建 MessageBubble 和 MessageList 组件
     - MessageBubble：根据 role 渲染用户消息或 Agent 响应（含 StreamingText + A2uiRenderer）
     - MessageList：按 timestamp 升序渲染消息列表
     - _Requirements: 9.1_
@@ -263,13 +263,13 @@ Web UI 模块（Phase 5 — 模块 18）采用前后端分离架构实现。后�
     - Tag: `Feature: web-ui, Property 4: 消息列表按时间顺序排列`
     - **Validates: Requirements 9.1**
 
-  - [ ] 14.5 创建 ChatView 页面
+  - [x] 14.5 创建 ChatView 页面
     - 在 src/views/ChatView.vue 中组装 MessageList + ChatInput + useChat
     - 发送消息时调用 useChat.sendMessage()
     - 显示加载指示器和错误提示
     - _Requirements: 9.1, 9.2, 9.3, 9.4, 9.7, 9.8_
 
-  - [ ] 14.6 完善 Sidebar 组件
+  - [x] 14.6 完善 Sidebar 组件
     - 显示会话列表（从 chatStore.sessions 读取）
     - 支持切换当前会话和删除会话
     - _Requirements: 9.6, 9.7_
