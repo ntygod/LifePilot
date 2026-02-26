@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { marked } from 'marked'
+import { Marked } from 'marked'
+import { markedHighlight } from 'marked-highlight'
 import hljs from 'highlight.js'
 
 const props = defineProps<{
@@ -8,20 +9,23 @@ const props = defineProps<{
   streaming?: boolean
 }>()
 
-// 配置 marked 使用 highlight.js 代码高亮
-marked.setOptions({
-  highlight(code: string, lang: string) {
-    if (lang && hljs.getLanguage(lang)) {
-      return hljs.highlight(code, { language: lang }).value
+// 使用 marked-highlight 扩展集成 highlight.js
+const markedInstance = new Marked(
+  markedHighlight({
+    langPrefix: 'hljs language-',
+    highlight(code: string, lang: string) {
+      if (lang && hljs.getLanguage(lang)) {
+        return hljs.highlight(code, { language: lang }).value
+      }
+      return hljs.highlightAuto(code).value
     }
-    return hljs.highlightAuto(code).value
-  }
-})
+  })
+)
 
 const html = computed(() => {
   if (!props.content) return ''
   try {
-    return marked.parse(props.content) as string
+    return markedInstance.parse(props.content) as string
   } catch {
     return props.content
   }
