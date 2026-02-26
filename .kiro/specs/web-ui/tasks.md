@@ -274,14 +274,14 @@ Web UI 模块（Phase 5 — 模块 18）采用前后端分离架构实现。后�
     - 支持切换当前会话和删除会话
     - _Requirements: 9.6, 9.7_
 
-- [ ] 15. 实现 A2UI 前端渲染器
-  - [ ] 15.1 创建 10 个 A2UI 基础组件
+- [x] 15. 实现 A2UI 前端渲染器
+  - [x] 15.1 创建 10 个 A2UI 基础组件
     - 在 src/components/a2ui/ 下创建：A2uiText、A2uiCard、A2uiButton、A2uiTextField、A2uiList、A2uiListItem、A2uiDatePicker、A2uiChip、A2uiDivider、A2uiImage
     - 每个组件接收 properties prop 和可选 signal prop
     - 含 signal 的组件在用户交互时调用 useA2uiSignal
     - _Requirements: 12.2, 12.3_
 
-  - [ ] 15.2 创建 componentCatalog 和 A2uiRenderer
+  - [x] 15.2 创建 componentCatalog 和 A2uiRenderer
     - componentCatalog.ts：维护 type → Vue 组件映射注册表
     - A2uiRenderer.vue：递归遍历邻接表，通过 `<component :is>` 动态渲染
     - 未注册 type 渲染 A2uiFallback 占位符组件 + console.warn
@@ -294,8 +294,8 @@ Web UI 模块（Phase 5 — 模块 18）采用前后端分离架构实现。后�
     - Tag: `Feature: web-ui, Property 7: A2UI 组件树更新与渲染完整性`
     - **Validates: Requirements 11.5, 12.1**
 
-- [ ] 16. 实现设置页面
-  - [ ] 16.1 创建 SettingsView 页面
+- [x] 16. 实现设置页面
+  - [x] 16.1 创建 SettingsView 页面
     - 在 src/views/SettingsView.vue 中实现设置表单
     - 主题切换（亮色 / 暗色 / 跟随系统）
     - LLM Provider 选择
@@ -316,7 +316,7 @@ Web UI 模块（Phase 5 — 模块 18）采用前后端分离架构实现。后�
     - Tag: `Feature: web-ui, Property 6: 会话切换清空并重载消息`
     - **Validates: Requirements 11.4**
 
-- [ ] 18. Final checkpoint — 全量验证
+- [x] 18. Final checkpoint — 全量验证
   - Ensure all tests pass, ask the user if questions arise.
   - 后端：`mvn test` 全量测试通过
   - 前端：`npm run test -- --run` 全量测试通过
