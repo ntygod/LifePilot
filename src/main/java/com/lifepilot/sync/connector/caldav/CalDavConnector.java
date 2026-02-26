@@ -352,13 +352,23 @@ public final class CalDavConnector implements SyncConnector {
 
     /**
      * 将本地实体转换为 iCalendar 文本。
+     *
+     * <p>根据实体类型使用对应的 FieldMapping 进行转换：
+     * ScheduleItem → VEVENT，TodoItem → VTODO。
+     * 如果 payload 已经是 String（iCalendar 文本），直接返回。</p>
      */
     private String convertToICal(String entityType, Object payload) {
         if (payload instanceof String s) {
             return s;
         }
-        // payload 应该已经是 iCalendar 文本
-        return payload.toString();
+        if (payload instanceof com.lifepilot.skill.builtin.schedule.ScheduleItem schedule) {
+            return eventMapping.toRemote(schedule);
+        }
+        if (payload instanceof com.lifepilot.skill.builtin.todo.TodoItem todo) {
+            return todoMapping.toRemote(todo);
+        }
+        throw new SyncException.MappingException(
+                "不支持的实体类型: " + entityType + ", payload=" + payload.getClass().getName());
     }
 
     /**
