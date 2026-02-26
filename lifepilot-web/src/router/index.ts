@@ -12,6 +12,26 @@ const router = createRouter({
       path: '/settings',
       name: 'settings',
       component: () => import('@/views/SettingsView.vue')
+    },
+    {
+      path: '/knowledge-bases',
+      name: 'knowledgeBases',
+      component: () => import('@/views/KnowledgeBaseView.vue')
+    },
+    {
+      path: '/skills',
+      name: 'skills',
+      component: () => import('@/views/SkillManageView.vue')
+    },
+    {
+      path: '/traces',
+      name: 'traces',
+      component: () => import('@/views/TraceReplayView.vue')
+    },
+    {
+      path: '/workflows',
+      name: 'workflows',
+      component: () => import('@/views/WorkflowManageView.vue')
     }
   ]
 })
