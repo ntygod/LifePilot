@@ -106,31 +106,6 @@ public class EpisodicMemory {
     }
 
     /**
-     * 按意图模糊匹配对话记录。
-     *
-     * @param goal 意图关键词
-     * @return 匹配的对话记录列表
-     */
-    public List<ConversationRecord> getByIntent(String goal) {
-        var conversations = jdbcTemplate.query(
-                "SELECT id, session_id, goal, summary, created_at, updated_at FROM conversations WHERE goal LIKE ? ORDER BY created_at DESC",
-                (rs, rowNum) -> new ConversationRecord(
-                        rs.getString("id"),
-                        rs.getString("session_id"),
-                        rs.getString("goal"),
-                        rs.getString("summary"),
-                        List.of(),
-                        Instant.parse(rs.getString("created_at")),
-                        Instant.parse(rs.getString("updated_at"))),
-                "%" + goal + "%");
-
-        return conversations.stream()
-                .map(c -> new ConversationRecord(c.id(), c.sessionId(), c.goal(), c.summary(),
-                        loadMessages(c.id()), c.createdAt(), c.updatedAt()))
-                .toList();
-    }
-
-    /**
      * 根据对话 ID 获取完整对话记录。
      *
      * @param conversationId 对话 ID
@@ -150,20 +125,6 @@ public class EpisodicMemory {
                 conversationId);
 
         return conversations.isEmpty() ? Optional.empty() : Optional.of(conversations.getFirst());
-    }
-
-    /**
-     * 压缩对话中的非 pinned 消息。
-     *
-     * @param conversationId 对话 ID
-     * @param level 目标压缩层级
-     */
-    public void compress(String conversationId, CompressionLevel level) {
-        int updated = jdbcTemplate.update(
-                "UPDATE messages SET compression_level = ?, compressed_content = '[已压缩]' WHERE conversation_id = ? AND is_pinned = 0",
-                level.level(), conversationId);
-
-        log.debug("压缩对话消息: conversationId={}, 层级={}, 更新数={}", conversationId, level, updated);
     }
 
     /**

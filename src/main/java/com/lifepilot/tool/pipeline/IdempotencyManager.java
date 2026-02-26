@@ -49,13 +49,4 @@ public class IdempotencyManager {
         log.debug("幂等记录保存: key={}", key);
     }
 
-    /** 清除所有缓存（用于测试）。 */
-    public void clear() {
-        cache.clear();
-    }
-
-    /** 获取缓存大小。 */
-    public int size() {
-        return cache.size();
-    }
 }

@@ -6,10 +6,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 
 /**
  * 熔断器管理器。
@@ -81,42 +79,6 @@ public class CircuitBreakerManager {
         if (!before.stateName().equals(after.stateName())) {
             persistAsync(breaker.key(), after);
         }
-    }
-
-    /**
-     * 获取指定熔断器状态。
-     *
-     * @param providerId     Provider ID
-     * @param capabilityType 能力类型
-     * @return 熔断器状态
-     */
-    public CircuitState getState(String providerId, String capabilityType) {
-        return getOrCreate(providerId, capabilityType).getState();
-    }
-
-    /**
-     * 获取所有熔断器状态的不可变快照。
-     *
-     * @return 键为 providerId:capabilityType，值为状态
-     */
-    public Map<String, CircuitState> getAllStates() {
-        return breakers.entrySet().stream()
-                .collect(Collectors.toUnmodifiableMap(
-                        Map.Entry::getKey,
-                        e -> e.getValue().getState()
-                ));
-    }
-
-    /**
-     * 手动重置指定熔断器。
-     *
-     * @param providerId     Provider ID
-     * @param capabilityType 能力类型
-     */
-    public void reset(String providerId, String capabilityType) {
-        var breaker = getOrCreate(providerId, capabilityType);
-        breaker.reset();
-        persistAsync(breaker.key(), breaker.getState());
     }
 
     // --- 内部方法 ---

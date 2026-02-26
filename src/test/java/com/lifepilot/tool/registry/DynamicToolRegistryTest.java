@@ -42,7 +42,7 @@ class DynamicToolRegistryTest {
         var resolved = registry.resolve("test.echo");
         assertTrue(resolved.isPresent());
         assertEquals("Echo", resolved.get().name());
-        assertEquals(1, registry.getToolCount());
+        assertEquals(1, registry.getAllTools().size());
     }
 
     @Test
@@ -56,7 +56,7 @@ class DynamicToolRegistryTest {
         BuiltinTool builtinTool = createBuiltinTool("test.echo", "Echo Builtin");
         registry.registerBuiltinTool(builtinTool);
         assertEquals("Echo Builtin", registry.resolve("test.echo").orElseThrow().name());
-        assertEquals(1, registry.getToolCount());
+        assertEquals(1, registry.getAllTools().size());
     }
 
     @Test
@@ -69,7 +69,7 @@ class DynamicToolRegistryTest {
 
         // 同层不覆盖，保留第一个
         assertEquals("Echo 1", registry.resolve("test.echo").orElseThrow().name());
-        assertEquals(1, registry.getToolCount());
+        assertEquals(1, registry.getAllTools().size());
     }
 
     @Test
@@ -77,10 +77,10 @@ class DynamicToolRegistryTest {
         McpTool tool1 = createMcpTool("mcp.tool1", "Tool1");
         McpTool tool2 = createMcpTool("mcp.tool2", "Tool2");
         registry.registerMcpTools("server1", List.of(tool1, tool2));
-        assertEquals(2, registry.getToolCount());
+        assertEquals(2, registry.getAllTools().size());
 
         registry.unregisterMcpTools("server1");
-        assertEquals(0, registry.getToolCount());
+        assertEquals(0, registry.getAllTools().size());
         assertTrue(registry.resolve("mcp.tool1").isEmpty());
     }
 
@@ -101,26 +101,30 @@ class DynamicToolRegistryTest {
         registry.registerBuiltinTool(createBuiltinTool("builtin.a", "A"));
         registry.registerMcpTools("s1", List.of(createMcpTool("mcp.b", "B")));
 
-        assertEquals(1, registry.getToolsByLayer(ToolLayer.JAVA_NATIVE).size());
-        assertEquals(1, registry.getToolsByLayer(ToolLayer.MCP_EXTERNAL).size());
-        assertEquals(0, registry.getToolsByLayer(ToolLayer.YAML_DECLARATIVE).size());
+        var counts = registry.getToolCountByLayer();
+        assertEquals(1, counts.getOrDefault(ToolLayer.JAVA_NATIVE, 0));
+        assertEquals(1, counts.getOrDefault(ToolLayer.MCP_EXTERNAL, 0));
+        assertEquals(0, counts.getOrDefault(ToolLayer.YAML_DECLARATIVE, 0));
     }
 
     @Test
     void 注册工具自动加入白名单() {
         BuiltinTool tool = createBuiltinTool("test.echo", "Echo");
         registry.registerBuiltinTool(tool);
-        assertTrue(guardrailPolicy.isAllowed("test.echo"));
+        // 通过 checkToolCall 验证白名单
+        ToolInput input = new ToolInput("test.echo", java.util.Map.of(), com.lifepilot.tool.schema.JsonSchema.empty(), null);
+        assertFalse(guardrailPolicy.checkToolCall(tool, input).blocked());
     }
 
     @Test
     void 注销工具自动移出白名单() {
         McpTool tool = createMcpTool("mcp.tool", "Tool");
         registry.registerMcpTools("server1", List.of(tool));
-        assertTrue(guardrailPolicy.isAllowed("mcp.tool"));
+        ToolInput input = new ToolInput("mcp.tool", java.util.Map.of(), com.lifepilot.tool.schema.JsonSchema.empty(), null);
+        assertFalse(guardrailPolicy.checkToolCall(tool, input).blocked());
 
         registry.unregisterMcpTools("server1");
-        assertFalse(guardrailPolicy.isAllowed("mcp.tool"));
+        assertTrue(guardrailPolicy.checkToolCall(tool, input).blocked());
     }
 
     // ─── 辅助方法 ───

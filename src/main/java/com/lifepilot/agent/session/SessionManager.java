@@ -148,20 +148,6 @@ public class SessionManager {
     }
 
     /**
-     * 删除会话。
-     *
-     * @param sessionId 会话 ID
-     */
-    public void deleteSession(String sessionId) {
-        try {
-            jdbcTemplate.update("DELETE FROM agent_sessions WHERE id = ?", sessionId);
-            log.debug("会话删除成功: sessionId={}", sessionId);
-        } catch (Exception e) {
-            log.warn("会话删除失败: sessionId={}, error={}", sessionId, e.getMessage());
-        }
-    }
-
-    /**
      * 定时清理过期会话。
      */
     @Scheduled(fixedDelayString = "${lifepilot.agent.session.cleanup-interval-ms:300000}")

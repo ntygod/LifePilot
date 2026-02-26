@@ -219,25 +219,6 @@ public class DynamicToolRegistry {
         return snapshot;
     }
 
-    /** 按层次过滤工具。 */
-    public List<ToolContract> getToolsByLayer(ToolLayer layer) {
-        return tools.values().stream()
-                .filter(t -> t.layer() == layer)
-                .toList();
-    }
-
-    /** 按标签过滤工具。 */
-    public List<ToolContract> getToolsByTag(String tag) {
-        return tools.values().stream()
-                .filter(t -> t.tags().contains(tag))
-                .toList();
-    }
-
-    /** 获取已注册工具总数。 */
-    public int getToolCount() {
-        return tools.size();
-    }
-
     /** 获取各层次工具数量统计。 */
     public Map<ToolLayer, Integer> getToolCountByLayer() {
         var counts = new EnumMap<ToolLayer, Integer>(ToolLayer.class);
