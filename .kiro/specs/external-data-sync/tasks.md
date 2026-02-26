@@ -282,8 +282,8 @@
     - 验证 enabled=false 的 profile 不执行定时同步
     - **Validates: Requirements 12.3, 12.5, 9.4**
 
-- [ ] 12. SyncSkillProvider Agent 集成
-  - [-] 12.1 实现 SyncSkillProvider
+- [x] 12. SyncSkillProvider Agent 集成
+  - [x] 12.1 实现 SyncSkillProvider
     - 实现 BuiltinSkillProvider 接口，使用 @BuiltinSkill(id = "sync", order = 5) 注解
     - provide() 返回 SkillDefinition（id="sync"、name="数据同步"、4 个 allowedTools）
     - registerTools() 注册 sync-trigger、sync-status、sync-config、sync-conflicts 四个工具
@@ -299,7 +299,7 @@
     - _Requirements: 14.1_
 
 - [ ] 13. SyncAutoConfiguration 自动配置
-  - [~] 13.1 实现 SyncAutoConfiguration
+  - [-] 13.1 实现 SyncAutoConfiguration
     - @AutoConfiguration + @ConditionalOnProperty(name = "lifepilot.sync.enabled")
     - @EnableConfigurationProperties(SyncProperties.class)
     - 注册所有 sync 模块 Bean：Connector 实例、SyncEngine、ChangeDetector、ConflictResolver、CredentialStore、SyncScheduler、Repository 实例、SyncSkillProvider
