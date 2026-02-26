@@ -22,6 +22,7 @@ import com.lifepilot.memory.semantic.SemanticMemory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -147,6 +148,7 @@ public class KnowledgeAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnBean(LlmRouter.class)
     public VectorIndexer vectorIndexer(LlmRouter llmRouter, JdbcTemplate jdbcTemplate,
                                        KnowledgeBaseProperties props) {
         return new VectorIndexer(llmRouter, jdbcTemplate, props.vectorIndexer());
@@ -170,6 +172,7 @@ public class KnowledgeAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnBean(LlmRouter.class)
     public ChunkContextEnricher chunkContextEnricher(LlmRouter llmRouter, KnowledgeBaseProperties props) {
         return new ChunkContextEnricher(llmRouter, props.contextEnricher());
     }
@@ -178,6 +181,7 @@ public class KnowledgeAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnBean(LlmRouter.class)
     public KnowledgeExtractionPipeline knowledgeExtractionPipeline(LlmRouter llmRouter,
                                                                     SemanticMemory semanticMemory,
                                                                     KnowledgeBaseProperties props) {
@@ -202,6 +206,7 @@ public class KnowledgeAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnBean(VectorIndexer.class)
     public DocumentRetriever documentRetriever(VectorIndexer vectorIndexer, FtsIndexer ftsIndexer,
                                                 Optional<Reranker> reranker,
                                                 KnowledgeBaseProperties props) {
@@ -212,6 +217,7 @@ public class KnowledgeAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnBean(VectorIndexer.class)
     public DocumentIngester documentIngester(FormatDetector formatDetector, SmartChunker smartChunker,
                                               ChunkContextEnricher contextEnricher,
                                               VectorIndexer vectorIndexer, FtsIndexer ftsIndexer,
