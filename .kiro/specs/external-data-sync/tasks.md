@@ -298,8 +298,8 @@
     - 验证各 action 参数解析
     - _Requirements: 14.1_
 
-- [ ] 13. SyncAutoConfiguration 自动配置
-  - [-] 13.1 实现 SyncAutoConfiguration
+- [x] 13. SyncAutoConfiguration 自动配置
+  - [x] 13.1 实现 SyncAutoConfiguration
     - @AutoConfiguration + @ConditionalOnProperty(name = "lifepilot.sync.enabled")
     - @EnableConfigurationProperties(SyncProperties.class)
     - 注册所有 sync 模块 Bean：Connector 实例、SyncEngine、ChangeDetector、ConflictResolver、CredentialStore、SyncScheduler、Repository 实例、SyncSkillProvider
@@ -327,7 +327,7 @@
     - 验证五张表结构正确
     - _Requirements: 13.1, 13.2, 13.3, 13.4, 13.5_
 
-- [ ] 15. Final checkpoint — 全量验证
+- [-] 15. Final checkpoint — 全量验证
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes

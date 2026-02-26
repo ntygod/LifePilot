@@ -22,6 +22,7 @@ import com.lifepilot.sync.skill.SyncSkillProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -142,6 +143,7 @@ public class SyncAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnBean({TodoRepository.class, ScheduleRepository.class, HabitRepository.class})
     public ChangeDetector changeDetector(TodoRepository todoRepository,
                                          ScheduleRepository scheduleRepository,
                                          HabitRepository habitRepository,
@@ -160,6 +162,7 @@ public class SyncAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnBean({ChangeDetector.class, EpisodicMemory.class})
     public SyncEngine syncEngine(Map<String, SyncConnector> syncConnectors,
                                   ChangeDetector changeDetector,
                                   ConflictResolver conflictResolver,
@@ -182,6 +185,7 @@ public class SyncAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnBean(SyncEngine.class)
     public SyncScheduler syncScheduler(SyncEngine syncEngine,
                                         SyncProfileRepository syncProfileRepository,
                                         SyncProperties properties) {
@@ -193,6 +197,7 @@ public class SyncAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnBean(SyncEngine.class)
     public SyncSkillProvider syncSkillProvider(SyncEngine syncEngine,
                                                SyncScheduler syncScheduler,
                                                SyncProfileRepository syncProfileRepository,
