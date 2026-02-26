@@ -48,27 +48,23 @@ public class GatewayAutoConfiguration {
     }
 
     /**
-     * 注册消息网关，自动注册所有 {@link ChannelAdapter} Bean。
+     * 注册消息网关（不在构造时注入 ChannelAdapter，避免循环依赖）。
      *
-     * <p>如果没有注册任何通道适配器 Bean，将创建无通道的网关。</p>
+     * <p>通道适配器在 {@link ApplicationReadyEvent} 中延迟注册。</p>
      *
      * @param pipeline 中间件管道
-     * @param adapters Spring 容器中所有 ChannelAdapter Bean，无匹配时为空列表
      * @return 消息网关实例
      */
     @Bean
-    public MessageGateway messageGateway(MiddlewarePipeline pipeline, List<ChannelAdapter> adapters) {
-        var gateway = new DefaultMessageGateway(pipeline);
-        for (var adapter : adapters) {
-            gateway.registerChannel(adapter);
-            log.info("注册通道适配器: type={}", adapter.channelType());
-        }
-        log.info("注册 MessageGateway，已注册 {} 个通道适配器", adapters.size());
-        return gateway;
+    public MessageGateway messageGateway(MiddlewarePipeline pipeline) {
+        log.info("注册 MessageGateway");
+        return new DefaultMessageGateway(pipeline);
     }
 
     /**
-     * 应用就绪后启动消息网关。
+     * 应用就绪后注册通道适配器并启动消息网关。
+     *
+     * <p>延迟注册通道适配器，打破 MessageGateway ↔ ChannelAdapter 循环依赖。</p>
      *
      * @param event 应用就绪事件
      */
@@ -76,9 +72,14 @@ public class GatewayAutoConfiguration {
     public void onApplicationReady(ApplicationReadyEvent event) {
         var ctx = event.getApplicationContext();
         if (ctx.containsBean("messageGateway")) {
-            var gateway = ctx.getBean(MessageGateway.class);
+            var gateway = (DefaultMessageGateway) ctx.getBean(MessageGateway.class);
+            var adapters = ctx.getBeansOfType(ChannelAdapter.class).values();
+            for (var adapter : adapters) {
+                gateway.registerChannel(adapter);
+                log.info("注册通道适配器: type={}", adapter.channelType());
+            }
             gateway.start();
-            log.info("ApplicationReady: 消息网关已启动");
+            log.info("ApplicationReady: 消息网关已启动，已注册 {} 个通道适配器", adapters.size());
         }
     }
 }

@@ -89,10 +89,11 @@ public class ToolAutoConfiguration {
     }
 
     @Bean
+    @ConditionalOnMissingBean
     public AgentToolProvider agentToolProvider(
             DynamicToolRegistry toolRegistry,
             ToolExecutionPipeline pipeline) {
-        log.info("工具桥接层初始化: 覆盖 agent 模块空实现兜底 Bean");
+        log.info("工具桥接层初始化: 注册 ToolBridge 实现的 AgentToolProvider");
         return new ToolBridgeAgentToolProvider(toolRegistry, pipeline);
     }
 }

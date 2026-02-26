@@ -33,7 +33,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * @author zsg
  * @since 2026-07-20
  */
-@AutoConfiguration
+@AutoConfiguration(after = com.lifepilot.tool.config.ToolAutoConfiguration.class)
 @EnableConfigurationProperties(AgentConfigProperties.class)
 @ConditionalOnProperty(prefix = "lifepilot.agent", name = "enabled",
         havingValue = "true", matchIfMissing = true)
