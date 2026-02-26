@@ -32,7 +32,7 @@ import java.util.List;
 /**
  * Agentic Evals 框架 Spring Boot 自动配置。
  *
- * <p>通过 {@code lifepilot.eval.enabled=true}（默认）激活，
+ * <p>通过 {@code lifepilot.eval.enabled=true}（需显式开启）激活，
  * 注册评估框架全部 Bean：场景加载器、场景序列化器、五个维度评估器、
  * 轨迹评估器、LLM 评判器、持久化存储、报告生成器和评估引擎。</p>
  *
@@ -44,7 +44,7 @@ import java.util.List;
  */
 @AutoConfiguration
 @EnableConfigurationProperties(EvalConfigProperties.class)
-@ConditionalOnProperty(prefix = "lifepilot.eval", name = "enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(prefix = "lifepilot.eval", name = "enabled", havingValue = "true", matchIfMissing = false)
 public class EvalAutoConfiguration {
 
     private static final Logger log = LoggerFactory.getLogger(EvalAutoConfiguration.class);
