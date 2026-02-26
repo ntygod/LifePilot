@@ -364,6 +364,31 @@ lifepilot:
     server:
       enabled: false
     servers: []
+  workflow:
+    # 工作流引擎总开关
+    enabled: true
+    # 步骤默认超时时间（秒）
+    default-step-timeout-seconds: 300
+    # 最大并行分支数（ParallelStep）
+    max-parallel-branches: 10
+    # 最大嵌套深度（SubWorkflowStep）
+    max-nesting-depth: 3
+    # 最大循环迭代次数（LoopStep）
+    max-loop-iterations: 100
+    # 工作流 YAML 定义文件目录
+    definitions-dir: "${user.home}/.lifepilot/workflows"
+    # 崩溃恢复开关
+    crash-recovery-enabled: true
+    # YAML 文件扫描间隔（秒）
+    scan-interval-seconds: 30
+    # 步骤重试策略（指数退避）
+    retry:
+      # 初始延迟（毫秒）
+      initial-delay-ms: 500
+      # 最大延迟（毫秒）
+      max-delay-ms: 5000
+      # 最大重试次数
+      max-attempts: 3
 
 logging:
   level:
