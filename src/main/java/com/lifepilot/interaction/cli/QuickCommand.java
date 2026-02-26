@@ -6,6 +6,7 @@ import com.lifepilot.mcp.registry.McpServerEntry;
 import com.lifepilot.mcp.registry.McpServerRegistry;
 import com.lifepilot.skill.model.SkillDefinition;
 import com.lifepilot.skill.registry.SkillRegistry;
+import com.lifepilot.skill.yaml.YamlSkillLoader;
 import com.lifepilot.tool.ToolContract;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
@@ -36,15 +37,18 @@ public class QuickCommand {
     private final ProviderRegistry providerRegistry;
     private final McpServerRegistry mcpServerRegistry;
     private final SkillRegistry skillRegistry;
+    private final YamlSkillLoader yamlSkillLoader;
 
     public QuickCommand(DynamicToolRegistry toolRegistry,
                         ProviderRegistry providerRegistry,
                         McpServerRegistry mcpServerRegistry,
-                        SkillRegistry skillRegistry) {
+                        SkillRegistry skillRegistry,
+                        YamlSkillLoader yamlSkillLoader) {
         this.toolRegistry = toolRegistry;
         this.providerRegistry = providerRegistry;
         this.mcpServerRegistry = mcpServerRegistry;
         this.skillRegistry = skillRegistry;
+        this.yamlSkillLoader = yamlSkillLoader;
     }
 
     /**
