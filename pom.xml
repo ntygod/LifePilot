@@ -136,6 +136,20 @@
             <optional>true</optional>
         </dependency>
 
+        <!-- JUnit 5 API — EvalTest/EvalSuite 注解和 Extension 在 main 中使用 -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-api</artifactId>
+            <scope>compile</scope>
+        </dependency>
+
+        <!-- Spring Test — EvalTestExtension 通过 SpringExtension 获取 ApplicationContext -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-test</artifactId>
+            <scope>compile</scope>
+        </dependency>
+
         <!-- Test -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

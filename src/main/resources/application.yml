@@ -463,6 +463,18 @@ lifepilot:
       dida:
         enabled: false
         base-url: "https://api.dida365.com"
+  eval:
+    enabled: true
+    scenario-directory: "${user.home}/.lifepilot/eval/scenarios"
+    default-pass-threshold: 0.7
+    degradation-threshold: 0.1
+    llm-judge:
+      scene: "eval-judge"
+      timeout-seconds: 30
+      fallback-score: 0.5
+      max-retries: 1
+    store:
+      default-query-limit: 50
 
 logging:
   level:
