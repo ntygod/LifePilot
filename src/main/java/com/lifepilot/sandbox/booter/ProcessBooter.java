@@ -160,6 +160,11 @@ public final class ProcessBooter implements SandboxBooter {
         return "process";
     }
 
+    @Override
+    public Path workingDirectory() {
+        return workingDirectory;
+    }
+
     /**
      * 读取输入流的全部内容为字节数组。
      */

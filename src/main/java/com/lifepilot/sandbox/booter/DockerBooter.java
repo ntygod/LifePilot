@@ -196,6 +196,11 @@ public final class DockerBooter implements SandboxBooter {
         return "docker";
     }
 
+    @Override
+    public Path workingDirectory() {
+        return workingDirectory;
+    }
+
     /**
      * 构建 docker run 命令参数列表。
      *

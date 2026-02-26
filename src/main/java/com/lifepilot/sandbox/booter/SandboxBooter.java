@@ -52,4 +52,11 @@ public sealed interface SandboxBooter permits ProcessBooter, DockerBooter {
      * @return "process" 或 "docker"
      */
     String type();
+
+    /**
+     * 获取沙箱工作目录。
+     *
+     * @return 工作目录路径，boot() 调用前返回 null
+     */
+    Path workingDirectory();
 }
