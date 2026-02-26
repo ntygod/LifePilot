@@ -100,11 +100,11 @@ Phase 4 — 高级能力 ✅
 
 Phase 5 — Web UI + 可观测性
   ├─ 18. Web UI 框架搭建（Vue 3 + Vite + Pinia + A2UI）
-  │     ├─ frontend-maven-plugin 集成
-  │     ├─ REST Controller + SSE 流式对话端点（调用 MessageGateway）
-  │     ├─ 对话页 + 设置页
-  │     ├─ SSE 流式响应（token + ui 事件）
-  │     └─ A2UI Generative UI 渲染器 + 基础组件目录 + 信号回传
+  │     ├─ 后端：REST Controller + SSE 流式对话端点 + WebChannelAdapter + CORS
+  │     ├─ 后端：A2UI 数据模型 + 信号回传端点
+  │     ├─ 前端（独立项目 lifepilot-web）：对话页 + 设置页
+  │     ├─ 前端：SSE 流式响应（token + ui 事件）
+  │     └─ 前端：A2UI Generative UI 渲染器 + 基础组件目录 + 信号回传
   ├─ 19. Web UI 功能页面（依赖知识库 + Skill 系统 + Gateway）
   │     ├─ 知识库管理页
   │     ├─ Skill / MCP 管理页

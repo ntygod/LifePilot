@@ -8,22 +8,25 @@
 
 ## 1. 模块定位与职责边界
 
-Web UI 模块为 LifePilot 提供浏览器端交互界面，是 Phase 5 的核心交付物。模块分为两个层面：
+Web UI 模块为 LifePilot 提供浏览器端交互界面，是 Phase 5 的核心交付物。
 
-- **后端 API 层**：Spring Boot REST Controller + SSE 流式端点，复用 MessageGateway 中间件管道
-- **前端 SPA 层**：Vue 3 + Vite + Pinia 单页应用，构建产物打包进 JAR 静态资源
+**核心架构决策：前后端彻底分离。**
+
+- **后端 API 层**（本 Java 项目内）：Spring Boot REST Controller + SSE 流式端点 + WebChannelAdapter，复用 MessageGateway 中间件管道。后端是纯 Server 端逻辑，不包含任何前端构建集成。
+- **前端 SPA 层**（独立项目）：Vue 3 + Vite + Pinia 单页应用，独立仓库、独立构建、独立部署。通过 HTTP/SSE 调用后端 API。
+
+这种分离为 Phase 6 的多端接入（CLI HTTP 客户端、移动端、桌面端）奠定基础，所有客户端共享同一套 REST/SSE API。
 
 ### 职责边界
 
-| 属于本模块 | 不属于本模块 |
-|-----------|------------|
-| REST API 端点（对话、设置） | 知识库管理页面（模块 19） |
-| SSE 流式对话传输 | Skill/MCP 管理页面（模块 19） |
-| WebChannelAdapter 通道适配器 | 轨迹回放页面（模块 19） |
-| 前端对话页 + 设置页 | 工作流管理页面（模块 19） |
-| A2UI Generative UI 渲染器 + 组件目录 | Skill/MCP 管理页面（模块 19） |
-| frontend-maven-plugin 构建集成 | 轨迹回放页面（模块 19） |
-| 前端路由、状态管理、组件库基础 | CLI HTTP 客户端迁移（Phase 6） |
+| 属于本模块（后端） | 属于本模块（前端，独立项目） | 不属于本模块 |
+|-------------------|--------------------------|------------|
+| REST API 端点（对话、设置、信号） | Vue 3 SPA 应用框架 | 知识库管理页面（模块 19） |
+| SSE 流式对话传输 | 对话页 + 设置页 | Skill/MCP 管理页面（模块 19） |
+| WebChannelAdapter 通道适配器 | A2UI 渲染器 + 组件目录 | 轨迹回放页面（模块 19） |
+| A2UI 后端数据模型 + 序列化 | 流式 Markdown 渲染 | 工作流管理页面（模块 19） |
+| Web 配置属性 | 状态管理、路由 | CLI HTTP 客户端迁移（Phase 6） |
+| CORS 配置 | SSE 客户端封装 | |
 
 ---
 
@@ -35,7 +38,6 @@ Web UI 模块为 LifePilot 提供浏览器端交互界面，是 Phase 5 的核�
 | SSE (Server-Sent Events) | 服务端向客户端单向推送事件的 HTTP 协议，用于流式传输 LLM 生成的 Token 和 A2UI 组件描述 |
 | SseEmitter | Spring MVC 提供的 SSE 发射器，支持异步逐块发送事件到客户端 |
 | WebChannelAdapter | Web 通道适配器，实现 `ChannelAdapter` 接口，桥接 REST 请求与 MessageGateway |
-| frontend-maven-plugin | Maven 插件，在构建阶段自动执行 `npm install` + `npm run build`，将前端产物输出到 `src/main/resources/static/` |
 | Pinia | Vue 3 官方状态管理库，管理对话列表、消息流、用户设置等全局状态 |
 | shadcn-vue | 基于 Radix Vue 的 Vue 3 组件库，提供无样式（headless）UI 原语 + Tailwind CSS 样式 |
 
@@ -47,6 +49,7 @@ Web UI 模块为 LifePilot 提供浏览器端交互界面，是 Phase 5 的核�
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
+│              前端独立项目 (lifepilot-web)                       │
 │                      浏览器 (Vue 3 SPA)                       │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐                    │
 │  │ ChatView │  │ Settings │  │  Layout  │                    │
@@ -61,11 +64,11 @@ Web UI 模块为 LifePilot 提供浏览器端交互界面，是 Phase 5 的核�
 │  │     Pinia Store 层                        │                │
 │  │  chatStore / settingsStore / a2uiStore    │                │
 │  └────┬──────────────────────────────────────┘                │
-│       │  fetch / EventSource (token + ui 事件)                │
+│       │  fetch / ReadableStream (token + ui 事件)             │
 └───────┼──────────────────────────────────────────────────────┘
-        │ HTTP / SSE
+        │ HTTP / SSE（跨域或同域反向代理）
 ┌───────┼──────────────────────────────────────────────────────┐
-│       ▼                                                       │
+│       ▼              后端 (lifepilot Java 项目)                │
 │  ┌─────────────────────┐                                     │
 │  │  ChatController     │  REST + SSE 端点（token + ui 事件）  │
 │  │  SettingsController │  设置 API                            │
@@ -98,10 +101,10 @@ Web UI 模块为 LifePilot 提供浏览器端交互界面，是 Phase 5 的核�
 | GET | `/api/chat/sessions` | 获取会话列表 |
 | GET | `/api/chat/sessions/{id}/messages` | 获取会话历史消息 |
 | DELETE | `/api/chat/sessions/{id}` | 删除会话 |
+| POST | `/api/chat/signals` | A2UI 信号回传（用户与 Generative UI 组件交互） |
 | GET | `/api/settings` | 获取用户设置 |
 | PUT | `/api/settings` | 更新用户设置 |
 | GET | `/api/health` | 健康检查（复用 Actuator） |
-| POST | `/api/chat/signals` | A2UI 信号回传（用户与 Generative UI 组件交互） |
 
 #### 3.2.2 SSE 流式协议
 
@@ -156,7 +159,34 @@ WebChannelAdapter 的核心职责：
 
 选择 `SseEmitter` 的理由：LifePilot 已使用 Spring MVC（`spring-boot-starter-web`），SSE 是 AI 对话流式响应的行业标准方案（OpenAI、DeepSeek、通义千问等均采用 SSE），且 `SseEmitter` 在 Virtual Thread 环境下表现良好。
 
-### 3.3 前端 SPA 层设计
+#### 3.2.5 CORS 配置
+
+前后端分离部署，前端和后端运行在不同端口/域名，必须配置 CORS：
+
+```java
+// WebAutoConfiguration 中注册 CORS 配置
+@Bean
+public WebMvcConfigurer corsConfigurer(WebProperties properties) {
+    return new WebMvcConfigurer() {
+        @Override
+        public void addCorsMappings(CorsRegistry registry) {
+            registry.addMapping("/api/**")
+                    .allowedOrigins(properties.getCors().getAllowedOrigins())
+                    .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+                    .allowedHeaders("*")
+                    .allowCredentials(true);
+        }
+    };
+}
+```
+
+配置项：
+- `lifepilot.web.cors.allowed-origins`：允许的前端源（开发时 `http://localhost:5173`，生产时实际域名）
+- `lifepilot.web.cors.allow-credentials`：是否允许携带 Cookie（Session 认证需要）
+
+### 3.3 前端 SPA 层设计（独立项目）
+
+前端作为独立项目（`lifepilot-web`），不在 Java 项目内，拥有独立的 `package.json`、构建流程和部署方式。
 
 #### 3.3.1 技术选型
 
@@ -171,15 +201,14 @@ WebChannelAdapter 的核心职责：
 | vue-markdown-renderer | latest | AI 流式 Markdown 渲染（高性能增量 DOM 更新） |
 | TypeScript | 5.x | 类型安全 |
 
-#### 3.3.2 前端目录结构
+#### 3.3.2 前端项目结构
 
 ```
-src/main/frontend/
+lifepilot-web/                  # 独立前端项目根目录
 ├── index.html
 ├── package.json
 ├── vite.config.ts
 ├── tsconfig.json
-├── tailwind.config.ts
 ├── src/
 │   ├── main.ts                 # 入口
 │   ├── App.vue                 # 根组件
@@ -224,7 +253,32 @@ src/main/frontend/
     └── favicon.ico
 ```
 
-#### 3.3.3 状态管理设计
+#### 3.3.3 API 基地址配置
+
+前端通过环境变量配置后端 API 地址，支持开发和生产环境切换：
+
+```typescript
+// api/client.ts
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8080'
+```
+
+开发时 Vite 可配置代理（可选），也可直接跨域访问后端（后端已配置 CORS）：
+
+```typescript
+// vite.config.ts
+export default defineConfig({
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+      },
+    },
+  },
+})
+```
+
+#### 3.3.4 状态管理设计
 
 ```typescript
 // chatStore — 管理对话状态
@@ -244,18 +298,19 @@ interface SettingsState {
 }
 ```
 
-#### 3.3.4 SSE 客户端实现
+#### 3.3.5 SSE 客户端实现
 
-前端通过 `EventSource` API 或 `fetch` + `ReadableStream` 消费 SSE 流：
+前端通过 `fetch` + `ReadableStream` 消费 SSE 流：
 
 ```typescript
 // useChat composable 核心逻辑
 async function sendMessage(content: string) {
   // 1. 添加用户消息到本地状态
-  // 2. 创建 EventSource 连接到 /api/chat/messages/stream
-  // 3. 监听 token 事件，增量拼接到 streamingContent
-  // 4. 监听 done 事件，将完整消息存入 messages
-  // 5. 监听 error 事件，显示错误提示
+  // 2. fetch POST /api/chat/messages/stream，流式读取响应体
+  // 3. 解析 SSE 事件，token 事件增量拼接到 streamingContent
+  // 4. ui 事件路由到 a2uiStore.updateComponents()
+  // 5. done 事件将完整消息存入 messages
+  // 6. error 事件显示错误提示
 }
 ```
 
@@ -264,89 +319,26 @@ async function sendMessage(content: string) {
 - `fetch` 支持 POST 请求 + 流式读取响应体
 - 可自定义请求头（如 Session ID、认证 Token）
 
-#### 3.3.5 流式 Markdown 渲染
-
-AI 响应通常包含 Markdown 格式内容（代码块、列表、表格等），流式场景下需要增量渲染。
+#### 3.3.6 流式 Markdown 渲染
 
 选型对比：
 
 | 方案 | 优势 | 劣势 |
 |------|------|------|
-| vue-markdown-renderer | Vue 3 原生、增量 DOM 更新、支持 Mermaid/KaTeX、性能极优（100x 更少 DOM 节点） | 较新项目 |
+| vue-markdown-renderer | Vue 3 原生、增量 DOM 更新、支持 Mermaid/KaTeX、性能极优 | 较新项目 |
 | markdown-it + 手动渲染 | 成熟稳定 | 流式场景需自行处理增量更新，性能差 |
 | marked + DOMPurify | 轻量 | 同上，且安全处理需额外配置 |
 
 采用 `vue-markdown-renderer`：专为 AI 流式场景设计，最小化 DOM 更新，支持代码高亮、Mermaid 图表渐进渲染，Vue 3 生态原生支持。
 
-### 3.4 构建集成
+#### 3.3.7 部署方式
 
-#### 3.4.1 frontend-maven-plugin 配置
-
-```xml
-<plugin>
-    <groupId>com.github.eirslett</groupId>
-    <artifactId>frontend-maven-plugin</artifactId>
-    <version>1.15.1</version>
-    <configuration>
-        <workingDirectory>src/main/frontend</workingDirectory>
-        <nodeVersion>v22.12.0</nodeVersion>
-    </configuration>
-    <executions>
-        <execution>
-            <id>install-node-and-npm</id>
-            <goals><goal>install-node-and-npm</goal></goals>
-        </execution>
-        <execution>
-            <id>npm-install</id>
-            <goals><goal>npm</goal></goals>
-            <configuration>
-                <arguments>install</arguments>
-            </configuration>
-        </execution>
-        <execution>
-            <id>npm-build</id>
-            <goals><goal>npm</goal></goals>
-            <phase>generate-resources</phase>
-            <configuration>
-                <arguments>run build</arguments>
-            </configuration>
-        </execution>
-    </executions>
-</plugin>
-```
-
-#### 3.4.2 Vite 构建输出
-
-Vite 配置 `build.outDir` 指向 `../resources/static/`，构建产物直接输出到 Spring Boot 静态资源目录：
-
-```typescript
-// vite.config.ts
-export default defineConfig({
-  build: {
-    outDir: '../resources/static',
-    emptyOutDir: true,
-  },
-  server: {
-    proxy: {
-      '/api': 'http://localhost:8080',  // 开发时代理后端 API
-    },
-  },
-})
-```
-
-#### 3.4.3 SPA 路由支持
-
-Spring Boot 需配置 SPA 路由回退，将非 API、非静态资源的请求转发到 `index.html`：
-
-```java
-// WebMvcConfigurer 配置 SPA 路由回退
-@Override
-public void addViewControllers(ViewControllerRegistry registry) {
-    // 非 /api/** 和非静态资源的请求回退到 index.html
-    registry.addViewController("/{path:[^\\.]*}")
-            .setViewName("forward:/index.html");
-}
-```
+前端独立部署，常见方案：
+- **开发环境**：`npm run dev`（Vite 开发服务器，端口 5173），通过代理或 CORS 访问后端
+- **生产环境**：`npm run build` 生成静态文件，通过以下任一方式部署：
+  - Nginx / Caddy 反向代理（推荐，同时代理 `/api` 到后端）
+  - 任意静态文件服务器（如 `npx serve dist`）
+  - CDN 托管
 
 ---
 
@@ -362,6 +354,8 @@ A2UI（Agent-to-UI）是 Google 提出的声明式 Generative UI 协议（v0.8 P
 - **信号（Signal）**：用户交互（点击按钮、输入文本等）通过信号回传给 Agent，触发后续推理
 
 ### 4.2 A2UI 数据模型
+
+后端定义 A2UI 数据模型（Java record），序列化为 JSON 通过 SSE `ui` 事件推送：
 
 ```json
 {
@@ -387,7 +381,7 @@ A2UI（Agent-to-UI）是 Google 提出的声明式 Generative UI 协议（v0.8 P
 }
 ```
 
-### 4.3 Vue A2UI 渲染器设计
+### 4.3 Vue A2UI 渲染器设计（前端项目）
 
 Vue 3 的 `<component :is>` 动态组件机制天然适合实现 A2UI 渲染器：
 
@@ -467,15 +461,16 @@ interface Message {
 
 | # | 决策 | 备选方案 | 选择理由 |
 |---|------|---------|---------|
-| 1 | SSE 流式传输（SseEmitter） | WebSocket / WebFlux Flux | SSE 是 AI 对话流式响应的行业标准；与现有 Spring MVC 栈一致；单向推送足够 |
-| 2 | Vue 3 + shadcn-vue | React + shadcn/ui | Phase 5 评估结论：中文社区生态强、Vercel AI SDK v6 支持 Vue composables、frontend-maven-plugin 集成成熟 |
-| 3 | vue-markdown-renderer | markdown-it / marked | 专为 AI 流式 Markdown 设计，增量 DOM 更新性能极优，Vue 3 原生支持 |
-| 4 | fetch + ReadableStream | EventSource API | EventSource 只支持 GET，无法携带 POST 请求体；fetch 支持自定义请求头和 POST |
-| 5 | 前端源码放 `src/main/frontend/` | 独立仓库 / 项目根目录 | 单仓库管理，frontend-maven-plugin 统一构建，部署为单 JAR |
+| 1 | 前后端彻底分离 | frontend-maven-plugin 打包进 JAR | 后端纯 Server 逻辑，为 Phase 6 多端接入（CLI HTTP、移动端）奠定基础；前端独立构建部署，开发体验更好 |
+| 2 | SSE 流式传输（SseEmitter） | WebSocket / WebFlux Flux | SSE 是 AI 对话流式响应的行业标准；与现有 Spring MVC 栈一致；单向推送足够 |
+| 3 | Vue 3 + shadcn-vue | React + shadcn/ui | Phase 5 评估结论：中文社区生态强、Vercel AI SDK v6 支持 Vue composables、生态成熟 |
+| 4 | vue-markdown-renderer | markdown-it / marked | 专为 AI 流式 Markdown 设计，增量 DOM 更新性能极优，Vue 3 原生支持 |
+| 5 | fetch + ReadableStream | EventSource API | EventSource 只支持 GET，无法携带 POST 请求体；fetch 支持自定义请求头和 POST |
 | 6 | Pinia 状态管理 | Vuex / 组件本地状态 | Vue 3 官方推荐、TypeScript 友好、Composition API 原生支持 |
 | 7 | Tailwind CSS 4 | 传统 CSS / CSS Modules | 原子化 CSS 开发效率高、与 shadcn-vue 天然配合、构建产物体积小 |
-| 8 | A2UI 协议 + 自建 Vue 渲染器 | 纯文本 SSE / 自定义 JSON 协议 / React Server Components | A2UI 是 Google 标准化方案（v0.8），邻接表模型简洁；Vue `<component :is>` 天然适配动态渲染；组件目录机制可扩展；后端无需感知前端框架 |
-| 9 | A2UI 组件内嵌 SSE 流 | 独立 WebSocket 通道 / 轮询 | 复用已有 SSE 通道，`ui` 事件与 `token` 事件交替传输，无需额外连接；简化前端连接管理 |
+| 8 | A2UI 协议 + 自建 Vue 渲染器 | 纯文本 SSE / 自定义 JSON 协议 | A2UI 是 Google 标准化方案（v0.8），邻接表模型简洁；Vue `<component :is>` 天然适配；组件目录可扩展 |
+| 9 | A2UI 组件内嵌 SSE 流 | 独立 WebSocket 通道 / 轮询 | 复用已有 SSE 通道，`ui` 事件与 `token` 事件交替传输，无需额外连接 |
+| 10 | 后端 CORS 配置 | Nginx 反向代理统一入口 | 开发阶段最简方案；生产环境可选择 Nginx 代理替代 CORS |
 
 ---
 
@@ -521,13 +516,15 @@ Phase 5 采用 Session 认证（已在 Gateway Auth 中间件中实现）：
 
 - 本地部署场景：默认信任 localhost 请求，无需登录
 - 远程访问场景：简单密码认证 + Session Cookie
+- 前后端分离场景下，Session Cookie 通过 CORS `allowCredentials: true` 跨域传递
 
 ### 7.2 CORS 配置
 
-开发模式下 Vite 开发服务器（端口 5173）需要跨域访问后端 API（端口 8080）：
+前后端分离部署，必须配置 CORS：
 
-- 开发环境：Vite proxy 代理 `/api` 请求到后端，无需 CORS
-- 生产环境：前端静态资源由 Spring Boot 提供，同源，无需 CORS
+- 开发环境：后端允许 `http://localhost:5173`（Vite 默认端口）
+- 生产环境：配置实际前端域名，或通过 Nginx 反向代理统一入口（此时无需 CORS）
+- 配置项：`lifepilot.web.cors.allowed-origins`、`lifepilot.web.cors.allow-credentials`
 
 ### 7.3 XSS 防护
 
@@ -542,11 +539,11 @@ Phase 5 采用 Session 认证（已在 Gateway Auth 中间件中实现）：
 
 | 项目 | Stars | 技术栈 | 借鉴点 |
 |------|-------|--------|--------|
-| [Open WebUI](https://github.com/open-webui/open-webui) | 80k+ | SvelteKit + FastAPI | 对话 UI 交互模式、会话管理、流式渲染架构 |
+| [Open WebUI](https://github.com/open-webui/open-webui) | 80k+ | SvelteKit + FastAPI | 对话 UI 交互模式、会话管理、流式渲染架构、前后端分离部署 |
 | [LobeChat](https://lobehub.com) | 70k+ | React + Next.js | 多模型切换 UI、对话分支、插件系统 UI |
 | [Chatbox](https://github.com/Bin-Huang/chatbox) | 25k+ | Electron + React | 桌面端 AI 对话 UI、多 Provider 配置界面 |
 | [shadcn-vue](https://github.com/unovue/shadcn-vue) | 5k+ | Vue 3 + Radix Vue | 无样式组件库、Tailwind CSS 集成模式 |
-| [vue-markdown-renderer](https://github.com/Simon-He95/vue-markdown-renderer) | 新兴 | Vue 3 | AI 流式 Markdown 增量渲染、100x 更少 DOM 节点 |
+| [vue-markdown-renderer](https://github.com/Simon-He95/vue-markdown-renderer) | 新兴 | Vue 3 | AI 流式 Markdown 增量渲染 |
 
 ### 8.2 技术方案参考
 
@@ -554,7 +551,6 @@ Phase 5 采用 Session 认证（已在 Gateway Auth 中间件中实现）：
 |------|------|--------|
 | Spring Boot SSE + SseEmitter | [Baeldung: Spring MVC SSE](https://www.baeldung.com/spring-mvc-sse-streams) | SseEmitter 超时管理、异常处理模式 |
 | Vercel AI SDK Vue composables | [AI SDK Docs](https://sdk.vercel.ai/docs/reference/ai-sdk-ui/use-chat) | useChat composable 设计模式、SSE 流协议格式 |
-| frontend-maven-plugin + Vite | [jessym.com](https://www.jessym.com/articles/bundling-react-vite-with-spring-boot) | 单 JAR 打包前端产物的 Maven 集成方案 |
 | AI 对话流式最佳实践 | [proagenticworkflows.ai](https://proagenticworkflows.ai/best-practices-streaming-llm-responses-front-end-stack) | SSE vs WebSocket vs fetch streaming 选型分析 |
 | Google A2UI 协议 | [Google A2UI Spec](https://github.com/anthropics/a2ui) | 声明式 Generative UI 协议，邻接表组件树模型，组件目录 + 信号机制 |
 

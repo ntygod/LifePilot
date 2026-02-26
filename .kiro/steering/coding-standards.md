@@ -55,18 +55,19 @@ public record AgentState(...) {}
 | sqlite-vec | 0.1.x | 向量索引，native 扩展打包进 JAR 启动时加载 |
 | JUnit 5 | 5.11+ | 单元测试 + 集成测试 |
 | JLine 3 | 3.28+ | CLI 补全、高亮、历史记录 |
-| Vue 3 + Vite + Pinia | 3.5 / 6.x / 3.x | 前端 SPA，构建产物打包进 JAR 静态资源 |
+| Vue 3 + Vite + Pinia | 3.5 / 6.x / 3.x | 前端 SPA（独立项目 lifepilot-web，独立构建部署） |
 | Flyway | 10.x | 数据库迁移（社区版，支持 SQLite） |
 
 ---
 
 ## 3. 打包与部署
 
-- 单 JAR 全包：后端 + SQLite native + sqlite-vec native + Web 前端静态资源
-- 前端构建：`frontend-maven-plugin` 在 Maven 构建时自动执行 `npm run build`，产物输出到 `src/main/resources/static/`
+- 后端单 JAR：后端 + SQLite native + sqlite-vec native（不含前端静态资源）
+- 前端独立项目（`lifepilot-web`）：独立构建（`npm run build`）、独立部署（Nginx / 静态服务器）
 - sqlite-jdbc：xerial 已内嵌各平台 native library（Windows / macOS / Linux），无需用户安装
 - sqlite-vec：各平台 native 扩展（.dll / .so / .dylib）打包进 JAR resources，启动时解压到临时目录加载
-- 启动方式：`java -jar lifepilot.jar` 一键启动后端 API + Web UI
+- 后端启动：`java -jar lifepilot.jar`（纯 REST/SSE API 服务）
+- 前端启动：`npm run dev`（开发）或 `npm run build` + 静态部署（生产）
 
 ---
 
