@@ -39,9 +39,9 @@ public non-sealed class MarkdownParser implements DocumentParser {
     private static final Pattern GFM_TABLE = Pattern.compile(
             "(\\|.+\\|\\n)(\\|[-: |]+\\|\\n)((?:\\|.+\\|\\n)*)", Pattern.MULTILINE);
 
-    // YAML Front Matter：--- 包裹的元数据块
+    // YAML Front Matter：--- 包裹的元数据块（必须位于文件开头）
     private static final Pattern YAML_FRONT_MATTER = Pattern.compile(
-            "^---\\n([\\s\\S]*?)\\n---\\n", Pattern.MULTILINE);
+            "\\A---\\n([\\s\\S]*?)\\n---\\n");
 
     @Override
     public List<String> supportedExtensions() {
@@ -95,7 +95,8 @@ public non-sealed class MarkdownParser implements DocumentParser {
      */
     private String readFile(Path filePath) {
         try {
-            return Files.readString(filePath, StandardCharsets.UTF_8);
+            // 统一换行符为 \n，避免 Windows \r\n 导致正则匹配失败
+            return Files.readString(filePath, StandardCharsets.UTF_8).replace("\r\n", "\n");
         } catch (IOException e) {
             throw new DocumentParseException(
                     "Markdown 文件读取失败: " + filePath,
