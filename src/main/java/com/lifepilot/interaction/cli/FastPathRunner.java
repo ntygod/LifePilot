@@ -1,5 +1,7 @@
 package com.lifepilot.interaction.cli;
 
+import com.lifepilot.app.LaunchMode;
+
 import java.io.PrintStream;
 import java.util.Set;
 
@@ -17,6 +19,7 @@ public final class FastPathRunner {
 
     private static final Set<String> HELP_FLAGS = Set.of("--help", "-h");
     private static final Set<String> VERSION_FLAGS = Set.of("--version", "-v");
+    private static final String MODE_PREFIX = "--mode=";
     private static final String FALLBACK_VERSION = "dev";
 
     private FastPathRunner() {
@@ -60,6 +63,46 @@ public final class FastPathRunner {
         return false;
     }
 
+    /**
+     * 解析启动模式。
+     *
+     * <p>遍历命令行参数查找 {@code --mode=xxx}，无效值输出错误并退出。
+     * 未传入 {@code --mode} 时返回 {@link LaunchMode#FULL}。</p>
+     *
+     * @param args 命令行参数
+     * @return 解析后的启动模式
+     */
+    public static LaunchMode resolveMode(String[] args) {
+        return resolveMode(args, System.err);
+    }
+
+    /**
+     * 解析启动模式（可注入错误输出流，便于测试）。
+     *
+     * @param args 命令行参数
+     * @param err 错误输出流
+     * @return 解析后的启动模式
+     */
+    static LaunchMode resolveMode(String[] args, PrintStream err) {
+        if (args == null) {
+            return LaunchMode.FULL;
+        }
+        for (String arg : args) {
+            if (arg != null && arg.startsWith(MODE_PREFIX)) {
+                String value = arg.substring(MODE_PREFIX.length());
+                var mode = LaunchMode.fromString(value);
+                if (mode.isPresent()) {
+                    return mode.get();
+                }
+                // 无效值：输出支持的模式列表并退出
+                err.println("无效的启动模式: " + value);
+                err.println("支持的模式: cli, web, tray, full");
+                System.exit(1);
+            }
+        }
+        return LaunchMode.FULL;
+    }
+
     /** 输出帮助信息。 */
     private static void printHelp(PrintStream out) {
         out.println("LifePilot — 了解你生活全貌的 AI 伙伴");
@@ -78,6 +121,7 @@ public final class FastPathRunner {
         out.println("选项:");
         out.println("  -h, --help        显示帮助信息");
         out.println("  -v, --version     显示版本号");
+        out.println("  --mode=<mode>     启动模式: cli, web, tray, full（默认: full）");
     }
 
     /** 输出版本号。 */
