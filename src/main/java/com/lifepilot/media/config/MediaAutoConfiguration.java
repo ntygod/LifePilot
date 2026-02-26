@@ -5,6 +5,7 @@ import java.util.List;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.ai.audio.transcription.TranscriptionModel;
@@ -38,6 +39,7 @@ import com.lifepilot.media.video.VideoProcessor;
  */
 @AutoConfiguration
 @EnableConfigurationProperties(MediaProperties.class)
+@ConditionalOnProperty(name = "lifepilot.media.enabled", havingValue = "true", matchIfMissing = true)
 public class MediaAutoConfiguration {
 
     @Bean
@@ -112,6 +114,7 @@ public class MediaAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnBean(ProviderRegistry.class)
     public MultimodalRouter multimodalRouter(
             ProviderRegistry providerRegistry,
             CircuitBreakerManager circuitBreakerManager,

@@ -22,6 +22,12 @@ lifepilot:
     enabled: false
   mcp:
     enabled: false
+  gateway:
+    enabled: false
+  workflow:
+    enabled: false
+  media:
+    enabled: false
   memory:
     enabled: false
     vector-db-url: "jdbc:sqlite:${java.io.tmpdir}/lifepilot-vec-test.db"
