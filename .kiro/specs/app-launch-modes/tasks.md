@@ -162,7 +162,7 @@
     - 验证 dispatch 分发到两个通道
     - _Requirements: 8.1, 8.2_
 
-- [-] 11. Final checkpoint — 全量测试通过
+- [x] 11. Final checkpoint — 全量测试通过
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes
