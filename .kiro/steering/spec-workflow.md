@@ -99,7 +99,7 @@ Phase 4 — 高级能力 ✅
         └─ OAuth Token 安全存储
 
 Phase 5 — Web UI + 可观测性
-  ├─ 18. Web UI 框架搭建（Vue 3 + Vite + Pinia + A2UI）
+  ├─ 18. Web UI 框架搭建 ✅（Vue 3 + Vite + Pinia + A2UI）
   │     ├─ 后端：REST Controller + SSE 流式对话端点 + WebChannelAdapter + CORS
   │     ├─ 后端：A2UI 数据模型 + 信号回传端点
   │     ├─ 前端（独立项目 lifepilot-web）：对话页 + 设置页
