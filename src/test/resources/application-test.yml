@@ -26,6 +26,8 @@ lifepilot:
     enabled: false
   workflow:
     enabled: false
+  sandbox:
+    enabled: false
   media:
     enabled: false
   memory:

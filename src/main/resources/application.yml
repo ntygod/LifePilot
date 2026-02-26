@@ -389,6 +389,51 @@ lifepilot:
       max-delay-ms: 5000
       # 最大重试次数
       max-attempts: 3
+  sandbox:
+    # 沙箱总开关
+    enabled: true
+    # 沙箱类型：process / docker
+    booter: process
+    # 支持的语言列表
+    supported-languages:
+      - python
+      - javascript
+      - shell
+    # 执行超时（秒）
+    execution-timeout-seconds: 30
+    # 输出最大字节数
+    max-output-bytes: 65536
+    # 语言运行时路径
+    runtime-paths:
+      python: "python3"
+      javascript: "node"
+      shell: "bash"
+    # 会话配置
+    session:
+      # 会话 TTL（秒）
+      ttl-seconds: 600
+      # 最大活跃会话数
+      max-active-sessions: 5
+      # 过期清理间隔（秒）
+      cleanup-interval-seconds: 60
+    # 代码预检配置
+    validator:
+      # 是否启用预检
+      enabled: true
+      # 是否拒绝 CRITICAL 级别违规
+      reject-critical: true
+    # Docker 容器配置
+    docker:
+      # 内存限制（MB）
+      memory-limit-mb: 256
+      # CPU 限制（核数）
+      cpu-limit: 1.0
+      # 磁盘限制（MB）
+      disk-limit-mb: 512
+      # 是否启用网络
+      network-enabled: false
+      # 镜像前缀
+      image-prefix: "lifepilot/sandbox-"
 
 logging:
   level:
