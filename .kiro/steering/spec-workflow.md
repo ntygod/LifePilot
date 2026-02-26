@@ -101,9 +101,9 @@ Phase 4 — 高级能力 ✅
 Phase 5 — Web UI + 可观测性
   ├─ 18. Web UI 框架搭建（Vue 3 + Vite + Pinia）
   │     ├─ frontend-maven-plugin 集成
+  │     ├─ REST Controller + SSE 流式对话端点（调用 MessageGateway）
   │     ├─ 对话页 + 设置页
-  │     ├─ SSE 流式响应
-  │     └─ 📌 待评估：Generative UI 协议（Agent 返回结构化 UI 组件描述，前端动态渲染交互式组件）
+  │     └─ SSE 流式响应
   ├─ 19. Web UI 功能页面（依赖知识库 + Skill 系统 + Gateway）
   │     ├─ 知识库管理页
   │     ├─ Skill / MCP 管理页
@@ -122,12 +122,25 @@ Phase 5 — Web UI + 可观测性
         ├─ EvalStore 评估结果持久化 + Flyway V14
         └─ EvalReport 退化告警 + 趋势对比
 
-📌 待评估：本地 CS 架构重构（渐进式迁移）
-  │  Phase 5 Web UI 阶段建立 REST/WebSocket API 层
-  │  → CLI 从直接调用迁移为 HTTP 客户端
-  │  → System Tray 作为轻量 Java 进程对接 API
-  │  → 未来移动端 / 第三方客户端统一通过 API 接入
-  │  → 上云部署时 Server 端独立部署，C 端按需适配
+  ── Phase 5 评估结论（2026-02-26）──────────────────────────────
+  │
+  │  ✅ 前端框架选型：维持 Vue 3 + Vite + Pinia
+  │     理由：中文社区生态强、Vercel AI SDK v6 已支持 Vue composables（useChat/useCompletion）、
+  │     AI Elements Vue 组件库（基于 shadcn-vue）已可用、frontend-maven-plugin 集成方案成熟。
+  │     React 唯一优势是 Generative UI 生态更成熟，但非 Phase 5 核心需求。
+  │
+  │  ✅ Generative UI 协议：采纳 A2UI，但暂缓至 Phase 5 完成后作为独立增强 spec
+  │     理由：Google A2UI 协议（v0.8 Public Preview）是最有前景的标准化方案，
+  │     但 Vue 渲染器尚未官方提供，规范仍在演进。LifePilot 对话场景可先用
+  │     SSE 流式文本 + 预定义组件覆盖 90% 需求。后端预留结构化 UI 描述字段即可。
+  │     Vue 的动态组件 <component :is> 天然适合实现 A2UI 渲染器。
+  │
+  │  ✅ 本地 CS 架构重构：Phase 5 建立 REST API 层，CLI 暂不迁移
+  │     理由：Web UI 必须有 REST/SSE API 层（刚需），但 CLI 在单 JAR 部署下
+  │     直接调用 AgentLoop 延迟最低、实现最简。API 层设计复用 MessageGateway
+  │     中间件管道，为未来 CLI HTTP 客户端迁移预留空间。
+  │     CLI/Tray HTTP 客户端迁移归入 Phase 6（上云部署/移动端接入时触发）。
+  │
 
 Phase 6 — 生态与进阶（远期）
   ├─ 21. 多 Agent 协作（依赖 Agent 引擎 + Skill 系统）
