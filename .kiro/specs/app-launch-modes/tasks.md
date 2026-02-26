@@ -138,26 +138,22 @@
     - Spring 自动收集所有 `NotificationChannel` Bean
     - _Requirements: 8.1, 8.2_
 
-  - [ ] 9.3 编写 NotificationDispatcher 单元测试
+  - [x] 9.3 编写 NotificationDispatcher 单元测试
     - 测试多通道分发到所有通道
     - 测试单通道异常不中断其余通道
     - 测试 LOW 紧急度仅入队
     - _Requirements: 8.2, 8.3_
 
-  - [ ]* 9.4 编写多通道分发属性测试
-    - **Property 6: 多通道分发覆盖所有通道**
-    - **Property 7: 单通道失败不阻断其余通道**
-    - **Validates: Requirements 8.2, 8.3**
 
 - [x] 10. 集成测试
-  - [ ]* 10.1 编写 LaunchMode Spring Context 集成测试
+  - [x] 10.1 编写 LaunchMode Spring Context 集成测试
     - 验证 CLI 模式下 Web 服务器未启动、CliAutoConfiguration 激活
     - 验证 WEB 模式下 CliAutoConfiguration 未激活
     - 验证 TRAY 模式下 TrayAutoConfiguration 激活（Mock SystemTray）
     - 验证 FULL 模式下 CLI 和 Web 均激活
     - _Requirements: 2.1, 2.2, 3.1, 3.2, 4.1, 4.2, 5.1_
 
-  - [ ]* 10.2 编写 NotificationDispatcher 多通道集成测试
+  - [x] 10.2 编写 NotificationDispatcher 多通道集成测试
     - 验证 LogNotificationChannel + Mock TrayNotificationChannel 同时注册
     - 验证 dispatch 分发到两个通道
     - _Requirements: 8.1, 8.2_
