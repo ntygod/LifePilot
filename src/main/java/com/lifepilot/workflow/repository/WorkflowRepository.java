@@ -192,6 +192,18 @@ public class WorkflowRepository {
      * @param states 要查询的状态（varargs）
      * @return 匹配状态的实例列表
      */
+    /**
+     * 按工作流 ID 查询执行实例，按 created_at 倒序。
+     *
+     * @param workflowId 工作流 ID
+     * @return 执行实例列表
+     */
+    public List<WorkflowInstance> findInstancesByWorkflowId(String workflowId) {
+        return jdbcTemplate.query(
+                "SELECT * FROM workflow_instances WHERE workflow_id = ? ORDER BY created_at DESC",
+                instanceRowMapper, workflowId);
+    }
+
     public List<WorkflowInstance> findInstancesByState(WorkflowState... states) {
         if (states == null || states.length == 0) {
             return List.of();
