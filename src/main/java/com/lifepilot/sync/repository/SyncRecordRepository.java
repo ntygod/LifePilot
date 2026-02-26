@@ -107,6 +107,20 @@ public class SyncRecordRepository {
     }
 
     /**
+     * 根据 ID 删除单条同步映射记录。
+     *
+     * @param id 同步映射记录 ID
+     * @return 是否删除成功
+     */
+    public boolean deleteById(String id) {
+        int deleted = jdbcTemplate.update("DELETE FROM sync_records WHERE id = ?", id);
+        if (deleted > 0) {
+            log.debug("同步映射删除完成: id={}", id);
+        }
+        return deleted > 0;
+    }
+
+    /**
      * 删除指定同步配置下的所有同步映射记录。
      *
      * @param profileId 同步配置 ID
@@ -115,6 +129,7 @@ public class SyncRecordRepository {
         int deleted = jdbcTemplate.update("DELETE FROM sync_records WHERE profile_id = ?", profileId);
         log.info("同步映射批量删除完成: profileId={}, 删除数量={}", profileId, deleted);
     }
+
 
     // ---- 内部方法 ----
 
