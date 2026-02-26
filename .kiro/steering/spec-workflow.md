@@ -14,6 +14,7 @@ inclusion: always
 
 > 最后更新：2026-02-26
 > 已完成模块标注 ✅，进行中标注 🔧
+> Phase 4 模块 15 已完成
 
 ```
 Phase 0 — 项目骨架 ✅
@@ -81,7 +82,7 @@ Phase 4 — 高级能力
   │     ├─ MediaProcessor 图片预处理
   │     ├─ ProviderCapability 能力声明（Chat / Embedding / Vision / Rerank / TTS / STT）
   │     └─ Apache Tika 文档格式检测
-  ├─ 15. 工作流/自动化编排（依赖 Agent 引擎 + Skill 系统 + 主动推理）
+  ├─ 15. 工作流/自动化编排 ✅（依赖 Agent 引擎 + Skill 系统 + 主动推理）
   │     ├─ WorkflowEngine 执行引擎
   │     ├─ YAML 声明式工作流定义
   │     ├─ 触发器（Cron / Event / Condition / Signal）
