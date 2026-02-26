@@ -228,7 +228,7 @@
     - CRUD 操作端到端验证
     - _Requirements: 7.1, 7.2_
 
-- [x] 13. Final checkpoint — 确认所有测试通过
+- [ ] 13. Final checkpoint — 确认所有测试通过
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes
