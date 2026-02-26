@@ -188,19 +188,19 @@ Web UI 模块（Phase 5 — 模块 18）采用前后端分离架构实现。后�
     - 提供 settingsApi（getSettings、updateSettings）
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 5.1_
 
-- [ ] 11. 实现 Pinia Store
-  - [ ] 11.1 创建 chatStore
+- [x] 11. 实现 Pinia Store
+  - [x] 11.1 创建 chatStore
     - 在 src/stores/chat.ts 中定义 chatStore
     - 管理 sessions、activeSessionId、messages、isStreaming、streamingContent
     - activeSessionId 变更时清空 messages 并从后端加载历史消息
     - _Requirements: 11.1, 11.4_
 
-  - [ ] 11.2 创建 a2uiStore
+  - [x] 11.2 创建 a2uiStore
     - 在 src/stores/a2ui.ts 中定义 a2uiStore
     - 管理 components（A2uiComponent[]），提供 updateComponents 和 clearComponents 方法
     - _Requirements: 11.2, 11.5_
 
-  - [ ] 11.3 创建 settingsStore
+  - [x] 11.3 创建 settingsStore
     - 在 src/stores/settings.ts 中定义 settingsStore
     - 管理 theme、language、llmProvider 设置
     - _Requirements: 11.3_
