@@ -101,9 +101,74 @@ public class QuickCommand {
                     printBuiltinUsage(domain, renderer);
                     return;
                 }
-                // 拼接 add 后面的所有参数作为内容
                 String content = String.join(" ", java.util.Arrays.copyOfRange(subArgs, 1, subArgs.length));
                 executeToolCommand("builtin." + domain + ".create", Map.of("content", content), renderer);
+            }
+            case "done" -> {
+                if (!"todo".equals(domain)) {
+                    renderer.error("子命令 done 仅适用于 todo");
+                    printBuiltinUsage(domain, renderer);
+                    return;
+                }
+                if (subArgs.length < 2) {
+                    renderer.error("缺少参数: todo done <id>");
+                    printBuiltinUsage(domain, renderer);
+                    return;
+                }
+                executeToolCommand("builtin.todo.done", Map.of("id", subArgs[1]), renderer);
+            }
+            case "delete" -> {
+                if (!"todo".equals(domain)) {
+                    renderer.error("子命令 delete 仅适用于 todo");
+                    printBuiltinUsage(domain, renderer);
+                    return;
+                }
+                if (subArgs.length < 2) {
+                    renderer.error("缺少参数: todo delete <id>");
+                    printBuiltinUsage(domain, renderer);
+                    return;
+                }
+                executeToolCommand("builtin.todo.delete", Map.of("id", subArgs[1]), renderer);
+            }
+            case "today" -> {
+                if (!"schedule".equals(domain)) {
+                    renderer.error("子命令 today 仅适用于 schedule");
+                    printBuiltinUsage(domain, renderer);
+                    return;
+                }
+                String today = java.time.LocalDate.now().toString();
+                executeToolCommand("builtin.schedule.list", Map.of("date", today), renderer);
+            }
+            case "tomorrow" -> {
+                if (!"schedule".equals(domain)) {
+                    renderer.error("子命令 tomorrow 仅适用于 schedule");
+                    printBuiltinUsage(domain, renderer);
+                    return;
+                }
+                String tomorrow = java.time.LocalDate.now().plusDays(1).toString();
+                executeToolCommand("builtin.schedule.list", Map.of("date", tomorrow), renderer);
+            }
+            case "checkin" -> {
+                if (!"habit".equals(domain)) {
+                    renderer.error("子命令 checkin 仅适用于 habit");
+                    printBuiltinUsage(domain, renderer);
+                    return;
+                }
+                if (subArgs.length < 2) {
+                    renderer.error("缺少参数: habit checkin <习惯名>");
+                    printBuiltinUsage(domain, renderer);
+                    return;
+                }
+                String habitName = String.join(" ", java.util.Arrays.copyOfRange(subArgs, 1, subArgs.length));
+                executeToolCommand("builtin.habit.checkin", Map.of("name", habitName), renderer);
+            }
+            case "status" -> {
+                if (!"habit".equals(domain)) {
+                    renderer.error("子命令 status 仅适用于 habit");
+                    printBuiltinUsage(domain, renderer);
+                    return;
+                }
+                executeToolCommand("builtin.habit.status", Map.of(), renderer);
             }
             default -> {
                 renderer.error("未知子命令: " + domain + " " + subCommand);
@@ -173,15 +238,36 @@ public class QuickCommand {
     }
 
     /**
-     * 输出内置工具命令的用法帮助。
+     * 输出内置工具命令的用法帮助（按 domain 差异化）。
      */
     private void printBuiltinUsage(String domain, ResponseRenderer renderer) {
         renderer.info("");
         renderer.info("用法: " + domain + " <子命令>");
         renderer.info("");
         renderer.info("可用子命令:");
-        renderer.info("  list              列出所有" + domainLabel(domain));
-        renderer.info("  add <内容>        添加" + domainLabel(domain));
+        switch (domain) {
+            case "todo" -> {
+                renderer.info("  list              列出所有待办");
+                renderer.info("  add <内容>        添加待办");
+                renderer.info("  done <id>         标记待办完成");
+                renderer.info("  delete <id>       删除待办");
+            }
+            case "schedule" -> {
+                renderer.info("  list              列出所有日程");
+                renderer.info("  add <内容>        添加日程");
+                renderer.info("  today             查看今日日程");
+                renderer.info("  tomorrow          查看明日日程");
+            }
+            case "habit" -> {
+                renderer.info("  list              列出所有习惯");
+                renderer.info("  checkin <习惯名>  习惯打卡");
+                renderer.info("  status            查看习惯状态");
+            }
+            default -> {
+                renderer.info("  list              列出所有" + domainLabel(domain));
+                renderer.info("  add <内容>        添加" + domainLabel(domain));
+            }
+        }
     }
 
     /**
