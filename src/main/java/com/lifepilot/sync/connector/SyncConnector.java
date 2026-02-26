@@ -11,7 +11,13 @@ import java.util.List;
  * <p>每个连接器实现负责与特定外部数据源（CalDAV / Todoist / 滴答清单 / Obsidian）
  * 的通信，包括认证、数据拉取、数据推送。</p>
  *
- * <p>注意：当前为普通接口，待所有连接器实现完成后将转为 sealed interface。</p>
+ * <p>实现类限定为：
+ * {@link com.lifepilot.sync.connector.caldav.CalDavConnector}、
+ * {@link com.lifepilot.sync.connector.todoist.TodoistConnector}、
+ * {@link com.lifepilot.sync.connector.dida.DidaConnector}、
+ * {@link com.lifepilot.sync.connector.obsidian.ObsidianConnector}。
+ * 由于 Java 未命名模块限制，sealed interface 无法跨子包 permits，
+ * 因此使用普通接口 + 文档约束替代。</p>
  *
  * @author zsg
  * @since 2026-02-26
