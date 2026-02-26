@@ -11,6 +11,7 @@ import com.lifepilot.workflow.parser.WorkflowYamlParser;
 import com.lifepilot.workflow.parser.WorkflowYamlPrinter;
 import com.lifepilot.workflow.registry.WorkflowRegistry;
 import com.lifepilot.workflow.repository.WorkflowRepository;
+import com.lifepilot.workflow.trigger.WorkflowTriggerManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -21,6 +22,9 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.event.EventListener;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.scheduling.TaskScheduler;
+import org.springframework.scheduling.annotation.EnableScheduling;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 
 /**
  * 工作流引擎 Spring Boot 自动配置。
@@ -37,6 +41,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
  */
 @AutoConfiguration
 @EnableConfigurationProperties(WorkflowConfigProperties.class)
+@EnableScheduling
 @ConditionalOnProperty(name = "lifepilot.workflow.enabled", havingValue = "true", matchIfMissing = true)
 public class WorkflowAutoConfiguration {
 
@@ -97,15 +102,34 @@ public class WorkflowAutoConfiguration {
         return new WorkflowEngine(registry, stepExecutor, expressionEngine, repository, config);
     }
 
+    @Bean
+    @ConditionalOnMissingBean(name = "workflowTaskScheduler")
+    public TaskScheduler workflowTaskScheduler() {
+        var scheduler = new ThreadPoolTaskScheduler();
+        scheduler.setPoolSize(2);
+        scheduler.setThreadNamePrefix("workflow-cron-");
+        scheduler.setDaemon(true);
+        scheduler.initialize();
+        return scheduler;
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public WorkflowTriggerManager workflowTriggerManager(WorkflowEngine engine,
+                                                          WorkflowRegistry registry,
+                                                          WorkflowRepository repository,
+                                                          TaskScheduler workflowTaskScheduler) {
+        return new WorkflowTriggerManager(engine, registry, repository, workflowTaskScheduler);
+    }
+
     /**
-     * 应用启动完成后触发崩溃恢复。
-     *
-     * <p>仅在 {@code lifepilot.workflow.crash-recovery-enabled=true}（默认）时执行。
+     * 应用启动完成后触发崩溃恢复和触发器注册。
      */
     @EventListener(ApplicationReadyEvent.class)
     public void onApplicationReady(ApplicationReadyEvent event) {
-        WorkflowEngine engine = event.getApplicationContext().getBean(WorkflowEngine.class);
-        engine.recoverInterruptedInstances();
-        log.info("工作流崩溃恢复已触发");
+        var ctx = event.getApplicationContext();
+        ctx.getBean(WorkflowEngine.class).recoverInterruptedInstances();
+        ctx.getBean(WorkflowTriggerManager.class).registerAllTriggers();
+        log.info("工作流崩溃恢复和触发器注册已完成");
     }
 }
