@@ -340,6 +340,14 @@ lifepilot:
       timestamp-tolerance-seconds: 300
       max-retry-count: 3
       retry-interval-seconds: 60
+  web:
+    sse:
+      timeout: 300000
+      heartbeat-interval: 30000
+    cors:
+      allowed-origins:
+        - "http://localhost:5173"
+      allow-credentials: true
   media:
     image:
       max-size-bytes: 10485760
