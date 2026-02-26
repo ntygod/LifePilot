@@ -14,7 +14,7 @@ inclusion: always
 
 > 最后更新：2026-02-26
 > 已完成模块标注 ✅，进行中标注 🔧
-> Phase 4 模块 15 已完成
+> Phase 4 全部完成
 
 ```
 Phase 0 — 项目骨架 ✅
@@ -76,8 +76,8 @@ Phase 3 — 交互与技能 ✅
         ├─ 三层工具安全策略（Global → Agent → Tool）
         └─ Channel 适配器（企微 / 钉钉 / 飞书 / Telegram）
 
-Phase 4 — 高级能力
-  ├─ 14. 多模态能力（依赖 LLM Router）
+Phase 4 — 高级能力 ✅
+  ├─ 14. 多模态能力 ✅（依赖 LLM Router）
   │     ├─ LlmRouter 多模态路由扩展
   │     ├─ MediaProcessor 图片预处理
   │     ├─ ProviderCapability 能力声明（Chat / Embedding / Vision / Rerank / TTS / STT）
@@ -92,7 +92,7 @@ Phase 4 — 高级能力
   │     ├─ 会话级沙箱实例复用
   │     ├─ CodeValidator 危险操作预检
   │     └─ 护栏集成（CRITICAL 风险级别）
-  └─ 17. 外部数据源同步（依赖 Skill 系统 + 记忆系统）
+  └─ 17. 外部数据源同步 ✅（依赖 Skill 系统 + 记忆系统）
         ├─ SyncEngine + SyncConnector 抽象
         ├─ CalDAV / Todoist / 滴答清单 / Obsidian 连接器
         ├─ 冲突解决策略（Last-Write-Wins / 用户确认）
