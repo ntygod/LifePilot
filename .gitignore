@@ -30,6 +30,9 @@ dist/
 *.db-wal
 *.db-shm
 
+# === Testing Runtime ===
+.jqwik-database
+
 # === Misc ===
 *.swp
 *.swo
