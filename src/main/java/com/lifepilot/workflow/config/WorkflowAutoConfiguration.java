@@ -76,9 +76,14 @@ public class WorkflowAutoConfiguration {
     @ConditionalOnMissingBean
     public WorkflowRegistry workflowRegistry(WorkflowRepository repository,
                                               WorkflowYamlParser parser,
-                                              WorkflowYamlPrinter printer) {
+                                              WorkflowYamlPrinter printer,
+                                              WorkflowConfigProperties config,
+                                              TaskScheduler workflowTaskScheduler) {
+        var registry = new WorkflowRegistry(repository, parser, printer);
+        registry.setConfigProperties(config);
+        registry.setTaskScheduler(workflowTaskScheduler);
         log.info("工作流注册中心初始化完成");
-        return new WorkflowRegistry(repository, parser, printer);
+        return registry;
     }
 
     @Bean
@@ -123,13 +128,14 @@ public class WorkflowAutoConfiguration {
     }
 
     /**
-     * 应用启动完成后触发崩溃恢复和触发器注册。
+     * 应用启动完成后触发崩溃恢复、触发器注册和 YAML 热加载。
      */
     @EventListener(ApplicationReadyEvent.class)
     public void onApplicationReady(ApplicationReadyEvent event) {
         var ctx = event.getApplicationContext();
         ctx.getBean(WorkflowEngine.class).recoverInterruptedInstances();
         ctx.getBean(WorkflowTriggerManager.class).registerAllTriggers();
-        log.info("工作流崩溃恢复和触发器注册已完成");
+        ctx.getBean(WorkflowRegistry.class).startScheduledScan();
+        log.info("工作流崩溃恢复、触发器注册和 YAML 热加载已完成");
     }
 }

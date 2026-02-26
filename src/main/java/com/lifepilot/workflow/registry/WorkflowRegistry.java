@@ -3,14 +3,20 @@ package com.lifepilot.workflow.registry;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.TaskScheduler;
 
+import com.lifepilot.workflow.config.WorkflowConfigProperties;
 import com.lifepilot.workflow.model.Result;
 import com.lifepilot.workflow.model.WorkflowDefinition;
 import com.lifepilot.workflow.parser.WorkflowYamlParser;
@@ -26,6 +32,8 @@ import com.lifepilot.workflow.repository.WorkflowRepository;
  * <p>注册时执行基本验证（必填字段、步骤非空），无效定义被拒绝并返回 {@code false}。
  * 重复 ID 注册时更新已有定义。禁用的工作流阻止新实例创建，但不影响运行中实例。
  *
+ * <p>支持 YAML 文件热加载：定时扫描 definitionsDir 目录，自动检测新增、修改和删除的文件。
+ *
  * @author zsg
  * @since 2026-02-26
  */
@@ -37,6 +45,18 @@ public class WorkflowRegistry {
     private final WorkflowRepository repository;
     private final WorkflowYamlParser parser;
     private final WorkflowYamlPrinter printer;
+
+    /** 文件路径 → 最后修改时间，用于检测文件变更。 */
+    private final ConcurrentHashMap<String, Instant> fileLastModified = new ConcurrentHashMap<>();
+
+    /** 文件路径 → 工作流 ID，用于检测文件删除后禁用对应定义。 */
+    private final ConcurrentHashMap<String, String> fileToWorkflowId = new ConcurrentHashMap<>();
+
+    /** 热加载配置属性，通过 {@link #setConfigProperties(WorkflowConfigProperties)} 注入。 */
+    private WorkflowConfigProperties configProperties;
+
+    /** 任务调度器，通过 {@link #setTaskScheduler(TaskScheduler)} 注入。 */
+    private TaskScheduler taskScheduler;
 
     /**
      * 构造 WorkflowRegistry，注入持久化仓储、YAML 解析器和打印器。
@@ -54,6 +74,60 @@ public class WorkflowRegistry {
         this.parser = parser;
         this.printer = printer;
         loadFromDatabase();
+    }
+
+    /**
+     * 设置配置属性（热加载所需）。
+     *
+     * @param configProperties 工作流配置属性
+     */
+    public void setConfigProperties(WorkflowConfigProperties configProperties) {
+        this.configProperties = configProperties;
+    }
+
+    /**
+     * 设置任务调度器（热加载所需）。
+     *
+     * @param taskScheduler Spring TaskScheduler
+     */
+    public void setTaskScheduler(TaskScheduler taskScheduler) {
+        this.taskScheduler = taskScheduler;
+    }
+
+    /**
+     * 启动定时扫描 — 周期性扫描 definitionsDir 目录，检测新增/修改/删除的 YAML 文件。
+     *
+     * <p>首次调用时立即执行一次全量扫描，之后按 {@code scanIntervalSeconds} 配置的间隔定时扫描。
+     * 扫描逻辑：
+     * <ul>
+     *   <li>新增文件 → 解析并注册</li>
+     *   <li>修改文件（lastModified 变化）→ 重新解析并更新</li>
+     *   <li>删除文件 → 禁用对应工作流定义（保留实例历史）</li>
+     *   <li>解析失败 → WARN 日志，跳过该文件</li>
+     * </ul>
+     *
+     * <p>需要先通过 {@link #setConfigProperties(WorkflowConfigProperties)} 和
+     * {@link #setTaskScheduler(TaskScheduler)} 注入依赖。
+     */
+    public void startScheduledScan() {
+        if (configProperties == null || taskScheduler == null) {
+            log.warn("热加载启动失败: configProperties 或 taskScheduler 未注入");
+            return;
+        }
+
+        Path directory = resolveDefinitionsDir(configProperties.getDefinitionsDir());
+        int intervalSeconds = configProperties.getScanIntervalSeconds();
+
+        // 首次立即执行全量扫描
+        performScan(directory);
+
+        // 注册定时任务
+        taskScheduler.scheduleAtFixedRate(
+                () -> performScan(directory),
+                Duration.ofSeconds(intervalSeconds)
+        );
+
+        log.info("工作流 YAML 热加载已启动: dir={}, interval={}s", directory, intervalSeconds);
     }
 
     /**
@@ -190,6 +264,139 @@ public class WorkflowRegistry {
         }
     }
 
+    // ==================== 热加载内部方法 ====================
+
+    /**
+     * 执行一次扫描周期 — 检测新增、修改和删除的 YAML 文件。
+     *
+     * @param directory 工作流定义目录
+     */
+    void performScan(Path directory) {
+        if (!Files.isDirectory(directory)) {
+            log.debug("工作流定义目录不存在，跳过扫描: path={}", directory);
+            return;
+        }
+
+        Set<String> currentFiles = new HashSet<>();
+
+        try (Stream<Path> files = Files.list(directory)) {
+            files.filter(this::isYamlFile)
+                    .forEach(file -> {
+                        String filePath = file.toAbsolutePath().toString();
+                        currentFiles.add(filePath);
+
+                        try {
+                            Instant lastModified = Files.getLastModifiedTime(file).toInstant();
+                            Instant previousModified = fileLastModified.get(filePath);
+
+                            if (previousModified == null) {
+                                // 新增文件
+                                handleNewFile(file, filePath, lastModified);
+                            } else if (!lastModified.equals(previousModified)) {
+                                // 修改文件
+                                handleModifiedFile(file, filePath, lastModified);
+                            }
+                            // 未修改 → 跳过
+                        } catch (IOException e) {
+                            log.warn("读取文件修改时间失败: file={}, 原因={}", file, e.getMessage());
+                        }
+                    });
+        } catch (IOException e) {
+            log.error("扫描工作流定义目录失败: path={}, 原因={}", directory, e.getMessage());
+            return;
+        }
+
+        // 检测删除的文件
+        handleDeletedFiles(currentFiles);
+    }
+
+    /**
+     * 处理新增的 YAML 文件 — 解析并注册。
+     */
+    private void handleNewFile(Path file, String filePath, Instant lastModified) {
+        try {
+            String yaml = Files.readString(file);
+            Result<WorkflowDefinition, List<String>> result = parser.parse(yaml);
+            switch (result) {
+                case Result.Ok<WorkflowDefinition, List<String>> ok -> {
+                    if (register(ok.value())) {
+                        fileLastModified.put(filePath, lastModified);
+                        fileToWorkflowId.put(filePath, ok.value().id());
+                        log.info("热加载: 新增工作流文件: file={}, id={}", file.getFileName(), ok.value().id());
+                    }
+                }
+                case Result.Err<WorkflowDefinition, List<String>> err -> {
+                    log.warn("热加载: YAML 解析失败，跳过文件: file={}, errors={}", file.getFileName(), err.error());
+                    // 记录文件时间，避免每次扫描都重新尝试解析
+                    fileLastModified.put(filePath, lastModified);
+                }
+            }
+        } catch (IOException e) {
+            log.warn("热加载: 读取文件失败: file={}, 原因={}", file.getFileName(), e.getMessage());
+        }
+    }
+
+    /**
+     * 处理修改的 YAML 文件 — 重新解析并更新注册。
+     */
+    private void handleModifiedFile(Path file, String filePath, Instant lastModified) {
+        try {
+            String yaml = Files.readString(file);
+            Result<WorkflowDefinition, List<String>> result = parser.parse(yaml);
+            switch (result) {
+                case Result.Ok<WorkflowDefinition, List<String>> ok -> {
+                    // 如果文件之前关联了不同的 workflowId，清理旧映射
+                    String previousId = fileToWorkflowId.get(filePath);
+                    if (previousId != null && !previousId.equals(ok.value().id())) {
+                        disable(previousId);
+                    }
+                    if (register(ok.value())) {
+                        fileLastModified.put(filePath, lastModified);
+                        fileToWorkflowId.put(filePath, ok.value().id());
+                        log.info("热加载: 更新工作流文件: file={}, id={}", file.getFileName(), ok.value().id());
+                    }
+                }
+                case Result.Err<WorkflowDefinition, List<String>> err -> {
+                    log.warn("热加载: YAML 解析失败，跳过更新: file={}, errors={}", file.getFileName(), err.error());
+                    fileLastModified.put(filePath, lastModified);
+                }
+            }
+        } catch (IOException e) {
+            log.warn("热加载: 读取文件失败: file={}, 原因={}", file.getFileName(), e.getMessage());
+        }
+    }
+
+    /**
+     * 处理删除的文件 — 禁用对应的工作流定义。
+     */
+    private void handleDeletedFiles(Set<String> currentFiles) {
+        Set<String> knownFiles = new HashSet<>(fileLastModified.keySet());
+        for (String knownFile : knownFiles) {
+            if (!currentFiles.contains(knownFile)) {
+                String workflowId = fileToWorkflowId.remove(knownFile);
+                fileLastModified.remove(knownFile);
+                if (workflowId != null) {
+                    disable(workflowId);
+                    log.info("热加载: 文件已删除，禁用工作流: file={}, id={}", knownFile, workflowId);
+                }
+            }
+        }
+    }
+
+    /**
+     * 解析 definitionsDir 路径，将 {@code ~} 替换为用户主目录。
+     *
+     * @param dir 配置的目录路径
+     * @return 解析后的绝对路径
+     */
+    static Path resolveDefinitionsDir(String dir) {
+        if (dir.startsWith("~")) {
+            String home = System.getProperty("user.home");
+            return Path.of(home + dir.substring(1));
+        }
+        return Path.of(dir);
+    }
+
     // ==================== 内部方法 ====================
 
     /**
@@ -282,3 +489,5 @@ public class WorkflowRegistry {
         }
     }
 }
+
+
