@@ -6,6 +6,7 @@ com.lifepilot.memory.config.MemoryAutoConfiguration
 com.lifepilot.knowledge.config.KnowledgeAutoConfiguration
 com.lifepilot.skill.config.SkillAutoConfiguration
 com.lifepilot.interaction.cli.config.CliAutoConfiguration
+com.lifepilot.interaction.tray.config.TrayAutoConfiguration
 com.lifepilot.agent.proactive.config.ProactiveAutoConfiguration
 com.lifepilot.interaction.config.GatewayAutoConfiguration
 com.lifepilot.interaction.config.GatewayMiddlewareAutoConfiguration

@@ -234,6 +234,10 @@ lifepilot:
       top-k: 5
   datasource:
     busy-timeout: 5000
+  tray:
+    enabled: false
+    tooltip: "LifePilot - AI 生活助手"
+    web-ui-url: "http://localhost:${server.port:8080}"
   cli:
     history-file: "${user.home}/.lifepilot/cli-history"
     max-history-size: 1000
