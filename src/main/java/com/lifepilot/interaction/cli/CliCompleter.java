@@ -46,45 +46,45 @@ public class CliCompleter implements Completer {
                 // chat（无子命令）
                 new ArgumentCompleter(new StringsCompleter("chat"), NullCompleter.INSTANCE),
 
-                // todo list | todo add
+                // todo list | add | done | delete
                 new ArgumentCompleter(
                         new StringsCompleter("todo"),
-                        new StringsCompleter("list", "add"),
+                        new StringsCompleter("list", "add", "done", "delete"),
                         NullCompleter.INSTANCE
                 ),
 
-                // schedule list
+                // schedule list | add | today | tomorrow
                 new ArgumentCompleter(
                         new StringsCompleter("schedule"),
-                        new StringsCompleter("list"),
+                        new StringsCompleter("list", "add", "today", "tomorrow"),
                         NullCompleter.INSTANCE
                 ),
 
-                // habit list
+                // habit list | checkin | status
                 new ArgumentCompleter(
                         new StringsCompleter("habit"),
-                        new StringsCompleter("list"),
+                        new StringsCompleter("list", "checkin", "status"),
                         NullCompleter.INSTANCE
                 ),
 
-                // llm list | llm test
+                // llm list | add | remove | enable | disable | test
                 new ArgumentCompleter(
                         new StringsCompleter("llm"),
-                        new StringsCompleter("list", "test"),
+                        new StringsCompleter("list", "add", "remove", "enable", "disable", "test"),
                         NullCompleter.INSTANCE
                 ),
 
-                // mcp list
+                // mcp list | add | remove | test
                 new ArgumentCompleter(
                         new StringsCompleter("mcp"),
-                        new StringsCompleter("list"),
+                        new StringsCompleter("list", "add", "remove", "test"),
                         NullCompleter.INSTANCE
                 ),
 
-                // skill list | skill info
+                // skill list | info | reload
                 new ArgumentCompleter(
                         new StringsCompleter("skill"),
-                        new StringsCompleter("list", "info"),
+                        new StringsCompleter("list", "info", "reload"),
                         NullCompleter.INSTANCE
                 ),
 

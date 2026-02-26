@@ -12,6 +12,7 @@ import com.lifepilot.interaction.cli.ResponseRenderer;
 import com.lifepilot.llm.registry.ProviderRegistry;
 import com.lifepilot.mcp.registry.McpServerRegistry;
 import com.lifepilot.skill.registry.SkillRegistry;
+import com.lifepilot.skill.yaml.YamlSkillLoader;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.jline.terminal.Terminal;
 import org.jline.terminal.TerminalBuilder;
@@ -99,14 +100,16 @@ public class CliAutoConfiguration {
      * @param providerRegistry  LLM Provider 注册表
      * @param mcpServerRegistry MCP Server 注册中心
      * @param skillRegistry     Skill 注册中心
+     * @param yamlSkillLoader   YAML Skill 加载器
      * @return 快捷命令分发器
      */
     @Bean
     public QuickCommand quickCommand(DynamicToolRegistry toolRegistry,
                                      ProviderRegistry providerRegistry,
                                      McpServerRegistry mcpServerRegistry,
-                                     SkillRegistry skillRegistry) {
-        return new QuickCommand(toolRegistry, providerRegistry, mcpServerRegistry, skillRegistry);
+                                     SkillRegistry skillRegistry,
+                                     YamlSkillLoader yamlSkillLoader) {
+        return new QuickCommand(toolRegistry, providerRegistry, mcpServerRegistry, skillRegistry, yamlSkillLoader);
     }
 
     /**

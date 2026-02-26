@@ -114,13 +114,20 @@ Phase 5 — Web UI + 可观测性
   │     ├─ GuardrailAdvisor Spring AI Advisor 横切注入
   │     ├─ DataRedactor 自动脱敏
   │     └─ 轨迹评估（工具选择正确性 + 步骤效率）
-  └─ 20.5 Agentic Evals 评估框架（依赖 Agent 引擎 + 工具系统 + LLM Router）📋 spec 已创建
+  └─ 20.5 Agentic Evals 评估框架 ✅（依赖 Agent 引擎 + 工具系统 + LLM Router）
         ├─ BenchmarkScenario YAML 声明式场景定义
         ├─ TrajectoryEvaluator 五维规则评估（工具选择 / 参数合法性 / 步骤效率 / 策略合规 / Token 效率）
         ├─ LLM-as-a-Judge 语义评估
         ├─ JUnit 5 集成（@EvalTest / @EvalSuite 注解）
         ├─ EvalStore 评估结果持久化 + Flyway V14
         └─ EvalReport 退化告警 + 趋势对比
+
+📌 待评估：本地 CS 架构重构（渐进式迁移）
+  │  Phase 5 Web UI 阶段建立 REST/WebSocket API 层
+  │  → CLI 从直接调用迁移为 HTTP 客户端
+  │  → System Tray 作为轻量 Java 进程对接 API
+  │  → 未来移动端 / 第三方客户端统一通过 API 接入
+  │  → 上云部署时 Server 端独立部署，C 端按需适配
 
 Phase 6 — 生态与进阶（远期）
   ├─ 21. 多 Agent 协作（依赖 Agent 引擎 + Skill 系统）

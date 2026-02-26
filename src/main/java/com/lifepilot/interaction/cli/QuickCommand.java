@@ -1,11 +1,16 @@
 package com.lifepilot.interaction.cli;
 
+import com.lifepilot.llm.config.ProviderCapability;
 import com.lifepilot.llm.config.ProviderConfig;
+import com.lifepilot.llm.config.ProviderType;
 import com.lifepilot.llm.registry.ProviderRegistry;
+import com.lifepilot.mcp.config.McpServerConfig;
 import com.lifepilot.mcp.registry.McpServerEntry;
 import com.lifepilot.mcp.registry.McpServerRegistry;
+import com.lifepilot.mcp.transport.TransportType;
 import com.lifepilot.skill.model.SkillDefinition;
 import com.lifepilot.skill.registry.SkillRegistry;
+import com.lifepilot.skill.yaml.YamlSkillLoader;
 import com.lifepilot.tool.ToolContract;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
@@ -36,15 +41,18 @@ public class QuickCommand {
     private final ProviderRegistry providerRegistry;
     private final McpServerRegistry mcpServerRegistry;
     private final SkillRegistry skillRegistry;
+    private final YamlSkillLoader yamlSkillLoader;
 
     public QuickCommand(DynamicToolRegistry toolRegistry,
                         ProviderRegistry providerRegistry,
                         McpServerRegistry mcpServerRegistry,
-                        SkillRegistry skillRegistry) {
+                        SkillRegistry skillRegistry,
+                        YamlSkillLoader yamlSkillLoader) {
         this.toolRegistry = toolRegistry;
         this.providerRegistry = providerRegistry;
         this.mcpServerRegistry = mcpServerRegistry;
         this.skillRegistry = skillRegistry;
+        this.yamlSkillLoader = yamlSkillLoader;
     }
 
     /**
@@ -97,9 +105,74 @@ public class QuickCommand {
                     printBuiltinUsage(domain, renderer);
                     return;
                 }
-                // 拼接 add 后面的所有参数作为内容
                 String content = String.join(" ", java.util.Arrays.copyOfRange(subArgs, 1, subArgs.length));
                 executeToolCommand("builtin." + domain + ".create", Map.of("content", content), renderer);
+            }
+            case "done" -> {
+                if (!"todo".equals(domain)) {
+                    renderer.error("子命令 done 仅适用于 todo");
+                    printBuiltinUsage(domain, renderer);
+                    return;
+                }
+                if (subArgs.length < 2) {
+                    renderer.error("缺少参数: todo done <id>");
+                    printBuiltinUsage(domain, renderer);
+                    return;
+                }
+                executeToolCommand("builtin.todo.done", Map.of("id", subArgs[1]), renderer);
+            }
+            case "delete" -> {
+                if (!"todo".equals(domain)) {
+                    renderer.error("子命令 delete 仅适用于 todo");
+                    printBuiltinUsage(domain, renderer);
+                    return;
+                }
+                if (subArgs.length < 2) {
+                    renderer.error("缺少参数: todo delete <id>");
+                    printBuiltinUsage(domain, renderer);
+                    return;
+                }
+                executeToolCommand("builtin.todo.delete", Map.of("id", subArgs[1]), renderer);
+            }
+            case "today" -> {
+                if (!"schedule".equals(domain)) {
+                    renderer.error("子命令 today 仅适用于 schedule");
+                    printBuiltinUsage(domain, renderer);
+                    return;
+                }
+                String today = java.time.LocalDate.now().toString();
+                executeToolCommand("builtin.schedule.list", Map.of("date", today), renderer);
+            }
+            case "tomorrow" -> {
+                if (!"schedule".equals(domain)) {
+                    renderer.error("子命令 tomorrow 仅适用于 schedule");
+                    printBuiltinUsage(domain, renderer);
+                    return;
+                }
+                String tomorrow = java.time.LocalDate.now().plusDays(1).toString();
+                executeToolCommand("builtin.schedule.list", Map.of("date", tomorrow), renderer);
+            }
+            case "checkin" -> {
+                if (!"habit".equals(domain)) {
+                    renderer.error("子命令 checkin 仅适用于 habit");
+                    printBuiltinUsage(domain, renderer);
+                    return;
+                }
+                if (subArgs.length < 2) {
+                    renderer.error("缺少参数: habit checkin <习惯名>");
+                    printBuiltinUsage(domain, renderer);
+                    return;
+                }
+                String habitName = String.join(" ", java.util.Arrays.copyOfRange(subArgs, 1, subArgs.length));
+                executeToolCommand("builtin.habit.checkin", Map.of("name", habitName), renderer);
+            }
+            case "status" -> {
+                if (!"habit".equals(domain)) {
+                    renderer.error("子命令 status 仅适用于 habit");
+                    printBuiltinUsage(domain, renderer);
+                    return;
+                }
+                executeToolCommand("builtin.habit.status", Map.of(), renderer);
             }
             default -> {
                 renderer.error("未知子命令: " + domain + " " + subCommand);
@@ -169,15 +242,36 @@ public class QuickCommand {
     }
 
     /**
-     * 输出内置工具命令的用法帮助。
+     * 输出内置工具命令的用法帮助（按 domain 差异化）。
      */
     private void printBuiltinUsage(String domain, ResponseRenderer renderer) {
         renderer.info("");
         renderer.info("用法: " + domain + " <子命令>");
         renderer.info("");
         renderer.info("可用子命令:");
-        renderer.info("  list              列出所有" + domainLabel(domain));
-        renderer.info("  add <内容>        添加" + domainLabel(domain));
+        switch (domain) {
+            case "todo" -> {
+                renderer.info("  list              列出所有待办");
+                renderer.info("  add <内容>        添加待办");
+                renderer.info("  done <id>         标记待办完成");
+                renderer.info("  delete <id>       删除待办");
+            }
+            case "schedule" -> {
+                renderer.info("  list              列出所有日程");
+                renderer.info("  add <内容>        添加日程");
+                renderer.info("  today             查看今日日程");
+                renderer.info("  tomorrow          查看明日日程");
+            }
+            case "habit" -> {
+                renderer.info("  list              列出所有习惯");
+                renderer.info("  checkin <习惯名>  习惯打卡");
+                renderer.info("  status            查看习惯状态");
+            }
+            default -> {
+                renderer.info("  list              列出所有" + domainLabel(domain));
+                renderer.info("  add <内容>        添加" + domainLabel(domain));
+            }
+        }
     }
 
     /**
@@ -215,6 +309,38 @@ public class QuickCommand {
                     return;
                 }
                 llmTest(subArgs[1], renderer);
+            }
+            case "add" -> {
+                if (subArgs.length < 5) {
+                    renderer.error("缺少参数: llm add <providerId> <type> <modelName> <apiKey>");
+                    printLlmUsage(renderer);
+                    return;
+                }
+                llmAdd(java.util.Arrays.copyOfRange(subArgs, 1, subArgs.length), renderer);
+            }
+            case "remove" -> {
+                if (subArgs.length < 2) {
+                    renderer.error("缺少参数: llm remove <providerId>");
+                    printLlmUsage(renderer);
+                    return;
+                }
+                llmRemove(subArgs[1], renderer);
+            }
+            case "enable" -> {
+                if (subArgs.length < 2) {
+                    renderer.error("缺少参数: llm enable <providerId>");
+                    printLlmUsage(renderer);
+                    return;
+                }
+                llmToggle(subArgs[1], true, renderer);
+            }
+            case "disable" -> {
+                if (subArgs.length < 2) {
+                    renderer.error("缺少参数: llm disable <providerId>");
+                    printLlmUsage(renderer);
+                    return;
+                }
+                llmToggle(subArgs[1], false, renderer);
             }
             default -> {
                 renderer.error("未知子命令: llm " + subCommand);
@@ -277,6 +403,65 @@ public class QuickCommand {
     }
 
     /**
+     * 添加 LLM Provider。
+     *
+     * @param args [providerId, type, modelName, apiKey]
+     * @param renderer 响应渲染器
+     */
+    private void llmAdd(String[] args, ResponseRenderer renderer) {
+        ProviderType type = ProviderType.valueOf(args[1].toUpperCase().replace("-", "_"));
+        String apiUrl = type == ProviderType.OLLAMA
+                ? "http://localhost:11434"
+                : "https://api.example.com";
+        var config = new ProviderConfig(
+                args[0], type, apiUrl, args[3], args[2],
+                30, 100, List.of(), java.util.Set.of(ProviderCapability.CHAT),
+                true, 0, 0, 128000, null, true
+        );
+        providerRegistry.register(config);
+        renderer.success("Provider 已添加: " + args[0]);
+    }
+
+    /**
+     * 移除 LLM Provider。
+     */
+    private void llmRemove(String providerId, ResponseRenderer renderer) {
+        if (providerRegistry.getConfig(providerId).isEmpty()) {
+            renderer.error("Provider 未注册: " + providerId);
+            return;
+        }
+        providerRegistry.deregister(providerId);
+        renderer.success("Provider 已移除: " + providerId);
+    }
+
+    /**
+     * 启用或禁用 LLM Provider。
+     */
+    private void llmToggle(String providerId, boolean enable, ResponseRenderer renderer) {
+        var configOpt = providerRegistry.getConfig(providerId);
+        if (configOpt.isEmpty()) {
+            renderer.error("Provider 未注册: " + providerId);
+            return;
+        }
+        var config = configOpt.get();
+        if (config.enabled() == enable) {
+            renderer.info("Provider " + providerId + " 已经是" + (enable ? "启用" : "禁用") + "状态");
+            return;
+        }
+        providerRegistry.deregister(providerId);
+        var newConfig = new ProviderConfig(
+                config.id(), config.type(), config.apiUrl(), config.apiKey(),
+                config.modelName(), config.timeoutSeconds(), config.priority(),
+                config.scenes(), config.capabilities(), enable,
+                config.costPerInputToken(), config.costPerOutputToken(),
+                config.maxContextWindow(), config.embeddingDimension(),
+                config.supportsStreaming()
+        );
+        providerRegistry.register(newConfig);
+        renderer.success("Provider " + providerId + " 已" + (enable ? "启用" : "禁用"));
+    }
+
+    /**
      * 输出 llm 命令的用法帮助。
      */
     private void printLlmUsage(ResponseRenderer renderer) {
@@ -284,8 +469,12 @@ public class QuickCommand {
         renderer.info("用法: llm <子命令>");
         renderer.info("");
         renderer.info("可用子命令:");
-        renderer.info("  list              列出所有 LLM Provider");
-        renderer.info("  test <id>         测试 Provider 连通性");
+        renderer.info("  list                                  列出所有 LLM Provider");
+        renderer.info("  add <id> <type> <model> <apiKey>      添加 Provider");
+        renderer.info("  remove <id>                           移除 Provider");
+        renderer.info("  enable <id>                           启用 Provider");
+        renderer.info("  disable <id>                          禁用 Provider");
+        renderer.info("  test <id>                             测试 Provider 连通性");
     }
 
     // ─────────────────────────────────────────────
@@ -304,6 +493,30 @@ public class QuickCommand {
         String subCommand = subArgs[0].toLowerCase();
         switch (subCommand) {
             case "list" -> mcpList(renderer);
+            case "add" -> {
+                if (subArgs.length < 4) {
+                    renderer.error("缺少参数: mcp add <name> <transport> <url>");
+                    printMcpUsage(renderer);
+                    return;
+                }
+                mcpAdd(java.util.Arrays.copyOfRange(subArgs, 1, subArgs.length), renderer);
+            }
+            case "remove" -> {
+                if (subArgs.length < 2) {
+                    renderer.error("缺少参数: mcp remove <name>");
+                    printMcpUsage(renderer);
+                    return;
+                }
+                mcpRemove(subArgs[1], renderer);
+            }
+            case "test" -> {
+                if (subArgs.length < 2) {
+                    renderer.error("缺少参数: mcp test <name>");
+                    printMcpUsage(renderer);
+                    return;
+                }
+                mcpTest(subArgs[1], renderer);
+            }
             default -> {
                 renderer.error("未知子命令: mcp " + subCommand);
                 printMcpUsage(renderer);
@@ -335,6 +548,58 @@ public class QuickCommand {
     }
 
     /**
+     * 添加 MCP Server。
+     *
+     * @param args [name, transport, url]
+     * @param renderer 响应渲染器
+     */
+    private void mcpAdd(String[] args, ResponseRenderer renderer) {
+        TransportType transport = TransportType.valueOf(args[1].toUpperCase().replace("-", "_"));
+        var config = McpServerConfig.builder()
+                .name(args[0])
+                .transport(transport)
+                .url(args[2])
+                .autoConnect(false)
+                .reconnect(true)
+                .build();
+        mcpServerRegistry.connectServer(config);
+        renderer.success("MCP Server 连接已发起: " + args[0]);
+    }
+
+    /**
+     * 移除 MCP Server。
+     */
+    private void mcpRemove(String name, ResponseRenderer renderer) {
+        if (mcpServerRegistry.getServer(name).isEmpty()) {
+            renderer.error("MCP Server 未找到: " + name);
+            return;
+        }
+        mcpServerRegistry.disconnectServer(name);
+        renderer.success("MCP Server 已断开: " + name);
+    }
+
+    /**
+     * 测试 MCP Server 连通性。
+     */
+    private void mcpTest(String name, ResponseRenderer renderer) {
+        var clientOpt = mcpServerRegistry.getClient(name);
+        if (clientOpt.isEmpty()) {
+            renderer.error("MCP Server 不可用: " + name);
+            return;
+        }
+        renderer.info("正在测试 MCP Server: " + name + " ...");
+        try {
+            long startMs = System.currentTimeMillis();
+            var tools = clientOpt.get().listTools().join();
+            long elapsedMs = System.currentTimeMillis() - startMs;
+            renderer.success("MCP Server " + name + " 连通正常（发现 " + tools.size() + " 个工具，延迟 " + elapsedMs + "ms）");
+        } catch (Exception e) {
+            log.warn("MCP Server 测试失败: name={}, error={}", name, e.getMessage());
+            renderer.error("MCP Server 测试失败: " + e.getMessage());
+        }
+    }
+
+    /**
      * 输出 mcp 命令的用法帮助。
      */
     private void printMcpUsage(ResponseRenderer renderer) {
@@ -342,7 +607,10 @@ public class QuickCommand {
         renderer.info("用法: mcp <子命令>");
         renderer.info("");
         renderer.info("可用子命令:");
-        renderer.info("  list              列出所有 MCP Server");
+        renderer.info("  list                              列出所有 MCP Server");
+        renderer.info("  add <name> <transport> <url>      添加 MCP Server");
+        renderer.info("  remove <name>                     移除 MCP Server");
+        renderer.info("  test <name>                       测试 MCP Server 连通性");
     }
 
     // ─────────────────────────────────────────────
@@ -369,6 +637,7 @@ public class QuickCommand {
                 }
                 skillInfo(subArgs[1], renderer);
             }
+            case "reload" -> skillReload(renderer);
             default -> {
                 renderer.error("未知子命令: skill " + subCommand);
                 printSkillUsage(renderer);
@@ -418,6 +687,14 @@ public class QuickCommand {
     }
 
     /**
+     * 重新加载所有 YAML Skill。
+     */
+    private void skillReload(ResponseRenderer renderer) {
+        int count = yamlSkillLoader.loadAll();
+        renderer.success("YAML Skill 重新加载完成，共加载 " + count + " 个 Skill");
+    }
+
+    /**
      * 输出 skill 命令的用法帮助。
      */
     private void printSkillUsage(ResponseRenderer renderer) {
@@ -427,5 +704,6 @@ public class QuickCommand {
         renderer.info("可用子命令:");
         renderer.info("  list              列出所有已注册 Skill");
         renderer.info("  info <id>         查看 Skill 详细信息");
+        renderer.info("  reload            重新加载 YAML Skill");
     }
 }
