@@ -133,6 +133,8 @@ public class WorkflowAutoConfiguration {
     @EventListener(ApplicationReadyEvent.class)
     public void onApplicationReady(ApplicationReadyEvent event) {
         var ctx = event.getApplicationContext();
+        // 延迟注入 triggerManager 到 registry，避免循环依赖
+        ctx.getBean(WorkflowRegistry.class).setTriggerManager(ctx.getBean(WorkflowTriggerManager.class));
         ctx.getBean(WorkflowEngine.class).recoverInterruptedInstances();
         ctx.getBean(WorkflowTriggerManager.class).registerAllTriggers();
         ctx.getBean(WorkflowRegistry.class).startScheduledScan();

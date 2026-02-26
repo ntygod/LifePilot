@@ -19,6 +19,7 @@ import org.springframework.scheduling.TaskScheduler;
 import com.lifepilot.workflow.config.WorkflowConfigProperties;
 import com.lifepilot.workflow.model.Result;
 import com.lifepilot.workflow.model.WorkflowDefinition;
+import com.lifepilot.workflow.trigger.WorkflowTriggerManager;
 import com.lifepilot.workflow.parser.WorkflowYamlParser;
 import com.lifepilot.workflow.parser.WorkflowYamlPrinter;
 import com.lifepilot.workflow.repository.WorkflowRepository;
@@ -58,6 +59,9 @@ public class WorkflowRegistry {
     /** 任务调度器，通过 {@link #setTaskScheduler(TaskScheduler)} 注入。 */
     private TaskScheduler taskScheduler;
 
+    /** 触发器管理器引用，用于热加载时注销已删除/禁用工作流的触发器。 */
+    private WorkflowTriggerManager triggerManager;
+
     /**
      * 构造 WorkflowRegistry，注入持久化仓储、YAML 解析器和打印器。
      *
@@ -92,6 +96,15 @@ public class WorkflowRegistry {
      */
     public void setTaskScheduler(TaskScheduler taskScheduler) {
         this.taskScheduler = taskScheduler;
+    }
+
+    /**
+     * 设置触发器管理器（热加载时注销触发器所需）。
+     *
+     * @param triggerManager 工作流触发器管理器
+     */
+    public void setTriggerManager(WorkflowTriggerManager triggerManager) {
+        this.triggerManager = triggerManager;
     }
 
     /**
@@ -242,29 +255,20 @@ public class WorkflowRegistry {
                 .toList();
     }
 
-    /**
-     * 扫描目录中的 YAML 文件并注册有效的工作流定义。
-     *
-     * <p>扫描 {@code *.yml} 和 {@code *.yaml} 文件，解析成功的注册到注册中心，
-     * 解析失败的记录 WARN 日志并跳过。
-     *
-     * @param directory 工作流 YAML 文件目录
-     */
-    public void scanAndRegister(Path directory) {
-        if (!Files.isDirectory(directory)) {
-            log.warn("工作流定义目录不存在: path={}", directory);
-            return;
-        }
+    // ==================== 热加载内部方法 ====================
 
-        try (Stream<Path> files = Files.list(directory)) {
-            files.filter(this::isYamlFile)
-                    .forEach(this::loadAndRegister);
-        } catch (IOException e) {
-            log.error("扫描工作流定义目录失败: path={}, 原因={}", directory, e.getMessage());
+    /**
+     * 通知触发器管理器注销指定工作流的触发器。
+     *
+     * <p>如果 triggerManager 未注入则跳过（不影响核心功能）。
+     *
+     * @param workflowId 工作流定义 ID
+     */
+    private void notifyTriggerUnregister(String workflowId) {
+        if (triggerManager != null) {
+            triggerManager.unregisterTriggers(workflowId);
         }
     }
-
-    // ==================== 热加载内部方法 ====================
 
     /**
      * 执行一次扫描周期 — 检测新增、修改和删除的 YAML 文件。
@@ -345,10 +349,11 @@ public class WorkflowRegistry {
             Result<WorkflowDefinition, List<String>> result = parser.parse(yaml);
             switch (result) {
                 case Result.Ok<WorkflowDefinition, List<String>> ok -> {
-                    // 如果文件之前关联了不同的 workflowId，清理旧映射
+                    // 如果文件之前关联了不同的 workflowId，清理旧映射并注销触发器
                     String previousId = fileToWorkflowId.get(filePath);
                     if (previousId != null && !previousId.equals(ok.value().id())) {
                         disable(previousId);
+                        notifyTriggerUnregister(previousId);
                     }
                     if (register(ok.value())) {
                         fileLastModified.put(filePath, lastModified);
@@ -367,7 +372,7 @@ public class WorkflowRegistry {
     }
 
     /**
-     * 处理删除的文件 — 禁用对应的工作流定义。
+     * 处理删除的文件 — 禁用对应的工作流定义并注销触发器。
      */
     private void handleDeletedFiles(Set<String> currentFiles) {
         Set<String> knownFiles = new HashSet<>(fileLastModified.keySet());
@@ -377,7 +382,8 @@ public class WorkflowRegistry {
                 fileLastModified.remove(knownFile);
                 if (workflowId != null) {
                     disable(workflowId);
-                    log.info("热加载: 文件已删除，禁用工作流: file={}, id={}", knownFile, workflowId);
+                    notifyTriggerUnregister(workflowId);
+                    log.info("热加载: 文件已删除，禁用工作流并注销触发器: file={}, id={}", knownFile, workflowId);
                 }
             }
         }
@@ -470,23 +476,6 @@ public class WorkflowRegistry {
         String fileName = path.getFileName().toString().toLowerCase();
         return Files.isRegularFile(path)
                 && (fileName.endsWith(".yml") || fileName.endsWith(".yaml"));
-    }
-
-    /**
-     * 加载并注册单个 YAML 文件。
-     */
-    private void loadAndRegister(Path file) {
-        try {
-            String yaml = Files.readString(file);
-            Result<WorkflowDefinition, List<String>> result = parser.parse(yaml);
-            switch (result) {
-                case Result.Ok<WorkflowDefinition, List<String>> ok -> register(ok.value());
-                case Result.Err<WorkflowDefinition, List<String>> err ->
-                        log.warn("工作流 YAML 解析失败: file={}, errors={}", file, err.error());
-            }
-        } catch (IOException e) {
-            log.warn("读取工作流 YAML 文件失败: file={}, 原因={}", file, e.getMessage());
-        }
     }
 }
 

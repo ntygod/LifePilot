@@ -245,10 +245,10 @@ class WorkflowRegistryTest {
         assertThat(registry.listEnabled()).isEmpty();
     }
 
-    // ==================== scanAndRegister 测试 ====================
+    // ==================== performScan 测试 ====================
 
     @Test
-    void scanAndRegister_扫描目录注册有效YAML(@TempDir Path tempDir) throws IOException {
+    void performScan_扫描目录注册有效YAML(@TempDir Path tempDir) throws IOException {
         // 创建有效的 YAML 文件
         String yaml = """
                 id: scan-wf
@@ -260,42 +260,42 @@ class WorkflowRegistryTest {
                 """;
         Files.writeString(tempDir.resolve("workflow.yml"), yaml);
 
-        registry.scanAndRegister(tempDir);
+        registry.performScan(tempDir);
 
         assertThat(registry.find("scan-wf")).isPresent();
     }
 
     @Test
-    void scanAndRegister_跳过无效YAML文件(@TempDir Path tempDir) throws IOException {
+    void performScan_跳过无效YAML文件(@TempDir Path tempDir) throws IOException {
         // 创建无效的 YAML 文件（缺少必填字段）
         Files.writeString(tempDir.resolve("invalid.yaml"), "invalid: true");
 
-        registry.scanAndRegister(tempDir);
+        registry.performScan(tempDir);
 
         // 不应有任何定义被注册
         assertThat(registry.listAll()).isEmpty();
     }
 
     @Test
-    void scanAndRegister_忽略非YAML文件(@TempDir Path tempDir) throws IOException {
+    void performScan_忽略非YAML文件(@TempDir Path tempDir) throws IOException {
         Files.writeString(tempDir.resolve("readme.txt"), "not a workflow");
 
-        registry.scanAndRegister(tempDir);
+        registry.performScan(tempDir);
 
         assertThat(registry.listAll()).isEmpty();
     }
 
     @Test
-    void scanAndRegister_目录不存在_不抛异常() {
+    void performScan_目录不存在_不抛异常() {
         Path nonExistent = Path.of("/non/existent/directory");
 
         // 不应抛出异常
-        registry.scanAndRegister(nonExistent);
+        registry.performScan(nonExistent);
         assertThat(registry.listAll()).isEmpty();
     }
 
     @Test
-    void scanAndRegister_混合有效和无效文件(@TempDir Path tempDir) throws IOException {
+    void performScan_混合有效和无效文件(@TempDir Path tempDir) throws IOException {
         String validYaml = """
                 id: valid-wf
                 name: 有效工作流
@@ -307,7 +307,7 @@ class WorkflowRegistryTest {
         Files.writeString(tempDir.resolve("valid.yml"), validYaml);
         Files.writeString(tempDir.resolve("invalid.yaml"), "broken: yaml: [");
 
-        registry.scanAndRegister(tempDir);
+        registry.performScan(tempDir);
 
         assertThat(registry.listAll()).hasSize(1);
         assertThat(registry.find("valid-wf")).isPresent();
