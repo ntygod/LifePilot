@@ -99,11 +99,12 @@ Phase 4 — 高级能力 ✅
         └─ OAuth Token 安全存储
 
 Phase 5 — Web UI + 可观测性
-  ├─ 18. Web UI 框架搭建（Vue 3 + Vite + Pinia）
+  ├─ 18. Web UI 框架搭建（Vue 3 + Vite + Pinia + A2UI）
   │     ├─ frontend-maven-plugin 集成
   │     ├─ REST Controller + SSE 流式对话端点（调用 MessageGateway）
   │     ├─ 对话页 + 设置页
-  │     └─ SSE 流式响应
+  │     ├─ SSE 流式响应（token + ui 事件）
+  │     └─ A2UI Generative UI 渲染器 + 基础组件目录 + 信号回传
   ├─ 19. Web UI 功能页面（依赖知识库 + Skill 系统 + Gateway）
   │     ├─ 知识库管理页
   │     ├─ Skill / MCP 管理页
@@ -129,11 +130,12 @@ Phase 5 — Web UI + 可观测性
   │     AI Elements Vue 组件库（基于 shadcn-vue）已可用、frontend-maven-plugin 集成方案成熟。
   │     React 唯一优势是 Generative UI 生态更成熟，但非 Phase 5 核心需求。
   │
-  │  ✅ Generative UI 协议：采纳 A2UI，但暂缓至 Phase 5 完成后作为独立增强 spec
+  │  ✅ Generative UI 协议：采纳 A2UI，纳入模块 18 核心范围
   │     理由：Google A2UI 协议（v0.8 Public Preview）是最有前景的标准化方案，
-  │     但 Vue 渲染器尚未官方提供，规范仍在演进。LifePilot 对话场景可先用
-  │     SSE 流式文本 + 预定义组件覆盖 90% 需求。后端预留结构化 UI 描述字段即可。
-  │     Vue 的动态组件 <component :is> 天然适合实现 A2UI 渲染器。
+  │     邻接表组件树模型简洁、组件目录机制可扩展。Vue 的动态组件 <component :is>
+  │     天然适合实现 A2UI 渲染器。模块 18 实现 A2UI 渲染器 + 10 个基础组件 +
+  │     信号回传机制，SSE 流中 ui 事件与 token 事件交替传输。
+  │     模块 19 扩展更多组件类型（Chart / Table / CodeBlock 等）。
   │
   │  ✅ 本地 CS 架构重构：Phase 5 建立 REST API 层，CLI 暂不迁移
   │     理由：Web UI 必须有 REST/SSE API 层（刚需），但 CLI 在单 JAR 部署下
