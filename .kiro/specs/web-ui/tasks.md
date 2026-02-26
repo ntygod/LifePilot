@@ -176,12 +176,12 @@ Web UI 模块（Phase 5 — 模块 18）采用前后端分离架构实现。后�
     - 创建 App.vue 和 main.ts 入口
     - _Requirements: 8.3, 8.4_
 
-- [ ] 10. 实现前端类型定义和 API 客户端
-  - [ ] 10.1 创建 TypeScript 类型定义
+- [x] 10. 实现前端类型定义和 API 客户端
+  - [x] 10.1 创建 TypeScript 类型定义
     - 在 src/types/index.ts 中定义所有接口：ChatSession、Message、A2uiComponent、A2uiSignal、TokenUsage、UserSettings、SseTokenEvent、SseDoneEvent、SseErrorEvent
     - _Requirements: 4.1, 4.2, 9.1, 10.1, 11.1, 13.1_
 
-  - [ ] 10.2 创建 API 客户端
+  - [x] 10.2 创建 API 客户端
     - 在 src/api/client.ts 中封装 fetch 请求
     - 统一拦截非 2xx 响应，抛出包含 ErrorResponse 的异常
     - 提供 chatApi（sendMessage、sendMessageStream、listSessions、getSessionMessages、deleteSession、sendSignal）
