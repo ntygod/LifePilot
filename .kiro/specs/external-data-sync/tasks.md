@@ -6,8 +6,8 @@
 
 ## Tasks
 
-- [ ] 1. 数据模型、枚举与 Flyway V17 迁移
-  - [ ] 1.1 创建枚举类型和基础 record
+- [x] 1. 数据模型、枚举与 Flyway V17 迁移
+  - [x] 1.1 创建枚举类型和基础 record
     - 创建 `com.lifepilot.sync.model` 包
     - 实现 ConflictPolicy、SyncDirection、SyncStatus 枚举
     - 实现 FieldDiff record
@@ -15,7 +15,7 @@
     - 实现 SyncOperation sealed interface（Create / Update / Delete）
     - _Requirements: 1.1, 1.4, 1.5, 6.2_
 
-  - [ ] 1.2 创建核心数据 record
+  - [x] 1.2 创建核心数据 record
     - 实现 SyncProfile record（含 @Builder(toBuilder = true)）
     - 实现 SyncRecord record
     - 实现 SyncState record
@@ -25,26 +25,26 @@
     - 实现 LocalChangeSet record（含内部 LocalEntity record）
     - _Requirements: 9.1, 6.2, 7.4, 8.5, 8.6_
 
-  - [ ] 1.3 创建 SyncException sealed 异常层次
+  - [x] 1.3 创建 SyncException sealed 异常层次
     - 实现 SyncException sealed class
     - 实现 ConnectionException、RemoteApiException、MappingException、CredentialException、SyncStateException 子类
     - _Requirements: 6.5, 6.6_
 
-  - [ ] 1.4 创建 Flyway V17 迁移脚本
+  - [x] 1.4 创建 Flyway V17 迁移脚本
     - 创建 `V17__create_sync_tables.sql`
     - 包含 sync_profiles、sync_records、sync_credentials、sync_conflicts、sync_state 五张表
     - 包含所有索引（idx_sync_records_profile、idx_sync_records_mapping、idx_sync_credentials_profile、idx_sync_conflicts_profile、idx_sync_conflicts_status、idx_sync_state_profile）
     - _Requirements: 13.1, 13.2, 13.3, 13.4, 13.5_
 
-  - [ ] 1.5 创建 SyncProperties 配置类和 application.yml 配置项
+  - [x] 1.5 创建 SyncProperties 配置类和 application.yml 配置项
     - 实现 `SyncProperties` @ConfigurationProperties(prefix = "lifepilot.sync")
     - 包含 enabled、default-cron、default-conflict-policy、timeout、max-retries、credential-key-source、obsidian-vault-path、event-sync-min-interval
     - 包含嵌套 Connectors 配置（caldav / todoist / dida）
     - 在 application.yml 中声明所有配置项及默认值
     - _Requirements: 16.1, 16.2, 16.3_
 
-- [ ] 2. Repository 层与 CredentialStore
-  - [ ] 2.1 实现 SyncProfileRepository
+- [x] 2. Repository 层与 CredentialStore
+  - [x] 2.1 实现 SyncProfileRepository
     - 基于 JdbcTemplate 实现 CRUD 操作
     - 支持 findById、findAll、findAllEnabled、create、update、delete
     - _Requirements: 9.2, 9.3_
@@ -54,17 +54,17 @@
     - 使用 jqwik 随机 SyncProfile 生成器验证 create → findById 往返一致性
     - **Validates: Requirements 9.2**
 
-  - [ ] 2.3 实现 SyncRecordRepository
+  - [x] 2.3 实现 SyncRecordRepository
     - 基于 JdbcTemplate 实现 CRUD 操作
     - 支持 findByProfileId、findByLocalEntity、findByRemoteEntity、upsert、deleteByProfileId
     - _Requirements: 6.7_
 
-  - [ ] 2.4 实现 SyncStateRepository 和 SyncConflictRepository
+  - [x] 2.4 实现 SyncStateRepository 和 SyncConflictRepository
     - SyncStateRepository：findByProfileId、upsert
     - SyncConflictRepository：findUnresolvedByProfileId、create、resolve
     - _Requirements: 8.5, 8.6, 8.7_
 
-  - [ ] 2.5 实现 CredentialStore 凭证加密存储
+  - [x] 2.5 实现 CredentialStore 凭证加密存储
     - 实现 AES-GCM 加密/解密逻辑（PBKDF2 密钥派生、随机 IV 生成）
     - 实现 store、retrieve、deleteByProfileId 方法
     - 错误密钥检测（AES-GCM auth tag 失败）
@@ -77,21 +77,21 @@
     - 验证两次存储相同明文值产生不同 IV
     - **Validates: Requirements 10.3, 10.5**
 
-- [ ] 3. Checkpoint — 基础设施层验证
+- [x] 3. Checkpoint — 基础设施层验证
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 4. FieldMapping 接口与字段映射实现
-  - [ ] 4.1 创建 FieldMapping 泛型接口
+- [x] 4. FieldMapping 接口与字段映射实现
+  - [x] 4.1 创建 FieldMapping 泛型接口
     - 定义 toRemote、toLocal、extractConflictFields 方法
     - _Requirements: 15.1, 15.2, 15.3_
 
-  - [ ] 4.2 实现 ICalendarParser
+  - [x] 4.2 实现 ICalendarParser
     - 实现 RFC 5545 iCalendar 格式的解析和生成
     - 支持 VEVENT 和 VTODO 组件
     - 处理多行折叠、特殊字符转义
     - _Requirements: 2.7, 2.8_
 
-  - [ ] 4.3 实现 CalDavFieldMapping
+  - [x] 4.3 实现 CalDavFieldMapping
     - 实现 FieldMapping<ScheduleItem, String>（VEVENT 映射）
     - 实现 FieldMapping<TodoItem, String>（VTODO 映射）
     - 字段映射：title↔SUMMARY、startTime↔DTSTART、endTime↔DTEND、location↔LOCATION、notes↔DESCRIPTION
@@ -104,7 +104,7 @@
     - 使用 jqwik 随机 ScheduleItem / TodoItem 生成器验证 toRemote → toLocal 往返一致性
     - **Validates: Requirements 2.9**
 
-  - [ ] 4.5 实现 TodoistFieldMapping
+  - [x] 4.5 实现 TodoistFieldMapping
     - 实现 FieldMapping<TodoItem, Map<String, Object>>
     - 字段映射：title→content、description→description、priority→priority（值反转 HIGH→4, MEDIUM→3, LOW→2）、dueDate→due.date、tags→labels
     - _Requirements: 3.5, 3.6, 15.4_
@@ -114,7 +114,7 @@
     - 使用 jqwik 随机 TodoItem 生成器（含 Priority 枚举）验证往返一致性
     - **Validates: Requirements 3.5, 3.6**
 
-  - [ ] 4.7 实现 DidaFieldMapping
+  - [x] 4.7 实现 DidaFieldMapping
     - 实现 FieldMapping<TodoItem, Map<String, Object>>（任务映射）
     - 实现 FieldMapping<HabitItem, Map<String, Object>>（习惯映射）
     - _Requirements: 4.4, 4.5_
@@ -125,12 +125,12 @@
     - 使用 jqwik 随机 TodoItem / HabitItem 生成器验证往返一致性
     - **Validates: Requirements 4.4, 4.5**
 
-  - [ ] 4.9 实现 YamlFrontmatterParser
+  - [x] 4.9 实现 YamlFrontmatterParser
     - 解析 `---` 分隔的 YAML frontmatter
     - 提取键值对，处理缺失字段和特殊字符
     - _Requirements: 5.4_
 
-  - [ ] 4.10 实现 ObsidianFieldMapping
+  - [x] 4.10 实现 ObsidianFieldMapping
     - 实现 FieldMapping<TodoItem, String>、FieldMapping<ScheduleItem, String>、FieldMapping<HabitItem, String>
     - 转换为 Markdown + YAML frontmatter 格式
     - _Requirements: 5.3, 5.5_
@@ -140,11 +140,11 @@
     - 使用 jqwik 随机 TodoItem / ScheduleItem / HabitItem 生成器验证往返一致性
     - **Validates: Requirements 5.6**
 
-- [ ] 5. Checkpoint — 字段映射层验证
+- [x] 5. Checkpoint — 字段映射层验证
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 6. ChangeDetector 与 ConflictResolver
-  - [ ] 6.1 实现 ChangeDetector
+- [x] 6. ChangeDetector 与 ConflictResolver
+  - [x] 6.1 实现 ChangeDetector
     - 检测本地新增（无 SyncRecord 的实体）、修改（updatedAt > lastSyncAt）、删除（SyncRecord 存在但实体不存在）
     - 按 SyncProfile.dataTypeFilter 过滤检测范围
     - 返回 LocalChangeSet
@@ -158,7 +158,7 @@
     - 验证返回实体类型仅包含 dataTypeFilter 中指定的类型
     - **Validates: Requirements 7.1, 7.2, 7.3, 7.5**
 
-  - [ ] 6.3 实现 ConflictResolver
+  - [x] 6.3 实现 ConflictResolver
     - 检测冲突：同一实体同时出现在 RemoteChangeSet.updated 和 LocalChangeSet.updated
     - 实现四种策略：LAST_WRITE_WINS、REMOTE_WINS、LOCAL_WINS、USER_CONFIRM
     - 所有冲突保存双方版本快照到 SyncConflict
@@ -173,8 +173,8 @@
     - 验证冲突检测条件、策略决定结果、快照非空
     - **Validates: Requirements 8.1, 8.2, 8.3, 8.4, 8.5, 8.6**
 
-- [ ] 7. SyncEngine 同步引擎
-  - [ ] 7.1 实现 SyncEngine 核心同步流程
+- [x] 7. SyncEngine 同步引擎
+  - [x] 7.1 实现 SyncEngine 核心同步流程
     - 实现 sync(SyncProfile) 方法
     - 完整双向流程：fetchRemote → detectLocal → resolveConflicts → applyRemote → pushLocal → updateState
     - 按 SyncDirection 分支：BIDIRECTIONAL / PULL_ONLY / PUSH_ONLY
@@ -197,15 +197,15 @@
     - 验证同步成功/失败/冲突时发布对应事件
     - **Validates: Requirements 6.2, 6.3, 6.4, 6.5, 6.7, 17.1, 17.2, 17.3**
 
-- [ ] 8. Checkpoint — 核心引擎验证
+- [x] 8. Checkpoint — 核心引擎验证
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 9. 连接器实现
-  - [ ] 9.1 实现 SyncConnector sealed interface
+- [x] 9. 连接器实现
+  - [x] 9.1 实现 SyncConnector sealed interface
     - 定义 type()、testConnection()、fetchChanges()、pushChanges() 方法签名
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6_
 
-  - [ ] 9.2 实现 CalDavConnector
+  - [x] 9.2 实现 CalDavConnector
     - 使用 Java HttpClient 发送 CalDAV REPORT / PUT / DELETE 请求
     - fetchChanges：sync-collection REPORT（RFC 6578）+ sync-token 增量
     - pushChanges：ETag 条件 PUT（If-Match header）
@@ -219,7 +219,7 @@
     - 测试 Basic Auth / OAuth2 认证切换
     - _Requirements: 2.2, 2.3, 2.4, 2.6_
 
-  - [ ] 9.4 实现 TodoistConnector
+  - [x] 9.4 实现 TodoistConnector
     - 使用 Java HttpClient 调用 Todoist API v1 Sync endpoint
     - fetchChanges：POST /sync/v1/sync 带 sync_token + resource_types
     - pushChanges：POST /sync/v1/sync 带 commands 数组（item_add / item_update / item_delete / item_complete）
@@ -233,7 +233,7 @@
     - 测试 401 Token 刷新流程
     - _Requirements: 3.2, 3.3, 3.7, 11.1, 11.4_
 
-  - [ ] 9.6 实现 DidaConnector
+  - [x] 9.6 实现 DidaConnector
     - 使用 Java HttpClient 调用滴答清单 Open API
     - fetchChanges：GET /open/v1/task + GET /open/v1/habit，基于 updated 时间戳过滤增量
     - pushChanges：POST/PUT/DELETE /open/v1/task（任务双向），习惯仅拉取
@@ -246,7 +246,7 @@
     - 测试 OAuth2 Authorization Code flow
     - _Requirements: 4.2, 4.7_
 
-  - [ ] 9.8 实现 ObsidianConnector
+  - [x] 9.8 实现 ObsidianConnector
     - 使用 Java NIO 操作本地文件系统
     - fetchChanges：遍历 Vault 目录，比较文件修改时间与上次同步时间
     - pushChanges：写入 Markdown 文件（YAML frontmatter + body）
@@ -259,11 +259,11 @@
     - 测试文件修改时间检测
     - _Requirements: 5.2, 5.7_
 
-- [ ] 10. Checkpoint — 连接器层验证
+- [x] 10. Checkpoint — 连接器层验证
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 11. SyncScheduler 同步调度
-  - [ ] 11.1 实现 SyncScheduler
+- [x] 11. SyncScheduler 同步调度
+  - [x] 11.1 实现 SyncScheduler
     - 使用 ScheduledExecutorService + Virtual Thread 执行同步任务
     - 基于 SyncProfile.cronExpression 定时调度
     - 事件触发同步：@EventListener 监听本地数据变更事件
@@ -283,7 +283,7 @@
     - **Validates: Requirements 12.3, 12.5, 9.4**
 
 - [ ] 12. SyncSkillProvider Agent 集成
-  - [ ] 12.1 实现 SyncSkillProvider
+  - [-] 12.1 实现 SyncSkillProvider
     - 实现 BuiltinSkillProvider 接口，使用 @BuiltinSkill(id = "sync", order = 5) 注解
     - provide() 返回 SkillDefinition（id="sync"、name="数据同步"、4 个 allowedTools）
     - registerTools() 注册 sync-trigger、sync-status、sync-config、sync-conflicts 四个工具
@@ -299,7 +299,7 @@
     - _Requirements: 14.1_
 
 - [ ] 13. SyncAutoConfiguration 自动配置
-  - [ ] 13.1 实现 SyncAutoConfiguration
+  - [~] 13.1 实现 SyncAutoConfiguration
     - @AutoConfiguration + @ConditionalOnProperty(name = "lifepilot.sync.enabled")
     - @EnableConfigurationProperties(SyncProperties.class)
     - 注册所有 sync 模块 Bean：Connector 实例、SyncEngine、ChangeDetector、ConflictResolver、CredentialStore、SyncScheduler、Repository 实例、SyncSkillProvider
