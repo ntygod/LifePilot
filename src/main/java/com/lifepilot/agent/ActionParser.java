@@ -64,22 +64,6 @@ public class ActionParser {
         }
     }
 
-    /**
-     * 将 Action 序列化为 JSON。
-     *
-     * @param action Action 实例
-     * @return JSON 字符串
-     */
-    public String serialize(Action action) {
-        try {
-            return objectMapper.writeValueAsString(action);
-        } catch (JsonProcessingException e) {
-            log.warn("Action 序列化失败: type={}, error={}",
-                    action.getClass().getSimpleName(), e.getMessage());
-            return "{}";
-        }
-    }
-
     /** 构建解析错误的 ErrorRecovery Action。 */
     private Action parseError(String message) {
         return new Action.ErrorRecovery(

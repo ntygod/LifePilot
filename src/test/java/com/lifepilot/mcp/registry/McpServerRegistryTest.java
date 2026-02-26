@@ -200,31 +200,6 @@ class McpServerRegistryTest {
     }
 
     // ─────────────────────────────────────────────
-    //  shutdownAll 测试
-    // ─────────────────────────────────────────────
-
-    @Test
-    void shutdownAll_关闭所有服务器() throws Exception {
-        registry.initializeAll(List.of(config));
-        when(mockClient.initialize()).thenReturn(CompletableFuture.completedFuture(null));
-        when(mockClient.listTools()).thenReturn(CompletableFuture.completedFuture(List.of()));
-        when(mockClient.getServerInfo()).thenReturn(new McpServerInfo("test", "1.0"));
-        when(mockToolAdapter.toToolContracts(eq("test-server"), anyList(), eq(mockClient)))
-                .thenReturn(List.of());
-        registry.connectServer(config);
-        Thread.sleep(500);
-
-        when(mockClient.shutdown()).thenReturn(CompletableFuture.completedFuture(null));
-
-        registry.shutdownAll();
-
-        verify(mockToolRegistry).unregisterMcpTools("test-server");
-        var entry = registry.getServer("test-server");
-        assertTrue(entry.isPresent());
-        assertEquals(McpServerState.DISCONNECTED, entry.get().state());
-    }
-
-    // ─────────────────────────────────────────────
     //  getClient 测试
     // ─────────────────────────────────────────────
 

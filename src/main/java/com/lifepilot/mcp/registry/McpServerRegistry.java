@@ -146,13 +146,6 @@ public class McpServerRegistry {
         log.info("MCP Server 已断开: name={}", serverName);
     }
 
-    /** 关闭所有 MCP Server。 */
-    public void shutdownAll() {
-        log.info("MCP Server 全部关闭: count={}", servers.size());
-        scheduler.shutdown();
-        servers.keySet().forEach(this::disconnectServer);
-    }
-
     /** 获取指定 Server 的客户端。 */
     public Optional<McpClient> getClient(String serverName) {
         var entry = servers.get(serverName);

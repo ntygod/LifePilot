@@ -144,26 +144,6 @@ public class WorkingMemory {
     }
 
     /**
-     * 清除指定会话的所有槽位。
-     *
-     * @param sessionId 会话 ID
-     */
-    public void clearSession(String sessionId) {
-        sessions.remove(sessionId);
-        tokenUsage.remove(sessionId);
-        lastActivity.remove(sessionId);
-    }
-
-    /**
-     * 返回所有活跃会话 ID 的不可变集合。
-     *
-     * @return 活跃会话 ID 集合
-     */
-    public Set<String> activeSessions() {
-        return Set.copyOf(sessions.keySet());
-    }
-
-    /**
      * 查找淘汰候选槽位 — 按类型优先级和重要度排序。
      *
      * <p>淘汰优先级：ReasoningSlot → ToolResultSlot → ConversationSlot（跳过 pinned）。

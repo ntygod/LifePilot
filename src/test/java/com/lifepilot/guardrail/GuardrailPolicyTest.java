@@ -85,10 +85,12 @@ class GuardrailPolicyTest {
     @Test
     void 移除白名单后_工具被拦截() {
         policy.addAllowedTools(List.of("test.echo"));
-        assertTrue(policy.isAllowed("test.echo"));
+        ToolContract tool = createTool("test.echo", RiskLevel.LOW);
+        ToolInput input = new ToolInput("test.echo", Map.of(), JsonSchema.empty(), null);
+        assertFalse(policy.checkToolCall(tool, input).blocked());
 
         policy.removeAllowedTools(List.of("test.echo"));
-        assertFalse(policy.isAllowed("test.echo"));
+        assertTrue(policy.checkToolCall(tool, input).blocked());
     }
 
     private ToolContract createTool(String id, RiskLevel riskLevel) {

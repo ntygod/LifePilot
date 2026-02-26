@@ -78,14 +78,4 @@ public class GuardrailPolicy {
         blockedTools.addAll(toolIds);
         log.debug("工具黑名单更新: added={}", toolIds);
     }
-
-    /** 移除黑名单工具。 */
-    public void removeBlockedTools(List<String> toolIds) {
-        toolIds.forEach(blockedTools::remove);
-    }
-
-    /** 检查工具是否在白名单中。 */
-    public boolean isAllowed(String toolId) {
-        return allowedTools.contains(toolId) && !blockedTools.contains(toolId);
-    }
 }

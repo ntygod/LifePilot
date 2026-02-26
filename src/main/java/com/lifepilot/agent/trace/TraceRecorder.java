@@ -11,7 +11,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -144,69 +143,6 @@ public class TraceRecorder {
             log.info("轨迹持久化成功: traceId={}, steps={}", traceId, context.steps().size());
         } catch (Exception e) {
             log.warn("轨迹持久化失败: traceId={}, error={}", traceId, e.getMessage());
-        }
-    }
-
-    /**
-     * 从数据库加载完整轨迹记录。
-     *
-     * @param traceId 轨迹 ID
-     * @return 轨迹记录
-     */
-    public Optional<TraceRecord> findTrace(String traceId) {
-        try {
-            var traces = jdbcTemplate.query(
-                    "SELECT * FROM agent_traces WHERE id = ?",
-                    (rs, rowNum) -> new TraceRecord(
-                            rs.getString("id"),
-                            rs.getString("session_id"),
-                            rs.getString("user_message"),
-                            rs.getString("final_output"),
-                            rs.getInt("success") == 1,
-                            rs.getString("error_message"),
-                            rs.getString("termination_reason"),
-                            rs.getInt("total_steps"),
-                            rs.getInt("total_tokens"),
-                            rs.getLong("duration_ms"),
-                            rs.getString("created_at")
-                    ),
-                    traceId
-            );
-            return traces.isEmpty() ? Optional.empty() : Optional.of(traces.getFirst());
-        } catch (Exception e) {
-            log.warn("轨迹查询失败: traceId={}, error={}", traceId, e.getMessage());
-            return Optional.empty();
-        }
-    }
-
-    /**
-     * 查询指定会话的所有轨迹。
-     *
-     * @param sessionId 会话 ID
-     * @return 轨迹记录列表
-     */
-    public List<TraceRecord> findTracesBySession(String sessionId) {
-        try {
-            return jdbcTemplate.query(
-                    "SELECT * FROM agent_traces WHERE session_id = ? ORDER BY created_at",
-                    (rs, rowNum) -> new TraceRecord(
-                            rs.getString("id"),
-                            rs.getString("session_id"),
-                            rs.getString("user_message"),
-                            rs.getString("final_output"),
-                            rs.getInt("success") == 1,
-                            rs.getString("error_message"),
-                            rs.getString("termination_reason"),
-                            rs.getInt("total_steps"),
-                            rs.getInt("total_tokens"),
-                            rs.getLong("duration_ms"),
-                            rs.getString("created_at")
-                    ),
-                    sessionId
-            );
-        } catch (Exception e) {
-            log.warn("会话轨迹查询失败: sessionId={}, error={}", sessionId, e.getMessage());
-            return List.of();
         }
     }
 
