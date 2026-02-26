@@ -10,6 +10,9 @@ import A2uiChip from './A2uiChip.vue'
 import A2uiDivider from './A2uiDivider.vue'
 import A2uiImage from './A2uiImage.vue'
 import A2uiFallback from './A2uiFallback.vue'
+import A2uiTable from './A2uiTable.vue'
+import A2uiCodeBlock from './A2uiCodeBlock.vue'
+import A2uiProgress from './A2uiProgress.vue'
 
 /** A2UI 组件类型 → Vue 组件映射注册表 */
 const catalog: Record<string, Component> = {
@@ -23,6 +26,9 @@ const catalog: Record<string, Component> = {
   Chip: A2uiChip,
   Divider: A2uiDivider,
   Image: A2uiImage,
+  Table: A2uiTable,
+  CodeBlock: A2uiCodeBlock,
+  Progress: A2uiProgress,
 }
 
 /** 根据 type 解析对应的 Vue 组件，未注册类型返回 A2uiFallback */

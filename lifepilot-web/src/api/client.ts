@@ -1,9 +1,23 @@
 import type {
   ChatResponse,
   ChatSession,
+  CreateKbRequest,
   ErrorResponse,
+  KbDocument,
+  KnowledgeBase,
+  McpServer,
+  McpTool,
   Message,
-  UserSettings
+  PageResult,
+  SkillDetail,
+  SkillSummary,
+  TraceDetail,
+  TraceItem,
+  TraceStep,
+  UserSettings,
+  WorkflowDetail,
+  WorkflowExecution,
+  WorkflowItem
 } from '@/types'
 
 // API 基础路径（开发环境通过 Vite proxy 转发）
@@ -97,5 +111,121 @@ export const settingsApi = {
       method: 'PUT',
       body: JSON.stringify(settings)
     })
+  }
+}
+
+// ========== 模块 19: 功能页面 API ==========
+
+/** 知识库管理 API */
+export const knowledgeBaseApi = {
+  list(): Promise<KnowledgeBase[]> {
+    return request('/knowledge-bases')
+  },
+  create(req: CreateKbRequest): Promise<KnowledgeBase> {
+    return request('/knowledge-bases', {
+      method: 'POST',
+      body: JSON.stringify(req)
+    })
+  },
+  get(id: string): Promise<KnowledgeBase> {
+    return request(`/knowledge-bases/${id}`)
+  },
+  delete(id: string): Promise<void> {
+    return request(`/knowledge-bases/${id}`, { method: 'DELETE' })
+  },
+  listDocuments(kbId: string): Promise<KbDocument[]> {
+    return request(`/knowledge-bases/${kbId}/documents`)
+  },
+  // 文件上传使用 FormData，不设置 Content-Type
+  async uploadDocument(kbId: string, file: File): Promise<KbDocument> {
+    const formData = new FormData()
+    formData.append('file', file)
+    const res = await fetch(`${BASE}/knowledge-bases/${kbId}/documents`, {
+      method: 'POST',
+      body: formData
+    })
+    if (!res.ok) {
+      let error: ErrorResponse
+      try {
+        error = await res.json()
+      } catch {
+        error = { code: res.status, message: res.statusText, timestamp: new Date().toISOString() }
+      }
+      throw error
+    }
+    return res.json()
+  },
+  deleteDocument(kbId: string, docId: string): Promise<void> {
+    return request(`/knowledge-bases/${kbId}/documents/${docId}`, { method: 'DELETE' })
+  }
+}
+
+/** Skill 管理 API */
+export const skillApi = {
+  list(): Promise<SkillSummary[]> {
+    return request('/skills')
+  },
+  get(id: string): Promise<SkillDetail> {
+    return request(`/skills/${id}`)
+  },
+  unregister(id: string): Promise<void> {
+    return request(`/skills/${id}`, { method: 'DELETE' })
+  }
+}
+
+/** MCP Server 管理 API */
+export const mcpApi = {
+  listServers(): Promise<McpServer[]> {
+    return request('/mcp/servers')
+  },
+  getServer(name: string): Promise<McpServer> {
+    return request(`/mcp/servers/${name}`)
+  },
+  connect(name: string): Promise<void> {
+    return request(`/mcp/servers/${name}/connect`, { method: 'POST' })
+  },
+  disconnect(name: string): Promise<void> {
+    return request(`/mcp/servers/${name}/disconnect`, { method: 'POST' })
+  },
+  listTools(name: string): Promise<McpTool[]> {
+    return request(`/mcp/servers/${name}/tools`)
+  }
+}
+
+/** 轨迹查询 API */
+export const traceApi = {
+  list(page = 0, size = 20): Promise<PageResult<TraceItem>> {
+    return request(`/traces?page=${page}&size=${size}`)
+  },
+  get(id: string): Promise<TraceDetail> {
+    return request(`/traces/${id}`)
+  },
+  getSteps(id: string): Promise<TraceStep[]> {
+    return request(`/traces/${id}/steps`)
+  }
+}
+
+/** 工作流管理 API */
+export const workflowApi = {
+  list(): Promise<WorkflowItem[]> {
+    return request('/workflows')
+  },
+  get(id: string): Promise<WorkflowDetail> {
+    return request(`/workflows/${id}`)
+  },
+  enable(id: string): Promise<void> {
+    return request(`/workflows/${id}/enable`, { method: 'POST' })
+  },
+  disable(id: string): Promise<void> {
+    return request(`/workflows/${id}/disable`, { method: 'POST' })
+  },
+  trigger(id: string, inputs?: Record<string, unknown>): Promise<WorkflowExecution> {
+    return request(`/workflows/${id}/trigger`, {
+      method: 'POST',
+      body: JSON.stringify({ inputs })
+    })
+  },
+  listExecutions(id: string): Promise<WorkflowExecution[]> {
+    return request(`/workflows/${id}/executions`)
   }
 }

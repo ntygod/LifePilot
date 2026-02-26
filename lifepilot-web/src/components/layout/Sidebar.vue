@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useChatStore } from '@/stores/chat'
 
 const router = useRouter()
+const route = useRoute()
 const chatStore = useChatStore()
 
 onMounted(() => {
@@ -23,6 +24,14 @@ function newChat() {
   chatStore.activeSessionId = null
   router.push('/')
 }
+
+const navItems = [
+  { path: '/knowledge-bases', label: '知识库' },
+  { path: '/skills', label: '技能' },
+  { path: '/traces', label: '轨迹' },
+  { path: '/workflows', label: '工作流' },
+  { path: '/settings', label: '设置' },
+]
 </script>
 
 <template>
@@ -65,13 +74,16 @@ function newChat() {
     </div>
 
     <!-- 底部导航 -->
-    <div class="p-2 border-t border-border">
-      <button
-        class="w-full text-left px-3 py-2 rounded-md text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
-        @click="router.push('/settings')"
-      >
-        设置
-      </button>
+    <div class="p-2 border-t border-border space-y-0.5">
+      <router-link
+        v-for="nav in navItems"
+        :key="nav.path"
+        :to="nav.path"
+        class="block w-full text-left px-3 py-2 rounded-md text-sm transition-colors"
+        :class="route.path === nav.path
+          ? 'bg-accent text-accent-foreground'
+          : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'"
+      >{{ nav.label }}</router-link>
     </div>
   </aside>
 </template>

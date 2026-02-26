@@ -138,6 +138,15 @@ public class SkillRegistry {
     }
 
     /**
+     * 返回所有已注册 Skill 的完整定义列表。
+     *
+     * @return 不可变 Skill 定义列表
+     */
+    public List<SkillDefinition> listAll() {
+        return List.copyOf(skills.values());
+    }
+
+    /**
      * 返回所有已注册 Skill 的 Discovery 摘要列表。
      *
      * @return 摘要字符串列表（不可变）

@@ -192,6 +192,20 @@ public class DynamicToolRegistry {
         return Optional.ofNullable(tools.get(toolId));
     }
 
+    /**
+     * 获取指定 MCP Server 注册的工具列表。
+     *
+     * @param serverName MCP 服务器名称
+     * @return 该 Server 注册的工具列表，Server 不存在时返回空列表
+     */
+    public List<ToolContract> getToolsByServer(String serverName) {
+        List<String> toolIds = serverToolIndex.getOrDefault(serverName, List.of());
+        return toolIds.stream()
+                .map(tools::get)
+                .filter(Objects::nonNull)
+                .toList();
+    }
+
     /** 获取所有可用工具（不可变列表）。 */
     public List<ToolContract> getAllTools() {
         return List.copyOf(tools.values());

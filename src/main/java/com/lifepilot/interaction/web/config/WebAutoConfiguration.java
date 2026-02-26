@@ -3,18 +3,27 @@ package com.lifepilot.interaction.web.config;
 import com.lifepilot.interaction.config.GatewayProperties;
 import com.lifepilot.interaction.gateway.MessageGateway;
 import com.lifepilot.interaction.web.adapter.WebChannelAdapter;
-import com.lifepilot.interaction.web.controller.ChatController;
-import com.lifepilot.interaction.web.controller.SettingsController;
-import com.lifepilot.interaction.web.controller.WebExceptionHandler;
+import com.lifepilot.interaction.web.controller.*;
+import com.lifepilot.interaction.web.service.TraceQueryService;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
+import com.lifepilot.knowledge.KnowledgeBaseManager;
+import com.lifepilot.knowledge.ingest.DocumentIngester;
+import com.lifepilot.mcp.registry.McpServerRegistry;
+import com.lifepilot.skill.registry.SkillRegistry;
+import com.lifepilot.tool.registry.DynamicToolRegistry;
+import com.lifepilot.workflow.engine.WorkflowEngine;
+import com.lifepilot.workflow.registry.WorkflowRegistry;
+import com.lifepilot.workflow.repository.WorkflowRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.event.EventListener;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
@@ -68,6 +77,48 @@ public class WebAutoConfiguration {
     public WebExceptionHandler webExceptionHandler() {
         log.info("注册 WebExceptionHandler");
         return new WebExceptionHandler();
+    }
+
+    // ── 模块 19 新增 Bean ──────────────────────────────────
+
+    @Bean
+    @ConditionalOnBean(JdbcTemplate.class)
+    public TraceQueryService traceQueryService(JdbcTemplate jdbcTemplate) {
+        log.info("注册 TraceQueryService");
+        return new TraceQueryService(jdbcTemplate);
+    }
+
+    @Bean
+    @ConditionalOnBean(KnowledgeBaseManager.class)
+    public KnowledgeBaseController knowledgeBaseController(KnowledgeBaseManager kbManager,
+                                                            DocumentIngester documentIngester) {
+        log.info("注册 KnowledgeBaseController");
+        return new KnowledgeBaseController(kbManager, documentIngester);
+    }
+
+    @Bean
+    @ConditionalOnBean({SkillRegistry.class, McpServerRegistry.class})
+    public SkillController skillController(SkillRegistry skillRegistry,
+                                            McpServerRegistry mcpServerRegistry,
+                                            DynamicToolRegistry toolRegistry) {
+        log.info("注册 SkillController");
+        return new SkillController(skillRegistry, mcpServerRegistry, toolRegistry);
+    }
+
+    @Bean
+    @ConditionalOnBean(TraceQueryService.class)
+    public TraceController traceController(TraceQueryService traceQueryService) {
+        log.info("注册 TraceController");
+        return new TraceController(traceQueryService);
+    }
+
+    @Bean
+    @ConditionalOnBean({WorkflowRegistry.class, WorkflowEngine.class})
+    public WorkflowController workflowController(WorkflowRegistry workflowRegistry,
+                                                  WorkflowEngine workflowEngine,
+                                                  WorkflowRepository workflowRepository) {
+        log.info("注册 WorkflowController");
+        return new WorkflowController(workflowRegistry, workflowEngine, workflowRepository);
     }
 
     /**
