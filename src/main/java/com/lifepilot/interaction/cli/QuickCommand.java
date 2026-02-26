@@ -1,6 +1,8 @@
 package com.lifepilot.interaction.cli;
 
+import com.lifepilot.llm.config.ProviderCapability;
 import com.lifepilot.llm.config.ProviderConfig;
+import com.lifepilot.llm.config.ProviderType;
 import com.lifepilot.llm.registry.ProviderRegistry;
 import com.lifepilot.mcp.registry.McpServerEntry;
 import com.lifepilot.mcp.registry.McpServerRegistry;
@@ -306,6 +308,38 @@ public class QuickCommand {
                 }
                 llmTest(subArgs[1], renderer);
             }
+            case "add" -> {
+                if (subArgs.length < 5) {
+                    renderer.error("缺少参数: llm add <providerId> <type> <modelName> <apiKey>");
+                    printLlmUsage(renderer);
+                    return;
+                }
+                llmAdd(java.util.Arrays.copyOfRange(subArgs, 1, subArgs.length), renderer);
+            }
+            case "remove" -> {
+                if (subArgs.length < 2) {
+                    renderer.error("缺少参数: llm remove <providerId>");
+                    printLlmUsage(renderer);
+                    return;
+                }
+                llmRemove(subArgs[1], renderer);
+            }
+            case "enable" -> {
+                if (subArgs.length < 2) {
+                    renderer.error("缺少参数: llm enable <providerId>");
+                    printLlmUsage(renderer);
+                    return;
+                }
+                llmToggle(subArgs[1], true, renderer);
+            }
+            case "disable" -> {
+                if (subArgs.length < 2) {
+                    renderer.error("缺少参数: llm disable <providerId>");
+                    printLlmUsage(renderer);
+                    return;
+                }
+                llmToggle(subArgs[1], false, renderer);
+            }
             default -> {
                 renderer.error("未知子命令: llm " + subCommand);
                 printLlmUsage(renderer);
@@ -367,6 +401,65 @@ public class QuickCommand {
     }
 
     /**
+     * 添加 LLM Provider。
+     *
+     * @param args [providerId, type, modelName, apiKey]
+     * @param renderer 响应渲染器
+     */
+    private void llmAdd(String[] args, ResponseRenderer renderer) {
+        ProviderType type = ProviderType.valueOf(args[1].toUpperCase().replace("-", "_"));
+        String apiUrl = type == ProviderType.OLLAMA
+                ? "http://localhost:11434"
+                : "https://api.example.com";
+        var config = new ProviderConfig(
+                args[0], type, apiUrl, args[3], args[2],
+                30, 100, List.of(), java.util.Set.of(ProviderCapability.CHAT),
+                true, 0, 0, 128000, null, true
+        );
+        providerRegistry.register(config);
+        renderer.success("Provider 已添加: " + args[0]);
+    }
+
+    /**
+     * 移除 LLM Provider。
+     */
+    private void llmRemove(String providerId, ResponseRenderer renderer) {
+        if (providerRegistry.getConfig(providerId).isEmpty()) {
+            renderer.error("Provider 未注册: " + providerId);
+            return;
+        }
+        providerRegistry.deregister(providerId);
+        renderer.success("Provider 已移除: " + providerId);
+    }
+
+    /**
+     * 启用或禁用 LLM Provider。
+     */
+    private void llmToggle(String providerId, boolean enable, ResponseRenderer renderer) {
+        var configOpt = providerRegistry.getConfig(providerId);
+        if (configOpt.isEmpty()) {
+            renderer.error("Provider 未注册: " + providerId);
+            return;
+        }
+        var config = configOpt.get();
+        if (config.enabled() == enable) {
+            renderer.info("Provider " + providerId + " 已经是" + (enable ? "启用" : "禁用") + "状态");
+            return;
+        }
+        providerRegistry.deregister(providerId);
+        var newConfig = new ProviderConfig(
+                config.id(), config.type(), config.apiUrl(), config.apiKey(),
+                config.modelName(), config.timeoutSeconds(), config.priority(),
+                config.scenes(), config.capabilities(), enable,
+                config.costPerInputToken(), config.costPerOutputToken(),
+                config.maxContextWindow(), config.embeddingDimension(),
+                config.supportsStreaming()
+        );
+        providerRegistry.register(newConfig);
+        renderer.success("Provider " + providerId + " 已" + (enable ? "启用" : "禁用"));
+    }
+
+    /**
      * 输出 llm 命令的用法帮助。
      */
     private void printLlmUsage(ResponseRenderer renderer) {
@@ -374,8 +467,12 @@ public class QuickCommand {
         renderer.info("用法: llm <子命令>");
         renderer.info("");
         renderer.info("可用子命令:");
-        renderer.info("  list              列出所有 LLM Provider");
-        renderer.info("  test <id>         测试 Provider 连通性");
+        renderer.info("  list                                  列出所有 LLM Provider");
+        renderer.info("  add <id> <type> <model> <apiKey>      添加 Provider");
+        renderer.info("  remove <id>                           移除 Provider");
+        renderer.info("  enable <id>                           启用 Provider");
+        renderer.info("  disable <id>                          禁用 Provider");
+        renderer.info("  test <id>                             测试 Provider 连通性");
     }
 
     // ─────────────────────────────────────────────
