@@ -8,10 +8,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.util.List;
+
 /**
  * 通知分发器 — 根据紧急程度选择通道并发送。
  *
- * <p>HIGH/MEDIUM → 日志通道，LOW → 被动队列。
+ * <p>HIGH/MEDIUM → 遍历所有通道分发，LOW → 被动队列。
  * 同时持久化到 proactive_notifications 表。</p>
  *
  * @author zsg
@@ -21,14 +23,14 @@ public class NotificationDispatcher {
 
     private static final Logger log = LoggerFactory.getLogger(NotificationDispatcher.class);
 
-    private final NotificationChannel logChannel;
+    private final List<NotificationChannel> channels;
     private final PassiveNotificationQueue passiveQueue;
     private final JdbcTemplate jdbcTemplate;
 
-    public NotificationDispatcher(NotificationChannel logChannel,
+    public NotificationDispatcher(List<NotificationChannel> channels,
                                    PassiveNotificationQueue passiveQueue,
                                    JdbcTemplate jdbcTemplate) {
-        this.logChannel = logChannel;
+        this.channels = List.copyOf(channels);
         this.passiveQueue = passiveQueue;
         this.jdbcTemplate = jdbcTemplate;
     }
@@ -44,9 +46,17 @@ public class NotificationDispatcher {
             passiveQueue.enqueue(notification);
             log.info("通知入队被动队列: type={}, urgency={}", notification.type(), notification.urgency());
         } else {
-            logChannel.send(notification);
-            log.info("通知已发送: type={}, urgency={}, channel={}",
-                    notification.type(), notification.urgency(), logChannel.id());
+            // HIGH/MEDIUM 遍历所有通道分发，单通道失败不中断
+            for (NotificationChannel channel : channels) {
+                try {
+                    channel.send(notification);
+                    log.info("通知已发送: type={}, urgency={}, channel={}",
+                            notification.type(), notification.urgency(), channel.id());
+                } catch (Exception e) {
+                    log.warn("通知发送失败: channel={}, type={}, error={}",
+                            channel.id(), notification.type(), e.getMessage());
+                }
+            }
         }
 
         // 持久化
