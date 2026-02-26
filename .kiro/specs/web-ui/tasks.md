@@ -6,8 +6,8 @@ Web UI 模块（Phase 5 — 模块 18）采用前后端分离架构实现。后�
 
 ## Tasks
 
-- [ ] 1. 实现后端 A2UI 数据模型和 REST 请求/响应模型
-  - [ ] 1.1 创建 A2UI 核心 record（A2uiComponent、A2uiSignal、A2uiComponentTree）
+- [x] 1. 实现后端 A2UI 数据模型和 REST 请求/响应模型
+  - [x] 1.1 创建 A2UI 核心 record（A2uiComponent、A2uiSignal、A2uiComponentTree）
     - 在 `com.lifepilot.interaction.web.model` 包下创建三个 record
     - A2uiComponent 包含 id、type、properties（Map）、children（List）、signal（@Nullable A2uiSignal）
     - A2uiSignal 包含 name、payload（Map）
@@ -21,27 +21,27 @@ Web UI 模块（Phase 5 — 模块 18）采用前后端分离架构实现。后�
     - Tag: `Feature: web-ui, Property 2: A2uiComponentTree 序列化 round-trip`
     - **Validates: Requirements 4.5**
 
-  - [ ] 1.3 创建 REST 请求/响应 record（ChatRequest、ChatResponse、SignalRequest、SessionInfo、MessageInfo、UserSettings、SseEvent）
+  - [x] 1.3 创建 REST 请求/响应 record（ChatRequest、ChatResponse、SignalRequest、SessionInfo、MessageInfo、UserSettings、SseEvent）
     - 在 `com.lifepilot.interaction.web.model` 包下创建所有 REST 模型 record
     - SignalRequest 紧凑构造器中 payload 使用 Map.copyOf() 防御性拷贝
     - 创建 ErrorResponse record 用于统一错误响应
     - _Requirements: 2.1, 2.2, 2.3, 2.7, 5.1, 13.1, 13.2_
 
-- [ ] 2. 实现 WebProperties 配置属性和 application.yml 更新
-  - [ ] 2.1 创建 WebProperties record
+- [x] 2. 实现 WebProperties 配置属性和 application.yml 更新
+  - [x] 2.1 创建 WebProperties record
     - 在 `com.lifepilot.interaction.web.config` 包下创建 WebProperties
     - 使用 `@ConfigurationProperties("lifepilot.web")` 绑定
     - 嵌套 SseProperties（timeout=300000, heartbeatInterval=30000）
     - 嵌套 CorsProperties（allowedOrigins=["http://localhost:5173"], allowCredentials=true）
     - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5_
 
-  - [ ] 2.2 更新 application.yml 声明 Web 配置项
+  - [x] 2.2 更新 application.yml 声明 Web 配置项
     - 在 application.yml 中添加 `lifepilot.web.sse` 和 `lifepilot.web.cors` 配置段
     - 显式声明所有配置项及默认值
     - _Requirements: 7.6_
 
-- [ ] 3. 实现 WebChannelAdapter 通道适配器
-  - [ ] 3.1 创建 WebChannelAdapter 类
+- [x] 3. 实现 WebChannelAdapter 通道适配器
+  - [x] 3.1 创建 WebChannelAdapter 类
     - 在 `com.lifepilot.interaction.web.adapter` 包下创建 WebChannelAdapter
     - 继承 AbstractChannelAdapter，channelType() 返回 ChannelType.WEB
     - 实现 normalize() 方法：ChatRequest → GatewayMessage（TextMessage）、SignalRequest → GatewayMessage（EventMessage）
@@ -67,8 +67,8 @@ Web UI 模块（Phase 5 — 模块 18）采用前后端分离架构实现。后�
     - Mock MessageGateway 验证交互
     - _Requirements: 1.1, 1.2, 1.3_
 
-- [ ] 4. 实现 SseSessionManager
-  - [ ] 4.1 创建 SseSessionManager 类
+- [x] 4. 实现 SseSessionManager
+  - [x] 4.1 创建 SseSessionManager 类
     - 在 `com.lifepilot.interaction.web.sse` 包下创建 SseSessionManager
     - 使用 ConcurrentHashMap 管理 streamId → SseEmitter 映射
     - 实现 createEmitter()（从 WebProperties 读取 timeout）、sendEvent()、closeEmitter()
@@ -83,11 +83,11 @@ Web UI 模块（Phase 5 — 模块 18）采用前后端分离架构实现。后�
     - 测试心跳调度逻辑
     - _Requirements: 3.6, 3.7_
 
-- [ ] 5. Checkpoint — 后端核心组件验证
+- [x] 5. Checkpoint — 后端核心组件验证
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 6. 实现 ChatController 和 SettingsController
-  - [ ] 6.1 创建 ChatController
+- [x] 6. 实现 ChatController 和 SettingsController
+  - [x] 6.1 创建 ChatController
     - 在 `com.lifepilot.interaction.web.controller` 包下创建 ChatController
     - POST /api/chat/messages — 非流式发送消息，调用 WebChannelAdapter.processMessage()
     - POST /api/chat/messages/stream — SSE 流式端点，返回 SseEmitter，调用 processMessageStreaming()
@@ -98,13 +98,13 @@ Web UI 模块（Phase 5 — 模块 18）采用前后端分离架构实现。后�
     - 会话 ID 不存在返回 404，信号参数无效返回 400
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.7, 3.1, 3.2, 3.3, 3.4, 3.5, 5.1, 5.2, 5.3, 5.4_
 
-  - [ ] 6.2 创建 SettingsController
+  - [x] 6.2 创建 SettingsController
     - 在 `com.lifepilot.interaction.web.controller` 包下创建 SettingsController
     - GET /api/settings — 获取用户设置
     - PUT /api/settings — 更新用户设置
     - _Requirements: 2.5, 2.6_
 
-  - [ ] 6.3 创建全局异常处理器 WebExceptionHandler
+  - [x] 6.3 创建全局异常处理器 WebExceptionHandler
     - 使用 @RestControllerAdvice 统一处理异常
     - 返回标准化 ErrorResponse（code, message, timestamp）
     - _Requirements: 2.7, 5.3, 5.4_
@@ -135,8 +135,8 @@ Web UI 模块（Phase 5 — 模块 18）采用前后端分离架构实现。后�
     - Tag: `Feature: web-ui, Property 9: 非流式消息处理完整性`
     - **Validates: Requirements 2.1**
 
-- [ ] 7. 实现 WebAutoConfiguration 和 CORS 配置
-  - [ ] 7.1 创建 WebAutoConfiguration
+- [x] 7. 实现 WebAutoConfiguration 和 CORS 配置
+  - [x] 7.1 创建 WebAutoConfiguration
     - 在 `com.lifepilot.interaction.web.config` 包下创建 WebAutoConfiguration
     - @ConditionalOnProperty(name = "lifepilot.gateway.channels.web.enabled", havingValue = "true")
     - 注册 WebChannelAdapter、SseSessionManager、ChatController、SettingsController Bean
@@ -152,11 +152,11 @@ Web UI 模块（Phase 5 — 模块 18）采用前后端分离架构实现。后�
     - 测试 WebProperties 默认值正确绑定
     - _Requirements: 1.4, 1.5, 6.1, 6.5, 14.1, 14.3_
 
-- [ ] 8. Checkpoint — 后端完整验证
+- [x] 8. Checkpoint — 后端完整验证
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 9. 搭建前端项目脚手架（lifepilot-web）
-  - [ ] 9.1 初始化 Vue 3 + Vite + TypeScript 项目
+- [x] 9. 搭建前端项目脚手架（lifepilot-web）
+  - [x] 9.1 初始化 Vue 3 + Vite + TypeScript 项目
     - 在工作区根目录创建 lifepilot-web/ 项目
     - 配置 package.json（Vue 3、Vite、TypeScript、Pinia、Vue Router）
     - 配置 vite.config.ts（/api 代理到 VITE_API_BASE，默认 http://localhost:8080）
@@ -164,12 +164,12 @@ Web UI 模块（Phase 5 — 模块 18）采用前后端分离架构实现。后�
     - 创建 .env 文件声明 VITE_API_BASE 环境变量
     - _Requirements: 8.1, 8.5, 8.6_
 
-  - [ ] 9.2 集成 Tailwind CSS 和 shadcn-vue
+  - [x] 9.2 集成 Tailwind CSS 和 shadcn-vue
     - 安装 Tailwind CSS 及依赖，配置 tailwind.config.ts 和 main.css
     - 安装 shadcn-vue 组件库，初始化配置
     - _Requirements: 8.2_
 
-  - [ ] 9.3 创建路由和布局组件
+  - [x] 9.3 创建路由和布局组件
     - 配置 Vue Router（/ → ChatView，/settings → SettingsView）
     - 创建 AppLayout.vue（侧边栏 + 主内容区）
     - 创建 Sidebar.vue（会话列表占位）
