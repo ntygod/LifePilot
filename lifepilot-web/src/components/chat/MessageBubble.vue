@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { Message } from '@/types'
 import StreamingText from './StreamingText.vue'
+import A2uiRenderer from '@/components/a2ui/A2uiRenderer.vue'
 
 defineProps<{
   message: Message
@@ -31,11 +32,17 @@ defineProps<{
         {{ message.content }}
       </p>
 
-      <!-- Agent 消息：Markdown 渲染 -->
+      <!-- Agent 消息：Markdown 渲染 + A2UI 组件 -->
       <template v-else>
         <StreamingText
           :content="streaming ? (streamingContent ?? '') : message.content"
           :streaming="streaming"
+        />
+        <!-- A2UI 组件渲染 -->
+        <A2uiRenderer
+          v-if="message.a2uiComponents?.length"
+          :components="message.a2uiComponents"
+          class="mt-2"
         />
       </template>
     </div>
