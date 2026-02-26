@@ -7,9 +7,12 @@ import com.lifepilot.agent.proactive.ResponseTracker;
 import com.lifepilot.agent.proactive.RuleEngine;
 import com.lifepilot.agent.proactive.SignalCollector;
 import com.lifepilot.agent.proactive.channel.LogNotificationChannel;
+import com.lifepilot.agent.proactive.channel.NotificationChannel;
 import com.lifepilot.agent.proactive.channel.PassiveNotificationQueue;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.memory.episodic.EpisodicMemory;
+
+import java.util.List;
 import com.lifepilot.skill.builtin.habit.HabitRepository;
 import com.lifepilot.skill.builtin.schedule.ScheduleRepository;
 import com.lifepilot.skill.builtin.todo.TodoRepository;
@@ -86,10 +89,10 @@ public class ProactiveAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public NotificationDispatcher notificationDispatcher(LogNotificationChannel logChannel,
+    public NotificationDispatcher notificationDispatcher(List<NotificationChannel> channels,
                                                           PassiveNotificationQueue passiveQueue,
                                                           JdbcTemplate jdbcTemplate) {
-        return new NotificationDispatcher(logChannel, passiveQueue, jdbcTemplate);
+        return new NotificationDispatcher(channels, passiveQueue, jdbcTemplate);
     }
 
     @Bean

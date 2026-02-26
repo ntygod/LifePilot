@@ -1,8 +1,12 @@
 package com.lifepilot;
 
+import java.util.HashMap;
+import java.util.Map;
+
+import com.lifepilot.app.LaunchMode;
+import com.lifepilot.interaction.cli.FastPathRunner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import com.lifepilot.interaction.cli.FastPathRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.event.ApplicationStartedEvent;
@@ -30,7 +34,26 @@ public class LifePilotApplication {
         if (FastPathRunner.tryFastPath(args)) {
             System.exit(0);
         }
-        SpringApplication.run(LifePilotApplication.class, args);
+
+        // 解析启动模式并注入对应 Spring 属性
+        LaunchMode mode = FastPathRunner.resolveMode(args);
+
+        SpringApplication app = new SpringApplication(LifePilotApplication.class);
+        Map<String, Object> props = new HashMap<>();
+
+        switch (mode) {
+            case CLI -> props.put("spring.main.web-application-type", "none");
+            case WEB -> props.put("lifepilot.cli.enabled", false);
+            case TRAY -> {
+                props.put("lifepilot.cli.enabled", false);
+                props.put("lifepilot.tray.enabled", true);
+            }
+            case FULL -> { /* 默认配置 */ }
+        }
+
+        props.put("lifepilot.app.launch-mode", mode.name().toLowerCase());
+        app.setDefaultProperties(props);
+        app.run(args);
     }
 
     /**
