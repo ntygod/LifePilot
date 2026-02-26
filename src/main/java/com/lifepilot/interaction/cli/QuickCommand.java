@@ -4,8 +4,10 @@ import com.lifepilot.llm.config.ProviderCapability;
 import com.lifepilot.llm.config.ProviderConfig;
 import com.lifepilot.llm.config.ProviderType;
 import com.lifepilot.llm.registry.ProviderRegistry;
+import com.lifepilot.mcp.config.McpServerConfig;
 import com.lifepilot.mcp.registry.McpServerEntry;
 import com.lifepilot.mcp.registry.McpServerRegistry;
+import com.lifepilot.mcp.transport.TransportType;
 import com.lifepilot.skill.model.SkillDefinition;
 import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.skill.yaml.YamlSkillLoader;
@@ -491,6 +493,30 @@ public class QuickCommand {
         String subCommand = subArgs[0].toLowerCase();
         switch (subCommand) {
             case "list" -> mcpList(renderer);
+            case "add" -> {
+                if (subArgs.length < 4) {
+                    renderer.error("缺少参数: mcp add <name> <transport> <url>");
+                    printMcpUsage(renderer);
+                    return;
+                }
+                mcpAdd(java.util.Arrays.copyOfRange(subArgs, 1, subArgs.length), renderer);
+            }
+            case "remove" -> {
+                if (subArgs.length < 2) {
+                    renderer.error("缺少参数: mcp remove <name>");
+                    printMcpUsage(renderer);
+                    return;
+                }
+                mcpRemove(subArgs[1], renderer);
+            }
+            case "test" -> {
+                if (subArgs.length < 2) {
+                    renderer.error("缺少参数: mcp test <name>");
+                    printMcpUsage(renderer);
+                    return;
+                }
+                mcpTest(subArgs[1], renderer);
+            }
             default -> {
                 renderer.error("未知子命令: mcp " + subCommand);
                 printMcpUsage(renderer);
@@ -522,6 +548,58 @@ public class QuickCommand {
     }
 
     /**
+     * 添加 MCP Server。
+     *
+     * @param args [name, transport, url]
+     * @param renderer 响应渲染器
+     */
+    private void mcpAdd(String[] args, ResponseRenderer renderer) {
+        TransportType transport = TransportType.valueOf(args[1].toUpperCase().replace("-", "_"));
+        var config = McpServerConfig.builder()
+                .name(args[0])
+                .transport(transport)
+                .url(args[2])
+                .autoConnect(false)
+                .reconnect(true)
+                .build();
+        mcpServerRegistry.connectServer(config);
+        renderer.success("MCP Server 连接已发起: " + args[0]);
+    }
+
+    /**
+     * 移除 MCP Server。
+     */
+    private void mcpRemove(String name, ResponseRenderer renderer) {
+        if (mcpServerRegistry.getServer(name).isEmpty()) {
+            renderer.error("MCP Server 未找到: " + name);
+            return;
+        }
+        mcpServerRegistry.disconnectServer(name);
+        renderer.success("MCP Server 已断开: " + name);
+    }
+
+    /**
+     * 测试 MCP Server 连通性。
+     */
+    private void mcpTest(String name, ResponseRenderer renderer) {
+        var clientOpt = mcpServerRegistry.getClient(name);
+        if (clientOpt.isEmpty()) {
+            renderer.error("MCP Server 不可用: " + name);
+            return;
+        }
+        renderer.info("正在测试 MCP Server: " + name + " ...");
+        try {
+            long startMs = System.currentTimeMillis();
+            var tools = clientOpt.get().listTools().join();
+            long elapsedMs = System.currentTimeMillis() - startMs;
+            renderer.success("MCP Server " + name + " 连通正常（发现 " + tools.size() + " 个工具，延迟 " + elapsedMs + "ms）");
+        } catch (Exception e) {
+            log.warn("MCP Server 测试失败: name={}, error={}", name, e.getMessage());
+            renderer.error("MCP Server 测试失败: " + e.getMessage());
+        }
+    }
+
+    /**
      * 输出 mcp 命令的用法帮助。
      */
     private void printMcpUsage(ResponseRenderer renderer) {
@@ -529,7 +607,10 @@ public class QuickCommand {
         renderer.info("用法: mcp <子命令>");
         renderer.info("");
         renderer.info("可用子命令:");
-        renderer.info("  list              列出所有 MCP Server");
+        renderer.info("  list                              列出所有 MCP Server");
+        renderer.info("  add <name> <transport> <url>      添加 MCP Server");
+        renderer.info("  remove <name>                     移除 MCP Server");
+        renderer.info("  test <name>                       测试 MCP Server 连通性");
     }
 
     // ─────────────────────────────────────────────
