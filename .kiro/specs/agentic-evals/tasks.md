@@ -6,7 +6,7 @@
 
 ## Tasks
 
-- [ ] 1. 配置层与数据模型
+- [x] 1. 配置层与数据模型
   - [ ] 1.1 实现 EvalConfigProperties 配置属性类
     - 创建 `com.lifepilot.eval.config.EvalConfigProperties`，包含 `enabled`、`scenarioDirectory`、`defaultPassThreshold`、`degradationThreshold` 字段
     - 创建嵌套类 `LlmJudge`（scene、timeoutSeconds、fallbackScore、maxRetries）

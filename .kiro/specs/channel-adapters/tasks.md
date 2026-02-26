@@ -253,7 +253,7 @@
     - 验证端点注册、路由分发、异常处理
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7_
 
-- [-] 12. Final checkpoint - 确保所有测试通过
+- [x] 12. Final checkpoint - 确保所有测试通过
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes
