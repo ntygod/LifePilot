@@ -327,7 +327,7 @@
     - 验证五张表结构正确
     - _Requirements: 13.1, 13.2, 13.3, 13.4, 13.5_
 
-- [-] 15. Final checkpoint — 全量验证
+- [x] 15. Final checkpoint — 全量验证
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes
