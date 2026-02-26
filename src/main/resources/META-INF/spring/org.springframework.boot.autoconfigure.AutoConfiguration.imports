@@ -11,3 +11,4 @@ com.lifepilot.interaction.config.GatewayAutoConfiguration
 com.lifepilot.interaction.config.GatewayMiddlewareAutoConfiguration
 com.lifepilot.interaction.config.ChannelAdapterAutoConfiguration
 com.lifepilot.media.config.MediaAutoConfiguration
+com.lifepilot.workflow.config.WorkflowAutoConfiguration
