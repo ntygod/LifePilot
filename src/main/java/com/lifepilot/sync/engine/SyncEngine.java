@@ -545,7 +545,7 @@ public class SyncEngine {
         String now = syncTime.toString();
         for (LocalEntity local : resolvedLocalChanges) {
             if (!failedIds.contains(local.localId())) {
-                // 推送成功，upsert SyncRecord（remoteEntityId 由连接器返回，此处暂用 localId 占位）
+                // 推送成功，upsert SyncRecord（remoteEntityId 应由连接器返回，此处用 localId 构造临时映射）
                 upsertSyncRecord(profile.id(), local.entityType(), local.localId(),
                         "remote-" + local.localId(), null, null, now);
             }

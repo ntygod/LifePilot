@@ -5,9 +5,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * 日志通知通道 — 占位实现，以 INFO 级别日志输出通知内容。
+ * 日志通知通道 — 以 INFO 级别日志输出通知内容。
  *
- * <p>未来替换为系统托盘/Web UI/企微等真实通道。</p>
+ * <p>作为默认通知通道，与 TrayNotificationChannel 等真实通道并存。
+ * 在无 GUI 环境下提供基本的通知输出能力。</p>
  *
  * @author zsg
  * @since 2026-02-25

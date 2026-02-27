@@ -2,8 +2,7 @@ package com.lifepilot.agent;
 
 import com.lifepilot.agent.model.*;
 import com.lifepilot.observability.guardrail.RiskLevel;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -17,8 +16,6 @@ import java.util.List;
  * @since 2026-07-20
  */
 public class StateReducer {
-
-    private static final Logger log = LoggerFactory.getLogger(StateReducer.class);
 
     /** 反思→规划回退最大次数。 */
     private static final int MAX_REVISION_CYCLES = 2;
