@@ -12,9 +12,9 @@ inclusion: always
 
 ### 1.1 模块依赖图
 
-> 最后更新：2026-02-26
+> 最后更新：2026-02-27
 > 已完成模块标注 ✅，进行中标注 🔧
-> Phase 4 全部完成
+> Phase 4 全部完成，Phase 6 模块 21 已完成
 
 ```
 Phase 0 — 项目骨架 ✅
@@ -145,7 +145,7 @@ Phase 5 — Web UI + 可观测性
   │
 
 Phase 6 — 生态与进阶（远期）
-  ├─ 21. 多 Agent 协作（依赖 Agent 引擎 + Skill 系统）
+  ├─ 21. 多 Agent 协作 ✅（依赖 Agent 引擎 + Skill 系统）
   │     ├─ AgentRegistry + AgentDefinition
   │     ├─ HandoffTool 委托工具模式（借鉴 AstrBot/OpenClaw）
   │     ├─ SubAgent 独立预算 + 独立上下文 + 差异化模型
