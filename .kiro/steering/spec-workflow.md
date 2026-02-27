@@ -110,7 +110,7 @@ Phase 5 — Web UI + 可观测性
   │     ├─ Skill / MCP 管理页
   │     ├─ 轨迹回放页
   │     └─ 工作流管理页
-  ├─ 20. 可观测性完善（依赖 Agent 引擎 + 工具系统）
+  ├─ 20. 可观测性完善 ✅（依赖 Agent 引擎 + 工具系统）
   │     ├─ TraceQuery 轨迹查询 API
   │     ├─ GuardrailAdvisor Spring AI Advisor 横切注入
   │     ├─ DataRedactor 自动脱敏
