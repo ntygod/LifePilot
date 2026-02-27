@@ -69,6 +69,25 @@ lifepilot:
         default-max-tokens: 16000
         default-max-steps: 15
         default-timeout-seconds: 180
+  a2a:
+    enabled: true
+    server:
+      enabled: true
+      api-key: ${LIFEPILOT_A2A_API_KEY:}
+      agent-name: LifePilot
+      agent-description: 个人生活助手
+      agent-version: 1.0.0
+      protocol-version: 0.2.5
+      streaming-enabled: true
+    client:
+      enabled: true
+      remote-agents: []
+      connect-timeout-seconds: 10
+      read-timeout-seconds: 60
+      card-cache-ttl-minutes: 30
+    task:
+      ttl-minutes: 60
+      max-history-length: 50
   llm:
     enabled: true
     providers:
