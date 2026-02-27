@@ -27,15 +27,15 @@
 - [x] 2. Checkpoint - 确保数据库迁移和配置层正确
   - Ensure all tests pass, ask the user if questions arise.
 
-- [-] 3. 核心数据模型 — RiskLevel 统一与 Trace 类型层次
-  - [-] 3.1 统一 RiskLevel 和 ApprovalMode 枚举
+- [x] 3. 核心数据模型 — RiskLevel 统一与 Trace 类型层次
+  - [x] 3.1 统一 RiskLevel 和 ApprovalMode 枚举
     - 创建 `com.lifepilot.observability.guardrail.RiskLevel` 枚举（LOW、MEDIUM、HIGH、CRITICAL）
     - 创建 `com.lifepilot.observability.guardrail.ApprovalMode` 枚举（AUTO、AUTO_WITH_AUDIT、USER_CONFIRM、USER_CONFIRM_WITH_VERIFICATION）
     - 修改所有引用 `com.lifepilot.tool.model.RiskLevel` 和 `com.lifepilot.agent.model.RiskLevel` 的代码，改为导入新的统一枚举
     - 标记旧的 RiskLevel 类 `@Deprecated`
     - _Requirements: 5.7, 5.8_
 
-  - [~] 3.2 实现 TraceStep sealed interface 和五种 record 类型
+  - [x] 3.2 实现 TraceStep sealed interface 和五种 record 类型
     - 创建 `com.lifepilot.observability.trace.TraceStep` sealed interface，定义 stepIndex()、timestamp()、duration()、typeName() 方法
     - 实现 LlmCallStep record（providerId、modelId、scene、inputTokens、outputTokens、latency、cacheHit、temperature、finishReason）
     - 实现 ToolCallStep record（toolId、toolAction、inputJson、outputJson、duration、success、errorMessage、riskLevel）
@@ -44,7 +44,7 @@
     - 实现 EvaluationStep record（五维评分 + overallScore + violations + suggestions）
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6_
 
-  - [~] 3.3 实现 TraceRecord、TraceMetadata 和辅助 record
+  - [x] 3.3 实现 TraceRecord、TraceMetadata 和辅助 record
     - 创建 `com.lifepilot.observability.trace.TraceRecord` record，包含 traceId、sessionId、goal、startTime、endTime、totalDuration、totalSteps、totalTokens、inputTokens、outputTokens、success、terminationReason、finalOutput、errorMessage、steps、metadata
     - 创建 `com.lifepilot.observability.trace.TraceMetadata` record（channelType、userId、clientVersion、tags）
     - 紧凑构造函数中使用 List.copyOf() 和 Map.copyOf() 保证不可变性
@@ -55,15 +55,15 @@
     - **Property 1: TraceRecord 和 TraceStep 集合字段不可变性**
     - **Validates: Requirements 1.9**
 
-- [ ] 4. 核心数据模型 — GuardrailPolicy 类型层次
-  - [~] 4.1 实现 GuardrailResult sealed interface
+- [x] 4. 核心数据模型 — GuardrailPolicy 类型层次
+  - [x] 4.1 实现 GuardrailResult sealed interface
     - 创建 `com.lifepilot.observability.guardrail.GuardrailResult` sealed interface
     - 实现 Passed record（policyId）
     - 实现 Blocked record（policyId、reason、riskLevel）
     - 实现 NeedsConfirmation record（policyId、message、approvalMode）
     - _Requirements: 5.6_
 
-  - [~] 4.2 实现 GuardrailPolicy sealed interface 和五种策略 record
+  - [x] 4.2 实现 GuardrailPolicy sealed interface 和五种策略 record
     - 创建 `com.lifepilot.observability.guardrail.GuardrailPolicy` sealed interface，定义 policyId()、enabled()、priority() 方法
     - 实现 ToolRiskPolicy record（policyId、enabled、priority、toolRiskMapping、defaultRiskLevel）
     - 实现 BudgetLimitPolicy record（policyId、enabled、priority、dailyTokenLimit）
@@ -72,7 +72,7 @@
     - 实现 DataRedactionPolicy record（policyId、enabled、priority）
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5_
 
-  - [~] 4.3 实现自定义异常类型
+  - [x] 4.3 实现自定义异常类型
     - 创建 `com.lifepilot.observability.trace.TraceDeserializationException`
     - 创建 `com.lifepilot.observability.trace.TraceNotFoundException`
     - 创建 `com.lifepilot.observability.trace.TraceExportException`
@@ -80,7 +80,7 @@
     - 创建 `com.lifepilot.observability.guardrail.GuardrailConfirmationRequiredException`（含 policyId、message、approvalMode）
     - _Requirements: 7.5, 7.6_
 
-- [ ] 5. Checkpoint - 确保核心数据模型编译通过
+- [-] 5. Checkpoint - 确保核心数据模型编译通过
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 6. DataRedactor 脱敏引擎
