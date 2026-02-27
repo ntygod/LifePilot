@@ -29,7 +29,7 @@
     "@tailwindcss/vite": "^4.1.7",
     "@types/node": "^22.15.18",
     "@vitejs/plugin-vue": "^5.2.3",
-    "@vue/test-utils": "^2.4.6",
+    "@vue/test-utils": "^2.4.0",
     "fast-check": "^4.1.1",
     "jsdom": "^26.1.0",
     "tailwindcss": "^4.1.7",
