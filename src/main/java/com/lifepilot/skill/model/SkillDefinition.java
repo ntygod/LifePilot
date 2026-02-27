@@ -1,7 +1,6 @@
 package com.lifepilot.skill.model;
 
 import lombok.Builder;
-import org.springframework.lang.Nullable;
 
 import java.util.List;
 import java.util.Map;
@@ -27,8 +26,7 @@ public record SkillDefinition(
         ExecutionStrategy execution,
         MemoryAccessPolicy memoryAccess,
         SkillBudget budget,
-        Map<String, String> metadata,
-        @Nullable String preferredProviderId
+        Map<String, String> metadata
 ) {
 
     /** 紧凑构造器 — 校验 + 防御性拷贝。 */

@@ -267,7 +267,7 @@ class YamlSkillLoaderTest {
     }
 
     @Test
-    void convertToDefinition_解析providerIdField() {
+    void convertToDefinition_providerIdField已移除不影响解析() {
         Map<String, Object> yamlMap = buildMinimalYamlMap();
         @SuppressWarnings("unchecked")
         var skill = (Map<String, Object>) yamlMap.get("skill");
@@ -276,7 +276,8 @@ class YamlSkillLoaderTest {
 
         SkillDefinition def = loader.convertToDefinition(yamlMap, filePath);
 
-        assertThat(def.preferredProviderId()).isEqualTo("openai-gpt4");
+        // preferredProviderId 已从 SkillDefinition 移除，provider-id 字段被忽略
+        assertThat(def.id()).isEqualTo("minimal-skill");
     }
 
     // ─────────────────────────────────────────────

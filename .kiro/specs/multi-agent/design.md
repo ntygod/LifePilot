@@ -52,7 +52,7 @@
 | `ToolContract` | tool | permits 列表不变，HandoffTool 通过 BuiltinTool 包装 | 无影响 | 不修改 sealed interface |
 | `DynamicToolRegistry` | tool | 新增 `unregisterBuiltinTool(String toolId)` 方法 | multi-agent | AgentToToolBridge 注销 HandoffTool 需要 |
 | `SkillDefinition` | skill | 移除 `preferredProviderId` 字段 | skill 模块内部 | Skill 不使用 LLM |
-| `SubAgentFactory` | skill | 标记 `@Deprecated` | skill 模块内部 | 职责迁移到 AgentExecutor |
+| `SubAgentFactory` | skill | 直接删除 | skill 模块内部 | 职责迁移到 AgentExecutor |
 | `SkillToToolBridge` | skill | 移除 SubAgent 激活路径 | skill 模块内部 | Skill 回归 L1 |
 | `SkillLifecycleManager` | skill | 移除 SubAgent 委托逻辑 | skill 模块内部 | Skill 回归 L1 |
 
@@ -326,12 +326,11 @@ public class ToolDiscoveryService {
 ### AgentRequest 扩展
 
 ```java
-// 现有 AgentRequest 需新增可选字段以支持 SubAgent 执行
+// 现有 AgentRequest 直接扩展字段以支持 SubAgent 执行（无需兼容旧构造器）
 public record AgentRequest(
     String message,
     String sessionId,
     String channel,
-    // --- 新增字段（SubAgent 支持）---
     @Nullable String systemPrompt,       // Agent 专属 System Prompt
     @Nullable Budget budget,             // 独立预算（覆盖默认）
     @Nullable String parentTraceId,      // 父 traceId
@@ -339,10 +338,6 @@ public record AgentRequest(
     @Nullable String preferredProvider,  // 偏好 LLM Provider
     @Nullable List<String> allowedToolIds // 工具白名单
 ) {
-    /** 兼容现有构造器。 */
-    public AgentRequest(String message, String sessionId, String channel) {
-        this(message, sessionId, channel, null, null, null, 0, null, null);
-    }
 }
 ```
 

@@ -106,10 +106,28 @@ public class AgentLoop {
                 // 上下文组装
                 var assembledContext = contextAssembler.assemble(state);
 
+                // SubAgent 场景：注入 Agent 专属 System Prompt
+                if (request.systemPrompt() != null && !request.systemPrompt().isBlank()) {
+                    String mergedSystemPrompt = request.systemPrompt() + "\n\n" + assembledContext.systemPrompt();
+                    assembledContext = new com.lifepilot.agent.context.AssembledContext(
+                            mergedSystemPrompt,
+                            assembledContext.userPrompt(),
+                            assembledContext.retrievedMemories(),
+                            assembledContext.tokenBudget(),
+                            assembledContext.retrievalCount(),
+                            assembledContext.topRetrievalScore(),
+                            assembledContext.workingMemoryTokens(),
+                            assembledContext.degraded()
+                    );
+                }
+
                 // LLM 调用
                 Action action;
                 try {
-                    String scene = mapPhaseToScene(state.phase());
+                    // SubAgent 场景：使用偏好 Provider 作为场景名
+                    String scene = request.preferredProvider() != null
+                            ? request.preferredProvider()
+                            : mapPhaseToScene(state.phase());
                     var response = llmRouter.call(scene, assembledContext.userPrompt(), null);
                     action = actionParser.parse(state.phase(), response.content());
                 } catch (LlmUnavailableException e) {

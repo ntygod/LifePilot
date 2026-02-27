@@ -6,8 +6,8 @@
 
 ## Tasks
 
-- [ ] 1. 实现数据模型层（model 包）
-  - [ ] 1.1 实现 AgentSource 密封接口和 AgentBudget record
+- [x] 1. 实现数据模型层（model 包）
+  - [x] 1.1 实现 AgentSource 密封接口和 AgentBudget record
     - 创建 `com.lifepilot.multiagent.model.AgentSource` sealed interface
     - permits `Builtin` 和 `MarkdownDefined` 两个 record 子类型
     - `MarkdownDefined` 包含 `filePath`（String）和 `@Nullable lastModified`（Instant）字段
@@ -17,7 +17,7 @@
     - 实现 `toAgentBudget()` 方法，映射到 `com.lifepilot.agent.model.Budget`（tokensUsed=0, tokensReserved=0, elapsed=ZERO）
     - _Requirements: 1.4, 1.5, 1.6_
 
-  - [ ] 1.2 实现 AgentDefinition record
+  - [x] 1.2 实现 AgentDefinition record
     - 创建 `com.lifepilot.multiagent.model.AgentDefinition` record
     - 包含 10 个字段：id, name, description, systemPrompt, allowedTools, canDelegate, budget, preferredProvider(@Nullable), source, metadata
     - 使用 `@Builder(toBuilder = true)` 注解
@@ -25,7 +25,7 @@
     - 紧凑构造器中校验 id/name/systemPrompt 非空非 blank，抛出 IllegalArgumentException
     - _Requirements: 1.1, 1.2, 1.3_
 
-  - [ ] 1.3 实现 AgentRegistryEvent 密封接口
+  - [x] 1.3 实现 AgentRegistryEvent 密封接口
     - 创建 `com.lifepilot.multiagent.model.AgentRegistryEvent` sealed interface
     - permits `AgentRegistered(AgentDefinition definition)` 和 `AgentUnregistered(String agentId)` 两个 record
     - _Requirements: 2.5_
@@ -41,14 +41,14 @@
     - 单元测试：DEFAULT/LIGHTWEIGHT/HEAVYWEIGHT 预设常量值验证
     - **Validates: Requirements 1.4, 1.5**
 
-- [ ] 2. 实现注册中心和跨模块变更
-  - [ ] 2.1 在 DynamicToolRegistry 新增 unregisterBuiltinTool 方法
+- [x] 2. 实现注册中心和跨模块变更
+  - [x] 2.1 在 DynamicToolRegistry 新增 unregisterBuiltinTool 方法
     - 在 `com.lifepilot.tool.registry.DynamicToolRegistry` 中新增 `unregisterBuiltinTool(String toolId)` 方法
     - 从 builtinTools ConcurrentHashMap 中移除指定 toolId 的工具
     - 跨模块变更，向后兼容（新增方法）
     - _Requirements: 3.2（跨模块接口变更表：DynamicToolRegistry）_
 
-  - [ ] 2.2 实现 AgentRegistry 注册中心
+  - [x] 2.2 实现 AgentRegistry 注册中心
     - 创建 `com.lifepilot.multiagent.registry.AgentRegistry`
     - 使用 `ConcurrentHashMap<String, AgentDefinition>` 存储
     - 实现 `register(AgentDefinition)` 方法：校验 ID 非空、Builtin 不允许被 Builtin 覆盖、MarkdownDefined 可覆盖 Builtin、发布 AgentRegistered 事件
@@ -72,11 +72,11 @@
     - 测试并发注册安全性
     - **Validates: Requirements 2.2, 2.5**
 
-- [ ] 3. Checkpoint - 确认数据模型层和注册中心
+- [x] 3. Checkpoint - 确认数据模型层和注册中心
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 4. 实现 HandoffTool 工厂和 AgentExecutor 执行器
-  - [ ] 4.1 扩展 AgentRequest 新增 SubAgent 支持字段
+- [x] 4. 实现 HandoffTool 工厂和 AgentExecutor 执行器
+  - [x] 4.1 扩展 AgentRequest 新增 SubAgent 支持字段
     - 修改 `com.lifepilot.agent.model.AgentRequest` record，新增可选字段：
       - `@Nullable String systemPrompt`（Agent 专属 System Prompt）
       - `@Nullable Budget budget`（独立预算，覆盖默认）
@@ -84,11 +84,10 @@
       - `int depth`（委托深度，默认 0）
       - `@Nullable String preferredProvider`（偏好 LLM Provider）
       - `@Nullable List<String> allowedToolIds`（工具白名单）
-    - 保留兼容现有构造器（message, sessionId, channel）
-    - 跨模块变更，向后兼容（新增字段 + 兼容构造器）
+    - 直接修改 record 字段，同步修复所有现有调用点（无需兼容旧构造器）
     - _Requirements: 5.1, 5.2, 5.3, 5.4_
 
-  - [ ] 4.2 实现 HandoffToolFactory 委托工具工厂
+  - [x] 4.2 实现 HandoffToolFactory 委托工具工厂
     - 创建 `com.lifepilot.multiagent.execution.HandoffToolFactory`
     - 实现 `createHandoffTool(AgentDefinition)` 方法，返回 `BuiltinTool` 实例
     - 工具 ID 格式 `handoff_to_{agentId}`
@@ -97,7 +96,7 @@
     - executor lambda 内部委托 AgentExecutor.execute()
     - _Requirements: 4.1, 4.2, 4.3, 4.4_
 
-  - [ ] 4.3 实现 AgentExecutor 执行器
+  - [x] 4.3 实现 AgentExecutor 执行器
     - 创建 `com.lifepilot.multiagent.execution.AgentExecutor`
     - 实现 `execute(AgentDefinition, task, context, parentState)` 方法
     - 执行流程：
@@ -123,11 +122,11 @@
     - 单元测试：preferredProvider 传递验证、allowedTools 中不存在的工具 ID 跳过 + WARN 日志
     - **Validates: Requirements 4.5, 4.6, 5.4, 5.6**
 
-- [ ] 5. Checkpoint - 确认 HandoffTool 和 AgentExecutor
+- [x] 5. Checkpoint - 确认 HandoffTool 和 AgentExecutor
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 6. 实现 Markdown Agent 定义解析与加载
-  - [ ] 6.1 实现 AgentMarkdownParser 解析器
+- [x] 6. 实现 Markdown Agent 定义解析与加载
+  - [x] 6.1 实现 AgentMarkdownParser 解析器
     - 创建 `com.lifepilot.multiagent.loader.AgentMarkdownParser`
     - 实现 `parse(String content, Path filePath)` 方法，返回 `Optional<AgentDefinition>`
     - 分离 YAML Frontmatter（`---` 分隔符）和 Markdown 正文
@@ -139,7 +138,7 @@
     - source 设为 `AgentSource.MarkdownDefined(filePath, lastModified)`
     - _Requirements: 6.2, 6.3, 6.4, 6.5_
 
-  - [ ] 6.2 实现 AgentMarkdownLoader 加载器（含热加载）
+  - [x] 6.2 实现 AgentMarkdownLoader 加载器（含热加载）
     - 创建 `com.lifepilot.multiagent.loader.AgentMarkdownLoader`
     - 实现 `loadFromDirectory(Path directory)` 方法：遍历 `.md` 文件 → 调用 parser.parse() → 注册到 AgentRegistry
     - 实现 `loadFromFile(Path file)` 方法：读取文件内容 → 调用 parser.parse()
@@ -163,8 +162,8 @@
     - 测试热加载文件变更检测（新增/修改/删除）
     - **Validates: Requirements 6.1, 6.6, 6.7, 6.8, 6.9**
 
-- [ ] 7. 实现 AgentToToolBridge 事件驱动桥接
-  - [ ] 7.1 实现 AgentToToolBridge
+- [x] 7. 实现 AgentToToolBridge 事件驱动桥接
+  - [x] 7.1 实现 AgentToToolBridge
     - 创建 `com.lifepilot.multiagent.bridge.AgentToToolBridge`
     - 使用 `@EventListener` 监听 `AgentRegistryEvent.AgentRegistered` 和 `AgentRegistryEvent.AgentUnregistered` 事件
     - AgentRegistered 事件：如果 `MultiAgentProperties.registerHandoffTools` 为 true，调用 HandoffToolFactory 创建 BuiltinTool 并注册到 DynamicToolRegistry
@@ -179,8 +178,8 @@
     - 测试 registerHandoffTools=false 时不注册
     - **Validates: Requirements 3.1, 3.2, 3.3**
 
-- [ ] 8. 实现配置、自动装配和预设 Agent
-  - [ ] 8.1 实现 MultiAgentProperties 配置属性类
+- [x] 8. 实现配置、自动装配和预设 Agent
+  - [x] 8.1 实现 MultiAgentProperties 配置属性类
     - 创建 `com.lifepilot.multiagent.config.MultiAgentProperties`
     - `@ConfigurationProperties(prefix = "lifepilot.agent.multi-agent")`
     - 字段：enabled(true)、maxDelegationDepth(2)、agentDefinitionsPath("~/.lifepilot/agents/")、registerHandoffTools(true)
@@ -188,7 +187,7 @@
     - 嵌套 BudgetDefaults 类：defaultMaxTokens(16000)、defaultMaxSteps(15)、defaultTimeoutSeconds(180)
     - _Requirements: 8.1, 8.2, 8.3, 8.4_
 
-  - [ ] 8.2 创建预设 Agent Markdown 定义文件
+  - [x] 8.2 创建预设 Agent Markdown 定义文件
     - 创建 `src/main/resources/preset-agents/writer.md`（写作专家）
       - System Prompt：结构化写作原则、风格匹配、素材组织
       - allowed-tools: [memory-search, knowledge-search]，budget: DEFAULT，canDelegate: false
@@ -200,7 +199,7 @@
       - allowed-tools: [memory-search, skill.todo-query, skill.schedule-query, skill.habit-query]，budget: DEFAULT，canDelegate: false
     - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5_
 
-  - [ ] 8.3 实现 MultiAgentAutoConfiguration 自动配置
+  - [x] 8.3 实现 MultiAgentAutoConfiguration 自动配置
     - 创建 `com.lifepilot.multiagent.config.MultiAgentAutoConfiguration`
     - `@AutoConfiguration(after = {AgentAutoConfiguration.class, SkillAutoConfiguration.class})`
     - `@ConditionalOnProperty(prefix = "lifepilot.agent.multi-agent", name = "enabled", havingValue = "true", matchIfMissing = true)`
@@ -211,7 +210,7 @@
       3. 如果 hotReload.enabled=true，启动热加载
     - _Requirements: 9.1, 9.2, 9.3, 9.4_
 
-  - [ ] 8.4 添加 application.yml 配置项
+  - [x] 8.4 添加 application.yml 配置项
     - 在 `src/main/resources/application.yml` 中添加 `lifepilot.agent.multi-agent` 配置段
     - 包含所有配置项及默认值
     - _Requirements: 8.2_
@@ -220,19 +219,19 @@
     - 验证所有默认值正确
     - **Validates: Requirements 8.2, 8.3, 8.4**
 
-- [ ] 9. Checkpoint - 确认配置、自动装配和预设 Agent
+- [x] 9. Checkpoint - 确认配置、自动装配和预设 Agent
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 10. Skill 系统清理（L1 回归）
-  - [ ] 10.1 清理 SkillDefinition 和 SkillToToolBridge
+- [x] 10. Skill 系统清理（L1 回归）
+  - [x] 10.1 清理 SkillDefinition 和 SkillToToolBridge
     - 从 `SkillDefinition` record 移除 `preferredProviderId` 字段
     - 修改 `SkillToToolBridge`：移除 SubAgent 激活路径，仅桥接 L1 确定性 Skill 执行（HttpAction / ShellAction / ChainAction / TemplateAction）
     - 修复所有因字段移除导致的编译错误（SkillYamlLoader、SkillLifecycleManager 等）
     - _Requirements: 10.1, 10.2_
 
-  - [ ] 10.2 清理 SkillLifecycleManager 和 SubAgentFactory
+  - [x] 10.2 清理 SkillLifecycleManager 和 SubAgentFactory
     - 从 `SkillLifecycleManager` 移除 SubAgent 委托逻辑
-    - 在 `SubAgentFactory` 类上标记 `@Deprecated`，添加 Javadoc 说明职责已迁移到 AgentExecutor
+    - 直接删除 `SubAgentFactory` 类（无需保留 @Deprecated 过渡期）
     - 确保现有 Skill YAML 定义文件不包含 SubAgent 配置时正常加载
     - _Requirements: 10.3, 10.4, 10.5_
 
@@ -242,8 +241,8 @@
     - 验证现有 Skill YAML 正常加载（向后兼容）
     - **Validates: Requirements 10.1, 10.2, 10.3, 10.5**
 
-- [ ] 11. 实现 ToolDiscoveryService 工具发现能力
-  - [ ] 11.1 实现 ToolDiscoveryService
+- [x] 11. 实现 ToolDiscoveryService 工具发现能力
+  - [x] 11.1 实现 ToolDiscoveryService
     - 创建 `com.lifepilot.multiagent.discovery.ToolDiscoveryService`
     - 定义 `ToolSummary` record：toolId, name, description, sourceType
     - 实现 `listAvailableTools()` 方法：从 DynamicToolRegistry.getAllTools() 获取所有工具
@@ -258,7 +257,7 @@
     - 单元测试：空注册表返回空列表、按来源分组验证
     - **Validates: Requirements 11.1, 11.2, 11.3**
 
-- [ ] 12. 集成测试
+- [x] 12. 集成测试
   - [ ]* 12.1 编写 MultiAgent_AgentLoop_集成测试
     - `@SpringBootTest` 验证 Spring Context 加载、Bean 注入链完整
     - 验证预设 Agent 注册（先 Builtin 后 MarkdownDefined）
@@ -275,7 +274,7 @@
     - 验证无 AgentRegistry、AgentExecutor 等 Bean 注册
     - **Validates: Requirements 8.5**
 
-- [ ] 13. Final checkpoint - 确认所有测试通过
+- [x] 13. Final checkpoint - 确认所有测试通过
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes

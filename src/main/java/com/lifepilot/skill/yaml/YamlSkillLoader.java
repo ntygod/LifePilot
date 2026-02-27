@@ -167,7 +167,6 @@ public class YamlSkillLoader {
         String version = getStringOrDefault(skill, "version", "1.0.0");
         String systemPrompt = getString(skill, "system-prompt");
         List<String> allowedTools = getStringList(skill, "allowed-tools");
-        String preferredProviderId = getStringOrNull(skill, "provider-id");
 
         // 解析 execution（缺省使用 DEFAULT）
         ExecutionStrategy execution = parseExecution(skill);
@@ -197,7 +196,6 @@ public class YamlSkillLoader {
                 .memoryAccess(memoryAccess)
                 .budget(budget)
                 .metadata(metadata)
-                .preferredProviderId(preferredProviderId)
                 .build();
     }
 

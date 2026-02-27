@@ -184,49 +184,6 @@ class YamlSkillSerializerTest {
     }
 
     // ─────────────────────────────────────────────
-    //  preferredProviderId
-    // ─────────────────────────────────────────────
-
-    @Test
-    void serialize_preferredProviderId为null时省略() {
-        var definition = buildMinimalDefinition();
-
-        String yaml = serializer.serialize(definition);
-
-        @SuppressWarnings("unchecked")
-        var root = (Map<String, Object>) new Yaml().load(yaml);
-        @SuppressWarnings("unchecked")
-        var skill = (Map<String, Object>) root.get("skill");
-        assertThat(skill).doesNotContainKey("provider-id");
-    }
-
-    @Test
-    void serialize_preferredProviderId非null时输出() {
-        var definition = SkillDefinition.builder()
-                .id("provider-skill")
-                .name("指定供应商")
-                .description("测试 provider-id")
-                .version("1.0.0")
-                .source(new SkillSource.UserDefined("test.yml"))
-                .systemPrompt("你是助手")
-                .allowedTools(List.of("tool-a"))
-                .execution(ExecutionStrategy.DEFAULT)
-                .memoryAccess(MemoryAccessPolicy.none())
-                .budget(SkillBudget.DEFAULT)
-                .metadata(Map.of())
-                .preferredProviderId("openai-gpt4")
-                .build();
-
-        String yaml = serializer.serialize(definition);
-
-        @SuppressWarnings("unchecked")
-        var root = (Map<String, Object>) new Yaml().load(yaml);
-        @SuppressWarnings("unchecked")
-        var skill = (Map<String, Object>) root.get("skill");
-        assertThat(skill.get("provider-id")).isEqualTo("openai-gpt4");
-    }
-
-    // ─────────────────────────────────────────────
     //  round-trip：序列化 → 解析
     // ─────────────────────────────────────────────
 

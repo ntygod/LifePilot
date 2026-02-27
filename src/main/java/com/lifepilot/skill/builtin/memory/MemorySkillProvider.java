@@ -83,7 +83,6 @@ public class MemorySkillProvider implements BuiltinSkillProvider {
                 ))
                 .budget(new SkillBudget(6000, 10, 90, 30))
                 .metadata(Map.of())
-                .preferredProviderId(null)
                 .build();
     }
 

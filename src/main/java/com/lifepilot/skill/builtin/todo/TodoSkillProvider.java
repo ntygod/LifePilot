@@ -66,7 +66,6 @@ public class TodoSkillProvider implements BuiltinSkillProvider {
                 .memoryAccess(MemoryAccessPolicy.none())
                 .budget(SkillBudget.LIGHTWEIGHT)
                 .metadata(Map.of())
-                .preferredProviderId(null)
                 .build();
     }
 
