@@ -80,7 +80,7 @@
 - [ ] 3. Checkpoint - 确认数据模型和序列化
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 4. 实现 Server 层核心组件
+- [x] 4. 实现 Server 层核心组件
   - [x] 4.1 实现 A2aTaskStore 内存存储
     - 创建 `com.lifepilot.a2a.server.A2aTaskStore`
     - 使用 `ConcurrentHashMap<String, A2aTask>` 存储
@@ -144,7 +144,7 @@
     - _Requirements: 5.1, 5.2, 5.4, 5.5, 5.6, 5.7_
 
 
-- [ ] 5. 实现 REST Controller 和 API Key 过滤器
+- [x] 5. 实现 REST Controller 和 API Key 过滤器
   - [x] 5.1 实现 A2aApiKeyFilter
     - 创建 `com.lifepilot.a2a.server.A2aApiKeyFilter` 继承 `OncePerRequestFilter`
     - 拦截 `/api/a2a/**` 路径，校验 `X-API-Key` Header
@@ -160,7 +160,7 @@
     - 使用 jqwik `@Property(tries = 100)`
     - **Validates: Requirements 12.1, 12.2, 12.3, 12.4**
 
-  - [~] 5.3 实现 AgentCardController
+  - [x] 5.3 实现 AgentCardController
     - 创建 `com.lifepilot.a2a.server.AgentCardController`
     - `GET /.well-known/agent.json` — 标准发现路径
     - `GET /api/a2a/agent-card` — 备用路径
@@ -168,7 +168,7 @@
     - 依赖注入：AgentCardGenerator
     - _Requirements: 4.1, 4.2_
 
-  - [~] 5.4 实现 A2aMessageController
+  - [x] 5.4 实现 A2aMessageController
     - 创建 `com.lifepilot.a2a.server.A2aMessageController`
     - `POST /api/a2a/message/send` — 同步消息处理，接收 A2aMessage，返回 A2aTask
     - `POST /api/a2a/message/stream` — SSE 流式消息处理，返回 SseEmitter
@@ -178,7 +178,7 @@
     - 依赖注入：A2aAgentExecutor, A2aProperties
     - _Requirements: 4.3, 4.4, 6.1, 6.2, 6.3, 6.4_
 
-  - [~] 5.5 实现 A2aTaskController
+  - [x] 5.5 实现 A2aTaskController
     - 创建 `com.lifepilot.a2a.server.A2aTaskController`
     - `GET /api/a2a/tasks/{id}` — 查询 Task 状态，不存在返回 404
     - `POST /api/a2a/tasks/{id}/cancel` — 取消 Task，终态 Task 返回 409
@@ -188,8 +188,8 @@
 - [ ] 6. Checkpoint - 确认 Server 层完整
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 7. 实现 Client 层组件
-  - [~] 7.1 实现 A2aClientService
+- [x] 7. 实现 Client 层组件
+  - [x] 7.1 实现 A2aClientService
     - 创建 `com.lifepilot.a2a.client.A2aClientService`
     - 使用 Spring RestClient 进行 HTTP 调用
     - connectTimeout / readTimeout 从 A2aProperties.client 读取
@@ -206,7 +206,7 @@
     - 测试 client.enabled=false 不执行远程调用（8.5）
     - _Requirements: 8.3, 8.5, 9.4_
 
-  - [~] 7.3 实现 RemoteAgentRegistry
+  - [x] 7.3 实现 RemoteAgentRegistry
     - 创建 `com.lifepilot.a2a.client.RemoteAgentRegistry`
     - 使用 `ConcurrentHashMap<String, CacheEntry>` 缓存（CacheEntry 包含 A2aAgentCard + fetchedAt）
     - 实现 `register(String agentUrl)` — 调用 A2aClientService.discoverAgent() 获取并缓存 Agent Card
@@ -223,7 +223,7 @@
     - 使用 jqwik `@Property(tries = 100)`
     - **Validates: Requirements 10.1, 10.2, 10.4**
 
-  - [~] 7.5 实现 RemoteAgentToolFactory
+  - [x] 7.5 实现 RemoteAgentToolFactory
     - 创建 `com.lifepilot.a2a.client.RemoteAgentToolFactory`
     - 实现 `registerRemoteTool(String agentUrl, A2aAgentCard card)` — 创建 BuiltinTool 并注册到 DynamicToolRegistry
     - 工具 ID 格式：`a2a_remote_{agentName}`（agentName 转 snake_case）
@@ -244,7 +244,7 @@
 - [ ] 8. Checkpoint - 确认 Client 层完整
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 9. 实现配置和自动装配
+- [x] 9. 实现配置和自动装配
   - [x] 9.1 实现 A2aProperties 配置属性类
     - 创建 `com.lifepilot.a2a.config.A2aProperties`
     - `@ConfigurationProperties(prefix = "lifepilot.a2a")`
@@ -254,13 +254,13 @@
     - 嵌套 Task 类：ttlMinutes(60)、maxHistoryLength(50)
     - _Requirements: 13.1, 13.2, 13.3, 13.4, 13.5_
 
-  - [~] 9.2 添加 application.yml 配置项
+  - [x] 9.2 添加 application.yml 配置项
     - 在 `src/main/resources/application.yml` 中添加 `lifepilot.a2a` 配置段
     - 包含所有配置项及默认值
     - api-key 通过环境变量 `${LIFEPILOT_A2A_API_KEY:}` 注入
     - _Requirements: 13.3, 13.4, 13.5_
 
-  - [~] 9.3 实现 A2aAutoConfiguration 自动装配
+  - [x] 9.3 实现 A2aAutoConfiguration 自动装配
     - 创建 `com.lifepilot.a2a.config.A2aAutoConfiguration`
     - `@AutoConfiguration(after = MultiAgentAutoConfiguration.class)`
     - `@EnableConfigurationProperties(A2aProperties.class)`
@@ -273,7 +273,7 @@
     - 依赖：AgentRegistry、AgentExecutor、AgentLoop（来自 MultiAgentAutoConfiguration）、DynamicToolRegistry（来自工具系统）
     - _Requirements: 14.1, 14.2, 14.3, 14.4, 14.5, 14.6_
 
-  - [~] 9.4 注册 AutoConfiguration 到 spring.factories / imports
+  - [x] 9.4 注册 AutoConfiguration 到 spring.factories / imports
     - 在 `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` 中添加 A2aAutoConfiguration
     - _Requirements: 14.1_
 
