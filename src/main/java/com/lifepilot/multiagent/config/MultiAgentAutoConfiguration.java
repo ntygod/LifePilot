@@ -164,7 +164,8 @@ public class MultiAgentAutoConfiguration {
                 try {
                     String content = resource.getContentAsString(StandardCharsets.UTF_8);
                     String filename = resource.getFilename();
-                    Path virtualPath = Path.of("classpath:preset-agents/" + filename);
+                    // 使用相对路径作为标识，避免 Windows 上 classpath: 前缀的非法字符
+                    Path virtualPath = Path.of("preset-agents", filename);
 
                     Optional<AgentDefinition> parsed = parser.parse(content, virtualPath);
                     parsed.ifPresent(def -> {
