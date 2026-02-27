@@ -1,6 +1,6 @@
 package com.lifepilot.eval.evaluator;
 
-import com.lifepilot.agent.trace.TraceStep;
+import com.lifepilot.observability.trace.TraceStep;
 import com.lifepilot.eval.model.EvalResult;
 import com.lifepilot.eval.scenario.BenchmarkScenario;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
@@ -60,8 +60,8 @@ public class TrajectoryEvaluator {
             overallScore += score.score() * weight;
         }
 
-        // 提取 traceId：取第一个步骤的 traceId，无步骤时为空字符串
-        String traceId = steps.isEmpty() ? "" : steps.getFirst().traceId();
+        // TraceStep sealed interface 不携带 traceId，由 EvalEngine 在外层设置
+        String traceId = "";
 
         log.debug("轨迹评估完成: scenarioId={}, overallScore={}", scenario.id(), overallScore);
 

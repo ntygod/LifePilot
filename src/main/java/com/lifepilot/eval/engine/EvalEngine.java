@@ -1,12 +1,11 @@
 package com.lifepilot.eval.engine;
 
 import com.lifepilot.agent.AgentLoop;
-import com.lifepilot.agent.model.Action;
-import com.lifepilot.agent.model.AgentPhase;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.agent.model.AgentResponse;
-import com.lifepilot.agent.trace.TraceRecorder;
-import com.lifepilot.agent.trace.TraceStep;
+import com.lifepilot.observability.trace.LlmCallStep;
+import com.lifepilot.observability.trace.TraceRecorder;
+import com.lifepilot.observability.trace.TraceStep;
 import com.lifepilot.eval.config.EvalConfigProperties;
 import com.lifepilot.eval.evaluator.TrajectoryEvaluator;
 import com.lifepilot.eval.judge.JudgeResult;
@@ -148,7 +147,9 @@ public class EvalEngine {
      * 从 AgentResponse 构建合成轨迹步骤。
      *
      * <p>AgentLoop 内部管理轨迹记录和持久化，外部无法直接获取 TraceStep 列表。
-     * 因此根据 AgentResponse 的元数据构建合成步骤，供 TrajectoryEvaluator 评估。</p>
+     * 因此根据 AgentResponse 的元数据构建合成步骤，供 TrajectoryEvaluator 评估。
+     * 使用新的 TraceStep sealed interface 子类型：LlmCallStep 用于 Token 统计，
+     * StateTransitionStep 用于步骤计数。</p>
      *
      * @param response AgentResponse
      * @param scenario 场景定义
@@ -160,21 +161,21 @@ public class EvalEngine {
         int tokensPerStep = stepCount > 0 ? response.tokensUsed() / stepCount : 0;
 
         for (int i = 0; i < stepCount; i++) {
-            var step = TraceStep.builder()
-                    .traceId(response.traceId())
-                    .stepIndex(i)
-                    .phaseBefore(AgentPhase.UNDERSTANDING)
-                    .phaseAfter(AgentPhase.EXECUTING)
-                    .action(new Action.ResponseGenerated(response.content(), List.of()))
-                    .toolId(null)
-                    .toolInput(null)
-                    .toolOutput(null)
-                    .blocked(false)
-                    .blockReason(null)
-                    .tokensUsed(tokensPerStep)
-                    .latencyMs(0)
-                    .timestamp(Instant.now())
-                    .build();
+            // 使用 LlmCallStep 携带 Token 统计信息
+            var step = new LlmCallStep(
+                    i,
+                    Instant.now(),
+                    java.time.Duration.ZERO,
+                    "synthetic",           // providerId
+                    "synthetic",           // modelId
+                    "eval",                // scene
+                    tokensPerStep,         // inputTokens
+                    0,                     // outputTokens
+                    java.time.Duration.ZERO, // latency
+                    false,                 // cacheHit
+                    0.0,                   // temperature
+                    null                   // finishReason
+            );
             steps.add(step);
         }
 

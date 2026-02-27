@@ -18,6 +18,7 @@ import com.lifepilot.interaction.middleware.router.RouteDecision;
 import com.lifepilot.interaction.model.GatewayMessage;
 import com.lifepilot.interaction.model.GatewayResponse;
 import com.lifepilot.interaction.model.TokenUsage;
+import com.lifepilot.observability.redactor.DataRedactor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

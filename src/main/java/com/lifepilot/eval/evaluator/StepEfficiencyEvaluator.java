@@ -1,6 +1,6 @@
 package com.lifepilot.eval.evaluator;
 
-import com.lifepilot.agent.trace.TraceStep;
+import com.lifepilot.observability.trace.TraceStep;
 import com.lifepilot.eval.scenario.BenchmarkScenario;
 
 import java.util.ArrayList;
