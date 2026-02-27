@@ -112,9 +112,7 @@ public class AgentMarkdownParser {
                 ? ((List<String>) frontmatter.get("allowed-tools"))
                 : List.of();
 
-        boolean canDelegate = frontmatter.containsKey("can-delegate")
-                ? Boolean.parseBoolean(frontmatter.get("can-delegate").toString())
-                : false;
+        boolean canDelegate = frontmatter.containsKey("can-delegate") && Boolean.parseBoolean(frontmatter.get("can-delegate").toString());
 
         AgentBudget budget = parseBudget(frontmatter);
 

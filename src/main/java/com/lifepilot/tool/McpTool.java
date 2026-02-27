@@ -1,14 +1,12 @@
 package com.lifepilot.tool;
 
 import com.lifepilot.observability.guardrail.RiskLevel;
-import com.lifepilot.tool.model.ToolBudget;
-import com.lifepilot.tool.model.ToolInput;
-import com.lifepilot.tool.model.ToolLayer;
-import com.lifepilot.tool.model.ToolResult;
-import com.lifepilot.tool.model.ToolResultMeta;
+import com.lifepilot.tool.model.*;
 import com.lifepilot.tool.schema.JsonSchema;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 /**
  * MCP 外部工具（Layer 1）。
@@ -72,7 +70,7 @@ public record McpTool(
             if (mcpResult.isError()) {
                 String errorMsg = mcpResult.content().stream()
                         .filter(c -> "text".equals(c.type()))
-                        .map(com.lifepilot.mcp.model.McpContent::text)
+                        .map(content -> Optional.ofNullable(content.text()).orElse(""))
                         .findFirst()
                         .orElse("MCP 工具调用失败");
                 return ToolResult.error(errorMsg, meta);
@@ -81,10 +79,10 @@ public record McpTool(
             // 提取文本内容
             String text = mcpResult.content().stream()
                     .filter(c -> "text".equals(c.type()))
-                    .map(com.lifepilot.mcp.model.McpContent::text)
+                    .map(content -> Optional.ofNullable(content.text()).orElse(""))
                     .reduce("", (a, b) -> a + b);
 
-            return ToolResult.success(java.util.Map.of("result", text), meta);
+            return ToolResult.success(Map.of("result", text), meta);
 
         } catch (Exception e) {
             var meta = ToolResultMeta.builder()

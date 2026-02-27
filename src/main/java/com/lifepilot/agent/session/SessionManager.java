@@ -12,6 +12,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -101,7 +102,7 @@ public class SessionManager {
 
             if (existing.isPresent()) {
                 var session = existing.get();
-                var turns = new java.util.ArrayList<>(session.recentTurns());
+                var turns = new ArrayList<>(session.recentTurns());
                 turns.add(newTurn);
                 // 截断到最近 N 轮
                 recentTurns = turns.size() > maxTurns

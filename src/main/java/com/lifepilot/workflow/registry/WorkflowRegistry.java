@@ -1,5 +1,17 @@
 package com.lifepilot.workflow.registry;
 
+import com.lifepilot.workflow.config.WorkflowConfigProperties;
+import com.lifepilot.workflow.model.Result;
+import com.lifepilot.workflow.model.WorkflowDefinition;
+import com.lifepilot.workflow.parser.WorkflowYamlParser;
+import com.lifepilot.workflow.parser.WorkflowYamlPrinter;
+import com.lifepilot.workflow.repository.WorkflowRepository;
+import com.lifepilot.workflow.trigger.WorkflowTriggerManager;
+import lombok.Setter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.TaskScheduler;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -11,18 +23,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.scheduling.TaskScheduler;
-
-import com.lifepilot.workflow.config.WorkflowConfigProperties;
-import com.lifepilot.workflow.model.Result;
-import com.lifepilot.workflow.model.WorkflowDefinition;
-import com.lifepilot.workflow.trigger.WorkflowTriggerManager;
-import com.lifepilot.workflow.parser.WorkflowYamlParser;
-import com.lifepilot.workflow.parser.WorkflowYamlPrinter;
-import com.lifepilot.workflow.repository.WorkflowRepository;
 
 /**
  * 工作流注册中心 — 管理 WorkflowDefinition 的注册、查询、启用/禁用。
@@ -53,13 +53,28 @@ public class WorkflowRegistry {
     /** 文件路径 → 工作流 ID，用于检测文件删除后禁用对应定义。 */
     private final ConcurrentHashMap<String, String> fileToWorkflowId = new ConcurrentHashMap<>();
 
-    /** 热加载配置属性，通过 {@link #setConfigProperties(WorkflowConfigProperties)} 注入。 */
+    /** 热加载配置属性，通过 {@link #setConfigProperties(WorkflowConfigProperties)} 注入。
+     * -- SETTER --
+     *  设置配置属性（热加载所需）。
+     *
+     */
+    @Setter
     private WorkflowConfigProperties configProperties;
 
-    /** 任务调度器，通过 {@link #setTaskScheduler(TaskScheduler)} 注入。 */
+    /** 任务调度器，通过 {@link #setTaskScheduler(TaskScheduler)} 注入。
+     * -- SETTER --
+     *  设置任务调度器（热加载所需）。
+     *
+     */
+    @Setter
     private TaskScheduler taskScheduler;
 
-    /** 触发器管理器引用，用于热加载时注销已删除/禁用工作流的触发器。 */
+    /** 触发器管理器引用，用于热加载时注销已删除/禁用工作流的触发器。
+     * -- SETTER --
+     *  设置触发器管理器（热加载时注销触发器所需）。
+     *
+     */
+    @Setter
     private WorkflowTriggerManager triggerManager;
 
     /**
@@ -78,33 +93,6 @@ public class WorkflowRegistry {
         this.parser = parser;
         this.printer = printer;
         loadFromDatabase();
-    }
-
-    /**
-     * 设置配置属性（热加载所需）。
-     *
-     * @param configProperties 工作流配置属性
-     */
-    public void setConfigProperties(WorkflowConfigProperties configProperties) {
-        this.configProperties = configProperties;
-    }
-
-    /**
-     * 设置任务调度器（热加载所需）。
-     *
-     * @param taskScheduler Spring TaskScheduler
-     */
-    public void setTaskScheduler(TaskScheduler taskScheduler) {
-        this.taskScheduler = taskScheduler;
-    }
-
-    /**
-     * 设置触发器管理器（热加载时注销触发器所需）。
-     *
-     * @param triggerManager 工作流触发器管理器
-     */
-    public void setTriggerManager(WorkflowTriggerManager triggerManager) {
-        this.triggerManager = triggerManager;
     }
 
     /**

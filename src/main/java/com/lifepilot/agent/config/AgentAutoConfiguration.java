@@ -8,11 +8,11 @@ import com.lifepilot.agent.StateReducer;
 import com.lifepilot.agent.context.ContextAssembler;
 import com.lifepilot.agent.context.DefaultMemoryRetrievalStrategy;
 import com.lifepilot.agent.session.SessionManager;
-import com.lifepilot.observability.trace.TraceRecorder;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.working.TokenBudgetAllocator;
 import com.lifepilot.memory.working.WorkingMemory;
+import com.lifepilot.observability.trace.TraceRecorder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -22,6 +22,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.JdbcTemplate;
+
+import java.util.List;
 
 /**
  * Agent 引擎 Spring Boot 自动配置。
@@ -85,7 +87,7 @@ public class AgentAutoConfiguration {
     @ConditionalOnMissingBean
     public AgentToolProvider agentToolProvider() {
         // 空实现兜底：工具系统未启用时返回空工具列表
-        return state -> java.util.List.of();
+        return _ -> List.of();
     }
 
     @Bean

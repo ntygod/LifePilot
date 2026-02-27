@@ -1,15 +1,16 @@
 package com.lifepilot.agent;
 
 import com.lifepilot.agent.config.AgentConfigProperties;
+import com.lifepilot.agent.context.AssembledContext;
 import com.lifepilot.agent.context.ContextAssembler;
 import com.lifepilot.agent.model.*;
 import com.lifepilot.agent.session.SessionManager;
-import com.lifepilot.observability.trace.StateTransitionStep;
-import com.lifepilot.observability.trace.TraceContext;
-import com.lifepilot.observability.trace.TraceRecorder;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.llm.LlmUnavailableException;
+import com.lifepilot.observability.trace.StateTransitionStep;
+import com.lifepilot.observability.trace.TraceContext;
+import com.lifepilot.observability.trace.TraceRecorder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -107,7 +108,7 @@ public class AgentLoop {
                 // SubAgent 场景：注入 Agent 专属 System Prompt
                 if (request.systemPrompt() != null && !request.systemPrompt().isBlank()) {
                     String mergedSystemPrompt = request.systemPrompt() + "\n\n" + assembledContext.systemPrompt();
-                    assembledContext = new com.lifepilot.agent.context.AssembledContext(
+                    assembledContext = new AssembledContext(
                             mergedSystemPrompt,
                             assembledContext.userPrompt(),
                             assembledContext.retrievedMemories(),
@@ -151,7 +152,7 @@ public class AgentLoop {
                 }
             }
 
-            // 완成轨迹记录
+            // 轨迹记录
             traceRecorder.endTrace(traceContext, state.finalOutput(),
                     state.terminationReason() == null, null, state.terminationReason());
 

@@ -8,6 +8,7 @@ import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -242,7 +243,7 @@ class SkillDefinitionValidatorTest {
 
     @Test
     void ValidationResult_errors不可变() {
-        var errors = new java.util.ArrayList<>(List.of("错误1"));
+        var errors = new ArrayList<>(List.of("错误1"));
         var result = new ValidationResult(false, errors);
         errors.add("错误2");
         assertThat(result.errors()).hasSize(1);
