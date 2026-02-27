@@ -103,10 +103,10 @@ Microsoft 在 Semantic Kernel v1.0 中将 "Skills" 重命名为 "Plugins"，原�
 | SubAgent 激活 | `SubAgentFactory` 在 Skill 模块中 | 迁移到多 Agent 模块，由 `AgentExecutor` 负责 |
 | `SkillDefinition.preferredProviderId` | Skill 可指定 LLM 偏好 | 移除（Skill 不使用 LLM，无需模型偏好） |
 | Skill 定位 | "Agent 能力单元"（含 SubAgent 激活） | 纯 L1 确定性工作流（不含 LLM 推理） |
-| Agent 定位 | 不存在独立概念 | L2 自主推理实体，YAML 声明式定义 |
+| Agent 定位 | 不存在独立概念 | L2 自主推理实体，Markdown + YAML Frontmatter 声明式定义 |
 | HandoffTool | 不存在 | LLM 通过 Function Call 委托给 Agent |
 | `SkillToToolBridge` | 将 Skill 包装为工具（含 SubAgent 激活） | 仅桥接 L1 确定性 Skill |
-| 热加载 | Skill YAML 热加载已实现 | Agent YAML 热加载（复用 Skill 热加载机制） |
+| 热加载 | Skill YAML 热加载已实现 | Agent Markdown 热加载（复用 Skill 热加载机制） |
 | 自扩展 | Skill 自扩展（GapDetector + Generator） | 保留 Skill 自扩展，Agent 不支持自扩展 |
 
 ### 2.3 不变的部分
@@ -160,13 +160,13 @@ public record AgentDefinition(
 ```java
 public sealed interface AgentSource permits
     AgentSource.Builtin,
-    AgentSource.YamlDefined {
+    AgentSource.MarkdownDefined {
 
     /** 内置 Agent — Java 代码注册。 */
     record Builtin() implements AgentSource {}
 
-    /** 用户定义 Agent — YAML 声明式，支持热加载。 */
-    record YamlDefined(
+    /** 用户定义 Agent — Markdown + YAML Frontmatter 声明式，支持热加载。 */
+    record MarkdownDefined(
         String filePath,
         @Nullable Instant lastModified
     ) implements AgentSource {}
@@ -273,24 +273,25 @@ public class AgentExecutor {
 
 HandoffTool 注册为 `BuiltinTool`，通过 `DynamicToolRegistry.registerBuiltinTool()` 注册。当 Agent 在 AgentRegistry 中注册/注销时，对应的 HandoffTool 自动注册/注销。
 
-### 4.4 AgentYamlLoader — YAML 加载与热加载
+### 4.4 AgentMarkdownLoader — Markdown 加载与热加载
 
 ```java
-public class AgentYamlLoader {
+public class AgentMarkdownLoader {
     /**
-     * 扫描指定目录下的 YAML Agent 定义文件。
-     * 支持 .yml 和 .yaml 后缀。
+     * 扫描指定目录下的 Markdown Agent 定义文件（.md 后缀）。
+     * 解析 YAML Frontmatter 提取结构化字段，Markdown 正文作为 System Prompt。
      */
     List<AgentDefinition> loadFromDirectory(Path directory);
 
     /**
-     * 解析单个 YAML 文件为 AgentDefinition。
+     * 解析单个 Markdown 文件为 AgentDefinition。
+     * 文件格式：YAML Frontmatter（---分隔）+ Markdown 正文（System Prompt）。
      */
     Optional<AgentDefinition> loadFromFile(Path file);
 }
 ```
 
-**热加载机制**：复用 Skill 系统已有的文件监控模式（`WatchService` 或定时扫描 `lastModified`），当 `~/.lifepilot/agents/` 目录下的 YAML 文件变更时，自动重新加载并更新 AgentRegistry。
+**热加载机制**：复用 Skill 系统已有的文件监控模式（`WatchService` 或定时扫描 `lastModified`），当 `~/.lifepilot/agents/` 目录下的 Markdown 文件变更时，自动重新加载并更新 AgentRegistry。
 
 ### 4.5 AgentToToolBridge — Agent 工具桥接
 
@@ -410,7 +411,7 @@ LifePilot 是个人助手，用户与主 Agent 保持持续对话，专家 Agent
 
 **步骤 1（模块 21 实现）**：
 - 创建 `AgentDefinition`、`AgentRegistry`、`AgentExecutor`、`HandoffTool`、`AgentToToolBridge`
-- 创建 `AgentYamlLoader` + 热加载
+- 创建 `AgentMarkdownLoader` + 热加载
 - 预设专家 Agent（writer / life-coach / planner）
 - `SubAgentFactory` 标记 `@Deprecated`，但保留功能
 
@@ -424,26 +425,15 @@ LifePilot 是个人助手，用户与主 Agent 保持持续对话，专家 Agent
 
 ---
 
-## 7. YAML Agent 定义格式
+## 7. Markdown Agent 定义格式（Markdown + YAML Frontmatter）
 
 ### 7.1 完整示例
 
-```yaml
-# ~/.lifepilot/agents/writer.yml
+```markdown
+---
 id: writer
 name: 写作专家
 description: 擅长撰写周报、邮件、文案、总结等文字内容，注重结构清晰和表达精准
-system-prompt: |
-  你是一位专业的中文写作助手。你的核心能力是将零散的素材和模糊的意图转化为结构清晰、表达精准的文字。
-  
-  写作原则：
-  - 先理解目的和受众，再组织结构
-  - 开门见山，避免冗余铺垫
-  - 使用具体数据和事实支撑观点
-  - 保持语气一致，匹配场景（正式/轻松/专业）
-  - 段落之间有清晰的逻辑过渡
-  
-  如果用户提供了素材但未明确格式，主动询问：目的是什么？给谁看？期望的篇幅和风格？
 allowed-tools:
   - memory-search
   - knowledge-search
@@ -456,23 +446,42 @@ preferred-provider: deepseek-chat
 metadata:
   category: creation
   icon: ✍️
+---
+
+你是一位专业的中文写作助手。你的核心能力是将零散的素材和模糊的意图转化为结构清晰、表达精准的文字。
+
+## 写作原则
+
+- 先理解目的和受众，再组织结构
+- 开门见山，避免冗余铺垫
+- 使用具体数据和事实支撑观点
+- 保持语气一致，匹配场景（正式/轻松/专业）
+- 段落之间有清晰的逻辑过渡
+
+## 交互规则
+
+如果用户提供了素材但未明确格式，主动询问：目的是什么？给谁看？期望的篇幅和风格？
 ```
+
+文件路径：`~/.lifepilot/agents/writer.md`
 
 ### 7.2 字段说明
 
-| 字段 | 必填 | 类型 | 说明 |
-|------|------|------|------|
-| `id` | 是 | String | Agent 唯一标识，kebab-case |
-| `name` | 是 | String | 显示名称 |
-| `description` | 是 | String | 能力描述，用于 HandoffTool 的工具描述 |
-| `system-prompt` | 是 | String | Agent 专属 System Prompt |
-| `allowed-tools` | 否 | List<String> | 工具白名单，空列表表示无工具 |
-| `can-delegate` | 否 | boolean | 是否允许嵌套委托，默认 false |
-| `budget.max-tokens` | 否 | int | Token 预算，默认 16000 |
-| `budget.max-steps` | 否 | int | 步骤预算，默认 15 |
-| `budget.timeout-seconds` | 否 | int | 超时秒数，默认 180 |
-| `preferred-provider` | 否 | String | 偏好 LLM Provider ID |
-| `metadata` | 否 | Map | 扩展元数据 |
+| 字段 | 位置 | 必填 | 类型 | 说明 |
+|------|------|------|------|------|
+| `id` | Frontmatter | 是 | String | Agent 唯一标识，kebab-case |
+| `name` | Frontmatter | 是 | String | 显示名称 |
+| `description` | Frontmatter | 是 | String | 能力描述，用于 HandoffTool 的工具描述 |
+| _(Markdown 正文)_ | Body | 是 | String | Agent 专属 System Prompt（Markdown 格式） |
+| `allowed-tools` | Frontmatter | 否 | List<String> | 工具白名单，空列表表示无工具 |
+| `can-delegate` | Frontmatter | 否 | boolean | 是否允许嵌套委托，默认 false |
+| `budget.max-tokens` | Frontmatter | 否 | int | Token 预算，默认 16000 |
+| `budget.max-steps` | Frontmatter | 否 | int | 步骤预算，默认 15 |
+| `budget.timeout-seconds` | Frontmatter | 否 | int | 超时秒数，默认 180 |
+| `preferred-provider` | Frontmatter | 否 | String | 偏好 LLM Provider ID |
+| `metadata` | Frontmatter | 否 | Map | 扩展元数据 |
+
+注意：`system-prompt` 不再是 YAML 字段，而是 Markdown 正文内容。这使得 System Prompt 可以充分利用 Markdown 的格式化能力（标题、列表、代码块等），编辑体验远优于 YAML 多行字符串。
 
 ---
 
@@ -525,21 +534,11 @@ LifePilot 是个人生活助手（todo / schedule / habit / memory / knowledge�
 
 核心价值：将用户的素材和意图转化为高质量的文字输出。主 Agent 的 System Prompt 优化方向是「理解意图 → 选择工具 → 执行任务」，而 writer 的 System Prompt 优化方向是「理解素材 → 组织结构 → 打磨表达」。
 
-```yaml
+```markdown
+---
 id: writer
 name: 写作专家
 description: 擅长撰写周报、邮件、文案、总结等文字内容，注重结构清晰和表达精准
-system-prompt: |
-  你是一位专业的中文写作助手。你的核心能力是将零散的素材和模糊的意图转化为结构清晰、表达精准的文字。
-  
-  写作原则：
-  - 先理解目的和受众，再组织结构
-  - 开门见山，避免冗余铺垫
-  - 使用具体数据和事实支撑观点
-  - 保持语气一致，匹配场景（正式/轻松/专业）
-  - 段落之间有清晰的逻辑过渡
-  
-  如果用户提供了素材但未明确格式，主动询问：目的是什么？给谁看？期望的篇幅和风格？
 allowed-tools:
   - memory-search
   - knowledge-search
@@ -552,7 +551,24 @@ preferred-provider: deepseek-chat
 metadata:
   category: creation
   icon: ✍️
+---
+
+你是一位专业的中文写作助手。你的核心能力是将零散的素材和模糊的意图转化为结构清晰、表达精准的文字。
+
+## 写作原则
+
+- 先理解目的和受众，再组织结构
+- 开门见山，避免冗余铺垫
+- 使用具体数据和事实支撑观点
+- 保持语气一致，匹配场景（正式/轻松/专业）
+- 段落之间有清晰的逻辑过渡
+
+## 交互规则
+
+如果用户提供了素材但未明确格式，主动询问：目的是什么？给谁看？期望的篇幅和风格？
 ```
+
+文件路径：`~/.lifepilot/agents/writer.md`
 
 #### life-coach（生活教练）
 
@@ -562,26 +578,11 @@ metadata:
 - [Personal Development with AI in 2026](https://www.upskillist.com/blog/personal-development-with-ai-daily-wins-that-compound/)（AI 作为 accountability partner 的趋势）
 - [Resolution Coach](https://www.producthunt.com/products/resolution-coach)（AI 教练产品的交互模式）
 
-```yaml
+```markdown
+---
 id: life-coach
 name: 生活教练
 description: 通过结构化回顾和引导式提问，帮助用户发现行为模式、复盘目标进展、制定改进策略
-system-prompt: |
-  你是一位温和而有洞察力的生活教练。你的核心方法是引导式提问，而非直接给出答案。
-  
-  教练原则：
-  - 先倾听和理解，再提问和引导
-  - 使用开放式问题（"你觉得是什么原因？"而非"是不是因为X？"）
-  - 关注行为模式而非单次事件（"这周和上周相比有什么变化？"）
-  - 肯定进步，即使很小（"完成了 3/5 个习惯，比上周多了 1 个"）
-  - 帮助用户建立因果联系（"你注意到运动的日子睡眠质量更好吗？"）
-  - 提供可操作的小步骤建议，而非宏大的改变计划
-  
-  回顾框架：
-  1. 数据回顾：客观呈现习惯完成率、任务完成情况、时间分配
-  2. 模式识别：发现趋势、关联、异常
-  3. 引导反思：通过提问帮助用户理解背后原因
-  4. 行动建议：提出 1-2 个具体的、可衡量的改进行动
 allowed-tools:
   - memory-search
   - knowledge-search
@@ -597,31 +598,38 @@ preferred-provider: deepseek-chat
 metadata:
   category: reflection
   icon: 🪞
+---
+
+你是一位温和而有洞察力的生活教练。你的核心方法是引导式提问，而非直接给出答案。
+
+## 教练原则
+
+- 先倾听和理解，再提问和引导
+- 使用开放式问题（"你觉得是什么原因？"而非"是不是因为X？"）
+- 关注行为模式而非单次事件（"这周和上周相比有什么变化？"）
+- 肯定进步，即使很小（"完成了 3/5 个习惯，比上周多了 1 个"）
+- 帮助用户建立因果联系（"你注意到运动的日子睡眠质量更好吗？"）
+- 提供可操作的小步骤建议，而非宏大的改变计划
+
+## 回顾框架
+
+1. **数据回顾**：客观呈现习惯完成率、任务完成情况、时间分配
+2. **模式识别**：发现趋势、关联、异常
+3. **引导反思**：通过提问帮助用户理解背后原因
+4. **行动建议**：提出 1-2 个具体的、可衡量的改进行动
 ```
+
+文件路径：`~/.lifepilot/agents/life-coach.md`
 
 #### planner（规划专家）
 
 核心价值：将用户的 todo、schedule、habit 数据综合分析，生成结构化的日/周规划。主 Agent 可以逐条处理 todo 和 schedule，但缺乏「全局视角下的优先级排序和时间块分配」的专业 Prompt。
 
-```yaml
+```markdown
+---
 id: planner
 name: 规划专家
 description: 综合分析待办事项、日程和习惯数据，生成结构化的日/周规划，优化时间分配
-system-prompt: |
-  你是一位注重实效的时间管理专家。你的核心能力是将零散的待办、日程和习惯整合为可执行的结构化计划。
-  
-  规划原则：
-  - 先识别固定时间块（已有日程、习惯打卡时间），再填充弹性任务
-  - 使用 Eisenhower 矩阵对任务分类：紧急重要 > 重要不紧急 > 紧急不重要 > 都不
-  - 考虑能量曲线：高认知任务安排在精力高峰期
-  - 每个时间块预留 10-15 分钟缓冲
-  - 单日规划不超过 6 个主要任务（认知负荷限制）
-  - 周规划包含至少 1 个「不紧急但重要」的推进项
-  
-  输出格式：
-  - 日规划：时间块表格（时间 | 任务 | 优先级 | 预估时长）
-  - 周规划：每日重点 + 周目标 + 习惯追踪提醒
-  - 冲突提示：如果发现时间冲突或过度安排，主动提醒
 allowed-tools:
   - memory-search
   - skill.todo-query
@@ -636,7 +644,27 @@ preferred-provider: deepseek-chat
 metadata:
   category: planning
   icon: 📋
+---
+
+你是一位注重实效的时间管理专家。你的核心能力是将零散的待办、日程和习惯整合为可执行的结构化计划。
+
+## 规划原则
+
+- 先识别固定时间块（已有日程、习惯打卡时间），再填充弹性任务
+- 使用 Eisenhower 矩阵对任务分类：紧急重要 > 重要不紧急 > 紧急不重要 > 都不
+- 考虑能量曲线：高认知任务安排在精力高峰期
+- 每个时间块预留 10-15 分钟缓冲
+- 单日规划不超过 6 个主要任务（认知负荷限制）
+- 周规划包含至少 1 个「不紧急但重要」的推进项
+
+## 输出格式
+
+- **日规划**：时间块表格（时间 | 任务 | 优先级 | 预估时长）
+- **周规划**：每日重点 + 周目标 + 习惯追踪提醒
+- **冲突提示**：如果发现时间冲突或过度安排，主动提醒
 ```
+
+文件路径：`~/.lifepilot/agents/planner.md`
 
 ### 8.5 为什么不预设更多 Agent
 
@@ -650,13 +678,13 @@ metadata:
 | coder（编程助手） | LifePilot 是生活助手，编程不在核心场景内 | 不预设 |
 | health-advisor（健康顾问） | 涉及医疗建议的法律风险，不适合预设 | 不预设 |
 
-用户可通过 YAML 热加载机制自定义任意 Agent。文档 §3.3 提供了 translator 的完整 YAML 示例。
+用户可通过 Markdown 热加载机制自定义任意 Agent。文档 §3.3 提供了 translator 的完整 Markdown 示例。
 
 ### 8.6 注册策略
 
-预设 Agent 以 `AgentSource.Builtin` 来源注册，用户自定义 Agent 以 `AgentSource.YamlDefined` 来源注册。Builtin 来源不允许被 YamlDefined 覆盖（与 SkillRegistry 行为一致）。
+预设 Agent 以 `AgentSource.Builtin` 来源注册，用户自定义 Agent 以 `AgentSource.MarkdownDefined` 来源注册。Builtin 来源不允许被 MarkdownDefined 覆盖（与 SkillRegistry 行为一致）。
 
-如果用户希望修改预设 Agent 的行为（如调整 writer 的 System Prompt），可以在 `~/.lifepilot/agents/` 下创建同 ID 的 YAML 文件，此时 YamlDefined 版本将覆盖 Builtin 版本。这是一个有意的设计决策：预设 Agent 提供合理的默认值，但用户始终拥有最终控制权。
+如果用户希望修改预设 Agent 的行为（如调整 writer 的 System Prompt），可以在 `~/.lifepilot/agents/` 下创建同 ID 的 Markdown 文件，此时 MarkdownDefined 版本将覆盖 Builtin 版本。这是一个有意的设计决策：预设 Agent 提供合理的默认值，但用户始终拥有最终控制权。
 
 ---
 
@@ -668,7 +696,7 @@ lifepilot:
     multi-agent:
       enabled: true                              # 是否启用多 Agent 协作
       max-delegation-depth: 2                    # 最大委托深度
-      agent-definitions-path: ~/.lifepilot/agents/ # 用户自定义 Agent YAML 目录
+      agent-definitions-path: ~/.lifepilot/agents/ # 用户自定义 Agent Markdown 目录
       register-handoff-tools: true               # 是否自动注册 HandoffTool
       hot-reload:
         enabled: true                            # 是否启用热加载
@@ -691,7 +719,7 @@ Agent 自扩展不适用的原因：
 1. Agent 的核心是 System Prompt，其质量直接决定推理质量，LLM 生成的 System Prompt 质量不可控
 2. Agent 拥有 LLM 推理能力，执行路径不可预测，沙箱验证无法覆盖所有场景
 3. Agent 的工具白名单决定了其能力边界，自动生成的白名单可能过宽或过窄
-4. 用户自定义 Agent（YAML + 热加载）已经提供了足够的扩展性
+4. 用户自定义 Agent（Markdown + 热加载）已经提供了足够的扩展性
 
 正因为不支持自扩展，预设 Agent 的选择变得至关重要。§8 详细阐述了预设 Agent 的「L2 准入测试」和设计理由。核心原则是：**宁缺毋滥**——只预设那些 System Prompt 专业化能带来显著质量提升的 Agent，其余场景由主 Agent 直接处理。
 
@@ -714,6 +742,25 @@ Agent 自扩展不适用的原因：
 - 深度 1 = 专家 Agent
 - 深度 2 = 专家 Agent 的嵌套委托（仅当 `canDelegate=true`）
 
+### 10.5 为什么 Agent 用 Markdown + YAML Frontmatter 而 Skill 用纯 YAML
+
+Agent 和 Skill 采用不同的定义文件格式，核心原则是**格式跟随内容本质**：
+
+| 维度 | Agent 定义 | Skill 定义 |
+|------|-----------|-----------|
+| 核心内容 | System Prompt（自然语言，Agent 的灵魂） | execution（SkillAction 结构化配置） |
+| 内容占比 | 自然语言 > 80%，结构化配置 < 20% | 结构化配置 > 80%，自然语言 < 20% |
+| 编辑体验 | Markdown 原生支持标题/列表/代码块，编辑器预览友好 | YAML 结构化字段，IDE 补全友好 |
+| 文件格式 | `.md`（Markdown + YAML Frontmatter） | `.yml`（纯 YAML） |
+
+行业趋势验证：
+- [Claude Code Agent Spec](https://lattice.uptownhr.com/claude-code-agents/agent-spec)：Agent 定义为 Markdown + YAML Frontmatter
+- [Open Agent Format (OAF) v0.8](https://openagentformat.com/)：`AGENTS.md` 使用 YAML Frontmatter + Markdown 指令
+- [Spring AI Agent Skills](https://spring.io/blog/2026/01/13/spring-ai-generic-agent-skills)：`SKILL.md` 使用 YAML Frontmatter + Markdown 指令
+- [从 YAML 到 Markdown 的范式转移](https://jimmysong.io/blog/from-yaml-to-markdown-devops-vs-collabops/)：AI-native 时代从云原生 YAML 配置转向 Markdown 自然语言定义
+
+核心洞察：当文件的主要内容是自然语言时，Markdown 是最自然的载体；当文件的主要内容是结构化配置时，YAML 是最自然的载体。Agent 的灵魂是 System Prompt（自然语言），Skill 的灵魂是 execution（结构化工作流）。
+
 ---
 
 ## 11. 调研参考
@@ -728,12 +775,15 @@ Agent 自扩展不适用的原因：
 | [Google ADK](https://cloud.google.com/blog/topics/developers-practitioners/where-to-use-sub-agents-versus-agents-as-tools) | Agent-as-Tool vs Sub-Agent | 采纳：agents-as-tools 模式 |
 | [Microsoft Cloud Adoption Framework](https://docs.microsoft.com/en-us/azure/cloud-adoption-framework/ai-agents/single-agent-multiple-agents) | 多 Agent 准入条件：安全边界、多团队、未来扩展 | 参考：LifePilot 单用户场景不满足前两条，按专业化准入 |
 | [Multi-agent error amplification](https://www.amitkoth.com/multi-agent-orchestration-complexity/) | 95% 单步可靠性在 20 步后仅剩 36% 成功率 | 采纳：严格控制预设 Agent 数量，避免过度拆分 |
-| [Spring AI Agent Skills](https://spring.io/blog/2026/01/13/spring-ai-generic-agent-skills) | Skill = Markdown 文件夹，渐进式发现 | 已在 Skill 系统中采纳 |
+| [Spring AI Agent Skills](https://spring.io/blog/2026/01/13/spring-ai-generic-agent-skills) | Skill = Markdown 文件夹（SKILL.md + YAML Frontmatter），渐进式发现 | 已在 Skill 系统中采纳；Agent 定义格式参考 |
 | [Spring AI Task SubAgents](https://spring.io/blog/2026/01/27/spring-ai-agentic-patterns-4-task-subagents) | 独立上下文 + 工具白名单 + 多模型路由 | 采纳：AgentExecutor 设计 |
 | [OpenAI Swarm](https://github.com/openai/swarm) | Handoff 模式，Agent 通过工具调用委托 | 采纳：HandoffTool 命名和模式 |
 | [AstrBot](https://github.com/Soulter/AstrBot) | `transfer_to_<name>` 工具模式 | 采纳：`handoff_to_{id}` 命名 |
 | [Specialist Agent Squad Playbook](https://www.digitalapplied.com/blog/ai-virtual-team-specialist-agent-squad-playbook) | 10 个专家角色卡 + 任务委托矩阵 | 参考：按频率×复杂度×成本评估委托 ROI |
 | [DeepMind Intelligent Delegation](https://theaiinsider.tech/2026/02/17/deepmind-study-proposes-rules-for-how-ai-agents-should-delegate/) | 委托需要明确角色、边界、信任校准、可验证完成 | 参考：AgentBudget + 深度限制 + TraceRecorder |
 | [Personal Development with AI 2026](https://www.upskillist.com/blog/personal-development-with-ai-daily-wins-that-compound/) | AI 作为 accountability partner，实时反馈 + 习惯追踪 | 采纳：life-coach Agent 的教练式交互模式 |
+| [Claude Code Agent Spec](https://lattice.uptownhr.com/claude-code-agents/agent-spec) | Agent 定义为 Markdown + YAML Frontmatter，System Prompt 作为 Markdown 正文 | 采纳：Agent 定义格式选型依据 |
+| [Open Agent Format (OAF) v0.8](https://openagentformat.com/) | AGENTS.md 使用 YAML Frontmatter + Markdown 指令，标准化 Agent 定义 | 采纳：Agent 定义格式选型依据 |
+| [从 YAML 到 Markdown 的范式转移](https://jimmysong.io/blog/from-yaml-to-markdown-devops-vs-collabops/) | AI-native 时代从云原生 YAML 配置转向 Markdown 自然语言定义 | 采纳：格式跟随内容本质的设计原则 |
 
 > 内容已重新组织表述以符合许可要求。参考来源均为 2025-2026 年发表的技术文章和开源项目。

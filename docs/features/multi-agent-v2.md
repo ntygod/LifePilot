@@ -39,8 +39,8 @@
 
 - AgentRegistry 管理所有 Agent 定义，支持运行时注册/注销/查找
 - 内置预设专家 Agent（写作、分析、调研），开箱即用
-- 用户可在 `~/.lifepilot/agents/` 目录下添加 YAML Agent 定义
-- 支持热加载：修改 YAML 文件后自动重新注册，无需重启
+- 用户可在 `~/.lifepilot/agents/` 目录下添加 Markdown Agent 定义（`.md` 文件）
+- 支持热加载：修改 Markdown 文件后自动重新注册，无需重启
 
 ### 2.2 HandoffTool 委托
 
@@ -73,7 +73,7 @@
 | 生活教练 (life-coach) | 周/月回顾、习惯分析、目标复盘 | "帮我做一下这周的回顾"、"分析我最近的习惯完成情况" | 需要教练式引导提问（Socratic 方法），而非主 Agent 的直接回答模式；回顾分析需要检索大量历史数据，上下文隔离收益高 |
 | 规划专家 (planner) | 日/周规划、时间块分配、优先级排序 | "帮我规划明天的日程"、"这周有哪些重要的事要做" | 需要时间管理方法论（Eisenhower 矩阵、能量曲线）的专业 Prompt；需要综合拉取 todo/schedule/habit 全量数据 |
 
-用户可通过 YAML 热加载机制自定义任意 Agent（如翻译专家、编程助手等），无需重启。
+用户可通过 Markdown 热加载机制自定义任意 Agent（如翻译专家、编程助手等），无需重启。
 
 ---
 
@@ -105,16 +105,13 @@
 
 ### 3.3 用户自定义 Agent
 
-用户在 `~/.lifepilot/agents/translator.yml` 创建翻译专家：
+用户在 `~/.lifepilot/agents/translator.md` 创建翻译专家：
 
-```yaml
+```markdown
+---
 id: translator
 name: 翻译专家
 description: 擅长中英文互译，保持原文风格和语气
-system-prompt: |
-  你是一位专业的中英文翻译专家。
-  翻译时保持原文的风格、语气和专业术语。
-  如果原文是中文则翻译为英文，反之亦然。
 allowed-tools: []
 can-delegate: false
 budget:
@@ -122,6 +119,14 @@ budget:
   max-steps: 5
   timeout-seconds: 60
 preferred-provider: deepseek-chat
+---
+
+你是一位专业的中英文翻译专家。
+
+## 翻译原则
+
+- 翻译时保持原文的风格、语气和专业术语
+- 如果原文是中文则翻译为英文，反之亦然
 ```
 
 保存文件后，热加载机制自动检测变更并注册新 Agent，无需重启。主 Agent 立即可以通过 `handoff_to_translator` 工具委托翻译任务。
@@ -163,7 +168,7 @@ Skill（L1）和 Agent（L2）可以在同一次对话中协作：
 ### 4.2 对用户的影响
 
 - 现有 YAML Skill 定义（`~/.lifepilot/skills/*.yml`）**完全兼容**，无需修改
-- 如果用户之前通过 Skill 的 SubAgent 模式使用专家能力，需要改为创建 Agent YAML 定义
+- 如果用户之前通过 Skill 的 SubAgent 模式使用专家能力，需要改为创建 Agent Markdown 定义
 - Skill 自扩展（自动生成新 Skill）功能不受影响
 - 内置 Skill（Todo / Schedule / Habit / Memory）不受影响
 
@@ -175,7 +180,7 @@ Skill（L1）和 Agent（L2）可以在同一次对话中协作：
 |--------|--------|------|
 | `lifepilot.agent.multi-agent.enabled` | `true` | 是否启用多 Agent 协作 |
 | `lifepilot.agent.multi-agent.max-delegation-depth` | `2` | 最大委托深度 |
-| `lifepilot.agent.multi-agent.agent-definitions-path` | `~/.lifepilot/agents/` | 用户自定义 Agent YAML 目录 |
+| `lifepilot.agent.multi-agent.agent-definitions-path` | `~/.lifepilot/agents/` | 用户自定义 Agent Markdown 目录 |
 | `lifepilot.agent.multi-agent.register-handoff-tools` | `true` | 是否自动注册 HandoffTool |
 | `lifepilot.agent.multi-agent.hot-reload.enabled` | `true` | 是否启用热加载 |
 | `lifepilot.agent.multi-agent.hot-reload.scan-interval-seconds` | `5` | 文件扫描间隔 |
@@ -193,7 +198,7 @@ Skill（L1）和 Agent（L2）可以在同一次对话中协作：
 - 子 Agent 不共享主 Agent 对话历史（隔离设计）
 - 不支持 Agent 间直接通信（需通过主 Agent 中转）
 - 不支持并行委托（顺序执行）
-- Agent 不支持自扩展（需用户手动创建 YAML 定义）
+- Agent 不支持自扩展（需用户手动创建 Markdown 定义）
 
 ### 6.2 未来扩展（模块 22+）
 
