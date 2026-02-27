@@ -8,7 +8,8 @@ import org.slf4j.LoggerFactory;
 /**
  * 用户确认服务空实现 — 默认自动确认。
  *
- * <p>在交互层（CLI/Web）实现之前使用此占位实现。
+ * <p>作为 {@code @ConditionalOnMissingBean} 的兜底 Bean，
+ * 当交互层提供具体实现（如 {@code CliUserConfirmationService}）时自动被覆盖。
  * 所有确认请求自动通过。</p>
  *
  * @author zsg

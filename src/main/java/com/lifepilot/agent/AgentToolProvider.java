@@ -8,8 +8,8 @@ import java.util.List;
 /**
  * 工具桥接层接口。
  *
- * <p>AgentLoop 通过此接口获取工具回调。
- * 本 spec 仅提供空实现，具体实现在工具系统 spec 中完成。</p>
+ * <p>AgentLoop 通过此接口获取工具回调，将 ToolContract 转换为 Spring AI ToolCallback。
+ * 默认实现为 {@code ToolBridgeAgentToolProvider}，通过 ToolExecutionPipeline 执行工具调用。</p>
  *
  * @author zsg
  * @since 2026-07-20

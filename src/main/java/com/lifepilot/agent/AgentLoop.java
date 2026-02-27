@@ -36,8 +36,6 @@ public class AgentLoop {
     private final TraceRecorder traceRecorder;
     private final SessionManager sessionManager;
     private final ActionParser actionParser;
-    // 预留：工具回调将在 LLM 调用集成 Function Calling 时使用
-    @SuppressWarnings("unused")
     private final AgentToolProvider agentToolProvider;
     private final AgentConfigProperties config;
 

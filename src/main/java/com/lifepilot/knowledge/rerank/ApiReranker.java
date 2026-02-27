@@ -10,7 +10,8 @@ import java.util.List;
 /**
  * API 精排器 — 调用外部 Reranker API（Jina, Cohere 等）进行精排。
  *
- * <p>当前为占位实现，后续接入具体 API。降级时返回原始结果。
+ * <p>当前为降级实现，直接返回前 topK 条原始结果。
+ * 后续接入具体 Reranker API 后替换为真实精排逻辑。</p>
  *
  * @author zsg
  * @since 2026-02-25
@@ -28,7 +29,7 @@ public final class ApiReranker implements Reranker {
 
     @Override
     public List<DocumentSearchResult> rerank(String query, List<DocumentSearchResult> candidates, int topK) {
-        // 占位实现：后续接入 Jina/Cohere API
+        // 降级实现：直接返回前 topK 条结果
         log.warn("ApiReranker 尚未接入外部 API，返回原始结果");
         return candidates.stream().limit(topK).toList();
     }

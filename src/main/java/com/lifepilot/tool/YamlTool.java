@@ -10,11 +10,12 @@ import com.lifepilot.tool.schema.JsonSchema;
 import java.util.List;
 
 /**
- * YAML 声明式工具（Layer 2）— 骨架实现。
+ * YAML 声明式工具（Layer 2）— 工具注册表中的 YAML 工具类型标记。
  *
- * <p>从 YAML 配置文件加载，支持运行时热加载。
- * 本 spec 仅定义骨架，execute() 抛出 UnsupportedOperationException，
- * 在后续 YAML 工具 spec 中实现。</p>
+ * <p>作为 {@link ToolContract} sealed interface 的 permit 之一，
+ * 用于在 {@link com.lifepilot.tool.registry.DynamicToolRegistry} 中
+ * 标识 YAML 来源的工具。实际的 YAML Skill 执行通过
+ * {@code SkillActionDispatcher} 路径完成，不经过 {@code execute()} 方法。</p>
  *
  * @param id 工具唯一标识
  * @param name 工具显示名称
@@ -52,6 +53,7 @@ public record YamlTool(
 
     @Override
     public ToolResult execute(ToolInput input) {
-        throw new UnsupportedOperationException("YAML 工具执行尚未实现");
+        throw new UnsupportedOperationException(
+                "YamlTool 不支持直接执行，YAML Skill 应通过 SkillActionDispatcher 路径调用");
     }
 }

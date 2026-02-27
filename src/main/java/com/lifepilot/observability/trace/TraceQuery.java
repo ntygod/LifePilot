@@ -289,7 +289,7 @@ public class TraceQuery {
             } catch (Exception e) {
                 log.warn("步骤反序列化失败，跳过: traceId={}, stepIndex={}, error={}",
                         traceId, rs.getInt("step_index"), e.getMessage());
-                // 返回一个占位的 StateTransitionStep
+                // 返回一个降级的 StateTransitionStep 以保持轨迹完整性
                 return new StateTransitionStep(
                         rs.getInt("step_index"),
                         Instant.parse(rs.getString("timestamp")),

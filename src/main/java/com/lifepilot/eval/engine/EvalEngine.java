@@ -42,12 +42,8 @@ public class EvalEngine {
 
     private static final Logger log = LoggerFactory.getLogger(EvalEngine.class);
 
-    // 预留：ScenarioLoader 供 JUnit 5 集成层使用
-    @SuppressWarnings("unused")
     private final ScenarioLoader scenarioLoader;
     private final AgentLoop agentLoop;
-    // 预留：TraceRecorder 供后续真实轨迹采集使用
-    @SuppressWarnings("unused")
     private final TraceRecorder traceRecorder;
     private final TrajectoryEvaluator trajectoryEvaluator;
     private final LlmJudge llmJudge;
