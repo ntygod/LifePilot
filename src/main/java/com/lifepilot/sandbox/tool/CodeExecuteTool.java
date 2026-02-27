@@ -25,7 +25,7 @@ import com.lifepilot.sandbox.repository.SandboxRepository;
 import com.lifepilot.sandbox.session.SandboxSessionManager;
 import com.lifepilot.sandbox.validator.CodeValidator;
 import com.lifepilot.tool.BuiltinTool;
-import com.lifepilot.tool.model.RiskLevel;
+import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.schema.JsonSchema;

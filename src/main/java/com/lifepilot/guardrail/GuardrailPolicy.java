@@ -1,7 +1,7 @@
 package com.lifepilot.guardrail;
 
 import com.lifepilot.tool.ToolContract;
-import com.lifepilot.tool.model.RiskLevel;
+import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.model.ToolInput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

@@ -3,7 +3,7 @@ package com.lifepilot.mcp.adapter;
 import com.lifepilot.mcp.McpClient;
 import com.lifepilot.mcp.model.McpToolAnnotations;
 import com.lifepilot.mcp.model.McpToolSchema;
-import com.lifepilot.tool.model.RiskLevel;
+import com.lifepilot.observability.guardrail.RiskLevel;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

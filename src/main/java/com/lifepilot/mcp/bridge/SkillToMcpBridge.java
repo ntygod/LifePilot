@@ -6,7 +6,7 @@ import com.lifepilot.mcp.model.McpToolAnnotations;
 import com.lifepilot.mcp.model.McpToolResult;
 import com.lifepilot.mcp.model.McpToolSchema;
 import com.lifepilot.tool.ToolContract;
-import com.lifepilot.tool.model.RiskLevel;
+import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.model.ValidationResult;

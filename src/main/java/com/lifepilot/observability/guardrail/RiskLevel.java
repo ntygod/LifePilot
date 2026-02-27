@@ -1,16 +1,14 @@
-package com.lifepilot.tool.model;
+package com.lifepilot.observability.guardrail;
 
 /**
- * 工具风险等级。
+ * 统一风险等级枚举。
  *
- * <p>风险等级在工具注册时声明，在 ToolExecutionPipeline 中强制执行。
- * 不同风险等级对应不同的审批流程。</p>
+ * <p>风险等级在工具注册时声明，在护栏引擎中强制执行。
+ * 不同风险等级对应不同的审批模式。</p>
  *
  * @author zsg
- * @since 2026-02-24
- * @deprecated 请使用 {@link com.lifepilot.observability.guardrail.RiskLevel}
+ * @since 2026-02-27
  */
-@Deprecated(forRemoval = true)
 public enum RiskLevel {
 
     /** 低风险：只读操作，无副作用。自动执行，无需审批。 */
@@ -50,5 +48,19 @@ public enum RiskLevel {
      */
     public boolean requiresSecondaryVerification() {
         return this == CRITICAL;
+    }
+
+    /**
+     * 获取对应的审批模式。
+     *
+     * @return 风险等级对应的审批模式
+     */
+    public ApprovalMode toApprovalMode() {
+        return switch (this) {
+            case LOW -> ApprovalMode.AUTO;
+            case MEDIUM -> ApprovalMode.AUTO_WITH_AUDIT;
+            case HIGH -> ApprovalMode.USER_CONFIRM;
+            case CRITICAL -> ApprovalMode.USER_CONFIRM_WITH_VERIFICATION;
+        };
     }
 }

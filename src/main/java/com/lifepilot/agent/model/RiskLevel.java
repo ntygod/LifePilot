@@ -5,7 +5,9 @@ package com.lifepilot.agent.model;
  *
  * @author zsg
  * @since 2026-07-20
+ * @deprecated 请使用 {@link com.lifepilot.observability.guardrail.RiskLevel}
  */
+@Deprecated(forRemoval = true)
 public enum RiskLevel {
 
     /** 低风险 — 自动执行 */

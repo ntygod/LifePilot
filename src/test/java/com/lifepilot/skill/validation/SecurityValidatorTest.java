@@ -4,7 +4,7 @@ import com.lifepilot.skill.config.SkillConfigProperties;
 import com.lifepilot.skill.validation.SecurityValidator.SecurityValidationResult;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.ToolContract;
-import com.lifepilot.tool.model.RiskLevel;
+import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
