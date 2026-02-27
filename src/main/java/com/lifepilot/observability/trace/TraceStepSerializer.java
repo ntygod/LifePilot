@@ -61,6 +61,21 @@ public class TraceStepSerializer {
     }
 
     /**
+     * 将 TraceMetadata 序列化为 JSON 字符串。
+     *
+     * @param metadata 追踪元数据
+     * @return JSON 字符串
+     * @throws TraceDeserializationException 序列化失败时抛出
+     */
+    public String serializeMetadata(TraceMetadata metadata) {
+        try {
+            return objectMapper.writeValueAsString(metadata);
+        } catch (JsonProcessingException e) {
+            throw new TraceDeserializationException("TraceMetadata 序列化失败", e);
+        }
+    }
+
+    /**
      * 根据步骤类型名称解析对应的 record 类型。
      */
     private Class<? extends TraceStep> resolveType(String stepType) {
