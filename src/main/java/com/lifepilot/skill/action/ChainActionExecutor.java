@@ -1,10 +1,7 @@
 package com.lifepilot.skill.action;
 
-import com.lifepilot.agent.model.AgentRequest;
-import com.lifepilot.agent.model.AgentState;
-import com.lifepilot.skill.activation.SubAgentFactory;
 import com.lifepilot.skill.config.SkillConfigProperties;
-import com.lifepilot.skill.model.SubAgentResult;
+import com.lifepilot.skill.model.SkillDefinition;
 import com.lifepilot.skill.registry.SkillRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,7 +15,11 @@ import java.util.stream.Collectors;
  * 技能串联执行器 — 按步骤顺序激活多个 Skill。
  *
  * <p>前一步的输出作为后一步的输入参数，通过 ${result.xxx} 引用。
- * 任一步骤失败则终止后续步骤。累计 Token 消耗不超过 Skill 预算。</p>
+ * 任一步骤失败则终止后续步骤。</p>
+ *
+ * <p>L1 回归：每个步骤通过 SkillRegistry 查找 Skill 定义，
+ * 将 systemPrompt 作为 TemplateAction 渲染执行，不再依赖 SubAgentFactory。
+ * 使用 {@link SkillActionDispatcher} 的引用通过 Lazy 注入避免循环依赖。</p>
  *
  * @author zsg
  * @since 2026-02-25
@@ -27,7 +28,6 @@ public class ChainActionExecutor {
 
     private static final Logger log = LoggerFactory.getLogger(ChainActionExecutor.class);
 
-    private final SubAgentFactory subAgentFactory;
     private final SkillRegistry skillRegistry;
     private final VariableResolver variableResolver;
     private final SkillConfigProperties config;
@@ -35,16 +35,13 @@ public class ChainActionExecutor {
     /**
      * 构造技能串联执行器。
      *
-     * @param subAgentFactory  SubAgent 工厂
      * @param skillRegistry    Skill 注册中心
      * @param variableResolver 变量替换引擎
      * @param config           Skill 配置属性
      */
-    public ChainActionExecutor(SubAgentFactory subAgentFactory,
-                               SkillRegistry skillRegistry,
+    public ChainActionExecutor(SkillRegistry skillRegistry,
                                VariableResolver variableResolver,
                                SkillConfigProperties config) {
-        this.subAgentFactory = subAgentFactory;
         this.skillRegistry = skillRegistry;
         this.variableResolver = variableResolver;
         this.config = config;
@@ -58,9 +55,8 @@ public class ChainActionExecutor {
      *   <li>校验步骤数不超过配置上限</li>
      *   <li>校验所有引用的 Skill ID 在 SkillRegistry 中存在</li>
      *   <li>空步骤列表直接返回成功</li>
-     *   <li>按顺序依次激活每个 Skill，前一步输出注入后一步输入</li>
+     *   <li>按顺序依次执行每个 Skill 的 TemplateAction，前一步输出注入后一步输入</li>
      *   <li>任一步骤失败终止后续步骤</li>
-     *   <li>累计 Token 消耗</li>
      * </ol></p>
      *
      * @param action Chain 动作定义
@@ -93,15 +89,12 @@ public class ChainActionExecutor {
             return ActionResult.success("");
         }
 
-        // 4. 按顺序依次激活每个 Skill
-        // 存储每个步骤的输出，键为 step.output() 名称
+        // 4. 按顺序依次执行每个 Skill 的 TemplateAction
         Map<String, Object> stepOutputs = new HashMap<>();
-        int cumulativeTokensUsed = 0;
         String lastOutput = "";
 
-        // 创建用于 SubAgentFactory 的 parentState
-        AgentState parentState = AgentState.init(
-                new AgentRequest("chain-execution", "chain-session", "internal"));
+        // TemplateActionExecutor 用于渲染每个步骤的 systemPrompt
+        var templateExecutor = new TemplateActionExecutor(variableResolver);
 
         for (int i = 0; i < steps.size(); i++) {
             SkillAction.ChainStep step = steps.get(i);
@@ -111,29 +104,35 @@ public class ChainActionExecutor {
 
             log.debug("技能串联执行步骤: index={}, skill={}, input={}", i, step.skill(), resolvedInput);
 
-            // 通过 SubAgentFactory 激活 Skill
-            SubAgentResult result = subAgentFactory.activate(step.skill(), resolvedInput, parentState);
+            // 查找 Skill 定义，将 systemPrompt 作为 TemplateAction 渲染
+            SkillDefinition skillDef = skillRegistry.find(step.skill()).orElse(null);
+            if (skillDef == null) {
+                // 理论上不会到这里（前面已校验），防御性处理
+                return ActionResult.error("技能串联步骤 " + i + " Skill 不存在: " + step.skill());
+            }
 
-            // 累计 Token 消耗
-            cumulativeTokensUsed += result.tokensUsed();
+            // 将 resolvedInput 作为前序结果传入 TemplateAction
+            var templateAction = new SkillAction.TemplateAction(skillDef.systemPrompt());
+            Map<String, Object> previousResult = new HashMap<>(stepOutputs);
+            previousResult.put("input", resolvedInput);
+            ActionResult stepResult = templateExecutor.execute(templateAction, previousResult);
 
             // 步骤失败则终止
-            if (!result.success()) {
-                log.warn("技能串联步骤失败: index={}, skill={}, output={}", i, step.skill(), result.output());
+            if (!stepResult.success()) {
+                log.warn("技能串联步骤失败: index={}, skill={}, output={}", i, step.skill(), stepResult.output());
                 return ActionResult.error(
-                        "技能串联步骤 " + i + " 失败 (skill=" + step.skill() + "): " + result.output());
+                        "技能串联步骤 " + i + " 失败 (skill=" + step.skill() + "): " + stepResult.output());
             }
 
             // 存储步骤输出，供后续步骤引用
-            lastOutput = result.output();
+            lastOutput = stepResult.output();
             stepOutputs.put(step.output(), lastOutput);
 
-            log.debug("技能串联步骤完成: index={}, skill={}, tokensUsed={}", i, step.skill(), result.tokensUsed());
+            log.debug("技能串联步骤完成: index={}, skill={}", i, step.skill());
         }
 
-        // 5. 返回最终结果，包含累计 Token 消耗
-        Map<String, Object> data = Map.of("tokensUsed", cumulativeTokensUsed);
-        return ActionResult.success(lastOutput, data);
+        // 5. 返回最终结果
+        return ActionResult.success(lastOutput);
     }
 
     /**

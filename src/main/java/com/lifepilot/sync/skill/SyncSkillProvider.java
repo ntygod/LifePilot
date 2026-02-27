@@ -101,7 +101,6 @@ public class SyncSkillProvider implements BuiltinSkillProvider {
                 .memoryAccess(MemoryAccessPolicy.none())
                 .budget(SkillBudget.DEFAULT)
                 .metadata(Map.of())
-                .preferredProviderId(null)
                 .build();
     }
 

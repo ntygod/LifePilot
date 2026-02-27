@@ -2,7 +2,7 @@
 
 > 本文档从 [FEATURES.md](../FEATURES.md) 拆分而来，对应原文 §2.2 章节。
 
-> ✅ Skill 系统已实现（Phase 3，模块 10），包括 SkillRegistry、SkillActivator、YAML 声明式 Skill、热加载、SubAgent 激活、Skill 自扩展（Gap 检测 + YAML 生成 + 三重验证）。详细架构设计参见 [architecture/skill-system.md](../architecture/skill-system.md)。
+> ✅ Skill 系统已实现（Phase 3，模块 10），包括 SkillRegistry、SkillActivator、YAML 声明式 Skill、热加载、Skill 自扩展（Gap 检测 + YAML 生成 + 三重验证）。SubAgent 能力已迁移至多 Agent 协作模块（模块 21）。详细架构设计参见 [architecture/skill-system.md](../architecture/skill-system.md)。
 
 LifePilot 采用统一的 Agent Skills 架构。一个 Skill 不是简单的工具别名，而是一个完整的**"Agent 能力单元"**——包含专业人格、工具权限、执行策略和记忆访问权限。
 
@@ -50,13 +50,13 @@ graph LR
 | **USER_DEFINED** | YAML 文件 | 运行时热加载 | 用户自定义扩展（天气查询、API 调用等） |
 | **AUTO_GENERATED** | Agent 运行时生成 | 安全验证后注册 | Agent 自动学习新能力 |
 
-## 3. Skill 激活 = SubAgent
+## 3. Skill 激活与执行
 
-当主 Agent 判断需要专业能力时，会激活对应的 Skill。激活过程就是创建一个 SubAgent 实例——注入 Skill 的 System Prompt、限制为 Skill 声明的工具子集、分配独立预算，然后复用主引擎执行。
+当主 Agent 判断需要专业能力时，会激活对应的 Skill。激活过程通过 `SkillLifecycleManager` 协调，使用 `SkillActionDispatcher` 根据 Skill 定义的 Action 类型（TemplateAction / HttpAction / ShellAction / ChainAction）确定性执行。
 
-> 类比：Skill 是**类（Class）**，SubAgent 是**对象（Object）**。Skill 定义能力蓝图，SubAgent 是运行时实例。
+> 注意：独立 SubAgent 能力（独立上下文、独立预算、多模型路由）已迁移至多 Agent 协作模块（模块 21），通过 `HandoffTool` + `AgentExecutor` 实现。
 
-**激活深度限制**：最多 2 层（主 Agent → SubAgent → Sub-SubAgent），防止无限递归。
+**并发激活限制**：最大并发激活数由配置控制，防止资源耗尽。
 
 **使用示例：**
 
@@ -124,9 +124,6 @@ skill:
   budget:
     max-tokens: 8000
     max-cost-cents: 50
-
-  # LLM 偏好（可选，不指定则使用主 Agent 的路由策略）
-  provider-id: null
 ```
 
 ## 5. Skill 自扩展能力

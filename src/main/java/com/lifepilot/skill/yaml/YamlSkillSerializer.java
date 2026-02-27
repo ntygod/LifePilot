@@ -46,7 +46,6 @@ public class YamlSkillSerializer {
      *   <li>systemPrompt → system-prompt</li>
      *   <li>allowedTools → allowed-tools</li>
      *   <li>省略与默认值相同的 execution、budget、memory-access、metadata</li>
-     *   <li>省略 null 的 preferredProviderId</li>
      * </ul></p>
      */
     private LinkedHashMap<String, Object> buildSkillMap(SkillDefinition definition) {
@@ -59,11 +58,6 @@ public class YamlSkillSerializer {
         map.put("version", definition.version());
         map.put("system-prompt", definition.systemPrompt());
         map.put("allowed-tools", new ArrayList<>(definition.allowedTools()));
-
-        // 可选：provider-id
-        if (definition.preferredProviderId() != null) {
-            map.put("provider-id", definition.preferredProviderId());
-        }
 
         // 可选：execution（省略与 DEFAULT 相同的值）
         if (!definition.execution().equals(ExecutionStrategy.DEFAULT)) {

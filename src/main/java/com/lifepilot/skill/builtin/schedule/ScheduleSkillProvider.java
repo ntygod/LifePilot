@@ -66,7 +66,6 @@ public class ScheduleSkillProvider implements BuiltinSkillProvider {
                 .memoryAccess(MemoryAccessPolicy.none())
                 .budget(SkillBudget.LIGHTWEIGHT)
                 .metadata(Map.of())
-                .preferredProviderId(null)
                 .build();
     }
 

@@ -15,7 +15,7 @@
 - [3. MemoryAccessPolicy — 声明式记忆访问控制](#3-memoryaccesspolicy--声明式记忆访问控制)
 - [4. 三种 Skill 来源详解](#4-三种-skill-来源详解)
 - [5. SkillRegistry — 技能注册中心](#5-skillregistry--技能注册中心)
-- [6. SubAgentFactory — SubAgent 工厂](#6-subagentfactory--subagent-工厂)
+- [6. Skill 激活执行（L1 确定性模式）](#6-skill-激活执行l1-确定性模式)
 - [7. Skill 激活生命周期](#7-skill-激活生命周期)
 - [8. Skill 自扩展机制](#8-skill-自扩展机制)
 - [9. SkillToToolBridge — 技能作为工具](#9-skilltoolbridge--技能作为工具)
@@ -66,7 +66,7 @@
    → 成本线性增长，质量反而下降
 ```
 
-LifePilot 的核心设计命题是：**Skill 不是工具的别名，而是一个完整的 Agent 能力单元（Agent Capability Unit）**。一个 Skill 封装了完成特定领域任务所需的全部要素——专业人格、工具权限、执行策略、记忆访问权限和独立预算。当 Skill 被激活时，它不是"给主 Agent 多了一个工具"，而是**创建了一个独立的 SubAgent 实例**，在隔离的上下文中执行任务。
+LifePilot 的核心设计命题是：**Skill 不是工具的别名，而是一个完整的 Agent 能力单元（Agent Capability Unit）**。一个 Skill 封装了完成特定领域任务所需的全部要素——专业人格、工具权限、执行策略、记忆访问权限和独立预算。当 Skill 被激活时，它不是"给主 Agent 多了一个工具"，而是通过 `SkillActionDispatcher` 根据 Action 类型确定性执行。对于需要独立上下文和独立预算的 SubAgent 能力，由多 Agent 协作模块（模块 21）的 `AgentExecutor` + `HandoffTool` 提供。
 
 这个命题直接导出了 LifePilot 技能系统的核心架构决策：
 
@@ -175,8 +175,8 @@ LifePilot 对 Anthropic 标准的映射：
 | YAML Frontmatter 元数据 | `SkillDefinition` record 的结构化字段 |
 | 文件夹结构（scripts + references + assets） | `SkillDefinition.allowedTools()` + `MemoryAccessPolicy` |
 | Discovery 阶段（name + description） | `SkillRegistry.listSummaries()` — 30-50 Token/Skill |
-| Activation 阶段（完整指令） | `SubAgentFactory.activate()` — 创建隔离 SubAgent |
-| Execution 阶段 | SubAgent 在独立上下文中执行 `AgentLoop` |
+| Activation 阶段（完整指令） | `SkillLifecycleManager.activate()` — 通过 SkillActionDispatcher 执行 |
+| Execution 阶段 | SkillActionDispatcher 根据 Action 类型确定性执行 |
 | 开放标准、跨框架复用 | YAML Skill 定义格式兼容 Anthropic 标准 |
 
 #### 1.2.2 Spring AI Agentic Patterns — Task Tool 与 Agent Registry
@@ -198,9 +198,9 @@ LifePilot 对 Anthropic 标准的映射：
 |---------------------------|---------------|
 | SkillsTool（发现+激活入口） | `SkillToToolBridge` — 将 Skill 暴露为 AgentLoop 可调用的工具 |
 | Agent Registry（SubAgent 目录） | `SkillRegistry` — ConcurrentHashMap 存储，语义搜索 |
-| Task Tool（SubAgent 调度） | `SubAgentFactory.activate()` — 创建并执行 SubAgent |
-| 多模型路由 | `SkillDefinition.preferredProviderId()` — Skill 级别的 LLM 偏好 |
-| 独立上下文窗口 | `SubAgentContext` — 每个 SubAgent 有独立的上下文组装 |
+| Task Tool（SubAgent 调度） | `SkillLifecycleManager.activate()` — 通过 SkillActionDispatcher 执行 |
+| 多模型路由 | 已移至多 Agent 协作模块（`AgentDefinition.preferredProvider()`） |
+| 独立上下文窗口 | Skill 使用 L1 确定性执行，SubAgent 能力由多 Agent 模块提供 |
 | 内置 SubAgent | `SkillSource.BUILTIN` — TodoSkill、ScheduleSkill 等 |
 
 #### 1.2.3 SkillRL — 层次化技能发现与递归进化
@@ -299,10 +299,10 @@ LifePilot 技能系统的核心类比来自面向对象编程：**Skill 是类�
 | OOP 概念 | Skill 概念 | 说明 |
 |----------|-----------|------|
 | **Class（类）** | `SkillDefinition` | 静态蓝图，描述能力的结构和约束 |
-| **Object（对象）** | `SubAgent` | 运行时实例，有独立的状态和生命周期 |
-| **Constructor（构造器）** | `SubAgentFactory.activate()` | 从蓝图创建实例，注入依赖 |
-| **Field（字段）** | `SubAgentContext` | SubAgent 的运行时状态（上下文、预算、轨迹） |
-| **Method（方法）** | Tool 调用 | SubAgent 通过调用工具执行操作 |
+| **Object（对象）** | Skill 激活实例 | 运行时执行，通过 SkillActionDispatcher 分发 |
+| **Constructor（构造器）** | `SkillLifecycleManager.activate()` | 从蓝图创建执行上下文 |
+| **Field（字段）** | Action 参数 | Skill 的运行时输入（TemplateAction / HttpAction 等） |
+| **Method（方法）** | Action 执行 | Skill 通过 SkillActionDispatcher 执行确定性操作 |
 | **Access Modifier（访问修饰符）** | `MemoryAccessPolicy` | 控制 SubAgent 可以访问哪些记忆层 |
 | **Interface（接口）** | `SkillContract` | Skill 对外暴露的能力声明 |
 | **Inheritance（继承）** | Skill 组合 | Skill A 可以在执行中激活 Skill B |
@@ -326,24 +326,16 @@ classDiagram
         +MemoryAccessPolicy memoryAccess
         +SkillBudget budget
         +SkillMetadata metadata
-        +String preferredProviderId
     }
 
-    class SubAgent {
-        <<runtime / "Object">>
-        +String instanceId
-        +SkillDefinition skill
-        +SubAgentContext context
-        +AgentState state
-        +Budget budget
-        +int depth
-        +execute() AgentResponse
-        +deactivate() void
+    class SkillLifecycleManager {
+        <<"Activator">>
+        +activate(String, String, AgentState) SubAgentResult
     }
 
-    class SubAgentFactory {
-        <<"Constructor">>
-        +activate(SkillDefinition, AgentState, int) SubAgent
+    class SkillActionDispatcher {
+        <<"Executor">>
+        +dispatch(SkillDefinition, String) String
     }
 
     class SkillRegistry {
@@ -354,9 +346,9 @@ classDiagram
         +reload() void
     }
 
-    SkillDefinition "1" --> "*" SubAgent : "激活（实例化）"
-    SubAgentFactory ..> SkillDefinition : "读取蓝图"
-    SubAgentFactory ..> SubAgent : "创建实例"
+    SkillDefinition "1" --> "*" SkillLifecycleManager : "激活"
+    SkillLifecycleManager ..> SkillActionDispatcher : "委托执行"
+    SkillActionDispatcher ..> SkillDefinition : "读取蓝图"
     SkillRegistry "1" --> "*" SkillDefinition : "管理注册"
 ```
 
@@ -540,7 +532,7 @@ LifePilot 的解决方案是**三重验证管线 + 用户确认**：
 设计决策的核心考量：
 
 - **不可变性**：`SkillDefinition` 一旦创建就不可修改。需要变更时，通过 `toBuilder()` 创建新实例。这消除了并发修改问题，使得 `SkillRegistry` 可以安全地在多线程环境中共享 Skill 定义。
-- **完整性**：一个 `SkillDefinition` 包含激活 SubAgent 所需的全部信息。`SubAgentFactory` 不需要从其他地方获取额外配置。
+- **完整性**：一个 `SkillDefinition` 包含执行 Skill 所需的全部信息。`SkillActionDispatcher` 不需要从其他地方获取额外配置。
 - **三来源统一**：无论 Skill 来自 Java 代码、YAML 文件还是 Agent 自生成，都使用同一个 `SkillDefinition` 数据模型。通过 `SkillSource` 区分来源。
 
 ### 2.2 完整数据模型类图
@@ -560,7 +552,6 @@ classDiagram
         +MemoryAccessPolicy memoryAccess
         +SkillBudget budget
         +SkillMetadata metadata
-        +String preferredProviderId
     }
 
     class SkillSource {
@@ -699,7 +690,6 @@ import java.util.List;
  * @param memoryAccess        声明式记忆读写权限
  * @param budget              独立预算约束（Token / 步骤 / 时间 / 成本）
  * @param metadata            元数据（作者、标签、分类、依赖、兼容性）
- * @param preferredProviderId 偏好的 LLM Provider ID（可选，null 表示使用默认）
  *
  * @see SkillSource 来源类型
  * @see ExecutionStrategy 执行策略
@@ -732,10 +722,7 @@ public record SkillDefinition(
     SkillBudget budget,
 
     // === 元数据 ===
-    SkillMetadata metadata,
-
-    // === LLM 偏好（可选） ===
-    @Nullable String preferredProviderId
+    SkillMetadata metadata
 ) {
     /**
      * 紧凑构造器 — 防御性拷贝和参数校验。
@@ -2012,7 +1999,6 @@ public class TodoSkillProvider implements BuiltinSkillProvider {
                 .compatibility(SkillCompatibility.any())
                 .iconEmoji("✅")
                 .build())
-            .preferredProviderId(null)
             .build();
     }
 }
@@ -2087,7 +2073,6 @@ public class ScheduleSkillProvider implements BuiltinSkillProvider {
                 .compatibility(SkillCompatibility.any())
                 .iconEmoji("📅")
                 .build())
-            .preferredProviderId(null)
             .build();
     }
 }
@@ -2163,7 +2148,6 @@ public class HabitSkillProvider implements BuiltinSkillProvider {
                 .compatibility(SkillCompatibility.any())
                 .iconEmoji("🎯")
                 .build())
-            .preferredProviderId(null)
             .build();
     }
 }
@@ -2243,7 +2227,6 @@ public class MemorySkillProvider implements BuiltinSkillProvider {
                 .compatibility(SkillCompatibility.any())
                 .iconEmoji("🧠")
                 .build())
-            .preferredProviderId(null)
             .build();
     }
 }
@@ -2315,7 +2298,6 @@ public class KnowledgeSkillProvider implements BuiltinSkillProvider {
                 .compatibility(SkillCompatibility.any())
                 .iconEmoji("📚")
                 .build())
-            .preferredProviderId(null)
             .build();
     }
 }
@@ -2415,11 +2397,6 @@ skill:
     category: productivity           # 分类
     dependencies: []                 # 依赖的其他 Skill ID
     icon-emoji: "✍️"                 # 图标 Emoji
-
-  # ─────────────────────────────────────────────
-  # LLM 偏好（可选）
-  # ─────────────────────────────────────────────
-  provider-id: null                  # null 表示使用默认 LLM
 ```
 
 #### 4.2.3 更多 YAML Skill 示例
@@ -2690,7 +2667,6 @@ public class YamlSkillLoader {
                 (Map<String, Object>) map.getOrDefault("budget", Map.of())))
             .metadata(mapMetadata(
                 (Map<String, Object>) map.getOrDefault("metadata", Map.of())))
-            .preferredProviderId((String) map.get("provider-id"))
             .build();
     }
 
@@ -4195,365 +4171,52 @@ public record ScoredSkill(String skillId, double score) {}
 
 ---
 
-## 6. SubAgentFactory — SubAgent 工厂
+## 6. Skill 激活执行（L1 确定性模式）
+
+> **重要变更说明**：原 `SubAgentFactory` 已在多 Agent 协作模块（模块 21）重构中移除。
+> Skill 系统回归 L1 确定性执行模式，SubAgent 能力由 `com.lifepilot.multiagent` 模块的
+> `AgentExecutor` + `HandoffTool` 提供。Skill 不再直接创建 SubAgent 实例。
 
 ### 6.1 核心设计
 
-`SubAgentFactory` 是 Skill 激活的核心组件。它从 `SkillDefinition`（蓝图）创建 `SubAgent`（运行时实例），负责：
-
-- **上下文隔离**：为 SubAgent 创建独立的上下文窗口
-- **预算分配**：从 SkillDefinition 读取预算约束，创建独立的 Budget 实例
-- **工具过滤**：根据 `allowedTools` 白名单过滤工具列表
-- **记忆策略注入**：将 `MemoryAccessPolicy` 注入到记忆服务代理层
-- **深度限制**：强制执行 `MAX_ACTIVATION_DEPTH = 2`
-- **多模型路由**：SubAgent 可以使用与主 Agent 不同的 LLM
+Skill 激活采用 L1 确定性执行模式。`SkillLifecycleManager` 通过 `SkillActionDispatcher` 分发执行，
+根据 Skill 定义的 Action 类型（`TemplateAction` / `HttpAction` / `ShellAction` / `ChainAction`）
+选择对应的执行器，无需创建独立的 SubAgent 实例。
 
 ```mermaid
 sequenceDiagram
     participant Main as 主 AgentLoop
-    participant Factory as SubAgentFactory
-    participant Registry as SkillRegistry
-    participant Tools as DynamicToolRegistry
-    participant Memory as MemoryService
-    participant Sub as SubAgent
+    participant Bridge as SkillToToolBridge
+    participant LCM as SkillLifecycleManager
+    participant Dispatcher as SkillActionDispatcher
+    participant Executor as TemplateActionExecutor
 
-    Main->>Factory: activate(skillId, parentState, depth=0)
-    Factory->>Registry: find(skillId)
-    Registry-->>Factory: SkillDefinition
-
-    Note over Factory: 深度检查: depth < MAX_ACTIVATION_DEPTH
-
-    Factory->>Factory: 创建 SubAgentContext
-    Factory->>Tools: filterToolsForSkill(skill.allowedTools)
-    Tools-->>Factory: 过滤后的工具列表
-    Factory->>Memory: createProxy(skill.memoryAccess)
-    Memory-->>Factory: MemoryServiceProxy（带访问控制）
-
-    Factory->>Factory: 创建独立 Budget
-    Factory->>Factory: 创建 AgentState（隔离上下文）
-
-    Factory->>Sub: 创建 SubAgent 实例
-    Note over Sub: 注入:<br/>- Skill 的 System Prompt<br/>- 过滤后的工具列表<br/>- 独立 Budget<br/>- 记忆访问代理<br/>- 深度 = depth + 1
-
-    Sub->>Sub: 执行 AgentLoop（复用核心逻辑）
-    Sub-->>Factory: SubAgentResult
-
-    Factory-->>Main: SubAgentResult
+    Main->>Bridge: execute(skillId, input)
+    Bridge->>LCM: activate(skillId, input, parentState)
+    LCM->>LCM: 并发激活数检查
+    LCM->>Dispatcher: dispatch(skillDefinition, input)
+    Dispatcher->>Executor: execute(TemplateAction, input)
+    Executor-->>Dispatcher: 执行结果
+    Dispatcher-->>LCM: SubAgentResult
+    LCM-->>Bridge: SubAgentResult
+    Bridge-->>Main: ToolResult
 ```
 
-### 6.2 SubAgentContext — SubAgent 上下文
+### 6.2 SkillLifecycleManager — 生命周期管理器（重构后）
 
-```java
-package com.lifepilot.skill.agent;
+`SkillLifecycleManager` 不再依赖 `SubAgentFactory`，改为依赖 `SkillRegistry` + `SkillActionDispatcher`：
 
-import com.lifepilot.agent.model.AgentState;
-import com.lifepilot.agent.model.Budget;
-import com.lifepilot.skill.SkillDefinition;
-import com.lifepilot.skill.memory.MemoryAccessPolicy;
-import com.lifepilot.tool.ToolContract;
-import lombok.Builder;
+- 通过 `SkillRegistry.find(skillId)` 查找 Skill 定义
+- 通过 `SkillActionDispatcher.dispatch(skill, input)` 执行 Skill
+- 对于包含 `systemPrompt` 的 Skill，使用 `TemplateAction(systemPrompt)` 模式
+- 保留并发激活数限制、指标收集、事件发布等生命周期管理职责
 
-import java.util.List;
+### 6.3 SubAgentResult — 执行结果
 
-/**
- * SubAgent 上下文 — 封装 SubAgent 执行所需的全部信息。
- *
- * <p>SubAgentContext 是 SubAgent 的"世界观"——它定义了 SubAgent
- * 能看到什么（工具列表）、能记住什么（记忆访问策略）、
- * 能花多少（预算）、以什么身份行动（System Prompt）。</p>
- *
- * @param skill          Skill 定义（蓝图）
- * @param state          SubAgent 的初始状态
- * @param budget         独立预算
- * @param tools          过滤后的工具列表（最小权限）
- * @param memoryPolicy   记忆访问策略
- * @param depth          当前激活深度
- * @param parentTraceId  父 Agent 的 Trace ID（用于关联追踪）
- */
-@Builder(toBuilder = true)
-public record SubAgentContext(
-    SkillDefinition skill,
-    AgentState state,
-    Budget budget,
-    List<ToolContract> tools,
-    MemoryAccessPolicy memoryPolicy,
-    int depth,
-    String parentTraceId
-) {
-    /** 紧凑构造器 — 防御性拷贝。 */
-    public SubAgentContext {
-        tools = List.copyOf(tools);
-    }
-}
-```
+`SubAgentResult` record 保留不变，仍作为 Skill 执行结果的统一数据模型。
+由 `SkillLifecycleManager` 构建并返回给 `SkillToToolBridge`。
 
-### 6.3 SubAgentResult — SubAgent 执行结果
-
-```java
-package com.lifepilot.skill.agent;
-
-import com.lifepilot.agent.model.AgentState;
-import jakarta.annotation.Nullable;
-import lombok.Builder;
-
-import java.time.Duration;
-
-/**
- * SubAgent 执行结果。
- *
- * <p>包含 SubAgent 的最终输出、执行统计和终止原因。
- * 主 Agent 根据此结果决定后续处理策略。</p>
- *
- * @param skillId           执行的 Skill ID
- * @param success           是否成功完成
- * @param output            最终输出文本
- * @param terminationReason 终止原因
- * @param tokensUsed        消耗的 Token 数
- * @param stepsExecuted     执行的步骤数
- * @param duration          执行耗时
- * @param traceId           SubAgent 的 Trace ID
- * @param error             错误信息（如果失败）
- */
-@Builder(toBuilder = true)
-public record SubAgentResult(
-    String skillId,
-    boolean success,
-    @Nullable String output,
-    String terminationReason,
-    int tokensUsed,
-    int stepsExecuted,
-    Duration duration,
-    String traceId,
-    @Nullable String error
-) {
-    /** 创建成功结果。 */
-    public static SubAgentResult success(String skillId, String output,
-                                          int tokensUsed, int steps,
-                                          Duration duration, String traceId) {
-        return SubAgentResult.builder()
-            .skillId(skillId)
-            .success(true)
-            .output(output)
-            .terminationReason("正常完成")
-            .tokensUsed(tokensUsed)
-            .stepsExecuted(steps)
-            .duration(duration)
-            .traceId(traceId)
-            .build();
-    }
-
-    /** 创建失败结果。 */
-    public static SubAgentResult failure(String skillId, String error,
-                                          String reason, int tokensUsed,
-                                          int steps, Duration duration,
-                                          String traceId) {
-        return SubAgentResult.builder()
-            .skillId(skillId)
-            .success(false)
-            .error(error)
-            .terminationReason(reason)
-            .tokensUsed(tokensUsed)
-            .stepsExecuted(steps)
-            .duration(duration)
-            .traceId(traceId)
-            .build();
-    }
-}
-```
-
-### 6.4 SubAgentFactory 完整实现
-
-```java
-package com.lifepilot.skill.agent;
-
-import com.lifepilot.agent.AgentLoop;
-import com.lifepilot.agent.model.*;
-import com.lifepilot.llm.LlmRouter;
-import com.lifepilot.skill.SkillDefinition;
-import com.lifepilot.skill.memory.MemoryAccessEnforcer;
-import com.lifepilot.skill.model.SkillBudget;
-import com.lifepilot.skill.registry.SkillRegistry;
-import com.lifepilot.tool.DynamicToolRegistry;
-import com.lifepilot.tool.ToolContract;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
-
-import java.time.Duration;
-import java.time.Instant;
-import java.util.List;
-import java.util.Set;
-import java.util.UUID;
-
-/**
- * SubAgent 工厂 — 从 SkillDefinition 创建运行时 SubAgent。
- *
- * <p>这是 "Skill = Class, SubAgent = Object" 类比中的"构造器"。
- * 每次调用 {@link #activate} 都会创建一个全新的 SubAgent 实例，
- * 具有独立的上下文、预算和生命周期。</p>
- *
- * <p>关键安全机制：
- * <ul>
- *   <li>深度限制：{@code MAX_ACTIVATION_DEPTH = 2}，防止无限递归</li>
- *   <li>工具过滤：SubAgent 只能看到 Skill 声明的工具子集</li>
- *   <li>预算隔离：SubAgent 有独立的 Token/步骤/时间预算</li>
- *   <li>记忆隔离：通过 MemoryAccessEnforcer 强制执行访问策略</li>
- * </ul></p>
- *
- * <p>多模型路由：如果 SkillDefinition 指定了 {@code preferredProviderId}，
- * SubAgent 会使用该 LLM Provider，而非主 Agent 的默认 Provider。
- * 这允许将简单任务路由到低成本模型，复杂任务路由到高能力模型。
- * 参考 <a href="https://spring.io/blog/2026/01/27/spring-ai-agentic-patterns-4-task-subagents">
- * Spring AI Agentic Patterns Part 4</a> 的多模型路由设计。</p>
- *
- * @see SubAgentContext SubAgent 上下文
- * @see SubAgentResult SubAgent 执行结果
- */
-@Service
-public class SubAgentFactory {
-
-    private static final Logger log = LoggerFactory.getLogger(SubAgentFactory.class);
-
-    /** 最大激活深度：主 Agent(0) → SubAgent(1) → Sub-SubAgent(2)。 */
-    public static final int MAX_ACTIVATION_DEPTH = 2;
-
-    private final SkillRegistry skillRegistry;
-    private final AgentLoop agentLoop;
-    private final DynamicToolRegistry toolRegistry;
-    private final MemoryAccessEnforcer memoryAccessEnforcer;
-    private final LlmRouter llmRouter;
-
-    public SubAgentFactory(SkillRegistry skillRegistry,
-                           AgentLoop agentLoop,
-                           DynamicToolRegistry toolRegistry,
-                           MemoryAccessEnforcer memoryAccessEnforcer,
-                           LlmRouter llmRouter) {
-        this.skillRegistry = skillRegistry;
-        this.agentLoop = agentLoop;
-        this.toolRegistry = toolRegistry;
-        this.memoryAccessEnforcer = memoryAccessEnforcer;
-        this.llmRouter = llmRouter;
-    }
-
-    /**
-     * 激活 Skill，创建并执行 SubAgent。
-     *
-     * <p>完整流程：
-     * <ol>
-     *   <li>查找 SkillDefinition</li>
-     *   <li>检查激活深度</li>
-     *   <li>过滤工具列表（最小权限）</li>
-     *   <li>创建独立预算</li>
-     *   <li>创建隔离的 AgentState</li>
-     *   <li>执行 SubAgent 的 AgentLoop</li>
-     *   <li>返回执行结果</li>
-     * </ol></p>
-     *
-     * @param skillId      Skill ID
-     * @param parentState  父 Agent 的当前状态
-     * @param currentDepth 当前激活深度（主 Agent 为 0）
-     * @return SubAgent 执行结果
-     * @throws SkillActivationException 激活失败时抛出
-     */
-    public SubAgentResult activate(String skillId, AgentState parentState,
-                                    int currentDepth) {
-        Instant startTime = Instant.now();
-
-        // 1. 查找 Skill 定义
-        SkillDefinition skill = skillRegistry.find(skillId)
-            .orElseThrow(() -> new SkillActivationException(
-                "Skill 不存在: " + skillId));
-
-        log.info("激活 Skill: id={}, depth={}, parentTrace={}",
-            skillId, currentDepth, parentState.traceId());
-
-        // 2. 深度检查
-        if (currentDepth >= MAX_ACTIVATION_DEPTH) {
-            throw new SkillActivationException(
-                "Skill 激活深度超过限制: depth=%d, max=%d, skillId=%s"
-                    .formatted(currentDepth, MAX_ACTIVATION_DEPTH, skillId));
-        }
-
-        // 3. 过滤工具列表（最小权限）
-        Set<String> allowed = Set.copyOf(skill.allowedTools());
-        List<ToolContract> filteredTools = toolRegistry.listAll().stream()
-            .filter(tool -> allowed.contains(tool.id()))
-            .toList();
-
-        if (filteredTools.isEmpty()) {
-            log.warn("Skill 的工具列表为空（所有声明的工具都不可用）: skillId={}",
-                skillId);
-        }
-
-        log.debug("工具过滤完成: skillId={}, declared={}, available={}",
-            skillId, skill.allowedTools().size(), filteredTools.size());
-
-        // 4. 创建独立预算
-        Budget subBudget = skill.budget().toAgentBudget();
-
-        // 5. 创建隔离的 AgentState
-        String subTraceId = parentState.traceId() + "/sub-" + skillId
-            + "-" + UUID.randomUUID().toString().substring(0, 8);
-
-        AgentState subState = AgentState.builder()
-            .traceId(subTraceId)
-            .sessionId(parentState.sessionId())
-            .goal(parentState.goal())
-            .phase(AgentPhase.UNDERSTANDING)
-            .budget(subBudget)
-            .policy(Policy.fromSkill(skill))
-            .steps(List.of())
-            .build();
-
-        // 6. 创建 SubAgentContext
-        SubAgentContext context = SubAgentContext.builder()
-            .skill(skill)
-            .state(subState)
-            .budget(subBudget)
-            .tools(filteredTools)
-            .memoryPolicy(skill.memoryAccess())
-            .depth(currentDepth + 1)
-            .parentTraceId(parentState.traceId())
-            .build();
-
-        // 7. 执行 SubAgent
-        try {
-            AgentResponse response = agentLoop.runWithSkill(
-                subState, skill, currentDepth + 1);
-
-            Duration duration = Duration.between(startTime, Instant.now());
-
-            log.info("SubAgent 执行完成: skillId={}, success={}, tokens={}, steps={}, duration={}ms",
-                skillId, response.success(), response.tokensUsed(),
-                response.stepsExecuted(), duration.toMillis());
-
-            if (response.success()) {
-                return SubAgentResult.success(
-                    skillId, response.content(), response.tokensUsed(),
-                    response.stepsExecuted(), duration, subTraceId);
-            } else {
-                return SubAgentResult.failure(
-                    skillId, response.error(), response.terminationReason(),
-                    response.tokensUsed(), response.stepsExecuted(),
-                    duration, subTraceId);
-            }
-
-        } catch (SkillActivationException e) {
-            // 深度限制异常 — 直接传播
-            throw e;
-        } catch (Exception e) {
-            Duration duration = Duration.between(startTime, Instant.now());
-            log.error("SubAgent 执行异常: skillId={}, error={}",
-                skillId, e.getMessage(), e);
-            return SubAgentResult.failure(
-                skillId, e.getMessage(), "异常终止",
-                0, 0, duration, subTraceId);
-        }
-    }
-}
-```
-
-### 6.5 SkillActivationException
+### 6.4 SkillActivationException
 
 ```java
 package com.lifepilot.skill.agent;
@@ -4564,9 +4227,8 @@ package com.lifepilot.skill.agent;
  * <p>常见原因：
  * <ul>
  *   <li>Skill 不存在</li>
- *   <li>激活深度超过限制</li>
+ *   <li>并发激活数超过限制</li>
  *   <li>依赖的 Skill 不可用</li>
- *   <li>兼容性检查失败</li>
  * </ul></p>
  */
 public class SkillActivationException extends RuntimeException {
@@ -4593,8 +4255,8 @@ Skill 的激活不是一个简单的"调用"，而是一个完整的生命周期
 stateDiagram-v2
     [*] --> Discovery: 主 Agent 需要能力
     Discovery --> Selection: LLM 选择 Skill
-    Selection --> Activation: SubAgentFactory.activate()
-    Activation --> Execution: SubAgent 开始执行
+    Selection --> Activation: SkillLifecycleManager.activate()
+    Activation --> Execution: SkillActionDispatcher 执行
     Execution --> Deactivation: 执行完成/预算耗尽/异常
 
     Deactivation --> [*]: 释放资源
@@ -4643,7 +4305,7 @@ stateDiagram-v2
 package com.lifepilot.skill.lifecycle;
 
 import com.lifepilot.skill.SkillDefinition;
-import com.lifepilot.skill.agent.SubAgentFactory;
+import com.lifepilot.skill.action.SkillActionDispatcher;
 import com.lifepilot.skill.agent.SubAgentResult;
 import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.agent.model.AgentState;
@@ -4663,7 +4325,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * <p>职责：
  * <ul>
  *   <li>管理并发激活数量（防止资源耗尽）</li>
- *   <li>跟踪活跃的 SubAgent 实例</li>
+ *   <li>通过 SkillActionDispatcher 执行 Skill（L1 确定性模式）</li>
  *   <li>发布生命周期事件</li>
  *   <li>收集激活指标</li>
  * </ul></p>
@@ -4673,27 +4335,23 @@ public class SkillLifecycleManager {
 
     private static final Logger log = LoggerFactory.getLogger(SkillLifecycleManager.class);
 
-    /** 最大并发激活数。 */
-    private static final int MAX_CONCURRENT_ACTIVATIONS = 5;
-
+    private final int maxConcurrentActivations;
     private final SkillRegistry skillRegistry;
-    private final SubAgentFactory subAgentFactory;
+    private final SkillActionDispatcher actionDispatcher;
     private final SkillMetricsTracker metricsTracker;
     private final ApplicationEventPublisher eventPublisher;
 
-    /** 当前活跃的 SubAgent 数量。 */
+    /** 当前活跃的 Skill 执行数量。 */
     private final AtomicInteger activeCount = new AtomicInteger(0);
 
-    /** 活跃的 SubAgent 追踪：traceId → skillId。 */
-    private final ConcurrentHashMap<String, String> activeSubAgents
-        = new ConcurrentHashMap<>();
-
-    public SkillLifecycleManager(SkillRegistry skillRegistry,
-                                  SubAgentFactory subAgentFactory,
+    public SkillLifecycleManager(int maxConcurrentActivations,
+                                  SkillRegistry skillRegistry,
+                                  SkillActionDispatcher actionDispatcher,
                                   SkillMetricsTracker metricsTracker,
                                   ApplicationEventPublisher eventPublisher) {
+        this.maxConcurrentActivations = maxConcurrentActivations;
         this.skillRegistry = skillRegistry;
-        this.subAgentFactory = subAgentFactory;
+        this.actionDispatcher = actionDispatcher;
         this.metricsTracker = metricsTracker;
         this.eventPublisher = eventPublisher;
     }
@@ -4731,26 +4389,27 @@ public class SkillLifecycleManager {
                                               AgentState parentState,
                                               int currentDepth) {
         // 并发检查
-        if (activeCount.get() >= MAX_CONCURRENT_ACTIVATIONS) {
+        if (activeCount.get() >= maxConcurrentActivations) {
             log.warn("并发激活数达到上限: current={}, max={}",
-                activeCount.get(), MAX_CONCURRENT_ACTIVATIONS);
+                activeCount.get(), maxConcurrentActivations);
             return SubAgentResult.failure(skillId,
-                "并发激活数达到上限: " + MAX_CONCURRENT_ACTIVATIONS,
+                "并发激活数达到上限: " + maxConcurrentActivations,
                 "并发限制", 0, 0, java.time.Duration.ZERO, "");
         }
 
         activeCount.incrementAndGet();
-        String traceId = parentState.traceId() + "/sub-" + skillId;
-        activeSubAgents.put(traceId, skillId);
 
         // 发布激活事件
         eventPublisher.publishEvent(
             new SkillLifecycleEvent.Activated(skillId, currentDepth, Instant.now()));
 
         try {
-            // 执行
-            SubAgentResult result = subAgentFactory.activate(
-                skillId, parentState, currentDepth);
+            // 通过 SkillActionDispatcher 执行（L1 确定性模式）
+            var skill = skillRegistry.find(skillId)
+                .orElseThrow(() -> new SkillActivationException("Skill 不存在: " + skillId));
+            String output = actionDispatcher.dispatch(skill, input);
+            var result = SubAgentResult.success(skillId, output, 0, 1,
+                java.time.Duration.ZERO, parentState.traceId());
 
             // 记录指标
             metricsTracker.recordActivation(skillId, result);
@@ -4759,7 +4418,6 @@ public class SkillLifecycleManager {
 
         } finally {
             // 停用
-            activeSubAgents.remove(traceId);
             activeCount.decrementAndGet();
 
             // 发布停用事件
@@ -4768,7 +4426,7 @@ public class SkillLifecycleManager {
         }
     }
 
-    /** 获取当前活跃的 SubAgent 数量。 */
+    /** 获取当前活跃的 Skill 执行数量。 */
     public int getActiveCount() {
         return activeCount.get();
     }
@@ -5197,9 +4855,9 @@ public record PendingSkill(
 │    ├─ 调用 mcp.github.create_issue    → MCP 远程调用                    │
 │    ├─ 调用 skill.writing-assistant    → SkillToToolBridge 拦截           │
 │    │     │                                                              │
-│    │     └─ SubAgentFactory.activate("writing-assistant")               │
+│    │     └─ SkillLifecycleManager.activate("writing-assistant")         │
 │    │         │                                                          │
-│    │         └─ SubAgent 在隔离上下文中执行                              │
+│    │         └─ SkillActionDispatcher 确定性执行                         │
 │    │             │                                                      │
 │    │             └─ 返回 SubAgentResult → 转换为 ToolResult              │
 │    │                                                                    │
@@ -5213,7 +4871,7 @@ public record PendingSkill(
 package com.lifepilot.skill.bridge;
 
 import com.lifepilot.skill.SkillDefinition;
-import com.lifepilot.skill.agent.SubAgentFactory;
+import com.lifepilot.skill.activation.SkillLifecycleManager;
 import com.lifepilot.skill.agent.SubAgentResult;
 import com.lifepilot.tool.ToolContract;
 import com.lifepilot.tool.budget.ToolBudget;
@@ -5231,11 +4889,11 @@ import java.util.Map;
 /**
  * Skill 工具适配器 — 将 SkillDefinition 包装为 ToolContract。
  *
- * <p>这是 Sub-Agent-as-Tools 范式的核心实现。
+ * <p>这是 Skill-as-Tools 范式的核心实现。
  * 每个 Skill 在 DynamicToolRegistry 中注册为一个工具，
  * 工具 ID 格式为 {@code skill.{skillId}}。</p>
  *
- * <p>当 AgentLoop 调用此工具时，实际触发的是 SubAgent 的激活和执行。
+ * <p>当 AgentLoop 调用此工具时，实际触发的是 SkillLifecycleManager 的激活和执行。
  * 执行结果（SubAgentResult）被转换为标准的 ToolResult 返回。</p>
  */
 public class SkillToolAdapter implements ToolContract {
@@ -5243,11 +4901,11 @@ public class SkillToolAdapter implements ToolContract {
     private static final Logger log = LoggerFactory.getLogger(SkillToolAdapter.class);
 
     private final SkillDefinition skill;
-    private final SubAgentFactory subAgentFactory;
+    private final SkillLifecycleManager lifecycleManager;
 
-    public SkillToolAdapter(SkillDefinition skill, SubAgentFactory subAgentFactory) {
+    public SkillToolAdapter(SkillDefinition skill, SkillLifecycleManager lifecycleManager) {
         this.skill = skill;
-        this.subAgentFactory = subAgentFactory;
+        this.lifecycleManager = lifecycleManager;
     }
 
     @Override
@@ -5324,7 +4982,7 @@ public class SkillToolAdapter implements ToolContract {
     }
 
     /**
-     * 执行 Skill — 实际触发 SubAgent 激活。
+     * 执行 Skill — 实际触发 SkillLifecycleManager 激活。
      *
      * @param input 工具输入（包含 task 字段）
      * @return 工具执行结果
@@ -5335,15 +4993,14 @@ public class SkillToolAdapter implements ToolContract {
         log.info("Skill 工具调用: skillId={}, task='{}'",
             skill.id(), truncate(task, 100));
 
-        // 从 ToolInput 的上下文中获取 AgentState 和 depth
+        // 从 ToolInput 的上下文中获取 AgentState
         AgentState parentState = (AgentState) input.parameters().get("__parentState");
-        int depth = (int) input.parameters().getOrDefault("__depth", 0);
 
         Instant start = Instant.now();
 
         try {
-            SubAgentResult result = subAgentFactory.activate(
-                skill.id(), parentState, depth);
+            SubAgentResult result = lifecycleManager.activate(
+                skill.id(), task, parentState);
 
             Duration duration = Duration.between(start, Instant.now());
 
@@ -5403,7 +5060,7 @@ public class SkillToolAdapter implements ToolContract {
 package com.lifepilot.skill.bridge;
 
 import com.lifepilot.skill.SkillDefinition;
-import com.lifepilot.skill.agent.SubAgentFactory;
+import com.lifepilot.skill.activation.SkillLifecycleManager;
 import com.lifepilot.skill.registry.SkillRegistryEvent;
 import com.lifepilot.tool.DynamicToolRegistry;
 import org.slf4j.Logger;
@@ -5427,12 +5084,12 @@ public class SkillToToolBridge {
     private static final Logger log = LoggerFactory.getLogger(SkillToToolBridge.class);
 
     private final DynamicToolRegistry toolRegistry;
-    private final SubAgentFactory subAgentFactory;
+    private final SkillLifecycleManager lifecycleManager;
 
     public SkillToToolBridge(DynamicToolRegistry toolRegistry,
-                              SubAgentFactory subAgentFactory) {
+                              SkillLifecycleManager lifecycleManager) {
         this.toolRegistry = toolRegistry;
-        this.subAgentFactory = subAgentFactory;
+        this.lifecycleManager = lifecycleManager;
     }
 
     /**
@@ -5441,7 +5098,7 @@ public class SkillToToolBridge {
     @EventListener
     public void onSkillRegistered(SkillRegistryEvent.SkillRegistered event) {
         SkillDefinition skill = event.skill();
-        var adapter = new SkillToolAdapter(skill, subAgentFactory);
+        var adapter = new SkillToolAdapter(skill, lifecycleManager);
         toolRegistry.registerBuiltinTool(adapter);
         log.info("Skill 工具桥接注册: skillId={}, toolId={}",
             skill.id(), adapter.id());
@@ -5465,7 +5122,7 @@ public class SkillToToolBridge {
     public void onSkillUpdated(SkillRegistryEvent.SkillUpdated event) {
         String toolId = "skill." + event.oldSkill().id();
         toolRegistry.unregister(toolId);
-        var adapter = new SkillToolAdapter(event.newSkill(), subAgentFactory);
+        var adapter = new SkillToolAdapter(event.newSkill(), lifecycleManager);
         toolRegistry.registerBuiltinTool(adapter);
         log.info("Skill 工具桥接更新: skillId={}", event.newSkill().id());
     }
@@ -5495,7 +5152,7 @@ public class SkillToToolBridge {
 │                                                                         │
 │  第 2 层：激活时安全（Activation Security）                               │
 │  ┌─────────────────────────────────────────────────────────────────┐    │
-│  │  SubAgentFactory — 激活时检查                                    │    │
+│  │  SkillLifecycleManager — 激活时检查                                │    │
 │  │  ├─ 深度限制（MAX_ACTIVATION_DEPTH = 2）                        │    │
 │  │  ├─ 并发限制（MAX_CONCURRENT_ACTIVATIONS = 5）                  │    │
 │  │  ├─ 工具过滤（只暴露声明的工具子集）                              │    │
@@ -5545,8 +5202,8 @@ public class SkillToToolBridge {
 
 | 约束 | 实现组件 | 执行时机 | 违规处理 |
 |------|---------|---------|---------|
-| **最小权限** | `SubAgentFactory` 工具过滤 | 激活时 | 未声明的工具对 SubAgent 不可见 |
-| **激活深度限制** | `SubAgentFactory.MAX_ACTIVATION_DEPTH` | 激活时 | 抛出 `SkillActivationException` |
+| **最小权限** | `SkillDefinition.allowedTools()` 工具声明 | 激活时 | 未声明的工具不可用 |
+| **激活深度限制** | 已移至多 Agent 模块 `AgentExecutor` | 委托时 | 返回 success=false |
 | **并发激活限制** | `SkillLifecycleManager.MAX_CONCURRENT_ACTIVATIONS` | 激活时 | 返回失败结果 |
 | **预算隔离** | 独立 `Budget` 实例 | 运行时每步 | `Action.BudgetExhausted` → 优雅终止 |
 | **记忆读隔离** | `MemoryAccessEnforcer.enforceRead()` | 运行时每次读 | `MemoryAccessViolationException` |
@@ -6135,7 +5792,6 @@ class SkillRegistryPropertyTest {
             .memoryAccess(MemoryAccessPolicy.none())
             .budget(SkillBudget.DEFAULT)
             .metadata(SkillMetadata.empty())
-            .preferredProviderId(null)
             .build();
     }
 }
@@ -6304,21 +5960,24 @@ class SubAgentPropertyTest {
     /**
      * 属性：激活深度不超过限制。
      *
-     * <p>当 depth >= MAX_ACTIVATION_DEPTH 时，必须抛出异常。</p>
+     * <p>当 depth >= maxDelegationDepth 时，必须返回失败结果。
+     * 深度限制已移至多 Agent 模块的 AgentExecutor。</p>
      */
     @Property(tries = 50)
     void 激活深度不超过限制(
             @ForAll @IntRange(min = 2, max = 10) int depth) {
 
-        // depth >= MAX_ACTIVATION_DEPTH 时应抛出异常
-        assertThat(depth).isGreaterThanOrEqualTo(SubAgentFactory.MAX_ACTIVATION_DEPTH);
+        int maxDelegationDepth = 2; // 默认配置值
+
+        // depth >= maxDelegationDepth 时应拒绝执行
+        assertThat(depth).isGreaterThanOrEqualTo(maxDelegationDepth);
 
         // 验证深度检查逻辑
-        if (depth >= SubAgentFactory.MAX_ACTIVATION_DEPTH) {
+        if (depth >= maxDelegationDepth) {
             assertThatThrownBy(() -> {
                 throw new SkillActivationException(
                     "Skill 激活深度超过限制: depth=%d, max=%d"
-                        .formatted(depth, SubAgentFactory.MAX_ACTIVATION_DEPTH));
+                        .formatted(depth, maxDelegationDepth));
             }).isInstanceOf(SkillActivationException.class)
               .hasMessageContaining("深度超过限制");
         }
@@ -6644,7 +6303,7 @@ class SkillSelfExtensionPropertyTest {
 │    ├─ [2] LLM 选择 Skill                                    ~500ms     │
 │    │   └─ 主 AgentLoop 的 LLM 调用（包含 Skill 摘要列表）              │
 │    │                                                                    │
-│    ├─ [3] Activation: SubAgentFactory.activate()             ~15ms     │
+│    ├─ [3] Activation: SkillLifecycleManager.activate()       ~15ms     │
 │    │   ├─ SkillRegistry.find()                               ~0.1ms   │
 │    │   ├─ 深度检查                                           ~0.01ms  │
 │    │   ├─ 工具过滤                                           ~2ms     │

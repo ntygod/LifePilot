@@ -1,11 +1,9 @@
 package com.lifepilot.skill.config;
 
-import com.lifepilot.agent.AgentLoop;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.skill.action.*;
 import com.lifepilot.skill.activation.SkillLifecycleManager;
 import com.lifepilot.skill.activation.SkillMetricsTracker;
-import com.lifepilot.skill.activation.SubAgentFactory;
 import com.lifepilot.skill.audit.SkillAuditRepository;
 import com.lifepilot.skill.bridge.SkillToToolBridge;
 import com.lifepilot.skill.builtin.BuiltinSkillProvider;
@@ -111,25 +109,16 @@ public class SkillAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public SubAgentFactory subAgentFactory(SkillRegistry skillRegistry,
-                                           AgentLoop agentLoop,
-                                           DynamicToolRegistry toolRegistry,
-                                           MemoryAccessEnforcer memoryAccessEnforcer) {
-        log.info("Skill 系统: 注册 SubAgentFactory");
-        return new SubAgentFactory(skillRegistry, agentLoop, toolRegistry, memoryAccessEnforcer);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
     public SkillLifecycleManager skillLifecycleManager(SkillConfigProperties config,
-                                                       SubAgentFactory subAgentFactory,
+                                                       SkillRegistry skillRegistry,
+                                                       SkillActionDispatcher actionDispatcher,
                                                        SkillMetricsTracker metricsTracker,
                                                        ApplicationEventPublisher eventPublisher) {
         log.info("Skill 系统: 注册 SkillLifecycleManager, maxConcurrentActivations={}",
                 config.getMaxConcurrentActivations());
         return new SkillLifecycleManager(
                 config.getMaxConcurrentActivations(),
-                subAgentFactory, metricsTracker, eventPublisher);
+                skillRegistry, actionDispatcher, metricsTracker, eventPublisher);
     }
 
     @Bean
@@ -277,13 +266,12 @@ public class SkillAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public ChainActionExecutor chainActionExecutor(SubAgentFactory factory,
-                                                   SkillRegistry registry,
+    public ChainActionExecutor chainActionExecutor(SkillRegistry registry,
                                                    VariableResolver resolver,
                                                    SkillConfigProperties config) {
         log.info("Skill 系统: 注册 ChainActionExecutor, maxSteps={}",
                 config.getChainAction().getMaxSteps());
-        return new ChainActionExecutor(factory, registry, resolver, config);
+        return new ChainActionExecutor(registry, resolver, config);
     }
 
     @Bean

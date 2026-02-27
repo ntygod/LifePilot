@@ -681,9 +681,6 @@ public class QuickCommand {
         renderer.info("  版本:        " + skill.version());
         renderer.info("  来源:        " + skill.source());
         renderer.info("  允许工具:    " + String.join(", ", skill.allowedTools()));
-        if (skill.preferredProviderId() != null) {
-            renderer.info("  首选 Provider: " + skill.preferredProviderId());
-        }
     }
 
     /**
