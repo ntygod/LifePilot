@@ -5,6 +5,7 @@ import com.lifepilot.tool.model.ToolBudget;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolLayer;
 import com.lifepilot.tool.model.ToolResult;
+import com.lifepilot.tool.model.ToolResultMeta;
 import com.lifepilot.tool.schema.JsonSchema;
 
 import java.util.List;
