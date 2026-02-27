@@ -411,7 +411,7 @@ LifePilot 是个人助手，用户与主 Agent 保持持续对话，专家 Agent
 **步骤 1（模块 21 实现）**：
 - 创建 `AgentDefinition`、`AgentRegistry`、`AgentExecutor`、`HandoffTool`、`AgentToToolBridge`
 - 创建 `AgentYamlLoader` + 热加载
-- 预设专家 Agent（writer / analyst / researcher）
+- 预设专家 Agent（writer / life-coach / planner）
 - `SubAgentFactory` 标记 `@Deprecated`，但保留功能
 
 **步骤 2（模块 21 后续清理）**：
@@ -432,11 +432,18 @@ LifePilot 是个人助手，用户与主 Agent 保持持续对话，专家 Agent
 # ~/.lifepilot/agents/writer.yml
 id: writer
 name: 写作专家
-description: 擅长撰写周报、邮件、文案、总结等文字内容
+description: 擅长撰写周报、邮件、文案、总结等文字内容，注重结构清晰和表达精准
 system-prompt: |
-  你是一位专业的中文写作助手。
-  你的任务是根据用户提供的素材和要求，撰写高质量的文字内容。
-  注意：保持简洁、专业、有条理。
+  你是一位专业的中文写作助手。你的核心能力是将零散的素材和模糊的意图转化为结构清晰、表达精准的文字。
+  
+  写作原则：
+  - 先理解目的和受众，再组织结构
+  - 开门见山，避免冗余铺垫
+  - 使用具体数据和事实支撑观点
+  - 保持语气一致，匹配场景（正式/轻松/专业）
+  - 段落之间有清晰的逻辑过渡
+  
+  如果用户提供了素材但未明确格式，主动询问：目的是什么？给谁看？期望的篇幅和风格？
 allowed-tools:
   - memory-search
   - knowledge-search
@@ -447,7 +454,7 @@ budget:
   timeout-seconds: 180
 preferred-provider: deepseek-chat
 metadata:
-  category: writing
+  category: creation
   icon: ✍️
 ```
 
@@ -471,15 +478,185 @@ metadata:
 
 ## 8. 预设专家 Agent
 
-模块 21 提供以下预设专家 Agent（YAML 定义，可由用户修改或扩展）：
+### 8.1 设计原则：何时值得创建专家 Agent
 
-| Agent ID | 名称 | 职责 | 偏好模型 | 预算级别 | canDelegate |
-|----------|------|------|---------|---------|-------------|
-| writer | 写作专家 | 周报、邮件、文案、总结 | deepseek-chat | DEFAULT | false |
-| analyst | 分析专家 | 数据分析、趋势解读、对比评估 | deepseek-chat | DEFAULT | false |
-| researcher | 调研专家 | 信息检索、资料整理、知识汇总 | deepseek-chat | HEAVYWEIGHT | false |
+Anthropic 在 2026 年 1 月发表的多 Agent 系统实践指南中，总结了三个 sub-agent 优于 single-agent 的场景：
+（1）上下文污染——子任务产生大量与主任务无关的上下文；
+（2）并行化——独立任务可同时执行；
+（3）专业化——不同任务需要不同的工具集或 System Prompt。
+
+参考来源：[Anthropic — Building multi-agent systems: When and how to use them](https://website.claude.com/blog/building-multi-agent-systems-when-and-how-to-use-them)
+
+同时，Anthropic 明确警告：许多团队花数月构建复杂多 Agent 架构，最终发现改进单 Agent 的 Prompt 就能达到同等效果。多 Agent 实现通常消耗 3-10 倍 Token。
+
+参考来源：[Multi-agent error amplification research](https://www.amitkoth.com/multi-agent-orchestration-complexity/)（95% 单步可靠性在 20 步后仅剩 36% 成功率）
+
+因此，LifePilot 的预设 Agent 必须通过以下「L2 准入测试」：
+
+| 准入条件 | 说明 | 不满足则 |
+|---------|------|---------|
+| System Prompt 专业化增益 | 专用 System Prompt 的输出质量显著优于主 Agent 通用 Prompt | 不设 Agent，主 Agent 直接处理 |
+| 人格/语气差异 | 任务需要与主 Agent 截然不同的交互风格（如教练式提问 vs 任务执行） | 不设 Agent |
+| 上下文隔离收益 | 任务会产生大量中间上下文，污染主 Agent 对话 | 可选加分项 |
+| 工具集差异 | 任务需要的工具集与主 Agent 显著不同 | 可选加分项 |
+
+### 8.2 原方案评审：writer / analyst / researcher
+
+| Agent | 准入测试结果 | 结论 |
+|-------|------------|------|
+| writer（写作专家） | ✅ System Prompt 增益显著（写作风格、结构、修辞需要专门优化）；✅ 人格差异（创作者 vs 执行者） | **保留** |
+| analyst（分析专家） | ❌ "数据分析"过于宽泛，主 Agent 配合相同工具即可完成；❌ 无明确人格差异 | **移除** |
+| researcher（调研专家） | ❌ 搜索+摘要是主 Agent 的核心能力；❌ 搜索结果上下文量小，无隔离收益 | **移除** |
+
+### 8.3 新方案：基于 LifePilot 产品定位的预设 Agent
+
+LifePilot 是个人生活助手（todo / schedule / habit / memory / knowledge），核心用户场景是日常生活管理。
+基于 L2 准入测试和产品定位，重新设计预设 Agent 列表：
+
+| Agent ID | 名称 | 职责 | 准入理由 | 偏好模型 | 预算级别 | canDelegate |
+|----------|------|------|---------|---------|---------|-------------|
+| writer | 写作专家 | 周报、邮件、文案、总结、润色 | System Prompt 增益：写作质量（结构、修辞、风格）需要专门优化的 Prompt；人格差异：创作者视角 vs 主 Agent 的任务执行视角 | deepseek-chat | DEFAULT | false |
+| life-coach | 生活教练 | 周/月回顾、习惯分析、目标复盘、行为模式洞察 | System Prompt 增益：教练式 Socratic 提问法、动机访谈技术、正向心理学框架；人格差异：引导式提问者 vs 主 Agent 的直接回答者；上下文隔离：回顾分析需要检索大量历史记忆数据 | deepseek-chat | HEAVYWEIGHT | false |
+| planner | 规划专家 | 日/周规划、时间块分配、优先级排序、冲突检测 | System Prompt 增益：时间管理方法论（Eisenhower 矩阵、时间块法、能量管理）、结构化输出格式；上下文隔离：规划需要拉取完整的 todo/schedule/habit 数据进行综合分析 | deepseek-chat | DEFAULT | false |
+
+### 8.4 各 Agent 详细设计
+
+#### writer（写作专家）
+
+核心价值：将用户的素材和意图转化为高质量的文字输出。主 Agent 的 System Prompt 优化方向是「理解意图 → 选择工具 → 执行任务」，而 writer 的 System Prompt 优化方向是「理解素材 → 组织结构 → 打磨表达」。
+
+```yaml
+id: writer
+name: 写作专家
+description: 擅长撰写周报、邮件、文案、总结等文字内容，注重结构清晰和表达精准
+system-prompt: |
+  你是一位专业的中文写作助手。你的核心能力是将零散的素材和模糊的意图转化为结构清晰、表达精准的文字。
+  
+  写作原则：
+  - 先理解目的和受众，再组织结构
+  - 开门见山，避免冗余铺垫
+  - 使用具体数据和事实支撑观点
+  - 保持语气一致，匹配场景（正式/轻松/专业）
+  - 段落之间有清晰的逻辑过渡
+  
+  如果用户提供了素材但未明确格式，主动询问：目的是什么？给谁看？期望的篇幅和风格？
+allowed-tools:
+  - memory-search
+  - knowledge-search
+can-delegate: false
+budget:
+  max-tokens: 16000
+  max-steps: 15
+  timeout-seconds: 180
+preferred-provider: deepseek-chat
+metadata:
+  category: creation
+  icon: ✍️
+```
+
+#### life-coach（生活教练）
+
+核心价值：帮助用户进行结构化的自我反思和行为模式洞察。这是与主 Agent 人格差异最大的 Agent——主 Agent 是「你说什么我做什么」的执行者，life-coach 是「通过提问帮你发现答案」的引导者。
+
+参考来源：
+- [Personal Development with AI in 2026](https://www.upskillist.com/blog/personal-development-with-ai-daily-wins-that-compound/)（AI 作为 accountability partner 的趋势）
+- [Resolution Coach](https://www.producthunt.com/products/resolution-coach)（AI 教练产品的交互模式）
+
+```yaml
+id: life-coach
+name: 生活教练
+description: 通过结构化回顾和引导式提问，帮助用户发现行为模式、复盘目标进展、制定改进策略
+system-prompt: |
+  你是一位温和而有洞察力的生活教练。你的核心方法是引导式提问，而非直接给出答案。
+  
+  教练原则：
+  - 先倾听和理解，再提问和引导
+  - 使用开放式问题（"你觉得是什么原因？"而非"是不是因为X？"）
+  - 关注行为模式而非单次事件（"这周和上周相比有什么变化？"）
+  - 肯定进步，即使很小（"完成了 3/5 个习惯，比上周多了 1 个"）
+  - 帮助用户建立因果联系（"你注意到运动的日子睡眠质量更好吗？"）
+  - 提供可操作的小步骤建议，而非宏大的改变计划
+  
+  回顾框架：
+  1. 数据回顾：客观呈现习惯完成率、任务完成情况、时间分配
+  2. 模式识别：发现趋势、关联、异常
+  3. 引导反思：通过提问帮助用户理解背后原因
+  4. 行动建议：提出 1-2 个具体的、可衡量的改进行动
+allowed-tools:
+  - memory-search
+  - knowledge-search
+  - skill.todo-query
+  - skill.schedule-query
+  - skill.habit-query
+can-delegate: false
+budget:
+  max-tokens: 32000
+  max-steps: 25
+  timeout-seconds: 300
+preferred-provider: deepseek-chat
+metadata:
+  category: reflection
+  icon: 🪞
+```
+
+#### planner（规划专家）
+
+核心价值：将用户的 todo、schedule、habit 数据综合分析，生成结构化的日/周规划。主 Agent 可以逐条处理 todo 和 schedule，但缺乏「全局视角下的优先级排序和时间块分配」的专业 Prompt。
+
+```yaml
+id: planner
+name: 规划专家
+description: 综合分析待办事项、日程和习惯数据，生成结构化的日/周规划，优化时间分配
+system-prompt: |
+  你是一位注重实效的时间管理专家。你的核心能力是将零散的待办、日程和习惯整合为可执行的结构化计划。
+  
+  规划原则：
+  - 先识别固定时间块（已有日程、习惯打卡时间），再填充弹性任务
+  - 使用 Eisenhower 矩阵对任务分类：紧急重要 > 重要不紧急 > 紧急不重要 > 都不
+  - 考虑能量曲线：高认知任务安排在精力高峰期
+  - 每个时间块预留 10-15 分钟缓冲
+  - 单日规划不超过 6 个主要任务（认知负荷限制）
+  - 周规划包含至少 1 个「不紧急但重要」的推进项
+  
+  输出格式：
+  - 日规划：时间块表格（时间 | 任务 | 优先级 | 预估时长）
+  - 周规划：每日重点 + 周目标 + 习惯追踪提醒
+  - 冲突提示：如果发现时间冲突或过度安排，主动提醒
+allowed-tools:
+  - memory-search
+  - skill.todo-query
+  - skill.schedule-query
+  - skill.habit-query
+can-delegate: false
+budget:
+  max-tokens: 16000
+  max-steps: 15
+  timeout-seconds: 180
+preferred-provider: deepseek-chat
+metadata:
+  category: planning
+  icon: 📋
+```
+
+### 8.5 为什么不预设更多 Agent
+
+以下是评估后决定不预设的候选 Agent：
+
+| 候选 | 评估 | 结论 |
+|------|------|------|
+| researcher（调研专家） | 搜索+摘要是主 Agent 核心能力，无 System Prompt 增益 | 不预设 |
+| analyst（分析专家） | 过于宽泛，主 Agent + 工具即可完成 | 不预设 |
+| translator（翻译专家） | System Prompt 增益存在，但翻译是低频场景，且主 Agent 翻译质量已足够 | 不预设（作为用户自定义示例） |
+| coder（编程助手） | LifePilot 是生活助手，编程不在核心场景内 | 不预设 |
+| health-advisor（健康顾问） | 涉及医疗建议的法律风险，不适合预设 | 不预设 |
+
+用户可通过 YAML 热加载机制自定义任意 Agent。文档 §3.3 提供了 translator 的完整 YAML 示例。
+
+### 8.6 注册策略
 
 预设 Agent 以 `AgentSource.Builtin` 来源注册，用户自定义 Agent 以 `AgentSource.YamlDefined` 来源注册。Builtin 来源不允许被 YamlDefined 覆盖（与 SkillRegistry 行为一致）。
+
+如果用户希望修改预设 Agent 的行为（如调整 writer 的 System Prompt），可以在 `~/.lifepilot/agents/` 下创建同 ID 的 YAML 文件，此时 YamlDefined 版本将覆盖 Builtin 版本。这是一个有意的设计决策：预设 Agent 提供合理的默认值，但用户始终拥有最终控制权。
 
 ---
 
@@ -516,6 +693,8 @@ Agent 自扩展不适用的原因：
 3. Agent 的工具白名单决定了其能力边界，自动生成的白名单可能过宽或过窄
 4. 用户自定义 Agent（YAML + 热加载）已经提供了足够的扩展性
 
+正因为不支持自扩展，预设 Agent 的选择变得至关重要。§8 详细阐述了预设 Agent 的「L2 准入测试」和设计理由。核心原则是：**宁缺毋滥**——只预设那些 System Prompt 专业化能带来显著质量提升的 Agent，其余场景由主 Agent 直接处理。
+
 ### 10.2 为什么独立 AgentRegistry 而非扩展 SkillRegistry
 
 1. **概念清晰**：Agent（L2 推理实体）和 Skill（L1 确定性工作流）是不同抽象层次
@@ -543,11 +722,18 @@ Agent 自扩展不适用的原因：
 |------|---------|---------------|
 | [Microsoft Semantic Kernel v1.0](https://devblogs.microsoft.com/semantic-kernel/skills-to-plugins-fully-embracing-the-openai-plugin-spec-in-semantic-kernel/) | Skills 重命名为 Plugins，消除概念混淆 | 采纳：明确区分 Skill（L1）和 Agent（L2） |
 | [四层能力模型](https://cenrax.substack.com/p/the-ai-agent-ecosystem-understanding) | Tool → Skill → Agent → Orchestrator | 采纳：作为架构重构的理论基础 |
+| [Anthropic — Building multi-agent systems](https://website.claude.com/blog/building-multi-agent-systems-when-and-how-to-use-them) | 三个 sub-agent 优于 single-agent 的场景：上下文污染、并行化、专业化；多 Agent 消耗 3-10x Token | 采纳：作为预设 Agent「L2 准入测试」的理论基础 |
 | [Anthropic Claude Code](https://www.eesel.ai/blog/skills-vs-subagent) | Skills = 上下文注入，Subagent = 独立推理 | 采纳：Skill 不推理，Agent 推理 |
+| [Claude Code Sub-Agents](https://www.implicator.ai/claudes-ai-sub-agents-turn-one-assistant-into-a-team-of-specialists/) | 每个 sub-agent 在独立上下文窗口中运行，防止上下文污染 | 采纳：上下文隔离设计 |
 | [Google ADK](https://cloud.google.com/blog/topics/developers-practitioners/where-to-use-sub-agents-versus-agents-as-tools) | Agent-as-Tool vs Sub-Agent | 采纳：agents-as-tools 模式 |
+| [Microsoft Cloud Adoption Framework](https://docs.microsoft.com/en-us/azure/cloud-adoption-framework/ai-agents/single-agent-multiple-agents) | 多 Agent 准入条件：安全边界、多团队、未来扩展 | 参考：LifePilot 单用户场景不满足前两条，按专业化准入 |
+| [Multi-agent error amplification](https://www.amitkoth.com/multi-agent-orchestration-complexity/) | 95% 单步可靠性在 20 步后仅剩 36% 成功率 | 采纳：严格控制预设 Agent 数量，避免过度拆分 |
 | [Spring AI Agent Skills](https://spring.io/blog/2026/01/13/spring-ai-generic-agent-skills) | Skill = Markdown 文件夹，渐进式发现 | 已在 Skill 系统中采纳 |
 | [Spring AI Task SubAgents](https://spring.io/blog/2026/01/27/spring-ai-agentic-patterns-4-task-subagents) | 独立上下文 + 工具白名单 + 多模型路由 | 采纳：AgentExecutor 设计 |
 | [OpenAI Swarm](https://github.com/openai/swarm) | Handoff 模式，Agent 通过工具调用委托 | 采纳：HandoffTool 命名和模式 |
 | [AstrBot](https://github.com/Soulter/AstrBot) | `transfer_to_<name>` 工具模式 | 采纳：`handoff_to_{id}` 命名 |
+| [Specialist Agent Squad Playbook](https://www.digitalapplied.com/blog/ai-virtual-team-specialist-agent-squad-playbook) | 10 个专家角色卡 + 任务委托矩阵 | 参考：按频率×复杂度×成本评估委托 ROI |
+| [DeepMind Intelligent Delegation](https://theaiinsider.tech/2026/02/17/deepmind-study-proposes-rules-for-how-ai-agents-should-delegate/) | 委托需要明确角色、边界、信任校准、可验证完成 | 参考：AgentBudget + 深度限制 + TraceRecorder |
+| [Personal Development with AI 2026](https://www.upskillist.com/blog/personal-development-with-ai-daily-wins-that-compound/) | AI 作为 accountability partner，实时反馈 + 习惯追踪 | 采纳：life-coach Agent 的教练式交互模式 |
 
 > 内容已重新组织表述以符合许可要求。参考来源均为 2025-2026 年发表的技术文章和开源项目。

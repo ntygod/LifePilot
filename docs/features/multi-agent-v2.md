@@ -65,11 +65,15 @@
 
 ### 2.5 预设专家 Agent
 
-| Agent | 职责 | 典型场景 |
-|-------|------|---------|
-| 写作专家 (writer) | 文字创作 | "帮我写一份本周工作周报"、"润色这封邮件" |
-| 分析专家 (analyst) | 数据分析 | "分析我最近的习惯完成趋势"、"对比这两个方案" |
-| 调研专家 (researcher) | 信息检索 | "调研 Spring AI 最新版本变化"、"整理这个主题的资料" |
+预设 Agent 经过严格的「L2 准入测试」筛选——只有当专用 System Prompt 的输出质量显著优于主 Agent 通用 Prompt 时，才值得创建独立 Agent。
+
+| Agent | 职责 | 典型场景 | 为什么需要独立 Agent |
+|-------|------|---------|-------------------|
+| 写作专家 (writer) | 文字创作与润色 | "帮我写一份本周工作周报"、"润色这封邮件" | 写作质量需要专门优化的 Prompt（结构、修辞、风格），与主 Agent 的任务执行 Prompt 截然不同 |
+| 生活教练 (life-coach) | 周/月回顾、习惯分析、目标复盘 | "帮我做一下这周的回顾"、"分析我最近的习惯完成情况" | 需要教练式引导提问（Socratic 方法），而非主 Agent 的直接回答模式；回顾分析需要检索大量历史数据，上下文隔离收益高 |
+| 规划专家 (planner) | 日/周规划、时间块分配、优先级排序 | "帮我规划明天的日程"、"这周有哪些重要的事要做" | 需要时间管理方法论（Eisenhower 矩阵、能量曲线）的专业 Prompt；需要综合拉取 todo/schedule/habit 全量数据 |
+
+用户可通过 YAML 热加载机制自定义任意 Agent（如翻译专家、编程助手等），无需重启。
 
 ---
 
@@ -91,12 +95,12 @@
 主 Agent 可在一次对话中委托多个专家 Agent：
 
 ```
-用户: 帮我分析最近的习惯数据，然后写一份改进建议报告
-主Agent: [调用 handoff_to_analyst(task="分析习惯完成数据")]
-分析专家: [返回分析结果]
-主Agent: [调用 handoff_to_writer(task="基于分析结果撰写改进建议", context=分析结果)]
-写作专家: [返回报告]
-主Agent: 这是您的习惯改进建议报告：...
+用户: 帮我回顾一下这周的情况，然后规划下周的重点
+主Agent: [调用 handoff_to_life_coach(task="进行本周回顾，分析习惯完成和任务完成情况")]
+生活教练: [检索本周记忆数据，分析行为模式，返回回顾报告和改进建议]
+主Agent: [调用 handoff_to_planner(task="基于本周回顾制定下周规划", context=回顾报告)]
+规划专家: [拉取 todo/schedule/habit 数据，生成下周结构化规划]
+主Agent: 这是您的周回顾和下周规划：...
 ```
 
 ### 3.3 用户自定义 Agent
@@ -127,17 +131,17 @@ preferred-provider: deepseek-chat
 Skill（L1）和 Agent（L2）可以在同一次对话中协作：
 
 ```
-用户: 查一下今天的汇率，然后帮我写一封英文邮件报告给老板
-主Agent: [调用 skill.exchange-rate-query（L1 确定性 Skill，不经过 LLM）]
-汇率Skill: [HTTP 调用 → 解析 → 返回 "1 USD = 7.24 CNY"]
-主Agent: [调用 handoff_to_writer(task="写英文邮件报告汇率", context="1 USD = 7.24 CNY")]
-写作专家: [LLM 推理 → 生成英文邮件]
+用户: 查一下今天的日程，然后帮我写一封请假邮件给老板
+主Agent: [调用 skill.schedule-query（L1 确定性 Skill，不经过 LLM）]
+日程Skill: [查询 → 返回 "14:00 团队周会, 16:00 客户演示"]
+主Agent: [调用 handoff_to_writer(task="写请假邮件给老板", context="今日日程：14:00 团队周会, 16:00 客户演示")]
+写作专家: [LLM 推理 → 生成请假邮件，提及需要安排同事代参加会议]
 主Agent: 邮件已为您撰写好：...
 ```
 
 这个例子清晰展示了四层模型的协作：
-- L0 Tool：汇率 API 的 HTTP 调用
-- L1 Skill：exchange-rate-query 编排 HTTP 调用 + 解析
+- L0 Tool：日程数据库查询
+- L1 Skill：schedule-query 编排查询 + 格式化
 - L2 Agent：writer 专家通过 LLM 推理撰写邮件
 - L3 Orchestrator：主 AgentLoop 协调整个流程
 
