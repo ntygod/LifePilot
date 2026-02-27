@@ -17,7 +17,9 @@ import java.util.Optional;
  *
  * @author zsg
  * @since 2026-02-27
+ * @deprecated 请使用 {@link com.lifepilot.observability.trace.TraceQuery}
  */
+@Deprecated(forRemoval = true)
 public class TraceQueryService {
 
     private static final Logger log = LoggerFactory.getLogger(TraceQueryService.class);
