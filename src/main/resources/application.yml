@@ -194,6 +194,37 @@ lifepilot:
       default-retrieval: 25
       high-relevance-threshold: 0.9
       long-conversation-turns-threshold: 10
+    # L4 程序记忆
+    procedural:
+      max-templates: 200
+      min-reliability: 0.7
+      min-use-count: 2
+      stale-days: 90
+      match-threshold: 0.6
+      default-importance: 0.5
+    # 巩固管线
+    consolidation:
+      cron: "0 0 3 * * *"
+      trigger-mode: CRON
+      lookback-days: 7
+      high-frequency-threshold: 3
+      importance-boost-step: 0.1
+      importance-boost-max: 0.3
+      cluster-similarity-threshold: 0.85
+      min-cluster-size: 2
+      max-templates-per-run: 10
+      min-execution-steps: 2
+    # 遗忘引擎
+    forgetting:
+      cron: "0 0 4 * * SUN"
+      max-retention-days: 365
+      lru-threshold-days: 90
+      priority-decay-rate: 0.02
+      priority-decay-threshold: 0.2
+      reflection-summary-min-importance: 0.3
+      reflection-summary-max-importance: 0.8
+      max-forget-per-run: 100
+      privacy-aware-boost: 0.3
   skills:
     enabled: true
     max-concurrent-activations: 5
