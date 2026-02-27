@@ -147,6 +147,26 @@ public class DynamicToolRegistry {
     // ─────────────────────────────────────────────
 
     /**
+     * 注销指定 ID 的 BuiltinTool。
+     *
+     * @param toolId 工具 ID
+     * @return 是否成功注销
+     */
+    public boolean unregisterBuiltinTool(String toolId) {
+        ToolContract removed = tools.remove(toolId);
+        if (removed != null) {
+            toolLayers.remove(toolId);
+            guardrailPolicy.removeAllowedTools(List.of(toolId));
+            invalidateSnapshot();
+            eventPublisher.publishEvent(new ToolsUnregistered(
+                    List.of(toolId), "builtin"));
+            log.info("BuiltinTool 注销完成: id={}", toolId);
+            return true;
+        }
+        return false;
+    }
+
+    /**
      * 注销指定 MCP Server 的所有工具。
      *
      * @param serverName MCP 服务器名称
