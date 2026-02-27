@@ -11,7 +11,9 @@ import java.util.regex.Pattern;
  *
  * @author zsg
  * @since 2026-02-25
+ * @deprecated 请使用 {@link com.lifepilot.observability.redactor.DataRedactor}
  */
+@Deprecated(forRemoval = true)
 public class DataRedactor {
 
     private static final Pattern PHONE_PATTERN = Pattern.compile("1[3-9]\\d{9}");
