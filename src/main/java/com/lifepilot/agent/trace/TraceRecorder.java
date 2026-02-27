@@ -22,7 +22,9 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * @author zsg
  * @since 2026-07-20
+ * @deprecated 请使用 {@link com.lifepilot.observability.trace.TraceRecorder}
  */
+@Deprecated(forRemoval = true)
 public class TraceRecorder {
 
     private static final Logger log = LoggerFactory.getLogger(TraceRecorder.class);

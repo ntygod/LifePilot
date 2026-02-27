@@ -1,7 +1,7 @@
 package com.lifepilot.guardrail;
 
 import com.lifepilot.tool.ToolContract;
-import com.lifepilot.tool.model.RiskLevel;
+import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.model.ToolInput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,7 +18,9 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * @author zsg
  * @since 2026-02-24
+ * @deprecated 请使用 {@link com.lifepilot.observability.guardrail.GuardrailPolicy}
  */
+@Deprecated(forRemoval = true)
 public class GuardrailPolicy {
 
     private static final Logger log = LoggerFactory.getLogger(GuardrailPolicy.class);

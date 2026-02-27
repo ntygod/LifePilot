@@ -12,7 +12,9 @@ import jakarta.annotation.Nullable;
  * @param requiresVerification 是否需要二次验证
  * @author zsg
  * @since 2026-02-24
+ * @deprecated 请使用 {@link com.lifepilot.observability.guardrail.GuardrailResult}
  */
+@Deprecated(forRemoval = true)
 public record GuardrailResult(
         boolean blocked,
         @Nullable String reason,

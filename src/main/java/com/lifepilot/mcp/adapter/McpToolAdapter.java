@@ -5,7 +5,7 @@ import com.lifepilot.mcp.model.McpToolAnnotations;
 import com.lifepilot.mcp.model.McpToolSchema;
 import com.lifepilot.tool.McpTool;
 import com.lifepilot.tool.ToolContract;
-import com.lifepilot.tool.model.RiskLevel;
+import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.model.ToolBudget;
 import com.lifepilot.tool.schema.JsonSchema;
 import org.slf4j.Logger;

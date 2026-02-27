@@ -8,7 +8,7 @@ import com.lifepilot.agent.StateReducer;
 import com.lifepilot.agent.context.ContextAssembler;
 import com.lifepilot.agent.context.DefaultMemoryRetrievalStrategy;
 import com.lifepilot.agent.session.SessionManager;
-import com.lifepilot.agent.trace.TraceRecorder;
+import com.lifepilot.observability.trace.TraceRecorder;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.working.TokenBudgetAllocator;
@@ -65,12 +65,6 @@ public class AgentAutoConfiguration {
     public ContextAssembler basicContextAssembler(AgentConfigProperties config) {
         log.warn("Agent 引擎: 注册基础版 ContextAssembler（记忆系统不可用，记忆检索功能已降级）");
         return new ContextAssembler(config);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public TraceRecorder traceRecorder(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
-        return new TraceRecorder(jdbcTemplate, objectMapper);
     }
 
     @Bean

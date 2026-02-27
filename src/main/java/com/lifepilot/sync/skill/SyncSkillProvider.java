@@ -14,7 +14,7 @@ import com.lifepilot.sync.repository.SyncRecordRepository;
 import com.lifepilot.sync.repository.SyncStateRepository;
 import com.lifepilot.sync.scheduler.SyncScheduler;
 import com.lifepilot.tool.BuiltinTool;
-import com.lifepilot.tool.model.RiskLevel;
+import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.tool.schema.JsonSchema;

@@ -2,7 +2,10 @@ package com.lifepilot.guardrail;
 
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.ToolContract;
-import com.lifepilot.tool.model.*;
+import com.lifepilot.observability.guardrail.RiskLevel;
+import com.lifepilot.tool.model.ToolBudget;
+import com.lifepilot.tool.model.ToolInput;
+import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.schema.JsonSchema;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

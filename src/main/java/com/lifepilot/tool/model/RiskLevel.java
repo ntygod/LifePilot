@@ -8,7 +8,9 @@ package com.lifepilot.tool.model;
  *
  * @author zsg
  * @since 2026-02-24
+ * @deprecated 请使用 {@link com.lifepilot.observability.guardrail.RiskLevel}
  */
+@Deprecated(forRemoval = true)
 public enum RiskLevel {
 
     /** 低风险：只读操作，无副作用。自动执行，无需审批。 */

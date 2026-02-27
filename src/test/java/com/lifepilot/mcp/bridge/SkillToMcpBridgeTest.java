@@ -1,7 +1,7 @@
 package com.lifepilot.mcp.bridge;
 
 import com.lifepilot.tool.BuiltinTool;
-import com.lifepilot.tool.model.RiskLevel;
+import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.junit.jupiter.api.BeforeEach;

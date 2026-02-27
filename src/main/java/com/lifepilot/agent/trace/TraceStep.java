@@ -12,7 +12,9 @@ import java.time.Instant;
  *
  * @author zsg
  * @since 2026-07-20
+ * @deprecated 请使用 {@link com.lifepilot.observability.trace.TraceStep}
  */
+@Deprecated(forRemoval = true)
 @Builder(toBuilder = true)
 public record TraceStep(
         String traceId,
