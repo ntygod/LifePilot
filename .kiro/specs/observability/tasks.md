@@ -83,7 +83,7 @@
 - [x] 5. Checkpoint - 确保核心数据模型编译通过
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 6. DataRedactor 脱敏引擎
+- [x] 6. DataRedactor 脱敏引擎
   - [x] 6.1 实现 RedactionRule record 和 DataRedactor
     - 创建 `com.lifepilot.observability.redactor.RedactionRule` record（name、description、pattern、replacement、priority、enabled）
     - 创建 `com.lifepilot.observability.redactor.RedactionAudit` record（redactedText、appliedRules）
@@ -117,7 +117,7 @@
     - **Property 23: DataRedactor 敏感数据移除**
     - **Validates: Requirements 8.9**
 
-- [ ] 7. TraceStepSerializer 序列化器
+- [x] 7. TraceStepSerializer 序列化器
   - [x] 7.1 实现 TraceStepSerializer
     - 创建 `com.lifepilot.observability.trace.TraceStepSerializer`
     - 实现 serialize(TraceStep) → JSON 字符串，使用 Jackson ObjectMapper
@@ -129,20 +129,20 @@
     - **Property 2: TraceStep 序列化 round-trip**
     - **Validates: Requirements 2.8, 2.9**
 
-- [ ] 8. TraceRecorder 追踪记录器
-  - [-] 8.1 实现 TraceRecorder 接口和 TraceContext
+- [x] 8. TraceRecorder 追踪记录器
+  - [x] 8.1 实现 TraceRecorder 接口和 TraceContext
     - 创建 `com.lifepilot.observability.trace.TraceRecorder` 接口，定义 startTrace、recordStep、endTrace、onStep、currentContext 方法
     - 创建 `com.lifepilot.observability.trace.TraceContext` 可变工作对象
     - _Requirements: 2.1, 2.5_
 
-  - [~] 8.2 实现 TraceContextPropagator
+  - [x] 8.2 实现 TraceContextPropagator
     - 创建 `com.lifepilot.observability.trace.TraceContextPropagator`
     - 实现 ScopedValue 模式（Virtual Thread 自动传播）
     - 实现 ThreadLocal 兼容模式（传统线程池场景）
     - 根据 ObservabilityProperties.trace.useScopedValue 配置选择模式
     - _Requirements: 2.5, 2.6_
 
-  - [~] 8.3 实现 TraceRecorderImpl
+  - [x] 8.3 实现 TraceRecorderImpl
     - 创建 `com.lifepilot.observability.trace.TraceRecorderImpl`
     - 注入 JdbcTemplate、TraceStepSerializer、TraceContextPropagator、DataRedactor、ObservabilityProperties
     - 实现 startTrace()：创建 TraceContext，通过 Propagator 绑定到当前线程
@@ -160,11 +160,11 @@
     - **Property 4: onStep 回调触发**
     - **Validates: Requirements 2.7**
 
-- [ ] 9. Checkpoint - 确保 Trace 核心层测试通过
+- [x] 9. Checkpoint - 确保 Trace 核心层测试通过
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 10. TraceQuery 轨迹查询服务
-  - [~] 10.1 实现 TraceQuery 多维度查询与分页
+- [x] 10. TraceQuery 轨迹查询服务
+  - [x] 10.1 实现 TraceQuery 多维度查询与分页
     - 创建 `com.lifepilot.observability.trace.TraceQuery`
     - 注入 JdbcTemplate、TraceStepSerializer、ObservabilityProperties
     - 实现 query(TraceQueryParams) → List<TraceSummary>，支持按时间范围、会话 ID、成功/失败状态、最小步骤数、最小 Token 数过滤，支持 limit + offset 分页
@@ -172,7 +172,7 @@
     - 实现 getDetail(String traceId) → TraceDetail，返回包含完整步骤列表的详情，Trace 不存在时抛出 TraceNotFoundException
     - _Requirements: 4.1, 4.2, 4.3, 4.4_
 
-  - [~] 10.2 实现 TraceQuery 回放、导出与统计
+  - [x] 10.2 实现 TraceQuery 回放、导出与统计
     - 实现 replay(String traceId) → List<ReplayStep>，将每个步骤转换为包含人类可读摘要的 ReplayStep，Trace 不存在时抛出 TraceNotFoundException
     - 实现 exportAsJson(String traceId) → String，将完整 Trace 序列化为 JSON 字符串，失败时抛出 TraceExportException
     - 实现 getTokenStats(Instant start, Instant end) → TokenConsumptionStats，返回时间范围内的 Token 消耗统计（总量、平均值、最大值、成功率、平均耗时）
@@ -202,11 +202,11 @@
     - **Property 10: TraceQuery Token 统计聚合正确性**
     - **Validates: Requirements 4.7**
 
-- [ ] 11. Checkpoint - 确保 TraceQuery 层测试通过
+- [x] 11. Checkpoint - 确保 TraceQuery 层测试通过
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 12. GuardrailEngine 策略执行引擎
-  - [~] 12.1 实现 GuardrailEngine
+- [x] 12. GuardrailEngine 策略执行引擎
+  - [x] 12.1 实现 GuardrailEngine
     - 创建 `com.lifepilot.observability.guardrail.GuardrailEngine`
     - 注入 JdbcTemplate、TraceRecorder、ObservabilityProperties
     - 使用 ConcurrentHashMap 管理策略注册表，支持 registerPolicy / unregisterPolicy
@@ -247,8 +247,8 @@
     - **Property 17: GuardrailEngine 审计日志记录**
     - **Validates: Requirements 6.5**
 
-- [ ] 13. Spring AI Advisor 集成
-  - [~] 13.1 实现 TraceAdvisor
+- [x] 13. Spring AI Advisor 集成
+  - [x] 13.1 实现 TraceAdvisor
     - 创建 `com.lifepilot.observability.trace.TraceAdvisor`，实现 Spring AI CallAdvisor 接口
     - 优先级设为 HIGHEST_PRECEDENCE + 100（在 GuardrailAdvisor 之后执行）
     - adviseRequest 阶段记录开始时间
@@ -256,7 +256,7 @@
     - LLM 调用异常时记录异常信息到 LlmCallStep 并重新抛出
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
 
-  - [~] 13.2 实现 GuardrailAdvisor
+  - [x] 13.2 实现 GuardrailAdvisor
     - 创建 `com.lifepilot.observability.guardrail.GuardrailAdvisor`，实现 Spring AI CallAdvisor 接口
     - 优先级设为 HIGHEST_PRECEDENCE（在所有其他 Advisor 之前执行）
     - adviseRequest 阶段调用 GuardrailEngine.checkInput() 检查输入内容安全
@@ -269,16 +269,16 @@
     - **Property 18: GuardrailAdvisor 异常映射**
     - **Validates: Requirements 7.5, 7.6**
 
-- [ ] 14. Checkpoint - 确保 Advisor 层测试通过
+- [x] 14. Checkpoint - 确保 Advisor 层测试通过
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 15. TrajectoryEvaluator 轨迹评估引擎
-  - [~] 15.1 实现 EvaluationResult record
+- [x] 15. TrajectoryEvaluator 轨迹评估引擎
+  - [x] 15.1 实现 EvaluationResult record
     - 创建 `com.lifepilot.observability.evaluation.EvaluationResult` record（traceId、evaluatedAt、五维评分、overallScore、actualSteps、actualTokens、violations、suggestions）
     - 紧凑构造函数中使用 List.copyOf() 保证不可变性
     - _Requirements: 9.7_
 
-  - [~] 15.2 实现 TrajectoryEvaluator
+  - [x] 15.2 实现 TrajectoryEvaluator
     - 创建 `com.lifepilot.observability.evaluation.TrajectoryEvaluator`
     - 注入 JdbcTemplate、ObservabilityProperties
     - 实现五维评估逻辑：工具选择正确性（失败/重复调用降分）、参数合法性（JSON Schema 校验）、步骤效率（步骤数比率）、策略合规性（护栏拦截降分）、Token 效率（Token 消耗比率）
@@ -300,18 +300,18 @@
     - **Property 26: TrajectoryEvaluator 确定性**
     - **Validates: Requirements 9.9**
 
-- [ ] 16. Checkpoint - 确保评估引擎测试通过
+- [x] 16. Checkpoint - 确保评估引擎测试通过
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 17. 跨模块迁移适配
-  - [~] 17.1 适配 AgentLoop 使用新 TraceRecorder 接口
+- [x] 17. 跨模块迁移适配
+  - [x] 17.1 适配 AgentLoop 使用新 TraceRecorder 接口
     - 修改 `com.lifepilot.agent.AgentLoop` 的 TraceRecorder 导入，从 `com.lifepilot.agent.trace.TraceRecorder` 改为 `com.lifepilot.observability.trace.TraceRecorder`
     - 修改 `reduceAndRecord()` 方法，构建 `StateTransitionStep` 替代旧的 `TraceStep`
     - 修改 TraceContext 导入为 `com.lifepilot.observability.trace.TraceContext`
     - 确保 AgentLoop 的所有 TraceRecorder 调用（startTrace、recordStep、endTrace）与新接口签名一致
     - _Requirements: 2.1, 2.2_
 
-  - [~] 17.2 标记旧类 @Deprecated 并更新引用
+  - [x] 17.2 标记旧类 @Deprecated 并更新引用
     - 标记 `com.lifepilot.agent.trace.TraceRecorder`（旧具体类）为 `@Deprecated`
     - 标记 `com.lifepilot.agent.trace.TraceStep`（旧简单 record）为 `@Deprecated`
     - 标记 `com.lifepilot.guardrail.GuardrailPolicy`（旧具体类）为 `@Deprecated`
@@ -321,8 +321,8 @@
     - 更新所有引用旧 RiskLevel 的代码，改为导入 `com.lifepilot.observability.guardrail.RiskLevel`
     - _Requirements: 5.7_
 
-- [ ] 18. ObservabilityAutoConfiguration 自动配置
-  - [~] 18.1 实现 ObservabilityAutoConfiguration
+- [x] 18. ObservabilityAutoConfiguration 自动配置
+  - [x] 18.1 实现 ObservabilityAutoConfiguration
     - 创建 `com.lifepilot.observability.config.ObservabilityAutoConfiguration`
     - 注册 Trace 相关 Bean：TraceStepSerializer、TraceContextPropagator、TraceRecorderImpl、TraceQuery、TraceAdvisor
     - 注册护栏相关 Bean：DataRedactor、GuardrailEngine、GuardrailAdvisor
@@ -331,33 +331,33 @@
     - 注册到 `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`
     - _Requirements: 13.1, 13.2, 13.3, 13.4, 13.5, 13.6_
 
-- [ ] 19. 集成测试
-  - [~] 19.1 写集成测试：TraceRecorderImpl → SQLite 写入读取 round-trip
+- [x] 19. 集成测试
+  - [x] 19.1 写集成测试：TraceRecorderImpl → SQLite 写入读取 round-trip
     - `@SpringBootTest` + 内存 SQLite
     - 验证 startTrace → recordStep（多种步骤类型）→ endTrace → TraceQuery.getDetail() 完整流程
     - 验证步骤数量、类型、字段值与原始记录一致
     - 验证 DataRedactor 脱敏在持久化链路中生效
     - _Requirements: 2.2, 2.3, 2.4, 4.4_
 
-  - [~] 19.2 写集成测试：GuardrailEngine 审计日志持久化
+  - [x] 19.2 写集成测试：GuardrailEngine 审计日志持久化
     - `@SpringBootTest` + 内存 SQLite
     - 注册策略 → 触发 Blocked/NeedsConfirmation → 验证 guardrail_logs 表有对应记录
     - _Requirements: 6.4, 6.5_
 
-  - [~] 19.3 写集成测试：ObservabilityAutoConfiguration 条件 Bean 注册
+  - [x] 19.3 写集成测试：ObservabilityAutoConfiguration 条件 Bean 注册
     - 测试 enabled=true 时所有 Bean 正常注册
     - 测试 trace.enabled=false 时 Trace 相关 Bean 不注册
     - 测试 guardrail.enabled=false 时护栏相关 Bean 不注册
     - 测试 evaluation.enabled=false 时评估相关 Bean 不注册
     - _Requirements: 13.4, 13.5, 13.6_
 
-  - [~] 19.4 写集成测试：Flyway V19 迁移脚本验证
+  - [x] 19.4 写集成测试：Flyway V19 迁移脚本验证
     - 验证迁移脚本在干净数据库上执行成功
     - 验证所有表和索引创建正确
     - 验证 FTS5 虚拟表和触发器工作正常
     - _Requirements: 11.1, 11.2, 11.3, 11.4, 11.5, 11.7, 11.8_
 
-- [ ] 20. Final checkpoint - 确保所有测试通过
+- [x] 20. Final checkpoint - 确保所有测试通过
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes
