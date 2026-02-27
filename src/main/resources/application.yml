@@ -478,6 +478,47 @@ lifepilot:
       dida:
         enabled: false
         base-url: "https://api.dida365.com"
+  observability:
+    trace:
+      enabled: true
+      record-prompts: false
+      retention-days: 30
+      use-scoped-value: true
+    guardrail:
+      enabled: true
+      tool-risk:
+        default-risk-level: LOW
+        tool-risk-mapping: {}
+      content-safety:
+        blocked-patterns: []
+        sensitive-topics: []
+      budget-limit:
+        max-tokens-per-request: 10000
+        max-steps-per-request: 20
+        max-duration-seconds: 120
+        daily-token-limit: 1000000
+      rate-limit:
+        max-calls-per-minute: 60
+        max-calls-per-hour: 1000
+    redaction:
+      enabled: true
+      redact-before-llm: true
+      redact-in-trace: true
+      redact-in-log: true
+    evaluation:
+      enabled: true
+      online-evaluation: true
+      tool-selection-weight: 0.30
+      parameter-validity-weight: 0.20
+      step-efficiency-weight: 0.20
+      policy-compliance-weight: 0.20
+      token-efficiency-weight: 0.10
+      pass-threshold: 0.7
+      attention-threshold: 0.5
+    metrics:
+      enabled: true
+      snapshot-interval-seconds: 300
+      max-latency-samples: 1000
   eval:
     enabled: false
     scenario-directory: "${user.home}/.lifepilot/eval/scenarios"
