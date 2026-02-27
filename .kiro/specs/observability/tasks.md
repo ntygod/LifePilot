@@ -80,11 +80,11 @@
     - 创建 `com.lifepilot.observability.guardrail.GuardrailConfirmationRequiredException`（含 policyId、message、approvalMode）
     - _Requirements: 7.5, 7.6_
 
-- [-] 5. Checkpoint - 确保核心数据模型编译通过
+- [x] 5. Checkpoint - 确保核心数据模型编译通过
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 6. DataRedactor 脱敏引擎
-  - [~] 6.1 实现 RedactionRule record 和 DataRedactor
+  - [x] 6.1 实现 RedactionRule record 和 DataRedactor
     - 创建 `com.lifepilot.observability.redactor.RedactionRule` record（name、description、pattern、replacement、priority、enabled）
     - 创建 `com.lifepilot.observability.redactor.RedactionAudit` record（redactedText、appliedRules）
     - 创建 `com.lifepilot.observability.redactor.DataRedactor`
@@ -118,7 +118,7 @@
     - **Validates: Requirements 8.9**
 
 - [ ] 7. TraceStepSerializer 序列化器
-  - [~] 7.1 实现 TraceStepSerializer
+  - [x] 7.1 实现 TraceStepSerializer
     - 创建 `com.lifepilot.observability.trace.TraceStepSerializer`
     - 实现 serialize(TraceStep) → JSON 字符串，使用 Jackson ObjectMapper
     - 实现 deserialize(String json, String stepType) → TraceStep，根据 step_type 确定具体 record 类型
@@ -130,7 +130,7 @@
     - **Validates: Requirements 2.8, 2.9**
 
 - [ ] 8. TraceRecorder 追踪记录器
-  - [~] 8.1 实现 TraceRecorder 接口和 TraceContext
+  - [-] 8.1 实现 TraceRecorder 接口和 TraceContext
     - 创建 `com.lifepilot.observability.trace.TraceRecorder` 接口，定义 startTrace、recordStep、endTrace、onStep、currentContext 方法
     - 创建 `com.lifepilot.observability.trace.TraceContext` 可变工作对象
     - _Requirements: 2.1, 2.5_
