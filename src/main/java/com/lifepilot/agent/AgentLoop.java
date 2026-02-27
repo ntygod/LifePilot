@@ -4,8 +4,9 @@ import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.context.ContextAssembler;
 import com.lifepilot.agent.model.*;
 import com.lifepilot.agent.session.SessionManager;
-import com.lifepilot.agent.trace.TraceRecorder;
-import com.lifepilot.agent.trace.TraceStep;
+import com.lifepilot.observability.trace.StateTransitionStep;
+import com.lifepilot.observability.trace.TraceContext;
+import com.lifepilot.observability.trace.TraceRecorder;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.llm.LlmUnavailableException;
@@ -134,7 +135,7 @@ public class AgentLoop {
                 }
             }
 
-            // 完成轨迹记录
+            // 완成轨迹记录
             traceRecorder.endTrace(traceContext, state.finalOutput(),
                     state.terminationReason() == null, null, state.terminationReason());
 
@@ -153,26 +154,22 @@ public class AgentLoop {
 
     /** 执行状态转换并记录轨迹步骤。 */
     private AgentState reduceAndRecord(AgentState state, Action action,
-                                        TraceRecorder.TraceContext traceContext,
+                                        TraceContext traceContext,
                                         Instant startTime) {
         AgentPhase phaseBefore = state.phase();
         AgentState newState = stateReducer.reduce(state, action);
 
-        var traceStep = TraceStep.builder()
-                .traceId(state.traceId())
-                .stepIndex(newState.stepCount() - 1)
-                .phaseBefore(phaseBefore)
-                .phaseAfter(newState.phase())
-                .action(action)
-                .toolId(extractToolId(action))
-                .blocked(action instanceof Action.Blocked)
-                .blockReason(action instanceof Action.Blocked b ? b.reason() : null)
-                .tokensUsed(extractTokensUsed(action))
-                .latencyMs(Duration.between(startTime, Instant.now()).toMillis())
-                .timestamp(Instant.now())
-                .build();
+        var step = new StateTransitionStep(
+                newState.stepCount() - 1,
+                Instant.now(),
+                Duration.between(startTime, Instant.now()),
+                phaseBefore.name(),
+                newState.phase().name(),
+                action.getClass().getSimpleName(),
+                extractActionSummary(action)
+        );
 
-        traceRecorder.recordStep(traceContext, traceStep);
+        traceRecorder.recordStep(traceContext, step);
         return newState;
     }
 
@@ -183,26 +180,22 @@ public class AgentLoop {
         return mapping.getOrDefault(key, LlmScene.AGENT_REASONING);
     }
 
-    /** 从 Action 中提取 toolId。 */
-    private String extractToolId(Action action) {
+    /** 从 Action 中提取摘要信息。 */
+    private String extractActionSummary(Action action) {
         return switch (action) {
-            case Action.ToolResult a -> a.toolId();
-            case Action.Blocked a -> a.toolId();
-            case Action.SubAgentResult a -> a.skillId();
-            default -> null;
+            case Action.IntentUnderstood a -> "意图理解: " + a.summary();
+            case Action.PlanGenerated a -> "计划生成: %d 步".formatted(a.steps().size());
+            case Action.ToolResult a -> "工具调用: " + a.toolId();
+            case Action.ReflectionComplete a -> "反思完成: " + (a.satisfied() ? "满意" : "需调整");
+            case Action.ResponseGenerated _ -> "响应生成";
+            case Action.BudgetExhausted a -> "预算耗尽: " + a.reason();
+            case Action.Blocked a -> "护栏阻断: " + a.reason();
+            case Action.ErrorRecovery a -> "错误恢复: " + a.errorMessage();
+            case Action.SubAgentResult a -> "子 Agent: " + a.skillId();
         };
     }
 
-    /** 从 Action 中提取 tokensUsed。 */
-    private int extractTokensUsed(Action action) {
-        return switch (action) {
-            case Action.ToolResult a -> a.tokensUsed();
-            case Action.SubAgentResult a -> a.tokensUsed();
-            default -> 0;
-        };
-    }
-
-    /** 异步后处理：会话持久化 + 轨迹持久化。 */
+    /** 异步后处理：会话持久化。 */
     private void asyncPostProcess(AgentState finalState) {
         var executor = Executors.newVirtualThreadPerTaskExecutor();
         executor.submit(() -> {
@@ -211,14 +204,6 @@ public class AgentLoop {
             } catch (Exception e) {
                 log.warn("会话持久化失败: sessionId={}, error={}",
                         finalState.sessionId(), e.getMessage());
-            }
-        });
-        executor.submit(() -> {
-            try {
-                traceRecorder.persistTrace(finalState.traceId());
-            } catch (Exception e) {
-                log.warn("轨迹持久化失败: traceId={}, error={}",
-                        finalState.traceId(), e.getMessage());
             }
         });
         executor.close();
