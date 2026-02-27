@@ -17,3 +17,4 @@ com.lifepilot.sandbox.config.SandboxAutoConfiguration
 com.lifepilot.sync.config.SyncAutoConfiguration
 com.lifepilot.eval.config.EvalAutoConfiguration
 com.lifepilot.interaction.web.config.WebAutoConfiguration
+com.lifepilot.observability.config.ObservabilityAutoConfiguration
