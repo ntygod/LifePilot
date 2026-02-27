@@ -5,7 +5,7 @@ import java.util.UUID;
 
 import com.lifepilot.interaction.middleware.audit.AuditEventRepository;
 import com.lifepilot.interaction.middleware.audit.AuditMiddleware;
-import com.lifepilot.interaction.middleware.audit.DataRedactor;
+import com.lifepilot.observability.redactor.DataRedactor;
 import com.lifepilot.interaction.middleware.auth.AuthMiddleware;
 import com.lifepilot.interaction.middleware.auth.CliAuthStrategy;
 import com.lifepilot.interaction.middleware.ratelimit.RateLimitMiddleware;

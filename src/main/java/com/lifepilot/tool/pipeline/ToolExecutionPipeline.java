@@ -1,10 +1,9 @@
 package com.lifepilot.tool.pipeline;
 
-import com.lifepilot.guardrail.GuardrailPolicy;
-import com.lifepilot.guardrail.GuardrailResult;
+import com.lifepilot.observability.guardrail.GuardrailEngine;
+import com.lifepilot.observability.guardrail.GuardrailResult;
 import com.lifepilot.interaction.UserConfirmationService;
 import com.lifepilot.tool.ToolContract;
-import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.model.ToolResultMeta;
@@ -33,7 +32,7 @@ public class ToolExecutionPipeline {
     private static final Logger log = LoggerFactory.getLogger(ToolExecutionPipeline.class);
 
     private final DynamicToolRegistry toolRegistry;
-    private final GuardrailPolicy guardrailPolicy;
+    private final GuardrailEngine guardrailEngine;
     private final IdempotencyManager idempotencyManager;
     private final UserConfirmationService confirmationService;
     private final long retryInitialDelayMs;
@@ -42,14 +41,14 @@ public class ToolExecutionPipeline {
 
     public ToolExecutionPipeline(
             DynamicToolRegistry toolRegistry,
-            GuardrailPolicy guardrailPolicy,
+            GuardrailEngine guardrailEngine,
             IdempotencyManager idempotencyManager,
             UserConfirmationService confirmationService,
             long retryInitialDelayMs,
             double retryMultiplier,
             long retryMaxDelayMs) {
         this.toolRegistry = toolRegistry;
-        this.guardrailPolicy = guardrailPolicy;
+        this.guardrailEngine = guardrailEngine;
         this.idempotencyManager = idempotencyManager;
         this.confirmationService = confirmationService;
         this.retryInitialDelayMs = retryInitialDelayMs;
@@ -92,20 +91,23 @@ public class ToolExecutionPipeline {
         }
 
         // 3. 护栏检查
-        GuardrailResult guardrail = guardrailPolicy.checkToolCall(tool, input);
-        if (guardrail.blocked()) {
-            log.warn("护栏拦截: toolId={}, reason={}", toolId, guardrail.reason());
-            return ToolResult.error("护栏拦截: " + guardrail.reason(),
-                    buildMeta(toolId, start, 0, false, idempotencyKey));
-        }
-        if (guardrail.requiresConfirmation()) {
-            boolean confirmed = confirmationService.requestConfirmation(
-                    tool, input, guardrail.confirmationMessage());
-            if (!confirmed) {
-                log.info("用户拒绝执行: toolId={}", toolId);
-                return ToolResult.error("用户拒绝执行",
+        GuardrailResult guardrail = guardrailEngine.checkToolCall(tool, input);
+        switch (guardrail) {
+            case GuardrailResult.Blocked blocked -> {
+                log.warn("护栏拦截: toolId={}, reason={}", toolId, blocked.reason());
+                return ToolResult.error("护栏拦截: " + blocked.reason(),
                         buildMeta(toolId, start, 0, false, idempotencyKey));
             }
+            case GuardrailResult.NeedsConfirmation confirm -> {
+                boolean confirmed = confirmationService.requestConfirmation(
+                        tool, input, confirm.message());
+                if (!confirmed) {
+                    log.info("用户拒绝执行: toolId={}", toolId);
+                    return ToolResult.error("用户拒绝执行",
+                            buildMeta(toolId, start, 0, false, idempotencyKey));
+                }
+            }
+            case GuardrailResult.Passed _ -> { /* 通过 */ }
         }
 
         // 4. 幂等检查

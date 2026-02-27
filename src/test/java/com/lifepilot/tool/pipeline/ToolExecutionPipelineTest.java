@@ -1,13 +1,13 @@
 package com.lifepilot.tool.pipeline;
 
-import com.lifepilot.guardrail.GuardrailPolicy;
+import com.lifepilot.observability.guardrail.GuardrailEngine;
+import com.lifepilot.observability.guardrail.GuardrailResult;
 import com.lifepilot.interaction.NoOpUserConfirmationService;
 import com.lifepilot.interaction.UserConfirmationService;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.model.ToolBudget;
 import com.lifepilot.tool.model.ToolResult;
-import com.lifepilot.tool.model.ToolResultMeta;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.tool.schema.JsonSchema;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 /**
@@ -30,19 +31,22 @@ import static org.mockito.Mockito.*;
 class ToolExecutionPipelineTest {
 
     private DynamicToolRegistry registry;
-    private GuardrailPolicy guardrailPolicy;
+    private GuardrailEngine guardrailEngine;
     private IdempotencyManager idempotencyManager;
     private ToolExecutionPipeline pipeline;
 
     @BeforeEach
     void setUp() {
-        guardrailPolicy = new GuardrailPolicy();
+        guardrailEngine = mock(GuardrailEngine.class);
+        // 默认所有工具调用通过护栏
+        when(guardrailEngine.checkToolCall(any(), any()))
+                .thenReturn(new GuardrailResult.Passed("test"));
         ApplicationEventPublisher publisher = mock(ApplicationEventPublisher.class);
-        registry = new DynamicToolRegistry(guardrailPolicy, publisher);
+        registry = new DynamicToolRegistry(guardrailEngine, publisher);
         idempotencyManager = new IdempotencyManager();
         UserConfirmationService confirmationService = new NoOpUserConfirmationService();
         pipeline = new ToolExecutionPipeline(
-                registry, guardrailPolicy, idempotencyManager, confirmationService,
+                registry, guardrailEngine, idempotencyManager, confirmationService,
                 100, 2.0, 1000);
     }
 
@@ -71,7 +75,9 @@ class ToolExecutionPipelineTest {
     void 护栏拦截_黑名单工具() {
         registerTool("test.blocked", JsonSchema.empty(),
                 input -> ToolResult.success(Map.of()));
-        guardrailPolicy.addBlockedTools(List.of("test.blocked"));
+        // Mock 护栏引擎返回 Blocked
+        when(guardrailEngine.checkToolCall(any(), any()))
+                .thenReturn(new GuardrailResult.Blocked("test-policy", "工具被阻止", RiskLevel.HIGH));
 
         ToolResult result = pipeline.execute("test.blocked", Map.of(), "trace-1", null);
         assertFalse(result.ok());

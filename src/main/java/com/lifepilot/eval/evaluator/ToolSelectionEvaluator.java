@@ -1,6 +1,7 @@
 package com.lifepilot.eval.evaluator;
 
-import com.lifepilot.agent.trace.TraceStep;
+import com.lifepilot.observability.trace.ToolCallStep;
+import com.lifepilot.observability.trace.TraceStep;
 import com.lifepilot.eval.scenario.BenchmarkScenario;
 
 import java.util.ArrayList;
@@ -27,10 +28,10 @@ public final class ToolSelectionEvaluator implements DimensionEvaluator {
 
     @Override
     public DimensionScore evaluate(List<TraceStep> steps, BenchmarkScenario scenario) {
-        // 提取实际工具调用序列（toolId 非 null 的步骤）
+        // 提取实际工具调用序列（ToolCallStep 子类型）
         List<String> actualToolCalls = steps.stream()
-                .filter(s -> s.toolId() != null)
-                .map(TraceStep::toolId)
+                .filter(s -> s instanceof ToolCallStep)
+                .map(s -> ((ToolCallStep) s).toolId())
                 .toList();
 
         List<String> expectedToolCalls = scenario.expectedToolCalls();

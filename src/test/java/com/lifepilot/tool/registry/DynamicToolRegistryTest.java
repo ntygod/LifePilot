@@ -1,6 +1,6 @@
 package com.lifepilot.tool.registry;
 
-import com.lifepilot.guardrail.GuardrailPolicy;
+import com.lifepilot.observability.guardrail.GuardrailEngine;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.McpTool;
 import com.lifepilot.tool.ToolContract;
@@ -28,14 +28,14 @@ import static org.mockito.Mockito.*;
 class DynamicToolRegistryTest {
 
     private DynamicToolRegistry registry;
-    private GuardrailPolicy guardrailPolicy;
+    private GuardrailEngine guardrailEngine;
     private ApplicationEventPublisher eventPublisher;
 
     @BeforeEach
     void setUp() {
-        guardrailPolicy = new GuardrailPolicy();
+        guardrailEngine = mock(GuardrailEngine.class);
         eventPublisher = mock(ApplicationEventPublisher.class);
-        registry = new DynamicToolRegistry(guardrailPolicy, eventPublisher);
+        registry = new DynamicToolRegistry(guardrailEngine, eventPublisher);
     }
 
     @Test
@@ -115,20 +115,18 @@ class DynamicToolRegistryTest {
     void 注册工具自动加入白名单() {
         BuiltinTool tool = createBuiltinTool("test.echo", "Echo");
         registry.registerBuiltinTool(tool);
-        // 通过 checkToolCall 验证白名单
-        ToolInput input = new ToolInput("test.echo", java.util.Map.of(), com.lifepilot.tool.schema.JsonSchema.empty(), null);
-        assertFalse(guardrailPolicy.checkToolCall(tool, input).blocked());
+        // 验证 GuardrailEngine.addAllowedTools 被调用
+        verify(guardrailEngine).addAllowedTools(List.of("test.echo"));
     }
 
     @Test
     void 注销工具自动移出白名单() {
         McpTool tool = createMcpTool("mcp.tool", "Tool");
         registry.registerMcpTools("server1", List.of(tool));
-        ToolInput input = new ToolInput("mcp.tool", java.util.Map.of(), com.lifepilot.tool.schema.JsonSchema.empty(), null);
-        assertFalse(guardrailPolicy.checkToolCall(tool, input).blocked());
+        verify(guardrailEngine).addAllowedTools(List.of("mcp.tool"));
 
         registry.unregisterMcpTools("server1");
-        assertTrue(guardrailPolicy.checkToolCall(tool, input).blocked());
+        verify(guardrailEngine).removeAllowedTools(List.of("mcp.tool"));
     }
 
     // ─── 辅助方法 ───

@@ -3,7 +3,7 @@ package com.lifepilot.eval.engine;
 import com.lifepilot.agent.AgentLoop;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.agent.model.AgentResponse;
-import com.lifepilot.agent.trace.TraceRecorder;
+import com.lifepilot.observability.trace.TraceRecorder;
 import com.lifepilot.eval.config.EvalConfigProperties;
 import com.lifepilot.eval.evaluator.TrajectoryEvaluator;
 import com.lifepilot.eval.judge.JudgeResult;

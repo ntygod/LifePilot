@@ -1,6 +1,6 @@
 package com.lifepilot.tool.registry;
 
-import com.lifepilot.guardrail.GuardrailPolicy;
+import com.lifepilot.observability.guardrail.GuardrailEngine;
 import com.lifepilot.tool.ToolContract;
 import com.lifepilot.tool.event.ToolRegistryEvent.*;
 import com.lifepilot.tool.model.ToolLayer;
@@ -38,7 +38,7 @@ public class DynamicToolRegistry {
     /** YAML 工具 ID 集合。 */
     private final ConcurrentHashMap<String, Boolean> yamlToolIds = new ConcurrentHashMap<>();
 
-    private final GuardrailPolicy guardrailPolicy;
+    private final GuardrailEngine guardrailEngine;
     private final ApplicationEventPublisher eventPublisher;
 
     /** 快照缓存锁。 */
@@ -46,9 +46,9 @@ public class DynamicToolRegistry {
     private volatile List<ToolContract> cachedSnapshot = List.of();
 
     public DynamicToolRegistry(
-            GuardrailPolicy guardrailPolicy,
+            GuardrailEngine guardrailEngine,
             ApplicationEventPublisher eventPublisher) {
-        this.guardrailPolicy = guardrailPolicy;
+        this.guardrailEngine = guardrailEngine;
         this.eventPublisher = eventPublisher;
     }
 
@@ -63,7 +63,7 @@ public class DynamicToolRegistry {
      */
     public void registerBuiltinTool(ToolContract tool) {
         if (registerWithPriority(tool, ToolLayer.JAVA_NATIVE, "builtin")) {
-            guardrailPolicy.addAllowedTools(List.of(tool.id()));
+            guardrailEngine.addAllowedTools(List.of(tool.id()));
             invalidateSnapshot();
             eventPublisher.publishEvent(new ToolsRegistered(
                     List.of(tool.id()), ToolLayer.JAVA_NATIVE, "builtin"));
@@ -84,7 +84,7 @@ public class DynamicToolRegistry {
             }
         }
         if (!registeredIds.isEmpty()) {
-            guardrailPolicy.addAllowedTools(registeredIds);
+            guardrailEngine.addAllowedTools(registeredIds);
             invalidateSnapshot();
             eventPublisher.publishEvent(new ToolsRegistered(
                     List.copyOf(registeredIds), ToolLayer.YAML_DECLARATIVE, "yaml"));
@@ -107,7 +107,7 @@ public class DynamicToolRegistry {
         }
         serverToolIndex.put(serverName, List.copyOf(registeredIds));
         if (!registeredIds.isEmpty()) {
-            guardrailPolicy.addAllowedTools(registeredIds);
+            guardrailEngine.addAllowedTools(registeredIds);
             invalidateSnapshot();
             eventPublisher.publishEvent(new ToolsRegistered(
                     List.copyOf(registeredIds), ToolLayer.MCP_EXTERNAL, serverName));
@@ -156,7 +156,7 @@ public class DynamicToolRegistry {
         ToolContract removed = tools.remove(toolId);
         if (removed != null) {
             toolLayers.remove(toolId);
-            guardrailPolicy.removeAllowedTools(List.of(toolId));
+            guardrailEngine.removeAllowedTools(List.of(toolId));
             invalidateSnapshot();
             eventPublisher.publishEvent(new ToolsUnregistered(
                     List.of(toolId), "builtin"));
@@ -178,7 +178,7 @@ public class DynamicToolRegistry {
                 tools.remove(id);
                 toolLayers.remove(id);
             });
-            guardrailPolicy.removeAllowedTools(toolIds);
+            guardrailEngine.removeAllowedTools(toolIds);
             invalidateSnapshot();
             eventPublisher.publishEvent(new ToolsUnregistered(
                     List.copyOf(toolIds), serverName));
@@ -195,7 +195,7 @@ public class DynamicToolRegistry {
                 toolLayers.remove(id);
             });
             yamlToolIds.clear();
-            guardrailPolicy.removeAllowedTools(toolIds);
+            guardrailEngine.removeAllowedTools(toolIds);
             invalidateSnapshot();
             eventPublisher.publishEvent(new ToolsUnregistered(
                     List.copyOf(toolIds), "yaml-reload"));

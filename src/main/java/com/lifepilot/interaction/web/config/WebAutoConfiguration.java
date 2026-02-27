@@ -4,8 +4,8 @@ import com.lifepilot.interaction.config.GatewayProperties;
 import com.lifepilot.interaction.gateway.MessageGateway;
 import com.lifepilot.interaction.web.adapter.WebChannelAdapter;
 import com.lifepilot.interaction.web.controller.*;
-import com.lifepilot.interaction.web.service.TraceQueryService;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
+import com.lifepilot.observability.trace.TraceQuery;
 import com.lifepilot.knowledge.KnowledgeBaseManager;
 import com.lifepilot.knowledge.ingest.DocumentIngester;
 import com.lifepilot.mcp.registry.McpServerRegistry;
@@ -23,7 +23,6 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.event.EventListener;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
@@ -82,13 +81,6 @@ public class WebAutoConfiguration {
     // ── 模块 19 新增 Bean ──────────────────────────────────
 
     @Bean
-    @ConditionalOnBean(JdbcTemplate.class)
-    public TraceQueryService traceQueryService(JdbcTemplate jdbcTemplate) {
-        log.info("注册 TraceQueryService");
-        return new TraceQueryService(jdbcTemplate);
-    }
-
-    @Bean
     @ConditionalOnBean(KnowledgeBaseManager.class)
     public KnowledgeBaseController knowledgeBaseController(KnowledgeBaseManager kbManager,
                                                             DocumentIngester documentIngester) {
@@ -106,10 +98,10 @@ public class WebAutoConfiguration {
     }
 
     @Bean
-    @ConditionalOnBean(TraceQueryService.class)
-    public TraceController traceController(TraceQueryService traceQueryService) {
+    @ConditionalOnBean(TraceQuery.class)
+    public TraceController traceController(TraceQuery traceQuery) {
         log.info("注册 TraceController");
-        return new TraceController(traceQueryService);
+        return new TraceController(traceQuery);
     }
 
     @Bean

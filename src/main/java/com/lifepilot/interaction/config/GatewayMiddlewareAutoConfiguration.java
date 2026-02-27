@@ -9,7 +9,7 @@ import com.lifepilot.interaction.channel.CliChannelAdapter;
 import com.lifepilot.interaction.gateway.MessageGateway;
 import com.lifepilot.interaction.middleware.audit.AuditEventRepository;
 import com.lifepilot.interaction.middleware.audit.AuditMiddleware;
-import com.lifepilot.interaction.middleware.audit.DataRedactor;
+import com.lifepilot.observability.redactor.DataRedactor;
 import com.lifepilot.interaction.middleware.auth.AuthMiddleware;
 import com.lifepilot.interaction.middleware.auth.AuthStrategy;
 import com.lifepilot.interaction.middleware.auth.CliAuthStrategy;
@@ -113,11 +113,6 @@ public class GatewayMiddlewareAutoConfiguration {
     }
 
     // ── 审计相关 ──────────────────────────────────────────────────
-
-    @Bean
-    public DataRedactor dataRedactor() {
-        return new DataRedactor();
-    }
 
     @Bean
     public AuditEventRepository auditEventRepository(JdbcTemplate jdbcTemplate) {

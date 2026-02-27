@@ -2,7 +2,7 @@ package com.lifepilot.eval.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.AgentLoop;
-import com.lifepilot.agent.trace.TraceRecorder;
+import com.lifepilot.observability.trace.TraceRecorder;
 import com.lifepilot.eval.engine.EvalEngine;
 import com.lifepilot.eval.evaluator.DimensionEvaluator;
 import com.lifepilot.eval.evaluator.ParameterValidityEvaluator;

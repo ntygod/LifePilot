@@ -1,6 +1,7 @@
 package com.lifepilot.eval.evaluator;
 
-import com.lifepilot.agent.trace.TraceStep;
+import com.lifepilot.observability.trace.LlmCallStep;
+import com.lifepilot.observability.trace.TraceStep;
 import com.lifepilot.eval.scenario.BenchmarkScenario;
 
 import java.util.ArrayList;
@@ -26,8 +27,13 @@ public final class TokenEfficiencyEvaluator implements DimensionEvaluator {
 
     @Override
     public DimensionScore evaluate(List<TraceStep> steps, BenchmarkScenario scenario) {
+        // 从 LlmCallStep 子类型累加 Token 消耗
         long actualTokens = steps.stream()
-                .mapToLong(TraceStep::tokensUsed)
+                .filter(s -> s instanceof LlmCallStep)
+                .mapToLong(s -> {
+                    var llm = (LlmCallStep) s;
+                    return llm.inputTokens() + llm.outputTokens();
+                })
                 .sum();
 
         if (actualTokens == 0) {

@@ -2,7 +2,8 @@ package com.lifepilot.eval.evaluator;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lifepilot.agent.trace.TraceStep;
+import com.lifepilot.observability.trace.ToolCallStep;
+import com.lifepilot.observability.trace.TraceStep;
 import com.lifepilot.eval.scenario.BenchmarkScenario;
 import com.lifepilot.tool.ToolContract;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
@@ -44,9 +45,10 @@ public final class ParameterValidityEvaluator implements DimensionEvaluator {
 
     @Override
     public DimensionScore evaluate(List<TraceStep> steps, BenchmarkScenario scenario) {
-        // 筛选有工具调用的步骤
-        List<TraceStep> toolSteps = steps.stream()
-                .filter(s -> s.toolId() != null)
+        // 筛选工具调用步骤
+        List<ToolCallStep> toolSteps = steps.stream()
+                .filter(s -> s instanceof ToolCallStep)
+                .map(s -> (ToolCallStep) s)
                 .toList();
 
         if (toolSteps.isEmpty()) {
@@ -57,7 +59,7 @@ public final class ParameterValidityEvaluator implements DimensionEvaluator {
         var violations = new ArrayList<String>();
         var suggestions = new ArrayList<String>();
 
-        for (TraceStep step : toolSteps) {
+        for (ToolCallStep step : toolSteps) {
             String toolId = step.toolId();
             var toolOpt = toolRegistry.resolve(toolId);
 
@@ -77,7 +79,7 @@ public final class ParameterValidityEvaluator implements DimensionEvaluator {
             }
 
             // 解析 toolInput JSON 为 Map
-            String toolInput = step.toolInput();
+            String toolInput = step.inputJson();
             if (toolInput == null || toolInput.isBlank()) {
                 // 无输入参数，校验 required 字段
                 var errors = schema.validate(Map.of());

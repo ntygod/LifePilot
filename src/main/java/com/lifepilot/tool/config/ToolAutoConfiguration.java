@@ -1,9 +1,9 @@
 package com.lifepilot.tool.config;
 
 import com.lifepilot.agent.AgentToolProvider;
-import com.lifepilot.guardrail.GuardrailPolicy;
 import com.lifepilot.interaction.NoOpUserConfirmationService;
 import com.lifepilot.interaction.UserConfirmationService;
+import com.lifepilot.observability.guardrail.GuardrailEngine;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.bridge.ToolBridgeAgentToolProvider;
 import com.lifepilot.tool.pipeline.IdempotencyManager;
@@ -40,12 +40,6 @@ public class ToolAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public GuardrailPolicy guardrailPolicy() {
-        return new GuardrailPolicy();
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
     public UserConfirmationService userConfirmationService() {
         return new NoOpUserConfirmationService();
     }
@@ -59,16 +53,16 @@ public class ToolAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public DynamicToolRegistry dynamicToolRegistry(
-            GuardrailPolicy guardrailPolicy,
+            GuardrailEngine guardrailEngine,
             ApplicationEventPublisher eventPublisher) {
-        return new DynamicToolRegistry(guardrailPolicy, eventPublisher);
+        return new DynamicToolRegistry(guardrailEngine, eventPublisher);
     }
 
     @Bean
     @ConditionalOnMissingBean
     public ToolExecutionPipeline toolExecutionPipeline(
             DynamicToolRegistry toolRegistry,
-            GuardrailPolicy guardrailPolicy,
+            GuardrailEngine guardrailEngine,
             IdempotencyManager idempotencyManager,
             UserConfirmationService confirmationService,
             ToolConfigProperties config) {
@@ -76,7 +70,7 @@ public class ToolAutoConfiguration {
         log.info("工具执行管线初始化: timeout={}s, maxRetries={}, retryDelay={}ms",
                 p.getDefaultTimeoutSeconds(), p.getDefaultMaxRetries(), p.getRetryInitialDelayMs());
         return new ToolExecutionPipeline(
-                toolRegistry, guardrailPolicy, idempotencyManager, confirmationService,
+                toolRegistry, guardrailEngine, idempotencyManager, confirmationService,
                 p.getRetryInitialDelayMs(), p.getRetryMultiplier(), p.getRetryMaxDelayMs());
     }
 

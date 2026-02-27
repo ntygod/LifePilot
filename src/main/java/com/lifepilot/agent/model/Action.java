@@ -1,5 +1,6 @@
 package com.lifepilot.agent.model;
 
+import com.lifepilot.observability.guardrail.RiskLevel;
 import org.springframework.lang.Nullable;
 
 import java.util.List;
