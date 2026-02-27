@@ -222,14 +222,14 @@
 - [x] 9. Checkpoint - 确认配置、自动装配和预设 Agent
   - Ensure all tests pass, ask the user if questions arise.
 
-- [-] 10. Skill 系统清理（L1 回归）
+- [x] 10. Skill 系统清理（L1 回归）
   - [x] 10.1 清理 SkillDefinition 和 SkillToToolBridge
     - 从 `SkillDefinition` record 移除 `preferredProviderId` 字段
     - 修改 `SkillToToolBridge`：移除 SubAgent 激活路径，仅桥接 L1 确定性 Skill 执行（HttpAction / ShellAction / ChainAction / TemplateAction）
     - 修复所有因字段移除导致的编译错误（SkillYamlLoader、SkillLifecycleManager 等）
     - _Requirements: 10.1, 10.2_
 
-  - [-] 10.2 清理 SkillLifecycleManager 和 SubAgentFactory
+  - [x] 10.2 清理 SkillLifecycleManager 和 SubAgentFactory
     - 从 `SkillLifecycleManager` 移除 SubAgent 委托逻辑
     - 直接删除 `SubAgentFactory` 类（无需保留 @Deprecated 过渡期）
     - 确保现有 Skill YAML 定义文件不包含 SubAgent 配置时正常加载
@@ -241,8 +241,8 @@
     - 验证现有 Skill YAML 正常加载（向后兼容）
     - **Validates: Requirements 10.1, 10.2, 10.3, 10.5**
 
-- [ ] 11. 实现 ToolDiscoveryService 工具发现能力
-  - [ ] 11.1 实现 ToolDiscoveryService
+- [x] 11. 实现 ToolDiscoveryService 工具发现能力
+  - [x] 11.1 实现 ToolDiscoveryService
     - 创建 `com.lifepilot.multiagent.discovery.ToolDiscoveryService`
     - 定义 `ToolSummary` record：toolId, name, description, sourceType
     - 实现 `listAvailableTools()` 方法：从 DynamicToolRegistry.getAllTools() 获取所有工具
@@ -257,7 +257,7 @@
     - 单元测试：空注册表返回空列表、按来源分组验证
     - **Validates: Requirements 11.1, 11.2, 11.3**
 
-- [ ] 12. 集成测试
+- [x] 12. 集成测试
   - [ ]* 12.1 编写 MultiAgent_AgentLoop_集成测试
     - `@SpringBootTest` 验证 Spring Context 加载、Bean 注入链完整
     - 验证预设 Agent 注册（先 Builtin 后 MarkdownDefined）
@@ -274,7 +274,7 @@
     - 验证无 AgentRegistry、AgentExecutor 等 Bean 注册
     - **Validates: Requirements 8.5**
 
-- [ ] 13. Final checkpoint - 确认所有测试通过
+- [x] 13. Final checkpoint - 确认所有测试通过
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes
