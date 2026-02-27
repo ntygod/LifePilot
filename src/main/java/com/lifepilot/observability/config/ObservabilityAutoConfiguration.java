@@ -54,8 +54,6 @@ public class ObservabilityAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnProperty(prefix = "lifepilot.observability.trace", name = "enabled",
-            havingValue = "true", matchIfMissing = true)
     public TraceContextPropagator traceContextPropagator(ObservabilityProperties properties) {
         return new TraceContextPropagator(properties.getTrace().isUseScopedValue());
     }
