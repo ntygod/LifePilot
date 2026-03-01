@@ -4,7 +4,9 @@ import com.lifepilot.interaction.config.GatewayProperties;
 import com.lifepilot.interaction.gateway.MessageGateway;
 import com.lifepilot.interaction.web.adapter.WebChannelAdapter;
 import com.lifepilot.interaction.web.controller.*;
+import com.lifepilot.interaction.web.repository.UserSettingsRepository;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
+import com.lifepilot.llm.registry.ProviderRegistry;
 import com.lifepilot.observability.trace.TraceQuery;
 import com.lifepilot.knowledge.KnowledgeBaseManager;
 import com.lifepilot.knowledge.ingest.DocumentIngester;
@@ -67,9 +69,11 @@ public class WebAutoConfiguration {
     }
 
     @Bean
-    public SettingsController settingsController() {
+    @ConditionalOnBean({ProviderRegistry.class, UserSettingsRepository.class})
+    public SettingsController settingsController(UserSettingsRepository settingsRepository,
+                                                 ProviderRegistry providerRegistry) {
         log.info("注册 SettingsController");
-        return new SettingsController();
+        return new SettingsController(settingsRepository, providerRegistry);
     }
 
     @Bean
