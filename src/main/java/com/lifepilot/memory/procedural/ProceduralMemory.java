@@ -145,6 +145,43 @@ public class ProceduralMemory {
         log.info("程序记忆: 删除模板, id={}", templateId);
     }
 
+    // ========== 成功率追踪 ==========
+
+    /**
+     * 记录模板执行结果 — 加权平均更新 successRate，递增 useCount，更新 lastUsedAt。
+     *
+     * <p>加权平均公式：{@code newRate = (oldRate × oldCount + (success ? 1.0 : 0.0)) / (oldCount + 1)}</p>
+     *
+     * @param templateId 模板 ID
+     * @param success    本次执行是否成功
+     */
+    public void recordExecution(String templateId, boolean success) {
+        var results = jdbcTemplate.query(
+                "SELECT success_rate, use_count FROM procedure_templates WHERE template_id = ?",
+                (rs, rowNum) -> new float[]{rs.getFloat("success_rate"), rs.getInt("use_count")},
+                templateId);
+
+        if (results.isEmpty()) {
+            log.warn("程序记忆: 记录执行结果失败, 模板不存在, templateId={}", templateId);
+            return;
+        }
+
+        float oldRate = results.getFirst()[0];
+        int oldCount = (int) results.getFirst()[1];
+        float newRate = (oldRate * oldCount + (success ? 1.0f : 0.0f)) / (oldCount + 1);
+        String now = Instant.now().toString();
+
+        jdbcTemplate.update(
+                """
+                UPDATE procedure_templates
+                SET success_rate = ?, use_count = ?, last_used_at = ?, updated_at = ?
+                WHERE template_id = ?
+                """,
+                newRate, oldCount + 1, now, now, templateId);
+
+        log.debug("程序记忆: 记录执行结果, templateId={}, success={}, newRate={}, newCount={}",
+                templateId, success, newRate, oldCount + 1);
+    }
 
     // ========== 内部方法 ==========
 

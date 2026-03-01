@@ -174,6 +174,69 @@ class ProceduralMemoryTest {
         assertThat(found.get().sourceTraceIds()).isEmpty();
     }
 
+    // --- 成功率追踪测试 ---
+
+    @Test
+    void recordExecution_成功时_加权平均提升successRate() {
+        var now = Instant.now();
+        // 初始 successRate=0.8, useCount=4
+        var template = new ProcedureTemplate(
+                "tpl-exec-success", "测试模板", "描述", "意图",
+                List.of(), Map.of(), 0.8f, 4, now, List.of(), now, now);
+        proceduralMemory.save(template);
+
+        proceduralMemory.recordExecution("tpl-exec-success", true);
+
+        var found = proceduralMemory.findById("tpl-exec-success");
+        assertThat(found).isPresent();
+        // newRate = (0.8 * 4 + 1.0) / 5 = 4.2 / 5 = 0.84
+        assertThat(found.get().successRate()).isCloseTo(0.84f, org.assertj.core.data.Offset.offset(0.001f));
+        assertThat(found.get().useCount()).isEqualTo(5);
+        assertThat(found.get().lastUsedAt()).isNotNull();
+    }
+
+    @Test
+    void recordExecution_失败时_加权平均降低successRate() {
+        var now = Instant.now();
+        // 初始 successRate=0.8, useCount=4
+        var template = new ProcedureTemplate(
+                "tpl-exec-fail", "测试模板", "描述", "意图",
+                List.of(), Map.of(), 0.8f, 4, now, List.of(), now, now);
+        proceduralMemory.save(template);
+
+        proceduralMemory.recordExecution("tpl-exec-fail", false);
+
+        var found = proceduralMemory.findById("tpl-exec-fail");
+        assertThat(found).isPresent();
+        // newRate = (0.8 * 4 + 0.0) / 5 = 3.2 / 5 = 0.64
+        assertThat(found.get().successRate()).isCloseTo(0.64f, org.assertj.core.data.Offset.offset(0.001f));
+        assertThat(found.get().useCount()).isEqualTo(5);
+    }
+
+    @Test
+    void recordExecution_模板不存在_不抛异常() {
+        // 不应抛异常，仅记录 WARN 日志
+        proceduralMemory.recordExecution("non-existent-id", true);
+    }
+
+    @Test
+    void recordExecution_初始useCount为0_首次执行() {
+        var now = Instant.now();
+        var template = new ProcedureTemplate(
+                "tpl-exec-first", "新模板", "描述", "意图",
+                List.of(), Map.of(), 0.0f, 0, null, List.of(), now, now);
+        proceduralMemory.save(template);
+
+        proceduralMemory.recordExecution("tpl-exec-first", true);
+
+        var found = proceduralMemory.findById("tpl-exec-first");
+        assertThat(found).isPresent();
+        // newRate = (0.0 * 0 + 1.0) / 1 = 1.0
+        assertThat(found.get().successRate()).isCloseTo(1.0f, org.assertj.core.data.Offset.offset(0.001f));
+        assertThat(found.get().useCount()).isEqualTo(1);
+        assertThat(found.get().lastUsedAt()).isNotNull();
+    }
+
     // --- 辅助方法 ---
 
     private ProcedureTemplate createSimpleTemplate(String id, String name, Instant now) {
