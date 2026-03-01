@@ -128,6 +128,21 @@ public class EpisodicMemory {
     }
 
     /**
+     * 根据会话 ID 获取所有消息记录。
+     *
+     * @param sessionId 会话 ID
+     * @return 消息记录列表
+     */
+    public List<MessageRecord> getMessagesBySessionId(String sessionId) {
+        var conversationIds = jdbcTemplate.queryForList(
+                "SELECT id FROM conversations WHERE session_id = ? ORDER BY created_at",
+                String.class, sessionId);
+        return conversationIds.stream()
+                .flatMap(cid -> loadMessages(cid).stream())
+                .toList();
+    }
+
+    /**
      * 加载指定对话的所有消息。
      */
     private List<MessageRecord> loadMessages(String conversationId) {

@@ -16,11 +16,22 @@ public class ToolConfigProperties {
 
     private boolean enabled = true;
     private PipelineConfig pipeline = new PipelineConfig();
+    private Yaml yaml = new Yaml();
 
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
     public PipelineConfig getPipeline() { return pipeline; }
     public void setPipeline(PipelineConfig pipeline) { this.pipeline = pipeline; }
+    public Yaml getYaml() { return yaml; }
+    public void setYaml(Yaml yaml) { this.yaml = yaml; }
+
+    /** YAML 工具配置。 */
+    public static class Yaml {
+        private String baseDir = "tools";
+
+        public String getBaseDir() { return baseDir; }
+        public void setBaseDir(String baseDir) { this.baseDir = baseDir; }
+    }
 
     /** 管线配置。 */
     public static class PipelineConfig {
