@@ -4,6 +4,7 @@ import com.lifepilot.tool.YamlTool;
 import com.lifepilot.tool.config.ToolConfigProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -26,6 +27,7 @@ import java.util.Optional;
  * @since 2026-02-28
  */
 @Service
+@ConditionalOnProperty(prefix = "lifepilot.tool", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class YamlToolPersistenceService {
 
     private static final Logger log = LoggerFactory.getLogger(YamlToolPersistenceService.class);

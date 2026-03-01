@@ -186,6 +186,15 @@ public class VectorSearcher {
         }
     }
 
+    /**
+     * 检查 sqlite-vec 扩展是否已加载。
+     *
+     * @return true 如果扩展已加载，false 否则
+     */
+    public boolean isVecExtensionLoaded() {
+        return vecExtensionLoaded;
+    }
+
     // --- 工具方法 ---
 
     /** float[] 转 byte[]（小端序，sqlite-vec 要求）。 */

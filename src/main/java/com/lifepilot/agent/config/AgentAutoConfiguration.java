@@ -92,16 +92,31 @@ public class AgentAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public AgentLoop agentLoop(StateReducer stateReducer,
-                                ContextAssembler contextAssembler,
-                                LlmRouter llmRouter,
-                                TraceRecorder traceRecorder,
-                                SessionManager sessionManager,
-                                ActionParser actionParser,
-                                AgentToolProvider agentToolProvider,
-                                AgentConfigProperties config) {
-        log.info("Agent 引擎初始化完成");
+    @ConditionalOnBean(TraceRecorder.class)
+    public AgentLoop agentLoopWithTrace(StateReducer stateReducer,
+                                        ContextAssembler contextAssembler,
+                                        LlmRouter llmRouter,
+                                        TraceRecorder traceRecorder,
+                                        SessionManager sessionManager,
+                                        ActionParser actionParser,
+                                        AgentToolProvider agentToolProvider,
+                                        AgentConfigProperties config) {
+        log.info("Agent 引擎初始化完成（带追踪）");
         return new AgentLoop(stateReducer, contextAssembler, llmRouter,
                 traceRecorder, sessionManager, actionParser, agentToolProvider, config);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(AgentLoop.class)
+    public AgentLoop agentLoopWithoutTrace(StateReducer stateReducer,
+                                           ContextAssembler contextAssembler,
+                                           LlmRouter llmRouter,
+                                           SessionManager sessionManager,
+                                           ActionParser actionParser,
+                                           AgentToolProvider agentToolProvider,
+                                           AgentConfigProperties config) {
+        log.info("Agent 引擎初始化完成（无追踪）");
+        return new AgentLoop(stateReducer, contextAssembler, llmRouter,
+                null, sessionManager, actionParser, agentToolProvider, config);
     }
 }

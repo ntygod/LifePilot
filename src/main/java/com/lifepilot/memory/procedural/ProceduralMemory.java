@@ -311,6 +311,10 @@ public class ProceduralMemory {
      * 与 VectorSearcher 中 entity_embeddings 的创建方式保持一致。
      */
     private void initVec0Tables() {
+        if (!vectorSearcher.isVecExtensionLoaded()) {
+            log.debug("程序记忆: sqlite-vec 未加载，跳过 vec0 表创建");
+            return;
+        }
         int dimensions = properties.getEmbeddingDimensions();
         try {
             jdbcTemplate.execute(

@@ -2,6 +2,7 @@ package com.lifepilot.tool.yaml;
 
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.YamlTool;
+import org.springframework.stereotype.Component;
 import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.Yaml;
 
@@ -16,6 +17,7 @@ import java.util.Map;
  * @author zsg
  * @since 2026-02-28
  */
+@Component
 public class YamlToolSerializer {
 
     /**

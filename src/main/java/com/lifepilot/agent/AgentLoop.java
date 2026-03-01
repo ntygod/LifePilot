@@ -74,8 +74,11 @@ public class AgentLoop {
                     : AgentState.init(request);
 
             // 开始轨迹记录
-            var traceContext = traceRecorder.startTrace(
-                    state.traceId(), state.sessionId(), request.message());
+            TraceContext traceContext = null;
+            if (traceRecorder != null) {
+                traceContext = traceRecorder.startTrace(
+                        state.traceId(), state.sessionId(), request.message());
+            }
 
             Instant startTime = Instant.now();
             int consecutiveBlocks = 0;
@@ -153,8 +156,10 @@ public class AgentLoop {
             }
 
             // 轨迹记录
-            traceRecorder.endTrace(traceContext, state.finalOutput(),
-                    state.terminationReason() == null, null, state.terminationReason());
+            if (traceRecorder != null && traceContext != null) {
+                traceRecorder.endTrace(traceContext, state.finalOutput(),
+                        state.terminationReason() == null, null, state.terminationReason());
+            }
 
             // 异步后处理（Virtual Thread）
             asyncPostProcess(state);
@@ -186,7 +191,9 @@ public class AgentLoop {
                 extractActionSummary(action)
         );
 
-        traceRecorder.recordStep(traceContext, step);
+        if (traceRecorder != null && traceContext != null) {
+            traceRecorder.recordStep(traceContext, step);
+        }
         return newState;
     }
 
