@@ -47,6 +47,36 @@ export interface UserSettings {
   llmProvider: string
 }
 
+/** Provider 能力类型 */
+export type ProviderCapability = 
+  | 'CHAT'
+  | 'EMBEDDING'
+  | 'STRUCTURED_OUTPUT'
+  | 'FUNCTION_CALLING'
+  | 'STREAMING'
+  | 'VISION'
+  | 'TTS'
+  | 'STT'
+
+/** LLM Provider 详细信息 */
+export interface LlmProviderDetail {
+  id: string
+  type: string
+  modelName: string
+  displayName: string
+  capabilities: ProviderCapability[]
+  priority: number
+  costPerInputToken: number
+  costPerOutputToken: number
+  scenes: string[]
+  maxContextWindow: number
+  supportsStreaming: boolean
+  enabled: boolean
+  apiUrl?: string
+  timeoutSeconds?: number
+  healthy?: boolean
+}
+
 /** SSE token 事件 */
 export interface SseTokenEvent {
   content: string

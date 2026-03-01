@@ -98,6 +98,27 @@ export const chatApi = {
   }
 }
 
+import type {
+  LlmProviderDetail
+} from '@/types'
+
+/** LLM Provider 信息（兼容旧接口） */
+export interface LlmProvider {
+  id: string
+  type: string
+  modelName: string
+  displayName: string
+  capabilities?: string[]
+  priority?: number
+  costPerInputToken?: number
+  costPerOutputToken?: number
+  scenes?: string[]
+  maxContextWindow?: number
+  supportsStreaming?: boolean
+  enabled?: boolean
+  healthy?: boolean
+}
+
 /** 设置相关 API */
 export const settingsApi = {
   /** 获取用户设置 */
@@ -111,6 +132,21 @@ export const settingsApi = {
       method: 'PUT',
       body: JSON.stringify(settings)
     })
+  },
+
+  /** 获取可用的 LLM Provider 列表（包含详细信息） */
+  getProviders(): Promise<LlmProvider[]> {
+    return request('/settings/providers')
+  },
+
+  /** 获取指定 Provider 的详细信息 */
+  getProviderDetail(providerId: string): Promise<LlmProviderDetail> {
+    return request(`/settings/providers/${providerId}`)
+  },
+
+  /** 获取所有 Provider 的健康状态 */
+  getProviderHealth(): Promise<Record<string, boolean>> {
+    return request('/settings/providers/health')
   }
 }
 
