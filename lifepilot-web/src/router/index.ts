@@ -4,9 +4,13 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     {
-      path: '/',
+      path: '/chat/:sessionId?',
       name: 'chat',
       component: () => import('@/views/ChatView.vue')
+    },
+    {
+      path: '/',
+      redirect: { name: 'chat' }
     },
     {
       path: '/settings',

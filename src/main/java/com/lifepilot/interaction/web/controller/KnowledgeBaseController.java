@@ -3,13 +3,14 @@ package com.lifepilot.interaction.web.controller;
 import com.lifepilot.interaction.web.model.CreateKbRequest;
 import com.lifepilot.interaction.web.model.ErrorResponse;
 import com.lifepilot.knowledge.KnowledgeBaseManager;
-import com.lifepilot.knowledge.ingest.DocumentIngester;
 import com.lifepilot.knowledge.model.Document;
 import com.lifepilot.knowledge.model.KnowledgeBase;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.lifepilot.knowledge.ingest.DocumentIngester;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.lang.Nullable;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -17,7 +18,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -34,14 +34,11 @@ import java.util.Set;
  * <p>提供知识库 CRUD 和文档管理 API 端点，
  * 委托 {@link KnowledgeBaseManager} 和 {@link DocumentIngester} 完成业务逻辑。</p>
  *
- * <p>仅在 {@link DocumentIngester} Bean 存在时注册（需要 LLM Router 和 Vector Indexer）。</p>
- *
  * @author zsg
  * @since 2026-02-27
  */
 @RestController
 @RequestMapping("/api/knowledge-bases")
-@ConditionalOnBean(DocumentIngester.class)
 public class KnowledgeBaseController {
 
     private static final Logger log = LoggerFactory.getLogger(KnowledgeBaseController.class);
@@ -50,10 +47,11 @@ public class KnowledgeBaseController {
     private static final Set<String> ALLOWED_EXTENSIONS = Set.of(".pdf", ".docx", ".md", ".txt");
 
     private final KnowledgeBaseManager kbManager;
+    @Nullable
     private final DocumentIngester documentIngester;
 
     public KnowledgeBaseController(KnowledgeBaseManager kbManager,
-                                   DocumentIngester documentIngester) {
+                                   @Nullable DocumentIngester documentIngester) {
         this.kbManager = kbManager;
         this.documentIngester = documentIngester;
     }
@@ -109,6 +107,12 @@ public class KnowledgeBaseController {
     @PostMapping("/{id}/documents")
     public ResponseEntity<?> uploadDocument(@PathVariable String id,
                                             @RequestParam("file") MultipartFile file) {
+        var ingester = this.documentIngester;
+        if (ingester == null) {
+            log.error("文档上传失败: DocumentIngester 未初始化，请检查知识库和向量索引配置");
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(
+                    new ErrorResponse(503, "文档导入功能未启用，请检查知识库配置", Instant.now()));
+        }
         // 校验文件扩展名
         String originalName = file.getOriginalFilename();
         if (originalName == null || !hasAllowedExtension(originalName)) {
@@ -121,10 +125,10 @@ public class KnowledgeBaseController {
             // 保存到临时文件
             String suffix = originalName.substring(originalName.lastIndexOf('.'));
             Path tempFile = Files.createTempFile("lifepilot-upload-", suffix);
-            file.transferTo(tempFile.toFile().getAbsoluteFile());
+            file.transferTo(java.util.Objects.requireNonNull(tempFile.toFile()));
 
             // 异步处理文档
-            documentIngester.ingest(id, tempFile);
+            ingester.ingest(id, tempFile);
             log.info("文档上传已提交异步处理: kbId={}, fileName={}", id, originalName);
 
             return ResponseEntity.accepted().body(

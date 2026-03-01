@@ -23,24 +23,27 @@
         </rollingPolicy>
     </appender>
 
-    <!-- 控制台 Appender：仅用于测试 profile -->
-    <springProfile name="test">
-        <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
-            <encoder>
-                <charset>UTF-8</charset>
-                <pattern>%d{HH:mm:ss.SSS} %5level [%thread] %logger{36} - %msg%n</pattern>
-            </encoder>
-        </appender>
-        <root level="INFO">
-            <appender-ref ref="CONSOLE" />
-        </root>
-    </springProfile>
+    <!-- 控制台 Appender：调试模式输出到控制台 -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <charset>UTF-8</charset>
+            <pattern>%d{HH:mm:ss.SSS} %5level [%thread] %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
 
-    <!-- 默认 profile（CLI 模式）：只输出到文件 -->
+    <!-- 默认 profile：同时输出到控制台和文件，方便调试 -->
     <springProfile name="!test">
         <logger name="com.lifepilot" level="DEBUG" />
         <root level="INFO">
+            <appender-ref ref="CONSOLE" />
             <appender-ref ref="FILE" />
+        </root>
+    </springProfile>
+
+    <!-- 测试 profile：只输出到控制台 -->
+    <springProfile name="test">
+        <root level="INFO">
+            <appender-ref ref="CONSOLE" />
         </root>
     </springProfile>
 

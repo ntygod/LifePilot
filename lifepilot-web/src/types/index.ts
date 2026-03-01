@@ -15,6 +15,12 @@ export interface Message {
   content: string
   a2uiComponents?: A2uiComponent[]
   timestamp: number
+  /** 前端侧的发送 / 处理状态标记，用于展示“发送中 / 失败 / 可重试” */
+  status?: 'pending' | 'success' | 'error'
+  /** 与本条消息相关的错误说明（仅在 status === 'error' 时展示） */
+  errorMessage?: string
+  /** 后端执行轨迹 ID（如存在），用于跳转到 Trace 详情 */
+  traceId?: string
 }
 
 /** A2UI 组件节点（邻接表） */
@@ -45,40 +51,6 @@ export interface UserSettings {
   theme: 'light' | 'dark' | 'system'
   language: string
   llmProvider: string
-  enableStreaming?: boolean
-  enableFunctionCall?: boolean
-  enableKnowledgeBase?: boolean
-  enableToolCall?: boolean
-}
-
-/** Provider 能力类型 */
-export type ProviderCapability = 
-  | 'CHAT'
-  | 'EMBEDDING'
-  | 'STRUCTURED_OUTPUT'
-  | 'FUNCTION_CALLING'
-  | 'STREAMING'
-  | 'VISION'
-  | 'TTS'
-  | 'STT'
-
-/** LLM Provider 详细信息 */
-export interface LlmProviderDetail {
-  id: string
-  type: string
-  modelName: string
-  displayName: string
-  capabilities: ProviderCapability[]
-  priority: number
-  costPerInputToken: number
-  costPerOutputToken: number
-  scenes: string[]
-  maxContextWindow: number
-  supportsStreaming: boolean
-  enabled: boolean
-  apiUrl?: string
-  timeoutSeconds?: number
-  healthy?: boolean
 }
 
 /** SSE token 事件 */
@@ -91,12 +63,16 @@ export interface SseTokenEvent {
 export interface SseDoneEvent {
   messageId: string
   tokenUsage: TokenUsage
+  /** 可选：本轮执行对应的 Trace Id（如后端有返回） */
+  traceId?: string
 }
 
 /** SSE 错误事件 */
 export interface SseErrorEvent {
   code: number
   message: string
+  /** 可选：错误对应的 Trace Id，便于前端跳转调试 */
+  traceId?: string
 }
 
 /** 非流式聊天响应 */
@@ -105,6 +81,13 @@ export interface ChatResponse {
   content: string
   a2ui?: { components: A2uiComponent[] }
   tokenUsage?: TokenUsage
+  /** 本轮对话中使用到的知识库 / 文档来源等（由后端返回，前端只做轻量展示） */
+  sources?: Array<{
+    type: 'knowledgeBase' | 'document' | 'tool' | 'workflow'
+    id: string
+    name: string
+    extra?: Record<string, unknown>
+  }>
 }
 
 /** 统一错误响应 */
@@ -166,21 +149,6 @@ export interface SkillDetail extends SkillSummary {
   preferredProviderId?: string
 }
 
-/** MCP Server 配置 */
-export interface McpServerConfig {
-  transport: 'STDIO' | 'STREAMABLE_HTTP' | 'SSE_LEGACY'
-  command?: string
-  args?: string[]
-  url?: string
-  env?: Record<string, string>
-  timeout?: number
-  autoConnect?: boolean
-  reconnect?: boolean
-  reconnectDelay?: number
-  maxReconnectAttempts?: number
-  healthCheckInterval?: number
-}
-
 /** MCP Server */
 export interface McpServer {
   name: string
@@ -188,7 +156,6 @@ export interface McpServer {
   toolCount: number
   connectedSince?: string
   lastError?: string
-  config?: McpServerConfig
 }
 
 /** MCP 工具 */
@@ -261,7 +228,6 @@ export interface WorkflowDetail extends WorkflowItem {
   inputs: Record<string, unknown>
   steps: unknown[]
   metadata: Record<string, string>
-  yaml?: string
 }
 
 /** 工作流执行记录 */
@@ -274,50 +240,4 @@ export interface WorkflowExecution {
   completedAt?: string
   failureReason?: string
   createdAt: string
-}
-
-/** Tool 摘要 */
-export interface ToolSummary {
-  id: string
-  name: string
-  description?: string
-  source: string
-  status: 'ENABLED' | 'DISABLED'
-  riskLevel?: string
-  tags?: string[]
-}
-
-/** Tool 详情 */
-export interface ToolDetail extends ToolSummary {
-  inputSchema?: Record<string, any>
-  outputSchema?: Record<string, any>
-  budget?: {
-    timeoutSeconds?: number
-    maxRetries?: number
-    maxCostCents?: number
-  }
-  idempotent?: boolean
-  createdAt?: string
-  updatedAt?: string
-}
-
-/** Tool 测试请求 */
-export interface ToolTestRequest {
-  toolId: string
-  input?: Record<string, any>
-  arguments?: Record<string, any>
-}
-
-/** Tool 测试响应 */
-export interface ToolTestResponse {
-  success: boolean
-  output?: any
-  error?: string
-  durationMs?: number
-  meta?: {
-    durationMs?: number
-    toolId?: string
-    action?: string
-    [key: string]: any
-  }
 }
