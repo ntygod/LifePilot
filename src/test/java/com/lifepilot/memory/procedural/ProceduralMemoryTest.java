@@ -55,6 +55,21 @@ class ProceduralMemoryTest {
                     updated_at          TEXT NOT NULL DEFAULT (datetime('now'))
                 )""");
 
+        // 创建 preference_rules 表（与 V20 迁移脚本一致）
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS preference_rules (
+                    rule_id             TEXT PRIMARY KEY,
+                    category            TEXT NOT NULL,
+                    key                 TEXT NOT NULL,
+                    value               TEXT NOT NULL,
+                    confidence          REAL NOT NULL DEFAULT 0.3,
+                    learned_from_json   TEXT NOT NULL DEFAULT '[]',
+                    observation_count   INTEGER NOT NULL DEFAULT 1,
+                    created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+                    updated_at          TEXT NOT NULL DEFAULT (datetime('now')),
+                    UNIQUE(category, key)
+                )""");
+
         // Mock VectorSearcher — 避免依赖 LLM 和 sqlite-vec
         vectorSearcher = mock(VectorSearcher.class);
 
@@ -235,6 +250,122 @@ class ProceduralMemoryTest {
         assertThat(found.get().successRate()).isCloseTo(1.0f, org.assertj.core.data.Offset.offset(0.001f));
         assertThat(found.get().useCount()).isEqualTo(1);
         assertThat(found.get().lastUsedAt()).isNotNull();
+    }
+
+    // --- 偏好规则 CRUD 测试 ---
+
+    @Test
+    void savePreference_findPreference_往返一致() {
+        var now = Instant.now();
+        var rule = new PreferenceRule(
+                "pref-1", "output", "language", "中文",
+                0.8f, "conversation-123", 3, now, now);
+
+        proceduralMemory.savePreference(rule);
+
+        var found = proceduralMemory.findPreference("output", "language");
+        assertThat(found).isPresent();
+        var loaded = found.get();
+        assertThat(loaded.ruleId()).isEqualTo("pref-1");
+        assertThat(loaded.category()).isEqualTo("output");
+        assertThat(loaded.key()).isEqualTo("language");
+        assertThat(loaded.value()).isEqualTo("中文");
+        assertThat(loaded.confidence()).isEqualTo(0.8f);
+        assertThat(loaded.learnedFrom()).isEqualTo("conversation-123");
+        assertThat(loaded.observationCount()).isEqualTo(3);
+    }
+
+    @Test
+    void savePreference_相同categoryKey_覆盖旧记录() {
+        var now = Instant.now();
+        var rule1 = new PreferenceRule(
+                "pref-old", "output", "format", "markdown",
+                0.5f, "conv-1", 1, now, now);
+        var rule2 = new PreferenceRule(
+                "pref-new", "output", "format", "plain-text",
+                0.9f, "conv-2", 5, now, now);
+
+        proceduralMemory.savePreference(rule1);
+        proceduralMemory.savePreference(rule2);
+
+        var found = proceduralMemory.findPreference("output", "format");
+        assertThat(found).isPresent();
+        assertThat(found.get().ruleId()).isEqualTo("pref-new");
+        assertThat(found.get().value()).isEqualTo("plain-text");
+
+        // 确认只有一条记录
+        var all = proceduralMemory.getPreferences("output");
+        assertThat(all).hasSize(1);
+    }
+
+    @Test
+    void findPreference_不存在_返回空() {
+        var found = proceduralMemory.findPreference("nonexistent", "key");
+        assertThat(found).isEmpty();
+    }
+
+    @Test
+    void getPreferences_按类别返回多条() {
+        var now = Instant.now();
+        proceduralMemory.savePreference(new PreferenceRule(
+                "pref-a", "schedule", "reminder", "提前15分钟",
+                0.6f, "conv-1", 2, now, now));
+        proceduralMemory.savePreference(new PreferenceRule(
+                "pref-b", "schedule", "default-duration", "30分钟",
+                0.7f, "conv-2", 3, now, now));
+        proceduralMemory.savePreference(new PreferenceRule(
+                "pref-c", "output", "tone", "友好",
+                0.5f, "conv-3", 1, now, now));
+
+        var schedulePrefs = proceduralMemory.getPreferences("schedule");
+        assertThat(schedulePrefs).hasSize(2);
+        assertThat(schedulePrefs).extracting(PreferenceRule::category)
+                .containsOnly("schedule");
+    }
+
+    @Test
+    void getPreferences_空类别_返回空列表() {
+        var result = proceduralMemory.getPreferences("empty-category");
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void reinforcePreference_递增observationCount并提升confidence() {
+        var now = Instant.now();
+        var rule = new PreferenceRule(
+                "pref-reinforce", "habit", "wake-time", "7:00",
+                0.3f, "conv-1", 1, now, now);
+        proceduralMemory.savePreference(rule);
+
+        proceduralMemory.reinforcePreference("pref-reinforce");
+
+        var found = proceduralMemory.findPreference("habit", "wake-time");
+        assertThat(found).isPresent();
+        assertThat(found.get().observationCount()).isEqualTo(2);
+        assertThat(found.get().confidence()).isCloseTo(0.35f,
+                org.assertj.core.data.Offset.offset(0.001f));
+    }
+
+    @Test
+    void reinforcePreference_confidence上限为1() {
+        var now = Instant.now();
+        var rule = new PreferenceRule(
+                "pref-cap", "habit", "exercise", "跑步",
+                0.98f, "conv-1", 10, now, now);
+        proceduralMemory.savePreference(rule);
+
+        proceduralMemory.reinforcePreference("pref-cap");
+
+        var found = proceduralMemory.findPreference("habit", "exercise");
+        assertThat(found).isPresent();
+        assertThat(found.get().confidence()).isLessThanOrEqualTo(1.0f);
+        assertThat(found.get().observationCount()).isEqualTo(11);
+    }
+
+    @Test
+    void reinforcePreference_规则不存在_不抛异常() {
+        // 不应抛异常，仅记录 WARN 日志
+        proceduralMemory.reinforcePreference("non-existent-id");
     }
 
     // --- 辅助方法 ---

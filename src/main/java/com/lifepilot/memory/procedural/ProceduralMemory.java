@@ -183,6 +183,84 @@ public class ProceduralMemory {
                 templateId, success, newRate, oldCount + 1);
     }
 
+    // ========== 偏好规则 ==========
+
+    /**
+     * 保存偏好规则 — 使用 INSERT OR REPLACE 保证 (category, key) 唯一性。
+     *
+     * @param rule 偏好规则
+     */
+    public void savePreference(PreferenceRule rule) {
+        jdbcTemplate.update(
+                """
+                INSERT OR REPLACE INTO preference_rules(
+                    rule_id, category, key, value, confidence,
+                    learned_from_json, observation_count, created_at, updated_at
+                ) VALUES(?,?,?,?,?,?,?,?,?)
+                """,
+                rule.ruleId(), rule.category(), rule.key(), rule.value(),
+                rule.confidence(), rule.learnedFrom(), rule.observationCount(),
+                rule.createdAt().toString(), rule.updatedAt().toString());
+
+        log.info("程序记忆: 保存偏好规则, ruleId={}, category={}, key={}",
+                rule.ruleId(), rule.category(), rule.key());
+    }
+
+    /**
+     * 按 category 和 key 查询偏好规则。
+     *
+     * @param category 类别
+     * @param key      键
+     * @return 偏好规则（如存在）
+     */
+    public Optional<PreferenceRule> findPreference(String category, String key) {
+        var results = jdbcTemplate.query(
+                "SELECT * FROM preference_rules WHERE category = ? AND key = ?",
+                (rs, rowNum) -> mapRowToPreference(rs),
+                category, key);
+        return results.isEmpty() ? Optional.empty() : Optional.of(results.getFirst());
+    }
+
+    /**
+     * 获取指定类别下的所有偏好规则。
+     *
+     * @param category 类别
+     * @return 偏好规则列表
+     */
+    public List<PreferenceRule> getPreferences(String category) {
+        var results = jdbcTemplate.query(
+                "SELECT * FROM preference_rules WHERE category = ?",
+                (rs, rowNum) -> mapRowToPreference(rs),
+                category);
+        return List.copyOf(results);
+    }
+
+    /**
+     * 强化偏好规则 — 递增 observationCount 并提升 confidence。
+     *
+     * <p>confidence 提升步长为 0.05，上限为 1.0。若 ruleId 不存在，记录 WARN 日志。</p>
+     *
+     * @param ruleId 偏好规则 ID
+     */
+    public void reinforcePreference(String ruleId) {
+        String now = Instant.now().toString();
+        int updated = jdbcTemplate.update(
+                """
+                UPDATE preference_rules
+                SET observation_count = observation_count + 1,
+                    confidence = MIN(1.0, confidence + 0.05),
+                    updated_at = ?
+                WHERE rule_id = ?
+                """,
+                now, ruleId);
+
+        if (updated == 0) {
+            log.warn("程序记忆: 强化偏好规则失败, 规则不存在, ruleId={}", ruleId);
+        } else {
+            log.debug("程序记忆: 强化偏好规则, ruleId={}", ruleId);
+        }
+    }
+
     // ========== 内部方法 ==========
 
     /**
@@ -221,6 +299,23 @@ public class ProceduralMemory {
             log.warn("程序记忆: triggerIntent 向量索引更新失败, templateId={}, error={}",
                     templateId, e.getMessage());
         }
+    }
+
+    /**
+     * ResultSet 行映射为 PreferenceRule。
+     */
+    private PreferenceRule mapRowToPreference(ResultSet rs) throws SQLException {
+        return new PreferenceRule(
+                rs.getString("rule_id"),
+                rs.getString("category"),
+                rs.getString("key"),
+                rs.getString("value"),
+                rs.getFloat("confidence"),
+                rs.getString("learned_from_json"),
+                rs.getInt("observation_count"),
+                Instant.parse(rs.getString("created_at")),
+                Instant.parse(rs.getString("updated_at"))
+        );
     }
 
     /**
