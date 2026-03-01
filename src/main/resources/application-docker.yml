@@ -1,0 +1,21 @@
+spring:
+  datasource:
+    url: "jdbc:sqlite:/data/lifepilot.db"
+
+lifepilot:
+  memory:
+    vector-db-url: "jdbc:sqlite:/data/vectors.db"
+  knowledge:
+    data-dir: "/data/knowledge"
+  skills:
+    directory: "/data/skills"
+  agent:
+    multi-agent:
+      agent-definitions-path: "/data/agents/"
+  workflow:
+    definitions-dir: "/data/workflows"
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+
