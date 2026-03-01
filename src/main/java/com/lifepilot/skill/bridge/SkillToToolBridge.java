@@ -113,28 +113,33 @@ public class SkillToToolBridge {
     /**
      * 监听 SkillUnregistered 事件，注销对应工具。
      *
-     * <p>由于 {@link DynamicToolRegistry} 未提供 unregisterBuiltinTool 方法，
-     * 当前仅记录 WARN 日志，工具将在注册中心中保留为孤立条目。</p>
+     * <p>工具 ID 格式：skill.{skillId}。桥接会调用
+     * {@link DynamicToolRegistry#unregisterBuiltinTool(String)} 将对应 BuiltinTool 从注册中心移除。</p>
      *
      * @param event Skill 注销事件
      */
     @EventListener
     public void onSkillUnregistered(SkillRegistryEvent.SkillUnregistered event) {
         String toolId = TOOL_ID_PREFIX + event.skillId();
-        log.warn("Skill 工具注销请求: toolId={}，DynamicToolRegistry 不支持单个 BuiltinTool 注销，工具将保留为孤立条目",
-                toolId);
+        boolean removed = toolRegistry.unregisterBuiltinTool(toolId);
+        if (removed) {
+            log.info("Skill 工具桥接注销成功: skillId={}, toolId={}", event.skillId(), toolId);
+        } else {
+            // 可能已被覆盖/提前移除/从未注册（例如注册失败或桥接被禁用）
+            log.debug("Skill 工具桥接注销跳过: skillId={}, toolId={}, reason=not-found", event.skillId(), toolId);
+        }
     }
 
     /**
      * 监听 SkillUpdated 事件，先注销旧工具再注册新工具。
      *
-     * <p>由于无法真正注销旧工具，实际行为是用新定义重新注册（覆盖）。</p>
+     * <p>实际行为：卸载旧 toolId（skill.{oldId}）后注册新 toolId（skill.{newId}）。</p>
      *
      * @param event Skill 更新事件
      */
     @EventListener
     public void onSkillUpdated(SkillRegistryEvent.SkillUpdated event) {
-        // 先尝试注销旧工具（实际只记录日志）
+        // 先注销旧工具
         onSkillUnregistered(new SkillRegistryEvent.SkillUnregistered(event.oldDefinition().id()));
         // 注册新工具（覆盖旧工具）
         onSkillRegistered(new SkillRegistryEvent.SkillRegistered(event.newDefinition()));

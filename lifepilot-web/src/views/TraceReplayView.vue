@@ -1,11 +1,19 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
+import { useRoute } from 'vue-router'
 import { useTraceStore } from '@/stores/trace'
 
 const store = useTraceStore()
 const expandedSteps = ref<Set<string>>(new Set())
+const route = useRoute()
 
-onMounted(() => store.fetchList())
+onMounted(async () => {
+  await store.fetchList()
+  const initialId = route.query.id as string | undefined
+  if (initialId) {
+    await selectTrace(initialId)
+  }
+})
 
 const totalPages = computed(() => Math.ceil(store.total / store.pageSize))
 

@@ -7,23 +7,63 @@ const props = defineProps<{
   messages: Message[]
   isStreaming?: boolean
   streamingContent?: string
+  /** 文本搜索关键字（可选），用于高亮匹配内容 */
+  query?: string
+}>()
+
+const emit = defineEmits<{
+  (e: 'retry', message: Message): void
 }>()
 
 // 按 timestamp 升序排列
 const sortedMessages = computed(() =>
   [...props.messages].sort((a, b) => a.timestamp - b.timestamp)
 )
+
+// 简单的日期标签：今天 / 昨天 / 更早
+function getDateLabel(timestamp: number): string {
+  const date = new Date(timestamp)
+  const today = new Date()
+  const diffMs = today.setHours(0, 0, 0, 0) - new Date(date.setHours(0, 0, 0, 0)).getTime()
+  const diffDays = Math.round(diffMs / (24 * 60 * 60 * 1000))
+
+  if (diffDays === 0) return '今天'
+  if (diffDays === 1) return '昨天'
+  return date.toLocaleDateString()
+}
+
+function highlight(text: string): string {
+  if (!props.query) return text
+  const escaped = props.query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const reg = new RegExp(escaped, 'gi')
+  return text.replace(reg, match => `<mark class="bg-yellow-200/70 dark:bg-yellow-500/40">${match}</mark>`)
+}
 </script>
 
 <template>
   <div class="flex flex-col">
-    <MessageBubble
-      v-for="(msg, index) in sortedMessages"
-      :key="msg.id"
-      :message="msg"
-      :streaming="isStreaming && index === sortedMessages.length - 1 && msg.role === 'assistant'"
-      :streaming-content="streamingContent"
-    />
+    <template v-for="(msg, index) in sortedMessages" :key="msg.id">
+      <!-- 日期分组标签 -->
+      <div
+        v-if="index === 0 || getDateLabel(msg.timestamp) !== getDateLabel(sortedMessages[index - 1]?.timestamp)"
+        class="my-2 flex items-center justify-center text-[11px] text-muted-foreground"
+      >
+        <span class="px-2 py-0.5 rounded-full bg-muted/70">
+          {{ getDateLabel(msg.timestamp) }}
+        </span>
+      </div>
+
+      <MessageBubble
+        :message="{
+          ...msg,
+          // 将内容高亮后的 HTML 通过额外字段传给气泡组件（后续可扩展）
+          highlightedContent: props.query ? highlight(msg.content) : undefined
+        }"
+        :streaming="isStreaming && index === sortedMessages.length - 1 && msg.role === 'assistant'"
+        :streaming-content="streamingContent"
+        @retry="emit('retry', $event)"
+      />
+    </template>
 
     <!-- 流式进行中但尚未有 assistant 消息时，显示占位 -->
     <MessageBubble

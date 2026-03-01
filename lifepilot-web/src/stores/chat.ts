@@ -18,6 +18,10 @@ export const useChatStore = defineStore('chat', () => {
   /** 加载会话列表 */
   async function loadSessions() {
     sessions.value = await chatApi.listSessions()
+    // 如果当前没有激活会话，但后端已有列表，则默认选中最近一个
+    if (!activeSessionId.value && sessions.value.length > 0) {
+      activeSessionId.value = sessions.value[0]?.id ?? null
+    }
   }
 
   /** 加载指定会话的历史消息 */
@@ -30,13 +34,32 @@ export const useChatStore = defineStore('chat', () => {
     messages.value.push(message)
   }
 
+  /** 按 ID 局部更新单条消息（用于状态 / 错误标记等） */
+  function updateMessage(id: string, patch: Partial<Message>) {
+    const index = messages.value.findIndex(m => m.id === id)
+    if (index === -1) return
+    messages.value[index] = { ...messages.value[index], ...patch }
+  }
+
   /** 删除会话 */
   async function deleteSession(sessionId: string) {
     await chatApi.deleteSession(sessionId)
     sessions.value = sessions.value.filter(s => s.id !== sessionId)
     if (activeSessionId.value === sessionId) {
       activeSessionId.value = sessions.value[0]?.id ?? null
+      // 重置当前消息列表
+      messages.value = []
+      streamingContent.value = ''
     }
+  }
+
+  /** 清空当前会话消息（保留会话本身） */
+  async function clearCurrentSessionMessages() {
+    if (!activeSessionId.value) return
+    // 后端建议暴露专门的清空接口，此处先用占位符，后续可接 `/chat/sessions/{id}/messages` DELETE
+    await chatApi.clearSessionMessages?.(activeSessionId.value)
+    messages.value = []
+    streamingContent.value = ''
   }
 
   /** 重置流式状态 */
@@ -63,7 +86,9 @@ export const useChatStore = defineStore('chat', () => {
     loadSessions,
     loadMessages,
     addMessage,
+    updateMessage,
     deleteSession,
+    clearCurrentSessionMessages,
     resetStreaming
   }
 })

@@ -11,7 +11,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /**
@@ -62,47 +61,6 @@ public class WebExceptionHandler {
     }
 
     /**
-     * 处理找不到处理器异常，返回 404 Not Found。
-     *
-     * <p>当请求的路径没有对应的控制器时，Spring MVC 会抛出此异常。
-     * 这通常发生在控制器未注册或路径不匹配的情况下。</p>
-     *
-     * @param ex 异常
-     * @return 标准化错误响应
-     */
-    @ExceptionHandler(NoHandlerFoundException.class)
-    public ResponseEntity<ErrorResponse> handleNoHandlerFound(NoHandlerFoundException ex) {
-        log.warn("找不到处理器: {} {}", ex.getHttpMethod(), ex.getRequestURL());
-        var error = new ErrorResponse(
-                HttpStatus.NOT_FOUND.value(),
-                "API 端点不存在: " + ex.getRequestURL(),
-                Instant.now()
-        );
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
-    }
-
-    /**
-     * 处理找不到静态资源异常，返回 404 Not Found。
-     *
-     * <p>当请求的路径没有对应的控制器时，Spring MVC 可能会尝试将其作为静态资源处理，
-     * 如果静态资源也不存在，会抛出此异常。这通常发生在控制器未注册的情况下
-     * （例如，由于依赖 Bean 不存在导致控制器未被注册）。</p>
-     *
-     * @param ex 异常
-     * @return 标准化错误响应
-     */
-    @ExceptionHandler(NoResourceFoundException.class)
-    public ResponseEntity<ErrorResponse> handleNoResourceFound(NoResourceFoundException ex) {
-        log.warn("找不到资源: {} {}", ex.getHttpMethod(), ex.getResourcePath());
-        var error = new ErrorResponse(
-                HttpStatus.NOT_FOUND.value(),
-                "API 端点不存在: " + ex.getResourcePath(),
-                Instant.now()
-        );
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
-    }
-
-    /**
      * 处理参数校验异常，返回 400 Bad Request。
      *
      * @param ex 异常
@@ -117,6 +75,22 @@ public class WebExceptionHandler {
                 Instant.now()
         );
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+    }
+
+    /**
+     * 处理找不到资源/路由的情况，返回 404 Not Found。
+     *
+     * <p>Spring Boot 3.x 在静态资源链路下未命中时会抛出 {@link NoResourceFoundException}。</p>
+     */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNoResourceFound(NoResourceFoundException ex) {
+        log.debug("未找到资源: {}", ex.getMessage());
+        var error = new ErrorResponse(
+                HttpStatus.NOT_FOUND.value(),
+                "Not Found",
+                Instant.now()
+        );
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
     }
 
     /**
