@@ -31,8 +31,8 @@
     - 显式声明所有配置项及默认值
     - _Requirements: 11.5_
 
-- [ ] 2. L4 程序记忆数据模型
-  - [ ] 2.1 创建 ProcedureTemplate record
+- [x] 2. L4 程序记忆数据模型
+  - [x] 2.1 创建 ProcedureTemplate record
     - 创建 `com.lifepilot.memory.procedural.ProcedureTemplate`
     - 字段：templateId、name、description、triggerIntent、steps(List<TemplateStep>)、variables(Map<String,String>)、successRate、useCount、lastUsedAt、sourceTraceIds、createdAt、updatedAt
     - 实现 `isReliable(float minReliability, int minUseCount)` 方法
@@ -47,7 +47,7 @@
     - **Property 4: isStale 时间判断正确性**
     - **Validates: Requirements 2.5**
 
-  - [ ] 2.4 创建 TemplateStep record
+  - [x] 2.4 创建 TemplateStep record
     - 创建 `com.lifepilot.memory.procedural.TemplateStep`
     - 字段：stepOrder、toolId、action、parameterTemplate(Map<String,String>)、description、isOptional
     - 实现 `resolveParameters(Map<String,String> variables)` 方法，替换 ${variable} 占位符
@@ -57,27 +57,27 @@
     - **Property 8: TemplateStep 变量替换正确性**
     - **Validates: Requirements 1.2**
 
-  - [ ] 2.6 创建 PreferenceRule record
+  - [x] 2.6 创建 PreferenceRule record
     - 创建 `com.lifepilot.memory.procedural.PreferenceRule`
     - 字段：ruleId、category、key、value、confidence、learnedFrom、observationCount、createdAt、updatedAt
     - 实现 `isHighConfidence()` 方法
     - _Requirements: 1.3_
 
-  - [ ] 2.7 创建 StrategyPattern record
+  - [x] 2.7 创建 StrategyPattern record
     - 创建 `com.lifepilot.memory.procedural.StrategyPattern`
     - 字段：patternId、situation、recommendedAction、successRate、applicationCount、createdAt
     - _Requirements: 1.4_
 
-  - [ ] 2.8 创建 ConsolidationStats record
+  - [x] 2.8 创建 ConsolidationStats record
     - 创建 `com.lifepilot.memory.consolidation.ConsolidationStats`
     - 字段：consolidationType、conversationsAnalyzed、entitiesFound、entitiesBoosted、extractionsTriggered、templatesCreated、templatesUpdated、elapsedMs
     - _Requirements: 5.6, 6.7_
 
-- [ ] 3. Checkpoint — 数据模型验证
+- [x] 3. Checkpoint — 数据模型验证
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 4. ProceduralMemory 服务 CRUD 与成功率追踪
-  - [ ] 4.1 实现 ProceduralMemory 服务 — 模板 CRUD
+- [x] 4. ProceduralMemory 服务 CRUD 与成功率追踪
+  - [x] 4.1 实现 ProceduralMemory 服务 — 模板 CRUD
     - 创建 `com.lifepilot.memory.procedural.ProceduralMemory`
     - 构造函数注入 JdbcTemplate、VectorSearcher、MemoryProperties
     - 实现 save/findById/update/delete 四个模板 CRUD 方法
@@ -90,7 +90,7 @@
     - **Property 1: 模板 CRUD 往返一致性**
     - **Validates: Requirements 2.1**
 
-  - [ ] 4.3 实现 ProceduralMemory 服务 — 成功率追踪
+  - [x] 4.3 实现 ProceduralMemory 服务 — 成功率追踪
     - 实现 `recordExecution(String templateId, boolean success)` 方法
     - 加权平均公式：newRate = (oldRate × oldCount + (success ? 1.0 : 0.0)) / (oldCount + 1)
     - 同时递增 useCount，更新 lastUsedAt
@@ -100,7 +100,7 @@
     - **Property 2: 成功率加权平均公式正确性**
     - **Validates: Requirements 2.2, 2.3**
 
-  - [ ] 4.5 实现 ProceduralMemory 服务 — 偏好规则 CRUD
+  - [x] 4.5 实现 ProceduralMemory 服务 — 偏好规则 CRUD
     - 实现 savePreference/findPreference/getPreferences/reinforcePreference 方法
     - savePreference 使用 INSERT OR REPLACE 保证 (category, key) 唯一性
     - reinforcePreference 递增 observationCount 并提升 confidence
@@ -111,7 +111,7 @@
     - **Property 6: 偏好规则强化单调递增**
     - **Validates: Requirements 2.6, 2.7**
 
-  - [ ] 4.7 实现 ProceduralMemory 服务 — 策略模式 CRUD
+  - [x] 4.7 实现 ProceduralMemory 服务 — 策略模式 CRUD
     - 实现 saveStrategy/findStrategiesBySituation 方法
     - findStrategiesBySituation 通过 strategy_situation_vec 向量相似度检索
     - _Requirements: 2.8_
@@ -122,8 +122,8 @@
     - 测试策略模式向量检索
     - _Requirements: 2.1, 2.6, 2.8_
 
-- [ ] 5. IntentMatcher 意图匹配器
-  - [ ] 5.1 实现 IntentMatcher 双路匹配
+- [x] 5. IntentMatcher 意图匹配器
+  - [x] 5.1 实现 IntentMatcher 双路匹配
     - 创建 `com.lifepilot.memory.procedural.IntentMatcher`
     - 构造函数注入 ProceduralMemory、VectorSearcher、FtsSearcher、LlmRouter、MemoryProperties
     - 创建 `TemplateMatch` 内部 record（template, score）
@@ -145,11 +145,11 @@
     - 测试融合评分低于阈值时返回空
     - _Requirements: 3.2, 3.3_
 
-- [ ] 6. Checkpoint — L4 程序记忆核心完成
+- [x] 6. Checkpoint — L4 程序记忆核心完成
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 7. EpisodicToSemanticConsolidator 情景→语义巩固器
-  - [ ] 7.1 实现 EpisodicToSemanticConsolidator
+- [x] 7. EpisodicToSemanticConsolidator 情景→语义巩固器
+  - [x] 7.1 实现 EpisodicToSemanticConsolidator
     - 创建 `com.lifepilot.memory.consolidation.EpisodicToSemanticConsolidator`
     - 构造函数注入 EpisodicMemory、SemanticMemory、@Nullable KnowledgeExtractionPipeline、JdbcTemplate、MemoryProperties
     - 实现 `consolidate()` 方法：
@@ -175,8 +175,8 @@
     - 测试 importanceScore 上限 1.0 不被突破
     - _Requirements: 5.5, 12.1_
 
-- [ ] 8. EpisodicToProceduralConsolidator 情景→程序巩固器
-  - [ ] 8.1 实现 EpisodicToProceduralConsolidator
+- [x] 8. EpisodicToProceduralConsolidator 情景→程序巩固器
+  - [x] 8.1 实现 EpisodicToProceduralConsolidator
     - 创建 `com.lifepilot.memory.consolidation.EpisodicToProceduralConsolidator`
     - 构造函数注入 JdbcTemplate、ProceduralMemory、LlmRouter、MemoryProperties
     - 实现 `consolidate()` 方法：
@@ -202,8 +202,8 @@
     - **Property 23: 程序巩固幂等性**
     - **Validates: Requirements 14.2**
 
-- [ ] 9. ConsolidationPipeline 编排与调度
-  - [ ] 9.1 实现 ConsolidationPipeline
+- [x] 9. ConsolidationPipeline 编排与调度
+  - [x] 9.1 实现 ConsolidationPipeline
     - 创建 `com.lifepilot.memory.consolidation.ConsolidationPipeline`
     - 构造函数注入 EpisodicToSemanticConsolidator、EpisodicToProceduralConsolidator、MemoryProperties
     - 实现 `@Scheduled(cron = "${lifepilot.memory.consolidation.cron}")` 定时入口
@@ -223,11 +223,11 @@
     - 测试 Cron 配置外部化
     - _Requirements: 7.2, 7.3, 7.6_
 
-- [ ] 10. Checkpoint — 巩固管线完成
+- [x] 10. Checkpoint — 巩固管线完成
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 11. ForgettingPolicy sealed interface 与策略实现
-  - [ ] 11.1 创建 ForgettingPolicy sealed interface 与 ForgettingPriority 计算器
+- [x] 11. ForgettingPolicy sealed interface 与策略实现
+  - [x] 11.1 创建 ForgettingPolicy sealed interface 与 ForgettingPriority 计算器
     - 创建 `com.lifepilot.memory.forgetting.ForgettingPolicy` sealed interface
     - permits: FifoPolicy, LruPolicy, PriorityDecayPolicy, ReflectionSummaryPolicy, RandomDropPolicy, HybridPolicy
     - 定义 `selectForForgetting(List<TemporalEntity> candidates, int budget)` 和 `name()` 方法
@@ -243,12 +243,12 @@
     - **Property 15: PII 实体遗忘优先级更高**
     - **Validates: Requirements 9.6**
 
-  - [ ] 11.4 实现 FifoPolicy 和 LruPolicy
+  - [x] 11.4 实现 FifoPolicy 和 LruPolicy
     - FifoPolicy：淘汰超过 maxRetentionDays 的实体
     - LruPolicy：淘汰超过 lruThresholdDays 未访问且 accessCount = 0 的实体
     - _Requirements: 8.2_
 
-  - [ ] 11.5 实现 PriorityDecayPolicy
+  - [x] 11.5 实现 PriorityDecayPolicy
     - 指数衰减公式：effectivePriority = importanceScore × exp(-λ × daysSinceLastAccess)
     - 淘汰衰减后优先级低于 priorityDecayThreshold 的实体
     - _Requirements: 8.3_
@@ -257,7 +257,7 @@
     - **Property 17: Priority Decay 指数衰减公式正确性**
     - **Validates: Requirements 8.3**
 
-  - [ ] 11.7 实现 ReflectionSummaryPolicy
+  - [x] 11.7 实现 ReflectionSummaryPolicy
     - 仅选择 importanceScore 在 [reflectionSummaryMinImportance, reflectionSummaryMaxImportance) 范围内的实体
     - 使用 LLM 生成摘要压缩（LLM 不可用时跳过）
     - _Requirements: 8.4_
@@ -266,7 +266,7 @@
     - **Property 18: ReflectionSummary 仅选择指定重要度范围的实体**
     - **Validates: Requirements 8.4**
 
-  - [ ] 11.9 实现 RandomDropPolicy 和 HybridPolicy
+  - [x] 11.9 实现 RandomDropPolicy 和 HybridPolicy
     - RandomDropPolicy：随机选择候选实体
     - HybridPolicy：四阶段顺序执行 FIFO → LRU → PriorityDecay → ReflectionSummary
     - 每阶段独立预算限制（总预算 / 4）
@@ -280,8 +280,8 @@
     - **Property 14: 遗忘数量不超过预算**
     - **Validates: Requirements 9.5, 13.3**
 
-- [ ] 12. ForgettingEngine 遗忘引擎
-  - [ ] 12.1 实现 ForgettingEngine
+- [x] 12. ForgettingEngine 遗忘引擎
+  - [x] 12.1 实现 ForgettingEngine
     - 创建 `com.lifepilot.memory.forgetting.ForgettingEngine`
     - 构造函数注入 SemanticMemory、@Nullable LlmRouter、JdbcTemplate、MemoryProperties
     - 实现 `@Scheduled(cron = "${lifepilot.memory.forgetting.cron}")` 定时入口
@@ -318,17 +318,17 @@
     - 测试最大遗忘数量限制
     - _Requirements: 9.2, 9.5, 9.6, 9.9_
 
-- [ ] 13. Checkpoint — 遗忘引擎完成
+- [x] 13. Checkpoint — 遗忘引擎完成
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 14. HybridRetriever L4 扩展与 AutoConfiguration 注册
-  - [ ] 14.1 扩展 HybridRetriever 新增 L4 检索路径
+- [x] 14. HybridRetriever L4 扩展与 AutoConfiguration 注册
+  - [x] 14.1 扩展 HybridRetriever 新增 L4 检索路径
     - 修改 `HybridRetriever` 构造函数，新增 `@Nullable IntentMatcher` 参数
     - 在 retrieve() 方法中并行执行 L4 IntentMatcher.match()
     - L4 匹配结果作为独立的 ReasoningSlot 注入，不参与 RRF 融合
     - _Requirements: 4.1, 4.2, 4.3_
 
-  - [ ] 14.2 扩展 MemoryAutoConfiguration 注册新 Bean
+  - [x] 14.2 扩展 MemoryAutoConfiguration 注册新 Bean
     - 注册 ProceduralMemory Bean（@ConditionalOnBean(VectorSearcher.class)）
     - 注册 IntentMatcher Bean（@ConditionalOnBean 多依赖）
     - 注册 EpisodicToSemanticConsolidator Bean
@@ -344,7 +344,7 @@
     - 验证 HybridRetriever 扩展后 L4 检索路径正常工作
     - _Requirements: 4.1, 4.2, 4.3_
 
-- [ ] 15. Final checkpoint — 全部完成
+- [x] 15. Final checkpoint — 全部完成
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes
