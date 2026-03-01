@@ -76,8 +76,26 @@ public class MemoryProperties {
     /** Token 预算分配配置。 */
     private TokenBudget tokenBudget = new TokenBudget();
 
+    /** L4 程序记忆配置。 */
+    private Procedural procedural = new Procedural();
+
+    /** 巩固管线配置。 */
+    private Consolidation consolidation = new Consolidation();
+
+    /** 遗忘引擎配置。 */
+    private Forgetting forgetting = new Forgetting();
+
     public TokenBudget getTokenBudget() { return tokenBudget; }
     public void setTokenBudget(TokenBudget tokenBudget) { this.tokenBudget = tokenBudget; }
+
+    public Procedural getProcedural() { return procedural; }
+    public void setProcedural(Procedural procedural) { this.procedural = procedural; }
+
+    public Consolidation getConsolidation() { return consolidation; }
+    public void setConsolidation(Consolidation consolidation) { this.consolidation = consolidation; }
+
+    public Forgetting getForgetting() { return forgetting; }
+    public void setForgetting(Forgetting forgetting) { this.forgetting = forgetting; }
 
     /**
      * Token 预算分配配置 — 控制上下文窗口四区域的预算比例和场景切换阈值。
@@ -146,5 +164,182 @@ public class MemoryProperties {
 
         public int getLongConversationTurnsThreshold() { return longConversationTurnsThreshold; }
         public void setLongConversationTurnsThreshold(int longConversationTurnsThreshold) { this.longConversationTurnsThreshold = longConversationTurnsThreshold; }
+    }
+
+    /**
+     * L4 程序记忆配置 — 控制操作模板的可靠性判断、过时淘汰和意图匹配阈值。
+     *
+     * @author zsg
+     * @since 2026-02-28
+     */
+    public static class Procedural {
+
+        /** 最大模板数量，默认 200。 */
+        private int maxTemplates = 200;
+
+        /** 最低可靠性阈值 [0.0, 1.0]，默认 0.7。 */
+        private float minReliability = 0.7f;
+
+        /** 最低使用次数，默认 2。 */
+        private int minUseCount = 2;
+
+        /** 过时天数阈值，默认 90。 */
+        private int staleDays = 90;
+
+        /** 意图匹配融合评分阈值 [0.0, 1.0]，默认 0.6。 */
+        private float matchThreshold = 0.6f;
+
+        /** 新模板默认重要度 [0.0, 1.0]，默认 0.5。 */
+        private float defaultImportance = 0.5f;
+
+        public int getMaxTemplates() { return maxTemplates; }
+        public void setMaxTemplates(int maxTemplates) { this.maxTemplates = maxTemplates; }
+
+        public float getMinReliability() { return minReliability; }
+        public void setMinReliability(float minReliability) { this.minReliability = minReliability; }
+
+        public int getMinUseCount() { return minUseCount; }
+        public void setMinUseCount(int minUseCount) { this.minUseCount = minUseCount; }
+
+        public int getStaleDays() { return staleDays; }
+        public void setStaleDays(int staleDays) { this.staleDays = staleDays; }
+
+        public float getMatchThreshold() { return matchThreshold; }
+        public void setMatchThreshold(float matchThreshold) { this.matchThreshold = matchThreshold; }
+
+        public float getDefaultImportance() { return defaultImportance; }
+        public void setDefaultImportance(float defaultImportance) { this.defaultImportance = defaultImportance; }
+    }
+
+    /**
+     * 巩固管线配置 — 控制定时调度、增量窗口、频率阈值、聚类参数和模板提炼限制。
+     *
+     * @author zsg
+     * @since 2026-02-28
+     */
+    public static class Consolidation {
+
+        /** 巩固定时 Cron 表达式，默认每日凌晨 3:00。 */
+        private String cron = "0 0 3 * * *";
+
+        /** 触发模式：CRON / IDLE / HYBRID，默认 CRON。 */
+        private String triggerMode = "CRON";
+
+        /** 回溯天数，默认 7。 */
+        private int lookbackDays = 7;
+
+        /** 高频提及阈值，默认 3。 */
+        private int highFrequencyThreshold = 3;
+
+        /** importanceScore 单次提升步长，默认 0.1。 */
+        private float importanceBoostStep = 0.1f;
+
+        /** importanceScore 单次巩固最大提升量，默认 0.3。 */
+        private float importanceBoostMax = 0.3f;
+
+        /** 聚类余弦相似度阈值，默认 0.85。 */
+        private float clusterSimilarityThreshold = 0.85f;
+
+        /** 最小聚类大小，默认 2。 */
+        private int minClusterSize = 2;
+
+        /** 每次巩固最大新模板数，默认 10。 */
+        private int maxTemplatesPerRun = 10;
+
+        /** 最小执行步数过滤阈值，默认 2。 */
+        private int minExecutionSteps = 2;
+
+        public String getCron() { return cron; }
+        public void setCron(String cron) { this.cron = cron; }
+
+        public String getTriggerMode() { return triggerMode; }
+        public void setTriggerMode(String triggerMode) { this.triggerMode = triggerMode; }
+
+        public int getLookbackDays() { return lookbackDays; }
+        public void setLookbackDays(int lookbackDays) { this.lookbackDays = lookbackDays; }
+
+        public int getHighFrequencyThreshold() { return highFrequencyThreshold; }
+        public void setHighFrequencyThreshold(int highFrequencyThreshold) { this.highFrequencyThreshold = highFrequencyThreshold; }
+
+        public float getImportanceBoostStep() { return importanceBoostStep; }
+        public void setImportanceBoostStep(float importanceBoostStep) { this.importanceBoostStep = importanceBoostStep; }
+
+        public float getImportanceBoostMax() { return importanceBoostMax; }
+        public void setImportanceBoostMax(float importanceBoostMax) { this.importanceBoostMax = importanceBoostMax; }
+
+        public float getClusterSimilarityThreshold() { return clusterSimilarityThreshold; }
+        public void setClusterSimilarityThreshold(float clusterSimilarityThreshold) { this.clusterSimilarityThreshold = clusterSimilarityThreshold; }
+
+        public int getMinClusterSize() { return minClusterSize; }
+        public void setMinClusterSize(int minClusterSize) { this.minClusterSize = minClusterSize; }
+
+        public int getMaxTemplatesPerRun() { return maxTemplatesPerRun; }
+        public void setMaxTemplatesPerRun(int maxTemplatesPerRun) { this.maxTemplatesPerRun = maxTemplatesPerRun; }
+
+        public int getMinExecutionSteps() { return minExecutionSteps; }
+        public void setMinExecutionSteps(int minExecutionSteps) { this.minExecutionSteps = minExecutionSteps; }
+    }
+
+    /**
+     * 遗忘引擎配置 — 控制 MaRS Hybrid 四阶段遗忘的调度、策略参数和安全限制。
+     *
+     * @author zsg
+     * @since 2026-02-28
+     */
+    public static class Forgetting {
+
+        /** 遗忘定时 Cron 表达式，默认每周日凌晨 4:00。 */
+        private String cron = "0 0 4 * * SUN";
+
+        /** 最大保留天数（FIFO 阈值），默认 365。 */
+        private int maxRetentionDays = 365;
+
+        /** LRU 未访问天数阈值，默认 90。 */
+        private int lruThresholdDays = 90;
+
+        /** Priority Decay 衰减率 λ，默认 0.02（半衰期约 35 天）。 */
+        private float priorityDecayRate = 0.02f;
+
+        /** Priority Decay 淘汰阈值，默认 0.2。 */
+        private float priorityDecayThreshold = 0.2f;
+
+        /** Reflection-Summary 最低重要度（含），默认 0.3。 */
+        private float reflectionSummaryMinImportance = 0.3f;
+
+        /** Reflection-Summary 最高重要度（不含），默认 0.8。 */
+        private float reflectionSummaryMaxImportance = 0.8f;
+
+        /** 每次遗忘最大数量，默认 100。 */
+        private int maxForgetPerRun = 100;
+
+        /** PII 实体遗忘优先级额外权重，默认 0.3。 */
+        private float privacyAwareBoost = 0.3f;
+
+        public String getCron() { return cron; }
+        public void setCron(String cron) { this.cron = cron; }
+
+        public int getMaxRetentionDays() { return maxRetentionDays; }
+        public void setMaxRetentionDays(int maxRetentionDays) { this.maxRetentionDays = maxRetentionDays; }
+
+        public int getLruThresholdDays() { return lruThresholdDays; }
+        public void setLruThresholdDays(int lruThresholdDays) { this.lruThresholdDays = lruThresholdDays; }
+
+        public float getPriorityDecayRate() { return priorityDecayRate; }
+        public void setPriorityDecayRate(float priorityDecayRate) { this.priorityDecayRate = priorityDecayRate; }
+
+        public float getPriorityDecayThreshold() { return priorityDecayThreshold; }
+        public void setPriorityDecayThreshold(float priorityDecayThreshold) { this.priorityDecayThreshold = priorityDecayThreshold; }
+
+        public float getReflectionSummaryMinImportance() { return reflectionSummaryMinImportance; }
+        public void setReflectionSummaryMinImportance(float reflectionSummaryMinImportance) { this.reflectionSummaryMinImportance = reflectionSummaryMinImportance; }
+
+        public float getReflectionSummaryMaxImportance() { return reflectionSummaryMaxImportance; }
+        public void setReflectionSummaryMaxImportance(float reflectionSummaryMaxImportance) { this.reflectionSummaryMaxImportance = reflectionSummaryMaxImportance; }
+
+        public int getMaxForgetPerRun() { return maxForgetPerRun; }
+        public void setMaxForgetPerRun(int maxForgetPerRun) { this.maxForgetPerRun = maxForgetPerRun; }
+
+        public float getPrivacyAwareBoost() { return privacyAwareBoost; }
+        public void setPrivacyAwareBoost(float privacyAwareBoost) { this.privacyAwareBoost = privacyAwareBoost; }
     }
 }

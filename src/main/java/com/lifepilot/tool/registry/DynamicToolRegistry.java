@@ -186,6 +186,27 @@ public class DynamicToolRegistry {
         }
     }
 
+    /**
+     * 注销指定 ID 的 YAML 工具。
+     *
+     * @param toolId 工具 ID
+     * @return 是否成功注销
+     */
+    public boolean unregisterYamlTool(String toolId) {
+        ToolContract removed = tools.remove(toolId);
+        if (removed != null) {
+            toolLayers.remove(toolId);
+            yamlToolIds.remove(toolId);
+            guardrailEngine.removeAllowedTools(List.of(toolId));
+            invalidateSnapshot();
+            eventPublisher.publishEvent(new ToolsUnregistered(
+                    List.of(toolId), "yaml"));
+            log.info("YAML 工具注销完成: id={}", toolId);
+            return true;
+        }
+        return false;
+    }
+
     /** 注销所有 YAML 工具（热加载前调用）。 */
     public void unregisterYamlTools() {
         List<String> toolIds = new ArrayList<>(yamlToolIds.keySet());
@@ -202,6 +223,28 @@ public class DynamicToolRegistry {
             log.info("YAML 工具注销完成: count={}", toolIds.size());
         }
     }
+
+    /**
+     * 注销指定 ID 的 YAML 工具。
+     *
+     * @param toolId 工具 ID
+     * @return 是否成功注销
+     */
+    public boolean unregisterYamlTool(String toolId) {
+        ToolContract removed = tools.remove(toolId);
+        if (removed != null) {
+            toolLayers.remove(toolId);
+            yamlToolIds.remove(toolId);
+            guardrailEngine.removeAllowedTools(List.of(toolId));
+            invalidateSnapshot();
+            eventPublisher.publishEvent(new ToolsUnregistered(
+                    List.of(toolId), "yaml"));
+            log.info("YAML 工具注销完成: id={}", toolId);
+            return true;
+        }
+        return false;
+    }
+
 
     // ─────────────────────────────────────────────
     //  查询方法
