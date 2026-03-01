@@ -7,7 +7,6 @@ import com.lifepilot.interaction.middleware.audit.AuditEventRepository;
 import com.lifepilot.interaction.middleware.audit.AuditMiddleware;
 import com.lifepilot.observability.redactor.DataRedactor;
 import com.lifepilot.interaction.middleware.auth.AuthMiddleware;
-import com.lifepilot.interaction.middleware.auth.CliAuthStrategy;
 import com.lifepilot.interaction.middleware.ratelimit.RateLimitMiddleware;
 import com.lifepilot.interaction.middleware.router.RouterMiddleware;
 import com.lifepilot.interaction.middleware.security.PromptInjectionDetector;
@@ -55,7 +54,6 @@ class GatewayMiddlewareAutoConfiguration_集成测试 {
 
     @Test
     void 认证相关Bean_注册成功() {
-        assertThat(context.getBean(CliAuthStrategy.class)).isNotNull();
         assertThat(context.getBean(AuthMiddleware.class)).isNotNull();
     }
 

@@ -59,7 +59,7 @@ class GatewayPipeline_集成测试 {
 
     @Test
     void 已知命令_快速路径返回200() {
-        var message = buildCliMessage(new MessageContent.CommandMessage("todo", List.of(), "/todo"));
+        var message = buildWebMessage(new MessageContent.CommandMessage("todo", List.of(), "/todo"));
         var response = gateway.process(message);
 
         assertThat(response.statusCode()).isEqualTo(200);
@@ -69,7 +69,7 @@ class GatewayPipeline_集成测试 {
 
     @Test
     void 斜杠文本命令_快速路径返回200() {
-        var message = buildCliMessage(new MessageContent.TextMessage("/schedule"));
+        var message = buildWebMessage(new MessageContent.TextMessage("/schedule"));
         var response = gateway.process(message);
 
         assertThat(response.statusCode()).isEqualTo(200);
@@ -78,7 +78,7 @@ class GatewayPipeline_集成测试 {
 
     @Test
     void 未知命令_返回400() {
-        var message = buildCliMessage(new MessageContent.CommandMessage("unknown", List.of(), "/unknown"));
+        var message = buildWebMessage(new MessageContent.CommandMessage("unknown", List.of(), "/unknown"));
         var response = gateway.process(message);
 
         assertThat(response.statusCode()).isEqualTo(400);
@@ -91,7 +91,7 @@ class GatewayPipeline_集成测试 {
     void 自然语言消息_无ExecutionMiddleware_链耗尽返回500() {
         // 测试环境未注册 AgentLoop，ExecutionMiddleware 不存在
         // 自然语言消息经过 Router 后调用 chain.next()，链耗尽返回 500
-        var message = buildCliMessage(new MessageContent.TextMessage("你好"));
+        var message = buildWebMessage(new MessageContent.TextMessage("你好"));
         var response = gateway.process(message);
 
         assertThat(response.statusCode()).isEqualTo(500);
@@ -121,7 +121,7 @@ class GatewayPipeline_集成测试 {
 
     @Test
     void Pipeline直接执行_快速路径命令() {
-        var message = buildCliMessage(new MessageContent.CommandMessage("habit", List.of(), "/habit"));
+        var message = buildWebMessage(new MessageContent.CommandMessage("habit", List.of(), "/habit"));
         var response = pipeline.execute(message);
 
         assertThat(response.statusCode()).isEqualTo(200);
@@ -134,7 +134,7 @@ class GatewayPipeline_集成测试 {
     void 网关未启动时_返回503() {
         // 创建新网关实例，不调用 start()
         var freshGateway = new DefaultMessageGateway(pipeline);
-        var message = buildCliMessage(new MessageContent.TextMessage("/todo"));
+        var message = buildWebMessage(new MessageContent.TextMessage("/todo"));
         var response = freshGateway.process(message);
 
         assertThat(response.statusCode()).isEqualTo(503);
@@ -142,9 +142,9 @@ class GatewayPipeline_集成测试 {
 
     // ── 辅助方法 ──────────────────────────────────────────────────
 
-    private static GatewayMessage buildCliMessage(MessageContent content) {
+    private static GatewayMessage buildWebMessage(MessageContent content) {
         return GatewayMessage.builder()
-                .channelType(ChannelType.CLI)
+                .channelType(ChannelType.WEB)
                 .userId("test-user")
                 .sessionId("test-session")
                 .content(content)
