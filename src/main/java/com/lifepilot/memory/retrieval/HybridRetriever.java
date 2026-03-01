@@ -1,6 +1,9 @@
 package com.lifepilot.memory.retrieval;
 
+import com.lifepilot.memory.procedural.IntentMatcher;
 import com.lifepilot.memory.semantic.SemanticMemory;
+import com.lifepilot.memory.working.ReasoningSlot;
+import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -10,6 +13,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -31,16 +35,23 @@ public class HybridRetriever {
     private final FtsSearcher ftsSearcher;
     private final GraphTraverser graphTraverser;
     private final SemanticMemory semanticMemory;
+    @Nullable
+    private final IntentMatcher intentMatcher;
     private final ExecutorService virtualThreadExecutor;
+
+    /** 最近一次 retrieve() 中 L4 程序记忆匹配结果（线程安全，每次 retrieve 重置）。 */
+    private volatile ReasoningSlot lastProcedureSlot;
 
     public HybridRetriever(VectorSearcher vectorSearcher,
                            FtsSearcher ftsSearcher,
                            GraphTraverser graphTraverser,
-                           SemanticMemory semanticMemory) {
+                           SemanticMemory semanticMemory,
+                           @Nullable IntentMatcher intentMatcher) {
         this.vectorSearcher = vectorSearcher;
         this.ftsSearcher = ftsSearcher;
         this.graphTraverser = graphTraverser;
         this.semanticMemory = semanticMemory;
+        this.intentMatcher = intentMatcher;
         this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
     }
 
@@ -62,13 +73,36 @@ public class HybridRetriever {
      * @return 融合排序后的检索结果列表（fusedScore 降序）
      */
     public List<RetrievalResult> retrieve(String query, int topK, RetrievalWeights weights) {
-        // 1. 并行执行三路检索
+        // 重置 L4 匹配结果
+        this.lastProcedureSlot = null;
+
+        // 1. 并行执行三路检索 + 可选 L4 意图匹配
         var vectorFuture = CompletableFuture.supplyAsync(
                 () -> vectorSearcher.searchEntities(query, topK, 0.0f), virtualThreadExecutor);
         var ftsFuture = CompletableFuture.supplyAsync(
                 () -> ftsSearcher.search(query, topK), virtualThreadExecutor);
         var graphFuture = CompletableFuture.supplyAsync(
                 () -> graphTraverser.traverse(query, topK), virtualThreadExecutor);
+
+        // L4: 并行执行 IntentMatcher（不参与 RRF 融合）
+        if (intentMatcher != null) {
+            CompletableFuture.runAsync(() -> {
+                try {
+                    var matchOpt = intentMatcher.match(query);
+                    matchOpt.ifPresent(match -> {
+                        var template = match.template();
+                        var context = "操作模板建议: %s (匹配度=%.2f, 成功率=%.2f, 步骤数=%d)"
+                                .formatted(template.name(), match.score(),
+                                        template.successRate(), template.steps().size());
+                        this.lastProcedureSlot = ReasoningSlot.retrievalContext(context, context.length() / 4);
+                        log.debug("混合检索: L4 意图匹配命中, template={}, score={}",
+                                template.name(), match.score());
+                    });
+                } catch (Exception e) {
+                    log.warn("混合检索: L4 意图匹配失败, error={}", e.getMessage());
+                }
+            }, virtualThreadExecutor).join(); // join 确保 L4 结果在 retrieve 返回前可用
+        }
 
         // 收集结果，任一路失败时使用空列表
         List<VectorSearchResult> vectorResults = safeGet(vectorFuture, "向量检索");
@@ -137,6 +171,18 @@ public class HybridRetriever {
         log.debug("混合检索: query={}, 向量={}, FTS={}, 图={}, 融合结果={}",
                 query, vectorItems.size(), ftsResults.size(), graphResults.size(), finalResults.size());
         return finalResults;
+    }
+
+    /**
+     * 获取最近一次 retrieve() 中 L4 程序记忆匹配结果。
+     *
+     * <p>L4 匹配结果不参与 RRF 融合排序，作为独立的执行建议注入 ReasoningSlot。
+     * 每次 retrieve() 调用后重置，无匹配时返回 Optional.empty()。</p>
+     *
+     * @return L4 程序记忆匹配的 ReasoningSlot
+     */
+    public Optional<ReasoningSlot> getLastProcedureSlot() {
+        return Optional.ofNullable(lastProcedureSlot);
     }
 
     // --- 内部方法 ---
