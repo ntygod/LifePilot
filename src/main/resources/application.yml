@@ -93,73 +93,8 @@ lifepilot:
       max-history-length: 50
   llm:
     enabled: true
-    providers:
-      ollama-qwen2.5:
-        type: ollama
-        api-url: http://localhost:11434
-        model-name: qwen2.5:7b
-        timeout-seconds: 60
-        priority: 0
-        scenes:
-          - intent_understanding
-          - task_planning
-          - knowledge_extraction
-          - chat
-          - memory_compression
-          - proactive_reasoning
-          - code_generation
-        capabilities: [CHAT, STRUCTURED_OUTPUT, FUNCTION_CALLING, STREAMING]
-        enabled: true
-        cost-per-input-token: 0
-        cost-per-output-token: 0
-        max-context-window: 32768
-        supports-streaming: true
-
-      ollama-nomic-embed:
-        type: ollama
-        api-url: http://localhost:11434
-        model-name: nomic-embed-text:v1.5
-        priority: 0
-        scenes: [embedding]
-        capabilities: [EMBEDDING]
-        enabled: true
-        cost-per-input-token: 0
-        cost-per-output-token: 0
-        max-context-window: 8192
-        embedding-dimension: 768
-
-      deepseek-chat:
-        type: deepseek
-        api-url: https://api.deepseek.com
-        api-key: ${DEEPSEEK_API_KEY:}
-        model-name: deepseek-chat
-        priority: 10
-        scenes:
-          - intent_understanding
-          - task_planning
-          - knowledge_extraction
-          - chat
-          - code_generation
-          - document_summary
-        capabilities: [CHAT, STRUCTURED_OUTPUT, FUNCTION_CALLING, STREAMING]
-        enabled: true
-        cost-per-input-token: 100
-        cost-per-output-token: 200
-        max-context-window: 65536
-
-      qwen-plus:
-        type: qwen
-        api-url: https://dashscope.aliyuncs.com/compatible-mode
-        api-key: ${QWEN_API_KEY:}
-        model-name: qwen-plus
-        priority: 20
-        scenes: [chat, task_planning, document_summary]
-        capabilities: [CHAT, STRUCTURED_OUTPUT, FUNCTION_CALLING, STREAMING, VISION]
-        enabled: true
-        cost-per-input-token: 80
-        cost-per-output-token: 200
-        max-context-window: 131072
-
+    # LLM Provider 配置已迁移到数据库（llm_providers 表）
+    # 通过 Web UI 的设置页面或 REST API 进行管理
     circuit-breaker:
       failure-threshold: 3
       reset-timeout-seconds: 60

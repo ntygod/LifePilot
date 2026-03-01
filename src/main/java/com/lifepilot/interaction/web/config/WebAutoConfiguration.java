@@ -1,25 +1,10 @@
 package com.lifepilot.interaction.web.config;
 
-import com.lifepilot.knowledge.config.KnowledgeAutoConfiguration;
-import com.lifepilot.mcp.config.McpAutoConfiguration;
-import com.lifepilot.observability.config.ObservabilityAutoConfiguration;
-import com.lifepilot.skill.config.SkillAutoConfiguration;
-import com.lifepilot.tool.config.ToolAutoConfiguration;
 import com.lifepilot.interaction.config.GatewayProperties;
 import com.lifepilot.interaction.gateway.MessageGateway;
 import com.lifepilot.interaction.web.adapter.WebChannelAdapter;
-import com.lifepilot.interaction.web.controller.*;
+import com.lifepilot.interaction.web.controller.WebExceptionHandler;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
-import com.lifepilot.observability.trace.TraceQuery;
-import com.lifepilot.knowledge.KnowledgeBaseManager;
-import com.lifepilot.knowledge.ingest.DocumentIngester;
-import com.lifepilot.mcp.registry.McpServerRegistry;
-import com.lifepilot.skill.registry.SkillRegistry;
-import com.lifepilot.tool.registry.DynamicToolRegistry;
-import com.lifepilot.workflow.config.WorkflowAutoConfiguration;
-import com.lifepilot.workflow.engine.WorkflowEngine;
-import com.lifepilot.workflow.registry.WorkflowRegistry;
-import com.lifepilot.workflow.repository.WorkflowRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -29,18 +14,18 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.event.EventListener;
 import org.springframework.lang.NonNull;
-import org.springframework.lang.Nullable;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
-
-import java.util.Objects;
 
 /**
  * Web 模块自动配置。
  *
  * <p>在 {@code lifepilot.gateway.channels.web.enabled=true} 时注册所有 Web 相关 Bean：
- * {@link WebChannelAdapter}、{@link SseSessionManager}、{@link ChatController}、
- * {@link SettingsController}、{@link WebExceptionHandler} 和 CORS 配置。</p>
+ * {@link WebChannelAdapter}、{@link SseSessionManager}、{@link WebExceptionHandler} 和 CORS 配置。</p>
+ *
+ * <p>Web Controller（如 {@link com.lifepilot.interaction.web.controller.ChatController}、
+ * {@link com.lifepilot.interaction.web.controller.SettingsController} 等）通过组件扫描自动注册。
+ * 如果依赖不存在，应用启动时会失败（fail-fast），这比条件注册更清晰。</p>
  *
  * <p>通过 {@link ApplicationReadyEvent} 启动 SSE 心跳调度，
  * 通过 {@link jakarta.annotation.PreDestroy} 在应用关闭时停止心跳并清理 SseEmitter。</p>
@@ -48,14 +33,7 @@ import java.util.Objects;
  * @author zsg
  * @since 2026-02-26
  */
-@AutoConfiguration(after = {
-        ToolAutoConfiguration.class,
-        McpAutoConfiguration.class,
-        SkillAutoConfiguration.class,
-        KnowledgeAutoConfiguration.class,
-        WorkflowAutoConfiguration.class,
-        ObservabilityAutoConfiguration.class
-})
+@AutoConfiguration
 @ConditionalOnProperty(name = "lifepilot.gateway.channels.web.enabled", havingValue = "true")
 @EnableConfigurationProperties(WebProperties.class)
 public class WebAutoConfiguration {
@@ -76,73 +54,29 @@ public class WebAutoConfiguration {
     }
 
     @Bean
-    public ChatController chatController(WebChannelAdapter adapter,
-                                          SseSessionManager sseManager) {
-        log.info("注册 ChatController");
-        return new ChatController(adapter, sseManager);
-    }
-
-    @Bean
-    public SettingsController settingsController() {
-        log.info("注册 SettingsController");
-        return new SettingsController();
-    }
-
-    @Bean
     public WebExceptionHandler webExceptionHandler() {
         log.info("注册 WebExceptionHandler");
         return new WebExceptionHandler();
     }
 
-    // ── 模块 19 新增 Bean ──────────────────────────────────
-
-    @Bean
-    @ConditionalOnProperty(prefix = "lifepilot.knowledge", name = "enabled",
-            havingValue = "true", matchIfMissing = true)
-    public KnowledgeBaseController knowledgeBaseController(KnowledgeBaseManager kbManager,
-                                                           @Nullable DocumentIngester documentIngester) {
-        log.info("注册 KnowledgeBaseController");
-        return new KnowledgeBaseController(kbManager, documentIngester);
-    }
-
-    @Bean
-    @ConditionalOnProperty(prefix = "lifepilot.skills", name = "enabled",
-            havingValue = "true", matchIfMissing = true)
-    public SkillController skillController(SkillRegistry skillRegistry,
-                                           McpServerRegistry mcpServerRegistry,
-                                           DynamicToolRegistry toolRegistry) {
-        log.info("注册 SkillController");
-        return new SkillController(skillRegistry, mcpServerRegistry, toolRegistry);
-    }
-
-    @Bean
-    @ConditionalOnProperty(prefix = "lifepilot.observability.trace", name = "enabled",
-            havingValue = "true", matchIfMissing = true)
-    public TraceController traceController(TraceQuery traceQuery) {
-        log.info("注册 TraceController");
-        return new TraceController(traceQuery);
-    }
-
-    @Bean
-    @ConditionalOnProperty(name = "lifepilot.workflow.enabled", havingValue = "true", matchIfMissing = true)
-    public WorkflowController workflowController(WorkflowRegistry workflowRegistry,
-                                                  WorkflowEngine workflowEngine,
-                                                  WorkflowRepository workflowRepository) {
-        log.info("注册 WorkflowController");
-        return new WorkflowController(workflowRegistry, workflowEngine, workflowRepository);
-    }
+    // 注意：ChatController、SettingsController、KnowledgeBaseController、SkillController、
+    // TraceController、WorkflowController 现在通过组件扫描自动注册，不再需要手动注册。
+    // 如果依赖不存在，应用启动时会失败（fail-fast），这比条件注册更清晰。
 
     /**
-     * 注册 CORS 配置。
+     * 注册 CORS 配置和静态资源排除规则。
      *
      * <p>从 {@link WebProperties} 读取允许的跨域源列表。
      * 空 allowedOrigins 时不注册 CORS 映射（拒绝所有跨域请求）。</p>
+     *
+     * <p>同时配置静态资源处理器，确保 {@code /api/**} 路径不会被静态资源处理器处理，
+     * 避免在控制器未注册时出现 "No static resource" 错误。</p>
      *
      * @param properties Web 配置属性
      * @return WebMvcConfigurer 实例
      */
     @Bean
-    public WebMvcConfigurer corsConfigurer(WebProperties properties) {
+    public WebMvcConfigurer webMvcConfigurer(WebProperties properties) {
         return new WebMvcConfigurer() {
             @Override
             public void addCorsMappings(@NonNull CorsRegistry registry) {
@@ -151,7 +85,7 @@ public class WebAutoConfiguration {
                     log.info("CORS allowedOrigins 为空，拒绝所有跨域请求");
                     return;
                 }
-                var origins = Objects.requireNonNull(cors.allowedOrigins().toArray(new String[0]));
+                var origins = cors.allowedOrigins().toArray(new String[0]);
                 registry.addMapping("/api/**")
                         .allowedOrigins(origins)
                         .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
@@ -160,6 +94,7 @@ public class WebAutoConfiguration {
                 log.info("CORS 配置已注册: allowedOrigins={}, allowCredentials={}",
                         cors.allowedOrigins(), cors.allowCredentials());
             }
+
         };
     }
 
