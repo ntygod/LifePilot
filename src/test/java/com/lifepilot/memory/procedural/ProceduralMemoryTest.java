@@ -70,6 +70,17 @@ class ProceduralMemoryTest {
                     UNIQUE(category, key)
                 )""");
 
+        // 创建 strategy_patterns 表（与 V20 迁移脚本一致）
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS strategy_patterns (
+                    pattern_id          TEXT PRIMARY KEY,
+                    situation           TEXT NOT NULL,
+                    recommended_action  TEXT NOT NULL,
+                    success_rate        REAL NOT NULL DEFAULT 0.0,
+                    application_count   INTEGER NOT NULL DEFAULT 0,
+                    created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+                )""");
+
         // Mock VectorSearcher — 避免依赖 LLM 和 sqlite-vec
         vectorSearcher = mock(VectorSearcher.class);
 
@@ -366,6 +377,65 @@ class ProceduralMemoryTest {
     void reinforcePreference_规则不存在_不抛异常() {
         // 不应抛异常，仅记录 WARN 日志
         proceduralMemory.reinforcePreference("non-existent-id");
+    }
+
+    // --- 策略模式 CRUD 测试 ---
+
+    @Test
+    void saveStrategy_findStrategiesBySituation_往返一致() {
+        var now = Instant.now();
+        var pattern = new StrategyPattern(
+                "strat-1", "用户要求安排会议但时间冲突",
+                "建议用户选择最近的空闲时段", 0.85f, 10, now);
+
+        proceduralMemory.saveStrategy(pattern);
+
+        var results = proceduralMemory.findStrategiesBySituation("时间冲突", 5);
+        assertThat(results).hasSize(1);
+        var loaded = results.getFirst();
+        assertThat(loaded.patternId()).isEqualTo("strat-1");
+        assertThat(loaded.situation()).isEqualTo("用户要求安排会议但时间冲突");
+        assertThat(loaded.recommendedAction()).isEqualTo("建议用户选择最近的空闲时段");
+        assertThat(loaded.successRate()).isEqualTo(0.85f);
+        assertThat(loaded.applicationCount()).isEqualTo(10);
+
+        // 验证 VectorSearcher 被调用（situation 向量索引）
+        verify(vectorSearcher).upsertEntityVector("strat-1", "用户要求安排会议但时间冲突");
+    }
+
+    @Test
+    void findStrategiesBySituation_无匹配_返回空列表() {
+        var results = proceduralMemory.findStrategiesBySituation("完全不相关的文本", 5);
+        assertThat(results).isEmpty();
+    }
+
+    @Test
+    void findStrategiesBySituation_按成功率降序排列() {
+        var now = Instant.now();
+        proceduralMemory.saveStrategy(new StrategyPattern(
+                "strat-low", "处理任务优先级冲突", "按截止日期排序", 0.5f, 3, now));
+        proceduralMemory.saveStrategy(new StrategyPattern(
+                "strat-high", "处理任务优先级冲突时", "按重要度排序", 0.9f, 8, now));
+        proceduralMemory.saveStrategy(new StrategyPattern(
+                "strat-mid", "处理任务优先级", "按紧急度排序", 0.7f, 5, now));
+
+        var results = proceduralMemory.findStrategiesBySituation("优先级", 10);
+        assertThat(results).hasSize(3);
+        assertThat(results.get(0).successRate()).isEqualTo(0.9f);
+        assertThat(results.get(1).successRate()).isEqualTo(0.7f);
+        assertThat(results.get(2).successRate()).isEqualTo(0.5f);
+    }
+
+    @Test
+    void findStrategiesBySituation_topK限制() {
+        var now = Instant.now();
+        for (int i = 0; i < 5; i++) {
+            proceduralMemory.saveStrategy(new StrategyPattern(
+                    "strat-" + i, "重复情境场景", "行动" + i, 0.5f + i * 0.1f, i, now));
+        }
+
+        var results = proceduralMemory.findStrategiesBySituation("情境", 2);
+        assertThat(results).hasSize(2);
     }
 
     // --- 辅助方法 ---
