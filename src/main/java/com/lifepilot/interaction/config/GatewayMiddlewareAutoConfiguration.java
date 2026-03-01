@@ -5,14 +5,11 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import com.lifepilot.agent.AgentLoop;
-import com.lifepilot.interaction.channel.CliChannelAdapter;
-import com.lifepilot.interaction.gateway.MessageGateway;
 import com.lifepilot.interaction.middleware.audit.AuditEventRepository;
 import com.lifepilot.interaction.middleware.audit.AuditMiddleware;
 import com.lifepilot.observability.redactor.DataRedactor;
 import com.lifepilot.interaction.middleware.auth.AuthMiddleware;
 import com.lifepilot.interaction.middleware.auth.AuthStrategy;
-import com.lifepilot.interaction.middleware.auth.CliAuthStrategy;
 import com.lifepilot.interaction.middleware.execution.ExecutionMiddleware;
 import com.lifepilot.interaction.middleware.ratelimit.RateLimitMiddleware;
 import com.lifepilot.interaction.middleware.router.RouterMiddleware;
@@ -20,8 +17,6 @@ import com.lifepilot.interaction.middleware.security.PromptInjectionDetector;
 import com.lifepilot.interaction.middleware.security.SecurityMiddleware;
 import com.lifepilot.interaction.middleware.security.SensitiveDataDetector;
 import com.lifepilot.interaction.middleware.security.TrustScoreCalculator;
-import com.lifepilot.interaction.cli.ResponseRenderer;
-import org.jline.terminal.Terminal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -46,11 +41,6 @@ public class GatewayMiddlewareAutoConfiguration {
     private static final Logger log = LoggerFactory.getLogger(GatewayMiddlewareAutoConfiguration.class);
 
     // ── 认证相关 ──────────────────────────────────────────────────
-
-    @Bean
-    public CliAuthStrategy cliAuthStrategy() {
-        return new CliAuthStrategy();
-    }
 
     @Bean
     public AuthMiddleware authMiddleware(List<AuthStrategy> strategies, GatewayProperties properties) {
@@ -127,14 +117,4 @@ public class GatewayMiddlewareAutoConfiguration {
         return new AuditMiddleware(repository, redactor, properties);
     }
 
-    // ── CLI 通道适配器 ────────────────────────────────────────────
-
-    @Bean
-    @ConditionalOnProperty(name = "lifepilot.gateway.channels.cli.enabled", matchIfMissing = true)
-    @ConditionalOnBean({MessageGateway.class, ResponseRenderer.class, Terminal.class})
-    public CliChannelAdapter cliChannelAdapter(MessageGateway gateway, ResponseRenderer renderer,
-                                               Terminal terminal) {
-        log.info("注册 CliChannelAdapter");
-        return new CliChannelAdapter(gateway, renderer, terminal);
-    }
 }
