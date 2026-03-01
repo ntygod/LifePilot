@@ -6,14 +6,14 @@ import com.lifepilot.interaction.model.GatewayMessage;
 /**
  * 认证策略 sealed interface，按通道类型分发认证逻辑。
  *
- * <p>每个通道实现自己的认证策略，当前仅支持 CLI 通道（{@link CliAuthStrategy}），
- * Web 通道策略将在后续 spec 中添加。
+ * <p>每个通道实现自己的认证策略，当前支持企业微信、钉钉和飞书通道，
+ * 后续可按需扩展新的通道策略实现。</p>
  *
  * @author zsg
  * @since 2026-02-25
  */
 public sealed interface AuthStrategy
-        permits CliAuthStrategy, WecomAuthStrategy, DingtalkAuthStrategy, FeishuAuthStrategy {
+        permits WecomAuthStrategy, DingtalkAuthStrategy, FeishuAuthStrategy {
 
     /**
      * 对网关消息执行认证。

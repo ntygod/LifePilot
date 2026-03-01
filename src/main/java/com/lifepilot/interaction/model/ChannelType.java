@@ -11,7 +11,6 @@ package com.lifepilot.interaction.model;
  */
 public enum ChannelType {
 
-    CLI("cli", false),
     WEB("web", false),
     WECOM("wecom", true),
     DINGTALK("dingtalk", true),

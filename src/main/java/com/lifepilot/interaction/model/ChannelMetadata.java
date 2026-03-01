@@ -12,8 +12,7 @@ import org.springframework.lang.Nullable;
  * @since 2026-02-25
  */
 public sealed interface ChannelMetadata
-        permits ChannelMetadata.CliMetadata,
-                ChannelMetadata.WebMetadata,
+        permits ChannelMetadata.WebMetadata,
                 ChannelMetadata.WecomMetadata,
                 ChannelMetadata.DingtalkMetadata,
                 ChannelMetadata.FeishuMetadata {
@@ -24,24 +23,6 @@ public sealed interface ChannelMetadata
      * @return 对应的 {@link ChannelType} 枚举值
      */
     ChannelType channelType();
-
-    /**
-     * CLI 通道元数据。
-     *
-     * @param terminalType   终端类型
-     * @param terminalWidth  终端宽度（列数）
-     * @param colorSupported 是否支持彩色输出
-     * @author zsg
-     * @since 2026-02-25
-     */
-    record CliMetadata(String terminalType, int terminalWidth, boolean colorSupported)
-            implements ChannelMetadata {
-
-        @Override
-        public ChannelType channelType() {
-            return ChannelType.CLI;
-        }
-    }
 
     /**
      * Web 通道元数据。
