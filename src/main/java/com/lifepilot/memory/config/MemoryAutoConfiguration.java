@@ -1,7 +1,14 @@
 package com.lifepilot.memory.config;
 
+import com.lifepilot.knowledge.extract.KnowledgeExtractionPipeline;
 import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.memory.consolidation.ConsolidationPipeline;
+import com.lifepilot.memory.consolidation.EpisodicToProceduralConsolidator;
+import com.lifepilot.memory.consolidation.EpisodicToSemanticConsolidator;
 import com.lifepilot.memory.episodic.EpisodicMemory;
+import com.lifepilot.memory.forgetting.ForgettingEngine;
+import com.lifepilot.memory.procedural.IntentMatcher;
+import com.lifepilot.memory.procedural.ProceduralMemory;
 import com.lifepilot.memory.retrieval.FtsSearcher;
 import com.lifepilot.memory.retrieval.GraphTraverser;
 import com.lifepilot.memory.retrieval.HybridRetriever;
@@ -183,9 +190,94 @@ public class MemoryAutoConfiguration {
             VectorSearcher vectorSearcher,
             FtsSearcher ftsSearcher,
             GraphTraverser graphTraverser,
-            SemanticMemory semanticMemory) {
-        log.info("记忆系统: 注册 HybridRetriever");
-        return new HybridRetriever(vectorSearcher, ftsSearcher, graphTraverser, semanticMemory);
+            SemanticMemory semanticMemory,
+            @Nullable IntentMatcher intentMatcher) {
+        log.info("记忆系统: 注册 HybridRetriever, L4 意图匹配={}",
+                intentMatcher != null ? "启用" : "禁用");
+        return new HybridRetriever(vectorSearcher, ftsSearcher, graphTraverser,
+                semanticMemory, intentMatcher);
+    }
+
+    // --- L4 程序记忆 ---
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(VectorSearcher.class)
+    public ProceduralMemory proceduralMemory(
+            JdbcTemplate jdbcTemplate,
+            VectorSearcher vectorSearcher,
+            MemoryProperties properties) {
+        log.info("记忆系统: 注册 ProceduralMemory");
+        return new ProceduralMemory(jdbcTemplate, vectorSearcher, properties);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean({ProceduralMemory.class, VectorSearcher.class, LlmRouter.class})
+    public IntentMatcher intentMatcher(
+            ProceduralMemory proceduralMemory,
+            VectorSearcher vectorSearcher,
+            JdbcTemplate jdbcTemplate,
+            LlmRouter llmRouter,
+            MemoryProperties properties) {
+        log.info("记忆系统: 注册 IntentMatcher");
+        return new IntentMatcher(proceduralMemory, vectorSearcher, jdbcTemplate, llmRouter, properties);
+    }
+
+    // --- 巩固管线 ---
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean({EpisodicMemory.class, SemanticMemory.class})
+    public EpisodicToSemanticConsolidator episodicToSemanticConsolidator(
+            EpisodicMemory episodicMemory,
+            SemanticMemory semanticMemory,
+            @Nullable KnowledgeExtractionPipeline extractionPipeline,
+            JdbcTemplate jdbcTemplate,
+            MemoryProperties properties) {
+        log.info("记忆系统: 注册 EpisodicToSemanticConsolidator, extractionPipeline={}",
+                extractionPipeline != null ? "可用" : "不可用");
+        return new EpisodicToSemanticConsolidator(episodicMemory, semanticMemory,
+                extractionPipeline, jdbcTemplate, properties);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean({ProceduralMemory.class, LlmRouter.class})
+    public EpisodicToProceduralConsolidator episodicToProceduralConsolidator(
+            JdbcTemplate jdbcTemplate,
+            ProceduralMemory proceduralMemory,
+            LlmRouter llmRouter,
+            MemoryProperties properties) {
+        log.info("记忆系统: 注册 EpisodicToProceduralConsolidator");
+        return new EpisodicToProceduralConsolidator(jdbcTemplate, proceduralMemory,
+                llmRouter, properties);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean({EpisodicToSemanticConsolidator.class, EpisodicToProceduralConsolidator.class})
+    public ConsolidationPipeline consolidationPipeline(
+            EpisodicToSemanticConsolidator semanticConsolidator,
+            EpisodicToProceduralConsolidator proceduralConsolidator,
+            MemoryProperties properties) {
+        log.info("记忆系统: 注册 ConsolidationPipeline");
+        return new ConsolidationPipeline(semanticConsolidator, proceduralConsolidator, properties);
+    }
+
+    // --- 遗忘引擎 ---
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(SemanticMemory.class)
+    public ForgettingEngine forgettingEngine(
+            SemanticMemory semanticMemory,
+            @Nullable LlmRouter llmRouter,
+            JdbcTemplate jdbcTemplate,
+            MemoryProperties properties) {
+        log.info("记忆系统: 注册 ForgettingEngine, LLM={}",
+                llmRouter != null ? "可用" : "不可用");
+        return new ForgettingEngine(semanticMemory, llmRouter, jdbcTemplate, properties);
     }
 
     // --- 工具方法 ---
