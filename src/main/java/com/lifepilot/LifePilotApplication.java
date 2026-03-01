@@ -1,10 +1,5 @@
 package com.lifepilot;
 
-import java.util.HashMap;
-import java.util.Map;
-
-import com.lifepilot.app.LaunchMode;
-import com.lifepilot.interaction.cli.FastPathRunner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.SpringApplication;
@@ -13,7 +8,6 @@ import org.springframework.boot.context.event.ApplicationStartedEvent;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.FilterType;
 import org.springframework.context.event.EventListener;
-import org.springframework.core.env.MapPropertySource;
 
 /**
  * LifePilot 应用启动类。
@@ -47,39 +41,7 @@ public class LifePilotApplication {
         System.setProperty("stderr.encoding", "UTF-8");
         System.setProperty("stdin.encoding", "UTF-8");
 
-        if (FastPathRunner.tryFastPath(args)) {
-            System.exit(0);
-        }
-
-        // 解析启动模式并注入对应 Spring 属性
-        LaunchMode mode = FastPathRunner.resolveMode(args);
-
-        SpringApplication app = new SpringApplication(LifePilotApplication.class);
-        Map<String, Object> props = new HashMap<>();
-
-        switch (mode) {
-            case CLI -> props.put("spring.main.web-application-type", "none");
-            case WEB -> {
-                props.put("lifepilot.cli.enabled", false);
-                props.put("lifepilot.gateway.channels.web.enabled", true);
-            }
-            case TRAY -> {
-                props.put("lifepilot.cli.enabled", false);
-                props.put("lifepilot.tray.enabled", true);
-                props.put("lifepilot.gateway.channels.web.enabled", true);
-            }
-            case FULL -> props.put("lifepilot.gateway.channels.web.enabled", true);
-        }
-
-        props.put("lifepilot.app.launch-mode", mode.name().toLowerCase());
-
-        // 使用 Initializer 注入属性，优先级高于 application.yml，
-        // 确保启动模式的属性覆盖 YAML 中的默认值
-        app.addInitializers(ctx -> {
-            var source = new MapPropertySource("launchModeProperties", props);
-            ctx.getEnvironment().getPropertySources().addFirst(source);
-        });
-        app.run(args);
+        SpringApplication.run(LifePilotApplication.class, args);
     }
 
     /**
