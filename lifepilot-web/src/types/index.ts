@@ -45,6 +45,10 @@ export interface UserSettings {
   theme: 'light' | 'dark' | 'system'
   language: string
   llmProvider: string
+  enableStreaming?: boolean
+  enableFunctionCall?: boolean
+  enableKnowledgeBase?: boolean
+  enableToolCall?: boolean
 }
 
 /** Provider 能力类型 */
@@ -162,6 +166,21 @@ export interface SkillDetail extends SkillSummary {
   preferredProviderId?: string
 }
 
+/** MCP Server 配置 */
+export interface McpServerConfig {
+  transport: 'STDIO' | 'STREAMABLE_HTTP' | 'SSE_LEGACY'
+  command?: string
+  args?: string[]
+  url?: string
+  env?: Record<string, string>
+  timeout?: number
+  autoConnect?: boolean
+  reconnect?: boolean
+  reconnectDelay?: number
+  maxReconnectAttempts?: number
+  healthCheckInterval?: number
+}
+
 /** MCP Server */
 export interface McpServer {
   name: string
@@ -169,6 +188,7 @@ export interface McpServer {
   toolCount: number
   connectedSince?: string
   lastError?: string
+  config?: McpServerConfig
 }
 
 /** MCP 工具 */
@@ -241,6 +261,7 @@ export interface WorkflowDetail extends WorkflowItem {
   inputs: Record<string, unknown>
   steps: unknown[]
   metadata: Record<string, string>
+  yaml?: string
 }
 
 /** 工作流执行记录 */
@@ -253,4 +274,50 @@ export interface WorkflowExecution {
   completedAt?: string
   failureReason?: string
   createdAt: string
+}
+
+/** Tool 摘要 */
+export interface ToolSummary {
+  id: string
+  name: string
+  description?: string
+  source: string
+  status: 'ENABLED' | 'DISABLED'
+  riskLevel?: string
+  tags?: string[]
+}
+
+/** Tool 详情 */
+export interface ToolDetail extends ToolSummary {
+  inputSchema?: Record<string, any>
+  outputSchema?: Record<string, any>
+  budget?: {
+    timeoutSeconds?: number
+    maxRetries?: number
+    maxCostCents?: number
+  }
+  idempotent?: boolean
+  createdAt?: string
+  updatedAt?: string
+}
+
+/** Tool 测试请求 */
+export interface ToolTestRequest {
+  toolId: string
+  input?: Record<string, any>
+  arguments?: Record<string, any>
+}
+
+/** Tool 测试响应 */
+export interface ToolTestResponse {
+  success: boolean
+  output?: any
+  error?: string
+  durationMs?: number
+  meta?: {
+    durationMs?: number
+    toolId?: string
+    action?: string
+    [key: string]: any
+  }
 }
