@@ -22,7 +22,7 @@
         <java.version>22</java.version>
         <spring-ai.version>1.1.2</spring-ai.version>
         <sqlite-jdbc.version>3.49.1.0</sqlite-jdbc.version>
-        <jline.version>3.28.0</jline.version>
+        <lombok.version>1.18.34</lombok.version>
     </properties>
 
     <dependencyManagement>
@@ -85,13 +85,6 @@
         <dependency>
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-core</artifactId>
-        </dependency>
-
-        <!-- JLine CLI -->
-        <dependency>
-            <groupId>org.jline</groupId>
-            <artifactId>jline</artifactId>
-            <version>${jline.version}</version>
         </dependency>
 
         <!-- Apache PDFBox — PDF 文档解析 -->
@@ -165,13 +158,19 @@
     </dependencies>
 
     <build>
+        <!-- 统一可执行 JAR 名称，便于 Docker 镜像复制 -->
+        <finalName>lifepilot</finalName>
+
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.14.0</version>
                 <configuration>
                     <source>22</source>
                     <target>22</target>
+                    <release>22</release>
+                    <encoding>UTF-8</encoding>
                     <annotationProcessorPaths>
                         <path>
                             <groupId>org.projectlombok</groupId>

@@ -22,8 +22,7 @@ management:
       show-details: always
 
 lifepilot:
-  app:
-    launch-mode: full
+  config-version: 1
   agent:
     enabled: true
     loop:
@@ -296,17 +295,6 @@ lifepilot:
       top-k: 5
   datasource:
     busy-timeout: 5000
-  tray:
-    enabled: false
-    tooltip: "LifePilot - AI 生活助手"
-    web-ui-url: "http://localhost:${server.port:8080}"
-  cli:
-    history-file: "${user.home}/.lifepilot/cli-history"
-    max-history-size: 1000
-    chat-prompt: "lifepilot> "
-    default-prompt: "$ "
-    stream-flush-interval-ms: 50
-    confirmation-timeout-seconds: 30
   gateway:
     enabled: true
     middleware:
@@ -366,8 +354,6 @@ lifepilot:
       response-summary-max-length: 200
       retention-days: 90
     channels:
-      cli:
-        enabled: true
       web:
         enabled: false
       wecom:
