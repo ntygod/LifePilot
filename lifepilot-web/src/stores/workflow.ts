@@ -76,8 +76,36 @@ export const useWorkflowStore = defineStore('workflow', () => {
     }
   }
 
+  async function create(data: Partial<WorkflowDetail>) {
+    error.value = null
+    try {
+      const workflow = await workflowApi.create(data)
+      await fetchList()
+      return workflow
+    } catch (e: any) {
+      error.value = e.message ?? '创建工作流失败'
+      throw e
+    }
+  }
+
+  async function update(id: string, data: Partial<WorkflowDetail>) {
+    error.value = null
+    try {
+      const workflow = await workflowApi.update(id, data)
+      await fetchList()
+      if (current.value?.id === id) {
+        current.value = workflow
+      }
+      return workflow
+    } catch (e: any) {
+      error.value = e.message ?? '更新工作流失败'
+      throw e
+    }
+  }
+
   return {
     list, current, executions, loading, error,
-    fetchList, fetchDetail, enable, disable, trigger, fetchExecutions
+    fetchList, fetchDetail, enable, disable, trigger, fetchExecutions,
+    create, update
   }
 })

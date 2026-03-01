@@ -3,23 +3,11 @@ package com.lifepilot.interaction.web.config;
 import com.lifepilot.interaction.config.GatewayProperties;
 import com.lifepilot.interaction.gateway.MessageGateway;
 import com.lifepilot.interaction.web.adapter.WebChannelAdapter;
-import com.lifepilot.interaction.web.controller.*;
-import com.lifepilot.interaction.web.repository.UserSettingsRepository;
+import com.lifepilot.interaction.web.controller.WebExceptionHandler;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
-import com.lifepilot.llm.registry.ProviderRegistry;
-import com.lifepilot.observability.trace.TraceQuery;
-import com.lifepilot.knowledge.KnowledgeBaseManager;
-import com.lifepilot.knowledge.ingest.DocumentIngester;
-import com.lifepilot.mcp.registry.McpServerRegistry;
-import com.lifepilot.skill.registry.SkillRegistry;
-import com.lifepilot.tool.registry.DynamicToolRegistry;
-import com.lifepilot.workflow.engine.WorkflowEngine;
-import com.lifepilot.workflow.registry.WorkflowRegistry;
-import com.lifepilot.workflow.repository.WorkflowRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -32,8 +20,11 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * Web 模块自动配置。
  *
  * <p>在 {@code lifepilot.gateway.channels.web.enabled=true} 时注册所有 Web 相关 Bean：
- * {@link WebChannelAdapter}、{@link SseSessionManager}、{@link ChatController}、
- * {@link SettingsController}、{@link WebExceptionHandler} 和 CORS 配置。</p>
+ * {@link WebChannelAdapter}、{@link SseSessionManager}、{@link WebExceptionHandler} 和 CORS 配置。</p>
+ *
+ * <p>Web Controller（如 {@link com.lifepilot.interaction.web.controller.ChatController}、
+ * {@link com.lifepilot.interaction.web.controller.SettingsController} 等）通过组件扫描自动注册。
+ * 如果依赖不存在，应用启动时会失败（fail-fast），这比条件注册更清晰。</p>
  *
  * <p>通过 {@link ApplicationReadyEvent} 启动 SSE 心跳调度，
  * 通过 {@link jakarta.annotation.PreDestroy} 在应用关闭时停止心跳并清理 SseEmitter。</p>
@@ -62,72 +53,29 @@ public class WebAutoConfiguration {
     }
 
     @Bean
-    public ChatController chatController(WebChannelAdapter adapter,
-                                          SseSessionManager sseManager) {
-        log.info("注册 ChatController");
-        return new ChatController(adapter, sseManager);
-    }
-
-    @Bean
-    @ConditionalOnBean({ProviderRegistry.class, UserSettingsRepository.class})
-    public SettingsController settingsController(UserSettingsRepository settingsRepository,
-                                                 ProviderRegistry providerRegistry) {
-        log.info("注册 SettingsController");
-        return new SettingsController(settingsRepository, providerRegistry);
-    }
-
-    @Bean
     public WebExceptionHandler webExceptionHandler() {
         log.info("注册 WebExceptionHandler");
         return new WebExceptionHandler();
     }
 
-    // ── 模块 19 新增 Bean ──────────────────────────────────
-
-    @Bean
-    @ConditionalOnBean(KnowledgeBaseManager.class)
-    public KnowledgeBaseController knowledgeBaseController(KnowledgeBaseManager kbManager,
-                                                            DocumentIngester documentIngester) {
-        log.info("注册 KnowledgeBaseController");
-        return new KnowledgeBaseController(kbManager, documentIngester);
-    }
-
-    @Bean
-    @ConditionalOnBean({SkillRegistry.class, McpServerRegistry.class})
-    public SkillController skillController(SkillRegistry skillRegistry,
-                                            McpServerRegistry mcpServerRegistry,
-                                            DynamicToolRegistry toolRegistry) {
-        log.info("注册 SkillController");
-        return new SkillController(skillRegistry, mcpServerRegistry, toolRegistry);
-    }
-
-    @Bean
-    @ConditionalOnBean(TraceQuery.class)
-    public TraceController traceController(TraceQuery traceQuery) {
-        log.info("注册 TraceController");
-        return new TraceController(traceQuery);
-    }
-
-    @Bean
-    @ConditionalOnBean({WorkflowRegistry.class, WorkflowEngine.class})
-    public WorkflowController workflowController(WorkflowRegistry workflowRegistry,
-                                                  WorkflowEngine workflowEngine,
-                                                  WorkflowRepository workflowRepository) {
-        log.info("注册 WorkflowController");
-        return new WorkflowController(workflowRegistry, workflowEngine, workflowRepository);
-    }
+    // 注意：ChatController、SettingsController、KnowledgeBaseController、SkillController、
+    // TraceController、WorkflowController 现在通过组件扫描自动注册，不再需要手动注册。
+    // 如果依赖不存在，应用启动时会失败（fail-fast），这比条件注册更清晰。
 
     /**
-     * 注册 CORS 配置。
+     * 注册 CORS 配置和静态资源排除规则。
      *
      * <p>从 {@link WebProperties} 读取允许的跨域源列表。
      * 空 allowedOrigins 时不注册 CORS 映射（拒绝所有跨域请求）。</p>
+     *
+     * <p>同时配置静态资源处理器，确保 {@code /api/**} 路径不会被静态资源处理器处理，
+     * 避免在控制器未注册时出现 "No static resource" 错误。</p>
      *
      * @param properties Web 配置属性
      * @return WebMvcConfigurer 实例
      */
     @Bean
-    public WebMvcConfigurer corsConfigurer(WebProperties properties) {
+    public WebMvcConfigurer webMvcConfigurer(WebProperties properties) {
         return new WebMvcConfigurer() {
             @Override
             public void addCorsMappings(CorsRegistry registry) {
@@ -144,6 +92,7 @@ public class WebAutoConfiguration {
                 log.info("CORS 配置已注册: allowedOrigins={}, allowCredentials={}",
                         cors.allowedOrigins(), cors.allowCredentials());
             }
+
         };
     }
 

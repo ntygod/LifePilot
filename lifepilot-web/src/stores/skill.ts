@@ -84,9 +84,61 @@ export const useSkillStore = defineStore('skill', () => {
     }
   }
 
+  async function createSkill(data: Partial<SkillDetail>) {
+    error.value = null
+    try {
+      const skill = await skillApi.create(data)
+      await fetchSkills()
+      return skill
+    } catch (e: any) {
+      error.value = e.message ?? '创建 Skill 失败'
+      throw e
+    }
+  }
+
+  async function updateSkill(id: string, data: Partial<SkillDetail>) {
+    error.value = null
+    try {
+      const skill = await skillApi.update(id, data)
+      await fetchSkills()
+      if (currentSkill.value?.id === id) {
+        currentSkill.value = skill
+      }
+      return skill
+    } catch (e: any) {
+      error.value = e.message ?? '更新 Skill 失败'
+      throw e
+    }
+  }
+
+  async function createMcpServer(data: { name: string; config: any }) {
+    error.value = null
+    try {
+      const server = await mcpApi.createServer(data)
+      await fetchMcpServers()
+      return server
+    } catch (e: any) {
+      error.value = e.message ?? '创建 MCP Server 失败'
+      throw e
+    }
+  }
+
+  async function updateMcpServer(name: string, data: { config: any }) {
+    error.value = null
+    try {
+      const server = await mcpApi.updateServer(name, data)
+      await fetchMcpServers()
+      return server
+    } catch (e: any) {
+      error.value = e.message ?? '更新 MCP Server 失败'
+      throw e
+    }
+  }
+
   return {
     skills, currentSkill, mcpServers, serverTools, loading, error,
     fetchSkills, fetchSkillDetail, unregisterSkill,
-    fetchMcpServers, connectServer, disconnectServer, fetchServerTools
+    fetchMcpServers, connectServer, disconnectServer, fetchServerTools,
+    createSkill, updateSkill, createMcpServer, updateMcpServer
   }
 })

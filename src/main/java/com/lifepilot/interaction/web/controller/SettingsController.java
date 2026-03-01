@@ -11,6 +11,7 @@ import com.lifepilot.llm.config.ProviderConfig;
 import com.lifepilot.llm.registry.ProviderRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -43,9 +44,10 @@ public class SettingsController {
      * 创建 SettingsController。
      *
      * @param settingsRepository 用户设置仓储
-     * @param providerRegistry    Provider 注册表（可选）
+     * @param providerRegistry    Provider 注册表（可选，可为 null）
      */
-    public SettingsController(UserSettingsRepository settingsRepository, ProviderRegistry providerRegistry) {
+    public SettingsController(UserSettingsRepository settingsRepository,
+                              @Autowired(required = false) ProviderRegistry providerRegistry) {
         this.settingsRepository = settingsRepository;
         this.providerRegistry = providerRegistry;
     }
@@ -96,6 +98,10 @@ public class SettingsController {
     @GetMapping("/providers")
     public ResponseEntity<List<Map<String, Object>>> getProviders() {
         log.debug("获取可用 LLM Provider 列表");
+        if (providerRegistry == null) {
+            log.warn("ProviderRegistry 不可用，返回空列表");
+            return ResponseEntity.ok(List.of());
+        }
         List<ProviderConfig> chatProviders = providerRegistry.findByCapability(ProviderCapability.CHAT);
         List<Map<String, Object>> providers = chatProviders.stream()
                 .map(config -> {
@@ -128,6 +134,10 @@ public class SettingsController {
     @GetMapping("/providers/health")
     public ResponseEntity<Map<String, Boolean>> getProviderHealth() {
         log.debug("获取 Provider 健康状态");
+        if (providerRegistry == null) {
+            log.warn("ProviderRegistry 不可用，返回空映射");
+            return ResponseEntity.ok(Map.of());
+        }
         Map<String, Boolean> healthStatus = providerRegistry.healthCheckAll();
         return ResponseEntity.ok(healthStatus);
     }
@@ -141,6 +151,10 @@ public class SettingsController {
     @GetMapping("/providers/{providerId}")
     public ResponseEntity<Map<String, Object>> getProviderDetail(@PathVariable String providerId) {
         log.debug("获取 Provider 详细信息: id={}", providerId);
+        if (providerRegistry == null) {
+            log.warn("ProviderRegistry 不可用，返回 404");
+            return ResponseEntity.notFound().build();
+        }
         return providerRegistry.getConfig(providerId)
                 .map(config -> {
                     Map<String, Object> provider = new java.util.HashMap<>();
@@ -160,9 +174,7 @@ public class SettingsController {
                     provider.put("enabled", config.enabled());
                     provider.put("apiUrl", config.apiUrl());
                     provider.put("timeoutSeconds", config.timeoutSeconds());
-                    // 检查健康状态
-                    Map<String, Boolean> healthStatus = providerRegistry.healthCheckAll();
-                    provider.put("healthy", healthStatus.getOrDefault(providerId, false));
+                    // 注意：健康状态通过 /api/settings/providers/health 接口单独获取，避免阻塞
                     return ResponseEntity.ok(provider);
                 })
                 .orElse(ResponseEntity.notFound().build());

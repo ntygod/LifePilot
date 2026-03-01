@@ -6,6 +6,7 @@ import com.lifepilot.interaction.web.model.SessionInfo;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.memory.episodic.MessageRecord;
+import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -27,9 +28,10 @@ public class ChatSessionService {
     private static final Logger log = LoggerFactory.getLogger(ChatSessionService.class);
 
     private final ChatSessionRepository sessionRepository;
+    @Nullable
     private final EpisodicMemory episodicMemory;
 
-    public ChatSessionService(ChatSessionRepository sessionRepository, EpisodicMemory episodicMemory) {
+    public ChatSessionService(ChatSessionRepository sessionRepository, @Nullable EpisodicMemory episodicMemory) {
         this.sessionRepository = sessionRepository;
         this.episodicMemory = episodicMemory;
     }
@@ -145,6 +147,12 @@ public class ChatSessionService {
         // 验证会话存在
         sessionRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("会话不存在: id=" + id));
+
+        // 如果记忆系统未启用，返回空列表
+        if (episodicMemory == null) {
+            log.warn("记忆系统未启用，无法获取会话消息: sessionId={}", id);
+            return List.of();
+        }
 
         // 从情景记忆中查询消息
         List<MessageRecord> records = episodicMemory.getMessagesBySessionId(id);

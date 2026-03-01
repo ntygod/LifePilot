@@ -5,13 +5,17 @@ import com.lifepilot.llm.adapter.ProviderAdapterFactory;
 import com.lifepilot.llm.circuit.CircuitBreakerManager;
 import com.lifepilot.llm.registry.ProviderHealthChecker;
 import com.lifepilot.llm.registry.ProviderRegistry;
+import com.lifepilot.llm.service.LlmProviderService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.event.EventListener;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
@@ -20,6 +24,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * <p>通过 {@code lifepilot.llm.enabled=true}（默认）激活，
  * 注册所有 LLM Router 核心 Bean，每个 Bean 使用
  * {@link ConditionalOnMissingBean} 允许用户覆盖。
+ *
+ * <p>启动时从数据库读取 LLM Provider 配置并注册，不再从配置文件读取。
  *
  * @author zsg
  * @since 2026-02-24
@@ -60,24 +66,27 @@ public class LlmAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public ProviderRegistry providerRegistry(ProviderAdapterFactory adapterFactory,
-                                             ProviderHealthChecker healthChecker,
-                                             LlmConfigProperties properties) {
-        var registry = new ProviderRegistry(adapterFactory, healthChecker);
-        // 自动注册已启用的 Provider
-        properties.getProviders().forEach((id, entry) -> {
-            if (entry.isEnabled()) {
-                try {
-                    var config = LlmConfigProperties.toProviderConfig(id, entry);
-                    registry.register(config);
-                } catch (Exception e) {
-                    log.warn("Provider 自动注册失败: id={}, error={}", id, e.getMessage());
-                }
-            }
-        });
-        if (registry.registeredIds().isEmpty()) {
-            log.warn("LLM Router: 无可用 Provider，所有 LLM 依赖功能将不可用");
+                                             ProviderHealthChecker healthChecker) {
+        // 创建空的注册表，启动时从数据库加载
+        return new ProviderRegistry(adapterFactory, healthChecker);
+    }
+
+    /**
+     * 应用启动完成后，从数据库加载并注册所有已启用的 Provider。
+     *
+     * @param event 应用就绪事件
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    public void registerProvidersFromDatabase(ApplicationReadyEvent event) {
+        ApplicationContext ctx = event.getApplicationContext();
+        if (ctx.getBeanNamesForType(LlmProviderService.class).length > 0) {
+            LlmProviderService providerService = ctx.getBean(LlmProviderService.class);
+            log.info("开始从数据库加载 LLM Provider 配置...");
+            providerService.registerAllEnabled();
+            log.info("LLM Provider 配置加载完成");
+        } else {
+            log.warn("LlmProviderService 不可用，跳过 Provider 注册");
         }
-        return registry;
     }
 
     @Bean

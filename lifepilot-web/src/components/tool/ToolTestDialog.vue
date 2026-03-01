@@ -95,7 +95,7 @@ async function runTest() {
   try {
     testResult.value = await toolStore.testTool({
       toolId: props.tool.id,
-      arguments: testArguments.value
+      input: testArguments.value
     })
   } catch (e: any) {
     // 错误已在 store 中处理
