@@ -118,10 +118,12 @@ class KnowledgeAutoConfigurationTest {
     /**
      * 基础设施 Mock Bean 配置。
      */
-    @Configuration
+    @org.springframework.boot.test.context.TestConfiguration
     static class InfraBeansConfig {
-        @Bean JdbcTemplate jdbcTemplate() { return mock(JdbcTemplate.class); }
-        @Bean ObjectMapper objectMapper() { return new ObjectMapper(); }
+        @Bean(name = "knowledgeTestJdbcTemplate")
+        JdbcTemplate jdbcTemplate() { return mock(JdbcTemplate.class); }
+        @Bean(name = "knowledgeTestObjectMapper")
+        ObjectMapper objectMapper() { return new ObjectMapper(); }
     }
 
     /**

@@ -69,13 +69,17 @@ class AgentAutoConfigurationTest {
      * 基础设施 Mock Bean 配置。
      *
      * <p>提供 AgentAutoConfiguration 中其他 Bean 方法所需的依赖
-     * （JdbcTemplate、ObjectMapper、LlmRouter），避免上下文启动失败。</p>
+     * （JdbcTemplate、ObjectMapper、LlmRouter），避免上下文启动失败。
+     * AgentConfigProperties 由 @EnableConfigurationProperties 自动注册，无需手动创建。</p>
      */
-    @Configuration
+    @org.springframework.boot.test.context.TestConfiguration
     static class InfraBeansConfig {
-        @Bean JdbcTemplate jdbcTemplate() { return mock(JdbcTemplate.class); }
-        @Bean ObjectMapper objectMapper() { return new ObjectMapper(); }
-        @Bean LlmRouter llmRouter() { return mock(LlmRouter.class); }
+        @Bean(name = "agentTestJdbcTemplate")
+        JdbcTemplate jdbcTemplate() { return mock(JdbcTemplate.class); }
+        @Bean(name = "agentTestObjectMapper")
+        ObjectMapper objectMapper() { return new ObjectMapper(); }
+        @Bean(name = "agentTestLlmRouter")
+        LlmRouter llmRouter() { return mock(LlmRouter.class); }
     }
 
     /** 模拟记忆系统 Bean 可用的配置。 */

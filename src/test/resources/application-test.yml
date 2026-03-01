@@ -10,6 +10,10 @@ lifepilot:
     enabled: false
     proactive:
       enabled: false
+    multi-agent:
+      enabled: false
+  a2a:
+    enabled: false
   llm:
     enabled: false
   tool:
@@ -33,6 +37,13 @@ lifepilot:
   memory:
     enabled: false
     vector-db-url: "jdbc:sqlite:${java.io.tmpdir}/lifepilot-vec-test.db"
+  observability:
+    trace:
+      enabled: true
+    guardrail:
+      enabled: false
+    evaluation:
+      enabled: false
 
 logging:
   level:
