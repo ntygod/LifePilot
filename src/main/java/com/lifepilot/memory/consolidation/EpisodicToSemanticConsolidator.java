@@ -1,0 +1,298 @@
+package com.lifepilot.memory.consolidation;
+
+import com.lifepilot.knowledge.chunking.DocumentChunk;
+import com.lifepilot.knowledge.extract.KnowledgeExtractionPipeline;
+import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.episodic.ConversationRecord;
+import com.lifepilot.memory.episodic.EpisodicMemory;
+import com.lifepilot.memory.episodic.MessageRecord;
+import com.lifepilot.memory.semantic.SemanticMemory;
+import com.lifepilot.memory.semantic.TemporalEntity;
+import jakarta.annotation.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.jdbc.core.JdbcTemplate;
+
+import java.time.Duration;
+import java.time.Instant;
+import java.util.*;
+import java.util.stream.Collectors;
+
+/**
+ * 情景→语义巩固器 — 分析近期对话中的实体提及频率，高频实体提升重要度，长对话触发知识提取。
+ *
+ * <p>巩固流程：
+ * <ol>
+ *   <li>获取增量窗口内的对话（通过 memory_consolidation_log 记录上次巩固时间戳）</li>
+ *   <li>统计已有 L3 实体在对话文本中的提及频率</li>
+ *   <li>高频实体（≥ 阈值）提升 importanceScore（步长可配置，上限 1.0）</li>
+ *   <li>长对话（&gt; 200 字符）触发 KnowledgeExtractionPipeline（LLM 不可用时跳过）</li>
+ *   <li>记录巩固日志到 memory_consolidation_log</li>
+ * </ol>
+ *
+ * @author zsg
+ * @since 2026-03-01
+ */
+public class EpisodicToSemanticConsolidator {
+
+    private static final Logger log = LoggerFactory.getLogger(EpisodicToSemanticConsolidator.class);
+    private static final String CONSOLIDATION_TYPE = "EPISODIC_TO_SEMANTIC";
+    /** 长对话触发知识提取的最小字符数。 */
+    private static final int MIN_EXTRACTION_LENGTH = 200;
+
+    private final EpisodicMemory episodicMemory;
+    private final SemanticMemory semanticMemory;
+    @Nullable
+    private final KnowledgeExtractionPipeline extractionPipeline;
+    private final JdbcTemplate jdbcTemplate;
+    private final MemoryProperties properties;
+
+    /**
+     * 构造情景→语义巩固器。
+     *
+     * @param episodicMemory     L2 情景记忆
+     * @param semanticMemory     L3 语义记忆
+     * @param extractionPipeline 知识提取管线（可选，LLM 不可用时为 null）
+     * @param jdbcTemplate       JDBC 模板
+     * @param properties         记忆配置
+     */
+    public EpisodicToSemanticConsolidator(EpisodicMemory episodicMemory,
+                                          SemanticMemory semanticMemory,
+                                          @Nullable KnowledgeExtractionPipeline extractionPipeline,
+                                          JdbcTemplate jdbcTemplate,
+                                          MemoryProperties properties) {
+        this.episodicMemory = episodicMemory;
+        this.semanticMemory = semanticMemory;
+        this.extractionPipeline = extractionPipeline;
+        this.jdbcTemplate = jdbcTemplate;
+        this.properties = properties;
+        log.info("EpisodicToSemanticConsolidator 初始化完成: extractionPipeline={}",
+                extractionPipeline != null ? "可用" : "不可用");
+    }
+
+    /**
+     * 执行情景→语义巩固。
+     *
+     * @return 巩固统计结果
+     */
+    public ConsolidationStats consolidate() {
+        long startMs = System.currentTimeMillis();
+        var config = properties.getConsolidation();
+
+        // 1. 获取增量窗口起始时间
+        Instant windowStart = getLastConsolidationTime()
+                .orElse(Instant.now().minus(Duration.ofDays(config.getLookbackDays())));
+
+        // 2. 获取窗口内的对话
+        var allRecent = episodicMemory.getRecent(1000);
+        var conversations = allRecent.stream()
+                .filter(c -> c.createdAt().isAfter(windowStart))
+                .toList();
+
+        if (conversations.isEmpty()) {
+            long elapsed = System.currentTimeMillis() - startMs;
+            log.info("语义巩固: 无新对话需要巩固, windowStart={}", windowStart);
+            var stats = new ConsolidationStats(CONSOLIDATION_TYPE, 0, 0, 0, 0, 0, 0, elapsed);
+            logConsolidation(stats);
+            return stats;
+        }
+
+        log.info("语义巩固: 发现 {} 个新对话, windowStart={}", conversations.size(), windowStart);
+
+        // 3. 获取所有当前 L3 实体
+        var currentEntities = semanticMemory.findAllCurrent();
+
+        // 4. 拼接所有对话文本，统计实体提及频率
+        String allText = buildConversationText(conversations);
+        Map<String, Integer> mentionCounts = countEntityMentions(allText, currentEntities);
+
+        // 5. 高频实体提升 importanceScore
+        int entitiesBoosted = boostHighFrequencyEntities(currentEntities, mentionCounts, config);
+
+        // 6. 长对话触发知识提取
+        int extractionsTriggered = triggerKnowledgeExtraction(conversations);
+
+        // 7. 记录巩固日志
+        long elapsed = System.currentTimeMillis() - startMs;
+        var stats = new ConsolidationStats(
+                CONSOLIDATION_TYPE,
+                conversations.size(),
+                mentionCounts.size(),
+                entitiesBoosted,
+                extractionsTriggered,
+                0, 0,
+                elapsed);
+        logConsolidation(stats);
+
+        log.info("语义巩固完成: conversations={}, entities={}, boosted={}, extractions={}, elapsed={}ms",
+                stats.conversationsAnalyzed(), stats.entitiesFound(),
+                stats.entitiesBoosted(), stats.extractionsTriggered(), stats.elapsedMs());
+
+        return stats;
+    }
+
+    /**
+     * 拼接对话中所有消息的文本内容。
+     */
+    private String buildConversationText(List<ConversationRecord> conversations) {
+        return conversations.stream()
+                .flatMap(c -> c.messages().stream())
+                .map(MessageRecord::content)
+                .filter(Objects::nonNull)
+                .collect(Collectors.joining(" "));
+    }
+
+    /**
+     * 统计每个实体在文本中的提及次数。
+     *
+     * @param text     全部对话文本
+     * @param entities 当前 L3 实体列表
+     * @return 实体 ID → 提及次数映射（仅包含提及次数 > 0 的实体）
+     */
+    private Map<String, Integer> countEntityMentions(String text, List<TemporalEntity> entities) {
+        Map<String, Integer> mentionCounts = new HashMap<>();
+        String lowerText = text.toLowerCase();
+
+        for (var entity : entities) {
+            int count = countMentions(lowerText, entity.name().toLowerCase());
+            if (count > 0) {
+                mentionCounts.put(entity.id(), count);
+            }
+        }
+        return mentionCounts;
+    }
+
+    /**
+     * 提升高频实体的 importanceScore。
+     *
+     * @return 被提升的实体数量
+     */
+    private int boostHighFrequencyEntities(List<TemporalEntity> entities,
+                                            Map<String, Integer> mentionCounts,
+                                            MemoryProperties.Consolidation config) {
+        int boosted = 0;
+        for (var entity : entities) {
+            int mentions = mentionCounts.getOrDefault(entity.id(), 0);
+            if (mentions >= config.getHighFrequencyThreshold()) {
+                float boost = Math.min(
+                        config.getImportanceBoostStep() * mentions,
+                        config.getImportanceBoostMax());
+                float newImportance = Math.min(1.0f, entity.importanceScore() + boost);
+
+                if (newImportance > entity.importanceScore()) {
+                    var updated = new TemporalEntity(
+                            entity.id(), entity.type(), entity.name(), entity.description(),
+                            entity.properties(), entity.version(), entity.isCurrent(),
+                            entity.validFrom(), entity.validTo(), entity.sourceConversationId(),
+                            entity.extractionConfidence(), newImportance,
+                            entity.accessCount(), entity.lastAccessedAt(),
+                            entity.createdAt(), Instant.now());
+                    semanticMemory.upsertWithConflictDetection(updated, entity.sourceConversationId());
+                    boosted++;
+                    log.debug("语义巩固: 实体重要度提升, name={}, oldScore={}, newScore={}, mentions={}",
+                            entity.name(), entity.importanceScore(), newImportance, mentions);
+                }
+            }
+        }
+        return boosted;
+    }
+
+    /**
+     * 对长对话触发知识提取。LLM 不可用时跳过。
+     *
+     * @return 触发提取的对话数量
+     */
+    private int triggerKnowledgeExtraction(List<ConversationRecord> conversations) {
+        if (extractionPipeline == null) {
+            log.debug("语义巩固: KnowledgeExtractionPipeline 不可用, 跳过知识提取");
+            return 0;
+        }
+
+        int triggered = 0;
+        for (var conv : conversations) {
+            String convText = conv.messages().stream()
+                    .map(MessageRecord::content)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.joining(" "));
+
+            if (convText.length() > MIN_EXTRACTION_LENGTH) {
+                try {
+                    var chunk = new DocumentChunk(
+                            UUID.randomUUID().toString(),
+                            conv.id(),
+                            "consolidation",
+                            convText,
+                            Optional.empty(),
+                            0,
+                            0,
+                            convText.length(),
+                            0,
+                            "",
+                            List.of(),
+                            0,
+                            Map.of());
+                    extractionPipeline.extract(List.of(chunk), conv.id());
+                    triggered++;
+                } catch (Exception e) {
+                    log.warn("语义巩固: 知识提取失败, conversationId={}, error={}",
+                            conv.id(), e.getMessage());
+                }
+            }
+        }
+        return triggered;
+    }
+
+    /**
+     * 获取上次巩固的时间戳。
+     *
+     * @return 上次巩固时间，无记录时返回 Optional.empty()
+     */
+    private Optional<Instant> getLastConsolidationTime() {
+        var results = jdbcTemplate.queryForList(
+                "SELECT created_at FROM memory_consolidation_log WHERE consolidation_type = ? ORDER BY created_at DESC LIMIT 1",
+                String.class, CONSOLIDATION_TYPE);
+        if (results.isEmpty()) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(Instant.parse(results.getFirst()));
+        } catch (Exception e) {
+            log.warn("语义巩固: 解析上次巩固时间失败, raw={}", results.getFirst());
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * 记录巩固日志到 memory_consolidation_log 表。
+     */
+    private void logConsolidation(ConsolidationStats stats) {
+        jdbcTemplate.update(
+                "INSERT INTO memory_consolidation_log (id, consolidation_type, conversations_analyzed, entities_found, entities_boosted, extractions_triggered, templates_created, templates_updated, elapsed_ms, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                UUID.randomUUID().toString(),
+                stats.consolidationType(),
+                stats.conversationsAnalyzed(),
+                stats.entitiesFound(),
+                stats.entitiesBoosted(),
+                stats.extractionsTriggered(),
+                stats.templatesCreated(),
+                stats.templatesUpdated(),
+                stats.elapsedMs(),
+                Instant.now().toString());
+    }
+
+    /**
+     * 统计 name 在 text 中出现的次数（大小写不敏感，调用方已转小写）。
+     */
+    private int countMentions(String text, String name) {
+        if (name.isEmpty()) {
+            return 0;
+        }
+        int count = 0;
+        int idx = 0;
+        while ((idx = text.indexOf(name, idx)) != -1) {
+            count++;
+            idx += name.length();
+        }
+        return count;
+    }
+}
