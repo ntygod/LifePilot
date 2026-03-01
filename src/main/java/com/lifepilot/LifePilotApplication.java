@@ -14,8 +14,8 @@ import org.springframework.context.event.EventListener;
  *
  * <p>本地运行的个人 AI Agent 助手，通过 {@code java -jar lifepilot.jar} 一键启动。
  *
- * <p>Web Controller 和 A2A Server Controller 通过各自的 AutoConfiguration 条件注册，
- * 此处排除组件扫描以避免无条件实例化导致依赖缺失。</p>
+ * <p>Web Controller 通过组件扫描自动注册，依赖缺失时会启动失败（fail-fast），
+ * 这比条件注册更清晰。A2A Server Controller 仍通过 AutoConfiguration 条件注册。</p>
  *
  * @author zsg
  * @since 2026-02-24
@@ -26,8 +26,8 @@ import org.springframework.context.event.EventListener;
         excludeFilters = @ComponentScan.Filter(
                 type = FilterType.REGEX,
                 pattern = {
-                        "com\\.lifepilot\\.interaction\\.web\\.controller\\..*",
-                        "com\\.lifepilot\\.a2a\\.server\\.(AgentCardController|A2aTaskController|A2aMessageController)"
+                        "com\\.lifepilot\\.a2a\\.server\\.(AgentCardController|A2aTaskController|A2aMessageController)",
+                        ".*Test\\$.*Config"
                 }
         )
 )

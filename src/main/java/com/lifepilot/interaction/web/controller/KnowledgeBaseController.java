@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -33,11 +34,14 @@ import java.util.Set;
  * <p>提供知识库 CRUD 和文档管理 API 端点，
  * 委托 {@link KnowledgeBaseManager} 和 {@link DocumentIngester} 完成业务逻辑。</p>
  *
+ * <p>仅在 {@link DocumentIngester} Bean 存在时注册（需要 LLM Router 和 Vector Indexer）。</p>
+ *
  * @author zsg
  * @since 2026-02-27
  */
 @RestController
 @RequestMapping("/api/knowledge-bases")
+@ConditionalOnBean(DocumentIngester.class)
 public class KnowledgeBaseController {
 
     private static final Logger log = LoggerFactory.getLogger(KnowledgeBaseController.class);
@@ -117,7 +121,7 @@ public class KnowledgeBaseController {
             // 保存到临时文件
             String suffix = originalName.substring(originalName.lastIndexOf('.'));
             Path tempFile = Files.createTempFile("lifepilot-upload-", suffix);
-            file.transferTo(tempFile.toFile());
+            file.transferTo(tempFile.toFile().getAbsoluteFile());
 
             // 异步处理文档
             documentIngester.ingest(id, tempFile);
