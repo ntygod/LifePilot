@@ -29,6 +29,9 @@ lifepilot:
   config-version: 1
   agent:
     enabled: true
+    debug:
+      # 打印每次调用 LLM 时发送的完整提示词（可能包含隐私/密钥），仅建议本地/受控环境开启
+      log-llm-prompts: true
     loop:
       max-iterations: 50
       max-consecutive-blocks: 3
