@@ -1,0 +1,305 @@
+# LifePilot Web UI 设计规范与开发指南
+
+> 基于项目设计系统文档 (`docs/ui-design-optimization.md`) 和 UI/UX 最佳实践
+
+## 项目技术栈
+
+- **前端框架**: Vue 3 + Composition API + TypeScript
+- **UI 组件库**: shadcn-vue (New York 风格)
+- **样式系统**: Tailwind CSS 4.x + CSS Variables
+- **状态管理**: Pinia
+- **路由**: Vue Router 4.x
+- **图标库**: lucide-vue-next
+- **构建工具**: Vite 6.x
+
+## 设计系统核心原则
+
+### 1. 间距系统 (Spacing System)
+
+**基础单位**: 4px (0.25rem)
+
+**标准刻度**:
+- `xs` = 4px (0.25rem)
+- `sm` = 8px (0.5rem)  
+- `md` = 16px (1rem)
+- `lg` = 24px (1.5rem)
+- `xl` = 32px (2rem)
+- `2xl` = 48px (3rem)
+
+**使用规则**:
+- 组件内间距: `p-md` (16px) 或 `px-md py-sm` (16px/8px)
+- 组件间距: `gap-md` (16px) 或 `gap-lg` (24px)
+- 页面边距: `px-lg` (24px) 桌面端，`px-md` (16px) 移动端
+- 消息间距: 统一使用 `py-lg` (24px)
+
+**禁止**: 使用任意值如 `p-3`, `px-5` 等，必须使用标准刻度
+
+### 2. 排版系统 (Typography)
+
+**字体层级**:
+- Display/页面大标题: `text-3xl` (28-30px)
+- Page Title: `text-2xl` (24px) + `font-semibold` + `leading-tight`
+- Section Title: `text-xl` (20px) + `leading-snug`
+- Body 正文: `text-base` (16px) + `leading-normal`
+- Body 次要: `text-sm` (14px) + `leading-normal`
+- Meta 辅助: `text-xs` (12px) + `text-muted-foreground`
+
+**字重规范**:
+- 标题: `font-semibold` (600)
+- 小标题/标签: `font-medium` (500)
+- 正文: `font-normal` (400)
+- 禁止使用 `font-bold` (700)，除非极少数强烈强调场景
+
+**字体家族**:
+- 中文主字体: `system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif`
+- 等宽字体: `"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace`
+
+### 3. 配色系统 (Color System)
+
+**品牌风格**: 专业的 SaaS 蓝 + 中性灰，偏冷静、理性
+
+**色板结构** (遵循 shadcn-vue):
+- `background` / `foreground` - 页面背景/前景
+- `card` / `card-foreground` - 卡片背景/前景
+- `muted` / `muted-foreground` - 次要背景/文字
+- `primary` / `primary-foreground` - 主色/主色文字
+- `accent` / `accent-foreground` - 强调色/强调色文字
+- `destructive` / `destructive-foreground` - 危险色/危险色文字
+- `border` / `input` - 边框/输入框边框
+- `ring` - 焦点环颜色
+
+**对比度要求**:
+- 正文与背景: ≥ 4.5:1 (WCAG AA)
+- 大字号(≥18px)与背景: ≥ 3:1
+- 辅助文字仍需满足可读性，避免过浅
+
+**使用规范**:
+- `primary`: 主按钮、主要操作入口、用户消息气泡背景
+- `accent`: 选中态导航、侧边栏当前项、空状态高亮区域
+- `destructive`: 仅用于删除、危险操作
+- `muted`/`card`: AI 消息气泡背景、卡片背景、快捷提示
+
+### 4. 圆角系统 (Radius System)
+
+**圆角层级**:
+- `rounded-sm`: 4px - Tag、小徽标
+- `rounded-lg`: 8px - 按钮、卡片、小弹层
+- `rounded-2xl`: 16px - 消息气泡、输入框、空状态大卡片
+- `rounded-full`: 全圆 - 头像、圆形按钮、图标按钮
+
+**组件圆角规则**:
+- 消息气泡: 基础 `rounded-2xl` (16px)
+  - 用户消息: 右下角 `rounded-br-sm` (制造"尖角"效果)
+  - AI 消息: 左下角 `rounded-bl-sm`
+- 输入框: `rounded-2xl` (与消息气泡保持一致)
+- 侧边栏项/菜单项: `rounded-lg` (避免过度圆润)
+
+### 5. 阴影系统 (Elevation)
+
+**阴影层级**:
+- `shadow-sm`: 轻微浮起 - 消息气泡、选中态卡片
+- `shadow-md`: 模块卡片、弹出层
+- `shadow-lg`: 对话框、模态框
+- `shadow-xl`: 大型对话框
+
+**使用场景**:
+- 按钮 hover: `hover:shadow-md`
+- 卡片: `shadow-sm`
+- 弹出层: `shadow-md` 或 `shadow-lg`
+
+### 6. 布局约束 (Layout Constraints)
+
+**最大宽度**:
+- 消息内容区域: `max-w-[768px]` (ChatGPT 风格)
+- 整体容器: `max-w-[1200px]` (Claude 风格)
+
+**布局结构**:
+```vue
+<div class="flex flex-col h-full">
+  <div class="flex-1 overflow-y-auto">
+    <div class="max-w-[768px] mx-auto px-lg py-lg">
+      <!-- 消息列表 -->
+    </div>
+  </div>
+  <div class="border-t border-border bg-card">
+    <div class="max-w-[768px] mx-auto px-lg py-md">
+      <!-- 输入框 -->
+    </div>
+  </div>
+</div>
+```
+
+**侧边栏宽度**: `--sidebar-width: 260px`
+
+### 7. 交互与动效 (Interaction & Motion)
+
+**动画原则**:
+- 时长: 150-250ms 为主，不超过 300ms
+- 缓动: `cubic-bezier(0.22, 0.61, 0.36, 1)` (ease-out)
+- 有意义: 只为状态变化、层级变化添加动效
+
+**关键场景**:
+- 按钮 hover: `transition-all duration-200 hover:bg-primary/90 hover:shadow-md`
+- 消息出现: 淡入 + 轻微位移 (`animate-fade-in-up`)
+- Focus 状态: `focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2`
+- Active 状态: `active:scale-[0.98]`
+
+**禁止事项**:
+- 禁止长时间(>500ms)且无意义的 Loading 动画
+- 禁止频繁闪烁、高饱和度的动效
+- 禁止大面积位移造成"页面抖动"
+
+### 8. 响应式设计 (Responsive)
+
+**断点策略** (Tailwind 默认):
+- `sm`: 640px
+- `md`: 768px
+- `lg`: 1024px
+- `xl`: 1280px
+
+**布局规则**:
+- ≤ `md`: 侧边栏默认折叠，内容宽度 `px-md` (16px)
+- ≥ `lg`: 启用固定侧边栏 + 内容区域，最大宽度 1200px
+- 消息列表: 始终使用 `max-w-[768px] mx-auto`
+
+**滚动与高度**:
+- 主布局: `h-screen`，顶部/底部固定，中间 `overflow-y-auto`
+- 避免双滚动条
+
+### 9. 图标规范 (Iconography)
+
+**图标风格**:
+- 使用线性 SVG 图标 (lucide-vue-next 风格)
+- 线宽统一: `stroke-width="1.5"` 或 `2`
+- 拐角圆润: `stroke-linecap="round"` + `stroke-linejoin="round"`
+
+**尺寸规范**:
+- 按钮图标: `w-4 h-4` (16px)
+- 导航图标: `w-4 h-4` 或 `w-5 h-5` (16px/20px)
+- 空状态图标: `w-8 h-8` (32px)
+- 与文字间距: `gap-2` (8px)
+
+**禁止**: 使用 emoji 作为图标，必须使用 SVG
+
+### 10. 组件规范 (Component Guidelines)
+
+#### Chat 消息 (MessageBubble)
+- 圆角: `rounded-2xl` (16px)，角色方向圆角差异
+- 间距: 外 `py-lg` (24px)，内 `px-4 py-3` (16px/12px)
+- 头像: `gap-2` (8px) 间距，AI/用户配色区分
+- 用户消息: 右对齐，`bg-primary text-primary-foreground`，右下角 `rounded-br-sm`
+- AI 消息: 左对齐，`bg-muted text-foreground`，左下角 `rounded-bl-sm`
+
+#### 输入框 (ChatInput)
+- 多行、自动扩展，高度 `min-h-[52px] max-h-[200px]`
+- 圆角: `rounded-2xl` (16px)
+- 内边距: `px-4 py-3` (16px/12px)
+- 右侧圆形发送按钮: `rounded-full w-10 h-10`
+- Focus: `focus:ring-2 focus:ring-ring focus:border-transparent`
+
+#### 侧边栏 (Sidebar)
+- 宽度: `w-[260px]` (使用 `--sidebar-width` 变量)
+- 背景: `bg-card/50 backdrop-blur-sm` (半透明 + 模糊)
+- 会话项: `rounded-lg`，hover/active 状态一致
+- 选中态: `bg-accent text-accent-foreground shadow-sm`
+
+#### 按钮 (Button)
+- 基础样式: `rounded-lg px-4 py-2 text-sm font-medium`
+- 主按钮: `bg-primary text-primary-foreground`
+- Hover: `hover:bg-primary/90 hover:shadow-md`
+- Focus: `focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2`
+- Active: `active:scale-[0.98]`
+- Disabled: `disabled:opacity-50 disabled:cursor-not-allowed`
+
+#### 空状态 (Empty State)
+- 图标 + 标题 + 描述 + 建议操作
+- 图标容器: `w-16 h-16 rounded-full bg-primary/10`
+- 标题: `text-xl font-semibold`
+- 描述: `text-sm text-muted-foreground max-w-md`
+- 建议按钮: `px-4 py-2 rounded-lg bg-muted text-muted-foreground hover:bg-accent`
+
+### 11. 无障碍与可用性 (Accessibility)
+
+**键盘操作**:
+- 所有可交互元素可通过 `Tab` 访问
+- 使用 `focus-visible` 或 `focus:ring` 提供明显焦点样式
+- 输入框支持: `Enter` 发送，`Shift+Enter` 换行
+
+**状态反馈**:
+- 加载: 骨架屏 / Loading 指示器
+- 成功: 轻量提示或状态变化
+- 错误: 红色文本 + 适度图标，定位在错误字段附近
+
+**文案规范**:
+- 占位符使用具体示例句，避免"请输入内容"
+- 错误提示说明原因与解决方式
+
+### 12. 代码规范
+
+**Vue 3 Composition API**:
+- 使用 `<script setup lang="ts">`
+- Props 使用 `defineProps<T>()` 或 `withDefaults(defineProps<T>(), {...})`
+- Emits 使用 `defineEmits<T>()`
+- 响应式数据优先使用 `ref`，复杂对象使用 `reactive` 或 `ref`
+
+**样式类名**:
+- 优先使用 Tailwind 工具类
+- 复杂样式使用 CSS Variables (`var(--spacing-md)`)
+- 避免内联样式，除非动态值
+
+**组件命名**:
+- PascalCase: `MessageBubble.vue`, `ChatInput.vue`
+- 文件名与组件名保持一致
+
+**类型定义**:
+- 使用 TypeScript 严格模式
+- 接口定义放在 `src/types/index.ts`
+- Props/Emits 使用 TypeScript 类型
+
+### 13. UI/UX 最佳实践
+
+**视觉层次**:
+- 使用颜色、大小、字重建立清晰的视觉层次
+- 重要信息使用 `font-semibold` + `text-foreground`
+- 次要信息使用 `text-muted-foreground`
+
+**一致性**:
+- 相同功能的组件使用相同的样式
+- 间距、圆角、颜色保持一致
+- 交互反馈保持一致
+
+**性能优化**:
+- 使用 `v-show` 而非 `v-if` 用于频繁切换的显示/隐藏
+- 长列表使用虚拟滚动
+- 图片使用懒加载
+
+**用户体验**:
+- 提供即时反馈（按钮点击、表单提交）
+- 使用骨架屏而非空白加载状态
+- 错误信息清晰、可操作
+- 空状态提供引导和操作建议
+
+## 开发检查清单
+
+在提交代码前，确保:
+
+- [ ] 间距使用标准刻度 (xs/sm/md/lg/xl/2xl)
+- [ ] 字体大小符合排版系统规范
+- [ ] 颜色使用设计系统色板，不使用硬编码颜色
+- [ ] 圆角使用标准层级 (sm/lg/2xl/full)
+- [ ] 按钮有完整的 hover/focus/active/disabled 状态
+- [ ] 响应式设计在移动端和桌面端都正常
+- [ ] 所有可交互元素有焦点样式
+- [ ] 动画时长不超过 300ms
+- [ ] 图标使用 SVG，不使用 emoji
+- [ ] 空状态有图标、标题、描述和建议操作
+- [ ] TypeScript 类型定义完整
+- [ ] 代码通过 ESLint 检查
+
+## 参考文档
+
+- 项目设计系统: `docs/ui-design-optimization.md`
+- Web UI 架构: `docs/architecture/web-ui.md`
+- shadcn-vue 文档: https://www.shadcn-vue.com/
+- Tailwind CSS 文档: https://tailwindcss.com/docs
+- Vue 3 文档: https://vuejs.org/

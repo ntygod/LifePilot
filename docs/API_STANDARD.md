@@ -278,21 +278,59 @@ Content-Type: application/json
 
 ### 10.2 事件类型与 data 结构
 
-- `message`: 增量消息片段（实现可选）
-- `done`: 完成事件（应包含 `messageId`，可带 `traceId/sources/knowledgeBaseId/skillIds/workflowInstanceId`）
-- `error`: 错误事件（字段与 `ErrorResponse` 对齐，便于统一处理）
+> **注意**：事件类型定义参见后端常量类 `com.lifepilot.interaction.web.sse.SseEventType` 和前端常量 `@/constants/sseEvents`。
+
+#### Chat 模块事件类型
+
+| 事件类型 | 说明 | 数据结构 |
+|---------|------|---------|
+| `token` | 增量文本片段事件 | `{"content": "文本片段"}` |
+| `ui` | UI 组件更新事件 | `{"components": [...]}` |
+| `done` | 消息完成事件 | `{"messageId": "...", "content": "...", "timestamp": ..., "tokenUsage": {...}, "traceId": "..."}` |
+| `error` | 错误事件 | `{"code": 500, "message": "...", "traceId": "..."}` |
+| `heartbeat` | 心跳事件 | `""`（空字符串） |
+
+**`done` 事件完整字段说明**：
+- `messageId`（必填）：消息 ID
+- `content`（可选）：完整消息内容（非流式响应时提供）
+- `sessionId`（可选）：会话 ID
+- `timestamp`（必填）：消息完成时间戳（毫秒）
+- `tokenUsage`（可选）：Token 使用统计，格式：`{"promptTokens": 100, "completionTokens": 200, "totalTokens": 300, "modelId": "..."}`
+- `traceId`（可选）：追踪 ID，用于调试和日志关联
+
+**`error` 事件字段说明**：
+- `code`（必填）：HTTP 状态码或错误码
+- `message`（必填）：错误消息
+- `traceId`（可选）：追踪 ID
+
+#### A2A 模块事件类型
+
+| 事件类型 | 说明 | 数据结构 |
+|---------|------|---------|
+| `task-status-update` | 任务状态更新事件 | `{"id": "...", "status": {...}, ...}` |
+| `task-artifact-update` | 任务产物更新事件 | `{"id": "...", "artifacts": [...], ...}` |
+| `task-complete` | 任务完成事件 | `{"id": "...", "status": {...}, ...}` |
 
 **示例**：
 
 ```
-event: message
-data: {"type":"text","content":"Hello"}
+event: token
+data: {"content":"Hello"}
+
+event: token
+data: {"content":" World"}
+
+event: ui
+data: {"components":[{"type":"button","id":"btn-1","label":"确认"}]}
 
 event: done
-data: {"messageId":"msg-123","content":"Hello World","traceId":"trace-abc-123"}
+data: {"messageId":"msg-123","content":"Hello World","timestamp":1709107200000,"tokenUsage":{"promptTokens":10,"completionTokens":2,"totalTokens":12,"modelId":"gpt-4"},"traceId":"trace-abc-123"}
 
 event: error
-data: {"code":500,"message":"处理失败","detail":null,"traceId":"trace-abc-123","timestamp":"2026-02-28T10:00:00Z"}
+data: {"code":500,"message":"处理失败","traceId":"trace-abc-123"}
+
+event: heartbeat
+data: 
 ```
 
 ---

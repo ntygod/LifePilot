@@ -165,7 +165,10 @@ LifePilot Memory System = (L, M, P, B, π, Φ, Ψ)
 │  │ │ ConversationRecord│ MessageRecord   │ CompressionLevel            │ │  │
 │  │ │ 完整对话记录       │ 消息级细粒度存储  │ ORIGINAL→SUMMARY→KEYPOINTS  │ │  │
 │  │ └──────────────────┴──────────────────┴──────────────────────────────┘ │  │
-│  │ 存储：SQLite conversations + messages 表 + FTS5 全文索引                │  │
+│  │ 存储：SQLite L2 对话表（conversations/messages）+ FTS5 全文索引          │  │
+│  │      ※ 这些表属于记忆系统内部的情景记忆存储，                          │  │
+│  │        与 Web 对话系统的 conversation_session / conversation_turn      │  │
+│  │        等表物理分离，仅通过服务接口进行逻辑关联。                      │  │
 │  │ 访问：追加写入不可变 < 10ms            生命周期：永久保留，可渐进压缩     │  │
 │  │ 索引：时间戳 + 会话 ID + 意图类型 + FTS5 全文                           │  │
 │  │ 特性：时间旅行查询 + 渐进式三层压缩 + 用户标记永不压缩                   │  │
@@ -268,6 +271,45 @@ com.lifepilot.memory
     ├── MemoryConfig.java             # 记忆系统配置
     └── MemoryProperties.java         # Spring Boot 配置属性
 ```
+
+### 2.3 会话视图与 ConversationViewService（逻辑视图）
+
+记忆系统本身**不拥有 Web 对话系统的会话表**，而是基于会话层提供的只读视图工作。
+为此，我们在后端代码中引入了统一的逻辑视图与服务接口：
+
+```text
+ConversationSessionView
+- sessionId: String
+- channelId: String
+- lastActiveAt: Instant
+- totalTurns: int
+- totalTokensUsed: int
+
+ConversationTurnView
+- sessionId: String
+- role: String           // USER / ASSISTANT / TOOL / SYSTEM 等
+- content: String
+- createdAt: Instant
+- reasoningSummary: String?  // 可选，来自会话层的推理摘要
+```
+
+上述视图由 `ConversationViewService` 聚合提供：
+
+```text
+ConversationViewService
+- Optional<ConversationSessionView> getSession(String sessionId)
+- List<ConversationTurnView> getRecentTurns(String sessionId, int limit)
+- List<ConversationTurnView> getFullTimeline(String sessionId)
+```
+
+当前实现中：
+
+- `getSession` / `getRecentTurns` 主要基于 `agent_sessions.recent_turns_json`
+ （由 `SessionManager` 维护的会话快照层）；
+- `getFullTimeline` 优先基于 L2 `EpisodicMemory.getMessagesBySessionId(sessionId)`
+  读取完整情景记忆时间线，在尚未归档到 L2 时降级为最近 N 条快照；
+- 记忆抽取 Job、评估组件等如需访问某个会话的历史，**必须通过此服务**，
+  而不是直接访问底层 `agent_sessions` / L2 表。
 
 ### 2.3 核心类关系图
 
@@ -467,7 +509,7 @@ sequenceDiagram
 
     User->>L1: 会话结束信号
     L1->>L2: flush() → ConversationRecord 持久化
-    L2->>L2: 追加写入 conversations + messages 表
+    L2->>L2: 追加写入 L2 对话表（conversations/messages）
     L2->>L2: 更新 FTS5 全文索引
 
     opt Token 预算超限的历史对话
