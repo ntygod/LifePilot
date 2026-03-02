@@ -66,10 +66,22 @@ public class LlmRouter {
             try {
                 var adapter = providerRegistry.getAdapter(config.id());
                 var timeout = Duration.ofSeconds(config.timeoutSeconds());
+                
+                // 记录提示词（用于调试）
+                log.debug("LLM 调用开始: scene={}, provider={}, prompt={}", 
+                        scene, config.id(), 
+                        prompt.length() > 200 ? prompt.substring(0, 200) + "..." : prompt);
+                
                 var response = adapter.call(prompt, outputSchema, timeout);
                 circuitBreakerManager.recordSuccess(config.id(), "CHAT");
-                log.debug("LLM 调用成功: scene={}, provider={}, latency={}ms",
-                        scene, config.id(), response.latencyMs());
+                
+                // 记录回复（用于调试）
+                log.info("LLM 调用成功: scene={}, provider={}, model={}, latency={}ms, tokens={}/{}",
+                        scene, config.id(), response.modelName(), response.latencyMs(),
+                        response.inputTokens(), response.outputTokens());
+                log.debug("LLM 完整回复: content={}", 
+                        response.content().length() > 500 ? response.content().substring(0, 500) + "..." : response.content());
+                
                 return response;
             } catch (Exception e) {
                 circuitBreakerManager.recordFailure(config.id(), "CHAT");
@@ -242,11 +254,35 @@ public class LlmRouter {
      */
     private List<ProviderConfig> findAvailableCandidates(String scene,
                                                           ProviderCapability requiredCapability) {
-        return providerRegistry.findByScene(scene).stream()
+        var byScene = providerRegistry.findByScene(scene);
+        log.debug("场景匹配结果: scene={}, 匹配数量={}, providers={}",
+                scene, byScene.size(),
+                byScene.stream().map(ProviderConfig::id).toList());
+        
+        var candidates = byScene.stream()
                 .filter(c -> c.hasCapability(requiredCapability))
                 .filter(c -> circuitBreakerManager.isCallPermitted(
                         c.id(), requiredCapability.name()))
                 .toList();
+        
+        if (candidates.isEmpty() && !byScene.isEmpty()) {
+            log.warn("场景匹配到 Provider 但无可用候选: scene={}, 匹配的Provider={}, 需要能力={}",
+                    scene,
+                    byScene.stream().map(c -> c.id() + "(能力:" + c.capabilities() + ")").toList(),
+                    requiredCapability);
+        } else if (candidates.isEmpty()) {
+            log.warn("场景无匹配 Provider: scene={}, 已注册Provider={}, 各Provider场景={}",
+                    scene,
+                    providerRegistry.registeredIds(),
+                    providerRegistry.registeredIds().stream()
+                            .map(id -> {
+                                var config = providerRegistry.getConfig(id);
+                                return config.map(c -> id + ":" + c.scenes()).orElse(id + ":未找到");
+                            })
+                            .toList());
+        }
+        
+        return candidates;
     }
 
     /**

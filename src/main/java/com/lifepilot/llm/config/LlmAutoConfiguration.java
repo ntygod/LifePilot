@@ -8,6 +8,7 @@ import com.lifepilot.llm.registry.ProviderRegistry;
 import com.lifepilot.llm.service.LlmProviderService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.ai.chat.client.advisor.api.CallAdvisor;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -17,6 +18,9 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.event.EventListener;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.lang.Nullable;
+
+import java.util.List;
 
 /**
  * LLM Router 自动配置。
@@ -40,8 +44,8 @@ public class LlmAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public ProviderAdapterFactory providerAdapterFactory() {
-        return new ProviderAdapterFactory();
+    public ProviderAdapterFactory providerAdapterFactory(@Nullable List<CallAdvisor> advisors) {
+        return new ProviderAdapterFactory(advisors);
     }
 
     @Bean

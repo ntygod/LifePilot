@@ -7,6 +7,7 @@ import com.lifepilot.llm.multimodal.MediaContent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.advisor.api.CallAdvisor;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
@@ -39,6 +40,7 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
     private final ChatModel chatModel;
     @Nullable
     private final EmbeddingModel embeddingModel;
+    private final List<CallAdvisor> defaultAdvisors;
 
     // 延迟构建的 ChatClient
     @Nullable
@@ -50,13 +52,16 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
      * @param config         Provider 配置
      * @param chatModel      Chat 模型
      * @param embeddingModel Embedding 模型（可选）
+     * @param defaultAdvisors 默认 Advisor 列表（可选）
      */
     public SpringAiProviderAdapter(ProviderConfig config,
                                    ChatModel chatModel,
-                                   @Nullable EmbeddingModel embeddingModel) {
+                                   @Nullable EmbeddingModel embeddingModel,
+                                   @Nullable List<CallAdvisor> defaultAdvisors) {
         this.config = config;
         this.chatModel = chatModel;
         this.embeddingModel = embeddingModel;
+        this.defaultAdvisors = defaultAdvisors != null ? List.copyOf(defaultAdvisors) : List.of();
     }
 
     @Override
@@ -83,7 +88,7 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
 
     @Override
     public <T> T callEntity(String prompt, Class<T> responseType) {
-        return ChatClient.create(chatModel)
+        return buildChatClient()
                 .prompt(prompt)
                 .call()
                 .entity(responseType);
@@ -116,9 +121,25 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
     @Override
     public Optional<ChatClient> chatClient() {
         if (chatClient == null) {
-            chatClient = ChatClient.create(chatModel);
+            synchronized (this) {
+                if (chatClient == null) {
+                    chatClient = buildChatClient();
+                }
+            }
         }
         return Optional.of(chatClient);
+    }
+
+    /**
+     * 构建 ChatClient，注入默认 Advisor 链。
+     * Advisor 执行顺序：GuardrailAdvisor(100) → TraceAdvisor(200)
+     */
+    private ChatClient buildChatClient() {
+        var builder = ChatClient.builder(chatModel);
+        if (!defaultAdvisors.isEmpty()) {
+            builder.defaultAdvisors(defaultAdvisors.toArray(new CallAdvisor[0]));
+        }
+        return builder.build();
     }
 
     @Override
@@ -127,7 +148,9 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
             String response = chatModel.call("ping");
             return response != null && !response.isBlank();
         } catch (Exception e) {
-            log.warn("Provider 健康检查失败: id={}, error={}", config.id(), e.getMessage());
+            // 连接失败是常见情况，使用 DEBUG 级别避免过多日志
+            // 仅在 ProviderHealthChecker 中记录汇总信息
+            log.debug("Provider 健康检查失败: id={}, error={}", config.id(), e.getMessage());
             return false;
         }
     }

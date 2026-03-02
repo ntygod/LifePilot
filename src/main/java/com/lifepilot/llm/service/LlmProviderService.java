@@ -106,7 +106,9 @@ public class LlmProviderService {
     }
 
     /**
-     * 删除 Provider（仅删除非预设置的）。
+     * 删除 Provider。
+     *
+     * <p>预设 Provider 仅用于方便用户初始配置，用户可以自由删除、启用或禁用任何 Provider。
      *
      * @param id Provider ID
      * @return 删除成功返回 true
@@ -116,9 +118,6 @@ public class LlmProviderService {
         java.util.Optional<LlmProviderEntity> entity = repository.findById(id);
         if (entity.isEmpty()) {
             return false;
-        }
-        if (entity.get().isPreset()) {
-            throw new IllegalArgumentException("不能删除预设置的 Provider: id=" + id);
         }
         int rows = repository.deleteById(id);
         if (rows > 0 && providerRegistry != null) {

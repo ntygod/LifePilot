@@ -98,7 +98,7 @@ public class ProviderRegistry {
                 .filter(ProviderConfig::enabled)
                 .filter(c -> c.hasCapability(capability))
                 .sorted(Comparator.comparingInt(ProviderConfig::priority))
-                .collect(Collectors.toUnmodifiableList());
+                .toList();
     }
 
     /**

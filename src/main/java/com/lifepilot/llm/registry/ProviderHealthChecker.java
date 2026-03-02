@@ -42,15 +42,16 @@ public class ProviderHealthChecker {
                         results.put(providerId, healthy);
                         log.debug("Provider 健康检查完成: id={}, healthy={}", providerId, healthy);
                     } catch (Exception e) {
+                        // adapter.healthCheck() 应该已经捕获了异常，这里捕获的是意外情况
                         results.put(providerId, false);
-                        log.warn("Provider 健康检查异常: id={}, error={}", providerId, e.getMessage());
+                        log.debug("Provider 健康检查异常: id={}, error={}", providerId, e.getMessage());
                     }
                 });
             }
             // 等待所有任务完成，超时后未完成的标记为不健康
             executor.shutdown();
             if (!executor.awaitTermination(HEALTH_CHECK_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-                log.warn("Provider 健康检查超时，部分 Provider 未完成检查");
+                log.warn("Provider 健康检查超时（{}秒），部分 Provider 未完成检查", HEALTH_CHECK_TIMEOUT_SECONDS);
                 // 未完成检查的 Provider 标记为不健康
                 for (var id : adapters.keySet()) {
                     results.putIfAbsent(id, false);
@@ -62,6 +63,13 @@ public class ProviderHealthChecker {
             for (var id : adapters.keySet()) {
                 results.putIfAbsent(id, false);
             }
+        }
+
+        // 记录汇总信息
+        long healthyCount = results.values().stream().filter(b -> b).count();
+        long totalCount = results.size();
+        if (healthyCount < totalCount) {
+            log.debug("Provider 健康检查汇总: {}/{} 个 Provider 健康", healthyCount, totalCount);
         }
 
         return Map.copyOf(results);

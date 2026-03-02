@@ -124,7 +124,7 @@ public class LlmProviderRepository {
      * @return 删除的行数
      */
     public int deleteById(String id) {
-        int rows = jdbcTemplate.update("DELETE FROM llm_providers WHERE id = ? AND is_preset = 0", id);
+        int rows = jdbcTemplate.update("DELETE FROM llm_providers WHERE id = ?", id);
         if (rows > 0) {
             log.debug("Provider 已删除: id={}", id);
         }

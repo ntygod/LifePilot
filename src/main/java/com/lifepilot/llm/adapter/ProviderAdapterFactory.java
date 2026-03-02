@@ -4,6 +4,7 @@ import com.lifepilot.llm.config.ProviderCapability;
 import com.lifepilot.llm.config.ProviderConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.ai.chat.client.advisor.api.CallAdvisor;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.ollama.OllamaChatModel;
@@ -11,6 +12,9 @@ import org.springframework.ai.ollama.OllamaEmbeddingModel;
 import org.springframework.ai.ollama.api.OllamaApi;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.api.OpenAiApi;
+import org.springframework.lang.Nullable;
+
+import java.util.List;
 
 /**
  * Provider 适配器工厂。
@@ -24,6 +28,30 @@ import org.springframework.ai.openai.api.OpenAiApi;
 public class ProviderAdapterFactory {
 
     private static final Logger log = LoggerFactory.getLogger(ProviderAdapterFactory.class);
+
+    private final List<CallAdvisor> defaultAdvisors;
+
+    /**
+     * 创建 Provider 适配器工厂。
+     *
+     * @param defaultAdvisors 默认 Advisor 列表（可选）
+     */
+    public ProviderAdapterFactory(@Nullable List<CallAdvisor> defaultAdvisors) {
+        this.defaultAdvisors = defaultAdvisors != null ? List.copyOf(defaultAdvisors) : List.of();
+        if (!this.defaultAdvisors.isEmpty()) {
+            log.info("ProviderAdapterFactory 初始化: 默认 Advisors={}",
+                    this.defaultAdvisors.stream()
+                            .map(a -> a.getClass().getSimpleName())
+                            .toList());
+        }
+    }
+
+    /**
+     * 无参构造（用于测试）。
+     */
+    public ProviderAdapterFactory() {
+        this.defaultAdvisors = List.of();
+    }
 
     /**
      * 根据 Provider 配置创建适配器。
@@ -70,7 +98,7 @@ public class ProviderAdapterFactory {
         }
 
         log.info("创建 Ollama 适配器: id={}, model={}", config.id(), config.modelName());
-        return new SpringAiProviderAdapter(config, chatModel, embeddingModel);
+        return new SpringAiProviderAdapter(config, chatModel, embeddingModel, defaultAdvisors);
     }
 
     /**
@@ -97,6 +125,6 @@ public class ProviderAdapterFactory {
 
         log.info("创建 OpenAI 兼容适配器: id={}, type={}, model={}",
                 config.id(), config.type(), config.modelName());
-        return new SpringAiProviderAdapter(config, chatModel, null);
+        return new SpringAiProviderAdapter(config, chatModel, null, defaultAdvisors);
     }
 }
