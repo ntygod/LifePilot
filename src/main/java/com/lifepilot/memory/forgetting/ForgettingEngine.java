@@ -202,12 +202,24 @@ public class ForgettingEngine {
      */
     private String buildCompressionPrompt(TemporalEntity entity) {
         return """
-                请将以下记忆实体压缩为一句话摘要，保留核心信息：
+                任务：将记忆实体压缩为一句话摘要
                 
-                名称：%s
-                类型：%s
-                描述：%s
-                属性：%s
+                目标：保留核心信息，去除冗余细节，确保摘要能准确代表原实体
+                
+                实体信息：
+                - 名称：%s
+                - 类型：%s
+                - 描述：%s
+                - 属性：%s
+                
+                压缩要求：
+                1. 输出单句摘要（不超过50字）
+                2. 保留：实体名称、核心特征、关键关系
+                3. 去除：冗余描述、重复信息、无关细节
+                4. 使用简洁、准确的语言
+                5. 确保摘要能独立理解，无需上下文
+                
+                输出格式：直接输出摘要文本，不要添加引号或标记
                 """.formatted(
                 entity.name(),
                 entity.type().name(),

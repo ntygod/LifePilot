@@ -2,6 +2,7 @@ package com.lifepilot.memory.config;
 
 import com.lifepilot.knowledge.extract.KnowledgeExtractionPipeline;
 import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.memory.compression.CompressionService;
 import com.lifepilot.memory.consolidation.ConsolidationPipeline;
 import com.lifepilot.memory.consolidation.EpisodicToProceduralConsolidator;
 import com.lifepilot.memory.consolidation.EpisodicToSemanticConsolidator;
@@ -16,11 +17,14 @@ import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.semantic.ConflictDetector;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.VersionMerger;
+import com.lifepilot.memory.working.DefaultSlotEvictionPolicy;
+import com.lifepilot.memory.working.SlotEvictionPolicy;
 import com.lifepilot.memory.working.TokenBudgetAllocator;
 import com.lifepilot.memory.working.WorkingMemory;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -29,12 +33,15 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.scheduling.annotation.EnableScheduling;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.sqlite.SQLiteConfig;
 import org.sqlite.SQLiteDataSource;
 
 import javax.sql.DataSource;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Objects;
 
 /**
  * 记忆系统自动配置。
@@ -47,11 +54,21 @@ import java.nio.file.Path;
  */
 @AutoConfiguration
 @EnableConfigurationProperties(MemoryProperties.class)
+@EnableScheduling
 @ConditionalOnProperty(prefix = "lifepilot.memory", name = "enabled",
         havingValue = "true", matchIfMissing = true)
 public class MemoryAutoConfiguration {
 
     private static final Logger log = LoggerFactory.getLogger(MemoryAutoConfiguration.class);
+
+    private final MemoryProperties properties;
+    private final ObjectProvider<WorkingMemory> workingMemoryProvider;
+
+    public MemoryAutoConfiguration(MemoryProperties properties,
+                                   ObjectProvider<WorkingMemory> workingMemoryProvider) {
+        this.properties = properties;
+        this.workingMemoryProvider = workingMemoryProvider;
+    }
 
     // --- L1 工作记忆 ---
 
@@ -60,6 +77,13 @@ public class MemoryAutoConfiguration {
     public TokenBudgetAllocator tokenBudgetAllocator(MemoryProperties properties) {
         log.info("记忆系统: 注册 TokenBudgetAllocator");
         return new TokenBudgetAllocator(properties);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public SlotEvictionPolicy slotEvictionPolicy() {
+        log.info("记忆系统: 注册默认 SlotEvictionPolicy");
+        return new DefaultSlotEvictionPolicy();
     }
 
     @Bean
@@ -73,9 +97,38 @@ public class MemoryAutoConfiguration {
     @ConditionalOnMissingBean
     public WorkingMemory workingMemory(
             MemoryProperties properties,
-            EpisodicMemory episodicMemory) {
+            EpisodicMemory episodicMemory,
+            TokenBudgetAllocator tokenBudgetAllocator,
+            SlotEvictionPolicy slotEvictionPolicy) {
         log.info("记忆系统: 注册 WorkingMemory, Token 预算={}", properties.getWorkingMemoryTokenBudget());
-        return new WorkingMemory(properties, episodicMemory);
+        return new WorkingMemory(properties, episodicMemory, tokenBudgetAllocator, slotEvictionPolicy);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean({EpisodicMemory.class, LlmRouter.class})
+    public CompressionService compressionService(EpisodicMemory episodicMemory,
+                                                 LlmRouter llmRouter) {
+        log.info("记忆系统: 注册 CompressionService");
+        return new CompressionService(llmRouter, episodicMemory);
+    }
+
+    /**
+     * 定期清理空闲会话，将其从 L1 flush 到 L2，防止工作记忆无限增长。
+     *
+     * <p>使用 {@link MemoryProperties#getIdleSessionTimeoutMinutes()} 作为空闲阈值。</p>
+     */
+    @Scheduled(fixedDelayString = "PT5M")
+    public void cleanupIdleWorkingMemorySessions() {
+        int timeoutMinutes = this.properties.getIdleSessionTimeoutMinutes();
+        if (timeoutMinutes <= 0) {
+            return;
+        }
+        WorkingMemory workingMemory = this.workingMemoryProvider.getIfAvailable();
+        if (workingMemory == null) {
+            return;
+        }
+        workingMemory.cleanupIdleSessions(java.time.Duration.ofMinutes(timeoutMinutes));
     }
 
     // --- 向量数据库 ---
@@ -114,7 +167,7 @@ public class MemoryAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean(name = "vectorJdbcTemplate")
     public JdbcTemplate vectorJdbcTemplate(@Qualifier("vectorDataSource") DataSource vectorDataSource) {
-        return new JdbcTemplate(vectorDataSource);
+        return new JdbcTemplate(Objects.requireNonNull(vectorDataSource, "vectorDataSource"));
     }
 
     // --- L3 语义记忆 ---

@@ -8,8 +8,12 @@ import com.lifepilot.memory.episodic.MessageRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
 import java.time.Instant;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -26,6 +30,8 @@ public class WorkingMemory {
 
     private final MemoryProperties properties;
     private final EpisodicMemory episodicMemory;
+    private final TokenBudgetAllocator tokenBudgetAllocator;
+    private final SlotEvictionPolicy slotEvictionPolicy;
 
     /** 会话槽位列表。 */
     private final ConcurrentHashMap<String, List<WorkingMemorySlot>> sessions = new ConcurrentHashMap<>();
@@ -36,9 +42,26 @@ public class WorkingMemory {
     /** 会话最后活动时间。 */
     private final ConcurrentHashMap<String, Instant> lastActivity = new ConcurrentHashMap<>();
 
-    public WorkingMemory(MemoryProperties properties, EpisodicMemory episodicMemory) {
+    /**
+     * 使用显式策略的构造函数。
+     */
+    public WorkingMemory(MemoryProperties properties,
+                         EpisodicMemory episodicMemory,
+                         TokenBudgetAllocator tokenBudgetAllocator,
+                         SlotEvictionPolicy slotEvictionPolicy) {
         this.properties = properties;
         this.episodicMemory = episodicMemory;
+        this.tokenBudgetAllocator = tokenBudgetAllocator;
+        this.slotEvictionPolicy = slotEvictionPolicy;
+    }
+
+    /**
+     * 兼容旧调用方的构造函数。
+     *
+     * <p>在未显式提供策略实例时，使用默认策略。</p>
+     */
+    public WorkingMemory(MemoryProperties properties, EpisodicMemory episodicMemory) {
+        this(properties, episodicMemory, new TokenBudgetAllocator(properties), new DefaultSlotEvictionPolicy());
     }
 
     /**
@@ -55,17 +78,27 @@ public class WorkingMemory {
         tokenUsage.compute(sessionId, (k, v) -> (v == null ? 0 : v) + slot.tokenCount());
         lastActivity.put(sessionId, Instant.now());
 
-        // 超预算时执行淘汰
-        int budget = properties.getWorkingMemoryTokenBudget();
-        while (tokenUsage.getOrDefault(sessionId, 0) > budget) {
-            var victim = findEvictionCandidate(slots);
+        // 超预算时执行淘汰（通过策略接口 + Token 预算分配器）
+        int totalBudget = properties.getWorkingMemoryTokenBudget();
+        // 使用 TokenBudgetAllocator 动态计算工作记忆可用预算
+        BudgetAllocation allocation = this.tokenBudgetAllocator.allocate(
+                totalBudget,
+                slots.size(),
+                0.0f
+        );
+        int budget = allocation.workingMemoryBudget();
+        int currentUsage = tokenUsage.getOrDefault(sessionId, 0);
+        while (currentUsage > budget) {
+            var victim = slotEvictionPolicy.selectEvictionCandidate(sessionId, slots, currentUsage, budget);
             if (victim == null) {
                 log.warn("无法找到可淘汰的槽位: sessionId={}", sessionId);
                 break;
             }
             slots.remove(victim);
-            tokenUsage.compute(sessionId, (k, v) -> (v == null ? 0 : v) - victim.tokenCount());
-            log.debug("淘汰槽位: sessionId={}, 类型={}, tokenCount={}", sessionId, victim.getClass().getSimpleName(), victim.tokenCount());
+            currentUsage -= victim.tokenCount();
+            tokenUsage.put(sessionId, currentUsage);
+            log.debug("淘汰槽位: sessionId={}, 类型={}, tokenCount={}", sessionId,
+                    victim.getClass().getSimpleName(), victim.tokenCount());
         }
     }
 
@@ -98,6 +131,8 @@ public class WorkingMemory {
     /**
      * 将会话的 ConversationSlot 转换为 ConversationRecord 并持久化到 L2 情景记忆，然后清除会话。
      *
+     * <p>该方法用于会话「真正结束」或被 idle 清理的场景，而不是每轮对话结束。</p>
+     *
      * @param sessionId 会话 ID
      */
     public void flush(String sessionId) {
@@ -106,7 +141,6 @@ public class WorkingMemory {
             return;
         }
 
-        // 提取 ConversationSlot 转换为 MessageRecord
         var now = Instant.now();
         var conversationId = UUID.randomUUID().toString();
         var messages = new ArrayList<MessageRecord>();
@@ -144,27 +178,45 @@ public class WorkingMemory {
     }
 
     /**
-     * 查找淘汰候选槽位 — 按类型优先级和重要度排序。
+     * 清理空闲会话：超过给定空闲阈值后，自动 flush 到 L2 并从 L1 中移除。
      *
-     * <p>淘汰优先级：ReasoningSlot → ToolResultSlot → ConversationSlot（跳过 pinned）。
-     * 同类型内按 importance 升序排序，优先淘汰重要度最低的。</p>
+     * <p>由定时任务调用，避免工作记忆无限增长。</p>
+     *
+     * @param idleThreshold 空闲阈值
      */
-    private WorkingMemorySlot findEvictionCandidate(List<WorkingMemorySlot> slots) {
-        synchronized (slots) {
-            return slots.stream()
-                    .filter(s -> !(s instanceof ConversationSlot cs && cs.isPinned()))
-                    .min(Comparator.comparingInt(this::typePriority)
-                            .thenComparing(WorkingMemorySlot::importance))
-                    .orElse(null);
+    public void cleanupIdleSessions(Duration idleThreshold) {
+        if (idleThreshold == null || idleThreshold.isNegative() || idleThreshold.isZero()) {
+            return;
+        }
+
+        var now = Instant.now();
+        var idleSessions = new ArrayList<String>();
+
+        for (var entry : lastActivity.entrySet()) {
+            var lastActive = entry.getValue();
+            if (lastActive == null) {
+                continue;
+            }
+            var idleDuration = Duration.between(lastActive, now);
+            if (idleDuration.compareTo(idleThreshold) > 0) {
+                idleSessions.add(entry.getKey());
+            }
+        }
+
+        if (idleSessions.isEmpty()) {
+            return;
+        }
+
+        for (var sessionId : idleSessions) {
+            try {
+                flush(sessionId);
+                log.info("清理空闲会话并 flush 到 L2: sessionId={}, idleMinutes>{}",
+                        sessionId, idleThreshold.toMinutes());
+            } catch (Exception e) {
+                log.warn("清理空闲会话失败: sessionId={}, error={}",
+                        sessionId, e.getMessage());
+            }
         }
     }
 
-    /** 类型淘汰优先级：ReasoningSlot(0) → ToolResultSlot(1) → ConversationSlot(2)。 */
-    private int typePriority(WorkingMemorySlot slot) {
-        return switch (slot) {
-            case ReasoningSlot _ -> 0;
-            case ToolResultSlot _ -> 1;
-            case ConversationSlot _ -> 2;
-        };
-    }
 }

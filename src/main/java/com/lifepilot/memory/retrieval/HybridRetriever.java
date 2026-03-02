@@ -2,6 +2,7 @@ package com.lifepilot.memory.retrieval;
 
 import com.lifepilot.memory.procedural.IntentMatcher;
 import com.lifepilot.memory.semantic.SemanticMemory;
+import com.lifepilot.memory.semantic.TemporalEntity;
 import com.lifepilot.memory.working.ReasoningSlot;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
@@ -11,9 +12,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -197,32 +200,47 @@ public class HybridRetriever {
         }
     }
 
-    /** 向量检索结果转换为 RankedItem（查询实体详情补全元数据）。 */
+    /** 向量检索结果转换为 RankedItem（批量查询实体详情补全元数据）。 */
     private List<RankedItem> convertVectorResults(List<VectorSearchResult> vectorResults) {
+        if (vectorResults.isEmpty()) {
+            return List.of();
+        }
+
         List<RankedItem> items = new ArrayList<>();
-        for (var vr : vectorResults) {
-            try {
-                // 从 SemanticMemory 的 findAllCurrent 中查找实体详情
-                // 这里直接用 JdbcTemplate 查询会更高效，但为避免 HybridRetriever 直接依赖 JdbcTemplate，
-                // 通过 SemanticMemory 间接获取
-                var allCurrent = semanticMemory.findAllCurrent();
-                var entity = allCurrent.stream()
-                        .filter(e -> e.id().equals(vr.entityId()))
-                        .findFirst();
-                if (entity.isPresent()) {
-                    var e = entity.get();
+        try {
+            Set<String> ids = new HashSet<>();
+            for (var vr : vectorResults) {
+                if (vr.entityId() != null && !vr.entityId().isBlank()) {
+                    ids.add(vr.entityId());
+                }
+            }
+            Map<String, TemporalEntity> entityMap = semanticMemory.findByIds(ids);
+
+            for (var vr : vectorResults) {
+                TemporalEntity entity = entityMap.get(vr.entityId());
+                if (entity != null) {
                     items.add(new RankedItem(
-                            e.id(), e.type().name(), e.name(), e.description(),
-                            vr.similarity(), e.lastAccessedAt(), e.importanceScore()));
+                            entity.id(),
+                            entity.type().name(),
+                            entity.name(),
+                            entity.description(),
+                            vr.similarity(),
+                            entity.lastAccessedAt(),
+                            entity.importanceScore()));
                 } else {
                     // 实体可能已归档，仅用 entityId 和 similarity 构建
                     items.add(new RankedItem(
-                            vr.entityId(), "UNKNOWN", vr.entityId(), null,
-                            vr.similarity(), null, 0.0f));
+                            vr.entityId(),
+                            "UNKNOWN",
+                            vr.entityId(),
+                            null,
+                            vr.similarity(),
+                            null,
+                            0.0f));
                 }
-            } catch (Exception e) {
-                log.warn("混合检索: 向量结果转换失败, entityId={}, error={}", vr.entityId(), e.getMessage());
             }
+        } catch (Exception e) {
+            log.warn("混合检索: 向量结果批量转换失败, error={}", e.getMessage());
         }
         return items;
     }

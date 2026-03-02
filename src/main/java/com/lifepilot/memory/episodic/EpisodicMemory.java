@@ -5,8 +5,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -58,8 +60,12 @@ public class EpisodicMemory {
      * @return 对话记录列表
      */
     public List<ConversationRecord> getRecent(int limit) {
+        if (limit <= 0) {
+            return List.of();
+        }
         var conversations = jdbcTemplate.query(
-                "SELECT id, session_id, goal, summary, created_at, updated_at FROM conversations ORDER BY created_at DESC LIMIT ?",
+                "SELECT id, session_id, goal, summary, created_at, updated_at " +
+                        "FROM conversations ORDER BY created_at DESC LIMIT ?",
                 (rs, rowNum) -> new ConversationRecord(
                         rs.getString("id"),
                         rs.getString("session_id"),
@@ -71,6 +77,38 @@ public class EpisodicMemory {
                 limit);
 
         // 填充每个对话的消息列表
+        return conversations.stream()
+                .map(c -> new ConversationRecord(c.id(), c.sessionId(), c.goal(), c.summary(),
+                        loadMessages(c.id()), c.createdAt(), c.updatedAt()))
+                .toList();
+    }
+
+    /**
+     * 按时间窗口获取最近的对话记录（按 created_at 降序）。
+     *
+     * <p>用于巩固管线和分析“最近 N 天/小时”的对话片段。</p>
+     *
+     * @param duration 回溯时间窗口（如 Duration.ofDays(7)）
+     * @return 对话记录列表
+     */
+    public List<ConversationRecord> getRecent(Duration duration) {
+        if (duration == null || duration.isNegative() || duration.isZero()) {
+            return List.of();
+        }
+        String since = Instant.now().minus(duration).toString();
+        var conversations = jdbcTemplate.query(
+                "SELECT id, session_id, goal, summary, created_at, updated_at " +
+                        "FROM conversations WHERE created_at >= ? ORDER BY created_at DESC",
+                (rs, rowNum) -> new ConversationRecord(
+                        rs.getString("id"),
+                        rs.getString("session_id"),
+                        rs.getString("goal"),
+                        rs.getString("summary"),
+                        List.of(),
+                        Instant.parse(rs.getString("created_at")),
+                        Instant.parse(rs.getString("updated_at"))),
+                since);
+
         return conversations.stream()
                 .map(c -> new ConversationRecord(c.id(), c.sessionId(), c.goal(), c.summary(),
                         loadMessages(c.id()), c.createdAt(), c.updatedAt()))
@@ -134,6 +172,9 @@ public class EpisodicMemory {
      * @return 消息记录列表
      */
     public List<MessageRecord> getMessagesBySessionId(String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return List.of();
+        }
         var conversationIds = jdbcTemplate.queryForList(
                 "SELECT id FROM conversations WHERE session_id = ? ORDER BY created_at",
                 String.class, sessionId);
@@ -143,11 +184,75 @@ public class EpisodicMemory {
     }
 
     /**
+     * 按意图（goal 模糊匹配）获取最近的对话记录。
+     *
+     * <p>例如 intentType="待办" 用于检索与待办事项相关的历史对话。</p>
+     *
+     * @param intentType 意图关键词
+     * @param limit      最大返回数量
+     * @return 匹配的对话记录列表
+     */
+    public List<ConversationRecord> getByIntent(String intentType, int limit) {
+        if (intentType == null || intentType.isBlank() || limit <= 0) {
+            return List.of();
+        }
+        var conversations = jdbcTemplate.query(
+                "SELECT id, session_id, goal, summary, created_at, updated_at " +
+                        "FROM conversations WHERE goal LIKE ? ORDER BY created_at DESC LIMIT ?",
+                (rs, rowNum) -> new ConversationRecord(
+                        rs.getString("id"),
+                        rs.getString("session_id"),
+                        rs.getString("goal"),
+                        rs.getString("summary"),
+                        List.of(),
+                        Instant.parse(rs.getString("created_at")),
+                        Instant.parse(rs.getString("updated_at"))),
+                "%" + intentType + "%", limit);
+
+        return conversations.stream()
+                .map(c -> new ConversationRecord(c.id(), c.sessionId(), c.goal(), c.summary(),
+                        loadMessages(c.id()), c.createdAt(), c.updatedAt()))
+                .toList();
+    }
+
+    /**
+     * 对指定对话执行渐进式压缩。
+     *
+     * <p>仅更新未 pinned 且当前压缩层级低于目标层级的消息。</p>
+     *
+     * @param conversationId 对话 ID
+     * @param targetLevel    目标压缩层级
+     * @param compressedTexts 消息 ID → 压缩后内容映射
+     */
+    @Transactional
+    public void compress(String conversationId,
+                         CompressionLevel targetLevel,
+                         Map<String, String> compressedTexts) {
+        if (compressedTexts == null || compressedTexts.isEmpty()) {
+            return;
+        }
+        for (var entry : compressedTexts.entrySet()) {
+            jdbcTemplate.update(
+                    "UPDATE messages " +
+                            "SET compressed_content = ?, compression_level = ? " +
+                            "WHERE id = ? AND conversation_id = ? AND is_pinned = 0 AND compression_level < ?",
+                    entry.getValue(),
+                    targetLevel.level(),
+                    entry.getKey(),
+                    conversationId,
+                    targetLevel.level());
+        }
+        log.info("情景记忆压缩: conversationId={}, level={}, count={}",
+                conversationId, targetLevel, compressedTexts.size());
+    }
+
+    /**
      * 加载指定对话的所有消息。
      */
     private List<MessageRecord> loadMessages(String conversationId) {
         return jdbcTemplate.query(
-                "SELECT id, conversation_id, role, content, compressed_content, compression_level, is_pinned, tool_call_json, token_count, created_at FROM messages WHERE conversation_id = ? ORDER BY created_at",
+                "SELECT id, conversation_id, role, content, compressed_content, compression_level, is_pinned, tool_call_json, token_count, created_at " +
+                        "FROM messages WHERE conversation_id = ? ORDER BY created_at",
                 (rs, rowNum) -> new MessageRecord(
                         rs.getString("id"),
                         rs.getString("conversation_id"),

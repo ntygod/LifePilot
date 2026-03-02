@@ -7,10 +7,12 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * 语义记忆服务 — 管理时序知识图谱的完整生命周期。
@@ -184,6 +186,27 @@ public class SemanticMemory {
         return jdbcTemplate.query(
                 "SELECT * FROM temporal_entities WHERE is_current = 1 ORDER BY importance_score ASC, access_count ASC",
                 (rs, rowNum) -> mapRowToEntity(rs));
+    }
+
+    /**
+     * 按 ID 批量查找当前/历史实体。
+     *
+     * @param ids 实体 ID 集合
+     * @return id → TemporalEntity 映射
+     */
+    public Map<String, TemporalEntity> findByIds(Collection<String> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return Map.of();
+        }
+        String placeholders = ids.stream().map(_ -> "?")
+                .collect(Collectors.joining(","));
+        String sql = "SELECT * FROM temporal_entities WHERE id IN (" + placeholders + ")";
+        Object[] params = ids.toArray();
+        List<TemporalEntity> list = jdbcTemplate.query(
+                sql,
+                (rs, rowNum) -> mapRowToEntity(rs),
+                params);
+        return list.stream().collect(Collectors.toMap(TemporalEntity::id, e -> e));
     }
 
     // --- 内部方法 ---
