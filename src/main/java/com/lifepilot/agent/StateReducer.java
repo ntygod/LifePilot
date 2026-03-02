@@ -59,7 +59,21 @@ public class StateReducer {
                     .terminationReason("需要用户澄清")
                     .build();
         }
-        // canProceed=true → PLANNING
+        
+        // SIMPLE 复杂度直接进入 RESPONDING，跳过 PLANNING/EXECUTING
+        if (a.complexity() == TaskComplexity.SIMPLE) {
+            validateTransition(state.phase(), AgentPhase.RESPONDING);
+            var entities = new ArrayList<>(state.mentionedEntities());
+            entities.addAll(a.entities());
+            return state.toBuilder()
+                    .phase(AgentPhase.RESPONDING)
+                    .stepCount(state.stepCount() + 1)
+                    .steps(appendStep(state.steps(), null, true, a.summary(), false, 0, 0))
+                    .mentionedEntities(entities)
+                    .build();
+        }
+        
+        // MODERATE / COMPLEX → PLANNING
         validateTransition(state.phase(), AgentPhase.PLANNING);
         var entities = new ArrayList<>(state.mentionedEntities());
         entities.addAll(a.entities());

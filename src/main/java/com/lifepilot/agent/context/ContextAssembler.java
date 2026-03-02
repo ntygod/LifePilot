@@ -336,24 +336,108 @@ public class ContextAssembler {
      * @return System Prompt 文本
      */
     String buildSystemPrompt(AgentPhase phase) {
-        String roleDefinition = "你是 LifePilot，一个智能个人助手。";
+        String roleDefinition = "你是 LifePilot，一个智能个人助手，专注于理解用户意图并高效完成任务。";
         String phaseInstruction = switch (phase) {
-            case UNDERSTANDING -> "当前阶段：意图理解。分析用户输入，提取关键实体和意图，评估任务复杂度。"
-                    + "如果需要澄清，设置 needsClarification=true 并提供澄清问题。"
-                    + "如果可以继续，设置 canProceed=true。";
-            case PLANNING -> "当前阶段：任务规划。根据理解的意图制定执行计划，"
-                    + "列出需要调用的工具及其参数，评估所需 Token 预算。";
-            case EXECUTING -> "当前阶段：工具执行。按计划执行工具调用，"
-                    + "记录每步结果，判断是否还有后续步骤。";
-            case REFLECTING -> "当前阶段：反思评估。评估执行结果是否满足用户意图，"
-                    + "决定是否需要重新规划或直接生成响应。";
-            case RESPONDING -> "当前阶段：生成响应。基于执行结果生成最终回复，"
-                    + "提供清晰、有用的信息。";
+            case UNDERSTANDING -> """
+                    阶段：意图理解
+                    
+                    任务：
+                    1. 深度分析用户输入的语义和意图
+                    2. 提取关键实体：人名、地名、时间、主题、数字等
+                    3. 评估复杂度：
+                       - SIMPLE：单步查询、问候、简单确认、闲聊。标记为SIMPLE的请求会直接生成响应，不会进入规划和工具执行阶段
+                       - MODERATE：需要2-3步操作、涉及多个工具
+                       - COMPLEX：多步骤、需要规划、涉及复杂逻辑
+                    4. 判断信息完整性：
+                       - 信息充足：canProceed=true, needsClarification=false
+                       - 信息不足：canProceed=false, needsClarification=true，提供具体澄清问题
+                    
+                    重要：对于简单问候（如"你好"、"hi"、"早上好"、"在吗"）和闲聊，必须标记为complexity="SIMPLE"，系统会直接生成友好响应，不会调用任何工具。
+                    
+                    输出格式（严格JSON，无Markdown标记）：
+                    {
+                      "summary": "意图摘要（1-2句话）",
+                      "needsClarification": false,
+                      "clarificationQuestion": null,
+                      "canProceed": true,
+                      "entities": ["实体1", "实体2"],
+                      "complexity": "SIMPLE|MODERATE|COMPLEX"
+                    }
+                    
+                    示例（简单问候）：
+                    {"summary":"用户发送问候","needsClarification":false,"clarificationQuestion":null,"canProceed":true,"entities":[],"complexity":"SIMPLE"}
+                    
+                    示例（需要澄清）：
+                    {"summary":"用户想查询但未指定内容","needsClarification":true,"clarificationQuestion":"你想查询什么信息？","canProceed":false,"entities":[],"complexity":"MODERATE"}
+                    """;
+            case PLANNING -> """
+                    阶段：任务规划
+                    
+                    任务：
+                    1. 基于意图理解结果，制定清晰的执行计划
+                    2. 为每个步骤指定工具ID、参数和描述
+                    3. 预估Token消耗，确保不超过预算
+                    4. 提供规划理由，说明为什么选择这些步骤
+                    
+                    输出格式（严格JSON）：
+                    {
+                      "steps": [
+                        {
+                          "toolId": "工具ID",
+                          "params": {"key": "value"},
+                          "description": "步骤描述"
+                        }
+                      ],
+                      "estimatedTokens": 1000,
+                      "rationale": "规划理由"
+                    }
+                    """;
+            case EXECUTING -> """
+                    阶段：工具执行
+                    
+                    任务：
+                    1. 严格按照规划步骤执行工具调用
+                    2. 记录每步的执行结果和状态
+                    3. 根据结果判断是否需要调整后续步骤
+                    4. 如遇错误，记录错误信息并评估是否可恢复
+                    """;
+            case REFLECTING -> """
+                    阶段：反思评估
+                    
+                    任务：
+                    1. 评估执行结果是否完全满足用户意图
+                    2. 识别执行中的问题和不足
+                    3. 决定是否需要重新规划或调整策略
+                    4. 生成执行摘要，总结关键信息
+                    
+                    输出格式（严格JSON）：
+                    {
+                      "satisfied": true,
+                      "adjustmentPlan": "调整计划（如无则为null）",
+                      "summary": "执行摘要",
+                      "needsReplanning": false
+                    }
+                    """;
+            case RESPONDING -> """
+                    阶段：生成响应
+                    
+                    任务：
+                    1. 基于执行结果生成清晰、有用的回复
+                    2. 使用自然语言，避免技术术语
+                    3. 提供相关的后续操作建议
+                    4. 如执行失败，提供友好的错误说明和解决建议
+                    
+                    输出格式（严格JSON）：
+                    {
+                      "content": "响应内容",
+                      "suggestions": ["建议1", "建议2"]
+                    }
+                    """;
             case TERMINATED -> "";
         };
-        String constraint = "请严格按照 JSON 格式输出结构化结果。";
+        String constraint = "\n\n重要约束：\n- 只输出JSON对象，不要任何Markdown代码块标记\n- 不要输出解释文字或注释\n- JSON必须完整且有效";
 
-        return roleDefinition + "\n" + phaseInstruction + "\n" + constraint;
+        return roleDefinition + "\n\n" + phaseInstruction + constraint;
     }
 
     /**
