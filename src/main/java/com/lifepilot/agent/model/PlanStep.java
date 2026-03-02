@@ -18,7 +18,8 @@ public record PlanStep(
 ) {
     /** 紧凑构造器 — 防御性拷贝。 */
     public PlanStep {
-        params = Map.copyOf(params);
-        dependsOn = List.copyOf(dependsOn);
+        // 允许 LLM 省略 params/dependsOn 字段，自动降级为空集合，避免 NPE
+        params = (params == null || params.isEmpty()) ? Map.of() : Map.copyOf(params);
+        dependsOn = (dependsOn == null || dependsOn.isEmpty()) ? List.of() : List.copyOf(dependsOn);
     }
 }

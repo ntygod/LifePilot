@@ -38,8 +38,7 @@ class AgentAutoConfigurationTest {
                 .withUserConfiguration(MemoryBeansConfig.class)
                 .run(context -> {
                     assertThat(context).hasSingleBean(ContextAssembler.class);
-                    assertThat(context).hasBean("fullContextAssembler");
-                    assertThat(context).doesNotHaveBean("basicContextAssembler");
+                    assertThat(context).hasBean("contextAssembler");
                 });
     }
 
@@ -48,8 +47,7 @@ class AgentAutoConfigurationTest {
         contextRunner
                 .run(context -> {
                     assertThat(context).hasSingleBean(ContextAssembler.class);
-                    assertThat(context).hasBean("basicContextAssembler");
-                    assertThat(context).doesNotHaveBean("fullContextAssembler");
+                    assertThat(context).hasBean("contextAssembler");
                 });
     }
 
@@ -60,8 +58,7 @@ class AgentAutoConfigurationTest {
                 .run(context -> {
                     assertThat(context).hasSingleBean(ContextAssembler.class);
                     assertThat(context).hasBean("customContextAssembler");
-                    assertThat(context).doesNotHaveBean("fullContextAssembler");
-                    assertThat(context).doesNotHaveBean("basicContextAssembler");
+                    assertThat(context).doesNotHaveBean("contextAssembler");
                 });
     }
 

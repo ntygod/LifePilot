@@ -35,7 +35,14 @@ public record AgentState(
         int depth,
         boolean done,
         @Nullable String finalOutput,
-        @Nullable String terminationReason
+        @Nullable String terminationReason,
+        /**
+         * 本轮推理概要摘要。
+         *
+         * <p>用于会话快照（recentTurns）与前端消息级「推理过程」折叠面板展示，
+         * 由 AgentLoop 在循环结束时基于步骤数 / Token 使用等信息生成。</p>
+         */
+        @Nullable String reasoningSummary
 ) {
     /** 紧凑构造器 — 防御性拷贝。 */
     public AgentState {

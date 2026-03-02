@@ -7,6 +7,7 @@ import com.lifepilot.agent.model.StepRecord;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.RetrievalResult;
 import com.lifepilot.memory.working.*;
+import com.lifepilot.observability.redactor.DataRedactor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
@@ -45,6 +46,7 @@ public class ContextAssembler {
     @Nullable private final WorkingMemory workingMemory;
     @Nullable private final TokenBudgetAllocator tokenBudgetAllocator;
     @Nullable private final MemoryRetrievalStrategy retrievalStrategy;
+    @Nullable private final DataRedactor dataRedactor;
 
     /** 基础版构造器（向后兼容，记忆字段为 null）。 */
     public ContextAssembler(AgentConfigProperties config) {
@@ -53,6 +55,7 @@ public class ContextAssembler {
         this.workingMemory = null;
         this.tokenBudgetAllocator = null;
         this.retrievalStrategy = null;
+        this.dataRedactor = null;
     }
 
     /** 完整版构造器（注入记忆系统依赖）。 */
@@ -60,12 +63,14 @@ public class ContextAssembler {
                             HybridRetriever hybridRetriever,
                             WorkingMemory workingMemory,
                             TokenBudgetAllocator tokenBudgetAllocator,
-                            MemoryRetrievalStrategy retrievalStrategy) {
+                            MemoryRetrievalStrategy retrievalStrategy,
+                            @Nullable DataRedactor dataRedactor) {
         this.config = config;
         this.hybridRetriever = hybridRetriever;
         this.workingMemory = workingMemory;
         this.tokenBudgetAllocator = tokenBudgetAllocator;
         this.retrievalStrategy = retrievalStrategy;
+        this.dataRedactor = dataRedactor;
     }
 
     /** 判断是否为完整版模式。 */
@@ -273,13 +278,17 @@ public class ContextAssembler {
                 .toList();
     }
 
-    /** 格式化单条检索结果。 */
+    /** 格式化单条检索结果（可选脱敏）。 */
     private String formatSingleResult(RetrievalResult result) {
         var sb = new StringBuilder();
         sb.append("[").append(result.entityType()).append("] ")
                 .append(result.name());
-        if (result.description() != null && !result.description().isBlank()) {
-            sb.append(": ").append(result.description());
+        String description = result.description();
+        if (description != null && !description.isBlank()) {
+            if (dataRedactor != null) {
+                description = dataRedactor.redact(description);
+            }
+            sb.append(": ").append(description);
         }
         sb.append(" (score=").append(String.format("%.2f", result.fusedScore())).append(")");
         return sb.toString();

@@ -36,4 +36,18 @@ public record AssembledContext(
     public int totalTokens() {
         return tokenBudget.totalConsumed();
     }
+
+    /** 基于当前上下文，仅替换 systemPrompt，返回新实例。 */
+    public AssembledContext withSystemPrompt(String newSystemPrompt) {
+        return new AssembledContext(
+                newSystemPrompt,
+                userPrompt(),
+                retrievedMemories(),
+                tokenBudget(),
+                retrievalCount(),
+                topRetrievalScore(),
+                workingMemoryTokens(),
+                degraded()
+        );
+    }
 }

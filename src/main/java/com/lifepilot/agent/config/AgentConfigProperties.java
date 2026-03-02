@@ -21,6 +21,7 @@ public class AgentConfigProperties {
     private BudgetConfig budget = new BudgetConfig();
     private ContextConfig context = new ContextConfig();
     private SessionConfig session = new SessionConfig();
+    private DebugConfig debug = new DebugConfig();
 
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
@@ -32,11 +33,14 @@ public class AgentConfigProperties {
     public void setContext(ContextConfig context) { this.context = context; }
     public SessionConfig getSession() { return session; }
     public void setSession(SessionConfig session) { this.session = session; }
+    public DebugConfig getDebug() { return debug; }
+    public void setDebug(DebugConfig debug) { this.debug = debug; }
 
     /** 循环配置。 */
     public static class LoopConfig {
         private int maxIterations = 50;
         private int maxConsecutiveBlocks = 3;
+        private int maxConsecutiveParseFailures = 3;
         private Map<String, String> sceneMapping = Map.of(
                 "understanding", "agent-reasoning",
                 "planning", "agent-reasoning",
@@ -49,6 +53,8 @@ public class AgentConfigProperties {
         public void setMaxIterations(int maxIterations) { this.maxIterations = maxIterations; }
         public int getMaxConsecutiveBlocks() { return maxConsecutiveBlocks; }
         public void setMaxConsecutiveBlocks(int maxConsecutiveBlocks) { this.maxConsecutiveBlocks = maxConsecutiveBlocks; }
+        public int getMaxConsecutiveParseFailures() { return maxConsecutiveParseFailures; }
+        public void setMaxConsecutiveParseFailures(int maxConsecutiveParseFailures) { this.maxConsecutiveParseFailures = maxConsecutiveParseFailures; }
         public Map<String, String> getSceneMapping() { return sceneMapping; }
         public void setSceneMapping(Map<String, String> sceneMapping) { this.sceneMapping = sceneMapping; }
     }
@@ -93,5 +99,18 @@ public class AgentConfigProperties {
         public void setMaxRecentTurns(int maxRecentTurns) { this.maxRecentTurns = maxRecentTurns; }
         public long getCleanupIntervalMs() { return cleanupIntervalMs; }
         public void setCleanupIntervalMs(long cleanupIntervalMs) { this.cleanupIntervalMs = cleanupIntervalMs; }
+    }
+
+    /**
+     * 调试配置。
+     *
+     * <p>注意：开启完整提示词日志可能泄漏隐私/密钥，仅建议在本地或受控环境使用。</p>
+     */
+    public static class DebugConfig {
+        /** 是否打印每次调用 LLM 时发送的完整 system/user 提示词。默认关闭。 */
+        private boolean logLlmPrompts = false;
+
+        public boolean isLogLlmPrompts() { return logLlmPrompts; }
+        public void setLogLlmPrompts(boolean logLlmPrompts) { this.logLlmPrompts = logLlmPrompts; }
     }
 }

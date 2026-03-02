@@ -1,5 +1,6 @@
 package com.lifepilot.agent.model;
 
+import com.lifepilot.llm.multimodal.MediaContent;
 import org.springframework.lang.Nullable;
 
 import java.util.List;
@@ -9,6 +10,10 @@ import java.util.List;
  *
  * <p>支持普通对话请求和 SubAgent 委托请求。SubAgent 场景下可指定
  * 独立 System Prompt、预算、偏好 Provider 和工具白名单。</p>
+ *
+ * <p>Phase 2：图片多模态支持
+ * 通过 {@code mediaContents} 字段携带当前请求关联的媒体内容（如图片），
+ * 便于在 AgentLoop 内部根据场景路由到 {@code MultimodalRouter}。</p>
  *
  * @author zsg
  * @since 2026-07-20
@@ -22,7 +27,8 @@ public record AgentRequest(
         @Nullable String parentTraceId,
         int depth,
         @Nullable String preferredProvider,
-        @Nullable List<String> allowedToolIds
+        @Nullable List<String> allowedToolIds,
+        @Nullable List<MediaContent> mediaContents
 ) {
 
     /**
@@ -33,6 +39,6 @@ public record AgentRequest(
      * @param channel   渠道标识
      */
     public AgentRequest(String message, String sessionId, String channel) {
-        this(message, sessionId, channel, null, null, null, 0, null, null);
+        this(message, sessionId, channel, null, null, null, 0, null, null, null);
     }
 }

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.model.AgentState;
+import com.lifepilot.memory.working.WorkingMemory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -33,12 +34,25 @@ public class SessionManager {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final AgentConfigProperties config;
+    /**
+     * 可选的工作记忆实例，用于在会话过期时触发 flush。
+     */
+    private final WorkingMemory workingMemory;
 
-    public SessionManager(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper,
-                          AgentConfigProperties config) {
+    public SessionManager(JdbcTemplate jdbcTemplate,
+                          ObjectMapper objectMapper,
+                          AgentConfigProperties config,
+                          WorkingMemory workingMemory) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.config = config;
+        this.workingMemory = workingMemory;
+    }
+
+    public SessionManager(JdbcTemplate jdbcTemplate,
+                          ObjectMapper objectMapper,
+                          AgentConfigProperties config) {
+        this(jdbcTemplate, objectMapper, config, null);
     }
 
     /**
@@ -79,6 +93,7 @@ public class SessionManager {
      * 保存会话（仅保留最近 N 轮对话）。
      *
      * <p>持久化失败时记录 WARN 日志，不抛出异常。</p>
+     * <p>使用 INSERT ... ON CONFLICT DO UPDATE 避免并发时的主键冲突。</p>
      *
      * @param state 当前 Agent 状态
      */
@@ -88,12 +103,13 @@ public class SessionManager {
             var existing = findSession(state.sessionId());
             String now = Instant.now().toString();
 
-            // 构建新的对话轮次
+            // 构建新的对话轮次（包含本轮推理概要）
             var newTurn = new ConversationTurn(
                     state.goal(),
                     state.finalOutput() != null ? state.finalOutput() : "",
                     List.of(),
-                    Instant.now()
+                    Instant.now(),
+                    state.reasoningSummary()
             );
 
             List<ConversationTurn> recentTurns;
@@ -119,7 +135,11 @@ public class SessionManager {
             String turnsJson = serializeTurns(recentTurns);
             String entitiesJson = serializeStringList(state.mentionedEntities());
 
+            // 使用 INSERT ... ON CONFLICT DO UPDATE 避免并发时的主键冲突
+            // SQLite 3.24.0+ 支持此语法
+            // 在冲突时，保持原有的 created_at，不更新它
             if (existing.isPresent()) {
+                // 已存在：使用 UPDATE（避免更新 created_at）
                 jdbcTemplate.update(
                         """
                         UPDATE agent_sessions SET recent_turns_json = ?, mentioned_entities_json = ?,
@@ -130,12 +150,21 @@ public class SessionManager {
                         state.sessionId()
                 );
             } else {
+                // 不存在：使用 INSERT ... ON CONFLICT DO UPDATE
+                // 如果并发插入导致冲突，则更新而不是失败，但保持原有的 created_at
                 jdbcTemplate.update(
                         """
                         INSERT INTO agent_sessions (id, channel_id, recent_turns_json,
                             mentioned_entities_json, last_active_at, total_turns,
                             total_tokens_used, archived, created_at, updated_at)
                         VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+                        ON CONFLICT(id) DO UPDATE SET
+                            recent_turns_json = excluded.recent_turns_json,
+                            mentioned_entities_json = excluded.mentioned_entities_json,
+                            last_active_at = excluded.last_active_at,
+                            total_turns = excluded.total_turns,
+                            total_tokens_used = excluded.total_tokens_used,
+                            updated_at = excluded.updated_at
                         """,
                         state.sessionId(), state.channel(), turnsJson, entitiesJson,
                         now, totalTurns, totalTokens, now, now
@@ -156,12 +185,32 @@ public class SessionManager {
         try {
             int timeoutMinutes = config.getSession().getTimeoutMinutes();
             Instant cutoff = Instant.now().minus(Duration.ofMinutes(timeoutMinutes));
-            int deleted = jdbcTemplate.update(
+
+            // 先查出需要归档的会话 ID，便于触发 L1 flush
+            var expiredSessionIds = jdbcTemplate.query(
+                    "SELECT id FROM agent_sessions WHERE last_active_at < ? AND archived = 0",
+                    (rs, rowNum) -> rs.getString("id"),
+                    cutoff.toString()
+            );
+
+            if (!expiredSessionIds.isEmpty() && workingMemory != null) {
+                for (String sessionId : expiredSessionIds) {
+                    try {
+                        workingMemory.flush(sessionId);
+                        log.debug("过期会话触发 WorkingMemory.flush: sessionId={}", sessionId);
+                    } catch (Exception e) {
+                        log.warn("过期会话触发 WorkingMemory.flush 失败: sessionId={}, error={}",
+                                sessionId, e.getMessage());
+                    }
+                }
+            }
+
+            int archived = jdbcTemplate.update(
                     "UPDATE agent_sessions SET archived = 1, updated_at = ? WHERE last_active_at < ? AND archived = 0",
                     Instant.now().toString(), cutoff.toString()
             );
-            if (deleted > 0) {
-                log.info("过期会话清理完成: archived={}", deleted);
+            if (archived > 0) {
+                log.info("过期会话清理完成: archived={}", archived);
             }
         } catch (Exception e) {
             log.warn("过期会话清理失败: error={}", e.getMessage());
