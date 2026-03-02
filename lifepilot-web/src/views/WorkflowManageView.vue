@@ -153,36 +153,79 @@ function formatDuration(start?: string, end?: string): string {
         </div>
         <div v-if="store.current.steps.length > 0">
           <span class="text-muted-foreground">步骤（{{ store.current.steps.length }}）：</span>
-          <div class="mt-1 space-y-1">
+          <div class="mt-2 space-y-2">
             <div
               v-for="(step, i) in store.current.steps"
               :key="i"
-              class="p-2 rounded-md bg-muted text-xs"
+              class="p-3 rounded-md border border-border bg-card"
             >
-              <pre class="whitespace-pre-wrap break-words">{{ JSON.stringify(step, null, 2) }}</pre>
+              <div class="flex items-start gap-3">
+                <div class="flex-shrink-0 w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-medium">
+                  {{ i + 1 }}
+                </div>
+                <div class="flex-1">
+                  <div class="font-medium text-foreground mb-1">
+                    {{ (step as any).name || (step as any).type || `步骤 ${i + 1}` }}
+                  </div>
+                  <div v-if="(step as any).description" class="text-sm text-muted-foreground mb-2">
+                    {{ (step as any).description }}
+                  </div>
+                  <div v-if="(step as any).agentId" class="text-xs text-muted-foreground">
+                    Agent: {{ (step as any).agentId }}
+                  </div>
+                  <div v-if="(step as any).toolId" class="text-xs text-muted-foreground">
+                    工具: {{ (step as any).toolId }}
+                  </div>
+                  <details class="mt-2">
+                    <summary class="text-xs text-muted-foreground cursor-pointer hover:text-foreground">
+                      查看完整配置
+                    </summary>
+                    <pre class="mt-2 p-2 rounded-md bg-muted text-xs overflow-x-auto">{{ JSON.stringify(step, null, 2) }}</pre>
+                  </details>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
       <!-- 执行历史 Tab -->
-      <div v-if="activeTab === 'executions'" class="space-y-2">
+      <div v-if="activeTab === 'executions'" class="space-y-3">
         <div v-if="store.executions.length === 0" class="text-sm text-muted-foreground">暂无执行记录</div>
         <div
           v-for="exec in store.executions"
           :key="exec.id"
-          class="border border-border rounded-md p-3"
+          class="border border-border rounded-lg p-4 hover:border-primary/50 transition-colors"
         >
-          <div class="flex items-center gap-3 text-sm">
-            <span
-              class="text-xs px-2 py-0.5 rounded-full shrink-0"
-              :class="stateLabel[exec.state]?.class ?? 'bg-gray-100 text-gray-800'"
-            >{{ stateLabel[exec.state]?.label ?? exec.state }}</span>
-            <span class="text-muted-foreground">步骤 {{ exec.currentStepIndex }}</span>
-            <span class="text-muted-foreground">{{ formatDuration(exec.startedAt, exec.completedAt) }}</span>
-            <span class="text-xs text-muted-foreground ml-auto">{{ new Date(exec.createdAt).toLocaleString() }}</span>
+          <div class="flex items-start justify-between mb-2">
+            <div class="flex items-center gap-3">
+              <span
+                class="text-xs px-2 py-0.5 rounded-full shrink-0"
+                :class="stateLabel[exec.state]?.class ?? 'bg-gray-100 text-gray-800'"
+              >
+                {{ stateLabel[exec.state]?.label ?? exec.state }}
+              </span>
+              <span class="text-sm text-muted-foreground">
+                当前步骤: {{ exec.currentStepIndex + 1 }} / {{ store.current?.steps.length || '?' }}
+              </span>
+            </div>
+            <span class="text-xs text-muted-foreground">{{ new Date(exec.createdAt).toLocaleString() }}</span>
           </div>
-          <div v-if="exec.failureReason" class="text-xs text-destructive mt-1">{{ exec.failureReason }}</div>
+          <div class="flex items-center gap-4 text-xs text-muted-foreground">
+            <span v-if="exec.startedAt">
+              开始: {{ new Date(exec.startedAt).toLocaleString() }}
+            </span>
+            <span v-if="exec.completedAt">
+              完成: {{ new Date(exec.completedAt).toLocaleString() }}
+            </span>
+            <span v-if="exec.startedAt && exec.completedAt">
+              耗时: {{ formatDuration(exec.startedAt, exec.completedAt) }}
+            </span>
+          </div>
+          <div v-if="exec.failureReason" class="mt-2 p-2 rounded-md bg-destructive/10 text-destructive text-sm">
+            <div class="font-medium mb-1">失败原因：</div>
+            <div>{{ exec.failureReason }}</div>
+          </div>
         </div>
       </div>
     </template>

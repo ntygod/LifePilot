@@ -135,10 +135,49 @@ export const useSkillStore = defineStore('skill', () => {
     }
   }
 
+  async function enableSkill(id: string) {
+    error.value = null
+    try {
+      await skillApi.enable(id)
+      await fetchSkills()
+      if (currentSkill.value?.id === id) {
+        await fetchSkillDetail(id)
+      }
+    } catch (e: any) {
+      error.value = e.message ?? '启用 Skill 失败'
+      throw e
+    }
+  }
+
+  async function disableSkill(id: string) {
+    error.value = null
+    try {
+      await skillApi.disable(id)
+      await fetchSkills()
+      if (currentSkill.value?.id === id) {
+        await fetchSkillDetail(id)
+      }
+    } catch (e: any) {
+      error.value = e.message ?? '禁用 Skill 失败'
+      throw e
+    }
+  }
+
+  async function testSkill(id: string, data: { userMessage: string; context?: Record<string, unknown> }) {
+    error.value = null
+    try {
+      return await skillApi.test(id, data)
+    } catch (e: any) {
+      error.value = e.message ?? '测试 Skill 失败'
+      throw e
+    }
+  }
+
   return {
     skills, currentSkill, mcpServers, serverTools, loading, error,
     fetchSkills, fetchSkillDetail, unregisterSkill,
     fetchMcpServers, connectServer, disconnectServer, fetchServerTools,
-    createSkill, updateSkill, createMcpServer, updateMcpServer
+    createSkill, updateSkill, createMcpServer, updateMcpServer,
+    enableSkill, disableSkill, testSkill
   }
 })

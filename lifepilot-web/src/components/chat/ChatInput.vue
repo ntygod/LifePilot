@@ -1,18 +1,46 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { Paperclip, FileText, X, ChevronDown, ChevronUp, Settings } from 'lucide-vue-next'
+import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
+import { chatApi } from '@/api/client'
+import type { ChatAttachment } from '@/types'
 
 const props = defineProps<{
   disabled?: boolean
 }>()
 
 const emit = defineEmits<{
-  send: [content: string]
+  send: [{ content: string; attachmentIds?: string[]; attachments?: ChatAttachment[] }]
 }>()
 
+const kbStore = useKnowledgeBaseStore()
 const input = ref('')
 // 基础长度限制：主要防止一次性粘贴超长内容导致请求失败
 const maxLength = 4000
 const inputLength = computed(() => input.value.length)
+
+// 附件相关（本地选中的文件列表）
+const attachments = ref<File[]>([])
+const fileInput = ref<HTMLInputElement | null>(null)
+
+// Prompt模板相关
+const showTemplates = ref(false)
+const promptTemplates = [
+  { name: '总结', content: '请帮我总结以下内容：\n\n' },
+  { name: '翻译', content: '请将以下内容翻译成英文：\n\n' },
+  { name: '改写', content: '请帮我改写以下内容，使其更加简洁明了：\n\n' },
+  { name: '代码审查', content: '请审查以下代码，指出潜在问题和改进建议：\n\n' },
+  { name: '解释', content: '请详细解释以下概念：\n\n' }
+]
+
+// 上下文配置相关
+const showContextConfig = ref(false)
+const contextConfig = ref({
+  model: '',
+  temperature: 0.7,
+  maxTokens: 2000,
+  knowledgeBases: [] as string[]
+})
 
 function handleKeydown(e: KeyboardEvent) {
   // Enter 发送，Shift+Enter 换行
@@ -22,43 +50,271 @@ function handleKeydown(e: KeyboardEvent) {
   }
 }
 
-function submit() {
+async function submit() {
   const content = input.value.trim()
   if (!content || props.disabled) return
-  emit('send', content)
+
+  // 如果有附件，先上传到后端，获取附件 ID 列表
+  let attachmentIds: string[] | undefined
+  let uploadedAttachments: ChatAttachment[] | undefined
+  if (attachments.value.length > 0) {
+    try {
+      const sessionId = undefined
+      const uploaded = await Promise.all(
+        attachments.value.map(file => chatApi.uploadAttachment(file, sessionId))
+      )
+      attachmentIds = uploaded.map(a => a.fileId)
+      uploadedAttachments = uploaded
+    } catch (e) {
+      // 上传失败时，不阻塞纯文本发送，只给出提示
+      console.error('附件上传失败:', e)
+    }
+  }
+
+  emit('send', { content, attachmentIds, attachments: uploadedAttachments })
   input.value = ''
+  attachments.value = []
+}
+
+function handleFileSelect() {
+  fileInput.value?.click()
+}
+
+function handleFileChange(e: Event) {
+  const input = e.target as HTMLInputElement
+  const files = input.files
+  if (!files) return
+  
+  Array.from(files).forEach(file => {
+    if (!attachments.value.find(f => f.name === file.name && f.size === file.size)) {
+      attachments.value.push(file)
+    }
+  })
+  input.value = ''
+}
+
+function removeAttachment(index: number) {
+  attachments.value.splice(index, 1)
+}
+
+function insertTemplate(template: typeof promptTemplates[0]) {
+  input.value = template.content + input.value
+  showTemplates.value = false
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 </script>
 
 <template>
-  <div class="border-t border-border p-3 bg-card">
-    <div class="max-w-3xl mx-auto flex flex-col gap-1">
-      <div class="flex gap-2 items-end">
-        <textarea
-          v-model="input"
-          :disabled="disabled"
-          :maxlength="maxLength"
-          placeholder="输入你的问题，或粘贴一段内容让 AI 帮你分析…"
-          rows="1"
-          class="flex-1 resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm
-                 placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring
-                 disabled:opacity-50 min-h-[40px] max-h-[120px]"
-          @keydown="handleKeydown"
-        />
+  <div class="border-t border-border bg-card">
+    <!-- 附件列表 -->
+    <div v-if="attachments.length > 0" class="px-4 md:px-6 pt-3 pb-2 flex flex-wrap gap-2">
+      <div
+        v-for="(file, index) in attachments"
+        :key="index"
+        class="inline-flex items-center gap-2 px-2 py-1 rounded-md bg-muted text-xs text-foreground"
+      >
+        <Paperclip :size="12" />
+        <span class="max-w-[200px] truncate">{{ file.name }}</span>
+        <span class="text-muted-foreground">({{ formatFileSize(file.size) }})</span>
         <button
-          :disabled="disabled || !input.trim()"
-          class="rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground
-                 hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed
-                 transition-colors shrink-0"
-          @click="submit"
+          type="button"
+          class="text-muted-foreground hover:text-destructive transition-colors"
+          @click="removeAttachment(index)"
         >
-          发送
+          <X :size="12" />
         </button>
       </div>
-      <div class="flex justify-between text-[11px] text-muted-foreground px-1">
-        <span>按 Enter 发送，Shift+Enter 换行</span>
-        <span>{{ inputLength }} / {{ maxLength }} 字符</span>
-        <span v-if="disabled">正在生成回答，稍候即可继续输入</span>
+    </div>
+
+    <!-- 上下文配置折叠区域 -->
+    <div v-if="showContextConfig" class="px-4 md:px-6 py-3 border-b border-border bg-muted/30 text-xs">
+      <div class="space-y-2">
+        <div class="flex items-center justify-between">
+          <span class="font-medium text-foreground">上下文配置</span>
+          <button
+            type="button"
+            class="text-muted-foreground hover:text-foreground"
+            @click="showContextConfig = false"
+          >
+            <ChevronUp :size="14" />
+          </button>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="text-muted-foreground mb-1 block">模型</label>
+            <select
+              v-model="contextConfig.model"
+              class="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs
+                     focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all duration-200"
+            >
+              <option value="">使用默认</option>
+              <!-- TODO: 从设置中获取可用模型列表 -->
+            </select>
+          </div>
+          <div>
+            <label class="text-muted-foreground mb-1 block">温度</label>
+            <input
+              v-model.number="contextConfig.temperature"
+              type="number"
+              min="0"
+              max="2"
+              step="0.1"
+              class="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs
+                     focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all duration-200"
+            />
+          </div>
+          <div>
+            <label class="text-muted-foreground mb-1 block">最大 Tokens</label>
+            <input
+              v-model.number="contextConfig.maxTokens"
+              type="number"
+              min="100"
+              max="8000"
+              step="100"
+              class="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs
+                     focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all duration-200"
+            />
+          </div>
+          <div>
+            <label class="text-muted-foreground mb-1 block">关联知识库</label>
+            <select
+              v-model="contextConfig.knowledgeBases"
+              multiple
+              class="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs
+                     focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all duration-200"
+            >
+              <option v-for="kb in kbStore.list" :key="kb.id" :value="kb.id">
+                {{ kb.name }}
+              </option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="px-4 md:px-6 py-4">
+      <div class="max-w-[768px] mx-auto flex flex-col gap-2">
+        <div class="flex gap-2 items-end">
+          <!-- Prompt模板下拉 -->
+          <div class="relative shrink-0">
+            <button
+              type="button"
+              class="h-[52px] w-10 rounded-lg border border-input bg-background
+                     text-muted-foreground transition-all duration-200
+                     hover:bg-accent hover:text-foreground hover:border-ring hover:shadow-sm
+                     focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2
+                     disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+              :disabled="disabled"
+              @click="showTemplates = !showTemplates"
+            >
+              <FileText :size="16" />
+            </button>
+            <Transition
+              enter-active-class="transition-all duration-200 ease-out"
+              enter-from-class="opacity-0 scale-95 translate-y-2"
+              enter-to-class="opacity-100 scale-100 translate-y-0"
+              leave-active-class="transition-all duration-150 ease-in"
+              leave-from-class="opacity-100 scale-100 translate-y-0"
+              leave-to-class="opacity-0 scale-95 translate-y-2"
+            >
+              <div
+                v-if="showTemplates"
+                class="absolute bottom-full mb-1 left-0 w-48 rounded-md border border-border bg-card shadow-lg z-10 overflow-hidden"
+              >
+                <div class="p-1">
+                  <div
+                    v-for="template in promptTemplates"
+                    :key="template.name"
+                    class="px-3 py-1.5 rounded text-xs text-foreground hover:bg-accent cursor-pointer transition-colors duration-150"
+                    @click="insertTemplate(template)"
+                  >
+                    {{ template.name }}
+                  </div>
+                </div>
+              </div>
+            </Transition>
+          </div>
+
+          <textarea
+            v-model="input"
+            :disabled="disabled"
+            :maxlength="maxLength"
+            placeholder="输入你的问题，或粘贴一段内容让 AI 帮你分析…"
+            rows="1"
+            class="flex-1 resize-none rounded-2xl border border-input bg-background px-4 py-3 text-sm
+                   placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent
+                   disabled:opacity-50 disabled:cursor-not-allowed min-h-[52px] max-h-[200px] transition-all duration-200"
+            @keydown="handleKeydown"
+            @click="showTemplates = false"
+          />
+          
+          <!-- 附件上传按钮 -->
+          <button
+            type="button"
+            class="h-[52px] w-10 rounded-lg border border-input bg-background hover:bg-accent
+                   text-muted-foreground hover:text-foreground transition-all duration-200 shrink-0
+                   disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center
+                   focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            :disabled="disabled"
+            @click="handleFileSelect"
+          >
+            <Paperclip :size="16" />
+          </button>
+          <input
+            ref="fileInput"
+            type="file"
+            multiple
+            class="hidden"
+            @change="handleFileChange"
+          />
+          
+          <!-- 上下文配置按钮 -->
+          <button
+            type="button"
+            class="h-[52px] w-10 rounded-lg border border-input bg-background hover:bg-accent
+                   text-muted-foreground hover:text-foreground transition-all duration-200 shrink-0
+                   disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center
+                   focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            :disabled="disabled"
+            :class="showContextConfig ? 'bg-accent text-foreground' : ''"
+            @click="showContextConfig = !showContextConfig"
+          >
+            <Settings :size="16" />
+          </button>
+          
+          <button
+            :disabled="disabled || !input.trim()"
+            class="w-10 h-10 rounded-full bg-primary text-primary-foreground
+                   hover:bg-primary/90 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed
+                   transition-all duration-200 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 shrink-0 flex items-center justify-center"
+            @click="submit"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="m22 2-7 20-4-9-9-4Z" />
+              <path d="M22 2 11 13" />
+            </svg>
+          </button>
+        </div>
+        <div class="flex justify-between text-xs text-muted-foreground px-1">
+          <span>按 Enter 发送，Shift+Enter 换行</span>
+          <span>{{ inputLength }} / {{ maxLength }} 字符</span>
+          <span v-if="disabled">正在生成回答，稍候即可继续输入</span>
+        </div>
       </div>
     </div>
   </div>

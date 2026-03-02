@@ -1,17 +1,24 @@
 import type {
+  ChatAttachment,
   ChatResponse,
   ChatSession,
   CreateKbRequest,
+  DocumentChunk,
   ErrorResponse,
   KbDocument,
+  KbStats,
   KnowledgeBase,
   McpServer,
   McpServerConfig,
   McpTool,
   Message,
   PageResult,
+  ProcessingLog,
   SkillDetail,
   SkillSummary,
+  TestRetrievalResult,
+  AgentDetail,
+  AgentSummary,
   ToolDetail,
   ToolSummary,
   ToolTestRequest,
@@ -22,7 +29,11 @@ import type {
   UserSettings,
   WorkflowDetail,
   WorkflowExecution,
-  WorkflowItem
+  WorkflowItem,
+  UsageStats,
+  AgentStats,
+  KnowledgeBaseStats,
+  ToolStats
 } from '@/types'
 
 // API 基础路径（开发环境通过 Vite proxy 转发）
@@ -98,10 +109,14 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 /** 对话相关 API */
 export const chatApi = {
   /** 非流式发送消息 */
-  sendMessage(content: string, sessionId?: string): Promise<ChatResponse> {
+  sendMessage(
+    content: string,
+    sessionId?: string,
+    attachmentIds?: string[]
+  ): Promise<ChatResponse> {
     return request('/chat/messages', {
       method: 'POST',
-      body: JSON.stringify({ content, sessionId })
+      body: JSON.stringify({ content, sessionId, attachmentIds })
     })
   },
 
@@ -112,18 +127,27 @@ export const chatApi = {
   async sendMessageStream(
     content: string,
     sessionId?: string,
+    attachmentIds?: string[],
     signal?: AbortSignal
   ): Promise<ReadableStream<Uint8Array>> {
     const res = await fetch(`${BASE}/chat/messages/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content, sessionId }),
+      body: JSON.stringify({ content, sessionId, attachmentIds }),
       signal
     })
     if (!res.ok || !res.body) {
       throw { code: res.status, message: '流式请求失败', timestamp: new Date().toISOString() }
     }
     return res.body
+  },
+
+  /** 创建会话 */
+  createSession(title?: string): Promise<ChatSession> {
+    return request('/chat/sessions', {
+      method: 'POST',
+      body: JSON.stringify({ title })
+    })
   },
 
   /** 获取会话列表 */
@@ -136,9 +160,22 @@ export const chatApi = {
     return request(`/chat/sessions/${sessionId}/messages`)
   },
 
+  /** 更新会话（标题、置顶、归档等） */
+  updateSession(sessionId: string, updates: { title?: string; pinned?: boolean; archived?: boolean }): Promise<ChatSession> {
+    return request(`/chat/sessions/${sessionId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates)
+    })
+  },
+
   /** 删除会话 */
   deleteSession(sessionId: string): Promise<void> {
     return request(`/chat/sessions/${sessionId}`, { method: 'DELETE' })
+  },
+
+  /** 清空会话消息 */
+  clearSessionMessages(sessionId: string): Promise<void> {
+    return request(`/chat/sessions/${sessionId}/clear`, { method: 'POST' })
   },
 
   /** A2UI 信号回传 */
@@ -147,12 +184,62 @@ export const chatApi = {
       method: 'POST',
       body: JSON.stringify({ name, payload, sessionId })
     })
+  },
+
+  /**
+   * 上传单个消息附件（图片/文件）。
+   *
+   * 使用 multipart/form-data，将文件二进制交给后端存储，返回文件 ID 和访问 URL 等信息。
+   */
+  async uploadAttachment(file: File, sessionId?: string): Promise<ChatAttachment> {
+    const form = new FormData()
+    form.append('file', file)
+    if (sessionId) {
+      form.append('sessionId', sessionId)
+    }
+
+    const res = await fetch(`${BASE}/chat/messages/upload`, {
+      method: 'POST',
+      body: form
+    })
+
+    if (!res.ok) {
+      let error: ErrorResponse
+      try {
+        error = await res.json()
+      } catch {
+        error = { code: res.status, message: res.statusText, timestamp: new Date().toISOString() }
+      }
+      throw error
+    }
+
+    const data = (await res.json()) as {
+      fileId: string
+      url: string
+      filename: string
+      size: number
+      type: string
+    }
+
+    const isImage = data.type.startsWith('image/')
+
+    return {
+      fileId: data.fileId,
+      url: data.url,
+      filename: data.filename,
+      size: data.size,
+      type: data.type,
+      isImage
+    }
   }
 }
 
 import type {
   LlmProviderDetail
 } from '@/types'
+
+// 导出 LlmProviderDetail 类型（向后兼容）
+export type { LlmProviderDetail }
 
 /** LLM Provider 信息（兼容旧接口） */
 export interface LlmProvider {
@@ -342,6 +429,34 @@ export const knowledgeBaseApi = {
   },
   deleteDocument(kbId: string, docId: string): Promise<void> {
     return request(`/knowledge-bases/${kbId}/documents/${docId}`, { method: 'DELETE' })
+  },
+  getDocumentChunks(kbId: string, docId: string, offset = 0, limit = 100): Promise<DocumentChunk[]> {
+    return request(`/knowledge-bases/${kbId}/documents/${docId}/chunks?offset=${offset}&limit=${limit}`)
+  },
+  retryDocument(kbId: string, docId: string): Promise<void> {
+    return request(`/knowledge-bases/${kbId}/documents/${docId}/retry`, { method: 'POST' })
+  },
+  rechunkDocument(kbId: string, docId: string): Promise<void> {
+    return request(`/knowledge-bases/${kbId}/documents/${docId}/rechunk`, { method: 'POST' })
+  },
+  downloadDocument(kbId: string, docId: string): Promise<Blob> {
+    return fetch(`${BASE}/knowledge-bases/${kbId}/documents/${docId}/download`).then(res => {
+      if (!res.ok) throw new Error('下载失败')
+      return res.blob()
+    })
+  },
+  getStats(kbId: string): Promise<KbStats> {
+    return request(`/knowledge-bases/${kbId}/stats`)
+  },
+  // 以下接口待后端实现
+  getDocumentLogs(kbId: string, docId: string): Promise<ProcessingLog[]> {
+    return request(`/knowledge-bases/${kbId}/documents/${docId}/logs`)
+  },
+  testRetrieval(kbId: string, query: string): Promise<TestRetrievalResult> {
+    return request(`/knowledge-bases/${kbId}/test-retrieval`, {
+      method: 'POST',
+      body: JSON.stringify({ query })
+    })
   }
 }
 
@@ -367,6 +482,18 @@ export const skillApi = {
   },
   unregister(id: string): Promise<void> {
     return request(`/skills/${id}`, { method: 'DELETE' })
+  },
+  enable(id: string): Promise<void> {
+    return request(`/skills/${id}/enable`, { method: 'POST' })
+  },
+  disable(id: string): Promise<void> {
+    return request(`/skills/${id}/disable`, { method: 'POST' })
+  },
+  test(id: string, data: { userMessage: string; context?: Record<string, unknown> }): Promise<any> {
+    return request(`/skills/${id}/test`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    })
   }
 }
 
@@ -411,6 +538,12 @@ export const traceApi = {
   },
   getSteps(id: string): Promise<TraceStep[]> {
     return request(`/traces/${id}/steps`)
+  },
+  getOverviewStats(window: '24h' | '7d' | '30d' = '7d'): Promise<any> {
+    return request(`/traces/stats/overview?window=${window}`)
+  },
+  getToolStats(): Promise<any> {
+    return request('/traces/stats/tools')
   }
 }
 
@@ -525,5 +658,76 @@ export const toolApi = {
   },
   getUsage(id: string): Promise<any> {
     return request(`/tools/${id}/usage`)
+  }
+}
+
+/** Agent 管理 API */
+export const agentApi = {
+  list(params?: { q?: string; type?: string; status?: string; tags?: string[] }): Promise<AgentSummary[]> {
+    const query = new URLSearchParams()
+    if (params?.q) query.append('q', params.q)
+    if (params?.type) query.append('type', params.type)
+    if (params?.status) query.append('status', params.status)
+    if (params?.tags && params.tags.length > 0) {
+      params.tags.forEach(tag => query.append('tags', tag))
+    }
+    const queryString = query.toString()
+    return request(`/agents${queryString ? `?${queryString}` : ''}`)
+  },
+  get(id: string): Promise<AgentDetail> {
+    return request(`/agents/${id}`)
+  },
+  create(data: Partial<AgentDetail>): Promise<AgentDetail> {
+    return request('/agents', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    })
+  },
+  update(id: string, data: Partial<AgentDetail>): Promise<AgentDetail> {
+    return request(`/agents/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    })
+  },
+  delete(id: string): Promise<void> {
+    return request(`/agents/${id}`, { method: 'DELETE' })
+  },
+  enable(id: string): Promise<void> {
+    return request(`/agents/${id}/enable`, { method: 'POST' })
+  },
+  disable(id: string): Promise<void> {
+    return request(`/agents/${id}/disable`, { method: 'POST' })
+  },
+  testChat(id: string, message: string): Promise<ChatResponse> {
+    return request(`/agents/${id}/test-chat`, {
+      method: 'POST',
+      body: JSON.stringify({ message })
+    })
+  }
+}
+
+/** Analytics API */
+export const analyticsApi = {
+  getUsageStats(timeRange: { from: string; to: string }): Promise<UsageStats> {
+    const query = new URLSearchParams()
+    query.append('from', timeRange.from)
+    query.append('to', timeRange.to)
+    return request(`/analytics/usage?${query.toString()}`)
+  },
+  getAgentStats(timeRange?: { from: string; to: string }): Promise<AgentStats[]> {
+    const query = new URLSearchParams()
+    if (timeRange) {
+      query.append('from', timeRange.from)
+      query.append('to', timeRange.to)
+    }
+    return request(`/analytics/agents?${query.toString()}`)
+  },
+  getKnowledgeBaseStats(timeRange?: { from: string; to: string }): Promise<KnowledgeBaseStats[]> {
+    const query = new URLSearchParams()
+    if (timeRange) {
+      query.append('from', timeRange.from)
+      query.append('to', timeRange.to)
+    }
+    return request(`/analytics/knowledge-bases?${query.toString()}`)
   }
 }

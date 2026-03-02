@@ -13,6 +13,9 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'retry', message: Message): void
+  (e: 'like', message: Message): void
+  (e: 'dislike', message: Message, feedback?: string): void
+  (e: 'fork', message: Message): void
 }>()
 
 // 按 timestamp 升序排列
@@ -46,9 +49,9 @@ function highlight(text: string): string {
       <!-- 日期分组标签 -->
       <div
         v-if="index === 0 || getDateLabel(msg.timestamp) !== getDateLabel(sortedMessages[index - 1]?.timestamp)"
-        class="my-2 flex items-center justify-center text-[11px] text-muted-foreground"
+        class="my-4 flex items-center justify-center text-xs text-muted-foreground"
       >
-        <span class="px-2 py-0.5 rounded-full bg-muted/70">
+        <span class="px-3 py-1 rounded-full bg-muted/70 text-xs font-medium">
           {{ getDateLabel(msg.timestamp) }}
         </span>
       </div>
@@ -58,10 +61,13 @@ function highlight(text: string): string {
           ...msg,
           // 将内容高亮后的 HTML 通过额外字段传给气泡组件（后续可扩展）
           highlightedContent: props.query ? highlight(msg.content) : undefined
-        }"
+        } as Message"
         :streaming="isStreaming && index === sortedMessages.length - 1 && msg.role === 'assistant'"
         :streaming-content="streamingContent"
-        @retry="emit('retry', $event)"
+        @retry="(m: Message) => emit('retry', m)"
+        @like="(m: Message) => emit('like', m)"
+        @dislike="(m: Message, f?: string) => emit('dislike', m, f)"
+        @fork="(m: Message) => emit('fork', m)"
       />
     </template>
 

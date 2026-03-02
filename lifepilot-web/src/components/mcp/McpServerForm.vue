@@ -38,17 +38,17 @@ watch(() => props.server, (server) => {
       const config = server.config
       formData.value = {
         name: server.name,
-        transport: config.transport,
+        transport: (config.transport === 'stdio' ? 'STDIO' : config.transport === 'sse' ? 'SSE_LEGACY' : config.transport) as 'STDIO' | 'STREAMABLE_HTTP' | 'SSE_LEGACY',
         command: config.command || '',
         args: config.args || [],
-        url: config.url || '',
+        url: config.url || config.baseUrl || '',
         env: config.env || {},
         // 后端配置中这些字段为数字类型，这里直接使用数值并提供合理默认值
-        timeout: typeof config.timeout === 'number' ? config.timeout : 30,
+        timeout: typeof config.timeout === 'number' ? config.timeout : (typeof config.timeoutSeconds === 'number' ? config.timeoutSeconds : 30),
         autoConnect: config.autoConnect ?? true,
         reconnect: config.reconnect ?? true,
         reconnectDelay: typeof config.reconnectDelay === 'number' ? config.reconnectDelay : 1000,
-        maxReconnectAttempts: config.maxReconnectAttempts ?? 5,
+        maxReconnectAttempts: config.maxReconnectAttempts ?? (typeof config.maxRetries === 'number' ? config.maxRetries : 5),
         healthCheckInterval: typeof config.healthCheckInterval === 'number' ? config.healthCheckInterval : 60
       }
   } else if (props.mode === 'create') {

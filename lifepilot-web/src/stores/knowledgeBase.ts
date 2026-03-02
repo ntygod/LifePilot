@@ -80,8 +80,11 @@ export const useKnowledgeBaseStore = defineStore('knowledgeBase', () => {
     }
   }
 
+  // 向后兼容的别名
+  const fetchKnowledgeBases = fetchList
+
   return {
     list, current, documents, loading, error,
-    fetchList, create, remove, fetchDocuments, uploadDocument, removeDocument
+    fetchList, fetchKnowledgeBases, create, remove, fetchDocuments, uploadDocument, removeDocument
   }
 })

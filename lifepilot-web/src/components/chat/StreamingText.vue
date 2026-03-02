@@ -25,9 +25,43 @@ const markedInstance = new Marked(
 const html = computed(() => {
   if (!props.content) return ''
   try {
-    return markedInstance.parse(props.content) as string
-  } catch {
+    // 流式传输时，Markdown 可能不完整（如代码块未闭合）
+    // 尝试解析，如果失败则返回原始文本（避免显示错误）
+    const parsed = markedInstance.parse(props.content) as string
+    return parsed
+  } catch (e) {
+    // 解析失败时，如果是流式传输，尝试修复常见的未闭合标记
+    if (props.streaming) {
+      // 尝试修复未闭合的代码块
+      let fixedContent = props.content
+      const codeBlockMatches = fixedContent.match(/```[\s\S]*?```/g)
+      const openCodeBlocks = (fixedContent.match(/```/g) || []).length
+      // 如果代码块标记数量是奇数，说明有未闭合的代码块
+      if (openCodeBlocks % 2 !== 0) {
+        // 在末尾添加闭合标记（假设是最后一个代码块未闭合）
+        fixedContent += '\n```'
+      }
+      try {
+        return markedInstance.parse(fixedContent) as string
+      } catch {
+        // 修复后仍然失败，返回原始文本（转义 HTML 以避免 XSS）
+        return props.content
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;')
+          .replace(/\n/g, '<br>')
+      }
+    }
+    // 非流式传输时解析失败，返回转义的原始文本
     return props.content
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;')
+      .replace(/\n/g, '<br>')
   }
 })
 </script>

@@ -41,6 +41,23 @@ export const useChatStore = defineStore('chat', () => {
     messages.value[index] = { ...messages.value[index], ...patch }
   }
 
+  /** 创建会话 */
+  async function createSession(title?: string): Promise<ChatSession> {
+    const session = await chatApi.createSession(title)
+    sessions.value.unshift(session)
+    return session
+  }
+
+  /** 更新会话 */
+  async function updateSession(sessionId: string, updates: { title?: string; pinned?: boolean; archived?: boolean }) {
+    const updated = await chatApi.updateSession(sessionId, updates)
+    const index = sessions.value.findIndex(s => s.id === sessionId)
+    if (index !== -1) {
+      sessions.value[index] = updated
+    }
+    return updated
+  }
+
   /** 删除会话 */
   async function deleteSession(sessionId: string) {
     await chatApi.deleteSession(sessionId)
@@ -56,8 +73,7 @@ export const useChatStore = defineStore('chat', () => {
   /** 清空当前会话消息（保留会话本身） */
   async function clearCurrentSessionMessages() {
     if (!activeSessionId.value) return
-    // 后端建议暴露专门的清空接口，此处先用占位符，后续可接 `/chat/sessions/{id}/messages` DELETE
-    await chatApi.clearSessionMessages?.(activeSessionId.value)
+    await chatApi.clearSessionMessages(activeSessionId.value)
     messages.value = []
     streamingContent.value = ''
   }
@@ -87,6 +103,8 @@ export const useChatStore = defineStore('chat', () => {
     loadMessages,
     addMessage,
     updateMessage,
+    createSession,
+    updateSession,
     deleteSession,
     clearCurrentSessionMessages,
     resetStreaming

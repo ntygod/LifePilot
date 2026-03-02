@@ -62,14 +62,17 @@ const capabilityOptions = [
 
 // 场景选项
 const sceneOptions = [
-  'intent_understanding',
-  'task_planning',
-  'knowledge_extraction',
-  'chat',
-  'memory_compression',
-  'proactive_reasoning',
-  'code_generation',
-  'embedding'
+  { value: 'intent_understanding', label: '意图理解' },
+  { value: 'task_planning', label: '任务规划' },
+  { value: 'knowledge_extraction', label: '知识提取' },
+  { value: 'chat', label: '通用对话' },
+  { value: 'memory_compression', label: '记忆压缩' },
+  { value: 'proactive_reasoning', label: '主动推理' },
+  { value: 'code_generation', label: '代码生成' },
+  { value: 'embedding', label: '向量嵌入' },
+  { value: 'agent-reasoning', label: 'Agent 推理（意图理解/任务规划/反思评估）' },
+  { value: 'agent-tool-calling', label: 'Agent 工具调用' },
+  { value: 'agent-generation', label: 'Agent 响应生成' }
 ]
 
 // 自定义 Provider（非预设置）
@@ -100,7 +103,7 @@ function openCreateForm() {
     modelName: '',
     timeoutSeconds: 30,
     priority: 0,
-    scenes: [],
+    scenes: ['chat', 'agent-reasoning', 'agent-tool-calling', 'agent-generation'], // 默认包含常用场景
     capabilities: ['CHAT'],
     enabled: true,
     costPerInputToken: 0,
@@ -200,6 +203,10 @@ async function saveProvider() {
     } else {
       const updateData: UpdateProviderRequest = { ...formData.value }
       delete (updateData as any).id // 更新时不需要 ID
+      // 如果 apiKey 为空字符串，表示用户未修改，不发送该字段
+      if (updateData.apiKey === '') {
+        delete updateData.apiKey
+      }
       console.log('更新 Provider:', formData.value.id, updateData)
       result = await llmProviderApi.updateProvider(formData.value.id, updateData)
       console.log('更新 Provider 成功:', result)
@@ -356,41 +363,69 @@ onMounted(() => {
           <!-- 预设置 Provider -->
           <div>
             <h3 class="text-lg font-medium text-foreground mb-4">预设置 Provider</h3>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div v-if="presets.length > 0" class="space-y-2">
               <div
                 v-for="preset in presets"
                 :key="preset.id"
-                class="p-4 border border-border rounded-lg hover:bg-muted/50 transition-colors"
+                class="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-muted/50 transition-colors"
               >
-                <div class="flex items-start justify-between">
-                  <div class="flex-1">
-                    <div class="flex items-center gap-2">
-                      <span class="font-medium">{{ preset.displayName || preset.id }}</span>
-                      <span
-                        class="px-2 py-0.5 text-xs rounded bg-blue-500/10 text-blue-700 dark:text-blue-400"
-                      >
-                        预设
-                      </span>
-                      <span
-                        v-if="preset.enabled"
-                        class="px-2 py-0.5 text-xs rounded bg-green-500/10 text-green-700 dark:text-green-400"
-                      >
-                        已启用
-                      </span>
-                    </div>
-                    <p class="text-sm text-muted-foreground mt-1">{{ preset.description }}</p>
-                    <p class="text-xs text-muted-foreground mt-1">
-                      {{ preset.type }} / {{ preset.modelName }}
-                    </p>
+                <div class="flex-1">
+                  <div class="flex items-center gap-2">
+                    <span class="font-medium">{{ preset.displayName || preset.id }}</span>
+                    <span
+                      class="px-2 py-0.5 text-xs rounded bg-blue-500/10 text-blue-700 dark:text-blue-400"
+                    >
+                      预设
+                    </span>
+                    <span
+                      class="px-2 py-0.5 text-xs rounded"
+                      :class="preset.enabled ? 'bg-green-500/10 text-green-700 dark:text-green-400' : 'bg-gray-500/10 text-gray-700 dark:text-gray-400'"
+                    >
+                      {{ preset.enabled ? '已启用' : '已禁用' }}
+                    </span>
+                    <span
+                      v-if="preset.healthy !== undefined"
+                      class="w-2 h-2 rounded-full"
+                      :class="preset.healthy ? 'bg-green-500' : 'bg-red-500'"
+                      :title="preset.healthy ? '健康' : '不健康'"
+                    ></span>
                   </div>
+                  <p class="text-sm text-muted-foreground mt-1">{{ preset.description }}</p>
+                  <p class="text-xs text-muted-foreground mt-1">
+                    {{ preset.type }} / {{ preset.modelName }}
+                  </p>
+                </div>
+                <div class="flex items-center gap-2">
                   <button
                     class="px-3 py-1 text-sm border border-border rounded hover:bg-accent transition-colors"
                     @click="createFromPreset(preset)"
+                    title="基于此预设创建新的 Provider"
                   >
                     使用
                   </button>
+                  <button
+                    class="px-3 py-1 text-sm border border-border rounded hover:bg-accent transition-colors"
+                    @click="openEditForm(preset)"
+                  >
+                    编辑
+                  </button>
+                  <button
+                    class="px-3 py-1 text-sm border border-border rounded hover:bg-accent transition-colors"
+                    @click="toggleEnabled(preset)"
+                  >
+                    {{ preset.enabled ? '禁用' : '启用' }}
+                  </button>
+                  <button
+                    class="px-3 py-1 text-sm border border-destructive text-destructive rounded hover:bg-destructive/10 transition-colors"
+                    @click="confirmDelete(preset)"
+                  >
+                    删除
+                  </button>
                 </div>
               </div>
+            </div>
+            <div v-else class="text-center py-8 text-muted-foreground">
+              暂无预设置 Provider
             </div>
           </div>
         </div>
@@ -522,6 +557,31 @@ onMounted(() => {
               />
             </div>
 
+            <!-- 场景 -->
+            <div>
+              <label class="block text-sm font-medium text-foreground mb-1">
+                支持的场景
+              </label>
+              <div class="flex flex-wrap gap-2">
+                <label
+                  v-for="scene in sceneOptions"
+                  :key="scene.value"
+                  class="flex items-center gap-2 px-3 py-2 border border-border rounded-md hover:bg-accent cursor-pointer"
+                >
+                  <input
+                    v-model="formData.scenes"
+                    type="checkbox"
+                    :value="scene.value"
+                    class="accent-primary"
+                  />
+                  <span class="text-sm">{{ scene.label }}</span>
+                </label>
+              </div>
+              <p class="text-xs text-muted-foreground mt-2">
+                提示：Agent 功能需要至少包含 agent-reasoning、agent-tool-calling 或 agent-generation 场景之一
+              </p>
+            </div>
+
             <!-- 能力 -->
             <div>
               <label class="block text-sm font-medium text-foreground mb-1">
@@ -560,14 +620,23 @@ onMounted(() => {
             <div class="flex justify-end gap-2 pt-4">
               <button
                 type="button"
-                class="px-4 py-2 border border-border rounded-md hover:bg-accent transition-colors"
+                class="px-4 py-2 border border-border rounded-md 
+                       transition-all duration-200
+                       hover:bg-accent hover:shadow-sm hover:border-ring
+                       focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2
+                       active:scale-[0.98]"
                 @click="showForm = false"
               >
                 取消
               </button>
               <button
                 type="submit"
-                class="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
+                class="px-4 py-2 bg-primary text-primary-foreground rounded-md 
+                       transition-all duration-200
+                       hover:bg-primary/90 hover:shadow-md hover:scale-[1.02]
+                       focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2
+                       active:scale-[0.98]
+                       disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:shadow-none"
                 :disabled="loading"
               >
                 {{ loading ? '保存中...' : '保存' }}

@@ -284,24 +284,24 @@ const themeOptions = [
   { value: 'system', label: '跟随系统' },
 ] as const
 
-const languageOptions = [
+const languageOptions: Array<{ value: string; label: string }> = [
   { value: 'zh-CN', label: '简体中文' },
   { value: 'zh-TW', label: '繁体中文' },
   { value: 'en-US', label: 'English' },
   { value: 'ja-JP', label: '日本語' },
-] as const
+]
 </script>
 
 <template>
   <div class="flex flex-col h-full overflow-y-auto">
     <div class="sticky top-0 z-10 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div class="container mx-auto px-6 py-4">
-        <h2 class="text-2xl font-semibold text-foreground">设置</h2>
+      <div class="container mx-auto px-4 md:px-6 py-4">
+        <h2 class="text-2xl font-semibold text-foreground leading-tight">设置</h2>
         <p class="text-sm text-muted-foreground mt-1">管理您的应用偏好和系统配置</p>
       </div>
     </div>
 
-    <div class="container mx-auto px-6 py-6 space-y-6 max-w-4xl">
+    <div class="container mx-auto px-4 md:px-6 py-6 space-y-6 max-w-4xl">
       <!-- 加载中 -->
       <div v-if="loading" class="flex items-center justify-center py-12">
         <div class="text-sm text-muted-foreground">加载中...</div>
@@ -321,14 +321,14 @@ const languageOptions = [
               <label
                 v-for="opt in themeOptions"
                 :key="opt.value"
-                class="flex items-center gap-2 cursor-pointer"
+                class="flex items-center gap-2 cursor-pointer transition-colors hover:text-foreground"
               >
                 <input
                   v-model="form.theme"
                   type="radio"
                   name="theme"
                   :value="opt.value"
-                  class="accent-primary"
+                  class="accent-primary focus:ring-2 focus:ring-ring focus:ring-offset-2"
                 />
                 <span class="text-sm">{{ opt.label }}</span>
               </label>
@@ -350,7 +350,7 @@ const languageOptions = [
             <div class="flex items-center gap-2 mb-2">
               <button
                 type="button"
-                class="px-3 py-1.5 text-sm border border-border rounded-md hover:bg-accent transition-colors"
+                class="px-3 py-1.5 text-sm font-medium border border-border rounded-lg bg-background hover:bg-accent hover:shadow-md active:scale-[0.98] transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 @click="showProviderManager = true"
               >
                 管理 Provider
@@ -389,7 +389,7 @@ const languageOptions = [
           <!-- Provider 配置表单 -->
           <div
             v-if="selectedProviderDetail"
-            class="rounded-lg border border-border bg-muted/30 p-4 space-y-4"
+            class="rounded-lg border border-border bg-muted/30 p-4 md:p-6 space-y-4"
           >
             <h4 class="text-sm font-medium">Provider 配置</h4>
             <div class="space-y-4">
@@ -451,10 +451,10 @@ const languageOptions = [
           <!-- Provider 详细信息卡片 -->
           <div
             v-if="selectedProviderDetail"
-            class="rounded-lg border border-border bg-muted/30 p-4 space-y-3"
+            class="rounded-lg border border-border bg-muted/30 p-4 md:p-6 space-y-3"
           >
             <h4 class="text-sm font-medium">Provider 详细信息</h4>
-            <div class="grid grid-cols-2 gap-3 text-sm">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
               <div>
                 <span class="text-muted-foreground">类型：</span>
                 <span class="ml-1">{{ selectedProviderDetail.type }}</span>
@@ -698,18 +698,18 @@ const languageOptions = [
         </SettingSection>
 
         <!-- 保存按钮 -->
-        <div class="sticky bottom-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-t py-4 -mx-6 px-6">
-          <div class="flex items-center justify-between">
+        <div class="sticky bottom-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-t py-4 -mx-4 md:-mx-6 px-4 md:px-6">
+          <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <div class="flex items-center gap-3">
               <button
                 type="submit"
                 :disabled="saving"
-                class="inline-flex items-center justify-center rounded-md text-sm font-medium h-10 px-6 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                class="inline-flex items-center justify-center rounded-lg text-sm font-medium h-10 px-6 bg-primary text-primary-foreground hover:bg-primary/90 hover:shadow-md active:scale-[0.98] transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none disabled:active:scale-100"
               >
                 {{ saving ? '保存中...' : '保存设置' }}
               </button>
 
-              <span v-if="saveSuccess" class="text-sm text-green-600 dark:text-green-400 flex items-center gap-1">
+              <span v-if="saveSuccess" class="text-sm text-green-600 dark:text-green-400 flex items-center gap-2">
                 <span class="w-1.5 h-1.5 rounded-full bg-green-600 dark:bg-green-400"></span>
                 已保存
               </span>

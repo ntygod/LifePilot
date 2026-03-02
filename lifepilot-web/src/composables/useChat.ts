@@ -2,7 +2,8 @@ import { ref } from 'vue'
 import { useChatStore } from '@/stores/chat'
 import { useA2uiStore } from '@/stores/a2ui'
 import { chatApi } from '@/api/client'
-import type { SseTokenEvent, SseDoneEvent, SseErrorEvent, A2uiComponent, TokenUsage } from '@/types'
+import { SSE_EVENT_TYPES } from '@/constants/sseEvents'
+import type { SseTokenEvent, SseDoneEvent, SseErrorEvent, A2uiComponent, TokenUsage, ReasoningEvent, ChatAttachment } from '@/types'
 
 /**
  * 对话 composable，封装 SSE 流式请求和消息管理。
@@ -24,13 +25,29 @@ export function useChat() {
   const lastPrompt = ref<string | null>(null)
   const lastModelId = ref<string | null>(null)
   const lastTokenUsage = ref<TokenUsage | null>(null)
+  // 当前轮推理事件流与状态文案
+  const reasoningEvents = ref<ReasoningEvent[]>([])
+  const reasoningStatusText = ref<string | null>(null)
   let abortController: AbortController | null = null
   // 当前这轮请求对应的用户消息 ID，用于在错误 / 完成时回写状态
   let currentUserMessageId: string | null = null
 
-  /** 发送消息（流式） */
-  async function sendMessage(content: string) {
+  /** 发送消息（流式），支持可选附件 ID 列表与前端附件对象（用于立即在 UI 中展示） */
+  async function sendMessage(content: string, attachmentIds?: string[], attachments?: ChatAttachment[]) {
     if (!content.trim()) return
+
+    // 如果当前没有活跃会话，先创建会话
+    if (!chatStore.activeSessionId) {
+      try {
+        const newSession = await chatStore.createSession()
+        chatStore.activeSessionId = newSession.id
+      } catch (e) {
+        const message = e instanceof Error ? e.message : '创建会话失败'
+        error.value = `无法创建会话：${message}`
+        console.error('创建会话失败:', e)
+        return
+      }
+    }
 
     // 添加用户消息到列表
     const userMessageId = crypto.randomUUID()
@@ -39,7 +56,8 @@ export function useChat() {
       role: 'user',
       content,
       timestamp: Date.now(),
-      status: 'pending'
+      status: 'pending',
+      attachments
     })
     currentUserMessageId = userMessageId
 
@@ -52,6 +70,8 @@ export function useChat() {
     lastPrompt.value = null
     lastModelId.value = null
     lastTokenUsage.value = null
+    reasoningEvents.value = []
+    reasoningStatusText.value = null
     a2uiStore.clearComponents()
     abortController = new AbortController()
 
@@ -62,14 +82,18 @@ export function useChat() {
       const stream = await chatApi.sendMessageStream(
         content,
         chatStore.activeSessionId ?? undefined,
+        attachmentIds,
         abortController.signal
       )
       await parseSseStream(stream)
     } catch (e: unknown) {
-      if (e instanceof DOMException && e.name === 'AbortError') return
+      if (e instanceof DOMException && e.name === 'AbortError') {
+        // 用户主动取消，不更新消息状态
+        return
+      }
       // 网络 / HTTP 级错误，视为本条消息发送失败
       const message = e instanceof Error ? e.message : '请求失败'
-      // 网络 / HTTP 级错误统一归为“网络异常”
+      // 网络 / HTTP 级错误统一归为"网络异常"
       error.value = `网络异常：${message}`
       if (currentUserMessageId) {
         chatStore.updateMessage(currentUserMessageId, {
@@ -77,6 +101,8 @@ export function useChat() {
           errorMessage: message
         })
       }
+      // 确保流式状态被重置
+      chatStore.resetStreaming()
     } finally {
       isStreaming.value = false
       chatStore.isStreaming = false
@@ -91,6 +117,7 @@ export function useChat() {
     const decoder = new TextDecoder()
     let buffer = ''
     let currentEvent = ''
+    let currentData = ''
 
     try {
       while (true) {
@@ -104,15 +131,50 @@ export function useChat() {
 
         for (const line of lines) {
           if (line.startsWith('event:')) {
+            // 如果之前有未处理的数据，先处理
+            if (currentData && currentEvent) {
+              handleSseEvent(currentEvent, currentData)
+              currentData = ''
+            }
             currentEvent = line.slice(6).trim()
           } else if (line.startsWith('data:')) {
-            const data = line.slice(5).trim()
-            if (data) handleSseEvent(currentEvent, data)
+            const data = line.slice(5)
+            // 支持多行数据：如果 data 行以空格开头，表示是上一行的续行
+            if (data.startsWith(' ')) {
+              currentData += '\n' + data.slice(1)
+            } else {
+              // 如果之前有未处理的数据，先处理
+              if (currentData && currentEvent) {
+                handleSseEvent(currentEvent, currentData)
+              }
+              currentData = data.trim()
+            }
+          } else if (line === '') {
+            // 空行表示事件结束，处理当前事件
+            if (currentData && currentEvent) {
+              handleSseEvent(currentEvent, currentData)
+              currentData = ''
+              currentEvent = ''
+            }
           }
-          // 空行表示事件结束
-          if (line === '') currentEvent = ''
         }
       }
+      // 处理最后剩余的数据
+      if (currentData && currentEvent) {
+        handleSseEvent(currentEvent, currentData)
+      }
+    } catch (e) {
+      // SSE 解析错误，更新用户消息状态
+      const message = e instanceof Error ? e.message : 'SSE 解析失败'
+      console.error('SSE 解析错误:', e)
+      error.value = `流式响应解析失败：${message}`
+      if (currentUserMessageId) {
+        chatStore.updateMessage(currentUserMessageId, {
+          status: 'error',
+          errorMessage: message
+        })
+      }
+      chatStore.resetStreaming()
     } finally {
       reader.releaseLock()
     }
@@ -122,27 +184,43 @@ export function useChat() {
   function handleSseEvent(eventType: string, data: string) {
     try {
       switch (eventType) {
-        case 'token': {
+        case SSE_EVENT_TYPES.REASONING: {
+          const payload: { sessionId?: string; turnId?: string; event: ReasoningEvent } = JSON.parse(data)
+          const ev = payload.event
+          reasoningEvents.value.push(ev)
+          reasoningStatusText.value = mapReasoningStatus(ev)
+          break
+        }
+        case SSE_EVENT_TYPES.TOKEN: {
           const event: SseTokenEvent = JSON.parse(data)
           chatStore.streamingContent += event.content
           break
         }
-        case 'ui': {
+        case SSE_EVENT_TYPES.UI: {
           const event: { components: A2uiComponent[] } = JSON.parse(data)
           a2uiStore.updateComponents(event.components)
           break
         }
-        case 'done': {
+        case SSE_EVENT_TYPES.DONE: {
           const event: SseDoneEvent = JSON.parse(data)
+          // 同步会话ID：如果后端返回了 sessionId，更新 activeSessionId
+          if (event.sessionId && event.sessionId !== chatStore.activeSessionId) {
+            chatStore.activeSessionId = event.sessionId
+          }
+          // 优先使用 event.content（非流式响应），否则使用 streamingContent（流式响应）
+          const finalContent = event.content ?? chatStore.streamingContent
+          // 优先使用后端返回的时间戳，否则使用当前时间
+          const timestamp = event.timestamp ?? Date.now()
           // 将完整消息存入消息列表
           chatStore.addMessage({
             id: event.messageId,
             role: 'assistant',
-            content: chatStore.streamingContent,
+            content: finalContent,
+            reasoningSummary: event.reasoningSummary,
             a2uiComponents: a2uiStore.components.length > 0
               ? [...a2uiStore.components]
               : undefined,
-            timestamp: Date.now(),
+            timestamp,
             traceId: event.traceId
           })
           // 记录本轮统计信息
@@ -155,7 +233,7 @@ export function useChat() {
           chatStore.resetStreaming()
           break
         }
-        case 'error': {
+        case SSE_EVENT_TYPES.ERROR: {
           const event: SseErrorEvent = JSON.parse(data)
           // 按错误码粗分类，提供更友好的提示
           let uiMessage: string
@@ -170,7 +248,7 @@ export function useChat() {
           }
 
           if (event.traceId) {
-            uiMessage += '（可前往“轨迹”页面查看该次执行详情）'
+            uiMessage += '（可前往"轨迹"页面查看该次执行详情）'
           }
 
           error.value = uiMessage
@@ -185,12 +263,55 @@ export function useChat() {
           chatStore.resetStreaming()
           break
         }
-        case 'heartbeat':
+        case SSE_EVENT_TYPES.HEARTBEAT:
           // 心跳事件，忽略
           break
+        default:
+          // 未知事件类型，记录警告但不影响流程
+          console.warn('未知的 SSE 事件类型:', eventType)
       }
-    } catch {
-      console.warn('SSE 事件解析失败:', eventType, data)
+    } catch (e) {
+      // JSON 解析失败或其他错误
+      const errorMessage = e instanceof Error ? e.message : '事件解析失败'
+      console.error('SSE 事件解析失败:', eventType, data, e)
+      // 如果是关键事件（done/error）解析失败，更新用户消息状态
+      if (eventType === SSE_EVENT_TYPES.DONE || eventType === SSE_EVENT_TYPES.ERROR) {
+        if (currentUserMessageId) {
+          chatStore.updateMessage(currentUserMessageId, {
+            status: 'error',
+            errorMessage: `事件解析失败：${errorMessage}`
+          })
+        }
+        chatStore.resetStreaming()
+      }
+    }
+  }
+
+  /** 将 ReasoningEvent 映射为顶部状态条文案 */
+  function mapReasoningStatus(ev: ReasoningEvent): string {
+    switch (ev.type) {
+      case 'AGENT_START':
+        return '正在准备上下文与预算…'
+      case 'CONTEXT_LOADING':
+        return '正在分析问题与上下文…'
+      case 'MEMORY_RETRIEVAL':
+        return '正在检索相关记忆…'
+      case 'TOOL_CALL_START':
+        return ev.toolName ? `正在调用工具：${ev.toolName}…` : '正在调用外部工具…'
+      case 'TOOL_CALL_END':
+        return ev.toolName ? `工具 ${ev.toolName} 调用完成` : '工具调用已完成'
+      case 'THINKING_STEP':
+        return '正在思考解决方案…'
+      case 'PLAN_UPDATED':
+        return '已更新执行计划…'
+      case 'ANSWER_DRAFTING':
+        return '正在整理最终答案…'
+      case 'ANSWER_FINALIZED':
+        return '本轮回答已完成'
+      case 'ERROR':
+        return '推理过程中发生错误'
+      default:
+        return '正在处理中…'
     }
   }
 
@@ -208,6 +329,8 @@ export function useChat() {
     // 最近一轮对话的调试 / 统计信息，用于主对话页顶部摘要和后续调试视图
     lastPrompt,
     lastModelId,
-    lastTokenUsage
+    lastTokenUsage,
+    reasoningEvents,
+    reasoningStatusText
   }
 }

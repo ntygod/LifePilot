@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { UserSettings } from '@/types'
-import { settingsApi } from '@/api/client'
+import { settingsApi, llmProviderApi, type LlmProvider } from '@/api/client'
 
 export const useSettingsStore = defineStore('settings', () => {
   const theme = ref<'light' | 'dark' | 'system'>('system')
@@ -11,6 +11,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const enableFunctionCall = ref(true)
   const enableKnowledgeBase = ref(true)
   const enableToolCall = ref(true)
+  const providers = ref<LlmProvider[]>([])
 
   /** 从后端加载设置 */
   async function load() {
@@ -45,9 +46,19 @@ export const useSettingsStore = defineStore('settings', () => {
     enableToolCall.value = saved.enableToolCall ?? true
   }
 
+  /** 获取 Provider 列表 */
+  async function fetchProviders() {
+    try {
+      providers.value = await settingsApi.getProviders()
+    } catch (e: any) {
+      console.error('加载 Provider 列表失败:', e)
+    }
+  }
+
   return { 
     theme, language, llmProvider, 
     enableStreaming, enableFunctionCall, enableKnowledgeBase, enableToolCall,
-    load, save 
+    providers,
+    load, save, fetchProviders
   }
 })
