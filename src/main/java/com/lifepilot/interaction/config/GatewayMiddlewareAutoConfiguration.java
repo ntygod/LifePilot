@@ -17,11 +17,14 @@ import com.lifepilot.interaction.middleware.security.PromptInjectionDetector;
 import com.lifepilot.interaction.middleware.security.SecurityMiddleware;
 import com.lifepilot.interaction.middleware.security.SensitiveDataDetector;
 import com.lifepilot.interaction.middleware.security.TrustScoreCalculator;
+import com.lifepilot.interaction.web.repository.AttachmentRepository;
+import com.lifepilot.interaction.web.sse.SseSessionManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.JdbcTemplate;
 
@@ -97,9 +100,21 @@ public class GatewayMiddlewareAutoConfiguration {
 
     @Bean
     @ConditionalOnBean(AgentLoop.class)
-    public ExecutionMiddleware executionMiddleware(AgentLoop agentLoop, GatewayProperties properties) {
+    public ExecutionMiddleware executionMiddleware(AgentLoop agentLoop,
+                                                   GatewayProperties properties,
+                                                   ApplicationContext applicationContext,
+                                                   AttachmentRepository attachmentRepository) {
         log.info("注册 ExecutionMiddleware");
-        return new ExecutionMiddleware(agentLoop, properties);
+        // 尝试获取 SseSessionManager，如果不存在则为 null（流式功能将不可用）
+        SseSessionManager sseSessionManager = null;
+        try {
+            if (applicationContext.containsBean("sseSessionManager")) {
+                sseSessionManager = applicationContext.getBean(SseSessionManager.class);
+            }
+        } catch (Exception e) {
+            log.debug("SseSessionManager 不可用，流式功能将禁用: {}", e.getMessage());
+        }
+        return new ExecutionMiddleware(agentLoop, properties, sseSessionManager, attachmentRepository);
     }
 
     // ── 审计相关 ──────────────────────────────────────────────────

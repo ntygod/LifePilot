@@ -239,6 +239,11 @@ public class LlmProviderController {
      * 从创建请求创建实体。
      */
     private LlmProviderEntity toEntity(CreateProviderRequest request) {
+        // 如果场景为空，默认包含 chat 场景（至少保证基本可用）
+        List<String> scenes = request.scenes() != null && !request.scenes().isEmpty()
+                ? request.scenes()
+                : List.of("chat");
+        
         return new LlmProviderEntity(
                 request.id(),
                 ProviderType.valueOf(request.type()),
@@ -247,7 +252,7 @@ public class LlmProviderController {
                 request.modelName(),
                 request.timeoutSeconds() != null ? request.timeoutSeconds() : 30,
                 request.priority() != null ? request.priority() : 0,
-                request.scenes() != null ? request.scenes() : List.of(),
+                scenes,
                 request.capabilities() != null
                         ? request.capabilities().stream()
                         .map(ProviderCapability::valueOf)
@@ -274,7 +279,9 @@ public class LlmProviderController {
                 existing.id(),
                 request.type() != null ? ProviderType.valueOf(request.type()) : existing.type(),
                 request.apiUrl() != null ? request.apiUrl() : existing.apiUrl(),
-                request.apiKey() != null ? request.apiKey() : existing.apiKey(),
+                // 如果 apiKey 为 null 或空字符串，使用现有的 apiKey（表示未修改）
+                (request.apiKey() != null && !request.apiKey().isBlank())
+                        ? request.apiKey() : existing.apiKey(),
                 request.modelName() != null ? request.modelName() : existing.modelName(),
                 request.timeoutSeconds() != null ? request.timeoutSeconds() : existing.timeoutSeconds(),
                 request.priority() != null ? request.priority() : existing.priority(),

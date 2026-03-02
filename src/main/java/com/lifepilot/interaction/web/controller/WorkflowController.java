@@ -2,21 +2,25 @@ package com.lifepilot.interaction.web.controller;
 
 import com.lifepilot.interaction.web.model.ErrorResponse;
 import com.lifepilot.interaction.web.model.TriggerWorkflowRequest;
+import com.lifepilot.workflow.config.WorkflowConfigProperties;
 import com.lifepilot.workflow.engine.WorkflowEngine;
+import com.lifepilot.workflow.model.Result;
+import com.lifepilot.workflow.model.WorkflowDefinition;
+import com.lifepilot.workflow.parser.WorkflowYamlParser;
+import com.lifepilot.workflow.parser.WorkflowYamlPrinter;
 import com.lifepilot.workflow.registry.WorkflowRegistry;
 import com.lifepilot.workflow.repository.WorkflowRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -36,13 +40,157 @@ public class WorkflowController {
     private final WorkflowRegistry workflowRegistry;
     private final WorkflowEngine workflowEngine;
     private final WorkflowRepository workflowRepository;
+    private final WorkflowYamlParser yamlParser;
+    private final WorkflowYamlPrinter yamlPrinter;
+    private final WorkflowConfigProperties workflowConfig;
+    private final Path workflowsDirectory;
 
     public WorkflowController(WorkflowRegistry workflowRegistry,
                                WorkflowEngine workflowEngine,
-                               WorkflowRepository workflowRepository) {
+                               WorkflowRepository workflowRepository,
+                               WorkflowYamlParser yamlParser,
+                               WorkflowYamlPrinter yamlPrinter,
+                               WorkflowConfigProperties workflowConfig) {
         this.workflowRegistry = workflowRegistry;
         this.workflowEngine = workflowEngine;
         this.workflowRepository = workflowRepository;
+        this.yamlParser = yamlParser;
+        this.yamlPrinter = yamlPrinter;
+        this.workflowConfig = workflowConfig;
+        String dir = workflowConfig.getDefinitionsDir();
+        // 处理 ~ 符号
+        if (dir.startsWith("~")) {
+            dir = System.getProperty("user.home") + dir.substring(1);
+        }
+        this.workflowsDirectory = Path.of(dir);
+    }
+
+    /**
+     * 创建 Workflow。
+     *
+     * @param request 创建请求（包含 yamlContent）
+     * @return 201 创建成功，400 参数错误
+     */
+    @PostMapping
+    public ResponseEntity<?> createWorkflow(@RequestBody Map<String, Object> request) {
+        log.debug("创建 Workflow: request={}", request);
+        
+        try {
+            // 获取 YAML 内容
+            String yamlContent = getString(request, "yamlContent");
+            if (yamlContent == null || yamlContent.isBlank()) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body(new ErrorResponse(400, "yamlContent 不能为空", Instant.now()));
+            }
+
+            // 解析 YAML
+            Result<WorkflowDefinition, List<String>> parseResult = yamlParser.parse(yamlContent);
+            if (parseResult instanceof Result.Err<WorkflowDefinition, List<String>> err) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body(new ErrorResponse(400, "YAML 解析失败: " + String.join(", ", err.error()), Instant.now()));
+            }
+
+            WorkflowDefinition definition = ((Result.Ok<WorkflowDefinition, List<String>>) parseResult).value();
+
+            // 检查是否已存在
+            if (workflowRegistry.find(definition.id()).isPresent()) {
+                return ResponseEntity.status(HttpStatus.CONFLICT)
+                        .body(new ErrorResponse(409, "Workflow ID 已存在: " + definition.id(), Instant.now()));
+            }
+
+            // 保存到文件系统
+            Path workflowFile = workflowsDirectory.resolve(definition.id() + ".yaml");
+            if (!Files.exists(workflowsDirectory)) {
+                Files.createDirectories(workflowsDirectory);
+            }
+            Files.writeString(workflowFile, yamlContent);
+
+            // 注册到 WorkflowRegistry
+            boolean registered = workflowRegistry.register(definition);
+            if (!registered) {
+                // 如果注册失败，删除文件
+                Files.deleteIfExists(workflowFile);
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body(new ErrorResponse(400, "Workflow 注册失败，请检查定义", Instant.now()));
+            }
+
+            log.info("Workflow 创建成功: id={}, name={}", definition.id(), definition.name());
+            return ResponseEntity.status(HttpStatus.CREATED).body(definition);
+        } catch (IOException e) {
+            log.error("创建 Workflow 失败", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ErrorResponse(500, "创建失败: " + e.getMessage(), Instant.now()));
+        } catch (Exception e) {
+            log.error("创建 Workflow 失败", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ErrorResponse(500, "创建失败: " + e.getMessage(), Instant.now()));
+        }
+    }
+
+    /**
+     * 更新 Workflow。
+     *
+     * @param id Workflow ID
+     * @param request 更新请求（包含 yamlContent）
+     * @return 200 更新成功，404 不存在，400 参数错误
+     */
+    @PutMapping("/{id}")
+    public ResponseEntity<?> updateWorkflow(@PathVariable String id,
+                                            @RequestBody Map<String, Object> request) {
+        log.debug("更新 Workflow: id={}, request={}", id, request);
+        
+        // 检查 Workflow 是否存在
+        var existingOpt = workflowRegistry.find(id);
+        if (existingOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(new ErrorResponse(404, "Workflow 不存在: id=" + id, Instant.now()));
+        }
+
+        try {
+            // 获取 YAML 内容
+            String yamlContent = getString(request, "yamlContent");
+            if (yamlContent == null || yamlContent.isBlank()) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body(new ErrorResponse(400, "yamlContent 不能为空", Instant.now()));
+            }
+
+            // 解析 YAML
+            Result<WorkflowDefinition, List<String>> parseResult = yamlParser.parse(yamlContent);
+            if (parseResult instanceof Result.Err<WorkflowDefinition, List<String>> err) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body(new ErrorResponse(400, "YAML 解析失败: " + String.join(", ", err.error()), Instant.now()));
+            }
+
+            WorkflowDefinition definition = ((Result.Ok<WorkflowDefinition, List<String>>) parseResult).value();
+
+            // 检查 ID 是否匹配
+            if (!definition.id().equals(id)) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body(new ErrorResponse(400, "YAML 中的 ID 必须与路径参数一致", Instant.now()));
+            }
+
+            // 更新文件系统
+            Path workflowFile = workflowsDirectory.resolve(id + ".yaml");
+            Files.writeString(workflowFile, yamlContent);
+
+            // 更新注册表
+            boolean registered = workflowRegistry.register(definition);
+            if (!registered) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body(new ErrorResponse(400, "Workflow 更新失败，请检查定义", Instant.now()));
+            }
+
+            log.info("Workflow 更新成功: id={}", id);
+            return ResponseEntity.ok(definition);
+        } catch (IOException e) {
+            log.error("更新 Workflow 失败: id={}", id, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ErrorResponse(500, "更新失败: " + e.getMessage(), Instant.now()));
+        } catch (Exception e) {
+            log.error("更新 Workflow 失败: id={}", id, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ErrorResponse(500, "更新失败: " + e.getMessage(), Instant.now()));
+        }
     }
 
     /**
@@ -147,5 +295,12 @@ public class WorkflowController {
                     new ErrorResponse(404, "工作流不存在: id=" + id, Instant.now()));
         }
         return ResponseEntity.ok(workflowRepository.findInstancesByWorkflowId(id));
+    }
+
+    // ── 辅助方法 ──────────────────────────────────────────
+
+    private String getString(Map<String, Object> map, String key) {
+        Object value = map.get(key);
+        return value != null ? value.toString() : null;
     }
 }

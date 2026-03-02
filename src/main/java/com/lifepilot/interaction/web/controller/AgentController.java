@@ -1,0 +1,826 @@
+package com.lifepilot.interaction.web.controller;
+
+import com.lifepilot.agent.AgentLoop;
+import com.lifepilot.agent.model.AgentRequest;
+import com.lifepilot.agent.model.AgentResponse;
+import com.lifepilot.interaction.model.TokenUsage;
+import com.lifepilot.interaction.web.model.AgentDetail;
+import com.lifepilot.interaction.web.model.AgentSummary;
+import com.lifepilot.interaction.web.model.ChatResponse;
+import com.lifepilot.interaction.web.model.CreateAgentRequest;
+import com.lifepilot.interaction.web.model.ErrorResponse;
+import com.lifepilot.interaction.web.model.TestChatRequest;
+import com.lifepilot.interaction.web.model.UpdateAgentRequest;
+import com.lifepilot.knowledge.KnowledgeBaseManager;
+import com.lifepilot.knowledge.model.KnowledgeBase;
+import com.lifepilot.multiagent.model.AgentBudget;
+import com.lifepilot.multiagent.model.AgentDefinition;
+import com.lifepilot.multiagent.model.AgentSource;
+import com.lifepilot.multiagent.registry.AgentRegistry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+/**
+ * Agent 管理 REST Controller。
+ *
+ * <p>提供 Agent 测试对话等端点。</p>
+ *
+ * @author zsg
+ * @since 2026-02-28
+ */
+@RestController
+@RequestMapping("/api/agents")
+public class AgentController {
+
+    private static final Logger log = LoggerFactory.getLogger(AgentController.class);
+
+    private final AgentRegistry agentRegistry;
+    private final AgentLoop agentLoop;
+    private final KnowledgeBaseManager knowledgeBaseManager;
+
+    public AgentController(AgentRegistry agentRegistry, AgentLoop agentLoop, KnowledgeBaseManager knowledgeBaseManager) {
+        this.agentRegistry = agentRegistry;
+        this.agentLoop = agentLoop;
+        this.knowledgeBaseManager = knowledgeBaseManager;
+    }
+
+    /**
+     * 获取 Agent 列表。
+     *
+     * <p>支持关键词搜索、类型过滤、状态过滤和标签过滤。</p>
+     *
+     * @param q      关键词搜索（名称/描述）
+     * @param type   Agent 类型过滤（"default"/"custom"/"workflow"）
+     * @param status 状态过滤（"enabled"/"disabled"）
+     * @param tags   标签过滤（多个标签，逗号分隔）
+     * @return Agent 列表
+     */
+    @GetMapping
+    public ResponseEntity<List<AgentSummary>> listAgents(
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) String type,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String tags) {
+        log.debug("查询 Agent 列表: q={}, type={}, status={}, tags={}", q, type, status, tags);
+
+        // 1. 获取所有 Agent
+        List<AgentDefinition> allAgents = agentRegistry.listAll();
+
+        // 2. 转换为 AgentSummary 并应用过滤
+        List<AgentSummary> summaries = allAgents.stream()
+                .map(this::toAgentSummary)
+                .filter(summary -> matchesQuery(summary, q))
+                .filter(summary -> matchesType(summary, type))
+                .filter(summary -> matchesStatus(summary, status))
+                .filter(summary -> matchesTags(summary, tags))
+                .collect(Collectors.toList());
+
+        log.info("返回 Agent 列表: 总数={}, 过滤后={}", allAgents.size(), summaries.size());
+        return ResponseEntity.ok(summaries);
+    }
+
+    /**
+     * 将 AgentDefinition 转换为 AgentSummary。
+     */
+    private AgentSummary toAgentSummary(AgentDefinition agent) {
+        // 判断类型
+        String agentType = determineType(agent.source());
+
+        // 判断状态（从 metadata 中提取）
+        String agentStatus = extractStatus(agent.metadata());
+
+        // 提取标签（从 metadata 中）
+        List<String> agentTags = extractTags(agent.metadata());
+
+        // 提取模型 ID（从 preferredProvider 或 metadata）
+        String modelId = agent.preferredProvider() != null
+                ? agent.preferredProvider()
+                : agent.metadata().getOrDefault("modelId", "").toString();
+
+        // 知识库数量（从 metadata 中的 knowledgeBaseIds 获取）
+        List<String> kbIds = extractKnowledgeBaseIds(agent.metadata());
+        int knowledgeBaseCount = kbIds.size();
+
+        // 创建时间和更新时间（从 metadata 或使用当前时间）
+        Instant createdAt = extractInstant(agent.metadata(), "createdAt", Instant.now());
+        Instant updatedAt = extractInstant(agent.metadata(), "updatedAt", Instant.now());
+
+        return new AgentSummary(
+                agent.id(),
+                agent.name(),
+                agent.description(),
+                agentType,
+                modelId,
+                knowledgeBaseCount,
+                updatedAt,
+                createdAt,
+                agentStatus,
+                agentTags
+        );
+    }
+
+    /**
+     * 根据 AgentSource 判断类型。
+     */
+    private String determineType(AgentSource source) {
+        if (source instanceof AgentSource.Builtin) {
+            return "default";
+        } else if (source instanceof AgentSource.MarkdownDefined) {
+            return "custom";
+        }
+        return "custom"; // 默认
+    }
+
+    /**
+     * 从 metadata 中提取标签。
+     */
+    private List<String> extractTags(java.util.Map<String, String> metadata) {
+        if (metadata == null || metadata.isEmpty()) {
+            return List.of();
+        }
+
+        String tagsStr = metadata.get("tags");
+        if (tagsStr == null || tagsStr.isBlank()) {
+            return List.of();
+        }
+
+        // 支持逗号分隔的字符串或 JSON 数组字符串
+        List<String> tags = new ArrayList<>();
+        if (tagsStr.startsWith("[")) {
+            // JSON 数组格式，简单解析
+            String content = tagsStr.substring(1, tagsStr.length() - 1);
+            for (String tag : content.split(",")) {
+                String trimmed = tag.trim().replaceAll("^\"|\"$", "");
+                if (!trimmed.isEmpty()) {
+                    tags.add(trimmed);
+                }
+            }
+        } else {
+            // 逗号分隔格式
+            for (String tag : tagsStr.split(",")) {
+                String trimmed = tag.trim();
+                if (!trimmed.isEmpty()) {
+                    tags.add(trimmed);
+                }
+            }
+        }
+        return tags;
+    }
+
+    /**
+     * 从 metadata 中提取 Instant。
+     */
+    private Instant extractInstant(java.util.Map<String, String> metadata, String key, Instant defaultValue) {
+        if (metadata == null || metadata.isEmpty()) {
+            return defaultValue;
+        }
+        String value = metadata.get(key);
+        if (value == null || value.isBlank()) {
+            return defaultValue;
+        }
+        try {
+            return Instant.parse(value);
+        } catch (Exception e) {
+            log.debug("无法解析时间戳: key={}, value={}", key, value);
+            return defaultValue;
+        }
+    }
+
+    /**
+     * 检查是否匹配关键词查询。
+     */
+    private boolean matchesQuery(AgentSummary summary, String q) {
+        if (q == null || q.isBlank()) {
+            return true;
+        }
+        String lowerQ = q.toLowerCase();
+        return (summary.name() != null && summary.name().toLowerCase().contains(lowerQ))
+                || (summary.description() != null && summary.description().toLowerCase().contains(lowerQ));
+    }
+
+    /**
+     * 检查是否匹配类型过滤。
+     */
+    private boolean matchesType(AgentSummary summary, String type) {
+        if (type == null || type.isBlank()) {
+            return true;
+        }
+        return type.equalsIgnoreCase(summary.type());
+    }
+
+    /**
+     * 检查是否匹配状态过滤。
+     */
+    private boolean matchesStatus(AgentSummary summary, String status) {
+        if (status == null || status.isBlank()) {
+            return true;
+        }
+        return status.equalsIgnoreCase(summary.status());
+    }
+
+    /**
+     * 检查是否匹配标签过滤。
+     */
+    private boolean matchesTags(AgentSummary summary, String tagsParam) {
+        if (tagsParam == null || tagsParam.isBlank()) {
+            return true;
+        }
+
+        List<String> filterTags = new ArrayList<>();
+        for (String tag : tagsParam.split(",")) {
+            String trimmed = tag.trim();
+            if (!trimmed.isEmpty()) {
+                filterTags.add(trimmed.toLowerCase());
+            }
+        }
+
+        if (filterTags.isEmpty()) {
+            return true;
+        }
+
+        // 检查 summary 的标签是否包含任一过滤标签
+        List<String> summaryTags = summary.tags() != null
+                ? summary.tags().stream().map(String::toLowerCase).collect(Collectors.toList())
+                : List.of();
+
+        return filterTags.stream().anyMatch(summaryTags::contains);
+    }
+
+    /**
+     * Agent 测试对话接口。
+     *
+     * <p>使用指定 Agent 配置进行对话测试，不保存会话历史。</p>
+     *
+     * @param id      Agent ID
+     * @param request 测试消息请求
+     * @return ChatResponse 包含响应内容和 Token 使用情况
+     */
+    @PostMapping("/{id}/test-chat")
+    public ResponseEntity<?> testChat(@PathVariable String id,
+                                       @RequestBody TestChatRequest request) {
+        log.info("Agent 测试对话请求: agentId={}, messageLength={}", id, request.message().length());
+
+        // 1. 查找 Agent 定义
+        var agentOpt = agentRegistry.find(id);
+        if (agentOpt.isEmpty()) {
+            log.warn("Agent 不存在: id={}", id);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    new ErrorResponse(404, "Agent 不存在: id=" + id, Instant.now()));
+        }
+
+        AgentDefinition agent = agentOpt.get();
+
+        // 2. 验证消息内容
+        if (request.message() == null || request.message().isBlank()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
+                    new ErrorResponse(400, "消息内容不能为空", Instant.now()));
+        }
+
+        try {
+            // 3. 构建 AgentRequest（使用独立的测试会话 ID）
+            String testSessionId = "test:" + UUID.randomUUID().toString();
+            var agentRequest = new AgentRequest(
+                    request.message(),
+                    testSessionId,
+                    "web-test",
+                    agent.systemPrompt(),
+                    agent.budget().toAgentBudget(),
+                    null, // 无父 traceId
+                    0,    // 深度为 0
+                    agent.preferredProvider(),
+                    agent.allowedTools(),
+                    null // 测试对话暂不携带多模态内容
+            );
+
+            // 4. 执行 Agent 对话
+            AgentResponse agentResponse = agentLoop.run(agentRequest);
+
+            // 5. 构建 ChatResponse
+            String messageId = UUID.randomUUID().toString();
+            TokenUsage tokenUsage = new TokenUsage(
+                    0, // promptTokens（AgentResponse 中没有详细分解）
+                    0, // completionTokens
+                    agentResponse.tokensUsed(), // totalTokens
+                    agent.preferredProvider() != null ? agent.preferredProvider() : "unknown"
+            );
+
+            ChatResponse chatResponse = new ChatResponse(
+                    messageId,
+                    agentResponse.content(),
+                    null, // a2ui（测试对话暂不支持）
+                    tokenUsage
+            );
+
+            log.info("Agent 测试对话完成: agentId={}, messageId={}, tokensUsed={}, steps={}",
+                    id, messageId, agentResponse.tokensUsed(), agentResponse.stepCount());
+
+            return ResponseEntity.ok(chatResponse);
+
+        } catch (Exception e) {
+            log.error("Agent 测试对话异常: agentId={}, error={}", id, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
+                    new ErrorResponse(500, "Agent 测试对话失败: " + e.getMessage(), Instant.now()));
+        }
+    }
+
+    /**
+     * 获取 Agent 详情。
+     *
+     * @param id Agent ID
+     * @return Agent 详情
+     */
+    @GetMapping("/{id}")
+    public ResponseEntity<?> getAgent(@PathVariable String id) {
+        log.debug("查询 Agent 详情: id={}", id);
+
+        var agentOpt = agentRegistry.find(id);
+        if (agentOpt.isEmpty()) {
+            log.warn("Agent 不存在: id={}", id);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    new ErrorResponse(404, "Agent 不存在: id=" + id, Instant.now()));
+        }
+
+        AgentDefinition agent = agentOpt.get();
+        AgentDetail detail = toAgentDetail(agent);
+
+        return ResponseEntity.ok(detail);
+    }
+
+    /**
+     * 创建 Agent。
+     *
+     * @param request 创建请求
+     * @return 创建的 Agent 详情
+     */
+    @PostMapping
+    public ResponseEntity<?> createAgent(@RequestBody CreateAgentRequest request) {
+        log.info("创建 Agent: name={}", request.name());
+
+        // 1. 验证必填字段
+        if (request.name() == null || request.name().isBlank()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
+                    new ErrorResponse(400, "Agent 名称不能为空", Instant.now()));
+        }
+        if (request.systemPrompt() == null || request.systemPrompt().isBlank()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
+                    new ErrorResponse(400, "System Prompt 不能为空", Instant.now()));
+        }
+
+        // 2. 生成 Agent ID
+        String agentId = "custom-" + UUID.randomUUID().toString().substring(0, 8);
+
+        // 3. 构建 metadata
+        Map<String, String> metadata = buildMetadata(request, Instant.now(), Instant.now());
+
+        // 4. 构建 AgentDefinition
+        AgentDefinition agentDef = AgentDefinition.builder()
+                .id(agentId)
+                .name(request.name())
+                .description(request.description() != null ? request.description() : "")
+                .systemPrompt(request.systemPrompt())
+                .allowedTools(request.toolIds() != null ? request.toolIds() : List.of())
+                .canDelegate(false) // 自定义 Agent 默认不允许委托
+                .budget(AgentBudget.DEFAULT)
+                .preferredProvider(request.modelId())
+                .source(new AgentSource.MarkdownDefined(null, Instant.now()))
+                .metadata(metadata)
+                .build();
+
+        // 5. 注册 Agent
+        boolean registered = agentRegistry.register(agentDef);
+        if (!registered) {
+            log.error("Agent 注册失败: id={}", agentId);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
+                    new ErrorResponse(500, "Agent 注册失败", Instant.now()));
+        }
+
+        // 6. 返回 Agent 详情
+        AgentDetail detail = toAgentDetail(agentDef);
+        log.info("Agent 创建成功: id={}, name={}", agentId, request.name());
+        return ResponseEntity.status(HttpStatus.CREATED).body(detail);
+    }
+
+    /**
+     * 更新 Agent。
+     *
+     * @param id      Agent ID
+     * @param request 更新请求
+     * @return 更新后的 Agent 详情
+     */
+    @PutMapping("/{id}")
+    public ResponseEntity<?> updateAgent(@PathVariable String id, @RequestBody UpdateAgentRequest request) {
+        log.info("更新 Agent: id={}", id);
+
+        // 1. 查找现有 Agent
+        var agentOpt = agentRegistry.find(id);
+        if (agentOpt.isEmpty()) {
+            log.warn("Agent 不存在: id={}", id);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    new ErrorResponse(404, "Agent 不存在: id=" + id, Instant.now()));
+        }
+
+        AgentDefinition existing = agentOpt.get();
+
+        // 2. 检查是否为 Builtin Agent（不允许更新）
+        if (existing.source() instanceof AgentSource.Builtin) {
+            log.warn("不允许更新 Builtin Agent: id={}", id);
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(
+                    new ErrorResponse(403, "不允许更新内置 Agent", Instant.now()));
+        }
+
+        // 3. 构建更新的 metadata（合并现有 metadata）
+        Map<String, String> existingMetadata = existing.metadata() != null ? existing.metadata() : Map.of();
+        Instant createdAt = extractInstant(existingMetadata, "createdAt", Instant.now());
+        Map<String, String> metadata = buildUpdateMetadata(request, existingMetadata, createdAt, Instant.now());
+
+        // 4. 构建更新的 AgentDefinition
+        AgentDefinition updatedDef = AgentDefinition.builder()
+                .id(id)
+                .name(request.name() != null ? request.name() : existing.name())
+                .description(request.description() != null ? request.description() : existing.description())
+                .systemPrompt(request.systemPrompt() != null ? request.systemPrompt() : existing.systemPrompt())
+                .allowedTools(request.toolIds() != null ? request.toolIds() : existing.allowedTools())
+                .canDelegate(existing.canDelegate())
+                .budget(existing.budget())
+                .preferredProvider(request.modelId() != null ? request.modelId() : existing.preferredProvider())
+                .source(existing.source())
+                .metadata(metadata)
+                .build();
+
+        // 5. 重新注册（覆盖）
+        boolean registered = agentRegistry.register(updatedDef);
+        if (!registered) {
+            log.error("Agent 更新失败: id={}", id);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
+                    new ErrorResponse(500, "Agent 更新失败", Instant.now()));
+        }
+
+        // 6. 返回更新后的 Agent 详情
+        AgentDetail detail = toAgentDetail(updatedDef);
+        log.info("Agent 更新成功: id={}", id);
+        return ResponseEntity.ok(detail);
+    }
+
+    /**
+     * 删除 Agent。
+     *
+     * @param id Agent ID
+     * @return 204 No Content
+     */
+    @DeleteMapping("/{id}")
+    public ResponseEntity<?> deleteAgent(@PathVariable String id) {
+        log.info("删除 Agent: id={}", id);
+
+        // 1. 查找现有 Agent
+        var agentOpt = agentRegistry.find(id);
+        if (agentOpt.isEmpty()) {
+            log.warn("Agent 不存在: id={}", id);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    new ErrorResponse(404, "Agent 不存在: id=" + id, Instant.now()));
+        }
+
+        AgentDefinition agent = agentOpt.get();
+
+        // 2. 检查是否为 Builtin Agent（不允许删除）
+        if (agent.source() instanceof AgentSource.Builtin) {
+            log.warn("不允许删除 Builtin Agent: id={}", id);
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(
+                    new ErrorResponse(403, "不允许删除内置 Agent", Instant.now()));
+        }
+
+        // 3. TODO: 检查是否被使用（会话、工作流等）
+
+        // 4. 注销 Agent
+        boolean unregistered = agentRegistry.unregister(id);
+        if (!unregistered) {
+            log.error("Agent 删除失败: id={}", id);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
+                    new ErrorResponse(500, "Agent 删除失败", Instant.now()));
+        }
+
+        log.info("Agent 删除成功: id={}", id);
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * 启用 Agent。
+     *
+     * @param id Agent ID
+     * @return 204 No Content
+     */
+    @PostMapping("/{id}/enable")
+    public ResponseEntity<?> enableAgent(@PathVariable String id) {
+        log.info("启用 Agent: id={}", id);
+
+        var agentOpt = agentRegistry.find(id);
+        if (agentOpt.isEmpty()) {
+            log.warn("Agent 不存在: id={}", id);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    new ErrorResponse(404, "Agent 不存在: id=" + id, Instant.now()));
+        }
+
+        AgentDefinition agent = agentOpt.get();
+        Map<String, String> metadata = new HashMap<>(agent.metadata() != null ? agent.metadata() : Map.of());
+        metadata.put("status", "enabled");
+
+        AgentDefinition updatedDef = agent.toBuilder()
+                .metadata(metadata)
+                .build();
+
+        agentRegistry.register(updatedDef);
+        log.info("Agent 启用成功: id={}", id);
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * 禁用 Agent。
+     *
+     * @param id Agent ID
+     * @return 204 No Content
+     */
+    @PostMapping("/{id}/disable")
+    public ResponseEntity<?> disableAgent(@PathVariable String id) {
+        log.info("禁用 Agent: id={}", id);
+
+        var agentOpt = agentRegistry.find(id);
+        if (agentOpt.isEmpty()) {
+            log.warn("Agent 不存在: id={}", id);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    new ErrorResponse(404, "Agent 不存在: id=" + id, Instant.now()));
+        }
+
+        AgentDefinition agent = agentOpt.get();
+        Map<String, String> metadata = new HashMap<>(agent.metadata() != null ? agent.metadata() : Map.of());
+        metadata.put("status", "disabled");
+
+        AgentDefinition updatedDef = agent.toBuilder()
+                .metadata(metadata)
+                .build();
+
+        agentRegistry.register(updatedDef);
+        log.info("Agent 禁用成功: id={}", id);
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * 将 AgentDefinition 转换为 AgentDetail。
+     */
+    private AgentDetail toAgentDetail(AgentDefinition agent) {
+        // 基本信息
+        String agentType = determineType(agent.source());
+        String agentStatus = extractStatus(agent.metadata());
+        List<String> agentTags = extractTags(agent.metadata());
+        String modelId = agent.preferredProvider() != null
+                ? agent.preferredProvider()
+                : agent.metadata().getOrDefault("modelId", "").toString();
+
+        // 知识库信息
+        List<String> kbIds = extractKnowledgeBaseIds(agent.metadata());
+        int knowledgeBaseCount = kbIds.size();
+        List<AgentDetail.KnowledgeBaseInfo> knowledgeBases = kbIds.stream()
+                .map(kbId -> {
+                    var kbOpt = knowledgeBaseManager.getKnowledgeBase(kbId);
+                    if (kbOpt.isPresent()) {
+                        KnowledgeBase kb = kbOpt.get();
+                        // 从 metadata 中提取知识库配置
+                        Map<String, String> kbConfig = extractKnowledgeBaseConfig(agent.metadata(), kbId);
+                        return new AgentDetail.KnowledgeBaseInfo(
+                                kb.id(),
+                                kb.name(),
+                                kbConfig.containsKey("topK") ? Integer.parseInt(kbConfig.get("topK")) : null,
+                                kbConfig.containsKey("maxContextTokens") ? Integer.parseInt(kbConfig.get("maxContextTokens")) : null
+                        );
+                    }
+                    return null;
+                })
+                .filter(kb -> kb != null)
+                .collect(Collectors.toList());
+
+        // 模型配置
+        Map<String, String> metadata = agent.metadata() != null ? agent.metadata() : Map.of();
+        Double temperature = metadata.containsKey("temperature") 
+                ? Double.parseDouble(metadata.get("temperature")) 
+                : null;
+        Integer maxTokens = metadata.containsKey("maxTokens") 
+                ? Integer.parseInt(metadata.get("maxTokens")) 
+                : null;
+        Double topP = metadata.containsKey("topP") 
+                ? Double.parseDouble(metadata.get("topP")) 
+                : null;
+
+        AgentDetail.ModelConfig modelConfig = new AgentDetail.ModelConfig(
+                modelId,
+                temperature,
+                maxTokens,
+                topP
+        );
+
+        // 时间戳
+        Instant createdAt = extractInstant(metadata, "createdAt", Instant.now());
+        Instant updatedAt = extractInstant(metadata, "updatedAt", Instant.now());
+
+        // 元数据（转换为 Map<String, Object>）
+        Map<String, Object> metadataObj = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : metadata.entrySet()) {
+            metadataObj.put(entry.getKey(), entry.getValue());
+        }
+
+        return new AgentDetail(
+                agent.id(),
+                agent.name(),
+                agent.description(),
+                agentType,
+                modelId,
+                knowledgeBaseCount,
+                updatedAt,
+                createdAt,
+                agentStatus,
+                agentTags,
+                agent.systemPrompt(),
+                modelConfig,
+                knowledgeBases,
+                agent.allowedTools(),
+                metadataObj
+        );
+    }
+
+    /**
+     * 从 metadata 中提取知识库 ID 列表。
+     */
+    private List<String> extractKnowledgeBaseIds(Map<String, String> metadata) {
+        if (metadata == null || metadata.isEmpty()) {
+            return List.of();
+        }
+        String kbIdsStr = metadata.get("knowledgeBaseIds");
+        if (kbIdsStr == null || kbIdsStr.isBlank()) {
+            return List.of();
+        }
+        List<String> kbIds = new ArrayList<>();
+        if (kbIdsStr.startsWith("[")) {
+            String content = kbIdsStr.substring(1, kbIdsStr.length() - 1);
+            for (String id : content.split(",")) {
+                String trimmed = id.trim().replaceAll("^\"|\"$", "");
+                if (!trimmed.isEmpty()) {
+                    kbIds.add(trimmed);
+                }
+            }
+        } else {
+            for (String id : kbIdsStr.split(",")) {
+                String trimmed = id.trim();
+                if (!trimmed.isEmpty()) {
+                    kbIds.add(trimmed);
+                }
+            }
+        }
+        return kbIds;
+    }
+
+    /**
+     * 从 metadata 中提取知识库配置。
+     */
+    private Map<String, String> extractKnowledgeBaseConfig(Map<String, String> metadata, String kbId) {
+        Map<String, String> config = new HashMap<>();
+        String prefix = "kb." + kbId + ".";
+        for (Map.Entry<String, String> entry : metadata.entrySet()) {
+            if (entry.getKey().startsWith(prefix)) {
+                String key = entry.getKey().substring(prefix.length());
+                config.put(key, entry.getValue());
+            }
+        }
+        return config;
+    }
+
+    /**
+     * 从 metadata 中提取状态。
+     */
+    private String extractStatus(Map<String, String> metadata) {
+        if (metadata == null || metadata.isEmpty()) {
+            return "enabled";
+        }
+        String status = metadata.get("status");
+        return status != null && !status.isBlank() ? status : "enabled";
+    }
+
+    /**
+     * 构建 metadata Map。
+     */
+    private Map<String, String> buildMetadata(CreateAgentRequest request, Instant createdAt, Instant updatedAt) {
+        Map<String, String> metadata = new LinkedHashMap<>();
+        
+        // 时间戳
+        metadata.put("createdAt", createdAt.toString());
+        metadata.put("updatedAt", updatedAt.toString());
+        
+        // 状态
+        metadata.put("status", "enabled");
+        
+        // 标签
+        if (request.tags() != null && !request.tags().isEmpty()) {
+            metadata.put("tags", String.join(",", request.tags()));
+        }
+        
+        // 模型配置
+        if (request.modelId() != null) {
+            metadata.put("modelId", request.modelId());
+        }
+        if (request.temperature() != null) {
+            metadata.put("temperature", request.temperature().toString());
+        }
+        if (request.maxTokens() != null) {
+            metadata.put("maxTokens", request.maxTokens().toString());
+        }
+        
+        // 知识库 ID 列表
+        if (request.knowledgeBaseIds() != null && !request.knowledgeBaseIds().isEmpty()) {
+            metadata.put("knowledgeBaseIds", String.join(",", request.knowledgeBaseIds()));
+        }
+        
+        // 其他元数据
+        if (request.metadata() != null) {
+            for (Map.Entry<String, Object> entry : request.metadata().entrySet()) {
+                if (!metadata.containsKey(entry.getKey())) {
+                    metadata.put(entry.getKey(), entry.getValue().toString());
+                }
+            }
+        }
+        
+        return metadata;
+    }
+
+    /**
+     * 构建 metadata Map（更新时使用，合并现有 metadata）。
+     */
+    private Map<String, String> buildUpdateMetadata(UpdateAgentRequest request, 
+                                                     Map<String, String> existingMetadata,
+                                                     Instant createdAt, 
+                                                     Instant updatedAt) {
+        Map<String, String> metadata = new LinkedHashMap<>(existingMetadata);
+        
+        // 时间戳（保持不变）
+        metadata.put("createdAt", createdAt.toString());
+        metadata.put("updatedAt", updatedAt.toString());
+        
+        // 状态（保持原有状态，如果请求中没有指定）
+        if (!metadata.containsKey("status")) {
+            metadata.put("status", "enabled");
+        }
+        
+        // 标签（如果请求中提供了，则更新）
+        if (request.tags() != null) {
+            if (request.tags().isEmpty()) {
+                metadata.put("tags", "");
+            } else {
+                metadata.put("tags", String.join(",", request.tags()));
+            }
+        }
+        
+        // 模型配置（如果请求中提供了，则更新）
+        if (request.modelId() != null) {
+            metadata.put("modelId", request.modelId());
+        }
+        if (request.temperature() != null) {
+            metadata.put("temperature", request.temperature().toString());
+        }
+        if (request.maxTokens() != null) {
+            metadata.put("maxTokens", request.maxTokens().toString());
+        }
+        
+        // 知识库 ID 列表（如果请求中提供了，则更新）
+        if (request.knowledgeBaseIds() != null) {
+            if (request.knowledgeBaseIds().isEmpty()) {
+                metadata.put("knowledgeBaseIds", "");
+            } else {
+                metadata.put("knowledgeBaseIds", String.join(",", request.knowledgeBaseIds()));
+            }
+        }
+        
+        // 其他元数据（如果请求中提供了，则更新）
+        if (request.metadata() != null) {
+            for (Map.Entry<String, Object> entry : request.metadata().entrySet()) {
+                metadata.put(entry.getKey(), entry.getValue().toString());
+            }
+        }
+        
+        return metadata;
+    }
+}

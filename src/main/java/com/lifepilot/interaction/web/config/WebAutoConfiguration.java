@@ -4,6 +4,7 @@ import com.lifepilot.interaction.config.GatewayProperties;
 import com.lifepilot.interaction.gateway.MessageGateway;
 import com.lifepilot.interaction.web.adapter.WebChannelAdapter;
 import com.lifepilot.interaction.web.controller.WebExceptionHandler;
+import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,9 +43,10 @@ public class WebAutoConfiguration {
 
     @Bean
     public WebChannelAdapter webChannelAdapter(MessageGateway gateway,
-                                                GatewayProperties gatewayProperties) {
+                                                GatewayProperties gatewayProperties,
+                                                AttachmentRepository attachmentRepository) {
         log.info("注册 WebChannelAdapter");
-        return new WebChannelAdapter(gateway, gatewayProperties);
+        return new WebChannelAdapter(gateway, gatewayProperties, attachmentRepository);
     }
 
     @Bean

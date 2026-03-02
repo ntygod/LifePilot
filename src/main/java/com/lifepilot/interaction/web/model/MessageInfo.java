@@ -7,11 +7,12 @@ import org.springframework.lang.Nullable;
 /**
  * 消息摘要信息。
  *
- * @param id        消息 ID
- * @param role      角色（user / assistant）
- * @param content   文本内容
- * @param a2ui      A2UI 组件树（可为 null）
- * @param timestamp 消息时间戳
+ * @param id               消息 ID
+ * @param role             角色（user / assistant）
+ * @param content          文本内容
+ * @param a2ui             A2UI 组件树（可为 null）
+ * @param timestamp        消息时间戳
+ * @param reasoningSummary 本条消息对应一轮对话的推理概要（可为 null，仅 assistant 消息返回）
  * @author zsg
  * @since 2026-02-27
  */
@@ -20,5 +21,6 @@ public record MessageInfo(
         String role,
         String content,
         @Nullable A2uiComponentTree a2ui,
-        Instant timestamp
+        Instant timestamp,
+        @Nullable String reasoningSummary
 ) {}

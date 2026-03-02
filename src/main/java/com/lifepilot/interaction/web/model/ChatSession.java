@@ -13,6 +13,7 @@ import java.util.UUID;
  * @param summary       会话摘要（可选）
  * @param messageCount  消息数量
  * @param isPinned      是否置顶
+ * @param archived      是否归档
  * @param lastMessageAt 最近一次消息时间（可选）
  * @param createdAt     创建时间
  * @param updatedAt     更新时间
@@ -25,6 +26,7 @@ public record ChatSession(
         String summary,
         int messageCount,
         boolean isPinned,
+        boolean archived,
         Instant lastMessageAt,
         Instant createdAt,
         Instant updatedAt
@@ -42,6 +44,7 @@ public record ChatSession(
                 title != null && !title.isBlank() ? title : "新对话",
                 null,
                 0,
+                false,
                 false,
                 null,
                 now,

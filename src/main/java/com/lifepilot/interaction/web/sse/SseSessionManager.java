@@ -6,6 +6,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.time.Instant;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -76,9 +78,22 @@ public class SseSessionManager {
             return;
         }
         try {
+            // 对于 done 事件，如果数据是 Map 类型且未包含 timestamp，自动添加时间戳
+            Object eventData = data;
+            if (SseEventType.DONE.equals(eventType) && data instanceof Map<?, ?> dataMap) {
+                @SuppressWarnings({"unchecked", "null"})
+                Map<String, Object> mutableMap = (Map<String, Object>) dataMap;
+                // 如果 Map 中未包含 timestamp，添加时间戳
+                if (!mutableMap.containsKey("timestamp")) {
+                    mutableMap.put("timestamp", Instant.now().toEpochMilli());
+                }
+                eventData = mutableMap;
+            }
+            
+            @SuppressWarnings("null")
             var event = SseEmitter.event()
                     .name(eventType)
-                    .data(data);
+                    .data(eventData);
             emitter.send(event);
         } catch (IOException e) {
             log.warn("SseEmitter 发送事件失败: streamId={}, eventType={}", streamId, eventType, e);
@@ -110,7 +125,7 @@ public class SseSessionManager {
             emitters.forEach((streamId, emitter) -> {
                 try {
                     var event = SseEmitter.event()
-                            .name("heartbeat")
+                            .name(SseEventType.HEARTBEAT)
                             .data("");
                     emitter.send(event);
                 } catch (IOException e) {

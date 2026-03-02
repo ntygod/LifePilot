@@ -1,19 +1,14 @@
 package com.lifepilot.interaction.middleware.router;
 
-import java.util.List;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import com.lifepilot.interaction.config.GatewayProperties;
 import com.lifepilot.interaction.middleware.GatewayMiddleware;
 import com.lifepilot.interaction.middleware.MiddlewareChain;
 import com.lifepilot.interaction.middleware.MiddlewareContext;
-import com.lifepilot.interaction.model.GatewayMessage;
-import com.lifepilot.interaction.model.GatewayResponse;
-import com.lifepilot.interaction.model.MessageContent;
-import com.lifepilot.interaction.model.ResponseContent;
-import com.lifepilot.interaction.model.TokenUsage;
+import com.lifepilot.interaction.model.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.List;
 
 /**
  * 意图路由中间件，根据消息类型分发到快速路径或 Agent 路径。
@@ -78,8 +73,8 @@ public class RouterMiddleware implements GatewayMiddleware {
      */
     private boolean isCommandMessage(GatewayMessage message) {
         return message.content() instanceof MessageContent.CommandMessage
-                || (message.content() instanceof MessageContent.TextMessage t
-                    && t.text().startsWith("/"));
+                || (message.content() instanceof MessageContent.TextMessage(String text)
+                    && text.startsWith("/"));
     }
 
     /**

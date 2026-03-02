@@ -1,6 +1,11 @@
 package com.lifepilot.interaction.web.adapter;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -14,6 +19,7 @@ import com.lifepilot.interaction.model.GatewayResponse;
 import com.lifepilot.interaction.model.MessageContent;
 import com.lifepilot.interaction.web.model.ChatRequest;
 import com.lifepilot.interaction.web.model.SignalRequest;
+import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,6 +30,10 @@ import org.slf4j.LoggerFactory;
  * <p>将 {@link ChatRequest} 和 {@link SignalRequest} 标准化为 {@link GatewayMessage}，
  * 通过 {@link MessageGateway#process} 推入中间件管道处理。Controller 负责 HTTP 协议层，
  * 本适配器负责 GatewayMessage 转换和 Gateway 调用，职责分离。</p>
+ *
+ * <p>Phase 2：图片多模态支持
+ * 在此处根据 ChatRequest.attachmentIds 加载消息附件二进制数据，并封装到
+ * {@link GatewayMessage#attachments()} 中，为后续多模态路由提供输入。</p>
  *
  * @author zsg
  * @since 2026-02-27
@@ -38,8 +48,13 @@ public class WebChannelAdapter extends AbstractChannelAdapter {
     /** Web 通道默认用户标识。 */
     private static final String DEFAULT_WEB_USER = "web-user";
 
-    public WebChannelAdapter(MessageGateway gateway, GatewayProperties properties) {
+    private final AttachmentRepository attachmentRepository;
+
+    public WebChannelAdapter(MessageGateway gateway,
+                             GatewayProperties properties,
+                             AttachmentRepository attachmentRepository) {
         super(gateway, properties);
+        this.attachmentRepository = attachmentRepository;
     }
 
     @Override
@@ -126,11 +141,16 @@ public class WebChannelAdapter extends AbstractChannelAdapter {
                                                     boolean acceptsSse) {
         var content = new MessageContent.TextMessage(request.content());
         var sessionId = request.sessionId() != null ? request.sessionId() : UUID.randomUUID().toString();
+
+        // Phase 2：根据 attachmentIds 加载消息附件（二进制 + MIME）
+        List<GatewayMessage.Attachment> attachments = loadAttachments(request, sessionId);
+
         return GatewayMessage.builder()
                 .channelType(ChannelType.WEB)
                 .userId(DEFAULT_WEB_USER)
                 .sessionId(sessionId)
                 .content(content)
+                .attachments(attachments)
                 .channelMetadata(buildWebMetadata(httpRequest, acceptsSse))
                 .timestamp(Instant.now())
                 .build();
@@ -179,5 +199,45 @@ public class WebChannelAdapter extends AbstractChannelAdapter {
                 null,
                 acceptsSse
         );
+    }
+
+    /**
+     * 根据 ChatRequest 中的附件 ID 列表加载附件记录与二进制数据。
+     *
+     * @param request   聊天请求
+     * @param sessionId 会话 ID（用于日志）
+     * @return GatewayMessage 附件列表
+     */
+    private List<GatewayMessage.Attachment> loadAttachments(ChatRequest request, String sessionId) {
+        var ids = request.attachmentIds();
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+
+        List<GatewayMessage.Attachment> results = new ArrayList<>();
+        for (String id : ids) {
+            try {
+                var record = attachmentRepository.findById(id);
+                if (record == null) {
+                    log.warn("WebChannelAdapter: 未找到附件记录, id={}, sessionId={}", id, sessionId);
+                    continue;
+                }
+                Path path = Path.of(record.filePath());
+                byte[] data = Files.readAllBytes(path);
+                var attachment = new GatewayMessage.Attachment(
+                        record.id(),
+                        record.fileName(),
+                        record.mimeType(),
+                        data,
+                        record.fileSize()
+                );
+                results.add(attachment);
+            } catch (IOException e) {
+                log.warn("WebChannelAdapter: 读取附件失败, id={}, sessionId={}, error={}", id, sessionId, e.getMessage());
+            } catch (Exception e) {
+                log.warn("WebChannelAdapter: 处理附件失败, id={}, sessionId={}, error={}", id, sessionId, e.getMessage());
+            }
+        }
+        return results;
     }
 }
