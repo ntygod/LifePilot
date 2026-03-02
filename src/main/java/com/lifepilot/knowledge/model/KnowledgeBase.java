@@ -1,6 +1,7 @@
 package com.lifepilot.knowledge.model;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -24,6 +25,7 @@ public record KnowledgeBase(
         Map<String, Object> chunkingConfig,
         int documentCount,
         int totalChunks,
+        List<String> tags,
         Instant createdAt,
         Instant updatedAt
 ) {
@@ -46,6 +48,6 @@ public record KnowledgeBase(
                 UUID.randomUUID().toString(),
                 name, description, embeddingModel,
                 Optional.empty(), "smart", Map.of(),
-                0, 0, now, now);
+                0, 0, List.of(), now, now);
     }
 }

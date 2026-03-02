@@ -50,8 +50,8 @@ public class KnowledgeBaseRepository {
                 INSERT INTO knowledge_bases (
                     id, name, description, embedding_model, reranker_model,
                     chunking_strategy, chunking_config_json,
-                    document_count, total_chunks, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    document_count, total_chunks, tags, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     name = excluded.name,
                     description = excluded.description,
@@ -61,6 +61,7 @@ public class KnowledgeBaseRepository {
                     chunking_config_json = excluded.chunking_config_json,
                     document_count = excluded.document_count,
                     total_chunks = excluded.total_chunks,
+                    tags = excluded.tags,
                     updated_at = excluded.updated_at
                 """,
                 kb.id(),
@@ -72,6 +73,7 @@ public class KnowledgeBaseRepository {
                 serializeMap(kb.chunkingConfig()),
                 kb.documentCount(),
                 kb.totalChunks(),
+                serializeList(kb.tags()),
                 kb.createdAt().toString(),
                 kb.updatedAt().toString());
     }
@@ -98,6 +100,63 @@ public class KnowledgeBaseRepository {
         return jdbcTemplate.query(
                 "SELECT * FROM knowledge_bases ORDER BY created_at DESC",
                 rowMapper);
+    }
+
+    /**
+     * 根据条件查询知识库。
+     *
+     * @param q         关键词搜索（名称/描述）
+     * @param tags      标签列表（多个标签，逗号分隔）
+     * @param timeRange 时间范围（7d/30d）
+     * @return 知识库列表
+     */
+    public List<KnowledgeBase> findByConditions(String q, String tags, String timeRange) {
+        StringBuilder sql = new StringBuilder("SELECT * FROM knowledge_bases WHERE 1=1");
+        List<Object> params = new java.util.ArrayList<>();
+
+        // 关键词搜索
+        if (q != null && !q.isBlank()) {
+            sql.append(" AND (name LIKE ? OR description LIKE ?)");
+            String searchPattern = "%" + q + "%";
+            params.add(searchPattern);
+            params.add(searchPattern);
+        }
+
+        // 标签过滤
+        if (tags != null && !tags.isBlank()) {
+            String[] tagArray = tags.split(",");
+            if (tagArray.length > 0) {
+                sql.append(" AND (");
+                for (int i = 0; i < tagArray.length; i++) {
+                    if (i > 0) {
+                        sql.append(" OR ");
+                    }
+                    sql.append("tags LIKE ?");
+                    params.add("%\"" + tagArray[i].trim() + "\"%");
+                }
+                sql.append(")");
+            }
+        }
+
+        // 时间范围过滤
+        if (timeRange != null && !timeRange.isBlank()) {
+            Instant cutoffTime;
+            if ("7d".equals(timeRange)) {
+                cutoffTime = Instant.now().minusSeconds(7 * 24 * 60 * 60);
+            } else if ("30d".equals(timeRange)) {
+                cutoffTime = Instant.now().minusSeconds(30 * 24 * 60 * 60);
+            } else {
+                cutoffTime = null;
+            }
+            if (cutoffTime != null) {
+                sql.append(" AND created_at >= ?");
+                params.add(cutoffTime.toString());
+            }
+        }
+
+        sql.append(" ORDER BY created_at DESC");
+
+        return jdbcTemplate.query(sql.toString(), rowMapper, params.toArray(new Object[0]));
     }
 
     /**
@@ -135,6 +194,7 @@ public class KnowledgeBaseRepository {
                 deserializeMap(rs.getString("chunking_config_json")),
                 rs.getInt("document_count"),
                 rs.getInt("total_chunks"),
+                deserializeStringList(rs.getString("tags")),
                 Instant.parse(rs.getString("created_at")),
                 Instant.parse(rs.getString("updated_at"))
         );
@@ -164,6 +224,33 @@ public class KnowledgeBaseRepository {
         } catch (JsonProcessingException e) {
             log.warn("JSON 反序列化失败，返回空 Map: json={}, error={}", json, e.getMessage());
             return Map.of();
+        }
+    }
+
+    /** List<String> 序列化为 JSON 字符串。 */
+    private String serializeList(List<String> list) {
+        if (list == null || list.isEmpty()) {
+            return "[]";
+        }
+        try {
+            return objectMapper.writeValueAsString(list);
+        } catch (JsonProcessingException e) {
+            log.warn("JSON 序列化失败，使用空数组: error={}", e.getMessage());
+            return "[]";
+        }
+    }
+
+    /** JSON 字符串反序列化为 List<String>。 */
+    private List<String> deserializeStringList(String json) {
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+        try {
+            List<String> result = objectMapper.readValue(json, new TypeReference<List<String>>() {});
+            return result != null ? result : List.of();
+        } catch (JsonProcessingException e) {
+            log.warn("JSON 反序列化失败，返回空列表: json={}, error={}", json, e.getMessage());
+            return List.of();
         }
     }
 }

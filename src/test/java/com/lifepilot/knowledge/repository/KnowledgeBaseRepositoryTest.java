@@ -13,6 +13,7 @@ import org.springframework.test.context.DynamicPropertySource;
 
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -92,7 +93,7 @@ class KnowledgeBaseRepositoryTest {
                 kb.id(), "更新名称", "更新描述", "model-v2",
                 Optional.of("reranker-v1"), "fixed-size",
                 Map.of("maxChunkSize", 2048),
-                5, 100, kb.createdAt(), Instant.now()
+                5, 100, List.of(), kb.createdAt(), Instant.now()
         );
         repository.save(updated);
 
@@ -123,17 +124,17 @@ class KnowledgeBaseRepositoryTest {
         var kb1 = new KnowledgeBase(
                 UUID.randomUUID().toString(), "知识库1", "", "model",
                 Optional.empty(), "smart", Map.of(), 0, 0,
-                now.minusSeconds(30), now.minusSeconds(30)
+                List.of(), now.minusSeconds(30), now.minusSeconds(30)
         );
         var kb2 = new KnowledgeBase(
                 UUID.randomUUID().toString(), "知识库2", "", "model",
                 Optional.empty(), "smart", Map.of(), 0, 0,
-                now.minusSeconds(20), now.minusSeconds(20)
+                List.of(), now.minusSeconds(20), now.minusSeconds(20)
         );
         var kb3 = new KnowledgeBase(
                 UUID.randomUUID().toString(), "知识库3", "", "model",
                 Optional.empty(), "smart", Map.of(), 0, 0,
-                now.minusSeconds(10), now.minusSeconds(10)
+                List.of(), now.minusSeconds(10), now.minusSeconds(10)
         );
 
         // 故意乱序插入
@@ -196,7 +197,7 @@ class KnowledgeBaseRepositoryTest {
         var kb = new KnowledgeBase(
                 UUID.randomUUID().toString(), "JSON测试", "描述", "model",
                 Optional.empty(), "fixed-size", config,
-                0, 0, Instant.now(), Instant.now()
+                0, 0, List.of(), Instant.now(), Instant.now()
         );
         repository.save(kb);
 

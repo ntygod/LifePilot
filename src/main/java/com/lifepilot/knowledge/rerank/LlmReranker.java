@@ -1,5 +1,6 @@
 package com.lifepilot.knowledge.rerank;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.lifepilot.knowledge.model.DocumentSearchResult;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.LlmUnavailableException;
@@ -59,17 +60,39 @@ public final class LlmReranker implements Reranker {
 
     private double scoreCandidate(String query, DocumentSearchResult candidate) {
         var prompt = """
-                请评估以下查询和文档的相关性，返回 0.0 到 1.0 之间的分数。
-                只返回数字，不要其他内容。
+                请评估以下查询和文档的相关性，返回 JSON 格式：
+                {"score": 0.85}
                 
                 查询：%s
                 文档：%s""".formatted(query, candidate.content());
 
-        var response = llmRouter.call(SCENE, prompt, null);
         try {
+            // 优先使用 callEntity 进行类型安全解析
+            ScoreResponse response = llmRouter.callEntity(SCENE, prompt, ScoreResponse.class);
+            if (response != null && response.score() != null) {
+                return Math.max(0.0, Math.min(1.0, response.score()));
+            }
+        } catch (Exception e) {
+            log.debug("LLM 精排 callEntity 解析失败，降级到手动解析: error={}", e.getMessage());
+        }
+        
+        // 降级到手动解析
+        try {
+            var response = llmRouter.call(SCENE, prompt, null);
             return Double.parseDouble(response.content().trim());
         } catch (NumberFormatException e) {
+            log.debug("LLM 精排手动解析失败，使用原始分数: error={}", e.getMessage());
+            return candidate.score();
+        } catch (LlmUnavailableException e) {
+            log.warn("LLM 精排不可用，使用原始分数: {}", e.getMessage());
             return candidate.score();
         }
     }
+    
+    /**
+     * 评分响应结构（用于 callEntity 解析）。
+     */
+    private record ScoreResponse(
+            @JsonProperty("score") Double score
+    ) {}
 }

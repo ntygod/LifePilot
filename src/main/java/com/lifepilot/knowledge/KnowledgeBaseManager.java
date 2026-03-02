@@ -75,6 +75,18 @@ public class KnowledgeBaseManager {
     }
 
     /**
+     * 根据条件查询知识库。
+     *
+     * @param q         关键词搜索（名称/描述）
+     * @param tags      标签列表（多个标签，逗号分隔）
+     * @param timeRange 时间范围（7d/30d）
+     * @return 知识库列表
+     */
+    public List<KnowledgeBase> listKnowledgeBases(String q, String tags, String timeRange) {
+        return kbRepository.findByConditions(q, tags, timeRange);
+    }
+
+    /**
      * 更新知识库信息。null 参数表示不更新对应字段。
      *
      * @param id          知识库 id
@@ -85,6 +97,22 @@ public class KnowledgeBaseManager {
      */
     @Transactional
     public KnowledgeBase updateKnowledgeBase(String id, String name, String description) {
+        return updateKnowledgeBase(id, name, description, null);
+    }
+
+    /**
+     * 更新知识库信息。null 参数表示不更新对应字段。
+     *
+     * @param id          知识库 id
+     * @param name        新名称（null 不更新）
+     * @param description 新描述（null 不更新）
+     * @param tags        新标签列表（null 不更新）
+     * @return 更新后的知识库
+     * @throws KnowledgeBaseNotFoundException 知识库不存在时抛出
+     */
+    @Transactional
+    public KnowledgeBase updateKnowledgeBase(String id, String name, String description, 
+                                            List<String> tags) {
         KnowledgeBase existing = kbRepository.findById(id)
                 .orElseThrow(() -> new KnowledgeBaseNotFoundException("知识库不存在: id=" + id));
 
@@ -98,11 +126,14 @@ public class KnowledgeBaseManager {
                 existing.chunkingConfig(),
                 existing.documentCount(),
                 existing.totalChunks(),
+                tags != null ? tags : existing.tags(),
                 existing.createdAt(),
                 Instant.now()
         );
         kbRepository.save(updated);
-        log.info("知识库更新成功: id={}", id);
+        log.info("知识库更新成功: id={}, description={}, tags={}", id, 
+                description != null ? "已更新" : "未更新",
+                tags != null ? "已更新" : "未更新");
         return updated;
     }
 
