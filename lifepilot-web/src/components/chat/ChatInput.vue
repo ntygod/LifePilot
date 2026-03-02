@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Paperclip, FileText, X, ChevronDown, ChevronUp, Settings } from 'lucide-vue-next'
+import { Paperclip, FileText, X, ChevronDown, ChevronUp, Settings, Image, FileAudio2, FileVideo } from 'lucide-vue-next'
 import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
 import { chatApi } from '@/api/client'
 import type { ChatAttachment } from '@/types'
@@ -22,6 +22,8 @@ const inputLength = computed(() => input.value.length)
 // 附件相关（本地选中的文件列表）
 const attachments = ref<File[]>([])
 const fileInput = ref<HTMLInputElement | null>(null)
+const isUploading = ref(false)
+const uploadError = ref<string | null>(null)
 
 // Prompt模板相关
 const showTemplates = ref(false)
@@ -52,12 +54,14 @@ function handleKeydown(e: KeyboardEvent) {
 
 async function submit() {
   const content = input.value.trim()
-  if (!content || props.disabled) return
+  if (!content || props.disabled || isUploading.value) return
 
   // 如果有附件，先上传到后端，获取附件 ID 列表
   let attachmentIds: string[] | undefined
   let uploadedAttachments: ChatAttachment[] | undefined
   if (attachments.value.length > 0) {
+    isUploading.value = true
+    uploadError.value = null
     try {
       const sessionId = undefined
       const uploaded = await Promise.all(
@@ -66,14 +70,20 @@ async function submit() {
       attachmentIds = uploaded.map(a => a.fileId)
       uploadedAttachments = uploaded
     } catch (e) {
-      // 上传失败时，不阻塞纯文本发送，只给出提示
+      // 上传失败时，不发送消息，给出错误提示，允许用户重试
       console.error('附件上传失败:', e)
+      uploadError.value = e instanceof Error ? e.message : '附件上传失败，请重试或移除附件'
+      isUploading.value = false
+      return
+    } finally {
+      isUploading.value = false
     }
   }
 
   emit('send', { content, attachmentIds, attachments: uploadedAttachments })
   input.value = ''
   attachments.value = []
+  uploadError.value = null
 }
 
 function handleFileSelect() {
@@ -107,6 +117,14 @@ function formatFileSize(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
+
+function getFileIcon(file: File) {
+  const type = file.type || ''
+  if (type.startsWith('image/')) return Image
+  if (type.startsWith('audio/')) return FileAudio2
+  if (type.startsWith('video/')) return FileVideo
+  return FileText
+}
 </script>
 
 <template>
@@ -118,7 +136,7 @@ function formatFileSize(bytes: number): string {
         :key="index"
         class="inline-flex items-center gap-2 px-2 py-1 rounded-md bg-muted text-xs text-foreground"
       >
-        <Paperclip :size="12" />
+        <component :is="getFileIcon(file)" :size="12" />
         <span class="max-w-[200px] truncate">{{ file.name }}</span>
         <span class="text-muted-foreground">({{ formatFileSize(file.size) }})</span>
         <button
@@ -269,6 +287,7 @@ function formatFileSize(bytes: number): string {
             ref="fileInput"
             type="file"
             multiple
+            accept="image/*,audio/*,video/*,.pdf,.txt,.md,.csv,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
             class="hidden"
             @change="handleFileChange"
           />
@@ -288,7 +307,7 @@ function formatFileSize(bytes: number): string {
           </button>
           
           <button
-            :disabled="disabled || !input.trim()"
+            :disabled="disabled || !input.trim() || isUploading"
             class="w-10 h-10 rounded-full bg-primary text-primary-foreground
                    hover:bg-primary/90 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed
                    transition-all duration-200 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 shrink-0 flex items-center justify-center"
@@ -310,10 +329,14 @@ function formatFileSize(bytes: number): string {
             </svg>
           </button>
         </div>
-        <div class="flex justify-between text-xs text-muted-foreground px-1">
+        <div class="flex justify-between items-center text-xs text-muted-foreground px-1">
           <span>按 Enter 发送，Shift+Enter 换行</span>
-          <span>{{ inputLength }} / {{ maxLength }} 字符</span>
+          <span v-if="isUploading" class="text-primary">正在上传附件…</span>
+          <span v-else>{{ inputLength }} / {{ maxLength }} 字符</span>
           <span v-if="disabled">正在生成回答，稍候即可继续输入</span>
+        </div>
+        <div v-if="uploadError" class="mt-1 px-1 text-xs text-destructive">
+          {{ uploadError }}
         </div>
       </div>
     </div>

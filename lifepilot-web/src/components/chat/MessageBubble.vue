@@ -124,12 +124,12 @@ function closeImagePreview() {
             ? 'relative z-[1] bg-primary text-primary-foreground'
             : 'relative z-[1] bg-muted text-foreground'"
         >
-        <!-- 用户消息：纯文本（支持可选高亮 HTML） -->
-        <p
-          v-if="message.role === 'user'"
-          class="text-sm whitespace-pre-wrap"
-          v-html="(message as any).highlightedContent ?? message.content"
-        />
+          <!-- 用户消息：纯文本（支持可选高亮 HTML） -->
+          <p
+            v-if="message.role === 'user'"
+            class="text-sm whitespace-pre-wrap"
+            v-html="(message as any).highlightedContent ?? message.content"
+          />
 
           <!-- Agent 消息：Markdown 渲染 + A2UI 工具卡片 -->
           <template v-else>
@@ -192,8 +192,8 @@ function closeImagePreview() {
 
           <!-- 图片附件缩略图（用户或 AI 消息均可展示） -->
           <div
-        v-if="imageAttachments.length > 0"
-        class="mt-2 grid grid-cols-2 gap-2"
+            v-if="imageAttachments.length > 0"
+            class="mt-2 grid grid-cols-2 gap-2"
           >
             <button
               v-for="att in imageAttachments"
@@ -209,6 +209,60 @@ function closeImagePreview() {
                 loading="lazy"
               />
             </button>
+          </div>
+
+          <!-- 非图片附件：视频 / 音频 / 通用文件下载 -->
+          <div
+            v-if="fileAttachments.length > 0"
+            class="mt-2 flex flex-col gap-2"
+          >
+            <div
+              v-for="att in fileAttachments"
+              :key="att.fileId"
+              class="flex flex-col gap-2 rounded-lg border border-border bg-background/60 px-3 py-2 text-xs text-foreground"
+            >
+              <div class="flex items-center justify-between gap-2">
+                <span class="truncate">
+                  {{ att.filename }}
+                </span>
+                <span class="shrink-0 text-[11px] text-muted-foreground">
+                  {{ (att.size / 1024).toFixed(1) }} KB
+                </span>
+              </div>
+
+              <!-- 视频播放器 -->
+              <video
+                v-if="att.type?.startsWith('video/')"
+                :src="att.url"
+                controls
+                class="mt-1 w-full max-w-full rounded-lg"
+                style="max-height: 360px;"
+              >
+                浏览器不支持视频播放
+              </video>
+
+              <!-- 音频播放器 -->
+              <audio
+                v-else-if="att.type?.startsWith('audio/')"
+                :src="att.url"
+                controls
+                class="mt-1 w-full"
+              />
+
+              <!-- 通用文件下载链接 -->
+              <a
+                v-else
+                :href="att.url"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="mt-1 inline-flex items-center gap-1 text-[11px] text-primary underline-offset-2 hover:underline"
+              >
+                <span class="inline-flex items-center justify-center text-muted-foreground">
+                  <FileText :size="14" />
+                </span>
+                <span>下载文件</span>
+              </a>
+            </div>
           </div>
         </div>
       </div>
@@ -328,58 +382,6 @@ function closeImagePreview() {
           >
             提交反馈
           </button>
-        </div>
-
-        <!-- 非图片附件：文件卡片 / 音频播放器 -->
-        <div
-          v-if="fileAttachments.length > 0"
-          class="mt-2 flex flex-col gap-2"
-        >
-          <div
-            v-for="att in fileAttachments"
-            :key="att.fileId"
-            class="flex items-center gap-3 rounded-lg border border-border bg-background/60 px-3 py-2 text-xs"
-          >
-            <!-- 图标：音频 vs 通用文件 -->
-            <div class="shrink-0 text-muted-foreground">
-              <FileAudio2
-                v-if="att.type?.startsWith('audio/')"
-                :size="16"
-              />
-              <FileText
-                v-else
-                :size="16"
-              />
-            </div>
-            <!-- 文件信息 -->
-            <div class="flex-1 min-w-0">
-              <div class="flex items-center justify-between gap-2">
-                <span class="truncate text-foreground">
-                  {{ att.filename }}
-                </span>
-                <span class="shrink-0 text-[11px] text-muted-foreground">
-                  {{ (att.size / 1024).toFixed(1) }} KB
-                </span>
-              </div>
-              <!-- 音频播放器 -->
-              <audio
-                v-if="att.type?.startsWith('audio/')"
-                :src="att.url"
-                controls
-                class="mt-1 w-full"
-              />
-              <!-- 通用文件下载链接 -->
-              <a
-                v-else
-                :href="att.url"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="mt-1 inline-flex items-center gap-1 text-[11px] text-primary underline-offset-2 hover:underline"
-              >
-                下载文件
-              </a>
-            </div>
-          </div>
         </div>
       </div>
 

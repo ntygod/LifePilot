@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.lifepilot.observability.config.ObservabilityProperties;
+import com.lifepilot.observability.evaluation.EvaluationResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -12,6 +13,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -268,6 +270,165 @@ public class TraceQuery {
                 rs.getInt("success_count"),
                 rs.getDouble("avg_duration_ms")
         ), start.toString(), end.toString());
+    }
+
+    /**
+     * 获取指定时间窗口内的概览统计。
+     *
+     * @param window 时间窗口（24h / 7d / 30d），默认使用 7d
+     * @return 概览统计数据
+     */
+    public OverviewStats getOverviewStats(String window) {
+        Instant now = Instant.now();
+        Instant start = switch (window) {
+            case "24h" -> now.minus(Duration.ofHours(24));
+            case "30d" -> now.minus(Duration.ofDays(30));
+            default -> now.minus(Duration.ofDays(7));
+        };
+
+        return jdbcTemplate.queryForObject("""
+                SELECT
+                    COUNT(*)                                                   AS total_traces,
+                    COALESCE(SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END), 0)  AS success_count,
+                    COALESCE(SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END), 0)  AS failure_count,
+                    CASE
+                        WHEN COUNT(*) > 0 THEN
+                            CAST(SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) AS REAL) / COUNT(*)
+                        ELSE 0.0
+                    END                                                        AS success_rate,
+                    COALESCE(AVG(total_steps), 0.0)                            AS avg_steps,
+                    COALESCE(AVG(total_duration_ms), 0.0)                      AS avg_duration_ms,
+                    COALESCE(SUM(total_tokens), 0)                             AS total_tokens,
+                    COALESCE(AVG(total_tokens), 0.0)                           AS avg_tokens
+                FROM traces
+                WHERE start_time >= ? AND start_time <= ?
+                """, (rs, rowNum) -> new OverviewStats(
+                rs.getInt("total_traces"),
+                rs.getInt("success_count"),
+                rs.getInt("failure_count"),
+                rs.getDouble("success_rate"),
+                rs.getDouble("avg_steps"),
+                rs.getDouble("avg_duration_ms"),
+                rs.getLong("total_tokens"),
+                rs.getDouble("avg_tokens")
+        ), start.toString(), now.toString());
+    }
+
+    /**
+     * 获取所有工具的使用统计。
+     *
+     * @return 工具使用统计列表
+     */
+    public List<ToolUsageStats> getToolUsageStats() {
+        // 仅统计工具调用步骤，聚合逻辑在内存中完成以简化 SQL。
+        var steps = jdbcTemplate.query("""
+                SELECT detail_json
+                FROM trace_steps
+                WHERE step_type = 'tool_call'
+                """, (rs, rowNum) -> rs.getString("detail_json"));
+
+        record Accumulator(long callCount, long successCount, long totalDurationMs) {
+        }
+
+        var statsByTool = steps.stream()
+                .map(json -> {
+                    try {
+                        TraceStep step = serializer.deserialize(json, "tool_call");
+                        return (step instanceof ToolCallStep tool) ? tool : null;
+                    } catch (Exception e) {
+                        log.warn("工具步骤反序列化失败，跳过统计: error={}", e.getMessage());
+                        return null;
+                    }
+                })
+                .filter(tool -> tool != null && tool.toolId() != null && !tool.toolId().isBlank())
+                .collect(java.util.stream.Collectors.toMap(
+                        ToolCallStep::toolId,
+                        tool -> new Accumulator(1, tool.success() ? 1 : 0, tool.duration().toMillis()),
+                        (a, b) -> new Accumulator(
+                                a.callCount + b.callCount,
+                                a.successCount + b.successCount,
+                                a.totalDurationMs + b.totalDurationMs
+                        )
+                ));
+
+        return statsByTool.entrySet().stream()
+                .map(entry -> {
+                    String toolId = entry.getKey();
+                    Accumulator acc = entry.getValue();
+                    int callCount = (int) acc.callCount;
+                    int successCount = (int) acc.successCount;
+                    int failureCount = callCount - successCount;
+                    double successRate = callCount > 0 ? (double) successCount / callCount : 0.0;
+                    double avgDurationMs = callCount > 0
+                            ? (double) acc.totalDurationMs / callCount
+                            : 0.0;
+                    return new ToolUsageStats(
+                            toolId,
+                            callCount,
+                            successCount,
+                            failureCount,
+                            successRate,
+                            avgDurationMs
+                    );
+                })
+                .sorted(java.util.Comparator.comparing(ToolUsageStats::toolId))
+                .toList();
+    }
+
+    /**
+     * 根据轨迹 ID 获取评估结果。
+     *
+     * @param traceId 轨迹 ID
+     * @return 评估结果
+     * @throws TraceNotFoundException 当轨迹无评估结果时抛出
+     */
+    public EvaluationResult getEvaluation(String traceId) {
+        var results = jdbcTemplate.query("""
+                SELECT trace_id, evaluated_at,
+                       tool_selection_score, parameter_validity_score, step_efficiency_score,
+                       policy_compliance_score, token_efficiency_score, overall_score,
+                       actual_steps, actual_tokens, violations_json, suggestions_json
+                FROM evaluation_results
+                WHERE trace_id = ?
+                """, (rs, rowNum) -> {
+            String violationsJson = rs.getString("violations_json");
+            String suggestionsJson = rs.getString("suggestions_json");
+
+            var violations = (violationsJson == null || violationsJson.isBlank())
+                    ? List.<String>of()
+                    : Arrays.stream(violationsJson.split(","))
+                    .map(String::trim)
+                    .filter(s -> !s.isEmpty())
+                    .toList();
+
+            var suggestions = (suggestionsJson == null || suggestionsJson.isBlank())
+                    ? List.<String>of()
+                    : Arrays.stream(suggestionsJson.split(","))
+                    .map(String::trim)
+                    .filter(s -> !s.isEmpty())
+                    .toList();
+
+            return new EvaluationResult(
+                    rs.getString("trace_id"),
+                    Instant.parse(rs.getString("evaluated_at")),
+                    rs.getDouble("tool_selection_score"),
+                    rs.getDouble("parameter_validity_score"),
+                    rs.getDouble("step_efficiency_score"),
+                    rs.getDouble("policy_compliance_score"),
+                    rs.getDouble("token_efficiency_score"),
+                    rs.getDouble("overall_score"),
+                    rs.getInt("actual_steps"),
+                    rs.getInt("actual_tokens"),
+                    violations,
+                    suggestions
+            );
+        }, traceId);
+
+        if (results.isEmpty()) {
+            throw new TraceNotFoundException("轨迹无评估结果: traceId=" + traceId);
+        }
+
+        return results.getFirst();
     }
 
     // ─── 内部方法 ───

@@ -207,8 +207,34 @@ export function useChat() {
           if (event.sessionId && event.sessionId !== chatStore.activeSessionId) {
             chatStore.activeSessionId = event.sessionId
           }
-          // 优先使用 event.content（非流式响应），否则使用 streamingContent（流式响应）
-          const finalContent = event.content ?? chatStore.streamingContent
+
+          // 解析多模态 contents 数组（TEXT/AUDIO）
+          let finalContent: string
+          const extraAttachments: ChatAttachment[] = []
+
+          if (event.contents && event.contents.length > 0) {
+            const textParts: string[] = []
+            for (const item of event.contents) {
+              if (item.type === 'TEXT' && item.text) {
+                textParts.push(item.text)
+              } else if (item.type === 'AUDIO' && item.url) {
+                extraAttachments.push({
+                  fileId: crypto.randomUUID(),
+                  url: item.url,
+                  filename: 'audio-response.' + (item.mimeType?.split('/')[1] ?? 'mp3'),
+                  size: 0,
+                  type: item.mimeType ?? 'audio/mpeg',
+                  isImage: false
+                })
+              }
+            }
+            // 若 contents 中没有 TEXT，则回退到 event.content 或 streamingContent
+            finalContent = (textParts.join('\n') || event.content) ?? chatStore.streamingContent
+          } else {
+            // 非多模态：保持现有行为，优先使用 event.content（非流式响应），否则使用 streamingContent（流式响应）
+            finalContent = event.content ?? chatStore.streamingContent
+          }
+
           // 优先使用后端返回的时间戳，否则使用当前时间
           const timestamp = event.timestamp ?? Date.now()
           // 将完整消息存入消息列表
@@ -221,10 +247,11 @@ export function useChat() {
               ? [...a2uiStore.components]
               : undefined,
             timestamp,
-            traceId: event.traceId
+            traceId: event.traceId,
+            attachments: extraAttachments.length > 0 ? extraAttachments : undefined
           })
-          // 记录本轮统计信息
-          lastTokenUsage.value = event.tokenUsage
+          // 记录本轮统计信息（若后端未返回则保持上一次或使用默认值）
+          lastTokenUsage.value = event.tokenUsage ?? lastTokenUsage.value
           lastModelId.value = event.tokenUsage?.modelId ?? null
           // 标记本轮用户消息为成功
           if (currentUserMessageId) {

@@ -58,7 +58,9 @@ public class ChatController {
             // Office
             ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
             // 音频（Phase 3）
-            ".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac", ".webm"
+            ".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac", ".webm",
+            // 视频（multimodal-completion）
+            ".mp4", ".avi", ".mov", ".mkv", ".flv"
     );
 
     private final WebChannelAdapter adapter;
@@ -471,7 +473,7 @@ public class ChatController {
         if (extension == null || !ALLOWED_EXTENSIONS.contains(extension.toLowerCase())) {
             log.warn("附件上传失败: 不支持的文件格式: {}", originalName);
             return ResponseEntity.badRequest().body(
-                    new ErrorResponse(400, "不支持的文件格式，仅支持图片、PDF、文本和Office文档", Instant.now()));
+                    new ErrorResponse(400, "不支持的文件格式，仅支持图片、PDF、文本、Office文档、音频和视频", Instant.now()));
         }
 
         // 验证文件大小
@@ -683,6 +685,20 @@ public class ChatController {
             case ".xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
             case ".ppt" -> "application/vnd.ms-powerpoint";
             case ".pptx" -> "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+            // 音频 MIME 类型：优先复用上传时设置的 contentType，此处仅兜底
+            case ".mp3" -> "audio/mpeg";
+            case ".wav" -> "audio/wav";
+            case ".m4a" -> "audio/mp4";
+            case ".aac" -> "audio/aac";
+            case ".ogg" -> "audio/ogg";
+            case ".flac" -> "audio/flac";
+            case ".webm" -> "audio/webm";
+            // 视频 MIME 类型（multimodal-completion）
+            case ".mp4" -> "video/mp4";
+            case ".avi" -> "video/x-msvideo";
+            case ".mov" -> "video/quicktime";
+            case ".mkv" -> "video/x-matroska";
+            case ".flv" -> "video/x-flv";
             default -> "application/octet-stream";
         };
     }

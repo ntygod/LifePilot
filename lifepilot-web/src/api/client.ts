@@ -33,7 +33,11 @@ import type {
   UsageStats,
   AgentStats,
   KnowledgeBaseStats,
-  ToolStats
+  ToolStats,
+  OverviewStats,
+  ToolUsageStats,
+  EvaluationResult,
+  TokenConsumptionStats
 } from '@/types'
 
 // API 基础路径（开发环境通过 Vite proxy 转发）
@@ -530,20 +534,79 @@ export const mcpApi = {
 
 /** 轨迹查询 API */
 export const traceApi = {
+  /**
+   * 分页获取轨迹列表
+   */
   list(page = 0, size = 20): Promise<PageResult<TraceItem>> {
     return request(`/traces?page=${page}&size=${size}`)
   },
+  /**
+   * 获取单条轨迹详情
+   */
   get(id: string): Promise<TraceDetail> {
     return request(`/traces/${id}`)
   },
+  /**
+   * 获取轨迹步骤列表
+   */
   getSteps(id: string): Promise<TraceStep[]> {
     return request(`/traces/${id}/steps`)
   },
-  getOverviewStats(window: '24h' | '7d' | '30d' = '7d'): Promise<any> {
+  /**
+   * 获取轨迹概览统计信息
+   *
+   * 用于统计卡片区域（总数、成功率、平均步骤数等）。
+   */
+  getOverviewStats(window: '24h' | '7d' | '30d' = '7d'): Promise<OverviewStats> {
     return request(`/traces/stats/overview?window=${window}`)
   },
-  getToolStats(): Promise<any> {
+  /**
+   * 获取工具使用统计信息
+   *
+   * 返回各工具的调用次数、成功率和平均耗时等。
+   */
+  getToolStats(): Promise<ToolUsageStats[]> {
     return request('/traces/stats/tools')
+  },
+  /**
+   * 搜索轨迹
+   *
+   * 使用关键字搜索最近的轨迹记录。
+   */
+  search(keyword: string, limit = 20): Promise<TraceItem[]> {
+    const params = new URLSearchParams()
+    params.append('keyword', keyword)
+    params.append('limit', String(limit))
+    const query = params.toString()
+    return request(`/traces/search?${query}`)
+  },
+  /**
+   * 导出轨迹为 JSON 字符串
+   *
+   * 返回单条轨迹的完整 JSON 文本，供前端下载保存。
+   */
+  export(id: string): Promise<string> {
+    return request(`/traces/${id}/export`)
+  },
+  /**
+   * 获取 Token 消耗统计
+   *
+   * 可选的起止时间用于限定统计窗口。
+   */
+  getTokenStats(start?: string, end?: string): Promise<TokenConsumptionStats> {
+    const params = new URLSearchParams()
+    if (start) params.append('start', start)
+    if (end) params.append('end', end)
+    const query = params.toString()
+    return request(`/traces/stats/tokens${query ? `?${query}` : ''}`)
+  },
+  /**
+   * 获取轨迹评估结果
+   *
+   * 返回单条轨迹的离线评估分数与违规/建议信息。
+   */
+  getEvaluation(id: string): Promise<EvaluationResult> {
+    return request(`/traces/${id}/evaluation`)
   }
 }
 

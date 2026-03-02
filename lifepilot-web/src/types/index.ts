@@ -499,6 +499,30 @@ export interface UsageStats {
   }>
 }
 
+/**
+ * Token 消耗统计（Trace 维度）
+ *
+ * 对指定时间范围内的 Trace 进行聚合统计，用于 Trace 页面 Token 分析。
+ */
+export interface TokenConsumptionStats {
+  /** 统计时间范围内的 Trace 数量 */
+  traceCount: number
+  /** 所有 Trace 的总 Token 数 */
+  totalTokens: number
+  /** 所有 Trace 的总输入 Token 数 */
+  totalInputTokens: number
+  /** 所有 Trace 的总输出 Token 数 */
+  totalOutputTokens: number
+  /** 每条 Trace 平均 Token 数 */
+  avgTokensPerTrace: number
+  /** 单条 Trace 的最大 Token 数 */
+  maxTokens: number
+  /** 成功的 Trace 数量 */
+  successCount: number
+  /** 平均耗时（毫秒） */
+  avgDurationMs: number
+}
+
 /** Analytics Agent 统计 */
 export interface AgentStats {
   agentId: string
@@ -552,3 +576,81 @@ export interface LlmProviderDetail {
 
 /** Provider 能力类型 */
 export type ProviderCapability = 'STREAMING' | 'FUNCTION_CALLING' | 'EMBEDDING' | 'VISION' | 'AUDIO'
+
+// ========== 模块 20: Observability 统计与评估 ==========
+
+/**
+ * 轨迹概览统计数据
+ *
+ * 用于 Trace 列表页顶部的统计卡片区域，展示整体运行情况。
+ */
+export interface OverviewStats {
+  /** 轨迹总数 */
+  totalTraces: number
+  /** 成功轨迹数量 */
+  successCount: number
+  /** 失败轨迹数量 */
+  failureCount: number
+  /** 成功率（0-1 小数） */
+  successRate: number
+  /** 平均步骤数 */
+  avgSteps: number
+  /** 平均耗时（毫秒） */
+  avgDurationMs: number
+  /** 总 Token 消耗 */
+  totalTokens: number
+  /** 平均每条轨迹 Token 消耗 */
+  avgTokens: number
+}
+
+/**
+ * 工具调用使用统计
+ *
+ * 用于工具统计列表，展示各工具的调用与成功情况。
+ */
+export interface ToolUsageStats {
+  /** 工具唯一标识 */
+  toolId: string
+  /** 总调用次数 */
+  callCount: number
+  /** 成功调用次数 */
+  successCount: number
+  /** 失败调用次数 */
+  failureCount: number
+  /** 成功率（0-1 小数） */
+  successRate: number
+  /** 平均调用耗时（毫秒） */
+  avgDurationMs: number
+}
+
+/**
+ * 轨迹离线评估结果
+ *
+ * 对单条 Trace 的多维度质量评估，用于详情页展示。
+ */
+export interface EvaluationResult {
+  /** 被评估的轨迹 ID */
+  traceId: string
+  /** 评估时间（ISO 8601） */
+  evaluatedAt: string
+  /** 工具选择合理性评分（0-1） */
+  toolSelectionScore: number
+  /** 参数合法性与幂等性评分（0-1） */
+  parameterValidityScore: number
+  /** 步骤数量与结构效率评分（0-1） */
+  stepEfficiencyScore: number
+  /** 策略与护栏合规性评分（0-1） */
+  policyComplianceScore: number
+  /** Token 使用效率评分（0-1） */
+  tokenEfficiencyScore: number
+  /** 综合评分（0-1） */
+  overallScore: number
+  /** 实际执行步骤数 */
+  actualSteps: number
+  /** 实际消耗 Token 数 */
+  actualTokens: number
+  /** 违规说明列表（如存在问题） */
+  violations: string[]
+  /** 优化建议列表 */
+  suggestions: string[]
+}

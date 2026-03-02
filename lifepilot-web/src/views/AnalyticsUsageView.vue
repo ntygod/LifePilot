@@ -61,20 +61,20 @@ async function loadStats() {
       // 如果 analytics API 不存在，使用 traces API 的统计接口
       if (e.status === 404 || e.message?.includes('404')) {
         const window = selectedRange.value === '7d' ? '7d' : selectedRange.value === '30d' ? '30d' : '7d'
-        const overview = await traceApi.getOverviewStats(window as '7d' | '30d')
+        const overview = await traceApi.getOverviewStats(window as '24h' | '7d' | '30d')
         
         // 转换 traces API 数据格式为 UsageStats
         stats.value = {
           totalRequests: overview.totalTraces || 0,
           totalTokens: overview.totalTokens || 0,
-          promptTokens: overview.promptTokens || 0,
-          completionTokens: overview.completionTokens || 0,
-          estimatedCost: overview.estimatedCost,
+          promptTokens: 0,
+          completionTokens: 0,
+          estimatedCost: undefined,
           timeRange: {
             from: timeRange.value.from,
             to: timeRange.value.to
           },
-          dailyStats: overview.dailyStats || []
+          dailyStats: []
         }
       } else {
         throw e
