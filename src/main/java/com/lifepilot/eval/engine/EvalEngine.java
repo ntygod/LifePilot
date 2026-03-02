@@ -83,7 +83,7 @@ public class EvalEngine {
         log.info("开始评估场景: scenarioId={}, name={}", scenario.id(), scenario.name());
 
         try {
-            // 1. 构造 AgentRequest 并执行 Agent
+            // 1. 构造 AgentRequest 并执行 Agent（评估场景目前不携带多模态媒体）
             var request = new AgentRequest(scenario.userInput(), "eval-" + scenario.id(), "eval");
             AgentResponse response = agentLoop.run(request);
 

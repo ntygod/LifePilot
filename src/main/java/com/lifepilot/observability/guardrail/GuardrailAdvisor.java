@@ -7,6 +7,7 @@ import org.springframework.ai.chat.client.ChatClientResponse;
 import org.springframework.ai.chat.client.advisor.api.CallAdvisor;
 import org.springframework.ai.chat.client.advisor.api.CallAdvisorChain;
 import org.springframework.ai.chat.messages.MessageType;
+import org.springframework.ai.content.Content;
 import org.springframework.core.Ordered;
 
 /**
@@ -67,13 +68,10 @@ public class GuardrailAdvisor implements CallAdvisor {
         try {
             // 提取用户消息内容
             var prompt = request.prompt();
-            if (prompt == null || prompt.getInstructions() == null) {
-                return;
-            }
 
             var userContent = prompt.getInstructions().stream()
                     .filter(msg -> msg.getMessageType() == MessageType.USER)
-                    .map(msg -> msg.getText())
+                    .map(Content::getText)
                     .reduce("", (a, b) -> a + " " + b)
                     .trim();
 
@@ -102,9 +100,6 @@ public class GuardrailAdvisor implements CallAdvisor {
             }
 
             var chatResponse = response.chatResponse();
-            if (chatResponse.getResult() == null || chatResponse.getResult().getOutput() == null) {
-                return;
-            }
 
             var outputText = chatResponse.getResult().getOutput().getText();
             if (outputText == null || outputText.isEmpty()) {

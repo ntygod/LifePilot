@@ -1,6 +1,7 @@
 package com.lifepilot.a2a.server;
 
 import com.lifepilot.a2a.config.A2aProperties;
+import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.a2a.model.A2aTask;
 import com.lifepilot.a2a.model.A2aMessage;
 import org.slf4j.Logger;
@@ -87,10 +88,10 @@ public class A2aMessageController {
         executor.executeStreaming(message, skillId, task -> {
             try {
                 String eventType = task.status().state().isTerminal()
-                        ? "task-complete"
+                        ? SseEventType.TASK_COMPLETE
                         : (task.artifacts() != null && !task.artifacts().isEmpty())
-                                ? "task-artifact-update"
-                                : "task-status-update";
+                                ? SseEventType.TASK_ARTIFACT_UPDATE
+                                : SseEventType.TASK_STATUS_UPDATE;
 
                 var event = SseEmitter.event()
                         .name(eventType)

@@ -1,10 +1,11 @@
 package com.lifepilot.eval.judge;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.lifepilot.eval.config.EvalConfigProperties;
 import com.lifepilot.llm.LlmRouter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.lang.Nullable;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -27,12 +28,10 @@ public class LlmJudge {
 
     private final LlmRouter llmRouter;
     private final EvalConfigProperties config;
-    private final ObjectMapper objectMapper;
 
     public LlmJudge(LlmRouter llmRouter, EvalConfigProperties config) {
         this.llmRouter = llmRouter;
         this.config = config;
-        this.objectMapper = new ObjectMapper();
         log.info("LlmJudge 初始化完成: scene={}", config.getLlmJudge().getScene());
     }
 
@@ -50,7 +49,49 @@ public class LlmJudge {
         var fallbackScore = judgeConfig.getFallbackScore();
 
         try {
-            // 第一次尝试：完整 Prompt
+            // 优先使用 callEntity() 进行类型安全解析
+            var prompt = buildPrompt(actualOutput, expectedPattern, criteria);
+            
+            try {
+                JudgeResponse response = llmRouter.callEntity(scene, prompt, JudgeResponse.class);
+                
+                if (response != null && response.score() != null) {
+                    var score = clampScore(response.score());
+                    var justification = response.justification() != null 
+                            ? response.justification() 
+                            : "无评判理由";
+                    log.debug("LLM Judge 评估完成（使用 callEntity）: score={}", score);
+                    // 注意：callEntity 不返回 token 使用量，这里使用 0
+                    // 如果需要 token 统计，可以降级到 call() 方法
+                    return new JudgeResult(score, justification, 0, false);
+                }
+                
+                // 如果解析结果为空，降级到手动解析
+                log.warn("LLM Judge callEntity 返回空结果，降级到手动解析");
+                return fallbackToManualParse(actualOutput, expectedPattern, criteria);
+                
+            } catch (Exception e) {
+                // callEntity 失败，降级到手动解析
+                log.warn("LLM Judge callEntity 失败，降级到手动解析: error={}", e.getMessage());
+                return fallbackToManualParse(actualOutput, expectedPattern, criteria);
+            }
+
+        } catch (Exception e) {
+            log.warn("LLM Judge 调用失败: error={}", e.getMessage());
+            return new JudgeResult(fallbackScore, "LLM 调用失败: " + e.getMessage(), 0, true);
+        }
+    }
+    
+    /**
+     * 降级到手动解析（保留原有逻辑作为后备）。
+     */
+    private JudgeResult fallbackToManualParse(String actualOutput, String expectedPattern, String criteria) {
+        var judgeConfig = config.getLlmJudge();
+        var scene = judgeConfig.getScene();
+        var fallbackScore = judgeConfig.getFallbackScore();
+
+        try {
+            // 使用 call() 方法获取原始响应
             var prompt = buildPrompt(actualOutput, expectedPattern, criteria);
             var response = llmRouter.call(scene, prompt, null);
             var tokensUsed = response.totalTokens();
@@ -58,7 +99,7 @@ public class LlmJudge {
             var parsed = parseResponse(response.content());
             if (parsed != null) {
                 var score = clampScore(parsed.score());
-                log.debug("LLM Judge 评估完成: score={}, tokens={}", score, tokensUsed);
+                log.debug("LLM Judge 手动解析成功: score={}, tokens={}", score, tokensUsed);
                 return new JudgeResult(score, parsed.justification(), tokensUsed, false);
             }
 
@@ -67,7 +108,7 @@ public class LlmJudge {
             return retryWithSimplifiedPrompt(actualOutput, expectedPattern, criteria, tokensUsed);
 
         } catch (Exception e) {
-            log.warn("LLM Judge 调用失败: error={}", e.getMessage());
+            log.warn("LLM Judge 手动解析调用失败: error={}", e.getMessage());
             return new JudgeResult(fallbackScore, "LLM 调用失败: " + e.getMessage(), 0, true);
         }
     }
@@ -144,22 +185,16 @@ public class LlmJudge {
     }
 
     /**
-     * 解析 LLM 响应为评分和理由。
+     * 解析 LLM 响应为评分和理由（降级方案）。
      *
      * @param content LLM 响应内容
      * @return 解析结果，解析失败返回 null
      */
     private ParsedResponse parseResponse(String content) {
-        // 尝试 JSON 解析
-        try {
-            var jsonResult = parseAsJson(content);
-            if (jsonResult != null) {
-                return jsonResult;
-            }
-        } catch (Exception e) {
-            log.debug("JSON 解析失败，尝试正则提取: error={}", e.getMessage());
-        }
-
+        // 尝试使用 callEntity 解析（如果可能）
+        // 注意：这里 content 已经是字符串，无法再使用 callEntity
+        // 所以保留手动解析逻辑作为降级方案
+        
         // 尝试正则提取评分
         var score = parseScoreFromText(content);
         if (score != null) {
@@ -167,50 +202,6 @@ public class LlmJudge {
         }
 
         return null;
-    }
-
-    /**
-     * 尝试将响应内容解析为 JSON，提取 score 和 justification。
-     */
-    private ParsedResponse parseAsJson(String content) {
-        try {
-            // 提取 JSON 块（可能被 markdown 代码块包裹）
-            var jsonStr = extractJsonBlock(content);
-            var node = objectMapper.readTree(jsonStr);
-
-            if (node.has("score")) {
-                var score = node.get("score").asDouble();
-                var justification = node.has("justification")
-                        ? node.get("justification").asText()
-                        : "无评判理由";
-                return new ParsedResponse(score, justification);
-            }
-        } catch (Exception ignored) {
-            // JSON 解析失败，返回 null
-        }
-        return null;
-    }
-
-    /**
-     * 从文本中提取 JSON 块（处理 markdown 代码块包裹的情况）。
-     */
-    private String extractJsonBlock(String content) {
-        var trimmed = content.trim();
-        // 处理 ```json ... ``` 包裹
-        if (trimmed.contains("```")) {
-            int start = trimmed.indexOf("{");
-            int end = trimmed.lastIndexOf("}");
-            if (start >= 0 && end > start) {
-                return trimmed.substring(start, end + 1);
-            }
-        }
-        // 直接尝试提取 JSON 对象
-        int start = trimmed.indexOf("{");
-        int end = trimmed.lastIndexOf("}");
-        if (start >= 0 && end > start) {
-            return trimmed.substring(start, end + 1);
-        }
-        return trimmed;
     }
 
     /**
@@ -238,7 +229,15 @@ public class LlmJudge {
     }
 
     /**
-     * 内部解析结果。
+     * LLM 评判响应结构（用于 callEntity 解析）。
+     */
+    public record JudgeResponse(
+            @JsonProperty("score") Double score,
+            @JsonProperty("justification") @Nullable String justification
+    ) {}
+
+    /**
+     * 内部解析结果（降级方案使用）。
      */
     private record ParsedResponse(double score, String justification) {
     }

@@ -79,13 +79,13 @@ public class A2aAgentExecutor {
                     taskStore.updateStatus(taskId, A2aTaskState.FAILED, "未知 Skill: " + skillId);
                     return taskStore.find(taskId).orElseThrow();
                 }
-                // 使用 AgentExecutor 执行子 Agent
+                // 使用 AgentExecutor 执行子 Agent（A2A 目前不携带多模态媒体）
                 var parentState = AgentState.init(new AgentRequest(textContent, taskId, "a2a"));
                 var subResult = agentExecutor.execute(definition.get(), textContent, null, parentState);
                 result = subResult.output();
-            } else {
-                // 路由到主 AgentLoop
-                var request = new AgentRequest(textContent, taskId, "a2a");
+                } else {
+                    // 路由到主 AgentLoop（A2A 目前不携带多模态媒体）
+                    var request = new AgentRequest(textContent, taskId, "a2a");
                 AgentResponse response = agentLoop.run(request);
                 result = response.content();
             }

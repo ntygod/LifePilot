@@ -79,7 +79,7 @@ public class AgentExecutor {
                     ? "任务: %s\n上下文: %s".formatted(task, context)
                     : task;
 
-            // 5. 构建 AgentRequest
+            // 5. 构建 AgentRequest（子 Agent 委托目前不携带多模态媒体）
             var subRequest = new AgentRequest(
                     message,
                     parentState.sessionId(),
@@ -89,7 +89,8 @@ public class AgentExecutor {
                     parentState.traceId(),
                     newDepth,
                     definition.preferredProvider(),
-                    allowedToolIds
+                    allowedToolIds,
+                    null
             );
 
             // 6. 执行 AgentLoop
