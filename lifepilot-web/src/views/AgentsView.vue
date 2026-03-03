@@ -106,92 +106,103 @@ const typeLabel: Record<string, string> = {
 <template>
   <div class="flex flex-col h-full overflow-hidden">
     <!-- 头部操作栏 -->
-    <div class="flex-shrink-0 p-6 border-b border-border">
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="text-2xl font-semibold text-foreground">Agent 管理</h2>
-        <button
-          class="px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-          @click="showCreateDialog = true"
-        >
-          新建 Agent
-        </button>
-      </div>
-
-      <!-- 搜索和过滤 -->
-      <div class="flex flex-wrap gap-3">
-        <div class="flex-1 min-w-[200px]">
-          <input
-            v-model="searchQuery"
-            type="text"
-            placeholder="搜索 Agent 名称或描述..."
-            class="w-full px-3 py-2 rounded-md border border-input bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-          />
+    <div class="flex-shrink-0 border-b border-border">
+      <div class="max-w-[1200px] mx-auto px-md md:px-lg py-md">
+        <div class="flex items-center justify-between mb-md gap-sm">
+          <h2 class="text-2xl font-semibold text-foreground leading-tight">
+            Agent 管理
+          </h2>
+          <button
+            class="px-md py-sm rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 hover:shadow-md transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            @click="showCreateDialog = true"
+          >
+            新建 Agent
+          </button>
         </div>
-        <select
-          v-model="typeFilter"
-          class="px-3 py-2 rounded-md border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-        >
-          <option value="">全部类型</option>
-          <option value="default">默认</option>
-          <option value="custom">自定义</option>
-          <option value="workflow">工作流</option>
-        </select>
-        <select
-          v-model="statusFilter"
-          class="px-3 py-2 rounded-md border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-        >
-          <option value="">全部状态</option>
-          <option value="enabled">已启用</option>
-          <option value="disabled">已禁用</option>
-        </select>
+
+        <!-- 搜索和过滤 -->
+        <div class="flex flex-wrap gap-sm">
+          <div class="flex-1 min-w-[220px]">
+            <input
+              v-model="searchQuery"
+              type="text"
+              placeholder="搜索 Agent 名称或描述..."
+              class="w-full px-3 py-2 rounded-2xl border border-input bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all duration-200"
+            />
+          </div>
+          <select
+            v-model="typeFilter"
+            class="px-md py-sm rounded-lg border border-input bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+          >
+            <option value="">全部类型</option>
+            <option value="default">默认</option>
+            <option value="custom">自定义</option>
+            <option value="workflow">工作流</option>
+          </select>
+          <select
+            v-model="statusFilter"
+            class="px-md py-sm rounded-lg border border-input bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+          >
+            <option value="">全部状态</option>
+            <option value="enabled">已启用</option>
+            <option value="disabled">已禁用</option>
+          </select>
+        </div>
       </div>
     </div>
 
     <!-- Agent 列表 -->
-    <div class="flex-1 overflow-y-auto p-6">
-      <div v-if="agentStore.loading" class="text-sm text-muted-foreground">加载中...</div>
-      <div v-else-if="filteredAgents.length === 0" class="text-sm text-muted-foreground">
-        {{ searchQuery || typeFilter || statusFilter ? '未找到匹配的 Agent' : '暂无 Agent，点击"新建 Agent"创建' }}
-      </div>
-      <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+    <div class="flex-1 overflow-y-auto">
+      <div class="max-w-[1200px] mx-auto px-md md:px-lg py-lg">
+        <div v-if="agentStore.loading" class="text-sm text-muted-foreground">加载中...</div>
+        <div v-else-if="filteredAgents.length === 0" class="text-sm text-muted-foreground">
+          {{ searchQuery || typeFilter || statusFilter ? '未找到匹配的 Agent' : '暂无 Agent，点击"新建 Agent"创建' }}
+        </div>
         <div
-          v-for="agent in filteredAgents"
-          :key="agent.id"
-          class="border border-border rounded-lg p-4 hover:border-primary/50 transition-colors cursor-pointer"
-          @click="router.push(`/agents/${agent.id}`)"
+          v-else
+          class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-md"
         >
-          <div class="flex items-start justify-between mb-2">
-            <div class="flex items-center gap-2">
-              <h3 class="font-medium text-foreground">{{ agent.name }}</h3>
-              <span
-                class="text-xs px-2 py-0.5 rounded-full"
-                :class="agent.enabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'"
-              >
-                {{ agent.enabled ? '已启用' : '已禁用' }}
+          <div
+            v-for="agent in filteredAgents"
+            :key="agent.id"
+            class="border border-border rounded-lg p-md hover:border-primary/50 hover:shadow-sm transition-all duration-200 cursor-pointer bg-card"
+            @click="router.push(`/agents/${agent.id}`)"
+          >
+            <div class="flex items-start justify-between mb-xs gap-sm">
+              <div class="flex items-center gap-xs">
+                <h3 class="font-medium text-foreground text-sm leading-snug">
+                  {{ agent.name }}
+                </h3>
+                <span
+                  class="text-xs px-sm py-xs rounded-full"
+                  :class="agent.enabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'"
+                >
+                  {{ agent.enabled ? '已启用' : '已禁用' }}
+                </span>
+              </div>
+              <span class="text-xs px-sm py-xs rounded-full bg-accent text-accent-foreground shrink-0">
+                {{ typeLabel[agent.type] ?? agent.type }}
               </span>
             </div>
-            <span class="text-xs px-2 py-0.5 rounded-full bg-accent text-accent-foreground shrink-0">
-              {{ typeLabel[agent.type] ?? agent.type }}
-            </span>
-          </div>
-          <p class="text-sm text-muted-foreground mb-3 line-clamp-2">
-            {{ agent.description || '无描述' }}
-          </p>
-          <div class="flex items-center gap-4 text-xs text-muted-foreground">
-            <span>模型: {{ agent.modelId || '未设置' }}</span>
-            <span>知识库: {{ agent.knowledgeBaseCount }}</span>
-          </div>
-          <div class="flex items-center gap-2 mt-2">
-            <span
-              v-for="tag in agent.tags?.slice(0, 3)"
-              :key="tag"
-              class="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground"
-            >
-              {{ tag }}
-            </span>
-          </div>
-          <div class="text-xs text-muted-foreground mt-2">
-            更新于: {{ formatDate(agent.updatedAt) }}
+            <p class="text-sm text-muted-foreground mb-sm line-clamp-2 leading-normal">
+              {{ agent.description || '无描述' }}
+            </p>
+            <div class="flex items-center gap-md text-xs text-muted-foreground">
+              <span>模型: {{ agent.modelId || '未设置' }}</span>
+              <span>知识库: {{ agent.knowledgeBaseCount }}</span>
+            </div>
+            <div class="flex items-center gap-xs mt-sm">
+              <span
+                v-for="tag in agent.tags?.slice(0, 3)"
+                :key="tag"
+                class="text-xs px-sm py-xs rounded-full bg-muted text-muted-foreground"
+              >
+                {{ tag }}
+              </span>
+            </div>
+            <div class="text-xs text-muted-foreground mt-xs">
+              更新于: {{ formatDate(agent.updatedAt) }}
+            </div>
           </div>
         </div>
       </div>
@@ -203,7 +214,7 @@ const typeLabel: Record<string, string> = {
       class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
       @click.self="showCreateDialog = false"
     >
-      <div class="bg-card border border-border rounded-lg p-6 w-full max-w-md shadow-lg">
+      <div class="bg-card border border-border rounded-lg p-6 w-full max-w-[448px] shadow-lg">
         <h3 class="text-lg font-semibold text-foreground mb-4">新建 Agent</h3>
         <div class="space-y-4">
           <div>
@@ -258,7 +269,7 @@ const typeLabel: Record<string, string> = {
       class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
       @click.self="deleteTarget = null"
     >
-      <div class="bg-card border border-border rounded-lg p-6 w-full max-w-sm shadow-lg">
+      <div class="bg-card border border-border rounded-lg p-6 w-full max-w-[384px] shadow-lg">
         <h3 class="text-lg font-semibold text-foreground mb-2">确认删除</h3>
         <p class="text-sm text-muted-foreground mb-4">
           确定要删除 Agent「{{ deleteTarget.name }}」吗？此操作不可撤销。

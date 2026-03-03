@@ -7,7 +7,7 @@ import { useSkillStore } from '@/stores/skill'
 import { useChat } from '@/composables/useChat'
 import { chatApi } from '@/api/client'
 import type { Message, ChatAttachment } from '@/types'
-import { Info, X } from 'lucide-vue-next'
+import { Info, LibraryBig, Puzzle, SlidersHorizontal, X } from 'lucide-vue-next'
 import MessageList from '@/components/chat/MessageList.vue'
 import ChatInput from '@/components/chat/ChatInput.vue'
 
@@ -172,88 +172,82 @@ async function handleUpdateSessionTitle() {
 
 <template>
   <div class="flex flex-col h-full">
-    <!-- 顶部上下文指示条 + 最近一轮统计 -->
-    <div class="px-4 md:px-6 py-2 border-b border-border bg-muted/40 text-xs text-muted-foreground space-y-2">
-      <!-- 上下文指示条：当前模型 / 知识库 / Skill / 跳转 -->
-      <div class="flex flex-wrap items-center gap-2">
-        <span class="font-medium text-foreground/80">本会话上下文</span>
-        <span v-if="lastModelId">· 当前模型：{{ lastModelId }}</span>
-        <span v-else>· 当前模型：默认模型（从设置中继承）</span>
-        <span>· 知识库：{{ hasKnowledgeBases ? `已配置 ${kbStore.list.length} 个` : '尚未配置' }}</span>
-        <span>· Skill：{{ hasSkills ? `已注册 ${skillStore.skills.length} 个` : '尚未注册' }}</span>
-        <span v-if="reasoningStatusText">· 当前状态：{{ reasoningStatusText }}</span>
-        <RouterLink
-          :to="{ name: 'knowledgeBases' }"
-          class="underline-offset-2 hover:underline"
-        >
-          管理知识库
-        </RouterLink>
-        <span>·</span>
-        <RouterLink
-          :to="{ name: 'skills' }"
-          class="underline-offset-2 hover:underline"
-        >
-          管理 Skill
-        </RouterLink>
+    <!-- 顶部上下文指示条（对齐 stitch：单行、64px、高级 pills） -->
+    <div class="sticky top-0 z-20 border-b border-border bg-card/80 backdrop-blur-md supports-[backdrop-filter]:bg-card/60">
+      <div class="max-w-[1200px] mx-auto h-16 flex items-center justify-between px-md md:px-lg">
+        <!-- 左侧 pills -->
+        <div class="flex items-center gap-sm text-xs font-medium text-muted-foreground min-w-0">
+          <div
+            class="inline-flex items-center gap-xs px-sm py-xs rounded-full bg-muted/50 border border-border hover:bg-muted/70 transition-colors"
+            title="上下文配置"
+          >
+            <span class="inline-flex w-1.5 h-1.5 rounded-full bg-green-500" />
+            <span class="truncate">上下文：{{ lastModelId ? lastModelId : '默认' }}</span>
+          </div>
 
-        <!-- 右侧侧栏开关 -->
-        <div class="ml-auto flex items-center gap-2">
+          <div
+            class="hidden md:inline-flex items-center gap-xs px-sm py-xs rounded-full bg-muted/50 border border-border hover:bg-muted/70 transition-colors"
+            title="技能状态"
+          >
+            <Puzzle :size="14" class="text-muted-foreground" />
+            <span>技能：{{ hasSkills ? `${skillStore.skills.length} 个活跃` : '未启用' }}</span>
+          </div>
+
+          <div
+            class="hidden md:inline-flex items-center gap-xs px-sm py-xs rounded-full bg-muted/50 border border-border hover:bg-muted/70 transition-colors"
+            title="知识库状态"
+          >
+            <LibraryBig :size="14" class="text-muted-foreground" />
+            <span>知识库：{{ hasKnowledgeBases ? `已配置 ${kbStore.list.length} 个` : '未挂载' }}</span>
+          </div>
+
+          <div
+            v-if="reasoningStatusText"
+            class="hidden lg:inline-flex items-center gap-xs px-sm py-xs rounded-full bg-muted/50 border border-border"
+          >
+            <span>状态：{{ reasoningStatusText }}</span>
+          </div>
+        </div>
+
+        <!-- 右侧操作 -->
+        <div class="flex items-center gap-sm shrink-0">
           <button
             v-if="chatStore.activeSessionId"
             type="button"
-            class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border text-xs font-medium
-                   hover:bg-background/60 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-            :class="showSessionSidebar ? 'text-foreground bg-background/60' : 'text-muted-foreground'"
+            class="p-2 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors
+                   focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            :title="showSessionSidebar ? '隐藏会话信息' : '会话信息'"
             @click="showSessionSidebar = !showSessionSidebar"
           >
-            <Info :size="14" />
-            <span>{{ showSessionSidebar ? '隐藏信息' : '会话信息' }}</span>
+            <Info :size="18" />
           </button>
+
           <button
             type="button"
-            class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border text-xs font-medium
-                   hover:bg-background/60 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-            :class="lastTokenUsage ? 'text-foreground' : 'text-muted-foreground'"
+            class="inline-flex items-center gap-xs px-sm py-xs rounded-lg border border-border text-sm font-medium
+                   text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors
+                   focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            :class="showDebugDrawer ? 'bg-muted/60 text-foreground' : ''"
             @click="showDebugDrawer = !showDebugDrawer"
           >
-            <span class="inline-block w-1.5 h-1.5 rounded-full"
-                  :class="showDebugDrawer ? 'bg-primary' : 'bg-muted-foreground/60'" />
-            <span>{{ showDebugDrawer ? '收起调试' : '调试视图' }}</span>
+            <SlidersHorizontal :size="16" />
+            <span>调试视图</span>
           </button>
         </div>
-      </div>
-
-      <!-- 最近一轮模型 / Token 使用摘要 -->
-      <div
-        v-if="lastTokenUsage"
-        class="flex items-center justify-between"
-      >
-        <div class="flex flex-wrap items-center gap-2">
-          <span class="font-medium text-foreground/80">本轮统计</span>
-          <span>·</span>
-          <span>模型：{{ lastModelId || '未知模型' }}</span>
-          <span>·</span>
-          <span>
-            Tokens：{{ lastTokenUsage.totalTokens }}
-            （提示 {{ lastTokenUsage.promptTokens }} / 回答 {{ lastTokenUsage.completionTokens }}）
-          </span>
-        </div>
-        <RouterLink
-          :to="{ name: 'traces' }"
-          class="underline-offset-2 hover:underline"
-        >
-          查看更详细执行信息
-        </RouterLink>
       </div>
     </div>
 
     <!-- 消息区域 + 右侧侧栏 -->
-    <div class="flex flex-1 overflow-hidden">
-      <!-- 消息区域 -->
-      <div ref="scrollContainer" class="flex-1 overflow-y-auto">
+    <div class="flex-1 overflow-hidden">
+      <div class="max-w-[1200px] mx-auto flex h-full overflow-hidden">
+        <!-- 消息区域 -->
+        <div
+          ref="scrollContainer"
+          class="flex-1 overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-border"
+        >
         <!-- 空状态 -->
-        <div v-if="chatStore.messages.length === 0 && !isStreaming" class="h-full flex items-center justify-center px-4 md:px-6">
-          <div class="text-center max-w-md mx-auto space-y-6">
+        <div v-if="chatStore.messages.length === 0 && !isStreaming" class="h-full flex items-center justify-center px-md md:px-lg">
+          <div class="text-center max-w-[560px] mx-auto space-y-6">
             <div class="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -276,19 +270,19 @@ async function handleUpdateSessionTitle() {
             </div>
             <div class="flex flex-col gap-2">
               <button
-                class="w-full rounded-lg border border-dashed border-border px-4 py-3 text-left text-sm
+                class="w-full rounded-lg border border-dashed border-border px-md py-sm text-left text-sm
                        hover:bg-accent hover:text-accent-foreground transition-all duration-200"
               >
                 帮我快速了解这个项目目前的能力和限制
               </button>
               <button
-                class="w-full rounded-lg border border-dashed border-border px-4 py-3 text-left text-sm
+                class="w-full rounded-lg border border-dashed border-border px-md py-sm text-left text-sm
                        hover:bg-accent hover:text-accent-foreground transition-all duration-200"
               >
                 我想用自己的文档搭一个知识库助手，应该怎么开始？
               </button>
               <button
-                class="w-full rounded-lg border border-dashed border-border px-4 py-3 text-left text-sm
+                class="w-full rounded-lg border border-dashed border-border px-md py-sm text-left text-sm
                        hover:bg-accent hover:text-accent-foreground transition-all duration-200"
               >
                 结合最近几条对话，帮我整理一份可以发给同事的总结
@@ -297,9 +291,9 @@ async function handleUpdateSessionTitle() {
           </div>
         </div>
 
-        <!-- 消息列表 + 顶部搜索 / 过滤条 -->
-        <div v-else class="max-w-[768px] mx-auto px-4 md:px-6 py-6 space-y-4">
-          <div class="flex items-center gap-2">
+          <!-- 消息列表 + 顶部搜索 / 过滤条 -->
+          <div v-else class="max-w-4xl mx-auto p-md md:p-xl space-y-xl pb-24">
+          <div class="flex items-center gap-sm">
             <input
               v-model="searchQuery"
               type="search"
@@ -321,179 +315,180 @@ async function handleUpdateSessionTitle() {
               清空当前会话
             </button>
           </div>
-          <MessageList
-            :messages="chatStore.messages"
-            :is-streaming="isStreaming"
-            :streaming-content="chatStore.streamingContent"
-            :query="searchQuery"
-            @retry="handleRetry"
-            @like="handleLike"
-            @dislike="handleDislike"
-            @fork="handleFork"
-          />
-        </div>
-      </div>
-
-      <!-- 右侧会话信息侧栏 -->
-      <div
-        v-if="showSessionSidebar && chatStore.activeSessionId"
-        class="hidden lg:flex w-80 border-l border-border bg-background text-sm flex-col"
-      >
-        <div class="px-4 py-3 border-b border-border flex items-center justify-between">
-          <span class="font-medium text-foreground">会话信息</span>
-          <button
-            type="button"
-            class="text-muted-foreground hover:text-foreground transition-colors"
-            @click="showSessionSidebar = false"
-          >
-            <X :size="16" />
-          </button>
-        </div>
-        <div class="flex-1 overflow-y-auto px-4 py-3 space-y-4">
-          <!-- 会话名称（可编辑） -->
-          <div>
-            <label class="text-xs font-medium text-muted-foreground mb-1 block">会话名称</label>
-            <input
-              v-model="sessionTitle"
-              type="text"
-              class="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm
-                     focus:outline-none focus:ring-1 focus:ring-ring"
-              @blur="handleUpdateSessionTitle"
+            <MessageList
+              :messages="chatStore.messages"
+              :is-streaming="isStreaming"
+              :streaming-content="chatStore.streamingContent"
+              :query="searchQuery"
+              @retry="handleRetry"
+              @like="handleLike"
+              @dislike="handleDislike"
+              @fork="handleFork"
             />
           </div>
-          
-          <!-- 创建时间 -->
-          <div>
-            <label class="text-xs font-medium text-muted-foreground mb-1 block">创建时间</label>
-            <p class="text-sm text-foreground">
-              {{ currentSession?.createdAt ? new Date(currentSession.createdAt).toLocaleString() : '-' }}
-            </p>
-          </div>
-          
-          <!-- 更新时间 -->
-          <div>
-            <label class="text-xs font-medium text-muted-foreground mb-1 block">更新时间</label>
-            <p class="text-sm text-foreground">
-              {{ currentSession?.updatedAt ? new Date(currentSession.updatedAt).toLocaleString() : '-' }}
-            </p>
-          </div>
-          
-          <!-- 关联知识库 -->
-          <div>
-            <label class="text-xs font-medium text-muted-foreground mb-1 block">关联知识库</label>
-            <div v-if="kbStore.list.length > 0" class="space-y-1">
-              <div
-                v-for="kb in kbStore.list"
-                :key="kb.id"
-                class="text-sm text-foreground flex items-center justify-between"
-              >
-                <span>{{ kb.name }}</span>
-                <RouterLink
-                  :to="{ name: 'knowledgeBases', query: { id: kb.id } }"
-                  class="text-xs text-primary hover:underline"
-                >
-                  查看
-                </RouterLink>
-              </div>
-            </div>
-            <p v-else class="text-sm text-muted-foreground">未关联知识库</p>
-          </div>
-          
-          <!-- 消息统计 -->
-          <div>
-            <label class="text-xs font-medium text-muted-foreground mb-1 block">消息统计</label>
-            <p class="text-sm text-foreground">
-              共 {{ chatStore.messages.length }} 条消息
-            </p>
-          </div>
         </div>
-      </div>
 
-      <!-- 右侧调试抽屉（桌面端优先展示） -->
-      <div
-        v-if="showDebugDrawer"
-        class="hidden lg:flex w-80 border-l border-border bg-background/60 text-xs flex-col"
-      >
-        <div class="px-3 py-2 border-b border-border flex items-center justify-between">
-          <span class="font-medium text-foreground/80 text-[11px]">最近一轮调试概要</span>
-          <RouterLink
-            :to="{ name: 'traces' }"
-            class="text-[11px] underline-offset-2 hover:underline text-muted-foreground"
-          >
-            查看完整轨迹
-          </RouterLink>
-        </div>
-        <div class="flex-1 overflow-y-auto px-3 py-2 space-y-3 text-[11px] text-muted-foreground">
-          <div>
-            <div class="font-medium text-foreground/80 mb-1">模型与 Token</div>
-            <p v-if="lastTokenUsage">
-              模型：{{ lastModelId || '未知模型' }}<br>
-              Tokens：{{ lastTokenUsage.totalTokens }}
-              （提示 {{ lastTokenUsage.promptTokens }} / 回答 {{ lastTokenUsage.completionTokens }}）
-            </p>
-            <p v-else>暂无最近一轮统计信息，发送一条消息后将在此展示。</p>
-          </div>
-          <div>
-            <div class="font-medium text-foreground/80 mb-1">Prompt 摘要</div>
-            <p v-if="lastPrompt">
-              {{ lastPrompt }}
-            </p>
-            <p v-else class="text-muted-foreground">暂未记录本轮 Prompt 摘要。</p>
-          </div>
-          <div>
-            <div class="font-medium text-foreground/80 mb-1">推理过程</div>
-            <div
-              v-if="reasoningEvents.length > 0"
-              class="space-y-1"
+        <!-- 右侧会话信息侧栏 -->
+        <div
+          v-if="showSessionSidebar && chatStore.activeSessionId"
+          class="hidden lg:flex w-80 border-l border-border bg-background text-sm flex-col"
+        >
+          <div class="px-md py-sm border-b border-border flex items-center justify-between">
+            <span class="font-medium text-foreground">会话信息</span>
+            <button
+              type="button"
+              class="text-muted-foreground hover:text-foreground transition-colors"
+              @click="showSessionSidebar = false"
             >
-              <div
-                v-for="event in reasoningEvents"
-                :key="event.id"
-                class="flex items-start gap-2"
-              >
+              <X :size="16" />
+            </button>
+          </div>
+          <div class="flex-1 overflow-y-auto px-md py-sm space-y-md">
+            <!-- 会话名称（可编辑） -->
+            <div>
+              <label class="text-xs font-medium text-muted-foreground mb-1 block">会话名称</label>
+              <input
+                v-model="sessionTitle"
+                type="text"
+                class="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm
+                       focus:outline-none focus:ring-1 focus:ring-ring"
+                @blur="handleUpdateSessionTitle"
+              />
+            </div>
+            
+            <!-- 创建时间 -->
+            <div>
+              <label class="text-xs font-medium text-muted-foreground mb-1 block">创建时间</label>
+              <p class="text-sm text-foreground">
+                {{ currentSession?.createdAt ? new Date(currentSession.createdAt).toLocaleString() : '-' }}
+              </p>
+            </div>
+            
+            <!-- 更新时间 -->
+            <div>
+              <label class="text-xs font-medium text-muted-foreground mb-1 block">更新时间</label>
+              <p class="text-sm text-foreground">
+                {{ currentSession?.updatedAt ? new Date(currentSession.updatedAt).toLocaleString() : '-' }}
+              </p>
+            </div>
+            
+            <!-- 关联知识库 -->
+            <div>
+              <label class="text-xs font-medium text-muted-foreground mb-1 block">关联知识库</label>
+              <div v-if="kbStore.list.length > 0" class="space-y-1">
                 <div
-                  class="mt-[3px] w-1.5 h-1.5 rounded-full"
-                  :class="[
-                    event.type === 'ERROR'
-                      ? 'bg-destructive'
-                      : event.type === 'TOOL_CALL_START' || event.type === 'TOOL_CALL_END'
-                        ? 'bg-primary'
-                        : 'bg-muted-foreground/60'
-                  ]"
-                />
-                <div class="space-y-0.5">
-                  <div class="flex items-center gap-1.5">
-                    <span class="text-[11px] text-foreground/90 font-medium">
-                      {{ event.title }}
-                    </span>
-                    <span class="text-[10px] uppercase tracking-wide text-muted-foreground/80">
-                      {{ event.type }}
-                    </span>
-                    <span
-                      v-if="event.toolName"
-                      class="px-1.5 py-0.5 rounded-full bg-muted text-[10px] text-muted-foreground"
-                    >
-                      工具：{{ event.toolName }}
-                    </span>
-                  </div>
-                  <p
-                    v-if="event.description"
-                    class="text-[10px] text-muted-foreground/90"
+                  v-for="kb in kbStore.list"
+                  :key="kb.id"
+                  class="text-sm text-foreground flex items-center justify-between"
+                >
+                  <span>{{ kb.name }}</span>
+                  <RouterLink
+                    :to="{ name: 'knowledgeBases', query: { id: kb.id } }"
+                    class="text-xs text-primary hover:underline"
                   >
-                    {{ event.description }}
-                  </p>
+                    查看
+                  </RouterLink>
                 </div>
               </div>
+              <p v-else class="text-sm text-muted-foreground">未关联知识库</p>
             </div>
-            <p
-              v-else
-              class="text-muted-foreground"
-            >
-              暂无本轮推理事件，发送一条消息后将在此展示 Agent 的思考与工具调用过程。
-            </p>
+            
+            <!-- 消息统计 -->
+            <div>
+              <label class="text-xs font-medium text-muted-foreground mb-1 block">消息统计</label>
+              <p class="text-sm text-foreground">
+                共 {{ chatStore.messages.length }} 条消息
+              </p>
+            </div>
           </div>
-          <div class="text-[10px] text-muted-foreground/80">
-            调试抽屉仅展示最近一轮对话的概要信息；如需查看完整工具调用与阶段详情，请前往“轨迹”页面。
+        </div>
+
+        <!-- 右侧调试抽屉（桌面端优先展示） -->
+        <div
+          v-if="showDebugDrawer"
+          class="hidden lg:flex w-80 border-l border-border bg-background/60 text-xs flex-col"
+        >
+          <div class="px-3 py-2 border-b border-border flex items-center justify-between">
+            <span class="font-medium text-foreground/80 text-[11px]">最近一轮调试概要</span>
+            <RouterLink
+              :to="{ name: 'traces' }"
+              class="text-[11px] underline-offset-2 hover:underline text-muted-foreground"
+            >
+              查看完整轨迹
+            </RouterLink>
+          </div>
+          <div class="flex-1 overflow-y-auto px-3 py-2 space-y-3 text-[11px] text-muted-foreground">
+            <div>
+              <div class="font-medium text-foreground/80 mb-1">模型与 Token</div>
+              <p v-if="lastTokenUsage">
+                模型：{{ lastModelId || '未知模型' }}<br>
+                Tokens：{{ lastTokenUsage.totalTokens }}
+                （提示 {{ lastTokenUsage.promptTokens }} / 回答 {{ lastTokenUsage.completionTokens }}）
+              </p>
+              <p v-else>暂无最近一轮统计信息，发送一条消息后将在此展示。</p>
+            </div>
+            <div>
+              <div class="font-medium text-foreground/80 mb-1">Prompt 摘要</div>
+              <p v-if="lastPrompt">
+                {{ lastPrompt }}
+              </p>
+              <p v-else class="text-muted-foreground">暂未记录本轮 Prompt 摘要。</p>
+            </div>
+            <div>
+              <div class="font-medium text-foreground/80 mb-1">推理过程</div>
+              <div
+                v-if="reasoningEvents.length > 0"
+                class="space-y-1"
+              >
+                <div
+                  v-for="event in reasoningEvents"
+                  :key="event.id"
+                  class="flex items-start gap-2"
+                >
+                  <div
+                    class="mt-[3px] w-1.5 h-1.5 rounded-full"
+                    :class="[
+                      event.type === 'ERROR'
+                        ? 'bg-destructive'
+                        : event.type === 'TOOL_CALL_START' || event.type === 'TOOL_CALL_END'
+                          ? 'bg-primary'
+                          : 'bg-muted-foreground/60'
+                    ]"
+                  />
+                  <div class="space-y-0.5">
+                    <div class="flex items-center gap-1.5">
+                      <span class="text-[11px] text-foreground/90 font-medium">
+                        {{ event.title }}
+                      </span>
+                      <span class="text-[10px] uppercase tracking-wide text-muted-foreground/80">
+                        {{ event.type }}
+                      </span>
+                      <span
+                        v-if="event.toolName"
+                        class="px-1.5 py-0.5 rounded-full bg-muted text-[10px] text-muted-foreground"
+                      >
+                        工具：{{ event.toolName }}
+                      </span>
+                    </div>
+                    <p
+                      v-if="event.description"
+                      class="text-[10px] text-muted-foreground/90"
+                    >
+                      {{ event.description }}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <p
+                v-else
+                class="text-muted-foreground"
+              >
+                暂无本轮推理事件，发送一条消息后将在此展示 Agent 的思考与工具调用过程。
+              </p>
+            </div>
+            <div class="text-[10px] text-muted-foreground/80">
+              调试抽屉仅展示最近一轮对话的概要信息；如需查看完整工具调用与阶段详情，请前往“轨迹”页面。
+            </div>
           </div>
         </div>
       </div>
@@ -502,7 +497,7 @@ async function handleUpdateSessionTitle() {
     <!-- 错误提示 -->
     <div
       v-if="error"
-      class="px-4 md:px-6 py-3 bg-destructive/10 text-destructive text-sm flex items-center justify-center gap-3"
+      class="px-md md:px-lg py-md bg-destructive/10 text-destructive text-sm flex items-center justify-center gap-sm"
     >
       <span>{{ error }}</span>
       <button

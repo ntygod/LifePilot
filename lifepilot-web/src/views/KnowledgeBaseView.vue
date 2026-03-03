@@ -161,178 +161,221 @@ const statusMap: Record<string, { label: string; class: string }> = {
 </script>
 
 <template>
-  <div class="flex flex-col h-full p-6">
-    <!-- 错误提示 -->
-    <div v-if="store.error" class="mb-4 p-3 rounded-md bg-destructive/10 text-destructive text-sm">
-      {{ store.error }}
-    </div>
-
-    <!-- 知识库列表视图 -->
-    <template v-if="!store.current">
-      <div class="flex items-center justify-between mb-6">
-        <h2 class="text-xl font-semibold text-foreground">知识库管理</h2>
-        <button
-          class="inline-flex items-center rounded-md text-sm font-medium h-9 px-4 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-          @click="showCreate = true"
+  <div class="flex flex-col h-full">
+    <div class="flex-1 overflow-y-auto">
+      <div class="max-w-[1200px] mx-auto px-md md:px-lg py-lg">
+        <!-- 错误提示 -->
+        <div
+          v-if="store.error"
+          class="mb-md px-md py-sm rounded-md bg-destructive/10 text-destructive text-sm"
         >
-          新建知识库
-        </button>
-      </div>
+          {{ store.error }}
+        </div>
 
-      <!-- 搜索和过滤栏 -->
-      <div class="mb-4 space-y-2">
-        <div class="flex items-center gap-2">
-          <div class="relative flex-1">
-            <Search class="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" :size="16" />
+        <!-- 知识库列表视图 -->
+        <template v-if="!store.current">
+          <div class="flex items-center justify-between mb-lg gap-sm">
+            <h2 class="text-2xl font-semibold text-foreground leading-tight">
+              知识库管理
+            </h2>
+            <button
+              class="inline-flex items-center rounded-lg text-sm font-medium h-9 px-md bg-primary text-primary-foreground hover:bg-primary/90 hover:shadow-md transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              @click="showCreate = true"
+            >
+              新建知识库
+            </button>
+          </div>
+
+          <!-- 搜索和过滤栏 -->
+          <div class="mb-md space-y-sm">
+            <div class="flex flex-wrap items-center gap-sm">
+              <div class="relative flex-1 min-w-[220px]">
+                <Search
+                  class="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                  :size="16"
+                />
+                <input
+                  v-model="searchQuery"
+                  type="search"
+                  placeholder="搜索知识库（名称或描述）…"
+                  class="w-full h-9 rounded-2xl border border-input bg-background pl-8 pr-3 text-sm
+                         placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all duration-200"
+                />
+              </div>
+              <button
+                class="inline-flex items-center gap-xs h-9 px-md rounded-lg border border-input bg-background text-sm text-muted-foreground
+                       hover:bg-accent hover:text-accent-foreground transition-all duration-200"
+                :class="showFilters ? 'bg-accent text-accent-foreground' : ''"
+                @click="showFilters = !showFilters"
+              >
+                <Filter :size="16" />
+                <span>过滤</span>
+              </button>
+            </div>
+
+            <!-- 过滤选项 -->
+            <div
+              v-if="showFilters"
+              class="px-md py-sm rounded-lg border border-border bg-muted/40 space-y-md"
+            >
+              <!-- 标签过滤 -->
+              <div>
+                <label class="text-xs font-medium text-muted-foreground mb-xs block">标签</label>
+                <div class="flex flex-wrap gap-sm">
+                  <button
+                    v-for="tag in allTags"
+                    :key="tag"
+                    class="inline-flex items-center gap-xs px-sm py-xs rounded-full text-xs border border-border
+                           transition-colors"
+                    :class="selectedTags.includes(tag)
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'bg-background hover:bg-accent hover:text-accent-foreground'"
+                    @click="toggleTag(tag)"
+                  >
+                    <Tag :size="12" />
+                    {{ tag }}
+                  </button>
+                </div>
+              </div>
+
+              <!-- 时间范围过滤 -->
+              <div>
+                <label class="text-xs font-medium text-muted-foreground mb-xs block">更新时间</label>
+                <select
+                  v-model="timeRange"
+                  class="w-full h-8 rounded-lg border border-input bg-background px-sm text-xs
+                         focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
+                >
+                  <option value="all">全部</option>
+                  <option value="7d">最近7天</option>
+                  <option value="30d">最近30天</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="store.loading" class="text-sm text-muted-foreground">加载中...</div>
+          <div v-else-if="filteredKbs.length === 0" class="text-sm text-muted-foreground">
+            {{ searchQuery || selectedTags.length > 0 || timeRange !== 'all' ? '没有找到匹配的知识库' : '暂无知识库' }}
+          </div>
+          <div
+            v-else
+            class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-md"
+          >
+            <div
+              v-for="kb in filteredKbs"
+              :key="kb.id"
+              class="border border-border rounded-lg p-md cursor-pointer hover:border-primary/50 hover:shadow-sm transition-all duration-200 group bg-card"
+              @click="selectKb(kb)"
+            >
+              <div class="flex items-start justify-between gap-sm">
+                <h3 class="font-medium text-foreground truncate flex-1 text-sm leading-snug">
+                  {{ kb.name }}
+                </h3>
+                <div class="flex items-center gap-xs opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    class="text-muted-foreground hover:text-foreground p-xs rounded-full hover:bg-muted/70 transition-colors"
+                    title="编辑"
+                    @click.stop="startEdit(kb)"
+                  >
+                    <Edit2 :size="14" />
+                  </button>
+                  <button
+                    class="text-muted-foreground hover:text-destructive p-xs rounded-full hover:bg-destructive/10 transition-colors"
+                    title="删除"
+                    @click.stop="deleteTarget = { type: 'kb', id: kb.id, name: kb.name }"
+                  >
+                    <X :size="14" />
+                  </button>
+                </div>
+              </div>
+              <p class="text-sm text-muted-foreground mt-xs line-clamp-2 leading-normal">
+                {{ kb.description || '无描述' }}
+              </p>
+              <div class="flex items-center gap-md mt-sm text-xs text-muted-foreground">
+                <span>{{ kb.documentCount }} 篇文档</span>
+                <span>{{ kb.totalChunks }} 个分块</span>
+              </div>
+              <div class="text-xs text-muted-foreground mt-xs">
+                更新于 {{ new Date(kb.updatedAt).toLocaleDateString() }}
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <!-- 文档列表视图 -->
+        <template v-else>
+          <div class="flex items-center gap-sm mb-lg">
+            <button
+              class="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-xs px-sm py-xs rounded-lg hover:bg-muted/60 transition-colors"
+              @click="backToList"
+            >
+              ←
+              <span>返回</span>
+            </button>
+            <h2 class="text-2xl font-semibold text-foreground leading-tight">
+              {{ store.current.name }}
+            </h2>
+            <button
+              class="ml-auto inline-flex items-center rounded-lg text-sm font-medium h-9 px-md bg-primary text-primary-foreground hover:bg-primary/90 hover:shadow-md transition-all duration-200"
+              @click="triggerUpload"
+            >
+              上传文档
+            </button>
             <input
-              v-model="searchQuery"
-              type="search"
-              placeholder="搜索知识库（名称或描述）…"
-              class="w-full h-9 pl-8 pr-3 rounded-md border border-input bg-background text-sm
-                     placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              ref="fileInput"
+              type="file"
+              accept=".pdf,.docx,.md,.txt"
+              class="hidden"
+              @change="handleFileChange"
             />
           </div>
-          <button
-            class="inline-flex items-center gap-1 h-9 px-3 rounded-md border border-input bg-background
-                   hover:bg-accent transition-colors"
-            :class="showFilters ? 'bg-accent' : ''"
-            @click="showFilters = !showFilters"
-          >
-            <Filter :size="16" />
-            <span class="text-sm">过滤</span>
-          </button>
-        </div>
 
-        <!-- 过滤选项 -->
-        <div v-if="showFilters" class="p-3 rounded-md border border-border bg-muted/30 space-y-3">
-          <!-- 标签过滤 -->
-          <div>
-            <label class="text-xs font-medium text-muted-foreground mb-1 block">标签</label>
-            <div class="flex flex-wrap gap-2">
-              <button
-                v-for="tag in allTags"
-                :key="tag"
-                class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs border border-border
-                       transition-colors"
-                :class="selectedTags.includes(tag)
-                  ? 'bg-primary text-primary-foreground border-primary'
-                  : 'bg-background hover:bg-accent'"
-                @click="toggleTag(tag)"
-              >
-                <Tag :size="12" />
-                {{ tag }}
-              </button>
-            </div>
+          <div v-if="store.loading" class="text-sm text-muted-foreground">加载中...</div>
+          <div v-else-if="store.documents.length === 0" class="text-sm text-muted-foreground">
+            暂无文档，点击上方按钮上传
           </div>
-
-          <!-- 时间范围过滤 -->
-          <div>
-            <label class="text-xs font-medium text-muted-foreground mb-1 block">更新时间</label>
-            <select
-              v-model="timeRange"
-              class="w-full h-8 rounded-md border border-input bg-background px-2 text-xs
-                     focus:outline-none focus:ring-1 focus:ring-ring"
+          <div v-else class="space-y-sm">
+            <div
+              v-for="doc in store.documents"
+              :key="doc.id"
+              class="flex items-center gap-md border border-border rounded-lg px-md py-sm bg-card"
             >
-              <option value="all">全部</option>
-              <option value="7d">最近7天</option>
-              <option value="30d">最近30天</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
-      <div v-if="store.loading" class="text-sm text-muted-foreground">加载中...</div>
-      <div v-else-if="filteredKbs.length === 0" class="text-sm text-muted-foreground">
-        {{ searchQuery || selectedTags.length > 0 || timeRange !== 'all' ? '没有找到匹配的知识库' : '暂无知识库' }}
-      </div>
-      <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        <div
-          v-for="kb in filteredKbs"
-          :key="kb.id"
-          class="border border-border rounded-lg p-4 cursor-pointer hover:border-primary/50 transition-colors group"
-          @click="selectKb(kb)"
-        >
-          <div class="flex items-start justify-between">
-            <h3 class="font-medium text-foreground truncate flex-1">{{ kb.name }}</h3>
-            <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-              <button
-                class="text-muted-foreground hover:text-foreground p-1"
-                title="编辑"
-                @click.stop="startEdit(kb)"
+              <div class="flex-1 min-w-0">
+                <div class="font-medium text-sm text-foreground truncate">
+                  {{ doc.fileName }}
+                </div>
+                <div class="flex items-center gap-md text-xs text-muted-foreground mt-xs">
+                  <span>{{ formatSize(doc.fileSize) }}</span>
+                  <span>{{ doc.chunkCount }} 个分块</span>
+                </div>
+              </div>
+              <span
+                class="text-xs px-sm py-xs rounded-full shrink-0"
+                :class="statusMap[doc.status]?.class ?? 'bg-gray-100 text-gray-800'"
               >
-                <Edit2 :size="14" />
-              </button>
+                {{ statusMap[doc.status]?.label ?? doc.status }}
+              </span>
               <button
-                class="text-muted-foreground hover:text-destructive p-1"
+                class="text-muted-foreground hover:text-destructive text-sm shrink-0 px-sm py-xs rounded-full hover:bg-destructive/10 transition-colors"
                 title="删除"
-                @click.stop="deleteTarget = { type: 'kb', id: kb.id, name: kb.name }"
+                @click="deleteTarget = { type: 'doc', id: doc.id, kbId: store.current!.id, name: doc.fileName }"
               >
-                <X :size="14" />
+                ×
               </button>
             </div>
           </div>
-          <p class="text-sm text-muted-foreground mt-1 line-clamp-2">{{ kb.description || '无描述' }}</p>
-          <div class="flex items-center gap-3 mt-3 text-xs text-muted-foreground">
-            <span>{{ kb.documentCount }} 篇文档</span>
-            <span>{{ kb.totalChunks }} 个分块</span>
-          </div>
-          <div class="text-xs text-muted-foreground mt-1">
-            更新于 {{ new Date(kb.updatedAt).toLocaleDateString() }}
-          </div>
-        </div>
+        </template>
       </div>
-    </template>
-
-    <!-- 文档列表视图 -->
-    <template v-else>
-      <div class="flex items-center gap-3 mb-6">
-        <button
-          class="text-sm text-muted-foreground hover:text-foreground transition-colors"
-          @click="backToList"
-        >← 返回</button>
-        <h2 class="text-xl font-semibold text-foreground">{{ store.current.name }}</h2>
-        <button
-          class="ml-auto inline-flex items-center rounded-md text-sm font-medium h-9 px-4 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-          @click="triggerUpload"
-        >
-          上传文档
-        </button>
-        <input ref="fileInput" type="file" accept=".pdf,.docx,.md,.txt" class="hidden" @change="handleFileChange" />
-      </div>
-
-      <div v-if="store.loading" class="text-sm text-muted-foreground">加载中...</div>
-      <div v-else-if="store.documents.length === 0" class="text-sm text-muted-foreground">暂无文档，点击上方按钮上传</div>
-      <div v-else class="space-y-2">
-        <div
-          v-for="doc in store.documents"
-          :key="doc.id"
-          class="flex items-center gap-4 border border-border rounded-md p-3"
-        >
-          <div class="flex-1 min-w-0">
-            <div class="font-medium text-sm text-foreground truncate">{{ doc.fileName }}</div>
-            <div class="flex items-center gap-3 text-xs text-muted-foreground mt-1">
-              <span>{{ formatSize(doc.fileSize) }}</span>
-              <span>{{ doc.chunkCount }} 个分块</span>
-            </div>
-          </div>
-          <span
-            class="text-xs px-2 py-0.5 rounded-full shrink-0"
-            :class="statusMap[doc.status]?.class ?? 'bg-gray-100 text-gray-800'"
-          >
-            {{ statusMap[doc.status]?.label ?? doc.status }}
-          </span>
-          <button
-            class="text-muted-foreground hover:text-destructive text-sm shrink-0"
-            title="删除"
-            @click="deleteTarget = { type: 'doc', id: doc.id, kbId: store.current!.id, name: doc.fileName }"
-          >×</button>
-        </div>
-      </div>
-    </template>
+    </div>
 
     <!-- 创建对话框 -->
-    <div v-if="showCreate" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" @click.self="showCreate = false">
-      <div class="bg-card border border-border rounded-lg p-6 w-full max-w-md shadow-lg">
+    <div
+      v-if="showCreate"
+      class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      @click.self="showCreate = false"
+    >
+      <div class="bg-card border border-border rounded-lg p-6 w-full max-w-[448px] shadow-lg">
         <h3 class="text-lg font-semibold text-foreground mb-4">新建知识库</h3>
         <form class="space-y-4" @submit.prevent="handleCreate">
           <div class="space-y-1.5">
@@ -360,19 +403,27 @@ const statusMap: Record<string, { label: string; class: string }> = {
               type="button"
               class="h-9 px-4 rounded-md text-sm border border-input hover:bg-accent transition-colors"
               @click="showCreate = false"
-            >取消</button>
+            >
+              取消
+            </button>
             <button
               type="submit"
               class="h-9 px-4 rounded-md text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-            >创建</button>
+            >
+              创建
+            </button>
           </div>
         </form>
       </div>
     </div>
 
     <!-- 编辑对话框 -->
-    <div v-if="editingKb" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" @click.self="editingKb = null">
-      <div class="bg-card border border-border rounded-lg p-6 w-full max-w-md shadow-lg">
+    <div
+      v-if="editingKb"
+      class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      @click.self="editingKb = null"
+    >
+      <div class="bg-card border border-border rounded-lg p-6 w-full max-w-[448px] shadow-lg">
         <h3 class="text-lg font-semibold text-foreground mb-4">编辑知识库</h3>
         <form class="space-y-4" @submit.prevent="handleUpdate">
           <div>
@@ -400,19 +451,27 @@ const statusMap: Record<string, { label: string; class: string }> = {
               type="button"
               class="h-9 px-4 rounded-md text-sm border border-input hover:bg-accent transition-colors"
               @click="editingKb = null"
-            >取消</button>
+            >
+              取消
+            </button>
             <button
               type="submit"
               class="h-9 px-4 rounded-md text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-            >保存</button>
+            >
+              保存
+            </button>
           </div>
         </form>
       </div>
     </div>
 
     <!-- 删除确认对话框 -->
-    <div v-if="deleteTarget" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" @click.self="deleteTarget = null">
-      <div class="bg-card border border-border rounded-lg p-6 w-full max-w-sm shadow-lg">
+    <div
+      v-if="deleteTarget"
+      class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      @click.self="deleteTarget = null"
+    >
+      <div class="bg-card border border-border rounded-lg p-6 w-full max-w-[384px] shadow-lg">
         <h3 class="text-lg font-semibold text-foreground mb-2">确认删除</h3>
         <p class="text-sm text-muted-foreground mb-4">
           确定要删除{{ deleteTarget.type === 'kb' ? '知识库' : '文档' }}「{{ deleteTarget.name }}」吗？此操作不可撤销。
@@ -421,11 +480,15 @@ const statusMap: Record<string, { label: string; class: string }> = {
           <button
             class="h-9 px-4 rounded-md text-sm border border-input hover:bg-accent transition-colors"
             @click="deleteTarget = null"
-          >取消</button>
+          >
+            取消
+          </button>
           <button
             class="h-9 px-4 rounded-md text-sm bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors"
             @click="confirmDelete"
-          >删除</button>
+          >
+            删除
+          </button>
         </div>
       </div>
     </div>

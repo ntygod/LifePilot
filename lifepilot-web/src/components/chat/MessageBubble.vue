@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Message } from '@/types'
 import { computed, ref } from 'vue'
-import { ThumbsUp, ThumbsDown, GitBranch, Copy, ChevronDown, ChevronRight, FileAudio2, FileText } from 'lucide-vue-next'
+import { Bot, Copy, GitBranch, ThumbsDown, ThumbsUp, ChevronDown, ChevronRight, FileAudio2, FileText } from 'lucide-vue-next'
 import StreamingText from './StreamingText.vue'
 import A2uiRenderer from '@/components/a2ui/A2uiRenderer.vue'
 
@@ -97,33 +97,62 @@ function closeImagePreview() {
 </script>
 
 <template>
-  <div class="flex gap-2 px-4 md:px-6 py-6" :class="message.role === 'user' ? 'justify-end' : ''">
+  <div
+    class="grid w-full gap-md"
+    :class="message.role === 'user' ? 'grid-cols-[1fr_auto]' : 'grid-cols-[auto_1fr]'"
+  >
     <!-- Agent 头像 -->
     <div
       v-if="message.role === 'assistant'"
-      class="shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-medium text-primary"
+      class="shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary mt-xs"
       aria-label="AI 消息"
     >
-      AI
+      <Bot :size="14" />
     </div>
 
     <!-- 消息内容 + 元信息 -->
-    <div class="flex flex-col items-start max-w-[768px]" :class="message.role === 'user' ? 'items-end' : 'items-start'">
+    <div
+      class="min-w-0 space-y-xs"
+      :class="message.role === 'user' ? 'flex flex-col items-end' : ''"
+    >
+      <!-- 顶部 meta 行（对齐 stitch：名称 • 时间） -->
       <div
-        class="w-full rounded-2xl px-4 py-3 relative shadow-sm"
-        :class="message.role === 'user' ? 'rounded-br-sm' : 'rounded-bl-sm'"
+        class="flex items-center gap-xs text-xs text-muted-foreground"
+        :class="message.role === 'user' ? 'justify-end' : ''"
+      >
+        <template v-if="message.role === 'assistant'">
+          <span class="font-semibold text-foreground">LifePilot 助手</span>
+          <span>•</span>
+          <time :datetime="new Date(message.timestamp).toISOString()">{{ timeLabel }}</time>
+        </template>
+        <template v-else>
+          <time :datetime="new Date(message.timestamp).toISOString()">{{ timeLabel }}</time>
+          <span>•</span>
+          <span class="font-semibold text-foreground">你</span>
+          <template v-if="userStatusLabel">
+            <span>•</span>
+            <span :class="message.status === 'error' ? 'text-destructive' : 'text-muted-foreground'">
+              {{ userStatusLabel }}
+            </span>
+          </template>
+        </template>
+      </div>
+
+      <div
+        class="relative max-w-full md:max-w-[85%] rounded-2xl shadow-sm transition-all duration-200"
+        :class="[
+          message.role === 'user'
+            ? 'bg-primary text-primary-foreground rounded-tr-sm shadow-md p-md'
+            : 'bg-card text-foreground rounded-tl-sm border border-border p-md'
+        ]"
       >
         <!-- 流式进行中的高亮边框与角标 -->
         <div
           v-if="streaming && message.role === 'assistant'"
-          class="absolute inset-0 rounded-2xl rounded-bl-sm border-2 border-primary/60 animate-pulse pointer-events-none"
+          class="absolute inset-0 rounded-2xl rounded-tl-sm border-2 border-primary/60 animate-pulse pointer-events-none"
         />
 
-        <div
-          :class="message.role === 'user'
-            ? 'relative z-[1] bg-primary text-primary-foreground'
-            : 'relative z-[1] bg-muted text-foreground'"
-        >
+        <div class="relative z-[1]">
           <!-- 用户消息：纯文本（支持可选高亮 HTML） -->
           <p
             v-if="message.role === 'user'"
@@ -191,10 +220,7 @@ function closeImagePreview() {
           </template>
 
           <!-- 图片附件缩略图（用户或 AI 消息均可展示） -->
-          <div
-            v-if="imageAttachments.length > 0"
-            class="mt-2 grid grid-cols-2 gap-2"
-          >
+          <div v-if="imageAttachments.length > 0" class="mt-2 grid grid-cols-2 gap-sm">
             <button
               v-for="att in imageAttachments"
               :key="att.fileId"
@@ -214,7 +240,7 @@ function closeImagePreview() {
           <!-- 非图片附件：视频 / 音频 / 通用文件下载 -->
           <div
             v-if="fileAttachments.length > 0"
-            class="mt-2 flex flex-col gap-2"
+            class="mt-2 flex flex-col gap-sm"
           >
             <div
               v-for="att in fileAttachments"
@@ -267,80 +293,53 @@ function closeImagePreview() {
         </div>
       </div>
 
-      <!-- 底部时间与角色标签 + 状态 / Trace 入口 / 操作 -->
-      <div class="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        <span>
-          {{ message.role === 'user' ? '你' : 'AI' }}
-        </span>
-        <span>·</span>
-        <time :datetime="new Date(message.timestamp).toISOString()">
-          {{ timeLabel }}
-        </time>
-        <!-- 用户消息的发送状态 -->
-        <template v-if="message.role === 'user' && userStatusLabel">
-          <span>·</span>
-          <span
-            :class="message.status === 'error' ? 'text-destructive' : 'text-muted-foreground'"
-          >
-            {{ userStatusLabel }}
-          </span>
-        </template>
-        <!-- 正在生成的 AI 消息：显式状态与停止提示 -->
-        <template v-if="message.role === 'assistant' && streaming">
-          <span>·</span>
-          <span class="inline-flex items-center gap-1 text-primary">
-            <span class="inline-flex h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
-            正在生成…可在顶部点击“停止”
-          </span>
-        </template>
-        <!-- 带 Trace 的 AI 消息：提供跳转入口（生成完毕） -->
-        <template v-else-if="message.role === 'assistant' && message.traceId">
-          <span>·</span>
-          <RouterLink
-            :to="{ name: 'traces', query: { id: message.traceId } }"
-            class="underline-offset-2 hover:underline"
-          >
-            查看执行轨迹
-          </RouterLink>
-        </template>
-        <!-- 复制内容 -->
-        <button
-          class="ml-1 text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline transition-colors"
-          type="button"
-          @click="copyToClipboard(message.content)"
-        >
-          复制内容
-        </button>
-      </div>
-
-      <!-- AI消息的操作按钮：点赞/点踩/分叉 -->
-      <div v-if="message.role === 'assistant' && !streaming" class="mt-2 flex items-center gap-2">
+      <!-- AI 消息操作区（对齐 stitch：图标 + 轻按钮） -->
+      <div
+        v-if="message.role === 'assistant' && !streaming"
+        class="flex items-center gap-md pl-xs"
+      >
         <button
           type="button"
-          class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-all duration-200"
-          :class="liked ? 'text-primary bg-primary/10' : ''"
+          class="flex items-center gap-xs text-xs text-muted-foreground hover:text-foreground transition-colors"
+          :class="liked ? 'text-primary' : ''"
           @click="handleLike"
         >
           <ThumbsUp :size="14" />
-          <span>有用</span>
+          <span>有帮助</span>
         </button>
         <button
           type="button"
-          class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-all duration-200"
-          :class="disliked ? 'text-destructive bg-destructive/10' : ''"
+          class="flex items-center gap-xs text-xs text-muted-foreground hover:text-foreground transition-colors"
+          :class="disliked ? 'text-destructive' : ''"
           @click="handleDislike"
         >
           <ThumbsDown :size="14" />
-          <span>无用</span>
+          <span>无帮助</span>
         </button>
         <button
           type="button"
-          class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-all duration-200"
+          class="flex items-center gap-xs text-xs text-muted-foreground hover:text-foreground transition-colors"
+          @click="copyToClipboard(message.content)"
+        >
+          <Copy :size="14" />
+          <span>复制</span>
+        </button>
+        <button
+          type="button"
+          class="flex items-center gap-xs text-xs text-muted-foreground hover:text-foreground transition-colors"
           @click="handleFork"
         >
           <GitBranch :size="14" />
-          <span>从此分叉</span>
+          <span>分叉</span>
         </button>
+
+        <RouterLink
+          v-if="message.traceId"
+          :to="{ name: 'traces', query: { id: message.traceId } }"
+          class="ml-auto text-xs text-primary hover:underline underline-offset-2"
+        >
+          查看执行轨迹
+        </RouterLink>
       </div>
 
       <!-- 图片大图预览层 -->
@@ -411,7 +410,7 @@ function closeImagePreview() {
     <!-- 用户头像 -->
     <div
       v-if="message.role === 'user'"
-      class="shrink-0 w-8 h-8 rounded-full bg-secondary flex items-center justify-center text-xs font-medium"
+      class="shrink-0 w-8 h-8 rounded-full bg-primary text-primary-foreground shadow-md flex items-center justify-center text-[10px] font-semibold mt-xs"
       aria-label="你的消息"
     >
       你

@@ -125,219 +125,243 @@ function getFileIcon(file: File) {
   if (type.startsWith('video/')) return FileVideo
   return FileText
 }
+
+defineExpose({
+  isUploading,
+  input,
+  getFileIcon
+})
 </script>
 
 <template>
-  <div class="border-t border-border bg-card">
-    <!-- 附件列表 -->
-    <div v-if="attachments.length > 0" class="px-4 md:px-6 pt-3 pb-2 flex flex-wrap gap-2">
-      <div
-        v-for="(file, index) in attachments"
-        :key="index"
-        class="inline-flex items-center gap-2 px-2 py-1 rounded-md bg-muted text-xs text-foreground"
-      >
-        <component :is="getFileIcon(file)" :size="12" />
-        <span class="max-w-[200px] truncate">{{ file.name }}</span>
-        <span class="text-muted-foreground">({{ formatFileSize(file.size) }})</span>
-        <button
-          type="button"
-          class="text-muted-foreground hover:text-destructive transition-colors"
-          @click="removeAttachment(index)"
+  <!-- 输入区域（对齐 stitch：浮层感、rounded-2xl、shadow-lg、底部提示） -->
+  <div class="bg-background/90 backdrop-blur-md supports-[backdrop-filter]:bg-background/60 pt-sm pb-lg px-md md:px-lg border-t border-transparent">
+    <div class="max-w-4xl mx-auto">
+      <!-- 附件列表 -->
+      <div v-if="attachments.length > 0" class="pt-sm pb-xs flex flex-wrap gap-sm">
+        <div
+          v-for="(file, index) in attachments"
+          :key="index"
+          class="inline-flex items-center gap-xs px-sm py-xs rounded-lg bg-muted text-xs text-foreground"
         >
-          <X :size="12" />
-        </button>
-      </div>
-    </div>
-
-    <!-- 上下文配置折叠区域 -->
-    <div v-if="showContextConfig" class="px-4 md:px-6 py-3 border-b border-border bg-muted/30 text-xs">
-      <div class="space-y-2">
-        <div class="flex items-center justify-between">
-          <span class="font-medium text-foreground">上下文配置</span>
+          <component :is="getFileIcon(file)" :size="12" />
+          <span class="max-w-[200px] truncate">{{ file.name }}</span>
+          <span class="text-muted-foreground">({{ formatFileSize(file.size) }})</span>
           <button
             type="button"
-            class="text-muted-foreground hover:text-foreground"
-            @click="showContextConfig = false"
+            class="text-muted-foreground hover:text-destructive transition-colors"
+            @click="removeAttachment(index)"
           >
-            <ChevronUp :size="14" />
+            <X :size="12" />
           </button>
         </div>
-        <div class="grid grid-cols-2 gap-2">
-          <div>
-            <label class="text-muted-foreground mb-1 block">模型</label>
-            <select
-              v-model="contextConfig.model"
-              class="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs
-                     focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all duration-200"
+      </div>
+
+      <!-- 上下文配置折叠区域 -->
+      <div v-if="showContextConfig" class="mb-sm rounded-lg border border-border bg-muted/20 p-sm text-xs">
+        <div class="space-y-sm">
+          <div class="flex items-center justify-between">
+            <span class="font-medium text-foreground">上下文配置</span>
+            <button
+              type="button"
+              class="text-muted-foreground hover:text-foreground"
+              @click="showContextConfig = false"
             >
-              <option value="">使用默认</option>
-              <!-- TODO: 从设置中获取可用模型列表 -->
-            </select>
+              <ChevronUp :size="14" />
+            </button>
           </div>
-          <div>
-            <label class="text-muted-foreground mb-1 block">温度</label>
-            <input
-              v-model.number="contextConfig.temperature"
-              type="number"
-              min="0"
-              max="2"
-              step="0.1"
-              class="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs
-                     focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all duration-200"
-            />
-          </div>
-          <div>
-            <label class="text-muted-foreground mb-1 block">最大 Tokens</label>
-            <input
-              v-model.number="contextConfig.maxTokens"
-              type="number"
-              min="100"
-              max="8000"
-              step="100"
-              class="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs
-                     focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all duration-200"
-            />
-          </div>
-          <div>
-            <label class="text-muted-foreground mb-1 block">关联知识库</label>
-            <select
-              v-model="contextConfig.knowledgeBases"
-              multiple
-              class="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs
-                     focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all duration-200"
-            >
-              <option v-for="kb in kbStore.list" :key="kb.id" :value="kb.id">
-                {{ kb.name }}
-              </option>
-            </select>
+          <div class="grid grid-cols-2 gap-sm">
+            <div>
+              <label class="text-muted-foreground mb-1 block">模型</label>
+              <select
+                v-model="contextConfig.model"
+                class="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs
+                       focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all duration-200"
+              >
+                <option value="">使用默认</option>
+                <!-- TODO: 从设置中获取可用模型列表 -->
+              </select>
+            </div>
+            <div>
+              <label class="text-muted-foreground mb-1 block">温度</label>
+              <input
+                v-model.number="contextConfig.temperature"
+                type="number"
+                min="0"
+                max="2"
+                step="0.1"
+                class="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs
+                       focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all duration-200"
+              />
+            </div>
+            <div>
+              <label class="text-muted-foreground mb-1 block">最大 Tokens</label>
+              <input
+                v-model.number="contextConfig.maxTokens"
+                type="number"
+                min="100"
+                max="8000"
+                step="100"
+                class="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs
+                       focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all duration-200"
+              />
+            </div>
+            <div>
+              <label class="text-muted-foreground mb-1 block">关联知识库</label>
+              <select
+                v-model="contextConfig.knowledgeBases"
+                multiple
+                class="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs
+                       focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all duration-200"
+              >
+                <option v-for="kb in kbStore.list" :key="kb.id" :value="kb.id">
+                  {{ kb.name }}
+                </option>
+              </select>
+            </div>
           </div>
         </div>
       </div>
-    </div>
 
-    <div class="px-4 md:px-6 py-4">
-      <div class="max-w-[768px] mx-auto flex flex-col gap-2">
-        <div class="flex gap-2 items-end">
-          <!-- Prompt模板下拉 -->
-          <div class="relative shrink-0">
-            <button
-              type="button"
-              class="h-[52px] w-10 rounded-lg border border-input bg-background
-                     text-muted-foreground transition-all duration-200
-                     hover:bg-accent hover:text-foreground hover:border-ring hover:shadow-sm
-                     focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2
-                     disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-              :disabled="disabled"
-              @click="showTemplates = !showTemplates"
-            >
-              <FileText :size="16" />
-            </button>
-            <Transition
-              enter-active-class="transition-all duration-200 ease-out"
-              enter-from-class="opacity-0 scale-95 translate-y-2"
-              enter-to-class="opacity-100 scale-100 translate-y-0"
-              leave-active-class="transition-all duration-150 ease-in"
-              leave-from-class="opacity-100 scale-100 translate-y-0"
-              leave-to-class="opacity-0 scale-95 translate-y-2"
-            >
-              <div
-                v-if="showTemplates"
-                class="absolute bottom-full mb-1 left-0 w-48 rounded-md border border-border bg-card shadow-lg z-10 overflow-hidden"
-              >
-                <div class="p-1">
-                  <div
-                    v-for="template in promptTemplates"
-                    :key="template.name"
-                    class="px-3 py-1.5 rounded text-xs text-foreground hover:bg-accent cursor-pointer transition-colors duration-150"
-                    @click="insertTemplate(template)"
-                  >
-                    {{ template.name }}
-                  </div>
-                </div>
-              </div>
-            </Transition>
-          </div>
-
+      <div class="relative">
+        <div
+          class="bg-card border border-input rounded-2xl shadow-lg overflow-hidden flex flex-col
+                 focus-within:ring-2 focus-within:ring-ring focus-within:border-transparent transition-all duration-200"
+        >
           <textarea
             v-model="input"
             :disabled="disabled"
             :maxlength="maxLength"
-            placeholder="输入你的问题，或粘贴一段内容让 AI 帮你分析…"
+            placeholder="问任何问题，或粘贴文本让 AI 分析…"
             rows="1"
-            class="flex-1 resize-none rounded-2xl border border-input bg-background px-4 py-3 text-sm
-                   placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent
-                   disabled:opacity-50 disabled:cursor-not-allowed min-h-[52px] max-h-[200px] transition-all duration-200"
+            class="w-full bg-transparent border-none text-foreground placeholder:text-muted-foreground focus:ring-0 resize-none
+                   py-md px-md min-h-[56px] max-h-[200px] text-base disabled:opacity-50 disabled:cursor-not-allowed"
             @keydown="handleKeydown"
             @click="showTemplates = false"
           />
-          
-          <!-- 附件上传按钮 -->
-          <button
-            type="button"
-            class="h-[52px] w-10 rounded-lg border border-input bg-background hover:bg-accent
-                   text-muted-foreground hover:text-foreground transition-all duration-200 shrink-0
-                   disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center
-                   focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            :disabled="disabled"
-            @click="handleFileSelect"
-          >
-            <Paperclip :size="16" />
-          </button>
-          <input
-            ref="fileInput"
-            type="file"
-            multiple
-            accept="image/*,audio/*,video/*,.pdf,.txt,.md,.csv,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
-            class="hidden"
-            @change="handleFileChange"
-          />
-          
-          <!-- 上下文配置按钮 -->
-          <button
-            type="button"
-            class="h-[52px] w-10 rounded-lg border border-input bg-background hover:bg-accent
-                   text-muted-foreground hover:text-foreground transition-all duration-200 shrink-0
-                   disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center
-                   focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            :disabled="disabled"
-            :class="showContextConfig ? 'bg-accent text-foreground' : ''"
-            @click="showContextConfig = !showContextConfig"
-          >
-            <Settings :size="16" />
-          </button>
-          
-          <button
-            :disabled="disabled || !input.trim() || isUploading"
-            class="w-10 h-10 rounded-full bg-primary text-primary-foreground
-                   hover:bg-primary/90 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed
-                   transition-all duration-200 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 shrink-0 flex items-center justify-center"
-            @click="submit"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="m22 2-7 20-4-9-9-4Z" />
-              <path d="M22 2 11 13" />
-            </svg>
-          </button>
+
+          <div class="flex items-center justify-between px-sm pb-sm">
+            <div class="flex items-center gap-sm">
+              <!-- Prompt 模板下拉 -->
+              <div class="relative">
+                <button
+                  type="button"
+                  class="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors
+                         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  :disabled="disabled"
+                  title="Prompt 模板"
+                  @click="showTemplates = !showTemplates"
+                >
+                  <FileText :size="18" />
+                </button>
+                <Transition
+                  enter-active-class="transition-all duration-200 ease-out"
+                  enter-from-class="opacity-0 scale-95 translate-y-2"
+                  enter-to-class="opacity-100 scale-100 translate-y-0"
+                  leave-active-class="transition-all duration-150 ease-in"
+                  leave-from-class="opacity-100 scale-100 translate-y-0"
+                  leave-to-class="opacity-0 scale-95 translate-y-2"
+                >
+                  <div
+                    v-if="showTemplates"
+                    class="absolute bottom-full mb-1 left-0 w-48 rounded-md border border-border bg-card shadow-lg z-10 overflow-hidden"
+                  >
+                    <div class="p-1">
+                      <div
+                        v-for="template in promptTemplates"
+                        :key="template.name"
+                        class="px-3 py-1.5 rounded text-xs text-foreground hover:bg-accent cursor-pointer transition-colors duration-150"
+                        @click="insertTemplate(template)"
+                      >
+                        {{ template.name }}
+                      </div>
+                    </div>
+                  </div>
+                </Transition>
+              </div>
+
+              <!-- 附件上传按钮 -->
+              <button
+                type="button"
+                class="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors
+                       disabled:opacity-50 disabled:cursor-not-allowed
+                       focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                :disabled="disabled"
+                title="附件"
+                @click="handleFileSelect"
+              >
+                <Paperclip :size="18" />
+              </button>
+              <input
+                ref="fileInput"
+                type="file"
+                multiple
+                accept="image/*,audio/*,video/*,.pdf,.txt,.md,.csv,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
+                class="hidden"
+                @change="handleFileChange"
+              />
+
+              <!-- 上下文配置按钮 -->
+              <button
+                type="button"
+                class="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors
+                       disabled:opacity-50 disabled:cursor-not-allowed
+                       focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                :disabled="disabled"
+                :class="showContextConfig ? 'bg-muted/60 text-foreground' : ''"
+                title="上下文配置"
+                @click="showContextConfig = !showContextConfig"
+              >
+                <Settings :size="18" />
+              </button>
+            </div>
+
+            <div class="flex items-center gap-sm">
+              <span class="text-xs text-muted-foreground hidden sm:inline-block">
+                {{ inputLength }} / {{ maxLength }}
+              </span>
+              <button
+                :disabled="disabled || !input.trim() || isUploading"
+                class="w-10 h-10 rounded-full shadow-sm flex items-center justify-center
+                       transition-all duration-200 active:scale-[0.98]
+                       disabled:opacity-50 disabled:cursor-not-allowed
+                       focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                :class="(disabled || !input.trim() || isUploading)
+                  ? 'bg-muted text-muted-foreground border border-border hover:bg-muted'
+                  : 'bg-primary text-primary-foreground hover:bg-primary/90 hover:shadow-md'"
+                @click="submit"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  class="-rotate-45 translate-x-0.5 -translate-y-0.5"
+                >
+                  <path d="m22 2-7 20-4-9-9-4Z" />
+                  <path d="M22 2 11 13" />
+                </svg>
+              </button>
+            </div>
+          </div>
         </div>
-        <div class="flex justify-between items-center text-xs text-muted-foreground px-1">
-          <span>按 Enter 发送，Shift+Enter 换行</span>
-          <span v-if="isUploading" class="text-primary">正在上传附件…</span>
-          <span v-else>{{ inputLength }} / {{ maxLength }} 字符</span>
-          <span v-if="disabled">正在生成回答，稍候即可继续输入</span>
-        </div>
-        <div v-if="uploadError" class="mt-1 px-1 text-xs text-destructive">
-          {{ uploadError }}
-        </div>
+      </div>
+
+      <div class="text-center mt-xs">
+        <p class="text-[10px] text-muted-foreground">
+          按 Enter 发送，Shift + Enter 换行。LifePilot 可能会出错。请核实重要信息。
+          <span v-if="isUploading" class="ml-2 text-primary">正在上传附件…</span>
+          <span v-else-if="disabled" class="ml-2">正在生成回答，稍候即可继续输入</span>
+        </p>
+      </div>
+
+      <div v-if="uploadError" class="mt-xs text-xs text-destructive">
+        {{ uploadError }}
       </div>
     </div>
   </div>

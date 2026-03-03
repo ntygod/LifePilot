@@ -229,7 +229,7 @@ async function batchDelete() {
   <div class="flex flex-col h-full">
     <!-- 顶部工具栏 -->
     <div class="border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div class="container mx-auto px-6 py-4">
+      <div class="max-w-[1200px] mx-auto px-md md:px-lg py-md">
         <div class="flex items-center justify-between mb-4">
           <h2 class="text-2xl font-semibold text-foreground">会话列表</h2>
           <button
@@ -330,7 +330,7 @@ async function batchDelete() {
 
     <!-- 会话列表 -->
     <div class="flex-1 overflow-y-auto">
-      <div class="container mx-auto px-6 py-4">
+      <div class="max-w-[1200px] mx-auto px-md md:px-lg py-lg">
         <!-- 加载中 -->
         <div v-if="loading" class="flex items-center justify-center py-12">
           <div class="text-sm text-muted-foreground">加载中...</div>
@@ -438,7 +438,7 @@ async function batchDelete() {
       class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
       @click.self="deleteTarget = null"
     >
-      <div class="bg-card border border-border rounded-lg p-6 w-full max-w-sm shadow-lg">
+      <div class="bg-card border border-border rounded-lg p-6 w-full max-w-[384px] shadow-lg">
         <h3 class="text-lg font-semibold text-foreground mb-2">确认删除</h3>
         <p class="text-sm text-muted-foreground mb-4">
           确定要删除此会话吗？此操作不可撤销。

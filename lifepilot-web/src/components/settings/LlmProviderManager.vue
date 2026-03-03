@@ -45,6 +45,7 @@ const providerTypes = [
   { value: 'QWEN', label: '通义千问' },
   { value: 'GLM', label: '智谱 GLM' },
   { value: 'WENXIN', label: '文心一言' },
+  { value: 'TEI', label: 'TEI（本地 Embedding）' },
   { value: 'OPENAI_COMPATIBLE', label: 'OpenAI 兼容' }
 ]
 
@@ -398,13 +399,6 @@ onMounted(() => {
                 <div class="flex items-center gap-2">
                   <button
                     class="px-3 py-1 text-sm border border-border rounded hover:bg-accent transition-colors"
-                    @click="createFromPreset(preset)"
-                    title="基于此预设创建新的 Provider"
-                  >
-                    使用
-                  </button>
-                  <button
-                    class="px-3 py-1 text-sm border border-border rounded hover:bg-accent transition-colors"
                     @click="openEditForm(preset)"
                   >
                     编辑
@@ -438,7 +432,7 @@ onMounted(() => {
       class="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]"
       @click.self="showForm = false"
     >
-      <div class="bg-card border border-border rounded-lg shadow-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto m-4">
+      <div class="bg-card border border-border rounded-lg shadow-lg w-full max-w-[672px] max-h-[90vh] overflow-y-auto m-4">
         <div class="p-6">
           <div class="flex items-center justify-between mb-6">
             <h2 class="text-xl font-semibold text-foreground">

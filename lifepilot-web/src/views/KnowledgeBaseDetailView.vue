@@ -237,37 +237,50 @@ async function testRetrieval() {
 <template>
   <div class="flex flex-col h-full overflow-hidden">
     <!-- 顶部导航栏 -->
-    <div class="flex items-center gap-3 px-6 py-4 border-b border-border">
-      <button
-        class="text-sm text-muted-foreground hover:text-foreground transition-colors"
-        @click="router.push('/knowledge-bases')"
-      >
-        <ArrowLeft :size="16" class="inline mr-1" />
-        返回
-      </button>
-      <h1 class="text-xl font-semibold text-foreground flex-1">
-        {{ kb?.name || '知识库详情' }}
-      </h1>
-      <button
-        class="inline-flex items-center gap-2 rounded-md text-sm font-medium h-9 px-4 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-        @click="triggerUpload"
-      >
-        <Upload :size="16" />
-        上传文档
-      </button>
-      <input ref="fileInput" type="file" multiple accept=".pdf,.docx,.md,.txt,.html" class="hidden" @change="handleFileChange" />
+    <div class="flex-shrink-0 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <div class="max-w-[1200px] mx-auto px-md md:px-lg py-md flex items-center gap-3">
+        <button
+          class="text-sm text-muted-foreground hover:text-foreground transition-colors"
+          @click="router.push('/knowledge-bases')"
+        >
+          <ArrowLeft :size="16" class="inline mr-1" />
+          返回
+        </button>
+        <h1 class="text-xl font-semibold text-foreground flex-1">
+          {{ kb?.name || '知识库详情' }}
+        </h1>
+        <button
+          class="inline-flex items-center gap-2 rounded-md text-sm font-medium h-9 px-md bg-primary text-primary-foreground hover:bg-primary/90 hover:shadow-md transition-all duration-200"
+          @click="triggerUpload"
+        >
+          <Upload :size="16" />
+          上传文档
+        </button>
+        <input
+          ref="fileInput"
+          type="file"
+          multiple
+          accept=".pdf,.docx,.md,.txt,.html"
+          class="hidden"
+          @change="handleFileChange"
+        />
+      </div>
     </div>
 
-    <!-- 错误提示 -->
-    <div v-if="error" class="mx-6 mt-4 p-3 rounded-md bg-destructive/10 text-destructive text-sm flex items-center justify-between">
-      <span>{{ error }}</span>
-      <button @click="error = null" class="text-destructive hover:text-destructive/80">
-        <X :size="16" />
-      </button>
-    </div>
+    <div class="flex-1 overflow-y-auto">
+      <div class="max-w-[1200px] mx-auto px-md md:px-lg py-lg">
+        <!-- 错误提示 -->
+        <div
+          v-if="error"
+          class="mb-md p-3 rounded-md bg-destructive/10 text-destructive text-sm flex items-center justify-between"
+        >
+          <span>{{ error }}</span>
+          <button @click="error = null" class="text-destructive hover:text-destructive/80">
+            <X :size="16" />
+          </button>
+        </div>
 
-    <!-- 主要内容区域 -->
-    <div class="flex-1 overflow-y-auto px-6 py-4">
+        <!-- 主要内容区域 -->
       <!-- 加载中 -->
       <div v-if="loading" class="text-sm text-muted-foreground">加载中...</div>
 
@@ -416,7 +429,7 @@ async function testRetrieval() {
                 <td class="p-3">
                   <div class="flex items-center gap-2">
                     <FileIcon :size="16" class="text-muted-foreground shrink-0" />
-                    <span class="text-sm text-foreground truncate max-w-xs">{{ doc.fileName }}</span>
+                    <span class="text-sm text-foreground truncate max-w-[320px]">{{ doc.fileName }}</span>
                   </div>
                 </td>
                 <td class="p-3 text-sm text-muted-foreground">
@@ -544,11 +557,12 @@ async function testRetrieval() {
           </div>
         </div>
       </template>
+      </div>
     </div>
 
     <!-- 处理日志对话框 -->
     <div v-if="showLogs && selectedDoc" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" @click.self="showLogs = false">
-      <div class="bg-card border border-border rounded-lg p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto shadow-lg">
+      <div class="bg-card border border-border rounded-lg p-6 w-full max-w-[672px] max-h-[80vh] overflow-y-auto shadow-lg">
         <div class="flex items-center justify-between mb-4">
           <h3 class="text-lg font-semibold text-foreground">处理日志 - {{ selectedDoc.fileName }}</h3>
           <button class="text-muted-foreground hover:text-foreground" @click="showLogs = false">
@@ -576,7 +590,7 @@ async function testRetrieval() {
 
     <!-- 删除确认对话框 -->
     <div v-if="deleteTarget" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" @click.self="deleteTarget = null">
-      <div class="bg-card border border-border rounded-lg p-6 w-full max-w-sm shadow-lg">
+      <div class="bg-card border border-border rounded-lg p-6 w-full max-w-[384px] shadow-lg">
         <h3 class="text-lg font-semibold text-foreground mb-2">确认删除</h3>
         <p class="text-sm text-muted-foreground mb-4">
           确定要删除文档「{{ deleteTarget.doc.fileName }}」吗？此操作不可撤销。

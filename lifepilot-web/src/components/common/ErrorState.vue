@@ -42,7 +42,7 @@ function handleAction() {
       </svg>
     </div>
     <h3 class="text-lg font-semibold text-foreground mb-2">{{ title }}</h3>
-    <p v-if="description" class="text-sm text-muted-foreground mb-4 max-w-md">{{ description }}</p>
+    <p v-if="description" class="text-sm text-muted-foreground mb-4 max-w-[448px]">{{ description }}</p>
     <button
       v-if="showAction && actionLabel"
       class="h-9 px-4 rounded-md text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"

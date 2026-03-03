@@ -43,7 +43,7 @@ function handleBackdropClick() {
     class="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]"
     @click.self="handleBackdropClick"
   >
-    <div class="bg-card border border-border rounded-lg p-6 w-full max-w-sm shadow-lg">
+    <div class="bg-card border border-border rounded-lg p-6 w-full max-w-[384px] shadow-lg">
       <h3 class="text-lg font-semibold text-foreground mb-2">{{ title }}</h3>
       <p class="text-sm text-muted-foreground mb-4 whitespace-pre-wrap">{{ message }}</p>
       <div class="flex justify-end gap-2">

@@ -184,6 +184,13 @@ export function useChat() {
   function handleSseEvent(eventType: string, data: string) {
     try {
       switch (eventType) {
+        case SSE_EVENT_TYPES.TRACE_START: {
+          const payload: { sessionId?: string; turnId?: string; traceId?: string; timestamp?: number } = JSON.parse(data)
+          if (payload.traceId && currentUserMessageId) {
+            chatStore.updateMessage(currentUserMessageId, { traceId: payload.traceId })
+          }
+          break
+        }
         case SSE_EVENT_TYPES.REASONING: {
           const payload: { sessionId?: string; turnId?: string; event: ReasoningEvent } = JSON.parse(data)
           const ev = payload.event

@@ -171,7 +171,7 @@ const stateLabel: Record<string, { label: string; class: string }> = {
       class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
       @click.self="showCreateDialog = false"
     >
-      <div class="bg-card border border-border rounded-lg p-6 w-full max-w-md shadow-lg max-h-[80vh] overflow-y-auto">
+      <div class="bg-card border border-border rounded-lg p-6 w-full max-w-[448px] shadow-lg max-h-[80vh] overflow-y-auto">
         <h3 class="text-lg font-semibold text-foreground mb-4">新建 MCP Server</h3>
         <div class="space-y-4">
           <div>
@@ -226,7 +226,7 @@ const stateLabel: Record<string, { label: string; class: string }> = {
       class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
       @click.self="deleteTarget = null"
     >
-      <div class="bg-card border border-border rounded-lg p-6 w-full max-w-sm shadow-lg">
+      <div class="bg-card border border-border rounded-lg p-6 w-full max-w-[384px] shadow-lg">
         <h3 class="text-lg font-semibold text-foreground mb-2">确认删除</h3>
         <p class="text-sm text-muted-foreground mb-4">
           确定要删除 MCP Server「{{ deleteTarget.name }}」吗？此操作不可撤销。

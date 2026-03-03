@@ -23,6 +23,13 @@ export const SSE_EVENT_TYPES = {
   ERROR: 'error',
   /** 心跳事件 */
   HEARTBEAT: 'heartbeat',
+  // Trace 模块事件类型
+  /** Trace 开始事件 */
+  TRACE_START: 'trace-start',
+  /** Trace 步骤事件 */
+  TRACE_STEP: 'trace-step',
+  /** Trace 结束事件 */
+  TRACE_END: 'trace-end',
   // A2A 模块事件类型
   /** 任务状态更新事件 */
   TASK_STATUS_UPDATE: 'task-status-update',

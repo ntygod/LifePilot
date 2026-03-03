@@ -127,24 +127,24 @@ function formatCost(cost?: number): string {
 </script>
 
 <template>
-  <div class="h-full overflow-y-auto bg-background">
-    <div class="container mx-auto px-6 py-6 max-w-6xl">
-      <!-- 标题和筛选 -->
-      <div class="flex items-center justify-between mb-6">
+  <div class="flex flex-col h-full overflow-hidden bg-background">
+    <!-- 顶部标题和筛选 -->
+    <div class="flex-shrink-0 border-b border-border">
+      <div class="max-w-[1200px] mx-auto px-md md:px-lg py-md flex items-center justify-between gap-md">
         <div>
-          <h1 class="text-3xl font-bold text-foreground">用量总览</h1>
+          <h1 class="text-2xl font-semibold text-foreground leading-tight">用量总览</h1>
           <p class="mt-1 text-sm text-muted-foreground">
             查看请求次数、Token 用量趋势和费用预估
           </p>
         </div>
-        
-        <div class="flex items-center gap-4">
+
+        <div class="flex items-center gap-md">
           <!-- 时间范围选择 -->
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-xs">
             <Calendar :size="18" class="text-muted-foreground" />
             <select
               v-model="selectedRange"
-              class="px-3 py-1.5 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              class="px-md py-xs rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               @change="loadStats"
             >
               <option v-for="opt in timeRangeOptions" :key="opt.value" :value="opt.value">
@@ -152,133 +152,138 @@ function formatCost(cost?: number): string {
               </option>
             </select>
           </div>
-          
+
           <!-- 自定义日期范围 -->
-          <div v-if="selectedRange === 'custom'" class="flex items-center gap-2">
+          <div v-if="selectedRange === 'custom'" class="flex items-center gap-xs">
             <input
               v-model="customFrom"
               type="date"
-              class="px-3 py-1.5 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              class="px-md py-xs rounded-2xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
               @change="loadStats"
             />
-            <span class="text-muted-foreground">至</span>
+            <span class="text-muted-foreground text-sm">至</span>
             <input
               v-model="customTo"
               type="date"
-              class="px-3 py-1.5 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              class="px-md py-xs rounded-2xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
               @change="loadStats"
             />
           </div>
         </div>
       </div>
+    </div>
 
-      <!-- 加载状态 -->
-      <div v-if="loading" class="flex items-center justify-center py-12">
-        <div class="text-muted-foreground">加载中...</div>
-      </div>
-
-      <!-- 错误状态 -->
-      <div v-else-if="error" class="py-12">
-        <EmptyState
-          title="加载失败"
-          :description="error"
-          action-label="重试"
-          :show-action="true"
-          @action="loadStats"
-        />
-      </div>
-
-      <!-- 统计数据 -->
-      <div v-else-if="stats" class="space-y-6">
-        <!-- 统计卡片 -->
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div class="p-6 rounded-lg border border-border bg-card">
-            <div class="flex items-center justify-between mb-2">
-              <span class="text-sm text-muted-foreground">总请求数</span>
-              <Zap :size="18" class="text-muted-foreground" />
-            </div>
-            <div class="text-2xl font-bold text-foreground">
-              {{ formatNumber(stats.totalRequests) }}
-            </div>
-          </div>
-
-          <div class="p-6 rounded-lg border border-border bg-card">
-            <div class="flex items-center justify-between mb-2">
-              <span class="text-sm text-muted-foreground">总 Token 数</span>
-              <TrendingUp :size="18" class="text-muted-foreground" />
-            </div>
-            <div class="text-2xl font-bold text-foreground">
-              {{ formatNumber(stats.totalTokens) }}
-            </div>
-            <div class="mt-1 text-xs text-muted-foreground">
-              输入: {{ formatNumber(stats.promptTokens) }} / 
-              输出: {{ formatNumber(stats.completionTokens) }}
-            </div>
-          </div>
-
-          <div class="p-6 rounded-lg border border-border bg-card">
-            <div class="flex items-center justify-between mb-2">
-              <span class="text-sm text-muted-foreground">输入 Token</span>
-            </div>
-            <div class="text-2xl font-bold text-foreground">
-              {{ formatNumber(stats.promptTokens) }}
-            </div>
-          </div>
-
-          <div class="p-6 rounded-lg border border-border bg-card">
-            <div class="flex items-center justify-between mb-2">
-              <span class="text-sm text-muted-foreground">输出 Token</span>
-            </div>
-            <div class="text-2xl font-bold text-foreground">
-              {{ formatNumber(stats.completionTokens) }}
-            </div>
-          </div>
+    <!-- 内容区域 -->
+    <div class="flex-1 overflow-y-auto">
+      <div class="max-w-[1200px] mx-auto px-md md:px-lg py-lg">
+        <!-- 加载状态 -->
+        <div v-if="loading" class="flex items-center justify-center py-lg">
+          <div class="text-sm text-muted-foreground">加载中...</div>
         </div>
 
-        <!-- 费用预估 -->
-        <div v-if="stats.estimatedCost !== undefined" class="p-6 rounded-lg border border-border bg-card">
-          <div class="flex items-center gap-2 mb-4">
-            <DollarSign :size="18" class="text-muted-foreground" />
-            <h2 class="text-lg font-semibold text-foreground">费用预估</h2>
-          </div>
-          <div class="text-3xl font-bold text-foreground">
-            {{ formatCost(stats.estimatedCost) }}
-          </div>
-          <p class="mt-2 text-sm text-muted-foreground">
-            基于当前 Token 用量和模型定价估算
-          </p>
-        </div>
-
-        <!-- 每日趋势（如果有数据） -->
-        <div v-if="stats.dailyStats && stats.dailyStats.length > 0" class="p-6 rounded-lg border border-border bg-card">
-          <h2 class="text-lg font-semibold text-foreground mb-4">每日趋势</h2>
-          <div class="space-y-3">
-            <div
-              v-for="day in stats.dailyStats"
-              :key="day.date"
-              class="flex items-center justify-between p-3 rounded-md bg-muted/50"
-            >
-              <div>
-                <div class="text-sm font-medium text-foreground">{{ day.date }}</div>
-                <div class="text-xs text-muted-foreground mt-1">
-                  {{ formatNumber(day.requests) }} 次请求 · {{ formatNumber(day.tokens) }} Tokens
-                </div>
-              </div>
-              <div class="text-right">
-                <div class="text-sm font-medium text-foreground">
-                  {{ formatCost(day.cost) }}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 空状态 -->
-        <div v-else class="py-12">
+        <!-- 错误状态 -->
+        <div v-else-if="error" class="py-lg">
           <EmptyState
-            title="暂无数据"
-            description="当前时间范围内没有使用记录"
+            title="加载失败"
+            :description="error"
+            action-label="重试"
+            :show-action="true"
+            @action="loadStats"
           />
+        </div>
+
+        <!-- 统计数据 -->
+        <div v-else-if="stats" class="space-y-md">
+          <!-- 统计卡片 -->
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-md">
+            <div class="p-md rounded-lg border border-border bg-card">
+              <div class="flex items-center justify-between mb-xs">
+                <span class="text-sm text-muted-foreground">总请求数</span>
+                <Zap :size="18" class="text-muted-foreground" />
+              </div>
+              <div class="text-2xl font-semibold text-foreground">
+                {{ formatNumber(stats.totalRequests) }}
+              </div>
+            </div>
+
+            <div class="p-md rounded-lg border border-border bg-card">
+              <div class="flex items-center justify-between mb-xs">
+                <span class="text-sm text-muted-foreground">总 Token 数</span>
+                <TrendingUp :size="18" class="text-muted-foreground" />
+              </div>
+              <div class="text-2xl font-semibold text-foreground">
+                {{ formatNumber(stats.totalTokens) }}
+              </div>
+              <div class="mt-xs text-xs text-muted-foreground">
+                输入: {{ formatNumber(stats.promptTokens) }} /
+                输出: {{ formatNumber(stats.completionTokens) }}
+              </div>
+            </div>
+
+            <div class="p-md rounded-lg border border-border bg-card">
+              <div class="flex items-center justify-between mb-xs">
+                <span class="text-sm text-muted-foreground">输入 Token</span>
+              </div>
+              <div class="text-2xl font-semibold text-foreground">
+                {{ formatNumber(stats.promptTokens) }}
+              </div>
+            </div>
+
+            <div class="p-md rounded-lg border border-border bg-card">
+              <div class="flex items-center justify-between mb-xs">
+                <span class="text-sm text-muted-foreground">输出 Token</span>
+              </div>
+              <div class="text-2xl font-semibold text-foreground">
+                {{ formatNumber(stats.completionTokens) }}
+              </div>
+            </div>
+          </div>
+
+          <!-- 费用预估 -->
+          <div v-if="stats.estimatedCost !== undefined" class="p-md rounded-lg border border-border bg-card">
+            <div class="flex items-center gap-xs mb-sm">
+              <DollarSign :size="18" class="text-muted-foreground" />
+              <h2 class="text-lg font-semibold text-foreground leading-snug">费用预估</h2>
+            </div>
+            <div class="text-3xl font-semibold text-foreground">
+              {{ formatCost(stats.estimatedCost) }}
+            </div>
+            <p class="mt-xs text-sm text-muted-foreground">
+              基于当前 Token 用量和模型定价估算
+            </p>
+          </div>
+
+          <!-- 每日趋势（如果有数据） -->
+          <div v-if="stats.dailyStats && stats.dailyStats.length > 0" class="p-md rounded-lg border border-border bg-card">
+            <h2 class="text-lg font-semibold text-foreground mb-sm">每日趋势</h2>
+            <div class="space-y-xs">
+              <div
+                v-for="day in stats.dailyStats"
+                :key="day.date"
+                class="flex items-center justify-between p-sm rounded-lg bg-muted/50"
+              >
+                <div>
+                  <div class="text-sm font-medium text-foreground">{{ day.date }}</div>
+                  <div class="text-xs text-muted-foreground mt-0.5">
+                    {{ formatNumber(day.requests) }} 次请求 · {{ formatNumber(day.tokens) }} Tokens
+                  </div>
+                </div>
+                <div class="text-right">
+                  <div class="text-sm font-medium text-foreground">
+                    {{ formatCost(day.cost) }}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 空状态 -->
+          <div v-else class="py-lg">
+            <EmptyState
+              title="暂无数据"
+              description="当前时间范围内没有使用记录"
+            />
+          </div>
         </div>
       </div>
     </div>

@@ -45,46 +45,50 @@ const riskLabel: Record<string, { label: string; class: string }> = {
 <template>
   <div class="flex flex-col h-full overflow-hidden">
     <!-- 头部 -->
-    <div class="flex-shrink-0 p-6 border-b border-border">
-      <div class="flex items-center justify-between mb-4">
-        <div class="flex items-center gap-3">
-          <button
-            class="text-sm text-muted-foreground hover:text-foreground transition-colors"
-            @click="router.push('/tools')"
-          >
-            ← 返回列表
-          </button>
-          <h2 class="text-2xl font-semibold text-foreground">
-            {{ tool?.displayName || tool?.name || '加载中...' }}
-          </h2>
-          <span
-            class="text-xs px-2 py-0.5 rounded-full"
-            :class="tool?.enabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'"
-          >
-            {{ tool?.enabled ? '已启用' : '已禁用' }}
-          </span>
-        </div>
-        <div class="flex gap-2">
-          <button
-            class="px-4 py-2 rounded-md border border-input hover:bg-accent transition-colors"
-            @click="showTestDialog = true"
-          >
-            测试调用
-          </button>
-          <button
-            class="px-4 py-2 rounded-md border border-input hover:bg-accent transition-colors"
-            @click="toggleTool"
-          >
-            {{ tool?.enabled ? '禁用' : '启用' }}
-          </button>
+    <div class="flex-shrink-0 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <div class="max-w-[1200px] mx-auto px-md md:px-lg py-md">
+        <div class="flex items-center justify-between gap-sm">
+          <div class="flex items-center gap-3">
+            <button
+              class="text-sm text-muted-foreground hover:text-foreground transition-colors"
+              @click="router.push('/tools')"
+            >
+              ← 返回列表
+            </button>
+            <h2 class="text-2xl font-semibold text-foreground">
+              {{ tool?.displayName || tool?.name || '加载中...' }}
+            </h2>
+            <span
+              class="text-xs px-2 py-0.5 rounded-full"
+              :class="tool?.enabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'"
+            >
+              {{ tool?.enabled ? '已启用' : '已禁用' }}
+            </span>
+          </div>
+          <div class="flex gap-2">
+            <button
+              class="px-4 py-2 rounded-md border border-input hover:bg-accent transition-colors"
+              @click="showTestDialog = true"
+            >
+              测试调用
+            </button>
+            <button
+              class="px-4 py-2 rounded-md border border-input hover:bg-accent transition-colors"
+              @click="toggleTool"
+            >
+              {{ tool?.enabled ? '禁用' : '启用' }}
+            </button>
+          </div>
         </div>
       </div>
     </div>
 
     <!-- 内容区域 -->
-    <div class="flex-1 overflow-y-auto p-6">
-      <div v-if="!tool" class="text-sm text-muted-foreground">加载中...</div>
-      <div v-else class="max-w-4xl mx-auto space-y-6">
+    <div class="flex-1 overflow-y-auto">
+      <div v-if="!tool" class="max-w-[1200px] mx-auto px-md md:px-lg py-lg text-sm text-muted-foreground">
+        加载中...
+      </div>
+      <div v-else class="max-w-[1200px] mx-auto px-md md:px-lg py-lg space-y-6">
         <!-- 基础信息 -->
         <div class="border border-border rounded-lg p-6">
           <h3 class="text-lg font-semibold text-foreground mb-4">基础信息</h3>

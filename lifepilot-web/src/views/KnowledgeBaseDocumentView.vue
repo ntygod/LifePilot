@@ -108,40 +108,43 @@ function scrollToChunk(chunkIndex: number) {
 <template>
   <div class="flex flex-col h-full overflow-hidden">
     <!-- 顶部导航栏 -->
-    <div class="flex items-center gap-3 px-6 py-4 border-b border-border">
-      <button
-        class="text-sm text-muted-foreground hover:text-foreground transition-colors"
-        @click="router.push(`/knowledge-bases/${kbId}`)"
-      >
-        <ArrowLeft :size="16" class="inline mr-1" />
-        返回
-      </button>
-      <div class="flex-1 min-w-0">
-        <h1 class="text-xl font-semibold text-foreground truncate">
-          {{ document?.fileName || '文档详情' }}
-        </h1>
-        <div v-if="document" class="flex items-center gap-4 mt-1 text-xs text-muted-foreground">
-          <span>{{ document.chunkCount }} 个分段</span>
-          <span>上传于 {{ formatDate(document.createdAt) }}</span>
+    <div class="flex-shrink-0 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <div class="max-w-[1200px] mx-auto px-md md:px-lg py-md flex items-center gap-3">
+        <button
+          class="text-sm text-muted-foreground hover:text-foreground transition-colors"
+          @click="router.push(`/knowledge-bases/${kbId}`)"
+        >
+          <ArrowLeft :size="16" class="inline mr-1" />
+          返回
+        </button>
+        <div class="flex-1 min-w-0">
+          <h1 class="text-xl font-semibold text-foreground truncate">
+            {{ document?.fileName || '文档详情' }}
+          </h1>
+          <div v-if="document" class="flex items-center gap-4 mt-1 text-xs text-muted-foreground">
+            <span>{{ document.chunkCount }} 个分段</span>
+            <span>上传于 {{ formatDate(document.createdAt) }}</span>
+          </div>
         </div>
+        <button
+          class="inline-flex items-center gap-2 rounded-md text-sm font-medium h-9 px-md border border-input hover:bg-accent transition-colors"
+          @click="downloadDocument"
+        >
+          <Download :size="16" />
+          下载
+        </button>
       </div>
-      <button
-        class="inline-flex items-center gap-2 rounded-md text-sm font-medium h-9 px-4 border border-input
-               hover:bg-accent transition-colors"
-        @click="downloadDocument"
-      >
-        <Download :size="16" />
-        下载
-      </button>
     </div>
 
-    <!-- 错误提示 -->
-    <div v-if="error" class="mx-6 mt-4 p-3 rounded-md bg-destructive/10 text-destructive text-sm">
-      {{ error }}
-    </div>
+    <div class="flex-1 overflow-y-auto">
+      <div class="max-w-[1200px] mx-auto px-md md:px-lg py-lg flex flex-col gap-md h-full">
+        <!-- 错误提示 -->
+        <div v-if="error" class="p-3 rounded-md bg-destructive/10 text-destructive text-sm">
+          {{ error }}
+        </div>
 
-    <!-- 主要内容区域 -->
-    <div class="flex-1 overflow-hidden flex">
+        <!-- 主要内容区域 -->
+        <div class="flex-1 overflow-hidden flex">
       <!-- 左侧：分段列表 -->
       <div class="w-80 border-r border-border overflow-y-auto bg-muted/10">
         <div class="p-4 border-b border-border">
@@ -252,6 +255,8 @@ function scrollToChunk(chunkIndex: number) {
               {{ loadingChunks ? '加载中...' : '加载更多分段' }}
             </button>
           </div>
+        </div>
+      </div>
         </div>
       </div>
     </div>

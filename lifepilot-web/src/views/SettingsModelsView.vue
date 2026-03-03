@@ -207,27 +207,28 @@ const deleteConfirmMessage = computed(() => {
 </script>
 
 <template>
-  <div class="flex flex-col h-full overflow-y-auto">
+  <div class="flex flex-col h-full overflow-hidden">
     <div class="sticky top-0 z-10 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div class="container mx-auto px-4 md:px-6 py-4">
+      <div class="max-w-[1200px] mx-auto px-md md:px-lg py-md">
         <h2 class="text-2xl font-semibold text-foreground leading-tight">模型配置</h2>
         <p class="text-sm text-muted-foreground mt-1">管理系统级可用模型和全局默认模型设置</p>
       </div>
     </div>
 
-    <div class="container mx-auto px-4 md:px-6 py-6 space-y-6 max-w-4xl">
-      <!-- 加载中 -->
-      <div v-if="loading || loadingProviders" class="flex items-center justify-center py-12">
-        <div class="text-sm text-muted-foreground">加载中...</div>
-      </div>
+    <div class="flex-1 overflow-y-auto">
+      <div class="max-w-[1200px] mx-auto px-md md:px-lg py-lg space-y-6 max-w-4xl">
+        <!-- 加载中 -->
+        <div v-if="loading || loadingProviders" class="flex items-center justify-center py-12">
+          <div class="text-sm text-muted-foreground">加载中...</div>
+        </div>
 
-      <!-- 加载失败 -->
-      <div v-else-if="error" class="rounded-lg border border-destructive bg-destructive/10 p-4">
-        <div class="text-sm text-destructive">{{ error }}</div>
-      </div>
+        <!-- 加载失败 -->
+        <div v-else-if="error" class="rounded-lg border border-destructive bg-destructive/10 p-4">
+          <div class="text-sm text-destructive">{{ error }}</div>
+        </div>
 
-      <!-- 设置表单 -->
-      <div v-else class="space-y-6">
+        <!-- 设置表单 -->
+        <div v-else class="space-y-6">
         <!-- 全局默认模型设置 -->
         <SettingSection title="全局默认模型" icon="🤖" description="设置全局默认使用的模型和参数上限">
           <SettingItem label="默认模型" description="选择全局默认使用的 LLM Provider" required>
@@ -350,7 +351,7 @@ const deleteConfirmMessage = computed(() => {
                   v-if="expandedProviders.has(provider.id)"
                   class="px-4 md:px-6 pb-4 pt-4 border-t border-border"
                 >
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                   <div>
                     <span class="text-muted-foreground">类型：</span>
                     <span class="ml-1">{{ provider.type }}</span>
@@ -449,6 +450,7 @@ const deleteConfirmMessage = computed(() => {
             </div>
           </div>
         </SettingSection>
+        </div>
       </div>
     </div>
 

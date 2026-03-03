@@ -15,7 +15,9 @@ import {
   ChevronRight,
   Plus,
   X,
-  Menu
+  Menu,
+  Pencil,
+  Trash2
 } from 'lucide-vue-next'
 
 interface Props {
@@ -159,6 +161,10 @@ const navItems = [
     ]
   }
 ]
+
+const workspaceNavItems = navItems.filter(i => i.id === 'knowledge-bases' || i.id === 'agents')
+const analyticsNavItems = navItems.filter(i => i.id === 'analytics')
+const settingsNavItems = navItems.filter(i => i.id === 'settings')
 </script>
 
 <template>
@@ -179,8 +185,8 @@ const navItems = [
     }"
   >
     <!-- 移动端关闭按钮 -->
-    <div v-if="isMobile" class="p-4 border-b border-border flex items-center justify-between">
-      <h1 class="text-lg font-semibold text-foreground">LifePilot</h1>
+    <div v-if="isMobile" class="h-16 px-lg border-b border-border flex items-center justify-between">
+      <h1 class="text-lg font-semibold text-foreground tracking-tight">LifePilot</h1>
       <button
         class="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
         @click="emit('close')"
@@ -189,8 +195,8 @@ const navItems = [
       </button>
     </div>
     <!-- 顶部标题 + 新建按钮（桌面端） -->
-    <div v-if="!isMobile" class="p-4 border-b border-border flex items-center justify-between">
-      <h1 class="text-lg font-semibold text-foreground">LifePilot</h1>
+    <div v-if="!isMobile" class="h-16 px-lg border-b border-border flex items-center justify-between">
+      <h1 class="text-lg font-semibold text-foreground tracking-tight">LifePilot</h1>
       <button
         class="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
         title="新建对话"
@@ -201,7 +207,7 @@ const navItems = [
     </div>
     
     <!-- 移动端新建按钮 -->
-    <div v-if="isMobile" class="px-4 py-2 border-b border-border">
+    <div v-if="isMobile" class="px-md py-sm border-b border-border">
       <button
         class="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors text-sm"
         @click="newChat(); emit('close')"
@@ -212,14 +218,24 @@ const navItems = [
     </div>
 
     <!-- 会话列表 -->
-    <div class="flex-1 overflow-y-auto p-2 space-y-1">
-      <p v-if="chatStore.sessions.length === 0" class="text-sm text-muted-foreground p-2">
+    <div class="flex-1 overflow-y-auto py-md px-sm space-y-sm">
+      <button
+        v-if="!isMobile"
+        type="button"
+        class="w-full flex items-center justify-center gap-sm px-md py-sm rounded-lg bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-all duration-200"
+        @click="newChat"
+      >
+        <Plus :size="16" />
+        新对话
+      </button>
+
+      <p v-if="chatStore.sessions.length === 0" class="text-sm text-muted-foreground p-sm">
         暂无会话
       </p>
       <div
         v-for="session in chatStore.sessions"
         :key="session.id"
-        class="group flex items-center gap-1 px-3 py-2 rounded-md text-sm cursor-pointer transition-colors"
+        class="group flex items-center gap-xs px-md py-sm rounded-lg text-sm cursor-pointer transition-colors"
         :class="chatStore.activeSessionId === session.id
           ? 'bg-accent text-accent-foreground'
           : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground'"
@@ -242,77 +258,153 @@ const navItems = [
         <!-- 操作按钮 -->
         <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
           <button
-            class="text-xs text-muted-foreground hover:text-foreground"
+            class="text-muted-foreground hover:text-foreground transition-colors"
             title="重命名"
             @click.stop="startRename(session.id, session.title || '新对话')"
           >
-            ✎
+            <Pencil :size="14" />
           </button>
           <button
-            class="text-xs text-muted-foreground hover:text-destructive"
+            class="text-muted-foreground hover:text-destructive transition-colors"
             title="删除会话"
             @click.stop="handleDelete(session.id)"
           >
-            ×
+            <Trash2 :size="14" />
           </button>
         </div>
       </div>
     </div>
 
-    <!-- 底部导航 -->
-    <div class="p-2 border-t border-border space-y-0.5 overflow-y-auto">
-      <template v-for="item in navItems" :key="item.id">
-        <!-- 单页导航项 -->
-        <router-link
-          v-if="item.type === 'single' && item.path"
-          :to="item.path"
-          class="flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors"
-          :class="isRouteActive(item.path)
-            ? 'bg-accent text-accent-foreground'
-            : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground'"
-        >
-          <component :is="item.icon" :size="18" class="shrink-0" />
-          <span class="truncate">{{ item.label }}</span>
-        </router-link>
-
-        <!-- 分组导航项 -->
-        <div v-else-if="item.type === 'group'">
-          <button
-            class="w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors"
-            :class="isGroupActive(item.children!.map(c => c.path))
-              ? 'bg-accent/50 text-accent-foreground'
+    <!-- 底部导航（对齐 stitch：分区标题 + 分组） -->
+    <div class="p-sm border-t border-border space-y-md overflow-y-auto">
+      <!-- 工作区 -->
+      <div class="space-y-xs">
+        <div class="px-md pb-xs text-xs font-medium text-muted-foreground uppercase tracking-wide">工作区</div>
+        <template v-for="item in workspaceNavItems" :key="item.id">
+          <router-link
+            v-if="item.type === 'single' && item.path"
+            :to="item.path"
+            class="flex items-center gap-sm px-md py-sm rounded-lg text-sm transition-colors"
+            :class="isRouteActive(item.path)
+              ? 'bg-accent text-accent-foreground'
               : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground'"
-            @click="toggleGroup(item.id)"
           >
-            <component :is="item.icon" :size="18" class="shrink-0" />
-            <span class="flex-1 text-left truncate">{{ item.label }}</span>
-            <ChevronRight 
-              :size="16" 
-              class="shrink-0 transition-transform"
-              :class="{ 'rotate-90': expandedGroups.has(item.id) }"
-            />
-          </button>
-          
-          <!-- 子菜单 -->
-          <div
-            v-if="expandedGroups.has(item.id)"
-            class="ml-4 mt-0.5 space-y-0.5"
-          >
-            <router-link
-              v-for="child in item.children"
-              :key="child.path"
-              :to="child.path"
-              class="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-colors"
-              :class="isRouteActive(child.path)
-                ? 'bg-accent text-accent-foreground'
+            <component :is="item.icon" :size="18" class="shrink-0 text-muted-foreground" />
+            <span class="truncate">{{ item.label }}</span>
+          </router-link>
+
+          <div v-else-if="item.type === 'group'">
+            <button
+              class="w-full flex items-center gap-sm px-md py-sm rounded-lg text-sm transition-colors"
+              :class="isGroupActive(item.children!.map(c => c.path))
+                ? 'bg-accent/50 text-accent-foreground'
                 : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground'"
+              @click="toggleGroup(item.id)"
             >
-              <component :is="child.icon" :size="16" class="shrink-0" />
-              <span class="truncate">{{ child.label }}</span>
-            </router-link>
+              <component :is="item.icon" :size="18" class="shrink-0 text-muted-foreground" />
+              <span class="flex-1 text-left truncate">{{ item.label }}</span>
+              <ChevronRight
+                :size="16"
+                class="shrink-0 transition-transform"
+                :class="{ 'rotate-90': expandedGroups.has(item.id) }"
+              />
+            </button>
+
+            <div v-if="expandedGroups.has(item.id)" class="ml-md mt-xs space-y-xs">
+              <router-link
+                v-for="child in item.children"
+                :key="child.path"
+                :to="child.path"
+                class="flex items-center gap-sm px-md py-xs rounded-lg text-sm transition-colors"
+                :class="isRouteActive(child.path)
+                  ? 'bg-accent text-accent-foreground'
+                  : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground'"
+              >
+                <component :is="child.icon" :size="16" class="shrink-0 text-muted-foreground" />
+                <span class="truncate">{{ child.label }}</span>
+              </router-link>
+            </div>
           </div>
-        </div>
-      </template>
+        </template>
+      </div>
+
+      <!-- 分析统计 -->
+      <div class="space-y-xs pt-sm">
+        <div class="px-md pb-xs text-xs font-medium text-muted-foreground uppercase tracking-wide">分析统计</div>
+        <template v-for="item in analyticsNavItems" :key="item.id">
+          <div v-if="item.type === 'group'">
+            <button
+              class="w-full flex items-center gap-sm px-md py-sm rounded-lg text-sm transition-colors"
+              :class="isGroupActive(item.children!.map(c => c.path))
+                ? 'bg-accent/50 text-accent-foreground'
+                : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground'"
+              @click="toggleGroup(item.id)"
+            >
+              <component :is="item.icon" :size="18" class="shrink-0 text-muted-foreground" />
+              <span class="flex-1 text-left truncate">{{ item.label }}</span>
+              <ChevronRight
+                :size="16"
+                class="shrink-0 transition-transform"
+                :class="{ 'rotate-90': expandedGroups.has(item.id) }"
+              />
+            </button>
+
+            <div v-if="expandedGroups.has(item.id)" class="ml-md mt-xs space-y-xs">
+              <router-link
+                v-for="child in item.children"
+                :key="child.path"
+                :to="child.path"
+                class="flex items-center gap-sm px-md py-xs rounded-lg text-sm transition-colors"
+                :class="isRouteActive(child.path)
+                  ? 'bg-accent text-accent-foreground'
+                  : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground'"
+              >
+                <component :is="child.icon" :size="16" class="shrink-0 text-muted-foreground" />
+                <span class="truncate">{{ child.label }}</span>
+              </router-link>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- 设置 -->
+      <div class="space-y-xs pt-sm">
+        <div class="px-md pb-xs text-xs font-medium text-muted-foreground uppercase tracking-wide">设置</div>
+        <template v-for="item in settingsNavItems" :key="item.id">
+          <div v-if="item.type === 'group'">
+            <button
+              class="w-full flex items-center gap-sm px-md py-sm rounded-lg text-sm transition-colors"
+              :class="isGroupActive(item.children!.map(c => c.path))
+                ? 'bg-accent/50 text-accent-foreground'
+                : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground'"
+              @click="toggleGroup(item.id)"
+            >
+              <component :is="item.icon" :size="18" class="shrink-0 text-muted-foreground" />
+              <span class="flex-1 text-left truncate">{{ item.label }}</span>
+              <ChevronRight
+                :size="16"
+                class="shrink-0 transition-transform"
+                :class="{ 'rotate-90': expandedGroups.has(item.id) }"
+              />
+            </button>
+
+            <div v-if="expandedGroups.has(item.id)" class="ml-md mt-xs space-y-xs">
+              <router-link
+                v-for="child in item.children"
+                :key="child.path"
+                :to="child.path"
+                class="flex items-center gap-sm px-md py-xs rounded-lg text-sm transition-colors"
+                :class="isRouteActive(child.path)
+                  ? 'bg-accent text-accent-foreground'
+                  : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground'"
+              >
+                <component :is="child.icon" :size="16" class="shrink-0 text-muted-foreground" />
+                <span class="truncate">{{ child.label }}</span>
+              </router-link>
+            </div>
+          </div>
+        </template>
+      </div>
     </div>
   </aside>
 </template>

@@ -119,7 +119,7 @@ const emit = defineEmits<{
 
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
-    <div class="relative w-full max-w-2xl mx-4 bg-card border border-border rounded-lg shadow-lg max-h-[90vh] overflow-hidden flex flex-col">
+    <div class="relative w-full max-w-[672px] mx-4 bg-card border border-border rounded-lg shadow-lg max-h-[90vh] overflow-hidden flex flex-col">
       <!-- 关闭按钮 -->
       <button
         class="absolute top-4 right-4 p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors z-10"

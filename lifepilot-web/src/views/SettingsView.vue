@@ -293,15 +293,16 @@ const languageOptions: Array<{ value: string; label: string }> = [
 </script>
 
 <template>
-  <div class="flex flex-col h-full overflow-y-auto">
+  <div class="flex flex-col h-full overflow-hidden">
     <div class="sticky top-0 z-10 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div class="container mx-auto px-4 md:px-6 py-4">
+      <div class="max-w-[1200px] mx-auto px-md md:px-lg py-md">
         <h2 class="text-2xl font-semibold text-foreground leading-tight">设置</h2>
         <p class="text-sm text-muted-foreground mt-1">管理您的应用偏好和系统配置</p>
       </div>
     </div>
 
-    <div class="container mx-auto px-4 md:px-6 py-6 space-y-6 max-w-4xl">
+    <div class="flex-1 overflow-y-auto">
+      <div class="max-w-[1200px] mx-auto px-md md:px-lg py-lg space-y-6 max-w-4xl">
       <!-- 加载中 -->
       <div v-if="loading" class="flex items-center justify-center py-12">
         <div class="text-sm text-muted-foreground">加载中...</div>
@@ -725,5 +726,6 @@ const languageOptions: Array<{ value: string; label: string }> = [
 
     <!-- LLM Provider 管理对话框 -->
     <LlmProviderManager v-if="showProviderManager" @close="showProviderManager = false" />
+    </div>
   </div>
 </template>

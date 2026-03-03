@@ -84,140 +84,203 @@ const stateLabel: Record<string, { label: string; class: string }> = {
 </script>
 
 <template>
-  <div class="flex flex-col h-full p-6">
-    <!-- 错误提示 -->
-    <div v-if="store.error" class="mb-4 p-3 rounded-md bg-destructive/10 text-destructive text-sm">
-      {{ store.error }}
-    </div>
-
-    <div class="flex items-center justify-between mb-4">
-      <h2 class="text-xl font-semibold text-foreground">技能管理</h2>
-      <button
-        v-if="activeTab === 'skills'"
-        class="px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-        @click="showCreateDialog = true"
-      >
-        新建 Skill
-      </button>
-    </div>
-
-    <!-- Tab 切换 -->
-    <div class="flex gap-1 mb-6 border-b border-border">
-      <button
-        class="px-4 py-2 text-sm transition-colors"
-        :class="activeTab === 'skills' ? 'border-b-2 border-primary text-foreground' : 'text-muted-foreground hover:text-foreground'"
-        @click="activeTab = 'skills'"
-      >Skill 列表</button>
-      <button
-        class="px-4 py-2 text-sm transition-colors"
-        :class="activeTab === 'mcp' ? 'border-b-2 border-primary text-foreground' : 'text-muted-foreground hover:text-foreground'"
-        @click="activeTab = 'mcp'"
-      >MCP Server</button>
-    </div>
-
-    <!-- Skill 列表 -->
-    <template v-if="activeTab === 'skills'">
-      <div v-if="store.loading" class="text-sm text-muted-foreground">加载中...</div>
-      <div v-else-if="store.skills.length === 0" class="text-sm text-muted-foreground">暂无 Skill</div>
-      <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+  <div class="flex flex-col h-full">
+    <div class="flex-1 overflow-y-auto">
+      <div class="max-w-[1200px] mx-auto px-md md:px-lg py-lg">
+        <!-- 错误提示 -->
         <div
-          v-for="skill in store.skills"
-          :key="skill.id"
-          class="border border-border rounded-lg p-4 hover:border-primary/50 transition-colors"
+          v-if="store.error"
+          class="mb-md px-md py-sm rounded-md bg-destructive/10 text-destructive text-sm"
         >
-          <div class="flex items-start justify-between mb-2">
-            <h3
-              class="font-medium text-foreground truncate cursor-pointer flex-1"
-              @click="viewSkillDetail(skill)"
-            >
-              {{ skill.name }}
-            </h3>
-            <span class="text-xs px-2 py-0.5 rounded-full bg-accent text-accent-foreground shrink-0 ml-2">
-              {{ sourceLabel[skill.sourceType] ?? skill.sourceType }}
-            </span>
-          </div>
-          <p class="text-sm text-muted-foreground mb-2 line-clamp-2">{{ skill.description || '无描述' }}</p>
-          <div class="flex items-center justify-between">
-            <div class="text-xs text-muted-foreground">v{{ skill.version }}</div>
-            <div class="flex gap-2">
-              <button
-                class="text-xs px-2 py-1 rounded-md border border-input hover:bg-accent transition-colors"
-                @click="viewSkillDetail(skill)"
-              >
-                查看
-              </button>
-              <button
-                v-if="skill.sourceType !== 'Builtin'"
-                class="text-xs px-2 py-1 rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors"
-                @click.stop="deleteTarget = skill"
-              >
-                删除
-              </button>
-            </div>
-          </div>
+          {{ store.error }}
         </div>
-      </div>
-    </template>
 
-    <!-- MCP Server 列表 -->
-    <template v-if="activeTab === 'mcp'">
-      <div v-if="store.loading" class="text-sm text-muted-foreground">加载中...</div>
-      <div v-else-if="store.mcpServers.length === 0" class="text-sm text-muted-foreground">暂无 MCP Server</div>
-      <div v-else class="space-y-3">
-        <div
-          v-for="server in store.mcpServers"
-          :key="server.name"
-          class="border border-border rounded-lg p-4"
-        >
-          <div class="flex items-center gap-3">
-            <h3 class="font-medium text-foreground">{{ server.name }}</h3>
-            <span
-              class="text-xs px-2 py-0.5 rounded-full shrink-0"
-              :class="stateLabel[server.state]?.class ?? 'bg-gray-100 text-gray-800'"
-            >{{ stateLabel[server.state]?.label ?? server.state }}</span>
-            <span class="text-xs text-muted-foreground">{{ server.toolCount }} 个工具</span>
-            <div class="ml-auto flex gap-2">
-              <button
-                v-if="server.state === 'DISCONNECTED'"
-                class="text-xs px-3 py-1 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-                @click="store.connectServer(server.name)"
-              >连接</button>
-              <button
-                v-if="server.state === 'CONNECTED'"
-                class="text-xs px-3 py-1 rounded-md border border-input hover:bg-accent transition-colors"
-                @click="store.disconnectServer(server.name)"
-              >断开</button>
-              <button
-                class="text-xs px-3 py-1 rounded-md border border-input hover:bg-accent transition-colors"
-                @click="selectServer(server)"
-              >查看工具</button>
-            </div>
+        <div class="flex items-center justify-between mb-md gap-sm">
+          <h2 class="text-2xl font-semibold text-foreground leading-tight">
+            技能管理
+          </h2>
+          <button
+            v-if="activeTab === 'skills'"
+            class="px-md py-sm rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 hover:shadow-md transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            @click="showCreateDialog = true"
+          >
+            新建 Skill
+          </button>
+        </div>
+
+        <!-- Tab 切换 -->
+        <div class="flex gap-xs mb-lg border-b border-border text-sm">
+          <button
+            class="px-md py-sm -mb-px border-b-2 transition-colors"
+            :class="activeTab === 'skills'
+              ? 'border-primary text-foreground'
+              : 'border-transparent text-muted-foreground hover:text-foreground'"
+            @click="activeTab = 'skills'"
+          >
+            Skill 列表
+          </button>
+          <button
+            class="px-md py-sm -mb-px border-b-2 transition-colors"
+            :class="activeTab === 'mcp'
+              ? 'border-primary text-foreground'
+              : 'border-transparent text-muted-foreground hover:text-foreground'"
+            @click="activeTab = 'mcp'"
+          >
+            MCP Server
+          </button>
+        </div>
+
+        <!-- Skill 列表 -->
+        <template v-if="activeTab === 'skills'">
+          <div v-if="store.loading" class="text-sm text-muted-foreground">加载中...</div>
+          <div v-else-if="store.skills.length === 0" class="text-sm text-muted-foreground">
+            暂无 Skill
           </div>
-          <div v-if="server.lastError" class="text-xs text-destructive mt-2">{{ server.lastError }}</div>
-
-          <!-- 工具列表（展开） -->
-          <div v-if="selectedServer?.name === server.name && store.serverTools.length > 0" class="mt-3 border-t border-border pt-3 space-y-1">
+          <div
+            v-else
+            class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-md"
+          >
             <div
-              v-for="tool in store.serverTools"
-              :key="tool.id"
-              class="text-sm flex gap-2"
+              v-for="skill in store.skills"
+              :key="skill.id"
+              class="border border-border rounded-lg p-md hover:border-primary/50 hover:shadow-sm transition-all duration-200 bg-card"
             >
-              <span class="font-mono text-foreground">{{ tool.name }}</span>
-              <span class="text-muted-foreground">{{ tool.description }}</span>
+              <div class="flex items-start justify-between mb-xs gap-sm">
+                <h3
+                  class="font-medium text-foreground truncate cursor-pointer flex-1 text-sm leading-snug"
+                  @click="viewSkillDetail(skill)"
+                >
+                  {{ skill.name }}
+                </h3>
+                <span class="text-xs px-sm py-xs rounded-full bg-accent text-accent-foreground shrink-0 ml-sm">
+                  {{ sourceLabel[skill.sourceType] ?? skill.sourceType }}
+                </span>
+              </div>
+              <p class="text-sm text-muted-foreground mb-sm line-clamp-2 leading-normal">
+                {{ skill.description || '无描述' }}
+              </p>
+              <div class="flex items-center justify-between">
+                <div class="text-xs text-muted-foreground">
+                  v{{ skill.version }}
+                </div>
+                <div class="flex gap-xs">
+                  <button
+                    class="text-xs px-sm py-xs rounded-lg border border-input hover:bg-accent hover:text-accent-foreground transition-colors"
+                    @click="viewSkillDetail(skill)"
+                  >
+                    查看
+                  </button>
+                  <button
+                    v-if="skill.sourceType !== 'Builtin'"
+                    class="text-xs px-sm py-xs rounded-lg bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors"
+                    @click.stop="deleteTarget = skill"
+                  >
+                    删除
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
+        </template>
+
+        <!-- MCP Server 列表 -->
+        <template v-if="activeTab === 'mcp'">
+          <div v-if="store.loading" class="text-sm text-muted-foreground">加载中...</div>
+          <div v-else-if="store.mcpServers.length === 0" class="text-sm text-muted-foreground">
+            暂无 MCP Server
+          </div>
+          <div v-else class="space-y-sm">
+            <div
+              v-for="server in store.mcpServers"
+              :key="server.name"
+              class="border border-border rounded-lg p-md bg-card"
+            >
+              <div class="flex items-center gap-sm">
+                <h3 class="font-medium text-foreground text-sm leading-snug">
+                  {{ server.name }}
+                </h3>
+                <span
+                  class="text-xs px-sm py-xs rounded-full shrink-0"
+                  :class="stateLabel[server.state]?.class ?? 'bg-gray-100 text-gray-800'"
+                >
+                  {{ stateLabel[server.state]?.label ?? server.state }}
+                </span>
+                <span class="text-xs text-muted-foreground">
+                  {{ server.toolCount }} 个工具
+                </span>
+                <div class="ml-auto flex gap-xs">
+                  <button
+                    v-if="server.state === 'DISCONNECTED'"
+                    class="text-xs px-md py-xs rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+                    @click="store.connectServer(server.name)"
+                  >
+                    连接
+                  </button>
+                  <button
+                    v-if="server.state === 'CONNECTED'"
+                    class="text-xs px-md py-xs rounded-lg border border-input hover:bg-accent transition-colors"
+                    @click="store.disconnectServer(server.name)"
+                  >
+                    断开
+                  </button>
+                  <button
+                    class="text-xs px-md py-xs rounded-lg border border-input hover:bg-accent transition-colors"
+                    @click="selectServer(server)"
+                  >
+                    查看工具
+                  </button>
+                </div>
+              </div>
+              <div
+                v-if="server.lastError"
+                class="text-xs text-destructive mt-xs"
+              >
+                {{ server.lastError }}
+              </div>
+
+              <!-- 工具列表（展开） -->
+              <div
+                v-if="selectedServer?.name === server.name && store.serverTools.length > 0"
+                class="mt-sm border-t border-border pt-sm space-y-xs"
+              >
+                <div
+                  v-for="tool in store.serverTools"
+                  :key="tool.id"
+                  class="text-sm flex gap-sm"
+                >
+                  <span class="font-mono text-foreground text-xs">
+                    {{ tool.name }}
+                  </span>
+                  <span class="text-muted-foreground text-xs">
+                    {{ tool.description }}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
       </div>
-    </template>
+    </div>
 
     <!-- Skill 详情抽屉 -->
-    <div v-if="showDetail && store.currentSkill" class="fixed inset-0 bg-black/50 flex justify-end z-50" @click.self="showDetail = false">
-      <div class="bg-card border-l border-border w-full max-w-md h-full overflow-y-auto p-6">
-        <div class="flex items-center justify-between mb-4">
-          <h3 class="text-lg font-semibold text-foreground">{{ store.currentSkill.name }}</h3>
-          <button class="text-muted-foreground hover:text-foreground" @click="showDetail = false">×</button>
+    <div
+      v-if="showDetail && store.currentSkill"
+      class="fixed inset-0 bg-black/50 flex justify-end z-50"
+      @click.self="showDetail = false"
+    >
+      <div class="bg-card border-l border-border w-full max-w-[448px] h-full overflow-y-auto px-lg py-md">
+        <div class="flex items-center justify-between mb-md">
+          <h3 class="text-lg font-semibold text-foreground">
+            {{ store.currentSkill.name }}
+          </h3>
+          <button
+            class="text-muted-foreground hover:text-foreground transition-colors"
+            @click="showDetail = false"
+          >
+            ×
+          </button>
         </div>
-        <div class="space-y-4 text-sm">
+        <div class="space-y-md text-sm">
           <div>
             <span class="text-muted-foreground">来源：</span>
             <span>{{ sourceLabel[store.currentSkill.sourceType] ?? store.currentSkill.sourceType }}</span>
@@ -228,28 +291,35 @@ const stateLabel: Record<string, { label: string; class: string }> = {
           </div>
           <div>
             <span class="text-muted-foreground">描述：</span>
-            <p class="mt-1">{{ store.currentSkill.description || '无描述' }}</p>
+            <p class="mt-xs leading-normal">
+              {{ store.currentSkill.description || '无描述' }}
+            </p>
           </div>
           <div v-if="store.currentSkill.allowedTools.length > 0">
             <span class="text-muted-foreground">允许工具：</span>
-            <div class="flex flex-wrap gap-1 mt-1">
+            <div class="flex flex-wrap gap-xs mt-xs">
               <span
                 v-for="tool in store.currentSkill.allowedTools"
                 :key="tool"
-                class="text-xs px-2 py-0.5 rounded-full bg-accent text-accent-foreground"
-              >{{ tool }}</span>
+                class="text-xs px-sm py-xs rounded-full bg-accent text-accent-foreground"
+              >
+                {{ tool }}
+              </span>
             </div>
           </div>
           <div v-if="store.currentSkill.systemPrompt">
             <span class="text-muted-foreground">系统提示词：</span>
-            <pre class="mt-1 p-3 rounded-md bg-muted text-xs whitespace-pre-wrap break-words">{{ store.currentSkill.systemPrompt }}</pre>
+            <pre class="mt-xs px-md py-sm rounded-md bg-muted text-xs whitespace-pre-wrap break-words leading-normal">
+{{ store.currentSkill.systemPrompt }}</pre>
           </div>
           <!-- 注销按钮（非 Builtin） -->
           <button
             v-if="store.currentSkill.sourceType !== 'Builtin'"
-            class="w-full h-9 rounded-md text-sm bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors"
+            class="w-full h-9 rounded-lg text-sm bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors"
             @click="deleteTarget = store.currentSkill"
-          >注销此 Skill</button>
+          >
+            注销此 Skill
+          </button>
         </div>
       </div>
     </div>
@@ -260,7 +330,7 @@ const stateLabel: Record<string, { label: string; class: string }> = {
       class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
       @click.self="showCreateDialog = false"
     >
-      <div class="bg-card border border-border rounded-lg p-6 w-full max-w-md shadow-lg">
+      <div class="bg-card border border-border rounded-lg p-6 w-full max-w-[448px] shadow-lg">
         <h3 class="text-lg font-semibold text-foreground mb-4">新建 Skill</h3>
         <div class="space-y-4">
           <div>
@@ -300,8 +370,12 @@ const stateLabel: Record<string, { label: string; class: string }> = {
     </div>
 
     <!-- 注销确认对话框 -->
-    <div v-if="deleteTarget" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]" @click.self="deleteTarget = null">
-      <div class="bg-card border border-border rounded-lg p-6 w-full max-w-sm shadow-lg">
+    <div
+      v-if="deleteTarget"
+      class="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]"
+      @click.self="deleteTarget = null"
+    >
+      <div class="bg-card border border-border rounded-lg p-6 w-full max-w-[384px] shadow-lg">
         <h3 class="text-lg font-semibold text-foreground mb-2">确认注销</h3>
         <p class="text-sm text-muted-foreground mb-4">
           确定要注销 Skill「{{ deleteTarget.name }}」吗？此操作不可撤销。
@@ -310,11 +384,15 @@ const stateLabel: Record<string, { label: string; class: string }> = {
           <button
             class="h-9 px-4 rounded-md text-sm border border-input hover:bg-accent transition-colors"
             @click="deleteTarget = null"
-          >取消</button>
+          >
+            取消
+          </button>
           <button
             class="h-9 px-4 rounded-md text-sm bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors"
             @click="confirmUnregister"
-          >注销</button>
+          >
+            注销
+          </button>
         </div>
       </div>
     </div>

@@ -22,7 +22,7 @@ function startUsing() {
         <h1 class="text-5xl md:text-6xl font-bold text-foreground mb-6">
           LifePilot
         </h1>
-        <p class="text-xl text-muted-foreground max-w-2xl mx-auto mb-8">
+        <p class="text-xl text-muted-foreground max-w-[672px] mx-auto mb-8">
           一个强大的 AI 助手，帮助你管理知识、执行任务和自动化工作流。
           所有数据存储在本地，完全掌控你的隐私。
         </p>
