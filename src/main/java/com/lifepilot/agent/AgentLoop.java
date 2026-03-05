@@ -23,6 +23,7 @@ import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.memory.working.ConversationSlot;
 import com.lifepilot.memory.working.WorkingMemory;
 import com.lifepilot.memory.working.WorkingMemorySlot;
+import com.lifepilot.memory.semantic.RealtimeExtractor;
 import com.lifepilot.observability.guardrail.GuardrailBlockedException;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.observability.trace.StateTransitionStep;
@@ -84,6 +85,8 @@ public class AgentLoop {
     private final WorkingMemory workingMemory;
     @Nullable
     private final ConversationHistoryStore conversationHistoryStore;
+    @Nullable
+    private final RealtimeExtractor realtimeExtractor;
 
     public AgentLoop(StateReducer stateReducer,
                      ContextAssembler contextAssembler,
@@ -97,7 +100,7 @@ public class AgentLoop {
                      AgentConfigProperties config) {
         this(stateReducer, contextAssembler, llmRouter, multimodalRouter, traceRecorder,
                 sessionManager, conversationViewService, actionParser, agentToolProvider, config,
-                null, null, null, null);
+                null, null, null, null, null);
     }
 
     public AgentLoop(StateReducer stateReducer,
@@ -113,7 +116,8 @@ public class AgentLoop {
                      @Nullable WorkingMemory workingMemory,
                      @Nullable ConversationHistoryStore conversationHistoryStore,
                      @Nullable SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
-                     @Nullable KnowledgeBaseRepository knowledgeBaseRepository) {
+                     @Nullable KnowledgeBaseRepository knowledgeBaseRepository,
+                     @Nullable RealtimeExtractor realtimeExtractor) {
         this.stateReducer = stateReducer;
         this.contextAssembler = contextAssembler;
         this.llmRouter = llmRouter;
@@ -126,6 +130,7 @@ public class AgentLoop {
         this.config = config;
         this.workingMemory = workingMemory;
         this.conversationHistoryStore = conversationHistoryStore;
+        this.realtimeExtractor = realtimeExtractor;
         this.sessionKnowledgeBaseRepository = sessionKnowledgeBaseRepository;
         this.knowledgeBaseRepository = knowledgeBaseRepository;
     }
@@ -1146,6 +1151,15 @@ public class AgentLoop {
                             finalState.finalOutput(),
                             finalState.reasoningSummary(),
                             finalState.traceId()
+                    );
+                }
+                
+                // 3. 触发 AUDN 实时实体提取（异步，不阻塞后处理）
+                if (realtimeExtractor != null && finalState.finalOutput() != null) {
+                    realtimeExtractor.extractAsync(
+                            finalState.sessionId(),
+                            finalState.goal(),
+                            finalState.finalOutput()
                     );
                 }
                 

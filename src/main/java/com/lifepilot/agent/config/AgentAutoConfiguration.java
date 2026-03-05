@@ -19,6 +19,7 @@ import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.memory.retrieval.HybridRetriever;
+import com.lifepilot.memory.semantic.RealtimeExtractor;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.working.TokenBudgetAllocator;
 import com.lifepilot.memory.working.WorkingMemory;
@@ -126,13 +127,16 @@ public class AgentAutoConfiguration {
                                         @Autowired(required = false) EpisodicMemory episodicMemory,
                                         @Autowired(required = false) ConversationHistoryStore conversationHistoryStore,
                                         @Autowired(required = false) SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
-                                        @Autowired(required = false) KnowledgeBaseRepository knowledgeBaseRepository) {
-        log.info("Agent 引擎初始化完成（带追踪，记忆系统{}，情景记忆{}）",
+                                        @Autowired(required = false) KnowledgeBaseRepository knowledgeBaseRepository,
+                                        @Autowired(required = false) RealtimeExtractor realtimeExtractor) {
+        log.info("Agent 引擎初始化完成（带追踪，记忆系统{}，情景记忆{}，实时提取{}）",
                 workingMemory != null ? "已启用" : "未启用",
-                episodicMemory != null ? "已启用" : "未启用");
+                episodicMemory != null ? "已启用" : "未启用",
+                realtimeExtractor != null ? "已启用" : "未启用");
         return new AgentLoop(stateReducer, contextAssembler, llmRouter, multimodalRouter,
                 traceRecorder, sessionManager, conversationViewService, actionParser, agentToolProvider,
-                config, workingMemory, conversationHistoryStore, sessionKnowledgeBaseRepository, knowledgeBaseRepository);
+                config, workingMemory, conversationHistoryStore, sessionKnowledgeBaseRepository,
+                knowledgeBaseRepository, realtimeExtractor);
     }
 
     @Bean
@@ -146,16 +150,19 @@ public class AgentAutoConfiguration {
                                            ActionParser actionParser,
                                            AgentToolProvider agentToolProvider,
                                            AgentConfigProperties config,
-                                           @org.springframework.beans.factory.annotation.Autowired(required = false) WorkingMemory workingMemory,
-                                           @org.springframework.beans.factory.annotation.Autowired(required = false) com.lifepilot.memory.episodic.EpisodicMemory episodicMemory,
-                                           @org.springframework.beans.factory.annotation.Autowired(required = false) ConversationHistoryStore conversationHistoryStore,
-                                           @org.springframework.beans.factory.annotation.Autowired(required = false) com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
-                                           @org.springframework.beans.factory.annotation.Autowired(required = false) com.lifepilot.knowledge.repository.KnowledgeBaseRepository knowledgeBaseRepository) {
-        log.info("Agent 引擎初始化完成（无追踪，记忆系统{}，情景记忆{}）",
+                                           @Autowired(required = false) WorkingMemory workingMemory,
+                                           @Autowired(required = false) EpisodicMemory episodicMemory,
+                                           @Autowired(required = false) ConversationHistoryStore conversationHistoryStore,
+                                           @Autowired(required = false) SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
+                                           @Autowired(required = false) KnowledgeBaseRepository knowledgeBaseRepository,
+                                           @Autowired(required = false) RealtimeExtractor realtimeExtractor) {
+        log.info("Agent 引擎初始化完成（无追踪，记忆系统{}，情景记忆{}，实时提取{}）",
                 workingMemory != null ? "已启用" : "未启用",
-                episodicMemory != null ? "已启用" : "未启用");
+                episodicMemory != null ? "已启用" : "未启用",
+                realtimeExtractor != null ? "已启用" : "未启用");
         return new AgentLoop(stateReducer, contextAssembler, llmRouter, multimodalRouter,
                 null, sessionManager, conversationViewService, actionParser, agentToolProvider,
-                config, workingMemory, conversationHistoryStore, sessionKnowledgeBaseRepository, knowledgeBaseRepository);
+                config, workingMemory, conversationHistoryStore, sessionKnowledgeBaseRepository,
+                knowledgeBaseRepository, realtimeExtractor);
     }
 }
