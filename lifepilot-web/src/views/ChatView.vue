@@ -240,7 +240,7 @@ async function handleUpdateSessionTitle(title: string) {
 <template>
   <div class="flex flex-col h-full">
     <!-- 顶部上下文指示条 -->
-    <div class="sticky top-0 z-20 border-b border-border bg-card/80 backdrop-blur-md supports-[backdrop-filter]:bg-card/60">
+    <div class="sticky top-0 z-20 border-b border-border/30 bg-card/60 backdrop-blur-xl">
       <div class="max-w-[1200px] mx-auto h-16 flex items-center justify-between px-md md:px-lg">
         <!-- 左侧 pills -->
         <div class="flex items-center gap-sm text-xs font-medium text-muted-foreground min-w-0">
