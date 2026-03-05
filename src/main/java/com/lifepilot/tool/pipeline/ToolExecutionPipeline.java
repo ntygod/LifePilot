@@ -154,6 +154,11 @@ public class ToolExecutionPipeline {
      * @return 执行结果
      */
     private ToolResult executeWithRetry(ToolContract tool, ToolInput input, int maxRetries) {
+        // handoff 工具不重试 — 直接执行一次并返回
+        if (tool.tags().contains("handoff")) {
+            return executeWithTimeout(tool, input, tool.budget().timeout());
+        }
+
         ToolResult lastResult = null;
         long delay = retryInitialDelayMs;
 
@@ -173,7 +178,7 @@ public class ToolExecutionPipeline {
 
             lastResult = executeWithTimeout(tool, input, tool.budget().timeout());
 
-            if (lastResult.ok() || !isRetryable(lastResult)) {
+            if (lastResult.ok() || !isRetryable(lastResult, tool)) {
                 return lastResult.toBuilder()
                         .meta(lastResult.meta().toBuilder().retryCount(attempt).build())
                         .build();
@@ -222,8 +227,12 @@ public class ToolExecutionPipeline {
      *
      * <p>超时和临时性错误可重试，参数错误和护栏拦截不可重试。</p>
      */
-    private boolean isRetryable(ToolResult result) {
+    private boolean isRetryable(ToolResult result, ToolContract tool) {
         if (result.ok()) {
+            return false;
+        }
+        // handoff 工具不可重试
+        if (tool.tags().contains("handoff")) {
             return false;
         }
         String error = result.error();

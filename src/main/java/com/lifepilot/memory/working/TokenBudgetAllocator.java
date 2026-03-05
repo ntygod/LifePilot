@@ -35,14 +35,37 @@ public class TokenBudgetAllocator {
      * 剩余部分在六个记忆区域之间独立分配，每个区域不超过其配置的 max 上限。
      * 当六区域总和超过剩余预算时，按优先级从低到高截断。</p>
      *
+     * <p>当 {@code hasMemoryData=false} 时，记忆区域预算归零，
+     * 释放的预算重新分配给用户消息和当前会话区域。</p>
+     *
      * @param contextWindowSize 上下文窗口总 Token 数
      * @param conversationTurns 当前对话轮次数
      * @param topRetrievalScore 最高检索相关度评分 [0.0, 1.0]
+     * @param hasMemoryData 是否有记忆数据可用（检索结果非空）
      * @return 九区域预算分配结果
      */
-    public BudgetAllocation allocate(int contextWindowSize, int conversationTurns, float topRetrievalScore) {
+    public BudgetAllocation allocate(int contextWindowSize, int conversationTurns, float topRetrievalScore, boolean hasMemoryData) {
         int systemPromptBudget = Math.round(contextWindowSize * budgetConfig.getSystemPromptRatio());
         int userMessageBudget = Math.round(contextWindowSize * budgetConfig.getUserMessageRatio());
+
+        // 无记忆数据时：记忆区域预算归零，释放预算重新分配给用户消息和当前会话
+        if (!hasMemoryData) {
+            int released = Math.max(0, contextWindowSize - systemPromptBudget - userMessageBudget);
+            int extraUserMessage = released / 3;
+            int extraCurrentSession = released - extraUserMessage;
+            log.debug("Token 预算分配（无记忆数据）: 总窗口={}, 系统提示词={}, 用户消息={}, 当前会话={}",
+                    contextWindowSize, systemPromptBudget, userMessageBudget + extraUserMessage, extraCurrentSession);
+            return new BudgetAllocation(
+                    0,  // userProfileBudget
+                    extraCurrentSession,  // currentSessionBudget
+                    0,  // crossSessionBudget
+                    0,  // knowledgeEntityBudget
+                    0,  // proceduralBudget
+                    0,  // knowledgeBaseBudget
+                    systemPromptBudget,
+                    userMessageBudget + extraUserMessage,
+                    contextWindowSize);
+        }
 
         // 剩余部分在六个记忆区域之间独立分配
         int remaining = Math.max(0, contextWindowSize - systemPromptBudget - userMessageBudget);

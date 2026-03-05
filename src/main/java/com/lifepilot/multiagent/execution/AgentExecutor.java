@@ -122,10 +122,15 @@ public class AgentExecutor {
     /**
      * 构建子 Agent 的工具白名单。
      *
-     * <p>如果 canDelegate=false，从 allowedTools 中排除 handoff_to_* 工具。
-     * 对于 allowedTools 中不存在于 DynamicToolRegistry 的工具 ID，记录 WARN 日志并跳过。</p>
+     * <p>排除规则（按优先级）：
+     * <ol>
+     *   <li>不存在于 DynamicToolRegistry 的工具 ID — 记录 WARN 日志并跳过</li>
+     *   <li>指向自身的 handoff 工具（防止自递归）— 独立于 canDelegate 标志</li>
+     *   <li>canDelegate=false 时排除所有 handoff_to_* 工具</li>
+     * </ol>
      */
     private List<String> buildAllowedToolIds(AgentDefinition definition) {
+        String selfHandoffId = HandoffToolFactory.TOOL_ID_PREFIX + definition.id();
         var result = new ArrayList<String>();
         for (String toolId : definition.allowedTools()) {
             // 跳过不存在的工具
@@ -134,7 +139,12 @@ public class AgentExecutor {
                         definition.id(), toolId);
                 continue;
             }
-            // canDelegate=false 时排除 handoff_to_* 工具
+            // 排除指向自身的 handoff 工具（防止自递归，独立于 canDelegate 标志）
+            if (toolId.equals(selfHandoffId)) {
+                log.debug("排除自递归 handoff 工具: agentId={}, toolId={}", definition.id(), toolId);
+                continue;
+            }
+            // canDelegate=false 时排除所有 handoff_to_* 工具
             if (!definition.canDelegate() && toolId.startsWith(HandoffToolFactory.TOOL_ID_PREFIX)) {
                 continue;
             }

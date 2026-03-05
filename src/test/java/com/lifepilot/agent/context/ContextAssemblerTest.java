@@ -99,7 +99,7 @@ class ContextAssemblerTest {
                 .thenReturn(List.of(
                         ConversationSlot.userMessage("你好", 5),
                         ConversationSlot.assistantMessage("你好，有什么可以帮你？", 15)));
-        when(tokenBudgetAllocator.allocate(eq(32000), anyInt(), anyFloat()))
+        when(tokenBudgetAllocator.allocate(eq(32000), anyInt(), anyFloat(), anyBoolean()))
                 .thenReturn(createAllocation());
     }
 
@@ -122,7 +122,7 @@ class ContextAssemblerTest {
 
         assembler.assemble(state);
 
-        verify(tokenBudgetAllocator).allocate(eq(32000), anyInt(), anyFloat());
+        verify(tokenBudgetAllocator).allocate(eq(32000), anyInt(), anyFloat(), anyBoolean());
     }
 
     @Test
@@ -136,13 +136,13 @@ class ContextAssemblerTest {
                 ConversationSlot.assistantMessage("b", 5),
                 ConversationSlot.userMessage("c", 5),
                 new ToolResultSlot("tool1", "query", "结果", 10, 0.5f, Instant.now())));
-        when(tokenBudgetAllocator.allocate(anyInt(), anyInt(), anyFloat()))
+        when(tokenBudgetAllocator.allocate(anyInt(), anyInt(), anyFloat(), anyBoolean()))
                 .thenReturn(createAllocation());
 
         assembler.assemble(state);
 
         // conversationTurns 应为 3（只计 ConversationSlot）
-        verify(tokenBudgetAllocator).allocate(eq(32000), eq(3), anyFloat());
+        verify(tokenBudgetAllocator).allocate(eq(32000), eq(3), anyFloat(), anyBoolean());
     }
 
     @Test
@@ -153,7 +153,7 @@ class ContextAssemblerTest {
                 createResult("e2", "低分", 0.60f));
         when(hybridRetriever.retrieve(anyString(), anyInt(), any())).thenReturn(results);
         when(workingMemory.getContext(anyString())).thenReturn(List.of());
-        when(tokenBudgetAllocator.allocate(anyInt(), anyInt(), anyFloat()))
+        when(tokenBudgetAllocator.allocate(anyInt(), anyInt(), anyFloat(), anyBoolean()))
                 .thenReturn(createAllocation());
 
         var context = assembler.assemble(state);
@@ -169,7 +169,7 @@ class ContextAssemblerTest {
         when(hybridRetriever.retrieve(anyString(), anyInt(), any()))
                 .thenReturn(List.of(createResult("e1", "测试", 0.8f)));
         when(workingMemory.getContext("session-1")).thenReturn(List.of());
-        when(tokenBudgetAllocator.allocate(anyInt(), anyInt(), anyFloat()))
+        when(tokenBudgetAllocator.allocate(anyInt(), anyInt(), anyFloat(), anyBoolean()))
                 .thenReturn(createAllocation());
 
         var context = assembler.assemble(state);
@@ -184,7 +184,7 @@ class ContextAssemblerTest {
         when(hybridRetriever.retrieve(anyString(), anyInt(), any()))
                 .thenThrow(new RuntimeException("检索服务不可用"));
         when(workingMemory.getContext(anyString())).thenReturn(List.of());
-        when(tokenBudgetAllocator.allocate(anyInt(), anyInt(), anyFloat()))
+        when(tokenBudgetAllocator.allocate(anyInt(), anyInt(), anyFloat(), anyBoolean()))
                 .thenReturn(createAllocation());
 
         var context = assembler.assemble(state);
@@ -201,7 +201,7 @@ class ContextAssemblerTest {
                 .thenReturn(List.of(createResult("e1", "测试", 0.8f)));
         when(workingMemory.getContext(anyString()))
                 .thenThrow(new RuntimeException("工作记忆不可用"));
-        when(tokenBudgetAllocator.allocate(anyInt(), anyInt(), anyFloat()))
+        when(tokenBudgetAllocator.allocate(anyInt(), anyInt(), anyFloat(), anyBoolean()))
                 .thenReturn(createAllocation());
 
         var context = assembler.assemble(state);
@@ -216,7 +216,7 @@ class ContextAssemblerTest {
         when(hybridRetriever.retrieve(anyString(), anyInt(), any()))
                 .thenReturn(List.of(createResult("e1", "测试", 0.8f)));
         when(workingMemory.getContext(anyString())).thenReturn(List.of());
-        when(tokenBudgetAllocator.allocate(anyInt(), anyInt(), anyFloat()))
+        when(tokenBudgetAllocator.allocate(anyInt(), anyInt(), anyFloat(), anyBoolean()))
                 .thenThrow(new RuntimeException("分配器不可用"));
 
         var context = assembler.assemble(state);

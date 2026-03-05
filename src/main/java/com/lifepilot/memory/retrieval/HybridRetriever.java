@@ -45,6 +45,9 @@ public class HybridRetriever {
     /** 最近一次 retrieve() 中 L4 程序记忆匹配结果（线程安全，每次 retrieve 重置）。 */
     private volatile ReasoningSlot lastProcedureSlot;
 
+    /** 空数据短路标记 — 三路检索全部返回空时设为 true，记忆写入后重置。volatile 保证可见性。 */
+    private volatile boolean knownEmpty = false;
+
     public HybridRetriever(VectorSearcher vectorSearcher,
                            FtsSearcher ftsSearcher,
                            GraphTraverser graphTraverser,
@@ -79,6 +82,12 @@ public class HybridRetriever {
         // 重置 L4 匹配结果
         this.lastProcedureSlot = null;
 
+        // 空数据短路：已知三路检索全部为空时直接返回
+        if (knownEmpty) {
+            log.debug("混合检索: 已知数据为空，短路返回");
+            return List.of();
+        }
+
         // 1. 并行执行三路检索 + 可选 L4 意图匹配
         var vectorFuture = CompletableFuture.supplyAsync(
                 () -> vectorSearcher.searchEntities(query, topK, 0.0f), virtualThreadExecutor);
@@ -111,6 +120,13 @@ public class HybridRetriever {
         List<VectorSearchResult> vectorResults = safeGet(vectorFuture, "向量检索");
         List<RankedItem> ftsResults = safeGet(ftsFuture, "全文搜索");
         List<RankedItem> graphResults = safeGet(graphFuture, "图遍历");
+
+        // 三路检索全部返回空时，设置 knownEmpty 短路标记
+        if (vectorResults.isEmpty() && ftsResults.isEmpty() && graphResults.isEmpty()) {
+            knownEmpty = true;
+            log.debug("混合检索: 三路检索全部返回空，设置 knownEmpty=true");
+            return List.of();
+        }
 
         // 2. 向量结果转换为 RankedItem
         List<RankedItem> vectorItems = convertVectorResults(vectorResults);
@@ -186,6 +202,13 @@ public class HybridRetriever {
      */
     public Optional<ReasoningSlot> getLastProcedureSlot() {
         return Optional.ofNullable(lastProcedureSlot);
+    }
+
+    /**
+     * 重置空数据标记，供记忆写入后调用。
+     */
+    public void resetEmptyFlag() {
+        this.knownEmpty = false;
     }
 
     // --- 内部方法 ---

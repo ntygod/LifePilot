@@ -42,13 +42,16 @@ public record AgentState(
          * <p>用于会话快照（recentTurns）与前端消息级「推理过程」折叠面板展示，
          * 由 AgentLoop 在循环结束时基于步骤数 / Token 使用等信息生成。</p>
          */
-        @Nullable String reasoningSummary
+        @Nullable String reasoningSummary,
+        /** 工具白名单 — 限制当前 Agent 可使用的工具 ID 列表，null 表示不限制。 */
+        @Nullable List<String> allowedToolIds
 ) {
     /** 紧凑构造器 — 防御性拷贝。 */
     public AgentState {
         steps = List.copyOf(steps);
         shortTermMemory = List.copyOf(shortTermMemory);
         mentionedEntities = List.copyOf(mentionedEntities);
+        allowedToolIds = allowedToolIds != null ? List.copyOf(allowedToolIds) : null;
     }
 
     /**
@@ -77,6 +80,7 @@ public record AgentState(
                 .done(false)
                 .finalOutput(null)
                 .terminationReason(null)
+                .allowedToolIds(request.allowedToolIds())
                 .build();
     }
 
@@ -107,6 +111,7 @@ public record AgentState(
                 .done(false)
                 .finalOutput(null)
                 .terminationReason(null)
+                .allowedToolIds(request.allowedToolIds())
                 .build();
     }
 
@@ -138,6 +143,7 @@ public record AgentState(
                 .done(false)
                 .finalOutput(null)
                 .terminationReason(null)
+                .allowedToolIds(null)
                 .build();
     }
 

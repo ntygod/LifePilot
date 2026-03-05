@@ -25,7 +25,7 @@ class TokenBudgetAllocatorTest {
 
     @Test
     void 默认配置下所有区域预算非负() {
-        var result = allocator.allocate(32000, 5, 0.5f);
+        var result = allocator.allocate(32000, 5, 0.5f, true);
 
         assertTrue(result.userProfileBudget() >= 0, "用户画像预算应 >= 0");
         assertTrue(result.currentSessionBudget() >= 0, "当前会话预算应 >= 0");
@@ -37,7 +37,7 @@ class TokenBudgetAllocatorTest {
 
     @Test
     void 六区域预算之和不超过剩余预算() {
-        var result = allocator.allocate(32000, 5, 0.5f);
+        var result = allocator.allocate(32000, 5, 0.5f, true);
 
         int remaining = result.totalBudget() - result.systemPromptBudget() - result.userMessageBudget();
         int sixRegionSum = result.userProfileBudget() + result.currentSessionBudget()
@@ -51,7 +51,7 @@ class TokenBudgetAllocatorTest {
     @Test
     void 每个区域预算不超过配置的max上限() {
         var budget = properties.getTokenBudget();
-        var result = allocator.allocate(32000, 5, 0.5f);
+        var result = allocator.allocate(32000, 5, 0.5f, true);
 
         assertTrue(result.userProfileBudget() <= budget.getUserProfileMax(),
                 "用户画像 %d 应 <= max %d".formatted(result.userProfileBudget(), budget.getUserProfileMax()));
@@ -69,7 +69,7 @@ class TokenBudgetAllocatorTest {
 
     @Test
     void 系统提示词和用户消息按比例分配() {
-        var result = allocator.allocate(32000, 5, 0.5f);
+        var result = allocator.allocate(32000, 5, 0.5f, true);
 
         // 默认 systemPromptRatio=0.10, userMessageRatio=0.15
         assertEquals(3200, result.systemPromptBudget(), "系统提示词应为 10%");
@@ -78,8 +78,8 @@ class TokenBudgetAllocatorTest {
 
     @Test
     void 高检索相关度时知识实体获得更多预算() {
-        var defaultResult = allocator.allocate(32000, 5, 0.5f);
-        var highRelevanceResult = allocator.allocate(32000, 5, 0.95f);
+        var defaultResult = allocator.allocate(32000, 5, 0.5f, true);
+        var highRelevanceResult = allocator.allocate(32000, 5, 0.95f, true);
 
         // 高相关度场景下，知识实体检索权重更大
         assertTrue(highRelevanceResult.knowledgeEntityBudget() >= defaultResult.knowledgeEntityBudget(),
@@ -88,8 +88,8 @@ class TokenBudgetAllocatorTest {
 
     @Test
     void 长对话时当前会话获得更多预算() {
-        var defaultResult = allocator.allocate(32000, 5, 0.5f);
-        var longConvResult = allocator.allocate(32000, 15, 0.5f);
+        var defaultResult = allocator.allocate(32000, 5, 0.5f, true);
+        var longConvResult = allocator.allocate(32000, 15, 0.5f, true);
 
         // 长对话场景下，当前会话权重更大
         assertTrue(longConvResult.currentSessionBudget() >= defaultResult.currentSessionBudget(),
@@ -109,7 +109,7 @@ class TokenBudgetAllocatorTest {
 
         // 窗口 2000，固定区域占 25%=500，剩余仅 1500
         // 六区域 max 总和 = 4800，必然触发截断
-        var result = allocator.allocate(2000, 5, 0.5f);
+        var result = allocator.allocate(2000, 5, 0.5f, true);
 
         int remaining = result.totalBudget() - result.systemPromptBudget() - result.userMessageBudget();
         int sixRegionSum = result.userProfileBudget() + result.currentSessionBudget()
@@ -136,7 +136,7 @@ class TokenBudgetAllocatorTest {
         budget.setKnowledgeBaseMax(500);
 
         // 窗口仅 1000，固定区域占 250，剩余 750
-        var result = allocator.allocate(1000, 5, 0.5f);
+        var result = allocator.allocate(1000, 5, 0.5f, true);
 
         int remaining = result.totalBudget() - result.systemPromptBudget() - result.userMessageBudget();
         int sixRegionSum = result.userProfileBudget() + result.currentSessionBudget()
@@ -154,7 +154,7 @@ class TokenBudgetAllocatorTest {
 
     @Test
     void 零窗口大小返回全零预算() {
-        var result = allocator.allocate(0, 0, 0.0f);
+        var result = allocator.allocate(0, 0, 0.0f, true);
 
         assertEquals(0, result.systemPromptBudget());
         assertEquals(0, result.userMessageBudget());
@@ -170,8 +170,8 @@ class TokenBudgetAllocatorTest {
     @Test
     void BudgetAllocation总和校验不抛异常() {
         // 正常分配不应触发 BudgetAllocation compact constructor 的校验异常
-        assertDoesNotThrow(() -> allocator.allocate(32000, 5, 0.5f));
-        assertDoesNotThrow(() -> allocator.allocate(8000, 0, 0.0f));
-        assertDoesNotThrow(() -> allocator.allocate(128000, 20, 1.0f));
+        assertDoesNotThrow(() -> allocator.allocate(32000, 5, 0.5f, true));
+        assertDoesNotThrow(() -> allocator.allocate(8000, 0, 0.0f, true));
+        assertDoesNotThrow(() -> allocator.allocate(128000, 20, 1.0f, true));
     }
 }
