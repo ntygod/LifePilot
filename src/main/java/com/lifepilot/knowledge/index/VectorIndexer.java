@@ -136,9 +136,20 @@ public class VectorIndexer {
      * @return 搜索结果列表（按相似度降序）
      */
     public List<DocumentSearchResult> searchSimilar(String query, List<String> kbIds, int topK) {
-        // 生成查询向量并转为 sqlite-vec 格式
         float[] queryVector = llmRouter.embed(query);
-        String vectorParam = vectorToString(queryVector);
+        return searchByEmbedding(queryVector, kbIds, topK);
+    }
+
+    /**
+     * 基于预计算 Embedding 向量的相似度搜索（用于 HyDE 模式）。
+     *
+     * @param embedding 预计算的 Embedding 向量
+     * @param kbIds     知识库 ID 列表
+     * @param topK      返回数量
+     * @return 搜索结果列表（按相似度降序）
+     */
+    public List<DocumentSearchResult> searchByEmbedding(float[] embedding, List<String> kbIds, int topK) {
+        String vectorParam = vectorToString(embedding);
 
         // sqlite-vec KNN 查询 + 联合 document_chunks 表过滤知识库
         var kbPlaceholders = kbIds.stream().map(id -> "?").collect(Collectors.joining(","));
@@ -175,6 +186,8 @@ public class VectorIndexer {
             );
         }, params.toArray());
     }
+
+
 
     // ---- 内部方法 ----
 

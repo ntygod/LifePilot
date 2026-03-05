@@ -222,6 +222,16 @@ lifepilot:
       smart-chunker:
         heading-density-threshold: 0.1
         short-document-threshold: 2000
+        code-block-density-threshold: 0.3
+        semantic-chunking-threshold: 5000
+      semantic-chunking:
+        enabled: false
+        breakpoint-threshold: 0.5
+        buffer-size: 1
+        min-chunk-size: 100
+        max-chunk-size: 1024
+        min-chunk-size: 100
+        max-chunk-size: 1024
     vector-indexer:
       batch-size: 32
       max-retries: 2
@@ -231,9 +241,15 @@ lifepilot:
       vector-weight: 0.6
       fts-weight: 0.4
       rrf-k: 60
+      low-confidence-threshold: 0.5
+      min-relevance-score: 0.0
+      context-window-size: 0
     context-enricher:
       enabled: true
       max-prefix-tokens: 100
+      batch-enabled: false
+      batch-size: 5
+      max-prompt-tokens: 4000
     extraction:
       enabled: true
       batch-size: 5
@@ -242,6 +258,16 @@ lifepilot:
       type: llm
       model: ""
       top-k: 5
+      llm-mode: pointwise
+      listwise-max-candidates: 20
+      api-provider: jina
+      api-key: "${RERANKER_API_KEY:}"
+      api-endpoint: ""
+      api-timeout-ms: 5000
+    query-enhancer:
+      mode: none
+      timeout-ms: 3000
+      max-rewrites: 3
   datasource:
     busy-timeout: 5000
   gateway:

@@ -7,6 +7,8 @@ import com.lifepilot.llm.LlmUnavailableException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.lifepilot.llm.LlmResponse;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -62,6 +64,16 @@ public class ChunkContextEnricher {
             return chunks;
         }
 
+        if (config.batchEnabled() && config.batchSize() > 1) {
+            return enrichBatch(chunks, documentSummary);
+        }
+        return enrichOneByOne(chunks, documentSummary);
+    }
+
+    /**
+     * 逐个分块调用 LLM 生成上下文前缀（原有逻辑）。
+     */
+    private List<DocumentChunk> enrichOneByOne(List<DocumentChunk> chunks, String documentSummary) {
         var enriched = new ArrayList<DocumentChunk>(chunks.size());
         int successCount = 0;
 
@@ -71,24 +83,210 @@ public class ChunkContextEnricher {
                 enriched.add(withContextPrefix(chunk, prefix));
                 successCount++;
             } catch (LlmUnavailableException e) {
-                // LLM 完全不可用，后续分块也不再尝试
                 log.warn("LLM 不可用，跳过剩余分块上下文增强: {}", e.getMessage());
                 enriched.add(chunk);
-                // 将剩余分块原样添加
                 int currentIndex = chunks.indexOf(chunk);
                 for (int i = currentIndex + 1; i < chunks.size(); i++) {
                     enriched.add(chunks.get(i));
                 }
                 break;
             } catch (Exception e) {
-                // 单个分块增强失败，跳过继续
                 log.warn("分块上下文增强失败，跳过: chunkId={}, error={}", chunk.id(), e.getMessage());
                 enriched.add(chunk);
             }
         }
 
-        log.info("上下文增强完成: 总分块={}, 成功增强={}", chunks.size(), successCount);
+        log.info("逐个上下文增强完成: 总分块={}, 成功增强={}", chunks.size(), successCount);
         return List.copyOf(enriched);
+    }
+
+    /**
+     * 批量增强：将多个分块组合为单个 Prompt，一次 LLM 调用生成所有前缀。
+     *
+     * <p>按 batchSize 分组，每组构建批量 Prompt。Token 超限时自动拆批。
+     * 前缀数量不匹配时回退到逐个调用。
+     */
+    private List<DocumentChunk> enrichBatch(List<DocumentChunk> chunks, String documentSummary) {
+        var enriched = new ArrayList<DocumentChunk>(chunks.size());
+        int batchSize = config.batchSize();
+        int successCount = 0;
+        int llmCallCount = 0;
+        long startTime = System.currentTimeMillis();
+
+        // 按 batchSize 分组
+        List<List<DocumentChunk>> batches = new ArrayList<>();
+        for (int i = 0; i < chunks.size(); i += batchSize) {
+            batches.add(chunks.subList(i, Math.min(i + batchSize, chunks.size())));
+        }
+
+        for (var batch : batches) {
+            try {
+                // 检查 Prompt Token 数，超限时拆分为更小的批次
+                List<List<DocumentChunk>> subBatches = splitIfTokenExceeded(batch);
+
+                for (var subBatch : subBatches) {
+                    var prompt = buildBatchPrompt(subBatch, documentSummary);
+                    LlmResponse response = llmRouter.call(SCENE, prompt, null);
+                    llmCallCount++;
+
+                    List<String> prefixes = parseBatchResponse(response.content());
+
+                    if (prefixes.size() != subBatch.size()) {
+                        // 前缀数量不匹配，回退到逐个调用
+                        log.warn("批量前缀数量不匹配: 期望={}, 实际={}, 回退到逐个调用",
+                                subBatch.size(), prefixes.size());
+                        for (var chunk : subBatch) {
+                            try {
+                                var prefix = generatePrefix(chunk, documentSummary);
+                                enriched.add(withContextPrefix(chunk, prefix));
+                                llmCallCount++;
+                                successCount++;
+                            } catch (Exception e) {
+                                log.warn("逐个回退增强失败: chunkId={}", chunk.id());
+                                enriched.add(chunk);
+                            }
+                        }
+                    } else {
+                        for (int i = 0; i < subBatch.size(); i++) {
+                            String prefix = prefixes.get(i).trim();
+                            int maxChars = config.maxPrefixTokens() * 4;
+                            if (prefix.length() > maxChars) {
+                                prefix = prefix.substring(0, maxChars);
+                            }
+                            enriched.add(withContextPrefix(subBatch.get(i), prefix));
+                            successCount++;
+                        }
+                    }
+                }
+            } catch (LlmUnavailableException e) {
+                log.warn("批量增强 LLM 不可用，剩余分块跳过: {}", e.getMessage());
+                enriched.addAll(batch);
+            } catch (Exception e) {
+                log.warn("批量增强失败，回退到逐个调用: {}", e.getMessage());
+                for (var chunk : batch) {
+                    try {
+                        var prefix = generatePrefix(chunk, documentSummary);
+                        enriched.add(withContextPrefix(chunk, prefix));
+                        llmCallCount++;
+                        successCount++;
+                    } catch (Exception ex) {
+                        enriched.add(chunk);
+                    }
+                }
+            }
+        }
+
+        long elapsed = System.currentTimeMillis() - startTime;
+        log.info("批量上下文增强完成: 总分块={}, 成功增强={}, LLM调用次数={}, 耗时={}ms",
+                chunks.size(), successCount, llmCallCount, elapsed);
+        return List.copyOf(enriched);
+    }
+
+    /**
+     * 检查批次 Prompt Token 是否超限，超限时拆分为更小的子批次。
+     */
+    private List<List<DocumentChunk>> splitIfTokenExceeded(List<DocumentChunk> batch) {
+        int estimatedTokens = batch.stream()
+                .mapToInt(c -> estimateTokens(c.content()))
+                .sum() + 200; // 200 Token 用于 Prompt 模板开销
+
+        if (estimatedTokens <= config.maxPromptTokens()) {
+            return List.of(batch);
+        }
+
+        // 拆分为更小的子批次
+        List<List<DocumentChunk>> subBatches = new ArrayList<>();
+        int currentTokens = 200;
+        int start = 0;
+
+        for (int i = 0; i < batch.size(); i++) {
+            int chunkTokens = estimateTokens(batch.get(i).content());
+            if (currentTokens + chunkTokens > config.maxPromptTokens() && i > start) {
+                subBatches.add(batch.subList(start, i));
+                start = i;
+                currentTokens = 200;
+            }
+            currentTokens += chunkTokens;
+        }
+        if (start < batch.size()) {
+            subBatches.add(batch.subList(start, batch.size()));
+        }
+
+        log.debug("批次 Token 超限，拆分为 {} 个子批次", subBatches.size());
+        return subBatches;
+    }
+
+    /**
+     * 构建批量增强 Prompt。
+     */
+    private String buildBatchPrompt(List<DocumentChunk> chunks, String documentSummary) {
+        var sb = new StringBuilder();
+        sb.append("请为以下文档分块分别生成简短的上下文描述（每个不超过 ")
+                .append(config.maxPrefixTokens())
+                .append(" Token）。\n返回 JSON 数组格式：[\"前缀1\", \"前缀2\", ...]\n\n");
+        sb.append("文档摘要：").append(documentSummary).append("\n\n");
+
+        for (int i = 0; i < chunks.size(); i++) {
+            sb.append("分块 ").append(i + 1).append("：\n");
+            sb.append(chunks.get(i).content()).append("\n\n");
+        }
+        return sb.toString();
+    }
+
+    /**
+     * 解析批量 LLM 响应，提取 JSON 数组中的前缀列表。
+     */
+    private List<String> parseBatchResponse(String response) {
+        // 简单解析 JSON 数组：提取 ["...", "...", ...] 中的字符串
+        String trimmed = response.trim();
+        // 找到第一个 [ 和最后一个 ]
+        int start = trimmed.indexOf('[');
+        int end = trimmed.lastIndexOf(']');
+        if (start < 0 || end <= start) {
+            return List.of();
+        }
+
+        String arrayContent = trimmed.substring(start + 1, end);
+        List<String> prefixes = new ArrayList<>();
+        boolean inString = false;
+        boolean escaped = false;
+        var current = new StringBuilder();
+
+        for (int i = 0; i < arrayContent.length(); i++) {
+            char c = arrayContent.charAt(i);
+            if (escaped) {
+                current.append(c);
+                escaped = false;
+                continue;
+            }
+            if (c == '\\') {
+                escaped = true;
+                continue;
+            }
+            if (c == '"') {
+                if (inString) {
+                    prefixes.add(current.toString());
+                    current = new StringBuilder();
+                }
+                inString = !inString;
+                continue;
+            }
+            if (inString) {
+                current.append(c);
+            }
+        }
+        return prefixes;
+    }
+
+    /**
+     * 估算文本 Token 数量。
+     */
+    private static int estimateTokens(String text) {
+        long chineseChars = text.chars()
+                .filter(c -> Character.UnicodeScript.of(c) == Character.UnicodeScript.HAN)
+                .count();
+        long otherChars = text.length() - chineseChars;
+        return (int) (chineseChars + otherChars / 4);
     }
 
     /**

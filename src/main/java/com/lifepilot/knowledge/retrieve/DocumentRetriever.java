@@ -4,7 +4,9 @@ import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
 import com.lifepilot.knowledge.index.FtsIndexer;
 import com.lifepilot.knowledge.index.VectorIndexer;
 import com.lifepilot.knowledge.model.DocumentSearchResult;
+import com.lifepilot.knowledge.model.ScoreBreakdown;
 import com.lifepilot.knowledge.rerank.Reranker;
+import com.lifepilot.knowledge.repository.DocumentChunkRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
@@ -14,10 +16,10 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 
 /**
- * 文档混合检索服务 — 向量 + FTS5 + RRF 融合 + 可选 Reranker。
+ * 文档混合检索服务 — 向量 + FTS5 + 自适应 RRF 融合 + 上下文窗口扩展 + 可选 Reranker。
  *
- * <p>并行执行向量相似度搜索和 FTS5 全文搜索，通过 Reciprocal Rank Fusion（RRF）
- * 融合两路结果，可选使用 Reranker 进行精排。
+ * <p>并行执行向量相似度搜索和 FTS5 全文搜索，通过自适应 Reciprocal Rank Fusion（RRF）
+ * 融合两路结果，支持上下文窗口扩展和可选 Reranker 精排。
  *
  * @author zsg
  * @since 2026-02-25
@@ -30,33 +32,41 @@ public class DocumentRetriever {
     private final VectorIndexer vectorIndexer;
     private final FtsIndexer ftsIndexer;
     private final Optional<Reranker> reranker;
+    @Nullable
+    private final QueryEnhancer queryEnhancer;
+    private final DocumentChunkRepository chunkRepository;
     private final KnowledgeBaseProperties.Retrieval config;
 
     /**
      * 构造文档混合检索服务。
      *
-     * @param vectorIndexer 向量索引服务
-     * @param ftsIndexer    FTS5 索引服务
-     * @param reranker      可选 Reranker（精排）
-     * @param config        检索配置
+     * @param vectorIndexer   向量索引服务
+     * @param ftsIndexer      FTS5 索引服务
+     * @param reranker        可选 Reranker（精排）
+     * @param queryEnhancer   查询增强器（可选）
+     * @param chunkRepository 分块数据访问层（上下文窗口扩展）
+     * @param config          检索配置
      */
     public DocumentRetriever(@Nullable VectorIndexer vectorIndexer, FtsIndexer ftsIndexer,
                               Optional<Reranker> reranker,
+                              @Nullable QueryEnhancer queryEnhancer,
+                              DocumentChunkRepository chunkRepository,
                               KnowledgeBaseProperties.Retrieval config) {
         this.vectorIndexer = vectorIndexer;
         this.ftsIndexer = ftsIndexer;
         this.reranker = reranker;
+        this.queryEnhancer = queryEnhancer;
+        this.chunkRepository = chunkRepository;
         this.config = config;
-        log.info("DocumentRetriever 初始化完成: topK={}, rrfK={}, reranker={}, vectorIndexer={}",
+        log.info("DocumentRetriever 初始化完成: topK={}, rrfK={}, reranker={}, queryEnhancer={}, contextWindowSize={}",
                 config.defaultTopK(), config.rrfK(),
                 reranker.isPresent() ? "启用" : "未启用",
-                vectorIndexer != null ? "启用" : "未启用（仅 FTS5）");
+                queryEnhancer != null ? "启用" : "未启用",
+                config.contextWindowSize());
     }
 
     /**
      * 混合检索文档分块。
-     *
-     * <p>并行执行向量搜索和 FTS5 搜索，通过 RRF 融合结果，可选精排。
      *
      * @param query 查询文本
      * @param kbIds 知识库 ID 列表
@@ -68,89 +78,131 @@ public class DocumentRetriever {
             return List.of();
         }
 
+        long startTime = System.currentTimeMillis();
         int effectiveTopK = topK > 0 ? topK : config.defaultTopK();
-        // 检索阶段多取一些候选，供 RRF 融合和精排使用
         int candidateK = effectiveTopK * 3;
 
-        // 并行执行向量搜索和 FTS5 搜索
+        // 1. 查询增强
+        QueryEnhancer.EnhancedQuery enhanced = enhanceQuery(query);
+
+        // 2. 并行执行向量搜索和 FTS5 搜索
+        List<DocumentSearchResult> vectorResults;
+        List<DocumentSearchResult> ftsResults;
+
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            // HyDE 模式使用假设文档 Embedding 进行向量搜索
             var vectorFuture = CompletableFuture.supplyAsync(
-                    () -> safeVectorSearch(query, kbIds, candidateK), executor);
+                    () -> safeVectorSearch(enhanced, kbIds, candidateK), executor);
             var ftsFuture = CompletableFuture.supplyAsync(
-                    () -> safeFtsSearch(query, kbIds, candidateK), executor);
+                    () -> safeFtsSearch(enhanced, kbIds, candidateK), executor);
 
-            var vectorResults = vectorFuture.join();
-            var ftsResults = ftsFuture.join();
-
-            log.debug("检索完成: vector={}, fts={}", vectorResults.size(), ftsResults.size());
-
-            // RRF 融合
-            var fused = rrfFusion(vectorResults, ftsResults, effectiveTopK);
-
-            // 可选精排
-            if (reranker.isPresent() && !fused.isEmpty()) {
-                try {
-                    var reranked = reranker.get().rerank(query, fused, effectiveTopK);
-                    log.debug("精排完成: input={}, output={}", fused.size(), reranked.size());
-                    return List.copyOf(reranked);
-                } catch (Exception e) {
-                    log.warn("Reranker 不可用，跳过精排: {}", e.getMessage());
-                }
-            }
-
-            return List.copyOf(fused);
+            vectorResults = vectorFuture.join();
+            ftsResults = ftsFuture.join();
         }
+
+        // 3. 自适应 RRF 融合
+        var fused = adaptiveRrfFusion(vectorResults, ftsResults, effectiveTopK);
+
+        // 4. 最低相关性阈值过滤
+        if (config.minRelevanceScore() > 0.0) {
+            fused = fused.stream()
+                    .filter(r -> r.score() >= config.minRelevanceScore())
+                    .toList();
+        }
+
+        // 5. 上下文窗口扩展
+        if (config.contextWindowSize() > 0) {
+            fused = expandContextWindow(fused);
+        }
+
+        // 6. 可选精排
+        if (reranker.isPresent() && !fused.isEmpty()) {
+            try {
+                var reranked = reranker.get().rerank(query, fused, effectiveTopK);
+                log.debug("精排完成: input={}, output={}", fused.size(), reranked.size());
+                fused = reranked;
+            } catch (Exception e) {
+                log.warn("Reranker 不可用，跳过精排: {}", e.getMessage());
+            }
+        }
+
+        long elapsed = System.currentTimeMillis() - startTime;
+        log.debug("检索完成: vector={}, fts={}, 融合后={}, 最终={}, 耗时={}ms",
+                vectorResults.size(), ftsResults.size(),
+                fused.size(), fused.size(), elapsed);
+
+        return List.copyOf(fused);
     }
 
     /**
-     * RRF 融合两路检索结果。
-     *
-     * <p>公式：score(d) = Σ 1 / (k + rank_i(d))，k 为 RRF 常数（默认 60）。
-     *
-     * @param vectorResults 向量搜索结果
-     * @param ftsResults    FTS5 搜索结果
-     * @param topK          返回数量
-     * @return 融合后的结果列表（按 RRF 分数降序）
+     * 增强查询（如果 QueryEnhancer 可用）。
      */
-    List<DocumentSearchResult> rrfFusion(List<DocumentSearchResult> vectorResults,
-                                         List<DocumentSearchResult> ftsResults,
-                                         int topK) {
+    private QueryEnhancer.EnhancedQuery enhanceQuery(String query) {
+        if (queryEnhancer != null) {
+            return queryEnhancer.enhance(query);
+        }
+        return new QueryEnhancer.EnhancedQuery(query, List.of(), Optional.empty());
+    }
+
+    /**
+     * 自适应 RRF 融合 — 根据向量 Top-1 分数动态调整权重。
+     *
+     * <p>向量 Top-1 分数 &lt; lowConfidenceThreshold 时提升 FTS 权重。
+     */
+    List<DocumentSearchResult> adaptiveRrfFusion(List<DocumentSearchResult> vectorResults,
+                                                  List<DocumentSearchResult> ftsResults,
+                                                  int topK) {
         int k = config.rrfK();
-        // chunkId → 累计 RRF 分数
-        var scoreMap = new LinkedHashMap<String, Double>();
-        // chunkId → 原始结果（保留内容信息）
+
+        // 自适应权重调整
+        double vectorWeight = config.vectorWeight();
+        double ftsWeight = config.ftsWeight();
+        if (!vectorResults.isEmpty()) {
+            double topVectorScore = vectorResults.getFirst().score();
+            if (topVectorScore < config.lowConfidenceThreshold()) {
+                vectorWeight = 0.3;
+                ftsWeight = 0.7;
+                log.debug("向量 Top-1 分数低于阈值，提升 FTS 权重: topScore={}, threshold={}",
+                        topVectorScore, config.lowConfidenceThreshold());
+            }
+        }
+
+        // chunkId → 各路原始分数
+        var vectorScoreMap = new HashMap<String, Double>();
+        var ftsScoreMap = new HashMap<String, Double>();
+        var rrfScoreMap = new LinkedHashMap<String, Double>();
         var resultMap = new HashMap<String, DocumentSearchResult>();
 
-        // 向量搜索结果的 RRF 分数
+        // 向量搜索 RRF 分数
         for (int rank = 0; rank < vectorResults.size(); rank++) {
             var result = vectorResults.get(rank);
-            double rrfScore = 1.0 / (k + rank + 1); // rank 从 1 开始
-            scoreMap.merge(
-                    result.chunkId(),
-                    Double.valueOf(rrfScore),
-                    (a, b) -> Double.valueOf(a.doubleValue() + b.doubleValue())
-            );
+            double rrfScore = vectorWeight / (k + rank + 1);
+            rrfScoreMap.merge(result.chunkId(), rrfScore, Double::sum);
             resultMap.putIfAbsent(result.chunkId(), result);
+            vectorScoreMap.put(result.chunkId(), result.score());
         }
 
-        // FTS5 搜索结果的 RRF 分数
+        // FTS5 搜索 RRF 分数
         for (int rank = 0; rank < ftsResults.size(); rank++) {
             var result = ftsResults.get(rank);
-            double rrfScore = 1.0 / (k + rank + 1);
-            scoreMap.merge(
-                    result.chunkId(),
-                    Double.valueOf(rrfScore),
-                    (a, b) -> Double.valueOf(a.doubleValue() + b.doubleValue())
-            );
+            double rrfScore = ftsWeight / (k + rank + 1);
+            rrfScoreMap.merge(result.chunkId(), rrfScore, Double::sum);
             resultMap.putIfAbsent(result.chunkId(), result);
+            ftsScoreMap.put(result.chunkId(), result.score());
         }
 
-        // 按 RRF 分数降序排序，取 topK
-        return scoreMap.entrySet().stream()
+        // 按 RRF 分数降序排序，构建 ScoreBreakdown
+        return rrfScoreMap.entrySet().stream()
                 .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
                 .limit(topK)
                 .map(entry -> {
                     var original = resultMap.get(entry.getKey());
+                    var breakdown = new ScoreBreakdown(
+                            vectorScoreMap.getOrDefault(entry.getKey(), 0.0),
+                            ftsScoreMap.getOrDefault(entry.getKey(), 0.0),
+                            entry.getValue(),
+                            Optional.empty()
+                    );
                     return new DocumentSearchResult(
                             original.chunkId(),
                             original.documentId(),
@@ -158,23 +210,110 @@ public class DocumentRetriever {
                             original.content(),
                             original.contextPrefix(),
                             original.headingHierarchy(),
-                            entry.getValue(), // RRF 融合分数
+                            entry.getValue(),
                             "fused",
-                            original.metadata()
+                            original.metadata(),
+                            Optional.of(breakdown),
+                            Optional.empty()
                     );
                 })
                 .toList();
     }
 
     /**
-     * 安全执行向量搜索，异常时返回空列表。
+     * 上下文窗口扩展 — 对每个命中分块，查询同文档的相邻分块并拼接。
      */
-    private List<DocumentSearchResult> safeVectorSearch(String query, List<String> kbIds, int topK) {
+    private List<DocumentSearchResult> expandContextWindow(List<DocumentSearchResult> results) {
+        int windowSize = config.contextWindowSize();
+        var expanded = new ArrayList<DocumentSearchResult>(results.size());
+
+        for (var result : results) {
+            try {
+                // 需要知道命中分块的 chunkIndex，从 metadata 或 chunkRepository 获取
+                var chunks = chunkRepository.findByDocumentId(result.documentId());
+                int hitIndex = -1;
+                for (var chunk : chunks) {
+                    if (chunk.id().equals(result.chunkId())) {
+                        hitIndex = chunk.chunkIndex();
+                        break;
+                    }
+                }
+
+                if (hitIndex < 0) {
+                    expanded.add(result);
+                    continue;
+                }
+
+                int fromIndex = Math.max(0, hitIndex - windowSize);
+                int toIndex = hitIndex + windowSize;
+                var windowChunks = chunkRepository.findByDocumentIdAndChunkIndexRange(
+                        result.documentId(), fromIndex, toIndex);
+
+                // 拼接内容，在命中分块前后插入标记
+                var sb = new StringBuilder();
+                for (var chunk : windowChunks) {
+                    if (chunk.chunkIndex() == hitIndex) {
+                        sb.append("<!-- hit-start -->\n");
+                        sb.append(chunk.content());
+                        sb.append("\n<!-- hit-end -->\n");
+                    } else {
+                        sb.append(chunk.content()).append("\n");
+                    }
+                }
+
+                expanded.add(new DocumentSearchResult(
+                        result.chunkId(),
+                        result.documentId(),
+                        result.knowledgeBaseId(),
+                        result.content(),
+                        result.contextPrefix(),
+                        result.headingHierarchy(),
+                        result.score(),
+                        result.sourcePath(),
+                        result.metadata(),
+                        result.scoreBreakdown(),
+                        Optional.of(sb.toString().trim())
+                ));
+            } catch (Exception e) {
+                log.warn("上下文窗口扩展失败，返回原始分块: chunkId={}, error={}",
+                        result.chunkId(), e.getMessage());
+                expanded.add(result);
+            }
+        }
+        return expanded;
+    }
+
+    /**
+     * 安全执行向量搜索，支持 HyDE 和 Rewrite 模式。
+     */
+    private List<DocumentSearchResult> safeVectorSearch(QueryEnhancer.EnhancedQuery enhanced,
+                                                         List<String> kbIds, int topK) {
         if (vectorIndexer == null) {
             return List.of();
         }
         try {
-            return vectorIndexer.searchSimilar(query, kbIds, topK);
+            // HyDE 模式：使用假设文档 Embedding
+            if (enhanced.hydeEmbedding().isPresent()) {
+                return vectorIndexer.searchByEmbedding(enhanced.hydeEmbedding().get(), kbIds, topK);
+            }
+
+            // Rewrite 模式：对每个改写查询分别检索，合并去重
+            if (!enhanced.rewrittenQueries().isEmpty()) {
+                var allResults = new LinkedHashMap<String, DocumentSearchResult>();
+                // 先检索原始查询
+                for (var r : vectorIndexer.searchSimilar(enhanced.primaryQuery(), kbIds, topK)) {
+                    allResults.putIfAbsent(r.chunkId(), r);
+                }
+                // 再检索改写查询
+                for (var rewrite : enhanced.rewrittenQueries()) {
+                    for (var r : vectorIndexer.searchSimilar(rewrite, kbIds, topK)) {
+                        allResults.putIfAbsent(r.chunkId(), r);
+                    }
+                }
+                return new ArrayList<>(allResults.values());
+            }
+
+            return vectorIndexer.searchSimilar(enhanced.primaryQuery(), kbIds, topK);
         } catch (Exception e) {
             log.warn("向量搜索失败，降级跳过: {}", e.getMessage());
             return List.of();
@@ -182,11 +321,24 @@ public class DocumentRetriever {
     }
 
     /**
-     * 安全执行 FTS5 搜索，异常时返回空列表。
+     * 安全执行 FTS5 搜索，支持 Rewrite 模式。
      */
-    private List<DocumentSearchResult> safeFtsSearch(String query, List<String> kbIds, int topK) {
+    private List<DocumentSearchResult> safeFtsSearch(QueryEnhancer.EnhancedQuery enhanced,
+                                                      List<String> kbIds, int topK) {
         try {
-            return ftsIndexer.search(query, kbIds, topK);
+            if (!enhanced.rewrittenQueries().isEmpty()) {
+                var allResults = new LinkedHashMap<String, DocumentSearchResult>();
+                for (var r : ftsIndexer.search(enhanced.primaryQuery(), kbIds, topK)) {
+                    allResults.putIfAbsent(r.chunkId(), r);
+                }
+                for (var rewrite : enhanced.rewrittenQueries()) {
+                    for (var r : ftsIndexer.search(rewrite, kbIds, topK)) {
+                        allResults.putIfAbsent(r.chunkId(), r);
+                    }
+                }
+                return new ArrayList<>(allResults.values());
+            }
+            return ftsIndexer.search(enhanced.primaryQuery(), kbIds, topK);
         } catch (Exception e) {
             log.warn("FTS5 搜索失败，降级跳过: {}", e.getMessage());
             return List.of();
