@@ -199,7 +199,7 @@ class MultiAgentLoopPreservationTest {
         var allocator = new TokenBudgetAllocator(properties);
 
         // 执行：典型有数据场景
-        BudgetAllocation allocation = allocator.allocate(16000, 5, 0.8f);
+        BudgetAllocation allocation = allocator.allocate(16000, 5, 0.8f, true);
 
         // 断言：验证预算分配的基本约束
         // **Validates: Requirements 3.4**

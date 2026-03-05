@@ -114,7 +114,8 @@ public class WorkingMemory {
         BudgetAllocation allocation = this.tokenBudgetAllocator.allocate(
                 totalBudget,
                 slots.size(),
-                0.0f
+                0.0f,
+                true
         );
         int budget = allocation.currentSessionBudget();
         int currentUsage = tokenUsage.getOrDefault(sessionId, 0);

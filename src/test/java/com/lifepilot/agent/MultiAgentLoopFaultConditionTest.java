@@ -412,7 +412,7 @@ class MultiAgentLoopFaultConditionTest {
 
         // Mock TokenBudgetAllocator 返回默认分配
         var tokenBudgetAllocator = mock(TokenBudgetAllocator.class);
-        when(tokenBudgetAllocator.allocate(anyInt(), anyInt(), anyFloat()))
+        when(tokenBudgetAllocator.allocate(anyInt(), anyInt(), anyFloat(), anyBoolean()))
                 .thenReturn(new BudgetAllocation(
                         500, 3000, 1000, 1500, 500, 500,
                         3200, 4800, 16000));

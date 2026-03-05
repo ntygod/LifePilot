@@ -172,7 +172,7 @@ public class ContextAssembler {
 
             // 4. 动态预算分配（降级容错）
             int conversationTurns = countConversationTurns(slots);
-            var budgetAllocation = safeAllocate(tokenBudgetAllocator, conversationTurns, topScore);
+            var budgetAllocation = safeAllocate(tokenBudgetAllocator, conversationTurns, topScore, !retrievalResults.isEmpty());
 
             // 5. 按预算截断
             var truncatedMemories = truncateByBudget(retrievalResults, budgetAllocation.knowledgeEntityBudget());
@@ -436,10 +436,10 @@ public class ContextAssembler {
     }
 
     /** 安全执行预算分配，异常时使用静态分配降级。 */
-    private BudgetAllocation safeAllocate(TokenBudgetAllocator allocator, int conversationTurns, float topScore) {
+    private BudgetAllocation safeAllocate(TokenBudgetAllocator allocator, int conversationTurns, float topScore, boolean hasMemoryData) {
         try {
             int windowSize = config.getContext().getMaxContextTokens();
-            return allocator.allocate(windowSize, conversationTurns, topScore);
+            return allocator.allocate(windowSize, conversationTurns, topScore, hasMemoryData);
         } catch (Exception e) {
             log.warn("预算分配降级: error={}", e.getMessage());
             int total = config.getContext().getMaxContextTokens();
