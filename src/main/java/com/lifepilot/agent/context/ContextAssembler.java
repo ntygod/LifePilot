@@ -144,8 +144,8 @@ public class ContextAssembler {
                 degraded = true;
             }
 
-            // 3. 获取会话槽位（降级容错）
-            var slots = safeGetContext(workingMemory, state.sessionId());
+            // 3. 获取会话槽位（排除当前轮用户消息，避免与 state.goal() 重复）
+            var slots = safeGetSessionHistory(workingMemory, state.sessionId(), state.goal());
 
             // 4. 动态预算分配（降级容错）
             int conversationTurns = countConversationTurns(slots);
@@ -248,6 +248,50 @@ public class ContextAssembler {
             log.warn("工作记忆降级: sessionId={}, error={}", sessionId, e.getMessage());
             return List.of();
         }
+    }
+
+    /**
+     * 从 L1 读取当前会话对话历史，排除当前轮用户消息（避免与 state.goal() 重复）。
+     *
+     * <p>因为 AgentLoop 在 assembleContext() 之前已将用户消息写入 L1，
+     * 而 state.goal() 会作为用户请求区域单独注入到提示词中，
+     * 所以需要排除 L1 中最后一条与 currentGoal 内容相同的 USER 消息。</p>
+     */
+    private List<WorkingMemorySlot> safeGetSessionHistory(
+            @Nullable WorkingMemory memory, String sessionId, String currentGoal) {
+        if (memory == null) return List.of();
+        try {
+            var allSlots = memory.getContext(sessionId);
+            if (allSlots == null || allSlots.isEmpty()) return List.of();
+            return filterOutCurrentUserMessage(allSlots, currentGoal);
+        } catch (Exception e) {
+            log.warn("L1 对话历史读取失败: sessionId={}, error={}", sessionId, e.getMessage());
+            return List.of();
+        }
+    }
+
+    /**
+     * 从槽位列表中排除最后一条与 currentGoal 内容相同的 USER 类型消息。
+     *
+     * <p>仅匹配 {@link ConversationSlot} 类型且 role 为 "user" 的槽位，
+     * 从后往前查找第一条匹配项并移除。</p>
+     */
+    List<WorkingMemorySlot> filterOutCurrentUserMessage(
+            List<WorkingMemorySlot> slots, String currentGoal) {
+        if (currentGoal == null || currentGoal.isBlank() || slots.isEmpty()) {
+            return slots;
+        }
+        // 从后往前找到最后一条 USER 消息，如果内容与 currentGoal 相同则排除
+        var result = new ArrayList<>(slots);
+        for (int i = result.size() - 1; i >= 0; i--) {
+            if (result.get(i) instanceof ConversationSlot cs
+                    && "user".equalsIgnoreCase(cs.role())
+                    && currentGoal.equals(cs.content())) {
+                result.remove(i);
+                break; // 只排除最后一条匹配的
+            }
+        }
+        return List.copyOf(result);
     }
 
     /** 安全执行预算分配，异常时使用静态分配降级。 */
