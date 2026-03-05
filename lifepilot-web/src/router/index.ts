@@ -92,6 +92,11 @@ const router = createRouter({
       component: () => import('@/views/SkillDetailView.vue')
     },
     {
+      path: '/marketplace',
+      name: 'marketplace',
+      component: () => import('@/views/MarketplaceView.vue')
+    },
+    {
       path: '/tools',
       name: 'tools',
       component: () => import('@/views/ToolsView.vue')
