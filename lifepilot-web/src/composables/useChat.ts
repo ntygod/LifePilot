@@ -3,7 +3,15 @@ import { useChatStore } from '@/stores/chat'
 import { useA2uiStore } from '@/stores/a2ui'
 import { chatApi } from '@/api/client'
 import { SSE_EVENT_TYPES } from '@/constants/sseEvents'
-import type { SseTokenEvent, SseDoneEvent, SseErrorEvent, A2uiComponent, TokenUsage, ReasoningEvent, ChatAttachment } from '@/types'
+import type {
+  SseTokenEvent,
+  SseDoneEvent,
+  SseErrorEvent,
+  A2uiComponent,
+  TokenUsage,
+  ReasoningEvent,
+  ChatAttachment,
+} from '@/types'
 
 /**
  * 对话 composable，封装 SSE 流式请求和消息管理。
@@ -32,8 +40,18 @@ export function useChat() {
   // 当前这轮请求对应的用户消息 ID，用于在错误 / 完成时回写状态
   let currentUserMessageId: string | null = null
 
-  /** 发送消息（流式），支持可选附件 ID 列表与前端附件对象（用于立即在 UI 中展示） */
-  async function sendMessage(content: string, attachmentIds?: string[], attachments?: ChatAttachment[]) {
+  /** 发送消息（流式），支持可选附件 ID 列表与会话配置（模型/知识库等）。 */
+  async function sendMessage(
+    content: string,
+    attachmentIds?: string[],
+    attachments?: ChatAttachment[],
+    sessionConfig?: {
+      modelId?: string
+      temperature?: number
+      maxTokens?: number
+      knowledgeBaseIds?: string[]
+    }
+  ) {
     if (!content.trim()) return
 
     // 如果当前没有活跃会话，先创建会话
@@ -46,6 +64,16 @@ export function useChat() {
         error.value = `无法创建会话：${message}`
         console.error('创建会话失败:', e)
         return
+      }
+    }
+
+    // 若本轮携带会话配置，先写回后端（确保首条消息也能按配置检索知识库/路由模型）
+    if (chatStore.activeSessionId && sessionConfig) {
+      try {
+        await chatApi.updateSessionConfig(chatStore.activeSessionId, sessionConfig)
+      } catch (e) {
+        // 配置写回失败不阻塞对话主流程，但提示用户配置可能未生效
+        console.warn('更新会话配置失败，将继续发送消息:', e)
       }
     }
 
@@ -255,11 +283,24 @@ export function useChat() {
               : undefined,
             timestamp,
             traceId: event.traceId,
-            attachments: extraAttachments.length > 0 ? extraAttachments : undefined
+            attachments: extraAttachments.length > 0 ? extraAttachments : undefined,
+            tokenUsage: event.tokenUsage,
+            modelId: event.tokenUsage?.modelId,
+            sources: event.sources,
+            toolsSummary: event.toolsSummary,
           })
-          // 记录本轮统计信息（若后端未返回则保持上一次或使用默认值）
-          lastTokenUsage.value = event.tokenUsage ?? lastTokenUsage.value
-          lastModelId.value = event.tokenUsage?.modelId ?? null
+          // 记录本轮统计信息（若后端未返回则保持上一次或使用 usage 字段兜底）
+          if (event.tokenUsage) {
+            lastTokenUsage.value = event.tokenUsage
+            lastModelId.value = event.tokenUsage.modelId ?? null
+          } else if (event.usage) {
+            lastTokenUsage.value = {
+              promptTokens: event.usage.inputTokens,
+              completionTokens: event.usage.outputTokens,
+              totalTokens: event.usage.totalTokens,
+              modelId: lastModelId.value ?? 'unknown',
+            }
+          }
           // 标记本轮用户消息为成功
           if (currentUserMessageId) {
             chatStore.updateMessage(currentUserMessageId, { status: 'success' })

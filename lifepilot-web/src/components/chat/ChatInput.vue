@@ -10,7 +10,17 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  send: [{ content: string; attachmentIds?: string[]; attachments?: ChatAttachment[] }]
+  send: [{
+    content: string
+    attachmentIds?: string[]
+    attachments?: ChatAttachment[]
+    sessionConfig?: {
+      modelId?: string
+      temperature?: number
+      maxTokens?: number
+      knowledgeBaseIds?: string[]
+    }
+  }]
 }>()
 
 const kbStore = useKnowledgeBaseStore()
@@ -42,6 +52,15 @@ const contextConfig = ref({
   temperature: 0.7,
   maxTokens: 2000,
   knowledgeBases: [] as string[]
+})
+
+const contextConfigDirty = computed(() => {
+  return (
+    !!contextConfig.value.model ||
+    contextConfig.value.temperature !== 0.7 ||
+    contextConfig.value.maxTokens !== 2000 ||
+    contextConfig.value.knowledgeBases.length > 0
+  )
 })
 
 function handleKeydown(e: KeyboardEvent) {
@@ -80,7 +99,16 @@ async function submit() {
     }
   }
 
-  emit('send', { content, attachmentIds, attachments: uploadedAttachments })
+  const sessionConfig = contextConfigDirty.value
+    ? {
+        modelId: contextConfig.value.model || undefined,
+        temperature: contextConfig.value.temperature,
+        maxTokens: contextConfig.value.maxTokens,
+        knowledgeBaseIds: contextConfig.value.knowledgeBases
+      }
+    : undefined
+
+  emit('send', { content, attachmentIds, attachments: uploadedAttachments, sessionConfig })
   input.value = ''
   attachments.value = []
   uploadError.value = null

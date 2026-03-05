@@ -217,6 +217,53 @@ function closeImagePreview() {
                 {{ message.reasoningSummary }}
               </div>
             </div>
+
+            <!-- 本轮执行概要卡片（模型 / Token / 工具 / 知识库） -->
+            <div
+              v-if="message.tokenUsage || (message.toolsSummary && message.toolsSummary.length) || (message.sources && message.sources.length)"
+              class="mt-2 rounded-lg border border-border/70 bg-background/80 text-[11px] text-muted-foreground px-3 py-2 space-y-1.5"
+            >
+              <div class="flex items-center gap-2">
+                <span class="inline-flex w-1.5 h-1.5 rounded-full bg-primary" />
+                <span class="font-medium text-foreground/80">本轮执行概要</span>
+              </div>
+              <div v-if="message.tokenUsage" class="text-[11px] leading-snug">
+                <span class="text-foreground/90">
+                  模型：{{ message.modelId || message.tokenUsage.modelId || '未知模型' }}
+                </span>
+                <span class="mx-1 text-muted-foreground/70">•</span>
+                <span>
+                  Tokens：{{ message.tokenUsage.totalTokens }}
+                  （提示 {{ message.tokenUsage.promptTokens }} / 回答 {{ message.tokenUsage.completionTokens }}）
+                </span>
+              </div>
+              <div v-if="message.toolsSummary && message.toolsSummary.length" class="text-[11px] leading-snug">
+                <span class="text-foreground/80">
+                  工具：共 {{ message.toolsSummary.length }} 次调用
+                </span>
+                <span v-if="message.toolsSummary[0]" class="ml-1 text-muted-foreground">
+                  · 示例：
+                  {{ message.toolsSummary[0].toolId }}
+                  <span v-if="message.toolsSummary[0].success === false" class="text-destructive">
+                    （失败）
+                  </span>
+                  <span v-else class="text-muted-foreground/80">
+                    （{{ message.toolsSummary[0].latencyMs }}ms）
+                  </span>
+                </span>
+              </div>
+              <div v-if="message.sources && message.sources.length" class="text-[11px] leading-snug">
+                <span class="text-foreground/80">
+                  知识库：{{ message.sources.filter(s => s.type === 'knowledgeBase').length }} 个
+                </span>
+                <span v-if="message.sources.find(s => s.type === 'knowledgeBase')" class="ml-1 text-muted-foreground">
+                  · 示例：
+                  {{
+                    message.sources.find(s => s.type === 'knowledgeBase')?.name
+                  }}
+                </span>
+              </div>
+            </div>
           </template>
 
           <!-- 图片附件缩略图（用户或 AI 消息均可展示） -->
