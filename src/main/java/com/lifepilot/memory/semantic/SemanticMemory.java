@@ -149,6 +149,19 @@ public class SemanticMemory {
         return results.isEmpty() ? Optional.empty() : Optional.of(results.getFirst());
     }
 
+    /**
+     * 查询指定类型的所有当前有效实体。
+     *
+     * @param type 实体类型
+     * @return 匹配的实体列表
+     */
+    public List<TemporalEntity> findCurrentByType(EntityType type) {
+        return jdbcTemplate.query(
+                "SELECT * FROM temporal_entities WHERE type = ? AND is_current = 1 ORDER BY importance_score DESC",
+                (rs, rowNum) -> mapRowToEntity(rs),
+                type.name());
+    }
+
     /** 归档：事务内设置 is_current=0, valid_to=now，同时归档所有当前有效关系。 */
     @Transactional
     public void archive(TemporalEntity entity) {

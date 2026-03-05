@@ -8,8 +8,13 @@ import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.knowledge.model.DocumentSearchResult;
 import com.lifepilot.knowledge.repository.DocumentRepository;
 import com.lifepilot.knowledge.retrieve.DocumentRetriever;
+import com.lifepilot.memory.episodic.EpisodicMemory;
+import com.lifepilot.memory.episodic.MessageRecord;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.RetrievalResult;
+import com.lifepilot.memory.semantic.EntityType;
+import com.lifepilot.memory.semantic.SemanticMemory;
+import com.lifepilot.memory.semantic.TemporalEntity;
 import com.lifepilot.memory.working.*;
 import com.lifepilot.observability.redactor.DataRedactor;
 import org.slf4j.Logger;
@@ -51,6 +56,10 @@ public class ContextAssembler {
     @Nullable private final TokenBudgetAllocator tokenBudgetAllocator;
     @Nullable private final MemoryRetrievalStrategy retrievalStrategy;
     @Nullable private final DataRedactor dataRedactor;
+    // L2 情景记忆：跨会话语义检索，可选注入
+    @Nullable private final EpisodicMemory episodicMemory;
+    // L3 语义记忆：用户画像查询，可选注入
+    @Nullable private final SemanticMemory semanticMemory;
     // 知识库（文档）检索：可选注入，未启用时不影响主流程
     @Nullable private final DocumentRetriever documentRetriever;
     @Nullable private final SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository;
@@ -64,6 +73,8 @@ public class ContextAssembler {
         this.tokenBudgetAllocator = null;
         this.retrievalStrategy = null;
         this.dataRedactor = null;
+        this.episodicMemory = null;
+        this.semanticMemory = null;
         this.documentRetriever = null;
         this.sessionKnowledgeBaseRepository = null;
         this.documentRepository = null;
@@ -77,10 +88,10 @@ public class ContextAssembler {
                             MemoryRetrievalStrategy retrievalStrategy,
                             @Nullable DataRedactor dataRedactor) {
         this(config, hybridRetriever, workingMemory, tokenBudgetAllocator, retrievalStrategy, dataRedactor,
-                null, null, null);
+                null, null, null, null, null);
     }
 
-    /** 完整版构造器（注入记忆系统 + 可选知识库检索依赖）。 */
+    /** 完整版构造器（注入记忆系统 + 可选知识库检索 + 可选 L2 情景记忆 + 可选 L3 语义记忆依赖）。 */
     public ContextAssembler(AgentConfigProperties config,
                             HybridRetriever hybridRetriever,
                             WorkingMemory workingMemory,
@@ -89,13 +100,17 @@ public class ContextAssembler {
                             @Nullable DataRedactor dataRedactor,
                             @Nullable DocumentRetriever documentRetriever,
                             @Nullable SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
-                            @Nullable DocumentRepository documentRepository) {
+                            @Nullable DocumentRepository documentRepository,
+                            @Nullable EpisodicMemory episodicMemory,
+                            @Nullable SemanticMemory semanticMemory) {
         this.config = config;
         this.hybridRetriever = hybridRetriever;
         this.workingMemory = workingMemory;
         this.tokenBudgetAllocator = tokenBudgetAllocator;
         this.retrievalStrategy = retrievalStrategy;
         this.dataRedactor = dataRedactor;
+        this.episodicMemory = episodicMemory;
+        this.semanticMemory = semanticMemory;
         this.documentRetriever = documentRetriever;
         this.sessionKnowledgeBaseRepository = sessionKnowledgeBaseRepository;
         this.documentRepository = documentRepository;
@@ -144,16 +159,24 @@ public class ContextAssembler {
                 degraded = true;
             }
 
-            // 3. 获取会话槽位（降级容错）
-            var slots = safeGetContext(workingMemory, state.sessionId());
+            // 3. 获取会话槽位（排除当前轮用户消息，避免与 state.goal() 重复）
+            var slots = safeGetSessionHistory(workingMemory, state.sessionId(), state.goal());
+
+            // 3.1 L2：跨会话相关片段（语义检索，排除当前 sessionId）
+            var crossSessionFragments = safeSearchCrossSession(
+                    episodicMemory, state.goal(), state.sessionId());
 
             // 4. 动态预算分配（降级容错）
             int conversationTurns = countConversationTurns(slots);
             var budgetAllocation = safeAllocate(tokenBudgetAllocator, conversationTurns, topScore);
 
             // 5. 按预算截断
-            var truncatedMemories = truncateByBudget(retrievalResults, budgetAllocation.retrievalBudget());
-            var truncatedSlots = truncateSlotsByBudget(slots, budgetAllocation.workingMemoryBudget());
+            var truncatedMemories = truncateByBudget(retrievalResults, budgetAllocation.knowledgeEntityBudget());
+            var truncatedSlots = truncateSlotsByBudget(slots, budgetAllocation.currentSessionBudget());
+            // 5.1 跨会话片段格式化并按预算截断
+            var formattedCrossSession = truncateStringsByBudget(
+                    formatCrossSessionFragments(crossSessionFragments),
+                    budgetAllocation.crossSessionBudget());
 
             // 6. 将检索上下文注入 L1（ReasoningSlot），并格式化检索结果
             slots = injectRetrievalReasoningSlots(workingMemory, state.sessionId(), truncatedMemories, procedureHintSlot, slots);
@@ -167,14 +190,29 @@ public class ContextAssembler {
 
             // 8. 构建 Prompt
             String systemPrompt = buildSystemPrompt(state.phase());
-            String userPrompt = buildEnhancedUserPrompt(state, formattedMemories, kbSnippets, truncatedSlots);
+            String userPrompt = buildEnhancedUserPrompt(state, formattedMemories, kbSnippets,
+                    formattedCrossSession, truncatedSlots);
 
             var context = new AssembledContext(
                     systemPrompt, userPrompt, formattedMemories,
                     tokenBudget, retrievalCount, topScore,
                     workingMemoryTokens, degraded);
 
-            // 9. 日志
+            // 9. 各区域 Token 消耗明细日志
+            if (log.isDebugEnabled()) {
+                int currentSessionTokens = truncatedSlots.stream()
+                        .mapToInt(WorkingMemorySlot::tokenCount).sum();
+                int crossSessionTokens = formattedCrossSession.stream()
+                        .mapToInt(this::estimateTokens).sum();
+                int knowledgeEntityTokens = formattedMemories.stream()
+                        .mapToInt(this::estimateTokens).sum();
+                int kbSnippetTokens = kbSnippets.stream()
+                        .mapToInt(this::estimateTokens).sum();
+                int systemPromptTokens = estimateTokens(systemPrompt);
+                log.debug("各区域 Token 消耗: sessionId={}, systemPrompt={}, currentSession={}, crossSession={}, knowledgeEntity={}, knowledgeBase={}",
+                        state.sessionId(), systemPromptTokens, currentSessionTokens,
+                        crossSessionTokens, knowledgeEntityTokens, kbSnippetTokens);
+            }
             logAssemblyMetrics(state, context, startTime);
 
             return context;
@@ -250,6 +288,121 @@ public class ContextAssembler {
         }
     }
 
+    /**
+     * 从 L1 读取当前会话对话历史，排除当前轮用户消息（避免与 state.goal() 重复）。
+     *
+     * <p>因为 AgentLoop 在 assembleContext() 之前已将用户消息写入 L1，
+     * 而 state.goal() 会作为用户请求区域单独注入到提示词中，
+     * 所以需要排除 L1 中最后一条与 currentGoal 内容相同的 USER 消息。</p>
+     */
+    private List<WorkingMemorySlot> safeGetSessionHistory(
+            @Nullable WorkingMemory memory, String sessionId, String currentGoal) {
+        if (memory == null) return List.of();
+        try {
+            var allSlots = memory.getContext(sessionId);
+            if (allSlots == null || allSlots.isEmpty()) return List.of();
+            return filterOutCurrentUserMessage(allSlots, currentGoal);
+        } catch (Exception e) {
+            log.warn("L1 对话历史读取失败: sessionId={}, error={}", sessionId, e.getMessage());
+            return List.of();
+        }
+    }
+
+    /**
+     * 从槽位列表中排除最后一条与 currentGoal 内容相同的 USER 类型消息。
+     *
+     * <p>仅匹配 {@link ConversationSlot} 类型且 role 为 "user" 的槽位，
+     * 从后往前查找第一条匹配项并移除。</p>
+     */
+    List<WorkingMemorySlot> filterOutCurrentUserMessage(
+            List<WorkingMemorySlot> slots, String currentGoal) {
+        if (currentGoal == null || currentGoal.isBlank() || slots.isEmpty()) {
+            return slots;
+        }
+        // 从后往前找到最后一条 USER 消息，如果内容与 currentGoal 相同则排除
+        var result = new ArrayList<>(slots);
+        for (int i = result.size() - 1; i >= 0; i--) {
+            if (result.get(i) instanceof ConversationSlot cs
+                    && "user".equalsIgnoreCase(cs.role())
+                    && currentGoal.equals(cs.content())) {
+                result.remove(i);
+                break; // 只排除最后一条匹配的
+            }
+        }
+        return List.copyOf(result);
+    }
+
+    /**
+     * 安全执行 L2 跨会话检索，排除当前 sessionId，异常时返回空列表。
+     *
+     * <p>L2 仅负责跨会话的语义相关片段检索，当前会话历史由 L1 独占提供。</p>
+     */
+    private List<MessageRecord> safeSearchCrossSession(
+            @Nullable EpisodicMemory episodicMemory, String query, String sessionId) {
+        if (episodicMemory == null || query == null || query.isBlank()) {
+            return List.of();
+        }
+        try {
+            return episodicMemory.searchExcludingSession(query, sessionId, 5);
+        } catch (Exception e) {
+            log.warn("L2 跨会话检索降级: sessionId={}, error={}", sessionId, e.getMessage());
+            return List.of();
+        }
+    }
+
+    /**
+     * 安全查询用户画像实体，异常时返回空字符串。
+     *
+     * <p>从 L3 语义记忆中查询 type=PERSON 且 isCurrent=true 的实体，
+     * 格式化为结构化文本注入 System Prompt。查询失败或结果为空时跳过注入。</p>
+     */
+    private String safeGetUserProfile(@Nullable SemanticMemory semanticMemory) {
+        if (semanticMemory == null) return "";
+        try {
+            var personEntities = semanticMemory.findCurrentByType(EntityType.PERSON);
+            if (personEntities.isEmpty()) return "";
+            return formatUserProfile(personEntities);
+        } catch (Exception e) {
+            log.warn("用户画像查询失败，降级跳过: error={}", e.getMessage());
+            return "";
+        }
+    }
+
+    /**
+     * 格式化用户画像实体为结构化文本。
+     *
+     * <p>每个 PERSON 实体输出名称、描述和属性键值对，
+     * 用于注入到 System Prompt 的角色定义之后。</p>
+     */
+    String formatUserProfile(List<TemporalEntity> personEntities) {
+        if (personEntities.isEmpty()) return "";
+        var sb = new StringBuilder("\n\n用户画像:\n");
+        for (var entity : personEntities) {
+            sb.append("- ").append(entity.name());
+            if (entity.description() != null && !entity.description().isBlank()) {
+                sb.append(": ").append(entity.description());
+            }
+            if (!entity.properties().isEmpty()) {
+                entity.properties().forEach((k, v) ->
+                        sb.append("\n  ").append(k).append(": ").append(v));
+            }
+            sb.append("\n");
+        }
+        return sb.toString();
+    }
+
+    /**
+     * 格式化跨会话检索结果为字符串列表。
+     *
+     * <p>每条结果格式为 {@code [角色] 有效内容}，便于注入到用户提示词中。</p>
+     */
+    List<String> formatCrossSessionFragments(List<MessageRecord> fragments) {
+        if (fragments == null || fragments.isEmpty()) return List.of();
+        return fragments.stream()
+                .map(msg -> "[%s] %s".formatted(msg.role(), msg.effectiveContent()))
+                .toList();
+    }
+
     /** 安全执行预算分配，异常时使用静态分配降级。 */
     private BudgetAllocation safeAllocate(TokenBudgetAllocator allocator, int conversationTurns, float topScore) {
         try {
@@ -259,8 +412,15 @@ public class ContextAssembler {
             log.warn("预算分配降级: error={}", e.getMessage());
             int total = config.getContext().getMaxContextTokens();
             return new BudgetAllocation(
-                    (int) (total * 0.10), (int) (total * 0.50),
-                    (int) (total * 0.25), (int) (total * 0.15), total);
+                    (int) (total * 0.02),   // userProfileBudget
+                    (int) (total * 0.30),   // currentSessionBudget
+                    (int) (total * 0.05),   // crossSessionBudget
+                    (int) (total * 0.15),   // knowledgeEntityBudget
+                    (int) (total * 0.02),   // proceduralBudget
+                    (int) (total * 0.03),   // knowledgeBaseBudget
+                    (int) (total * 0.10),   // systemPromptBudget
+                    (int) (total * 0.15),   // userMessageBudget
+                    total);
         }
     }
 
@@ -521,8 +681,8 @@ public class ContextAssembler {
 
         return new TokenBudget(
                 allocation.systemPromptBudget(),
-                allocation.workingMemoryBudget(),
-                allocation.retrievalBudget(),
+                allocation.currentSessionBudget(),
+                allocation.knowledgeEntityBudget(),
                 staticBudget.toolSchemaBudget(),
                 staticBudget.toolResultBudget(),
                 staticBudget.reservedBuffer(),
@@ -641,18 +801,22 @@ public class ContextAssembler {
                     """;
             case TERMINATED -> "";
         };
+        // 用户画像注入（角色定义之后、阶段指令之前）
+        String userProfile = safeGetUserProfile(semanticMemory);
+
         String constraint = "\n\n重要约束：\n- 只输出JSON对象，不要任何Markdown代码块标记\n- 不要输出解释文字或注释\n- JSON必须完整且有效";
 
-        return roleDefinition + "\n\n" + phaseInstruction + constraint;
+        return roleDefinition + userProfile + "\n\n" + phaseInstruction + constraint;
     }
 
     /**
      * 构建增强版 User Prompt（结构化内容区域）。
-     * 顺序：用户请求 → 相关记忆 → 对话历史 → 工具结果 → 推理上下文 → 已执行步骤 → 预算剩余
+     * 顺序：用户请求 → 相关记忆 → 知识库片段 → 跨会话参考 → 对话历史 → 工具结果 → 推理上下文 → 已执行步骤 → 预算剩余
      */
     String buildEnhancedUserPrompt(AgentState state,
                                    List<String> memories,
                                    List<String> knowledgeBaseSnippets,
+                                   List<String> crossSessionFragments,
                                    List<WorkingMemorySlot> slots) {
         var sb = new StringBuilder();
 
@@ -672,6 +836,14 @@ public class ContextAssembler {
             sb.append("\n知识库片段:\n");
             for (var snippet : knowledgeBaseSnippets) {
                 sb.append("  - ").append(snippet).append("\n");
+            }
+        }
+
+        // 2.6 跨会话参考（L2 情景记忆跨会话检索结果，条件性区域）
+        if (crossSessionFragments != null && !crossSessionFragments.isEmpty()) {
+            sb.append("\n跨会话参考:\n");
+            for (var fragment : crossSessionFragments) {
+                sb.append("  - ").append(fragment).append("\n");
             }
         }
 

@@ -116,7 +116,7 @@ public class WorkingMemory {
                 slots.size(),
                 0.0f
         );
-        int budget = allocation.workingMemoryBudget();
+        int budget = allocation.currentSessionBudget();
         int currentUsage = tokenUsage.getOrDefault(sessionId, 0);
         while (currentUsage > budget) {
             var victim = slotEvictionPolicy.selectEvictionCandidate(sessionId, slots, currentUsage, budget);

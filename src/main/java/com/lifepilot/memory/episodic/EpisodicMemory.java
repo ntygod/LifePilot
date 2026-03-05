@@ -184,6 +184,50 @@ public class EpisodicMemory {
     }
 
     /**
+     * 语义检索其他会话中的相关消息，排除指定 sessionId。
+     *
+     * <p>基于 FTS5 全文检索，JOIN conversations 表过滤 session_id，
+     * 按 BM25 相关度排序返回最相关的消息记录。</p>
+     *
+     * @param query            查询文本
+     * @param excludeSessionId 排除的会话 ID
+     * @param limit            最大返回数
+     * @return 相关消息列表，异常时返回空列表
+     */
+    public List<MessageRecord> searchExcludingSession(String query, String excludeSessionId, int limit) {
+        if (query == null || query.isBlank() || limit <= 0) {
+            return List.of();
+        }
+        try {
+            return jdbcTemplate.query(
+                    "SELECT m.id, m.conversation_id, m.role, m.content, m.compressed_content, " +
+                            "m.compression_level, m.is_pinned, m.tool_call_json, m.token_count, m.created_at " +
+                            "FROM messages m " +
+                            "JOIN messages_fts fts ON m.rowid = fts.rowid " +
+                            "JOIN conversations c ON m.conversation_id = c.id " +
+                            "WHERE messages_fts MATCH ? AND c.session_id != ? " +
+                            "ORDER BY bm25(messages_fts) " +
+                            "LIMIT ?",
+                    (rs, rowNum) -> new MessageRecord(
+                            rs.getString("id"),
+                            rs.getString("conversation_id"),
+                            rs.getString("role"),
+                            rs.getString("content"),
+                            rs.getString("compressed_content"),
+                            CompressionLevel.fromLevel(rs.getInt("compression_level")),
+                            rs.getInt("is_pinned") == 1,
+                            rs.getString("tool_call_json"),
+                            rs.getInt("token_count"),
+                            Instant.parse(rs.getString("created_at"))),
+                    query, excludeSessionId, limit);
+        } catch (Exception e) {
+            log.warn("跨会话排除检索失败: query={}, excludeSessionId={}, error={}",
+                    query, excludeSessionId, e.getMessage());
+            return List.of();
+        }
+    }
+
+    /**
      * 按意图（goal 模糊匹配）获取最近的对话记录。
      *
      * <p>例如 intentType="待办" 用于检索与待办事项相关的历史对话。</p>

@@ -23,6 +23,7 @@ import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.memory.working.ConversationSlot;
 import com.lifepilot.memory.working.WorkingMemory;
 import com.lifepilot.memory.working.WorkingMemorySlot;
+import com.lifepilot.memory.semantic.RealtimeExtractor;
 import com.lifepilot.observability.guardrail.GuardrailBlockedException;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.observability.trace.StateTransitionStep;
@@ -84,6 +85,8 @@ public class AgentLoop {
     private final WorkingMemory workingMemory;
     @Nullable
     private final ConversationHistoryStore conversationHistoryStore;
+    @Nullable
+    private final RealtimeExtractor realtimeExtractor;
 
     public AgentLoop(StateReducer stateReducer,
                      ContextAssembler contextAssembler,
@@ -97,7 +100,7 @@ public class AgentLoop {
                      AgentConfigProperties config) {
         this(stateReducer, contextAssembler, llmRouter, multimodalRouter, traceRecorder,
                 sessionManager, conversationViewService, actionParser, agentToolProvider, config,
-                null, null, null, null);
+                null, null, null, null, null);
     }
 
     public AgentLoop(StateReducer stateReducer,
@@ -113,7 +116,8 @@ public class AgentLoop {
                      @Nullable WorkingMemory workingMemory,
                      @Nullable ConversationHistoryStore conversationHistoryStore,
                      @Nullable SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
-                     @Nullable KnowledgeBaseRepository knowledgeBaseRepository) {
+                     @Nullable KnowledgeBaseRepository knowledgeBaseRepository,
+                     @Nullable RealtimeExtractor realtimeExtractor) {
         this.stateReducer = stateReducer;
         this.contextAssembler = contextAssembler;
         this.llmRouter = llmRouter;
@@ -126,6 +130,7 @@ public class AgentLoop {
         this.config = config;
         this.workingMemory = workingMemory;
         this.conversationHistoryStore = conversationHistoryStore;
+        this.realtimeExtractor = realtimeExtractor;
         this.sessionKnowledgeBaseRepository = sessionKnowledgeBaseRepository;
         this.knowledgeBaseRepository = knowledgeBaseRepository;
     }
@@ -154,6 +159,10 @@ public class AgentLoop {
         
         try {
             state = initState(request);
+
+            // 用户消息写入 L1（在 assembleContext 之前，确保对话历史完整）
+            writeUserMessageToL1(state);
+
             // TraceId 提前告知前端：便于在流式过程中打开“实时轨迹”视图
             if (state.traceId() != null) {
                 sseManager.sendEvent(streamId, SseEventType.TRACE_START, Map.of(
@@ -287,7 +296,10 @@ public class AgentLoop {
                         .build();
             }
 
-            // 异步后处理（会话快照 / 工作记忆）
+            // AI 响应写入 L1（在 asyncPostProcess 之前）
+            writeAssistantMessageToL1(state);
+
+            // 异步后处理（会话快照 / L2 flush）
             asyncPostProcess(state);
             
             // 从 TraceContext 中聚合 Token 使用量和模型信息
@@ -343,6 +355,9 @@ public class AgentLoop {
         try {
             state = initState(request);
 
+            // 用户消息写入 L1（在 assembleContext 之前，确保对话历史完整）
+            writeUserMessageToL1(state);
+
             traceContext = startTraceIfEnabled(state, request);
 
             // Trace 启动后重新计时：Loop 总耗时用于 Budget elapsed、Step elapsed 等。
@@ -391,6 +406,9 @@ public class AgentLoop {
                         .reasoningSummary(summary)
                         .build();
             }
+
+            // AI 响应写入 L1（在 asyncPostProcess 之前）
+            writeAssistantMessageToL1(state);
 
             // 异步后处理（Virtual Thread）
             asyncPostProcess(state);
@@ -1116,7 +1134,7 @@ public class AgentLoop {
         };
     }
 
-    /** 异步后处理：会话持久化和消息保存。 */
+    /** 异步后处理：会话快照持久化和 L2 flush。 */
     private void asyncPostProcess(AgentState finalState) {
         // 这里必须"真正异步"：不要在当前线程等待持久化完成（否则会拉长端到端延迟）。
         // Virtual Thread 非常适合这种 I/O 型后处理任务。
@@ -1136,10 +1154,15 @@ public class AgentLoop {
                     );
                 }
                 
-                // 3. 如果 WorkingMemory 可用，保存消息到 L1（由 Token 预算与后续策略控制持久化与淘汰）
-                if (workingMemory != null) {
-                    saveMessagesToMemory(finalState);
+                // 3. 触发 AUDN 实时实体提取（异步，不阻塞后处理）
+                if (realtimeExtractor != null && finalState.finalOutput() != null) {
+                    realtimeExtractor.extractAsync(
+                            finalState.sessionId(),
+                            finalState.goal(),
+                            finalState.finalOutput()
+                    );
                 }
+                
             } catch (Exception e) {
                 log.warn("会话持久化失败: sessionId={}, error={}",
                         finalState.sessionId(), e.getMessage());
@@ -1148,43 +1171,35 @@ public class AgentLoop {
     }
 
     /**
-     * 将用户消息和 AI 响应保存到 WorkingMemory。
-     *
-     * @param state Agent 状态
+     * 在核心循环开始前，将用户消息写入 L1 工作记忆。
+     * 失败时记录警告日志并继续（降级为无对话历史模式）。
      */
-    private void saveMessagesToMemory(AgentState state) {
-        WorkingMemory memory = this.workingMemory;
-        if (memory == null) {
-            return;
-        }
-        
+    private void writeUserMessageToL1(AgentState state) {
+        if (workingMemory == null || state.goal() == null || state.goal().isBlank()) return;
         try {
-            String sessionId = state.sessionId();
-            String userMessage = state.goal();
-            String assistantResponse = state.finalOutput();
-
-            // 保存用户消息
-            if (userMessage != null && !userMessage.isBlank()) {
-                int userTokens = estimateTokens(userMessage);
-                ConversationSlot userSlot = ConversationSlot.userMessage(userMessage, userTokens);
-                memory.append(sessionId, userSlot);
-                log.debug("用户消息已保存到工作记忆: sessionId={}, tokens={}",
-                        sessionId, userTokens);
-            }
-
-            // 保存 AI 响应
-            if (assistantResponse != null && !assistantResponse.isBlank()) {
-                int assistantTokens = estimateTokens(assistantResponse);
-                ConversationSlot assistantSlot = ConversationSlot.assistantMessage(
-                        assistantResponse, assistantTokens);
-                memory.append(sessionId, assistantSlot);
-                log.debug("AI 响应已保存到工作记忆: sessionId={}, tokens={}",
-                        sessionId, assistantTokens);
-            }
-
+            int tokens = estimateTokens(state.goal());
+            var slot = ConversationSlot.userMessage(state.goal(), tokens);
+            workingMemory.append(state.sessionId(), slot);
         } catch (Exception e) {
-            log.warn("保存消息到记忆系统失败: sessionId={}, error={}",
-                    state.sessionId(), e.getMessage(), e);
+            log.warn("用户消息写入 L1 失败，降级为无对话历史: sessionId={}, error={}",
+                    state.sessionId(), e.getMessage());
+        }
+    }
+
+    /**
+     * LLM 响应生成后，将 AI 响应写入 L1 工作记忆。
+     */
+    private void writeAssistantMessageToL1(AgentState state) {
+        if (workingMemory == null) return;
+        String response = state.finalOutput();
+        if (response == null || response.isBlank()) return;
+        try {
+            int tokens = estimateTokens(response);
+            var slot = ConversationSlot.assistantMessage(response, tokens);
+            workingMemory.append(state.sessionId(), slot);
+        } catch (Exception e) {
+            log.warn("AI 响应写入 L1 失败: sessionId={}, error={}",
+                    state.sessionId(), e.getMessage());
         }
     }
 
