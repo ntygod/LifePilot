@@ -54,7 +54,6 @@ import java.util.stream.Collectors;
 public class AgentLoop {
 
     private static final Logger log = LoggerFactory.getLogger(AgentLoop.class);
-    private static final ObjectMapper TOOL_INPUT_MAPPER = new ObjectMapper();
 
     /** 流式 RESPONDING 阶段追加的自然语言输出约束。 */
     private static final String STREAMING_OUTPUT_CONSTRAINT = """
@@ -73,6 +72,7 @@ public class AgentLoop {
     private final LlmRouter llmRouter;
     private final MultimodalRouter multimodalRouter;
     private final TraceRecorder traceRecorder;
+    private final ObjectMapper objectMapper;
     @Nullable
     private final SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository;
     @Nullable
@@ -95,6 +95,7 @@ public class AgentLoop {
                      LlmRouter llmRouter,
                      MultimodalRouter multimodalRouter,
                      TraceRecorder traceRecorder,
+                     ObjectMapper objectMapper,
                      SessionManager sessionManager,
                      @Nullable ConversationViewService conversationViewService,
                      ActionParser actionParser,
@@ -110,6 +111,7 @@ public class AgentLoop {
         this.llmRouter = llmRouter;
         this.multimodalRouter = multimodalRouter;
         this.traceRecorder = traceRecorder;
+        this.objectMapper = objectMapper;
         this.sessionManager = sessionManager;
         this.conversationViewService = conversationViewService;
         this.actionParser = actionParser;
@@ -928,7 +930,7 @@ public class AgentLoop {
 
         String toolInputJson;
         try {
-            toolInputJson = TOOL_INPUT_MAPPER.writeValueAsString(step.params());
+            toolInputJson = objectMapper.writeValueAsString(step.params());
         } catch (Exception e) {
             return new Action.ErrorRecovery(
                     AgentErrorType.LLM_PARSE_FAILURE,
@@ -946,7 +948,7 @@ public class AgentLoop {
             if (output != null && output.trim().startsWith("{")) {
                 // ToolBridgeAgentToolProvider 失败输出为 {"error":"..."}，这里做一个轻量判定
                 try {
-                    var node = TOOL_INPUT_MAPPER.readTree(output);
+                    var node = objectMapper.readTree(output);
                     if (node != null && node.has("error")) {
                         success = false;
                     }
@@ -1250,14 +1252,21 @@ public class AgentLoop {
     }
 
     /**
-     * 估算文本 Token 数量（中英文混合约 2 字符/Token）。
+     * 估算文本 Token 数量（区分中英文）。
+     *
+     * <p>中文字符按 1 Token/字符计算，其他字符按 4 字符/Token 计算。
+     * 与知识库分块器（FixedSizeChunker 等）保持一致的估算策略。</p>
      *
      * @param text 文本内容
      * @return Token 数量
      */
     private int estimateTokens(String text) {
         if (text == null || text.isEmpty()) return 0;
-        return Math.max(1, text.length() / 2);
+        long cjkChars = text.chars()
+                .filter(c -> Character.UnicodeScript.of(c) == Character.UnicodeScript.HAN)
+                .count();
+        long otherChars = text.length() - cjkChars;
+        return Math.max(1, (int) (cjkChars + otherChars / 4));
     }
 
     /**

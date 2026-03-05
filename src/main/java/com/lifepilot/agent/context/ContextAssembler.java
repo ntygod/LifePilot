@@ -658,10 +658,14 @@ public class ContextAssembler {
                 .count();
     }
 
-    /** 估算文本 Token 数（中英文混合约 2 字符/Token）。 */
+    /** 估算文本 Token 数（区分中英文：中文 1 Token/字符，其他 4 字符/Token）。 */
     int estimateTokens(String text) {
         if (text == null || text.isEmpty()) return 0;
-        return Math.max(1, text.length() / 2);
+        long cjkChars = text.chars()
+                .filter(c -> Character.UnicodeScript.of(c) == Character.UnicodeScript.HAN)
+                .count();
+        long otherChars = text.length() - cjkChars;
+        return Math.max(1, (int) (cjkChars + otherChars / 4));
     }
 
     // --- TokenBudget 构建 ---
