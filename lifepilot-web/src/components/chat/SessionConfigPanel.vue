@@ -3,6 +3,12 @@ import { ref, watch } from 'vue'
 import type { SessionConfig, KnowledgeBase } from '@/types'
 import type { LlmProvider } from '@/api/client'
 import { X } from 'lucide-vue-next'
+import { Button } from '@/components/ui/button'
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
+import { Slider } from '@/components/ui/slider'
+import { Input } from '@/components/ui/input'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Label } from '@/components/ui/label'
 
 const props = defineProps<{
   modelId?: string
@@ -41,12 +47,33 @@ function emitUpdate() {
   })
 }
 
-function toggleKb(id: string) {
-  const idx = localKbIds.value.indexOf(id)
-  if (idx >= 0) {
-    localKbIds.value.splice(idx, 1)
+function onModelChange(value: unknown) {
+  localModelId.value = String(value ?? '')
+  emitUpdate()
+}
+
+function onTemperatureChange(value: number[] | undefined) {
+  if (value) {
+    localTemperature.value = value[0]
+  }
+  emitUpdate()
+}
+
+function onMaxTokensChange(value: string | number) {
+  localMaxTokens.value = Number(value)
+  emitUpdate()
+}
+
+function toggleKb(id: string, checked: boolean) {
+  if (checked) {
+    if (!localKbIds.value.includes(id)) {
+      localKbIds.value.push(id)
+    }
   } else {
-    localKbIds.value.push(id)
+    const idx = localKbIds.value.indexOf(id)
+    if (idx >= 0) {
+      localKbIds.value.splice(idx, 1)
+    }
   }
   emitUpdate()
 }
@@ -56,76 +83,70 @@ function toggleKb(id: string) {
   <div class="rounded-lg border border-border bg-card p-4 space-y-4 text-sm">
     <div class="flex items-center justify-between">
       <span class="font-medium text-foreground">会话配置</span>
-      <button
-        type="button"
-        class="text-muted-foreground hover:text-foreground transition-colors"
+      <Button
+        variant="ghost"
+        size="icon-sm"
         @click="emit('close')"
       >
         <X :size="16" />
-      </button>
+      </Button>
     </div>
 
     <!-- 模型选择 -->
-    <div>
-      <label class="text-xs font-medium text-muted-foreground mb-1 block">模型</label>
-      <select
-        v-model="localModelId"
-        class="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm
-               focus:outline-none focus:ring-1 focus:ring-ring"
-        @change="emitUpdate"
-      >
-        <option value="">默认模型</option>
-        <option v-for="p in providers" :key="p.id" :value="p.id">
-          {{ p.displayName || p.modelName || p.id }}
-        </option>
-      </select>
+    <div class="space-y-1.5">
+      <Label class="text-xs text-muted-foreground">模型</Label>
+      <Select :model-value="localModelId" @update:model-value="onModelChange">
+        <SelectTrigger class="w-full">
+          <SelectValue placeholder="默认模型" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="">默认模型</SelectItem>
+          <SelectItem v-for="p in providers" :key="p.id" :value="p.id">
+            {{ p.displayName || p.modelName || p.id }}
+          </SelectItem>
+        </SelectContent>
+      </Select>
     </div>
 
     <!-- 温度 -->
-    <div>
-      <label class="text-xs font-medium text-muted-foreground mb-1 block">
+    <div class="space-y-1.5">
+      <Label class="text-xs text-muted-foreground">
         温度：{{ localTemperature.toFixed(1) }}
-      </label>
-      <input
-        v-model.number="localTemperature"
-        type="range"
-        min="0"
-        max="2"
-        step="0.1"
-        class="w-full"
-        @change="emitUpdate"
+      </Label>
+      <Slider
+        :model-value="[localTemperature]"
+        :min="0"
+        :max="2"
+        :step="0.1"
+        @update:model-value="onTemperatureChange"
       />
     </div>
 
     <!-- 最大 Token -->
-    <div>
-      <label class="text-xs font-medium text-muted-foreground mb-1 block">最大 Token</label>
-      <input
-        v-model.number="localMaxTokens"
+    <div class="space-y-1.5">
+      <Label class="text-xs text-muted-foreground">最大 Token</Label>
+      <Input
         type="number"
-        min="100"
-        max="8000"
-        step="100"
-        class="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm
-               focus:outline-none focus:ring-1 focus:ring-ring"
-        @change="emitUpdate"
+        :model-value="localMaxTokens"
+        :min="100"
+        :max="8000"
+        :step="100"
+        @update:model-value="onMaxTokensChange"
       />
     </div>
 
     <!-- 知识库多选 -->
-    <div v-if="knowledgeBases.length > 0">
-      <label class="text-xs font-medium text-muted-foreground mb-1 block">关联知识库</label>
+    <div v-if="knowledgeBases.length > 0" class="space-y-1.5">
+      <Label class="text-xs text-muted-foreground">关联知识库</Label>
       <div class="space-y-1 max-h-32 overflow-y-auto">
         <label
           v-for="kb in knowledgeBases"
           :key="kb.id"
           class="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5"
         >
-          <input
-            type="checkbox"
+          <Checkbox
             :checked="localKbIds.includes(kb.id)"
-            class="rounded border-input"
-            @change="toggleKb(kb.id)"
+            @update:checked="(checked: boolean) => toggleKb(kb.id, checked)"
           />
           <span class="text-sm text-foreground">{{ kb.name }}</span>
         </label>
