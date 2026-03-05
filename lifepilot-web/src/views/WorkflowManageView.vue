@@ -1,11 +1,17 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useWorkflowStore } from '@/stores/workflow'
-import type { WorkflowItem } from '@/types'
+import type { WorkflowDetail, WorkflowItem } from '@/types'
+import WorkflowForm from '@/components/workflow/WorkflowForm.vue'
+import { Copy, Edit2, Plus, Trash2, Workflow as WorkflowIcon } from 'lucide-vue-next'
 
 const store = useWorkflowStore()
 const activeTab = ref<'detail' | 'executions'>('detail')
 const triggerLoading = ref(false)
+
+const showForm = ref(false)
+const formMode = ref<'create' | 'edit' | 'duplicate'>('create')
+const selectedWorkflow = ref<WorkflowDetail | null>(null)
 
 onMounted(() => store.fetchList())
 
@@ -38,6 +44,43 @@ async function showExecutions(id: string) {
   await store.fetchExecutions(id)
 }
 
+function openCreate() {
+  formMode.value = 'create'
+  selectedWorkflow.value = null
+  showForm.value = true
+}
+
+function openEdit() {
+  if (!store.current) return
+  formMode.value = 'edit'
+  selectedWorkflow.value = store.current
+  showForm.value = true
+}
+
+function openDuplicate() {
+  if (!store.current) return
+  formMode.value = 'duplicate'
+  selectedWorkflow.value = store.current
+  showForm.value = true
+}
+
+async function confirmDelete() {
+  if (!store.current) return
+  const wf = store.current
+  const ok = window.confirm(`确认删除工作流「${wf.name}」？此操作不可撤销。`)
+  if (!ok) return
+
+  await store.remove(wf.id)
+  backToList()
+  await store.fetchList()
+}
+
+async function onWorkflowSaved(wf: WorkflowDetail) {
+  // store.create/update 已刷新列表，这里确保详情视图也同步到最新状态
+  await store.fetchDetail(wf.id)
+  showForm.value = false
+}
+
 const stateLabel: Record<string, { label: string; class: string }> = {
   PENDING: { label: '等待中', class: 'bg-gray-100 text-gray-800' },
   RUNNING: { label: '运行中', class: 'bg-blue-100 text-blue-800' },
@@ -67,10 +110,37 @@ function formatDuration(start?: string, end?: string): string {
         <template v-if="!store.current">
           <div class="flex items-center justify-between mb-md">
             <h2 class="text-2xl font-semibold text-foreground leading-tight">工作流管理</h2>
+            <button
+              class="rounded-lg px-md py-sm text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 hover:shadow-md transition-all duration-200 active:scale-[0.98]"
+              @click="openCreate"
+            >
+              <span class="inline-flex items-center gap-sm">
+                <Plus class="w-4 h-4" />
+                新建工作流
+              </span>
+            </button>
           </div>
 
           <div v-if="store.loading" class="text-sm text-muted-foreground">加载中...</div>
-          <div v-else-if="store.list.length === 0" class="text-sm text-muted-foreground">暂无工作流</div>
+          <div
+            v-else-if="store.list.length === 0"
+            class="border border-border rounded-2xl bg-card p-lg flex flex-col items-center text-center gap-sm"
+          >
+            <div class="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
+              <WorkflowIcon class="w-8 h-8 text-primary" />
+            </div>
+            <div class="text-xl font-semibold text-foreground">暂无工作流</div>
+            <!-- 注意：项目里 `md` 可能被用作 spacing token（16px），避免用 `max-w-md` 导致文本被压成逐字换行 -->
+            <div class="text-sm text-muted-foreground w-full max-w-[560px] leading-normal">
+              通过 YAML 定义你的第一个自动化流程。你可以先从“手动触发 + 工具步骤”的模板开始。
+            </div>
+            <button
+              class="rounded-lg px-md py-sm text-sm font-medium bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-all duration-200 active:scale-[0.98]"
+              @click="openCreate"
+            >
+              立即新建
+            </button>
+          </div>
           <div v-else class="space-y-sm">
             <div
               v-for="wf in store.list"
@@ -136,6 +206,34 @@ function formatDuration(start?: string, end?: string): string {
               @click="handleTrigger(store.current!.id)"
             >
               {{ triggerLoading ? '触发中...' : '手动触发' }}
+            </button>
+            <div class="flex-1" />
+            <button
+              class="text-sm px-md py-xs rounded-lg border border-input bg-background hover:bg-accent hover:shadow-sm transition-all duration-200 active:scale-[0.98]"
+              @click="openEdit"
+            >
+              <span class="inline-flex items-center gap-sm">
+                <Edit2 class="w-4 h-4" />
+                编辑
+              </span>
+            </button>
+            <button
+              class="text-sm px-md py-xs rounded-lg border border-input bg-background hover:bg-accent hover:shadow-sm transition-all duration-200 active:scale-[0.98]"
+              @click="openDuplicate"
+            >
+              <span class="inline-flex items-center gap-sm">
+                <Copy class="w-4 h-4" />
+                复制
+              </span>
+            </button>
+            <button
+              class="text-sm px-md py-xs rounded-lg border border-destructive/30 bg-background text-destructive hover:bg-destructive/10 hover:shadow-sm transition-all duration-200 active:scale-[0.98]"
+              @click="confirmDelete"
+            >
+              <span class="inline-flex items-center gap-sm">
+                <Trash2 class="w-4 h-4" />
+                删除
+              </span>
             </button>
           </div>
 
@@ -257,5 +355,13 @@ function formatDuration(start?: string, end?: string): string {
         </template>
       </div>
     </div>
+
+    <WorkflowForm
+      v-if="showForm"
+      :workflow="selectedWorkflow"
+      :mode="formMode"
+      @close="showForm = false"
+      @saved="onWorkflowSaved"
+    />
   </div>
 </template>

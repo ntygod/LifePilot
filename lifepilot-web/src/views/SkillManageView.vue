@@ -8,7 +8,6 @@ const router = useRouter()
 const store = useSkillStore()
 
 const activeTab = ref<'skills' | 'mcp'>('skills')
-const showDetail = ref(false)
 const showCreateDialog = ref(false)
 const deleteTarget = ref<SkillSummary | null>(null)
 const selectedServer = ref<McpServer | null>(null)
@@ -28,20 +27,9 @@ async function viewSkillDetail(skill: SkillSummary) {
   router.push(`/skills/${skill.id}`)
 }
 
-async function confirmUnregister() {
-  if (!deleteTarget.value) return
-  try {
-    await store.unregisterSkill(deleteTarget.value.id)
-    deleteTarget.value = null
-    showDetail.value = false
-  } catch (e: any) {
-    alert(e.message || '注销失败')
-  }
-}
-
 async function handleCreate() {
   if (!newSkill.value.name.trim()) {
-    alert('请输入 Skill 名称')
+    alert('请为能力填写名称')
     return
   }
   try {
@@ -53,12 +41,25 @@ async function handleCreate() {
   }
 }
 
+async function confirmUnregister() {
+  if (!deleteTarget.value) return
+  try {
+    await store.unregisterSkill(deleteTarget.value.id)
+    deleteTarget.value = null
+  } catch (e: any) {
+    alert(e.message || '删除失败')
+  }
+}
+
 async function toggleSkill(skill: SkillSummary, e: Event) {
   e.stopPropagation()
   try {
-    // 这里需要后端返回 enabled 状态，暂时使用占位逻辑
-    // 实际应该根据 skill.enabled 判断
+    const enabled = (skill as any).enabled ?? true
+    if (enabled) {
+      await store.disableSkill(skill.id)
+    } else {
     await store.enableSkill(skill.id)
+    }
   } catch (e: any) {
     alert(e.message || '操作失败')
   }
@@ -76,10 +77,10 @@ const sourceLabel: Record<string, string> = {
 }
 
 const stateLabel: Record<string, { label: string; class: string }> = {
-  CONNECTED: { label: '已连接', class: 'bg-green-100 text-green-800' },
-  CONNECTING: { label: '连接中', class: 'bg-blue-100 text-blue-800' },
-  DISCONNECTED: { label: '未连接', class: 'bg-gray-100 text-gray-800' },
-  RECONNECTING: { label: '重连中', class: 'bg-yellow-100 text-yellow-800' },
+  CONNECTED: { label: '已连接', class: 'bg-primary/10 text-primary' },
+  CONNECTING: { label: '连接中', class: 'bg-accent text-accent-foreground' },
+  DISCONNECTED: { label: '未连接', class: 'bg-muted text-muted-foreground' },
+  RECONNECTING: { label: '重连中', class: 'bg-accent/70 text-accent-foreground' },
 }
 </script>
 
@@ -96,15 +97,20 @@ const stateLabel: Record<string, { label: string; class: string }> = {
         </div>
 
         <div class="flex items-center justify-between mb-md gap-sm">
+          <div class="space-y-xs">
           <h2 class="text-2xl font-semibold text-foreground leading-tight">
-            技能管理
+              我的智能能力
           </h2>
+            <p class="text-sm text-muted-foreground">
+              在这里管理 LifePilot 能为你做的事情，你可以随时开启或关闭这些能力。
+            </p>
+          </div>
           <button
             v-if="activeTab === 'skills'"
             class="px-md py-sm rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 hover:shadow-md transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             @click="showCreateDialog = true"
           >
-            新建 Skill
+            新建能力（高级）
           </button>
         </div>
 
@@ -133,8 +139,25 @@ const stateLabel: Record<string, { label: string; class: string }> = {
         <!-- Skill 列表 -->
         <template v-if="activeTab === 'skills'">
           <div v-if="store.loading" class="text-sm text-muted-foreground">加载中...</div>
-          <div v-else-if="store.skills.length === 0" class="text-sm text-muted-foreground">
-            暂无 Skill
+          <div
+            v-else-if="store.skills.length === 0"
+            class="flex flex-col items-center justify-center py-xl text-center"
+          >
+            <div class="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-md">
+              <span class="text-2xl text-primary">◎</span>
+            </div>
+            <h3 class="text-xl font-semibold text-foreground mb-sm">
+              还没有可用的智能能力
+            </h3>
+            <p class="text-sm text-muted-foreground mb-md max-w-md">
+              LifePilot 可以通过不同的能力帮助你管理任务、规划时间或整理信息。你可以先从系统推荐的能力开始使用，或者为自己创建一个专属能力。
+            </p>
+            <button
+              class="px-md py-sm rounded-lg bg-muted text-muted-foreground text-sm font-medium hover:bg-accent transition-all duration-200"
+              @click="showCreateDialog = true"
+            >
+              创建我的第一个能力
+            </button>
           </div>
           <div
             v-else
@@ -146,37 +169,53 @@ const stateLabel: Record<string, { label: string; class: string }> = {
               class="border border-border rounded-lg p-md hover:border-primary/50 hover:shadow-sm transition-all duration-200 bg-card"
             >
               <div class="flex items-start justify-between mb-xs gap-sm">
+                <div class="flex-1 min-w-0">
                 <h3
-                  class="font-medium text-foreground truncate cursor-pointer flex-1 text-sm leading-snug"
+                    class="font-medium text-foreground truncate cursor-pointer text-sm leading-snug"
                   @click="viewSkillDetail(skill)"
                 >
                   {{ skill.name }}
                 </h3>
-                <span class="text-xs px-sm py-xs rounded-full bg-accent text-accent-foreground shrink-0 ml-sm">
+                  <p class="mt-xs text-xs text-muted-foreground line-clamp-2 leading-normal">
+                    {{ skill.description || '这个能力还没有添加描述。' }}
+                  </p>
+                </div>
+                <div class="flex flex-col items-end gap-xs shrink-0 ml-sm">
+                  <span class="text-xs px-sm py-xs rounded-full bg-accent text-accent-foreground">
                   {{ sourceLabel[skill.sourceType] ?? skill.sourceType }}
                 </span>
-              </div>
-              <p class="text-sm text-muted-foreground mb-sm line-clamp-2 leading-normal">
-                {{ skill.description || '无描述' }}
-              </p>
-              <div class="flex items-center justify-between">
-                <div class="text-xs text-muted-foreground">
-                  v{{ skill.version }}
+                  <button
+                    class="mt-xs inline-flex items-center gap-xs px-sm py-xs rounded-full text-xs border border-input hover:bg-accent transition-colors"
+                    @click="toggleSkill(skill, $event)"
+                  >
+                    <span>
+                      {{ (skill as any).enabled ?? true ? '启用中' : '已关闭' }}
+                    </span>
+                  </button>
                 </div>
-                <div class="flex gap-xs">
+              </div>
+              <div class="mt-sm space-y-xs text-xs text-muted-foreground">
+                <div>
+                  <span class="mr-xs text-muted-foreground">适合用来：</span>
+                  <span>{{ skill.description || '根据你的需求为你提供帮助' }}</span>
+                </div>
+                <div class="flex items-center justify-between">
+                  <span>v{{ skill.version }}</span>
+                  <div class="flex items-center gap-xs">
                   <button
                     class="text-xs px-sm py-xs rounded-lg border border-input hover:bg-accent hover:text-accent-foreground transition-colors"
                     @click="viewSkillDetail(skill)"
                   >
-                    查看
+                      了解详情
                   </button>
                   <button
-                    v-if="skill.sourceType !== 'Builtin'"
+                      v-if="skill.sourceType === 'UserDefined'"
                     class="text-xs px-sm py-xs rounded-lg bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors"
                     @click.stop="deleteTarget = skill"
                   >
                     删除
                   </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -201,7 +240,7 @@ const stateLabel: Record<string, { label: string; class: string }> = {
                 </h3>
                 <span
                   class="text-xs px-sm py-xs rounded-full shrink-0"
-                  :class="stateLabel[server.state]?.class ?? 'bg-gray-100 text-gray-800'"
+                  :class="stateLabel[server.state]?.class ?? 'bg-muted text-foreground'"
                 >
                   {{ stateLabel[server.state]?.label ?? server.state }}
                 </span>
@@ -262,105 +301,46 @@ const stateLabel: Record<string, { label: string; class: string }> = {
       </div>
     </div>
 
-    <!-- Skill 详情抽屉 -->
-    <div
-      v-if="showDetail && store.currentSkill"
-      class="fixed inset-0 bg-black/50 flex justify-end z-50"
-      @click.self="showDetail = false"
-    >
-      <div class="bg-card border-l border-border w-full max-w-[448px] h-full overflow-y-auto px-lg py-md">
-        <div class="flex items-center justify-between mb-md">
-          <h3 class="text-lg font-semibold text-foreground">
-            {{ store.currentSkill.name }}
-          </h3>
-          <button
-            class="text-muted-foreground hover:text-foreground transition-colors"
-            @click="showDetail = false"
-          >
-            ×
-          </button>
-        </div>
-        <div class="space-y-md text-sm">
-          <div>
-            <span class="text-muted-foreground">来源：</span>
-            <span>{{ sourceLabel[store.currentSkill.sourceType] ?? store.currentSkill.sourceType }}</span>
-          </div>
-          <div>
-            <span class="text-muted-foreground">版本：</span>
-            <span>{{ store.currentSkill.version }}</span>
-          </div>
-          <div>
-            <span class="text-muted-foreground">描述：</span>
-            <p class="mt-xs leading-normal">
-              {{ store.currentSkill.description || '无描述' }}
-            </p>
-          </div>
-          <div v-if="store.currentSkill.allowedTools.length > 0">
-            <span class="text-muted-foreground">允许工具：</span>
-            <div class="flex flex-wrap gap-xs mt-xs">
-              <span
-                v-for="tool in store.currentSkill.allowedTools"
-                :key="tool"
-                class="text-xs px-sm py-xs rounded-full bg-accent text-accent-foreground"
-              >
-                {{ tool }}
-              </span>
-            </div>
-          </div>
-          <div v-if="store.currentSkill.systemPrompt">
-            <span class="text-muted-foreground">系统提示词：</span>
-            <pre class="mt-xs px-md py-sm rounded-md bg-muted text-xs whitespace-pre-wrap break-words leading-normal">
-{{ store.currentSkill.systemPrompt }}</pre>
-          </div>
-          <!-- 注销按钮（非 Builtin） -->
-          <button
-            v-if="store.currentSkill.sourceType !== 'Builtin'"
-            class="w-full h-9 rounded-lg text-sm bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors"
-            @click="deleteTarget = store.currentSkill"
-          >
-            注销此 Skill
-          </button>
-        </div>
-      </div>
-    </div>
-
     <!-- 新建对话框 -->
     <div
       v-if="showCreateDialog"
       class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
       @click.self="showCreateDialog = false"
     >
-      <div class="bg-card border border-border rounded-lg p-6 w-full max-w-[448px] shadow-lg">
-        <h3 class="text-lg font-semibold text-foreground mb-4">新建 Skill</h3>
-        <div class="space-y-4">
+      <div class="bg-card border border-border rounded-lg p-lg w-full max-w-[448px] shadow-lg">
+        <h3 class="text-lg font-semibold text-foreground mb-sm">新建能力（高级）</h3>
+        <p class="text-sm text-muted-foreground mb-md">
+          适合熟悉 AI 配置的高级用户，创建一个完全自定义的智能能力。普通使用场景通常无需手动创建。
+        </p>
+        <div class="space-y-md">
           <div>
             <label class="block text-sm font-medium text-foreground mb-1">名称 *</label>
             <input
               v-model="newSkill.name"
               type="text"
-              placeholder="输入 Skill 名称"
-              class="w-full px-3 py-2 rounded-md border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              placeholder="例如：帮我规划本周目标"
+              class="w-full px-md py-sm rounded-2xl border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
             />
           </div>
           <div>
             <label class="block text-sm font-medium text-foreground mb-1">描述</label>
             <textarea
               v-model="newSkill.description"
-              placeholder="输入 Skill 描述"
+              placeholder="简单描述这个能力可以帮你做什么，便于后续识别和使用"
               rows="3"
-              class="w-full px-3 py-2 rounded-md border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+              class="w-full px-md py-sm rounded-2xl border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none"
             />
           </div>
         </div>
-        <div class="flex justify-end gap-2 mt-6">
+        <div class="flex justify-end gap-sm mt-lg">
           <button
-            class="px-4 py-2 rounded-md border border-input hover:bg-accent transition-colors"
+            class="px-md py-sm rounded-lg border border-input text-sm hover:bg-accent transition-colors"
             @click="showCreateDialog = false"
           >
             取消
           </button>
           <button
-            class="px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+            class="px-md py-sm rounded-lg bg-primary text-primary-foreground text-sm hover:bg-primary/90 transition-colors"
             @click="handleCreate"
           >
             创建

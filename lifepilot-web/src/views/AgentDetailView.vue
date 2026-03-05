@@ -139,9 +139,18 @@ watch(systemPrompt, () => {
 async function saveModelConfig() {
   if (!agent.value) return
   try {
-    await agentStore.updateAgent(agent.value.id, {
-      modelConfig: modelConfig.value
-    })
+    const payload: any = {
+      // 后端 UpdateAgentRequest 字段
+      modelId: modelConfig.value.modelId,
+      temperature: modelConfig.value.temperature,
+      maxTokens: modelConfig.value.maxTokens,
+      // 模型高级参数（如 topP）通过 metadata 透传
+      metadata: {}
+    }
+    if (modelConfig.value.topP != null) {
+      payload.metadata.topP = modelConfig.value.topP
+    }
+    await agentStore.updateAgent(agent.value.id, payload)
   } catch (e: any) {
     alert(e.message || '保存失败')
   }
@@ -150,9 +159,26 @@ async function saveModelConfig() {
 async function saveKnowledgeBases() {
   if (!agent.value) return
   try {
-    await agentStore.updateAgent(agent.value.id, {
-      knowledgeBases: selectedKbs.value
-    })
+    const kbIds = selectedKbs.value.map(kb => kb.id)
+    const metadata: Record<string, any> = {}
+
+    // 将每个知识库的配置写入 metadata（kb.{id}.topK / kb.{id}.maxContextTokens）
+    for (const kb of selectedKbs.value) {
+      const prefix = `kb.${kb.id}.`
+      if (kb.topK != null) {
+        metadata[`${prefix}topK`] = kb.topK
+      }
+      if (kb.maxContextTokens != null) {
+        metadata[`${prefix}maxContextTokens`] = kb.maxContextTokens
+      }
+    }
+
+    const payload: any = {
+      knowledgeBaseIds: kbIds,
+      metadata
+    }
+
+    await agentStore.updateAgent(agent.value.id, payload)
     showKbDialog.value = false
   } catch (e: any) {
     alert(e.message || '保存失败')
@@ -162,9 +188,11 @@ async function saveKnowledgeBases() {
 async function saveTools() {
   if (!agent.value) return
   try {
-    await agentStore.updateAgent(agent.value.id, {
-      enabledTools: enabledTools.value
-    })
+    const payload: any = {
+      // 后端 UpdateAgentRequest 中的 toolIds
+      toolIds: enabledTools.value
+    }
+    await agentStore.updateAgent(agent.value.id, payload)
     showToolsDialog.value = false
   } catch (e: any) {
     alert(e.message || '保存失败')

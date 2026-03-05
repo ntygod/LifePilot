@@ -12,6 +12,7 @@ const skillId = computed(() => route.params.id as string)
 const skill = computed(() => skillStore.currentSkill)
 
 const editingBasic = ref(false)
+const showAdvanced = ref(false)
 const basicInfo = ref({
   name: '',
   description: '',
@@ -62,6 +63,10 @@ const isYamlEditable = computed(() => {
   return skill.value?.sourceType === 'UserDefined'
 })
 
+const isEnabled = computed(() => {
+  return (skill.value as any)?.enabled ?? true
+})
+
 async function saveBasicInfo() {
   if (!skill.value) return
   try {
@@ -106,32 +111,9 @@ watch(yamlContent, () => {
 })
 
 async function runTest() {
-  if (!skill.value || !testInput.value.trim() || testLoading.value) return
-  
-  testLoading.value = true
-  testResult.value = null
-  
-  try {
-    let context: Record<string, unknown> = {}
-    try {
-      context = JSON.parse(testContext.value || '{}')
-    } catch {
-      alert('上下文 JSON 格式错误')
-      return
-    }
-    
-    const result = await skillStore.testSkill(skill.value.id, {
-      userMessage: testInput.value,
-      context
-    })
-    testResult.value = result
-  } catch (e: any) {
-    testResult.value = {
-      error: e.message || '测试失败'
-    }
-  } finally {
-    testLoading.value = false
-  }
+  // 当前后端尚未提供 Skill 独立测试接口，避免发送无效请求
+  if (!skill.value) return
+  alert('当前版本暂未开放 Skill 独立测试接口，请在 Agent 中关联该 Skill 后通过对话进行验证。')
 }
 
 const sourceLabel: Record<string, string> = {
@@ -144,171 +126,236 @@ const sourceLabel: Record<string, string> = {
 <template>
   <div class="flex flex-col h-full overflow-hidden">
     <!-- 头部 -->
-    <div class="flex-shrink-0 p-6 border-b border-border">
-      <div class="flex items-center justify-between mb-4">
-        <div class="flex items-center gap-3">
+    <div class="flex-shrink-0 px-lg py-md border-b border-border bg-background/60 backdrop-blur-sm">
+      <div class="max-w-[1200px] mx-auto flex items-center justify-between gap-md">
+        <div class="flex items-center gap-sm">
           <button
             class="text-sm text-muted-foreground hover:text-foreground transition-colors"
             @click="router.push('/skills')"
           >
             ← 返回列表
           </button>
-          <h2 class="text-2xl font-semibold text-foreground">
-            {{ skill?.name || '加载中...' }}
-          </h2>
-          <span class="text-xs px-2 py-0.5 rounded-full bg-accent text-accent-foreground">
-            {{ sourceLabel[skill?.sourceType || ''] ?? skill?.sourceType }}
+          <div class="flex flex-col gap-xs">
+            <div class="flex items-center gap-sm">
+              <h2 class="text-2xl font-semibold text-foreground leading-tight">
+                {{ skill?.name || '加载中...' }}
+              </h2>
+              <span class="text-xs px-sm py-xs rounded-full bg-accent text-accent-foreground">
+                {{ sourceLabel[skill?.sourceType || ''] ?? skill?.sourceType }}
+              </span>
+            </div>
+            <p class="text-sm text-muted-foreground">
+              了解这个能力能为你做什么，以及它在对话中的使用方式。
+            </p>
+          </div>
+        </div>
+        <div v-if="skill" class="flex items-center gap-sm">
+          <span class="text-xs text-muted-foreground">
+            当前状态：{{ isEnabled ? '启用中' : '已关闭' }}
           </span>
+          <button
+            class="px-md py-sm rounded-lg text-sm border border-input hover:bg-accent hover:text-accent-foreground transition-colors"
+            @click="isEnabled ? skillStore.disableSkill(skill.id) : skillStore.enableSkill(skill.id)"
+          >
+            {{ isEnabled ? '关闭此能力' : '启用此能力' }}
+          </button>
         </div>
       </div>
     </div>
 
     <!-- 内容区域 -->
-    <div class="flex-1 overflow-y-auto p-6">
-      <div v-if="!skill" class="text-sm text-muted-foreground">加载中...</div>
-      <div v-else class="max-w-4xl mx-auto space-y-6">
-        <!-- 基本信息 -->
-        <div class="border border-border rounded-lg p-6">
-          <div class="flex items-center justify-between mb-4">
-            <h3 class="text-lg font-semibold text-foreground">基本信息</h3>
-            <button
-              v-if="!editingBasic && skill.sourceType !== 'Builtin'"
-              class="text-sm text-muted-foreground hover:text-foreground transition-colors"
-              @click="editingBasic = true"
-            >
-              编辑
-            </button>
+    <div class="flex-1 overflow-y-auto px-lg py-lg">
+      <div v-if="!skill" class="text-sm text-muted-foreground max-w-[1200px] mx-auto">加载中...</div>
+      <div v-else class="max-w-[768px] mx-auto space-y-lg">
+        <!-- 使用说明 -->
+        <div class="border border-border rounded-2xl p-lg bg-card shadow-sm">
+          <h3 class="text-lg font-semibold text-foreground mb-sm">这个能力能为你做什么</h3>
+          <p class="text-sm text-muted-foreground leading-normal mb-md">
+            {{ skill.description || '这个能力还没有详细描述，你可以先在对话中试着让它帮你完成一些任务。' }}
+          </p>
+          <div class="space-y-sm">
+            <h4 class="text-sm font-medium text-foreground">你可以这样向它提问</h4>
+            <ul class="list-disc list-inside space-y-xs text-sm text-muted-foreground">
+              <li>用自己的语言描述你希望它帮你完成的事情，例如：“帮我整理一下这周的重要待办。”</li>
+              <li>如果有上下文信息，可以在同一条消息中一并提供。</li>
+              <li>遇到不符合预期的结果，可以补充说明你的期望，它会尝试调整行为。</li>
+            </ul>
           </div>
-          
-          <div v-if="editingBasic" class="space-y-4">
-            <div>
-              <label class="block text-sm font-medium text-foreground mb-1">名称</label>
-              <input
-                v-model="basicInfo.name"
-                type="text"
-                class="w-full px-3 py-2 rounded-md border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-              />
+        </div>
+
+        <!-- 行为与数据概览 -->
+        <div class="border border-border rounded-2xl p-lg bg-card">
+          <h3 class="text-lg font-semibold text-foreground mb-sm">行为与数据概览</h3>
+          <div class="space-y-sm text-sm text-muted-foreground">
+            <div class="flex items-center justify-between">
+              <span>版本</span>
+              <span class="text-foreground">v{{ skill.version }}</span>
             </div>
-            <div>
-              <label class="block text-sm font-medium text-foreground mb-1">描述</label>
-              <textarea
-                v-model="basicInfo.description"
-                rows="3"
-                class="w-full px-3 py-2 rounded-md border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none"
-              />
-            </div>
-            <div class="flex justify-end gap-2">
-              <button
-                class="px-4 py-2 rounded-md border border-input hover:bg-accent transition-colors"
-                @click="editingBasic = false"
-              >
-                取消
-              </button>
-              <button
-                class="px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-                @click="saveBasicInfo"
-              >
-                保存
-              </button>
-            </div>
-          </div>
-          <div v-else class="space-y-2 text-sm">
-            <div>
-              <span class="text-muted-foreground">描述：</span>
-              <p class="mt-1">{{ skill.description || '无描述' }}</p>
-            </div>
-            <div>
-              <span class="text-muted-foreground">版本：</span>
-              <span>{{ skill.version }}</span>
-            </div>
-            <div v-if="skill.allowedTools.length > 0">
-              <span class="text-muted-foreground">允许工具：</span>
-              <div class="flex flex-wrap gap-1 mt-1">
+            <div v-if="skill.allowedTools.length > 0" class="space-y-xs">
+              <span class="block">可能会使用到的内部能力（工具）</span>
+              <div class="flex flex-wrap gap-xs mt-xs">
                 <span
                   v-for="tool in skill.allowedTools"
                   :key="tool"
-                  class="text-xs px-2 py-0.5 rounded-full bg-accent text-accent-foreground"
+                  class="text-xs px-sm py-xs rounded-full bg-accent text-accent-foreground"
                 >
                   {{ tool }}
                 </span>
               </div>
             </div>
-            <div v-if="skill.systemPrompt">
-              <span class="text-muted-foreground">系统提示词：</span>
-              <pre class="mt-1 p-3 rounded-md bg-muted text-xs whitespace-pre-wrap break-words">{{ skill.systemPrompt }}</pre>
+            <div class="pt-sm border-t border-border">
+              <p class="text-xs text-muted-foreground">
+                数据安全：此能力只会在你发起请求时工作，不会在未征得你同意的情况下主动对外发送消息。
+              </p>
             </div>
           </div>
         </div>
 
-        <!-- YAML 编辑器（仅 UserDefined 类型可编辑） -->
-        <div v-if="isYamlEditable" class="border border-border rounded-lg p-6">
-          <div class="flex items-center justify-between mb-4">
-            <h3 class="text-lg font-semibold text-foreground">YAML 配置</h3>
-            <div class="flex items-center gap-2">
-              <span
-                v-if="yamlDirty"
-                class="text-xs text-muted-foreground"
-              >
-                未保存
-              </span>
-              <button
-                v-if="yamlDirty"
-                class="text-sm px-3 py-1 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
-                :disabled="yamlSaving"
-                @click="saveYaml"
-              >
-                {{ yamlSaving ? '保存中...' : '保存' }}
-              </button>
+        <!-- 高级设置 -->
+        <div class="border border-border rounded-2xl p-lg bg-card">
+          <button
+            class="w-full flex items-center justify-between text-left text-sm font-medium text-foreground"
+            @click="showAdvanced = !showAdvanced"
+          >
+            <span>高级设置（仅在你了解含义时再修改）</span>
+            <span class="text-xs text-muted-foreground">
+              {{ showAdvanced ? '收起' : '展开' }}
+            </span>
+          </button>
+          <div v-if="showAdvanced" class="mt-md space-y-md text-sm">
+            <!-- 基本信息编辑 -->
+            <div class="border border-dashed border-border rounded-lg p-md">
+              <div class="flex items-center justify-between mb-sm">
+                <h4 class="text-sm font-medium text-foreground">基础配置</h4>
+                <button
+                  v-if="!editingBasic && skill.sourceType !== 'Builtin'"
+                  class="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  @click="editingBasic = true"
+                >
+                  编辑
+                </button>
+              </div>
+              <div v-if="editingBasic" class="space-y-sm">
+                <div>
+                  <label class="block text-xs font-medium text-foreground mb-xs">名称</label>
+                  <input
+                    v-model="basicInfo.name"
+                    type="text"
+                    class="w-full px-md py-sm rounded-2xl border border-input bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-foreground mb-xs">描述</label>
+                  <textarea
+                    v-model="basicInfo.description"
+                    rows="3"
+                    class="w-full px-md py-sm rounded-2xl border border-input bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+                  />
+                </div>
+                <div class="flex justify-end gap-sm mt-sm">
+                  <button
+                    class="px-md py-sm rounded-lg border border-input text-xs hover:bg-accent transition-colors"
+                    @click="editingBasic = false"
+                  >
+                    取消
+                  </button>
+                  <button
+                    class="px-md py-sm rounded-lg bg-primary text-primary-foreground text-xs hover:bg-primary/90 transition-colors"
+                    @click="saveBasicInfo"
+                  >
+                    保存
+                  </button>
+                </div>
+              </div>
+              <div v-else class="space-y-xs text-xs text-muted-foreground">
+                <div>
+                  <span class="mr-xs text-muted-foreground">名称：</span>
+                  <span class="text-foreground">{{ skill.name }}</span>
+                </div>
+                <div>
+                  <span class="mr-xs text-muted-foreground">描述：</span>
+                  <span class="text-foreground">{{ skill.description || '无描述' }}</span>
+                </div>
+              </div>
             </div>
-          </div>
-          <textarea
-            v-model="yamlContent"
-            rows="15"
-            placeholder="输入 YAML 配置..."
-            class="w-full px-3 py-2 rounded-md border border-input bg-background text-foreground font-mono text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none"
-          />
-          <p class="text-xs text-muted-foreground mt-2">
-            提示：YAML 配置以 JSON 格式存储，请使用有效的 JSON 格式
-          </p>
-        </div>
 
-        <!-- 调试区域 -->
-        <div class="border border-border rounded-lg p-6">
-          <h3 class="text-lg font-semibold text-foreground mb-4">调试测试</h3>
-          <div class="space-y-4">
-            <div>
-              <label class="block text-sm font-medium text-foreground mb-1">输入消息</label>
-              <input
-                v-model="testInput"
-                type="text"
-                placeholder="输入测试消息..."
-                class="w-full px-3 py-2 rounded-md border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-              />
+            <!-- 系统提示词 -->
+            <div class="border border-dashed border-border rounded-lg p-md">
+              <h4 class="text-sm font-medium text-foreground mb-xs">系统提示词（System Prompt）</h4>
+              <p class="text-xs text-muted-foreground mb-sm">
+                这里定义了 LifePilot 在使用此能力时的内部说明。修改不当可能导致行为异常，请谨慎调整。
+              </p>
+              <pre class="mt-xs px-md py-sm rounded-md bg-muted text-xs whitespace-pre-wrap break-words leading-normal">
+{{ skill.systemPrompt }}</pre>
             </div>
-            <div>
-              <label class="block text-sm font-medium text-foreground mb-1">上下文 (JSON)</label>
-              <textarea
-                v-model="testContext"
-                rows="4"
-                placeholder='{"key": "value"}'
-                class="w-full px-3 py-2 rounded-md border border-input bg-background text-foreground font-mono text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none"
-              />
-            </div>
-            <button
-              class="w-full px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
-              :disabled="!testInput.trim() || testLoading"
-              @click="runTest"
+
+            <!-- YAML / JSON 配置 -->
+            <div
+              v-if="isYamlEditable"
+              class="border border-dashed border-border rounded-lg p-md"
             >
-              {{ testLoading ? '测试中...' : '运行测试' }}
-            </button>
-            <div v-if="testResult" class="mt-4 p-4 rounded-md bg-muted">
-              <h4 class="text-sm font-medium text-foreground mb-2">测试结果</h4>
-              <pre v-if="testResult.error" class="text-sm text-destructive whitespace-pre-wrap break-words">
-                {{ testResult.error }}
-              </pre>
-              <pre v-else class="text-sm text-foreground whitespace-pre-wrap break-words">
-                {{ JSON.stringify(testResult, null, 2) }}
-              </pre>
+              <div class="flex items-center justify-between mb-xs">
+                <h4 class="text-sm font-medium text-foreground">内部配置（JSON）</h4>
+                <div class="flex items-center gap-xs">
+                  <span
+                    v-if="yamlDirty"
+                    class="text-xs text-muted-foreground"
+                  >
+                    未保存
+                  </span>
+                  <button
+                    v-if="yamlDirty"
+                    class="text-xs px-sm py-xs rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+                    :disabled="yamlSaving"
+                    @click="saveYaml"
+                  >
+                    {{ yamlSaving ? '保存中...' : '保存' }}
+                  </button>
+                </div>
+              </div>
+              <p class="text-xs text-muted-foreground mb-sm">
+                仅在你非常清楚含义时再修改。这里存放的是此能力的内部 JSON 配置，而不是普通文档内容。
+              </p>
+              <textarea
+                v-model="yamlContent"
+                rows="12"
+                placeholder="以 JSON 形式编辑内部配置..."
+                class="w-full px-md py-sm rounded-2xl border border-input bg-background text-foreground font-mono text-xs focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+              />
+            </div>
+
+            <!-- 调试测试 -->
+            <div class="border border-dashed border-border rounded-lg p-md">
+              <h4 class="text-sm font-medium text-foreground mb-xs">调试测试</h4>
+              <p class="text-xs text-muted-foreground mb-sm">
+                后续版本会在这里开放直接测试能力的功能。当前请在 Agent 中关联该能力后，通过对话进行验证。
+              </p>
+              <div class="space-y-sm opacity-70 pointer-events-none">
+                <div>
+                  <label class="block text-xs font-medium text-foreground mb-xs">输入消息</label>
+                  <input
+                    v-model="testInput"
+                    type="text"
+                    placeholder="输入测试消息..."
+                    class="w-full px-md py-sm rounded-2xl border border-input bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-foreground mb-xs">上下文 (JSON)</label>
+                  <textarea
+                    v-model="testContext"
+                    rows="4"
+                    placeholder='{"key": "value"}'
+                    class="w-full px-md py-sm rounded-2xl border border-input bg-background text-foreground font-mono text-xs focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+                  />
+                </div>
+                <button
+                  class="w-full px-md py-sm rounded-lg bg-primary text-primary-foreground text-sm disabled:opacity-50"
+                  disabled
+                >
+                  运行测试（即将上线）
+                </button>
+              </div>
             </div>
           </div>
         </div>

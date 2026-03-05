@@ -8,8 +8,7 @@ const router = useRouter()
 const toolStore = useToolStore()
 
 const searchQuery = ref('')
-const typeFilter = ref<string>('')
-const statusFilter = ref<string>('')
+const sourceFilter = ref<string>('')
 const riskFilter = ref<string>('')
 
 onMounted(() => {
@@ -28,16 +27,8 @@ const filteredTools = computed(() => {
     )
   }
 
-  if (typeFilter.value) {
-    result = result.filter(t => t.type === typeFilter.value)
-  }
-
-  if (statusFilter.value) {
-    if (statusFilter.value === 'enabled') {
-      result = result.filter(t => t.enabled)
-    } else if (statusFilter.value === 'disabled') {
-      result = result.filter(t => !t.enabled)
-    }
+  if (sourceFilter.value) {
+    result = result.filter(t => t.source === sourceFilter.value)
   }
 
   if (riskFilter.value) {
@@ -47,10 +38,10 @@ const filteredTools = computed(() => {
   return result
 })
 
-const typeLabel: Record<string, string> = {
-  PLUGIN: 'Java 原生',
-  SKILL: 'YAML Skill',
-  MCP: 'MCP 工具'
+const sourceLabel: Record<string, string> = {
+  builtin: 'Java 原生',
+  yaml: 'YAML Tool',
+  mcp: 'MCP 工具'
 }
 
 const riskLabel: Record<string, { label: string; class: string }> = {
@@ -78,21 +69,13 @@ const riskLabel: Record<string, { label: string; class: string }> = {
             />
           </div>
           <select
-            v-model="typeFilter"
+            v-model="sourceFilter"
             class="px-md py-sm rounded-lg border border-input bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-ring"
           >
-            <option value="">全部类型</option>
-            <option value="PLUGIN">Java 原生</option>
-            <option value="SKILL">YAML Skill</option>
-            <option value="MCP">MCP 工具</option>
-          </select>
-          <select
-            v-model="statusFilter"
-            class="px-md py-sm rounded-lg border border-input bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-          >
-            <option value="">全部状态</option>
-            <option value="enabled">已启用</option>
-            <option value="disabled">已禁用</option>
+            <option value="">全部来源</option>
+            <option value="builtin">Java 原生</option>
+            <option value="yaml">YAML Tool</option>
+            <option value="mcp">MCP 工具</option>
           </select>
           <select
             v-model="riskFilter"
@@ -112,7 +95,7 @@ const riskLabel: Record<string, { label: string; class: string }> = {
       <div class="max-w-[1200px] mx-auto px-md md:px-lg py-lg">
         <div v-if="toolStore.loading" class="text-sm text-muted-foreground">加载中...</div>
         <div v-else-if="filteredTools.length === 0" class="text-sm text-muted-foreground">
-          {{ searchQuery || typeFilter || statusFilter || riskFilter ? '未找到匹配的工具' : '暂无工具' }}
+          {{ searchQuery || sourceFilter || riskFilter ? '未找到匹配的工具' : '暂无工具' }}
         </div>
         <div v-else class="space-y-sm">
           <div
@@ -127,14 +110,11 @@ const riskLabel: Record<string, { label: string; class: string }> = {
                   <h3 class="font-medium text-foreground text-sm leading-snug">
                     {{ tool.displayName || tool.name }}
                   </h3>
-                  <span
-                    class="text-xs px-sm py-xs rounded-full"
-                    :class="tool.enabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'"
-                  >
-                    {{ tool.enabled ? '已启用' : '已禁用' }}
+                  <span class="text-xs px-sm py-xs rounded-full bg-green-100 text-green-800">
+                    默认可用
                   </span>
                   <span class="text-xs px-sm py-xs rounded-full bg-accent text-accent-foreground">
-                    {{ typeLabel[tool.type] ?? tool.type }}
+                    {{ sourceLabel[tool.source] ?? tool.source }}
                   </span>
                   <span
                     class="text-xs px-sm py-xs rounded-full shrink-0"
