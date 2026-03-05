@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { Paperclip, FileText, X, ChevronDown, ChevronUp, Settings, Image, FileAudio2, FileVideo } from 'lucide-vue-next'
+import { Textarea } from '@/components/ui/textarea'
 import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
 import { chatApi } from '@/api/client'
 import type { ChatAttachment } from '@/types'
@@ -253,17 +254,17 @@ defineExpose({
 
       <div class="relative">
         <div
-          class="bg-card border border-input rounded-2xl shadow-lg overflow-hidden flex flex-col
-                 focus-within:ring-2 focus-within:ring-ring focus-within:border-transparent transition-all duration-200"
+          class="rounded-xl border border-border bg-card shadow-sm overflow-hidden flex flex-col
+                 focus-within:ring-2 focus-within:ring-ring focus-within:border-transparent transition-all duration-200 p-2"
         >
-          <textarea
+          <Textarea
             v-model="input"
             :disabled="disabled"
             :maxlength="maxLength"
             placeholder="问任何问题，或粘贴文本让 AI 分析…"
             rows="1"
-            class="w-full bg-transparent border-none text-foreground placeholder:text-muted-foreground focus:ring-0 resize-none
-                   py-md px-md min-h-[56px] max-h-[200px] text-base disabled:opacity-50 disabled:cursor-not-allowed"
+            class="border-0 focus-visible:ring-0 shadow-none resize-none
+                   min-h-[56px] max-h-[200px] text-base bg-transparent"
             @keydown="handleKeydown"
             @click="showTemplates = false"
           />
