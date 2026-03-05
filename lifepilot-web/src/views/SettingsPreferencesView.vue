@@ -1,12 +1,18 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useSettings } from '@/composables/useSettings'
-import { settingsApi } from '@/api/client'
 import SettingSection from '@/components/settings/SettingSection.vue'
 import SettingItem from '@/components/settings/SettingItem.vue'
-import SettingSwitch from '@/components/settings/SettingSwitch.vue'
-import SettingSelect from '@/components/settings/SettingSelect.vue'
-import SettingSlider from '@/components/settings/SettingSlider.vue'
+import { Switch } from '@/components/ui/switch'
+import { Slider } from '@/components/ui/slider'
+import { Button } from '@/components/ui/button'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 const { settings, loading, error, loadSettings, saveSettings } = useSettings()
 
@@ -67,25 +73,25 @@ const themeOptions = [
   { value: 'system', label: '跟随系统' },
 ] as const
 
-const languageOptions: Array<{ value: string; label: string }> = [
+const languageOptions = [
   { value: 'zh-CN', label: '简体中文' },
   { value: 'zh-TW', label: '繁体中文' },
   { value: 'en-US', label: 'English' },
   { value: 'ja-JP', label: '日本語' },
 ]
 
-const densityOptions: Array<{ value: string; label: string }> = [
+const densityOptions = [
   { value: 'compact', label: '紧凑' },
   { value: 'standard', label: '标准' },
 ]
 
-const fontSizeOptions: Array<{ value: string; label: string }> = [
+const fontSizeOptions = [
   { value: 'small', label: '小' },
   { value: 'medium', label: '中' },
   { value: 'large', label: '大' },
 ]
 
-const timeFormatOptions: Array<{ value: string; label: string }> = [
+const timeFormatOptions = [
   { value: '24h', label: '24 小时制' },
   { value: '12h', label: '12 小时制' },
 ]
@@ -101,143 +107,159 @@ function restartOnboarding() {
 <template>
   <div class="flex flex-col h-full overflow-hidden">
     <div class="flex-1 overflow-y-auto">
-      <div class="max-w-[1200px] mx-auto px-md md:px-lg py-lg space-y-6 max-w-4xl">
+      <div class="max-w-4xl mx-auto px-md md:px-lg py-lg space-y-6">
         <!-- 加载中 -->
         <div v-if="loading" class="flex items-center justify-center py-12">
           <div class="text-sm text-muted-foreground">加载中...</div>
         </div>
 
-      <!-- 加载失败 -->
-      <div v-else-if="error" class="rounded-lg border border-destructive bg-destructive/10 p-4">
-        <div class="text-sm text-destructive">{{ error }}</div>
-      </div>
+        <!-- 加载失败 -->
+        <div v-else-if="error" class="rounded-lg border border-destructive bg-destructive/10 p-4">
+          <div class="text-sm text-destructive">{{ error }}</div>
+        </div>
 
-      <!-- 设置表单 -->
-      <form v-else @submit.prevent="handleSave" class="space-y-6">
-        <!-- 外观设置 -->
-        <SettingSection title="外观设置" icon="🎨" description="自定义界面主题和语言偏好">
-          <SettingItem label="主题" description="选择您偏好的界面主题">
-            <div class="flex gap-3">
-              <label
-                v-for="opt in themeOptions"
-                :key="opt.value"
-                class="flex items-center gap-2 cursor-pointer transition-colors hover:text-foreground"
-              >
-                <input
-                  v-model="form.theme"
-                  type="radio"
-                  name="theme"
-                  :value="opt.value"
-                  class="accent-primary focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                />
-                <span class="text-sm">{{ opt.label }}</span>
-              </label>
-            </div>
-          </SettingItem>
+        <!-- 设置表单 -->
+        <form v-else @submit.prevent="handleSave" class="space-y-6">
+          <!-- 外观设置 -->
+          <SettingSection title="外观设置" icon="🎨" description="自定义界面主题和语言偏好">
+            <SettingItem label="主题" description="选择您偏好的界面主题" html-for="theme">
+              <Select :model-value="form.theme" @update:model-value="(v) => form.theme = v as any">
+                <SelectTrigger id="theme" class="w-40">
+                  <SelectValue placeholder="请选择主题" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="opt in themeOptions" :key="opt.value" :value="opt.value">
+                    {{ opt.label }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </SettingItem>
 
-          <SettingItem label="语言" description="选择界面显示语言">
-            <SettingSelect
-              v-model="form.language"
-              :options="languageOptions"
-              placeholder="请选择语言"
-            />
-          </SettingItem>
+            <SettingItem label="语言" description="选择界面显示语言" html-for="language">
+              <Select :model-value="form.language" @update:model-value="(v) => form.language = String(v)">
+                <SelectTrigger id="language" class="w-40">
+                  <SelectValue placeholder="请选择语言" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="opt in languageOptions" :key="opt.value" :value="opt.value">
+                    {{ opt.label }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </SettingItem>
 
-          <SettingItem label="布局密度" description="控制界面元素的间距">
-            <SettingSelect
-              v-model="form.layoutDensity"
-              :options="densityOptions"
-              placeholder="请选择布局密度"
-            />
-          </SettingItem>
+            <SettingItem label="布局密度" description="控制界面元素的间距" html-for="layout-density">
+              <Select :model-value="form.layoutDensity" @update:model-value="(v) => form.layoutDensity = v as any">
+                <SelectTrigger id="layout-density" class="w-40">
+                  <SelectValue placeholder="请选择布局密度" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="opt in densityOptions" :key="opt.value" :value="opt.value">
+                    {{ opt.label }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </SettingItem>
 
-          <SettingItem label="字号" description="调整界面文字大小">
-            <SettingSelect
-              v-model="form.fontSize"
-              :options="fontSizeOptions"
-              placeholder="请选择字号"
-            />
-          </SettingItem>
-        </SettingSection>
+            <SettingItem label="字号" description="调整界面文字大小" html-for="font-size">
+              <Select :model-value="form.fontSize" @update:model-value="(v) => form.fontSize = v as any">
+                <SelectTrigger id="font-size" class="w-40">
+                  <SelectValue placeholder="请选择字号" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="opt in fontSizeOptions" :key="opt.value" :value="opt.value">
+                    {{ opt.label }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </SettingItem>
+          </SettingSection>
 
-        <!-- 时间格式 -->
-        <SettingSection title="时间格式" icon="🕐" description="配置时间显示格式">
-          <SettingItem label="时间格式" description="选择时间显示方式">
-            <SettingSelect
-              v-model="form.timeFormat"
-              :options="timeFormatOptions"
-              placeholder="请选择时间格式"
-            />
-          </SettingItem>
-        </SettingSection>
+          <!-- 时间格式 -->
+          <SettingSection title="时间格式" icon="🕐" description="配置时间显示格式">
+            <SettingItem label="时间格式" description="选择时间显示方式" html-for="time-format">
+              <Select :model-value="form.timeFormat" @update:model-value="(v) => form.timeFormat = v as any">
+                <SelectTrigger id="time-format" class="w-40">
+                  <SelectValue placeholder="请选择时间格式" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="opt in timeFormatOptions" :key="opt.value" :value="opt.value">
+                    {{ opt.label }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </SettingItem>
+          </SettingSection>
 
-        <!-- 对话偏好 -->
-        <SettingSection title="对话偏好" icon="💬" description="配置对话相关的显示和行为">
-          <SettingItem label="显示 Token 用量" description="在对话中显示 Token 消耗统计">
-            <SettingSwitch v-model="form.showTokenUsage" />
-          </SettingItem>
+          <!-- 对话偏好 -->
+          <SettingSection title="对话偏好" icon="💬" description="配置对话相关的显示和行为">
+            <SettingItem label="显示 Token 用量" description="在对话中显示 Token 消耗统计" html-for="show-token-usage">
+              <Switch
+                id="show-token-usage"
+                :checked="form.showTokenUsage"
+                @update:checked="(v: boolean) => form.showTokenUsage = v"
+              />
+            </SettingItem>
 
-          <SettingItem label="自动展开代码块" description="默认展开所有代码块">
-            <SettingSwitch v-model="form.autoExpandCodeBlocks" />
-          </SettingItem>
+            <SettingItem label="自动展开代码块" description="默认展开所有代码块" html-for="auto-expand-code">
+              <Switch
+                id="auto-expand-code"
+                :checked="form.autoExpandCodeBlocks"
+                @update:checked="(v: boolean) => form.autoExpandCodeBlocks = v"
+              />
+            </SettingItem>
 
-          <SettingItem label="折叠超长回复" description="自动折叠超过一定长度的回复">
-            <SettingSwitch v-model="form.collapseLongReplies" />
-          </SettingItem>
+            <SettingItem label="折叠超长回复" description="自动折叠超过一定长度的回复" html-for="collapse-long-replies">
+              <Switch
+                id="collapse-long-replies"
+                :checked="form.collapseLongReplies"
+                @update:checked="(v: boolean) => form.collapseLongReplies = v"
+              />
+            </SettingItem>
 
-          <SettingItem
-            v-if="form.collapseLongReplies"
-            label="折叠阈值"
-            description="超过此字符数时自动折叠"
-          >
-            <div class="flex items-center gap-3">
-              <div class="flex-1">
-                <SettingSlider
-                  v-model="form.collapseThreshold"
+            <SettingItem
+              v-if="form.collapseLongReplies"
+              label="折叠阈值"
+              description="超过此字符数时自动折叠"
+            >
+              <div class="flex items-center gap-3">
+                <Slider
+                  :model-value="[form.collapseThreshold]"
                   :min="500"
                   :max="5000"
                   :step="100"
+                  class="w-32"
+                  @update:model-value="(v) => { if (v) form.collapseThreshold = v[0] }"
                 />
+                <span class="text-sm text-muted-foreground min-w-[4rem] text-right">{{ form.collapseThreshold }} 字符</span>
               </div>
-              <span class="text-sm text-muted-foreground min-w-[4rem]">{{ form.collapseThreshold }} 字符</span>
-            </div>
-          </SettingItem>
-        </SettingSection>
+            </SettingItem>
+          </SettingSection>
 
-        <!-- 其他设置 -->
-        <SettingSection title="其他设置" icon="⚙️" description="系统相关设置">
-          <SettingItem label="重新开始新手引导" description="清除新手引导完成状态，下次启动时将重新显示引导">
-            <button
-              type="button"
-              class="px-4 py-2 rounded-lg border border-input bg-background hover:bg-accent hover:shadow-md active:scale-[0.98] transition-all duration-200 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              @click="restartOnboarding"
-            >
-              重新开始
-            </button>
-          </SettingItem>
-        </SettingSection>
+          <!-- 其他设置 -->
+          <SettingSection title="其他设置" icon="⚙️" description="系统相关设置">
+            <SettingItem label="重新开始新手引导" description="清除新手引导完成状态，下次启动时将重新显示引导">
+              <Button type="button" variant="outline" @click="restartOnboarding">
+                重新开始
+              </Button>
+            </SettingItem>
+          </SettingSection>
 
-        <!-- 保存按钮 -->
-        <div class="sticky bottom-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-t py-4 -mx-4 md:-mx-6 px-4 md:px-6">
-          <div class="flex items-center justify-between">
+          <!-- 保存按钮 -->
+          <div class="sticky bottom-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-t py-4 -mx-4 md:-mx-6 px-4 md:px-6">
             <div class="flex items-center gap-3">
-              <button
-                type="submit"
-                :disabled="saving"
-                class="inline-flex items-center justify-center rounded-lg text-sm font-medium h-10 px-6 bg-primary text-primary-foreground hover:bg-primary/90 hover:shadow-md active:scale-[0.98] transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none disabled:active:scale-100"
-              >
+              <Button type="submit" :disabled="saving">
                 {{ saving ? '保存中...' : '保存设置' }}
-              </button>
+              </Button>
 
               <span v-if="saveSuccess" class="text-sm text-green-600 dark:text-green-400 flex items-center gap-2">
-                <span class="w-1.5 h-1.5 rounded-full bg-green-600 dark:bg-green-400"></span>
+                <span class="w-1.5 h-1.5 rounded-full bg-green-600 dark:bg-green-400" />
                 已保存
               </span>
               <span v-if="saveError" class="text-sm text-destructive">{{ saveError }}</span>
             </div>
           </div>
-        </div>
-      </form>
+        </form>
       </div>
     </div>
   </div>
