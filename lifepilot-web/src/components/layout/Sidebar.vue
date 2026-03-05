@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useChatStore } from '@/stores/chat'
+import ThemeToggle from '@/components/global/ThemeToggle.vue'
 import { 
   MessageSquare, 
   BookOpen, 
@@ -405,6 +406,11 @@ const settingsNavItems = navItems.filter(i => i.id === 'settings')
           </div>
         </template>
       </div>
+    </div>
+
+    <!-- 主题切换 -->
+    <div class="p-sm border-t border-border flex items-center justify-center">
+      <ThemeToggle />
     </div>
   </aside>
 </template>
