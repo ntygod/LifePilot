@@ -32,10 +32,11 @@ class AgentLoopExecutingPlanTest {
                 mock(MultimodalRouter.class),
                 mock(TraceRecorder.class),
                 mock(SessionManager.class),
-                null, // ConversationViewService (not needed for this test)
+                null,
                 mock(ActionParser.class),
                 mock(AgentToolProvider.class),
-                new AgentConfigProperties()
+                new AgentConfigProperties(),
+                null, null, null, null, null
         );
 
         ToolCallback okTool = toolCallback("calendar_create_event", "{\"ok\":true}");
@@ -84,10 +85,11 @@ class AgentLoopExecutingPlanTest {
                 mock(MultimodalRouter.class),
                 mock(TraceRecorder.class),
                 mock(SessionManager.class),
-                null, // ConversationViewService
+                null,
                 mock(ActionParser.class),
                 mock(AgentToolProvider.class),
-                new AgentConfigProperties()
+                new AgentConfigProperties(),
+                null, null, null, null, null
         );
 
         ToolCallback badTool = toolCallback("calendar_create_event", "{\"error\":\"boom\"}");
@@ -135,10 +137,11 @@ class AgentLoopExecutingPlanTest {
                 mock(MultimodalRouter.class),
                 mock(TraceRecorder.class),
                 mock(SessionManager.class),
-                null, // ConversationViewService
+                null,
                 mock(ActionParser.class),
                 mock(AgentToolProvider.class),
-                new AgentConfigProperties()
+                new AgentConfigProperties(),
+                null, null, null, null, null
         );
 
         ExecutionPlan plan = new ExecutionPlan(List.of(

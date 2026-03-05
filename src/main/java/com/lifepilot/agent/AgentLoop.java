@@ -96,21 +96,6 @@ public class AgentLoop {
                      MultimodalRouter multimodalRouter,
                      TraceRecorder traceRecorder,
                      SessionManager sessionManager,
-                     ConversationViewService conversationViewService,
-                     ActionParser actionParser,
-                     AgentToolProvider agentToolProvider,
-                     AgentConfigProperties config) {
-        this(stateReducer, contextAssembler, llmRouter, multimodalRouter, traceRecorder,
-                sessionManager, conversationViewService, actionParser, agentToolProvider, config,
-                null, null, null, null, null);
-    }
-
-    public AgentLoop(StateReducer stateReducer,
-                     ContextAssembler contextAssembler,
-                     LlmRouter llmRouter,
-                     MultimodalRouter multimodalRouter,
-                     TraceRecorder traceRecorder,
-                     SessionManager sessionManager,
                      @Nullable ConversationViewService conversationViewService,
                      ActionParser actionParser,
                      AgentToolProvider agentToolProvider,
