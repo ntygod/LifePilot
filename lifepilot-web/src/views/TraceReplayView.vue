@@ -5,6 +5,11 @@ import { MessageCircle, Wrench, Shield, ArrowRight, BarChart3, Download } from '
 import { useTraceStore } from '@/stores/trace'
 import type { TraceItem, TraceStep } from '@/types'
 import { SSE_EVENT_TYPES } from '@/constants/sseEvents'
+import FilterChips from '@/components/common/FilterChips.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
+import ErrorState from '@/components/common/ErrorState.vue'
+import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
+import StepDurationChart from '@/components/trace/StepDurationChart.vue'
 
 const store = useTraceStore()
 const expandedSteps = ref<Set<string>>(new Set())
@@ -14,6 +19,22 @@ const route = useRoute()
 const searchKeyword = ref('')
 const statusFilter = ref<'all' | 'success' | 'failure'>('all')
 const lastSearchedKeyword = ref('')
+
+// 时间范围筛选（列表过滤用）
+const timeRangeFilter = ref<'all' | '24h' | '7d' | '30d'>('all')
+
+const TIME_RANGE_OPTIONS = [
+  { value: 'all', label: '全部' },
+  { value: '24h', label: '最近 24 小时' },
+  { value: '7d', label: '最近 7 天' },
+  { value: '30d', label: '最近 30 天' },
+]
+
+const TIME_RANGE_MS: Record<string, number> = {
+  '24h': 24 * 60 * 60 * 1000,
+  '7d': 7 * 24 * 60 * 60 * 1000,
+  '30d': 30 * 24 * 60 * 60 * 1000,
+}
 
 // 概览统计时间窗口
 const timeWindow = ref<'24h' | '7d' | '30d'>('7d')
@@ -29,13 +50,21 @@ let liveSource: EventSource | null = null
 // 计算当前是否处于搜索模式
 const isSearching = computed(() => lastSearchedKeyword.value.trim().length > 0)
 
-// 当前展示的列表（考虑搜索与筛选）
+// 当前展示的列表（考虑搜索、状态筛选与时间范围过滤）
 const filteredTraces = computed<TraceItem[]>(() => {
   const baseList = isSearching.value ? store.searchResults : store.list
 
   return baseList.filter((trace) => {
+    // 状态过滤
     if (statusFilter.value === 'success' && !trace.success) return false
     if (statusFilter.value === 'failure' && trace.success) return false
+
+    // 时间范围过滤
+    if (timeRangeFilter.value !== 'all') {
+      const cutoff = Date.now() - TIME_RANGE_MS[timeRangeFilter.value]
+      if (new Date(trace.createdAt).getTime() < cutoff) return false
+    }
+
     return true
   })
 })
@@ -259,9 +288,14 @@ async function handleExportCurrent() {
     <div class="flex-1 overflow-y-auto">
       <div class="max-w-[1200px] mx-auto px-md md:px-lg py-lg">
         <!-- 错误提示 -->
-        <div v-if="store.error" class="mb-4 p-4 rounded-md bg-destructive/10 text-destructive text-sm">
-          {{ store.error }}
-        </div>
+        <ErrorState
+          v-if="store.error && !store.loading"
+          title="加载失败"
+          :description="store.error"
+          action-label="重试"
+          :show-action="true"
+          @action="store.fetchList()"
+        />
 
         <!-- 轨迹列表 -->
         <template v-if="!store.current">
@@ -330,6 +364,15 @@ async function handleExportCurrent() {
             仅失败
           </button>
         </div>
+      </div>
+
+      <!-- 时间范围筛选 -->
+      <div class="mb-4 flex items-center gap-3">
+        <span class="text-xs text-muted-foreground">时间范围：</span>
+        <FilterChips
+          v-model="timeRangeFilter"
+          :options="TIME_RANGE_OPTIONS"
+        />
       </div>
 
       <!-- 概览统计卡片 -->
@@ -422,21 +465,25 @@ async function handleExportCurrent() {
       </div>
 
       <!-- 列表 / 空状态 -->
-      <div v-if="store.loading && !isSearching" class="text-sm text-muted-foreground">
-        加载中...
-      </div>
-      <div
+      <LoadingSpinner v-if="store.loading && !isSearching" text="加载轨迹中…" />
+      <EmptyState
         v-else-if="isSearching && lastSearchedKeyword && store.searchResults.length === 0"
-        class="text-sm text-muted-foreground"
-      >
-        未找到匹配的轨迹
-      </div>
-      <div
-        v-else-if="!isSearching && store.list.length === 0"
-        class="text-sm text-muted-foreground"
-      >
-        暂无轨迹记录
-      </div>
+        icon="🔍"
+        title="未找到匹配的轨迹"
+        description="尝试调整搜索关键词或筛选条件"
+      />
+      <EmptyState
+        v-else-if="!isSearching && filteredTraces.length === 0 && store.list.length === 0"
+        icon="📋"
+        title="暂无轨迹记录"
+        description="当 Agent 执行对话后，轨迹将自动记录在此"
+      />
+      <EmptyState
+        v-else-if="!isSearching && filteredTraces.length === 0 && store.list.length > 0"
+        icon="🔍"
+        title="无匹配结果"
+        description="当前筛选条件下没有轨迹，尝试调整状态或时间范围"
+      />
       <div v-else class="space-y-4">
         <div
           v-for="trace in filteredTraces"
@@ -527,6 +574,18 @@ async function handleExportCurrent() {
         <span>{{ store.current.totalTokens }} tokens</span>
         <span>{{ formatDuration(store.current.durationMs) }}</span>
         <span v-if="store.current.modelId" class="text-muted-foreground">{{ store.current.modelId }}</span>
+      </div>
+
+      <!-- 步骤耗时分布 -->
+      <div
+        v-if="store.steps.length > 0 && store.current.durationMs > 0"
+        class="mb-6 p-4 rounded-lg border border-border bg-card shadow-sm"
+      >
+        <h3 class="text-sm font-medium text-foreground mb-3">步骤耗时分布</h3>
+        <StepDurationChart
+          :steps="store.steps"
+          :total-duration-ms="store.current.durationMs"
+        />
       </div>
 
       <div v-if="store.current.errorMessage" class="mb-4 p-3 rounded-md bg-destructive/10 text-destructive text-sm">
