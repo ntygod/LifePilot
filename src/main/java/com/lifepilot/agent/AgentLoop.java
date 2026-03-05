@@ -2,6 +2,7 @@ package com.lifepilot.agent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.config.AgentConfigProperties;
+import com.lifepilot.multiagent.execution.HandoffToolFactory;
 import com.lifepilot.agent.context.AssembledContext;
 import com.lifepilot.agent.context.ContextAssembler;
 import com.lifepilot.agent.model.*;
@@ -874,9 +875,18 @@ public class AgentLoop {
             );
         }
 
+        // 若是 handoff 工具，注入调用方上下文（depth / traceId / sessionId）
+        Map<String, Object> params = step.params();
+        if (toolId.startsWith(HandoffToolFactory.TOOL_ID_PREFIX)) {
+            params = new HashMap<>(params);
+            params.put("_callerDepth", state.depth());
+            params.put("_callerTraceId", state.traceId());
+            params.put("_callerSessionId", state.sessionId());
+        }
+
         String toolInputJson;
         try {
-            toolInputJson = objectMapper.writeValueAsString(step.params());
+            toolInputJson = objectMapper.writeValueAsString(params);
         } catch (Exception e) {
             return new Action.ErrorRecovery(
                     AgentErrorType.LLM_PARSE_FAILURE,
