@@ -16,12 +16,22 @@ const emit = defineEmits<{
   (e: 'like', message: Message): void
   (e: 'dislike', message: Message, feedback?: string): void
   (e: 'fork', message: Message): void
+  (e: 'regenerate', message: Message): void
+  (e: 'copy', content: string): void
 }>()
 
 // 按 timestamp 升序排列
 const sortedMessages = computed(() =>
   [...props.messages].sort((a, b) => a.timestamp - b.timestamp)
 )
+
+// 最后一条 assistant 消息的 ID，用于控制"重新生成"按钮仅在最后一条 AI 消息上显示
+const lastAssistantId = computed(() => {
+  for (let i = sortedMessages.value.length - 1; i >= 0; i--) {
+    if (sortedMessages.value[i].role === 'assistant') return sortedMessages.value[i].id
+  }
+  return null
+})
 
 // 简单的日期标签：今天 / 昨天 / 更早
 function getDateLabel(timestamp: number): string {
@@ -59,15 +69,17 @@ function highlight(text: string): string {
       <MessageBubble
         :message="{
           ...msg,
-          // 将内容高亮后的 HTML 通过额外字段传给气泡组件（后续可扩展）
           highlightedContent: props.query ? highlight(msg.content) : undefined
         } as Message"
         :streaming="isStreaming && index === sortedMessages.length - 1 && msg.role === 'assistant'"
         :streaming-content="streamingContent"
+        :is-last-assistant="msg.id === lastAssistantId"
         @retry="(m: Message) => emit('retry', m)"
         @like="(m: Message) => emit('like', m)"
         @dislike="(m: Message, f?: string) => emit('dislike', m, f)"
         @fork="(m: Message) => emit('fork', m)"
+        @regenerate="(m: Message) => emit('regenerate', m)"
+        @copy="(c: string) => emit('copy', c)"
       />
     </template>
 
