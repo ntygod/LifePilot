@@ -231,3 +231,23 @@
     background: transparent;
   }
 }
+
+
+/* 路由过渡动画 — opacity + translateY 组合 */
+.page-slide-enter-active {
+  transition: opacity 200ms ease-out, transform 200ms ease-out;
+}
+
+.page-slide-leave-active {
+  transition: opacity 150ms ease-in, transform 150ms ease-in;
+}
+
+.page-slide-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.page-slide-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
