@@ -505,6 +505,7 @@ export interface ToolDetail extends ToolSummary {
     maxRetries?: number
     maxCostCents?: number
   }
+  exportable?: boolean
   tags?: string[]
   sideEffects?: string[]
   metadata?: Record<string, unknown>

@@ -15,6 +15,8 @@ import {
   Download, CheckCircle, Clock, XCircle, FileIcon,
   ArrowLeft, TestTube, X
 } from 'lucide-vue-next'
+import Breadcrumb from '@/components/global/Breadcrumb.vue'
+import type { BreadcrumbItem } from '@/components/global/Breadcrumb.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -63,6 +65,12 @@ const batchDeleting = ref(false)
 
 // 支持的 MIME 类型列表（传给 DropZone）
 const acceptTypes = Array.from(SUPPORTED_TYPES)
+
+// 面包屑导航
+const breadcrumbItems = computed<BreadcrumbItem[]>(() => [
+  { label: '知识库', to: { name: 'knowledgeBases' } },
+  { label: kb.value?.name ?? '...' }
+])
 
 // 文件类型映射
 const fileTypeMap: Record<string, string> = {
@@ -355,32 +363,29 @@ async function testRetrieval() {
   <div class="flex flex-col h-full overflow-hidden">
     <!-- 顶部导航栏 -->
     <div class="flex-shrink-0 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div class="max-w-[1200px] mx-auto px-md md:px-lg py-md flex items-center gap-3">
-        <button
-          class="text-sm text-muted-foreground hover:text-foreground transition-colors"
-          @click="router.push('/knowledge-bases')"
-        >
-          <ArrowLeft :size="16" class="inline mr-1" />
-          返回
-        </button>
-        <h1 class="text-xl font-semibold text-foreground flex-1">
-          {{ kb?.name || '知识库详情' }}
-        </h1>
-        <button
-          class="inline-flex items-center gap-2 rounded-md text-sm font-medium h-9 px-md bg-primary text-primary-foreground hover:bg-primary/90 hover:shadow-md transition-all duration-200"
-          @click="triggerUpload"
-        >
-          <Upload :size="16" />
-          上传文档
-        </button>
-        <input
-          ref="fileInput"
-          type="file"
-          multiple
-          accept=".pdf,.docx,.doc,.md,.txt,.html,.htm"
-          class="hidden"
-          @change="handleFileChange"
-        />
+      <div class="max-w-[1200px] mx-auto px-md md:px-lg py-md">
+        <!-- 面包屑导航 -->
+        <Breadcrumb :items="breadcrumbItems" class="mb-2" />
+        <div class="flex items-center gap-3">
+          <h1 class="text-xl font-semibold text-foreground flex-1">
+            {{ kb?.name || '知识库详情' }}
+          </h1>
+          <button
+            class="inline-flex items-center gap-2 rounded-md text-sm font-medium h-9 px-md bg-primary text-primary-foreground hover:bg-primary/90 hover:shadow-md transition-all duration-200"
+            @click="triggerUpload"
+          >
+            <Upload :size="16" />
+            上传文档
+          </button>
+          <input
+            ref="fileInput"
+            type="file"
+            multiple
+            accept=".pdf,.docx,.doc,.md,.txt,.html,.htm"
+            class="hidden"
+            @change="handleFileChange"
+          />
+        </div>
       </div>
     </div>
 

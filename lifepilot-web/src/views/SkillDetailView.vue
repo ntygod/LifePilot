@@ -3,6 +3,8 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useSkillStore } from '@/stores/skill'
 import type { SkillDetail } from '@/types'
+import Breadcrumb from '@/components/global/Breadcrumb.vue'
+import type { BreadcrumbItem } from '@/components/global/Breadcrumb.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -10,6 +12,12 @@ const skillStore = useSkillStore()
 
 const skillId = computed(() => route.params.id as string)
 const skill = computed(() => skillStore.currentSkill)
+
+// 面包屑导航
+const breadcrumbItems = computed<BreadcrumbItem[]>(() => [
+  { label: 'Skills', to: { name: 'skills' } },
+  { label: skill.value?.name ?? '...' }
+])
 
 const editingBasic = ref(false)
 const showAdvanced = ref(false)
@@ -127,38 +135,36 @@ const sourceLabel: Record<string, string> = {
   <div class="flex flex-col h-full overflow-hidden">
     <!-- 头部 -->
     <div class="flex-shrink-0 px-lg py-md border-b border-border bg-background/60 backdrop-blur-sm">
-      <div class="max-w-[1200px] mx-auto flex items-center justify-between gap-md">
-        <div class="flex items-center gap-sm">
-          <button
-            class="text-sm text-muted-foreground hover:text-foreground transition-colors"
-            @click="router.push('/skills')"
-          >
-            ← 返回列表
-          </button>
-          <div class="flex flex-col gap-xs">
-            <div class="flex items-center gap-sm">
-              <h2 class="text-2xl font-semibold text-foreground leading-tight">
-                {{ skill?.name || '加载中...' }}
-              </h2>
-              <span class="text-xs px-sm py-xs rounded-full bg-accent text-accent-foreground">
-                {{ sourceLabel[skill?.sourceType || ''] ?? skill?.sourceType }}
-              </span>
+      <div class="max-w-[1200px] mx-auto">
+        <!-- 面包屑导航 -->
+        <Breadcrumb :items="breadcrumbItems" class="mb-2" />
+        <div class="flex items-center justify-between gap-md">
+          <div class="flex items-center gap-sm">
+            <div class="flex flex-col gap-xs">
+              <div class="flex items-center gap-sm">
+                <h2 class="text-2xl font-semibold text-foreground leading-tight">
+                  {{ skill?.name || '加载中...' }}
+                </h2>
+                <span class="text-xs px-sm py-xs rounded-full bg-accent text-accent-foreground">
+                  {{ sourceLabel[skill?.sourceType || ''] ?? skill?.sourceType }}
+                </span>
+              </div>
+              <p class="text-sm text-muted-foreground">
+                了解这个能力能为你做什么，以及它在对话中的使用方式。
+              </p>
             </div>
-            <p class="text-sm text-muted-foreground">
-              了解这个能力能为你做什么，以及它在对话中的使用方式。
-            </p>
           </div>
-        </div>
-        <div v-if="skill" class="flex items-center gap-sm">
-          <span class="text-xs text-muted-foreground">
-            当前状态：{{ isEnabled ? '启用中' : '已关闭' }}
-          </span>
-          <button
-            class="px-md py-sm rounded-lg text-sm border border-input hover:bg-accent hover:text-accent-foreground transition-colors"
-            @click="isEnabled ? skillStore.disableSkill(skill.id) : skillStore.enableSkill(skill.id)"
-          >
-            {{ isEnabled ? '关闭此能力' : '启用此能力' }}
-          </button>
+          <div v-if="skill" class="flex items-center gap-sm">
+            <span class="text-xs text-muted-foreground">
+              当前状态：{{ isEnabled ? '启用中' : '已关闭' }}
+            </span>
+            <button
+              class="px-md py-sm rounded-lg text-sm border border-input hover:bg-accent hover:text-accent-foreground transition-colors"
+              @click="isEnabled ? skillStore.disableSkill(skill.id) : skillStore.enableSkill(skill.id)"
+            >
+              {{ isEnabled ? '关闭此能力' : '启用此能力' }}
+            </button>
+          </div>
         </div>
       </div>
     </div>

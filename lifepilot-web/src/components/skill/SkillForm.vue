@@ -240,7 +240,7 @@ function removeTool(tool: string) {
                   class="w-full px-md py-sm border border-input rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
                   :class="{ 'border-destructive': errors.id }"
                   placeholder="例如：weekly-planner"
-                  @input="idTouched.value = true"
+                  @input="idTouched = true"
                 />
                 <p v-if="errors.id" class="text-xs text-destructive mt-xs">{{ errors.id }}</p>
                 <p v-else class="text-xs text-muted-foreground mt-xs">

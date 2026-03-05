@@ -1,43 +1,19 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed } from 'vue'
 import SettingSection from '@/components/settings/SettingSection.vue'
-import SettingItem from '@/components/settings/SettingItem.vue'
+import { SHORTCUT_DEFINITIONS } from '@/composables/useKeyboardShortcuts'
 
-// 快捷键定义（只读列表）
-const shortcuts = ref([
-  {
-    category: '全局快捷键',
-    items: [
-      { name: '打开命令面板', keys: ['Ctrl', 'K'] },
-      { name: '切换主题', keys: ['Ctrl', 'Shift', 'T'] },
-      { name: '新建会话', keys: ['Ctrl', 'N'] },
-      { name: '搜索会话', keys: ['Ctrl', 'F'] },
-    ]
-  },
-  {
-    category: '对话页快捷键',
-    items: [
-      { name: '新建会话', keys: ['Ctrl', 'N'] },
-      { name: '聚焦输入框', keys: ['Ctrl', 'L'] },
-      { name: '发送消息', keys: ['Enter'] },
-      { name: '换行', keys: ['Shift', 'Enter'] },
-      { name: '停止生成', keys: ['Ctrl', 'C'] },
-      { name: '清空会话', keys: ['Ctrl', 'Shift', 'C'] },
-    ]
-  },
-  {
-    category: '编辑器快捷键',
-    items: [
-      { name: '复制代码块', keys: ['Ctrl', 'C'] },
-      { name: '折叠代码块', keys: ['Ctrl', 'Shift', 'F'] },
-      { name: '展开所有代码块', keys: ['Ctrl', 'Shift', 'E'] },
-    ]
-  },
-])
-
-function formatKeys(keys: string[]): string {
-  return keys.join(' + ')
-}
+// 按 category 分组快捷键定义
+const groupedShortcuts = computed(() => {
+  const map = new Map<string, { name: string; keys: string[] }[]>()
+  for (const def of SHORTCUT_DEFINITIONS) {
+    if (!map.has(def.category)) {
+      map.set(def.category, [])
+    }
+    map.get(def.category)!.push({ name: def.name, keys: def.keys })
+  }
+  return Array.from(map.entries()).map(([category, items]) => ({ category, items }))
+})
 </script>
 
 <template>
@@ -52,7 +28,7 @@ function formatKeys(keys: string[]): string {
     <div class="flex-1 overflow-y-auto">
       <div class="max-w-[1200px] mx-auto px-md md:px-lg py-lg space-y-6 max-w-4xl">
         <div
-          v-for="category in shortcuts"
+          v-for="category in groupedShortcuts"
           :key="category.category"
           class="space-y-4"
         >

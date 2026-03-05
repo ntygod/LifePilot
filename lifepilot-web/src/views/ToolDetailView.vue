@@ -3,6 +3,8 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useToolStore } from '@/stores/tool'
 import ToolTestDialog from '@/components/tool/ToolTestDialog.vue'
+import Breadcrumb from '@/components/global/Breadcrumb.vue'
+import type { BreadcrumbItem } from '@/components/global/Breadcrumb.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -12,6 +14,12 @@ const toolId = computed(() => route.params.id as string)
 const tool = computed(() => toolStore.currentTool)
 const showTestDialog = ref(false)
 const usage = ref<any | null>(null)
+
+// 面包屑导航
+const breadcrumbItems = computed<BreadcrumbItem[]>(() => [
+  { label: '工具', to: { name: 'tools' } },
+  { label: tool.value?.displayName || tool.value?.name || '...' }
+])
 
 onMounted(async () => {
   await toolStore.fetchToolDetail(toolId.value)
@@ -40,14 +48,10 @@ const riskLabel: Record<string, { label: string; class: string }> = {
     <!-- 头部 -->
     <div class="flex-shrink-0 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div class="max-w-[1200px] mx-auto px-md md:px-lg py-md">
+        <!-- 面包屑导航 -->
+        <Breadcrumb :items="breadcrumbItems" class="mb-2" />
         <div class="flex items-center justify-between gap-sm">
           <div class="flex items-center gap-3">
-            <button
-              class="text-sm text-muted-foreground hover:text-foreground transition-colors"
-              @click="router.push('/tools')"
-            >
-              ← 返回列表
-            </button>
             <h2 class="text-2xl font-semibold text-foreground leading-tight">
               {{ tool?.displayName || tool?.name || '加载中...' }}
             </h2>
