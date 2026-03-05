@@ -367,6 +367,8 @@ export interface McpTool {
   id: string
   name: string
   description: string
+  /** 输入参数 JSON Schema（可选，后端 ToolContract 序列化返回） */
+  inputSchema?: Record<string, any>
 }
 
 /** 轨迹列表项 */
@@ -703,4 +705,22 @@ export interface EvaluationResult {
   violations: string[]
   /** 优化建议列表 */
   suggestions: string[]
+}
+
+// ========== 知识库拖拽上传：前端本地类型 ==========
+
+/**
+ * 上传文件条目（UploadProgress 组件使用，纯前端状态）
+ */
+export interface UploadFileItem {
+  /** 前端生成的唯一 ID（用于列表 key） */
+  id: string
+  /** 原始 File 对象引用（用于重试） */
+  file: File
+  /** 文件名 */
+  fileName: string
+  /** 上传状态 */
+  status: 'waiting' | 'uploading' | 'success' | 'error'
+  /** 错误信息（仅 status === 'error' 时有值） */
+  errorMessage?: string
 }

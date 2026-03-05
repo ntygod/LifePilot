@@ -1,9 +1,22 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useWorkflowStore } from '@/stores/workflow'
 import type { WorkflowDetail, WorkflowItem } from '@/types'
 import WorkflowForm from '@/components/workflow/WorkflowForm.vue'
-import { Copy, Edit2, Plus, Trash2, Workflow as WorkflowIcon } from 'lucide-vue-next'
+import ExecutionDetail from '@/components/workflow/ExecutionDetail.vue'
+import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
+import ErrorState from '@/components/common/ErrorState.vue'
+import Pagination from '@/components/common/Pagination.vue'
+import {
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  Edit2,
+  Plus,
+  Trash2,
+  Workflow as WorkflowIcon,
+} from 'lucide-vue-next'
 
 const store = useWorkflowStore()
 const activeTab = ref<'detail' | 'executions'>('detail')
@@ -12,6 +25,30 @@ const triggerLoading = ref(false)
 const showForm = ref(false)
 const formMode = ref<'create' | 'edit' | 'duplicate'>('create')
 const selectedWorkflow = ref<WorkflowDetail | null>(null)
+
+// 执行历史分页
+const EXEC_PAGE_SIZE = 10
+const execPage = ref(0)
+
+const pagedExecutions = computed(() => {
+  const start = execPage.value * EXEC_PAGE_SIZE
+  return store.executions.slice(start, start + EXEC_PAGE_SIZE)
+})
+
+const execPageCount = computed(() =>
+  Math.ceil(store.executions.length / EXEC_PAGE_SIZE)
+)
+
+const showExecPagination = computed(() =>
+  store.executions.length > EXEC_PAGE_SIZE
+)
+
+// 执行详情展开状态
+const expandedExecId = ref<string | null>(null)
+
+function toggleExecDetail(execId: string) {
+  expandedExecId.value = expandedExecId.value === execId ? null : execId
+}
 
 onMounted(() => store.fetchList())
 
@@ -23,6 +60,8 @@ async function selectWorkflow(wf: WorkflowItem) {
 function backToList() {
   store.current = null
   store.executions = []
+  expandedExecId.value = null
+  execPage.value = 0
 }
 
 async function handleToggle(id: string, enabled: boolean) {
@@ -41,6 +80,8 @@ async function handleTrigger(id: string) {
 
 async function showExecutions(id: string) {
   activeTab.value = 'executions'
+  execPage.value = 0
+  expandedExecId.value = null
   await store.fetchExecutions(id)
 }
 
@@ -76,7 +117,6 @@ async function confirmDelete() {
 }
 
 async function onWorkflowSaved(wf: WorkflowDetail) {
-  // store.create/update 已刷新列表，这里确保详情视图也同步到最新状态
   await store.fetchDetail(wf.id)
   showForm.value = false
 }
@@ -101,8 +141,8 @@ function formatDuration(start?: string, end?: string): string {
   <div class="flex flex-col h-full overflow-hidden">
     <div class="flex-1 overflow-y-auto">
       <div class="max-w-[1200px] mx-auto px-md md:px-lg py-lg">
-        <!-- 错误提示 -->
-        <div v-if="store.error" class="mb-sm p-sm rounded-lg bg-destructive/10 text-destructive text-sm">
+        <!-- 错误提示（详情页内联错误） -->
+        <div v-if="store.error && store.current" class="mb-sm p-sm rounded-lg bg-destructive/10 text-destructive text-sm">
           {{ store.error }}
         </div>
 
@@ -121,26 +161,30 @@ function formatDuration(start?: string, end?: string): string {
             </button>
           </div>
 
-          <div v-if="store.loading" class="text-sm text-muted-foreground">加载中...</div>
-          <div
+          <!-- 加载状态 -->
+          <LoadingSpinner v-if="store.loading" text="加载中..." />
+
+          <!-- 错误状态 -->
+          <ErrorState
+            v-else-if="store.error"
+            :description="store.error"
+            action-label="重试"
+            :show-action="true"
+            @action="store.fetchList()"
+          />
+
+          <!-- 空状态 -->
+          <EmptyState
             v-else-if="store.list.length === 0"
-            class="border border-border rounded-2xl bg-card p-lg flex flex-col items-center text-center gap-sm"
-          >
-            <div class="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
-              <WorkflowIcon class="w-8 h-8 text-primary" />
-            </div>
-            <div class="text-xl font-semibold text-foreground">暂无工作流</div>
-            <!-- 注意：项目里 `md` 可能被用作 spacing token（16px），避免用 `max-w-md` 导致文本被压成逐字换行 -->
-            <div class="text-sm text-muted-foreground w-full max-w-[560px] leading-normal">
-              通过 YAML 定义你的第一个自动化流程。你可以先从“手动触发 + 工具步骤”的模板开始。
-            </div>
-            <button
-              class="rounded-lg px-md py-sm text-sm font-medium bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-all duration-200 active:scale-[0.98]"
-              @click="openCreate"
-            >
-              立即新建
-            </button>
-          </div>
+            icon="⚙️"
+            title="暂无工作流"
+            description="通过 YAML 定义你的第一个自动化流程。你可以先从"手动触发 + 工具步骤"的模板开始。"
+            action-label="新建工作流"
+            :show-action="true"
+            @action="openCreate"
+          />
+
+          <!-- 工作流列表 -->
           <div v-else class="space-y-sm">
             <div
               v-for="wf in store.list"
@@ -315,42 +359,67 @@ function formatDuration(start?: string, end?: string): string {
 
           <!-- 执行历史 Tab -->
           <div v-if="activeTab === 'executions'" class="space-y-sm">
-            <div v-if="store.executions.length === 0" class="text-sm text-muted-foreground">暂无执行记录</div>
-            <div
-              v-for="exec in store.executions"
-              :key="exec.id"
-              class="border border-border rounded-lg p-md hover:border-primary/50 hover:shadow-sm transition-all duration-200 bg-card"
-            >
-              <div class="flex items-start justify-between mb-xs">
-                <div class="flex items-center gap-sm">
-                  <span
-                    class="text-xs px-sm py-xs rounded-full shrink-0"
-                    :class="stateLabel[exec.state]?.class ?? 'bg-gray-100 text-gray-800'"
-                  >
-                    {{ stateLabel[exec.state]?.label ?? exec.state }}
-                  </span>
-                  <span class="text-sm text-muted-foreground">
-                    当前步骤: {{ exec.currentStepIndex + 1 }} / {{ store.current?.steps.length || '?' }}
+            <EmptyState
+              v-if="store.executions.length === 0"
+              icon="📋"
+              title="暂无执行记录"
+              description="手动触发或等待定时触发后，执行记录将在此展示。"
+            />
+            <template v-else>
+              <div
+                v-for="exec in pagedExecutions"
+                :key="exec.id"
+                class="border border-border rounded-lg bg-card hover:border-primary/50 hover:shadow-sm transition-all duration-200"
+              >
+                <!-- 执行记录摘要行（可点击展开） -->
+                <div
+                  class="flex items-start justify-between p-md cursor-pointer"
+                  @click="toggleExecDetail(exec.id)"
+                >
+                  <div class="flex items-center gap-sm flex-1">
+                    <component
+                      :is="expandedExecId === exec.id ? ChevronDown : ChevronRight"
+                      class="w-4 h-4 text-muted-foreground flex-shrink-0"
+                    />
+                    <span
+                      class="text-xs px-sm py-xs rounded-full shrink-0"
+                      :class="stateLabel[exec.state]?.class ?? 'bg-gray-100 text-gray-800'"
+                    >
+                      {{ stateLabel[exec.state]?.label ?? exec.state }}
+                    </span>
+                    <span class="text-sm text-muted-foreground">
+                      步骤: {{ exec.currentStepIndex + 1 }} / {{ store.current?.steps.length || '?' }}
+                    </span>
+                    <span
+                      v-if="exec.startedAt && exec.completedAt"
+                      class="text-xs text-muted-foreground"
+                    >
+                      耗时: {{ formatDuration(exec.startedAt, exec.completedAt) }}
+                    </span>
+                  </div>
+                  <span class="text-xs text-muted-foreground shrink-0">
+                    {{ new Date(exec.createdAt).toLocaleString() }}
                   </span>
                 </div>
-                <span class="text-xs text-muted-foreground">{{ new Date(exec.createdAt).toLocaleString() }}</span>
+
+                <!-- 展开的执行详情 -->
+                <div v-if="expandedExecId === exec.id" class="px-md pb-md">
+                  <ExecutionDetail
+                    :execution="exec"
+                    :total-steps="store.current?.steps.length ?? 0"
+                  />
+                </div>
               </div>
-              <div class="flex items-center gap-md text-xs text-muted-foreground">
-                <span v-if="exec.startedAt">
-                  开始: {{ new Date(exec.startedAt).toLocaleString() }}
-                </span>
-                <span v-if="exec.completedAt">
-                  完成: {{ new Date(exec.completedAt).toLocaleString() }}
-                </span>
-                <span v-if="exec.startedAt && exec.completedAt">
-                  耗时: {{ formatDuration(exec.startedAt, exec.completedAt) }}
-                </span>
-              </div>
-              <div v-if="exec.failureReason" class="mt-xs p-sm rounded-lg bg-destructive/10 text-destructive text-sm">
-                <div class="font-medium mb-0.5">失败原因：</div>
-                <div>{{ exec.failureReason }}</div>
-              </div>
-            </div>
+
+              <!-- 分页 -->
+              <Pagination
+                v-if="showExecPagination"
+                :page="execPage"
+                :page-count="execPageCount"
+                size="sm"
+                @change="execPage = $event"
+              />
+            </template>
           </div>
         </template>
       </div>
