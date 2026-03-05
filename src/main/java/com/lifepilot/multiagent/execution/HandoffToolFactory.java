@@ -71,10 +71,16 @@ public class HandoffToolFactory {
                         String context = input.getOptionalParam("context", String.class)
                                 .orElse(null);
 
+                        // 从 ToolInput 读取调用方上下文（由 AgentLoop 注入）
+                        int callerDepth = input.getOptionalParam("_callerDepth", Integer.class).orElse(0);
+                        String callerTraceId = input.getOptionalParam("_callerTraceId", String.class).orElse(null);
+                        String callerSessionId = input.getOptionalParam("_callerSessionId", String.class)
+                                .orElse("handoff-" + UUID.randomUUID().toString().substring(0, 8));
+
                         // 创建最小 parentState 用于深度检查和轨迹关联
                         AgentState minimalParentState = AgentState.builder()
                                 .traceId(UUID.randomUUID().toString())
-                                .sessionId("handoff-" + UUID.randomUUID().toString().substring(0, 8))
+                                .sessionId(callerSessionId)
                                 .goal(task)
                                 .phase(AgentPhase.EXECUTING)
                                 .channel("internal")
@@ -86,11 +92,12 @@ public class HandoffToolFactory {
                                 .shortTermMemory(List.of())
                                 .mentionedEntities(List.of())
                                 .budget(Budget.defaultBudget())
-                                .parentTraceId(null)
-                                .depth(0)
+                                .parentTraceId(callerTraceId)
+                                .depth(callerDepth)
                                 .done(false)
                                 .finalOutput(null)
                                 .terminationReason(null)
+                                .allowedToolIds(null)
                                 .build();
 
                         var result = agentExecutor.execute(definition, task, context, minimalParentState);
