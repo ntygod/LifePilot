@@ -12,6 +12,9 @@ import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.memory.episodic.MessageRecord;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.RetrievalResult;
+import com.lifepilot.memory.semantic.EntityType;
+import com.lifepilot.memory.semantic.SemanticMemory;
+import com.lifepilot.memory.semantic.TemporalEntity;
 import com.lifepilot.memory.working.*;
 import com.lifepilot.observability.redactor.DataRedactor;
 import org.slf4j.Logger;
@@ -55,6 +58,8 @@ public class ContextAssembler {
     @Nullable private final DataRedactor dataRedactor;
     // L2 情景记忆：跨会话语义检索，可选注入
     @Nullable private final EpisodicMemory episodicMemory;
+    // L3 语义记忆：用户画像查询，可选注入
+    @Nullable private final SemanticMemory semanticMemory;
     // 知识库（文档）检索：可选注入，未启用时不影响主流程
     @Nullable private final DocumentRetriever documentRetriever;
     @Nullable private final SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository;
@@ -69,6 +74,7 @@ public class ContextAssembler {
         this.retrievalStrategy = null;
         this.dataRedactor = null;
         this.episodicMemory = null;
+        this.semanticMemory = null;
         this.documentRetriever = null;
         this.sessionKnowledgeBaseRepository = null;
         this.documentRepository = null;
@@ -82,10 +88,10 @@ public class ContextAssembler {
                             MemoryRetrievalStrategy retrievalStrategy,
                             @Nullable DataRedactor dataRedactor) {
         this(config, hybridRetriever, workingMemory, tokenBudgetAllocator, retrievalStrategy, dataRedactor,
-                null, null, null, null);
+                null, null, null, null, null);
     }
 
-    /** 完整版构造器（注入记忆系统 + 可选知识库检索 + 可选 L2 情景记忆依赖）。 */
+    /** 完整版构造器（注入记忆系统 + 可选知识库检索 + 可选 L2 情景记忆 + 可选 L3 语义记忆依赖）。 */
     public ContextAssembler(AgentConfigProperties config,
                             HybridRetriever hybridRetriever,
                             WorkingMemory workingMemory,
@@ -95,7 +101,8 @@ public class ContextAssembler {
                             @Nullable DocumentRetriever documentRetriever,
                             @Nullable SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
                             @Nullable DocumentRepository documentRepository,
-                            @Nullable EpisodicMemory episodicMemory) {
+                            @Nullable EpisodicMemory episodicMemory,
+                            @Nullable SemanticMemory semanticMemory) {
         this.config = config;
         this.hybridRetriever = hybridRetriever;
         this.workingMemory = workingMemory;
@@ -103,6 +110,7 @@ public class ContextAssembler {
         this.retrievalStrategy = retrievalStrategy;
         this.dataRedactor = dataRedactor;
         this.episodicMemory = episodicMemory;
+        this.semanticMemory = semanticMemory;
         this.documentRetriever = documentRetriever;
         this.sessionKnowledgeBaseRepository = sessionKnowledgeBaseRepository;
         this.documentRepository = documentRepository;
@@ -326,6 +334,47 @@ public class ContextAssembler {
             log.warn("L2 跨会话检索降级: sessionId={}, error={}", sessionId, e.getMessage());
             return List.of();
         }
+    }
+
+    /**
+     * 安全查询用户画像实体，异常时返回空字符串。
+     *
+     * <p>从 L3 语义记忆中查询 type=PERSON 且 isCurrent=true 的实体，
+     * 格式化为结构化文本注入 System Prompt。查询失败或结果为空时跳过注入。</p>
+     */
+    private String safeGetUserProfile(@Nullable SemanticMemory semanticMemory) {
+        if (semanticMemory == null) return "";
+        try {
+            var personEntities = semanticMemory.findCurrentByType(EntityType.PERSON);
+            if (personEntities.isEmpty()) return "";
+            return formatUserProfile(personEntities);
+        } catch (Exception e) {
+            log.warn("用户画像查询失败，降级跳过: error={}", e.getMessage());
+            return "";
+        }
+    }
+
+    /**
+     * 格式化用户画像实体为结构化文本。
+     *
+     * <p>每个 PERSON 实体输出名称、描述和属性键值对，
+     * 用于注入到 System Prompt 的角色定义之后。</p>
+     */
+    String formatUserProfile(List<TemporalEntity> personEntities) {
+        if (personEntities.isEmpty()) return "";
+        var sb = new StringBuilder("\n\n用户画像:\n");
+        for (var entity : personEntities) {
+            sb.append("- ").append(entity.name());
+            if (entity.description() != null && !entity.description().isBlank()) {
+                sb.append(": ").append(entity.description());
+            }
+            if (!entity.properties().isEmpty()) {
+                entity.properties().forEach((k, v) ->
+                        sb.append("\n  ").append(k).append(": ").append(v));
+            }
+            sb.append("\n");
+        }
+        return sb.toString();
     }
 
     /**
@@ -738,9 +787,12 @@ public class ContextAssembler {
                     """;
             case TERMINATED -> "";
         };
+        // 用户画像注入（角色定义之后、阶段指令之前）
+        String userProfile = safeGetUserProfile(semanticMemory);
+
         String constraint = "\n\n重要约束：\n- 只输出JSON对象，不要任何Markdown代码块标记\n- 不要输出解释文字或注释\n- JSON必须完整且有效";
 
-        return roleDefinition + "\n\n" + phaseInstruction + constraint;
+        return roleDefinition + userProfile + "\n\n" + phaseInstruction + constraint;
     }
 
     /**
