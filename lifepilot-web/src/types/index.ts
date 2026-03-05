@@ -62,6 +62,10 @@ export interface Message {
   sources?: SourceSummary[]
   /** 可选：本轮执行涉及到的工具调用摘要列表 */
   toolsSummary?: ToolCallSummary[]
+  /** 消息是否已折叠（长消息场景，前端本地状态） */
+  collapsed?: boolean
+  /** 用户反馈状态（前端本地状态，不持久化到后端） */
+  feedbackStatus?: 'liked' | 'disliked' | null
 }
 
 /** A2UI 组件节点（邻接表） */
@@ -203,6 +207,10 @@ export interface ToolCallSummary {
   success: boolean
   latencyMs: number
   hasMoreSteps?: boolean
+  /** 工具调用的输入参数摘要（截断展示，由后端 done 事件返回） */
+  inputSummary?: string
+  /** 工具调用的输出结果摘要（截断展示，由后端 done 事件返回） */
+  outputSummary?: string
 }
 
 /** 统一错误响应 */
@@ -210,6 +218,14 @@ export interface ErrorResponse {
   code: number
   message: string
   timestamp: string
+}
+
+/** 会话配置（模型/温度/最大 Token/知识库选择） */
+export interface SessionConfig {
+  modelId?: string
+  temperature?: number
+  maxTokens?: number
+  knowledgeBaseIds?: string[]
 }
 
 // ========== 模块 19: Web UI 功能页面类型 ==========
