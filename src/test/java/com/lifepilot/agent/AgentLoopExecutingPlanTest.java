@@ -35,8 +35,7 @@ class AgentLoopExecutingPlanTest {
                 null, // ConversationViewService (not needed for this test)
                 mock(ActionParser.class),
                 mock(AgentToolProvider.class),
-                new AgentConfigProperties(),
-                null // WorkingMemory (not needed for this test)
+                new AgentConfigProperties()
         );
 
         ToolCallback okTool = toolCallback("calendar_create_event", "{\"ok\":true}");
@@ -88,8 +87,7 @@ class AgentLoopExecutingPlanTest {
                 null, // ConversationViewService
                 mock(ActionParser.class),
                 mock(AgentToolProvider.class),
-                new AgentConfigProperties(),
-                null // WorkingMemory
+                new AgentConfigProperties()
         );
 
         ToolCallback badTool = toolCallback("calendar_create_event", "{\"error\":\"boom\"}");
@@ -140,8 +138,7 @@ class AgentLoopExecutingPlanTest {
                 null, // ConversationViewService
                 mock(ActionParser.class),
                 mock(AgentToolProvider.class),
-                new AgentConfigProperties(),
-                null // WorkingMemory
+                new AgentConfigProperties()
         );
 
         ExecutionPlan plan = new ExecutionPlan(List.of(
