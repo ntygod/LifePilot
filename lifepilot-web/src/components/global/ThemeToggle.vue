@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useTheme } from '@/composables/useTheme'
+import { Toggle } from '@/components/ui/toggle'
 import { Sun, Moon, Monitor } from 'lucide-vue-next'
 import { computed } from 'vue'
 
@@ -17,12 +18,13 @@ const iconComponent = computed(() => {
 
 <template>
   <!-- 主题切换按钮：点击循环切换 light → dark → system -->
-  <button
-    type="button"
-    class="inline-flex items-center justify-center rounded-md p-2 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+  <Toggle
+    size="sm"
+    :pressed="mode === 'dark'"
+    aria-label="切换主题"
     title="切换主题"
     @click="cycleTheme()"
   >
     <component :is="iconComponent" :size="18" />
-  </button>
+  </Toggle>
 </template>
