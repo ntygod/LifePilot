@@ -31,6 +31,12 @@ export const useUiStore = defineStore('ui', () => {
     const finalMessage = message ?? ''
     toasts.value.push({ id, type, message: finalMessage })
 
+    // 超过上限时移除最旧的 toast
+    const MAX_TOASTS = 5
+    while (toasts.value.length > MAX_TOASTS) {
+      toasts.value.shift()
+    }
+
     window.setTimeout(() => {
       clearToast(id)
     }, duration)
