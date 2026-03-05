@@ -180,7 +180,7 @@ const settingsNavItems = navItems.filter(i => i.id === 'settings')
   
   <!-- 侧边栏 -->
   <aside
-    class="w-[var(--sidebar-width)] border-r border-border bg-card flex flex-col h-full transition-transform duration-200 z-50"
+    class="w-[var(--sidebar-width)] border-r border-sidebar-border/50 bg-sidebar-background/80 backdrop-blur-xl flex flex-col h-full transition-transform duration-200 z-50"
     :class="{
       'fixed inset-y-0 left-0': isMobile,
       '-translate-x-full': isMobile && !isOpen,
@@ -238,7 +238,7 @@ const settingsNavItems = navItems.filter(i => i.id === 'settings')
       <div
         v-for="session in chatStore.sessions"
         :key="session.id"
-        class="group flex items-center gap-xs px-md py-sm rounded-lg text-sm cursor-pointer transition-colors"
+        class="group flex items-center gap-xs px-md py-sm rounded-lg text-sm cursor-pointer transition-colors duration-200 ease-out"
         :class="chatStore.activeSessionId === session.id
           ? 'bg-accent text-accent-foreground'
           : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground'"
@@ -259,7 +259,7 @@ const settingsNavItems = navItems.filter(i => i.id === 'settings')
         </div>
 
         <!-- 操作按钮 -->
-        <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+        <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150 shrink-0">
           <button
             class="text-muted-foreground hover:text-foreground transition-colors"
             title="重命名"
@@ -287,9 +287,9 @@ const settingsNavItems = navItems.filter(i => i.id === 'settings')
           <router-link
             v-if="item.type === 'single' && item.path"
             :to="item.path"
-            class="flex items-center gap-sm px-md py-sm rounded-lg text-sm transition-colors"
+            class="relative flex items-center gap-sm px-md py-sm rounded-lg text-sm transition-colors duration-200 ease-out"
             :class="isRouteActive(item.path)
-              ? 'bg-accent text-accent-foreground'
+              ? 'nav-item-active bg-accent text-accent-foreground'
               : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground'"
           >
             <component :is="item.icon" :size="18" class="shrink-0 text-muted-foreground" />
@@ -298,7 +298,7 @@ const settingsNavItems = navItems.filter(i => i.id === 'settings')
 
           <div v-else-if="item.type === 'group'">
             <button
-              class="w-full flex items-center gap-sm px-md py-sm rounded-lg text-sm transition-colors"
+              class="w-full flex items-center gap-sm px-md py-sm rounded-lg text-sm transition-colors duration-200 ease-out"
               :class="isGroupActive(item.children!.map(c => c.path))
                 ? 'bg-accent/50 text-accent-foreground'
                 : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground'"
@@ -318,9 +318,9 @@ const settingsNavItems = navItems.filter(i => i.id === 'settings')
                 v-for="child in item.children"
                 :key="child.path"
                 :to="child.path"
-                class="flex items-center gap-sm px-md py-xs rounded-lg text-sm transition-colors"
+                class="relative flex items-center gap-sm px-md py-xs rounded-lg text-sm transition-colors duration-200 ease-out"
                 :class="isRouteActive(child.path)
-                  ? 'bg-accent text-accent-foreground'
+                  ? 'nav-item-active bg-accent text-accent-foreground'
                   : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground'"
               >
                 <component :is="child.icon" :size="16" class="shrink-0 text-muted-foreground" />
@@ -337,7 +337,7 @@ const settingsNavItems = navItems.filter(i => i.id === 'settings')
         <template v-for="item in analyticsNavItems" :key="item.id">
           <div v-if="item.type === 'group'">
             <button
-              class="w-full flex items-center gap-sm px-md py-sm rounded-lg text-sm transition-colors"
+              class="w-full flex items-center gap-sm px-md py-sm rounded-lg text-sm transition-colors duration-200 ease-out"
               :class="isGroupActive(item.children!.map(c => c.path))
                 ? 'bg-accent/50 text-accent-foreground'
                 : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground'"
@@ -357,9 +357,9 @@ const settingsNavItems = navItems.filter(i => i.id === 'settings')
                 v-for="child in item.children"
                 :key="child.path"
                 :to="child.path"
-                class="flex items-center gap-sm px-md py-xs rounded-lg text-sm transition-colors"
+                class="relative flex items-center gap-sm px-md py-xs rounded-lg text-sm transition-colors duration-200 ease-out"
                 :class="isRouteActive(child.path)
-                  ? 'bg-accent text-accent-foreground'
+                  ? 'nav-item-active bg-accent text-accent-foreground'
                   : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground'"
               >
                 <component :is="child.icon" :size="16" class="shrink-0 text-muted-foreground" />
@@ -376,7 +376,7 @@ const settingsNavItems = navItems.filter(i => i.id === 'settings')
         <template v-for="item in settingsNavItems" :key="item.id">
           <div v-if="item.type === 'group'">
             <button
-              class="w-full flex items-center gap-sm px-md py-sm rounded-lg text-sm transition-colors"
+              class="w-full flex items-center gap-sm px-md py-sm rounded-lg text-sm transition-colors duration-200 ease-out"
               :class="isGroupActive(item.children!.map(c => c.path))
                 ? 'bg-accent/50 text-accent-foreground'
                 : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground'"
@@ -396,9 +396,9 @@ const settingsNavItems = navItems.filter(i => i.id === 'settings')
                 v-for="child in item.children"
                 :key="child.path"
                 :to="child.path"
-                class="flex items-center gap-sm px-md py-xs rounded-lg text-sm transition-colors"
+                class="relative flex items-center gap-sm px-md py-xs rounded-lg text-sm transition-colors duration-200 ease-out"
                 :class="isRouteActive(child.path)
-                  ? 'bg-accent text-accent-foreground'
+                  ? 'nav-item-active bg-accent text-accent-foreground'
                   : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground'"
               >
                 <component :is="child.icon" :size="16" class="shrink-0 text-muted-foreground" />
@@ -416,3 +416,18 @@ const settingsNavItems = navItems.filter(i => i.id === 'settings')
     </div>
   </aside>
 </template>
+
+<style scoped>
+/* 选中导航项左侧 3px primary 色竖条指示器 */
+.nav-item-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 60%;
+  border-radius: 0 2px 2px 0;
+  background: var(--primary);
+}
+</style>
