@@ -175,125 +175,36 @@ public class AgentLoop {
             );
             traceContext = startTraceIfEnabled(state, request);
             loopStart = Instant.now();
-            var limits = LoopLimits.from(config);
-            var counters = new LoopCounters();
+            // 核心循环 — 流式回调
+            var callback = new StreamingCallback(sseManager, streamId, request.sessionId(), tempTurnId);
+            state = coreLoop(state, request, traceContext, loopStart, callback);
 
-            // 核心循环
-            for (int iteration = 0; !state.isDone(); iteration++) {
-                // 1) 迭代硬限制
-                Action forcedByIterationLimit = forceTerminateIfIterationLimitReached(iteration, limits);
-                if (forcedByIterationLimit != null) {
-                    state = reduceAndRecord(state, forcedByIterationLimit, traceContext, loopStart);
-                    break;
+            // 检查流式特殊中断（RESPONDING 阶段 LLM 不可用）
+            if (callback.hasStreamingError()) {
+                error = callback.getStreamingError();
+            } else {
+                // 归一化最终输出与推理概要
+                String callbackContent = callback.getFinalContent();
+                finalContent = state.finalOutput() != null
+                        ? state.finalOutput()
+                        : (callbackContent != null ? callbackContent : finalContent);
+                if (state.terminationReason() == null) {
+                    reasoningSummary = buildReasoningSummary(state, traceContext);
+                    state = state.toBuilder()
+                            .finalOutput(finalContent)
+                            .reasoningSummary(reasoningSummary)
+                            .build();
                 }
 
-                // 2) 更新 Budget
-                state = updateBudgetElapsed(state, loopStart);
-                Action forcedByBudget = forceTerminateIfBudgetExceeded(state);
-                if (forcedByBudget != null) {
-                    state = reduceAndRecord(state, forcedByBudget, traceContext, loopStart);
-                    break;
-                }
+                // AI 响应写入 L1
+                writeAssistantMessageToL1(state);
 
-                // 3) 上下文组装
-                // 先发送 CONTEXT_LOADING，提示正在收集上下文与预算信息
-                sendReasoningEvent(
-                        sseManager,
-                        streamId,
-                        request.sessionId(),
-                        tempTurnId,
-                        "CONTEXT_LOADING",
-                        "分析问题与上下文",
-                        "正在梳理本轮问题、会话历史与可用记忆。",
-                        null,
-                        Map.of()
-                );
-                var assembledContext = assembleContext(request, state);
-                // 上下文组装完成后，发送 MEMORY_RETRIEVAL，占位表示已完成记忆检索/上下文拼接（如有）
-                sendReasoningEvent(
-                        sseManager,
-                        streamId,
-                        request.sessionId(),
-                        tempTurnId,
-                        "MEMORY_RETRIEVAL",
-                        "检索相关记忆",
-                        "已基于最近对话与知识收集相关记忆，用于本轮推理。",
-                        null,
-                        Map.of()
-                );
+                // 异步后处理
+                asyncPostProcess(state);
 
-                // 4) 调用 LLM / 执行工具（RESPONDING 阶段使用流式）
-                Action action;
-                if (state.phase() == AgentPhase.RESPONDING) {
-                    // 推理阶段：开始生成回答
-                    sendReasoningEvent(
-                            sseManager,
-                            streamId,
-                            request.sessionId(),
-                            tempTurnId,
-                            "ANSWER_DRAFTING",
-                            "正在生成回答",
-                            "模型正在根据上下文整理最终回答。",
-                            null,
-                            Map.of()
-                    );
-                    action = callLlmStreamingAndParseAction(request, state, assembledContext, traceContext, streamId, sseManager, tempTurnId);
-                    state = reduceAndRecord(state, action, traceContext, loopStart);
-                    
-                    // 提取最终内容和 Token 使用量
-                    if (action instanceof Action.ResponseGenerated responseGenerated) {
-                        finalContent = responseGenerated.content();
-                    } else if (action instanceof Action.ErrorRecovery errorRecovery
-                            && errorRecovery.errorType() == AgentErrorType.LLM_UNAVAILABLE) {
-                        // 流式 RESPONDING 阶段如果 LLM 不可用：统一走“错误结束”通道，避免既发 ERROR 又发 DONE
-                        error = new RuntimeException(errorRecovery.errorMessage());
-                        break;
-                    }
-                } else if (state.phase() == AgentPhase.EXECUTING) {
-                    // 执行阶段：按计划调用工具，并发送 TOOL_CALL_* 推理事件
-                    var toolCallbacks = agentToolProvider.getToolCallbacks(state);
-                    action = executeNextPlannedToolStep(
-                            state,
-                            toolCallbacks,
-                            sseManager,
-                            streamId,
-                            request.sessionId(),
-                            tempTurnId
-                    );
-                    state = reduceAndRecord(state, action, traceContext, loopStart);
-                } else {
-                    action = callLlmAndParseAction(request, state, assembledContext);
-                    state = reduceAndRecord(state, action, traceContext, loopStart);
-                }
-
-                // 5) 连续异常/阻断保护
-                Action forcedByConsecutiveFailures = counters.onAction(action, state, limits);
-                if (forcedByConsecutiveFailures != null) {
-                    state = reduceAndRecord(state, forcedByConsecutiveFailures, traceContext, loopStart);
-                    break;
-                }
+                // 聚合 Token 使用量
+                finalTokenUsage = aggregateTokenUsage(traceContext);
             }
-
-            // 归一化最终输出与推理概要（供持久化与前端展示使用）
-            finalContent = state.finalOutput() != null ? state.finalOutput() : finalContent;
-            if (state.terminationReason() == null) {
-                reasoningSummary = buildReasoningSummary(state, traceContext);
-                // 将最终输出与推理概要写回状态，便于异步持久化使用
-                state = state.toBuilder()
-                        .finalOutput(finalContent)
-                        .reasoningSummary(reasoningSummary)
-                        .build();
-            }
-
-            // AI 响应写入 L1（在 asyncPostProcess 之前）
-            writeAssistantMessageToL1(state);
-
-            // 异步后处理（会话快照 / L2 flush）
-            asyncPostProcess(state);
-            
-            // 从 TraceContext 中聚合 Token 使用量和模型信息
-            finalTokenUsage = aggregateTokenUsage(traceContext);
-
         } catch (Exception e) {
             log.error("流式 Agent 循环异常终止: error={}", e.getMessage(), e);
             error = e;
@@ -1587,6 +1498,115 @@ public class AgentLoop {
             }
             // 其他阶段（UNDERSTANDING / PLANNING / REFLECTING / RESPONDING）：同步 LLM
             return callLlmAndParseAction(request, state, assembledContext);
+        }
+    }
+
+    /**
+     * 流式迭代回调 — runStreaming() 使用。
+     *
+     * <p>EXECUTING 阶段执行工具并发送 TOOL_CALL_START/END 推理事件，
+     * RESPONDING 阶段使用流式 LLM 并发送 ANSWER_DRAFTING 事件，
+     * 其他阶段同步调用 LLM。上下文组装前后发送 CONTEXT_LOADING / MEMORY_RETRIEVAL 事件。</p>
+     */
+    private class StreamingCallback implements IterationCallback {
+
+        private final SseSessionManager sseManager;
+        private final String streamId;
+        private final String sessionId;
+        private final String turnId;
+
+        /** 流式 RESPONDING 阶段 LLM 不可用时记录的错误。 */
+        @Nullable
+        private Exception streamingError;
+
+        /** RESPONDING 阶段提取的最终内容。 */
+        @Nullable
+        private String finalContent;
+
+        StreamingCallback(SseSessionManager sseManager, String streamId,
+                          String sessionId, String turnId) {
+            this.sseManager = sseManager;
+            this.streamId = streamId;
+            this.sessionId = sessionId;
+            this.turnId = turnId;
+        }
+
+        @Override
+        public void beforeContextAssembly(AgentRequest request, AgentState state) {
+            sendReasoningEvent(
+                    sseManager, streamId, sessionId, turnId,
+                    "CONTEXT_LOADING", "分析问题与上下文",
+                    "正在梳理本轮问题、会话历史与可用记忆。",
+                    null, Map.of()
+            );
+        }
+
+        @Override
+        public void afterContextAssembly(AgentRequest request, AgentState state) {
+            sendReasoningEvent(
+                    sseManager, streamId, sessionId, turnId,
+                    "MEMORY_RETRIEVAL", "检索相关记忆",
+                    "已基于最近对话与知识收集相关记忆，用于本轮推理。",
+                    null, Map.of()
+            );
+        }
+
+        @Override
+        public Action dispatchAction(AgentRequest request,
+                                     AgentState state,
+                                     AssembledContext assembledContext,
+                                     @Nullable TraceContext traceContext) {
+            if (state.phase() == AgentPhase.EXECUTING) {
+                // EXECUTING 阶段：执行工具 + 发送 TOOL_CALL_START/END 推理事件
+                var toolCallbacks = agentToolProvider.getToolCallbacks(state);
+                return executeNextPlannedToolStep(
+                        state, toolCallbacks, sseManager, streamId, sessionId, turnId);
+            }
+            if (state.phase() == AgentPhase.RESPONDING) {
+                // RESPONDING 阶段：流式 LLM + ANSWER_DRAFTING 推理事件
+                sendReasoningEvent(
+                        sseManager, streamId, sessionId, turnId,
+                        "ANSWER_DRAFTING", "正在生成回答",
+                        "模型正在根据上下文整理最终回答。",
+                        null, Map.of()
+                );
+                Action action = callLlmStreamingAndParseAction(
+                        request, state, assembledContext, traceContext,
+                        streamId, sseManager, turnId);
+                // 提取最终内容
+                if (action instanceof Action.ResponseGenerated responseGenerated) {
+                    this.finalContent = responseGenerated.content();
+                }
+                return action;
+            }
+            // 其他阶段（UNDERSTANDING / PLANNING / REFLECTING）：同步 LLM
+            return callLlmAndParseAction(request, state, assembledContext);
+        }
+
+        @Override
+        public boolean shouldBreakAfterAction(Action action, AgentState state) {
+            // 流式 RESPONDING 阶段 LLM 不可用：记录错误并中断循环
+            if (action instanceof Action.ErrorRecovery errorRecovery
+                    && errorRecovery.errorType() == AgentErrorType.LLM_UNAVAILABLE
+                    && state.phase() == AgentPhase.RESPONDING) {
+                this.streamingError = new RuntimeException(errorRecovery.errorMessage());
+                return true;
+            }
+            return false;
+        }
+
+        boolean hasStreamingError() {
+            return streamingError != null;
+        }
+
+        @Nullable
+        Exception getStreamingError() {
+            return streamingError;
+        }
+
+        @Nullable
+        String getFinalContent() {
+            return finalContent;
         }
     }
 
