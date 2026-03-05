@@ -25,7 +25,7 @@ const {
   lastTokenUsage,
   lastPrompt,
   reasoningStatusText,
-  reasoningEvents
+  reasoningEvents,
 } = useChat()
 const scrollContainer = ref<HTMLElement>()
 const searchQuery = ref('')
@@ -43,6 +43,24 @@ const currentSession = computed(() => {
   if (!chatStore.activeSessionId) return null
   return chatStore.sessions.find(s => s.id === chatStore.activeSessionId) || null
 })
+
+// 最近一条 AI 消息及其执行摘要（工具 / 知识库）
+const lastAssistantMessage = computed(() => {
+  for (let i = chatStore.messages.length - 1; i >= 0; i -= 1) {
+    const m = chatStore.messages[i]
+    if (m.role === 'assistant') return m
+  }
+  return null
+})
+
+const lastToolsSummary = computed(() => lastAssistantMessage.value?.toolsSummary ?? [])
+const lastSources = computed(() => lastAssistantMessage.value?.sources ?? [])
+const lastKbSources = computed(() =>
+  lastSources.value.filter(s => s.type === 'knowledgeBase'),
+)
+const lastToolSources = computed(() =>
+  lastSources.value.filter(s => s.type === 'tool' || s.type === 'workflow'),
+)
 
 onMounted(async () => {
   // 首次进入时，根据路由参数确定当前会话
@@ -83,8 +101,18 @@ function scrollToBottom() {
 watch(() => chatStore.messages.length, scrollToBottom)
 watch(() => chatStore.streamingContent, scrollToBottom)
 
-async function handleSend(payload: { content: string; attachmentIds?: string[]; attachments?: ChatAttachment[] }) {
-  await sendMessage(payload.content, payload.attachmentIds, payload.attachments)
+async function handleSend(payload: {
+  content: string
+  attachmentIds?: string[]
+  attachments?: ChatAttachment[]
+  sessionConfig?: {
+    modelId?: string
+    temperature?: number
+    maxTokens?: number
+    knowledgeBaseIds?: string[]
+  }
+}) {
+  await sendMessage(payload.content, payload.attachmentIds, payload.attachments, payload.sessionConfig)
 }
 
 async function handleRetry(message: Message) {
@@ -484,6 +512,59 @@ async function handleUpdateSessionTitle() {
                 class="text-muted-foreground"
               >
                 暂无本轮推理事件，发送一条消息后将在此展示 Agent 的思考与工具调用过程。
+              </p>
+            </div>
+            <div>
+              <div class="font-medium text-foreground/80 mb-1">工具统计</div>
+              <div v-if="lastToolsSummary.length > 0" class="space-y-1">
+                <p>
+                  共调用 {{ lastToolsSummary.length }} 次工具
+                </p>
+                <ul class="space-y-0.5">
+                  <li
+                    v-for="(tool, index) in lastToolsSummary.slice(0, 3)"
+                    :key="tool.toolId + ':' + index"
+                    class="flex items-center justify-between gap-2"
+                  >
+                    <span class="truncate text-foreground/80">
+                      {{ tool.toolId }}
+                    </span>
+                    <span class="shrink-0 text-[10px]">
+                      <span
+                        :class="tool.success === false ? 'text-destructive' : 'text-emerald-500'"
+                      >
+                        {{ tool.success === false ? '失败' : '成功' }}
+                      </span>
+                      <span class="mx-1 text-muted-foreground/60">•</span>
+                      <span class="text-muted-foreground/80">
+                        {{ tool.latencyMs }}ms
+                      </span>
+                    </span>
+                  </li>
+                </ul>
+              </div>
+              <p v-else class="text-muted-foreground">
+                暂无工具调用统计。
+              </p>
+            </div>
+            <div>
+              <div class="font-medium text-foreground/80 mb-1">知识库来源</div>
+              <div v-if="lastKbSources.length > 0" class="space-y-0.5">
+                <p>
+                  本轮命中 {{ lastKbSources.length }} 个知识库：
+                </p>
+                <ul class="list-disc list-inside space-y-0.5">
+                  <li
+                    v-for="kb in lastKbSources.slice(0, 4)"
+                    :key="kb.id"
+                    class="truncate text-foreground/80"
+                  >
+                    {{ kb.name }} <span class="text-muted-foreground/70">({{ kb.id }})</span>
+                  </li>
+                </ul>
+              </div>
+              <p v-else class="text-muted-foreground">
+                暂无知识库命中记录。
               </p>
             </div>
             <div class="text-[10px] text-muted-foreground/80">

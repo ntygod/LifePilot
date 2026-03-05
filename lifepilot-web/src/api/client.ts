@@ -172,6 +172,26 @@ export const chatApi = {
     })
   },
 
+  /**
+   * 更新会话配置（模型/温度/最大Tokens/关联知识库）。
+   *
+   * 注意：知识库关联会影响后端在生成回答前的检索上下文注入（若已启用）。
+   */
+  updateSessionConfig(
+    sessionId: string,
+    config: {
+      modelId?: string
+      temperature?: number
+      maxTokens?: number
+      knowledgeBaseIds?: string[]
+    }
+  ): Promise<void> {
+    return request(`/chat/sessions/${sessionId}/config`, {
+      method: 'PATCH',
+      body: JSON.stringify(config)
+    })
+  },
+
   /** 删除会话 */
   deleteSession(sessionId: string): Promise<void> {
     return request(`/chat/sessions/${sessionId}`, { method: 'DELETE' })
@@ -618,17 +638,25 @@ export const workflowApi = {
   get(id: string): Promise<WorkflowDetail> {
     return request(`/workflows/${id}`)
   },
-  create(data: Partial<WorkflowDetail>): Promise<WorkflowDetail> {
+  getYaml(id: string): Promise<{ yamlContent: string }> {
+    return request(`/workflows/${id}/yaml`)
+  },
+  create(data: { yaml: string } | { yamlContent: string }): Promise<WorkflowDetail> {
+    const yamlContent = 'yamlContent' in data ? data.yamlContent : data.yaml
     return request('/workflows', {
       method: 'POST',
-      body: JSON.stringify(data)
+      body: JSON.stringify({ yamlContent })
     })
   },
-  update(id: string, data: Partial<WorkflowDetail>): Promise<WorkflowDetail> {
+  update(id: string, data: { yaml: string } | { yamlContent: string }): Promise<WorkflowDetail> {
+    const yamlContent = 'yamlContent' in data ? data.yamlContent : data.yaml
     return request(`/workflows/${id}`, {
       method: 'PUT',
-      body: JSON.stringify(data)
+      body: JSON.stringify({ yamlContent })
     })
+  },
+  delete(id: string): Promise<void> {
+    return request(`/workflows/${id}`, { method: 'DELETE' })
   },
   enable(id: string): Promise<void> {
     return request(`/workflows/${id}/enable`, { method: 'POST' })
@@ -709,14 +737,13 @@ export const toolApi = {
     return request(`/tools/${id}/disable`, { method: 'POST' })
   },
   test(req: ToolTestRequest): Promise<ToolTestResponse> {
-    // 统一使用 input 字段，如果提供了 arguments 则转换为 input
-    const requestBody = {
-      toolId: req.toolId,
-      input: req.input ?? req.arguments ?? {}
-    }
-    return request('/tools/test', {
+    // 后端使用 /tools/{id}/test，参数字段名为 arguments
+    const args = req.input ?? req.arguments ?? {}
+    return request(`/tools/${req.toolId}/test`, {
       method: 'POST',
-      body: JSON.stringify(requestBody)
+      body: JSON.stringify({
+        arguments: args
+      })
     })
   },
   getUsage(id: string): Promise<any> {

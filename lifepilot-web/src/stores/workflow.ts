@@ -76,7 +76,9 @@ export const useWorkflowStore = defineStore('workflow', () => {
     }
   }
 
-  async function create(data: Partial<WorkflowDetail>) {
+  type WorkflowYamlPayload = { yaml: string } | { yamlContent: string }
+
+  async function create(data: WorkflowYamlPayload) {
     error.value = null
     try {
       const workflow = await workflowApi.create(data)
@@ -88,7 +90,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     }
   }
 
-  async function update(id: string, data: Partial<WorkflowDetail>) {
+  async function update(id: string, data: WorkflowYamlPayload) {
     error.value = null
     try {
       const workflow = await workflowApi.update(id, data)
@@ -103,9 +105,26 @@ export const useWorkflowStore = defineStore('workflow', () => {
     }
   }
 
+  async function remove(id: string) {
+    error.value = null
+    try {
+      await workflowApi.delete(id)
+      // 更新本地列表
+      list.value = list.value.filter(w => w.id !== id)
+      // 如果当前详情正是被删除的工作流，清空 current / executions
+      if (current.value?.id === id) {
+        current.value = null
+        executions.value = []
+      }
+    } catch (e: any) {
+      error.value = e.message ?? '删除工作流失败'
+      throw e
+    }
+  }
+
   return {
     list, current, executions, loading, error,
     fetchList, fetchDetail, enable, disable, trigger, fetchExecutions,
-    create, update
+    create, update, remove
   }
 })
