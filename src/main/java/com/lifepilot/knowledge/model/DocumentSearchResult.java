@@ -16,6 +16,8 @@ import java.util.Optional;
  * @param score            相关性分数
  * @param sourcePath       来源路径（"vector" / "fts" / "fused"）
  * @param metadata         附加元数据
+ * @param scoreBreakdown   分数来源明细（可选）
+ * @param expandedContent  上下文窗口扩展后的完整内容（可选）
  * @author zsg
  * @since 2026-02-25
  */
@@ -28,5 +30,25 @@ public record DocumentSearchResult(
         List<String> headingHierarchy,
         double score,
         String sourcePath,
-        Map<String, String> metadata
-) {}
+        Map<String, String> metadata,
+        Optional<ScoreBreakdown> scoreBreakdown,
+        Optional<String> expandedContent
+) {
+
+    public DocumentSearchResult {
+        if (scoreBreakdown == null) scoreBreakdown = Optional.empty();
+        if (expandedContent == null) expandedContent = Optional.empty();
+    }
+
+    /**
+     * 兼容旧签名的构造函数 — 不含 scoreBreakdown 和 expandedContent。
+     */
+    public DocumentSearchResult(String chunkId, String documentId, String knowledgeBaseId,
+                                 String content, Optional<String> contextPrefix,
+                                 List<String> headingHierarchy, double score,
+                                 String sourcePath, Map<String, String> metadata) {
+        this(chunkId, documentId, knowledgeBaseId, content, contextPrefix,
+             headingHierarchy, score, sourcePath, metadata,
+             Optional.empty(), Optional.empty());
+    }
+}
