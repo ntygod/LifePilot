@@ -1,5 +1,7 @@
 package com.lifepilot.skill.config;
 
+import lombok.Getter;
+import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
@@ -10,6 +12,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @author zsg
  * @since 2026-02-25
  */
+@Setter
+@Getter
 @ConfigurationProperties(prefix = "lifepilot.skills")
 public class SkillConfigProperties {
 
@@ -42,36 +46,6 @@ public class SkillConfigProperties {
 
     /** HTTP 动作配置。 */
     private HttpAction httpAction = new HttpAction();
-
-    public boolean isEnabled() { return enabled; }
-    public void setEnabled(boolean enabled) { this.enabled = enabled; }
-
-    public int getMaxConcurrentActivations() { return maxConcurrentActivations; }
-    public void setMaxConcurrentActivations(int maxConcurrentActivations) { this.maxConcurrentActivations = maxConcurrentActivations; }
-
-    public String getDirectory() { return directory; }
-    public void setDirectory(String directory) { this.directory = directory; }
-
-    public long getHotReloadDebounceMs() { return hotReloadDebounceMs; }
-    public void setHotReloadDebounceMs(long hotReloadDebounceMs) { this.hotReloadDebounceMs = hotReloadDebounceMs; }
-
-    public Validation getValidation() { return validation; }
-    public void setValidation(Validation validation) { this.validation = validation; }
-
-    public Search getSearch() { return search; }
-    public void setSearch(Search search) { this.search = search; }
-
-    public AutoGeneration getAutoGeneration() { return autoGeneration; }
-    public void setAutoGeneration(AutoGeneration autoGeneration) { this.autoGeneration = autoGeneration; }
-
-    public ShellAction getShellAction() { return shellAction; }
-    public void setShellAction(ShellAction shellAction) { this.shellAction = shellAction; }
-
-    public ChainAction getChainAction() { return chainAction; }
-    public void setChainAction(ChainAction chainAction) { this.chainAction = chainAction; }
-
-    public HttpAction getHttpAction() { return httpAction; }
-    public void setHttpAction(HttpAction httpAction) { this.httpAction = httpAction; }
 
     /**
      * Skill 定义校验限制配置。

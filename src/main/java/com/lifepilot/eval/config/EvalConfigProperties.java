@@ -1,5 +1,7 @@
 package com.lifepilot.eval.config;
 
+import lombok.Getter;
+import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
@@ -10,6 +12,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @author zsg
  * @since 2026-08-01
  */
+@Setter
+@Getter
 @ConfigurationProperties(prefix = "lifepilot.eval")
 public class EvalConfigProperties {
 
@@ -31,30 +35,14 @@ public class EvalConfigProperties {
     /** 持久化配置。 */
     private Store store = new Store();
 
-    public boolean isEnabled() { return enabled; }
-    public void setEnabled(boolean enabled) { this.enabled = enabled; }
-
-    public String getScenarioDirectory() { return scenarioDirectory; }
-    public void setScenarioDirectory(String scenarioDirectory) { this.scenarioDirectory = scenarioDirectory; }
-
-    public double getDefaultPassThreshold() { return defaultPassThreshold; }
-    public void setDefaultPassThreshold(double defaultPassThreshold) { this.defaultPassThreshold = defaultPassThreshold; }
-
-    public double getDegradationThreshold() { return degradationThreshold; }
-    public void setDegradationThreshold(double degradationThreshold) { this.degradationThreshold = degradationThreshold; }
-
-    public LlmJudge getLlmJudge() { return llmJudge; }
-    public void setLlmJudge(LlmJudge llmJudge) { this.llmJudge = llmJudge; }
-
-    public Store getStore() { return store; }
-    public void setStore(Store store) { this.store = store; }
-
     /**
      * LLM Judge 配置 — 控制 LLM 语义评估的行为参数。
      *
      * @author zsg
      * @since 2026-08-01
      */
+    @Setter
+    @Getter
     public static class LlmJudge {
 
         /** LLM Judge 场景名称，默认 eval-judge。 */
@@ -69,17 +57,6 @@ public class EvalConfigProperties {
         /** 最大重试次数，默认 1。 */
         private int maxRetries = 1;
 
-        public String getScene() { return scene; }
-        public void setScene(String scene) { this.scene = scene; }
-
-        public int getTimeoutSeconds() { return timeoutSeconds; }
-        public void setTimeoutSeconds(int timeoutSeconds) { this.timeoutSeconds = timeoutSeconds; }
-
-        public double getFallbackScore() { return fallbackScore; }
-        public void setFallbackScore(double fallbackScore) { this.fallbackScore = fallbackScore; }
-
-        public int getMaxRetries() { return maxRetries; }
-        public void setMaxRetries(int maxRetries) { this.maxRetries = maxRetries; }
     }
 
     /**
@@ -88,12 +65,12 @@ public class EvalConfigProperties {
      * @author zsg
      * @since 2026-08-01
      */
+    @Setter
+    @Getter
     public static class Store {
 
         /** 历史查询默认限制，默认 50。 */
         private int defaultQueryLimit = 50;
 
-        public int getDefaultQueryLimit() { return defaultQueryLimit; }
-        public void setDefaultQueryLimit(int defaultQueryLimit) { this.defaultQueryLimit = defaultQueryLimit; }
     }
 }
