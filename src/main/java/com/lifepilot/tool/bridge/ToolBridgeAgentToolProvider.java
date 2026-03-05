@@ -44,7 +44,16 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
     @Override
     public List<ToolCallback> getToolCallbacks(AgentState state) {
         List<ToolContract> tools = toolRegistry.getToolSnapshot();
-        log.debug("生成 ToolCallback: count={}", tools.size());
+        var allowedToolIds = state.allowedToolIds();
+        if (allowedToolIds != null && !allowedToolIds.isEmpty()) {
+            int totalCount = tools.size();
+            tools = tools.stream()
+                    .filter(t -> allowedToolIds.contains(t.id()))
+                    .toList();
+            log.debug("生成 ToolCallback: total={}, filtered={}", totalCount, tools.size());
+        } else {
+            log.debug("生成 ToolCallback: count={}", tools.size());
+        }
         return tools.stream()
                 .map(this::toToolCallback)
                 .toList();
