@@ -4,6 +4,9 @@ import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
 import { knowledgeBaseApi } from '@/api/client'
 import type { KnowledgeBase } from '@/types'
 import { Search, Filter, Tag, Edit2, X } from 'lucide-vue-next'
+import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
+import ErrorState from '@/components/common/ErrorState.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
 
 const store = useKnowledgeBaseStore()
 
@@ -164,12 +167,15 @@ const statusMap: Record<string, { label: string; class: string }> = {
   <div class="flex flex-col h-full">
     <div class="flex-1 overflow-y-auto">
       <div class="max-w-[1200px] mx-auto px-md md:px-lg py-lg">
-        <!-- 错误提示 -->
+        <!-- 错误提示（非致命，列表已有数据时展示横幅） -->
         <div
-          v-if="store.error"
-          class="mb-md px-md py-sm rounded-md bg-destructive/10 text-destructive text-sm"
+          v-if="store.error && store.list.length > 0"
+          class="mb-md px-md py-sm rounded-md bg-destructive/10 text-destructive text-sm flex items-center justify-between"
         >
-          {{ store.error }}
+          <span>{{ store.error }}</span>
+          <button @click="store.error = null" class="text-destructive hover:text-destructive/80">
+            <X :size="16" />
+          </button>
         </div>
 
         <!-- 知识库列表视图 -->
@@ -254,10 +260,36 @@ const statusMap: Record<string, { label: string; class: string }> = {
             </div>
           </div>
 
-          <div v-if="store.loading" class="text-sm text-muted-foreground">加载中...</div>
-          <div v-else-if="filteredKbs.length === 0" class="text-sm text-muted-foreground">
-            {{ searchQuery || selectedTags.length > 0 || timeRange !== 'all' ? '没有找到匹配的知识库' : '暂无知识库' }}
-          </div>
+          <!-- 加载中 -->
+          <LoadingSpinner v-if="store.loading" text="加载中..." />
+
+          <!-- 错误状态 -->
+          <ErrorState
+            v-else-if="store.error && filteredKbs.length === 0"
+            :description="store.error"
+            action-label="重试"
+            :show-action="true"
+            @action="store.fetchList()"
+          />
+
+          <!-- 空状态引导 -->
+          <EmptyState
+            v-else-if="filteredKbs.length === 0 && !searchQuery && selectedTags.length === 0 && timeRange === 'all'"
+            icon="📚"
+            title="暂无知识库"
+            description="创建知识库后，可以上传文档并进行语义检索"
+            action-label="新建知识库"
+            :show-action="true"
+            @action="showCreate = true"
+          />
+
+          <!-- 搜索/过滤无结果 -->
+          <EmptyState
+            v-else-if="filteredKbs.length === 0"
+            icon="🔍"
+            title="没有找到匹配的知识库"
+            description="尝试调整搜索关键词或过滤条件"
+          />
           <div
             v-else
             class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-md"
@@ -331,7 +363,7 @@ const statusMap: Record<string, { label: string; class: string }> = {
             />
           </div>
 
-          <div v-if="store.loading" class="text-sm text-muted-foreground">加载中...</div>
+          <LoadingSpinner v-if="store.loading" text="加载中..." />
           <div v-else-if="store.documents.length === 0" class="text-sm text-muted-foreground">
             暂无文档，点击上方按钮上传
           </div>
