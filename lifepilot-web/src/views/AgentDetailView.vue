@@ -8,6 +8,8 @@ import { useSettingsStore } from '@/stores/settings'
 import { agentApi } from '@/api/client'
 import type { AgentDetail, Message } from '@/types'
 import StreamingText from '@/components/chat/StreamingText.vue'
+import Breadcrumb from '@/components/global/Breadcrumb.vue'
+import type { BreadcrumbItem } from '@/components/global/Breadcrumb.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -18,6 +20,12 @@ const settingsStore = useSettingsStore()
 
 const agentId = computed(() => route.params.id as string)
 const agent = computed(() => agentStore.currentAgent)
+
+// 面包屑导航
+const breadcrumbItems = computed<BreadcrumbItem[]>(() => [
+  { label: 'Agents', to: { name: 'agents' } },
+  { label: agent.value?.name ?? '...' }
+])
 
 // 基本信息
 const editingBasic = ref(false)
@@ -259,14 +267,10 @@ function formatDate(dateStr: string) {
     <!-- 头部 -->
     <div class="flex-shrink-0 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div class="max-w-[1200px] mx-auto px-md md:px-lg py-md">
+        <!-- 面包屑导航 -->
+        <Breadcrumb :items="breadcrumbItems" class="mb-2" />
         <div class="flex items-center justify-between gap-sm">
           <div class="flex items-center gap-3">
-            <button
-              class="text-sm text-muted-foreground hover:text-foreground transition-colors"
-              @click="router.push('/agents')"
-            >
-              ← 返回列表
-            </button>
             <h2 class="text-2xl font-semibold text-foreground">
               {{ agent?.name || '加载中...' }}
             </h2>

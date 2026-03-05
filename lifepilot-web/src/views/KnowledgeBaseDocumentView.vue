@@ -4,6 +4,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { knowledgeBaseApi } from '@/api/client'
 import type { KbDocument, DocumentChunk } from '@/types'
 import { ArrowLeft, FileText, Download, RefreshCw, FileIcon } from 'lucide-vue-next'
+import Breadcrumb from '@/components/global/Breadcrumb.vue'
+import type { BreadcrumbItem } from '@/components/global/Breadcrumb.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -16,6 +18,16 @@ const chunks = ref<DocumentChunk[]>([])
 const loading = ref(false)
 const error = ref<string | null>(null)
 const loadingChunks = ref(false)
+
+// 知识库信息（面包屑用）
+const kb = ref<{ id: string; name: string } | null>(null)
+
+// 面包屑导航（三级：知识库 > 知识库名称 > 文档名称）
+const breadcrumbItems = computed<BreadcrumbItem[]>(() => [
+  { label: '知识库', to: { name: 'knowledgeBases' } },
+  { label: kb.value?.name ?? '...', to: { name: 'knowledgeBaseDetail', params: { id: kbId.value } } },
+  { label: document.value?.fileName ?? '...' }
+])
 
 // 分页
 const chunkOffset = ref(0)
@@ -37,6 +49,8 @@ async function loadDocument() {
   loading.value = true
   error.value = null
   try {
+    // 加载知识库信息（面包屑用）
+    kb.value = await knowledgeBaseApi.get(kbId.value)
     const docs = await knowledgeBaseApi.listDocuments(kbId.value)
     document.value = docs.find(d => d.id === docId.value) || null
     if (!document.value) {
@@ -109,30 +123,27 @@ function scrollToChunk(chunkIndex: number) {
   <div class="flex flex-col h-full overflow-hidden">
     <!-- 顶部导航栏 -->
     <div class="flex-shrink-0 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div class="max-w-[1200px] mx-auto px-md md:px-lg py-md flex items-center gap-3">
-        <button
-          class="text-sm text-muted-foreground hover:text-foreground transition-colors"
-          @click="router.push(`/knowledge-bases/${kbId}`)"
-        >
-          <ArrowLeft :size="16" class="inline mr-1" />
-          返回
-        </button>
-        <div class="flex-1 min-w-0">
-          <h1 class="text-xl font-semibold text-foreground truncate">
-            {{ document?.fileName || '文档详情' }}
-          </h1>
-          <div v-if="document" class="flex items-center gap-4 mt-1 text-xs text-muted-foreground">
-            <span>{{ document.chunkCount }} 个分段</span>
-            <span>上传于 {{ formatDate(document.createdAt) }}</span>
+      <div class="max-w-[1200px] mx-auto px-md md:px-lg py-md">
+        <!-- 面包屑导航 -->
+        <Breadcrumb :items="breadcrumbItems" class="mb-2" />
+        <div class="flex items-center gap-3">
+          <div class="flex-1 min-w-0">
+            <h1 class="text-xl font-semibold text-foreground truncate">
+              {{ document?.fileName || '文档详情' }}
+            </h1>
+            <div v-if="document" class="flex items-center gap-4 mt-1 text-xs text-muted-foreground">
+              <span>{{ document.chunkCount }} 个分段</span>
+              <span>上传于 {{ formatDate(document.createdAt) }}</span>
+            </div>
           </div>
+          <button
+            class="inline-flex items-center gap-2 rounded-md text-sm font-medium h-9 px-md border border-input hover:bg-accent transition-colors"
+            @click="downloadDocument"
+          >
+            <Download :size="16" />
+            下载
+          </button>
         </div>
-        <button
-          class="inline-flex items-center gap-2 rounded-md text-sm font-medium h-9 px-md border border-input hover:bg-accent transition-colors"
-          @click="downloadDocument"
-        >
-          <Download :size="16" />
-          下载
-        </button>
       </div>
     </div>
 

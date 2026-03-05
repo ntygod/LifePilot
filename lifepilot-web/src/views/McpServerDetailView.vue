@@ -3,6 +3,8 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useSkillStore } from '@/stores/skill'
 import type { McpServerConfig } from '@/types'
+import Breadcrumb from '@/components/global/Breadcrumb.vue'
+import type { BreadcrumbItem } from '@/components/global/Breadcrumb.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -10,6 +12,12 @@ const skillStore = useSkillStore()
 
 const serverName = computed(() => route.params.id as string)
 const server = computed(() => skillStore.mcpServers.find(s => s.name === serverName.value))
+
+// 面包屑导航
+const breadcrumbItems = computed<BreadcrumbItem[]>(() => [
+  { label: 'MCP Servers', to: { name: 'mcpServers' } },
+  { label: server.value?.name ?? '...' }
+])
 
 const editing = ref(false)
 const config = ref<McpServerConfig>({
@@ -82,14 +90,10 @@ const stateLabel: Record<string, { label: string; class: string }> = {
   <div class="flex flex-col h-full overflow-hidden">
     <!-- 头部 -->
     <div class="flex-shrink-0 p-6 border-b border-border">
+      <!-- 面包屑导航 -->
+      <Breadcrumb :items="breadcrumbItems" class="mb-2" />
       <div class="flex items-center justify-between mb-4">
         <div class="flex items-center gap-3">
-          <button
-            class="text-sm text-muted-foreground hover:text-foreground transition-colors"
-            @click="router.push('/mcp-servers')"
-          >
-            ← 返回列表
-          </button>
           <h2 class="text-2xl font-semibold text-foreground">
             {{ server?.name || '加载中...' }}
           </h2>
