@@ -367,6 +367,8 @@ export interface McpTool {
   id: string
   name: string
   description: string
+  /** 输入参数 JSON Schema（可选，后端 ToolContract 序列化返回） */
+  inputSchema?: Record<string, any>
 }
 
 /** 轨迹列表项 */
