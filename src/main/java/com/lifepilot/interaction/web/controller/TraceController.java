@@ -1,16 +1,31 @@
 package com.lifepilot.interaction.web.controller;
 
 import com.lifepilot.interaction.web.model.ErrorResponse;
+import com.lifepilot.interaction.web.model.PageResult;
+import com.lifepilot.interaction.web.model.TraceDetailDto;
+import com.lifepilot.interaction.web.model.TraceItemDto;
+import com.lifepilot.interaction.web.model.TraceStepDto;
+import com.lifepilot.interaction.web.sse.SseEventType;
+import com.lifepilot.observability.config.ObservabilityProperties;
 import com.lifepilot.observability.trace.OverviewStats;
 import com.lifepilot.observability.trace.ToolUsageStats;
 import com.lifepilot.observability.trace.TokenConsumptionStats;
 import com.lifepilot.observability.trace.TraceNotFoundException;
 import com.lifepilot.observability.trace.TraceQuery;
 import com.lifepilot.observability.trace.TraceQueryParams;
+import com.lifepilot.observability.trace.TraceRecorder;
+import com.lifepilot.observability.trace.TraceStep;
+import com.lifepilot.observability.trace.TraceStepSerializer;
+import com.lifepilot.observability.trace.LlmCallStep;
+import com.lifepilot.observability.trace.ToolCallStep;
+import com.lifepilot.observability.trace.StateTransitionStep;
+import com.lifepilot.observability.trace.GuardrailStep;
+import com.lifepilot.observability.trace.EvaluationStep;
 import com.lifepilot.observability.evaluation.EvaluationResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.http.MediaType;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -18,11 +33,13 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.Instant;
 import java.time.Duration;
 import java.time.format.DateTimeParseException;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 轨迹回放 REST Controller。
@@ -42,9 +59,18 @@ public class TraceController {
     private static final Logger log = LoggerFactory.getLogger(TraceController.class);
 
     private final TraceQuery traceQuery;
+    private final TraceRecorder traceRecorder;
+    private final TraceStepSerializer stepSerializer;
+    private final ObservabilityProperties properties;
 
-    public TraceController(TraceQuery traceQuery) {
+    public TraceController(TraceQuery traceQuery,
+                           TraceRecorder traceRecorder,
+                           TraceStepSerializer stepSerializer,
+                           ObservabilityProperties properties) {
         this.traceQuery = traceQuery;
+        this.traceRecorder = traceRecorder;
+        this.stepSerializer = stepSerializer;
+        this.properties = properties;
     }
 
     /**
@@ -63,7 +89,21 @@ public class TraceController {
                 .limit(size)
                 .offset(page * size)
                 .build();
-        return ResponseEntity.ok(traceQuery.query(params));
+        var summaries = traceQuery.query(params);
+        var items = summaries.stream()
+                .map(s -> new TraceItemDto(
+                        s.traceId(),
+                        s.sessionId(),
+                        s.goal(),
+                        s.success(),
+                        s.totalSteps(),
+                        s.totalTokens(),
+                        s.totalDurationMs(),
+                        s.startTime().toString()
+                ))
+                .toList();
+        long total = traceQuery.countAll();
+        return ResponseEntity.ok(new PageResult<>(items, page, size, total));
     }
 
     /**
@@ -75,7 +115,23 @@ public class TraceController {
     @GetMapping("/{id}")
     public ResponseEntity<?> getTrace(@PathVariable String id) {
         try {
-            return ResponseEntity.ok(traceQuery.getDetail(id));
+            var detail = traceQuery.getDetail(id);
+            String modelId = resolveModelId(detail.steps());
+            var dto = new TraceDetailDto(
+                    detail.traceId(),
+                    detail.sessionId(),
+                    detail.goal(),
+                    detail.success(),
+                    detail.totalSteps(),
+                    detail.totalTokens(),
+                    detail.totalDurationMs(),
+                    detail.startTime().toString(),
+                    detail.finalOutput(),
+                    detail.errorMessage(),
+                    detail.terminationReason(),
+                    modelId
+            );
+            return ResponseEntity.ok(dto);
         } catch (TraceNotFoundException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
                     new ErrorResponse(404, e.getMessage(), Instant.now()));
@@ -91,11 +147,77 @@ public class TraceController {
     @GetMapping("/{id}/steps")
     public ResponseEntity<?> getTraceSteps(@PathVariable String id) {
         try {
-            return ResponseEntity.ok(traceQuery.replay(id));
+            boolean includeContent = properties.getTrace().isRecordPrompts();
+            List<TraceStep> steps = traceQuery.getSteps(id);
+            var dtos = steps.stream()
+                    .map(step -> toStepDto(id, step, includeContent))
+                    .toList();
+            return ResponseEntity.ok(dtos);
         } catch (TraceNotFoundException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
                     new ErrorResponse(404, e.getMessage(), Instant.now()));
         }
+    }
+
+    /**
+     * SSE：实时订阅指定 traceId 的步骤事件。
+     *
+     * <p>用于 Web UI “实时轨迹”视图。在默认配置下不会推送 prompt/output 等敏感内容。</p>
+     */
+    @GetMapping(value = "/{id}/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter streamTrace(@PathVariable String id) {
+        var emitter = new SseEmitter(0L); // 不超时，由客户端断开/服务端完成
+        boolean includeContent = properties.getTrace().isRecordPrompts();
+
+        // 订阅 Trace 步骤与结束事件（可取消订阅，避免 listener 泄漏）
+        AutoCloseable stepSub = traceRecorder.onStep(ev -> {
+            if (!id.equals(ev.traceId())) return;
+            try {
+                TraceStepDto dto = toStepDto(id, ev.step(), includeContent);
+                emitter.send(SseEmitter.event()
+                        .name(SseEventType.TRACE_STEP)
+                        .data(java.util.Objects.requireNonNull(dto)));
+            } catch (Exception sendError) {
+                try { emitter.completeWithError(sendError); } catch (Exception ignore) {}
+            }
+        });
+
+        AutoCloseable endSub = traceRecorder.onTraceEnd(record -> {
+            if (!id.equals(record.traceId())) return;
+            try {
+                emitter.send(SseEmitter.event().name(SseEventType.TRACE_END).data(
+                        java.util.Objects.requireNonNull((Object) Map.of(
+                        "traceId", record.traceId(),
+                        "success", record.success(),
+                        "timestamp", Instant.now().toEpochMilli()
+                        ))
+                ));
+                emitter.complete();
+            } catch (Exception sendError) {
+                try { emitter.completeWithError(sendError); } catch (Exception ignore) {}
+            }
+        });
+
+        Runnable cleanup = () -> closeQuietly(stepSub, endSub);
+        emitter.onCompletion(cleanup);
+        emitter.onTimeout(cleanup);
+        emitter.onError(ex -> cleanup.run());
+
+        // 立即发送 start 事件，便于前端进入“实时中”状态
+        try {
+            emitter.send(SseEmitter.event().name(SseEventType.TRACE_START).data(
+                    java.util.Objects.requireNonNull((Object) Map.of(
+                    "traceId", id,
+                    "recordPrompts", includeContent,
+                    "timestamp", Instant.now().toEpochMilli()
+                    ))
+            ));
+        } catch (Exception e) {
+            cleanup.run();
+            emitter.completeWithError(e);
+        }
+
+        return emitter;
     }
 
     /**
@@ -154,7 +276,19 @@ public class TraceController {
         }
 
         var results = traceQuery.searchByKeyword(keyword, limit);
-        return ResponseEntity.ok(results);
+        var items = results.stream()
+                .map(s -> new TraceItemDto(
+                        s.traceId(),
+                        s.sessionId(),
+                        s.goal(),
+                        s.success(),
+                        s.totalSteps(),
+                        s.totalTokens(),
+                        s.totalDurationMs(),
+                        s.startTime().toString()
+                ))
+                .toList();
+        return ResponseEntity.ok(items);
     }
 
     /**
@@ -223,6 +357,133 @@ public class TraceController {
         } catch (TraceNotFoundException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(new ErrorResponse(404, e.getMessage(), Instant.now()));
+        }
+    }
+
+    // ────────────────────────────────────────────────
+    // DTO 映射辅助方法
+    // ────────────────────────────────────────────────
+
+    private String resolveModelId(List<TraceStep> steps) {
+        if (steps == null || steps.isEmpty()) return null;
+        for (int i = steps.size() - 1; i >= 0; i--) {
+            var s = steps.get(i);
+            if (s instanceof LlmCallStep llm) {
+                return llm.modelId();
+            }
+        }
+        return null;
+    }
+
+    private TraceStepDto toStepDto(String traceId, TraceStep step, boolean includeContent) {
+        String stepType = step.typeName();
+        String id = traceId + ":" + stepType + ":" + step.stepIndex();
+        String createdAt = step.timestamp().toString();
+
+        // 默认字段
+        String phaseBefore = "";
+        String phaseAfter = "";
+        String actionType = stepType;
+        String actionJson = null;
+        String toolId = null;
+        String toolInputJson = null;
+        String toolOutput = null;
+        boolean success = true;
+        boolean blocked = false;
+        String blockReason = null;
+        int tokensUsed = 0;
+        long latencyMs = step.duration().toMillis();
+
+        switch (step) {
+            case StateTransitionStep st -> {
+                phaseBefore = st.phaseBefore();
+                phaseAfter = st.phaseAfter();
+                actionType = st.actionType();
+                actionJson = includeContent && st.actionSummary() != null
+                        ? st.actionSummary()
+                        : null;
+                success = true;
+                blocked = false;
+                tokensUsed = 0;
+                latencyMs = st.duration().toMillis();
+            }
+            case LlmCallStep llm -> {
+                actionType = "LLM_CALL";
+                tokensUsed = llm.inputTokens() + llm.outputTokens();
+                latencyMs = llm.latency().toMillis();
+                // actionJson 用于 UI 展示结构化信息
+                actionJson = safeSerialize(llm, includeContent);
+            }
+            case ToolCallStep tool -> {
+                actionType = tool.toolAction() != null ? tool.toolAction() : "TOOL_CALL";
+                toolId = tool.toolId();
+                toolInputJson = includeContent ? tool.inputJson() : null;
+                toolOutput = includeContent ? tool.outputJson() : null;
+                success = tool.success();
+                blocked = false;
+                tokensUsed = 0;
+                latencyMs = tool.duration().toMillis();
+                actionJson = safeSerialize(tool, includeContent);
+            }
+            case GuardrailStep g -> {
+                actionType = "GUARDRAIL";
+                success = g.passed();
+                blocked = !g.passed();
+                blockReason = includeContent ? g.reason() : null;
+                tokensUsed = 0;
+                latencyMs = g.duration().toMillis();
+                actionJson = safeSerialize(g, includeContent);
+            }
+            case EvaluationStep e -> {
+                actionType = "EVALUATION";
+                success = true;
+                blocked = false;
+                tokensUsed = 0;
+                latencyMs = e.duration().toMillis();
+                actionJson = safeSerialize(e, includeContent);
+            }
+            default -> {
+                actionJson = safeSerialize(step, includeContent);
+            }
+        }
+
+        return new TraceStepDto(
+                id,
+                step.stepIndex(),
+                phaseBefore,
+                phaseAfter,
+                actionType,
+                actionJson,
+                toolId,
+                toolInputJson,
+                toolOutput,
+                success,
+                blocked,
+                blockReason,
+                tokensUsed,
+                latencyMs,
+                createdAt
+        );
+    }
+
+    private String safeSerialize(TraceStep step, boolean includeContent) {
+        if (!includeContent && (step instanceof ToolCallStep
+                || step instanceof StateTransitionStep
+                || step instanceof GuardrailStep)) {
+            // 默认不暴露潜在敏感字段（仅返回类型与索引等结构信息）
+            return "{\"type\":\"" + step.typeName() + "\",\"stepIndex\":" + step.stepIndex() + "}";
+        }
+        try {
+            return stepSerializer.serialize(step);
+        } catch (Exception e) {
+            return "{\"type\":\"" + step.typeName() + "\",\"stepIndex\":" + step.stepIndex() + "}";
+        }
+    }
+
+    private void closeQuietly(AutoCloseable... closables) {
+        for (AutoCloseable c : closables) {
+            if (c == null) continue;
+            try { c.close(); } catch (Exception ignore) {}
         }
     }
 }

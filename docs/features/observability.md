@@ -2,7 +2,7 @@
 
 > 本文档从 [FEATURES.md](../FEATURES.md) 拆分而来，对应原文 §2.17 / §2.18 章节。
 
-> ✅ 基础可观测性已实现：TraceRecorder（内存缓存 + SQLite 持久化）、GuardrailPolicy（白名单/黑名单/风险审批）、DataRedactor（敏感数据脱敏）。高级功能（TraceQuery API、GuardrailAdvisor Spring AI Advisor 横切注入、轨迹评估）在 Phase 5 规划中。
+> ✅ 可观测性已实现并可用于 Web UI：TraceRecorder（内存累积 + SQLite 持久化）、TraceQuery（列表/详情/步骤/搜索/导出/统计）、GuardrailPolicy/GuardrailAdvisor（风险拦截与审计）、TrajectoryEvaluator（轨迹评估）、DataRedactor（敏感数据脱敏）。同时支持 SSE 实时推送（用于“实时轨迹”视图）。
 
 ## 1. 可观测性与护栏
 
@@ -39,6 +39,18 @@ Trace #20260315-001
 ```
 
 Trace 支持离线回放，可以在 Web UI 的轨迹回放页面逐步查看每个决策的详细信息。
+
+### 1.3 实时轨迹（SSE）
+
+LifePilot 支持在 Web UI 中实时查看 Trace 步骤流，便于在执行过程中观察 Agent 的状态与工具调用链路。
+
+- **Trace SSE 订阅**：`GET /api/traces/{traceId}/stream`
+  - **事件类型**：`trace-start` / `trace-step` / `trace-end`
+  - **说明**：默认不会推送（也不会落盘）prompt/output 等敏感内容；如需调试可显式开启 `lifepilot.observability.trace.record-prompts=true`。
+
+- **Chat 流式 SSE 提前返回 traceId**：`POST /api/chat/messages/stream`
+  - **事件类型**：`trace-start`
+  - **说明**：在推理开始后尽早返回 `traceId`，前端可在“发送中”阶段就展示“查看实时轨迹”入口。
 
 ### 1.2 护栏引擎（GuardrailEngine）
 

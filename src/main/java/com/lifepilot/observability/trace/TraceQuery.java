@@ -15,6 +15,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * 轨迹查询服务 — 提供多维度查询、FTS5 全文搜索、回放、导出和统计功能。
@@ -87,11 +88,12 @@ public class TraceQuery {
         args.add(params.limit() > 0 ? params.limit() : 20);
         args.add(params.offset());
 
-        return jdbcTemplate.query(sql.toString(), (rs, rowNum) -> new TraceSummary(
-                rs.getString("trace_id"),
-                rs.getString("session_id"),
-                rs.getString("goal"),
-                Instant.parse(rs.getString("start_time")),
+        String querySql = sql.toString();
+        return jdbcTemplate.query(Objects.requireNonNull(querySql), (rs, rowNum) -> new TraceSummary(
+                Objects.requireNonNull(rs.getString("trace_id")),
+                Objects.requireNonNull(rs.getString("session_id")),
+                Objects.requireNonNull(rs.getString("goal")),
+                Instant.parse(Objects.requireNonNull(rs.getString("start_time"))),
                 rs.getString("end_time") != null ? Instant.parse(rs.getString("end_time")) : null,
                 rs.getLong("total_duration_ms"),
                 rs.getInt("total_steps"),
@@ -105,6 +107,14 @@ public class TraceQuery {
     }
 
     /**
+     * 获取 traces 总记录数（用于分页）。
+     */
+    public long countAll() {
+        Long total = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM traces", Long.class);
+        return total != null ? total : 0L;
+    }
+
+    /**
      * 使用 FTS5 全文搜索轨迹。
      *
      * @param keyword 搜索关键词
@@ -112,6 +122,37 @@ public class TraceQuery {
      * @return 匹配的轨迹摘要列表
      */
     public List<TraceSummary> searchByKeyword(String keyword, int limit) {
+        int resolvedLimit = limit > 0 ? limit : 20;
+        boolean recordPrompts = properties.getTrace().isRecordPrompts();
+
+        // 默认不落盘内容时，FTS5 搜索意义不大；此处降级为按 trace_id/session_id 模糊匹配。
+        if (!recordPrompts) {
+            String like = "%" + keyword + "%";
+            return jdbcTemplate.query("""
+                    SELECT trace_id, session_id, goal, start_time, end_time,
+                           total_duration_ms, total_steps, total_tokens, input_tokens, output_tokens,
+                           success, termination_reason, error_message
+                    FROM traces
+                    WHERE trace_id LIKE ? OR session_id LIKE ?
+                    ORDER BY start_time DESC
+                    LIMIT ?
+                    """, (rs, rowNum) -> new TraceSummary(
+                    java.util.Objects.requireNonNull(rs.getString("trace_id")),
+                    java.util.Objects.requireNonNull(rs.getString("session_id")),
+                    java.util.Objects.requireNonNull(rs.getString("goal")),
+                    Instant.parse(java.util.Objects.requireNonNull(rs.getString("start_time"))),
+                    rs.getString("end_time") != null ? Instant.parse(rs.getString("end_time")) : null,
+                    rs.getLong("total_duration_ms"),
+                    rs.getInt("total_steps"),
+                    rs.getInt("total_tokens"),
+                    rs.getInt("input_tokens"),
+                    rs.getInt("output_tokens"),
+                    rs.getInt("success") == 1,
+                    rs.getString("termination_reason"),
+                    rs.getString("error_message")
+            ), like, like, resolvedLimit);
+        }
+
         return jdbcTemplate.query("""
                 SELECT t.trace_id, t.session_id, t.goal, t.start_time, t.end_time,
                        t.total_duration_ms, t.total_steps, t.total_tokens, t.input_tokens, t.output_tokens,
@@ -122,10 +163,10 @@ public class TraceQuery {
                 ORDER BY rank
                 LIMIT ?
                 """, (rs, rowNum) -> new TraceSummary(
-                rs.getString("trace_id"),
-                rs.getString("session_id"),
-                rs.getString("goal"),
-                Instant.parse(rs.getString("start_time")),
+                Objects.requireNonNull(rs.getString("trace_id")),
+                Objects.requireNonNull(rs.getString("session_id")),
+                Objects.requireNonNull(rs.getString("goal")),
+                Instant.parse(Objects.requireNonNull(rs.getString("start_time"))),
                 rs.getString("end_time") != null ? Instant.parse(rs.getString("end_time")) : null,
                 rs.getLong("total_duration_ms"),
                 rs.getInt("total_steps"),
@@ -135,7 +176,7 @@ public class TraceQuery {
                 rs.getInt("success") == 1,
                 rs.getString("termination_reason"),
                 rs.getString("error_message")
-        ), keyword, limit > 0 ? limit : 20);
+        ), keyword, resolvedLimit);
     }
 
     /**
@@ -222,6 +263,19 @@ public class TraceQuery {
                         step
                 ))
                 .toList();
+    }
+
+    /**
+     * 获取指定 trace 的原始步骤列表（用于 Web UI 步骤时间线）。
+     */
+    public List<TraceStep> getSteps(String traceId) {
+        // 验证轨迹存在
+        var count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM traces WHERE trace_id = ?", Integer.class, traceId);
+        if (count == null || count == 0) {
+            throw new TraceNotFoundException("轨迹不存在: traceId=" + traceId);
+        }
+        return loadSteps(traceId);
     }
 
     /**

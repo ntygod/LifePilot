@@ -90,9 +90,7 @@ public class TraceAdvisor implements CallAdvisor {
                     }
 
                     // 提取完成原因
-                    if (chatResponse.getResult() != null && chatResponse.getResult().getMetadata() != null) {
-                        finishReason = chatResponse.getResult().getMetadata().getFinishReason();
-                    }
+                    finishReason = chatResponse.getResult().getMetadata().getFinishReason();
                 }
 
                 // 异常时记录错误信息到 finishReason

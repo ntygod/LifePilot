@@ -57,11 +57,20 @@ public interface TraceRecorder {
                          @Nullable String terminationReason);
 
     /**
-     * 注册步骤回调监听器。
+     * 注册步骤回调监听器（实时事件）。
      *
      * @param listener 回调函数
+     * @return 取消订阅句柄（调用 close() 取消监听）
      */
-    void onStep(Consumer<TraceStep> listener);
+    AutoCloseable onStep(Consumer<TraceStepEvent> listener);
+
+    /**
+     * 注册 Trace 结束回调监听器（实时事件）。
+     *
+     * @param listener 回调函数
+     * @return 取消订阅句柄（调用 close() 取消监听）
+     */
+    AutoCloseable onTraceEnd(Consumer<TraceRecord> listener);
 
     /**
      * 获取当前线程/虚拟线程绑定的追踪上下文。

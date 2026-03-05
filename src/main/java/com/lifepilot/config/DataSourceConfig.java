@@ -1,7 +1,10 @@
 package com.lifepilot.config;
 
+import com.lifepilot.memory.config.SqliteVecDataSource;
+import com.lifepilot.memory.config.SqliteVecInitializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -16,6 +19,7 @@ import org.sqlite.SQLiteDataSource;
 import javax.sql.DataSource;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Objects;
 
 /**
  * SQLite 数据源配置。
@@ -41,7 +45,8 @@ public class DataSourceConfig {
      */
     @Bean
     public DataSource dataSource(@Value("${spring.datasource.url}") String url,
-                                 DataSourceProperties dsProperties) {
+                                 DataSourceProperties dsProperties,
+                                 ObjectProvider<SqliteVecInitializer> sqliteVecInitializerProvider) {
         // 确保数据库文件目录存在（内存数据库跳过）
         if (!url.contains(":memory:") && !url.contains("mode=memory")) {
             ensureDatabaseDirectory(url);
@@ -53,11 +58,19 @@ public class DataSourceConfig {
         config.setSynchronous(SQLiteConfig.SynchronousMode.NORMAL);
         config.enforceForeignKeys(true);
         config.setBusyTimeout(dsProperties.getBusyTimeout());
+        // 允许在该 DataSource 上加载原生扩展（例如 sqlite-vec）
+        config.enableLoadExtension(true);
 
         var dataSource = new SQLiteDataSource(config);
         dataSource.setUrl(url);
 
         log.info("SQLite 数据源初始化完成: url={}", url);
+
+        // 如果启用了记忆系统且 sqlite-vec 扩展资源可用，则确保每条连接都加载扩展
+        SqliteVecInitializer sqliteVecInitializer = sqliteVecInitializerProvider.getIfAvailable();
+        if (sqliteVecInitializer != null) {
+            return new SqliteVecDataSource(dataSource, sqliteVecInitializer, "main");
+        }
         return dataSource;
     }
 
@@ -81,7 +94,7 @@ public class DataSourceConfig {
     @Bean
     @Primary
     public JdbcTemplate jdbcTemplate(DataSource dataSource) {
-        return new JdbcTemplate(dataSource);
+        return new JdbcTemplate(Objects.requireNonNull(dataSource, "dataSource"));
     }
 
     /**
@@ -90,13 +103,27 @@ public class DataSourceConfig {
      * @param url JDBC 连接 URL
      */
     private void ensureDatabaseDirectory(String url) {
+        if (url == null || !url.startsWith("jdbc:sqlite:")) {
+            return;
+        }
+
         try {
-            // jdbc:sqlite:/path/to/db → /path/to/db
-            var dbPath = url.replace("jdbc:sqlite:", "");
-            var parentDir = Path.of(dbPath).getParent();
-            if (parentDir != null && !Files.exists(parentDir)) {
+            // 1. 去掉 jdbc:sqlite: 前缀
+            String pathStr = url.substring("jdbc:sqlite:".length());
+
+            // 💡 关键修复：如果 URL 包含查询参数（如 ?enable_load_extension=true），则截断它们
+            int queryIndex = pathStr.indexOf('?');
+            if (queryIndex != -1) {
+                pathStr = pathStr.substring(0, queryIndex);
+            }
+
+            // 2. 此时 pathStr 是纯粹的文件路径，可以安全地交给 Path 处理
+            Path dbPath = Path.of(pathStr);
+            Path parentDir = dbPath.getParent();
+
+            if (parentDir != null && Files.notExists(parentDir)) {
                 Files.createDirectories(parentDir);
-                log.info("创建数据库目录: path={}", parentDir);
+                log.info("记忆系统: 已成功创建数据库目录: {}", parentDir);
             }
         } catch (Exception e) {
             log.error("创建数据库目录失败: url={}", url, e);

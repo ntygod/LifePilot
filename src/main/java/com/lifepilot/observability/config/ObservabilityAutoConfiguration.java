@@ -1,5 +1,6 @@
 package com.lifepilot.observability.config;
 
+import com.lifepilot.agent.config.AgentAutoConfiguration;
 import com.lifepilot.observability.evaluation.TrajectoryEvaluator;
 import com.lifepilot.observability.guardrail.GuardrailAdvisor;
 import com.lifepilot.observability.guardrail.GuardrailEngine;
@@ -27,7 +28,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * @author zsg
  * @since 2026-02-27
  */
-@AutoConfiguration
+@AutoConfiguration(before = AgentAutoConfiguration.class)
 @EnableConfigurationProperties(ObservabilityProperties.class)
 public class ObservabilityAutoConfiguration {
 
@@ -62,11 +63,11 @@ public class ObservabilityAutoConfiguration {
     @ConditionalOnMissingBean(TraceRecorder.class)
     @ConditionalOnProperty(prefix = "lifepilot.observability.trace", name = "enabled",
             havingValue = "true", matchIfMissing = true)
-    public TraceRecorderImpl traceRecorderImpl(JdbcTemplate jdbcTemplate,
-                                                TraceStepSerializer serializer,
-                                                TraceContextPropagator propagator,
-                                                DataRedactor redactor,
-                                                ObservabilityProperties properties) {
+    public TraceRecorder traceRecorder(JdbcTemplate jdbcTemplate,
+                                       TraceStepSerializer serializer,
+                                       TraceContextPropagator propagator,
+                                       DataRedactor redactor,
+                                       ObservabilityProperties properties) {
         log.info("可观测性: 注册 TraceRecorderImpl 追踪记录器");
         return new TraceRecorderImpl(jdbcTemplate, serializer, propagator, redactor, properties);
     }

@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { MessageCircle, Wrench, Shield, ArrowRight, BarChart3, Download } from 'lucide-vue-next'
 import { useTraceStore } from '@/stores/trace'
 import type { TraceItem, TraceStep } from '@/types'
+import { SSE_EVENT_TYPES } from '@/constants/sseEvents'
 
 const store = useTraceStore()
 const expandedSteps = ref<Set<string>>(new Set())
@@ -19,6 +20,11 @@ const timeWindow = ref<'24h' | '7d' | '30d'>('7d')
 
 // 导出状态
 const exporting = ref(false)
+
+// 实时 SSE 订阅（Trace Step Stream）
+const liveConnected = ref(false)
+const liveError = ref<string | null>(null)
+let liveSource: EventSource | null = null
 
 // 计算当前是否处于搜索模式
 const isSearching = computed(() => lastSearchedKeyword.value.trim().length > 0)
@@ -44,6 +50,61 @@ onMounted(async () => {
   }
 })
 
+onBeforeUnmount(() => {
+  stopLiveStream()
+})
+
+function stopLiveStream() {
+  liveSource?.close()
+  liveSource = null
+  liveConnected.value = false
+  liveError.value = null
+}
+
+function startLiveStream(traceId: string) {
+  stopLiveStream()
+  liveError.value = null
+  try {
+    liveSource = new EventSource(`/api/traces/${traceId}/stream`)
+
+    liveSource.addEventListener(SSE_EVENT_TYPES.TRACE_START, () => {
+      liveConnected.value = true
+    })
+
+    liveSource.addEventListener(SSE_EVENT_TYPES.TRACE_STEP, (ev) => {
+      try {
+        const step = JSON.parse((ev as MessageEvent).data) as TraceStep
+        const idx = store.steps.findIndex((s) => s.id === step.id)
+        if (idx >= 0) {
+          store.steps[idx] = step
+        } else {
+          store.steps.push(step)
+        }
+        store.steps.sort((a, b) => a.stepIndex - b.stepIndex)
+      } catch (e) {
+        // 忽略单条解析失败
+        console.warn('trace-step 事件解析失败', e)
+      }
+    })
+
+    liveSource.addEventListener(SSE_EVENT_TYPES.TRACE_END, () => {
+      liveConnected.value = false
+      stopLiveStream()
+      // Trace 结束后刷新一次详情与步骤，确保与落盘结果一致
+      if (store.current?.id) {
+        void Promise.all([store.fetchDetail(store.current.id), store.fetchSteps(store.current.id)])
+      }
+    })
+
+    liveSource.onerror = () => {
+      liveConnected.value = false
+      liveError.value = '实时连接已断开'
+    }
+  } catch (e: any) {
+    liveError.value = e?.message ?? '无法建立实时连接'
+  }
+}
+
 async function handleSearch() {
   lastSearchedKeyword.value = searchKeyword.value.trim()
   await store.search(searchKeyword.value, 20)
@@ -65,9 +126,11 @@ async function handleChangeTimeWindow(window: '24h' | '7d' | '30d') {
 async function selectTrace(id: string) {
   await Promise.all([store.fetchDetail(id), store.fetchSteps(id), store.fetchEvaluation(id)])
   expandedSteps.value.clear()
+  startLiveStream(id)
 }
 
 function backToList() {
+  stopLiveStream()
   store.current = null
   store.steps = []
   store.evaluation = null
@@ -83,6 +146,13 @@ function toggleStep(stepId: string) {
 
 function truncate(text: string, max = 500): string {
   return text.length > max ? text.slice(0, max) + '...' : text
+}
+
+function displayUserMessage(text: string | undefined | null): string {
+  const raw = (text ?? '').trim()
+  if (!raw) return '（内容未保存）'
+  if (raw === '[[content_not_persisted]]') return '（内容未保存）'
+  return text as string
 }
 
 function formatDuration(ms: number): string {
@@ -185,14 +255,16 @@ async function handleExportCurrent() {
 </script>
 
 <template>
-  <div class="flex flex-col h-full px-6 py-6 overflow-y-auto">
-    <!-- 错误提示 -->
-    <div v-if="store.error" class="mb-4 p-4 rounded-md bg-destructive/10 text-destructive text-sm">
-      {{ store.error }}
-    </div>
+  <div class="flex flex-col h-full">
+    <div class="flex-1 overflow-y-auto">
+      <div class="max-w-[1200px] mx-auto px-md md:px-lg py-lg">
+        <!-- 错误提示 -->
+        <div v-if="store.error" class="mb-4 p-4 rounded-md bg-destructive/10 text-destructive text-sm">
+          {{ store.error }}
+        </div>
 
-    <!-- 轨迹列表 -->
-    <template v-if="!store.current">
+        <!-- 轨迹列表 -->
+        <template v-if="!store.current">
       <h2 class="text-xl font-semibold text-foreground mb-4">轨迹回放</h2>
 
       <!-- 搜索栏 + 状态筛选 -->
@@ -377,7 +449,7 @@ async function handleExportCurrent() {
               class="w-2 h-2 rounded-full shrink-0"
               :class="trace.success ? 'bg-green-500' : 'bg-red-500'"
             />
-            <span class="text-sm text-foreground truncate flex-1">{{ trace.userMessage }}</span>
+            <span class="text-sm text-foreground truncate flex-1">{{ displayUserMessage(trace.userMessage) }}</span>
             <span class="text-xs text-muted-foreground shrink-0">{{ formatDuration(trace.durationMs) }}</span>
           </div>
           <div class="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
@@ -407,16 +479,29 @@ async function handleExportCurrent() {
       </div>
     </template>
 
-    <!-- 轨迹详情 -->
-    <template v-else>
+        <!-- 轨迹详情 -->
+        <template v-else>
       <div class="flex items-center gap-3 mb-4">
         <button
           class="text-sm text-muted-foreground hover:text-foreground transition-colors"
           @click="backToList"
         >← 返回</button>
         <h2 class="text-xl font-semibold text-foreground truncate">
-          {{ store.current.userMessage }}
+          {{ displayUserMessage(store.current.userMessage) }}
         </h2>
+        <span
+          v-if="liveConnected"
+          class="inline-flex items-center rounded-full border border-border bg-muted px-3 py-1 text-xs text-muted-foreground"
+        >
+          实时中
+        </span>
+        <span
+          v-else-if="liveError"
+          class="inline-flex items-center rounded-full border border-border bg-destructive/10 px-3 py-1 text-xs text-destructive"
+          :title="liveError"
+        >
+          实时断开
+        </span>
         <button
           type="button"
           class="ml-auto inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border text-xs font-medium
@@ -658,6 +743,8 @@ async function handleExportCurrent() {
         <h3 class="text-sm font-medium text-foreground mb-2">最终输出</h3>
         <p class="text-sm text-muted-foreground whitespace-pre-wrap">{{ store.current.finalOutput }}</p>
       </div>
-    </template>
+        </template>
+      </div>
+    </div>
   </div>
 </template>

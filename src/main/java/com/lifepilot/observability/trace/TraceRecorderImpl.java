@@ -37,7 +37,8 @@ public class TraceRecorderImpl implements TraceRecorder {
     private final TraceContextPropagator propagator;
     private final DataRedactor redactor;
     private final ObservabilityProperties properties;
-    private final List<Consumer<TraceStep>> listeners = new CopyOnWriteArrayList<>();
+    private final List<Consumer<TraceStepEvent>> stepListeners = new CopyOnWriteArrayList<>();
+    private final List<Consumer<TraceRecord>> traceEndListeners = new CopyOnWriteArrayList<>();
 
     public TraceRecorderImpl(JdbcTemplate jdbcTemplate,
                              TraceStepSerializer serializer,
@@ -76,9 +77,10 @@ public class TraceRecorderImpl implements TraceRecorder {
         context.addStep(redactedStep);
 
         // 触发回调
-        for (Consumer<TraceStep> listener : listeners) {
+        TraceStepEvent event = new TraceStepEvent(context.traceId(), redactedStep);
+        for (Consumer<TraceStepEvent> listener : stepListeners) {
             try {
-                listener.accept(redactedStep);
+                listener.accept(event);
             } catch (Exception e) {
                 log.warn("步骤回调执行异常: traceId={}, error={}", context.traceId(), e.getMessage());
             }
@@ -127,6 +129,15 @@ public class TraceRecorderImpl implements TraceRecorder {
         // 异步持久化（Virtual Thread）
         Thread.startVirtualThread(() -> persistTrace(record));
 
+        // Trace 结束回调（实时事件）
+        for (Consumer<TraceRecord> listener : traceEndListeners) {
+            try {
+                listener.accept(record);
+            } catch (Exception e) {
+                log.warn("TraceEnd 回调执行异常: traceId={}, error={}", context.traceId(), e.getMessage());
+            }
+        }
+
         log.info("追踪结束: traceId={}, success={}, steps={}, tokens={}",
                 context.traceId(), success, context.steps().size(), totalTokens);
 
@@ -134,8 +145,15 @@ public class TraceRecorderImpl implements TraceRecorder {
     }
 
     @Override
-    public void onStep(Consumer<TraceStep> listener) {
-        listeners.add(listener);
+    public AutoCloseable onStep(Consumer<TraceStepEvent> listener) {
+        stepListeners.add(listener);
+        return () -> stepListeners.remove(listener);
+    }
+
+    @Override
+    public AutoCloseable onTraceEnd(Consumer<TraceRecord> listener) {
+        traceEndListeners.add(listener);
+        return () -> traceEndListeners.remove(listener);
     }
 
     @Override
@@ -192,6 +210,12 @@ public class TraceRecorderImpl implements TraceRecorder {
      */
     private void persistTrace(TraceRecord record) {
         try {
+            boolean recordPrompts = properties.getTrace().isRecordPrompts();
+
+            // 内容落盘策略：默认不落盘 prompt/output（goal/finalOutput/tool I/O 等）
+            String persistedGoal = recordPrompts ? record.goal() : "[[content_not_persisted]]";
+            String persistedFinalOutput = recordPrompts ? record.finalOutput() : null;
+
             // 序列化元数据
             String metadataJson = null;
             if (record.metadata() != null) {
@@ -211,13 +235,13 @@ public class TraceRecorderImpl implements TraceRecorder {
                         success, termination_reason, final_output, error_message, metadata_json, created_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    record.traceId(), record.sessionId(), record.goal(),
+                    record.traceId(), record.sessionId(), persistedGoal,
                     record.startTime().toString(),
                     record.endTime() != null ? record.endTime().toString() : null,
                     record.totalDurationMs(), record.totalSteps(), record.totalTokens(),
                     record.inputTokens(), record.outputTokens(),
                     record.success() ? 1 : 0,
-                    record.terminationReason(), record.finalOutput(), record.errorMessage(),
+                    record.terminationReason(), persistedFinalOutput, record.errorMessage(),
                     metadataJson, Instant.now().toString()
             );
 
@@ -225,7 +249,8 @@ public class TraceRecorderImpl implements TraceRecorder {
             for (TraceStep step : record.steps()) {
                 String detailJson;
                 try {
-                    detailJson = serializer.serialize(step);
+                    TraceStep persistedStep = recordPrompts ? step : stripContent(step);
+                    detailJson = serializer.serialize(persistedStep);
                 } catch (Exception e) {
                     log.error("步骤序列化失败: traceId={}, stepIndex={}, error={}",
                             record.traceId(), step.stepIndex(), e.getMessage());
@@ -248,5 +273,35 @@ public class TraceRecorderImpl implements TraceRecorder {
         } catch (Exception e) {
             log.warn("追踪持久化失败: traceId={}, error={}", record.traceId(), e.getMessage());
         }
+    }
+
+    /**
+     * 默认不落盘内容时，对步骤中的潜在敏感字段进行清空（仅用于持久化）。
+     */
+    private TraceStep stripContent(TraceStep step) {
+        return switch (step) {
+            case ToolCallStep tool -> new ToolCallStep(
+                    tool.stepIndex(), tool.timestamp(), tool.duration(),
+                    tool.toolId(), tool.toolAction(),
+                    null,
+                    null,
+                    tool.success(),
+                    null,
+                    tool.riskLevel()
+            );
+            case GuardrailStep guardrail -> new GuardrailStep(
+                    guardrail.stepIndex(), guardrail.timestamp(), guardrail.duration(),
+                    guardrail.policyId(), guardrail.checkType(), guardrail.passed(),
+                    null,
+                    guardrail.riskLevel(), guardrail.approvalMode()
+            );
+            case StateTransitionStep state -> new StateTransitionStep(
+                    state.stepIndex(), state.timestamp(), state.duration(),
+                    state.phaseBefore(), state.phaseAfter(),
+                    state.actionType(),
+                    null
+            );
+            default -> step;
+        };
     }
 }

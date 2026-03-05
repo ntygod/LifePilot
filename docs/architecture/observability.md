@@ -843,6 +843,14 @@ public record ToolCallStep(
 }
 ```
 
+在 Agent 场景下，`TraceContext` 会累积所有 `LlmCallStep` 与 `ToolCallStep`，并在循环结束时由 `AgentLoop` 聚合为轻量执行概要，直接挂载到 Chat SSE 的 `done` 事件：
+
+- 从所有 `LlmCallStep` 聚合得到本轮真实的 `TokenUsage`（`promptTokens/completionTokens/totalTokens/modelId`），映射到 `done.tokenUsage` 与 `done.usage`
+- 从所有 `ToolCallStep` 提取 `toolId/toolAction/duration/success`，生成 `toolsSummary` 列表，用于 Web UI 中的“执行概要 / 工具统计”卡片
+- 基于会话-知识库关联表与知识库元数据推导出本轮命中的知识库列表，生成 `sources` 数组（`type: "knowledgeBase" | "tool" | "workflow"` 等），用于 Web UI 中的“知识库来源”区域
+
+这样可以在不打断 Trace 记录模型的前提下，为 Chat Web UI 提供高层的调试视图入口，同时保留“从消息 → Trace 详情”的深度联动能力。
+
 ```java
 package com.lifepilot.observability.trace;
 
@@ -1311,6 +1319,7 @@ Trace #01JQXYZ-20260315-001
 package com.lifepilot.observability.trace;
 
 import java.util.function.Consumer;
+import java.util.Optional;
 
 /**
  * 追踪记录器接口 — 定义 Trace 的生命周期管理。
@@ -1391,21 +1400,30 @@ public interface TraceRecorder {
                           @Nullable String terminationReason);
 
     /**
-     * 注册步骤回调。
+     * 注册步骤回调（实时事件）。
      *
      * <p>每次 recordStep 时，回调函数会被调用。
      * 用于实时推送执行进度到前端（通过 SSE）。</p>
      *
-     * @param listener 步骤回调函数
+     * @param listener 步骤事件回调函数
+     * @return 取消订阅句柄（close() 取消监听）
      */
-    void onStep(Consumer<TraceStep> listener);
+    AutoCloseable onStep(Consumer<TraceStepEvent> listener);
+
+    /**
+     * 注册 Trace 结束回调（实时事件）。
+     *
+     * @param listener TraceRecord 回调函数
+     * @return 取消订阅句柄（close() 取消监听）
+     */
+    AutoCloseable onTraceEnd(Consumer<TraceRecord> listener);
 
     /**
      * 获取当前线程的 TraceContext。
      *
      * @return 当前 TraceContext，如果没有则返回 empty
      */
-    java.util.Optional<TraceContext> currentContext();
+    Optional<TraceContext> currentContext();
 }
 ```
 
@@ -1413,6 +1431,15 @@ public interface TraceRecorder {
 
 `TraceRecorderImpl` 是 `TraceRecorder` 的生产实现，使用 SQLite 持久化 Trace 数据，
 并通过 Virtual Thread 实现异步写入，避免阻塞 Agent 主循环。
+
+**数据隐私与落盘策略（实现对齐）**：
+
+- **默认（`lifepilot.observability.trace.record-prompts=false`）**：不落盘 prompt/output 等内容字段。
+  - `traces.goal` 写入占位符 `[[content_not_persisted]]`
+  - `traces.final_output` 不写入（保持 `NULL`）
+  - `ToolCallStep` 的 `inputJson/outputJson/errorMessage`、`GuardrailStep.reason`、`StateTransitionStep.actionSummary` 等字段在持久化时会被清空
+  - 实时 SSE（`/api/traces/{traceId}/stream`）同样遵循该策略，不推送敏感内容
+- **显式开启（`record-prompts=true`）**：允许将脱敏后的内容字段持久化/推送，便于排障与评估（仍建议配合保留期与访问控制）。
 
 ```java
 package com.lifepilot.observability.trace;
@@ -1933,6 +1960,9 @@ public class TraceContextPropagator {
 
 `TraceAdvisor` 是 Spring AI 的 `CallAdvisor` 实现，自动记录每次 LLM 调用的完整轨迹。
 它在 Advisor 链中位于 `GuardrailAdvisor` 之后，确保护栏阻断的调用也被记录。
+
+> **实现对齐说明（2026-03）**：当前代码中的 `TraceAdvisor` 主要记录 **Token 使用量 / 模型信息 / 延迟** 等元数据；
+> prompt/output 的落盘与实时推送遵循 `lifepilot.observability.trace.record-prompts` 策略（默认关闭）。
 
 ```mermaid
 sequenceDiagram
@@ -5942,12 +5972,12 @@ public class ObservabilityEndpoint {
 
 ## 12. SQLite Schema 与 Flyway 迁移
 
-### V11__observability.sql
+### V19__create_observability_tables.sql（实现对齐）
 
 ```sql
 -- ============================================================
--- V11__observability.sql
--- 可观测性与护栏引擎数据库迁移
+-- V19__create_observability_tables.sql
+-- 可观测性模块数据库迁移（traces / trace_steps / guardrail_logs / redaction_logs / evaluation_results + FTS5）
 -- 模块：com.lifepilot.observability
 -- ============================================================
 
@@ -6197,13 +6227,13 @@ lifepilot:
     # ----- Trace 配置 -----
     trace:
       enabled: true
-      # 是否记录 Prompt 内容（调试模式下开启，生产环境关闭）
+      # 是否记录/落盘 prompt/output 等内容字段（调试模式下开启，生产环境建议关闭）
+      # - false（默认）：traces.goal 写入占位符 [[content_not_persisted]]，final_output 不落盘，步骤中的工具输入输出等字段持久化时清空
+      # - true：允许落盘（仍会按 redaction 配置进行脱敏）
       record-prompts: false
-      # 异步写入线程池大小（Virtual Thread 模式下此配置无效）
-      async-writer-threads: 4
-      # Trace 数据保留天数
+      # Trace 数据保留天数（用于后续清理任务）
       retention-days: 30
-      # 使用 ScopedValue 传播（推荐，需要 Java 22+）
+      # 是否使用 ScopedValue 传播上下文（当前实现仍以 ThreadLocal 兼容为主）
       use-scoped-value: true
 
     # ----- 护栏配置 -----
