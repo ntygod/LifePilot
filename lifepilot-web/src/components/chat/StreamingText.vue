@@ -1,13 +1,27 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, onUpdated, onMounted } from 'vue'
 import { Marked } from 'marked'
 import { markedHighlight } from 'marked-highlight'
 import hljs from 'highlight.js'
+import { injectCopyButtons } from '@/utils/codeBlockCopy'
 
 const props = defineProps<{
   content: string
   streaming?: boolean
 }>()
+
+// 容器引用，用于注入代码块复制按钮
+const proseRef = ref<HTMLElement | null>(null)
+
+function tryInjectCopyButtons() {
+  if (proseRef.value) {
+    injectCopyButtons(proseRef.value)
+  }
+}
+
+// 首次挂载 + 每次 DOM 更新后注入（幂等）
+onMounted(tryInjectCopyButtons)
+onUpdated(tryInjectCopyButtons)
 
 // 使用 marked-highlight 扩展集成 highlight.js
 const markedInstance = new Marked(
@@ -67,6 +81,6 @@ const html = computed(() => {
 </script>
 
 <template>
-  <div class="prose prose-sm max-w-none dark:prose-invert" v-html="html" />
+  <div ref="proseRef" class="prose prose-sm max-w-none dark:prose-invert" v-html="html" />
   <span v-if="streaming" class="inline-block w-2 h-4 bg-foreground/60 animate-pulse ml-0.5" />
 </template>
