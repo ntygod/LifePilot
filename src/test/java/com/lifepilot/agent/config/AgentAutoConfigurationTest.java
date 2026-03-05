@@ -3,6 +3,7 @@ package com.lifepilot.agent.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.context.ContextAssembler;
 import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.working.TokenBudgetAllocator;
 import com.lifepilot.memory.working.WorkingMemory;
@@ -77,6 +78,8 @@ class AgentAutoConfigurationTest {
         ObjectMapper objectMapper() { return new ObjectMapper(); }
         @Bean(name = "agentTestLlmRouter")
         LlmRouter llmRouter() { return mock(LlmRouter.class); }
+        @Bean(name = "agentTestMultimodalRouter")
+        MultimodalRouter multimodalRouter() { return mock(MultimodalRouter.class); }
     }
 
     /** 模拟记忆系统 Bean 可用的配置。 */

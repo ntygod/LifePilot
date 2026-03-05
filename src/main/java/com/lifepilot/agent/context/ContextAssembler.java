@@ -198,7 +198,21 @@ public class ContextAssembler {
                     tokenBudget, retrievalCount, topScore,
                     workingMemoryTokens, degraded);
 
-            // 9. 日志
+            // 9. 各区域 Token 消耗明细日志
+            if (log.isDebugEnabled()) {
+                int currentSessionTokens = truncatedSlots.stream()
+                        .mapToInt(WorkingMemorySlot::tokenCount).sum();
+                int crossSessionTokens = formattedCrossSession.stream()
+                        .mapToInt(this::estimateTokens).sum();
+                int knowledgeEntityTokens = formattedMemories.stream()
+                        .mapToInt(this::estimateTokens).sum();
+                int kbSnippetTokens = kbSnippets.stream()
+                        .mapToInt(this::estimateTokens).sum();
+                int systemPromptTokens = estimateTokens(systemPrompt);
+                log.debug("各区域 Token 消耗: sessionId={}, systemPrompt={}, currentSession={}, crossSession={}, knowledgeEntity={}, knowledgeBase={}",
+                        state.sessionId(), systemPromptTokens, currentSessionTokens,
+                        crossSessionTokens, knowledgeEntityTokens, kbSnippetTokens);
+            }
             logAssemblyMetrics(state, context, startTime);
 
             return context;
