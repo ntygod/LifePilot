@@ -1,6 +1,7 @@
 package com.lifepilot.knowledge.chunking;
 
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
+import org.springframework.lang.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -12,9 +13,11 @@ import java.util.regex.Pattern;
 /**
  * 智能策略选择器 — 分析文档特征自动选择最佳分块策略。
  *
- * <p>选择逻辑：
+ * <p>选择逻辑（优先级从高到低）：
  * <ol>
+ *   <li>代码块密度 &gt; codeBlockDensityThreshold → RecursiveChunker（保留代码块完整性）</li>
  *   <li>标题密度 &gt; headingDensityThreshold → HeadingChunker</li>
+ *   <li>semanticChunker 可用且文档长度 &gt; semanticChunkingThreshold → SemanticChunker</li>
  *   <li>文本长度 &gt; shortDocumentThreshold → RecursiveChunker</li>
  *   <li>否则 → FixedSizeChunker</li>
  * </ol>
@@ -30,31 +33,47 @@ public non-sealed class SmartChunker implements ChunkingStrategy {
     private static final Pattern HEADING_PATTERN = Pattern.compile(
             "^#{1,6}\\s+.+", Pattern.MULTILINE);
 
+    /** Markdown 围栏代码块正则 */
+    private static final Pattern CODE_BLOCK_PATTERN = Pattern.compile(
+            "```[\\s\\S]*?```", Pattern.MULTILINE);
+
     private final FixedSizeChunker fixedSizeChunker;
     private final RecursiveChunker recursiveChunker;
     private final HeadingChunker headingChunker;
+    @Nullable
+    private final SemanticChunker semanticChunker;
     private final double headingDensityThreshold;
     private final int shortDocumentThreshold;
+    private final double codeBlockDensityThreshold;
+    private final int semanticChunkingThreshold;
 
     /**
      * 构造智能策略选择器。
      *
-     * @param fixedSizeChunker 固定大小分块器
-     * @param recursiveChunker 递归分块器
-     * @param headingChunker   标题分块器
-     * @param smartConfig      智能选择配置
+     * @param fixedSizeChunker  固定大小分块器
+     * @param recursiveChunker  递归分块器
+     * @param headingChunker    标题分块器
+     * @param semanticChunker   语义分块器（可选，为 null 时跳过语义分块策略）
+     * @param smartConfig       智能选择配置
      */
     public SmartChunker(FixedSizeChunker fixedSizeChunker,
                         RecursiveChunker recursiveChunker,
                         HeadingChunker headingChunker,
+                        @Nullable SemanticChunker semanticChunker,
                         KnowledgeBaseProperties.Chunking.SmartChunker smartConfig) {
         this.fixedSizeChunker = fixedSizeChunker;
         this.recursiveChunker = recursiveChunker;
         this.headingChunker = headingChunker;
+        this.semanticChunker = semanticChunker;
         this.headingDensityThreshold = smartConfig.headingDensityThreshold();
         this.shortDocumentThreshold = smartConfig.shortDocumentThreshold();
-        log.debug("初始化 SmartChunker: headingDensityThreshold={}, shortDocumentThreshold={}",
-                headingDensityThreshold, shortDocumentThreshold);
+        this.codeBlockDensityThreshold = smartConfig.codeBlockDensityThreshold();
+        this.semanticChunkingThreshold = smartConfig.semanticChunkingThreshold();
+        log.debug("初始化 SmartChunker: headingDensityThreshold={}, shortDocumentThreshold={}, " +
+                        "codeBlockDensityThreshold={}, semanticChunkingThreshold={}, semanticChunker={}",
+                headingDensityThreshold, shortDocumentThreshold,
+                codeBlockDensityThreshold, semanticChunkingThreshold,
+                semanticChunker != null ? "可用" : "不可用");
     }
 
     /**
@@ -69,25 +88,43 @@ public non-sealed class SmartChunker implements ChunkingStrategy {
             return fixedSizeChunker;
         }
 
-        // 计算标题密度
+        // 计算文档特征
+        double codeBlockDensity = calcCodeBlockDensity(text);
         int headingCount = countHeadings(text);
         int paragraphCount = countParagraphs(text);
         double headingDensity = paragraphCount > 0
                 ? (double) headingCount / paragraphCount
                 : 0.0;
 
+        // 1. 代码块密度高 → RecursiveChunker（保留代码块完整性）
+        if (codeBlockDensity > codeBlockDensityThreshold) {
+            log.debug("选择 RecursiveChunker（代码块密度高）: codeBlockDensity={}, threshold={}",
+                    codeBlockDensity, codeBlockDensityThreshold);
+            return recursiveChunker;
+        }
+
+        // 2. 标题密度高 → HeadingChunker
         if (headingDensity > headingDensityThreshold) {
             log.debug("选择 HeadingChunker: headingDensity={}, threshold={}",
                     headingDensity, headingDensityThreshold);
             return headingChunker;
         }
 
+        // 3. 语义分块器可用且文档足够长 → SemanticChunker
+        if (semanticChunker != null && text.length() > semanticChunkingThreshold) {
+            log.debug("选择 SemanticChunker: textLength={}, threshold={}",
+                    text.length(), semanticChunkingThreshold);
+            return semanticChunker;
+        }
+
+        // 4. 长文档 → RecursiveChunker
         if (text.length() > shortDocumentThreshold) {
             log.debug("选择 RecursiveChunker: textLength={}, threshold={}",
                     text.length(), shortDocumentThreshold);
             return recursiveChunker;
         }
 
+        // 5. 默认 → FixedSizeChunker
         log.debug("选择 FixedSizeChunker: textLength={}", text.length());
         return fixedSizeChunker;
     }
@@ -107,6 +144,31 @@ public non-sealed class SmartChunker implements ChunkingStrategy {
     @Override
     public String strategyName() {
         return "smart";
+    }
+
+    /**
+     * 统计文本中的 Markdown 围栏代码块数量。
+     */
+    private int countCodeBlocks(String text) {
+        int count = 0;
+        Matcher matcher = CODE_BLOCK_PATTERN.matcher(text);
+        while (matcher.find()) {
+            count++;
+        }
+        return count;
+    }
+
+    /**
+     * 计算代码块字符数占总字符数的比例。
+     */
+    private double calcCodeBlockDensity(String text) {
+        if (text.isEmpty()) return 0.0;
+        int codeChars = 0;
+        Matcher matcher = CODE_BLOCK_PATTERN.matcher(text);
+        while (matcher.find()) {
+            codeChars += matcher.end() - matcher.start();
+        }
+        return (double) codeChars / text.length();
     }
 
     /**

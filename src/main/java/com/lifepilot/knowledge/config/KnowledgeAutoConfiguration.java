@@ -121,7 +121,7 @@ public class KnowledgeAutoConfiguration {
     @ConditionalOnMissingBean
     public SmartChunker smartChunker(FixedSizeChunker fixedSizeChunker, RecursiveChunker recursiveChunker,
                                      HeadingChunker headingChunker, KnowledgeBaseProperties props) {
-        return new SmartChunker(fixedSizeChunker, recursiveChunker, headingChunker,
+        return new SmartChunker(fixedSizeChunker, recursiveChunker, headingChunker, null,
                 props.chunking().smartChunker());
     }
 
