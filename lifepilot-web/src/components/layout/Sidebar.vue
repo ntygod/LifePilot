@@ -183,7 +183,7 @@ const mobileSections = [
 <template>
   <!-- 移动端：使用 shadcn-vue Sheet 替代手写 fixed + translate-x 滑入 -->
   <Sheet v-if="isMobile" :open="isOpen" @update:open="(val: boolean) => { if (!val) emit('close') }">
-    <SheetContent side="left" class="w-[var(--sidebar-width)] p-0 bg-sidebar-background/80 backdrop-blur-xl border-sidebar-border/50">
+    <SheetContent side="left" class="w-[var(--sidebar-width)] p-0 bg-sidebar-background/80 backdrop-blur-xl dark:bg-sidebar-background/60 dark:backdrop-blur-2xl border-sidebar-border/50">
       <!-- 移动端标题栏（Sheet 自带关闭按钮，此处仅展示标题） -->
       <div class="h-16 px-lg border-b border-border flex items-center">
         <h1 class="text-lg font-semibold text-foreground tracking-tight">LifePilot</h1>
@@ -321,7 +321,7 @@ const mobileSections = [
   <!-- 桌面端：静态侧边栏 -->
   <aside
     v-else
-    class="w-[var(--sidebar-width)] border-r border-sidebar-border/50 bg-sidebar-background/80 backdrop-blur-xl flex flex-col h-full"
+    class="w-[var(--sidebar-width)] border-r border-sidebar-border/50 bg-sidebar-background/80 backdrop-blur-xl dark:bg-sidebar-background/60 dark:backdrop-blur-2xl flex flex-col h-full"
   >
     <!-- 顶部标题 + 新建按钮（桌面端） -->
     <div class="h-16 px-lg border-b border-border flex items-center justify-between">
