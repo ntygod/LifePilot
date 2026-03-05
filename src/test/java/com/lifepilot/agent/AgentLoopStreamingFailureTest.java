@@ -57,6 +57,7 @@ class AgentLoopStreamingFailureTest {
                 workingMemory,
                 conversationHistoryStore,
                 null,
+                null,
                 null
         );
 
