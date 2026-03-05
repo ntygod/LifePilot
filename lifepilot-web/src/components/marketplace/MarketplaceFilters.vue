@@ -1,5 +1,8 @@
+<!-- MarketplaceFilters — 搜索与标签筛选，使用 shadcn-vue 组件 -->
 <script setup lang="ts">
 import { ref, watch } from 'vue'
+import SearchBar from '@/components/common/SearchBar.vue'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 
 const props = defineProps<{
   search: string
@@ -20,8 +23,7 @@ watch(() => props.search, (val) => {
   localSearch.value = val
 })
 
-function onSearchInput(e: Event) {
-  const value = (e.target as HTMLInputElement).value
+function onSearchUpdate(value: string) {
   localSearch.value = value
   if (debounceTimer) clearTimeout(debounceTimer)
   debounceTimer = setTimeout(() => {
@@ -29,52 +31,43 @@ function onSearchInput(e: Event) {
   }, 300)
 }
 
-function selectTag(tag: string) {
-  emit('update:tag', tag === props.tag ? '' : tag)
+/** ToggleGroup 值变化：空字符串表示"全部" */
+function handleTagChange(val: string | undefined) {
+  emit('update:tag', val || '')
 }
 </script>
 
 <template>
   <div class="flex flex-col sm:flex-row items-start sm:items-center gap-sm">
     <!-- 搜索输入框 -->
-    <div class="relative w-full sm:w-64">
-      <span class="pointer-events-none absolute inset-y-0 left-2 flex items-center text-xs text-muted-foreground">
-        🔍
-      </span>
-      <input
-        :value="localSearch"
-        type="search"
-        placeholder="搜索 Skill 名称或描述..."
-        aria-label="搜索 Skill"
-        class="flex h-9 w-full rounded-md border border-input bg-transparent pl-7 pr-3 py-1 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-        @input="onSearchInput"
-      />
-    </div>
+    <SearchBar
+      :model-value="localSearch"
+      placeholder="搜索 Skill 名称或描述..."
+      aria-label="搜索 Skill"
+      class="w-full sm:w-64"
+      @update:model-value="onSearchUpdate"
+    />
 
     <!-- 标签筛选 -->
-    <div v-if="availableTags.length > 0" class="inline-flex flex-wrap items-center gap-2">
-      <button
-        type="button"
-        class="rounded-full border text-xs transition-colors px-2 py-1"
-        :class="!tag
-          ? 'bg-primary text-primary-foreground border-primary'
-          : 'border-border text-muted-foreground hover:text-foreground'"
-        @click="selectTag('')"
-      >
+    <ToggleGroup
+      v-if="availableTags.length > 0"
+      type="single"
+      variant="outline"
+      size="sm"
+      :model-value="tag || 'all'"
+      class="flex-wrap"
+      @update:model-value="handleTagChange($event === 'all' ? '' : ($event as string))"
+    >
+      <ToggleGroupItem value="all">
         全部
-      </button>
-      <button
+      </ToggleGroupItem>
+      <ToggleGroupItem
         v-for="t in availableTags"
         :key="t"
-        type="button"
-        class="rounded-full border text-xs transition-colors px-2 py-1"
-        :class="tag === t
-          ? 'bg-primary text-primary-foreground border-primary'
-          : 'border-border text-muted-foreground hover:text-foreground'"
-        @click="selectTag(t)"
+        :value="t"
       >
         {{ t }}
-      </button>
-    </div>
+      </ToggleGroupItem>
+    </ToggleGroup>
   </div>
 </template>
