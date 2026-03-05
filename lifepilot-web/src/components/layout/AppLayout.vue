@@ -70,7 +70,7 @@ function closeSidebar() {
     <!-- 主内容区（路由过渡动画） -->
     <main class="flex-1 overflow-hidden md:ml-0" :class="{ 'ml-0': isMobile }">
       <router-view v-slot="{ Component }">
-        <Transition name="page-fade" mode="out-in">
+        <Transition name="page-slide" mode="out-in">
           <component :is="Component" />
         </Transition>
       </router-view>
@@ -84,16 +84,4 @@ function closeSidebar() {
   </div>
 </template>
 
-<style scoped>
-/* 路由页面过渡动画：仅 opacity */
-.page-fade-enter-active {
-  transition: opacity 150ms ease-out;
-}
-.page-fade-leave-active {
-  transition: opacity 100ms ease-in;
-}
-.page-fade-enter-from,
-.page-fade-leave-to {
-  opacity: 0;
-}
-</style>
+
