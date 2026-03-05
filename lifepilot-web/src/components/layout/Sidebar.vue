@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useChatStore } from '@/stores/chat'
 import ThemeToggle from '@/components/global/ThemeToggle.vue'
+import { AnimatePresence, motion } from 'motion-v'
 import { 
   MessageSquare, 
   BookOpen, 
@@ -21,6 +22,9 @@ import {
   Trash2,
   ShoppingBag
 } from 'lucide-vue-next'
+
+// motion.div 组件引用，用于模板中的动态组件
+const MotionDiv = motion.div
 
 interface Props {
   isMobile?: boolean
@@ -313,20 +317,31 @@ const settingsNavItems = navItems.filter(i => i.id === 'settings')
               />
             </button>
 
-            <div v-if="expandedGroups.has(item.id)" class="ml-md mt-xs space-y-xs">
-              <router-link
-                v-for="child in item.children"
-                :key="child.path"
-                :to="child.path"
-                class="relative flex items-center gap-sm px-md py-xs rounded-lg text-sm transition-colors duration-200 ease-out"
-                :class="isRouteActive(child.path)
-                  ? 'nav-item-active bg-accent text-accent-foreground'
-                  : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground'"
+            <AnimatePresence>
+              <MotionDiv
+                v-if="expandedGroups.has(item.id)"
+                :initial="{ height: 0, opacity: 0 }"
+                :animate="{ height: 'auto', opacity: 1 }"
+                :exit="{ height: 0, opacity: 0 }"
+                :transition="{ duration: 0.25 }"
+                style="overflow: hidden"
               >
-                <component :is="child.icon" :size="16" class="shrink-0 text-muted-foreground" />
-                <span class="truncate">{{ child.label }}</span>
-              </router-link>
-            </div>
+                <div class="ml-md mt-xs space-y-xs">
+                  <router-link
+                    v-for="child in item.children"
+                    :key="child.path"
+                    :to="child.path"
+                    class="relative flex items-center gap-sm px-md py-xs rounded-lg text-sm transition-colors duration-200 ease-out"
+                    :class="isRouteActive(child.path)
+                      ? 'nav-item-active bg-accent text-accent-foreground'
+                      : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground'"
+                  >
+                    <component :is="child.icon" :size="16" class="shrink-0 text-muted-foreground" />
+                    <span class="truncate">{{ child.label }}</span>
+                  </router-link>
+                </div>
+              </MotionDiv>
+            </AnimatePresence>
           </div>
         </template>
       </div>
@@ -352,20 +367,31 @@ const settingsNavItems = navItems.filter(i => i.id === 'settings')
               />
             </button>
 
-            <div v-if="expandedGroups.has(item.id)" class="ml-md mt-xs space-y-xs">
-              <router-link
-                v-for="child in item.children"
-                :key="child.path"
-                :to="child.path"
-                class="relative flex items-center gap-sm px-md py-xs rounded-lg text-sm transition-colors duration-200 ease-out"
-                :class="isRouteActive(child.path)
-                  ? 'nav-item-active bg-accent text-accent-foreground'
-                  : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground'"
+            <AnimatePresence>
+              <MotionDiv
+                v-if="expandedGroups.has(item.id)"
+                :initial="{ height: 0, opacity: 0 }"
+                :animate="{ height: 'auto', opacity: 1 }"
+                :exit="{ height: 0, opacity: 0 }"
+                :transition="{ duration: 0.25 }"
+                style="overflow: hidden"
               >
-                <component :is="child.icon" :size="16" class="shrink-0 text-muted-foreground" />
-                <span class="truncate">{{ child.label }}</span>
-              </router-link>
-            </div>
+                <div class="ml-md mt-xs space-y-xs">
+                  <router-link
+                    v-for="child in item.children"
+                    :key="child.path"
+                    :to="child.path"
+                    class="relative flex items-center gap-sm px-md py-xs rounded-lg text-sm transition-colors duration-200 ease-out"
+                    :class="isRouteActive(child.path)
+                      ? 'nav-item-active bg-accent text-accent-foreground'
+                      : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground'"
+                  >
+                    <component :is="child.icon" :size="16" class="shrink-0 text-muted-foreground" />
+                    <span class="truncate">{{ child.label }}</span>
+                  </router-link>
+                </div>
+              </MotionDiv>
+            </AnimatePresence>
           </div>
         </template>
       </div>
@@ -391,20 +417,31 @@ const settingsNavItems = navItems.filter(i => i.id === 'settings')
               />
             </button>
 
-            <div v-if="expandedGroups.has(item.id)" class="ml-md mt-xs space-y-xs">
-              <router-link
-                v-for="child in item.children"
-                :key="child.path"
-                :to="child.path"
-                class="relative flex items-center gap-sm px-md py-xs rounded-lg text-sm transition-colors duration-200 ease-out"
-                :class="isRouteActive(child.path)
-                  ? 'nav-item-active bg-accent text-accent-foreground'
-                  : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground'"
+            <AnimatePresence>
+              <MotionDiv
+                v-if="expandedGroups.has(item.id)"
+                :initial="{ height: 0, opacity: 0 }"
+                :animate="{ height: 'auto', opacity: 1 }"
+                :exit="{ height: 0, opacity: 0 }"
+                :transition="{ duration: 0.25 }"
+                style="overflow: hidden"
               >
-                <component :is="child.icon" :size="16" class="shrink-0 text-muted-foreground" />
-                <span class="truncate">{{ child.label }}</span>
-              </router-link>
-            </div>
+                <div class="ml-md mt-xs space-y-xs">
+                  <router-link
+                    v-for="child in item.children"
+                    :key="child.path"
+                    :to="child.path"
+                    class="relative flex items-center gap-sm px-md py-xs rounded-lg text-sm transition-colors duration-200 ease-out"
+                    :class="isRouteActive(child.path)
+                      ? 'nav-item-active bg-accent text-accent-foreground'
+                      : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground'"
+                  >
+                    <component :is="child.icon" :size="16" class="shrink-0 text-muted-foreground" />
+                    <span class="truncate">{{ child.label }}</span>
+                  </router-link>
+                </div>
+              </MotionDiv>
+            </AnimatePresence>
           </div>
         </template>
       </div>
