@@ -1,5 +1,6 @@
 package com.lifepilot.agent;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.context.AssembledContext;
 import com.lifepilot.agent.context.TokenBudget;
@@ -49,6 +50,7 @@ class AgentLoopStreamingFailureTest {
                 llmRouter,
                 multimodalRouter,
                 traceRecorder,
+                new ObjectMapper(),
                 sessionManager,
                 null,
                 actionParser,

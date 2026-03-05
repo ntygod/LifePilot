@@ -1,5 +1,6 @@
 package com.lifepilot.agent;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.context.ContextAssembler;
 import com.lifepilot.agent.model.*;
@@ -31,6 +32,7 @@ class AgentLoopExecutingPlanTest {
                 mock(LlmRouter.class),
                 mock(MultimodalRouter.class),
                 mock(TraceRecorder.class),
+                new ObjectMapper(),
                 mock(SessionManager.class),
                 null,
                 mock(ActionParser.class),
@@ -84,6 +86,7 @@ class AgentLoopExecutingPlanTest {
                 mock(LlmRouter.class),
                 mock(MultimodalRouter.class),
                 mock(TraceRecorder.class),
+                new ObjectMapper(),
                 mock(SessionManager.class),
                 null,
                 mock(ActionParser.class),
@@ -136,6 +139,7 @@ class AgentLoopExecutingPlanTest {
                 mock(LlmRouter.class),
                 mock(MultimodalRouter.class),
                 mock(TraceRecorder.class),
+                new ObjectMapper(),
                 mock(SessionManager.class),
                 null,
                 mock(ActionParser.class),
