@@ -8,8 +8,13 @@ import com.lifepilot.agent.StateReducer;
 import com.lifepilot.agent.context.ContextAssembler;
 import com.lifepilot.agent.context.DefaultMemoryRetrievalStrategy;
 import com.lifepilot.agent.session.SessionManager;
+import com.lifepilot.conversation.ConversationHistoryStore;
 import com.lifepilot.conversation.ConversationViewService;
 import com.lifepilot.conversation.DefaultConversationViewService;
+import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
+import com.lifepilot.knowledge.repository.DocumentRepository;
+import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
+import com.lifepilot.knowledge.retrieve.DocumentRetriever;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.memory.episodic.EpisodicMemory;
@@ -18,9 +23,10 @@ import com.lifepilot.memory.working.TokenBudgetAllocator;
 import com.lifepilot.memory.working.WorkingMemory;
 import com.lifepilot.observability.redactor.DataRedactor;
 import com.lifepilot.observability.trace.TraceRecorder;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.lifepilot.tool.config.ToolAutoConfiguration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -41,7 +47,7 @@ import java.util.List;
  * @author zsg
  * @since 2026-07-20
  */
-@AutoConfiguration(after = com.lifepilot.tool.config.ToolAutoConfiguration.class)
+@AutoConfiguration(after = ToolAutoConfiguration.class)
 @EnableConfigurationProperties(AgentConfigProperties.class)
 @ConditionalOnProperty(prefix = "lifepilot.agent", name = "enabled",
         havingValue = "true", matchIfMissing = true)
@@ -61,12 +67,16 @@ public class AgentAutoConfiguration {
                                              @Autowired(required = false) HybridRetriever hybridRetriever,
                                              @Autowired(required = false) WorkingMemory workingMemory,
                                              @Autowired(required = false) TokenBudgetAllocator tokenBudgetAllocator,
-                                             @Autowired(required = false) DataRedactor dataRedactor) {
+                                             @Autowired(required = false) DataRedactor dataRedactor,
+                                             @Autowired(required = false) DocumentRetriever documentRetriever,
+                                             @Autowired(required = false) SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
+                                             @Autowired(required = false) DocumentRepository documentRepository) {
         if (hybridRetriever != null && workingMemory != null && tokenBudgetAllocator != null) {
             log.info("Agent 引擎: 注册完整版 ContextAssembler（记忆系统已就绪）");
             var strategy = new DefaultMemoryRetrievalStrategy();
             return new ContextAssembler(config, hybridRetriever,
-                    workingMemory, tokenBudgetAllocator, strategy, dataRedactor);
+                    workingMemory, tokenBudgetAllocator, strategy, dataRedactor,
+                    documentRetriever, sessionKnowledgeBaseRepository, documentRepository);
         }
         log.warn("Agent 引擎: 注册基础版 ContextAssembler（记忆系统部分或全部不可用，记忆检索功能已降级）");
         return new ContextAssembler(config);
@@ -96,13 +106,6 @@ public class AgentAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public AgentToolProvider agentToolProvider() {
-        // 空实现兜底：工具系统未启用时返回空工具列表
-        return _ -> List.of();
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
     @ConditionalOnBean(TraceRecorder.class)
     public AgentLoop agentLoopWithTrace(StateReducer stateReducer,
                                         ContextAssembler contextAssembler,
@@ -114,13 +117,17 @@ public class AgentAutoConfiguration {
                                         ActionParser actionParser,
                                         AgentToolProvider agentToolProvider,
                                         AgentConfigProperties config,
-                                        @org.springframework.beans.factory.annotation.Autowired(required = false) WorkingMemory workingMemory,
-                                        @org.springframework.beans.factory.annotation.Autowired(required = false) com.lifepilot.memory.episodic.EpisodicMemory episodicMemory) {
+                                        @Autowired(required = false) WorkingMemory workingMemory,
+                                        @Autowired(required = false) EpisodicMemory episodicMemory,
+                                        @Autowired(required = false) ConversationHistoryStore conversationHistoryStore,
+                                        @Autowired(required = false) SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
+                                        @Autowired(required = false) KnowledgeBaseRepository knowledgeBaseRepository) {
         log.info("Agent 引擎初始化完成（带追踪，记忆系统{}，情景记忆{}）",
                 workingMemory != null ? "已启用" : "未启用",
                 episodicMemory != null ? "已启用" : "未启用");
         return new AgentLoop(stateReducer, contextAssembler, llmRouter, multimodalRouter,
-                traceRecorder, sessionManager, conversationViewService, actionParser, agentToolProvider, config, workingMemory);
+                traceRecorder, sessionManager, conversationViewService, actionParser, agentToolProvider,
+                config, workingMemory, conversationHistoryStore, sessionKnowledgeBaseRepository, knowledgeBaseRepository);
     }
 
     @Bean
@@ -135,11 +142,15 @@ public class AgentAutoConfiguration {
                                            AgentToolProvider agentToolProvider,
                                            AgentConfigProperties config,
                                            @org.springframework.beans.factory.annotation.Autowired(required = false) WorkingMemory workingMemory,
-                                           @org.springframework.beans.factory.annotation.Autowired(required = false) com.lifepilot.memory.episodic.EpisodicMemory episodicMemory) {
+                                           @org.springframework.beans.factory.annotation.Autowired(required = false) com.lifepilot.memory.episodic.EpisodicMemory episodicMemory,
+                                           @org.springframework.beans.factory.annotation.Autowired(required = false) ConversationHistoryStore conversationHistoryStore,
+                                           @org.springframework.beans.factory.annotation.Autowired(required = false) com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
+                                           @org.springframework.beans.factory.annotation.Autowired(required = false) com.lifepilot.knowledge.repository.KnowledgeBaseRepository knowledgeBaseRepository) {
         log.info("Agent 引擎初始化完成（无追踪，记忆系统{}，情景记忆{}）",
                 workingMemory != null ? "已启用" : "未启用",
                 episodicMemory != null ? "已启用" : "未启用");
         return new AgentLoop(stateReducer, contextAssembler, llmRouter, multimodalRouter,
-                null, sessionManager, conversationViewService, actionParser, agentToolProvider, config, workingMemory);
+                null, sessionManager, conversationViewService, actionParser, agentToolProvider,
+                config, workingMemory, conversationHistoryStore, sessionKnowledgeBaseRepository, knowledgeBaseRepository);
     }
 }

@@ -6,11 +6,18 @@ import com.lifepilot.agent.context.AssembledContext;
 import com.lifepilot.agent.context.ContextAssembler;
 import com.lifepilot.agent.model.*;
 import com.lifepilot.agent.session.SessionManager;
+import com.lifepilot.conversation.ConversationHistoryStore;
 import com.lifepilot.conversation.ConversationTurnView;
 import com.lifepilot.conversation.ConversationViewService;
+import com.lifepilot.interaction.model.TokenUsage;
+import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
+import com.lifepilot.interaction.web.sse.SseEventType;
+import com.lifepilot.interaction.web.sse.SseSessionManager;
+import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.llm.LlmUnavailableException;
+import com.lifepilot.llm.StreamingLlmResponse;
 import com.lifepilot.llm.multimodal.MultimodalRequest;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.memory.working.ConversationSlot;
@@ -21,23 +28,15 @@ import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.observability.trace.StateTransitionStep;
 import com.lifepilot.observability.trace.TraceContext;
 import com.lifepilot.observability.trace.TraceRecorder;
-import com.lifepilot.interaction.model.TokenUsage;
-import com.lifepilot.interaction.web.sse.SseEventType;
-import com.lifepilot.interaction.web.sse.SseSessionManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.lang.Nullable;
-import reactor.core.publisher.Flux;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -54,11 +53,27 @@ public class AgentLoop {
     private static final Logger log = LoggerFactory.getLogger(AgentLoop.class);
     private static final ObjectMapper TOOL_INPUT_MAPPER = new ObjectMapper();
 
+    /** 流式 RESPONDING 阶段追加的自然语言输出约束。 */
+    private static final String STREAMING_OUTPUT_CONSTRAINT = """
+            
+            输出要求（流式）：
+            - 直接使用自然语言回复，不要输出 JSON
+            - 不要包含任何代码块或格式标记
+            - 回复应简洁、有用、友好
+            """;
+
+    /** 当 TraceContext 中没有 LlmCallStep 时的默认 modelId。 */
+    private static final String DEFAULT_MODEL_ID = "agent";
+
     private final StateReducer stateReducer;
     private final ContextAssembler contextAssembler;
     private final LlmRouter llmRouter;
     private final MultimodalRouter multimodalRouter;
     private final TraceRecorder traceRecorder;
+    @Nullable
+    private final SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository;
+    @Nullable
+    private final KnowledgeBaseRepository knowledgeBaseRepository;
     private final SessionManager sessionManager;
     @Nullable
     private final ConversationViewService conversationViewService;
@@ -67,6 +82,8 @@ public class AgentLoop {
     private final AgentConfigProperties config;
     @Nullable
     private final WorkingMemory workingMemory;
+    @Nullable
+    private final ConversationHistoryStore conversationHistoryStore;
 
     public AgentLoop(StateReducer stateReducer,
                      ContextAssembler contextAssembler,
@@ -79,7 +96,8 @@ public class AgentLoop {
                      AgentToolProvider agentToolProvider,
                      AgentConfigProperties config) {
         this(stateReducer, contextAssembler, llmRouter, multimodalRouter, traceRecorder,
-                sessionManager, conversationViewService, actionParser, agentToolProvider, config, null);
+                sessionManager, conversationViewService, actionParser, agentToolProvider, config,
+                null, null, null, null);
     }
 
     public AgentLoop(StateReducer stateReducer,
@@ -92,7 +110,10 @@ public class AgentLoop {
                      ActionParser actionParser,
                      AgentToolProvider agentToolProvider,
                      AgentConfigProperties config,
-                     @Nullable WorkingMemory workingMemory) {
+                     @Nullable WorkingMemory workingMemory,
+                     @Nullable ConversationHistoryStore conversationHistoryStore,
+                     @Nullable SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
+                     @Nullable KnowledgeBaseRepository knowledgeBaseRepository) {
         this.stateReducer = stateReducer;
         this.contextAssembler = contextAssembler;
         this.llmRouter = llmRouter;
@@ -104,6 +125,9 @@ public class AgentLoop {
         this.agentToolProvider = agentToolProvider;
         this.config = config;
         this.workingMemory = workingMemory;
+        this.conversationHistoryStore = conversationHistoryStore;
+        this.sessionKnowledgeBaseRepository = sessionKnowledgeBaseRepository;
+        this.knowledgeBaseRepository = knowledgeBaseRepository;
     }
 
     /**
@@ -117,7 +141,7 @@ public class AgentLoop {
      * @param sseManager    SSE 会话管理器
      */
     public void runStreaming(AgentRequest request, String streamId, SseSessionManager sseManager) {
-        AgentState state = null;
+        AgentState state = AgentState.init(request);
         TraceContext traceContext = null;
         Instant loopStart = Instant.now();
         Exception error = null;
@@ -130,6 +154,15 @@ public class AgentLoop {
         
         try {
             state = initState(request);
+            // TraceId 提前告知前端：便于在流式过程中打开“实时轨迹”视图
+            if (state.traceId() != null) {
+                sseManager.sendEvent(streamId, SseEventType.TRACE_START, Map.of(
+                        "sessionId", request.sessionId(),
+                        "turnId", tempTurnId,
+                        "traceId", state.traceId(),
+                        "timestamp", Instant.now().toEpochMilli()
+                ));
+            }
             // 推理开始事件
             sendReasoningEvent(
                     sseManager,
@@ -140,7 +173,7 @@ public class AgentLoop {
                     "开始处理请求",
                     "Agent 已接收到用户请求，正在准备上下文与预算。",
                     null,
-                    java.util.Map.of()
+                    Map.of()
             );
             traceContext = startTraceIfEnabled(state, request);
             loopStart = Instant.now();
@@ -175,7 +208,7 @@ public class AgentLoop {
                         "分析问题与上下文",
                         "正在梳理本轮问题、会话历史与可用记忆。",
                         null,
-                        java.util.Map.of()
+                        Map.of()
                 );
                 var assembledContext = assembleContext(request, state);
                 // 上下文组装完成后，发送 MEMORY_RETRIEVAL，占位表示已完成记忆检索/上下文拼接（如有）
@@ -188,7 +221,7 @@ public class AgentLoop {
                         "检索相关记忆",
                         "已基于最近对话与知识收集相关记忆，用于本轮推理。",
                         null,
-                        java.util.Map.of()
+                        Map.of()
                 );
 
                 // 4) 调用 LLM / 执行工具（RESPONDING 阶段使用流式）
@@ -204,14 +237,19 @@ public class AgentLoop {
                             "正在生成回答",
                             "模型正在根据上下文整理最终回答。",
                             null,
-                            java.util.Map.of()
+                            Map.of()
                     );
-                    action = callLlmStreamingAndParseAction(request, state, assembledContext, streamId, sseManager, tempTurnId);
+                    action = callLlmStreamingAndParseAction(request, state, assembledContext, traceContext, streamId, sseManager, tempTurnId);
                     state = reduceAndRecord(state, action, traceContext, loopStart);
                     
                     // 提取最终内容和 Token 使用量
                     if (action instanceof Action.ResponseGenerated responseGenerated) {
                         finalContent = responseGenerated.content();
+                    } else if (action instanceof Action.ErrorRecovery errorRecovery
+                            && errorRecovery.errorType() == AgentErrorType.LLM_UNAVAILABLE) {
+                        // 流式 RESPONDING 阶段如果 LLM 不可用：统一走“错误结束”通道，避免既发 ERROR 又发 DONE
+                        error = new RuntimeException(errorRecovery.errorMessage());
+                        break;
                     }
                 } else if (state.phase() == AgentPhase.EXECUTING) {
                     // 执行阶段：按计划调用工具，并发送 TOOL_CALL_* 推理事件
@@ -240,7 +278,7 @@ public class AgentLoop {
 
             // 归一化最终输出与推理概要（供持久化与前端展示使用）
             finalContent = state.finalOutput() != null ? state.finalOutput() : finalContent;
-            if (state != null && state.terminationReason() == null) {
+            if (state.terminationReason() == null) {
                 reasoningSummary = buildReasoningSummary(state, traceContext);
                 // 将最终输出与推理概要写回状态，便于异步持久化使用
                 state = state.toBuilder()
@@ -252,97 +290,39 @@ public class AgentLoop {
             // 异步后处理（会话快照 / 工作记忆）
             asyncPostProcess(state);
             
-            // 从 TraceContext 中提取 Token 使用量和模型信息
-            String modelId = "agent";
-            int promptTokens = 0;
-            int completionTokens = 0;
-            if (traceContext != null) {
-                promptTokens = traceContext.totalInputTokens();
-                completionTokens = traceContext.totalOutputTokens();
-                // 从最后一个 LlmCallStep 中获取 modelId
-                var steps = traceContext.steps();
-                for (int i = steps.size() - 1; i >= 0; i--) {
-                    var step = steps.get(i);
-                    if (step instanceof com.lifepilot.observability.trace.LlmCallStep llmStep) {
-                        modelId = llmStep.modelId();
-                        break;
-                    }
-                }
-            }
-            finalTokenUsage = new TokenUsage(promptTokens, completionTokens, promptTokens + completionTokens, modelId);
+            // 从 TraceContext 中聚合 Token 使用量和模型信息
+            finalTokenUsage = aggregateTokenUsage(traceContext);
 
         } catch (Exception e) {
             log.error("流式 Agent 循环异常终止: error={}", e.getMessage(), e);
             error = e;
-            var errorState = AgentState.init(request);
-            state = errorState;
+            state = AgentState.init(request);
         } finally {
             // 轨迹记录
             if (traceRecorder != null && traceContext != null) {
-                String finalOutput = state != null ? state.finalOutput() : null;
-                boolean success = error == null && state != null && state.terminationReason() == null;
+                String finalOutput = state.finalOutput();
+                boolean success = error == null && state.terminationReason() == null;
                 String errorType = error != null ? error.getClass().getSimpleName() : null;
                 String errorDetail = error != null
                         ? error.getMessage()
-                        : (state != null ? state.terminationReason() : null);
+                        : state.terminationReason();
                 traceRecorder.endTrace(traceContext, finalOutput, success, errorType, errorDetail);
             }
 
             // 发送 done 事件或 error 事件
             if (error != null) {
-                sseManager.sendEvent(streamId, SseEventType.ERROR, Map.of(
-                        "code", 500,
-                        "message", "处理失败: " + error.getMessage(),
-                        "traceId", state != null ? state.traceId() : null
-                ));
-                sseManager.closeEmitter(streamId);
+                sendStreamError(sseManager, streamId, 500,
+                        "处理失败: " + error.getMessage(), state.traceId());
             } else {
-                var doneData = new java.util.HashMap<String, Object>();
-                // 会话与回合标识
-                doneData.put("sessionId", request.sessionId());
-                doneData.put("turnId", tempTurnId);
-                // usage 结构，兼容文档中的字段命名
-                if (finalTokenUsage != null) {
-                    var usage = new java.util.HashMap<String, Object>();
-                    usage.put("inputTokens", finalTokenUsage.promptTokens());
-                    usage.put("outputTokens", finalTokenUsage.completionTokens());
-                    usage.put("totalTokens", finalTokenUsage.totalTokens());
-                    doneData.put("usage", usage);
-                    // 兼容旧字段
-                    doneData.put("tokenUsage", finalTokenUsage);
-                }
-                // 兼容历史字段：messageId / content / traceId / timestamp
-                doneData.put("messageId", UUID.randomUUID().toString());
-                doneData.put("content", finalContent);
-                doneData.put("timestamp", Instant.now().toEpochMilli());
-                if (state != null && state.traceId() != null) {
-                    doneData.put("traceId", state.traceId());
-                }
-                // 推理概要（Phase 1：先返回简单文案）
-                if (reasoningSummary != null) {
-                    doneData.put("reasoningSummary", reasoningSummary);
-                }
-                // contents：当前仅返回 TEXT，后续扩展多模态
-                var contents = new java.util.ArrayList<java.util.Map<String, Object>>();
-                if (finalContent != null && !finalContent.isBlank()) {
-                    var textContent = new java.util.HashMap<String, Object>();
-                    textContent.put("type", "TEXT");
-                    textContent.put("text", finalContent);
-                    contents.add(textContent);
-                }
-                doneData.put("contents", contents);
                 // 推理结束事件（在 DONE 之前发送，便于前端时间线展示）
                 sendReasoningEvent(
-                        sseManager,
-                        streamId,
-                        request.sessionId(),
-                        tempTurnId,
-                        "ANSWER_FINALIZED",
-                        "回答已生成",
-                        "本轮推理与回答已完成。",
-                        null,
-                        java.util.Map.of()
+                        sseManager, streamId, request.sessionId(), tempTurnId,
+                        "ANSWER_FINALIZED", "回答已生成", "本轮推理与回答已完成。",
+                        null, java.util.Map.of()
                 );
+                var doneData = buildDoneEventPayload(
+                        request, state, tempTurnId, finalTokenUsage,
+                        traceContext, reasoningSummary, finalContent);
                 sseManager.sendEvent(streamId, SseEventType.DONE, doneData);
                 sseManager.closeEmitter(streamId);
             }
@@ -356,7 +336,7 @@ public class AgentLoop {
      * @return Agent 响应
      */
     public AgentResponse run(AgentRequest request) {
-        AgentState state = null;
+        AgentState state = AgentState.init(request);
         TraceContext traceContext = null;
         Instant loopStart = Instant.now();
         Exception error = null;
@@ -403,7 +383,7 @@ public class AgentLoop {
             }
 
             // 归一化最终输出与推理概要（非流式）：用于会话快照与 /complete 响应
-            if (state != null && state.terminationReason() == null) {
+            if (state.terminationReason() == null) {
                 String finalContent = state.finalOutput();
                 String summary = buildReasoningSummary(state, traceContext);
                 state = state.toBuilder()
@@ -414,12 +394,6 @@ public class AgentLoop {
 
             // 异步后处理（Virtual Thread）
             asyncPostProcess(state);
-
-            // state 在此处理论上不为 null，但为防御性起见仍做一次兜底
-            if (state == null) {
-                var fallback = AgentState.init(request);
-                return fallback.toResponse();
-            }
             return state.toResponse();
 
         } catch (Exception e) {
@@ -432,12 +406,12 @@ public class AgentLoop {
         } finally {
             // 轨迹记录（确保异常路径也能正确结束）
             if (traceRecorder != null && traceContext != null) {
-                String finalOutput = state != null ? state.finalOutput() : null;
-                boolean success = error == null && state != null && state.terminationReason() == null;
+                String finalOutput = state.finalOutput();
+                boolean success = error == null && state.terminationReason() == null;
                 String errorType = error != null ? error.getClass().getSimpleName() : null;
                 String errorDetail = error != null
                         ? error.getMessage()
-                        : (state != null ? state.terminationReason() : null);
+                        : state.terminationReason();
                 traceRecorder.endTrace(traceContext, finalOutput, success, errorType, errorDetail);
             }
         }
@@ -454,9 +428,11 @@ public class AgentLoop {
             return null;
         }
         int steps = state.stepCount();
-        int tokens = state.budget() != null ? state.budget().tokensUsed() : 0;
+        int tokens = 0;
         String modelId = "agent";
         if (traceContext != null) {
+            // 使用 TraceContext 中累计的 Token 与最后一次 LLM 调用的模型 ID
+            tokens = traceContext.totalInputTokens() + traceContext.totalOutputTokens();
             var stepsList = traceContext.steps();
             for (int i = stepsList.size() - 1; i >= 0; i--) {
                 var step = stepsList.get(i);
@@ -465,6 +441,9 @@ public class AgentLoop {
                     break;
                 }
             }
+        } else if (state.budget() != null) {
+            // 回退：使用预算中粗略的 tokensUsed
+            tokens = state.budget().tokensUsed();
         }
         return "本轮推理已完成，使用模型 %s，经历 %d 个推理步骤，累计约 %d 个 Token。"
                 .formatted(modelId, steps, tokens);
@@ -536,120 +515,218 @@ public class AgentLoop {
     private Action callLlmStreamingAndParseAction(AgentRequest request,
                                                   AgentState state,
                                                   AssembledContext assembledContext,
+                                                  TraceContext traceContext,
                                                   String streamId,
                                                   SseSessionManager sseManager,
                                                   String tempTurnId) {
         try {
-            String scene = request.preferredProvider() != null
-                    ? request.preferredProvider()
-                    : mapPhaseToScene(state.phase());
+            String scene = mapPhaseToScene(state.phase());
 
             String systemPrompt = assembledContext.systemPrompt();
             String userPrompt = assembledContext.userPrompt();
             String userText = userPrompt != null ? userPrompt : "";
 
-            // 流式调用时，修改 System Prompt：移除 JSON 格式要求，直接要求返回自然语言
-            // 因为流式响应是逐字返回的，不适合返回结构化数据
+            // 流式 RESPONDING：保留原有 systemPrompt，仅追加"自然语言输出"约束
             String streamingSystemPrompt = systemPrompt;
-            if (state.phase() == AgentPhase.RESPONDING && systemPrompt != null) {
-                // 替换 RESPONDING 阶段的 JSON 格式要求为自然语言要求
-                String roleDefinition = "你是 LifePilot，一个智能个人助手，专注于理解用户意图并高效完成任务。";
-                String respondingInstruction = """
-                        阶段：生成响应
-                        
-                        任务：
-                        1. 基于执行结果生成清晰、有用的回复
-                        2. 使用自然语言，避免技术术语
-                        3. 提供相关的后续操作建议
-                        4. 如执行失败，提供友好的错误说明和解决建议
-                        
-                        输出要求：
-                        - 直接使用自然语言回复，不要使用 JSON 格式
-                        - 回复应清晰、有用、友好
-                        - 不要包含任何代码块或格式标记
-                        """;
-                String constraint = "\n\n重要约束：\n- 直接使用自然语言回复，不要使用任何格式标记\n- 回复应简洁、有用、友好";
-                streamingSystemPrompt = roleDefinition + "\n\n" + respondingInstruction + constraint;
+            if (state.phase() == AgentPhase.RESPONDING) {
+                if (streamingSystemPrompt == null || streamingSystemPrompt.isBlank()) {
+                    streamingSystemPrompt = STREAMING_OUTPUT_CONSTRAINT.trim();
+                } else {
+                    streamingSystemPrompt = streamingSystemPrompt + "\n" + STREAMING_OUTPUT_CONSTRAINT;
+                }
             }
 
-            // 构建完整提示词（system + user）
+            // 获取工具回调（与非流式路径一致，让 LLM 看到可用工具）
+            var toolCallbacks = agentToolProvider.getToolCallbacks(state);
+            if (!toolCallbacks.isEmpty()) {
+                log.debug("流式调用已注册工具回调: count={}, phase={}, traceId={}",
+                        toolCallbacks.size(), state.phase(), state.traceId());
+            }
+
+            // 构建完整提示词（仅用于日志和 trace 记录）
             String fullPrompt = (streamingSystemPrompt != null && !streamingSystemPrompt.isBlank()
                     ? streamingSystemPrompt + "\n\n" : "") + userText;
 
             // 打印完整提示词（便于调试）
-            logLlmPromptIfEnabled(scene, state.phase(), state.traceId(), streamingSystemPrompt, userText, null, fullPrompt);
+            logLlmPromptIfEnabled(scene, state.phase(), state.traceId(), streamingSystemPrompt, userText, toolCallbacks, fullPrompt);
 
-            // 使用流式调用：如当前请求包含媒体内容，则通过 MultimodalRouter 走多模态流式通道
-            Flux<String> stream;
+            // 构建流式响应 Flux 和 Provider 元信息
+            reactor.core.publisher.Flux<String> tokenStream;
+            String providerId;
+            String modelId;
+
             var mediaList = request.mediaContents();
             if (mediaList != null && !mediaList.isEmpty()) {
+                // 多模态路径：暂沿用 MultimodalRouter（ChatClient 多模态流式支持后续接入）
                 MultimodalRequest mmRequest = new MultimodalRequest(
-                        scene,
-                        fullPrompt,
-                        mediaList,
-                        null
-                );
-                stream = multimodalRouter.stream(mmRequest);
+                        scene, fullPrompt, mediaList, null);
+                StreamingLlmResponse streaming = multimodalRouter.streamWithInfo(mmRequest);
+                tokenStream = streaming.stream();
+                providerId = streaming.providerId();
+                modelId = streaming.modelId();
             } else {
-                stream = llmRouter.stream(scene, fullPrompt);
+                // 文本路径：通过 ChatClient 注入 toolCallbacks，走 function calling 协议
+                var clientInfo = llmRouter.getChatClientWithInfo(scene);
+                var prompt = buildPrompt(clientInfo.client(), streamingSystemPrompt, toolCallbacks);
+                tokenStream = prompt.user(userText).stream().content();
+                providerId = clientInfo.providerId();
+                modelId = clientInfo.modelId();
             }
-            
+
             StringBuilder contentBuilder = new StringBuilder();
-            // token 序号，用于前端增量渲染与调试
             final int[] tokenIndex = {0};
-            
-            // 订阅流式响应，发送 token 事件（同时包含旧字段 content 以兼容现有前端）
-            stream.doOnNext(token -> {
+            Instant start = Instant.now();
+
+            if (tokenStream == null) {
+                throw new IllegalStateException("streaming response is null");
+            }
+
+            // 订阅流式响应，发送 token 事件
+            tokenStream.doOnNext(token -> {
                 contentBuilder.append(token);
                 int index = tokenIndex[0]++;
                 sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
                         "sessionId", request.sessionId(),
                         "turnId", tempTurnId,
-                        "delta", token,
                         "content", token,
                         "index", index
                 ));
             })
             .doOnError(error -> {
                 log.error("流式 LLM 调用失败: scene={}, error={}", scene, error.getMessage(), error);
-                sseManager.sendEvent(streamId, SseEventType.ERROR, Map.of(
-                        "code", 500,
-                        "message", "LLM 调用失败: " + error.getMessage()
-                ));
             })
-            .blockLast(); // 等待流完成
+            .blockLast();
 
             String responseContent = contentBuilder.toString();
-            
-            // 如果响应内容是 JSON 格式（即使修改了 System Prompt，LLM 仍可能返回 JSON），
-            // 尝试解析并提取 content 字段
-            if (responseContent != null && responseContent.trim().startsWith("{")) {
+
+            // 如果响应内容是 JSON 格式（LLM 仍可能返回 JSON），尝试解析并提取 content 字段
+            if (responseContent.trim().startsWith("{")) {
                 try {
-                    // 尝试使用 ActionParser 解析为 ResponseGenerated
                     Action parsed = actionParser.parse(AgentPhase.RESPONDING, responseContent);
                     if (parsed instanceof Action.ResponseGenerated responseGenerated) {
-                        // 解析成功，使用解析后的 content
                         responseContent = responseGenerated.content();
                         log.debug("流式响应包含 JSON 格式，已解析并提取 content 字段");
                     }
-                    // 如果解析失败（返回 ErrorRecovery），使用原始内容
                 } catch (Exception e) {
-                    // 解析失败，使用原始内容
                     log.debug("流式响应 JSON 解析失败，使用原始内容: {}", e.getMessage());
                 }
             }
-            
+
+            // 记录流式 LLM Step（补齐 modelId/token usage）
+            recordStreamingLlmStep(traceContext,
+                    start,
+                    providerId,
+                    modelId,
+                    scene,
+                    fullPrompt,
+                    responseContent,
+                    null);
+
             // 解析为 ResponseGenerated Action（suggestions 为空列表）
             return new Action.ResponseGenerated(responseContent, List.of());
 
         } catch (Exception e) {
             log.error("流式 LLM 调用异常: phase={}, error={}", state.phase(), e.getMessage(), e);
+            // 记录流式失败到 Trace（保证 usage/modelId 能反映这次调用）
+            try {
+                String scene = mapPhaseToScene(state.phase());
+                String systemPrompt = assembledContext.systemPrompt();
+                String userText = assembledContext.userPrompt() != null ? assembledContext.userPrompt() : "";
+                String fullPrompt = (systemPrompt != null && !systemPrompt.isBlank()
+                        ? systemPrompt + "\n\n" : "") + userText;
+                // model/provider 不一定可得，使用 unknown 占位
+                recordStreamingLlmStep(traceContext,
+                        Instant.now(),
+                        "unknown",
+                        "unknown",
+                        scene,
+                        fullPrompt,
+                        "",
+                        e);
+            } catch (Exception ignore) {
+                // trace 记录失败不影响主流程
+            }
+
+            // 落一条可读的系统错误消息（DB + L1 WorkingMemory），便于前端展示/审计
+            persistStreamingSystemError(state.sessionId(), state.traceId(), e);
             return new Action.ErrorRecovery(
                     AgentErrorType.LLM_UNAVAILABLE,
                     "流式 LLM 调用失败: " + e.getMessage(),
                     true,
                     null
             );
+        }
+    }
+
+    /**
+     * 将流式 LLM 调用记录为 LlmCallStep（用于 TraceContext 汇总 token/model）。
+     *
+     * <p>由于 stream 通道缺少原生 usage 元信息，这里采用粗略估算的 token 计数。</p>
+     */
+    private void recordStreamingLlmStep(@Nullable TraceContext traceContext,
+                                        Instant startTime,
+                                        String providerId,
+                                        String modelId,
+                                        String scene,
+                                        @Nullable String prompt,
+                                        @Nullable String output,
+                                        @Nullable Exception error) {
+        if (traceRecorder == null || traceContext == null) {
+            return;
+        }
+        Instant end = Instant.now();
+        Duration d = Duration.between(startTime, end);
+        int inputTokens = estimateTokens(prompt != null ? prompt : "");
+        int outputTokens = estimateTokens(output != null ? output : "");
+        if (error != null) {
+            outputTokens = 0;
+        }
+        String finishReason = error != null ? ("error: " + error.getMessage()) : "stream_complete";
+
+        int stepIndex = traceContext.steps() != null ? traceContext.steps().size() : 0;
+        var step = new com.lifepilot.observability.trace.LlmCallStep(
+                stepIndex,
+                end,
+                d,
+                providerId != null ? providerId : "unknown",
+                modelId != null ? modelId : "unknown",
+                scene != null ? scene : "unknown",
+                inputTokens,
+                outputTokens,
+                d,
+                false,
+                0.0d,
+                finishReason
+        );
+        traceRecorder.recordStep(traceContext, step);
+    }
+
+    /**
+     * 流式失败时落一条 system 消息：写 Web 对话历史 + 写 WorkingMemory(L1)。
+     *
+     * <p>该方法不抛异常，避免影响主流程的 SSE ERROR 关闭。</p>
+     */
+    private void persistStreamingSystemError(@Nullable String sessionId,
+                                             @Nullable String traceId,
+                                             Exception e) {
+        try {
+            if (sessionId == null || sessionId.isBlank()) {
+                return;
+            }
+            String detail = e != null ? e.getMessage() : "unknown";
+            String content = "系统提示：模型服务暂时不可用，请稍后重试。\n"
+                    + "（错误信息）" + detail;
+
+            if (conversationHistoryStore != null) {
+                conversationHistoryStore.appendSystemMessage(sessionId, content, traceId);
+            }
+            WorkingMemory memory = this.workingMemory;
+            if (memory != null) {
+                int tokens = estimateTokens(content);
+                memory.append(sessionId, com.lifepilot.memory.working.ConversationSlot.systemMessage(content, tokens));
+            }
+        } catch (Exception ignore) {
+            // ignore
         }
     }
 
@@ -663,10 +740,9 @@ public class AgentLoop {
                                          AgentState state,
                                          AssembledContext assembledContext) {
         try {
-            // SubAgent 场景：使用偏好 Provider 作为场景名
-            String scene = request.preferredProvider() != null
-                    ? request.preferredProvider()
-                    : mapPhaseToScene(state.phase());
+            // 场景统一由 AgentPhase 映射，避免将 preferredProvider 误用为场景名
+            // 这样 ProviderConfig.scenes 只需维护标准场景常量（如 intent_understanding、agent-reasoning 等）
+            String scene = mapPhaseToScene(state.phase());
 
             // 使用 ChatClient，分离 system prompt 和 user prompt
             ChatClient chatClient = llmRouter.getChatClient(scene);
@@ -957,8 +1033,10 @@ public class AgentLoop {
         if (toolCallbacks != null && !toolCallbacks.isEmpty()) {
             toolNames = toolCallbacks.stream()
                     .filter(Objects::nonNull)
-                    .map(cb -> cb.getToolDefinition() != null ? cb.getToolDefinition().name() : null)
-                    .filter(Objects::nonNull)
+                    .map(cb -> {
+                        cb.getToolDefinition();
+                        return cb.getToolDefinition().name();
+                    })
                     .distinct()
                     .collect(Collectors.toList());
         }
@@ -995,7 +1073,9 @@ public class AgentLoop {
                                         TraceContext traceContext,
                                         Instant startTime) {
         AgentPhase phaseBefore = state.phase();
-        AgentState newState = stateReducer.reduce(state, action);
+        AgentState newState = Objects.requireNonNull(
+                stateReducer.reduce(state, action),
+                "stateReducer.reduce returned null");
 
         Instant now = Instant.now();
         var step = new StateTransitionStep(
@@ -1045,7 +1125,18 @@ public class AgentLoop {
                 // 1. 保存会话状态
                 sessionManager.saveSession(finalState);
                 
-                // 2. 如果 WorkingMemory 可用，保存消息到 L1（由 Token 预算与后续策略控制持久化与淘汰）
+                // 2. 保存对话历史（与记忆系统解耦）
+                if (conversationHistoryStore != null) {
+                    conversationHistoryStore.appendTurn(
+                            finalState.sessionId(),
+                            finalState.goal(),
+                            finalState.finalOutput(),
+                            finalState.reasoningSummary(),
+                            finalState.traceId()
+                    );
+                }
+                
+                // 3. 如果 WorkingMemory 可用，保存消息到 L1（由 Token 预算与后续策略控制持久化与淘汰）
                 if (workingMemory != null) {
                     saveMessagesToMemory(finalState);
                 }
@@ -1163,6 +1254,174 @@ public class AgentLoop {
     }
 
     /**
+     * 构建知识库来源摘要列表。
+     *
+     * <p>当前实现基于会话-知识库关联表，仅返回本轮会话绑定的知识库列表，
+     * 用于前端轻量展示“本轮使用到的知识库来源”。后续如需精确到文档/分块，
+     * 可在记忆检索与文档检索链路中将命中信息写入 Trace 或单独的收集器。</p>
+     *
+     * @param sessionId 会话 ID
+     * @return sources 数组（与前端 ChatResponse.sources 结构对齐）
+     */
+    private java.util.List<java.util.Map<String, Object>> buildKnowledgeSources(String sessionId) {
+        SessionKnowledgeBaseRepository repo = this.sessionKnowledgeBaseRepository;
+        if (sessionId == null || sessionId.isBlank() || repo == null) {
+            return java.util.List.of();
+        }
+        try {
+            var kbIds = repo.findKnowledgeBaseIdsBySessionId(sessionId);
+            if (kbIds == null || kbIds.isEmpty()) {
+                return java.util.List.of();
+            }
+            var result = new java.util.ArrayList<java.util.Map<String, Object>>();
+            for (String kbId : kbIds) {
+                if (kbId == null || kbId.isBlank()) {
+                    continue;
+                }
+                String name = kbId;
+                if (knowledgeBaseRepository != null) {
+                    try {
+                        var kbOpt = knowledgeBaseRepository.findById(kbId);
+                        if (kbOpt.isPresent() && kbOpt.get().name() != null && !kbOpt.get().name().isBlank()) {
+                            name = kbOpt.get().name();
+                        }
+                    } catch (Exception ignore) {
+                        // 知识库名称查询失败不影响主流程，回退为 ID
+                    }
+                }
+                var source = new java.util.HashMap<String, Object>();
+                source.put("type", "knowledgeBase");
+                source.put("id", kbId);
+                source.put("name", name);
+                result.add(source);
+            }
+            return java.util.Collections.unmodifiableList(result);
+        } catch (Exception e) {
+            log.debug("构建知识库来源摘要失败: sessionId={}, error={}", sessionId, e.getMessage());
+            return java.util.List.of();
+        }
+    }
+
+    /**
+     * 从 TraceContext 中聚合 Token 使用量和模型信息。
+     *
+     * @param traceContext 追踪上下文（可为 null）
+     * @return Token 使用量统计
+     */
+    private TokenUsage aggregateTokenUsage(TraceContext traceContext) {
+        String modelId = DEFAULT_MODEL_ID;
+        int promptTokens = 0;
+        int completionTokens = 0;
+        if (traceContext != null) {
+            promptTokens = traceContext.totalInputTokens();
+            completionTokens = traceContext.totalOutputTokens();
+            var steps = traceContext.steps();
+            for (int i = steps.size() - 1; i >= 0; i--) {
+                var step = steps.get(i);
+                if (step instanceof com.lifepilot.observability.trace.LlmCallStep llmStep) {
+                    modelId = llmStep.modelId();
+                    break;
+                }
+            }
+        }
+        return new TokenUsage(promptTokens, completionTokens, promptTokens + completionTokens, modelId);
+    }
+
+    /**
+     * 构建 SSE done 事件的 payload。
+     *
+     * @param request           用户请求
+     * @param state             Agent 状态
+     * @param tempTurnId        临时轮次 ID
+     * @param finalTokenUsage   Token 使用量
+     * @param traceContext      追踪上下文（可为 null）
+     * @param reasoningSummary  推理概要（可为 null）
+     * @param finalContent      最终输出内容
+     * @return done 事件 payload Map
+     */
+    private Map<String, Object> buildDoneEventPayload(AgentRequest request,
+                                                       AgentState state,
+                                                       String tempTurnId,
+                                                       TokenUsage finalTokenUsage,
+                                                       TraceContext traceContext,
+                                                       String reasoningSummary,
+                                                       String finalContent) {
+        var doneData = new java.util.HashMap<String, Object>();
+        // 会话与回合标识
+        doneData.put("sessionId", request.sessionId());
+        doneData.put("turnId", tempTurnId);
+        // usage
+        if (finalTokenUsage != null) {
+            var usage = new java.util.HashMap<String, Object>();
+            usage.put("inputTokens", finalTokenUsage.promptTokens());
+            usage.put("outputTokens", finalTokenUsage.completionTokens());
+            usage.put("totalTokens", finalTokenUsage.totalTokens());
+            doneData.put("usage", usage);
+        }
+        // 工具调用摘要：从 TraceContext 的 ToolCallStep 提取
+        if (traceContext != null && !traceContext.steps().isEmpty()) {
+            var toolSummaries = new java.util.ArrayList<java.util.Map<String, Object>>();
+            for (var step : traceContext.steps()) {
+                if (step instanceof com.lifepilot.observability.trace.ToolCallStep toolStep) {
+                    var toolSummary = new java.util.HashMap<String, Object>();
+                    toolSummary.put("toolId", toolStep.toolId());
+                    toolSummary.put("action", toolStep.toolAction());
+                    toolSummary.put("success", toolStep.success());
+                    toolSummary.put("latencyMs", toolStep.duration().toMillis());
+                    toolSummaries.add(toolSummary);
+                }
+            }
+            if (!toolSummaries.isEmpty()) {
+                doneData.put("toolsSummary", toolSummaries);
+            }
+        }
+        // 知识库来源摘要
+        var sources = buildKnowledgeSources(request.sessionId());
+        if (!sources.isEmpty()) {
+            doneData.put("sources", sources);
+        }
+        // 基础字段
+        doneData.put("timestamp", Instant.now().toEpochMilli());
+        if (state.traceId() != null) {
+            doneData.put("traceId", state.traceId());
+        }
+        if (reasoningSummary != null) {
+            doneData.put("reasoningSummary", reasoningSummary);
+        }
+        // contents：当前仅返回 TEXT，后续扩展多模态
+        var contents = new java.util.ArrayList<java.util.Map<String, Object>>();
+        if (finalContent != null && !finalContent.isBlank()) {
+            var textContent = new java.util.HashMap<String, Object>();
+            textContent.put("type", "TEXT");
+            textContent.put("text", finalContent);
+            contents.add(textContent);
+        }
+        doneData.put("contents", contents);
+        return doneData;
+    }
+
+    /**
+     * 发送 SSE 错误事件并关闭 emitter。
+     *
+     * @param sseManager SSE 会话管理器
+     * @param streamId   流式标识
+     * @param code       错误码
+     * @param message    错误消息
+     * @param traceId    追踪 ID（可为 null）
+     */
+    private void sendStreamError(SseSessionManager sseManager, String streamId,
+                                 int code, String message, String traceId) {
+        var errorData = new java.util.HashMap<String, Object>();
+        errorData.put("code", code);
+        errorData.put("message", message);
+        if (traceId != null) {
+            errorData.put("traceId", traceId);
+        }
+        sseManager.sendEvent(streamId, SseEventType.ERROR, errorData);
+        sseManager.closeEmitter(streamId);
+    }
+
+    /**
      * 发送推理过程事件到前端，用于构建 Reasoning Timeline 与状态条。
      *
      * @param sseManager SSE 会话管理器
@@ -1185,19 +1444,22 @@ public class AgentLoop {
                                     String toolName,
                                     Map<String, Object> extra) {
         try {
-            Map<String, Object> eventPayload = Map.of(
-                    "sessionId", sessionId,
-                    "turnId", turnId,
-                    "event", Map.of(
-                            "id", UUID.randomUUID().toString(),
-                            "type", type,
-                            "title", title,
-                            "description", description,
-                            "toolName", toolName,
-                            "createdAt", Instant.now().toString(),
-                            "extra", extra != null ? extra : java.util.Map.of()
-                    )
-            );
+            var eventDetail = new java.util.HashMap<String, Object>();
+            eventDetail.put("id", UUID.randomUUID().toString());
+            eventDetail.put("type", type);
+            eventDetail.put("title", title);
+            eventDetail.put("description", description);
+            eventDetail.put("createdAt", Instant.now().toString());
+            eventDetail.put("extra", extra != null ? extra : java.util.Map.of());
+            if (toolName != null) {
+                eventDetail.put("toolName", toolName);
+            }
+
+            var eventPayload = new java.util.HashMap<String, Object>();
+            eventPayload.put("sessionId", sessionId);
+            eventPayload.put("turnId", turnId);
+            eventPayload.put("event", eventDetail);
+
             sseManager.sendEvent(streamId, SseEventType.REASONING, eventPayload);
         } catch (Exception e) {
             // 推理事件发送失败不应影响主流程，记录调试日志即可

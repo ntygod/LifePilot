@@ -19,6 +19,7 @@ import com.lifepilot.interaction.middleware.security.SensitiveDataDetector;
 import com.lifepilot.interaction.middleware.security.TrustScoreCalculator;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
+import com.lifepilot.observability.trace.TraceRecorder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -114,7 +115,14 @@ public class GatewayMiddlewareAutoConfiguration {
         } catch (Exception e) {
             log.debug("SseSessionManager 不可用，流式功能将禁用: {}", e.getMessage());
         }
-        return new ExecutionMiddleware(agentLoop, properties, sseSessionManager, attachmentRepository);
+        // 尝试获取 TraceRecorder，如果不存在则为 null（可观测性增强将不可用）
+        TraceRecorder traceRecorder = null;
+        try {
+            traceRecorder = applicationContext.getBean(TraceRecorder.class);
+        } catch (Exception e) {
+            log.debug("TraceRecorder 不可用，可观测性增强将禁用: {}", e.getMessage());
+        }
+        return new ExecutionMiddleware(agentLoop, properties, attachmentRepository, sseSessionManager, traceRecorder);
     }
 
     // ── 审计相关 ──────────────────────────────────────────────────

@@ -4,6 +4,10 @@ import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.model.AgentPhase;
 import com.lifepilot.agent.model.AgentState;
 import com.lifepilot.agent.model.StepRecord;
+import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
+import com.lifepilot.knowledge.model.DocumentSearchResult;
+import com.lifepilot.knowledge.repository.DocumentRepository;
+import com.lifepilot.knowledge.retrieve.DocumentRetriever;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.RetrievalResult;
 import com.lifepilot.memory.working.*;
@@ -17,7 +21,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Objects;
+import java.util.Optional;
 
 /**
  * 完整版上下文组装器 — 集成记忆检索、会话上下文、动态预算分配。
@@ -47,6 +51,10 @@ public class ContextAssembler {
     @Nullable private final TokenBudgetAllocator tokenBudgetAllocator;
     @Nullable private final MemoryRetrievalStrategy retrievalStrategy;
     @Nullable private final DataRedactor dataRedactor;
+    // 知识库（文档）检索：可选注入，未启用时不影响主流程
+    @Nullable private final DocumentRetriever documentRetriever;
+    @Nullable private final SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository;
+    @Nullable private final DocumentRepository documentRepository;
 
     /** 基础版构造器（向后兼容，记忆字段为 null）。 */
     public ContextAssembler(AgentConfigProperties config) {
@@ -56,6 +64,9 @@ public class ContextAssembler {
         this.tokenBudgetAllocator = null;
         this.retrievalStrategy = null;
         this.dataRedactor = null;
+        this.documentRetriever = null;
+        this.sessionKnowledgeBaseRepository = null;
+        this.documentRepository = null;
     }
 
     /** 完整版构造器（注入记忆系统依赖）。 */
@@ -65,12 +76,29 @@ public class ContextAssembler {
                             TokenBudgetAllocator tokenBudgetAllocator,
                             MemoryRetrievalStrategy retrievalStrategy,
                             @Nullable DataRedactor dataRedactor) {
+        this(config, hybridRetriever, workingMemory, tokenBudgetAllocator, retrievalStrategy, dataRedactor,
+                null, null, null);
+    }
+
+    /** 完整版构造器（注入记忆系统 + 可选知识库检索依赖）。 */
+    public ContextAssembler(AgentConfigProperties config,
+                            HybridRetriever hybridRetriever,
+                            WorkingMemory workingMemory,
+                            TokenBudgetAllocator tokenBudgetAllocator,
+                            MemoryRetrievalStrategy retrievalStrategy,
+                            @Nullable DataRedactor dataRedactor,
+                            @Nullable DocumentRetriever documentRetriever,
+                            @Nullable SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
+                            @Nullable DocumentRepository documentRepository) {
         this.config = config;
         this.hybridRetriever = hybridRetriever;
         this.workingMemory = workingMemory;
         this.tokenBudgetAllocator = tokenBudgetAllocator;
         this.retrievalStrategy = retrievalStrategy;
         this.dataRedactor = dataRedactor;
+        this.documentRetriever = documentRetriever;
+        this.sessionKnowledgeBaseRepository = sessionKnowledgeBaseRepository;
+        this.documentRepository = documentRepository;
     }
 
     /** 判断是否为完整版模式。 */
@@ -94,22 +122,20 @@ public class ContextAssembler {
         var startTime = Instant.now();
         boolean degraded = false;
 
-        // isFullMode() 已确认所有记忆系统依赖非 null
-        var retriever = Objects.requireNonNull(hybridRetriever);
-        var memory = Objects.requireNonNull(workingMemory);
-        var allocator = Objects.requireNonNull(tokenBudgetAllocator);
-        var strategy = Objects.requireNonNull(retrievalStrategy);
-
         try {
             // 1. 获取检索策略
-            var strategyConfig = strategy.getStrategy(state.phase());
+            var strategyConfig = retrievalStrategy.getStrategy(state.phase());
 
             if (strategyConfig.skip()) {
                 return buildMinimalContext(state);
             }
 
             // 2. 执行记忆检索（降级容错）
-            var retrievalResults = safeRetrieve(retriever, state.goal(), strategyConfig);
+            var retrievalResults = safeRetrieve(hybridRetriever, state.goal(), strategyConfig);
+            // 2.1 知识库检索（可选；仅当会话关联了 knowledgeBaseIds）
+            var kbSnippets = safeRetrieveKnowledgeBaseSnippets(state.sessionId(), state.goal(), 5);
+            // L4: 可选意图匹配提示（来自 HybridRetriever 内部的 IntentMatcher 结果）
+            var procedureHintSlot = safeGetLastProcedureSlot(hybridRetriever);
             int retrievalCount = retrievalResults.size();
             float topScore = retrievalResults.isEmpty() ? 0.0f
                     : retrievalResults.getFirst().fusedScore();
@@ -119,17 +145,18 @@ public class ContextAssembler {
             }
 
             // 3. 获取会话槽位（降级容错）
-            var slots = safeGetContext(memory, state.sessionId());
+            var slots = safeGetContext(workingMemory, state.sessionId());
 
             // 4. 动态预算分配（降级容错）
             int conversationTurns = countConversationTurns(slots);
-            var budgetAllocation = safeAllocate(allocator, conversationTurns, topScore);
+            var budgetAllocation = safeAllocate(tokenBudgetAllocator, conversationTurns, topScore);
 
             // 5. 按预算截断
             var truncatedMemories = truncateByBudget(retrievalResults, budgetAllocation.retrievalBudget());
             var truncatedSlots = truncateSlotsByBudget(slots, budgetAllocation.workingMemoryBudget());
 
-            // 6. 格式化检索结果
+            // 6. 将检索上下文注入 L1（ReasoningSlot），并格式化检索结果
+            slots = injectRetrievalReasoningSlots(workingMemory, state.sessionId(), truncatedMemories, procedureHintSlot, slots);
             var formattedMemories = formatRetrievalResults(truncatedMemories);
             int workingMemoryTokens = truncatedSlots.stream()
                     .mapToInt(WorkingMemorySlot::tokenCount).sum();
@@ -140,7 +167,7 @@ public class ContextAssembler {
 
             // 8. 构建 Prompt
             String systemPrompt = buildSystemPrompt(state.phase());
-            String userPrompt = buildEnhancedUserPrompt(state, formattedMemories, truncatedSlots);
+            String userPrompt = buildEnhancedUserPrompt(state, formattedMemories, kbSnippets, truncatedSlots);
 
             var context = new AssembledContext(
                     systemPrompt, userPrompt, formattedMemories,
@@ -201,6 +228,15 @@ public class ContextAssembler {
         } catch (Exception e) {
             log.warn("记忆检索降级: query={}, error={}", truncate(query, 50), e.getMessage());
             return List.of();
+        }
+    }
+
+    /** 安全获取 HybridRetriever 最近一次 L4 意图匹配结果，异常时返回 Optional.empty()。 */
+    private Optional<ReasoningSlot> safeGetLastProcedureSlot(HybridRetriever retriever) {
+        try {
+            return retriever.getLastProcedureSlot();
+        } catch (Exception e) {
+            return Optional.empty();
         }
     }
 
@@ -276,6 +312,167 @@ public class ContextAssembler {
         return results.stream()
                 .map(this::formatSingleResult)
                 .toList();
+    }
+
+    /**
+     * 将检索上下文与 L4 程序提示以 ReasoningSlot 的形式注入到 L1 工作记忆。
+     *
+     * <p>
+     * - 保留原有“相关记忆”字符串拼接行为；
+     * - 只在 full mode 下执行，异常时静默降级，不影响主流程。
+     * </p>
+     */
+    private List<WorkingMemorySlot> injectRetrievalReasoningSlots(WorkingMemory memory,
+                                                                  String sessionId,
+                                                                  List<RetrievalResult> truncatedMemories,
+                                                                  Optional<ReasoningSlot> procedureHintSlot,
+                                                                  List<WorkingMemorySlot> existingSlots) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return existingSlots;
+        }
+        var updated = new ArrayList<>(existingSlots != null ? existingSlots : List.of());
+        try {
+            // 1) L4 程序提示 → ReasoningSlot（若尚未存在）
+            if (procedureHintSlot != null && procedureHintSlot.isPresent()) {
+                ReasoningSlot slot = procedureHintSlot.get();
+                if (slot.thought() != null && !slot.thought().isBlank()) {
+                    boolean alreadyExists = updated.stream()
+                            .filter(s -> s instanceof ReasoningSlot)
+                            .map(s -> (ReasoningSlot) s)
+                            .anyMatch(rs -> rs.thought() != null && rs.thought().equals(slot.thought()));
+                    if (!alreadyExists) {
+                        memory.append(sessionId, slot);
+                        updated.add(slot);
+                    }
+                }
+            }
+
+            // 2) 检索到的语义记忆 → ReasoningSlot（只注入前若干条，避免污染 L1）
+            int maxInjected = Math.min(5, truncatedMemories.size());
+            for (int i = 0; i < maxInjected; i++) {
+                RetrievalResult result = truncatedMemories.get(i);
+                String thought = formatSingleResult(result);
+                if (thought == null || thought.isBlank()) {
+                    continue;
+                }
+                ReasoningSlot reasoningSlot = ReasoningSlot.retrievalContext(thought, estimateTokens(thought));
+                memory.append(sessionId, reasoningSlot);
+                updated.add(reasoningSlot);
+            }
+        } catch (Exception e) {
+            log.warn("检索上下文注入 L1 失败: sessionId={}, error={}", sessionId, e.getMessage());
+        }
+        return List.copyOf(updated);
+    }
+
+    /**
+     * 将 L4 意图匹配提示注入到“相关记忆”列表的首位，并按 tokenBudget 截断。
+     *
+     * <p>注入的提示属于“检索增强信息”，不占用 WorkingMemory budget。</p>
+     */
+    private List<String> injectProcedureHint(List<String> memories,
+                                             Optional<ReasoningSlot> procedureHintSlot,
+                                             int tokenBudget) {
+        if (procedureHintSlot == null || procedureHintSlot.isEmpty()) {
+            return memories;
+        }
+        var slot = procedureHintSlot.get();
+        if (slot.thought() == null || slot.thought().isBlank()) {
+            return memories;
+        }
+        var items = new ArrayList<String>();
+        items.add("[PROCEDURE] " + slot.thought());
+        items.addAll(memories);
+        return truncateStringsByBudget(items, tokenBudget);
+    }
+
+    /** 按列表顺序截断字符串列表到 tokenBudget 内（至少保留 1 条）。 */
+    private List<String> truncateStringsByBudget(List<String> items, int tokenBudget) {
+        if (items == null || items.isEmpty()) {
+            return List.of();
+        }
+        var kept = new ArrayList<String>();
+        int usedTokens = 0;
+        for (var item : items) {
+            int tokens = estimateTokens(item);
+            if (usedTokens + tokens > tokenBudget && !kept.isEmpty()) {
+                break;
+            }
+            kept.add(item);
+            usedTokens += tokens;
+        }
+        return List.copyOf(kept);
+    }
+
+    /**
+     * 基于会话关联的 knowledgeBaseIds 检索文档分块，并格式化为可注入 Prompt 的字符串列表。
+     *
+     * <p>依赖可选：DocumentRetriever / SessionKnowledgeBaseRepository 任一缺失时返回空列表。</p>
+     */
+    private List<String> safeRetrieveKnowledgeBaseSnippets(String sessionId, String query, int topK) {
+        try {
+            if (sessionId == null || sessionId.isBlank() || query == null || query.isBlank()) {
+                return List.of();
+            }
+            var kbRepo = this.sessionKnowledgeBaseRepository;
+            var docRetriever = this.documentRetriever;
+            if (docRetriever == null || kbRepo == null) {
+                return List.of();
+            }
+            var kbIds = kbRepo.findKnowledgeBaseIdsBySessionId(sessionId);
+            if (kbIds == null || kbIds.isEmpty()) {
+                return List.of();
+            }
+
+            List<DocumentSearchResult> results = docRetriever.retrieve(query, kbIds, topK);
+            if (results == null || results.isEmpty()) {
+                return List.of();
+            }
+
+            List<String> formatted = new ArrayList<>();
+            for (var r : results) {
+                String docName = r.documentId();
+                if (documentRepository != null) {
+                    try {
+                        var docOpt = documentRepository.findById(r.documentId());
+                        if (docOpt.isPresent()) {
+                            docName = docOpt.get().fileName();
+                        }
+                    } catch (Exception ignore) {
+                        // 文档名查询失败不影响主流程
+                    }
+                }
+                String heading = "";
+                if (r.headingHierarchy() != null && !r.headingHierarchy().isEmpty()) {
+                    var items = r.headingHierarchy().stream()
+                            .filter(s -> s != null && !s.isBlank())
+                            .toList();
+                    if (!items.isEmpty()) {
+                        heading = " / " + String.join(" / ", items);
+                    }
+                }
+
+                String prefix = "";
+                if (r.contextPrefix().isPresent()) {
+                    String p = r.contextPrefix().orElse("");
+                    if (!p.isBlank()) {
+                        prefix = p.strip() + "\n";
+                    }
+                }
+                String content = r.content() != null ? r.content().strip() : "";
+                String snippet = ("[KB] " + docName + heading + "\n" + prefix + content).strip();
+                if (!snippet.isBlank()) {
+                    formatted.add(snippet);
+                }
+            }
+
+            // 防御性：按长度截断，避免知识库片段把 Prompt 撑爆（此处用粗略 token 预算）
+            int kbBudget = Math.max(400, config.getContext().getMaxContextTokens() / 6);
+            return truncateStringsByBudget(formatted, kbBudget);
+        } catch (Exception e) {
+            log.warn("知识库检索降级: sessionId={}, error={}", sessionId, e.getMessage());
+            return List.of();
+        }
     }
 
     /** 格式化单条检索结果（可选脱敏）。 */
@@ -455,6 +652,7 @@ public class ContextAssembler {
      */
     String buildEnhancedUserPrompt(AgentState state,
                                    List<String> memories,
+                                   List<String> knowledgeBaseSnippets,
                                    List<WorkingMemorySlot> slots) {
         var sb = new StringBuilder();
 
@@ -466,6 +664,14 @@ public class ContextAssembler {
             sb.append("\n相关记忆:\n");
             for (var memory : memories) {
                 sb.append("  - ").append(memory).append("\n");
+            }
+        }
+
+        // 2.5 知识库片段（条件性区域）
+        if (knowledgeBaseSnippets != null && !knowledgeBaseSnippets.isEmpty()) {
+            sb.append("\n知识库片段:\n");
+            for (var snippet : knowledgeBaseSnippets) {
+                sb.append("  - ").append(snippet).append("\n");
             }
         }
 
@@ -551,10 +757,11 @@ public class ContextAssembler {
             }
         }
 
-        if (state.plan() != null) {
-            sb.append("当前计划: ").append(state.plan().rationale()).append("\n");
+        var plan = state.plan();
+        if (plan != null) {
+            sb.append("当前计划: ").append(plan.rationale()).append("\n");
             sb.append("计划进度: ").append(state.planStepIndex())
-                    .append("/").append(state.plan().steps().size()).append("\n");
+                    .append("/").append(plan.steps().size()).append("\n");
         }
 
         return sb.toString();

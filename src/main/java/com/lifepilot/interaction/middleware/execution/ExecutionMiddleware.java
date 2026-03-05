@@ -1,13 +1,5 @@
 package com.lifepilot.interaction.middleware.execution;
 
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-
 import com.lifepilot.agent.AgentLoop;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.interaction.config.GatewayProperties;
@@ -23,8 +15,19 @@ import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.llm.multimodal.MediaContent;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.interaction.web.sse.SseEventType;
+import com.lifepilot.observability.trace.TraceContext;
+import com.lifepilot.observability.trace.TraceRecorder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Agent 执行中间件，将 GatewayMessage 转换为 AgentRequest 并调用 AgentLoop。
@@ -42,18 +45,14 @@ public class ExecutionMiddleware implements GatewayMiddleware {
 
     private static final Logger log = LoggerFactory.getLogger(ExecutionMiddleware.class);
 
+    /** 当 TraceContext 中没有 LlmCallStep 时的默认 modelId。 */
+    private static final String DEFAULT_MODEL_ID = "agent";
+
     private final AgentLoop agentLoop;
     private final GatewayProperties properties;
+    private final AttachmentRepository attachmentRepository;
     private final SseSessionManager sseSessionManager;
-
-    public ExecutionMiddleware(AgentLoop agentLoop,
-                               GatewayProperties properties,
-                               SseSessionManager sseSessionManager,
-                               AttachmentRepository attachmentRepository) {
-        this.agentLoop = agentLoop;
-        this.properties = properties;
-        this.sseSessionManager = sseSessionManager;
-    }
+    private final TraceRecorder traceRecorder;
 
     @Override
     public GatewayResponse process(GatewayMessage message, MiddlewareChain chain) {
@@ -68,9 +67,18 @@ public class ExecutionMiddleware implements GatewayMiddleware {
         }
     }
 
-    /**
-     * 同步处理消息（非流式）。
-     */
+    public ExecutionMiddleware(AgentLoop agentLoop,
+                               GatewayProperties properties,
+                               AttachmentRepository attachmentRepository,
+                               SseSessionManager sseSessionManager,
+                               TraceRecorder traceRecorder) {
+        this.agentLoop = agentLoop;
+        this.properties = properties;
+        this.attachmentRepository = attachmentRepository;
+        this.sseSessionManager = sseSessionManager;
+        this.traceRecorder = traceRecorder;
+    }
+
     private GatewayResponse processSync(GatewayMessage message, MiddlewareChain chain) {
         // 1. GatewayMessage → AgentRequest
         List<MediaContent> mediaContents = buildMediaContents(message);
@@ -94,7 +102,32 @@ public class ExecutionMiddleware implements GatewayMiddleware {
             var agentResponse = future.get(timeout, TimeUnit.SECONDS);
 
             // 3. AgentResponse → GatewayResponse，构建 TokenUsage
-            var tokenUsage = new TokenUsage(0, 0, agentResponse.tokensUsed(), "agent");
+            // 优先使用 TraceContext 中累计的 Token 统计（若可用），否则回退到 AgentResponse 粗略计数
+            int promptTokens = 0;
+            int completionTokens = 0;
+            String modelId = DEFAULT_MODEL_ID;
+            Optional<TraceContext> traceContextOpt = traceRecorder != null
+                    ? traceRecorder.currentContext()
+                    : Optional.empty();
+            if (traceContextOpt.isPresent()) {
+                TraceContext ctx = traceContextOpt.get();
+                promptTokens = ctx.totalInputTokens();
+                completionTokens = ctx.totalOutputTokens();
+                // 从最后一个 LlmCallStep 中回溯模型 ID
+                var steps = ctx.steps();
+                for (int i = steps.size() - 1; i >= 0; i--) {
+                    var step = steps.get(i);
+                    if (step instanceof com.lifepilot.observability.trace.LlmCallStep llmStep) {
+                        modelId = llmStep.modelId();
+                        break;
+                    }
+                }
+            }
+            if (promptTokens == 0 && completionTokens == 0) {
+                // 回退到 AgentResponse 提供的粗略 tokensUsed 统计
+                completionTokens = agentResponse.tokensUsed();
+            }
+            var tokenUsage = new TokenUsage(promptTokens, completionTokens, promptTokens + completionTokens, modelId);
             chain.context().set(MiddlewareContext.KEY_AGENT_RESPONSE, agentResponse);
             chain.context().set(MiddlewareContext.KEY_TOKEN_USAGE, tokenUsage);
 
@@ -124,11 +157,15 @@ public class ExecutionMiddleware implements GatewayMiddleware {
         String streamId = UUID.randomUUID().toString();
         log.debug("开始流式处理: messageId={}, streamId={}", message.messageId(), streamId);
 
-        // 2. 返回 StreamingContent，让 Controller 创建 SseEmitter
+        // 2. 先注册 SseEmitter，确保异步任务发送事件时 emitter 已存在（避免竞态丢事件）
+        sseSessionManager.createEmitter(streamId);
+
+        // 3. 返回 StreamingContent，Controller 通过 streamId 获取已注册的 emitter
         var response = GatewayResponse.success(message.channelType(),
                 new ResponseContent.StreamingContent(streamId));
 
-        // 3. 在后台异步执行 AgentLoop，并通过 SSE 发送事件
+        // 4. 在后台异步执行 AgentLoop，并通过 SSE 发送事件
+        int timeoutSeconds = properties.execution().timeoutSeconds();
         CompletableFuture.runAsync(() -> {
             try {
                 List<MediaContent> mediaContents = buildMediaContents(message);
@@ -150,14 +187,25 @@ public class ExecutionMiddleware implements GatewayMiddleware {
 
             } catch (Exception e) {
                 log.error("流式处理异常: messageId={}, streamId={}", message.messageId(), streamId, e);
-                // 发送错误事件
-                sseSessionManager.sendEvent(streamId, SseEventType.ERROR, java.util.Map.of(
-                        "code", 500,
-                        "message", "流式处理失败: " + e.getMessage()
-                ));
+                var errorData = new java.util.HashMap<String, Object>();
+                errorData.put("code", 500);
+                errorData.put("message", "流式处理失败: " + e.getMessage());
+                sseSessionManager.sendEvent(streamId, SseEventType.ERROR, errorData);
                 sseSessionManager.closeEmitter(streamId);
             }
-        });
+        }).orTimeout(timeoutSeconds, TimeUnit.SECONDS)
+          .exceptionally(ex -> {
+              if (ex instanceof TimeoutException || (ex.getCause() instanceof TimeoutException)) {
+                  log.error("流式处理超时: messageId={}, streamId={}, timeout={}s",
+                          message.messageId(), streamId, timeoutSeconds);
+                  var errorData = new java.util.HashMap<String, Object>();
+                  errorData.put("code", 504);
+                  errorData.put("message", "处理超时，请稍后重试");
+                  sseSessionManager.sendEvent(streamId, SseEventType.ERROR, errorData);
+                  sseSessionManager.closeEmitter(streamId);
+              }
+              return null;
+          });
 
         return response;
     }
