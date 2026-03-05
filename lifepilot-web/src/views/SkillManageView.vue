@@ -370,6 +370,7 @@ const stateLabel: Record<string, { label: string; variant: 'default' | 'secondar
                 <Card
                   v-for="server in filteredMcpServers"
                   :key="server.name"
+                  class="hover:-translate-y-0.5 hover:shadow-md transition-all duration-200"
                 >
                   <CardHeader class="pb-2">
                     <div class="flex items-center gap-sm">

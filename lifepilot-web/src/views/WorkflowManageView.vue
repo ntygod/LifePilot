@@ -368,7 +368,7 @@ function formatDuration(start?: string, end?: string): string {
                 <Card
                   v-for="exec in pagedExecutions"
                   :key="exec.id"
-                  class="hover:border-primary/50 hover:shadow-sm transition-all duration-200"
+                  class="hover:-translate-y-0.5 hover:shadow-md hover:border-primary/50 transition-all duration-200"
                 >
                   <!-- 执行记录摘要行（可点击展开） -->
                   <div
