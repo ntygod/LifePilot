@@ -5,13 +5,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Token 预算分配器 — 根据上下文窗口大小和会话状态动态分配四区域预算。
+ * Token 预算分配器 — 根据上下文窗口大小和会话状态动态分配九区域预算。
  *
  * <p>分配策略：
  * <ul>
  *   <li>系统提示词区：固定 10%</li>
  *   <li>用户消息区：固定 15%</li>
- *   <li>剩余 75% 在工作记忆区和检索上下文区之间动态分配</li>
+ *   <li>剩余 75% 在六个记忆区域之间动态分配</li>
  * </ul>
  *
  * @author zsg
@@ -30,16 +30,19 @@ public class TokenBudgetAllocator {
     /**
      * 根据上下文窗口大小和会话状态分配 Token 预算。
      *
+     * <p>固定区域（系统提示词、用户消息）按比例分配，
+     * 剩余部分在六个记忆区域之间按场景动态分配。</p>
+     *
      * @param contextWindowSize 上下文窗口总 Token 数
      * @param conversationTurns 当前对话轮次数
      * @param topRetrievalScore 最高检索相关度评分 [0.0, 1.0]
-     * @return 四区域预算分配结果
+     * @return 九区域预算分配结果
      */
     public BudgetAllocation allocate(int contextWindowSize, int conversationTurns, float topRetrievalScore) {
         int systemPromptBudget = Math.round(contextWindowSize * budgetConfig.getSystemPromptRatio());
         int userMessageBudget = Math.round(contextWindowSize * budgetConfig.getUserMessageRatio());
 
-        // 剩余部分在工作记忆区和检索上下文区之间动态分配
+        // 剩余部分在六个记忆区域之间动态分配
         int remaining = contextWindowSize - systemPromptBudget - userMessageBudget;
 
         // 归一化基数 = (1 - 固定比例之和) × 100
@@ -49,25 +52,35 @@ public class TokenBudgetAllocator {
         float retrievalRatio;
 
         if (topRetrievalScore > budgetConfig.getHighRelevanceThreshold()) {
-            // 高相关度检索结果
             workingMemoryRatio = budgetConfig.getHighRelevanceWorkingMemory() / remainingBase;
             retrievalRatio = budgetConfig.getHighRelevanceRetrieval() / remainingBase;
         } else if (conversationTurns > budgetConfig.getLongConversationTurnsThreshold()) {
-            // 长对话
             workingMemoryRatio = budgetConfig.getLongConversationWorkingMemory() / remainingBase;
             retrievalRatio = budgetConfig.getLongConversationRetrieval() / remainingBase;
         } else {
-            // 默认场景
             workingMemoryRatio = budgetConfig.getDefaultWorkingMemory() / remainingBase;
             retrievalRatio = budgetConfig.getDefaultRetrieval() / remainingBase;
         }
 
-        int workingMemoryBudget = Math.round(remaining * workingMemoryRatio);
-        int retrievalBudget = Math.round(remaining * retrievalRatio);
+        // 原 workingMemoryBudget → currentSessionBudget，原 retrievalBudget → knowledgeEntityBudget
+        int currentSessionBudget = Math.round(remaining * workingMemoryRatio);
+        int knowledgeEntityBudget = Math.round(remaining * retrievalRatio);
 
-        log.debug("Token 预算分配: 总窗口={}, 系统提示词={}, 用户消息={}, 工作记忆={}, 检索={}",
-                contextWindowSize, systemPromptBudget, userMessageBudget, workingMemoryBudget, retrievalBudget);
+        // 新增区域暂按配置上限与剩余空间取较小值分配（后续 task 1.3 会重构为完整的六区域独立分配）
+        int userProfileBudget = Math.min(budgetConfig.getUserProfileMax(), remaining / 10);
+        int crossSessionBudget = Math.min(budgetConfig.getCrossSessionMax(), remaining / 10);
+        int proceduralBudget = Math.min(budgetConfig.getProceduralMax(), remaining / 10);
+        int knowledgeBaseBudget = Math.min(budgetConfig.getKnowledgeBaseMax(), remaining / 10);
 
-        return new BudgetAllocation(systemPromptBudget, workingMemoryBudget, retrievalBudget, userMessageBudget, contextWindowSize);
+        log.debug("Token 预算分配: 总窗口={}, 系统提示词={}, 用户消息={}, 当前会话={}, 知识实体={}, 用户画像={}, 跨会话={}, 操作模板={}, 知识库={}",
+                contextWindowSize, systemPromptBudget, userMessageBudget,
+                currentSessionBudget, knowledgeEntityBudget,
+                userProfileBudget, crossSessionBudget, proceduralBudget, knowledgeBaseBudget);
+
+        return new BudgetAllocation(
+                userProfileBudget, currentSessionBudget, crossSessionBudget,
+                knowledgeEntityBudget, proceduralBudget, knowledgeBaseBudget,
+                systemPromptBudget, userMessageBudget, contextWindowSize);
     }
+
 }

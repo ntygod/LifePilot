@@ -82,7 +82,10 @@ class ContextAssemblerTest {
     }
 
     private BudgetAllocation createAllocation() {
-        return new BudgetAllocation(3200, 16000, 8000, 4800, 32000);
+        // userProfile=500, currentSession=16000, crossSession=1000,
+        // knowledgeEntity=8000, procedural=300, knowledgeBase=500,
+        // systemPrompt=3200, userMessage=4800, total=32000
+        return new BudgetAllocation(500, 16000, 1000, 8000, 300, 500, 3200, 4800, 32000);
     }
 
     private void setupDefaultMocks(AgentState state) {

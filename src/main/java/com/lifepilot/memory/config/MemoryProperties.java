@@ -135,6 +135,24 @@ public class MemoryProperties {
         /** 长对话轮次判断阈值，默认 10。 */
         private int longConversationTurnsThreshold = 10;
 
+        /** 用户画像区域 Token 预算上限，默认 500。 */
+        private int userProfileMax = 500;
+
+        /** 当前会话历史区域 Token 预算上限，默认 4000。 */
+        private int currentSessionMax = 4000;
+
+        /** 跨会话摘要区域 Token 预算上限，默认 1000。 */
+        private int crossSessionMax = 1000;
+
+        /** 相关知识实体区域 Token 预算上限，默认 500。 */
+        private int knowledgeEntityMax = 500;
+
+        /** 操作模板区域 Token 预算上限，默认 300。 */
+        private int proceduralMax = 300;
+
+        /** 知识库片段区域 Token 预算上限，默认 500。 */
+        private int knowledgeBaseMax = 500;
+
         public float getSystemPromptRatio() { return systemPromptRatio; }
         public void setSystemPromptRatio(float systemPromptRatio) { this.systemPromptRatio = systemPromptRatio; }
 
@@ -164,6 +182,24 @@ public class MemoryProperties {
 
         public int getLongConversationTurnsThreshold() { return longConversationTurnsThreshold; }
         public void setLongConversationTurnsThreshold(int longConversationTurnsThreshold) { this.longConversationTurnsThreshold = longConversationTurnsThreshold; }
+
+        public int getUserProfileMax() { return userProfileMax; }
+        public void setUserProfileMax(int userProfileMax) { this.userProfileMax = userProfileMax; }
+
+        public int getCurrentSessionMax() { return currentSessionMax; }
+        public void setCurrentSessionMax(int currentSessionMax) { this.currentSessionMax = currentSessionMax; }
+
+        public int getCrossSessionMax() { return crossSessionMax; }
+        public void setCrossSessionMax(int crossSessionMax) { this.crossSessionMax = crossSessionMax; }
+
+        public int getKnowledgeEntityMax() { return knowledgeEntityMax; }
+        public void setKnowledgeEntityMax(int knowledgeEntityMax) { this.knowledgeEntityMax = knowledgeEntityMax; }
+
+        public int getProceduralMax() { return proceduralMax; }
+        public void setProceduralMax(int proceduralMax) { this.proceduralMax = proceduralMax; }
+
+        public int getKnowledgeBaseMax() { return knowledgeBaseMax; }
+        public void setKnowledgeBaseMax(int knowledgeBaseMax) { this.knowledgeBaseMax = knowledgeBaseMax; }
     }
 
     /**

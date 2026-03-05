@@ -152,8 +152,8 @@ public class ContextAssembler {
             var budgetAllocation = safeAllocate(tokenBudgetAllocator, conversationTurns, topScore);
 
             // 5. 按预算截断
-            var truncatedMemories = truncateByBudget(retrievalResults, budgetAllocation.retrievalBudget());
-            var truncatedSlots = truncateSlotsByBudget(slots, budgetAllocation.workingMemoryBudget());
+            var truncatedMemories = truncateByBudget(retrievalResults, budgetAllocation.knowledgeEntityBudget());
+            var truncatedSlots = truncateSlotsByBudget(slots, budgetAllocation.currentSessionBudget());
 
             // 6. 将检索上下文注入 L1（ReasoningSlot），并格式化检索结果
             slots = injectRetrievalReasoningSlots(workingMemory, state.sessionId(), truncatedMemories, procedureHintSlot, slots);
@@ -259,8 +259,15 @@ public class ContextAssembler {
             log.warn("预算分配降级: error={}", e.getMessage());
             int total = config.getContext().getMaxContextTokens();
             return new BudgetAllocation(
-                    (int) (total * 0.10), (int) (total * 0.50),
-                    (int) (total * 0.25), (int) (total * 0.15), total);
+                    (int) (total * 0.02),   // userProfileBudget
+                    (int) (total * 0.30),   // currentSessionBudget
+                    (int) (total * 0.05),   // crossSessionBudget
+                    (int) (total * 0.15),   // knowledgeEntityBudget
+                    (int) (total * 0.02),   // proceduralBudget
+                    (int) (total * 0.03),   // knowledgeBaseBudget
+                    (int) (total * 0.10),   // systemPromptBudget
+                    (int) (total * 0.15),   // userMessageBudget
+                    total);
         }
     }
 
@@ -521,8 +528,8 @@ public class ContextAssembler {
 
         return new TokenBudget(
                 allocation.systemPromptBudget(),
-                allocation.workingMemoryBudget(),
-                allocation.retrievalBudget(),
+                allocation.currentSessionBudget(),
+                allocation.knowledgeEntityBudget(),
                 staticBudget.toolSchemaBudget(),
                 staticBudget.toolResultBudget(),
                 staticBudget.reservedBuffer(),
