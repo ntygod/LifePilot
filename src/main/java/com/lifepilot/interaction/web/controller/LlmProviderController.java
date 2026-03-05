@@ -193,8 +193,7 @@ public class LlmProviderController {
         if (providerRegistry == null) {
             return ResponseEntity.ok(Map.of("healthy", false, "message", "ProviderRegistry 不可用"));
         }
-        Map<String, Boolean> healthStatus = providerRegistry.healthCheckAll();
-        boolean healthy = healthStatus.getOrDefault(id, false);
+        boolean healthy = providerRegistry.healthCheck(id);
         return ResponseEntity.ok(Map.of("healthy", healthy));
     }
 

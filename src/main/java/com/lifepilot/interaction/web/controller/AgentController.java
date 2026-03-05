@@ -108,6 +108,7 @@ public class AgentController {
 
         // 判断状态（从 metadata 中提取）
         String agentStatus = extractStatus(agent.metadata());
+        boolean enabled = "enabled".equalsIgnoreCase(agentStatus);
 
         // 提取标签（从 metadata 中）
         List<String> agentTags = extractTags(agent.metadata());
@@ -134,6 +135,7 @@ public class AgentController {
                 knowledgeBaseCount,
                 updatedAt,
                 createdAt,
+                enabled,
                 agentStatus,
                 agentTags
         );
@@ -291,7 +293,7 @@ public class AgentController {
         AgentDefinition agent = agentOpt.get();
 
         // 2. 验证消息内容
-        if (request.message() == null || request.message().isBlank()) {
+        if (request.message().isBlank()) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
                     new ErrorResponse(400, "消息内容不能为空", Instant.now()));
         }
@@ -441,19 +443,12 @@ public class AgentController {
 
         AgentDefinition existing = agentOpt.get();
 
-        // 2. 检查是否为 Builtin Agent（不允许更新）
-        if (existing.source() instanceof AgentSource.Builtin) {
-            log.warn("不允许更新 Builtin Agent: id={}", id);
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(
-                    new ErrorResponse(403, "不允许更新内置 Agent", Instant.now()));
-        }
-
-        // 3. 构建更新的 metadata（合并现有 metadata）
+        // 2. 构建更新的 metadata（合并现有 metadata）
         Map<String, String> existingMetadata = existing.metadata() != null ? existing.metadata() : Map.of();
         Instant createdAt = extractInstant(existingMetadata, "createdAt", Instant.now());
         Map<String, String> metadata = buildUpdateMetadata(request, existingMetadata, createdAt, Instant.now());
 
-        // 4. 构建更新的 AgentDefinition
+        // 3. 构建更新的 AgentDefinition
         AgentDefinition updatedDef = AgentDefinition.builder()
                 .id(id)
                 .name(request.name() != null ? request.name() : existing.name())
@@ -467,15 +462,21 @@ public class AgentController {
                 .metadata(metadata)
                 .build();
 
-        // 5. 重新注册（覆盖）
-        boolean registered = agentRegistry.register(updatedDef);
+        // 4. 重新注册（覆盖）
+        // 对于 Builtin Agent，允许通过管理 API 在线更新，因此这里使用 forceRegister
+        boolean registered;
+        if (existing.source() instanceof AgentSource.Builtin && updatedDef.source() instanceof AgentSource.Builtin) {
+            registered = agentRegistry.forceRegister(updatedDef);
+        } else {
+            registered = agentRegistry.register(updatedDef);
+        }
         if (!registered) {
             log.error("Agent 更新失败: id={}", id);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
                     new ErrorResponse(500, "Agent 更新失败", Instant.now()));
         }
 
-        // 6. 返回更新后的 Agent 详情
+        // 5. 返回更新后的 Agent 详情
         AgentDetail detail = toAgentDetail(updatedDef);
         log.info("Agent 更新成功: id={}", id);
         return ResponseEntity.ok(detail);
@@ -589,6 +590,7 @@ public class AgentController {
         // 基本信息
         String agentType = determineType(agent.source());
         String agentStatus = extractStatus(agent.metadata());
+        boolean enabled = "enabled".equalsIgnoreCase(agentStatus);
         List<String> agentTags = extractTags(agent.metadata());
         String modelId = agent.preferredProvider() != null
                 ? agent.preferredProvider()
@@ -654,6 +656,7 @@ public class AgentController {
                 knowledgeBaseCount,
                 updatedAt,
                 createdAt,
+                enabled,
                 agentStatus,
                 agentTags,
                 agent.systemPrompt(),

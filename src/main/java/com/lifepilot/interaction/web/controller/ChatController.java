@@ -140,36 +140,53 @@ public class ChatController {
         var response = adapter.processMessageStreaming(request, httpRequest);
 
         if (response.content() instanceof ResponseContent.StreamingContent(String streamId)) {
-            // 流式响应：通过 SseSessionManager 创建 SseEmitter
-            log.debug("创建 SSE 流: streamId={}", streamId);
+            // 流式响应：emitter 已在 ExecutionMiddleware 中预创建，直接获取
+            var emitter = sseManager.getEmitter(streamId);
+            if (emitter != null) {
+                log.debug("获取已注册 SSE 流: streamId={}", streamId);
+                return emitter;
+            }
+            // 兜底：极端情况下 emitter 未注册（不应发生），降级创建
+            log.warn("SSE 流未预注册，降级创建: streamId={}", streamId);
             return sseManager.createEmitter(streamId);
         }
 
-        // 非流式响应：创建临时 SseEmitter，发送 done 事件后完成
-        log.debug("流式端点收到非流式响应，发送 done 事件后关闭");
+        // 非流式响应：创建临时 SseEmitter
         var emitter = new SseEmitter(0L);
         try {
-            var text = response.content() != null ? response.content().toPlainText() : "";
-            var doneDataBuilder = new java.util.HashMap<String, Object>();
-            doneDataBuilder.put("messageId", response.responseId());
-            doneDataBuilder.put("content", text);
-            // 包含 sessionId，便于前端同步
-            if (request.sessionId() != null) {
-                doneDataBuilder.put("sessionId", request.sessionId());
+            if (!response.isSuccess()) {
+                // 错误响应（中间件拦截等）：发送 error 事件，避免前端误判为成功
+                log.debug("流式端点收到错误响应: statusCode={}", response.statusCode());
+                var errorData = new java.util.HashMap<String, Object>();
+                errorData.put("code", response.statusCode());
+                errorData.put("message", response.errorMessage() != null
+                        ? response.errorMessage() : "请求处理失败");
+                var errorEvent = SseEmitter.event()
+                        .name(SseEventType.ERROR)
+                        .data(errorData);
+                emitter.send(errorEvent);
+            } else {
+                // 成功的非流式响应：发送 done 事件
+                log.debug("流式端点收到非流式响应，发送 done 事件后关闭");
+                var text = response.content() != null ? response.content().toPlainText() : "";
+                var doneDataBuilder = new java.util.HashMap<String, Object>();
+                doneDataBuilder.put("messageId", response.responseId());
+                doneDataBuilder.put("content", text);
+                if (request.sessionId() != null) {
+                    doneDataBuilder.put("sessionId", request.sessionId());
+                }
+                if (response.tokenUsage() != null) {
+                    doneDataBuilder.put("tokenUsage", response.tokenUsage());
+                }
+                doneDataBuilder.put("timestamp", Instant.now().toEpochMilli());
+                var doneEvent = SseEmitter.event()
+                        .name(SseEventType.DONE)
+                        .data(doneDataBuilder);
+                emitter.send(doneEvent);
             }
-            // 包含 tokenUsage 和 traceId（如果有）
-            if (response.tokenUsage() != null) {
-                doneDataBuilder.put("tokenUsage", response.tokenUsage());
-            }
-            // 包含时间戳（消息完成时间）
-            doneDataBuilder.put("timestamp", Instant.now().toEpochMilli());
-            var doneEvent = SseEmitter.event()
-                    .name(SseEventType.DONE)
-                    .data(doneDataBuilder);
-            emitter.send(doneEvent);
             emitter.complete();
         } catch (Exception e) {
-            log.warn("发送 done 事件失败", e);
+            log.warn("发送 SSE 事件失败", e);
             emitter.completeWithError(e);
         }
         return emitter;

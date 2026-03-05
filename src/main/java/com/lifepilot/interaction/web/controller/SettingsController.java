@@ -1,9 +1,5 @@
 package com.lifepilot.interaction.web.controller;
 
-import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
-
 import com.lifepilot.interaction.web.model.UserSettings;
 import com.lifepilot.interaction.web.repository.UserSettingsRepository;
 import com.lifepilot.llm.config.ProviderCapability;
@@ -13,12 +9,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 用户设置 REST 端点，提供设置的读取和更新功能。
@@ -105,7 +101,7 @@ public class SettingsController {
         List<ProviderConfig> chatProviders = providerRegistry.findByCapability(ProviderCapability.CHAT);
         List<Map<String, Object>> providers = chatProviders.stream()
                 .map(config -> {
-                    Map<String, Object> provider = new java.util.HashMap<>();
+                    Map<String, Object> provider = new HashMap<>();
                     provider.put("id", config.id());
                     provider.put("type", config.type().name());
                     provider.put("modelName", config.modelName());
@@ -157,7 +153,7 @@ public class SettingsController {
         }
         return providerRegistry.getConfig(providerId)
                 .map(config -> {
-                    Map<String, Object> provider = new java.util.HashMap<>();
+                    Map<String, Object> provider = new HashMap<>();
                     provider.put("id", config.id());
                     provider.put("type", config.type().name());
                     provider.put("modelName", config.modelName());
@@ -191,6 +187,7 @@ public class SettingsController {
             case OLLAMA -> "Ollama (" + config.modelName() + ")";
             case DEEPSEEK -> "DeepSeek";
             case QWEN -> "通义千问";
+            case TEI -> "TEI (" + config.modelName() + ")";
             case WENXIN -> "文心一言";
             case GLM -> "智谱 GLM";
             case OPENAI_COMPATIBLE -> "OpenAI 兼容";

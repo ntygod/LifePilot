@@ -194,6 +194,54 @@ public class WorkflowController {
     }
 
     /**
+     * 删除 Workflow（软删除定义 + 删除 YAML 文件 + 从注册表移除）。
+     *
+     * <p>为保留执行历史（workflow_instances 外键），后端不会物理删除数据库中的定义行，
+     * 而是将其标记为 deleted 并从注册表中移除。</p>
+     *
+     * @param id Workflow ID
+     * @return 204 成功，404 不存在
+     */
+    @DeleteMapping("/{id}")
+    public ResponseEntity<?> deleteWorkflow(@PathVariable String id) {
+        log.debug("删除 Workflow: id={}", id);
+
+        // 仅允许删除已存在的工作流
+        if (workflowRegistry.find(id).isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(new ErrorResponse(404, "Workflow 不存在: id=" + id, Instant.now()));
+        }
+
+        try {
+            // 软删除 DB 定义（保留历史）
+            workflowRepository.markDefinitionDeleted(id);
+
+            // 删除文件系统中的 YAML（兼容 .yaml/.yml）
+            if (!Files.exists(workflowsDirectory)) {
+                // 目录不存在时认为无文件可删
+                log.debug("workflowsDirectory 不存在，跳过删除文件: dir={}", workflowsDirectory);
+            } else {
+                Files.deleteIfExists(workflowsDirectory.resolve(id + ".yaml"));
+                Files.deleteIfExists(workflowsDirectory.resolve(id + ".yml"));
+            }
+
+            // 从注册表移除（并注销触发器）
+            workflowRegistry.unregister(id);
+
+            log.info("Workflow 删除成功: id={}", id);
+            return ResponseEntity.noContent().build();
+        } catch (IOException e) {
+            log.error("删除 Workflow 失败: id={}", id, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ErrorResponse(500, "删除失败: " + e.getMessage(), Instant.now()));
+        } catch (Exception e) {
+            log.error("删除 Workflow 失败: id={}", id, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ErrorResponse(500, "删除失败: " + e.getMessage(), Instant.now()));
+        }
+    }
+
+    /**
      * 获取所有工作流定义列表。
      *
      * @return 工作流定义列表
@@ -216,6 +264,48 @@ public class WorkflowController {
                 .<ResponseEntity<?>>map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(
                         new ErrorResponse(404, "工作流不存在: id=" + id, Instant.now())));
+    }
+
+    /**
+     * 获取指定工作流的原始 YAML 内容（用于前端 YAML 编辑）。
+     *
+     * @param id 工作流 ID
+     * @return 200 返回 { yamlContent }，404 不存在
+     */
+    @GetMapping("/{id}/yaml")
+    public ResponseEntity<?> getWorkflowYaml(@PathVariable String id) {
+        // 验证工作流存在（避免读取任意文件）
+        if (workflowRegistry.find(id).isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    new ErrorResponse(404, "工作流不存在: id=" + id, Instant.now()));
+        }
+
+        try {
+            Path yamlFile = workflowsDirectory.resolve(id + ".yaml");
+            Path ymlFile = workflowsDirectory.resolve(id + ".yml");
+
+            String yamlContent = null;
+            if (Files.exists(yamlFile)) {
+                yamlContent = Files.readString(yamlFile);
+            } else if (Files.exists(ymlFile)) {
+                yamlContent = Files.readString(ymlFile);
+            }
+
+            if (yamlContent == null) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                        new ErrorResponse(404, "YAML 文件不存在: id=" + id, Instant.now()));
+            }
+
+            return ResponseEntity.ok(Map.of("yamlContent", yamlContent));
+        } catch (IOException e) {
+            log.error("读取 Workflow YAML 失败: id={}", id, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ErrorResponse(500, "读取失败: " + e.getMessage(), Instant.now()));
+        } catch (Exception e) {
+            log.error("读取 Workflow YAML 失败: id={}", id, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ErrorResponse(500, "读取失败: " + e.getMessage(), Instant.now()));
+        }
     }
 
     /**
