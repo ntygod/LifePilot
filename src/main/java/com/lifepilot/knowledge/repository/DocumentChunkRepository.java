@@ -123,6 +123,22 @@ public class DocumentChunkRepository {
         return count != null ? count : 0;
     }
 
+    /**
+     * 根据文档 id 和 chunkIndex 范围查询分块，按 chunk_index 升序排列。
+     *
+     * @param documentId 文档 id
+     * @param fromIndex  起始 chunkIndex（含）
+     * @param toIndex    结束 chunkIndex（含）
+     * @return 分块列表（按 chunk_index 排序）
+     */
+    public List<DocumentChunk> findByDocumentIdAndChunkIndexRange(String documentId,
+                                                                   int fromIndex, int toIndex) {
+        return jdbcTemplate.query(
+                "SELECT * FROM document_chunks WHERE document_id = ? AND chunk_index BETWEEN ? AND ? ORDER BY chunk_index",
+                rowMapper, documentId, fromIndex, toIndex);
+    }
+
+
     // ---- 内部方法 ----
 
     /** RowMapper：将 ResultSet 行映射为 DocumentChunk record。 */

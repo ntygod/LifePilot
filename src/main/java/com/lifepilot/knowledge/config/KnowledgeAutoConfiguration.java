@@ -209,8 +209,10 @@ public class KnowledgeAutoConfiguration {
     @ConditionalOnMissingBean
     public DocumentRetriever documentRetriever(@Nullable VectorIndexer vectorIndexer, FtsIndexer ftsIndexer,
                                                 Optional<Reranker> reranker,
+                                                @Nullable com.lifepilot.knowledge.retrieve.QueryEnhancer queryEnhancer,
+                                                DocumentChunkRepository chunkRepository,
                                                 KnowledgeBaseProperties props) {
-        return new DocumentRetriever(vectorIndexer, ftsIndexer, reranker, props.retrieval());
+        return new DocumentRetriever(vectorIndexer, ftsIndexer, reranker, queryEnhancer, chunkRepository, props.retrieval());
     }
 
     // ---- 导入管线 ----
