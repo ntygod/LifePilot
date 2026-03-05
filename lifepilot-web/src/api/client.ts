@@ -202,6 +202,29 @@ export const chatApi = {
     return request(`/chat/sessions/${sessionId}/clear`, { method: 'POST' })
   },
 
+  /** 提交消息反馈（点赞/点踩） */
+  submitFeedback(
+    messageId: string,
+    type: 'like' | 'dislike',
+    text?: string
+  ): Promise<void> {
+    return request(`/chat/messages/${messageId}/feedback`, {
+      method: 'POST',
+      body: JSON.stringify({ type, text })
+    })
+  },
+
+  /** 分叉会话（从指定消息处创建新会话） */
+  forkSession(
+    sessionId: string,
+    fromMessageId?: string
+  ): Promise<ChatSession> {
+    return request(`/chat/sessions/${sessionId}/fork`, {
+      method: 'POST',
+      body: JSON.stringify({ fromMessageId })
+    })
+  },
+
   /** A2UI 信号回传 */
   sendSignal(name: string, payload: Record<string, unknown>, sessionId: string): Promise<unknown> {
     return request('/chat/signals', {
