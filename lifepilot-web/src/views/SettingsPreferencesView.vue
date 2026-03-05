@@ -100,13 +100,6 @@ function restartOnboarding() {
 
 <template>
   <div class="flex flex-col h-full overflow-hidden">
-    <div class="sticky top-0 z-10 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div class="max-w-[1200px] mx-auto px-md md:px-lg py-md">
-        <h2 class="text-2xl font-semibold text-foreground leading-tight">偏好设置</h2>
-        <p class="text-sm text-muted-foreground mt-1">自定义界面外观和对话偏好</p>
-      </div>
-    </div>
-
     <div class="flex-1 overflow-y-auto">
       <div class="max-w-[1200px] mx-auto px-md md:px-lg py-lg space-y-6 max-w-4xl">
         <!-- 加载中 -->

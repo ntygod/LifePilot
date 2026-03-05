@@ -161,7 +161,7 @@ const navItems = [
     icon: Settings,
     type: 'group',
     children: [
-      { label: '偏好设置', path: '/settings/preferences', icon: Settings },
+      { label: '偏好设置', path: '/settings', icon: Settings },
       { label: '模型配置', path: '/settings/models', icon: Bot },
       { label: '快捷键', path: '/settings/shortcuts', icon: Settings }
     ]

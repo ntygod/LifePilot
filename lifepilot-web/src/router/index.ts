@@ -133,8 +133,8 @@ const router = createRouter({
 
     /**
      * 设置与偏好
-     * 当前 `/settings` 继续使用原有单页实现，
-     * `/settings/*` 子路由先接占位页，后续再拆分内容。
+     * 使用 Tabs 导航，所有设置子页面通过 Tab 切换，
+     * 子路由重定向到主设置页（保留路径以支持 Sidebar 导航和 Tab 映射）。
      */
     {
       path: '/settings',
@@ -144,17 +144,17 @@ const router = createRouter({
     {
       path: '/settings/preferences',
       name: 'settingsPreferences',
-      component: () => import('@/views/SettingsPreferencesView.vue')
+      component: () => import('@/views/SettingsView.vue')
     },
     {
       path: '/settings/models',
       name: 'settingsModels',
-      component: () => import('@/views/SettingsModelsView.vue')
+      component: () => import('@/views/SettingsView.vue')
     },
     {
       path: '/settings/shortcuts',
       name: 'settingsShortcuts',
-      component: () => import('@/views/SettingsShortcutsView.vue')
+      component: () => import('@/views/SettingsView.vue')
     },
 
     /**
