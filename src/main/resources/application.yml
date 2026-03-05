@@ -135,6 +135,13 @@ lifepilot:
       default-retrieval: 25
       high-relevance-threshold: 0.9
       long-conversation-turns-threshold: 10
+      # 六区域独立 Token 预算上限
+      user-profile-max: 500
+      current-session-max: 4000
+      cross-session-max: 1000
+      knowledge-entity-max: 500
+      procedural-max: 300
+      knowledge-base-max: 500
     # L4 程序记忆
     procedural:
       max-templates: 200
