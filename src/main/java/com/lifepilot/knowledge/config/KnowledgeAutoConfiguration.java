@@ -199,7 +199,7 @@ public class KnowledgeAutoConfiguration {
         var rerankerConfig = props.reranker();
         return switch (rerankerConfig.type()) {
             case "api" -> new ApiReranker(rerankerConfig);
-            default -> new LlmReranker(llmRouter);
+            default -> new LlmReranker(llmRouter, rerankerConfig);
         };
     }
 
