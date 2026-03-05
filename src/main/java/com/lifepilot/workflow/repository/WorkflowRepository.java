@@ -59,14 +59,15 @@ public class WorkflowRepository {
     public void saveDefinition(WorkflowDefinition def, String yamlContent) {
         String now = Instant.now().toString();
         jdbcTemplate.update("""
-                INSERT INTO workflow_definitions (id, name, description, version, enabled, definition_yaml, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO workflow_definitions (id, name, description, version, enabled, definition_yaml, deleted, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     name = excluded.name,
                     description = excluded.description,
                     version = excluded.version,
                     enabled = excluded.enabled,
                     definition_yaml = excluded.definition_yaml,
+                    deleted = 0,
                     updated_at = excluded.updated_at
                 """,
                 def.id(), def.name(), def.description(), def.version(),
@@ -85,7 +86,7 @@ public class WorkflowRepository {
      */
     public Optional<WorkflowDefinition> findDefinition(String id) {
         List<WorkflowDefinition> results = jdbcTemplate.query(
-                "SELECT * FROM workflow_definitions WHERE id = ?",
+                "SELECT * FROM workflow_definitions WHERE id = ? AND deleted = 0",
                 (rs, rowNum) -> mapDefinition(rs.getString("definition_yaml"),
                         rs.getInt("enabled") == 1),
                 id);
@@ -99,11 +100,27 @@ public class WorkflowRepository {
      */
     public List<WorkflowDefinition> findAllDefinitions() {
         return jdbcTemplate.query(
-                "SELECT * FROM workflow_definitions",
+                "SELECT * FROM workflow_definitions WHERE deleted = 0",
                 (rs, rowNum) -> mapDefinition(rs.getString("definition_yaml"),
                         rs.getInt("enabled") == 1))
                 .stream()
                 .toList();
+    }
+
+    /**
+     * 将工作流定义标记为已删除（软删除）。
+     *
+     * <p>保留 workflow_definitions 行以保持 workflow_instances 的外键完整性，
+     * 但从正常加载/列表中隐藏。</p>
+     *
+     * @param id 工作流定义 ID
+     */
+    public void markDefinitionDeleted(String id) {
+        String now = Instant.now().toString();
+        jdbcTemplate.update(
+                "UPDATE workflow_definitions SET deleted = 1, enabled = 0, updated_at = ? WHERE id = ?",
+                now, id);
+        log.info("工作流定义软删除标记成功: id={}", id);
     }
 
     /**

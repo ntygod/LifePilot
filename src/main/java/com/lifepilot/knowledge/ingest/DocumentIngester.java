@@ -19,6 +19,7 @@ import com.lifepilot.knowledge.repository.DocumentRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.lang.Nullable;
 
 import java.nio.file.Path;
 import java.time.Instant;
@@ -42,10 +43,13 @@ public class DocumentIngester {
 
     private final FormatDetector formatDetector;
     private final ChunkingStrategy smartChunker;
+    @Nullable
     private final ChunkContextEnricher contextEnricher;
+    @Nullable
     private final VectorIndexer vectorIndexer;
     private final FtsIndexer ftsIndexer;
     private final DuplicateDetector duplicateDetector;
+    @Nullable
     private final KnowledgeExtractionPipeline extractionPipeline;
     private final DocumentRepository docRepository;
     private final DocumentChunkRepository chunkRepository;
@@ -57,11 +61,11 @@ public class DocumentIngester {
      */
     public DocumentIngester(FormatDetector formatDetector,
                             ChunkingStrategy smartChunker,
-                            ChunkContextEnricher contextEnricher,
-                            VectorIndexer vectorIndexer,
+                            @Nullable ChunkContextEnricher contextEnricher,
+                            @Nullable VectorIndexer vectorIndexer,
                             FtsIndexer ftsIndexer,
                             DuplicateDetector duplicateDetector,
-                            KnowledgeExtractionPipeline extractionPipeline,
+                            @Nullable KnowledgeExtractionPipeline extractionPipeline,
                             DocumentRepository docRepository,
                             DocumentChunkRepository chunkRepository,
                             ApplicationEventPublisher eventPublisher,
@@ -77,7 +81,10 @@ public class DocumentIngester {
         this.chunkRepository = chunkRepository;
         this.eventPublisher = eventPublisher;
         this.props = props;
-        log.info("DocumentIngester 初始化完成");
+        log.info("DocumentIngester 初始化完成: vectorIndexer={}, contextEnricher={}, extractionPipeline={}",
+                vectorIndexer != null ? "启用" : "未启用",
+                contextEnricher != null ? "可用" : "不可用",
+                extractionPipeline != null ? "可用" : "不可用");
     }
 
     /**
@@ -146,7 +153,11 @@ public class DocumentIngester {
             if (props.contextEnricher().enabled()) {
                 publishProgress(doc, DocumentStatus.CHUNKING, 50, "上下文增强中");
                 var summary = parseResult.text().substring(0, Math.min(500, parseResult.text().length()));
-                chunks = contextEnricher.enrich(chunks, summary);
+                if (contextEnricher != null) {
+                    chunks = contextEnricher.enrich(chunks, summary);
+                } else {
+                    log.warn("上下文增强已启用但 ChunkContextEnricher 不可用，已降级跳过: docId={}", doc.id());
+                }
             }
 
             // 保存分块
@@ -253,15 +264,24 @@ public class DocumentIngester {
         var chunks = doChunk(doc, parseResult);
         if (props.contextEnricher().enabled()) {
             var summary = parseResult.text().substring(0, Math.min(500, parseResult.text().length()));
-            chunks = contextEnricher.enrich(chunks, summary);
+            if (contextEnricher != null) {
+                chunks = contextEnricher.enrich(chunks, summary);
+            } else {
+                log.warn("上下文增强已启用但 ChunkContextEnricher 不可用，已降级跳过: docId={}", doc.id());
+            }
         }
         return chunks;
     }
 
     private void doIndex(List<DocumentChunk> chunks) {
-        // 向量索引和 FTS5 索引并行执行
-        var vectorFuture = CompletableFuture.runAsync(
-                () -> vectorIndexer.indexChunks(chunks),
+        // 向量索引（可选）和 FTS5 索引并行执行
+        var vectorFuture = CompletableFuture.runAsync(() -> {
+                    if (vectorIndexer != null) {
+                        vectorIndexer.indexChunks(chunks);
+                    } else {
+                        log.warn("VectorIndexer 不可用，已降级跳过向量索引（仅构建 FTS5）");
+                    }
+                },
                 Executors.newVirtualThreadPerTaskExecutor());
         var ftsFuture = CompletableFuture.runAsync(
                 () -> ftsIndexer.indexChunks(chunks),
@@ -272,6 +292,10 @@ public class DocumentIngester {
     private void doExtract(String docId, List<DocumentChunk> chunks) {
         if (!props.extraction().enabled()) {
             log.debug("知识提取已禁用，跳过");
+            return;
+        }
+        if (extractionPipeline == null) {
+            log.warn("知识提取已启用但 KnowledgeExtractionPipeline 不可用，已降级跳过: docId={}", docId);
             return;
         }
         try {

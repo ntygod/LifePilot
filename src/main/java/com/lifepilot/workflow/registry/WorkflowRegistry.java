@@ -181,6 +181,7 @@ public class WorkflowRegistry {
     public boolean unregister(String workflowId) {
         WorkflowDefinition removed = definitions.remove(workflowId);
         if (removed != null) {
+            notifyTriggerUnregister(workflowId);
             log.info("工作流定义注销: id={}", workflowId);
             return true;
         }

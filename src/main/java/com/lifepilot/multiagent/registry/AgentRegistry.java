@@ -32,9 +32,11 @@ public class AgentRegistry {
     }
 
     /**
-     * 注册 Agent 定义。
+     * 注册 Agent 定义（受保护的注册）。
      *
      * <p>规则：Builtin 不允许被 Builtin 覆盖，MarkdownDefined 可覆盖 Builtin。</p>
+     *
+     * <p>用于系统启动时的批量加载、Markdown 等“来源定义式”注册场景。</p>
      *
      * @param definition Agent 定义
      * @return 是否注册成功
@@ -59,6 +61,28 @@ public class AgentRegistry {
         agents.put(id, definition);
         eventPublisher.publishEvent(new AgentRegistryEvent.AgentRegistered(definition));
         log.info("Agent 注册成功: id={}, source={}", id, definition.source().getClass().getSimpleName());
+        return true;
+    }
+
+    /**
+     * 强制注册 Agent 定义。
+     *
+     * <p>跳过 Builtin 覆盖校验，主要用于运行时通过管理 API
+     * 对已有 Agent（包括 Builtin）进行在线更新的场景。</p>
+     *
+     * @param definition Agent 定义
+     * @return 是否注册成功
+     */
+    public boolean forceRegister(AgentDefinition definition) {
+        if (definition.id() == null || definition.id().isBlank()) {
+            log.warn("Agent 强制注册失败: ID 为空");
+            return false;
+        }
+
+        String id = definition.id();
+        agents.put(id, definition);
+        eventPublisher.publishEvent(new AgentRegistryEvent.AgentRegistered(definition));
+        log.info("Agent 强制注册成功: id={}, source={}", id, definition.source().getClass().getSimpleName());
         return true;
     }
 

@@ -7,6 +7,7 @@ import com.lifepilot.knowledge.model.DocumentSearchResult;
 import com.lifepilot.knowledge.rerank.Reranker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.lang.Nullable;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -25,6 +26,7 @@ public class DocumentRetriever {
 
     private static final Logger log = LoggerFactory.getLogger(DocumentRetriever.class);
 
+    @Nullable
     private final VectorIndexer vectorIndexer;
     private final FtsIndexer ftsIndexer;
     private final Optional<Reranker> reranker;
@@ -38,15 +40,17 @@ public class DocumentRetriever {
      * @param reranker      可选 Reranker（精排）
      * @param config        检索配置
      */
-    public DocumentRetriever(VectorIndexer vectorIndexer, FtsIndexer ftsIndexer,
+    public DocumentRetriever(@Nullable VectorIndexer vectorIndexer, FtsIndexer ftsIndexer,
                               Optional<Reranker> reranker,
                               KnowledgeBaseProperties.Retrieval config) {
         this.vectorIndexer = vectorIndexer;
         this.ftsIndexer = ftsIndexer;
         this.reranker = reranker;
         this.config = config;
-        log.info("DocumentRetriever 初始化完成: topK={}, rrfK={}, reranker={}",
-                config.defaultTopK(), config.rrfK(), reranker.isPresent() ? "启用" : "未启用");
+        log.info("DocumentRetriever 初始化完成: topK={}, rrfK={}, reranker={}, vectorIndexer={}",
+                config.defaultTopK(), config.rrfK(),
+                reranker.isPresent() ? "启用" : "未启用",
+                vectorIndexer != null ? "启用" : "未启用（仅 FTS5）");
     }
 
     /**
@@ -121,7 +125,11 @@ public class DocumentRetriever {
         for (int rank = 0; rank < vectorResults.size(); rank++) {
             var result = vectorResults.get(rank);
             double rrfScore = 1.0 / (k + rank + 1); // rank 从 1 开始
-            scoreMap.merge(result.chunkId(), rrfScore, Double::sum);
+            scoreMap.merge(
+                    result.chunkId(),
+                    Double.valueOf(rrfScore),
+                    (a, b) -> Double.valueOf(a.doubleValue() + b.doubleValue())
+            );
             resultMap.putIfAbsent(result.chunkId(), result);
         }
 
@@ -129,7 +137,11 @@ public class DocumentRetriever {
         for (int rank = 0; rank < ftsResults.size(); rank++) {
             var result = ftsResults.get(rank);
             double rrfScore = 1.0 / (k + rank + 1);
-            scoreMap.merge(result.chunkId(), rrfScore, Double::sum);
+            scoreMap.merge(
+                    result.chunkId(),
+                    Double.valueOf(rrfScore),
+                    (a, b) -> Double.valueOf(a.doubleValue() + b.doubleValue())
+            );
             resultMap.putIfAbsent(result.chunkId(), result);
         }
 
@@ -158,6 +170,9 @@ public class DocumentRetriever {
      * 安全执行向量搜索，异常时返回空列表。
      */
     private List<DocumentSearchResult> safeVectorSearch(String query, List<String> kbIds, int topK) {
+        if (vectorIndexer == null) {
+            return List.of();
+        }
         try {
             return vectorIndexer.searchSimilar(query, kbIds, topK);
         } catch (Exception e) {

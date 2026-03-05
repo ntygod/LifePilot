@@ -29,6 +29,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.lang.Nullable;
 
 import java.util.List;
 import java.util.Optional;
@@ -206,8 +207,7 @@ public class KnowledgeAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean(VectorIndexer.class)
-    public DocumentRetriever documentRetriever(VectorIndexer vectorIndexer, FtsIndexer ftsIndexer,
+    public DocumentRetriever documentRetriever(@Nullable VectorIndexer vectorIndexer, FtsIndexer ftsIndexer,
                                                 Optional<Reranker> reranker,
                                                 KnowledgeBaseProperties props) {
         return new DocumentRetriever(vectorIndexer, ftsIndexer, reranker, props.retrieval());
@@ -217,12 +217,11 @@ public class KnowledgeAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean(VectorIndexer.class)
     public DocumentIngester documentIngester(FormatDetector formatDetector, SmartChunker smartChunker,
-                                              ChunkContextEnricher contextEnricher,
-                                              VectorIndexer vectorIndexer, FtsIndexer ftsIndexer,
+                                              @Nullable ChunkContextEnricher contextEnricher,
+                                              @Nullable VectorIndexer vectorIndexer, FtsIndexer ftsIndexer,
                                               DuplicateDetector duplicateDetector,
-                                              KnowledgeExtractionPipeline extractionPipeline,
+                                              @Nullable KnowledgeExtractionPipeline extractionPipeline,
                                               DocumentRepository docRepository,
                                               DocumentChunkRepository chunkRepository,
                                               ApplicationEventPublisher eventPublisher,
