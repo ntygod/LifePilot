@@ -118,6 +118,7 @@ public class AgentAutoConfiguration {
                                         LlmRouter llmRouter,
                                         MultimodalRouter multimodalRouter,
                                         TraceRecorder traceRecorder,
+                                        ObjectMapper objectMapper,
                                         SessionManager sessionManager,
                                         @Autowired(required = false) ConversationViewService conversationViewService,
                                         ActionParser actionParser,
@@ -134,7 +135,7 @@ public class AgentAutoConfiguration {
                 episodicMemory != null ? "已启用" : "未启用",
                 realtimeExtractor != null ? "已启用" : "未启用");
         return new AgentLoop(stateReducer, contextAssembler, llmRouter, multimodalRouter,
-                traceRecorder, sessionManager, conversationViewService, actionParser, agentToolProvider,
+                traceRecorder, objectMapper, sessionManager, conversationViewService, actionParser, agentToolProvider,
                 config, workingMemory, conversationHistoryStore, sessionKnowledgeBaseRepository,
                 knowledgeBaseRepository, realtimeExtractor);
     }
@@ -145,6 +146,7 @@ public class AgentAutoConfiguration {
                                            ContextAssembler contextAssembler,
                                            LlmRouter llmRouter,
                                            MultimodalRouter multimodalRouter,
+                                           ObjectMapper objectMapper,
                                            SessionManager sessionManager,
                                            @Autowired(required = false) ConversationViewService conversationViewService,
                                            ActionParser actionParser,
@@ -161,7 +163,7 @@ public class AgentAutoConfiguration {
                 episodicMemory != null ? "已启用" : "未启用",
                 realtimeExtractor != null ? "已启用" : "未启用");
         return new AgentLoop(stateReducer, contextAssembler, llmRouter, multimodalRouter,
-                null, sessionManager, conversationViewService, actionParser, agentToolProvider,
+                null, objectMapper, sessionManager, conversationViewService, actionParser, agentToolProvider,
                 config, workingMemory, conversationHistoryStore, sessionKnowledgeBaseRepository,
                 knowledgeBaseRepository, realtimeExtractor);
     }

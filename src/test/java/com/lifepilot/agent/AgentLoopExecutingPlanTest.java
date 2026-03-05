@@ -1,5 +1,6 @@
 package com.lifepilot.agent;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.context.ContextAssembler;
 import com.lifepilot.agent.model.*;
@@ -31,11 +32,13 @@ class AgentLoopExecutingPlanTest {
                 mock(LlmRouter.class),
                 mock(MultimodalRouter.class),
                 mock(TraceRecorder.class),
+                new ObjectMapper(),
                 mock(SessionManager.class),
-                null, // ConversationViewService (not needed for this test)
+                null,
                 mock(ActionParser.class),
                 mock(AgentToolProvider.class),
-                new AgentConfigProperties()
+                new AgentConfigProperties(),
+                null, null, null, null, null
         );
 
         ToolCallback okTool = toolCallback("calendar_create_event", "{\"ok\":true}");
@@ -83,11 +86,13 @@ class AgentLoopExecutingPlanTest {
                 mock(LlmRouter.class),
                 mock(MultimodalRouter.class),
                 mock(TraceRecorder.class),
+                new ObjectMapper(),
                 mock(SessionManager.class),
-                null, // ConversationViewService
+                null,
                 mock(ActionParser.class),
                 mock(AgentToolProvider.class),
-                new AgentConfigProperties()
+                new AgentConfigProperties(),
+                null, null, null, null, null
         );
 
         ToolCallback badTool = toolCallback("calendar_create_event", "{\"error\":\"boom\"}");
@@ -134,11 +139,13 @@ class AgentLoopExecutingPlanTest {
                 mock(LlmRouter.class),
                 mock(MultimodalRouter.class),
                 mock(TraceRecorder.class),
+                new ObjectMapper(),
                 mock(SessionManager.class),
-                null, // ConversationViewService
+                null,
                 mock(ActionParser.class),
                 mock(AgentToolProvider.class),
-                new AgentConfigProperties()
+                new AgentConfigProperties(),
+                null, null, null, null, null
         );
 
         ExecutionPlan plan = new ExecutionPlan(List.of(

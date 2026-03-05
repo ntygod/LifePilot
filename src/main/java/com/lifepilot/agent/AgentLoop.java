@@ -26,7 +26,9 @@ import com.lifepilot.memory.working.WorkingMemorySlot;
 import com.lifepilot.memory.semantic.RealtimeExtractor;
 import com.lifepilot.observability.guardrail.GuardrailBlockedException;
 import com.lifepilot.observability.guardrail.RiskLevel;
+import com.lifepilot.observability.trace.LlmCallStep;
 import com.lifepilot.observability.trace.StateTransitionStep;
+import com.lifepilot.observability.trace.ToolCallStep;
 import com.lifepilot.observability.trace.TraceContext;
 import com.lifepilot.observability.trace.TraceRecorder;
 import org.slf4j.Logger;
@@ -52,7 +54,6 @@ import java.util.stream.Collectors;
 public class AgentLoop {
 
     private static final Logger log = LoggerFactory.getLogger(AgentLoop.class);
-    private static final ObjectMapper TOOL_INPUT_MAPPER = new ObjectMapper();
 
     /** 流式 RESPONDING 阶段追加的自然语言输出约束。 */
     private static final String STREAMING_OUTPUT_CONSTRAINT = """
@@ -71,6 +72,7 @@ public class AgentLoop {
     private final LlmRouter llmRouter;
     private final MultimodalRouter multimodalRouter;
     private final TraceRecorder traceRecorder;
+    private final ObjectMapper objectMapper;
     @Nullable
     private final SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository;
     @Nullable
@@ -93,21 +95,7 @@ public class AgentLoop {
                      LlmRouter llmRouter,
                      MultimodalRouter multimodalRouter,
                      TraceRecorder traceRecorder,
-                     SessionManager sessionManager,
-                     ConversationViewService conversationViewService,
-                     ActionParser actionParser,
-                     AgentToolProvider agentToolProvider,
-                     AgentConfigProperties config) {
-        this(stateReducer, contextAssembler, llmRouter, multimodalRouter, traceRecorder,
-                sessionManager, conversationViewService, actionParser, agentToolProvider, config,
-                null, null, null, null, null);
-    }
-
-    public AgentLoop(StateReducer stateReducer,
-                     ContextAssembler contextAssembler,
-                     LlmRouter llmRouter,
-                     MultimodalRouter multimodalRouter,
-                     TraceRecorder traceRecorder,
+                     ObjectMapper objectMapper,
                      SessionManager sessionManager,
                      @Nullable ConversationViewService conversationViewService,
                      ActionParser actionParser,
@@ -123,6 +111,7 @@ public class AgentLoop {
         this.llmRouter = llmRouter;
         this.multimodalRouter = multimodalRouter;
         this.traceRecorder = traceRecorder;
+        this.objectMapper = objectMapper;
         this.sessionManager = sessionManager;
         this.conversationViewService = conversationViewService;
         this.actionParser = actionParser;
@@ -330,7 +319,7 @@ public class AgentLoop {
                 sendReasoningEvent(
                         sseManager, streamId, request.sessionId(), tempTurnId,
                         "ANSWER_FINALIZED", "回答已生成", "本轮推理与回答已完成。",
-                        null, java.util.Map.of()
+                        null, Map.of()
                 );
                 var doneData = buildDoneEventPayload(
                         request, state, tempTurnId, finalTokenUsage,
@@ -454,7 +443,7 @@ public class AgentLoop {
             var stepsList = traceContext.steps();
             for (int i = stepsList.size() - 1; i >= 0; i--) {
                 var step = stepsList.get(i);
-                if (step instanceof com.lifepilot.observability.trace.LlmCallStep llmStep) {
+                if (step instanceof LlmCallStep llmStep) {
                     modelId = llmStep.modelId();
                     break;
                 }
@@ -702,7 +691,7 @@ public class AgentLoop {
         String finishReason = error != null ? ("error: " + error.getMessage()) : "stream_complete";
 
         int stepIndex = traceContext.steps() != null ? traceContext.steps().size() : 0;
-        var step = new com.lifepilot.observability.trace.LlmCallStep(
+        var step = new LlmCallStep(
                 stepIndex,
                 end,
                 d,
@@ -741,7 +730,7 @@ public class AgentLoop {
             WorkingMemory memory = this.workingMemory;
             if (memory != null) {
                 int tokens = estimateTokens(content);
-                memory.append(sessionId, com.lifepilot.memory.working.ConversationSlot.systemMessage(content, tokens));
+                memory.append(sessionId, ConversationSlot.systemMessage(content, tokens));
             }
         } catch (Exception ignore) {
             // ignore
@@ -941,7 +930,7 @@ public class AgentLoop {
 
         String toolInputJson;
         try {
-            toolInputJson = TOOL_INPUT_MAPPER.writeValueAsString(step.params());
+            toolInputJson = objectMapper.writeValueAsString(step.params());
         } catch (Exception e) {
             return new Action.ErrorRecovery(
                     AgentErrorType.LLM_PARSE_FAILURE,
@@ -959,7 +948,7 @@ public class AgentLoop {
             if (output != null && output.trim().startsWith("{")) {
                 // ToolBridgeAgentToolProvider 失败输出为 {"error":"..."}，这里做一个轻量判定
                 try {
-                    var node = TOOL_INPUT_MAPPER.readTree(output);
+                    var node = objectMapper.readTree(output);
                     if (node != null && node.has("error")) {
                         success = false;
                     }
@@ -1051,10 +1040,7 @@ public class AgentLoop {
         if (toolCallbacks != null && !toolCallbacks.isEmpty()) {
             toolNames = toolCallbacks.stream()
                     .filter(Objects::nonNull)
-                    .map(cb -> {
-                        cb.getToolDefinition();
-                        return cb.getToolDefinition().name();
-                    })
+                    .map(cb -> cb.getToolDefinition().name())
                     .distinct()
                     .collect(Collectors.toList());
         }
@@ -1136,14 +1122,18 @@ public class AgentLoop {
 
     /** 异步后处理：会话快照持久化和 L2 flush。 */
     private void asyncPostProcess(AgentState finalState) {
-        // 这里必须"真正异步"：不要在当前线程等待持久化完成（否则会拉长端到端延迟）。
-        // Virtual Thread 非常适合这种 I/O 型后处理任务。
+        // Virtual Thread 非常适合这种 I/O 型后处理任务
         Thread.startVirtualThread(() -> {
+            // 1. 保存会话状态
             try {
-                // 1. 保存会话状态
                 sessionManager.saveSession(finalState);
-                
-                // 2. 保存对话历史（与记忆系统解耦）
+            } catch (Exception e) {
+                log.warn("会话快照持久化失败: sessionId={}, error={}",
+                        finalState.sessionId(), e.getMessage());
+            }
+            
+            // 2. 保存对话历史（与记忆系统解耦）
+            try {
                 if (conversationHistoryStore != null) {
                     conversationHistoryStore.appendTurn(
                             finalState.sessionId(),
@@ -1153,8 +1143,13 @@ public class AgentLoop {
                             finalState.traceId()
                     );
                 }
-                
-                // 3. 触发 AUDN 实时实体提取（异步，不阻塞后处理）
+            } catch (Exception e) {
+                log.warn("对话历史持久化失败: sessionId={}, error={}",
+                        finalState.sessionId(), e.getMessage());
+            }
+            
+            // 3. 触发 AUDN 实时实体提取（异步，不阻塞后处理）
+            try {
                 if (realtimeExtractor != null && finalState.finalOutput() != null) {
                     realtimeExtractor.extractAsync(
                             finalState.sessionId(),
@@ -1162,9 +1157,8 @@ public class AgentLoop {
                             finalState.finalOutput()
                     );
                 }
-                
             } catch (Exception e) {
-                log.warn("会话持久化失败: sessionId={}, error={}",
+                log.warn("AUDN 实时实体提取失败: sessionId={}, error={}",
                         finalState.sessionId(), e.getMessage());
             }
         });
@@ -1236,9 +1230,9 @@ public class AgentLoop {
                 String role = turn.role();
 
                 ConversationSlot slot;
-                if ("USER".equalsIgnoreCase(role) || "user".equalsIgnoreCase(role)) {
+                if ("user".equalsIgnoreCase(role)) {
                     slot = new ConversationSlot("user", content, tokens, 0.8f, false, null, turn.createdAt());
-                } else if ("ASSISTANT".equalsIgnoreCase(role) || "assistant".equalsIgnoreCase(role)) {
+                } else if ("assistant".equalsIgnoreCase(role)) {
                     slot = new ConversationSlot("assistant", content, tokens, 0.6f, false, null, turn.createdAt());
                 } else {
                     // 其他角色（如 system）作为高重要度 pinned 系统消息
@@ -1258,14 +1252,21 @@ public class AgentLoop {
     }
 
     /**
-     * 估算文本 Token 数量（中英文混合约 2 字符/Token）。
+     * 估算文本 Token 数量（区分中英文）。
+     *
+     * <p>中文字符按 1 Token/字符计算，其他字符按 4 字符/Token 计算。
+     * 与知识库分块器（FixedSizeChunker 等）保持一致的估算策略。</p>
      *
      * @param text 文本内容
      * @return Token 数量
      */
     private int estimateTokens(String text) {
         if (text == null || text.isEmpty()) return 0;
-        return Math.max(1, text.length() / 2);
+        long cjkChars = text.chars()
+                .filter(c -> Character.UnicodeScript.of(c) == Character.UnicodeScript.HAN)
+                .count();
+        long otherChars = text.length() - cjkChars;
+        return Math.max(1, (int) (cjkChars + otherChars / 4));
     }
 
     /**
@@ -1278,17 +1279,17 @@ public class AgentLoop {
      * @param sessionId 会话 ID
      * @return sources 数组（与前端 ChatResponse.sources 结构对齐）
      */
-    private java.util.List<java.util.Map<String, Object>> buildKnowledgeSources(String sessionId) {
+    private List<Map<String, Object>> buildKnowledgeSources(String sessionId) {
         SessionKnowledgeBaseRepository repo = this.sessionKnowledgeBaseRepository;
         if (sessionId == null || sessionId.isBlank() || repo == null) {
-            return java.util.List.of();
+            return List.of();
         }
         try {
             var kbIds = repo.findKnowledgeBaseIdsBySessionId(sessionId);
             if (kbIds == null || kbIds.isEmpty()) {
-                return java.util.List.of();
+                return List.of();
             }
-            var result = new java.util.ArrayList<java.util.Map<String, Object>>();
+            var result = new ArrayList<Map<String, Object>>();
             for (String kbId : kbIds) {
                 if (kbId == null || kbId.isBlank()) {
                     continue;
@@ -1304,16 +1305,16 @@ public class AgentLoop {
                         // 知识库名称查询失败不影响主流程，回退为 ID
                     }
                 }
-                var source = new java.util.HashMap<String, Object>();
+                var source = new HashMap<String, Object>();
                 source.put("type", "knowledgeBase");
                 source.put("id", kbId);
                 source.put("name", name);
                 result.add(source);
             }
-            return java.util.Collections.unmodifiableList(result);
+            return Collections.unmodifiableList(result);
         } catch (Exception e) {
             log.debug("构建知识库来源摘要失败: sessionId={}, error={}", sessionId, e.getMessage());
-            return java.util.List.of();
+            return List.of();
         }
     }
 
@@ -1333,7 +1334,7 @@ public class AgentLoop {
             var steps = traceContext.steps();
             for (int i = steps.size() - 1; i >= 0; i--) {
                 var step = steps.get(i);
-                if (step instanceof com.lifepilot.observability.trace.LlmCallStep llmStep) {
+                if (step instanceof LlmCallStep llmStep) {
                     modelId = llmStep.modelId();
                     break;
                 }
@@ -1361,13 +1362,13 @@ public class AgentLoop {
                                                        TraceContext traceContext,
                                                        String reasoningSummary,
                                                        String finalContent) {
-        var doneData = new java.util.HashMap<String, Object>();
+        var doneData = new HashMap<String, Object>();
         // 会话与回合标识
         doneData.put("sessionId", request.sessionId());
         doneData.put("turnId", tempTurnId);
         // usage
         if (finalTokenUsage != null) {
-            var usage = new java.util.HashMap<String, Object>();
+            var usage = new HashMap<String, Object>();
             usage.put("inputTokens", finalTokenUsage.promptTokens());
             usage.put("outputTokens", finalTokenUsage.completionTokens());
             usage.put("totalTokens", finalTokenUsage.totalTokens());
@@ -1375,10 +1376,10 @@ public class AgentLoop {
         }
         // 工具调用摘要：从 TraceContext 的 ToolCallStep 提取
         if (traceContext != null && !traceContext.steps().isEmpty()) {
-            var toolSummaries = new java.util.ArrayList<java.util.Map<String, Object>>();
+            var toolSummaries = new ArrayList<Map<String, Object>>();
             for (var step : traceContext.steps()) {
-                if (step instanceof com.lifepilot.observability.trace.ToolCallStep toolStep) {
-                    var toolSummary = new java.util.HashMap<String, Object>();
+                if (step instanceof ToolCallStep toolStep) {
+                    var toolSummary = new HashMap<String, Object>();
                     toolSummary.put("toolId", toolStep.toolId());
                     toolSummary.put("action", toolStep.toolAction());
                     toolSummary.put("success", toolStep.success());
@@ -1404,9 +1405,9 @@ public class AgentLoop {
             doneData.put("reasoningSummary", reasoningSummary);
         }
         // contents：当前仅返回 TEXT，后续扩展多模态
-        var contents = new java.util.ArrayList<java.util.Map<String, Object>>();
+        var contents = new ArrayList<Map<String, Object>>();
         if (finalContent != null && !finalContent.isBlank()) {
-            var textContent = new java.util.HashMap<String, Object>();
+            var textContent = new HashMap<String, Object>();
             textContent.put("type", "TEXT");
             textContent.put("text", finalContent);
             contents.add(textContent);
@@ -1426,7 +1427,7 @@ public class AgentLoop {
      */
     private void sendStreamError(SseSessionManager sseManager, String streamId,
                                  int code, String message, String traceId) {
-        var errorData = new java.util.HashMap<String, Object>();
+        var errorData = new HashMap<String, Object>();
         errorData.put("code", code);
         errorData.put("message", message);
         if (traceId != null) {
@@ -1459,18 +1460,18 @@ public class AgentLoop {
                                     String toolName,
                                     Map<String, Object> extra) {
         try {
-            var eventDetail = new java.util.HashMap<String, Object>();
+            var eventDetail = new HashMap<String, Object>();
             eventDetail.put("id", UUID.randomUUID().toString());
             eventDetail.put("type", type);
             eventDetail.put("title", title);
             eventDetail.put("description", description);
             eventDetail.put("createdAt", Instant.now().toString());
-            eventDetail.put("extra", extra != null ? extra : java.util.Map.of());
+            eventDetail.put("extra", extra != null ? extra : Map.of());
             if (toolName != null) {
                 eventDetail.put("toolName", toolName);
             }
 
-            var eventPayload = new java.util.HashMap<String, Object>();
+            var eventPayload = new HashMap<String, Object>();
             eventPayload.put("sessionId", sessionId);
             eventPayload.put("turnId", turnId);
             eventPayload.put("event", eventDetail);
