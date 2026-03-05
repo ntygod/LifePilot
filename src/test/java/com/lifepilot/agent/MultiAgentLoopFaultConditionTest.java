@@ -365,7 +365,7 @@ class MultiAgentLoopFaultConditionTest {
             jdbcTemplate.update(
                     "INSERT INTO messages (id, conversation_id, role, content, compression_level, is_pinned, token_count, created_at) "
                             + "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    "msg-1", "conv-1", "user", "帮我总结一下架构设计", 0, 0, 10,
+                    "msg-1", "conv-1", "user", "帮我总结一下:架构设计", 0, 0, 10,
                     "2026-03-05T10:00:00Z");
             // 手动同步 FTS5 索引（使用 messages 表的 rowid）
             jdbcTemplate.execute(
