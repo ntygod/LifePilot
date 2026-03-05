@@ -140,6 +140,7 @@ class MultiAgentLoopFaultConditionTest {
         // 准备：Mock AgentExecutor 以捕获传入的 parentState
         var agentLoop = mock(AgentLoop.class);
         var config = new MultiAgentProperties();
+        config.setMaxDelegationDepth(5); // 设置足够大的深度限制，避免深度检查拦截
         var agentExecutor = new AgentExecutor(agentLoop, toolRegistry, config);
         var factory = new HandoffToolFactory(agentExecutor);
 
