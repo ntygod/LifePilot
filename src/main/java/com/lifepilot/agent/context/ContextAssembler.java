@@ -8,6 +8,8 @@ import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.knowledge.model.DocumentSearchResult;
 import com.lifepilot.knowledge.repository.DocumentRepository;
 import com.lifepilot.knowledge.retrieve.DocumentRetriever;
+import com.lifepilot.memory.episodic.EpisodicMemory;
+import com.lifepilot.memory.episodic.MessageRecord;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.RetrievalResult;
 import com.lifepilot.memory.working.*;
@@ -51,6 +53,8 @@ public class ContextAssembler {
     @Nullable private final TokenBudgetAllocator tokenBudgetAllocator;
     @Nullable private final MemoryRetrievalStrategy retrievalStrategy;
     @Nullable private final DataRedactor dataRedactor;
+    // L2 情景记忆：跨会话语义检索，可选注入
+    @Nullable private final EpisodicMemory episodicMemory;
     // 知识库（文档）检索：可选注入，未启用时不影响主流程
     @Nullable private final DocumentRetriever documentRetriever;
     @Nullable private final SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository;
@@ -64,6 +68,7 @@ public class ContextAssembler {
         this.tokenBudgetAllocator = null;
         this.retrievalStrategy = null;
         this.dataRedactor = null;
+        this.episodicMemory = null;
         this.documentRetriever = null;
         this.sessionKnowledgeBaseRepository = null;
         this.documentRepository = null;
@@ -77,10 +82,10 @@ public class ContextAssembler {
                             MemoryRetrievalStrategy retrievalStrategy,
                             @Nullable DataRedactor dataRedactor) {
         this(config, hybridRetriever, workingMemory, tokenBudgetAllocator, retrievalStrategy, dataRedactor,
-                null, null, null);
+                null, null, null, null);
     }
 
-    /** 完整版构造器（注入记忆系统 + 可选知识库检索依赖）。 */
+    /** 完整版构造器（注入记忆系统 + 可选知识库检索 + 可选 L2 情景记忆依赖）。 */
     public ContextAssembler(AgentConfigProperties config,
                             HybridRetriever hybridRetriever,
                             WorkingMemory workingMemory,
@@ -89,13 +94,15 @@ public class ContextAssembler {
                             @Nullable DataRedactor dataRedactor,
                             @Nullable DocumentRetriever documentRetriever,
                             @Nullable SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
-                            @Nullable DocumentRepository documentRepository) {
+                            @Nullable DocumentRepository documentRepository,
+                            @Nullable EpisodicMemory episodicMemory) {
         this.config = config;
         this.hybridRetriever = hybridRetriever;
         this.workingMemory = workingMemory;
         this.tokenBudgetAllocator = tokenBudgetAllocator;
         this.retrievalStrategy = retrievalStrategy;
         this.dataRedactor = dataRedactor;
+        this.episodicMemory = episodicMemory;
         this.documentRetriever = documentRetriever;
         this.sessionKnowledgeBaseRepository = sessionKnowledgeBaseRepository;
         this.documentRepository = documentRepository;
@@ -147,6 +154,10 @@ public class ContextAssembler {
             // 3. 获取会话槽位（排除当前轮用户消息，避免与 state.goal() 重复）
             var slots = safeGetSessionHistory(workingMemory, state.sessionId(), state.goal());
 
+            // 3.1 L2：跨会话相关片段（语义检索，排除当前 sessionId）
+            var crossSessionFragments = safeSearchCrossSession(
+                    episodicMemory, state.goal(), state.sessionId());
+
             // 4. 动态预算分配（降级容错）
             int conversationTurns = countConversationTurns(slots);
             var budgetAllocation = safeAllocate(tokenBudgetAllocator, conversationTurns, topScore);
@@ -154,6 +165,10 @@ public class ContextAssembler {
             // 5. 按预算截断
             var truncatedMemories = truncateByBudget(retrievalResults, budgetAllocation.knowledgeEntityBudget());
             var truncatedSlots = truncateSlotsByBudget(slots, budgetAllocation.currentSessionBudget());
+            // 5.1 跨会话片段格式化并按预算截断
+            var formattedCrossSession = truncateStringsByBudget(
+                    formatCrossSessionFragments(crossSessionFragments),
+                    budgetAllocation.crossSessionBudget());
 
             // 6. 将检索上下文注入 L1（ReasoningSlot），并格式化检索结果
             slots = injectRetrievalReasoningSlots(workingMemory, state.sessionId(), truncatedMemories, procedureHintSlot, slots);
@@ -167,7 +182,8 @@ public class ContextAssembler {
 
             // 8. 构建 Prompt
             String systemPrompt = buildSystemPrompt(state.phase());
-            String userPrompt = buildEnhancedUserPrompt(state, formattedMemories, kbSnippets, truncatedSlots);
+            String userPrompt = buildEnhancedUserPrompt(state, formattedMemories, kbSnippets,
+                    formattedCrossSession, truncatedSlots);
 
             var context = new AssembledContext(
                     systemPrompt, userPrompt, formattedMemories,
@@ -292,6 +308,36 @@ public class ContextAssembler {
             }
         }
         return List.copyOf(result);
+    }
+
+    /**
+     * 安全执行 L2 跨会话检索，排除当前 sessionId，异常时返回空列表。
+     *
+     * <p>L2 仅负责跨会话的语义相关片段检索，当前会话历史由 L1 独占提供。</p>
+     */
+    private List<MessageRecord> safeSearchCrossSession(
+            @Nullable EpisodicMemory episodicMemory, String query, String sessionId) {
+        if (episodicMemory == null || query == null || query.isBlank()) {
+            return List.of();
+        }
+        try {
+            return episodicMemory.searchExcludingSession(query, sessionId, 5);
+        } catch (Exception e) {
+            log.warn("L2 跨会话检索降级: sessionId={}, error={}", sessionId, e.getMessage());
+            return List.of();
+        }
+    }
+
+    /**
+     * 格式化跨会话检索结果为字符串列表。
+     *
+     * <p>每条结果格式为 {@code [角色] 有效内容}，便于注入到用户提示词中。</p>
+     */
+    List<String> formatCrossSessionFragments(List<MessageRecord> fragments) {
+        if (fragments == null || fragments.isEmpty()) return List.of();
+        return fragments.stream()
+                .map(msg -> "[%s] %s".formatted(msg.role(), msg.effectiveContent()))
+                .toList();
     }
 
     /** 安全执行预算分配，异常时使用静态分配降级。 */
@@ -699,11 +745,12 @@ public class ContextAssembler {
 
     /**
      * 构建增强版 User Prompt（结构化内容区域）。
-     * 顺序：用户请求 → 相关记忆 → 对话历史 → 工具结果 → 推理上下文 → 已执行步骤 → 预算剩余
+     * 顺序：用户请求 → 相关记忆 → 知识库片段 → 跨会话参考 → 对话历史 → 工具结果 → 推理上下文 → 已执行步骤 → 预算剩余
      */
     String buildEnhancedUserPrompt(AgentState state,
                                    List<String> memories,
                                    List<String> knowledgeBaseSnippets,
+                                   List<String> crossSessionFragments,
                                    List<WorkingMemorySlot> slots) {
         var sb = new StringBuilder();
 
@@ -723,6 +770,14 @@ public class ContextAssembler {
             sb.append("\n知识库片段:\n");
             for (var snippet : knowledgeBaseSnippets) {
                 sb.append("  - ").append(snippet).append("\n");
+            }
+        }
+
+        // 2.6 跨会话参考（L2 情景记忆跨会话检索结果，条件性区域）
+        if (crossSessionFragments != null && !crossSessionFragments.isEmpty()) {
+            sb.append("\n跨会话参考:\n");
+            for (var fragment : crossSessionFragments) {
+                sb.append("  - ").append(fragment).append("\n");
             }
         }
 
