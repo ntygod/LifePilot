@@ -371,6 +371,19 @@ lifepilot:
       speed: 1.0
       output-format: mp3
       max-text-length: 4096
+  marketplace:
+    enabled: true
+    index-sources:
+      - "https://raw.githubusercontent.com/lifepilot-skills/index/main/index.json"
+    cache-ttl-hours: 24
+    auto-check-updates: true
+    security:
+      block-high-risk: false
+      injection-patterns:
+        - "(?i)ignore\\s+(all\\s+)?previous\\s+instructions?"
+        - "(?i)ignore\\s+(all\\s+)?prior"
+        - "(?i)disregard\\s+(all\\s+)?(above|previous)"
+        - "(?i)forget\\s+(all\\s+)?previous"
   mcp:
     enabled: true
     server:

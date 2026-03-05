@@ -725,3 +725,57 @@ export interface UploadFileItem {
   /** 错误信息（仅 status === 'error' 时有值） */
   errorMessage?: string
 }
+
+
+// ========== 模块 25: Skill 市场类型 ==========
+
+/** Skill 市场包元数据 */
+export interface SkillPackage {
+  id: string
+  name: string
+  description: string
+  version: string
+  author: string
+  repoUrl: string
+  filePath: string
+  tags: string[]
+  minLifepilotVersion: string
+  createdAt: string
+  updatedAt: string
+  downloads: number
+  verified: boolean
+  /** 已安装的版本（未安装时为 undefined） */
+  installedVersion?: string
+  /** 是否已安装 */
+  installed: boolean
+}
+
+/** 安全发现条目 */
+export interface SecurityFinding {
+  level: 'LOW' | 'MEDIUM' | 'HIGH'
+  category: string
+  description: string
+}
+
+/** 安全扫描报告 */
+export interface SecurityReport {
+  findings: SecurityFinding[]
+  overallRisk: 'LOW' | 'MEDIUM' | 'HIGH'
+}
+
+/** 安装结果 */
+export interface InstallResult {
+  success: boolean
+  skillId?: string
+  securityReport?: SecurityReport
+  errorMessage?: string
+  requiresConfirmation: boolean
+}
+
+/** 更新信息 */
+export interface UpdateInfo {
+  packageId: string
+  name: string
+  installedVersion: string
+  latestVersion: string
+}

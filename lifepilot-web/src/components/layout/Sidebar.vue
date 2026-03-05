@@ -18,7 +18,8 @@ import {
   X,
   Menu,
   Pencil,
-  Trash2
+  Trash2,
+  ShoppingBag
 } from 'lucide-vue-next'
 
 interface Props {
@@ -47,7 +48,7 @@ onMounted(() => {
   // 根据当前路由自动展开对应的分组
   if (route.path.startsWith('/agents') || route.path.startsWith('/workflows') || 
       route.path.startsWith('/skills') || route.path.startsWith('/tools') || 
-      route.path.startsWith('/mcp-servers')) {
+      route.path.startsWith('/mcp-servers') || route.path.startsWith('/marketplace')) {
     expandedGroups.value.add('agents')
   }
   if (route.path.startsWith('/analytics')) {
@@ -136,6 +137,7 @@ const navItems = [
       { label: 'Agents', path: '/agents', icon: Bot },
       { label: '工作流', path: '/workflows', icon: Workflow },
       { label: 'Skills', path: '/skills', icon: Puzzle },
+      { label: 'Skill 市场', path: '/marketplace', icon: ShoppingBag },
       { label: '工具', path: '/tools', icon: Wrench },
       { label: 'MCP Servers', path: '/mcp-servers', icon: Server }
     ]
