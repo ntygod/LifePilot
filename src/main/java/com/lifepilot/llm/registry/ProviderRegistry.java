@@ -8,13 +8,8 @@ import com.lifepilot.llm.config.ProviderConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Comparator;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 
 /**
  * Provider 注册表。
@@ -84,7 +79,7 @@ public class ProviderRegistry {
                 .filter(ProviderConfig::enabled)
                 .filter(c -> c.supportsScene(scene))
                 .sorted(Comparator.comparingInt(ProviderConfig::priority))
-                .collect(Collectors.toUnmodifiableList());
+                .toList();
     }
 
     /**
@@ -133,6 +128,14 @@ public class ProviderRegistry {
      */
     public Map<String, Boolean> healthCheckAll() {
         return healthChecker.checkAll(Map.copyOf(adapters));
+    }
+
+    public boolean healthCheck(String providerId) {
+        var adapter = adapters.get(providerId);
+        if (adapter == null) {
+            throw new IllegalArgumentException("Provider 未注册: id=" + providerId);
+        }
+        return adapter.healthCheck();
     }
 
     /**

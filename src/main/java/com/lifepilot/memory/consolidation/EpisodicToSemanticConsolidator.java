@@ -8,9 +8,9 @@ import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.memory.episodic.MessageRecord;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
-import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.Duration;
@@ -42,8 +42,7 @@ public class EpisodicToSemanticConsolidator {
 
     private final EpisodicMemory episodicMemory;
     private final SemanticMemory semanticMemory;
-    @Nullable
-    private final KnowledgeExtractionPipeline extractionPipeline;
+    private final ObjectProvider<KnowledgeExtractionPipeline> extractionPipelineProvider;
     private final JdbcTemplate jdbcTemplate;
     private final MemoryProperties properties;
 
@@ -58,16 +57,15 @@ public class EpisodicToSemanticConsolidator {
      */
     public EpisodicToSemanticConsolidator(EpisodicMemory episodicMemory,
                                           SemanticMemory semanticMemory,
-                                          @Nullable KnowledgeExtractionPipeline extractionPipeline,
+                                          ObjectProvider<KnowledgeExtractionPipeline> extractionPipelineProvider,
                                           JdbcTemplate jdbcTemplate,
                                           MemoryProperties properties) {
         this.episodicMemory = episodicMemory;
         this.semanticMemory = semanticMemory;
-        this.extractionPipeline = extractionPipeline;
+        this.extractionPipelineProvider = extractionPipelineProvider;
         this.jdbcTemplate = jdbcTemplate;
         this.properties = properties;
-        log.info("EpisodicToSemanticConsolidator 初始化完成: extractionPipeline={}",
-                extractionPipeline != null ? "可用" : "不可用");
+        log.info("EpisodicToSemanticConsolidator 初始化完成（知识提取管线按需获取）");
     }
 
     /**
@@ -203,6 +201,7 @@ public class EpisodicToSemanticConsolidator {
      * @return 触发提取的对话数量
      */
     private int triggerKnowledgeExtraction(List<ConversationRecord> conversations) {
+        var extractionPipeline = extractionPipelineProvider.getIfAvailable();
         if (extractionPipeline == null) {
             log.debug("语义巩固: KnowledgeExtractionPipeline 不可用, 跳过知识提取");
             return 0;

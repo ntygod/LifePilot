@@ -176,6 +176,38 @@ public class LlmRouter {
     }
 
     /**
+     * ChatClient 附带 Provider 元信息（用于可观测性 / trace 记录）。
+     *
+     * @param client     ChatClient 实例
+     * @param providerId Provider ID
+     * @param modelId    模型 ID
+     */
+    public record ChatClientInfo(ChatClient client, String providerId, String modelId) {}
+
+    /**
+     * 获取支持流式的最高优先级 Provider 的 ChatClient 及元信息。
+     *
+     * @param scene 场景名称
+     * @return ChatClient + providerId + modelId
+     * @throws LlmUnavailableException 无可用流式 Provider
+     */
+    public ChatClientInfo getChatClientWithInfo(String scene) {
+        var candidates = findAvailableCandidates(scene, ProviderCapability.CHAT)
+                .stream()
+                .filter(ProviderConfig::supportsStreaming)
+                .toList();
+        for (var config : candidates) {
+            var adapter = providerRegistry.getAdapter(config.id());
+            var client = adapter.chatClient();
+            if (client.isPresent()) {
+                return new ChatClientInfo(client.get(), config.id(), config.modelName());
+            }
+        }
+        throw new LlmUnavailableException(
+                "无可用流式 ChatClient: scene=" + scene, scene, List.of());
+    }
+
+    /**
      * 执行文本嵌入，使用独立 EMBEDDING 熔断器隔离。
      *
      * @param text 待嵌入文本
@@ -230,6 +262,20 @@ public class LlmRouter {
      * @throws LlmUnavailableException 无可用 STREAMING Provider
      */
     public Flux<String> stream(String scene, String prompt) {
+        return streamWithInfo(scene, prompt).stream();
+    }
+
+    /**
+     * 执行流式文本生成，并返回附带 Provider/模型信息的响应包装。
+     *
+     * <p>用于 SSE/流式通道补齐可观测性数据（例如 modelId）。</p>
+     *
+     * @param scene  场景名称
+     * @param prompt 提示词
+     * @return 流式响应（含 providerId/modelId）
+     * @throws LlmUnavailableException 无可用 STREAMING Provider
+     */
+    public StreamingLlmResponse streamWithInfo(String scene, String prompt) {
         var candidates = findAvailableCandidates(scene, ProviderCapability.CHAT)
                 .stream()
                 .filter(ProviderConfig::supportsStreaming)
@@ -244,7 +290,7 @@ public class LlmRouter {
         var config = candidates.getFirst();
         var adapter = providerRegistry.getAdapter(config.id());
         log.debug("流式调用: scene={}, provider={}", scene, config.id());
-        return adapter.stream(prompt);
+        return new StreamingLlmResponse(adapter.stream(prompt), config.id(), config.modelName());
     }
 
     // --- 内部方法 ---

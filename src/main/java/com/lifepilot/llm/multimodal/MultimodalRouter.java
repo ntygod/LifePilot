@@ -13,6 +13,7 @@ import com.lifepilot.llm.ExponentialBackoff;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.LlmUnavailableException;
+import com.lifepilot.llm.StreamingLlmResponse;
 import com.lifepilot.llm.circuit.CircuitBreakerManager;
 import com.lifepilot.llm.config.ProviderCapability;
 import com.lifepilot.llm.registry.ProviderRegistry;
@@ -166,6 +167,15 @@ public class MultimodalRouter {
      * @throws LlmUnavailableException 无可用 VISION Provider
      */
     public Flux<String> stream(MultimodalRequest request) {
+        return streamWithInfo(request).stream();
+    }
+
+    /**
+     * 执行多模态流式调用（返回附带 Provider/模型信息的响应包装）。
+     *
+     * <p>用于 SSE/流式通道补齐可观测性数据（例如 modelId）。</p>
+     */
+    public StreamingLlmResponse streamWithInfo(MultimodalRequest request) {
         // 1. 视频预处理
         var preprocessed = preprocessVideo(request);
         String text = preprocessed.text();
@@ -176,7 +186,7 @@ public class MultimodalRouter {
                 .anyMatch(mc -> mc.mimeType().startsWith("image/"));
         if (!hasImages) {
             log.debug("无图片附件，委托 LlmRouter.stream: scene={}", request.scene());
-            return llmRouter.stream(request.scene(), text);
+            return llmRouter.streamWithInfo(request.scene(), text);
         }
 
         // 3. 有图片 → 校验 + 预处理
@@ -203,7 +213,7 @@ public class MultimodalRouter {
         var config = candidates.getFirst();
         var adapter = providerRegistry.getAdapter(config.id());
         log.debug("多模态流式调用: scene={}, provider={}", request.scene(), config.id());
-        return adapter.streamWithMedia(text, processedImages);
+        return new StreamingLlmResponse(adapter.streamWithMedia(text, processedImages), config.id(), config.modelName());
     }
 
     // --- 内部方法 ---
@@ -216,7 +226,8 @@ public class MultimodalRouter {
      * @return 预处理后的请求（text 可能追加转录文本，mediaList 可能替换视频为关键帧）
      */
     private MultimodalRequest preprocessVideo(MultimodalRequest request) {
-        if (!request.hasVideos() || videoProcessor == null) {
+        VideoProcessor vp = this.videoProcessor;
+        if (!request.hasVideos() || vp == null) {
             return request;
         }
 
@@ -231,7 +242,7 @@ public class MultimodalRouter {
         }
 
         log.debug("开始视频预处理: fileName={}, 大小={}B", videoContent.fileName(), videoContent.sizeBytes());
-        VideoProcessResult result = videoProcessor.process(videoContent.data(), videoContent.mimeType());
+        VideoProcessResult result = vp.process(videoContent.data(), videoContent.mimeType());
 
         // 构建新的 mediaList：原始非视频项 + 关键帧
         List<MediaContent> nonVideoItems = request.mediaList().stream()

@@ -17,6 +17,7 @@ import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.semantic.ConflictDetector;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.VersionMerger;
+import com.lifepilot.memory.trace.MemoryEventRecorder;
 import com.lifepilot.memory.working.DefaultSlotEvictionPolicy;
 import com.lifepilot.memory.working.SlotEvictionPolicy;
 import com.lifepilot.memory.working.TokenBudgetAllocator;
@@ -99,9 +100,10 @@ public class MemoryAutoConfiguration {
             MemoryProperties properties,
             EpisodicMemory episodicMemory,
             TokenBudgetAllocator tokenBudgetAllocator,
-            SlotEvictionPolicy slotEvictionPolicy) {
+            SlotEvictionPolicy slotEvictionPolicy,
+            MemoryEventRecorder memoryEventRecorder) {
         log.info("记忆系统: 注册 WorkingMemory, Token 预算={}", properties.getWorkingMemoryTokenBudget());
-        return new WorkingMemory(properties, episodicMemory, tokenBudgetAllocator, slotEvictionPolicy);
+        return new WorkingMemory(properties, episodicMemory, tokenBudgetAllocator, slotEvictionPolicy, memoryEventRecorder);
     }
 
     @Bean
@@ -133,12 +135,18 @@ public class MemoryAutoConfiguration {
 
     // --- 向量数据库 ---
 
+    @Bean
+    @ConditionalOnMissingBean
+    public SqliteVecInitializer sqliteVecInitializer() {
+        return new SqliteVecInitializer();
+    }
+
     /**
      * 向量数据库 DataSource — 独立于主数据库，用于 sqlite-vec 向量索引。
      */
     @Bean
     @ConditionalOnMissingBean(name = "vectorDataSource")
-    public DataSource vectorDataSource(MemoryProperties properties) {
+    public DataSource vectorDataSource(MemoryProperties properties, SqliteVecInitializer sqliteVecInitializer) {
         String url = properties.getVectorDbUrl();
         if (!url.contains(":memory:") && !url.contains("mode=memory")) {
             try {
@@ -155,10 +163,13 @@ public class MemoryAutoConfiguration {
         config.setJournalMode(SQLiteConfig.JournalMode.WAL);
         config.setSynchronous(SQLiteConfig.SynchronousMode.NORMAL);
         config.setBusyTimeout(5000);
+        // 允许在该 DataSource 上加载原生扩展（例如 sqlite-vec）
+        config.enableLoadExtension(true);
         var dataSource = new SQLiteDataSource(config);
         dataSource.setUrl(url);
         log.info("记忆系统: 向量数据库初始化完成, url={}", url);
-        return dataSource;
+        // 关键：sqlite-vec 是“按连接加载”的，这里包一层确保每条连接都可用
+        return new SqliteVecDataSource(dataSource, sqliteVecInitializer, "vector");
     }
 
     /**
@@ -168,6 +179,15 @@ public class MemoryAutoConfiguration {
     @ConditionalOnMissingBean(name = "vectorJdbcTemplate")
     public JdbcTemplate vectorJdbcTemplate(@Qualifier("vectorDataSource") DataSource vectorDataSource) {
         return new JdbcTemplate(Objects.requireNonNull(vectorDataSource, "vectorDataSource"));
+    }
+
+    // --- 记忆事件追踪 ---
+
+    @Bean
+    @ConditionalOnMissingBean
+    public MemoryEventRecorder memoryEventRecorder(JdbcTemplate jdbcTemplate) {
+        log.info("记忆系统: 注册 MemoryEventRecorder");
+        return new MemoryEventRecorder(jdbcTemplate);
     }
 
     // --- L3 语义记忆 ---
@@ -285,13 +305,12 @@ public class MemoryAutoConfiguration {
     public EpisodicToSemanticConsolidator episodicToSemanticConsolidator(
             EpisodicMemory episodicMemory,
             SemanticMemory semanticMemory,
-            @Nullable KnowledgeExtractionPipeline extractionPipeline,
+            ObjectProvider<KnowledgeExtractionPipeline> extractionPipelineProvider,
             JdbcTemplate jdbcTemplate,
             MemoryProperties properties) {
-        log.info("记忆系统: 注册 EpisodicToSemanticConsolidator, extractionPipeline={}",
-                extractionPipeline != null ? "可用" : "不可用");
+        log.info("记忆系统: 注册 EpisodicToSemanticConsolidator（知识提取管线按需获取）");
         return new EpisodicToSemanticConsolidator(episodicMemory, semanticMemory,
-                extractionPipeline, jdbcTemplate, properties);
+                extractionPipelineProvider, jdbcTemplate, properties);
     }
 
     @Bean

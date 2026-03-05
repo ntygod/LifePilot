@@ -11,6 +11,8 @@ public enum ProviderType {
     OLLAMA("ollama"),
     /** DeepSeek API */
     DEEPSEEK("deepseek"),
+    /** HuggingFace Text Embeddings Inference（TEI） */
+    TEI("tei"),
     /** 百度文心一言 API */
     WENXIN("wenxin"),
     /** 阿里通义千问 API */
@@ -38,11 +40,11 @@ public enum ProviderType {
     /**
      * 是否使用 OpenAI 兼容 API。
      *
-     * @return DEEPSEEK、QWEN、GLM、OPENAI_COMPATIBLE 返回 true
+     * @return DEEPSEEK、QWEN、GLM、TEI、OPENAI_COMPATIBLE 返回 true
      */
     public boolean isOpenAiCompatible() {
         return switch (this) {
-            case DEEPSEEK, QWEN, GLM, OPENAI_COMPATIBLE -> true;
+            case DEEPSEEK, QWEN, GLM, TEI, OPENAI_COMPATIBLE -> true;
             case OLLAMA, WENXIN -> false;
         };
     }

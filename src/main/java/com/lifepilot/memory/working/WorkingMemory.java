@@ -5,6 +5,8 @@ import com.lifepilot.memory.episodic.CompressionLevel;
 import com.lifepilot.memory.episodic.ConversationRecord;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.memory.episodic.MessageRecord;
+import com.lifepilot.memory.trace.MemoryEvent;
+import com.lifepilot.memory.trace.MemoryEventRecorder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -32,6 +34,7 @@ public class WorkingMemory {
     private final EpisodicMemory episodicMemory;
     private final TokenBudgetAllocator tokenBudgetAllocator;
     private final SlotEvictionPolicy slotEvictionPolicy;
+    private final MemoryEventRecorder memoryEventRecorder;
 
     /** 会话槽位列表。 */
     private final ConcurrentHashMap<String, List<WorkingMemorySlot>> sessions = new ConcurrentHashMap<>();
@@ -48,11 +51,13 @@ public class WorkingMemory {
     public WorkingMemory(MemoryProperties properties,
                          EpisodicMemory episodicMemory,
                          TokenBudgetAllocator tokenBudgetAllocator,
-                         SlotEvictionPolicy slotEvictionPolicy) {
+                         SlotEvictionPolicy slotEvictionPolicy,
+                         MemoryEventRecorder memoryEventRecorder) {
         this.properties = properties;
         this.episodicMemory = episodicMemory;
         this.tokenBudgetAllocator = tokenBudgetAllocator;
         this.slotEvictionPolicy = slotEvictionPolicy;
+        this.memoryEventRecorder = memoryEventRecorder;
     }
 
     /**
@@ -61,7 +66,10 @@ public class WorkingMemory {
      * <p>在未显式提供策略实例时，使用默认策略。</p>
      */
     public WorkingMemory(MemoryProperties properties, EpisodicMemory episodicMemory) {
-        this(properties, episodicMemory, new TokenBudgetAllocator(properties), new DefaultSlotEvictionPolicy());
+        this(properties, episodicMemory,
+                new TokenBudgetAllocator(properties),
+                new DefaultSlotEvictionPolicy(),
+                null);
     }
 
     /**
@@ -77,6 +85,28 @@ public class WorkingMemory {
         slots.add(slot);
         tokenUsage.compute(sessionId, (k, v) -> (v == null ? 0 : v) + slot.tokenCount());
         lastActivity.put(sessionId, Instant.now());
+
+        // 记录工作记忆追加事件（观测性失败不影响主流程）
+        if (memoryEventRecorder != null) {
+            try {
+                MemoryEvent event = MemoryEvent.create(
+                        "FORMATION",
+                        "L1",
+                        sessionId,
+                        null,
+                        null,
+                        "L1_APPEND",
+                        "Append slot to working memory: " + slot.getClass().getSimpleName(),
+                        java.util.Map.of(
+                                "tokenCount", slot.tokenCount(),
+                                "importance", slot.importance()
+                        )
+                );
+                memoryEventRecorder.record(event);
+            } catch (Exception ignored) {
+                // ignore
+            }
+        }
 
         // 超预算时执行淘汰（通过策略接口 + Token 预算分配器）
         int totalBudget = properties.getWorkingMemoryTokenBudget();
@@ -129,16 +159,26 @@ public class WorkingMemory {
     }
 
     /**
-     * 将会话的 ConversationSlot 转换为 ConversationRecord 并持久化到 L2 情景记忆，然后清除会话。
+     * 将会话的 {@link ConversationSlot} 集合转换为 {@link ConversationRecord} 并持久化到 L2 情景记忆，然后清除会话。
      *
-     * <p>该方法用于会话「真正结束」或被 idle 清理的场景，而不是每轮对话结束。</p>
+     * <p>
+     * 这是新推荐的统一入口：需要在调用方明确传入本次会话的 {@code goal}，
+     * 以便在 L2 中区分不同类型的意图与任务。
+     * </p>
+     *
+     * <p>
+     * 该方法既可用于「会话真正结束」的显式触发场景（例如前端点击结束会话），
+     * 也可被空闲/过期清理任务复用。
+     * </p>
      *
      * @param sessionId 会话 ID
+     * @param goal      会话目标/意图摘要（允许为 {@code null} 或空串，此时使用降级占位）
+     * @return 持久化后的 {@link ConversationRecord}，如无可持久化消息则返回 {@code null}
      */
-    public void flush(String sessionId) {
+    public ConversationRecord flush(String sessionId, String goal) {
         var slots = sessions.get(sessionId);
         if (slots == null || slots.isEmpty()) {
-            return;
+            return null;
         }
 
         var now = Instant.now();
@@ -163,18 +203,74 @@ public class WorkingMemory {
             }
         }
 
+        ConversationRecord record = null;
         if (!messages.isEmpty()) {
-            var record = new ConversationRecord(
-                    conversationId, sessionId, "会话记录", null,
+            String normalizedGoal = (goal == null || goal.isBlank())
+                    ? "会话记录"
+                    : goal;
+            record = new ConversationRecord(
+                    conversationId, sessionId, normalizedGoal, null,
                     messages, now, now);
             episodicMemory.save(record);
             log.info("Flush 会话到 L2: sessionId={}, 消息数={}", sessionId, messages.size());
+
+            if (memoryEventRecorder != null) {
+                try {
+                    MemoryEvent event = MemoryEvent.create(
+                            "FORMATION",
+                            "L2",
+                            sessionId,
+                            conversationId,
+                            null,
+                            "L1_FLUSH",
+                            "Flush working memory conversation to L2",
+                            java.util.Map.of(
+                                    "messageCount", messages.size(),
+                                    "goal", normalizedGoal
+                            )
+                    );
+                    memoryEventRecorder.record(event);
+                } catch (Exception ignored) {
+                    // ignore
+                }
+            }
         }
 
         // 清除会话
         sessions.remove(sessionId);
         tokenUsage.remove(sessionId);
         lastActivity.remove(sessionId);
+
+        return record;
+    }
+
+    /**
+     * 兼容旧调用方的 flush 重载。
+     *
+     * <p>
+     * 仍然支持只传入 {@code sessionId} 的用法，内部使用默认 goal。
+     * 建议新的调用路径优先使用 {@link #flush(String, String)}。
+     * </p>
+     *
+     * @param sessionId 会话 ID
+     */
+    public void flush(String sessionId) {
+        flush(sessionId, "会话记录");
+    }
+
+    /**
+     * 会话结束高层封装方法。
+     *
+     * <p>
+     * 调用方应在「会话真正结束」时调用此方法，而不是依赖空闲/过期清理任务。
+     * </p>
+     *
+     * @param sessionId 会话 ID
+     * @param goal      会话目标/意图摘要
+     * @return 持久化后的 {@link ConversationRecord}，如无可持久化消息则返回 {@code null}
+     */
+    public ConversationRecord endSession(String sessionId, String goal) {
+        return flush(sessionId, goal);
     }
 
     /**

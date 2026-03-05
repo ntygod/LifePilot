@@ -110,10 +110,9 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
                     "Provider 不支持 STREAMING 能力: id=" + config.id());
         }
         return chatModel.stream(new Prompt(prompt))
-                .map(response -> {
+                .mapNotNull(response -> {
                     var result = response.getResult();
-                    return result != null && result.getOutput() != null
-                            ? result.getOutput().getText() : "";
+                    return result.getOutput().getText();
                 })
                 .filter(text -> text != null && !text.isEmpty());
     }
@@ -145,8 +144,26 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
     @Override
     public boolean healthCheck() {
         try {
-            String response = chatModel.call("ping");
-            return response != null && !response.isBlank();
+            // 如果 Provider 有 CHAT 能力，使用 chatModel 进行健康检查
+            if (config.hasCapability(ProviderCapability.CHAT)) {
+                ChatResponse response = chatModel.call(new Prompt("ping"));
+                if (response == null || response.getResult() == null
+                        || response.getResult().getOutput() == null) {
+                    return false;
+                }
+                String text = response.getResult().getOutput().getText();
+                return text != null && !text.isBlank();
+            }
+            // 如果 Provider 只有 EMBEDDING 能力（纯 embedding Provider），使用 embeddingModel 进行健康检查
+            else if (config.hasCapability(ProviderCapability.EMBEDDING) && embeddingModel != null) {
+                float[] embedding = embeddingModel.embed("ping");
+                return embedding != null && embedding.length > 0;
+            }
+            // 既没有 CHAT 也没有 EMBEDDING 能力，视为不健康
+            else {
+                log.debug("Provider 既没有 CHAT 也没有 EMBEDDING 能力: id={}", config.id());
+                return false;
+            }
         } catch (Exception e) {
             // 连接失败是常见情况，使用 DEBUG 级别避免过多日志
             // 仅在 ProviderHealthChecker 中记录汇总信息
@@ -212,10 +229,9 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
         UserMessage userMessage = builder.build();
 
         return chatModel.stream(new Prompt(userMessage))
-                .map(response -> {
+                .mapNotNull(response -> {
                     var result = response.getResult();
-                    return result != null && result.getOutput() != null
-                            ? result.getOutput().getText() : "";
+                    return result.getOutput().getText();
                 })
                 .filter(text -> text != null && !text.isEmpty());
     }

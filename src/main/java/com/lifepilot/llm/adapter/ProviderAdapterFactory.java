@@ -11,6 +11,8 @@ import org.springframework.ai.ollama.OllamaChatModel;
 import org.springframework.ai.ollama.OllamaEmbeddingModel;
 import org.springframework.ai.ollama.api.OllamaApi;
 import org.springframework.ai.openai.OpenAiChatModel;
+import org.springframework.ai.openai.OpenAiChatOptions;
+import org.springframework.ai.openai.OpenAiEmbeddingModel;
 import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.lang.Nullable;
 
@@ -62,7 +64,7 @@ public class ProviderAdapterFactory {
     public SpringAiProviderAdapter create(ProviderConfig config) {
         return switch (config.type()) {
             case OLLAMA -> createOllamaAdapter(config);
-            case DEEPSEEK, QWEN, GLM, OPENAI_COMPATIBLE -> createOpenAiCompatibleAdapter(config);
+            case DEEPSEEK, QWEN, GLM, TEI, OPENAI_COMPATIBLE -> createOpenAiCompatibleAdapter(config);
             case WENXIN -> throw new UnsupportedOperationException(
                     "WENXIN 适配器尚未实现，留给 llm-router-advanced");
         };
@@ -102,19 +104,21 @@ public class ProviderAdapterFactory {
     }
 
     /**
-     * 创建 OpenAI 兼容适配器（DeepSeek / Qwen / GLM / OpenAI Compatible）。
+     * 创建 OpenAI 兼容适配器（DeepSeek / Qwen / GLM / TEI / OpenAI Compatible）。
      */
     private SpringAiProviderAdapter createOpenAiCompatibleAdapter(ProviderConfig config) {
         var openAiApiBuilder = OpenAiApi.builder()
                 .baseUrl(config.apiUrl());
 
-        if (config.apiKey() != null && !config.apiKey().isBlank()) {
-            openAiApiBuilder.apiKey(config.apiKey());
+        // 避免潜在的 NPE，先缓存 apiKey
+        String apiKey = config.apiKey();
+        if (apiKey != null && !apiKey.isBlank()) {
+            openAiApiBuilder.apiKey(apiKey);
         }
 
         var openAiApi = openAiApiBuilder.build();
 
-        var chatOptions = org.springframework.ai.openai.OpenAiChatOptions.builder()
+        var chatOptions = OpenAiChatOptions.builder()
                 .model(config.modelName())
                 .build();
 
@@ -123,8 +127,15 @@ public class ProviderAdapterFactory {
                 .defaultOptions(chatOptions)
                 .build();
 
-        log.info("创建 OpenAI 兼容适配器: id={}, type={}, model={}",
-                config.id(), config.type(), config.modelName());
-        return new SpringAiProviderAdapter(config, chatModel, null, defaultAdvisors);
+        // 仅在具备 EMBEDDING 能力时创建 EmbeddingModel
+        EmbeddingModel embeddingModel = null;
+        if (config.hasCapability(ProviderCapability.EMBEDDING)) {
+            embeddingModel = new OpenAiEmbeddingModel(openAiApi);
+        }
+
+        log.info("创建 OpenAI 兼容适配器: id={}, type={}, model={}, hasEmbedding={}",
+                config.id(), config.type(), config.modelName(),
+                embeddingModel != null);
+        return new SpringAiProviderAdapter(config, chatModel, embeddingModel, defaultAdvisors);
     }
 }
