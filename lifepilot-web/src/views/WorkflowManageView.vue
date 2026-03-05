@@ -178,7 +178,7 @@ function formatDuration(start?: string, end?: string): string {
             v-else-if="store.list.length === 0"
             icon="⚙️"
             title="暂无工作流"
-            description="通过 YAML 定义你的第一个自动化流程。你可以先从"手动触发 + 工具步骤"的模板开始。"
+            description="通过 YAML 定义你的第一个自动化流程。你可以先从「手动触发 + 工具步骤」的模板开始。"
             action-label="新建工作流"
             :show-action="true"
             @action="openCreate"
