@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import SettingSection from '@/components/settings/SettingSection.vue'
+import { Badge } from '@/components/ui/badge'
 import { SHORTCUT_DEFINITIONS } from '@/composables/useKeyboardShortcuts'
 
 // 按 category 分组快捷键定义
@@ -34,13 +35,10 @@ const groupedShortcuts = computed(() => {
               >
                 <span class="text-sm text-foreground">{{ item.name }}</span>
                 <div class="flex items-center gap-1">
-                  <kbd
-                    v-for="(key, index) in item.keys"
-                    :key="index"
-                    class="px-2 py-1 rounded bg-muted text-xs font-mono text-muted-foreground"
-                  >
-                    {{ key }}
-                  </kbd>
+                  <template v-for="(key, index) in item.keys" :key="index">
+                    <span v-if="index > 0" class="text-muted-foreground">+</span>
+                    <Badge variant="outline" class="font-mono text-xs px-1.5 py-0.5">{{ key }}</Badge>
+                  </template>
                 </div>
               </div>
             </div>
