@@ -882,6 +882,26 @@ public class AgentLoop {
             params.put("_callerDepth", state.depth());
             params.put("_callerTraceId", state.traceId());
             params.put("_callerSessionId", state.sessionId());
+
+            // 流式路径：在 handoff 工具调用前发送 agent_delegated 进度事件
+            if (sseManager != null && streamId != null && turnId != null) {
+                String agentId = toolId.substring(HandoffToolFactory.TOOL_ID_PREFIX.length());
+                String task = params.getOrDefault("task", "").toString();
+                sendReasoningEvent(
+                        sseManager,
+                        streamId,
+                        sessionId,
+                        turnId,
+                        SseEventType.AGENT_DELEGATED,
+                        "委托给 Agent: " + agentId,
+                        "正在将任务委托给专家 Agent 处理。",
+                        toolId,
+                        Map.of(
+                                "agentId", agentId,
+                                "task", task
+                        )
+                );
+            }
         }
 
         String toolInputJson;
