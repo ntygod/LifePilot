@@ -27,6 +27,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 完整版上下文组装器 — 集成记忆检索、会话上下文、动态预算分配。
@@ -64,6 +65,9 @@ public class ContextAssembler {
     @Nullable private final DocumentRetriever documentRetriever;
     @Nullable private final SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository;
     @Nullable private final DocumentRepository documentRepository;
+
+    /** 请求级检索缓存 — 同一 traceId + query + topK 组合只执行一次实际检索。 */
+    private final ConcurrentHashMap<String, List<RetrievalResult>> retrievalCache = new ConcurrentHashMap<>();
 
     /** 基础版构造器（向后兼容，记忆字段为 null）。 */
     public ContextAssembler(AgentConfigProperties config) {
@@ -145,8 +149,8 @@ public class ContextAssembler {
                 return buildMinimalContext(state);
             }
 
-            // 2. 执行记忆检索（降级容错）
-            var retrievalResults = safeRetrieve(hybridRetriever, state.goal(), strategyConfig);
+            // 2. 执行记忆检索（请求级缓存 + 降级容错）
+            var retrievalResults = cachedRetrieve(state.traceId(), state.goal(), strategyConfig);
             // 2.1 知识库检索（可选；仅当会话关联了 knowledgeBaseIds）
             var kbSnippets = safeRetrieveKnowledgeBaseSnippets(state.sessionId(), state.goal(), 5);
             // L4: 可选意图匹配提示（来自 HybridRetriever 内部的 IntentMatcher 结果）
@@ -155,8 +159,8 @@ public class ContextAssembler {
             float topScore = retrievalResults.isEmpty() ? 0.0f
                     : retrievalResults.getFirst().fusedScore();
             if (retrievalResults.isEmpty() && state.goal() != null) {
-                // 检索返回空可能是降级
-                degraded = true;
+                // 检索返回空是正常状态（新系统/首次对话），不标记降级
+                log.debug("记忆检索无结果: sessionId={}, goal={}", state.sessionId(), truncate(state.goal(), 50));
             }
 
             // 3. 获取会话槽位（排除当前轮用户消息，避免与 state.goal() 重复）
@@ -267,6 +271,34 @@ public class ContextAssembler {
             log.warn("记忆检索降级: query={}, error={}", truncate(query, 50), e.getMessage());
             return List.of();
         }
+    }
+
+    /**
+     * 带请求级缓存的记忆检索 — 同一 traceId + query + topK 组合只执行一次实际检索。
+     */
+    private List<RetrievalResult> cachedRetrieve(String traceId, String query, RetrievalStrategyConfig config) {
+        if (query == null || query.isBlank() || hybridRetriever == null) {
+            return List.of();
+        }
+        String cacheKey = traceId + "|" + query + "|" + config.topK();
+        return retrievalCache.computeIfAbsent(cacheKey, k -> {
+            try {
+                return hybridRetriever.retrieve(query, config.topK(), config.weights());
+            } catch (Exception e) {
+                log.warn("记忆检索降级: query={}, error={}", truncate(query, 50), e.getMessage());
+                return List.of();
+            }
+        });
+    }
+
+    /**
+     * 清除指定 traceId 的检索缓存，在 AgentLoop 请求结束时调用。
+     *
+     * @param traceId 要清除缓存的 traceId
+     */
+    public void clearCache(String traceId) {
+        if (traceId == null) return;
+        retrievalCache.entrySet().removeIf(entry -> entry.getKey().startsWith(traceId + "|"));
     }
 
     /** 安全获取 HybridRetriever 最近一次 L4 意图匹配结果，异常时返回 Optional.empty()。 */
