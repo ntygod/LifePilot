@@ -4,6 +4,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useChatStore } from '@/stores/chat'
 import ThemeToggle from '@/components/global/ThemeToggle.vue'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
+import { Input } from '@/components/ui/input'
 import { AnimatePresence, motion } from 'motion-v'
 import { 
   MessageSquare, 
@@ -215,10 +216,10 @@ const mobileSections = [
           @click="selectSession(session.id)"
         >
           <div class="flex-1 min-w-0">
-            <input
+            <Input
               v-if="renamingId === session.id"
               v-model="renameTitle"
-              class="w-full bg-background/80 rounded px-1 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+              class="h-6 bg-background/80 rounded px-1 py-0.5 text-xs"
               @keyup.enter.stop="confirmRename(session.id)"
               @keyup.esc.stop="cancelRename"
               @click.stop
@@ -360,10 +361,10 @@ const mobileSections = [
       >
         <!-- 标题 / 重命名输入 -->
         <div class="flex-1 min-w-0">
-          <input
+          <Input
             v-if="renamingId === session.id"
             v-model="renameTitle"
-            class="w-full bg-background/80 rounded px-1 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+            class="h-6 bg-background/80 rounded px-1 py-0.5 text-xs"
             @keyup.enter.stop="confirmRename(session.id)"
             @keyup.esc.stop="cancelRename"
             @click.stop

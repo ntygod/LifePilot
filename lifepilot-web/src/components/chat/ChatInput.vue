@@ -2,6 +2,11 @@
 import { computed, ref } from 'vue'
 import { Paperclip, FileText, X, ChevronDown, ChevronUp, Settings, Image, FileAudio2, FileVideo } from 'lucide-vue-next'
 import { Textarea } from '@/components/ui/textarea'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Select as UiSelect, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
 import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
 import { chatApi } from '@/api/client'
 import type { ChatAttachment } from '@/types'
@@ -201,42 +206,33 @@ defineExpose({
           </div>
           <div class="grid grid-cols-2 gap-sm">
             <div>
-              <label class="text-muted-foreground mb-1 block">模型</label>
-              <select
-                v-model="contextConfig.model"
-                class="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs
-                       focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all duration-200"
-              >
-                <option value="">使用默认</option>
-                <!-- TODO: 从设置中获取可用模型列表 -->
-              </select>
+              <Label class="text-muted-foreground mb-1">模型</Label>
+              <UiSelect v-model="contextConfig.model">
+                <SelectTrigger class="text-xs"><SelectValue placeholder="使用默认" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">使用默认</SelectItem>
+                  <!-- TODO: 从设置中获取可用模型列表 -->
+                </SelectContent>
+              </UiSelect>
             </div>
             <div>
-              <label class="text-muted-foreground mb-1 block">温度</label>
-              <input
+              <Label class="text-muted-foreground mb-1">温度</Label>
+              <Input
                 v-model.number="contextConfig.temperature"
-                type="number"
-                min="0"
-                max="2"
-                step="0.1"
-                class="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs
-                       focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all duration-200"
+                type="number" :min="0" :max="2" :step="0.1"
+                class="text-xs"
               />
             </div>
             <div>
-              <label class="text-muted-foreground mb-1 block">最大 Tokens</label>
-              <input
+              <Label class="text-muted-foreground mb-1">最大 Tokens</Label>
+              <Input
                 v-model.number="contextConfig.maxTokens"
-                type="number"
-                min="100"
-                max="8000"
-                step="100"
-                class="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs
-                       focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all duration-200"
+                type="number" :min="100" :max="8000" :step="100"
+                class="text-xs"
               />
             </div>
             <div>
-              <label class="text-muted-foreground mb-1 block">关联知识库</label>
+              <Label class="text-muted-foreground mb-1">关联知识库</Label>
               <select
                 v-model="contextConfig.knowledgeBases"
                 multiple

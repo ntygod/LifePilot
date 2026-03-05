@@ -10,6 +10,7 @@ import { chatApi, llmProviderApi } from '@/api/client'
 import type { Message, ChatAttachment, SessionConfig } from '@/types'
 import type { LlmProvider } from '@/api/client'
 import { Info, Puzzle, LibraryBig, SlidersHorizontal, Settings2 } from 'lucide-vue-next'
+import { Input } from '@/components/ui/input'
 import { copyToClipboard } from '@/utils/clipboard'
 import MessageList from '@/components/chat/MessageList.vue'
 import ChatInput from '@/components/chat/ChatInput.vue'
@@ -343,12 +344,11 @@ async function handleUpdateSessionTitle(title: string) {
             />
 
             <div class="flex items-center gap-sm">
-              <input
+              <Input
                 v-model="searchQuery"
                 type="search"
                 placeholder="在当前对话中搜索（按内容关键字）…"
-                class="flex-1 h-9 rounded-lg border border-input bg-background px-3 text-sm
-                       placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all duration-200"
+                class="flex-1"
               />
               <span class="text-xs text-muted-foreground whitespace-nowrap">
                 共 {{ chatStore.messages.length }} 条

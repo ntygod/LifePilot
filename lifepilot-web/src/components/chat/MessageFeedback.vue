@@ -3,6 +3,7 @@ import { ref, watch } from 'vue'
 import type { Message } from '@/types'
 import { chatApi } from '@/api/client'
 import { ThumbsUp, ThumbsDown } from 'lucide-vue-next'
+import { Textarea } from '@/components/ui/textarea'
 
 const props = defineProps<{
   message: Message
@@ -94,13 +95,11 @@ async function submitFeedback() {
 
     <!-- 点踩反馈输入框 -->
     <div v-if="showFeedbackInput">
-      <textarea
+      <Textarea
         v-model="feedbackText"
         placeholder="请描述问题或建议（可选）"
         rows="2"
-        class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm
-               placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring
-               focus:border-transparent resize-none transition-all duration-200"
+        class="resize-none"
       />
       <div class="mt-2 flex justify-end gap-2">
         <button

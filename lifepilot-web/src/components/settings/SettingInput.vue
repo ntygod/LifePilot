@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { Input } from '@/components/ui/input'
 
 const props = defineProps<{
   modelValue: string | number
@@ -22,7 +23,7 @@ const inputValue = computed({
 </script>
 
 <template>
-  <input
+  <Input
     v-model="inputValue"
     :type="type || 'text'"
     :placeholder="placeholder"
@@ -30,11 +31,5 @@ const inputValue = computed({
     :min="min"
     :max="max"
     :step="step"
-    class="flex h-9 w-full rounded-lg border border-input bg-transparent px-3 py-1 text-sm shadow-sm 
-           transition-all duration-200
-           placeholder:text-muted-foreground 
-           hover:border-ring hover:shadow-md
-           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2
-           disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-input disabled:hover:shadow-sm"
   />
 </template>

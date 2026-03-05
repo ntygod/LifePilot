@@ -2,6 +2,9 @@
 import { ref, watch } from 'vue'
 import { useToolStore } from '@/stores/tool'
 import type { ToolDetail } from '@/types'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { Checkbox } from '@/components/ui/checkbox'
 
 const props = defineProps<{
   tool?: ToolDetail | null
@@ -186,10 +189,9 @@ async function handleSubmit() {
             <label class="block text-sm font-medium text-foreground mb-1">
               Tool ID <span class="text-destructive">*</span>
             </label>
-            <input
+            <Input
               v-model="formData.id"
               type="text"
-              class="w-full px-3 py-2 bg-background border border-border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
               placeholder="例如: my-tool"
             />
             <p v-if="errors.id" class="text-sm text-destructive mt-1">{{ errors.id }}</p>
@@ -200,10 +202,9 @@ async function handleSubmit() {
             <label class="block text-sm font-medium text-foreground mb-1">
               名称 <span class="text-destructive">*</span>
             </label>
-            <input
+            <Input
               v-model="formData.name"
               type="text"
-              class="w-full px-3 py-2 bg-background border border-border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
               placeholder="Tool 显示名称"
             />
             <p v-if="errors.name" class="text-sm text-destructive mt-1">{{ errors.name }}</p>
@@ -212,10 +213,9 @@ async function handleSubmit() {
           <!-- 描述 -->
           <div>
             <label class="block text-sm font-medium text-foreground mb-1">描述</label>
-            <textarea
+            <Textarea
               v-model="formData.description"
               rows="3"
-              class="w-full px-3 py-2 bg-background border border-border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
               placeholder="Tool 功能描述"
             />
           </div>
@@ -225,10 +225,10 @@ async function handleSubmit() {
             <label class="block text-sm font-medium text-foreground mb-1">
               输入 Schema (JSON) <span class="text-destructive">*</span>
             </label>
-            <textarea
+            <Textarea
               v-model="inputSchemaText"
               rows="8"
-              class="w-full px-3 py-2 bg-background border border-border rounded-md text-foreground font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              class="font-mono text-sm"
               placeholder='{"type": "object", "properties": {}, "required": []}'
             />
             <p v-if="errors.inputSchema" class="text-sm text-destructive mt-1">{{ errors.inputSchema }}</p>
@@ -239,10 +239,10 @@ async function handleSubmit() {
             <label class="block text-sm font-medium text-foreground mb-1">
               输出 Schema (JSON)
             </label>
-            <textarea
+            <Textarea
               v-model="outputSchemaText"
               rows="6"
-              class="w-full px-3 py-2 bg-background border border-border rounded-md text-foreground font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              class="font-mono text-sm"
               placeholder='{"type": "object", "properties": {}}'
             />
             <p v-if="errors.outputSchema" class="text-sm text-destructive mt-1">{{ errors.outputSchema }}</p>
@@ -252,29 +252,29 @@ async function handleSubmit() {
           <div class="grid grid-cols-3 gap-4">
             <div>
               <label class="block text-sm font-medium text-foreground mb-1">超时时间（秒）</label>
-              <input
-                v-model.number="formData.budget.timeoutSeconds"
+              <Input
+                :model-value="String(formData.budget.timeoutSeconds)"
+                @update:model-value="formData.budget.timeoutSeconds = Number($event)"
                 type="number"
                 min="1"
-                class="w-full px-3 py-2 bg-background border border-border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
               />
             </div>
             <div>
               <label class="block text-sm font-medium text-foreground mb-1">最大重试次数</label>
-              <input
-                v-model.number="formData.budget.maxRetries"
+              <Input
+                :model-value="String(formData.budget.maxRetries)"
+                @update:model-value="formData.budget.maxRetries = Number($event)"
                 type="number"
                 min="0"
-                class="w-full px-3 py-2 bg-background border border-border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
               />
             </div>
             <div>
               <label class="block text-sm font-medium text-foreground mb-1">最大成本（分）</label>
-              <input
-                v-model.number="formData.budget.maxCostCents"
+              <Input
+                :model-value="String(formData.budget.maxCostCents)"
+                @update:model-value="formData.budget.maxCostCents = Number($event)"
                 type="number"
                 min="0"
-                class="w-full px-3 py-2 bg-background border border-border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
               />
             </div>
           </div>
@@ -293,10 +293,9 @@ async function handleSubmit() {
           <!-- 幂等性 -->
           <div>
             <label class="flex items-center gap-2">
-              <input
-                v-model="formData.idempotent"
-                type="checkbox"
-                class="w-4 h-4 text-primary bg-background border-border rounded focus:ring-primary"
+              <Checkbox
+                :checked="formData.idempotent"
+                @update:checked="formData.idempotent = $event"
               />
               <span class="text-sm font-medium text-foreground">幂等操作</span>
             </label>
@@ -305,10 +304,9 @@ async function handleSubmit() {
           <!-- 标签 -->
           <div>
             <label class="block text-sm font-medium text-foreground mb-1">标签（逗号分隔）</label>
-            <input
+            <Input
               v-model="tagsText"
               type="text"
-              class="w-full px-3 py-2 bg-background border border-border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
               placeholder="例如: api, http, external"
             />
           </div>

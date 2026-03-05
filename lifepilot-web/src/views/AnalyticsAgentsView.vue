@@ -4,6 +4,7 @@ import { analyticsApi, agentApi } from '@/api/client'
 import type { AgentStats, KnowledgeBaseStats } from '@/types'
 import { Bot, BookOpen, TrendingUp, AlertCircle, Clock } from 'lucide-vue-next'
 import EmptyState from '@/components/common/EmptyState.vue'
+import { Input } from '@/components/ui/input'
 
 const loading = ref(false)
 const agentStats = ref<AgentStats[]>([])
@@ -178,17 +179,17 @@ function formatPercent(rate: number): string {
 
           <!-- 自定义日期范围 -->
           <div v-if="selectedRange === 'custom'" class="flex items-center gap-xs">
-            <input
+            <Input
               v-model="customFrom"
               type="date"
-              class="px-md py-xs rounded-2xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
+              class="rounded-2xl"
               @change="loadStats"
             />
             <span class="text-muted-foreground text-sm">至</span>
-            <input
+            <Input
               v-model="customTo"
               type="date"
-              class="px-md py-xs rounded-2xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
+              class="rounded-2xl"
               @change="loadStats"
             />
           </div>

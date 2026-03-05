@@ -2,6 +2,9 @@
 import { ref, computed, watch } from 'vue'
 import { useToolStore } from '@/stores/tool'
 import type { ToolDetail, ToolTestResponse } from '@/types'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { Checkbox } from '@/components/ui/checkbox'
 
 const props = defineProps<{
   tool: ToolDetail | null
@@ -156,21 +159,20 @@ function closeDialog() {
             </p>
 
             <!-- 字符串输入 -->
-            <input
+            <Input
               v-if="field.type === 'string' && !field.enum && field.format !== 'textarea'"
               v-model="testArguments[field.key]"
               type="text"
-              class="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               :class="{ 'border-destructive': errors[field.key] }"
               :placeholder="field.description || `输入 ${field.label}`"
             />
 
             <!-- 多行文本 -->
-            <textarea
+            <Textarea
               v-else-if="field.type === 'string' && field.format === 'textarea'"
               v-model="testArguments[field.key]"
               rows="4"
-              class="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring font-mono text-sm"
+              class="font-mono text-sm"
               :class="{ 'border-destructive': errors[field.key] }"
               :placeholder="field.description || `输入 ${field.label}`"
             />
@@ -189,34 +191,33 @@ function closeDialog() {
             </select>
 
             <!-- 数字输入 -->
-            <input
+            <Input
               v-else-if="field.type === 'number' || field.type === 'integer'"
-              v-model.number="testArguments[field.key]"
+              :model-value="String(testArguments[field.key])"
+              @update:model-value="testArguments[field.key] = Number($event)"
               type="number"
-              class="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               :class="{ 'border-destructive': errors[field.key] }"
               :placeholder="field.description || `输入 ${field.label}`"
             />
 
             <!-- 布尔值 -->
             <div v-else-if="field.type === 'boolean'" class="flex items-center gap-2">
-              <input
-                v-model="testArguments[field.key]"
-                type="checkbox"
-                class="w-4 h-4 rounded border-input text-primary focus:ring-2 focus:ring-ring"
+              <Checkbox
+                :checked="testArguments[field.key]"
+                @update:checked="testArguments[field.key] = $event"
               />
               <span class="text-sm text-muted-foreground">{{ field.description || '启用' }}</span>
             </div>
 
             <!-- JSON 对象/数组 -->
-            <textarea
+            <Textarea
               v-else-if="field.type === 'object' || field.type === 'array'"
-              :value="typeof testArguments[field.key] === 'object' ? JSON.stringify(testArguments[field.key], null, 2) : testArguments[field.key]"
+              :model-value="typeof testArguments[field.key] === 'object' ? JSON.stringify(testArguments[field.key], null, 2) : testArguments[field.key]"
               rows="6"
-              class="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring font-mono text-sm"
+              class="font-mono text-sm"
               :class="{ 'border-destructive': errors[field.key] }"
               placeholder='例如: {"key": "value"} 或 ["item1", "item2"]'
-              @input="(e) => {
+              @input="(e: Event) => {
                 const value = (e.target as HTMLTextAreaElement).value
                 try {
                   if (value.trim()) {
