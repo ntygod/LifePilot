@@ -45,6 +45,8 @@ public class DefaultMessageGateway implements MessageGateway {
             return GatewayResponse.error(message.channelType(), "网关未运行", 503);
         }
 
+        // 将 messageId 注入 MDC，使整条中间件链路的日志可关联
+        org.slf4j.MDC.put("messageId", message.messageId());
         log.debug("处理入站消息: messageId={}, channel={}", message.messageId(), message.channelType());
         var start = Instant.now();
 
@@ -63,6 +65,8 @@ public class DefaultMessageGateway implements MessageGateway {
             log.info("消息处理完成: messageId={}, statusCode={}, latency={}ms",
                     message.messageId(), errorResponse.statusCode(), latency.toMillis());
             return errorResponse;
+        } finally {
+            org.slf4j.MDC.remove("messageId");
         }
     }
 

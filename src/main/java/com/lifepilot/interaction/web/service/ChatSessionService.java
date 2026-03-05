@@ -1,27 +1,22 @@
 package com.lifepilot.interaction.web.service;
 
-import com.lifepilot.agent.session.ConversationTurn;
 import com.lifepilot.agent.session.SessionManager;
 import com.lifepilot.interaction.web.model.ChatSession;
 import com.lifepilot.interaction.web.model.MessageInfo;
 import com.lifepilot.interaction.web.model.SessionConfigRequest;
 import com.lifepilot.interaction.web.model.SessionDetailInfo;
 import com.lifepilot.interaction.web.model.SessionInfo;
+import com.lifepilot.interaction.web.repository.ChatMessageRepository;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
-import com.lifepilot.memory.episodic.ConversationRecord;
 import com.lifepilot.memory.episodic.EpisodicMemory;
-import com.lifepilot.memory.episodic.MessageRecord;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 
 /**
  * Web UI 会话管理服务。
@@ -37,6 +32,7 @@ public class ChatSessionService {
     private static final Logger log = LoggerFactory.getLogger(ChatSessionService.class);
 
     private final ChatSessionRepository sessionRepository;
+    private final ChatMessageRepository chatMessageRepository;
     private final SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository;
     @Nullable
     private final SessionManager sessionManager;
@@ -44,10 +40,12 @@ public class ChatSessionService {
     private final EpisodicMemory episodicMemory;
 
     public ChatSessionService(ChatSessionRepository sessionRepository,
+                              ChatMessageRepository chatMessageRepository,
                               SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
                               @Nullable EpisodicMemory episodicMemory,
                               @Nullable SessionManager sessionManager) {
         this.sessionRepository = sessionRepository;
+        this.chatMessageRepository = chatMessageRepository;
         this.sessionKnowledgeBaseRepository = sessionKnowledgeBaseRepository;
         this.episodicMemory = episodicMemory;
         this.sessionManager = sessionManager;
@@ -189,6 +187,7 @@ public class ChatSessionService {
     public void clearSessionMessages(String id) {
         sessionRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("会话不存在: id=" + id));
+        chatMessageRepository.deleteBySessionId(id);
         sessionRepository.clearMessages(id);
         log.info("会话消息已清空: id={}", id);
     }
@@ -214,73 +213,8 @@ public class ChatSessionService {
         sessionRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("会话不存在: id=" + id));
 
-        // 首选从情景记忆（L2）中加载完整历史
-        if (episodicMemory != null) {
-            List<MessageRecord> records = episodicMemory.getMessagesBySessionId(id);
-            if (records != null && !records.isEmpty()) {
-                // 转换为 MessageInfo（a2ui 暂时为 null，因为未存储在 messages 表中；reasoningSummary 暂不从 L2 提取）
-                return records.stream()
-                        .map(record -> new MessageInfo(
-                                record.id(),
-                                record.role(),
-                                record.effectiveContent(), // 使用有效内容（优先压缩内容）
-                                null, // a2ui 组件树暂未持久化，后续可扩展
-                                record.createdAt(),
-                                null // reasoningSummary 当前仅从会话快照（recentTurns）恢复
-                        ))
-                        .toList();
-            }
-        } else {
-            log.warn("记忆系统未启用，无法从 L2 获取会话消息: sessionId={}", id);
-        }
-
-        // 当 L2 记忆不可用或尚未落盘时，尝试从会话快照（agent_sessions.recent_turns_json）构造最近若干轮历史
-        if (sessionManager == null) {
-            log.debug("SessionManager 不可用，无法从会话快照恢复消息: sessionId={}", id);
-            return List.of();
-        }
-
-        var snapshotOpt = sessionManager.findSession(id);
-        if (snapshotOpt.isEmpty()) {
-            log.debug("未找到会话快照，返回空消息列表: sessionId={}", id);
-            return List.of();
-        }
-
-        var snapshot = snapshotOpt.get();
-        List<ConversationTurn> turns = snapshot.recentTurns();
-        if (turns == null || turns.isEmpty()) {
-            log.debug("会话快照中无 recentTurns，返回空消息列表: sessionId={}", id);
-            return List.of();
-        }
-
-        List<MessageInfo> messages = new ArrayList<>();
-        for (ConversationTurn turn : turns) {
-            // user 消息
-            if (turn.userMessage() != null && !turn.userMessage().isBlank()) {
-                messages.add(new MessageInfo(
-                        UUID.randomUUID().toString(),
-                        "user",
-                        turn.userMessage(),
-                        null,
-                        turn.timestamp(),
-                        null
-                ));
-            }
-            // assistant 消息
-            if (turn.agentResponse() != null && !turn.agentResponse().isBlank()) {
-                messages.add(new MessageInfo(
-                        UUID.randomUUID().toString(),
-                        "assistant",
-                        turn.agentResponse(),
-                        null,
-                        turn.timestamp(),
-                        turn.reasoningSummary()
-                ));
-            }
-        }
-
-        log.debug("从会话快照恢复会话消息: sessionId={}, turns={}, messages={}", id, turns.size(), messages.size());
-        return messages;
+        // 对话历史与记忆系统物理解耦：仅从 chat_messages 读取历史
+        return chatMessageRepository.findMessageInfosBySessionId(id);
     }
 
     /**
@@ -348,33 +282,9 @@ public class ChatSessionService {
         int messageCount = session.messageCount();
         long totalTokens = 0;
 
-        // 如果记忆系统启用，从消息记录中统计 Token
-        if (episodicMemory != null) {
-            List<MessageRecord> records = episodicMemory.getMessagesBySessionId(id);
-            totalTokens = records.stream()
-                    .mapToLong(record -> record.tokenCount())
-                    .sum();
-            // 如果消息记录存在，使用实际的消息数
-            if (!records.isEmpty()) {
-                messageCount = records.size();
-            }
-        }
-
         // 获取最后一条消息预览
         String lastMessagePreview = session.summary();
-        if (lastMessagePreview == null && episodicMemory != null) {
-            List<MessageRecord> records = episodicMemory.getMessagesBySessionId(id);
-            if (!records.isEmpty()) {
-                MessageRecord lastMessage = records.get(records.size() - 1);
-                String content = lastMessage.effectiveContent();
-                // 截取前100个字符作为预览
-                if (content != null && content.length() > 100) {
-                    lastMessagePreview = content.substring(0, 100) + "...";
-                } else {
-                    lastMessagePreview = content;
-                }
-            }
-        }
+        // 对话历史解耦后：lastMessagePreview 由 chat_sessions.summary 维护；Token 统计暂不计算（后续可扩展字段）
 
         return new SessionDetailInfo(
                 session.id(),
@@ -404,29 +314,10 @@ public class ChatSessionService {
         ChatSession originalSession = sessionRepository.findById(originalSessionId)
                 .orElseThrow(() -> new IllegalArgumentException("原会话不存在: id=" + originalSessionId));
 
-        // 2. 如果记忆系统未启用，只创建新会话（不复制消息）
-        if (episodicMemory == null) {
-            log.warn("记忆系统未启用，无法复制消息历史: sessionId={}", originalSessionId);
-            String title = newTitle != null && !newTitle.isBlank() 
-                    ? newTitle 
-                    : originalSession.title() + " (分叉)";
-            ChatSession newSession = ChatSession.create(title);
-            sessionRepository.save(newSession);
-            
-            // 复制会话-知识库关联
-            List<String> knowledgeBaseIds = sessionKnowledgeBaseRepository
-                    .findKnowledgeBaseIdsBySessionId(originalSessionId);
-            for (String kbId : knowledgeBaseIds) {
-                sessionKnowledgeBaseRepository.addAssociation(newSession.id(), kbId);
-            }
-            
-            return toSessionInfo(newSession);
-        }
-
-        // 3. 获取原会话的所有消息（按时间排序）
-        List<MessageRecord> allMessages = episodicMemory.getMessagesBySessionId(originalSessionId);
+        // 2. 获取原会话的所有历史消息（按时间排序）
+        var allMessages = chatMessageRepository.findRowsBySessionId(originalSessionId);
         
-        // 4. 找到指定消息的位置
+        // 3. 找到指定消息的位置
         int messageIndex = -1;
         for (int i = 0; i < allMessages.size(); i++) {
             if (allMessages.get(i).id().equals(fromMessageId)) {
@@ -439,68 +330,38 @@ public class ChatSessionService {
             throw new IllegalArgumentException("消息不存在: messageId=" + fromMessageId);
         }
 
-        // 5. 复制该消息及其之前的所有消息（包含该消息）
-        List<MessageRecord> messagesToCopy = allMessages.subList(0, messageIndex + 1);
+        // 4. 复制该消息及其之前的所有消息（包含该消息）
+        var messagesToCopy = allMessages.subList(0, messageIndex + 1);
         
         if (messagesToCopy.isEmpty()) {
             throw new IllegalArgumentException("没有可复制的消息");
         }
 
-        // 6. 创建新会话
+        // 5. 创建新会话
         String title = newTitle != null && !newTitle.isBlank() 
                 ? newTitle 
                 : originalSession.title() + " (分叉)";
         ChatSession newSession = ChatSession.create(title);
         sessionRepository.save(newSession);
 
-        // 7. 创建新的 conversation
-        String newConversationId = UUID.randomUUID().toString();
-        Instant now = Instant.now();
-        
-        // 获取原 conversation 的 goal 和 summary（如果有多个 conversation，使用第一个）
-        String goal = null;
-        String summary = null;
-        if (!allMessages.isEmpty()) {
-            String originalConversationId = allMessages.get(0).conversationId();
-            var originalConversation = episodicMemory.getById(originalConversationId);
-            if (originalConversation.isPresent()) {
-                goal = originalConversation.get().goal();
-                summary = originalConversation.get().summary();
-            }
-        }
-
-        // 8. 创建新的消息记录（使用新的消息 ID 和 conversation ID）
-        List<MessageRecord> newMessages = new ArrayList<>();
-        for (MessageRecord originalMsg : messagesToCopy) {
-            String newMessageId = UUID.randomUUID().toString();
-            MessageRecord newMsg = new MessageRecord(
-                    newMessageId,
-                    newConversationId,
+        // 6. 写入 chat_messages（使用新的消息 ID，保留原始 createdAt 以保持顺序）
+        for (var originalMsg : messagesToCopy) {
+            chatMessageRepository.insert(
+                    newSession.id(),
                     originalMsg.role(),
                     originalMsg.content(),
-                    originalMsg.compressedContent(),
-                    originalMsg.compressionLevel(),
-                    originalMsg.isPinned(),
-                    originalMsg.toolCallJson(),
-                    originalMsg.tokenCount(),
-                    originalMsg.createdAt() // 保持原始创建时间
+                    originalMsg.reasoningSummary(),
+                    originalMsg.traceId(),
+                    originalMsg.createdAt()
             );
-            newMessages.add(newMsg);
         }
 
-        // 9. 保存新的 conversation 和消息
-        ConversationRecord newConversation = new ConversationRecord(
-                newConversationId,
-                newSession.id(),
-                goal,
-                summary,
-                newMessages,
-                now,
-                now
-        );
-        episodicMemory.save(newConversation);
+        // 7. 更新新会话统计（message_count / last_message_at / summary 预览）
+        for (var originalMsg : messagesToCopy) {
+            sessionRepository.appendMessageMeta(newSession.id(), originalMsg.createdAt(), preview(originalMsg.content()));
+        }
 
-        // 10. 复制会话-知识库关联
+        // 8. 复制会话-知识库关联
         List<String> knowledgeBaseIds = sessionKnowledgeBaseRepository
                 .findKnowledgeBaseIdsBySessionId(originalSessionId);
         for (String kbId : knowledgeBaseIds) {
@@ -508,9 +369,20 @@ public class ChatSessionService {
         }
 
         log.info("会话分叉完成: originalSessionId={}, newSessionId={}, messageCount={}", 
-                originalSessionId, newSession.id(), newMessages.size());
+                originalSessionId, newSession.id(), messagesToCopy.size());
         
         return toSessionInfo(newSession);
+    }
+
+    private String preview(String content) {
+        if (content == null) {
+            return null;
+        }
+        String t = content.strip();
+        if (t.length() <= 100) {
+            return t;
+        }
+        return t.substring(0, 100) + "...";
     }
 
     /**

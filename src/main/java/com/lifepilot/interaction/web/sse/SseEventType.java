@@ -38,6 +38,16 @@ public final class SseEventType {
     
     /** 心跳事件 */
     public static final String HEARTBEAT = "heartbeat";
+
+    // Trace 模块事件类型
+    /** Trace 开始事件 */
+    public static final String TRACE_START = "trace-start";
+
+    /** Trace 步骤事件 */
+    public static final String TRACE_STEP = "trace-step";
+
+    /** Trace 结束事件 */
+    public static final String TRACE_END = "trace-end";
     
     // A2A 模块事件类型
     /** 任务状态更新事件 */

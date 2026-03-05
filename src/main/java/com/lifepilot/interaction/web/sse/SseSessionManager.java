@@ -65,6 +65,16 @@ public class SseSessionManager {
     }
 
     /**
+     * 获取已注册的 SseEmitter（不创建新实例）。
+     *
+     * @param streamId 流式传输标识
+     * @return 已注册的 SseEmitter，若不存在则返回 null
+     */
+    public SseEmitter getEmitter(String streamId) {
+        return emitters.get(streamId);
+    }
+
+    /**
      * 向指定 SseEmitter 发送事件。
      *
      * @param streamId  流式传输标识
@@ -81,13 +91,14 @@ public class SseSessionManager {
             // 对于 done 事件，如果数据是 Map 类型且未包含 timestamp，自动添加时间戳
             Object eventData = data;
             if (SseEventType.DONE.equals(eventType) && data instanceof Map<?, ?> dataMap) {
-                @SuppressWarnings({"unchecked", "null"})
-                Map<String, Object> mutableMap = (Map<String, Object>) dataMap;
-                // 如果 Map 中未包含 timestamp，添加时间戳
-                if (!mutableMap.containsKey("timestamp")) {
-                    mutableMap.put("timestamp", Instant.now().toEpochMilli());
+                @SuppressWarnings("unchecked")
+                Map<String, Object> originalMap = (Map<String, Object>) dataMap;
+                if (!originalMap.containsKey("timestamp")) {
+                    // 防御性拷贝：避免对不可变 Map（Map.of()）执行 put 导致 UnsupportedOperationException
+                    var mutableCopy = new java.util.HashMap<>(originalMap);
+                    mutableCopy.put("timestamp", Instant.now().toEpochMilli());
+                    eventData = mutableCopy;
                 }
-                eventData = mutableMap;
             }
             
             @SuppressWarnings("null")

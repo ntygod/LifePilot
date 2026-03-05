@@ -2,6 +2,8 @@ package com.lifepilot.interaction.web.model;
 
 import org.springframework.lang.Nullable;
 
+import java.util.List;
+
 /**
  * 发送消息请求体。
  *
@@ -19,5 +21,5 @@ public record ChatRequest(
          * <p>由前端在发送消息前通过 /chat/messages/upload 上传得到，用于后续多模态路由
          * 和消息历史中的媒体引用。当前阶段后端可选择性消费该字段。</p>
          */
-        @Nullable java.util.List<String> attachmentIds
+        @Nullable List<String> attachmentIds
 ) {}

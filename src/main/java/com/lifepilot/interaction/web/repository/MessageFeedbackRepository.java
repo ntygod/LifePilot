@@ -54,7 +54,7 @@ public class MessageFeedbackRepository {
      */
     public boolean messageExists(String messageId) {
         Integer count = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM messages WHERE id = ?",
+                "SELECT COUNT(*) FROM chat_messages WHERE id = ?",
                 Integer.class, messageId);
         return count != null && count > 0;
     }
@@ -67,9 +67,9 @@ public class MessageFeedbackRepository {
      */
     public String getSessionIdByMessageId(String messageId) {
         try {
-            // 通过 messages -> conversations 关联查询 session_id
+            // 对话历史与记忆系统解耦：通过 chat_messages 直接获取 session_id
             return jdbcTemplate.queryForObject(
-                    "SELECT c.session_id FROM messages m JOIN conversations c ON m.conversation_id = c.id WHERE m.id = ?",
+                    "SELECT session_id FROM chat_messages WHERE id = ?",
                     String.class, messageId);
         } catch (Exception e) {
             log.warn("获取消息的会话 ID 失败: messageId={}, error={}", messageId, e.getMessage());

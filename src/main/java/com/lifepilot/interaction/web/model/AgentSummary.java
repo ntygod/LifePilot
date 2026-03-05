@@ -11,9 +11,10 @@ import java.util.List;
  * @param description         Agent 描述
  * @param type                Agent 类型（"default"/"custom"/"workflow"）
  * @param modelId             模型 ID
- * @param knowledgeBaseCount   关联的知识库数量
+ * @param knowledgeBaseCount  关联的知识库数量
  * @param updatedAt           更新时间
  * @param createdAt           创建时间
+ * @param enabled             是否启用（由 status 字段派生，status="enabled" 时为 true）
  * @param status              Agent 状态（"enabled"/"disabled"）
  * @param tags                标签列表
  * @author zsg
@@ -28,6 +29,7 @@ public record AgentSummary(
         int knowledgeBaseCount,
         Instant updatedAt,
         Instant createdAt,
+        boolean enabled,
         String status,
         List<String> tags
 ) {}
