@@ -133,14 +133,13 @@ async function saveModelConfig() {
 async function saveKnowledgeBases() {
   if (!agent.value) return
   try {
-    const kbIds = selectedKbs.value.map(kb => kb.id)
     const metadata: Record<string, any> = {}
     for (const kb of selectedKbs.value) {
       const prefix = `kb.${kb.id}.`
       if (kb.topK != null) metadata[`${prefix}topK`] = kb.topK
       if (kb.maxContextTokens != null) metadata[`${prefix}maxContextTokens`] = kb.maxContextTokens
     }
-    await agentStore.updateAgent(agent.value.id, { knowledgeBaseIds: kbIds, metadata })
+    await agentStore.updateAgent(agent.value.id, { knowledgeBases: selectedKbs.value, metadata })
     showKbDialog.value = false
   } catch (e: any) { alert(e.message || '保存失败') }
 }
@@ -148,7 +147,7 @@ async function saveKnowledgeBases() {
 async function saveTools() {
   if (!agent.value) return
   try {
-    await agentStore.updateAgent(agent.value.id, { toolIds: enabledTools.value })
+    await agentStore.updateAgent(agent.value.id, { enabledTools: enabledTools.value })
     showToolsDialog.value = false
   } catch (e: any) { alert(e.message || '保存失败') }
 }
@@ -288,7 +287,7 @@ function toggleTool(toolId: string) {
               </div>
               <div class="space-y-2">
                 <Label>温度: {{ modelConfig.temperature }}</Label>
-                <Slider :model-value="[modelConfig.temperature]" :min="0" :max="2" :step="0.1" @update:model-value="(v: number[]) => { modelConfig.temperature = v[0]; saveModelConfig() }" />
+                <Slider :model-value="[modelConfig.temperature]" :min="0" :max="2" :step="0.1" @update:model-value="(v: number[] | undefined) => { if (v) { modelConfig.temperature = v[0]; saveModelConfig() } }" />
               </div>
               <div class="space-y-2">
                 <Label>最大 Tokens</Label>
@@ -296,7 +295,7 @@ function toggleTool(toolId: string) {
               </div>
               <div class="space-y-2">
                 <Label>Top-P: {{ modelConfig.topP }}</Label>
-                <Slider :model-value="[modelConfig.topP]" :min="0" :max="1" :step="0.01" @update:model-value="(v: number[]) => { modelConfig.topP = v[0]; saveModelConfig() }" />
+                <Slider :model-value="[modelConfig.topP]" :min="0" :max="1" :step="0.01" @update:model-value="(v: number[] | undefined) => { if (v) { modelConfig.topP = v[0]; saveModelConfig() } }" />
               </div>
             </div>
           </CardContent>

@@ -29,7 +29,7 @@ const sliderValue = computed({
       :step="step ?? 1"
       :disabled="disabled"
       class="flex-1"
-      @update:model-value="(v: number[]) => emit('update:modelValue', v[0])"
+      @update:model-value="(v: number[] | undefined) => { if (v) emit('update:modelValue', v[0]) }"
     />
     <span class="text-sm text-muted-foreground min-w-[3rem] text-right">
       {{ modelValue }}
