@@ -6,6 +6,10 @@ import type { KbDocument, DocumentChunk } from '@/types'
 import { ArrowLeft, FileText, Download, RefreshCw, FileIcon } from 'lucide-vue-next'
 import Breadcrumb from '@/components/global/Breadcrumb.vue'
 import type { BreadcrumbItem } from '@/components/global/Breadcrumb.vue'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
+import { ScrollArea } from '@/components/ui/scroll-area'
 
 const route = useRoute()
 const router = useRouter()
@@ -49,7 +53,6 @@ async function loadDocument() {
   loading.value = true
   error.value = null
   try {
-    // 加载知识库信息（面包屑用）
     kb.value = await knowledgeBaseApi.get(kbId.value)
     const docs = await knowledgeBaseApi.listDocuments(kbId.value)
     document.value = docs.find(d => d.id === docId.value) || null
@@ -124,7 +127,6 @@ function scrollToChunk(chunkIndex: number) {
     <!-- 顶部导航栏 -->
     <div class="flex-shrink-0 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div class="max-w-[1200px] mx-auto px-md md:px-lg py-md">
-        <!-- 面包屑导航 -->
         <Breadcrumb :items="breadcrumbItems" class="mb-2" />
         <div class="flex items-center gap-3">
           <div class="flex-1 min-w-0">
@@ -136,13 +138,10 @@ function scrollToChunk(chunkIndex: number) {
               <span>上传于 {{ formatDate(document.createdAt) }}</span>
             </div>
           </div>
-          <button
-            class="inline-flex items-center gap-2 rounded-md text-sm font-medium h-9 px-md border border-input hover:bg-accent transition-colors"
-            @click="downloadDocument"
-          >
+          <Button variant="outline" @click="downloadDocument">
             <Download :size="16" />
             下载
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -156,118 +155,142 @@ function scrollToChunk(chunkIndex: number) {
 
         <!-- 主要内容区域 -->
         <div class="flex-1 overflow-hidden flex">
-      <!-- 左侧：分段列表 -->
-      <div class="w-80 border-r border-border overflow-y-auto bg-muted/10">
-        <div class="p-4 border-b border-border">
-          <h2 class="text-sm font-semibold text-foreground mb-2">分段列表</h2>
-          <div class="text-xs text-muted-foreground">
-            共 {{ document?.chunkCount || 0 }} 个分段
-          </div>
-        </div>
-        <div v-if="loadingChunks && chunks.length === 0" class="p-4 text-sm text-muted-foreground">
-          加载中...
-        </div>
-        <div v-else-if="chunks.length === 0" class="p-4 text-sm text-muted-foreground">
-          暂无分段
-        </div>
-        <div v-else class="divide-y divide-border">
-          <button
-            v-for="chunk in chunks"
-            :key="chunk.id"
-            :id="`chunk-nav-${chunk.chunkIndex}`"
-            class="w-full p-3 text-left hover:bg-accent transition-colors"
-            @click="scrollToChunk(chunk.chunkIndex)"
-          >
-            <div class="flex items-start justify-between mb-1">
-              <span class="text-xs font-medium text-foreground">分段 #{{ chunk.chunkIndex + 1 }}</span>
-              <span class="text-xs text-muted-foreground">{{ chunk.tokenCount }} tokens</span>
+          <!-- 左侧：分段列表 -->
+          <div class="w-80 border-r border-border overflow-hidden flex flex-col bg-muted/10">
+            <div class="p-4 border-b border-border flex-shrink-0">
+              <h2 class="text-sm font-semibold text-foreground mb-2">分段列表</h2>
+              <div class="text-xs text-muted-foreground">
+                共 {{ document?.chunkCount || 0 }} 个分段
+              </div>
             </div>
-            <p class="text-xs text-muted-foreground line-clamp-2">{{ chunk.content }}</p>
-            <div v-if="chunk.headingHierarchy && chunk.headingHierarchy.length > 0" class="mt-1">
-              <span class="text-xs text-muted-foreground">
-                {{ chunk.headingHierarchy.join(' > ') }}
-              </span>
+            <!-- Skeleton 加载占位符 -->
+            <div v-if="loadingChunks && chunks.length === 0" class="p-4 space-y-3">
+              <div v-for="i in 6" :key="i" class="space-y-2">
+                <Skeleton class="h-3 w-1/3" />
+                <Skeleton class="h-3 w-full" />
+                <Skeleton class="h-3 w-2/3" />
+              </div>
             </div>
-          </button>
-          <div v-if="hasMoreChunks" class="p-4">
-            <button
-              class="w-full h-9 rounded-md border border-input hover:bg-accent transition-colors text-sm"
-              :disabled="loadingChunks"
-              @click="loadMoreChunks"
-            >
-              {{ loadingChunks ? '加载中...' : '加载更多' }}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- 右侧：分段内容预览 -->
-      <div class="flex-1 overflow-y-auto p-6">
-        <div v-if="loading && !document" class="text-sm text-muted-foreground">加载中...</div>
-        <div v-else-if="!document" class="text-sm text-muted-foreground">文档不存在</div>
-        <div v-else-if="chunks.length === 0" class="text-sm text-muted-foreground">
-          暂无分段内容
-        </div>
-        <div v-else class="max-w-4xl mx-auto space-y-6">
-          <div
-            v-for="chunk in chunks"
-            :id="`chunk-${chunk.chunkIndex}`"
-            :key="chunk.id"
-            class="p-6 rounded-lg border border-border bg-card"
-          >
-            <!-- 分段头部信息 -->
-            <div class="flex items-start justify-between mb-4 pb-4 border-b border-border">
-              <div>
-                <h3 class="text-sm font-semibold text-foreground mb-1">
-                  分段 #{{ chunk.chunkIndex + 1 }}
-                </h3>
-                <div class="flex items-center gap-4 text-xs text-muted-foreground">
-                  <span>{{ chunk.tokenCount }} tokens</span>
-                  <span v-if="chunk.pageNumber">第 {{ chunk.pageNumber }} 页</span>
-                  <span>位置: {{ chunk.startOffset }}-{{ chunk.endOffset }}</span>
-                </div>
-                <div v-if="chunk.headingHierarchy && chunk.headingHierarchy.length > 0" class="mt-2">
-                  <div class="text-xs text-muted-foreground">
-                    <span class="font-medium">路径:</span>
-                    {{ chunk.headingHierarchy.join(' > ') }}
+            <div v-else-if="chunks.length === 0" class="p-4 text-sm text-muted-foreground">
+              暂无分段
+            </div>
+            <ScrollArea v-else class="flex-1">
+              <div class="divide-y divide-border">
+                <button
+                  v-for="chunk in chunks"
+                  :key="chunk.id"
+                  :id="`chunk-nav-${chunk.chunkIndex}`"
+                  class="w-full p-3 text-left hover:bg-accent transition-colors"
+                  @click="scrollToChunk(chunk.chunkIndex)"
+                >
+                  <div class="flex items-start justify-between mb-1">
+                    <span class="text-xs font-medium text-foreground">分段 #{{ chunk.chunkIndex + 1 }}</span>
+                    <span class="text-xs text-muted-foreground">{{ chunk.tokenCount }} tokens</span>
                   </div>
+                  <p class="text-xs text-muted-foreground line-clamp-2">{{ chunk.content }}</p>
+                  <div v-if="chunk.headingHierarchy && chunk.headingHierarchy.length > 0" class="mt-1">
+                    <span class="text-xs text-muted-foreground">
+                      {{ chunk.headingHierarchy.join(' > ') }}
+                    </span>
+                  </div>
+                </button>
+                <div v-if="hasMoreChunks" class="p-4">
+                  <Button
+                    variant="outline"
+                    class="w-full"
+                    :disabled="loadingChunks"
+                    @click="loadMoreChunks"
+                  >
+                    {{ loadingChunks ? '加载中...' : '加载更多' }}
+                  </Button>
                 </div>
               </div>
-            </div>
-
-            <!-- 分段内容 -->
-            <div class="prose prose-sm max-w-none">
-              <div v-if="chunk.contextPrefix" class="mb-2 text-sm text-muted-foreground italic">
-                {{ chunk.contextPrefix }}
-              </div>
-              <div class="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
-                {{ chunk.content }}
-              </div>
-            </div>
-
-            <!-- 元数据 -->
-            <div v-if="chunk.metadata && Object.keys(chunk.metadata).length > 0" class="mt-4 pt-4 border-t border-border">
-              <details class="text-xs">
-                <summary class="cursor-pointer text-muted-foreground hover:text-foreground">
-                  元数据
-                </summary>
-                <pre class="mt-2 p-2 rounded bg-muted/30 text-xs overflow-x-auto">{{ JSON.stringify(chunk.metadata, null, 2) }}</pre>
-              </details>
-            </div>
+            </ScrollArea>
           </div>
 
-          <!-- 加载更多按钮 -->
-          <div v-if="hasMoreChunks" class="text-center">
-            <button
-              class="h-9 px-4 rounded-md border border-input hover:bg-accent transition-colors text-sm"
-              :disabled="loadingChunks"
-              @click="loadMoreChunks"
-            >
-              {{ loadingChunks ? '加载中...' : '加载更多分段' }}
-            </button>
+          <!-- 右侧：分段内容预览 -->
+          <div class="flex-1 overflow-y-auto p-6">
+            <!-- Skeleton 加载占位符 -->
+            <div v-if="loading && !document" class="max-w-4xl mx-auto space-y-6">
+              <Card v-for="i in 3" :key="i">
+                <CardHeader>
+                  <Skeleton class="h-4 w-1/4" />
+                  <Skeleton class="h-3 w-1/3 mt-2" />
+                </CardHeader>
+                <CardContent>
+                  <Skeleton class="h-4 w-full mb-2" />
+                  <Skeleton class="h-4 w-full mb-2" />
+                  <Skeleton class="h-4 w-3/4" />
+                </CardContent>
+              </Card>
+            </div>
+            <div v-else-if="!document" class="text-sm text-muted-foreground">文档不存在</div>
+            <div v-else-if="chunks.length === 0" class="text-sm text-muted-foreground">
+              暂无分段内容
+            </div>
+            <div v-else class="max-w-4xl mx-auto space-y-6">
+              <Card
+                v-for="chunk in chunks"
+                :id="`chunk-${chunk.chunkIndex}`"
+                :key="chunk.id"
+              >
+                <!-- 分段头部信息 -->
+                <CardHeader class="pb-4 border-b border-border">
+                  <div class="flex items-start justify-between">
+                    <div>
+                      <h3 class="text-sm font-semibold text-foreground mb-1">
+                        分段 #{{ chunk.chunkIndex + 1 }}
+                      </h3>
+                      <div class="flex items-center gap-4 text-xs text-muted-foreground">
+                        <span>{{ chunk.tokenCount }} tokens</span>
+                        <span v-if="chunk.pageNumber">第 {{ chunk.pageNumber }} 页</span>
+                        <span>位置: {{ chunk.startOffset }}-{{ chunk.endOffset }}</span>
+                      </div>
+                      <div v-if="chunk.headingHierarchy && chunk.headingHierarchy.length > 0" class="mt-2">
+                        <div class="text-xs text-muted-foreground">
+                          <span class="font-medium">路径:</span>
+                          {{ chunk.headingHierarchy.join(' > ') }}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </CardHeader>
+
+                <!-- 分段内容 -->
+                <CardContent class="pt-4">
+                  <div class="prose prose-sm max-w-none">
+                    <div v-if="chunk.contextPrefix" class="mb-2 text-sm text-muted-foreground italic">
+                      {{ chunk.contextPrefix }}
+                    </div>
+                    <div class="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
+                      {{ chunk.content }}
+                    </div>
+                  </div>
+
+                  <!-- 元数据 -->
+                  <div v-if="chunk.metadata && Object.keys(chunk.metadata).length > 0" class="mt-4 pt-4 border-t border-border">
+                    <details class="text-xs">
+                      <summary class="cursor-pointer text-muted-foreground hover:text-foreground">
+                        元数据
+                      </summary>
+                      <pre class="mt-2 p-2 rounded bg-muted/30 text-xs overflow-x-auto">{{ JSON.stringify(chunk.metadata, null, 2) }}</pre>
+                    </details>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <!-- 加载更多按钮 -->
+              <div v-if="hasMoreChunks" class="text-center">
+                <Button
+                  variant="outline"
+                  :disabled="loadingChunks"
+                  @click="loadMoreChunks"
+                >
+                  {{ loadingChunks ? '加载中...' : '加载更多分段' }}
+                </Button>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
         </div>
       </div>
     </div>

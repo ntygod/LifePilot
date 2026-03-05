@@ -17,6 +17,22 @@ import {
 } from 'lucide-vue-next'
 import Breadcrumb from '@/components/global/Breadcrumb.vue'
 import type { BreadcrumbItem } from '@/components/global/Breadcrumb.vue'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
+import {
+  Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
+} from '@/components/ui/sheet'
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+} from '@/components/ui/dialog'
 
 const route = useRoute()
 const router = useRouter()
@@ -33,7 +49,7 @@ const error = ref<string | null>(null)
 const searchQuery = ref('')
 const filterType = ref<string>('all')
 const filterStatus = ref<string>('all')
-const filterTimeRange = ref<'all' | '7d' | '30d'>('all')
+const filterTimeRange = ref<string>('all')
 const showFilters = ref(false)
 
 // 文档操作
@@ -88,6 +104,12 @@ const statusMap: Record<string, { label: string; icon: any; class: string }> = {
   COMPLETED: { label: '已完成', icon: CheckCircle, class: 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400' },
   ERROR: { label: '失败', icon: XCircle, class: 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400' }
 }
+
+// 删除确认对话框状态
+const showDeleteConfirm = computed({
+  get: () => deleteTarget.value !== null,
+  set: (val: boolean) => { if (!val) deleteTarget.value = null }
+})
 
 onMounted(async () => {
   await loadData()
@@ -187,17 +209,14 @@ async function handleFileChange(e: Event) {
   input.value = ''
 }
 
-// 拖拽上传：有效文件
 function handleDropFiles(files: File[]) {
   handleBatchUpload(files)
 }
 
-// 拖拽上传：不支持格式
 function handleRejectFiles(fileNames: string[]) {
   showToast(`已跳过不支持的文件格式：${fileNames.join(', ')}`)
 }
 
-// 批量上传队列逻辑
 async function handleBatchUpload(files: File[]) {
   const items: UploadFileItem[] = files.map(f => ({
     id: crypto.randomUUID(),
@@ -223,7 +242,6 @@ async function handleBatchUpload(files: File[]) {
   await loadData()
 }
 
-// 重试单个失败上传
 async function handleRetryUpload(fileId: string) {
   const item = uploadQueue.value.find(f => f.id === fileId)
   if (!item) return
@@ -239,7 +257,6 @@ async function handleRetryUpload(fileId: string) {
   }
 }
 
-// 关闭上传进度面板
 function handleDismissUpload() {
   uploadQueue.value = []
 }
@@ -364,19 +381,15 @@ async function testRetrieval() {
     <!-- 顶部导航栏 -->
     <div class="flex-shrink-0 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div class="max-w-[1200px] mx-auto px-md md:px-lg py-md">
-        <!-- 面包屑导航 -->
         <Breadcrumb :items="breadcrumbItems" class="mb-2" />
         <div class="flex items-center gap-3">
           <h1 class="text-xl font-semibold text-foreground flex-1">
             {{ kb?.name || '知识库详情' }}
           </h1>
-          <button
-            class="inline-flex items-center gap-2 rounded-md text-sm font-medium h-9 px-md bg-primary text-primary-foreground hover:bg-primary/90 hover:shadow-md transition-all duration-200"
-            @click="triggerUpload"
-          >
+          <Button @click="triggerUpload">
             <Upload :size="16" />
             上传文档
-          </button>
+          </Button>
           <input
             ref="fileInput"
             type="file"
@@ -397,13 +410,28 @@ async function testRetrieval() {
           class="mb-md p-3 rounded-md bg-destructive/10 text-destructive text-sm flex items-center justify-between"
         >
           <span>{{ error }}</span>
-          <button @click="error = null" class="text-destructive hover:text-destructive/80">
+          <Button variant="ghost" size="icon-sm" @click="error = null">
             <X :size="16" />
-          </button>
+          </Button>
         </div>
 
-        <!-- 加载中 -->
-        <LoadingSpinner v-if="loading" text="加载中..." />
+        <!-- Skeleton 加载占位符 -->
+        <div v-if="loading" class="space-y-6">
+          <Card>
+            <CardHeader>
+              <Skeleton class="h-6 w-1/3" />
+              <Skeleton class="h-4 w-2/3 mt-2" />
+            </CardHeader>
+            <CardContent>
+              <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Skeleton v-for="i in 4" :key="i" class="h-16 rounded-md" />
+              </div>
+            </CardContent>
+          </Card>
+          <div class="space-y-2">
+            <Skeleton v-for="i in 5" :key="i" class="h-12 w-full rounded-md" />
+          </div>
+        </div>
 
         <!-- 加载失败（无数据时展示 ErrorState） -->
         <ErrorState
@@ -417,37 +445,39 @@ async function testRetrieval() {
         <!-- 知识库信息 -->
         <template v-else-if="kb">
           <!-- 基本信息卡片 -->
-          <div class="mb-6 p-4 rounded-lg border border-border bg-card">
-            <div class="flex items-start justify-between mb-4">
-              <div class="flex-1">
-                <h2 class="text-lg font-semibold text-foreground mb-1">{{ kb.name }}</h2>
-                <p v-if="kb.description" class="text-sm text-muted-foreground">{{ kb.description }}</p>
-              </div>
-            </div>
-            <!-- 统计信息 -->
-            <div v-if="stats" class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
-              <div class="p-3 rounded-md bg-muted/30">
-                <div class="text-xs text-muted-foreground mb-1">文档数</div>
-                <div class="text-lg font-semibold text-foreground">{{ stats.documentCount }}</div>
-              </div>
-              <div class="p-3 rounded-md bg-muted/30">
-                <div class="text-xs text-muted-foreground mb-1">分段数</div>
-                <div class="text-lg font-semibold text-foreground">{{ stats.totalChunks }}</div>
-              </div>
-              <div class="p-3 rounded-md bg-muted/30">
-                <div class="text-xs text-muted-foreground mb-1">总大小</div>
-                <div class="text-lg font-semibold text-foreground">{{ formatSize(stats.totalSize) }}</div>
-              </div>
-              <div class="p-3 rounded-md bg-muted/30">
-                <div class="text-xs text-muted-foreground mb-1">索引状态</div>
-                <div class="text-lg font-semibold text-foreground">
-                  <span v-if="stats.indexStatus === 'HEALTHY'" class="text-green-600">健康</span>
-                  <span v-else-if="stats.indexStatus === 'PROCESSING'" class="text-blue-600">处理中</span>
-                  <span v-else class="text-yellow-600">部分失败</span>
+          <Card class="mb-6">
+            <CardContent class="pt-6">
+              <div class="flex items-start justify-between mb-4">
+                <div class="flex-1">
+                  <h2 class="text-lg font-semibold text-foreground mb-1">{{ kb.name }}</h2>
+                  <p v-if="kb.description" class="text-sm text-muted-foreground">{{ kb.description }}</p>
                 </div>
               </div>
-            </div>
-          </div>
+              <!-- 统计信息 -->
+              <div v-if="stats" class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+                <div class="p-3 rounded-md bg-muted/30">
+                  <div class="text-xs text-muted-foreground mb-1">文档数</div>
+                  <div class="text-lg font-semibold text-foreground">{{ stats.documentCount }}</div>
+                </div>
+                <div class="p-3 rounded-md bg-muted/30">
+                  <div class="text-xs text-muted-foreground mb-1">分段数</div>
+                  <div class="text-lg font-semibold text-foreground">{{ stats.totalChunks }}</div>
+                </div>
+                <div class="p-3 rounded-md bg-muted/30">
+                  <div class="text-xs text-muted-foreground mb-1">总大小</div>
+                  <div class="text-lg font-semibold text-foreground">{{ formatSize(stats.totalSize) }}</div>
+                </div>
+                <div class="p-3 rounded-md bg-muted/30">
+                  <div class="text-xs text-muted-foreground mb-1">索引状态</div>
+                  <div class="text-lg font-semibold text-foreground">
+                    <span v-if="stats.indexStatus === 'HEALTHY'" class="text-green-600">健康</span>
+                    <span v-else-if="stats.indexStatus === 'PROCESSING'" class="text-blue-600">处理中</span>
+                    <span v-else class="text-yellow-600">部分失败</span>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
           <!-- 上传进度面板 -->
           <div v-if="uploadQueue.length > 0" class="mb-4">
@@ -469,73 +499,73 @@ async function testRetrieval() {
             <div class="p-4 space-y-2">
               <div class="flex items-center gap-2">
                 <div class="relative flex-1">
-                  <Search class="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" :size="16" />
-                  <input
+                  <Search class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                  <Input
                     v-model="searchQuery"
                     type="search"
                     placeholder="搜索文档名称…"
-                    class="w-full h-9 pl-8 pr-3 rounded-md border border-input bg-background text-sm
-                           placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                    class="pl-8"
                   />
                 </div>
-                <button
-                  class="inline-flex items-center gap-1 h-9 px-3 rounded-md border border-input bg-background
-                         hover:bg-accent transition-colors"
+                <Button
+                  variant="outline"
                   :class="showFilters ? 'bg-accent' : ''"
                   @click="showFilters = !showFilters"
                 >
                   <Filter :size="16" />
-                  <span class="text-sm">过滤</span>
-                </button>
-                <button
-                  class="inline-flex items-center gap-1 h-9 px-3 rounded-md border border-input bg-background
-                         hover:bg-accent transition-colors"
+                  <span>过滤</span>
+                </Button>
+                <Button
+                  variant="outline"
                   @click="showTestRetrieval = !showTestRetrieval"
                 >
                   <TestTube :size="16" />
-                  <span class="text-sm">测试检索</span>
-                </button>
+                  <span>测试检索</span>
+                </Button>
               </div>
 
               <!-- 过滤选项 -->
               <div v-if="showFilters" class="p-3 rounded-md border border-border bg-muted/30 space-y-3">
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <div>
-                    <label class="text-xs font-medium text-muted-foreground mb-1 block">文件类型</label>
-                    <select
-                      v-model="filterType"
-                      class="w-full h-8 rounded-md border border-input bg-background px-2 text-xs
-                             focus:outline-none focus:ring-1 focus:ring-ring"
-                    >
-                      <option value="all">全部</option>
-                      <option v-for="type in allFileTypes" :key="type" :value="type">{{ type }}</option>
-                    </select>
+                    <Label class="text-xs text-muted-foreground mb-1 block">文件类型</Label>
+                    <Select v-model="filterType">
+                      <SelectTrigger class="w-full h-8 text-xs">
+                        <SelectValue placeholder="全部" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">全部</SelectItem>
+                        <SelectItem v-for="type in allFileTypes" :key="type" :value="type">{{ type }}</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div>
-                    <label class="text-xs font-medium text-muted-foreground mb-1 block">处理状态</label>
-                    <select
-                      v-model="filterStatus"
-                      class="w-full h-8 rounded-md border border-input bg-background px-2 text-xs
-                             focus:outline-none focus:ring-1 focus:ring-ring"
-                    >
-                      <option value="all">全部</option>
-                      <option value="PENDING">等待中</option>
-                      <option value="PROCESSING">处理中</option>
-                      <option value="COMPLETED">已完成</option>
-                      <option value="ERROR">失败</option>
-                    </select>
+                    <Label class="text-xs text-muted-foreground mb-1 block">处理状态</Label>
+                    <Select v-model="filterStatus">
+                      <SelectTrigger class="w-full h-8 text-xs">
+                        <SelectValue placeholder="全部" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">全部</SelectItem>
+                        <SelectItem value="PENDING">等待中</SelectItem>
+                        <SelectItem value="PROCESSING">处理中</SelectItem>
+                        <SelectItem value="COMPLETED">已完成</SelectItem>
+                        <SelectItem value="ERROR">失败</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div>
-                    <label class="text-xs font-medium text-muted-foreground mb-1 block">上传时间</label>
-                    <select
-                      v-model="filterTimeRange"
-                      class="w-full h-8 rounded-md border border-input bg-background px-2 text-xs
-                             focus:outline-none focus:ring-1 focus:ring-ring"
-                    >
-                      <option value="all">全部</option>
-                      <option value="7d">最近7天</option>
-                      <option value="30d">最近30天</option>
-                    </select>
+                    <Label class="text-xs text-muted-foreground mb-1 block">上传时间</Label>
+                    <Select v-model="filterTimeRange">
+                      <SelectTrigger class="w-full h-8 text-xs">
+                        <SelectValue placeholder="全部" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">全部</SelectItem>
+                        <SelectItem value="7d">最近7天</SelectItem>
+                        <SelectItem value="30d">最近30天</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
               </div>
@@ -549,13 +579,14 @@ async function testRetrieval() {
               <span class="text-sm text-foreground">
                 已选择 <span class="font-semibold">{{ selectedDocIds.size }}</span> 个文档
               </span>
-              <button
-                class="inline-flex items-center gap-1 h-8 px-3 rounded-md text-sm bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors"
+              <Button
+                variant="destructive"
+                size="sm"
                 @click="showBatchDeleteConfirm = true"
               >
                 <Trash2 :size="14" />
                 批量删除
-              </button>
+              </Button>
             </div>
 
             <!-- 文档列表表格 -->
@@ -569,11 +600,9 @@ async function testRetrieval() {
                 <thead class="bg-muted/30 border-b border-border">
                   <tr>
                     <th class="w-10 p-3">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         :checked="isAllSelected"
-                        class="rounded border-input"
-                        @change="toggleSelectAll"
+                        @update:checked="toggleSelectAll"
                       />
                     </th>
                     <th class="text-left p-3 text-xs font-medium text-muted-foreground">文档名称</th>
@@ -592,11 +621,9 @@ async function testRetrieval() {
                     class="border-b border-border hover:bg-muted/30 transition-colors"
                   >
                     <td class="w-10 p-3">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         :checked="selectedDocIds.has(doc.id)"
-                        class="rounded border-input"
-                        @change="toggleDocSelection(doc.id)"
+                        @update:checked="toggleDocSelection(doc.id)"
                       />
                     </td>
                     <td class="p-3">
@@ -615,63 +642,36 @@ async function testRetrieval() {
                       {{ formatDate(doc.createdAt) }}
                     </td>
                     <td class="p-3">
-                      <span
-                        class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+                      <Badge variant="outline"
                         :class="statusMap[doc.status]?.class ?? 'bg-gray-100 text-gray-800'"
                       >
                         <component :is="statusMap[doc.status]?.icon" :size="12" />
                         {{ statusMap[doc.status]?.label ?? doc.status }}
-                      </span>
+                      </Badge>
                     </td>
                     <td class="p-3 text-sm text-muted-foreground">
                       {{ doc.chunkCount }}
                     </td>
                     <td class="p-3">
                       <div class="flex items-center justify-end gap-1">
-                        <button
-                          class="p-1.5 text-muted-foreground hover:text-foreground transition-colors"
-                          title="查看详情"
-                          @click="viewDocument(doc)"
-                        >
+                        <Button variant="ghost" size="icon-sm" class="size-7" title="查看详情" @click="viewDocument(doc)">
                           <Eye :size="14" />
-                        </button>
-                        <button
-                          class="p-1.5 text-muted-foreground hover:text-foreground transition-colors"
-                          title="下载"
-                          @click="downloadDocument(doc)"
-                        >
+                        </Button>
+                        <Button variant="ghost" size="icon-sm" class="size-7" title="下载" @click="downloadDocument(doc)">
                           <Download :size="14" />
-                        </button>
-                        <button
-                          v-if="doc.status === 'ERROR'"
-                          class="p-1.5 text-muted-foreground hover:text-blue-600 transition-colors"
-                          title="重试"
-                          @click="handleRetry(doc)"
-                        >
+                        </Button>
+                        <Button v-if="doc.status === 'ERROR'" variant="ghost" size="icon-sm" class="size-7" title="重试" @click="handleRetry(doc)">
                           <RefreshCw :size="14" />
-                        </button>
-                        <button
-                          v-if="doc.status === 'COMPLETED'"
-                          class="p-1.5 text-muted-foreground hover:text-blue-600 transition-colors"
-                          title="重新分块"
-                          @click="handleRechunk(doc)"
-                        >
+                        </Button>
+                        <Button v-if="doc.status === 'COMPLETED'" variant="ghost" size="icon-sm" class="size-7" title="重新分块" @click="handleRechunk(doc)">
                           <RefreshCw :size="14" />
-                        </button>
-                        <button
-                          class="p-1.5 text-muted-foreground hover:text-foreground transition-colors"
-                          title="查看日志"
-                          @click="viewLogs(doc)"
-                        >
+                        </Button>
+                        <Button variant="ghost" size="icon-sm" class="size-7" title="查看日志" @click="viewLogs(doc)">
                           <FileText :size="14" />
-                        </button>
-                        <button
-                          class="p-1.5 text-muted-foreground hover:text-destructive transition-colors"
-                          title="删除"
-                          @click="deleteTarget = { doc }"
-                        >
+                        </Button>
+                        <Button variant="ghost" size="icon-sm" class="size-7 hover:text-destructive" title="删除" @click="deleteTarget = { doc }">
                           <Trash2 :size="14" />
-                        </button>
+                        </Button>
                       </div>
                     </td>
                   </tr>
@@ -681,25 +681,23 @@ async function testRetrieval() {
           </DropZone>
 
           <!-- 测试检索区域 -->
-          <div v-if="showTestRetrieval" class="mt-6 p-4 rounded-lg border border-border bg-card">
-            <h3 class="text-sm font-semibold text-foreground mb-3">测试检索</h3>
-            <div class="space-y-3">
+          <Card v-if="showTestRetrieval" class="mt-6">
+            <CardHeader>
+              <CardTitle class="text-sm">测试检索</CardTitle>
+            </CardHeader>
+            <CardContent class="space-y-3">
               <div class="flex gap-2">
-                <input
+                <Input
                   v-model="testQuery"
-                  type="text"
                   placeholder="输入测试问题…"
-                  class="flex-1 h-9 rounded-md border border-input bg-background px-3 text-sm
-                         placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
                   @keyup.enter="testRetrieval"
                 />
-                <button
-                  class="h-9 px-4 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors text-sm"
+                <Button
                   :disabled="testing || !testQuery.trim()"
                   @click="testRetrieval"
                 >
                   {{ testing ? '检索中...' : '检索' }}
-                </button>
+                </Button>
               </div>
               <!-- 检索结果 -->
               <div v-if="testResult" class="space-y-3">
@@ -724,8 +722,8 @@ async function testRetrieval() {
                   <p class="text-sm text-foreground whitespace-pre-wrap">{{ testResult.answer }}</p>
                 </div>
               </div>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
         </template>
       </div>
     </div>
@@ -740,53 +738,44 @@ async function testRetrieval() {
       </div>
     </Transition>
 
-    <!-- 处理日志对话框 -->
-    <div v-if="showLogs && selectedDoc" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" @click.self="showLogs = false">
-      <div class="bg-card border border-border rounded-lg p-6 w-full max-w-[672px] max-h-[80vh] overflow-y-auto shadow-lg">
-        <div class="flex items-center justify-between mb-4">
-          <h3 class="text-lg font-semibold text-foreground">处理日志 - {{ selectedDoc.fileName }}</h3>
-          <button class="text-muted-foreground hover:text-foreground" @click="showLogs = false">
-            <X :size="20" />
-          </button>
-        </div>
-        <div v-if="processingLogs.length === 0" class="text-sm text-muted-foreground">暂无日志</div>
-        <div v-else class="space-y-2">
-          <div
-            v-for="log in processingLogs"
-            :key="log.id"
-            class="p-3 rounded-md border border-border"
-            :class="log.stage === 'ERROR' ? 'bg-red-50 dark:bg-red-900/10' : 'bg-muted/30'"
-          >
-            <div class="flex items-start justify-between mb-1">
-              <span class="text-xs font-medium text-foreground">{{ log.stage }}</span>
-              <span class="text-xs text-muted-foreground">{{ formatDate(log.timestamp) }}</span>
+    <!-- 处理日志侧栏 (Sheet) -->
+    <Sheet :open="showLogs && !!selectedDoc" @update:open="(val: boolean) => { if (!val) { showLogs = false; selectedDoc = null } }">
+      <SheetContent side="right" class="w-full sm:max-w-[672px] overflow-y-auto">
+        <SheetHeader>
+          <SheetTitle>处理日志</SheetTitle>
+          <SheetDescription>{{ selectedDoc?.fileName }}</SheetDescription>
+        </SheetHeader>
+        <div class="mt-4">
+          <div v-if="processingLogs.length === 0" class="text-sm text-muted-foreground">暂无日志</div>
+          <div v-else class="space-y-2">
+            <div
+              v-for="log in processingLogs"
+              :key="log.id"
+              class="p-3 rounded-md border border-border"
+              :class="log.stage === 'ERROR' ? 'bg-red-50 dark:bg-red-900/10' : 'bg-muted/30'"
+            >
+              <div class="flex items-start justify-between mb-1">
+                <span class="text-xs font-medium text-foreground">{{ log.stage }}</span>
+                <span class="text-xs text-muted-foreground">{{ formatDate(log.timestamp) }}</span>
+              </div>
+              <p class="text-sm text-foreground">{{ log.message }}</p>
+              <p v-if="log.error" class="text-xs text-destructive mt-1">{{ log.error }}</p>
             </div>
-            <p class="text-sm text-foreground">{{ log.message }}</p>
-            <p v-if="log.error" class="text-xs text-destructive mt-1">{{ log.error }}</p>
           </div>
         </div>
-      </div>
-    </div>
+      </SheetContent>
+    </Sheet>
 
     <!-- 单个删除确认对话框 -->
-    <div v-if="deleteTarget" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" @click.self="deleteTarget = null">
-      <div class="bg-card border border-border rounded-lg p-6 w-full max-w-[384px] shadow-lg">
-        <h3 class="text-lg font-semibold text-foreground mb-2">确认删除</h3>
-        <p class="text-sm text-muted-foreground mb-4">
-          确定要删除文档「{{ deleteTarget.doc.fileName }}」吗？此操作不可撤销。
-        </p>
-        <div class="flex justify-end gap-2">
-          <button
-            class="h-9 px-4 rounded-md text-sm border border-input hover:bg-accent transition-colors"
-            @click="deleteTarget = null"
-          >取消</button>
-          <button
-            class="h-9 px-4 rounded-md text-sm bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors"
-            @click="handleDelete"
-          >删除</button>
-        </div>
-      </div>
-    </div>
+    <ConfirmDialog
+      v-model:show="showDeleteConfirm"
+      title="确认删除"
+      :message="deleteTarget ? `确定要删除文档「${deleteTarget.doc.fileName}」吗？此操作不可撤销。` : ''"
+      confirm-label="删除"
+      confirm-variant="destructive"
+      @confirm="handleDelete"
+      @cancel="deleteTarget = null"
+    />
 
     <!-- 批量删除确认对话框 -->
     <ConfirmDialog

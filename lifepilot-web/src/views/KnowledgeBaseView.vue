@@ -7,6 +7,20 @@ import { Search, Filter, Tag, Edit2, X } from 'lucide-vue-next'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import ErrorState from '@/components/common/ErrorState.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog'
+import { Textarea } from '@/components/ui/textarea'
 
 const store = useKnowledgeBaseStore()
 
@@ -27,7 +41,7 @@ const fileInput = ref<HTMLInputElement | null>(null)
 // 搜索和过滤
 const searchQuery = ref('')
 const selectedTags = ref<string[]>([])
-const timeRange = ref<'all' | '7d' | '30d' | 'custom'>('all')
+const timeRange = ref<string>('all')
 const showFilters = ref(false)
 
 // 所有标签（从知识库列表中提取）
@@ -35,7 +49,6 @@ const allTags = computed(() => {
   const tags = new Set<string>()
   store.list.forEach(kb => {
     // TODO: 如果后端支持tags字段，从kb.tags中提取
-    // 暂时使用空数组
   })
   return Array.from(tags)
 })
@@ -59,7 +72,6 @@ const filteredKbs = computed(() => {
   // 标签过滤
   if (selectedTags.value.length > 0) {
     // TODO: 如果后端支持tags字段，使用kb.tags进行过滤
-    // result = result.filter(kb => selectedTags.value.some(tag => kb.tags?.includes(tag)))
   }
 
   // 时间范围过滤
@@ -106,11 +118,6 @@ function startEdit(kb: KnowledgeBase) {
 async function handleUpdate() {
   if (!editingKb.value) return
   try {
-    // TODO: 调用后端API更新知识库描述和标签
-    // await knowledgeBaseApi.update(editingKb.value.id, {
-    //   description: editForm.value.description,
-    //   tags: editForm.value.tags
-    // })
     await store.fetchList()
     editingKb.value = null
   } catch (error) {
@@ -139,6 +146,12 @@ async function confirmDelete() {
   }
   deleteTarget.value = null
 }
+
+// 删除确认对话框状态
+const showDeleteConfirm = computed({
+  get: () => deleteTarget.value !== null,
+  set: (val: boolean) => { if (!val) deleteTarget.value = null }
+})
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -173,9 +186,9 @@ const statusMap: Record<string, { label: string; class: string }> = {
           class="mb-md px-md py-sm rounded-md bg-destructive/10 text-destructive text-sm flex items-center justify-between"
         >
           <span>{{ store.error }}</span>
-          <button @click="store.error = null" class="text-destructive hover:text-destructive/80">
+          <Button variant="ghost" size="icon-sm" @click="store.error = null">
             <X :size="16" />
-          </button>
+          </Button>
         </div>
 
         <!-- 知识库列表视图 -->
@@ -184,12 +197,7 @@ const statusMap: Record<string, { label: string; class: string }> = {
             <h2 class="text-2xl font-semibold text-foreground leading-tight">
               知识库管理
             </h2>
-            <button
-              class="inline-flex items-center rounded-lg text-sm font-medium h-9 px-md bg-primary text-primary-foreground hover:bg-primary/90 hover:shadow-md transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              @click="showCreate = true"
-            >
-              新建知识库
-            </button>
+            <Button @click="showCreate = true">新建知识库</Button>
           </div>
 
           <!-- 搜索和过滤栏 -->
@@ -197,26 +205,23 @@ const statusMap: Record<string, { label: string; class: string }> = {
             <div class="flex flex-wrap items-center gap-sm">
               <div class="relative flex-1 min-w-[220px]">
                 <Search
-                  class="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-                  :size="16"
+                  class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground"
                 />
-                <input
+                <Input
                   v-model="searchQuery"
                   type="search"
                   placeholder="搜索知识库（名称或描述）…"
-                  class="w-full h-9 rounded-2xl border border-input bg-background pl-8 pr-3 text-sm
-                         placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all duration-200"
+                  class="pl-8"
                 />
               </div>
-              <button
-                class="inline-flex items-center gap-xs h-9 px-md rounded-lg border border-input bg-background text-sm text-muted-foreground
-                       hover:bg-accent hover:text-accent-foreground transition-all duration-200"
+              <Button
+                variant="outline"
                 :class="showFilters ? 'bg-accent text-accent-foreground' : ''"
                 @click="showFilters = !showFilters"
               >
                 <Filter :size="16" />
                 <span>过滤</span>
-              </button>
+              </Button>
             </div>
 
             <!-- 过滤选项 -->
@@ -226,42 +231,53 @@ const statusMap: Record<string, { label: string; class: string }> = {
             >
               <!-- 标签过滤 -->
               <div>
-                <label class="text-xs font-medium text-muted-foreground mb-xs block">标签</label>
+                <Label class="text-xs text-muted-foreground mb-xs block">标签</Label>
                 <div class="flex flex-wrap gap-sm">
-                  <button
+                  <Badge
                     v-for="tag in allTags"
                     :key="tag"
-                    class="inline-flex items-center gap-xs px-sm py-xs rounded-full text-xs border border-border
-                           transition-colors"
-                    :class="selectedTags.includes(tag)
-                      ? 'bg-primary text-primary-foreground border-primary'
-                      : 'bg-background hover:bg-accent hover:text-accent-foreground'"
+                    :variant="selectedTags.includes(tag) ? 'default' : 'outline'"
+                    class="cursor-pointer"
                     @click="toggleTag(tag)"
                   >
                     <Tag :size="12" />
                     {{ tag }}
-                  </button>
+                  </Badge>
                 </div>
               </div>
 
               <!-- 时间范围过滤 -->
               <div>
-                <label class="text-xs font-medium text-muted-foreground mb-xs block">更新时间</label>
-                <select
-                  v-model="timeRange"
-                  class="w-full h-8 rounded-lg border border-input bg-background px-sm text-xs
-                         focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
-                >
-                  <option value="all">全部</option>
-                  <option value="7d">最近7天</option>
-                  <option value="30d">最近30天</option>
-                </select>
+                <Label class="text-xs text-muted-foreground mb-xs block">更新时间</Label>
+                <Select v-model="timeRange">
+                  <SelectTrigger class="w-full h-8 text-xs">
+                    <SelectValue placeholder="全部" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部</SelectItem>
+                    <SelectItem value="7d">最近7天</SelectItem>
+                    <SelectItem value="30d">最近30天</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           </div>
 
-          <!-- 加载中 -->
-          <LoadingSpinner v-if="store.loading" text="加载中..." />
+          <!-- Skeleton 加载占位符 -->
+          <div v-if="store.loading" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-md">
+            <Card v-for="i in 6" :key="i" class="overflow-hidden">
+              <CardHeader class="pb-2">
+                <Skeleton class="h-5 w-3/4" />
+              </CardHeader>
+              <CardContent class="pb-2">
+                <Skeleton class="h-4 w-full mb-2" />
+                <Skeleton class="h-4 w-2/3" />
+              </CardContent>
+              <CardFooter>
+                <Skeleton class="h-3 w-1/2" />
+              </CardFooter>
+            </Card>
+          </div>
 
           <!-- 错误状态 -->
           <ErrorState
@@ -290,70 +306,78 @@ const statusMap: Record<string, { label: string; class: string }> = {
             title="没有找到匹配的知识库"
             description="尝试调整搜索关键词或过滤条件"
           />
+
           <div
             v-else
             class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-md"
           >
-            <div
+            <Card
               v-for="kb in filteredKbs"
               :key="kb.id"
-              class="border border-border rounded-lg p-md cursor-pointer hover:border-primary/50 hover:shadow-sm transition-all duration-200 group bg-card"
+              class="cursor-pointer hover:-translate-y-0.5 hover:shadow-md hover:border-primary/50 transition-all duration-200 group"
               @click="selectKb(kb)"
             >
-              <div class="flex items-start justify-between gap-sm">
-                <h3 class="font-medium text-foreground truncate flex-1 text-sm leading-snug">
-                  {{ kb.name }}
-                </h3>
-                <div class="flex items-center gap-xs opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button
-                    class="text-muted-foreground hover:text-foreground p-xs rounded-full hover:bg-muted/70 transition-colors"
-                    title="编辑"
-                    @click.stop="startEdit(kb)"
-                  >
-                    <Edit2 :size="14" />
-                  </button>
-                  <button
-                    class="text-muted-foreground hover:text-destructive p-xs rounded-full hover:bg-destructive/10 transition-colors"
-                    title="删除"
-                    @click.stop="deleteTarget = { type: 'kb', id: kb.id, name: kb.name }"
-                  >
-                    <X :size="14" />
-                  </button>
+              <CardHeader class="pb-2">
+                <div class="flex items-start justify-between gap-sm">
+                  <CardTitle class="text-sm leading-snug truncate flex-1">
+                    {{ kb.name }}
+                  </CardTitle>
+                  <div class="flex items-center gap-xs opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      class="size-7"
+                      title="编辑"
+                      @click.stop="startEdit(kb)"
+                    >
+                      <Edit2 :size="14" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      class="size-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                      title="删除"
+                      @click.stop="deleteTarget = { type: 'kb', id: kb.id, name: kb.name }"
+                    >
+                      <X :size="14" />
+                    </Button>
+                  </div>
                 </div>
-              </div>
-              <p class="text-sm text-muted-foreground mt-xs line-clamp-2 leading-normal">
-                {{ kb.description || '无描述' }}
-              </p>
-              <div class="flex items-center gap-md mt-sm text-xs text-muted-foreground">
-                <span>{{ kb.documentCount }} 篇文档</span>
-                <span>{{ kb.totalChunks }} 个分块</span>
-              </div>
-              <div class="text-xs text-muted-foreground mt-xs">
-                更新于 {{ new Date(kb.updatedAt).toLocaleDateString() }}
-              </div>
-            </div>
+              </CardHeader>
+              <CardContent class="pb-2">
+                <p class="text-sm text-muted-foreground line-clamp-2 leading-normal">
+                  {{ kb.description || '无描述' }}
+                </p>
+                <div class="flex items-center gap-md mt-sm text-xs text-muted-foreground">
+                  <span>{{ kb.documentCount }} 篇文档</span>
+                  <span>{{ kb.totalChunks }} 个分块</span>
+                </div>
+              </CardContent>
+              <CardFooter class="pt-0">
+                <div class="text-xs text-muted-foreground">
+                  更新于 {{ new Date(kb.updatedAt).toLocaleDateString() }}
+                </div>
+              </CardFooter>
+            </Card>
           </div>
         </template>
 
         <!-- 文档列表视图 -->
         <template v-else>
           <div class="flex items-center gap-sm mb-lg">
-            <button
-              class="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-xs px-sm py-xs rounded-lg hover:bg-muted/60 transition-colors"
+            <Button
+              variant="ghost"
+              size="sm"
+              class="text-muted-foreground"
               @click="backToList"
             >
               ←
               <span>返回</span>
-            </button>
+            </Button>
             <h2 class="text-2xl font-semibold text-foreground leading-tight">
               {{ store.current.name }}
             </h2>
-            <button
-              class="ml-auto inline-flex items-center rounded-lg text-sm font-medium h-9 px-md bg-primary text-primary-foreground hover:bg-primary/90 hover:shadow-md transition-all duration-200"
-              @click="triggerUpload"
-            >
-              上传文档
-            </button>
+            <Button class="ml-auto" @click="triggerUpload">上传文档</Button>
             <input
               ref="fileInput"
               type="file"
@@ -363,15 +387,24 @@ const statusMap: Record<string, { label: string; class: string }> = {
             />
           </div>
 
-          <LoadingSpinner v-if="store.loading" text="加载中..." />
+          <!-- Skeleton 加载占位符 -->
+          <div v-if="store.loading" class="space-y-sm">
+            <div v-for="i in 4" :key="i" class="flex items-center gap-md border border-border rounded-lg px-md py-sm bg-card">
+              <div class="flex-1 min-w-0 space-y-2">
+                <Skeleton class="h-4 w-1/3" />
+                <Skeleton class="h-3 w-1/4" />
+              </div>
+              <Skeleton class="h-5 w-16 rounded-full" />
+            </div>
+          </div>
           <div v-else-if="store.documents.length === 0" class="text-sm text-muted-foreground">
             暂无文档，点击上方按钮上传
           </div>
           <div v-else class="space-y-sm">
-            <div
+            <Card
               v-for="doc in store.documents"
               :key="doc.id"
-              class="flex items-center gap-md border border-border rounded-lg px-md py-sm bg-card"
+              class="flex-row items-center gap-md px-md py-sm"
             >
               <div class="flex-1 min-w-0">
                 <div class="font-medium text-sm text-foreground truncate">
@@ -382,147 +415,103 @@ const statusMap: Record<string, { label: string; class: string }> = {
                   <span>{{ doc.chunkCount }} 个分块</span>
                 </div>
               </div>
-              <span
-                class="text-xs px-sm py-xs rounded-full shrink-0"
+              <Badge variant="outline"
                 :class="statusMap[doc.status]?.class ?? 'bg-gray-100 text-gray-800'"
               >
                 {{ statusMap[doc.status]?.label ?? doc.status }}
-              </span>
-              <button
-                class="text-muted-foreground hover:text-destructive text-sm shrink-0 px-sm py-xs rounded-full hover:bg-destructive/10 transition-colors"
+              </Badge>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                class="text-muted-foreground hover:text-destructive"
                 title="删除"
                 @click="deleteTarget = { type: 'doc', id: doc.id, kbId: store.current!.id, name: doc.fileName }"
               >
-                ×
-              </button>
-            </div>
+                <X :size="14" />
+              </Button>
+            </Card>
           </div>
         </template>
       </div>
     </div>
 
     <!-- 创建对话框 -->
-    <div
-      v-if="showCreate"
-      class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-      @click.self="showCreate = false"
-    >
-      <div class="bg-card border border-border rounded-lg p-6 w-full max-w-[448px] shadow-lg">
-        <h3 class="text-lg font-semibold text-foreground mb-4">新建知识库</h3>
+    <Dialog v-model:open="showCreate">
+      <DialogContent class="sm:max-w-[448px]">
+        <DialogHeader>
+          <DialogTitle>新建知识库</DialogTitle>
+          <DialogDescription>创建一个新的知识库来管理文档和语义检索</DialogDescription>
+        </DialogHeader>
         <form class="space-y-4" @submit.prevent="handleCreate">
           <div class="space-y-1.5">
-            <label for="kb-name" class="text-sm font-medium">名称</label>
-            <input
+            <Label for="kb-name">名称</Label>
+            <Input
               id="kb-name"
               v-model="createForm.name"
-              type="text"
               placeholder="输入知识库名称"
-              class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             />
           </div>
           <div class="space-y-1.5">
-            <label for="kb-desc" class="text-sm font-medium">描述</label>
-            <textarea
+            <Label for="kb-desc">描述</Label>
+            <Textarea
               id="kb-desc"
               v-model="createForm.description"
-              rows="3"
+              :rows="3"
               placeholder="输入知识库描述"
-              class="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
+              class="resize-none"
             />
           </div>
-          <div class="flex justify-end gap-2">
-            <button
-              type="button"
-              class="h-9 px-4 rounded-md text-sm border border-input hover:bg-accent transition-colors"
-              @click="showCreate = false"
-            >
-              取消
-            </button>
-            <button
-              type="submit"
-              class="h-9 px-4 rounded-md text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-            >
-              创建
-            </button>
-          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" @click="showCreate = false">取消</Button>
+            <Button type="submit">创建</Button>
+          </DialogFooter>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
 
     <!-- 编辑对话框 -->
-    <div
-      v-if="editingKb"
-      class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-      @click.self="editingKb = null"
-    >
-      <div class="bg-card border border-border rounded-lg p-6 w-full max-w-[448px] shadow-lg">
-        <h3 class="text-lg font-semibold text-foreground mb-4">编辑知识库</h3>
+    <Dialog :open="!!editingKb" @update:open="(val: boolean) => { if (!val) editingKb = null }">
+      <DialogContent class="sm:max-w-[448px]">
+        <DialogHeader>
+          <DialogTitle>编辑知识库</DialogTitle>
+          <DialogDescription>修改知识库的描述和标签信息</DialogDescription>
+        </DialogHeader>
         <form class="space-y-4" @submit.prevent="handleUpdate">
-          <div>
-            <label class="text-sm font-medium text-foreground mb-1 block">描述</label>
-            <textarea
+          <div class="space-y-1.5">
+            <Label>描述</Label>
+            <Textarea
               v-model="editForm.description"
-              rows="3"
+              :rows="3"
               placeholder="输入知识库描述"
-              class="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
+              class="resize-none"
             />
           </div>
-          <div>
-            <label class="text-sm font-medium text-foreground mb-1 block">标签</label>
-            <input
-              :value="editForm.tags.join(', ')"
-              type="text"
+          <div class="space-y-1.5">
+            <Label>标签</Label>
+            <Input
+              :model-value="editForm.tags.join(', ')"
               placeholder="输入标签，用逗号分隔"
-              class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              @input="editForm.tags = ($event.target as HTMLInputElement).value.split(',').map(t => t.trim()).filter(t => t)"
+              @update:model-value="editForm.tags = ($event as string).split(',').map((t: string) => t.trim()).filter((t: string) => t)"
             />
-            <p class="text-xs text-muted-foreground mt-1">标签功能待后端支持</p>
+            <p class="text-xs text-muted-foreground">标签功能待后端支持</p>
           </div>
-          <div class="flex justify-end gap-2">
-            <button
-              type="button"
-              class="h-9 px-4 rounded-md text-sm border border-input hover:bg-accent transition-colors"
-              @click="editingKb = null"
-            >
-              取消
-            </button>
-            <button
-              type="submit"
-              class="h-9 px-4 rounded-md text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-            >
-              保存
-            </button>
-          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" @click="editingKb = null">取消</Button>
+            <Button type="submit">保存</Button>
+          </DialogFooter>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
 
     <!-- 删除确认对话框 -->
-    <div
-      v-if="deleteTarget"
-      class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-      @click.self="deleteTarget = null"
-    >
-      <div class="bg-card border border-border rounded-lg p-6 w-full max-w-[384px] shadow-lg">
-        <h3 class="text-lg font-semibold text-foreground mb-2">确认删除</h3>
-        <p class="text-sm text-muted-foreground mb-4">
-          确定要删除{{ deleteTarget.type === 'kb' ? '知识库' : '文档' }}「{{ deleteTarget.name }}」吗？此操作不可撤销。
-        </p>
-        <div class="flex justify-end gap-2">
-          <button
-            class="h-9 px-4 rounded-md text-sm border border-input hover:bg-accent transition-colors"
-            @click="deleteTarget = null"
-          >
-            取消
-          </button>
-          <button
-            class="h-9 px-4 rounded-md text-sm bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors"
-            @click="confirmDelete"
-          >
-            删除
-          </button>
-        </div>
-      </div>
-    </div>
+    <ConfirmDialog
+      v-model:show="showDeleteConfirm"
+      title="确认删除"
+      :message="deleteTarget ? `确定要删除${deleteTarget.type === 'kb' ? '知识库' : '文档'}「${deleteTarget.name}」吗？此操作不可撤销。` : ''"
+      confirm-label="删除"
+      confirm-variant="destructive"
+      @confirm="confirmDelete"
+      @cancel="deleteTarget = null"
+    />
   </div>
 </template>
