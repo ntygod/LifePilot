@@ -351,40 +351,9 @@ public class AgentLoop {
 
             // Trace 启动后重新计时：Loop 总耗时用于 Budget elapsed、Step elapsed 等。
             loopStart = Instant.now();
-            var limits = LoopLimits.from(config);
-            var counters = new LoopCounters();
 
-            // 核心循环
-            for (int iteration = 0; !state.isDone(); iteration++) {
-                // 1) 迭代硬限制（保护性兜底）
-                Action forcedByIterationLimit = forceTerminateIfIterationLimitReached(iteration, limits);
-                if (forcedByIterationLimit != null) {
-                    state = reduceAndRecord(state, forcedByIterationLimit, traceContext, loopStart);
-                    break;
-                }
-
-                // 2) 更新 Budget 已用时长 + Budget 软硬限制
-                state = updateBudgetElapsed(state, loopStart);
-                Action forcedByBudget = forceTerminateIfBudgetExceeded(state);
-                if (forcedByBudget != null) {
-                    state = reduceAndRecord(state, forcedByBudget, traceContext, loopStart);
-                    break;
-                }
-
-                // 3) 上下文组装（含 SubAgent systemPrompt 覆盖合并）
-                var assembledContext = assembleContext(request, state);
-
-                // 4) 调用 LLM → 解析为 Action → 归约状态 → 记录 Trace
-                Action action = callLlmAndParseAction(request, state, assembledContext);
-                state = reduceAndRecord(state, action, traceContext, loopStart);
-
-                // 5) 连续异常/阻断保护：解析失败与护栏阻断过多会强制终止
-                Action forcedByConsecutiveFailures = counters.onAction(action, state, limits);
-                if (forcedByConsecutiveFailures != null) {
-                    state = reduceAndRecord(state, forcedByConsecutiveFailures, traceContext, loopStart);
-                    break;
-                }
-            }
+            // 核心循环 — 非流式回调
+            state = coreLoop(state, request, traceContext, loopStart, new NonStreamingCallback());
 
             // 归一化最终输出与推理概要（非流式）：用于会话快照与 /complete 响应
             if (state.terminationReason() == null) {
@@ -422,6 +391,72 @@ public class AgentLoop {
                 traceRecorder.endTrace(traceContext, finalOutput, success, errorType, errorDetail);
             }
         }
+    }
+
+    // ==================== 核心循环骨架 ====================
+
+    /**
+     * 核心循环骨架 — run() 和 runStreaming() 的共享实现。
+     *
+     * <p>封装迭代限制检查、预算更新、上下文组装、Action 分发、状态归约、
+     * 连续失败保护等共享逻辑。流式/非流式差异通过 {@link IterationCallback} 注入。</p>
+     *
+     * @param state      初始状态（已完成 initState）
+     * @param request    用户请求
+     * @param traceContext 追踪上下文（可为 null）
+     * @param loopStart  循环开始时间
+     * @param callback   迭代回调（封装流式/非流式差异）
+     * @return 循环结束后的最终状态
+     */
+    private AgentState coreLoop(AgentState state,
+                                AgentRequest request,
+                                @Nullable TraceContext traceContext,
+                                Instant loopStart,
+                                IterationCallback callback) {
+        var limits = LoopLimits.from(config);
+        var counters = new LoopCounters();
+
+        for (int iteration = 0; !state.isDone(); iteration++) {
+            // 1) 迭代硬限制
+            Action forcedByIterationLimit = forceTerminateIfIterationLimitReached(iteration, limits);
+            if (forcedByIterationLimit != null) {
+                state = reduceAndRecord(state, forcedByIterationLimit, traceContext, loopStart);
+                break;
+            }
+
+            // 2) 更新 Budget 已用时长 + Budget 软硬限制
+            state = updateBudgetElapsed(state, loopStart);
+            Action forcedByBudget = forceTerminateIfBudgetExceeded(state);
+            if (forcedByBudget != null) {
+                state = reduceAndRecord(state, forcedByBudget, traceContext, loopStart);
+                break;
+            }
+
+            // 3) 上下文组装（含回调钩子）
+            callback.beforeContextAssembly(request, state);
+            var assembledContext = assembleContext(request, state);
+            callback.afterContextAssembly(request, state);
+
+            // 4) Action 分发（由回调实现决定 LLM / 流式 LLM / 工具执行）
+            Action action = callback.dispatchAction(request, state, assembledContext, traceContext);
+
+            // 5) 状态归约 + Trace 记录
+            state = reduceAndRecord(state, action, traceContext, loopStart);
+
+            // 6) 回调中断检查（流式 RESPONDING 阶段 LLM 不可用时中断）
+            if (callback.shouldBreakAfterAction(action, state)) {
+                break;
+            }
+
+            // 7) 连续异常/阻断保护
+            Action forcedByConsecutiveFailures = counters.onAction(action, state, limits);
+            if (forcedByConsecutiveFailures != null) {
+                state = reduceAndRecord(state, forcedByConsecutiveFailures, traceContext, loopStart);
+                break;
+            }
+        }
+
+        return state;
     }
 
     /**
@@ -1482,6 +1517,80 @@ public class AgentLoop {
             log.debug("发送 reasoning 事件失败: type={}, error={}", type, e.getMessage());
         }
     }
+
+    // ==================== 核心循环策略接口 ====================
+
+    /**
+     * 核心循环迭代回调 — 封装流式与非流式场景的差异行为。
+     *
+     * <p>核心循环 {@link #coreLoop} 在每次迭代中通过此接口注入差异化逻辑：
+     * 上下文组装前后的事件通知、Action 获取方式（LLM / 流式 LLM / 工具执行）、
+     * 以及 Action 归约后的中断判断。</p>
+     *
+     * <p>非流式场景使用 default 空实现，流式场景覆写钩子方法发送 SSE 推理事件。</p>
+     *
+     * @author zsg
+     * @since 2026-03-05
+     */
+    private interface IterationCallback {
+
+        /** 上下文组装前回调（流式场景发送 CONTEXT_LOADING 事件）。 */
+        default void beforeContextAssembly(AgentRequest request, AgentState state) {}
+
+        /** 上下文组装后回调（流式场景发送 MEMORY_RETRIEVAL 事件）。 */
+        default void afterContextAssembly(AgentRequest request, AgentState state) {}
+
+        /**
+         * 根据当前状态和上下文分发并获取 Action。
+         *
+         * <p>实现方根据 {@link AgentPhase} 选择正确的 Action 获取方式：
+         * EXECUTING → 直接执行工具，RESPONDING（流式）→ 流式 LLM，其他 → 同步 LLM。</p>
+         *
+         * @param request          用户请求
+         * @param state            当前 Agent 状态
+         * @param assembledContext  已组装的上下文
+         * @param traceContext      追踪上下文（可为 null）
+         * @return 本轮迭代产生的 Action
+         */
+        Action dispatchAction(AgentRequest request,
+                              AgentState state,
+                              AssembledContext assembledContext,
+                              @Nullable TraceContext traceContext);
+
+        /**
+         * Action 归约后回调。返回 true 表示应立即中断循环。
+         *
+         * <p>流式场景用于处理 RESPONDING 阶段 LLM 不可用时的特殊中断。</p>
+         */
+        default boolean shouldBreakAfterAction(Action action, AgentState state) {
+            return false;
+        }
+    }
+
+    /**
+     * 非流式迭代回调 — run() 使用。
+     *
+     * <p>EXECUTING 阶段直接执行工具，其他阶段同步调用 LLM。
+     * 不发送任何 SSE 推理事件，不覆写钩子方法。</p>
+     */
+    private class NonStreamingCallback implements IterationCallback {
+
+        @Override
+        public Action dispatchAction(AgentRequest request,
+                                     AgentState state,
+                                     AssembledContext assembledContext,
+                                     @Nullable TraceContext traceContext) {
+            if (state.phase() == AgentPhase.EXECUTING) {
+                // EXECUTING 阶段：直接按 ExecutionPlan 执行工具，不调用 LLM
+                var toolCallbacks = agentToolProvider.getToolCallbacks(state);
+                return executeNextPlannedToolStep(state, toolCallbacks);
+            }
+            // 其他阶段（UNDERSTANDING / PLANNING / REFLECTING / RESPONDING）：同步 LLM
+            return callLlmAndParseAction(request, state, assembledContext);
+        }
+    }
+
+    // ==================== Loop 保护机制 ====================
 
     /**
      * Loop 保护限制（来自配置）。
