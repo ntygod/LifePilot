@@ -17,6 +17,7 @@ import com.lifepilot.knowledge.repository.DocumentChunkRepository;
 import com.lifepilot.knowledge.repository.DocumentRepository;
 import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
 import com.lifepilot.knowledge.retrieve.DocumentRetriever;
+import com.lifepilot.knowledge.retrieve.QueryEnhancer;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import org.slf4j.Logger;
@@ -119,9 +120,21 @@ public class KnowledgeAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnBean(LlmRouter.class)
+    @ConditionalOnProperty(prefix = "lifepilot.knowledge.chunking.semantic-chunking", name = "enabled",
+            havingValue = "true")
+    public SemanticChunker semanticChunker(LlmRouter llmRouter, RecursiveChunker recursiveChunker,
+                                           KnowledgeBaseProperties props) {
+        return new SemanticChunker(llmRouter, recursiveChunker, props.chunking().semanticChunking());
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     public SmartChunker smartChunker(FixedSizeChunker fixedSizeChunker, RecursiveChunker recursiveChunker,
-                                     HeadingChunker headingChunker, KnowledgeBaseProperties props) {
-        return new SmartChunker(fixedSizeChunker, recursiveChunker, headingChunker, null,
+                                     HeadingChunker headingChunker,
+                                     @Nullable SemanticChunker semanticChunker,
+                                     KnowledgeBaseProperties props) {
+        return new SmartChunker(fixedSizeChunker, recursiveChunker, headingChunker, semanticChunker,
                 props.chunking().smartChunker());
     }
 
@@ -189,6 +202,20 @@ public class KnowledgeAutoConfiguration {
         return new KnowledgeExtractionPipeline(llmRouter, semanticMemory, props.extraction());
     }
 
+    // ---- 查询增强（可选） ----
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(LlmRouter.class)
+    @ConditionalOnProperty(prefix = "lifepilot.knowledge.query-enhancer", name = "mode",
+            matchIfMissing = false)
+    public QueryEnhancer queryEnhancer(LlmRouter llmRouter, KnowledgeBaseProperties props) {
+        if ("none".equals(props.queryEnhancer().mode())) {
+            return null;
+        }
+        return new QueryEnhancer(llmRouter, props.queryEnhancer());
+    }
+
     // ---- Reranker（可选） ----
 
     @Bean
@@ -209,7 +236,7 @@ public class KnowledgeAutoConfiguration {
     @ConditionalOnMissingBean
     public DocumentRetriever documentRetriever(@Nullable VectorIndexer vectorIndexer, FtsIndexer ftsIndexer,
                                                 Optional<Reranker> reranker,
-                                                @Nullable com.lifepilot.knowledge.retrieve.QueryEnhancer queryEnhancer,
+                                                @Nullable QueryEnhancer queryEnhancer,
                                                 DocumentChunkRepository chunkRepository,
                                                 KnowledgeBaseProperties props) {
         return new DocumentRetriever(vectorIndexer, ftsIndexer, reranker, queryEnhancer, chunkRepository, props.retrieval());
