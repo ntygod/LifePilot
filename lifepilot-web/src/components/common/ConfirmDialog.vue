@@ -1,4 +1,15 @@
 <script setup lang="ts">
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+
 interface Props {
   title: string
   message: string
@@ -8,11 +19,11 @@ interface Props {
   show?: boolean
 }
 
-const props = withDefaults(defineProps<Props>(), {
+withDefaults(defineProps<Props>(), {
   confirmLabel: '确认',
   cancelLabel: '取消',
   confirmVariant: 'default',
-  show: true
+  show: true,
 })
 
 const emit = defineEmits<{
@@ -30,41 +41,28 @@ function handleCancel() {
   emit('cancel')
   emit('update:show', false)
 }
-
-function handleBackdropClick() {
-  emit('update:show', false)
-  emit('cancel')
-}
 </script>
 
 <template>
-  <div
-    v-if="show"
-    class="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]"
-    @click.self="handleBackdropClick"
-  >
-    <div class="bg-card border border-border rounded-lg p-6 w-full max-w-[384px] shadow-lg">
-      <h3 class="text-lg font-semibold text-foreground mb-2">{{ title }}</h3>
-      <p class="text-sm text-muted-foreground mb-4 whitespace-pre-wrap">{{ message }}</p>
-      <div class="flex justify-end gap-2">
-        <button
-          class="h-9 px-4 rounded-md text-sm border border-input hover:bg-accent transition-colors"
-          @click="handleCancel"
-        >
+  <AlertDialog :open="show" @update:open="$emit('update:show', $event)">
+    <AlertDialogContent>
+      <AlertDialogHeader>
+        <AlertDialogTitle>{{ title }}</AlertDialogTitle>
+        <AlertDialogDescription class="whitespace-pre-wrap">
+          {{ message }}
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+      <AlertDialogFooter>
+        <AlertDialogCancel @click="handleCancel">
           {{ cancelLabel }}
-        </button>
-        <button
-          :class="[
-            'h-9 px-4 rounded-md text-sm transition-colors',
-            confirmVariant === 'destructive'
-              ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
-              : 'bg-primary text-primary-foreground hover:bg-primary/90'
-          ]"
+        </AlertDialogCancel>
+        <AlertDialogAction
+          :class="confirmVariant === 'destructive' ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90' : ''"
           @click="handleConfirm"
         >
           {{ confirmLabel }}
-        </button>
-      </div>
-    </div>
-  </div>
+        </AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
+  </AlertDialog>
 </template>

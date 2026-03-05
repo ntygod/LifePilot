@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import SettingSection from '@/components/settings/SettingSection.vue'
+import { Badge } from '@/components/ui/badge'
 import { SHORTCUT_DEFINITIONS } from '@/composables/useKeyboardShortcuts'
 
 // 按 category 分组快捷键定义
@@ -18,13 +19,6 @@ const groupedShortcuts = computed(() => {
 
 <template>
   <div class="flex flex-col h-full overflow-hidden">
-    <div class="sticky top-0 z-10 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div class="max-w-[1200px] mx-auto px-md md:px-lg py-md">
-        <h2 class="text-2xl font-semibold text-foreground leading-tight">快捷键设置</h2>
-        <p class="text-sm text-muted-foreground mt-1">查看当前可用快捷键（只读列表）</p>
-      </div>
-    </div>
-
     <div class="flex-1 overflow-y-auto">
       <div class="max-w-[1200px] mx-auto px-md md:px-lg py-lg space-y-6 max-w-4xl">
         <div
@@ -41,13 +35,10 @@ const groupedShortcuts = computed(() => {
               >
                 <span class="text-sm text-foreground">{{ item.name }}</span>
                 <div class="flex items-center gap-1">
-                  <kbd
-                    v-for="(key, index) in item.keys"
-                    :key="index"
-                    class="px-2 py-1 rounded bg-muted text-xs font-mono text-muted-foreground"
-                  >
-                    {{ key }}
-                  </kbd>
+                  <template v-for="(key, index) in item.keys" :key="index">
+                    <span v-if="index > 0" class="text-muted-foreground">+</span>
+                    <Badge variant="outline" class="font-mono text-xs px-1.5 py-0.5">{{ key }}</Badge>
+                  </template>
                 </div>
               </div>
             </div>

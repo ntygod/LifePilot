@@ -4,6 +4,8 @@ import { useWorkflowStore } from '@/stores/workflow'
 import { useToolStore } from '@/stores/tool'
 import { workflowApi } from '@/api/client'
 import type { WorkflowDetail } from '@/types'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 
 const props = defineProps<{
   workflow?: WorkflowDetail | null
@@ -391,9 +393,8 @@ onMounted(async () => {
             <div class="grid grid-cols-1 md:grid-cols-2 gap-md">
               <div>
                 <label class="block text-sm font-medium text-foreground mb-1">工作流 ID <span class="text-destructive">*</span></label>
-                <input
+                <Input
                   v-model="guided.id"
-                  class="w-full px-md py-sm border border-input rounded-2xl bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 text-sm"
                   :class="{ 'border-destructive': errors.guided_id }"
                   placeholder="例如：daily-report"
                 />
@@ -403,9 +404,8 @@ onMounted(async () => {
 
               <div>
                 <label class="block text-sm font-medium text-foreground mb-1">名称 <span class="text-destructive">*</span></label>
-                <input
+                <Input
                   v-model="guided.name"
-                  class="w-full px-md py-sm border border-input rounded-2xl bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 text-sm"
                   :class="{ 'border-destructive': errors.guided_name }"
                   placeholder="例如：每日工作汇总"
                 />
@@ -414,10 +414,10 @@ onMounted(async () => {
 
               <div class="md:col-span-2">
                 <label class="block text-sm font-medium text-foreground mb-1">描述</label>
-                <textarea
+                <Textarea
                   v-model="guided.description"
                   rows="2"
-                  class="w-full px-md py-sm border border-input rounded-2xl bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 text-sm leading-normal"
+                  class="leading-normal"
                   placeholder="这条工作流会做什么？什么时候运行？"
                 />
               </div>
@@ -428,9 +428,8 @@ onMounted(async () => {
               <div class="grid grid-cols-1 md:grid-cols-2 gap-md">
                 <div>
                   <label class="block text-sm font-medium text-foreground mb-1">步骤 ID <span class="text-destructive">*</span></label>
-                  <input
+                  <Input
                     v-model="guided.stepId"
-                    class="w-full px-md py-sm border border-input rounded-2xl bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 text-sm"
                     :class="{ 'border-destructive': errors.guided_stepId }"
                     placeholder="例如：fetch_data"
                   />
@@ -439,9 +438,8 @@ onMounted(async () => {
 
                 <div>
                   <label class="block text-sm font-medium text-foreground mb-1">步骤名称</label>
-                  <input
+                  <Input
                     v-model="guided.stepName"
-                    class="w-full px-md py-sm border border-input rounded-2xl bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 text-sm"
                     placeholder="例如：抓取数据"
                   />
                 </div>
@@ -470,9 +468,8 @@ onMounted(async () => {
                     </div>
                     <!-- 保留手动输入能力，方便先设计 Workflow 再补充 Tool 场景 -->
                     <div class="flex-1">
-                      <input
+                      <Input
                         v-model="guided.toolId"
-                        class="w-full px-md py-sm border border-input rounded-2xl bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 text-sm"
                         :class="{ 'border-destructive': errors.guided_toolId }"
                         placeholder="也可以直接输入自定义 Tool ID，例如：weather.get"
                       />
@@ -488,11 +485,11 @@ onMounted(async () => {
 
                 <div class="md:col-span-2">
                   <label class="block text-sm font-medium text-foreground mb-1">params（JSON 对象）</label>
-                  <textarea
+                  <Textarea
                     v-model="guided.paramsJson"
                     rows="5"
-                    class="w-full px-md py-sm border border-input rounded-2xl bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 font-mono text-sm leading-normal"
                     :class="{ 'border-destructive': errors.guided_paramsJson }"
+                    class="font-mono text-sm leading-normal"
                     spellcheck="false"
                     placeholder="例如：{} 或 {&quot;query&quot;:&quot;xxx&quot;}"
                   />
@@ -525,11 +522,11 @@ onMounted(async () => {
             <label class="block text-sm font-medium text-foreground mb-1">
               YAML 定义 <span class="text-destructive">*</span>
             </label>
-            <textarea
+            <Textarea
               v-model="formData.yaml"
               rows="20"
               spellcheck="false"
-              class="w-full px-md py-sm border border-input rounded-2xl bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 font-mono text-sm leading-normal min-h-[360px]"
+              class="font-mono text-sm leading-normal min-h-[360px]"
               :class="{ 'border-destructive': errors.yaml }"
               placeholder="示例：id/name/triggers/steps..."
             />

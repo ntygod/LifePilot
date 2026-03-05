@@ -3,6 +3,8 @@ import { ref, computed, watch } from 'vue'
 import type { ChatSession, KnowledgeBase } from '@/types'
 import { X } from 'lucide-vue-next'
 import { RouterLink } from 'vue-router'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 
 const props = defineProps<{
   session: ChatSession | null
@@ -41,19 +43,17 @@ function handleBlur() {
     <div class="flex-1 overflow-y-auto px-md py-sm space-y-md">
       <!-- 会话名称 -->
       <div>
-        <label class="text-xs font-medium text-muted-foreground mb-1 block">会话名称</label>
-        <input
+        <Label class="text-xs text-muted-foreground mb-1">会话名称</Label>
+        <Input
           v-model="editTitle"
-          type="text"
-          class="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm
-                 focus:outline-none focus:ring-1 focus:ring-ring"
+          class="h-8 text-sm"
           @blur="handleBlur"
         />
       </div>
 
       <!-- 创建时间 -->
       <div>
-        <label class="text-xs font-medium text-muted-foreground mb-1 block">创建时间</label>
+        <Label class="text-xs text-muted-foreground mb-1">创建时间</Label>
         <p class="text-sm text-foreground">
           {{ session?.createdAt ? new Date(session.createdAt).toLocaleString() : '-' }}
         </p>
@@ -61,7 +61,7 @@ function handleBlur() {
 
       <!-- 更新时间 -->
       <div>
-        <label class="text-xs font-medium text-muted-foreground mb-1 block">更新时间</label>
+        <Label class="text-xs text-muted-foreground mb-1">更新时间</Label>
         <p class="text-sm text-foreground">
           {{ session?.updatedAt ? new Date(session.updatedAt).toLocaleString() : '-' }}
         </p>
@@ -69,7 +69,7 @@ function handleBlur() {
 
       <!-- 关联知识库 -->
       <div>
-        <label class="text-xs font-medium text-muted-foreground mb-1 block">关联知识库</label>
+        <Label class="text-xs text-muted-foreground mb-1">关联知识库</Label>
         <div v-if="knowledgeBases.length > 0" class="space-y-1">
           <div
             v-for="kb in knowledgeBases"
@@ -90,7 +90,7 @@ function handleBlur() {
 
       <!-- 消息统计 -->
       <div>
-        <label class="text-xs font-medium text-muted-foreground mb-1 block">消息统计</label>
+        <Label class="text-xs text-muted-foreground mb-1">消息统计</Label>
         <p class="text-sm text-foreground">共 {{ messageCount }} 条消息</p>
       </div>
     </div>

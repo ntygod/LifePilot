@@ -1,12 +1,28 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSkillStore } from '@/stores/skill'
 import type { McpServer } from '@/types'
+import SearchBar from '@/components/common/SearchBar.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
 
 const router = useRouter()
 const skillStore = useSkillStore()
 
+const searchQuery = ref('')
 const showCreateDialog = ref(false)
 const deleteTarget = ref<McpServer | null>(null)
 const selectedServer = ref<McpServer | null>(null)
@@ -54,7 +70,6 @@ async function handleCreate() {
 async function handleDelete() {
   if (!deleteTarget.value) return
   try {
-    // 注意：MCP Server 删除可能需要通过 API，这里暂时使用占位逻辑
     alert('删除功能待后端实现')
     deleteTarget.value = null
   } catch (e: any) {
@@ -67,185 +82,220 @@ async function selectServer(server: McpServer) {
   await skillStore.fetchServerTools(server.name)
 }
 
-const stateLabel: Record<string, { label: string; class: string }> = {
-  CONNECTED: { label: '已连接', class: 'bg-green-100 text-green-800' },
-  CONNECTING: { label: '连接中', class: 'bg-blue-100 text-blue-800' },
-  DISCONNECTED: { label: '未连接', class: 'bg-gray-100 text-gray-800' },
-  RECONNECTING: { label: '重连中', class: 'bg-yellow-100 text-yellow-800' },
+const filteredServers = computed(() => {
+  if (!searchQuery.value) return skillStore.mcpServers
+  const q = searchQuery.value.toLowerCase()
+  return skillStore.mcpServers.filter(s =>
+    s.name.toLowerCase().includes(q)
+  )
+})
+
+const stateVariant: Record<string, 'default' | 'secondary' | 'outline' | 'destructive'> = {
+  CONNECTED: 'default',
+  CONNECTING: 'secondary',
+  DISCONNECTED: 'outline',
+  RECONNECTING: 'secondary',
+}
+
+const stateLabel: Record<string, string> = {
+  CONNECTED: '已连接',
+  CONNECTING: '连接中',
+  DISCONNECTED: '未连接',
+  RECONNECTING: '重连中',
 }
 </script>
 
 <template>
   <div class="flex flex-col h-full overflow-hidden">
     <!-- 头部操作栏 -->
-    <div class="flex-shrink-0 p-6 border-b border-border">
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="text-2xl font-semibold text-foreground">MCP Server 管理</h2>
-        <button
-          class="px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-          @click="showCreateDialog = true"
-        >
-          新建 Server
-        </button>
+    <div class="flex-shrink-0 border-b border-border">
+      <div class="max-w-[1200px] mx-auto px-md md:px-lg py-md">
+        <div class="flex items-center justify-between mb-md">
+          <h2 class="text-2xl font-semibold text-foreground leading-tight">MCP Server 管理</h2>
+          <Button @click="showCreateDialog = true">新建 Server</Button>
+        </div>
+
+        <!-- 搜索栏 -->
+        <SearchBar
+          v-model="searchQuery"
+          placeholder="搜索 Server 名称..."
+          class="max-w-[400px]"
+        />
       </div>
     </div>
 
     <!-- Server 列表 -->
-    <div class="flex-1 overflow-y-auto p-6">
-      <div v-if="skillStore.loading" class="text-sm text-muted-foreground">加载中...</div>
-      <div v-else-if="skillStore.mcpServers.length === 0" class="text-sm text-muted-foreground">
-        暂无 MCP Server，点击"新建 Server"创建
-      </div>
-      <div v-else class="space-y-3">
-        <div
-          v-for="server in skillStore.mcpServers"
-          :key="server.name"
-          class="border border-border rounded-lg p-4 hover:border-primary/50 transition-colors"
-        >
-          <div class="flex items-center gap-3 mb-2">
-            <h3
-              class="font-medium text-foreground cursor-pointer flex-1"
-              @click="router.push(`/mcp-servers/${server.name}`)"
-            >
-              {{ server.name }}
-            </h3>
-            <span
-              class="text-xs px-2 py-0.5 rounded-full shrink-0"
-              :class="stateLabel[server.state]?.class ?? 'bg-gray-100 text-gray-800'"
-            >
-              {{ stateLabel[server.state]?.label ?? server.state }}
-            </span>
-            <span class="text-xs text-muted-foreground">{{ server.toolCount }} 个工具</span>
-            <div class="flex gap-2">
-              <button
-                v-if="server.state === 'DISCONNECTED'"
-                class="text-xs px-3 py-1 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-                @click="skillStore.connectServer(server.name)"
-              >
-                连接
-              </button>
-              <button
-                v-if="server.state === 'CONNECTED'"
-                class="text-xs px-3 py-1 rounded-md border border-input hover:bg-accent transition-colors"
-                @click="skillStore.disconnectServer(server.name)"
-              >
-                断开
-              </button>
-              <button
-                class="text-xs px-3 py-1 rounded-md border border-input hover:bg-accent transition-colors"
-                @click="router.push(`/mcp-servers/${server.name}`)"
-              >
-                查看详情
-              </button>
-              <button
-                class="text-xs px-3 py-1 rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors"
-                @click.stop="deleteTarget = server"
-              >
-                删除
-              </button>
-            </div>
-          </div>
-          <div v-if="server.lastError" class="text-xs text-destructive mt-2">{{ server.lastError }}</div>
-          <div v-if="server.connectedSince" class="text-xs text-muted-foreground mt-1">
-            连接时间: {{ new Date(server.connectedSince).toLocaleString() }}
-          </div>
+    <div class="flex-1 overflow-y-auto">
+      <div class="max-w-[1200px] mx-auto px-md md:px-lg py-lg">
+        <!-- Skeleton 加载占位符 -->
+        <div v-if="skillStore.loading" class="space-y-sm">
+          <Card v-for="i in 4" :key="i">
+            <CardHeader class="pb-2">
+              <div class="flex items-center gap-sm">
+                <Skeleton class="h-5 w-1/4" />
+                <Skeleton class="h-5 w-16 rounded-full" />
+                <Skeleton class="h-5 w-20" />
+              </div>
+            </CardHeader>
+            <CardContent class="pb-3">
+              <Skeleton class="h-4 w-full mb-2" />
+              <Skeleton class="h-3 w-1/3" />
+            </CardContent>
+          </Card>
+        </div>
 
-          <!-- 工具列表（展开） -->
-          <div v-if="selectedServer?.name === server.name && skillStore.serverTools.length > 0" class="mt-3 border-t border-border pt-3 space-y-1">
-            <div
-              v-for="tool in skillStore.serverTools"
-              :key="tool.id"
-              class="text-sm flex gap-2"
-            >
-              <span class="font-mono text-foreground">{{ tool.name }}</span>
-              <span class="text-muted-foreground">{{ tool.description }}</span>
-            </div>
-          </div>
+        <!-- 空状态 -->
+        <EmptyState
+          v-else-if="skillStore.mcpServers.length === 0"
+          icon="🔌"
+          title="暂无 MCP Server"
+          description="点击「新建 Server」创建你的第一个 MCP Server"
+        />
+
+        <!-- 搜索无结果 -->
+        <EmptyState
+          v-else-if="filteredServers.length === 0"
+          icon="🔍"
+          title="未找到匹配的 Server"
+          description="尝试调整搜索关键词"
+        />
+
+        <!-- Server 卡片列表 -->
+        <div v-else class="space-y-sm">
+          <Card
+            v-for="server in filteredServers"
+            :key="server.name"
+            class="hover:-translate-y-0.5 hover:shadow-md hover:border-primary/50 transition-all duration-200"
+          >
+            <CardHeader class="pb-2">
+              <div class="flex items-start justify-between gap-sm">
+                <div class="flex items-center gap-sm flex-1 min-w-0">
+                  <CardTitle
+                    class="text-sm leading-snug cursor-pointer hover:text-primary transition-colors"
+                    @click="router.push(`/mcp-servers/${server.name}`)"
+                  >
+                    {{ server.name }}
+                  </CardTitle>
+                  <Badge :variant="stateVariant[server.state] ?? 'outline'">
+                    {{ stateLabel[server.state] ?? server.state }}
+                  </Badge>
+                  <span class="text-xs text-muted-foreground">{{ server.toolCount }} 个工具</span>
+                </div>
+                <div class="flex gap-1.5 shrink-0">
+                  <Button
+                    v-if="server.state === 'DISCONNECTED'"
+                    size="sm"
+                    @click="skillStore.connectServer(server.name)"
+                  >
+                    连接
+                  </Button>
+                  <Button
+                    v-if="server.state === 'CONNECTED'"
+                    variant="outline"
+                    size="sm"
+                    @click="skillStore.disconnectServer(server.name)"
+                  >
+                    断开
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    @click="router.push(`/mcp-servers/${server.name}`)"
+                  >
+                    查看详情
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    @click.stop="deleteTarget = server"
+                  >
+                    删除
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent class="pb-3">
+              <div v-if="server.lastError" class="text-xs text-destructive mb-1">{{ server.lastError }}</div>
+              <div v-if="server.connectedSince" class="text-xs text-muted-foreground">
+                连接时间: {{ new Date(server.connectedSince).toLocaleString() }}
+              </div>
+
+              <!-- 工具列表（展开） -->
+              <div
+                v-if="selectedServer?.name === server.name && skillStore.serverTools.length > 0"
+                class="mt-3 border-t border-border pt-3 space-y-1"
+              >
+                <div
+                  v-for="tool in skillStore.serverTools"
+                  :key="tool.id"
+                  class="text-sm flex gap-2"
+                >
+                  <span class="font-mono text-foreground">{{ tool.name }}</span>
+                  <span class="text-muted-foreground">{{ tool.description }}</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
     </div>
 
     <!-- 新建对话框 -->
-    <div
-      v-if="showCreateDialog"
-      class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-      @click.self="showCreateDialog = false"
-    >
-      <div class="bg-card border border-border rounded-lg p-6 w-full max-w-[448px] shadow-lg max-h-[80vh] overflow-y-auto">
-        <h3 class="text-lg font-semibold text-foreground mb-4">新建 MCP Server</h3>
-        <div class="space-y-4">
-          <div>
-            <label class="block text-sm font-medium text-foreground mb-1">名称 *</label>
-            <input
+    <Dialog v-model:open="showCreateDialog">
+      <DialogContent class="sm:max-w-[448px]">
+        <DialogHeader>
+          <DialogTitle>新建 MCP Server</DialogTitle>
+          <DialogDescription>配置一个新的 MCP Server 连接</DialogDescription>
+        </DialogHeader>
+        <div class="space-y-4 py-4">
+          <div class="space-y-2">
+            <Label for="server-name">名称 *</Label>
+            <Input
+              id="server-name"
               v-model="newServer.name"
-              type="text"
               placeholder="输入 Server 名称"
-              class="w-full px-3 py-2 rounded-md border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
             />
           </div>
-          <div>
-            <label class="block text-sm font-medium text-foreground mb-1">传输方式</label>
-            <select
-              v-model="newServer.config.transport"
-              class="w-full px-3 py-2 rounded-md border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-            >
-              <option value="stdio">stdio</option>
-              <option value="sse">SSE</option>
-            </select>
+          <div class="space-y-2">
+            <Label for="server-transport">传输方式</Label>
+            <Select v-model="newServer.config.transport">
+              <SelectTrigger id="server-transport">
+                <SelectValue placeholder="选择传输方式" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="stdio">stdio</SelectItem>
+                <SelectItem value="sse">SSE</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
-          <div>
-            <label class="block text-sm font-medium text-foreground mb-1">命令 *</label>
-            <input
+          <div class="space-y-2">
+            <Label for="server-command">命令 *</Label>
+            <Input
+              id="server-command"
               v-model="newServer.config.command"
-              type="text"
               placeholder="输入命令（如：node, python）"
-              class="w-full px-3 py-2 rounded-md border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
             />
           </div>
         </div>
-        <div class="flex justify-end gap-2 mt-6">
-          <button
-            class="px-4 py-2 rounded-md border border-input hover:bg-accent transition-colors"
-            @click="showCreateDialog = false"
-          >
-            取消
-          </button>
-          <button
-            class="px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-            @click="handleCreate"
-          >
-            创建
-          </button>
-        </div>
-      </div>
-    </div>
+        <DialogFooter>
+          <Button variant="outline" @click="showCreateDialog = false">取消</Button>
+          <Button @click="handleCreate">创建</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
 
     <!-- 删除确认对话框 -->
-    <div
+    <ConfirmDialog
       v-if="deleteTarget"
-      class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-      @click.self="deleteTarget = null"
-    >
-      <div class="bg-card border border-border rounded-lg p-6 w-full max-w-[384px] shadow-lg">
-        <h3 class="text-lg font-semibold text-foreground mb-2">确认删除</h3>
-        <p class="text-sm text-muted-foreground mb-4">
-          确定要删除 MCP Server「{{ deleteTarget.name }}」吗？此操作不可撤销。
-        </p>
-        <div class="flex justify-end gap-2">
-          <button
-            class="px-4 py-2 rounded-md border border-input hover:bg-accent transition-colors"
-            @click="deleteTarget = null"
-          >
-            取消
-          </button>
-          <button
-            class="px-4 py-2 rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors"
-            @click="handleDelete"
-          >
-            删除
-          </button>
-        </div>
-      </div>
-    </div>
+      :show="!!deleteTarget"
+      title="确认删除"
+      :message="`确定要删除 MCP Server「${deleteTarget.name}」吗？此操作不可撤销。`"
+      confirm-label="删除"
+      cancel-label="取消"
+      confirm-variant="destructive"
+      @confirm="handleDelete"
+      @cancel="deleteTarget = null"
+      @update:show="!$event && (deleteTarget = null)"
+    />
   </div>
 </template>

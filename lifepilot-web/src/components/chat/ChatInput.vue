@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { Paperclip, FileText, X, ChevronDown, ChevronUp, Settings, Image, FileAudio2, FileVideo } from 'lucide-vue-next'
+import { Textarea } from '@/components/ui/textarea'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Select as UiSelect, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
 import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
 import { chatApi } from '@/api/client'
 import type { ChatAttachment } from '@/types'
@@ -200,42 +206,33 @@ defineExpose({
           </div>
           <div class="grid grid-cols-2 gap-sm">
             <div>
-              <label class="text-muted-foreground mb-1 block">模型</label>
-              <select
-                v-model="contextConfig.model"
-                class="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs
-                       focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all duration-200"
-              >
-                <option value="">使用默认</option>
-                <!-- TODO: 从设置中获取可用模型列表 -->
-              </select>
+              <Label class="text-muted-foreground mb-1">模型</Label>
+              <UiSelect v-model="contextConfig.model">
+                <SelectTrigger class="text-xs"><SelectValue placeholder="使用默认" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">使用默认</SelectItem>
+                  <!-- TODO: 从设置中获取可用模型列表 -->
+                </SelectContent>
+              </UiSelect>
             </div>
             <div>
-              <label class="text-muted-foreground mb-1 block">温度</label>
-              <input
+              <Label class="text-muted-foreground mb-1">温度</Label>
+              <Input
                 v-model.number="contextConfig.temperature"
-                type="number"
-                min="0"
-                max="2"
-                step="0.1"
-                class="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs
-                       focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all duration-200"
+                type="number" :min="0" :max="2" :step="0.1"
+                class="text-xs"
               />
             </div>
             <div>
-              <label class="text-muted-foreground mb-1 block">最大 Tokens</label>
-              <input
+              <Label class="text-muted-foreground mb-1">最大 Tokens</Label>
+              <Input
                 v-model.number="contextConfig.maxTokens"
-                type="number"
-                min="100"
-                max="8000"
-                step="100"
-                class="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs
-                       focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all duration-200"
+                type="number" :min="100" :max="8000" :step="100"
+                class="text-xs"
               />
             </div>
             <div>
-              <label class="text-muted-foreground mb-1 block">关联知识库</label>
+              <Label class="text-muted-foreground mb-1">关联知识库</Label>
               <select
                 v-model="contextConfig.knowledgeBases"
                 multiple
@@ -253,17 +250,17 @@ defineExpose({
 
       <div class="relative">
         <div
-          class="bg-card border border-input rounded-2xl shadow-lg overflow-hidden flex flex-col
-                 focus-within:ring-2 focus-within:ring-ring focus-within:border-transparent transition-all duration-200"
+          class="rounded-xl border border-border bg-card shadow-sm overflow-hidden flex flex-col
+                 focus-within:ring-2 focus-within:ring-ring focus-within:border-transparent transition-all duration-200 p-2"
         >
-          <textarea
+          <Textarea
             v-model="input"
             :disabled="disabled"
             :maxlength="maxLength"
             placeholder="问任何问题，或粘贴文本让 AI 分析…"
             rows="1"
-            class="w-full bg-transparent border-none text-foreground placeholder:text-muted-foreground focus:ring-0 resize-none
-                   py-md px-md min-h-[56px] max-h-[200px] text-base disabled:opacity-50 disabled:cursor-not-allowed"
+            class="border-0 focus-visible:ring-0 shadow-none resize-none
+                   min-h-[56px] max-h-[200px] text-base bg-transparent"
             @keydown="handleKeydown"
             @click="showTemplates = false"
           />

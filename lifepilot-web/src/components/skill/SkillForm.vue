@@ -2,6 +2,8 @@
 import { ref, computed, watch } from 'vue'
 import { useSkillStore } from '@/stores/skill'
 import type { SkillDetail } from '@/types'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 
 const props = defineProps<{
   skill?: SkillDetail | null
@@ -192,10 +194,9 @@ function removeTool(tool: string) {
               <label class="block text-sm font-medium text-foreground mb-xs">
               名称 <span class="text-destructive">*</span>
             </label>
-            <input
+            <Input
               v-model="formData.name"
               type="text"
-                class="w-full px-md py-sm border border-input rounded-2xl bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               :class="{ 'border-destructive': errors.name }"
                 placeholder="例如：帮我规划一周目标"
             />
@@ -205,10 +206,9 @@ function removeTool(tool: string) {
           <!-- 描述 -->
           <div>
               <label class="block text-sm font-medium text-foreground mb-xs">用途描述</label>
-            <textarea
+            <Textarea
               v-model="formData.description"
               rows="2"
-                class="w-full px-md py-sm border border-input rounded-2xl bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                 placeholder="用一两句话说明这个能力主要帮你做什么，方便你和系统理解它的用途"
               />
             </div>
@@ -233,11 +233,11 @@ function removeTool(tool: string) {
                 <label class="block text-xs font-medium text-foreground mb-xs">
                   能力 ID <span class="text-destructive">*</span>
                 </label>
-                <input
+                <Input
                   v-model="formData.id"
                   type="text"
                   :disabled="mode === 'edit'"
-                  class="w-full px-md py-sm border border-input rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+                  class="disabled:opacity-50"
                   :class="{ 'border-destructive': errors.id }"
                   placeholder="例如：weekly-planner"
                   @input="idTouched = true"
@@ -251,10 +251,9 @@ function removeTool(tool: string) {
           <!-- 版本 -->
           <div>
                 <label class="block text-xs font-medium text-foreground mb-xs">版本号</label>
-            <input
+            <Input
               v-model="formData.version"
               type="text"
-                  class="w-full px-md py-sm border border-input rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                   placeholder="例如：1.0.0"
             />
           </div>
@@ -264,10 +263,10 @@ function removeTool(tool: string) {
                 <label class="block text-xs font-medium text-foreground mb-xs">
                   系统提示（System Prompt）<span class="text-destructive">*</span>
             </label>
-            <textarea
+            <Textarea
               v-model="formData.systemPrompt"
               rows="6"
-                  class="w-full px-md py-sm border border-input rounded-2xl bg-background text-foreground font-mono text-xs focus:outline-none focus:ring-2 focus:ring-ring"
+                  class="font-mono text-xs"
               :class="{ 'border-destructive': errors.systemPrompt }"
                   placeholder="用系统视角描述这个能力的角色、目标和应遵循的规则，例如：你是一名擅长时间管理的助手，帮助用户将模糊愿望拆解成可执行计划..."
             />
@@ -296,10 +295,10 @@ function removeTool(tool: string) {
               </span>
             </div>
                 <div class="flex items-center gap-xs">
-                  <input
+                  <Input
                     v-model="newToolName"
                     type="text"
-                    class="flex-1 px-md py-xs border border-input rounded-lg bg-background text-foreground text-xs focus:outline-none focus:ring-2 focus:ring-ring"
+                    class="flex-1 text-xs"
                     placeholder="输入工具 ID，例如：todo-manager 或 calendar"
                   />
             <button
@@ -318,10 +317,10 @@ function removeTool(tool: string) {
           <!-- 首选 Provider -->
           <div>
                 <label class="block text-xs font-medium text-foreground mb-xs">首选 Provider ID</label>
-            <input
+            <Input
               v-model="formData.preferredProviderId"
               type="text"
-                  class="w-full px-md py-sm border border-input rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring text-xs"
+                  class="text-xs"
                   placeholder="例如：openai-gpt-4，通常保持默认即可"
             />
               </div>

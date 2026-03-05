@@ -2,6 +2,9 @@
 import { computed } from 'vue'
 import type { Message } from '@/types'
 import MessageBubble from './MessageBubble.vue'
+import { motion } from 'motion-v'
+
+const MotionDiv = motion.div
 
 const props = defineProps<{
   messages: Message[]
@@ -66,29 +69,41 @@ function highlight(text: string): string {
         </span>
       </div>
 
-      <MessageBubble
-        :message="{
-          ...msg,
-          highlightedContent: props.query ? highlight(msg.content) : undefined
-        } as Message"
-        :streaming="isStreaming && index === sortedMessages.length - 1 && msg.role === 'assistant'"
-        :streaming-content="streamingContent"
-        :is-last-assistant="msg.id === lastAssistantId"
-        @retry="(m: Message) => emit('retry', m)"
-        @like="(m: Message) => emit('like', m)"
-        @dislike="(m: Message, f?: string) => emit('dislike', m, f)"
-        @fork="(m: Message) => emit('fork', m)"
-        @regenerate="(m: Message) => emit('regenerate', m)"
-        @copy="(c: string) => emit('copy', c)"
-      />
+      <MotionDiv
+        :initial="{ y: 16, opacity: 0 }"
+        :animate="{ y: 0, opacity: 1 }"
+        :transition="{ duration: 0.3, ease: 'easeOut' }"
+      >
+        <MessageBubble
+          :message="{
+            ...msg,
+            highlightedContent: props.query ? highlight(msg.content) : undefined
+          } as Message"
+          :streaming="isStreaming && index === sortedMessages.length - 1 && msg.role === 'assistant'"
+          :streaming-content="streamingContent"
+          :is-last-assistant="msg.id === lastAssistantId"
+          @retry="(m: Message) => emit('retry', m)"
+          @like="(m: Message) => emit('like', m)"
+          @dislike="(m: Message, f?: string) => emit('dislike', m, f)"
+          @fork="(m: Message) => emit('fork', m)"
+          @regenerate="(m: Message) => emit('regenerate', m)"
+          @copy="(c: string) => emit('copy', c)"
+        />
+      </MotionDiv>
     </template>
 
     <!-- 流式进行中但尚未有 assistant 消息时，显示占位 -->
-    <MessageBubble
+    <MotionDiv
       v-if="isStreaming && (sortedMessages.length === 0 || sortedMessages[sortedMessages.length - 1]?.role === 'user')"
-      :message="{ id: 'streaming', role: 'assistant', content: '', timestamp: Date.now() }"
-      :streaming="true"
-      :streaming-content="streamingContent"
-    />
+      :initial="{ y: 16, opacity: 0 }"
+      :animate="{ y: 0, opacity: 1 }"
+      :transition="{ duration: 0.3, ease: 'easeOut' }"
+    >
+      <MessageBubble
+        :message="{ id: 'streaming', role: 'assistant', content: '', timestamp: Date.now() }"
+        :streaming="true"
+        :streaming-content="streamingContent"
+      />
+    </MotionDiv>
   </div>
 </template>

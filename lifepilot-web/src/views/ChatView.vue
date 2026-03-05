@@ -10,6 +10,7 @@ import { chatApi, llmProviderApi } from '@/api/client'
 import type { Message, ChatAttachment, SessionConfig } from '@/types'
 import type { LlmProvider } from '@/api/client'
 import { Info, Puzzle, LibraryBig, SlidersHorizontal, Settings2 } from 'lucide-vue-next'
+import { Input } from '@/components/ui/input'
 import { copyToClipboard } from '@/utils/clipboard'
 import MessageList from '@/components/chat/MessageList.vue'
 import ChatInput from '@/components/chat/ChatInput.vue'
@@ -240,7 +241,7 @@ async function handleUpdateSessionTitle(title: string) {
 <template>
   <div class="flex flex-col h-full">
     <!-- 顶部上下文指示条 -->
-    <div class="sticky top-0 z-20 border-b border-border bg-card/80 backdrop-blur-md supports-[backdrop-filter]:bg-card/60">
+    <div class="sticky top-0 z-20 border-b border-border/30 bg-card/60 backdrop-blur-xl dark:bg-card/40 dark:backdrop-blur-2xl">
       <div class="max-w-[1200px] mx-auto h-16 flex items-center justify-between px-md md:px-lg">
         <!-- 左侧 pills -->
         <div class="flex items-center gap-sm text-xs font-medium text-muted-foreground min-w-0">
@@ -343,12 +344,11 @@ async function handleUpdateSessionTitle(title: string) {
             />
 
             <div class="flex items-center gap-sm">
-              <input
+              <Input
                 v-model="searchQuery"
                 type="search"
                 placeholder="在当前对话中搜索（按内容关键字）…"
-                class="flex-1 h-9 rounded-lg border border-input bg-background px-3 text-sm
-                       placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all duration-200"
+                class="flex-1"
               />
               <span class="text-xs text-muted-foreground whitespace-nowrap">
                 共 {{ chatStore.messages.length }} 条

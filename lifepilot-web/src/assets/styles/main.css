@@ -4,49 +4,99 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --background: hsl(0 0% 100%);
-  --foreground: hsl(240 10% 3.9%);
+  /* 基础色 — 微暖灰白 */
+  --background: hsl(210 20% 98%);
+  --foreground: hsl(220 14% 10%);
   --card: hsl(0 0% 100%);
-  --card-foreground: hsl(240 10% 3.9%);
+  --card-foreground: hsl(220 14% 10%);
   --popover: hsl(0 0% 100%);
-  --popover-foreground: hsl(240 10% 3.9%);
-  --primary: hsl(240 5.9% 10%);
-  --primary-foreground: hsl(0 0% 98%);
-  --secondary: hsl(240 4.8% 95.9%);
-  --secondary-foreground: hsl(240 5.9% 10%);
-  --muted: hsl(240 4.8% 95.9%);
-  --muted-foreground: hsl(240 3.8% 46.1%);
-  --accent: hsl(240 4.8% 95.9%);
-  --accent-foreground: hsl(240 5.9% 10%);
-  --destructive: hsl(0 84.2% 60.2%);
+  --popover-foreground: hsl(220 14% 10%);
+
+  /* 品牌色 — Teal */
+  --primary: hsl(172 66% 40%);
+  --primary-foreground: hsl(0 0% 100%);
+
+  /* 辅助色 */
+  --secondary: hsl(210 15% 95%);
+  --secondary-foreground: hsl(220 14% 10%);
+  --muted: hsl(210 15% 95%);
+  --muted-foreground: hsl(220 8% 46%);
+  --accent: hsl(210 15% 93%);
+  --accent-foreground: hsl(220 14% 10%);
+
+  /* 功能色 */
+  --destructive: hsl(0 84% 60%);
   --destructive-foreground: hsl(0 0% 98%);
-  --border: hsl(240 5.9% 90%);
-  --input: hsl(240 5.9% 90%);
-  --ring: hsl(240 5.9% 10%);
+  --border: hsl(210 15% 90%);
+  --input: hsl(210 15% 90%);
+  --ring: hsl(172 66% 40%);
+  --ring-offset-background: hsl(210 20% 98%);
+
+  /* 圆角 */
   --radius: 0.5rem;
+
+  /* 侧边栏专用 */
+  --sidebar-background: hsl(210 20% 97%);
+  --sidebar-foreground: hsl(220 14% 10%);
+  --sidebar-border: hsl(210 15% 90%);
+  --sidebar-accent: hsl(210 15% 93%);
+  --sidebar-accent-foreground: hsl(220 14% 10%);
   --sidebar-width: 260px;
+
+  /* 图表色 */
+  --chart-1: hsl(172 66% 40%);
+  --chart-2: hsl(200 70% 50%);
+  --chart-3: hsl(30 80% 55%);
+  --chart-4: hsl(280 60% 55%);
+  --chart-5: hsl(340 65% 55%);
+
+  /* 动画 timing function */
+  --ease-in-out-smooth: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .dark {
-  --background: hsl(240 10% 3.9%);
-  --foreground: hsl(0 0% 98%);
-  --card: hsl(240 10% 3.9%);
-  --card-foreground: hsl(0 0% 98%);
-  --popover: hsl(240 10% 3.9%);
-  --popover-foreground: hsl(0 0% 98%);
-  --primary: hsl(0 0% 98%);
-  --primary-foreground: hsl(240 5.9% 10%);
-  --secondary: hsl(240 3.7% 15.9%);
-  --secondary-foreground: hsl(0 0% 98%);
-  --muted: hsl(240 3.7% 15.9%);
-  --muted-foreground: hsl(240 5% 64.9%);
-  --accent: hsl(240 3.7% 15.9%);
-  --accent-foreground: hsl(0 0% 98%);
-  --destructive: hsl(0 62.8% 30.6%);
+  /* 基础色 — 深蓝灰 */
+  --background: hsl(220 14% 6%);
+  --foreground: hsl(210 20% 98%);
+  --card: hsl(220 14% 9%);
+  --card-foreground: hsl(210 20% 98%);
+  --popover: hsl(220 14% 9%);
+  --popover-foreground: hsl(210 20% 98%);
+
+  /* 品牌色 — Teal */
+  --primary: hsl(172 66% 50%);
+  --primary-foreground: hsl(220 14% 6%);
+
+  /* 辅助色 */
+  --secondary: hsl(220 10% 15%);
+  --secondary-foreground: hsl(210 20% 98%);
+  --muted: hsl(220 10% 15%);
+  --muted-foreground: hsl(220 8% 55%);
+  --accent: hsl(220 10% 15%);
+  --accent-foreground: hsl(210 20% 98%);
+
+  /* 功能色 */
+  --destructive: hsl(0 63% 31%);
   --destructive-foreground: hsl(0 0% 98%);
-  --border: hsl(240 3.7% 15.9%);
-  --input: hsl(240 3.7% 15.9%);
-  --ring: hsl(240 4.9% 83.9%);
+  --border: hsl(220 8% 18%);
+  --input: hsl(220 8% 18%);
+  --ring: hsl(172 66% 50%);
+  --ring-offset-background: hsl(220 14% 6%);
+
+  /* 侧边栏专用 */
+  --sidebar-background: hsl(220 14% 7%);
+  --sidebar-foreground: hsl(210 20% 98%);
+  --sidebar-border: hsl(220 8% 15%);
+  --sidebar-accent: hsl(220 10% 13%);
+  --sidebar-accent-foreground: hsl(210 20% 98%);
+
+  /* 图表色 */
+  --chart-1: hsl(172 66% 50%);
+  --chart-2: hsl(200 70% 60%);
+  --chart-3: hsl(30 80% 60%);
+  --chart-4: hsl(280 60% 65%);
+  --chart-5: hsl(340 65% 60%);
 }
 
 @theme inline {
@@ -77,6 +127,22 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-ring-offset-background: var(--ring-offset-background);
+
+  /* 侧边栏色彩 */
+  --color-sidebar-background: var(--sidebar-background);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+
+  /* 图表色 */
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -164,4 +230,24 @@
   .scrollbar-track-transparent::-webkit-scrollbar-track {
     background: transparent;
   }
+}
+
+
+/* 路由过渡动画 — opacity + translateY 组合 */
+.page-slide-enter-active {
+  transition: opacity 200ms ease-out, transform 200ms ease-out;
+}
+
+.page-slide-leave-active {
+  transition: opacity 150ms ease-in, transform 150ms ease-in;
+}
+
+.page-slide-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.page-slide-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
 }

@@ -4,10 +4,12 @@ import type { SkillPackage, UpdateInfo } from '@/types'
 import { marketplaceApi } from '@/api/marketplace'
 import MarketplaceFilters from '@/components/marketplace/MarketplaceFilters.vue'
 import SkillCard from '@/components/marketplace/SkillCard.vue'
-import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import ErrorState from '@/components/common/ErrorState.vue'
 import Pagination from '@/components/common/Pagination.vue'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
 
 // 搜索与筛选状态
 const search = ref('')
@@ -115,13 +117,13 @@ onMounted(() => {
               发现和安装社区贡献的 Skill，扩展 LifePilot 的能力。
             </p>
           </div>
-          <button
-            class="px-md py-sm rounded-lg border border-input text-sm font-medium hover:bg-accent transition-all duration-200 disabled:opacity-50"
+          <Button
+            variant="outline"
             :disabled="refreshing"
             @click="handleRefresh"
           >
             {{ refreshing ? '刷新中...' : '刷新索引' }}
-          </button>
+          </Button>
         </div>
 
         <!-- 搜索与筛选 -->
@@ -133,8 +135,31 @@ onMounted(() => {
           />
         </div>
 
-        <!-- 加载状态 -->
-        <LoadingSpinner v-if="loading" text="加载 Skill 列表..." />
+        <!-- Skeleton 加载占位符 -->
+        <div v-if="loading" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-md">
+          <Card v-for="i in 6" :key="i">
+            <CardHeader class="pb-2">
+              <div class="flex items-center gap-1.5">
+                <Skeleton class="h-4 w-1/3" />
+                <Skeleton class="h-5 w-14 rounded-full" />
+              </div>
+              <Skeleton class="h-3 w-1/4 mt-1" />
+            </CardHeader>
+            <CardContent class="pb-3">
+              <Skeleton class="h-3 w-full mb-1" />
+              <Skeleton class="h-3 w-2/3 mb-3" />
+              <div class="flex gap-1 mb-3">
+                <Skeleton class="h-5 w-12 rounded-full" />
+                <Skeleton class="h-5 w-16 rounded-full" />
+                <Skeleton class="h-5 w-10 rounded-full" />
+              </div>
+              <div class="flex items-center justify-between pt-sm border-t border-border">
+                <Skeleton class="h-3 w-16" />
+                <Skeleton class="h-7 w-16 rounded-md" />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
 
         <!-- 错误状态 -->
         <ErrorState

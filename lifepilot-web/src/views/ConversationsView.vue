@@ -5,6 +5,8 @@ import { useChatStore } from '@/stores/chat'
 import type { ChatSession } from '@/types'
 import { Pin, Archive, Trash2, Edit2, Plus, Search, Filter, X } from 'lucide-vue-next'
 import SettingSelect from '@/components/settings/SettingSelect.vue'
+import { Input } from '@/components/ui/input'
+import { Checkbox } from '@/components/ui/checkbox'
 
 const router = useRouter()
 const chatStore = useChatStore()
@@ -247,11 +249,11 @@ async function batchDelete() {
           <!-- 搜索框 -->
           <div class="relative flex-1 min-w-[200px] max-w-[400px]">
             <Search class="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" :size="16" />
-            <input
+            <Input
               v-model="searchQuery"
               type="search"
               placeholder="搜索会话名称或最近消息..."
-              class="w-full h-9 pl-8 pr-3 rounded-md border border-input bg-background text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              class="pl-8"
             />
           </div>
 
@@ -283,10 +285,9 @@ async function batchDelete() {
 
           <!-- 显示归档开关 -->
           <label class="flex items-center gap-2 text-sm cursor-pointer shrink-0">
-            <input
-              v-model="showArchived"
-              type="checkbox"
-              class="rounded border-input"
+            <Checkbox
+              :checked="showArchived"
+              @update:checked="showArchived = $event"
             />
             <span class="text-muted-foreground whitespace-nowrap">显示归档</span>
           </label>
@@ -358,11 +359,11 @@ async function batchDelete() {
             @click="selectSession(session)"
           >
             <!-- 选择框 -->
-            <input
-              type="checkbox"
+            <Checkbox
               :checked="selectedIds.has(session.id)"
-              class="mt-1 rounded border-input"
-              @click.stop="toggleSelect(session.id)"
+              class="mt-1"
+              @click.stop
+              @update:checked="toggleSelect(session.id)"
             />
 
             <!-- 会话内容 -->
@@ -373,10 +374,10 @@ async function batchDelete() {
                     <Pin :size="14" fill="currentColor" />
                   </span>
                   <span v-if="session.archived" class="text-muted-foreground text-xs">[归档]</span>
-                  <input
+                  <Input
                     v-if="renamingId === session.id"
                     v-model="renameTitle"
-                    class="flex-1 bg-background border border-input rounded px-2 py-0.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                    class="flex-1"
                     @click.stop
                     @keyup.enter.stop="confirmRename(session.id)"
                     @keyup.esc.stop="cancelRename"

@@ -4,6 +4,9 @@ import type { SkillPackage, InstallResult, SecurityReport } from '@/types'
 import { marketplaceApi } from '@/api/marketplace'
 import SecurityReportDialog from './SecurityReportDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 
 const props = defineProps<{
   skill: SkillPackage
@@ -36,7 +39,6 @@ async function handleInstall() {
   try {
     const result: InstallResult = await marketplaceApi.install(props.skill.id)
     if (result.requiresConfirmation && result.securityReport) {
-      // 需要用户确认高风险安装
       securityReport.value = result.securityReport
       showSecurityDialog.value = true
     } else if (result.success) {
@@ -108,96 +110,95 @@ async function handleUpgrade() {
 </script>
 
 <template>
-  <div class="border border-border rounded-lg p-md hover:border-primary/50 hover:shadow-sm transition-all duration-200 bg-card flex flex-col">
-    <!-- 头部：名称 + 已验证徽章 -->
-    <div class="flex items-start justify-between gap-sm mb-xs">
-      <div class="flex-1 min-w-0">
-        <div class="flex items-center gap-1.5">
-          <h3 class="font-medium text-foreground text-sm leading-snug truncate">
-            {{ skill.name }}
-          </h3>
-          <span
-            v-if="skill.verified"
-            class="shrink-0 text-xs px-1.5 py-0.5 rounded-full bg-primary/10 text-primary"
-            title="已验证"
-          >
-            ✓ 已验证
+  <Card class="flex flex-col hover:-translate-y-0.5 hover:shadow-md hover:border-primary/50 transition-all duration-200">
+    <CardHeader class="pb-2">
+      <!-- 头部：名称 + 已验证徽章 -->
+      <div class="flex items-start justify-between gap-sm">
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-1.5">
+            <h3 class="font-medium text-foreground text-sm leading-snug truncate">
+              {{ skill.name }}
+            </h3>
+            <Badge v-if="skill.verified" variant="secondary" class="shrink-0">
+              ✓ 已验证
+            </Badge>
+          </div>
+          <p class="text-xs text-muted-foreground mt-0.5">
+            {{ skill.author }} · v{{ skill.version }}
+          </p>
+        </div>
+      </div>
+    </CardHeader>
+
+    <CardContent class="flex-1 flex flex-col pb-3">
+      <!-- 描述 -->
+      <p class="text-xs text-muted-foreground line-clamp-2 leading-normal mb-sm flex-1">
+        {{ skill.description || '暂无描述' }}
+      </p>
+
+      <!-- 标签 -->
+      <div v-if="skill.tags.length > 0" class="flex flex-wrap gap-1 mb-sm">
+        <Badge
+          v-for="t in skill.tags.slice(0, 4)"
+          :key="t"
+          variant="outline"
+        >
+          {{ t }}
+        </Badge>
+        <Badge v-if="skill.tags.length > 4" variant="outline">
+          +{{ skill.tags.length - 4 }}
+        </Badge>
+      </div>
+
+      <!-- 底部：下载量 + 安装状态 + 操作按钮 -->
+      <div class="flex items-center justify-between mt-auto pt-sm border-t border-border">
+        <div class="flex items-center gap-2 text-xs text-muted-foreground">
+          <span>↓ {{ skill.downloads }}</span>
+          <span v-if="skill.installed" class="text-primary">
+            已安装 v{{ skill.installedVersion }}
           </span>
         </div>
-        <p class="text-xs text-muted-foreground mt-0.5">
-          {{ skill.author }} · v{{ skill.version }}
-        </p>
+
+        <div class="flex items-center gap-1.5">
+          <!-- 升级按钮 -->
+          <Button
+            v-if="skill.installed && hasUpdate"
+            size="sm"
+            :disabled="upgrading"
+            @click="handleUpgrade"
+          >
+            {{ upgrading ? '升级中...' : '升级' }}
+          </Button>
+
+          <!-- 卸载按钮 -->
+          <Button
+            v-if="skill.installed"
+            variant="outline"
+            size="sm"
+            :disabled="uninstalling"
+            class="hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50"
+            @click="showUninstallConfirm = true"
+          >
+            {{ uninstalling ? '卸载中...' : '卸载' }}
+          </Button>
+
+          <!-- 安装按钮 -->
+          <Button
+            v-if="!skill.installed"
+            size="sm"
+            :disabled="installing"
+            @click="handleInstall"
+          >
+            {{ installing ? '安装中...' : '安装' }}
+          </Button>
+        </div>
       </div>
-    </div>
 
-    <!-- 描述 -->
-    <p class="text-xs text-muted-foreground line-clamp-2 leading-normal mb-sm flex-1">
-      {{ skill.description || '暂无描述' }}
-    </p>
-
-    <!-- 标签 -->
-    <div v-if="skill.tags.length > 0" class="flex flex-wrap gap-1 mb-sm">
-      <span
-        v-for="tag in skill.tags.slice(0, 4)"
-        :key="tag"
-        class="text-xs px-1.5 py-0.5 rounded-full bg-accent text-accent-foreground"
-      >
-        {{ tag }}
-      </span>
-      <span
-        v-if="skill.tags.length > 4"
-        class="text-xs px-1.5 py-0.5 rounded-full bg-accent text-accent-foreground"
-      >
-        +{{ skill.tags.length - 4 }}
-      </span>
-    </div>
-
-    <!-- 底部：下载量 + 安装状态 + 操作按钮 -->
-    <div class="flex items-center justify-between mt-auto pt-sm border-t border-border">
-      <div class="flex items-center gap-2 text-xs text-muted-foreground">
-        <span>↓ {{ skill.downloads }}</span>
-        <span v-if="skill.installed" class="text-primary">
-          已安装 v{{ skill.installedVersion }}
-        </span>
-      </div>
-
-      <div class="flex items-center gap-1.5">
-        <!-- 升级按钮 -->
-        <button
-          v-if="skill.installed && hasUpdate"
-          class="text-xs px-2.5 py-1 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
-          :disabled="upgrading"
-          @click="handleUpgrade"
-        >
-          {{ upgrading ? '升级中...' : '升级' }}
-        </button>
-
-        <!-- 卸载按钮 -->
-        <button
-          v-if="skill.installed"
-          class="text-xs px-2.5 py-1 rounded-md border border-input hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50 transition-colors disabled:opacity-50"
-          :disabled="uninstalling"
-          @click="showUninstallConfirm = true"
-        >
-          {{ uninstalling ? '卸载中...' : '卸载' }}
-        </button>
-
-        <!-- 安装按钮 -->
-        <button
-          v-if="!skill.installed"
-          class="text-xs px-2.5 py-1 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
-          :disabled="installing"
-          @click="handleInstall"
-        >
-          {{ installing ? '安装中...' : '安装' }}
-        </button>
-      </div>
-    </div>
-
-    <!-- 错误提示 -->
-    <p v-if="errorMsg" class="text-xs text-destructive mt-xs">
-      {{ errorMsg }}
-    </p>
+      <!-- 错误提示 -->
+      <p v-if="errorMsg" class="text-xs text-destructive mt-xs">
+        {{ errorMsg }}
+      </p>
+    </CardContent>
 
     <!-- 安全报告对话框 -->
     <SecurityReportDialog
@@ -218,5 +219,5 @@ async function handleUpgrade() {
       confirm-variant="destructive"
       @confirm="handleUninstall"
     />
-  </div>
+  </Card>
 </template>

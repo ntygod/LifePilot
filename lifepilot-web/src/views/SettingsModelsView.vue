@@ -5,9 +5,13 @@ import { llmProviderApi, settingsApi } from '@/api/client'
 import type { LlmProvider } from '@/api/client'
 import SettingSection from '@/components/settings/SettingSection.vue'
 import SettingItem from '@/components/settings/SettingItem.vue'
-import SettingSelect from '@/components/settings/SettingSelect.vue'
 import LlmProviderManager from '@/components/settings/LlmProviderManager.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import { Card, CardContent } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ChevronDown, CheckCircle2, XCircle, Loader2, RefreshCw, Trash2 } from 'lucide-vue-next'
 
 const { settings, loading, error, loadSettings, saveSettings } = useSettings()
@@ -48,14 +52,12 @@ async function loadProviders() {
   }
 }
 
-
 // 检查单个 Provider 的健康状态
 async function checkProviderHealth(providerId: string) {
   if (checkingHealth.value.has(providerId)) return
   
   checkingHealth.value.add(providerId)
   try {
-    // 添加超时控制（10秒）
     const timeoutPromise = new Promise<never>((_, reject) => {
       setTimeout(() => reject(new Error('健康检查超时')), 10000)
     })
@@ -67,7 +69,6 @@ async function checkProviderHealth(providerId: string) {
     
     healthStatus.value[providerId] = result.healthy
     
-    // 更新 providers 中的 healthy 字段
     const index = providers.value.findIndex(p => p.id === providerId)
     if (index !== -1) {
       providers.value[index] = {
@@ -78,7 +79,6 @@ async function checkProviderHealth(providerId: string) {
   } catch (err) {
     console.error(`检查 Provider ${providerId} 健康状态失败:`, err)
     healthStatus.value[providerId] = false
-    // 更新 providers 中的 healthy 字段
     const index = providers.value.findIndex(p => p.id === providerId)
     if (index !== -1) {
       providers.value[index] = {
@@ -91,7 +91,6 @@ async function checkProviderHealth(providerId: string) {
   }
 }
 
-
 // 获取 Provider 的健康状态
 function getProviderHealth(providerId: string): 'healthy' | 'unhealthy' | 'checking' | 'unknown' {
   if (checkingHealth.value.has(providerId)) return 'checking'
@@ -100,9 +99,26 @@ function getProviderHealth(providerId: string): 'healthy' | 'unhealthy' | 'check
   return healthy ? 'healthy' : 'unhealthy'
 }
 
+// 健康状态 Badge variant 映射
+function getHealthBadgeVariant(status: string): 'default' | 'secondary' | 'destructive' | 'outline' {
+  switch (status) {
+    case 'healthy': return 'default'
+    case 'unhealthy': return 'destructive'
+    default: return 'secondary'
+  }
+}
+
+function getHealthBadgeText(status: string): string {
+  switch (status) {
+    case 'healthy': return '健康'
+    case 'unhealthy': return '不健康'
+    case 'checking': return '检查中...'
+    default: return '未查询'
+  }
+}
+
 async function handleProviderManagerClose() {
   showProviderManager.value = false
-  // 重新加载模型列表
   await loadProviders()
 }
 
@@ -114,10 +130,12 @@ function toggleProviderExpanded(providerId: string) {
   }
 }
 
-async function handleSave() {
-  if (!defaultProvider.value) return
+async function handleDefaultProviderChange(value: any) {
+  const strValue = String(value ?? '')
+  defaultProvider.value = strValue
+  if (!strValue) return
   try {
-    await saveSettings({ ...settings.value, llmProvider: defaultProvider.value } as any)
+    await saveSettings({ ...settings.value, llmProvider: strValue } as any)
   } catch (e) {
     console.error('保存失败:', e)
   }
@@ -180,7 +198,6 @@ async function handleDelete() {
   try {
     await llmProviderApi.deleteProvider(deletingProviderId.value)
     await loadProviders()
-    // 如果删除的是默认模型，清空默认模型设置
     if (deletingProviderId.value === defaultProvider.value) {
       defaultProvider.value = ''
       if (settings.value) {
@@ -208,18 +225,36 @@ const deleteConfirmMessage = computed(() => {
 
 <template>
   <div class="flex flex-col h-full overflow-hidden">
-    <div class="sticky top-0 z-10 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div class="max-w-[1200px] mx-auto px-md md:px-lg py-md">
-        <h2 class="text-2xl font-semibold text-foreground leading-tight">模型配置</h2>
-        <p class="text-sm text-muted-foreground mt-1">管理系统级可用模型和全局默认模型设置</p>
-      </div>
-    </div>
-
     <div class="flex-1 overflow-y-auto">
       <div class="max-w-[1200px] mx-auto px-md md:px-lg py-lg space-y-6 max-w-4xl">
-        <!-- 加载中 -->
-        <div v-if="loading || loadingProviders" class="flex items-center justify-center py-12">
-          <div class="text-sm text-muted-foreground">加载中...</div>
+        <!-- 加载中 — Skeleton 占位符 -->
+        <div v-if="loading || loadingProviders" class="space-y-6">
+          <!-- 全局默认模型 Skeleton -->
+          <div class="rounded-lg border bg-card p-4 space-y-4">
+            <div class="flex items-center gap-2">
+              <Skeleton class="h-5 w-5 rounded" />
+              <Skeleton class="h-5 w-32" />
+            </div>
+            <Skeleton class="h-3 w-48" />
+            <div class="pt-2 space-y-3">
+              <Skeleton class="h-4 w-24" />
+              <Skeleton class="h-9 w-full" />
+            </div>
+          </div>
+          <!-- 可用模型列表 Skeleton -->
+          <div class="rounded-lg border bg-card p-4 space-y-4">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <Skeleton class="h-5 w-5 rounded" />
+                <Skeleton class="h-5 w-28" />
+              </div>
+              <Skeleton class="h-9 w-24 rounded-md" />
+            </div>
+            <Skeleton class="h-3 w-56" />
+            <div class="space-y-2 pt-2">
+              <Skeleton v-for="i in 3" :key="i" class="h-20 w-full rounded-lg" />
+            </div>
+          </div>
         </div>
 
         <!-- 加载失败 -->
@@ -234,52 +269,59 @@ const deleteConfirmMessage = computed(() => {
           <SettingItem label="默认模型" description="选择全局默认使用的 LLM Provider" required>
             <div class="flex items-center gap-2">
               <div class="flex-1">
-                <SettingSelect
-                  v-model="defaultProvider"
-                  :options="providers.map(p => ({ value: p.id, label: p.displayName || p.id }))"
+                <Select
+                  :model-value="defaultProvider"
                   :disabled="loadingProviders"
-                  placeholder="请选择默认模型"
-                  @change="handleSave"
-                />
+                  @update:model-value="handleDefaultProviderChange"
+                >
+                  <SelectTrigger class="w-full">
+                    <SelectValue placeholder="请选择默认模型" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem
+                      v-for="p in providers"
+                      :key="p.id"
+                      :value="p.id"
+                    >
+                      {{ p.displayName || p.id }}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
-            <span v-if="loadingProviders" class="text-xs text-muted-foreground mt-1">加载中...</span>
           </SettingItem>
         </SettingSection>
 
         <!-- 系统级可用模型列表 -->
         <SettingSection title="可用模型列表" icon="📋" description="查看当前系统中所有可用的模型">
           <template #header-actions>
-            <button
-              class="px-4 py-2 text-sm font-medium bg-primary text-primary-foreground rounded-lg 
-                     transition-all duration-200
-                     hover:bg-primary/90 hover:shadow-md
-                     active:scale-[0.98]
-                     focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              @click="showProviderManager = true"
-            >
+            <Button @click="showProviderManager = true">
               配置模型
-            </button>
+            </Button>
           </template>
           <div v-if="providers.length === 0" class="text-sm text-muted-foreground py-4">
             暂无可用模型，请先配置 LLM Provider
           </div>
           <div v-else class="space-y-2">
-            <div
+            <Card
               v-for="provider in providers"
               :key="provider.id"
-              class="rounded-lg border border-border bg-muted/30"
+              class="overflow-hidden hover:-translate-y-0.5 hover:shadow-md transition-all duration-200"
             >
               <!-- 模型名称行（可点击展开） -->
-              <div
+              <CardContent
                 class="flex items-center justify-between p-4 cursor-pointer 
                        transition-all duration-200
-                       hover:bg-muted/50 hover:shadow-sm
-                       active:scale-[0.99]"
+                       hover:bg-muted/50"
                 @click="toggleProviderExpanded(provider.id)"
               >
                 <div class="flex items-center gap-3 flex-1">
-                  <button class="text-muted-foreground hover:text-foreground transition-colors">
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    class="text-muted-foreground hover:text-foreground shrink-0"
+                    @click.stop="toggleProviderExpanded(provider.id)"
+                  >
                     <ChevronDown
                       :size="18"
                       :class="[
@@ -287,56 +329,46 @@ const deleteConfirmMessage = computed(() => {
                         expandedProviders.has(provider.id) && 'rotate-180'
                       ]"
                     />
-                  </button>
-                  <div class="flex-1">
-                    <div class="flex items-center gap-2">
+                  </Button>
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 flex-wrap">
                       <h4 class="font-medium text-foreground">{{ provider.displayName || provider.id }}</h4>
-                      <span
+                      <!-- 默认 Badge -->
+                      <Badge
                         v-if="provider.id === defaultProvider"
-                        class="px-2 py-0.5 rounded-sm text-xs font-medium bg-primary/10 text-primary"
+                        variant="secondary"
+                        class="text-primary"
                       >
                         默认
-                      </span>
+                      </Badge>
                       <!-- 健康状态查询按钮 -->
-                      <button
-                        class="px-2 py-1 text-xs font-medium rounded-lg border border-border bg-card text-foreground
-                               transition-all duration-200
-                               hover:bg-accent hover:text-accent-foreground hover:shadow-sm
-                               active:scale-[0.98]
-                               focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2
-                               disabled:opacity-50 disabled:cursor-not-allowed"
+                      <Button
+                        variant="outline"
+                        size="sm"
                         :disabled="checkingHealth.has(provider.id)"
                         @click.stop="checkProviderHealth(provider.id)"
-                        title="查询健康状态"
                       >
-                        <div class="flex items-center gap-1">
-                          <Loader2 v-if="getProviderHealth(provider.id) === 'checking'" :size="12" class="animate-spin" />
-                          <RefreshCw v-else :size="12" />
-                          <span>{{ getProviderHealth(provider.id) === 'checking' ? '检查中' : '查询状态' }}</span>
-                        </div>
-                      </button>
-                      <!-- 健康状态指示器 -->
-                      <div v-if="getProviderHealth(provider.id) !== 'unknown' && getProviderHealth(provider.id) !== 'checking'" class="flex items-center">
-                        <CheckCircle2
-                          v-if="getProviderHealth(provider.id) === 'healthy'"
-                          :size="14"
-                          class="text-green-600"
-                          title="健康"
-                        />
-                        <XCircle
-                          v-else-if="getProviderHealth(provider.id) === 'unhealthy'"
-                          :size="14"
-                          class="text-destructive"
-                          title="不健康"
-                        />
-                      </div>
+                        <Loader2 v-if="getProviderHealth(provider.id) === 'checking'" :size="12" class="animate-spin" />
+                        <RefreshCw v-else :size="12" />
+                        <span>{{ getProviderHealth(provider.id) === 'checking' ? '检查中' : '查询状态' }}</span>
+                      </Button>
+                      <!-- 健康状态 Badge -->
+                      <Badge
+                        v-if="getProviderHealth(provider.id) !== 'unknown'"
+                        :variant="getHealthBadgeVariant(getProviderHealth(provider.id))"
+                      >
+                        <Loader2 v-if="getProviderHealth(provider.id) === 'checking'" :size="12" class="animate-spin" />
+                        <CheckCircle2 v-else-if="getProviderHealth(provider.id) === 'healthy'" :size="12" />
+                        <XCircle v-else-if="getProviderHealth(provider.id) === 'unhealthy'" :size="12" />
+                        {{ getHealthBadgeText(getProviderHealth(provider.id)) }}
+                      </Badge>
                     </div>
                     <p v-if="provider.description" class="text-sm text-muted-foreground mt-0.5">
                       {{ provider.description }}
                     </p>
                   </div>
                 </div>
-              </div>
+              </CardContent>
               
               <!-- 详细信息（展开时显示） -->
               <Transition
@@ -377,34 +409,16 @@ const deleteConfirmMessage = computed(() => {
                   </div>
                   <div>
                     <span class="text-muted-foreground">健康状态：</span>
-                    <span class="ml-1 flex items-center gap-1">
-                      <span
-                        v-if="getProviderHealth(provider.id) === 'checking'"
-                        class="flex items-center gap-1 text-muted-foreground"
+                    <span class="ml-1">
+                      <Badge
+                        :variant="getHealthBadgeVariant(getProviderHealth(provider.id))"
+                        class="text-xs"
                       >
-                        <Loader2 :size="12" class="animate-spin" />
-                        <span>检查中...</span>
-                      </span>
-                      <span
-                        v-else-if="getProviderHealth(provider.id) === 'healthy'"
-                        class="flex items-center gap-1 text-green-600"
-                      >
-                        <CheckCircle2 :size="12" />
-                        <span>健康</span>
-                      </span>
-                      <span
-                        v-else-if="getProviderHealth(provider.id) === 'unhealthy'"
-                        class="flex items-center gap-1 text-destructive"
-                      >
-                        <XCircle :size="12" />
-                        <span>不健康</span>
-                      </span>
-                      <span
-                        v-else
-                        class="flex items-center gap-1 text-muted-foreground"
-                      >
-                        <span>未查询</span>
-                      </span>
+                        <Loader2 v-if="getProviderHealth(provider.id) === 'checking'" :size="12" class="animate-spin" />
+                        <CheckCircle2 v-else-if="getProviderHealth(provider.id) === 'healthy'" :size="12" />
+                        <XCircle v-else-if="getProviderHealth(provider.id) === 'unhealthy'" :size="12" />
+                        {{ getHealthBadgeText(getProviderHealth(provider.id)) }}
+                      </Badge>
                     </span>
                   </div>
                   <div>
@@ -428,26 +442,20 @@ const deleteConfirmMessage = computed(() => {
                   </div>
                   <!-- 删除按钮 -->
                   <div class="col-span-2 pt-2 border-t border-border">
-                    <button
-                      class="px-3 py-1.5 text-sm font-medium text-destructive border border-destructive/20 rounded-lg 
-                             transition-all duration-200
-                             hover:bg-destructive/10 hover:border-destructive/40 hover:shadow-sm
-                             active:scale-[0.98]
-                             focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive focus-visible:ring-offset-2
-                             disabled:opacity-50 disabled:cursor-not-allowed"
+                    <Button
+                      variant="destructive"
+                      size="sm"
                       :disabled="loadingProviders"
                       @click.stop="confirmDelete(provider)"
                     >
-                      <div class="flex items-center gap-2">
-                        <Trash2 :size="14" />
-                        <span>删除此 Provider</span>
-                      </div>
-                    </button>
+                      <Trash2 :size="14" />
+                      删除此 Provider
+                    </Button>
                   </div>
                 </div>
                 </div>
               </Transition>
-            </div>
+            </Card>
           </div>
         </SettingSection>
         </div>
