@@ -304,7 +304,7 @@ interface SettingsState {
 
 ```typescript
 // useChat composable 核心逻辑
-async function sendMessage(content: string) {
+async function sendMessage(content: string, sessionId?: string, attachmentIds?: string[]) {
   // 1. 添加用户消息到本地状态
   // 2. fetch POST /api/chat/messages/stream，流式读取响应体
   // 3. 解析 SSE 事件，token 事件增量拼接到 streamingContent
@@ -314,12 +314,27 @@ async function sendMessage(content: string) {
 }
 ```
 
+请求体（JSON）示例：
+
+```json
+{
+  "content": "帮我总结这张截图的要点",
+  "sessionId": "810233ba-2a45-450a-926e-79be3f5c6925",
+  "attachmentIds": ["att-1"]
+}
+```
+
+补充说明：
+
+- **多模态**：附件需先通过 `POST /api/chat/messages/upload` 上传，拿到 `attachmentId` 后放入 `attachmentIds`。
+- **知识库关联（RAG）**：知识库不是每条消息都传参，而是通过 `PATCH /api/chat/sessions/{id}/config` 将 `knowledgeBaseIds` 绑定到会话；后端按 `sessionId` 自动检索并注入“知识库片段”。
+
 选择 `fetch` + `ReadableStream` 而非 `EventSource` 的理由：
 - `EventSource` 只支持 GET 请求，无法在请求体中携带消息内容
 - `fetch` 支持 POST 请求 + 流式读取响应体
 - 可自定义请求头（如 Session ID、认证 Token）
 
-#### 3.3.6 流式 Markdown 渲染
+#### 3.3.6 流式 Markdown 渲染与调试视图
 
 选型对比：
 
@@ -330,6 +345,13 @@ async function sendMessage(content: string) {
 | marked + DOMPurify | 轻量 | 同上，且安全处理需额外配置 |
 
 采用 `vue-markdown-renderer`：专为 AI 流式场景设计，最小化 DOM 更新，支持代码高亮、Mermaid 图表渐进渲染，Vue 3 生态原生支持。
+
+在此基础上，ChatView 顶部与右侧调试抽屉会消费 `done` 事件中的调试字段：
+
+- `tokenUsage` / `usage`：更新“模型与 Token”摘要卡片
+- `reasoningSummary` + `reasoning` 事件流：构建“推理过程时间线”
+- `sources`：展示本轮命中的知识库 / 文档来源列表，帮助用户确认 RAG 是否命中预期知识
+- `toolsSummary`：展示本轮调用的工具列表及耗时，支持从消息跳转到 Trace 详情
 
 #### 3.3.7 部署方式
 

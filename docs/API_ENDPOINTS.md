@@ -27,6 +27,7 @@
 |---|---|---|---|
 | POST | `/api/chat/messages` | `sendMessage` | 非流式发送消息 |
 | POST | `/api/chat/messages/stream` | `sendMessageStream` | SSE 流式发送消息（返回 `SseEmitter`） |
+| POST | `/api/chat/messages/upload` | `uploadAttachment` | 上传消息附件（返回 `attachmentId/url`，用于多模态） |
 
 ---
 
@@ -38,10 +39,14 @@
 |---|---|---|---|
 | POST | `/api/chat/sessions` | `createSession` | 创建会话（201） |
 | GET | `/api/chat/sessions` | `listSessions` | 会话列表 |
+| GET | `/api/chat/sessions/{id}` | `getSession` | 获取会话详情（含关联知识库） |
 | GET | `/api/chat/sessions/{id}/messages` | `getSessionMessages` | 会话历史消息 |
 | PATCH | `/api/chat/sessions/{id}` | `updateSession` | 更新会话（标题/置顶等） |
+| PATCH | `/api/chat/sessions/{id}/config` | `updateSessionConfig` | 更新会话配置（含 `knowledgeBaseIds` 绑定） |
 | DELETE | `/api/chat/sessions/{id}` | `deleteSession` | 删除会话（204） |
 | POST | `/api/chat/sessions/{id}/clear` | `clearSessionMessages` | 清空会话消息（204） |
+| POST | `/api/chat/sessions/batch` | `batchUpdateSessions` | 批量操作会话（pin/archive/delete 等） |
+| POST | `/api/chat/sessions/{id}/fork` | `forkSession` | 分叉会话（从指定消息复制上下文） |
 
 ---
 

@@ -276,6 +276,26 @@ Accept: text/event-stream
 Content-Type: application/json
 ```
 
+**请求体（JSON）**：
+
+```json
+{
+  "content": "你能看到上传的知识库吗",
+  "sessionId": "810233ba-2a45-450a-926e-79be3f5c6925",
+  "attachmentIds": ["att-1", "att-2"]
+}
+```
+
+- **content**：必填，本轮用户输入文本。
+- **sessionId**：可选；为空时后端会自动创建一个新的会话 ID（并在 `done` 事件里返回）。
+- **attachmentIds**：可选；多模态输入的附件 ID 列表。附件需先通过 `POST /api/chat/messages/upload` 上传获得。
+
+**知识库关联（RAG）说明**：
+
+- Chat 流式端点本身不需要每次显式传 `knowledgeBaseIds`。
+- 知识库是“绑定在会话上的配置”，通过 `PATCH /api/chat/sessions/{id}/config` 写入 `knowledgeBaseIds`（后端落库到 `session_knowledge_bases`）。
+- 之后每次调用 `/api/chat/messages/stream` 时，后端会根据 `sessionId` 自动检索会话关联的知识库，并将命中的“知识库片段”注入 Prompt（参见 `ContextAssembler.safeRetrieveKnowledgeBaseSnippets()` 的 `知识库片段:` 区块）。
+
 ### 10.2 事件类型与 data 结构
 
 > **注意**：事件类型定义参见后端常量类 `com.lifepilot.interaction.web.sse.SseEventType` 和前端常量 `@/constants/sseEvents`。
@@ -286,7 +306,7 @@ Content-Type: application/json
 |---------|------|---------|
 | `token` | 增量文本片段事件 | `{"content": "文本片段"}` |
 | `ui` | UI 组件更新事件 | `{"components": [...]}` |
-| `done` | 消息完成事件 | `{"messageId": "...", "content": "...", "timestamp": ..., "tokenUsage": {...}, "traceId": "..."}` |
+| `done` | 消息完成事件 | `{"messageId": "...", "content": "...", "timestamp": ..., "tokenUsage": {...}, "usage": {...}, "sources": [...], "toolsSummary": [...], "traceId": "..."}` |
 | `error` | 错误事件 | `{"code": 500, "message": "...", "traceId": "..."}` |
 | `heartbeat` | 心跳事件 | `""`（空字符串） |
 
@@ -296,6 +316,20 @@ Content-Type: application/json
 - `sessionId`（可选）：会话 ID
 - `timestamp`（必填）：消息完成时间戳（毫秒）
 - `tokenUsage`（可选）：Token 使用统计，格式：`{"promptTokens": 100, "completionTokens": 200, "totalTokens": 300, "modelId": "..."}`
+- `usage`（可选）：聚合后的 Token 使用概要 `{ "inputTokens": number, "outputTokens": number, "totalTokens": number }`，便于前端轻量展示和兜底
+- `reasoningSummary`（可选）：本轮推理概要文案（模型 ID / 步骤数 / 估算 Token 等）
+- `contents`（可选）：多模态内容列表，当前支持 `TEXT` / `AUDIO` 等类型
+- `sources`（可选）：本轮执行涉及到的来源摘要数组，结构与前端 `SourceSummary` 对齐：
+  - `type`: `"knowledgeBase" | "document" | "tool" | "workflow"`
+  - `id`: 来源 ID（如知识库 ID、文档 ID、工具 ID）
+  - `name`: 人类可读名称（如知识库名称）
+  - `extra`（可选）：附加字段（如命中分数区间、文档路径等）
+- `toolsSummary`（可选）：本轮工具调用摘要列表，来自 Trace 的 `ToolCallStep` 聚合：
+  - `toolId`: 工具 ID
+  - `action`（可选）：工具动作/方法名
+  - `success`: 是否成功
+  - `latencyMs`: 调用耗时（毫秒）
+  - `hasMoreSteps`（可选）：当时是否仍有剩余计划步骤
 - `traceId`（可选）：追踪 ID，用于调试和日志关联
 
 **`error` 事件字段说明**：
@@ -324,7 +358,22 @@ event: ui
 data: {"components":[{"type":"button","id":"btn-1","label":"确认"}]}
 
 event: done
-data: {"messageId":"msg-123","content":"Hello World","timestamp":1709107200000,"tokenUsage":{"promptTokens":10,"completionTokens":2,"totalTokens":12,"modelId":"gpt-4"},"traceId":"trace-abc-123"}
+data: {
+  "messageId":"msg-123",
+  "content":"Hello World",
+  "timestamp":1709107200000,
+  "tokenUsage":{"promptTokens":10,"completionTokens":2,"totalTokens":12,"modelId":"gpt-4"},
+  "usage":{"inputTokens":10,"outputTokens":2,"totalTokens":12},
+  "traceId":"trace-abc-123",
+  "reasoningSummary":"本轮推理已完成，使用模型 gpt-4，经历 3 个推理步骤，累计约 12 个 Token。",
+  "sources":[
+    {"type":"knowledgeBase","id":"kb-123","name":"项目需求文档"},
+    {"type":"tool","id":"web-search","name":"Web 搜索"}
+  ],
+  "toolsSummary":[
+    {"toolId":"web-search","action":"search","success":true,"latencyMs":320}
+  ]
+}
 
 event: error
 data: {"code":500,"message":"处理失败","traceId":"trace-abc-123"}
