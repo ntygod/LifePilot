@@ -120,7 +120,7 @@ const isCollapsible = computed(() =>
         :class="[
           message.role === 'user'
             ? 'bg-primary text-primary-foreground rounded-tr-sm shadow-md p-md'
-            : 'bg-card text-foreground rounded-tl-sm border border-border p-md'
+            : 'bg-card text-foreground rounded-tl-sm border border-border p-md assistant-bubble'
         ]"
       >
         <!-- 流式高亮边框 -->
@@ -295,3 +295,10 @@ const isCollapsible = computed(() =>
     </div>
   </div>
 </template>
+
+<style scoped>
+.assistant-bubble {
+  border-left: 2px solid transparent;
+  border-image: linear-gradient(to bottom, hsl(var(--primary) / 0.3), transparent) 1;
+}
+</style>
