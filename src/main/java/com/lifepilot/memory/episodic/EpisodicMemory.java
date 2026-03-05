@@ -30,6 +30,18 @@ public class EpisodicMemory {
     }
 
     /**
+     * 转义 FTS5 查询字符串，防止特殊字符（冒号、引号等）被解析为 FTS5 语法。
+     *
+     * <p>转义策略：用双引号包裹整个查询，内部双引号转义为两个双引号。</p>
+     *
+     * @param query 原始查询字符串
+     * @return 转义后的 FTS5 安全查询字符串
+     */
+    static String escapeFts5Query(String query) {
+        return "\"" + query.replace("\"", "\"\"") + "\"";
+    }
+
+    /**
      * 保存对话记录（事务内写入 conversations + messages）。
      *
      * @param record 对话记录
@@ -126,7 +138,7 @@ public class EpisodicMemory {
             // 通过 FTS5 搜索消息，获取关联的对话 ID
             var conversationIds = jdbcTemplate.queryForList(
                     "SELECT DISTINCT m.conversation_id FROM messages m JOIN messages_fts fts ON m.rowid = fts.rowid WHERE messages_fts MATCH ? ORDER BY bm25(messages_fts)",
-                    String.class, query);
+                    String.class, escapeFts5Query(query));
 
             if (conversationIds.isEmpty()) {
                 return List.of();
@@ -219,7 +231,7 @@ public class EpisodicMemory {
                             rs.getString("tool_call_json"),
                             rs.getInt("token_count"),
                             Instant.parse(rs.getString("created_at"))),
-                    query, excludeSessionId, limit);
+                    escapeFts5Query(query), excludeSessionId, limit);
         } catch (Exception e) {
             log.warn("跨会话排除检索失败: query={}, excludeSessionId={}, error={}",
                     query, excludeSessionId, e.getMessage());
