@@ -4,6 +4,7 @@ import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.skill.builtin.habit.HabitRepository;
 import com.lifepilot.skill.builtin.schedule.ScheduleRepository;
 import com.lifepilot.skill.builtin.todo.TodoRepository;
+import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.sync.connector.SyncConnector;
 import com.lifepilot.sync.connector.caldav.CalDavConnector;
 import com.lifepilot.sync.connector.dida.DidaConnector;
@@ -206,11 +207,12 @@ public class SyncAutoConfiguration {
                                                SyncRecordRepository syncRecordRepository,
                                                CredentialStore credentialStore,
                                                Map<String, SyncConnector> syncConnectors,
-                                               SyncProperties properties) {
+                                               SyncProperties properties,
+                                               PromptRegistry promptRegistry) {
         log.info("同步模块: 注册 SyncSkillProvider");
         return new SyncSkillProvider(syncEngine, syncScheduler, syncProfileRepository,
                 syncStateRepository, syncConflictRepository, syncRecordRepository,
-                credentialStore, syncConnectors, properties);
+                credentialStore, syncConnectors, properties, promptRegistry);
     }
 
     // ==================== 启动后初始化 ====================

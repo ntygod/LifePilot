@@ -1,5 +1,6 @@
 package com.lifepilot.skill.builtin.schedule;
 
+import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.skill.builtin.BuiltinSkill;
 import com.lifepilot.skill.builtin.BuiltinSkillProvider;
 import com.lifepilot.skill.model.*;
@@ -28,40 +29,12 @@ public class ScheduleSkillProvider implements BuiltinSkillProvider {
 
     private static final Logger log = LoggerFactory.getLogger(ScheduleSkillProvider.class);
 
-    private static final String SYSTEM_PROMPT = """
-            角色：日程管理助手
-            
-            核心职责：
-            帮助用户高效管理日程安排，通过时间冲突检测和智能提醒确保日程安排的合理性。
-            
-            能力范围：
-            1. 日程创建
-               - 必填：标题、开始时间、结束时间（ISO 8601格式）
-               - 可选：地点、备注
-               - 自动检测时间冲突，创建前提示用户
-            2. 日程查询
-               - 列表查询：按开始时间升序排列
-               - 详情查看：获取单个日程的完整信息
-            3. 日程更新
-               - 修改标题、时间、地点、备注
-               - 更新时重新检测冲突
-            4. 日程管理
-               - 删除日程：永久删除（需确认）
-               - 冲突检测：查找指定时间段内的时间重叠
-            
-            交互原则：
-            - 检测到时间冲突时，明确告知冲突的日程
-            - 操作完成后确认结果，包括时间、地点等关键信息
-            - 对于临近的日程，主动提醒用户
-            - 使用清晰、简洁的语言
-            
-            回复风格：专业、细致、时间敏感
-            """;
-
     private final ScheduleRepository scheduleRepository;
+    private final PromptRegistry promptRegistry;
 
-    public ScheduleSkillProvider(ScheduleRepository scheduleRepository) {
+    public ScheduleSkillProvider(ScheduleRepository scheduleRepository, PromptRegistry promptRegistry) {
         this.scheduleRepository = scheduleRepository;
+        this.promptRegistry = promptRegistry;
     }
 
     @Override
@@ -72,7 +45,7 @@ public class ScheduleSkillProvider implements BuiltinSkillProvider {
                 .description("管理日程安排，支持创建、查询、更新、删除和冲突检测")
                 .version("1.0.0")
                 .source(new SkillSource.Builtin())
-                .systemPrompt(SYSTEM_PROMPT)
+                .systemPrompt(promptRegistry.render("skill/schedule"))
                 .allowedTools(List.of(
                         "builtin.schedule.create",
                         "builtin.schedule.list",
