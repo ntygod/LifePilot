@@ -68,8 +68,8 @@ async function loadStats() {
         stats.value = {
           totalRequests: overview.totalTraces || 0,
           totalTokens: overview.totalTokens || 0,
-          promptTokens: 0,
-          completionTokens: 0,
+          inputTokens: 0,
+          outputTokens: 0,
           estimatedCost: undefined,
           timeRange: {
             from: timeRange.value.from,
@@ -216,8 +216,8 @@ function formatCost(cost?: number): string {
                 {{ formatNumber(stats.totalTokens) }}
               </div>
               <div class="mt-xs text-xs text-muted-foreground">
-                输入: {{ formatNumber(stats.promptTokens) }} /
-                输出: {{ formatNumber(stats.completionTokens) }}
+                输入: {{ formatNumber(stats.inputTokens) }} /
+                输出: {{ formatNumber(stats.outputTokens) }}
               </div>
             </div>
 
@@ -226,7 +226,7 @@ function formatCost(cost?: number): string {
                 <span class="text-sm text-muted-foreground">输入 Token</span>
               </div>
               <div class="text-2xl font-semibold text-foreground">
-                {{ formatNumber(stats.promptTokens) }}
+                {{ formatNumber(stats.inputTokens) }}
               </div>
             </div>
 
@@ -235,7 +235,7 @@ function formatCost(cost?: number): string {
                 <span class="text-sm text-muted-foreground">输出 Token</span>
               </div>
               <div class="text-2xl font-semibold text-foreground">
-                {{ formatNumber(stats.completionTokens) }}
+                {{ formatNumber(stats.outputTokens) }}
               </div>
             </div>
           </div>
