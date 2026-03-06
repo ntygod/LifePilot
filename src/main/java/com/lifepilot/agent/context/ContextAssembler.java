@@ -746,6 +746,8 @@ public class ContextAssembler {
      */
     String buildSystemPrompt(AgentPhase phase) {
         if (phase == AgentPhase.TERMINATED) return "";
+        // EXECUTING 阶段直接执行工具，不经过 LLM，无需系统提示词
+        if (phase == AgentPhase.EXECUTING) return "";
         String roleDefinition = promptRegistry.render("agent/role-definition");
         String userProfile = safeGetUserProfile(semanticMemory);
         String phaseKey = "agent/" + phase.name().toLowerCase();
