@@ -79,7 +79,7 @@ onMounted(async () => {
   void kbStore.fetchList()
   void skillStore.fetchSkills()
   try {
-    providers.value = await llmProviderApi.listProviders()
+    providers.value = await llmProviderApi.listEnabledProviders()
   } catch {
     // Provider 列表拉取失败不阻塞页面
   }
