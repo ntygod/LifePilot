@@ -32,6 +32,7 @@ import com.lifepilot.observability.trace.StateTransitionStep;
 import com.lifepilot.observability.trace.ToolCallStep;
 import com.lifepilot.observability.trace.TraceContext;
 import com.lifepilot.observability.trace.TraceRecorder;
+import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
@@ -55,15 +56,6 @@ import java.util.stream.Collectors;
 public class AgentLoop {
 
     private static final Logger log = LoggerFactory.getLogger(AgentLoop.class);
-
-    /** 流式 RESPONDING 阶段追加的自然语言输出约束。 */
-    private static final String STREAMING_OUTPUT_CONSTRAINT = """
-            
-            输出要求（流式）：
-            - 直接使用自然语言回复，不要输出 JSON
-            - 不要包含任何代码块或格式标记
-            - 回复应简洁、有用、友好
-            """;
 
     /** 当 TraceContext 中没有 LlmCallStep 时的默认 modelId。 */
     private static final String DEFAULT_MODEL_ID = "agent";
@@ -90,6 +82,7 @@ public class AgentLoop {
     private final ConversationHistoryStore conversationHistoryStore;
     @Nullable
     private final RealtimeExtractor realtimeExtractor;
+    private final PromptRegistry promptRegistry;
 
     public AgentLoop(StateReducer stateReducer,
                      ContextAssembler contextAssembler,
@@ -106,7 +99,8 @@ public class AgentLoop {
                      @Nullable ConversationHistoryStore conversationHistoryStore,
                      @Nullable SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
                      @Nullable KnowledgeBaseRepository knowledgeBaseRepository,
-                     @Nullable RealtimeExtractor realtimeExtractor) {
+                     @Nullable RealtimeExtractor realtimeExtractor,
+                     PromptRegistry promptRegistry) {
         this.stateReducer = stateReducer;
         this.contextAssembler = contextAssembler;
         this.llmRouter = llmRouter;
@@ -123,6 +117,7 @@ public class AgentLoop {
         this.realtimeExtractor = realtimeExtractor;
         this.sessionKnowledgeBaseRepository = sessionKnowledgeBaseRepository;
         this.knowledgeBaseRepository = knowledgeBaseRepository;
+        this.promptRegistry = promptRegistry;
     }
 
     /**
@@ -483,10 +478,11 @@ public class AgentLoop {
             // 流式 RESPONDING：保留原有 systemPrompt，仅追加"自然语言输出"约束
             String streamingSystemPrompt = systemPrompt;
             if (state.phase() == AgentPhase.RESPONDING) {
+                String streamingConstraint = promptRegistry.render("agent/streaming-constraint");
                 if (streamingSystemPrompt == null || streamingSystemPrompt.isBlank()) {
-                    streamingSystemPrompt = STREAMING_OUTPUT_CONSTRAINT.trim();
+                    streamingSystemPrompt = streamingConstraint;
                 } else {
-                    streamingSystemPrompt = streamingSystemPrompt + "\n" + STREAMING_OUTPUT_CONSTRAINT;
+                    streamingSystemPrompt = streamingSystemPrompt + "\n" + streamingConstraint;
                 }
             }
 

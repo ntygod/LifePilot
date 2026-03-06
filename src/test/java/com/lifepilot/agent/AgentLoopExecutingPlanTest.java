@@ -8,6 +8,7 @@ import com.lifepilot.agent.session.SessionManager;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.observability.trace.TraceRecorder;
+import com.lifepilot.prompt.PromptRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.definition.DefaultToolDefinition;
@@ -38,7 +39,8 @@ class AgentLoopExecutingPlanTest {
                 mock(ActionParser.class),
                 mock(AgentToolProvider.class),
                 new AgentConfigProperties(),
-                null, null, null, null, null
+                null, null, null, null, null,
+                mock(PromptRegistry.class)
         );
 
         ToolCallback okTool = toolCallback("calendar_create_event", "{\"ok\":true}");
@@ -92,7 +94,8 @@ class AgentLoopExecutingPlanTest {
                 mock(ActionParser.class),
                 mock(AgentToolProvider.class),
                 new AgentConfigProperties(),
-                null, null, null, null, null
+                null, null, null, null, null,
+                mock(PromptRegistry.class)
         );
 
         ToolCallback badTool = toolCallback("calendar_create_event", "{\"error\":\"boom\"}");
@@ -145,7 +148,8 @@ class AgentLoopExecutingPlanTest {
                 mock(ActionParser.class),
                 mock(AgentToolProvider.class),
                 new AgentConfigProperties(),
-                null, null, null, null, null
+                null, null, null, null, null,
+                mock(PromptRegistry.class)
         );
 
         ExecutionPlan plan = new ExecutionPlan(List.of(

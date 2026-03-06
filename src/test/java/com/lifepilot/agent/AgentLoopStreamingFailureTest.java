@@ -18,6 +18,7 @@ import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.memory.working.WorkingMemory;
 import com.lifepilot.observability.trace.TraceContext;
 import com.lifepilot.observability.trace.TraceRecorder;
+import com.lifepilot.prompt.PromptRegistry;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
@@ -60,7 +61,8 @@ class AgentLoopStreamingFailureTest {
                 conversationHistoryStore,
                 null,
                 null,
-                null
+                null,
+                mock(PromptRegistry.class)
         );
 
         AgentRequest request = new AgentRequest("hi", "s1", "web", null, null, null,
