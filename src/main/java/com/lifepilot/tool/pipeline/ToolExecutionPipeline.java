@@ -70,7 +70,7 @@ public class ToolExecutionPipeline {
     public ToolResult execute(String toolId, Map<String, Object> parameters,
                               String traceId, @Nullable String idempotencyKey) {
         Instant start = Instant.now();
-        log.debug("管线开始: toolId={}, traceId={}", toolId, traceId);
+        log.debug("管线开始: toolId={}, traceId={}, params={}", toolId, traceId, parameters);
 
         // 1. 解析工具
         ToolContract tool = toolRegistry.resolve(toolId).orElse(null);
