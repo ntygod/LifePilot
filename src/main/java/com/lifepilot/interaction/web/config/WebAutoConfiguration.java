@@ -90,7 +90,7 @@ public class WebAutoConfiguration {
                 var origins = cors.allowedOrigins().toArray(new String[0]);
                 registry.addMapping("/api/**")
                         .allowedOrigins(origins)
-                        .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+                        .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
                         .allowedHeaders("*")
                         .allowCredentials(cors.allowCredentials());
                 log.info("CORS 配置已注册: allowedOrigins={}, allowCredentials={}",

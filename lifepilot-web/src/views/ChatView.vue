@@ -46,6 +46,12 @@ const showConfigPanel = ref(false)
 
 // LLM Provider 列表（用于 SessionConfigPanel）
 const providers = ref<LlmProvider[]>([])
+// 仅保留有 Chat 能力的 Provider（过滤 Embedding / Rerank 等非对话模型）
+const chatProviders = computed(() =>
+  providers.value.filter(p =>
+    !p.capabilities || p.capabilities.length === 0 || p.capabilities.some(c => c.toLowerCase() === 'chat')
+  )
+)
 
 // 顶部上下文指示条数据
 const hasKnowledgeBases = computed(() => kbStore.list.length > 0)
@@ -337,7 +343,7 @@ async function handleUpdateSessionTitle(title: string) {
             <SessionConfigPanel
               v-if="showConfigPanel"
               :model-id="lastModelId ?? undefined"
-              :providers="providers"
+              :providers="chatProviders"
               :knowledge-bases="kbStore.list"
               @update="handleConfigUpdate"
               @close="showConfigPanel = false"
@@ -439,6 +445,6 @@ async function handleUpdateSessionTitle(title: string) {
     </div>
 
     <!-- 输入框 -->
-    <ChatInput :disabled="isStreaming" :providers="providers" @send="handleSend" />
+    <ChatInput :disabled="isStreaming" :providers="chatProviders" @send="handleSend" />
   </div>
 </template>
