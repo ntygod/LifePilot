@@ -74,6 +74,13 @@ public class JsonSchema {
                         errors.add(ValidationError.typeMismatch(
                                 field, expectedType, value.getClass().getSimpleName()));
                     }
+                    // format 关键字检查
+                    String format = (String) propSchema.get("format");
+                    if (format != null && value instanceof String strValue) {
+                        if (!matchesFormat(strValue, format)) {
+                            errors.add(ValidationError.formatMismatch(field, format, strValue));
+                        }
+                    }
                 }
             }
         }
@@ -92,6 +99,29 @@ public class JsonSchema {
             case "array" -> value instanceof List;
             default -> true; // 未知类型不校验
         };
+    }
+
+    /** 检查字符串值是否匹配指定的 JSON Schema format。 */
+    private boolean matchesFormat(String value, String format) {
+        try {
+            return switch (format) {
+                case "date-time" -> {
+                    java.time.OffsetDateTime.parse(value);
+                    yield true;
+                }
+                case "date" -> {
+                    java.time.LocalDate.parse(value);
+                    yield true;
+                }
+                case "time" -> {
+                    java.time.LocalTime.parse(value);
+                    yield true;
+                }
+                default -> true; // 未知 format 不校验
+            };
+        } catch (java.time.format.DateTimeParseException e) {
+            return false;
+        }
     }
 
     /** 获取 Schema 定义。 */
