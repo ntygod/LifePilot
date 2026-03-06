@@ -15,6 +15,9 @@ import java.time.Instant;
  * JDBC 实现的对话历史存储（chat_sessions + chat_messages）。
  *
  * <p>与 L1-L4 记忆系统物理解耦：不写入 conversations/messages（memory tables）。</p>
+ *
+ * @author zsg
+ * @since 2026-03-03
  */
 @Service
 public class JdbcConversationHistoryStore implements ConversationHistoryStore {
@@ -30,6 +33,52 @@ public class JdbcConversationHistoryStore implements ConversationHistoryStore {
         this.messageRepository = messageRepository;
     }
 
+    /**
+     * 同步写入用户消息，返回后端生成的 messageId。
+     *
+     * <p>不调用 ensureExists()，调用方需确保会话已预创建。</p>
+     *
+     * @since 2026-03-06
+     */
+    @Override
+    @Transactional
+    public String appendUserMessage(String sessionId,
+                                    String userMessage,
+                                    @Nullable String traceId) {
+        Instant ts = Instant.now();
+        String messageId = messageRepository.insert(sessionId, "user", userMessage, null, traceId, ts);
+        sessionRepository.appendMessageMeta(sessionId, ts, truncatePreview(userMessage));
+        log.debug("用户消息已同步写入: sessionId={}, messageId={}", sessionId, messageId);
+        return messageId;
+    }
+
+    /**
+     * 同步写入助手消息，返回后端生成的 messageId。
+     *
+     * <p>不调用 ensureExists()，调用方需确保会话已预创建。</p>
+     *
+     * @since 2026-03-06
+     */
+    @Override
+    @Transactional
+    public String appendAssistantMessage(String sessionId,
+                                         String assistantMessage,
+                                         @Nullable String reasoningSummary,
+                                         @Nullable String traceId) {
+        Instant ts = Instant.now();
+        String messageId = messageRepository.insert(sessionId, "assistant", assistantMessage,
+                reasoningSummary, traceId, ts);
+        sessionRepository.appendMessageMeta(sessionId, ts, truncatePreview(assistantMessage));
+        log.debug("助手消息已同步写入: sessionId={}, messageId={}", sessionId, messageId);
+        return messageId;
+    }
+
+    /**
+     * 追加一轮对话（向后兼容 CLI 等非 Web 渠道）。
+     *
+     * <p>保留 ensureExists() 调用，因为 CLI 渠道可能未预创建会话。
+     * 将在 task 3.5 中移除。</p>
+     */
     @Override
     @Transactional
     public void appendTurn(String sessionId,
@@ -41,22 +90,14 @@ public class JdbcConversationHistoryStore implements ConversationHistoryStore {
             return;
         }
 
-        // 确保 chat_sessions 存在（避免非 Web 渠道或异常流程导致外键失败）
+        // 确保 chat_sessions 存在（CLI 等非 Web 渠道的向后兼容，task 3.5 移除）
         sessionRepository.ensureExists(sessionId);
 
-        Instant base = Instant.now();
-
-        // 1) user 消息
         if (userMessage != null && !userMessage.isBlank()) {
-            messageRepository.insert(sessionId, "user", userMessage, null, traceId, base);
-            sessionRepository.appendMessageMeta(sessionId, base, truncatePreview(userMessage));
+            appendUserMessage(sessionId, userMessage, traceId);
         }
-
-        // 2) assistant 消息（优先用 assistant 做 sidebar 预览）
         if (assistantMessage != null && !assistantMessage.isBlank()) {
-            Instant ts = base.plusMillis(1);
-            messageRepository.insert(sessionId, "assistant", assistantMessage, reasoningSummary, traceId, ts);
-            sessionRepository.appendMessageMeta(sessionId, ts, truncatePreview(assistantMessage));
+            appendAssistantMessage(sessionId, assistantMessage, reasoningSummary, traceId);
         }
 
         log.debug("对话历史已追加: sessionId={}, hasUser={}, hasAssistant={}",
@@ -99,4 +140,3 @@ public class JdbcConversationHistoryStore implements ConversationHistoryStore {
         return t.substring(0, 100) + "...";
     }
 }
-
