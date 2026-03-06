@@ -1,21 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Paperclip, FileText, X, ChevronDown, ChevronUp, Settings, Image, FileAudio2, FileVideo } from 'lucide-vue-next'
+import { Paperclip, FileText, X, Image, FileAudio2, FileVideo } from 'lucide-vue-next'
 import { Textarea } from '@/components/ui/textarea'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import {
-  Select as UiSelect, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select'
-import { Checkbox } from '@/components/ui/checkbox'
-import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
 import { chatApi } from '@/api/client'
-import type { LlmProvider } from '@/api/client'
 import type { ChatAttachment } from '@/types'
 
 const props = defineProps<{
   disabled?: boolean
-  providers?: LlmProvider[]
 }>()
 
 const emit = defineEmits<{
@@ -23,16 +14,9 @@ const emit = defineEmits<{
     content: string
     attachmentIds?: string[]
     attachments?: ChatAttachment[]
-    sessionConfig?: {
-      modelId?: string
-      temperature?: number
-      maxTokens?: number
-      knowledgeBaseIds?: string[]
-    }
   }]
 }>()
 
-const kbStore = useKnowledgeBaseStore()
 const input = ref('')
 // 基础长度限制：主要防止一次性粘贴超长内容导致请求失败
 const maxLength = 4000
@@ -53,24 +37,6 @@ const promptTemplates = [
   { name: '代码审查', content: '请审查以下代码，指出潜在问题和改进建议：\n\n' },
   { name: '解释', content: '请详细解释以下概念：\n\n' }
 ]
-
-// 上下文配置相关
-const showContextConfig = ref(false)
-const contextConfig = ref({
-  model: '',
-  temperature: 0.7,
-  maxTokens: 2000,
-  knowledgeBases: [] as string[]
-})
-
-const contextConfigDirty = computed(() => {
-  return (
-    !!contextConfig.value.model ||
-    contextConfig.value.temperature !== 0.7 ||
-    contextConfig.value.maxTokens !== 2000 ||
-    contextConfig.value.knowledgeBases.length > 0
-  )
-})
 
 function handleKeydown(e: KeyboardEvent) {
   // Enter 发送，Shift+Enter 换行
@@ -108,16 +74,7 @@ async function submit() {
     }
   }
 
-  const sessionConfig = contextConfigDirty.value
-    ? {
-        modelId: contextConfig.value.model || undefined,
-        temperature: contextConfig.value.temperature,
-        maxTokens: contextConfig.value.maxTokens,
-        knowledgeBaseIds: contextConfig.value.knowledgeBases
-      }
-    : undefined
-
-  emit('send', { content, attachmentIds, attachments: uploadedAttachments, sessionConfig })
+  emit('send', { content, attachmentIds, attachments: uploadedAttachments })
   input.value = ''
   attachments.value = []
   uploadError.value = null
@@ -191,76 +148,6 @@ defineExpose({
           >
             <X :size="12" />
           </button>
-        </div>
-      </div>
-
-      <!-- 上下文配置折叠区域 -->
-      <div v-if="showContextConfig" class="mb-sm rounded-lg border border-border bg-muted/20 p-sm text-xs">
-        <div class="space-y-sm">
-          <div class="flex items-center justify-between">
-            <span class="font-medium text-foreground">上下文配置</span>
-            <button
-              type="button"
-              class="text-muted-foreground hover:text-foreground"
-              @click="showContextConfig = false"
-            >
-              <ChevronUp :size="14" />
-            </button>
-          </div>
-          <div class="grid grid-cols-2 gap-sm">
-            <div>
-              <Label class="text-muted-foreground mb-1">模型</Label>
-              <UiSelect :model-value="contextConfig.model || '__default__'" @update:model-value="(v: any) => contextConfig.model = v === '__default__' ? '' : String(v ?? '')">
-                <SelectTrigger class="text-xs"><SelectValue placeholder="使用默认" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__default__">使用默认</SelectItem>
-                  <SelectItem v-for="p in (props.providers ?? [])" :key="p.id" :value="p.id">
-                    {{ p.displayName || p.modelName || p.id }}
-                  </SelectItem>
-                </SelectContent>
-              </UiSelect>
-            </div>
-            <div>
-              <Label class="text-muted-foreground mb-1">温度</Label>
-              <Input
-                v-model.number="contextConfig.temperature"
-                type="number" :min="0" :max="2" :step="0.1"
-                class="text-xs"
-              />
-            </div>
-            <div>
-              <Label class="text-muted-foreground mb-1">最大 Tokens</Label>
-              <Input
-                v-model.number="contextConfig.maxTokens"
-                type="number" :min="100" :max="8000" :step="100"
-                class="text-xs"
-              />
-            </div>
-            <div>
-              <Label class="text-muted-foreground mb-1">关联知识库</Label>
-              <div v-if="kbStore.list.length > 0" class="space-y-1 max-h-24 overflow-y-auto rounded-lg border border-input bg-background px-2 py-1.5">
-                <label
-                  v-for="kb in kbStore.list"
-                  :key="kb.id"
-                  class="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5"
-                >
-                  <Checkbox
-                    :checked="contextConfig.knowledgeBases.includes(kb.id)"
-                    @update:checked="(checked: boolean) => {
-                      if (checked) {
-                        if (!contextConfig.knowledgeBases.includes(kb.id)) contextConfig.knowledgeBases.push(kb.id)
-                      } else {
-                        const idx = contextConfig.knowledgeBases.indexOf(kb.id)
-                        if (idx >= 0) contextConfig.knowledgeBases.splice(idx, 1)
-                      }
-                    }"
-                  />
-                  <span class="text-xs text-foreground truncate">{{ kb.name }}</span>
-                </label>
-              </div>
-              <span v-else class="text-xs text-muted-foreground">暂无知识库</span>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -342,19 +229,6 @@ defineExpose({
                 @change="handleFileChange"
               />
 
-              <!-- 上下文配置按钮 -->
-              <button
-                type="button"
-                class="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors
-                       disabled:opacity-50 disabled:cursor-not-allowed
-                       focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                :disabled="disabled"
-                :class="showContextConfig ? 'bg-muted/60 text-foreground' : ''"
-                title="上下文配置"
-                @click="showContextConfig = !showContextConfig"
-              >
-                <Settings :size="18" />
-              </button>
             </div>
 
             <div class="flex items-center gap-sm">
