@@ -80,6 +80,13 @@ onMounted(async () => {
   const sessionId = route.params.sessionId as string | undefined
   if (sessionId && sessionId !== chatStore.activeSessionId) {
     chatStore.activeSessionId = sessionId
+  } else if (!sessionId && !chatStore.activeSessionId) {
+    // 新对话页面：立即创建会话
+    try {
+      await chatStore.startNewSession()
+    } catch (e) {
+      console.error('创建新会话失败:', e)
+    }
   }
   // 拉取知识库 / Skill / Provider 列表
   void kbStore.fetchList()
@@ -94,9 +101,15 @@ onMounted(async () => {
 // 路由变化时同步 activeSessionId
 watch(
   () => route.params.sessionId as string | undefined,
-  (sessionId) => {
+  async (sessionId) => {
     if (!sessionId) {
+      // 导航到新对话页面：立即创建会话
       chatStore.activeSessionId = null
+      try {
+        await chatStore.startNewSession()
+      } catch (e) {
+        console.error('创建新会话失败:', e)
+      }
       return
     }
     if (sessionId !== chatStore.activeSessionId) {

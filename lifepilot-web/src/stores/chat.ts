@@ -55,6 +55,13 @@ export const useChatStore = defineStore('chat', () => {
     return session
   }
 
+  /** 开始新对话：立即创建会话并设置为活跃会话 */
+  async function startNewSession(title?: string): Promise<ChatSession> {
+    const session = await createSession(title)
+    activeSessionId.value = session.id
+    return session
+  }
+
   /** 更新会话 */
   async function updateSession(sessionId: string, updates: { title?: string; pinned?: boolean; archived?: boolean }) {
     const updated = await chatApi.updateSession(sessionId, updates)
@@ -112,6 +119,7 @@ export const useChatStore = defineStore('chat', () => {
     updateMessage,
     replaceMessageId,
     createSession,
+    startNewSession,
     updateSession,
     deleteSession,
     clearCurrentSessionMessages,

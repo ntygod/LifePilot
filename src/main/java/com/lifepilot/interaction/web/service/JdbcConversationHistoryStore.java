@@ -1,4 +1,4 @@
-package com.lifepilot.interaction.web.service;
+﻿package com.lifepilot.interaction.web.service;
 
 import com.lifepilot.conversation.ConversationHistoryStore;
 import com.lifepilot.interaction.web.repository.ChatMessageRepository;
@@ -36,7 +36,7 @@ public class JdbcConversationHistoryStore implements ConversationHistoryStore {
     /**
      * 同步写入用户消息，返回后端生成的 messageId。
      *
-     * <p>不调用 ensureExists()，调用方需确保会话已预创建。</p>
+     * <p>调用方需确保会话已预创建。</p>
      *
      * @since 2026-03-06
      */
@@ -55,7 +55,7 @@ public class JdbcConversationHistoryStore implements ConversationHistoryStore {
     /**
      * 同步写入助手消息，返回后端生成的 messageId。
      *
-     * <p>不调用 ensureExists()，调用方需确保会话已预创建。</p>
+     * <p>调用方需确保会话已预创建。</p>
      *
      * @since 2026-03-06
      */
@@ -76,8 +76,7 @@ public class JdbcConversationHistoryStore implements ConversationHistoryStore {
     /**
      * 追加一轮对话（向后兼容 CLI 等非 Web 渠道）。
      *
-     * <p>保留 ensureExists() 调用，因为 CLI 渠道可能未预创建会话。
-     * 将在 task 3.5 中移除。</p>
+     * <p>调用方需确保会话已预创建（Web 渠道在打开新对话时创建，CLI 渠道由适配器负责）。</p>
      */
     @Override
     @Transactional
@@ -89,9 +88,6 @@ public class JdbcConversationHistoryStore implements ConversationHistoryStore {
         if (sessionId == null || sessionId.isBlank()) {
             return;
         }
-
-        // 确保 chat_sessions 存在（CLI 等非 Web 渠道的向后兼容，task 3.5 移除）
-        sessionRepository.ensureExists(sessionId);
 
         if (userMessage != null && !userMessage.isBlank()) {
             appendUserMessage(sessionId, userMessage, traceId);
@@ -117,9 +113,6 @@ public class JdbcConversationHistoryStore implements ConversationHistoryStore {
         if (systemMessage == null || systemMessage.isBlank()) {
             return;
         }
-
-        // 确保 chat_sessions 存在（避免非 Web 渠道或异常流程导致外键失败）
-        sessionRepository.ensureExists(sessionId);
 
         Instant ts = Instant.now();
         messageRepository.insert(sessionId, "system", systemMessage, null, traceId, ts);

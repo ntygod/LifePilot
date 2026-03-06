@@ -1,4 +1,4 @@
-package com.lifepilot.interaction.web.repository;
+﻿package com.lifepilot.interaction.web.repository;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -67,26 +67,7 @@ public class ChatSessionRepository {
                 session.updatedAt().toString());
     }
 
-    /**
-     * 确保会话记录存在（用于“只提供 sessionId 但未显式创建 chat_sessions”的场景）。
-     *
-     * <p>不会覆盖已有记录；若不存在则以默认值插入。</p>
-     */
-    public void ensureExists(String sessionId) {
-        if (sessionId == null || sessionId.isBlank()) {
-            return;
-        }
-        String now = Instant.now().toString();
-        jdbcTemplate.update("""
-                        INSERT OR IGNORE INTO chat_sessions (
-                            id, title, summary, message_count, is_pinned, archived,
-                            last_message_at, created_at, updated_at
-                        ) VALUES (?, '新对话', NULL, 0, 0, 0, NULL, ?, ?)
-                        """,
-                sessionId, now, now);
-    }
-
-    /**
+        /**
      * 追加一条消息带来的会话元数据变化：消息计数、最后消息时间、摘要预览。
      *
      * <p>摘要预览用于 Sidebar “最后一条消息预览”。</p>

@@ -1,16 +1,10 @@
 package com.lifepilot.interaction.web.controller;
 
-import com.lifepilot.interaction.web.model.ChunkResult;
-import com.lifepilot.interaction.web.model.CreateKbRequest;
-import com.lifepilot.interaction.web.model.ErrorResponse;
-import com.lifepilot.interaction.web.model.LogEntry;
-import com.lifepilot.interaction.web.model.ProcessingLogResponse;
-import com.lifepilot.interaction.web.model.RetrievalTestRequest;
-import com.lifepilot.interaction.web.model.RetrievalTestResponse;
-import com.lifepilot.interaction.web.model.UpdateKbRequest;
+import com.lifepilot.interaction.web.model.*;
 import com.lifepilot.knowledge.KnowledgeBaseManager;
 import com.lifepilot.knowledge.exception.DocumentNotFoundException;
 import com.lifepilot.knowledge.exception.KnowledgeBaseNotFoundException;
+import com.lifepilot.knowledge.ingest.DocumentIngester;
 import com.lifepilot.knowledge.model.Document;
 import com.lifepilot.knowledge.model.DocumentSearchResult;
 import com.lifepilot.knowledge.model.DocumentStatus;
@@ -19,30 +13,17 @@ import com.lifepilot.knowledge.repository.DocumentRepository;
 import com.lifepilot.knowledge.retrieve.DocumentRetriever;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import com.lifepilot.knowledge.ingest.DocumentIngester;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.lang.Nullable;
-import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PatchMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -181,14 +162,14 @@ public class KnowledgeBaseController {
             // 保存到临时文件
             String suffix = originalName.substring(originalName.lastIndexOf('.'));
             Path tempFile = Files.createTempFile("lifepilot-upload-", suffix);
-            file.transferTo(java.util.Objects.requireNonNull(tempFile.toFile()));
+            file.transferTo(Objects.requireNonNull(tempFile.toFile()));
 
             // 异步处理文档
             ingester.ingest(id, tempFile);
             log.info("文档上传已提交异步处理: kbId={}, fileName={}", id, originalName);
 
             return ResponseEntity.accepted().body(
-                    java.util.Map.of("message", "文档已提交处理", "fileName", originalName));
+                    Map.of("message", "文档已提交处理", "fileName", originalName));
         } catch (IOException e) {
             log.error("文档上传失败: kbId={}, fileName={}, error={}", id, originalName, e.getMessage());
             return ResponseEntity.internalServerError().body(

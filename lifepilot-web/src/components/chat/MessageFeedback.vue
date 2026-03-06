@@ -4,7 +4,6 @@ import type { Message } from '@/types'
 import { chatApi } from '@/api/client'
 import { ThumbsUp, ThumbsDown } from 'lucide-vue-next'
 import { Textarea } from '@/components/ui/textarea'
-import { useChatStore } from '@/stores/chat'
 
 const props = defineProps<{
   message: Message
@@ -14,8 +13,6 @@ const emit = defineEmits<{
   (e: 'like', message: Message): void
   (e: 'dislike', message: Message, feedback?: string): void
 }>()
-
-const chatStore = useChatStore()
 
 // 本地反馈状态，初始化自 message.feedbackStatus
 const feedbackStatus = ref<'liked' | 'disliked' | null>(props.message.feedbackStatus ?? null)
@@ -38,7 +35,7 @@ async function handleLike() {
   try {
     isSubmitting.value = true
     await chatApi.submitFeedback(
-      props.message.id, 'like', undefined, chatStore.activeSessionId ?? undefined
+      props.message.id, 'like'
     )
     emit('like', props.message)
   } catch {
@@ -67,8 +64,7 @@ async function submitDislikeFeedback() {
   try {
     isSubmitting.value = true
     await chatApi.submitFeedback(
-      props.message.id, 'dislike', feedbackText.value || undefined,
-      chatStore.activeSessionId ?? undefined
+      props.message.id, 'dislike', feedbackText.value || undefined
     )
     emit('dislike', props.message, feedbackText.value)
     showFeedbackInput.value = false

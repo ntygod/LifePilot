@@ -54,17 +54,10 @@ export function useChat() {
   ) {
     if (!content.trim()) return
 
-    // 如果当前没有活跃会话，先创建会话
+    // 会话已在打开新对话时预创建，此处 activeSessionId 必定非空
     if (!chatStore.activeSessionId) {
-      try {
-        const newSession = await chatStore.createSession()
-        chatStore.activeSessionId = newSession.id
-      } catch (e) {
-        const message = e instanceof Error ? e.message : '创建会话失败'
-        error.value = `无法创建会话：${message}`
-        console.error('创建会话失败:', e)
-        return
-      }
+      error.value = '会话未创建，请先打开新对话'
+      return
     }
 
     // 若本轮携带会话配置，先写回后端（确保首条消息也能按配置检索知识库/路由模型）
