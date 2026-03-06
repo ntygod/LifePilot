@@ -141,6 +141,9 @@ public class AgentLoop {
         String reasoningSummary = null;
         // 为本轮推理生成一个临时 turnId，用于前端关联 reasoning/token 事件
         String tempTurnId = UUID.randomUUID().toString();
+        // 后端生成的消息 ID（同步写入 chat_messages 后获取）
+        String userMessageId = null;
+        String assistantMessageId = null;
         
         try {
             state = initState(request);
@@ -148,14 +151,27 @@ public class AgentLoop {
             // 用户消息写入 L1（在 assembleContext 之前，确保对话历史完整）
             writeUserMessageToL1(state);
 
-            // TraceId 提前告知前端：便于在流式过程中打开“实时轨迹”视图
+            // 同步写入用户消息到 chat_messages，获取后端生成的 messageId
+            if (conversationHistoryStore != null && state.goal() != null && !state.goal().isBlank()) {
+                try {
+                    userMessageId = conversationHistoryStore.appendUserMessage(
+                            state.sessionId(), state.goal(), state.traceId());
+                } catch (Exception e) {
+                    log.warn("用户消息同步写入失败: sessionId={}, error={}", state.sessionId(), e.getMessage());
+                }
+            }
+
+            // TraceId 提前告知前端：便于在流式过程中打开"实时轨迹"视图
             if (state.traceId() != null) {
-                sseManager.sendEvent(streamId, SseEventType.TRACE_START, Map.of(
-                        "sessionId", request.sessionId(),
-                        "turnId", tempTurnId,
-                        "traceId", state.traceId(),
-                        "timestamp", Instant.now().toEpochMilli()
-                ));
+                var traceStartData = new HashMap<String, Object>();
+                traceStartData.put("sessionId", request.sessionId());
+                traceStartData.put("turnId", tempTurnId);
+                traceStartData.put("traceId", state.traceId());
+                traceStartData.put("timestamp", Instant.now().toEpochMilli());
+                if (userMessageId != null) {
+                    traceStartData.put("userMessageId", userMessageId);
+                }
+                sseManager.sendEvent(streamId, SseEventType.TRACE_START, traceStartData);
             }
             // 推理开始事件
             sendReasoningEvent(
@@ -195,7 +211,17 @@ public class AgentLoop {
                 // AI 响应写入 L1
                 writeAssistantMessageToL1(state);
 
-                // 异步后处理
+                // 同步写入助手消息到 chat_messages，获取后端生成的 messageId
+                if (conversationHistoryStore != null && finalContent != null && !finalContent.isBlank()) {
+                    try {
+                        assistantMessageId = conversationHistoryStore.appendAssistantMessage(
+                                state.sessionId(), finalContent, reasoningSummary, state.traceId());
+                    } catch (Exception e) {
+                        log.warn("助手消息同步写入失败: sessionId={}, error={}", state.sessionId(), e.getMessage());
+                    }
+                }
+
+                // 异步后处理（会话快照 + AUDN 实体提取，不含对话历史）
                 asyncPostProcess(state);
 
                 // 聚合 Token 使用量
@@ -230,7 +256,7 @@ public class AgentLoop {
                 );
                 var doneData = buildDoneEventPayload(
                         request, state, tempTurnId, finalTokenUsage,
-                        traceContext, reasoningSummary, finalContent);
+                        traceContext, reasoningSummary, finalContent, assistantMessageId);
                 sseManager.sendEvent(streamId, SseEventType.DONE, doneData);
                 sseManager.closeEmitter(streamId);
             }
@@ -254,6 +280,16 @@ public class AgentLoop {
             // 用户消息写入 L1（在 assembleContext 之前，确保对话历史完整）
             writeUserMessageToL1(state);
 
+            // 同步写入用户消息到 chat_messages
+            if (conversationHistoryStore != null && state.goal() != null && !state.goal().isBlank()) {
+                try {
+                    conversationHistoryStore.appendUserMessage(
+                            state.sessionId(), state.goal(), state.traceId());
+                } catch (Exception e) {
+                    log.warn("用户消息同步写入失败: sessionId={}, error={}", state.sessionId(), e.getMessage());
+                }
+            }
+
             traceContext = startTraceIfEnabled(state, request);
 
             // Trace 启动后重新计时：Loop 总耗时用于 Budget elapsed、Step elapsed 等。
@@ -275,7 +311,17 @@ public class AgentLoop {
             // AI 响应写入 L1（在 asyncPostProcess 之前）
             writeAssistantMessageToL1(state);
 
-            // 异步后处理（Virtual Thread）
+            // 同步写入助手消息到 chat_messages
+            if (conversationHistoryStore != null && state.finalOutput() != null && !state.finalOutput().isBlank()) {
+                try {
+                    conversationHistoryStore.appendAssistantMessage(
+                            state.sessionId(), state.finalOutput(), state.reasoningSummary(), state.traceId());
+                } catch (Exception e) {
+                    log.warn("助手消息同步写入失败: sessionId={}, error={}", state.sessionId(), e.getMessage());
+                }
+            }
+
+            // 异步后处理（会话快照 + AUDN 实体提取，不含对话历史）
             asyncPostProcess(state);
             return state.toResponse();
 
@@ -1104,23 +1150,7 @@ public class AgentLoop {
                         finalState.sessionId(), e.getMessage());
             }
             
-            // 2. 保存对话历史（与记忆系统解耦）
-            try {
-                if (conversationHistoryStore != null) {
-                    conversationHistoryStore.appendTurn(
-                            finalState.sessionId(),
-                            finalState.goal(),
-                            finalState.finalOutput(),
-                            finalState.reasoningSummary(),
-                            finalState.traceId()
-                    );
-                }
-            } catch (Exception e) {
-                log.warn("对话历史持久化失败: sessionId={}, error={}",
-                        finalState.sessionId(), e.getMessage());
-            }
-            
-            // 3. 触发 AUDN 实时实体提取（异步，不阻塞后处理）
+            // 2. 触发 AUDN 实时实体提取（异步，不阻塞后处理）
             try {
                 if (realtimeExtractor != null && finalState.finalOutput() != null) {
                     realtimeExtractor.extractAsync(
@@ -1333,10 +1363,11 @@ public class AgentLoop {
                                                        TokenUsage finalTokenUsage,
                                                        TraceContext traceContext,
                                                        String reasoningSummary,
-                                                       String finalContent) {
+                                                       String finalContent,
+                                                       @Nullable String assistantMessageId) {
         var doneData = new HashMap<String, Object>();
-        // 消息标识（前端用于反馈等操作）
-        doneData.put("messageId", tempTurnId);
+        // 消息标识（优先使用后端同步写入返回的 messageId，兜底用 tempTurnId）
+        doneData.put("messageId", assistantMessageId != null ? assistantMessageId : tempTurnId);
         // 会话与回合标识
         doneData.put("sessionId", request.sessionId());
         doneData.put("turnId", tempTurnId);

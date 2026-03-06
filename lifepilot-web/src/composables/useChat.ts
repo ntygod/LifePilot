@@ -54,17 +54,10 @@ export function useChat() {
   ) {
     if (!content.trim()) return
 
-    // 如果当前没有活跃会话，先创建会话
+    // 会话已在打开新对话时预创建，此处 activeSessionId 必定非空
     if (!chatStore.activeSessionId) {
-      try {
-        const newSession = await chatStore.createSession()
-        chatStore.activeSessionId = newSession.id
-      } catch (e) {
-        const message = e instanceof Error ? e.message : '创建会话失败'
-        error.value = `无法创建会话：${message}`
-        console.error('创建会话失败:', e)
-        return
-      }
+      error.value = '会话未创建，请先打开新对话'
+      return
     }
 
     // 若本轮携带会话配置，先写回后端（确保首条消息也能按配置检索知识库/路由模型）
@@ -213,9 +206,14 @@ export function useChat() {
     try {
       switch (eventType) {
         case SSE_EVENT_TYPES.TRACE_START: {
-          const payload: { sessionId?: string; turnId?: string; traceId?: string; timestamp?: number } = JSON.parse(data)
+          const payload: { sessionId?: string; turnId?: string; traceId?: string; timestamp?: number; userMessageId?: string } = JSON.parse(data)
           if (payload.traceId && currentUserMessageId) {
             chatStore.updateMessage(currentUserMessageId, { traceId: payload.traceId })
+          }
+          // 用后端返回的 userMessageId 替换前端临时 ID，确保前后端 ID 一致
+          if (payload.userMessageId && currentUserMessageId) {
+            chatStore.replaceMessageId(currentUserMessageId, payload.userMessageId)
+            currentUserMessageId = payload.userMessageId
           }
           break
         }
@@ -238,8 +236,8 @@ export function useChat() {
         }
         case SSE_EVENT_TYPES.DONE: {
           const event: SseDoneEvent = JSON.parse(data)
-          // 后端 AgentLoop 路径可能未返回 messageId，兜底生成 UUID
-          const messageId = event.messageId || crypto.randomUUID()
+          // 后端同步写入后返回 messageId，不再需要前端兜底生成
+          const messageId = event.messageId
           // 同步会话ID：如果后端返回了 sessionId，更新 activeSessionId
           if (event.sessionId && event.sessionId !== chatStore.activeSessionId) {
             chatStore.activeSessionId = event.sessionId

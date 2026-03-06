@@ -1,4 +1,4 @@
-package com.lifepilot.interaction.web.controller;
+﻿package com.lifepilot.interaction.web.controller;
 
 import com.lifepilot.interaction.model.GatewayResponse;
 import com.lifepilot.interaction.model.ResponseContent;
@@ -625,17 +625,12 @@ public class ChatController {
                     new ErrorResponse(400, "反馈类型必须是 'like' 或 'dislike'", Instant.now()));
         }
 
-        // 尝试从 chat_messages 获取会话 ID；消息可能尚未持久化（异步写入），此时从请求体获取
+        // 从 chat_messages 获取会话 ID（消息已同步持久化，无需降级逻辑）
         String sessionId = feedbackRepository.getSessionIdByMessageId(messageId);
         if (sessionId == null) {
-            // 消息尚未写入 chat_messages（asyncPostProcess 异步延迟），使用请求体中的 sessionId
-            sessionId = request.sessionId();
-            if (sessionId == null || sessionId.isBlank()) {
-                log.warn("消息反馈失败: 消息尚未持久化且请求未携带 sessionId: messageId={}", messageId);
-                return ResponseEntity.badRequest().body(
-                        new ErrorResponse(400, "消息尚未就绪，请稍后重试", Instant.now()));
-            }
-            log.debug("消息尚未持久化，使用请求体 sessionId: messageId={}, sessionId={}", messageId, sessionId);
+            log.warn("消息反馈失败: 消息不存在: messageId={}", messageId);
+            return ResponseEntity.badRequest().body(
+                    new ErrorResponse(400, "消息不存在", Instant.now()));
         }
 
         try {

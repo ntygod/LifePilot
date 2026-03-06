@@ -41,10 +41,24 @@ export const useChatStore = defineStore('chat', () => {
     messages.value[index] = { ...messages.value[index], ...patch }
   }
 
+  /** 替换消息 ID（用于将前端临时 ID 替换为后端返回的持久化 ID） */
+  function replaceMessageId(oldId: string, newId: string) {
+    const index = messages.value.findIndex(m => m.id === oldId)
+    if (index === -1) return
+    messages.value[index] = { ...messages.value[index], id: newId }
+  }
+
   /** 创建会话 */
   async function createSession(title?: string): Promise<ChatSession> {
     const session = await chatApi.createSession(title)
     sessions.value.unshift(session)
+    return session
+  }
+
+  /** 开始新对话：立即创建会话并设置为活跃会话 */
+  async function startNewSession(title?: string): Promise<ChatSession> {
+    const session = await createSession(title)
+    activeSessionId.value = session.id
     return session
   }
 
@@ -103,7 +117,9 @@ export const useChatStore = defineStore('chat', () => {
     loadMessages,
     addMessage,
     updateMessage,
+    replaceMessageId,
     createSession,
+    startNewSession,
     updateSession,
     deleteSession,
     clearCurrentSessionMessages,
