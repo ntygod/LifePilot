@@ -1,6 +1,6 @@
 package com.lifepilot.knowledge.model;
 
-import java.util.Optional;
+import org.springframework.lang.Nullable;
 
 /**
  * 导入进度事件 — 追踪文档导入管线各阶段的进度。
@@ -18,5 +18,5 @@ public record IngestionProgress(
         String knowledgeBaseId,
         DocumentStatus stage,
         int progressPercent,
-        Optional<String> message
+        @Nullable String message
 ) {}

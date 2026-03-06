@@ -497,7 +497,19 @@ export const knowledgeBaseApi = {
   },
   // 以下接口待后端实现
   getDocumentLogs(kbId: string, docId: string): Promise<ProcessingLog[]> {
-    return request(`/knowledge-bases/${kbId}/documents/${docId}/logs`)
+    return request<{ logs: Array<{ timestamp: string; level: string; message: string; details?: Record<string, unknown> }> }>(
+      `/knowledge-bases/${kbId}/documents/${docId}/logs`
+    ).then(resp => {
+      if (!resp || !resp.logs) return []
+      return resp.logs.map((log, index) => ({
+        id: `${docId}-log-${index}`,
+        documentId: docId,
+        stage: (log.level === 'ERROR' ? 'ERROR' : 'COMPLETE') as ProcessingLog['stage'],
+        message: log.message,
+        timestamp: log.timestamp,
+        error: log.level === 'ERROR' ? (log.details?.error as string) : undefined
+      }))
+    })
   },
   testRetrieval(kbId: string, query: string): Promise<TestRetrievalResult> {
     return request(`/knowledge-bases/${kbId}/test-retrieval`, {

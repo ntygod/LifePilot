@@ -258,9 +258,9 @@ export interface KbDocument {
   fileName: string
   fileSize: number
   mimeType: string
-  status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'ERROR'
+  status: 'UPLOADING' | 'PARSING' | 'CHUNKING' | 'INDEXING' | 'EXTRACTING' | 'READY' | 'UPDATING' | 'DELETING' | 'ERROR'
   chunkCount: number
-  errorMessage?: string
+  errorMessage?: string | null
   createdAt: string
   updatedAt: string
 }

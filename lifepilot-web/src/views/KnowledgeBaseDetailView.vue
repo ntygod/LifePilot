@@ -99,9 +99,14 @@ const fileTypeMap: Record<string, string> = {
 }
 
 const statusMap: Record<string, { label: string; icon: any; class: string }> = {
-  PENDING: { label: '等待中', icon: Clock, class: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400' },
-  PROCESSING: { label: '处理中', icon: RefreshCw, class: 'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400' },
-  COMPLETED: { label: '已完成', icon: CheckCircle, class: 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400' },
+  UPLOADING: { label: '上传中', icon: Clock, class: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400' },
+  PARSING: { label: '解析中', icon: RefreshCw, class: 'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400' },
+  CHUNKING: { label: '分块中', icon: RefreshCw, class: 'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400' },
+  INDEXING: { label: '索引中', icon: RefreshCw, class: 'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400' },
+  EXTRACTING: { label: '提取中', icon: RefreshCw, class: 'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400' },
+  READY: { label: '已完成', icon: CheckCircle, class: 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400' },
+  UPDATING: { label: '更新中', icon: RefreshCw, class: 'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400' },
+  DELETING: { label: '删除中', icon: RefreshCw, class: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400' },
   ERROR: { label: '失败', icon: XCircle, class: 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400' }
 }
 
@@ -547,9 +552,12 @@ async function testRetrieval() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">全部</SelectItem>
-                        <SelectItem value="PENDING">等待中</SelectItem>
-                        <SelectItem value="PROCESSING">处理中</SelectItem>
-                        <SelectItem value="COMPLETED">已完成</SelectItem>
+                        <SelectItem value="UPLOADING">上传中</SelectItem>
+                        <SelectItem value="PARSING">解析中</SelectItem>
+                        <SelectItem value="CHUNKING">分块中</SelectItem>
+                        <SelectItem value="INDEXING">索引中</SelectItem>
+                        <SelectItem value="EXTRACTING">提取中</SelectItem>
+                        <SelectItem value="READY">已完成</SelectItem>
                         <SelectItem value="ERROR">失败</SelectItem>
                       </SelectContent>
                     </Select>
@@ -663,7 +671,7 @@ async function testRetrieval() {
                         <Button v-if="doc.status === 'ERROR'" variant="ghost" size="icon-sm" class="size-7" title="重试" @click="handleRetry(doc)">
                           <RefreshCw :size="14" />
                         </Button>
-                        <Button v-if="doc.status === 'COMPLETED'" variant="ghost" size="icon-sm" class="size-7" title="重新分块" @click="handleRechunk(doc)">
+                        <Button v-if="doc.status === 'READY'" variant="ghost" size="icon-sm" class="size-7" title="重新分块" @click="handleRechunk(doc)">
                           <RefreshCw :size="14" />
                         </Button>
                         <Button variant="ghost" size="icon-sm" class="size-7" title="查看日志" @click="viewLogs(doc)">

@@ -1,8 +1,9 @@
 package com.lifepilot.knowledge.model;
 
+import org.springframework.lang.Nullable;
+
 import java.time.Instant;
 import java.util.Map;
-import java.util.Optional;
 
 /**
  * 文档 — 知识库中的单个文档记录。
@@ -24,8 +25,8 @@ public record Document(
         DocumentStatus status,
         int chunkCount,
         int entityCount,
-        Optional<String> errorMessage,
-        Optional<String> lastProcessedStage,
+        @Nullable String errorMessage,
+        @Nullable String lastProcessedStage,
         Map<String, String> metadata,
         Instant createdAt,
         Instant updatedAt

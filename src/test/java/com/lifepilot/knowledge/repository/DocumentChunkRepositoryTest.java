@@ -79,7 +79,7 @@ class DocumentChunkRepositoryTest {
                 UUID.randomUUID().toString(), knowledgeBaseId, "test.md", "/path/test.md",
                 1024L, "text/markdown", "doc-hash",
                 DocumentStatus.CHUNKING, 0, 0,
-                Optional.empty(), Optional.empty(), Map.of(), now, now
+                null, null, Map.of(), now, now
         );
         docRepository.save(doc);
         documentId = doc.id();
@@ -207,7 +207,7 @@ class DocumentChunkRepositoryTest {
                 UUID.randomUUID().toString(), knowledgeBaseId, "other.md", "/path/other.md",
                 512L, "text/markdown", "hash2",
                 DocumentStatus.CHUNKING, 0, 0,
-                Optional.empty(), Optional.empty(), Map.of(), now, now
+                null, null, Map.of(), now, now
         );
         docRepository.save(doc2);
 

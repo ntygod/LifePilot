@@ -22,7 +22,6 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -147,7 +146,7 @@ class KnowledgeBaseManagerTest {
         var doc = new Document(
                 docId, kb.id(), "test.md", "/path/test.md", 1024,
                 "text/markdown", "hash", DocumentStatus.READY, 2, 0,
-                Optional.empty(), Optional.empty(), Map.of(),
+                null, null, Map.of(),
                 Instant.now(), Instant.now()
         );
         docRepository.save(doc);
@@ -155,12 +154,12 @@ class KnowledgeBaseManagerTest {
         // 手动插入分块
         var chunk1 = new DocumentChunk(
                 UUID.randomUUID().toString(), docId, kb.id(),
-                "content1", Optional.empty(), 0, 0, 100, 10, "hash1",
+                "content1", null, 0, 0, 100, 10, "hash1",
                 List.of(), 0, Map.of()
         );
         var chunk2 = new DocumentChunk(
                 UUID.randomUUID().toString(), docId, kb.id(),
-                "content2", Optional.empty(), 1, 100, 200, 10, "hash2",
+                "content2", null, 1, 100, 200, 10, "hash2",
                 List.of(), 0, Map.of()
         );
         chunkRepository.saveAll(List.of(chunk1, chunk2));
@@ -185,13 +184,13 @@ class KnowledgeBaseManagerTest {
         var doc1 = new Document(
                 UUID.randomUUID().toString(), kb.id(), "doc1.md", "/path/doc1.md", 512,
                 "text/markdown", "hash1", DocumentStatus.READY, 1, 0,
-                Optional.empty(), Optional.empty(), Map.of(),
+                null, null, Map.of(),
                 Instant.now(), Instant.now()
         );
         var doc2 = new Document(
                 UUID.randomUUID().toString(), kb.id(), "doc2.md", "/path/doc2.md", 1024,
                 "text/markdown", "hash2", DocumentStatus.READY, 2, 0,
-                Optional.empty(), Optional.empty(), Map.of(),
+                null, null, Map.of(),
                 Instant.now(), Instant.now()
         );
         docRepository.save(doc1);
@@ -211,14 +210,14 @@ class KnowledgeBaseManagerTest {
         var doc = new Document(
                 docId, kb.id(), "test.md", "/path/test.md", 1024,
                 "text/markdown", "hash", DocumentStatus.READY, 1, 0,
-                Optional.empty(), Optional.empty(), Map.of(),
+                null, null, Map.of(),
                 Instant.now(), Instant.now()
         );
         docRepository.save(doc);
 
         var chunk = new DocumentChunk(
                 UUID.randomUUID().toString(), docId, kb.id(),
-                "content", Optional.empty(), 0, 0, 100, 10, "hash",
+                "content", null, 0, 0, 100, 10, "hash",
                 List.of(), 0, Map.of()
         );
         chunkRepository.saveAll(List.of(chunk));

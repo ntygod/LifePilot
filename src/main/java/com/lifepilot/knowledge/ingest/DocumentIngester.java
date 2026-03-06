@@ -101,7 +101,7 @@ public class DocumentIngester {
             var doc = new Document(
                     docId, kbId, filePath.getFileName().toString(), filePath.toString(),
                     filePath.toFile().length(), "", "", DocumentStatus.UPLOADING,
-                    0, 0, Optional.empty(), Optional.empty(), Map.of(), now, now);
+                    0, 0, null, null, Map.of(), now, now);
             docRepository.save(doc);
             return executeFullPipeline(doc, filePath);
         }, Executors.newVirtualThreadPerTaskExecutor());
@@ -118,7 +118,7 @@ public class DocumentIngester {
             var doc = docRepository.findById(documentId)
                     .orElseThrow(() -> new RuntimeException("文档不存在: " + documentId));
             var filePath = Path.of(doc.filePath());
-            var lastStage = doc.lastProcessedStage().orElse("");
+            var lastStage = doc.lastProcessedStage() != null ? doc.lastProcessedStage() : "";
             return resumeFromStage(doc, filePath, lastStage);
         }, Executors.newVirtualThreadPerTaskExecutor());
     }
@@ -176,18 +176,18 @@ public class DocumentIngester {
 
             // 7. READY
             publishProgress(doc, DocumentStatus.READY, 100, "导入完成");
-            docRepository.updateStatus(doc.id(), DocumentStatus.READY, Optional.empty());
+            docRepository.updateStatus(doc.id(), DocumentStatus.READY, null);
             log.info("文档导入成功: docId={}, chunks={}", doc.id(), chunks.size());
 
             return docRepository.findById(doc.id()).orElse(doc);
 
         } catch (DuplicateDocumentException e) {
             log.warn("文档导入失败（重复）: docId={}, error={}", doc.id(), e.getMessage());
-            docRepository.updateStatus(doc.id(), DocumentStatus.ERROR, Optional.of(e.getMessage()));
+            docRepository.updateStatus(doc.id(), DocumentStatus.ERROR, e.getMessage());
             throw e;
         } catch (Exception e) {
             log.error("文档导入失败: docId={}, error={}", doc.id(), e.getMessage(), e);
-            docRepository.updateStatus(doc.id(), DocumentStatus.ERROR, Optional.of(e.getMessage()));
+            docRepository.updateStatus(doc.id(), DocumentStatus.ERROR, e.getMessage());
             throw new RuntimeException("文档导入失败: " + e.getMessage(), e);
         }
     }
@@ -206,7 +206,7 @@ public class DocumentIngester {
                     docRepository.updateChunkCount(doc.id(), chunks.size());
                     doIndex(chunks);
                     doExtract(doc.id(), chunks);
-                    docRepository.updateStatus(doc.id(), DocumentStatus.READY, Optional.empty());
+                    docRepository.updateStatus(doc.id(), DocumentStatus.READY, null);
                     yield docRepository.findById(doc.id()).orElse(doc);
                 }
                 case "CHUNKING" -> {
@@ -214,28 +214,28 @@ public class DocumentIngester {
                     var chunks = chunkRepository.findByDocumentId(doc.id());
                     doIndex(chunks);
                     doExtract(doc.id(), chunks);
-                    docRepository.updateStatus(doc.id(), DocumentStatus.READY, Optional.empty());
+                    docRepository.updateStatus(doc.id(), DocumentStatus.READY, null);
                     yield docRepository.findById(doc.id()).orElse(doc);
                 }
                 case "INDEXING" -> {
                     // 索引可能部分完成，从提取开始
                     var chunks = chunkRepository.findByDocumentId(doc.id());
                     doExtract(doc.id(), chunks);
-                    docRepository.updateStatus(doc.id(), DocumentStatus.READY, Optional.empty());
+                    docRepository.updateStatus(doc.id(), DocumentStatus.READY, null);
                     yield docRepository.findById(doc.id()).orElse(doc);
                 }
                 case "EXTRACTING" -> {
                     // 提取失败，重试
                     var chunks = chunkRepository.findByDocumentId(doc.id());
                     doExtract(doc.id(), chunks);
-                    docRepository.updateStatus(doc.id(), DocumentStatus.READY, Optional.empty());
+                    docRepository.updateStatus(doc.id(), DocumentStatus.READY, null);
                     yield docRepository.findById(doc.id()).orElse(doc);
                 }
                 default -> executeFullPipeline(doc, filePath);
             };
         } catch (Exception e) {
             log.error("文档恢复失败: docId={}, lastStage={}, error={}", doc.id(), lastStage, e.getMessage(), e);
-            docRepository.updateStatus(doc.id(), DocumentStatus.ERROR, Optional.of(e.getMessage()));
+            docRepository.updateStatus(doc.id(), DocumentStatus.ERROR, e.getMessage());
             throw new RuntimeException("文档恢复失败: " + e.getMessage(), e);
         }
     }
@@ -309,13 +309,13 @@ public class DocumentIngester {
     // ---- 辅助方法 ----
 
     private void updateStage(String docId, DocumentStatus stage) {
-        docRepository.updateStatus(docId, stage, Optional.empty());
+        docRepository.updateStatus(docId, stage, null);
         docRepository.updateLastProcessedStage(docId, stage.name());
     }
 
     private void publishProgress(Document doc, DocumentStatus stage, int percent, String message) {
         var progress = new IngestionProgress(
-                doc.id(), doc.knowledgeBaseId(), stage, percent, Optional.of(message));
+                doc.id(), doc.knowledgeBaseId(), stage, percent, message);
         eventPublisher.publishEvent(progress);
     }
 }
