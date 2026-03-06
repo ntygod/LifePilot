@@ -207,10 +207,10 @@ defineExpose({
           <div class="grid grid-cols-2 gap-sm">
             <div>
               <Label class="text-muted-foreground mb-1">模型</Label>
-              <UiSelect v-model="contextConfig.model">
+              <UiSelect :model-value="contextConfig.model || '__default__'" @update:model-value="v => contextConfig.model = v === '__default__' ? '' : v">
                 <SelectTrigger class="text-xs"><SelectValue placeholder="使用默认" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">使用默认</SelectItem>
+                  <SelectItem value="__default__">使用默认</SelectItem>
                   <!-- TODO: 从设置中获取可用模型列表 -->
                 </SelectContent>
               </UiSelect>

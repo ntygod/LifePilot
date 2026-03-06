@@ -48,7 +48,8 @@ function emitUpdate() {
 }
 
 function onModelChange(value: unknown) {
-  localModelId.value = String(value ?? '')
+  const v = String(value ?? '')
+  localModelId.value = v === '__default__' ? '' : v
   emitUpdate()
 }
 
@@ -95,12 +96,12 @@ function toggleKb(id: string, checked: boolean) {
     <!-- 模型选择 -->
     <div class="space-y-1.5">
       <Label class="text-xs text-muted-foreground">模型</Label>
-      <Select :model-value="localModelId" @update:model-value="onModelChange">
+      <Select :model-value="localModelId || '__default__'" @update:model-value="onModelChange">
         <SelectTrigger class="w-full">
           <SelectValue placeholder="默认模型" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="">默认模型</SelectItem>
+          <SelectItem value="__default__">默认模型</SelectItem>
           <SelectItem v-for="p in providers" :key="p.id" :value="p.id">
             {{ p.displayName || p.modelName || p.id }}
           </SelectItem>
