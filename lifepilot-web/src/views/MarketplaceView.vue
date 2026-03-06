@@ -10,6 +10,7 @@ import Pagination from '@/components/common/Pagination.vue'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { ServerOff } from 'lucide-vue-next'
 
 // 搜索与筛选状态
 const search = ref('')
@@ -24,6 +25,9 @@ const totalElements = ref(0)
 const loading = ref(false)
 const error = ref('')
 const refreshing = ref(false)
+
+// 服务不可用状态（后端 API 返回 404/503 等）
+const serviceUnavailable = ref(false)
 
 // 更新信息
 const updates = ref<UpdateInfo[]>([])
@@ -96,9 +100,28 @@ function handleRefreshAfterAction() {
   loadUpdates()
 }
 
+/** 重新检查服务可用性 */
+async function handleRetryServiceCheck() {
+  serviceUnavailable.value = false
+  error.value = ''
+  await loadSkills()
+  if (error.value && skills.value.length === 0) {
+    serviceUnavailable.value = true
+  } else {
+    // 服务恢复，加载更新信息
+    await loadUpdates()
+  }
+}
+
 onMounted(() => {
-  loadSkills()
-  loadUpdates()
+  loadSkills().then(() => {
+    // 检测服务不可用（后端 Controller 未注册导致 404 等）
+    if (error.value && skills.value.length === 0) {
+      serviceUnavailable.value = true
+      return
+    }
+    loadUpdates()
+  })
 })
 </script>
 
@@ -135,6 +158,20 @@ onMounted(() => {
           />
         </div>
 
+        <!-- 服务不可用提示（后端 API 未注册或不可达） -->
+        <div v-if="serviceUnavailable" class="flex flex-col items-center justify-center py-16 px-4 text-center">
+          <div class="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
+            <ServerOff class="w-7 h-7 text-muted-foreground" />
+          </div>
+          <h3 class="text-lg font-semibold text-foreground mb-2">功能未启用或服务不可用</h3>
+          <p class="text-sm text-muted-foreground mb-6 max-w-[448px]">
+            Skill 市场功能当前不可用，可能是相关服务尚未启用或后端未正确配置。请检查后端服务状态后重试。
+          </p>
+          <Button variant="outline" size="sm" @click="handleRetryServiceCheck">
+            重新检查
+          </Button>
+        </div>
+
         <!-- Skeleton 加载占位符 -->
         <div v-if="loading" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-md">
           <Card v-for="i in 6" :key="i">
@@ -161,9 +198,9 @@ onMounted(() => {
           </Card>
         </div>
 
-        <!-- 错误状态 -->
+        <!-- 错误状态（serviceUnavailable 时不显示，由上方专用提示覆盖） -->
         <ErrorState
-          v-else-if="error"
+          v-else-if="error && !serviceUnavailable"
           title="加载失败"
           :description="error"
           action-label="重试"
