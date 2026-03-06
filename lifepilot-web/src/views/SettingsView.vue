@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import SettingsPreferencesView from '@/views/SettingsPreferencesView.vue'
@@ -15,6 +15,14 @@ const tabMap: Record<string, string> = {
 }
 const initialTab = tabMap[route.path] || 'preferences'
 const activeTab = ref(initialTab)
+
+// 监听路由变化，同步 Tab 状态（支持从 Sidebar 导航）
+watch(() => route.path, (newPath) => {
+  const tab = tabMap[newPath]
+  if (tab) {
+    activeTab.value = tab
+  }
+})
 </script>
 
 <template>
