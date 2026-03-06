@@ -131,7 +131,8 @@ public class AgentAutoConfiguration {
                                         @Autowired(required = false) ConversationHistoryStore conversationHistoryStore,
                                         @Autowired(required = false) SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
                                         @Autowired(required = false) KnowledgeBaseRepository knowledgeBaseRepository,
-                                        @Autowired(required = false) RealtimeExtractor realtimeExtractor) {
+                                        @Autowired(required = false) RealtimeExtractor realtimeExtractor,
+                                        PromptRegistry promptRegistry) {
         log.info("Agent 引擎初始化完成（带追踪，记忆系统{}，情景记忆{}，实时提取{}）",
                 workingMemory != null ? "已启用" : "未启用",
                 episodicMemory != null ? "已启用" : "未启用",
@@ -139,7 +140,7 @@ public class AgentAutoConfiguration {
         return new AgentLoop(stateReducer, contextAssembler, llmRouter, multimodalRouter,
                 traceRecorder, objectMapper, sessionManager, conversationViewService, actionParser, agentToolProvider,
                 config, workingMemory, conversationHistoryStore, sessionKnowledgeBaseRepository,
-                knowledgeBaseRepository, realtimeExtractor);
+                knowledgeBaseRepository, realtimeExtractor, promptRegistry);
     }
 
     @Bean
@@ -159,7 +160,8 @@ public class AgentAutoConfiguration {
                                            @Autowired(required = false) ConversationHistoryStore conversationHistoryStore,
                                            @Autowired(required = false) SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
                                            @Autowired(required = false) KnowledgeBaseRepository knowledgeBaseRepository,
-                                           @Autowired(required = false) RealtimeExtractor realtimeExtractor) {
+                                           @Autowired(required = false) RealtimeExtractor realtimeExtractor,
+                                           PromptRegistry promptRegistry) {
         log.info("Agent 引擎初始化完成（无追踪，记忆系统{}，情景记忆{}，实时提取{}）",
                 workingMemory != null ? "已启用" : "未启用",
                 episodicMemory != null ? "已启用" : "未启用",
@@ -167,6 +169,6 @@ public class AgentAutoConfiguration {
         return new AgentLoop(stateReducer, contextAssembler, llmRouter, multimodalRouter,
                 null, objectMapper, sessionManager, conversationViewService, actionParser, agentToolProvider,
                 config, workingMemory, conversationHistoryStore, sessionKnowledgeBaseRepository,
-                knowledgeBaseRepository, realtimeExtractor);
+                knowledgeBaseRepository, realtimeExtractor, promptRegistry);
     }
 }

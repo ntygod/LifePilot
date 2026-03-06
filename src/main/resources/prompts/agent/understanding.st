@@ -1,37 +1,32 @@
 {roleDefinition}
 {userProfile}
 
+<context_guide>
+用户提示词中可能包含以下上下文区域，请充分利用：
+- 「相关记忆」：从语义记忆和情景记忆中检索的历史信息，反映用户偏好和历史行为模式，可用于推断用户意图
+- 「知识库片段」：从用户知识库中检索的文档片段，应作为事实依据优先引用
+- 「跨会话参考」：其他会话中的相关对话片段，作为补充背景信息
+- 「推理上下文」：Agent 前序阶段的推理过程，作为当前决策的依据
+</context_guide>
+
 <instructions>
 阶段：意图理解
 
 任务：
 1. 深度分析用户输入的语义和意图
 2. 提取关键实体：人名、地名、时间、主题、数字等
+   - 时间表达式规范化：将相对时间转换为具体日期时间（如"明天下午三点"→ 具体 ISO 日期时间、"下周一"→ 具体日期）
 3. 评估复杂度：
-   - SIMPLE：单步查询、问候、简单确认、闲聊。标记为SIMPLE的请求会直接生成响应，不会进入规划和工具执行阶段
-   - MODERATE：需要2-3步操作、涉及多个工具
-   - COMPLEX：多步骤、需要规划、涉及复杂逻辑
+   - SIMPLE：单步查询、问候、简单确认、闲聊。不进入规划和工具执行阶段，直接生成响应
+     典型场景：打招呼、询问天气、简单数学计算、对上一轮回复的确认
+     注意：如果用户历史偏好显示经常使用某工具（如习惯性通过工具查询待办），相关请求应考虑标记为 MODERATE
+   - MODERATE：需要 1-3 步工具操作
+     典型场景：添加单条待办、查询今日日程、记录一个习惯打卡
+   - COMPLEX：多步骤、跨工具协作、需要规划
+     典型场景：批量操作、需要先查询再修改、涉及多个 Skill 协作
 4. 判断信息完整性：
-   - 信息充足：canProceed=true, needsClarification=false
-   - 信息不足：canProceed=false, needsClarification=true，提供具体澄清问题
+   - 如果缺失信息可从记忆上下文中补全（如用户偏好、历史模式），标记 canProceed=true
+   - 仅对真正无法从上下文推断的必需信息要求澄清：canProceed=false, needsClarification=true
 
-重要：对于简单问候（如"你好"、"hi"、"早上好"、"在吗"）和闲聊，必须标记为complexity="SIMPLE"，系统会直接生成友好响应，不会调用任何工具。
+重要：对于简单问候（如"你好"、"hi"、"早上好"、"在吗"）和闲聊，必须标记为 complexity="SIMPLE"。
 </instructions>
-
-<constraints>
-- 只输出 JSON 对象，不要任何 Markdown 代码块标记
-- 不要输出解释文字或注释
-- JSON 必须完整且有效
-</constraints>
-
-<output_format>
-\{"summary": "意图摘要（1-2句话）", "needsClarification": false, "clarificationQuestion": null, "canProceed": true, "entities": ["实体1", "实体2"], "complexity": "SIMPLE|MODERATE|COMPLEX"\}
-</output_format>
-
-<examples>
-简单问候：
-\{"summary":"用户发送问候","needsClarification":false,"clarificationQuestion":null,"canProceed":true,"entities":[],"complexity":"SIMPLE"\}
-
-需要澄清：
-\{"summary":"用户想查询但未指定内容","needsClarification":true,"clarificationQuestion":"你想查询什么信息？","canProceed":false,"entities":[],"complexity":"MODERATE"\}
-</examples>
