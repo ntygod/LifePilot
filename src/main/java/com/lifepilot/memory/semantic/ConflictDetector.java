@@ -2,6 +2,7 @@ package com.lifepilot.memory.semantic;
 
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.memory.retrieval.VectorSearcher;
+import com.lifepilot.prompt.PromptRegistry;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,6 +30,7 @@ public class ConflictDetector {
     @Nullable
     private final LlmRouter llmRouter;
     private final float semanticMatchThreshold;
+    private final PromptRegistry promptRegistry;
 
     /**
      * 构造 ConflictDetector。
@@ -37,15 +39,18 @@ public class ConflictDetector {
      * @param vectorSearcher         向量检索器
      * @param llmRouter              LLM 路由器（可选，用于消歧义）
      * @param semanticMatchThreshold 语义匹配阈值
+     * @param promptRegistry         提示词注册中心
      */
     public ConflictDetector(JdbcTemplate jdbcTemplate,
                             VectorSearcher vectorSearcher,
                             @Nullable LlmRouter llmRouter,
-                            float semanticMatchThreshold) {
+                            float semanticMatchThreshold,
+                            PromptRegistry promptRegistry) {
         this.jdbcTemplate = jdbcTemplate;
         this.vectorSearcher = vectorSearcher;
         this.llmRouter = llmRouter;
         this.semanticMatchThreshold = semanticMatchThreshold;
+        this.promptRegistry = promptRegistry;
     }
 
     /**
@@ -118,9 +123,10 @@ public class ConflictDetector {
 
     /** LLM 消歧义：判断两个实体是否为同一实体。 */
     private boolean llmDisambiguate(TemporalEntity newEntity, TemporalEntity candidate) {
-        var prompt = "判断以下两个实体是否为同一实体，只回答 true 或 false：\n" +
-                "实体A: " + newEntity.textRepresentation() + "\n" +
-                "实体B: " + candidate.textRepresentation();
+        var prompt = promptRegistry.render("semantic/entity-disambiguation", Map.of(
+                "entityA", newEntity.textRepresentation(),
+                "entityB", candidate.textRepresentation()
+        ));
         var response = llmRouter.call("knowledge_extraction", prompt, null);
         return response.content().trim().toLowerCase().contains("true");
     }

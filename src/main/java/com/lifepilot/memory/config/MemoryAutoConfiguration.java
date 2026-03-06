@@ -224,11 +224,12 @@ public class MemoryAutoConfiguration {
             JdbcTemplate jdbcTemplate,
             VectorSearcher vectorSearcher,
             @Nullable LlmRouter llmRouter,
-            MemoryProperties properties) {
+            MemoryProperties properties,
+            PromptRegistry promptRegistry) {
         log.info("记忆系统: 注册 ConflictDetector, semanticMatchThreshold={}",
                 properties.getSemanticMatchThreshold());
         return new ConflictDetector(jdbcTemplate, vectorSearcher, llmRouter,
-                properties.getSemanticMatchThreshold());
+                properties.getSemanticMatchThreshold(), promptRegistry);
     }
 
     @Bean

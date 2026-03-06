@@ -353,9 +353,10 @@ public class SkillAutoConfiguration {
                                          YamlSkillLoader loader,
                                          YamlSkillSerializer serializer,
                                          SkillRegistry registry,
-                                         SkillConfigProperties config) {
+                                         SkillConfigProperties config,
+                                         PromptRegistry promptRegistry) {
         log.info("Skill 系统: 注册 SkillGenerator");
-        return new SkillGenerator(llmRouter, pipeline, loader, serializer, registry, config);
+        return new SkillGenerator(llmRouter, pipeline, loader, serializer, registry, config, promptRegistry);
     }
 
     // ==================== 审计 ====================

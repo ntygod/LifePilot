@@ -25,6 +25,7 @@ import com.lifepilot.memory.working.TokenBudgetAllocator;
 import com.lifepilot.memory.working.WorkingMemory;
 import com.lifepilot.observability.redactor.DataRedactor;
 import com.lifepilot.observability.trace.TraceRecorder;
+import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.tool.config.ToolAutoConfiguration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -64,6 +65,7 @@ public class AgentAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean(ContextAssembler.class)
     public ContextAssembler contextAssembler(AgentConfigProperties config,
+                                             PromptRegistry promptRegistry,
                                              @Autowired(required = false) HybridRetriever hybridRetriever,
                                              @Autowired(required = false) WorkingMemory workingMemory,
                                              @Autowired(required = false) TokenBudgetAllocator tokenBudgetAllocator,
@@ -81,10 +83,10 @@ public class AgentAutoConfiguration {
             return new ContextAssembler(config, hybridRetriever,
                     workingMemory, tokenBudgetAllocator, strategy, dataRedactor,
                     documentRetriever, sessionKnowledgeBaseRepository, documentRepository,
-                    episodicMemory, semanticMemory);
+                    episodicMemory, semanticMemory, promptRegistry);
         }
         log.warn("Agent 引擎: 注册基础版 ContextAssembler（记忆系统部分或全部不可用，记忆检索功能已降级）");
-        return new ContextAssembler(config);
+        return new ContextAssembler(config, promptRegistry);
     }
 
     @Bean

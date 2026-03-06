@@ -9,6 +9,7 @@ import com.lifepilot.memory.retrieval.RetrievalResult;
 import com.lifepilot.memory.retrieval.RetrievalWeights;
 import com.lifepilot.memory.working.*;
 import com.lifepilot.observability.redactor.DataRedactor;
+import com.lifepilot.prompt.PromptRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -35,6 +36,7 @@ class ContextAssemblerTest {
     @Mock WorkingMemory workingMemory;
     @Mock TokenBudgetAllocator tokenBudgetAllocator;
     @Mock DataRedactor dataRedactor;
+    @Mock PromptRegistry promptRegistry;
 
     private AgentConfigProperties config;
     private ContextAssembler assembler;
@@ -45,7 +47,7 @@ class ContextAssemblerTest {
         config.getContext().setMaxContextTokens(32000);
         var strategy = new DefaultMemoryRetrievalStrategy();
         assembler = new ContextAssembler(config, hybridRetriever,
-                workingMemory, tokenBudgetAllocator, strategy, dataRedactor);
+                workingMemory, tokenBudgetAllocator, strategy, dataRedactor, promptRegistry);
     }
 
     // --- 辅助方法 ---

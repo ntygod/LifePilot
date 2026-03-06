@@ -15,6 +15,7 @@ import com.lifepilot.memory.retrieval.RetrievalWeights;
 import com.lifepilot.memory.working.BudgetAllocation;
 import com.lifepilot.memory.working.TokenBudgetAllocator;
 import com.lifepilot.memory.working.WorkingMemory;
+import com.lifepilot.prompt.PromptRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -45,6 +46,7 @@ class MemoryRetrievalGuard_集成测试 {
     private WorkingMemory workingMemory;
     private TokenBudgetAllocator tokenBudgetAllocator;
     private MemoryRetrievalStrategy retrievalStrategy;
+    private PromptRegistry promptRegistry;
 
     @BeforeEach
     void setUp() {
@@ -66,6 +68,11 @@ class MemoryRetrievalGuard_集成测试 {
         retrievalStrategy = mock(MemoryRetrievalStrategy.class);
         when(retrievalStrategy.getStrategy(any(AgentPhase.class)))
                 .thenReturn(new RetrievalStrategyConfig(5, RetrievalWeights.DEFAULT, false, false));
+
+        // Mock PromptRegistry
+        promptRegistry = mock(PromptRegistry.class);
+        when(promptRegistry.render(anyString())).thenReturn("mock-prompt");
+        when(promptRegistry.render(anyString(), any())).thenReturn("mock-prompt");
     }
 
     /** 构造测试用 AgentState。 */
@@ -103,7 +110,7 @@ class MemoryRetrievalGuard_集成测试 {
         // 构造完整版 ContextAssembler
         var assembler = new ContextAssembler(
                 agentConfig, hybridRetriever, workingMemory,
-                tokenBudgetAllocator, retrievalStrategy, null);
+                tokenBudgetAllocator, retrievalStrategy, null, promptRegistry);
 
         var state = buildTestState("trace-empty-1", "帮我总结一下lifepilot的架构设计思想");
 
@@ -148,7 +155,7 @@ class MemoryRetrievalGuard_集成测试 {
         // 构造完整版 ContextAssembler
         var assembler = new ContextAssembler(
                 agentConfig, hybridRetriever, workingMemory,
-                tokenBudgetAllocator, retrievalStrategy, null);
+                tokenBudgetAllocator, retrievalStrategy, null, promptRegistry);
 
         // 第一次调用 — traceId-1
         var state1 = buildTestState("trace-shortcircuit-1", "查询任务列表");
