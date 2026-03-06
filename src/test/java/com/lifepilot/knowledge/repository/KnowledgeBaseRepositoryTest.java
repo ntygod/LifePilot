@@ -15,7 +15,6 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -74,7 +73,7 @@ class KnowledgeBaseRepositoryTest {
         assertThat(result.name()).isEqualTo("测试知识库");
         assertThat(result.description()).isEqualTo("测试描述");
         assertThat(result.embeddingModel()).isEqualTo("text-embedding-3-small");
-        assertThat(result.rerankerModel()).isEmpty();
+        assertThat(result.rerankerModel()).isNull();
         assertThat(result.chunkingStrategy()).isEqualTo("smart");
         assertThat(result.chunkingConfig()).isEmpty();
         assertThat(result.documentCount()).isZero();
@@ -91,7 +90,7 @@ class KnowledgeBaseRepositoryTest {
         // 使用相同 id 保存更新后的记录
         var updated = new KnowledgeBase(
                 kb.id(), "更新名称", "更新描述", "model-v2",
-                Optional.of("reranker-v1"), "fixed-size",
+                "reranker-v1", "fixed-size",
                 Map.of("maxChunkSize", 2048),
                 5, 100, List.of(), kb.createdAt(), Instant.now()
         );
@@ -103,7 +102,7 @@ class KnowledgeBaseRepositoryTest {
         assertThat(result.name()).isEqualTo("更新名称");
         assertThat(result.description()).isEqualTo("更新描述");
         assertThat(result.embeddingModel()).isEqualTo("model-v2");
-        assertThat(result.rerankerModel()).hasValue("reranker-v1");
+        assertThat(result.rerankerModel()).isEqualTo("reranker-v1");
         assertThat(result.chunkingStrategy()).isEqualTo("fixed-size");
         assertThat(result.documentCount()).isEqualTo(5);
         assertThat(result.totalChunks()).isEqualTo(100);
@@ -123,17 +122,17 @@ class KnowledgeBaseRepositoryTest {
         var now = Instant.now();
         var kb1 = new KnowledgeBase(
                 UUID.randomUUID().toString(), "知识库1", "", "model",
-                Optional.empty(), "smart", Map.of(), 0, 0,
+                null, "smart", Map.of(), 0, 0,
                 List.of(), now.minusSeconds(30), now.minusSeconds(30)
         );
         var kb2 = new KnowledgeBase(
                 UUID.randomUUID().toString(), "知识库2", "", "model",
-                Optional.empty(), "smart", Map.of(), 0, 0,
+                null, "smart", Map.of(), 0, 0,
                 List.of(), now.minusSeconds(20), now.minusSeconds(20)
         );
         var kb3 = new KnowledgeBase(
                 UUID.randomUUID().toString(), "知识库3", "", "model",
-                Optional.empty(), "smart", Map.of(), 0, 0,
+                null, "smart", Map.of(), 0, 0,
                 List.of(), now.minusSeconds(10), now.minusSeconds(10)
         );
 
@@ -196,7 +195,7 @@ class KnowledgeBaseRepositoryTest {
         );
         var kb = new KnowledgeBase(
                 UUID.randomUUID().toString(), "JSON测试", "描述", "model",
-                Optional.empty(), "fixed-size", config,
+                null, "fixed-size", config,
                 0, 0, List.of(), Instant.now(), Instant.now()
         );
         repository.save(kb);
