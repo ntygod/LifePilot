@@ -86,17 +86,20 @@ class ReasoningSlotDedup_BugCondition_探索测试 {
         // 模拟第二次调用时的 truncatedMemories — 包含相同的检索结果
         List<RetrievalResult> truncatedMemories = List.of(result);
 
-        // 模拟 injectRetrievalReasoningSlots 第 2 段逻辑的行为
-        // 未修复代码：无条件注入，不检查重复
+        // 模拟 injectRetrievalReasoningSlots 第 2 段逻辑的行为（修复后含去重检查）
         var updated = new ArrayList<>(existingSlots);
         for (int i = 0; i < Math.min(5, truncatedMemories.size()); i++) {
             RetrievalResult r = truncatedMemories.get(i);
             String thought = formatSingleResult(r);
             if (thought == null || thought.isBlank()) continue;
-            // 未修复代码缺少此去重检查 ↓
-            // boolean alreadyExists = updated.stream()...
+            // 修复后的去重检查
+            boolean alreadyExists = updated.stream()
+                    .filter(s -> s instanceof ReasoningSlot)
+                    .map(s -> (ReasoningSlot) s)
+                    .anyMatch(rs -> rs.thought() != null && rs.thought().equals(thought));
+            if (alreadyExists) continue;
             ReasoningSlot reasoningSlot = ReasoningSlot.retrievalContext(thought, 20);
-            updated.add(reasoningSlot);  // 无条件添加
+            updated.add(reasoningSlot);
         }
 
         // 统计重复 thought 数量
@@ -130,7 +133,7 @@ class ReasoningSlotDedup_BugCondition_探索测试 {
         var result2 = buildResult("todo", "写报告", "截止周五", 0.75f);
         List<RetrievalResult> truncatedMemories = List.of(result1, result2);
 
-        // 模拟 5 个阶段的重复注入（未修复代码的行为）
+        // 模拟 5 个阶段的注入（修复后含去重检查）
         var accumulated = new ArrayList<WorkingMemorySlot>();
         for (int phase = 0; phase < 5; phase++) {
             var updated = new ArrayList<>(accumulated);
@@ -138,7 +141,12 @@ class ReasoningSlotDedup_BugCondition_探索测试 {
                 RetrievalResult r = truncatedMemories.get(i);
                 String thought = formatSingleResult(r);
                 if (thought == null || thought.isBlank()) continue;
-                // 未修复代码：无条件注入
+                // 修复后的去重检查
+                boolean alreadyExists = updated.stream()
+                        .filter(s -> s instanceof ReasoningSlot)
+                        .map(s -> (ReasoningSlot) s)
+                        .anyMatch(rs -> rs.thought() != null && rs.thought().equals(thought));
+                if (alreadyExists) continue;
                 ReasoningSlot reasoningSlot = ReasoningSlot.retrievalContext(thought, 20);
                 updated.add(reasoningSlot);
             }
