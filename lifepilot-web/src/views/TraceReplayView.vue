@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { MessageCircle, Wrench, Shield, ArrowRight, BarChart3, Download } from 'lucide-vue-next'
+import { MessageCircle, Wrench, Shield, ArrowRight, BarChart3, Download, ServerOff } from 'lucide-vue-next'
 import { useTraceStore } from '@/stores/trace'
 import type { TraceItem, TraceStep } from '@/types'
 import { SSE_EVENT_TYPES } from '@/constants/sseEvents'
@@ -46,6 +46,9 @@ const timeWindow = ref<'24h' | '7d' | '30d'>('7d')
 // 导出状态
 const exporting = ref(false)
 
+// 服务不可用状态（后端 API 返回 404/503 等）
+const serviceUnavailable = ref(false)
+
 // 实时 SSE 订阅（Trace Step Stream）
 const liveConnected = ref(false)
 const liveError = ref<string | null>(null)
@@ -76,7 +79,16 @@ const filteredTraces = computed<TraceItem[]>(() => {
 const totalPages = computed(() => Math.ceil(store.total / store.pageSize))
 
 onMounted(async () => {
-  await Promise.all([store.fetchList(), store.fetchOverviewStats(timeWindow.value)])
+  try {
+    await Promise.all([store.fetchList(), store.fetchOverviewStats(timeWindow.value)])
+  } catch {
+    // fetchList/fetchOverviewStats 内部已处理 error，此处仅做兜底
+  }
+  // 检测服务不可用（后端 Controller 未注册导致 404 等）
+  if (store.error && store.list.length === 0) {
+    serviceUnavailable.value = true
+    return
+  }
   const initialId = route.query.id as string | undefined
   if (initialId) {
     await selectTrace(initialId)
@@ -285,15 +297,42 @@ async function handleExportCurrent() {
     exporting.value = false
   }
 }
+
+/** 重新检查服务可用性 */
+async function handleRetryServiceCheck() {
+  serviceUnavailable.value = false
+  store.error = null
+  await store.fetchList()
+  if (store.error && store.list.length === 0) {
+    serviceUnavailable.value = true
+  } else {
+    // 服务恢复，加载概览统计
+    await store.fetchOverviewStats(timeWindow.value)
+  }
+}
 </script>
 
 <template>
   <div class="flex flex-col h-full">
     <div class="flex-1 overflow-y-auto">
       <div class="max-w-[1200px] mx-auto px-md md:px-lg py-lg">
-        <!-- 错误提示 -->
+        <!-- 服务不可用提示（后端 API 未注册或不可达） -->
+        <div v-if="serviceUnavailable" class="flex flex-col items-center justify-center py-16 px-4 text-center">
+          <div class="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
+            <ServerOff class="w-7 h-7 text-muted-foreground" />
+          </div>
+          <h3 class="text-lg font-semibold text-foreground mb-2">功能未启用或服务不可用</h3>
+          <p class="text-sm text-muted-foreground mb-6 max-w-[448px]">
+            轨迹回放功能当前不可用，可能是相关服务尚未启用或后端未正确配置。请检查后端服务状态后重试。
+          </p>
+          <Button variant="outline" size="sm" @click="handleRetryServiceCheck">
+            重新检查
+          </Button>
+        </div>
+
+        <!-- 一般性错误提示 -->
         <ErrorState
-          v-if="store.error && !store.loading"
+          v-else-if="store.error && !store.loading"
           title="加载失败"
           :description="store.error"
           action-label="重试"
