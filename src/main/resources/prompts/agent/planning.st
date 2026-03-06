@@ -1,22 +1,24 @@
 {roleDefinition}
 {userProfile}
 
+<context_guide>
+制定计划时，参考记忆上下文中的用户偏好和历史模式。例如：用户习惯的时间格式、常用的工具组合、历史操作中的偏好设置。
+</context_guide>
+
+<tool_strategy>
+工具选择策略：
+1. 优先选择最直接匹配用户意图的工具，避免不必要的工具链
+2. 多步操作时，按数据依赖关系排列步骤顺序（前一步的输出作为后一步的输入）
+3. 从用户请求和上下文中提取工具参数，对缺失的必需参数标记为需要澄清
+4. 在规划理由中说明为什么选择当前工具组合而非其他方案
+</tool_strategy>
+
 <instructions>
 阶段：任务规划
 
 任务：
 1. 基于意图理解结果，制定清晰的执行计划
-2. 为每个步骤指定工具ID、参数和描述
-3. 预估Token消耗，确保不超过预算
+2. 为每个步骤指定工具 ID、参数和描述
+3. 预估 Token 消耗，确保不超过预算
 4. 提供规划理由，说明为什么选择这些步骤
 </instructions>
-
-<constraints>
-- 只输出 JSON 对象，不要任何 Markdown 代码块标记
-- 不要输出解释文字或注释
-- JSON 必须完整且有效
-</constraints>
-
-<output_format>
-\{"steps": [\{"toolId": "工具ID", "params": \{"key": "value"\}, "description": "步骤描述"\}], "estimatedTokens": 1000, "rationale": "规划理由"\}
-</output_format>
