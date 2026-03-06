@@ -537,8 +537,8 @@ export interface ToolTestResponse {
 export interface UsageStats {
   totalRequests: number
   totalTokens: number
-  promptTokens: number
-  completionTokens: number
+  inputTokens: number
+  outputTokens: number
   estimatedCost?: number
   timeRange: {
     from: string
@@ -548,8 +548,8 @@ export interface UsageStats {
     date: string
     requests: number
     tokens: number
-    promptTokens: number
-    completionTokens: number
+    inputTokens: number
+    outputTokens: number
     cost?: number
   }>
 }
