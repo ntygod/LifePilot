@@ -280,6 +280,9 @@ export function useChat() {
             role: 'assistant',
             content: finalContent,
             reasoningSummary: event.reasoningSummary,
+            reasoningEvents: reasoningEvents.value.length > 0
+              ? [...reasoningEvents.value]
+              : undefined,
             a2uiComponents: a2uiStore.components.length > 0
               ? [...a2uiStore.components]
               : undefined,

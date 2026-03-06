@@ -44,6 +44,8 @@ export interface Message {
    * 由后端在 SSE DONE 事件中通过 reasoningSummary 字段返回。
    */
   reasoningSummary?: string
+  /** 本条消息对应的推理事件时间线（由前端在 SSE 流结束时从 useChat 快照保存） */
+  reasoningEvents?: ReasoningEvent[]
   /** 前端侧的发送 / 处理状态标记，用于展示"发送中 / 失败 / 可重试" */
   status?: 'pending' | 'success' | 'error'
   /** 与本条消息相关的错误说明（仅在 status === 'error' 时展示） */

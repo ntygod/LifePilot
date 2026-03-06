@@ -375,6 +375,7 @@ async function handleUpdateSessionTitle(title: string) {
               :messages="chatStore.messages"
               :is-streaming="isStreaming"
               :streaming-content="chatStore.streamingContent"
+              :streaming-reasoning-events="reasoningEvents"
               :query="searchQuery"
               @retry="handleRetry"
               @like="handleLike"

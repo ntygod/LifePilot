@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import type { Message } from '@/types'
+import type { Message, ReasoningEvent } from '@/types'
 import { computed, ref } from 'vue'
 import { Bot, ChevronDown, ChevronRight, FileText } from 'lucide-vue-next'
 import { shouldCollapse, getPreviewContent } from '@/utils/messageUtils'
 import StreamingText from './StreamingText.vue'
+import ReasoningTimeline from './ReasoningTimeline.vue'
 import A2uiRenderer from '@/components/a2ui/A2uiRenderer.vue'
 import ToolCallCard from './ToolCallCard.vue'
 import KbSourceTag from './KbSourceTag.vue'
@@ -15,6 +16,7 @@ const props = defineProps<{
   message: Message
   streaming?: boolean
   streamingContent?: string
+  streamingReasoningEvents?: ReasoningEvent[]
   isLastAssistant?: boolean
 }>()
 
@@ -30,8 +32,7 @@ const emit = defineEmits<{
 // 长消息折叠状态
 const collapsed = ref(props.message.collapsed ?? shouldCollapse(props.message.content))
 
-// 推理摘要折叠状态
-const showReasoning = ref(false)
+// 推理摘要折叠状态（由 ReasoningTimeline 组件内部管理）
 // 图片预览状态
 const showImagePreview = ref(false)
 const previewImageUrl = ref<string | null>(null)
@@ -185,32 +186,13 @@ const isCollapsible = computed(() =>
               />
             </div>
 
-            <!-- 推理过程摘要折叠面板 -->
-            <div
-              v-if="message.reasoningSummary"
-              class="mt-2 rounded-lg border border-border/80 bg-background/80 text-xs text-muted-foreground overflow-hidden"
-            >
-              <button
-                type="button"
-                class="w-full px-3 py-2 flex items-center justify-between gap-2 text-left hover:bg-muted/60 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                @click="showReasoning = !showReasoning"
-              >
-                <div class="flex items-center gap-2">
-                  <span class="inline-flex w-1.5 h-1.5 rounded-full bg-primary" />
-                  <span class="text-[11px] font-medium text-foreground/80">本轮推理概要</span>
-                </div>
-                <div class="flex items-center gap-1 text-[10px] text-muted-foreground">
-                  <span>{{ showReasoning ? '收起' : '展开' }}</span>
-                  <component :is="showReasoning ? ChevronDown : ChevronRight" :size="12" />
-                </div>
-              </button>
-              <div
-                v-if="showReasoning"
-                class="px-3 py-2 border-t border-border/70 text-[11px] leading-normal"
-              >
-                {{ message.reasoningSummary }}
-              </div>
-            </div>
+            <!-- 推理过程时间线 -->
+            <ReasoningTimeline
+              v-if="message.reasoningSummary || message.reasoningEvents?.length || (streaming && streamingReasoningEvents?.length)"
+              :summary="message.reasoningSummary"
+              :events="streaming ? streamingReasoningEvents : message.reasoningEvents"
+              :streaming="streaming"
+            />
           </template>
 
           <!-- 图片附件 -->
