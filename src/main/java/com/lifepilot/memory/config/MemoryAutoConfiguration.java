@@ -279,11 +279,16 @@ public class MemoryAutoConfiguration {
             FtsSearcher ftsSearcher,
             GraphTraverser graphTraverser,
             SemanticMemory semanticMemory,
+            EpisodicMemory episodicMemory,
             @Nullable IntentMatcher intentMatcher) {
         log.info("记忆系统: 注册 HybridRetriever, L4 意图匹配={}",
                 intentMatcher != null ? "启用" : "禁用");
-        return new HybridRetriever(vectorSearcher, ftsSearcher, graphTraverser,
+        var retriever = new HybridRetriever(vectorSearcher, ftsSearcher, graphTraverser,
                 semanticMemory, intentMatcher);
+        // 注入写入回调：记忆写入后重置 knownEmpty 短路标记，避免永久短路
+        semanticMemory.setWriteCallback(retriever::resetEmptyFlag);
+        episodicMemory.setWriteCallback(retriever::resetEmptyFlag);
+        return retriever;
     }
 
     // --- L4 程序记忆 ---

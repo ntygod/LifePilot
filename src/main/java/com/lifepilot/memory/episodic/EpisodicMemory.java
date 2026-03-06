@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
+import jakarta.annotation.Nullable;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -25,8 +26,21 @@ public class EpisodicMemory {
 
     private final JdbcTemplate jdbcTemplate;
 
+    /** 记忆写入回调 — 通知检索引擎数据已变更（重置 knownEmpty 短路标记）。 */
+    @Nullable
+    private Runnable writeCallback;
+
     public EpisodicMemory(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
+    }
+
+    /**
+     * 设置记忆写入回调，用于在对话记录写入后通知检索引擎重置空数据标记。
+     *
+     * @param writeCallback 写入回调
+     */
+    public void setWriteCallback(@Nullable Runnable writeCallback) {
+        this.writeCallback = writeCallback;
     }
 
     /**
@@ -62,6 +76,14 @@ public class EpisodicMemory {
                     msg.createdAt().toString());
         }
 
+        // 通知检索引擎数据已变更，重置 knownEmpty 短路标记
+        if (writeCallback != null) {
+            try {
+                writeCallback.run();
+            } catch (Exception e) {
+                log.warn("情景记忆: writeCallback 执行失败, error={}", e.getMessage());
+            }
+        }
         log.debug("保存对话记录: id={}, 消息数={}", record.id(), record.messageCount());
     }
 

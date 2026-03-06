@@ -1,6 +1,7 @@
 package com.lifepilot.memory.semantic;
 
 import com.lifepilot.memory.retrieval.VectorSearcher;
+import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -32,6 +33,10 @@ public class SemanticMemory {
     private final VersionMerger versionMerger;
     private final VectorSearcher vectorSearcher;
 
+    /** 记忆写入回调 — 通知检索引擎数据已变更（重置 knownEmpty 短路标记）。 */
+    @Nullable
+    private Runnable writeCallback;
+
     public SemanticMemory(JdbcTemplate jdbcTemplate,
                           ConflictDetector conflictDetector,
                           VersionMerger versionMerger,
@@ -40,6 +45,17 @@ public class SemanticMemory {
         this.conflictDetector = conflictDetector;
         this.versionMerger = versionMerger;
         this.vectorSearcher = vectorSearcher;
+    }
+
+    /**
+     * 设置记忆写入回调，用于在实体写入后通知检索引擎重置空数据标记。
+     *
+     * <p>通过 setter 注入避免 SemanticMemory ↔ HybridRetriever 循环依赖。</p>
+     *
+     * @param writeCallback 写入回调
+     */
+    public void setWriteCallback(@Nullable Runnable writeCallback) {
+        this.writeCallback = writeCallback;
     }
 
     /**
@@ -78,6 +94,7 @@ public class SemanticMemory {
                     existing.get().createdAt(), now);
             insertEntity(entity);
             updateVector(entity);
+            notifyWriteCallback();
             log.debug("语义记忆: 版本化更新, name={}, version={}", entity.name(), entity.version());
             return entity;
         } else {
@@ -92,6 +109,7 @@ public class SemanticMemory {
                     0, null, now, now);
             insertEntity(entity);
             updateVector(entity);
+            notifyWriteCallback();
             log.debug("语义记忆: 新建实体, name={}, id={}", entity.name(), entity.id());
             return entity;
         }
@@ -223,6 +241,17 @@ public class SemanticMemory {
     }
 
     // --- 内部方法 ---
+
+    /** 通知检索引擎数据已变更，重置 knownEmpty 短路标记。 */
+    private void notifyWriteCallback() {
+        if (writeCallback != null) {
+            try {
+                writeCallback.run();
+            } catch (Exception e) {
+                log.warn("语义记忆: writeCallback 执行失败, error={}", e.getMessage());
+            }
+        }
+    }
 
     /** 插入实体到数据库。 */
     private void insertEntity(TemporalEntity entity) {
