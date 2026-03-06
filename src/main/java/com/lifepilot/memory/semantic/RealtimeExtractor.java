@@ -136,15 +136,18 @@ public class RealtimeExtractor {
     /** 执行 ADD 操作：创建新实体。 */
     private void executeAdd(AudnDecision decision, String sessionId) {
         var now = Instant.now();
+        // source_conversation_id 传 null：实时提取在每轮对话后立即执行，
+        // 此时 conversations 记录尚未创建（L1→L2 flush 在会话结束时才触发），
+        // 传 sessionId 会违反 FK 约束。该列允许 NULL。
         var entity = new TemporalEntity(
                 UUID.randomUUID().toString(),
                 decision.entityType(),
                 decision.entityName(),
                 decision.description(),
                 decision.properties() != null ? decision.properties() : Map.of(),
-                1, true, now, null, sessionId,
+                1, true, now, null, null,
                 0.8f, 0.5f, 0, null, now, now);
-        semanticMemory.upsertWithConflictDetection(entity, sessionId);
+        semanticMemory.upsertWithConflictDetection(entity, null);
         log.debug("AUDN ADD: name={}, type={}", decision.entityName(), decision.entityType());
     }
 
@@ -168,11 +171,11 @@ public class RealtimeExtractor {
                 null, decision.entityType(), decision.entityName(),
                 decision.description() != null ? decision.description() : old.description(),
                 mergedProps,
-                old.version(), true, old.validFrom(), null, sessionId,
+                old.version(), true, old.validFrom(), null, null,
                 old.extractionConfidence(), old.importanceScore(),
                 old.accessCount(), old.lastAccessedAt(),
                 old.createdAt(), Instant.now());
-        semanticMemory.upsertWithConflictDetection(updated, sessionId);
+        semanticMemory.upsertWithConflictDetection(updated, null);
         log.debug("AUDN UPDATE: name={}, type={}", decision.entityName(), decision.entityType());
     }
 

@@ -152,6 +152,8 @@ public class SessionManager {
             } else {
                 // 不存在：使用 INSERT ... ON CONFLICT DO UPDATE
                 // 如果并发插入导致冲突，则更新而不是失败，但保持原有的 created_at
+                // ON CONFLICT 时使用 total_turns + 1 而非 excluded.total_turns，
+                // 避免 findSession 未命中时 turns 始终为 1
                 jdbcTemplate.update(
                         """
                         INSERT INTO agent_sessions (id, channel_id, recent_turns_json,
@@ -162,8 +164,8 @@ public class SessionManager {
                             recent_turns_json = excluded.recent_turns_json,
                             mentioned_entities_json = excluded.mentioned_entities_json,
                             last_active_at = excluded.last_active_at,
-                            total_turns = excluded.total_turns,
-                            total_tokens_used = excluded.total_tokens_used,
+                            total_turns = agent_sessions.total_turns + 1,
+                            total_tokens_used = agent_sessions.total_tokens_used + excluded.total_tokens_used,
                             updated_at = excluded.updated_at
                         """,
                         state.sessionId(), state.channel(), turnsJson, entitiesJson,
