@@ -439,6 +439,6 @@ async function handleUpdateSessionTitle(title: string) {
     </div>
 
     <!-- 输入框 -->
-    <ChatInput :disabled="isStreaming" @send="handleSend" />
+    <ChatInput :disabled="isStreaming" :providers="providers" @send="handleSend" />
   </div>
 </template>

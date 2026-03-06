@@ -7,12 +7,15 @@ import { Label } from '@/components/ui/label'
 import {
   Select as UiSelect, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
+import { Checkbox } from '@/components/ui/checkbox'
 import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
 import { chatApi } from '@/api/client'
+import type { LlmProvider } from '@/api/client'
 import type { ChatAttachment } from '@/types'
 
 const props = defineProps<{
   disabled?: boolean
+  providers?: LlmProvider[]
 }>()
 
 const emit = defineEmits<{
@@ -211,7 +214,9 @@ defineExpose({
                 <SelectTrigger class="text-xs"><SelectValue placeholder="使用默认" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__default__">使用默认</SelectItem>
-                  <!-- TODO: 从设置中获取可用模型列表 -->
+                  <SelectItem v-for="p in (props.providers ?? [])" :key="p.id" :value="p.id">
+                    {{ p.displayName || p.modelName || p.id }}
+                  </SelectItem>
                 </SelectContent>
               </UiSelect>
             </div>
@@ -233,16 +238,27 @@ defineExpose({
             </div>
             <div>
               <Label class="text-muted-foreground mb-1">关联知识库</Label>
-              <select
-                v-model="contextConfig.knowledgeBases"
-                multiple
-                class="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs
-                       focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all duration-200"
-              >
-                <option v-for="kb in kbStore.list" :key="kb.id" :value="kb.id">
-                  {{ kb.name }}
-                </option>
-              </select>
+              <div v-if="kbStore.list.length > 0" class="space-y-1 max-h-24 overflow-y-auto rounded-lg border border-input bg-background px-2 py-1.5">
+                <label
+                  v-for="kb in kbStore.list"
+                  :key="kb.id"
+                  class="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5"
+                >
+                  <Checkbox
+                    :checked="contextConfig.knowledgeBases.includes(kb.id)"
+                    @update:checked="(checked: boolean) => {
+                      if (checked) {
+                        if (!contextConfig.knowledgeBases.includes(kb.id)) contextConfig.knowledgeBases.push(kb.id)
+                      } else {
+                        const idx = contextConfig.knowledgeBases.indexOf(kb.id)
+                        if (idx >= 0) contextConfig.knowledgeBases.splice(idx, 1)
+                      }
+                    }"
+                  />
+                  <span class="text-xs text-foreground truncate">{{ kb.name }}</span>
+                </label>
+              </div>
+              <span v-else class="text-xs text-muted-foreground">暂无知识库</span>
             </div>
           </div>
         </div>
