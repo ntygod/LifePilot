@@ -280,21 +280,60 @@ PromptRegistry 在 Spring AutoConfiguration 中初始化，扫描 `classpath:pro
 - 集成测试：确认 PromptRegistry Bean 注入成功
 - 回归测试：确认原有功能不受影响
 
-## 7. 调研参考
+## 7. 调研参考（2026-03 更新）
 
 ### 7.1 前沿理论
 
-- **Context Engineering (2025-2026)**：由 Andrej Karpathy 等人提出，强调 prompt engineering 已演进为 context engineering，核心是管理 LLM 看到的全部信息环境，而非仅优化措辞。来源：Karpathy 2025 演讲、Anthropic Research Blog
+- **Context Engineering 范式 (2025-2026)**：Andrej Karpathy（2025 年 6 月）提出"LLM 是 CPU，上下文窗口是 RAM，你的工作是操作系统"。Phil Schmid（Hugging Face）指出"大多数 Agent 失败不是模型失败，而是上下文失败"。LangChain 总结四大策略：write（持久化）、select（RAG 检索）、compress（摘要压缩）、isolate（上下文隔离）。来源：[thomas-wiegold.com](https://thomas-wiegold.com/blog/prompt-engineering-best-practices-2026/)
+- **Lost-in-the-Middle 问题**：Liu et al.（2024）发现 LLM 注意力呈 U 型曲线，中间位置信息准确率下降 30% 以上。设计启示：关键指令放在提示词开头和末尾，避免放在中间。来源：[arxiv.org/abs/2406.16008](https://arxiv.org/abs/2406.16008)
+- **提示词长度甜区**：Levy/Jacoby/Goldberg（2024）研究表明 LLM 推理能力在约 3,000 token 后开始退化，每个提示词分区的实用甜区为 150-300 词。来源：[thomas-wiegold.com](https://thomas-wiegold.com/blog/prompt-engineering-best-practices-2026/)
+- **ACE 框架（Stanford）**：Agentic Context Engineering 框架将上下文视为可演进的 playbook，通过 Generator/Reflector/Curator 三角色防止简洁偏差和上下文坍缩。来源：[arxiv.org/abs/2510.04618](https://arxiv.org/abs/2510.04618)
 - **Structured Prompting**：使用 XML/Markdown 标签组织提示词各部分，实验表明结构化提示词比纯文本提示词在复杂任务上准确率提升 15-30%。来源：Anthropic Prompt Engineering Guide 2025
+- **生产级 Agent 提示词五要素**：Identity & Role、Tool Definitions、Constraints、Output Format、Few-shot Examples。不可协商的约束放最前，工具语义次之，示例放最后。来源：[arunbaby.com](https://arunbaby.com/ai-agents/0003-prompt-engineering-for-agents/)
 
-### 7.2 开源项目参考
+### 7.2 结构化输出与 Spring AI
 
-- **Spring AI PromptTemplate**：基于 StringTemplate 4 引擎，支持从 classpath Resource 加载模板，`{variable}` 占位符语法。项目已依赖 Spring AI 1.1.2 但未使用此功能
+- **Spring AI `.entity()` 结构化输出**：Spring AI 的 `.entity()` 方法通过 structured output converter 自动向 LLM 注入 JSON Schema，无需在提示词中手动指定输出格式。OpenAI Structured Outputs（2024 年 8 月）、Anthropic constrained decoding（2025 年 11 月）均已原生支持。设计启示：UNDERSTANDING/PLANNING/REFLECTING 三个使用 `.entity()` 的阶段应移除冗余的 JSON 格式指令，避免与自动注入的 Schema 冲突。来源：[spring.io](https://spring.io/blog/2024/05/09/spring-ai-structured-output/)
+
+### 7.3 开源项目参考
+
+- **Spring AI PromptTemplate**：基于 StringTemplate 4 引擎，支持从 classpath Resource 加载模板，`{variable}` 占位符语法。项目已依赖 Spring AI 1.1.2，prompt-optimization spec 已完成集成
 - **LangChain PromptTemplate**：Python 生态的提示词模板方案，支持 partial variables、output parser 集成。设计理念可借鉴但实现不适用于 Java 栈
 - **Promptfoo**：提示词评估框架，支持 A/B 测试和回归测试。当前阶段不引入，但资源文件外部化为未来集成奠定基础
 
-### 7.3 竞品分析
+### 7.4 竞品分析
 
-- **Anthropic Claude**：官方推荐使用 XML 标签（`<instructions>`, `<context>`, `<output>`）组织提示词，Claude 对 XML 结构有特殊优化
+- **Anthropic Claude**：官方推荐使用 XML 标签（`<instructions>`, `<context>`, `<output>`）组织提示词，Claude 对 XML 结构有特殊优化。注意：攻击性语言（"CRITICAL!"、"YOU MUST"）在新版 Claude 模型上反而降低效果。来源：[docs.anthropic.com](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/use-xml-tags)
 - **OpenAI GPT**：推荐使用 system/user/assistant 三角色分离，system prompt 中使用 Markdown 标题分区
 - **Google Gemini**：推荐使用结构化 JSON 定义提示词，支持 grounding 和 function calling 内联
+
+### 7.5 记忆上下文安全
+
+- **上下文来源标注**：标记上下文来源（用户输入 vs 工具输出 vs 检索文档），将不可信的 RAG 片段与系统指令分离。记忆内容应视为假设而非事实："如不确定，请确认"。来源：[arunbaby.com](https://arunbaby.com/ai-agents/0003-prompt-engineering-for-agents/)、[casaba.com](https://www.casaba.com/docs/agentic-ai-security/data-rag-memory/)
+
+## 8. Agent 提示词内容增强设计
+
+> 本节基于 §7 调研结论，定义 Agent 阶段提示词的内容增强方向。实现细节见 `.kiro/specs/agent-prompt-enhancement/design.md`。
+
+### 8.1 核心设计决策
+
+| 决策 | 选择 | 理由（引用调研） |
+|------|------|----------------|
+| 移除结构化输出阶段的 JSON 格式指令 | 是 | Spring AI `.entity()` 自动注入 JSON Schema（§7.2），手动指令冗余且可能冲突 |
+| 角色定义控制在 300 字以内 | 是 | 提示词长度甜区 150-300 词（§7.1 Levy et al.），角色定义应简洁以预留上下文预算 |
+| 添加记忆上下文使用引导 | 是 | 记忆内容需标注来源和可信度（§7.5），引导 LLM 正确区分事实依据和参考信息 |
+| 关键指令放在提示词首尾 | 是 | Lost-in-the-Middle U 型注意力曲线（§7.1 Liu et al.），中间位置信息易被忽略 |
+| 使用 XML 标签分区 | 是 | Anthropic 推荐（§7.4），LLM 对 XML 结构理解优于纯文本分隔符 |
+| 避免攻击性语言 | 是 | Anthropic 研究表明"CRITICAL!"等语言在新模型上降低效果（§7.4） |
+
+### 8.2 各阶段增强要点
+
+| 阶段 | 增强内容 | 对应调研 |
+|------|---------|---------|
+| role-definition | 四维角色定义（身份/能力/准则/风格），≤300 字 | §7.1 提示词长度甜区、§7.1 五要素 Identity |
+| understanding | 移除 JSON 格式指令 + `<context_guide>` 记忆引导 + 复杂度典型场景 + 时间规范化 | §7.2 Spring AI、§7.5 上下文安全、§7.1 Context Engineering |
+| planning | 移除 JSON 格式指令 + `<context_guide>` + `<tool_strategy>` 工具选择策略 | §7.2 Spring AI、§7.1 五要素 Tool Definitions |
+| reflecting | 移除 JSON 格式指令 + `<context_guide>` + `<evaluation_dimensions>` 三维评估 | §7.2 Spring AI、§7.1 ACE 框架 Reflector 角色 |
+| responding | `<tone_style>` 人格风格 + `<response_structure>` 回复结构 | §7.1 五要素 Constraints、§7.4 Anthropic 风格指南 |
+| executing | 删除（死代码，EXECUTING 阶段直接执行工具不经过 LLM） | 代码审计结论 |
+| streaming-constraint | 新增，从 AgentLoop 硬编码常量迁移 | §5.2 提示词与业务逻辑解耦原则 |
