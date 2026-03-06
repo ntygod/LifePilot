@@ -112,62 +112,40 @@ public class AgentAutoConfiguration {
         return new ActionParser(objectMapper);
     }
 
+    /**
+     * 统一的 AgentLoop bean 创建方法。
+     *
+     * <p>通过 {@code @Autowired(required = false)} 注入 {@link TraceRecorder}，
+     * 在依赖注入阶段自动解析，彻底消除 {@code @ConditionalOnBean} 跨
+     * auto-configuration 评估时序问题。</p>
+     */
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean(TraceRecorder.class)
-    public AgentLoop agentLoopWithTrace(StateReducer stateReducer,
-                                        ContextAssembler contextAssembler,
-                                        LlmRouter llmRouter,
-                                        MultimodalRouter multimodalRouter,
-                                        TraceRecorder traceRecorder,
-                                        ObjectMapper objectMapper,
-                                        SessionManager sessionManager,
-                                        @Autowired(required = false) ConversationViewService conversationViewService,
-                                        ActionParser actionParser,
-                                        AgentToolProvider agentToolProvider,
-                                        AgentConfigProperties config,
-                                        @Autowired(required = false) WorkingMemory workingMemory,
-                                        @Autowired(required = false) EpisodicMemory episodicMemory,
-                                        @Autowired(required = false) ConversationHistoryStore conversationHistoryStore,
-                                        @Autowired(required = false) SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
-                                        @Autowired(required = false) KnowledgeBaseRepository knowledgeBaseRepository,
-                                        @Autowired(required = false) RealtimeExtractor realtimeExtractor,
-                                        PromptRegistry promptRegistry) {
-        log.info("Agent 引擎初始化完成（带追踪，记忆系统{}，情景记忆{}，实时提取{}）",
+    public AgentLoop agentLoop(StateReducer stateReducer,
+                               ContextAssembler contextAssembler,
+                               LlmRouter llmRouter,
+                               MultimodalRouter multimodalRouter,
+                               ObjectMapper objectMapper,
+                               SessionManager sessionManager,
+                               @Autowired(required = false) ConversationViewService conversationViewService,
+                               ActionParser actionParser,
+                               AgentToolProvider agentToolProvider,
+                               AgentConfigProperties config,
+                               @Autowired(required = false) TraceRecorder traceRecorder,
+                               @Autowired(required = false) WorkingMemory workingMemory,
+                               @Autowired(required = false) EpisodicMemory episodicMemory,
+                               @Autowired(required = false) ConversationHistoryStore conversationHistoryStore,
+                               @Autowired(required = false) SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
+                               @Autowired(required = false) KnowledgeBaseRepository knowledgeBaseRepository,
+                               @Autowired(required = false) RealtimeExtractor realtimeExtractor,
+                               PromptRegistry promptRegistry) {
+        log.info("Agent 引擎初始化完成（追踪{}，记忆系统{}，情景记忆{}，实时提取{}）",
+                traceRecorder != null ? "已启用" : "未启用",
                 workingMemory != null ? "已启用" : "未启用",
                 episodicMemory != null ? "已启用" : "未启用",
                 realtimeExtractor != null ? "已启用" : "未启用");
         return new AgentLoop(stateReducer, contextAssembler, llmRouter, multimodalRouter,
                 traceRecorder, objectMapper, sessionManager, conversationViewService, actionParser, agentToolProvider,
-                config, workingMemory, conversationHistoryStore, sessionKnowledgeBaseRepository,
-                knowledgeBaseRepository, realtimeExtractor, promptRegistry);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean(AgentLoop.class)
-    public AgentLoop agentLoopWithoutTrace(StateReducer stateReducer,
-                                           ContextAssembler contextAssembler,
-                                           LlmRouter llmRouter,
-                                           MultimodalRouter multimodalRouter,
-                                           ObjectMapper objectMapper,
-                                           SessionManager sessionManager,
-                                           @Autowired(required = false) ConversationViewService conversationViewService,
-                                           ActionParser actionParser,
-                                           AgentToolProvider agentToolProvider,
-                                           AgentConfigProperties config,
-                                           @Autowired(required = false) WorkingMemory workingMemory,
-                                           @Autowired(required = false) EpisodicMemory episodicMemory,
-                                           @Autowired(required = false) ConversationHistoryStore conversationHistoryStore,
-                                           @Autowired(required = false) SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
-                                           @Autowired(required = false) KnowledgeBaseRepository knowledgeBaseRepository,
-                                           @Autowired(required = false) RealtimeExtractor realtimeExtractor,
-                                           PromptRegistry promptRegistry) {
-        log.info("Agent 引擎初始化完成（无追踪，记忆系统{}，情景记忆{}，实时提取{}）",
-                workingMemory != null ? "已启用" : "未启用",
-                episodicMemory != null ? "已启用" : "未启用",
-                realtimeExtractor != null ? "已启用" : "未启用");
-        return new AgentLoop(stateReducer, contextAssembler, llmRouter, multimodalRouter,
-                null, objectMapper, sessionManager, conversationViewService, actionParser, agentToolProvider,
                 config, workingMemory, conversationHistoryStore, sessionKnowledgeBaseRepository,
                 knowledgeBaseRepository, realtimeExtractor, promptRegistry);
     }
