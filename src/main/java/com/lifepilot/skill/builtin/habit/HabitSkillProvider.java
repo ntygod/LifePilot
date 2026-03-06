@@ -89,7 +89,7 @@ public class HabitSkillProvider implements BuiltinSkillProvider {
                         "properties", Map.of(
                                 "name", Map.of("type", "string", "description", "习惯名称"),
                                 "frequency", Map.of("type", "string", "description", "频率: DAILY/WEEKLY"),
-                                "targetTime", Map.of("type", "string", "description", "目标打卡时间 HH:mm")
+                                "targetTime", Map.of("type", "string", "format", "time", "description", "目标打卡时间 HH:mm")
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
@@ -178,7 +178,7 @@ public class HabitSkillProvider implements BuiltinSkillProvider {
                                 "id", Map.of("type", "string", "description", "习惯 ID"),
                                 "name", Map.of("type", "string", "description", "新名称"),
                                 "frequency", Map.of("type", "string", "description", "新频率: DAILY/WEEKLY"),
-                                "targetTime", Map.of("type", "string", "description", "新目标打卡时间 HH:mm")
+                                "targetTime", Map.of("type", "string", "format", "time", "description", "新目标打卡时间 HH:mm")
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)

@@ -87,7 +87,7 @@ public class TodoSkillProvider implements BuiltinSkillProvider {
                                 "title", Map.of("type", "string", "description", "待办标题"),
                                 "description", Map.of("type", "string", "description", "待办描述"),
                                 "priority", Map.of("type", "string", "description", "优先级: HIGH/MEDIUM/LOW"),
-                                "dueDate", Map.of("type", "string", "description", "截止日期 ISO 8601"),
+                                "dueDate", Map.of("type", "string", "format", "date-time", "description", "截止日期 ISO 8601"),
                                 "tags", Map.of("type", "string", "description", "标签，逗号分隔")
                         )
                 )))
@@ -192,7 +192,7 @@ public class TodoSkillProvider implements BuiltinSkillProvider {
                                 "description", Map.of("type", "string", "description", "新描述"),
                                 "priority", Map.of("type", "string", "description", "新优先级: HIGH/MEDIUM/LOW"),
                                 "status", Map.of("type", "string", "description", "新状态: PENDING/IN_PROGRESS/COMPLETED"),
-                                "dueDate", Map.of("type", "string", "description", "新截止日期 ISO 8601"),
+                                "dueDate", Map.of("type", "string", "format", "date-time", "description", "新截止日期 ISO 8601"),
                                 "tags", Map.of("type", "string", "description", "新标签，逗号分隔")
                         )
                 )))

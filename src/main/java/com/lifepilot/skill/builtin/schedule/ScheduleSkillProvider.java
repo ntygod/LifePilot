@@ -85,8 +85,8 @@ public class ScheduleSkillProvider implements BuiltinSkillProvider {
                         "required", List.of("title", "startTime", "endTime"),
                         "properties", Map.of(
                                 "title", Map.of("type", "string", "description", "日程标题"),
-                                "startTime", Map.of("type", "string", "description", "开始时间 ISO 8601"),
-                                "endTime", Map.of("type", "string", "description", "结束时间 ISO 8601"),
+                                "startTime", Map.of("type", "string", "format", "date-time", "description", "开始时间 ISO 8601"),
+                                "endTime", Map.of("type", "string", "format", "date-time", "description", "结束时间 ISO 8601"),
                                 "location", Map.of("type", "string", "description", "地点"),
                                 "notes", Map.of("type", "string", "description", "备注")
                         )
@@ -179,8 +179,8 @@ public class ScheduleSkillProvider implements BuiltinSkillProvider {
                         "properties", Map.of(
                                 "id", Map.of("type", "string", "description", "日程 ID"),
                                 "title", Map.of("type", "string", "description", "新标题"),
-                                "startTime", Map.of("type", "string", "description", "新开始时间 ISO 8601"),
-                                "endTime", Map.of("type", "string", "description", "新结束时间 ISO 8601"),
+                                "startTime", Map.of("type", "string", "format", "date-time", "description", "新开始时间 ISO 8601"),
+                                "endTime", Map.of("type", "string", "format", "date-time", "description", "新结束时间 ISO 8601"),
                                 "location", Map.of("type", "string", "description", "新地点"),
                                 "notes", Map.of("type", "string", "description", "新备注")
                         )
@@ -255,8 +255,8 @@ public class ScheduleSkillProvider implements BuiltinSkillProvider {
                         "type", "object",
                         "required", List.of("startTime", "endTime"),
                         "properties", Map.of(
-                                "startTime", Map.of("type", "string", "description", "查询开始时间 ISO 8601"),
-                                "endTime", Map.of("type", "string", "description", "查询结束时间 ISO 8601")
+                                "startTime", Map.of("type", "string", "format", "date-time", "description", "查询开始时间 ISO 8601"),
+                                "endTime", Map.of("type", "string", "format", "date-time", "description", "查询结束时间 ISO 8601")
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
