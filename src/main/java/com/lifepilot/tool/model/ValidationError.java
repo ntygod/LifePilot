@@ -29,4 +29,12 @@ public record ValidationError(
                 "类型不匹配: 期望 %s，实际 %s".formatted(expected, actual),
                 expected, actual);
     }
+
+    /** 创建格式不匹配错误。 */
+    public static ValidationError formatMismatch(String path, String format, String actual) {
+        return new ValidationError(path,
+                "格式不匹配: 期望 %s 格式".formatted(format),
+                format, actual);
+    }
+
 }

@@ -554,6 +554,14 @@ public class ContextAssembler {
                 if (thought == null || thought.isBlank()) {
                     continue;
                 }
+                // 去重检查：与第 1 段（L4 程序提示）的去重逻辑一致
+                boolean alreadyExists = updated.stream()
+                        .filter(s -> s instanceof ReasoningSlot)
+                        .map(s -> (ReasoningSlot) s)
+                        .anyMatch(rs -> rs.thought() != null && rs.thought().equals(thought));
+                if (alreadyExists) {
+                    continue;
+                }
                 ReasoningSlot reasoningSlot = ReasoningSlot.retrievalContext(thought, estimateTokens(thought));
                 memory.append(sessionId, reasoningSlot);
                 updated.add(reasoningSlot);

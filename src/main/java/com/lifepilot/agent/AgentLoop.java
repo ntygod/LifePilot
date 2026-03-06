@@ -394,7 +394,41 @@ public class AgentLoop {
             Action action = callback.dispatchAction(request, state, assembledContext, traceContext);
 
             // 5) 状态归约 + Trace 记录
+            AgentState preReduceState = state;
             state = reduceAndRecord(state, action, traceContext, loopStart);
+
+            // 5.5) 工具调用步骤记录 — 补充 ToolCallStep 到 TraceContext
+            if (action instanceof Action.ToolResult toolResult
+                    && traceRecorder != null && traceContext != null) {
+                String inputJson = null;
+                try {
+                    if (preReduceState.plan() != null
+                            && preReduceState.planStepIndex() >= 0
+                            && preReduceState.planStepIndex() < preReduceState.plan().steps().size()) {
+                        inputJson = objectMapper.writeValueAsString(
+                                preReduceState.plan().steps().get(preReduceState.planStepIndex()).params());
+                    }
+                } catch (Exception e) {
+                    log.debug("工具输入参数序列化失败: {}", e.getMessage());
+                }
+                String outputJson = toolResult.output();
+                if (outputJson != null && outputJson.length() > 2000) {
+                    outputJson = outputJson.substring(0, 2000) + "...[truncated]";
+                }
+                var toolCallStep = new ToolCallStep(
+                        traceContext.steps().size(),
+                        Instant.now(),
+                        Duration.ofMillis(toolResult.latencyMs()),
+                        toolResult.toolId(),
+                        toolResult.toolId(),
+                        inputJson,
+                        outputJson,
+                        toolResult.success(),
+                        toolResult.success() ? null : toolResult.output(),
+                        RiskLevel.LOW
+                );
+                traceRecorder.recordStep(traceContext, toolCallStep);
+            }
 
             // 6) 回调中断检查（流式 RESPONDING 阶段 LLM 不可用时中断）
             if (callback.shouldBreakAfterAction(action, state)) {

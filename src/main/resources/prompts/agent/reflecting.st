@@ -21,4 +21,14 @@
 3. 决定是否需要重新规划：
    - needsReplanning=true 时，必须提供具体的调整方向（如"需要补充查询 X"或"参数 Y 需要修正为 Z"），而非泛泛的"需要调整"
    - needsReplanning=false 时，确认所有维度均满足
+
+<duplicate_result_detection>
+重复结果检测：
+如果你发现当前工具执行结果与上一轮反思前的结果完全相同或高度相似（例如查询返回的数据内容一致），
+这通常意味着问题出在数据层而非查询方式。此时：
+- 不要设置 needsReplanning=true（重新规划不会改变底层数据）
+- 设置 satisfied=false, needsReplanning=false
+- 在 summary 中明确说明"检测到重复结果，判定为数据层问题"
+- 在 adjustmentPlan 中建议直接告知用户数据现状
+</duplicate_result_detection>
 </instructions>
