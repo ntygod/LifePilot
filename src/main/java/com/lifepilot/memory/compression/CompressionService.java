@@ -5,6 +5,7 @@ import com.lifepilot.llm.LlmScene;
 import com.lifepilot.memory.episodic.CompressionLevel;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.memory.episodic.MessageRecord;
+import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Async;
@@ -28,36 +29,16 @@ public class CompressionService {
 
     private static final Logger log = LoggerFactory.getLogger(CompressionService.class);
 
-    private static final String SUMMARY_PROMPT = """
-            请将以下对话内容压缩为简洁的摘要，保留：
-            1. 关键决策和结论
-            2. 重要的事实信息（人名、日期、数字）
-            3. 用户的明确意图和偏好
-            4. 工具执行的关键结果
-
-            丢弃：
-            1. 寒暄和礼貌用语
-            2. 重复的确认信息
-            3. 中间推理过程（只保留结论）
-
-            对话内容：
-            %s
-            """;
-
-    private static final String KEYPOINTS_PROMPT = """
-            请将以下摘要进一步浓缩为关键要点列表（每个要点一行，以 "- " 开头）：
-            仅保留最核心的决策、结论和事实。
-
-            摘要内容：
-            %s
-            """;
-
     private final LlmRouter llmRouter;
     private final EpisodicMemory episodicMemory;
+    private final PromptRegistry promptRegistry;
 
-    public CompressionService(LlmRouter llmRouter, EpisodicMemory episodicMemory) {
+    public CompressionService(LlmRouter llmRouter,
+                              EpisodicMemory episodicMemory,
+                              PromptRegistry promptRegistry) {
         this.llmRouter = llmRouter;
         this.episodicMemory = episodicMemory;
+        this.promptRegistry = promptRegistry;
     }
 
     /**
@@ -90,9 +71,11 @@ public class CompressionService {
 
             String prompt;
             if (targetLevel == CompressionLevel.SUMMARY) {
-                prompt = SUMMARY_PROMPT.formatted(formatMessages(compressible));
+                prompt = promptRegistry.render("memory/compression-summary",
+                        Map.of("conversation", formatMessages(compressible)));
             } else if (targetLevel == CompressionLevel.KEYPOINTS) {
-                prompt = KEYPOINTS_PROMPT.formatted(formatMessages(compressible));
+                prompt = promptRegistry.render("memory/compression-keypoints",
+                        Map.of("summary", formatMessages(compressible)));
             } else {
                 log.warn("对话压缩: 不支持的目标层级 {}, conversationId={}", targetLevel, conversationId);
                 return;

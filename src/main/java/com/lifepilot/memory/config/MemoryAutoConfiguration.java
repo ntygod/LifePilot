@@ -8,6 +8,7 @@ import com.lifepilot.memory.consolidation.EpisodicToProceduralConsolidator;
 import com.lifepilot.memory.consolidation.EpisodicToSemanticConsolidator;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.memory.forgetting.ForgettingEngine;
+import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.memory.procedural.IntentMatcher;
 import com.lifepilot.memory.procedural.ProceduralMemory;
 import com.lifepilot.memory.retrieval.FtsSearcher;
@@ -111,9 +112,10 @@ public class MemoryAutoConfiguration {
     @ConditionalOnMissingBean
     @ConditionalOnBean({EpisodicMemory.class, LlmRouter.class})
     public CompressionService compressionService(EpisodicMemory episodicMemory,
-                                                 LlmRouter llmRouter) {
+                                                 LlmRouter llmRouter,
+                                                 PromptRegistry promptRegistry) {
         log.info("记忆系统: 注册 CompressionService");
-        return new CompressionService(llmRouter, episodicMemory);
+        return new CompressionService(llmRouter, episodicMemory, promptRegistry);
     }
 
     /**
@@ -358,10 +360,11 @@ public class MemoryAutoConfiguration {
             SemanticMemory semanticMemory,
             @Nullable LlmRouter llmRouter,
             JdbcTemplate jdbcTemplate,
-            MemoryProperties properties) {
+            MemoryProperties properties,
+            PromptRegistry promptRegistry) {
         log.info("记忆系统: 注册 ForgettingEngine, LLM={}",
                 llmRouter != null ? "可用" : "不可用");
-        return new ForgettingEngine(semanticMemory, llmRouter, jdbcTemplate, properties);
+        return new ForgettingEngine(semanticMemory, llmRouter, jdbcTemplate, properties, promptRegistry);
     }
 
     // --- 工具方法 ---

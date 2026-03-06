@@ -20,6 +20,7 @@ import com.lifepilot.knowledge.retrieve.DocumentRetriever;
 import com.lifepilot.knowledge.retrieve.QueryEnhancer;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.memory.semantic.SemanticMemory;
+import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -187,8 +188,10 @@ public class KnowledgeAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     @ConditionalOnBean(LlmRouter.class)
-    public ChunkContextEnricher chunkContextEnricher(LlmRouter llmRouter, KnowledgeBaseProperties props) {
-        return new ChunkContextEnricher(llmRouter, props.contextEnricher());
+    public ChunkContextEnricher chunkContextEnricher(LlmRouter llmRouter,
+                                                     KnowledgeBaseProperties props,
+                                                     PromptRegistry promptRegistry) {
+        return new ChunkContextEnricher(llmRouter, props.contextEnricher(), promptRegistry);
     }
 
     // ---- 知识提取 ----
@@ -222,11 +225,13 @@ public class KnowledgeAutoConfiguration {
     @ConditionalOnMissingBean
     @ConditionalOnProperty(prefix = "lifepilot.knowledge.reranker", name = "enabled",
             havingValue = "true")
-    public Reranker reranker(LlmRouter llmRouter, KnowledgeBaseProperties props) {
+    public Reranker reranker(LlmRouter llmRouter,
+                            KnowledgeBaseProperties props,
+                            PromptRegistry promptRegistry) {
         var rerankerConfig = props.reranker();
         return switch (rerankerConfig.type()) {
             case "api" -> new ApiReranker(rerankerConfig);
-            default -> new LlmReranker(llmRouter, rerankerConfig);
+            default -> new LlmReranker(llmRouter, rerankerConfig, promptRegistry);
         };
     }
 
