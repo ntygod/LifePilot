@@ -1,4 +1,4 @@
-﻿package com.lifepilot.interaction.web.service;
+package com.lifepilot.interaction.web.service;
 
 import com.lifepilot.conversation.ConversationHistoryStore;
 import com.lifepilot.interaction.web.repository.ChatMessageRepository;

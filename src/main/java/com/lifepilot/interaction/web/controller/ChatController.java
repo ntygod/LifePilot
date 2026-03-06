@@ -1,4 +1,4 @@
-﻿package com.lifepilot.interaction.web.controller;
+package com.lifepilot.interaction.web.controller;
 
 import com.lifepilot.interaction.model.GatewayResponse;
 import com.lifepilot.interaction.model.ResponseContent;
