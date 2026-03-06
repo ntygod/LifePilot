@@ -12,6 +12,7 @@ import com.lifepilot.memory.working.TokenBudgetAllocator;
 import com.lifepilot.memory.working.BudgetAllocation;
 import com.lifepilot.memory.working.WorkingMemory;
 import com.lifepilot.multiagent.config.MultiAgentProperties;
+import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.multiagent.execution.AgentExecutor;
 import com.lifepilot.multiagent.execution.HandoffToolFactory;
 import com.lifepilot.multiagent.model.AgentBudget;
@@ -423,9 +424,12 @@ class MultiAgentLoopFaultConditionTest {
                 .thenReturn(new RetrievalStrategyConfig(5, RetrievalWeights.DEFAULT, false, false));
 
         // 构造 ContextAssembler（完整版）
+        var promptRegistry = mock(PromptRegistry.class);
+        when(promptRegistry.render(anyString())).thenReturn("mock-prompt");
+        when(promptRegistry.render(anyString(), any())).thenReturn("mock-prompt");
         var assembler = new ContextAssembler(
                 agentConfig, hybridRetriever, workingMemory,
-                tokenBudgetAllocator, retrievalStrategy, null);
+                tokenBudgetAllocator, retrievalStrategy, null, promptRegistry);
 
         // 构造 AgentState
         var state = AgentState.builder()

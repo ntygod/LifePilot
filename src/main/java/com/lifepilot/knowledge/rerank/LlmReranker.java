@@ -6,6 +6,7 @@ import com.lifepilot.knowledge.model.DocumentSearchResult;
 import com.lifepilot.knowledge.model.ScoreBreakdown;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.LlmUnavailableException;
+import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -29,10 +30,14 @@ public final class LlmReranker implements Reranker {
 
     private final LlmRouter llmRouter;
     private final KnowledgeBaseProperties.Reranker config;
+    private final PromptRegistry promptRegistry;
 
-    public LlmReranker(LlmRouter llmRouter, KnowledgeBaseProperties.Reranker config) {
+    public LlmReranker(LlmRouter llmRouter,
+                       KnowledgeBaseProperties.Reranker config,
+                       PromptRegistry promptRegistry) {
         this.llmRouter = llmRouter;
         this.config = config;
+        this.promptRegistry = promptRegistry;
         log.info("LlmReranker 初始化: mode={}, listwiseMaxCandidates={}",
                 config.llmMode(), config.listwiseMaxCandidates());
     }
@@ -75,20 +80,21 @@ public final class LlmReranker implements Reranker {
     private List<DocumentSearchResult> listwiseSinglePass(String query,
                                                            List<DocumentSearchResult> candidates) {
         var idMap = new LinkedHashMap<String, DocumentSearchResult>();
-        var sb = new StringBuilder();
-        sb.append("请根据与查询的相关性对以下文档排序，返回排序后的文档 ID JSON 数组。\n");
-        sb.append("查询：").append(query).append("\n\n");
+        var docsText = new StringBuilder();
 
         for (int i = 0; i < candidates.size(); i++) {
             var c = candidates.get(i);
             String docId = "doc_" + i;
             idMap.put(docId, c);
-            sb.append("文档 ").append(docId).append("：\n");
-            sb.append(truncateContent(c.content(), 500)).append("\n\n");
+            docsText.append("文档 ").append(docId).append("：\n");
+            docsText.append(truncateContent(c.content(), 500)).append("\n\n");
         }
-        sb.append("返回格式：[\"doc_0\", \"doc_2\", \"doc_1\", ...]");
 
-        List<String> rankedIds = llmRouter.callEntity(SCENE, sb.toString(), RankedIds.class).ids();
+        var prompt = promptRegistry.render("knowledge/rerank-listwise", Map.of(
+                "query", query,
+                "documents", docsText.toString()));
+
+        List<String> rankedIds = llmRouter.callEntity(SCENE, prompt, RankedIds.class).ids();
         if (rankedIds == null || rankedIds.isEmpty()) {
             throw new RuntimeException("Listwise 返回空排序列表");
         }
@@ -182,12 +188,9 @@ public final class LlmReranker implements Reranker {
      * 评估单个 query-document 对的相关性分数。
      */
     private double scoreCandidate(String query, DocumentSearchResult candidate) {
-        var prompt = """
-                请评估以下查询和文档的相关性，返回 JSON 格式：
-                {"score": 0.85}
-                
-                查询：%s
-                文档：%s""".formatted(query, truncateContent(candidate.content(), 500));
+        var prompt = promptRegistry.render("knowledge/rerank-pointwise", Map.of(
+                "query", query,
+                "document", truncateContent(candidate.content(), 500)));
 
         try {
             ScoreResponse response = llmRouter.callEntity(SCENE, prompt, ScoreResponse.class);

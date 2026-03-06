@@ -4,11 +4,13 @@ import com.lifepilot.agent.proactive.config.ProactiveConfigProperties;
 import com.lifepilot.agent.proactive.model.ProactiveNotification;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.LlmUnavailableException;
+import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 
 import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -31,6 +33,7 @@ public class ProactiveReasoner {
     private final ResponseTracker responseTracker;
     private final LlmRouter llmRouter;
     private final ProactiveConfigProperties config;
+    private final PromptRegistry promptRegistry;
 
     public ProactiveReasoner(SignalCollector signalCollector,
                               RuleEngine ruleEngine,
@@ -38,7 +41,8 @@ public class ProactiveReasoner {
                               NotificationDispatcher notificationDispatcher,
                               ResponseTracker responseTracker,
                               LlmRouter llmRouter,
-                              ProactiveConfigProperties config) {
+                              ProactiveConfigProperties config,
+                              PromptRegistry promptRegistry) {
         this.signalCollector = signalCollector;
         this.ruleEngine = ruleEngine;
         this.frequencyStateManager = frequencyStateManager;
@@ -46,6 +50,7 @@ public class ProactiveReasoner {
         this.responseTracker = responseTracker;
         this.llmRouter = llmRouter;
         this.config = config;
+        this.promptRegistry = promptRegistry;
     }
 
     /**
@@ -138,18 +143,11 @@ public class ProactiveReasoner {
 
     /** 构建 LLM 评估提示词。 */
     private String buildEvaluationPrompt(com.lifepilot.agent.proactive.model.ProactiveCandidate candidate) {
-        return """
-                你是一个智能生活助手。请判断以下提醒是否值得发送给用户，如果值得，请生成简洁的提醒内容（不超过 %d 字）。
-                如果不值得发送，请回复 "SKIP"。
-                
-                提醒类型：%s
-                紧急程度：%s
-                原因：%s
-                """.formatted(
-                config.getMaxContentLength(),
-                candidate.type(),
-                candidate.urgency(),
-                candidate.reason()
-        );
+        return promptRegistry.render("proactive/evaluation", Map.of(
+                "maxContentLength", String.valueOf(config.getMaxContentLength()),
+                "type", candidate.type(),
+                "urgency", candidate.urgency(),
+                "reason", candidate.reason()
+        ));
     }
 }

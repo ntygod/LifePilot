@@ -17,6 +17,7 @@ import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
 import com.lifepilot.memory.working.*;
 import com.lifepilot.observability.redactor.DataRedactor;
+import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
@@ -26,6 +27,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -57,6 +59,7 @@ public class ContextAssembler {
     @Nullable private final TokenBudgetAllocator tokenBudgetAllocator;
     @Nullable private final MemoryRetrievalStrategy retrievalStrategy;
     @Nullable private final DataRedactor dataRedactor;
+    private final PromptRegistry promptRegistry;
     // L2 情景记忆：跨会话语义检索，可选注入
     @Nullable private final EpisodicMemory episodicMemory;
     // L3 语义记忆：用户画像查询，可选注入
@@ -70,8 +73,9 @@ public class ContextAssembler {
     private final ConcurrentHashMap<String, List<RetrievalResult>> retrievalCache = new ConcurrentHashMap<>();
 
     /** 基础版构造器（向后兼容，记忆字段为 null）。 */
-    public ContextAssembler(AgentConfigProperties config) {
+    public ContextAssembler(AgentConfigProperties config, PromptRegistry promptRegistry) {
         this.config = config;
+        this.promptRegistry = promptRegistry;
         this.hybridRetriever = null;
         this.workingMemory = null;
         this.tokenBudgetAllocator = null;
@@ -90,9 +94,10 @@ public class ContextAssembler {
                             WorkingMemory workingMemory,
                             TokenBudgetAllocator tokenBudgetAllocator,
                             MemoryRetrievalStrategy retrievalStrategy,
-                            @Nullable DataRedactor dataRedactor) {
+                            @Nullable DataRedactor dataRedactor,
+                            PromptRegistry promptRegistry) {
         this(config, hybridRetriever, workingMemory, tokenBudgetAllocator, retrievalStrategy, dataRedactor,
-                null, null, null, null, null);
+                null, null, null, null, null, promptRegistry);
     }
 
     /** 完整版构造器（注入记忆系统 + 可选知识库检索 + 可选 L2 情景记忆 + 可选 L3 语义记忆依赖）。 */
@@ -106,13 +111,15 @@ public class ContextAssembler {
                             @Nullable SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
                             @Nullable DocumentRepository documentRepository,
                             @Nullable EpisodicMemory episodicMemory,
-                            @Nullable SemanticMemory semanticMemory) {
+                            @Nullable SemanticMemory semanticMemory,
+                            PromptRegistry promptRegistry) {
         this.config = config;
         this.hybridRetriever = hybridRetriever;
         this.workingMemory = workingMemory;
         this.tokenBudgetAllocator = tokenBudgetAllocator;
         this.retrievalStrategy = retrievalStrategy;
         this.dataRedactor = dataRedactor;
+        this.promptRegistry = promptRegistry;
         this.episodicMemory = episodicMemory;
         this.semanticMemory = semanticMemory;
         this.documentRetriever = documentRetriever;
@@ -738,111 +745,13 @@ public class ContextAssembler {
      * @return System Prompt 文本
      */
     String buildSystemPrompt(AgentPhase phase) {
-        String roleDefinition = "你是 LifePilot，一个智能个人助手，专注于理解用户意图并高效完成任务。";
-        String phaseInstruction = switch (phase) {
-            case UNDERSTANDING -> """
-                    阶段：意图理解
-                    
-                    任务：
-                    1. 深度分析用户输入的语义和意图
-                    2. 提取关键实体：人名、地名、时间、主题、数字等
-                    3. 评估复杂度：
-                       - SIMPLE：单步查询、问候、简单确认、闲聊。标记为SIMPLE的请求会直接生成响应，不会进入规划和工具执行阶段
-                       - MODERATE：需要2-3步操作、涉及多个工具
-                       - COMPLEX：多步骤、需要规划、涉及复杂逻辑
-                    4. 判断信息完整性：
-                       - 信息充足：canProceed=true, needsClarification=false
-                       - 信息不足：canProceed=false, needsClarification=true，提供具体澄清问题
-                    
-                    重要：对于简单问候（如"你好"、"hi"、"早上好"、"在吗"）和闲聊，必须标记为complexity="SIMPLE"，系统会直接生成友好响应，不会调用任何工具。
-                    
-                    输出格式（严格JSON，无Markdown标记）：
-                    {
-                      "summary": "意图摘要（1-2句话）",
-                      "needsClarification": false,
-                      "clarificationQuestion": null,
-                      "canProceed": true,
-                      "entities": ["实体1", "实体2"],
-                      "complexity": "SIMPLE|MODERATE|COMPLEX"
-                    }
-                    
-                    示例（简单问候）：
-                    {"summary":"用户发送问候","needsClarification":false,"clarificationQuestion":null,"canProceed":true,"entities":[],"complexity":"SIMPLE"}
-                    
-                    示例（需要澄清）：
-                    {"summary":"用户想查询但未指定内容","needsClarification":true,"clarificationQuestion":"你想查询什么信息？","canProceed":false,"entities":[],"complexity":"MODERATE"}
-                    """;
-            case PLANNING -> """
-                    阶段：任务规划
-                    
-                    任务：
-                    1. 基于意图理解结果，制定清晰的执行计划
-                    2. 为每个步骤指定工具ID、参数和描述
-                    3. 预估Token消耗，确保不超过预算
-                    4. 提供规划理由，说明为什么选择这些步骤
-                    
-                    输出格式（严格JSON）：
-                    {
-                      "steps": [
-                        {
-                          "toolId": "工具ID",
-                          "params": {"key": "value"},
-                          "description": "步骤描述"
-                        }
-                      ],
-                      "estimatedTokens": 1000,
-                      "rationale": "规划理由"
-                    }
-                    """;
-            case EXECUTING -> """
-                    阶段：工具执行
-                    
-                    任务：
-                    1. 严格按照规划步骤执行工具调用
-                    2. 记录每步的执行结果和状态
-                    3. 根据结果判断是否需要调整后续步骤
-                    4. 如遇错误，记录错误信息并评估是否可恢复
-                    """;
-            case REFLECTING -> """
-                    阶段：反思评估
-                    
-                    任务：
-                    1. 评估执行结果是否完全满足用户意图
-                    2. 识别执行中的问题和不足
-                    3. 决定是否需要重新规划或调整策略
-                    4. 生成执行摘要，总结关键信息
-                    
-                    输出格式（严格JSON）：
-                    {
-                      "satisfied": true,
-                      "adjustmentPlan": "调整计划（如无则为null）",
-                      "summary": "执行摘要",
-                      "needsReplanning": false
-                    }
-                    """;
-            case RESPONDING -> """
-                    阶段：生成响应
-                    
-                    任务：
-                    1. 基于执行结果生成清晰、有用的回复
-                    2. 使用自然语言，避免技术术语
-                    3. 提供相关的后续操作建议
-                    4. 如执行失败，提供友好的错误说明和解决建议
-                    
-                    输出格式（严格JSON）：
-                    {
-                      "content": "响应内容",
-                      "suggestions": ["建议1", "建议2"]
-                    }
-                    """;
-            case TERMINATED -> "";
-        };
-        // 用户画像注入（角色定义之后、阶段指令之前）
+        if (phase == AgentPhase.TERMINATED) return "";
+        String roleDefinition = promptRegistry.render("agent/role-definition");
         String userProfile = safeGetUserProfile(semanticMemory);
-
-        String constraint = "\n\n重要约束：\n- 只输出JSON对象，不要任何Markdown代码块标记\n- 不要输出解释文字或注释\n- JSON必须完整且有效";
-
-        return roleDefinition + userProfile + "\n\n" + phaseInstruction + constraint;
+        String phaseKey = "agent/" + phase.name().toLowerCase();
+        return promptRegistry.render(phaseKey, Map.of(
+                "roleDefinition", roleDefinition,
+                "userProfile", userProfile != null ? userProfile : ""));
     }
 
     /**

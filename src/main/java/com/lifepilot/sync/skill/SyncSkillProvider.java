@@ -13,6 +13,7 @@ import com.lifepilot.sync.repository.SyncProfileRepository;
 import com.lifepilot.sync.repository.SyncRecordRepository;
 import com.lifepilot.sync.repository.SyncStateRepository;
 import com.lifepilot.sync.scheduler.SyncScheduler;
+import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.model.ToolResult;
@@ -43,56 +44,6 @@ public class SyncSkillProvider implements BuiltinSkillProvider {
 
     private static final Logger log = LoggerFactory.getLogger(SyncSkillProvider.class);
 
-    private static final String SYSTEM_PROMPT = """
-            角色：数据同步助手
-            
-            核心职责：
-            管理 LifePilot 与外部数据源之间的双向数据同步，确保数据一致性和冲突解决。
-            
-            支持的数据源：
-            - CalDAV：日历数据同步
-            - Todoist：待办事项同步
-            - 滴答清单：待办事项同步
-            - Obsidian：笔记同步
-            
-            能力范围：
-            1. 同步触发
-               - 手动触发指定配置的即时同步
-               - 报告同步结果：拉取数量、推送数量、冲突数量
-               - 同步状态：SUCCESS、PARTIAL_SUCCESS、FAILED
-            2. 状态查询
-               - 查询单个或所有启用配置的同步状态
-               - 显示最后同步时间、状态、错误信息
-            3. 配置管理
-               - 创建：设置连接器类型、连接参数、同步方向、冲突策略、调度表达式
-               - 查看：列出所有同步配置
-               - 更新：修改配置参数
-               - 删除：删除配置及关联数据
-               - 测试：测试连接器连接性
-            4. 冲突管理
-               - 查看未解决的同步冲突
-               - 手动解决冲突（标记为已解决）
-            
-            同步方向：
-            - BIDIRECTIONAL：双向同步（默认）
-            - PULL_ONLY：仅从远程拉取
-            - PUSH_ONLY：仅推送到远程
-            
-            冲突策略：
-            - LAST_WRITE_WINS：最后写入获胜
-            - REMOTE_WINS：远程优先
-            - LOCAL_WINS：本地优先
-            - USER_CONFIRM：用户确认
-            
-            交互原则：
-            - 同步完成后报告详细结果（成功/失败数量）
-            - 检测到冲突时，明确说明冲突内容和解决建议
-            - 配置操作后确认结果，包括配置ID和关键参数
-            - 测试连接时报告响应时间和连接状态
-            
-            回复风格：专业、详细、结果导向
-            """;
-
     private final SyncEngine syncEngine;
     private final SyncScheduler syncScheduler;
     private final SyncProfileRepository profileRepository;
@@ -102,6 +53,7 @@ public class SyncSkillProvider implements BuiltinSkillProvider {
     private final CredentialStore credentialStore;
     private final Map<String, SyncConnector> connectors;
     private final SyncProperties properties;
+    private final PromptRegistry promptRegistry;
 
     public SyncSkillProvider(SyncEngine syncEngine,
                              SyncScheduler syncScheduler,
@@ -111,7 +63,8 @@ public class SyncSkillProvider implements BuiltinSkillProvider {
                              SyncRecordRepository recordRepository,
                              CredentialStore credentialStore,
                              Map<String, SyncConnector> connectors,
-                             SyncProperties properties) {
+                             SyncProperties properties,
+                             PromptRegistry promptRegistry) {
         this.syncEngine = syncEngine;
         this.syncScheduler = syncScheduler;
         this.profileRepository = profileRepository;
@@ -121,6 +74,7 @@ public class SyncSkillProvider implements BuiltinSkillProvider {
         this.credentialStore = credentialStore;
         this.connectors = Map.copyOf(connectors);
         this.properties = properties;
+        this.promptRegistry = promptRegistry;
     }
 
     @Override
@@ -131,7 +85,7 @@ public class SyncSkillProvider implements BuiltinSkillProvider {
                 .description("管理外部数据源同步：触发同步、查看状态、管理配置、解决冲突")
                 .version("1.0.0")
                 .source(new SkillSource.Builtin())
-                .systemPrompt(SYSTEM_PROMPT)
+                .systemPrompt(promptRegistry.render("skill/sync"))
                 .allowedTools(List.of(
                         "builtin.sync.trigger",
                         "builtin.sync.status",

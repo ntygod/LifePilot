@@ -11,6 +11,7 @@ import com.lifepilot.agent.proactive.channel.NotificationChannel;
 import com.lifepilot.agent.proactive.channel.PassiveNotificationQueue;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.memory.episodic.EpisodicMemory;
+import com.lifepilot.prompt.PromptRegistry;
 
 import java.util.List;
 import com.lifepilot.skill.builtin.habit.HabitRepository;
@@ -111,9 +112,10 @@ public class ProactiveAutoConfiguration {
                                                 NotificationDispatcher notificationDispatcher,
                                                 ResponseTracker responseTracker,
                                                 LlmRouter llmRouter,
-                                                ProactiveConfigProperties config) {
+                                                ProactiveConfigProperties config,
+                                                PromptRegistry promptRegistry) {
         log.info("主动推理引擎初始化完成");
         return new ProactiveReasoner(signalCollector, ruleEngine, frequencyStateManager,
-                notificationDispatcher, responseTracker, llmRouter, config);
+                notificationDispatcher, responseTracker, llmRouter, config, promptRegistry);
     }
 }

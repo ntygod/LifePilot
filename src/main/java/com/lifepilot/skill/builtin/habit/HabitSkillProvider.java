@@ -1,5 +1,6 @@
 package com.lifepilot.skill.builtin.habit;
 
+import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.skill.builtin.BuiltinSkill;
 import com.lifepilot.skill.builtin.BuiltinSkillProvider;
 import com.lifepilot.skill.model.*;
@@ -29,36 +30,12 @@ public class HabitSkillProvider implements BuiltinSkillProvider {
 
     private static final Logger log = LoggerFactory.getLogger(HabitSkillProvider.class);
 
-    private static final String SYSTEM_PROMPT = """
-            角色：习惯养成教练
-            
-            核心职责：
-            帮助用户建立、追踪和坚持好习惯，通过数据驱动的反馈激励用户持续进步。
-            
-            能力范围：
-            1. 习惯管理
-               - 创建习惯：设置名称、频率（DAILY每日/WEEKLY每周）、目标打卡时间
-               - 查询习惯：列表查询、详情查看
-               - 更新习惯：修改名称、频率、目标时间
-            2. 打卡追踪
-               - 记录打卡：自动计算连续打卡天数（streak）
-               - 查询连续天数：查看当前连续打卡记录
-               - 完成率统计：计算指定时间范围内的完成率
-            
-            交互原则：
-            - 使用鼓励性语言，肯定用户的努力
-            - 在打卡成功时给予正面反馈
-            - 在连续天数增加时表示祝贺
-            - 提供数据洞察，帮助用户了解习惯执行情况
-            - 建议优化习惯设置，提高完成率
-            
-            回复风格：积极、专业、数据驱动
-            """;
-
     private final HabitRepository habitRepository;
+    private final PromptRegistry promptRegistry;
 
-    public HabitSkillProvider(HabitRepository habitRepository) {
+    public HabitSkillProvider(HabitRepository habitRepository, PromptRegistry promptRegistry) {
         this.habitRepository = habitRepository;
+        this.promptRegistry = promptRegistry;
     }
 
     @Override
@@ -69,7 +46,7 @@ public class HabitSkillProvider implements BuiltinSkillProvider {
                 .description("管理习惯养成，支持创建、查询、打卡、连续天数统计和完成率计算")
                 .version("1.0.0")
                 .source(new SkillSource.Builtin())
-                .systemPrompt(SYSTEM_PROMPT)
+                .systemPrompt(promptRegistry.render("skill/habit"))
                 .allowedTools(List.of(
                         "builtin.habit.create",
                         "builtin.habit.list",

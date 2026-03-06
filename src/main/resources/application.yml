@@ -27,6 +27,8 @@ management:
 
 lifepilot:
   config-version: 1
+  prompt:
+    base-path: "classpath:prompts/"
   agent:
     enabled: true
     debug:

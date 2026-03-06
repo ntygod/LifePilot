@@ -49,6 +49,7 @@ class SyncSkillProviderTest {
     @Mock private CredentialStore credentialStore;
     @Mock private SyncConnector caldavConnector;
     @Mock private DynamicToolRegistry toolRegistry;
+    @Mock private com.lifepilot.prompt.PromptRegistry promptRegistry;
 
     private SyncSkillProvider provider;
     private SyncProperties properties;
@@ -56,10 +57,11 @@ class SyncSkillProviderTest {
     @BeforeEach
     void setUp() {
         properties = new SyncProperties();
+        when(promptRegistry.render("skill/sync")).thenReturn("同步系统提示词");
         provider = new SyncSkillProvider(
                 syncEngine, syncScheduler, profileRepository, stateRepository,
                 conflictRepository, recordRepository, credentialStore,
-                Map.of("caldav", caldavConnector), properties);
+                Map.of("caldav", caldavConnector), properties, promptRegistry);
     }
 
     // ---- provide() 测试 ----

@@ -1,6 +1,7 @@
 package com.lifepilot.skill.config;
 
 import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.skill.action.*;
 import com.lifepilot.skill.activation.SkillLifecycleManager;
 import com.lifepilot.skill.activation.SkillMetricsTracker;
@@ -156,31 +157,35 @@ public class SkillAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public TodoSkillProvider todoSkillProvider(TodoRepository todoRepository) {
+    public TodoSkillProvider todoSkillProvider(TodoRepository todoRepository,
+                                               PromptRegistry promptRegistry) {
         log.info("Skill 系统: 注册 TodoSkillProvider");
-        return new TodoSkillProvider(todoRepository);
+        return new TodoSkillProvider(todoRepository, promptRegistry);
     }
 
     @Bean
     @ConditionalOnMissingBean
-    public ScheduleSkillProvider scheduleSkillProvider(ScheduleRepository scheduleRepository) {
+    public ScheduleSkillProvider scheduleSkillProvider(ScheduleRepository scheduleRepository,
+                                                       PromptRegistry promptRegistry) {
         log.info("Skill 系统: 注册 ScheduleSkillProvider");
-        return new ScheduleSkillProvider(scheduleRepository);
+        return new ScheduleSkillProvider(scheduleRepository, promptRegistry);
     }
 
     @Bean
     @ConditionalOnMissingBean
-    public HabitSkillProvider habitSkillProvider(HabitRepository habitRepository) {
+    public HabitSkillProvider habitSkillProvider(HabitRepository habitRepository,
+                                                 PromptRegistry promptRegistry) {
         log.info("Skill 系统: 注册 HabitSkillProvider");
-        return new HabitSkillProvider(habitRepository);
+        return new HabitSkillProvider(habitRepository, promptRegistry);
     }
 
     @Bean
     @ConditionalOnMissingBean
     public MemorySkillProvider memorySkillProvider(HybridRetriever hybridRetriever,
-                                                   SemanticMemory semanticMemory) {
+                                                   SemanticMemory semanticMemory,
+                                                   PromptRegistry promptRegistry) {
         log.info("Skill 系统: 注册 MemorySkillProvider");
-        return new MemorySkillProvider(hybridRetriever, semanticMemory);
+        return new MemorySkillProvider(hybridRetriever, semanticMemory, promptRegistry);
     }
 
     // --- 注册器 ---
@@ -348,9 +353,10 @@ public class SkillAutoConfiguration {
                                          YamlSkillLoader loader,
                                          YamlSkillSerializer serializer,
                                          SkillRegistry registry,
-                                         SkillConfigProperties config) {
+                                         SkillConfigProperties config,
+                                         PromptRegistry promptRegistry) {
         log.info("Skill 系统: 注册 SkillGenerator");
-        return new SkillGenerator(llmRouter, pipeline, loader, serializer, registry, config);
+        return new SkillGenerator(llmRouter, pipeline, loader, serializer, registry, config, promptRegistry);
     }
 
     // ==================== 审计 ====================

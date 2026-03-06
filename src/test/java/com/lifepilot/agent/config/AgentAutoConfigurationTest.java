@@ -7,6 +7,7 @@ import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.working.TokenBudgetAllocator;
 import com.lifepilot.memory.working.WorkingMemory;
+import com.lifepilot.prompt.PromptRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -80,6 +81,8 @@ class AgentAutoConfigurationTest {
         LlmRouter llmRouter() { return mock(LlmRouter.class); }
         @Bean(name = "agentTestMultimodalRouter")
         MultimodalRouter multimodalRouter() { return mock(MultimodalRouter.class); }
+        @Bean(name = "agentTestPromptRegistry")
+        PromptRegistry promptRegistry() { return mock(PromptRegistry.class); }
     }
 
     /** 模拟记忆系统 Bean 可用的配置。 */
@@ -94,8 +97,8 @@ class AgentAutoConfigurationTest {
     @Configuration
     static class CustomContextAssemblerConfig {
         @Bean
-        ContextAssembler customContextAssembler(AgentConfigProperties config) {
-            return new ContextAssembler(config);
+        ContextAssembler customContextAssembler(AgentConfigProperties config, PromptRegistry promptRegistry) {
+            return new ContextAssembler(config, promptRegistry);
         }
     }
 }

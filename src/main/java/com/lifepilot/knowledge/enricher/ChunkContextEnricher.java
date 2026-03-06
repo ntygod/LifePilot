@@ -4,6 +4,7 @@ import com.lifepilot.knowledge.chunking.DocumentChunk;
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.LlmUnavailableException;
+import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -11,6 +12,7 @@ import com.lifepilot.llm.LlmResponse;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -31,16 +33,21 @@ public class ChunkContextEnricher {
 
     private final LlmRouter llmRouter;
     private final KnowledgeBaseProperties.ContextEnricher config;
+    private final PromptRegistry promptRegistry;
 
     /**
      * 构造分块上下文增强器。
      *
-     * @param llmRouter LLM 路由器
-     * @param config    上下文增强配置
+     * @param llmRouter      LLM 路由器
+     * @param config         上下文增强配置
+     * @param promptRegistry 提示词注册中心
      */
-    public ChunkContextEnricher(LlmRouter llmRouter, KnowledgeBaseProperties.ContextEnricher config) {
+    public ChunkContextEnricher(LlmRouter llmRouter,
+                                KnowledgeBaseProperties.ContextEnricher config,
+                                PromptRegistry promptRegistry) {
         this.llmRouter = llmRouter;
         this.config = config;
+        this.promptRegistry = promptRegistry;
         log.info("ChunkContextEnricher 初始化完成: enabled={}, maxPrefixTokens={}",
                 config.enabled(), config.maxPrefixTokens());
     }
@@ -220,17 +227,15 @@ public class ChunkContextEnricher {
      * 构建批量增强 Prompt。
      */
     private String buildBatchPrompt(List<DocumentChunk> chunks, String documentSummary) {
-        var sb = new StringBuilder();
-        sb.append("请为以下文档分块分别生成简短的上下文描述（每个不超过 ")
-                .append(config.maxPrefixTokens())
-                .append(" Token）。\n返回 JSON 数组格式：[\"前缀1\", \"前缀2\", ...]\n\n");
-        sb.append("文档摘要：").append(documentSummary).append("\n\n");
-
+        var chunksText = new StringBuilder();
         for (int i = 0; i < chunks.size(); i++) {
-            sb.append("分块 ").append(i + 1).append("：\n");
-            sb.append(chunks.get(i).content()).append("\n\n");
+            chunksText.append("分块 ").append(i + 1).append("：\n");
+            chunksText.append(chunks.get(i).content()).append("\n\n");
         }
-        return sb.toString();
+        return promptRegistry.render("knowledge/chunk-context", Map.of(
+                "maxPrefixTokens", String.valueOf(config.maxPrefixTokens()),
+                "documentSummary", documentSummary,
+                "chunks", chunksText.toString()));
     }
 
     /**

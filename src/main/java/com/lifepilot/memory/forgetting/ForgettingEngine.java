@@ -6,6 +6,7 @@ import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.prompt.PromptRegistry;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,6 +14,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 
 import java.time.Instant;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -43,15 +45,18 @@ public class ForgettingEngine {
     private final LlmRouter llmRouter;
     private final JdbcTemplate jdbcTemplate;
     private final MemoryProperties properties;
+    private final PromptRegistry promptRegistry;
 
     public ForgettingEngine(SemanticMemory semanticMemory,
                             @Nullable LlmRouter llmRouter,
                             JdbcTemplate jdbcTemplate,
-                            MemoryProperties properties) {
+                            MemoryProperties properties,
+                            PromptRegistry promptRegistry) {
         this.semanticMemory = semanticMemory;
         this.llmRouter = llmRouter;
         this.jdbcTemplate = jdbcTemplate;
         this.properties = properties;
+        this.promptRegistry = promptRegistry;
     }
 
     /**
@@ -201,30 +206,11 @@ public class ForgettingEngine {
      * @return 压缩提示词
      */
     private String buildCompressionPrompt(TemporalEntity entity) {
-        return """
-                任务：将记忆实体压缩为一句话摘要
-                
-                目标：保留核心信息，去除冗余细节，确保摘要能准确代表原实体
-                
-                实体信息：
-                - 名称：%s
-                - 类型：%s
-                - 描述：%s
-                - 属性：%s
-                
-                压缩要求：
-                1. 输出单句摘要（不超过50字）
-                2. 保留：实体名称、核心特征、关键关系
-                3. 去除：冗余描述、重复信息、无关细节
-                4. 使用简洁、准确的语言
-                5. 确保摘要能独立理解，无需上下文
-                
-                输出格式：直接输出摘要文本，不要添加引号或标记
-                """.formatted(
-                entity.name(),
-                entity.type().name(),
-                entity.description() != null ? entity.description() : "无",
-                entity.properties().toString());
+        return promptRegistry.render("memory/entity-compression", Map.of(
+                "name", entity.name(),
+                "type", entity.type().name(),
+                "description", entity.description() != null ? entity.description() : "无",
+                "properties", entity.properties().toString()));
     }
 
     /**
