@@ -1339,6 +1339,8 @@ public class AgentLoop {
                                                        String reasoningSummary,
                                                        String finalContent) {
         var doneData = new HashMap<String, Object>();
+        // 消息标识（前端用于反馈等操作）
+        doneData.put("messageId", tempTurnId);
         // 会话与回合标识
         doneData.put("sessionId", request.sessionId());
         doneData.put("turnId", tempTurnId);

@@ -238,6 +238,8 @@ export function useChat() {
         }
         case SSE_EVENT_TYPES.DONE: {
           const event: SseDoneEvent = JSON.parse(data)
+          // 后端 AgentLoop 路径可能未返回 messageId，兜底生成 UUID
+          const messageId = event.messageId || crypto.randomUUID()
           // 同步会话ID：如果后端返回了 sessionId，更新 activeSessionId
           if (event.sessionId && event.sessionId !== chatStore.activeSessionId) {
             chatStore.activeSessionId = event.sessionId
@@ -274,7 +276,7 @@ export function useChat() {
           const timestamp = event.timestamp ?? Date.now()
           // 将完整消息存入消息列表
           chatStore.addMessage({
-            id: event.messageId,
+            id: messageId,
             role: 'assistant',
             content: finalContent,
             reasoningSummary: event.reasoningSummary,
