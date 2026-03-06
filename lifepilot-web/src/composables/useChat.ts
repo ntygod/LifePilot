@@ -213,9 +213,14 @@ export function useChat() {
     try {
       switch (eventType) {
         case SSE_EVENT_TYPES.TRACE_START: {
-          const payload: { sessionId?: string; turnId?: string; traceId?: string; timestamp?: number } = JSON.parse(data)
+          const payload: { sessionId?: string; turnId?: string; traceId?: string; timestamp?: number; userMessageId?: string } = JSON.parse(data)
           if (payload.traceId && currentUserMessageId) {
             chatStore.updateMessage(currentUserMessageId, { traceId: payload.traceId })
+          }
+          // 用后端返回的 userMessageId 替换前端临时 ID，确保前后端 ID 一致
+          if (payload.userMessageId && currentUserMessageId) {
+            chatStore.replaceMessageId(currentUserMessageId, payload.userMessageId)
+            currentUserMessageId = payload.userMessageId
           }
           break
         }
@@ -238,8 +243,8 @@ export function useChat() {
         }
         case SSE_EVENT_TYPES.DONE: {
           const event: SseDoneEvent = JSON.parse(data)
-          // 后端 AgentLoop 路径可能未返回 messageId，兜底生成 UUID
-          const messageId = event.messageId || crypto.randomUUID()
+          // 后端同步写入后返回 messageId，不再需要前端兜底生成
+          const messageId = event.messageId
           // 同步会话ID：如果后端返回了 sessionId，更新 activeSessionId
           if (event.sessionId && event.sessionId !== chatStore.activeSessionId) {
             chatStore.activeSessionId = event.sessionId
