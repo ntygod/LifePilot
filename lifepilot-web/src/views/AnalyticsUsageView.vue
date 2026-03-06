@@ -119,6 +119,14 @@ function formatNumber(num: number | undefined | null): string {
   return Math.floor(absValue).toString()
 }
 
+// 计算柱状图柱子高度（按最大值等比缩放）
+function getBarHeight(tokens: number): string {
+  if (!stats.value?.dailyStats || stats.value.dailyStats.length === 0) return '0%'
+  const max = Math.max(...stats.value.dailyStats.map(d => d.tokens))
+  if (max === 0) return '0%'
+  return Math.max((tokens / max) * 100, 2) + '%'
+}
+
 // 格式化费用
 function formatCost(cost?: number): string {
   if (cost === undefined || cost === null) return 'N/A'
@@ -257,6 +265,23 @@ function formatCost(cost?: number): string {
           <!-- 每日趋势（如果有数据） -->
           <div v-if="stats.dailyStats && stats.dailyStats.length > 0" class="p-md rounded-lg border border-border bg-card">
             <h2 class="text-lg font-semibold text-foreground mb-sm">每日趋势</h2>
+            <!-- 柱状图 -->
+            <div class="flex items-end gap-1 h-40 mb-md">
+              <div
+                v-for="day in stats.dailyStats"
+                :key="'chart-' + day.date"
+                class="flex-1 flex flex-col items-center gap-1"
+              >
+                <div
+                  class="w-full bg-primary/80 rounded-t transition-all hover:bg-primary min-w-0"
+                  :style="{ height: getBarHeight(day.tokens) }"
+                  :title="`${day.date}: ${formatNumber(day.tokens)} Tokens · ${formatNumber(day.requests)} 次请求`"
+                ></div>
+                <span class="text-[10px] text-muted-foreground truncate w-full text-center">
+                  {{ day.date.slice(5) }}
+                </span>
+              </div>
+            </div>
             <div class="space-y-xs">
               <div
                 v-for="day in stats.dailyStats"
