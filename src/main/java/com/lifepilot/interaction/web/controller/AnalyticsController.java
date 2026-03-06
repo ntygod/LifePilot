@@ -97,14 +97,14 @@ public class AnalyticsController {
         // 查询每日统计（使用 SQLite 的 strftime 函数）
         List<UsageStats.DailyStat> dailyStats = jdbcTemplate.query("""
                 SELECT 
-                    strftime('%%Y-%%m-%%d', start_time) AS date,
+                    strftime('%Y-%m-%d', start_time) AS date,
                     COUNT(*) AS requests,
                     COALESCE(SUM(total_tokens), 0) AS tokens,
                     COALESCE(SUM(input_tokens), 0) AS input_tokens,
                     COALESCE(SUM(output_tokens), 0) AS output_tokens
                 FROM traces
                 WHERE start_time >= ? AND start_time <= ?
-                GROUP BY strftime('%%Y-%%m-%%d', start_time)
+                GROUP BY strftime('%Y-%m-%d', start_time)
                 ORDER BY date
                 """, (rs, rowNum) -> {
             String dateStr = rs.getString("date");
