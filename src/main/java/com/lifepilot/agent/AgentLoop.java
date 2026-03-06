@@ -1344,13 +1344,14 @@ public class AgentLoop {
         // 会话与回合标识
         doneData.put("sessionId", request.sessionId());
         doneData.put("turnId", tempTurnId);
-        // usage
+        // tokenUsage（前端优先读取此字段，包含 modelId）
         if (finalTokenUsage != null) {
-            var usage = new HashMap<String, Object>();
-            usage.put("inputTokens", finalTokenUsage.promptTokens());
-            usage.put("outputTokens", finalTokenUsage.completionTokens());
-            usage.put("totalTokens", finalTokenUsage.totalTokens());
-            doneData.put("usage", usage);
+            var tokenUsageMap = new HashMap<String, Object>();
+            tokenUsageMap.put("promptTokens", finalTokenUsage.promptTokens());
+            tokenUsageMap.put("completionTokens", finalTokenUsage.completionTokens());
+            tokenUsageMap.put("totalTokens", finalTokenUsage.totalTokens());
+            tokenUsageMap.put("modelId", finalTokenUsage.modelId());
+            doneData.put("tokenUsage", tokenUsageMap);
         }
         // 工具调用摘要：从 TraceContext 的 ToolCallStep 提取
         if (traceContext != null && !traceContext.steps().isEmpty()) {
