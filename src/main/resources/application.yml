@@ -232,8 +232,6 @@ lifepilot:
         buffer-size: 1
         min-chunk-size: 100
         max-chunk-size: 1024
-        min-chunk-size: 100
-        max-chunk-size: 1024
     vector-indexer:
       batch-size: 32
       max-retries: 2
