@@ -206,11 +206,12 @@ export const chatApi = {
   submitFeedback(
     messageId: string,
     type: 'like' | 'dislike',
-    text?: string
+    feedback?: string,
+    sessionId?: string
   ): Promise<void> {
     return request(`/chat/messages/${messageId}/feedback`, {
       method: 'POST',
-      body: JSON.stringify({ type, text })
+      body: JSON.stringify({ type, feedback, sessionId })
     })
   },
 

@@ -625,25 +625,17 @@ public class ChatController {
                     new ErrorResponse(400, "反馈类型必须是 'like' 或 'dislike'", Instant.now()));
         }
 
-        // 点踩时必须提供反馈内容
-        if ("dislike".equals(request.type()) && (request.feedback() == null || request.feedback().isBlank())) {
-            log.warn("消息反馈失败: 点踩时反馈内容为空");
-            return ResponseEntity.badRequest().body(
-                    new ErrorResponse(400, "点踩时必须提供反馈内容", Instant.now()));
-        }
-
-        // 验证消息是否存在
-        if (!feedbackRepository.messageExists(messageId)) {
-            log.warn("消息反馈失败: 消息不存在: messageId={}", messageId);
-            return ResponseEntity.notFound().build();
-        }
-
-        // 获取会话 ID
+        // 尝试从 chat_messages 获取会话 ID；消息可能尚未持久化（异步写入），此时从请求体获取
         String sessionId = feedbackRepository.getSessionIdByMessageId(messageId);
         if (sessionId == null) {
-            log.error("消息反馈失败: 无法获取消息的会话 ID: messageId={}", messageId);
-            return ResponseEntity.internalServerError().body(
-                    new ErrorResponse(500, "无法获取消息的会话信息", Instant.now()));
+            // 消息尚未写入 chat_messages（asyncPostProcess 异步延迟），使用请求体中的 sessionId
+            sessionId = request.sessionId();
+            if (sessionId == null || sessionId.isBlank()) {
+                log.warn("消息反馈失败: 消息尚未持久化且请求未携带 sessionId: messageId={}", messageId);
+                return ResponseEntity.badRequest().body(
+                        new ErrorResponse(400, "消息尚未就绪，请稍后重试", Instant.now()));
+            }
+            log.debug("消息尚未持久化，使用请求体 sessionId: messageId={}, sessionId={}", messageId, sessionId);
         }
 
         try {

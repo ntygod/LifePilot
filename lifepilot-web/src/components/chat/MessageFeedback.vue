@@ -4,6 +4,7 @@ import type { Message } from '@/types'
 import { chatApi } from '@/api/client'
 import { ThumbsUp, ThumbsDown } from 'lucide-vue-next'
 import { Textarea } from '@/components/ui/textarea'
+import { useChatStore } from '@/stores/chat'
 
 const props = defineProps<{
   message: Message
@@ -14,10 +15,13 @@ const emit = defineEmits<{
   (e: 'dislike', message: Message, feedback?: string): void
 }>()
 
+const chatStore = useChatStore()
+
 // 本地反馈状态，初始化自 message.feedbackStatus
 const feedbackStatus = ref<'liked' | 'disliked' | null>(props.message.feedbackStatus ?? null)
 const showFeedbackInput = ref(false)
 const feedbackText = ref('')
+const isSubmitting = ref(false)
 
 // 同步外部 prop 变化
 watch(() => props.message.feedbackStatus, (val) => {
@@ -25,47 +29,54 @@ watch(() => props.message.feedbackStatus, (val) => {
 })
 
 async function handleLike() {
+  if (isSubmitting.value) return
   const prev = feedbackStatus.value
   feedbackStatus.value = feedbackStatus.value === 'liked' ? null : 'liked'
   showFeedbackInput.value = false
   feedbackText.value = ''
 
   try {
-    await chatApi.submitFeedback(props.message.id, 'like')
+    isSubmitting.value = true
+    await chatApi.submitFeedback(
+      props.message.id, 'like', undefined, chatStore.activeSessionId ?? undefined
+    )
     emit('like', props.message)
   } catch {
-    // 回滚
     feedbackStatus.value = prev
+  } finally {
+    isSubmitting.value = false
   }
 }
 
-async function handleDislike() {
-  const prev = feedbackStatus.value
+function handleDislike() {
+  if (isSubmitting.value) return
   if (feedbackStatus.value === 'disliked') {
+    // 取消点踩
     feedbackStatus.value = null
     showFeedbackInput.value = false
     feedbackText.value = ''
   } else {
+    // 展开反馈输入框，不立即调用 API
     feedbackStatus.value = 'disliked'
     showFeedbackInput.value = true
   }
-
-  try {
-    await chatApi.submitFeedback(props.message.id, 'dislike')
-  } catch {
-    feedbackStatus.value = prev
-    showFeedbackInput.value = prev === 'disliked'
-  }
 }
 
-async function submitFeedback() {
+async function submitDislikeFeedback() {
+  if (isSubmitting.value) return
   try {
-    await chatApi.submitFeedback(props.message.id, 'dislike', feedbackText.value)
+    isSubmitting.value = true
+    await chatApi.submitFeedback(
+      props.message.id, 'dislike', feedbackText.value || undefined,
+      chatStore.activeSessionId ?? undefined
+    )
     emit('dislike', props.message, feedbackText.value)
     showFeedbackInput.value = false
     feedbackText.value = ''
   } catch {
     // 保持输入框打开，让用户重试
+  } finally {
+    isSubmitting.value = false
   }
 }
 </script>
@@ -77,6 +88,7 @@ async function submitFeedback() {
         type="button"
         class="flex items-center gap-xs text-xs text-muted-foreground hover:text-foreground transition-colors"
         :class="feedbackStatus === 'liked' ? 'text-primary' : ''"
+        :disabled="isSubmitting"
         @click="handleLike"
       >
         <ThumbsUp :size="14" />
@@ -86,6 +98,7 @@ async function submitFeedback() {
         type="button"
         class="flex items-center gap-xs text-xs text-muted-foreground hover:text-foreground transition-colors"
         :class="feedbackStatus === 'disliked' ? 'text-destructive' : ''"
+        :disabled="isSubmitting"
         @click="handleDislike"
       >
         <ThumbsDown :size="14" />
@@ -106,7 +119,8 @@ async function submitFeedback() {
           type="button"
           class="px-4 py-2 rounded-lg text-sm font-medium border border-input
                  hover:bg-accent transition-all duration-200"
-          @click="showFeedbackInput = false; feedbackText = ''"
+          :disabled="isSubmitting"
+          @click="showFeedbackInput = false; feedbackText = ''; feedbackStatus = null"
         >
           取消
         </button>
@@ -114,7 +128,8 @@ async function submitFeedback() {
           type="button"
           class="px-4 py-2 rounded-lg text-sm font-medium bg-primary text-primary-foreground
                  hover:bg-primary/90 transition-all duration-200"
-          @click="submitFeedback"
+          :disabled="isSubmitting"
+          @click="submitDislikeFeedback"
         >
           提交反馈
         </button>
