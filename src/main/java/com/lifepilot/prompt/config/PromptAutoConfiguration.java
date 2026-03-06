@@ -13,7 +13,10 @@ import org.springframework.core.io.support.ResourcePatternResolver;
 import java.io.IOException;
 
 /**
- * 提示词模块自动配置 — 启动时扫描 {@code classpath:prompts/**/*.st} 并注册到 {@link PromptRegistry}。
+ * Prompt module auto-configuration.
+ *
+ * <p>Scans all .st template files under prompts directory
+ * on startup and registers them into {@link PromptRegistry}.</p>
  *
  * @author zsg
  * @since 2026-03-06
@@ -31,22 +34,23 @@ public class PromptAutoConfiguration {
         var registry = new PromptRegistry();
         String basePath = properties.getBasePath();
 
-        // 扫描所有 .st 模板文件
+        // Scan all .st template files
         String pattern = basePath + "**/*.st";
         Resource[] resources;
         try {
             resources = resolver.getResources(pattern);
         } catch (IOException e) {
-            log.warn("提示词模板目录扫描失败: pattern={}", pattern);
+            log.warn("Prompt template directory scan failed: pattern={}", pattern);
             return registry;
         }
 
-        // 计算 basePath 在 URL 中的标准化前缀，用于提取相对路径
-        String normalizedBase = basePath.replace("classpath:", "prompts/");
+        // Compute normalized base prefix for extracting relative paths
+        // basePath = "classpath:prompts/" -> normalizedBase = "prompts/"
+        String normalizedBase = basePath.replace("classpath:", "");
 
         for (Resource resource : resources) {
             if (!resource.isReadable()) {
-                log.warn("提示词模板不可读，跳过: {}", resource);
+                log.warn("Prompt template not readable, skipping: {}", resource);
                 continue;
             }
             String key = extractTemplateKey(resource, normalizedBase);
@@ -55,32 +59,30 @@ public class PromptAutoConfiguration {
             }
         }
 
-        log.info("提示词注册完成: count={}", registry.size());
+        log.info("Prompt registration complete: count={}", registry.size());
         return registry;
     }
 
     /**
-     * 从 Resource 的 URL 路径中提取模板键。
+     * Extract template key from a Resource URL path.
      *
-     * <p>例如 {@code classpath:prompts/agent/understanding.st} → {@code "agent/understanding"}</p>
+     * <p>Example: {@code classpath:prompts/agent/understanding.st} becomes {@code "agent/understanding"}</p>
      */
     private String extractTemplateKey(Resource resource, String normalizedBase) {
         try {
             String url = resource.getURL().toString();
-            // 找到 prompts/ 之后的相对路径
             int idx = url.indexOf(normalizedBase);
             if (idx < 0) {
-                log.warn("无法提取模板键，路径不包含 basePath: {}", url);
+                log.warn("Cannot extract template key, path does not contain basePath: {}", url);
                 return null;
             }
             String relativePath = url.substring(idx + normalizedBase.length());
-            // 去除 .st 后缀
             if (relativePath.endsWith(".st")) {
                 relativePath = relativePath.substring(0, relativePath.length() - 3);
             }
             return relativePath;
         } catch (IOException e) {
-            log.warn("无法获取资源 URL: {}", resource, e);
+            log.warn("Cannot get resource URL: {}", resource, e);
             return null;
         }
     }
