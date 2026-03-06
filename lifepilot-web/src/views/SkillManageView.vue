@@ -249,7 +249,7 @@ const stateLabel: Record<string, { label: string; variant: 'default' | 'secondar
                 <Card
                   v-for="skill in filteredSkills"
                   :key="skill.id"
-                  class="hover:-translate-y-0.5 hover:shadow-md hover:border-primary/50 transition-all duration-200 group"
+                  class="cursor-pointer hover:-translate-y-0.5 hover:shadow-md hover:border-primary/50 transition-all duration-200 group"
                 >
                   <CardHeader class="pb-2">
                     <div class="flex items-start justify-between gap-sm">
@@ -269,7 +269,7 @@ const stateLabel: Record<string, { label: string; variant: 'default' | 'secondar
                     </div>
                   </CardHeader>
                   <CardContent class="pb-2">
-                    <p class="text-xs text-muted-foreground line-clamp-2 leading-normal">
+                    <p class="text-sm text-muted-foreground line-clamp-2 leading-normal">
                       {{ skill.description || '这个能力还没有添加描述。' }}
                     </p>
                     <div class="mt-sm text-xs text-muted-foreground">
@@ -370,7 +370,7 @@ const stateLabel: Record<string, { label: string; variant: 'default' | 'secondar
                 <Card
                   v-for="server in filteredMcpServers"
                   :key="server.name"
-                  class="hover:-translate-y-0.5 hover:shadow-md transition-all duration-200"
+                  class="hover:-translate-y-0.5 hover:shadow-md hover:border-primary/50 transition-all duration-200"
                 >
                   <CardHeader class="pb-2">
                     <div class="flex items-center gap-sm">

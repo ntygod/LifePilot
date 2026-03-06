@@ -211,7 +211,7 @@ function formatDuration(start?: string, end?: string): string {
             <Card
               v-for="wf in store.list"
               :key="wf.id"
-              class="cursor-pointer hover:-translate-y-0.5 hover:shadow-md hover:border-primary/50 transition-all duration-200"
+              class="cursor-pointer hover:-translate-y-0.5 hover:shadow-md hover:border-primary/50 transition-all duration-200 group"
               @click="selectWorkflow(wf)"
             >
               <CardHeader class="pb-2">
