@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useToolStore } from '@/stores/tool'
-import type { ToolDetail, ToolTestResponse } from '@/types'
+import type { ToolDetail, ToolTestResponse, ToolTestHistoryItem } from '@/types'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -20,6 +20,11 @@ const testArguments = ref<Record<string, any>>({})
 const testLoading = ref(false)
 const testResult = ref<ToolTestResponse | null>(null)
 const errors = ref<Record<string, string>>({})
+
+// 新增状态：结果 Tab 切换、测试历史、最近请求
+const resultTab = ref<'formatted' | 'json'>('formatted')
+const testHistory = ref<ToolTestHistoryItem[]>([])
+const lastRequest = ref<Record<string, any> | null>(null)
 
 // 根据 inputSchema 生成表单字段
 const formFields = computed(() => {
@@ -50,6 +55,8 @@ watch(() => props.tool, (tool) => {
     testArguments.value = {}
     testResult.value = null
     errors.value = {}
+    resultTab.value = 'formatted'
+    lastRequest.value = null
     
     // 设置默认值
     formFields.value.forEach(field => {
@@ -85,6 +92,21 @@ function validate(): boolean {
   return valid
 }
 
+// 添加测试历史记录
+function addHistoryItem(input: Record<string, any>, result: ToolTestResponse) {
+  const item: ToolTestHistoryItem = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    timestamp: Date.now(),
+    input: { ...input },
+    result
+  }
+  testHistory.value.push(item)
+  // 最多保留 5 条
+  if (testHistory.value.length > 5) {
+    testHistory.value.shift()
+  }
+}
+
 // 运行测试
 async function runTest() {
   if (!props.tool) return
@@ -95,14 +117,22 @@ async function runTest() {
   testResult.value = null
   errors.value = {}
   
+  // 记录请求 JSON
+  const inputSnapshot = { ...testArguments.value }
+  lastRequest.value = {
+    toolId: props.tool.id,
+    input: inputSnapshot
+  }
+  
   try {
-    testResult.value = await toolStore.testTool({
+    const result = await toolStore.testTool({
       toolId: props.tool.id,
       input: testArguments.value
     })
+    testResult.value = result
+    addHistoryItem(inputSnapshot, result)
   } catch (e: any) {
-    // 错误已在 store 中处理
-    testResult.value = {
+    const errorResult: ToolTestResponse = {
       success: false,
       output: {},
       error: e.message || '测试失败',
@@ -112,12 +142,18 @@ async function runTest() {
         action: 'test'
       }
     }
+    testResult.value = errorResult
+    addHistoryItem(inputSnapshot, errorResult)
   } finally {
     testLoading.value = false
   }
 }
 
+// 关闭对话框时清空历史
 function closeDialog() {
+  testHistory.value = []
+  lastRequest.value = null
+  resultTab.value = 'formatted'
   emit('close')
 }
 </script>
@@ -142,6 +178,24 @@ function closeDialog() {
         <div class="text-sm text-muted-foreground">
           <p v-if="tool.description">{{ tool.description }}</p>
           <p class="mt-1">ID: <span class="font-mono">{{ tool.id }}</span></p>
+        </div>
+
+        <!-- 测试历史记录 -->
+        <div v-if="testHistory.length > 0" class="mb-4 border-b border-border pb-4">
+          <h4 class="text-sm font-medium text-foreground mb-2">最近测试记录</h4>
+          <div class="space-y-1">
+            <button
+              v-for="item in testHistory"
+              :key="item.id"
+              class="w-full text-left p-2 rounded-md hover:bg-muted text-xs"
+              @click="testArguments = { ...item.input }"
+            >
+              <span class="text-muted-foreground">{{ new Date(item.timestamp).toLocaleTimeString() }}</span>
+              <span :class="item.result.success ? 'text-green-600' : 'text-destructive'" class="ml-2">
+                {{ item.result.success ? '成功' : '失败' }}
+              </span>
+            </button>
+          </div>
         </div>
 
         <!-- 参数表单 -->
@@ -258,10 +312,23 @@ function closeDialog() {
           >{{ testLoading ? '测试中...' : '运行测试' }}</button>
         </div>
 
-        <!-- 测试结果 -->
+        <!-- 测试结果（含 Tab 切换） -->
         <div v-if="testResult" class="mt-4 border-t border-border pt-4">
-          <h4 class="text-sm font-medium text-foreground mb-2">测试结果</h4>
-          <div class="space-y-2">
+          <div class="flex items-center gap-2 mb-3">
+            <button
+              class="px-3 py-1 rounded-md text-sm"
+              :class="resultTab === 'formatted' ? 'bg-primary text-primary-foreground' : 'bg-muted'"
+              @click="resultTab = 'formatted'"
+            >格式化视图</button>
+            <button
+              class="px-3 py-1 rounded-md text-sm"
+              :class="resultTab === 'json' ? 'bg-primary text-primary-foreground' : 'bg-muted'"
+              @click="resultTab = 'json'"
+            >JSON 视图</button>
+          </div>
+
+          <!-- 格式化视图：保留现有渲染逻辑 -->
+          <div v-if="resultTab === 'formatted'" class="space-y-2">
             <!-- 状态 -->
             <div class="flex items-center gap-2">
               <span class="text-sm text-muted-foreground">状态：</span>
@@ -271,7 +338,7 @@ function closeDialog() {
               >{{ testResult.success ? '成功' : '失败' }}</span>
             </div>
 
-            <!-- 错误信息 -->
+            <!-- 错误信息（增强：展示错误类型和完整错误响应） -->
             <div v-if="testResult.error" class="text-sm text-destructive">
               <span class="font-medium">错误：</span>
               <p class="mt-1 whitespace-pre-wrap break-words">{{ testResult.error }}</p>
@@ -288,6 +355,18 @@ function closeDialog() {
               <div>执行时间：{{ testResult.meta.durationMs }}ms</div>
               <div>Tool ID：<span class="font-mono">{{ testResult.meta.toolId }}</span></div>
               <div v-if="testResult.meta.action">操作：{{ testResult.meta.action }}</div>
+            </div>
+          </div>
+
+          <!-- JSON 视图 -->
+          <div v-else class="space-y-3">
+            <div>
+              <h5 class="text-xs font-medium text-muted-foreground mb-1">请求 JSON</h5>
+              <pre class="p-3 rounded-md bg-muted text-xs overflow-x-auto">{{ JSON.stringify(lastRequest, null, 2) }}</pre>
+            </div>
+            <div>
+              <h5 class="text-xs font-medium text-muted-foreground mb-1">响应 JSON</h5>
+              <pre class="p-3 rounded-md bg-muted text-xs overflow-x-auto">{{ JSON.stringify(testResult, null, 2) }}</pre>
             </div>
           </div>
         </div>
