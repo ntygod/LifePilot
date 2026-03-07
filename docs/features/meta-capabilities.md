@@ -574,9 +574,9 @@ Agent 需要在适当时机与用户交互，而非自作主张。
 
 ---
 
-## 10. 工具权限模型（Tool Permission Model）
+## 9. 工具权限模型（Tool Permission Model）
 
-### 10.1 核心概念：一切皆 Tool
+### 9.1 核心概念：一切皆 Tool
 
 在 LifePilot 中，LLM 能直接调用的只有 `DynamicToolRegistry` 中注册的 Tool。**Skill 和 Agent 本身不是 Tool，不能被 LLM 直接检索或调用**，它们通过桥接机制在运行时被转换为 Tool 注册到 Registry 中：
 
@@ -607,7 +607,7 @@ LLM 选择工具 → DynamicToolRegistry 中的 BuiltinTool
 
 关键推论：**权限控制的统一收口点是 Tool 可见性**。Agent 和 Skill 的 `allowedTools` 白名单控制的不是"谁能调用我"，而是"我作为 SubAgent 运行时能看到哪些 Tool"。
 
-### 10.2 问题分析
+### 9.2 问题分析
 
 当前系统已有分散的权限机制（`AgentDefinition.allowedTools`、`SkillDefinition.allowedTools`、`GuardrailEngine` 风险审批），但缺少统一的权限解析模型。需要解决的核心问题：
 
@@ -616,7 +616,7 @@ LLM 选择工具 → DynamicToolRegistry 中的 BuiltinTool
 - SubAgent 的工具范围应严格为父 Agent 的子集，当前未强制约束
 - 没有统一的权限解析流程把各层串起来
 
-### 10.3 三层权限模型
+### 9.3 三层权限模型
 
 权限检查由外到内逐层收窄，每一层都是前一层的子集：
 
@@ -645,9 +645,9 @@ LLM 选择工具 → DynamicToolRegistry 中的 BuiltinTool
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### 10.4 各调用者的权限解析
+### 9.4 各调用者的权限解析
 
-#### 10.4.1 Agent 调用工具
+#### 9.4.1 Agent 调用工具
 
 ```
 有效工具集 = (Agent.allowedTools ∪ infrastructure 工具) ∩ 全局策略通过
@@ -657,7 +657,7 @@ LLM 选择工具 → DynamicToolRegistry 中的 BuiltinTool
 - 空白名单（`allowedTools = []`）表示可用所有工具（当前行为不变）
 - 每次工具调用仍经过 `GuardrailEngine.checkToolCall()` 做风险审批
 
-#### 10.4.2 SubAgent 调用工具
+#### 9.4.2 SubAgent 调用工具
 
 ```
 有效工具集 = (parentScope ∩ SubAgent.allowedTools ∪ infrastructure 工具) ∩ 全局策略通过
@@ -668,7 +668,7 @@ LLM 选择工具 → DynamicToolRegistry 中的 BuiltinTool
 - infrastructure 工具始终可用，不受父子约束
 - 这确保了权限只能收窄、不能扩大
 
-#### 10.4.3 Skill 调用工具
+#### 9.4.3 Skill 调用工具
 
 ```
 有效工具集 = (Skill.allowedTools ∪ infrastructure 工具) ∩ 全局策略通过
@@ -680,7 +680,7 @@ LLM 选择工具 → DynamicToolRegistry 中的 BuiltinTool
 - `SecurityValidator` 在 Skill 加载时校验白名单不含 HIGH/CRITICAL 风险工具（已实现）
 - infrastructure 工具对 Skill SubAgent 同样始终可用
 
-#### 10.4.4 Workflow 调用工具
+#### 9.4.4 Workflow 调用工具
 
 ```
 有效工具集 = (步骤声明的 required-tools ∪ infrastructure 工具) ∩ 全局策略通过
@@ -691,7 +691,7 @@ LLM 选择工具 → DynamicToolRegistry 中的 BuiltinTool
 - 未声明 `required-tools` 的步骤（向后兼容）默认可用所有工具
 - 长期目标：所有 Workflow 步骤都应显式声明 `required-tools`
 
-### 10.5 Infrastructure 工具的特殊语义
+### 9.5 Infrastructure 工具的特殊语义
 
 标记为 `infrastructure` 的工具具有以下特殊行为：
 
@@ -712,7 +712,7 @@ tools.stream()
     .toList();
 ```
 
-### 10.6 权限解析流程图
+### 9.6 权限解析流程图
 
 ```
 工具调用请求
@@ -745,7 +745,7 @@ tools.stream()
 └─────────────────────┘
 ```
 
-### 10.7 与现有代码的改动点
+### 9.7 与现有代码的改动点
 
 | 改动位置 | 改动内容 | 影响范围 |
 |---------|---------|---------|
@@ -755,7 +755,7 @@ tools.stream()
 | `ToolContract` | `tags()` 已支持，无需改动 | 无 |
 | `GuardrailEngine` | infrastructure 工具跳过审计日志 | 审计日志量 |
 
-### 10.8 设计决策
+### 9.8 设计决策
 
 **Q: 为什么不引入独立的 PermissionService？**
 A: 当前的三层模型已经覆盖所有场景，且各层的执行点已经存在（`ToolBridgeAgentToolProvider` 做 Layer 2，`GuardrailEngine` 做 Layer 1）。引入独立服务会增加调用链复杂度，且需要重构现有管线。保持现有架构，在各执行点增加少量逻辑即可。
@@ -768,7 +768,7 @@ A: 短期内不强制（向后兼容），未声明的步骤默认可用所有�
 
 ---
 
-## 11. 调研参考
+## 10. 调研参考
 
 - [Anthropic Agent Skills 开放标准](https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills)（2025.12 发布，30+ 产品采纳）
 - [LobeHub Skills Marketplace](https://lobehub.com/skills)（2900+ Skills，含 find-skills / install-skills 元 Skill）
