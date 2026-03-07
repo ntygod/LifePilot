@@ -1,5 +1,7 @@
 package com.lifepilot.llm;
 
+import com.lifepilot.llm.cache.CacheEntry;
+import com.lifepilot.llm.cache.SemanticCache;
 import com.lifepilot.llm.circuit.CircuitBreakerManager;
 import com.lifepilot.llm.config.ProviderCapability;
 import com.lifepilot.llm.config.ProviderConfig;
@@ -31,6 +33,7 @@ public class LlmRouter {
     private final ProviderRegistry providerRegistry;
     private final CircuitBreakerManager circuitBreakerManager;
     private final ExponentialBackoff backoff;
+    @Nullable private volatile SemanticCache semanticCache;
 
     public LlmRouter(ProviderRegistry providerRegistry,
                      CircuitBreakerManager circuitBreakerManager) {
@@ -38,6 +41,15 @@ public class LlmRouter {
         this.circuitBreakerManager = circuitBreakerManager;
         this.backoff = ExponentialBackoff.defaults();
         log.info("LlmRouter 初始化完成");
+    }
+
+    /**
+     * 注入语义缓存（延迟注入，避免循环依赖）。
+     *
+     * @param semanticCache 语义缓存实例
+     */
+    public void setSemanticCache(@Nullable SemanticCache semanticCache) {
+        this.semanticCache = semanticCache;
     }
 
     /**
@@ -50,6 +62,20 @@ public class LlmRouter {
      * @throws LlmUnavailableException 所有候选 Provider 均失败
      */
     public LlmResponse call(String scene, String prompt, @Nullable String outputSchema) {
+        // 缓存查询（在 Provider 故障转移循环前）
+        if (semanticCache != null) {
+            try {
+                var cached = semanticCache.lookup(scene, null, prompt);
+                if (cached.isPresent()) {
+                    CacheEntry entry = cached.get();
+                    log.debug("LLM 缓存命中: scene={}, cacheId={}", scene, entry.id());
+                    return LlmResponse.cached(entry.responseText(), "cache", entry.modelName());
+                }
+            } catch (Exception e) {
+                log.warn("LLM 缓存查询异常，跳过缓存: scene={}, error={}", scene, e.getMessage());
+            }
+        }
+
         var candidates = findAvailableCandidates(scene, ProviderCapability.CHAT);
         if (candidates.isEmpty()) {
             throw new LlmUnavailableException(
@@ -82,6 +108,15 @@ public class LlmRouter {
                 log.debug("LLM 完整回复: content={}", 
                         response.content().length() > 500 ? response.content().substring(0, 500) + "..." : response.content());
                 
+                // 异步写入缓存
+                if (semanticCache != null) {
+                    try {
+                        semanticCache.putAsync(scene, null, prompt, response.content(), response.modelName());
+                    } catch (Exception e) {
+                        log.warn("LLM 缓存写入异常，静默跳过: scene={}, error={}", scene, e.getMessage());
+                    }
+                }
+
                 return response;
             } catch (Exception e) {
                 circuitBreakerManager.recordFailure(config.id(), "CHAT");
