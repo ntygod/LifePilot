@@ -29,6 +29,9 @@ public class SkillConfigProperties {
     /** 热加载防抖间隔（毫秒），默认 500。 */
     private long hotReloadDebounceMs = 500;
 
+    /** Skill 定义文件名，默认 SKILL.md。 */
+    private String skillFilename = "SKILL.md";
+
     /** 校验限制配置。 */
     private Validation validation = new Validation();
 

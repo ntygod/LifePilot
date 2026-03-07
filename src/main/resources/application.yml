@@ -201,6 +201,7 @@ lifepilot:
     max-concurrent-activations: 5
     directory: "${user.home}/.lifepilot/skills"
     hot-reload-debounce-ms: 500
+    skill-filename: SKILL.md
     auto-generation:
       enabled: true
       gap-threshold: 0.6
