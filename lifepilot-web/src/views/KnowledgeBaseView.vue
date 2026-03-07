@@ -169,9 +169,14 @@ function toggleTag(tag: string) {
 }
 
 const statusMap: Record<string, { label: string; class: string }> = {
-  PENDING: { label: '等待中', class: 'bg-yellow-100 text-yellow-800' },
-  PROCESSING: { label: '处理中', class: 'bg-blue-100 text-blue-800' },
-  COMPLETED: { label: '已完成', class: 'bg-green-100 text-green-800' },
+  UPLOADING: { label: '上传中', class: 'bg-yellow-100 text-yellow-800' },
+  PARSING: { label: '解析中', class: 'bg-blue-100 text-blue-800' },
+  CHUNKING: { label: '分块中', class: 'bg-blue-100 text-blue-800' },
+  INDEXING: { label: '索引中', class: 'bg-blue-100 text-blue-800' },
+  EXTRACTING: { label: '提取中', class: 'bg-blue-100 text-blue-800' },
+  READY: { label: '已完成', class: 'bg-green-100 text-green-800' },
+  UPDATING: { label: '更新中', class: 'bg-blue-100 text-blue-800' },
+  DELETING: { label: '删除中', class: 'bg-yellow-100 text-yellow-800' },
   ERROR: { label: '失败', class: 'bg-red-100 text-red-800' },
 }
 </script>

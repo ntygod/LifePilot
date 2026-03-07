@@ -258,7 +258,7 @@ async function handleUpdateSessionTitle(title: string) {
 </script>
 
 <template>
-  <div class="flex flex-col h-full">
+  <div class="flex flex-col h-full overflow-hidden">
     <!-- 顶部上下文指示条 -->
     <div class="sticky top-0 z-20 border-b border-border/30 bg-card/60 backdrop-blur-xl dark:bg-card/40 dark:backdrop-blur-2xl">
       <div class="max-w-[1200px] mx-auto h-16 flex items-center justify-between px-md md:px-lg">
@@ -342,7 +342,7 @@ async function handleUpdateSessionTitle(title: string) {
         <!-- 消息区域 -->
         <div
           ref="scrollContainer"
-          class="flex-1 overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-border"
+          class="flex-1 min-w-0 overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-border"
         >
           <!-- 空状态 -->
           <EmptyState
@@ -403,6 +403,7 @@ async function handleUpdateSessionTitle(title: string) {
         <!-- 右侧会话信息侧栏 -->
         <SessionSidebar
           v-if="showSessionSidebar && chatStore.activeSessionId"
+          class="flex-shrink-0"
           :session="currentSession"
           :knowledge-bases="kbStore.list"
           :message-count="chatStore.messages.length"
@@ -413,6 +414,7 @@ async function handleUpdateSessionTitle(title: string) {
         <!-- 右侧调试抽屉 -->
         <DebugDrawer
           v-if="showDebugDrawer"
+          class="flex-shrink-0"
           :token-usage="lastTokenUsage"
           :model-id="lastModelId"
           :prompt="lastPrompt"
@@ -459,6 +461,6 @@ async function handleUpdateSessionTitle(title: string) {
     </div>
 
     <!-- 输入框 -->
-    <ChatInput :disabled="isStreaming" :providers="chatProviders" @send="handleSend" />
+    <ChatInput :disabled="isStreaming" @send="handleSend" />
   </div>
 </template>

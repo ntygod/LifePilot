@@ -16,7 +16,6 @@ import org.springframework.test.context.DynamicPropertySource;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -79,7 +78,7 @@ class DocumentRepositoryTest {
                 id, knowledgeBaseId, fileName, "/path/to/" + fileName,
                 1024L, "text/markdown", "sha256-hash-" + id,
                 DocumentStatus.UPLOADING, 0, 0,
-                Optional.empty(), Optional.empty(),
+                null, null,
                 Map.of("key", "value"), now, now
         );
     }
@@ -103,8 +102,8 @@ class DocumentRepositoryTest {
         assertThat(result.status()).isEqualTo(DocumentStatus.UPLOADING);
         assertThat(result.chunkCount()).isZero();
         assertThat(result.entityCount()).isZero();
-        assertThat(result.errorMessage()).isEmpty();
-        assertThat(result.lastProcessedStage()).isEmpty();
+        assertThat(result.errorMessage()).isNull();
+        assertThat(result.lastProcessedStage()).isNull();
         assertThat(result.metadata()).containsEntry("key", "value");
         assertThat(result.createdAt()).isEqualTo(doc.createdAt());
         assertThat(result.updatedAt()).isEqualTo(doc.updatedAt());
@@ -117,7 +116,7 @@ class DocumentRepositoryTest {
                 UUID.randomUUID().toString(), knowledgeBaseId, "error.md", "/path/error.md",
                 512L, "text/markdown", "hash",
                 DocumentStatus.ERROR, 0, 0,
-                Optional.of("解析失败"), Optional.of("PARSING"),
+                "解析失败", "PARSING",
                 Map.of(), now, now
         );
 
@@ -125,8 +124,8 @@ class DocumentRepositoryTest {
         var found = documentRepository.findById(doc.id());
 
         assertThat(found).isPresent();
-        assertThat(found.get().errorMessage()).hasValue("解析失败");
-        assertThat(found.get().lastProcessedStage()).hasValue("PARSING");
+        assertThat(found.get().errorMessage()).isEqualTo("解析失败");
+        assertThat(found.get().lastProcessedStage()).isEqualTo("PARSING");
         assertThat(found.get().status()).isEqualTo(DocumentStatus.ERROR);
     }
 
@@ -160,7 +159,7 @@ class DocumentRepositoryTest {
                 UUID.randomUUID().toString(), kb2.id(), "doc2.md", "/path/doc2.md",
                 512L, "text/plain", "hash2",
                 DocumentStatus.READY, 0, 0,
-                Optional.empty(), Optional.empty(), Map.of(), now, now
+                null, null, Map.of(), now, now
         );
         documentRepository.save(doc1);
         documentRepository.save(doc2);
@@ -185,12 +184,12 @@ class DocumentRepositoryTest {
         var doc = createTestDocument(UUID.randomUUID().toString(), "status.md");
         documentRepository.save(doc);
 
-        documentRepository.updateStatus(doc.id(), DocumentStatus.ERROR, Optional.of("解析超时"));
+        documentRepository.updateStatus(doc.id(), DocumentStatus.ERROR, "解析超时");
 
         var found = documentRepository.findById(doc.id());
         assertThat(found).isPresent();
         assertThat(found.get().status()).isEqualTo(DocumentStatus.ERROR);
-        assertThat(found.get().errorMessage()).hasValue("解析超时");
+        assertThat(found.get().errorMessage()).isEqualTo("解析超时");
         assertThat(found.get().updatedAt()).isAfterOrEqualTo(doc.updatedAt());
     }
 
@@ -201,16 +200,16 @@ class DocumentRepositoryTest {
                 UUID.randomUUID().toString(), knowledgeBaseId, "recover.md", "/path/recover.md",
                 512L, "text/markdown", "hash",
                 DocumentStatus.ERROR, 0, 0,
-                Optional.of("之前的错误"), Optional.empty(), Map.of(), now, now
+                "之前的错误", null, Map.of(), now, now
         );
         documentRepository.save(doc);
 
-        documentRepository.updateStatus(doc.id(), DocumentStatus.PARSING, Optional.empty());
+        documentRepository.updateStatus(doc.id(), DocumentStatus.PARSING, null);
 
         var found = documentRepository.findById(doc.id());
         assertThat(found).isPresent();
         assertThat(found.get().status()).isEqualTo(DocumentStatus.PARSING);
-        assertThat(found.get().errorMessage()).isEmpty();
+        assertThat(found.get().errorMessage()).isNull();
     }
 
     @Test
@@ -248,7 +247,7 @@ class DocumentRepositoryTest {
 
         var found = documentRepository.findById(doc.id());
         assertThat(found).isPresent();
-        assertThat(found.get().lastProcessedStage()).hasValue("CHUNKING");
+        assertThat(found.get().lastProcessedStage()).isEqualTo("CHUNKING");
         assertThat(found.get().updatedAt()).isAfterOrEqualTo(doc.updatedAt());
     }
 
@@ -261,7 +260,7 @@ class DocumentRepositoryTest {
                 doc.id(), knowledgeBaseId, "updated.md", "/path/updated.md",
                 2048L, "text/plain", "new-hash",
                 DocumentStatus.READY, 10, 5,
-                Optional.empty(), Optional.of("INDEXING"),
+                null, "INDEXING",
                 Map.of("updated", "true"), doc.createdAt(), Instant.now()
         );
         documentRepository.save(updated);

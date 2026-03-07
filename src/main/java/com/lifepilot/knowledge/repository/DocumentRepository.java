@@ -81,8 +81,8 @@ public class DocumentRepository {
                 doc.status().name(),
                 doc.chunkCount(),
                 doc.entityCount(),
-                doc.errorMessage().orElse(null),
-                doc.lastProcessedStage().orElse(null),
+                doc.errorMessage(),
+                doc.lastProcessedStage(),
                 serializeMap(doc.metadata()),
                 doc.createdAt().toString(),
                 doc.updatedAt().toString());
@@ -129,10 +129,10 @@ public class DocumentRepository {
      * @param status       新状态
      * @param errorMessage 错误消息（为空时清除）
      */
-    public void updateStatus(String id, DocumentStatus status, Optional<String> errorMessage) {
+    public void updateStatus(String id, DocumentStatus status, String errorMessage) {
         jdbcTemplate.update(
                 "UPDATE documents SET status = ?, error_message = ?, updated_at = ? WHERE id = ?",
-                status.name(), errorMessage.orElse(null), Instant.now().toString(), id);
+                status.name(), errorMessage, Instant.now().toString(), id);
     }
 
     /**
@@ -186,8 +186,8 @@ public class DocumentRepository {
                 DocumentStatus.valueOf(rs.getString("status")),
                 rs.getInt("chunk_count"),
                 rs.getInt("entity_count"),
-                Optional.ofNullable(rs.getString("error_message")),
-                Optional.ofNullable(rs.getString("last_processed_stage")),
+                rs.getString("error_message"),
+                rs.getString("last_processed_stage"),
                 deserializeMetadata(rs.getString("metadata_json")),
                 Instant.parse(rs.getString("created_at")),
                 Instant.parse(rs.getString("updated_at"))

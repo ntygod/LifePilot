@@ -151,7 +151,7 @@ const riskBadge: Record<string, { label: string; variant: 'default' | 'secondary
           <Card
             v-for="tool in filteredTools"
             :key="tool.id"
-            class="cursor-pointer hover:-translate-y-0.5 hover:shadow-md hover:border-primary/50 transition-all duration-200"
+            class="cursor-pointer hover:-translate-y-0.5 hover:shadow-md hover:border-primary/50 transition-all duration-200 group"
             @click="router.push(`/tools/${tool.id}`)"
           >
             <CardHeader class="pb-2">

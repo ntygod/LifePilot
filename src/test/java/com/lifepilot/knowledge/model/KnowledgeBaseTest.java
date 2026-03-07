@@ -3,7 +3,6 @@ package com.lifepilot.knowledge.model;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -45,7 +44,7 @@ class KnowledgeBaseTest {
     void create_rerankerModel为空() {
         KnowledgeBase kb = KnowledgeBase.create("测试库", "描述", "text-embedding-3-small");
 
-        assertEquals(Optional.empty(), kb.rerankerModel());
+        assertNull(kb.rerankerModel());
     }
 
     @Test

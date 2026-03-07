@@ -186,6 +186,83 @@ public class KnowledgeBaseController {
         return ResponseEntity.noContent().build();
     }
 
+    /** 获取知识库统计信息。 */
+    @GetMapping("/{id}/stats")
+    public ResponseEntity<?> getStats(@PathVariable String id) {
+        return kbManager.getKnowledgeBase(id)
+                .<ResponseEntity<?>>map(kb -> {
+                    var docs = kbManager.listDocuments(id);
+                    long totalSize = docs.stream().mapToLong(Document::fileSize).sum();
+                    int totalChunks = docs.stream().mapToInt(Document::chunkCount).sum();
+                    long processingCount = docs.stream()
+                            .filter(d -> !d.status().isTerminal())
+                            .count();
+                    long errorCount = docs.stream()
+                            .filter(d -> d.status() == DocumentStatus.ERROR)
+                            .count();
+                    String indexStatus = errorCount > 0 ? "PARTIAL_FAILURE"
+                            : processingCount > 0 ? "PROCESSING" : "HEALTHY";
+                    return ResponseEntity.ok(Map.of(
+                            "documentCount", docs.size(),
+                            "totalChunks", totalChunks,
+                            "totalSize", totalSize,
+                            "indexStatus", indexStatus,
+                            "processingDocuments", processingCount,
+                            "errorDocuments", errorCount
+                    ));
+                })
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                        new ErrorResponse(404, "知识库不存在: id=" + id, Instant.now())));
+    }
+
+    /** 重试失败的文档处理。 */
+    @PostMapping("/{id}/documents/{docId}/retry")
+    public ResponseEntity<?> retryDocument(@PathVariable String id,
+                                           @PathVariable String docId) {
+        var ingester = this.documentIngester;
+        if (ingester == null) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(
+                    new ErrorResponse(503, "文档导入功能未启用", Instant.now()));
+        }
+        var docRepo = this.documentRepository;
+        if (docRepo == null) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(
+                    new ErrorResponse(503, "文档功能未启用", Instant.now()));
+        }
+        var docOpt = docRepo.findById(docId);
+        if (docOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    new ErrorResponse(404, "文档不存在: id=" + docId, Instant.now()));
+        }
+        ingester.resume(docId);
+        log.info("文档重试已提交: docId={}", docId);
+        return ResponseEntity.accepted().body(Map.of("message", "文档已提交重新处理"));
+    }
+
+    /** 重新分块文档。 */
+    @PostMapping("/{id}/documents/{docId}/rechunk")
+    public ResponseEntity<?> rechunkDocument(@PathVariable String id,
+                                             @PathVariable String docId) {
+        var ingester = this.documentIngester;
+        if (ingester == null) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(
+                    new ErrorResponse(503, "文档导入功能未启用", Instant.now()));
+        }
+        var docRepo = this.documentRepository;
+        if (docRepo == null) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(
+                    new ErrorResponse(503, "文档功能未启用", Instant.now()));
+        }
+        var docOpt = docRepo.findById(docId);
+        if (docOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    new ErrorResponse(404, "文档不存在: id=" + docId, Instant.now()));
+        }
+        ingester.resume(docId);
+        log.info("文档重新分块已提交: docId={}", docId);
+        return ResponseEntity.accepted().body(Map.of("message", "文档已提交重新分块"));
+    }
+
     /** 测试知识库检索。 */
     @PostMapping("/{id}/test-retrieval")
     public ResponseEntity<?> testRetrieval(@PathVariable String id,
@@ -325,7 +402,7 @@ public class KnowledgeBaseController {
 
         // 根据状态生成对应的日志
         DocumentStatus status = doc.status();
-        String lastStage = doc.lastProcessedStage().orElse("");
+        String lastStage = doc.lastProcessedStage() != null ? doc.lastProcessedStage() : "";
         
         // 根据状态和阶段生成日志
         if (status == DocumentStatus.UPLOADING) {
@@ -384,7 +461,7 @@ public class KnowledgeBaseController {
         }
         
         if (status == DocumentStatus.ERROR) {
-            String errorMsg = doc.errorMessage().orElse("未知错误");
+            String errorMsg = doc.errorMessage() != null ? doc.errorMessage() : "未知错误";
             logs.add(new LogEntry(
                     doc.updatedAt(),
                     "ERROR",

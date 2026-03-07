@@ -1,9 +1,10 @@
 package com.lifepilot.knowledge.model;
 
+import org.springframework.lang.Nullable;
+
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -20,7 +21,7 @@ public record KnowledgeBase(
         String name,
         String description,
         String embeddingModel,
-        Optional<String> rerankerModel,
+        @Nullable String rerankerModel,
         String chunkingStrategy,
         Map<String, Object> chunkingConfig,
         int documentCount,
@@ -47,7 +48,7 @@ public record KnowledgeBase(
         return new KnowledgeBase(
                 UUID.randomUUID().toString(),
                 name, description, embeddingModel,
-                Optional.empty(), "smart", Map.of(),
+                null, "smart", Map.of(),
                 0, 0, List.of(), now, now);
     }
 }
