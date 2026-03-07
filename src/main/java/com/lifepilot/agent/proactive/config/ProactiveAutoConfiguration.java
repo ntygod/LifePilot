@@ -6,9 +6,11 @@ import com.lifepilot.agent.proactive.ProactiveReasoner;
 import com.lifepilot.agent.proactive.ResponseTracker;
 import com.lifepilot.agent.proactive.RuleEngine;
 import com.lifepilot.agent.proactive.SignalCollector;
+import com.lifepilot.agent.proactive.channel.GatewayNotificationChannel;
 import com.lifepilot.agent.proactive.channel.LogNotificationChannel;
 import com.lifepilot.agent.proactive.channel.NotificationChannel;
 import com.lifepilot.agent.proactive.channel.PassiveNotificationQueue;
+import com.lifepilot.interaction.channel.ChannelAdapter;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.prompt.PromptRegistry;
@@ -50,6 +52,12 @@ public class ProactiveAutoConfiguration {
     @ConditionalOnMissingBean
     public LogNotificationChannel logNotificationChannel() {
         return new LogNotificationChannel();
+    }
+
+    @Bean
+    @ConditionalOnBean(ChannelAdapter.class)
+    public GatewayNotificationChannel gatewayNotificationChannel(List<ChannelAdapter> adapters) {
+        return new GatewayNotificationChannel(adapters);
     }
 
     @Bean
