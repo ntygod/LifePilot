@@ -9,6 +9,7 @@ import com.lifepilot.interaction.web.repository.MessageFeedbackRepository;
 import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
+import com.lifepilot.agent.proactive.ResponseTracker;
 import com.lifepilot.agent.proactive.config.ProactiveConfigProperties;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
@@ -71,13 +72,16 @@ public class ChatController {
     private final AttachmentRepository attachmentRepository;
     private final KnowledgeBaseProperties knowledgeBaseProperties;
     private final ProactiveConfigProperties proactiveConfig;
+    @org.springframework.lang.Nullable
+    private final ResponseTracker responseTracker;
 
     public ChatController(WebChannelAdapter adapter, SseSessionManager sseManager,
                           com.lifepilot.interaction.web.service.ChatSessionService sessionService,
                           MessageFeedbackRepository feedbackRepository,
                           AttachmentRepository attachmentRepository,
                           KnowledgeBaseProperties knowledgeBaseProperties,
-                          ProactiveConfigProperties proactiveConfig) {
+                          ProactiveConfigProperties proactiveConfig,
+                          @org.springframework.lang.Nullable ResponseTracker responseTracker) {
         this.adapter = adapter;
         this.sseManager = sseManager;
         this.sessionService = sessionService;
@@ -85,6 +89,7 @@ public class ChatController {
         this.attachmentRepository = attachmentRepository;
         this.knowledgeBaseProperties = knowledgeBaseProperties;
         this.proactiveConfig = proactiveConfig;
+        this.responseTracker = responseTracker;
     }
 
     /**
@@ -106,6 +111,8 @@ public class ChatController {
         }
 
         log.debug("收到非流式消息请求: sessionId={}", request.sessionId());
+        // 反馈闭环：通知 ResponseTracker 用户交互
+        notifyResponseTracker(request.content());
         var response = adapter.processMessage(request, httpRequest);
         var chatResponse = toChatResponse(response);
         return ResponseEntity.ok(chatResponse);
@@ -141,6 +148,8 @@ public class ChatController {
         }
 
         log.debug("收到流式消息请求: sessionId={}", request.sessionId());
+        // 反馈闭环：通知 ResponseTracker 用户交互
+        notifyResponseTracker(request.content());
         var response = adapter.processMessageStreaming(request, httpRequest);
 
         if (response.content() instanceof ResponseContent.StreamingContent(String streamId)) {
@@ -666,6 +675,22 @@ public class ChatController {
     }
 
     // ── 内部辅助方法 ──────────────────────────────────────────
+
+    /**
+     * 安全通知 ResponseTracker 用户交互，异常不影响消息处理主流程。
+     *
+     * @param content 用户消息内容
+     */
+    private void notifyResponseTracker(String content) {
+        if (responseTracker == null || content == null || content.isBlank()) {
+            return;
+        }
+        try {
+            responseTracker.onUserInteraction(content);
+        } catch (Exception e) {
+            log.warn("ResponseTracker 通知失败: error={}", e.getMessage());
+        }
+    }
 
     /**
      * 获取文件扩展名（包含点号）。

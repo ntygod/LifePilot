@@ -7,12 +7,15 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import com.lifepilot.agent.proactive.ResponseTracker;
 import com.lifepilot.interaction.channel.ChannelAdapter;
 import com.lifepilot.interaction.middleware.MiddlewarePipeline;
 import com.lifepilot.interaction.model.ChannelType;
 import com.lifepilot.interaction.model.GatewayMessage;
 import com.lifepilot.interaction.model.GatewayResponse;
+import com.lifepilot.interaction.model.MessageContent;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.lang.Nullable;
 
 /**
  * 默认消息网关实现，管理通道注册表和生命周期，将消息推入中间件管道处理。
@@ -29,14 +32,18 @@ public class DefaultMessageGateway implements MessageGateway {
     private final ConcurrentHashMap<ChannelType, ChannelAdapter> channels = new ConcurrentHashMap<>();
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final MiddlewarePipeline pipeline;
+    @Nullable private final ResponseTracker responseTracker;
 
     /**
      * 构造默认消息网关。
      *
-     * @param pipeline 中间件管道
+     * @param pipeline        中间件管道
+     * @param responseTracker 用户响应追踪器（可选，主动推理模块未启用时为 null）
      */
-    public DefaultMessageGateway(MiddlewarePipeline pipeline) {
+    public DefaultMessageGateway(MiddlewarePipeline pipeline,
+                                  @Nullable ResponseTracker responseTracker) {
         this.pipeline = pipeline;
+        this.responseTracker = responseTracker;
     }
 
     @Override
@@ -48,6 +55,8 @@ public class DefaultMessageGateway implements MessageGateway {
         // 将 messageId 注入 MDC，使整条中间件链路的日志可关联
         org.slf4j.MDC.put("messageId", message.messageId());
         log.debug("处理入站消息: messageId={}, channel={}", message.messageId(), message.channelType());
+        // 反馈闭环：对文本消息通知 ResponseTracker
+        notifyResponseTracker(message);
         var start = Instant.now();
 
         try {
@@ -135,5 +144,20 @@ public class DefaultMessageGateway implements MessageGateway {
     @Override
     public boolean isRunning() {
         return running.get();
+    }
+
+    /**
+     * 安全通知 ResponseTracker 用户交互，仅处理文本消息，异常不影响消息处理主流程。
+     */
+    private void notifyResponseTracker(GatewayMessage message) {
+        if (responseTracker == null) return;
+        try {
+            var content = message.content();
+            if (content instanceof MessageContent.TextMessage tm) {
+                responseTracker.onUserInteraction(tm.text());
+            }
+        } catch (Exception e) {
+            log.warn("ResponseTracker 通知失败: messageId={}, error={}", message.messageId(), e.getMessage());
+        }
     }
 }
