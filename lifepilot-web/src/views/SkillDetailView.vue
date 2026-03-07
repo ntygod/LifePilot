@@ -2,9 +2,11 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useSkillStore } from '@/stores/skill'
+import { skillApi } from '@/api/client'
 import type { SkillDetail } from '@/types'
 import Breadcrumb from '@/components/global/Breadcrumb.vue'
 import type { BreadcrumbItem } from '@/components/global/Breadcrumb.vue'
+import MarkdownEditor from '@/components/editor/MarkdownEditor.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -36,9 +38,9 @@ const basicInfo = ref({
   tags: [] as string[]
 })
 
-const yamlContent = ref('')
-const yamlDirty = ref(false)
-const yamlSaving = ref(false)
+// Markdown 编辑器状态
+const markdownContent = ref('')
+const markdownLoading = ref(true)
 
 const testInput = ref('')
 const testContext = ref('{}')
@@ -49,6 +51,13 @@ onMounted(async () => {
   await skillStore.fetchSkillDetail(skillId.value)
   if (skill.value) {
     initFormData()
+    // 加载 Skill Markdown 定义
+    try {
+      markdownContent.value = await skillApi.getSkillMarkdown(skillId.value)
+    } catch {
+      markdownContent.value = ''
+    }
+    markdownLoading.value = false
   }
 })
 
@@ -66,18 +75,7 @@ function initFormData() {
     description: skill.value.description || '',
     tags: []
   }
-
-  if (skill.value.sourceType === 'UserDefined' && skill.value.metadata) {
-    yamlContent.value = JSON.stringify(skill.value.metadata, null, 2)
-  } else {
-    yamlContent.value = ''
-  }
-  yamlDirty.value = false
 }
-
-const isYamlEditable = computed(() => {
-  return skill.value?.sourceType === 'UserDefined'
-})
 
 const isEnabled = computed(() => {
   return (skill.value as any)?.enabled ?? true
@@ -95,36 +93,6 @@ async function saveBasicInfo() {
     alert(e.message || '保存失败')
   }
 }
-
-async function saveYaml() {
-  if (!skill.value || !yamlDirty.value || !isYamlEditable.value) return
-
-  yamlSaving.value = true
-  try {
-    let parsedMetadata: Record<string, string> = {}
-    try {
-      parsedMetadata = JSON.parse(yamlContent.value)
-    } catch {
-      alert('YAML 格式错误')
-      return
-    }
-
-    await skillStore.updateSkill(skill.value.id, {
-      metadata: parsedMetadata
-    })
-    yamlDirty.value = false
-  } catch (e: any) {
-    alert(e.message || '保存失败')
-  } finally {
-    yamlSaving.value = false
-  }
-}
-
-watch(yamlContent, () => {
-  if (isYamlEditable.value) {
-    yamlDirty.value = true
-  }
-})
 
 async function runTest() {
   if (!skill.value) return
@@ -323,38 +291,16 @@ const sourceLabel: Record<string, string> = {
                     <pre class="mt-xs px-md py-sm rounded-md bg-muted text-xs whitespace-pre-wrap break-words leading-normal">{{ skill.systemPrompt }}</pre>
                   </div>
 
-                  <!-- YAML / JSON 配置 -->
-                  <div
-                    v-if="isYamlEditable"
-                    class="border border-dashed border-border rounded-lg p-md"
-                  >
-                    <div class="flex items-center justify-between mb-xs">
-                      <h4 class="text-sm font-medium text-foreground">内部配置（JSON）</h4>
-                      <div class="flex items-center gap-xs">
-                        <span
-                          v-if="yamlDirty"
-                          class="text-xs text-muted-foreground"
-                        >
-                          未保存
-                        </span>
-                        <Button
-                          v-if="yamlDirty"
-                          size="sm"
-                          :disabled="yamlSaving"
-                          @click="saveYaml"
-                        >
-                          {{ yamlSaving ? '保存中...' : '保存' }}
-                        </Button>
-                      </div>
-                    </div>
-                    <p class="text-xs text-muted-foreground mb-sm">
-                      仅在你非常清楚含义时再修改。这里存放的是此能力的内部 JSON 配置，而不是普通文档内容。
-                    </p>
-                    <Textarea
-                      v-model="yamlContent"
-                      :rows="12"
-                      placeholder="以 JSON 形式编辑内部配置..."
-                      class="font-mono text-xs resize-none"
+                  <!-- Skill 定义（SKILL.md）— 替换原 JSON 编辑区域 -->
+                  <div class="border border-dashed border-border rounded-lg p-md">
+                    <h4 class="text-sm font-medium text-foreground mb-xs">Skill 定义（SKILL.md）</h4>
+                    <Skeleton v-if="markdownLoading" class="h-64 w-full" />
+                    <MarkdownEditor
+                      v-else
+                      v-model="markdownContent"
+                      :readonly="skill.sourceType !== 'UserDefined'"
+                      title="SKILL.md"
+                      :on-save="(content: string) => skillApi.updateSkillMarkdown(skillId, content)"
                     />
                   </div>
 
