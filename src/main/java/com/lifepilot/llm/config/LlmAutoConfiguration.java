@@ -2,6 +2,7 @@ package com.lifepilot.llm.config;
 
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.adapter.ProviderAdapterFactory;
+import com.lifepilot.llm.cache.SemanticCache;
 import com.lifepilot.llm.circuit.CircuitBreakerManager;
 import com.lifepilot.llm.registry.ProviderHealthChecker;
 import com.lifepilot.llm.registry.ProviderRegistry;
@@ -98,5 +99,18 @@ public class LlmAutoConfiguration {
     public LlmRouter llmRouter(ProviderRegistry providerRegistry,
                                 CircuitBreakerManager circuitBreakerManager) {
         return new LlmRouter(providerRegistry, circuitBreakerManager);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnProperty(prefix = "lifepilot.llm.cache", name = "enabled",
+            havingValue = "true", matchIfMissing = true)
+    public SemanticCache semanticCache(LlmConfigProperties properties,
+                                       LlmRouter llmRouter,
+                                       JdbcTemplate jdbcTemplate) {
+        var cache = new SemanticCache(properties.getCache(), llmRouter, jdbcTemplate);
+        // 延迟注入，避免构造函数循环依赖
+        llmRouter.setSemanticCache(cache);
+        return cache;
     }
 }
