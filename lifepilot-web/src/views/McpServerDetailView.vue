@@ -2,7 +2,8 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useSkillStore } from '@/stores/skill'
-import type { McpServerConfig } from '@/types'
+import { mcpApi } from '@/api/client'
+import type { McpServerConfig, McpConnectionLog } from '@/types'
 import Breadcrumb from '@/components/global/Breadcrumb.vue'
 import type { BreadcrumbItem } from '@/components/global/Breadcrumb.vue'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -46,6 +47,15 @@ onMounted(async () => {
     if (server.value.config) {
       config.value = { ...server.value.config }
     }
+    // 加载连接日志
+    logsLoading.value = true
+    try {
+      connectionLogs.value = await mcpApi.getConnectionLogs(server.value.name)
+    } catch {
+      connectionLogs.value = []
+    } finally {
+      logsLoading.value = false
+    }
   }
 })
 
@@ -84,6 +94,18 @@ async function testConnection() {
   } finally {
     testing.value = false
   }
+}
+
+// 连接日志状态
+const connectionLogs = ref<McpConnectionLog[]>([])
+const logsLoading = ref(false)
+
+// 连接事件类型样式映射
+const eventTypeStyle: Record<string, { label: string; class: string }> = {
+  CONNECT:    { label: '已连接', class: 'text-green-600 bg-green-50 dark:text-green-400 dark:bg-green-950' },
+  DISCONNECT: { label: '断开',   class: 'text-muted-foreground bg-muted' },
+  ERROR:      { label: '错误',   class: 'text-destructive bg-destructive/10' },
+  RECONNECT:  { label: '重连',   class: 'text-yellow-600 bg-yellow-50 dark:text-yellow-400 dark:bg-yellow-950' },
 }
 
 const stateVariant: Record<string, 'default' | 'secondary' | 'outline' | 'destructive'> = {
@@ -257,11 +279,22 @@ const stateLabel: Record<string, string> = {
                 <div
                   v-for="tool in skillStore.serverTools"
                   :key="tool.id"
-                  class="p-3 rounded-md bg-muted cursor-pointer hover:bg-muted/80 transition-colors"
-                  @click="router.push(`/tools/${tool.id}`)"
+                  class="p-3 rounded-md bg-muted flex items-center justify-between"
                 >
-                  <div class="font-medium text-foreground text-sm">{{ tool.name }}</div>
-                  <div class="text-xs text-muted-foreground mt-1">{{ tool.description }}</div>
+                  <div
+                    class="cursor-pointer hover:text-primary"
+                    @click="router.push(`/tools/${tool.id}`)"
+                  >
+                    <div class="font-medium text-foreground text-sm">{{ tool.name }}</div>
+                    <div class="text-xs text-muted-foreground mt-1">{{ tool.description }}</div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    @click="router.push(`/tools/${tool.id}`)"
+                  >
+                    测试调用
+                  </Button>
                 </div>
               </div>
             </CardContent>
@@ -284,6 +317,44 @@ const stateLabel: Record<string, string> = {
               <div v-if="server.lastError">
                 <span class="text-muted-foreground">最后错误：</span>
                 <span class="text-destructive">{{ server.lastError }}</span>
+              </div>
+            </CardContent>
+          </Card>
+
+          <!-- 连接日志 -->
+          <Card>
+            <CardHeader>
+              <CardTitle>连接日志</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Skeleton v-if="logsLoading" class="h-32 w-full" />
+              <div v-else-if="connectionLogs.length === 0" class="text-sm text-muted-foreground">
+                暂无连接日志
+              </div>
+              <div v-else class="space-y-2">
+                <div
+                  v-for="(log, idx) in connectionLogs"
+                  :key="idx"
+                  class="flex items-start gap-3 p-2 rounded-md text-sm"
+                  :class="log.eventType === 'ERROR' ? 'bg-destructive/5' : ''"
+                >
+                  <span class="text-muted-foreground whitespace-nowrap text-xs mt-0.5">
+                    {{ new Date(log.timestamp).toLocaleString() }}
+                  </span>
+                  <Badge
+                    variant="secondary"
+                    class="text-xs px-1.5 py-0.5 whitespace-nowrap"
+                    :class="eventTypeStyle[log.eventType]?.class ?? ''"
+                  >
+                    {{ eventTypeStyle[log.eventType]?.label ?? log.eventType }}
+                  </Badge>
+                  <span
+                    class="text-sm flex-1"
+                    :class="log.eventType === 'ERROR' ? 'text-destructive' : 'text-foreground'"
+                  >
+                    {{ log.description }}
+                  </span>
+                </div>
               </div>
             </CardContent>
           </Card>
