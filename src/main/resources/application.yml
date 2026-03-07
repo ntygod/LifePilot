@@ -107,6 +107,14 @@ lifepilot:
       retry-initial-delay-ms: 500
       retry-multiplier: 2.0
       retry-max-delay-ms: 5000
+    cache:
+      enabled: true
+      similarity-threshold: 0.92
+      ttl-seconds: 3600
+      max-entries: 10000
+    connection-pool:
+      max-connections: 5
+      keep-alive-seconds: 300
   tool:
     enabled: true
     pipeline:

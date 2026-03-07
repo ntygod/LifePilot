@@ -2,6 +2,7 @@ package com.lifepilot.llm.config;
 
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.adapter.ProviderAdapterFactory;
+import com.lifepilot.llm.cache.SemanticCache;
 import com.lifepilot.llm.circuit.CircuitBreakerManager;
 import com.lifepilot.llm.registry.ProviderHealthChecker;
 import com.lifepilot.llm.registry.ProviderRegistry;
@@ -44,8 +45,9 @@ public class LlmAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public ProviderAdapterFactory providerAdapterFactory(@Nullable List<CallAdvisor> advisors) {
-        return new ProviderAdapterFactory(advisors);
+    public ProviderAdapterFactory providerAdapterFactory(@Nullable List<CallAdvisor> advisors,
+                                                         LlmConfigProperties properties) {
+        return new ProviderAdapterFactory(advisors, properties.getConnectionPool());
     }
 
     @Bean
@@ -91,6 +93,47 @@ public class LlmAutoConfiguration {
         } else {
             log.warn("LlmProviderService 不可用，跳过 Provider 注册");
         }
+
+        // 连接预热：对云端 Provider 发起轻量级健康检查，建立 TCP 连接
+        warmupCloudProviders(ctx);
+    }
+
+    /**
+     * 对所有已注册的云端 Provider 发起轻量级预热请求，建立 TCP 连接池。
+     * 预热失败仅记录 WARN 日志，不影响启动。
+     */
+    private void warmupCloudProviders(ApplicationContext ctx) {
+        if (ctx.getBeanNamesForType(ProviderRegistry.class).length == 0) {
+            return;
+        }
+        var registry = ctx.getBean(ProviderRegistry.class);
+        var providerIds = registry.registeredIds();
+        if (providerIds.isEmpty()) {
+            log.debug("无已注册 Provider，跳过连接预热");
+            return;
+        }
+
+        int warmupCount = 0;
+        for (String id : providerIds) {
+            var configOpt = registry.getConfig(id);
+            if (configOpt.isEmpty() || configOpt.get().isLocal()) {
+                continue; // 跳过本地 Provider（Ollama 无需预热）
+            }
+            try {
+                boolean healthy = registry.healthCheck(id);
+                if (healthy) {
+                    log.info("云端 Provider 连接预热成功: id={}", id);
+                } else {
+                    log.warn("云端 Provider 连接预热响应异常: id={}", id);
+                }
+                warmupCount++;
+            } catch (Exception e) {
+                log.warn("云端 Provider 连接预热失败: id={}, error={}", id, e.getMessage());
+            }
+        }
+        if (warmupCount > 0) {
+            log.info("连接预热完成: 预热 {} 个云端 Provider", warmupCount);
+        }
     }
 
     @Bean
@@ -98,5 +141,18 @@ public class LlmAutoConfiguration {
     public LlmRouter llmRouter(ProviderRegistry providerRegistry,
                                 CircuitBreakerManager circuitBreakerManager) {
         return new LlmRouter(providerRegistry, circuitBreakerManager);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnProperty(prefix = "lifepilot.llm.cache", name = "enabled",
+            havingValue = "true", matchIfMissing = true)
+    public SemanticCache semanticCache(LlmConfigProperties properties,
+                                       LlmRouter llmRouter,
+                                       JdbcTemplate jdbcTemplate) {
+        var cache = new SemanticCache(properties.getCache(), llmRouter, jdbcTemplate);
+        // 延迟注入，避免构造函数循环依赖
+        llmRouter.setSemanticCache(cache);
+        return cache;
     }
 }

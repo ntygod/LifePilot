@@ -1,5 +1,6 @@
 package com.lifepilot.llm.adapter;
 
+import com.lifepilot.llm.config.LlmConfigProperties.ConnectionPoolConfigEntry;
 import com.lifepilot.llm.config.ProviderCapability;
 import com.lifepilot.llm.config.ProviderConfig;
 import org.slf4j.Logger;
@@ -14,8 +15,12 @@ import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.OpenAiEmbeddingModel;
 import org.springframework.ai.openai.api.OpenAiApi;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.lang.Nullable;
+import org.springframework.web.client.RestClient;
 
+import java.net.http.HttpClient;
+import java.time.Duration;
 import java.util.List;
 
 /**
@@ -32,14 +37,19 @@ public class ProviderAdapterFactory {
     private static final Logger log = LoggerFactory.getLogger(ProviderAdapterFactory.class);
 
     private final List<CallAdvisor> defaultAdvisors;
+    @Nullable
+    private final ConnectionPoolConfigEntry connectionPoolConfig;
 
     /**
      * 创建 Provider 适配器工厂。
      *
-     * @param defaultAdvisors 默认 Advisor 列表（可选）
+     * @param defaultAdvisors      默认 Advisor 列表（可选）
+     * @param connectionPoolConfig HTTP 连接池配置（可选）
      */
-    public ProviderAdapterFactory(@Nullable List<CallAdvisor> defaultAdvisors) {
+    public ProviderAdapterFactory(@Nullable List<CallAdvisor> defaultAdvisors,
+                                  @Nullable ConnectionPoolConfigEntry connectionPoolConfig) {
         this.defaultAdvisors = defaultAdvisors != null ? List.copyOf(defaultAdvisors) : List.of();
+        this.connectionPoolConfig = connectionPoolConfig;
         if (!this.defaultAdvisors.isEmpty()) {
             log.info("ProviderAdapterFactory 初始化: 默认 Advisors={}",
                     this.defaultAdvisors.stream()
@@ -53,6 +63,7 @@ public class ProviderAdapterFactory {
      */
     public ProviderAdapterFactory() {
         this.defaultAdvisors = List.of();
+        this.connectionPoolConfig = null;
     }
 
     /**
@@ -114,6 +125,19 @@ public class ProviderAdapterFactory {
         String apiKey = config.apiKey();
         if (apiKey != null && !apiKey.isBlank()) {
             openAiApiBuilder.apiKey(apiKey);
+        }
+
+        // 配置 HTTP 连接池参数（连接超时 + 保活）
+        if (connectionPoolConfig != null) {
+            var httpClient = HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(config.timeoutSeconds()))
+                    .build();
+            var requestFactory = new JdkClientHttpRequestFactory(httpClient);
+            requestFactory.setReadTimeout(Duration.ofSeconds(config.timeoutSeconds()));
+            var restClientBuilder = RestClient.builder().requestFactory(requestFactory);
+            openAiApiBuilder.restClientBuilder(restClientBuilder);
+            log.debug("云端 Provider HTTP 连接池配置: id={}, connectTimeout={}s",
+                    config.id(), config.timeoutSeconds());
         }
 
         var openAiApi = openAiApiBuilder.build();

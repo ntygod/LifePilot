@@ -32,6 +32,12 @@ public class LlmConfigProperties {
     /** 熔断器配置。 */
     private CircuitBreakerConfigEntry circuitBreaker = new CircuitBreakerConfigEntry();
 
+    /** 语义缓存配置。 */
+    private CacheConfigEntry cache = new CacheConfigEntry();
+
+    /** HTTP 连接池配置。 */
+    private ConnectionPoolConfigEntry connectionPool = new ConnectionPoolConfigEntry();
+
     /**
      * 将熔断器配置条目转换为不可变 record。
      *
@@ -111,5 +117,37 @@ public class LlmConfigProperties {
         private double retryMultiplier = 2.0;
         private int retryMaxDelayMs = 5000;
 
+    }
+
+    /**
+     * 语义缓存配置条目（JavaBean 风格，用于 YAML 绑定）。
+     *
+     * <p>绑定 {@code lifepilot.llm.cache} 前缀。
+     */
+    @Setter
+    @Getter
+    public static class CacheConfigEntry {
+        /** 缓存总开关，默认 true。 */
+        private boolean enabled = true;
+        /** 余弦相似度命中阈值，默认 0.92。 */
+        private double similarityThreshold = 0.92;
+        /** 缓存条目 TTL 秒数，默认 3600。 */
+        private int ttlSeconds = 3600;
+        /** 最大缓存条目数（LRU 淘汰），默认 10000。 */
+        private int maxEntries = 10000;
+    }
+
+    /**
+     * HTTP 连接池配置条目（JavaBean 风格，用于 YAML 绑定）。
+     *
+     * <p>绑定 {@code lifepilot.llm.connection-pool} 前缀。
+     */
+    @Setter
+    @Getter
+    public static class ConnectionPoolConfigEntry {
+        /** 最大连接数，默认 5。 */
+        private int maxConnections = 5;
+        /** 连接保活时间（秒），默认 300。 */
+        private int keepAliveSeconds = 300;
     }
 }
