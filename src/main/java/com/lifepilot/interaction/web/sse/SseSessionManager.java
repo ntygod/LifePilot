@@ -65,6 +65,55 @@ public class SseSessionManager {
     }
 
     /**
+     * 创建通知专用 SseEmitter 并注册到管理器。
+     *
+     * @param notificationStreamId 通知流标识（notification-{uuid} 前缀）
+     * @param timeout              超时时间（毫秒）
+     * @return 新创建的 SseEmitter
+     */
+    public SseEmitter createNotificationEmitter(String notificationStreamId, long timeout) {
+        var emitter = new SseEmitter(timeout);
+
+        emitter.onCompletion(() -> {
+            emitters.remove(notificationStreamId);
+            log.debug("通知 SseEmitter 完成: streamId={}", notificationStreamId);
+        });
+        emitter.onTimeout(() -> {
+            emitters.remove(notificationStreamId);
+            log.debug("通知 SseEmitter 超时: streamId={}", notificationStreamId);
+        });
+        emitter.onError(ex -> {
+            emitters.remove(notificationStreamId);
+            log.warn("通知 SseEmitter 异常: streamId={}", notificationStreamId, ex);
+        });
+
+        emitters.put(notificationStreamId, emitter);
+        log.debug("通知 SseEmitter 创建成功: streamId={}", notificationStreamId);
+        return emitter;
+    }
+
+    /**
+     * 广播通知到所有 notification- 前缀的 emitter。
+     *
+     * @param data 通知事件数据
+     */
+    public void broadcastNotification(Object data) {
+        emitters.forEach((streamId, emitter) -> {
+            if (streamId.startsWith("notification-")) {
+                try {
+                    var event = SseEmitter.event()
+                            .name(SseEventType.NOTIFICATION)
+                            .data(data);
+                    emitter.send(event);
+                } catch (IOException e) {
+                    log.warn("通知广播失败，关闭连接: streamId={}", streamId);
+                    closeEmitter(streamId);
+                }
+            }
+        });
+    }
+
+    /**
      * 获取已注册的 SseEmitter（不创建新实例）。
      *
      * @param streamId 流式传输标识

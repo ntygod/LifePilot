@@ -44,9 +44,10 @@ public class WebAutoConfiguration {
     @Bean
     public WebChannelAdapter webChannelAdapter(MessageGateway gateway,
                                                 GatewayProperties gatewayProperties,
-                                                AttachmentRepository attachmentRepository) {
+                                                AttachmentRepository attachmentRepository,
+                                                SseSessionManager sseSessionManager) {
         log.info("注册 WebChannelAdapter");
-        return new WebChannelAdapter(gateway, gatewayProperties, attachmentRepository);
+        return new WebChannelAdapter(gateway, gatewayProperties, attachmentRepository, sseSessionManager);
     }
 
     @Bean

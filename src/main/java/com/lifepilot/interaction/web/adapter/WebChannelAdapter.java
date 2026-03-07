@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import com.lifepilot.agent.proactive.model.NotificationType;
+import com.lifepilot.agent.proactive.model.Urgency;
 import com.lifepilot.interaction.channel.AbstractChannelAdapter;
 import com.lifepilot.interaction.config.GatewayProperties;
 import com.lifepilot.interaction.gateway.MessageGateway;
@@ -18,11 +20,14 @@ import com.lifepilot.interaction.model.GatewayMessage;
 import com.lifepilot.interaction.model.GatewayResponse;
 import com.lifepilot.interaction.model.MessageContent;
 import com.lifepilot.interaction.web.model.ChatRequest;
+import com.lifepilot.interaction.web.model.NotificationSseEvent;
 import com.lifepilot.interaction.web.model.SignalRequest;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
+import com.lifepilot.interaction.web.sse.SseSessionManager;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.lang.Nullable;
 
 /**
  * Web 通道适配器，桥接 REST 请求与 MessageGateway 中间件管道。
@@ -49,12 +54,15 @@ public class WebChannelAdapter extends AbstractChannelAdapter {
     private static final String DEFAULT_WEB_USER = "web-user";
 
     private final AttachmentRepository attachmentRepository;
+    @Nullable private final SseSessionManager sseSessionManager;
 
     public WebChannelAdapter(MessageGateway gateway,
                              GatewayProperties properties,
-                             AttachmentRepository attachmentRepository) {
+                             AttachmentRepository attachmentRepository,
+                             @Nullable SseSessionManager sseSessionManager) {
         super(gateway, properties);
         this.attachmentRepository = attachmentRepository;
+        this.sseSessionManager = sseSessionManager;
     }
 
     @Override
@@ -86,6 +94,30 @@ public class WebChannelAdapter extends AbstractChannelAdapter {
 
     @Override
     protected void doSendResponse(String userId, GatewayResponse response) {
+        // 检查 metadata 中是否包含 notificationType（主动推理通知）
+        var metadata = response.metadata();
+        if (metadata != null && metadata.containsKey("notificationType") && sseSessionManager != null) {
+            try {
+                var typeStr = String.valueOf(metadata.get("notificationType"));
+                var type = NotificationType.valueOf(typeStr);
+                var urgencyStr = metadata.containsKey("urgency")
+                        ? String.valueOf(metadata.get("urgency")) : "LOW";
+                var urgency = Urgency.valueOf(urgencyStr);
+                var notificationId = metadata.containsKey("notificationId")
+                        ? String.valueOf(metadata.get("notificationId")) : UUID.randomUUID().toString();
+                var content = response.content() != null ? response.content().toPlainText() : "";
+
+                var event = new NotificationSseEvent(
+                        notificationId, type, urgency, content,
+                        java.time.Instant.now().toString());
+                sseSessionManager.broadcastNotification(event);
+                log.debug("通知 SSE 广播完成: type={}, urgency={}", type, urgency);
+                return;
+            } catch (Exception e) {
+                log.warn("通知 SSE 广播失败，降级为默认处理: userId={}, error={}", userId, e.getMessage());
+            }
+        }
+
         // Web 通道的响应通过 Controller 直接返回，此方法用于异步场景
         log.debug("Web 通道异步响应: userId={}, statusCode={}", userId, response.statusCode());
     }

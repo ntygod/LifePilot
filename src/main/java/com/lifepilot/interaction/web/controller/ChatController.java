@@ -9,6 +9,7 @@ import com.lifepilot.interaction.web.repository.MessageFeedbackRepository;
 import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
+import com.lifepilot.agent.proactive.config.ProactiveConfigProperties;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -69,18 +70,21 @@ public class ChatController {
     private final MessageFeedbackRepository feedbackRepository;
     private final AttachmentRepository attachmentRepository;
     private final KnowledgeBaseProperties knowledgeBaseProperties;
+    private final ProactiveConfigProperties proactiveConfig;
 
     public ChatController(WebChannelAdapter adapter, SseSessionManager sseManager,
                           com.lifepilot.interaction.web.service.ChatSessionService sessionService,
                           MessageFeedbackRepository feedbackRepository,
                           AttachmentRepository attachmentRepository,
-                          KnowledgeBaseProperties knowledgeBaseProperties) {
+                          KnowledgeBaseProperties knowledgeBaseProperties,
+                          ProactiveConfigProperties proactiveConfig) {
         this.adapter = adapter;
         this.sseManager = sseManager;
         this.sessionService = sessionService;
         this.feedbackRepository = feedbackRepository;
         this.attachmentRepository = attachmentRepository;
         this.knowledgeBaseProperties = knowledgeBaseProperties;
+        this.proactiveConfig = proactiveConfig;
     }
 
     /**
@@ -420,6 +424,22 @@ public class ChatController {
             return ResponseEntity.internalServerError().body(
                     new ErrorResponse(500, "分叉会话失败: " + e.getMessage(), Instant.now()));
         }
+    }
+
+    /**
+     * SSE 持久通知流端点 — 客户端订阅后接收主动推理引擎推送的通知事件。
+     *
+     * <p>创建持久 SseEmitter，timeout 从 {@link ProactiveConfigProperties#getNotificationSseTimeoutMs()} 读取，
+     * 注册到 {@link SseSessionManager}，streamId 使用 notification-{uuid} 前缀。</p>
+     *
+     * @return 持久通知 SseEmitter
+     */
+    @GetMapping("/notifications/stream")
+    public SseEmitter notificationStream() {
+        var streamId = "notification-" + UUID.randomUUID();
+        long timeout = proactiveConfig.getNotificationSseTimeoutMs();
+        log.debug("创建通知 SSE 流: streamId={}, timeout={}ms", streamId, timeout);
+        return sseManager.createNotificationEmitter(streamId, timeout);
     }
 
     /**

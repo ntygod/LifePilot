@@ -61,4 +61,7 @@ public final class SseEventType {
     
     /** 任务完成事件 */
     public static final String TASK_COMPLETE = "task-complete";
+
+    /** 主动通知事件 */
+    public static final String NOTIFICATION = "notification";
 }
