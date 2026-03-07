@@ -215,7 +215,7 @@ lifepilot:
       timeout-seconds: 30
     validation:
       max-name-length: 128
-      max-system-prompt-length: 10000
+      max-instructions-length: 10000
       auto-generated-max-tokens: 10000
       auto-generated-max-steps: 15
       auto-generated-max-timeout: 180
