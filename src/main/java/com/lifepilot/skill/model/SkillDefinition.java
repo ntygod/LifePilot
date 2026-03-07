@@ -6,10 +6,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Skill 定义 — Agent 能力单元的完整蓝图。
+ * Skill 定义 — 程序性知识包的完整蓝图。
  *
  * <p>每个 Skill 通过此 record 描述其 ID、名称、描述、版本、来源、
- * System Prompt、工具白名单、执行策略、记忆访问策略、预算约束和元数据。</p>
+ * 指令（instructions）、建议工具列表（suggestedTools）和元数据。</p>
  *
  * @author zsg
  * @since 2026-07-28
@@ -21,11 +21,8 @@ public record SkillDefinition(
         String description,
         String version,
         SkillSource source,
-        String systemPrompt,
-        List<String> allowedTools,
-        ExecutionStrategy execution,
-        MemoryAccessPolicy memoryAccess,
-        SkillBudget budget,
+        String instructions,
+        List<String> suggestedTools,
         Map<String, String> metadata
 ) {
 
@@ -33,8 +30,8 @@ public record SkillDefinition(
     public SkillDefinition {
         if (id == null || id.isBlank()) throw new IllegalArgumentException("Skill ID 不能为空");
         if (name == null || name.isBlank()) throw new IllegalArgumentException("Skill 名称不能为空");
-        if (systemPrompt == null || systemPrompt.isBlank()) throw new IllegalArgumentException("System Prompt 不能为空");
-        allowedTools = List.copyOf(allowedTools);
+        if (instructions == null || instructions.isBlank()) throw new IllegalArgumentException("Skill 指令不能为空");
+        suggestedTools = List.copyOf(suggestedTools);
         metadata = Map.copyOf(metadata);
     }
 
