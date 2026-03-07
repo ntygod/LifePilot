@@ -2,9 +2,11 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useWorkflowStore } from '@/stores/workflow'
+import { workflowApi } from '@/api/client'
 import Breadcrumb from '@/components/global/Breadcrumb.vue'
 import type { BreadcrumbItem } from '@/components/global/Breadcrumb.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
+import YamlEditor from '@/components/editor/YamlEditor.vue'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -20,6 +22,10 @@ const workflow = computed(() => workflowStore.current)
 const activeTab = ref<'detail' | 'executions'>('detail')
 const triggerLoading = ref(false)
 
+// YAML 编辑器状态
+const yamlDefinition = ref('')
+const yamlLoading = ref(true)
+
 // 面包屑导航
 const breadcrumbItems = computed<BreadcrumbItem[]>(() => [
   { label: '工作流', to: { name: 'workflows' } },
@@ -28,6 +34,14 @@ const breadcrumbItems = computed<BreadcrumbItem[]>(() => [
 
 onMounted(async () => {
   await workflowStore.fetchDetail(workflowId.value)
+  // 加载工作流 YAML 定义
+  try {
+    yamlDefinition.value = await workflowApi.getWorkflowYaml(workflowId.value)
+  } catch {
+    // YAML 加载失败时保持空内容
+  } finally {
+    yamlLoading.value = false
+  }
 })
 
 async function handleToggle() {
@@ -225,6 +239,28 @@ function formatDuration(start?: string, end?: string): string {
                     </div>
                   </div>
                 </div>
+              </CardContent>
+            </Card>
+
+            <!-- YAML 定义 -->
+            <Card>
+              <CardHeader>
+                <div class="flex items-center justify-between">
+                  <CardTitle>YAML 定义</CardTitle>
+                  <Badge variant="outline">v{{ workflow.version }}</Badge>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <Skeleton v-if="yamlLoading" class="h-64 w-full" />
+                <YamlEditor
+                  v-else
+                  v-model="yamlDefinition"
+                  title="工作流 YAML"
+                  :on-save="async (content: string) => {
+                    await workflowApi.updateWorkflowYaml(workflowId, content)
+                    await workflowStore.fetchDetail(workflowId)
+                  }"
+                />
               </CardContent>
             </Card>
           </TabsContent>

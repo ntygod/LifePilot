@@ -1,12 +1,20 @@
 package com.lifepilot.interaction.web.controller;
 
 import com.lifepilot.agent.AgentLoop;
+import com.lifepilot.agent.context.AssembledContext;
+import com.lifepilot.agent.context.ContextAssembler;
+import com.lifepilot.agent.context.TokenBudget;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.agent.model.AgentResponse;
+import com.lifepilot.agent.model.AgentState;
 import com.lifepilot.interaction.model.TokenUsage;
 import com.lifepilot.interaction.web.model.AgentDetail;
 import com.lifepilot.interaction.web.model.AgentSummary;
 import com.lifepilot.interaction.web.model.ChatResponse;
+import com.lifepilot.interaction.web.model.ContextPreviewRequest;
+import com.lifepilot.interaction.web.model.ContextPreviewResponse;
+import com.lifepilot.interaction.web.model.ContextPreviewResponse.SegmentInfo;
+import com.lifepilot.interaction.web.model.ContextPreviewResponse.TokenBudgetInfo;
 import com.lifepilot.interaction.web.model.CreateAgentRequest;
 import com.lifepilot.interaction.web.model.ErrorResponse;
 import com.lifepilot.interaction.web.model.TestChatRequest;
@@ -57,11 +65,16 @@ public class AgentController {
     private final AgentRegistry agentRegistry;
     private final AgentLoop agentLoop;
     private final KnowledgeBaseManager knowledgeBaseManager;
+    private final ContextAssembler contextAssembler;
 
-    public AgentController(AgentRegistry agentRegistry, AgentLoop agentLoop, KnowledgeBaseManager knowledgeBaseManager) {
+    public AgentController(AgentRegistry agentRegistry,
+                           AgentLoop agentLoop,
+                           KnowledgeBaseManager knowledgeBaseManager,
+                           ContextAssembler contextAssembler) {
         this.agentRegistry = agentRegistry;
         this.agentLoop = agentLoop;
         this.knowledgeBaseManager = knowledgeBaseManager;
+        this.contextAssembler = contextAssembler;
     }
 
     /**
@@ -342,6 +355,86 @@ public class AgentController {
             log.error("Agent 测试对话异常: agentId={}, error={}", id, e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
                     new ErrorResponse(500, "Agent 测试对话失败: " + e.getMessage(), Instant.now()));
+        }
+    }
+
+    /**
+     * 上下文组装预览接口。
+     *
+     * <p>使用指定 Agent 配置和测试消息，调用 ContextAssembler 组装上下文，
+     * 返回各段落内容、Token 预算分配和实际消耗。</p>
+     *
+     * @param id      Agent ID
+     * @param request 预览请求（包含测试消息和可选会话 ID）
+     * @return ContextPreviewResponse 上下文组装结果
+     */
+    @PostMapping("/{id}/context-preview")
+    public ResponseEntity<?> contextPreview(@PathVariable String id,
+                                            @RequestBody ContextPreviewRequest request) {
+        log.info("上下文组装预览请求: agentId={}, messageLength={}", id, request.message().length());
+
+        // 1. 查找 Agent 定义
+        var agentOpt = agentRegistry.find(id);
+        if (agentOpt.isEmpty()) {
+            log.warn("Agent 不存在: id={}", id);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    new ErrorResponse(404, "Agent 不存在: id=" + id, Instant.now()));
+        }
+
+        AgentDefinition agent = agentOpt.get();
+
+        try {
+            // 2. 构造临时 AgentState（UNDERSTANDING 阶段）
+            String sessionId = request.sessionId() != null
+                    ? request.sessionId()
+                    : "preview:" + UUID.randomUUID();
+            var agentRequest = new AgentRequest(
+                    request.message(),
+                    sessionId,
+                    "web-preview",
+                    agent.systemPrompt(),
+                    agent.budget().toAgentBudget(),
+                    null, 0,
+                    agent.preferredProvider(),
+                    agent.allowedTools(),
+                    null
+            );
+            AgentState state = AgentState.init(agentRequest);
+
+            // 3. 调用 ContextAssembler 组装上下文
+            AssembledContext assembled = contextAssembler.assemble(state);
+
+            // 4. 映射为响应 DTO
+            TokenBudget tb = assembled.tokenBudget();
+            var segments = new LinkedHashMap<String, SegmentInfo>();
+            segments.put("systemPrompt", new SegmentInfo(assembled.systemPrompt(), tb.systemPromptUsed()));
+            segments.put("conversationHistory", new SegmentInfo("", tb.historyUsed()));
+            segments.put("memoryRetrieval", new SegmentInfo(
+                    String.join("\n", assembled.retrievedMemories()), tb.memoryUsed()));
+            segments.put("toolResults", new SegmentInfo("", tb.toolResultUsed()));
+
+            var tokenBudgetInfo = new TokenBudgetInfo(
+                    tb.systemPromptBudget(), tb.historyBudget(), tb.memoryBudget(),
+                    tb.toolSchemaBudget(), tb.toolResultBudget(), tb.reservedBuffer(),
+                    tb.systemPromptUsed(), tb.historyUsed(), tb.memoryUsed(),
+                    tb.toolSchemaUsed(), tb.toolResultUsed()
+            );
+
+            var response = new ContextPreviewResponse(
+                    segments, tokenBudgetInfo,
+                    assembled.totalTokens(), tb.totalBudget(),
+                    assembled.degraded()
+            );
+
+            log.info("上下文组装预览完成: agentId={}, totalTokens={}, degraded={}",
+                    id, assembled.totalTokens(), assembled.degraded());
+
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            log.error("上下文组装预览异常: agentId={}, error={}", id, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
+                    new ErrorResponse(500, "上下文组装预览失败: " + e.getMessage(), Instant.now()));
         }
     }
 

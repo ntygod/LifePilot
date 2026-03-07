@@ -10,6 +10,8 @@ import type { AgentDetail, Message } from '@/types'
 import StreamingText from '@/components/chat/StreamingText.vue'
 import Breadcrumb from '@/components/global/Breadcrumb.vue'
 import type { BreadcrumbItem } from '@/components/global/Breadcrumb.vue'
+import MarkdownEditor from '@/components/editor/MarkdownEditor.vue'
+import ContextPreview from '@/components/agent/ContextPreview.vue'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -19,6 +21,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Slider } from '@/components/ui/slider'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
@@ -41,6 +44,7 @@ const breadcrumbItems = computed<BreadcrumbItem[]>(() => [
   { label: agent.value?.name ?? '...' }
 ])
 
+// ========== 基本信息编辑 ==========
 const editingBasic = ref(false)
 const basicInfo = ref({ name: '', description: '', tags: [] as string[] })
 const systemPrompt = ref('')
@@ -55,6 +59,17 @@ const testMessages = ref<Message[]>([])
 const testInput = ref('')
 const testLoading = ref(false)
 
+// ========== Agent Markdown 编辑状态 ==========
+const agentMarkdownContent = ref('')
+const agentMarkdownLoading = ref(true)
+// 判断当前 Agent 是否支持 Markdown 编辑
+const agentMarkdownAvailable = computed(() =>
+  agent.value?.source === 'MarkdownDefined' || agent.value?.source === 'Builtin'
+)
+
+// ========== Tab 切换 ==========
+const activeTab = ref('config')
+
 onMounted(async () => {
   await Promise.all([
     agentStore.fetchAgentDetail(agentId.value),
@@ -62,7 +77,18 @@ onMounted(async () => {
     toolStore.fetchTools(),
     settingsStore.fetchProviders()
   ])
-  if (agent.value) initFormData()
+  if (agent.value) {
+    initFormData()
+    // 加载 Agent Markdown 定义（如果可用）
+    if (agentMarkdownAvailable.value) {
+      try {
+        agentMarkdownContent.value = await agentApi.getAgentMarkdown(agentId.value)
+      } catch {
+        // Markdown 不可用时回退到 System Prompt 模式
+      }
+      agentMarkdownLoading.value = false
+    }
+  }
 })
 
 watch(() => agent.value, (newAgent) => { if (newAgent) initFormData() })
@@ -201,6 +227,10 @@ function toggleTool(toolId: string) {
             <Badge :variant="agent?.enabled ? 'default' : 'secondary'">
               {{ agent?.enabled ? '已启用' : '已禁用' }}
             </Badge>
+            <!-- 来源类型 Badge -->
+            <Badge v-if="agent?.source" variant="outline">
+              {{ agent.source === 'MarkdownDefined' ? 'Markdown' : 'Builtin' }}
+            </Badge>
           </div>
           <Button variant="outline" @click="toggleAgent">
             {{ agent?.enabled ? '禁用' : '启用' }}
@@ -212,155 +242,191 @@ function toggleTool(toolId: string) {
     <!-- 内容区域 -->
     <div class="flex-1 overflow-y-auto">
       <div v-if="!agent" class="max-w-[1200px] mx-auto px-md md:px-lg py-lg text-sm text-muted-foreground">加载中...</div>
-      <div v-else class="max-w-[1200px] mx-auto px-md md:px-lg py-lg space-y-6">
-        <!-- 基本信息 -->
-        <Card>
-          <CardHeader>
-            <div class="flex items-center justify-between">
-              <CardTitle>基本信息</CardTitle>
-              <Button v-if="!editingBasic" variant="ghost" size="sm" @click="editingBasic = true">编辑</Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div v-if="editingBasic" class="space-y-4">
-              <div class="space-y-2">
-                <Label>名称</Label>
-                <Input v-model="basicInfo.name" />
-              </div>
-              <div class="space-y-2">
-                <Label>描述</Label>
-                <Textarea v-model="basicInfo.description" :rows="3" />
-              </div>
-              <div class="flex justify-end gap-2">
-                <Button variant="outline" @click="editingBasic = false">取消</Button>
-                <Button @click="saveBasicInfo">保存</Button>
-              </div>
-            </div>
-            <div v-else class="space-y-2 text-sm">
-              <div>
-                <span class="text-muted-foreground">描述：</span>
-                <p class="mt-1">{{ agent.description || '无描述' }}</p>
-              </div>
-              <div v-if="agent.tags && agent.tags.length > 0">
-                <span class="text-muted-foreground">标签：</span>
-                <div class="flex flex-wrap gap-1 mt-1">
-                  <Badge v-for="tag in agent.tags" :key="tag" variant="secondary">{{ tag }}</Badge>
+      <div v-else class="max-w-[1200px] mx-auto px-md md:px-lg py-lg">
+        <!-- Tab 切换：配置 / 上下文预览 -->
+        <Tabs v-model="activeTab">
+          <TabsList class="mb-md">
+            <TabsTrigger value="config">配置</TabsTrigger>
+            <TabsTrigger value="context-preview">上下文预览</TabsTrigger>
+          </TabsList>
+
+          <!-- 配置 Tab -->
+          <TabsContent value="config" class="space-y-6">
+            <!-- 基本信息 -->
+            <Card>
+              <CardHeader>
+                <div class="flex items-center justify-between">
+                  <CardTitle>基本信息</CardTitle>
+                  <Button v-if="!editingBasic" variant="ghost" size="sm" @click="editingBasic = true">编辑</Button>
                 </div>
-              </div>
-              <div><span class="text-muted-foreground">创建时间：</span><span>{{ formatDate(agent.createdAt) }}</span></div>
-              <div><span class="text-muted-foreground">更新时间：</span><span>{{ formatDate(agent.updatedAt) }}</span></div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <!-- System Prompt -->
-        <Card>
-          <CardHeader>
-            <div class="flex items-center justify-between">
-              <CardTitle>System Prompt</CardTitle>
-              <div class="flex items-center gap-2">
-                <span v-if="systemPromptDirty" class="text-xs text-muted-foreground">未保存</span>
-                <Button v-if="systemPromptDirty" size="sm" :disabled="systemPromptSaving" @click="saveSystemPrompt">
-                  {{ systemPromptSaving ? '保存中...' : '保存' }}
-                </Button>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <Textarea v-model="systemPrompt" :rows="10" placeholder="输入 System Prompt..." class="font-mono text-sm" />
-          </CardContent>
-        </Card>
-
-        <!-- 模型配置 -->
-        <Card>
-          <CardHeader><CardTitle>模型配置</CardTitle></CardHeader>
-          <CardContent>
-            <div class="grid grid-cols-2 gap-4">
-              <div class="space-y-2">
-                <Label>模型</Label>
-                <Select v-model="modelConfig.modelId" @update:model-value="saveModelConfig">
-                  <SelectTrigger><SelectValue placeholder="选择模型" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem v-for="model in availableModels" :key="model.id" :value="model.id">{{ model.name }}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div class="space-y-2">
-                <Label>温度: {{ modelConfig.temperature }}</Label>
-                <Slider :model-value="[modelConfig.temperature]" :min="0" :max="2" :step="0.1" @update:model-value="(v: number[] | undefined) => { if (v) { modelConfig.temperature = v[0]; saveModelConfig() } }" />
-              </div>
-              <div class="space-y-2">
-                <Label>最大 Tokens</Label>
-                <Input v-model.number="modelConfig.maxTokens" type="number" :min="1" @change="saveModelConfig" />
-              </div>
-              <div class="space-y-2">
-                <Label>Top-P: {{ modelConfig.topP }}</Label>
-                <Slider :model-value="[modelConfig.topP]" :min="0" :max="1" :step="0.01" @update:model-value="(v: number[] | undefined) => { if (v) { modelConfig.topP = v[0]; saveModelConfig() } }" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <!-- 关联知识库 -->
-        <Card>
-          <CardHeader>
-            <div class="flex items-center justify-between">
-              <CardTitle>关联知识库 ({{ selectedKbs.length }})</CardTitle>
-              <Button variant="outline" size="sm" @click="showKbDialog = true">管理</Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div v-if="selectedKbs.length === 0" class="text-sm text-muted-foreground">未关联知识库</div>
-            <div v-else class="space-y-2">
-              <div v-for="kb in selectedKbs" :key="kb.id" class="flex items-center justify-between p-3 rounded-md bg-muted">
-                <div>
-                  <div class="font-medium text-foreground">{{ kb.name }}</div>
-                  <div class="text-xs text-muted-foreground">Top-K: {{ kb.topK || 5 }}, 最大上下文: {{ kb.maxContextTokens || 2000 }} tokens</div>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <!-- 工具开关 -->
-        <Card>
-          <CardHeader>
-            <div class="flex items-center justify-between">
-              <CardTitle>工具能力 ({{ enabledTools.length }})</CardTitle>
-              <Button variant="outline" size="sm" @click="showToolsDialog = true">管理</Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div v-if="enabledTools.length === 0" class="text-sm text-muted-foreground">未启用工具</div>
-            <div v-else class="space-y-2">
-              <div v-for="toolId in enabledTools" :key="toolId" class="p-3 rounded-md bg-muted">
-                <div class="font-medium text-foreground">{{ toolId }}</div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <!-- 测试对话区 -->
-        <Card>
-          <CardHeader><CardTitle>测试对话</CardTitle></CardHeader>
-          <CardContent class="space-y-4">
-            <div class="h-64 overflow-y-auto border border-border rounded-md p-4 bg-muted/50">
-              <div v-if="testMessages.length === 0" class="text-sm text-muted-foreground text-center py-8">开始与 Agent 对话...</div>
-              <div v-else class="space-y-4">
-                <div v-for="msg in testMessages" :key="msg.id" class="flex" :class="msg.role === 'user' ? 'justify-end' : 'justify-start'">
-                  <div class="max-w-[80%] rounded-lg p-3" :class="msg.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-background border border-border'">
-                    <StreamingText :content="msg.content" />
+              </CardHeader>
+              <CardContent>
+                <div v-if="editingBasic" class="space-y-4">
+                  <div class="space-y-2">
+                    <Label>名称</Label>
+                    <Input v-model="basicInfo.name" />
+                  </div>
+                  <div class="space-y-2">
+                    <Label>描述</Label>
+                    <Textarea v-model="basicInfo.description" :rows="3" />
+                  </div>
+                  <div class="flex justify-end gap-2">
+                    <Button variant="outline" @click="editingBasic = false">取消</Button>
+                    <Button @click="saveBasicInfo">保存</Button>
                   </div>
                 </div>
-              </div>
-            </div>
-            <div class="flex gap-2">
-              <Input v-model="testInput" placeholder="输入消息..." class="flex-1" @keydown.enter="sendTestMessage" />
-              <Button :disabled="!testInput.trim() || testLoading" @click="sendTestMessage">{{ testLoading ? '发送中...' : '发送' }}</Button>
-            </div>
-          </CardContent>
-        </Card>
+                <div v-else class="space-y-2 text-sm">
+                  <div>
+                    <span class="text-muted-foreground">描述：</span>
+                    <p class="mt-1">{{ agent.description || '无描述' }}</p>
+                  </div>
+                  <div v-if="agent.tags && agent.tags.length > 0">
+                    <span class="text-muted-foreground">标签：</span>
+                    <div class="flex flex-wrap gap-1 mt-1">
+                      <Badge v-for="tag in agent.tags" :key="tag" variant="secondary">{{ tag }}</Badge>
+                    </div>
+                  </div>
+                  <div><span class="text-muted-foreground">创建时间：</span><span>{{ formatDate(agent.createdAt) }}</span></div>
+                  <div><span class="text-muted-foreground">更新时间：</span><span>{{ formatDate(agent.updatedAt) }}</span></div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <!-- System Prompt / Agent 定义 — 条件渲染 -->
+            <Card>
+              <CardHeader>
+                <div class="flex items-center justify-between">
+                  <CardTitle>{{ agentMarkdownAvailable ? 'Agent 定义' : 'System Prompt' }}</CardTitle>
+                  <!-- 仅非 Markdown 模式展示保存按钮 -->
+                  <div v-if="!agentMarkdownAvailable" class="flex items-center gap-2">
+                    <span v-if="systemPromptDirty" class="text-xs text-muted-foreground">未保存</span>
+                    <Button v-if="systemPromptDirty" size="sm" :disabled="systemPromptSaving" @click="saveSystemPrompt">
+                      {{ systemPromptSaving ? '保存中...' : '保存' }}
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <!-- MarkdownDefined / Builtin Agent：使用 MarkdownEditor -->
+                <template v-if="agentMarkdownAvailable">
+                  <Skeleton v-if="agentMarkdownLoading" class="h-64 w-full" />
+                  <MarkdownEditor
+                    v-else
+                    v-model="agentMarkdownContent"
+                    :readonly="agent?.source === 'Builtin'"
+                    title="Agent 定义"
+                    :on-save="async (content: string) => {
+                      await agentApi.updateAgentMarkdown(agentId, content)
+                      await agentStore.fetchAgentDetail(agentId)
+                    }"
+                  />
+                </template>
+                <!-- 其他 Agent：保留原有 Textarea -->
+                <template v-else>
+                  <Textarea v-model="systemPrompt" :rows="10" placeholder="输入 System Prompt..." class="font-mono text-sm" />
+                </template>
+              </CardContent>
+            </Card>
+
+            <!-- 模型配置 -->
+            <Card>
+              <CardHeader><CardTitle>模型配置</CardTitle></CardHeader>
+              <CardContent>
+                <div class="grid grid-cols-2 gap-4">
+                  <div class="space-y-2">
+                    <Label>模型</Label>
+                    <Select v-model="modelConfig.modelId" @update:model-value="saveModelConfig">
+                      <SelectTrigger><SelectValue placeholder="选择模型" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem v-for="model in availableModels" :key="model.id" :value="model.id">{{ model.name }}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div class="space-y-2">
+                    <Label>温度: {{ modelConfig.temperature }}</Label>
+                    <Slider :model-value="[modelConfig.temperature]" :min="0" :max="2" :step="0.1" @update:model-value="(v: number[] | undefined) => { if (v) { modelConfig.temperature = v[0]; saveModelConfig() } }" />
+                  </div>
+                  <div class="space-y-2">
+                    <Label>最大 Tokens</Label>
+                    <Input v-model.number="modelConfig.maxTokens" type="number" :min="1" @change="saveModelConfig" />
+                  </div>
+                  <div class="space-y-2">
+                    <Label>Top-P: {{ modelConfig.topP }}</Label>
+                    <Slider :model-value="[modelConfig.topP]" :min="0" :max="1" :step="0.01" @update:model-value="(v: number[] | undefined) => { if (v) { modelConfig.topP = v[0]; saveModelConfig() } }" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <!-- 关联知识库 -->
+            <Card>
+              <CardHeader>
+                <div class="flex items-center justify-between">
+                  <CardTitle>关联知识库 ({{ selectedKbs.length }})</CardTitle>
+                  <Button variant="outline" size="sm" @click="showKbDialog = true">管理</Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div v-if="selectedKbs.length === 0" class="text-sm text-muted-foreground">未关联知识库</div>
+                <div v-else class="space-y-2">
+                  <div v-for="kb in selectedKbs" :key="kb.id" class="flex items-center justify-between p-3 rounded-md bg-muted">
+                    <div>
+                      <div class="font-medium text-foreground">{{ kb.name }}</div>
+                      <div class="text-xs text-muted-foreground">Top-K: {{ kb.topK || 5 }}, 最大上下文: {{ kb.maxContextTokens || 2000 }} tokens</div>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <!-- 工具开关 -->
+            <Card>
+              <CardHeader>
+                <div class="flex items-center justify-between">
+                  <CardTitle>工具能力 ({{ enabledTools.length }})</CardTitle>
+                  <Button variant="outline" size="sm" @click="showToolsDialog = true">管理</Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div v-if="enabledTools.length === 0" class="text-sm text-muted-foreground">未启用工具</div>
+                <div v-else class="space-y-2">
+                  <div v-for="toolId in enabledTools" :key="toolId" class="p-3 rounded-md bg-muted">
+                    <div class="font-medium text-foreground">{{ toolId }}</div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <!-- 测试对话区 -->
+            <Card>
+              <CardHeader><CardTitle>测试对话</CardTitle></CardHeader>
+              <CardContent class="space-y-4">
+                <div class="h-64 overflow-y-auto border border-border rounded-md p-4 bg-muted/50">
+                  <div v-if="testMessages.length === 0" class="text-sm text-muted-foreground text-center py-8">开始与 Agent 对话...</div>
+                  <div v-else class="space-y-4">
+                    <div v-for="msg in testMessages" :key="msg.id" class="flex" :class="msg.role === 'user' ? 'justify-end' : 'justify-start'">
+                      <div class="max-w-[80%] rounded-lg p-3" :class="msg.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-background border border-border'">
+                        <StreamingText :content="msg.content" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="flex gap-2">
+                  <Input v-model="testInput" placeholder="输入消息..." class="flex-1" @keydown.enter="sendTestMessage" />
+                  <Button :disabled="!testInput.trim() || testLoading" @click="sendTestMessage">{{ testLoading ? '发送中...' : '发送' }}</Button>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <!-- 上下文预览 Tab -->
+          <TabsContent value="context-preview">
+            <ContextPreview :agent-id="agentId" />
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
+
     <!-- 知识库管理对话框 -->
     <Dialog v-model:open="showKbDialog">
       <DialogContent class="max-w-[672px] max-h-[80vh] overflow-y-auto">

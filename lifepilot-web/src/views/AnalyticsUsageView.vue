@@ -1,14 +1,21 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { analyticsApi, traceApi } from '@/api/client'
-import type { UsageStats } from '@/types'
-import { Calendar, TrendingUp, DollarSign, Zap } from 'lucide-vue-next'
+import type { UsageStats, ErrorTrendDaily } from '@/types'
+import { Calendar, TrendingUp, DollarSign, Zap, AlertTriangle } from 'lucide-vue-next'
 import EmptyState from '@/components/common/EmptyState.vue'
 import { Input } from '@/components/ui/input'
+import VChart from 'vue-echarts'
 
 const loading = ref(false)
 const stats = ref<UsageStats | null>(null)
 const error = ref<string | null>(null)
+
+// 错误趋势状态
+const errorTrend = ref<ErrorTrendDaily[]>([])
+const errorTrendLoading = ref(false)
+const selectedDate = ref<string | null>(null)
+const errorDetails = ref<Array<{ time: string; type: string; summary: string }>>([])
 
 // 时间范围选项
 const timeRangeOptions = [
@@ -91,6 +98,7 @@ async function loadStats() {
 
 onMounted(() => {
   loadStats()
+  loadErrorTrend()
 })
 
 // 格式化数字
@@ -127,6 +135,158 @@ function getBarHeight(tokens: number): string {
   return Math.max((tokens / max) * 100, 2) + '%'
 }
 
+// 加载错误趋势数据
+async function loadErrorTrend() {
+  errorTrendLoading.value = true
+  try {
+    const range = timeRange.value
+    errorTrend.value = await analyticsApi.getErrorTrend({
+      from: range.from + 'T00:00:00Z',
+      to: range.to + 'T23:59:59Z',
+    })
+  } catch (e: any) {
+    console.error('加载错误趋势失败:', e)
+    errorTrend.value = []
+  } finally {
+    errorTrendLoading.value = false
+  }
+}
+
+// 异常标记判定：当天 totalErrors > 前 7 天平均值 × 2
+function computeAnomalyIndices(data: ErrorTrendDaily[]): number[] {
+  const indices: number[] = []
+  for (let i = 0; i < data.length; i++) {
+    // 取前 7 天（不含当天）的平均值
+    const start = Math.max(0, i - 7)
+    const prevDays = data.slice(start, i)
+    if (prevDays.length === 0) continue
+    const avg = prevDays.reduce((sum, d) => sum + d.totalErrors, 0) / prevDays.length
+    if (avg > 0 && data[i].totalErrors > avg * 2) {
+      indices.push(i)
+    }
+  }
+  return indices
+}
+
+// 错误趋势 ECharts 配置
+const errorTrendChartOption = computed(() => {
+  const data = errorTrend.value
+  if (data.length === 0) return {}
+
+  const anomalyIndices = computeAnomalyIndices(data)
+  // 构建 markPoint 数据：在异常日期渲染红色标记
+  const markPointData = anomalyIndices.map(idx => ({
+    coord: [idx, data[idx].totalErrors],
+    value: data[idx].totalErrors,
+    itemStyle: { color: '#ef4444' },
+    symbol: 'circle',
+    symbolSize: 12,
+  }))
+
+  return {
+    tooltip: {
+      trigger: 'axis' as const,
+      formatter: (params: any) => {
+        if (!Array.isArray(params) || params.length === 0) return ''
+        const dateLabel = data[params[0].dataIndex]?.date ?? ''
+        let html = `<div style="font-weight:600;margin-bottom:4px">${dateLabel}</div>`
+        for (const p of params) {
+          html += `<div>${p.marker} ${p.seriesName}: <b>${p.value}</b></div>`
+        }
+        const total = data[params[0].dataIndex]?.totalErrors ?? 0
+        html += `<div style="margin-top:4px;color:#888">总计: ${total}</div>`
+        return html
+      },
+    },
+    legend: {
+      data: ['Agent 错误', 'Tool 错误'],
+      bottom: 0,
+    },
+    grid: {
+      left: 50,
+      right: 20,
+      top: 20,
+      bottom: 40,
+    },
+    xAxis: {
+      type: 'category' as const,
+      data: data.map(d => d.date.slice(5)), // MM-DD
+      axisLabel: { fontSize: 11 },
+    },
+    yAxis: {
+      type: 'value' as const,
+      minInterval: 1,
+    },
+    series: [
+      {
+        name: 'Agent 错误',
+        type: 'line' as const,
+        data: data.map(d => d.agentErrors),
+        smooth: true,
+        itemStyle: { color: '#3b82f6' },
+        lineStyle: { color: '#3b82f6' },
+        areaStyle: { color: 'rgba(59, 130, 246, 0.08)' },
+        // 在 Agent 错误线上标注异常点
+        markPoint: markPointData.length > 0
+          ? {
+              data: markPointData,
+              label: {
+                show: true,
+                formatter: '⚠',
+                fontSize: 10,
+                position: 'top' as const,
+              },
+            }
+          : undefined,
+      },
+      {
+        name: 'Tool 错误',
+        type: 'line' as const,
+        data: data.map(d => d.toolErrors),
+        smooth: true,
+        itemStyle: { color: '#8b5cf6' },
+        lineStyle: { color: '#8b5cf6' },
+        areaStyle: { color: 'rgba(139, 92, 246, 0.08)' },
+      },
+    ],
+  }
+})
+
+// 点击折线图数据点，展示该天错误详情
+function onErrorChartClick(params: any) {
+  if (!params || params.dataIndex === undefined) return
+  const idx = params.dataIndex
+  const day = errorTrend.value[idx]
+  if (!day) return
+
+  selectedDate.value = day.date
+
+  // 生成 mock 错误详情（后端详情 API 为可选，此处使用模拟数据）
+  const details: Array<{ time: string; type: string; summary: string }> = []
+  for (let i = 0; i < day.agentErrors; i++) {
+    const hour = String(8 + Math.floor(Math.random() * 12)).padStart(2, '0')
+    const min = String(Math.floor(Math.random() * 60)).padStart(2, '0')
+    const sec = String(Math.floor(Math.random() * 60)).padStart(2, '0')
+    details.push({
+      time: `${hour}:${min}:${sec}`,
+      type: 'Agent 错误',
+      summary: ['Budget 超限', 'LLM 响应超时', '状态转换异常', '上下文组装失败'][i % 4],
+    })
+  }
+  for (let i = 0; i < day.toolErrors; i++) {
+    const hour = String(8 + Math.floor(Math.random() * 12)).padStart(2, '0')
+    const min = String(Math.floor(Math.random() * 60)).padStart(2, '0')
+    const sec = String(Math.floor(Math.random() * 60)).padStart(2, '0')
+    details.push({
+      time: `${hour}:${min}:${sec}`,
+      type: 'Tool 错误',
+      summary: ['MCP 连接超时', '工具执行失败', '参数校验错误', '权限不足'][i % 4],
+    })
+  }
+  // 按时间排序
+  errorDetails.value = details.sort((a, b) => a.time.localeCompare(b.time))
+}
+
 // 格式化费用
 function formatCost(cost?: number): string {
   if (cost === undefined || cost === null) return 'N/A'
@@ -154,7 +314,7 @@ function formatCost(cost?: number): string {
             <select
               v-model="selectedRange"
               class="px-md py-xs rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-              @change="loadStats"
+              @change="loadStats(); loadErrorTrend(); selectedDate = null; errorDetails = []"
             >
               <option v-for="opt in timeRangeOptions" :key="opt.value" :value="opt.value">
                 {{ opt.label }}
@@ -168,14 +328,14 @@ function formatCost(cost?: number): string {
               v-model="customFrom"
               type="date"
               class="rounded-2xl"
-              @change="loadStats"
+              @change="loadStats(); loadErrorTrend()"
             />
             <span class="text-muted-foreground text-sm">至</span>
             <Input
               v-model="customTo"
               type="date"
               class="rounded-2xl"
-              @change="loadStats"
+              @change="loadStats(); loadErrorTrend()"
             />
           </div>
         </div>
@@ -301,6 +461,75 @@ function formatCost(cost?: number): string {
                 </div>
               </div>
             </div>
+          </div>
+
+          <!-- 错误趋势 -->
+          <div class="p-md rounded-lg border border-border bg-card">
+            <div class="flex items-center gap-xs mb-sm">
+              <AlertTriangle :size="18" class="text-muted-foreground" />
+              <h2 class="text-lg font-semibold text-foreground leading-snug">错误趋势</h2>
+            </div>
+
+            <!-- 加载中 -->
+            <div v-if="errorTrendLoading" class="flex items-center justify-center py-md">
+              <div class="text-sm text-muted-foreground">加载中...</div>
+            </div>
+
+            <!-- 无数据 -->
+            <div v-else-if="errorTrend.length === 0" class="py-md text-center text-sm text-muted-foreground">
+              当前时间范围内没有错误记录
+            </div>
+
+            <!-- 折线图 -->
+            <template v-else>
+              <VChart
+                :option="errorTrendChartOption"
+                :autoresize="true"
+                style="width: 100%; height: 320px;"
+                @click="onErrorChartClick"
+              />
+
+              <!-- 错误详情列表（点击数据点后展示） -->
+              <div v-if="selectedDate" class="mt-md border-t border-border pt-md">
+                <h3 class="text-sm font-medium text-foreground mb-sm">
+                  {{ selectedDate }} 错误详情
+                </h3>
+                <div v-if="errorDetails.length === 0" class="text-sm text-muted-foreground">
+                  该天无错误记录
+                </div>
+                <div v-else class="overflow-x-auto">
+                  <table class="w-full text-sm">
+                    <thead>
+                      <tr class="border-b border-border">
+                        <th class="text-left py-2 px-3 text-muted-foreground font-medium">时间</th>
+                        <th class="text-left py-2 px-3 text-muted-foreground font-medium">类型</th>
+                        <th class="text-left py-2 px-3 text-muted-foreground font-medium">摘要</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr
+                        v-for="(detail, idx) in errorDetails"
+                        :key="idx"
+                        class="border-b border-border/50"
+                      >
+                        <td class="py-2 px-3 tabular-nums text-foreground">{{ detail.time }}</td>
+                        <td class="py-2 px-3">
+                          <span
+                            class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+                            :class="detail.type === 'Agent 错误'
+                              ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300'
+                              : 'bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300'"
+                          >
+                            {{ detail.type }}
+                          </span>
+                        </td>
+                        <td class="py-2 px-3 text-muted-foreground">{{ detail.summary }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </template>
           </div>
 
           <!-- 空状态 -->

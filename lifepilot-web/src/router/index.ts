@@ -118,6 +118,15 @@ const router = createRouter({
     },
 
     /**
+     * 依赖关系图
+     */
+    {
+      path: '/dependencies',
+      name: 'dependencies',
+      component: () => import('@/views/DependencyView.vue')
+    },
+
+    /**
      * Analytics / 用量
      */
     {
@@ -129,6 +138,11 @@ const router = createRouter({
       path: '/analytics/agents',
       name: 'analyticsAgents',
       component: () => import('@/views/AnalyticsAgentsView.vue')
+    },
+    {
+      path: '/analytics/tools',
+      name: 'analyticsTools',
+      component: () => import('@/views/AnalyticsToolsView.vue')
     },
 
     /**

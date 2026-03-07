@@ -3,6 +3,10 @@ import { createPinia } from 'pinia'
 import App from './App.vue'
 import router from './router'
 import './assets/styles/main.css'
+// Monaco Editor Worker 环境初始化（必须在编辑器组件加载前执行）
+import './plugins/monaco'
+// ECharts 按需引入（注册图表类型、组件和渲染器）
+import './plugins/echarts'
 import type { ThemeMode } from '@/composables/useTheme'
 
 // FOUC 防护：在 Vue 挂载前同步应用主题 dark class，避免白屏闪烁

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.interaction.web.model.AgentStats;
 import com.lifepilot.interaction.web.model.KnowledgeBaseStats;
+import com.lifepilot.interaction.web.model.ToolAnalyticsResponse;
 import com.lifepilot.interaction.web.model.UsageStats;
 import com.lifepilot.knowledge.KnowledgeBaseManager;
 import com.lifepilot.knowledge.model.KnowledgeBase;
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -338,6 +340,100 @@ public class AnalyticsController {
         return ResponseEntity.ok(stats);
     }
 
+    // ─── Tool 调用统计 ───
+
+    /**
+     * Tool 调用统计接口。
+     *
+     * <p>查询 trace_steps 表中 step_type='tool_call' 的记录，
+     * 按 toolId 聚合统计调用次数、成功/失败次数、平均耗时，
+     * 并按天分组生成趋势数据。</p>
+     *
+     * @param from 开始时间（ISO 8601，可选，缺失时默认最近 30 天）
+     * @param to   结束时间（ISO 8601，可选，缺失时默认当前时间）
+     * @return Tool 调用统计响应
+     */
+    @GetMapping("/tools")
+    public ResponseEntity<ToolAnalyticsResponse> getToolAnalytics(
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to) {
+        log.debug("查询 Tool 调用统计: from={}, to={}", from, to);
+
+        // 默认时间范围：最近 30 天
+        Instant endTime = (to != null && !to.isBlank()) ? Instant.parse(to) : Instant.now();
+        Instant startTime = (from != null && !from.isBlank()) ? Instant.parse(from) : endTime.minus(30, ChronoUnit.DAYS);
+
+        // 查询所有 tool_call 类型的步骤
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                SELECT ts.detail_json, ts.duration_ms, ts.timestamp
+                FROM trace_steps ts
+                JOIN traces t ON ts.trace_id = t.trace_id
+                WHERE ts.step_type = 'tool_call'
+                  AND t.start_time >= ?
+                  AND t.start_time <= ?
+                """, startTime.toString(), endTime.toString());
+
+        // 按 toolId 聚合统计
+        Map<String, ToolAggregation> toolAggMap = new HashMap<>();
+        // 按天分组聚合
+        Map<String, DailyAggregation> dailyAggMap = new TreeMap<>();
+
+        for (Map<String, Object> row : rows) {
+            String detailJson = (String) row.get("detail_json");
+            long durationMs = row.get("duration_ms") instanceof Number n ? n.longValue() : 0L;
+            String timestamp = (String) row.get("timestamp");
+
+            String toolId = extractToolIdFromJson(detailJson);
+            if (toolId == null || toolId.isBlank()) {
+                continue;
+            }
+            boolean success = extractSuccessFromJson(detailJson);
+
+            // 工具维度聚合
+            toolAggMap.computeIfAbsent(toolId, k -> new ToolAggregation())
+                    .add(success, durationMs);
+
+            // 日期维度聚合（从 timestamp 提取日期部分）
+            String date = extractDate(timestamp);
+            if (date != null) {
+                dailyAggMap.computeIfAbsent(date, k -> new DailyAggregation())
+                        .add(success);
+            }
+        }
+
+        // 构建 toolStats 列表
+        List<ToolAnalyticsResponse.ToolStatItem> toolStats = toolAggMap.entrySet().stream()
+                .map(entry -> {
+                    String toolId = entry.getKey();
+                    ToolAggregation agg = entry.getValue();
+                    return new ToolAnalyticsResponse.ToolStatItem(
+                            toolId,
+                            toolId,
+                            agg.callCount,
+                            agg.successCount,
+                            agg.callCount - agg.successCount,
+                            agg.callCount > 0 ? agg.totalDurationMs / agg.callCount : 0
+                    );
+                })
+                .sorted((a, b) -> Integer.compare(b.callCount(), a.callCount()))
+                .collect(Collectors.toList());
+
+        // 构建 dailyTrend 列表
+        List<ToolAnalyticsResponse.DailyTrend> dailyTrend = dailyAggMap.entrySet().stream()
+                .map(entry -> {
+                    DailyAggregation agg = entry.getValue();
+                    return new ToolAnalyticsResponse.DailyTrend(
+                            entry.getKey(),
+                            agg.callCount,
+                            agg.successCount,
+                            agg.callCount - agg.successCount
+                    );
+                })
+                .collect(Collectors.toList());
+
+        return ResponseEntity.ok(new ToolAnalyticsResponse(toolStats, dailyTrend));
+    }
+
     // ─── 内部辅助方法 ───
 
     /**
@@ -420,6 +516,17 @@ public class AnalyticsController {
     }
 
     /**
+     * 从 ISO 8601 时间戳中提取日期部分（yyyy-MM-dd）。
+     */
+    private String extractDate(String timestamp) {
+        if (timestamp == null || timestamp.length() < 10) {
+            return null;
+        }
+        // ISO 8601 格式：2026-03-15T10:23:45Z 或 2026-03-15T10:23:45.123Z
+        return timestamp.substring(0, 10);
+    }
+
+    /**
      * 从 tool_id 中提取知识库 ID。
      */
     private String extractKbIdFromToolId(String toolId) {
@@ -478,6 +585,38 @@ public class AnalyticsController {
             this.retrievalCount = retrievalCount;
             this.avgRetrievalTime = avgRetrievalTime;
             this.successCount = successCount;
+        }
+    }
+
+    /**
+     * Tool 调用聚合临时类。
+     */
+    private static class ToolAggregation {
+        int callCount;
+        int successCount;
+        long totalDurationMs;
+
+        void add(boolean success, long durationMs) {
+            callCount++;
+            if (success) {
+                successCount++;
+            }
+            totalDurationMs += durationMs;
+        }
+    }
+
+    /**
+     * 每日调用聚合临时类。
+     */
+    private static class DailyAggregation {
+        int callCount;
+        int successCount;
+
+        void add(boolean success) {
+            callCount++;
+            if (success) {
+                successCount++;
+            }
         }
     }
 }

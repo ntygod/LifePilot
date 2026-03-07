@@ -20,7 +20,8 @@ import {
   Plus,
   Pencil,
   Trash2,
-  ShoppingBag
+  ShoppingBag,
+  GitBranch
 } from 'lucide-vue-next'
 
 // motion.div 组件引用，用于模板中的动态组件
@@ -52,7 +53,8 @@ onMounted(() => {
   // 根据当前路由自动展开对应的分组
   if (route.path.startsWith('/agents') || route.path.startsWith('/workflows') || 
       route.path.startsWith('/skills') || route.path.startsWith('/tools') || 
-      route.path.startsWith('/mcp-servers') || route.path.startsWith('/marketplace')) {
+      route.path.startsWith('/mcp-servers') || route.path.startsWith('/marketplace') ||
+      route.path.startsWith('/dependencies')) {
     expandedGroups.value.add('agents')
   }
   if (route.path.startsWith('/analytics')) {
@@ -143,7 +145,8 @@ const navItems = [
       { label: 'Skills', path: '/skills', icon: Puzzle },
       { label: 'Skill 市场', path: '/marketplace', icon: ShoppingBag },
       { label: '工具', path: '/tools', icon: Wrench },
-      { label: 'MCP Servers', path: '/mcp-servers', icon: Server }
+      { label: 'MCP Servers', path: '/mcp-servers', icon: Server },
+      { label: '依赖关系', path: '/dependencies', icon: GitBranch }
     ]
   },
   {
@@ -153,7 +156,8 @@ const navItems = [
     type: 'group',
     children: [
       { label: '用量统计', path: '/analytics/usage', icon: BarChart3 },
-      { label: 'Agent 分析', path: '/analytics/agents', icon: Bot }
+      { label: 'Agent 分析', path: '/analytics/agents', icon: Bot },
+      { label: '工具统计', path: '/analytics/tools', icon: Wrench }
     ]
   },
   {
