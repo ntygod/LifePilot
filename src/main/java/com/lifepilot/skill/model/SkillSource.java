@@ -32,9 +32,9 @@ public sealed interface SkillSource permits SkillSource.Builtin, SkillSource.Use
     record Builtin() implements SkillSource {}
 
     /**
-     * 用户定义来源 — YAML 声明式。
+     * 用户定义来源 — Markdown 声明式。
      *
-     * @param filePath     YAML 文件路径
+     * @param filePath     Skill 文件夹路径
      * @param lastModified 文件最后修改时间，用于热加载变更检测
      */
     record UserDefined(String filePath, @Nullable Instant lastModified) implements SkillSource {

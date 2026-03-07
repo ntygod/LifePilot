@@ -8,9 +8,9 @@ import com.lifepilot.skill.marketplace.install.InstalledSkillRepository;
 import com.lifepilot.skill.marketplace.install.SkillInstaller;
 import com.lifepilot.skill.marketplace.security.SkillSecurityScanner;
 import com.lifepilot.skill.marketplace.version.VersionResolver;
+import com.lifepilot.skill.markdown.MarkdownSkillLoader;
+import com.lifepilot.skill.markdown.MarkdownSkillParser;
 import com.lifepilot.skill.registry.SkillRegistry;
-import com.lifepilot.skill.yaml.YamlSchemaValidator;
-import com.lifepilot.skill.yaml.YamlSkillLoader;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -94,8 +94,8 @@ public class MarketplaceAutoConfiguration {
     public SkillInstaller skillInstaller(IndexManager indexManager,
                                          VersionResolver versionResolver,
                                          SkillSecurityScanner securityScanner,
-                                         YamlSchemaValidator schemaValidator,
-                                         YamlSkillLoader yamlSkillLoader,
+                                         MarkdownSkillParser markdownParser,
+                                         MarkdownSkillLoader markdownSkillLoader,
                                          SkillRegistry skillRegistry,
                                          InstalledSkillRepository installedSkillRepository,
                                          MarketplaceProperties marketplaceProperties,
@@ -103,7 +103,7 @@ public class MarketplaceAutoConfiguration {
                                          RestClient.Builder restClientBuilder) {
         log.info("Skill 市场: 注册 SkillInstaller");
         return new SkillInstaller(indexManager, versionResolver, securityScanner,
-                schemaValidator, yamlSkillLoader, skillRegistry, installedSkillRepository,
+                markdownParser, markdownSkillLoader, skillRegistry, installedSkillRepository,
                 marketplaceProperties, skillConfigProperties, restClientBuilder);
     }
 

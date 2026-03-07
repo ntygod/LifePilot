@@ -1,24 +1,21 @@
 package com.lifepilot.skill.validation;
 
-import com.lifepilot.skill.yaml.YamlSchemaValidator;
+import com.lifepilot.skill.markdown.MarkdownSkillParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
-import org.yaml.snakeyaml.Yaml;
-import org.yaml.snakeyaml.error.YAMLException;
 
 import java.util.List;
 import java.util.Map;
 
 /**
- * 格式验证器 — 校验 YAML 语法和 Schema 结构。
+ * 格式验证器 — 校验 SKILL.md 格式（YAML Frontmatter + Markdown Body）。
  *
- * <p>复用 {@link YamlSchemaValidator} 的校验逻辑，额外处理 YAML 语法解析错误。
- * 验证流程：
+ * <p>委托 {@link MarkdownSkillParser} 完成解析与校验，验证流程：
  * <ol>
  *   <li>校验输入非空</li>
- *   <li>使用 SnakeYAML 解析 YAML 语法</li>
- *   <li>调用 YamlSchemaValidator 校验 Schema 结构</li>
+ *   <li>调用 MarkdownSkillParser.parse() 解析 SKILL.md 内容</li>
+ *   <li>解析成功时将 frontmatterMap 包装为 {@code {"skill": frontmatterMap}} 格式以兼容 SecurityValidator</li>
  * </ol></p>
  *
  * @author zsg
@@ -28,53 +25,40 @@ public class FormatValidator {
 
     private static final Logger log = LoggerFactory.getLogger(FormatValidator.class);
 
-    private final YamlSchemaValidator schemaValidator;
+    private final MarkdownSkillParser markdownParser;
 
-    public FormatValidator(YamlSchemaValidator schemaValidator) {
-        this.schemaValidator = schemaValidator;
+    public FormatValidator(MarkdownSkillParser markdownParser) {
+        this.markdownParser = markdownParser;
     }
 
     /**
-     * 校验 YAML 内容的格式。
+     * 校验 SKILL.md 格式内容。
      *
-     * <p>先校验 YAML 语法正确性，再委托 {@link YamlSchemaValidator} 校验 Schema 结构。</p>
+     * <p>委托 {@link MarkdownSkillParser} 解析 YAML Frontmatter 和 Markdown Body，
+     * 成功时将 frontmatterMap 包装为 {@code {"skill": frontmatterMap}} 以兼容下游 SecurityValidator。</p>
      *
-     * @param yamlContent YAML 字符串
+     * @param markdownContent SKILL.md 完整文本
      * @return 校验结果，包含解析后的 Map（成功时）
      */
-    public FormatValidationResult validate(String yamlContent) {
+    public FormatValidationResult validate(String markdownContent) {
         // 1. 校验输入非空
-        if (yamlContent == null || yamlContent.isBlank()) {
-            log.debug("格式验证失败: YAML 内容为空");
-            return new FormatValidationResult(false, List.of("YAML 内容不能为空"), null);
+        if (markdownContent == null || markdownContent.isBlank()) {
+            log.debug("格式验证失败: SKILL.md 内容为空");
+            return new FormatValidationResult(false, List.of("SKILL.md 内容不能为空"), null);
         }
 
-        // 2. 使用 SnakeYAML 解析 YAML 语法
-        Map<String, Object> parsedMap;
-        try {
-            var yaml = new Yaml();
-            Object parsed = yaml.load(yamlContent);
-            if (!(parsed instanceof Map<?, ?> rawMap)) {
-                log.debug("格式验证失败: YAML 解析结果不是 Map 类型");
-                return new FormatValidationResult(false, List.of("YAML 解析结果必须是 Map 类型"), null);
-            }
-            @SuppressWarnings("unchecked")
-            Map<String, Object> typedMap = (Map<String, Object>) rawMap;
-            parsedMap = typedMap;
-        } catch (YAMLException e) {
-            log.debug("格式验证失败: YAML 语法错误: {}", e.getMessage());
-            return new FormatValidationResult(false, List.of("YAML 语法错误: " + e.getMessage()), null);
+        // 2. 调用 MarkdownSkillParser 解析
+        var parseResult = markdownParser.parse(markdownContent);
+
+        if (!parseResult.success()) {
+            log.debug("格式验证失败: 解析错误数={}", parseResult.errors().size());
+            return new FormatValidationResult(false, parseResult.errors(), null);
         }
 
-        // 3. 调用 YamlSchemaValidator 校验 Schema 结构
-        var schemaResult = schemaValidator.validate(parsedMap);
-        if (!schemaResult.valid()) {
-            log.debug("格式验证失败: Schema 校验错误数={}", schemaResult.errors().size());
-            return new FormatValidationResult(false, schemaResult.errors(), null);
-        }
-
+        // 3. 包装 frontmatterMap 为 {"skill": frontmatterMap} 以兼容 SecurityValidator
+        var wrappedMap = Map.of("skill", (Object) parseResult.frontmatterMap());
         log.debug("格式验证通过");
-        return new FormatValidationResult(true, List.of(), parsedMap);
+        return new FormatValidationResult(true, List.of(), wrappedMap);
     }
 
     /**

@@ -1,6 +1,9 @@
 package com.lifepilot.skill.marketplace.install;
 
 import com.lifepilot.skill.config.SkillConfigProperties;
+import com.lifepilot.skill.markdown.MarkdownSkillLoader;
+import com.lifepilot.skill.markdown.MarkdownSkillParser;
+import com.lifepilot.skill.markdown.MarkdownSkillParser.ParseResult;
 import com.lifepilot.skill.marketplace.config.MarketplaceProperties;
 import com.lifepilot.skill.marketplace.index.IndexManager;
 import com.lifepilot.skill.marketplace.model.*;
@@ -12,8 +15,6 @@ import com.lifepilot.skill.model.ExecutionStrategy;
 import com.lifepilot.skill.model.MemoryAccessPolicy;
 import com.lifepilot.skill.model.SkillBudget;
 import com.lifepilot.skill.registry.SkillRegistry;
-import com.lifepilot.skill.yaml.YamlSchemaValidator;
-import com.lifepilot.skill.yaml.YamlSkillLoader;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -37,7 +38,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /**
- * SkillInstaller 单元测试 — Mock HTTP 下载、SkillRegistry、YamlSkillLoader。
+ * SkillInstaller 单元测试 — Mock HTTP 下载、SkillRegistry、MarkdownSkillLoader。
  *
  * @author zsg
  * @since 2026-03-05
@@ -45,29 +46,14 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class SkillInstallerTest {
 
-    @Mock
-    private IndexManager indexManager;
-
-    @Mock
-    private SkillSecurityScanner securityScanner;
-
-    @Mock
-    private YamlSchemaValidator schemaValidator;
-
-    @Mock
-    private YamlSkillLoader yamlSkillLoader;
-
-    @Mock
-    private SkillRegistry skillRegistry;
-
-    @Mock
-    private InstalledSkillRepository installedSkillRepository;
-
-    @Mock
-    private RestClient restClient;
-
-    @Mock
-    private RestClient.ResponseSpec responseSpec;
+    @Mock private IndexManager indexManager;
+    @Mock private SkillSecurityScanner securityScanner;
+    @Mock private MarkdownSkillParser markdownParser;
+    @Mock private MarkdownSkillLoader markdownSkillLoader;
+    @Mock private SkillRegistry skillRegistry;
+    @Mock private InstalledSkillRepository installedSkillRepository;
+    @Mock private RestClient restClient;
+    @Mock private RestClient.ResponseSpec responseSpec;
 
     @TempDir
     Path tempDir;
@@ -76,23 +62,23 @@ class SkillInstallerTest {
     private VersionResolver versionResolver;
     private SkillInstaller installer;
 
-    /** 示例 YAML 内容。 */
-    private static final String SAMPLE_YAML = """
-            skill:
-              id: test-skill
-              name: 测试 Skill
-              description: 用于测试的 Skill
-              version: "1.0.0"
-              system-prompt: 你是一个测试助手
-              allowed-tools:
-                - todo-add
+    private static final String SAMPLE_MARKDOWN = """
+            ---
+            id: test-skill
+            name: "\u6D4B\u8BD5 Skill"
+            description: "\u7528\u4E8E\u6D4B\u8BD5\u7684 Skill"
+            version: "1.0.0"
+            allowed-tools:
+              - todo-add
+            ---
+
+            \u4F60\u662F\u4E00\u4E2A\u6D4B\u8BD5\u52A9\u624B
             """;
 
     @BeforeEach
     void setUp() {
         marketplaceProperties = new MarketplaceProperties();
         marketplaceProperties.setIndexSources(List.of("https://example.com/index.json"));
-
         versionResolver = new VersionResolver();
 
         var skillConfigProperties = new SkillConfigProperties();
@@ -102,10 +88,18 @@ class SkillInstallerTest {
         when(builder.build()).thenReturn(restClient);
 
         installer = new SkillInstaller(
-                indexManager, versionResolver, securityScanner, schemaValidator,
-                yamlSkillLoader, skillRegistry, installedSkillRepository,
+                indexManager, versionResolver, securityScanner, markdownParser,
+                markdownSkillLoader, skillRegistry, installedSkillRepository,
                 marketplaceProperties, skillConfigProperties, builder
         );
+    }
+
+    private ParseResult successResult() {
+        return new ParseResult(true, sampleDefinition(), List.of(), Map.of("id", "test-skill"));
+    }
+
+    private ParseResult failureResult(String error) {
+        return new ParseResult(false, null, List.of(error), null);
     }
 
     // ── install ─────────────────────────────────────────────
@@ -115,25 +109,21 @@ class SkillInstallerTest {
 
         @Test
         void 安装成功_完整流程() {
-            // 准备
             var pkg = samplePackage("test-pkg", "1.0.0");
             when(indexManager.getPackage("test-pkg")).thenReturn(Optional.of(pkg));
-            mockHttpDownload(SAMPLE_YAML);
-            when(schemaValidator.validate(any())).thenReturn(new YamlSchemaValidator.ValidationResult(true, List.of()));
+            mockHttpDownload(SAMPLE_MARKDOWN);
+            when(markdownParser.parse(SAMPLE_MARKDOWN)).thenReturn(successResult());
             when(securityScanner.scan(any())).thenReturn(new SecurityReport(List.of(), RiskLevel.LOW));
-            when(yamlSkillLoader.loadFile(any(Path.class))).thenReturn(Optional.of(sampleDefinition()));
+            when(markdownSkillLoader.loadFolder(any(Path.class))).thenReturn(Optional.of(sampleDefinition()));
             when(skillRegistry.register(any())).thenReturn(true);
 
-            // 执行
             var result = installer.install("test-pkg", false);
 
-            // 验证
             assertThat(result.success()).isTrue();
             assertThat(result.skillId()).isEqualTo("test-skill");
             assertThat(result.requiresConfirmation()).isFalse();
             verify(installedSkillRepository).save(any(InstalledSkill.class));
-            // 验证 YAML 文件已写入
-            assertThat(Files.exists(tempDir.resolve("test-pkg.yaml"))).isTrue();
+            assertThat(Files.exists(tempDir.resolve("test-pkg").resolve("SKILL.md"))).isTrue();
         }
 
         @Test
@@ -143,7 +133,7 @@ class SkillInstallerTest {
             var result = installer.install("nonexistent", false);
 
             assertThat(result.success()).isFalse();
-            assertThat(result.errorMessage()).contains("未找到包");
+            assertThat(result.errorMessage()).contains("\u672A\u627E\u5230\u5305");
         }
 
         @Test
@@ -156,7 +146,7 @@ class SkillInstallerTest {
             var result = installer.install("test-pkg", false);
 
             assertThat(result.success()).isFalse();
-            assertThat(result.errorMessage()).contains("版本不兼容");
+            assertThat(result.errorMessage()).contains("\u7248\u672C\u4E0D\u517C\u5BB9");
         }
 
         @Test
@@ -168,33 +158,31 @@ class SkillInstallerTest {
             var result = installer.install("test-pkg", false);
 
             assertThat(result.success()).isFalse();
-            assertThat(result.errorMessage()).contains("下载失败");
+            assertThat(result.errorMessage()).contains("\u4E0B\u8F7D\u5931\u8D25");
         }
 
         @Test
-        void Schema校验失败_返回失败() {
+        void SKILL_MD解析校验失败_返回失败() {
             var pkg = samplePackage("test-pkg", "1.0.0");
             when(indexManager.getPackage("test-pkg")).thenReturn(Optional.of(pkg));
-            mockHttpDownload(SAMPLE_YAML);
-            when(schemaValidator.validate(any())).thenReturn(
-                    new YamlSchemaValidator.ValidationResult(false, List.of("缺少必填字段: id")));
+            mockHttpDownload(SAMPLE_MARKDOWN);
+            when(markdownParser.parse(SAMPLE_MARKDOWN)).thenReturn(failureResult("\u7F3A\u5C11\u5FC5\u586B\u5B57\u6BB5: id"));
 
             var result = installer.install("test-pkg", false);
 
             assertThat(result.success()).isFalse();
-            assertThat(result.errorMessage()).contains("Schema 校验失败");
+            assertThat(result.errorMessage()).contains("\u89E3\u6790\u6821\u9A8C\u5931\u8D25");
         }
 
         @Test
         void HIGH风险_未确认_返回需要确认() {
             var pkg = samplePackage("test-pkg", "1.0.0");
             when(indexManager.getPackage("test-pkg")).thenReturn(Optional.of(pkg));
-            mockHttpDownload(SAMPLE_YAML);
-            when(schemaValidator.validate(any())).thenReturn(new YamlSchemaValidator.ValidationResult(true, List.of()));
+            mockHttpDownload(SAMPLE_MARKDOWN);
+            when(markdownParser.parse(SAMPLE_MARKDOWN)).thenReturn(successResult());
             var highRiskReport = new SecurityReport(
-                    List.of(new SecurityFinding(RiskLevel.HIGH, "危险工具", "包含 shell 执行工具")),
-                    RiskLevel.HIGH
-            );
+                    List.of(new SecurityFinding(RiskLevel.HIGH, "\u5371\u9669\u5DE5\u5177", "\u5305\u542B shell \u6267\u884C\u5DE5\u5177")),
+                    RiskLevel.HIGH);
             when(securityScanner.scan(any())).thenReturn(highRiskReport);
 
             var result = installer.install("test-pkg", false);
@@ -208,14 +196,13 @@ class SkillInstallerTest {
         void HIGH风险_已确认_继续安装() {
             var pkg = samplePackage("test-pkg", "1.0.0");
             when(indexManager.getPackage("test-pkg")).thenReturn(Optional.of(pkg));
-            mockHttpDownload(SAMPLE_YAML);
-            when(schemaValidator.validate(any())).thenReturn(new YamlSchemaValidator.ValidationResult(true, List.of()));
+            mockHttpDownload(SAMPLE_MARKDOWN);
+            when(markdownParser.parse(SAMPLE_MARKDOWN)).thenReturn(successResult());
             var highRiskReport = new SecurityReport(
-                    List.of(new SecurityFinding(RiskLevel.HIGH, "危险工具", "包含 shell 执行工具")),
-                    RiskLevel.HIGH
-            );
+                    List.of(new SecurityFinding(RiskLevel.HIGH, "\u5371\u9669\u5DE5\u5177", "\u5305\u542B shell \u6267\u884C\u5DE5\u5177")),
+                    RiskLevel.HIGH);
             when(securityScanner.scan(any())).thenReturn(highRiskReport);
-            when(yamlSkillLoader.loadFile(any(Path.class))).thenReturn(Optional.of(sampleDefinition()));
+            when(markdownSkillLoader.loadFolder(any(Path.class))).thenReturn(Optional.of(sampleDefinition()));
             when(skillRegistry.register(any())).thenReturn(true);
 
             var result = installer.install("test-pkg", true);
@@ -227,70 +214,66 @@ class SkillInstallerTest {
         @Test
         void HIGH风险_配置阻止_返回失败() {
             marketplaceProperties.getSecurity().setBlockHighRisk(true);
-
             var pkg = samplePackage("test-pkg", "1.0.0");
             when(indexManager.getPackage("test-pkg")).thenReturn(Optional.of(pkg));
-            mockHttpDownload(SAMPLE_YAML);
-            when(schemaValidator.validate(any())).thenReturn(new YamlSchemaValidator.ValidationResult(true, List.of()));
+            mockHttpDownload(SAMPLE_MARKDOWN);
+            when(markdownParser.parse(SAMPLE_MARKDOWN)).thenReturn(successResult());
             var highRiskReport = new SecurityReport(
-                    List.of(new SecurityFinding(RiskLevel.HIGH, "危险工具", "包含 shell 执行工具")),
-                    RiskLevel.HIGH
-            );
+                    List.of(new SecurityFinding(RiskLevel.HIGH, "\u5371\u9669\u5DE5\u5177", "\u5305\u542B shell \u6267\u884C\u5DE5\u5177")),
+                    RiskLevel.HIGH);
             when(securityScanner.scan(any())).thenReturn(highRiskReport);
 
             var result = installer.install("test-pkg", true);
 
             assertThat(result.success()).isFalse();
-            assertThat(result.errorMessage()).contains("安全策略禁止");
+            assertThat(result.errorMessage()).contains("\u5B89\u5168\u7B56\u7565\u7981\u6B62");
         }
 
         @Test
-        void SkillRegistry注册失败_清理文件并返回失败() {
+        void SkillRegistry注册失败_清理文件夹并返回失败() {
             var pkg = samplePackage("test-pkg", "1.0.0");
             when(indexManager.getPackage("test-pkg")).thenReturn(Optional.of(pkg));
-            mockHttpDownload(SAMPLE_YAML);
-            when(schemaValidator.validate(any())).thenReturn(new YamlSchemaValidator.ValidationResult(true, List.of()));
+            mockHttpDownload(SAMPLE_MARKDOWN);
+            when(markdownParser.parse(SAMPLE_MARKDOWN)).thenReturn(successResult());
             when(securityScanner.scan(any())).thenReturn(new SecurityReport(List.of(), RiskLevel.LOW));
-            when(yamlSkillLoader.loadFile(any(Path.class))).thenReturn(Optional.of(sampleDefinition()));
+            when(markdownSkillLoader.loadFolder(any(Path.class))).thenReturn(Optional.of(sampleDefinition()));
             when(skillRegistry.register(any())).thenReturn(false);
 
             var result = installer.install("test-pkg", false);
 
             assertThat(result.success()).isFalse();
-            assertThat(result.errorMessage()).contains("注册被拒绝");
-            // 文件应被清理
-            assertThat(Files.exists(tempDir.resolve("test-pkg.yaml"))).isFalse();
+            assertThat(result.errorMessage()).contains("\u6CE8\u518C\u88AB\u62D2\u7EDD");
+            assertThat(Files.exists(tempDir.resolve("test-pkg"))).isFalse();
         }
 
         @Test
-        void YamlSkillLoader加载失败_清理文件并返回失败() {
+        void MarkdownSkillLoader加载失败_清理文件夹并返回失败() {
             var pkg = samplePackage("test-pkg", "1.0.0");
             when(indexManager.getPackage("test-pkg")).thenReturn(Optional.of(pkg));
-            mockHttpDownload(SAMPLE_YAML);
-            when(schemaValidator.validate(any())).thenReturn(new YamlSchemaValidator.ValidationResult(true, List.of()));
+            mockHttpDownload(SAMPLE_MARKDOWN);
+            when(markdownParser.parse(SAMPLE_MARKDOWN)).thenReturn(successResult());
             when(securityScanner.scan(any())).thenReturn(new SecurityReport(List.of(), RiskLevel.LOW));
-            when(yamlSkillLoader.loadFile(any(Path.class))).thenReturn(Optional.empty());
+            when(markdownSkillLoader.loadFolder(any(Path.class))).thenReturn(Optional.empty());
 
             var result = installer.install("test-pkg", false);
 
             assertThat(result.success()).isFalse();
-            assertThat(result.errorMessage()).contains("加载失败");
-            assertThat(Files.exists(tempDir.resolve("test-pkg.yaml"))).isFalse();
+            assertThat(result.errorMessage()).contains("\u52A0\u8F7D\u5931\u8D25");
+            assertThat(Files.exists(tempDir.resolve("test-pkg"))).isFalse();
         }
 
         @Test
         void 安装成功后_source替换为Marketplace() {
             var pkg = samplePackage("test-pkg", "1.0.0");
             when(indexManager.getPackage("test-pkg")).thenReturn(Optional.of(pkg));
-            mockHttpDownload(SAMPLE_YAML);
-            when(schemaValidator.validate(any())).thenReturn(new YamlSchemaValidator.ValidationResult(true, List.of()));
+            mockHttpDownload(SAMPLE_MARKDOWN);
+            when(markdownParser.parse(SAMPLE_MARKDOWN)).thenReturn(successResult());
             when(securityScanner.scan(any())).thenReturn(new SecurityReport(List.of(), RiskLevel.LOW));
-            when(yamlSkillLoader.loadFile(any(Path.class))).thenReturn(Optional.of(sampleDefinition()));
+            when(markdownSkillLoader.loadFolder(any(Path.class))).thenReturn(Optional.of(sampleDefinition()));
             when(skillRegistry.register(any())).thenReturn(true);
 
             installer.install("test-pkg", false);
 
-            // 验证注册时 source 已替换为 Marketplace
             verify(skillRegistry).register(argThat(def ->
                     def.source() instanceof SkillSource.Marketplace marketplace
                             && "test-pkg".equals(marketplace.packageId())
@@ -305,22 +288,20 @@ class SkillInstallerTest {
 
         @Test
         void 卸载成功_完整流程() throws IOException {
-            // 准备：写入 YAML 文件模拟已安装状态
-            Path yamlFile = tempDir.resolve("test-pkg.yaml");
-            Files.writeString(yamlFile, SAMPLE_YAML);
+            Path skillFolder = tempDir.resolve("test-pkg");
+            Files.createDirectories(skillFolder);
+            Files.writeString(skillFolder.resolve("SKILL.md"), SAMPLE_MARKDOWN);
 
             var installed = sampleInstalledSkill("test-pkg", "1.0.0");
             when(installedSkillRepository.findByPackageId("test-pkg")).thenReturn(Optional.of(installed));
-            when(yamlSkillLoader.loadFile(yamlFile)).thenReturn(Optional.of(sampleDefinition()));
+            when(markdownSkillLoader.loadFolder(skillFolder)).thenReturn(Optional.of(sampleDefinition()));
 
-            // 执行
             var result = installer.uninstall("test-pkg");
 
-            // 验证
             assertThat(result.success()).isTrue();
             verify(skillRegistry).unregister("test-skill");
             verify(installedSkillRepository).deleteByPackageId("test-pkg");
-            assertThat(Files.exists(yamlFile)).isFalse();
+            assertThat(Files.exists(skillFolder)).isFalse();
         }
 
         @Test
@@ -330,11 +311,11 @@ class SkillInstallerTest {
             var result = installer.uninstall("nonexistent");
 
             assertThat(result.success()).isFalse();
-            assertThat(result.errorMessage()).contains("未找到已安装");
+            assertThat(result.errorMessage()).contains("\u672A\u627E\u5230\u5DF2\u5B89\u88C5");
         }
 
         @Test
-        void YAML文件不存在_仍然清理记录() {
+        void Skill文件夹不存在_仍然清理记录() {
             var installed = sampleInstalledSkill("test-pkg", "1.0.0");
             when(installedSkillRepository.findByPackageId("test-pkg")).thenReturn(Optional.of(installed));
 
@@ -352,29 +333,26 @@ class SkillInstallerTest {
 
         @Test
         void 升级成功_先卸载后安装() throws IOException {
-            // 准备卸载
-            Path yamlFile = tempDir.resolve("test-pkg.yaml");
-            Files.writeString(yamlFile, SAMPLE_YAML);
+            Path skillFolder = tempDir.resolve("test-pkg");
+            Files.createDirectories(skillFolder);
+            Files.writeString(skillFolder.resolve("SKILL.md"), SAMPLE_MARKDOWN);
             var installed = sampleInstalledSkill("test-pkg", "1.0.0");
             when(installedSkillRepository.findByPackageId("test-pkg"))
-                    .thenReturn(Optional.of(installed))   // upgrade 检查
-                    .thenReturn(Optional.of(installed))   // uninstall 查找
-                    .thenReturn(Optional.empty());        // install 后不再有旧记录
-            when(yamlSkillLoader.loadFile(any(Path.class)))
+                    .thenReturn(Optional.of(installed))
+                    .thenReturn(Optional.of(installed))
+                    .thenReturn(Optional.empty());
+            when(markdownSkillLoader.loadFolder(any(Path.class)))
                     .thenReturn(Optional.of(sampleDefinition()));
 
-            // 准备安装
             var pkg = samplePackage("test-pkg", "2.0.0");
             when(indexManager.getPackage("test-pkg")).thenReturn(Optional.of(pkg));
-            mockHttpDownload(SAMPLE_YAML);
-            when(schemaValidator.validate(any())).thenReturn(new YamlSchemaValidator.ValidationResult(true, List.of()));
+            mockHttpDownload(SAMPLE_MARKDOWN);
+            when(markdownParser.parse(SAMPLE_MARKDOWN)).thenReturn(successResult());
             when(securityScanner.scan(any())).thenReturn(new SecurityReport(List.of(), RiskLevel.LOW));
             when(skillRegistry.register(any())).thenReturn(true);
 
-            // 执行
             var result = installer.upgrade("test-pkg", false);
 
-            // 验证
             assertThat(result.success()).isTrue();
             verify(skillRegistry).unregister("test-skill");
             verify(installedSkillRepository).deleteByPackageId("test-pkg");
@@ -389,7 +367,7 @@ class SkillInstallerTest {
             var result = installer.upgrade("nonexistent", false);
 
             assertThat(result.success()).isFalse();
-            assertThat(result.errorMessage()).contains("未找到已安装");
+            assertThat(result.errorMessage()).contains("\u672A\u627E\u5230\u5DF2\u5B89\u88C5");
         }
     }
 
@@ -401,7 +379,6 @@ class SkillInstallerTest {
     private void mockHttpDownload(String responseBody) {
         var headerUriSpec = mock(RestClient.RequestHeadersUriSpec.class);
         var headerSpec = mock(RestClient.RequestHeadersSpec.class);
-
         when(restClient.get()).thenReturn(headerUriSpec);
         when(headerUriSpec.uri(anyString())).thenReturn(headerSpec);
         when(headerSpec.retrieve()).thenReturn(responseSpec);
@@ -412,21 +389,20 @@ class SkillInstallerTest {
     private void mockHttpDownloadFailure() {
         var headerUriSpec = mock(RestClient.RequestHeadersUriSpec.class);
         var headerSpec = mock(RestClient.RequestHeadersSpec.class);
-
         when(restClient.get()).thenReturn(headerUriSpec);
         when(headerUriSpec.uri(anyString())).thenReturn(headerSpec);
-        when(headerSpec.retrieve()).thenThrow(new ResourceAccessException("连接超时"));
+        when(headerSpec.retrieve()).thenThrow(new ResourceAccessException("\u8FDE\u63A5\u8D85\u65F6"));
     }
 
     private static SkillPackage samplePackage(String id, String version) {
         return SkillPackage.builder()
                 .id(id)
-                .name("测试 Skill")
-                .description("用于测试的 Skill")
+                .name("\u6D4B\u8BD5 Skill")
+                .description("\u7528\u4E8E\u6D4B\u8BD5\u7684 Skill")
                 .version(version)
                 .author("test-author")
                 .repoUrl("https://raw.githubusercontent.com/test/repo/main")
-                .filePath("skills/test.yaml")
+                .filePath("skills/test-skill/SKILL.md")
                 .tags(List.of("test"))
                 .minLifepilotVersion("0.1.0")
                 .createdAt(Instant.now().toString())
@@ -439,11 +415,11 @@ class SkillInstallerTest {
     private static SkillDefinition sampleDefinition() {
         return SkillDefinition.builder()
                 .id("test-skill")
-                .name("测试 Skill")
-                .description("用于测试的 Skill")
+                .name("\u6D4B\u8BD5 Skill")
+                .description("\u7528\u4E8E\u6D4B\u8BD5\u7684 Skill")
                 .version("1.0.0")
-                .source(new SkillSource.UserDefined("/tmp/test.yaml"))
-                .systemPrompt("你是一个测试助手")
+                .source(new SkillSource.UserDefined("/tmp/test-skills"))
+                .systemPrompt("\u4F60\u662F\u4E00\u4E2A\u6D4B\u8BD5\u52A9\u624B")
                 .allowedTools(List.of("todo-add"))
                 .execution(ExecutionStrategy.DEFAULT)
                 .memoryAccess(MemoryAccessPolicy.none())
@@ -456,11 +432,11 @@ class SkillInstallerTest {
         return new InstalledSkill(
                 "id-" + packageId,
                 packageId,
-                "测试 Skill",
+                "\u6D4B\u8BD5 Skill",
                 version,
                 "https://example.com/index.json",
                 "https://raw.githubusercontent.com/test/repo/main",
-                "skills/test.yaml",
+                "skills/test-skill/SKILL.md",
                 null,
                 Instant.now(),
                 Instant.now()

@@ -1,4 +1,4 @@
-package com.lifepilot.skill.yaml;
+package com.lifepilot.skill.markdown;
 
 import com.lifepilot.skill.model.*;
 import org.yaml.snakeyaml.DumperOptions;
@@ -7,26 +7,33 @@ import org.yaml.snakeyaml.Yaml;
 import java.util.*;
 
 /**
- * Skill 定义序列化器 — 将 SkillDefinition 序列化为 YAML 字符串。
+ * SKILL.md 序列化器 — 将 SkillDefinition 序列化为 SKILL.md 格式。
  *
- * <p>用于自生成 Skill 的持久化。省略与默认值相同的可选字段。</p>
+ * <p>序列化规则：
+ * <ol>
+ *   <li>输出 {@code ---} 开头</li>
+ *   <li>使用 SnakeYAML 将元数据字段序列化为 YAML（保持字段顺序：id → name → description → version → allowed-tools → ...）</li>
+ *   <li>省略与默认值相同的可选字段（execution、memory-access、budget、metadata）</li>
+ *   <li>输出 {@code ---} 结尾</li>
+ *   <li>输出空行</li>
+ *   <li>输出 systemPrompt 作为 Markdown Body</li>
+ * </ol>
  *
  * @author zsg
- * @since 2026-02-25
+ * @since 2026-03-07
  */
-public class YamlSkillSerializer {
+public class MarkdownSkillSerializer {
 
     /**
-     * 将 SkillDefinition 序列化为 YAML 字符串。
+     * 将 SkillDefinition 序列化为 SKILL.md 格式字符串。
      *
      * @param definition Skill 定义
-     * @return 符合 YAML Skill Schema 的字符串
+     * @return SKILL.md 格式的完整文本
      */
     public String serialize(SkillDefinition definition) {
-        var skillMap = buildSkillMap(definition);
-        var root = new LinkedHashMap<String, Object>();
-        root.put("skill", skillMap);
+        var frontmatterMap = buildFrontmatterMap(definition);
 
+        // 配置 SnakeYAML — BLOCK 风格、2 空格缩进
         var options = new DumperOptions();
         options.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
         options.setPrettyFlow(true);
@@ -35,20 +42,32 @@ public class YamlSkillSerializer {
         options.setIndent(2);
 
         var yaml = new Yaml(options);
-        return yaml.dump(root);
+        String yamlContent = yaml.dump(frontmatterMap);
+
+        // 组装 SKILL.md：--- + YAML + --- + 空行 + Markdown Body
+        var sb = new StringBuilder();
+        sb.append("---\n");
+        sb.append(yamlContent);
+        sb.append("---\n");
+        sb.append("\n");
+        sb.append(definition.systemPrompt());
+        sb.append("\n");
+
+        return sb.toString();
     }
 
+    // ─────────────────────────────────────────────
+    //  Frontmatter Map 构建
+    // ─────────────────────────────────────────────
+
     /**
-     * 构建 skill 节点的 Map 表示。
+     * 构建 Frontmatter 的有序 Map 表示。
      *
-     * <p>字段映射规则：
-     * <ul>
-     *   <li>systemPrompt → system-prompt</li>
-     *   <li>allowedTools → allowed-tools</li>
-     *   <li>省略与默认值相同的 execution、budget、memory-access、metadata</li>
-     * </ul></p>
+     * <p>字段顺序：id → name → description → version → allowed-tools →
+     * execution → memory-access → budget → metadata。
+     * 等于默认值的可选字段不输出。</p>
      */
-    private LinkedHashMap<String, Object> buildSkillMap(SkillDefinition definition) {
+    private LinkedHashMap<String, Object> buildFrontmatterMap(SkillDefinition definition) {
         var map = new LinkedHashMap<String, Object>();
 
         // 必填字段（始终输出）
@@ -56,7 +75,6 @@ public class YamlSkillSerializer {
         map.put("name", definition.name());
         map.put("description", definition.description());
         map.put("version", definition.version());
-        map.put("system-prompt", definition.systemPrompt());
         map.put("allowed-tools", new ArrayList<>(definition.allowedTools()));
 
         // 可选：execution（省略与 DEFAULT 相同的值）
@@ -65,7 +83,7 @@ public class YamlSkillSerializer {
         }
 
         // 可选：memory-access（省略空策略）
-        if (!definition.memoryAccess().read().isEmpty() || !definition.memoryAccess().write().isEmpty()) {
+        if (!definition.memoryAccess().equals(MemoryAccessPolicy.none())) {
             map.put("memory-access", buildMemoryAccessMap(definition.memoryAccess()));
         }
 
@@ -81,6 +99,10 @@ public class YamlSkillSerializer {
 
         return map;
     }
+
+    // ─────────────────────────────────────────────
+    //  子节点构建
+    // ─────────────────────────────────────────────
 
     /**
      * 构建 execution 节点。

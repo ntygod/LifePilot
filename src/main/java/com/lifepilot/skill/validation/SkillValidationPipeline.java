@@ -8,7 +8,7 @@ import org.slf4j.LoggerFactory;
  *
  * <p>按顺序执行三重验证：
  * <ol>
- *   <li>{@link FormatValidator} — 校验 YAML 语法和 Schema 结构</li>
+ *   <li>{@link FormatValidator} — 校验 SKILL.md 格式（YAML Frontmatter + Markdown Body）</li>
  *   <li>{@link SecurityValidator} — 校验工具白名单、风险等级、预算上限和 Prompt 注入</li>
  *   <li>{@link SandboxValidator} — 在隔离环境中验证内部一致性</li>
  * </ol></p>
@@ -38,13 +38,13 @@ public class SkillValidationPipeline {
      * <p>按顺序执行格式验证 → 安全验证 → 沙箱验证，任一阶段失败时终止管线并返回失败结果。
      * 每个阶段开始/结束记录 DEBUG 日志，最终结果记录 INFO 日志。</p>
      *
-     * @param yamlContent YAML 字符串内容
+     * @param markdownContent SKILL.md 完整文本
      * @return 验证结果
      */
-    public SkillValidationResult validate(String yamlContent) {
+    public SkillValidationResult validate(String markdownContent) {
         // 1. 格式验证
         log.debug("开始格式验证阶段");
-        var formatResult = formatValidator.validate(yamlContent);
+        var formatResult = formatValidator.validate(markdownContent);
         log.debug("格式验证完成: passed={}", formatResult.passed());
         if (!formatResult.passed()) {
             log.info("验证管线终止于格式验证阶段: errors={}", formatResult.errors());
@@ -62,7 +62,7 @@ public class SkillValidationPipeline {
 
         // 3. 沙箱验证
         log.debug("开始沙箱验证阶段");
-        var sandboxResult = sandboxValidator.validate(yamlContent);
+        var sandboxResult = sandboxValidator.validate(markdownContent);
         log.debug("沙箱验证完成: passed={}", sandboxResult.passed());
         if (!sandboxResult.passed()) {
             log.info("验证管线终止于沙箱验证阶段: errors={}", sandboxResult.errors());

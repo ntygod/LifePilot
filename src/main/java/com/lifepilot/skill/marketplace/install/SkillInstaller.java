@@ -2,6 +2,8 @@ package com.lifepilot.skill.marketplace.install;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.skill.config.SkillConfigProperties;
+import com.lifepilot.skill.markdown.MarkdownSkillLoader;
+import com.lifepilot.skill.markdown.MarkdownSkillParser;
 import com.lifepilot.skill.marketplace.config.MarketplaceProperties;
 import com.lifepilot.skill.marketplace.index.IndexManager;
 import com.lifepilot.skill.marketplace.model.*;
@@ -10,19 +12,18 @@ import com.lifepilot.skill.marketplace.version.VersionResolver;
 import com.lifepilot.skill.model.SkillDefinition;
 import com.lifepilot.skill.model.SkillSource;
 import com.lifepilot.skill.registry.SkillRegistry;
-import com.lifepilot.skill.yaml.YamlSchemaValidator;
-import com.lifepilot.skill.yaml.YamlSkillLoader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.client.RestClient;
-import org.yaml.snakeyaml.Yaml;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 /**
  * Skill 安装器 — 负责从远程仓库下载、校验、安全扫描、写入本地并注册 Skill。
@@ -31,10 +32,10 @@ import java.util.UUID;
  * <ol>
  *   <li>从 IndexManager 获取 SkillPackage 元数据</li>
  *   <li>版本兼容性检查</li>
- *   <li>HTTP 下载 YAML 文件</li>
- *   <li>Schema 校验 + 安全扫描</li>
- *   <li>写入本地 skills 目录</li>
- *   <li>通过 YamlSkillLoader 加载并替换 source 为 Marketplace</li>
+ *   <li>HTTP 下载 SKILL.md 文件</li>
+ *   <li>MarkdownSkillParser 解析 + 安全扫描</li>
+ *   <li>写入本地 skills 目录（{packageId}/SKILL.md）</li>
+ *   <li>通过 MarkdownSkillLoader 加载并替换 source 为 Marketplace</li>
  *   <li>注册到 SkillRegistry 并持久化安装记录</li>
  * </ol>
  *
@@ -51,8 +52,8 @@ public class SkillInstaller {
     private final IndexManager indexManager;
     private final VersionResolver versionResolver;
     private final SkillSecurityScanner securityScanner;
-    private final YamlSchemaValidator schemaValidator;
-    private final YamlSkillLoader yamlSkillLoader;
+    private final MarkdownSkillParser markdownParser;
+    private final MarkdownSkillLoader markdownSkillLoader;
     private final SkillRegistry skillRegistry;
     private final InstalledSkillRepository installedSkillRepository;
     private final MarketplaceProperties marketplaceProperties;
@@ -66,8 +67,8 @@ public class SkillInstaller {
      * @param indexManager            索引管理器
      * @param versionResolver         版本解析器
      * @param securityScanner         安全扫描器
-     * @param schemaValidator         YAML Schema 校验器
-     * @param yamlSkillLoader         YAML Skill 加载器
+     * @param markdownParser          Markdown Skill 解析器
+     * @param markdownSkillLoader     Markdown Skill 加载器
      * @param skillRegistry           Skill 注册中心
      * @param installedSkillRepository 已安装记录 DAO
      * @param marketplaceProperties   市场配置属性
@@ -77,8 +78,8 @@ public class SkillInstaller {
     public SkillInstaller(IndexManager indexManager,
                           VersionResolver versionResolver,
                           SkillSecurityScanner securityScanner,
-                          YamlSchemaValidator schemaValidator,
-                          YamlSkillLoader yamlSkillLoader,
+                          MarkdownSkillParser markdownParser,
+                          MarkdownSkillLoader markdownSkillLoader,
                           SkillRegistry skillRegistry,
                           InstalledSkillRepository installedSkillRepository,
                           MarketplaceProperties marketplaceProperties,
@@ -87,8 +88,8 @@ public class SkillInstaller {
         this.indexManager = indexManager;
         this.versionResolver = versionResolver;
         this.securityScanner = securityScanner;
-        this.schemaValidator = schemaValidator;
-        this.yamlSkillLoader = yamlSkillLoader;
+        this.markdownParser = markdownParser;
+        this.markdownSkillLoader = markdownSkillLoader;
         this.skillRegistry = skillRegistry;
         this.installedSkillRepository = installedSkillRepository;
         this.marketplaceProperties = marketplaceProperties;
@@ -122,53 +123,36 @@ public class SkillInstaller {
                     false);
         }
 
-        // 3. HTTP 下载 YAML 文件
-        String yamlContent;
+        // 3. HTTP 下载 SKILL.md 文件
+        String markdownContent;
         try {
             String downloadUrl = skillPackage.repoUrl() + "/" + skillPackage.filePath();
-            yamlContent = restClient.get()
+            markdownContent = restClient.get()
                     .uri(downloadUrl)
                     .retrieve()
                     .body(String.class);
-            if (yamlContent == null || yamlContent.isBlank()) {
+            if (markdownContent == null || markdownContent.isBlank()) {
                 log.warn("安装失败，下载内容为空: packageId={}, url={}", packageId, downloadUrl);
-                return new InstallResult(false, null, null, "下载的 YAML 文件内容为空", false);
+                return new InstallResult(false, null, null, "下载的 SKILL.md 文件内容为空", false);
             }
         } catch (Exception e) {
-            log.warn("安装失败，YAML 下载异常: packageId={}, error={}", packageId, e.getMessage());
-            return new InstallResult(false, null, null, "YAML 文件下载失败: " + e.getMessage(), false);
+            log.warn("安装失败，SKILL.md 下载异常: packageId={}, error={}", packageId, e.getMessage());
+            return new InstallResult(false, null, null, "SKILL.md 文件下载失败: " + e.getMessage(), false);
         }
 
-        // 4. 解析 YAML
-        Map<String, Object> yamlMap;
-        try {
-            var yaml = new Yaml();
-            Object parsed = yaml.load(yamlContent);
-            if (!(parsed instanceof Map<?, ?> map)) {
-                return new InstallResult(false, null, null, "YAML 解析结果不是 Map 类型", false);
-            }
-            @SuppressWarnings("unchecked")
-            Map<String, Object> castMap = (Map<String, Object>) map;
-            yamlMap = castMap;
-        } catch (Exception e) {
-            log.warn("安装失败，YAML 解析异常: packageId={}, error={}", packageId, e.getMessage());
-            return new InstallResult(false, null, null, "YAML 解析失败: " + e.getMessage(), false);
-        }
-
-        // 5. Schema 校验（校验器期望根 YAML Map，包含 "skill" 键）
-        var validationResult = schemaValidator.validate(yamlMap);
-        if (!validationResult.valid()) {
-            log.warn("安装失败，Schema 校验不通过: packageId={}, errors={}", packageId, validationResult.errors());
+        // 4. 使用 MarkdownSkillParser 解析并校验
+        var parseResult = markdownParser.parse(markdownContent);
+        if (!parseResult.success()) {
+            log.warn("安装失败，SKILL.md 解析校验不通过: packageId={}, errors={}", packageId, parseResult.errors());
             return new InstallResult(false, null, null,
-                    "YAML Schema 校验失败: " + String.join("; ", validationResult.errors()), false);
+                    "SKILL.md 解析校验失败: " + String.join("; ", parseResult.errors()), false);
         }
 
-        // 6. 安全扫描（扫描器期望 skill 节点内容）
-        @SuppressWarnings("unchecked")
-        var skillNode = (Map<String, Object>) yamlMap.get("skill");
-        SecurityReport securityReport = securityScanner.scan(skillNode != null ? skillNode : yamlMap);
+        // 5. 安全扫描（扫描器期望 skill 节点内容，包装为 {"skill": frontmatterMap} 后取 skill 节点）
+        var frontmatterMap = parseResult.frontmatterMap();
+        SecurityReport securityReport = securityScanner.scan(frontmatterMap != null ? frontmatterMap : Map.of());
 
-        // 7. HIGH 风险处理
+        // 6. HIGH 风险处理
         if (securityReport.overallRisk() == RiskLevel.HIGH) {
             if (marketplaceProperties.getSecurity().isBlockHighRisk()) {
                 log.warn("安装被阻止，HIGH 风险且配置禁止安装: packageId={}", packageId);
@@ -181,24 +165,25 @@ public class SkillInstaller {
             }
         }
 
-        // 8. 写入 YAML 文件到本地 skills 目录
-        Path targetFile = skillsDirectory.resolve(packageId + ".yaml");
+        // 7. 写入 SKILL.md 文件到本地 skills 目录（{packageId}/SKILL.md）
+        Path skillFolder = skillsDirectory.resolve(packageId);
+        Path targetFile = skillFolder.resolve("SKILL.md");
         try {
-            Files.createDirectories(skillsDirectory);
-            Files.writeString(targetFile, yamlContent);
+            Files.createDirectories(skillFolder);
+            Files.writeString(targetFile, markdownContent);
         } catch (IOException e) {
             log.error("安装失败，写入文件异常: packageId={}, path={}, error={}",
                     packageId, targetFile, e.getMessage());
-            return new InstallResult(false, null, securityReport, "写入 YAML 文件失败: " + e.getMessage(), false);
+            return new InstallResult(false, null, securityReport, "写入 SKILL.md 文件失败: " + e.getMessage(), false);
         }
 
-        // 9. 通过 YamlSkillLoader 加载并替换 source 为 Marketplace
-        var definitionOpt = yamlSkillLoader.loadFile(targetFile);
+        // 8. 通过 MarkdownSkillLoader 加载并替换 source 为 Marketplace
+        var definitionOpt = markdownSkillLoader.loadFolder(skillFolder);
         if (definitionOpt.isEmpty()) {
-            // 加载失败，清理已写入的文件
-            deleteFileQuietly(targetFile);
-            log.warn("安装失败，YamlSkillLoader 加载失败: packageId={}", packageId);
-            return new InstallResult(false, null, securityReport, "YAML Skill 加载失败", false);
+            // 加载失败，清理已写入的文件夹
+            deleteFolderQuietly(skillFolder);
+            log.warn("安装失败，MarkdownSkillLoader 加载失败: packageId={}", packageId);
+            return new InstallResult(false, null, securityReport, "SKILL.md 加载失败", false);
         }
 
         // 替换 source 为 Marketplace
@@ -207,15 +192,15 @@ public class SkillInstaller {
                 .source(new SkillSource.Marketplace(packageId, resolveIndexSourceUrl(skillPackage), now))
                 .build();
 
-        // 10. 注册到 SkillRegistry
+        // 9. 注册到 SkillRegistry
         boolean registered = skillRegistry.register(definition);
         if (!registered) {
-            deleteFileQuietly(targetFile);
+            deleteFolderQuietly(skillFolder);
             log.warn("安装失败，SkillRegistry 注册被拒绝: packageId={}, skillId={}", packageId, definition.id());
             return new InstallResult(false, null, securityReport, "Skill 注册被拒绝", false);
         }
 
-        // 11. 持久化安装记录
+        // 10. 持久化安装记录
         String securityReportJson = serializeSecurityReport(securityReport);
         var installedSkill = new InstalledSkill(
                 UUID.randomUUID().toString(),
@@ -237,7 +222,7 @@ public class SkillInstaller {
     }
 
     /**
-     * 卸载 Skill — 注销、删除文件、清理记录。
+     * 卸载 Skill — 注销、删除文件夹、清理记录。
      *
      * @param packageId 市场包 ID
      * @return 安装结果（复用 InstallResult 表示卸载结果）
@@ -251,15 +236,15 @@ public class SkillInstaller {
         }
         var installed = installedOpt.get();
 
-        // 2. 从 SkillRegistry 注销（通过加载文件获取 skillId）
-        Path yamlFile = skillsDirectory.resolve(packageId + ".yaml");
-        String skillId = resolveSkillId(yamlFile, installed);
+        // 2. 从 SkillRegistry 注销（通过加载文件夹获取 skillId）
+        Path skillFolder = skillsDirectory.resolve(packageId);
+        String skillId = resolveSkillId(skillFolder, installed);
         if (skillId != null) {
             skillRegistry.unregister(skillId);
         }
 
-        // 3. 删除 YAML 文件
-        deleteFileQuietly(yamlFile);
+        // 3. 删除 Skill 文件夹
+        deleteFolderQuietly(skillFolder);
 
         // 4. 删除安装记录
         installedSkillRepository.deleteByPackageId(packageId);
@@ -308,17 +293,17 @@ public class SkillInstaller {
     }
 
     /**
-     * 从 YAML 文件或已安装记录中解析 Skill ID。
+     * 从 Skill 文件夹或已安装记录中解析 Skill ID。
      */
-    private String resolveSkillId(Path yamlFile, InstalledSkill installed) {
-        // 尝试从文件加载获取 skillId
-        if (Files.exists(yamlFile)) {
-            var defOpt = yamlSkillLoader.loadFile(yamlFile);
+    private String resolveSkillId(Path skillFolder, InstalledSkill installed) {
+        // 尝试从文件夹加载获取 skillId
+        if (Files.isDirectory(skillFolder)) {
+            var defOpt = markdownSkillLoader.loadFolder(skillFolder);
             if (defOpt.isPresent()) {
                 return defOpt.get().id();
             }
         }
-        // 回退：使用 packageId 作为 skillId（通常 YAML 中的 id 与 packageId 一致）
+        // 回退：使用 packageId 作为 skillId（通常 SKILL.md 中的 id 与 packageId 一致）
         return installed.packageId();
     }
 
@@ -335,13 +320,24 @@ public class SkillInstaller {
     }
 
     /**
-     * 静默删除文件，忽略异常。
+     * 静默删除文件夹及其内容，忽略异常。
      */
-    private void deleteFileQuietly(Path file) {
+    private void deleteFolderQuietly(Path folder) {
         try {
-            Files.deleteIfExists(file);
+            if (Files.exists(folder)) {
+                try (Stream<Path> walk = Files.walk(folder)) {
+                    walk.sorted(Comparator.reverseOrder())
+                            .forEach(path -> {
+                                try {
+                                    Files.deleteIfExists(path);
+                                } catch (IOException e) {
+                                    log.warn("删除文件失败: path={}, error={}", path, e.getMessage());
+                                }
+                            });
+                }
+            }
         } catch (IOException e) {
-            log.warn("删除文件失败: path={}, error={}", file, e.getMessage());
+            log.warn("删除文件夹失败: folder={}, error={}", folder, e.getMessage());
         }
     }
 }

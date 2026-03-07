@@ -4,32 +4,32 @@ import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.skill.config.SkillConfigProperties;
+import com.lifepilot.skill.markdown.MarkdownSkillParser;
+import com.lifepilot.skill.markdown.MarkdownSkillSerializer;
 import com.lifepilot.skill.model.*;
 import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.skill.validation.SkillValidationPipeline;
 import com.lifepilot.skill.validation.SkillValidationResult;
-import com.lifepilot.skill.yaml.YamlSkillLoader;
-import com.lifepilot.skill.yaml.YamlSkillSerializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
-import org.yaml.snakeyaml.Yaml;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
-import java.util.*;
+import java.util.Map;
+import java.util.UUID;
 
 /**
- * Skill 生成器 — 使用 LLM 根据缺口描述生成 YAML Skill 定义。
+ * Skill 生成器 — 使用 LLM 根据缺口描述生成 SKILL.md 格式的 Skill 定义。
  *
  * <p>生成流程：
  * <ol>
  *   <li>构建 Prompt：注入安全约束 + 已有 Skill 示例（最多 3 个）</li>
- *   <li>LLM 生成 YAML 内容</li>
+ *   <li>LLM 生成 SKILL.md 内容（YAML Frontmatter + Markdown Body）</li>
  *   <li>调用 {@link SkillValidationPipeline} 三重验证</li>
- *   <li>验证通过后解析为待确认的 {@link SkillDefinition}</li>
+ *   <li>验证通过后使用 {@link MarkdownSkillParser} 解析为待确认的 {@link SkillDefinition}</li>
  * </ol></p>
  *
  * @author zsg
@@ -44,8 +44,8 @@ public class SkillGenerator {
 
     private final LlmRouter llmRouter;
     private final SkillValidationPipeline validationPipeline;
-    private final YamlSkillLoader yamlSkillLoader;
-    private final YamlSkillSerializer yamlSkillSerializer;
+    private final MarkdownSkillParser markdownParser;
+    private final MarkdownSkillSerializer markdownSerializer;
     private final SkillRegistry skillRegistry;
     private final SkillConfigProperties config;
     private final PromptRegistry promptRegistry;
@@ -53,15 +53,15 @@ public class SkillGenerator {
 
     public SkillGenerator(LlmRouter llmRouter,
                           SkillValidationPipeline validationPipeline,
-                          YamlSkillLoader yamlSkillLoader,
-                          YamlSkillSerializer yamlSkillSerializer,
+                          MarkdownSkillParser markdownParser,
+                          MarkdownSkillSerializer markdownSerializer,
                           SkillRegistry skillRegistry,
                           SkillConfigProperties config,
                           PromptRegistry promptRegistry) {
         this.llmRouter = llmRouter;
         this.validationPipeline = validationPipeline;
-        this.yamlSkillLoader = yamlSkillLoader;
-        this.yamlSkillSerializer = yamlSkillSerializer;
+        this.markdownParser = markdownParser;
+        this.markdownSerializer = markdownSerializer;
         this.skillRegistry = skillRegistry;
         this.config = config;
         this.promptRegistry = promptRegistry;
@@ -71,7 +71,7 @@ public class SkillGenerator {
     /**
      * 根据缺口描述生成 Skill。
      *
-     * <p>流程：构建 Prompt → LLM 生成 YAML → 提取 YAML → 三重验证 → 解析为 SkillDefinition。</p>
+     * <p>流程：构建 Prompt → LLM 生成 SKILL.md → 提取 Markdown → 三重验证 → 解析为 SkillDefinition。</p>
      *
      * @param gap 缺口描述
      * @return 生成结果，包含待确认的 SkillDefinition 或失败原因
@@ -80,7 +80,7 @@ public class SkillGenerator {
         // 1. 构建生成 Prompt
         String prompt = buildGenerationPrompt(gap);
 
-        // 2. 调用 LLM 生成 YAML
+        // 2. 调用 LLM 生成 SKILL.md
         String rawContent;
         try {
             var response = llmRouter.call(LlmScene.SKILL_GENERATION, prompt, null);
@@ -90,43 +90,53 @@ public class SkillGenerator {
             return GenerationResult.error(e.getMessage());
         }
 
-        // 3. 提取 YAML 内容（处理 markdown 代码块）
-        String yamlContent = extractYaml(rawContent);
+        // 3. 提取 Markdown 内容（处理代码块包裹）
+        String markdownContent = extractMarkdown(rawContent);
 
         // 4. 三重验证
-        var validationResult = validationPipeline.validate(yamlContent);
+        var validationResult = validationPipeline.validate(markdownContent);
         if (!validationResult.passed()) {
             log.warn("自生成 Skill 三重验证失败: gap={}, stage={}, errors={}",
                     gap.suggestedId(), validationResult.failedStage(), validationResult.errors());
             return GenerationResult.validationFailed(validationResult);
         }
 
-        // 5. 解析为 SkillDefinition
-        var definitionOpt = buildSkillDefinitionFromYaml(yamlContent, gap);
-        if (definitionOpt.isEmpty()) {
-            log.warn("自生成 Skill YAML 解析为 SkillDefinition 失败: gap={}", gap.suggestedId());
-            return GenerationResult.error("YAML 解析为 SkillDefinition 失败");
+        // 5. 使用 MarkdownSkillParser 解析为 SkillDefinition
+        var parseResult = markdownParser.parse(markdownContent);
+        if (!parseResult.success() || parseResult.definition() == null) {
+            log.warn("自生成 Skill SKILL.md 解析为 SkillDefinition 失败: gap={}", gap.suggestedId());
+            return GenerationResult.error("SKILL.md 解析为 SkillDefinition 失败");
         }
 
-        log.info("Skill 生成成功: skillId={}, gap={}", definitionOpt.get().id(), gap.suggestedId());
-        return GenerationResult.success(definitionOpt.get(), yamlContent);
+        // 6. 替换 source 为 AutoGenerated
+        var autoSource = new SkillSource.AutoGenerated(
+                UUID.randomUUID().toString(),
+                Instant.now(),
+                gap.triggerRequest(),
+                false
+        );
+        var definition = parseResult.definition().toBuilder().source(autoSource).build();
+
+        log.info("Skill 生成成功: skillId={}, gap={}", definition.id(), gap.suggestedId());
+        return GenerationResult.success(definition, markdownContent);
     }
 
     /**
      * 用户确认后持久化并注册。
      *
-     * <p>将 YAML 文件写入 ~/.lifepilot/skills/auto/{skill-id}.yml，
+     * <p>将 SKILL.md 文件写入 ~/.lifepilot/skills/auto/{skill-id}/SKILL.md，
      * 更新 userConfirmed 为 true 并注册到 SkillRegistry。</p>
      *
      * @param definition 待确认的 SkillDefinition
      * @return 注册是否成功
      */
     public boolean confirmAndPersist(SkillDefinition definition) {
-        // 1. 确保 auto/ 目录存在
+        // 1. 确保 auto/{skill-id}/ 目录存在
+        Path skillFolder = autoSkillsDirectory.resolve(definition.id());
         try {
-            Files.createDirectories(autoSkillsDirectory);
+            Files.createDirectories(skillFolder);
         } catch (IOException e) {
-            log.error("创建自生成 Skill 目录失败: path={}, error={}", autoSkillsDirectory, e.getMessage());
+            log.error("创建自生成 Skill 目录失败: path={}, error={}", skillFolder, e.getMessage());
             return false;
         }
 
@@ -145,11 +155,11 @@ public class SkillGenerator {
                 .source(confirmedSource)
                 .build();
 
-        // 3. 序列化为 YAML 并写入文件
-        String yamlContent = yamlSkillSerializer.serialize(confirmedDefinition);
-        Path targetFile = autoSkillsDirectory.resolve(definition.id() + ".yml");
+        // 3. 序列化为 SKILL.md 并写入文件
+        String markdownContent = markdownSerializer.serialize(confirmedDefinition);
+        Path targetFile = skillFolder.resolve("SKILL.md");
         try {
-            Files.writeString(targetFile, yamlContent);
+            Files.writeString(targetFile, markdownContent);
             log.info("自生成 Skill 已持久化: skillId={}, path={}", definition.id(), targetFile);
         } catch (IOException e) {
             log.error("自生成 Skill 持久化失败: skillId={}, path={}, error={}",
@@ -214,16 +224,16 @@ public class SkillGenerator {
     }
 
     /**
-     * 从 LLM 响应中提取 YAML 内容。
+     * 从 LLM 响应中提取 SKILL.md 内容。
      *
-     * <p>处理 LLM 可能返回的 markdown 代码块包裹格式（```yaml ... ```）。</p>
+     * <p>处理 LLM 可能返回的代码块包裹格式（```markdown ... ```、```yaml ... ```、``` ... ```）。</p>
      *
      * @param content LLM 原始响应内容
-     * @return 提取后的 YAML 字符串
+     * @return 提取后的 SKILL.md 字符串
      */
-    static String extractYaml(String content) {
+    static String extractMarkdown(String content) {
         String trimmed = content.trim();
-        // 处理 ```yaml ... ``` 或 ``` ... ``` 格式
+        // 处理 ```markdown ... ```、```yaml ... ``` 或 ``` ... ``` 格式
         if (trimmed.startsWith("```")) {
             int firstNewline = trimmed.indexOf('\n');
             int lastBacktick = trimmed.lastIndexOf("```");
@@ -235,217 +245,11 @@ public class SkillGenerator {
     }
 
     /**
-     * 将 YAML 字符串解析为 SkillDefinition。
-     *
-     * <p>使用 SnakeYAML 解析后提取 skill 节点字段，构建 SkillDefinition，
-     * source 设为 {@link SkillSource.AutoGenerated}（userConfirmed=false）。</p>
-     *
-     * @param yamlContent YAML 字符串
-     * @param gap         缺口描述（用于填充 source 信息）
-     * @return 解析后的 SkillDefinition，失败返回 Optional.empty()
-     */
-    @SuppressWarnings("unchecked")
-    Optional<SkillDefinition> buildSkillDefinitionFromYaml(String yamlContent, SkillGap gap) {
-        try {
-            var yaml = new Yaml();
-            Map<String, Object> yamlMap = yaml.load(yamlContent);
-            var skill = (Map<String, Object>) yamlMap.get("skill");
-            if (skill == null) {
-                log.warn("YAML 缺少 skill 根节点");
-                return Optional.empty();
-            }
-
-            String id = getStringOrDefault(skill, "id", gap.suggestedId());
-            String name = getStringOrDefault(skill, "name", gap.suggestedName());
-            String description = getStringOrDefault(skill, "description", "");
-            String version = getStringOrDefault(skill, "version", "1.0.0");
-            String systemPrompt = getStringOrDefault(skill, "system-prompt", "");
-
-            List<String> allowedTools = new ArrayList<>();
-            Object toolsNode = skill.get("allowed-tools");
-            if (toolsNode instanceof List<?> toolsList) {
-                for (Object tool : toolsList) {
-                    allowedTools.add(String.valueOf(tool));
-                }
-            }
-
-            // 解析 execution（缺省使用 DEFAULT）
-            ExecutionStrategy execution = parseExecution(skill);
-
-            // 解析 budget（缺省使用 DEFAULT）
-            SkillBudget budget = parseBudget(skill);
-
-            // 解析 memory-access（缺省使用 none）
-            MemoryAccessPolicy memoryAccess = parseMemoryAccess(skill);
-
-            // 解析 metadata
-            Map<String, String> metadata = parseMetadata(skill);
-
-            var source = new SkillSource.AutoGenerated(
-                    UUID.randomUUID().toString(),
-                    Instant.now(),
-                    gap.triggerRequest(),
-                    false
-            );
-
-            return Optional.of(SkillDefinition.builder()
-                    .id(id)
-                    .name(name)
-                    .description(description)
-                    .version(version)
-                    .source(source)
-                    .systemPrompt(systemPrompt)
-                    .allowedTools(allowedTools)
-                    .execution(execution)
-                    .memoryAccess(memoryAccess)
-                    .budget(budget)
-                    .metadata(metadata)
-                    .build());
-        } catch (Exception e) {
-            log.warn("YAML 解析为 SkillDefinition 失败: {}", e.getMessage());
-            return Optional.empty();
-        }
-    }
-
-    /**
-     * 解析 execution 配置节点。
-     */
-    @SuppressWarnings("unchecked")
-    private static ExecutionStrategy parseExecution(Map<String, Object> skill) {
-        var executionNode = skill.get("execution");
-        if (!(executionNode instanceof Map<?, ?> execMap)) {
-            return ExecutionStrategy.DEFAULT;
-        }
-        var exec = (Map<String, Object>) execMap;
-        int maxSteps = getIntOrDefault(exec, "max-steps", ExecutionStrategy.DEFAULT.maxSteps());
-        int timeoutSeconds = getIntOrDefault(exec, "timeout-seconds", ExecutionStrategy.DEFAULT.timeoutSeconds());
-        boolean requireConfirmation = getBooleanOrDefault(exec, "require-confirmation", ExecutionStrategy.DEFAULT.requireConfirmation());
-        return new ExecutionStrategy(maxSteps, timeoutSeconds, requireConfirmation,
-                ExecutionStrategy.DEFAULT.retryPolicy(), ExecutionStrategy.DEFAULT.confirmationMode());
-    }
-
-    /**
-     * 解析 budget 配置节点。
-     */
-    @SuppressWarnings("unchecked")
-    private static SkillBudget parseBudget(Map<String, Object> skill) {
-        var budgetNode = skill.get("budget");
-        if (!(budgetNode instanceof Map<?, ?> budgetMap)) {
-            return SkillBudget.DEFAULT;
-        }
-        var budget = (Map<String, Object>) budgetMap;
-        int maxTokens = getIntOrDefault(budget, "max-tokens", SkillBudget.DEFAULT.maxTokens());
-        int maxSteps = getIntOrDefault(budget, "max-steps", SkillBudget.DEFAULT.maxSteps());
-        int timeoutSeconds = getIntOrDefault(budget, "timeout-seconds", SkillBudget.DEFAULT.timeoutSeconds());
-        int maxCostCents = getIntOrDefault(budget, "max-cost-cents", SkillBudget.DEFAULT.maxCostCents());
-        return new SkillBudget(maxTokens, maxSteps, timeoutSeconds, maxCostCents);
-    }
-
-    /**
-     * 解析 memory-access 配置节点。
-     */
-    @SuppressWarnings("unchecked")
-    private static MemoryAccessPolicy parseMemoryAccess(Map<String, Object> skill) {
-        var memoryNode = skill.get("memory-access");
-        if (!(memoryNode instanceof Map<?, ?> memMap)) {
-            return MemoryAccessPolicy.none();
-        }
-        var memory = (Map<String, Object>) memMap;
-
-        List<MemoryReadPermission> readPermissions = new ArrayList<>();
-        var readNode = memory.get("read");
-        if (readNode instanceof List<?> readList) {
-            for (Object item : readList) {
-                if (item instanceof Map<?, ?> readItem) {
-                    var readMap = (Map<String, Object>) readItem;
-                    String layer = getStringOrDefault(readMap, "layer", "");
-                    List<String> entityTypes = getStringListOrEmpty(readMap, "entity-types");
-                    String timeRange = readMap.containsKey("time-range")
-                            ? String.valueOf(readMap.get("time-range")) : null;
-                    readPermissions.add(new MemoryReadPermission(layer, entityTypes, timeRange));
-                }
-            }
-        }
-
-        List<MemoryWritePermission> writePermissions = new ArrayList<>();
-        var writeNode = memory.get("write");
-        if (writeNode instanceof List<?> writeList) {
-            for (Object item : writeList) {
-                if (item instanceof Map<?, ?> writeItem) {
-                    var writeMap = (Map<String, Object>) writeItem;
-                    String layer = getStringOrDefault(writeMap, "layer", "");
-                    List<String> entityTypes = getStringListOrEmpty(writeMap, "entity-types");
-                    boolean requireApproval = getBooleanOrDefault(writeMap, "require-approval", false);
-                    writePermissions.add(new MemoryWritePermission(layer, entityTypes, requireApproval));
-                }
-            }
-        }
-
-        return new MemoryAccessPolicy(readPermissions, writePermissions);
-    }
-
-    /**
-     * 解析 metadata 配置节点。
-     */
-    private static Map<String, String> parseMetadata(Map<String, Object> skill) {
-        var metadataNode = skill.get("metadata");
-        if (!(metadataNode instanceof Map<?, ?> metaMap)) {
-            return Map.of();
-        }
-        var result = new HashMap<String, String>();
-        for (var entry : metaMap.entrySet()) {
-            result.put(String.valueOf(entry.getKey()), String.valueOf(entry.getValue()));
-        }
-        return result;
-    }
-
-    /**
-     * 从 Map 中安全获取字符串值，不存在时返回默认值。
-     */
-    private static String getStringOrDefault(Map<String, Object> map, String key, String defaultValue) {
-        Object value = map.get(key);
-        return value != null ? value.toString() : defaultValue;
-    }
-
-    /**
-     * 从 Map 中安全获取整数值，不存在时返回默认值。
-     */
-    private static int getIntOrDefault(Map<String, Object> map, String key, int defaultValue) {
-        Object value = map.get(key);
-        if (value instanceof Number number) {
-            return number.intValue();
-        }
-        return defaultValue;
-    }
-
-    /**
-     * 从 Map 中安全获取布尔值，不存在时返回默认值。
-     */
-    private static boolean getBooleanOrDefault(Map<String, Object> map, String key, boolean defaultValue) {
-        Object value = map.get(key);
-        if (value instanceof Boolean bool) {
-            return bool;
-        }
-        return defaultValue;
-    }
-
-    /**
-     * 从 Map 中安全获取字符串列表，不存在时返回空列表。
-     */
-    private static List<String> getStringListOrEmpty(Map<String, Object> map, String key) {
-        Object value = map.get(key);
-        if (value instanceof List<?> list) {
-            return list.stream().map(Object::toString).toList();
-        }
-        return List.of();
-    }
-
-    /**
      * 生成结果 — 封装生成成功/失败的完整信息。
      *
      * @param success          是否成功
      * @param definition       生成的 SkillDefinition（成功时非 null）
-     * @param yamlContent      生成的 YAML 内容（成功时非 null）
+     * @param markdownContent  生成的 SKILL.md 内容（成功时非 null）
      * @param validationResult 验证结果（验证失败时非 null）
      * @param errorMessage     错误信息（失败时非 null）
      * @author zsg
@@ -454,19 +258,19 @@ public class SkillGenerator {
     public record GenerationResult(
             boolean success,
             @Nullable SkillDefinition definition,
-            @Nullable String yamlContent,
+            @Nullable String markdownContent,
             @Nullable SkillValidationResult validationResult,
             @Nullable String errorMessage
     ) {
         /**
          * 创建生成成功结果。
          *
-         * @param definition 生成的 SkillDefinition
-         * @param yaml       生成的 YAML 内容
+         * @param definition      生成的 SkillDefinition
+         * @param markdownContent 生成的 SKILL.md 内容
          * @return 成功结果
          */
-        public static GenerationResult success(SkillDefinition definition, String yaml) {
-            return new GenerationResult(true, definition, yaml, null, null);
+        public static GenerationResult success(SkillDefinition definition, String markdownContent) {
+            return new GenerationResult(true, definition, markdownContent, null, null);
         }
 
         /**
