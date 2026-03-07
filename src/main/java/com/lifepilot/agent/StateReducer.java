@@ -159,13 +159,41 @@ public class StateReducer {
 
     private AgentState reduceBudgetExhausted(AgentState state, Action.BudgetExhausted a) {
         validateTransition(state.phase(), AgentPhase.TERMINATED);
+        String degradedResponse = buildDegradedResponse(state.steps(), a.reason());
         return state.toBuilder()
                 .phase(AgentPhase.TERMINATED)
                 .stepCount(state.stepCount() + 1)
                 .steps(appendStep(state.steps(), null, false, a.reason(), false, 0, 0))
                 .done(true)
+                .finalOutput(degradedResponse)
                 .terminationReason(a.reason())
                 .build();
+    }
+
+    /**
+     * 基于已执行步骤生成降级响应文本。
+     *
+     * <p>当 Agent 因资源耗尽终止时，从已执行步骤中提取成功的工具调用结果，
+     * 拼接为摘要文本返回给用户，避免空响应。</p>
+     *
+     * @param steps  已执行步骤列表
+     * @param reason 终止原因
+     * @return 降级响应文本
+     * @since 2026-03-06
+     */
+    private String buildDegradedResponse(List<StepRecord> steps, String reason) {
+        var successfulToolSteps = steps.stream()
+                .filter(s -> s.toolId() != null && s.success())
+                .toList();
+        if (successfulToolSteps.isEmpty()) {
+            return "抱歉，处理您的请求时资源耗尽（" + reason + "），请尝试简化请求或稍后重试。";
+        }
+        var sb = new StringBuilder("处理过程中资源耗尽，以下是已获取的信息：\n");
+        for (var step : successfulToolSteps) {
+            sb.append("- ").append(step.toolId()).append("：").append(step.output()).append("\n");
+        }
+        sb.append("\n（处理未完成：").append(reason).append("）");
+        return sb.toString();
     }
 
     private AgentState reduceBlocked(AgentState state, Action.Blocked a) {
