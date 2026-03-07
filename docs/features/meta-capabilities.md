@@ -574,7 +574,168 @@ Agent 需要在适当时机与用户交互，而非自作主张。
 
 ---
 
-## 9. 调研参考
+## 10. 工具权限模型（Tool Permission Model）
+
+### 10.1 问题分析
+
+Agent、Workflow、Skill 最终都通过 `ToolExecutionPipeline` 执行工具调用。当前系统已有分散的权限机制（`AgentDefinition.allowedTools`、`SkillDefinition.allowedTools`、`GuardrailEngine` 风险审批），但缺少统一的权限解析模型。需要解决的核心问题：
+
+- Workflow 步骤没有工具权限声明，直接调用工具无白名单约束
+- 基础工具（§8）需要"始终可用"语义，不应被调用者白名单过滤掉
+- SubAgent 的工具范围应严格为父 Agent 的子集，当前未强制约束
+- 没有统一的权限解析流程把各层串起来
+
+### 10.2 三层权限模型
+
+权限检查由外到内逐层收窄，每一层都是前一层的子集：
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Layer 1: 全局策略（Global Policy）                          │
+│  GuardrailEngine 强制执行，所有调用者都必须经过                 │
+│  • ToolRiskPolicy — 风险等级审批                              │
+│  • BudgetLimitPolicy — Token 预算限制                        │
+│  • RateLimitPolicy — 速率限制                                │
+│  • ContentSafetyPolicy — 内容安全                            │
+│  • DataRedactionPolicy — 数据脱敏                            │
+├─────────────────────────────────────────────────────────────┤
+│  Layer 2: 调用者作用域（Caller Scope）                        │
+│  每种调用者类型有自己的工具白名单机制                            │
+│  • Agent: allowedTools 白名单                                │
+│  • Skill: allowedTools 白名单                                │
+│  • Workflow: 步骤级 required-tools 声明                      │
+│  • SubAgent: parentScope ∩ selfScope（强制子集约束）          │
+├─────────────────────────────────────────────────────────────┤
+│  Layer 3: 工具自身属性（Tool Properties）                     │
+│  工具注册时声明的固有属性                                      │
+│  • RiskLevel → 决定审批模式（AUTO → USER_CONFIRM）            │
+│  • tags: "infrastructure" → 绕过 Layer 2 白名单              │
+│  • tags: "handoff" → 不可重试、受 canDelegate 控制            │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 10.3 各调用者的权限解析
+
+#### 10.3.1 Agent 调用工具
+
+```
+有效工具集 = (Agent.allowedTools ∪ infrastructure 工具) ∩ 全局策略通过
+```
+
+- `ToolBridgeAgentToolProvider.getToolCallbacks()` 按 `allowedToolIds` 过滤时，自动包含 `infrastructure` 标签的工具
+- 空白名单（`allowedTools = []`）表示可用所有工具（当前行为不变）
+- 每次工具调用仍经过 `GuardrailEngine.checkToolCall()` 做风险审批
+
+#### 10.3.2 SubAgent 调用工具
+
+```
+有效工具集 = (parentScope ∩ SubAgent.allowedTools ∪ infrastructure 工具) ∩ 全局策略通过
+```
+
+- `AgentExecutor.buildAllowedToolIds()` 增加父 Agent 作用域约束
+- SubAgent 声明的 `allowedTools` 中，只有同时存在于父 Agent 作用域内的工具才生效
+- infrastructure 工具始终可用，不受父子约束
+- 这确保了权限只能收窄、不能扩大
+
+#### 10.3.3 Skill 调用工具
+
+```
+有效工具集 = (Skill.allowedTools ∪ infrastructure 工具) ∩ 全局策略通过
+```
+
+- Skill 通过 SubAgent 模式激活时，其 `allowedTools` 已由 `SecurityValidator` 在加载时校验
+- `SecurityValidator` 确保 Skill 不声明 HIGH/CRITICAL 风险工具（已实现）
+- infrastructure 工具对 Skill 同样始终可用
+
+#### 10.3.4 Workflow 调用工具
+
+```
+有效工具集 = (步骤声明的 required-tools ∪ infrastructure 工具) ∩ 全局策略通过
+```
+
+- Workflow YAML 定义中每个步骤新增 `required-tools` 字段，声明该步骤需要的工具
+- WorkflowEngine 执行步骤前，校验 `required-tools` 中的工具都已注册且可用
+- 未声明 `required-tools` 的步骤（向后兼容）默认可用所有工具
+- 长期目标：所有 Workflow 步骤都应显式声明 `required-tools`
+
+### 10.4 Infrastructure 工具的特殊语义
+
+标记为 `infrastructure` 的工具具有以下特殊行为：
+
+| 特性 | 说明 |
+|------|------|
+| 始终可用 | 不受任何调用者的 `allowedTools` 白名单限制 |
+| 低风险 | 全部为 LOW 风险等级，不触发用户确认 |
+| 不可禁用 | 不能通过白名单机制排除（Agent 的基本感官不应被剥夺） |
+| 审计豁免 | 不写入 `guardrail_logs`（减少噪音，`datetime` 每次对话都会调用） |
+
+判定逻辑在 `ToolBridgeAgentToolProvider.getToolCallbacks()` 中实现：
+
+```java
+// 伪代码
+tools.stream()
+    .filter(t -> allowedToolIds.contains(t.id()) 
+                 || t.tags().contains("infrastructure"))
+    .toList();
+```
+
+### 10.5 权限解析流程图
+
+```
+工具调用请求
+    │
+    ▼
+┌─────────────────────┐
+│ 1. 工具存在性检查     │ ── 不存在 → 返回错误
+│    DynamicToolRegistry│
+└──────────┬──────────┘
+           ▼
+┌─────────────────────┐
+│ 2. 调用者作用域检查   │ ── 不在白名单且非 infrastructure → 工具不可见
+│    (Layer 2)         │    （ToolBridgeAgentToolProvider 过滤阶段）
+└──────────┬──────────┘
+           ▼
+┌─────────────────────┐
+│ 3. 参数校验          │ ── 校验失败 → 返回错误
+│    ToolInput.validate│
+└──────────┬──────────┘
+           ▼
+┌─────────────────────┐
+│ 4. 全局策略检查       │ ── Blocked → 返回拦截
+│    GuardrailEngine   │ ── NeedsConfirmation → 请求用户确认
+│    (Layer 1)         │
+└──────────┬──────────┘
+           ▼
+┌─────────────────────┐
+│ 5. 执行工具          │
+│    ToolContract.exec │
+└─────────────────────┘
+```
+
+### 10.6 与现有代码的改动点
+
+| 改动位置 | 改动内容 | 影响范围 |
+|---------|---------|---------|
+| `ToolBridgeAgentToolProvider` | 过滤逻辑增加 `infrastructure` 标签豁免 | Agent 工具可见性 |
+| `AgentExecutor.buildAllowedToolIds()` | 增加父 Agent 作用域交集约束 | SubAgent 工具范围 |
+| `WorkflowEngine` | 步骤执行前校验 `required-tools` | Workflow 工具权限 |
+| `ToolContract` | `tags()` 已支持，无需改动 | 无 |
+| `GuardrailEngine` | infrastructure 工具跳过审计日志 | 审计日志量 |
+
+### 10.7 设计决策
+
+**Q: 为什么不引入独立的 PermissionService？**
+A: 当前的三层模型已经覆盖所有场景，且各层的执行点已经存在（`ToolBridgeAgentToolProvider` 做 Layer 2，`GuardrailEngine` 做 Layer 1）。引入独立服务会增加调用链复杂度，且需要重构现有管线。保持现有架构，在各执行点增加少量逻辑即可。
+
+**Q: 为什么 infrastructure 工具不可禁用？**
+A: `datetime`、`think`、`confirm` 等工具是 Agent 正常运作的基本前提。一个不知道当前时间的 Agent 无法处理日程相关请求，一个不能请求用户确认的 Agent 无法安全执行高风险操作。这些工具的风险等级为 LOW，不存在安全隐患。
+
+**Q: Workflow 的 required-tools 是否强制？**
+A: 短期内不强制（向后兼容），未声明的步骤默认可用所有工具。长期目标是所有 Workflow 步骤都显式声明，实现最小权限原则。
+
+---
+
+## 11. 调研参考
 
 - [Anthropic Agent Skills 开放标准](https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills)（2025.12 发布，30+ 产品采纳）
 - [LobeHub Skills Marketplace](https://lobehub.com/skills)（2900+ Skills，含 find-skills / install-skills 元 Skill）
