@@ -3,7 +3,8 @@ package com.lifepilot.skill.builtin.habit;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.skill.builtin.BuiltinSkill;
 import com.lifepilot.skill.builtin.BuiltinSkillProvider;
-import com.lifepilot.skill.model.*;
+import com.lifepilot.skill.model.SkillDefinition;
+import com.lifepilot.skill.model.SkillSource;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.model.ToolResult;
@@ -46,8 +47,8 @@ public class HabitSkillProvider implements BuiltinSkillProvider {
                 .description("管理习惯养成，支持创建、查询、打卡、连续天数统计和完成率计算")
                 .version("1.0.0")
                 .source(new SkillSource.Builtin())
-                .systemPrompt(promptRegistry.render("skill/habit"))
-                .allowedTools(List.of(
+                .instructions(promptRegistry.render("skill/habit"))
+                .suggestedTools(List.of(
                         "builtin.habit.create",
                         "builtin.habit.list",
                         "builtin.habit.get",
@@ -56,9 +57,6 @@ public class HabitSkillProvider implements BuiltinSkillProvider {
                         "builtin.habit.streak",
                         "builtin.habit.completion-rate"
                 ))
-                .execution(ExecutionStrategy.DEFAULT)
-                .memoryAccess(MemoryAccessPolicy.none())
-                .budget(SkillBudget.LIGHTWEIGHT)
                 .metadata(Map.of())
                 .build();
     }

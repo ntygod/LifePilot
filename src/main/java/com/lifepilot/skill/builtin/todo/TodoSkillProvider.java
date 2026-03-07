@@ -3,7 +3,8 @@ package com.lifepilot.skill.builtin.todo;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.skill.builtin.BuiltinSkill;
 import com.lifepilot.skill.builtin.BuiltinSkillProvider;
-import com.lifepilot.skill.model.*;
+import com.lifepilot.skill.model.SkillDefinition;
+import com.lifepilot.skill.model.SkillSource;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.model.ToolResult;
@@ -45,8 +46,8 @@ public class TodoSkillProvider implements BuiltinSkillProvider {
                 .description("管理待办事项，支持创建、查询、更新、删除和完成操作")
                 .version("1.0.0")
                 .source(new SkillSource.Builtin())
-                .systemPrompt(promptRegistry.render("skill/todo"))
-                .allowedTools(List.of(
+                .instructions(promptRegistry.render("skill/todo"))
+                .suggestedTools(List.of(
                         "builtin.todo.create",
                         "builtin.todo.list",
                         "builtin.todo.get",
@@ -54,9 +55,6 @@ public class TodoSkillProvider implements BuiltinSkillProvider {
                         "builtin.todo.delete",
                         "builtin.todo.complete"
                 ))
-                .execution(ExecutionStrategy.DEFAULT)
-                .memoryAccess(MemoryAccessPolicy.none())
-                .budget(SkillBudget.LIGHTWEIGHT)
                 .metadata(Map.of())
                 .build();
     }

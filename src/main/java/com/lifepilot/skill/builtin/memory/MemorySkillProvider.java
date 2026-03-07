@@ -9,7 +9,8 @@ import com.lifepilot.memory.semantic.TemporalEntity;
 import com.lifepilot.memory.semantic.TemporalRelation;
 import com.lifepilot.skill.builtin.BuiltinSkill;
 import com.lifepilot.skill.builtin.BuiltinSkillProvider;
-import com.lifepilot.skill.model.*;
+import com.lifepilot.skill.model.SkillDefinition;
+import com.lifepilot.skill.model.SkillSource;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.model.ToolResult;
@@ -57,27 +58,14 @@ public class MemorySkillProvider implements BuiltinSkillProvider {
                 .description("管理长期记忆，支持搜索、创建、标签、时间线和关联查询")
                 .version("1.0.0")
                 .source(new SkillSource.Builtin())
-                .systemPrompt(promptRegistry.render("skill/memory"))
-                .allowedTools(List.of(
+                .instructions(promptRegistry.render("skill/memory"))
+                .suggestedTools(List.of(
                         "builtin.memory.search",
                         "builtin.memory.create",
                         "builtin.memory.tag",
                         "builtin.memory.timeline",
                         "builtin.memory.relate"
                 ))
-                .execution(ExecutionStrategy.DEFAULT)
-                .memoryAccess(new MemoryAccessPolicy(
-                        List.of(
-                                new MemoryReadPermission("L1_WORKING", List.of("*"), null),
-                                new MemoryReadPermission("L2_EPISODIC", List.of("*"), null),
-                                new MemoryReadPermission("L3_SEMANTIC", List.of("*"), null)
-                        ),
-                        List.of(
-                                new MemoryWritePermission("L2_EPISODIC", List.of("MEMO", "TAG"), false),
-                                new MemoryWritePermission("L3_SEMANTIC", List.of("RELATION"), false)
-                        )
-                ))
-                .budget(new SkillBudget(6000, 10, 90, 30))
                 .metadata(Map.of())
                 .build();
     }
