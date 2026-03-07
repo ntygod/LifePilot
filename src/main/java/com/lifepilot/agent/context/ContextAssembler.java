@@ -201,8 +201,10 @@ public class ContextAssembler {
 
             // 8. 构建 Prompt
             String systemPrompt = buildSystemPrompt(state.phase());
+            // 用户画像从 System Prompt 移至 User Prompt 半稳定区
+            String userProfile = safeGetUserProfile(semanticMemory);
             String userPrompt = buildEnhancedUserPrompt(state, formattedMemories, kbSnippets,
-                    formattedCrossSession, truncatedSlots);
+                    formattedCrossSession, truncatedSlots, userProfile);
 
             var context = new AssembledContext(
                     systemPrompt, userPrompt, formattedMemories,
@@ -757,52 +759,31 @@ public class ContextAssembler {
         // EXECUTING 阶段直接执行工具，不经过 LLM，无需系统提示词
         if (phase == AgentPhase.EXECUTING) return "";
         String roleDefinition = promptRegistry.render("agent/role-definition");
-        String userProfile = safeGetUserProfile(semanticMemory);
+        // 用户画像移至 User Prompt 半稳定区，System Prompt 保持会话内不变
         String phaseKey = "agent/" + phase.name().toLowerCase();
         return promptRegistry.render(phaseKey, Map.of(
                 "roleDefinition", roleDefinition,
-                "userProfile", userProfile != null ? userProfile : ""));
+                "userProfile", ""));
     }
 
     /**
      * 构建增强版 User Prompt（结构化内容区域）。
-     * 顺序：用户请求 → 相关记忆 → 知识库片段 → 跨会话参考 → 对话历史 → 工具结果 → 推理上下文 → 已执行步骤 → 预算剩余
+     * 顺序：用户画像 → 对话历史 → 相关记忆 → 知识库片段 → 跨会话参考 → 工具结果 → 推理上下文 → 已执行步骤 → 当前用户请求 → 预算剩余
      */
     String buildEnhancedUserPrompt(AgentState state,
                                    List<String> memories,
                                    List<String> knowledgeBaseSnippets,
                                    List<String> crossSessionFragments,
-                                   List<WorkingMemorySlot> slots) {
+                                   List<WorkingMemorySlot> slots,
+                                   @Nullable String userProfile) {
         var sb = new StringBuilder();
 
-        // 1. 用户请求（最重要，放在开头）
-        sb.append("用户请求: ").append(state.goal()).append("\n");
-
-        // 2. 相关记忆（条件性区域）
-        if (!memories.isEmpty()) {
-            sb.append("\n相关记忆:\n");
-            for (var memory : memories) {
-                sb.append("  - ").append(memory).append("\n");
-            }
+        // 1. 用户画像（半稳定区，从 System Prompt 移至此处）
+        if (userProfile != null && !userProfile.isBlank()) {
+            sb.append("用户画像:\n").append(userProfile).append("\n");
         }
 
-        // 2.5 知识库片段（条件性区域）
-        if (knowledgeBaseSnippets != null && !knowledgeBaseSnippets.isEmpty()) {
-            sb.append("\n知识库片段:\n");
-            for (var snippet : knowledgeBaseSnippets) {
-                sb.append("  - ").append(snippet).append("\n");
-            }
-        }
-
-        // 2.6 跨会话参考（L2 情景记忆跨会话检索结果，条件性区域）
-        if (crossSessionFragments != null && !crossSessionFragments.isEmpty()) {
-            sb.append("\n跨会话参考:\n");
-            for (var fragment : crossSessionFragments) {
-                sb.append("  - ").append(fragment).append("\n");
-            }
-        }
-
-        // 3. 对话历史（条件性区域，按 createdAt 时间顺序）
+        // 2. 对话历史（半稳定区，按 createdAt 时序）
         var conversationSlots = slots.stream()
                 .filter(s -> s instanceof ConversationSlot)
                 .map(s -> (ConversationSlot) s)
@@ -815,7 +796,31 @@ public class ContextAssembler {
             }
         }
 
-        // 4. 工具结果（条件性区域）
+        // 3. 相关记忆（动态区）
+        if (!memories.isEmpty()) {
+            sb.append("\n相关记忆:\n");
+            for (var memory : memories) {
+                sb.append("  - ").append(memory).append("\n");
+            }
+        }
+
+        // 4. 知识库片段（动态区）
+        if (knowledgeBaseSnippets != null && !knowledgeBaseSnippets.isEmpty()) {
+            sb.append("\n知识库片段:\n");
+            for (var snippet : knowledgeBaseSnippets) {
+                sb.append("  - ").append(snippet).append("\n");
+            }
+        }
+
+        // 5. 跨会话参考（动态区）
+        if (crossSessionFragments != null && !crossSessionFragments.isEmpty()) {
+            sb.append("\n跨会话参考:\n");
+            for (var fragment : crossSessionFragments) {
+                sb.append("  - ").append(fragment).append("\n");
+            }
+        }
+
+        // 6. 工具结果（动态区）
         var toolSlots = slots.stream()
                 .filter(s -> s instanceof ToolResultSlot)
                 .map(s -> (ToolResultSlot) s)
@@ -828,7 +833,7 @@ public class ContextAssembler {
             }
         }
 
-        // 5. 推理上下文（条件性区域）
+        // 7. 推理上下文（动态区）
         var reasoningSlots = slots.stream()
                 .filter(s -> s instanceof ReasoningSlot)
                 .map(s -> (ReasoningSlot) s)
@@ -840,7 +845,7 @@ public class ContextAssembler {
             }
         }
 
-        // 6. 已执行步骤
+        // 8. 已执行步骤（动态区）
         if (!state.steps().isEmpty()) {
             sb.append("\n已执行步骤:\n");
             for (int i = 0; i < state.steps().size(); i++) {
@@ -853,7 +858,10 @@ public class ContextAssembler {
             }
         }
 
-        // 7. 预算剩余（放在末尾）
+        // 9. 当前用户请求（动态区，移至末尾紧邻预算）
+        sb.append("\n用户请求: ").append(state.goal()).append("\n");
+
+        // 10. 预算剩余
         sb.append("\n预算剩余: Token=").append(state.budget().tokensRemaining())
                 .append(", 已用步骤=").append(state.stepCount()).append("\n");
 
