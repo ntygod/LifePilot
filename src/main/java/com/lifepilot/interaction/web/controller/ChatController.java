@@ -9,6 +9,8 @@ import com.lifepilot.interaction.web.repository.MessageFeedbackRepository;
 import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
+import com.lifepilot.agent.proactive.ResponseTracker;
+import com.lifepilot.agent.proactive.config.ProactiveConfigProperties;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -69,18 +71,25 @@ public class ChatController {
     private final MessageFeedbackRepository feedbackRepository;
     private final AttachmentRepository attachmentRepository;
     private final KnowledgeBaseProperties knowledgeBaseProperties;
+    private final ProactiveConfigProperties proactiveConfig;
+    @org.springframework.lang.Nullable
+    private final ResponseTracker responseTracker;
 
     public ChatController(WebChannelAdapter adapter, SseSessionManager sseManager,
                           com.lifepilot.interaction.web.service.ChatSessionService sessionService,
                           MessageFeedbackRepository feedbackRepository,
                           AttachmentRepository attachmentRepository,
-                          KnowledgeBaseProperties knowledgeBaseProperties) {
+                          KnowledgeBaseProperties knowledgeBaseProperties,
+                          ProactiveConfigProperties proactiveConfig,
+                          @org.springframework.lang.Nullable ResponseTracker responseTracker) {
         this.adapter = adapter;
         this.sseManager = sseManager;
         this.sessionService = sessionService;
         this.feedbackRepository = feedbackRepository;
         this.attachmentRepository = attachmentRepository;
         this.knowledgeBaseProperties = knowledgeBaseProperties;
+        this.proactiveConfig = proactiveConfig;
+        this.responseTracker = responseTracker;
     }
 
     /**
@@ -102,6 +111,8 @@ public class ChatController {
         }
 
         log.debug("收到非流式消息请求: sessionId={}", request.sessionId());
+        // 反馈闭环：通知 ResponseTracker 用户交互
+        notifyResponseTracker(request.content());
         var response = adapter.processMessage(request, httpRequest);
         var chatResponse = toChatResponse(response);
         return ResponseEntity.ok(chatResponse);
@@ -137,6 +148,8 @@ public class ChatController {
         }
 
         log.debug("收到流式消息请求: sessionId={}", request.sessionId());
+        // 反馈闭环：通知 ResponseTracker 用户交互
+        notifyResponseTracker(request.content());
         var response = adapter.processMessageStreaming(request, httpRequest);
 
         if (response.content() instanceof ResponseContent.StreamingContent(String streamId)) {
@@ -423,6 +436,22 @@ public class ChatController {
     }
 
     /**
+     * SSE 持久通知流端点 — 客户端订阅后接收主动推理引擎推送的通知事件。
+     *
+     * <p>创建持久 SseEmitter，timeout 从 {@link ProactiveConfigProperties#getNotificationSseTimeoutMs()} 读取，
+     * 注册到 {@link SseSessionManager}，streamId 使用 notification-{uuid} 前缀。</p>
+     *
+     * @return 持久通知 SseEmitter
+     */
+    @GetMapping("/notifications/stream")
+    public SseEmitter notificationStream() {
+        var streamId = "notification-" + UUID.randomUUID();
+        long timeout = proactiveConfig.getNotificationSseTimeoutMs();
+        log.debug("创建通知 SSE 流: streamId={}, timeout={}ms", streamId, timeout);
+        return sseManager.createNotificationEmitter(streamId, timeout);
+    }
+
+    /**
      * A2UI 信号回传。
      *
      * <p>将用户与 A2UI 组件的交互信号转换为 GatewayMessage 提交到中间件管道处理。
@@ -646,6 +675,22 @@ public class ChatController {
     }
 
     // ── 内部辅助方法 ──────────────────────────────────────────
+
+    /**
+     * 安全通知 ResponseTracker 用户交互，异常不影响消息处理主流程。
+     *
+     * @param content 用户消息内容
+     */
+    private void notifyResponseTracker(String content) {
+        if (responseTracker == null || content == null || content.isBlank()) {
+            return;
+        }
+        try {
+            responseTracker.onUserInteraction(content);
+        } catch (Exception e) {
+            log.warn("ResponseTracker 通知失败: error={}", e.getMessage());
+        }
+    }
 
     /**
      * 获取文件扩展名（包含点号）。

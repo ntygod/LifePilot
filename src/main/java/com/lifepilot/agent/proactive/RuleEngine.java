@@ -10,7 +10,9 @@ import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
@@ -106,6 +108,25 @@ public class RuleEngine {
                     "习惯「%s」连续 %d 天打卡记录面临中断".formatted(habit.name(), habit.currentStreak())));
         }
 
+        // 6. 每日总结规则
+        if (isTypeAllowed(NotificationType.DAILY_SUMMARY)) {
+            if (signals.currentTime().getHour() == config.getDailySummaryHour()
+                    && !hasSentToday(NotificationType.DAILY_SUMMARY, signals.currentTime().toLocalDate())) {
+                candidates.add(new ProactiveCandidate(
+                        NotificationType.DAILY_SUMMARY, Urgency.LOW, "每日总结时间到"));
+            }
+        }
+
+        // 7. 每周回顾规则
+        if (isTypeAllowed(NotificationType.WEEKLY_REVIEW)) {
+            if (signals.dayOfWeek().getValue() == config.getWeeklyReviewDay()
+                    && signals.currentTime().getHour() == config.getWeeklyReviewHour()
+                    && !hasSentThisWeek(NotificationType.WEEKLY_REVIEW, signals.currentTime().toLocalDate())) {
+                candidates.add(new ProactiveCandidate(
+                        NotificationType.WEEKLY_REVIEW, Urgency.LOW, "每周回顾时间到"));
+            }
+        }
+
         return List.copyOf(candidates);
     }
 
@@ -134,5 +155,31 @@ public class RuleEngine {
             return false;
         }
         return !frequencyStateManager.isInCooldown(type);
+    }
+
+    /**
+     * 判断指定类型今天是否已发送过通知。
+     */
+    private boolean hasSentToday(NotificationType type, LocalDate today) {
+        var lastNotified = frequencyStateManager.getLastNotifiedAt(type);
+        if (lastNotified.equals(Instant.EPOCH)) {
+            return false;
+        }
+        var lastDate = LocalDate.ofInstant(lastNotified, ZoneId.systemDefault());
+        return !lastDate.isBefore(today);
+    }
+
+    /**
+     * 判断指定类型本周是否已发送过通知。
+     */
+    private boolean hasSentThisWeek(NotificationType type, LocalDate today) {
+        var lastNotified = frequencyStateManager.getLastNotifiedAt(type);
+        if (lastNotified.equals(Instant.EPOCH)) {
+            return false;
+        }
+        var lastDate = LocalDate.ofInstant(lastNotified, ZoneId.systemDefault());
+        // 本周一作为周起始
+        var weekStart = today.with(java.time.DayOfWeek.MONDAY);
+        return !lastDate.isBefore(weekStart);
     }
 }

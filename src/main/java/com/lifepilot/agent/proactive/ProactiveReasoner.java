@@ -2,6 +2,7 @@ package com.lifepilot.agent.proactive;
 
 import com.lifepilot.agent.proactive.config.ProactiveConfigProperties;
 import com.lifepilot.agent.proactive.model.ProactiveNotification;
+import com.lifepilot.agent.proactive.model.Urgency;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.LlmUnavailableException;
 import com.lifepilot.prompt.PromptRegistry;
@@ -93,16 +94,23 @@ public class ProactiveReasoner {
                 continue;
             }
 
-            // LLM 评估
             try {
-                var prompt = buildEvaluationPrompt(candidate);
-                var llmResponse = llmRouter.call("proactive_reasoning", prompt, null);
-                var content = llmResponse.content();
+                String content;
 
-                // LLM 判定不值得发送
-                if (content == null || content.isBlank() || content.contains("SKIP")) {
-                    log.debug("LLM 判定跳过: type={}", candidate.type());
-                    continue;
+                if (candidate.urgency() == Urgency.HIGH) {
+                    // HIGH 紧急度：模板渲染，跳过 LLM
+                    content = renderHighUrgencyTemplate(candidate);
+                } else {
+                    // MEDIUM/LOW：LLM 评估
+                    var prompt = buildEvaluationPrompt(candidate);
+                    var llmResponse = llmRouter.call("proactive_reasoning", prompt, null);
+                    content = llmResponse.content();
+
+                    // LLM 判定不值得发送
+                    if (content == null || content.isBlank() || content.contains("SKIP")) {
+                        log.debug("LLM 判定跳过: type={}", candidate.type());
+                        continue;
+                    }
                 }
 
                 // 截断内容
@@ -139,6 +147,19 @@ public class ProactiveReasoner {
 
         // 清理过期追踪
         responseTracker.cleanupExpired();
+    }
+
+    /**
+     * 渲染 HIGH 紧急度模板，失败时降级为 candidate.reason()。
+     */
+    private String renderHighUrgencyTemplate(com.lifepilot.agent.proactive.model.ProactiveCandidate candidate) {
+        try {
+            var templateKey = "proactive/high-urgency/" + candidate.type().name().toLowerCase();
+            return promptRegistry.render(templateKey, Map.of("reason", candidate.reason()));
+        } catch (Exception e) {
+            log.warn("HIGH 紧急度模板渲染失败，降级为原始原因: type={}, error={}", candidate.type(), e.getMessage());
+            return candidate.reason();
+        }
     }
 
     /** 构建 LLM 评估提示词。 */

@@ -3,7 +3,7 @@
 > **文档性质**：深度架构设计文档（Developer-Facing）
 > **目标读者**：核心开发者、架构评审者
 > **模块归属**：`com.lifepilot.agent.proactive`
-> **最后更新**：2026-02
+> **最后更新**：2026-03
 > **从属关系**：本文档从 [ARCHITECTURE.md](../ARCHITECTURE.md) 拆分而来，聚焦主动推理引擎的完整设计。
 
 ---
@@ -138,12 +138,20 @@ Stage 1（规则引擎，< 10ms）过滤 90% 的无效信号，只有通过规�
 │  │                    通知通道层                                   │  │
 │  │                                                               │  │
 │  │  ┌──────────────────┐  ┌──────────────────────────────────┐  │  │
-│  │  │ LogNotification  │  │ PassiveNotificationQueue         │  │  │
-│  │  │ Channel          │  │ （LOW 紧急度通知暂存）             │  │  │
-│  │  │ （占位实现）       │  │                                  │  │  │
+│  │  │ GatewayNotifica- │  │ PassiveNotificationQueue         │  │  │
+│  │  │ tionChannel      │  │ （LOW 紧急度通知暂存）             │  │  │
+│  │  │ （桥接 Channel-  │  │ → ContextAssembler drain         │  │  │
+│  │  │  Adapter 广播）   │  │ → WebChannelAdapter SSE 广播     │  │  │
+│  │  └───────┬──────────┘  └──────────────────────────────────┘  │  │
+│  │          │                                                    │  │
+│  │  ┌───────▼──────────┐  ┌──────────────────────────────────┐  │  │
+│  │  │ WebChannelAdapter│  │ LogNotificationChannel           │  │  │
+│  │  │ → SSE 通知推送    │  │ （兜底日志输出）                   │  │  │
+│  │  │ → SseSession-    │  │                                  │  │  │
+│  │  │   Manager 广播   │  │                                  │  │  │
 │  │  └──────────────────┘  └──────────────────────────────────┘  │  │
 │  │                                                               │  │
-│  │  未来扩展：系统托盘 / Web Push / 企微 / 钉钉 / 飞书           │  │
+│  │  Web UI: GET /api/notifications/stream（SSE 持久通知端点）     │  │
 │  └───────────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -154,18 +162,21 @@ Stage 1（规则引擎，< 10ms）过滤 90% 的无效信号，只有通过规�
 
 ### 3.1 职责
 
-`ProactiveReasoner` 是主动推理引擎的入口，通过 `@Scheduled` 定时触发（默认每 5 分钟），在 Virtual Thread 上执行两阶段推理管线。
+`ProactiveReasoner` 是主动推理引擎的入口，通过 `@Scheduled` 定时触发（默认每 30 分钟），在 Virtual Thread 上执行两阶段推理管线。
 
 ### 3.2 执行流程
 
 ```
-@Scheduled(fixedDelayString = "${lifepilot.proactive.check-interval-ms:300000}")
+@Scheduled(fixedDelayString = "${lifepilot.agent.proactive.check-interval-ms:1800000}")
 void reason():
   1. SignalCollector.collect() → SignalBundle（4 类信号）
   2. RuleEngine.evaluate(signals) → List<ProactiveCandidate>（候选通知）
   3. 对每个候选：
      a. FrequencyStateManager.shouldSend(type, urgency) → 频率过滤
-     b. LLM 评估（可选，仅 MEDIUM 紧急度需要）→ 价值判断
+     b. 紧急度路由：
+        - HIGH → 模板渲染（PromptRegistry），跳过 LLM，直接构造通知
+        - MEDIUM/LOW → LLM 评估（LlmRouter），综合判断是否值得打扰
+     c. 模板渲染失败时降级为 candidate.reason() 作为通知内容
   4. NotificationDispatcher.dispatch(notifications) → 分发通知
   5. ResponseTracker.track(notifications) → 追踪用户响应
 ```
@@ -294,13 +305,16 @@ void dispatch(ProactiveNotification notification) {
 ### 7.2 通道选择
 
 当前实现：
-- 主动通道：`LogNotificationChannel`（占位实现，以 INFO 日志输出）
-- 被动通道：`PassiveNotificationQueue`（ConcurrentLinkedQueue 暂存）
+- 主动通道：`GatewayNotificationChannel`（桥接 NotificationChannel 与 ChannelAdapter，遍历所有已注册通道广播）
+- 主动通道：`LogNotificationChannel`（日志输出，作为兜底通道）
+- 被动通道：`PassiveNotificationQueue`（ConcurrentLinkedQueue 暂存，ContextAssembler 首次对话时 drain 注入上下文）
 
-未来扩展：
-- 系统托盘通知（Windows / macOS / Linux 原生通知）
-- Web Push（SSE 推送到 Web UI）
-- 企微/钉钉/飞书（通过 ChannelAdapter 推送）
+通知分发流程：
+1. `NotificationDispatcher` 根据紧急度路由：HIGH/MEDIUM → 主动通道，LOW → 被动队列
+2. `GatewayNotificationChannel` 将 `ProactiveNotification` 转换为 `GatewayResponse`（metadata 包含 notificationType、urgency、notificationId）
+3. 遍历所有 `ChannelAdapter`（WebChannelAdapter、企微、钉钉等）调用 `sendResponse()`
+4. `WebChannelAdapter.doSendResponse()` 检测 metadata 中的 notificationType，通过 `SseSessionManager.broadcastNotification()` 推送 SSE 事件
+5. 被动队列中的 LOW 紧急度通知在 WebChannelAdapter 处理响应时也会 drain 并通过 SSE 广播
 
 ---
 
@@ -347,12 +361,49 @@ public interface NotificationChannel {
 
 | 通道 | 类 | 说明 |
 |------|---|------|
-| 日志通道 | `LogNotificationChannel` | 占位实现，INFO 级别日志输出 |
-| 被动队列 | `PassiveNotificationQueue` | ConcurrentLinkedQueue，用户主动 `drainAll()` 查看 |
+| Gateway 通道 | `GatewayNotificationChannel` | 桥接 NotificationChannel 与 ChannelAdapter，遍历所有通道广播，单通道失败不中断 |
+| 日志通道 | `LogNotificationChannel` | 兜底通道，INFO 级别日志输出 |
+| 被动队列 | `PassiveNotificationQueue` | ConcurrentLinkedQueue，ContextAssembler 首次对话时 `drainAll()` 注入上下文 |
 
-### 9.3 扩展点
+### 9.3 Web UI SSE 持久通知端点
 
-`NotificationChannel` 是扩展点接口。未来 Gateway 模块可实现真实通道（系统托盘、Web Push、企微等），注册到 `NotificationDispatcher` 即可。
+Web UI 通过 SSE 持久连接接收主动通知推送：
+
+- 端点：`GET /api/notifications/stream`
+- 超时：从 `ProactiveConfigProperties.notificationSseTimeoutMs` 读取（默认 30 分钟）
+- streamId 命名：`notification-{uuid}` 前缀，与对话 SSE 连接区分
+- 事件类型：`notification`（`SseEventType.NOTIFICATION`）
+- 事件载荷：`NotificationSseEvent(id, type, urgency, content, timestamp)`
+
+推送链路：
+```
+GatewayNotificationChannel
+  → WebChannelAdapter.doSendResponse()
+    → 检测 metadata.notificationType
+      → SseSessionManager.broadcastNotification(NotificationSseEvent)
+        → 广播到所有 notification- 前缀的 SseEmitter
+```
+
+### 9.4 ResponseTracker 反馈闭环集成
+
+`ResponseTracker` 在以下两个集成点接收用户交互信号：
+
+1. `ChatController`：在 `sendMessage()` 和 `sendMessageStream()` 中调用 `responseTracker.onUserInteraction(content)`
+2. `DefaultMessageGateway`：在 `process()` 中对 `TextMessage` 类型调用 `responseTracker.onUserInteraction(normalizedContent)`
+
+两个集成点通过幂等检查避免重复调用。异常捕获 WARN 日志，不影响消息处理主流程。
+
+### 9.5 ContextAssembler 被动通知消费
+
+`ContextAssembler` 通过构造函数注入 `@Nullable PassiveNotificationQueue`，在 `buildEnhancedUserPrompt()` 中 drain 被动队列：
+
+- 调用 `passiveNotificationQueue.drainAll()` 获取所有待处理通知
+- 格式化为「待处理提醒」上下文段，注入到用户画像之后、对话历史之前
+- 空列表不添加上下文段，异常时 WARN 日志静默跳过
+
+### 9.6 扩展点
+
+`NotificationChannel` 是扩展点接口。新增通道只需实现接口并注册为 Spring Bean，`NotificationDispatcher` 自动收集所有 `NotificationChannel` Bean。
 
 ---
 
@@ -387,32 +438,41 @@ ROADMAP §6（AstrBot 深度分析）指出 AstrBot 采用被动响应模型，�
 
 ```yaml
 lifepilot:
-  proactive:
-    # 推理检查间隔（毫秒）
-    check-interval-ms: 300000  # 5 分钟
-    # 免打扰时段
-    quiet-hours-start: "23:00"
-    quiet-hours-end: "07:00"
-    # 降频阈值（连续忽略次数）
-    ignore-threshold: 3
-    # REDUCED 状态冷却期倍数
-    reduced-multiplier: 3
-    # 各类型冷却期（分钟）
-    cooldown-minutes:
-      deadline-reminder: 60
-      schedule-reminder: 30
-      habit-reminder: 120
-      streak-at-risk: 240
-      daily-summary: 1440
-      weekly-review: 10080
-    # 响应追踪超时（分钟）
-    response-timeout-minutes: 30
-    # 各类型开关
-    enabled-types:
-      deadline-reminder: true
-      schedule-reminder: true
-      habit-reminder: true
-      streak-at-risk: true
-      daily-summary: true
-      weekly-review: true
+  agent:
+    proactive:
+      # 推理检查间隔（毫秒）
+      check-interval-ms: 1800000  # 30 分钟
+      # 免打扰时段
+      quiet-hours-start: "23:00"
+      quiet-hours-end: "07:00"
+      # 降频阈值（连续忽略次数）
+      ignore-threshold: 3
+      # REDUCED 状态冷却期倍数
+      reduced-multiplier: 3
+      # 各类型冷却期（分钟）— 按 NotificationType 独立配置
+      cooldown-minutes-per-type:
+        DEADLINE_REMINDER: 60
+        SCHEDULE_REMINDER: 30
+        HABIT_REMINDER: 120
+        STREAK_AT_RISK: 240
+        DAILY_SUMMARY: 1440
+        WEEKLY_REVIEW: 10080
+      # 每日总结触发小时（24h 制）
+      daily-summary-hour: 21
+      # 每周回顾触发星期（1=周一，7=周日）
+      weekly-review-day: 7
+      # 每周回顾触发小时（24h 制）
+      weekly-review-hour: 10
+      # SSE 通知连接超时（毫秒）
+      notification-sse-timeout-ms: 1800000  # 30 分钟
+      # 响应追踪超时（分钟）
+      response-timeout-minutes: 30
+      # 各类型开关
+      enabled-types:
+        deadline-reminder: true
+        schedule-reminder: true
+        habit-reminder: true
+        streak-at-risk: true
+        daily-summary: true
+        weekly-review: true
 ```

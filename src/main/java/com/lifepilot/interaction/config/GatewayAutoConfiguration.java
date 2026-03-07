@@ -2,6 +2,7 @@ package com.lifepilot.interaction.config;
 
 import java.util.List;
 
+import com.lifepilot.agent.proactive.ResponseTracker;
 import com.lifepilot.interaction.channel.ChannelAdapter;
 import com.lifepilot.interaction.gateway.DefaultMessageGateway;
 import com.lifepilot.interaction.gateway.MessageGateway;
@@ -15,6 +16,7 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.event.EventListener;
 import org.springframework.context.annotation.Bean;
+import org.springframework.lang.Nullable;
 
 /**
  * Gateway 核心框架自动配置。
@@ -56,9 +58,10 @@ public class GatewayAutoConfiguration {
      * @return 消息网关实例
      */
     @Bean
-    public MessageGateway messageGateway(MiddlewarePipeline pipeline) {
+    public MessageGateway messageGateway(MiddlewarePipeline pipeline,
+                                          @Nullable ResponseTracker responseTracker) {
         log.info("注册 MessageGateway");
-        return new DefaultMessageGateway(pipeline);
+        return new DefaultMessageGateway(pipeline, responseTracker);
     }
 
     /**

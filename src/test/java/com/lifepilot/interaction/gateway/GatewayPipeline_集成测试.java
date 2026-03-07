@@ -133,7 +133,7 @@ class GatewayPipeline_集成测试 {
     @Test
     void 网关未启动时_返回503() {
         // 创建新网关实例，不调用 start()
-        var freshGateway = new DefaultMessageGateway(pipeline);
+        var freshGateway = new DefaultMessageGateway(pipeline, null);
         var message = buildWebMessage(new MessageContent.TextMessage("/todo"));
         var response = freshGateway.process(message);
 

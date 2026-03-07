@@ -4,6 +4,7 @@ import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.model.AgentPhase;
 import com.lifepilot.agent.model.AgentState;
 import com.lifepilot.agent.model.StepRecord;
+import com.lifepilot.agent.proactive.channel.PassiveNotificationQueue;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.knowledge.model.DocumentSearchResult;
 import com.lifepilot.knowledge.repository.DocumentRepository;
@@ -70,6 +71,8 @@ public class ContextAssembler {
     @Nullable private final DocumentRetriever documentRetriever;
     @Nullable private final SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository;
     @Nullable private final DocumentRepository documentRepository;
+    // 被动通知队列：首次对话时 drain 并注入上下文，可选注入
+    @Nullable private final PassiveNotificationQueue passiveNotificationQueue;
 
     /** 请求级检索缓存 — 同一 traceId + query + topK 组合只执行一次实际检索。 */
     private final ConcurrentHashMap<String, List<RetrievalResult>> retrievalCache = new ConcurrentHashMap<>();
@@ -88,6 +91,7 @@ public class ContextAssembler {
         this.documentRetriever = null;
         this.sessionKnowledgeBaseRepository = null;
         this.documentRepository = null;
+        this.passiveNotificationQueue = null;
     }
 
     /** 完整版构造器（注入记忆系统依赖）。 */
@@ -99,10 +103,10 @@ public class ContextAssembler {
                             @Nullable DataRedactor dataRedactor,
                             PromptRegistry promptRegistry) {
         this(config, hybridRetriever, workingMemory, tokenBudgetAllocator, retrievalStrategy, dataRedactor,
-                null, null, null, null, null, promptRegistry);
+                null, null, null, null, null, null, promptRegistry);
     }
 
-    /** 完整版构造器（注入记忆系统 + 可选知识库检索 + 可选 L2 情景记忆 + 可选 L3 语义记忆依赖）。 */
+    /** 完整版构造器（注入记忆系统 + 可选知识库检索 + 可选 L2 情景记忆 + 可选 L3 语义记忆 + 可选被动通知队列依赖）。 */
     public ContextAssembler(AgentConfigProperties config,
                             HybridRetriever hybridRetriever,
                             WorkingMemory workingMemory,
@@ -114,6 +118,7 @@ public class ContextAssembler {
                             @Nullable DocumentRepository documentRepository,
                             @Nullable EpisodicMemory episodicMemory,
                             @Nullable SemanticMemory semanticMemory,
+                            @Nullable PassiveNotificationQueue passiveNotificationQueue,
                             PromptRegistry promptRegistry) {
         this.config = config;
         this.hybridRetriever = hybridRetriever;
@@ -127,6 +132,7 @@ public class ContextAssembler {
         this.documentRetriever = documentRetriever;
         this.sessionKnowledgeBaseRepository = sessionKnowledgeBaseRepository;
         this.documentRepository = documentRepository;
+        this.passiveNotificationQueue = passiveNotificationQueue;
     }
 
     /** 判断是否为完整版模式。 */
@@ -410,6 +416,23 @@ public class ContextAssembler {
             return episodicMemory.searchExcludingSession(query, sessionId, 5);
         } catch (Exception e) {
             log.warn("L2 跨会话检索降级: sessionId={}, error={}", sessionId, e.getMessage());
+            return List.of();
+        }
+    }
+
+    /**
+     * 安全 drain 被动通知队列，异常时返回空列表。
+     */
+    private List<String> safeDrainPassiveNotifications() {
+        if (passiveNotificationQueue == null) return List.of();
+        try {
+            var notifications = passiveNotificationQueue.drainAll();
+            if (notifications.isEmpty()) return List.of();
+            return notifications.stream()
+                    .map(n -> "[%s] %s (%s)".formatted(n.type(), n.content(), n.sentAt()))
+                    .toList();
+        } catch (Exception e) {
+            log.warn("被动通知队列 drain 失败，降级跳过: error={}", e.getMessage());
             return List.of();
         }
     }
@@ -804,6 +827,15 @@ public class ContextAssembler {
         // 1. 用户画像（半稳定区，从 System Prompt 移至此处）
         if (userProfile != null && !userProfile.isBlank()) {
             sb.append("用户画像:\n").append(userProfile).append("\n");
+        }
+
+        // 1.5 被动通知（首次对话时 drain）
+        var passiveSection = safeDrainPassiveNotifications();
+        if (!passiveSection.isEmpty()) {
+            sb.append("\n待处理提醒:\n");
+            for (var line : passiveSection) {
+                sb.append("  - ").append(line).append("\n");
+            }
         }
 
         // 2. 对话历史（半稳定区，按 createdAt 时序）

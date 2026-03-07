@@ -30,8 +30,27 @@ public class ProactiveConfigProperties {
     /** 免打扰结束小时（0-23），默认 8。 */
     private int quietHoursEnd = 8;
 
-    /** 同类型通知冷却时间（分钟），默认 120。 */
-    private int cooldownMinutes = 120;
+    /** 各通知类型独立冷却时间（分钟）。 */
+    private Map<NotificationType, Integer> cooldownMinutesPerType = new EnumMap<>(Map.of(
+            NotificationType.DEADLINE_REMINDER, 60,
+            NotificationType.SCHEDULE_REMINDER, 30,
+            NotificationType.HABIT_REMINDER, 120,
+            NotificationType.STREAK_AT_RISK, 240,
+            NotificationType.DAILY_SUMMARY, 1440,
+            NotificationType.WEEKLY_REVIEW, 10080
+    ));
+
+    /** 每日总结触发小时（0-23），默认 21 点。 */
+    private int dailySummaryHour = 21;
+
+    /** 每周回顾触发星期（1=Monday, 7=Sunday），默认周日。 */
+    private int weeklyReviewDay = 7;
+
+    /** 每周回顾触发小时（0-23），默认 10 点。 */
+    private int weeklyReviewHour = 10;
+
+    /** 通知 SSE 端点超时（毫秒），默认 30 分钟。 */
+    private long notificationSseTimeoutMs = 1_800_000;
 
     /** 用户响应窗口（分钟），默认 30。 */
     private int responseWindowMinutes = 30;
@@ -62,8 +81,32 @@ public class ProactiveConfigProperties {
     public int getQuietHoursEnd() { return quietHoursEnd; }
     public void setQuietHoursEnd(int quietHoursEnd) { this.quietHoursEnd = quietHoursEnd; }
 
-    public int getCooldownMinutes() { return cooldownMinutes; }
-    public void setCooldownMinutes(int cooldownMinutes) { this.cooldownMinutes = cooldownMinutes; }
+    public Map<NotificationType, Integer> getCooldownMinutesPerType() { return cooldownMinutesPerType; }
+    public void setCooldownMinutesPerType(Map<NotificationType, Integer> cooldownMinutesPerType) {
+        this.cooldownMinutesPerType = cooldownMinutesPerType;
+    }
+
+    /**
+     * 获取指定通知类型的冷却时间（分钟），未配置时 fallback 120 分钟。
+     *
+     * @param type 通知类型
+     * @return 冷却时间（分钟）
+     */
+    public int getCooldownMinutesForType(NotificationType type) {
+        return cooldownMinutesPerType.getOrDefault(type, 120);
+    }
+
+    public int getDailySummaryHour() { return dailySummaryHour; }
+    public void setDailySummaryHour(int dailySummaryHour) { this.dailySummaryHour = dailySummaryHour; }
+
+    public int getWeeklyReviewDay() { return weeklyReviewDay; }
+    public void setWeeklyReviewDay(int weeklyReviewDay) { this.weeklyReviewDay = weeklyReviewDay; }
+
+    public int getWeeklyReviewHour() { return weeklyReviewHour; }
+    public void setWeeklyReviewHour(int weeklyReviewHour) { this.weeklyReviewHour = weeklyReviewHour; }
+
+    public long getNotificationSseTimeoutMs() { return notificationSseTimeoutMs; }
+    public void setNotificationSseTimeoutMs(long notificationSseTimeoutMs) { this.notificationSseTimeoutMs = notificationSseTimeoutMs; }
 
     public int getResponseWindowMinutes() { return responseWindowMinutes; }
     public void setResponseWindowMinutes(int responseWindowMinutes) { this.responseWindowMinutes = responseWindowMinutes; }
