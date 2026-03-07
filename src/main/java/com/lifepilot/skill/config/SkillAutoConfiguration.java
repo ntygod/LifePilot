@@ -230,10 +230,9 @@ public class SkillAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public SecurityValidator securityValidator(DynamicToolRegistry toolRegistry,
-                                              SkillConfigProperties config) {
+    public SecurityValidator securityValidator(DynamicToolRegistry toolRegistry) {
         log.info("Skill 系统: 注册 SecurityValidator");
-        return new SecurityValidator(toolRegistry, config);
+        return new SecurityValidator(toolRegistry);
     }
 
     @Bean

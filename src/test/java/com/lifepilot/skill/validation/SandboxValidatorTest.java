@@ -26,14 +26,14 @@ class SandboxValidatorTest {
         return """
                 ---
                 id: my-skill-1
-                name: "\u6D4B\u8BD5\u6280\u80FD"
-                description: "\u8FD9\u662F\u4E00\u4E2A\u6D4B\u8BD5\u6280\u80FD"
-                allowed-tools:
+                name: "测试技能"
+                description: "这是一个测试技能"
+                suggested-tools:
                   - tool-a
                   - tool-b
                 ---
 
-                \u4F60\u662F\u4E00\u4E2A\u6D4B\u8BD5\u52A9\u624B
+                你是一个测试助手
                 """;
     }
 
@@ -47,33 +47,33 @@ class SandboxValidatorTest {
         assertThat(result.errors()).isEmpty();
     }
 
-    // ── systemPrompt 长度校验 ──
+    // ── instructions 长度校验 ──
 
     @Test
-    void systemPrompt超过5000字符_沙箱验证失败() {
-        String longPrompt = "x".repeat(5001);
+    void instructions超过5000字符_沙箱验证失败() {
+        String longInstructions = "x".repeat(5001);
         String md = """
                 ---
-                id: long-prompt-skill
-                name: "\u957F\u63D0\u793A\u8BCD\u6280\u80FD"
-                description: "\u6D4B\u8BD5\u8D85\u957F system-prompt"
-                allowed-tools:
+                id: long-instructions-skill
+                name: "长指令技能"
+                description: "测试超长 instructions"
+                suggested-tools:
                   - tool-a
                 ---
 
                 %s
-                """.formatted(longPrompt);
+                """.formatted(longInstructions);
 
         SandboxValidationResult result = validator.validate(md);
 
         assertThat(result.passed()).isFalse();
-        assertThat(result.errors()).anyMatch(e -> e.contains("systemPrompt") && e.contains("5000"));
+        assertThat(result.errors()).anyMatch(e -> e.contains("instructions") && e.contains("5000"));
     }
 
-    // ── allowedTools 数量校验 ──
+    // ── suggestedTools 数量校验 ──
 
     @Test
-    void allowedTools超过10个_沙箱验证失败() {
+    void suggestedTools超过10个_沙箱验证失败() {
         StringBuilder tools = new StringBuilder();
         for (int i = 1; i <= 11; i++) {
             tools.append("  - tool-").append(i).append("\n");
@@ -81,25 +81,25 @@ class SandboxValidatorTest {
         String md = """
                 ---
                 id: many-tools-skill
-                name: "\u591A\u5DE5\u5177\u6280\u80FD"
-                description: "\u6D4B\u8BD5\u8D85\u591A\u5DE5\u5177"
-                allowed-tools:
+                name: "多工具技能"
+                description: "测试超多工具"
+                suggested-tools:
                 %s---
 
-                \u4F60\u662F\u4E00\u4E2A\u52A9\u624B
+                你是一个助手
                 """.formatted(tools.toString());
 
         SandboxValidationResult result = validator.validate(md);
 
         assertThat(result.passed()).isFalse();
-        assertThat(result.errors()).anyMatch(e -> e.contains("allowedTools") && e.contains("10"));
+        assertThat(result.errors()).anyMatch(e -> e.contains("suggestedTools") && e.contains("10"));
     }
 
     // ── 两个限制同时超出 ──
 
     @Test
-    void systemPrompt和allowedTools同时超限_返回多个错误() {
-        String longPrompt = "x".repeat(5001);
+    void instructions和suggestedTools同时超限_返回多个错误() {
+        String longInstructions = "x".repeat(5001);
         StringBuilder tools = new StringBuilder();
         for (int i = 1; i <= 11; i++) {
             tools.append("  - tool-").append(i).append("\n");
@@ -107,27 +107,27 @@ class SandboxValidatorTest {
         String md = """
                 ---
                 id: both-exceed-skill
-                name: "\u53CC\u8D85\u9650\u6280\u80FD"
-                description: "\u6D4B\u8BD5\u4E24\u4E2A\u9650\u5236\u540C\u65F6\u8D85\u51FA"
-                allowed-tools:
+                name: "双超限技能"
+                description: "测试两个限制同时超出"
+                suggested-tools:
                 %s---
 
                 %s
-                """.formatted(tools.toString(), longPrompt);
+                """.formatted(tools.toString(), longInstructions);
 
         SandboxValidationResult result = validator.validate(md);
 
         assertThat(result.passed()).isFalse();
         assertThat(result.errors()).hasSize(2);
-        assertThat(result.errors()).anyMatch(e -> e.contains("systemPrompt"));
-        assertThat(result.errors()).anyMatch(e -> e.contains("allowedTools"));
+        assertThat(result.errors()).anyMatch(e -> e.contains("instructions"));
+        assertThat(result.errors()).anyMatch(e -> e.contains("suggestedTools"));
     }
 
     // ── 解析失败 ──
 
     @Test
     void 缺少Frontmatter_沙箱验证失败() {
-        String noFrontmatter = "\u4F60\u662F\u4E00\u4E2A\u6D4B\u8BD5\u52A9\u624B";
+        String noFrontmatter = "你是一个测试助手";
 
         SandboxValidationResult result = validator.validate(noFrontmatter);
 
@@ -138,19 +138,19 @@ class SandboxValidatorTest {
     // ── 边界值 ──
 
     @Test
-    void systemPrompt恰好5000字符_沙箱验证通过() {
-        String exactPrompt = "x".repeat(5000);
+    void instructions恰好5000字符_沙箱验证通过() {
+        String exactInstructions = "x".repeat(5000);
         String md = """
                 ---
-                id: exact-prompt-skill
-                name: "\u7CBE\u786E\u957F\u5EA6\u6280\u80FD"
-                description: "\u6D4B\u8BD5\u6070\u597D 5000 \u5B57\u7B26"
-                allowed-tools:
+                id: exact-instructions-skill
+                name: "精确长度技能"
+                description: "测试恰好 5000 字符"
+                suggested-tools:
                   - tool-a
                 ---
 
                 %s
-                """.formatted(exactPrompt);
+                """.formatted(exactInstructions);
 
         SandboxValidationResult result = validator.validate(md);
 
@@ -159,7 +159,7 @@ class SandboxValidatorTest {
     }
 
     @Test
-    void allowedTools恰好10个_沙箱验证通过() {
+    void suggestedTools恰好10个_沙箱验证通过() {
         StringBuilder tools = new StringBuilder();
         for (int i = 1; i <= 10; i++) {
             tools.append("  - tool-").append(i).append("\n");
@@ -167,12 +167,12 @@ class SandboxValidatorTest {
         String md = """
                 ---
                 id: exact-tools-skill
-                name: "\u7CBE\u786E\u5DE5\u5177\u6570\u6280\u80FD"
-                description: "\u6D4B\u8BD5\u6070\u597D 10 \u4E2A\u5DE5\u5177"
-                allowed-tools:
+                name: "精确工具数技能"
+                description: "测试恰好 10 个工具"
+                suggested-tools:
                 %s---
 
-                \u4F60\u662F\u4E00\u4E2A\u52A9\u624B
+                你是一个助手
                 """.formatted(tools.toString());
 
         SandboxValidationResult result = validator.validate(md);
