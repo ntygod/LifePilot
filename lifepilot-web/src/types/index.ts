@@ -464,6 +464,8 @@ export interface AgentSummary {
   createdAt: string
   tags?: string[]
   avatar?: string
+  /** Agent 来源类型（MarkdownDefined / Builtin 等） */
+  source?: string
 }
 
 /** Agent 详情 */
