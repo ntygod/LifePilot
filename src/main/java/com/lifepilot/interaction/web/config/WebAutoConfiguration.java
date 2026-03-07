@@ -1,5 +1,6 @@
 package com.lifepilot.interaction.web.config;
 
+import com.lifepilot.agent.proactive.channel.PassiveNotificationQueue;
 import com.lifepilot.interaction.config.GatewayProperties;
 import com.lifepilot.interaction.gateway.MessageGateway;
 import com.lifepilot.interaction.web.adapter.WebChannelAdapter;
@@ -8,6 +9,7 @@ import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -45,9 +47,11 @@ public class WebAutoConfiguration {
     public WebChannelAdapter webChannelAdapter(MessageGateway gateway,
                                                 GatewayProperties gatewayProperties,
                                                 AttachmentRepository attachmentRepository,
-                                                SseSessionManager sseSessionManager) {
+                                                SseSessionManager sseSessionManager,
+                                                @Autowired(required = false) PassiveNotificationQueue passiveNotificationQueue) {
         log.info("注册 WebChannelAdapter");
-        return new WebChannelAdapter(gateway, gatewayProperties, attachmentRepository, sseSessionManager);
+        return new WebChannelAdapter(gateway, gatewayProperties, attachmentRepository,
+                sseSessionManager, passiveNotificationQueue);
     }
 
     @Bean
