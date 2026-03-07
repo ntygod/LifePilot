@@ -20,6 +20,10 @@ import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.skill.generation.SkillGapDetector;
 import com.lifepilot.skill.generation.SkillGenerator;
+import com.lifepilot.skill.markdown.MarkdownSkillLoader;
+import com.lifepilot.skill.markdown.MarkdownSkillParser;
+import com.lifepilot.skill.markdown.MarkdownSkillSerializer;
+import com.lifepilot.skill.markdown.SkillFileWatcher;
 import com.lifepilot.skill.memory.MemoryAccessEnforcer;
 import com.lifepilot.skill.registry.SkillDefinitionValidator;
 import com.lifepilot.skill.registry.SkillRegistry;
@@ -28,10 +32,6 @@ import com.lifepilot.skill.validation.FormatValidator;
 import com.lifepilot.skill.validation.SandboxValidator;
 import com.lifepilot.skill.validation.SecurityValidator;
 import com.lifepilot.skill.validation.SkillValidationPipeline;
-import com.lifepilot.skill.yaml.SkillFileWatcher;
-import com.lifepilot.skill.yaml.YamlSchemaValidator;
-import com.lifepilot.skill.yaml.YamlSkillLoader;
-import com.lifepilot.skill.yaml.YamlSkillSerializer;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -52,7 +52,7 @@ import java.util.List;
  * Skill 系统 Spring Boot 自动配置。
  *
  * <p>通过 {@code lifepilot.skills.enabled=true}（默认）激活，
- * 注册 Skill 框架核心组件、YAML 解析与热加载、动作执行器、安全验证管线、
+ * 注册 Skill 框架核心组件、Markdown 解析与热加载、动作执行器、安全验证管线、
  * Skill 自扩展、审计追溯和内置 Skill 提供者。
  * 每个 Bean 使用 {@link ConditionalOnMissingBean} 允许用户覆盖。</p>
  *
@@ -199,34 +199,34 @@ public class SkillAutoConfiguration {
         return new BuiltinSkillRegistrar(providers, skillRegistry, toolRegistry);
     }
 
-    // ==================== YAML 解析与热加载 ====================
+    // ==================== Markdown 解析与热加载 ====================
 
     @Bean
     @ConditionalOnMissingBean
-    public YamlSchemaValidator yamlSchemaValidator(SkillConfigProperties config) {
-        log.info("Skill 系统: 注册 YamlSchemaValidator");
-        return new YamlSchemaValidator(config);
+    public MarkdownSkillParser markdownSkillParser() {
+        log.info("Skill 系统: 注册 MarkdownSkillParser");
+        return new MarkdownSkillParser();
     }
 
     @Bean
     @ConditionalOnMissingBean
-    public YamlSkillLoader yamlSkillLoader(YamlSchemaValidator validator,
-                                           SkillRegistry registry,
-                                           SkillConfigProperties config) {
-        log.info("Skill 系统: 注册 YamlSkillLoader, directory={}", config.getDirectory());
-        return new YamlSkillLoader(validator, registry, config);
+    public MarkdownSkillSerializer markdownSkillSerializer() {
+        log.info("Skill 系统: 注册 MarkdownSkillSerializer");
+        return new MarkdownSkillSerializer();
     }
 
     @Bean
     @ConditionalOnMissingBean
-    public YamlSkillSerializer yamlSkillSerializer() {
-        log.info("Skill 系统: 注册 YamlSkillSerializer");
-        return new YamlSkillSerializer();
+    public MarkdownSkillLoader markdownSkillLoader(MarkdownSkillParser parser,
+                                                   SkillRegistry registry,
+                                                   SkillConfigProperties config) {
+        log.info("Skill 系统: 注册 MarkdownSkillLoader, directory={}", config.getDirectory());
+        return new MarkdownSkillLoader(parser, registry, config);
     }
 
     @Bean
     @ConditionalOnMissingBean
-    public SkillFileWatcher skillFileWatcher(YamlSkillLoader loader,
+    public SkillFileWatcher skillFileWatcher(MarkdownSkillLoader loader,
                                             SkillRegistry registry,
                                             SkillConfigProperties config) {
         log.info("Skill 系统: 注册 SkillFileWatcher");
@@ -301,9 +301,9 @@ public class SkillAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public FormatValidator formatValidator(YamlSchemaValidator schemaValidator) {
+    public FormatValidator formatValidator(MarkdownSkillParser markdownParser) {
         log.info("Skill 系统: 注册 FormatValidator");
-        return new FormatValidator(schemaValidator);
+        return new FormatValidator(markdownParser);
     }
 
     @Bean
@@ -316,9 +316,9 @@ public class SkillAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public SandboxValidator sandboxValidator() {
+    public SandboxValidator sandboxValidator(MarkdownSkillParser markdownParser) {
         log.info("Skill 系统: 注册 SandboxValidator");
-        return new SandboxValidator();
+        return new SandboxValidator(markdownParser);
     }
 
     @Bean
@@ -350,13 +350,13 @@ public class SkillAutoConfiguration {
             name = "enabled", havingValue = "true", matchIfMissing = true)
     public SkillGenerator skillGenerator(LlmRouter llmRouter,
                                          SkillValidationPipeline pipeline,
-                                         YamlSkillLoader loader,
-                                         YamlSkillSerializer serializer,
+                                         MarkdownSkillParser markdownParser,
+                                         MarkdownSkillSerializer markdownSerializer,
                                          SkillRegistry registry,
                                          SkillConfigProperties config,
                                          PromptRegistry promptRegistry) {
         log.info("Skill 系统: 注册 SkillGenerator");
-        return new SkillGenerator(llmRouter, pipeline, loader, serializer, registry, config, promptRegistry);
+        return new SkillGenerator(llmRouter, pipeline, markdownParser, markdownSerializer, registry, config, promptRegistry);
     }
 
     // ==================== 审计 ====================
@@ -371,9 +371,9 @@ public class SkillAutoConfiguration {
     // ==================== 启动后初始化 ====================
 
     /**
-     * 应用启动完成后触发 YAML Skill 初始加载和文件监听启动。
+     * 应用启动完成后触发 Markdown Skill 初始加载和文件监听启动。
      *
-     * <p>{@link SkillFileWatcher#start()} 内部会调用 {@link YamlSkillLoader#loadAll()} 完成初始加载，
+     * <p>{@link SkillFileWatcher#start()} 内部会调用 {@link MarkdownSkillLoader#loadAll()} 完成初始加载，
      * 然后启动 WatchService 监听文件变更。</p>
      *
      * @param event 应用就绪事件
@@ -382,7 +382,7 @@ public class SkillAutoConfiguration {
     public void onApplicationReady(ApplicationReadyEvent event) {
         var ctx = event.getApplicationContext();
 
-        // SkillFileWatcher.start() 内部已包含 YamlSkillLoader.loadAll() 初始加载
+        // SkillFileWatcher.start() 内部已包含 MarkdownSkillLoader.loadAll() 初始加载
         if (ctx.containsBean("skillFileWatcher")) {
             var watcher = ctx.getBean(SkillFileWatcher.class);
             watcher.start();

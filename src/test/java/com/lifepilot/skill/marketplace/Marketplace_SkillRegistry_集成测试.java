@@ -1,6 +1,8 @@
 package com.lifepilot.skill.marketplace;
 
 import com.lifepilot.skill.config.SkillConfigProperties;
+import com.lifepilot.skill.markdown.MarkdownSkillLoader;
+import com.lifepilot.skill.markdown.MarkdownSkillParser;
 import com.lifepilot.skill.marketplace.config.MarketplaceProperties;
 import com.lifepilot.skill.marketplace.index.IndexManager;
 import com.lifepilot.skill.marketplace.install.InstalledSkillRepository;
@@ -12,8 +14,6 @@ import com.lifepilot.skill.model.*;
 import com.lifepilot.skill.registry.SkillDefinitionValidator;
 import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.skill.registry.SkillSearchIndex;
-import com.lifepilot.skill.yaml.YamlSchemaValidator;
-import com.lifepilot.skill.yaml.YamlSkillLoader;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -34,53 +34,49 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /**
- * Marketplace → SkillRegistry 跨模块集成测试。
+ * Marketplace \u2192 SkillRegistry \u8DE8\u6A21\u5757\u96C6\u6210\u6D4B\u8BD5\u3002
  *
- * <p>验证安装后 Skill 注册到 SkillRegistry、卸载后从 SkillRegistry 注销。
- * 使用真实 SkillRegistry（内存）+ 真实 InstalledSkillRepository（内存 SQLite），
- * Mock HTTP 下载和索引管理。</p>
+ * <p>\u9A8C\u8BC1\u5B89\u88C5\u540E Skill \u6CE8\u518C\u5230 SkillRegistry\u3001\u5378\u8F7D\u540E\u4ECE SkillRegistry \u6CE8\u9500\u3002
+ * \u4F7F\u7528\u771F\u5B9E SkillRegistry\uFF08\u5185\u5B58\uFF09+ \u771F\u5B9E InstalledSkillRepository\uFF08\u5185\u5B58 SQLite\uFF09\uFF0C
+ * Mock HTTP \u4E0B\u8F7D\u548C\u7D22\u5F15\u7BA1\u7406\u3002</p>
  *
  * @author zsg
  * @since 2026-03-05
  */
-class Marketplace_SkillRegistry_集成测试 {
+class Marketplace_SkillRegistry_\u96C6\u6210\u6D4B\u8BD5 {
 
-    /** 示例 YAML 内容 — 合法的 Skill 定义。 */
-    private static final String SAMPLE_YAML = """
-            skill:
-              id: test-marketplace-skill
-              name: 测试市场 Skill
-              description: 用于集成测试的市场 Skill
-              version: "1.0.0"
-              system-prompt: 你是一个测试助手
-              allowed-tools:
-                - todo-add
+    private static final String SAMPLE_MARKDOWN = """
+            ---
+            id: test-marketplace-skill
+            name: "\u6D4B\u8BD5\u5E02\u573A Skill"
+            description: "\u7528\u4E8E\u96C6\u6210\u6D4B\u8BD5\u7684\u5E02\u573A Skill"
+            version: "1.0.0"
+            allowed-tools:
+              - todo-add
+            ---
+
+            \u4F60\u662F\u4E00\u4E2A\u6D4B\u8BD5\u52A9\u624B
             """;
 
     @TempDir
     Path tempDir;
 
-    // 真实组件
     private SkillRegistry skillRegistry;
     private InstalledSkillRepository installedSkillRepository;
     private VersionResolver versionResolver;
 
-    // Mock 组件
     private IndexManager indexManager;
     private SkillSecurityScanner securityScanner;
-    private YamlSchemaValidator schemaValidator;
-    private YamlSkillLoader yamlSkillLoader;
+    private MarkdownSkillParser markdownParser;
+    private MarkdownSkillLoader markdownSkillLoader;
     private RestClient restClient;
 
-    // 被测对象
     private SkillInstaller installer;
-
-    // 数据库资源
     private SingleConnectionDataSource dataSource;
 
     @BeforeEach
     void setUp() {
-        // 1. 内存 SQLite + 表结构
+        // 1. \u5185\u5B58 SQLite + \u8868\u7ED3\u6784
         dataSource = new SingleConnectionDataSource("jdbc:sqlite::memory:", true);
         var jdbcTemplate = new JdbcTemplate(dataSource);
         jdbcTemplate.execute("""
@@ -99,11 +95,10 @@ class Marketplace_SkillRegistry_集成测试 {
                 """);
         installedSkillRepository = new InstalledSkillRepository(jdbcTemplate);
 
-        // 2. 真实 SkillRegistry（Mock 其依赖）
+        // 2. \u771F\u5B9E SkillRegistry
         var toolRegistry = mock(com.lifepilot.tool.registry.DynamicToolRegistry.class);
-        // ToolContract 是 sealed interface，不能 mock，使用真实 BuiltinTool 实例
         var dummyTool = com.lifepilot.tool.BuiltinTool.builder()
-                .id("todo-add").name("todo-add").description("测试工具")
+                .id("todo-add").name("todo-add").description("\u6D4B\u8BD5\u5DE5\u5177")
                 .executor(input -> null).build();
         when(toolRegistry.resolve(anyString())).thenReturn(Optional.of(dummyTool));
 
@@ -115,25 +110,25 @@ class Marketplace_SkillRegistry_集成测试 {
         var eventPublisher = mock(ApplicationEventPublisher.class);
         skillRegistry = new SkillRegistry(validator, searchIndex, eventPublisher, skillConfig);
 
-        // 3. Mock 外部依赖
+        // 3. Mock \u5916\u90E8\u4F9D\u8D56
         indexManager = mock(IndexManager.class);
         securityScanner = mock(SkillSecurityScanner.class);
-        schemaValidator = mock(YamlSchemaValidator.class);
-        yamlSkillLoader = mock(YamlSkillLoader.class);
+        markdownParser = mock(MarkdownSkillParser.class);
+        markdownSkillLoader = mock(MarkdownSkillLoader.class);
         restClient = mock(RestClient.class);
         versionResolver = new VersionResolver();
 
-        // 4. 配置
+        // 4. \u914D\u7F6E
         var marketplaceProperties = new MarketplaceProperties();
         marketplaceProperties.setIndexSources(List.of("https://example.com/index.json"));
 
-        // 5. 构建 SkillInstaller
+        // 5. \u6784\u5EFA SkillInstaller
         RestClient.Builder builder = mock(RestClient.Builder.class);
         when(builder.build()).thenReturn(restClient);
 
         installer = new SkillInstaller(
-                indexManager, versionResolver, securityScanner, schemaValidator,
-                yamlSkillLoader, skillRegistry, installedSkillRepository,
+                indexManager, versionResolver, securityScanner, markdownParser,
+                markdownSkillLoader, skillRegistry, installedSkillRepository,
                 marketplaceProperties, skillConfig, builder
         );
     }
@@ -145,44 +140,33 @@ class Marketplace_SkillRegistry_集成测试 {
 
     @Test
     void 安装后_Skill注册到SkillRegistry_可通过find查到() {
-        // 准备：Mock 索引返回包元数据
         var skillPackage = samplePackage("test-pkg", "1.0.0");
         when(indexManager.getPackage("test-pkg")).thenReturn(Optional.of(skillPackage));
+        mockHttpDownload(SAMPLE_MARKDOWN);
 
-        // Mock HTTP 下载返回 YAML
-        mockHttpDownload(SAMPLE_YAML);
+        var parseResult = new MarkdownSkillParser.ParseResult(
+                true, sampleDefinition("test-marketplace-skill"), List.of(),
+                Map.of("id", "test-marketplace-skill"));
+        when(markdownParser.parse(SAMPLE_MARKDOWN)).thenReturn(parseResult);
+        when(securityScanner.scan(any())).thenReturn(new SecurityReport(List.of(), RiskLevel.LOW));
 
-        // Mock Schema 校验通过
-        when(schemaValidator.validate(any())).thenReturn(
-                new YamlSchemaValidator.ValidationResult(true, List.of()));
-
-        // Mock 安全扫描返回 LOW 风险
-        when(securityScanner.scan(any())).thenReturn(
-                new SecurityReport(List.of(), RiskLevel.LOW));
-
-        // Mock YamlSkillLoader 返回 SkillDefinition
         var definition = sampleDefinition("test-marketplace-skill");
-        when(yamlSkillLoader.loadFile(any(Path.class))).thenReturn(Optional.of(definition));
+        when(markdownSkillLoader.loadFolder(any(Path.class))).thenReturn(Optional.of(definition));
 
-        // 执行安装
         var result = installer.install("test-pkg", false);
 
-        // 验证安装成功
         assertThat(result.success()).isTrue();
         assertThat(result.skillId()).isEqualTo("test-marketplace-skill");
 
-        // 核心验证：SkillRegistry 中能找到已安装的 Skill
         var found = skillRegistry.find("test-marketplace-skill");
         assertThat(found).isPresent();
         assertThat(found.get().id()).isEqualTo("test-marketplace-skill");
         assertThat(found.get().source()).isInstanceOf(SkillSource.Marketplace.class);
 
-        // 验证 source 字段正确
         var marketplaceSource = (SkillSource.Marketplace) found.get().source();
         assertThat(marketplaceSource.packageId()).isEqualTo("test-pkg");
         assertThat(marketplaceSource.indexSourceUrl()).isEqualTo("https://example.com/index.json");
 
-        // 验证 InstalledSkillRepository 中有记录
         var installed = installedSkillRepository.findByPackageId("test-pkg");
         assertThat(installed).isPresent();
         assertThat(installed.get().version()).isEqualTo("1.0.0");
@@ -190,35 +174,29 @@ class Marketplace_SkillRegistry_集成测试 {
 
     @Test
     void 卸载后_Skill从SkillRegistry注销_find返回empty() {
-        // 先安装
+        // \u5148\u5B89\u88C5
         var skillPackage = samplePackage("test-pkg-uninstall", "1.0.0");
         when(indexManager.getPackage("test-pkg-uninstall")).thenReturn(Optional.of(skillPackage));
-        mockHttpDownload(SAMPLE_YAML);
-        when(schemaValidator.validate(any())).thenReturn(
-                new YamlSchemaValidator.ValidationResult(true, List.of()));
-        when(securityScanner.scan(any())).thenReturn(
-                new SecurityReport(List.of(), RiskLevel.LOW));
+        mockHttpDownload(SAMPLE_MARKDOWN);
+
+        var parseResult = new MarkdownSkillParser.ParseResult(
+                true, sampleDefinition("test-marketplace-skill"), List.of(),
+                Map.of("id", "test-marketplace-skill"));
+        when(markdownParser.parse(SAMPLE_MARKDOWN)).thenReturn(parseResult);
+        when(securityScanner.scan(any())).thenReturn(new SecurityReport(List.of(), RiskLevel.LOW));
 
         var definition = sampleDefinition("test-marketplace-skill");
-        when(yamlSkillLoader.loadFile(any(Path.class))).thenReturn(Optional.of(definition));
+        when(markdownSkillLoader.loadFolder(any(Path.class))).thenReturn(Optional.of(definition));
 
         var installResult = installer.install("test-pkg-uninstall", false);
         assertThat(installResult.success()).isTrue();
-
-        // 确认已注册
         assertThat(skillRegistry.find("test-marketplace-skill")).isPresent();
         assertThat(installedSkillRepository.findByPackageId("test-pkg-uninstall")).isPresent();
 
-        // 执行卸载
         var uninstallResult = installer.uninstall("test-pkg-uninstall");
 
-        // 验证卸载成功
         assertThat(uninstallResult.success()).isTrue();
-
-        // 核心验证：SkillRegistry 中已找不到
         assertThat(skillRegistry.find("test-marketplace-skill")).isEmpty();
-
-        // 验证 InstalledSkillRepository 中记录已删除
         assertThat(installedSkillRepository.findByPackageId("test-pkg-uninstall")).isEmpty();
     }
 
@@ -226,24 +204,23 @@ class Marketplace_SkillRegistry_集成测试 {
     void 安装_卸载_再安装_SkillRegistry状态正确() {
         var skillPackage = samplePackage("test-pkg-reinstall", "1.0.0");
         when(indexManager.getPackage("test-pkg-reinstall")).thenReturn(Optional.of(skillPackage));
-        mockHttpDownload(SAMPLE_YAML);
-        when(schemaValidator.validate(any())).thenReturn(
-                new YamlSchemaValidator.ValidationResult(true, List.of()));
-        when(securityScanner.scan(any())).thenReturn(
-                new SecurityReport(List.of(), RiskLevel.LOW));
+        mockHttpDownload(SAMPLE_MARKDOWN);
+
+        var parseResult = new MarkdownSkillParser.ParseResult(
+                true, sampleDefinition("test-marketplace-skill"), List.of(),
+                Map.of("id", "test-marketplace-skill"));
+        when(markdownParser.parse(SAMPLE_MARKDOWN)).thenReturn(parseResult);
+        when(securityScanner.scan(any())).thenReturn(new SecurityReport(List.of(), RiskLevel.LOW));
 
         var definition = sampleDefinition("test-marketplace-skill");
-        when(yamlSkillLoader.loadFile(any(Path.class))).thenReturn(Optional.of(definition));
+        when(markdownSkillLoader.loadFolder(any(Path.class))).thenReturn(Optional.of(definition));
 
-        // 第一次安装
         assertThat(installer.install("test-pkg-reinstall", false).success()).isTrue();
         assertThat(skillRegistry.find("test-marketplace-skill")).isPresent();
 
-        // 卸载
         assertThat(installer.uninstall("test-pkg-reinstall").success()).isTrue();
         assertThat(skillRegistry.find("test-marketplace-skill")).isEmpty();
 
-        // 重新安装
         assertThat(installer.install("test-pkg-reinstall", false).success()).isTrue();
         assertThat(skillRegistry.find("test-marketplace-skill")).isPresent();
         assertThat(installedSkillRepository.findByPackageId("test-pkg-reinstall")).isPresent();
@@ -258,7 +235,6 @@ class Marketplace_SkillRegistry_集成测试 {
         var requestHeadersUriSpec = mock(RestClient.RequestHeadersUriSpec.class);
         var requestHeadersSpec = mock(RestClient.RequestHeadersSpec.class);
         var responseSpec = mock(RestClient.ResponseSpec.class);
-
         when(restClient.get()).thenReturn(requestHeadersUriSpec);
         when(requestHeadersUriSpec.uri(anyString())).thenReturn(requestHeadersSpec);
         when(requestHeadersSpec.retrieve()).thenReturn(responseSpec);
@@ -268,12 +244,12 @@ class Marketplace_SkillRegistry_集成测试 {
     private static SkillPackage samplePackage(String id, String version) {
         return SkillPackage.builder()
                 .id(id)
-                .name("测试 Skill")
-                .description("用于集成测试的 Skill")
+                .name("\u6D4B\u8BD5 Skill")
+                .description("\u7528\u4E8E\u96C6\u6210\u6D4B\u8BD5\u7684 Skill")
                 .version(version)
                 .author("test-author")
                 .repoUrl("https://raw.githubusercontent.com/test/repo/main")
-                .filePath("skills/test.yaml")
+                .filePath("skills/test-skill/SKILL.md")
                 .tags(List.of("test"))
                 .minLifepilotVersion("0.1.0")
                 .createdAt(Instant.now().toString())
@@ -286,11 +262,11 @@ class Marketplace_SkillRegistry_集成测试 {
     private static SkillDefinition sampleDefinition(String skillId) {
         return SkillDefinition.builder()
                 .id(skillId)
-                .name("测试市场 Skill")
-                .description("用于集成测试的市场 Skill")
+                .name("\u6D4B\u8BD5\u5E02\u573A Skill")
+                .description("\u7528\u4E8E\u96C6\u6210\u6D4B\u8BD5\u7684\u5E02\u573A Skill")
                 .version("1.0.0")
-                .source(new SkillSource.UserDefined("/tmp/test.yaml"))
-                .systemPrompt("你是一个测试助手")
+                .source(new SkillSource.UserDefined("/tmp/test-skills"))
+                .systemPrompt("\u4F60\u662F\u4E00\u4E2A\u6D4B\u8BD5\u52A9\u624B")
                 .allowedTools(List.of("todo-add"))
                 .execution(ExecutionStrategy.DEFAULT)
                 .memoryAccess(MemoryAccessPolicy.none())
