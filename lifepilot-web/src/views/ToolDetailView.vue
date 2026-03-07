@@ -2,7 +2,9 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useToolStore } from '@/stores/tool'
+import { toolApi } from '@/api/client'
 import ToolTestDialog from '@/components/tool/ToolTestDialog.vue'
+import YamlEditor from '@/components/editor/YamlEditor.vue'
 import Breadcrumb from '@/components/global/Breadcrumb.vue'
 import type { BreadcrumbItem } from '@/components/global/Breadcrumb.vue'
 import { Button } from '@/components/ui/button'
@@ -20,6 +22,10 @@ const showTestDialog = ref(false)
 const usage = ref<any | null>(null)
 const usageLoading = ref(true)
 
+// YAML 编辑器状态
+const toolYamlContent = ref('')
+const yamlLoading = ref(true)
+
 // 面包屑导航
 const breadcrumbItems = computed<BreadcrumbItem[]>(() => [
   { label: '工具', to: { name: 'tools' } },
@@ -28,6 +34,18 @@ const breadcrumbItems = computed<BreadcrumbItem[]>(() => [
 
 onMounted(async () => {
   await toolStore.fetchToolDetail(toolId.value)
+  // 加载 YAML 定义（仅 yaml 来源工具）
+  if (tool.value?.source === 'yaml') {
+    try {
+      toolYamlContent.value = await toolApi.getToolYaml(toolId.value)
+    } catch {
+      // YAML 加载失败不阻塞详情展示
+    } finally {
+      yamlLoading.value = false
+    }
+  } else {
+    yamlLoading.value = false
+  }
   try {
     usage.value = await toolStore.fetchToolUsage(toolId.value)
   } catch {
@@ -38,9 +56,9 @@ onMounted(async () => {
 })
 
 const sourceLabel: Record<string, string> = {
-  builtin: 'Java 原生',
-  yaml: 'YAML Tool',
-  mcp: 'MCP 工具',
+  builtin: 'Builtin',
+  yaml: 'YAML',
+  mcp: 'MCP',
 }
 
 const riskBadge: Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' | 'destructive' }> = {
@@ -62,7 +80,9 @@ const riskBadge: Record<string, { label: string; variant: 'default' | 'secondary
             <h2 class="text-2xl font-semibold text-foreground leading-tight">
               {{ tool?.displayName || tool?.name || '加载中...' }}
             </h2>
-            <Badge variant="default">默认可用</Badge>
+            <Badge :variant="tool?.source === 'yaml' ? 'default' : 'secondary'">
+              {{ sourceLabel[tool?.source ?? ''] ?? tool?.source ?? '...' }}
+            </Badge>
           </div>
           <Button variant="outline" @click="showTestDialog = true">
             测试调用
@@ -205,6 +225,28 @@ const riskBadge: Record<string, { label: string; variant: 'default' | 'secondary
                 <pre class="p-3 rounded-md bg-muted text-xs overflow-x-auto">{{ JSON.stringify(tool.outputSchema, null, 2) }}</pre>
               </div>
             </div>
+          </CardContent>
+        </Card>
+
+        <!-- YAML 定义（仅 yaml 来源工具展示） -->
+        <Card v-if="tool.source === 'yaml'">
+          <CardHeader>
+            <div class="flex items-center justify-between">
+              <CardTitle>YAML 定义</CardTitle>
+              <Badge variant="outline">{{ sourceLabel[tool.source] }}</Badge>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <Skeleton v-if="yamlLoading" class="h-64 w-full" />
+            <YamlEditor
+              v-else
+              v-model="toolYamlContent"
+              title="Tool YAML"
+              :on-save="async (content: string) => {
+                await toolApi.updateToolYaml(toolId, content)
+                await toolStore.fetchToolDetail(toolId)
+              }"
+            />
           </CardContent>
         </Card>
 
