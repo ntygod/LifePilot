@@ -90,7 +90,8 @@ public class FrequencyStateManager {
             return false;
         }
         int multiplier = entry.state().intervalMultiplier(config.getReducedMultiplier());
-        long cooldownMs = (long) config.getCooldownMinutes() * 60_000L * multiplier;
+        // 使用按类型冷却值
+        long cooldownMs = (long) config.getCooldownMinutesForType(type) * 60_000L * multiplier;
         return Duration.between(entry.lastNotifiedAt(), Instant.now()).toMillis() < cooldownMs;
     }
 
