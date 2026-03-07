@@ -79,6 +79,16 @@ public class FrequencyStateManager {
     }
 
     /**
+     * 获取指定类型的最后通知时间。
+     *
+     * @param type 通知类型
+     * @return 最后通知时间，未通知过时返回 Instant.EPOCH
+     */
+    public Instant getLastNotifiedAt(NotificationType type) {
+        return cache.getOrDefault(type, FrequencyStateEntry.initial()).lastNotifiedAt();
+    }
+
+    /**
      * 判断指定类型是否在冷却期内。
      *
      * @param type 通知类型
