@@ -7,6 +7,7 @@ import com.lifepilot.agent.AgentToolProvider;
 import com.lifepilot.agent.StateReducer;
 import com.lifepilot.agent.context.ContextAssembler;
 import com.lifepilot.agent.context.DefaultMemoryRetrievalStrategy;
+import com.lifepilot.agent.proactive.channel.PassiveNotificationQueue;
 import com.lifepilot.agent.session.SessionManager;
 import com.lifepilot.conversation.ConversationHistoryStore;
 import com.lifepilot.conversation.ConversationViewService;
@@ -74,7 +75,8 @@ public class AgentAutoConfiguration {
                                              @Autowired(required = false) SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
                                              @Autowired(required = false) DocumentRepository documentRepository,
                                              @Autowired(required = false) EpisodicMemory episodicMemory,
-                                             @Autowired(required = false) SemanticMemory semanticMemory) {
+                                             @Autowired(required = false) SemanticMemory semanticMemory,
+                                             @Autowired(required = false) PassiveNotificationQueue passiveNotificationQueue) {
         if (hybridRetriever != null && workingMemory != null && tokenBudgetAllocator != null) {
             log.info("Agent 引擎: 注册完整版 ContextAssembler（记忆系统已就绪，L2 情景记忆{}，L3 语义记忆{}）",
                     episodicMemory != null ? "已启用" : "未启用",
@@ -83,7 +85,7 @@ public class AgentAutoConfiguration {
             return new ContextAssembler(config, hybridRetriever,
                     workingMemory, tokenBudgetAllocator, strategy, dataRedactor,
                     documentRetriever, sessionKnowledgeBaseRepository, documentRepository,
-                    episodicMemory, semanticMemory, promptRegistry);
+                    episodicMemory, semanticMemory, passiveNotificationQueue, promptRegistry);
         }
         log.warn("Agent 引擎: 注册基础版 ContextAssembler（记忆系统部分或全部不可用，记忆检索功能已降级）");
         return new ContextAssembler(config, promptRegistry);
