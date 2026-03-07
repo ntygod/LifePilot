@@ -29,7 +29,9 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
 
 /**
  * 完整版上下文组装器 — 集成记忆检索、会话上下文、动态预算分配。
@@ -156,12 +158,40 @@ public class ContextAssembler {
                 return buildMinimalContext(state);
             }
 
-            // 2. 执行记忆检索（请求级缓存 + 降级容错）
-            var retrievalResults = cachedRetrieve(state.traceId(), state.goal(), strategyConfig);
-            // 2.1 知识库检索（可选；仅当会话关联了 knowledgeBaseIds）
-            var kbSnippets = safeRetrieveKnowledgeBaseSnippets(state.sessionId(), state.goal(), 5);
+            // 2. 四路并行检索（Virtual Thread）
+            List<RetrievalResult> retrievalResults;
+            List<String> kbSnippets;
+            List<WorkingMemorySlot> slots;
+            List<MessageRecord> crossSessionFragments;
+            Optional<ReasoningSlot> procedureHintSlot;
+
+            try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+                var retrievalFuture = CompletableFuture.supplyAsync(
+                        () -> cachedRetrieve(state.traceId(), state.goal(), strategyConfig), executor);
+                var kbFuture = CompletableFuture.supplyAsync(
+                        () -> safeRetrieveKnowledgeBaseSnippets(state.sessionId(), state.goal(), 5), executor);
+                var slotsFuture = CompletableFuture.supplyAsync(
+                        () -> safeGetSessionHistory(workingMemory, state.sessionId(), state.goal()), executor);
+                var crossSessionFuture = CompletableFuture.supplyAsync(
+                        () -> safeSearchCrossSession(episodicMemory, state.goal(), state.sessionId()), executor);
+
+                CompletableFuture.allOf(retrievalFuture, kbFuture, slotsFuture, crossSessionFuture).join();
+
+                retrievalResults = retrievalFuture.join();
+                kbSnippets = kbFuture.join();
+                slots = slotsFuture.join();
+                crossSessionFragments = crossSessionFuture.join();
+            } catch (Exception parallelEx) {
+                // Virtual Thread 创建失败时降级为串行执行
+                log.warn("并行检索异常，降级为串行: error={}", parallelEx.getMessage());
+                retrievalResults = cachedRetrieve(state.traceId(), state.goal(), strategyConfig);
+                kbSnippets = safeRetrieveKnowledgeBaseSnippets(state.sessionId(), state.goal(), 5);
+                slots = safeGetSessionHistory(workingMemory, state.sessionId(), state.goal());
+                crossSessionFragments = safeSearchCrossSession(episodicMemory, state.goal(), state.sessionId());
+            }
+
             // L4: 可选意图匹配提示（来自 HybridRetriever 内部的 IntentMatcher 结果）
-            var procedureHintSlot = safeGetLastProcedureSlot(hybridRetriever);
+            procedureHintSlot = safeGetLastProcedureSlot(hybridRetriever);
             int retrievalCount = retrievalResults.size();
             float topScore = retrievalResults.isEmpty() ? 0.0f
                     : retrievalResults.getFirst().fusedScore();
@@ -169,13 +199,6 @@ public class ContextAssembler {
                 // 检索返回空是正常状态（新系统/首次对话），不标记降级
                 log.debug("记忆检索无结果: sessionId={}, goal={}", state.sessionId(), truncate(state.goal(), 50));
             }
-
-            // 3. 获取会话槽位（排除当前轮用户消息，避免与 state.goal() 重复）
-            var slots = safeGetSessionHistory(workingMemory, state.sessionId(), state.goal());
-
-            // 3.1 L2：跨会话相关片段（语义检索，排除当前 sessionId）
-            var crossSessionFragments = safeSearchCrossSession(
-                    episodicMemory, state.goal(), state.sessionId());
 
             // 4. 动态预算分配（降级容错）
             int conversationTurns = countConversationTurns(slots);
