@@ -781,3 +781,103 @@ export interface UpdateInfo {
   installedVersion: string
   latestVersion: string
 }
+
+
+// ========== Web UI 深度调试与配置：新增类型 ==========
+
+/** 上下文组装预览响应 */
+export interface ContextPreviewResponse {
+  segments: {
+    systemPrompt: { content: string; tokens: number }
+    conversationHistory: { content: string; tokens: number }
+    memoryRetrieval: { content: string; tokens: number }
+    toolResults: { content: string; tokens: number }
+  }
+  tokenBudget: TokenBudgetData
+  totalTokens: number
+  totalBudget: number
+  degraded: boolean
+}
+
+/** Token 预算数据（对齐后端 TokenBudget record） */
+export interface TokenBudgetData {
+  systemPromptBudget: number
+  historyBudget: number
+  memoryBudget: number
+  toolSchemaBudget: number
+  toolResultBudget: number
+  reservedBuffer: number
+  systemPromptUsed: number
+  historyUsed: number
+  memoryUsed: number
+  toolSchemaUsed: number
+  toolResultUsed: number
+}
+
+/** 依赖图节点 */
+export interface DependencyNode {
+  id: string
+  name: string
+  type: 'AGENT' | 'SKILL' | 'TOOL'
+  enabled: boolean
+}
+
+/** 依赖图边 */
+export interface DependencyEdge {
+  source: string
+  target: string
+  relation: string
+}
+
+/** 依赖图响应 */
+export interface DependencyGraphResponse {
+  nodes: DependencyNode[]
+  edges: DependencyEdge[]
+}
+
+/** Tool 调用统计项 */
+export interface ToolCallStats {
+  toolId: string
+  toolName: string
+  callCount: number
+  successCount: number
+  failureCount: number
+  avgLatencyMs: number
+}
+
+/** Tool 调用每日趋势 */
+export interface ToolDailyTrend {
+  date: string
+  callCount: number
+  successCount: number
+  failureCount: number
+}
+
+/** Tool 统计 API 响应 */
+export interface ToolAnalyticsResponse {
+  toolStats: ToolCallStats[]
+  dailyTrend: ToolDailyTrend[]
+}
+
+/** 错误趋势每日数据 */
+export interface ErrorTrendDaily {
+  date: string
+  agentErrors: number
+  toolErrors: number
+  totalErrors: number
+}
+
+/** MCP 连接日志条目 */
+export interface McpConnectionLog {
+  timestamp: string
+  eventType: 'CONNECT' | 'DISCONNECT' | 'ERROR' | 'RECONNECT'
+  description: string
+}
+
+/** Tool 测试历史记录 */
+export interface ToolTestHistoryItem {
+  id: string
+  timestamp: number
+  input: Record<string, any>
+  result: ToolTestResponse
+}
