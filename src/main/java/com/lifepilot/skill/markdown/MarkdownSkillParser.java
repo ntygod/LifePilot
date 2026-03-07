@@ -1,12 +1,14 @@
 package com.lifepilot.skill.markdown;
 
-import com.lifepilot.skill.model.*;
+import com.lifepilot.skill.model.SkillDefinition;
+import com.lifepilot.skill.model.SkillSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
 import org.yaml.snakeyaml.Yaml;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -18,9 +20,9 @@ import java.util.Map;
  *   <li>查找第一个 {@code ---} 行（必须是文件首行或首行为空后的第一行）</li>
  *   <li>查找第二个 {@code ---} 行，提取之间的内容为 YAML Frontmatter</li>
  *   <li>使用 SnakeYAML 解析 Frontmatter 为 {@code Map<String, Object>}</li>
- *   <li>提取第二个 {@code ---} 之后的所有内容为 Markdown Body（trim 后作为 systemPrompt）</li>
+ *   <li>提取第二个 {@code ---} 之后的所有内容为 Markdown Body（trim 后作为 instructions）</li>
  *   <li>校验必填字段（id、name、description）</li>
- *   <li>校验 systemPrompt 非空</li>
+ *   <li>校验 instructions 非空</li>
  *   <li>将 Map 字段映射为 {@link SkillDefinition} record</li>
  * </ol>
  *
@@ -115,9 +117,9 @@ public class MarkdownSkillParser {
             }
         }
 
-        // 6. 校验 systemPrompt 非空
+        // 6. 校验 instructions 非空
         if (markdownBody.isEmpty()) {
-            errors.add("System Prompt 不能为空");
+            errors.add("instructions 不能为空");
         }
 
         if (!errors.isEmpty()) {
@@ -141,15 +143,12 @@ public class MarkdownSkillParser {
     /**
      * 将 Frontmatter Map + Markdown Body 映射为 SkillDefinition。
      */
-    private SkillDefinition mapToDefinition(Map<String, Object> fm, String systemPrompt) {
+    private SkillDefinition mapToDefinition(Map<String, Object> fm, String instructions) {
         String id = getString(fm, "id");
         String name = getString(fm, "name");
         String description = getString(fm, "description");
         String version = getStringOrDefault(fm, "version", "1.0.0");
-        List<String> allowedTools = getStringList(fm, "allowed-tools");
-        ExecutionStrategy execution = parseExecution(fm);
-        MemoryAccessPolicy memoryAccess = parseMemoryAccess(fm);
-        SkillBudget budget = parseBudget(fm);
+        List<String> suggestedTools = getStringList(fm, "suggested-tools");
         Map<String, String> metadata = parseMetadata(fm);
 
         return SkillDefinition.builder()
@@ -158,120 +157,61 @@ public class MarkdownSkillParser {
                 .description(description)
                 .version(version)
                 .source(new SkillSource.UserDefined("", null))
-                .systemPrompt(systemPrompt)
-                .allowedTools(allowedTools)
-                .execution(execution)
-                .memoryAccess(memoryAccess)
-                .budget(budget)
+                .instructions(instructions)
+                .suggestedTools(suggestedTools)
                 .metadata(metadata)
                 .build();
     }
 
-    @SuppressWarnings("unchecked")
-    private ExecutionStrategy parseExecution(Map<String, Object> fm) {
-        var executionNode = fm.get("execution");
-        if (!(executionNode instanceof Map<?, ?> execMap)) {
-            return ExecutionStrategy.DEFAULT;
-        }
-        var exec = (Map<String, Object>) execMap;
-
-        int maxSteps = getIntOrDefault(exec, "max-steps", ExecutionStrategy.DEFAULT.maxSteps());
-        int timeoutSeconds = getIntOrDefault(exec, "timeout-seconds", ExecutionStrategy.DEFAULT.timeoutSeconds());
-        boolean requireConfirmation = getBooleanOrDefault(exec, "require-confirmation", ExecutionStrategy.DEFAULT.requireConfirmation());
-
-        // 解析 retry 策略
-        ExecutionStrategy.RetryPolicy retryPolicy = ExecutionStrategy.DEFAULT.retryPolicy();
-        var retryNode = exec.get("retry");
-        if (retryNode instanceof String retryStr) {
-            retryPolicy = switch (retryStr.toUpperCase()) {
-                case "NONE" -> ExecutionStrategy.RetryPolicy.NONE;
-                case "DEFAULT" -> ExecutionStrategy.RetryPolicy.DEFAULT;
-                default -> ExecutionStrategy.DEFAULT.retryPolicy();
-            };
-        }
-
-        // 解析确认模式
-        ExecutionStrategy.ConfirmationMode confirmationMode = ExecutionStrategy.DEFAULT.confirmationMode();
-        var confirmNode = exec.get("confirmation-mode");
-        if (confirmNode instanceof String confirmStr) {
-            confirmationMode = switch (confirmStr.toUpperCase()) {
-                case "NONE" -> ExecutionStrategy.ConfirmationMode.NONE;
-                case "FIRST_RUN" -> ExecutionStrategy.ConfirmationMode.FIRST_RUN;
-                case "ALWAYS" -> ExecutionStrategy.ConfirmationMode.ALWAYS;
-                default -> ExecutionStrategy.DEFAULT.confirmationMode();
-            };
-        }
-
-        return new ExecutionStrategy(maxSteps, timeoutSeconds, requireConfirmation, retryPolicy, confirmationMode);
-    }
-
-    @SuppressWarnings("unchecked")
-    private MemoryAccessPolicy parseMemoryAccess(Map<String, Object> fm) {
-        var memoryNode = fm.get("memory-access");
-        if (!(memoryNode instanceof Map<?, ?> memMap)) {
-            return MemoryAccessPolicy.none();
-        }
-        var memory = (Map<String, Object>) memMap;
-
-        // 解析 read 权限
-        List<MemoryReadPermission> readPermissions = new ArrayList<>();
-        var readNode = memory.get("read");
-        if (readNode instanceof List<?> readList) {
-            for (Object item : readList) {
-                if (item instanceof Map<?, ?> readItem) {
-                    var readMap = (Map<String, Object>) readItem;
-                    String layer = getString(readMap, "layer");
-                    List<String> entityTypes = getStringList(readMap, "entity-types");
-                    String timeRange = getStringOrNull(readMap, "time-range");
-                    readPermissions.add(new MemoryReadPermission(layer, entityTypes, timeRange));
-                }
-            }
-        }
-
-        // 解析 write 权限
-        List<MemoryWritePermission> writePermissions = new ArrayList<>();
-        var writeNode = memory.get("write");
-        if (writeNode instanceof List<?> writeList) {
-            for (Object item : writeList) {
-                if (item instanceof Map<?, ?> writeItem) {
-                    var writeMap = (Map<String, Object>) writeItem;
-                    String layer = getString(writeMap, "layer");
-                    List<String> entityTypes = getStringList(writeMap, "entity-types");
-                    boolean requireApproval = getBooleanOrDefault(writeMap, "require-approval", false);
-                    writePermissions.add(new MemoryWritePermission(layer, entityTypes, requireApproval));
-                }
-            }
-        }
-
-        return new MemoryAccessPolicy(readPermissions, writePermissions);
-    }
-
-    @SuppressWarnings("unchecked")
-    private SkillBudget parseBudget(Map<String, Object> fm) {
-        var budgetNode = fm.get("budget");
-        if (!(budgetNode instanceof Map<?, ?> budgetMap)) {
-            return SkillBudget.DEFAULT;
-        }
-        var budget = (Map<String, Object>) budgetMap;
-
-        int maxTokens = getIntOrDefault(budget, "max-tokens", SkillBudget.DEFAULT.maxTokens());
-        int maxSteps = getIntOrDefault(budget, "max-steps", SkillBudget.DEFAULT.maxSteps());
-        int timeoutSeconds = getIntOrDefault(budget, "timeout-seconds", SkillBudget.DEFAULT.timeoutSeconds());
-        int maxCostCents = getIntOrDefault(budget, "max-cost-cents", SkillBudget.DEFAULT.maxCostCents());
-
-        return new SkillBudget(maxTokens, maxSteps, timeoutSeconds, maxCostCents);
-    }
-
+    /**
+     * 解析 metadata — 合并 frontmatter 中的 metadata 节点和顶层 tags/category/author/dependencies。
+     */
     private Map<String, String> parseMetadata(Map<String, Object> fm) {
+        var result = new HashMap<String, String>();
+
+        // 从 metadata 节点提取
         var metadataNode = fm.get("metadata");
-        if (!(metadataNode instanceof Map<?, ?> metaMap)) {
-            return Map.of();
+        if (metadataNode instanceof Map<?, ?> metaMap) {
+            for (var entry : metaMap.entrySet()) {
+                result.put(String.valueOf(entry.getKey()), String.valueOf(entry.getValue()));
+            }
         }
-        var result = new java.util.HashMap<String, String>();
-        for (var entry : metaMap.entrySet()) {
-            result.put(String.valueOf(entry.getKey()), String.valueOf(entry.getValue()));
+
+        // 从顶层提取 tags（列表→逗号拼接）
+        var tagsNode = fm.get("tags");
+        if (tagsNode instanceof List<?> tagsList) {
+            String joined = tagsList.stream().map(Object::toString).reduce((a, b) -> a + "," + b).orElse("");
+            if (!joined.isEmpty()) {
+                result.put("tags", joined);
+            }
+        } else if (tagsNode instanceof String tagsStr && !tagsStr.isBlank()) {
+            result.put("tags", tagsStr);
         }
-        return Map.copyOf(result);
+
+        // 从顶层提取 category
+        var categoryNode = fm.get("category");
+        if (categoryNode != null && !categoryNode.toString().isBlank()) {
+            result.put("category", categoryNode.toString());
+        }
+
+        // 从顶层提取 author
+        var authorNode = fm.get("author");
+        if (authorNode != null && !authorNode.toString().isBlank()) {
+            result.put("author", authorNode.toString());
+        }
+
+        // 从顶层提取 dependencies（列表→逗号拼接）
+        var depsNode = fm.get("dependencies");
+        if (depsNode instanceof List<?> depsList) {
+            String joined = depsList.stream().map(Object::toString).reduce((a, b) -> a + "," + b).orElse("");
+            if (!joined.isEmpty()) {
+                result.put("dependencies", joined);
+            }
+        } else if (depsNode instanceof String depsStr && !depsStr.isBlank()) {
+            result.put("dependencies", depsStr);
+        }
+
+        return result.isEmpty() ? Map.of() : Map.copyOf(result);
     }
 
     // ─────────────────────────────────────────────
@@ -288,11 +228,6 @@ public class MarkdownSkillParser {
         return value != null ? value.toString() : defaultValue;
     }
 
-    @Nullable
-    private String getStringOrNull(Map<String, Object> map, String key) {
-        Object value = map.get(key);
-        return value != null ? value.toString() : null;
-    }
 
     private List<String> getStringList(Map<String, Object> map, String key) {
         Object value = map.get(key);
@@ -302,21 +237,7 @@ public class MarkdownSkillParser {
         return List.of();
     }
 
-    private int getIntOrDefault(Map<String, Object> map, String key, int defaultValue) {
-        Object value = map.get(key);
-        if (value instanceof Number number) {
-            return number.intValue();
-        }
-        return defaultValue;
-    }
 
-    private boolean getBooleanOrDefault(Map<String, Object> map, String key, boolean defaultValue) {
-        Object value = map.get(key);
-        if (value instanceof Boolean bool) {
-            return bool;
-        }
-        return defaultValue;
-    }
 
     // ─────────────────────────────────────────────
     //  解析结果

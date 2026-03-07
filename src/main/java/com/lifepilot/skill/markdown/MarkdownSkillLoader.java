@@ -112,7 +112,7 @@ public class MarkdownSkillLoader {
      * 加载单个 Skill 文件夹。
      *
      * <p>读取文件夹中的 SKILL.md 文件，解析为 SkillDefinition，
-     * 并构建 {@link SkillSource.UserDefined}（filePath 指向文件夹路径）。</p>
+     * 并构建 {@link SkillSource.UserDefined}（folderPath 指向文件夹路径）。</p>
      *
      * @param skillFolder Skill 文件夹路径
      * @return 解析出的 SkillDefinition，失败返回 Optional.empty()
@@ -134,7 +134,7 @@ public class MarkdownSkillLoader {
                 return Optional.empty();
             }
 
-            // 构建 SkillSource.UserDefined，filePath 指向文件夹路径
+            // 构建 SkillSource.UserDefined，folderPath 指向文件夹路径
             Instant lastModified = getLastModified(skillFile);
             var source = new SkillSource.UserDefined(skillFolder.toString(), lastModified);
 
