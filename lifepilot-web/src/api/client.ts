@@ -37,7 +37,15 @@ import type {
   OverviewStats,
   ToolUsageStats,
   EvaluationResult,
-  TokenConsumptionStats
+  TokenConsumptionStats,
+  ContextPreviewResponse,
+  TokenBudgetData,
+  DependencyGraphResponse,
+  ToolCallStats,
+  ToolDailyTrend,
+  ToolAnalyticsResponse,
+  ErrorTrendDaily,
+  McpConnectionLog
 } from '@/types'
 
 // API 基础路径（开发环境通过 Vite proxy 转发）
@@ -553,6 +561,21 @@ export const skillApi = {
       method: 'POST',
       body: JSON.stringify(data)
     })
+  },
+  /** 获取 Skill Markdown 定义 */
+  getSkillMarkdown(skillId: string): Promise<string> {
+    return fetch(`${BASE}/skills/${skillId}/markdown`).then(res => {
+      if (!res.ok) throw { code: res.status, message: '获取失败', timestamp: new Date().toISOString() }
+      return res.text()
+    })
+  },
+  /** 更新 Skill Markdown 定义 */
+  updateSkillMarkdown(skillId: string, content: string): Promise<void> {
+    return request(`/skills/${skillId}/markdown`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'text/plain' },
+      body: content
+    } as any)
   }
 }
 
@@ -584,6 +607,10 @@ export const mcpApi = {
   },
   listTools(name: string): Promise<McpTool[]> {
     return request(`/mcp/servers/${name}/tools`)
+  },
+  /** 获取 MCP Server 连接日志 */
+  getConnectionLogs(serverName: string): Promise<McpConnectionLog[]> {
+    return request(`/mcp/servers/${serverName}/connection-logs`)
   }
 }
 
@@ -707,6 +734,14 @@ export const workflowApi = {
   },
   listExecutions(id: string): Promise<WorkflowExecution[]> {
     return request(`/workflows/${id}/executions`)
+  },
+  /** 获取工作流 YAML 内容（便捷方法） */
+  getWorkflowYaml(workflowId: string): Promise<string> {
+    return this.getYaml(workflowId).then(res => res.yamlContent)
+  },
+  /** 更新工作流 YAML 内容（便捷方法） */
+  updateWorkflowYaml(workflowId: string, content: string): Promise<WorkflowDetail> {
+    return this.update(workflowId, { yamlContent: content })
   }
 }
 
@@ -783,6 +818,21 @@ export const toolApi = {
   },
   getUsage(id: string): Promise<any> {
     return request(`/tools/${id}/usage`)
+  },
+  /** 获取 Tool YAML 定义 */
+  getToolYaml(toolId: string): Promise<string> {
+    return fetch(`${BASE}/tools/${toolId}/yaml`).then(res => {
+      if (!res.ok) throw { code: res.status, message: '获取失败', timestamp: new Date().toISOString() }
+      return res.text()
+    })
+  },
+  /** 更新 Tool YAML 定义 */
+  updateToolYaml(toolId: string, content: string): Promise<void> {
+    return request(`/tools/${toolId}/yaml`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'text/plain' },
+      body: content
+    } as any)
   }
 }
 
@@ -828,6 +878,41 @@ export const agentApi = {
       method: 'POST',
       body: JSON.stringify({ message })
     })
+  },
+  /** 流式测试聊天 */
+  async testChatStream(id: string, message: string, signal?: AbortSignal): Promise<ReadableStream<Uint8Array>> {
+    const res = await fetch(`${BASE}/agents/${id}/test-chat/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message }),
+      signal
+    })
+    if (!res.ok || !res.body) {
+      throw { code: res.status, message: '流式请求失败', timestamp: new Date().toISOString() }
+    }
+    return res.body
+  },
+  /** 上下文组装预览 */
+  contextPreview(agentId: string, message: string, sessionId?: string): Promise<ContextPreviewResponse> {
+    return request(`/agents/${agentId}/context-preview`, {
+      method: 'POST',
+      body: JSON.stringify({ message, sessionId })
+    })
+  },
+  /** 获取 Agent Markdown 定义 */
+  getAgentMarkdown(agentId: string): Promise<string> {
+    return fetch(`${BASE}/agents/${agentId}/markdown`).then(res => {
+      if (!res.ok) throw { code: res.status, message: '获取失败', timestamp: new Date().toISOString() }
+      return res.text()
+    })
+  },
+  /** 更新 Agent Markdown 定义 */
+  updateAgentMarkdown(agentId: string, content: string): Promise<void> {
+    return request(`/agents/${agentId}/markdown`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'text/plain' },
+      body: content
+    } as any)
   }
 }
 
@@ -854,5 +939,27 @@ export const analyticsApi = {
       query.append('to', timeRange.to)
     }
     return request(`/analytics/knowledge-bases?${query.toString()}`)
+  },
+  /** 获取 Tool 调用统计 */
+  getToolAnalytics(timeRange: { from: string; to: string }): Promise<ToolAnalyticsResponse> {
+    const query = new URLSearchParams()
+    query.append('from', timeRange.from)
+    query.append('to', timeRange.to)
+    return request(`/analytics/tools?${query.toString()}`)
+  },
+  /** 获取错误趋势 */
+  getErrorTrend(timeRange: { from: string; to: string }): Promise<ErrorTrendDaily[]> {
+    const query = new URLSearchParams()
+    query.append('from', timeRange.from)
+    query.append('to', timeRange.to)
+    return request(`/analytics/error-trend?${query.toString()}`)
+  }
+}
+
+/** 依赖关系图 API */
+export const dependencyApi = {
+  /** 获取依赖关系图 */
+  getGraph(): Promise<DependencyGraphResponse> {
+    return request('/dependencies/graph')
   }
 }
