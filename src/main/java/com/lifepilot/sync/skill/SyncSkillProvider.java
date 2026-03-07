@@ -85,16 +85,13 @@ public class SyncSkillProvider implements BuiltinSkillProvider {
                 .description("管理外部数据源同步：触发同步、查看状态、管理配置、解决冲突")
                 .version("1.0.0")
                 .source(new SkillSource.Builtin())
-                .systemPrompt(promptRegistry.render("skill/sync"))
-                .allowedTools(List.of(
+                .instructions(promptRegistry.render("skill/sync"))
+                .suggestedTools(List.of(
                         "builtin.sync.trigger",
                         "builtin.sync.status",
                         "builtin.sync.config",
                         "builtin.sync.conflicts"
                 ))
-                .execution(ExecutionStrategy.DEFAULT)
-                .memoryAccess(MemoryAccessPolicy.none())
-                .budget(SkillBudget.DEFAULT)
                 .metadata(Map.of())
                 .build();
     }

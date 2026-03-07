@@ -72,10 +72,10 @@ public class DependencyController {
             }
         }
 
-        // 2. 遍历 Skill → 节点 + allowedTools 边
+        // 2. 遍历 Skill → 节点 + suggestedTools 边
         for (var skill : skillRegistry.listAll()) {
             nodeMap.put(skill.id(), new NodeInfo(skill.id(), skill.name(), "SKILL", true));
-            for (String toolId : skill.allowedTools()) {
+            for (String toolId : skill.suggestedTools()) {
                 edges.add(new EdgeInfo(skill.id(), toolId, "uses-tool"));
             }
         }

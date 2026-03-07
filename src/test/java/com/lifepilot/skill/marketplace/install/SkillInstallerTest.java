@@ -11,9 +11,6 @@ import com.lifepilot.skill.marketplace.security.SkillSecurityScanner;
 import com.lifepilot.skill.marketplace.version.VersionResolver;
 import com.lifepilot.skill.model.SkillDefinition;
 import com.lifepilot.skill.model.SkillSource;
-import com.lifepilot.skill.model.ExecutionStrategy;
-import com.lifepilot.skill.model.MemoryAccessPolicy;
-import com.lifepilot.skill.model.SkillBudget;
 import com.lifepilot.skill.registry.SkillRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
@@ -419,11 +416,8 @@ class SkillInstallerTest {
                 .description("\u7528\u4E8E\u6D4B\u8BD5\u7684 Skill")
                 .version("1.0.0")
                 .source(new SkillSource.UserDefined("/tmp/test-skills"))
-                .systemPrompt("\u4F60\u662F\u4E00\u4E2A\u6D4B\u8BD5\u52A9\u624B")
-                .allowedTools(List.of("todo-add"))
-                .execution(ExecutionStrategy.DEFAULT)
-                .memoryAccess(MemoryAccessPolicy.none())
-                .budget(SkillBudget.DEFAULT)
+                .instructions("\u4F60\u662F\u4E00\u4E2A\u6D4B\u8BD5\u52A9\u624B")
+                .suggestedTools(List.of("todo-add"))
                 .metadata(Map.of())
                 .build();
     }

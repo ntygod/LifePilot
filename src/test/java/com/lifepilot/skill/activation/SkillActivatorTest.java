@@ -88,7 +88,6 @@ class SkillActivatorTest {
         assertThat(eventPublisher.publishedEvents.getFirst()).isInstanceOf(SkillLifecycleEvent.Activated.class);
         var event = (SkillLifecycleEvent.Activated) eventPublisher.publishedEvents.getFirst();
         assertThat(event.skillId()).isEqualTo("event-test");
-        assertThat(event.traceId()).isNotBlank();
     }
 
     // ── skillId 不存在 ──
@@ -197,7 +196,11 @@ class SkillActivatorTest {
         private final Map<String, SkillDefinition> store = new java.util.concurrent.ConcurrentHashMap<>();
 
         StubSkillRegistry() {
-            super(null, null, null, null);
+            super(null, null, null, createDefaultConfig());
+        }
+
+        private static com.lifepilot.skill.config.SkillConfigProperties createDefaultConfig() {
+            return new com.lifepilot.skill.config.SkillConfigProperties();
         }
 
         void addSkill(SkillDefinition definition) {

@@ -1,10 +1,8 @@
 package com.lifepilot.workflow.engine;
 
 import com.lifepilot.llm.LlmRouter;
-import com.lifepilot.skill.action.ActionResult;
-import com.lifepilot.skill.action.SkillAction;
-import com.lifepilot.skill.action.SkillActionDispatcher;
-import com.lifepilot.skill.model.SkillDefinition;
+import com.lifepilot.skill.activation.SkillActivator;
+import com.lifepilot.skill.model.SkillActivation;
 import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.tool.ToolContract;
 import com.lifepilot.tool.model.ToolInput;
@@ -27,7 +25,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <p>根据 {@link WorkflowStep} 的具体类型分发到对应的执行逻辑：
  * <ul>
- *   <li>{@link SkillStep} → {@link SkillRegistry} + {@link SkillActionDispatcher}</li>
+ *   <li>{@link SkillStep} → {@link SkillActivator#activate}</li>
  *   <li>{@link ToolStep} → {@link DynamicToolRegistry} + {@link ToolContract#execute}</li>
  *   <li>{@link LlmStep} → {@link LlmRouter#call}</li>
  *   <li>{@link ConditionStep} → 条件求值 + 递归执行分支</li>
@@ -46,7 +44,7 @@ public class StepExecutor {
     private static final Logger log = LoggerFactory.getLogger(StepExecutor.class);
 
     private final SkillRegistry skillRegistry;
-    private final SkillActionDispatcher skillActionDispatcher;
+    private final SkillActivator skillActivator;
     private final DynamicToolRegistry toolRegistry;
     private final LlmRouter llmRouter;
     private final WorkflowConfigProperties config;
@@ -54,19 +52,19 @@ public class StepExecutor {
     /**
      * 构造步骤分发器。
      *
-     * @param skillRegistry          Skill 注册中心
-     * @param skillActionDispatcher  Skill 动作分发器
-     * @param toolRegistry           动态工具注册中心
-     * @param llmRouter              LLM 路由器
-     * @param config                 工作流配置属性
+     * @param skillRegistry  Skill 注册中心
+     * @param skillActivator Skill 激活器
+     * @param toolRegistry   动态工具注册中心
+     * @param llmRouter      LLM 路由器
+     * @param config         工作流配置属性
      */
     public StepExecutor(SkillRegistry skillRegistry,
-                        SkillActionDispatcher skillActionDispatcher,
+                        SkillActivator skillActivator,
                         DynamicToolRegistry toolRegistry,
                         LlmRouter llmRouter,
                         WorkflowConfigProperties config) {
         this.skillRegistry = skillRegistry;
-        this.skillActionDispatcher = skillActionDispatcher;
+        this.skillActivator = skillActivator;
         this.toolRegistry = toolRegistry;
         this.llmRouter = llmRouter;
         this.config = config;
@@ -107,33 +105,28 @@ public class StepExecutor {
     // ========== 各步骤类型执行逻辑 ==========
 
     /**
-     * 执行 SkillStep — 通过 SkillRegistry 查找 Skill，使用 SkillActionDispatcher 分发执行。
+     * 执行 SkillStep — 通过 SkillActivator 激活 Skill，返回指令和建议工具。
      */
     private Map<String, Object> executeSkill(SkillStep step,
                                              WorkflowContext context,
                                              ExpressionEngine expressionEngine) {
         log.info("执行 SkillStep: stepId={}, skillId={}", step.id(), step.skillId());
 
-        // 1. 查找 Skill 定义
-        SkillDefinition skillDef = skillRegistry.find(step.skillId())
-                .orElseThrow(() -> new WorkflowStepException(
-                        step.id(), "Skill 未找到: skillId=" + step.skillId()));
-
-        // 2. 解析参数表达式
-        Map<String, Object> resolvedParams = expressionEngine.resolveMap(
-                toObjectMap(step.params()), context);
-
-        // 3. 使用 TemplateAction 执行 Skill（将 systemPrompt 作为模板渲染）
-        var action = new SkillAction.TemplateAction(skillDef.systemPrompt());
-        ActionResult actionResult = skillActionDispatcher.dispatch(action, resolvedParams, null);
-
-        // 4. 转换为输出 Map
-        Map<String, Object> output = new HashMap<>();
-        output.put("success", actionResult.success());
-        output.put("output", actionResult.output());
-        if (actionResult.data() != null) {
-            output.put("data", actionResult.data());
+        // 1. 激活 Skill
+        SkillActivation activation;
+        try {
+            activation = skillActivator.activate(step.skillId());
+        } catch (Exception e) {
+            throw new WorkflowStepException(
+                    step.id(), "Skill 激活失败: skillId=" + step.skillId() + ", error=" + e.getMessage(), e);
         }
+
+        // 2. 返回激活结果
+        Map<String, Object> output = new HashMap<>();
+        output.put("success", true);
+        output.put("skillId", activation.skillId());
+        output.put("instructions", activation.instructions());
+        output.put("suggestedTools", activation.suggestedTools());
         return Map.copyOf(output);
     }
 

@@ -525,7 +525,7 @@ public class ToolController {
 
         // 查询被哪些 Skill 使用
         List<Map<String, String>> usedBySkills = skillRegistry.listAll().stream()
-                .filter(skill -> skill.allowedTools() != null && skill.allowedTools().contains(toolId))
+                .filter(skill -> skill.suggestedTools() != null && skill.suggestedTools().contains(toolId))
                 .map(skill -> Map.of(
                         "id", skill.id(),
                         "name", skill.name() != null ? skill.name() : skill.id()

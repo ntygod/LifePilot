@@ -53,18 +53,15 @@ class SkillRegistryTest {
                 .description("测试描述-" + id)
                 .version("1.0.0")
                 .source(new SkillSource.Builtin())
-                .systemPrompt("你是测试助手")
-                .allowedTools(List.of("tool-a"))
-                .execution(ExecutionStrategy.DEFAULT)
-                .memoryAccess(MemoryAccessPolicy.none())
-                .budget(SkillBudget.DEFAULT)
+                .instructions("你是测试助手")
+                .suggestedTools(List.of("tool-a"))
                 .metadata(Map.of())
                 .build();
     }
 
     private SkillDefinition userDefinedDefinition(String id) {
         return builtinDefinition(id).toBuilder()
-                .source(new SkillSource.UserDefined("/path/to/skill.yaml"))
+                .source(new SkillSource.UserDefined("/path/to/skill"))
                 .build();
     }
 

@@ -45,7 +45,7 @@ public sealed interface WorkflowStep permits
     @Nullable ErrorStrategy errorStrategy();
 
     /**
-     * Skill 步骤，通过 SkillActionDispatcher 调用已注册的 Skill。
+     * Skill 步骤，通过 SkillActivator 激活已注册的 Skill。
      *
      * @param id            步骤唯一标识
      * @param name          步骤名称
