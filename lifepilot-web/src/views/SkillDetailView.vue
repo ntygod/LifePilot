@@ -122,7 +122,6 @@ const toolSourceLabel: Record<string, string> = {
   SKILL: 'Skill',
   MCP: 'MCP',
   builtin: '内置',
-  yaml: 'YAML',
   mcp: 'MCP',
 }
 
