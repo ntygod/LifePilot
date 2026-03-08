@@ -151,27 +151,128 @@
 
 /* 共享卡片样式层 */
 @layer components {
-  /* 列表页卡片 */
+  /* === 列表页卡片 — 多层阴影 + 顶部高亮 === */
   .list-card {
     border: 1px solid var(--border);
     border-radius: var(--radius);
     background: var(--card);
-    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.03);
     transition: all 0.2s cubic-bezier(0.22, 0.61, 0.36, 1);
+    box-shadow:
+      0 1px 2px 0 rgb(0 0 0 / 0.04),
+      0 1px 4px 0 rgb(0 0 0 / 0.02),
+      inset 0 1px 0 0 rgb(255 255 255 / 0.06);
   }
   .list-card:hover {
-    box-shadow: 0 4px 12px -2px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.04);
+    box-shadow:
+      0 4px 12px -2px rgb(0 0 0 / 0.1),
+      0 2px 6px -2px rgb(0 0 0 / 0.06),
+      inset 0 1px 0 0 rgb(255 255 255 / 0.08);
     border-color: hsl(from var(--primary) h s l / 0.4);
-    transform: translateY(-1px);
+    transform: translateY(-2px);
   }
 
-  /* 详情页卡片 */
+  /* === 详情页卡片 — 多层阴影 + 背景渐变 + 顶部高亮 === */
   .detail-card {
     border: 1px solid var(--border);
     border-radius: var(--radius);
     background: linear-gradient(135deg, var(--card) 0%, hsl(from var(--muted) h s l / 0.3) 100%);
-    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.04);
+    box-shadow:
+      0 1px 3px 0 rgb(0 0 0 / 0.05),
+      0 1px 2px 0 rgb(0 0 0 / 0.03),
+      inset 0 1px 0 0 rgb(255 255 255 / 0.06);
   }
+
+  /* === 状态按钮 — 启用态（绿色系） === */
+  .status-btn-active {
+    background: hsl(from var(--primary) h s l / 0.08);
+    border-color: hsl(from var(--primary) h s l / 0.3);
+    color: hsl(from var(--primary) h s l / 1);
+    font-weight: 500;
+    gap: 0.375rem;
+  }
+  .status-btn-active::before {
+    content: '';
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: hsl(142 71% 45%);
+    flex-shrink: 0;
+  }
+  .status-btn-active:hover {
+    background: hsl(from var(--primary) h s l / 0.14);
+  }
+
+  /* === 状态按钮 — 关闭/禁用态（灰色系） === */
+  .status-btn-inactive {
+    background: hsl(from var(--muted) h s l / 0.5);
+    border-color: hsl(from var(--border) h s l / 0.6);
+    color: var(--muted-foreground);
+    font-weight: 500;
+    gap: 0.375rem;
+  }
+  .status-btn-inactive::before {
+    content: '';
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--muted-foreground);
+    opacity: 0.5;
+    flex-shrink: 0;
+  }
+  .status-btn-inactive:hover {
+    background: hsl(from var(--muted) h s l / 0.7);
+  }
+
+  /* === 导航/操作按钮 — link 风格 === */
+  .action-btn-link {
+    color: var(--muted-foreground);
+    font-weight: 400;
+    gap: 0.25rem;
+  }
+  .action-btn-link:hover {
+    color: var(--foreground);
+  }
+
+  /* === 对话历史会话项 === */
+  .session-item {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.22, 0.61, 0.36, 1);
+  }
+  .session-item:hover {
+    background: hsl(from var(--accent) h s l / 0.5);
+  }
+  .session-item-active {
+    background: var(--accent);
+  }
+  .session-item-active::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 3px;
+    height: 60%;
+    border-radius: 0 2px 2px 0;
+    background: var(--primary);
+  }
+
+  /* === 导航图标语义化颜色 === */
+  .nav-icon-blue { color: hsl(210 80% 55%); }
+  .nav-icon-purple { color: hsl(265 60% 58%); }
+  .nav-icon-green { color: hsl(160 60% 42%); }
+  .nav-icon-gray { color: var(--muted-foreground); }
+
+  .dark .nav-icon-blue { color: hsl(210 80% 65%); }
+  .dark .nav-icon-purple { color: hsl(265 60% 68%); }
+  .dark .nav-icon-green { color: hsl(160 60% 52%); }
 
   /* 统计数据区块 */
   .stat-block {

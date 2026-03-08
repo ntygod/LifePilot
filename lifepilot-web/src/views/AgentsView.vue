@@ -224,6 +224,7 @@ const typeLabel: Record<string, string> = {
                   <Badge
                     :variant="agent.enabled ? 'default' : 'secondary'"
                     class="text-xs"
+                    :class="agent.enabled ? 'status-btn-active' : 'status-btn-inactive'"
                   >
                     {{ agent.enabled ? '已启用' : '已禁用' }}
                   </Badge>

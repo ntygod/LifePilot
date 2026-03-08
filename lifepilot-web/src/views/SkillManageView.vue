@@ -250,13 +250,13 @@ const stateLabel: Record<string, { label: string; variant: 'default' | 'secondar
                   v-for="skill in filteredSkills"
                   :key="skill.id"
                   class="list-card cursor-pointer group"
+                  @click="viewSkillDetail(skill)"
                 >
                   <CardHeader class="pb-2">
                     <div class="flex items-start justify-between gap-sm">
                       <div class="flex-1 min-w-0">
                         <CardTitle
-                          class="text-sm leading-snug truncate cursor-pointer"
-                          @click="viewSkillDetail(skill)"
+                          class="text-sm leading-snug truncate"
                         >
                           {{ skill.name }}
                         </CardTitle>
@@ -282,18 +282,22 @@ const stateLabel: Record<string, { label: string; variant: 'default' | 'secondar
                       <span class="text-xs text-muted-foreground">v{{ skill.version }}</span>
                       <div class="flex items-center gap-xs">
                         <Button
+                          v-if="skill.metadata?.status !== 'disabled'"
                           variant="outline"
                           size="sm"
-                          @click="toggleSkill(skill, $event)"
+                          class="status-btn-active"
+                          @click.stop="toggleSkill(skill, $event)"
                         >
-                          {{ skill.metadata?.status !== 'disabled' ? '启用中' : '已关闭' }}
+                          启用中
                         </Button>
                         <Button
+                          v-else
                           variant="outline"
                           size="sm"
-                          @click="viewSkillDetail(skill)"
+                          class="status-btn-inactive"
+                          @click.stop="toggleSkill(skill, $event)"
                         >
-                          了解详情
+                          已关闭
                         </Button>
                         <Button
                           v-if="skill.source?.type === 'UserDefined'"
