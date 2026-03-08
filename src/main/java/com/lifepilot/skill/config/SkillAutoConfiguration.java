@@ -41,6 +41,8 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.event.EventListener;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.List;
@@ -298,9 +300,15 @@ public class SkillAutoConfiguration {
      * 然后启动 WatchService 监听文件变更。之后调用 {@link SkillToToolBridge#registerSkillsTool()}
      * 注册统一的 skills 工具到 DynamicToolRegistry。</p>
      *
+     * <p>使用 {@code @Order(Ordered.LOWEST_PRECEDENCE)} 确保在
+     * {@link BuiltinSkillRegistrar#registerAll()} 之后执行，
+     * 保证 Builtin 工具（如 {@code builtin.shell.exec}）已注册到 DynamicToolRegistry，
+     * 用户 Skill 的 suggestedTools 校验才能通过。</p>
+     *
      * @param event 应用就绪事件
      */
     @EventListener(ApplicationReadyEvent.class)
+    @Order(Ordered.LOWEST_PRECEDENCE)
     public void onApplicationReady(ApplicationReadyEvent event) {
         var ctx = event.getApplicationContext();
 
