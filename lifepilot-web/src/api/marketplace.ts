@@ -24,34 +24,35 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   return JSON.parse(text) as T
 }
 
-/** Skill 市场 API */
+/** 扩展市场 API */
 export const marketplaceApi = {
-  /** 获取 Skill 列表（分页 + 搜索 + 标签筛选） */
-  getSkills(params: { search?: string; tag?: string; page?: number; size?: number } = {}): Promise<PageResult<SkillPackage>> {
+  /** 获取扩展列表（分页 + 搜索 + 标签筛选 + 类型筛选） */
+  getSkills(params: { type?: string; search?: string; tag?: string; page?: number; size?: number } = {}): Promise<PageResult<SkillPackage>> {
     const query = new URLSearchParams()
+    if (params.type) query.append('type', params.type)
     if (params.search) query.append('search', params.search)
     if (params.tag) query.append('tag', params.tag)
     query.append('page', String(params.page ?? 0))
     query.append('size', String(params.size ?? 20))
-    return request(`/skills?${query.toString()}`)
+    return request(`/extensions?${query.toString()}`)
   },
 
-  /** 获取单个 Skill 详情 */
+  /** 获取单个扩展详情 */
   getSkill(id: string): Promise<SkillPackage> {
-    return request(`/skills/${id}`)
+    return request(`/extensions/${id}`)
   },
 
-  /** 安装 Skill */
+  /** 安装扩展 */
   install(id: string, confirmHighRisk = false): Promise<InstallResult> {
-    return request(`/skills/${id}/install`, {
+    return request(`/extensions/${id}/install`, {
       method: 'POST',
       body: JSON.stringify({ confirmHighRisk })
     })
   },
 
-  /** 卸载 Skill */
+  /** 卸载扩展 */
   uninstall(id: string): Promise<void> {
-    return request(`/skills/${id}`, { method: 'DELETE' })
+    return request(`/extensions/${id}`, { method: 'DELETE' })
   },
 
   /** 刷新索引 */
@@ -64,8 +65,8 @@ export const marketplaceApi = {
     return request('/updates')
   },
 
-  /** 升级 Skill */
+  /** 升级扩展 */
   upgrade(id: string): Promise<InstallResult> {
-    return request(`/skills/${id}/upgrade`, { method: 'POST' })
+    return request(`/extensions/${id}/upgrade`, { method: 'POST' })
   }
 }
