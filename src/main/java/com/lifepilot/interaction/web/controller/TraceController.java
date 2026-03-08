@@ -24,7 +24,6 @@ import com.lifepilot.observability.trace.EvaluationStep;
 import com.lifepilot.observability.evaluation.EvaluationResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.http.MediaType;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -53,7 +52,6 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/api/traces")
-@ConditionalOnBean(TraceQuery.class)
 public class TraceController {
 
     private static final Logger log = LoggerFactory.getLogger(TraceController.class);
