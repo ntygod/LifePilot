@@ -132,9 +132,9 @@ const riskBadge: Record<string, { label: string; variant: 'default' | 'secondary
       <!-- 详情内容 -->
       <div v-else class="max-w-[1200px] mx-auto px-md md:px-lg py-lg space-y-6">
         <!-- 基础信息 -->
-        <Card>
+        <Card class="detail-card">
           <CardHeader>
-            <CardTitle>基础信息</CardTitle>
+            <CardTitle class="section-title">基础信息</CardTitle>
           </CardHeader>
           <CardContent>
             <div class="space-y-3 text-sm">
@@ -191,9 +191,9 @@ const riskBadge: Record<string, { label: string; variant: 'default' | 'secondary
         </Card>
 
         <!-- 行为与副作用说明 -->
-        <Card v-if="tool.sideEffects && tool.sideEffects.length > 0">
+        <Card v-if="tool.sideEffects && tool.sideEffects.length > 0" class="detail-card">
           <CardHeader>
-            <CardTitle>行为与副作用说明</CardTitle>
+            <CardTitle class="section-title">行为与副作用说明</CardTitle>
           </CardHeader>
           <CardContent>
             <ul class="space-y-2 text-sm">
@@ -210,9 +210,9 @@ const riskBadge: Record<string, { label: string; variant: 'default' | 'secondary
         </Card>
 
         <!-- Schema 信息 -->
-        <Card v-if="tool.inputSchema || tool.outputSchema">
+        <Card v-if="tool.inputSchema || tool.outputSchema" class="detail-card">
           <CardHeader>
-            <CardTitle>Schema</CardTitle>
+            <CardTitle class="section-title">Schema</CardTitle>
           </CardHeader>
           <CardContent>
             <div class="space-y-4">
@@ -229,10 +229,10 @@ const riskBadge: Record<string, { label: string; variant: 'default' | 'secondary
         </Card>
 
         <!-- YAML 定义（仅 yaml 来源工具展示） -->
-        <Card v-if="tool.source === 'yaml'">
+        <Card v-if="tool.source === 'yaml'" class="detail-card">
           <CardHeader>
             <div class="flex items-center justify-between">
-              <CardTitle>YAML 定义</CardTitle>
+              <CardTitle class="section-title">YAML 定义</CardTitle>
               <Badge variant="outline">{{ sourceLabel[tool.source] }}</Badge>
             </div>
           </CardHeader>
@@ -251,9 +251,9 @@ const riskBadge: Record<string, { label: string; variant: 'default' | 'secondary
         </Card>
 
         <!-- 预算配置 -->
-        <Card v-if="tool.budget">
+        <Card v-if="tool.budget" class="detail-card">
           <CardHeader>
-            <CardTitle>预算配置</CardTitle>
+            <CardTitle class="section-title">预算配置</CardTitle>
           </CardHeader>
           <CardContent>
             <div class="space-y-2 text-sm">
@@ -274,9 +274,9 @@ const riskBadge: Record<string, { label: string; variant: 'default' | 'secondary
         </Card>
 
         <!-- 使用情况 -->
-        <Card>
+        <Card class="detail-card">
           <CardHeader>
-            <CardTitle>使用情况</CardTitle>
+            <CardTitle class="section-title">使用情况</CardTitle>
           </CardHeader>
           <CardContent>
             <!-- Skeleton 加载占位符 -->

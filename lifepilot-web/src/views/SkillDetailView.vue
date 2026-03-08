@@ -227,9 +227,9 @@ const toolCards = computed<ToolCardInfo[]>(() => {
 
       <div v-else class="max-w-[768px] mx-auto space-y-lg">
         <!-- 使用说明 -->
-        <Card>
+        <Card class="detail-card">
           <CardHeader>
-            <CardTitle class="text-lg">这个能力能为你做什么</CardTitle>
+            <CardTitle class="section-title">这个能力能为你做什么</CardTitle>
           </CardHeader>
           <CardContent>
             <p class="text-sm text-muted-foreground leading-normal mb-md">
@@ -247,9 +247,9 @@ const toolCards = computed<ToolCardInfo[]>(() => {
         </Card>
 
         <!-- 行为与数据概览 -->
-        <Card>
+        <Card class="detail-card">
           <CardHeader>
-            <CardTitle class="text-lg">行为与数据概览</CardTitle>
+            <CardTitle class="section-title">行为与数据概览</CardTitle>
           </CardHeader>
           <CardContent>
             <div class="space-y-sm text-sm text-muted-foreground">
@@ -295,7 +295,7 @@ const toolCards = computed<ToolCardInfo[]>(() => {
         </Card>
 
         <!-- 高级设置 — Accordion -->
-        <Card>
+        <Card class="detail-card">
           <Accordion type="single" collapsible>
             <AccordionItem value="advanced" class="border-b-0">
               <AccordionTrigger class="px-6 py-4 text-sm font-medium">
