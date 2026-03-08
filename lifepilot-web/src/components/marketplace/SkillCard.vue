@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import type { SkillPackage, InstallResult, SecurityReport } from '@/types'
+import type { ExtensionPackage, InstallResult, SecurityReport } from '@/types'
 import { marketplaceApi } from '@/api/marketplace'
 import SecurityReportDialog from './SecurityReportDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 
 const props = defineProps<{
-  skill: SkillPackage
+  skill: ExtensionPackage
   /** 是否有可用更新 */
   hasUpdate?: boolean
 }>()
@@ -21,6 +21,19 @@ const emit = defineEmits<{
 
 // 操作状态
 const installing = ref(false)
+
+// 扩展类型标签映射
+const typeLabel: Record<string, string> = {
+  SKILL: 'Skill',
+  AGENT: 'Agent',
+  WORKFLOW: 'Workflow',
+}
+
+const typeVariant: Record<string, 'default' | 'secondary' | 'outline'> = {
+  SKILL: 'default',
+  AGENT: 'secondary',
+  WORKFLOW: 'outline',
+}
 const uninstalling = ref(false)
 const upgrading = ref(false)
 const errorMsg = ref('')
@@ -119,6 +132,9 @@ async function handleUpgrade() {
             <h3 class="font-medium text-foreground text-sm leading-snug truncate">
               {{ skill.name }}
             </h3>
+            <Badge :variant="typeVariant[skill.type] ?? 'outline'" class="shrink-0 text-[10px]">
+              {{ typeLabel[skill.type] ?? skill.type }}
+            </Badge>
             <Badge v-if="skill.verified" variant="secondary" class="shrink-0">
               ✓ 已验证
             </Badge>
@@ -135,6 +151,16 @@ async function handleUpgrade() {
       <p class="text-xs text-muted-foreground line-clamp-2 leading-normal mb-sm flex-1">
         {{ skill.description || '暂无描述' }}
       </p>
+
+      <!-- 前置条件 -->
+      <div v-if="skill.requirements && skill.requirements.length > 0" class="mb-sm">
+        <p class="text-[10px] text-muted-foreground mb-0.5">前置条件：</p>
+        <div class="flex flex-wrap gap-1">
+          <Badge v-for="req in skill.requirements" :key="req" variant="outline" class="text-[10px]">
+            {{ req }}
+          </Badge>
+        </div>
+      </div>
 
       <!-- 标签 -->
       <div v-if="skill.tags.length > 0" class="flex flex-wrap gap-1 mb-sm">
