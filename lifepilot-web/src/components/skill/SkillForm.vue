@@ -22,9 +22,8 @@ const formData = ref({
   name: '',
   description: '',
   version: '1.0.0',
-  systemPrompt: '',
-  allowedTools: [] as string[],
-  preferredProviderId: '',
+  instructions: '',
+  suggestedTools: [] as string[],
   metadata: {} as Record<string, string>
 })
 
@@ -43,9 +42,8 @@ watch(() => props.skill, (skill) => {
       name: props.mode === 'duplicate' ? `${skill.name} (副本)` : skill.name,
       description: skill.description || '',
       version: skill.version || '1.0.0',
-      systemPrompt: skill.systemPrompt || '',
-      allowedTools: [...(skill.allowedTools || [])],
-      preferredProviderId: skill.preferredProviderId || '',
+      instructions: skill.instructions || '',
+      suggestedTools: [...(skill.suggestedTools || [])],
       metadata: { ...(skill.metadata || {}) }
     }
   } else if (props.mode === 'create') {
@@ -54,9 +52,8 @@ watch(() => props.skill, (skill) => {
       name: '',
       description: '',
       version: '1.0.0',
-      systemPrompt: '',
-      allowedTools: [],
-      preferredProviderId: '',
+      instructions: '',
+      suggestedTools: [],
       metadata: {}
     }
   }
@@ -91,8 +88,8 @@ function validate(): boolean {
     errors.value.name = '给这个能力起个名字吧，方便你在列表中识别它'
   }
   
-  if (!formData.value.systemPrompt.trim()) {
-    errors.value.systemPrompt = '建议为能力补充一段系统提示，帮助它稳定理解自己的角色和行为'
+  if (!formData.value.instructions.trim()) {
+    errors.value.instructions = '建议为能力补充一段指令，帮助它稳定理解自己的角色和行为'
   }
   
   return Object.keys(errors.value).length === 0
@@ -111,9 +108,8 @@ async function handleSubmit() {
         name: formData.value.name,
         description: formData.value.description,
         version: formData.value.version,
-        systemPrompt: formData.value.systemPrompt,
-        allowedTools: formData.value.allowedTools,
-        preferredProviderId: formData.value.preferredProviderId || undefined,
+        instructions: formData.value.instructions,
+        suggestedTools: formData.value.suggestedTools,
         metadata: formData.value.metadata
       })
     } else if (props.mode === 'duplicate') {
@@ -123,9 +119,8 @@ async function handleSubmit() {
         name: formData.value.name,
         description: formData.value.description,
         version: formData.value.version,
-        systemPrompt: formData.value.systemPrompt,
-        allowedTools: formData.value.allowedTools,
-        preferredProviderId: formData.value.preferredProviderId || undefined,
+        instructions: formData.value.instructions,
+        suggestedTools: formData.value.suggestedTools,
         metadata: formData.value.metadata
       })
     } else {
@@ -134,9 +129,8 @@ async function handleSubmit() {
         name: formData.value.name,
         description: formData.value.description,
         version: formData.value.version,
-        systemPrompt: formData.value.systemPrompt,
-        allowedTools: formData.value.allowedTools,
-        preferredProviderId: formData.value.preferredProviderId || undefined,
+        instructions: formData.value.instructions,
+        suggestedTools: formData.value.suggestedTools,
         metadata: formData.value.metadata
       })
     }
@@ -154,14 +148,14 @@ const newToolName = ref('')
 
 function addTool() {
   const tool = newToolName.value.trim()
-  if (tool && !formData.value.allowedTools.includes(tool)) {
-    formData.value.allowedTools.push(tool)
+  if (tool && !formData.value.suggestedTools.includes(tool)) {
+    formData.value.suggestedTools.push(tool)
     newToolName.value = ''
   }
 }
 
 function removeTool(tool: string) {
-  formData.value.allowedTools = formData.value.allowedTools.filter(t => t !== tool)
+  formData.value.suggestedTools = formData.value.suggestedTools.filter(t => t !== tool)
 }
 </script>
 
@@ -258,29 +252,29 @@ function removeTool(tool: string) {
             />
           </div>
 
-          <!-- 系统提示 -->
+          <!-- 指令 -->
           <div>
                 <label class="block text-xs font-medium text-foreground mb-xs">
-                  系统提示（System Prompt）<span class="text-destructive">*</span>
+                  指令（Instructions）<span class="text-destructive">*</span>
             </label>
             <Textarea
-              v-model="formData.systemPrompt"
+              v-model="formData.instructions"
               rows="6"
                   class="font-mono text-xs"
-              :class="{ 'border-destructive': errors.systemPrompt }"
+              :class="{ 'border-destructive': errors.instructions }"
                   placeholder="用系统视角描述这个能力的角色、目标和应遵循的规则，例如：你是一名擅长时间管理的助手，帮助用户将模糊愿望拆解成可执行计划..."
             />
-                <p v-if="errors.systemPrompt" class="text-xs text-destructive mt-xs">
-                  {{ errors.systemPrompt }}
+                <p v-if="errors.instructions" class="text-xs text-destructive mt-xs">
+                  {{ errors.instructions }}
                 </p>
           </div>
 
-          <!-- 允许的工具 -->
+          <!-- 建议工具 -->
           <div>
-                <label class="block text-xs font-medium text-foreground mb-xs">允许调用的内部工具</label>
+                <label class="block text-xs font-medium text-foreground mb-xs">建议工具</label>
                 <div class="flex flex-wrap gap-xs mb-xs">
               <span
-                v-for="tool in formData.allowedTools"
+                v-for="tool in formData.suggestedTools"
                 :key="tool"
                     class="inline-flex items-center gap-xs px-sm py-xs bg-accent text-accent-foreground rounded-lg text-xs"
               >
@@ -313,17 +307,6 @@ function removeTool(tool: string) {
                   可选。仅当你希望此能力显式调用某些内部工具时再配置，例如待办、日程等。
                 </p>
           </div>
-
-          <!-- 首选 Provider -->
-          <div>
-                <label class="block text-xs font-medium text-foreground mb-xs">首选 Provider ID</label>
-            <Input
-              v-model="formData.preferredProviderId"
-              type="text"
-                  class="text-xs"
-                  placeholder="例如：openai-gpt-4，通常保持默认即可"
-            />
-              </div>
             </div>
           </div>
 
