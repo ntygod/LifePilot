@@ -3,8 +3,10 @@ package com.lifepilot.meta.config;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.meta.convenience.CapabilityAggregator;
 import com.lifepilot.meta.convenience.IntrospectionSkillProvider;
+import com.lifepilot.meta.convenience.McpInstallerRegistrar;
 import com.lifepilot.meta.convenience.SkillDiscoveryRegistrar;
 import com.lifepilot.meta.infra.InfraToolProvider;
+import com.lifepilot.mcp.registry.McpServerRegistry;
 import com.lifepilot.meta.infra.browser.BrowserSessionManager;
 import com.lifepilot.meta.infra.interaction.CliInteractionHandler;
 import com.lifepilot.meta.infra.interaction.InteractionBridge;
@@ -113,6 +115,16 @@ public class MetaAutoConfiguration {
         return new SkillDiscoveryRegistrar(skillRegistry, markdownSkillParser, properties);
     }
 
-    // Bean 注册将在后续任务中随实现类创建逐步添加：
-    // - Task 12: McpInstallerRegistrar (@ConditionalOnProperty)
+    /**
+     * 注册 mcp-installer 注册器 — 启动时检查 npx 可用性并注册 mcp-installer MCP Server。
+     *
+     * <p>通过 {@code lifepilot.meta.mcp-installer.enabled} 配置控制启用，默认 true。</p>
+     */
+    @Bean
+    @ConditionalOnProperty(name = "lifepilot.meta.mcp-installer.enabled",
+                           havingValue = "true", matchIfMissing = true)
+    McpInstallerRegistrar mcpInstallerRegistrar(McpServerRegistry mcpServerRegistry,
+                                                 MetaProperties properties) {
+        return new McpInstallerRegistrar(mcpServerRegistry, properties);
+    }
 }
