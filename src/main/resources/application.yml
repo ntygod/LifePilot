@@ -649,4 +649,4 @@ lifepilot:
       auto-trigger: true
       agent-definition: preset-agents/onboarding-guide.md
 
-# 日志配置见 logback-spring.xml（CLI 模式输出到文件，避免干扰 JLine 终端输入）
+# 日志配置见 logback-spring.xml

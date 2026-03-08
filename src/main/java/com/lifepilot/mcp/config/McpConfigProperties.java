@@ -1,6 +1,8 @@
 package com.lifepilot.mcp.config;
 
 import com.lifepilot.mcp.transport.TransportType;
+import lombok.Getter;
+import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.time.Duration;
@@ -17,6 +19,8 @@ import java.util.Map;
  * @author zsg
  * @since 2026-02-24
  */
+@Setter
+@Getter
 @ConfigurationProperties(prefix = "lifepilot.mcp")
 public class McpConfigProperties {
 
@@ -29,15 +33,6 @@ public class McpConfigProperties {
     /** MCP Server 连接列表。 */
     private List<ServerEntry> servers = new ArrayList<>();
 
-    public boolean isEnabled() { return enabled; }
-    public void setEnabled(boolean enabled) { this.enabled = enabled; }
-
-    public ServerProperties getServer() { return server; }
-    public void setServer(ServerProperties server) { this.server = server; }
-
-    public List<ServerEntry> getServers() { return servers; }
-    public void setServers(List<ServerEntry> servers) { this.servers = servers; }
-
     /**
      * 将配置条目转换为 McpServerConfig 列表。
      */
@@ -48,15 +43,17 @@ public class McpConfigProperties {
     }
 
     /** MCP Server 模式配置。 */
+    @Setter
+    @Getter
     public static class ServerProperties {
         /** 是否启用 MCP Server 模式（反向桥接），默认 false。 */
         private boolean enabled = false;
 
-        public boolean isEnabled() { return enabled; }
-        public void setEnabled(boolean enabled) { this.enabled = enabled; }
     }
 
     /** 单个 MCP Server 配置条目。 */
+    @Setter
+    @Getter
     public static class ServerEntry {
         private String name;
         private TransportType transport = TransportType.STDIO;
@@ -70,42 +67,6 @@ public class McpConfigProperties {
         private Duration reconnectDelay;
         private int maxReconnectAttempts = 5;
         private Duration healthCheckInterval;
-
-        public String getName() { return name; }
-        public void setName(String name) { this.name = name; }
-
-        public TransportType getTransport() { return transport; }
-        public void setTransport(TransportType transport) { this.transport = transport; }
-
-        public String getCommand() { return command; }
-        public void setCommand(String command) { this.command = command; }
-
-        public List<String> getArgs() { return args; }
-        public void setArgs(List<String> args) { this.args = args; }
-
-        public String getUrl() { return url; }
-        public void setUrl(String url) { this.url = url; }
-
-        public Map<String, String> getEnv() { return env; }
-        public void setEnv(Map<String, String> env) { this.env = env; }
-
-        public Duration getTimeout() { return timeout; }
-        public void setTimeout(Duration timeout) { this.timeout = timeout; }
-
-        public boolean isAutoConnect() { return autoConnect; }
-        public void setAutoConnect(boolean autoConnect) { this.autoConnect = autoConnect; }
-
-        public boolean isReconnect() { return reconnect; }
-        public void setReconnect(boolean reconnect) { this.reconnect = reconnect; }
-
-        public Duration getReconnectDelay() { return reconnectDelay; }
-        public void setReconnectDelay(Duration reconnectDelay) { this.reconnectDelay = reconnectDelay; }
-
-        public int getMaxReconnectAttempts() { return maxReconnectAttempts; }
-        public void setMaxReconnectAttempts(int maxReconnectAttempts) { this.maxReconnectAttempts = maxReconnectAttempts; }
-
-        public Duration getHealthCheckInterval() { return healthCheckInterval; }
-        public void setHealthCheckInterval(Duration healthCheckInterval) { this.healthCheckInterval = healthCheckInterval; }
 
         /** 转换为 McpServerConfig record。 */
         public McpServerConfig toServerConfig() {
