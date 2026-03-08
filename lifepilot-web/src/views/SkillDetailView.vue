@@ -358,7 +358,7 @@ const toolCards = computed<ToolCardInfo[]>(() => {
                   <div class="border border-dashed border-border rounded-lg p-md">
                     <h4 class="text-sm font-medium text-foreground mb-xs">系统提示词（System Prompt）</h4>
                     <p class="text-xs text-muted-foreground mb-sm">
-                      这里定义了 LifePilot 在使用此能力时的内部说明。修改不当可能导致行为异常，请谨慎调整。
+                      这里定义了 ZhiWei 在使用此能力时的内部说明。修改不当可能导致行为异常，请谨慎调整。
                     </p>
                     <pre class="mt-xs px-md py-sm rounded-md bg-muted text-xs whitespace-pre-wrap break-words leading-normal">{{ skill.instructions }}</pre>
                   </div>

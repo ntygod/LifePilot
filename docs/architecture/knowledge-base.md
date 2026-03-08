@@ -21,26 +21,26 @@
 > **核心洞察：知识库不是独立的 RAG 模块，而是认知记忆体系的有机扩展。**
 > A knowledge base is not a standalone RAG module, but an organic extension of the cognitive memory system.
 
-这一洞察源于 LifePilot 的核心设计理念——Agent 的所有知识来源（对话、文档、外部工具结果）应当汇入统一的认知体系，
+这一洞察源于 ZhiWei 的核心设计理念——Agent 的所有知识来源（对话、文档、外部工具结果）应当汇入统一的认知体系，
 而非各自为政。文档中提取的实体应当与对话中提取的实体在同一个时序知识图谱中共存；文档中的操作步骤应当与用户行为模式
 一起被提炼为程序记忆。
 
 ### 1.2 前沿研究基础
 
-LifePilot 的知识库管理设计综合了 2024-2026 年 RAG 和知识管理领域的前沿研究成果：
+ZhiWei 的知识库管理设计综合了 2024-2026 年 RAG 和知识管理领域的前沿研究成果：
 
-| 研究 | 核心贡献 | LifePilot 采纳 |
+| 研究 | 核心贡献 | ZhiWei 采纳 |
 |------|---------|---------------|
 | **GraphRAG** ([Microsoft, 2024](https://arxiv.org/abs/2404.16130)) | 提出基于图的 RAG 方法——先从文档中提取实体和关系构建知识图谱，再通过图遍历增强检索。社区摘要（Community Summary）机制支持全局性问题的回答 | 文档实体提取 → 时序知识图谱的设计灵感；图遍历作为第三检索路径 |
 | **Zep Temporal KG** ([Zep, 2025](https://graphrag.com/)) | 将时序维度引入知识图谱——每个实体和关系都有时间有效期，支持"时间旅行"查询。提出 Episode → Entity → Community 的三层抽象 | 文档实体的时序版本化；文档知识与对话知识在同一时序 KG 中共存 |
 | **LlamaIndex** ([LlamaIndex, 2024-2025](https://www.llamaindex.ai/)) | 提出多种分块策略（Sentence Splitter、Semantic Chunker、Hierarchical Chunker）和多种索引类型（Vector、Summary、Knowledge Graph）的组合使用 | 多策略分块框架的设计参考；SmartChunker 自动选择策略的灵感 |
-| **LangChain RAG** ([LangChain, 2024-2025](https://www.langchain.com/)) | 提出 RAG 管线的标准化抽象——Document Loader → Text Splitter → Embedding → Vector Store → Retriever → Chain | 文档导入管线的阶段划分参考；但 LifePilot 在此基础上增加了知识提取和记忆融合 |
+| **LangChain RAG** ([LangChain, 2024-2025](https://www.langchain.com/)) | 提出 RAG 管线的标准化抽象——Document Loader → Text Splitter → Embedding → Vector Store → Retriever → Chain | 文档导入管线的阶段划分参考；但 ZhiWei 在此基础上增加了知识提取和记忆融合 |
 | **ColBERT / ColPali** ([Stanford, 2024](https://arxiv.org/abs/2004.12832)) | 延迟交互（Late Interaction）检索模型，在保持高效率的同时实现接近交叉编码器的精度 | 可选 Reranker 精排的理论基础；未来可集成 ColBERT 作为本地 Reranker |
 | **Contextual Retrieval** ([Anthropic, 2024](https://www.anthropic.com/news/contextual-retrieval)) | 在分块时为每个 chunk 添加上下文前缀（Contextual Embedding），显著提升检索召回率 | ChunkContextEnricher 的设计灵感；为每个分块添加文档级上下文摘要 |
 
 ### 1.3 与传统 RAG 系统的对比
 
-| 维度 | **LifePilot 知识库** | **LangChain RAG** | **LlamaIndex** | **传统企业 RAG** |
+| 维度 | **ZhiWei 知识库** | **LangChain RAG** | **LlamaIndex** | **传统企业 RAG** |
 |------|:-------------------:|:-----------------:|:--------------:|:---------------:|
 | 定位 | 认知记忆体系的有机扩展 | 独立 RAG 管线 | 独立索引框架 | 独立知识问答系统 |
 | 知识提取 | ✅ 实体/关系/时序提取 → 知识图谱 | ❌ 无 | ⚠️ 基础 KG 索引 | ❌ 无 |
@@ -66,7 +66,7 @@ LifePilot 的知识库管理设计综合了 2024-2026 年 RAG 和知识管理领
 
 ### 1.5 架构定位
 
-知识库管理系统在 LifePilot 分层架构中的定位：
+知识库管理系统在 ZhiWei 分层架构中的定位：
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -101,10 +101,10 @@ LifePilot 的知识库管理设计综合了 2024-2026 年 RAG 和知识管理领
 
 ### 1.6 形式化定义
 
-LifePilot 将知识库管理系统形式化为以下元组：
+ZhiWei 将知识库管理系统形式化为以下元组：
 
 ```
-LifePilot Knowledge Base System = (K, D, C, I, E, R)
+ZhiWei Knowledge Base System = (K, D, C, I, E, R)
 
 其中：
   K = {kb₁, kb₂, ..., kbₙ}      — 知识库集合，每个 KB 独立配置
@@ -123,7 +123,7 @@ LifePilot Knowledge Base System = (K, D, C, I, E, R)
 
 ### 1.7 关键差异化总结
 
-| 差异点 | 传统 RAG | LifePilot 知识库 |
+| 差异点 | 传统 RAG | ZhiWei 知识库 |
 |--------|---------|-----------------|
 | 文档 → 分块 → 向量 | ✅ 标准流程 | ✅ 标准流程 + 上下文增强 |
 | 文档 → 实体 → 知识图谱 | ❌ 不做 | ✅ 自动提取实体和关系，写入时序 KG |
@@ -1398,7 +1398,7 @@ import java.util.regex.Pattern;
  *   <li>结构保留：保留标题层级关系，用于 HeadingChunker</li>
  * </ul></p>
  *
- * <p>Markdown 是 LifePilot 最推荐的文档格式，因为：
+ * <p>Markdown 是 ZhiWei 最推荐的文档格式，因为：
  * <ul>
  *   <li>结构清晰：标题层级天然适合 HeadingChunker</li>
  *   <li>纯文本：无需外部库解析，零依赖</li>
@@ -1843,7 +1843,7 @@ public class FormatDetector {
 
 ### 4.1 设计原理
 
-分块（Chunking）是 RAG 系统中最关键的环节之一——分块质量直接决定检索质量。LifePilot 的分块策略设计基于以下认知：
+分块（Chunking）是 RAG 系统中最关键的环节之一——分块质量直接决定检索质量。ZhiWei 的分块策略设计基于以下认知：
 
 - **语义连贯性**：每个分块应当是语义完整的单元，不应在句子中间或段落中间截断
 - **大小均衡性**：分块大小应当相对均匀，避免极大或极小的分块影响检索效果
@@ -2533,7 +2533,7 @@ import java.util.regex.Pattern;
 /**
  * 标题层级分块器 — 按文档标题结构进行智能分块。
  *
- * <p>这是 LifePilot 最推荐的分块策略，特别适合结构化文档（Markdown、技术文档、报告等）。</p>
+ * <p>这是 ZhiWei 最推荐的分块策略，特别适合结构化文档（Markdown、技术文档、报告等）。</p>
  *
  * <p>核心思想：文档的标题层级天然定义了语义边界——同一标题下的内容通常讨论同一主题。
  * HeadingChunker 利用这一特性，在标题边界处切分文本，保留完整的标题层级路径。</p>
@@ -3725,7 +3725,7 @@ import java.util.Optional;
 /**
  * 知识库数据访问层 — 基于 JdbcTemplate 的 SQLite 数据访问。
  *
- * <p>遵循 LifePilot 数据库规范：
+ * <p>遵循 ZhiWei 数据库规范：
  * <ul>
  *   <li>主键 TEXT 存 UUID</li>
  *   <li>时间 TEXT 存 ISO 8601</li>
@@ -3843,7 +3843,7 @@ public class KnowledgeBaseRepository {
 
 ### 6.1 设计原理
 
-向量索引是知识库检索的核心——通过将文本分块转换为高维向量，实现基于语义相似度的检索。LifePilot 使用 sqlite-vec 作为向量存储引擎，与 SQLite 无缝集成，无需额外的向量数据库进程。
+向量索引是知识库检索的核心——通过将文本分块转换为高维向量，实现基于语义相似度的检索。ZhiWei 使用 sqlite-vec 作为向量存储引擎，与 SQLite 无缝集成，无需额外的向量数据库进程。
 
 关键设计决策：
 
@@ -4111,7 +4111,7 @@ public record IndexingResult(int indexedCount, int skippedCount, long elapsedMs)
 
 全文搜索（Full-Text Search）是向量检索的重要互补——向量检索擅长语义相似度匹配，但对精确关键词匹配（如人名、专有名词、代码标识符）效果不佳。FTS5 是 SQLite 内置的全文搜索引擎，支持 BM25 排序、高亮和摘要提取。
 
-LifePilot 使用 FTS5 作为知识库的第二检索路径，与向量检索互补：
+ZhiWei 使用 FTS5 作为知识库的第二检索路径，与向量检索互补：
 
 | 检索方式 | 擅长场景 | 不擅长场景 |
 |---------|---------|-----------|
@@ -4121,7 +4121,7 @@ LifePilot 使用 FTS5 作为知识库的第二检索路径，与向量检索互�
 
 ### 7.2 中文分词策略
 
-SQLite FTS5 默认使用 Unicode61 分词器，对中文支持有限（按 Unicode 字符类别分词）。LifePilot 采用以下策略：
+SQLite FTS5 默认使用 Unicode61 分词器，对中文支持有限（按 Unicode 字符类别分词）。ZhiWei 采用以下策略：
 
 1. **simple 分词器**：FTS5 内置的 simple 分词器按空格和标点分词，对中文效果一般但零依赖
 2. **字符级 N-gram 增强**：在索引时为中文文本生成 bigram/trigram，提升中文搜索召回率
@@ -4782,7 +4782,7 @@ public class DocumentIngester {
 
 ### 9.1 设计原理
 
-知识提取是 LifePilot 知识库区别于传统 RAG 系统的核心差异——不仅将文档切块存储，还从中提取结构化知识（实体、关系、时序信息），写入 L3 语义记忆的时序知识图谱。
+知识提取是 ZhiWei 知识库区别于传统 RAG 系统的核心差异——不仅将文档切块存储，还从中提取结构化知识（实体、关系、时序信息），写入 L3 语义记忆的时序知识图谱。
 
 这使得文档知识能够与对话中提取的知识在同一个知识图谱中共存和交叉引用。例如：
 
@@ -4792,7 +4792,7 @@ public class DocumentIngester {
 
 ### 9.2 与记忆系统知识提取管线的关系
 
-LifePilot 有两个知识提取管线：
+ZhiWei 有两个知识提取管线：
 
 | 管线 | 包路径 | 输入 | 输出 | 触发时机 |
 |------|--------|------|------|---------|
@@ -5359,7 +5359,7 @@ public record ExtractionResult(
 
 ### 10.1 核心理念
 
-LifePilot 知识库系统与认知记忆系统的融合是整个架构最关键的差异化设计。传统 RAG 系统中，文档知识库和对话记忆是两个完全独立的系统；而在 LifePilot 中，它们共享同一个认知基础设施：
+ZhiWei 知识库系统与认知记忆系统的融合是整个架构最关键的差异化设计。传统 RAG 系统中，文档知识库和对话记忆是两个完全独立的系统；而在 ZhiWei 中，它们共享同一个认知基础设施：
 
 - **共享 L3 语义记忆**：文档中提取的实体和对话中提取的实体在同一个时序知识图谱中
 - **共享 HybridRetriever**：统一的检索入口，同时搜索对话记忆和文档知识
@@ -5744,7 +5744,7 @@ public record DocumentSearchResult(
 
 ### 10.6 知识流转路径
 
-文档知识在 LifePilot 认知体系中的流转路径：
+文档知识在 ZhiWei 认知体系中的流转路径：
 
 | 流转路径 | 触发条件 | 数据转换 | 目标 |
 |---------|---------|---------|------|
@@ -6444,7 +6444,7 @@ public record KnowledgeBaseProperties(
 
 知识库系统的正确性依赖于多个不变量（invariant），这些不变量适合用属性测试（Property-Based Testing）来验证。与传统的示例测试不同，属性测试通过随机生成大量输入来验证系统在所有情况下都满足特定属性。
 
-LifePilot 使用 jqwik 1.9.x 作为属性测试框架，重点验证以下领域：
+ZhiWei 使用 jqwik 1.9.x 作为属性测试框架，重点验证以下领域：
 
 | 领域 | 核心不变量 | 测试策略 |
 |------|-----------|---------|
@@ -7128,9 +7128,9 @@ public class KnowledgeBaseArbitraries {
 
 > **文档结束**
 >
-> 本文档详细描述了 LifePilot 知识库管理系统的完整架构设计，涵盖从文档解析、智能分块、
+> 本文档详细描述了 ZhiWei 知识库管理系统的完整架构设计，涵盖从文档解析、智能分块、
 > 双索引构建到知识提取和认知记忆融合的全流程。知识库系统不是独立的 RAG 模块，
-> 而是 LifePilot 四层认知记忆体系的有机扩展——文档知识与对话知识在同一个时序知识图谱中
+> 而是 ZhiWei 四层认知记忆体系的有机扩展——文档知识与对话知识在同一个时序知识图谱中
 > 共存、交叉引用、共同演化。
 >
 > 相关文档：

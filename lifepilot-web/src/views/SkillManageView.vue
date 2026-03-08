@@ -170,7 +170,7 @@ const stateLabel: Record<string, { label: string; variant: 'default' | 'secondar
               我的智能能力
             </h2>
             <p class="text-sm text-muted-foreground">
-              在这里管理 LifePilot 能为你做的事情，你可以随时开启或关闭这些能力。
+              在这里管理 ZhiWei 能为你做的事情，你可以随时开启或关闭这些能力。
             </p>
           </div>
           <Button
@@ -320,7 +320,7 @@ const stateLabel: Record<string, { label: string; variant: 'default' | 'secondar
               v-else
               icon="◎"
               title="还没有可用的智能能力"
-              description="LifePilot 可以通过不同的能力帮助你管理任务、规划时间或整理信息。你可以先从系统推荐的能力开始使用，或者为自己创建一个专属能力。"
+              description="ZhiWei 可以通过不同的能力帮助你管理任务、规划时间或整理信息。你可以先从系统推荐的能力开始使用，或者为自己创建一个专属能力。"
               action-label="创建能力"
               :show-action="true"
               @action="showCreateDialog = true"
@@ -447,7 +447,7 @@ const stateLabel: Record<string, { label: string; variant: 'default' | 'secondar
               v-else
               icon="🔌"
               title="暂无 MCP Server"
-              description="MCP Server 可以为 LifePilot 提供更多外部工具能力。你可以添加一个 MCP Server 来扩展功能。"
+              description="MCP Server 可以为 ZhiWei 提供更多外部工具能力。你可以添加一个 MCP Server 来扩展功能。"
             />
           </TabsContent>
         </Tabs>

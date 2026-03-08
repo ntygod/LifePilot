@@ -26,7 +26,7 @@
 
 ### 1.1 核心命题：Skill 是 Agent 的能力单元，不是工具别名
 
-传统 AI 助手的"技能"通常是工具的简单包装——一个函数调用加一段描述。LifePilot 的 Skill 是一个完整的**能力单元**，包含：
+传统 AI 助手的"技能"通常是工具的简单包装——一个函数调用加一段描述。ZhiWei 的 Skill 是一个完整的**能力单元**，包含：
 
 | 组成部分 | 说明 | 内置 Skill 示例 |
 |---------|------|----------------|
@@ -42,15 +42,15 @@
 
 2025-2026 年个人生产力工具正在经历从"工具"到"助手"的转变。[skywork.ai](https://skywork.ai/blog/ai-agent/best-ai-agents-personal-productivity/) 分析了最佳 AI 个人生产力 Agent 的特征：端到端覆盖（收件箱 → 日历 → 任务 → 文档 → 跟进）。
 
-LifePilot 的四个内置 Skill（Todo / Schedule / Habit / Memory）覆盖了个人生产力的核心场景，并通过 Agent 引擎实现了跨 Skill 的智能协作。
+ZhiWei 的四个内置 Skill（Todo / Schedule / Habit / Memory）覆盖了个人生产力的核心场景，并通过 Agent 引擎实现了跨 Skill 的智能协作。
 
 Content was rephrased for compliance with licensing restrictions.
 
 #### 1.2.2 习惯养成的行为科学基础
 
-BJ Fogg 的行为模型（B = MAP：Behavior = Motivation × Ability × Prompt）是习惯养成领域的经典理论。LifePilot 的习惯 Skill 设计映射了这个模型：
+BJ Fogg 的行为模型（B = MAP：Behavior = Motivation × Ability × Prompt）是习惯养成领域的经典理论。ZhiWei 的习惯 Skill 设计映射了这个模型：
 
-| Fogg 模型要素 | LifePilot 实现 |
+| Fogg 模型要素 | ZhiWei 实现 |
 |--------------|---------------|
 | Motivation（动机） | 连续打卡天数（streak）提供成就感 |
 | Ability（能力） | 一句话打卡（`habit checkin 晨跑`），极低操作门槛 |
@@ -65,9 +65,9 @@ BJ Fogg 的行为模型（B = MAP：Behavior = Motivation × Ability × Prompt�
 | Notion | ✅ 数据库 | ✅ 日历 | ⚠️ 需手动 | ❌ | ✅ Notion AI |
 | Obsidian | ⚠️ 插件 | ⚠️ 插件 | ⚠️ 插件 | ✅ 知识图谱 | ⚠️ 插件 |
 | Reclaim.ai | ❌ | ✅ 智能排程 | ✅ 习惯时间块 | ❌ | ✅ AI 排程 |
-| LifePilot | ✅ | ✅ | ✅ | ✅ 三层记忆 | ✅ Agent 原生 |
+| ZhiWei | ✅ | ✅ | ✅ | ✅ 三层记忆 | ✅ Agent 原生 |
 
-LifePilot 的差异化：四个领域统一在一个 Agent 引擎下，Skill 之间可以交叉引用（如待办截止提醒关联日程冲突检测），记忆系统提供跨 Skill 的上下文感知。
+ZhiWei 的差异化：四个领域统一在一个 Agent 引擎下，Skill 之间可以交叉引用（如待办截止提醒关联日程冲突检测），记忆系统提供跨 Skill 的上下文感知。
 
 ### 1.3 三条核心设计原则
 
@@ -307,15 +307,15 @@ Memory Skill 是唯一具有记忆访问权限的内置 Skill：
 
 ### 8.1 个人生产力 AI Agent 趋势
 
-2025-2026 年个人生产力领域的核心趋势是**从工具到助手的转变**。传统工具（Todoist、Google Calendar）需要用户主动操作，AI 助手（LifePilot、Reclaim.ai）可以主动建议和自动化。
+2025-2026 年个人生产力领域的核心趋势是**从工具到助手的转变**。传统工具（Todoist、Google Calendar）需要用户主动操作，AI 助手（ZhiWei、Reclaim.ai）可以主动建议和自动化。
 
-[newsbytesapp.com](https://www.newsbytesapp.com/news/science/ai-driven-techniques-for-goal-achievement/story) 指出，2026 年 AI 正在改变个人目标设定的方式，通过提供个性化计划、实时反馈和持续问责。LifePilot 的习惯 Skill 正是这一趋势的实现。
+[newsbytesapp.com](https://www.newsbytesapp.com/news/science/ai-driven-techniques-for-goal-achievement/story) 指出，2026 年 AI 正在改变个人目标设定的方式，通过提供个性化计划、实时反馈和持续问责。ZhiWei 的习惯 Skill 正是这一趋势的实现。
 
 Content was rephrased for compliance with licensing restrictions.
 
 ### 8.2 内置 Skill 与竞品功能对比
 
-| 功能 | Todoist | TickTick | Reclaim.ai | LifePilot |
+| 功能 | Todoist | TickTick | Reclaim.ai | ZhiWei |
 |------|---------|----------|-----------|-----------|
 | 自然语言创建 | ✅ | ✅ | ❌ | ✅ Agent 原生 |
 | 冲突检测 | ❌ | ❌ | ✅ | ✅ schedule.conflicts |

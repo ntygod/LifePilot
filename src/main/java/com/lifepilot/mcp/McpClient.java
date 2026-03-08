@@ -96,7 +96,7 @@ public class McpClient {
                                     "tools", Map.of("listChanged", true)
                             ),
                             "clientInfo", Map.of(
-                                    "name", "LifePilot",
+                                    "name", "ZhiWei",
                                     "version", "1.0.0"
                             )
                     );

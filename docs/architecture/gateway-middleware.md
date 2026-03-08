@@ -71,13 +71,13 @@
    → 传统 WAF 规则无法检测 Prompt 注入
 ```
 
-LifePilot 的核心设计命题是：**AI Agent 需要一个专用的 Gateway 层，它理解 Token 经济学、支持多通道异构接入、提供认知增强的安全策略，并且将通道差异完全屏蔽在 Agent 业务逻辑之外**。
+ZhiWei 的核心设计命题是：**AI Agent 需要一个专用的 Gateway 层，它理解 Token 经济学、支持多通道异构接入、提供认知增强的安全策略，并且将通道差异完全屏蔽在 Agent 业务逻辑之外**。
 
-这个命题直接导出了 LifePilot Gateway 的核心架构决策：
+这个命题直接导出了 ZhiWei Gateway 的核心架构决策：
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                    LifePilot Gateway 架构概览                             │
+│                    ZhiWei Gateway 架构概览                             │
 │                                                                         │
 │  ┌──────────────────────────────────────────────────────────────────┐   │
 │  │                    通道适配层（ChannelAdapter）                    │   │
@@ -121,7 +121,7 @@ LifePilot 的核心设计命题是：**AI Agent 需要一个专用的 Gateway �
 
 ### 1.2 前沿研究基础
 
-LifePilot Gateway 的设计不是凭空构想，而是建立在 2025-2026 年 AI 基础设施领域的前沿研究和工程实践之上。以下是核心参考来源及其对 LifePilot 设计的影响：
+ZhiWei Gateway 的设计不是凭空构想，而是建立在 2025-2026 年 AI 基础设施领域的前沿研究和工程实践之上。以下是核心参考来源及其对 ZhiWei 设计的影响：
 
 #### 1.2.1 AI Gateway 作为 Agent 流量的基础设施层
 
@@ -132,13 +132,13 @@ LifePilot Gateway 的设计不是凭空构想，而是建立在 2025-2026 年 AI
 - **不可预测延迟**：同一个 Agent 的不同请求，延迟可能相差 100 倍
 - **语义级安全**：需要理解自然语言内容才能检测威胁（如 Prompt 注入）
 
-LifePilot 的映射：`RateLimitMiddleware` 实现了 Token 感知限流（而非请求计数），`SecurityMiddleware` 集成了 `GuardrailEngine` 进行语义级安全检查。
+ZhiWei 的映射：`RateLimitMiddleware` 实现了 Token 感知限流（而非请求计数），`SecurityMiddleware` 集成了 `GuardrailEngine` 进行语义级安全检查。
 
 #### 1.2.2 Token 感知的限流与成本归因
 
 [Amit Kothari — API Gateway for AI Applications](https://www.amitkoth.com/api-gateway-ai-applications/) 深入分析了 AI 应用场景下 API Gateway 的设计挑战，提出了三个关键模式：
 
-| 模式 | 传统 Gateway | AI Gateway | LifePilot 实现 |
+| 模式 | 传统 Gateway | AI Gateway | ZhiWei 实现 |
 |------|-------------|-----------|---------------|
 | **限流** | 请求数/秒 | Token 数/分钟 + 请求数/秒 | `TokenBucket` 双维度限流 |
 | **路由** | URL 路径匹配 | 模型能力匹配 + 成本优化 | `RouterMiddleware` 快慢路径分流 |
@@ -151,7 +151,7 @@ LifePilot 的映射：`RateLimitMiddleware` 实现了 Token 感知限流（而�
 - **AI Gateway**：管理应用与 LLM 之间的交互（Prompt 管理、Token 限流、模型路由、成本控制）
 - **Agent Gateway**：管理 Agent 与 Agent 之间的通信（Agent 发现、协议转换、权限控制、审计追踪）
 
-LifePilot 的 `MessageGateway` 同时承担了这两个角色：对外是 Agent Gateway（管理用户通过各通道与 Agent 的交互），对内是 AI Gateway 的入口（通过 `ExecutionMiddleware` 触发 `AgentLoop`，后者通过 `LlmRouter` 与 LLM 交互）。
+ZhiWei 的 `MessageGateway` 同时承担了这两个角色：对外是 Agent Gateway（管理用户通过各通道与 Agent 的交互），对内是 AI Gateway 的入口（通过 `ExecutionMiddleware` 触发 `AgentLoop`，后者通过 `LlmRouter` 与 LLM 交互）。
 
 #### 1.2.4 AI Gateway 与传统 API Gateway 的本质差异
 
@@ -178,7 +178,7 @@ LifePilot 的 `MessageGateway` 同时承担了这两个角色：对外是 Agent 
 
 #### 1.2.5 责任链模式与中间件管道
 
-责任链模式（Chain of Responsibility）是中间件管道的经典设计模式。在 LifePilot 的上下文中，每个中间件是链上的一个处理器，负责特定的横切关注点（认证、限流、安全、路由、执行、审计）。关键设计决策：
+责任链模式（Chain of Responsibility）是中间件管道的经典设计模式。在 ZhiWei 的上下文中，每个中间件是链上的一个处理器，负责特定的横切关注点（认证、限流、安全、路由、执行、审计）。关键设计决策：
 
 - **单一职责**：每个中间件只做一件事，可独立测试
 - **可组合**：中间件可以动态添加、移除、重排序
@@ -187,7 +187,7 @@ LifePilot 的 `MessageGateway` 同时承担了这两个角色：对外是 Agent 
 
 #### 1.2.6 企业 IM 集成模式
 
-企业微信、钉钉、飞书是中国企业最主流的 IM 平台。LifePilot 通过 Webhook 回调模式集成这三个平台，每个平台有不同的认证机制和消息格式：
+企业微信、钉钉、飞书是中国企业最主流的 IM 平台。ZhiWei 通过 Webhook 回调模式集成这三个平台，每个平台有不同的认证机制和消息格式：
 
 | 平台 | 认证方式 | 消息格式 | 推送方式 | 特殊能力 |
 |------|---------|---------|---------|---------|
@@ -195,11 +195,11 @@ LifePilot 的 `MessageGateway` 同时承担了这两个角色：对外是 Agent 
 | 钉钉 | HmacSHA256 签名 | JSON | Webhook 回调 | 交互式卡片（ActionCard） |
 | 飞书 | 验证 Token + AES 加密 | JSON | 事件订阅 v2.0 | 富文本（Post）+ 交互卡片 |
 
-LifePilot 的 `ChannelAdapter` 体系将这些差异完全封装，上层中间件和 Agent 业务逻辑完全不感知通道差异。
+ZhiWei 的 `ChannelAdapter` 体系将这些差异完全封装，上层中间件和 Agent 业务逻辑完全不感知通道差异。
 
 ### 1.3 五条核心设计原则
 
-LifePilot Gateway 遵循五条核心设计原则。这些原则不是抽象的口号，而是直接映射到具体的代码实现：
+ZhiWei Gateway 遵循五条核心设计原则。这些原则不是抽象的口号，而是直接映射到具体的代码实现：
 
 #### 原则 1：统一入口，多通道适配
 
@@ -275,7 +275,7 @@ public interface GatewayMiddleware {
 
 传统的限流策略按请求数计数——每秒 100 个请求、每分钟 1000 个请求。但在 AI Agent 场景下，一个请求可能消耗 200 Token（简单问答），也可能消耗 50000 Token（深度分析）。按请求计数的限流无法反映真实的资源消耗。
 
-LifePilot 的限流策略是 **Token 感知** 的：限流的单位不是请求数，而是 Token 消耗量。同时保留请求数限流作为辅助维度，防止高频低 Token 的 DoS 攻击。
+ZhiWei 的限流策略是 **Token 感知** 的：限流的单位不是请求数，而是 Token 消耗量。同时保留请求数限流作为辅助维度，防止高频低 Token 的 DoS 攻击。
 
 ```java
 /**
@@ -305,7 +305,7 @@ public record RateLimitConfig(
 
 #### 原则 4：认知记忆增强安全
 
-传统的安全策略是静态的——固定的规则、固定的阈值。LifePilot 的安全中间件可以访问用户的认知记忆（通过 `HybridRetriever`），根据用户的历史行为动态调整安全策略。例如：
+传统的安全策略是静态的——固定的规则、固定的阈值。ZhiWei 的安全中间件可以访问用户的认知记忆（通过 `HybridRetriever`），根据用户的历史行为动态调整安全策略。例如：
 
 - 长期活跃且行为正常的用户 → 信任度高 → 放宽限制
 - 新用户或行为异常的用户 → 信任度低 → 严格检查
@@ -372,7 +372,7 @@ AgentResponse agentResponse = agentLoop.run(agentRequest);
 
 ### 2.1 核心设计：record + sealed interface 构建类型安全的消息体系
 
-LifePilot 的统一消息模型是整个 Gateway 架构的基石。所有通道的消息在进入中间件管道之前，都必须转换为 `GatewayMessage`。这个转换由各通道的 `ChannelAdapter` 负责，确保中间件和 Agent 业务逻辑只需要处理一种消息格式。
+ZhiWei 的统一消息模型是整个 Gateway 架构的基石。所有通道的消息在进入中间件管道之前，都必须转换为 `GatewayMessage`。这个转换由各通道的 `ChannelAdapter` 负责，确保中间件和 Agent 业务逻辑只需要处理一种消息格式。
 
 ```mermaid
 classDiagram
@@ -526,7 +526,7 @@ package com.lifepilot.interaction.model;
 /**
  * 通道类型枚举。
  *
- * <p>定义 LifePilot 支持的所有交互通道。每个通道有不同的
+ * <p>定义 ZhiWei 支持的所有交互通道。每个通道有不同的
  * 传输协议、认证机制和消息格式，但在 Gateway 层统一处理。</p>
  */
 public enum ChannelType {
@@ -906,7 +906,7 @@ import java.util.UUID;
 /**
  * 统一网关消息 — 所有通道消息的标准化表示。
  *
- * <p>这是 LifePilot Gateway 架构的核心数据结构。无论消息来自
+ * <p>这是 ZhiWei Gateway 架构的核心数据结构。无论消息来自
  * CLI、Web、企微、钉钉还是飞书，都会被转换为 GatewayMessage，
  * 然后经过统一的中间件管道处理。</p>
  *
@@ -1565,7 +1565,7 @@ public class GatewayAutoConfiguration {
 
 ### 4.1 核心设计：链式处理 + 短路能力 + 共享上下文
 
-中间件管道是 LifePilot Gateway 的处理引擎。它将多个独立的中间件按优先级串联成一条处理链，每个中间件可以：
+中间件管道是 ZhiWei Gateway 的处理引擎。它将多个独立的中间件按优先级串联成一条处理链，每个中间件可以：
 - **继续**：调用 `chain.next(message)` 将消息传递给下一个中间件
 - **短路**：直接返回 `GatewayResponse`，终止管道（如认证失败返回 401）
 - **修改**：在传递前修改消息或在返回后修改响应
@@ -1942,7 +1942,7 @@ public class MiddlewarePipeline {
 
 ### 5.1 核心设计：多通道异构认证策略
 
-传统 API Gateway 的认证通常是单一模式——API Key、JWT 或 OAuth。但 LifePilot 面对的是五个完全不同的通道，每个通道有自己的认证机制：
+传统 API Gateway 的认证通常是单一模式——API Key、JWT 或 OAuth。但 ZhiWei 面对的是五个完全不同的通道，每个通道有自己的认证机制：
 
 - **CLI**：本地进程，无需认证（操作系统级信任）
 - **Web**：Session 或 JWT Token
@@ -2594,7 +2594,7 @@ public class AuthMiddleware implements GatewayMiddleware {
 
 传统限流算法（固定窗口、滑动窗口、令牌桶）都是基于**请求计数**的。但在 AI Agent 场景下，请求的"重量"差异巨大——一个简单的 `/help` 命令消耗 0 Token，而一个"帮我分析这份报告并生成摘要"可能消耗 50000 Token。按请求计数限流无法反映真实的资源消耗。
 
-LifePilot 的限流策略是**双维度**的：
+ZhiWei 的限流策略是**双维度**的：
 
 | 维度 | 算法 | 目的 | 单位 |
 |------|------|------|------|
@@ -2630,7 +2630,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * <p>与传统令牌桶的区别：
  * <ul>
  *   <li>传统令牌桶：每个令牌代表一个请求</li>
- *   <li>LifePilot 令牌桶：每个令牌代表一个 LLM Token</li>
+ *   <li>ZhiWei 令牌桶：每个令牌代表一个 LLM Token</li>
  * </ul></p>
  *
  * <p>线程安全：使用 AtomicLong 和 AtomicReference 实现无锁并发。</p>
@@ -3049,7 +3049,7 @@ public class RateLimitMiddleware implements GatewayMiddleware {
 
 ### 7.1 核心设计：多层安全检查 + 认知记忆增强
 
-SecurityMiddleware 是 LifePilot Gateway 的安全核心。它不仅执行传统的内容安全检查（敏感词过滤、注入检测），还利用用户的认知记忆动态调整安全策略——这是 LifePilot 区别于传统 Gateway 的关键创新。
+SecurityMiddleware 是 ZhiWei Gateway 的安全核心。它不仅执行传统的内容安全检查（敏感词过滤、注入检测），还利用用户的认知记忆动态调整安全策略——这是 ZhiWei 区别于传统 Gateway 的关键创新。
 
 安全检查分为四个层次，按严重程度从高到低执行：
 
@@ -3070,7 +3070,7 @@ SecurityMiddleware 是 LifePilot Gateway 的安全核心。它不仅执行传统
 │                                                                         │
 │  Layer 3: 内容过滤                                                       │
 │  ├─ 敏感词库匹配（AC 自动机高效匹配）                                    │
-│  └─ 话题边界检查（超出 LifePilot 能力范围的请求）                         │
+│  └─ 话题边界检查（超出 ZhiWei 能力范围的请求）                         │
 │                                                                         │
 │  Layer 4: 认知记忆增强（动态策略）                                        │
 │  ├─ 查询用户历史行为 → 计算信任分数                                      │
@@ -3664,7 +3664,7 @@ public class TrustScoreCalculator {
 
 ### 8.1 核心设计：快速路径 vs 慢速路径
 
-RouterMiddleware 是 LifePilot Gateway 的"交通警察"。它的核心职责是决定每条消息应该走**快速路径**还是**慢速路径**：
+RouterMiddleware 是 ZhiWei Gateway 的"交通警察"。它的核心职责是决定每条消息应该走**快速路径**还是**慢速路径**：
 
 - **快速路径（Fast Path）**：命令前缀消息（如 `/todo 买牛奶`）直接路由到对应的 Skill/工具，跳过 LLM 推理。延迟 < 100ms，Token 消耗 = 0。
 - **慢速路径（Slow Path）**：自然语言消息（如"帮我安排明天的日程"）进入完整的 Agent 循环（`AgentLoop.run()`），由 LLM 理解意图、规划步骤、调用工具。延迟 2-30s，Token 消耗 500-50000。
@@ -4629,7 +4629,7 @@ public class AuditMiddleware implements GatewayMiddleware {
 
 ### 11.1 ChannelAdapter 接口与生命周期
 
-通道适配器是 LifePilot Gateway 与外部世界的接触面。每个适配器负责一个特定通道的协议适配、消息格式转换和连接管理。适配器的生命周期由 `MessageGateway` 统一管理。
+通道适配器是 ZhiWei Gateway 与外部世界的接触面。每个适配器负责一个特定通道的协议适配、消息格式转换和连接管理。适配器的生命周期由 `MessageGateway` 统一管理。
 
 ```mermaid
 stateDiagram-v2
@@ -4960,7 +4960,7 @@ public class CliAdapter extends AbstractChannelAdapter {
         try {
             // 初始化 JLine Terminal
             terminal = TerminalBuilder.builder()
-                .name("LifePilot")
+                .name("ZhiWei")
                 .system(true)
                 .build();
 
@@ -5135,7 +5135,7 @@ public class CliAdapter extends AbstractChannelAdapter {
     private void printWelcome() {
         terminal.writer().println();
         terminal.writer().println(new AttributedString(
-            "  🧭 LifePilot — 你的 AI 生活助手",
+            "  🧭 ZhiWei — 你的 AI 生活助手",
             AttributedStyle.DEFAULT.foreground(AttributedStyle.CYAN).bold()
         ).toAnsi(terminal));
         terminal.writer().println("  输入自然语言或 /help 查看可用命令");
@@ -5703,7 +5703,7 @@ public class DingtalkAdapter extends AbstractChannelAdapter {
             return Map.of(
                 "msgtype", "actionCard",
                 "actionCard", Map.of(
-                    "title", "LifePilot",
+                    "title", "ZhiWei",
                     "text", content,
                     "singleTitle", "查看详情",
                     "singleURL", "dingtalk://dingtalkclient/page/link?pc_slide=true"
@@ -5964,7 +5964,7 @@ public class FeishuAdapter extends AbstractChannelAdapter {
             // 使用飞书 API 发送消息
             if (content.length() > 500 || content.contains("**")) {
                 // 长消息或 Markdown 使用富文本格式
-                apiClient.sendPost(userId, "LifePilot", content);
+                apiClient.sendPost(userId, "ZhiWei", content);
             } else {
                 apiClient.sendText(userId, content);
             }
@@ -6203,7 +6203,7 @@ public class FailedMessageRetryScheduler {
 -- V9__gateway_middleware.sql
 -- Gateway + 中间件管道相关表
 --
--- 遵循 LifePilot 数据库规范：
+-- 遵循 ZhiWei 数据库规范：
 --   - 主键 TEXT 存 UUID
 --   - 时间 TEXT 存 ISO 8601
 --   - 布尔 INTEGER (0/1)
@@ -6459,7 +6459,7 @@ erDiagram
 
 ```yaml
 # =============================================================================
-# LifePilot Gateway + 中间件管道配置
+# ZhiWei Gateway + 中间件管道配置
 # =============================================================================
 
 lifepilot:

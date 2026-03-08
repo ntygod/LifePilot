@@ -2,12 +2,12 @@
 
 ## 1. 功能概述
 
-外部数据源同步模块让 LifePilot 能够与用户已有的生产力工具保持数据同步，避免数据孤岛。用户可以继续使用 Todoist、滴答清单等熟悉的工具管理任务，同时让 LifePilot 的 Agent 获得完整的数据视图，提供更智能的建议和自动化。
+外部数据源同步模块让 ZhiWei 能够与用户已有的生产力工具保持数据同步，避免数据孤岛。用户可以继续使用 Todoist、滴答清单等熟悉的工具管理任务，同时让 ZhiWei 的 Agent 获得完整的数据视图，提供更智能的建议和自动化。
 
 **核心价值：**
 - 无需手动在多个工具间复制数据
 - Agent 获得用户完整的任务/日程/习惯数据，推理更准确
-- 支持渐进式迁移，用户可以逐步将工作流转移到 LifePilot
+- 支持渐进式迁移，用户可以逐步将工作流转移到 ZhiWei
 
 ## 2. 核心特性
 
@@ -30,13 +30,13 @@
 
 ### 2.3 冲突检测与解决
 
-当同一条数据在 LifePilot 和外部服务上都被修改时，系统自动检测冲突并按策略解决：
+当同一条数据在 ZhiWei 和外部服务上都被修改时，系统自动检测冲突并按策略解决：
 
 | 策略 | 行为 | 适用场景 |
 |------|------|---------|
 | LAST_WRITE_WINS | 保留最后修改的版本（默认） | 日常使用，冲突概率低 |
 | REMOTE_WINS | 始终以外部服务为准 | 外部服务是主要编辑入口 |
-| LOCAL_WINS | 始终以 LifePilot 为准 | LifePilot 是主要编辑入口 |
+| LOCAL_WINS | 始终以 ZhiWei 为准 | ZhiWei 是主要编辑入口 |
 | USER_CONFIRM | 标记冲突，等待用户手动选择 | 重要数据，不允许自动覆盖 |
 
 冲突发生时，系统保留双方版本的快照，用户可随时回溯。
@@ -72,22 +72,22 @@
 - `sync-conflicts`：查看和解决未处理的冲突
 
 Agent 可以主动感知同步事件，例如：
-- "你的 Todoist 有 3 个新任务已同步到 LifePilot"
+- "你的 Todoist 有 3 个新任务已同步到 ZhiWei"
 - "CalDAV 同步失败，可能是网络问题，要重试吗？"
 
 ## 3. 使用场景
 
 ### 场景 1：Todoist 用户迁移
-用户一直使用 Todoist 管理任务，开始使用 LifePilot 后，配置 Todoist 同步。LifePilot Agent 可以看到所有 Todoist 任务，提供智能排期建议，同时用户仍可在 Todoist 上操作。
+用户一直使用 Todoist 管理任务，开始使用 ZhiWei 后，配置 Todoist 同步。ZhiWei Agent 可以看到所有 Todoist 任务，提供智能排期建议，同时用户仍可在 Todoist 上操作。
 
 ### 场景 2：CalDAV 日历同步
-用户使用 Nextcloud 管理日历，配置 CalDAV 同步后，LifePilot 自动获取日程数据。Agent 在安排新任务时会考虑已有日程，避免时间冲突。
+用户使用 Nextcloud 管理日历，配置 CalDAV 同步后，ZhiWei 自动获取日程数据。Agent 在安排新任务时会考虑已有日程，避免时间冲突。
 
 ### 场景 3：Obsidian 知识库联动
-用户在 Obsidian Vault 中用 Markdown 管理待办和笔记，配置 Obsidian 同步后，LifePilot 自动解析 YAML frontmatter 中的任务数据，实现知识库与任务管理的联动。
+用户在 Obsidian Vault 中用 Markdown 管理待办和笔记，配置 Obsidian 同步后，ZhiWei 自动解析 YAML frontmatter 中的任务数据，实现知识库与任务管理的联动。
 
 ### 场景 4：多源聚合
-用户同时配置 Todoist（工作任务）+ CalDAV（个人日历）+ 滴答清单（习惯追踪），LifePilot Agent 获得完整的生活数据视图，提供跨领域的智能建议。
+用户同时配置 Todoist（工作任务）+ CalDAV（个人日历）+ 滴答清单（习惯追踪），ZhiWei Agent 获得完整的生活数据视图，提供跨领域的智能建议。
 
 ## 4. 配置项
 

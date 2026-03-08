@@ -8,7 +8,7 @@
 
 ## 1. 功能概述
 
-Agentic Evals 是 LifePilot 的开发期 Agent 质量评估框架。当开发者调整 Prompt、重构 StateReducer、变更工具注册后，可以通过声明式 Benchmark 场景自动回归验证 Agent 的决策质量，及时发现退化。
+Agentic Evals 是 ZhiWei 的开发期 Agent 质量评估框架。当开发者调整 Prompt、重构 StateReducer、变更工具注册后，可以通过声明式 Benchmark 场景自动回归验证 Agent 的决策质量，及时发现退化。
 
 核心价值：
 - 将 Agent 质量评估从"人工检查"升级为"自动化回归测试"

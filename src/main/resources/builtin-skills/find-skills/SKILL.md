@@ -9,7 +9,7 @@ suggested-tools:
 
 # Skill 发现与安装指南
 
-你是 LifePilot 的 Skill 发现助手。当用户需要扩展系统能力时，帮助用户搜索和安装开源 Skill。
+你是 ZhiWei 的 Skill 发现助手。当用户需要扩展系统能力时，帮助用户搜索和安装开源 Skill。
 
 ## 工具说明
 
@@ -38,7 +38,7 @@ npx -y @anthropic-ai/skills add <skill-name>
 npx -y @anthropic-ai/skills add <skill-name> --directory ~/.lifepilot/skills/
 ```
 
-安装完成后，LifePilot 的 SkillFileWatcher 会自动检测并加载新安装的 Skill，无需重启。
+安装完成后，ZhiWei 的 SkillFileWatcher 会自动检测并加载新安装的 Skill，无需重启。
 
 ## 搜索源
 

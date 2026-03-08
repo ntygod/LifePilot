@@ -2,7 +2,7 @@
 
 ## 1. 模块定位与职责边界
 
-外部数据源同步模块（`com.lifepilot.sync`）负责将 LifePilot 内部的待办、日程、习惯等数据与外部服务（CalDAV 服务器、Todoist、滴答清单、Obsidian Vault）进行双向同步。
+外部数据源同步模块（`com.lifepilot.sync`）负责将 ZhiWei 内部的待办、日程、习惯等数据与外部服务（CalDAV 服务器、Todoist、滴答清单、Obsidian Vault）进行双向同步。
 
 **核心职责：**
 - 提供统一的同步引擎抽象，屏蔽各外部服务的协议差异
@@ -25,7 +25,7 @@
 | SyncProfile | 同步配置实例，一个用户可以配置多个同步目标（如同时同步 CalDAV 和 Todoist） |
 | SyncToken | 增量同步令牌，标识上次同步的位置，用于获取增量变更 |
 | ConflictPolicy | 冲突解决策略，定义双向同步中数据冲突时的处理方式 |
-| FieldMapping | 字段映射规则，定义 LifePilot 内部数据模型与外部服务数据模型之间的转换 |
+| FieldMapping | 字段映射规则，定义 ZhiWei 内部数据模型与外部服务数据模型之间的转换 |
 | SyncRecord | 同步记录，记录每个本地实体与远程实体的映射关系和同步状态 |
 | CredentialStore | 凭证存储，安全管理 OAuth Token、API Key 等敏感信息 |
 
@@ -125,9 +125,9 @@ public class SyncEngine {
 
 ### 3.4 数据模型映射
 
-LifePilot 内部有三种核心数据类型需要同步：
+ZhiWei 内部有三种核心数据类型需要同步：
 
-| LifePilot 类型 | CalDAV | Todoist | 滴答清单 | Obsidian |
+| ZhiWei 类型 | CalDAV | Todoist | 滴答清单 | Obsidian |
 |---------------|--------|---------|---------|----------|
 | TodoItem | VTODO | Task | Task | Markdown 文件（YAML frontmatter） |
 | ScheduleItem | VEVENT | — | — | Markdown 文件（YAML frontmatter） |
@@ -165,7 +165,7 @@ public interface FieldMapping<L, R> {
 **理由：**
 - 对于个人助手场景，用户通常在单设备操作，冲突概率低
 - LWW 简单可靠，Joplin 和 DAVx⁵ 等成熟项目也采用类似策略
-- 不采用 CRDT：CRDT 适合多用户实时协作场景，对于个人数据同步过于复杂，且 LifePilot 的数据模型（TodoItem / ScheduleItem）是整体替换而非字段级合并
+- 不采用 CRDT：CRDT 适合多用户实时协作场景，对于个人数据同步过于复杂，且 ZhiWei 的数据模型（TodoItem / ScheduleItem）是整体替换而非字段级合并
 - 保留 User-Confirm 选项，让用户在重要数据上可以手动决策
 - 参考 Stacksync 的字段级冲突检测思路，在 LWW 基础上记录冲突详情供用户回溯
 
@@ -174,7 +174,7 @@ public interface FieldMapping<L, R> {
 **决策：** 使用 `sealed interface` 定义连接器类型，编译时确定支持的连接器集合。
 
 **理由：**
-- LifePilot 当前阶段支持的外部服务是确定的（CalDAV / Todoist / 滴答清单 / Obsidian）
+- ZhiWei 当前阶段支持的外部服务是确定的（CalDAV / Todoist / 滴答清单 / Obsidian）
 - sealed interface 配合 switch 穷举匹配，编译器保证所有连接器类型都被处理
 - 未来如需扩展，可以将 sealed interface 改为 open interface + SPI 机制
 - 与项目中 SkillAction、AgentAction 等已有模式保持一致
@@ -224,7 +224,7 @@ public interface FieldMapping<L, R> {
 ## 6. 调研参考
 
 ### 前沿理论
-- CRDT（Conflict-free Replicated Data Types）：数学上保证最终一致性的数据结构，适用于多副本并发更新场景。LifePilot 场景下 CRDT 过于复杂，但其"冲突不可避免则自动解决"的思想值得借鉴（参考 [arxiv:2505.01144](https://arxiv.org/abs/2505.01144)）
+- CRDT（Conflict-free Replicated Data Types）：数学上保证最终一致性的数据结构，适用于多副本并发更新场景。ZhiWei 场景下 CRDT 过于复杂，但其"冲突不可避免则自动解决"的思想值得借鉴（参考 [arxiv:2505.01144](https://arxiv.org/abs/2505.01144)）
 - CalDAV Sync Protocol（RFC 6578）：WebDAV 集合同步协议，通过 sync-token 实现增量同步
 - Todoist API v1 统一 API：2025 年 Todoist 将 REST API 和 Sync API 合并为统一的 v1 API，sync endpoint 支持增量同步（参考 [Todoist Developer](https://developer.todoist.com/api/v1)）
 

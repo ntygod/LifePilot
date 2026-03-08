@@ -1,4 +1,4 @@
-## LifePilot 对话系统重设计方案
+## ZhiWei 对话系统重设计方案
 
 > 版本：v0.1（草案，待迭代打磨）  
 > 范围：对话呈现层（Web UI） + 与 AgentLoop / 记忆 / 多模态媒体模块的接口设计
@@ -980,7 +980,7 @@ export function openChatStream(request: ChatRequest, onEvent: (e: ServerSentEven
 
 ##### 9.2.3 组件拆分与样式约束
 
-基于 `LifePilot Web UI 设计规范`，推荐组件结构：
+基于 `ZhiWei Web UI 设计规范`，推荐组件结构：
 
 - `ChatPage.vue`：整体布局（Sidebar + 对话区域），使用 `flex flex-col h-screen`。
 - `MessageList.vue`：渲染 `ConversationTurn[]`，控制 `max-w-[768px] mx-auto px-lg py-lg`。

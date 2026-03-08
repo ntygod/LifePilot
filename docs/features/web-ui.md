@@ -7,7 +7,7 @@
 
 ## 1. 功能概述
 
-Web UI 为 LifePilot 提供浏览器端交互界面，用户通过 Web 页面与 AI Agent 进行对话、管理设置。
+Web UI 为 ZhiWei 提供浏览器端交互界面，用户通过 Web 页面与 AI Agent 进行对话、管理设置。
 
 **前后端彻底分离**：后端（Java 项目）提供纯 REST/SSE API，前端（独立 Vue 3 项目）独立构建部署。所有客户端（Web、未来的 CLI HTTP、移动端）共享同一套 API。
 
@@ -57,7 +57,7 @@ Web UI 为 LifePilot 提供浏览器端交互界面，用户通过 Web 页面与
 
 ### 3.1 日常对话
 
-用户在浏览器中打开 LifePilot Web UI，输入自然语言消息，Agent 以流式文本 + Generative UI 组件响应。例如：
+用户在浏览器中打开 ZhiWei Web UI，输入自然语言消息，Agent 以流式文本 + Generative UI 组件响应。例如：
 
 - 用户："帮我看看今天的待办"
 - Agent 返回：文本摘要 + A2UI 待办列表卡片（含"标记完成"按钮）

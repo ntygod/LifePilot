@@ -6,7 +6,7 @@
 
 ## 1. 可观测性与护栏
 
-LifePilot 提供 Trace 级的行为可观测性和多层护栏保护，确保 Agent 行为透明、安全、可审计。
+ZhiWei 提供 Trace 级的行为可观测性和多层护栏保护，确保 Agent 行为透明、安全、可审计。
 
 ### 1.1 Trace 追踪
 
@@ -42,7 +42,7 @@ Trace 支持离线回放，可以在 Web UI 的轨迹回放页面逐步查看每
 
 ### 1.3 实时轨迹（SSE）
 
-LifePilot 支持在 Web UI 中实时查看 Trace 步骤流，便于在执行过程中观察 Agent 的状态与工具调用链路。
+ZhiWei 支持在 Web UI 中实时查看 Trace 步骤流，便于在执行过程中观察 Agent 的状态与工具调用链路。
 
 - **Trace SSE 订阅**：`GET /api/traces/{traceId}/stream`
   - **事件类型**：`trace-start` / `trace-step` / `trace-end`
@@ -70,7 +70,7 @@ flowchart LR
 
 ## 2. 数据隐私与本地优先
 
-隐私保护是 LifePilot 的核心设计原则，不是事后补丁。
+隐私保护是 ZhiWei 的核心设计原则，不是事后补丁。
 
 | 设计决策 | 说明 |
 |---------|------|
@@ -85,7 +85,7 @@ flowchart LR
 ```
 你：用 DeepSeek 帮我分析一下这份合同
 
-LifePilot：⚠️ 提示：此操作将把合同内容发送到 DeepSeek 云端 API。
+ZhiWei：⚠️ 提示：此操作将把合同内容发送到 DeepSeek 云端 API。
          合同中检测到以下敏感信息，已自动脱敏：
          - 甲方联系人手机号：138****5678
          - 合同金额：已保留

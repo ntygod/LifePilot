@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  LifePilot 日志配置。
+  ZhiWei 日志配置。
   CLI 模式下日志输出到文件，避免与 JLine 终端争抢 stdout 导致输入卡顿。
 -->
 <configuration>

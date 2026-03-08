@@ -139,7 +139,7 @@ onMounted(() => {
               扩展市场
             </h2>
             <p class="text-sm text-muted-foreground">
-              发现和安装社区贡献的 Skill、Agent 和 Workflow，扩展 LifePilot 的能力。
+              发现和安装社区贡献的 Skill、Agent 和 Workflow，扩展 ZhiWei 的能力。
             </p>
           </div>
           <Button

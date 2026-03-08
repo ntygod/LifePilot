@@ -21,7 +21,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * LifePilot 应用启动验证集成测试。
+ * ZhiWei 应用启动验证集成测试。
  *
  * <p>验证项目骨架配置正确：Spring 上下文加载、健康检查端点、
  * Flyway 迁移执行、SQLite PRAGMA 设置。

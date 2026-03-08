@@ -6,7 +6,7 @@
 
 ## 1. 概述
 
-LifePilot 代码执行沙箱让 AI Agent 能够安全地运行用户提供的代码片段。支持 Python、JavaScript 和 Shell 三种语言，适用于数据处理、计算、脚本自动化等场景。
+ZhiWei 代码执行沙箱让 AI Agent 能够安全地运行用户提供的代码片段。支持 Python、JavaScript 和 Shell 三种语言，适用于数据处理、计算、脚本自动化等场景。
 
 核心能力：
 - 三层安全防护：代码预检 → 用户确认 → 沙箱隔离执行

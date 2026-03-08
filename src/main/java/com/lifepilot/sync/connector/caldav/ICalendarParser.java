@@ -261,7 +261,7 @@ public final class ICalendarParser {
         var sb = new StringBuilder();
         sb.append("BEGIN:VCALENDAR").append(CRLF);
         sb.append("VERSION:2.0").append(CRLF);
-        sb.append("PRODID:-//LifePilot//NONSGML v1.0//EN").append(CRLF);
+        sb.append("PRODID:-//ZhiWei//NONSGML v1.0//EN").append(CRLF);
         sb.append("BEGIN:").append(componentType).append(CRLF);
 
         for (var entry : properties.entrySet()) {

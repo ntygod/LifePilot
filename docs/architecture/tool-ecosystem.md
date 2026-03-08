@@ -59,7 +59,7 @@
    每个框架有自己的工具定义格式 → 工具无法跨框架复用
 ```
 
-LifePilot 的核心设计命题是：**工具是严格的 API 契约（Contract），不是给 LLM 的"建议"**。每个工具都有类型化的输入/输出 Schema、明确的幂等性保证、风险等级声明和执行预算。LLM 必须遵守契约，而非"尽力而为"。
+ZhiWei 的核心设计命题是：**工具是严格的 API 契约（Contract），不是给 LLM 的"建议"**。每个工具都有类型化的输入/输出 Schema、明确的幂等性保证、风险等级声明和执行预算。LLM 必须遵守契约，而非"尽力而为"。
 
 ### 1.2 N×M 问题与 MCP 的诞生
 
@@ -80,7 +80,7 @@ LifePilot 的核心设计命题是：**工具是严格的 API 契约（Contract�
 │  │ CrewAI       │──┼───┼─────│ GitHub       │                           │
 │  │              │  │   │     │              │                           │
 │  ├──────────────┤  │   │     ├──────────────┤                           │
-│  │ LifePilot    │──┼───┼─────│ 本地文件系统  │                           │
+│  │ ZhiWei    │──┼───┼─────│ 本地文件系统  │                           │
 │  └──────────────┘  │   │     └──────────────┘                           │
 │                    │   │                                                │
 │  每个框架都要为每个工具写适配器 → N×M 个适配器                            │
@@ -102,7 +102,7 @@ LifePilot 的核心设计命题是：**工具是严格的 API 契约（Contract�
 │  ├──────────────┤    │      ↕       │    ├──────────────┤              │
 │  │ CrewAI       │────│  MCP Server  │────│ GitHub       │              │
 │  ├──────────────┤    │              │    ├──────────────┤              │
-│  │ LifePilot    │────│              │────│ 本地文件系统  │              │
+│  │ ZhiWei    │────│              │────│ 本地文件系统  │              │
 │  └──────────────┘    └──────────────┘    └──────────────┘              │
 │                                                                         │
 │  每个框架只需实现 MCP Client → N 个适配器                                │
@@ -113,11 +113,11 @@ LifePilot 的核心设计命题是：**工具是严格的 API 契约（Contract�
 
 ### 1.3 三层工具架构哲学
 
-LifePilot 并不完全依赖 MCP。我们设计了一个**三层工具架构**，在 MCP 的基础上增加了 Java 原生工具和 YAML 声明式工具两个层次。三层之间有明确的优先级关系：
+ZhiWei 并不完全依赖 MCP。我们设计了一个**三层工具架构**，在 MCP 的基础上增加了 Java 原生工具和 YAML 声明式工具两个层次。三层之间有明确的优先级关系：
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                    LifePilot 三层工具架构                                 │
+│                    ZhiWei 三层工具架构                                 │
 │                                                                         │
 │  ┌─────────────────────────────────────────────────────────────────┐    │
 │  │                DynamicToolRegistry（统一工具注册中心）             │    │
@@ -157,7 +157,7 @@ LifePilot 并不完全依赖 MCP。我们设计了一个**三层工具架构**�
 
 ### 1.4 五条核心设计原则
 
-LifePilot 工具生态遵循五条核心设计原则。这些原则不是抽象的口号，而是直接映射到具体的代码实现：
+ZhiWei 工具生态遵循五条核心设计原则。这些原则不是抽象的口号，而是直接映射到具体的代码实现：
 
 #### 原则 1：类型安全 — 输入输出必须有 Schema
 
@@ -443,9 +443,9 @@ public record ToolResultMeta(
 
 ### 1.5 与主流工具框架的对比分析
 
-LifePilot 的混合工具生态并非唯一的设计选择。以下是与主流框架的深度对比：
+ZhiWei 的混合工具生态并非唯一的设计选择。以下是与主流框架的深度对比：
 
-| 维度 | LifePilot | LangChain4j | Spring AI (原生) | OpenClaw |
+| 维度 | ZhiWei | LangChain4j | Spring AI (原生) | OpenClaw |
 |------|-----------|-------------|-----------------|----------|
 | **工具定义** | `sealed interface ToolContract` | `@Tool` 注解 + 反射 | `@Tool` 注解 + `FunctionCallback` | JSON Schema 配置 |
 | **类型安全** | ✅ 编译时（sealed + record） | ⚠️ 运行时（反射） | ⚠️ 运行时（反射） | ❌ 纯 JSON |
@@ -455,7 +455,7 @@ LifePilot 的混合工具生态并非唯一的设计选择。以下是与主流�
 | **风险分级** | ✅ 四级（LOW→CRITICAL） | ❌ 无 | ❌ 无 | ⚠️ 二级 |
 | **幂等性** | ✅ idempotencyKey + 缓存 | ❌ 无 | ❌ 无 | ❌ 无 |
 | **预算控制** | ✅ 三维（超时/重试/成本） | ⚠️ 仅超时 | ⚠️ 仅超时 | ❌ 无 |
-| **反向桥接** | ✅ LifePilot 可作 MCP Server | ❌ 无 | ❌ 无 | ❌ 无 |
+| **反向桥接** | ✅ ZhiWei 可作 MCP Server | ❌ 无 | ❌ 无 | ❌ 无 |
 | **沙箱执行** | ✅ Shell 白名单 + 进程隔离 | ❌ 无 | ❌ 无 | ⚠️ 基础 |
 | **属性测试** | ✅ jqwik 验证不变量 | ❌ 无 | ❌ 无 | ❌ 无 |
 | **实现语言** | Java 22 | Java 17+ | Java 17+ | Python |
@@ -463,7 +463,7 @@ LifePilot 的混合工具生态并非唯一的设计选择。以下是与主流�
 
 ### 1.6 前沿研究基础
 
-LifePilot 工具生态的设计建立在以下前沿研究和工程实践之上：
+ZhiWei 工具生态的设计建立在以下前沿研究和工程实践之上：
 
 #### 1.6.1 MCP 规范 — 工具交互的行业标准
 
@@ -474,11 +474,11 @@ LifePilot 工具生态的设计建立在以下前沿研究和工程实践之上�
 - **三种传输方式**：stdio（本地进程）、~~SSE~~（已在 2025-03-26 版本中弃用）、Streamable HTTP（推荐的远程传输方式）
 - **工具发现**：`tools/list` 方法返回服务器提供的所有工具及其 JSON Schema
 
-LifePilot 的映射：`McpClient` 实现了完整的 MCP 客户端协议，`SkillToMcpBridge` 实现了 MCP 服务器协议，使 LifePilot 既是 MCP 客户端也是 MCP 服务器。
+ZhiWei 的映射：`McpClient` 实现了完整的 MCP 客户端协议，`SkillToMcpBridge` 实现了 MCP 服务器协议，使 ZhiWei 既是 MCP 客户端也是 MCP 服务器。
 
 #### 1.6.2 Spring AI MCP 集成 — 框架级支持
 
-[Spring AI 的 MCP 集成](https://docs.spring.io/spring-ai/reference/api/mcp/mcp-client-boot-starter-docs.html)提供了 `SyncMcpToolCallback` 和 `SyncMcpToolCallbackProvider`，将 MCP 工具无缝集成到 Spring AI 的 `ChatClient` 工具调用链中。LifePilot 在此基础上增加了：
+[Spring AI 的 MCP 集成](https://docs.spring.io/spring-ai/reference/api/mcp/mcp-client-boot-starter-docs.html)提供了 `SyncMcpToolCallback` 和 `SyncMcpToolCallbackProvider`，将 MCP 工具无缝集成到 Spring AI 的 `ChatClient` 工具调用链中。ZhiWei 在此基础上增加了：
 
 - 三层优先级解析（Spring AI 原生只有扁平注册）
 - 风险分级和审批流程
@@ -494,7 +494,7 @@ LifePilot 的映射：`McpClient` 实现了完整的 MCP 客户端协议，`Skil
 - **审计日志（Audit Logging）**：所有工具调用都有完整的审计记录
 - **人机协作（HITL）**：高风险操作需要人类确认
 
-LifePilot 的映射：`RiskLevel` 四级分级 + `GuardrailPolicy` 护栏策略 + `ToolExecutionPipeline` 审计记录。
+ZhiWei 的映射：`RiskLevel` 四级分级 + `GuardrailPolicy` 护栏策略 + `ToolExecutionPipeline` 审计记录。
 
 #### 1.6.4 MCP Java SDK — 协议实现基础
 
@@ -505,7 +505,7 @@ LifePilot 的映射：`RiskLevel` 四级分级 + `GuardrailPolicy` 护栏策略 
 - 三种传输支持：STDIO、SSE（兼容旧服务器）、Streamable HTTP
 - Spring 特定传输作为可选依赖
 
-LifePilot 使用 BOM 管理 MCP Java SDK 的版本，确保所有 MCP 相关依赖版本一致。
+ZhiWei 使用 BOM 管理 MCP Java SDK 的版本，确保所有 MCP 相关依赖版本一致。
 
 ---
 
@@ -513,7 +513,7 @@ LifePilot 使用 BOM 管理 MCP Java SDK 的版本，确保所有 MCP 相关依�
 
 ### 2.1 核心设计：sealed interface 穷举工具类型
 
-LifePilot 使用 Java 22 的 `sealed interface` 定义工具契约体系。`sealed` 关键字确保所有工具类型在编译时已知，`switch` 表达式可以穷举匹配，不会遗漏任何类型。
+ZhiWei 使用 Java 22 的 `sealed interface` 定义工具契约体系。`sealed` 关键字确保所有工具类型在编译时已知，`switch` 表达式可以穷举匹配，不会遗漏任何类型。
 
 ```mermaid
 classDiagram
@@ -664,7 +664,7 @@ import jakarta.annotation.Nullable;
 import java.util.List;
 
 /**
- * 工具契约 — LifePilot 工具生态的核心抽象。
+ * 工具契约 — ZhiWei 工具生态的核心抽象。
  *
  * <p>所有工具（无论来源）都必须实现此接口。sealed 修饰符确保
  * 工具类型在编译时完全已知，switch 表达式可以穷举匹配。</p>
@@ -1387,7 +1387,7 @@ private ToolResult dispatch(ToolContract tool, ToolInput input) {
 
 ### 3.1 核心设计：统一注册、透明分发
 
-`DynamicToolRegistry` 是 LifePilot 工具生态的中枢。它统一管理来自三个层次的工具，对 `AgentLoop` 完全透明——`AgentLoop` 不关心工具来自 Java Bean、YAML 文件还是 MCP Server，只通过 `DynamicToolRegistry` 获取可用工具列表。
+`DynamicToolRegistry` 是 ZhiWei 工具生态的中枢。它统一管理来自三个层次的工具，对 `AgentLoop` 完全透明——`AgentLoop` 不关心工具来自 Java Bean、YAML 文件还是 MCP Server，只通过 `DynamicToolRegistry` 获取可用工具列表。
 
 ```mermaid
 classDiagram
@@ -1992,9 +1992,9 @@ public class BuiltinToolRegistrar {
 
 MCP 的核心概念：
 
-| 概念 | 说明 | LifePilot 映射 |
+| 概念 | 说明 | ZhiWei 映射 |
 |------|------|---------------|
-| **Server** | 提供工具、资源和 Prompt 的服务端 | 外部 MCP Server 进程 / LifePilot 自身（反向桥接） |
+| **Server** | 提供工具、资源和 Prompt 的服务端 | 外部 MCP Server 进程 / ZhiWei 自身（反向桥接） |
 | **Client** | 连接 Server 并调用工具的客户端 | `McpClient` |
 | **Transport** | 客户端与服务端之间的通信层 | `McpTransport` sealed interface |
 | **Tool** | Server 暴露的可调用函数 | 转换为 `McpTool` (ToolContract) |
@@ -2010,7 +2010,7 @@ MCP 的核心概念：
 2. **Streamable HTTP**：通过 HTTP 与远程服务通信，自 2025-03-26 版本起替代 SSE 成为推荐的远程传输方式
 
 > **注意**：SSE（Server-Sent Events）传输已在 MCP 规范 2025-03-26 版本中被弃用，
-> 由 Streamable HTTP 替代。LifePilot 仍保留 SSE 支持以兼容旧版 MCP Server，
+> 由 Streamable HTTP 替代。ZhiWei 仍保留 SSE 支持以兼容旧版 MCP Server，
 > 但新部署应使用 Streamable HTTP。
 
 ```mermaid
@@ -2696,7 +2696,7 @@ import java.util.concurrent.CompletableFuture;
  * SSE 传输实现（已弃用，仅兼容旧版 MCP Server）。
  *
  * <p>SSE（Server-Sent Events）传输在 MCP 规范 2025-03-26 版本中
- * 被 Streamable HTTP 替代。LifePilot 保留此实现以兼容
+ * 被 Streamable HTTP 替代。ZhiWei 保留此实现以兼容
  * 尚未升级到新规范的旧版 MCP Server。</p>
  *
  * <p>新部署应使用 {@link StreamableHttpTransport}。</p>
@@ -2927,7 +2927,7 @@ public class McpClient {
                         "tools", Map.of("listChanged", true)
                     ),
                     "clientInfo", Map.of(
-                        "name", "LifePilot",
+                        "name", "ZhiWei",
                         "version", "1.0.0"
                     )
                 );
@@ -3070,7 +3070,7 @@ public class McpClient {
 
 ```mermaid
 sequenceDiagram
-    participant App as LifePilot 启动
+    participant App as ZhiWei 启动
     participant Reg as McpServerRegistry
     participant Client as McpClient
     participant Transport as McpTransport
@@ -3182,7 +3182,7 @@ public record McpToolSchema(
  * MCP 工具注解（MCP 规范扩展字段）。
  *
  * <p>用于传递工具的元信息，如风险等级、幂等性等。
- * 这些信息不是 MCP 规范的必需字段，但 LifePilot
+ * 这些信息不是 MCP 规范的必需字段，但 ZhiWei
  * 会利用它们来推断工具的安全属性。</p>
  *
  * @param title 工具标题（可选）
@@ -3255,7 +3255,7 @@ public record JsonRpcMessage(
 
 ### 4.11 Spring AI MCP 集成
 
-LifePilot 利用 [Spring AI 的 MCP 集成](https://docs.spring.io/spring-ai/reference/api/mcp/mcp-client-boot-starter-docs.html)将 MCP 工具无缝接入 `ChatClient` 的工具调用链。Spring AI 提供了 `SyncMcpToolCallback` 和 `SyncMcpToolCallbackProvider`，LifePilot 在此基础上增加了三层优先级解析和安全控制。
+ZhiWei 利用 [Spring AI 的 MCP 集成](https://docs.spring.io/spring-ai/reference/api/mcp/mcp-client-boot-starter-docs.html)将 MCP 工具无缝接入 `ChatClient` 的工具调用链。Spring AI 提供了 `SyncMcpToolCallback` 和 `SyncMcpToolCallbackProvider`，ZhiWei 在此基础上增加了三层优先级解析和安全控制。
 
 ```java
 package com.lifepilot.tool.bridge;
@@ -3274,7 +3274,7 @@ import java.util.List;
  * <p>将 DynamicToolRegistry 中的所有工具转换为 Spring AI 的
  * ToolCallback，供 ChatClient 在 LLM 工具调用时使用。</p>
  *
- * <p>这是 LifePilot 工具生态与 Spring AI 框架的桥接层。
+ * <p>这是 ZhiWei 工具生态与 Spring AI 框架的桥接层。
  * AgentLoop 通过此组件获取工具回调列表，传递给 ChatClient。</p>
  */
 @Component
@@ -3763,7 +3763,7 @@ public class McpServerRegistry {
 
 ### 6.1 核心职责
 
-`McpToolAdapter` 负责将 MCP Server 返回的工具 Schema（`McpToolSchema`）转换为 LifePilot 的 `ToolContract`（具体为 `McpTool`）。转换过程包括：Schema 映射、风险等级推断、预算分配和 ID 生成。
+`McpToolAdapter` 负责将 MCP Server 返回的工具 Schema（`McpToolSchema`）转换为 ZhiWei 的 `ToolContract`（具体为 `McpTool`）。转换过程包括：Schema 映射、风险等级推断、预算分配和 ID 生成。
 
 ```mermaid
 flowchart LR
@@ -3990,18 +3990,18 @@ public class McpToolAdapter {
 
 ## 7. SkillToMcpBridge — 反向桥接
 
-### 7.1 设计理念：LifePilot 既是 MCP Client 也是 MCP Server
+### 7.1 设计理念：ZhiWei 既是 MCP Client 也是 MCP Server
 
-LifePilot 不仅可以作为 MCP Client 调用外部 MCP Server 的工具，还可以作为 MCP Server 将自身的内置工具暴露给外部 AI 助手。这种双向桥接使得 LifePilot 可以融入更大的 AI Agent 生态系统。
+ZhiWei 不仅可以作为 MCP Client 调用外部 MCP Server 的工具，还可以作为 MCP Server 将自身的内置工具暴露给外部 AI 助手。这种双向桥接使得 ZhiWei 可以融入更大的 AI Agent 生态系统。
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                    LifePilot 双向 MCP 桥接                               │
+│                    ZhiWei 双向 MCP 桥接                               │
 │                                                                         │
-│  外部 MCP Server                LifePilot                外部 AI 助手    │
+│  外部 MCP Server                ZhiWei                外部 AI 助手    │
 │  ┌──────────────┐    MCP     ┌──────────────┐    MCP    ┌────────────┐ │
 │  │ Filesystem   │◄──Client──►│              │◄──Server──►│ Claude     │ │
-│  │ Server       │            │  LifePilot   │            │ Desktop    │ │
+│  │ Server       │            │  ZhiWei   │            │ Desktop    │ │
 │  ├──────────────┤            │              │            ├────────────┤ │
 │  │ GitHub       │◄──Client──►│  内置工具     │◄──Server──►│ Cursor     │ │
 │  │ Server       │            │  日程管理     │            │            │ │
@@ -4010,8 +4010,8 @@ LifePilot 不仅可以作为 MCP Client 调用外部 MCP Server 的工具，还�
 │  │ Server       │            │              │            │            │ │
 │  └──────────────┘            └──────────────┘            └────────────┘ │
 │                                                                         │
-│  左侧：LifePilot 作为 MCP Client 调用外部工具                            │
-│  右侧：LifePilot 作为 MCP Server 暴露内置工具                            │
+│  左侧：ZhiWei 作为 MCP Client 调用外部工具                            │
+│  右侧：ZhiWei 作为 MCP Server 暴露内置工具                            │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -4039,11 +4039,11 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * LifePilot → MCP Server 反向桥接。
+ * ZhiWei → MCP Server 反向桥接。
  *
- * <p>将 LifePilot 的内置工具暴露为 MCP 工具，
+ * <p>将 ZhiWei 的内置工具暴露为 MCP 工具，
  * 使外部 AI 助手（如 Claude Desktop、Cursor）可以通过
- * MCP 协议调用 LifePilot 的能力。</p>
+ * MCP 协议调用 ZhiWei 的能力。</p>
  *
  * <p>安全约束：
  * <ul>
@@ -4168,7 +4168,7 @@ public class SkillToMcpBridge {
                 tool.riskLevel() == com.lifepilot.tool.model.RiskLevel.LOW,
                 tool.riskLevel().ordinal() >= com.lifepilot.tool.model.RiskLevel.HIGH.ordinal(),
                 tool.idempotent(),
-                false // LifePilot 内置工具不访问外部世界
+                false // ZhiWei 内置工具不访问外部世界
             )
         );
     }
@@ -4185,7 +4185,7 @@ public class SkillToMcpBridge {
                 "tools", Map.of("listChanged", true)
             ),
             "serverInfo", Map.of(
-                "name", "LifePilot",
+                "name", "ZhiWei",
                 "version", "1.0.0"
             )
         );
@@ -4294,7 +4294,7 @@ public class McpServerEndpoint {
 
 ### 8.1 设计理念：零代码工具扩展
 
-YAML 声明式工具是 LifePilot 三层工具架构的中间层（Layer 2）。它允许用户通过编写 YAML 配置文件来定义新工具，无需编写 Java 代码。这降低了工具扩展的门槛，使非开发者用户也能自定义 LifePilot 的能力。
+YAML 声明式工具是 ZhiWei 三层工具架构的中间层（Layer 2）。它允许用户通过编写 YAML 配置文件来定义新工具，无需编写 Java 代码。这降低了工具扩展的门槛，使非开发者用户也能自定义 ZhiWei 的能力。
 
 ### 8.2 YAML Skill 定义格式
 
@@ -5238,7 +5238,7 @@ public class ToolExecutionPipeline {
 
 ### 10.1 工具风险分级体系
 
-工具风险分级是 LifePilot 安全架构的核心。每个工具在注册时声明自己的风险等级，`ToolExecutionPipeline` 在执行前根据风险等级执行对应的审批流程。
+工具风险分级是 ZhiWei 安全架构的核心。每个工具在注册时声明自己的风险等级，`ToolExecutionPipeline` 在执行前根据风险等级执行对应的审批流程。
 
 参考 [AI Agent 安全最佳实践](https://skywork.ai/blog/ai-agent-safety-faq/)中的最小权限原则和人机协作（HITL）模式。
 
@@ -5629,7 +5629,7 @@ public class DataRedactor {
 ```sql
 -- V7__tool_ecosystem.sql
 -- 工具生态模块数据库迁移
--- 遵循 LifePilot 数据库规范：
+-- 遵循 ZhiWei 数据库规范：
 --   主键 TEXT 存 UUID，时间 TEXT 存 ISO 8601，布尔 INTEGER(0/1)，JSON 用 TEXT + _json 后缀
 
 -- ─────────────────────────────────────────────
@@ -5897,7 +5897,7 @@ lifepilot:
         max-reconnect-attempts: 3
         health-check-interval: 60s
 
-    # MCP Server 端（LifePilot 作为 MCP Server）
+    # MCP Server 端（ZhiWei 作为 MCP Server）
     server:
       enabled: false
       # 暴露的端口（默认与 Spring Boot 共用）
@@ -6558,7 +6558,7 @@ MCP 工具调用延迟分解（stdio 传输）：
 │ └──────────┘ └──────────┘ └──────────┘ └──────────────────┘│
 │                                                             │
 │ 优化空间：Server 处理时间取决于 MCP Server 实现，不可控       │
-│ LifePilot 侧开销 < 5ms                                      │
+│ ZhiWei 侧开销 < 5ms                                      │
 └─────────────────────────────────────────────────────────────┘
 
 MCP 工具调用延迟分解（Streamable HTTP 传输）：
@@ -6627,7 +6627,7 @@ MCP Server 的工具 Schema 在连接初始化时获取一次，之后缓存在 
 
 ### 14.4 性能对比
 
-| 场景 | LifePilot | 典型 Python Agent 框架 | 差异原因 |
+| 场景 | ZhiWei | 典型 Python Agent 框架 | 差异原因 |
 |------|-----------|----------------------|---------|
 | 工具查找 | < 1ms | ~5ms | ConcurrentHashMap vs dict + 遍历 |
 | Java 原生工具调用 | < 5ms | N/A | 进程内调用，无序列化 |
@@ -6660,7 +6660,7 @@ MCP Server 的工具 Schema 在连接初始化时获取一次，之后缓存在 
 
 > **文档结束**
 >
-> 本文档详细描述了 LifePilot 混合工具生态的完整架构设计，涵盖三层工具架构、
+> 本文档详细描述了 ZhiWei 混合工具生态的完整架构设计，涵盖三层工具架构、
 > MCP 协议深度集成、YAML 声明式工具、工具执行管线、安全沙箱、数据持久化、
 > 配置管理和属性测试。所有设计决策都基于生产级 AI Agent 的实际需求，
 > 参考了 [MCP 规范](https://modelcontextprotocol.io/specification/2025-06-18/basic)、

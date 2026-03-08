@@ -15,7 +15,7 @@ import java.util.UUID;
  *
  * <p>日期时间格式转换：
  * <ul>
- *   <li>LifePilot 使用 ISO 8601（如 {@code 2026-03-01T09:00:00Z}）</li>
+ *   <li>ZhiWei 使用 ISO 8601（如 {@code 2026-03-01T09:00:00Z}）</li>
  *   <li>iCalendar 使用紧凑格式（如 {@code 20260301T090000Z}）</li>
  * </ul>
  *

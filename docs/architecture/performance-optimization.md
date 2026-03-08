@@ -16,7 +16,7 @@
 - [4. 竞品深度分析](#4-竞品深度分析)
 - [5. 优化方向一：多层缓存机制](#5-优化方向一多层缓存机制)
 - [6. 优化方向二：TTFT 优化](#6-优化方向二ttft-优化)
-- [7. LifePilot 适配方案](#7-lifepilot-适配方案)
+- [7. ZhiWei 适配方案](#7-lifepilot-适配方案)
 - [8. 设计决策与权衡](#8-设计决策与权衡)
 - [9. 调研参考汇总](#9-调研参考汇总)
 
@@ -26,7 +26,7 @@
 
 ### 1.1 当前瓶颈
 
-LifePilot 作为个人 AI Agent，每次用户交互都会触发 AgentLoop 控制循环，循环中的每一步都涉及 LLM 调用。当前存在两个核心性能问题：
+ZhiWei 作为个人 AI Agent，每次用户交互都会触发 AgentLoop 控制循环，循环中的每一步都涉及 LLM 调用。当前存在两个核心性能问题：
 
 **问题 1：Token 消耗冗余**
 
@@ -112,9 +112,9 @@ LLM 推理过程中，Transformer 的 Key-Value Cache 是计算密集型操作�
 - **LayerKV** (2025)：提出分层 KV Cache 量化策略，在保持精度的同时将 KV Cache 内存占用降低 40-60%
 - **Strata** (2025)：提出层次化上下文缓存（Hierarchical Context Caching），将 Prompt 分为多个语义层级，每层独立缓存和失效
 
-**对 LifePilot 的启示：**
+**对 ZhiWei 的启示：**
 
-LifePilot 的 Agent 循环天然具备高前缀复用率——System Prompt（角色定义 + 工具声明 + 行为约束）在同一会话的多轮循环中完全不变。通过将 Prompt 结构化为「稳定前缀 + 动态后缀」，可以最大化 Provider 侧 KV Cache 命中率。
+ZhiWei 的 Agent 循环天然具备高前缀复用率——System Prompt（角色定义 + 工具声明 + 行为约束）在同一会话的多轮循环中完全不变。通过将 Prompt 结构化为「稳定前缀 + 动态后缀」，可以最大化 Provider 侧 KV Cache 命中率。
 
 ### 2.2 语义缓存（Semantic Caching）
 
@@ -133,9 +133,9 @@ SCALM (Semantic Caching for Automated LLM Management) 提出了一种基于语�
 3. **缓存失效策略**：LLM 响应可能因上下文变化而过时，需要智能失效机制
 4. **Agent 场景特殊性**：Agent 的同一查询在不同状态下可能需要不同响应（如不同的 AgentPhase）
 
-**对 LifePilot 的启示：**
+**对 ZhiWei 的启示：**
 
-LifePilot 的 `LlmConfigProperties.CacheConfig` 已定义 `similarityThreshold=0.92`，这是一个合理的起点。但需要引入 scene 维度的缓存隔离——不同场景（PLANNING / EXECUTING / RESPONDING）的缓存不应互相污染。
+ZhiWei 的 `LlmConfigProperties.CacheConfig` 已定义 `similarityThreshold=0.92`，这是一个合理的起点。但需要引入 scene 维度的缓存隔离——不同场景（PLANNING / EXECUTING / RESPONDING）的缓存不应互相污染。
 
 ### 2.3 Agent 缓存的五层模型
 
@@ -149,9 +149,9 @@ fast.io (2025) 提出了 Agent 缓存的五层架构模型，从快到慢：
 | L4 | Tool Result Cache | 相同工具 + 相同参数 | <1ms | 避免重复工具执行 |
 | L5 | RAG Chunk Cache | 相同查询的检索结果 | <5ms | 避免重复向量检索 |
 
-**对 LifePilot 的启示：**
+**对 ZhiWei 的启示：**
 
-LifePilot 当前仅实现了 L5 的部分能力（`ContextAssembler.retrievalCache`）。五层模型中，L1（Prompt Caching）和 L3（Semantic Cache）对 LifePilot 的收益最大：
+ZhiWei 当前仅实现了 L5 的部分能力（`ContextAssembler.retrievalCache`）。五层模型中，L1（Prompt Caching）和 L3（Semantic Cache）对 ZhiWei 的收益最大：
 - L1 无需应用层改动，通过 Prompt 结构优化即可激活 Provider 侧能力
 - L3 已有架构设计（`SemanticCache`），需要落地实现
 - L2 作为 L3 的特例（相似度=1.0），可以合并到 L3 实现中
@@ -161,7 +161,7 @@ LifePilot 当前仅实现了 L5 的部分能力（`ContextAssembler.retrievalCac
 
 **Prompt 压缩：**
 
-LLMLingua (Microsoft, 2024) 提出了基于 Token 级别的 Prompt 压缩技术，可在保持语义的前提下压缩 Prompt 20-40%。但该方法需要额外的小模型推理，引入新的延迟。对于 LifePilot 的单用户场景，Prompt 压缩的收益不如 Prompt 结构优化（前缀稳定化）。
+LLMLingua (Microsoft, 2024) 提出了基于 Token 级别的 Prompt 压缩技术，可在保持语义的前提下压缩 Prompt 20-40%。但该方法需要额外的小模型推理，引入新的延迟。对于 ZhiWei 的单用户场景，Prompt 压缩的收益不如 Prompt 结构优化（前缀稳定化）。
 
 **并行上下文组装：**
 
@@ -169,7 +169,7 @@ ContextAssembler 当前的检索流程是串行的：HybridRetriever → 知识�
 
 **流式优先架构：**
 
-传统的请求-响应模式要求完整生成响应后才返回。流式架构允许 LLM 生成第一个 Token 后立即开始传输，用户感知的 TTFT 等于 LLM 的实际 TTFT，而非 LLM TTFT + 完整生成时间。LifePilot 已实现流式架构（`AgentLoop.runStreaming`），但上下文组装阶段仍是阻塞的。
+传统的请求-响应模式要求完整生成响应后才返回。流式架构允许 LLM 生成第一个 Token 后立即开始传输，用户感知的 TTFT 等于 LLM 的实际 TTFT，而非 LLM TTFT + 完整生成时间。ZhiWei 已实现流式架构（`AgentLoop.runStreaming`），但上下文组装阶段仍是阻塞的。
 
 ### 2.5 Token 消耗优化研究
 
@@ -180,7 +180,7 @@ ContextAssembler 当前的检索流程是串行的：HybridRetriever → 知识�
 3. **上下文压缩**（应用层）：节省 20-40% Token，需要额外推理开销
 4. **工具输出摘要**（应用层）：对长工具输出节省 50-80% Token，需要额外 LLM 调用
 
-对 LifePilot 而言，策略 1 和 2 的 ROI 最高，策略 3 和 4 可作为后续优化。
+对 ZhiWei 而言，策略 1 和 2 的 ROI 最高，策略 3 和 4 可作为后续优化。
 
 ---
 
@@ -229,9 +229,9 @@ SimilarityEvaluator (接口)
 - 支持 CPU 内存 / GPU 内存 / 磁盘三级存储
 - 与 vLLM 深度集成，支持 Prefix Caching
 
-**对 LifePilot 的参考价值：**
-- LMCache 的优化发生在推理引擎层，LifePilot 作为 API 调用方无法直接使用
-- 但其「稳定前缀最大化」的设计思想可以指导 LifePilot 的 Prompt 结构优化
+**对 ZhiWei 的参考价值：**
+- LMCache 的优化发生在推理引擎层，ZhiWei 作为 API 调用方无法直接使用
+- 但其「稳定前缀最大化」的设计思想可以指导 ZhiWei 的 Prompt 结构优化
 - 验证了 KV Cache 复用对 TTFT 的显著改善（长上下文场景下 TTFT 降低 3-10x）
 
 ### 3.3 Redis LangCache
@@ -246,10 +246,10 @@ SimilarityEvaluator (接口)
 **可借鉴的设计：**
 - 缓存条目的 metadata 设计：包含 model、temperature、timestamp、hit_count
 - 基于 hit_count 的热度感知淘汰策略
-- 支持 namespace 隔离（类似 LifePilot 的 scene 隔离）
+- 支持 namespace 隔离（类似 ZhiWei 的 scene 隔离）
 
 **局限性：**
-- 依赖 Redis Stack，增加部署复杂度（LifePilot 追求单 JAR 部署）
+- 依赖 Redis Stack，增加部署复杂度（ZhiWei 追求单 JAR 部署）
 - 向量搜索性能依赖 Redis 内存，不适合资源受限的个人部署
 
 ### 3.4 Spring AI 缓存生态
@@ -259,8 +259,8 @@ SimilarityEvaluator (接口)
 - `CachingAdvisor`（社区贡献）：基于 Spring Cache 抽象的简单缓存
 - 无内置的语义缓存支持
 
-**对 LifePilot 的参考价值：**
-- LifePilot 的 `LlmRouter` 不直接使用 `ChatClient.Advisor` 链（因为路由层在 Advisor 之下）
+**对 ZhiWei 的参考价值：**
+- ZhiWei 的 `LlmRouter` 不直接使用 `ChatClient.Advisor` 链（因为路由层在 Advisor 之下）
 - 但 Advisor 模式的「横切关注点注入」思想可以借鉴：缓存作为 LlmRouter 的前置拦截层
 - Spring Cache 抽象（`@Cacheable`）不适合语义缓存（需要向量相似度计算），需要自定义实现
 
@@ -272,9 +272,9 @@ SimilarityEvaluator (接口)
 | 向量存储 | 多种（Milvus/FAISS/SQLite） | N/A（KV Cache） | Redis RediSearch | N/A |
 | 部署复杂度 | 中（Python + 向量DB） | 高（推理引擎集成） | 中（Redis Stack） | 低（Spring 原生） |
 | Agent 感知 | 无 | 无 | 无 | 无 |
-| 适合 LifePilot | 架构参考 | 思想参考 | 架构参考 | 集成参考 |
+| 适合 ZhiWei | 架构参考 | 思想参考 | 架构参考 | 集成参考 |
 
-**结论：** 没有现成方案可以直接用于 LifePilot。最佳策略是借鉴 GPTCache 的管道化架构 + Redis LangCache 的 metadata 设计，基于 LifePilot 已有的 SQLite + sqlite-vec 基础设施实现自定义 `SemanticCache`（已有架构设计，需落地）。
+**结论：** 没有现成方案可以直接用于 ZhiWei。最佳策略是借鉴 GPTCache 的管道化架构 + Redis LangCache 的 metadata 设计，基于 ZhiWei 已有的 SQLite + sqlite-vec 基础设施实现自定义 `SemanticCache`（已有架构设计，需落地）。
 
 ---
 
@@ -291,8 +291,8 @@ SimilarityEvaluator (接口)
 - 缓存粒度：以 64 Token 为单位对齐，前缀匹配到最近的 64 Token 边界
 - 缓存有效期：最后一次命中后 ~30 分钟过期（冷启动后需要一次完整计算）
 
-**对 LifePilot 的启示：**
-- DeepSeek 是 LifePilot 的主要云端 Provider，其自动缓存机制可以「免费」获得
+**对 ZhiWei 的启示：**
+- DeepSeek 是 ZhiWei 的主要云端 Provider，其自动缓存机制可以「免费」获得
 - 关键优化点：确保 Prompt 前缀稳定（System Prompt + 工具定义放在最前面）
 - 64 Token 对齐意味着 Prompt 结构的微小变化可能导致缓存失效
 
@@ -312,8 +312,8 @@ SimilarityEvaluator (接口)
 - 成本降低：缓存命中部分按 0.1x 计费
 - 缓存有效期：隐式缓存 ~10 分钟，显式缓存可配置更长
 
-**对 LifePilot 的启示：**
-- Qwen 的会话缓存模式与 LifePilot 的 session 概念天然对齐
+**对 ZhiWei 的启示：**
+- Qwen 的会话缓存模式与 ZhiWei 的 session 概念天然对齐
 - 可以在 `ProviderAdapter` 层为 Qwen 启用 `enable_context_cache` 参数
 - 128 Token 对齐粒度比 DeepSeek 的 64 Token 更粗，对 Prompt 结构变化更敏感
 
@@ -328,9 +328,9 @@ SimilarityEvaluator (接口)
 - 最小缓存长度：1024 Token（短 Prompt 无法缓存）
 - 缓存有效期：5 分钟（每次命中刷新）
 
-**对 LifePilot 的启示：**
+**对 ZhiWei 的启示：**
 - Anthropic 的显式缓存模式需要在 `ProviderAdapter` 层注入 `cache_control` 参数
-- 1024 Token 最小长度对 LifePilot 不是问题（System Prompt + 工具定义通常 > 1500 Token）
+- 1024 Token 最小长度对 ZhiWei 不是问题（System Prompt + 工具定义通常 > 1500 Token）
 - 缓存写入的 1.25x 成本意味着首次调用略贵，但后续调用大幅便宜
 
 ### 4.4 OpenAI Automatic Caching
@@ -343,8 +343,8 @@ SimilarityEvaluator (接口)
 - 缓存粒度：128 Token 对齐
 - 缓存有效期：5-10 分钟
 
-**对 LifePilot 的启示：**
-- OpenAI 当前不是 LifePilot 的 Provider，但如果未来接入，其自动缓存可以直接受益
+**对 ZhiWei 的启示：**
+- OpenAI 当前不是 ZhiWei 的 Provider，但如果未来接入，其自动缓存可以直接受益
 - 0.5x 的折扣率低于 DeepSeek/Qwen 的 0.1x，成本优势较小
 
 ### 4.5 Ollama（本地推理）
@@ -357,8 +357,8 @@ SimilarityEvaluator (接口)
 - TTFT 优化：KV Cache 命中时 TTFT 显著降低
 - 缓存有效期：模型卸载前一直有效
 
-**对 LifePilot 的启示：**
-- Ollama 是 LifePilot 的优先 Provider（priority=0），其 KV Cache 复用是「免费」的
+**对 ZhiWei 的启示：**
+- Ollama 是 ZhiWei 的优先 Provider（priority=0），其 KV Cache 复用是「免费」的
 - 关键优化：保持 Prompt 前缀稳定，避免不必要的前缀变化导致 KV Cache 失效
 - Ollama 的 `/api/chat` 接口支持 `keep_alive` 参数控制模型驻留时间
 
@@ -372,13 +372,13 @@ SimilarityEvaluator (接口)
 | OpenAI | 内存 KV Cache | 自动 | 0.5x | 1024 Token | 128 Token | 5-10min |
 | Ollama | 内存 KV Cache | 自动 | N/A（本地） | 无限制 | N/A | 模型驻留期 |
 
-**核心结论：** LifePilot 的三个 Provider（Ollama / DeepSeek / Qwen）都支持自动 Prefix Caching，且 DeepSeek 和 Qwen 的折扣率高达 90%。LifePilot 无需实现 Provider 侧的缓存逻辑，只需优化 Prompt 结构以最大化前缀稳定性。
+**核心结论：** ZhiWei 的三个 Provider（Ollama / DeepSeek / Qwen）都支持自动 Prefix Caching，且 DeepSeek 和 Qwen 的折扣率高达 90%。ZhiWei 无需实现 Provider 侧的缓存逻辑，只需优化 Prompt 结构以最大化前缀稳定性。
 
 ---
 
 ## 5. 优化方向一：多层缓存机制
 
-基于前沿理论（§2.3 五层模型）和竞品分析（§4），为 LifePilot 设计三层缓存架构：
+基于前沿理论（§2.3 五层模型）和竞品分析（§4），为 ZhiWei 设计三层缓存架构：
 
 ### 5.1 三层缓存架构
 
@@ -586,7 +586,7 @@ CompletableFuture.allOf(retrievalFuture, kbFuture, crossSessionFuture, historyFu
 
 ---
 
-## 7. LifePilot 适配方案
+## 7. ZhiWei 适配方案
 
 ### 7.1 实施优先级
 
@@ -674,7 +674,7 @@ CompletableFuture.allOf(retrievalFuture, kbFuture, crossSessionFuture, historyFu
 
 **决策：选择 SQLite + sqlite-vec。**
 
-理由：LifePilot 是单用户个人 Agent，缓存条目规模预计在千级到万级，SQLite 的性能完全满足需求。单 JAR 部署是核心架构约束，引入 Redis 会显著增加部署复杂度，违背项目的「零运维」设计目标。sqlite-vec 已在记忆系统中验证过稳定性和性能。
+理由：ZhiWei 是单用户个人 Agent，缓存条目规模预计在千级到万级，SQLite 的性能完全满足需求。单 JAR 部署是核心架构约束，引入 Redis 会显著增加部署复杂度，违背项目的「零运维」设计目标。sqlite-vec 已在记忆系统中验证过稳定性和性能。
 
 ### 8.2 缓存粒度：完整响应 vs 响应片段
 
@@ -685,7 +685,7 @@ CompletableFuture.allOf(retrievalFuture, kbFuture, crossSessionFuture, historyFu
 
 **决策：缓存完整响应。**
 
-理由：LifePilot 的 LLM 响应通常在 200-2000 Token（约 0.5-5KB 文本），存储开销可忽略。完整响应缓存的实现最简单，命中时直接返回，无需额外处理。万级缓存条目的总存储量预计在 10-50MB，对 SQLite 毫无压力。
+理由：ZhiWei 的 LLM 响应通常在 200-2000 Token（约 0.5-5KB 文本），存储开销可忽略。完整响应缓存的实现最简单，命中时直接返回，无需额外处理。万级缓存条目的总存储量预计在 10-50MB，对 SQLite 毫无压力。
 
 ### 8.3 语义相似度阈值选择
 
@@ -699,7 +699,7 @@ CompletableFuture.allOf(retrievalFuture, kbFuture, crossSessionFuture, historyFu
 
 **决策：默认 0.92，可通过配置调整。**
 
-理由：0.92 是 SCALM 论文推荐的平衡阈值，在 LifePilot 的个人 Agent 场景下，用户查询模式相对固定（如每天问 "今天有什么安排"），0.92 的阈值可以捕获这类语义等价的查询变体。通过 `lifepilot.llm.cache.similarity-threshold` 配置键允许用户根据实际体验调整。
+理由：0.92 是 SCALM 论文推荐的平衡阈值，在 ZhiWei 的个人 Agent 场景下，用户查询模式相对固定（如每天问 "今天有什么安排"），0.92 的阈值可以捕获这类语义等价的查询变体。通过 `lifepilot.llm.cache.similarity-threshold` 配置键允许用户根据实际体验调整。
 
 ### 8.4 并行检索 vs 串行检索
 
@@ -735,7 +735,7 @@ CompletableFuture.allOf(retrievalFuture, kbFuture, crossSessionFuture, historyFu
 
 **决策：TTL + LRU 混合策略。**
 
-理由：TTL 确保缓存数据不会无限期过时（默认 3600s），LRU 确保缓存大小不会无限增长（默认 10000 条）。事件驱动失效虽然更精确，但实现复杂度高，且 LifePilot 的个人场景下数据变更频率低，TTL + LRU 已足够。这与 `LlmConfigProperties.CacheConfig` 中已定义的 `ttlSeconds` 和 `maxEntries` 配置一致。
+理由：TTL 确保缓存数据不会无限期过时（默认 3600s），LRU 确保缓存大小不会无限增长（默认 10000 条）。事件驱动失效虽然更精确，但实现复杂度高，且 ZhiWei 的个人场景下数据变更频率低，TTL + LRU 已足够。这与 `LlmConfigProperties.CacheConfig` 中已定义的 `ttlSeconds` 和 `maxEntries` 配置一致。
 
 
 ---

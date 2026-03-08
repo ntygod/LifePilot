@@ -48,7 +48,7 @@ public class WebFetchToolExecutor {
 
             Document doc = Jsoup.connect(url)
                     .timeout(timeoutMillis)
-                    .userAgent("LifePilot/1.0 (Web Fetch Tool)")
+                    .userAgent("ZhiWei/1.0 (Web Fetch Tool)")
                     .followRedirects(true)
                     .get();
 

@@ -5,7 +5,7 @@
 > ✅ Skill 系统已实现（Phase 3，模块 10）。当前实现需要重构以对齐业界 Agent Skills 标准。
 > 详细架构设计参见 [architecture/skill-system.md](../architecture/skill-system.md)。
 
-LifePilot 采用业界标准的 Agent Skills 架构。Skill 是**程序性知识包（Procedural Knowledge Package）**——包含领域专业指令、参考资料和脚本。当 Skill 被激活时，其指令注入 Agent 上下文，Agent 按照指令使用 LLM 推理执行任务。
+ZhiWei 采用业界标准的 Agent Skills 架构。Skill 是**程序性知识包（Procedural Knowledge Package）**——包含领域专业指令、参考资料和脚本。当 Skill 被激活时，其指令注入 Agent 上下文，Agent 按照指令使用 LLM 推理执行任务。
 
 ## 1. Skill 的本质
 
@@ -58,7 +58,7 @@ Skill 激活 = 将指令注入 Agent 上下文。Agent 使用自己的 LLM 按�
 ```
 你：帮我写一篇关于本周工作进展的周报
 
-LifePilot：好的，我来帮你准备周报。
+ZhiWei：好的，我来帮你准备周报。
 
          🔍 发现匹配 Skill：writing-assistant
          📋 激活「写作助手」Skill，加载写作指令...
@@ -124,7 +124,7 @@ category: productivity
 ```
 你：帮我查一下今天人民币对美元的汇率
 
-LifePilot：检测到当前没有汇率查询能力，正在创建新 Skill...
+ZhiWei：检测到当前没有汇率查询能力，正在创建新 Skill...
          🔍 分析需求：需要调用汇率 API 获取实时数据
          📝 生成 Skill 定义：exchange-rate/SKILL.md
          🔒 安全验证：✅ 格式校验通过 ✅ 安全检查通过 ✅ 沙箱验证通过
@@ -146,4 +146,4 @@ LifePilot：检测到当前没有汇率查询能力，正在创建新 Skill...
 
 ## 8. 社区兼容性
 
-LifePilot 的 Skill 格式与 Anthropic Agent Skills 开放标准兼容。社区发布的 SKILL.md 文件夹可直接放入 `~/.lifepilot/skills/` 目录使用，无需任何转换。
+ZhiWei 的 Skill 格式与 Anthropic Agent Skills 开放标准兼容。社区发布的 SKILL.md 文件夹可直接放入 `~/.lifepilot/skills/` 目录使用，无需任何转换。

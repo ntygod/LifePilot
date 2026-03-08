@@ -27,14 +27,14 @@
 ### 1.1 核心命题：安全优先的本地代码执行
 
 AI Agent 执行用户提供的代码是高价值能力（数据处理、计算、脚本自动化），但也是最高风险操作。
-LifePilot 的核心命题是：**在保证安全隔离的前提下，提供尽可能低门槛的代码执行体验**。
+ZhiWei 的核心命题是：**在保证安全隔离的前提下，提供尽可能低门槛的代码执行体验**。
 
 ```
 传统方案（无隔离）：
   Agent 直接调用 Runtime.exec() → 代码在宿主进程中执行
   问题：任意文件读写、网络访问、系统命令，安全风险极高
 
-LifePilot 方案（纵深防御）：
+ZhiWei 方案（纵深防御）：
   CodeValidator 预检 → GuardrailPolicy CRITICAL 审批 → SandboxBooter 隔离执行
   优势：多层安全屏障，用户可选隔离强度
 ```
@@ -67,11 +67,11 @@ LifePilot 方案（纵深防御）：
 
 ### 2.1 调研的开源项目与前沿技术
 
-| 项目/技术 | 核心理念 | 与 LifePilot 的关系 |
+| 项目/技术 | 核心理念 | 与 ZhiWei 的关系 |
 |-----------|---------|-------------------|
-| [E2B](https://e2b.dev) | Firecracker microVM 沙箱，~150ms 启动，200M+ 沙箱实例，Fortune 100 采用 | 云端托管方案，LifePilot 本地优先不适用，但借鉴其 SDK 设计和超时控制 |
+| [E2B](https://e2b.dev) | Firecracker microVM 沙箱，~150ms 启动，200M+ 沙箱实例，Fortune 100 采用 | 云端托管方案，ZhiWei 本地优先不适用，但借鉴其 SDK 设计和超时控制 |
 | [Daytona](https://daytona.io) | Docker 容器沙箱，90ms 冷启动，支持 Computer Use | 借鉴其极速启动优化和 File/Execute API 设计 |
-| [Modal](https://modal.com) | gVisor 用户态内核隔离，Python 优先，GPU 弹性伸缩 | gVisor 隔离思路可参考，但 LifePilot 不需要 GPU 场景 |
+| [Modal](https://modal.com) | gVisor 用户态内核隔离，Python 优先，GPU 弹性伸缩 | gVisor 隔离思路可参考，但 ZhiWei 不需要 GPU 场景 |
 | [Sprites (Fly.io)](https://sprites.dev) | 持久化 VM + 即时 Checkpoint/Restore，Firecracker 隔离 | 借鉴 Checkpoint 思路用于长时间沙箱会话保存 |
 | [Northflank](https://northflank.com) | BYOC 部署 + Kata/gVisor microVM，企业级 VPC 隔离 | 借鉴分层隔离策略（容器 → gVisor → microVM） |
 | [AstrBot Shipyard](https://github.com/AstrBotDevs/AstrBot) | Booter 抽象 + 会话级实例管理 + 技能脚本同步 | 直接借鉴 Booter 抽象模式和会话复用机制 |
@@ -97,7 +97,7 @@ Content was rephrased for compliance with licensing restrictions.
 
 | 决策 | 选择 | 替代方案 | 理由 |
 |------|------|---------|------|
-| 默认隔离方案 | ProcessBooter（ProcessBuilder + 临时目录 + 超时） | Docker 容器 | 零外部依赖，LifePilot 单 JAR 部署理念；Docker 作为可选增强 |
+| 默认隔离方案 | ProcessBooter（ProcessBuilder + 临时目录 + 超时） | Docker 容器 | 零外部依赖，ZhiWei 单 JAR 部署理念；Docker 作为可选增强 |
 | 沙箱抽象 | sealed interface SandboxBooter | 策略模式 / 工厂模式 | sealed 编译期穷举，新增 Booter 类型时编译器强制处理所有分支 |
 | 会话管理 | 会话级实例复用 + TTL 自动销毁 | 每次执行创建新实例 | 减少冷启动开销，同一会话内保持执行上下文（如已安装的依赖） |
 | 代码预检 | 正则模式匹配 + 可配置规则 | AST 解析 / 字节码分析 | 多语言支持（Python/JS/Shell），正则足够覆盖常见危险模式 |
@@ -108,14 +108,14 @@ Content was rephrased for compliance with licensing restrictions.
 
 Java Security Manager（JSM）已在 Java 17 标记为 deprecated，Java 24 正式移除。当前 Java 生态的共识是：**不再依赖 JVM 内沙箱机制，转向 OS 级外部隔离**。
 
-LifePilot 的策略完全符合这一趋势：
+ZhiWei 的策略完全符合这一趋势：
 - **外部隔离（强沙箱）**：ProcessBuilder 进程隔离 / Docker 容器隔离 / nsjail namespace 隔离
 - **JVM 内技术（浅层防护）**：CodeValidator 静态预检作为第一道防线，不依赖 JSM
 - **未来可选**：GraalVM Polyglot 为 JavaScript/Python 提供 JVM 内沙箱（Truffle 框架），安全性优于 JSM
 
-### 2.5 LifePilot 差异化定位
+### 2.5 ZhiWei 差异化定位
 
-相比调研的云端沙箱平台（E2B / Daytona / Modal），LifePilot 沙箱的独特定位：
+相比调研的云端沙箱平台（E2B / Daytona / Modal），ZhiWei 沙箱的独特定位：
 
 1. **本地优先** — 不依赖云端 API，代码在用户本机执行，隐私数据不出本地
 2. **零外部依赖默认方案** — ProcessBooter 不需要 Docker / nsjail / 任何额外安装

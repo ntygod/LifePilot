@@ -33,6 +33,7 @@ const emit = defineEmits<{
 // ========== 状态 ==========
 
 const uiStore = useUiStore()
+const { monacoRef } = useMonaco()
 const editorRef = shallowRef<any>(null)
 const lastSavedContent = ref(props.modelValue)
 const saving = ref(false)
@@ -121,7 +122,7 @@ function clearMarkers() {
   if (!editor) return
   const model = editor.getModel()
   if (!model) return
-  const monaco = useMonaco().monacoRef.value
+  const monaco = monacoRef.value
   if (monaco) {
     monaco.editor.setModelMarkers(model, 'yaml-frontmatter', [])
   }
@@ -132,7 +133,7 @@ function setMarkers(line: number, col: number, message: string) {
   if (!editor) return
   const model = editor.getModel()
   if (!model) return
-  const monaco = useMonaco().monacoRef.value
+  const monaco = monacoRef.value
   if (!monaco) return
 
   monaco.editor.setModelMarkers(model, 'yaml-frontmatter', [

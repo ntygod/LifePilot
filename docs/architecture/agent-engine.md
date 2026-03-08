@@ -61,13 +61,13 @@
    没有独立于 LLM 的安全检查层
 ```
 
-LifePilot 的核心设计命题是：**Agent 是一个分布式系统，LLM 只是其中的规划器/执行器组件**。可靠性来自架构和护栏，而非模型能力本身。
+ZhiWei 的核心设计命题是：**Agent 是一个分布式系统，LLM 只是其中的规划器/执行器组件**。可靠性来自架构和护栏，而非模型能力本身。
 
-这个命题直接导出了 LifePilot Agent 引擎的核心架构决策：
+这个命题直接导出了 ZhiWei Agent 引擎的核心架构决策：
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    LifePilot Agent 引擎架构                      │
+│                    ZhiWei Agent 引擎架构                      │
 │                                                                 │
 │  ┌──────────────────┐    ┌──────────────────────────────────┐   │
 │  │   概率域 (LLM)    │    │       确定性域 (Code)             │   │
@@ -89,7 +89,7 @@ LifePilot 的核心设计命题是：**Agent 是一个分布式系统，LLM 只�
 
 ### 1.2 前沿研究基础
 
-LifePilot Agent 引擎的设计不是凭空构想，而是建立在 2025-2026 年 AI Agent 领域的前沿研究和工程实践之上。以下是核心参考来源及其对 LifePilot 设计的影响：
+ZhiWei Agent 引擎的设计不是凭空构想，而是建立在 2025-2026 年 AI Agent 领域的前沿研究和工程实践之上。以下是核心参考来源及其对 ZhiWei 设计的影响：
 
 #### 1.2.1 Redis Agent Architecture — 状态化控制循环
 
@@ -99,7 +99,7 @@ LifePilot Agent 引擎的设计不是凭空构想，而是建立在 2025-2026 �
 - 状态转换逻辑必须与 LLM 决策逻辑分离
 - 控制循环（Control Loop）比 Chain/Graph 模式更适合生产环境
 
-LifePilot 的映射：`AgentLoop`（控制循环）+ `StateReducer`（确定性状态转换）+ `AgentState`（可序列化状态）直接实现了这一模式。
+ZhiWei 的映射：`AgentLoop`（控制循环）+ `StateReducer`（确定性状态转换）+ `AgentState`（可序列化状态）直接实现了这一模式。
 
 #### 1.2.2 Anthropic Context Engineering — 上下文即稀缺资源
 
@@ -109,13 +109,13 @@ Anthropic 在 2025 年提出的上下文工程（Context Engineering）理念，
 - 上下文的质量比数量更重要
 - 不同任务阶段需要不同的上下文组成
 
-LifePilot 的映射：`ContextAssembler` 实现了基于 `AgentPhase` 的动态 Token 预算分配，不同阶段的上下文组成比例不同。
+ZhiWei 的映射：`ContextAssembler` 实现了基于 `AgentPhase` 的动态 Token 预算分配，不同阶段的上下文组成比例不同。
 
 #### 1.2.3 Weaviate Context Engineering — Write/Select/Compress/Isolate
 
 [Weaviate 的上下文工程博客](https://weaviate.io/blog/context-engineering) 提出了四种上下文管理策略：
 
-| 策略 | 含义 | LifePilot 实现 |
+| 策略 | 含义 | ZhiWei 实现 |
 |------|------|---------------|
 | **Write** | 主动向上下文写入结构化信息 | `ContextAssembler` 注入情境快照（时间/任务/日程/习惯） |
 | **Select** | 从大量候选中精选最相关的内容 | `HybridRetriever` 三路混合检索 + Top-K 截断 |
@@ -126,7 +126,7 @@ LifePilot 的映射：`ContextAssembler` 实现了基于 `AgentPhase` 的动态 
 
 [Inkeep 的 Fighting Context Rot](https://inkeep.com/blog/fighting-context-rot) 揭示了长对话中的一个关键问题：**上下文腐化（Context Rot）**。随着对话轮次增加，早期的上下文信息会被"稀释"，LLM 对早期信息的注意力急剧下降。
 
-LifePilot 的应对策略：
+ZhiWei 的应对策略：
 - `DialogCompressor` 的三层压缩确保关键信息始终在"注意力热区"
 - `ContextAssembler` 将最重要的信息放在 System Prompt 的开头和 User Message 的末尾（注意力 U 型曲线）
 - 每轮循环重新组装上下文，而非简单追加
@@ -141,7 +141,7 @@ LifePilot 的应对策略：
 
 #### 1.2.6 Spring AI Advisors — 横切关注点的优雅注入
 
-[Spring AI Advisor 模式](https://docs.spring.io/spring-ai/reference/api/advisors.html) 提供了一种在 AI 交互链路中注入横切关注点的标准方式。LifePilot 利用这一模式实现了：
+[Spring AI Advisor 模式](https://docs.spring.io/spring-ai/reference/api/advisors.html) 提供了一种在 AI 交互链路中注入横切关注点的标准方式。ZhiWei 利用这一模式实现了：
 
 - `GuardrailAdvisor`：在 LLM 调用前后自动执行护栏检查
 - `TraceAdvisor`：自动记录每次 LLM 交互的完整轨迹
@@ -149,7 +149,7 @@ LifePilot 的应对策略：
 
 ### 1.3 五条核心设计原则
 
-LifePilot Agent 引擎遵循五条核心设计原则。这些原则不是抽象的口号，而是直接映射到具体的代码实现：
+ZhiWei Agent 引擎遵循五条核心设计原则。这些原则不是抽象的口号，而是直接映射到具体的代码实现：
 
 #### 原则 1：概率决策与确定性状态分离
 
@@ -374,7 +374,7 @@ public enum ApprovalMode {
 
 ### 1.4 与 ReAct / LangGraph / AutoGen 的对比分析
 
-LifePilot 的控制循环模式并非唯一的 Agent 架构选择。以下是与主流框架的深度对比：
+ZhiWei 的控制循环模式并非唯一的 Agent 架构选择。以下是与主流框架的深度对比：
 
 #### 1.4.1 架构模式对比
 
@@ -392,14 +392,14 @@ LifePilot 的控制循环模式并非唯一的 Agent 架构选择。以下是与
 │    └─ 改进：Agent 间协作，但对话协调开销大                                 │
 │                                                                         │
 │  2025-2026: 状态化控制循环 (State Machine + Control Loop)                │
-│    └─ LifePilot 选择：确定性状态机 + 概率决策分离                         │
+│    └─ ZhiWei 选择：确定性状态机 + 概率决策分离                         │
 │       Redis / Anthropic / 业界共识                                       │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
 #### 1.4.2 详细对比表
 
-| 维度 | ReAct | LangGraph | AutoGen | LifePilot |
+| 维度 | ReAct | LangGraph | AutoGen | ZhiWei |
 |------|-------|-----------|---------|-----------|
 | **状态管理** | 隐式（在 Prompt 中） | 显式（图节点状态） | 隐式（对话历史） | 显式（`AgentState` record） |
 | **状态可序列化** | ❌ | ⚠️ 部分 | ❌ | ✅ 完全可序列化 |
@@ -416,34 +416,34 @@ LifePilot 的控制循环模式并非唯一的 Agent 架构选择。以下是与
 
 #### 1.4.3 为什么不选择 LangGraph？
 
-LangGraph 是最接近 LifePilot 设计理念的框架，但有几个关键差异：
+LangGraph 是最接近 ZhiWei 设计理念的框架，但有几个关键差异：
 
 ```java
 /**
- * LangGraph vs LifePilot 的核心差异。
+ * LangGraph vs ZhiWei 的核心差异。
  *
  * <p>LangGraph 使用有向图（DAG）定义 Agent 的执行流程，
  * 节点是处理步骤，边是条件转换。这在简单场景下很直观，
  * 但在复杂场景下有以下问题：</p>
  *
  * <p>1. 图结构在编译时固定，运行时无法动态调整
- *    LifePilot 的 AgentPhase 转换由 StateReducer 在运行时决定，
+ *    ZhiWei 的 AgentPhase 转换由 StateReducer 在运行时决定，
  *    可以根据上下文动态选择路径。</p>
  *
  * <p>2. LangGraph 的状态是 Python dict，类型安全性弱
- *    LifePilot 的 AgentState 是 Java record，编译时类型检查。</p>
+ *    ZhiWei 的 AgentState 是 Java record，编译时类型检查。</p>
  *
  * <p>3. LangGraph 没有内置的预算控制和护栏机制
- *    LifePilot 通过 Budget + GuardrailAdvisor 内置支持。</p>
+ *    ZhiWei 通过 Budget + GuardrailAdvisor 内置支持。</p>
  *
  * <p>4. LangGraph 是 Python 生态，不适合 Spring Boot 项目
- *    LifePilot 基于 Spring AI，与 Spring 生态无缝集成。</p>
+ *    ZhiWei 基于 Spring AI，与 Spring 生态无缝集成。</p>
  */
 ```
 
 #### 1.4.4 架构选择的权衡
 
-LifePilot 的控制循环模式也有其权衡：
+ZhiWei 的控制循环模式也有其权衡：
 
 | 优势 | 权衡 |
 |------|------|
@@ -506,7 +506,7 @@ import java.util.concurrent.CompletableFuture;
 /**
  * Agent 核心控制循环。
  *
- * <p>这是 LifePilot Agent 引擎的心脏。每次用户请求都会启动一个控制循环，
+ * <p>这是 ZhiWei Agent 引擎的心脏。每次用户请求都会启动一个控制循环，
  * 循环在以下条件之一满足时终止：
  * <ol>
  *   <li>Agent 生成了最终响应（正常完成）</li>
@@ -885,7 +885,7 @@ public class AgentLoop {
 
 ### 2.2 为什么不用 ReAct
 
-ReAct（Reasoning + Acting）是 2023-2024 年的主流 Agent 模式，但在 2025-2026 年的生产实践中暴露了明显问题。LifePilot 选择控制循环模式而非 ReAct，是基于以下深度分析：
+ReAct（Reasoning + Acting）是 2023-2024 年的主流 Agent 模式，但在 2025-2026 年的生产实践中暴露了明显问题。ZhiWei 选择控制循环模式而非 ReAct，是基于以下深度分析：
 
 #### 2.2.1 ReAct 的核心问题
 
@@ -917,7 +917,7 @@ ReAct 模式：
   │       无法对"Thought"进行单元测试                         │
   └─────────────────────────────────────────────────────────┘
 
-控制循环模式（LifePilot）：
+控制循环模式（ZhiWei）：
   ┌─────────────────────────────────────────────────────────┐
   │ AgentState = {                                          │
   │   traceId: "abc-123",                                   │
@@ -939,7 +939,7 @@ ReAct 模式：
 
 ### 2.3 循环终止条件与安全保证
 
-Agent 循环必须保证**终止性**——不能无限运行。LifePilot 通过多层终止保证确保这一点：
+Agent 循环必须保证**终止性**——不能无限运行。ZhiWei 通过多层终止保证确保这一点：
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -1213,7 +1213,7 @@ public record ConversationTurn(
 
 ## 3. StateReducer — 确定性状态机
 
-StateReducer 是 LifePilot Agent 引擎中最重要的组件之一。它的核心保证是：**相同的 (state, action) 输入永远产生相同的输出**。这个确定性保证使得状态转换可测试、可回放、可调试。
+StateReducer 是 ZhiWei Agent 引擎中最重要的组件之一。它的核心保证是：**相同的 (state, action) 输入永远产生相同的输出**。这个确定性保证使得状态转换可测试、可回放、可调试。
 
 ### 3.1 AgentState 完整数据模型
 
@@ -2252,7 +2252,7 @@ public record StepRecord(
 
 ### 3.6 状态快照与回放机制
 
-状态快照与回放是 LifePilot Agent 引擎的核心能力之一。由于 `AgentState` 是完全不可变的，且所有状态变更都通过 `StateReducer` 的确定性逻辑执行，我们可以实现完整的事件溯源（Event Sourcing）。
+状态快照与回放是 ZhiWei Agent 引擎的核心能力之一。由于 `AgentState` 是完全不可变的，且所有状态变更都通过 `StateReducer` 的确定性逻辑执行，我们可以实现完整的事件溯源（Event Sourcing）。
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -2422,7 +2422,7 @@ public record StateDiff(
 
 上下文工程（Context Engineering）是 2025-2026 年 Agent 开发的核心技能。正如 [Anthropic 的上下文工程理念](https://www.anthropic.com/) 所强调的：上下文窗口是稀缺资源，不是"把所有东西塞进 Prompt"，而是**精确控制每个 Token 的价值**。
 
-[Weaviate 的上下文工程博客](https://weaviate.io/blog/context-engineering) 提出了四种策略：Write（主动写入）、Select（精选检索）、Compress（压缩释放）、Isolate（隔离关注点）。LifePilot 的 `ContextAssembler` 完整实现了这四种策略。
+[Weaviate 的上下文工程博客](https://weaviate.io/blog/context-engineering) 提出了四种策略：Write（主动写入）、Select（精选检索）、Compress（压缩释放）、Isolate（隔离关注点）。ZhiWei 的 `ContextAssembler` 完整实现了这四种策略。
 
 ### 4.1 Token 预算分配策略
 
@@ -3004,7 +3004,7 @@ public class SystemPromptTemplate {
 
     /** Agent 身份声明模板。 */
     private static final String IDENTITY_TEMPLATE = """
-        你是 LifePilot，一个本地运行的个人 AI Agent 助手。
+        你是 ZhiWei，一个本地运行的个人 AI Agent 助手。
         你了解用户的生活全貌，能够主动提供建议和帮助。
 
         核心能力：
@@ -3455,7 +3455,7 @@ public class DialogCompressor {
 
 ## 5. ProactiveReasoner — 主动推理引擎
 
-主动推理是 LifePilot 区别于传统 AI 助手的核心差异化能力。传统助手是被动的——用户问什么答什么。LifePilot 的 `ProactiveReasoner` 能够**主动观察用户的生活模式，在合适的时机提供有价值的建议和提醒**。
+主动推理是 ZhiWei 区别于传统 AI 助手的核心差异化能力。传统助手是被动的——用户问什么答什么。ZhiWei 的 `ProactiveReasoner` 能够**主动观察用户的生活模式，在合适的时机提供有价值的建议和提醒**。
 
 ### 5.1 两阶段推理管线
 
@@ -3507,7 +3507,7 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 
 /**
- * 主动推理引擎 — LifePilot 的核心差异化能力。
+ * 主动推理引擎 — ZhiWei 的核心差异化能力。
  *
  * <p>两阶段推理管线：
  * <ol>
@@ -3605,7 +3605,7 @@ public class ProactiveReasoner {
             var chatClient = llmRouter.getChatClient("proactive-reasoning");
             String evaluation = chatClient.prompt()
                 .system("""
-                    你是 LifePilot 的主动推理模块。请评估以下提醒是否值得发送给用户。
+                    你是 ZhiWei 的主动推理模块。请评估以下提醒是否值得发送给用户。
                     考虑因素：
                     1. 紧急程度：是否需要立即关注？
                     2. 相关性：与用户当前情境是否相关？
@@ -4346,7 +4346,7 @@ record TrackingEntry(Instant sentAt, boolean acknowledged) {}
 
 ### 6.1 三维预算模型
 
-LifePilot 使用三维预算模型：**Token / 步骤 / 时间**。任一维度超限即触发终止。
+ZhiWei 使用三维预算模型：**Token / 步骤 / 时间**。任一维度超限即触发终止。
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -5425,7 +5425,7 @@ public class SessionRepository {
 /**
  * 多通道会话同步策略。
  *
- * <p>用户可能通过不同通道（CLI / Web / 企微）与 LifePilot 交互。
+ * <p>用户可能通过不同通道（CLI / Web / 企微）与 ZhiWei 交互。
  * 会话同步确保跨通道的上下文一致性。</p>
  *
  * <p>同步规则：
@@ -5902,7 +5902,7 @@ public record ValidationResult(boolean valid, java.util.List<String> violations)
 
 ## 10. Spring AI 集成详解
 
-LifePilot 深度集成 [Spring AI 1.1.2](https://docs.spring.io/spring-ai/reference/)，利用其 Advisor 模式、ChatClient API、结构化输出、以及 Tool Calling 能力。
+ZhiWei 深度集成 [Spring AI 1.1.2](https://docs.spring.io/spring-ai/reference/)，利用其 Advisor 模式、ChatClient API、结构化输出、以及 Tool Calling 能力。
 
 ### 10.1 ChatClient 配置与 Advisor 链
 
@@ -6188,7 +6188,7 @@ public class StructuredOutputExample {
  *
  * <p>Spring AI 支持通过 @Tool 注解声明工具，
  * 或通过 toolCallbacks() 动态注册工具。
- * LifePilot 使用后者，因为工具列表是动态的。</p>
+ * ZhiWei 使用后者，因为工具列表是动态的。</p>
  *
  * <p>工具调用流程：
  * <ol>
@@ -6249,7 +6249,7 @@ public class ToolCallingIntegration {
 
 ## 11. SQLite Schema
 
-Agent 引擎相关的数据表定义。遵循 LifePilot 数据库规范：主键 `TEXT` 存 UUID，时间 `TEXT` 存 ISO 8601，布尔 `INTEGER`(0/1)，JSON 用 `TEXT` + `_json` 后缀。
+Agent 引擎相关的数据表定义。遵循 ZhiWei 数据库规范：主键 `TEXT` 存 UUID，时间 `TEXT` 存 ISO 8601，布尔 `INTEGER`(0/1)，JSON 用 `TEXT` + `_json` 后缀。
 
 ### 11.1 agent_sessions 表
 
@@ -7507,7 +7507,7 @@ public class AgentArbitraries {
 /**
  * Virtual Thread 使用策略。
  *
- * <p>LifePilot 使用 Java 22 的 Virtual Thread 处理 I/O 密集型任务。
+ * <p>ZhiWei 使用 Java 22 的 Virtual Thread 处理 I/O 密集型任务。
  * Virtual Thread 的优势是轻量级（~1KB 栈空间 vs 平台线程的 ~1MB），
  * 可以创建大量并发任务而不会耗尽系统资源。</p>
  *
@@ -7645,7 +7645,7 @@ public class CacheMonitor {
 
 > **文档结束**
 >
-> 本文档描述了 LifePilot Agent 引擎的完整架构设计，涵盖 14 个核心模块。
+> 本文档描述了 ZhiWei Agent 引擎的完整架构设计，涵盖 14 个核心模块。
 > 实际实现可能根据开发进度和技术约束有所调整，但以下核心设计原则应始终贯穿：
 >
 > 1. **概率决策与确定性状态分离** — AgentLoop + StateReducer

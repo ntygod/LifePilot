@@ -2,7 +2,7 @@
 
 ## 1. 模块定位与职责边界
 
-Skill 市场（模块 25）为 LifePilot 提供 Skill 的发布、发现、安装和版本管理能力。它是 Skill 系统（模块 10）和 MCP 协议支持（模块 4）的上层扩展，不改变已有 Skill 运行时行为，仅增加分发渠道。
+Skill 市场（模块 25）为 ZhiWei 提供 Skill 的发布、发现、安装和版本管理能力。它是 Skill 系统（模块 10）和 MCP 协议支持（模块 4）的上层扩展，不改变已有 Skill 运行时行为，仅增加分发渠道。
 
 ### 核心职责
 
@@ -66,7 +66,7 @@ Skill 市场（模块 25）为 LifePilot 提供 Skill 的发布、发现、安�
 
 - 索引仓库托管一个 `index.json` 文件，包含所有可用 Skill 的元数据
 - 每个 Skill 条目指向其 GitHub 仓库和 YAML 文件路径
-- LifePilot 定期或手动刷新索引缓存
+- ZhiWei 定期或手动刷新索引缓存
 - 支持配置多个索引源（官方 + 社区 + 私有）
 
 索引文件格式：
@@ -133,7 +133,7 @@ SkillRegistry.register()  ← 注册到运行时
 
 ### 3.4 安全扫描策略
 
-参考 OpenClaw Skills 安全审计报告（41.7% 存在漏洞），LifePilot 在安装前执行本地安全扫描：
+参考 OpenClaw Skills 安全审计报告（41.7% 存在漏洞），ZhiWei 在安装前执行本地安全扫描：
 
 | 检查项 | 风险级别 | 处理方式 |
 |--------|---------|---------|
@@ -149,14 +149,14 @@ SkillRegistry.register()  ← 注册到运行时
 
 ### 4.1 为什么选择 GitHub 仓库索引而非自建服务器
 
-- LifePilot 是本地优先的个人助手，不应依赖自建云服务
+- ZhiWei 是本地优先的个人助手，不应依赖自建云服务
 - GitHub 仓库天然提供版本控制、PR 审核流程、CDN 加速
 - LobeChat、Copilot Plugins、IDA Plugin Repository 均采用此模式，已验证可行
 - 社区贡献通过 PR 提交，维护成本低
 
 ### 4.2 为什么不实现依赖解析
 
-- LifePilot Skill 是独立的 YAML 声明，不存在 Skill 间依赖关系
+- ZhiWei Skill 是独立的 YAML 声明，不存在 Skill 间依赖关系
 - Skill 的工具依赖由 DynamicToolRegistry 在运行时解析
 - 避免引入 npm/Maven 式的依赖地狱复杂度
 
@@ -164,7 +164,7 @@ SkillRegistry.register()  ← 注册到运行时
 
 - 本地优先原则，不依赖外部服务
 - 用户可自定义扫描规则
-- 参考 Dify 插件系统的本地校验 + 远程审核双层模式，LifePilot 先实现本地层
+- 参考 Dify 插件系统的本地校验 + 远程审核双层模式，ZhiWei 先实现本地层
 
 ## 5. 与已有模块的集成点
 

@@ -18,7 +18,7 @@ import java.util.List;
  * @param filePath            文件在仓库中的相对路径
  * @param tags                标签列表
  * @param requirements        前置条件说明列表（纯信息性）
- * @param minLifepilotVersion 最低兼容 LifePilot 版本
+ * @param minLifepilotVersion 最低兼容 ZhiWei 版本
  * @param createdAt           创建时间（ISO 8601）
  * @param updatedAt           更新时间（ISO 8601）
  * @param downloads           下载次数

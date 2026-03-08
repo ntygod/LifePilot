@@ -10,7 +10,7 @@ import com.lifepilot.tool.schema.JsonSchema;
 import java.util.List;
 
 /**
- * 工具契约 — LifePilot 工具生态的核心抽象。
+ * 工具契约 — ZhiWei 工具生态的核心抽象。
  *
  * <p>所有工具（无论来源）都必须实现此接口。sealed 修饰符确保
  * 工具类型在编译时完全已知，switch 表达式可以穷举匹配。</p>

@@ -18,11 +18,11 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * LifePilot → MCP Server 反向桥接。
+ * ZhiWei → MCP Server 反向桥接。
  *
- * <p>将 LifePilot 的内置工具暴露为 MCP 工具，
+ * <p>将 ZhiWei 的内置工具暴露为 MCP 工具，
  * 使外部 AI 助手（如 Claude Desktop、Cursor）可以通过
- * MCP 协议调用 LifePilot 的能力。</p>
+ * MCP 协议调用 ZhiWei 的能力。</p>
  *
  * <p>安全约束：仅导出 exportable=true 的工具。</p>
  *
@@ -120,7 +120,7 @@ public class SkillToMcpBridge {
                         "tools", Map.of("listChanged", true)
                 ),
                 "serverInfo", Map.of(
-                        "name", "LifePilot",
+                        "name", "ZhiWei",
                         "version", "1.0.0"
                 )
         );

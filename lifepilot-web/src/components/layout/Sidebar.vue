@@ -214,7 +214,7 @@ function formatRelativeTime(isoString: string): string {
     <SheetContent side="left" class="w-[var(--sidebar-width)] p-0 bg-sidebar-background/80 backdrop-blur-xl dark:bg-sidebar-background/60 dark:backdrop-blur-2xl border-sidebar-border/50">
       <!-- 移动端标题栏（Sheet 自带关闭按钮，此处仅展示标题） -->
       <div class="h-16 px-lg border-b border-border flex items-center">
-        <h1 class="text-lg font-semibold text-foreground tracking-tight">LifePilot</h1>
+        <h1 class="text-lg font-semibold text-foreground tracking-tight">ZhiWei</h1>
       </div>
 
       <!-- 移动端新建按钮 -->
@@ -360,7 +360,7 @@ function formatRelativeTime(isoString: string): string {
   >
     <!-- 顶部标题 + 新建按钮（桌面端） -->
     <div class="h-16 px-lg border-b border-border flex items-center justify-between">
-      <h1 class="text-lg font-semibold text-foreground tracking-tight">LifePilot</h1>
+      <h1 class="text-lg font-semibold text-foreground tracking-tight">ZhiWei</h1>
       <button
         class="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
         title="新建对话"

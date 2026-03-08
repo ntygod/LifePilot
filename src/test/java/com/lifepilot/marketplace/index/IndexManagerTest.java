@@ -205,7 +205,7 @@ class IndexManagerTest {
             List<ExtensionPackage> packages = indexManager.getPackages();
 
             assertThat(packages.getFirst().requirements())
-                    .containsExactly("内置 Todo 和 Schedule 功能（LifePilot 默认包含）");
+                    .containsExactly("内置 Todo 和 Schedule 功能（ZhiWei 默认包含）");
         }
 
         @Test
@@ -353,7 +353,7 @@ class IndexManagerTest {
                 "repoUrl": "https://github.com/lifepilot-extensions/weekly-planner",
                 "filePath": "SKILL.md",
                 "tags": ["productivity", "planning"],
-                "requirements": ["内置 Todo 和 Schedule 功能（LifePilot 默认包含）"],
+                "requirements": ["内置 Todo 和 Schedule 功能（ZhiWei 默认包含）"],
                 "minLifepilotVersion": "1.0.0",
                 "createdAt": "2026-02-01T00:00:00Z",
                 "updatedAt": "2026-03-01T00:00:00Z",
@@ -397,7 +397,7 @@ class IndexManagerTest {
                 "repoUrl": "https://github.com/lifepilot-extensions/weekly-planner",
                 "filePath": "SKILL.md",
                 "tags": ["productivity", "planning"],
-                "requirements": ["内置 Todo 和 Schedule 功能（LifePilot 默认包含）"],
+                "requirements": ["内置 Todo 和 Schedule 功能（ZhiWei 默认包含）"],
                 "minLifepilotVersion": "1.0.0",
                 "createdAt": "2026-02-01T00:00:00Z",
                 "updatedAt": "2026-03-05T00:00:00Z",

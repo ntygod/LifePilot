@@ -84,9 +84,9 @@ AI Agent：
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-这个扩展模型直接映射到 LifePilot 的可观测性架构：
+这个扩展模型直接映射到 ZhiWei 的可观测性架构：
 
-| 支柱 | LifePilot 实现 | 核心组件 |
+| 支柱 | ZhiWei 实现 | 核心组件 |
 |------|---------------|---------|
 | **Traces** | 步骤级完整决策轨迹 | `TraceRecorder` + `TraceAdvisor` |
 | **Metrics** | Token/延迟/错误率/缓存命中率 | `MetricsCollector` + Actuator |
@@ -95,7 +95,7 @@ AI Agent：
 
 ### 1.2 前沿研究基础
 
-LifePilot 的可观测性与护栏引擎设计建立在 2025-2026 年 AI Agent 领域的前沿研究和工程实践之上。
+ZhiWei 的可观测性与护栏引擎设计建立在 2025-2026 年 AI Agent 领域的前沿研究和工程实践之上。
 
 #### 1.2.1 OpenTelemetry GenAI 语义约定
 
@@ -110,7 +110,7 @@ LifePilot 的可观测性与护栏引擎设计建立在 2025-2026 年 AI Agent �
 - `gen_ai.request.temperature`：温度参数
 - `gen_ai.response.finish_reasons`：完成原因
 
-LifePilot 虽然不直接依赖 OpenTelemetry SDK（避免引入重量级依赖），但在 Trace 数据模型中
+ZhiWei 虽然不直接依赖 OpenTelemetry SDK（避免引入重量级依赖），但在 Trace 数据模型中
 完全对齐了 GenAI 语义约定的属性命名，确保未来可以无缝导出到 OpenTelemetry 后端。
 
 #### 1.2.2 MintMCP — AI Agent 可观测性与 OpenTelemetry
@@ -123,7 +123,7 @@ AI Agent 的可观测性需要在传统 OpenTelemetry 的基础上增加以下�
 - **Token 经济学**：每个 Span 都应该记录 Token 消耗，支持成本归因分析
 - **多 Agent 协作追踪**：SubAgent 的 Trace 应该作为父 Agent Trace 的子 Span
 
-LifePilot 的映射：`TraceStep` 的 sealed interface 设计直接实现了这些维度——
+ZhiWei 的映射：`TraceStep` 的 sealed interface 设计直接实现了这些维度——
 `LlmCallStep`、`ToolCallStep`、`GuardrailStep` 等不同类型的步骤记录了各自维度的完整信息。
 
 #### 1.2.3 Iterathon — AI Agent 生产环境可观测性
@@ -136,7 +136,7 @@ AI Agent 可观测性的关键挑战：
 - **实时性要求**：开发者需要实时查看 Agent 的执行状态，而不是事后分析日志
 - **成本归因**：需要精确知道每个功能、每个用户、每个时间段的 Token 消耗
 
-LifePilot 的应对：
+ZhiWei 的应对：
 - Trace 数据写入 SQLite，利用 FTS5 全文索引支持高效查询
 - `DataRedactor` 在 Trace 写入前自动脱敏敏感数据
 - `TraceRecorder` 支持实时步骤回调，前端可以通过 SSE 实时展示执行进度
@@ -147,7 +147,7 @@ LifePilot 的应对：
 [AG2](https://docs.ag2.ai/) 的 OpenTelemetry Tracing 实现为多 Agent 系统提供了追踪方案。
 其核心思想是：每个 Agent 的执行是一个 Trace，Agent 之间的调用通过 Span 链接关联。
 
-LifePilot 的映射：虽然 LifePilot 当前是单 Agent 架构（带 SubAgent），
+ZhiWei 的映射：虽然 ZhiWei 当前是单 Agent 架构（带 SubAgent），
 但 Trace 数据模型预留了 `parentTraceId` 字段，支持未来扩展到多 Agent 协作场景。
 
 #### 1.2.5 Braintrust — AI Agent 评估框架
@@ -160,7 +160,7 @@ AI Agent 评估的核心理念：**不只评估最终输出，还要评估完整
 - 步骤数是否最少？（可能完成了任务，但浪费了大量步骤）
 - Token 消耗是否合理？（可能结果正确，但消耗了 10 倍的 Token）
 
-LifePilot 的 `TrajectoryEvaluator` 直接实现了 Braintrust 的评估理念，
+ZhiWei 的 `TrajectoryEvaluator` 直接实现了 Braintrust 的评估理念，
 支持五个维度的轨迹评估。
 
 #### 1.2.6 GetMaxim.ai — 评估 Agentic AI 系统
@@ -170,7 +170,7 @@ LifePilot 的 `TrajectoryEvaluator` 直接实现了 Braintrust 的评估理念�
 - **在线评估**：每次 Agent 执行完成后自动评估，用于实时监控质量
 - **离线回放**：加载历史 Trace，重新评估，用于回归测试和性能分析
 
-LifePilot 同时支持这两种模式：在线评估通过 `TrajectoryEvaluator.evaluateOnline()` 实现，
+ZhiWei 同时支持这两种模式：在线评估通过 `TrajectoryEvaluator.evaluateOnline()` 实现，
 离线回放通过 `TraceQuery.replay()` + `TrajectoryEvaluator.evaluateOffline()` 实现。
 
 #### 1.2.7 Snyk — AI Agent 安全护栏
@@ -183,14 +183,14 @@ AI Agent 的安全护栏必须满足以下原则：
 - **分级执行**：不同风险等级的操作有不同的审批流程
 - **实时更新**：策略可以在运行时动态更新，无需重启
 
-LifePilot 的 `GuardrailEngine` 完全实现了这些原则。
+ZhiWei 的 `GuardrailEngine` 完全实现了这些原则。
 
 #### 1.2.8 Galileo.ai — AI Agent 护栏指南
 
 [Galileo.ai](https://galileo.ai/blog/ai-agent-guardrails-guide) 的护栏指南提供了
 Agent 护栏的分类框架：
 
-| 护栏类型 | 说明 | LifePilot 实现 |
+| 护栏类型 | 说明 | ZhiWei 实现 |
 |---------|------|---------------|
 | **输入护栏** | 检查用户输入是否安全 | `GuardrailAdvisor` pre-call 检查 |
 | **输出护栏** | 检查 LLM 输出是否合规 | `GuardrailAdvisor` post-call 验证 |
@@ -209,7 +209,7 @@ Agent 护栏的分类框架：
 
 ### 1.3 五条核心设计原则
 
-LifePilot 可观测性与护栏引擎遵循五条核心设计原则。
+ZhiWei 可观测性与护栏引擎遵循五条核心设计原则。
 这些原则不是抽象的口号，而是直接映射到具体的代码实现：
 
 #### 原则 1：全链路追踪 — 从用户输入到最终响应的完整决策轨迹
@@ -249,7 +249,7 @@ Trace 不仅记录"发生了什么"，还记录"为什么做出这个决策"。
 
 #### 原则 2：零侵入 — 通过 Spring AI Advisor 模式横切注入
 
-可观测性和护栏逻辑不应该侵入业务代码。LifePilot 通过 Spring AI 的 Advisor 模式，
+可观测性和护栏逻辑不应该侵入业务代码。ZhiWei 通过 Spring AI 的 Advisor 模式，
 将 Trace 记录和护栏检查作为横切关注点自动注入到 LLM 调用链路中。
 
 ```java
@@ -277,7 +277,7 @@ private Action decide(AgentState state, AgentContext context) {
 #### 原则 3：Token 经济学 — 每次 LLM 调用的 Token 消耗都被精确记录和归因
 
 Token 是 AI Agent 的"货币"。每次 LLM 调用都消耗 Token，而 Token 直接对应成本。
-LifePilot 精确记录每次调用的 Token 消耗，并支持多维度的成本归因分析。
+ZhiWei 精确记录每次调用的 Token 消耗，并支持多维度的成本归因分析。
 
 ```java
 /**
@@ -1189,9 +1189,9 @@ public class TraceContext {
 
 ### 2.4 OpenTelemetry GenAI 语义约定映射
 
-LifePilot 的 Trace 数据模型与 OpenTelemetry GenAI 语义约定的完整映射关系：
+ZhiWei 的 Trace 数据模型与 OpenTelemetry GenAI 语义约定的完整映射关系：
 
-| OpenTelemetry GenAI 属性 | LifePilot 字段 | 说明 |
+| OpenTelemetry GenAI 属性 | ZhiWei 字段 | 说明 |
 |--------------------------|---------------|------|
 | `trace_id` | `TraceRecord.traceId` | 追踪 ID |
 | `span_id` | `TraceStep.stepIndex` | 步骤序号（简化为整数） |
@@ -3579,7 +3579,7 @@ public record TaskBenchmark(
 
 ### 7.1 设计理念 — Policy-as-Code，在 LLM 之外强制执行
 
-护栏引擎是 LifePilot 安全架构的核心。它的设计理念来自
+护栏引擎是 ZhiWei 安全架构的核心。它的设计理念来自
 [Snyk](https://snyk.io/blog/future-of-ai-agent-security-guardrails/) 的 AI Agent 安全护栏研究
 和 [Galileo.ai](https://galileo.ai/blog/ai-agent-guardrails-guide) 的护栏指南：
 
@@ -3603,7 +3603,7 @@ public record TaskBenchmark(
 │  └─────────────────────────────────────────────────────────────────┘    │
 │                                                                         │
 │  ┌─────────────────────────────────────────────────────────────────┐    │
-│  │  LifePilot 方式：代码强制执行                                    │    │
+│  │  ZhiWei 方式：代码强制执行                                    │    │
 │  │                                                                 │    │
 │  │  LLM: "我要调用 file.delete 删除 /important/data"               │    │
 │  │  GuardrailEngine: 检查 file.delete → 风险等级 CRITICAL          │    │
@@ -4674,7 +4674,7 @@ public class GuardrailConfirmationRequiredException
 
 ### 9.1 设计理念
 
-`DataRedactor` 是 LifePilot 数据安全的最后一道防线。它确保敏感数据
+`DataRedactor` 是 ZhiWei 数据安全的最后一道防线。它确保敏感数据
 （手机号、身份证号、银行卡号、邮箱等）在以下场景中被自动脱敏：
 
 - 发送到云端 LLM 之前（防止敏感数据泄露到第三方）
@@ -4808,7 +4808,7 @@ import java.util.regex.Pattern;
 /**
  * 敏感数据脱敏器 — 自动识别和脱敏敏感数据。
  *
- * <p>DataRedactor 是 LifePilot 数据安全的核心组件。
+ * <p>DataRedactor 是 ZhiWei 数据安全的核心组件。
  * 它在以下场景中自动执行脱敏：
  * <ul>
  *   <li>云端 LLM 调用前：防止敏感数据泄露到第三方</li>
@@ -5426,7 +5426,7 @@ public enum ApprovalStatus {
 
 ### 11.1 核心指标定义
 
-LifePilot 的可观测性指标分为四大类：Agent 指标、LLM 指标、工具指标、记忆指标。
+ZhiWei 的可观测性指标分为四大类：Agent 指标、LLM 指标、工具指标、记忆指标。
 所有指标通过 `MetricsCollector` 收集，通过 Spring Boot Actuator 暴露。
 
 ```
@@ -7576,7 +7576,7 @@ class MetricsCollectorPropertyTest {
 
 > **文档结束**
 >
-> 本文档覆盖了 LifePilot 可观测性与护栏引擎的完整架构设计，包括：
+> 本文档覆盖了 ZhiWei 可观测性与护栏引擎的完整架构设计，包括：
 > - Trace 数据模型与 OpenTelemetry GenAI 语义约定对齐
 > - TraceRecorder 的 SQLite 持久化与 Virtual Thread 异步写入
 > - TraceAdvisor 的 Spring AI Advisor 集成

@@ -1,4 +1,4 @@
-## LifePilot 记忆系统：实现 vs 设计对照笔记
+## ZhiWei 记忆系统：实现 vs 设计对照笔记
 
 > 目的：梳理当前 `com.lifepilot.memory` 相关代码与《memory-system.md》等设计文档的差异，作为后续逐条拆解与改造的工作底稿。
 

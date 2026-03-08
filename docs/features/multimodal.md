@@ -4,7 +4,7 @@
 
 > ⚠️ 本文档描述的是目标功能设计，尚未实现。
 
-支持图片理解、视频理解、文档解析、语音输入（STT）和语音输出（TTS），扩展 LifePilot 从纯文本交互到多模态交互。
+支持图片理解、视频理解、文档解析、语音输入（STT）和语音输出（TTS），扩展 ZhiWei 从纯文本交互到多模态交互。
 
 ## 1. 图片理解
 
@@ -121,7 +121,7 @@ WAV、MP3、OGG、M4A、FLAC、WebM。单个音频文件最大 25MB，最长 5 �
 
 采用"本地优先"级联降级策略（借鉴 [OpenClaw](https://github.com/openclaw/openclaw) 的音频处理架构）：
 
-1. **本地 Whisper CLI**（优先）：用户自行安装 whisper.cpp，LifePilot 自动检测 PATH。零成本、完全隐私
+1. **本地 Whisper CLI**（优先）：用户自行安装 whisper.cpp，ZhiWei 自动检测 PATH。零成本、完全隐私
 2. **云端 STT Provider**（降级）：OpenAI Whisper API（`whisper-1` / `gpt-4o-transcribe`），精度更高但需要 API Key
 
 ### 5.4 处理流程

@@ -209,8 +209,8 @@ class AgentResponseLoss_Preservation_保持测试 {
 
         // roleDefinition 中的标志性内容
         assertThat(systemPrompt)
-                .as("系统提示词应包含 roleDefinition 中的 LifePilot 标识")
-                .contains("LifePilot");
+                .as("系统提示词应包含 roleDefinition 中的 ZhiWei 标识")
+                .contains("ZhiWei");
 
         // 提示词不应为空
         assertThat(systemPrompt)

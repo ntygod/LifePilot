@@ -43,7 +43,7 @@ public class VersionResolver {
     /**
      * 检查当前应用版本是否满足最低版本要求。
      *
-     * @param currentVersion 当前 LifePilot 版本
+     * @param currentVersion 当前 ZhiWei 版本
      * @param minVersion     扩展要求的最低版本
      * @return true 表示兼容（当前版本 ≥ 最低版本）
      * @throws IllegalArgumentException 版本格式不合法

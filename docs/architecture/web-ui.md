@@ -8,7 +8,7 @@
 
 ## 1. 模块定位与职责边界
 
-Web UI 模块为 LifePilot 提供浏览器端交互界面，是 Phase 5 的核心交付物。
+Web UI 模块为 ZhiWei 提供浏览器端交互界面，是 Phase 5 的核心交付物。
 
 **核心架构决策：前后端彻底分离。**
 
@@ -157,7 +157,7 @@ WebChannelAdapter 的核心职责：
 | Spring WebFlux `Flux<ServerSentEvent>` | 响应式原生支持 | 需引入 WebFlux 依赖，与现有 MVC 栈冲突 | ❌ 不采用 |
 | WebSocket | 双向通信 | AI 对话场景只需服务端→客户端单向推送，过度设计 | ❌ 不采用 |
 
-选择 `SseEmitter` 的理由：LifePilot 已使用 Spring MVC（`spring-boot-starter-web`），SSE 是 AI 对话流式响应的行业标准方案（OpenAI、DeepSeek、通义千问等均采用 SSE），且 `SseEmitter` 在 Virtual Thread 环境下表现良好。
+选择 `SseEmitter` 的理由：ZhiWei 已使用 Spring MVC（`spring-boot-starter-web`），SSE 是 AI 对话流式响应的行业标准方案（OpenAI、DeepSeek、通义千问等均采用 SSE），且 `SseEmitter` 在 Virtual Thread 环境下表现良好。
 
 #### 3.2.5 CORS 配置
 
@@ -603,15 +603,15 @@ Phase 5 采用 Session 认证（已在 Gateway Auth 中间件中实现）：
 - 用户交互通过 Canvas Server 转发为 Tool Call 回传 Agent
 - 与 Google A2UI 协议不同：OpenClaw 的 A2UI 是 HTML 属性标注方案，Google A2UI 是 JSON 邻接表组件树方案
 
-**对 LifePilot 的借鉴**：
-- Gateway 统一入口 + Channel 适配器模式（LifePilot 已采用类似架构）
+**对 ZhiWei 的借鉴**：
+- Gateway 统一入口 + Channel 适配器模式（ZhiWei 已采用类似架构）
 - Canvas 独立进程隔离思路（A2UI 渲染与主服务分离，崩溃不影响核心对话）
-- 多 Agent 路由按 Channel/Session 分发（LifePilot Phase 6 多 Agent 协作可参考）
+- 多 Agent 路由按 Channel/Session 分发（ZhiWei Phase 6 多 Agent 协作可参考）
 
-**与 LifePilot 的差异**：
-- OpenClaw Web UI 内嵌于 Gateway，非独立前端项目；LifePilot 采用前后端彻底分离
-- OpenClaw 使用 Lit Web Components；LifePilot 使用 Vue 3 + shadcn-vue
-- OpenClaw A2UI 是 HTML 属性方案；LifePilot 采用 Google A2UI JSON 协议（更标准化、更易扩展）
+**与 ZhiWei 的差异**：
+- OpenClaw Web UI 内嵌于 Gateway，非独立前端项目；ZhiWei 采用前后端彻底分离
+- OpenClaw 使用 Lit Web Components；ZhiWei 使用 Vue 3 + shadcn-vue
+- OpenClaw A2UI 是 HTML 属性方案；ZhiWei 采用 Google A2UI JSON 协议（更标准化、更易扩展）
 
 > 参考来源：[OpenClaw Architecture Overview](https://ppaolo.substack.com/p/openclaw-system-architecture-overview)、[OpenClaw Deployment Architectures](https://flowzap.xyz/blog/every-way-to-deploy-openclaw)、[OpenClaw Source Code Review](https://www.moely.ai/resources/openclaw-framework-source-code-review)。内容已重新组织表述。
 
@@ -633,23 +633,23 @@ Phase 5 采用 Session 认证（已在 Gateway Auth 中间件中实现）：
 - 中间件管道：FastAPI 中间件处理认证、RBAC、请求路由、工具执行
 - 消息树结构：支持对话分支（Message History Tree），每条消息可有多个子回复
 - RAG 知识系统：文档摄入 → 分块 → 嵌入 → 向量检索 → 重排序，完整 RAG 管线
-- Pipeline 系统：可插拔的处理管线（类似 LifePilot 的中间件管道）
+- Pipeline 系统：可插拔的处理管线（类似 ZhiWei 的中间件管道）
 
 **流式响应方案**：
 - LLM 响应使用 SSE（Server-Sent Events）流式传输
 - WebSocket 用于系统事件广播（用户状态、通知等），非 LLM 流式响应
 - 支持多模型并行对话（Multi-Model Response Display）
 
-**对 LifePilot 的借鉴**：
-- 消息树结构（对话分支）是高级对话 UI 的标配，LifePilot 可在后续版本考虑
-- 代理架构（前端不直接调用 LLM）与 LifePilot 的 Gateway 中间件管道理念一致
-- TipTap 富文本编辑器集成方案（LifePilot 可在模块 19 考虑）
-- WebSocket + SSE 混合方案：WebSocket 用于系统事件，SSE 用于 LLM 流式响应（LifePilot Phase 5 先用纯 SSE，后续可扩展 WebSocket）
+**对 ZhiWei 的借鉴**：
+- 消息树结构（对话分支）是高级对话 UI 的标配，ZhiWei 可在后续版本考虑
+- 代理架构（前端不直接调用 LLM）与 ZhiWei 的 Gateway 中间件管道理念一致
+- TipTap 富文本编辑器集成方案（ZhiWei 可在模块 19 考虑）
+- WebSocket + SSE 混合方案：WebSocket 用于系统事件，SSE 用于 LLM 流式响应（ZhiWei Phase 5 先用纯 SSE，后续可扩展 WebSocket）
 
-**与 LifePilot 的差异**：
-- Open WebUI 前后端同仓库（SvelteKit 构建后由 FastAPI 提供静态文件）；LifePilot 前后端彻底分离
-- Open WebUI 使用 Python FastAPI；LifePilot 使用 Java Spring Boot
-- Open WebUI 无 Generative UI 能力；LifePilot 内置 A2UI 协议支持
+**与 ZhiWei 的差异**：
+- Open WebUI 前后端同仓库（SvelteKit 构建后由 FastAPI 提供静态文件）；ZhiWei 前后端彻底分离
+- Open WebUI 使用 Python FastAPI；ZhiWei 使用 Java Spring Boot
+- Open WebUI 无 Generative UI 能力；ZhiWei 内置 A2UI 协议支持
 
 > 参考来源：[Open WebUI Architecture](https://deepwiki.com/open-webui/open-webui/2-architecture)、[Open WebUI Frontend Architecture](https://deepwiki.com/open-webui/open-webui/2.1-frontend-architecture)、[Open WebUI Backend Architecture](https://deepwiki.com/open-webui/open-webui/2.2-backend-architecture)。内容已重新组织表述。
 
@@ -683,23 +683,23 @@ Phase 5 采用 Session 认证（已在 Gateway Auth 中间件中实现）：
 - 非声明式协议，而是代码生成 + 沙箱执行模式
 - 与 A2UI 的 JSON 声明式方案有本质区别
 
-**对 LifePilot 的借鉴**：
-- `@lobehub/ui` 专用 AI 组件库的思路：LifePilot 可将 A2UI 组件封装为可复用的 Vue 组件库
-- Thinking UI（推理过程展示）：LifePilot 可在 SSE 流中增加 `thinking` 事件类型
-- zustand 的轻量状态管理理念与 Pinia 类似，验证了 LifePilot 选择 Pinia 的合理性
-- tRPC 端到端类型安全：LifePilot 前后端分离场景下可考虑 OpenAPI 生成 TypeScript 客户端实现类似效果
+**对 ZhiWei 的借鉴**：
+- `@lobehub/ui` 专用 AI 组件库的思路：ZhiWei 可将 A2UI 组件封装为可复用的 Vue 组件库
+- Thinking UI（推理过程展示）：ZhiWei 可在 SSE 流中增加 `thinking` 事件类型
+- zustand 的轻量状态管理理念与 Pinia 类似，验证了 ZhiWei 选择 Pinia 的合理性
+- tRPC 端到端类型安全：ZhiWei 前后端分离场景下可考虑 OpenAPI 生成 TypeScript 客户端实现类似效果
 
-**与 LifePilot 的差异**：
-- LobeChat 使用 React + Next.js（SSR/SSG）；LifePilot 使用 Vue 3 + Vite（纯 SPA）
-- LobeChat 使用 PostgreSQL；LifePilot 使用 SQLite（单 JAR 部署）
-- LobeChat Artifacts 是代码生成模式；LifePilot A2UI 是声明式 JSON 协议（更轻量、更安全）
-- LobeChat 是 Monorepo 全栈项目；LifePilot 前后端彻底分离
+**与 ZhiWei 的差异**：
+- LobeChat 使用 React + Next.js（SSR/SSG）；ZhiWei 使用 Vue 3 + Vite（纯 SPA）
+- LobeChat 使用 PostgreSQL；ZhiWei 使用 SQLite（单 JAR 部署）
+- LobeChat Artifacts 是代码生成模式；ZhiWei A2UI 是声明式 JSON 协议（更轻量、更安全）
+- LobeChat 是 Monorepo 全栈项目；ZhiWei 前后端彻底分离
 
 > 参考来源：[LobeChat Development Guide](https://lobehub.com/docs/development/start)、[LobeChat GitHub](https://github.com/lobehub/lobe-chat)、[@lobehub/ui](https://github.com/lobehub/lobe-ui)。内容已重新组织表述。
 
 #### 8.3.4 竞品对比矩阵
 
-| 维度 | OpenClaw | Open WebUI | LobeChat | LifePilot（规划） |
+| 维度 | OpenClaw | Open WebUI | LobeChat | ZhiWei（规划） |
 |------|----------|------------|----------|-----------------|
 | **前端框架** | Lit Web Components | SvelteKit | React + Next.js | Vue 3 + Vite |
 | **后端框架** | Node.js (Gateway) | Python FastAPI | Next.js API + tRPC | Java Spring Boot |
@@ -714,10 +714,10 @@ Phase 5 采用 Session 认证（已在 Gateway Auth 中间件中实现）：
 
 #### 8.3.5 竞品分析结论
 
-1. **前后端分离是趋势**：OpenClaw 内嵌 Web UI 的方案虽然部署简单，但限制了前端独立演进。Open WebUI 和 LobeChat 虽然同仓库，但前后端分层清晰。LifePilot 的彻底分离方案最为灵活，为多端接入奠定基础。
+1. **前后端分离是趋势**：OpenClaw 内嵌 Web UI 的方案虽然部署简单，但限制了前端独立演进。Open WebUI 和 LobeChat 虽然同仓库，但前后端分层清晰。ZhiWei 的彻底分离方案最为灵活，为多端接入奠定基础。
 
-2. **Generative UI 差异化明显**：三个竞品中只有 OpenClaw 有 Generative UI 能力（HTML 属性方案），LobeChat 的 Artifacts 是代码沙箱模式。LifePilot 采用 Google A2UI JSON 协议是更标准化、更安全的方案，这是重要的差异化优势。
+2. **Generative UI 差异化明显**：三个竞品中只有 OpenClaw 有 Generative UI 能力（HTML 属性方案），LobeChat 的 Artifacts 是代码沙箱模式。ZhiWei 采用 Google A2UI JSON 协议是更标准化、更安全的方案，这是重要的差异化优势。
 
-3. **SSE 是 AI 流式响应的行业共识**：Open WebUI 和 LobeChat 均使用 SSE 传输 LLM 响应，OpenClaw 使用 WebSocket（因其 Gateway 架构天然基于 WebSocket）。LifePilot 选择 SSE 符合行业主流。
+3. **SSE 是 AI 流式响应的行业共识**：Open WebUI 和 LobeChat 均使用 SSE 传输 LLM 响应，OpenClaw 使用 WebSocket（因其 Gateway 架构天然基于 WebSocket）。ZhiWei 选择 SSE 符合行业主流。
 
-4. **专用 AI 组件库值得借鉴**：LobeChat 的 `@lobehub/ui` 证明了 AI 对话场景需要专用组件（ChatItem、Markdown 渲染、Thinking UI 等）。LifePilot 的 A2UI 组件目录 + shadcn-vue 基础组件可以形成类似的专用组件体系。
+4. **专用 AI 组件库值得借鉴**：LobeChat 的 `@lobehub/ui` 证明了 AI 对话场景需要专用组件（ChatItem、Markdown 渲染、Thinking UI 等）。ZhiWei 的 A2UI 组件目录 + shadcn-vue 基础组件可以形成类似的专用组件体系。

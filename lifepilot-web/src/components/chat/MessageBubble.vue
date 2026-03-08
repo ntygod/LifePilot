@@ -98,7 +98,7 @@ const isCollapsible = computed(() =>
         :class="message.role === 'user' ? 'justify-end' : ''"
       >
         <template v-if="message.role === 'assistant'">
-          <span class="font-semibold text-foreground">LifePilot 助手</span>
+          <span class="font-semibold text-foreground">ZhiWei 助手</span>
           <span>•</span>
           <time :datetime="new Date(message.timestamp).toISOString()">{{ timeLabel }}</time>
         </template>

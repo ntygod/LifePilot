@@ -10,7 +10,7 @@
 
 ## 1. 模块定位与职责边界
 
-Agentic Evals 是 LifePilot 的开发期 Agent 质量评估框架，提供系统性的 Agent 决策质量回归验证能力。它与可观测性模块（TraceRecorder / GuardrailEngine）互补：可观测性关注"记录发生了什么"，Agentic Evals 关注"评判做得好不好"。
+Agentic Evals 是 ZhiWei 的开发期 Agent 质量评估框架，提供系统性的 Agent 决策质量回归验证能力。它与可观测性模块（TraceRecorder / GuardrailEngine）互补：可观测性关注"记录发生了什么"，Agentic Evals 关注"评判做得好不好"。
 
 ### 职责边界
 

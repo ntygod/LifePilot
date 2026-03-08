@@ -35,14 +35,14 @@
   用户想起来 → 提问 → 助手回答
   问题：用户忘记提问 = 助手无用
 
-主动模式（LifePilot）：
+主动模式（ZhiWei）：
   信号采集 → 规则过滤 → LLM 评估 → 智能通知
   优势：用户不需要记住任何事，助手主动关怀
 ```
 
 但主动通知有一个致命风险：**通知疲劳（Notification Fatigue）**。如果助手频繁打扰用户，用户会关闭通知甚至卸载应用。
 
-LifePilot 的核心设计命题是：**在"主动关怀"和"避免打扰"之间找到精确的平衡点**。
+ZhiWei 的核心设计命题是：**在"主动关怀"和"避免打扰"之间找到精确的平衡点**。
 
 ### 1.2 前沿研究基础
 
@@ -50,7 +50,7 @@ LifePilot 的核心设计命题是：**在"主动关怀"和"避免打扰"之间�
 
 [arxiv:2003.02097 — A Snooze-less User-Aware Notification System](https://ar5iv.labs.arxiv.org/html/2003.02097) 提出了一个关键框架：智能通知系统应基于事件严重性、用户偏好和时间表来发送、抑制或聚合通知，从而减少用户忽略或延后通知的需要。
 
-LifePilot 的映射：`RuleEngine` 实现了基于规则的快速过滤（免打扰时段、冷却期、类型开关），`FrequencyStateManager` 实现了基于用户反馈的自适应降频。
+ZhiWei 的映射：`RuleEngine` 实现了基于规则的快速过滤（免打扰时段、冷却期、类型开关），`FrequencyStateManager` 实现了基于用户反馈的自适应降频。
 
 Content was rephrased for compliance with licensing restrictions.
 
@@ -58,7 +58,7 @@ Content was rephrased for compliance with licensing restrictions.
 
 2025-2026 年 AI Agent 领域的一个重要趋势是从被动响应转向主动预期。[nodemerge.com](https://www.nodemerge.com/blog/ai-agent-predictions-2026) 指出，到 2026 年我们将看到高自主性系统的兴起——主动 AI 观察用户行为、预期需求，并在用户提问之前建议操作。
 
-LifePilot 的 `ProactiveReasoner` 正是这一趋势的实现：通过信号采集感知用户状态，通过规则引擎快速过滤，通过 LLM 评估决定是否值得打扰。
+ZhiWei 的 `ProactiveReasoner` 正是这一趋势的实现：通过信号采集感知用户状态，通过规则引擎快速过滤，通过 LLM 评估决定是否值得打扰。
 
 Content was rephrased for compliance with licensing restrictions.
 
@@ -66,7 +66,7 @@ Content was rephrased for compliance with licensing restrictions.
 
 [liminary.io](https://liminary.io/blog/proactive-recall-vs-agentic-research) 提出了一个重要的范式转换：从拉取式检索（用户停下工作去搜索）到推送式交付（AI 在合适时机主动推送相关信息）。
 
-LifePilot 的主动推理引擎实现了这个转换：用户不需要主动查询待办截止日期或日程冲突，系统会在合适的时机主动推送。
+ZhiWei 的主动推理引擎实现了这个转换：用户不需要主动查询待办截止日期或日程冲突，系统会在合适的时机主动推送。
 
 Content was rephrased for compliance with licensing restrictions.
 
@@ -74,7 +74,7 @@ Content was rephrased for compliance with licensing restrictions.
 
 [IBM — Alert Fatigue Reduction with AI Agents](https://www.ibm.com/think/insights/alert-fatigue-reduction-with-ai-agents) 指出，告警疲劳的核心问题不是数据量，而是数据质量和上下文。AI Agent 可以通过理解上下文来过滤低价值告警，只推送真正需要关注的信息。
 
-LifePilot 的两阶段架构正是这个思路：Stage 1（规则引擎）过滤明显不需要的通知，Stage 2（LLM 评估）基于用户上下文判断通知价值。
+ZhiWei 的两阶段架构正是这个思路：Stage 1（规则引擎）过滤明显不需要的通知，Stage 2（LLM 评估）基于用户上下文判断通知价值。
 
 Content was rephrased for compliance with licensing restrictions.
 
@@ -418,9 +418,9 @@ GatewayNotificationChannel
 | Microsoft Cortana (已停) | ✅ 基于 Office 数据 | ❌ 无 | Office 365 数据 | 系统通知 |
 | OpenClaw | ❌ 被动响应 | — | — | — |
 | AstrBot | ⚠️ 被动模型 | ❌ 无 | 消息平台事件 | 消息平台 |
-| LifePilot | ✅ 两阶段推理 | ✅ 三态自适应 | 时间+任务+习惯+行为 | 可扩展通道 |
+| ZhiWei | ✅ 两阶段推理 | ✅ 三态自适应 | 时间+任务+习惯+行为 | 可扩展通道 |
 
-### 10.2 LifePilot 的差异化优势
+### 10.2 ZhiWei 的差异化优势
 
 1. **两阶段架构**：规则引擎快速过滤 + LLM 深度评估，兼顾效率和智能
 2. **三态自适应降频**：基于用户反馈自动调整频率，避免通知疲劳
@@ -430,7 +430,7 @@ GatewayNotificationChannel
 
 ### 10.3 与 ROADMAP 中竞品分析的关联
 
-ROADMAP §6（AstrBot 深度分析）指出 AstrBot 采用被动响应模型，不具备主动推理能力。ROADMAP §7（OpenClaw 深度分析）同样确认 OpenClaw 是纯被动架构。LifePilot 的主动推理引擎是相对于这两个竞品的核心差异化能力。
+ROADMAP §6（AstrBot 深度分析）指出 AstrBot 采用被动响应模型，不具备主动推理能力。ROADMAP §7（OpenClaw 深度分析）同样确认 OpenClaw 是纯被动架构。ZhiWei 的主动推理引擎是相对于这两个竞品的核心差异化能力。
 
 ---
 

@@ -1,5 +1,5 @@
 /**
- * 反向桥接 — 将 LifePilot 内置工具暴露为 MCP Server。
+ * 反向桥接 — 将 ZhiWei 内置工具暴露为 MCP Server。
  *
  * <p>{@link com.lifepilot.mcp.bridge.SkillToMcpBridge} 筛选可导出工具并处理
  * MCP 协议请求；{@link com.lifepilot.mcp.bridge.McpServerEndpoint} 提供

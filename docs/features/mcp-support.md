@@ -4,11 +4,11 @@
 
 > ✅ MCP 协议支持已实现（Phase 1，模块 4），包括 McpClient、StdioTransport、StreamableHttpTransport、McpToolAdapter、McpServerRegistry、SkillToMcpBridge。
 
-LifePilot 已实现 MCP（Model Context Protocol）客户端，可以连接任意 MCP Server，接入日益丰富的 MCP 工具生态。
+ZhiWei 已实现 MCP（Model Context Protocol）客户端，可以连接任意 MCP Server，接入日益丰富的 MCP 工具生态。
 
 ## 1. 为什么需要 MCP？
 
-MCP 已成为 AI Agent 工具调用的事实标准（Anthropic / OpenAI / Google / Microsoft 均支持）。通过 MCP，LifePilot 可以连接：
+MCP 已成为 AI Agent 工具调用的事实标准（Anthropic / OpenAI / Google / Microsoft 均支持）。通过 MCP，ZhiWei 可以连接：
 
 - 文件系统操作工具
 - 数据库查询工具
@@ -42,7 +42,7 @@ lifepilot:
 
 ## 3. 双向桥接
 
-不仅将能连接外部 MCP Server，LifePilot 的内置 Skill 也将通过桥接层暴露为 MCP Tool，供其他 MCP 客户端调用：
+不仅将能连接外部 MCP Server，ZhiWei 的内置 Skill 也将通过桥接层暴露为 MCP Tool，供其他 MCP 客户端调用：
 
 ```
 外部 MCP Server → McpToolAdapter → 统一工具注册中心 ← SkillToMcpBridge ← 内置 Skill

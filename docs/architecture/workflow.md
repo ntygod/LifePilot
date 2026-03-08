@@ -30,19 +30,19 @@
 
 ### 1.1 核心命题：声明式自动化编排
 
-传统自动化工具要求用户编写代码（Temporal、LittleHorse）或学习复杂的 BPMN XML（Flowable）。LifePilot 的目标用户是个人效率管理者而非开发者，核心命题是：**让非程序员也能通过 YAML 声明式定义创建复杂的多步骤自动化流程**。
+传统自动化工具要求用户编写代码（Temporal、LittleHorse）或学习复杂的 BPMN XML（Flowable）。ZhiWei 的目标用户是个人效率管理者而非开发者，核心命题是：**让非程序员也能通过 YAML 声明式定义创建复杂的多步骤自动化流程**。
 
 ```
 传统自动化（Code-as-Workflow）：
   开发者编写 Java/Go/Python → 编译部署 → 执行
   问题：门槛高，个人用户无法使用
 
-LifePilot 自动化（YAML 声明式）：
+ZhiWei 自动化（YAML 声明式）：
   用户编写 YAML → 引擎解析 → 状态机驱动执行
   优势：零代码，热加载，即写即用
 ```
 
-但声明式也有固有局限：表达能力不如通用编程语言。LifePilot 的设计策略是**覆盖 80% 的常见场景**（顺序、条件、循环、并行、子工作流），对于超出 YAML 表达能力的复杂逻辑，通过 LlmStep 和 SkillStep 委托给 AI 或自定义 Skill 处理。
+但声明式也有固有局限：表达能力不如通用编程语言。ZhiWei 的设计策略是**覆盖 80% 的常见场景**（顺序、条件、循环、并行、子工作流），对于超出 YAML 表达能力的复杂逻辑，通过 LlmStep 和 SkillStep 委托给 AI 或自定义 Skill 处理。
 
 ### 1.2 五条核心设计原则
 
@@ -72,10 +72,10 @@ WorkflowInstance 使用 record + toBuilder 模式。状态转换不修改原对�
 
 ### 2.1 调研的开源项目与前沿理论
 
-| 项目/理论 | 核心理念 | 与 LifePilot 的关系 |
+| 项目/理论 | 核心理念 | 与 ZhiWei 的关系 |
 |-----------|---------|-------------------|
 | [Temporal](https://temporal.io) | Durable Execution — Event Sourcing 持久化，代码即工作流，自动重试和故障恢复 | 借鉴崩溃恢复思路，但不采用分布式 Event Sourcing |
-| [Restate](https://restate.dev) | 轻量级 Durable Execution，Journal 持久化，单二进制部署，Java SDK | 最接近 LifePilot 定位（轻量、嵌入式），借鉴 Journal 简化恢复设计 |
+| [Restate](https://restate.dev) | 轻量级 Durable Execution，Journal 持久化，单二进制部署，Java SDK | 最接近 ZhiWei 定位（轻量、嵌入式），借鉴 Journal 简化恢复设计 |
 | [LittleHorse](https://littlehorse.io) | Java 原生工作流引擎，WfSpec/WfRun 分离，有向图执行模型 | 借鉴 Definition/Instance 分离模式 |
 | [Flowable](https://flowable.com) | 成熟 BPMN 2.0 引擎，嵌入式 Java 库，Spring Boot 集成 | 借鉴嵌入式 Spring 集成模式，但 YAML 替代 BPMN XML |
 | [n8n](https://n8n.io) | 节点式可视化工作流，事件驱动，422+ 集成，AI Agent 节点 | 借鉴 Trigger/Action 分类和 AI 步骤集成思路 |
@@ -96,9 +96,9 @@ Content was rephrased for compliance with licensing restrictions.
 | 补偿策略 | Saga Compensate | 无补偿 / 全局回滚 | 工作流步骤可能调用外部 API，需要补偿机制 |
 | 断点恢复 | Checkpointing（借鉴 LangGraph） | 重新执行 | 长时间工作流不应因崩溃而从头开始 |
 
-### 2.3 LifePilot 差异化优势
+### 2.3 ZhiWei 差异化优势
 
-相比调研的开源项目，LifePilot 工作流引擎的独特定位：
+相比调研的开源项目，ZhiWei 工作流引擎的独特定位：
 
 1. **嵌入式单机** — 不需要独立的工作流服务器（vs Temporal/LittleHorse），SQLite 持久化，单 JAR 运行
 2. **AI 原生集成** — LlmStep 直接调用 LLM，SkillStep 调用 AI Skill，工作流天然具备 AI 能力（vs 传统工作流引擎需要额外集成）
@@ -519,14 +519,14 @@ Step C 失败 + Compensate 策略：
 
 ### 11.3 设计决策：快照恢复 vs Event Sourcing
 
-| 维度 | 快照恢复（LifePilot） | Event Sourcing（Temporal） |
+| 维度 | 快照恢复（ZhiWei） | Event Sourcing（Temporal） |
 |------|---------------------|--------------------------|
 | 实现复杂度 | 低（读取最新快照） | 高（重放事件日志） |
 | 存储开销 | 低（只保留最新状态） | 高（追加所有事件） |
 | 恢复精度 | 步骤级（从上次完成的步骤继续） | 操作级（精确重放每个操作） |
 | 适用场景 | 单机嵌入式 | 分布式集群 |
 
-LifePilot 选择快照恢复，因为单机 SQLite 场景下步骤级精度已足够，且实现和存储成本更低。
+ZhiWei 选择快照恢复，因为单机 SQLite 场景下步骤级精度已足够，且实现和存储成本更低。
 
 ---
 
@@ -548,7 +548,7 @@ WorkflowRegistry 定期扫描配置目录（默认 `~/.lifepilot/workflows`）�
 
 ### 12.2 设计决策：轮询 vs WatchService
 
-Java NIO WatchService 在不同操作系统上行为不一致（macOS 使用轮询实现，性能差；Linux inotify 有事件丢失风险）。LifePilot 选择简单的定时轮询，30 秒间隔对个人自动化场景完全足够。
+Java NIO WatchService 在不同操作系统上行为不一致（macOS 使用轮询实现，性能差；Linux inotify 有事件丢失风险）。ZhiWei 选择简单的定时轮询，30 秒间隔对个人自动化场景完全足够。
 
 ---
 

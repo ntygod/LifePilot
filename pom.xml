@@ -15,7 +15,7 @@
     <groupId>com.lifepilot</groupId>
     <artifactId>lifepilot</artifactId>
     <version>0.1.0-SNAPSHOT</version>
-    <name>LifePilot</name>
+    <name>ZhiWei</name>
     <description>本地运行的个人 AI Agent 助手</description>
 
     <properties>

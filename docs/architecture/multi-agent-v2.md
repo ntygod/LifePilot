@@ -12,7 +12,7 @@
 
 ### 1.1 现状分析
 
-当前 LifePilot 的 Skill 系统（模块 10）存在一个根本性的架构问题：**Skill 同时承担了两个不同抽象层次的职责**。
+当前 ZhiWei 的 Skill 系统（模块 10）存在一个根本性的架构问题：**Skill 同时承担了两个不同抽象层次的职责**。
 
 **L1 确定性工作流**：`SkillAction` sealed interface 定义了四种确定性动作（HttpAction / ShellAction / ChainAction / TemplateAction），这些动作不经过 LLM 推理，是纯粹的工作流编排。
 
@@ -364,7 +364,7 @@ public class AgentToToolBridge {
 | 实现复杂度 | 低（复用 Action.SubAgentResult） | 高（需要对话状态迁移） |
 | 适用场景 | 任务委托、专家咨询 | 完全领域切换 |
 
-LifePilot 是个人助手，用户与主 Agent 保持持续对话，专家 Agent 是辅助角色。agents-as-tools 模式与现有 `Action.SubAgentResult` 完全兼容，无需修改 AgentLoop 核心循环。
+ZhiWei 是个人助手，用户与主 Agent 保持持续对话，专家 Agent 是辅助角色。agents-as-tools 模式与现有 `Action.SubAgentResult` 完全兼容，无需修改 AgentLoop 核心循环。
 
 ### 5.3 与现有模块的集成点
 
@@ -500,7 +500,7 @@ Anthropic 在 2026 年 1 月发表的多 Agent 系统实践指南中，总结了
 
 参考来源：[Multi-agent error amplification research](https://www.amitkoth.com/multi-agent-orchestration-complexity/)（95% 单步可靠性在 20 步后仅剩 36% 成功率）
 
-因此，LifePilot 的预设 Agent 必须通过以下「L2 准入测试」：
+因此，ZhiWei 的预设 Agent 必须通过以下「L2 准入测试」：
 
 | 准入条件 | 说明 | 不满足则 |
 |---------|------|---------|
@@ -517,9 +517,9 @@ Anthropic 在 2026 年 1 月发表的多 Agent 系统实践指南中，总结了
 | analyst（分析专家） | ❌ "数据分析"过于宽泛，主 Agent 配合相同工具即可完成；❌ 无明确人格差异 | **移除** |
 | researcher（调研专家） | ❌ 搜索+摘要是主 Agent 的核心能力；❌ 搜索结果上下文量小，无隔离收益 | **移除** |
 
-### 8.3 新方案：基于 LifePilot 产品定位的预设 Agent
+### 8.3 新方案：基于 ZhiWei 产品定位的预设 Agent
 
-LifePilot 是个人生活助手（todo / schedule / habit / memory / knowledge），核心用户场景是日常生活管理。
+ZhiWei 是个人生活助手（todo / schedule / habit / memory / knowledge），核心用户场景是日常生活管理。
 基于 L2 准入测试和产品定位，重新设计预设 Agent 列表：
 
 | Agent ID | 名称 | 职责 | 准入理由 | 偏好模型 | 预算级别 | canDelegate |
@@ -675,7 +675,7 @@ metadata:
 | researcher（调研专家） | 搜索+摘要是主 Agent 核心能力，无 System Prompt 增益 | 不预设 |
 | analyst（分析专家） | 过于宽泛，主 Agent + 工具即可完成 | 不预设 |
 | translator（翻译专家） | System Prompt 增益存在，但翻译是低频场景，且主 Agent 翻译质量已足够 | 不预设（作为用户自定义示例） |
-| coder（编程助手） | LifePilot 是生活助手，编程不在核心场景内 | 不预设 |
+| coder（编程助手） | ZhiWei 是生活助手，编程不在核心场景内 | 不预设 |
 | health-advisor（健康顾问） | 涉及医疗建议的法律风险，不适合预设 | 不预设 |
 
 用户可通过 Markdown 热加载机制自定义任意 Agent。文档 §3.3 提供了 translator 的完整 Markdown 示例。
@@ -732,7 +732,7 @@ Agent 自扩展不适用的原因：
 
 ### 10.3 为什么 agents-as-tools 而非完全 handoff
 
-见 §5.2。核心理由：LifePilot 是个人助手，主 Agent 需要保持对话连贯性和控制权。与现有 `Action.SubAgentResult` 完全兼容，零改动复用 AgentLoop。
+见 §5.2。核心理由：ZhiWei 是个人助手，主 Agent 需要保持对话连贯性和控制权。与现有 `Action.SubAgentResult` 完全兼容，零改动复用 AgentLoop。
 
 ### 10.4 委托深度限制
 
@@ -765,7 +765,7 @@ Agent 和 Skill 采用不同的定义文件格式，核心原则是**格式跟�
 
 ## 11. 调研参考
 
-| 来源 | 核心洞察 | LifePilot 采纳 |
+| 来源 | 核心洞察 | ZhiWei 采纳 |
 |------|---------|---------------|
 | [Microsoft Semantic Kernel v1.0](https://devblogs.microsoft.com/semantic-kernel/skills-to-plugins-fully-embracing-the-openai-plugin-spec-in-semantic-kernel/) | Skills 重命名为 Plugins，消除概念混淆 | 采纳：明确区分 Skill（L1）和 Agent（L2） |
 | [四层能力模型](https://cenrax.substack.com/p/the-ai-agent-ecosystem-understanding) | Tool → Skill → Agent → Orchestrator | 采纳：作为架构重构的理论基础 |
@@ -773,7 +773,7 @@ Agent 和 Skill 采用不同的定义文件格式，核心原则是**格式跟�
 | [Anthropic Claude Code](https://www.eesel.ai/blog/skills-vs-subagent) | Skills = 上下文注入，Subagent = 独立推理 | 采纳：Skill 不推理，Agent 推理 |
 | [Claude Code Sub-Agents](https://www.implicator.ai/claudes-ai-sub-agents-turn-one-assistant-into-a-team-of-specialists/) | 每个 sub-agent 在独立上下文窗口中运行，防止上下文污染 | 采纳：上下文隔离设计 |
 | [Google ADK](https://cloud.google.com/blog/topics/developers-practitioners/where-to-use-sub-agents-versus-agents-as-tools) | Agent-as-Tool vs Sub-Agent | 采纳：agents-as-tools 模式 |
-| [Microsoft Cloud Adoption Framework](https://docs.microsoft.com/en-us/azure/cloud-adoption-framework/ai-agents/single-agent-multiple-agents) | 多 Agent 准入条件：安全边界、多团队、未来扩展 | 参考：LifePilot 单用户场景不满足前两条，按专业化准入 |
+| [Microsoft Cloud Adoption Framework](https://docs.microsoft.com/en-us/azure/cloud-adoption-framework/ai-agents/single-agent-multiple-agents) | 多 Agent 准入条件：安全边界、多团队、未来扩展 | 参考：ZhiWei 单用户场景不满足前两条，按专业化准入 |
 | [Multi-agent error amplification](https://www.amitkoth.com/multi-agent-orchestration-complexity/) | 95% 单步可靠性在 20 步后仅剩 36% 成功率 | 采纳：严格控制预设 Agent 数量，避免过度拆分 |
 | [Spring AI Agent Skills](https://spring.io/blog/2026/01/13/spring-ai-generic-agent-skills) | Skill = Markdown 文件夹（SKILL.md + YAML Frontmatter），渐进式发现 | 已在 Skill 系统中采纳；Agent 定义格式参考 |
 | [Spring AI Task SubAgents](https://spring.io/blog/2026/01/27/spring-ai-agentic-patterns-4-task-subagents) | 独立上下文 + 工具白名单 + 多模型路由 | 采纳：AgentExecutor 设计 |

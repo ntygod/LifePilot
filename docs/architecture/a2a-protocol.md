@@ -11,7 +11,7 @@
 
 ### 1.1 定位
 
-A2A（Agent-to-Agent）协议支持模块为 LifePilot 提供跨系统 Agent 互操作能力。LifePilot 同时作为 A2A Server（暴露自身 Agent 能力供外部调用）和 A2A Client（发现并调用外部 A2A Agent），实现与其他 AI Agent 系统的标准化通信。
+A2A（Agent-to-Agent）协议支持模块为 ZhiWei 提供跨系统 Agent 互操作能力。ZhiWei 同时作为 A2A Server（暴露自身 Agent 能力供外部调用）和 A2A Client（发现并调用外部 A2A Agent），实现与其他 AI Agent 系统的标准化通信。
 
 ### 1.2 职责边界
 
@@ -50,7 +50,7 @@ A2A 和 MCP 是互补协议，解决不同层次的问题：
 | Message | Agent 间交换信息的基本单元，包含多个 Part（TextPart / FilePart / DataPart） |
 | Part | 消息内容片段，支持文本、文件（base64 或 URI）、结构化数据 |
 | Artifact | Task 产出物，包含一个或多个 Part |
-| Skill | Agent Card 中声明的能力单元（与 LifePilot 的 Skill 概念不同，此处指 A2A 协议的 skill 字段） |
+| Skill | Agent Card 中声明的能力单元（与 ZhiWei 的 Skill 概念不同，此处指 A2A 协议的 skill 字段） |
 
 ### 2.2 角色定义
 
@@ -58,7 +58,7 @@ A2A 和 MCP 是互补协议，解决不同层次的问题：
 |------|------|
 | A2A Server | 暴露 Agent Card 和消息处理端点，接收并执行任务 |
 | A2A Client | 发现远程 Agent Card，发送消息，管理任务 |
-| LifePilot 主 Agent | 作为 A2A Client 调用远程 Agent；同时通过 A2A Server 暴露自身能力 |
+| ZhiWei 主 Agent | 作为 A2A Client 调用远程 Agent；同时通过 A2A Server 暴露自身能力 |
 
 ### 2.3 Task 状态机
 
@@ -79,7 +79,7 @@ A2A 和 MCP 是互补协议，解决不同层次的问题：
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                        LifePilot A2A 模块                           │
+│                        ZhiWei A2A 模块                           │
 │                                                                     │
 │  ┌──────────────────────────┐    ┌──────────────────────────┐      │
 │  │     A2A Server 层         │    │     A2A Client 层         │      │
@@ -121,7 +121,7 @@ A2A 和 MCP 是互补协议，解决不同层次的问题：
 ```java
 public class AgentCardGenerator {
     /**
-     * 生成 LifePilot 主 Agent 的 Agent Card。
+     * 生成 ZhiWei 主 Agent 的 Agent Card。
      * 将 AgentRegistry 中所有已注册 Agent 映射为 A2A AgentSkill。
      */
     public A2aAgentCard generateCard();
@@ -132,7 +132,7 @@ public class AgentCardGenerator {
 - `AgentDefinition.id` → `AgentSkill.id`
 - `AgentDefinition.name` → `AgentSkill.name`
 - `AgentDefinition.description` → `AgentSkill.description`
-- LifePilot 整体作为一个 A2A Agent 暴露，内部的多个 AgentDefinition 映射为 skills
+- ZhiWei 整体作为一个 A2A Agent 暴露，内部的多个 AgentDefinition 映射为 skills
 
 #### 3.2.2 A2aAgentExecutor — A2A 请求执行器
 
@@ -168,7 +168,7 @@ public class A2aTaskStore {
 
 设计决策：Task 存储在内存中（ConcurrentHashMap），不持久化到 SQLite。理由：
 1. A2A Task 是短期会话状态，不需要跨重启保留
-2. LifePilot 是单用户本地应用，并发量低
+2. ZhiWei 是单用户本地应用，并发量低
 3. 避免增加 Flyway 迁移脚本复杂度
 
 #### 3.2.4 REST 端点
@@ -214,7 +214,7 @@ public class A2aClientService {
 
 传输协议选择：使用 HTTP+JSON/REST 传输（非 JSON-RPC 2.0）。理由：
 1. Spring Boot 原生支持 REST，无需额外依赖
-2. LifePilot 是单用户本地应用，不需要 gRPC 的高性能
+2. ZhiWei 是单用户本地应用，不需要 gRPC 的高性能
 3. REST 调试友好，与现有 Web 模块风格一致
 4. A2A Java SDK 已支持 REST 传输（`a2a-java-sdk-reference-rest`）
 
@@ -266,7 +266,7 @@ public class RemoteAgentToolFactory {
 1. A2A Java SDK（`io.github.a2asdk`）基于 Quarkus 参考实现，与 Spring Boot 集成需要额外适配
 2. A2A 协议数据模型简单（约 15 个核心类型），自行实现成本低
 3. 避免引入 Quarkus 相关传递依赖
-4. 使用 Java 22 record + sealed interface，与 LifePilot 编码风格一致
+4. 使用 Java 22 record + sealed interface，与 ZhiWei 编码风格一致
 
 ```java
 // Agent Card
@@ -346,18 +346,18 @@ public record A2aArtifact(
 |------|------|------|
 | A2A Java SDK (`a2a-java`) | 官方实现，协议更新自动跟进 | 基于 Quarkus，Spring Boot 集成需适配；引入大量传递依赖 |
 | A2A4J (`a2a4j`) | 社区 Spring Boot 实现 | 成熟度不足，API 不稳定 |
-| Spring AI A2A (`spring-ai-a2a`) | Spring 生态原生集成 | 依赖 Spring AI 2.0 + Spring Boot 4.0，LifePilot 使用 Spring AI 1.1.2 |
+| Spring AI A2A (`spring-ai-a2a`) | Spring 生态原生集成 | 依赖 Spring AI 2.0 + Spring Boot 4.0，ZhiWei 使用 Spring AI 1.1.2 |
 | 自定义 record | 零额外依赖；Java 22 record 风格一致；完全可控 | 需要手动跟进协议更新 |
 
 A2A 协议数据模型约 15 个核心类型，使用 record + sealed interface 实现代码量约 200 行，维护成本可控。协议版本 0.2.5 已相对稳定，核心类型（AgentCard / Task / Message / Part）不太可能大幅变更。
 
-### 4.2 LifePilot 作为单一 A2A Agent vs 多 Agent 暴露
+### 4.2 ZhiWei 作为单一 A2A Agent vs 多 Agent 暴露
 
-**决策**：LifePilot 整体作为一个 A2A Agent 暴露，内部 Agent 映射为 A2A skills。
+**决策**：ZhiWei 整体作为一个 A2A Agent 暴露，内部 Agent 映射为 A2A skills。
 
 理由：
-1. A2A 协议中一个 Agent Card 对应一个服务端点，LifePilot 是单 JAR 部署
-2. 外部调用者不需要了解 LifePilot 内部的 Agent 拓扑
+1. A2A 协议中一个 Agent Card 对应一个服务端点，ZhiWei 是单 JAR 部署
+2. 外部调用者不需要了解 ZhiWei 内部的 Agent 拓扑
 3. 内部 Agent（writer / life-coach / planner）作为 skills 暴露，外部可通过 skill ID 指定
 4. 简化认证——一个端点一套认证，而非每个 Agent 独立认证
 
@@ -366,7 +366,7 @@ A2A 协议数据模型约 15 个核心类型，使用 record + sealed interface 
 **决策**：HTTP+JSON/REST（非 JSON-RPC 2.0）。
 
 A2A 协议支持三种传输：JSON-RPC 2.0、gRPC、HTTP+JSON/REST。选择 REST 的理由：
-1. 与 LifePilot 现有 Web 模块（Spring MVC REST Controller）风格一致
+1. 与 ZhiWei 现有 Web 模块（Spring MVC REST Controller）风格一致
 2. 调试友好，curl / Postman 可直接测试
 3. SSE 流式响应复用现有 SSE 基础设施
 4. 单用户本地应用不需要 gRPC 的高吞吐
@@ -376,10 +376,10 @@ A2A 协议支持三种传输：JSON-RPC 2.0、gRPC、HTTP+JSON/REST。选择 RES
 **决策**：API Key 认证（`securitySchemes.apiKey`），复用 Gateway 模块的 Auth 中间件。
 
 理由：
-1. LifePilot 是个人本地应用，OAuth 2.0 过于复杂
+1. ZhiWei 是个人本地应用，OAuth 2.0 过于复杂
 2. API Key 通过 `lifepilot.a2a.server.api-key` 配置，存储在环境变量中
 3. 外部 Agent 调用时在 HTTP Header 中携带 API Key
-4. 未来可扩展为 OAuth 2.0（当 LifePilot 上云部署时）
+4. 未来可扩展为 OAuth 2.0（当 ZhiWei 上云部署时）
 
 ### 4.5 Task 存储策略
 
@@ -417,7 +417,7 @@ lifepilot:
     server:
       enabled: true                                  # 是否启用 A2A Server
       api-key: ${LIFEPILOT_A2A_API_KEY:}            # Server 端 API Key（空则不启用认证）
-      agent-name: LifePilot                          # Agent Card 中的名称
+      agent-name: ZhiWei                          # Agent Card 中的名称
       agent-description: 个人生活助手                  # Agent Card 中的描述
       agent-version: 1.0.0                           # Agent Card 中的版本
       protocol-version: 0.2.5                        # A2A 协议版本
@@ -437,7 +437,7 @@ lifepilot:
 
 ## 7. 调研参考
 
-| 来源 | 核心洞察 | LifePilot 采纳 |
+| 来源 | 核心洞察 | ZhiWei 采纳 |
 |------|---------|---------------|
 | [A2A Protocol Spec v0.2.5](https://github.com/google/A2A) | 开放协议，JSON-RPC 2.0 / gRPC / REST 三种传输，Agent Card 发现机制 | 采纳 REST 传输 + Agent Card 发现 |
 | [A2A Java SDK](https://github.com/a2aproject/a2a-java) | 官方 Java SDK，Quarkus 参考实现，支持 JSON-RPC / gRPC / REST | 参考 API 设计，不直接依赖（避免 Quarkus 传递依赖） |

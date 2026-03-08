@@ -1,4 +1,4 @@
-# LifePilot 架构设计图
+# ZhiWei 架构设计图
 
 > **文档性质**：架构可视化文档（Developer-Facing）
 > **目标读者**：架构师、开发者、技术评审者
@@ -273,7 +273,7 @@ graph LR
 ```mermaid
 graph TB
     subgraph "应用进程"
-        App[LifePilot Application<br/>Spring Boot]
+        App[ZhiWei Application<br/>Spring Boot]
     end
 
     subgraph "数据存储"
@@ -299,7 +299,7 @@ graph TB
 ### 4.2 目录结构
 
 ```
-LifePilot/
+ZhiWei/
 ├── config/              # 配置文件
 │   ├── application.yml
 │   └── skills/

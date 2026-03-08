@@ -20,7 +20,7 @@ function startUsing() {
           <span class="text-sm font-medium">本地运行的个人 AI Agent 助手</span>
         </div>
         <h1 class="text-5xl md:text-6xl font-bold text-foreground mb-6">
-          LifePilot
+          ZhiWei
         </h1>
         <p class="text-xl text-muted-foreground max-w-[672px] mx-auto mb-8">
           一个强大的 AI 助手，帮助你管理知识、执行任务和自动化工作流。
@@ -104,7 +104,7 @@ function startUsing() {
 
       <!-- 特性亮点 -->
       <div class="text-center">
-        <h2 class="text-3xl font-bold text-foreground mb-8">为什么选择 LifePilot？</h2>
+        <h2 class="text-3xl font-bold text-foreground mb-8">为什么选择 ZhiWei？</h2>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div>
             <div class="text-2xl mb-2">🔒</div>

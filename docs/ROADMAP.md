@@ -1,6 +1,6 @@
-# LifePilot 能力演进路线图
+# ZhiWei 能力演进路线图
 
-> 本文档基于 LifePilot 项目现状，分析当前能力差距，规划未来架构演进方向。
+> 本文档基于 ZhiWei 项目现状，分析当前能力差距，规划未来架构演进方向。
 > 后续各能力模块可直接参照本文档创建对应的 spec 进行开发。
 
 ---
@@ -86,7 +86,7 @@
 
 ### 1.3 与 OpenClaw 的差距分析
 
-| 能力维度 | OpenClaw | LifePilot 现状 | 差距评估 |
+| 能力维度 | OpenClaw | ZhiWei 现状 | 差距评估 |
 |----------|----------|----------------|----------|
 | **工具协议** | MCP 协议原生支持，可连接任意 MCP Server | ✅ MCP Client + Transport + Adapter + Registry | 🟢 已持平 |
 | **多模型路由** | 支持多 LLM Provider 切换 | ✅ 已实现场景路由 + 优先级故障转移 | 🟢 已持平 |
@@ -116,7 +116,7 @@
 #### 1. MCP 协议原生支持
 
 - **描述**：实现 MCP（Model Context Protocol）客户端，支持连接外部 MCP Server，同时将现有插件桥接为 MCP Tool
-- **为什么需要**：MCP 已成为 AI Agent 工具调用的事实标准。不支持 MCP 意味着无法接入日益丰富的 MCP 工具生态（文件系统、数据库、浏览器、各类 SaaS API），严重限制了 LifePilot 的扩展能力
+- **为什么需要**：MCP 已成为 AI Agent 工具调用的事实标准。不支持 MCP 意味着无法接入日益丰富的 MCP 工具生态（文件系统、数据库、浏览器、各类 SaaS API），严重限制了 ZhiWei 的扩展能力
 - **优先级理由**：这是 Agent 能力的基础设施，后续的文档管理、外部同步、代码执行等能力都可以通过 MCP Server 的形式接入，投入产出比最高
 
 #### 2. 文档/知识库管理
@@ -142,7 +142,7 @@
 #### 5. 外部数据源同步
 
 - **描述**：支持与主流日历（Google Calendar / Outlook）、待办（Todoist / 滴答清单）、笔记（Obsidian）应用的双向同步
-- **为什么需要**：用户的待办和日程数据分散在多个应用中，LifePilot 作为个人助手需要获取完整的用户数据才能提供有价值的建议
+- **为什么需要**：用户的待办和日程数据分散在多个应用中，ZhiWei 作为个人助手需要获取完整的用户数据才能提供有价值的建议
 - **优先级理由**：直接提升"个人助手"的核心价值，但涉及大量第三方 API 对接，工作量较大
 
 #### 6. 工作流/自动化编排
@@ -586,7 +586,7 @@ steps:
 
 ```mermaid
 gantt
-    title LifePilot 能力演进甘特图
+    title ZhiWei 能力演进甘特图
     dateFormat  YYYY-MM-DD
     axisFormat  %Y-%m
 
@@ -665,9 +665,9 @@ gantt
 
 ### 6.1 项目概况
 
-AstrBot 定位为"一站式 Agentic IM 聊天机器人基础设施"，核心面向多平台 IM 聊天场景。与 LifePilot 的"个人 AI Agent 助手 + 主动智能"定位有交集但侧重不同。
+AstrBot 定位为"一站式 Agentic IM 聊天机器人基础设施"，核心面向多平台 IM 聊天场景。与 ZhiWei 的"个人 AI Agent 助手 + 主动智能"定位有交集但侧重不同。
 
-| 维度 | AstrBot | LifePilot |
+| 维度 | AstrBot | ZhiWei |
 |------|---------|-----------|
 | 定位 | 多平台 IM 聊天机器人基础设施 | 个人 AI Agent 助手（主动智能） |
 | 语言 | Python | Java 22 |
@@ -693,26 +693,26 @@ AstrBot 提供了极其丰富的部署方式：Docker Compose、`uv tool install
 AstrBot 将"Chat Provider"（负责文本补全）和"Agent Runner"（负责思考+执行循环）做了清晰分离。还支持接入 Dify、Coze、阿里云百炼等 LLMOps 平台作为 Agent Runner。
 
 **借鉴建议**：
-- LifePilot 的 AgentLoop 和 LlmRouter 已有类似分离，但可以考虑允许外部 Agent 平台（如 Dify）作为可选执行引擎
-- 用户已在 Dify 上搭建的工作流可直接被 LifePilot 调度，降低迁移成本
+- ZhiWei 的 AgentLoop 和 LlmRouter 已有类似分离，但可以考虑允许外部 Agent 平台（如 Dify）作为可选执行引擎
+- 用户已在 Dify 上搭建的工作流可直接被 ZhiWei 调度，降低迁移成本
 
 #### 3. SubAgent 轻量编排
 
 AstrBot 的 SubAgent 设计：主 Agent 只看到 `transfer_to_<subagent_name>` 委托工具，每个 SubAgent 有独立的 Persona、工具集，甚至可以用不同的模型 Provider（如主 Agent 用 GPT-4o，子 Agent 用 GPT-4o-mini 节省成本）。
 
 **借鉴建议**：
-- LifePilot 路线图中的"多 Agent 协作"（Phase 3）可参考此方案
+- ZhiWei 路线图中的"多 Agent 协作"（Phase 3）可参考此方案
 - 不需要复杂的 Agent 间通信协议，用"委托工具"模式即可
-- 每个 SubAgent 独立预算、独立上下文，与 LifePilot 的 Budget 机制天然兼容
+- 每个 SubAgent 独立预算、独立上下文，与 ZhiWei 的 Budget 机制天然兼容
 
 #### 4. Agent Sandbox 沙箱环境
 
 AstrBot 使用 Shipyard 项目做 Docker 容器级沙箱，支持会话级资源复用、数据持久化（`/home/<session_id>` 自动挂载）、实例 TTL 自动续期。
 
 **借鉴建议**：
-- LifePilot 路线图中的"代码执行沙箱"（Phase 3）可参考 Shipyard 的设计
+- ZhiWei 路线图中的"代码执行沙箱"（Phase 3）可参考 Shipyard 的设计
 - 沙箱实例 TTL + 操作续期机制比简单的超时限制更灵活
-- 多会话共享沙箱实例可节省资源（LifePilot 当前方案是 ProcessBuilder 轻量沙箱 + 可选 Docker）
+- 多会话共享沙箱实例可节省资源（ZhiWei 当前方案是 ProcessBuilder 轻量沙箱 + 可选 Docker）
 
 #### 5. 插件生态规模
 
@@ -725,10 +725,10 @@ AstrBot 拥有 900+ 社区插件，支持 WebUI 一键安装。这是其最大�
 
 #### 6. 知识库功能已落地
 
-AstrBot 支持多知识库管理、文件上传（最大 128MB）、Embedding + Reranker 双模型检索。虽然架构深度不如 LifePilot 的四层认知记忆，但已是可用的产品功能。
+AstrBot 支持多知识库管理、文件上传（最大 128MB）、Embedding + Reranker 双模型检索。虽然架构深度不如 ZhiWei 的四层认知记忆，但已是可用的产品功能。
 
 **借鉴建议**：
-- LifePilot 的记忆系统架构更先进，但文档/知识库管理仍在路线图上
+- ZhiWei 的记忆系统架构更先进，但文档/知识库管理仍在路线图上
 - 建议优先落地此功能，用户感知最直接
 - Reranker 模型可作为可选增强集成到 HybridRetriever 中
 
@@ -737,12 +737,12 @@ AstrBot 支持多知识库管理、文件上传（最大 128MB）、Embedding + 
 AstrBot 支持 QQ、Telegram、Discord、LINE、Satori、Misskey、WhatsApp 等十几个平台。
 
 **借鉴建议**：
-- LifePilot 定位是"个人助手"而非"群聊机器人"，不需要全覆盖
+- ZhiWei 定位是"个人助手"而非"群聊机器人"，不需要全覆盖
 - 可考虑增加 Telegram（海外用户）和微信公众号/微信客服（国内个人用户最常用）
 
-### 6.3 LifePilot 的差异化优势（无需对标）
+### 6.3 ZhiWei 的差异化优势（无需对标）
 
-| 能力 | LifePilot | AstrBot |
+| 能力 | ZhiWei | AstrBot |
 |------|-----------|---------|
 | 四层认知记忆 + 时序知识图谱 | ✅ 已实现 | ❌ 仅基础对话历史 |
 | 主动推理 + 智能降频状态机 | ✅ 已实现 | ❌ 被动响应为主 |
@@ -767,7 +767,7 @@ AstrBot 支持 QQ、Telegram、Discord、LINE、Satori、Misskey、WhatsApp 等�
 
 ### 6.5 源码级深度分析（代码实现层面）
 
-> 以下分析基于 AstrBot `master` 分支源码的逐文件阅读，聚焦于实现模式和架构决策，为 LifePilot 提供代码级借鉴。
+> 以下分析基于 AstrBot `master` 分支源码的逐文件阅读，聚焦于实现模式和架构决策，为 ZhiWei 提供代码级借鉴。
 
 #### 6.5.1 整体代码结构
 
@@ -803,7 +803,7 @@ astrbot/
 └── utils/                  # 工具类
 ```
 
-**对比 LifePilot**：LifePilot 采用扁平的 `com.lifepilot.{module}` 包结构，AstrBot 则是深层嵌套的 `core/` 目录。LifePilot 的模块划分更清晰（agent / memory / llm / skill / interaction / observability），AstrBot 的 `core/` 包含了几乎所有逻辑，模块边界相对模糊。
+**对比 ZhiWei**：ZhiWei 采用扁平的 `com.lifepilot.{module}` 包结构，AstrBot 则是深层嵌套的 `core/` 目录。ZhiWei 的模块划分更清晰（agent / memory / llm / skill / interaction / observability），AstrBot 的 `core/` 包含了几乎所有逻辑，模块边界相对模糊。
 
 #### 6.5.2 事件总线 + 管线架构（核心消息处理流程）
 
@@ -825,9 +825,9 @@ AstrBot 的消息处理采用 **EventBus → PipelineScheduler → Stage 链** �
    - `RespondStage` → 消息发送
 
 **借鉴价值**：
-- LifePilot 当前的消息处理是 `CliInterface` / `ChannelAdapter` → `AgentLoop` 的直连模式，缺少中间的管线层
+- ZhiWei 当前的消息处理是 `CliInterface` / `ChannelAdapter` → `AgentLoop` 的直连模式，缺少中间的管线层
 - 可借鉴 AstrBot 的 Stage 链设计，在 `AgentLoop` 前增加预处理管线：频率限制 → 内容安全 → 上下文组装 → Agent 处理 → 结果后处理
-- 洋葱模型的 `AsyncGenerator` 实现在 Java 中可用 Spring AOP 或 Interceptor 链替代，LifePilot 已有的 `TraceAdvisor` / `GuardrailAdvisor` 就是类似模式
+- 洋葱模型的 `AsyncGenerator` 实现在 Java 中可用 Spring AOP 或 Interceptor 链替代，ZhiWei 已有的 `TraceAdvisor` / `GuardrailAdvisor` 就是类似模式
 
 #### 6.5.3 Agent Runner 抽象与工具循环
 
@@ -846,9 +846,9 @@ AstrBot 的 Agent 执行分为两层：
 - `ToolSet`：工具集合，提供 `openai_schema()` / `anthropic_schema()` / `google_schema()` 三种 API 格式转换。这是一个很实用的设计——同一套工具定义可以适配不同 LLM Provider 的 Function Calling 格式
 
 **借鉴价值**：
-- LifePilot 的 `ToolContract` 接口目前只有一种序列化格式（Spring AI 的 `FunctionCallback`），可参考 AstrBot 的 `ToolSet` 设计，增加多格式输出能力，为未来支持非 Spring AI 的 Provider 做准备
-- Runner 抽象层的设计值得借鉴：LifePilot 可以将 `AgentLoop` 重构为 `AgentRunner` 接口，内置实现保持现有逻辑，同时允许接入 Dify / Coze 等外部平台作为可选 Runner
-- `FunctionTool` 的 `active` 字段（运行时启用/禁用工具）是一个实用特性，LifePilot 的 `DynamicToolRegistry` 可以借鉴
+- ZhiWei 的 `ToolContract` 接口目前只有一种序列化格式（Spring AI 的 `FunctionCallback`），可参考 AstrBot 的 `ToolSet` 设计，增加多格式输出能力，为未来支持非 Spring AI 的 Provider 做准备
+- Runner 抽象层的设计值得借鉴：ZhiWei 可以将 `AgentLoop` 重构为 `AgentRunner` 接口，内置实现保持现有逻辑，同时允许接入 Dify / Coze 等外部平台作为可选 Runner
+- `FunctionTool` 的 `active` 字段（运行时启用/禁用工具）是一个实用特性，ZhiWei 的 `DynamicToolRegistry` 可以借鉴
 
 #### 6.5.4 SubAgent 委托机制（HandoffTool）
 
@@ -868,12 +868,12 @@ AstrBot 的 SubAgent 实现非常优雅，核心只有两个文件：
 当主 Agent 调用 `transfer_to_xxx` 工具时，`FunctionToolExecutor` 识别到这是 HandoffTool，创建子 Agent 实例执行任务。子 Agent 可以使用不同的 Provider（通过 `provider_id` 指定），实现主 Agent 用强模型决策、子 Agent 用弱模型执行的成本优化。
 
 **借鉴价值**：
-- 这个设计可以直接映射到 LifePilot 的 Java 实现：
+- 这个设计可以直接映射到 ZhiWei 的 Java 实现：
   - `SubAgentOrchestrator` → Spring `@Component`，从 `application.yml` 加载配置
   - `HandoffTool` → 实现 `ToolContract` 接口的委托工具
   - `Agent` dataclass → Java record `AgentDefinition(name, instructions, tools, providerId)`
 - 关键洞察：SubAgent 不需要独立的执行引擎，复用主 `AgentLoop` 即可，只需切换 System Prompt、工具集和 Provider
-- `background_task` 参数的设计很巧妙——允许 Agent 自主判断是否需要异步执行，LifePilot 可以结合 `CompletableFuture` 实现
+- `background_task` 参数的设计很巧妙——允许 Agent 自主判断是否需要异步执行，ZhiWei 可以结合 `CompletableFuture` 实现
 
 #### 6.5.5 MCP 客户端实现
 
@@ -893,10 +893,10 @@ AstrBot 的 MCP 客户端（`agent/mcp_client.py`，~400 行）实现了完整�
 **MCPTool 适配**：`MCPTool` 继承 `FunctionTool`，将 MCP Server 的 `mcp.Tool` 直接映射为内部工具格式，`call()` 方法委托给 `MCPClient.call_tool_with_reconnect()`。
 
 **借鉴价值**：
-- LifePilot 的 `McpClient` 已实现了类似架构，但可以借鉴以下细节：
+- ZhiWei 的 `McpClient` 已实现了类似架构，但可以借鉴以下细节：
   - **连接前快速测试**：在正式建立 MCP 连接前先做 HTTP 连通性检查，快速失败
   - **tenacity 重试机制**：Java 中可用 Resilience4j 的 `Retry` 替代，与现有 `CircuitBreakerManager` 配合
-  - **Streamable HTTP 传输**：这是 MCP 协议的新传输方式，LifePilot 的 `McpTransport` 接口应预留此扩展点
+  - **Streamable HTTP 传输**：这是 MCP 协议的新传输方式，ZhiWei 的 `McpTransport` 接口应预留此扩展点
   - **Lock 保护的重连逻辑**：避免并发重连导致的资源竞争，Java 中用 `ReentrantLock` 或 `synchronized` 实现
 
 #### 6.5.6 知识库系统实现
@@ -923,10 +923,10 @@ AstrBot 的知识库（`core/knowledge_base/`）是一个完整的 RAG 系统：
 - 检索时支持跨知识库查询，结果包含来源信息（知识库名 / 文档名 / 相关度分数）
 
 **借鉴价值**：
-- LifePilot 的知识库设计（路线图 3.2）可以直接参考此实现，但有几个改进点：
-  - AstrBot 的分块策略较简单（仅 FixedSize 和 Recursive），LifePilot 路线图中规划的 `HeadingChunker`（按标题层级分块）是更好的选择
-  - AstrBot 使用独立的 SQLite 数据库存储知识库元数据，LifePilot 可以复用现有的 SQLite 实例，通过表前缀区分
-  - AstrBot 的 `RankFusion` 使用 RRF 算法，LifePilot 的 `HybridRetriever` 已有三路合并排序，可以在此基础上增加 Reranker 模型作为可选的精排步骤
+- ZhiWei 的知识库设计（路线图 3.2）可以直接参考此实现，但有几个改进点：
+  - AstrBot 的分块策略较简单（仅 FixedSize 和 Recursive），ZhiWei 路线图中规划的 `HeadingChunker`（按标题层级分块）是更好的选择
+  - AstrBot 使用独立的 SQLite 数据库存储知识库元数据，ZhiWei 可以复用现有的 SQLite 实例，通过表前缀区分
+  - AstrBot 的 `RankFusion` 使用 RRF 算法，ZhiWei 的 `HybridRetriever` 已有三路合并排序，可以在此基础上增加 Reranker 模型作为可选的精排步骤
   - **多知识库实例**的设计值得借鉴：每个知识库可以配置不同的 Embedding 模型和分块参数，适应不同类型的文档
 
 #### 6.5.7 沙箱执行环境（Computer 模块）
@@ -946,11 +946,11 @@ AstrBot 的沙箱系统（`core/computer/`）采用 **Booter 抽象 + 会话级�
 - 使用 `uuid5(NAMESPACE_DNS, session_id)` 生成确定性的沙箱实例 ID
 
 **借鉴价值**：
-- LifePilot 路线图中的 `SandboxExecutor` 可以借鉴 Booter 抽象模式：
+- ZhiWei 路线图中的 `SandboxExecutor` 可以借鉴 Booter 抽象模式：
   - `SandboxBooter` 接口 → `ProcessBooter`（本地进程）/ `DockerBooter`（Docker 容器）/ `ShipyardBooter`（远程沙箱）
   - 会话级实例复用比每次创建新进程更高效
-  - 技能脚本自动同步到沙箱的设计很实用——LifePilot 的 `SkillPlugin` 如果需要在沙箱中执行，也需要类似的同步机制
-- `available()` 健康检查 + 自动重建的模式，与 LifePilot 的 `CircuitBreakerManager` 理念一致
+  - 技能脚本自动同步到沙箱的设计很实用——ZhiWei 的 `SkillPlugin` 如果需要在沙箱中执行，也需要类似的同步机制
+- `available()` 健康检查 + 自动重建的模式，与 ZhiWei 的 `CircuitBreakerManager` 理念一致
 
 #### 6.5.8 Provider 系统与多格式适配
 
@@ -970,9 +970,9 @@ AstrBot 的 Provider 系统（`core/provider/`）有几个值得注意的设计�
 **LLMResponse**：统一的响应模型，同时支持 OpenAI / Anthropic / Google GenAI 的原始响应（`raw_completion` 字段），以及统一的工具调用结果格式。
 
 **借鉴价值**：
-- LifePilot 的 `ProviderAdapter` 接口可以借鉴 `ProviderType` 枚举，为未来的 TTS / STT / Rerank 能力预留扩展点
+- ZhiWei 的 `ProviderAdapter` 接口可以借鉴 `ProviderType` 枚举，为未来的 TTS / STT / Rerank 能力预留扩展点
 - `TokenUsage` 的缓存 Token 区分设计值得借鉴——随着 Prompt Caching 成为主流（Claude / GPT-4 都已支持），区分缓存和非缓存 Token 对成本分析很有价值
-- LifePilot 的 `LlmRouter` 可以在路由决策中考虑 Provider 的能力类型（`ProviderType`），而不仅仅是场景路由
+- ZhiWei 的 `LlmRouter` 可以在路由决策中考虑 Provider 的能力类型（`ProviderType`），而不仅仅是场景路由
 
 #### 6.5.9 生命周期管理
 
@@ -991,30 +991,30 @@ AstrBot 的 `AstrBotCoreLifecycle`（`core_lifecycle.py`，~400 行）是整个�
 **优雅停止**：`stop()` 方法按逆序终止各组件，先取消所有任务，再逐个终止插件、Provider、平台、知识库，最后等待所有任务真正结束。
 
 **借鉴价值**：
-- LifePilot 的 `LifePilotApplication`（Spring Boot 启动类）已有 Spring 的 Bean 生命周期管理，但可以借鉴以下点：
-  - **启动完成钩子**：AstrBot 在所有组件初始化完成后触发 `OnAstrBotLoadedEvent`，插件可以注册此钩子执行启动后逻辑。LifePilot 可以通过 Spring 的 `ApplicationReadyEvent` 实现类似功能
-  - **统一的任务管理**：LifePilot 的后台任务（ProactiveReasoner 定时评估、NotificationRouter 重试等）目前分散在各组件中，可以考虑统一的 `TaskManager` 管理所有后台任务的生命周期
+- ZhiWei 的 `LifePilotApplication`（Spring Boot 启动类）已有 Spring 的 Bean 生命周期管理，但可以借鉴以下点：
+  - **启动完成钩子**：AstrBot 在所有组件初始化完成后触发 `OnAstrBotLoadedEvent`，插件可以注册此钩子执行启动后逻辑。ZhiWei 可以通过 Spring 的 `ApplicationReadyEvent` 实现类似功能
+  - **统一的任务管理**：ZhiWei 的后台任务（ProactiveReasoner 定时评估、NotificationRouter 重试等）目前分散在各组件中，可以考虑统一的 `TaskManager` 管理所有后台任务的生命周期
   - **优雅停止的逆序终止**：确保依赖关系正确的组件销毁顺序
 
 #### 6.5.10 代码质量与工程实践观察
 
-| 维度 | AstrBot | LifePilot | 评价 |
+| 维度 | AstrBot | ZhiWei | 评价 |
 |------|---------|-----------|------|
-| 类型标注 | Python 3.12+ 类型提示，但不完全 | Java 强类型 | LifePilot 天然优势 |
-| 错误处理 | 大量 try-except + traceback 打印 | Spring 异常体系 + 自定义异常 | LifePilot 更规范 |
-| 测试覆盖 | `tests/` 目录存在但覆盖率未知 | JUnit 5 + jqwik 属性测试 | LifePilot 更严谨 |
+| 类型标注 | Python 3.12+ 类型提示，但不完全 | Java 强类型 | ZhiWei 天然优势 |
+| 错误处理 | 大量 try-except + traceback 打印 | Spring 异常体系 + 自定义异常 | ZhiWei 更规范 |
+| 测试覆盖 | `tests/` 目录存在但覆盖率未知 | JUnit 5 + jqwik 属性测试 | ZhiWei 更严谨 |
 | 配置管理 | JSON 配置 + 运行时热更新 | `application.yml` + Spring 配置体系 | 各有优势 |
 | 文档注释 | 中文 docstring，较详细 | 中文 Javadoc（编码规范要求） | 风格一致 |
-| 代码规模 | 核心文件普遍较大（30KB+） | 单一职责，文件较小 | LifePilot 更易维护 |
+| 代码规模 | 核心文件普遍较大（30KB+） | 单一职责，文件较小 | ZhiWei 更易维护 |
 | 依赖管理 | `pyproject.toml` + `uv` | `pom.xml` + Maven | 各有生态 |
 
-**总体评价**：AstrBot 的代码风格偏向"快速迭代"，单文件代码量大（`astr_main_agent.py` 42KB、`tool_loop_agent_runner.py` 36KB、`star_manager.py` 54KB），模块内聚度不如 LifePilot。但其架构设计（事件总线 + 管线 + Runner 抽象 + HandoffTool）非常实用，值得在实现层面借鉴。
+**总体评价**：AstrBot 的代码风格偏向"快速迭代"，单文件代码量大（`astr_main_agent.py` 42KB、`tool_loop_agent_runner.py` 36KB、`star_manager.py` 54KB），模块内聚度不如 ZhiWei。但其架构设计（事件总线 + 管线 + Runner 抽象 + HandoffTool）非常实用，值得在实现层面借鉴。
 
 ### 6.6 综合借鉴实施建议
 
 基于源码级分析，更新后的实施建议按实现复杂度排序：
 
-| 序号 | 借鉴项 | 实现复杂度 | 对应 LifePilot 改动 | 建议时机 |
+| 序号 | 借鉴项 | 实现复杂度 | 对应 ZhiWei 改动 | 建议时机 |
 |------|--------|-----------|---------------------|----------|
 | 1 | ToolSet 多格式输出 | 低 | `ToolContract` 增加 `toOpenAiSchema()` / `toAnthropicSchema()` 方法 | 立即可做 |
 | 2 | FunctionTool 的 `active` 开关 | 低 | `DynamicToolRegistry` 增加工具启用/禁用能力 | 立即可做 |
@@ -1045,7 +1045,7 @@ OpenClaw（原名 Clawdbot → Moltbot）由奥地利开发者 Peter Steinberger
 
 OpenClaw 定位为"自托管个人 AI Agent"，核心理念是在用户自己的设备上运行一个持续在线的 AI 助手，通过用户已有的消息平台（WhatsApp / Telegram / Discord / Slack / Signal / iMessage / Google Chat / Teams 等）进行交互，能够执行真实的系统操作（浏览器控制、文件系统读写、Shell 命令执行、屏幕录制等）。
 
-| 维度 | OpenClaw | LifePilot |
+| 维度 | OpenClaw | ZhiWei |
 |------|----------|-----------|
 | 定位 | 自托管个人 AI Agent（本地 OS 级操作） | 个人 AI Agent 助手（认知记忆 + 主动推理） |
 | 语言/框架 | TypeScript / Node.js ≥22 | Java 22 / Spring Boot 3.x |
@@ -1077,7 +1077,7 @@ OpenClaw 的核心是 Gateway 模式——一个长期运行的 Node.js 进程�
 [消息平台] → [Channel 适配器] → [Gateway 控制面] → [路由 + 权限] → [Agent Runtime] → [流式响应] → [Channel 输出]
 ```
 
-**借鉴建议**：LifePilot 当前的消息处理是 `CliInterface` / `ChannelAdapter` → `AgentLoop` 直连模式，缺少统一的 Gateway 层。可以引入轻量级 Gateway + Middleware 管道，统一 CLI / Web / 企微 / 钉钉等渠道的消息入口，便于添加认证、限流、审计等横切关注点。建议的 Java 设计：
+**借鉴建议**：ZhiWei 当前的消息处理是 `CliInterface` / `ChannelAdapter` → `AgentLoop` 直连模式，缺少统一的 Gateway 层。可以引入轻量级 Gateway + Middleware 管道，统一 CLI / Web / 企微 / 钉钉等渠道的消息入口，便于添加认证、限流、审计等横切关注点。建议的 Java 设计：
 
 ```java
 public interface MessageGateway {
@@ -1106,8 +1106,8 @@ OpenClaw 对 Pi 的四个核心工具做了生产级包装（`src/agents/pi-tool
 - Bash → 增加超时控制、沙箱策略、输出截断
 
 **借鉴建议**：
-- "Agent 自扩展"的理念值得思考——LifePilot 可以允许 Agent 在运行时通过代码生成创建新的轻量工具（结合未来的代码执行沙箱）
-- Pi 的极简核心 + 扩展层的分层设计，与 LifePilot 的 `AgentLoop`（核心）+ `SkillPlugin`（扩展）架构理念一致
+- "Agent 自扩展"的理念值得思考——ZhiWei 可以允许 Agent 在运行时通过代码生成创建新的轻量工具（结合未来的代码执行沙箱）
+- Pi 的极简核心 + 扩展层的分层设计，与 ZhiWei 的 `AgentLoop`（核心）+ `SkillPlugin`（扩展）架构理念一致
 
 #### 7.2.3 8 层工具策略系统
 
@@ -1124,7 +1124,7 @@ OpenClaw 的安全设计非常精细，工具调用经过 8 层策略检查：
 
 此外，DM 配对认证机制（`dmPolicy="pairing"`）要求未知发送者提供配对码才能与 Agent 交互，防止未授权访问。
 
-**借鉴建议**：LifePilot 已有 `GuardrailAdvisor` 和 `DataRedactor`，但缺少工具级分层策略。建议：
+**借鉴建议**：ZhiWei 已有 `GuardrailAdvisor` 和 `DataRedactor`，但缺少工具级分层策略。建议：
 1. 为每个工具添加权限声明（`@RequiresPermission`）
 2. 实现至少 3 层策略：全局策略 → Agent 策略 → 工具策略
 3. 高风险操作增加用户确认流程（可复用 `GuardrailAdvisor` 的拦截机制）
@@ -1152,7 +1152,7 @@ OpenClaw 支持 10+ 消息平台，每个平台一个 Channel 适配器（`src/c
 - 支持多媒体消息：图片、文件、语音、视频的统一抽象
 - DM 配对认证：每个 Channel 可独立配置 `dmPolicy`
 
-**借鉴建议**：LifePilot 已有企微/钉钉/飞书适配器（`ChannelAdapter` 接口），架构方向一致。可以考虑增加 Telegram（海外用户）和微信公众号（国内个人用户最常用）。
+**借鉴建议**：ZhiWei 已有企微/钉钉/飞书适配器（`ChannelAdapter` 接口），架构方向一致。可以考虑增加 Telegram（海外用户）和微信公众号（国内个人用户最常用）。
 
 #### 7.2.6 Browser Control + Computer Use
 
@@ -1178,17 +1178,17 @@ OpenClaw 的记忆系统采用 Markdown 文件持久化，核心文件包括：
 
 同时使用 SQLite-vec 进行向量搜索（`src/memory/`），支持 Embedding 模型的语义检索。
 
-**对比 LifePilot**：LifePilot 的四层认知记忆系统（Working / Episodic / Semantic / Procedural）+ 时序知识图谱 + 混合检索（向量 + FTS5 + 图遍历）在架构深度上显著领先。OpenClaw 的 Markdown 文件方案简单直观但缺乏结构化查询能力和记忆巩固/遗忘机制。
+**对比 ZhiWei**：ZhiWei 的四层认知记忆系统（Working / Episodic / Semantic / Procedural）+ 时序知识图谱 + 混合检索（向量 + FTS5 + 图遍历）在架构深度上显著领先。OpenClaw 的 Markdown 文件方案简单直观但缺乏结构化查询能力和记忆巩固/遗忘机制。
 
 #### 7.2.8 SubAgent 体系
 
 OpenClaw 支持 SubAgent 委托，主 Agent 可以将任务委托给具有不同 Persona 和工具集的子 Agent。子 Agent 可以使用不同的 LLM Provider（如主 Agent 用 Claude Opus，子 Agent 用 GPT-4o-mini 节省成本）。
 
-**借鉴建议**：与 AstrBot 的 HandoffTool 模式类似，LifePilot 路线图 Phase 3 的多 Agent 协作可参考此设计。
+**借鉴建议**：与 AstrBot 的 HandoffTool 模式类似，ZhiWei 路线图 Phase 3 的多 Agent 协作可参考此设计。
 
-### 7.3 LifePilot 的差异化优势
+### 7.3 ZhiWei 的差异化优势
 
-| 维度 | LifePilot 优势 | OpenClaw 现状 |
+| 维度 | ZhiWei 优势 | OpenClaw 现状 |
 |------|---------------|---------------|
 | 认知记忆 | 四层记忆系统 + 时序知识图谱 + 混合检索 | Markdown 文件 + SQLite-vec 向量搜索，无分层记忆 |
 | 记忆巩固/遗忘 | ConsolidationPipeline + V2 Reflection-Summary 遗忘策略 | 无记忆巩固和遗忘机制 |
@@ -1204,9 +1204,9 @@ OpenClaw 支持 SubAgent 委托，主 Agent 可以将任务委托给具有不同
 
 基于深入源码分析，1.2 节的对比表需要更正以下两点：
 
-1. **本地优先**：OpenClaw 实际上也是本地优先架构（Gateway 运行在用户设备上，数据存储在本地文件系统），与 LifePilot 在这一维度上是**持平**而非 LifePilot 的差异化优势。两者的区别在于：OpenClaw 依赖 Node.js 运行时 + 外部 LLM API，LifePilot 依赖 JVM + 外部 LLM API（或本地 Ollama）。
+1. **本地优先**：OpenClaw 实际上也是本地优先架构（Gateway 运行在用户设备上，数据存储在本地文件系统），与 ZhiWei 在这一维度上是**持平**而非 ZhiWei 的差异化优势。两者的区别在于：OpenClaw 依赖 Node.js 运行时 + 外部 LLM API，ZhiWei 依赖 JVM + 外部 LLM API（或本地 Ollama）。
 
-2. **主动推理**：OpenClaw 支持 Cron Job 定时任务（如早间简报）和 Heartbeat 心跳机制，具备一定的主动能力。但 LifePilot 的 ProactiveReasoner（30 分钟定时评估 + 规则过滤 + LLM 评估 + 智能降频状态机）在主动推理的深度和智能程度上仍然领先。OpenClaw 的主动能力更接近"定时任务触发"，LifePilot 的主动能力是"基于上下文的智能推理"。
+2. **主动推理**：OpenClaw 支持 Cron Job 定时任务（如早间简报）和 Heartbeat 心跳机制，具备一定的主动能力。但 ZhiWei 的 ProactiveReasoner（30 分钟定时评估 + 规则过滤 + LLM 评估 + 智能降频状态机）在主动推理的深度和智能程度上仍然领先。OpenClaw 的主动能力更接近"定时任务触发"，ZhiWei 的主动能力是"基于上下文的智能推理"。
 
 ### 7.5 源码级深度分析
 
@@ -1263,7 +1263,7 @@ openclaw/
 
 关键路径：CLI 或 Channel 输入 → Gateway 路由和权限检查 → 触发 Agent 执行 → 流式结果返回 → Channel 输出。
 
-**对比 LifePilot**：LifePilot 的消息处理是 `CliInterface` / `ChannelAdapter` → `AgentLoop` 直连，缺少 Gateway 这一中间层。Gateway 层的价值在于：
+**对比 ZhiWei**：ZhiWei 的消息处理是 `CliInterface` / `ChannelAdapter` → `AgentLoop` 直连，缺少 Gateway 这一中间层。Gateway 层的价值在于：
 - 统一的认证和权限检查
 - 跨 Channel 的会话管理
 - 请求级别的速率限制和安全审计
@@ -1280,7 +1280,7 @@ OpenClaw 的 CLI 设计有几个值得注意的点：
 
 "快速路径"设计值得借鉴——对于简单命令（如 `openclaw version`），不需要初始化整个 Gateway 和 Agent Runtime，直接返回结果。这显著提升了 CLI 响应速度。
 
-**借鉴建议**：LifePilot 的 `CliInterface` 当前每次启动都需要初始化完整的 Spring 上下文。可以考虑为简单命令（如 `settings list`、`version`）提供快速路径，跳过不必要的 Bean 初始化。
+**借鉴建议**：ZhiWei 的 `CliInterface` 当前每次启动都需要初始化完整的 Spring 上下文。可以考虑为简单命令（如 `settings list`、`version`）提供快速路径，跳过不必要的 Bean 初始化。
 
 #### 7.5.4 配置系统
 
@@ -1291,7 +1291,7 @@ OpenClaw 使用 JSON5 格式配置（支持注释），配置系统特点：
 - 配置校验 + 默认值填充
 - 会话级配置覆盖（`src/config/sessions.ts`）
 
-**对比 LifePilot**：LifePilot 使用 Spring Boot 的 `application.yml` 配置体系，已有成熟的配置管理。OpenClaw 的配置版本迁移机制值得借鉴——当配置格式变更时自动迁移旧配置，避免用户手动修改。
+**对比 ZhiWei**：ZhiWei 使用 Spring Boot 的 `application.yml` 配置体系，已有成熟的配置管理。OpenClaw 的配置版本迁移机制值得借鉴——当配置格式变更时自动迁移旧配置，避免用户手动修改。
 
 ### 7.6 行动建议优先级
 
@@ -1307,9 +1307,9 @@ OpenClaw 使用 JSON5 格式配置（支持注释），配置系统特点：
 | P3 | Computer Use 完整实现 | 高 | 本地 OS 操作能力 |
 | P3 | 原生桌面/移动客户端 | 极高 | 用户体验提升 |
 
-### 7.7 综合对比：OpenClaw vs AstrBot vs LifePilot
+### 7.7 综合对比：OpenClaw vs AstrBot vs ZhiWei
 
-| 维度 | OpenClaw | AstrBot | LifePilot |
+| 维度 | OpenClaw | AstrBot | ZhiWei |
 |------|----------|---------|-----------|
 | 定位 | 自托管个人 AI Agent | 多平台 IM 聊天机器人 | 个人 AI Agent 助手 |
 | 语言 | TypeScript | Python | Java 22 |
@@ -1323,4 +1323,4 @@ OpenClaw 使用 JSON5 格式配置（支持注释），配置系统特点：
 | 部署体验 | npm 一行安装 + 向导 | Docker / uv / Tauri | Spring Boot JAR |
 | 中国生态 | 无 | QQ / 企微 / 钉钉 / 飞书 | 企微 / 钉钉 / 飞书 |
 
-**结论**：三个项目各有侧重。OpenClaw 在用户规模、工具生态和部署体验上遥遥领先；AstrBot 在中国 IM 平台覆盖和插件数量上有优势；LifePilot 在记忆系统深度、状态管理严谨性、可观测性和主动推理智能度上具有技术差异化优势。LifePilot 应优先补齐工具生态（MCP + 声明式 Skill）和部署体验短板，同时保持认知记忆和主动推理的技术护城河。
+**结论**：三个项目各有侧重。OpenClaw 在用户规模、工具生态和部署体验上遥遥领先；AstrBot 在中国 IM 平台覆盖和插件数量上有优势；ZhiWei 在记忆系统深度、状态管理严谨性、可观测性和主动推理智能度上具有技术差异化优势。ZhiWei 应优先补齐工具生态（MCP + 声明式 Skill）和部署体验短板，同时保持认知记忆和主动推理的技术护城河。

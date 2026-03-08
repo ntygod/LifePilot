@@ -269,7 +269,7 @@ defineExpose({
 
       <div class="text-center mt-xs">
         <p class="text-[10px] text-muted-foreground">
-          按 Enter 发送，Shift + Enter 换行。LifePilot 可能会出错。请核实重要信息。
+          按 Enter 发送，Shift + Enter 换行。ZhiWei 可能会出错。请核实重要信息。
           <span v-if="isUploading" class="ml-2 text-primary">正在上传附件…</span>
           <span v-else-if="disabled" class="ml-2">正在生成回答，稍候即可继续输入</span>
         </p>

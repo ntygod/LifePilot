@@ -41,7 +41,7 @@ AI Agent CLI 交互模型：
   延迟：2s ~ 120s，非确定性输出，多轮对话上下文
 ```
 
-这个差异直接导出 LifePilot CLI 的核心设计决策：
+这个差异直接导出 ZhiWei CLI 的核心设计决策：
 
 1. **双模式架构**：交互式对话模式（长连接、多轮）+ 单次命令模式（快进快出）
 2. **快速路径优化**：简单命令（`--help`、`--version`）跳过 Spring 上下文初始化，实现毫秒级响应
@@ -50,13 +50,13 @@ AI Agent CLI 交互模型：
 
 ### 1.2 前沿 CLI UX 研究基础
 
-LifePilot CLI 的设计参考了以下前沿实践：
+ZhiWei CLI 的设计参考了以下前沿实践：
 
-| 来源 | 核心洞察 | LifePilot 映射 |
+| 来源 | 核心洞察 | ZhiWei 映射 |
 |------|---------|---------------|
 | [bettercli.org](https://bettercli.org/) CLI Design Guide | CLI 应提供渐进式发现：先展示最常用命令，高级选项按需探索 | `CliCompleter` 按使用频率排序补全建议 |
 | [Lucas F. Costa — UX Patterns for CLI Tools](https://lucasfcosta.com/2022/06/01/ux-patterns-cli-tools.html) | 好的 CLI 应以示例开头而非手册页；错误消息应包含修复建议 | `ResponseRenderer` 错误输出附带建议操作 |
-| [JLine 3 官方文档](https://jline.github.io/docs/advanced/library-integration) | JLine + Picocli 集成模式：JLine 负责终端交互，Picocli 负责命令解析 | LifePilot 采用 JLine 交互 + 自定义 `CommandRouter` 路由 |
+| [JLine 3 官方文档](https://jline.github.io/docs/advanced/library-integration) | JLine + Picocli 集成模式：JLine 负责终端交互，Picocli 负责命令解析 | ZhiWei 采用 JLine 交互 + 自定义 `CommandRouter` 路由 |
 | [caduh — Make Your CLI a Joy to Use](https://www.caduh.com/blog/make-your-cli-a-joy-to-use) | 一致的子命令结构、智能默认值、TTY 感知的颜色输出 | `QuickCommand` 统一子命令模式，`ResponseRenderer` TTY 感知 |
 
 Content was rephrased for compliance with licensing restrictions.
@@ -100,7 +100,7 @@ CLI 的主要交互模式是自然语言对话（`lifepilot chat`），快捷命
 │  ┌───────────────────────────────────────────────────────────────┐  │
 │  │                    CliShell（JLine 3 主循环）                   │  │
 │  │                                                               │  │
-│  │  LineReader.readLine("LifePilot> ")                           │  │
+│  │  LineReader.readLine("ZhiWei> ")                           │  │
 │  │       │                                                       │  │
 │  │       ├── 空行 / quit / exit → 退出                           │  │
 │  │       │                                                       │  │
@@ -176,7 +176,7 @@ CLI 的主要交互模式是自然语言对话（`lifepilot chat`），快捷命
 
 | 模式 | 触发条件 | 行为 | 示例 |
 |------|---------|------|------|
-| 交互式 | `java -jar lifepilot.jar` | 显示欢迎横幅，进入 REPL | `LifePilot> 今天有什么安排？` |
+| 交互式 | `java -jar lifepilot.jar` | 显示欢迎横幅，进入 REPL | `ZhiWei> 今天有什么安排？` |
 | 单次命令 | `java -jar lifepilot.jar todo list` | 执行命令，输出结果，退出 | 直接输出待办列表 |
 
 ### 3.4 欢迎横幅
@@ -260,7 +260,7 @@ java -jar lifepilot.jar --help
 | Picocli | `@Command` 注解 + 延迟初始化 | 命令解析在 Spring 之前完成 |
 | GraalVM native-image | AOT 编译 | 启动时间 < 100ms，但编译复杂 |
 | Spring Boot Lazy Init | `spring.main.lazy-initialization=true` | 减少启动时间但不消除 |
-| LifePilot FastPathRunner | `main()` 拦截 | 最简单直接，零依赖 |
+| ZhiWei FastPathRunner | `main()` 拦截 | 最简单直接，零依赖 |
 
 ---
 
@@ -414,15 +414,15 @@ public interface QuickCommand {
 | AstrBot | ❌ 无 CLI | 消息平台 only | — | — | — |
 | Aider | ✅ 完整 CLI | REPL + 单次 | ❌ | 部分 | Git 文件补全 |
 | Claude Code | ✅ 完整 CLI | REPL | ❌ | ✅ | 文件路径补全 |
-| LifePilot | ✅ 完整 CLI | REPL + 单次 + 快速路径 | ✅ | ✅ | 命令 + 子命令补全 |
+| ZhiWei | ✅ 完整 CLI | REPL + 单次 + 快速路径 | ✅ | ✅ | 命令 + 子命令补全 |
 
 ### 9.2 JLine 3 vs 竞品终端库
 
-| 库 | 语言 | 特性 | LifePilot 选择理由 |
+| 库 | 语言 | 特性 | ZhiWei 选择理由 |
 |---|------|------|-------------------|
 | JLine 3 | Java | 补全、高亮、历史、多行编辑 | Java 生态最成熟的终端库 |
 | Picocli | Java | 注解式命令解析、类型转换 | 适合纯命令式 CLI，不适合对话式 |
-| Lanterna | Java | TUI 框架（类 ncurses） | 过重，LifePilot 不需要 TUI |
+| Lanterna | Java | TUI 框架（类 ncurses） | 过重，ZhiWei 不需要 TUI |
 | Bubbletea | Go | 函数式 TUI 框架 | Go 生态，不适用 |
 | Ink | Node.js | React 式终端 UI | Node.js 生态，不适用 |
 
@@ -437,9 +437,9 @@ AI Agent CLI 的启动时间是关键 UX 指标。用户对 `--help` 的期望�
 | GraalVM native-image | < 100ms | 高（反射配置、AOT 限制） | 适合发布版本 |
 | Spring Boot Lazy Init | ~1.5s | 低 | 减少但不消除 |
 | CRaC（Coordinated Restore at Checkpoint） | < 200ms | 中 | JDK 21+ 实验性 |
-| FastPathRunner（LifePilot） | < 50ms | 极低 | 仅限无依赖命令 |
+| FastPathRunner（ZhiWei） | < 50ms | 极低 | 仅限无依赖命令 |
 
-LifePilot 当前采用 `FastPathRunner` 作为最小成本方案，未来可考虑 GraalVM native-image 进一步优化。
+ZhiWei 当前采用 `FastPathRunner` 作为最小成本方案，未来可考虑 GraalVM native-image 进一步优化。
 
 ---
 
@@ -451,7 +451,7 @@ lifepilot:
     # 欢迎横幅开关
     show-banner: true
     # 提示符
-    prompt: "LifePilot> "
+    prompt: "ZhiWei> "
     # 历史记录文件
     history-file: "~/.lifepilot/cli-history"
     # 最大历史记录条数

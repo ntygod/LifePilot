@@ -44,7 +44,7 @@
 
 #### 2.1.1 记忆巩固与层次化组织
 
-| 研究 | 核心贡献 | LifePilot 采纳 |
+| 研究 | 核心贡献 | ZhiWei 采纳 |
 |------|---------|---------------|
 | **TiMem** ([arXiv 2601.02845](https://arxiv.org/abs/2601.02845)) | 提出时序记忆树（Temporal Memory Tree, TMT），将对话流组织为五层层次结构，从原始对话片段逐层抽象为人格画像。在 LoCoMo 基准上达到 75.30% 准确率，同时减少 52.20% 的召回记忆长度 | 巩固管线的层次化抽象策略：L2 情景记忆→L3 语义记忆的渐进提炼流程 |
 | **HiMem** ([arXiv 2601.06377](https://arxiv.org/abs/2601.06377)) | 提出冲突感知的记忆再巩固（Conflict-aware Memory Reconsolidation），基于检索反馈修订和补充已存储知识，实现记忆的持续自我演化 | 巩固管线中的冲突检测与版本化更新策略 |
@@ -54,7 +54,7 @@
 
 #### 2.1.2 认知遗忘与记忆管理
 
-| 研究 | 核心贡献 | LifePilot 采纳 |
+| 研究 | 核心贡献 | ZhiWei 采纳 |
 |------|---------|---------------|
 | **MaRS** ([arXiv 2512.12856](https://arxiv.org/abs/2512.12856)) | 将记忆形式化为元组 A=(M,P,B,π)，提出 6 种遗忘策略，Hybrid 策略综合评分 ≈0.911。300 次评估实验验证了预算约束下的遗忘有效性 | Hybrid 遗忘策略的完整实现框架 |
 | **FadeMem** ([arXiv 2601.18642](https://arxiv.org/abs/2601.18642)) | 生物启发的主动遗忘机制，证明主动遗忘低价值信息可提升检索精度和推理质量 | 遗忘引擎的理论基础，隐私感知遗忘的设计依据 |
@@ -62,7 +62,7 @@
 
 #### 2.1.3 图检索与知识图谱
 
-| 研究 | 核心贡献 | LifePilot 采纳 |
+| 研究 | 核心贡献 | ZhiWei 采纳 |
 |------|---------|---------------|
 | **Synapse** ([arXiv 2601.02744](https://arxiv.org/abs/2601.02744)) | 将记忆建模为动态图，通过扩散激活（Spreading Activation）+ 侧向抑制（Lateral Inhibition）+ 时间衰减动态高亮相关子图 | 评估 Agentic GraphRAG 的参考方案 |
 | **GraphRAG-Bench** ([arXiv 2506.05690](https://arxiv.org/abs/2506.05690)) | 系统评估 GraphRAG vs 传统 RAG，发现 GraphRAG 在多跳推理上提升 4.5%，但在简单事实检索上准确率低 13.4%，延迟高 2.3 倍 | Agentic GraphRAG 待评估决策的关键依据 |
@@ -70,12 +70,12 @@
 
 #### 2.1.4 开源项目与产品对比
 
-| 项目/产品 | 核心特点 | 与 LifePilot 的差异 |
+| 项目/产品 | 核心特点 | 与 ZhiWei 的差异 |
 |----------|---------|-------------------|
-| **EverMemOS** (EverMind, 2025-2026) | 四层记忆提取架构，LoCoMo 93.05% SOTA，100-300ms 延迟，Token 成本降低 70%。三阶段生命周期：MemCell 提取→MemScene 语义巩固→重构性回忆 | 云端 API 服务，非本地部署；LifePilot 采纳其 MemCell→MemScene 的两级巩固思路，但基于 SQLite 本地实现 |
-| **Mem0** ([arXiv 2504.19413](https://arxiv.org/abs/2504.19413)) | 三阶段管线（提取→巩固→检索），Mem0ᵍ 图变体支持多会话关系推理。LoCoMo 上相对准确率提升 26%，p95 延迟降低 91% | 云端优先，图存储依赖 Neo4j；LifePilot 采纳其选择性记忆提取策略，但用 SQLite 递归 CTE 替代 Neo4j |
-| **Engram** (2026) | 知识图谱 + 扩散激活检索 + 睡眠周期巩固。开源，支持 MCP 集成 | Python 生态，非 JVM；LifePilot 借鉴其睡眠周期巩固模式和扩散激活检索思路 |
-| **LangChain Agent Builder** (2026) | 文件系统记忆架构，跨会话学习和适应 | 通用框架，无认知科学启发的层次化设计；LifePilot 的四层认知架构更精细 |
+| **EverMemOS** (EverMind, 2025-2026) | 四层记忆提取架构，LoCoMo 93.05% SOTA，100-300ms 延迟，Token 成本降低 70%。三阶段生命周期：MemCell 提取→MemScene 语义巩固→重构性回忆 | 云端 API 服务，非本地部署；ZhiWei 采纳其 MemCell→MemScene 的两级巩固思路，但基于 SQLite 本地实现 |
+| **Mem0** ([arXiv 2504.19413](https://arxiv.org/abs/2504.19413)) | 三阶段管线（提取→巩固→检索），Mem0ᵍ 图变体支持多会话关系推理。LoCoMo 上相对准确率提升 26%，p95 延迟降低 91% | 云端优先，图存储依赖 Neo4j；ZhiWei 采纳其选择性记忆提取策略，但用 SQLite 递归 CTE 替代 Neo4j |
+| **Engram** (2026) | 知识图谱 + 扩散激活检索 + 睡眠周期巩固。开源，支持 MCP 集成 | Python 生态，非 JVM；ZhiWei 借鉴其睡眠周期巩固模式和扩散激活检索思路 |
+| **LangChain Agent Builder** (2026) | 文件系统记忆架构，跨会话学习和适应 | 通用框架，无认知科学启发的层次化设计；ZhiWei 的四层认知架构更精细 |
 
 ### 2.2 关键设计决策
 
@@ -296,7 +296,7 @@ lifepilot:
 
 #### 7.1.1 现状分析
 
-当前 LifePilot 的图遍历检索使用 SQLite 递归 CTE 实现（`GraphTraverser`），通过 `WITH RECURSIVE` 语句沿关系边扩展 N 跳。这种方案在 Phase 2 中已实现并验证。
+当前 ZhiWei 的图遍历检索使用 SQLite 递归 CTE 实现（`GraphTraverser`），通过 `WITH RECURSIVE` 语句沿关系边扩展 N 跳。这种方案在 Phase 2 中已实现并验证。
 
 #### 7.1.2 GraphRAG 的优势与局限
 
@@ -313,7 +313,7 @@ lifepilot:
 - 时间敏感查询准确率下降 16.6%
 - 图构建和维护成本高
 
-#### 7.1.3 LifePilot 场景评估
+#### 7.1.3 ZhiWei 场景评估
 
 | 维度 | SQLite CTE 现状 | Agentic GraphRAG |
 |------|----------------|-----------------|
@@ -327,7 +327,7 @@ lifepilot:
 
 **暂不引入 Agentic GraphRAG**。理由：
 
-1. LifePilot 是个人 Agent，实体规模在 SQLite CTE 的高效处理范围内（~10K 实体，2-3 跳遍历 < 10ms）
+1. ZhiWei 是个人 Agent，实体规模在 SQLite CTE 的高效处理范围内（~10K 实体，2-3 跳遍历 < 10ms）
 2. GraphRAG-Bench 的评估显示，在简单查询场景下 GraphRAG 反而降低准确率，而个人 Agent 的大部分查询属于简单事实检索
 3. 引入 GraphRAG 会破坏「单 JAR + SQLite」的零依赖部署模型
 4. 当前 HybridRetriever 的三路检索（向量 + FTS5 + CTE 图遍历）已覆盖大部分检索需求

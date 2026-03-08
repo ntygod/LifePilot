@@ -1,4 +1,4 @@
-# LifePilot
+# ZhiWei
 
 > **了解你生活全貌的 AI 伙伴**
 
@@ -7,7 +7,7 @@
 [![Spring AI](https://img.shields.io/badge/Spring%20AI-1.1.2-blue.svg)](https://spring.io/projects/spring-ai)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**LifePilot** 是一个本地运行的个人 AI Agent 助手，核心定位为"了解你生活全貌的 AI 伙伴"。它不只是被动执行用户命令，而是具备**主动智能能力**——观察用户的生活模式，主动提供建议和帮助。
+**ZhiWei** 是一个本地运行的个人 AI Agent 助手，核心定位为"了解你生活全貌的 AI 伙伴"。它不只是被动执行用户命令，而是具备**主动智能能力**——观察用户的生活模式，主动提供建议和帮助。
 
 ## ✨ 核心特性
 
@@ -105,7 +105,7 @@ java -jar target/lifepilot-0.1.0-SNAPSHOT.jar
 
 ### 首次使用
 
-启动后，你可以通过以下方式与 LifePilot 交互：
+启动后，你可以通过以下方式与 ZhiWei 交互：
 
 1. **CLI 模式**（默认）
 ```bash
@@ -127,21 +127,21 @@ java -jar lifepilot.jar --mode tray
 
 ```
 你：你好，我是小明
-LifePilot：你好小明！很高兴认识你。我是 LifePilot，你的 AI 伙伴。
+ZhiWei：你好小明！很高兴认识你。我是 ZhiWei，你的 AI 伙伴。
          有什么我可以帮你的吗？
 
 你：帮我创建一个明天下午3点的会议，和产品团队讨论Q2规划
-LifePilot：✅ 已创建日程「产品团队Q2规划讨论」
+ZhiWei：✅ 已创建日程「产品团队Q2规划讨论」
          📅 明天 15:00-16:00
          🔔 明天 14:45 会提醒你
 
 你：再帮我加个待办，会前准备Q1数据汇总
-LifePilot：✅ 已创建待办「准备Q1数据汇总」
+ZhiWei：✅ 已创建待办「准备Q1数据汇总」
          🔴 优先级：高
          ⏰ 截止时间：明天 14:30（会议前 30 分钟）
 
 你：看看我今天的安排
-LifePilot：📊 今日概览：
+ZhiWei：📊 今日概览：
          📅 日程：2 项
            09:00 团队周会
            14:00 客户回访
@@ -362,6 +362,6 @@ npm run build
 
 ---
 
-**LifePilot** — 了解你生活全貌的 AI 伙伴
+**ZhiWei** — 了解你生活全貌的 AI 伙伴
 
 本地运行 · 隐私优先 · 越用越懂你

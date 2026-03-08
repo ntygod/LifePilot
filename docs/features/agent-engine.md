@@ -33,11 +33,11 @@
 
 ## 1. 设计哲学与核心理念
 
-### 1.1 为什么 LifePilot 不是"又一个聊天机器人"
+### 1.1 为什么 ZhiWei 不是"又一个聊天机器人"
 
 绝大多数 AI 助手本质上是**提示词包装器**（prompt wrapper）——用户输入文本，系统拼接提示词，LLM 返回文本，循环往复。这种架构在简单问答场景下足够，但在需要**多步推理、工具编排、状态持久化、安全约束**的真实生活管理场景中迅速崩塌。
 
-LifePilot 的 Agent 引擎采用截然不同的架构范式：**LLM 是规划器（Planner），不是执行器（Executor）**。整个系统被设计为一个分布式控制系统，其中 LLM 仅负责在概率域内做出决策，而所有状态管理、工具调用、安全检查、上下文组装均在确定性代码域内执行。
+ZhiWei 的 Agent 引擎采用截然不同的架构范式：**LLM 是规划器（Planner），不是执行器（Executor）**。整个系统被设计为一个分布式控制系统，其中 LLM 仅负责在概率域内做出决策，而所有状态管理、工具调用、安全检查、上下文组装均在确定性代码域内执行。
 
 这一设计理念与 2025-2026 年业界的架构演进方向一致：
 
@@ -47,7 +47,7 @@ LifePilot 的 Agent 引擎采用截然不同的架构范式：**LLM 是规划器
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    LifePilot Agent 引擎                    │
+│                    ZhiWei Agent 引擎                    │
 │                                                           │
 │  ┌─────────────────────┐   ┌───────────────────────────┐ │
 │  │   概率域 (LLM)       │   │   确定性域 (Code)          │ │
@@ -1164,7 +1164,7 @@ LLM 的上下文窗口不是一个可以随意填充的无限容器——它是�
 - **Inkeep 的 "Fighting Context Rot"**：长对话中注意力会逐步退化（Context Rot），早期的关键信息被后续大量消息淹没。解决方案不是简单地增大窗口，而是主动压缩和重组上下文结构。
 - **Redis 上下文窗口管理指南（2026）**：将上下文窗口类比为内存管理——需要分配策略、淘汰策略和碎片整理，而非无限制地追加内容。
 
-LifePilot 的 ContextAssembler 将这些理念融合为一个核心原则：
+ZhiWei 的 ContextAssembler 将这些理念融合为一个核心原则：
 
 > **不同的 Agent 阶段需要不同的上下文组成。**
 
@@ -1180,7 +1180,7 @@ UNDERSTANDING 阶段需要更多的用户历史和知识图谱信息来理解意
 │  │ → Token 浪费、注意力稀释、决策质量下降                 │    │
 │  └─────────────────────────────────────────────────────┘    │
 │                                                             │
-│  LifePilot 方式:                                             │
+│  ZhiWei 方式:                                             │
 │  ┌─────────────────────────────────────────────────────┐    │
 │  │ 阶段感知的 System Prompt                              │    │
 │  │ + 相关性排序的对话历史（压缩旧消息）                    │    │
@@ -2039,7 +2039,7 @@ ContextAssembler 利用这一特性，将信息按重要性分配到上下文窗
 
 ### 5.1 设计理念：安全不依赖 LLM 的自我约束
 
-安全是 Agent 引擎中**唯一不可妥协**的横切关注点。与其他 AI 系统依赖提示词注入（"你不能做危险的事情"）不同，LifePilot 的安全模型建立在一个核心假设之上：
+安全是 Agent 引擎中**唯一不可妥协**的横切关注点。与其他 AI 系统依赖提示词注入（"你不能做危险的事情"）不同，ZhiWei 的安全模型建立在一个核心假设之上：
 
 > **LLM 的自我约束是不可靠的。安全必须由确定性代码在 LLM 之外强制执行。**
 
@@ -2076,7 +2076,7 @@ ContextAssembler 利用这一特性，将信息按重要性分配到上下文窗
 
 ### 5.2 风险等级与处理策略
 
-LifePilot 将所有工具操作和数据访问划分为四个风险等级，每个等级对应不同的处理策略。风险等级由 `GuardrailPolicy` 静态定义，不依赖 LLM 的运行时判断。
+ZhiWei 将所有工具操作和数据访问划分为四个风险等级，每个等级对应不同的处理策略。风险等级由 `GuardrailPolicy` 静态定义，不依赖 LLM 的运行时判断。
 
 ```java
 package com.lifepilot.agent;
@@ -2769,7 +2769,7 @@ sequenceDiagram
 
 ### 6.1 统一工具抽象
 
-LifePilot 的工具生态系统面临一个核心挑战：工具来源多样化。
+ZhiWei 的工具生态系统面临一个核心挑战：工具来源多样化。
 
 - **MCP 工具**：通过 Model Context Protocol 从外部 MCP Server 动态发现和调用的工具，Schema 在运行时获取
 - **YAML 声明式工具**：通过 YAML 文件声明的 HTTP API 封装，无需编写 Java 代码即可集成外部服务
@@ -4672,7 +4672,7 @@ flowchart TD
 
 ### 8.4 SubAgent 预算隔离
 
-当一个 Skill 被激活为 SubAgent 时，它需要自己的独立预算——既不能无限制地消耗父 Agent 的资源，也不能因为预算分配不当而无法完成任务。LifePilot 采用**预算切分与回收**机制来解决这个问题。
+当一个 Skill 被激活为 SubAgent 时，它需要自己的独立预算——既不能无限制地消耗父 Agent 的资源，也不能因为预算分配不当而无法完成任务。ZhiWei 采用**预算切分与回收**机制来解决这个问题。
 
 **核心原则：**
 
@@ -5339,7 +5339,7 @@ AgentLoop 终止 ──► SessionManager.completeSession()
 
 ### 9.3 对话历史与消息模型
 
-多轮对话的核心是消息历史的结构化管理。LifePilot 的消息模型不是简单的 `(role, content)` 二元组，而是使用 `sealed interface` 定义了五种语义明确的消息变体，每种变体携带该类型消息所需的完整上下文信息。
+多轮对话的核心是消息历史的结构化管理。ZhiWei 的消息模型不是简单的 `(role, content)` 二元组，而是使用 `sealed interface` 定义了五种语义明确的消息变体，每种变体携带该类型消息所需的完整上下文信息。
 
 这一设计的关键优势：
 
@@ -5923,7 +5923,7 @@ public class SessionRepository {
 
 ### 9.5 会话恢复与断点续传
 
-会话恢复是 LifePilot 区别于普通聊天机器人的关键能力。当用户关闭应用后重新打开，或网络中断后重新连接，系统能够从上次中断的位置无缝继续对话，而非要求用户重新描述上下文。
+会话恢复是 ZhiWei 区别于普通聊天机器人的关键能力。当用户关闭应用后重新打开，或网络中断后重新连接，系统能够从上次中断的位置无缝继续对话，而非要求用户重新描述上下文。
 
 恢复过程的核心挑战在于：**AgentState 是内存中的不可变对象，包含对话历史、执行阶段、预算快照等复合数据，需要从多张 SQLite 表中精确重建。**
 
@@ -6077,7 +6077,7 @@ public class SessionRecoveryService {
 
 ### 9.6 会话超时与清理策略
 
-长时间空闲的会话会占用内存资源（`ConcurrentHashMap` 中的活跃索引）和 SQLite 存储空间。LifePilot 通过可配置的超时策略自动管理会话生命周期，包括空闲挂起、过期归档和历史清理。
+长时间空闲的会话会占用内存资源（`ConcurrentHashMap` 中的活跃索引）和 SQLite 存储空间。ZhiWei 通过可配置的超时策略自动管理会话生命周期，包括空闲挂起、过期归档和历史清理。
 
 #### YAML 配置
 
@@ -6306,7 +6306,7 @@ public class SessionCleanupTask {
 
 ### 9.7 多会话并发
 
-LifePilot 作为本地优先的个人 AI 助手，虽然主要服务单用户，但需要支持多会话并发场景：用户可能同时在 CLI 和 Web UI 中各开一个会话，或者一个前台会话正在交互的同时，后台有定时触发的主动推理会话在运行。
+ZhiWei 作为本地优先的个人 AI 助手，虽然主要服务单用户，但需要支持多会话并发场景：用户可能同时在 CLI 和 Web UI 中各开一个会话，或者一个前台会话正在交互的同时，后台有定时触发的主动推理会话在运行。
 
 多会话并发的核心设计原则：**每个会话运行在独立的 Virtual Thread 上，通过不可变状态和 ConcurrentHashMap 实现零锁竞争的会话隔离。**
 
@@ -6511,7 +6511,7 @@ public class ConcurrentSessionExecutor {
 
 #### Virtual Thread 的选择理由
 
-LifePilot 选择 Virtual Thread 而非传统线程池管理会话并发，基于以下考量：
+ZhiWei 选择 Virtual Thread 而非传统线程池管理会话并发，基于以下考量：
 
 | 维度 | 传统线程池 | Virtual Thread |
 |------|-----------|----------------|
@@ -6521,7 +6521,7 @@ LifePilot 选择 Virtual Thread 而非传统线程池管理会话并发，基于
 | 代码复杂度 | 需要手动管理线程池、队列、拒绝策略 | 直接使用 `Executors.newVirtualThreadPerTaskExecutor()` |
 | 调试友好 | 线程转储中线程名有意义 | 同样支持线程转储和 JFR 事件 |
 
-对于 LifePilot 的典型场景（单用户、1-5 个并发会话、每个会话包含多次 LLM 调用和工具执行），Virtual Thread 的优势在于：
+对于 ZhiWei 的典型场景（单用户、1-5 个并发会话、每个会话包含多次 LLM 调用和工具执行），Virtual Thread 的优势在于：
 
 1. **LLM 调用是 I/O 密集型**：每次 LLM 调用耗时 1-10 秒，Virtual Thread 在等待响应时不占用平台线程
 2. **工具调用可能阻塞**：MCP 工具、HTTP 请求、文件操作都是阻塞 I/O，Virtual Thread 天然适配
@@ -6534,9 +6534,9 @@ LifePilot 选择 Virtual Thread 而非传统线程池管理会话并发，基于
 
 ## 10. 并发模型与 Virtual Thread
 
-> **核心问题**：Agent 引擎的工作负载本质上是 I/O 密集型的——LLM 调用、MCP 工具执行、知识库检索、外部 HTTP 请求，每一步都涉及网络等待。传统的线程池模型在面对大量阻塞 I/O 时迅速耗尽平台线程，而响应式编程（WebFlux）虽然解决了线程利用率问题，却以代码可读性和调试体验为代价。Java 22 的 Virtual Thread（JEP 444）和结构化并发（JEP 505 预览）为 LifePilot 提供了第三条路径：**用同步代码的写法获得异步代码的性能**。
+> **核心问题**：Agent 引擎的工作负载本质上是 I/O 密集型的——LLM 调用、MCP 工具执行、知识库检索、外部 HTTP 请求，每一步都涉及网络等待。传统的线程池模型在面对大量阻塞 I/O 时迅速耗尽平台线程，而响应式编程（WebFlux）虽然解决了线程利用率问题，却以代码可读性和调试体验为代价。Java 22 的 Virtual Thread（JEP 444）和结构化并发（JEP 505 预览）为 ZhiWei 提供了第三条路径：**用同步代码的写法获得异步代码的性能**。
 
-本节深入阐述 LifePilot 的并发架构，从技术选型理由到具体实现模式，再到已知陷阱的规避策略。
+本节深入阐述 ZhiWei 的并发架构，从技术选型理由到具体实现模式，再到已知陷阱的规避策略。
 
 ### 10.1 为什么选择 Virtual Thread
 
@@ -6558,7 +6558,7 @@ LifePilot 选择 Virtual Thread 而非传统线程池管理会话并发，基于
 
 #### 10.1.2 Agent 工作负载特征分析
 
-LifePilot Agent 引擎的典型工作负载具有以下特征，这些特征决定了 Virtual Thread 是最优选择：
+ZhiWei Agent 引擎的典型工作负载具有以下特征，这些特征决定了 Virtual Thread 是最优选择：
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -6593,7 +6593,7 @@ LifePilot Agent 引擎的典型工作负载具有以下特征，这些特征决�
 
 #### 10.1.3 基准测试：模拟 Agent 工作负载
 
-以下基准测试模拟了 LifePilot 的典型场景：多个 Agent 会话并发执行，每个会话包含 3-5 步循环，每步包含一次 LLM 调用（模拟 2s 延迟）和 1-3 次工具调用（模拟 500ms 延迟）。
+以下基准测试模拟了 ZhiWei 的典型场景：多个 Agent 会话并发执行，每个会话包含 3-5 步循环，每步包含一次 LLM 调用（模拟 2s 延迟）和 1-3 次工具调用（模拟 500ms 延迟）。
 
 ```java
 package com.lifepilot.agent.benchmark;
@@ -6682,7 +6682,7 @@ public class ConcurrencyBenchmark {
 | 内存开销 | ~20MB（20 × 1MB 栈） | ~500KB（50 × ~10KB） |
 | 代码复杂度 | 需管理线程池大小、拒绝策略 | `try-with-resources` 即可 |
 
-> **参考**：JEP 444（Virtual Threads，Java 21 正式发布）定义了虚拟线程的核心语义——虚拟线程在执行阻塞 I/O 操作时自动从载体线程（carrier thread）卸载，载体线程可以继续执行其他虚拟线程。JEP 505（Structured Concurrency，Java 23 第四次预览）提供了 `StructuredTaskScope`，用于管理虚拟线程的父子关系和生命周期。LifePilot 基于 Java 22，使用 `--enable-preview` 启用结构化并发特性。
+> **参考**：JEP 444（Virtual Threads，Java 21 正式发布）定义了虚拟线程的核心语义——虚拟线程在执行阻塞 I/O 操作时自动从载体线程（carrier thread）卸载，载体线程可以继续执行其他虚拟线程。JEP 505（Structured Concurrency，Java 23 第四次预览）提供了 `StructuredTaskScope`，用于管理虚拟线程的父子关系和生命周期。ZhiWei 基于 Java 22，使用 `--enable-preview` 启用结构化并发特性。
 
 
 ### 10.2 StructuredTaskScope — 结构化并发
@@ -6713,11 +6713,11 @@ flowchart TD
 ```
 
 
-在 LifePilot 中，结构化并发的典型应用场景是 **Agent 单步内的并行工具调用**。当 LLM 在一次响应中请求调用多个工具（例如同时查询日历和知识库），这些工具调用应当并行执行以减少延迟，但必须在当前步骤结束前全部完成或取消。
+在 ZhiWei 中，结构化并发的典型应用场景是 **Agent 单步内的并行工具调用**。当 LLM 在一次响应中请求调用多个工具（例如同时查询日历和知识库），这些工具调用应当并行执行以减少延迟，但必须在当前步骤结束前全部完成或取消。
 
 #### 10.2.2 ParallelToolExecutor — 并行工具执行器
 
-`ParallelToolExecutor` 是 LifePilot 中结构化并发的核心实现。它使用 `StructuredTaskScope` 管理并行工具调用的完整生命周期，提供超时控制、错误隔离和结果聚合能力。
+`ParallelToolExecutor` 是 ZhiWei 中结构化并发的核心实现。它使用 `StructuredTaskScope` 管理并行工具调用的完整生命周期，提供超时控制、错误隔离和结果聚合能力。
 
 ```java
 package com.lifepilot.agent.tool;
@@ -6958,7 +6958,7 @@ flowchart TD
     style D fill:#fff3e0
 ```
 
-| 策略 | 语义 | 失败行为 | LifePilot 使用场景 |
+| 策略 | 语义 | 失败行为 | ZhiWei 使用场景 |
 |------|------|---------|-------------------|
 | `ShutdownOnFailure` | 全部成功或全部取消 | 任一失败 → 取消其余 → 抛出异常 | 依赖性工具调用（日历+地点） |
 | 基础 `StructuredTaskScope` | 等待全部完成 | 逐个检查成功/失败 | 独立工具调用（天气+新闻+日程） |
@@ -6988,7 +6988,7 @@ flowchart TD
 
 #### 10.3.2 AgentContext — 作用域值载体
 
-LifePilot 定义了 `AgentContext` 作为 Agent 执行过程中所有上下文信息的载体。通过 `ScopedValue`，这些上下文信息在整个 Agent 循环（包括并行工具调用的子虚拟线程）中自动可见，无需显式传递。
+ZhiWei 定义了 `AgentContext` 作为 Agent 执行过程中所有上下文信息的载体。通过 `ScopedValue`，这些上下文信息在整个 Agent 循环（包括并行工具调用的子虚拟线程）中自动可见，无需显式传递。
 
 ```java
 package com.lifepilot.agent.context;
@@ -7015,7 +7015,7 @@ import java.util.UUID;
  *
  * @param sessionId 当前会话唯一标识
  * @param traceId   分布式追踪标识，贯穿整个请求链路
- * @param userId    当前用户标识（LifePilot 单用户场景下通常为默认值）
+ * @param userId    当前用户标识（ZhiWei 单用户场景下通常为默认值）
  * @param budget    当前预算快照的引用（只读）
  */
 public record AgentContext(
@@ -7194,12 +7194,12 @@ flowchart TD
 
 #### 10.4.1 "零 synchronized" 原则
 
-LifePilot Agent 引擎的并发安全策略建立在一个核心原则之上：**禁止使用 `synchronized` 关键字**。这不是教条主义，而是基于 Virtual Thread 的技术约束和架构设计的双重考量：
+ZhiWei Agent 引擎的并发安全策略建立在一个核心原则之上：**禁止使用 `synchronized` 关键字**。这不是教条主义，而是基于 Virtual Thread 的技术约束和架构设计的双重考量：
 
 1. **技术约束**：`synchronized` 块会导致 Virtual Thread 被"钉"（pin）在载体线程上，无法在阻塞时让出载体线程，从而退化为传统线程模型（详见 10.6 节）
 2. **架构设计**：通过不可变数据结构和无锁并发容器，可以从根本上消除对互斥锁的需求
 
-LifePilot 的线程安全策略分为三个层次：
+ZhiWei 的线程安全策略分为三个层次：
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -7234,7 +7234,7 @@ LifePilot 的线程安全策略分为三个层次：
 
 #### 10.4.2 不可变 Record 的线程安全保证
 
-不可变对象是最强的线程安全保证——如果一个对象创建后永远不会被修改，那么任意数量的线程可以同时读取它而无需任何同步。LifePilot 的核心数据结构全部使用 Java `record` 实现，并在紧凑构造器中执行防御性拷贝：
+不可变对象是最强的线程安全保证——如果一个对象创建后永远不会被修改，那么任意数量的线程可以同时读取它而无需任何同步。ZhiWei 的核心数据结构全部使用 Java `record` 实现，并在紧凑构造器中执行防御性拷贝：
 
 ```java
 package com.lifepilot.agent;
@@ -7285,7 +7285,7 @@ public record ImmutableStateExample(
 
 #### 10.4.3 ConcurrentHashMap 注册表模式
 
-对于需要运行时动态注册和查找的组件（如工具注册表、会话管理器），LifePilot 使用 `ConcurrentHashMap` 提供无锁的并发读写能力：
+对于需要运行时动态注册和查找的组件（如工具注册表、会话管理器），ZhiWei 使用 `ConcurrentHashMap` 提供无锁的并发读写能力：
 
 ```java
 package com.lifepilot.agent.tool;
@@ -7366,7 +7366,7 @@ public class ToolRegistry {
 
 #### 10.4.4 CompletableFuture 异步协调
 
-对于需要跨会话或跨组件协调的场景，LifePilot 使用 `CompletableFuture` 实现非阻塞的异步协调，避免使用 `synchronized` 或 `wait/notify`：
+对于需要跨会话或跨组件协调的场景，ZhiWei 使用 `CompletableFuture` 实现非阻塞的异步协调，避免使用 `synchronized` 或 `wait/notify`：
 
 ```java
 package com.lifepilot.agent.session;
@@ -7448,7 +7448,7 @@ public class SessionResultCoordinator {
 
 Virtual Thread 的一个潜在陷阱是**过度并发**——因为创建虚拟线程几乎没有成本，开发者可能不加限制地启动大量并发任务，导致下游资源（LLM API、数据库连接、外部服务）被压垮。
 
-在 LifePilot 的场景中，最关键的瓶颈是 **LLM API 调用**：
+在 ZhiWei 的场景中，最关键的瓶颈是 **LLM API 调用**：
 
 - LLM 提供商通常有速率限制（如 OpenAI 的 RPM / TPM 限制）
 - 每次 LLM 调用消耗 Token 预算，不受控的并发会快速耗尽预算
@@ -7679,7 +7679,7 @@ private AgentAction callLlmWithThrottle(AssembledContext context, AgentPhase pha
 
 ### 10.6 Virtual Thread 陷阱与规避
 
-Virtual Thread 虽然大幅简化了并发编程，但存在若干已知陷阱。LifePilot 在架构设计阶段就针对每个陷阱制定了明确的规避策略。
+Virtual Thread 虽然大幅简化了并发编程，但存在若干已知陷阱。ZhiWei 在架构设计阶段就针对每个陷阱制定了明确的规避策略。
 
 #### 10.6.1 陷阱一：线程钉住（Pinned Thread）
 
@@ -7707,7 +7707,7 @@ sequenceDiagram
 ```
 
 
-**LifePilot 的规避策略**：
+**ZhiWei 的规避策略**：
 
 | 策略 | 实现方式 | 适用场景 |
 |------|---------|---------|
@@ -7764,8 +7764,8 @@ public class VirtualThreadSafeLock {
 ```
 
 
-> **第三方库的 synchronized 问题**：某些第三方库内部使用了 `synchronized`（如早期版本的 JDBC 驱动、某些 HTTP 客户端）。LifePilot 通过以下方式应对：
-> - **xerial sqlite-jdbc**：SQLite 本身是串行写入的，sqlite-jdbc 内部使用 `synchronized` 保护连接。由于 LifePilot 是单用户场景，数据库写入频率低，钉住的影响可忽略。但在开发环境中通过 `-Djdk.tracePinnedThreads=short` 监控。
+> **第三方库的 synchronized 问题**：某些第三方库内部使用了 `synchronized`（如早期版本的 JDBC 驱动、某些 HTTP 客户端）。ZhiWei 通过以下方式应对：
+> - **xerial sqlite-jdbc**：SQLite 本身是串行写入的，sqlite-jdbc 内部使用 `synchronized` 保护连接。由于 ZhiWei 是单用户场景，数据库写入频率低，钉住的影响可忽略。但在开发环境中通过 `-Djdk.tracePinnedThreads=short` 监控。
 > - **HTTP 客户端**：使用 Java 11+ 的 `java.net.http.HttpClient`，它原生支持 Virtual Thread，不使用 `synchronized`。
 > - **Spring AI ChatClient**：底层使用 `RestClient`（基于 `HttpClient`），Virtual Thread 友好。
 
@@ -7773,7 +7773,7 @@ public class VirtualThreadSafeLock {
 
 **问题描述**：Virtual Thread 的调度依赖于载体线程池（默认大小为 CPU 核心数）。如果大量虚拟线程同时执行 CPU 密集型计算（而非 I/O 阻塞），载体线程会被长时间占用，导致其他虚拟线程无法被调度。
 
-**LifePilot 的风险评估**：Agent 引擎的 CPU 密集型操作（状态转换、上下文组装、安全检查）耗时极短（< 10ms），不会导致载体线程饥饿。但以下场景需要注意：
+**ZhiWei 的风险评估**：Agent 引擎的 CPU 密集型操作（状态转换、上下文组装、安全检查）耗时极短（< 10ms），不会导致载体线程饥饿。但以下场景需要注意：
 
 | 场景 | 风险 | 规避措施 |
 |------|------|---------|
@@ -7832,7 +7832,7 @@ public class CarrierThreadProtection {
 更严重的是，某些框架和库在内部使用 `ThreadLocal` 缓存大对象（如数据库连接、格式化器、缓冲区），这些对象在虚拟线程结束后不会被立即回收（如果 `ThreadLocal` 引用链未断开）。
 
 
-**LifePilot 的规避策略**：
+**ZhiWei 的规避策略**：
 
 | 策略 | 说明 |
 |------|------|
@@ -7896,7 +7896,7 @@ public class ThreadLocalMigrationExample {
 
 **问题描述**：传统并发模型中，对象池（如数据库连接池、HTTP 连接池）的大小通常与线程池大小匹配。当切换到 Virtual Thread 后，并发任务数可能从几十个暴增到数千个，但对象池的大小不会自动扩展，导致大量虚拟线程在等待池化对象时阻塞。
 
-**LifePilot 的应对**：
+**ZhiWei 的应对**：
 
 | 池化资源 | 策略 | 说明 |
 |---------|------|------|
@@ -7906,7 +7906,7 @@ public class ThreadLocalMigrationExample {
 
 #### 10.6.5 陷阱总结与检查清单
 
-以下检查清单用于 LifePilot 的代码审查，确保 Virtual Thread 的正确使用：
+以下检查清单用于 ZhiWei 的代码审查，确保 Virtual Thread 的正确使用：
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -7939,7 +7939,7 @@ public class ThreadLocalMigrationExample {
 
 #### 10.6.6 JVM 启动参数配置
 
-LifePilot 在开发和生产环境中使用不同的 JVM 参数来优化 Virtual Thread 的行为：
+ZhiWei 在开发和生产环境中使用不同的 JVM 参数来优化 Virtual Thread 的行为：
 
 ```bash
 # 开发环境 — 启用预览特性 + 线程钉住检测
@@ -7962,7 +7962,7 @@ java --enable-preview \
 | `-Djdk.virtualThreadScheduler.parallelism` | 载体线程池大小 | 4（便于复现并发问题） | 0（默认=CPU 核心数） |
 | `-Djdk.virtualThreadScheduler.maxPoolSize` | 载体线程池最大大小 | 默认 | 默认（256） |
 
-> **关于 `--enable-preview`**：LifePilot 使用的 `StructuredTaskScope`（JEP 505）和 `ScopedValue`（JEP 487）在 Java 22 中仍为预览特性，需要 `--enable-preview` 标志。Virtual Thread 本身（JEP 444）在 Java 21 已正式发布，不需要预览标志。当这些特性在未来的 Java LTS 版本中正式发布后，可以移除 `--enable-preview`。
+> **关于 `--enable-preview`**：ZhiWei 使用的 `StructuredTaskScope`（JEP 505）和 `ScopedValue`（JEP 487）在 Java 22 中仍为预览特性，需要 `--enable-preview` 标志。Virtual Thread 本身（JEP 444）在 Java 21 已正式发布，不需要预览标志。当这些特性在未来的 Java LTS 版本中正式发布后，可以移除 `--enable-preview`。
 
 
 ---
@@ -9470,7 +9470,7 @@ Agent 引擎的可观测性不是事后附加的"日志打印"，而是从架构
 
 #### 12.1.1 GenAI 语义约定对齐
 
-LifePilot 遵循 2025-2026 年 [OpenTelemetry GenAI Semantic Conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/) 定义 Span 命名和属性。Agent 引擎的每个关键操作都映射为一个 OTel Span，形成层次化的 Trace 树：
+ZhiWei 遵循 2025-2026 年 [OpenTelemetry GenAI Semantic Conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/) 定义 Span 命名和属性。Agent 引擎的每个关键操作都映射为一个 OTel Span，形成层次化的 Trace 树：
 
 ```
 Trace: agent.session (root span)
@@ -9500,7 +9500,7 @@ Span 命名约定：
 
 #### 12.1.2 标准属性定义
 
-每个 Span 携带的属性遵循 GenAI 语义约定，并扩展 LifePilot 自定义属性（`lifepilot.*` 命名空间）：
+每个 Span 携带的属性遵循 GenAI 语义约定，并扩展 ZhiWei 自定义属性（`lifepilot.*` 命名空间）：
 
 ```java
 package com.lifepilot.agent.observability;
@@ -9513,7 +9513,7 @@ import java.util.Map;
  * <p>属性分为三类：
  * <ul>
  *   <li>GenAI 标准属性（{@code gen_ai.*}）— 直接对齐 OTel 规范</li>
- *   <li>LifePilot 扩展属性（{@code lifepilot.*}）— Agent 引擎特有</li>
+ *   <li>ZhiWei 扩展属性（{@code lifepilot.*}）— Agent 引擎特有</li>
  *   <li>通用属性（{@code session_id} 等）— 跨 Span 传播</li>
  * </ul></p>
  */
@@ -9544,7 +9544,7 @@ public final class AgentSpanAttributes {
     /** 完成原因（如 "stop"、"length"、"tool_calls"）。 */
     public static final String GEN_AI_RESPONSE_FINISH_REASONS = "gen_ai.response.finish_reasons";
 
-    // ===== LifePilot 扩展属性 =====
+    // ===== ZhiWei 扩展属性 =====
 
     /** 会话 ID。 */
     public static final String SESSION_ID = "lifepilot.session_id";
@@ -10116,7 +10116,7 @@ public class AgentLoggingAdvisor implements CallAroundAdvisor {
 
 #### 12.4.1 桥接架构
 
-LifePilot 内部使用 `TraceRecorder`（§7）记录完整的决策轨迹并持久化到 SQLite。同时，为了与外部可观测性生态（Jaeger、Zipkin、Grafana Tempo）集成，需要将内部 `TraceEvent` 转换为标准的 OpenTelemetry Span。`OtelTraceExporter` 承担这一桥接职责。
+ZhiWei 内部使用 `TraceRecorder`（§7）记录完整的决策轨迹并持久化到 SQLite。同时，为了与外部可观测性生态（Jaeger、Zipkin、Grafana Tempo）集成，需要将内部 `TraceEvent` 转换为标准的 OpenTelemetry Span。`OtelTraceExporter` 承担这一桥接职责。
 
 ```mermaid
 flowchart LR

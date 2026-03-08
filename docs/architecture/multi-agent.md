@@ -100,7 +100,7 @@
 借鉴 OpenAI Swarm / AstrBot 的 `transfer_to_<agent>` 模式，但做了关键调整：
 
 **OpenAI Swarm 模式**：完全控制权转移，主 Agent 暂停，子 Agent 接管对话。
-**LifePilot 模式**：委托执行后返回，主 Agent 保持控制权（agents-as-tools 模式）。
+**ZhiWei 模式**：委托执行后返回，主 Agent 保持控制权（agents-as-tools 模式）。
 
 选择 agents-as-tools 而非完全 handoff 的理由：
 1. 主 Agent 需要汇总多个专家 Agent 的结果
@@ -211,7 +211,7 @@ public record AgentBudget(
 | 实现复杂度 | 低（复用 SubAgentResult） | 高（需要对话状态迁移） |
 | 适用场景 | 任务委托、专家咨询 | 完全领域切换 |
 
-**决策理由**：LifePilot 是个人助手，用户与主 Agent 保持持续对话，专家 Agent 是辅助角色。agents-as-tools 模式与现有 `Action.SubAgentResult` 完全兼容，无需修改 AgentLoop 核心循环。
+**决策理由**：ZhiWei 是个人助手，用户与主 Agent 保持持续对话，专家 Agent 是辅助角色。agents-as-tools 模式与现有 `Action.SubAgentResult` 完全兼容，无需修改 AgentLoop 核心循环。
 
 ### 5.2 AgentRegistry vs 扩展 SkillRegistry
 
@@ -289,7 +289,7 @@ lifepilot:
 
 ### 8.1 前沿理论与框架
 
-| 来源 | 核心洞察 | LifePilot 采纳 |
+| 来源 | 核心洞察 | ZhiWei 采纳 |
 |------|---------|---------------|
 | [OpenAI Swarm / Agents SDK](https://github.com/openai/swarm) | Handoff 模式：Agent 通过工具调用委托，共享对话历史 | 采纳 HandoffTool 模式，但选择 agents-as-tools 而非完全 handoff |
 | [Spring AI Agent Utils (TaskTool)](https://spring.io/blog/2025/06/18/spring-ai-agentic-patterns-part-4) | 层级 SubAgent：主 Agent 通过 Task 工具委托，子 Agent 独立上下文和工具集 | 采纳独立上下文 + 工具白名单隔离 |

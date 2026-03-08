@@ -7,7 +7,7 @@
 
 ### 1.1 核心命题
 
-LifePilot 的 LLM 路由层围绕一个核心命题：**如何为本地优先的个人 AI Agent 构建一个弹性、经济、可观测的多模型路由层，使 Agent 行为在模型切换时保持一致？**
+ZhiWei 的 LLM 路由层围绕一个核心命题：**如何为本地优先的个人 AI Agent 构建一个弹性、经济、可观测的多模型路由层，使 Agent 行为在模型切换时保持一致？**
 
 传统 API 网关的路由关注吞吐量和延迟均衡，但 AI Agent 的 LLM 路由有本质不同——Agent 的**行为一致性（behavioral consistency）**比单次请求的延迟更重要。当一个 Agent 正在执行多步任务规划时，中途切换到能力差异较大的模型可能导致规划风格突变、工具调用格式不兼容、甚至任务失败。这种"行为漂移（behavioral drift）"是传统 API 路由完全不需要考虑的问题。
 
@@ -21,9 +21,9 @@ LifePilot 的 LLM 路由层围绕一个核心命题：**如何为本地优先的
 - **拥塞感知选择器（Congestion-Aware Selector）**：使用 AIMD（Additive Increase / Multiplicative Decrease）算法动态调整每个 Provider 的并发窗口，在高负载时自动降级到备选模型
 - **行为一致性保障**：模型切换是受控的有序降级，上层 Agent 只声明意图（"我需要一个支持结构化输出的 Chat 模型来做任务规划"），路由层负责将意图映射到具体的 Provider + Model 组合
 
-LifePilot 借鉴了 MMR 的意图驱动路由和有序故障转移思想，但做了本地化适配：
+ZhiWei 借鉴了 MMR 的意图驱动路由和有序故障转移思想，但做了本地化适配：
 
-| Sierra.ai MMR | LifePilot 适配 | 差异原因 |
+| Sierra.ai MMR | ZhiWei 适配 | 差异原因 |
 |---------------|---------------|---------|
 | AIMD 拥塞控制 | 简化为优先级排序 + 熔断器 | 个人用户并发极低，无需拥塞控制 |
 | 多区域部署 | 本地 Ollama + 云端备选 | 本地优先架构，非多区域 |
@@ -32,9 +32,9 @@ LifePilot 借鉴了 MMR 的意图驱动路由和有序故障转移思想，但�
 
 #### TokenWise 预算强制路由
 
-受 [TokenWise](https://arxiv.org/abs/2502.09735) 预算强制路由概念的启发，LifePilot 在路由决策中引入 **Token 预算维度**——不仅考虑"哪个模型能用"，还考虑"哪个模型用得起"。对于个人用户，月度 LLM 开支是硬约束，路由层必须在质量和成本之间动态平衡。
+受 [TokenWise](https://arxiv.org/abs/2502.09735) 预算强制路由概念的启发，ZhiWei 在路由决策中引入 **Token 预算维度**——不仅考虑"哪个模型能用"，还考虑"哪个模型用得起"。对于个人用户，月度 LLM 开支是硬约束，路由层必须在质量和成本之间动态平衡。
 
-TokenWise 的核心洞察是：**在预算约束下，路由策略应该是一个多目标优化问题，而非简单的可用性检查**。LifePilot 将这一思想简化为三级预算状态机：
+TokenWise 的核心洞察是：**在预算约束下，路由策略应该是一个多目标优化问题，而非简单的可用性检查**。ZhiWei 将这一思想简化为三级预算状态机：
 
 ```
 OK（正常）→ WARN（警告，优先选择低成本模型）→ BLOCKED（阻断，仅允许本地模型）
@@ -93,7 +93,7 @@ graph LR
 
 ### 2.1 架构概览
 
-LLM 路由层位于 LifePilot 基础设施层，向上为 Agent 层提供统一的 LLM 调用接口，向下适配多种 LLM Provider。整体架构遵循**洋葱模型**：外层处理横切关注点（缓存、预算、熔断），内层执行实际的 Provider 调用。
+LLM 路由层位于 ZhiWei 基础设施层，向上为 Agent 层提供统一的 LLM 调用接口，向下适配多种 LLM Provider。整体架构遵循**洋葱模型**：外层处理横切关注点（缓存、预算、熔断），内层执行实际的 Provider 调用。
 
 ```mermaid
 flowchart TB
@@ -819,7 +819,7 @@ public class LlmAutoConfiguration {
 
 ### 4.1 场景定义
 
-LifePilot 的 LLM 调用按**场景（Scene）**分类，每个场景绑定一组有序的 Provider 列表。场景是路由决策的第一维度——它回答"这次 LLM 调用是为了什么？"这个问题。调用方不需要知道具体使用哪个模型，只需要声明意图。
+ZhiWei 的 LLM 调用按**场景（Scene）**分类，每个场景绑定一组有序的 Provider 列表。场景是路由决策的第一维度——它回答"这次 LLM 调用是为了什么？"这个问题。调用方不需要知道具体使用哪个模型，只需要声明意图。
 
 ```java
 /**
@@ -1324,17 +1324,17 @@ public class LlmRouter {
 
 ### 5.1 设计思路
 
-Spring AI 1.1.2 是 LifePilot LLM 路由层的底层基础设施。LifePilot 不直接调用各 LLM Provider 的 HTTP API，而是通过 Spring AI 提供的统一抽象（`ChatModel`、`EmbeddingModel`、`ChatClient`）与 LLM 交互。这带来三个关键优势：
+Spring AI 1.1.2 是 ZhiWei LLM 路由层的底层基础设施。ZhiWei 不直接调用各 LLM Provider 的 HTTP API，而是通过 Spring AI 提供的统一抽象（`ChatModel`、`EmbeddingModel`、`ChatClient`）与 LLM 交互。这带来三个关键优势：
 
 1. **Provider 适配零成本**：Spring AI 已经适配了 Ollama、OpenAI 兼容 API 等主流 Provider
 2. **Advisor 模式横切注入**：`ChatClient` 的 Advisor 链天然支持护栏和轨迹记录的透明注入
 3. **结构化输出原生支持**：`BeanOutputConverter` + `entity()` API 将 LLM 输出直接映射为 Java 对象
 
-但 Spring AI 的自动配置默认是"一个应用一个 ChatModel"的模式，而 LifePilot 需要**同时管理多个 Provider 的多个 ChatModel 实例**。因此引入了 `ProviderAdapter` 适配层。
+但 Spring AI 的自动配置默认是"一个应用一个 ChatModel"的模式，而 ZhiWei 需要**同时管理多个 Provider 的多个 ChatModel 实例**。因此引入了 `ProviderAdapter` 适配层。
 
 ```mermaid
 flowchart LR
-    subgraph LifePilot["LifePilot 路由层"]
+    subgraph ZhiWei["ZhiWei 路由层"]
         LR["LlmRouter"] --> PR["ProviderRegistry"] --> PAF["ProviderAdapterFactory"]
     end
     subgraph 适配层["ProviderAdapter 适配层"]
@@ -1523,7 +1523,7 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
 
 ### 5.4 ProviderAdapterFactory — 适配器工厂
 
-`ProviderAdapterFactory` 根据 `ProviderType` 创建对应的 `SpringAiProviderAdapter` 实例。核心职责是将 LifePilot 的 `ProviderConfig` 转换为 Spring AI 的 `ChatModel` / `EmbeddingModel` 实例。
+`ProviderAdapterFactory` 根据 `ProviderType` 创建对应的 `SpringAiProviderAdapter` 实例。核心职责是将 ZhiWei 的 `ProviderConfig` 转换为 Spring AI 的 `ChatModel` / `EmbeddingModel` 实例。
 
 | ProviderType | ChatModel 实现 | EmbeddingModel | 说明 |
 |-------------|---------------|----------------|------|
@@ -1655,7 +1655,7 @@ public class ProviderAdapterFactory {
 
 ### 5.5 Advisor 链设计
 
-Spring AI 的 Advisor 模式是 LifePilot 实现横切关注点（护栏、轨迹、脱敏）的核心机制。Advisor 在 `ChatClient` 调用链中自动执行，业务代码无需显式调用。
+Spring AI 的 Advisor 模式是 ZhiWei 实现横切关注点（护栏、轨迹、脱敏）的核心机制。Advisor 在 `ChatClient` 调用链中自动执行，业务代码无需显式调用。
 
 ```mermaid
 sequenceDiagram
@@ -1700,7 +1700,7 @@ sequenceDiagram
 
 ### 5.6 结构化输出
 
-Spring AI 1.1.2 的结构化输出是 LifePilot 知识提取、意图理解等场景的关键能力。通过 `BeanOutputConverter`，LLM 输出可以直接映射为 Java record。
+Spring AI 1.1.2 的结构化输出是 ZhiWei 知识提取、意图理解等场景的关键能力。通过 `BeanOutputConverter`，LLM 输出可以直接映射为 Java record。
 
 **两种结构化输出路径**：
 
@@ -1765,7 +1765,7 @@ public class KnowledgeExtractionPipeline {
 
 #### Ollama（本地模型）
 
-Ollama 是 LifePilot 的首选 Provider，具有以下特殊处理：
+Ollama 是 ZhiWei 的首选 Provider，具有以下特殊处理：
 
 - **零成本**：`costPerInputToken = 0`，`costPerOutputToken = 0`，不受预算约束
 - **完全隐私**：数据不出本机，不需要 `DataRedactorAdvisor` 脱敏
@@ -1832,7 +1832,7 @@ var qwenChat = OpenAiChatModel.builder()
 
 #### 文心一言（百度专有 API）
 
-文心一言使用百度专有的 API 格式，与 OpenAI API 不兼容。Spring AI 1.1.2 暂无官方支持，LifePilot 使用自定义 `WenxinChatModel` 实现适配。
+文心一言使用百度专有的 API 格式，与 OpenAI API 不兼容。Spring AI 1.1.2 暂无官方支持，ZhiWei 使用自定义 `WenxinChatModel` 实现适配。
 
 ```java
 /**
@@ -1875,9 +1875,9 @@ public class WenxinChatModel implements ChatModel {
 
 ### 5.8 Spring AI 自动配置集成
 
-LifePilot 不使用 Spring AI 的默认自动配置（`spring-ai-ollama-spring-boot-starter` 等），而是通过 `ProviderAdapterFactory` 手动创建 Spring AI 模型实例。原因是：
+ZhiWei 不使用 Spring AI 的默认自动配置（`spring-ai-ollama-spring-boot-starter` 等），而是通过 `ProviderAdapterFactory` 手动创建 Spring AI 模型实例。原因是：
 
-1. **多实例管理**：Spring AI 默认自动配置创建单个 `ChatModel` Bean，而 LifePilot 需要同时管理多个 Provider 的多个 `ChatModel` 实例
+1. **多实例管理**：Spring AI 默认自动配置创建单个 `ChatModel` Bean，而 ZhiWei 需要同时管理多个 Provider 的多个 `ChatModel` 实例
 2. **动态注册**：Provider 可以在运行时动态注册/注销，Spring AI 的自动配置不支持这种动态性
 3. **配置统一**：所有 Provider 的配置统一在 `lifepilot.llm.providers` 下管理，而非分散在各个 `spring.ai.*` 前缀下
 
@@ -1930,7 +1930,7 @@ public class LifePilotApplication {
 
 熔断器（Circuit Breaker）是 LLM 路由层实现**渐进降级**原则的核心组件。当某个 Provider 持续故障时，熔断器自动将其从路由候选列表中移除，避免无效调用浪费时间和 Token 预算；当故障恢复后，熔断器通过探测机制自动恢复该 Provider。
 
-LifePilot 的熔断器设计借鉴了 [Sierra.ai MMR](https://sierra.ai/blog/model-failover) 的拥塞感知选择器概念，但做了本地化简化——个人用户并发极低，不需要 AIMD 拥塞控制算法，简化为**三态状态机 + 指数退避**即可满足需求。
+ZhiWei 的熔断器设计借鉴了 [Sierra.ai MMR](https://sierra.ai/blog/model-failover) 的拥塞感知选择器概念，但做了本地化简化——个人用户并发极低，不需要 AIMD 拥塞控制算法，简化为**三态状态机 + 指数退避**即可满足需求。
 
 **核心设计决策**：
 
@@ -2583,7 +2583,7 @@ class CircuitBreakerPropertyTest {
 - [Verified Semantic Prompt Caching (arXiv 2502.03771)](https://arxiv.org/abs/2502.03771)：提出了基于语义验证的 prompt 缓存框架，通过 embedding 相似度判断缓存命中，并引入验证机制确保缓存响应的语义正确性
 - [Reducing LLM Costs via Semantic Embedding Caching (arXiv 2411.05276)](https://arxiv.org/abs/2411.05276)：实验表明语义缓存可以在保持 95%+ 响应质量的前提下，减少 30-50% 的 LLM API 调用成本
 
-**LifePilot 的语义缓存特点**：
+**ZhiWei 的语义缓存特点**：
 
 | 特点 | 说明 |
 |------|------|
@@ -3120,9 +3120,9 @@ public class SemanticCache {
 
 ### 8.1 设计思路
 
-Token 预算管理是 LLM 路由层实现**预算感知**原则的核心组件。对于个人用户，月度 LLM 开支是硬约束——LifePilot 必须在质量和成本之间动态平衡，确保用户不会因为 Agent 的自动化行为而产生意外的高额账单。
+Token 预算管理是 LLM 路由层实现**预算感知**原则的核心组件。对于个人用户，月度 LLM 开支是硬约束——ZhiWei 必须在质量和成本之间动态平衡，确保用户不会因为 Agent 的自动化行为而产生意外的高额账单。
 
-受 [TokenWise (arXiv 2502.09735)](https://arxiv.org/abs/2502.09735) 预算强制路由概念的启发，LifePilot 将预算管理简化为**三级状态机**：
+受 [TokenWise (arXiv 2502.09735)](https://arxiv.org/abs/2502.09735) 预算强制路由概念的启发，ZhiWei 将预算管理简化为**三级状态机**：
 
 ```
 OK（正常路由）→ WARN（优先低成本模型）→ BLOCKED（仅本地模型）
@@ -3519,7 +3519,7 @@ public class TokenBudgetManager {
 
 ### 8.5 Token 速率限制概念
 
-参考 [Azure API Management 的 llm-token-limit 策略](https://learn.microsoft.com/azure/api-management/llm-token-limit-policy)，LifePilot 在预算管理之外还引入了 Token 速率限制的概念——限制单位时间内的 Token 消耗速率，防止短时间内的突发调用耗尽预算。
+参考 [Azure API Management 的 llm-token-limit 策略](https://learn.microsoft.com/azure/api-management/llm-token-limit-policy)，ZhiWei 在预算管理之外还引入了 Token 速率限制的概念——限制单位时间内的 Token 消耗速率，防止短时间内的突发调用耗尽预算。
 
 对于个人用户场景，速率限制主要用于防止 Agent 循环调用（如任务规划陷入死循环）导致的 Token 暴涨：
 
@@ -3585,7 +3585,7 @@ public class TokenRateLimiter {
 
 ### 9.1 设计思路
 
-LLM 的输出本质上是非结构化文本，但 LifePilot 的大多数场景（意图理解、知识提取、任务规划）都需要**结构化数据**。输出解析器（`LlmOutputParser`）是连接 LLM 非结构化输出与 Java 强类型系统的桥梁。
+LLM 的输出本质上是非结构化文本，但 ZhiWei 的大多数场景（意图理解、知识提取、任务规划）都需要**结构化数据**。输出解析器（`LlmOutputParser`）是连接 LLM 非结构化输出与 Java 强类型系统的桥梁。
 
 现实中 LLM 的 JSON 输出经常存在各种格式问题——尾部逗号、单引号、未闭合括号、Markdown 代码块包裹等。`LlmOutputParser` 采用**多策略解析链**，按优先级依次尝试，最大化解析成功率：
 
@@ -4068,9 +4068,9 @@ public class StructuredOutputValidationAdvisor implements CallAroundAdvisor {
 
 ### 10.1 设计思路
 
-成本优化是 LifePilot LLM 路由层的核心关注点之一。作为本地优先的个人 AI Agent，LifePilot 的用户对 LLM 调用成本高度敏感——每一次云端 API 调用都有真实的金钱成本。路由层必须在**响应质量**和**调用成本**之间找到最优平衡点。
+成本优化是 ZhiWei LLM 路由层的核心关注点之一。作为本地优先的个人 AI Agent，ZhiWei 的用户对 LLM 调用成本高度敏感——每一次云端 API 调用都有真实的金钱成本。路由层必须在**响应质量**和**调用成本**之间找到最优平衡点。
 
-LifePilot 的成本优化不是单一策略，而是**六大策略协同工作**的系统性方案：
+ZhiWei 的成本优化不是单一策略，而是**六大策略协同工作**的系统性方案：
 
 ```mermaid
 flowchart TD
@@ -4100,7 +4100,7 @@ flowchart TD
 
 ### 10.2 国产 LLM 成本对比（2025-2026 定价参考）
 
-以下为 LifePilot 支持的主要 LLM Provider 的成本对比。价格为近似参考值，实际价格以各厂商官网为准。
+以下为 ZhiWei 支持的主要 LLM Provider 的成本对比。价格为近似参考值，实际价格以各厂商官网为准。
 
 | Provider | 模型 | 输入价格（¥/百万Token） | 输出价格（¥/百万Token） | 上下文窗口 | 特点 |
 |----------|------|----------------------|----------------------|-----------|------|
@@ -4152,7 +4152,7 @@ flowchart TD
 
 #### 策略 3: 本地模型优先
 
-Ollama 本地模型是 LifePilot 的成本优化基石——零 API 成本、零网络延迟、完全隐私。
+Ollama 本地模型是 ZhiWei 的成本优化基石——零 API 成本、零网络延迟、完全隐私。
 
 **适合本地模型的场景**：
 - 高频调用场景（意图理解、主动推理）— 调用量大，云端成本累积快
@@ -4580,7 +4580,7 @@ flowchart TD
 | 预算强制 | 防护性 | 防止超支 | 硬上限保障 |
 | **综合效果** | **80-95%** | **实际月支出 ¥2.5-10** | 大部分调用零成本 |
 
-**关键结论**：通过本地模型优先 + 语义缓存的组合，LifePilot 可以将实际月度 LLM 支出控制在 **¥5-10 元**以内，远低于 50 元的月预算上限。本地 Ollama 模型是成本优化的最大贡献者。
+**关键结论**：通过本地模型优先 + 语义缓存的组合，ZhiWei 可以将实际月度 LLM 支出控制在 **¥5-10 元**以内，远低于 50 元的月预算上限。本地 Ollama 模型是成本优化的最大贡献者。
 
 
 ---
@@ -4589,7 +4589,7 @@ flowchart TD
 
 ### 11.1 设计思路
 
-Embedding（文本向量化）是 LifePilot 记忆检索、知识库语义搜索、语义缓存等功能的基础能力。与 Chat 路由不同，Embedding 路由有其独特的特征：
+Embedding（文本向量化）是 ZhiWei 记忆检索、知识库语义搜索、语义缓存等功能的基础能力。与 Chat 路由不同，Embedding 路由有其独特的特征：
 
 - **无状态性**：Embedding 调用之间没有上下文依赖，不需要会话亲和性
 - **批量友好**：知识提取、记忆巩固等场景通常需要批量向量化，逐条调用效率低下
@@ -4600,7 +4600,7 @@ Embedding（文本向量化）是 LifePilot 记忆检索、知识库语义搜索
 
 ### 11.2 Embedding 模型选项
 
-LifePilot 支持多种 Embedding 模型，按本地优先原则排序：
+ZhiWei 支持多种 Embedding 模型，按本地优先原则排序：
 
 | 模型 | Provider | 维度 | 成本 | 优先级 | 适用场景 |
 |------|----------|------|------|--------|---------|
@@ -4832,7 +4832,7 @@ public class LlmRouter {
 
 ### 11.6 维度归一化
 
-当 Embedding 模型切换时（例如从 Ollama nomic-embed-text 768 维切换到 OpenAI text-embedding-3-small 1536 维），已存储的向量与新生成的向量维度不一致，无法直接进行余弦相似度计算。LifePilot 采用以下策略处理维度差异：
+当 Embedding 模型切换时（例如从 Ollama nomic-embed-text 768 维切换到 OpenAI text-embedding-3-small 1536 维），已存储的向量与新生成的向量维度不一致，无法直接进行余弦相似度计算。ZhiWei 采用以下策略处理维度差异：
 
 **策略一：目标维度对齐（推荐）**
 
@@ -4904,7 +4904,7 @@ public class EmbeddingDimensionNormalizer {
 
 ### 11.7 sqlite-vec 不可用时的降级策略
 
-sqlite-vec 是 LifePilot 的向量索引引擎，但作为 native 扩展，可能在某些平台上加载失败。当 sqlite-vec 不可用时，Embedding 功能不应完全失效，而是降级为 JVM 内暴力余弦相似度搜索。
+sqlite-vec 是 ZhiWei 的向量索引引擎，但作为 native 扩展，可能在某些平台上加载失败。当 sqlite-vec 不可用时，Embedding 功能不应完全失效，而是降级为 JVM 内暴力余弦相似度搜索。
 
 ```java
 /**
@@ -5162,7 +5162,7 @@ public class EmbeddingWorker {
 
 ### 12.1 设计思路
 
-LLM 路由层的可观测性是 LifePilot 整体可观测性体系（参见 [observability.md](observability.md)）的关键组成部分。与传统 API 的可观测性不同，LLM 调用的可观测性需要关注**成本维度**——每次调用都有 Token 消耗和费用，用户需要清晰地了解"钱花在了哪里"。
+LLM 路由层的可观测性是 ZhiWei 整体可观测性体系（参见 [observability.md](observability.md)）的关键组成部分。与传统 API 的可观测性不同，LLM 调用的可观测性需要关注**成本维度**——每次调用都有 Token 消耗和费用，用户需要清晰地了解"钱花在了哪里"。
 
 可观测性集成的三个层次：
 
@@ -6906,6 +6906,6 @@ mvn test -pl lifepilot-core \
 
 > **文档结束**
 >
-> 本文档描述了 LifePilot LLM 路由层的完整架构设计。
+> 本文档描述了 ZhiWei LLM 路由层的完整架构设计。
 > 实际实现可能根据开发进度和 Spring AI 版本演进有所调整，
 > 但核心设计原则（意图驱动、行为一致性、预算感知、渐进降级）应始终贯穿。

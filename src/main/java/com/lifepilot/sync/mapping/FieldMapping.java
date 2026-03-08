@@ -5,7 +5,7 @@ import com.lifepilot.sync.model.FieldDiff;
 import java.util.Map;
 
 /**
- * 字段映射泛型接口，定义 LifePilot 本地实体与远程服务数据格式之间的双向转换。
+ * 字段映射泛型接口，定义 ZhiWei 本地实体与远程服务数据格式之间的双向转换。
  *
  * @param <L> 本地实体类型（如 TodoItem、ScheduleItem、HabitItem）
  * @param <R> 远程数据格式类型（如 String、Map）

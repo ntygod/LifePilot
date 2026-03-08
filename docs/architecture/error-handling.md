@@ -34,7 +34,7 @@
 
 ### 1.1 核心命题：为什么 AI Agent 的错误处理不同于传统应用
 
-LifePilot 的错误处理架构围绕一个核心命题：**AI Agent 的错误是概率性的，而非确定性的**。
+ZhiWei 的错误处理架构围绕一个核心命题：**AI Agent 的错误是概率性的，而非确定性的**。
 传统应用的错误处理建立在一个隐含假设之上——错误是可枚举的、可预测的。
 一个 REST API 要么返回 200，要么返回 4xx/5xx，错误码是有限集合。
 但 AI Agent 的错误空间是开放的、概率性的、且具有级联效应。
@@ -76,7 +76,7 @@ AI Agent 的错误模式：
 
 #### 传统应用 vs AI Agent 错误处理对比
 
-| 维度 | 传统应用 | AI Agent（LifePilot） |
+| 维度 | 传统应用 | AI Agent（ZhiWei） |
 |------|---------|---------------------|
 | **错误性质** | 确定性（异常类型明确） | 概率性（LLM 输出不可预测） |
 | **错误空间** | 有限可枚举 | 开放无限 |
@@ -134,20 +134,20 @@ AI Agent 的错误模式：
 
 ### 1.2 前沿研究基础
 
-LifePilot 的错误处理架构不是凭空构想，而是建立在 2025-2026 年 AI Agent 领域的前沿研究和工程实践之上。
+ZhiWei 的错误处理架构不是凭空构想，而是建立在 2025-2026 年 AI Agent 领域的前沿研究和工程实践之上。
 
 #### 1.2.1 Portkey.ai — LLM 网关的弹性模式
 
-[Portkey.ai](https://portkey.ai) 是 LLM 网关领域的先驱，其提出的弹性模式直接影响了 LifePilot 的 LLM 层错误处理设计：
+[Portkey.ai](https://portkey.ai) 是 LLM 网关领域的先驱，其提出的弹性模式直接影响了 ZhiWei 的 LLM 层错误处理设计：
 
 - **自动重试（Automatic Retries）**：对瞬时错误（429 Too Many Requests、503 Service Unavailable）自动重试，使用指数退避避免雷群效应
 - **故障转移（Fallbacks）**：主 Provider 失败时自动切换到备选 Provider，支持有序降级链
 - **熔断器（Circuit Breakers）**：连续失败达到阈值后自动熔断，避免对已故障的 Provider 持续发送请求
-- **负载均衡（Load Balancing）**：在多个 Provider 之间分配请求，但 LifePilot 简化为优先级排序（个人用户无需负载均衡）
+- **负载均衡（Load Balancing）**：在多个 Provider 之间分配请求，但 ZhiWei 简化为优先级排序（个人用户无需负载均衡）
 
-LifePilot 的适配：
+ZhiWei 的适配：
 
-| Portkey.ai 模式 | LifePilot 适配 | 差异原因 |
+| Portkey.ai 模式 | ZhiWei 适配 | 差异原因 |
 |-----------------|---------------|---------|
 | 自动重试 + 指数退避 | `RetryExecutor` + jitter | 完全采纳，增加随机抖动避免同步重试 |
 | 多 Provider 故障转移 | `LlmRouter` 有序降级链 | 采纳，增加本地模型兜底 |
@@ -157,17 +157,17 @@ LifePilot 的适配：
 
 #### 1.2.2 Resilience4j — Java 弹性库的设计哲学
 
-[Resilience4j](https://resilience4j.readme.io/) 是 Java 生态中最成熟的弹性库，其设计哲学深刻影响了 LifePilot 的错误处理架构：
+[Resilience4j](https://resilience4j.readme.io/) 是 Java 生态中最成熟的弹性库，其设计哲学深刻影响了 ZhiWei 的错误处理架构：
 
 - **装饰器模式**：每个弹性模式（熔断器、重试、限流）都是独立的装饰器，可以自由组合
 - **函数式 API**：基于 `Supplier<T>` / `Function<T, R>` 的函数式接口，与 Java 22 的函数式风格完美契合
 - **事件驱动**：每个状态变化都发布事件，支持可观测性集成
 
-LifePilot 没有直接依赖 Resilience4j，而是基于其设计哲学实现了轻量级版本。原因是：
+ZhiWei 没有直接依赖 Resilience4j，而是基于其设计哲学实现了轻量级版本。原因是：
 
-1. **AI Agent 特有需求**：Resilience4j 的熔断器是服务级别的，LifePilot 需要 Provider:Capability 复合键级别的隔离
+1. **AI Agent 特有需求**：Resilience4j 的熔断器是服务级别的，ZhiWei 需要 Provider:Capability 复合键级别的隔离
 2. **降级语义不同**：传统熔断器降级是"返回默认值"，AI Agent 降级是"切换到备选 Provider 或本地模型"
-3. **依赖最小化**：LifePilot 追求单 JAR 部署，减少不必要的依赖
+3. **依赖最小化**：ZhiWei 追求单 JAR 部署，减少不必要的依赖
 
 #### 1.2.3 AI Agent 错误恢复模式（2025-2026 业界实践）
 
@@ -186,11 +186,11 @@ LifePilot 没有直接依赖 Resilience4j，而是基于其设计哲学实现了
 
 #### 1.2.4 Spring AI 重试机制
 
-[Spring AI](https://docs.spring.io/spring-ai/) 内置了基础的重试支持，但 LifePilot 需要更精细的控制：
+[Spring AI](https://docs.spring.io/spring-ai/) 内置了基础的重试支持，但 ZhiWei 需要更精细的控制：
 
-- Spring AI 的重试是 Provider 级别的，LifePilot 需要 Capability 级别的隔离
-- Spring AI 没有内置熔断器，LifePilot 需要熔断器 + 故障转移的组合
-- Spring AI 的降级是简单的异常抛出，LifePilot 需要多级降级策略
+- Spring AI 的重试是 Provider 级别的，ZhiWei 需要 Capability 级别的隔离
+- Spring AI 没有内置熔断器，ZhiWei 需要熔断器 + 故障转移的组合
+- Spring AI 的降级是简单的异常抛出，ZhiWei 需要多级降级策略
 
 #### 1.2.5 LLM 优雅降级模式
 
@@ -294,7 +294,7 @@ public <T> T execute(RetryPolicy policy, Supplier<T> action, String operationNam
 
 #### 原则 3：优雅降级 — LLM 不可用时非 LLM 功能继续工作
 
-这是 LifePilot 错误处理最核心的原则。作为本地优先的个人 AI Agent，LifePilot 必须在各种故障场景下保持最大可用性。
+这是 ZhiWei 错误处理最核心的原则。作为本地优先的个人 AI Agent，ZhiWei 必须在各种故障场景下保持最大可用性。
 
 ```mermaid
 flowchart TD
@@ -453,7 +453,7 @@ public record UserFriendlyError(
 - 用户应该看到什么消息（每个类别有不同的用户友好映射）
 - 错误日志应该记录什么级别（WARN / ERROR / FATAL）
 
-LifePilot 使用 Java 22 的 `sealed interface` 实现错误分类体系，利用 `switch` 表达式的穷举匹配确保每个错误类别都被处理。
+ZhiWei 使用 Java 22 的 `sealed interface` 实现错误分类体系，利用 `switch` 表达式的穷举匹配确保每个错误类别都被处理。
 
 ### 2.2 四大错误类别
 
@@ -696,7 +696,7 @@ package com.lifepilot.observability.error;
 /**
  * 错误所在层级枚举。
  *
- * <p>对应 LifePilot 的分层架构，每层有独立的错误处理策略。</p>
+ * <p>对应 ZhiWei 的分层架构，每层有独立的错误处理策略。</p>
  */
 public enum ErrorLayer {
 
@@ -1183,7 +1183,7 @@ public interface ClassifiableException {
 
 ## 3. LLM 层错误处理
 
-LLM 层是 LifePilot 错误处理最复杂的层级。与传统 API 调用不同，LLM 调用的错误空间是开放的——不仅有网络层面的技术错误（超时、限流、服务不可用），还有语义层面的"软错误"（幻觉、格式不符、Token 超限）。
+LLM 层是 ZhiWei 错误处理最复杂的层级。与传统 API 调用不同，LLM 调用的错误空间是开放的——不仅有网络层面的技术错误（超时、限流、服务不可用），还有语义层面的"软错误"（幻觉、格式不符、Token 超限）。
 
 LLM 层错误处理的核心挑战：
 
@@ -1216,7 +1216,7 @@ LLM 层错误处理的核心挑战：
 
 ### 3.1 Provider 不可用 — 熔断器 + 多 Provider 故障转移
 
-当 LLM Provider 不可用时（网络故障、服务宕机、限流），LifePilot 采用**熔断器 + 有序故障转移**的组合策略。熔断器防止对已故障的 Provider 持续发送请求（避免雪崩），故障转移确保请求被路由到可用的备选 Provider。
+当 LLM Provider 不可用时（网络故障、服务宕机、限流），ZhiWei 采用**熔断器 + 有序故障转移**的组合策略。熔断器防止对已故障的 Provider 持续发送请求（避免雪崩），故障转移确保请求被路由到可用的备选 Provider。
 
 #### 故障转移流程
 
@@ -2269,7 +2269,7 @@ public class ToolErrorFormatter {
 
 ### 4.2 MCP Server 断连 — 自动重连 + 工具注销
 
-MCP（Model Context Protocol）Server 是外部工具的提供者。当 MCP Server 断连时，其提供的所有工具都变得不可用。LifePilot 采用**自动重连 + 优雅注销**的策略。
+MCP（Model Context Protocol）Server 是外部工具的提供者。当 MCP Server 断连时，其提供的所有工具都变得不可用。ZhiWei 采用**自动重连 + 优雅注销**的策略。
 
 ```java
 package com.lifepilot.observability.error.handler;
@@ -3130,7 +3130,7 @@ public class MemoryRetrievalFallbackHandler {
 
 ## 6. 交互层错误处理
 
-交互层负责 LifePilot 与外部通信通道（CLI、Web UI、企业 IM）的连接管理。交互层错误处理的核心目标是：**用户消息不丢失，连接断开后自动恢复**。
+交互层负责 ZhiWei 与外部通信通道（CLI、Web UI、企业 IM）的连接管理。交互层错误处理的核心目标是：**用户消息不丢失，连接断开后自动恢复**。
 
 ### 6.1 通道断连 — 自动重连 + 消息入队重发
 
@@ -3506,7 +3506,7 @@ import org.springframework.stereotype.Component;
  * 企业 IM 平台错误码映射器。
  *
  * <p>不同的企业 IM 平台有各自的错误码体系，
- * 需要统一映射到 LifePilot 的 {@link ErrorCategory}。</p>
+ * 需要统一映射到 ZhiWei 的 {@link ErrorCategory}。</p>
  */
 @Component
 public class ImPlatformErrorMapper {
@@ -3612,7 +3612,7 @@ public class ImPlatformErrorMapper {
 
 ## 7. RetryExecutor — 统一重试引擎
 
-RetryExecutor 是 LifePilot 错误处理框架的核心基础设施之一。所有需要重试的操作都通过 RetryExecutor 执行，确保重试策略的一致性和可观测性。
+RetryExecutor 是 ZhiWei 错误处理框架的核心基础设施之一。所有需要重试的操作都通过 RetryExecutor 执行，确保重试策略的一致性和可观测性。
 
 ### 7.1 设计理念
 
@@ -4150,11 +4150,11 @@ public class RetryMetricsListener implements RetryListener {
 
 ## 8. CircuitBreakerManager — 熔断器管理
 
-熔断器是 LifePilot 错误处理框架中最关键的弹性模式。它的核心思想来自电路断路器：当检测到下游服务持续故障时，自动"断开电路"，阻止对故障服务的继续调用，避免资源浪费和级联故障。
+熔断器是 ZhiWei 错误处理框架中最关键的弹性模式。它的核心思想来自电路断路器：当检测到下游服务持续故障时，自动"断开电路"，阻止对故障服务的继续调用，避免资源浪费和级联故障。
 
 ### 8.1 设计理念
 
-LifePilot 的熔断器与传统熔断器（如 Resilience4j）有一个关键区别：**熔断粒度是 Provider:Capability 复合键**，而非简单的服务级别。
+ZhiWei 的熔断器与传统熔断器（如 Resilience4j）有一个关键区别：**熔断粒度是 Provider:Capability 复合键**，而非简单的服务级别。
 
 这意味着：
 - DeepSeek 的 Chat 能力故障，不影响 DeepSeek 的 Embedding 能力
@@ -4169,7 +4169,7 @@ LifePilot 的熔断器与传统熔断器（如 Resilience4j）有一个关键区
 │    DeepSeek [OPEN] ← Chat 故障导致整个 Provider 被熔断                  │
 │    → Embedding 也无法使用（误伤）                                        │
 │                                                                         │
-│  LifePilot 熔断器（Provider:Capability 级别）：                          │
+│  ZhiWei 熔断器（Provider:Capability 级别）：                          │
 │    DeepSeek:CHAT       [OPEN]   ← 仅 Chat 能力被熔断                   │
 │    DeepSeek:EMBEDDING  [CLOSED] ← Embedding 正常使用                    │
 │    Ollama:CHAT         [CLOSED] ← 本地 Chat 正常                       │
@@ -4607,7 +4607,7 @@ public class CircuitBreakerManager {
 
 ## 9. DegradationManager — 降级管理器
 
-降级管理器是 LifePilot 错误处理框架的"大脑"——它根据系统各组件的健康状态，动态决定当前的降级级别，并通知所有组件调整行为。
+降级管理器是 ZhiWei 错误处理框架的"大脑"——它根据系统各组件的健康状态，动态决定当前的降级级别，并通知所有组件调整行为。
 
 ### 9.1 降级级别
 
@@ -4906,7 +4906,7 @@ public class DegradationManager {
 
 ## 10. ErrorRecoveryPipeline — 错误恢复管线
 
-错误恢复管线是 LifePilot 错误处理框架的"自愈"机制。当错误发生时，恢复管线按优先级尝试多种恢复策略，直到找到一个成功的策略或所有策略都失败。
+错误恢复管线是 ZhiWei 错误处理框架的"自愈"机制。当错误发生时，恢复管线按优先级尝试多种恢复策略，直到找到一个成功的策略或所有策略都失败。
 
 ### 10.1 RecoveryStrategy — 恢复策略
 
@@ -5145,7 +5145,7 @@ public class ErrorRecoveryPipeline {
 
 ### 11.1 错误传播规则
 
-错误在 LifePilot 的分层架构中按照严格的规则传播。核心原则是：**每层尽量自己处理错误，只有无法处理时才向上传播**。
+错误在 ZhiWei 的分层架构中按照严格的规则传播。核心原则是：**每层尽量自己处理错误，只有无法处理时才向上传播**。
 
 ```mermaid
 sequenceDiagram
@@ -7207,6 +7207,6 @@ com.lifepilot.observability
 
 > **文档结束**
 >
-> 本文档覆盖了 LifePilot 错误处理框架的完整架构设计，
+> 本文档覆盖了 ZhiWei 错误处理框架的完整架构设计，
 > 从设计哲学到具体实现，从配置参考到属性测试。
-> 所有代码均遵循 Java 22 编码约定和 LifePilot 编码规范。
+> 所有代码均遵循 Java 22 编码约定和 ZhiWei 编码规范。

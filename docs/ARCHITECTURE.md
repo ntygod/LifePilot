@@ -1,4 +1,4 @@
-﻿# LifePilot 架构设计文档
+﻿# ZhiWei 架构设计文档
 
 > **文档性质**：开发者面向（Developer-Facing）架构设计文档
 > **目标读者**：核心开发者、架构评审者、技术面试官
@@ -10,11 +10,11 @@
 
 ### 1.1 产品定位与核心差异
 
-LifePilot 是一个**本地运行的个人 AI Agent 助手**，核心定位为"了解你生活全貌的 AI 伙伴"。
+ZhiWei 是一个**本地运行的个人 AI Agent 助手**，核心定位为"了解你生活全貌的 AI 伙伴"。
 
-与 OpenClaw 等通用 AI Agent 框架不同，LifePilot 不只是被动执行用户命令，而是具备**主动智能能力**——它观察用户的生活模式，主动提供建议和帮助。与 AstrBot 等 IM 聊天机器人基础设施不同，LifePilot 聚焦于**个人生活管理**场景，以认知记忆和主动推理为核心差异化。
+与 OpenClaw 等通用 AI Agent 框架不同，ZhiWei 不只是被动执行用户命令，而是具备**主动智能能力**——它观察用户的生活模式，主动提供建议和帮助。与 AstrBot 等 IM 聊天机器人基础设施不同，ZhiWei 聚焦于**个人生活管理**场景，以认知记忆和主动推理为核心差异化。
 
-| 维度 | 传统 AI 助手 | OpenClaw | AstrBot | LifePilot |
+| 维度 | 传统 AI 助手 | OpenClaw | AstrBot | ZhiWei |
 |------|-------------|----------|---------|-----------|
 | 交互模式 | 问答式 | 被动执行 | 事件驱动 | **主动智能 + 被动响应** |
 | 记忆能力 | 无/对话级 | Markdown 文件 | 基础对话历史 | **四层认知记忆 + 时序知识图谱** |
@@ -47,7 +47,7 @@ LifePilot 是一个**本地运行的个人 AI Agent 助手**，核心定位为"�
 
 本项目的架构设计参考了 2025-2026 年 AI Agent 领域的前沿实践：
 
-| 领域 | 业界前沿 | LifePilot 实现 | 参考来源 |
+| 领域 | 业界前沿 | ZhiWei 实现 | 参考来源 |
 |------|----------|---------------|---------|
 | Agent 架构 | 状态化控制循环 + 确定性 Reducer | AgentLoop + StateReducer 分离概率决策与确定性状态转换 | [Redis 2026 Agent Architecture](https://redis.io/blog/ai-agent-architecture/) |
 | 记忆系统 | 四层认知记忆：Working/Episodic/Semantic/Procedural | 四层记忆架构 + 记忆巩固/遗忘管线 | [Oracle 2026 Agent Memory](https://blogs.oracle.com/developers/agent-memory-why-your-ai-has-amnesia-and-how-to-fix-it) |
@@ -379,7 +379,7 @@ graph LR
 
 ## 16. 技术亮点总结
 
-以下是 LifePilot 的核心技术创新点，每个点都可以展开为 30 分钟以上的深度技术讨论：
+以下是 ZhiWei 的核心技术创新点，每个点都可以展开为 30 分钟以上的深度技术讨论：
 
 | # | 技术亮点 | 深度指标 | 核心要点 |
 |---|---------|---------|---------|
@@ -398,5 +398,5 @@ graph LR
 
 > **文档结束**
 >
-> 本文档描述了 LifePilot 的理想架构设计。实际实现可能根据开发进度和技术约束有所调整，
+> 本文档描述了 ZhiWei 的理想架构设计。实际实现可能根据开发进度和技术约束有所调整，
 > 但核心设计原则（概率/确定性分离、四层认知记忆、本地优先、Trace 级可观测）应始终贯穿。

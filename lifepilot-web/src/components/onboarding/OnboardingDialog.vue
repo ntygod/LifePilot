@@ -13,8 +13,8 @@ const totalSteps = 4
 const steps = [
   {
     id: 1,
-    title: '欢迎使用 LifePilot',
-    description: 'LifePilot 是一个本地运行的个人 AI Agent 助手，帮助你更高效地管理知识、执行任务和自动化工作流。',
+    title: '欢迎使用 ZhiWei',
+    description: 'ZhiWei 是一个本地运行的个人 AI Agent 助手，帮助你更高效地管理知识、执行任务和自动化工作流。',
     content: [
       {
         icon: '💬',
@@ -36,7 +36,7 @@ const steps = [
   {
     id: 2,
     title: '创建你的第一个会话',
-    description: '开始与 AI 对话，体验 LifePilot 的核心功能。',
+    description: '开始与 AI 对话，体验 ZhiWei 的核心功能。',
     content: null
   },
   {

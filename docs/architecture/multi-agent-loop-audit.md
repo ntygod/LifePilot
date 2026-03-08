@@ -38,7 +38,7 @@
 
 ### 1.1 问题本质
 
-LifePilot 的多 Agent 协作存在一条关键的上下文传播链：
+ZhiWei 的多 Agent 协作存在一条关键的上下文传播链：
 
 ```
 AgentDefinition          AgentExecutor           HandoffToolFactory        AgentLoop              ToolBridgeAgentToolProvider
@@ -229,7 +229,7 @@ AgentLoop 注入 _callerDepth/_callerTraceId → HandoffToolFactory 读取
 ### 2.1 问题本质
 
 `ToolExecutionPipeline` 是所有工具调用的唯一入口，它对所有工具施加相同的
-超时/重试/幂等逻辑。但 LifePilot 的工具生态中存在两类语义截然不同的工具：
+超时/重试/幂等逻辑。但 ZhiWei 的工具生态中存在两类语义截然不同的工具：
 
 | 维度 | 数据工具（如 `builtin.todo.create`） | 系统工具（如 `handoff_to_writer`） |
 |------|--------------------------------------|-----------------------------------|
@@ -329,7 +329,7 @@ if (newPhase != oldPhase) {
 
 ### 3.1 问题本质
 
-LifePilot 的记忆检索管线设计为「始终执行完整检索流程」，不考虑以下边界条件：
+ZhiWei 的记忆检索管线设计为「始终执行完整检索流程」，不考虑以下边界条件：
 - 系统刚安装，记忆库为空
 - 同一请求内多次检索相同查询
 - 查询文本包含 FTS5 特殊字符

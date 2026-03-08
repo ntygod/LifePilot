@@ -100,7 +100,7 @@ class MultiAgentHandoff_集成测试 {
         // 通过 HandoffToolFactory 创建的工具执行委托
         var writerHandoff = handoffToolFactory.createHandoffTool(buildWriterDefinition());
         Map<String, Object> params = new HashMap<>();
-        params.put("task", "写一篇关于 LifePilot 架构的文章");
+        params.put("task", "写一篇关于 ZhiWei 架构的文章");
         params.put("context", "需要涵盖多 Agent 协作模块");
         params.put("_callerDepth", 0);
         params.put("_callerTraceId", "parent-trace-001");

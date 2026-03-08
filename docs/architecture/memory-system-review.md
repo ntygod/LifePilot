@@ -255,7 +255,7 @@ ChatGPT 的记忆系统并不使用 RAG 检索对话历史，而是采用 4 层�
 - **recency × frequency 门控**：决定哪些记忆自动注入，高频 + 近期的优先
 - **总量控制**：User Memory 约 33 条、Recent Conversations 约 15 条，硬性上限防止 token 爆炸
 
-**对 LifePilot 的启示**：
+**对 ZhiWei 的启示**：
 - 不需要对 L2 做全量 RAG，轻量摘要（会话标题 + 关键信息）更高效
 - User Memory 模式非常适合 L3 语义记忆的注入策略：提炼为事实列表，始终注入
 - 需要一个"记忆条目数上限"机制，而非无限检索
@@ -287,7 +287,7 @@ Agent 发现用户说"我是前端工程师"
 - 压缩冗余信息、提升重要信息的优先级
 - 类似人类睡眠时的记忆巩固
 
-**对 LifePilot 的启示**：
+**对 ZhiWei 的启示**：
 - "记忆块 + token 上限"模式值得借鉴：每个记忆区域有固定 token 预算
 - Agent 自编辑记忆的思路可以简化为"对话后自动更新用户画像块"
 - Sleep-time compute 与现有的定时巩固管线理念一致
@@ -314,7 +314,7 @@ Mem0 的核心是 AUDN 决策循环：每条新信息到来时，LLM 决定对�
 - 在事实记忆之上构建关系图
 - 支持多跳推理（如"用户的同事李四负责的项目是什么？"）
 
-**对 LifePilot 的启示**：
+**对 ZhiWei 的启示**：
 - AUDN 模式可以替代当前的"定时批量巩固"：每轮对话后实时决策是否更新记忆
 - 比全量 RAG 高效得多：只存储和更新有价值的信息
 - 图增强与现有的时序知识图谱方向一致
@@ -331,7 +331,7 @@ Extract（提取）→ Consolidate（巩固）→ Store（存储）→ Retrieve�
 ```
 
 **三类记忆**：
-| 类型 | 内容 | 检索方式 | LifePilot 对应 |
+| 类型 | 内容 | 检索方式 | ZhiWei 对应 |
 |------|------|---------|---------------|
 | Semantic | 事实、概念、关系 | 向量 + 关键词 | L3 temporal_entities |
 | Episodic | 事件、对话片段 | 时间 + 语义 | L2 conversations/messages |
@@ -352,9 +352,9 @@ score = w1 × relevance + w2 × recency + w3 × importance + w4 × trust
 
 记忆系统的核心价值在于**选择性遗忘和提炼**，而非全量存储。
 
-### 5.5 综合分析：LifePilot 应采用的策略
+### 5.5 综合分析：ZhiWei 应采用的策略
 
-基于以上调研，结合 LifePilot 的技术约束（Java 22 / SQLite / 单 JAR / 本地部署），推荐以下策略：
+基于以上调研，结合 ZhiWei 的技术约束（Java 22 / SQLite / 单 JAR / 本地部署），推荐以下策略：
 
 #### 5.5.1 提示词记忆注入策略（借鉴 ChatGPT + Letta）
 

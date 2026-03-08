@@ -98,9 +98,9 @@ Skill 不是独立的执行实体，不是 SubAgent，也不是工具的别名�
   Skill 本身不执行任何操作，Agent 是执行者
 ```
 
-LifePilot 对 Anthropic 标准的映射：
+ZhiWei 对 Anthropic 标准的映射：
 
-| Anthropic Agent Skills 标准 | LifePilot 实现 |
+| Anthropic Agent Skills 标准 | ZhiWei 实现 |
 |---------------------------|---------------|
 | SKILL.md 文件 | `SkillDefinition.instructions()` — 领域专业指令 |
 | YAML Frontmatter 元数据 | `SkillDefinition` record 的结构化字段 |
@@ -116,13 +116,13 @@ LifePilot 对 Anthropic 标准的映射：
 - **Part 1: Agent Skills** — Skill 是模块化的指令/脚本/资源文件夹，与 LLM 无关。`SkillsTool` 作为发现和激活的统一入口。Skill 的指令在激活时才注入上下文。
 - **Part 4: Task SubAgents** — SubAgent 是独立的推理实体，有独立上下文窗口、独立预算、可路由到不同模型。这是完全不同于 Skill 的概念。
 
-这个区分对 LifePilot 的影响：需要独立推理能力的角色（写作助手、健身教练、财务分析师）应该是 `AgentDefinition`（模块 21），而不是 `SkillDefinition`。
+这个区分对 ZhiWei 的影响：需要独立推理能力的角色（写作助手、健身教练、财务分析师）应该是 `AgentDefinition`（模块 21），而不是 `SkillDefinition`。
 
 #### 1.2.3 SkillRL — 自动技能发现与递归进化
 
 2026 年 2 月 [SkillRL 论文](https://arxiv.org/abs/2602.08234) 提出从执行轨迹中自动提取可复用技能模式，技能库随 Agent 使用不断进化。
 
-| SkillRL 概念 | LifePilot 实现 |
+| SkillRL 概念 | ZhiWei 实现 |
 |-------------|---------------|
 | 自动技能发现 | `SkillGapDetector` — 检测现有 Skill 无法处理的请求 |
 | 技能生成 | `SkillGenerator` — LLM 生成 SKILL.md 定义 |
@@ -130,7 +130,7 @@ LifePilot 对 Anthropic 标准的映射：
 
 #### 1.2.4 Self-Tooling Agent (STA) — 动态工具合成
 
-[Self-Tooling Agent](https://openreview.net/forum?id=VnMcTvEqhd) 提出 Agent 动态合成新工具的思想。LifePilot 的 Skill 自扩展机制借鉴了这一理念：当现有 Skill 无法处理请求时，`SkillGenerator` 自动生成新的 SKILL.md。
+[Self-Tooling Agent](https://openreview.net/forum?id=VnMcTvEqhd) 提出 Agent 动态合成新工具的思想。ZhiWei 的 Skill 自扩展机制借鉴了这一理念：当现有 Skill 无法处理请求时，`SkillGenerator` 自动生成新的 SKILL.md。
 
 ### 1.3 核心设计原则
 
@@ -153,7 +153,7 @@ Skill 可以声明 `suggestedTools` 列表，建议 Agent 优先使用哪些工�
 
 #### 原则 4：社区兼容
 
-LifePilot 的 Skill 格式必须与 Anthropic Agent Skills 开放标准兼容。社区发布的 SKILL.md 文件夹可以直接放入 `~/.lifepilot/skills/` 目录使用，无需任何转换。
+ZhiWei 的 Skill 格式必须与 Anthropic Agent Skills 开放标准兼容。社区发布的 SKILL.md 文件夹可以直接放入 `~/.lifepilot/skills/` 目录使用，无需任何转换。
 
 #### 原则 5：自扩展安全 — 三重验证 + 用户确认
 

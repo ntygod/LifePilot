@@ -1,6 +1,6 @@
 # 元能力系统（Meta-Capabilities）
 
-> 本文档描述 LifePilot 的自扩展基础设施 — 让系统能自我发现、自我扩展、自我解释的内置元能力。
+> 本文档描述 ZhiWei 的自扩展基础设施 — 让系统能自我发现、自我扩展、自我解释的内置元能力。
 
 > 状态：📋 规划中（依赖 Skill 系统、MCP 协议、多 Agent 协作、插件市场）
 
@@ -52,7 +52,7 @@
 
 ### 2.1 功能定位
 
-系统自省是元能力的入口 — 让用户了解 LifePilot 当前能做什么。新用户的第一个问题往往是"你能做什么？"，自省能力让 Agent 能准确、完整地回答这个问题。
+系统自省是元能力的入口 — 让用户了解 ZhiWei 当前能做什么。新用户的第一个问题往往是"你能做什么？"，自省能力让 Agent 能准确、完整地回答这个问题。
 
 ### 2.2 实现方式
 
@@ -82,7 +82,7 @@ Java 原生内置 Skill（`SystemIntrospectionSkillProvider`），与 Todo/Sched
 ```
 你：你能做什么？
 
-LifePilot：我目前有以下能力：
+ZhiWei：我目前有以下能力：
 
          📋 核心 Skill（4 个）
          • 待办管理 — 创建、查询、完成待办事项
@@ -105,7 +105,7 @@ LifePilot：我目前有以下能力：
 ```
 你：我想管理我的 Notion 笔记
 
-LifePilot：目前我还没有 Notion 相关的能力。我可以帮你：
+ZhiWei：目前我还没有 Notion 相关的能力。我可以帮你：
 
          1. 🔍 搜索 MCP Server — 看看有没有 Notion 的 MCP 连接器
          2. 🔍 搜索 Skill 市场 — 看看有没有 Notion 集成 Skill
@@ -136,7 +136,7 @@ Java 原生内置 Skill（`SkillDiscoverySkillProvider`），封装已有的 `Ma
 ┌─────────────┬────────────────────────────────┐
 │  主要来源    │  扩展来源                       │
 ├─────────────┼────────────────────────────────┤
-│ LifePilot   │  开源 Agent Skills 生态         │
+│ ZhiWei   │  开源 Agent Skills 生态         │
 │ Marketplace │                                │
 │             │  • LobeHub Skills Marketplace   │
 │ • GitHub    │  • AgentSkillsHub（458+ Skills）│
@@ -144,12 +144,12 @@ Java 原生内置 Skill（`SkillDiscoverySkillProvider`），封装已有的 `Ma
 │ • 已有的    │    topic）                      │
 │   IndexMgr  │                                │
 │   + Skill   │  格式适配层：                    │
-│   Installer │  外部格式 → LifePilot Markdown  │
+│   Installer │  外部格式 → ZhiWei Markdown  │
 │             │  Frontmatter 格式               │
 └─────────────┴────────────────────────────────┘
 ```
 
-**主要来源 — LifePilot Marketplace**：
+**主要来源 — ZhiWei Marketplace**：
 - 已有完整基础设施（IndexManager + SkillInstaller + SecurityAuditor）
 - Skill 格式原生兼容，安装后直接可用
 - 经过 SkillValidationPipeline 三重验证（格式 → 安全 → 沙箱）
@@ -158,7 +158,7 @@ Java 原生内置 Skill（`SkillDiscoverySkillProvider`），封装已有的 `Ma
 - LobeHub Skills Marketplace（2900+ Skills，社区最活跃）
 - AgentSkillsHub（458+ Skills，安全评级 A-F）
 - GitHub 搜索（`agent-skills` / `mcp-skill` topic）
-- 需要格式转换层：外部 Skill 的 Markdown 指令 + 元数据 → LifePilot Frontmatter 格式
+- 需要格式转换层：外部 Skill 的 Markdown 指令 + 元数据 → ZhiWei Frontmatter 格式
 
 ### 3.4 格式适配
 
@@ -171,7 +171,7 @@ Java 原生内置 Skill（`SkillDiscoverySkillProvider`），封装已有的 `Ma
 └── templates/        # 模板文件
 ```
 
-LifePilot 的 Skill 格式：
+ZhiWei 的 Skill 格式：
 
 ```
 ~/.lifepilot/skills/{skill-name}/
@@ -180,7 +180,7 @@ LifePilot 的 Skill 格式：
 
 适配映射：
 
-| 外部字段 | LifePilot 字段 | 说明 |
+| 外部字段 | ZhiWei 字段 | 说明 |
 |---------|---------------|------|
 | name | id + name | 外部 name 同时映射为 ID（kebab-case）和显示名 |
 | description | description | 直接映射 |
@@ -189,7 +189,7 @@ LifePilot 的 Skill 格式：
 | — | source: MARKETPLACE | 标记来源为市场安装 |
 | — | version | 从外部元数据提取或默认 "1.0" |
 
-适配层做的事情很薄：读取外部 Skill 的元数据和指令 → 生成 LifePilot Frontmatter 格式的 SKILL.md → 走正常的 SkillValidationPipeline 验证 → 安装到用户 Skill 目录。
+适配层做的事情很薄：读取外部 Skill 的元数据和指令 → 生成 ZhiWei Frontmatter 格式的 SKILL.md → 走正常的 SkillValidationPipeline 验证 → 安装到用户 Skill 目录。
 
 ### 3.5 提供的工具
 
@@ -213,11 +213,11 @@ LifePilot 的 Skill 格式：
 ```
 你：我需要查汇率
 
-LifePilot：🔍 正在搜索汇率相关 Skill...
+ZhiWei：🔍 正在搜索汇率相关 Skill...
 
          找到 2 个匹配结果：
 
-         1. 📦 exchange-rate-query（LifePilot 市场）
+         1. 📦 exchange-rate-query（ZhiWei 市场）
             ⭐ 安全评级：A | 下载量：1,200
             功能：实时汇率查询，支持 150+ 货币对
             来源：exchangerate.host API
@@ -231,7 +231,7 @@ LifePilot：🔍 正在搜索汇率相关 Skill...
 
 你：安装第一个
 
-LifePilot：🔒 安全验证中...
+ZhiWei：🔒 安全验证中...
          ✅ 格式校验通过
          ✅ 安全检查通过（无危险操作）
          ✅ 沙箱试运行通过
@@ -303,7 +303,7 @@ MCP 没有"本系统市场"的概念，直接对接业界已有的开源注册�
 ```
 你：我想连接 GitHub 管理我的仓库
 
-LifePilot：🔍 正在搜索 GitHub 相关的 MCP Server...
+ZhiWei：🔍 正在搜索 GitHub 相关的 MCP Server...
 
          找到：@modelcontextprotocol/server-github
          • 官方维护，传输类型：stdio
@@ -314,12 +314,12 @@ LifePilot：🔍 正在搜索 GitHub 相关的 MCP Server...
 
 你：安装
 
-LifePilot：请提供你的 GitHub Personal Access Token。
+ZhiWei：请提供你的 GitHub Personal Access Token。
          （在 GitHub Settings → Developer settings → Personal access tokens 创建）
 
 你：ghp_xxxxxxxxxxxx
 
-LifePilot：🔧 配置中...
+ZhiWei：🔧 配置中...
          ✅ 环境变量已设置
          ✅ MCP Server 配置已写入
          ✅ 连接测试通过（12 个工具可用）
@@ -333,7 +333,7 @@ LifePilot：🔧 配置中...
 
 ### 5.1 功能定位
 
-新用户首次使用 LifePilot 时，引导 Agent 主动介绍系统能力，根据用户的使用场景推荐合适的 Skill 组合、Agent 配置和工作流设置。
+新用户首次使用 ZhiWei 时，引导 Agent 主动介绍系统能力，根据用户的使用场景推荐合适的 Skill 组合、Agent 配置和工作流设置。
 
 ### 5.2 实现方式
 
@@ -341,7 +341,7 @@ Markdown 定义的预设 Agent（`onboarding-guide.md`），放置在 `src/main/
 
 ### 5.3 核心能力
 
-- 了解 LifePilot 所有功能模块，能用通俗语言解释每个模块的价值
+- 了解 ZhiWei 所有功能模块，能用通俗语言解释每个模块的价值
 - 调用 `system.list-capabilities` 和 `system.suggest` 工具，基于实际注册状态回答
 - 根据用户描述的使用场景（学生、职场人、自由职业者等），推荐个性化的能力组合
 - 引导用户完成关键配置（LLM 服务商、MCP Server、首个 Skill）
@@ -352,7 +352,7 @@ Markdown 定义的预设 Agent（`onboarding-guide.md`），放置在 `src/main/
 ```
 （首次启动）
 
-LifePilot：👋 你好！我是 LifePilot，你的 AI 伙伴。
+ZhiWei：👋 你好！我是 ZhiWei，你的 AI 伙伴。
 
          我可以帮你管理待办、安排日程、养成习惯，还能通过扩展获得更多能力。
 
@@ -365,7 +365,7 @@ LifePilot：👋 你好！我是 LifePilot，你的 AI 伙伴。
 
 你：主要是个人效率管理，偶尔需要查一些信息
 
-LifePilot：了解！推荐你这样开始：
+ZhiWei：了解！推荐你这样开始：
 
          ✅ 已就绪：
          • 待办管理、日程管理、习惯养成（内置，直接可用）
@@ -578,7 +578,7 @@ Agent 需要在适当时机与用户交互，而非自作主张。
 
 ### 9.1 核心概念：一切皆 Tool
 
-在 LifePilot 中，LLM 能直接调用的只有 `DynamicToolRegistry` 中注册的 Tool。**Skill 和 Agent 本身不是 Tool，不能被 LLM 直接检索或调用**，它们通过桥接机制在运行时被转换为 Tool 注册到 Registry 中：
+在 ZhiWei 中，LLM 能直接调用的只有 `DynamicToolRegistry` 中注册的 Tool。**Skill 和 Agent 本身不是 Tool，不能被 LLM 直接检索或调用**，它们通过桥接机制在运行时被转换为 Tool 注册到 Registry 中：
 
 | 概念 | 本质 | 桥接机制 | 注册到 Registry 的 Tool ID |
 |------|------|---------|--------------------------|

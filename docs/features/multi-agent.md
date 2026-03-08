@@ -7,7 +7,7 @@
 
 ## 1. 功能概述
 
-多 Agent 协作为 LifePilot 引入**专家 Agent 委托**能力。主 Agent 在处理用户请求时，可以自主判断是否需要将特定领域任务委托给专家 Agent 执行。每个专家 Agent 拥有独立的身份、System Prompt、工具集、预算和可选的差异化 LLM 模型。
+多 Agent 协作为 ZhiWei 引入**专家 Agent 委托**能力。主 Agent 在处理用户请求时，可以自主判断是否需要将特定领域任务委托给专家 Agent 执行。每个专家 Agent 拥有独立的身份、System Prompt、工具集、预算和可选的差异化 LLM 模型。
 
 ### 用户价值
 

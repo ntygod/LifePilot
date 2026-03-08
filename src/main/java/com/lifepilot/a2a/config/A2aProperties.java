@@ -31,7 +31,7 @@ public class A2aProperties {
     public static class Server {
         private boolean enabled = true;
         private String apiKey = "";
-        private String agentName = "LifePilot";
+        private String agentName = "ZhiWei";
         private String agentDescription = "个人生活助手";
         private String agentVersion = "1.0.0";
         private String protocolVersion = "0.2.5";

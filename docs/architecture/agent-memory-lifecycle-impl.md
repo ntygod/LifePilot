@@ -1,4 +1,4 @@
-## LifePilot Agent 记忆生命周期实现说明
+## ZhiWei Agent 记忆生命周期实现说明
 
 > 本文是对 `AgentLoop` 与多层记忆系统当前「实际实现行为」的梳理，用于和设计文档 `agent-memory-lifecycle.md` / `memory-advanced.md` 对照。侧重点是：一次请求在代码里如何读/写 Session、L1 工作记忆、L2 情景记忆与混合检索。
 

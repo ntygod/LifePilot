@@ -7,7 +7,7 @@
 
 ### 1.1 核心命题
 
-LifePilot 当前仅支持纯文本交互，`LlmRouter` 的所有调用方法（`call`、`callEntity`、`stream`）均以 `String prompt` 为输入。多模态能力的目标是：**在不破坏现有文本调用链路的前提下，扩展 LLM 路由层以支持图片理解、视频理解、文档内容提取、语音转文字（STT）和文字转语音（TTS），使 Agent 能够处理用户发送的图片、视频、文档和语音消息，并以语音形式回复。**
+ZhiWei 当前仅支持纯文本交互，`LlmRouter` 的所有调用方法（`call`、`callEntity`、`stream`）均以 `String prompt` 为输入。多模态能力的目标是：**在不破坏现有文本调用链路的前提下，扩展 LLM 路由层以支持图片理解、视频理解、文档内容提取、语音转文字（STT）和文字转语音（TTS），使 Agent 能够处理用户发送的图片、视频、文档和语音消息，并以语音形式回复。**
 
 ### 1.2 场景定义
 
@@ -27,22 +27,22 @@ LifePilot 当前仅支持纯文本交互，`LlmRouter` 的所有调用方法（`
 [OpenClaw](https://github.com/openclaw/openclaw)（186k+ Stars）的 `src/media/` 模块实现了完整的多模态媒体处理管线，其核心设计值得借鉴：
 
 - **分层媒体节点（Media Nodes）**：将图片理解、音频转录、文档解析拆分为独立的处理节点（`src/nodes/audio`、`src/nodes/image`），每个节点有独立的 Provider 优先级列表和降级策略
-- **音频转录级联降级**：OpenClaw 的音频处理采用"本地 CLI → 云端 Provider"的级联策略——优先检测本地 `whisper-cli`（whisper.cpp）或 `sherpa-onnx-offline`，不可用时回退到 OpenAI / Groq / Deepgram 等云端 STT Provider。这与 LifePilot 的"本地优先"原则高度一致
+- **音频转录级联降级**：OpenClaw 的音频处理采用"本地 CLI → 云端 Provider"的级联策略——优先检测本地 `whisper-cli`（whisper.cpp）或 `sherpa-onnx-offline`，不可用时回退到 OpenAI / Groq / Deepgram 等云端 STT Provider。这与 ZhiWei 的"本地优先"原则高度一致
 - **转录即消息体**：语音消息转录后，转录文本直接替换消息体（`Body`），后续处理流程与文本消息完全一致。这种"转录前置"设计避免了在 Agent 引擎中引入音频模态的复杂性
 
-**借鉴要点**：LifePilot 采用类似的"转录前置"策略——语音消息在进入 `AgentLoop` 前由 `AudioTranscriber` 转为文本，Agent 引擎无需感知音频模态。TTS 则作为输出后处理，在 Agent 回复文本后可选地转为语音。
+**借鉴要点**：ZhiWei 采用类似的"转录前置"策略——语音消息在进入 `AgentLoop` 前由 `AudioTranscriber` 转为文本，Agent 引擎无需感知音频模态。TTS 则作为输出后处理，在 Agent 回复文本后可选地转为语音。
 
 #### AstrBot ProviderType 能力枚举
 
 [AstrBot](https://github.com/AstrBotDevs/AstrBot)（13k+ Stars）的 Provider 系统通过 `ProviderType` 枚举明确区分 Provider 的能力类型：`CHAT_COMPLETION`、`SPEECH_TO_TEXT`、`TEXT_TO_SPEECH`、`EMBEDDING`、`RERANK`。每个 Provider 声明自己支持的能力类型，路由层根据请求类型选择匹配的 Provider。
 
-**借鉴要点**：LifePilot 的 `ProviderCapability` 枚举已有 `VISION`，本模块扩展新增 `TTS` 和 `STT` 能力值，使路由层能够根据请求类型（视觉/语音/文本）选择合适的 Provider。
+**借鉴要点**：ZhiWei 的 `ProviderCapability` 枚举已有 `VISION`，本模块扩展新增 `TTS` 和 `STT` 能力值，使路由层能够根据请求类型（视觉/语音/文本）选择合适的 Provider。
 
 #### OpenAI 图片 Token 计算模型
 
 OpenAI 的视觉模型采用基于 Tile 的图片 Token 计算方式：图片先缩放到 2048×2048 以内，再按 512×512 的 Tile 切分，每个 Tile 消耗 170 Token，加上基础的 85 Token。公式为 `total = 85 + 170 × n`（n 为 Tile 数）。例如 1024×1536 的图片需要 6 个 Tile，消耗 85 + 170×6 = 1105 Token。
 
-**借鉴要点**：LifePilot 的图片预处理策略（最大边长 2048、等比缩放）与 OpenAI 的 Tile 计算模型对齐——将图片控制在 2048 以内可以有效限制 Token 消耗。未来可在 `MediaProcessor` 中实现 Token 估算方法，为 `TokenBudget` 提供图片 Token 预估。
+**借鉴要点**：ZhiWei 的图片预处理策略（最大边长 2048、等比缩放）与 OpenAI 的 Tile 计算模型对齐——将图片控制在 2048 以内可以有效限制 Token 消耗。未来可在 `MediaProcessor` 中实现 Token 估算方法，为 `TokenBudget` 提供图片 Token 预估。
 
 #### Spring AI 统一音频 API
 
@@ -50,7 +50,7 @@ Spring AI 2.0 提供了统一的 TTS/STT 接口抽象：
 - **TTS**：`TextToSpeechModel` / `StreamingTextToSpeechModel` 接口，支持 OpenAI（`gpt-4o-mini-tts`）和 ElevenLabs 等 Provider，通过 Spring Boot 配置切换 Provider
 - **STT**：`TranscriptionModel` 接口，支持 OpenAI Whisper（`whisper-1`、`gpt-4o-transcribe`）等模型
 
-LifePilot 当前使用 Spring AI 1.1.2，该版本已有 `OpenAiAudioTranscriptionModel` 和 `OpenAiAudioSpeechModel`。本模块基于这些已有 API 构建音频处理能力，同时通过 `AudioTranscriber` / `SpeechSynthesizer` 抽象层隔离 Spring AI 版本变化。
+ZhiWei 当前使用 Spring AI 1.1.2，该版本已有 `OpenAiAudioTranscriptionModel` 和 `OpenAiAudioSpeechModel`。本模块基于这些已有 API 构建音频处理能力，同时通过 `AudioTranscriber` / `SpeechSynthesizer` 抽象层隔离 Spring AI 版本变化。
 
 #### LangChain 多模态 Agent 模式
 
@@ -59,37 +59,37 @@ LifePilot 当前使用 Spring AI 1.1.2，该版本已有 `OpenAiAudioTranscripti
 2. **预处理转换**：将非文本模态预处理为文本（如 OCR、STT），再传给纯文本 LLM
 3. **工具调用**：Agent 通过工具调用专门的视觉/音频模型
 
-LifePilot 采用混合策略：图片理解使用"原生多模态"模式（直接传给 VISION Provider），音频使用"预处理转换"模式（STT 转文本后进入 Agent），文档使用"预处理转换"模式（解析为纯文本）。
+ZhiWei 采用混合策略：图片理解使用"原生多模态"模式（直接传给 VISION Provider），音频使用"预处理转换"模式（STT 转文本后进入 Agent），文档使用"预处理转换"模式（解析为纯文本）。
 
 #### NVIDIA 多模态 RAG 音视频处理
 
 [NVIDIA Enterprise RAG Blueprint](https://developer.nvidia.com/blog/an-easy-introduction-to-multimodal-retrieval-augmented-generation-for-video-and-audio/) 提出了音视频 RAG 的处理模式：音频通过 ASR 模型（如 Parakeet-CTC）转录为文本，视频通过关键帧提取 + 下采样获取代表性帧，再分别进行文本和视觉检索。
 
-**借鉴要点**：视频理解的"关键帧提取"模式可作为 LifePilot 远期扩展方向——将视频拆分为关键帧图片 + 音轨转录文本，复用现有的图片理解和 STT 能力。本模块暂不实现视频理解，但架构预留扩展点。
+**借鉴要点**：视频理解的"关键帧提取"模式可作为 ZhiWei 远期扩展方向——将视频拆分为关键帧图片 + 音轨转录文本，复用现有的图片理解和 STT 能力。本模块暂不实现视频理解，但架构预留扩展点。
 
 #### OmAgent 视频理解分治框架
 
 [OmAgent](https://arxiv.org/abs/2406.16620)（EMNLP 2024）提出了面向复杂视频理解的多模态 Agent 框架，核心思想是**任务分治（Divide-and-Conquer）**：将复杂的视频问答任务拆分为多个子任务，由专门的 Agent 分别处理视觉帧检索、音频转录、时间定位等子问题，最后汇总结果。OmAgent 集成了多模态 RAG，能高效存储和检索视频帧，处理 24 小时以上的长视频。
 
-**借鉴要点**：LifePilot 的视频理解采用类似的分治策略——`VideoProcessor` 将视频拆分为关键帧序列 + 音轨，关键帧复用 `MediaProcessor` 的图片预处理管线，音轨复用 `AudioTranscriber` 的 STT 管线，最终将视觉描述和转录文本合并为结构化上下文传给 LLM。
+**借鉴要点**：ZhiWei 的视频理解采用类似的分治策略——`VideoProcessor` 将视频拆分为关键帧序列 + 音轨，关键帧复用 `MediaProcessor` 的图片预处理管线，音轨复用 `AudioTranscriber` 的 STT 管线，最终将视觉描述和转录文本合并为结构化上下文传给 LLM。
 
 #### Qwen2.5-VL 本地视频理解
 
 [Qwen2.5-VL](https://github.com/QwenLM/Qwen2.5-VL) 是通义千问团队的视觉语言模型，支持 20 分钟以上的视频理解，已在 Ollama 上提供本地部署（`ollama pull qwen2.5vl`）。Qwen2.5-VL 采用动态分辨率处理，能自适应不同尺寸的视频帧，在 VideoMME、MVBench 等视频理解基准上达到 SOTA 水平。
 
-**借鉴要点**：Qwen2.5-VL 的 Ollama 本地部署能力与 LifePilot 的"本地优先"原则完美契合。对于短视频（< 2 分钟），可直接将采样帧序列传给 Qwen2.5-VL 进行原生视频理解；对于长视频，仍采用关键帧提取 + STT 的分治策略。
+**借鉴要点**：Qwen2.5-VL 的 Ollama 本地部署能力与 ZhiWei 的"本地优先"原则完美契合。对于短视频（< 2 分钟），可直接将采样帧序列传给 Qwen2.5-VL 进行原生视频理解；对于长视频，仍采用关键帧提取 + STT 的分治策略。
 
 #### AKeyS 智能关键帧搜索
 
 [AKeyS（Agentic Keyframe Search）](https://arxiv.org/html/2503.16032)提出了一种 Agent 驱动的视频关键帧搜索方法，通过迭代推理动态选择最相关的视频帧，而非传统的均匀采样或固定间隔提取。在 EgoSchema 和 NExT-QA 数据集上，AKeyS 以最少的计算开销实现了最高的关键帧搜索效率。
 
-**借鉴要点**：LifePilot 的 `VideoProcessor` 初期采用均匀采样策略（简单可靠），远期可引入类似 AKeyS 的智能关键帧选择——根据用户问题动态选择最相关的视频帧，减少传给 LLM 的帧数，降低 Token 消耗。
+**借鉴要点**：ZhiWei 的 `VideoProcessor` 初期采用均匀采样策略（简单可靠），远期可引入类似 AKeyS 的智能关键帧选择——根据用户问题动态选择最相关的视频帧，减少传给 LLM 的帧数，降低 Token 消耗。
 
 #### Gemini 原生视频理解
 
 [Gemini 2.5](https://developers.googleblog.com/en/gemini-2-5-video-understanding/) 支持原生视频输入（最长 90 分钟），无需手动提取帧，模型内部自动处理视频的时序信息。Gemini 的视频理解在 ActivityNet、VideoMME 等基准上达到 SOTA。通过 File API 上传视频文件或直接传入 YouTube URL。
 
-**借鉴要点**：Gemini 的原生视频理解代表了未来方向——模型直接消费视频流而非关键帧序列。LifePilot 当前通过关键帧提取 + STT 的方式实现视频理解（兼容更多 Provider），但架构预留了原生视频输入的扩展点（`VIDEO_UNDERSTANDING` 能力值），待 Spring AI 支持 Gemini 视频 API 后可无缝切换。
+**借鉴要点**：Gemini 的原生视频理解代表了未来方向——模型直接消费视频流而非关键帧序列。ZhiWei 当前通过关键帧提取 + STT 的方式实现视频理解（兼容更多 Provider），但架构预留了原生视频输入的扩展点（`VIDEO_UNDERSTANDING` 能力值），待 Spring AI 支持 Gemini 视频 API 后可无缝切换。
 
 ### 1.4 设计原则
 
@@ -616,7 +616,7 @@ lifepilot:
 
 ### 11.3 可选外部依赖
 
-- **whisper.cpp / whisper CLI**：本地 STT，用户自行安装，LifePilot 自动检测
+- **whisper.cpp / whisper CLI**：本地 STT，用户自行安装，ZhiWei 自动检测
 
 ---
 

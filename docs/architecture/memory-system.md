@@ -21,13 +21,13 @@
 > **核心洞察：记忆不是存储问题，而是认知过程。**
 > Memory is not a storage problem, but a cognitive process.
 
-这一洞察来自认知科学的基本发现：人类记忆不是被动的录像机，而是主动的建构过程——我们不断地形成、巩固、重组和遗忘记忆。LifePilot 的记忆系统正是基于这一认知科学原理设计的。
+这一洞察来自认知科学的基本发现：人类记忆不是被动的录像机，而是主动的建构过程——我们不断地形成、巩固、重组和遗忘记忆。ZhiWei 的记忆系统正是基于这一认知科学原理设计的。
 
 ### 1.2 前沿研究基础
 
-LifePilot 的记忆系统设计综合了 2024-2026 年 Agent 记忆领域的六项前沿研究成果：
+ZhiWei 的记忆系统设计综合了 2024-2026 年 Agent 记忆领域的六项前沿研究成果：
 
-| 研究 | 核心贡献 | LifePilot 采纳 |
+| 研究 | 核心贡献 | ZhiWei 采纳 |
 |------|---------|---------------|
 | **MaRS** ([arXiv 2512.12856](https://arxiv.org/abs/2512.12856)) | 认知启发的记忆架构，将记忆形式化为元组 A=(M,P,B,π)，其中 M=记忆存储、P=遗忘策略集、B=预算约束、π=策略选择器。提出 6 种遗忘策略（FIFO、LRU、Priority Decay、Reflection-Summary、Random-Drop、Hybrid），Hybrid 策略达到最佳综合得分 ≈0.911 | 采纳 Hybrid 遗忘策略框架；采纳预算约束模型；采纳来源追踪（provenance tracking）机制 |
 | **MemoriesDB** ([arXiv 2511.06179](https://arxiv.org/abs/2511.06179)) | 提出"时间-语义-关系实体"（time-semantic-relational entity）概念，每条记忆同时编码何时（temporal）、是什么（semantic）、如何关联（relational）三个维度 | 时序知识图谱的核心设计灵感；`TemporalEntity` 的三维编码模型 |
@@ -38,7 +38,7 @@ LifePilot 的记忆系统设计综合了 2024-2026 年 Agent 记忆领域的六�
 
 ### 1.3 六种记忆操作生命周期
 
-基于记忆操作综述（[arXiv 2505.00675](https://arxiv.org/abs/2505.00675)）的理论框架，LifePilot 将记忆的完整生命周期建模为六种基本操作的循环：
+基于记忆操作综述（[arXiv 2505.00675](https://arxiv.org/abs/2505.00675)）的理论框架，ZhiWei 将记忆的完整生命周期建模为六种基本操作的循环：
 
 ```mermaid
 flowchart LR
@@ -82,7 +82,7 @@ flowchart LR
     style G fill:#e8f5e9
 ```
 
-每种操作在 LifePilot 中对应独立的服务组件：
+每种操作在 ZhiWei 中对应独立的服务组件：
 
 | 操作 | 服务组件 | 触发时机 | 延迟要求 |
 |------|---------|---------|---------|
@@ -107,7 +107,7 @@ flowchart LR
 
 ### 1.5 竞品对比分析
 
-| 维度 | **LifePilot** | **MaRS** | **MemGPT** | **Mem0** | **传统 RAG** |
+| 维度 | **ZhiWei** | **MaRS** | **MemGPT** | **Mem0** | **传统 RAG** |
 |------|:------------:|:-------:|:---------:|:-------:|:-----------:|
 | 记忆层次 | 四层（Working/Episodic/Semantic/Procedural） | 单层（统一记忆存储） | 两层（Main Context + Archival） | 两层（Short-term + Long-term） | 单层（向量存储） |
 | 时序感知 | ✅ 版本化实体 + 时间旅行查询 | ❌ 无时序维度 | ❌ 无时序维度 | ⚠️ 基础时间戳 | ❌ 无 |
@@ -122,10 +122,10 @@ flowchart LR
 
 ### 1.6 形式化定义
 
-受 MaRS 论文启发，LifePilot 将记忆系统形式化为扩展元组：
+受 MaRS 论文启发，ZhiWei 将记忆系统形式化为扩展元组：
 
 ```
-LifePilot Memory System = (L, M, P, B, π, Φ, Ψ)
+ZhiWei Memory System = (L, M, P, B, π, Φ, Ψ)
 
 其中：
   L = {L1, L2, L3, L4}           — 四层记忆层次
@@ -562,7 +562,7 @@ sequenceDiagram
 
 ### 3.1 设计原理
 
-工作记忆是认知科学中的核心概念——人类在执行任务时，大脑会在工作记忆中维持一个有限容量的"心理工作台"，存放当前正在处理的信息。LifePilot 的 L1 工作记忆模拟了这一机制：
+工作记忆是认知科学中的核心概念——人类在执行任务时，大脑会在工作记忆中维持一个有限容量的"心理工作台"，存放当前正在处理的信息。ZhiWei 的 L1 工作记忆模拟了这一机制：
 
 - **极低延迟**：纯 JVM 堆内存操作，访问延迟 < 1ms，不涉及任何 I/O
 - **有限容量**：受 LLM 上下文窗口大小约束，通过 `TokenBudgetAllocator` 动态分配
@@ -1182,7 +1182,7 @@ public record MemoryProperties(
 
 ### 4.1 设计原理
 
-情景记忆（Episodic Memory）是认知科学中描述"对具体事件的记忆"的概念——人类能够回忆起"上周二和张总开会讨论了什么"，这就是情景记忆在起作用。LifePilot 的 L2 情景记忆模拟了这一机制：
+情景记忆（Episodic Memory）是认知科学中描述"对具体事件的记忆"的概念——人类能够回忆起"上周二和张总开会讨论了什么"，这就是情景记忆在起作用。ZhiWei 的 L2 情景记忆模拟了这一机制：
 
 - **追加写入不可变**：对话记录一旦写入就不可修改（只有压缩内容可以追加），保证审计追踪的完整性。这与事件溯源（Event Sourcing）的理念一致——历史不可篡改
 - **渐进式三层压缩**：受 TiMem（[arXiv 2601.02845](https://arxiv.org/abs/2601.02845)）时序记忆树的启发，对话内容从原文逐层抽象为摘要和要点，在保留关键信息的同时大幅减少 Token 消耗
@@ -1900,11 +1900,11 @@ public class CompressionService {
 
 语义记忆是认知科学中描述"关于世界的一般性知识"的概念——人类知道"巴黎是法国的首都"，这就是语义记忆。与情景记忆（记住具体事件）不同，语义记忆存储的是从多次经验中提炼出的抽象知识。
 
-LifePilot 的 L3 语义记忆在传统知识图谱的基础上引入了两个关键创新：
+ZhiWei 的 L3 语义记忆在传统知识图谱的基础上引入了两个关键创新：
 
 **创新 1: 时序维度（受 MemoriesDB 启发）**
 
-传统知识图谱只存储"当前状态"——"张总是产品经理"。但现实中信息会随时间变化——张总可能升职为产品总监。LifePilot 的时序知识图谱为每个实体和关系都添加了时间维度（`valid_from` / `valid_to`），支持：
+传统知识图谱只存储"当前状态"——"张总是产品经理"。但现实中信息会随时间变化——张总可能升职为产品总监。ZhiWei 的时序知识图谱为每个实体和关系都添加了时间维度（`valid_from` / `valid_to`），支持：
 - **时间旅行查询**："2025 年 6 月时，张总的职位是什么？"
 - **变更历史追踪**："张总的职位变更记录"
 - **版本化更新**：新信息到达时创建新版本，旧版本保留可查
@@ -3386,7 +3386,7 @@ stateDiagram-v2
 
 程序记忆（Procedural Memory）在认知科学中对应"知道如何做"（knowing how）的知识——骑自行车、打字、做菜的步骤。与语义记忆（"知道是什么"）不同，程序记忆编码的是**操作序列和行为模式**，一旦形成就能自动化执行，无需每次从头推理。
 
-在 LifePilot 中，L4 程序记忆存储三类知识：
+在 ZhiWei 中，L4 程序记忆存储三类知识：
 
 1. **操作模板（ProcedureTemplate）**：从用户成功的多步执行轨迹中提炼出的可复用操作序列。例如"创建会议"模板包含：查日历空闲时间 → 创建日程 → 发送邀请 → 设置提醒。
 2. **偏好规则（PreferenceRule）**：从用户行为中学习到的个人偏好。例如"用户偏好在上午处理重要邮件"、"用户习惯用 Markdown 格式记笔记"。
@@ -4364,7 +4364,7 @@ flowchart TD
 > 向量搜索提供语义理解，FTS5 提供精确匹配，图遍历提供关联发现。
 > 三者并行执行，通过 Reciprocal Rank Fusion (RRF) 融合为统一排序。
 
-这一设计受到 Azure AI Search、Chroma 等现代混合搜索系统的启发，但 LifePilot 在标准 RRF 基础上增加了**时间衰减**和**重要度加权**，使检索结果更贴合个人 Agent 的使用场景。
+这一设计受到 Azure AI Search、Chroma 等现代混合搜索系统的启发，但 ZhiWei 在标准 RRF 基础上增加了**时间衰减**和**重要度加权**，使检索结果更贴合个人 Agent 的使用场景。
 
 ### 7.2 三路检索架构
 
@@ -4535,7 +4535,7 @@ Score(d) = Σ  1 / (k + rank(r, d))
   k = 平滑常数（默认 60，防止排名第 1 的文档分数过高）
 ```
 
-LifePilot 在标准 RRF 基础上扩展了**加权 RRF + 时间衰减 + 重要度加成**：
+ZhiWei 在标准 RRF 基础上扩展了**加权 RRF + 时间衰减 + 重要度加成**：
 
 ```
 FinalScore(d) = WeightedRRF(d) × RecencyFactor(d) + ImportanceBoost(d)
@@ -5798,7 +5798,7 @@ lifepilot:
 - **成功的行为序列**被编码为自动化程序（"创建会议的 4 个步骤" → 操作模板）
 - **低频、低价值的细节**逐渐被遗忘（"上周二下午 3:15 的闲聊" → 淡化）
 
-LifePilot 的巩固管线模拟了这一认知过程，受 TiMem（[arXiv 2601.02845](https://arxiv.org/abs/2601.02845)）的时序记忆树（Temporal Memory Tree）启发——将原始观察逐层抽象为更高层次的表示。
+ZhiWei 的巩固管线模拟了这一认知过程，受 TiMem（[arXiv 2601.02845](https://arxiv.org/abs/2601.02845)）的时序记忆树（Temporal Memory Tree）启发——将原始观察逐层抽象为更高层次的表示。
 
 ### 9.2 双向巩固架构
 
@@ -6592,7 +6592,7 @@ MaRS（[arXiv 2512.12856](https://arxiv.org/abs/2512.12856)）将遗忘形式化
 
 ### 10.2 MaRS 六种遗忘策略
 
-LifePilot 完整实现了 MaRS 论文提出的 6 种遗忘策略，并扩展了隐私感知维度：
+ZhiWei 完整实现了 MaRS 论文提出的 6 种遗忘策略，并扩展了隐私感知维度：
 
 ```mermaid
 flowchart TD
@@ -7110,7 +7110,7 @@ import java.util.*;
 /**
  * 遗忘策略引擎 — 定期扫描并清理低价值记忆。
  *
- * <p>遗忘引擎是 LifePilot 记忆系统的"垃圾回收器"，
+ * <p>遗忘引擎是 ZhiWei 记忆系统的"垃圾回收器"，
  * 定期扫描所有当前实体，根据遗忘优先级执行三级处理：</p>
  *
  * <ol>
@@ -7784,7 +7784,7 @@ quadrantChart
 | 隐私保护 | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ |
 | 适应性 | ❌ | ⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐ | ❌ | ⭐⭐⭐⭐⭐ |
 | MaRS 评分 | 0.723 | 0.801 | 0.856 | 0.889 | 0.745 | **0.911** |
-| LifePilot 用途 | L1 溢出 | L3 清理 | L3 衰减 | L2 压缩 | 隐私场景 | **默认策略** |
+| ZhiWei 用途 | L1 溢出 | L3 清理 | L3 衰减 | L2 压缩 | 隐私场景 | **默认策略** |
 
 
 ---
@@ -7811,11 +7811,11 @@ quadrantChart
 - **渐进压缩**：信息经历多层压缩——从原文到摘要再到关键要点，每层保留不同粒度的信息
 - **优先级标记**：使用标记系统（Mastra 使用交通灯 emoji）标识信息的重要程度，确保关键信息在压缩过程中被保留
 
-**LifePilot 的适配方案**
+**ZhiWei 的适配方案**
 
-LifePilot 借鉴 Mastra 的渐进压缩理念，但做了以下关键适配：
+ZhiWei 借鉴 Mastra 的渐进压缩理念，但做了以下关键适配：
 
-| 维度 | Mastra 方案 | LifePilot 适配 |
+| 维度 | Mastra 方案 | ZhiWei 适配 |
 |------|------------|---------------|
 | 优先级标记 | 交通灯 emoji（🔴🟡🟢） | 数值化重要度评分（0.0-1.0），与四层记忆的 `importanceScore` 统一 |
 | 压缩层数 | 2 层（原文→摘要） | 3 层（原文→摘要→关键要点），更细粒度的压缩控制 |
@@ -8759,7 +8759,7 @@ public class SemanticRedundancyDetector {
 
 ### 11.6 压缩触发策略
 
-压缩不是随时发生的——错误的触发时机会打断用户体验或浪费计算资源。LifePilot 采用多策略触发机制，在合适的时机执行压缩。
+压缩不是随时发生的——错误的触发时机会打断用户体验或浪费计算资源。ZhiWei 采用多策略触发机制，在合适的时机执行压缩。
 
 ```mermaid
 flowchart TD
@@ -9049,7 +9049,7 @@ public class CompressionMemoryBridge {
 
 ### 11.8 压缩质量保证
 
-压缩是有损操作——任何摘要都不可避免地丢失部分信息。关键在于确保丢失的是低价值信息，而非关键决策或事实。LifePilot 通过多维度质量评估和回滚机制保障压缩质量。
+压缩是有损操作——任何摘要都不可避免地丢失部分信息。关键在于确保丢失的是低价值信息，而非关键决策或事实。ZhiWei 通过多维度质量评估和回滚机制保障压缩质量。
 
 **质量评估维度**
 
@@ -9220,7 +9220,7 @@ lifepilot:
 
 ### 12.1 Spring AI ChatMemory 架构
 
-Spring AI 1.1.2 提供了一套标准化的对话记忆抽象，LifePilot 在此基础上构建深度集成，将简单的消息存储扩展为完整的认知记忆系统。
+Spring AI 1.1.2 提供了一套标准化的对话记忆抽象，ZhiWei 在此基础上构建深度集成，将简单的消息存储扩展为完整的认知记忆系统。
 
 **Spring AI 记忆抽象层次**
 
@@ -9285,9 +9285,9 @@ classDiagram
 ```
 
 
-**Spring AI 原生抽象与 LifePilot 扩展对比**
+**Spring AI 原生抽象与 ZhiWei 扩展对比**
 
-| 能力 | Spring AI 原生 | LifePilot 扩展 |
+| 能力 | Spring AI 原生 | ZhiWei 扩展 |
 |------|---------------|---------------|
 | 消息存储 | 简单 CRUD（内存 / JDBC） | SQLite + 四层记忆集成 |
 | 上下文窗口 | 固定滑动窗口（丢弃最早消息） | 渐进压缩（压缩而非丢弃） |
@@ -9302,7 +9302,7 @@ classDiagram
 
 ### 12.2 LifePilotChatMemoryRepository
 
-`LifePilotChatMemoryRepository` 实现 Spring AI 的 `ChatMemoryRepository` 接口，以 SQLite 为后端存储，同时桥接 LifePilot 的四层记忆系统。
+`LifePilotChatMemoryRepository` 实现 Spring AI 的 `ChatMemoryRepository` 接口，以 SQLite 为后端存储，同时桥接 ZhiWei 的四层记忆系统。
 
 ```java
 package com.lifepilot.memory.spring;
@@ -9325,7 +9325,7 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * LifePilot 对话记忆仓库 — 基于 SQLite 的 {@link ChatMemoryRepository} 实现。
+ * ZhiWei 对话记忆仓库 — 基于 SQLite 的 {@link ChatMemoryRepository} 实现。
  *
  * <p>核心职责：
  * <ul>
@@ -9504,7 +9504,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * LifePilot 对话记忆 — 压缩感知的 {@link ChatMemory} 实现。
+ * ZhiWei 对话记忆 — 压缩感知的 {@link ChatMemory} 实现。
  *
  * <p>与 Spring AI 的 {@link org.springframework.ai.chat.memory.MessageWindowChatMemory} 不同，
  * 本实现在消息窗口超出预算时不会丢弃消息，而是触发渐进压缩：
@@ -10095,7 +10095,7 @@ public class MemoryAutoConfiguration {
     public LifePilotChatMemoryRepository lifePilotChatMemoryRepository(
             JdbcTemplate jdbc,
             WorkingMemory workingMemory) {
-        log.info("初始化 LifePilot ChatMemoryRepository（SQLite 后端）");
+        log.info("初始化 ZhiWei ChatMemoryRepository（SQLite 后端）");
         return new LifePilotChatMemoryRepository(jdbc, workingMemory);
     }
 
@@ -10123,7 +10123,7 @@ public class MemoryAutoConfiguration {
             ConversationCompressor compressor,
             HybridRetriever retriever,
             MemoryContextAssembler contextAssembler) {
-        log.info("初始化 LifePilot ChatMemory（压缩感知模式）");
+        log.info("初始化 ZhiWei ChatMemory（压缩感知模式）");
         return new LifePilotChatMemory(
                 repository, compressor, retriever, contextAssembler);
     }
@@ -10160,7 +10160,7 @@ public class MemoryAutoConfiguration {
 
 ### 12.6 Advisor 执行顺序
 
-LifePilot 的 Advisor 链遵循严格的执行顺序，确保安全检查在记忆注入之前完成，可观测性追踪覆盖完整的请求-响应生命周期。
+ZhiWei 的 Advisor 链遵循严格的执行顺序，确保安全检查在记忆注入之前完成，可观测性追踪覆盖完整的请求-响应生命周期。
 
 ```mermaid
 sequenceDiagram
@@ -10210,7 +10210,7 @@ sequenceDiagram
 
 ### 12.7 与 Spring AI ChatClient 的集成示例
 
-以下示例展示如何在业务代码中使用 LifePilot 记忆系统增强的 ChatClient。
+以下示例展示如何在业务代码中使用 ZhiWei 记忆系统增强的 ChatClient。
 
 ```java
 package com.lifepilot.agent;
@@ -10227,7 +10227,7 @@ import org.springframework.stereotype.Service;
 import java.util.Map;
 
 /**
- * Agent 对话服务 — 演示 Spring AI ChatClient 与 LifePilot 记忆系统的集成。
+ * Agent 对话服务 — 演示 Spring AI ChatClient 与 ZhiWei 记忆系统的集成。
  *
  * <p>集成要点：
  * <ul>
@@ -10250,7 +10250,7 @@ public class AgentChatService {
      * 运行时按 order 自动排序执行。</p>
      *
      * @param chatClientBuilder Spring AI 提供的 ChatClient 构建器
-     * @param chatMemory        LifePilot 的压缩感知 ChatMemory
+     * @param chatMemory        ZhiWei 的压缩感知 ChatMemory
      * @param memoryAdvisor     记忆注入/提取 Advisor
      */
     public AgentChatService(ChatClient.Builder chatClientBuilder,
@@ -10264,7 +10264,7 @@ public class AgentChatService {
                         memoryAdvisor
                 )
                 .defaultSystem("""
-                        你是 LifePilot，一个个人 AI 助手。
+                        你是 ZhiWei，一个个人 AI 助手。
                         你能够记住用户的偏好、习惯和历史对话。
                         请根据上下文中提供的记忆信息，给出个性化的回答。
                         """)
@@ -10340,7 +10340,7 @@ flowchart TB
         TA["TraceAdvisor"]
     end
 
-    subgraph 记忆层["LifePilot 记忆层"]
+    subgraph 记忆层["ZhiWei 记忆层"]
         LCM["LifePilotChatMemory"]
         LCMR["LifePilotChatMemoryRepository"]
         COMP["ConversationCompressor"]
@@ -10859,7 +10859,7 @@ quadrantChart
 
 **jqwik 与 JUnit 5 的集成**
 
-LifePilot 使用 [jqwik 1.9.x](https://jqwik.net/) 作为属性测试框架，它与 JUnit 5 无缝集成：
+ZhiWei 使用 [jqwik 1.9.x](https://jqwik.net/) 作为属性测试框架，它与 JUnit 5 无缝集成：
 
 - `@Property` 注解标记属性测试方法（替代 `@Test`）
 - `@ForAll` 注解标记随机生成的参数
@@ -12007,7 +12007,7 @@ class WorkingMemoryBudgetPropertyTest {
 
 ### 14.9 自定义 Arbitrary 生成器
 
-jqwik 的 `Arbitrary` 是属性测试的数据引擎。LifePilot 提供一组领域特定的 Arbitrary 生成器，确保随机生成的数据符合记忆系统的业务约束。
+jqwik 的 `Arbitrary` 是属性测试的数据引擎。ZhiWei 提供一组领域特定的 Arbitrary 生成器，确保随机生成的数据符合记忆系统的业务约束。
 
 ```java
 package com.lifepilot.memory.testing;

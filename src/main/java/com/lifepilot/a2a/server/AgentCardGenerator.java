@@ -27,7 +27,7 @@ public class AgentCardGenerator {
         this.properties = properties;
     }
 
-    /** 生成 LifePilot 主 Agent 的 Agent Card。 */
+    /** 生成 ZhiWei 主 Agent 的 Agent Card。 */
     public A2aAgentCard generateCard() {
         var server = properties.getServer();
 

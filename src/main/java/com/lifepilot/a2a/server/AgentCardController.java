@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.RestController;
  * Agent Card REST 端点。
  *
  * <p>提供标准发现路径 {@code /.well-known/agent.json} 和
- * 备用路径 {@code /api/a2a/agent-card}，返回 LifePilot 的 A2A Agent Card。</p>
+ * 备用路径 {@code /api/a2a/agent-card}，返回 ZhiWei 的 A2A Agent Card。</p>
  *
  * @author zsg
  * @since 2026-02-28

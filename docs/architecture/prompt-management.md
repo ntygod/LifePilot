@@ -139,7 +139,7 @@ var template = new PromptTemplate(resource);
 
 // 变量插值
 Map<String, Object> variables = Map.of(
-    "role", "LifePilot 智能助手",
+    "role", "ZhiWei 智能助手",
     "maxContentLength", 200
 );
 String rendered = template.render(variables);
@@ -245,7 +245,7 @@ PromptRegistry 在 Spring AutoConfiguration 中初始化，扫描 `classpath:pro
 
 ### 5.3 StringTemplate 中的 XML 标签处理
 
-由于 StringTemplate 使用 `<>` 作为默认分隔符可能与 XML 标签冲突，LifePilot 采用以下策略：
+由于 StringTemplate 使用 `<>` 作为默认分隔符可能与 XML 标签冲突，ZhiWei 采用以下策略：
 - 提示词模板使用 `{variable}` 占位符（Spring AI 默认配置）
 - XML 标签直接写入模板文本，不会被 StringTemplate 解析
 - 如需在 XML 标签内使用变量：`<role>{roleName}</role>`

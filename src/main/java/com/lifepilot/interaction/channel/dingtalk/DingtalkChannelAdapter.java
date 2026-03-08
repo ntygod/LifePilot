@@ -140,7 +140,7 @@ public class DingtalkChannelAdapter extends AbstractChannelAdapter {
 
             if (converter.shouldUseActionCard(content)) {
                 String title = content instanceof ResponseContent.CardContent card
-                        ? card.title() : "LifePilot";
+                        ? card.title() : "ZhiWei";
                 return Map.of(
                         "msgtype", "actionCard",
                         "actionCard", Map.of("title", title, "text", text)
@@ -172,7 +172,7 @@ public class DingtalkChannelAdapter extends AbstractChannelAdapter {
         String text = converter.convert(content);
         if (converter.shouldUseActionCard(content)) {
             String title = content instanceof ResponseContent.CardContent card
-                    ? card.title() : "LifePilot";
+                    ? card.title() : "ZhiWei";
             apiClient.sendActionCard(userId, title, text);
         } else {
             apiClient.sendText(userId, text);

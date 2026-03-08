@@ -5,9 +5,9 @@
 
 ## 1. 设计哲学与原则
 
-LifePilot 的数据模型设计围绕一个核心命题：**如何为本地运行的个人 AI Agent 构建一个兼具结构化查询、语义检索和时序推理能力的统一存储层？**
+ZhiWei 的数据模型设计围绕一个核心命题：**如何为本地运行的个人 AI Agent 构建一个兼具结构化查询、语义检索和时序推理能力的统一存储层？**
 
-受 MemoriesDB（[arXiv 2511.06179](https://arxiv.org/abs/2511.06179)）"时间-语义-关系实体"（time-semantic-relational entity）概念的启发，LifePilot 将每条核心数据视为同时编码了 **何时（when）、是什么（what）、如何关联（how it connects）** 三个维度的实体。这一理念贯穿整个数据模型。
+受 MemoriesDB（[arXiv 2511.06179](https://arxiv.org/abs/2511.06179)）"时间-语义-关系实体"（time-semantic-relational entity）概念的启发，ZhiWei 将每条核心数据视为同时编码了 **何时（when）、是什么（what）、如何关联（how it connects）** 三个维度的实体。这一理念贯穿整个数据模型。
 
 五大设计原则：
 
@@ -25,7 +25,7 @@ LifePilot 的数据模型设计围绕一个核心命题：**如何为本地运�
 
 ### 2.1 双库分离策略
 
-LifePilot 采用双 SQLite 数据库架构：
+ZhiWei 采用双 SQLite 数据库架构：
 
 | 数据库 | 文件 | 内容 | 说明 |
 |--------|------|------|------|
@@ -736,7 +736,7 @@ CREATE INDEX idx_checkins_habit ON habit_checkins(habit_id, checkin_at DESC);
 
 ### 4.5 时序知识图谱
 
-时序知识图谱是 LifePilot 语义记忆（L3 Semantic Memory）的核心存储，也是整个数据模型中最复杂的部分。受 MemoriesDB 论文启发，每个实体和关系都编码了时间维度，支持版本化更新和时间旅行查询。
+时序知识图谱是 ZhiWei 语义记忆（L3 Semantic Memory）的核心存储，也是整个数据模型中最复杂的部分。受 MemoriesDB 论文启发，每个实体和关系都编码了时间维度，支持版本化更新和时间旅行查询。
 
 #### 实体类型体系
 
@@ -1571,7 +1571,7 @@ CREATE INDEX idx_embeddings_queue_status ON embeddings_queue(status, created_at)
 
 ### 5.2 多维度向量索引
 
-LifePilot 维护三张向量表，分别服务于不同的语义检索场景：
+ZhiWei 维护三张向量表，分别服务于不同的语义检索场景：
 
 ```sql
 -- ① 知识图谱实体向量（vectors.db）
@@ -1630,7 +1630,7 @@ ORDER BY cv.distance;
 
 | 函数 | 适用场景 | 说明 |
 |------|---------|------|
-| `vec_distance_cosine()` | 文本语义相似度 | LifePilot 默认选择，对向量长度不敏感 |
+| `vec_distance_cosine()` | 文本语义相似度 | ZhiWei 默认选择，对向量长度不敏感 |
 | `vec_distance_L2()` | 需要考虑向量幅度时 | 欧氏距离，适合已归一化的向量 |
 | `vec_distance_hamming()` | 二值向量快速筛选 | 配合 `bit` 类型使用，适合粗筛阶段 |
 
@@ -1700,7 +1700,7 @@ public class JvmVectorFallback implements VectorSearcher {
 
 ### 6.1 FTS5 虚拟表
 
-LifePilot 为三类核心内容建立 FTS5 全文索引，与向量语义检索互补：
+ZhiWei 为三类核心内容建立 FTS5 全文索引，与向量语义检索互补：
 
 ```sql
 -- 对话消息全文索引
@@ -1740,7 +1740,7 @@ SQLite FTS5 的内置 tokenizer 对中文支持有限，这是本地中文 AI �
 - `unicode61` tokenizer：按 Unicode 类别分词，对中文做字符级分割（每个汉字作为独立 token）
 - `porter` tokenizer：英文词干提取，不适用于中文
 
-**LifePilot 的分词策略**：
+**ZhiWei 的分词策略**：
 
 | 阶段 | 方案 | 说明 |
 |------|------|------|
@@ -1848,7 +1848,7 @@ END;
 
 ### 7.1 Repository 模式
 
-LifePilot 选择 Spring JDBC Template 而非 JPA/Hibernate 作为数据访问层实现，原因如下：
+ZhiWei 选择 Spring JDBC Template 而非 JPA/Hibernate 作为数据访问层实现，原因如下：
 
 1. **SQLite 兼容性** — SQLite 不完全兼容 JPA 方言（如不支持 `SEQUENCE`、`IDENTITY` 策略有限制）
 2. **特殊功能支持** — FTS5 虚拟表、sqlite-vec 扩展、递归 CTE 等 SQLite 特性需要原生 SQL
@@ -2118,7 +2118,7 @@ src/main/resources/db/migration/
 
 ```sql
 -- ============================================================
--- LifePilot 初始 Schema 迁移
+-- ZhiWei 初始 Schema 迁移
 -- 版本: V1.0
 -- 描述: 创建所有核心表、索引、触发器和 FTS5 虚拟表
 -- ============================================================
@@ -2872,7 +2872,7 @@ public record ExportData(
 
 ### 10.1 索引策略
 
-LifePilot 的索引设计遵循三个原则：覆盖高频查询、利用部分索引减少存储、避免过度索引拖慢写入。
+ZhiWei 的索引设计遵循三个原则：覆盖高频查询、利用部分索引减少存储、避免过度索引拖慢写入。
 
 **覆盖索引**：
 
@@ -3127,6 +3127,6 @@ CHECK (json_valid(steps_json))  -- 必填 JSON 字段不允许 NULL
 
 > **文档结束**
 >
-> 本文档是 LifePilot 数据模型的权威参考。所有表结构变更必须通过 Flyway 迁移脚本管理，
+> 本文档是 ZhiWei 数据模型的权威参考。所有表结构变更必须通过 Flyway 迁移脚本管理，
 > 并同步更新本文档。数据模型的设计原则（本地优先、追加优先、时序感知、向量原生、Schema 演进）
 > 应在后续迭代中始终贯穿。

@@ -30,7 +30,7 @@
 
 ### 1.1 定位
 
-元能力系统是 LifePilot 的**自扩展基础设施层**，位于业务 Skill 之下、Agent 引擎之上。它不提供具体的业务功能（查天气、记待办），而是提供让系统获取新能力的能力 — 自省、发现、安装、配置。
+元能力系统是 ZhiWei 的**自扩展基础设施层**，位于业务 Skill 之下、Agent 引擎之上。它不提供具体的业务功能（查天气、记待办），而是提供让系统获取新能力的能力 — 自省、发现、安装、配置。
 
 类比操作系统：业务 Skill 是应用程序，元能力是应用商店 + 系统设置 + 帮助中心。
 
@@ -39,7 +39,7 @@
 **本模块负责**：
 - 基础工具（Infrastructure Tools）— Agent 的基本感官（时间、计算、搜索、交互）
 - 系统自省 — 聚合各注册中心信息，让 Agent 了解自身能力
-- Skill 发现与安装 — 从 LifePilot Marketplace + 开源生态搜索、安装 Skill
+- Skill 发现与安装 — 从 ZhiWei Marketplace + 开源生态搜索、安装 Skill
 - MCP 发现与配置 — 从 MCP Registry / Smithery 搜索、配置 MCP Server
 - 引导 Agent — 新用户引导、场景推荐
 - 统一工具权限模型 — 三层权限解析（全局策略 → 调用者作用域 → 工具属性）
@@ -70,7 +70,7 @@
 | 一切皆 Tool | 核心原则：LLM 只能调用 `DynamicToolRegistry` 中的 Tool；Skill 和 Agent 通过桥接机制转换为 Tool |
 | Caller Scope | 调用者作用域，每种调用者（Agent/Skill/Workflow）的工具白名单 |
 | Infrastructure 豁免 | 标记为 `infrastructure` 的工具绕过 Layer 2 白名单过滤，始终对所有调用者可用 |
-| 格式适配层 | 将外部 Skill 格式（Anthropic Agent Skills 标准等）转换为 LifePilot Markdown Frontmatter 格式 |
+| 格式适配层 | 将外部 Skill 格式（Anthropic Agent Skills 标准等）转换为 ZhiWei Markdown Frontmatter 格式 |
 
 ---
 
@@ -240,7 +240,7 @@ tools.stream()
 
 ### 5.1 设计目标
 
-聚合 LifePilot 各注册中心的信息，让 Agent 能准确回答"你能做什么？"类问题。自省是元能力的入口 — 用户了解系统能力后，才会产生扩展需求。
+聚合 ZhiWei 各注册中心的信息，让 Agent 能准确回答"你能做什么？"类问题。自省是元能力的入口 — 用户了解系统能力后，才会产生扩展需求。
 
 ### 5.2 CapabilityAggregator
 
@@ -306,7 +306,7 @@ public sealed interface ExternalSkillSource
 
 ### 6.3 SkillFormatAdapter
 
-将外部 Skill 格式转换为 LifePilot Markdown Frontmatter 格式：
+将外部 Skill 格式转换为 ZhiWei Markdown Frontmatter 格式：
 
 ```
 外部 Skill（Anthropic Agent Skills 标准等）
@@ -315,7 +315,7 @@ public sealed interface ExternalSkillSource
 SkillFormatAdapter.adapt(RawSkillContent)
     │
     ▼
-LifePilot SKILL.md（YAML Frontmatter + Markdown 指令体）
+ZhiWei SKILL.md（YAML Frontmatter + Markdown 指令体）
     │
     ▼
 SkillValidationPipeline（格式 → 安全 → 沙箱）
@@ -389,7 +389,7 @@ public sealed interface McpRegistryClient
 
 ### 8.1 设计目标
 
-新用户首次使用 LifePilot 时，引导 Agent 主动介绍系统能力，根据用户场景推荐 Skill 组合和配置方案。
+新用户首次使用 ZhiWei 时，引导 Agent 主动介绍系统能力，根据用户场景推荐 Skill 组合和配置方案。
 
 ### 8.2 实现方式
 
@@ -403,7 +403,7 @@ id: onboarding-guide
 name: 引导助手
 description: 新用户引导，介绍系统能力并推荐个性化配置
 system-prompt: |
-  你是 LifePilot 的引导助手。你的职责是...
+  你是 ZhiWei 的引导助手。你的职责是...
 allowed-tools:
   - system.list-capabilities
   - system.explain

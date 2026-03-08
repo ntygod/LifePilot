@@ -10,7 +10,7 @@ import org.springframework.context.annotation.FilterType;
 import org.springframework.context.event.EventListener;
 
 /**
- * LifePilot 应用启动类。
+ * ZhiWei 应用启动类。
  *
  * <p>本地运行的个人 AI Agent 助手，通过 {@code java -jar lifepilot.jar} 一键启动。
  *
