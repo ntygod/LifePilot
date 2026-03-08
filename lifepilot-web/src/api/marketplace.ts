@@ -1,4 +1,4 @@
-import type { InstallResult, PageResult, SkillPackage, UpdateInfo } from '@/types'
+import type { ExtensionPackage, InstallResult, PagedResult } from '@/types'
 
 // API 基础路径（开发环境通过 Vite proxy 转发）
 const BASE = '/api/marketplace'
@@ -27,7 +27,7 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 /** 扩展市场 API */
 export const marketplaceApi = {
   /** 获取扩展列表（分页 + 搜索 + 标签筛选 + 类型筛选） */
-  getSkills(params: { type?: string; search?: string; tag?: string; page?: number; size?: number } = {}): Promise<PageResult<SkillPackage>> {
+  getSkills(params: { type?: string; search?: string; tag?: string; page?: number; size?: number } = {}): Promise<PagedResult<ExtensionPackage>> {
     const query = new URLSearchParams()
     if (params.type) query.append('type', params.type)
     if (params.search) query.append('search', params.search)
@@ -38,16 +38,14 @@ export const marketplaceApi = {
   },
 
   /** 获取单个扩展详情 */
-  getSkill(id: string): Promise<SkillPackage> {
+  getSkill(id: string): Promise<ExtensionPackage> {
     return request(`/extensions/${id}`)
   },
 
-  /** 安装扩展 */
+  /** 安装扩展 — confirmHighRisk 作为查询参数传递 */
   install(id: string, confirmHighRisk = false): Promise<InstallResult> {
-    return request(`/extensions/${id}/install`, {
-      method: 'POST',
-      body: JSON.stringify({ confirmHighRisk })
-    })
+    const query = confirmHighRisk ? '?confirmHighRisk=true' : ''
+    return request(`/extensions/${id}/install${query}`, { method: 'POST' })
   },
 
   /** 卸载扩展 */
@@ -60,13 +58,14 @@ export const marketplaceApi = {
     return request('/index/refresh', { method: 'POST' })
   },
 
-  /** 获取可用更新列表 */
-  getUpdates(): Promise<UpdateInfo[]> {
+  /** 获取可用更新列表（返回 ExtensionPackage 数组） */
+  getUpdates(): Promise<ExtensionPackage[]> {
     return request('/updates')
   },
 
-  /** 升级扩展 */
-  upgrade(id: string): Promise<InstallResult> {
-    return request(`/extensions/${id}/upgrade`, { method: 'POST' })
+  /** 升级扩展 — confirmHighRisk 作为查询参数传递 */
+  upgrade(id: string, confirmHighRisk = false): Promise<InstallResult> {
+    const query = confirmHighRisk ? '?confirmHighRisk=true' : ''
+    return request(`/extensions/${id}/upgrade${query}`, { method: 'POST' })
   }
 }
