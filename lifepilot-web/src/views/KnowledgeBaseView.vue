@@ -319,7 +319,7 @@ const statusMap: Record<string, { label: string; class: string }> = {
             <Card
               v-for="kb in filteredKbs"
               :key="kb.id"
-              class="cursor-pointer hover:-translate-y-0.5 hover:shadow-md hover:border-primary/50 transition-all duration-200 group"
+              class="list-card cursor-pointer group"
               @click="selectKb(kb)"
             >
               <CardHeader class="pb-2">
