@@ -7,7 +7,6 @@ import SettingSection from '@/components/settings/SettingSection.vue'
 import SettingItem from '@/components/settings/SettingItem.vue'
 import LlmProviderManager from '@/components/settings/LlmProviderManager.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
-import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -303,13 +302,13 @@ const deleteConfirmMessage = computed(() => {
             暂无可用模型，请先配置 LLM Provider
           </div>
           <div v-else class="space-y-2">
-            <Card
+            <div
               v-for="provider in providers"
               :key="provider.id"
-              class="overflow-hidden hover:-translate-y-0.5 hover:shadow-md transition-all duration-200"
+              class="list-card overflow-hidden"
             >
               <!-- 模型名称行（可点击展开） -->
-              <CardContent
+              <div
                 class="flex items-center justify-between p-4 cursor-pointer 
                        transition-all duration-200
                        hover:bg-muted/50"
@@ -343,8 +342,9 @@ const deleteConfirmMessage = computed(() => {
                       </Badge>
                       <!-- 健康状态查询按钮 -->
                       <Button
-                        variant="outline"
+                        variant="ghost"
                         size="sm"
+                        class="action-btn-link"
                         :disabled="checkingHealth.has(provider.id)"
                         @click.stop="checkProviderHealth(provider.id)"
                       >
@@ -368,7 +368,7 @@ const deleteConfirmMessage = computed(() => {
                     </p>
                   </div>
                 </div>
-              </CardContent>
+              </div>
               
               <!-- 详细信息（展开时显示） -->
               <Transition
@@ -455,7 +455,7 @@ const deleteConfirmMessage = computed(() => {
                 </div>
                 </div>
               </Transition>
-            </Card>
+            </div>
           </div>
         </SettingSection>
         </div>

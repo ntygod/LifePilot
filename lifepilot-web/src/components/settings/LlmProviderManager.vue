@@ -11,7 +11,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import {
-  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
 
 const emit = defineEmits<{ close: [] }>()
@@ -206,8 +206,11 @@ onMounted(() => { loadProviders() })
 </script>
 <template>
   <Dialog :open="true" @update:open="(v: boolean) => { if (!v) emit('close') }">
-    <DialogContent class="max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
-      <DialogHeader><DialogTitle>LLM Provider 管理</DialogTitle></DialogHeader>
+    <DialogContent class="sm:max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
+      <DialogHeader>
+        <DialogTitle>LLM Provider 管理</DialogTitle>
+        <DialogDescription>管理系统中的 LLM Provider 配置，包括新建、编辑、启用/禁用和删除</DialogDescription>
+      </DialogHeader>
 
       <div class="flex-1 overflow-y-auto p-6">
         <div class="space-y-6">
@@ -230,8 +233,8 @@ onMounted(() => { loadProviders() })
                 <p class="text-sm text-muted-foreground mt-1">{{ provider.type }} / {{ provider.modelName }}</p>
               </div>
               <div class="flex items-center gap-2">
-                <Button variant="outline" size="sm" @click="openEditForm(provider)">编辑</Button>
-                <Button variant="outline" size="sm" @click="toggleEnabled(provider)">{{ provider.enabled ? '禁用' : '启用' }}</Button>
+                <Button variant="ghost" size="sm" class="action-btn-link" @click="openEditForm(provider)">编辑</Button>
+                <Button variant="outline" size="sm" :class="provider.enabled ? 'status-btn-active' : 'status-btn-inactive'" @click="toggleEnabled(provider)">{{ provider.enabled ? '禁用' : '启用' }}</Button>
                 <Button variant="destructive" size="sm" @click="confirmDelete(provider)">删除</Button>
               </div>
             </div>
@@ -256,8 +259,8 @@ onMounted(() => { loadProviders() })
                   <p class="text-xs text-muted-foreground mt-1">{{ preset.type }} / {{ preset.modelName }}</p>
                 </div>
                 <div class="flex items-center gap-2">
-                  <Button variant="outline" size="sm" @click="openEditForm(preset)">编辑</Button>
-                  <Button variant="outline" size="sm" @click="toggleEnabled(preset)">{{ preset.enabled ? '禁用' : '启用' }}</Button>
+                  <Button variant="ghost" size="sm" class="action-btn-link" @click="openEditForm(preset)">编辑</Button>
+                  <Button variant="outline" size="sm" :class="preset.enabled ? 'status-btn-active' : 'status-btn-inactive'" @click="toggleEnabled(preset)">{{ preset.enabled ? '禁用' : '启用' }}</Button>
                   <Button variant="destructive" size="sm" @click="confirmDelete(preset)">删除</Button>
                 </div>
               </div>
@@ -270,9 +273,10 @@ onMounted(() => { loadProviders() })
   </Dialog>
   <!-- Provider 表单对话框 -->
   <Dialog v-model:open="showForm">
-    <DialogContent class="max-w-[672px] max-h-[90vh] overflow-y-auto">
+    <DialogContent class="sm:max-w-[672px] max-h-[90vh] overflow-y-auto">
       <DialogHeader>
         <DialogTitle>{{ formMode === 'create' ? '新建 Provider' : formMode === 'preset' ? '从预设创建' : '编辑 Provider' }}</DialogTitle>
+        <DialogDescription>填写 Provider 的基本信息、API 配置和支持的能力</DialogDescription>
       </DialogHeader>
 
       <form @submit.prevent="saveProvider" class="space-y-4">
