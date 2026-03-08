@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { analyticsApi, agentApi } from '@/api/client'
 import type { AgentStats, KnowledgeBaseStats } from '@/types'
 import { Bot, BookOpen, TrendingUp, AlertCircle, Clock } from 'lucide-vue-next'
 import EmptyState from '@/components/common/EmptyState.vue'
-import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { DatePicker } from '@/components/ui/date-picker'
 
 const loading = ref(false)
 const agentStats = ref<AgentStats[]>([])
@@ -26,6 +27,17 @@ const timeRangeOptions = [
 const selectedRange = ref<'7d' | '30d' | 'custom'>('7d')
 const customFrom = ref('')
 const customTo = ref('')
+
+// 时间范围变更时自动刷新数据
+watch(selectedRange, () => {
+  loadStats()
+})
+
+watch([customFrom, customTo], () => {
+  if (selectedRange.value === 'custom') {
+    loadStats()
+  }
+})
 
 // 计算时间范围
 const timeRange = computed(() => {
@@ -166,32 +178,23 @@ function formatPercent(rate: number): string {
         <div class="flex items-center gap-md">
           <!-- 时间范围选择 -->
           <div class="flex items-center gap-xs">
-            <select
-              v-model="selectedRange"
-              class="px-md py-xs rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-              @change="loadStats"
-            >
-              <option v-for="opt in timeRangeOptions" :key="opt.value" :value="opt.value">
-                {{ opt.label }}
-              </option>
-            </select>
+            <Select v-model="selectedRange">
+              <SelectTrigger size="sm" class="w-[130px]">
+                <SelectValue placeholder="选择时间范围" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="opt in timeRangeOptions" :key="opt.value" :value="opt.value">
+                  {{ opt.label }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           <!-- 自定义日期范围 -->
           <div v-if="selectedRange === 'custom'" class="flex items-center gap-xs">
-            <Input
-              v-model="customFrom"
-              type="date"
-              class="rounded-2xl"
-              @change="loadStats"
-            />
+            <DatePicker v-model="customFrom" placeholder="开始日期" class="w-[150px]" />
             <span class="text-muted-foreground text-sm">至</span>
-            <Input
-              v-model="customTo"
-              type="date"
-              class="rounded-2xl"
-              @change="loadStats"
-            />
+            <DatePicker v-model="customTo" placeholder="结束日期" class="w-[150px]" />
           </div>
         </div>
       </div>
@@ -222,14 +225,16 @@ function formatPercent(rate: number): string {
 
           <div class="flex items-center gap-xs ml-auto">
             <span class="text-sm text-muted-foreground">排序:</span>
-            <select
-              v-model="sortBy"
-              class="px-md py-xs rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-            >
-              <option value="callCount">调用次数</option>
-              <option value="avgResponseTime">平均响应时间</option>
-              <option value="failureRate">失败率</option>
-            </select>
+            <Select v-model="sortBy">
+              <SelectTrigger size="sm" class="w-[140px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="callCount">调用次数</SelectItem>
+                <SelectItem value="avgResponseTime">平均响应时间</SelectItem>
+                <SelectItem value="failureRate">失败率</SelectItem>
+              </SelectContent>
+            </Select>
             <button
               class="px-md py-xs rounded-lg border border-input bg-background text-sm hover:bg-accent transition-all duration-200 active:scale-[0.98]"
               @click="sortOrder = sortOrder === 'asc' ? 'desc' : 'asc'"

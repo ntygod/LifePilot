@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { analyticsApi, traceApi } from '@/api/client'
 import type { UsageStats, ErrorTrendDaily } from '@/types'
 import { Calendar, TrendingUp, DollarSign, Zap, AlertTriangle } from 'lucide-vue-next'
 import EmptyState from '@/components/common/EmptyState.vue'
-import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { DatePicker } from '@/components/ui/date-picker'
 import VChart from 'vue-echarts'
 
 const loading = ref(false)
@@ -27,6 +28,21 @@ const timeRangeOptions = [
 const selectedRange = ref<'7d' | '30d' | 'custom'>('7d')
 const customFrom = ref('')
 const customTo = ref('')
+
+// 时间范围变更时自动刷新数据
+watch(selectedRange, () => {
+  selectedDate.value = null
+  errorDetails.value = []
+  loadStats()
+  loadErrorTrend()
+})
+
+watch([customFrom, customTo], () => {
+  if (selectedRange.value === 'custom') {
+    loadStats()
+    loadErrorTrend()
+  }
+})
 
 // 计算时间范围
 const timeRange = computed(() => {
@@ -311,32 +327,23 @@ function formatCost(cost?: number): string {
           <!-- 时间范围选择 -->
           <div class="flex items-center gap-xs">
             <Calendar :size="18" class="text-muted-foreground" />
-            <select
-              v-model="selectedRange"
-              class="px-md py-xs rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-              @change="loadStats(); loadErrorTrend(); selectedDate = null; errorDetails = []"
-            >
-              <option v-for="opt in timeRangeOptions" :key="opt.value" :value="opt.value">
-                {{ opt.label }}
-              </option>
-            </select>
+            <Select v-model="selectedRange">
+              <SelectTrigger size="sm" class="w-[130px]">
+                <SelectValue placeholder="选择时间范围" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="opt in timeRangeOptions" :key="opt.value" :value="opt.value">
+                  {{ opt.label }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           <!-- 自定义日期范围 -->
           <div v-if="selectedRange === 'custom'" class="flex items-center gap-xs">
-            <Input
-              v-model="customFrom"
-              type="date"
-              class="rounded-2xl"
-              @change="loadStats(); loadErrorTrend()"
-            />
+            <DatePicker v-model="customFrom" placeholder="开始日期" class="w-[150px]" />
             <span class="text-muted-foreground text-sm">至</span>
-            <Input
-              v-model="customTo"
-              type="date"
-              class="rounded-2xl"
-              @change="loadStats(); loadErrorTrend()"
-            />
+            <DatePicker v-model="customTo" placeholder="结束日期" class="w-[150px]" />
           </div>
         </div>
       </div>
@@ -365,7 +372,7 @@ function formatCost(cost?: number): string {
         <div v-else-if="stats" class="space-y-md">
           <!-- 统计卡片 -->
           <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-md">
-            <div class="p-md rounded-lg border border-border bg-card">
+            <div class="stat-block p-md">
               <div class="flex items-center justify-between mb-xs">
                 <span class="text-sm text-muted-foreground">总请求数</span>
                 <Zap :size="18" class="text-muted-foreground" />
@@ -375,7 +382,7 @@ function formatCost(cost?: number): string {
               </div>
             </div>
 
-            <div class="p-md rounded-lg border border-border bg-card">
+            <div class="stat-block p-md">
               <div class="flex items-center justify-between mb-xs">
                 <span class="text-sm text-muted-foreground">总 Token 数</span>
                 <TrendingUp :size="18" class="text-muted-foreground" />
@@ -389,7 +396,7 @@ function formatCost(cost?: number): string {
               </div>
             </div>
 
-            <div class="p-md rounded-lg border border-border bg-card">
+            <div class="stat-block p-md">
               <div class="flex items-center justify-between mb-xs">
                 <span class="text-sm text-muted-foreground">输入 Token</span>
               </div>
@@ -398,7 +405,7 @@ function formatCost(cost?: number): string {
               </div>
             </div>
 
-            <div class="p-md rounded-lg border border-border bg-card">
+            <div class="stat-block p-md">
               <div class="flex items-center justify-between mb-xs">
                 <span class="text-sm text-muted-foreground">输出 Token</span>
               </div>
@@ -409,10 +416,10 @@ function formatCost(cost?: number): string {
           </div>
 
           <!-- 费用预估 -->
-          <div v-if="stats.estimatedCost !== undefined" class="p-md rounded-lg border border-border bg-card">
+          <div v-if="stats.estimatedCost !== undefined" class="detail-card p-md">
             <div class="flex items-center gap-xs mb-sm">
               <DollarSign :size="18" class="text-muted-foreground" />
-              <h2 class="text-lg font-semibold text-foreground leading-snug">费用预估</h2>
+              <h2 class="section-title leading-snug">费用预估</h2>
             </div>
             <div class="text-3xl font-semibold text-foreground">
               {{ formatCost(stats.estimatedCost) }}
@@ -423,8 +430,8 @@ function formatCost(cost?: number): string {
           </div>
 
           <!-- 每日趋势（如果有数据） -->
-          <div v-if="stats.dailyStats && stats.dailyStats.length > 0" class="p-md rounded-lg border border-border bg-card">
-            <h2 class="text-lg font-semibold text-foreground mb-sm">每日趋势</h2>
+          <div v-if="stats.dailyStats && stats.dailyStats.length > 0" class="detail-card p-md">
+            <h2 class="section-title mb-sm">每日趋势</h2>
             <!-- 柱状图 -->
             <div class="flex items-end gap-1 h-40 mb-md">
               <div
@@ -464,10 +471,10 @@ function formatCost(cost?: number): string {
           </div>
 
           <!-- 错误趋势 -->
-          <div class="p-md rounded-lg border border-border bg-card">
+          <div class="detail-card p-md">
             <div class="flex items-center gap-xs mb-sm">
               <AlertTriangle :size="18" class="text-muted-foreground" />
-              <h2 class="text-lg font-semibold text-foreground leading-snug">错误趋势</h2>
+              <h2 class="section-title leading-snug">错误趋势</h2>
             </div>
 
             <!-- 加载中 -->
@@ -532,13 +539,14 @@ function formatCost(cost?: number): string {
             </template>
           </div>
 
-          <!-- 空状态 -->
-          <div v-else class="py-lg">
-            <EmptyState
-              title="暂无数据"
-              description="当前时间范围内没有使用记录"
-            />
-          </div>
+        </div>
+
+        <!-- 空状态 -->
+        <div v-else class="py-lg">
+          <EmptyState
+            title="暂无数据"
+            description="当前时间范围内没有使用记录"
+          />
         </div>
       </div>
     </div>

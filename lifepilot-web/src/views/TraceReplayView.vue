@@ -368,14 +368,14 @@ async function handleRetryServiceCheck() {
               <span class="text-muted-foreground">状态：</span>
               <Button
                 size="sm"
-                :variant="statusFilter === 'all' ? 'secondary' : 'outline'"
+                :variant="statusFilter === 'all' ? 'secondary' : 'ghost'"
                 @click="statusFilter = 'all'"
               >
                 全部
               </Button>
               <Button
                 size="sm"
-                :variant="statusFilter === 'success' ? 'secondary' : 'outline'"
+                :variant="statusFilter === 'success' ? 'secondary' : 'ghost'"
                 :class="statusFilter === 'success' ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' : ''"
                 @click="statusFilter = 'success'"
               >
@@ -383,7 +383,7 @@ async function handleRetryServiceCheck() {
               </Button>
               <Button
                 size="sm"
-                :variant="statusFilter === 'failure' ? 'secondary' : 'outline'"
+                :variant="statusFilter === 'failure' ? 'secondary' : 'ghost'"
                 :class="statusFilter === 'failure' ? 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100' : ''"
                 @click="statusFilter = 'failure'"
               >
@@ -412,7 +412,7 @@ async function handleRetryServiceCheck() {
                   v-for="tw in (['24h', '7d', '30d'] as const)"
                   :key="tw"
                   size="sm"
-                  :variant="timeWindow === tw ? 'secondary' : 'outline'"
+                  :variant="timeWindow === tw ? 'secondary' : 'ghost'"
                   class="rounded-full"
                   @click="handleChangeTimeWindow(tw)"
                 >
@@ -426,12 +426,10 @@ async function handleRetryServiceCheck() {
               v-if="!store.overviewStats"
               class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4"
             >
-              <Card v-for="i in 5" :key="i">
-                <CardContent class="p-3">
-                  <Skeleton class="h-3 w-16 mb-2" />
-                  <Skeleton class="h-6 w-20" />
-                </CardContent>
-              </Card>
+              <div v-for="i in 5" :key="i" class="stat-block">
+                <Skeleton class="h-3 w-16 mb-2" />
+                <Skeleton class="h-6 w-20" />
+              </div>
             </div>
 
             <!-- 统计卡片实际内容 -->
@@ -439,52 +437,42 @@ async function handleRetryServiceCheck() {
               v-else
               class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4"
             >
-              <Card>
-                <CardContent class="p-3">
-                  <p class="text-xs text-muted-foreground mb-1">轨迹总数</p>
-                  <p class="text-xl font-semibold text-foreground leading-tight">
-                    {{ store.overviewStats.totalTraces }}
-                  </p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent class="p-3">
-                  <p class="text-xs text-muted-foreground mb-1">成功率</p>
-                  <p class="text-xl font-semibold text-foreground leading-tight">
-                    {{ (store.overviewStats.successRate * 100).toFixed(1) }}%
-                  </p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent class="p-3">
-                  <p class="text-xs text-muted-foreground mb-1">平均步骤数</p>
-                  <p class="text-xl font-semibold text-foreground leading-tight">
-                    {{ store.overviewStats.avgSteps.toFixed(1) }}
-                  </p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent class="p-3">
-                  <p class="text-xs text-muted-foreground mb-1">平均耗时</p>
-                  <p class="text-xl font-semibold text-foreground leading-tight">
-                    {{ formatDuration(store.overviewStats.avgDurationMs) }}
-                  </p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent class="p-3">
-                  <p class="text-xs text-muted-foreground mb-1">总 Token 消耗</p>
-                  <p class="text-xl font-semibold text-foreground leading-tight">
-                    {{ store.overviewStats.totalTokens }}
-                  </p>
-                </CardContent>
-              </Card>
+              <div class="stat-block">
+                <p class="text-xs text-muted-foreground mb-1">轨迹总数</p>
+                <p class="text-xl font-semibold text-foreground leading-tight">
+                  {{ store.overviewStats.totalTraces }}
+                </p>
+              </div>
+              <div class="stat-block">
+                <p class="text-xs text-muted-foreground mb-1">成功率</p>
+                <p class="text-xl font-semibold text-foreground leading-tight">
+                  {{ (store.overviewStats.successRate * 100).toFixed(1) }}%
+                </p>
+              </div>
+              <div class="stat-block">
+                <p class="text-xs text-muted-foreground mb-1">平均步骤数</p>
+                <p class="text-xl font-semibold text-foreground leading-tight">
+                  {{ store.overviewStats.avgSteps.toFixed(1) }}
+                </p>
+              </div>
+              <div class="stat-block">
+                <p class="text-xs text-muted-foreground mb-1">平均耗时</p>
+                <p class="text-xl font-semibold text-foreground leading-tight">
+                  {{ formatDuration(store.overviewStats.avgDurationMs) }}
+                </p>
+              </div>
+              <div class="stat-block">
+                <p class="text-xs text-muted-foreground mb-1">总 Token 消耗</p>
+                <p class="text-xl font-semibold text-foreground leading-tight">
+                  {{ store.overviewStats.totalTokens }}
+                </p>
+              </div>
             </div>
           </div>
 
           <!-- Skeleton 加载占位符 -->
           <div v-if="store.loading && !isSearching" class="space-y-4">
-            <Card v-for="i in 4" :key="i">
+            <Card v-for="i in 4" :key="i" class="list-card">
               <CardContent class="p-4">
                 <div class="flex items-center gap-4">
                   <Skeleton class="w-2 h-2 rounded-full" />
@@ -527,7 +515,7 @@ async function handleRetryServiceCheck() {
             <Card
               v-for="trace in filteredTraces"
               :key="trace.id"
-              class="cursor-pointer hover:-translate-y-0.5 hover:shadow-md hover:border-primary/50 transition-all duration-200"
+              class="list-card cursor-pointer"
               @click="selectTrace(trace.id)"
             >
               <CardContent class="p-4">
@@ -601,7 +589,7 @@ async function handleRetryServiceCheck() {
           </div>
 
           <!-- 汇总信息 -->
-          <Card class="mb-6">
+          <Card class="detail-card mb-6">
             <CardContent class="p-4 flex items-center gap-6 text-sm">
               <div class="flex items-center gap-2">
                 <span
@@ -620,7 +608,7 @@ async function handleRetryServiceCheck() {
           <!-- 步骤耗时分布 -->
           <Card
             v-if="store.steps.length > 0 && store.current.durationMs > 0"
-            class="mb-6"
+            class="detail-card mb-6"
           >
             <CardHeader class="pb-2">
               <h3 class="text-sm font-medium text-foreground">步骤耗时分布</h3>
@@ -638,7 +626,7 @@ async function handleRetryServiceCheck() {
           </div>
 
           <!-- 评估分数区域 -->
-          <Card v-if="store.evaluation" class="mb-6">
+          <Card v-if="store.evaluation" class="detail-card mb-6">
             <CardHeader class="pb-2">
               <div class="flex items-center justify-between">
                 <div>
@@ -843,7 +831,7 @@ async function handleRetryServiceCheck() {
           </div>
 
           <!-- 最终输出 -->
-          <Card v-if="store.current.finalOutput" class="mt-6">
+          <Card v-if="store.current.finalOutput" class="detail-card mt-6">
             <CardHeader class="pb-2">
               <h3 class="text-sm font-medium text-foreground">最终输出</h3>
             </CardHeader>

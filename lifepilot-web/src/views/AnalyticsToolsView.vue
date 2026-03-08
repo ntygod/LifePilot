@@ -185,8 +185,8 @@ const trendChartOption = computed(() => ({
         <!-- 统计数据 -->
         <div v-else class="space-y-md">
           <!-- Tool 调用排行榜 -->
-          <div class="p-md rounded-lg border border-border bg-card">
-            <h2 class="text-lg font-semibold text-foreground mb-sm">调用排行榜</h2>
+          <div class="detail-card p-md">
+            <h2 class="section-title mb-sm">调用排行榜</h2>
             <div class="overflow-x-auto">
               <table class="w-full text-sm">
                 <thead>
@@ -228,8 +228,8 @@ const trendChartOption = computed(() => ({
           </div>
 
           <!-- Tool 调用趋势折线图 -->
-          <div v-if="dailyTrend.length > 0" class="p-md rounded-lg border border-border bg-card">
-            <h2 class="text-lg font-semibold text-foreground mb-sm">调用趋势</h2>
+          <div v-if="dailyTrend.length > 0" class="detail-card p-md">
+            <h2 class="section-title mb-sm">调用趋势</h2>
             <VChart
               :option="trendChartOption"
               :autoresize="true"
