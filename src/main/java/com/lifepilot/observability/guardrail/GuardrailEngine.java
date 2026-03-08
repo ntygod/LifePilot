@@ -116,6 +116,11 @@ public class GuardrailEngine {
             return new GuardrailResult.Passed("whitelist");
         }
 
+        // infrastructure 低风险工具跳过策略评估和审计日志
+        if (tool.tags().contains("infrastructure") && tool.riskLevel() == RiskLevel.LOW) {
+            return new GuardrailResult.Passed("infrastructure-low-risk");
+        }
+
         var sortedPolicies = enabledPoliciesSorted();
         for (GuardrailPolicy policy : sortedPolicies) {
             try {
