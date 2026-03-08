@@ -1,11 +1,12 @@
 package com.lifepilot.interaction.web.controller;
 
-import com.lifepilot.skill.marketplace.MarketplaceService;
-import com.lifepilot.skill.marketplace.model.InstallResult;
-import com.lifepilot.skill.marketplace.model.RiskLevel;
-import com.lifepilot.skill.marketplace.model.SecurityFinding;
-import com.lifepilot.skill.marketplace.model.SecurityReport;
-import com.lifepilot.skill.marketplace.model.SkillPackage;
+import com.lifepilot.marketplace.MarketplaceService;
+import com.lifepilot.marketplace.model.ExtensionPackage;
+import com.lifepilot.marketplace.model.ExtensionType;
+import com.lifepilot.marketplace.model.InstallResult;
+import com.lifepilot.marketplace.model.RiskLevel;
+import com.lifepilot.marketplace.model.SecurityFinding;
+import com.lifepilot.marketplace.model.SecurityReport;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -43,33 +44,33 @@ class MarketplaceControllerTest {
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
-    // ── GET /api/marketplace/skills ────────────────────────────
+    // ── GET /api/marketplace/extensions ────────────────────────
 
     @Nested
-    class ListSkills {
+    class ListExtensions {
 
         @Test
         void 无过滤条件_返回分页结果() throws Exception {
             var pkg = testPackage("pkg-1", "测试工具", 100);
             var paged = new MarketplaceService.PagedResult<>(List.of(pkg), 0, 20, 1, 1);
-            when(marketplaceService.getSkills(null, null, 0, 20)).thenReturn(paged);
+            when(marketplaceService.getExtensions(null, null, null, 0, 20)).thenReturn(paged);
 
-            mockMvc.perform(get("/api/marketplace/skills"))
+            mockMvc.perform(get("/api/marketplace/extensions"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.totalElements").value(1))
                     .andExpect(jsonPath("$.totalPages").value(1))
                     .andExpect(jsonPath("$.content", hasSize(1)))
                     .andExpect(jsonPath("$.content[0].id").value("pkg-1"));
 
-            verify(marketplaceService).getSkills(null, null, 0, 20);
+            verify(marketplaceService).getExtensions(null, null, null, 0, 20);
         }
 
         @Test
         void 带搜索和标签参数() throws Exception {
-            var paged = new MarketplaceService.PagedResult<SkillPackage>(List.of(), 0, 10, 0, 0);
-            when(marketplaceService.getSkills("ai", "tool", 1, 10)).thenReturn(paged);
+            var paged = new MarketplaceService.PagedResult<ExtensionPackage>(List.of(), 0, 10, 0, 0);
+            when(marketplaceService.getExtensions(null, "ai", "tool", 1, 10)).thenReturn(paged);
 
-            mockMvc.perform(get("/api/marketplace/skills")
+            mockMvc.perform(get("/api/marketplace/extensions")
                             .param("search", "ai")
                             .param("tag", "tool")
                             .param("page", "1")
@@ -78,21 +79,35 @@ class MarketplaceControllerTest {
                     .andExpect(jsonPath("$.totalElements").value(0))
                     .andExpect(jsonPath("$.content", hasSize(0)));
 
-            verify(marketplaceService).getSkills("ai", "tool", 1, 10);
+            verify(marketplaceService).getExtensions(null, "ai", "tool", 1, 10);
+        }
+
+        @Test
+        void 按类型筛选() throws Exception {
+            var pkg = testPackage("pkg-1", "测试 Agent", 50);
+            var paged = new MarketplaceService.PagedResult<>(List.of(pkg), 0, 20, 1, 1);
+            when(marketplaceService.getExtensions(ExtensionType.AGENT, null, null, 0, 20)).thenReturn(paged);
+
+            mockMvc.perform(get("/api/marketplace/extensions")
+                            .param("type", "AGENT"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.content", hasSize(1)));
+
+            verify(marketplaceService).getExtensions(ExtensionType.AGENT, null, null, 0, 20);
         }
     }
 
-    // ── GET /api/marketplace/skills/{id} ──────────────────────
+    // ── GET /api/marketplace/extensions/{id} ──────────────────
 
     @Nested
-    class GetSkill {
+    class GetExtension {
 
         @Test
         void 存在的包_返回200() throws Exception {
             var pkg = testPackage("pkg-1", "测试工具", 50);
-            when(marketplaceService.getSkill("pkg-1")).thenReturn(Optional.of(pkg));
+            when(marketplaceService.getExtension("pkg-1")).thenReturn(Optional.of(pkg));
 
-            mockMvc.perform(get("/api/marketplace/skills/pkg-1"))
+            mockMvc.perform(get("/api/marketplace/extensions/pkg-1"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.id").value("pkg-1"))
                     .andExpect(jsonPath("$.name").value("测试工具"));
@@ -100,27 +115,28 @@ class MarketplaceControllerTest {
 
         @Test
         void 不存在的包_返回404() throws Exception {
-            when(marketplaceService.getSkill("unknown")).thenReturn(Optional.empty());
+            when(marketplaceService.getExtension("unknown")).thenReturn(Optional.empty());
 
-            mockMvc.perform(get("/api/marketplace/skills/unknown"))
+            mockMvc.perform(get("/api/marketplace/extensions/unknown"))
                     .andExpect(status().isNotFound());
         }
     }
 
-    // ── POST /api/marketplace/skills/{id}/install ─────────────
+    // ── POST /api/marketplace/extensions/{id}/install ─────────
 
     @Nested
-    class InstallSkill {
+    class InstallExtension {
 
         @Test
         void 安装成功() throws Exception {
-            var result = new InstallResult(true, "skill-1", null, null, false);
+            var result = new InstallResult(true, "ext-1", ExtensionType.SKILL, null, null, null, false);
             when(marketplaceService.install("pkg-1", false)).thenReturn(result);
 
-            mockMvc.perform(post("/api/marketplace/skills/pkg-1/install"))
+            mockMvc.perform(post("/api/marketplace/extensions/pkg-1/install"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.success").value(true))
-                    .andExpect(jsonPath("$.skillId").value("skill-1"))
+                    .andExpect(jsonPath("$.extensionId").value("ext-1"))
+                    .andExpect(jsonPath("$.extensionType").value("SKILL"))
                     .andExpect(jsonPath("$.requiresConfirmation").value(false));
 
             verify(marketplaceService).install("pkg-1", false);
@@ -129,13 +145,13 @@ class MarketplaceControllerTest {
         @Test
         void 高风险需要确认() throws Exception {
             var report = new SecurityReport(
-                    List.of(new SecurityFinding(RiskLevel.HIGH, "dangerous-tool", "包含危险工具 shell_execute")),
+                    List.of(new SecurityFinding(RiskLevel.HIGH, "危险工具", "包含危险工具 shell_execute")),
                     RiskLevel.HIGH
             );
-            var result = new InstallResult(false, null, report, null, true);
+            var result = new InstallResult(false, null, ExtensionType.SKILL, report, null, null, true);
             when(marketplaceService.install("pkg-2", false)).thenReturn(result);
 
-            mockMvc.perform(post("/api/marketplace/skills/pkg-2/install"))
+            mockMvc.perform(post("/api/marketplace/extensions/pkg-2/install"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.success").value(false))
                     .andExpect(jsonPath("$.requiresConfirmation").value(true))
@@ -144,10 +160,10 @@ class MarketplaceControllerTest {
 
         @Test
         void 确认高风险安装() throws Exception {
-            var result = new InstallResult(true, "skill-2", null, null, false);
+            var result = new InstallResult(true, "ext-2", ExtensionType.SKILL, null, null, null, false);
             when(marketplaceService.install("pkg-2", true)).thenReturn(result);
 
-            mockMvc.perform(post("/api/marketplace/skills/pkg-2/install")
+            mockMvc.perform(post("/api/marketplace/extensions/pkg-2/install")
                             .param("confirmHighRisk", "true"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.success").value(true));
@@ -156,17 +172,17 @@ class MarketplaceControllerTest {
         }
     }
 
-    // ── DELETE /api/marketplace/skills/{id} ────────────────────
+    // ── DELETE /api/marketplace/extensions/{id} ────────────────
 
     @Nested
-    class UninstallSkill {
+    class UninstallExtension {
 
         @Test
         void 卸载成功() throws Exception {
-            var result = new InstallResult(true, "skill-1", null, null, false);
+            var result = new InstallResult(true, "ext-1", ExtensionType.SKILL, null, null, null, false);
             when(marketplaceService.uninstall("pkg-1")).thenReturn(result);
 
-            mockMvc.perform(delete("/api/marketplace/skills/pkg-1"))
+            mockMvc.perform(delete("/api/marketplace/extensions/pkg-1"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.success").value(true));
 
@@ -175,13 +191,13 @@ class MarketplaceControllerTest {
 
         @Test
         void 卸载不存在的包() throws Exception {
-            var result = new InstallResult(false, null, null, "未找到已安装的 Skill: unknown", false);
+            var result = new InstallResult(false, null, null, null, null, "未找到已安装扩展: unknown", false);
             when(marketplaceService.uninstall("unknown")).thenReturn(result);
 
-            mockMvc.perform(delete("/api/marketplace/skills/unknown"))
+            mockMvc.perform(delete("/api/marketplace/extensions/unknown"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.success").value(false))
-                    .andExpect(jsonPath("$.errorMessage").value("未找到已安装的 Skill: unknown"));
+                    .andExpect(jsonPath("$.errorMessage").value("未找到已安装扩展: unknown"));
         }
     }
 
@@ -229,17 +245,17 @@ class MarketplaceControllerTest {
         }
     }
 
-    // ── POST /api/marketplace/skills/{id}/upgrade ──────────────
+    // ── POST /api/marketplace/extensions/{id}/upgrade ──────────
 
     @Nested
-    class UpgradeSkill {
+    class UpgradeExtension {
 
         @Test
         void 升级成功() throws Exception {
-            var result = new InstallResult(true, "skill-1", null, null, false);
+            var result = new InstallResult(true, "ext-1", ExtensionType.SKILL, null, null, null, false);
             when(marketplaceService.upgrade("pkg-1", false)).thenReturn(result);
 
-            mockMvc.perform(post("/api/marketplace/skills/pkg-1/upgrade"))
+            mockMvc.perform(post("/api/marketplace/extensions/pkg-1/upgrade"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.success").value(true));
 
@@ -248,10 +264,10 @@ class MarketplaceControllerTest {
 
         @Test
         void 确认高风险升级() throws Exception {
-            var result = new InstallResult(true, "skill-1", null, null, false);
+            var result = new InstallResult(true, "ext-1", ExtensionType.SKILL, null, null, null, false);
             when(marketplaceService.upgrade("pkg-1", true)).thenReturn(result);
 
-            mockMvc.perform(post("/api/marketplace/skills/pkg-1/upgrade")
+            mockMvc.perform(post("/api/marketplace/extensions/pkg-1/upgrade")
                             .param("confirmHighRisk", "true"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.success").value(true));
@@ -262,16 +278,21 @@ class MarketplaceControllerTest {
 
     // ── 辅助方法 ───────────────────────────────────────────────
 
-    private static SkillPackage testPackage(String id, String name, int downloads) {
-        return SkillPackage.builder()
+    private static ExtensionPackage testPackage(String id, String name, int downloads) {
+        return ExtensionPackage.builder()
                 .id(id)
                 .name(name)
+                .type(ExtensionType.SKILL)
                 .description("测试描述")
                 .version("1.0.0")
                 .author("test-author")
                 .repoUrl("https://github.com/test/repo")
-                .filePath("skills/" + id + ".yaml")
+                .filePath("skills/" + id + "/SKILL.md")
                 .tags(List.of("tool"))
+                .requirements(List.of())
+                .minLifepilotVersion("1.0.0")
+                .createdAt("2026-01-01T00:00:00Z")
+                .updatedAt("2026-01-01T00:00:00Z")
                 .downloads(downloads)
                 .verified(false)
                 .installed(false)
