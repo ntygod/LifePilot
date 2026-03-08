@@ -156,6 +156,12 @@ public class MetaProperties {
 
             /** 空闲超时（秒），默认 300（5 分钟）。 */
             private int idleTimeoutSeconds = 300;
+
+            /** 工具执行超时（秒），默认 30。 */
+            private int toolTimeoutSeconds = 30;
+
+            /** 浏览器安装超时（秒），默认 600（10 分钟）。 */
+            private int installTimeoutSeconds = 600;
         }
 
         /**
