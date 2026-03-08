@@ -1,7 +1,9 @@
 package com.lifepilot.meta.config;
 
+import com.lifepilot.meta.infra.InfraToolProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.annotation.Bean;
 
 /**
  * 元能力系统 Spring Boot 自动配置。
@@ -17,8 +19,18 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 @EnableConfigurationProperties(MetaProperties.class)
 public class MetaAutoConfiguration {
 
+    /**
+     * 注册基础工具提供者。
+     *
+     * <p>SandboxBooter 和 InteractionBridge 尚未作为 Bean 注入，
+     * 后续任务中将逐步替换为实际类型。</p>
+     */
+    @Bean
+    InfraToolProvider infraToolProvider(MetaProperties properties) {
+        return new InfraToolProvider(properties, null, null);
+    }
+
     // Bean 注册将在后续任务中随实现类创建逐步添加：
-    // - Task 2: InfraToolProvider
     // - Task 9: InteractionBridge
     // - Task 10: CapabilityAggregator + IntrospectionSkillProvider
     // - Task 11: SkillDiscoveryRegistrar (@ConditionalOnProperty)
