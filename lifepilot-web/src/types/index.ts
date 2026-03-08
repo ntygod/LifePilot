@@ -1,4 +1,4 @@
-// LifePilot 前端类型定义
+// ZhiWei 前端类型定义
 
 /** 会话摘要 */
 export interface ChatSession {
@@ -182,6 +182,16 @@ export interface SseErrorEvent {
   message: string
   /** 可选：错误对应的 Trace Id，便于前端跳转调试 */
   traceId?: string
+}
+
+/** SSE 媒体数据事件（截图等二进制数据通过独立事件传输，避免被截断） */
+export interface SseMediaEvent {
+  /** 媒体字段名（如 screenshot） */
+  field: string
+  /** MIME 类型（如 image/png） */
+  mimeType: string
+  /** Base64 编码的媒体数据 */
+  data: string
 }
 
 /** 非流式聊天响应 */
