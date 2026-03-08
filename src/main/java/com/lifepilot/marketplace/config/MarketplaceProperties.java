@@ -24,7 +24,7 @@ public class MarketplaceProperties {
 
     /** 索引源 URL 列表，默认包含官方索引。 */
     private List<String> indexSources = List.of(
-            "https://raw.githubusercontent.com/lifepilot-skills/index/main/index.json"
+            "https://raw.githubusercontent.com/ntygod/ZhiWei-index/main/index.json"
     );
 
     /** 索引缓存 TTL（小时），默认 24。 */

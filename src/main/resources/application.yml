@@ -422,7 +422,7 @@ lifepilot:
   marketplace:
     enabled: true
     index-sources:
-      - "https://raw.githubusercontent.com/lifepilot-skills/index/main/index.json"
+      - "https://raw.githubusercontent.com/ntygod/ZhiWei-index/main/index.json"
     cache-ttl-hours: 24
     auto-check-updates: true
     security:
