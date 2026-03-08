@@ -1,165 +1,109 @@
 package com.lifepilot.skill.bridge;
 
-import com.lifepilot.agent.model.AgentState;
-import com.lifepilot.agent.model.Budget;
-import com.lifepilot.skill.activation.SkillLifecycleManager;
-import com.lifepilot.skill.event.SkillRegistryEvent;
-import com.lifepilot.skill.model.SkillDefinition;
-import com.lifepilot.skill.model.SubAgentResult;
+import com.lifepilot.skill.activation.SkillActivationException;
+import com.lifepilot.skill.activation.SkillActivator;
+import com.lifepilot.skill.model.SkillActivation;
+import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.observability.guardrail.RiskLevel;
+import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.event.EventListener;
 
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 /**
- * Skill 工具桥接 — 监听 SkillRegistryEvent，将 Skill 包装为 BuiltinTool 注册到 DynamicToolRegistry。
+ * Skill 工具桥接 — 注册统一的 skills 工具到 DynamicToolRegistry。
  *
- * <p>实现 Sub-Agent-as-Tools 范式：每个已注册的 Skill 在 DynamicToolRegistry 中
- * 以 "skill.{skillId}" 为 ID 注册为 BuiltinTool，executor lambda 委托给
- * {@link SkillLifecycleManager#activate} 执行。</p>
+ * <p>注册一个 ID 为 "skills" 的 BuiltinTool，通过 action 参数分发操作：
+ * <ul>
+ *   <li>{@code list_skills} — 返回所有已注册 Skill 的 Discovery 摘要</li>
+ *   <li>{@code activate_skill} — 激活指定 Skill，返回指令和建议工具</li>
+ * </ul>
  *
  * @author zsg
- * @since 2026-07-28
+ * @since 2026-03-07
  */
 public class SkillToToolBridge {
 
     private static final Logger log = LoggerFactory.getLogger(SkillToToolBridge.class);
 
-    /** 工具 ID 前缀。 */
-    private static final String TOOL_ID_PREFIX = "skill.";
-
     private final DynamicToolRegistry toolRegistry;
-    private final SkillLifecycleManager lifecycleManager;
+    private final SkillRegistry skillRegistry;
+    private final SkillActivator skillActivator;
 
     public SkillToToolBridge(DynamicToolRegistry toolRegistry,
-                             SkillLifecycleManager lifecycleManager) {
+                             SkillRegistry skillRegistry,
+                             SkillActivator skillActivator) {
         this.toolRegistry = toolRegistry;
-        this.lifecycleManager = lifecycleManager;
+        this.skillRegistry = skillRegistry;
+        this.skillActivator = skillActivator;
     }
 
     /**
-     * 监听 SkillRegistered 事件，创建 BuiltinTool 并注册到 DynamicToolRegistry。
+     * 注册统一的 skills 工具到 DynamicToolRegistry。
      *
-     * <p>工具 ID 格式：skill.{skillId}。executor lambda 从 ToolInput 提取 "input" 参数，
-     * 创建最小 AgentState 后委托给 {@link SkillLifecycleManager#activate}，
-     * 将 {@link SubAgentResult} 转换为 {@link ToolResult} 返回。</p>
-     *
-     * @param event Skill 注册事件
+     * <p>工具 ID 为 "skills"，支持 list_skills 和 activate_skill 两种操作。</p>
      */
-    @EventListener
-    public void onSkillRegistered(SkillRegistryEvent.SkillRegistered event) {
-        SkillDefinition definition = event.definition();
-        String toolId = TOOL_ID_PREFIX + definition.id();
-
-        BuiltinTool tool = BuiltinTool.builder()
-                .id(toolId)
-                .name(definition.name())
-                .description(definition.description())
-                .riskLevel(RiskLevel.MEDIUM)
-                .idempotent(false)
+    public void registerSkillsTool() {
+        BuiltinTool skillsTool = BuiltinTool.builder()
+                .id("skills")
+                .name("Skill 管理")
+                .description("发现和激活 Skill。list_skills 查看可用 Skill，activate_skill 激活指定 Skill。")
+                .riskLevel(RiskLevel.LOW)
+                .idempotent(true)
                 .tags(List.of("skill"))
-                .executor(input -> {
-                    try {
-                        // 从 ToolInput 提取用户输入
-                        String userInput = input.getOptionalParam("input", String.class)
-                                .orElse("");
-
-                        // 创建最小 AgentState 用于激活调用
-                        AgentState minimalState = AgentState.builder()
-                                .traceId(UUID.randomUUID().toString())
-                                .sessionId("bridge-" + UUID.randomUUID().toString().substring(0, 8))
-                                .goal(userInput)
-                                .phase(com.lifepilot.agent.model.AgentPhase.UNDERSTANDING)
-                                .channel("internal")
-                                .steps(List.of())
-                                .stepCount(0)
-                                .plan(null)
-                                .planStepIndex(0)
-                                .revisionCount(0)
-                                .shortTermMemory(List.of())
-                                .mentionedEntities(List.of())
-                                .budget(Budget.defaultBudget())
-                                .parentTraceId(null)
-                                .depth(0)
-                                .done(false)
-                                .finalOutput(null)
-                                .terminationReason(null)
-                                .build();
-
-                        // 委托 SkillLifecycleManager 激活 Skill
-                        SubAgentResult result = lifecycleManager.activate(
-                                definition.id(), userInput, minimalState);
-
-                        // SubAgentResult → ToolResult 转换
-                        return convertToToolResult(result);
-                    } catch (Exception e) {
-                        log.error("Skill 工具执行失败: toolId={}, error={}", toolId, e.getMessage(), e);
-                        return ToolResult.error("Skill 执行失败: " + e.getMessage());
-                    }
-                })
+                .executor(this::handleSkillAction)
                 .build();
-
-        toolRegistry.registerBuiltinTool(tool);
-        log.info("Skill 工具桥接注册成功: skillId={}, toolId={}", definition.id(), toolId);
+        toolRegistry.registerBuiltinTool(skillsTool);
+        log.info("统一 skills 工具注册成功");
     }
 
     /**
-     * 监听 SkillUnregistered 事件，注销对应工具。
+     * 根据 action 参数分发操作。
      *
-     * <p>工具 ID 格式：skill.{skillId}。桥接会调用
-     * {@link DynamicToolRegistry#unregisterBuiltinTool(String)} 将对应 BuiltinTool 从注册中心移除。</p>
-     *
-     * @param event Skill 注销事件
-     */
-    @EventListener
-    public void onSkillUnregistered(SkillRegistryEvent.SkillUnregistered event) {
-        String toolId = TOOL_ID_PREFIX + event.skillId();
-        boolean removed = toolRegistry.unregisterBuiltinTool(toolId);
-        if (removed) {
-            log.info("Skill 工具桥接注销成功: skillId={}, toolId={}", event.skillId(), toolId);
-        } else {
-            // 可能已被覆盖/提前移除/从未注册（例如注册失败或桥接被禁用）
-            log.debug("Skill 工具桥接注销跳过: skillId={}, toolId={}, reason=not-found", event.skillId(), toolId);
-        }
-    }
-
-    /**
-     * 监听 SkillUpdated 事件，先注销旧工具再注册新工具。
-     *
-     * <p>实际行为：卸载旧 toolId（skill.{oldId}）后注册新 toolId（skill.{newId}）。</p>
-     *
-     * @param event Skill 更新事件
-     */
-    @EventListener
-    public void onSkillUpdated(SkillRegistryEvent.SkillUpdated event) {
-        // 先注销旧工具
-        onSkillUnregistered(new SkillRegistryEvent.SkillUnregistered(event.oldDefinition().id()));
-        // 注册新工具（覆盖旧工具）
-        onSkillRegistered(new SkillRegistryEvent.SkillRegistered(event.newDefinition()));
-        log.info("Skill 工具桥接更新完成: skillId={}", event.newDefinition().id());
-    }
-
-    /**
-     * 将 SubAgentResult 转换为 ToolResult。
-     *
-     * @param result SubAgent 执行结果
+     * @param input 工具输入
      * @return 工具执行结果
      */
-    private ToolResult convertToToolResult(SubAgentResult result) {
-        if (result.success()) {
+    private ToolResult handleSkillAction(ToolInput input) {
+        String action = input.getParam("action", String.class);
+        return switch (action) {
+            case "list_skills" -> listSkills();
+            case "activate_skill" -> activateSkill(input);
+            default -> ToolResult.error("未知操作: " + action);
+        };
+    }
+
+    /**
+     * 列出所有已注册 Skill 的 Discovery 摘要。
+     *
+     * @return 包含摘要列表的成功结果
+     */
+    private ToolResult listSkills() {
+        List<String> summaries = skillRegistry.listSummaries();
+        return ToolResult.success(Map.of("skills", summaries));
+    }
+
+    /**
+     * 激活指定 Skill，返回指令和建议工具。
+     *
+     * @param input 工具输入（需包含 skill_id 参数）
+     * @return 激活成功返回指令和建议工具，失败返回错误信息
+     */
+    private ToolResult activateSkill(ToolInput input) {
+        String skillId = input.getParam("skill_id", String.class);
+        try {
+            SkillActivation activation = skillActivator.activate(skillId);
             return ToolResult.success(Map.of(
-                    "output", result.output(),
-                    "tokensUsed", result.tokensUsed()
+                    "skill_id", activation.skillId(),
+                    "instructions", activation.instructions(),
+                    "suggested_tools", activation.suggestedTools()
             ));
-        } else {
-            return ToolResult.error(result.output());
+        } catch (SkillActivationException e) {
+            return ToolResult.error("Skill 不存在或无法激活: " + skillId);
         }
     }
 }

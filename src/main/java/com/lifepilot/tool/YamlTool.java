@@ -15,7 +15,7 @@ import java.util.List;
  * <p>作为 {@link ToolContract} sealed interface 的 permit 之一，
  * 用于在 {@link com.lifepilot.tool.registry.DynamicToolRegistry} 中
  * 标识 YAML 来源的工具。实际的 YAML Skill 执行通过
- * {@code SkillActionDispatcher} 路径完成，不经过 {@code execute()} 方法。</p>
+ * {@code SkillActivator} 路径完成，不经过 {@code execute()} 方法。</p>
  *
  * @param id 工具唯一标识
  * @param name 工具显示名称
@@ -54,6 +54,6 @@ public record YamlTool(
     @Override
     public ToolResult execute(ToolInput input) {
         throw new UnsupportedOperationException(
-                "YamlTool 不支持直接执行，YAML Skill 应通过 SkillActionDispatcher 路径调用");
+                "YamlTool 不支持直接执行，YAML Skill 应通过 SkillActivator 路径调用");
     }
 }

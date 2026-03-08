@@ -107,9 +107,9 @@ public class SkillAuditRepository {
     public void onSkillRegistered(SkillRegistryEvent.SkillRegistered event) {
         var def = event.definition();
         var detail = """
-                {"name":"%s","description":"%s","version":"%s","allowedToolsCount":%d,"source":"%s"}"""
+                {"name":"%s","description":"%s","version":"%s","suggestedToolsCount":%d,"source":"%s"}"""
                 .formatted(def.name(), escapeJson(def.description()), def.version(),
-                        def.allowedTools().size(), sourceTypeName(def.source()));
+                        def.suggestedTools().size(), sourceTypeName(def.source()));
         record(new SkillAuditEvent(
                 UUID.randomUUID().toString(),
                 def.id(),
@@ -142,15 +142,13 @@ public class SkillAuditRepository {
      */
     @EventListener
     public void onSkillActivated(SkillLifecycleEvent.Activated event) {
-        var detail = """
-                {"traceId":"%s"}""".formatted(event.traceId());
         record(new SkillAuditEvent(
                 UUID.randomUUID().toString(),
                 event.skillId(),
                 SkillAuditEventType.ACTIVATED,
-                detail,
+                "{}",
                 "UNKNOWN",
-                event.traceId(),
+                "system",
                 Instant.now().toString()
         ));
     }

@@ -73,11 +73,11 @@ class SyncSkillProviderTest {
         assertEquals("sync", def.id());
         assertEquals("数据同步", def.name());
         assertEquals("1.0.0", def.version());
-        assertEquals(4, def.allowedTools().size());
-        assertTrue(def.allowedTools().contains("builtin.sync.trigger"));
-        assertTrue(def.allowedTools().contains("builtin.sync.status"));
-        assertTrue(def.allowedTools().contains("builtin.sync.config"));
-        assertTrue(def.allowedTools().contains("builtin.sync.conflicts"));
+        assertEquals(4, def.suggestedTools().size());
+        assertTrue(def.suggestedTools().contains("builtin.sync.trigger"));
+        assertTrue(def.suggestedTools().contains("builtin.sync.status"));
+        assertTrue(def.suggestedTools().contains("builtin.sync.config"));
+        assertTrue(def.suggestedTools().contains("builtin.sync.conflicts"));
     }
 
     // ---- registerTools() 测试 ----

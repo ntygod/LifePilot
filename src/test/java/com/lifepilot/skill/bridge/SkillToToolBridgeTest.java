@@ -1,9 +1,10 @@
 package com.lifepilot.skill.bridge;
 
-import com.lifepilot.agent.model.AgentState;
-import com.lifepilot.skill.activation.SkillLifecycleManager;
-import com.lifepilot.skill.event.SkillRegistryEvent;
-import com.lifepilot.skill.model.*;
+import com.lifepilot.observability.guardrail.GuardrailEngine;
+import com.lifepilot.skill.activation.SkillActivationException;
+import com.lifepilot.skill.activation.SkillActivator;
+import com.lifepilot.skill.model.SkillActivation;
+import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.ToolContract;
 import com.lifepilot.tool.model.ToolInput;
@@ -12,169 +13,239 @@ import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.tool.schema.JsonSchema;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.lang.NonNull;
 
 import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.*;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * SkillToToolBridge 单元测试。
+ * {@link SkillToToolBridge} 单元测试。
+ *
+ * <p>覆盖场景：list_skills 返回摘要、activate_skill 激活成功、
+ * activate_skill 激活失败（SkillActivationException）、未知 action 返回错误、缺少 skill_id 返回错误。</p>
  *
  * @author zsg
- * @since 2026-07-28
+ * @since 2026-03-07
  */
 class SkillToToolBridgeTest {
 
-    private DynamicToolRegistry toolRegistry;
-    private SkillLifecycleManager lifecycleManager;
+    private StubSkillRegistry stubRegistry;
+    private StubSkillActivator stubActivator;
+    private CapturingToolRegistry capturingToolRegistry;
     private SkillToToolBridge bridge;
+
+    /** 注册后捕获的 skills 工具。 */
+    private BuiltinTool skillsTool;
 
     @BeforeEach
     void setUp() {
-        toolRegistry = mock(DynamicToolRegistry.class);
-        lifecycleManager = mock(SkillLifecycleManager.class);
-        bridge = new SkillToToolBridge(toolRegistry, lifecycleManager);
+        stubRegistry = new StubSkillRegistry();
+        stubActivator = new StubSkillActivator();
+        capturingToolRegistry = new CapturingToolRegistry();
+        bridge = new SkillToToolBridge(capturingToolRegistry, stubRegistry, stubActivator);
+
+        // 注册 skills 工具并捕获
+        bridge.registerSkillsTool();
+        skillsTool = capturingToolRegistry.capturedTool;
+        assertThat(skillsTool).isNotNull();
+        assertThat(skillsTool.id()).isEqualTo("skills");
     }
 
-    @Test
-    void onSkillRegistered_注册BuiltinTool到DynamicToolRegistry() {
-        SkillDefinition definition = createTestDefinition("todo");
 
-        bridge.onSkillRegistered(new SkillRegistryEvent.SkillRegistered(definition));
-
-        ArgumentCaptor<ToolContract> captor = ArgumentCaptor.forClass(ToolContract.class);
-        verify(toolRegistry).registerBuiltinTool(captor.capture());
-
-        ToolContract registered = captor.getValue();
-        assertThat(registered.id()).isEqualTo("skill.todo");
-        assertThat(registered.name()).isEqualTo("待办管理");
-        assertThat(registered.description()).isEqualTo("管理待办事项");
-    }
+    // ── list_skills 返回摘要 ──
 
     @Test
-    void onSkillRegistered_工具执行成功时返回ToolResult_success() {
-        SkillDefinition definition = createTestDefinition("todo");
-        SubAgentResult successResult = SubAgentResult.builder()
-                .skillId("todo")
-                .success(true)
-                .output("待办已创建")
-                .tokensUsed(100)
-                .stepsExecuted(3)
-                .durationMs(500)
-                .traceId("trace-123")
-                .build();
+    void list_skills_返回所有已注册Skill摘要() {
+        stubRegistry.setSummaries(List.of("todo: 管理待办事项", "schedule: 管理日程安排"));
 
-        when(lifecycleManager.activate(eq("todo"), eq("创建待办"), any(AgentState.class)))
-                .thenReturn(successResult);
-
-        bridge.onSkillRegistered(new SkillRegistryEvent.SkillRegistered(definition));
-
-        ArgumentCaptor<ToolContract> captor = ArgumentCaptor.forClass(ToolContract.class);
-        verify(toolRegistry).registerBuiltinTool(captor.capture());
-
-        BuiltinTool tool = (BuiltinTool) captor.getValue();
-        ToolInput input = new ToolInput("skill.todo",
-                Map.of("input", "创建待办"), JsonSchema.empty(), null);
-        ToolResult result = tool.execute(input);
+        ToolResult result = executeAction("list_skills", Map.of());
 
         assertThat(result.ok()).isTrue();
-        assertThat(result.data()).containsEntry("output", "待办已创建");
-        assertThat(result.data()).containsEntry("tokensUsed", 100);
+        @SuppressWarnings("unchecked")
+        List<String> skills = (List<String>) result.data().get("skills");
+        assertThat(skills).containsExactly("todo: 管理待办事项", "schedule: 管理日程安排");
     }
 
     @Test
-    void onSkillRegistered_工具执行失败时返回ToolResult_error() {
-        SkillDefinition definition = createTestDefinition("todo");
-        SubAgentResult failResult = SubAgentResult.builder()
-                .skillId("todo")
-                .success(false)
-                .output("Skill 并发激活超限")
-                .tokensUsed(0)
-                .stepsExecuted(0)
-                .durationMs(0)
-                .traceId("trace-456")
-                .build();
+    void list_skills_无Skill时返回空列表() {
+        stubRegistry.setSummaries(List.of());
 
-        when(lifecycleManager.activate(eq("todo"), eq("创建待办"), any(AgentState.class)))
-                .thenReturn(failResult);
+        ToolResult result = executeAction("list_skills", Map.of());
 
-        bridge.onSkillRegistered(new SkillRegistryEvent.SkillRegistered(definition));
+        assertThat(result.ok()).isTrue();
+        @SuppressWarnings("unchecked")
+        List<String> skills = (List<String>) result.data().get("skills");
+        assertThat(skills).isEmpty();
+    }
 
-        ArgumentCaptor<ToolContract> captor = ArgumentCaptor.forClass(ToolContract.class);
-        verify(toolRegistry).registerBuiltinTool(captor.capture());
+    // ── activate_skill 激活成功 ──
 
-        BuiltinTool tool = (BuiltinTool) captor.getValue();
-        ToolInput input = new ToolInput("skill.todo",
-                Map.of("input", "创建待办"), JsonSchema.empty(), null);
-        ToolResult result = tool.execute(input);
+    @Test
+    void activate_skill_激活成功返回指令和建议工具() {
+        stubActivator.setActivation(new SkillActivation(
+                "writing", "你是一个写作助手。", List.of("search", "web_browse")));
+
+        ToolResult result = executeAction("activate_skill", Map.of("skill_id", "writing"));
+
+        assertThat(result.ok()).isTrue();
+        assertThat(result.data().get("skill_id")).isEqualTo("writing");
+        assertThat(result.data().get("instructions")).isEqualTo("你是一个写作助手。");
+        @SuppressWarnings("unchecked")
+        List<String> tools = (List<String>) result.data().get("suggested_tools");
+        assertThat(tools).containsExactly("search", "web_browse");
+    }
+
+    // ── activate_skill 激活失败 ──
+
+    @Test
+    void activate_skill_Skill不存在返回错误() {
+        stubActivator.setException(new SkillActivationException("Skill 不存在: unknown"));
+
+        ToolResult result = executeAction("activate_skill", Map.of("skill_id", "unknown"));
 
         assertThat(result.ok()).isFalse();
-        assertThat(result.error()).isEqualTo("Skill 并发激活超限");
+        assertThat(result.error()).contains("Skill 不存在或无法激活");
+        assertThat(result.error()).contains("unknown");
     }
 
+    // ── 未知 action 返回错误 ──
+
     @Test
-    void onSkillRegistered_工具执行异常时返回ToolResult_error() {
-        SkillDefinition definition = createTestDefinition("todo");
-
-        when(lifecycleManager.activate(eq("todo"), eq(""), any(AgentState.class)))
-                .thenThrow(new RuntimeException("意外错误"));
-
-        bridge.onSkillRegistered(new SkillRegistryEvent.SkillRegistered(definition));
-
-        ArgumentCaptor<ToolContract> captor = ArgumentCaptor.forClass(ToolContract.class);
-        verify(toolRegistry).registerBuiltinTool(captor.capture());
-
-        BuiltinTool tool = (BuiltinTool) captor.getValue();
-        // 不传 input 参数，默认为空字符串
-        ToolInput input = new ToolInput("skill.todo",
-                Map.of(), JsonSchema.empty(), null);
-        ToolResult result = tool.execute(input);
+    void 未知action_返回错误信息() {
+        ToolResult result = executeAction("delete_skill", Map.of());
 
         assertThat(result.ok()).isFalse();
-        assertThat(result.error()).contains("Skill 执行失败");
+        assertThat(result.error()).contains("未知操作");
+        assertThat(result.error()).contains("delete_skill");
     }
 
-    @Test
-    void onSkillUnregistered_记录WARN日志不抛异常() {
-        // 由于 DynamicToolRegistry 不支持 unregisterBuiltinTool，仅记录日志
-        bridge.onSkillUnregistered(new SkillRegistryEvent.SkillUnregistered("todo"));
+    // ── 缺少 skill_id 返回错误 ──
 
-        // 不应调用任何注册中心方法
-        verifyNoInteractions(toolRegistry);
+    @Test
+    void activate_skill_缺少skill_id_抛出IllegalArgumentException() {
+        // ToolInput.getParam() 在参数缺失时抛出 IllegalArgumentException
+        assertThatThrownBy(() -> executeAction("activate_skill", Map.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("skill_id");
     }
 
-    @Test
-    void onSkillUpdated_先注销再注册() {
-        SkillDefinition oldDef = createTestDefinition("todo");
-        SkillDefinition newDef = createTestDefinition("todo");
+    // ── 辅助方法 ──
 
-        bridge.onSkillUpdated(new SkillRegistryEvent.SkillUpdated(oldDef, newDef));
+    /**
+     * 构造 ToolInput 并通过捕获的 skills 工具执行。
+     */
+    private ToolResult executeAction(String action, Map<String, Object> extraParams) {
+        var params = new java.util.HashMap<>(extraParams);
+        params.put("action", action);
+        ToolInput input = new ToolInput("skills", params, JsonSchema.empty(), null);
+        return skillsTool.execute(input);
+    }
 
-        // 应注册新工具（注销只记录日志）
-        verify(toolRegistry).registerBuiltinTool(any(ToolContract.class));
+    // ── Stub / Capture 内部类 ──
+
+    /**
+     * 捕获注册工具的 DynamicToolRegistry — 仅记录 registerBuiltinTool 调用。
+     */
+    private static class CapturingToolRegistry extends DynamicToolRegistry {
+
+        BuiltinTool capturedTool;
+
+        CapturingToolRegistry() {
+            super(new NoOpGuardrailEngine(), new NoOpEventPublisher());
+        }
+
+        @Override
+        public void registerBuiltinTool(ToolContract tool) {
+            if (tool instanceof BuiltinTool bt) {
+                this.capturedTool = bt;
+            }
+        }
     }
 
     /**
-     * 创建测试用 SkillDefinition。
+     * 简易 SkillRegistry 桩 — 仅实现 listSummaries() 方法。
      */
-    private SkillDefinition createTestDefinition(String id) {
-        return SkillDefinition.builder()
-                .id(id)
-                .name("待办管理")
-                .description("管理待办事项")
-                .version("1.0.0")
-                .source(new SkillSource.Builtin())
-                .systemPrompt("你是待办管理助手")
-                .allowedTools(List.of("builtin.todo.create"))
-                .execution(ExecutionStrategy.DEFAULT)
-                .memoryAccess(MemoryAccessPolicy.none())
-                .budget(SkillBudget.DEFAULT)
-                .metadata(Map.of())
-                .build();
+    private static class StubSkillRegistry extends SkillRegistry {
+
+        private List<String> summaries = List.of();
+
+        StubSkillRegistry() {
+            super(null, null, null, null);
+        }
+
+        void setSummaries(List<String> summaries) {
+            this.summaries = List.copyOf(summaries);
+        }
+
+        @Override
+        public List<String> listSummaries() {
+            return summaries;
+        }
+    }
+
+    /**
+     * 简易 SkillActivator 桩 — 可配置返回激活结果或抛出异常。
+     */
+    private static class StubSkillActivator extends SkillActivator {
+
+        private SkillActivation activation;
+        private SkillActivationException exception;
+
+        StubSkillActivator() {
+            super(null, null, null);
+        }
+
+        void setActivation(SkillActivation activation) {
+            this.activation = activation;
+            this.exception = null;
+        }
+
+        void setException(SkillActivationException exception) {
+            this.exception = exception;
+            this.activation = null;
+        }
+
+        @Override
+        public SkillActivation activate(String skillId) {
+            if (exception != null) {
+                throw exception;
+            }
+            return activation;
+        }
+    }
+
+    /**
+     * 空操作 GuardrailEngine — 满足 DynamicToolRegistry 构造依赖。
+     */
+    private static class NoOpGuardrailEngine extends GuardrailEngine {
+
+        NoOpGuardrailEngine() {
+            super(null, null, null);
+        }
+
+        @Override
+        public void addAllowedTools(List<String> toolIds) {
+            // 空操作
+        }
+
+        @Override
+        public void removeAllowedTools(List<String> toolIds) {
+            // 空操作
+        }
+    }
+
+    /**
+     * 空操作事件发布器。
+     */
+    private static class NoOpEventPublisher implements ApplicationEventPublisher {
+
+        @Override
+        public void publishEvent(@NonNull Object event) {
+            // 空操作
+        }
     }
 }

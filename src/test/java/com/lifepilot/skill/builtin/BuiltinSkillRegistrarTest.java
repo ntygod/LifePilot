@@ -113,11 +113,8 @@ class BuiltinSkillRegistrarTest {
                 .description("测试用 Skill")
                 .version("1.0.0")
                 .source(new SkillSource.Builtin())
-                .systemPrompt("你是测试助手")
-                .allowedTools(List.of("builtin.test.tool"))
-                .execution(ExecutionStrategy.DEFAULT)
-                .memoryAccess(MemoryAccessPolicy.none())
-                .budget(SkillBudget.DEFAULT)
+                .instructions("你是测试助手")
+                .suggestedTools(List.of("builtin.test.tool"))
                 .metadata(Map.of())
                 .build();
     }

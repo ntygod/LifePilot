@@ -3,7 +3,8 @@ package com.lifepilot.skill.builtin.schedule;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.skill.builtin.BuiltinSkill;
 import com.lifepilot.skill.builtin.BuiltinSkillProvider;
-import com.lifepilot.skill.model.*;
+import com.lifepilot.skill.model.SkillDefinition;
+import com.lifepilot.skill.model.SkillSource;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.model.ToolResult;
@@ -45,8 +46,8 @@ public class ScheduleSkillProvider implements BuiltinSkillProvider {
                 .description("管理日程安排，支持创建、查询、更新、删除和冲突检测")
                 .version("1.0.0")
                 .source(new SkillSource.Builtin())
-                .systemPrompt(promptRegistry.render("skill/schedule"))
-                .allowedTools(List.of(
+                .instructions(promptRegistry.render("skill/schedule"))
+                .suggestedTools(List.of(
                         "builtin.schedule.create",
                         "builtin.schedule.list",
                         "builtin.schedule.get",
@@ -54,9 +55,6 @@ public class ScheduleSkillProvider implements BuiltinSkillProvider {
                         "builtin.schedule.delete",
                         "builtin.schedule.conflicts"
                 ))
-                .execution(ExecutionStrategy.DEFAULT)
-                .memoryAccess(MemoryAccessPolicy.none())
-                .budget(SkillBudget.LIGHTWEIGHT)
                 .metadata(Map.of())
                 .build();
     }

@@ -1,7 +1,7 @@
 package com.lifepilot.workflow.config;
 
 import com.lifepilot.llm.LlmRouter;
-import com.lifepilot.skill.action.SkillActionDispatcher;
+import com.lifepilot.skill.activation.SkillActivator;
 import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.workflow.engine.StepExecutor;
@@ -33,7 +33,7 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
  * 注册工作流引擎全部 Bean：解析器、表达式引擎、持久化仓储、步骤执行器、
  * 注册中心和核心引擎。
  *
- * <p>依赖已有模块：SkillRegistry、SkillActionDispatcher、DynamicToolRegistry、
+ * <p>依赖已有模块：SkillRegistry、SkillActivator、DynamicToolRegistry、
  * LlmRouter、JdbcTemplate。
  *
  * @author zsg
@@ -89,11 +89,11 @@ public class WorkflowAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public StepExecutor workflowStepExecutor(SkillRegistry skillRegistry,
-                                              SkillActionDispatcher skillActionDispatcher,
+                                              SkillActivator skillActivator,
                                               DynamicToolRegistry toolRegistry,
                                               LlmRouter llmRouter,
                                               WorkflowConfigProperties config) {
-        return new StepExecutor(skillRegistry, skillActionDispatcher, toolRegistry, llmRouter, config);
+        return new StepExecutor(skillRegistry, skillActivator, toolRegistry, llmRouter, config);
     }
 
     @Bean

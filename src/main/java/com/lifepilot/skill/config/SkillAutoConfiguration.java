@@ -2,8 +2,7 @@ package com.lifepilot.skill.config;
 
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.prompt.PromptRegistry;
-import com.lifepilot.skill.action.*;
-import com.lifepilot.skill.activation.SkillLifecycleManager;
+import com.lifepilot.skill.activation.SkillActivator;
 import com.lifepilot.skill.activation.SkillMetricsTracker;
 import com.lifepilot.skill.audit.SkillAuditRepository;
 import com.lifepilot.skill.bridge.SkillToToolBridge;
@@ -24,7 +23,6 @@ import com.lifepilot.skill.markdown.MarkdownSkillLoader;
 import com.lifepilot.skill.markdown.MarkdownSkillParser;
 import com.lifepilot.skill.markdown.MarkdownSkillSerializer;
 import com.lifepilot.skill.markdown.SkillFileWatcher;
-import com.lifepilot.skill.memory.MemoryAccessEnforcer;
 import com.lifepilot.skill.registry.SkillDefinitionValidator;
 import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.skill.registry.SkillSearchIndex;
@@ -44,7 +42,6 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.event.EventListener;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.web.client.RestClient;
 
 import java.util.List;
 
@@ -52,7 +49,7 @@ import java.util.List;
  * Skill 系统 Spring Boot 自动配置。
  *
  * <p>通过 {@code lifepilot.skills.enabled=true}（默认）激活，
- * 注册 Skill 框架核心组件、Markdown 解析与热加载、动作执行器、安全验证管线、
+ * 注册 Skill 框架核心组件、Markdown 解析与热加载、安全验证管线、
  * Skill 自扩展、审计追溯和内置 Skill 提供者。
  * 每个 Bean 使用 {@link ConditionalOnMissingBean} 允许用户覆盖。</p>
  *
@@ -68,13 +65,6 @@ public class SkillAutoConfiguration {
     private static final Logger log = LoggerFactory.getLogger(SkillAutoConfiguration.class);
 
     // --- 框架组件 ---
-
-    @Bean
-    @ConditionalOnMissingBean
-    public MemoryAccessEnforcer memoryAccessEnforcer() {
-        log.info("Skill 系统: 注册 MemoryAccessEnforcer");
-        return new MemoryAccessEnforcer();
-    }
 
     @Bean
     @ConditionalOnMissingBean
@@ -110,24 +100,20 @@ public class SkillAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public SkillLifecycleManager skillLifecycleManager(SkillConfigProperties config,
-                                                       SkillRegistry skillRegistry,
-                                                       SkillActionDispatcher actionDispatcher,
-                                                       SkillMetricsTracker metricsTracker,
-                                                       ApplicationEventPublisher eventPublisher) {
-        log.info("Skill 系统: 注册 SkillLifecycleManager, maxConcurrentActivations={}",
-                config.getMaxConcurrentActivations());
-        return new SkillLifecycleManager(
-                config.getMaxConcurrentActivations(),
-                skillRegistry, actionDispatcher, metricsTracker, eventPublisher);
+    public SkillActivator skillActivator(SkillRegistry skillRegistry,
+                                         SkillMetricsTracker skillMetricsTracker,
+                                         ApplicationEventPublisher eventPublisher) {
+        log.info("Skill 系统: 注册 SkillActivator");
+        return new SkillActivator(skillRegistry, skillMetricsTracker, eventPublisher);
     }
 
     @Bean
     @ConditionalOnMissingBean
     public SkillToToolBridge skillToToolBridge(DynamicToolRegistry toolRegistry,
-                                              SkillLifecycleManager lifecycleManager) {
+                                              SkillRegistry skillRegistry,
+                                              SkillActivator skillActivator) {
         log.info("Skill 系统: 注册 SkillToToolBridge");
-        return new SkillToToolBridge(toolRegistry, lifecycleManager);
+        return new SkillToToolBridge(toolRegistry, skillRegistry, skillActivator);
     }
 
     // --- 持久化组件 ---
@@ -233,70 +219,6 @@ public class SkillAutoConfiguration {
         return new SkillFileWatcher(loader, registry, config);
     }
 
-    // ==================== 动作执行器 ====================
-
-    @Bean
-    @ConditionalOnMissingBean
-    public VariableResolver variableResolver() {
-        log.info("Skill 系统: 注册 VariableResolver");
-        return new VariableResolver();
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public DangerousCommandDetector dangerousCommandDetector() {
-        log.info("Skill 系统: 注册 DangerousCommandDetector");
-        return new DangerousCommandDetector();
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public HttpActionExecutor httpActionExecutor(RestClient.Builder restClientBuilder,
-                                                VariableResolver resolver,
-                                                SkillConfigProperties config) {
-        log.info("Skill 系统: 注册 HttpActionExecutor, ssrfProtection={}",
-                config.getHttpAction().isSsrfProtectionEnabled());
-        return new HttpActionExecutor(restClientBuilder.build(), resolver, config);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public ShellActionExecutor shellActionExecutor(DangerousCommandDetector detector,
-                                                  VariableResolver resolver,
-                                                  SkillConfigProperties config) {
-        log.info("Skill 系统: 注册 ShellActionExecutor, maxTimeout={}s",
-                config.getShellAction().getMaxTimeoutSeconds());
-        return new ShellActionExecutor(detector, resolver, config);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public ChainActionExecutor chainActionExecutor(SkillRegistry registry,
-                                                   VariableResolver resolver,
-                                                   SkillConfigProperties config) {
-        log.info("Skill 系统: 注册 ChainActionExecutor, maxSteps={}",
-                config.getChainAction().getMaxSteps());
-        return new ChainActionExecutor(registry, resolver, config);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public TemplateActionExecutor templateActionExecutor(VariableResolver resolver) {
-        log.info("Skill 系统: 注册 TemplateActionExecutor");
-        return new TemplateActionExecutor(resolver);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public SkillActionDispatcher skillActionDispatcher(HttpActionExecutor http,
-                                                      ShellActionExecutor shell,
-                                                      ChainActionExecutor chain,
-                                                      TemplateActionExecutor template,
-                                                      VariableResolver resolver) {
-        log.info("Skill 系统: 注册 SkillActionDispatcher");
-        return new SkillActionDispatcher(http, shell, chain, template, resolver);
-    }
-
     // ==================== 安全验证管线 ====================
 
     @Bean
@@ -308,10 +230,9 @@ public class SkillAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public SecurityValidator securityValidator(DynamicToolRegistry toolRegistry,
-                                              SkillConfigProperties config) {
+    public SecurityValidator securityValidator(DynamicToolRegistry toolRegistry) {
         log.info("Skill 系统: 注册 SecurityValidator");
-        return new SecurityValidator(toolRegistry, config);
+        return new SecurityValidator(toolRegistry);
     }
 
     @Bean
@@ -371,10 +292,11 @@ public class SkillAutoConfiguration {
     // ==================== 启动后初始化 ====================
 
     /**
-     * 应用启动完成后触发 Markdown Skill 初始加载和文件监听启动。
+     * 应用启动完成后触发 Markdown Skill 初始加载、文件监听启动和统一 skills 工具注册。
      *
      * <p>{@link SkillFileWatcher#start()} 内部会调用 {@link MarkdownSkillLoader#loadAll()} 完成初始加载，
-     * 然后启动 WatchService 监听文件变更。</p>
+     * 然后启动 WatchService 监听文件变更。之后调用 {@link SkillToToolBridge#registerSkillsTool()}
+     * 注册统一的 skills 工具到 DynamicToolRegistry。</p>
      *
      * @param event 应用就绪事件
      */
@@ -387,6 +309,12 @@ public class SkillAutoConfiguration {
             var watcher = ctx.getBean(SkillFileWatcher.class);
             watcher.start();
             log.info("ApplicationReady: SkillFileWatcher 已启动（含初始加载）");
+        }
+
+        // 注册统一 skills 工具
+        if (ctx.containsBean("skillToToolBridge")) {
+            ctx.getBean(SkillToToolBridge.class).registerSkillsTool();
+            log.info("ApplicationReady: 统一 skills 工具已注册");
         }
     }
 }

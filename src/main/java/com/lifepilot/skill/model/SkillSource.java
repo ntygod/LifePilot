@@ -34,13 +34,13 @@ public sealed interface SkillSource permits SkillSource.Builtin, SkillSource.Use
     /**
      * 用户定义来源 — Markdown 声明式。
      *
-     * @param filePath     Skill 文件夹路径
+     * @param folderPath   Skill 文件夹路径
      * @param lastModified 文件最后修改时间，用于热加载变更检测
      */
-    record UserDefined(String filePath, @Nullable Instant lastModified) implements SkillSource {
+    record UserDefined(String folderPath, @Nullable Instant lastModified) implements SkillSource {
         /** 兼容旧构造器。 */
-        public UserDefined(String filePath) {
-            this(filePath, null);
+        public UserDefined(String folderPath) {
+            this(folderPath, null);
         }
     }
 

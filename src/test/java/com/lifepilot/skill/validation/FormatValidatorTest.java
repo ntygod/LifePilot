@@ -26,14 +26,14 @@ class FormatValidatorTest {
         return """
                 ---
                 id: my-skill-1
-                name: "\u6D4B\u8BD5\u6280\u80FD"
-                description: "\u8FD9\u662F\u4E00\u4E2A\u6D4B\u8BD5\u6280\u80FD"
-                allowed-tools:
+                name: "测试技能"
+                description: "这是一个测试技能"
+                suggested-tools:
                   - tool-a
                   - tool-b
                 ---
 
-                \u4F60\u662F\u4E00\u4E2A\u6D4B\u8BD5\u52A9\u624B
+                你是一个测试助手
                 """;
     }
 
@@ -60,7 +60,7 @@ class FormatValidatorTest {
 
     @Test
     void 缺少Frontmatter分隔符_返回错误() {
-        String noFrontmatter = "\u4F60\u662F\u4E00\u4E2A\u6D4B\u8BD5\u52A9\u624B";
+        String noFrontmatter = "你是一个测试助手";
 
         FormatValidationResult result = validator.validate(noFrontmatter);
 
@@ -77,7 +77,7 @@ class FormatValidatorTest {
                 id: my-skill
                 ---
 
-                \u4F60\u662F\u4E00\u4E2A\u6D4B\u8BD5\u52A9\u624B
+                你是一个测试助手
                 """;
 
         FormatValidationResult result = validator.validate(missingFields);
@@ -86,22 +86,22 @@ class FormatValidatorTest {
         assertThat(result.errors()).isNotEmpty();
     }
 
-    // ── 空 Body（System Prompt 为空）──
+    // ── 空 Body（instructions 为空）──
 
     @Test
     void 空Body_校验失败() {
         String emptyBody = """
                 ---
                 id: my-skill
-                name: "\u6D4B\u8BD5"
-                description: "\u6D4B\u8BD5"
+                name: "测试"
+                description: "测试"
                 ---
                 """;
 
         FormatValidationResult result = validator.validate(emptyBody);
 
         assertThat(result.passed()).isFalse();
-        assertThat(result.errors()).anyMatch(e -> e.contains("System Prompt"));
+        assertThat(result.errors()).isNotEmpty();
     }
 
     // ── null / blank 输入 ──
@@ -111,7 +111,7 @@ class FormatValidatorTest {
         FormatValidationResult result = validator.validate(null);
 
         assertThat(result.passed()).isFalse();
-        assertThat(result.errors()).anyMatch(e -> e.contains("\u4E0D\u80FD\u4E3A\u7A7A"));
+        assertThat(result.errors()).anyMatch(e -> e.contains("不能为空"));
     }
 
     @Test
@@ -119,7 +119,7 @@ class FormatValidatorTest {
         FormatValidationResult result = validator.validate("");
 
         assertThat(result.passed()).isFalse();
-        assertThat(result.errors()).anyMatch(e -> e.contains("\u4E0D\u80FD\u4E3A\u7A7A"));
+        assertThat(result.errors()).anyMatch(e -> e.contains("不能为空"));
     }
 
     @Test
@@ -127,27 +127,24 @@ class FormatValidatorTest {
         FormatValidationResult result = validator.validate("   \n  \t  ");
 
         assertThat(result.passed()).isFalse();
-        assertThat(result.errors()).anyMatch(e -> e.contains("\u4E0D\u80FD\u4E3A\u7A7A"));
+        assertThat(result.errors()).anyMatch(e -> e.contains("不能为空"));
     }
 
     // ── 包含可选字段 ──
 
     @Test
-    void 包含version和execution_格式验证通过() {
+    void 包含version和suggestedTools_格式验证通过() {
         String withOptional = """
                 ---
                 id: my-skill-2
-                name: "\u9AD8\u7EA7\u6280\u80FD"
-                description: "\u5305\u542B\u53EF\u9009\u5B57\u6BB5\u7684\u6280\u80FD"
+                name: "高级技能"
+                description: "包含可选字段的技能"
                 version: "1.2.3"
-                allowed-tools:
+                suggested-tools:
                   - tool-a
-                execution:
-                  max-steps: 20
-                  timeout-seconds: 300
                 ---
 
-                \u4F60\u662F\u4E00\u4E2A\u9AD8\u7EA7\u52A9\u624B
+                你是一个高级助手
                 """;
 
         FormatValidationResult result = validator.validate(withOptional);

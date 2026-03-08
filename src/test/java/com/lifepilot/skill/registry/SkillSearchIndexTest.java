@@ -194,11 +194,8 @@ class SkillSearchIndexTest {
                 .description(description)
                 .version("1.0.0")
                 .source(new SkillSource.Builtin())
-                .systemPrompt("测试 Prompt")
-                .allowedTools(List.of("tool-1"))
-                .execution(ExecutionStrategy.DEFAULT)
-                .memoryAccess(MemoryAccessPolicy.none())
-                .budget(SkillBudget.DEFAULT)
+                .instructions("测试 Prompt")
+                .suggestedTools(List.of("tool-1"))
                 .metadata(Map.of())
                 .build();
     }

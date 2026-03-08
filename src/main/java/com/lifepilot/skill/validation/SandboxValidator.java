@@ -16,8 +16,8 @@ import java.util.List;
  * <p>校验规则：
  * <ul>
  *   <li>SKILL.md 内容可被 {@link MarkdownSkillParser} 成功解析</li>
- *   <li>systemPrompt 长度不超过 5000 字符（沙箱安全限制）</li>
- *   <li>工具列表数量不超过 10 个（沙箱安全限制）</li>
+ *   <li>instructions 长度不超过 5000 字符（沙箱安全限制）</li>
+ *   <li>suggestedTools 数量不超过 10 个（沙箱安全限制）</li>
  * </ul></p>
  *
  * <p>使用临时文件进行解析验证，完成后清理临时文件。</p>
@@ -29,10 +29,10 @@ public class SandboxValidator {
 
     private static final Logger log = LoggerFactory.getLogger(SandboxValidator.class);
 
-    /** 沙箱安全限制：systemPrompt 最大长度。 */
-    private static final int MAX_SYSTEM_PROMPT_LENGTH = 5000;
+    /** 沙箱安全限制：instructions 最大长度。 */
+    private static final int MAX_INSTRUCTIONS_LENGTH = 5000;
 
-    /** 沙箱安全限制：工具列表最大数量。 */
+    /** 沙箱安全限制：suggestedTools 最大数量。 */
     private static final int MAX_TOOLS_COUNT = 10;
 
     private final MarkdownSkillParser markdownParser;
@@ -47,8 +47,8 @@ public class SandboxValidator {
      * <p>验证流程：
      * <ol>
      *   <li>使用 {@link MarkdownSkillParser} 解析 SKILL.md 内容</li>
-     *   <li>校验 systemPrompt 长度</li>
-     *   <li>校验 allowedTools 数量</li>
+     *   <li>校验 instructions 长度</li>
+     *   <li>校验 suggestedTools 数量</li>
      *   <li>使用临时文件验证 SKILL.md 可被完整解析</li>
      * </ol></p>
      *
@@ -70,17 +70,17 @@ public class SandboxValidator {
         }
         List<String> errors = new ArrayList<>();
 
-        // 2. 校验 systemPrompt 长度
-        String systemPrompt = definition.systemPrompt();
-        if (systemPrompt.length() > MAX_SYSTEM_PROMPT_LENGTH) {
-            errors.add("systemPrompt 长度超过沙箱限制: " + systemPrompt.length()
-                    + " > " + MAX_SYSTEM_PROMPT_LENGTH);
+        // 2. 校验 instructions 长度
+        String instructions = definition.instructions();
+        if (instructions.length() > MAX_INSTRUCTIONS_LENGTH) {
+            errors.add("instructions 长度超过沙箱限制: " + instructions.length()
+                    + " > " + MAX_INSTRUCTIONS_LENGTH);
         }
 
-        // 3. 校验 allowedTools 数量
-        var allowedTools = definition.allowedTools();
-        if (allowedTools.size() > MAX_TOOLS_COUNT) {
-            errors.add("allowedTools 数量超过沙箱限制: " + allowedTools.size()
+        // 3. 校验 suggestedTools 数量
+        var suggestedTools = definition.suggestedTools();
+        if (suggestedTools.size() > MAX_TOOLS_COUNT) {
+            errors.add("suggestedTools 数量超过沙箱限制: " + suggestedTools.size()
                     + " > " + MAX_TOOLS_COUNT);
         }
 
