@@ -1,7 +1,10 @@
 package com.lifepilot.meta.config;
 
 import com.lifepilot.meta.infra.InfraToolProvider;
+import com.lifepilot.meta.infra.browser.BrowserSessionManager;
+import jakarta.annotation.Nullable;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.web.client.RestClient;
@@ -9,9 +12,9 @@ import org.springframework.web.client.RestClient;
 /**
  * 元能力系统 Spring Boot 自动配置。
  *
- * <p>注册元能力模块所有核心 Bean：InfraToolProvider、InteractionBridge、
- * CapabilityAggregator、IntrospectionSkillProvider、SkillDiscoveryRegistrar、
- * McpInstallerRegistrar。实现类将在后续任务中逐步创建，届时补充 Bean 注册。</p>
+ * <p>注册元能力模块所有核心 Bean：InfraToolProvider、BrowserSessionManager、
+ * InteractionBridge、CapabilityAggregator、IntrospectionSkillProvider、
+ * SkillDiscoveryRegistrar、McpInstallerRegistrar。</p>
  *
  * @author zsg
  * @since 2026-03-10
@@ -24,12 +27,23 @@ public class MetaAutoConfiguration {
      * 注册基础工具提供者。
      *
      * <p>SandboxBooter 和 InteractionBridge 尚未作为 Bean 注入，
-     * 后续任务中将逐步替换为实际类型。</p>
+     * 后续任务中将逐步替换为实际类型。BrowserSessionManager 为可选依赖，
+     * 仅在 Playwright 可用时注入。</p>
      */
     @Bean
     InfraToolProvider infraToolProvider(MetaProperties properties,
-                                        RestClient.Builder restClientBuilder) {
-        return new InfraToolProvider(properties, restClientBuilder, null, null);
+                                        RestClient.Builder restClientBuilder,
+                                        @Nullable BrowserSessionManager browserSessionManager) {
+        return new InfraToolProvider(properties, restClientBuilder, null, null, browserSessionManager);
+    }
+
+    /**
+     * 注册浏览器会话管理器 — 仅在 Playwright 类可用时注册。
+     */
+    @Bean
+    @ConditionalOnClass(name = "com.microsoft.playwright.Playwright")
+    BrowserSessionManager browserSessionManager(MetaProperties properties) {
+        return new BrowserSessionManager(properties);
     }
 
     // Bean 注册将在后续任务中随实现类创建逐步添加：

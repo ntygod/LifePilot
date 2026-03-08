@@ -1,6 +1,7 @@
 package com.lifepilot.meta.infra;
 
 import com.lifepilot.meta.config.MetaProperties;
+import com.lifepilot.meta.infra.browser.*;
 import com.lifepilot.meta.infra.env.DateTimeToolExecutor;
 import com.lifepilot.meta.infra.env.SystemInfoToolExecutor;
 import com.lifepilot.meta.infra.env.UserProfileToolExecutor;
@@ -45,15 +46,19 @@ public class InfraToolProvider implements BuiltinSkillProvider {
     private final Object sandboxBooter;
     @Nullable
     private final Object interactionBridge;
+    @Nullable
+    private final BrowserSessionManager browserSessionManager;
 
     public InfraToolProvider(MetaProperties properties,
                              RestClient.Builder restClientBuilder,
                              @Nullable Object sandboxBooter,
-                             @Nullable Object interactionBridge) {
+                             @Nullable Object interactionBridge,
+                             @Nullable BrowserSessionManager browserSessionManager) {
         this.properties = properties;
         this.restClientBuilder = restClientBuilder;
         this.sandboxBooter = sandboxBooter;
         this.interactionBridge = interactionBridge;
+        this.browserSessionManager = browserSessionManager;
     }
 
     @Override
@@ -73,7 +78,11 @@ public class InfraToolProvider implements BuiltinSkillProvider {
                         "builtin.web.fetch",
                         "builtin.reason.think",
                         "builtin.reason.calculate",
-                        "builtin.shell.exec"
+                        "builtin.shell.exec",
+                        "builtin.browser.navigate",
+                        "builtin.browser.click",
+                        "builtin.browser.input",
+                        "builtin.browser.screenshot"
                 ))
                 .execution(ExecutionStrategy.DEFAULT)
                 .memoryAccess(MemoryAccessPolicy.none())
@@ -112,7 +121,18 @@ public class InfraToolProvider implements BuiltinSkillProvider {
 
         toolRegistry.registerBuiltinTool(buildShellExecTool(shellExecExecutor));
 
-        log.info("基础工具注册完成: count=8, categories=[env, web, reason, shell]");
+        // 浏览器自动化工具（4 个）
+        var navigateExecutor = new BrowserNavigateToolExecutor(browserSessionManager);
+        var clickExecutor = new BrowserClickToolExecutor(browserSessionManager);
+        var inputExecutor = new BrowserInputToolExecutor(browserSessionManager);
+        var screenshotExecutor = new BrowserScreenshotToolExecutor(browserSessionManager);
+
+        toolRegistry.registerBuiltinTool(buildBrowserNavigateTool(navigateExecutor));
+        toolRegistry.registerBuiltinTool(buildBrowserClickTool(clickExecutor));
+        toolRegistry.registerBuiltinTool(buildBrowserInputTool(inputExecutor));
+        toolRegistry.registerBuiltinTool(buildBrowserScreenshotTool(screenshotExecutor));
+
+        log.info("基础工具注册完成: count=12, categories=[env, web, reason, shell, browser]");
     }
 
     // ─────────────────────────────────────────────
@@ -280,6 +300,102 @@ public class InfraToolProvider implements BuiltinSkillProvider {
                 )))
                 .riskLevel(RiskLevel.HIGH)
                 .idempotent(false)
+                .tags(INFRA_TAGS)
+                .executor(executor::execute)
+                .build();
+    }
+
+    // ─────────────────────────────────────────────
+    //  浏览器自动化工具构建
+    // ─────────────────────────────────────────────
+
+    /** 构建浏览器导航工具 — Playwright page.navigate()，MEDIUM 风险。 */
+    private BuiltinTool buildBrowserNavigateTool(BrowserNavigateToolExecutor executor) {
+        return BuiltinTool.builder()
+                .id("builtin.browser.navigate")
+                .name("浏览器导航")
+                .description("使用浏览器导航到指定 URL，返回页面标题和文本快照。适用于访问 JavaScript 渲染的动态网页")
+                .inputSchema(JsonSchema.of(Map.of(
+                        "type", "object",
+                        "required", List.of("url"),
+                        "properties", Map.of(
+                                "url", Map.of("type", "string",
+                                        "description", "目标 URL"),
+                                "sessionId", Map.of("type", "string",
+                                        "description", "浏览器会话 ID，默认 default，同一会话复用 Page")
+                        )
+                )))
+                .riskLevel(RiskLevel.MEDIUM)
+                .idempotent(false)
+                .tags(INFRA_TAGS)
+                .executor(executor::execute)
+                .build();
+    }
+
+    /** 构建浏览器点击工具 — Playwright page.click()，MEDIUM 风险。 */
+    private BuiltinTool buildBrowserClickTool(BrowserClickToolExecutor executor) {
+        return BuiltinTool.builder()
+                .id("builtin.browser.click")
+                .name("浏览器点击")
+                .description("点击页面中指定 CSS 选择器的元素，等待导航或响应完成")
+                .inputSchema(JsonSchema.of(Map.of(
+                        "type", "object",
+                        "required", List.of("selector"),
+                        "properties", Map.of(
+                                "selector", Map.of("type", "string",
+                                        "description", "CSS 选择器，定位要点击的元素"),
+                                "sessionId", Map.of("type", "string",
+                                        "description", "浏览器会话 ID，默认 default")
+                        )
+                )))
+                .riskLevel(RiskLevel.MEDIUM)
+                .idempotent(false)
+                .tags(INFRA_TAGS)
+                .executor(executor::execute)
+                .build();
+    }
+
+    /** 构建浏览器输入工具 — Playwright page.fill()，MEDIUM 风险。 */
+    private BuiltinTool buildBrowserInputTool(BrowserInputToolExecutor executor) {
+        return BuiltinTool.builder()
+                .id("builtin.browser.input")
+                .name("浏览器输入")
+                .description("在页面表单字段中填入文本内容，使用 CSS 选择器定位输入框")
+                .inputSchema(JsonSchema.of(Map.of(
+                        "type", "object",
+                        "required", List.of("selector", "value"),
+                        "properties", Map.of(
+                                "selector", Map.of("type", "string",
+                                        "description", "CSS 选择器，定位输入框元素"),
+                                "value", Map.of("type", "string",
+                                        "description", "要填入的文本内容"),
+                                "sessionId", Map.of("type", "string",
+                                        "description", "浏览器会话 ID，默认 default")
+                        )
+                )))
+                .riskLevel(RiskLevel.MEDIUM)
+                .idempotent(false)
+                .tags(INFRA_TAGS)
+                .executor(executor::execute)
+                .build();
+    }
+
+    /** 构建浏览器截图工具 — Playwright page.screenshot()，LOW 风险。 */
+    private BuiltinTool buildBrowserScreenshotTool(BrowserScreenshotToolExecutor executor) {
+        return BuiltinTool.builder()
+                .id("builtin.browser.screenshot")
+                .name("浏览器截图")
+                .description("截取当前页面截图，返回 Base64 编码的 PNG 图片。支持全页截图")
+                .inputSchema(JsonSchema.of(Map.of(
+                        "type", "object",
+                        "properties", Map.of(
+                                "sessionId", Map.of("type", "string",
+                                        "description", "浏览器会话 ID，默认 default"),
+                                "fullPage", Map.of("type", "boolean",
+                                        "description", "是否截取整页（包括滚动区域），默认 false")
+                        )
+                )))
+                .riskLevel(RiskLevel.LOW)
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
