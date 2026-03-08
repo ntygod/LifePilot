@@ -87,11 +87,14 @@ class StaleBreaker_BugCondition_探索测试 {
     @Test
     @DisplayName("陈旧 Provider 的熔断器状态不应被恢复到内存中")
     void 陈旧Provider的熔断器状态_构造后不应存在于breakers中() throws Exception {
-        // 定义当前活跃的 Provider ID 集合（不包含 ollama-nomic-embed）
-        Set<String> activeProviderIds = Set.of("deepseek-chat");
+        // 定义当前活跃的 key 集合（不包含 ollama-nomic-embed:EMBEDDING）
+        Set<String> activeKeys = Set.of(VALID_KEY);
 
         // 构造 CircuitBreakerManager，触发 restoreFromDatabase()
         var manager = new CircuitBreakerManager(config, jdbcTemplate);
+
+        // 模拟 LlmAutoConfiguration 中 Provider 加载完成后的清理调用
+        manager.purgeStaleBreakers(activeKeys);
 
         // 通过反射获取 breakers map
         var breakers = getBreakers(manager);
@@ -101,11 +104,9 @@ class StaleBreaker_BugCondition_探索测试 {
                 "有效 Provider 的熔断器状态应被恢复: " + VALID_KEY);
 
         // Bug Condition 断言：陈旧 key 不应存在
-        // 在未修复代码上，restoreFromDatabase() 无条件恢复所有行，
-        // 所以 STALE_KEY 会存在于 breakers 中 → 断言失败 → 确认 bug 存在
         assertFalse(breakers.containsKey(STALE_KEY),
                 "陈旧 Provider 的熔断器状态不应被恢复到内存中: " + STALE_KEY
-                        + "（当前活跃 Provider: " + activeProviderIds + "）");
+                        + "（当前活跃 key: " + activeKeys + "）");
     }
 
     @Test
@@ -113,16 +114,24 @@ class StaleBreaker_BugCondition_探索测试 {
     void 陈旧Provider的熔断器状态_应从数据库中删除() throws Exception {
         // 构造 CircuitBreakerManager，触发 restoreFromDatabase()
         var manager = new CircuitBreakerManager(config, jdbcTemplate);
-        // 确认 manager 已恢复状态
-        assertNotNull(getBreakers(manager));
+
+        // 模拟 LlmAutoConfiguration 中 Provider 加载完成后的清理调用
+        manager.purgeStaleBreakers(Set.of(VALID_KEY));
 
         // 验证数据库中陈旧条目应被清理
-        // 在未修复代码上，没有 purgeStaleBreakers() 方法，数据库中陈旧条目仍然存在
         var staleCount = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM circuit_breaker_states WHERE provider_capability = ?",
                 Integer.class, STALE_KEY);
 
         assertEquals(0, staleCount,
                 "陈旧 Provider 的熔断器状态应从数据库中删除: " + STALE_KEY);
+
+        // 验证有效条目仍在数据库中
+        var validCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM circuit_breaker_states WHERE provider_capability = ?",
+                Integer.class, VALID_KEY);
+
+        assertEquals(1, validCount,
+                "有效 Provider 的熔断器状态应保留在数据库中: " + VALID_KEY);
     }
 }
