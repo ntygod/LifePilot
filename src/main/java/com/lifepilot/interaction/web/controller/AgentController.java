@@ -155,16 +155,19 @@ public class AgentController {
     }
 
     /**
-     * 根据 AgentSource 判断类型。
+     * 根据 AgentSource 确定 Agent 类型标签。
      */
     private String determineType(AgentSource source) {
         if (source instanceof AgentSource.Builtin) {
             return "default";
         } else if (source instanceof AgentSource.MarkdownDefined) {
             return "custom";
+        } else if (source instanceof AgentSource.Marketplace) {
+            return "marketplace";
         }
         return "custom"; // 默认
     }
+
 
     /**
      * 从 metadata 中提取标签。

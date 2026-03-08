@@ -241,8 +241,10 @@ public class CapabilityAggregator {
         return switch (source) {
             case AgentSource.Builtin _ -> "builtin";
             case AgentSource.MarkdownDefined _ -> "yaml";
+            case AgentSource.Marketplace _ -> "marketplace";
         };
     }
+
 
     /** 从 MCP 工具 ID 提取 Server 名称（约定：{serverName}.{toolName}）。 */
     private String extractMcpServerName(String toolId) {
