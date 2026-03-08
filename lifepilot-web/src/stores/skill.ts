@@ -8,6 +8,7 @@ export const useSkillStore = defineStore('skill', () => {
   const currentSkill = ref<SkillDetail | null>(null)
   const mcpServers = ref<McpServer[]>([])
   const serverTools = ref<McpTool[]>([])
+  const npxAvailable = ref<boolean | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
 
@@ -43,15 +44,24 @@ export const useSkillStore = defineStore('skill', () => {
     }
   }
 
-  async function fetchMcpServers() {
-    loading.value = true
+  async function fetchMcpServers(silent = false) {
+    if (!silent) loading.value = true
     error.value = null
     try {
       mcpServers.value = await mcpApi.listServers()
     } catch (e: any) {
       error.value = e.message ?? '加载 MCP Server 列表失败'
     } finally {
-      loading.value = false
+      if (!silent) loading.value = false
+    }
+  }
+
+  async function fetchMcpStatus() {
+    try {
+      const status = await mcpApi.getStatus()
+      npxAvailable.value = status.npxAvailable
+    } catch {
+      npxAvailable.value = null
     }
   }
 
@@ -174,9 +184,9 @@ export const useSkillStore = defineStore('skill', () => {
   }
 
   return {
-    skills, currentSkill, mcpServers, serverTools, loading, error,
+    skills, currentSkill, mcpServers, serverTools, npxAvailable, loading, error,
     fetchSkills, fetchSkillDetail, unregisterSkill,
-    fetchMcpServers, connectServer, disconnectServer, fetchServerTools,
+    fetchMcpServers, fetchMcpStatus, connectServer, disconnectServer, fetchServerTools,
     createSkill, updateSkill, createMcpServer, updateMcpServer,
     enableSkill, disableSkill, testSkill
   }

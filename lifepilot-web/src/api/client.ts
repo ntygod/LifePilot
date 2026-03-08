@@ -581,6 +581,10 @@ export const skillApi = {
 
 /** MCP Server 管理 API */
 export const mcpApi = {
+  /** 获取 MCP 环境状态（npx 可用性等） */
+  getStatus(): Promise<{ npxAvailable: boolean }> {
+    return request('/mcp/status')
+  },
   listServers(): Promise<McpServer[]> {
     return request('/mcp/servers')
   },

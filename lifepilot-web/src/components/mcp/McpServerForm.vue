@@ -10,7 +10,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import {
-  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
 
 const props = defineProps<{ server?: McpServer | null; mode: 'create' | 'edit' }>()
@@ -93,9 +93,10 @@ function removeArg(index: number) { formData.value.args.splice(index, 1) }
 </script>
 <template>
   <Dialog :open="true" @update:open="(v: boolean) => { if (!v) emit('close') }">
-    <DialogContent class="max-w-[672px] max-h-[90vh] overflow-y-auto">
+    <DialogContent class="sm:max-w-[672px] max-h-[90vh] overflow-y-auto">
       <DialogHeader>
         <DialogTitle>{{ mode === 'create' ? '新建 MCP Server' : '编辑 MCP Server' }}</DialogTitle>
+        <DialogDescription>配置 MCP Server 的连接信息和参数</DialogDescription>
       </DialogHeader>
 
       <form @submit.prevent="handleSubmit" class="space-y-4">

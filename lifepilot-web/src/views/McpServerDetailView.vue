@@ -47,15 +47,6 @@ onMounted(async () => {
     if (server.value.config) {
       config.value = { ...server.value.config }
     }
-    // 加载连接日志
-    logsLoading.value = true
-    try {
-      connectionLogs.value = await mcpApi.getConnectionLogs(server.value.name)
-    } catch {
-      connectionLogs.value = []
-    } finally {
-      logsLoading.value = false
-    }
   }
 })
 
@@ -111,14 +102,20 @@ const eventTypeStyle: Record<string, { label: string; class: string }> = {
 const stateVariant: Record<string, 'default' | 'secondary' | 'outline' | 'destructive'> = {
   CONNECTED: 'default',
   CONNECTING: 'secondary',
+  INITIALIZING: 'secondary',
+  HEALTH_CHECK: 'default',
   DISCONNECTED: 'outline',
+  DISCONNECTING: 'outline',
   RECONNECTING: 'secondary',
 }
 
 const stateLabel: Record<string, string> = {
   CONNECTED: '已连接',
   CONNECTING: '连接中',
+  INITIALIZING: '初始化中',
+  HEALTH_CHECK: '已连接',
   DISCONNECTED: '未连接',
+  DISCONNECTING: '断开中',
   RECONNECTING: '重连中',
 }
 </script>
@@ -144,14 +141,14 @@ const stateLabel: Record<string, string> = {
           <div class="flex gap-1.5">
             <Button
               v-if="server"
-              variant="outline"
+              variant="ghost" size="sm" class="action-btn-link"
               :disabled="testing"
               @click="testConnection"
             >
               {{ testing ? '测试中...' : '测试连接' }}
             </Button>
             <Button
-              variant="outline"
+              variant="ghost" size="sm" class="action-btn-link"
               @click="editing = !editing"
             >
               {{ editing ? '取消编辑' : '编辑配置' }}
@@ -173,7 +170,7 @@ const stateLabel: Record<string, string> = {
       <div class="max-w-[1200px] mx-auto px-md md:px-lg py-lg">
         <!-- Skeleton 加载占位符 -->
         <div v-if="!server" class="space-y-md">
-          <Card>
+          <Card class="detail-card">
             <CardHeader>
               <Skeleton class="h-6 w-1/4" />
             </CardHeader>
@@ -183,7 +180,7 @@ const stateLabel: Record<string, string> = {
               <Skeleton class="h-9 w-2/3" />
             </CardContent>
           </Card>
-          <Card>
+          <Card class="detail-card">
             <CardHeader>
               <Skeleton class="h-6 w-1/3" />
             </CardHeader>
@@ -196,9 +193,9 @@ const stateLabel: Record<string, string> = {
 
         <div v-else class="space-y-md">
           <!-- 基础配置 -->
-          <Card>
+          <Card class="detail-card">
             <CardHeader>
-              <CardTitle>基础配置</CardTitle>
+              <CardTitle class="section-title">基础配置</CardTitle>
             </CardHeader>
             <CardContent class="space-y-4">
               <div class="space-y-2">
@@ -238,9 +235,9 @@ const stateLabel: Record<string, string> = {
           </Card>
 
           <!-- 高级选项 -->
-          <Card>
+          <Card class="detail-card">
             <CardHeader>
-              <CardTitle>高级选项</CardTitle>
+              <CardTitle class="section-title">高级选项</CardTitle>
             </CardHeader>
             <CardContent class="space-y-4">
               <div class="space-y-2">
@@ -267,9 +264,9 @@ const stateLabel: Record<string, string> = {
           </Card>
 
           <!-- 工具列表 -->
-          <Card>
+          <Card class="detail-card">
             <CardHeader>
-              <CardTitle>工具列表 ({{ skillStore.serverTools.length }})</CardTitle>
+              <CardTitle class="section-title">工具列表 ({{ skillStore.serverTools.length }})</CardTitle>
             </CardHeader>
             <CardContent>
               <div v-if="skillStore.serverTools.length === 0" class="text-sm text-muted-foreground">
@@ -279,19 +276,18 @@ const stateLabel: Record<string, string> = {
                 <div
                   v-for="tool in skillStore.serverTools"
                   :key="tool.id"
-                  class="p-3 rounded-md bg-muted flex items-center justify-between"
+                  class="list-card p-3 flex items-center justify-between cursor-pointer group"
+                  @click="router.push(`/tools/${tool.id}`)"
                 >
-                  <div
-                    class="cursor-pointer hover:text-primary"
-                    @click="router.push(`/tools/${tool.id}`)"
-                  >
-                    <div class="font-medium text-foreground text-sm">{{ tool.name }}</div>
+                  <div>
+                    <div class="font-medium text-foreground text-sm group-hover:text-primary transition-colors">{{ tool.name }}</div>
                     <div class="text-xs text-muted-foreground mt-1">{{ tool.description }}</div>
                   </div>
                   <Button
                     variant="outline"
                     size="sm"
-                    @click="router.push(`/tools/${tool.id}`)"
+                    class="action-btn-link shrink-0"
+                    @click.stop="router.push(`/tools/${tool.id}`)"
                   >
                     测试调用
                   </Button>
@@ -301,9 +297,9 @@ const stateLabel: Record<string, string> = {
           </Card>
 
           <!-- 状态信息 -->
-          <Card>
+          <Card class="detail-card">
             <CardHeader>
-              <CardTitle>状态信息</CardTitle>
+              <CardTitle class="section-title">状态信息</CardTitle>
             </CardHeader>
             <CardContent class="space-y-2 text-sm">
               <div>
@@ -322,9 +318,9 @@ const stateLabel: Record<string, string> = {
           </Card>
 
           <!-- 连接日志 -->
-          <Card>
+          <Card class="detail-card">
             <CardHeader>
-              <CardTitle>连接日志</CardTitle>
+              <CardTitle class="section-title">连接日志</CardTitle>
             </CardHeader>
             <CardContent>
               <Skeleton v-if="logsLoading" class="h-32 w-full" />
