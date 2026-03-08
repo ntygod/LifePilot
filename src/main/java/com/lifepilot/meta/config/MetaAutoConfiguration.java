@@ -2,6 +2,7 @@ package com.lifepilot.meta.config;
 
 import com.lifepilot.meta.infra.InfraToolProvider;
 import com.lifepilot.meta.infra.browser.BrowserSessionManager;
+import com.lifepilot.sandbox.booter.SandboxBooter;
 import jakarta.annotation.Nullable;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -26,15 +27,16 @@ public class MetaAutoConfiguration {
     /**
      * 注册基础工具提供者。
      *
-     * <p>SandboxBooter 和 InteractionBridge 尚未作为 Bean 注入，
-     * 后续任务中将逐步替换为实际类型。BrowserSessionManager 为可选依赖，
-     * 仅在 Playwright 可用时注入。</p>
+     * <p>SandboxBooter 为可选依赖，仅在沙箱模块可用时注入。
+     * InteractionBridge 尚未作为 Bean 注入，后续任务中将逐步替换为实际类型。
+     * BrowserSessionManager 为可选依赖，仅在 Playwright 可用时注入。</p>
      */
     @Bean
     InfraToolProvider infraToolProvider(MetaProperties properties,
                                         RestClient.Builder restClientBuilder,
+                                        @Nullable SandboxBooter sandboxBooter,
                                         @Nullable BrowserSessionManager browserSessionManager) {
-        return new InfraToolProvider(properties, restClientBuilder, null, null, browserSessionManager);
+        return new InfraToolProvider(properties, restClientBuilder, sandboxBooter, null, browserSessionManager);
     }
 
     /**

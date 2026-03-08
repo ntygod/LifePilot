@@ -2,6 +2,7 @@ package com.lifepilot.meta.infra;
 
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.meta.infra.browser.*;
+import com.lifepilot.meta.infra.code.CodeExecuteToolExecutor;
 import com.lifepilot.meta.infra.env.DateTimeToolExecutor;
 import com.lifepilot.meta.infra.env.SystemInfoToolExecutor;
 import com.lifepilot.meta.infra.env.UserProfileToolExecutor;
@@ -11,6 +12,7 @@ import com.lifepilot.meta.infra.shell.ShellExecToolExecutor;
 import com.lifepilot.meta.infra.web.WebFetchToolExecutor;
 import com.lifepilot.meta.infra.web.WebSearchToolExecutor;
 import com.lifepilot.observability.guardrail.RiskLevel;
+import com.lifepilot.sandbox.booter.SandboxBooter;
 import com.lifepilot.skill.builtin.BuiltinSkill;
 import com.lifepilot.skill.builtin.BuiltinSkillProvider;
 import com.lifepilot.skill.model.*;
@@ -43,7 +45,7 @@ public class InfraToolProvider implements BuiltinSkillProvider {
     private final MetaProperties properties;
     private final RestClient.Builder restClientBuilder;
     @Nullable
-    private final Object sandboxBooter;
+    private final SandboxBooter sandboxBooter;
     @Nullable
     private final Object interactionBridge;
     @Nullable
@@ -51,7 +53,7 @@ public class InfraToolProvider implements BuiltinSkillProvider {
 
     public InfraToolProvider(MetaProperties properties,
                              RestClient.Builder restClientBuilder,
-                             @Nullable Object sandboxBooter,
+                             @Nullable SandboxBooter sandboxBooter,
                              @Nullable Object interactionBridge,
                              @Nullable BrowserSessionManager browserSessionManager) {
         this.properties = properties;
@@ -82,7 +84,8 @@ public class InfraToolProvider implements BuiltinSkillProvider {
                         "builtin.browser.navigate",
                         "builtin.browser.click",
                         "builtin.browser.input",
-                        "builtin.browser.screenshot"
+                        "builtin.browser.screenshot",
+                        "builtin.code.execute"
                 ))
                 .execution(ExecutionStrategy.DEFAULT)
                 .memoryAccess(MemoryAccessPolicy.none())
@@ -132,7 +135,12 @@ public class InfraToolProvider implements BuiltinSkillProvider {
         toolRegistry.registerBuiltinTool(buildBrowserInputTool(inputExecutor));
         toolRegistry.registerBuiltinTool(buildBrowserScreenshotTool(screenshotExecutor));
 
-        log.info("基础工具注册完成: count=12, categories=[env, web, reason, shell, browser]");
+        // 代码执行工具（1 个）
+        var codeExecuteExecutor = new CodeExecuteToolExecutor(properties, sandboxBooter);
+
+        toolRegistry.registerBuiltinTool(buildCodeExecuteTool(codeExecuteExecutor));
+
+        log.info("基础工具注册完成: count=13, categories=[env, web, reason, shell, browser, code]");
     }
 
     // ─────────────────────────────────────────────
@@ -396,6 +404,35 @@ public class InfraToolProvider implements BuiltinSkillProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .tags(INFRA_TAGS)
+                .executor(executor::execute)
+                .build();
+    }
+
+    // ─────────────────────────────────────────────
+    //  代码执行工具构建
+    // ─────────────────────────────────────────────
+
+    /** 构建代码执行工具 — 桥接 SandboxBooter，HIGH 风险。 */
+    private BuiltinTool buildCodeExecuteTool(CodeExecuteToolExecutor executor) {
+        return BuiltinTool.builder()
+                .id("builtin.code.execute")
+                .name("执行代码")
+                .description("在沙箱环境中执行代码，支持 Python/JavaScript/Shell。HIGH 风险，每次执行需用户确认")
+                .inputSchema(JsonSchema.of(Map.of(
+                        "type", "object",
+                        "required", List.of("code"),
+                        "properties", Map.of(
+                                "code", Map.of("type", "string",
+                                        "description", "要执行的代码"),
+                                "language", Map.of("type", "string",
+                                        "description", "编程语言（python/javascript/shell），默认使用配置值"),
+                                "timeoutSeconds", Map.of("type", "integer",
+                                        "description", "执行超时时间（秒），默认 30")
+                        )
+                )))
+                .riskLevel(RiskLevel.HIGH)
+                .idempotent(false)
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
