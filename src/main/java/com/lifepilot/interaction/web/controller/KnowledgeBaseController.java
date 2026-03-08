@@ -164,8 +164,8 @@ public class KnowledgeBaseController {
             Path tempFile = Files.createTempFile("lifepilot-upload-", suffix);
             file.transferTo(Objects.requireNonNull(tempFile.toFile()));
 
-            // 异步处理文档
-            ingester.ingest(id, tempFile);
+            // 异步处理文档，传递原始文件名
+            ingester.ingest(id, tempFile, originalName);
             log.info("文档上传已提交异步处理: kbId={}, fileName={}", id, originalName);
 
             return ResponseEntity.accepted().body(

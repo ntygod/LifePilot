@@ -514,7 +514,8 @@ async function testRetrieval() {
                 </div>
                 <Button
                   variant="outline"
-                  :class="showFilters ? 'bg-accent' : ''"
+                  class="action-btn-link"
+                  :class="showFilters ? 'bg-accent text-accent-foreground' : ''"
                   @click="showFilters = !showFilters"
                 >
                   <Filter :size="16" />
@@ -522,6 +523,7 @@ async function testRetrieval() {
                 </Button>
                 <Button
                   variant="outline"
+                  class="action-btn-link"
                   @click="showTestRetrieval = !showTestRetrieval"
                 >
                   <TestTube :size="16" />

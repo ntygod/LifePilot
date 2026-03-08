@@ -16,6 +16,7 @@ import com.lifepilot.knowledge.parser.FormatDetector;
 import com.lifepilot.knowledge.parser.ParseResult;
 import com.lifepilot.knowledge.repository.DocumentChunkRepository;
 import com.lifepilot.knowledge.repository.DocumentRepository;
+import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -53,6 +54,7 @@ public class DocumentIngester {
     private final KnowledgeExtractionPipeline extractionPipeline;
     private final DocumentRepository docRepository;
     private final DocumentChunkRepository chunkRepository;
+    private final KnowledgeBaseRepository kbRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final KnowledgeBaseProperties props;
 
@@ -68,6 +70,7 @@ public class DocumentIngester {
                             @Nullable KnowledgeExtractionPipeline extractionPipeline,
                             DocumentRepository docRepository,
                             DocumentChunkRepository chunkRepository,
+                            KnowledgeBaseRepository kbRepository,
                             ApplicationEventPublisher eventPublisher,
                             KnowledgeBaseProperties props) {
         this.formatDetector = formatDetector;
@@ -79,6 +82,7 @@ public class DocumentIngester {
         this.extractionPipeline = extractionPipeline;
         this.docRepository = docRepository;
         this.chunkRepository = chunkRepository;
+        this.kbRepository = kbRepository;
         this.eventPublisher = eventPublisher;
         this.props = props;
         log.info("DocumentIngester 初始化完成: vectorIndexer={}, contextEnricher={}, extractionPipeline={}",
@@ -90,21 +94,36 @@ public class DocumentIngester {
     /**
      * 异步导入文档到指定知识库。
      *
-     * @param kbId     知识库 ID
-     * @param filePath 文件路径
+     * @param kbId             知识库 ID
+     * @param filePath         文件路径
+     * @param originalFileName 原始文件名（用户上传时的文件名）
      * @return 异步文档结果
      */
-    public CompletableFuture<Document> ingest(String kbId, Path filePath) {
+    public CompletableFuture<Document> ingest(String kbId, Path filePath, String originalFileName) {
         return CompletableFuture.supplyAsync(() -> {
             var docId = UUID.randomUUID().toString();
             var now = Instant.now();
+            // 使用原始文件名而非临时文件名
+            var fileName = (originalFileName != null && !originalFileName.isBlank())
+                    ? originalFileName : filePath.getFileName().toString();
             var doc = new Document(
-                    docId, kbId, filePath.getFileName().toString(), filePath.toString(),
+                    docId, kbId, fileName, filePath.toString(),
                     filePath.toFile().length(), "", "", DocumentStatus.UPLOADING,
                     0, 0, null, null, Map.of(), now, now);
             docRepository.save(doc);
             return executeFullPipeline(doc, filePath);
         }, Executors.newVirtualThreadPerTaskExecutor());
+    }
+
+    /**
+     * 异步导入文档到指定知识库（使用文件路径名作为文件名）。
+     *
+     * @param kbId     知识库 ID
+     * @param filePath 文件路径
+     * @return 异步文档结果
+     */
+    public CompletableFuture<Document> ingest(String kbId, Path filePath) {
+        return ingest(kbId, filePath, filePath.getFileName().toString());
     }
 
     /**
@@ -177,6 +196,10 @@ public class DocumentIngester {
             // 7. READY
             publishProgress(doc, DocumentStatus.READY, 100, "导入完成");
             docRepository.updateStatus(doc.id(), DocumentStatus.READY, null);
+
+            // 更新知识库的文档数和分块数
+            refreshKnowledgeBaseCounts(doc.knowledgeBaseId());
+
             log.info("文档导入成功: docId={}, chunks={}", doc.id(), chunks.size());
 
             return docRepository.findById(doc.id()).orElse(doc);
@@ -207,6 +230,7 @@ public class DocumentIngester {
                     doIndex(chunks);
                     doExtract(doc.id(), chunks);
                     docRepository.updateStatus(doc.id(), DocumentStatus.READY, null);
+                    refreshKnowledgeBaseCounts(doc.knowledgeBaseId());
                     yield docRepository.findById(doc.id()).orElse(doc);
                 }
                 case "CHUNKING" -> {
@@ -215,6 +239,7 @@ public class DocumentIngester {
                     doIndex(chunks);
                     doExtract(doc.id(), chunks);
                     docRepository.updateStatus(doc.id(), DocumentStatus.READY, null);
+                    refreshKnowledgeBaseCounts(doc.knowledgeBaseId());
                     yield docRepository.findById(doc.id()).orElse(doc);
                 }
                 case "INDEXING" -> {
@@ -222,6 +247,7 @@ public class DocumentIngester {
                     var chunks = chunkRepository.findByDocumentId(doc.id());
                     doExtract(doc.id(), chunks);
                     docRepository.updateStatus(doc.id(), DocumentStatus.READY, null);
+                    refreshKnowledgeBaseCounts(doc.knowledgeBaseId());
                     yield docRepository.findById(doc.id()).orElse(doc);
                 }
                 case "EXTRACTING" -> {
@@ -229,6 +255,7 @@ public class DocumentIngester {
                     var chunks = chunkRepository.findByDocumentId(doc.id());
                     doExtract(doc.id(), chunks);
                     docRepository.updateStatus(doc.id(), DocumentStatus.READY, null);
+                    refreshKnowledgeBaseCounts(doc.knowledgeBaseId());
                     yield docRepository.findById(doc.id()).orElse(doc);
                 }
                 default -> executeFullPipeline(doc, filePath);
@@ -311,6 +338,23 @@ public class DocumentIngester {
     private void updateStage(String docId, DocumentStatus stage) {
         docRepository.updateStatus(docId, stage, null);
         docRepository.updateLastProcessedStage(docId, stage.name());
+    }
+
+    /**
+     * 刷新知识库的文档数和分块数统计。
+     *
+     * <p>统计该知识库下所有文档数量和分块总数，更新到 knowledge_bases 表。</p>
+     */
+    private void refreshKnowledgeBaseCounts(String kbId) {
+        try {
+            var docs = docRepository.findByKnowledgeBaseId(kbId);
+            int docCount = docs.size();
+            int totalChunks = docs.stream().mapToInt(Document::chunkCount).sum();
+            kbRepository.updateDocumentCount(kbId, docCount, totalChunks);
+            log.debug("知识库统计已更新: kbId={}, docCount={}, totalChunks={}", kbId, docCount, totalChunks);
+        } catch (Exception e) {
+            log.warn("知识库统计更新失败（不影响文档导入）: kbId={}, error={}", kbId, e.getMessage());
+        }
     }
 
     private void publishProgress(Document doc, DocumentStatus stage, int percent, String message) {

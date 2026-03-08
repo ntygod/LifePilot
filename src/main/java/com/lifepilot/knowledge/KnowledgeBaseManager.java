@@ -159,18 +159,26 @@ public class KnowledgeBaseManager {
     }
 
     /**
-     * 删除文档及其关联分块。
+     * 删除文档及其关联分块，并更新知识库统计。
      *
      * @param documentId 文档 id
      * @throws DocumentNotFoundException 文档不存在时抛出
      */
     @Transactional
     public void removeDocument(String documentId) {
-        docRepository.findById(documentId)
+        Document doc = docRepository.findById(documentId)
                 .orElseThrow(() -> new DocumentNotFoundException("文档不存在: id=" + documentId));
 
+        String kbId = doc.knowledgeBaseId();
         chunkRepository.deleteByDocumentId(documentId);
         docRepository.deleteById(documentId);
-        log.info("文档删除成功: id={}", documentId);
+
+        // 刷新知识库的文档数和分块数
+        var remainingDocs = docRepository.findByKnowledgeBaseId(kbId);
+        int docCount = remainingDocs.size();
+        int totalChunks = remainingDocs.stream().mapToInt(Document::chunkCount).sum();
+        kbRepository.updateDocumentCount(kbId, docCount, totalChunks);
+
+        log.info("文档删除成功: id={}, 知识库统计已更新: kbId={}", documentId, kbId);
     }
 }

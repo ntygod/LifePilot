@@ -258,11 +258,12 @@ public class KnowledgeAutoConfiguration {
                                               @Nullable KnowledgeExtractionPipeline extractionPipeline,
                                               DocumentRepository docRepository,
                                               DocumentChunkRepository chunkRepository,
+                                              KnowledgeBaseRepository kbRepository,
                                               ApplicationEventPublisher eventPublisher,
                                               KnowledgeBaseProperties props) {
         return new DocumentIngester(formatDetector, smartChunker, contextEnricher,
                 vectorIndexer, ftsIndexer, duplicateDetector, extractionPipeline,
-                docRepository, chunkRepository, eventPublisher, props);
+                docRepository, chunkRepository, kbRepository, eventPublisher, props);
     }
 
     // ---- 管理服务 ----
