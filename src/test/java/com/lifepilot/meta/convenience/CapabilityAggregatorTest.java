@@ -82,11 +82,8 @@ class CapabilityAggregatorTest {
                 .description("测试描述")
                 .version("1.0.0")
                 .source(new SkillSource.Builtin())
-                .systemPrompt("测试")
-                .allowedTools(List.of())
-                .execution(ExecutionStrategy.DEFAULT)
-                .memoryAccess(MemoryAccessPolicy.none())
-                .budget(SkillBudget.LIGHTWEIGHT)
+                .instructions("测试")
+                .suggestedTools(List.of())
                 .metadata(Map.of())
                 .build();
         when(skillRegistry.listAll()).thenReturn(List.of(skill));
@@ -215,11 +212,8 @@ class CapabilityAggregatorTest {
                 .description("测试")
                 .version("1.0.0")
                 .source(new SkillSource.Builtin())
-                .systemPrompt("测试")
-                .allowedTools(List.of())
-                .execution(ExecutionStrategy.DEFAULT)
-                .memoryAccess(MemoryAccessPolicy.none())
-                .budget(SkillBudget.LIGHTWEIGHT)
+                .instructions("测试")
+                .suggestedTools(List.of())
                 .metadata(Map.of())
                 .build();
         when(skillRegistry.listAll()).thenReturn(List.of(skill));
@@ -277,11 +271,8 @@ class CapabilityAggregatorTest {
                 .description("描述 " + id)
                 .version("1.0.0")
                 .source(source)
-                .systemPrompt("测试")
-                .allowedTools(List.of())
-                .execution(ExecutionStrategy.DEFAULT)
-                .memoryAccess(MemoryAccessPolicy.none())
-                .budget(SkillBudget.LIGHTWEIGHT)
+                .instructions("测试")
+                .suggestedTools(List.of())
                 .metadata(Map.of())
                 .build();
     }
