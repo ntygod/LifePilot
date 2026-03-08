@@ -149,6 +149,46 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
+/* 共享卡片样式层 */
+@layer components {
+  /* 列表页卡片 */
+  .list-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--card);
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.03);
+    transition: all 0.2s cubic-bezier(0.22, 0.61, 0.36, 1);
+  }
+  .list-card:hover {
+    box-shadow: 0 4px 12px -2px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.04);
+    border-color: hsl(from var(--primary) h s l / 0.4);
+    transform: translateY(-1px);
+  }
+
+  /* 详情页卡片 */
+  .detail-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: linear-gradient(135deg, var(--card) 0%, hsl(from var(--muted) h s l / 0.3) 100%);
+    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.04);
+  }
+
+  /* 统计数据区块 */
+  .stat-block {
+    background: hsl(from var(--muted) h s l / 0.5);
+    border-radius: calc(var(--radius) - 2px);
+    padding: 0.75rem;
+  }
+
+  /* 区块标题 */
+  .section-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--foreground);
+    line-height: 1.5;
+  }
+}
+
 /* 统一的动画工具类 */
 @layer utilities {
   /* 平滑过渡 */
