@@ -6,6 +6,7 @@ import com.lifepilot.meta.infra.env.SystemInfoToolExecutor;
 import com.lifepilot.meta.infra.env.UserProfileToolExecutor;
 import com.lifepilot.meta.infra.reason.CalculateToolExecutor;
 import com.lifepilot.meta.infra.reason.ThinkToolExecutor;
+import com.lifepilot.meta.infra.shell.ShellExecToolExecutor;
 import com.lifepilot.meta.infra.web.WebFetchToolExecutor;
 import com.lifepilot.meta.infra.web.WebSearchToolExecutor;
 import com.lifepilot.observability.guardrail.RiskLevel;
@@ -71,7 +72,8 @@ public class InfraToolProvider implements BuiltinSkillProvider {
                         "builtin.web.search",
                         "builtin.web.fetch",
                         "builtin.reason.think",
-                        "builtin.reason.calculate"
+                        "builtin.reason.calculate",
+                        "builtin.shell.exec"
                 ))
                 .execution(ExecutionStrategy.DEFAULT)
                 .memoryAccess(MemoryAccessPolicy.none())
@@ -105,7 +107,12 @@ public class InfraToolProvider implements BuiltinSkillProvider {
         toolRegistry.registerBuiltinTool(buildThinkTool(thinkExecutor));
         toolRegistry.registerBuiltinTool(buildCalculateTool(calculateExecutor));
 
-        log.info("基础工具注册完成: count=7, categories=[env, web, reason]");
+        // Shell 执行工具（1 个）
+        var shellExecExecutor = new ShellExecToolExecutor(properties);
+
+        toolRegistry.registerBuiltinTool(buildShellExecTool(shellExecExecutor));
+
+        log.info("基础工具注册完成: count=8, categories=[env, web, reason, shell]");
     }
 
     // ─────────────────────────────────────────────
@@ -244,6 +251,35 @@ public class InfraToolProvider implements BuiltinSkillProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .tags(INFRA_TAGS)
+                .executor(executor::execute)
+                .build();
+    }
+
+    // ─────────────────────────────────────────────
+    //  Shell 执行工具构建
+    // ─────────────────────────────────────────────
+
+    /** 构建 Shell 命令执行工具 — ProcessBuilder 子进程执行，HIGH 风险。 */
+    private BuiltinTool buildShellExecTool(ShellExecToolExecutor executor) {
+        return BuiltinTool.builder()
+                .id("builtin.shell.exec")
+                .name("执行 Shell 命令")
+                .description("在操作系统 Shell 中执行命令，捕获 stdout/stderr 输出。支持安装软件、运行脚本、管理进程等系统操作。HIGH 风险，每次执行需用户确认")
+                .inputSchema(JsonSchema.of(Map.of(
+                        "type", "object",
+                        "required", List.of("command"),
+                        "properties", Map.of(
+                                "command", Map.of("type", "string",
+                                        "description", "要执行的 Shell 命令"),
+                                "workingDirectory", Map.of("type", "string",
+                                        "description", "工作目录路径，默认用户 home 目录"),
+                                "timeoutSeconds", Map.of("type", "integer",
+                                        "description", "命令超时时间（秒），默认使用配置值（30s）")
+                        )
+                )))
+                .riskLevel(RiskLevel.HIGH)
+                .idempotent(false)
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
