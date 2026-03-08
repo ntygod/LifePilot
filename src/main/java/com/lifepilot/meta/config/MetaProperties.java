@@ -218,6 +218,9 @@ public class MetaProperties {
 
         /** 能力聚合缓存 TTL（秒），默认 60。 */
         private int cacheTtlSeconds = 60;
+
+        /** 事件防抖窗口（毫秒），默认 500。 */
+        private int debounceMillis = 500;
     }
 
     /**

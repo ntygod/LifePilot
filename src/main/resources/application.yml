@@ -634,6 +634,7 @@ lifepilot:
         response-timeout-seconds: 120
     introspection:
       cache-ttl-seconds: 60
+      debounce-millis: 500
     skill-discovery:
       enabled: true
       builtin-skill-path: builtin-skills/find-skills
