@@ -94,6 +94,23 @@ public class LlmAutoConfiguration {
             log.warn("LlmProviderService 不可用，跳过 Provider 注册");
         }
 
+        // 清理陈旧熔断器状态
+        if (ctx.getBeanNamesForType(CircuitBreakerManager.class).length > 0
+                && ctx.getBeanNamesForType(ProviderRegistry.class).length > 0) {
+            var cbManager = ctx.getBean(CircuitBreakerManager.class);
+            var registry = ctx.getBean(ProviderRegistry.class);
+            // 构建有效 key 集合：providerId:capabilityType
+            var activeKeys = new java.util.HashSet<String>();
+            for (String providerId : registry.registeredIds()) {
+                registry.getConfig(providerId).ifPresent(config -> {
+                    for (var cap : config.capabilities()) {
+                        activeKeys.add(providerId + ":" + cap.name());
+                    }
+                });
+            }
+            cbManager.purgeStaleBreakers(activeKeys);
+        }
+
         // 连接预热：对云端 Provider 发起轻量级健康检查，建立 TCP 连接
         warmupCloudProviders(ctx);
     }

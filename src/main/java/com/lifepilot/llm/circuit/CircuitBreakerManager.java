@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -78,6 +79,29 @@ public class CircuitBreakerManager {
         var after = breaker.getState();
         if (!before.stateName().equals(after.stateName())) {
             persistAsync(breaker.key(), after);
+        }
+    }
+
+    /**
+     * 清理陈旧熔断器状态 — 移除不在活跃 key 集合中的熔断器。
+     *
+     * @param activeKeys 当前有效的 providerId:capabilityType key 集合
+     */
+    public void purgeStaleBreakers(Set<String> activeKeys) {
+        var staleKeys = breakers.keySet().stream()
+                .filter(key -> !activeKeys.contains(key))
+                .toList();
+        for (var key : staleKeys) {
+            breakers.remove(key);
+            try {
+                jdbcTemplate.update("DELETE FROM circuit_breaker_states WHERE provider_capability = ?", key);
+                log.info("清理陈旧熔断器: key={}", key);
+            } catch (Exception e) {
+                log.warn("清理陈旧熔断器数据库记录失败: key={}, error={}", key, e.getMessage());
+            }
+        }
+        if (!staleKeys.isEmpty()) {
+            log.info("陈旧熔断器清理完成: 移除 {} 个", staleKeys.size());
         }
     }
 
