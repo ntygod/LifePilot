@@ -3,6 +3,7 @@ package com.lifepilot.interaction.web.controller;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.interaction.web.model.AgentStats;
+import com.lifepilot.interaction.web.model.ErrorTrendDaily;
 import com.lifepilot.interaction.web.model.KnowledgeBaseStats;
 import com.lifepilot.interaction.web.model.ToolAnalyticsResponse;
 import com.lifepilot.interaction.web.model.UsageStats;
@@ -432,6 +433,56 @@ public class AnalyticsController {
                 .collect(Collectors.toList());
 
         return ResponseEntity.ok(new ToolAnalyticsResponse(toolStats, dailyTrend));
+    }
+
+    // ─── 错误趋势统计 ───
+
+    /**
+     * 错误趋势统计接口。
+     *
+     * <p>按天统计失败的 Trace 数量，区分 Agent 错误和工具错误。
+     * Agent 错误：失败 Trace 中不包含 tool_call 步骤的错误。
+     * 工具错误：失败 Trace 中包含失败 tool_call 步骤的错误。</p>
+     *
+     * @param from 开始时间（ISO 8601）
+     * @param to   结束时间（ISO 8601）
+     * @return 每日错误趋势列表
+     */
+    @GetMapping("/error-trend")
+    public ResponseEntity<List<ErrorTrendDaily>> getErrorTrend(
+            @RequestParam String from,
+            @RequestParam String to) {
+        log.debug("查询错误趋势: from={}, to={}", from, to);
+
+        Instant startTime = Instant.parse(from);
+        Instant endTime = Instant.parse(to);
+
+        // 查询每日失败 Trace 总数及工具错误数
+        List<ErrorTrendDaily> trend = jdbcTemplate.query("""
+                SELECT 
+                    strftime('%Y-%m-%d', t.start_time) AS date,
+                    COUNT(*) AS total_errors,
+                    COALESCE(SUM(CASE WHEN EXISTS (
+                        SELECT 1 FROM trace_steps ts 
+                        WHERE ts.trace_id = t.trace_id 
+                          AND ts.step_type = 'tool_call'
+                          AND ts.detail_json LIKE '%%"success":false%%'
+                    ) THEN 1 ELSE 0 END), 0) AS tool_errors
+                FROM traces t
+                WHERE t.success = 0
+                  AND t.start_time >= ?
+                  AND t.start_time <= ?
+                GROUP BY strftime('%Y-%m-%d', t.start_time)
+                ORDER BY date
+                """, (rs, rowNum) -> {
+            String date = rs.getString("date");
+            long totalErrors = rs.getLong("total_errors");
+            long toolErrors = rs.getLong("tool_errors");
+            long agentErrors = totalErrors - toolErrors;
+            return new ErrorTrendDaily(date, agentErrors, toolErrors, totalErrors);
+        }, startTime.toString(), endTime.toString());
+
+        return ResponseEntity.ok(trend);
     }
 
     // ─── 内部辅助方法 ───
