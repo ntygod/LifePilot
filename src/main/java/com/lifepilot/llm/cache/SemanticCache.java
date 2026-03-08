@@ -34,7 +34,11 @@ public class SemanticCache {
     private final CacheConfigEntry config;
     private final LlmRouter llmRouter;
     private final JdbcTemplate jdbcTemplate;
-    private final boolean vecAvailable;
+
+    /** vec0 表是否已成功初始化（volatile 支持延迟初始化）。 */
+    private volatile boolean vecAvailable;
+    /** 延迟初始化同步锁。 */
+    private final Object vecInitLock = new Object();
 
     // 统计计数器
     private final AtomicLong totalQueries = new AtomicLong();
@@ -53,12 +57,13 @@ public class SemanticCache {
         this.config = config;
         this.llmRouter = llmRouter;
         this.jdbcTemplate = jdbcTemplate;
+        // 尝试立即初始化（happy path：Provider 已就绪）
         this.vecAvailable = initVec0Table();
         if (vecAvailable) {
             log.info("语义缓存: 初始化完成, similarityThreshold={}, ttlSeconds={}, maxEntries={}",
                     config.getSimilarityThreshold(), config.getTtlSeconds(), config.getMaxEntries());
         } else {
-            log.info("语义缓存: sqlite-vec 不可用，缓存功能降级为不可用");
+            log.info("语义缓存: vec0 表初始化失败，将在首次使用时延迟初始化");
         }
     }
 
@@ -82,6 +87,33 @@ public class SemanticCache {
     }
 
     /**
+     * 确保 vec0 表已初始化（线程安全的延迟初始化）。
+     *
+     * <p>使用 double-checked locking：如果 {@code vecAvailable} 已为 {@code true}，
+     * 直接返回（快速路径）；否则在同步块内重试 {@code initVec0Table()}。
+     * 每次调用失败后仍允许下次重试，因为 Provider 可能稍后就绪。</p>
+     *
+     * @return vec0 表是否可用
+     */
+    private boolean ensureVecInitialized() {
+        if (vecAvailable) {
+            return true;
+        }
+        synchronized (vecInitLock) {
+            if (vecAvailable) {
+                return true;
+            }
+            boolean result = initVec0Table();
+            if (result) {
+                vecAvailable = true;
+                log.info("语义缓存: 延迟初始化成功, similarityThreshold={}, ttlSeconds={}, maxEntries={}",
+                        config.getSimilarityThreshold(), config.getTtlSeconds(), config.getMaxEntries());
+            }
+            return result;
+        }
+    }
+
+    /**
      * 查询缓存：计算 prompt 的 Embedding，在指定 scene + phase 维度内执行向量相似度搜索。
      *
      * @param scene  LLM 场景
@@ -92,7 +124,7 @@ public class SemanticCache {
     public Optional<CacheEntry> lookup(String scene, @Nullable String phase, String prompt) {
         totalQueries.incrementAndGet();
 
-        if (!vecAvailable) {
+        if (!ensureVecInitialized()) {
             missCount.incrementAndGet();
             return Optional.empty();
         }
@@ -181,7 +213,7 @@ public class SemanticCache {
      */
     public void putAsync(String scene, @Nullable String phase, String prompt,
                          String response, String modelName) {
-        if (!vecAvailable) return;
+        if (!ensureVecInitialized()) return;
 
         CompletableFuture.runAsync(() -> {
             try {

@@ -15,7 +15,7 @@ import java.util.regex.Pattern;
  *
  * <p>校验规则：
  * <ul>
- *   <li>ID 格式：{@code ^[a-z0-9-]{1,64}$}</li>
+ *   <li>ID 格式：{@code ^[a-z0-9.-]{1,64}$}（小写字母、数字、连字符和点号）</li>
  *   <li>名称长度 ≤ 配置的 maxNameLength</li>
  *   <li>Instructions 长度 ≤ 配置的 maxInstructionsLength</li>
  *   <li>suggestedTools 中每个工具 ID 在 {@link DynamicToolRegistry} 中存在（允许为空列表）</li>
@@ -28,8 +28,8 @@ public class SkillDefinitionValidator {
 
     private static final Logger log = LoggerFactory.getLogger(SkillDefinitionValidator.class);
 
-    /** Skill ID 合法格式：小写字母、数字和连字符，长度 1-64。 */
-    private static final Pattern ID_PATTERN = Pattern.compile("^[a-z0-9-]{1,64}$");
+    /** Skill ID 合法格式：小写字母、数字、连字符和点号，长度 1-64。 */
+    private static final Pattern ID_PATTERN = Pattern.compile("^[a-z0-9.-]{1,64}$");
 
     private final DynamicToolRegistry toolRegistry;
     private final SkillConfigProperties.Validation validationConfig;
@@ -51,7 +51,7 @@ public class SkillDefinitionValidator {
 
         // 校验 ID 格式
         if (definition.id() == null || !ID_PATTERN.matcher(definition.id()).matches()) {
-            errors.add("Skill ID 格式不合法，必须匹配 ^[a-z0-9-]{1,64}$: " + definition.id());
+            errors.add("Skill ID 格式不合法，必须匹配 ^[a-z0-9.-]{1,64}$: " + definition.id());
         }
 
         // 校验名称长度

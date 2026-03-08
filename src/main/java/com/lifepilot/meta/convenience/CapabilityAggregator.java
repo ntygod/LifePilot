@@ -21,6 +21,10 @@ import org.springframework.context.event.EventListener;
 import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 能力聚合器 — 从四个注册中心拉取信息，统一为 {@link CapabilitySummary}。
@@ -47,6 +51,15 @@ public class CapabilityAggregator {
     private final WorkflowRegistry workflowRegistry;
     private final int cacheTtlSeconds;
 
+    /** 防抖调度器（单线程虚拟线程）。 */
+    private final ScheduledExecutorService debounceExecutor;
+
+    /** 防抖窗口（毫秒）。 */
+    private final int debounceMillis;
+
+    /** 待执行的防抖任务。 */
+    private volatile ScheduledFuture<?> pendingInvalidation;
+
     /** 缓存条目：聚合结果 + 过期时间。 */
     private record CachedSummary(CapabilitySummary summary, Instant expireAt) {
         boolean isExpired() {
@@ -66,6 +79,9 @@ public class CapabilityAggregator {
         this.toolRegistry = toolRegistry;
         this.workflowRegistry = workflowRegistry;
         this.cacheTtlSeconds = properties.getIntrospection().getCacheTtlSeconds();
+        this.debounceMillis = properties.getIntrospection().getDebounceMillis();
+        this.debounceExecutor = Executors.newSingleThreadScheduledExecutor(
+                Thread.ofVirtual().name("capability-debounce").factory());
     }
 
     /**
@@ -120,19 +136,40 @@ public class CapabilityAggregator {
     /** 监听 Skill 注册中心事件。 */
     @EventListener
     public void onSkillRegistryEvent(SkillRegistryEvent event) {
-        invalidateCache();
+        scheduleInvalidation();
     }
 
     /** 监听工具注册中心事件。 */
     @EventListener
     public void onToolRegistryEvent(ToolRegistryEvent event) {
-        invalidateCache();
+        scheduleInvalidation();
     }
 
     /** 监听 Agent 注册中心事件。 */
     @EventListener
     public void onAgentRegistryEvent(AgentRegistryEvent event) {
-        invalidateCache();
+        scheduleInvalidation();
+    }
+
+    /**
+     * 调度防抖缓存失效。
+     *
+     * <p>取消上一个待执行的失效任务，重新调度延迟 {@code debounceMillis} 后执行。
+     * 短时间内的多次事件只会触发一次实际的 {@link #invalidateCache()} 调用。</p>
+     */
+    private void scheduleInvalidation() {
+        var pending = this.pendingInvalidation;
+        if (pending != null) {
+            pending.cancel(false);
+        }
+        this.pendingInvalidation = debounceExecutor.schedule(
+                this::invalidateCache, debounceMillis, TimeUnit.MILLISECONDS);
+    }
+
+    /** 关闭防抖调度器。 */
+    @jakarta.annotation.PreDestroy
+    public void shutdown() {
+        debounceExecutor.shutdownNow();
     }
 
     // ─────────────────────────────────────────────
