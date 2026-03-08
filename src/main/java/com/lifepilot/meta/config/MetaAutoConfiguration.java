@@ -3,18 +3,21 @@ package com.lifepilot.meta.config;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.meta.convenience.CapabilityAggregator;
 import com.lifepilot.meta.convenience.IntrospectionSkillProvider;
+import com.lifepilot.meta.convenience.SkillDiscoveryRegistrar;
 import com.lifepilot.meta.infra.InfraToolProvider;
 import com.lifepilot.meta.infra.browser.BrowserSessionManager;
 import com.lifepilot.meta.infra.interaction.CliInteractionHandler;
 import com.lifepilot.meta.infra.interaction.InteractionBridge;
 import com.lifepilot.multiagent.registry.AgentRegistry;
 import com.lifepilot.sandbox.booter.SandboxBooter;
+import com.lifepilot.skill.markdown.MarkdownSkillParser;
 import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.workflow.registry.WorkflowRegistry;
 import jakarta.annotation.Nullable;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.web.client.RestClient;
@@ -96,7 +99,20 @@ public class MetaAutoConfiguration {
                 agentRegistry, toolRegistry, workflowRegistry);
     }
 
+    /**
+     * 注册 find-skills Skill 发现注册器 — 启动时读取内置 SKILL.md 并注册到 SkillRegistry。
+     *
+     * <p>通过 {@code lifepilot.meta.skill-discovery.enabled} 配置控制启用，默认 true。</p>
+     */
+    @Bean
+    @ConditionalOnProperty(name = "lifepilot.meta.skill-discovery.enabled",
+                           havingValue = "true", matchIfMissing = true)
+    SkillDiscoveryRegistrar skillDiscoveryRegistrar(SkillRegistry skillRegistry,
+                                                    MarkdownSkillParser markdownSkillParser,
+                                                    MetaProperties properties) {
+        return new SkillDiscoveryRegistrar(skillRegistry, markdownSkillParser, properties);
+    }
+
     // Bean 注册将在后续任务中随实现类创建逐步添加：
-    // - Task 11: SkillDiscoveryRegistrar (@ConditionalOnProperty)
     // - Task 12: McpInstallerRegistrar (@ConditionalOnProperty)
 }
