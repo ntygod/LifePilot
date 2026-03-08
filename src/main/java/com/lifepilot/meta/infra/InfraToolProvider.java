@@ -13,6 +13,7 @@ import com.lifepilot.meta.infra.env.UserProfileToolExecutor;
 import com.lifepilot.meta.infra.reason.CalculateToolExecutor;
 import com.lifepilot.meta.infra.reason.ThinkToolExecutor;
 import com.lifepilot.meta.infra.shell.ShellExecToolExecutor;
+import com.lifepilot.meta.infra.interaction.*;
 import com.lifepilot.meta.infra.web.WebFetchToolExecutor;
 import com.lifepilot.meta.infra.web.WebSearchToolExecutor;
 import com.lifepilot.observability.guardrail.RiskLevel;
@@ -51,14 +52,14 @@ public class InfraToolProvider implements BuiltinSkillProvider {
     @Nullable
     private final SandboxBooter sandboxBooter;
     @Nullable
-    private final Object interactionBridge;
+    private final InteractionBridge interactionBridge;
     @Nullable
     private final BrowserSessionManager browserSessionManager;
 
     public InfraToolProvider(MetaProperties properties,
                              RestClient.Builder restClientBuilder,
                              @Nullable SandboxBooter sandboxBooter,
-                             @Nullable Object interactionBridge,
+                             @Nullable InteractionBridge interactionBridge,
                              @Nullable BrowserSessionManager browserSessionManager) {
         this.properties = properties;
         this.restClientBuilder = restClientBuilder;
@@ -93,7 +94,11 @@ public class InfraToolProvider implements BuiltinSkillProvider {
                         "builtin.file.read",
                         "builtin.file.write",
                         "builtin.file.list",
-                        "builtin.file.search"
+                        "builtin.file.search",
+                        "builtin.interact.confirm",
+                        "builtin.interact.choose",
+                        "builtin.interact.input",
+                        "builtin.interact.notify"
                 ))
                 .execution(ExecutionStrategy.DEFAULT)
                 .memoryAccess(MemoryAccessPolicy.none())
@@ -159,7 +164,23 @@ public class InfraToolProvider implements BuiltinSkillProvider {
         toolRegistry.registerBuiltinTool(buildFileListTool(fileListExecutor));
         toolRegistry.registerBuiltinTool(buildFileSearchTool(fileSearchExecutor));
 
-        log.info("基础工具注册完成: count=17, categories=[env, web, reason, shell, browser, code, file]");
+        // 交互控制工具（4 个）
+        if (interactionBridge != null) {
+            var interactConfirmExecutor = new ConfirmToolExecutor(interactionBridge);
+            var interactChooseExecutor = new ChooseToolExecutor(interactionBridge);
+            var interactInputExecutor = new InputToolExecutor(interactionBridge);
+            var interactNotifyExecutor = new NotifyToolExecutor(interactionBridge);
+
+            toolRegistry.registerBuiltinTool(buildConfirmTool(interactConfirmExecutor));
+            toolRegistry.registerBuiltinTool(buildChooseTool(interactChooseExecutor));
+            toolRegistry.registerBuiltinTool(buildInputTool(interactInputExecutor));
+            toolRegistry.registerBuiltinTool(buildNotifyTool(interactNotifyExecutor));
+        } else {
+            log.warn("InteractionBridge 不可用，跳过交互控制工具注册");
+        }
+
+        log.info("基础工具注册完成: count={}, categories=[env, web, reason, shell, browser, code, file, interact]",
+                interactionBridge != null ? 21 : 17);
     }
 
     // ─────────────────────────────────────────────
@@ -550,6 +571,101 @@ public class InfraToolProvider implements BuiltinSkillProvider {
                                         "description", "文件名 glob 过滤模式（如 *.java），可选"),
                                 "maxResults", Map.of("type", "integer",
                                         "description", "最大返回结果数，默认 50")
+                        )
+                )))
+                .riskLevel(RiskLevel.LOW)
+                .tags(INFRA_TAGS)
+                .executor(executor::execute)
+                .build();
+    }
+
+    // ─────────────────────────────────────────────
+    //  交互控制工具构建
+    // ─────────────────────────────────────────────
+
+    /** 构建确认工具 — 阻塞等待用户 yes/no 响应，LOW 风险。 */
+    private BuiltinTool buildConfirmTool(ConfirmToolExecutor executor) {
+        return BuiltinTool.builder()
+                .id("builtin.interact.confirm")
+                .name("请求用户确认")
+                .description("向用户展示操作摘要并请求确认（yes/no），阻塞等待用户响应")
+                .inputSchema(JsonSchema.of(Map.of(
+                        "type", "object",
+                        "required", List.of("message", "sessionId"),
+                        "properties", Map.of(
+                                "message", Map.of("type", "string",
+                                        "description", "需要用户确认的操作摘要"),
+                                "sessionId", Map.of("type", "string",
+                                        "description", "当前会话 ID")
+                        )
+                )))
+                .riskLevel(RiskLevel.LOW)
+                .tags(INFRA_TAGS)
+                .executor(executor::execute)
+                .build();
+    }
+
+    /** 构建选择工具 — 阻塞等待用户从选项列表中选择，LOW 风险。 */
+    private BuiltinTool buildChooseTool(ChooseToolExecutor executor) {
+        return BuiltinTool.builder()
+                .id("builtin.interact.choose")
+                .name("请求用户选择")
+                .description("向用户展示选项列表并请求选择，阻塞等待用户响应")
+                .inputSchema(JsonSchema.of(Map.of(
+                        "type", "object",
+                        "required", List.of("message", "options", "sessionId"),
+                        "properties", Map.of(
+                                "message", Map.of("type", "string",
+                                        "description", "选择提示消息"),
+                                "options", Map.of("type", "array",
+                                        "items", Map.of("type", "string"),
+                                        "description", "可选项列表"),
+                                "sessionId", Map.of("type", "string",
+                                        "description", "当前会话 ID")
+                        )
+                )))
+                .riskLevel(RiskLevel.LOW)
+                .tags(INFRA_TAGS)
+                .executor(executor::execute)
+                .build();
+    }
+
+    /** 构建输入工具 — 阻塞等待用户自由文本输入，LOW 风险。 */
+    private BuiltinTool buildInputTool(InputToolExecutor executor) {
+        return BuiltinTool.builder()
+                .id("builtin.interact.input")
+                .name("请求用户输入")
+                .description("向用户展示输入提示并请求自由文本输入，阻塞等待用户响应")
+                .inputSchema(JsonSchema.of(Map.of(
+                        "type", "object",
+                        "required", List.of("message", "sessionId"),
+                        "properties", Map.of(
+                                "message", Map.of("type", "string",
+                                        "description", "输入提示消息"),
+                                "sessionId", Map.of("type", "string",
+                                        "description", "当前会话 ID")
+                        )
+                )))
+                .riskLevel(RiskLevel.LOW)
+                .tags(INFRA_TAGS)
+                .executor(executor::execute)
+                .build();
+    }
+
+    /** 构建通知工具 — 非阻塞推送通知消息，LOW 风险。 */
+    private BuiltinTool buildNotifyTool(NotifyToolExecutor executor) {
+        return BuiltinTool.builder()
+                .id("builtin.interact.notify")
+                .name("推送通知")
+                .description("向用户推送通知消息，非阻塞（不等待用户响应）")
+                .inputSchema(JsonSchema.of(Map.of(
+                        "type", "object",
+                        "required", List.of("message", "sessionId"),
+                        "properties", Map.of(
+                                "message", Map.of("type", "string",
+                                        "description", "通知消息内容"),
+                                "sessionId", Map.of("type", "string",
+                                        "description", "当前会话 ID")
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
