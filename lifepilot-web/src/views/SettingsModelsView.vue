@@ -224,9 +224,9 @@ const deleteConfirmMessage = computed(() => {
 </script>
 
 <template>
-  <div class="flex flex-col h-full overflow-hidden">
-    <div class="flex-1 overflow-y-auto">
-      <div class="max-w-[1200px] mx-auto px-md md:px-lg py-lg space-y-6 max-w-4xl">
+  <div class="flex flex-col">
+    <div class="flex-1">
+      <div class="max-w-4xl mx-auto px-md md:px-lg py-lg space-y-6">
         <!-- 加载中 — Skeleton 占位符 -->
         <div v-if="loading || loadingProviders" class="space-y-6">
           <!-- 全局默认模型 Skeleton -->

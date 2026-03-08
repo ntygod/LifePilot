@@ -105,8 +105,8 @@ function restartOnboarding() {
 </script>
 
 <template>
-  <div class="flex flex-col h-full overflow-hidden">
-    <div class="flex-1 overflow-y-auto">
+  <div class="flex flex-col">
+    <div class="flex-1">
       <div class="max-w-4xl mx-auto px-md md:px-lg py-lg space-y-6">
         <!-- 加载中 -->
         <div v-if="loading" class="flex items-center justify-center py-12">
