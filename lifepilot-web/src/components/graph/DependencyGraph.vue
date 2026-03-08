@@ -251,11 +251,16 @@ function initSimulation() {
     enabled: n.enabled,
   }))
 
-  const links: SimLink[] = props.edges.map(e => ({
-    source: e.source,
-    target: e.target,
-    relation: e.relation,
-  }))
+  // 构建节点 ID 集合，过滤掉引用不存在节点的边
+  const nodeIdSet = new Set(nodes.map(n => n.id))
+
+  const links: SimLink[] = props.edges
+    .filter(e => nodeIdSet.has(e.source) && nodeIdSet.has(e.target))
+    .map(e => ({
+      source: e.source,
+      target: e.target,
+      relation: e.relation,
+    }))
 
   simNodes.value = nodes
   simLinks.value = links

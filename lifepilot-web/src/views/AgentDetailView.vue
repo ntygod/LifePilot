@@ -429,7 +429,7 @@ function toggleTool(toolId: string) {
 
     <!-- 知识库管理对话框 -->
     <Dialog v-model:open="showKbDialog">
-      <DialogContent class="max-w-[672px] max-h-[80vh] overflow-y-auto">
+      <DialogContent class="sm:max-w-[672px] max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>管理知识库</DialogTitle>
           <DialogDescription>选择要关联的知识库并配置参数</DialogDescription>
@@ -458,7 +458,7 @@ function toggleTool(toolId: string) {
 
     <!-- 工具管理对话框 -->
     <Dialog v-model:open="showToolsDialog">
-      <DialogContent class="max-w-[672px] max-h-[80vh] overflow-y-auto">
+      <DialogContent class="sm:max-w-[672px] max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>管理工具</DialogTitle>
           <DialogDescription>选择要启用的工具</DialogDescription>
