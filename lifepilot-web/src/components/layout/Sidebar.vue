@@ -131,6 +131,7 @@ const navItems = [
     id: 'knowledge-bases',
     label: '知识库',
     icon: BookOpen,
+    iconClass: 'nav-icon-blue',
     path: '/knowledge-bases',
     type: 'single'
   },
@@ -138,37 +139,40 @@ const navItems = [
     id: 'agents',
     label: 'Agent & 工作流',
     icon: Bot,
+    iconClass: 'nav-icon-purple',
     type: 'group',
     children: [
-      { label: 'Agents', path: '/agents', icon: Bot },
-      { label: '工作流', path: '/workflows', icon: Workflow },
-      { label: 'Skills', path: '/skills', icon: Puzzle },
-      { label: 'Skill 市场', path: '/marketplace', icon: ShoppingBag },
-      { label: '工具', path: '/tools', icon: Wrench },
-      { label: 'MCP Servers', path: '/mcp-servers', icon: Server },
-      { label: '依赖关系', path: '/dependencies', icon: GitBranch }
+      { label: 'Agents', path: '/agents', icon: Bot, iconClass: 'nav-icon-purple' },
+      { label: '工作流', path: '/workflows', icon: Workflow, iconClass: 'nav-icon-purple' },
+      { label: 'Skills', path: '/skills', icon: Puzzle, iconClass: 'nav-icon-purple' },
+      { label: 'Skill 市场', path: '/marketplace', icon: ShoppingBag, iconClass: 'nav-icon-purple' },
+      { label: '工具', path: '/tools', icon: Wrench, iconClass: 'nav-icon-purple' },
+      { label: 'MCP Servers', path: '/mcp-servers', icon: Server, iconClass: 'nav-icon-purple' },
+      { label: '依赖关系', path: '/dependencies', icon: GitBranch, iconClass: 'nav-icon-purple' }
     ]
   },
   {
     id: 'analytics',
     label: '分析 / 用量',
     icon: BarChart3,
+    iconClass: 'nav-icon-green',
     type: 'group',
     children: [
-      { label: '用量统计', path: '/analytics/usage', icon: BarChart3 },
-      { label: 'Agent 分析', path: '/analytics/agents', icon: Bot },
-      { label: '工具统计', path: '/analytics/tools', icon: Wrench }
+      { label: '用量统计', path: '/analytics/usage', icon: BarChart3, iconClass: 'nav-icon-green' },
+      { label: 'Agent 分析', path: '/analytics/agents', icon: Bot, iconClass: 'nav-icon-green' },
+      { label: '工具统计', path: '/analytics/tools', icon: Wrench, iconClass: 'nav-icon-green' }
     ]
   },
   {
     id: 'settings',
     label: '设置',
     icon: Settings,
+    iconClass: 'nav-icon-gray',
     type: 'group',
     children: [
-      { label: '偏好设置', path: '/settings', icon: Settings },
-      { label: '模型配置', path: '/settings/models', icon: Bot },
-      { label: '快捷键', path: '/settings/shortcuts', icon: Settings }
+      { label: '偏好设置', path: '/settings', icon: Settings, iconClass: 'nav-icon-gray' },
+      { label: '模型配置', path: '/settings/models', icon: Bot, iconClass: 'nav-icon-gray' },
+      { label: '快捷键', path: '/settings/shortcuts', icon: Settings, iconClass: 'nav-icon-gray' }
     ]
   }
 ]
@@ -183,6 +187,25 @@ const mobileSections = [
   { title: '分析统计', items: analyticsNavItems },
   { title: '设置', items: settingsNavItems }
 ]
+
+/**
+ * 将 ISO 8601 时间戳转换为相对时间描述。
+ */
+function formatRelativeTime(isoString: string): string {
+  const date = new Date(isoString)
+  const now = Date.now()
+  const diffMs = now - date.getTime()
+  const diffMin = Math.floor(diffMs / 60000)
+  const diffHour = Math.floor(diffMs / 3600000)
+  const diffDay = Math.floor(diffMs / 86400000)
+
+  if (diffMin < 1) return '刚刚'
+  if (diffMin < 60) return `${diffMin} 分钟前`
+  if (diffHour < 24) return `${diffHour} 小时前`
+  if (diffDay === 1) return '昨天'
+  if (diffDay < 7) return `${diffDay} 天前`
+  return `${date.getMonth() + 1}月${date.getDate()}日`
+}
 </script>
 
 <template>
@@ -213,40 +236,47 @@ const mobileSections = [
         <div
           v-for="session in chatStore.sessions"
           :key="session.id"
-          class="group flex items-center gap-xs px-md py-sm rounded-lg text-sm cursor-pointer transition-colors duration-200 ease-out"
-          :class="chatStore.activeSessionId === session.id
-            ? 'bg-accent text-accent-foreground'
-            : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground'"
+          class="session-item group"
+          :class="{ 'session-item-active': chatStore.activeSessionId === session.id }"
           @click="selectSession(session.id)"
         >
-          <div class="flex-1 min-w-0">
-            <Input
-              v-if="renamingId === session.id"
-              v-model="renameTitle"
-              class="h-6 bg-background/80 rounded px-1 py-0.5 text-xs"
-              @keyup.enter.stop="confirmRename(session.id)"
-              @keyup.esc.stop="cancelRename"
-              @click.stop
-              @blur="confirmRename(session.id)"
-            />
-            <span v-else class="truncate">{{ session.title || '新对话' }}</span>
+          <div class="flex items-center gap-xs">
+            <div class="flex-1 min-w-0">
+              <Input
+                v-if="renamingId === session.id"
+                v-model="renameTitle"
+                class="h-6 bg-background/80 rounded px-1 py-0.5 text-xs"
+                @keyup.enter.stop="confirmRename(session.id)"
+                @keyup.esc.stop="cancelRename"
+                @click.stop
+                @blur="confirmRename(session.id)"
+              />
+              <span v-else class="text-sm truncate block"
+                :class="chatStore.activeSessionId === session.id
+                  ? 'text-accent-foreground'
+                  : 'text-muted-foreground'"
+              >{{ session.title || '新对话' }}</span>
+            </div>
+            <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150 shrink-0">
+              <button
+                class="text-muted-foreground hover:text-foreground transition-colors"
+                title="重命名"
+                @click.stop="startRename(session.id, session.title || '新对话')"
+              >
+                <Pencil :size="14" />
+              </button>
+              <button
+                class="text-muted-foreground hover:text-destructive transition-colors"
+                title="删除会话"
+                @click.stop="handleDelete(session.id)"
+              >
+                <Trash2 :size="14" />
+              </button>
+            </div>
           </div>
-          <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150 shrink-0">
-            <button
-              class="text-muted-foreground hover:text-foreground transition-colors"
-              title="重命名"
-              @click.stop="startRename(session.id, session.title || '新对话')"
-            >
-              <Pencil :size="14" />
-            </button>
-            <button
-              class="text-muted-foreground hover:text-destructive transition-colors"
-              title="删除会话"
-              @click.stop="handleDelete(session.id)"
-            >
-              <Trash2 :size="14" />
-            </button>
-          </div>
+          <span v-if="session.updatedAt" class="text-xs text-muted-foreground/70">
+            {{ formatRelativeTime(session.updatedAt) }}
+          </span>
         </div>
       </div>
 
@@ -264,7 +294,7 @@ const mobileSections = [
                   ? 'nav-item-active bg-accent text-accent-foreground'
                   : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground'"
               >
-                <component :is="item.icon" :size="18" class="shrink-0 text-muted-foreground" />
+                <component :is="item.icon" :size="18" :class="['shrink-0', item.iconClass || 'text-muted-foreground']" />
                 <span class="truncate">{{ item.label }}</span>
               </router-link>
 
@@ -276,7 +306,7 @@ const mobileSections = [
                     : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground'"
                   @click="toggleGroup(item.id)"
                 >
-                  <component :is="item.icon" :size="18" class="shrink-0 text-muted-foreground" />
+                  <component :is="item.icon" :size="18" :class="['shrink-0', item.iconClass || 'text-muted-foreground']" />
                   <span class="flex-1 text-left truncate">{{ item.label }}</span>
                   <ChevronRight
                     :size="16"
@@ -304,7 +334,7 @@ const mobileSections = [
                           ? 'nav-item-active bg-accent text-accent-foreground'
                           : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground'"
                       >
-                        <component :is="child.icon" :size="16" class="shrink-0 text-muted-foreground" />
+                        <component :is="child.icon" :size="16" :class="['shrink-0', child.iconClass || 'text-muted-foreground']" />
                         <span class="truncate">{{ child.label }}</span>
                       </router-link>
                     </div>
@@ -344,7 +374,11 @@ const mobileSections = [
     <div class="flex-1 overflow-y-auto py-md px-sm space-y-sm">
       <button
         type="button"
-        class="w-full flex items-center justify-center gap-sm px-md py-sm rounded-lg bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-all duration-200"
+        class="w-full flex items-center justify-center gap-sm px-md py-sm rounded-lg
+               border border-dashed border-border/60
+               text-muted-foreground hover:text-foreground
+               hover:border-primary/40 hover:bg-accent/50
+               transition-all duration-200"
         @click="newChat"
       >
         <Plus :size="16" />
@@ -357,43 +391,50 @@ const mobileSections = [
       <div
         v-for="session in chatStore.sessions"
         :key="session.id"
-        class="group flex items-center gap-xs px-md py-sm rounded-lg text-sm cursor-pointer transition-colors duration-200 ease-out"
-        :class="chatStore.activeSessionId === session.id
-          ? 'bg-accent text-accent-foreground'
-          : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground'"
+        class="session-item group"
+        :class="{ 'session-item-active': chatStore.activeSessionId === session.id }"
         @click="selectSession(session.id)"
       >
-        <!-- 标题 / 重命名输入 -->
-        <div class="flex-1 min-w-0">
-          <Input
-            v-if="renamingId === session.id"
-            v-model="renameTitle"
-            class="h-6 bg-background/80 rounded px-1 py-0.5 text-xs"
-            @keyup.enter.stop="confirmRename(session.id)"
-            @keyup.esc.stop="cancelRename"
-            @click.stop
-            @blur="confirmRename(session.id)"
-          />
-          <span v-else class="truncate">{{ session.title || '新对话' }}</span>
-        </div>
+        <div class="flex items-center gap-xs">
+          <!-- 标题 / 重命名输入 -->
+          <div class="flex-1 min-w-0">
+            <Input
+              v-if="renamingId === session.id"
+              v-model="renameTitle"
+              class="h-6 bg-background/80 rounded px-1 py-0.5 text-xs"
+              @keyup.enter.stop="confirmRename(session.id)"
+              @keyup.esc.stop="cancelRename"
+              @click.stop
+              @blur="confirmRename(session.id)"
+            />
+            <span v-else class="text-sm truncate block"
+              :class="chatStore.activeSessionId === session.id
+                ? 'text-accent-foreground'
+                : 'text-muted-foreground'"
+            >{{ session.title || '新对话' }}</span>
+          </div>
 
-        <!-- 操作按钮 -->
-        <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150 shrink-0">
-          <button
-            class="text-muted-foreground hover:text-foreground transition-colors"
-            title="重命名"
-            @click.stop="startRename(session.id, session.title || '新对话')"
-          >
-            <Pencil :size="14" />
-          </button>
-          <button
-            class="text-muted-foreground hover:text-destructive transition-colors"
-            title="删除会话"
-            @click.stop="handleDelete(session.id)"
-          >
-            <Trash2 :size="14" />
-          </button>
+          <!-- 操作按钮（hover 显示） -->
+          <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150 shrink-0">
+            <button
+              class="text-muted-foreground hover:text-foreground transition-colors"
+              title="重命名"
+              @click.stop="startRename(session.id, session.title || '新对话')"
+            >
+              <Pencil :size="14" />
+            </button>
+            <button
+              class="text-muted-foreground hover:text-destructive transition-colors"
+              title="删除会话"
+              @click.stop="handleDelete(session.id)"
+            >
+              <Trash2 :size="14" />
+            </button>
+          </div>
         </div>
+        <span v-if="session.updatedAt" class="text-xs text-muted-foreground/70">
+          {{ formatRelativeTime(session.updatedAt) }}
+        </span>
       </div>
     </div>
 
@@ -411,7 +452,7 @@ const mobileSections = [
               ? 'nav-item-active bg-accent text-accent-foreground'
               : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground'"
           >
-            <component :is="item.icon" :size="18" class="shrink-0 text-muted-foreground" />
+            <component :is="item.icon" :size="18" :class="['shrink-0', item.iconClass || 'text-muted-foreground']" />
             <span class="truncate">{{ item.label }}</span>
           </router-link>
 
@@ -423,7 +464,7 @@ const mobileSections = [
                 : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground'"
               @click="toggleGroup(item.id)"
             >
-              <component :is="item.icon" :size="18" class="shrink-0 text-muted-foreground" />
+              <component :is="item.icon" :size="18" :class="['shrink-0', item.iconClass || 'text-muted-foreground']" />
               <span class="flex-1 text-left truncate">{{ item.label }}</span>
               <ChevronRight
                 :size="16"
@@ -451,7 +492,7 @@ const mobileSections = [
                       ? 'nav-item-active bg-accent text-accent-foreground'
                       : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground'"
                   >
-                    <component :is="child.icon" :size="16" class="shrink-0 text-muted-foreground" />
+                    <component :is="child.icon" :size="16" :class="['shrink-0', child.iconClass || 'text-muted-foreground']" />
                     <span class="truncate">{{ child.label }}</span>
                   </router-link>
                 </div>
@@ -473,7 +514,7 @@ const mobileSections = [
                 : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground'"
               @click="toggleGroup(item.id)"
             >
-              <component :is="item.icon" :size="18" class="shrink-0 text-muted-foreground" />
+              <component :is="item.icon" :size="18" :class="['shrink-0', item.iconClass || 'text-muted-foreground']" />
               <span class="flex-1 text-left truncate">{{ item.label }}</span>
               <ChevronRight
                 :size="16"
@@ -501,7 +542,7 @@ const mobileSections = [
                       ? 'nav-item-active bg-accent text-accent-foreground'
                       : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground'"
                   >
-                    <component :is="child.icon" :size="16" class="shrink-0 text-muted-foreground" />
+                    <component :is="child.icon" :size="16" :class="['shrink-0', child.iconClass || 'text-muted-foreground']" />
                     <span class="truncate">{{ child.label }}</span>
                   </router-link>
                 </div>
@@ -523,7 +564,7 @@ const mobileSections = [
                 : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground'"
               @click="toggleGroup(item.id)"
             >
-              <component :is="item.icon" :size="18" class="shrink-0 text-muted-foreground" />
+              <component :is="item.icon" :size="18" :class="['shrink-0', item.iconClass || 'text-muted-foreground']" />
               <span class="flex-1 text-left truncate">{{ item.label }}</span>
               <ChevronRight
                 :size="16"
@@ -551,7 +592,7 @@ const mobileSections = [
                       ? 'nav-item-active bg-accent text-accent-foreground'
                       : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground'"
                   >
-                    <component :is="child.icon" :size="16" class="shrink-0 text-muted-foreground" />
+                    <component :is="child.icon" :size="16" :class="['shrink-0', child.iconClass || 'text-muted-foreground']" />
                     <span class="truncate">{{ child.label }}</span>
                   </router-link>
                 </div>
