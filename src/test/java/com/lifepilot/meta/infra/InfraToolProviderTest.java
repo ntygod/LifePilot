@@ -27,7 +27,7 @@ class InfraToolProviderTest {
         properties = new MetaProperties();
         var restClientBuilder = mock(RestClient.Builder.class);
         when(restClientBuilder.build()).thenReturn(mock(RestClient.class));
-        provider = new InfraToolProvider(properties, restClientBuilder, null, null);
+        provider = new InfraToolProvider(properties, restClientBuilder, null, null, null);
     }
 
     @Test
@@ -41,13 +41,13 @@ class InfraToolProviderTest {
     }
 
     @Test
-    void registerTools_注册5个工具_含环境感知和信息获取() {
+    void registerTools_注册12个工具_含全部已实现类别() {
         DynamicToolRegistry registry = mock(DynamicToolRegistry.class);
 
         provider.registerTools(registry);
 
         ArgumentCaptor<BuiltinTool> captor = ArgumentCaptor.forClass(BuiltinTool.class);
-        verify(registry, times(5)).registerBuiltinTool(captor.capture());
+        verify(registry, times(12)).registerBuiltinTool(captor.capture());
 
         var tools = captor.getAllValues();
         assertThat(tools).extracting(BuiltinTool::id)
@@ -56,7 +56,14 @@ class InfraToolProviderTest {
                         "builtin.env.user-profile",
                         "builtin.env.system-info",
                         "builtin.web.search",
-                        "builtin.web.fetch"
+                        "builtin.web.fetch",
+                        "builtin.reason.think",
+                        "builtin.reason.calculate",
+                        "builtin.shell.exec",
+                        "builtin.browser.navigate",
+                        "builtin.browser.click",
+                        "builtin.browser.input",
+                        "builtin.browser.screenshot"
                 );
     }
 
@@ -75,7 +82,7 @@ class InfraToolProviderTest {
     }
 
     @Test
-    void registerTools_所有环境工具风险等级为LOW() {
+    void registerTools_环境和推理工具风险等级为LOW_Shell为HIGH_浏览器为MEDIUM或LOW() {
         DynamicToolRegistry registry = mock(DynamicToolRegistry.class);
 
         provider.registerTools(registry);
@@ -84,9 +91,20 @@ class InfraToolProviderTest {
         verify(registry, atLeastOnce()).registerBuiltinTool(captor.capture());
 
         for (BuiltinTool tool : captor.getAllValues()) {
-            assertThat(tool.riskLevel())
-                    .as("工具 %s 风险等级应为 LOW", tool.id())
-                    .isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.LOW);
+            if (tool.id().startsWith("builtin.env.") || tool.id().startsWith("builtin.web.")
+                    || tool.id().startsWith("builtin.reason.") || tool.id().equals("builtin.browser.screenshot")) {
+                assertThat(tool.riskLevel())
+                        .as("工具 %s 风险等级应为 LOW", tool.id())
+                        .isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.LOW);
+            } else if (tool.id().equals("builtin.shell.exec")) {
+                assertThat(tool.riskLevel())
+                        .as("工具 %s 风险等级应为 HIGH", tool.id())
+                        .isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.HIGH);
+            } else if (tool.id().startsWith("builtin.browser.")) {
+                assertThat(tool.riskLevel())
+                        .as("工具 %s 风险等级应为 MEDIUM", tool.id())
+                        .isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.MEDIUM);
+            }
         }
     }
 }
