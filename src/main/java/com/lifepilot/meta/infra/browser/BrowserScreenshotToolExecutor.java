@@ -57,6 +57,13 @@ public class BrowserScreenshotToolExecutor {
                     "url", page.url(),
                     "fullPage", fullPage
             ));
+        } catch (BrowserNotInstalledException e) {
+            log.warn("浏览器引擎未安装: {}", e.getMessage());
+            return ToolResult.error(
+                    "浏览器引擎未安装。请在终端运行以下命令安装：\n" +
+                    "mvn exec:java -e -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args=\"install chromium\"\n" +
+                    "安装完成后重试即可。"
+            );
         } catch (Exception e) {
             log.error("浏览器截图失败: sessionId={}, error={}", sessionId, e.getMessage(), e);
             return ToolResult.error("浏览器截图失败: " + e.getMessage());
