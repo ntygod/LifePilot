@@ -7,6 +7,7 @@ import type {
   SseTokenEvent,
   SseDoneEvent,
   SseErrorEvent,
+  SseMediaEvent,
   A2uiComponent,
   TokenUsage,
   ReasoningEvent,
@@ -36,6 +37,8 @@ export function useChat() {
   // 当前轮推理事件流与状态文案
   const reasoningEvents = ref<ReasoningEvent[]>([])
   const reasoningStatusText = ref<string | null>(null)
+  // 当前轮流式媒体数据（截图等），DONE 事件时合并到消息附件
+  const streamingMedia = ref<SseMediaEvent[]>([])
   let abortController: AbortController | null = null
   // 当前这轮请求对应的用户消息 ID，用于在错误 / 完成时回写状态
   let currentUserMessageId: string | null = null
@@ -93,6 +96,7 @@ export function useChat() {
     lastTokenUsage.value = null
     reasoningEvents.value = []
     reasoningStatusText.value = null
+    streamingMedia.value = []
     a2uiStore.clearComponents()
     abortController = new AbortController()
 
@@ -234,6 +238,11 @@ export function useChat() {
           a2uiStore.updateComponents(event.components)
           break
         }
+        case SSE_EVENT_TYPES.MEDIA: {
+          const event: SseMediaEvent = JSON.parse(data)
+          streamingMedia.value.push(event)
+          break
+        }
         case SSE_EVENT_TYPES.DONE: {
           const event: SseDoneEvent = JSON.parse(data)
           // 后端同步写入后返回 messageId，不再需要前端兜底生成
@@ -272,6 +281,17 @@ export function useChat() {
 
           // 优先使用后端返回的时间戳，否则使用当前时间
           const timestamp = event.timestamp ?? Date.now()
+          // 合并流式媒体数据到附件列表（截图等通过 MEDIA 事件独立传输的二进制数据）
+          for (const media of streamingMedia.value) {
+            extraAttachments.push({
+              fileId: crypto.randomUUID(),
+              url: `data:${media.mimeType};base64,${media.data}`,
+              filename: `${media.field}.${media.mimeType.split('/')[1] ?? 'bin'}`,
+              size: Math.round(media.data.length * 0.75),
+              type: media.mimeType,
+              isImage: media.mimeType.startsWith('image/')
+            })
+          }
           // 将完整消息存入消息列表
           chatStore.addMessage({
             id: messageId,
@@ -409,6 +429,8 @@ export function useChat() {
     lastModelId,
     lastTokenUsage,
     reasoningEvents,
-    reasoningStatusText
+    reasoningStatusText,
+    // 当前轮流式媒体数据（截图等），供组件实时预览
+    streamingMedia
   }
 }
