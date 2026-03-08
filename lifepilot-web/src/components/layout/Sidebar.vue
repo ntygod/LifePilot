@@ -145,7 +145,7 @@ const navItems = [
       { label: 'Agents', path: '/agents', icon: Bot, iconClass: 'nav-icon-purple' },
       { label: '工作流', path: '/workflows', icon: Workflow, iconClass: 'nav-icon-purple' },
       { label: 'Skills', path: '/skills', icon: Puzzle, iconClass: 'nav-icon-purple' },
-      { label: 'Skill 市场', path: '/marketplace', icon: ShoppingBag, iconClass: 'nav-icon-purple' },
+      { label: '扩展市场', path: '/marketplace', icon: ShoppingBag, iconClass: 'nav-icon-purple' },
       { label: '工具', path: '/tools', icon: Wrench, iconClass: 'nav-icon-purple' },
       { label: 'MCP Servers', path: '/mcp-servers', icon: Server, iconClass: 'nav-icon-purple' },
       { label: '依赖关系', path: '/dependencies', icon: GitBranch, iconClass: 'nav-icon-purple' }
