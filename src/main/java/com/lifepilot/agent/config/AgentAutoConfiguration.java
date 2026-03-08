@@ -7,6 +7,7 @@ import com.lifepilot.agent.AgentToolProvider;
 import com.lifepilot.agent.StateReducer;
 import com.lifepilot.agent.context.ContextAssembler;
 import com.lifepilot.agent.context.DefaultMemoryRetrievalStrategy;
+import com.lifepilot.agent.media.MediaDataExtractor;
 import com.lifepilot.agent.proactive.channel.PassiveNotificationQueue;
 import com.lifepilot.agent.session.SessionManager;
 import com.lifepilot.conversation.ConversationHistoryStore;
@@ -114,6 +115,12 @@ public class AgentAutoConfiguration {
         return new ActionParser(objectMapper);
     }
 
+    @Bean
+    @ConditionalOnMissingBean
+    public MediaDataExtractor mediaDataExtractor(ObjectMapper objectMapper) {
+        return new MediaDataExtractor(objectMapper);
+    }
+
     /**
      * 统一的 AgentLoop bean 创建方法。
      *
@@ -140,7 +147,8 @@ public class AgentAutoConfiguration {
                                @Autowired(required = false) SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
                                @Autowired(required = false) KnowledgeBaseRepository knowledgeBaseRepository,
                                @Autowired(required = false) RealtimeExtractor realtimeExtractor,
-                               PromptRegistry promptRegistry) {
+                               PromptRegistry promptRegistry,
+                               @Autowired(required = false) MediaDataExtractor mediaDataExtractor) {
         log.info("Agent 引擎初始化完成（追踪{}，记忆系统{}，情景记忆{}，实时提取{}）",
                 traceRecorder != null ? "已启用" : "未启用",
                 workingMemory != null ? "已启用" : "未启用",
@@ -149,6 +157,6 @@ public class AgentAutoConfiguration {
         return new AgentLoop(stateReducer, contextAssembler, llmRouter, multimodalRouter,
                 traceRecorder, objectMapper, sessionManager, conversationViewService, actionParser, agentToolProvider,
                 config, workingMemory, conversationHistoryStore, sessionKnowledgeBaseRepository,
-                knowledgeBaseRepository, realtimeExtractor, promptRegistry);
+                knowledgeBaseRepository, realtimeExtractor, promptRegistry, mediaDataExtractor);
     }
 }

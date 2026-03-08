@@ -62,7 +62,8 @@ class AgentLoopStreamingFailureTest {
                 null,
                 null,
                 null,
-                mock(PromptRegistry.class)
+                mock(PromptRegistry.class),
+                null
         );
 
         AgentRequest request = new AgentRequest("hi", "s1", "web", null, null, null,

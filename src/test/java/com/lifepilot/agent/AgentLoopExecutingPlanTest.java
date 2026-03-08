@@ -40,7 +40,8 @@ class AgentLoopExecutingPlanTest {
                 mock(AgentToolProvider.class),
                 new AgentConfigProperties(),
                 null, null, null, null, null,
-                mock(PromptRegistry.class)
+                mock(PromptRegistry.class),
+                null
         );
 
         ToolCallback okTool = toolCallback("calendar_create_event", "{\"ok\":true}");
@@ -95,7 +96,8 @@ class AgentLoopExecutingPlanTest {
                 mock(AgentToolProvider.class),
                 new AgentConfigProperties(),
                 null, null, null, null, null,
-                mock(PromptRegistry.class)
+                mock(PromptRegistry.class),
+                null
         );
 
         ToolCallback badTool = toolCallback("calendar_create_event", "{\"error\":\"boom\"}");
@@ -149,7 +151,8 @@ class AgentLoopExecutingPlanTest {
                 mock(AgentToolProvider.class),
                 new AgentConfigProperties(),
                 null, null, null, null, null,
-                mock(PromptRegistry.class)
+                mock(PromptRegistry.class),
+                null
         );
 
         ExecutionPlan plan = new ExecutionPlan(List.of(
