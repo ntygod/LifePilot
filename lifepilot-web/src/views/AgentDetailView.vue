@@ -232,7 +232,7 @@ function toggleTool(toolId: string) {
               {{ agent.source === 'MarkdownDefined' ? 'Markdown' : 'Builtin' }}
             </Badge>
           </div>
-          <Button variant="outline" @click="toggleAgent">
+          <Button :variant="agent?.enabled ? 'destructive' : 'outline'" @click="toggleAgent">
             {{ agent?.enabled ? '禁用' : '启用' }}
           </Button>
         </div>

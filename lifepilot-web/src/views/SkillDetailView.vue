@@ -190,7 +190,7 @@ const toolCards = computed<ToolCardInfo[]>(() => {
               当前状态：{{ isEnabled ? '启用中' : '已关闭' }}
             </span>
             <Button
-              variant="outline"
+              :variant="isEnabled ? 'destructive' : 'outline'"
               @click="isEnabled ? skillStore.disableSkill(skill.id) : skillStore.enableSkill(skill.id)"
             >
               {{ isEnabled ? '关闭此能力' : '启用此能力' }}
