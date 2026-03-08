@@ -4,6 +4,8 @@ import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.meta.infra.env.DateTimeToolExecutor;
 import com.lifepilot.meta.infra.env.SystemInfoToolExecutor;
 import com.lifepilot.meta.infra.env.UserProfileToolExecutor;
+import com.lifepilot.meta.infra.reason.CalculateToolExecutor;
+import com.lifepilot.meta.infra.reason.ThinkToolExecutor;
 import com.lifepilot.meta.infra.web.WebFetchToolExecutor;
 import com.lifepilot.meta.infra.web.WebSearchToolExecutor;
 import com.lifepilot.observability.guardrail.RiskLevel;
@@ -67,7 +69,9 @@ public class InfraToolProvider implements BuiltinSkillProvider {
                         "builtin.env.user-profile",
                         "builtin.env.system-info",
                         "builtin.web.search",
-                        "builtin.web.fetch"
+                        "builtin.web.fetch",
+                        "builtin.reason.think",
+                        "builtin.reason.calculate"
                 ))
                 .execution(ExecutionStrategy.DEFAULT)
                 .memoryAccess(MemoryAccessPolicy.none())
@@ -94,7 +98,14 @@ public class InfraToolProvider implements BuiltinSkillProvider {
         toolRegistry.registerBuiltinTool(buildWebSearchTool(webSearchExecutor));
         toolRegistry.registerBuiltinTool(buildWebFetchTool(webFetchExecutor));
 
-        log.info("基础工具注册完成: count=5, categories=[env, web]");
+        // 推理辅助工具（2 个）
+        var thinkExecutor = new ThinkToolExecutor();
+        var calculateExecutor = new CalculateToolExecutor();
+
+        toolRegistry.registerBuiltinTool(buildThinkTool(thinkExecutor));
+        toolRegistry.registerBuiltinTool(buildCalculateTool(calculateExecutor));
+
+        log.info("基础工具注册完成: count=7, categories=[env, web, reason]");
     }
 
     // ─────────────────────────────────────────────
@@ -186,6 +197,50 @@ public class InfraToolProvider implements BuiltinSkillProvider {
                                         "description", "目标网页 URL"),
                                 "selector", Map.of("type", "string",
                                         "description", "CSS 选择器，用于提取页面特定区域内容（可选）")
+                        )
+                )))
+                .riskLevel(RiskLevel.LOW)
+                .tags(INFRA_TAGS)
+                .executor(executor::execute)
+                .build();
+    }
+
+    // ─────────────────────────────────────────────
+    //  推理辅助工具构建
+    // ─────────────────────────────────────────────
+
+    /** 构建思考工具 — Agent 内部推理草稿板。 */
+    private BuiltinTool buildThinkTool(ThinkToolExecutor executor) {
+        return BuiltinTool.builder()
+                .id("builtin.reason.think")
+                .name("思考")
+                .description("Agent 内部推理草稿板，用于逐步思考复杂问题。内容不输出给用户，仅用于 Agent 的中间推理过程")
+                .inputSchema(JsonSchema.of(Map.of(
+                        "type", "object",
+                        "required", List.of("reasoning"),
+                        "properties", Map.of(
+                                "reasoning", Map.of("type", "string",
+                                        "description", "推理内容，Agent 的思考过程")
+                        )
+                )))
+                .riskLevel(RiskLevel.LOW)
+                .tags(INFRA_TAGS)
+                .executor(executor::execute)
+                .build();
+    }
+
+    /** 构建计算工具 — BigDecimal 精确运算。 */
+    private BuiltinTool buildCalculateTool(CalculateToolExecutor executor) {
+        return BuiltinTool.builder()
+                .id("builtin.reason.calculate")
+                .name("精确计算")
+                .description("使用 BigDecimal 进行精确算术运算。支持四则运算(如 123.45+67.89)、百分比(如 200*15%)、日期差(如 2026-03-08 - 2025-01-01)")
+                .inputSchema(JsonSchema.of(Map.of(
+                        "type", "object",
+                        "required", List.of("expression"),
+                        "properties", Map.of(
+                                "expression", Map.of("type", "string",
+                                        "description", "数学表达式或日期差表达式")
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
