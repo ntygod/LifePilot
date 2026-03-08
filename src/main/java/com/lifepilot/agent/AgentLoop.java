@@ -5,6 +5,7 @@ import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.multiagent.execution.HandoffToolFactory;
 import com.lifepilot.agent.context.AssembledContext;
 import com.lifepilot.agent.context.ContextAssembler;
+import com.lifepilot.agent.media.MediaDataExtractor;
 import com.lifepilot.agent.model.*;
 import com.lifepilot.agent.session.SessionManager;
 import com.lifepilot.conversation.ConversationHistoryStore;
@@ -83,6 +84,8 @@ public class AgentLoop {
     @Nullable
     private final RealtimeExtractor realtimeExtractor;
     private final PromptRegistry promptRegistry;
+    @Nullable
+    private final MediaDataExtractor mediaDataExtractor;
 
     public AgentLoop(StateReducer stateReducer,
                      ContextAssembler contextAssembler,
@@ -100,7 +103,8 @@ public class AgentLoop {
                      @Nullable SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
                      @Nullable KnowledgeBaseRepository knowledgeBaseRepository,
                      @Nullable RealtimeExtractor realtimeExtractor,
-                     PromptRegistry promptRegistry) {
+                     PromptRegistry promptRegistry,
+                     @Nullable MediaDataExtractor mediaDataExtractor) {
         this.stateReducer = stateReducer;
         this.contextAssembler = contextAssembler;
         this.llmRouter = llmRouter;
@@ -118,6 +122,7 @@ public class AgentLoop {
         this.sessionKnowledgeBaseRepository = sessionKnowledgeBaseRepository;
         this.knowledgeBaseRepository = knowledgeBaseRepository;
         this.promptRegistry = promptRegistry;
+        this.mediaDataExtractor = mediaDataExtractor;
     }
 
     /**
@@ -396,6 +401,35 @@ public class AgentLoop {
             // 5) 状态归约 + Trace 记录
             AgentState preReduceState = state;
             state = reduceAndRecord(state, action, traceContext, loopStart);
+
+            // 5.4) 媒体数据提取与 SSE 发送（在 ToolCallStep 截断之前）
+            if (action instanceof Action.ToolResult toolResult
+                    && callback instanceof StreamingCallback sc
+                    && mediaDataExtractor != null) {
+                var extraction = mediaDataExtractor.extract(toolResult.toolId(), toolResult.output());
+                if (!extraction.mediaItems().isEmpty()) {
+                    for (var item : extraction.mediaItems()) {
+                        var mediaPayload = Map.<String, Object>of(
+                                "mediaType", item.mediaType(),
+                                "encoding", item.encoding(),
+                                "data", item.data(),
+                                "toolId", toolResult.toolId(),
+                                "toolCallIndex", traceContext != null ? traceContext.steps().size() : 0,
+                                "metadata", item.metadata()
+                        );
+                        sc.sendMediaEvent(mediaPayload);
+                    }
+                    // 用 sanitizedOutput 替换原始 action，避免 Base64 进入后续 Trace 和 LLM 上下文
+                    action = new Action.ToolResult(
+                            toolResult.toolId(),
+                            toolResult.success(),
+                            extraction.sanitizedOutput(),
+                            toolResult.tokensUsed(),
+                            toolResult.latencyMs(),
+                            toolResult.hasMore()
+                    );
+                }
+            }
 
             // 5.5) 工具调用步骤记录 — 补充 ToolCallStep 到 TraceContext
             if (action instanceof Action.ToolResult toolResult
@@ -1701,6 +1735,15 @@ public class AgentLoop {
         @Nullable
         String getFinalContent() {
             return finalContent;
+        }
+
+        /**
+         * 发送 MEDIA SSE 事件（媒体数据独立通道）。
+         *
+         * @param payload 媒体事件负载
+         */
+        void sendMediaEvent(Map<String, Object> payload) {
+            sseManager.sendEvent(streamId, SseEventType.MEDIA, payload);
         }
     }
 

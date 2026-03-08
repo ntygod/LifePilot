@@ -95,7 +95,7 @@ lifepilot:
     server:
       enabled: true
       api-key: ${LIFEPILOT_A2A_API_KEY:}
-      agent-name: LifePilot
+      agent-name: ZhiWei
       agent-description: 个人生活助手
       agent-version: 1.0.0
       protocol-version: 0.2.5
@@ -620,6 +620,8 @@ lifepilot:
         enabled: true
         headless: true
         idle-timeout-seconds: 300
+        tool-timeout-seconds: 30
+        install-timeout-seconds: 600
       code-execute:
         enabled: true
         default-language: python
