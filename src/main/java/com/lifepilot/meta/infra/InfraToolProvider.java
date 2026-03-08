@@ -4,6 +4,8 @@ import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.meta.infra.env.DateTimeToolExecutor;
 import com.lifepilot.meta.infra.env.SystemInfoToolExecutor;
 import com.lifepilot.meta.infra.env.UserProfileToolExecutor;
+import com.lifepilot.meta.infra.web.WebFetchToolExecutor;
+import com.lifepilot.meta.infra.web.WebSearchToolExecutor;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.skill.builtin.BuiltinSkill;
 import com.lifepilot.skill.builtin.BuiltinSkillProvider;
@@ -14,6 +16,7 @@ import com.lifepilot.tool.schema.JsonSchema;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.web.client.RestClient;
 
 import java.util.List;
 import java.util.Map;
@@ -34,15 +37,18 @@ public class InfraToolProvider implements BuiltinSkillProvider {
     private static final List<String> INFRA_TAGS = List.of("infrastructure");
 
     private final MetaProperties properties;
+    private final RestClient.Builder restClientBuilder;
     @Nullable
     private final Object sandboxBooter;
     @Nullable
     private final Object interactionBridge;
 
     public InfraToolProvider(MetaProperties properties,
+                             RestClient.Builder restClientBuilder,
                              @Nullable Object sandboxBooter,
                              @Nullable Object interactionBridge) {
         this.properties = properties;
+        this.restClientBuilder = restClientBuilder;
         this.sandboxBooter = sandboxBooter;
         this.interactionBridge = interactionBridge;
     }
@@ -59,7 +65,9 @@ public class InfraToolProvider implements BuiltinSkillProvider {
                 .allowedTools(List.of(
                         "builtin.env.datetime",
                         "builtin.env.user-profile",
-                        "builtin.env.system-info"
+                        "builtin.env.system-info",
+                        "builtin.web.search",
+                        "builtin.web.fetch"
                 ))
                 .execution(ExecutionStrategy.DEFAULT)
                 .memoryAccess(MemoryAccessPolicy.none())
@@ -79,7 +87,14 @@ public class InfraToolProvider implements BuiltinSkillProvider {
         toolRegistry.registerBuiltinTool(buildUserProfileTool(userProfileExecutor));
         toolRegistry.registerBuiltinTool(buildSystemInfoTool(systemInfoExecutor));
 
-        log.info("基础工具注册完成: count=3, category=env");
+        // 信息获取工具（2 个）
+        var webSearchExecutor = new WebSearchToolExecutor(properties, restClientBuilder);
+        var webFetchExecutor = new WebFetchToolExecutor(properties);
+
+        toolRegistry.registerBuiltinTool(buildWebSearchTool(webSearchExecutor));
+        toolRegistry.registerBuiltinTool(buildWebFetchTool(webFetchExecutor));
+
+        log.info("基础工具注册完成: count=5, categories=[env, web]");
     }
 
     // ─────────────────────────────────────────────
@@ -125,6 +140,54 @@ public class InfraToolProvider implements BuiltinSkillProvider {
                 .name("获取系统信息")
                 .description("获取操作系统、JVM 版本、可用内存和磁盘空间等系统信息")
                 .inputSchema(JsonSchema.empty())
+                .riskLevel(RiskLevel.LOW)
+                .tags(INFRA_TAGS)
+                .executor(executor::execute)
+                .build();
+    }
+
+    // ─────────────────────────────────────────────
+    //  信息获取工具构建
+    // ─────────────────────────────────────────────
+
+    /** 构建 Web 搜索工具。 */
+    private BuiltinTool buildWebSearchTool(WebSearchToolExecutor executor) {
+        return BuiltinTool.builder()
+                .id("builtin.web.search")
+                .name("Web 搜索")
+                .description("通过搜索引擎检索信息，返回标题、摘要和链接列表。支持 DuckDuckGo（免费）/ Google / Bing")
+                .inputSchema(JsonSchema.of(Map.of(
+                        "type", "object",
+                        "required", List.of("query"),
+                        "properties", Map.of(
+                                "query", Map.of("type", "string",
+                                        "description", "搜索关键词"),
+                                "maxResults", Map.of("type", "integer",
+                                        "description", "最大返回结果数，默认使用配置值")
+                        )
+                )))
+                .riskLevel(RiskLevel.LOW)
+                .tags(INFRA_TAGS)
+                .executor(executor::execute)
+                .build();
+    }
+
+    /** 构建 Web 抓取工具。 */
+    private BuiltinTool buildWebFetchTool(WebFetchToolExecutor executor) {
+        return BuiltinTool.builder()
+                .id("builtin.web.fetch")
+                .name("Web 页面抓取")
+                .description("抓取指定 URL 的网页内容，解析 HTML 提取正文文本。支持 CSS 选择器定向提取")
+                .inputSchema(JsonSchema.of(Map.of(
+                        "type", "object",
+                        "required", List.of("url"),
+                        "properties", Map.of(
+                                "url", Map.of("type", "string",
+                                        "description", "目标网页 URL"),
+                                "selector", Map.of("type", "string",
+                                        "description", "CSS 选择器，用于提取页面特定区域内容（可选）")
+                        )
+                )))
                 .riskLevel(RiskLevel.LOW)
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)

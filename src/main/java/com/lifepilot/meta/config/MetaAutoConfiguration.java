@@ -4,6 +4,7 @@ import com.lifepilot.meta.infra.InfraToolProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.web.client.RestClient;
 
 /**
  * 元能力系统 Spring Boot 自动配置。
@@ -26,8 +27,9 @@ public class MetaAutoConfiguration {
      * 后续任务中将逐步替换为实际类型。</p>
      */
     @Bean
-    InfraToolProvider infraToolProvider(MetaProperties properties) {
-        return new InfraToolProvider(properties, null, null);
+    InfraToolProvider infraToolProvider(MetaProperties properties,
+                                        RestClient.Builder restClientBuilder) {
+        return new InfraToolProvider(properties, restClientBuilder, null, null);
     }
 
     // Bean 注册将在后续任务中随实现类创建逐步添加：
