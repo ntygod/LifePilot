@@ -729,18 +729,23 @@ export interface UploadFileItem {
 }
 
 
-// ========== 模块 25: Skill 市场类型 ==========
+// ========== 模块 25: 扩展市场类型 ==========
 
-/** Skill 市场包元数据 */
-export interface SkillPackage {
+/** 扩展类型枚举（对齐后端 ExtensionType） */
+export type ExtensionType = 'SKILL' | 'AGENT' | 'WORKFLOW'
+
+/** 扩展包元数据（对齐后端 ExtensionPackage record） */
+export interface ExtensionPackage {
   id: string
   name: string
+  type: ExtensionType
   description: string
   version: string
   author: string
   repoUrl: string
   filePath: string
   tags: string[]
+  requirements: string[]
   minLifepilotVersion: string
   createdAt: string
   updatedAt: string
@@ -751,6 +756,9 @@ export interface SkillPackage {
   /** 是否已安装 */
   installed: boolean
 }
+
+/** 向后兼容别名 */
+export type SkillPackage = ExtensionPackage
 
 /** 安全发现条目 */
 export interface SecurityFinding {
@@ -765,21 +773,24 @@ export interface SecurityReport {
   overallRisk: 'LOW' | 'MEDIUM' | 'HIGH'
 }
 
-/** 安装结果 */
+/** 安装结果（对齐后端 InstallResult record） */
 export interface InstallResult {
   success: boolean
-  skillId?: string
+  extensionId?: string
+  extensionType?: ExtensionType
   securityReport?: SecurityReport
+  requirements?: string[]
   errorMessage?: string
   requiresConfirmation: boolean
 }
 
-/** 更新信息 */
-export interface UpdateInfo {
-  packageId: string
-  name: string
-  installedVersion: string
-  latestVersion: string
+/** 后端分页结果（对齐 MarketplaceService.PagedResult） */
+export interface PagedResult<T> {
+  content: T[]
+  page: number
+  size: number
+  totalElements: number
+  totalPages: number
 }
 
 
