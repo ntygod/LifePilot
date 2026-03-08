@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
 import { knowledgeBaseApi } from '@/api/client'
 import type { KnowledgeBase } from '@/types'
@@ -23,6 +24,7 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 
 const store = useKnowledgeBaseStore()
+const router = useRouter()
 
 // 创建对话框
 const showCreate = ref(false)
@@ -34,9 +36,6 @@ const editForm = ref({ description: '', tags: [] as string[] })
 
 // 删除确认
 const deleteTarget = ref<{ type: 'kb' | 'doc'; id: string; kbId?: string; name: string } | null>(null)
-
-// 文件上传
-const fileInput = ref<HTMLInputElement | null>(null)
 
 // 搜索和过滤
 const searchQuery = ref('')
@@ -89,13 +88,7 @@ const filteredKbs = computed(() => {
 })
 
 function selectKb(kb: KnowledgeBase) {
-  store.current = kb
-  store.fetchDocuments(kb.id)
-}
-
-function backToList() {
-  store.current = null
-  store.documents = []
+  router.push(`/knowledge-bases/${kb.id}`)
 }
 
 async function handleCreate() {
@@ -125,18 +118,6 @@ async function handleUpdate() {
   }
 }
 
-function triggerUpload() {
-  fileInput.value?.click()
-}
-
-async function handleFileChange(e: Event) {
-  const input = e.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file || !store.current) return
-  await store.uploadDocument(store.current.id, file)
-  input.value = ''
-}
-
 async function confirmDelete() {
   if (!deleteTarget.value) return
   if (deleteTarget.value.type === 'kb') {
@@ -153,12 +134,6 @@ const showDeleteConfirm = computed({
   set: (val: boolean) => { if (!val) deleteTarget.value = null }
 })
 
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
-
 function toggleTag(tag: string) {
   const index = selectedTags.value.indexOf(tag)
   if (index === -1) {
@@ -168,17 +143,6 @@ function toggleTag(tag: string) {
   }
 }
 
-const statusMap: Record<string, { label: string; class: string }> = {
-  UPLOADING: { label: '上传中', class: 'bg-yellow-100 text-yellow-800' },
-  PARSING: { label: '解析中', class: 'bg-blue-100 text-blue-800' },
-  CHUNKING: { label: '分块中', class: 'bg-blue-100 text-blue-800' },
-  INDEXING: { label: '索引中', class: 'bg-blue-100 text-blue-800' },
-  EXTRACTING: { label: '提取中', class: 'bg-blue-100 text-blue-800' },
-  READY: { label: '已完成', class: 'bg-green-100 text-green-800' },
-  UPDATING: { label: '更新中', class: 'bg-blue-100 text-blue-800' },
-  DELETING: { label: '删除中', class: 'bg-yellow-100 text-yellow-800' },
-  ERROR: { label: '失败', class: 'bg-red-100 text-red-800' },
-}
 </script>
 
 <template>
@@ -197,7 +161,7 @@ const statusMap: Record<string, { label: string; class: string }> = {
         </div>
 
         <!-- 知识库列表视图 -->
-        <template v-if="!store.current">
+        <div>
           <div class="flex items-center justify-between mb-lg gap-sm">
             <h2 class="text-2xl font-semibold text-foreground leading-tight">
               知识库管理
@@ -365,78 +329,7 @@ const statusMap: Record<string, { label: string; class: string }> = {
               </CardFooter>
             </Card>
           </div>
-        </template>
-
-        <!-- 文档列表视图 -->
-        <template v-else>
-          <div class="flex items-center gap-sm mb-lg">
-            <Button
-              variant="ghost"
-              size="sm"
-              class="text-muted-foreground"
-              @click="backToList"
-            >
-              ←
-              <span>返回</span>
-            </Button>
-            <h2 class="text-2xl font-semibold text-foreground leading-tight">
-              {{ store.current.name }}
-            </h2>
-            <Button class="ml-auto" @click="triggerUpload">上传文档</Button>
-            <input
-              ref="fileInput"
-              type="file"
-              accept=".pdf,.docx,.md,.txt"
-              class="hidden"
-              @change="handleFileChange"
-            />
-          </div>
-
-          <!-- Skeleton 加载占位符 -->
-          <div v-if="store.loading" class="space-y-sm">
-            <div v-for="i in 4" :key="i" class="flex items-center gap-md border border-border rounded-lg px-md py-sm bg-card">
-              <div class="flex-1 min-w-0 space-y-2">
-                <Skeleton class="h-4 w-1/3" />
-                <Skeleton class="h-3 w-1/4" />
-              </div>
-              <Skeleton class="h-5 w-16 rounded-full" />
-            </div>
-          </div>
-          <div v-else-if="store.documents.length === 0" class="text-sm text-muted-foreground">
-            暂无文档，点击上方按钮上传
-          </div>
-          <div v-else class="space-y-sm">
-            <Card
-              v-for="doc in store.documents"
-              :key="doc.id"
-              class="flex-row items-center gap-md px-md py-sm"
-            >
-              <div class="flex-1 min-w-0">
-                <div class="font-medium text-sm text-foreground truncate">
-                  {{ doc.fileName }}
-                </div>
-                <div class="flex items-center gap-md text-xs text-muted-foreground mt-xs">
-                  <span>{{ formatSize(doc.fileSize) }}</span>
-                  <span>{{ doc.chunkCount }} 个分块</span>
-                </div>
-              </div>
-              <Badge variant="outline"
-                :class="statusMap[doc.status]?.class ?? 'bg-gray-100 text-gray-800'"
-              >
-                {{ statusMap[doc.status]?.label ?? doc.status }}
-              </Badge>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                class="text-muted-foreground hover:text-destructive"
-                title="删除"
-                @click="deleteTarget = { type: 'doc', id: doc.id, kbId: store.current!.id, name: doc.fileName }"
-              >
-                <X :size="14" />
-              </Button>
-            </Card>
-          </div>
-        </template>
+        </div>
       </div>
     </div>
 
