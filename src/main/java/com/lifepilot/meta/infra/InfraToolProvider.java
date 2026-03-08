@@ -76,8 +76,8 @@ public class InfraToolProvider implements BuiltinSkillProvider {
                 .description("Agent 通用执行能力工具集，包含环境感知、信息获取、推理辅助、Shell 执行、浏览器自动化、代码执行、文件系统和交互控制")
                 .version("1.0.0")
                 .source(new SkillSource.Builtin())
-                .systemPrompt("基础工具集提供 Agent 的通用执行能力，无需额外激活即可使用。")
-                .allowedTools(List.of(
+                .instructions("基础工具集提供 Agent 的通用执行能力，无需额外激活即可使用。")
+                .suggestedTools(List.of(
                         "builtin.env.datetime",
                         "builtin.env.user-profile",
                         "builtin.env.system-info",
@@ -100,9 +100,6 @@ public class InfraToolProvider implements BuiltinSkillProvider {
                         "builtin.interact.input",
                         "builtin.interact.notify"
                 ))
-                .execution(ExecutionStrategy.DEFAULT)
-                .memoryAccess(MemoryAccessPolicy.none())
-                .budget(SkillBudget.LIGHTWEIGHT)
                 .metadata(Map.of())
                 .build();
     }

@@ -52,8 +52,8 @@ class SkillDiscoveryRegistrarTest {
         assertThat(definition.id()).isEqualTo("builtin.find-skills");
         assertThat(definition.name()).isEqualTo("Skill 发现与安装");
         assertThat(definition.source()).isInstanceOf(SkillSource.Builtin.class);
-        assertThat(definition.allowedTools()).contains("builtin.shell.exec");
-        assertThat(definition.systemPrompt()).contains("Skill 发现");
+        assertThat(definition.suggestedTools()).contains("builtin.shell.exec");
+        assertThat(definition.instructions()).contains("Skill 发现");
     }
 
     @Test

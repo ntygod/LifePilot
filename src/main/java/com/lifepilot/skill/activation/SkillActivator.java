@@ -9,8 +9,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 
-import java.util.UUID;
-
 /**
  * Skill 激活器 — 将 Skill 从注册表中激活为上下文注入包。
  *
@@ -63,7 +61,7 @@ public class SkillActivator {
         metricsTracker.recordActivation(skillId);
 
         // 4. 发布激活事件
-        eventPublisher.publishEvent(new SkillLifecycleEvent.Activated(skillId, UUID.randomUUID().toString()));
+        eventPublisher.publishEvent(new SkillLifecycleEvent.Activated(skillId));
         log.info("Skill 已激活: skillId={}", skillId);
 
         // 5. 返回激活结果

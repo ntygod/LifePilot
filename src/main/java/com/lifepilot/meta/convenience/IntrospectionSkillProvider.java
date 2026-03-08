@@ -65,16 +65,13 @@ public class IntrospectionSkillProvider implements BuiltinSkillProvider {
                 .description("查询系统能力、获取详细说明、查看系统状态、推荐匹配能力")
                 .version("1.0.0")
                 .source(new SkillSource.Builtin())
-                .systemPrompt("系统自省工具集，用于查询和了解系统当前的能力、状态和推荐。")
-                .allowedTools(List.of(
+                .instructions("系统自省工具集，用于查询和了解系统当前的能力、状态和推荐。")
+                .suggestedTools(List.of(
                         "system.list-capabilities",
                         "system.explain",
                         "system.status",
                         "system.suggest"
                 ))
-                .execution(ExecutionStrategy.DEFAULT)
-                .memoryAccess(MemoryAccessPolicy.none())
-                .budget(SkillBudget.LIGHTWEIGHT)
                 .metadata(Map.of())
                 .build();
     }
@@ -237,7 +234,7 @@ public class IntrospectionSkillProvider implements BuiltinSkillProvider {
             data.put("description", skill.description());
             data.put("type", "skill");
             data.put("version", skill.version());
-            data.put("allowedTools", skill.allowedTools());
+            data.put("suggestedTools", skill.suggestedTools());
             data.put("metadata", skill.metadata());
             return ToolResult.success(Map.copyOf(data));
         }).orElse(null);

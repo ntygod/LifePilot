@@ -66,7 +66,7 @@ class IntrospectionSkillProviderTest {
 
         assertThat(definition.id()).isEqualTo("builtin.introspection");
         assertThat(definition.name()).isEqualTo("系统自省");
-        assertThat(definition.allowedTools()).containsExactlyInAnyOrder(
+        assertThat(definition.suggestedTools()).containsExactlyInAnyOrder(
                 "system.list-capabilities",
                 "system.explain",
                 "system.status",
@@ -315,11 +315,8 @@ class IntrospectionSkillProviderTest {
                 .description("描述 " + id)
                 .version("1.0.0")
                 .source(new SkillSource.Builtin())
-                .systemPrompt("测试")
-                .allowedTools(List.of())
-                .execution(ExecutionStrategy.DEFAULT)
-                .memoryAccess(MemoryAccessPolicy.none())
-                .budget(SkillBudget.LIGHTWEIGHT)
+                .instructions("测试")
+                .suggestedTools(List.of())
                 .metadata(Map.of())
                 .build();
     }
