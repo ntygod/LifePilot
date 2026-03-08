@@ -232,7 +232,7 @@ function toggleTool(toolId: string) {
               {{ agent.source === 'MarkdownDefined' ? 'Markdown' : 'Builtin' }}
             </Badge>
           </div>
-          <Button variant="outline" @click="toggleAgent">
+          <Button :variant="agent?.enabled ? 'destructive' : 'outline'" @click="toggleAgent">
             {{ agent?.enabled ? '禁用' : '启用' }}
           </Button>
         </div>
@@ -253,10 +253,10 @@ function toggleTool(toolId: string) {
           <!-- 配置 Tab -->
           <TabsContent value="config" class="space-y-6">
             <!-- 基本信息 -->
-            <Card>
+            <Card class="detail-card">
               <CardHeader>
                 <div class="flex items-center justify-between">
-                  <CardTitle>基本信息</CardTitle>
+                  <CardTitle class="section-title">基本信息</CardTitle>
                   <Button v-if="!editingBasic" variant="ghost" size="sm" @click="editingBasic = true">编辑</Button>
                 </div>
               </CardHeader>
@@ -293,10 +293,10 @@ function toggleTool(toolId: string) {
             </Card>
 
             <!-- System Prompt / Agent 定义 — 条件渲染 -->
-            <Card>
+            <Card class="detail-card">
               <CardHeader>
                 <div class="flex items-center justify-between">
-                  <CardTitle>{{ agentMarkdownAvailable ? 'Agent 定义' : 'System Prompt' }}</CardTitle>
+                  <CardTitle class="section-title">{{ agentMarkdownAvailable ? 'Agent 定义' : 'System Prompt' }}</CardTitle>
                   <!-- 仅非 Markdown 模式展示保存按钮 -->
                   <div v-if="!agentMarkdownAvailable" class="flex items-center gap-2">
                     <span v-if="systemPromptDirty" class="text-xs text-muted-foreground">未保存</span>
@@ -329,8 +329,8 @@ function toggleTool(toolId: string) {
             </Card>
 
             <!-- 模型配置 -->
-            <Card>
-              <CardHeader><CardTitle>模型配置</CardTitle></CardHeader>
+            <Card class="detail-card">
+              <CardHeader><CardTitle class="section-title">模型配置</CardTitle></CardHeader>
               <CardContent>
                 <div class="grid grid-cols-2 gap-4">
                   <div class="space-y-2">
@@ -359,10 +359,10 @@ function toggleTool(toolId: string) {
             </Card>
 
             <!-- 关联知识库 -->
-            <Card>
+            <Card class="detail-card">
               <CardHeader>
                 <div class="flex items-center justify-between">
-                  <CardTitle>关联知识库 ({{ selectedKbs.length }})</CardTitle>
+                  <CardTitle class="section-title">关联知识库 ({{ selectedKbs.length }})</CardTitle>
                   <Button variant="outline" size="sm" @click="showKbDialog = true">管理</Button>
                 </div>
               </CardHeader>
@@ -380,10 +380,10 @@ function toggleTool(toolId: string) {
             </Card>
 
             <!-- 工具开关 -->
-            <Card>
+            <Card class="detail-card">
               <CardHeader>
                 <div class="flex items-center justify-between">
-                  <CardTitle>工具能力 ({{ enabledTools.length }})</CardTitle>
+                  <CardTitle class="section-title">工具能力 ({{ enabledTools.length }})</CardTitle>
                   <Button variant="outline" size="sm" @click="showToolsDialog = true">管理</Button>
                 </div>
               </CardHeader>
@@ -398,8 +398,8 @@ function toggleTool(toolId: string) {
             </Card>
 
             <!-- 测试对话区 -->
-            <Card>
-              <CardHeader><CardTitle>测试对话</CardTitle></CardHeader>
+            <Card class="detail-card">
+              <CardHeader><CardTitle class="section-title">测试对话</CardTitle></CardHeader>
               <CardContent class="space-y-4">
                 <div class="h-64 overflow-y-auto border border-border rounded-md p-4 bg-muted/50">
                   <div v-if="testMessages.length === 0" class="text-sm text-muted-foreground text-center py-8">开始与 Agent 对话...</div>

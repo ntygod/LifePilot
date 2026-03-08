@@ -249,7 +249,7 @@ const stateLabel: Record<string, { label: string; variant: 'default' | 'secondar
                 <Card
                   v-for="skill in filteredSkills"
                   :key="skill.id"
-                  class="cursor-pointer hover:-translate-y-0.5 hover:shadow-md hover:border-primary/50 transition-all duration-200 group"
+                  class="list-card cursor-pointer group"
                 >
                   <CardHeader class="pb-2">
                     <div class="flex items-start justify-between gap-sm">
@@ -370,7 +370,7 @@ const stateLabel: Record<string, { label: string; variant: 'default' | 'secondar
                 <Card
                   v-for="server in filteredMcpServers"
                   :key="server.name"
-                  class="hover:-translate-y-0.5 hover:shadow-md hover:border-primary/50 transition-all duration-200"
+                  class="list-card"
                 >
                   <CardHeader class="pb-2">
                     <div class="flex items-center gap-sm">

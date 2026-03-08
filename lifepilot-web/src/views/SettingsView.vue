@@ -1,28 +1,21 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, type Component } from 'vue'
 import { useRoute } from 'vue-router'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import SettingsPreferencesView from '@/views/SettingsPreferencesView.vue'
 import SettingsModelsView from '@/views/SettingsModelsView.vue'
 import SettingsShortcutsView from '@/views/SettingsShortcutsView.vue'
 
-// 根据路由参数决定默认 Tab（支持从 Sidebar 直接导航到特定 Tab）
 const route = useRoute()
-const tabMap: Record<string, string> = {
-  '/settings/preferences': 'preferences',
-  '/settings/models': 'models',
-  '/settings/shortcuts': 'shortcuts',
-}
-const initialTab = tabMap[route.path] || 'preferences'
-const activeTab = ref(initialTab)
 
-// 监听路由变化，同步 Tab 状态（支持从 Sidebar 导航）
-watch(() => route.path, (newPath) => {
-  const tab = tabMap[newPath]
-  if (tab) {
-    activeTab.value = tab
-  }
-})
+// 路由路径 → 子组件映射
+const viewMap: Record<string, Component> = {
+  '/settings': SettingsPreferencesView,
+  '/settings/preferences': SettingsPreferencesView,
+  '/settings/models': SettingsModelsView,
+  '/settings/shortcuts': SettingsShortcutsView,
+}
+
+const activeView = computed(() => viewMap[route.path] ?? SettingsPreferencesView)
 </script>
 
 <template>
@@ -35,46 +28,9 @@ watch(() => route.path, (newPath) => {
       </div>
     </div>
 
-    <!-- Tabs 导航 + 内容 -->
-    <div class="flex-1 overflow-hidden">
-      <Tabs v-model="activeTab" default-value="preferences" class="flex flex-col h-full">
-        <div class="border-b bg-background">
-          <div class="max-w-[1200px] mx-auto px-md md:px-lg">
-            <TabsList class="h-10 bg-transparent p-0 gap-4">
-              <TabsTrigger
-                value="preferences"
-                class="relative h-10 rounded-none border-b-2 border-transparent px-0 pb-3 pt-2 font-medium text-muted-foreground data-[state=active]:border-primary data-[state=active]:text-foreground data-[state=active]:shadow-none bg-transparent"
-              >
-                偏好设置
-              </TabsTrigger>
-              <TabsTrigger
-                value="models"
-                class="relative h-10 rounded-none border-b-2 border-transparent px-0 pb-3 pt-2 font-medium text-muted-foreground data-[state=active]:border-primary data-[state=active]:text-foreground data-[state=active]:shadow-none bg-transparent"
-              >
-                模型配置
-              </TabsTrigger>
-              <TabsTrigger
-                value="shortcuts"
-                class="relative h-10 rounded-none border-b-2 border-transparent px-0 pb-3 pt-2 font-medium text-muted-foreground data-[state=active]:border-primary data-[state=active]:text-foreground data-[state=active]:shadow-none bg-transparent"
-              >
-                快捷键
-              </TabsTrigger>
-            </TabsList>
-          </div>
-        </div>
-
-        <div class="flex-1 overflow-y-auto">
-          <TabsContent value="preferences" class="mt-0 h-full">
-            <SettingsPreferencesView />
-          </TabsContent>
-          <TabsContent value="models" class="mt-0 h-full">
-            <SettingsModelsView />
-          </TabsContent>
-          <TabsContent value="shortcuts" class="mt-0 h-full">
-            <SettingsShortcutsView />
-          </TabsContent>
-        </div>
-      </Tabs>
+    <!-- 直接渲染子组件，无 Tabs -->
+    <div class="flex-1 overflow-y-auto">
+      <component :is="activeView" />
     </div>
   </div>
 </template>

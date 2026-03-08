@@ -18,8 +18,8 @@ const groupedShortcuts = computed(() => {
 </script>
 
 <template>
-  <div class="flex flex-col h-full overflow-hidden">
-    <div class="flex-1 overflow-y-auto">
+  <div class="flex flex-col">
+    <div class="flex-1">
       <div class="max-w-[1200px] mx-auto px-md md:px-lg py-lg space-y-6 max-w-4xl">
         <div
           v-for="category in groupedShortcuts"

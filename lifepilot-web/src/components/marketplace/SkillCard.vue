@@ -110,7 +110,7 @@ async function handleUpgrade() {
 </script>
 
 <template>
-  <Card class="flex flex-col hover:-translate-y-0.5 hover:shadow-md hover:border-primary/50 transition-all duration-200">
+  <Card class="list-card flex flex-col">
     <CardHeader class="pb-2">
       <!-- 头部：名称 + 已验证徽章 -->
       <div class="flex items-start justify-between gap-sm">

@@ -450,7 +450,7 @@ async function testRetrieval() {
         <!-- 知识库信息 -->
         <template v-else-if="kb">
           <!-- 基本信息卡片 -->
-          <Card class="mb-6">
+          <Card class="detail-card mb-6">
             <CardContent class="pt-6">
               <div class="flex items-start justify-between mb-4">
                 <div class="flex-1">
@@ -460,19 +460,19 @@ async function testRetrieval() {
               </div>
               <!-- 统计信息 -->
               <div v-if="stats" class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
-                <div class="p-3 rounded-md bg-muted/30">
+                <div class="stat-block">
                   <div class="text-xs text-muted-foreground mb-1">文档数</div>
                   <div class="text-lg font-semibold text-foreground">{{ stats.documentCount }}</div>
                 </div>
-                <div class="p-3 rounded-md bg-muted/30">
+                <div class="stat-block">
                   <div class="text-xs text-muted-foreground mb-1">分段数</div>
                   <div class="text-lg font-semibold text-foreground">{{ stats.totalChunks }}</div>
                 </div>
-                <div class="p-3 rounded-md bg-muted/30">
+                <div class="stat-block">
                   <div class="text-xs text-muted-foreground mb-1">总大小</div>
                   <div class="text-lg font-semibold text-foreground">{{ formatSize(stats.totalSize) }}</div>
                 </div>
-                <div class="p-3 rounded-md bg-muted/30">
+                <div class="stat-block">
                   <div class="text-xs text-muted-foreground mb-1">索引状态</div>
                   <div class="text-lg font-semibold text-foreground">
                     <span v-if="stats.indexStatus === 'HEALTHY'" class="text-green-600">健康</span>
@@ -689,9 +689,9 @@ async function testRetrieval() {
           </DropZone>
 
           <!-- 测试检索区域 -->
-          <Card v-if="showTestRetrieval" class="mt-6">
+          <Card v-if="showTestRetrieval" class="detail-card mt-6">
             <CardHeader>
-              <CardTitle class="text-sm">测试检索</CardTitle>
+              <CardTitle class="section-title text-sm">测试检索</CardTitle>
             </CardHeader>
             <CardContent class="space-y-3">
               <div class="flex gap-2">

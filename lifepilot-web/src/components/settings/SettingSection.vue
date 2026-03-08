@@ -7,7 +7,7 @@ defineProps<{
 </script>
 
 <template>
-  <div class="rounded-lg border bg-card text-card-foreground shadow-sm">
+  <div class="detail-card text-card-foreground">
     <div class="p-4 border-b">
       <div class="flex items-center justify-between gap-2">
         <div class="flex items-center gap-2">

@@ -212,7 +212,7 @@ const typeLabel: Record<string, string> = {
           <Card
             v-for="agent in filteredAgents"
             :key="agent.id"
-            class="cursor-pointer hover:-translate-y-0.5 hover:shadow-md hover:border-primary/50 transition-all duration-200 group"
+            class="list-card cursor-pointer group"
             @click="router.push(`/agents/${agent.id}`)"
           >
             <CardHeader class="pb-2">
