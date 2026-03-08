@@ -121,6 +121,14 @@
             <version>1.18.3</version>
         </dependency>
 
+        <!-- Playwright — 浏览器自动化（可选依赖，运行时检测） -->
+        <dependency>
+            <groupId>com.microsoft.playwright</groupId>
+            <artifactId>playwright</artifactId>
+            <version>1.49.0</version>
+            <optional>true</optional>
+        </dependency>
+
         <!-- Thumbnailator — 图片压缩和缩放 -->
         <dependency>
             <groupId>net.coobird</groupId>
