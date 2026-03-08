@@ -64,4 +64,8 @@ public final class SseEventType {
 
     /** 主动通知事件 */
     public static final String NOTIFICATION = "notification";
+
+    // 媒体模块事件类型
+    /** 媒体数据事件（图片/音频等大体积二进制数据） */
+    public static final String MEDIA = "media";
 }
