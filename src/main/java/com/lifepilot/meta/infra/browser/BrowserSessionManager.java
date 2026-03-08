@@ -5,7 +5,6 @@ import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -185,12 +184,27 @@ public class BrowserSessionManager {
     /**
      * 确保 Browser 实例已初始化。
      *
+     * <p>首次调用时创建 Playwright 和 Browser 实例。
+     * 如果浏览器二进制未安装，抛出 {@link BrowserNotInstalledException}。</p>
+     *
      * @return Browser 实例
+     * @throws BrowserNotInstalledException 浏览器二进制未安装
      */
     private synchronized Object ensureBrowser() {
         if (browserInstance == null) {
             playwrightInstance = PlaywrightBridge.createPlaywright();
-            browserInstance = PlaywrightBridge.launchBrowser(playwrightInstance, browserConfig.isHeadless());
+            try {
+                browserInstance = PlaywrightBridge.launchBrowser(playwrightInstance, browserConfig.isHeadless());
+            } catch (Exception e) {
+                // Playwright 浏览器二进制未安装时，launch() 会抛出异常
+                String msg = e.getMessage();
+                if (msg != null && (msg.contains("install") || msg.contains("executable doesn't exist")
+                        || msg.contains("browserType.launch"))) {
+                    throw new BrowserNotInstalledException(
+                            "Playwright 浏览器二进制未安装，请运行安装命令", e);
+                }
+                throw e;
+            }
             log.info("Playwright Browser 懒初始化完成: headless={}", browserConfig.isHeadless());
         }
         return browserInstance;
