@@ -139,23 +139,28 @@ public class ShellExecToolExecutor {
 
         Process process = pb.start();
 
-        // 读取 stdout 和 stderr
-        String stdout;
-        String stderr;
-        try (var stdoutStream = process.getInputStream();
-             var stderrStream = process.getErrorStream()) {
-            stdout = new String(stdoutStream.readAllBytes());
-            stderr = new String(stderrStream.readAllBytes());
-        }
+        // 在独立线程中读取 stdout/stderr，避免 readAllBytes() 阻塞导致 waitFor 无法超时
+        var stdoutFuture = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+            try { return new String(process.getInputStream().readAllBytes()); }
+            catch (IOException e) { return ""; }
+        });
+        var stderrFuture = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+            try { return new String(process.getErrorStream().readAllBytes()); }
+            catch (IOException e) { return ""; }
+        });
 
         // 等待进程完成，超时则强制终止
         boolean completed = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
         if (!completed) {
             process.destroyForcibly();
+            process.waitFor(2, TimeUnit.SECONDS); // 等待强制终止完成
             log.warn("Shell 命令超时被终止: command={}, timeout={}s", command, timeoutSeconds);
             return ToolResult.error("命令执行超时（" + timeoutSeconds + " 秒），已强制终止");
         }
 
+        // 进程已完成，获取输出
+        String stdout = stdoutFuture.join();
+        String stderr = stderrFuture.join();
         int exitCode = process.exitValue();
 
         // 截断输出
