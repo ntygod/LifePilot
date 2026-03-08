@@ -1,11 +1,17 @@
 package com.lifepilot.meta.config;
 
 import com.lifepilot.interaction.web.sse.SseSessionManager;
+import com.lifepilot.meta.convenience.CapabilityAggregator;
+import com.lifepilot.meta.convenience.IntrospectionSkillProvider;
 import com.lifepilot.meta.infra.InfraToolProvider;
 import com.lifepilot.meta.infra.browser.BrowserSessionManager;
 import com.lifepilot.meta.infra.interaction.CliInteractionHandler;
 import com.lifepilot.meta.infra.interaction.InteractionBridge;
+import com.lifepilot.multiagent.registry.AgentRegistry;
 import com.lifepilot.sandbox.booter.SandboxBooter;
+import com.lifepilot.skill.registry.SkillRegistry;
+import com.lifepilot.tool.registry.DynamicToolRegistry;
+import com.lifepilot.workflow.registry.WorkflowRegistry;
 import jakarta.annotation.Nullable;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -64,8 +70,33 @@ public class MetaAutoConfiguration {
         return new BrowserSessionManager(properties);
     }
 
+    /**
+     * 注册能力聚合器 — 从四个注册中心聚合系统能力信息。
+     */
+    @Bean
+    CapabilityAggregator capabilityAggregator(SkillRegistry skillRegistry,
+                                               AgentRegistry agentRegistry,
+                                               DynamicToolRegistry toolRegistry,
+                                               WorkflowRegistry workflowRegistry,
+                                               MetaProperties properties) {
+        return new CapabilityAggregator(skillRegistry, agentRegistry,
+                toolRegistry, workflowRegistry, properties);
+    }
+
+    /**
+     * 注册系统自省 Skill 提供者 — 注册 4 个自省工具。
+     */
+    @Bean
+    IntrospectionSkillProvider introspectionSkillProvider(CapabilityAggregator aggregator,
+                                                          SkillRegistry skillRegistry,
+                                                          AgentRegistry agentRegistry,
+                                                          DynamicToolRegistry toolRegistry,
+                                                          WorkflowRegistry workflowRegistry) {
+        return new IntrospectionSkillProvider(aggregator, skillRegistry,
+                agentRegistry, toolRegistry, workflowRegistry);
+    }
+
     // Bean 注册将在后续任务中随实现类创建逐步添加：
-    // - Task 10: CapabilityAggregator + IntrospectionSkillProvider
     // - Task 11: SkillDiscoveryRegistrar (@ConditionalOnProperty)
     // - Task 12: McpInstallerRegistrar (@ConditionalOnProperty)
 }
