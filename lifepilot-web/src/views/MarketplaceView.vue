@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
-import type { SkillPackage, UpdateInfo } from '@/types'
+import type { ExtensionPackage } from '@/types'
 import { marketplaceApi } from '@/api/marketplace'
 import MarketplaceFilters from '@/components/marketplace/MarketplaceFilters.vue'
 import SkillCard from '@/components/marketplace/SkillCard.vue'
@@ -15,11 +15,12 @@ import { ServerOff } from 'lucide-vue-next'
 // 搜索与筛选状态
 const search = ref('')
 const tag = ref('')
+const extensionType = ref('')
 const page = ref(0)
 const size = 20
 
 // 数据状态
-const skills = ref<SkillPackage[]>([])
+const skills = ref<ExtensionPackage[]>([])
 const totalPages = ref(0)
 const totalElements = ref(0)
 const loading = ref(false)
@@ -30,8 +31,8 @@ const refreshing = ref(false)
 const serviceUnavailable = ref(false)
 
 // 更新信息
-const updates = ref<UpdateInfo[]>([])
-const updateIds = computed(() => new Set(updates.value.map(u => u.packageId)))
+const updates = ref<ExtensionPackage[]>([])
+const updateIds = computed(() => new Set(updates.value.map(u => u.id)))
 
 // 从所有 Skill 中提取可用标签（去重）
 const availableTags = computed(() => {
@@ -40,20 +41,21 @@ const availableTags = computed(() => {
   return Array.from(tagSet).sort()
 })
 
-/** 加载 Skill 列表 */
+/** 加载扩展列表 */
 async function loadSkills() {
   loading.value = true
   error.value = ''
   try {
     const result = await marketplaceApi.getSkills({
+      type: extensionType.value || undefined,
       search: search.value || undefined,
       tag: tag.value || undefined,
       page: page.value,
       size
     })
-    skills.value = result.items ?? (result as any).content ?? []
-    totalPages.value = (result as any).totalPages ?? Math.ceil((result.total ?? 0) / size)
-    totalElements.value = result.total ?? (result as any).totalElements ?? 0
+    skills.value = result.content
+    totalPages.value = result.totalPages
+    totalElements.value = result.totalElements
   } catch (e: any) {
     error.value = e.message || '加载失败'
   } finally {
@@ -85,7 +87,7 @@ async function handleRefresh() {
 }
 
 /** 搜索/筛选变化时重置分页并重新加载 */
-watch([search, tag], () => {
+watch([search, tag, extensionType], () => {
   page.value = 0
   loadSkills()
 })
@@ -134,10 +136,10 @@ onMounted(() => {
         <div class="flex items-center justify-between mb-md gap-sm">
           <div class="space-y-xs">
             <h2 class="text-2xl font-semibold text-foreground leading-tight">
-              Skill 市场
+              扩展市场
             </h2>
             <p class="text-sm text-muted-foreground">
-              发现和安装社区贡献的 Skill，扩展 LifePilot 的能力。
+              发现和安装社区贡献的 Skill、Agent 和 Workflow，扩展 LifePilot 的能力。
             </p>
           </div>
           <Button
@@ -154,6 +156,7 @@ onMounted(() => {
           <MarketplaceFilters
             v-model:search="search"
             v-model:tag="tag"
+            v-model:type="extensionType"
             :available-tags="availableTags"
           />
         </div>
@@ -165,7 +168,7 @@ onMounted(() => {
           </div>
           <h3 class="text-lg font-semibold text-foreground mb-2">功能未启用或服务不可用</h3>
           <p class="text-sm text-muted-foreground mb-6 max-w-[448px]">
-            Skill 市场功能当前不可用，可能是相关服务尚未启用或后端未正确配置。请检查后端服务状态后重试。
+            扩展市场功能当前不可用，可能是相关服务尚未启用或后端未正确配置。请检查后端服务状态后重试。
           </p>
           <Button variant="outline" size="sm" @click="handleRetryServiceCheck">
             重新检查
@@ -233,8 +236,8 @@ onMounted(() => {
         <EmptyState
           v-else
           icon="🏪"
-          title="暂无可用 Skill"
-          description="市场中还没有 Skill，请尝试刷新索引或稍后再来。"
+          title="暂无可用扩展"
+          description="市场中还没有扩展，请尝试刷新索引或稍后再来。"
           action-label="刷新索引"
           :show-action="true"
           @action="handleRefresh"
