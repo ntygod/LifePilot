@@ -582,6 +582,92 @@ public class SkillController {
         return ResponseEntity.noContent().build();
     }
 
+    // ── Skill Markdown 端点 ─────────────────────────────────
+
+    /**
+     * 获取指定 Skill 的 Markdown 内容。
+     *
+     * @param id Skill ID
+     * @return Markdown 文本（text/markdown），不存在返回 404
+     */
+    @GetMapping(value = "/skills/{id}/markdown", produces = "text/markdown")
+    public ResponseEntity<?> getSkillMarkdown(@PathVariable String id) {
+        Optional<SkillDefinition> skillOpt = skillRegistry.find(id);
+        if (skillOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(new ErrorResponse(404, "Skill 不存在: id=" + id, Instant.now()));
+        }
+
+        String markdown = markdownSerializer.serialize(skillOpt.get());
+        return ResponseEntity.ok(markdown);
+    }
+
+    /**
+     * 通过 Markdown 内容更新指定 Skill。
+     *
+     * <p>接收纯文本 SKILL.md 内容，解析后写入文件并注册到 SkillRegistry。</p>
+     *
+     * @param id      Skill ID
+     * @param content Markdown 文本内容
+     * @return 更新后的 SkillDefinition JSON，解析失败返回 400，不存在返回 404
+     */
+    @PutMapping(value = "/skills/{id}/markdown", consumes = "text/plain")
+    public ResponseEntity<?> updateSkillMarkdown(@PathVariable String id,
+                                                  @RequestBody String content) {
+        // 检查 Skill 是否存在
+        Optional<SkillDefinition> existingOpt = skillRegistry.find(id);
+        if (existingOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(new ErrorResponse(404, "Skill 不存在: id=" + id, Instant.now()));
+        }
+
+        // 仅用户定义的 Skill 可通过 Markdown 更新
+        if (!(existingOpt.get().source() instanceof SkillSource.UserDefined)) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(new ErrorResponse(400, "只能更新用户创建的 Skill", Instant.now()));
+        }
+
+        // 解析 Markdown 内容
+        var parseResult = markdownParser.parse(content);
+        if (!parseResult.success() || parseResult.definition() == null) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(new ErrorResponse(400, "SKILL.md 解析失败: " + String.join("; ", parseResult.errors()), Instant.now()));
+        }
+
+        SkillDefinition parsed = parseResult.definition();
+
+        // 验证 ID 一致性
+        if (!parsed.id().equals(id)) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(new ErrorResponse(400, "SKILL.md 中的 ID 必须与路径参数一致", Instant.now()));
+        }
+
+        try {
+            // 写入文件
+            Path skillFolder = skillsDirectory.resolve(id);
+            if (!Files.exists(skillFolder)) {
+                Files.createDirectories(skillFolder);
+            }
+            Path skillFile = skillFolder.resolve(skillConfig.getSkillFilename());
+            Files.writeString(skillFile, content);
+
+            // 通过 MarkdownSkillLoader 加载（设置正确的 source）
+            Optional<SkillDefinition> loaded = markdownLoader.loadFolder(skillFolder);
+            if (loaded.isEmpty()) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body(new ErrorResponse(400, "Skill 更新失败，请检查定义", Instant.now()));
+            }
+
+            skillRegistry.register(loaded.get());
+            log.info("Skill Markdown 更新成功: id={}", id);
+            return ResponseEntity.ok(loaded.get());
+        } catch (IOException e) {
+            log.error("Skill Markdown 更新失败: id={}", id, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ErrorResponse(500, "更新失败: " + e.getMessage(), Instant.now()));
+        }
+    }
+
     // ── 辅助方法 ──────────────────────────────────────────
 
     private String getString(Map<String, Object> map, String key) {
