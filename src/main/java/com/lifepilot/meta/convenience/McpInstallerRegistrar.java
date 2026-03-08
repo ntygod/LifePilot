@@ -79,13 +79,19 @@ public class McpInstallerRegistrar implements InitializingBean {
      * <p>通过 {@link ProcessBuilder} 执行 {@code npx --version}，
      * 在 {@value #NPX_CHECK_TIMEOUT_SECONDS} 秒内完成且退出码为 0 则视为可用。</p>
      *
+     * <p>Windows 上 npx 是 .cmd 批处理脚本，需要通过 {@code cmd /c} 执行。</p>
+     *
      * @return npx 可用返回 true，否则返回 false
      */
     boolean isNpxAvailable() {
         try {
-            var process = new ProcessBuilder("npx", "--version")
-                    .redirectErrorStream(true)
-                    .start();
+            ProcessBuilder pb;
+            if (System.getProperty("os.name", "").toLowerCase().contains("win")) {
+                pb = new ProcessBuilder("cmd", "/c", "npx", "--version");
+            } else {
+                pb = new ProcessBuilder("npx", "--version");
+            }
+            var process = pb.redirectErrorStream(true).start();
             boolean finished = process.waitFor(NPX_CHECK_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             if (!finished) {
                 process.destroyForcibly();
@@ -97,4 +103,5 @@ public class McpInstallerRegistrar implements InitializingBean {
             return false;
         }
     }
+
 }

@@ -67,6 +67,9 @@ public class McpServerRegistry {
         String name = config.name();
         log.info("MCP Server 连接开始: name={}, transport={}", name, config.transport());
 
+        // 确保 entry 存在（外部直接调用 connectServer 时可能未经过 initializeAll）
+        servers.putIfAbsent(name, McpServerEntry.initial(config));
+
         updateState(name, McpServerState.CONNECTING);
 
         CompletableFuture.runAsync(() -> {
