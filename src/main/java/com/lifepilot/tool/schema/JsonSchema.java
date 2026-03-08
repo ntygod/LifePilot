@@ -1,5 +1,6 @@
 package com.lifepilot.tool.schema;
 
+import com.fasterxml.jackson.annotation.JsonValue;
 import com.lifepilot.tool.model.ValidationError;
 
 import java.util.ArrayList;
@@ -125,6 +126,7 @@ public class JsonSchema {
     }
 
     /** 获取 Schema 定义。 */
+    @JsonValue
     public Map<String, Object> toMap() {
         return schema;
     }
