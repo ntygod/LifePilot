@@ -23,6 +23,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.concurrent.TimeUnit;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -678,25 +679,42 @@ public class SkillController {
     // ── MCP Server 端点 ─────────────────────────────────────
 
     /**
+     * 获取 MCP 环境状态（npx 可用性等）。
+     *
+     * <p>前端据此展示环境依赖提示，例如 Node.js 未安装时引导用户安装。</p>
+     *
+     * @return 包含 npxAvailable 的状态 Map
+     */
+    @GetMapping("/mcp/status")
+    public ResponseEntity<?> getMcpStatus() {
+        boolean npxAvailable = checkNpxAvailable();
+        return ResponseEntity.ok(Map.of("npxAvailable", npxAvailable));
+    }
+
+    /**
      * 获取所有 MCP Server 列表。
      *
-     * @return MCP Server 条目列表
+     * @return MCP Server 扁平化 DTO 列表
      */
     @GetMapping("/mcp/servers")
     public ResponseEntity<?> listMcpServers() {
         log.debug("查询 MCP Server 列表");
-        return ResponseEntity.ok(mcpServerRegistry.listServers());
+        var dtos = mcpServerRegistry.listServers().stream()
+                .map(this::toMcpServerDto)
+                .toList();
+        return ResponseEntity.ok(dtos);
     }
 
     /**
      * 获取指定 MCP Server 详情。
      *
      * @param name Server 名称
-     * @return Server 条目，不存在返回 404
+     * @return Server 扁平化 DTO，不存在返回 404
      */
     @GetMapping("/mcp/servers/{name}")
     public ResponseEntity<?> getMcpServer(@PathVariable String name) {
         return mcpServerRegistry.getServer(name)
+                .map(this::toMcpServerDto)
                 .<ResponseEntity<?>>map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(
                         new ErrorResponse(404, "MCP Server 不存在: name=" + name, Instant.now())));
@@ -968,5 +986,71 @@ public class SkillController {
         } catch (NumberFormatException e) {
             return defaultValue;
         }
+    }
+
+    // ── npx 可用性检查 ──────────────────────────────────────────
+
+    /**
+     * 检查 npx 是否可用。
+     *
+     * <p>Windows 上 npx 是 .cmd 批处理脚本，需要通过 {@code cmd /c} 执行。</p>
+     */
+    private boolean checkNpxAvailable() {
+        try {
+            ProcessBuilder pb;
+            if (System.getProperty("os.name", "").toLowerCase().contains("win")) {
+                pb = new ProcessBuilder("cmd", "/c", "npx", "--version");
+            } else {
+                pb = new ProcessBuilder("npx", "--version");
+            }
+            var process = pb.redirectErrorStream(true).start();
+            boolean finished = process.waitFor(5, TimeUnit.SECONDS);
+            if (!finished) {
+                process.destroyForcibly();
+                return false;
+            }
+            return process.exitValue() == 0;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    // ── McpServerEntry → 前端 DTO 转换 ──────────────────────────────
+
+    /**
+     * 将 McpServerEntry 转换为前端期望的扁平 DTO。
+     *
+     * <p>前端 McpServer 类型期望 name/state/toolCount 等顶层字段，
+     * 而 McpServerEntry 的 name 嵌套在 config 中，且 client 字段不应序列化。</p>
+     */
+    private Map<String, Object> toMcpServerDto(com.lifepilot.mcp.registry.McpServerEntry entry) {
+        var dto = new HashMap<String, Object>();
+        var config = entry.config();
+        dto.put("name", config.name());
+        dto.put("state", entry.state().name());
+        dto.put("toolCount", toolRegistry.getToolsByServer(config.name()).size());
+        dto.put("connectedSince", entry.connectedSince() != null ? entry.connectedSince().toString() : null);
+        dto.put("lastError", entry.lastError());
+
+        // 嵌套 config 供前端编辑用
+        var configDto = new HashMap<String, Object>();
+        // 前端 Select 使用小写值：stdio / sse
+        configDto.put("transport", switch (config.transport()) {
+            case STDIO -> "stdio";
+            case SSE_LEGACY -> "sse";
+            case STREAMABLE_HTTP -> "streamable_http";
+        });
+        configDto.put("command", config.command());
+        configDto.put("args", config.args());
+        configDto.put("env", config.env());
+        configDto.put("url", config.url());
+        configDto.put("autoConnect", config.autoConnect());
+        configDto.put("reconnect", config.reconnect());
+        // 前端期望的字段名和单位
+        configDto.put("timeoutSeconds", config.timeout().toSeconds());
+        configDto.put("maxRetries", config.maxReconnectAttempts());
+        dto.put("config", configDto);
+
+        return dto;
     }
 }
