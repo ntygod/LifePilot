@@ -7,6 +7,7 @@ import com.lifepilot.agent.model.AgentResponse;
 import com.lifepilot.agent.model.AgentState;
 import com.lifepilot.multiagent.config.MultiAgentProperties;
 import com.lifepilot.multiagent.model.AgentDefinition;
+import com.lifepilot.tool.ToolContract;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -71,8 +72,8 @@ public class AgentExecutor {
             // 2. 创建独立 Budget
             var subBudget = definition.budget().toAgentBudget();
 
-            // 3. 构建 allowedToolIds（canDelegate=false 时排除 handoff_to_* 工具）
-            List<String> allowedToolIds = buildAllowedToolIds(definition);
+            // 3. 构建 allowedToolIds（canDelegate=false 时排除 handoff_to_* 工具 + 父作用域交集）
+            List<String> allowedToolIds = buildAllowedToolIds(definition, parentState);
 
             // 4. 组装任务消息
             String message = context != null
@@ -128,8 +129,16 @@ public class AgentExecutor {
      *   <li>指向自身的 handoff 工具（防止自递归）— 独立于 canDelegate 标志</li>
      *   <li>canDelegate=false 时排除所有 handoff_to_* 工具</li>
      * </ol>
+     *
+     * <p>交集约束：当父 Agent 的 allowedToolIds 非空时，子 Agent 的有效工具集
+     * 取与父 Agent 作用域的交集，防止通过委托实现权限提升。
+     * Infrastructure 工具（tags 含 "infrastructure"）始终保留，不受交集约束。</p>
+     *
+     * @param definition  子 Agent 蓝图
+     * @param parentState 父 Agent 状态
+     * @return 子 Agent 的有效工具 ID 列表
      */
-    private List<String> buildAllowedToolIds(AgentDefinition definition) {
+    private List<String> buildAllowedToolIds(AgentDefinition definition, AgentState parentState) {
         String selfHandoffId = HandoffToolFactory.TOOL_ID_PREFIX + definition.id();
         var result = new ArrayList<String>();
         for (String toolId : definition.allowedTools()) {
@@ -150,6 +159,23 @@ public class AgentExecutor {
             }
             result.add(toolId);
         }
+
+        // 父 Agent 作用域交集约束
+        var parentAllowed = parentState.allowedToolIds();
+        if (parentAllowed != null && !parentAllowed.isEmpty()) {
+            result.retainAll(parentAllowed);
+        }
+
+        // infrastructure 工具始终保留
+        toolRegistry.getToolSnapshot().stream()
+                .filter(t -> t.tags().contains("infrastructure"))
+                .map(ToolContract::id)
+                .forEach(id -> {
+                    if (!result.contains(id)) {
+                        result.add(id);
+                    }
+                });
+
         return List.copyOf(result);
     }
 }

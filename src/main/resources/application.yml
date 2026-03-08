@@ -589,5 +589,57 @@ lifepilot:
       max-retries: 1
     store:
       default-query-limit: 50
+  # 元能力系统配置
+  meta:
+    infra:
+      web-search:
+        provider: duckduckgo
+        api-key: ${SEARCH_API_KEY:}
+        max-results: 5
+      web-fetch:
+        max-content-length: 50000
+        timeout-seconds: 10
+      user-profile:
+        timezone: ""
+        cache-ttl-seconds: 300
+      shell:
+        command-blacklist:
+          - "rm\\s+-rf\\s+/"
+          - "format\\s+[a-zA-Z]:"
+          - "shutdown"
+          - "reboot"
+          - "mkfs"
+          - "dd\\s+if="
+        timeout-seconds: 30
+        max-output-length: 50000
+      browser:
+        enabled: true
+        headless: true
+        idle-timeout-seconds: 300
+      code-execute:
+        enabled: true
+        default-language: python
+      file:
+        max-read-size: 1048576
+        allowed-directories: []
+        denied-directories:
+          - "/etc"
+          - "/var"
+          - "C:\\Windows"
+      interaction:
+        response-timeout-seconds: 120
+    introspection:
+      cache-ttl-seconds: 60
+    skill-discovery:
+      enabled: true
+      builtin-skill-path: builtin-skills/find-skills
+    mcp-installer:
+      enabled: true
+      command: npx
+      args:
+        - "@anaisbetts/mcp-installer"
+    onboarding:
+      auto-trigger: true
+      agent-definition: preset-agents/onboarding-guide.md
 
 # 日志配置见 logback-spring.xml（CLI 模式输出到文件，避免干扰 JLine 终端输入）

@@ -48,7 +48,8 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
         if (allowedToolIds != null && !allowedToolIds.isEmpty()) {
             int totalCount = tools.size();
             tools = tools.stream()
-                    .filter(t -> allowedToolIds.contains(t.id()))
+                    .filter(t -> allowedToolIds.contains(t.id())
+                                 || t.tags().contains("infrastructure"))
                     .toList();
             log.debug("生成 ToolCallback: total={}, filtered={}", totalCount, tools.size());
         } else {
