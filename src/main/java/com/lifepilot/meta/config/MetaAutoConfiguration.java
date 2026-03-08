@@ -12,7 +12,7 @@ import com.lifepilot.meta.infra.interaction.CliInteractionHandler;
 import com.lifepilot.meta.infra.interaction.InteractionBridge;
 import com.lifepilot.multiagent.registry.AgentRegistry;
 import com.lifepilot.sandbox.booter.SandboxBooter;
-import com.lifepilot.skill.markdown.MarkdownSkillParser;
+import com.lifepilot.skill.config.SkillConfigProperties;
 import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.workflow.registry.WorkflowRegistry;
@@ -102,17 +102,17 @@ public class MetaAutoConfiguration {
     }
 
     /**
-     * 注册 find-skills Skill 发现注册器 — 启动时读取内置 SKILL.md 并注册到 SkillRegistry。
+     * 注册 find-skills Skill 提取器 — 启动时将内置 SKILL.md 提取到用户 Skill 目录。
      *
-     * <p>通过 {@code lifepilot.meta.skill-discovery.enabled} 配置控制启用，默认 true。</p>
+     * <p>通过 {@code lifepilot.meta.skill-discovery.enabled} 配置控制启用，默认 true。
+     * 提取后由 MarkdownSkillLoader 在 ApplicationReadyEvent 时作为 UserDefined Skill 加载。</p>
      */
     @Bean
     @ConditionalOnProperty(name = "lifepilot.meta.skill-discovery.enabled",
                            havingValue = "true", matchIfMissing = true)
-    SkillDiscoveryRegistrar skillDiscoveryRegistrar(SkillRegistry skillRegistry,
-                                                    MarkdownSkillParser markdownSkillParser,
-                                                    MetaProperties properties) {
-        return new SkillDiscoveryRegistrar(skillRegistry, markdownSkillParser, properties);
+    SkillDiscoveryRegistrar skillDiscoveryRegistrar(MetaProperties properties,
+                                                    SkillConfigProperties skillConfig) {
+        return new SkillDiscoveryRegistrar(properties, skillConfig);
     }
 
     /**

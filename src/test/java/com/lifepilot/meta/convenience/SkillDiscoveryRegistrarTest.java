@@ -1,109 +1,107 @@
 package com.lifepilot.meta.convenience;
 
 import com.lifepilot.meta.config.MetaProperties;
-import com.lifepilot.skill.markdown.MarkdownSkillParser;
-import com.lifepilot.skill.model.*;
-import com.lifepilot.skill.registry.SkillRegistry;
+import com.lifepilot.skill.config.SkillConfigProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
+import org.junit.jupiter.api.io.TempDir;
 
-import java.util.List;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.argThat;
-import static org.mockito.Mockito.*;
 
 /**
- * SkillDiscoveryRegistrar 单元测试 — 验证 SKILL.md 解析和注册。
+ * SkillDiscoveryRegistrar 单元测试 — 验证 SKILL.md 提取到用户目录。
  *
  * @author zsg
  * @since 2026-03-08
  */
 class SkillDiscoveryRegistrarTest {
 
-    private SkillRegistry skillRegistry;
-    private MarkdownSkillParser markdownSkillParser;
     private MetaProperties properties;
-    private SkillDiscoveryRegistrar registrar;
+    private SkillConfigProperties skillConfig;
+
+    @TempDir
+    Path tempDir;
 
     @BeforeEach
     void setUp() {
-        skillRegistry = mock(SkillRegistry.class);
-        markdownSkillParser = new MarkdownSkillParser();
         properties = new MetaProperties();
-
-        when(skillRegistry.register(any())).thenReturn(true);
-
-        registrar = new SkillDiscoveryRegistrar(skillRegistry, markdownSkillParser, properties);
+        skillConfig = new SkillConfigProperties();
+        skillConfig.setDirectory(tempDir.toString());
     }
 
     @Test
-    void registerFindSkills_解析内置SKILL_MD并注册成功() {
-        // 使用默认配置路径，读取实际的 classpath 资源
-        registrar.registerFindSkills();
+    void extractFindSkillsToUserDirectory_首次启动提取SKILL_MD到用户目录() {
+        var registrar = new SkillDiscoveryRegistrar(properties, skillConfig);
 
-        // 验证注册被调用
-        var captor = ArgumentCaptor.forClass(SkillDefinition.class);
-        verify(skillRegistry).register(captor.capture());
+        registrar.extractFindSkillsToUserDirectory();
 
-        var definition = captor.getValue();
-        assertThat(definition.id()).isEqualTo("builtin.find-skills");
-        assertThat(definition.name()).isEqualTo("Skill 发现与安装");
-        assertThat(definition.source()).isInstanceOf(SkillSource.Builtin.class);
-        assertThat(definition.suggestedTools()).contains("builtin.shell.exec");
-        assertThat(definition.instructions()).contains("Skill 发现");
+        Path targetFile = tempDir.resolve("builtin.find-skills/SKILL.md");
+        assertThat(targetFile).exists();
+
+        String content = readString(targetFile);
+        assertThat(content).contains("builtin.find-skills");
+        assertThat(content).contains("Skill 发现与安装");
+        assertThat(content).contains("suggested-tools");
     }
 
     @Test
-    void registerFindSkills_source覆盖为Builtin() {
-        registrar.registerFindSkills();
+    void extractFindSkillsToUserDirectory_文件已存在时跳过不覆盖() throws IOException {
+        // 预先创建文件，模拟用户已自定义
+        Path folder = tempDir.resolve("builtin.find-skills");
+        Files.createDirectories(folder);
+        Path targetFile = folder.resolve("SKILL.md");
+        Files.writeString(targetFile, "用户自定义内容", StandardCharsets.UTF_8);
 
-        verify(skillRegistry).register(argThat(def ->
-                def.source() instanceof SkillSource.Builtin));
+        var registrar = new SkillDiscoveryRegistrar(properties, skillConfig);
+        registrar.extractFindSkillsToUserDirectory();
+
+        // 验证文件内容未被覆盖
+        assertThat(Files.readString(targetFile, StandardCharsets.UTF_8))
+                .isEqualTo("用户自定义内容");
     }
 
     @Test
-    void registerFindSkills_资源路径不存在时跳过注册() {
-        // 设置不存在的路径
+    void extractFindSkillsToUserDirectory_功能禁用时跳过提取() {
+        properties.getSkillDiscovery().setEnabled(false);
+
+        var registrar = new SkillDiscoveryRegistrar(properties, skillConfig);
+        registrar.extractFindSkillsToUserDirectory();
+
+        Path targetFile = tempDir.resolve("builtin.find-skills/SKILL.md");
+        assertThat(targetFile).doesNotExist();
+    }
+
+    @Test
+    void extractFindSkillsToUserDirectory_资源路径不存在时跳过提取() {
         properties.getSkillDiscovery().setBuiltinSkillPath("nonexistent/path");
 
-        registrar.registerFindSkills();
+        var registrar = new SkillDiscoveryRegistrar(properties, skillConfig);
+        registrar.extractFindSkillsToUserDirectory();
 
-        // 不应调用注册
-        verify(skillRegistry, never()).register(any());
+        Path targetFile = tempDir.resolve("builtin.find-skills/SKILL.md");
+        assertThat(targetFile).doesNotExist();
     }
 
     @Test
-    void registerFindSkills_解析失败时跳过注册() {
-        // 使用 Mock parser 返回失败结果
-        var mockParser = mock(MarkdownSkillParser.class);
-        when(mockParser.parse(any())).thenReturn(
-                new MarkdownSkillParser.ParseResult(false, null, List.of("解析错误"), null));
+    void afterPropertiesSet_触发提取() {
+        var registrar = new SkillDiscoveryRegistrar(properties, skillConfig);
 
-        var registrarWithMockParser = new SkillDiscoveryRegistrar(
-                skillRegistry, mockParser, properties);
-
-        registrarWithMockParser.registerFindSkills();
-
-        verify(skillRegistry, never()).register(any());
-    }
-
-    @Test
-    void registerFindSkills_注册失败时记录警告() {
-        when(skillRegistry.register(any())).thenReturn(false);
-
-        // 不应抛异常
-        registrar.registerFindSkills();
-
-        verify(skillRegistry).register(any());
-    }
-
-    @Test
-    void afterPropertiesSet_触发注册() {
         registrar.afterPropertiesSet();
 
-        verify(skillRegistry).register(any());
+        Path targetFile = tempDir.resolve("builtin.find-skills/SKILL.md");
+        assertThat(targetFile).exists();
+    }
+
+    private static String readString(Path path) {
+        try {
+            return Files.readString(path, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 }
