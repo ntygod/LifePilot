@@ -1,7 +1,7 @@
 package com.lifepilot.marketplace.security;
 
 import com.lifepilot.marketplace.model.*;
-import com.lifepilot.skill.marketplace.config.MarketplaceProperties;
+import com.lifepilot.marketplace.config.MarketplaceProperties;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.ToolContract;
 import com.lifepilot.tool.model.ToolResult;

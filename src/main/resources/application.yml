@@ -432,6 +432,10 @@ lifepilot:
         - "(?i)ignore\\s+(all\\s+)?prior"
         - "(?i)disregard\\s+(all\\s+)?(above|previous)"
         - "(?i)forget\\s+(all\\s+)?previous"
+    install-dirs:
+      skills: "${user.home}/.lifepilot/skills"
+      agents: "${user.home}/.lifepilot/agents"
+      workflows: "${user.home}/.lifepilot/workflows"
   mcp:
     enabled: true
     server:

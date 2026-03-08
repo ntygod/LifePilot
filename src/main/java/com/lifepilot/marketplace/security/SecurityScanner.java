@@ -1,7 +1,7 @@
 package com.lifepilot.marketplace.security;
 
 import com.lifepilot.marketplace.model.*;
-import com.lifepilot.skill.marketplace.config.MarketplaceProperties;
+import com.lifepilot.marketplace.config.MarketplaceProperties;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

@@ -5,7 +5,7 @@ import com.lifepilot.marketplace.index.IndexManager;
 import com.lifepilot.marketplace.model.*;
 import com.lifepilot.marketplace.security.SecurityScanner;
 import com.lifepilot.marketplace.version.VersionResolver;
-import com.lifepilot.skill.marketplace.config.MarketplaceProperties;
+import com.lifepilot.marketplace.config.MarketplaceProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.client.RestClient;

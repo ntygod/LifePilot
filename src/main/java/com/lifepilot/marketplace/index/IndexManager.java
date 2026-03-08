@@ -7,7 +7,7 @@ import com.lifepilot.marketplace.install.InstalledExtensionRepository;
 import com.lifepilot.marketplace.model.ExtensionPackage;
 import com.lifepilot.marketplace.model.InstalledExtension;
 import com.lifepilot.marketplace.version.VersionResolver;
-import com.lifepilot.skill.marketplace.config.MarketplaceProperties;
+import com.lifepilot.marketplace.config.MarketplaceProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;

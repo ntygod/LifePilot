@@ -5,7 +5,7 @@ import com.lifepilot.marketplace.model.ExtensionPackage;
 import com.lifepilot.marketplace.model.ExtensionType;
 import com.lifepilot.marketplace.model.InstalledExtension;
 import com.lifepilot.marketplace.version.VersionResolver;
-import com.lifepilot.skill.marketplace.config.MarketplaceProperties;
+import com.lifepilot.marketplace.config.MarketplaceProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
