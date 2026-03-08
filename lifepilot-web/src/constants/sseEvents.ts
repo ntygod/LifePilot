@@ -23,6 +23,8 @@ export const SSE_EVENT_TYPES = {
   ERROR: 'error',
   /** 心跳事件 */
   HEARTBEAT: 'heartbeat',
+  /** 媒体数据事件（截图等二进制数据） */
+  MEDIA: 'media',
   // Trace 模块事件类型
   /** Trace 开始事件 */
   TRACE_START: 'trace-start',
