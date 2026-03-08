@@ -6,6 +6,7 @@ import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.web.client.RestClient;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
@@ -24,7 +25,9 @@ class InfraToolProviderTest {
     @BeforeEach
     void setUp() {
         properties = new MetaProperties();
-        provider = new InfraToolProvider(properties, null, null);
+        var restClientBuilder = mock(RestClient.Builder.class);
+        when(restClientBuilder.build()).thenReturn(mock(RestClient.class));
+        provider = new InfraToolProvider(properties, restClientBuilder, null, null);
     }
 
     @Test
@@ -38,20 +41,22 @@ class InfraToolProviderTest {
     }
 
     @Test
-    void registerTools_注册3个环境感知工具() {
+    void registerTools_注册5个工具_含环境感知和信息获取() {
         DynamicToolRegistry registry = mock(DynamicToolRegistry.class);
 
         provider.registerTools(registry);
 
         ArgumentCaptor<BuiltinTool> captor = ArgumentCaptor.forClass(BuiltinTool.class);
-        verify(registry, times(3)).registerBuiltinTool(captor.capture());
+        verify(registry, times(5)).registerBuiltinTool(captor.capture());
 
         var tools = captor.getAllValues();
         assertThat(tools).extracting(BuiltinTool::id)
                 .containsExactlyInAnyOrder(
                         "builtin.env.datetime",
                         "builtin.env.user-profile",
-                        "builtin.env.system-info"
+                        "builtin.env.system-info",
+                        "builtin.web.search",
+                        "builtin.web.fetch"
                 );
     }
 
