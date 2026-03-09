@@ -453,7 +453,7 @@ lifepilot:
     # 提示符
     prompt: "ZhiWei> "
     # 历史记录文件
-    history-file: "~/.lifepilot/cli-history"
+    history-file: "~/.zhiwei/cli-history"
     # 最大历史记录条数
     max-history-size: 1000
     # 流式输出开关

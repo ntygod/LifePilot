@@ -13,7 +13,7 @@ ZhiWei 的数据模型设计围绕一个核心命题：**如何为本地运行�
 
 | 原则 | 说明 | 体现 |
 |------|------|------|
-| **本地优先** | 所有数据存储在 `~/.lifepilot/`，零外部依赖 | SQLite 单文件数据库，无需安装数据库服务 |
+| **本地优先** | 所有数据存储在 `~/.zhiwei/`，零外部依赖 | SQLite 单文件数据库，无需安装数据库服务 |
 | **追加优先** | 核心数据（对话、轨迹、事件日志）采用追加写入 | 支持事件溯源、审计追踪和 Undo 操作 |
 | **时序感知** | 实体和关系都带时间维度 | 版本化更新 + `valid_from`/`valid_to` 支持时间旅行查询 |
 | **向量原生** | 向量索引与结构化数据同库 | sqlite-vec 扩展提供 `vec0` 虚拟表，KNN 查询原生支持 |
@@ -1137,7 +1137,7 @@ Skill 定义表存储三种来源的 Skill 元数据：BUILTIN（内置）、USE
 | `id` | TEXT | PK | UUID |
 | `name` | TEXT | NOT NULL, UNIQUE | 知识库名称 |
 | `description` | TEXT | | 描述 |
-| `base_path` | TEXT | | 文档根路径（如 `~/.lifepilot/documents/work-docs`） |
+| `base_path` | TEXT | | 文档根路径（如 `~/.zhiwei/documents/work-docs`） |
 | `document_count` | INTEGER | DEFAULT 0 | 文档数量 |
 | `total_chunks` | INTEGER | DEFAULT 0 | 总分块数 |
 | `created_at` | TEXT | NOT NULL | ISO 8601 |
@@ -3072,7 +3072,7 @@ CHECK (json_valid(steps_json))  -- 必填 JSON 字段不允许 NULL
 ## 12. 存储目录结构
 
 ```
-~/.lifepilot/
+~/.zhiwei/
 ├── data/                              # 数据库文件
 │   ├── lifepilot.db                   # 主数据库（结构化数据 + FTS5）
 │   ├── lifepilot.db-wal               # WAL 日志文件（运行时自动创建）

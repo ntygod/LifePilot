@@ -1,4 +1,4 @@
-package com.lifepilot.sync.connector.obsidian;
+﻿package com.lifepilot.sync.connector.obsidian;
 
 import com.lifepilot.skill.builtin.habit.HabitItem;
 import com.lifepilot.skill.builtin.schedule.ScheduleItem;
@@ -25,7 +25,7 @@ import java.util.UUID;
  * status: PENDING
  * dueDate: "2026-03-01"
  * tags: [购物, 日常]
- * lifepilot_id: "uuid-xxx"
+ * zhiwei_id: "uuid-xxx"
  * ---
  * 任务描述正文...
  * </pre>
@@ -135,7 +135,7 @@ public final class ObsidianFieldMapping {
      *
      * <p>映射关系：
      * <ul>
-     *   <li>id ↔ lifepilot_id</li>
+     *   <li>id ↔ zhiwei_id</li>
      *   <li>title ↔ title</li>
      *   <li>description ↔ body（正文）</li>
      *   <li>priority ↔ priority（枚举名称）</li>
@@ -159,7 +159,7 @@ public final class ObsidianFieldMapping {
             if (local.tags() != null && !local.tags().isEmpty()) {
                 fm.put("tags", local.tags());
             }
-            fm.put("lifepilot_id", local.id());
+            fm.put("zhiwei_id", local.id());
 
             var body = local.description() != null ? local.description() : "";
             return YamlFrontmatterParser.format(fm, body);
@@ -171,7 +171,7 @@ public final class ObsidianFieldMapping {
             var fm = result.frontmatter();
             var body = result.body();
 
-            var id = getString(fm, "lifepilot_id", UUID.randomUUID().toString());
+            var id = getString(fm, "zhiwei_id", UUID.randomUUID().toString());
             var title = getString(fm, "title", "");
             var description = (body == null || body.isBlank()) ? null : body;
             var priority = parsePriority(getNullableString(fm, "priority"));
@@ -240,7 +240,7 @@ public final class ObsidianFieldMapping {
      *
      * <p>映射关系：
      * <ul>
-     *   <li>id ↔ lifepilot_id</li>
+     *   <li>id ↔ zhiwei_id</li>
      *   <li>title ↔ title</li>
      *   <li>startTime ↔ startTime</li>
      *   <li>endTime ↔ endTime</li>
@@ -260,7 +260,7 @@ public final class ObsidianFieldMapping {
             if (local.location() != null) {
                 fm.put("location", local.location());
             }
-            fm.put("lifepilot_id", local.id());
+            fm.put("zhiwei_id", local.id());
 
             var body = local.notes() != null ? local.notes() : "";
             return YamlFrontmatterParser.format(fm, body);
@@ -272,7 +272,7 @@ public final class ObsidianFieldMapping {
             var fm = result.frontmatter();
             var body = result.body();
 
-            var id = getString(fm, "lifepilot_id", UUID.randomUUID().toString());
+            var id = getString(fm, "zhiwei_id", UUID.randomUUID().toString());
             var title = getString(fm, "title", "");
             var startTime = getString(fm, "startTime", "");
             var endTime = getString(fm, "endTime", "");
@@ -315,7 +315,7 @@ public final class ObsidianFieldMapping {
      *
      * <p>映射关系：
      * <ul>
-     *   <li>id ↔ lifepilot_id</li>
+     *   <li>id ↔ zhiwei_id</li>
      *   <li>name ↔ name</li>
      *   <li>frequency ↔ frequency（枚举名称）</li>
      *   <li>targetTime ↔ targetTime</li>
@@ -334,7 +334,7 @@ public final class ObsidianFieldMapping {
                 fm.put("targetTime", local.targetTime());
             }
             fm.put("currentStreak", local.currentStreak());
-            fm.put("lifepilot_id", local.id());
+            fm.put("zhiwei_id", local.id());
 
             return YamlFrontmatterParser.format(fm, "");
         }
@@ -344,7 +344,7 @@ public final class ObsidianFieldMapping {
             var result = YamlFrontmatterParser.parse(remote);
             var fm = result.frontmatter();
 
-            var id = getString(fm, "lifepilot_id", UUID.randomUUID().toString());
+            var id = getString(fm, "zhiwei_id", UUID.randomUUID().toString());
             var name = getString(fm, "name", "");
             var frequency = parseFrequency(getNullableString(fm, "frequency"));
             var targetTime = getNullableString(fm, "targetTime");

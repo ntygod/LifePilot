@@ -1,4 +1,4 @@
-package com.lifepilot.sync.connector.obsidian;
+﻿package com.lifepilot.sync.connector.obsidian;
 
 import com.lifepilot.sync.config.SyncProperties;
 import com.lifepilot.sync.connector.JsonHelper;
@@ -235,10 +235,10 @@ public final class ObsidianConnector implements SyncConnector {
         var remoteId = fileName.endsWith(".md")
                 ? fileName.substring(0, fileName.length() - 3) : fileName;
 
-        // 从 frontmatter 提取 lifepilot_id 作为备选
-        var lifepilotId = fm.get("lifepilot_id");
-        if (lifepilotId != null) {
-            remoteId = lifepilotId.toString();
+        // 从 frontmatter 提取 zhiwei_id 作为备选
+        var zhiweiId = fm.get("zhiwei_id");
+        if (zhiweiId != null) {
+            remoteId = zhiweiId.toString();
         }
 
         // 构建 fields Map

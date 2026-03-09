@@ -67,7 +67,7 @@ class DockerBooterTest {
         assertThat(command).contains("--memory", "256m");
         assertThat(command).contains("--cpus", "1.0");
         // 镜像名
-        assertThat(command).contains("lifepilot/sandbox-python");
+        assertThat(command).contains("zhiwei/sandbox-python");
         // 运行时命令和脚本路径
         assertThat(command).contains("python3", "/workspace/script.py");
     }
@@ -128,7 +128,7 @@ class DockerBooterTest {
 
         ArrayList<String> command = booter.buildDockerCommand("test-container", request, "bash", "script.sh");
 
-        assertThat(command).contains("lifepilot/sandbox-shell");
+        assertThat(command).contains("zhiwei/sandbox-shell");
         assertThat(command).contains("bash", "/workspace/script.sh");
     }
 }

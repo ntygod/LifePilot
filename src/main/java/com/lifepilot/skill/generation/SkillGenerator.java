@@ -124,7 +124,7 @@ public class SkillGenerator {
     /**
      * 用户确认后持久化并注册。
      *
-     * <p>将 SKILL.md 文件写入 ~/.lifepilot/skills/auto/{skill-id}/SKILL.md，
+     * <p>将 SKILL.md 文件写入 ~/.zhiwei/skills/auto/{skill-id}/SKILL.md，
      * 更新 userConfirmed 为 true 并注册到 SkillRegistry。</p>
      *
      * @param definition 待确认的 SkillDefinition

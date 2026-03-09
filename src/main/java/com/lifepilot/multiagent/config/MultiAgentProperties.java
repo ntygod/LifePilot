@@ -18,7 +18,7 @@ public class MultiAgentProperties {
     private int maxDelegationDepth = 2;
 
     /** Agent Markdown 定义文件目录。 */
-    private String agentDefinitionsPath = "~/.lifepilot/agents/";
+    private String agentDefinitionsPath = "~/.zhiwei/agents/";
 
     /** 是否自动注册 HandoffTool。 */
     private boolean registerHandoffTools = true;

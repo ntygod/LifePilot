@@ -16,7 +16,7 @@ import java.nio.file.Path;
  * 内置 find-skills Skill 提取器 — 启动时将 SKILL.md 从 classpath 提取到用户 Skill 目录。
  *
  * <p>从 classpath 读取 {@code builtin-skills/find-skills/SKILL.md}，
- * 提取到用户 Skill 目录（{@code ~/.lifepilot/skills/builtin.find-skills/SKILL.md}）。
+ * 提取到用户 Skill 目录（{@code ~/.zhiwei/skills/builtin.find-skills/SKILL.md}）。
  * 后续由 {@link com.lifepilot.skill.markdown.MarkdownSkillLoader} 作为 UserDefined Skill 加载，
  * 用户可在文件系统中查看和编辑。</p>
  *

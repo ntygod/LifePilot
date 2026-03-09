@@ -22,7 +22,7 @@ if %JAVA_MAJOR% LSS 22 (
 )
 
 REM 3. 创建数据目录
-if not exist "%USERPROFILE%\.lifepilot" mkdir "%USERPROFILE%\.lifepilot"
+if not exist "%USERPROFILE%\.zhiwei" mkdir "%USERPROFILE%\.zhiwei"
 
 REM 4. 计算 JVM 内存参数（系统内存 50%，上限 2048MB）
 set "XMX=512"
@@ -36,5 +36,5 @@ if not "%TOTAL_MEM_KB%"=="" (
 echo 使用 JVM 最大内存: %XMX%m
 
 REM 5. 启动应用
-java -Xmx%XMX%m -jar "%~dp0lifepilot.jar"
+java -Xmx%XMX%m -jar "%~dp0zhiwei.jar"
 

@@ -19,10 +19,10 @@ ZhiWei 工作流引擎让你通过 YAML 文件定义多步骤自动化流程，�
 
 ### 2.1 创建你的第一个工作流
 
-在 `~/.lifepilot/workflows/` 目录下创建 YAML 文件：
+在 `~/.zhiwei/workflows/` 目录下创建 YAML 文件：
 
 ```yaml
-# ~/.lifepilot/workflows/daily-review.yml
+# ~/.zhiwei/workflows/daily-review.yml
 id: daily-review
 name: 每日回顾
 description: 每天晚上自动生成当日任务回顾
@@ -431,7 +431,7 @@ steps:
 lifepilot:
   workflow:
     enabled: true                          # 是否启用工作流引擎
-    definitions-dir: "~/.lifepilot/workflows"  # YAML 文件目录
+    definitions-dir: "~/.zhiwei/workflows"  # YAML 文件目录
     default-step-timeout-seconds: 300      # 默认步骤超时
     max-parallel-branches: 10              # 最大并行分支数
     max-nesting-depth: 3                   # 子工作流最大嵌套深度

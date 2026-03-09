@@ -20,8 +20,8 @@ public class EvalConfigProperties {
     /** 评估框架总开关，默认 true。 */
     private boolean enabled = true;
 
-    /** Benchmark 场景 YAML 目录，默认 ${user.home}/.lifepilot/eval/scenarios。 */
-    private String scenarioDirectory = "${user.home}/.lifepilot/eval/scenarios";
+    /** Benchmark 场景 YAML 目录，默认 ${user.home}/.zhiwei/eval/scenarios。 */
+    private String scenarioDirectory = "${user.home}/.zhiwei/eval/scenarios";
 
     /** 默认通过阈值 [0.0, 1.0]，默认 0.7。 */
     private double defaultPassThreshold = 0.7;

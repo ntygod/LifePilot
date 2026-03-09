@@ -1,7 +1,7 @@
-﻿# ZhiWei — 了解你生活全貌的 AI 伙伴
+﻿# ZhiWei — 见微知著，你的 AI 伙伴
 
 > **产品定位**：本地运行的个人 AI Agent 助手
-> **核心理念**：不只是被动回答问题，而是主动理解你的生活模式，在合适的时机给出建议和帮助
+> **核心理念**：不只是被动回答问题，而是主动理解你的行为模式，在合适的时机给出建议和帮助
 > **隐私承诺**：所有个人数据存储在本地，你完全掌控自己的隐私
 
 ---
@@ -10,7 +10,7 @@
 
 ### 1.1 ZhiWei 是什么？
 
-ZhiWei 是一个运行在你本地设备上的个人 AI Agent 助手。你可以用自然语言和它对话，让它帮你管理待办、安排日程、养成习惯、整理知识——更重要的是，它会从你的日常交互中学习，逐渐理解你的生活模式，在你需要的时候主动提供帮助。
+ZhiWei 是一个运行在你本地设备上的个人 AI Agent 助手。你可以用自然语言和它对话，让它帮你管理待办、安排日程、养成习惯、整理知识——更重要的是，它会从你的日常交互中学习，逐渐理解你的行为模式，在你需要的时候主动提供帮助。
 
 **一句话概括**：ZhiWei 是一个越用越懂你的 AI 伙伴，而不只是一个聊天机器人。
 
@@ -72,8 +72,8 @@ ZhiWei 是一个运行在你本地设备上的个人 AI Agent 助手。你可以
 ```yaml
 lifepilot:
   # ==================== 基础配置 ====================
-  # 数据存储路径（默认 ~/.lifepilot/）
-  data-dir: ~/.lifepilot
+  # 数据存储路径（默认 ~/.zhiwei/）
+  data-dir: ~/.zhiwei
 
   # ==================== LLM 服务商配置 ====================
   llm:
@@ -139,7 +139,7 @@ lifepilot:
   # ==================== Skill 配置 ====================
   skills:
     # 用户自定义 Skill 目录
-    user-skills-dir: ~/.lifepilot/skills
+    user-skills-dir: ~/.zhiwei/skills
     # 自生成 Skill 是否需要用户确认
     auto-generated-require-confirmation: true
     # 激活深度限制
@@ -197,7 +197,7 @@ lifepilot:
     type: sqlite-vec    # sqlite-vec（默认）或 chroma
     # Chroma 配置（仅 type=chroma 时生效）
     chroma-url: http://localhost:8000
-    chroma-collection: lifepilot-memory
+    chroma-collection: zhiwei-memory
 
   # ==================== 可观测性 ====================
   observability:
@@ -350,11 +350,11 @@ ZhiWei：📊 今日概览：
 | 功能 | 优先级 | 状态 | 说明 |
 |------|--------|------|------|
 | MCP 协议原生支持 | P0 | ✅ 已实现 | MCP Client + stdio/SSE 传输 + 现有插件桥接 |
-| Web UI 完善 | P0 | 📋 规划中 | 聊天 + LLM 管理 + 知识库/Skill/轨迹页面 |
+| Web UI 完善 | P0 | ✅ 已实现 | Vue 3 + Vite + Pinia + SSE 流式对话 + A2UI Generative UI |
 | 文档/知识库管理 | P0 | ✅ 已实现 | 多知识库 + 智能分块 + 混合检索 + 认知记忆融合 |
-| Gateway + 中间件管道 | P0 | 📋 规划中 | 统一消息入口 + 6 层中间件管道 |
-| 工具分层安全策略 | P0 | 📋 规划中 | 三层策略模型 + 风险等级 + 用户确认机制 |
-| 部署体验优化 | P0 | 📋 规划中 | Docker + 启动脚本 + 环境检测 + 配置向导 |
+| Gateway + 中间件管道 | P0 | ✅ 已实现 | 统一消息入口 + 6 层中间件管道（Auth → RateLimit → Security → Router → Execution → Audit） |
+| 工具分层安全策略 | P0 | ✅ 已实现 | 三层策略模型（Global → Agent → Tool）+ 风险等级 + 用户确认机制 |
+| 部署体验优化 | P0 | ✅ 已实现 | Docker 镜像 + docker-compose + 启动脚本（start.sh / start.bat） |
 
 ### Phase 2 — 差异化能力（中期）
 
@@ -363,18 +363,18 @@ ZhiWei：📊 今日概览：
 | Agent Skills 技能系统 | P0 | ✅ 已实现 | 统一 Skill 架构 + 三种来源 + SubAgent 激活 |
 | Skill 自扩展能力 | P1 | ✅ 已实现 | Agent 运行时自动创建 YAML Skill |
 | 声明式 YAML Skill | P1 | ✅ 已实现 | 零代码开发 + 运行时热加载 + 记忆访问 |
-| 认知记忆增强工作流 | P1 | 📋 规划中 | 记忆模式触发 + YAML 工作流定义 |
-| Browser 工具 / 网页信息提取 | P1 | 📋 规划中 | Jsoup + HtmlUnit + 自动知识沉淀 |
-| 多模态能力 | P1 | 📋 规划中 | 图片理解 + 文档解析（Spring AI 多模态 API） |
-| 外部数据源同步 | P1 | 📋 规划中 | CalDAV / Todoist / 滴答清单 / Obsidian 双向同步 |
+| 认知记忆增强工作流 | P1 | ✅ 已实现 | WorkflowEngine 执行引擎 + YAML 声明式工作流 + 触发器（Cron / Event / Condition / Signal） |
+| Browser 工具 / 网页信息提取 | P1 | ✅ 已实现 | InfraToolProvider 浏览器工具集（打开 / 点击 / 提取 / 截图） |
+| 多模态能力 | P1 | ✅ 已实现 | MediaProcessor 图片预处理 + ProviderCapability 能力声明（Vision / TTS / STT） |
+| 外部数据源同步 | P1 | ✅ 已实现 | SyncEngine + CalDAV / Todoist / 滴答清单 / Obsidian 连接器 + 冲突解决策略 |
 
 ### Phase 3 — 生态建设（远期）
 
 | 功能 | 优先级 | 状态 | 说明 |
 |------|--------|------|------|
-| 代码执行沙箱 | P2 | 📋 规划中 | ProcessBuilder 轻量沙箱 + 可选 Docker 强隔离 |
+| 代码执行沙箱 | P2 | ✅ 已实现 | SandboxBooter 抽象（Process / Docker / Remote）+ CodeValidator 危险操作预检 |
 | 配置版本迁移 | P2 | 📋 规划中 | 配置格式变更时自动迁移，用户无感升级 |
-| 插件市场 / 社区生态 | P2 | 📋 规划中 | Skill 发布、发现、安装机制 |
+| 插件市场 / 社区生态 | P2 | ✅ 已实现 | MarketplaceService + IndexManager + GitHub 仓库索引 + 安全审核 + 版本管理 |
 | 移动端适配 | P2 | 📋 规划中 | PWA 或响应式 Web UI |
 | 多语言 Skill 运行时 | P2 | 📋 规划中 | 支持 Python / JavaScript Skill（通过沙箱执行） |
 
@@ -390,10 +390,15 @@ ZhiWei：📊 今日概览：
 | 混合工具生态 | ⭐ 原创 | MCP + YAML + Java 三层统一注册调度 |
 | ProactiveReasoner + 降频状态机 | ⭐ 原创 | 两阶段主动推理 + 渐进降频/即时恢复 |
 | StateReducer 确定性状态机 | ⭐ 原创 | 概率决策与确定性状态分离，可测试可回放 |
+| 多 Agent 协作 | ⭐ 原创 | HandoffTool 委托模式 + SubAgent 独立预算/上下文/模型 |
+| A2A 协议支持 | 借鉴+创新 | Google A2A 协议实现 + Agent Card 能力声明 + 跨系统互操作 |
+| Agentic Evals 评估框架 | ⭐ 原创 | 五维规则评估 + LLM-as-a-Judge + JUnit 5 集成 |
 | Agent Skills 统一架构 | 借鉴+创新 | 融合 OpenClaw Pi 哲学 + AstrBot HandoffTool |
 | Gateway + 中间件管道 | 借鉴+改进 | 借鉴 OpenClaw Gateway，适配 Spring Boot |
 | 工具分层安全策略 | 借鉴+改进 | 借鉴 OpenClaw 8 层策略，精简为实用 3 层 |
 | 文档/知识库管理 | 借鉴+改进 | 融合 RAG 最佳实践 + 四层认知记忆 |
+| 代码执行沙箱 | 借鉴+改进 | 多后端抽象（Process / Docker / Remote）+ 护栏集成 |
+| 插件市场 | 借鉴+改进 | GitHub 仓库索引 + 安全审核 + 版本管理 |
 
 ---
 
@@ -403,28 +408,29 @@ ZhiWei：📊 今日概览：
 
 | 组件 | 技术选型 | 说明 |
 |------|---------|------|
-| 语言 | Java 22 | LTS 版本，支持 Virtual Threads、Pattern Matching |
-| 框架 | Spring Boot 3.5.x | 成熟的企业级框架 |
+| 语言 | Java 22 | 支持 Virtual Threads、Record、Sealed、Pattern Matching |
+| 框架 | Spring Boot 3.5.3 | 成熟的企业级框架 |
 | AI 集成 | Spring AI 1.1.2 | Spring 生态的 AI 抽象层 |
-| 结构化存储 | SQLite | 轻量级，本地优先，零配置 |
+| 结构化存储 | SQLite (xerial 3.49.x) | 轻量级，本地优先，零配置 |
 | 向量存储 | sqlite-vec | SQLite 扩展，无需额外服务 |
-| CLI | JLine 3 | Java 终端交互库，支持补全和高亮 |
-| 测试 | JUnit 5 + jqwik | 单元测试 + 属性测试 |
+| 测试 | JUnit 5 + jqwik 1.9.2 | 单元测试 + 属性测试 |
 | 构建 | Maven 3.9.x | 标准化构建工具 |
-| 可观测性 | OpenTelemetry | Agent 语义约定的 Trace 追踪 |
+| 前端 | Vue 3 + Vite + Pinia | 独立项目 zhiwei-web，SSE 流式对话 |
+| 数据库迁移 | Flyway | 社区版，支持 SQLite |
 
 ### B. 目录结构
 
 ```
-~/.lifepilot/                    # 用户数据目录
+~/.zhiwei/                       # 用户数据目录
 ├── data/
-│   ├── lifepilot.db             # SQLite 主数据库
+│   ├── zhiwei.db                # SQLite 主数据库
 │   └── vectors.db               # 向量索引数据库
 ├── skills/                      # 用户自定义 YAML Skill
 │   ├── weather-query.yml
 │   └── exchange-rate.yml
 ├── workflows/                   # 自定义工作流
 │   └── weekly-report.yml
+├── agents/                      # 自定义 Agent 定义
 ├── knowledge/                   # 知识库文档
 │   ├── work-docs/
 │   └── study-notes/
@@ -438,19 +444,32 @@ ZhiWei：📊 今日概览：
 
 ```
 com.lifepilot
+├── a2a            # A2A 协议：A2A Client/Server、Agent Card 能力声明
 ├── agent          # Agent 引擎：AgentLoop、StateReducer、ContextAssembler、ProactiveReasoner
-├── memory         # 记忆系统：四层记忆、知识图谱、混合检索、巩固/遗忘管线
-├── llm            # LLM 路由：LlmRouter、CircuitBreaker、ProviderAdapter
-├── skill          # 技能插件：SkillPlugin、ToolContract、内置插件
-├── mcp            # MCP 协议：McpClient、Transport、ToolAdapter、Bridge
-├── interaction    # 交互层：CLI、Web、SystemTray、消息平台适配
+├── config         # 全局配置：应用级 Bean 配置
+├── conversation   # 对话管理：会话历史存储
+├── eval           # 评估框架：BenchmarkScenario、TrajectoryEvaluator、LLM-as-a-Judge
+├── guardrail      # 护栏引擎：GuardrailPolicy、风险分级
+├── interaction    # 交互层：CLI、Web、消息平台适配
 ├── knowledge      # 知识库：文档解析、分块、索引
-├── observability  # 可观测性：Trace、Guardrail、DataRedactor
+├── llm            # LLM 路由：LlmRouter、CircuitBreaker、ProviderAdapter
+├── marketplace    # 插件市场：MarketplaceService、IndexManager、安全审核
+├── mcp            # MCP 协议：McpClient、Transport、ToolAdapter、Bridge
+├── media          # 多模态：MediaProcessor、格式检测
+├── memory         # 记忆系统：四层记忆、知识图谱、混合检索、巩固/遗忘管线
+├── meta           # 元能力：InfraToolProvider、CapabilityAggregator、IntrospectionSkill
+├── multiagent     # 多 Agent 协作：AgentRegistry、HandoffTool、SubAgent 管理
+├── observability  # 可观测性：Trace、DataRedactor
+├── prompt         # Prompt 管理：模板加载、变量注入
+├── sandbox        # 代码沙箱：SandboxBooter、CodeValidator
+├── skill          # 技能系统：SkillRegistry、SkillActivator、YAML Skill、Markdown Skill
+├── sync           # 外部同步：SyncEngine、CalDAV/Todoist/Obsidian 连接器
+├── tool           # 工具系统：ToolContract、DynamicToolRegistry
 └── workflow       # 工作流引擎：触发器、执行器、工作流定义
 ```
 
 ---
 
-> **ZhiWei** — 了解你生活全貌的 AI 伙伴
+> **ZhiWei** — 见微知著，你的 AI 伙伴
 > 
 > 本地运行 · 隐私优先 · 越用越懂你

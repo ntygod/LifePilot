@@ -5,7 +5,7 @@ import { useSettingsStore } from '@/stores/settings'
 export type ThemeMode = 'light' | 'dark' | 'system'
 
 /** localStorage 存储键 */
-const STORAGE_KEY = 'lifepilot_theme'
+const STORAGE_KEY = 'zhiwei_theme'
 
 /** 主题循环顺序 */
 const CYCLE_ORDER: ThemeMode[] = ['light', 'dark', 'system']

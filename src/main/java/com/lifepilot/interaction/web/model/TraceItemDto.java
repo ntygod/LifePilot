@@ -1,7 +1,7 @@
 package com.lifepilot.interaction.web.model;
 
 /**
- * 前端 Trace 列表项 DTO（与 lifepilot-web 的 types/TraceItem 对齐）。
+ * 前端 Trace 列表项 DTO（与 zhiwei-web 的 types/TraceItem 对齐）。
  *
  * @param id          traceId
  * @param sessionId   会话 ID

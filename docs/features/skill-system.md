@@ -37,7 +37,7 @@ Skill 与 Agent 的关键区分：
 兼容 Anthropic Agent Skills 开放标准，社区 Skill 可直接使用：
 
 ```
-~/.lifepilot/skills/
+~/.zhiwei/skills/
 ├── writing-assistant/
 │   ├── SKILL.md              # 指令文件（必需）
 │   ├── scripts/              # 辅助脚本（可选）
@@ -131,7 +131,7 @@ ZhiWei：检测到当前没有汇率查询能力，正在创建新 Skill...
          
          💱 今日汇率：1 USD = 7.24 CNY
          
-         [此 Skill 已保存到 ~/.lifepilot/skills/，下次可直接使用]
+         [此 Skill 已保存到 ~/.zhiwei/skills/，下次可直接使用]
 ```
 
 ## 7. 渐进式发现
@@ -146,4 +146,4 @@ ZhiWei：检测到当前没有汇率查询能力，正在创建新 Skill...
 
 ## 8. 社区兼容性
 
-ZhiWei 的 Skill 格式与 Anthropic Agent Skills 开放标准兼容。社区发布的 SKILL.md 文件夹可直接放入 `~/.lifepilot/skills/` 目录使用，无需任何转换。
+ZhiWei 的 Skill 格式与 Anthropic Agent Skills 开放标准兼容。社区发布的 SKILL.md 文件夹可直接放入 `~/.zhiwei/skills/` 目录使用，无需任何转换。

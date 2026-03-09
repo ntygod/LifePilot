@@ -108,7 +108,7 @@ function goToAgents() {
 
 function completeOnboarding() {
   // 保存完成状态到 localStorage
-  localStorage.setItem('lifepilot_onboarding_completed', 'true')
+  localStorage.setItem('zhiwei_onboarding_completed', 'true')
   emit('complete')
 }
 

@@ -12,7 +12,7 @@ import org.springframework.context.event.EventListener;
 /**
  * ZhiWei 应用启动类。
  *
- * <p>本地运行的个人 AI Agent 助手，通过 {@code java -jar lifepilot.jar} 一键启动。
+ * <p>本地运行的个人 AI Agent 助手，通过 {@code java -jar zhiwei.jar} 一键启动。
  *
  * <p>Web Controller 通过组件扫描自动注册，依赖缺失时会启动失败（fail-fast），
  * 这比条件注册更清晰。A2A Server Controller 仍通过 AutoConfiguration 条件注册。</p>

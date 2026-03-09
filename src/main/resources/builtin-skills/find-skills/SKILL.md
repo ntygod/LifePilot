@@ -1,4 +1,4 @@
----
+﻿---
 id: builtin.find-skills
 name: "Skill 发现与安装"
 description: "搜索和安装开源 Skill 扩展包，通过 npx @anthropic-ai/skills 命令行工具从 skills.sh 索引、LobeHub Marketplace 和 GitHub 搜索 Skill 并安装到本地"
@@ -32,10 +32,10 @@ npx -y @anthropic-ai/skills find <关键词>
 npx -y @anthropic-ai/skills add <skill-name>
 ```
 
-安装时需要指定目标目录为 `~/.lifepilot/skills/`：
+安装时需要指定目标目录为 `~/.zhiwei/skills/`：
 
 ```bash
-npx -y @anthropic-ai/skills add <skill-name> --directory ~/.lifepilot/skills/
+npx -y @anthropic-ai/skills add <skill-name> --directory ~/.zhiwei/skills/
 ```
 
 安装完成后，ZhiWei 的 SkillFileWatcher 会自动检测并加载新安装的 Skill，无需重启。
@@ -50,7 +50,7 @@ npx -y @anthropic-ai/skills add <skill-name> --directory ~/.lifepilot/skills/
 
 ## 安装目录约定
 
-- 用户 Skill 目录：`~/.lifepilot/skills/`
+- 用户 Skill 目录：`~/.zhiwei/skills/`
 - 每个 Skill 安装为独立文件夹，包含 `SKILL.md` 定义文件
 - SkillFileWatcher 监控该目录，自动检测新增、修改和删除
 
@@ -59,7 +59,7 @@ npx -y @anthropic-ai/skills add <skill-name> --directory ~/.lifepilot/skills/
 1. 用户描述需求（如"我需要一个能同步 Google Calendar 的功能"）
 2. 提取关键词，执行 `npx -y @anthropic-ai/skills find <关键词>` 搜索
 3. 向用户展示搜索结果，推荐最匹配的 Skill
-4. 用户确认后，执行 `npx -y @anthropic-ai/skills add <skill-name> --directory ~/.lifepilot/skills/` 安装
+4. 用户确认后，执行 `npx -y @anthropic-ai/skills add <skill-name> --directory ~/.zhiwei/skills/` 安装
 5. 告知用户 Skill 已安装并自动加载
 
 ## 注意事项

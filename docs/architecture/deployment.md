@@ -32,7 +32,7 @@
 |------|------|
 | 后端服务 | Spring Boot JAR，提供 REST/SSE API，内嵌 SQLite + sqlite-vec native |
 | 前端应用 | Vue 3 SPA（lifepilot-web），独立构建为静态资源，通过 Nginx 部署 |
-| 数据目录 | `~/.lifepilot/`（本地）或 Docker Volume 挂载点，存放 SQLite 数据库、配置、日志 |
+| 数据目录 | `~/.zhiwei/`（本地）或 Docker Volume 挂载点，存放 SQLite 数据库、配置、日志 |
 | 配置版本 | `application.yml` 中的 `lifepilot.config-version` 字段，标识当前配置格式版本 |
 | 配置迁移器 | 启动时自动检测配置版本并执行迁移链的组件 |
 
@@ -71,7 +71,7 @@
 │   ├─ REST Controller 层（Chat / Settings / Skill / ...）     │
 │   ├─ MessageGateway + 中间件管道                              │
 │   ├─ Agent 引擎 + 工具系统 + 记忆系统 + ...                   │
-│   └─ SQLite + sqlite-vec（数据目录：~/.lifepilot/）           │
+│   └─ SQLite + sqlite-vec（数据目录：~/.zhiwei/）           │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -194,7 +194,7 @@ volumes:
 
 1. **Java 环境检测**：检查 `java` 命令是否可用，版本是否 ≥ 22
 2. **JVM 参数调优**：根据可用内存自动设置 `-Xmx`（默认取系统内存的 50%，上限 2G）
-3. **数据目录初始化**：首次运行时创建 `~/.lifepilot/` 目录结构
+3. **数据目录初始化**：首次运行时创建 `~/.zhiwei/` 目录结构
 4. **启动后端服务**：`java $JVM_OPTS -jar lifepilot.jar`
 5. **友好错误提示**：Java 未安装或版本不对时，输出清晰的安装指引
 

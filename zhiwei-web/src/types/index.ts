@@ -756,7 +756,7 @@ export interface ExtensionPackage {
   filePath: string
   tags: string[]
   requirements: string[]
-  minLifepilotVersion: string
+  minZhiweiVersion: string
   createdAt: string
   updatedAt: string
   downloads: number

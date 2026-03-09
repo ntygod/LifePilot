@@ -66,12 +66,12 @@ public class MarketplaceProperties {
     public static class InstallDirs {
 
         /** Skill 扩展安装目录。 */
-        private String skills = "${user.home}/.lifepilot/skills";
+        private String skills = "${user.home}/.zhiwei/skills";
 
         /** Agent 模板安装目录。 */
-        private String agents = "${user.home}/.lifepilot/agents";
+        private String agents = "${user.home}/.zhiwei/agents";
 
         /** Workflow 模板安装目录。 */
-        private String workflows = "${user.home}/.lifepilot/workflows";
+        private String workflows = "${user.home}/.zhiwei/workflows";
     }
 }

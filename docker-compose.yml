@@ -4,14 +4,14 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - lifepilot-data:/data
+      - zhiwei-data:/data
     environment:
       - SPRING_PROFILES_ACTIVE=docker
-      - LIFEPILOT_DATA_DIR=/data
+      - ZHIWEI_DATA_DIR=/data
     restart: unless-stopped
 
   frontend:
-    build: ./lifepilot-web
+    build: ./zhiwei-web
     ports:
       - "80:80"
     depends_on:
@@ -19,5 +19,4 @@ services:
     restart: unless-stopped
 
 volumes:
-  lifepilot-data:
-
+  zhiwei-data:

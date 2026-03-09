@@ -39,7 +39,7 @@
 
 - AgentRegistry 管理所有 Agent 定义，支持运行时注册/注销/查找
 - 内置预设专家 Agent（写作、分析、调研），开箱即用
-- 用户可在 `~/.lifepilot/agents/` 目录下添加 Markdown Agent 定义（`.md` 文件）
+- 用户可在 `~/.zhiwei/agents/` 目录下添加 Markdown Agent 定义（`.md` 文件）
 - 支持热加载：修改 Markdown 文件后自动重新注册，无需重启
 
 ### 2.2 HandoffTool 委托
@@ -105,7 +105,7 @@
 
 ### 3.3 用户自定义 Agent
 
-用户在 `~/.lifepilot/agents/translator.md` 创建翻译专家：
+用户在 `~/.zhiwei/agents/translator.md` 创建翻译专家：
 
 ```markdown
 ---
@@ -167,7 +167,7 @@ Skill（L1）和 Agent（L2）可以在同一次对话中协作：
 
 ### 4.2 对用户的影响
 
-- 现有 YAML Skill 定义（`~/.lifepilot/skills/*.yml`）**完全兼容**，无需修改
+- 现有 YAML Skill 定义（`~/.zhiwei/skills/*.yml`）**完全兼容**，无需修改
 - 如果用户之前通过 Skill 的 SubAgent 模式使用专家能力，需要改为创建 Agent Markdown 定义
 - Skill 自扩展（自动生成新 Skill）功能不受影响
 - 内置 Skill（Todo / Schedule / Habit / Memory）不受影响
@@ -180,7 +180,7 @@ Skill（L1）和 Agent（L2）可以在同一次对话中协作：
 |--------|--------|------|
 | `lifepilot.agent.multi-agent.enabled` | `true` | 是否启用多 Agent 协作 |
 | `lifepilot.agent.multi-agent.max-delegation-depth` | `2` | 最大委托深度 |
-| `lifepilot.agent.multi-agent.agent-definitions-path` | `~/.lifepilot/agents/` | 用户自定义 Agent Markdown 目录 |
+| `lifepilot.agent.multi-agent.agent-definitions-path` | `~/.zhiwei/agents/` | 用户自定义 Agent Markdown 目录 |
 | `lifepilot.agent.multi-agent.register-handoff-tools` | `true` | 是否自动注册 HandoffTool |
 | `lifepilot.agent.multi-agent.hot-reload.enabled` | `true` | 是否启用热加载 |
 | `lifepilot.agent.multi-agent.hot-reload.scan-interval-seconds` | `5` | 文件扫描间隔 |

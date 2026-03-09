@@ -4738,7 +4738,7 @@ AgentToolProvider 是 Agent 引擎与工具生态之间的桥梁。它将三种�
 │  └─ 注册：Spring 容器自动扫描                                    │
 │                                                                 │
 │  Layer 2: YAML 声明式工具                                        │
-│  ├─ 来源：~/.lifepilot/skills/*.yml                              │
+│  ├─ 来源：~/.zhiwei/skills/*.yml                              │
 │  ├─ 示例：weather-query.yml, translation.yml                    │
 │  ├─ 特点：零代码开发、运行时热加载                                │
 │  └─ 注册：YamlSkillLoader 扫描并注册                             │

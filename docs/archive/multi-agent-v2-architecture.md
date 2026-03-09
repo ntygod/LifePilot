@@ -291,7 +291,7 @@ public class AgentMarkdownLoader {
 }
 ```
 
-**热加载机制**：复用 Skill 系统已有的文件监控模式（`WatchService` 或定时扫描 `lastModified`），当 `~/.lifepilot/agents/` 目录下的 Markdown 文件变更时，自动重新加载并更新 AgentRegistry。
+**热加载机制**：复用 Skill 系统已有的文件监控模式（`WatchService` 或定时扫描 `lastModified`），当 `~/.zhiwei/agents/` 目录下的 Markdown 文件变更时，自动重新加载并更新 AgentRegistry。
 
 ### 4.5 AgentToToolBridge — Agent 工具桥接
 
@@ -463,7 +463,7 @@ metadata:
 如果用户提供了素材但未明确格式，主动询问：目的是什么？给谁看？期望的篇幅和风格？
 ```
 
-文件路径：`~/.lifepilot/agents/writer.md`
+文件路径：`~/.zhiwei/agents/writer.md`
 
 ### 7.2 字段说明
 
@@ -568,7 +568,7 @@ metadata:
 如果用户提供了素材但未明确格式，主动询问：目的是什么？给谁看？期望的篇幅和风格？
 ```
 
-文件路径：`~/.lifepilot/agents/writer.md`
+文件路径：`~/.zhiwei/agents/writer.md`
 
 #### life-coach（生活教练）
 
@@ -619,7 +619,7 @@ metadata:
 4. **行动建议**：提出 1-2 个具体的、可衡量的改进行动
 ```
 
-文件路径：`~/.lifepilot/agents/life-coach.md`
+文件路径：`~/.zhiwei/agents/life-coach.md`
 
 #### planner（规划专家）
 
@@ -664,7 +664,7 @@ metadata:
 - **冲突提示**：如果发现时间冲突或过度安排，主动提醒
 ```
 
-文件路径：`~/.lifepilot/agents/planner.md`
+文件路径：`~/.zhiwei/agents/planner.md`
 
 ### 8.5 为什么不预设更多 Agent
 
@@ -684,7 +684,7 @@ metadata:
 
 预设 Agent 以 `AgentSource.Builtin` 来源注册，用户自定义 Agent 以 `AgentSource.MarkdownDefined` 来源注册。Builtin 来源不允许被 MarkdownDefined 覆盖（与 SkillRegistry 行为一致）。
 
-如果用户希望修改预设 Agent 的行为（如调整 writer 的 System Prompt），可以在 `~/.lifepilot/agents/` 下创建同 ID 的 Markdown 文件，此时 MarkdownDefined 版本将覆盖 Builtin 版本。这是一个有意的设计决策：预设 Agent 提供合理的默认值，但用户始终拥有最终控制权。
+如果用户希望修改预设 Agent 的行为（如调整 writer 的 System Prompt），可以在 `~/.zhiwei/agents/` 下创建同 ID 的 Markdown 文件，此时 MarkdownDefined 版本将覆盖 Builtin 版本。这是一个有意的设计决策：预设 Agent 提供合理的默认值，但用户始终拥有最终控制权。
 
 ---
 
@@ -696,7 +696,7 @@ lifepilot:
     multi-agent:
       enabled: true                              # 是否启用多 Agent 协作
       max-delegation-depth: 2                    # 最大委托深度
-      agent-definitions-path: ~/.lifepilot/agents/ # 用户自定义 Agent Markdown 目录
+      agent-definitions-path: ~/.zhiwei/agents/ # 用户自定义 Agent Markdown 目录
       register-handoff-tools: true               # 是否自动注册 HandoffTool
       hot-reload:
         enabled: true                            # 是否启用热加载

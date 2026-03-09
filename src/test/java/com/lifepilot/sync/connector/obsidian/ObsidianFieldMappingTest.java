@@ -1,4 +1,4 @@
-package com.lifepilot.sync.connector.obsidian;
+﻿package com.lifepilot.sync.connector.obsidian;
 
 import com.lifepilot.skill.builtin.habit.HabitItem;
 import com.lifepilot.skill.builtin.schedule.ScheduleItem;
@@ -50,7 +50,7 @@ class ObsidianFieldMappingTest {
             assertTrue(markdown.contains("dueDate:"));
             assertTrue(markdown.contains("2026-03-01"));
             assertTrue(markdown.contains("tags: [购物, 日常]"));
-            assertTrue(markdown.contains("lifepilot_id:"));
+            assertTrue(markdown.contains("zhiwei_id:"));
             assertTrue(markdown.contains("uuid-001"));
             assertTrue(markdown.contains("去超市买两盒牛奶"));
         }
@@ -82,7 +82,7 @@ class ObsidianFieldMappingTest {
                     ---
                     type: todo
                     title: 简单任务
-                    lifepilot_id: "uuid-003"
+                    zhiwei_id: "uuid-003"
                     ---
                     """;
 
@@ -98,7 +98,7 @@ class ObsidianFieldMappingTest {
         }
 
         @Test
-        void toLocal_无lifepilot_id_自动生成UUID() {
+        void toLocal_无zhiwei_id_自动生成UUID() {
             var markdown = """
                     ---
                     type: todo
@@ -149,7 +149,7 @@ class ObsidianFieldMappingTest {
                     title: 远程标题
                     priority: LOW
                     status: COMPLETED
-                    lifepilot_id: "uuid-005"
+                    zhiwei_id: "uuid-005"
                     ---
                     远程描述
                     """;
@@ -205,7 +205,7 @@ class ObsidianFieldMappingTest {
             assertTrue(markdown.contains("startTime:"));
             assertTrue(markdown.contains("endTime:"));
             assertTrue(markdown.contains("location: 会议室A"));
-            assertTrue(markdown.contains("lifepilot_id:"));
+            assertTrue(markdown.contains("zhiwei_id:"));
             assertTrue(markdown.contains("讨论Q1计划"));
         }
 
@@ -251,7 +251,7 @@ class ObsidianFieldMappingTest {
                     ---
                     type: schedule
                     title: 简单日程
-                    lifepilot_id: "uuid-104"
+                    zhiwei_id: "uuid-104"
                     ---
                     """;
 
@@ -280,7 +280,7 @@ class ObsidianFieldMappingTest {
                     startTime: "2026-03-01T10:00:00Z"
                     endTime: "2026-03-01T11:00:00Z"
                     location: 会议室B
-                    lifepilot_id: "uuid-105"
+                    zhiwei_id: "uuid-105"
                     ---
                     远程备注
                     """;
@@ -322,7 +322,7 @@ class ObsidianFieldMappingTest {
             // YamlFrontmatterParser 会对含冒号的值加引号
             assertTrue(markdown.contains("targetTime:") && markdown.contains("07:00"));
             assertTrue(markdown.contains("currentStreak: 15"));
-            assertTrue(markdown.contains("lifepilot_id:"));
+            assertTrue(markdown.contains("zhiwei_id:"));
             assertTrue(markdown.contains("uuid-201"));
         }
 
@@ -366,7 +366,7 @@ class ObsidianFieldMappingTest {
                     ---
                     type: habit
                     name: 简单习惯
-                    lifepilot_id: "uuid-204"
+                    zhiwei_id: "uuid-204"
                     ---
                     """;
 
@@ -386,7 +386,7 @@ class ObsidianFieldMappingTest {
                     type: habit
                     name: 测试习惯
                     frequency: INVALID
-                    lifepilot_id: "uuid-205"
+                    zhiwei_id: "uuid-205"
                     ---
                     """;
 
@@ -409,7 +409,7 @@ class ObsidianFieldMappingTest {
                     frequency: WEEKLY
                     targetTime: "09:00"
                     currentStreak: 5
-                    lifepilot_id: "uuid-206"
+                    zhiwei_id: "uuid-206"
                     ---
                     """;
 

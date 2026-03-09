@@ -28,8 +28,8 @@ public class WorkflowConfigProperties {
     /** 最大循环迭代次数（LoopStep），默认 100。 */
     private int maxLoopIterations = 100;
 
-    /** 工作流 YAML 定义文件目录，默认 ~/.lifepilot/workflows。 */
-    private String definitionsDir = "~/.lifepilot/workflows";
+    /** 工作流 YAML 定义文件目录，默认 ~/.zhiwei/workflows。 */
+    private String definitionsDir = "~/.zhiwei/workflows";
 
     /** 崩溃恢复开关，默认 true。 */
     private boolean crashRecoveryEnabled = true;

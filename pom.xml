@@ -14,7 +14,7 @@
 
     <groupId>com.lifepilot</groupId>
     <artifactId>lifepilot</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.2.0-SNAPSHOT</version>
     <name>ZhiWei</name>
     <description>本地运行的个人 AI Agent 助手</description>
 
@@ -180,7 +180,7 @@
 
     <build>
         <!-- 统一可执行 JAR 名称，便于 Docker 镜像复制 -->
-        <finalName>lifepilot</finalName>
+        <finalName>zhiwei</finalName>
 
         <plugins>
             <plugin>
