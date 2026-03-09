@@ -4,7 +4,7 @@
   支持节点自由拖拽、连接锚点拖拽连线、键盘删除、右键上下文菜单。
 -->
 <script setup lang="ts">
-import { computed, ref, reactive, watch, onMounted, onUnmounted } from 'vue'
+import { computed, ref, triggerRef, watch, onMounted, onUnmounted } from 'vue'
 import type { StepModel, StepType } from '@/composables/useWorkflowModel'
 import { useDagLayout } from '@/composables/useDagLayout'
 import { STEP_TYPE_META } from '@/components/workflow/editor/stepTypeMeta'
@@ -27,9 +27,8 @@ const emit = defineEmits<{
 const { computeLayers } = useDagLayout()
 const containerRef = ref<HTMLElement | null>(null)
 
-// ── 节点位置状态 ──
-/** 每个步骤的绝对位置（相对于画布内容区域） */
-const positions = reactive(new Map<string, { x: number; y: number }>())
+// ── 节点位置状态（使用普通对象，确保 Vue 响应式追踪可靠） ──
+const positions = ref<Record<string, { x: number; y: number }>>({})
 
 /** 节点尺寸常量 */
 const NODE_WIDTH = 180
@@ -39,30 +38,53 @@ const NODE_GAP_X = 40
 const PADDING_TOP = 40
 const PADDING_LEFT = 40
 
+/** 获取步骤位置的辅助函数 */
+function getPos(stepId: string): { x: number; y: number } {
+  return positions.value[stepId] ?? { x: 0, y: 0 }
+}
+
+/** 设置步骤位置（直接修改 + 手动触发响应式更新，避免拖拽时频繁创建新对象） */
+function setPos(stepId: string, pos: { x: number; y: number }) {
+  positions.value[stepId] = pos
+  triggerRef(positions)
+}
+
 /**
  * 根据拓扑分层计算初始位置。
  * 仅为没有位置的新节点分配位置，已有位置的节点保持不变。
  */
 function autoLayoutNewNodes() {
   const layers = computeLayers(props.steps)
+  const newPositions = { ...positions.value }
+  let changed = false
+
   for (let layerIdx = 0; layerIdx < layers.length; layerIdx++) {
     const layer = layers[layerIdx]
     const layerWidth = layer.length * NODE_WIDTH + (layer.length - 1) * NODE_GAP_X
     const startX = PADDING_LEFT + Math.max(0, (400 - layerWidth) / 2)
     for (let nodeIdx = 0; nodeIdx < layer.length; nodeIdx++) {
       const stepId = layer[nodeIdx]
-      if (!positions.has(stepId)) {
-        positions.set(stepId, {
+      if (!(stepId in newPositions)) {
+        newPositions[stepId] = {
           x: startX + nodeIdx * (NODE_WIDTH + NODE_GAP_X),
           y: PADDING_TOP + layerIdx * (NODE_HEIGHT + LAYER_GAP_Y),
-        })
+        }
+        changed = true
       }
     }
   }
+
   // 清理已删除步骤的位置
   const stepIds = new Set(props.steps.map(s => s.id))
-  for (const id of positions.keys()) {
-    if (!stepIds.has(id)) positions.delete(id)
+  for (const id of Object.keys(newPositions)) {
+    if (!stepIds.has(id)) {
+      delete newPositions[id]
+      changed = true
+    }
+  }
+
+  if (changed) {
+    positions.value = newPositions
   }
 }
 
@@ -71,7 +93,7 @@ function autoLayoutNewNodes() {
 const canvasSize = computed(() => {
   let maxX = 600
   let maxY = 400
-  for (const pos of positions.values()) {
+  for (const pos of Object.values(positions.value)) {
     maxX = Math.max(maxX, pos.x + NODE_WIDTH + 60)
     maxY = Math.max(maxY, pos.y + NODE_HEIGHT + 60)
   }
@@ -84,8 +106,8 @@ const lines = computed(() => {
   const result: Array<{ x1: number; y1: number; x2: number; y2: number; fromId: string; toId: string }> = []
   for (const step of props.steps) {
     for (const dep of step.dependsOn) {
-      const fromPos = positions.get(dep)
-      const toPos = positions.get(step.id)
+      const fromPos = positions.value[dep]
+      const toPos = positions.value[step.id]
       if (!fromPos || !toPos) continue
       result.push({
         x1: fromPos.x + NODE_WIDTH / 2,
@@ -130,7 +152,7 @@ const dragOffset = ref({ x: 0, y: 0 })
 /** 临时连线：从源锚点到鼠标位置 */
 const tempLine = computed(() => {
   if (!connectingFrom.value) return null
-  const fromPos = positions.get(connectingFrom.value)
+  const fromPos = positions.value[connectingFrom.value]
   if (!fromPos) return null
   return {
     x1: fromPos.x + NODE_WIDTH / 2,
@@ -169,7 +191,7 @@ function onNodeMouseDown(e: MouseEvent, stepId: string) {
   if (target.closest('[data-anchor-input]') || target.closest('[data-anchor-output]')) return
 
   e.preventDefault()
-  const pos = positions.get(stepId)
+  const pos = positions.value[stepId]
   if (!pos || !containerRef.value) return
 
   draggingNodeId.value = stepId
@@ -189,7 +211,7 @@ function onNodeDragMove(e: MouseEvent) {
   const containerRect = containerRef.value.getBoundingClientRect()
   const newX = e.clientX - containerRect.left + containerRef.value.scrollLeft - dragOffset.value.x
   const newY = e.clientY - containerRect.top + containerRef.value.scrollTop - dragOffset.value.y
-  positions.set(draggingNodeId.value, {
+  setPos(draggingNodeId.value, {
     x: Math.max(0, newX),
     y: Math.max(0, newY),
   })
@@ -359,34 +381,47 @@ function isLineHighlighted(line: { fromId: string; toId: string }): boolean {
 }
 
 // ── 步骤变化监听 ──
+/**
+ * 确保每个步骤都有位置。
+ * 使用 steps ID 列表的 join 作为 watch 源，避免 deep watch 的同引用问题。
+ */
+watch(
+  () => props.steps.map(s => s.id).join(','),
+  () => {
+    let needAutoLayout = false
+    const newPositions = { ...positions.value }
 
-watch(() => props.steps, (newSteps, oldSteps) => {
-  // 为新增的步骤设置位置
-  const oldIds = new Set((oldSteps ?? []).map(s => s.id))
-  const newIds = newSteps.map(s => s.id)
-
-  for (const id of newIds) {
-    if (!oldIds.has(id) && !positions.has(id)) {
-      if (pendingDropPos.value) {
-        // 使用 drop 位置
-        positions.set(id, { ...pendingDropPos.value })
-        pendingDropPos.value = null
-      } else {
-        // 使用自动布局
-        autoLayoutNewNodes()
+    // 为没有位置的新步骤分配位置
+    for (const step of props.steps) {
+      if (!(step.id in newPositions)) {
+        if (pendingDropPos.value) {
+          newPositions[step.id] = { ...pendingDropPos.value }
+          pendingDropPos.value = null
+        } else {
+          needAutoLayout = true
+        }
       }
     }
-  }
 
-  // 清理已删除步骤的位置
-  const currentIds = new Set(newIds)
-  for (const id of positions.keys()) {
-    if (!currentIds.has(id)) positions.delete(id)
-  }
-}, { deep: true })
+    // 清理已删除步骤的位置
+    const currentIds = new Set(props.steps.map(s => s.id))
+    for (const id of Object.keys(newPositions)) {
+      if (!currentIds.has(id)) {
+        delete newPositions[id]
+      }
+    }
+
+    positions.value = newPositions
+
+    // 如果有需要自动布局的新步骤，调用 autoLayoutNewNodes
+    if (needAutoLayout) {
+      autoLayoutNewNodes()
+    }
+  },
+  { immediate: true },
+)
 
 onMounted(() => {
-  autoLayoutNewNodes()
   document.addEventListener('click', onDocumentClickForMenu)
 })
 
@@ -491,8 +526,8 @@ function onDocumentClickForMenu() {
                 : 'border-border hover:border-primary/50',
           ]"
           :style="{
-            left: (positions.get(step.id)?.x ?? 0) + 'px',
-            top: (positions.get(step.id)?.y ?? 0) + 'px',
+            left: getPos(step.id).x + 'px',
+            top: getPos(step.id).y + 'px',
             width: NODE_WIDTH + 'px',
           }"
           @mousedown="onNodeMouseDown($event, step.id)"
