@@ -458,6 +458,8 @@ lifepilot:
     crash-recovery-enabled: true
     # YAML 文件扫描间隔（秒）
     scan-interval-seconds: 30
+    # 是否在启动时释放内置工作流模板到用户目录
+    seed-builtin-workflows: true
     # 步骤重试策略（指数退避）
     retry:
       # 初始延迟（毫秒）
