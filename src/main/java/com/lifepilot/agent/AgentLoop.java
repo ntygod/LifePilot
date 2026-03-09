@@ -147,11 +147,13 @@ public class AgentLoop {
      * <p>在 RESPONDING 阶段使用流式 LLM 调用，其他阶段保持同步。
      * 通过 SseSessionManager 发送 token 事件，最后发送 done 事件。</p>
      *
-     * @param request       用户请求
-     * @param streamId      流式传输标识
-     * @param sseManager    SSE 会话管理器
+     * @param request             用户请求
+     * @param streamId            流式传输标识
+     * @param sseManager          SSE 会话管理器
+     * @param cancellationToken   外部传入的取消信号令牌，超时/断开时由调用方触发 cancel()
      */
-    public void runStreaming(AgentRequest request, String streamId, SseSessionManager sseManager) {
+    public void runStreaming(AgentRequest request, String streamId, SseSessionManager sseManager,
+                             CancellationToken cancellationToken) {
         AgentState state = AgentState.init(request);
         TraceContext traceContext = null;
         Instant loopStart = Instant.now();
@@ -166,8 +168,8 @@ public class AgentLoop {
         String userMessageId = null;
         String assistantMessageId = null;
 
-        // 创建取消信号令牌，供外部调用方传递取消意图
-        var token = new CancellationToken();
+        // 使用外部传入的取消信号令牌
+        var token = cancellationToken;
         this.cancellationToken = token;
 
         try {

@@ -170,7 +170,10 @@ public class ExecutionMiddleware implements GatewayMiddleware {
         var response = GatewayResponse.success(message.channelType(),
                 new ResponseContent.StreamingContent(streamId));
 
-        // 4. 在后台异步执行 AgentLoop，并通过 SSE 发送事件
+        // 4. 创建取消信号令牌，超时/断开时触发 cancel() 通知 coreLoop 停止
+        var cancellationToken = new com.lifepilot.agent.CancellationToken();
+
+        // 5. 在后台异步执行 AgentLoop，并通过 SSE 发送事件
         int timeoutSeconds = properties.execution().timeoutSeconds();
         CompletableFuture.runAsync(() -> {
             try {
@@ -188,8 +191,8 @@ public class ExecutionMiddleware implements GatewayMiddleware {
                         mediaContents
                 );
 
-                // 调用流式版本的 AgentLoop
-                agentLoop.runStreaming(agentRequest, streamId, sseSessionManager);
+                // 调用流式版本的 AgentLoop，传入取消信号令牌
+                agentLoop.runStreaming(agentRequest, streamId, sseSessionManager, cancellationToken);
 
             } catch (Exception e) {
                 log.error("流式处理异常: messageId={}, streamId={}", message.messageId(), streamId, e);
@@ -204,6 +207,8 @@ public class ExecutionMiddleware implements GatewayMiddleware {
               if (ex instanceof TimeoutException || (ex.getCause() instanceof TimeoutException)) {
                   log.error("流式处理超时: messageId={}, streamId={}, timeout={}s",
                           message.messageId(), streamId, timeoutSeconds);
+                  // 超时后通过 CancellationToken 通知 coreLoop 停止执行
+                  cancellationToken.cancel();
                   var errorData = new java.util.HashMap<String, Object>();
                   errorData.put("code", 504);
                   errorData.put("message", "处理超时，请稍后重试");
