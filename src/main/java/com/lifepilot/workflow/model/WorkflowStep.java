@@ -8,7 +8,7 @@ import org.springframework.lang.Nullable;
 /**
  * 工作流步骤类型 sealed interface。
  *
- * <p>定义工作流中可执行的九种步骤类型：
+ * <p>定义工作流中可执行的十种步骤类型：
  * <ul>
  *   <li>{@link SkillStep} — 调用已注册的 Skill 执行</li>
  *   <li>{@link ToolStep} — 调用已注册的 Tool 执行</li>
@@ -19,6 +19,7 @@ import org.springframework.lang.Nullable;
  *   <li>{@link SubWorkflowStep} — 调用子工作流</li>
  *   <li>{@link NoopStep} — 空操作，直接跳过</li>
  *   <li>{@link WaitStep} — 等待指定时长后继续</li>
+ *   <li>{@link ApprovalStep} — 人工审批步骤，暂停工作流等待审批决策</li>
  * </ul>
  *
  * @author zsg
@@ -33,7 +34,8 @@ public sealed interface WorkflowStep permits
         WorkflowStep.ParallelStep,
         WorkflowStep.SubWorkflowStep,
         WorkflowStep.NoopStep,
-        WorkflowStep.WaitStep {
+        WorkflowStep.WaitStep,
+        WorkflowStep.ApprovalStep {
 
     /** 步骤唯一标识。 */
     String id();
@@ -44,6 +46,9 @@ public sealed interface WorkflowStep permits
     /** 错误处理策略，为 null 时默认使用 {@link ErrorStrategy.Fail}。 */
     @Nullable ErrorStrategy errorStrategy();
 
+    /** DAG 依赖声明，列出当前步骤依赖的前置步骤 ID。 */
+    List<String> dependsOn();
+
     /**
      * Skill 步骤，通过 SkillActivator 激活已注册的 Skill。
      *
@@ -51,10 +56,12 @@ public sealed interface WorkflowStep permits
      * @param name          步骤名称
      * @param skillId       目标 Skill ID
      * @param params        传递给 Skill 的参数（支持 ${} 表达式）
+     * @param dependsOn     DAG 依赖的前置步骤 ID 列表
      * @param errorStrategy 错误处理策略
      */
     record SkillStep(String id, String name, String skillId,
                      Map<String, String> params,
+                     List<String> dependsOn,
                      @Nullable ErrorStrategy errorStrategy) implements WorkflowStep {}
 
     /**
@@ -64,10 +71,12 @@ public sealed interface WorkflowStep permits
      * @param name          步骤名称
      * @param toolId        目标 Tool ID
      * @param params        传递给 Tool 的参数（支持 ${} 表达式）
+     * @param dependsOn     DAG 依赖的前置步骤 ID 列表
      * @param errorStrategy 错误处理策略
      */
     record ToolStep(String id, String name, String toolId,
                     Map<String, String> params,
+                    List<String> dependsOn,
                     @Nullable ErrorStrategy errorStrategy) implements WorkflowStep {}
 
     /**
@@ -78,10 +87,12 @@ public sealed interface WorkflowStep permits
      * @param scene          LLM 场景标识
      * @param promptTemplate 提示词模板（支持 ${} 表达式）
      * @param outputSchema   可选的输出 JSON Schema，用于结构化输出
+     * @param dependsOn      DAG 依赖的前置步骤 ID 列表
      * @param errorStrategy  错误处理策略
      */
     record LlmStep(String id, String name, String scene, String promptTemplate,
                    @Nullable String outputSchema,
+                   List<String> dependsOn,
                    @Nullable ErrorStrategy errorStrategy) implements WorkflowStep {}
 
     /**
@@ -92,11 +103,13 @@ public sealed interface WorkflowStep permits
      * @param condition     条件表达式
      * @param thenSteps     条件为 true 时执行的步骤列表
      * @param elseSteps     条件为 false 时执行的步骤列表
+     * @param dependsOn     DAG 依赖的前置步骤 ID 列表
      * @param errorStrategy 错误处理策略
      */
     record ConditionStep(String id, String name, String condition,
                          List<WorkflowStep> thenSteps,
                          List<WorkflowStep> elseSteps,
+                         List<String> dependsOn,
                          @Nullable ErrorStrategy errorStrategy) implements WorkflowStep {}
 
     /**
@@ -109,10 +122,12 @@ public sealed interface WorkflowStep permits
      * @param items         集合表达式（解析为 List）
      * @param loopVar       循环变量名
      * @param body          每次迭代执行的步骤列表
+     * @param dependsOn     DAG 依赖的前置步骤 ID 列表
      * @param errorStrategy 错误处理策略
      */
     record LoopStep(String id, String name, String items, String loopVar,
                     List<WorkflowStep> body,
+                    List<String> dependsOn,
                     @Nullable ErrorStrategy errorStrategy) implements WorkflowStep {}
 
     /**
@@ -121,10 +136,12 @@ public sealed interface WorkflowStep permits
      * @param id            步骤唯一标识
      * @param name          步骤名称
      * @param branches      并行分支列表，每个分支是一组步骤
+     * @param dependsOn     DAG 依赖的前置步骤 ID 列表
      * @param errorStrategy 错误处理策略
      */
     record ParallelStep(String id, String name,
                         List<List<WorkflowStep>> branches,
+                        List<String> dependsOn,
                         @Nullable ErrorStrategy errorStrategy) implements WorkflowStep {}
 
     /**
@@ -134,10 +151,12 @@ public sealed interface WorkflowStep permits
      * @param name          步骤名称
      * @param workflowId    目标工作流 ID
      * @param params        传递给子工作流的输入参数（支持 ${} 表达式）
+     * @param dependsOn     DAG 依赖的前置步骤 ID 列表
      * @param errorStrategy 错误处理策略
      */
     record SubWorkflowStep(String id, String name, String workflowId,
                            Map<String, String> params,
+                           List<String> dependsOn,
                            @Nullable ErrorStrategy errorStrategy) implements WorkflowStep {}
 
     /**
@@ -145,9 +164,11 @@ public sealed interface WorkflowStep permits
      *
      * @param id            步骤唯一标识
      * @param name          步骤名称
+     * @param dependsOn     DAG 依赖的前置步骤 ID 列表
      * @param errorStrategy 错误处理策略
      */
     record NoopStep(String id, String name,
+                    List<String> dependsOn,
                     @Nullable ErrorStrategy errorStrategy) implements WorkflowStep {}
 
     /**
@@ -158,8 +179,32 @@ public sealed interface WorkflowStep permits
      * @param id              步骤唯一标识
      * @param name            步骤名称
      * @param durationSeconds 等待时长（秒）
+     * @param dependsOn       DAG 依赖的前置步骤 ID 列表
      * @param errorStrategy   错误处理策略
      */
     record WaitStep(String id, String name, long durationSeconds,
+                    List<String> dependsOn,
                     @Nullable ErrorStrategy errorStrategy) implements WorkflowStep {}
+
+    /**
+     * 人工审批步骤，暂停工作流等待审批决策。
+     *
+     * <p>引擎遇到 ApprovalStep 时将工作流状态从 RUNNING 转换为 PAUSED，
+     * 等待外部通过 {@code WorkflowEngine.approve()} 提交审批决策。
+     *
+     * @param id                    步骤唯一标识
+     * @param name                  步骤名称
+     * @param message               审批消息（展示给审批人）
+     * @param approvers             审批人列表
+     * @param timeoutSeconds        审批超时时间（秒）
+     * @param autoApproveOnTimeout  超时后是否自动批准
+     * @param dependsOn             DAG 依赖的前置步骤 ID 列表
+     * @param errorStrategy         错误处理策略
+     */
+    record ApprovalStep(String id, String name, String message,
+                        List<String> approvers,
+                        int timeoutSeconds,
+                        boolean autoApproveOnTimeout,
+                        List<String> dependsOn,
+                        @Nullable ErrorStrategy errorStrategy) implements WorkflowStep {}
 }
