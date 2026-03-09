@@ -286,8 +286,8 @@ async function batchDelete() {
           <!-- 显示归档开关 -->
           <label class="flex items-center gap-2 text-sm cursor-pointer shrink-0">
             <Checkbox
-              :checked="showArchived"
-              @update:checked="showArchived = $event"
+              :model-value="showArchived"
+              @update:model-value="showArchived = $event"
             />
             <span class="text-muted-foreground whitespace-nowrap">显示归档</span>
           </label>
@@ -360,10 +360,10 @@ async function batchDelete() {
           >
             <!-- 选择框 -->
             <Checkbox
-              :checked="selectedIds.has(session.id)"
+              :model-value="selectedIds.has(session.id)"
               class="mt-1"
               @click.stop
-              @update:checked="toggleSelect(session.id)"
+              @update:model-value="toggleSelect(session.id)"
             />
 
             <!-- 会话内容 -->

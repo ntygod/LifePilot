@@ -294,8 +294,8 @@ async function handleSubmit() {
           <div>
             <label class="flex items-center gap-2">
               <Checkbox
-                :checked="formData.idempotent"
-                @update:checked="formData.idempotent = $event"
+                :model-value="formData.idempotent"
+                @update:model-value="formData.idempotent = $event"
               />
               <span class="text-sm font-medium text-foreground">幂等操作</span>
             </label>

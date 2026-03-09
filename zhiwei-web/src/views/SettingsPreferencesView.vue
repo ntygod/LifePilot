@@ -196,24 +196,24 @@ function restartOnboarding() {
             <SettingItem label="显示 Token 用量" description="在对话中显示 Token 消耗统计" html-for="show-token-usage">
               <Switch
                 id="show-token-usage"
-                :checked="form.showTokenUsage"
-                @update:checked="(v: boolean) => form.showTokenUsage = v"
+                :model-value="form.showTokenUsage"
+                @update:model-value="(v: boolean) => form.showTokenUsage = v"
               />
             </SettingItem>
 
             <SettingItem label="自动展开代码块" description="默认展开所有代码块" html-for="auto-expand-code">
               <Switch
                 id="auto-expand-code"
-                :checked="form.autoExpandCodeBlocks"
-                @update:checked="(v: boolean) => form.autoExpandCodeBlocks = v"
+                :model-value="form.autoExpandCodeBlocks"
+                @update:model-value="(v: boolean) => form.autoExpandCodeBlocks = v"
               />
             </SettingItem>
 
             <SettingItem label="折叠超长回复" description="自动折叠超过一定长度的回复" html-for="collapse-long-replies">
               <Switch
                 id="collapse-long-replies"
-                :checked="form.collapseLongReplies"
-                @update:checked="(v: boolean) => form.collapseLongReplies = v"
+                :model-value="form.collapseLongReplies"
+                @update:model-value="(v: boolean) => form.collapseLongReplies = v"
               />
             </SettingItem>
 

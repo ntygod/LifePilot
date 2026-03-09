@@ -298,8 +298,8 @@ function updateInputField(index: number, field: string, value: unknown) {
             <!-- 必填 -->
             <div class="flex items-end gap-1.5 pb-0.5">
               <Checkbox
-                :checked="input.required"
-                @update:checked="updateInputField(idx, 'required', $event)"
+                :model-value="input.required"
+                @update:model-value="updateInputField(idx, 'required', $event)"
               />
               <Label class="text-xs">必填</Label>
             </div>

@@ -92,8 +92,8 @@ function updateAutoApprove(checked: boolean) {
     </div>
     <div class="flex items-center gap-2">
       <Checkbox
-        :checked="modelValue.autoApproveOnTimeout"
-        @update:checked="updateAutoApprove"
+        :model-value="modelValue.autoApproveOnTimeout"
+        @update:model-value="updateAutoApprove"
       />
       <Label class="text-xs cursor-pointer">超时自动通过</Label>
     </div>

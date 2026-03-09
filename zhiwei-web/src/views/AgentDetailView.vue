@@ -437,7 +437,7 @@ function toggleTool(toolId: string) {
         <div class="space-y-2 my-4">
           <div v-for="kb in kbStore.list" :key="kb.id" class="flex items-center justify-between p-3 border border-border rounded-md">
             <div class="flex items-center gap-3">
-              <Checkbox :checked="selectedKbs.some(k => k.id === kb.id)" @update:checked="() => toggleKb(kb.id, kb.name)" />
+              <Checkbox :model-value="selectedKbs.some(k => k.id === kb.id)" @update:model-value="() => toggleKb(kb.id, kb.name)" />
               <div>
                 <div class="font-medium text-foreground">{{ kb.name }}</div>
                 <div class="text-xs text-muted-foreground">{{ kb.description }}</div>
@@ -470,7 +470,7 @@ function toggleTool(toolId: string) {
               <div class="text-xs text-muted-foreground">{{ tool.description }}</div>
               <div class="text-xs text-muted-foreground mt-1">类型: {{ tool.type }}, 风险: {{ tool.riskLevel }}</div>
             </div>
-            <Checkbox :checked="enabledTools.includes(tool.id)" @update:checked="() => toggleTool(tool.id)" />
+            <Checkbox :model-value="enabledTools.includes(tool.id)" @update:model-value="() => toggleTool(tool.id)" />
           </div>
         </div>
         <DialogFooter>

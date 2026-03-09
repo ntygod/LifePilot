@@ -151,12 +151,12 @@ function removeArg(index: number) { formData.value.args.splice(index, 1) }
         </div>
 
         <div class="flex items-center gap-2">
-          <Checkbox id="autoConnect" :checked="formData.autoConnect" @update:checked="(v: boolean) => formData.autoConnect = v" />
+          <Checkbox id="autoConnect" :model-value="formData.autoConnect" @update:model-value="(v: boolean) => formData.autoConnect = v" />
           <Label for="autoConnect" class="cursor-pointer">自动连接</Label>
         </div>
 
         <div class="flex items-center gap-2">
-          <Checkbox id="reconnect" :checked="formData.reconnect" @update:checked="(v: boolean) => formData.reconnect = v" />
+          <Checkbox id="reconnect" :model-value="formData.reconnect" @update:model-value="(v: boolean) => formData.reconnect = v" />
           <Label for="reconnect" class="cursor-pointer">自动重连</Label>
         </div>
 
