@@ -4,6 +4,8 @@ import com.lifepilot.interaction.web.model.ErrorResponse;
 import com.lifepilot.interaction.web.model.TriggerWorkflowRequest;
 import com.lifepilot.workflow.config.WorkflowConfigProperties;
 import com.lifepilot.workflow.engine.WorkflowEngine;
+import com.lifepilot.workflow.engine.WorkflowEventRecorder;
+import com.lifepilot.workflow.model.ApprovalDecision;
 import com.lifepilot.workflow.model.Result;
 import com.lifepilot.workflow.model.WorkflowDefinition;
 import com.lifepilot.workflow.parser.WorkflowYamlParser;
@@ -14,6 +16,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.lang.Nullable;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
@@ -40,6 +43,7 @@ public class WorkflowController {
     private final WorkflowRegistry workflowRegistry;
     private final WorkflowEngine workflowEngine;
     private final WorkflowRepository workflowRepository;
+    private final WorkflowEventRecorder workflowEventRecorder;
     private final WorkflowYamlParser yamlParser;
     private final WorkflowYamlPrinter yamlPrinter;
     private final WorkflowConfigProperties workflowConfig;
@@ -48,12 +52,14 @@ public class WorkflowController {
     public WorkflowController(WorkflowRegistry workflowRegistry,
                                WorkflowEngine workflowEngine,
                                WorkflowRepository workflowRepository,
+                               WorkflowEventRecorder workflowEventRecorder,
                                WorkflowYamlParser yamlParser,
                                WorkflowYamlPrinter yamlPrinter,
                                WorkflowConfigProperties workflowConfig) {
         this.workflowRegistry = workflowRegistry;
         this.workflowEngine = workflowEngine;
         this.workflowRepository = workflowRepository;
+        this.workflowEventRecorder = workflowEventRecorder;
         this.yamlParser = yamlParser;
         this.yamlPrinter = yamlPrinter;
         this.workflowConfig = workflowConfig;
@@ -387,7 +393,76 @@ public class WorkflowController {
         return ResponseEntity.ok(workflowRepository.findInstancesByWorkflowId(id));
     }
 
+    // ── 执行实例端点 ──────────────────────────────────────
+
+    /**
+     * 获取单个工作流执行实例详情。
+     *
+     * @param instanceId 实例 ID
+     * @return 实例详情，不存在返回 404
+     */
+    @GetMapping("/executions/{instanceId}")
+    public ResponseEntity<?> getInstance(@PathVariable String instanceId) {
+        return workflowRepository.findInstance(instanceId)
+                .<ResponseEntity<?>>map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                        new ErrorResponse(404, "工作流实例未找到: id=" + instanceId, Instant.now())));
+    }
+
+    /**
+     * 提交审批决策。
+     *
+     * @param instanceId 实例 ID
+     * @param stepId     审批步骤 ID
+     * @param request    审批请求
+     * @return 更新后的实例，404 不存在，400 状态/步骤不匹配
+     */
+    @PostMapping("/executions/{instanceId}/steps/{stepId}/approve")
+    public ResponseEntity<?> approveStep(@PathVariable String instanceId,
+                                         @PathVariable String stepId,
+                                         @RequestBody ApproveRequest request) {
+        try {
+            var decision = new ApprovalDecision(
+                    ApprovalDecision.Decision.valueOf(request.decision()),
+                    request.decidedBy(),
+                    request.reason(),
+                    Instant.now()
+            );
+            var updated = workflowEngine.approve(instanceId, stepId, decision);
+            log.info("审批操作完成: instanceId={}, stepId={}, decision={}", instanceId, stepId, request.decision());
+            return ResponseEntity.ok(updated);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(new ErrorResponse(404, e.getMessage(), Instant.now()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(new ErrorResponse(400, e.getMessage(), Instant.now()));
+        } catch (Exception e) {
+            log.error("审批操作失败: instanceId={}, stepId={}", instanceId, stepId, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ErrorResponse(500, "审批操作失败: " + e.getMessage(), Instant.now()));
+        }
+    }
+
+    /**
+     * 获取实例事件时间线。
+     *
+     * @param instanceId 实例 ID
+     * @return 事件列表（按 createdAt 升序），不存在返回 404
+     */
+    @GetMapping("/executions/{instanceId}/events")
+    public ResponseEntity<?> getEventTimeline(@PathVariable String instanceId) {
+        if (workflowRepository.findInstance(instanceId).isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(new ErrorResponse(404, "工作流实例未找到: id=" + instanceId, Instant.now()));
+        }
+        return ResponseEntity.ok(workflowEventRecorder.getTimeline(instanceId));
+    }
+
     // ── 辅助方法 ──────────────────────────────────────────
+
+    /** 审批请求 DTO。 */
+    record ApproveRequest(String decision, String decidedBy, @Nullable String reason) {}
 
     private String getString(Map<String, Object> map, String key) {
         Object value = map.get(key);
