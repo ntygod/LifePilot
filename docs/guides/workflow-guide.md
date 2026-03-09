@@ -604,80 +604,105 @@ errorStrategy:
 
 知微首次启动时会自动释放 5 个内置工作流模板到 `~/.zhiwei/workflows/` 目录。你可以直接使用、修改或删除它们。删除后重启应用会重新释放。
 
-### 1. 晨间简报（morning-briefing.yml）
+这些模板覆盖了工作流引擎的所有高级特性：ConditionStep 条件分支、LoopStep 循环处理、ParallelStep 并行执行、ApprovalStep 人工审批、SubWorkflowStep 子工作流、WaitStep 等待、ErrorStrategy 错误策略、DAG dependsOn 依赖编排。
 
-**触发方式：** 每天早上 8:00 自动执行
+### 1. 智能内容审核（content-review.yml）
 
-**功能：** 获取今日待办和日程，用 AI 生成一份简洁的晨间简报。
+**触发方式：** 事件触发（content.submitted）或手动触发
 
-**步骤流程：**
-```
-SkillStep(todo.list) → SkillStep(schedule.today) → LlmStep(生成简报)
-```
-
-**涉及的步骤类型：** skill、llm
-
-**适合学习：** 最基础的顺序执行模式——获取数据，然后用 AI 处理。
-
-### 2. 周报生成（weekly-review.yml）
-
-**触发方式：** 每周日晚上 8:00 自动执行
-
-**功能：** 并行获取本周待办完成情况和习惯打卡数据，用 AI 生成周报。
+**功能：** 使用 LLM 分析内容风险等级，高风险内容进入人工审批，低风险自动通过，最终生成审核报告并发送通知。
 
 **步骤流程：**
 ```
-ParallelStep(todo.list ∥ habit.weekly-stats) → LlmStep(生成周报)
+ToolStep(预处理) → [LlmStep(风险分析) ∥ ToolStep(关键词扫描)]（DAG 并行）
+  → ConditionStep(风险判定)
+    → then: ApprovalStep(人工审批) → ConditionStep(审批结果)
+    → else: ToolStep(自动通过)
+  → LlmStep(生成报告) → ToolStep(发送通知)
 ```
 
-**涉及的步骤类型：** parallel、skill、llm
+**涉及的步骤类型：** tool、llm、condition（嵌套）、approval
 
-**适合学习：** 并行步骤的用法——同时从多个数据源获取数据，提高效率。
+**适合学习：** DAG 依赖编排（dependsOn）、条件分支嵌套、人工审批流程、错误重试策略。
 
-### 3. 网页摘要（web-digest.yml）
+### 2. 多源数据聚合报告（data-aggregation.yml）
 
-**触发方式：** 手动触发，需要输入 URL 列表
+**触发方式：** 每周一早上 9:00 自动执行，或手动触发
 
-**功能：** 遍历 URL 列表，逐个抓取网页内容，最后用 AI 生成综合摘要。
+**功能：** 并行从多个数据源（待办、日程、习惯）采集信息并分析，LLM 综合生成聚合报告，格式化后保存并发送。
 
 **步骤流程：**
 ```
-LoopStep(遍历 URL → ToolStep(web.fetch)) → LlmStep(生成摘要)
+ParallelStep(3 个分支各含 SkillStep + LlmStep 链)
+  → ToolStep(获取外部数据, errorStrategy=skip)
+  → LlmStep(综合分析) → ToolStep(格式化) → [ToolStep(保存) ∥ ToolStep(发送)]
 ```
 
-**涉及的步骤类型：** loop、tool、llm
+**涉及的步骤类型：** parallel（分支内含多步骤链）、skill、llm、tool
 
-**适合学习：** 循环步骤 + 输入参数 + 错误处理（单个网页失败不中断）。
+**适合学习：** 并行分支内的多步骤串联、DAG 多依赖汇聚、skip 错误策略、retry 错误策略。
 
-### 4. 会议纪要（meeting-notes.yml）
+### 3. 批量任务处理（batch-processing.yml）
 
-**触发方式：** 手动触发，需要输入会议文字记录
+**触发方式：** 每天凌晨 2:00 自动执行，或手动触发
 
-**功能：** 用 AI 生成结构化会议纪要，然后从纪要中提取待办事项。
+**功能：** 获取待处理任务列表，LLM 校验数据完整性，循环逐条处理每个任务（按类型路由到不同处理器），最终生成处理汇总报告。
 
 **步骤流程：**
 ```
-LlmStep(生成纪要) → LlmStep(提取待办)
+ToolStep(获取任务列表) → LlmStep(校验数据)
+  → LoopStep(逐条处理)
+    → ConditionStep(任务分类路由)
+      → then: ToolStep(数据同步, retry)
+      → else: ToolStep(通用任务, retry)
+    → ToolStep(更新状态, skip)
+  → ToolStep(汇总结果) → LlmStep(生成报告) → ToolStep(发送通知)
 ```
 
-**涉及的步骤类型：** llm
+**涉及的步骤类型：** loop（含嵌套 condition）、condition、tool、llm
 
-**适合学习：** LLM 链式调用——第二步引用第一步的输出，逐步精炼结果。
+**适合学习：** 循环步骤 + 嵌套条件分支、循环变量引用（loopVar）、多种错误策略组合（retry + skip）。
 
-### 5. 调研报告（research-report.yml）
+### 4. 定时巡检与告警（scheduled-inspection.yml）
+
+**触发方式：** 每 30 分钟自动执行
+
+**功能：** 执行系统健康检查（系统、LLM、数据库），LLM 分析巡检结果，根据严重程度分级告警，紧急情况等待冷却后触发自动修复子工作流。
+
+**步骤流程：**
+```
+[ToolStep(健康检查) ∥ ToolStep(LLM 状态) ∥ ToolStep(数据库状态)]（DAG 并行）
+  → LlmStep(分析结果)
+  → ConditionStep(健康判定)
+    → then: ConditionStep(严重程度)
+      → critical: ToolStep(紧急告警) → WaitStep(冷却 60s) → SubWorkflowStep(自动修复) → ToolStep(验证)
+      → degraded: ToolStep(降级告警)
+    → else: NoopStep(记录健康)
+  → ToolStep(保存巡检记录)
+```
+
+**涉及的步骤类型：** tool、llm、condition（嵌套）、wait、sub-workflow、noop
+
+**适合学习：** WaitStep 冷却等待、SubWorkflowStep 子工作流调用、嵌套条件分支、skip 错误策略。
+
+### 5. 多步骤调研与审批（research-approval.yml）
 
 **触发方式：** 手动触发，需要输入调研主题
 
-**功能：** 搜索相关信息，用 AI 生成调研报告。
+**功能：** 多源信息搜索（网络 + 知识库 + 记忆），LLM 深度分析并质量评审，经人工审批后发布调研成果，失败时自动执行补偿回滚。
 
 **步骤流程：**
 ```
-ToolStep(web.search) → LlmStep(生成报告)
+[ToolStep(搜索网络) ∥ ToolStep(搜索知识库) ∥ SkillStep(搜索记忆)]（DAG 并行）
+  → LlmStep(深度分析) → LlmStep(质量评审)
+  → ApprovalStep(成果审批)
+  → ToolStep(发布, errorStrategy=compensate → 回滚)
+  → [ToolStep(通知) ∥ SkillStep(存入记忆)]（DAG 并行）
 ```
 
-**涉及的步骤类型：** tool、llm
+**涉及的步骤类型：** tool、skill、llm、approval
 
-**适合学习：** 工具 + AI 组合——先用工具获取原始数据，再用 AI 分析处理。
+**适合学习：** compensate 补偿错误策略（发布失败自动回滚）、DAG 多源并行汇聚、审批流程、skip 降级策略。
 
 ### 自定义内置工作流
 
@@ -706,71 +731,105 @@ lifepilot:
 
 内置工作流展示了几种常见的组合模式，你可以在自己的工作流中灵活运用：
 
-**模式 1：获取 → 生成**（晨间简报、调研报告）
+**模式 1：DAG 并行汇聚 → 分析**（内容审核、调研审批）
 
-最基础的模式。先用 Skill 或 Tool 获取数据，再用 LLM 分析处理。
+多个步骤通过 dependsOn 声明依赖关系，引擎自动并行执行无依赖的步骤，在汇聚点合并结果。
 
 ```yaml
 steps:
-  - id: fetch
-    type: skill / tool     # 获取原始数据
-  - id: generate
-    type: llm              # AI 分析处理
-    prompt: "基于 ${steps.fetch.output.result} 生成..."
+  - id: source-a
+    type: tool
+  - id: source-b
+    type: tool
+  - id: analyze
+    type: llm
+    prompt: |
+      数据 A：${steps.source-a.output.result}
+      数据 B：${steps.source-b.output.result}
+    dependsOn:
+      - source-a
+      - source-b
 ```
 
-**模式 2：并行获取 → 合并生成**（周报生成）
+**模式 2：并行分支内多步骤链**（数据聚合报告）
 
-需要从多个数据源获取数据时，用 parallel 并行执行，然后在 LLM 步骤中合并引用。
+parallel 分支内可包含多个串联步骤，每个分支独立执行采集 + 分析链。
 
 ```yaml
 steps:
   - id: gather
     type: parallel
     branches:
-      - - id: source-a
+      - - id: fetch-data
           type: skill
-      - - id: source-b
+        - id: analyze-data
+          type: llm
+          prompt: "分析：${steps.fetch-data.output.result}"
+      - - id: fetch-other
           type: skill
-  - id: generate
-    type: llm
-    prompt: |
-      数据 A：${steps.source-a.output.result}
-      数据 B：${steps.source-b.output.result}
 ```
 
-**模式 3：遍历 → 汇总**（网页摘要）
+**模式 3：循环 + 嵌套条件路由**（批量任务处理）
 
-对集合中的每个元素执行操作，最后汇总处理。
+对集合中的每个元素执行操作，循环体内按条件路由到不同处理器。
 
 ```yaml
 steps:
   - id: process-each
     type: loop
-    items: "${inputs.items}"
+    items: "${steps.fetch.output.result}"
     loopVar: item
     body:
-      - id: process
-        type: tool
-        params:
-          data: "${item}"
-  - id: summarize
-    type: llm
-    prompt: "汇总以下结果：${steps.process-each.output.result}"
+      - id: route
+        type: condition
+        condition: "${item.type} == 'special'"
+        then:
+          - id: special-handler
+            type: tool
+        else:
+          - id: default-handler
+            type: tool
 ```
 
-**模式 4：链式 LLM**（会议纪要）
+**模式 4：条件分支 + 审批 + 等待 + 子工作流**（定时巡检、内容审核）
 
-多个 LLM 步骤串联，每步精炼上一步的输出。适合复杂的文本处理任务。
+嵌套条件分支实现多级决策，结合审批、等待冷却、子工作流调用等高级步骤。
 
 ```yaml
 steps:
-  - id: step-1
-    type: llm
-    prompt: "第一步处理：${inputs.data}"
-  - id: step-2
-    type: llm
-    prompt: "基于上一步结果进一步处理：${steps.step-1.output.result}"
+  - id: decision
+    type: condition
+    condition: "${steps.analyze.output.result.status} == 'critical'"
+    then:
+      - id: alert
+        type: tool
+      - id: cooldown
+        type: wait
+        durationSeconds: 60
+      - id: auto-fix
+        type: sub-workflow
+        workflowId: remediation
+    else:
+      - id: log-ok
+        type: noop
+```
+
+**模式 5：补偿错误策略**（调研审批）
+
+发布操作失败时自动执行补偿步骤回滚，保证数据一致性。
+
+```yaml
+steps:
+  - id: publish
+    type: tool
+    toolId: knowledge.ingest
+    errorStrategy:
+      type: compensate
+      compensationStep:
+        id: rollback
+        name: 回滚发布
+        type: tool
+        toolId: knowledge.delete
 ```
 
 ### 创建自己的工作流
