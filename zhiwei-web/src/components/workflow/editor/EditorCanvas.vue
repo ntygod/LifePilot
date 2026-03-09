@@ -2,7 +2,8 @@
   编排画布组件。
   基于 CSS Flex 分层布局 + SVG 连线层的交互式 DAG 画布。
   任务 3.1：基础布局 + SVG 连线 + 空画布引导 + 拖放区域。
-  节点渲染细节（图标、选中高亮等）在 3.2 实现，连接锚点在 3.3，交互在 3.4。
+  任务 3.2：步骤节点渲染（类型图标、名称、ID、类型标签、选中高亮、验证错误红色边框、悬停效果）。
+  连接锚点在 3.3，交互在 3.4。
 -->
 <script setup lang="ts">
 import { computed, ref, watch, nextTick, onMounted } from 'vue'
@@ -144,31 +145,39 @@ onMounted(() => nextTick(updateLines))
           :key="layerIdx"
           class="flex flex-wrap items-start justify-center gap-4"
         >
-          <!-- 简单节点盒子（3.2 会增强渲染细节） -->
+          <!-- 步骤节点（类型图标 + 名称 + ID + 类型标签 + 选中高亮 + 验证错误边框） -->
           <div
             v-for="stepId in layer"
             :key="stepId"
             :data-step-id="stepId"
-            class="flex min-w-[140px] max-w-[200px] cursor-pointer items-center gap-2 rounded-lg border-2 bg-background px-3 py-2 transition-colors hover:border-primary/50"
+            class="group flex min-w-[160px] max-w-[220px] cursor-pointer flex-col gap-1.5 rounded-lg border-2 bg-background px-3 py-2.5 shadow-sm transition-all hover:border-primary/50 hover:shadow-md"
             :class="{
               'border-primary ring-2 ring-primary/20': selectedStepId === stepId,
-              'border-destructive': validationErrors.has(stepId),
+              'border-destructive ring-2 ring-destructive/20': validationErrors.has(stepId) && selectedStepId !== stepId,
               'border-border': selectedStepId !== stepId && !validationErrors.has(stepId),
             }"
             @click="emit('select-step', stepId)"
           >
-            <component
-              :is="STEP_TYPE_META[stepMap.get(stepId)!.type].icon"
-              class="h-4 w-4 shrink-0 text-muted-foreground"
-            />
-            <div class="min-w-0">
-              <div class="truncate text-xs font-medium">
-                {{ stepMap.get(stepId)?.name ?? stepId }}
-              </div>
-              <div class="truncate text-[10px] text-muted-foreground">
-                {{ stepId }}
+            <!-- 上部：图标 + 名称 + ID -->
+            <div class="flex items-center gap-2">
+              <component
+                :is="STEP_TYPE_META[stepMap.get(stepId)!.type].icon"
+                class="h-4 w-4 shrink-0 transition-colors"
+                :class="selectedStepId === stepId ? 'text-primary' : 'text-muted-foreground group-hover:text-primary/70'"
+              />
+              <div class="min-w-0">
+                <div class="truncate text-xs font-medium">
+                  {{ stepMap.get(stepId)?.name ?? stepId }}
+                </div>
+                <div class="truncate text-[10px] text-muted-foreground">
+                  {{ stepId }}
+                </div>
               </div>
             </div>
+            <!-- 类型标签 -->
+            <span class="inline-flex w-fit items-center rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+              {{ STEP_TYPE_META[stepMap.get(stepId)!.type].label }}
+            </span>
           </div>
         </div>
       </div>
