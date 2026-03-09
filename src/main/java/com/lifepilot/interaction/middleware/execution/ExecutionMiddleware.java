@@ -2,6 +2,7 @@ package com.lifepilot.interaction.middleware.execution;
 
 import com.lifepilot.agent.AgentLoop;
 import com.lifepilot.agent.model.AgentRequest;
+import com.lifepilot.agent.model.AgentResponse;
 import com.lifepilot.interaction.config.GatewayProperties;
 import com.lifepilot.interaction.middleware.GatewayMiddleware;
 import com.lifepilot.interaction.middleware.MiddlewareChain;
@@ -96,8 +97,9 @@ public class ExecutionMiddleware implements GatewayMiddleware {
         );
 
         // 2. 带超时调用 AgentLoop.run()
+        CompletableFuture<AgentResponse> future = null;
         try {
-            var future = CompletableFuture.supplyAsync(() -> agentLoop.run(agentRequest));
+            future = CompletableFuture.supplyAsync(() -> agentLoop.run(agentRequest));
             int timeout = properties.execution().timeoutSeconds();
             var agentResponse = future.get(timeout, TimeUnit.SECONDS);
 
@@ -136,6 +138,10 @@ public class ExecutionMiddleware implements GatewayMiddleware {
                     .toBuilder().tokenUsage(tokenUsage).build();
 
         } catch (TimeoutException e) {
+            // 超时后取消底层任务，配合 coreLoop 的中断检查点终止 AgentLoop
+            if (future != null) {
+                future.cancel(true);
+            }
             log.warn("Agent 执行超时: messageId={}, timeout={}s", message.messageId(),
                     properties.execution().timeoutSeconds());
             return GatewayResponse.error(message.channelType(), "请求处理超时", 504);
