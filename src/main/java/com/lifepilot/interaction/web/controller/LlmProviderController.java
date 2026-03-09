@@ -115,9 +115,15 @@ public class LlmProviderController {
     public ResponseEntity<?> saveProvider(@RequestBody CreateProviderRequest request) {
         log.debug("保存 LLM Provider: id={}", request.id());
         try {
-            LlmProviderEntity entity = toEntity(request);
+            // 如果是更新且 apiKey 为空，保留数据库中的旧值
+            String apiKey = request.apiKey();
+            if (apiKey == null || apiKey.isBlank()) {
+                apiKey = providerService.findById(request.id())
+                        .map(LlmProviderEntity::apiKey)
+                        .orElse(null);
+            }
+            LlmProviderEntity entity = toEntity(request, apiKey);
             LlmProviderEntity saved = providerService.save(entity);
-            // 保存时不检查健康状态，避免阻塞响应
             return ResponseEntity.ok(toMap(saved, false));
         } catch (IllegalArgumentException e) {
             log.warn("保存 Provider 失败: {}", e.getMessage());
@@ -236,34 +242,35 @@ public class LlmProviderController {
 
     /**
      * 从创建请求创建实体。
+     *
+     * @param request 请求
+     * @param resolvedApiKey 已解析的 apiKey（编辑时可能保留旧值）
      */
-    private LlmProviderEntity toEntity(CreateProviderRequest request) {
-        // 如果场景为空，默认包含 chat 场景（至少保证基本可用）
-        List<String> scenes = request.scenes() != null && !request.scenes().isEmpty()
-                ? request.scenes()
-                : List.of("chat");
-        
+    private LlmProviderEntity toEntity(CreateProviderRequest request, String resolvedApiKey) {
         return new LlmProviderEntity(
                 request.id(),
                 ProviderType.valueOf(request.type()),
                 request.apiUrl(),
-                request.apiKey(),
+                resolvedApiKey,
                 request.modelName(),
                 request.timeoutSeconds() != null ? request.timeoutSeconds() : 30,
                 request.priority() != null ? request.priority() : 0,
-                scenes,
+                request.scenes() != null ? request.scenes() : List.of(),
                 request.capabilities() != null
                         ? request.capabilities().stream()
                         .map(ProviderCapability::valueOf)
                         .collect(Collectors.toSet())
-                        : java.util.Set.of(ProviderCapability.CHAT),
-                request.enabled() != null ? request.enabled() : true,
+                        : java.util.Set.of(),
+                request.enabled() != null ? request.enabled() : false,
                 request.costPerInputToken() != null ? request.costPerInputToken() : 0,
                 request.costPerOutputToken() != null ? request.costPerOutputToken() : 0,
                 request.maxContextWindow() != null ? request.maxContextWindow() : 4096,
                 request.embeddingDimension(),
                 request.supportsStreaming() != null ? request.supportsStreaming() : false,
-                false, // 自定义 Provider 不是预设置
+                // 保留已有记录的 isPreset 标志，新建时为 false
+                providerService.findById(request.id())
+                        .map(LlmProviderEntity::isPreset)
+                        .orElse(false),
                 request.displayName(),
                 request.description()
         );
