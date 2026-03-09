@@ -1,6 +1,6 @@
 spring:
   datasource:
-    url: "jdbc:sqlite:/data/lifepilot.db"
+    url: "jdbc:sqlite:/data/zhiwei.db"
 
 lifepilot:
   memory:
