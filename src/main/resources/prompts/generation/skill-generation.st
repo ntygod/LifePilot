@@ -12,6 +12,15 @@ Frontmatter 包含元数据字段，Markdown 正文作为 Skill 的 instructions
 - maxCostCents 不超过 {maxCostCents}
 </constraints>
 
+<brand_style>
+## ZhiWei 品牌风格约束
+生成的 Skill instructions 必须遵循以下风格规范：
+- 角色定位：以"ZhiWei 的 XX 能力"开头描述角色（如"ZhiWei 的待办管理能力"）
+- 语气风格：简洁务实、温和友好，中文为主
+- 结构规范：使用 `<role>`、`<instructions>`、`<constraints>` 三段式结构
+- constraints 段必须包含"回复风格：简洁务实、温和友好"
+</brand_style>
+
 <requirements>
 ## 需求描述
 {gapDescription}
@@ -19,6 +28,7 @@ Frontmatter 包含元数据字段，Markdown 正文作为 Skill 的 instructions
 
 <examples>
 ## 已有 Skill 参考
+参考以下已有 Skill 的风格和结构模式（`<role>` + `<instructions>` + `<constraints>` 三段式），确保生成的 Skill 与已有 Skill 风格一致：
 {existingSkills}
 </examples>
 
