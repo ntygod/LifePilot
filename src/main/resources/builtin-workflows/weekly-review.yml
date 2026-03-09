@@ -1,0 +1,41 @@
+id: weekly-review
+name: 周报生成
+description: 每周日晚自动汇总本周待办完成情况和习惯打卡数据，生成周报
+version: "1.0"
+triggers:
+  - type: cron
+    cron: "0 0 20 * * 0"
+steps:
+  - id: gather-data
+    name: 并行获取本周数据
+    type: parallel
+    branches:
+      - - id: fetch-weekly-todos
+          name: 获取本周待办
+          type: skill
+          skillId: todo.list
+          params:
+            filter: "this-week"
+      - - id: fetch-weekly-habits
+          name: 获取本周习惯数据
+          type: skill
+          skillId: habit.weekly-stats
+          params: {}
+  - id: generate-review
+    name: 生成周报
+    type: llm
+    scene: workflow
+    prompt: |
+      请根据以下数据生成一份周报：
+
+      ## 本周待办完成情况
+      ${steps.fetch-weekly-todos.output.result}
+
+      ## 本周习惯打卡数据
+      ${steps.fetch-weekly-habits.output.result}
+
+      要求：
+      1. 统计待办完成率
+      2. 分析习惯坚持情况
+      3. 总结本周亮点和不足
+      4. 给出下周改进建议
