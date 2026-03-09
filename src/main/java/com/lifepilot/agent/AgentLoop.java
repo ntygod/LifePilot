@@ -357,7 +357,18 @@ public class AgentLoop {
 
             // 异步后处理（会话快照 + AUDN 实体提取，不含对话历史）
             asyncPostProcess(state);
-            return state.toResponse();
+
+            // 通过 TraceContext 聚合 token 统计，替代 budget.tokensUsed()（Fix 11）
+            // budget 只在 ToolResult/SubAgentResult 时扣减，纯 LLM 回合为 0
+            var tokenUsage = aggregateTokenUsage(traceContext);
+            return new AgentResponse(
+                    state.traceId(),
+                    state.sessionId(),
+                    state.finalOutput() != null ? state.finalOutput() : "",
+                    tokenUsage.totalTokens(),
+                    state.stepCount(),
+                    state.terminationReason()
+            );
 
         } catch (Exception e) {
             log.error("Agent 循环异常终止: error={}", e.getMessage(), e);
