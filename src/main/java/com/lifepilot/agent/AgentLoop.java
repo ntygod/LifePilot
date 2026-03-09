@@ -87,6 +87,9 @@ public class AgentLoop {
     @Nullable
     private final MediaDataExtractor mediaDataExtractor;
 
+    /** 当前执行的取消信号令牌，供外部调用方（ExecutionMiddleware、SseSessionManager）访问。 */
+    private volatile CancellationToken cancellationToken;
+
     public AgentLoop(StateReducer stateReducer,
                      ContextAssembler contextAssembler,
                      LlmRouter llmRouter,
@@ -126,6 +129,19 @@ public class AgentLoop {
     }
 
     /**
+     * 获取当前执行的取消信号令牌。
+     *
+     * <p>供外部调用方（ExecutionMiddleware、SseSessionManager）在超时或断开时
+     * 调用 {@code token.cancel()} 通知 coreLoop 终止。</p>
+     *
+     * @return 当前取消令牌，若尚未开始执行则返回 null
+     */
+    @Nullable
+    public CancellationToken getCancellationToken() {
+        return cancellationToken;
+    }
+
+    /**
      * 流式执行 Agent 循环，通过 SSE 发送 token 事件。
      *
      * <p>在 RESPONDING 阶段使用流式 LLM 调用，其他阶段保持同步。
@@ -149,7 +165,11 @@ public class AgentLoop {
         // 后端生成的消息 ID（同步写入 chat_messages 后获取）
         String userMessageId = null;
         String assistantMessageId = null;
-        
+
+        // 创建取消信号令牌，供外部调用方传递取消意图
+        var token = new CancellationToken();
+        this.cancellationToken = token;
+
         try {
             state = initState(request);
 
@@ -194,7 +214,7 @@ public class AgentLoop {
             loopStart = Instant.now();
             // 核心循环 — 流式回调
             var callback = new StreamingCallback(sseManager, streamId, request.sessionId(), tempTurnId);
-            state = coreLoop(state, request, traceContext, loopStart, callback);
+            state = coreLoop(state, request, traceContext, loopStart, callback, token);
 
             // 检查流式特殊中断（RESPONDING 阶段 LLM 不可用）
             if (callback.hasStreamingError()) {
@@ -279,6 +299,11 @@ public class AgentLoop {
         TraceContext traceContext = null;
         Instant loopStart = Instant.now();
         Exception error = null;
+
+        // 创建取消信号令牌，供外部调用方传递取消意图
+        var token = new CancellationToken();
+        this.cancellationToken = token;
+
         try {
             state = initState(request);
 
@@ -301,7 +326,7 @@ public class AgentLoop {
             loopStart = Instant.now();
 
             // 核心循环 — 非流式回调
-            state = coreLoop(state, request, traceContext, loopStart, new NonStreamingCallback());
+            state = coreLoop(state, request, traceContext, loopStart, new NonStreamingCallback(), token);
 
             // 归一化最终输出与推理概要（非流式）：用于会话快照与 /complete 响应
             if (state.terminationReason() == null) {
@@ -364,17 +389,25 @@ public class AgentLoop {
      * @param traceContext 追踪上下文（可为 null）
      * @param loopStart  循环开始时间
      * @param callback   迭代回调（封装流式/非流式差异）
+     * @param cancellationToken 取消信号令牌，每次迭代开头检查
      * @return 循环结束后的最终状态
      */
     private AgentState coreLoop(AgentState state,
                                 AgentRequest request,
                                 @Nullable TraceContext traceContext,
                                 Instant loopStart,
-                                IterationCallback callback) {
+                                IterationCallback callback,
+                                CancellationToken cancellationToken) {
         var limits = LoopLimits.from(config);
         var counters = new LoopCounters();
 
         for (int iteration = 0; !state.isDone(); iteration++) {
+            // 0) 取消信号检查 — 外部超时/断开时立即终止
+            if (cancellationToken.isCancelled() || Thread.currentThread().isInterrupted()) {
+                log.info("coreLoop 检测到取消信号，终止循环: iteration={}", iteration);
+                break;
+            }
+
             // 1) 迭代硬限制
             Action forcedByIterationLimit = forceTerminateIfIterationLimitReached(iteration, limits);
             if (forcedByIterationLimit != null) {
