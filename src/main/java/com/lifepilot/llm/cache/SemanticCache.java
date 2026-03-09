@@ -57,14 +57,10 @@ public class SemanticCache {
         this.config = config;
         this.llmRouter = llmRouter;
         this.jdbcTemplate = jdbcTemplate;
-        // 尝试立即初始化（happy path：Provider 已就绪）
-        this.vecAvailable = initVec0Table();
-        if (vecAvailable) {
-            log.info("语义缓存: 初始化完成, similarityThreshold={}, ttlSeconds={}, maxEntries={}",
-                    config.getSimilarityThreshold(), config.getTtlSeconds(), config.getMaxEntries());
-        } else {
-            log.info("语义缓存: vec0 表初始化失败，将在首次使用时延迟初始化");
-        }
+        // 延迟初始化：构造阶段 EMBEDDING Provider 可能尚未注册，
+        // 由 ensureVecInitialized() 在首次 lookup/putAsync 时完成初始化
+        this.vecAvailable = false;
+        log.debug("语义缓存: 已创建，将在首次使用时初始化 vec0 表");
     }
 
     /** 程序化创建 semantic_cache_vec 虚拟表。 */
