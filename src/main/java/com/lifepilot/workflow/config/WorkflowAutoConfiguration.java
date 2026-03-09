@@ -15,6 +15,12 @@ import com.lifepilot.workflow.trigger.WorkflowTriggerManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -128,16 +134,92 @@ public class WorkflowAutoConfiguration {
     }
 
     /**
-     * 应用启动完成后触发崩溃恢复、触发器注册和 YAML 热加载。
+     * 应用启动完成后依次执行：内置工作流释放、崩溃恢复、触发器注册和 YAML 热加载。
      */
     @EventListener(ApplicationReadyEvent.class)
     public void onApplicationReady(ApplicationReadyEvent event) {
         var ctx = event.getApplicationContext();
+        var config = ctx.getBean(WorkflowConfigProperties.class);
+
         // 延迟注入 triggerManager 到 registry，避免循环依赖
         ctx.getBean(WorkflowRegistry.class).setTriggerManager(ctx.getBean(WorkflowTriggerManager.class));
+
+        // ① 释放内置工作流到用户目录（在崩溃恢复和热加载之前）
+        seedBuiltinWorkflows(config);
+
+        // ② 崩溃恢复
         ctx.getBean(WorkflowEngine.class).recoverInterruptedInstances();
+
+        // ③ 触发器注册
         ctx.getBean(WorkflowTriggerManager.class).registerAllTriggers();
+
+        // ④ YAML 热加载（会扫描用户目录，发现刚释放的文件）
         ctx.getBean(WorkflowRegistry.class).startScheduledScan();
+
         log.info("工作流崩溃恢复、触发器注册和 YAML 热加载已完成");
+    }
+
+    /**
+     * 将 classpath 中的内置工作流模板释放到用户工作流目录。
+     *
+     * <p>仅当用户目录中不存在同名文件时才复制，不覆盖用户已修改的版本。
+     * 释放后由已有的热加载扫描机制自动发现并注册。</p>
+     */
+    private void seedBuiltinWorkflows(WorkflowConfigProperties config) {
+        if (!config.isSeedBuiltinWorkflows()) {
+            log.debug("内置工作流释放已禁用");
+            return;
+        }
+
+        // 解析用户工作流目录路径（处理 ~ 前缀）
+        String dirPath = config.getDefinitionsDir();
+        if (dirPath.startsWith("~")) {
+            dirPath = System.getProperty("user.home") + dirPath.substring(1);
+        }
+        Path targetDir = Path.of(dirPath);
+
+        // 确保目录存在
+        try {
+            Files.createDirectories(targetDir);
+        } catch (IOException e) {
+            log.warn("创建工作流目录失败: path={}, error={}", targetDir, e.getMessage());
+            return;
+        }
+
+        try {
+            var resolver = new PathMatchingResourcePatternResolver();
+            Resource[] resources = resolver.getResources("classpath:builtin-workflows/*.yml");
+            int seeded = 0;
+
+            for (Resource resource : resources) {
+                try {
+                    String filename = resource.getFilename();
+                    if (filename == null) {
+                        continue;
+                    }
+                    Path targetFile = targetDir.resolve(filename);
+
+                    if (Files.exists(targetFile)) {
+                        log.debug("内置工作流已存在，跳过: file={}", filename);
+                        continue;
+                    }
+
+                    try (var in = resource.getInputStream()) {
+                        Files.copy(in, targetFile);
+                        seeded++;
+                        log.info("内置工作流已释放: file={}", filename);
+                    }
+                } catch (IOException e) {
+                    log.warn("内置工作流释放失败: file={}, error={}",
+                            resource.getFilename(), e.getMessage());
+                }
+            }
+
+            if (seeded > 0) {
+                log.info("内置工作流释放完成: 新增={}", seeded);
+            }
+        } catch (IOException e) {
+            log.debug("内置工作流资源目录不存在或为空: error={}", e.getMessage());
+        }
     }
 }
