@@ -120,6 +120,12 @@ public class ActionParser {
             }
         }
 
+        // 策略 6: 自然语言文本兜底 — 非 EXECUTING 阶段，LLM 返回纯文本时包装为 ResponseGenerated
+        if (phase != AgentPhase.EXECUTING && isLikelyNaturalLanguage(trimmed)) {
+            log.info("LLM 输出为自然语言文本，兜底为 ResponseGenerated: phase={}, length={}", phase, trimmed.length());
+            return new Action.ResponseGenerated(trimmed, List.of());
+        }
+
         // 所有策略都失败，尝试最后一次解析以获取详细错误信息
         String lastError = null;
         try {
@@ -384,6 +390,31 @@ public class ActionParser {
                 }
             }
         }
+    }
+
+    /**
+     * 检测文本是否为纯自然语言（不含 JSON 结构）。
+     *
+     * <p>判断条件：strip() 后不以 {@code {}} 或 {@code []} 包裹、不包含 JSON 关键字段标记、
+     * 长度大于 0 且非空白。用于在所有 JSON 解析策略失败后，
+     * 将 LLM 返回的自然语言文本兜底为 ResponseGenerated。</p>
+     *
+     * @param text 待检测文本（已 strip）
+     * @return 如果是纯自然语言文本返回 true
+     */
+    private boolean isLikelyNaturalLanguage(String text) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+        // 以 { 或 [ 开头说明可能是 JSON（即使格式有误也不应兜底为自然语言）
+        if (text.startsWith("{") || text.startsWith("[")) {
+            return false;
+        }
+        // 包含 JSON 关键字段标记，说明可能是被截断或格式错误的 JSON
+        if (text.contains("\"action\":") || text.contains("\"type\":") || text.contains("\"action\" :")) {
+            return false;
+        }
+        return true;
     }
 
     /** 构建解析错误的 ErrorRecovery Action。 */
