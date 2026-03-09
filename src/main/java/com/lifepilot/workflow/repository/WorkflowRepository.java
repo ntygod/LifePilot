@@ -8,6 +8,9 @@ import com.lifepilot.workflow.model.WorkflowDefinition;
 import com.lifepilot.workflow.model.WorkflowInstance;
 import com.lifepilot.workflow.model.WorkflowState;
 import com.lifepilot.workflow.parser.WorkflowYamlParser;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -16,8 +19,10 @@ import org.springframework.lang.Nullable;
 
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -38,12 +43,14 @@ public class WorkflowRepository {
 
     private final JdbcTemplate jdbcTemplate;
     private final WorkflowYamlParser yamlParser;
+    private final ObjectMapper objectMapper;
     private final RowMapper<WorkflowInstance> instanceRowMapper;
     private final RowMapper<StepLog> stepLogRowMapper;
 
     public WorkflowRepository(JdbcTemplate jdbcTemplate, WorkflowYamlParser yamlParser) {
         this.jdbcTemplate = jdbcTemplate;
         this.yamlParser = yamlParser;
+        this.objectMapper = new ObjectMapper();
         this.instanceRowMapper = this::mapInstance;
         this.stepLogRowMapper = this::mapStepLog;
     }
@@ -147,16 +154,18 @@ public class WorkflowRepository {
     public void saveInstance(WorkflowInstance instance) {
         jdbcTemplate.update("""
                 INSERT INTO workflow_instances
-                    (id, workflow_id, state, input_json, context_json, current_step_index,
+                    (id, workflow_id, state, input_json, context_json,
+                     completed_step_ids_json, pending_approval_step_id,
                      started_at, completed_at, failure_reason, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 instance.id(),
                 instance.workflowId(),
                 instance.state().name(),
                 instance.context() != null ? instance.context().toJson() : null,
                 instance.context() != null ? instance.context().toJson() : null,
-                instance.currentStepIndex(),
+                serializeStepIds(instance.completedStepIds()),
+                instance.pendingApprovalStepId(),
                 toText(instance.startedAt()),
                 toText(instance.completedAt()),
                 instance.failureReason(),
@@ -174,20 +183,22 @@ public class WorkflowRepository {
     public void updateInstance(WorkflowInstance instance) {
         jdbcTemplate.update("""
                 UPDATE workflow_instances SET
-                    state = ?, context_json = ?, current_step_index = ?,
+                    state = ?, context_json = ?,
+                    completed_step_ids_json = ?, pending_approval_step_id = ?,
                     started_at = ?, completed_at = ?, failure_reason = ?, updated_at = ?
                 WHERE id = ?
                 """,
                 instance.state().name(),
                 instance.context() != null ? instance.context().toJson() : null,
-                instance.currentStepIndex(),
+                serializeStepIds(instance.completedStepIds()),
+                instance.pendingApprovalStepId(),
                 toText(instance.startedAt()),
                 toText(instance.completedAt()),
                 instance.failureReason(),
                 toText(instance.updatedAt()),
                 instance.id());
-        log.debug("工作流实例更新: id={}, state={}, stepIndex={}",
-                instance.id(), instance.state(), instance.currentStepIndex());
+        log.debug("工作流实例更新: id={}, state={}, completedSteps={}",
+                instance.id(), instance.state(), instance.completedStepIds().size());
     }
 
     /**
@@ -311,7 +322,8 @@ public class WorkflowRepository {
                 .workflowId(rs.getString("workflow_id"))
                 .state(WorkflowState.valueOf(rs.getString("state")))
                 .context(context)
-                .currentStepIndex(rs.getInt("current_step_index"))
+                .completedStepIds(deserializeStepIds(rs.getString("completed_step_ids_json")))
+                .pendingApprovalStepId(rs.getString("pending_approval_step_id"))
                 .startedAt(parseInstant(rs.getString("started_at")))
                 .completedAt(parseInstant(rs.getString("completed_at")))
                 .failureReason(rs.getString("failure_reason"))
@@ -340,6 +352,43 @@ public class WorkflowRepository {
                 durationMs,
                 parseInstant(rs.getString("created_at"))
         );
+    }
+
+    /**
+     * 将步骤 ID 集合序列化为 JSON 数组字符串。
+     *
+     * @param stepIds 步骤 ID 集合
+     * @return JSON 数组字符串，如 {@code ["step1","step2"]}
+     */
+    private String serializeStepIds(Set<String> stepIds) {
+        if (stepIds == null || stepIds.isEmpty()) {
+            return "[]";
+        }
+        try {
+            return objectMapper.writeValueAsString(stepIds);
+        } catch (JsonProcessingException e) {
+            log.warn("步骤 ID 集合序列化失败，返回空数组: {}", e.getMessage());
+            return "[]";
+        }
+    }
+
+    /**
+     * 将 JSON 数组字符串反序列化为步骤 ID 集合。
+     *
+     * @param json JSON 数组字符串
+     * @return 步骤 ID 集合，null 或空字符串返回空集合
+     */
+    private Set<String> deserializeStepIds(@Nullable String json) {
+        if (json == null || json.isBlank()) {
+            return new LinkedHashSet<>();
+        }
+        try {
+            List<String> list = objectMapper.readValue(json, new TypeReference<List<String>>() {});
+            return new LinkedHashSet<>(list);
+        } catch (JsonProcessingException e) {
+            log.warn("步骤 ID 集合反序列化失败，返回空集合: {}", e.getMessage());
+            return new LinkedHashSet<>();
+        }
     }
 
     /** ISO 8601 TEXT → Instant，null 安全。 */
