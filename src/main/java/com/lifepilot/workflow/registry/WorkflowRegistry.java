@@ -1,6 +1,7 @@
 package com.lifepilot.workflow.registry;
 
 import com.lifepilot.workflow.config.WorkflowConfigProperties;
+import com.lifepilot.workflow.engine.DagScheduler;
 import com.lifepilot.workflow.model.Result;
 import com.lifepilot.workflow.model.WorkflowDefinition;
 import com.lifepilot.workflow.parser.WorkflowYamlParser;
@@ -76,6 +77,14 @@ public class WorkflowRegistry {
      */
     @Setter
     private WorkflowTriggerManager triggerManager;
+
+    /** DAG 调度器引用，用于注册时验证步骤依赖无环。
+     * -- SETTER --
+     *  设置 DAG 调度器（环检测所需）。
+     *
+     */
+    @Setter
+    private DagScheduler dagScheduler;
 
     /**
      * 构造 WorkflowRegistry，注入持久化仓储、YAML 解析器和打印器。
@@ -432,6 +441,17 @@ public class WorkflowRegistry {
             log.warn("工作流定义验证失败: steps 为空, id={}", definition.id());
             return false;
         }
+
+        // DAG 环检测
+        if (dagScheduler != null) {
+            try {
+                dagScheduler.buildExecutionPlan(definition.steps());
+            } catch (IllegalArgumentException e) {
+                log.warn("工作流定义验证失败: 步骤存在环依赖, id={}, error={}", definition.id(), e.getMessage());
+                return false;
+            }
+        }
+
         return true;
     }
 
