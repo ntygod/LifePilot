@@ -1,6 +1,9 @@
+# Docker 环境专用配置（通过 SPRING_PROFILES_ACTIVE=docker 激活）
+# 所有路径映射到容器内 /data 卷，由 docker-compose.yml 的 zhiwei-data 卷持久化
+
 spring:
   datasource:
-    url: "jdbc:sqlite:/data/zhiwei.db"
+    url: "jdbc:sqlite:/data/zhiwei.db?enable_load_extension=true"
 
 lifepilot:
   memory:
@@ -14,8 +17,16 @@ lifepilot:
       agent-definitions-path: "/data/agents/"
   workflow:
     definitions-dir: "/data/workflows"
+  eval:
+    scenario-directory: "/data/eval/scenarios"
+  marketplace:
+    install-dirs:
+      skills: "/data/skills"
+      agents: "/data/agents"
+      workflows: "/data/workflows"
+  sync:
+    obsidian-vault-path: "/data/obsidian"
 
 logging:
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
-
