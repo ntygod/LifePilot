@@ -3,7 +3,7 @@ package com.lifepilot.interaction.web.model;
 import jakarta.annotation.Nullable;
 
 /**
- * 前端 Trace 步骤 DTO（与 lifepilot-web 的 types/TraceStep 对齐）。
+ * 前端 Trace 步骤 DTO（与 zhiwei-web 的 types/TraceStep 对齐）。
  */
 public record TraceStepDto(
         String id,
