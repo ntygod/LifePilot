@@ -257,7 +257,7 @@ public class AgentLoop {
         } catch (Exception e) {
             log.error("流式 Agent 循环异常终止: error={}", e.getMessage(), e);
             error = e;
-            state = AgentState.init(request);
+            // 保留原始 state（保持 traceId 一致），不重置为新的 AgentState.init(request)
         } finally {
             // 轨迹记录
             if (traceRecorder != null && traceContext != null) {
@@ -360,10 +360,8 @@ public class AgentLoop {
         } catch (Exception e) {
             log.error("Agent 循环异常终止: error={}", e.getMessage(), e);
             error = e;
-            // 构建错误状态用于响应
-            var errorState = AgentState.init(request);
-            state = errorState;
-            return AgentResponse.error(errorState, e);
+            // 保留原始 state（保持 traceId 一致），不重置为新的 AgentState.init(request)
+            return AgentResponse.error(state, e);
         } finally {
             // 轨迹记录（确保异常路径也能正确结束）
             if (traceRecorder != null && traceContext != null) {
