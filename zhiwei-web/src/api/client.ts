@@ -28,8 +28,10 @@ import type {
   TraceStep,
   UserSettings,
   WorkflowDetail,
+  WorkflowEvent,
   WorkflowExecution,
   WorkflowItem,
+  ApprovalRequest,
   UsageStats,
   AgentStats,
   KnowledgeBaseStats,
@@ -746,6 +748,21 @@ export const workflowApi = {
   /** 更新工作流 YAML 内容（便捷方法） */
   updateWorkflowYaml(workflowId: string, content: string): Promise<WorkflowDetail> {
     return this.update(workflowId, { yamlContent: content })
+  },
+  /** 获取单个执行实例详情 */
+  getInstance(instanceId: string): Promise<WorkflowExecution> {
+    return request(`/workflows/executions/${instanceId}`)
+  },
+  /** 提交审批决策 */
+  approve(instanceId: string, stepId: string, req: ApprovalRequest): Promise<WorkflowExecution> {
+    return request(`/workflows/executions/${instanceId}/steps/${stepId}/approve`, {
+      method: 'POST',
+      body: JSON.stringify(req)
+    })
+  },
+  /** 获取实例事件时间线 */
+  getEventTimeline(instanceId: string): Promise<WorkflowEvent[]> {
+    return request(`/workflows/executions/${instanceId}/events`)
   }
 }
 

@@ -451,12 +451,43 @@ export interface WorkflowDetail extends WorkflowItem {
 export interface WorkflowExecution {
   id: string
   workflowId: string
-  state: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED'
-  currentStepIndex: number
+  state: 'CREATED' | 'RUNNING' | 'PAUSED' | 'WAITING' | 'COMPLETED' | 'FAILED' | 'CANCELLED'
+  completedStepIds: string[]
+  pendingApprovalStepId?: string
   startedAt?: string
   completedAt?: string
   failureReason?: string
   createdAt: string
+  updatedAt: string
+}
+
+/** 工作流审计事件类型 */
+export type WorkflowEventType =
+  | 'INSTANCE_CREATED'
+  | 'INSTANCE_STATE_CHANGED'
+  | 'STEP_STARTED'
+  | 'STEP_COMPLETED'
+  | 'STEP_FAILED'
+  | 'STEP_SKIPPED'
+  | 'APPROVAL_REQUESTED'
+  | 'APPROVAL_DECIDED'
+
+/** 工作流审计事件 */
+export interface WorkflowEvent {
+  id: string
+  instanceId: string
+  workflowId: string
+  type: WorkflowEventType
+  stepId?: string
+  dataJson?: string
+  createdAt: string
+}
+
+/** 审批请求 */
+export interface ApprovalRequest {
+  decision: 'APPROVED' | 'REJECTED'
+  decidedBy: string
+  reason?: string
 }
 
 /** Agent 列表项 */

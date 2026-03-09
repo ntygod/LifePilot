@@ -1,12 +1,14 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import type { WorkflowItem, WorkflowDetail, WorkflowExecution } from '@/types'
+import type { WorkflowItem, WorkflowDetail, WorkflowExecution, WorkflowEvent, ApprovalRequest } from '@/types'
 import { workflowApi } from '@/api/client'
 
 export const useWorkflowStore = defineStore('workflow', () => {
   const list = ref<WorkflowItem[]>([])
   const current = ref<WorkflowDetail | null>(null)
   const executions = ref<WorkflowExecution[]>([])
+  const currentInstance = ref<WorkflowExecution | null>(null)
+  const eventTimeline = ref<WorkflowEvent[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
 
@@ -122,9 +124,43 @@ export const useWorkflowStore = defineStore('workflow', () => {
     }
   }
 
+  async function approve(instanceId: string, stepId: string, req: ApprovalRequest) {
+    error.value = null
+    try {
+      const updated = await workflowApi.approve(instanceId, stepId, req)
+      // 更新 executions 列表中对应实例
+      const idx = executions.value.findIndex(e => e.id === instanceId)
+      if (idx !== -1) executions.value[idx] = updated
+      // 更新 currentInstance
+      if (currentInstance.value?.id === instanceId) currentInstance.value = updated
+      return updated
+    } catch (e: any) {
+      error.value = e.message ?? '审批操作失败'
+      throw e
+    }
+  }
+
+  async function fetchInstance(instanceId: string) {
+    error.value = null
+    try {
+      currentInstance.value = await workflowApi.getInstance(instanceId)
+    } catch (e: any) {
+      error.value = e.message ?? '加载实例详情失败'
+    }
+  }
+
+  async function fetchEventTimeline(instanceId: string) {
+    error.value = null
+    try {
+      eventTimeline.value = await workflowApi.getEventTimeline(instanceId)
+    } catch (e: any) {
+      error.value = e.message ?? '加载事件时间线失败'
+    }
+  }
+
   return {
-    list, current, executions, loading, error,
+    list, current, executions, currentInstance, eventTimeline, loading, error,
     fetchList, fetchDetail, enable, disable, trigger, fetchExecutions,
-    create, update, remove
+    create, update, remove, approve, fetchInstance, fetchEventTimeline
   }
 })
