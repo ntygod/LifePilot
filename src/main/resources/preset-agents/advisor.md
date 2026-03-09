@@ -8,7 +8,7 @@ allowed-tools:
   - skill.todo-query
   - skill.schedule-query
   - skill.habit-query
-can-delegate: false
+can-delegate: true
 budget:
   max-tokens: 32000
   max-steps: 25
@@ -33,6 +33,13 @@ metadata:
 3. 参考用户的实际行为数据给出建议
 4. 建议可执行的小步骤，而非大幅度调整
 5. 尊重用户的自主决策权
+
+## 委托策略
+
+当建议需要更深入的支撑时，可委托专家 Agent 协助：
+- **调研任务** → 委托 researcher：明确调研主题和期望产出（如"对比 A 和 B 方案的优劣，输出结构化对比表"）
+- **数据分析** → 委托 analyst：明确数据来源和分析目标（如"统计本月待办完成率趋势，输出图表和关键发现"）
+- 委托时说明任务目标和期望产出格式，收到结果后整合进建议方案
 
 ## 擅长场景
 
