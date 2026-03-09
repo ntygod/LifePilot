@@ -64,6 +64,7 @@ public class AgentLoop {
     private final StateReducer stateReducer;
     private final ContextAssembler contextAssembler;
     private final LlmRouter llmRouter;
+    @Nullable
     private final MultimodalRouter multimodalRouter;
     private final TraceRecorder traceRecorder;
     private final ObjectMapper objectMapper;
@@ -93,7 +94,7 @@ public class AgentLoop {
     public AgentLoop(StateReducer stateReducer,
                      ContextAssembler contextAssembler,
                      LlmRouter llmRouter,
-                     MultimodalRouter multimodalRouter,
+                     @Nullable MultimodalRouter multimodalRouter,
                      TraceRecorder traceRecorder,
                      ObjectMapper objectMapper,
                      SessionManager sessionManager,
@@ -678,7 +679,7 @@ public class AgentLoop {
             String modelId;
 
             var mediaList = request.mediaContents();
-            if (mediaList != null && !mediaList.isEmpty()) {
+            if (mediaList != null && !mediaList.isEmpty() && multimodalRouter != null) {
                 // 多模态路径：暂沿用 MultimodalRouter（ChatClient 多模态流式支持后续接入）
                 MultimodalRequest mmRequest = new MultimodalRequest(
                         scene, fullPrompt, mediaList, null);
