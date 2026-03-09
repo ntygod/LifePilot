@@ -6,10 +6,12 @@
 <script setup lang="ts">
 import type {
   StepModel,
-  StepType,
   SkillStepConfig as SkillStepConfigType,
   ToolStepConfig as ToolStepConfigType,
   LlmStepConfig as LlmStepConfigType,
+  ConditionStepConfig as ConditionStepConfigType,
+  LoopStepConfig as LoopStepConfigType,
+  ParallelStepConfig as ParallelStepConfigType,
   SubWorkflowStepConfig as SubWorkflowStepConfigType,
   WaitStepConfig as WaitStepConfigType,
   ApprovalStepConfig as ApprovalStepConfigType,
@@ -29,6 +31,9 @@ import SubWorkflowStepConfig from '@/components/workflow/editor/SubWorkflowStepC
 import WaitStepConfig from '@/components/workflow/editor/WaitStepConfig.vue'
 import ApprovalStepConfig from '@/components/workflow/editor/ApprovalStepConfig.vue'
 import NoopStepConfig from '@/components/workflow/editor/NoopStepConfig.vue'
+import ConditionStepConfig from '@/components/workflow/editor/ConditionStepConfig.vue'
+import LoopStepConfig from '@/components/workflow/editor/LoopStepConfig.vue'
+import ParallelStepConfig from '@/components/workflow/editor/ParallelStepConfig.vue'
 
 const props = defineProps<{
   step: StepModel | null
@@ -41,15 +46,6 @@ const emit = defineEmits<{
 /** 更新步骤通用字段 */
 function updateField(field: keyof StepModel, value: unknown) {
   emit('update:step', { [field]: value })
-}
-
-/**
- * 嵌套步骤类型占位文本（condition/loop/parallel 在任务 4.4 实现）。
- */
-const NESTED_TYPE_PLACEHOLDER: Partial<Record<StepType, string>> = {
-  'condition': '条件分支配置区域（condition、thenSteps、elseSteps）',
-  'loop': '循环配置区域（items、loopVar、body）',
-  'parallel': '并行配置区域（branches）',
 }
 </script>
 
@@ -145,14 +141,21 @@ const NESTED_TYPE_PLACEHOLDER: Partial<Record<StepType, string>> = {
               :model-value="(step.config as NoopStepConfigType)"
               @update:model-value="updateField('config', $event)"
             />
-
-            <!-- 嵌套步骤类型占位（任务 4.4 实现） -->
-            <div
-              v-else-if="NESTED_TYPE_PLACEHOLDER[step.type]"
-              class="rounded-md border border-dashed p-3 text-xs text-muted-foreground"
-            >
-              {{ NESTED_TYPE_PLACEHOLDER[step.type] }}
-            </div>
+            <ConditionStepConfig
+              v-else-if="step.type === 'condition'"
+              :model-value="(step.config as ConditionStepConfigType)"
+              @update:model-value="updateField('config', $event)"
+            />
+            <LoopStepConfig
+              v-else-if="step.type === 'loop'"
+              :model-value="(step.config as LoopStepConfigType)"
+              @update:model-value="updateField('config', $event)"
+            />
+            <ParallelStepConfig
+              v-else-if="step.type === 'parallel'"
+              :model-value="(step.config as ParallelStepConfigType)"
+              @update:model-value="updateField('config', $event)"
+            />
           </div>
 
           <Separator />
