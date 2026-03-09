@@ -146,8 +146,8 @@ function toggleKb(id: string, checked: boolean) {
           class="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5"
         >
           <Checkbox
-            :checked="localKbIds.includes(kb.id)"
-            @update:checked="(checked: boolean) => toggleKb(kb.id, checked)"
+            :model-value="localKbIds.includes(kb.id)"
+            @update:model-value="(checked: boolean) => toggleKb(kb.id, checked)"
           />
           <span class="text-sm text-foreground">{{ kb.name }}</span>
         </label>

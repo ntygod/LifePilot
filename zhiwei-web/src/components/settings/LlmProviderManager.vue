@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { llmProviderApi, type LlmProvider, type CreateProviderRequest, type UpdateProviderRequest } from '@/api/client'
+import { llmProviderApi, type LlmProvider, type CreateProviderRequest } from '@/api/client'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,18 +17,16 @@ import {
 const emit = defineEmits<{ close: [] }>()
 
 const providers = ref<LlmProvider[]>([])
-const presets = ref<LlmProvider[]>([])
 const loading = ref(false)
 const showForm = ref(false)
 const showDeleteConfirm = ref(false)
-const editingProvider = ref<LlmProvider | null>(null)
 const deletingProviderId = ref<string | null>(null)
-const formMode = ref<'create' | 'edit' | 'preset'>('create')
+const isEditing = ref(false)
 
 const formData = ref<CreateProviderRequest>({
   id: '', type: 'OPENAI_COMPATIBLE', apiUrl: '', apiKey: '', modelName: '',
-  timeoutSeconds: 30, priority: 0, scenes: [], capabilities: ['CHAT'],
-  enabled: true, costPerInputToken: 0, costPerOutputToken: 0,
+  timeoutSeconds: 30, priority: 0, scenes: [], capabilities: [],
+  enabled: false, costPerInputToken: 0, costPerOutputToken: 0,
   maxContextWindow: 4096, supportsStreaming: false, displayName: '', description: ''
 })
 
@@ -65,19 +63,16 @@ const sceneOptions = [
   { value: 'agent-generation', label: 'Agent 响应生成' }
 ]
 
-const customProviders = computed(() => providers.value.filter(p => !p.isPreset))
-
 async function loadProviders() {
   loading.value = true
   try {
     providers.value = await llmProviderApi.listProviders()
-    presets.value = await llmProviderApi.listPresets()
   } catch (err) { console.error('加载 Provider 列表失败:', err) }
   finally { loading.value = false }
 }
+
 function openCreateForm() {
-  formMode.value = 'create'
-  editingProvider.value = null
+  isEditing.value = false
   formData.value = {
     id: '', type: 'OPENAI_COMPATIBLE', apiUrl: '', apiKey: '', modelName: '',
     timeoutSeconds: 30, priority: 0,
@@ -90,38 +85,25 @@ function openCreateForm() {
 }
 
 function openEditForm(provider: LlmProvider) {
-  formMode.value = 'edit'
-  editingProvider.value = provider
+  isEditing.value = true
   formData.value = {
-    id: provider.id, type: provider.type, apiUrl: provider.apiUrl || '', apiKey: '',
-    modelName: provider.modelName, timeoutSeconds: provider.timeoutSeconds || 30,
-    priority: provider.priority || 0, scenes: provider.scenes || [],
-    capabilities: provider.capabilities || ['CHAT'], enabled: provider.enabled ?? true,
-    costPerInputToken: provider.costPerInputToken || 0,
-    costPerOutputToken: provider.costPerOutputToken || 0,
-    maxContextWindow: provider.maxContextWindow || 4096,
+    id: provider.id,
+    type: provider.type,
+    apiUrl: provider.apiUrl ?? '',
+    apiKey: '',
+    modelName: provider.modelName,
+    timeoutSeconds: provider.timeoutSeconds ?? 30,
+    priority: provider.priority ?? 0,
+    scenes: [...(provider.scenes ?? [])],
+    capabilities: [...(provider.capabilities ?? [])],
+    enabled: provider.enabled ?? false,
+    costPerInputToken: provider.costPerInputToken ?? 0,
+    costPerOutputToken: provider.costPerOutputToken ?? 0,
+    maxContextWindow: provider.maxContextWindow ?? 4096,
     embeddingDimension: provider.embeddingDimension,
     supportsStreaming: provider.supportsStreaming ?? false,
-    displayName: provider.displayName, description: provider.description
-  }
-  errors.value = {}
-  showForm.value = true
-}
-
-function createFromPreset(preset: LlmProvider) {
-  formMode.value = 'preset'
-  editingProvider.value = null
-  formData.value = {
-    id: preset.id + '-custom', type: preset.type, apiUrl: preset.apiUrl || '', apiKey: '',
-    modelName: preset.modelName, timeoutSeconds: preset.timeoutSeconds || 30,
-    priority: preset.priority || 0, scenes: preset.scenes || [],
-    capabilities: preset.capabilities || ['CHAT'], enabled: true,
-    costPerInputToken: preset.costPerInputToken || 0,
-    costPerOutputToken: preset.costPerOutputToken || 0,
-    maxContextWindow: preset.maxContextWindow || 4096,
-    embeddingDimension: preset.embeddingDimension,
-    supportsStreaming: preset.supportsStreaming ?? false,
-    displayName: preset.displayName, description: preset.description
+    displayName: provider.displayName ?? '',
+    description: provider.description ?? ''
   }
   errors.value = {}
   showForm.value = true
@@ -140,15 +122,11 @@ async function saveProvider() {
   if (!validate()) return
   loading.value = true
   try {
-    let result
-    if (formMode.value === 'create' || formMode.value === 'preset') {
-      result = await llmProviderApi.saveProvider(formData.value)
-    } else {
-      const updateData: UpdateProviderRequest = { ...formData.value }
-      delete (updateData as any).id
-      if (updateData.apiKey === '') delete updateData.apiKey
-      result = await llmProviderApi.updateProvider(formData.value.id, updateData)
-    }
+    // 统一用 POST 全量保存，不区分新建/编辑
+    const data = { ...formData.value }
+    // apiKey 为空表示不修改，删掉让后端保留旧值
+    if (isEditing.value && !data.apiKey) delete data.apiKey
+    await llmProviderApi.saveProvider(data)
     await loadProviders()
     showForm.value = false
   } catch (err: any) {
@@ -191,15 +169,17 @@ const deleteConfirmMessage = computed(() => {
 })
 
 function toggleScene(sceneValue: string) {
-  const idx = formData.value.scenes!.indexOf(sceneValue)
-  if (idx >= 0) formData.value.scenes!.splice(idx, 1)
-  else formData.value.scenes!.push(sceneValue)
+  const scenes = formData.value.scenes!
+  const idx = scenes.indexOf(sceneValue)
+  if (idx >= 0) scenes.splice(idx, 1)
+  else scenes.push(sceneValue)
 }
 
 function toggleCapability(capValue: string) {
-  const idx = formData.value.capabilities!.indexOf(capValue)
-  if (idx >= 0) formData.value.capabilities!.splice(idx, 1)
-  else formData.value.capabilities!.push(capValue)
+  const caps = formData.value.capabilities!
+  const idx = caps.indexOf(capValue)
+  if (idx >= 0) caps.splice(idx, 1)
+  else caps.push(capValue)
 }
 
 onMounted(() => { loadProviders() })
@@ -213,22 +193,20 @@ onMounted(() => { loadProviders() })
       </DialogHeader>
 
       <div class="flex-1 overflow-y-auto p-6">
-        <div class="space-y-6">
+        <div class="space-y-4">
           <div class="flex justify-between items-center">
-            <h3 class="text-lg font-medium text-foreground">自定义 Provider</h3>
+            <h3 class="text-lg font-medium text-foreground">所有 Provider</h3>
             <Button @click="openCreateForm">+ 新建 Provider</Button>
           </div>
 
-          <!-- 自定义 Provider 列表 -->
-          <div v-if="customProviders.length > 0" class="space-y-2">
-            <div v-for="provider in customProviders" :key="provider.id"
+          <div v-if="providers.length > 0" class="space-y-2">
+            <div v-for="provider in providers" :key="provider.id"
               class="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-muted/50 transition-colors">
               <div class="flex-1">
                 <div class="flex items-center gap-2">
                   <span class="font-medium">{{ provider.displayName || provider.id }}</span>
+                  <Badge v-if="provider.isPreset" variant="outline">预设</Badge>
                   <Badge :variant="provider.enabled ? 'default' : 'secondary'">{{ provider.enabled ? '已启用' : '已禁用' }}</Badge>
-                  <span v-if="provider.healthy !== undefined" class="w-2 h-2 rounded-full"
-                    :class="provider.healthy ? 'bg-green-500' : 'bg-red-500'" :title="provider.healthy ? '健康' : '不健康'"></span>
                 </div>
                 <p class="text-sm text-muted-foreground mt-1">{{ provider.type }} / {{ provider.modelName }}</p>
               </div>
@@ -239,50 +217,24 @@ onMounted(() => { loadProviders() })
               </div>
             </div>
           </div>
-          <div v-else class="text-center py-8 text-muted-foreground">暂无自定义 Provider，点击上方按钮创建</div>
-
-          <!-- 预设置 Provider -->
-          <div>
-            <h3 class="text-lg font-medium text-foreground mb-4">预设置 Provider</h3>
-            <div v-if="presets.length > 0" class="space-y-2">
-              <div v-for="preset in presets" :key="preset.id"
-                class="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-muted/50 transition-colors">
-                <div class="flex-1">
-                  <div class="flex items-center gap-2">
-                    <span class="font-medium">{{ preset.displayName || preset.id }}</span>
-                    <Badge variant="outline">预设</Badge>
-                    <Badge :variant="preset.enabled ? 'default' : 'secondary'">{{ preset.enabled ? '已启用' : '已禁用' }}</Badge>
-                    <span v-if="preset.healthy !== undefined" class="w-2 h-2 rounded-full"
-                      :class="preset.healthy ? 'bg-green-500' : 'bg-red-500'" :title="preset.healthy ? '健康' : '不健康'"></span>
-                  </div>
-                  <p class="text-sm text-muted-foreground mt-1">{{ preset.description }}</p>
-                  <p class="text-xs text-muted-foreground mt-1">{{ preset.type }} / {{ preset.modelName }}</p>
-                </div>
-                <div class="flex items-center gap-2">
-                  <Button variant="ghost" size="sm" class="action-btn-link" @click="openEditForm(preset)">编辑</Button>
-                  <Button variant="outline" size="sm" :class="preset.enabled ? 'status-btn-active' : 'status-btn-inactive'" @click="toggleEnabled(preset)">{{ preset.enabled ? '禁用' : '启用' }}</Button>
-                  <Button variant="destructive" size="sm" @click="confirmDelete(preset)">删除</Button>
-                </div>
-              </div>
-            </div>
-            <div v-else class="text-center py-8 text-muted-foreground">暂无预设置 Provider</div>
-          </div>
+          <div v-else class="text-center py-8 text-muted-foreground">暂无 Provider，点击上方按钮创建</div>
         </div>
       </div>
     </DialogContent>
   </Dialog>
+
   <!-- Provider 表单对话框 -->
   <Dialog v-model:open="showForm">
     <DialogContent class="sm:max-w-[672px] max-h-[90vh] overflow-y-auto">
       <DialogHeader>
-        <DialogTitle>{{ formMode === 'create' ? '新建 Provider' : formMode === 'preset' ? '从预设创建' : '编辑 Provider' }}</DialogTitle>
+        <DialogTitle>{{ isEditing ? '编辑 Provider' : '新建 Provider' }}</DialogTitle>
         <DialogDescription>填写 Provider 的基本信息、API 配置和支持的能力</DialogDescription>
       </DialogHeader>
 
       <form @submit.prevent="saveProvider" class="space-y-4">
         <div v-if="errors._general" class="p-3 bg-destructive/10 text-destructive rounded-md text-sm">{{ errors._general }}</div>
 
-        <div v-if="formMode === 'create' || formMode === 'preset'" class="space-y-2">
+        <div v-if="!isEditing" class="space-y-2">
           <Label>Provider ID <span class="text-destructive">*</span></Label>
           <Input v-model="formData.id" placeholder="例如: my-custom-provider" :class="{ 'border-destructive': errors.id }" />
           <p v-if="errors.id" class="text-sm text-destructive">{{ errors.id }}</p>
@@ -306,7 +258,7 @@ onMounted(() => { loadProviders() })
 
         <div class="space-y-2">
           <Label>API Key</Label>
-          <Input v-model="formData.apiKey" type="password" placeholder="请输入 API Key（留空则不更新）" />
+          <Input v-model="formData.apiKey" type="password" :placeholder="isEditing ? '留空则不更新' : '请输入 API Key'" />
         </div>
 
         <div class="space-y-2">
@@ -331,7 +283,7 @@ onMounted(() => { loadProviders() })
           <div class="flex flex-wrap gap-2">
             <label v-for="scene in sceneOptions" :key="scene.value"
               class="flex items-center gap-2 px-3 py-2 border border-border rounded-md hover:bg-accent cursor-pointer">
-              <Checkbox :checked="formData.scenes?.includes(scene.value)" @update:checked="() => toggleScene(scene.value)" />
+              <Checkbox :model-value="formData.scenes?.includes(scene.value)" @update:model-value="() => toggleScene(scene.value)" />
               <span class="text-sm">{{ scene.label }}</span>
             </label>
           </div>
@@ -343,14 +295,14 @@ onMounted(() => { loadProviders() })
           <div class="flex flex-wrap gap-2">
             <label v-for="cap in capabilityOptions" :key="cap.value"
               class="flex items-center gap-2 px-3 py-2 border border-border rounded-md hover:bg-accent cursor-pointer">
-              <Checkbox :checked="formData.capabilities?.includes(cap.value)" @update:checked="() => toggleCapability(cap.value)" />
+              <Checkbox :model-value="formData.capabilities?.includes(cap.value)" @update:model-value="() => toggleCapability(cap.value)" />
               <span class="text-sm">{{ cap.label }}</span>
             </label>
           </div>
         </div>
 
         <div class="flex items-center gap-2">
-          <Checkbox :checked="formData.enabled" @update:checked="(v: boolean) => formData.enabled = v" />
+          <Checkbox :model-value="formData.enabled" @update:model-value="(v: boolean) => formData.enabled = v" />
           <Label class="cursor-pointer">启用此 Provider</Label>
         </div>
 

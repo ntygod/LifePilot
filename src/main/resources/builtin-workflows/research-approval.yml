@@ -1,0 +1,192 @@
+id: research-approval
+name: 多步骤调研与审批
+description: 多源信息搜索与 LLM 深度分析，经人工审批后发布调研成果，失败时自动执行补偿回滚
+version: "1.0"
+triggers:
+  - type: manual
+inputs:
+  topic:
+    type: string
+    required: true
+    description: 调研主题
+  depth:
+    type: string
+    required: false
+    defaultValue: standard
+    description: 调研深度（brief / standard / deep）
+  publishTarget:
+    type: string
+    required: false
+    defaultValue: knowledge-base
+    description: 发布目标（knowledge-base / document / both）
+metadata:
+  category: 知识管理
+  complexity: advanced
+steps:
+  - id: search-web
+    name: 搜索网络资料
+    type: tool
+    toolId: web.search
+    params:
+      query: "${inputs.topic}"
+      maxResults: "10"
+    errorStrategy:
+      type: retry
+      maxAttempts: 2
+      initialDelayMs: 1000
+      maxDelayMs: 5000
+
+  - id: search-knowledge-base
+    name: 搜索知识库
+    type: tool
+    toolId: knowledge.search
+    params:
+      query: "${inputs.topic}"
+      topK: "5"
+    errorStrategy:
+      type: skip
+      reason: 知识库搜索失败时仍可基于网络资料继续
+
+  - id: search-memory
+    name: 搜索历史记忆
+    type: skill
+    skillId: memory.search
+    params:
+      query: "${inputs.topic}"
+      limit: "10"
+    errorStrategy:
+      type: skip
+      reason: 记忆搜索失败时仍可基于其他来源继续
+
+  - id: deep-analysis
+    name: LLM 深度分析
+    type: llm
+    scene: research
+    prompt: |
+      请针对主题「${inputs.topic}」进行深度调研分析。
+
+      ## 调研深度
+      ${inputs.depth}
+
+      ## 网络搜索结果
+      ${steps.search-web.output.result}
+
+      ## 知识库相关内容
+      ${steps.search-knowledge-base.output.result}
+
+      ## 历史记忆参考
+      ${steps.search-memory.output.result}
+
+      请按以下结构输出调研报告：
+      1. **执行摘要**：200 字以内的核心结论
+      2. **背景分析**：主题背景和研究现状
+      3. **核心发现**：按重要性排列的 3-5 个关键发现
+      4. **详细分析**：每个发现的深入论证
+      5. **数据支撑**：引用的关键数据和来源
+      6. **风险评估**：潜在风险和不确定性
+      7. **结论与建议**：可行的行动建议
+      8. **参考来源**：所有引用的信息来源
+    dependsOn:
+      - search-web
+      - search-knowledge-base
+      - search-memory
+
+  - id: quality-review
+    name: 质量评审
+    type: llm
+    scene: workflow
+    prompt: |
+      请对以下调研报告进行质量评审：
+
+      ${steps.deep-analysis.output.result}
+
+      评审维度：
+      1. 论证逻辑是否严密
+      2. 数据引用是否准确
+      3. 结论是否有充分支撑
+      4. 是否存在偏见或遗漏
+      5. 语言表达是否专业
+
+      输出 JSON 格式：
+      {
+        "qualityScore": 1-10,
+        "issues": ["问题列表"],
+        "suggestions": ["改进建议"],
+        "passReview": true/false
+      }
+    dependsOn:
+      - deep-analysis
+
+  - id: approval-gate
+    name: 调研成果审批
+    type: approval
+    message: |
+      调研报告审批请求：
+      - 主题：${inputs.topic}
+      - 深度：${inputs.depth}
+      - 质量评分：${steps.quality-review.output.result.qualityScore}/10
+      - 自动评审：${steps.quality-review.output.result.passReview}
+
+      报告摘要：
+      ${steps.deep-analysis.output.result}
+
+      评审意见：
+      ${steps.quality-review.output.result.suggestions}
+    approvers:
+      - knowledge-manager
+      - owner
+    timeoutSeconds: 86400
+    autoApproveOnTimeout: false
+    dependsOn:
+      - quality-review
+
+  - id: publish-result
+    name: 发布调研成果
+    type: tool
+    toolId: knowledge.ingest
+    params:
+      title: "调研报告：${inputs.topic}"
+      content: "${steps.deep-analysis.output.result}"
+      category: research
+      target: "${inputs.publishTarget}"
+    dependsOn:
+      - approval-gate
+    errorStrategy:
+      type: compensate
+      compensationStep:
+        id: rollback-publish
+        name: 回滚发布
+        type: tool
+        toolId: knowledge.delete
+        params:
+          title: "调研报告：${inputs.topic}"
+          reason: "发布失败自动回滚"
+
+  - id: notify-stakeholders
+    name: 通知相关方
+    type: tool
+    toolId: notification.send
+    params:
+      channel: webhook
+      title: "调研报告已发布：${inputs.topic}"
+      body: "${steps.deep-analysis.output.result}"
+      recipient: team
+    dependsOn:
+      - publish-result
+    errorStrategy:
+      type: skip
+      reason: 通知发送失败不影响已发布的成果
+
+  - id: save-to-memory
+    name: 存入长期记忆
+    type: skill
+    skillId: memory.save
+    params:
+      content: "${steps.deep-analysis.output.result}"
+      tags: "research,${inputs.topic}"
+      importance: "high"
+    dependsOn:
+      - publish-result
+    errorStrategy:
+      type: skip
+      reason: 记忆保存失败不影响已发布的成果

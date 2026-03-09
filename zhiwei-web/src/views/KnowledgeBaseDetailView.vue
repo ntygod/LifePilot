@@ -611,8 +611,8 @@ async function testRetrieval() {
                   <tr>
                     <th class="w-10 p-3">
                       <Checkbox
-                        :checked="isAllSelected"
-                        @update:checked="toggleSelectAll"
+                        :model-value="isAllSelected"
+                        @update:model-value="toggleSelectAll"
                       />
                     </th>
                     <th class="text-left p-3 text-xs font-medium text-muted-foreground">文档名称</th>
@@ -632,8 +632,8 @@ async function testRetrieval() {
                   >
                     <td class="w-10 p-3">
                       <Checkbox
-                        :checked="selectedDocIds.has(doc.id)"
-                        @update:checked="toggleDocSelection(doc.id)"
+                        :model-value="selectedDocIds.has(doc.id)"
+                        @update:model-value="toggleDocSelection(doc.id)"
                       />
                     </td>
                     <td class="p-3">

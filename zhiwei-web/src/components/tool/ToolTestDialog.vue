@@ -257,8 +257,8 @@ function closeDialog() {
             <!-- 布尔值 -->
             <div v-else-if="field.type === 'boolean'" class="flex items-center gap-2">
               <Checkbox
-                :checked="testArguments[field.key]"
-                @update:checked="testArguments[field.key] = $event"
+                :model-value="testArguments[field.key]"
+                @update:model-value="testArguments[field.key] = $event"
               />
               <span class="text-sm text-muted-foreground">{{ field.description || '启用' }}</span>
             </div>

@@ -59,11 +59,11 @@
 
 | 工作流 | 触发方式 | 功能 |
 |--------|---------|------|
-| morning-briefing | Cron（每天早 8 点） | 汇总今日待办 + 日程 + 天气，生成晨间简报 |
-| weekly-review | Cron（每周日晚 8 点） | 汇总本周完成情况 + 下周规划建议 |
-| web-digest | 用户触发 | 输入 URL 列表，批量抓取并生成摘要 |
-| meeting-notes | 用户触发 | 输入会议文字，生成结构化纪要 + 待办提取 |
-| research-report | 用户触发 | 输入主题，自动搜索 + 整理 + 生成调研报告 |
+| content-review | 事件触发 / 手动 | LLM 风险分析 + 条件分支 + 人工审批，覆盖 ConditionStep / ApprovalStep |
+| data-aggregation | Cron（每周一早 9 点） / 手动 | 并行多源采集 + LLM 综合分析，覆盖 ParallelStep / DAG dependsOn |
+| batch-processing | Cron（每天凌晨 2 点） / 手动 | 循环逐条处理 + 条件路由，覆盖 LoopStep / ErrorStrategy |
+| scheduled-inspection | Cron（每 30 分钟） | 定时巡检 + 分级告警 + 自动修复，覆盖 WaitStep / SubWorkflowStep |
+| research-approval | 手动触发 | 多源调研 + 审批 + 补偿回滚，覆盖 ApprovalStep / compensate ErrorStrategy |
 
 ---
 
