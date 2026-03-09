@@ -4,8 +4,17 @@
   通用字段（id/name/errorStrategy）+ 按步骤类型动态渲染子组件。
 -->
 <script setup lang="ts">
-import type { Component } from 'vue'
-import type { StepModel, StepType } from '@/composables/useWorkflowModel'
+import type {
+  StepModel,
+  StepType,
+  SkillStepConfig as SkillStepConfigType,
+  ToolStepConfig as ToolStepConfigType,
+  LlmStepConfig as LlmStepConfigType,
+  SubWorkflowStepConfig as SubWorkflowStepConfigType,
+  WaitStepConfig as WaitStepConfigType,
+  ApprovalStepConfig as ApprovalStepConfigType,
+  NoopStepConfig as NoopStepConfigType,
+} from '@/composables/useWorkflowModel'
 import { STEP_TYPE_META } from '@/components/workflow/editor/stepTypeMeta'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Input } from '@/components/ui/input'
@@ -13,6 +22,13 @@ import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { MousePointerClick } from 'lucide-vue-next'
 import ErrorStrategyConfig from '@/components/workflow/editor/ErrorStrategyConfig.vue'
+import SkillStepConfig from '@/components/workflow/editor/SkillStepConfig.vue'
+import ToolStepConfig from '@/components/workflow/editor/ToolStepConfig.vue'
+import LlmStepConfig from '@/components/workflow/editor/LlmStepConfig.vue'
+import SubWorkflowStepConfig from '@/components/workflow/editor/SubWorkflowStepConfig.vue'
+import WaitStepConfig from '@/components/workflow/editor/WaitStepConfig.vue'
+import ApprovalStepConfig from '@/components/workflow/editor/ApprovalStepConfig.vue'
+import NoopStepConfig from '@/components/workflow/editor/NoopStepConfig.vue'
 
 const props = defineProps<{
   step: StepModel | null
@@ -28,20 +44,12 @@ function updateField(field: keyof StepModel, value: unknown) {
 }
 
 /**
- * 按步骤类型获取占位文本。
- * 后续任务 4.3/4.4 会替换为实际子组件。
+ * 嵌套步骤类型占位文本（condition/loop/parallel 在任务 4.4 实现）。
  */
-const TYPE_CONFIG_PLACEHOLDER: Record<StepType, string> = {
-  'skill': 'Skill 配置区域（skillId、params）',
-  'tool': '工具配置区域（toolId、params）',
-  'llm': 'LLM 配置区域（scene、prompt、outputSchema）',
+const NESTED_TYPE_PLACEHOLDER: Partial<Record<StepType, string>> = {
   'condition': '条件分支配置区域（condition、thenSteps、elseSteps）',
   'loop': '循环配置区域（items、loopVar、body）',
   'parallel': '并行配置区域（branches）',
-  'sub-workflow': '子工作流配置区域（workflowId、params）',
-  'noop': '空操作，无额外配置',
-  'wait': '等待配置区域（durationSeconds）',
-  'approval': '审批配置区域（message、approvers、timeout）',
 }
 </script>
 
@@ -97,11 +105,53 @@ const TYPE_CONFIG_PLACEHOLDER: Record<StepType, string> = {
 
           <Separator />
 
-          <!-- 类型专属配置区域（占位，后续任务 4.3/4.4 替换为实际子组件） -->
+          <!-- 类型专属配置区域 -->
           <div>
             <p class="mb-2 text-xs font-medium text-muted-foreground">类型配置</p>
-            <div class="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
-              {{ TYPE_CONFIG_PLACEHOLDER[step.type] }}
+
+            <!-- 基础步骤类型配置组件 -->
+            <SkillStepConfig
+              v-if="step.type === 'skill'"
+              :model-value="(step.config as SkillStepConfigType)"
+              @update:model-value="updateField('config', $event)"
+            />
+            <ToolStepConfig
+              v-else-if="step.type === 'tool'"
+              :model-value="(step.config as ToolStepConfigType)"
+              @update:model-value="updateField('config', $event)"
+            />
+            <LlmStepConfig
+              v-else-if="step.type === 'llm'"
+              :model-value="(step.config as LlmStepConfigType)"
+              @update:model-value="updateField('config', $event)"
+            />
+            <SubWorkflowStepConfig
+              v-else-if="step.type === 'sub-workflow'"
+              :model-value="(step.config as SubWorkflowStepConfigType)"
+              @update:model-value="updateField('config', $event)"
+            />
+            <WaitStepConfig
+              v-else-if="step.type === 'wait'"
+              :model-value="(step.config as WaitStepConfigType)"
+              @update:model-value="updateField('config', $event)"
+            />
+            <ApprovalStepConfig
+              v-else-if="step.type === 'approval'"
+              :model-value="(step.config as ApprovalStepConfigType)"
+              @update:model-value="updateField('config', $event)"
+            />
+            <NoopStepConfig
+              v-else-if="step.type === 'noop'"
+              :model-value="(step.config as NoopStepConfigType)"
+              @update:model-value="updateField('config', $event)"
+            />
+
+            <!-- 嵌套步骤类型占位（任务 4.4 实现） -->
+            <div
+              v-else-if="NESTED_TYPE_PLACEHOLDER[step.type]"
+              class="rounded-md border border-dashed p-3 text-xs text-muted-foreground"
+            >
+              {{ NESTED_TYPE_PLACEHOLDER[step.type] }}
             </div>
           </div>
 
