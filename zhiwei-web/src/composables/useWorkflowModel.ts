@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import type { Ref } from 'vue'
+import { useDagLayout } from './useDagLayout'
 
 // ========== 类型定义 ==========
 
@@ -320,13 +321,13 @@ export function useWorkflowModel(): {
     model.value.selectedStepId = stepId
   }
 
+  const { wouldCreateCycle } = useDagLayout()
+
   /**
    * 添加依赖关系：toStepId 依赖 fromStepId。
    * 将 fromStepId 添加到 toStepId 的 dependsOn 列表中。
-   * 返回 true 表示成功，false 表示步骤不存在。
+   * 返回 true 表示成功，false 表示步骤不存在或会产生环路。
    * 已存在的依赖不会重复添加（幂等性）。
-   *
-   * 注意：环路检测将在 useDagLayout 实现后集成（task 1.2）。
    */
   function addDependency(fromStepId: string, toStepId: string): boolean {
     const toStep = model.value.steps.find(s => s.id === toStepId)
@@ -334,6 +335,8 @@ export function useWorkflowModel(): {
     if (!toStep || !fromStep) return false
     // 幂等：已存在则直接返回 true
     if (toStep.dependsOn.includes(fromStepId)) return true
+    // 环路检测：添加后会产生环路则拒绝
+    if (wouldCreateCycle(model.value.steps, fromStepId, toStepId)) return false
     toStep.dependsOn.push(fromStepId)
     return true
   }
