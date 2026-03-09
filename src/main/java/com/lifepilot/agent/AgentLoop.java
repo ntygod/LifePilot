@@ -1,4 +1,4 @@
-﻿package com.lifepilot.agent;
+﻿﻿package com.lifepilot.agent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.config.AgentConfigProperties;
@@ -622,6 +622,13 @@ public class AgentLoop {
         try {
             String scene = mapPhaseToScene(state.phase());
 
+            // Fix 9: 优先使用 preferredProvider 路由，未指定时回退到 mapPhaseToScene
+            if (request.preferredProvider() != null && !request.preferredProvider().isBlank()) {
+                scene = request.preferredProvider();
+                log.debug("流式调用使用 preferredProvider 路由: provider={}, phase={}, traceId={}",
+                        request.preferredProvider(), state.phase(), state.traceId());
+            }
+
             String systemPrompt = assembledContext.systemPrompt();
             String userPrompt = assembledContext.userPrompt();
             String userText = userPrompt != null ? userPrompt : "";
@@ -845,8 +852,15 @@ public class AgentLoop {
             // 这样 ProviderConfig.scenes 只需维护标准场景常量（如 intent_understanding、agent-reasoning 等）
             String scene = mapPhaseToScene(state.phase());
 
-            // 使用 ChatClient，分离 system prompt 和 user prompt
-            ChatClient chatClient = llmRouter.getChatClient(scene);
+            // Fix 9: 优先使用 preferredProvider 路由，未指定时回退到 mapPhaseToScene
+            ChatClient chatClient;
+            if (request.preferredProvider() != null && !request.preferredProvider().isBlank()) {
+                chatClient = llmRouter.getChatClient(request.preferredProvider());
+                log.debug("使用 preferredProvider 路由: provider={}, phase={}, traceId={}",
+                        request.preferredProvider(), state.phase(), state.traceId());
+            } else {
+                chatClient = llmRouter.getChatClient(scene);
+            }
             String systemPrompt = assembledContext.systemPrompt();
             String userPrompt = assembledContext.userPrompt();
             String userText = userPrompt != null ? userPrompt : "";
