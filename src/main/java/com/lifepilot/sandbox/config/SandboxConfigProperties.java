@@ -143,8 +143,8 @@ public class SandboxConfigProperties {
         /** 是否启用网络，默认 false。 */
         private boolean networkEnabled = false;
 
-        /** Docker 镜像前缀，默认 lifepilot/sandbox-。 */
-        private String imagePrefix = "lifepilot/sandbox-";
+        /** Docker 镜像前缀，默认 zhiwei/sandbox-。 */
+        private String imagePrefix = "zhiwei/sandbox-";
 
         public int getMemoryLimitMb() { return memoryLimitMb; }
         public void setMemoryLimitMb(int memoryLimitMb) { this.memoryLimitMb = memoryLimitMb; }

@@ -32,7 +32,7 @@ public class A2aProperties {
         private boolean enabled = true;
         private String apiKey = "";
         private String agentName = "ZhiWei";
-        private String agentDescription = "个人生活助手";
+        private String agentDescription = "个人助手";
         private String agentVersion = "1.0.0";
         private String protocolVersion = "0.2.5";
         private boolean streamingEnabled = true;

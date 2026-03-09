@@ -40,8 +40,8 @@ public class MemoryProperties {
     /** 冲突检测语义匹配阈值 [0.0, 1.0]，默认 0.92。 */
     private float semanticMatchThreshold = 0.92f;
 
-    /** 向量数据库 JDBC URL，默认 jdbc:sqlite:${user.home}/.lifepilot/vectors.db。 */
-    private String vectorDbUrl = "jdbc:sqlite:" + System.getProperty("user.home") + "/.lifepilot/vectors.db";
+    /** 向量数据库 JDBC URL，默认 jdbc:sqlite:${user.home}/.zhiwei/vectors.db。 */
+    private String vectorDbUrl = "jdbc:sqlite:" + System.getProperty("user.home") + "/.zhiwei/vectors.db";
 
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }

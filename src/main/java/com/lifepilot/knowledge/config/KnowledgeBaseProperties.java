@@ -23,7 +23,7 @@ public record KnowledgeBaseProperties(
 ) {
 
     public KnowledgeBaseProperties {
-        if (dataDir == null) dataDir = System.getProperty("user.home") + "/.lifepilot/data";
+        if (dataDir == null) dataDir = System.getProperty("user.home") + "/.zhiwei/data";
         if (maxFileSize <= 0) maxFileSize = 104857600L;
         if (chunking == null) chunking = new Chunking(null, null, null, null, null, null);
         if (vectorIndexer == null) vectorIndexer = new VectorIndexer(0, 0, 0);
