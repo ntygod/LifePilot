@@ -7,9 +7,9 @@ allowed-tools:
   - knowledge-search
 can-delegate: false
 budget:
-  max-tokens: 16000
-  max-steps: 15
-  timeout-seconds: 180
+  max-tokens: 32000
+  max-steps: 20
+  timeout-seconds: 300
 metadata:
   category: creation
   icon: ✍️
