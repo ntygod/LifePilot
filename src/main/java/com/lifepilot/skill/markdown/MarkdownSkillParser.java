@@ -50,6 +50,15 @@ public class MarkdownSkillParser {
             return ParseResult.failure(List.of("SKILL.md 内容不能为空"));
         }
 
+        // BOM 剥离：UTF-8 BOM 字符 \uFEFF 会导致首行 --- 匹配失败
+        if (!content.isEmpty() && content.charAt(0) == '\uFEFF') {
+            content = content.substring(1);
+            log.debug("SKILL.md 内容包含 BOM 标记，已剥离");
+        }
+
+        // CRLF 统一：避免后续 YAML 解析器的兼容性问题
+        content = content.replace("\r\n", "\n").replace("\r", "\n");
+
         // 1. 查找 Frontmatter 分隔符
         var lines = content.lines().toList();
         int firstDelimiter = -1;
