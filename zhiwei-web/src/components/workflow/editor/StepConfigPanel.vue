@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { MousePointerClick } from 'lucide-vue-next'
+import ErrorStrategyConfig from '@/components/workflow/editor/ErrorStrategyConfig.vue'
 
 const props = defineProps<{
   step: StepModel | null
@@ -106,12 +107,13 @@ const TYPE_CONFIG_PLACEHOLDER: Record<StepType, string> = {
 
           <Separator />
 
-          <!-- 错误策略配置区域（占位，任务 4.2 替换为 ErrorStrategyConfig.vue） -->
+          <!-- 错误策略配置 -->
           <div>
             <p class="mb-2 text-xs font-medium text-muted-foreground">错误策略</p>
-            <div class="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
-              错误策略配置区域（retry / skip / fail / compensate）
-            </div>
+            <ErrorStrategyConfig
+              :model-value="step.errorStrategy"
+              @update:model-value="updateField('errorStrategy', $event)"
+            />
           </div>
         </div>
       </ScrollArea>
