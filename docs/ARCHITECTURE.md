@@ -10,9 +10,9 @@
 
 ### 1.1 产品定位与核心差异
 
-ZhiWei 是一个**本地运行的个人 AI Agent 助手**，核心定位为"了解你生活全貌的 AI 伙伴"。
+ZhiWei 是一个**本地运行的个人 AI Agent 助手**，核心定位为"见微知著，你的 AI 伙伴"。
 
-与 OpenClaw 等通用 AI Agent 框架不同，ZhiWei 不只是被动执行用户命令，而是具备**主动智能能力**——它观察用户的生活模式，主动提供建议和帮助。与 AstrBot 等 IM 聊天机器人基础设施不同，ZhiWei 聚焦于**个人生活管理**场景，以认知记忆和主动推理为核心差异化。
+与 OpenClaw 等通用 AI Agent 框架不同，ZhiWei 不只是被动执行用户命令，而是具备**主动智能能力**——它观察用户的行为模式，主动提供建议和帮助。与 AstrBot 等 IM 聊天机器人基础设施不同，ZhiWei 聚焦于**个人助手**场景，以认知记忆和主动推理为核心差异化。
 
 | 维度 | 传统 AI 助手 | OpenClaw | AstrBot | ZhiWei |
 |------|-------------|----------|---------|-----------|
@@ -93,12 +93,16 @@ ZhiWei 是一个**本地运行的个人 AI Agent 助手**，核心定位为"了�
 │  MemorySystem (四层认知记忆)   │ LlmRouter (多模型路由 + 熔断器)         │
 │  ObservabilityEngine (Trace)  │ GuardrailEngine (策略引擎 + 护栏)       │
 │  DocumentIngester (文档管线)   │ KnowledgeExtractionPipeline            │
+│  MediaProcessor (多模态预处理) │ WorkflowEngine (工作流编排)             │
+│  SandboxBooter (代码执行沙箱)  │ MultiAgent (多 Agent 协作)             │
+│  A2aProtocol (跨系统互操作)    │ TrajectoryEvaluator (Agentic 评估)     │
+│  MarketplaceService (扩展市场) │ InfraToolProvider (Meta 能力)          │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                          存储层 (Storage Layer)                          │
 │  SQLite (结构化 + FTS5 全文索引)                                         │
 │  sqlite-vec (向量索引)                                                   │
 │  EventLog (追加写入审计日志)                                              │
-│  ~/.lifepilot/ (本地数据目录)                                            │
+│  ~/.zhiwei/ (本地数据目录)                                               │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -140,7 +144,7 @@ graph TB
     subgraph 能力层["能力层 (Capability Layer)"]
         DTR["DynamicToolRegistry<br/>统一工具注册"]
         L3["Layer 3: Java 原生<br/>TodoPlugin / SchedulePlugin<br/>HabitPlugin / MemoryPlugin"]
-        L2["Layer 2: YAML 声明式<br/>YamlSkillLoader<br/>~/.lifepilot/skills/*.yml"]
+        L2["Layer 2: YAML 声明式<br/>YamlSkillLoader<br/>~/.zhiwei/skills/*.yml"]
         L1["Layer 1: MCP 外部<br/>McpClient + McpToolAdapter<br/>stdio / SSE 传输"]
     end
 
@@ -151,6 +155,14 @@ graph TB
         GE["GuardrailEngine<br/>策略引擎 + DataRedactor"]
         DI["DocumentIngester<br/>文档解析管线"]
         KE["KnowledgeExtraction<br/>知识提取管线"]
+        MP2["MediaProcessor<br/>多模态预处理"]
+        WF["WorkflowEngine<br/>工作流编排"]
+        SBX["SandboxBooter<br/>代码执行沙箱"]
+        MA["MultiAgent<br/>多 Agent 协作"]
+        A2A["A2aProtocol<br/>跨系统互操作"]
+        EVL["TrajectoryEvaluator<br/>Agentic 评估"]
+        MKT2["MarketplaceService<br/>扩展市场"]
+        META2["InfraToolProvider<br/>Meta 能力"]
     end
 
     subgraph 存储层["存储层"]
@@ -273,6 +285,40 @@ graph LR
         CHA["ChannelAdapters"]
     end
 
+    subgraph multiagent["com.lifepilot.multiagent"]
+        AR["AgentRegistry"]
+        HT["HandoffTool"]
+    end
+
+    subgraph a2a["com.lifepilot.a2a"]
+        A2AC["A2aClient"]
+        A2AS["A2aServer"]
+    end
+
+    subgraph media["com.lifepilot.media"]
+        MP["MediaProcessor"]
+    end
+
+    subgraph workflow["com.lifepilot.workflow"]
+        WE["WorkflowEngine"]
+    end
+
+    subgraph sandbox["com.lifepilot.sandbox"]
+        SB["SandboxBooter"]
+    end
+
+    subgraph eval["com.lifepilot.eval"]
+        TE["TrajectoryEvaluator"]
+    end
+
+    subgraph marketplace["com.lifepilot.marketplace"]
+        MKT["MarketplaceService"]
+    end
+
+    subgraph meta["com.lifepilot.meta"]
+        META["InfraToolProvider"]
+    end
+
     AL2 --> SR2
     AL2 --> CA2
     AL2 --> LR2
@@ -296,6 +342,7 @@ graph LR
 
     LR2 --> CB
     LR2 --> PA
+    LR2 --> MP
 
     GA --> GEng
     GEng --> DR
@@ -308,6 +355,18 @@ graph LR
     HR --> SM
     HR --> EM
     HR --> VEC2["SqliteVecStore"]
+
+    multiagent --> agent
+    multiagent --> skill
+    a2a --> multiagent
+    workflow --> agent
+    workflow --> skill
+    sandbox --> tool
+    eval --> agent
+    eval --> obs
+    marketplace --> skill
+    meta --> tool
+    meta --> mcp
 ```
 
 **依赖规则**：
@@ -319,27 +378,40 @@ graph LR
 
 ---
 
-## 3-13. 模块详细设计
+## 3-25. 模块详细设计
 
 > 以下各模块的详细设计已拆分为独立文档，便于增量阅读和 Spec 规划。
 
-| # | 模块 | 架构设计 | 功能说明 |
-|---|------|---------|---------|
-| 3 | Agent 引擎 | [agent-engine.md](architecture/agent-engine.md) | [agent-engine.md](features/agent-engine.md) |
-| 4 | Skill 技能系统 | [skill-system.md](architecture/skill-system.md) | [skill-system.md](features/skill-system.md) |
-| 5 | 记忆系统 | [memory-system.md](architecture/memory-system.md) | [memory-system.md](features/memory-system.md) |
-| 6 | 混合工具生态 | [tool-ecosystem.md](architecture/tool-ecosystem.md) | [tool-ecosystem.md](features/tool-ecosystem.md) |
-| 7 | LLM 路由 | [llm-router.md](architecture/llm-router.md) | [llm-router.md](features/llm-router.md) |
-| 8 | 知识库管理 | [knowledge-base.md](architecture/knowledge-base.md) | [knowledge-base.md](features/knowledge-base.md) |
-| 9 | Gateway + 中间件 | [gateway-middleware.md](architecture/gateway-middleware.md) | [gateway-channels.md](features/gateway-channels.md) |
-| 10-11 | 可观测性 + 护栏 | [observability.md](architecture/observability.md) | [observability.md](features/observability.md) |
-| 12 | 数据模型 | [data-model.md](architecture/data-model.md) | — |
-| 13 | 错误处理 | [error-handling.md](architecture/error-handling.md) | — |
-| — | 内置 Skills | — | [builtin-skills.md](features/builtin-skills.md) |
-| — | MCP 协议 | — | [mcp-support.md](features/mcp-support.md) |
-| — | 主动推理 + 工作流 | — | [proactive-reasoning.md](features/proactive-reasoning.md) |
-| — | 部署体验 | — | [deployment.md](features/deployment.md) |
-| — | Skill 开发指南 | — | [skill-development.md](features/skill-development.md) |
+| # | 模块 | 包名 | 架构设计 | 功能说明 |
+|---|------|------|---------|---------|
+| 3 | Agent 引擎 | `agent` | [agent-engine.md](architecture/agent-engine.md) | [agent-engine.md](features/agent-engine.md) |
+| 4 | Skill 技能系统 | `skill` | [skill-system.md](architecture/skill-system.md) | [skill-system.md](features/skill-system.md) |
+| 5 | 记忆系统 | `memory` | [memory-system.md](architecture/memory-system.md) | [memory-system.md](features/memory-system.md) |
+| 6 | 混合工具生态 | `tool` | [tool-ecosystem.md](architecture/tool-ecosystem.md) | [tool-ecosystem.md](features/tool-ecosystem.md) |
+| 7 | LLM 路由 | `llm` | [llm-router.md](architecture/llm-router.md) | [llm-router.md](features/llm-router.md) |
+| 8 | 知识库管理 | `knowledge` | [knowledge-base.md](architecture/knowledge-base.md) | [knowledge-base.md](features/knowledge-base.md) |
+| 9 | Gateway + 中间件 | `interaction` | [gateway-middleware.md](architecture/gateway-middleware.md) | [gateway-channels.md](features/gateway-channels.md) |
+| 10 | 可观测性 + 护栏 | `observability` | [observability.md](architecture/observability.md) | [observability.md](features/observability.md) |
+| 11 | 数据模型 | — | [data-model.md](architecture/data-model.md) | — |
+| 12 | 错误处理 | — | [error-handling.md](architecture/error-handling.md) | — |
+| 13 | 多模态能力 | `media` | [multimodal.md](architecture/multimodal.md) | [multimodal.md](features/multimodal.md) |
+| 14 | 工作流编排 | `workflow` | [workflow.md](architecture/workflow.md) | [workflow.md](features/workflow.md) |
+| 15 | 代码执行沙箱 | `sandbox` | [sandbox.md](architecture/sandbox.md) | [sandbox.md](features/sandbox.md) |
+| 16 | 外部数据源同步 | `sync` | [external-data-sync.md](architecture/external-data-sync.md) | [external-data-sync.md](features/external-data-sync.md) |
+| 17 | 主动推理 | `agent.proactive` | [proactive-reasoning.md](architecture/proactive-reasoning.md) | [proactive-reasoning.md](features/proactive-reasoning.md) |
+| 18 | Web UI | `interaction.web` | [web-ui.md](architecture/web-ui.md) | [web-ui.md](features/web-ui.md) |
+| 19 | 多 Agent 协作 | `multiagent` | [multi-agent.md](architecture/multi-agent.md) | [multi-agent.md](features/multi-agent.md) |
+| 20 | A2A 协议 | `a2a` | [a2a-protocol.md](architecture/a2a-protocol.md) | [a2a-protocol.md](features/a2a-protocol.md) |
+| 21 | Agentic 评估 | `eval` | [agentic-evals.md](architecture/agentic-evals.md) | [agentic-evals.md](features/agentic-evals.md) |
+| 22 | 扩展市场 | `marketplace` | [skill-marketplace.md](architecture/skill-marketplace.md) | [skill-marketplace.md](features/skill-marketplace.md) |
+| 23 | Meta 能力 | `meta` | [meta-capabilities.md](architecture/meta-capabilities.md) | [meta-capabilities.md](features/meta-capabilities.md) |
+| 24 | Prompt 管理 | `prompt` | [prompt-management.md](architecture/prompt-management.md) | [prompt-management.md](features/prompt-management.md) |
+| 25 | 记忆系统进阶 | `memory` | [memory-advanced.md](architecture/memory-advanced.md) | [memory-advanced.md](features/memory-advanced.md) |
+| — | 内置 Skills | `skill.builtin` | [builtin-skills.md](architecture/builtin-skills.md) | [builtin-skills.md](features/builtin-skills.md) |
+| — | MCP 协议 | `mcp` | — | [mcp-support.md](features/mcp-support.md) |
+| — | 部署体验 | — | [deployment.md](architecture/deployment.md) | [deployment.md](features/deployment.md) |
+| — | Skill 开发指南 | — | — | [skill-development.md](features/skill-development.md) |
+| — | 性能优化 | — | [performance-optimization.md](architecture/performance-optimization.md) | [performance-optimization.md](features/performance-optimization.md) |
 
 ---
 
@@ -356,7 +428,7 @@ graph LR
 | 7 | **MCP 协议** 工具标准 | 自定义协议, OpenAPI | 行业事实标准（Anthropic/OpenAI/Google/Microsoft 支持）；生态丰富 | 协议仍在演进，需要适配层隔离变化 |
 | 8 | **Maven** 构建工具 | Gradle | 标准化依赖管理、社区生态成熟、Spring Boot 官方推荐 | 增量编译不如 Gradle 快 |
 | 9 | **四层认知记忆** | 简单 RAG, 两层记忆 | 认知科学启发，层间自动流转；差异化竞争力 | 实现复杂度高，需要维护多个存储和管线 |
-| 10 | **单 Agent + Skill 激活** | 多 Agent 对等协作 | 简化架构，Skill = Class / SubAgent = Object 类比清晰；深度限制 2 层防止复杂度爆炸 | 不支持 Agent 间对等通信 |
+| 10 | **多 Agent 协作 + A2A 协议** | 单 Agent 模式 | HandoffTool 委托模式实现 Agent 间协作；A2A 协议支持跨系统 Agent 互操作；SubAgent 独立预算 + 独立上下文 + 差异化模型 | 架构复杂度增加，需要管理 Agent 间状态隔离 |
 
 ---
 
@@ -387,16 +459,18 @@ graph LR
 | 2 | **四层认知记忆 + 层间自动流转** | ⭐⭐⭐⭐⭐ | Working → Episodic → Semantic → Procedural 四层架构；记忆巩固管线（情景→语义提炼、情景→程序提炼）；MaRS 认知遗忘框架（FIFO/LRU/Priority Decay/Reflection-Summary/Hybrid） |
 | 3 | **时序知识图谱 + 三路混合检索** | ⭐⭐⭐⭐⭐ | 版本化实体/关系支持时间旅行查询；向量语义 + FTS5 全文 + 图遍历三路并行检索；加权融合排序（5 维权重） |
 | 4 | **ProactiveReasoner 两阶段推理** | ⭐⭐⭐⭐ | 规则引擎快速过滤（< 10ms）+ LLM 精细判断（~500ms）；FrequencyStateMachine 智能降频（NORMAL→REDUCED→MUTED）；降频渐进、恢复即时，避免沉默螺旋 |
-| 5 | **Skill = Class, SubAgent = Object** | ⭐⭐⭐⭐ | 统一三种来源（BUILTIN/USER_DEFINED/AUTO_GENERATED）；声明式记忆访问权限 + 预算隔离 + 深度限制；Skill 自扩展：需求检测→YAML 生成→三重验证→用户确认 |
+| 5 | **Skill = Class, SubAgent = Object + 多 Agent 协作** | ⭐⭐⭐⭐ | 统一三种来源（BUILTIN/USER_DEFINED/AUTO_GENERATED）；声明式记忆访问权限 + 预算隔离 + 深度限制；Skill 自扩展：需求检测→YAML 生成→三重验证→用户确认；HandoffTool 委托模式实现多 Agent 协作；A2A 协议支持跨系统互操作 |
 | 6 | **Spring AI Advisor 模式横切注入** | ⭐⭐⭐⭐ | GuardrailAdvisor（护栏）+ TraceAdvisor（轨迹）自动注入 ChatClient 调用链；业务代码零侵入，关注点完全分离；优先级排序保证执行顺序 |
 | 7 | **三层混合工具生态 + MCP 双向桥接** | ⭐⭐⭐⭐ | Java 原生 > YAML 声明式 > MCP 外部，优先级解析；DynamicToolRegistry 运行时动态注册/注销；SkillToMcpBridge 反向暴露内置工具为 MCP Tool |
 | 8 | **熔断器能力类型隔离** | ⭐⭐⭐ | providerId:capabilityType 复合键；Chat 熔断不影响 Embedding；CLOSED→OPEN→HALF_OPEN 标准状态机 |
 | 9 | **渐进式对话压缩** | ⭐⭐⭐ | Layer 0 原文 → Layer 1 摘要 → Layer 2 要点；按 Token 预算动态触发压缩；典型压缩率 60%/80% |
-| 10 | **本地优先隐私设计** | ⭐⭐⭐ | 全部数据存储在 ~/.lifepilot/；DataRedactor 自动脱敏；云端 LLM 调用前明确告知用户；隐私感知遗忘策略 |
+| 10 | **本地优先隐私设计** | ⭐⭐⭐ | 全部数据存储在 ~/.zhiwei/；DataRedactor 自动脱敏；云端 LLM 调用前明确告知用户；隐私感知遗忘策略 |
 
 ---
 
 > **文档结束**
 >
-> 本文档描述了 ZhiWei 的理想架构设计。实际实现可能根据开发进度和技术约束有所调整，
-> 但核心设计原则（概率/确定性分离、四层认知记忆、本地优先、Trace 级可观测）应始终贯穿。
+> 本文档描述了 ZhiWei 的架构设计。截至 0.2.0 版本，Phase 1~6 的核心模块已全部实现，
+> 包括四层认知记忆、多模态能力、多 Agent 协作、A2A 协议、工作流编排、代码执行沙箱、
+> 扩展市场、Agentic 评估等。核心设计原则（概率/确定性分离、四层认知记忆、本地优先、
+> Trace 级可观测）贯穿始终。
