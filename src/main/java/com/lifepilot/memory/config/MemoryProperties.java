@@ -85,6 +85,9 @@ public class MemoryProperties {
     /** 遗忘引擎配置。 */
     private Forgetting forgetting = new Forgetting();
 
+    /** 实体提取配置。 */
+    private Extraction extraction = new Extraction();
+
     public TokenBudget getTokenBudget() { return tokenBudget; }
     public void setTokenBudget(TokenBudget tokenBudget) { this.tokenBudget = tokenBudget; }
 
@@ -96,6 +99,9 @@ public class MemoryProperties {
 
     public Forgetting getForgetting() { return forgetting; }
     public void setForgetting(Forgetting forgetting) { this.forgetting = forgetting; }
+
+    public Extraction getExtraction() { return extraction; }
+    public void setExtraction(Extraction extraction) { this.extraction = extraction; }
 
     /**
      * Token 预算分配配置 — 控制上下文窗口四区域的预算比例和场景切换阈值。
@@ -377,5 +383,20 @@ public class MemoryProperties {
 
         public float getPrivacyAwareBoost() { return privacyAwareBoost; }
         public void setPrivacyAwareBoost(float privacyAwareBoost) { this.privacyAwareBoost = privacyAwareBoost; }
+    }
+
+    /**
+     * 实体提取配置 — 控制 RealtimeExtractor AUDN 提取的超时等参数。
+     *
+     * @author zsg
+     * @since 2026-03-10
+     */
+    public static class Extraction {
+
+        /** AUDN 实体提取 LLM 调用超时（秒），默认 60。 */
+        private int timeoutSeconds = 60;
+
+        public int getTimeoutSeconds() { return timeoutSeconds; }
+        public void setTimeoutSeconds(int timeoutSeconds) { this.timeoutSeconds = timeoutSeconds; }
     }
 }
