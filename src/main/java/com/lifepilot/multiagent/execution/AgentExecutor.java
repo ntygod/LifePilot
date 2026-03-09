@@ -103,11 +103,13 @@ public class AgentExecutor {
             log.info("Agent 委托执行完成: agentId={}, tokensUsed={}, steps={}",
                     agentId, response.tokensUsed(), response.stepCount());
 
-            // 7. 转换为 SubAgentResult
+            // 7. 转换为 SubAgentResult — 澄清终止视为成功（父 Agent 可展示澄清问题）
+            boolean success = response.terminationReason() == null
+                    || "需要用户澄清".equals(response.terminationReason());
             return new Action.SubAgentResult(
                     response.traceId(),
                     agentId,
-                    response.terminationReason() == null,
+                    success,
                     response.content(),
                     response.tokensUsed());
 
