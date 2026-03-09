@@ -1,21 +1,43 @@
+# ZhiWei（知微）Docker Compose 编排文件
+# 使用方法：
+#   1. 复制 .env.example 为 .env，填入至少一个 LLM API Key
+#   2. docker compose up -d
+#   3. 访问 http://localhost（前端）或 http://localhost:8080（后端 API）
+
 services:
   backend:
     build: .
+    image: zhiwei/backend:latest
     ports:
-      - "8080:8080"
+      - "${ZHIWEI_PORT:-8080}:8080"
     volumes:
       - zhiwei-data:/data
     environment:
       - SPRING_PROFILES_ACTIVE=docker
       - ZHIWEI_DATA_DIR=/data
+      # LLM 服务商 API Key（至少配置一个，否则对话功能不可用）
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - QWEN_API_KEY=${QWEN_API_KEY:-}
+      # 可选：搜索和 Reranker
+      - SEARCH_API_KEY=${SEARCH_API_KEY:-}
+      - RERANKER_API_KEY=${RERANKER_API_KEY:-}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     restart: unless-stopped
 
   frontend:
     build: ./zhiwei-web
+    image: zhiwei/frontend:latest
     ports:
-      - "80:80"
+      - "${ZHIWEI_WEB_PORT:-80}:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
