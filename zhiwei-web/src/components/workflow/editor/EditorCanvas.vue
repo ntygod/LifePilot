@@ -4,13 +4,14 @@
   任务 3.1：基础布局 + SVG 连线 + 空画布引导 + 拖放区域。
   任务 3.2：步骤节点渲染（类型图标、名称、ID、类型标签、选中高亮、验证错误红色边框、悬停效果）。
   任务 3.3：连接锚点（底部出口 + 顶部入口）+ 拖拽连线交互。
+  任务 3.4：键盘删除、右键上下文菜单、悬停高亮连线。
 -->
 <script setup lang="ts">
 import { computed, ref, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import type { StepModel, StepType } from '@/composables/useWorkflowModel'
 import { useDagLayout } from '@/composables/useDagLayout'
 import { STEP_TYPE_META } from '@/components/workflow/editor/stepTypeMeta'
-import { PackagePlus } from 'lucide-vue-next'
+import { PackagePlus, Trash2, Unlink } from 'lucide-vue-next'
 
 const props = defineProps<{
   steps: StepModel[]
@@ -39,8 +40,23 @@ const stepMap = computed(() => {
   return map
 })
 
-// SVG 连线状态
-const lines = ref<Array<{ x1: number; y1: number; x2: number; y2: number }>>([])
+// SVG 连线状态（含 fromId/toId 用于悬停高亮）
+const lines = ref<Array<{ x1: number; y1: number; x2: number; y2: number; fromId: string; toId: string }>>([])
+
+// ── 悬停高亮状态 ──
+/** 当前悬停的步骤 ID，用于高亮关联连线 */
+const hoveredStepId = ref<string | null>(null)
+
+// ── 右键上下文菜单状态 ──
+interface ContextMenuState {
+  x: number
+  y: number
+  type: 'step' | 'line'
+  stepId?: string
+  fromId?: string
+  toId?: string
+}
+const contextMenu = ref<ContextMenuState | null>(null)
 
 // ── 连接拖拽状态 ──
 /** 正在拖拽连线的源步骤 ID，null 表示未在拖拽 */
@@ -88,6 +104,8 @@ function updateLines() {
         y1: fromRect.bottom - containerRect.top,
         x2: toRect.left + toRect.width / 2 - containerRect.left,
         y2: toRect.top - containerRect.top,
+        fromId: dep,
+        toId: step.id,
       })
     }
   }
@@ -177,18 +195,120 @@ function onDrop(e: DragEvent) {
   }
 }
 
+// ── 键盘快捷键 ──
+
+/** Delete/Backspace 删除选中步骤，Escape 关闭上下文菜单 */
+function onKeyDown(e: KeyboardEvent) {
+  // Escape 关闭上下文菜单
+  if (e.key === 'Escape') {
+    closeContextMenu()
+    return
+  }
+  // Delete/Backspace 删除选中步骤（仅在画布聚焦时，不在 input/textarea 中）
+  if ((e.key === 'Delete' || e.key === 'Backspace') && props.selectedStepId) {
+    const target = e.target as HTMLElement
+    const tagName = target.tagName.toLowerCase()
+    if (tagName === 'input' || tagName === 'textarea' || target.isContentEditable) return
+    e.preventDefault()
+    emit('delete-step', props.selectedStepId)
+  }
+}
+
+// ── 右键上下文菜单 ──
+
+/** 步骤节点右键菜单 */
+function onNodeContextMenu(e: MouseEvent, stepId: string) {
+  e.preventDefault()
+  e.stopPropagation()
+  contextMenu.value = { x: e.clientX, y: e.clientY, type: 'step', stepId }
+}
+
+/** 连线右键菜单 */
+function onLineContextMenu(e: MouseEvent, fromId: string, toId: string) {
+  e.preventDefault()
+  e.stopPropagation()
+  contextMenu.value = { x: e.clientX, y: e.clientY, type: 'line', fromId, toId }
+}
+
+/** 关闭上下文菜单 */
+function closeContextMenu() {
+  contextMenu.value = null
+}
+
+/** 上下文菜单 — 删除步骤 */
+function ctxDeleteStep() {
+  if (contextMenu.value?.stepId) {
+    emit('delete-step', contextMenu.value.stepId)
+  }
+  closeContextMenu()
+}
+
+/** 上下文菜单 — 删除步骤的所有连线 */
+function ctxDisconnectAll() {
+  if (contextMenu.value?.stepId) {
+    // 发出 disconnect 事件，toId 为空字符串表示删除所有连线
+    emit('disconnect', contextMenu.value.stepId, '')
+  }
+  closeContextMenu()
+}
+
+/** 上下文菜单 — 删除单条连线 */
+function ctxDisconnectLine() {
+  if (contextMenu.value?.fromId && contextMenu.value?.toId) {
+    emit('disconnect', contextMenu.value.fromId, contextMenu.value.toId)
+  }
+  closeContextMenu()
+}
+
+/** 点击画布空白区域关闭上下文菜单 */
+function onContainerClick() {
+  closeContextMenu()
+}
+
+// ── 悬停高亮 ──
+
+function onNodeMouseEnter(stepId: string) {
+  hoveredStepId.value = stepId
+}
+
+function onNodeMouseLeave() {
+  hoveredStepId.value = null
+}
+
+/** 判断连线是否与悬停步骤关联 */
+function isLineHighlighted(line: { fromId: string; toId: string }): boolean {
+  if (!hoveredStepId.value) return false
+  return line.fromId === hoveredStepId.value || line.toId === hoveredStepId.value
+}
+
 // 步骤变化时重新计算连线
 watch(() => props.steps, () => nextTick(updateLines), { deep: true })
-onMounted(() => nextTick(updateLines))
-onUnmounted(() => cancelConnection())
+
+onMounted(() => {
+  nextTick(updateLines)
+  document.addEventListener('click', onDocumentClickForMenu)
+})
+
+onUnmounted(() => {
+  cancelConnection()
+  document.removeEventListener('click', onDocumentClickForMenu)
+})
+
+/** 点击文档任意位置关闭上下文菜单（菜单外部） */
+function onDocumentClickForMenu() {
+  closeContextMenu()
+}
 </script>
 
 <template>
   <div
     ref="containerRef"
-    class="relative flex-1 overflow-auto bg-muted/30"
+    class="relative flex-1 overflow-auto bg-muted/30 outline-none"
+    tabindex="0"
     @dragover="onDragOver"
     @drop="onDrop"
+    @keydown="onKeyDown"
+    @click="onContainerClick"
   >
     <!-- 空画布引导提示 -->
     <div
@@ -205,19 +325,31 @@ onUnmounted(() => cancelConnection())
     <template v-else>
       <!-- SVG 连线层 -->
       <svg
-        class="pointer-events-none absolute inset-0 h-full w-full"
+        class="absolute inset-0 h-full w-full"
         style="z-index: 0"
       >
-        <!-- 已有 DAG 连线 -->
-        <path
-          v-for="(line, i) in lines"
-          :key="i"
-          :d="bezierPath(line)"
-          fill="none"
-          stroke="#9ca3af"
-          stroke-width="1.5"
-          stroke-dasharray="6 3"
-        />
+        <!-- 已有 DAG 连线（可见线 + 透明宽击中区域） -->
+        <template v-for="(line, i) in lines" :key="i">
+          <!-- 透明宽路径：扩大鼠标交互区域 -->
+          <path
+            :d="bezierPath(line)"
+            fill="none"
+            stroke="transparent"
+            stroke-width="12"
+            class="cursor-pointer"
+            style="pointer-events: stroke"
+            @contextmenu="onLineContextMenu($event, line.fromId, line.toId)"
+          />
+          <!-- 可见连线 -->
+          <path
+            :d="bezierPath(line)"
+            fill="none"
+            :stroke="isLineHighlighted(line) ? 'hsl(var(--primary))' : '#9ca3af'"
+            :stroke-width="isLineHighlighted(line) ? 2.5 : 1.5"
+            :stroke-dasharray="isLineHighlighted(line) ? 'none' : '6 3'"
+            class="pointer-events-none transition-all duration-150"
+          />
+        </template>
         <!-- 拖拽中的临时连线 -->
         <path
           v-if="tempLine"
@@ -225,6 +357,7 @@ onUnmounted(() => cancelConnection())
           fill="none"
           stroke="hsl(var(--primary))"
           stroke-width="2"
+          class="pointer-events-none"
         />
       </svg>
 
@@ -247,6 +380,9 @@ onUnmounted(() => cancelConnection())
               'border-border': selectedStepId !== stepId && !validationErrors.has(stepId),
             }"
             @click="emit('select-step', stepId)"
+            @contextmenu="onNodeContextMenu($event, stepId)"
+            @mouseenter="onNodeMouseEnter(stepId)"
+            @mouseleave="onNodeMouseLeave"
           >
             <!-- 顶部入口锚点 -->
             <div
@@ -288,5 +424,43 @@ onUnmounted(() => cancelConnection())
         </div>
       </div>
     </template>
+
+    <!-- 右键上下文菜单 -->
+    <Teleport to="body">
+      <div
+        v-if="contextMenu"
+        class="fixed z-50 min-w-[140px] rounded-md border bg-popover py-1 shadow-lg"
+        :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
+        @click.stop
+      >
+        <!-- 步骤节点菜单 -->
+        <template v-if="contextMenu.type === 'step'">
+          <button
+            class="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-popover-foreground hover:bg-accent"
+            @click="ctxDeleteStep"
+          >
+            <Trash2 class="h-3.5 w-3.5" />
+            删除步骤
+          </button>
+          <button
+            class="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-popover-foreground hover:bg-accent"
+            @click="ctxDisconnectAll"
+          >
+            <Unlink class="h-3.5 w-3.5" />
+            删除所有连线
+          </button>
+        </template>
+        <!-- 连线菜单 -->
+        <template v-if="contextMenu.type === 'line'">
+          <button
+            class="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-popover-foreground hover:bg-accent"
+            @click="ctxDisconnectLine"
+          >
+            <Unlink class="h-3.5 w-3.5" />
+            删除连线
+          </button>
+        </template>
+      </div>
+    </Teleport>
   </div>
 </template>
