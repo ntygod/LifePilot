@@ -1,0 +1,170 @@
+id: content-review
+name: 智能内容审核流程
+description: 使用 LLM 分析内容风险等级，高风险内容进入人工审批，低风险自动通过，最终发送通知
+version: "1.0"
+triggers:
+  - type: event
+    eventType: content.submitted
+  - type: manual
+inputs:
+  content:
+    type: string
+    required: true
+    description: 待审核的内容文本
+  contentType:
+    type: string
+    required: false
+    defaultValue: article
+    description: 内容类型（article / comment / post）
+  author:
+    type: string
+    required: false
+    defaultValue: unknown
+    description: 内容作者标识
+metadata:
+  category: 内容安全
+  complexity: advanced
+steps:
+  - id: preprocess
+    name: 内容预处理
+    type: tool
+    toolId: text.normalize
+    params:
+      text: "${inputs.content}"
+      stripHtml: "true"
+
+  - id: llm-risk-analysis
+    name: LLM 风险分析
+    type: llm
+    scene: content-review
+    prompt: |
+      请对以下内容进行风险分析，输出 JSON 格式结果：
+
+      ## 内容类型
+      ${inputs.contentType}
+
+      ## 待审核内容
+      ${steps.preprocess.output.result}
+
+      请从以下维度评估：
+      1. 违规风险（涉政 / 涉黄 / 暴力 / 欺诈）
+      2. 质量评分（1-10）
+      3. 敏感词检测
+
+      输出格式：
+      {
+        "riskLevel": "high|medium|low",
+        "riskScore": 0-100,
+        "categories": ["违规类别"],
+        "qualityScore": 1-10,
+        "sensitiveWords": ["敏感词列表"],
+        "summary": "风险摘要"
+      }
+    dependsOn:
+      - preprocess
+
+  - id: keyword-scan
+    name: 关键词扫描
+    type: tool
+    toolId: content.keyword-scan
+    params:
+      text: "${steps.preprocess.output.result}"
+      ruleSet: default
+    dependsOn:
+      - preprocess
+
+  - id: risk-decision
+    name: 风险等级判定
+    type: condition
+    condition: "${steps.llm-risk-analysis.output.result.riskLevel} == 'high' || ${steps.keyword-scan.output.result.hitCount} > 5"
+    dependsOn:
+      - llm-risk-analysis
+      - keyword-scan
+    then:
+      - id: human-approval
+        name: 人工审批
+        type: approval
+        message: |
+          内容审核需要人工确认：
+          - 作者：${inputs.author}
+          - 类型：${inputs.contentType}
+          - 风险等级：${steps.llm-risk-analysis.output.result.riskLevel}
+          - 风险摘要：${steps.llm-risk-analysis.output.result.summary}
+          - 命中关键词数：${steps.keyword-scan.output.result.hitCount}
+        approvers:
+          - content-reviewer
+          - admin
+        timeoutSeconds: 7200
+        autoApproveOnTimeout: false
+      - id: approval-result-check
+        name: 审批结果判定
+        type: condition
+        condition: "${steps.human-approval.output.approved} == true"
+        then:
+          - id: mark-approved-manual
+            name: 标记人工通过
+            type: tool
+            toolId: content.update-status
+            params:
+              contentId: "${inputs.content}"
+              status: approved
+              reviewer: manual
+        else:
+          - id: mark-rejected
+            name: 标记拒绝
+            type: tool
+            toolId: content.update-status
+            params:
+              contentId: "${inputs.content}"
+              status: rejected
+              reviewer: manual
+    else:
+      - id: auto-approve
+        name: 自动通过
+        type: tool
+        toolId: content.update-status
+        params:
+          contentId: "${inputs.content}"
+          status: approved
+          reviewer: auto
+
+  - id: generate-report
+    name: 生成审核报告
+    type: llm
+    scene: workflow
+    prompt: |
+      请根据以下审核信息生成简洁的审核报告：
+
+      ## 内容信息
+      - 作者：${inputs.author}
+      - 类型：${inputs.contentType}
+
+      ## LLM 风险分析结果
+      ${steps.llm-risk-analysis.output.result}
+
+      ## 关键词扫描结果
+      ${steps.keyword-scan.output.result}
+
+      请输出：
+      1. 审核结论
+      2. 风险点汇总
+      3. 处理建议
+    dependsOn:
+      - risk-decision
+
+  - id: send-notification
+    name: 发送审核通知
+    type: tool
+    toolId: notification.send
+    params:
+      channel: webhook
+      title: "内容审核完成"
+      body: "${steps.generate-report.output.result}"
+      recipient: "${inputs.author}"
+    dependsOn:
+      - generate-report
+    errorStrategy:
+      type: retry
+      maxAttempts: 3
+      initialDelayMs: 1000
+      maxDelayMs: 5000

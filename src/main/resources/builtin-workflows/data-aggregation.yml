@@ -1,0 +1,153 @@
+id: data-aggregation
+name: 多源数据聚合报告
+description: 并行从多个数据源采集信息，LLM 综合分析后生成聚合报告，通过工具发送给指定接收人
+version: "1.0"
+triggers:
+  - type: cron
+    cron: "0 0 9 * * MON"
+  - type: manual
+inputs:
+  reportTitle:
+    type: string
+    required: false
+    defaultValue: 周度数据聚合报告
+    description: 报告标题
+  recipients:
+    type: string
+    required: false
+    defaultValue: team
+    description: 报告接收人（逗号分隔）
+metadata:
+  category: 数据分析
+  complexity: advanced
+steps:
+  - id: fetch-sources
+    name: 并行采集多源数据
+    type: parallel
+    branches:
+      - - id: fetch-todo-stats
+          name: 获取待办统计
+          type: skill
+          skillId: todo.statistics
+          params:
+            period: last-7-days
+        - id: analyze-todo-trend
+          name: 分析待办趋势
+          type: llm
+          scene: workflow
+          prompt: |
+            请分析以下待办事项统计数据的趋势：
+
+            ${steps.fetch-todo-stats.output.result}
+
+            输出：
+            1. 完成率趋势
+            2. 积压情况
+            3. 效率评估
+      - - id: fetch-schedule-stats
+          name: 获取日程统计
+          type: skill
+          skillId: schedule.statistics
+          params:
+            period: last-7-days
+        - id: analyze-schedule-load
+          name: 分析日程负载
+          type: llm
+          scene: workflow
+          prompt: |
+            请分析以下日程统计数据的负载情况：
+
+            ${steps.fetch-schedule-stats.output.result}
+
+            输出：
+            1. 日均会议时长
+            2. 空闲时间占比
+            3. 负载评估
+      - - id: fetch-habit-stats
+          name: 获取习惯统计
+          type: skill
+          skillId: habit.statistics
+          params:
+            period: last-7-days
+
+  - id: fetch-external-data
+    name: 获取外部数据
+    type: tool
+    toolId: web.search
+    params:
+      query: "行业动态 本周要闻"
+      maxResults: "5"
+    errorStrategy:
+      type: skip
+      reason: 外部数据获取失败不影响核心报告
+
+  - id: synthesize-report
+    name: LLM 综合分析
+    type: llm
+    scene: workflow
+    prompt: |
+      请根据以下多源数据生成一份综合周报：
+
+      ## 报告标题
+      ${inputs.reportTitle}
+
+      ## 待办事项分析
+      ${steps.analyze-todo-trend.output.result}
+
+      ## 日程负载分析
+      ${steps.analyze-schedule-load.output.result}
+
+      ## 习惯追踪数据
+      ${steps.fetch-habit-stats.output.result}
+
+      ## 外部行业动态
+      ${steps.fetch-external-data.output.result}
+
+      请按以下结构输出报告：
+      1. **本周概览**：一段话总结本周整体情况
+      2. **效率指标**：待办完成率、日程利用率、习惯坚持率
+      3. **趋势分析**：与上周对比的变化趋势
+      4. **行业参考**：相关行业动态摘要
+      5. **下周建议**：基于数据分析的改进建议
+    dependsOn:
+      - fetch-sources
+      - fetch-external-data
+
+  - id: format-report
+    name: 格式化报告
+    type: tool
+    toolId: document.format
+    params:
+      content: "${steps.synthesize-report.output.result}"
+      format: markdown
+      template: weekly-report
+    dependsOn:
+      - synthesize-report
+
+  - id: save-report
+    name: 保存报告
+    type: tool
+    toolId: document.save
+    params:
+      title: "${inputs.reportTitle}"
+      content: "${steps.format-report.output.result}"
+      category: weekly-report
+    dependsOn:
+      - format-report
+
+  - id: send-report
+    name: 发送报告
+    type: tool
+    toolId: notification.send
+    params:
+      channel: email
+      title: "${inputs.reportTitle}"
+      body: "${steps.format-report.output.result}"
+      recipient: "${inputs.recipients}"
+    dependsOn:
+      - format-report
+    errorStrategy:
+      type: retry
+      maxAttempts: 2
+      initialDelayMs: 2000
+      maxDelayMs: 10000
