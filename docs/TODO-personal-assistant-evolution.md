@@ -1,140 +1,111 @@
-# 知微（ZhiWei）— 从"个人生活助手"到"个人助手"演进待办
+# 知微（ZhiWei）— 从"个人生活助手"到"个人助手"演进计划
 
 > 创建时间：2026-03-08
-> 状态：待讨论
-> AI 名称已确定：知微（ZhiWei），意为"见微知著"
+> 更新时间：2026-03-09
+> 状态：已确认，准备实施
+> AI 名称：知微（ZhiWei），意为"见微知著"
+> 目标版本：0.2.0（公开内测版）
 
 ---
 
-## 1. 品牌与定位调整
+## 1. 已确认决策
 
-### 1.1 名称确认
-
-- AI 名称：**知微**（ZhiWei），意为"见微知著"
-- 项目代号 / 包名 `com.lifepilot` 和数据目录 `~/.lifepilot/`：待讨论是否需要更名
-- 前端项目名 `lifepilot-web`：待讨论
-
-### 1.2 Slogan 调整
-
-- 当前："了解你生活全貌的 AI 伙伴"
-- 建议方向：去掉"生活"限定，体现"见微知著"的含义
-- 待确定新 slogan
-
-### 1.3 文档措辞统一
-
-需要更新的文档（将"个人生活管理"等措辞调整为"个人助手"定位）：
-
-- `docs/ARCHITECTURE.md` — §1.1 产品定位与核心差异
-- `docs/FEATURES.md` — §1.1 / §1.2 / §1.3 产品简介
-- `docs/ROADMAP.md` — 各处定位描述
-- `src/main/resources/prompts/` — Agent 角色定义相关 Prompt
+| 决策项 | 结论 |
+|--------|------|
+| 包名 `com.lifepilot` | 保留不变（改动风险大，收益低） |
+| 数据目录 `~/.lifepilot/` | 重命名为 `~/.zhiwei/` |
+| 前端项目 `lifepilot-web` | 重命名为 `zhiwei-web` |
+| Slogan | "见微知著，你的 AI 伙伴" |
+| 版本号 | 0.1.0 → 0.2.0 |
+| 发布范围 | 公开内测 |
 
 ---
 
-## 2. 能力域扩展
+## 2. 内置能力评估结论
 
-### 2.1 当前能力（生活管理域）
+### 2.1 内置 Skill（4 个 BuiltinSkillProvider）
 
-- ✅ 待办管理（TodoSkillProvider）
-- ✅ 日程管理（ScheduleSkillProvider）
-- ✅ 习惯养成（HabitSkillProvider）
-- ✅ 记忆管理（MemorySkillProvider）
+| Skill | 决策 | 理由 |
+|-------|------|------|
+| TodoSkillProvider | ✅ 保留 | 待办管理是通用能力 |
+| ScheduleSkillProvider | ✅ 保留 | 日程管理是通用能力 |
+| HabitSkillProvider | ✅ 保留，Prompt 层弱化 | 偏生活管理，但保留合理；不再作为核心能力首屏展示 |
+| MemorySkillProvider | ✅ 保留 | 底层基础设施，完全通用 |
 
-### 2.2 待扩展能力域
+### 2.2 预设 Agent（4 个 preset-agents）
 
-#### 工作效率域
+| Agent | 决策 | 理由 |
+|-------|------|------|
+| onboarding-guide | ✅ 保留并更新内容 | 必需，更新为"个人助手"定位 |
+| life-coach | 🔄 重塑为 advisor（顾问） | "生活教练"太窄，扩展到工作决策、学习规划等 |
+| planner | ✅ 保留并微调措辞 | 规划能力完全通用 |
+| writer | ✅ 保留 | 写作专家本身通用 |
 
-- 邮件管理（摘要、草稿、分类）
-- 会议纪要自动生成
-- 文档撰写辅助（报告、方案、总结）
-- 项目进度跟踪
+新增预设 Agent：
 
-#### 信息处理域
+| Agent | 定位 |
+|-------|------|
+| researcher | 调研专家：利用 WebSearch/WebFetch/KnowledgeBase 做信息收集、对比分析、摘要提炼 |
+| analyst | 数据分析师：利用 CodeExecute/Calculate/File 做数据处理、图表生成、趋势分析 |
 
-- 网页信息提取与摘要（Meta 模块已有 WebFetch/WebSearch 基础）
-- RSS / 新闻聚合与个性化推送
-- 文件管理与搜索（Meta 模块已有 File 工具基础）
+### 2.3 主动推理引擎
 
-#### 学习与知识域
+- 6 种 NotificationType 全部保留（DEADLINE_REMINDER / SCHEDULE_REMINDER / HABIT_REMINDER / STREAK_AT_RISK / DAILY_SUMMARY / WEEKLY_REVIEW）
+- HABIT_REMINDER / STREAK_AT_RISK 降低默认优先级
+- SignalCollector / RuleEngine 架构 0.2 不大改，仅更新 Prompt 层描述
+- 规则引擎可配置化归入后续版本
 
-- 阅读笔记整理
-- 学习计划制定与跟踪
-- 知识卡片生成
+### 2.4 内置工作流模板（新增）
 
-#### 财务与生活服务域
-
-- 简单记账与支出分析
-- 出行规划
-- 购物清单管理
-
-### 2.3 扩展策略
-
-- 大部分新能力可通过 YAML 声明式 Skill + MCP 外部工具实现，不需要改架构
-- 核心架构（StateReducer / 四层记忆 / 混合检索 / Skill 系统 / MCP）是领域无关的，无需改动
-- Meta 模块已提供 Shell / Browser / File / Web / Code 等基础设施工具，可组合出高层能力
-
----
-
-## 3. 主动推理引擎泛化
-
-### 3.1 当前状态
-
-ProactiveReasoner 的信号采集和推理规则偏向生活场景（待办到期、日程冲突、习惯打卡）。
-
-### 3.2 需要的改变
-
-- 信号源扩展：工作邮件到达、项目截止日期临近、学习计划进度落后等
-- 推理规则泛化：从硬编码的生活场景规则，演进为可配置的规则引擎
-- Workflow 模块（YAML 声明式工作流 + 触发器）已在做这个方向，需要继续推进
+| 工作流 | 触发方式 | 功能 |
+|--------|---------|------|
+| morning-briefing | Cron（每天早 8 点） | 汇总今日待办 + 日程 + 天气，生成晨间简报 |
+| weekly-review | Cron（每周日晚 8 点） | 汇总本周完成情况 + 下周规划建议 |
+| web-digest | 用户触发 | 输入 URL 列表，批量抓取并生成摘要 |
+| meeting-notes | 用户触发 | 输入会议文字，生成结构化纪要 + 待办提取 |
+| research-report | 用户触发 | 输入主题，自动搜索 + 整理 + 生成调研报告 |
 
 ---
 
-## 4. Prompt 与人设调整
+## 3. Spec 实施计划
 
-### 4.1 Agent 角色定义
+执行顺序：1 → 2 → 3 → 4（有依赖关系）
 
-- 自我定位从"生活管理助手"扩展为"全能个人助手"
-- 体现"知微"的含义：善于从细节中洞察用户需求
+### Spec 1: `brand-upgrade`（品牌升级）— 1-2 天
 
-### 4.2 对话风格自适应
+- 版本号 0.1 → 0.2（pom.xml + package.json）
+- 数据目录 `~/.lifepilot/` → `~/.zhiwei/`
+- 前端项目 `lifepilot-web` → `zhiwei-web`
+- Slogan 更新："见微知著，你的 AI 伙伴"
+- 文档措辞统一（ARCHITECTURE.md / FEATURES.md / ROADMAP.md）
 
-- 工作场景：更专业简洁
-- 生活场景：更轻松友好
-- System Prompt 中的能力声明需要覆盖更广的领域
+### Spec 2: `agent-persona-upgrade`（Agent 人设升级）— 2-3 天
 
-### 4.3 涉及文件
+- role-definition.st 重写：从"智能生活助手"到"个人 AI 助手"
+- 预设 Agent 调整：life-coach → advisor，新增 researcher、analyst
+- onboarding-guide 内容更新
+- 能力声明扩展（覆盖工作、学习、信息处理等领域）
 
-- `src/main/resources/prompts/agent/` 下所有 Prompt 模板
-- Agent roleDefinition 配置
+### Spec 3: `builtin-workflows`（内置工作流模板）— 3-5 天
 
----
+- 实现 5 个预装工作流 YAML
+- 启动时自动加载机制（类似 preset-agents 的加载方式）
+- 工作流模板的文档说明
 
-## 5. 实施优先级建议
+### Spec 4: `beta-release-readiness`（内测发布准备）— 2-3 天
 
-### P0 — 低成本高收益
-
-- [ ] 更新文档中的定位描述
-- [ ] 调整 Agent System Prompt，扩展能力声明
-- [ ] 确定新 slogan
-
-### P1 — 中等成本
-
-- [ ] 利用 YAML Skill 系统新增工作效率类 Skill
-- [ ] 利用 Meta 模块基础设施工具组合高层能力
-- [ ] ProactiveReasoner 推理规则泛化
-
-### P2 — 长期投入
-
-- [ ] 记忆系统 L4 程序记忆（学习用户工作习惯和偏好）
-- [ ] 记忆巩固管线（从对话中自动提炼用户工作模式）
-- [ ] 评估是否需要重命名包名 / 项目名
+- README 重写（面向公开用户）
+- Docker 配置更新（镜像名、环境变量）
+- 默认配置优化（开箱即用体验）
+- 启动脚本更新
+- 已知限制文档
 
 ---
 
-## 6. 核心结论
+## 4. 核心结论
 
 架构层面不需要推倒重来。当前的核心组件（StateReducer / 四层记忆 / 混合检索 / Skill 系统 / MCP / Meta 基础设施）都是领域无关的。从"生活助手"到"个人助手"的升级主要是：
 
-1. 内容层面的扩展（新 Skill、新 Prompt、新推理规则）
+1. 内容层面的扩展（新 Prompt、新预设 Agent、新工作流模板）
 2. 品牌层面的调整（名称、文档、slogan、对外描述）
-3. 少量架构层面的泛化（ProactiveReasoner 规则引擎化）
+3. 内测发布准备（README、Docker、默认配置）
