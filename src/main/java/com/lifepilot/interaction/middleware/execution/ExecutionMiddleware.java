@@ -16,14 +16,12 @@ import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.llm.multimodal.MediaContent;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.interaction.web.sse.SseEventType;
-import com.lifepilot.observability.trace.TraceContext;
 import com.lifepilot.observability.trace.TraceRecorder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -105,32 +103,10 @@ public class ExecutionMiddleware implements GatewayMiddleware {
             var agentResponse = future.get(timeout, TimeUnit.SECONDS);
 
             // 3. AgentResponse → GatewayResponse，构建 TokenUsage
-            // 优先使用 TraceContext 中累计的 Token 统计（若可用），否则回退到 AgentResponse 粗略计数
-            int promptTokens = 0;
-            int completionTokens = 0;
-            String modelId = DEFAULT_MODEL_ID;
-            Optional<TraceContext> traceContextOpt = traceRecorder != null
-                    ? traceRecorder.currentContext()
-                    : Optional.empty();
-            if (traceContextOpt.isPresent()) {
-                TraceContext ctx = traceContextOpt.get();
-                promptTokens = ctx.totalInputTokens();
-                completionTokens = ctx.totalOutputTokens();
-                // 从最后一个 LlmCallStep 中回溯模型 ID
-                var steps = ctx.steps();
-                for (int i = steps.size() - 1; i >= 0; i--) {
-                    var step = steps.get(i);
-                    if (step instanceof com.lifepilot.observability.trace.LlmCallStep llmStep) {
-                        modelId = llmStep.modelId();
-                        break;
-                    }
-                }
-            }
-            if (promptTokens == 0 && completionTokens == 0) {
-                // 回退到 AgentResponse 提供的粗略 tokensUsed 统计
-                completionTokens = agentResponse.tokensUsed();
-            }
-            var tokenUsage = new TokenUsage(promptTokens, completionTokens, promptTokens + completionTokens, modelId);
+            // 直接从 AgentResponse 获取 token 统计（Fix 10）
+            // AgentResponse.tokensUsed() 已由 AgentLoop 通过 TraceContext 聚合（Fix 11），无需依赖 ThreadLocal
+            int totalTokens = agentResponse.tokensUsed();
+            var tokenUsage = new TokenUsage(0, totalTokens, totalTokens, DEFAULT_MODEL_ID);
             chain.context().set(MiddlewareContext.KEY_AGENT_RESPONSE, agentResponse);
             chain.context().set(MiddlewareContext.KEY_TOKEN_USAGE, tokenUsage);
 
