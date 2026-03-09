@@ -460,6 +460,18 @@ lifepilot:
     scan-interval-seconds: 30
     # 是否在启动时释放内置工作流模板到用户目录
     seed-builtin-workflows: true
+    # 审批步骤配置
+    approval:
+      # 默认审批超时时间（秒），24 小时
+      default-timeout-seconds: 86400
+      # 超时后是否自动批准
+      auto-approve-on-timeout: false
+    # 事件审计配置
+    event-audit:
+      # 是否启用事件审计记录
+      enabled: true
+      # 事件保留天数
+      retention-days: 90
     # 步骤重试策略（指数退避）
     retry:
       # 初始延迟（毫秒）
