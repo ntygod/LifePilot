@@ -1,6 +1,9 @@
 @echo off
 chcp 65001 >nul 2>&1
 
+set "VERSION=0.2.0"
+set "JAR_FILE=%~dp0zhiwei.jar"
+
 REM 1. 检测 java 命令
 where java >nul 2>&1
 if errorlevel 1 (
@@ -14,17 +17,26 @@ for /f "tokens=3" %%v in ('java -version 2^>^&1 ^| findstr /i "version"') do set
 for /f "tokens=1 delims=." %%m in ("%JAVA_VER%") do set "JAVA_MAJOR=%%m"
 if "%JAVA_MAJOR%"=="" (
     echo 错误: 无法解析 Java 版本
+    echo 请下载 Java 22+: https://adoptium.net/
     exit /b 1
 )
 if %JAVA_MAJOR% LSS 22 (
     echo 错误: 当前 Java 版本为 %JAVA_MAJOR%，要求 22 或更高
+    echo 请下载 Java 22+: https://adoptium.net/
     exit /b 1
 )
 
-REM 3. 创建数据目录
+REM 3. 检查 JAR 文件
+if not exist "%JAR_FILE%" (
+    echo 错误: 未找到 %JAR_FILE%
+    echo 请先构建项目: mvn clean package -DskipTests
+    exit /b 1
+)
+
+REM 4. 创建数据目录
 if not exist "%USERPROFILE%\.zhiwei" mkdir "%USERPROFILE%\.zhiwei"
 
-REM 4. 计算 JVM 内存参数（系统内存 50%，上限 2048MB）
+REM 5. 计算 JVM 内存参数（系统内存 50%，上限 2048MB）
 set "XMX=512"
 for /f "tokens=2 delims==" %%m in ('wmic OS get TotalVisibleMemorySize /value ^| findstr "="') do set "TOTAL_MEM_KB=%%m"
 if not "%TOTAL_MEM_KB%"=="" (
@@ -33,8 +45,19 @@ if not "%TOTAL_MEM_KB%"=="" (
     if %XMX% GTR 2048 set XMX=2048
 )
 
-echo 使用 JVM 最大内存: %XMX%m
+REM 6. 读取自定义端口
+if "%ZHIWEI_PORT%"=="" set "ZHIWEI_PORT=8080"
+set "PORT=%ZHIWEI_PORT%"
 
-REM 5. 启动应用
-java -Xmx%XMX%m -jar "%~dp0zhiwei.jar"
+REM 7. 输出启动信息
+echo ======================================
+echo   ZhiWei（知微）v%VERSION%
+echo   见微知著，你的 AI 伙伴
+echo ======================================
+echo   访问地址: http://localhost:%PORT%
+echo   数据目录: %USERPROFILE%\.zhiwei\
+echo   JVM 内存: %XMX%m
+echo ======================================
 
+REM 8. 启动应用
+java -Xmx%XMX%m -jar "%JAR_FILE%" --server.port=%PORT%

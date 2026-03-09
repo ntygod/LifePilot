@@ -5,18 +5,20 @@ import com.lifepilot.llm.LlmUnavailableException;
 import com.lifepilot.skill.model.SkillDefinition;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.lang.Nullable;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Skill 语义搜索索引 — 基于 Embedding 向量的语义匹配。
  *
  * <p>使用 {@link ConcurrentHashMap} 缓存每个 Skill 的 Embedding 向量，
- * 通过余弦相似度进行语义搜索。LLM 不可用时降级跳过索引，
- * Skill 仍可通过 ID 精确查找。</p>
+ * 通过余弦相似度进行语义搜索。LLM 不可用时降级为关键词匹配模式，
+ * 基于 Skill 名称和描述进行简单文本匹配。</p>
  *
  * @author zsg
  * @since 2026-07-28
@@ -26,9 +28,12 @@ public class SkillSearchIndex {
     private static final Logger log = LoggerFactory.getLogger(SkillSearchIndex.class);
 
     private final ConcurrentHashMap<String, float[]> embeddings = new ConcurrentHashMap<>();
+    /** 关键词降级模式使用：缓存每个 Skill 的名称+描述文本（小写） */
+    private final ConcurrentHashMap<String, String> skillTexts = new ConcurrentHashMap<>();
+    @Nullable
     private final LlmRouter llmRouter;
 
-    public SkillSearchIndex(LlmRouter llmRouter) {
+    public SkillSearchIndex(@Nullable LlmRouter llmRouter) {
         this.llmRouter = llmRouter;
     }
 
@@ -36,50 +41,71 @@ public class SkillSearchIndex {
      * 为 Skill 生成 Embedding 并缓存。
      *
      * <p>使用 Skill 的 name + description 生成 Embedding 向量。
-     * LLM 不可用时记录 WARN 日志并跳过索引。</p>
+     * LLM 不可用时降级为缓存文本用于关键词匹配。</p>
      *
      * @param definition Skill 定义
      */
     public void index(SkillDefinition definition) {
         String text = definition.name() + " " + definition.description();
+        // 始终缓存文本，供关键词降级模式使用
+        skillTexts.put(definition.id(), text.toLowerCase(Locale.ROOT));
+
+        if (llmRouter == null) {
+            log.debug("Skill 关键词索引成功（降级模式）: skillId={}", definition.id());
+            return;
+        }
         try {
             float[] vector = llmRouter.embed(text);
             embeddings.put(definition.id(), vector);
             log.debug("Skill Embedding 索引成功: skillId={}", definition.id());
         } catch (LlmUnavailableException e) {
-            log.warn("Embedding 生成失败，跳过索引: skillId={}, 原因={}", definition.id(), e.getMessage());
+            log.warn("Embedding 生成失败，降级为关键词索引: skillId={}, 原因={}", definition.id(), e.getMessage());
         }
     }
 
     /**
-     * 移除 Embedding 缓存。
+     * 移除索引缓存。
      *
      * @param skillId Skill ID
      */
     public void remove(String skillId) {
         embeddings.remove(skillId);
-        log.debug("Skill Embedding 索引已移除: skillId={}", skillId);
+        skillTexts.remove(skillId);
+        log.debug("Skill 索引已移除: skillId={}", skillId);
     }
 
     /**
-     * 语义搜索，返回相似度 &gt; 0.5 的 Top-K 结果。
+     * 搜索 Skill，返回 Top-K 结果。
      *
-     * <p>将查询文本转换为 Embedding 向量，计算与所有缓存向量的余弦相似度，
-     * 过滤相似度大于 0.5 的结果，按相似度降序排列，限制返回数量为 topK。</p>
-     *
-     * <p>LLM 不可用时返回空列表并记录 WARN 日志。</p>
+     * <p>当 LlmRouter 可用时，使用向量语义搜索（余弦相似度 &gt; 0.5）。
+     * 当 LlmRouter 不可用时，降级为关键词匹配模式，基于查询词在
+     * Skill 名称和描述中的命中率计算相关度。</p>
      *
      * @param query 查询文本
      * @param topK  最大返回数量
-     * @return 搜索结果列表，按相似度降序排列
+     * @return 搜索结果列表，按相关度降序排列
      */
     public List<SearchResult> search(String query, int topK) {
+        if (llmRouter == null) {
+            return keywordSearch(query, topK);
+        }
+        return vectorSearch(query, topK);
+    }
+
+    /**
+     * 向量语义搜索（LlmRouter 可用时使用）。
+     */
+    private List<SearchResult> vectorSearch(String query, int topK) {
+        LlmRouter router = this.llmRouter;
+        if (router == null) {
+            return keywordSearch(query, topK);
+        }
         float[] queryVector;
         try {
-            queryVector = llmRouter.embed(query);
+            queryVector = router.embed(query);
         } catch (LlmUnavailableException e) {
-            log.warn("查询 Embedding 生成失败，返回空结果: query={}, 原因={}", query, e.getMessage());
-            return List.of();
+            log.warn("查询 Embedding 生成失败，降级为关键词搜索: query={}, 原因={}", query, e.getMessage());
+            return keywordSearch(query, topK);
         }
 
         List<SearchResult> results = new ArrayList<>();
@@ -87,6 +113,41 @@ public class SkillSearchIndex {
             double similarity = cosineSimilarity(queryVector, vector);
             if (similarity > 0.5) {
                 results.add(new SearchResult(skillId, similarity));
+            }
+        });
+
+        results.sort(Comparator.comparingDouble(SearchResult::similarity).reversed());
+
+        if (results.size() > topK) {
+            return List.copyOf(results.subList(0, topK));
+        }
+        return List.copyOf(results);
+    }
+
+    /**
+     * 关键词匹配搜索（降级模式）。
+     *
+     * <p>将查询文本按空格分词，计算每个 Skill 文本中命中的关键词比例作为相关度。
+     * 过滤相关度 &gt; 0 的结果，按相关度降序排列。</p>
+     */
+    private List<SearchResult> keywordSearch(String query, int topK) {
+        if (query == null || query.isBlank()) {
+            return List.of();
+        }
+        String lowerQuery = query.toLowerCase(Locale.ROOT);
+        String[] keywords = lowerQuery.split("\\s+");
+
+        List<SearchResult> results = new ArrayList<>();
+        skillTexts.forEach((skillId, text) -> {
+            int hits = 0;
+            for (String keyword : keywords) {
+                if (!keyword.isBlank() && text.contains(keyword)) {
+                    hits++;
+                }
+            }
+            if (hits > 0) {
+                double relevance = (double) hits / keywords.length;
+                results.add(new SearchResult(skillId, relevance));
             }
         });
 

@@ -33,6 +33,8 @@ lifepilot:
   prompt:
     base-path: "classpath:prompts/"
   agent:
+    # ===== Agent 引擎配置 =====
+    # AgentLoop 核心控制循环，依赖 LLM Router；LLM 未配置时 AgentLoop 不创建，Web UI 仍可访问
     enabled: true
     debug:
       # 打印每次调用 LLM 时发送的完整提示词（可能包含隐私/密钥），仅建议本地/受控环境开启
@@ -110,9 +112,11 @@ lifepilot:
       ttl-minutes: 60
       max-history-length: 50
   llm:
+    # ===== LLM 路由配置 =====
+    # Provider 配置已迁移到数据库（llm_providers 表），通过 Web UI 设置页面管理
+    # 首次启动后请访问 Web UI 配置至少一个 LLM 服务商（如 DeepSeek、OpenAI、Ollama 等）
+    # 如果未配置任何 Provider，系统仍可启动，但对话功能不可用
     enabled: true
-    # LLM Provider 配置已迁移到数据库（llm_providers 表）
-    # 通过 Web UI 的设置页面或 REST API 进行管理
     circuit-breaker:
       failure-threshold: 3
       reset-timeout-seconds: 60
@@ -137,6 +141,9 @@ lifepilot:
       retry-multiplier: 2.0
       retry-max-delay-ms: 5000
   memory:
+    # ===== 记忆系统配置 =====
+    # 四层认知记忆：L1 工作记忆 + L2 情景记忆 + L3 语义记忆 + L4 程序记忆
+    # L1/L2 不依赖 LLM，L3/L4 依赖 Embedding（LLM 不可用时自动降级）
     enabled: true
     working-memory-token-budget: 8000
     idle-session-timeout-minutes: 30
@@ -200,6 +207,9 @@ lifepilot:
     extraction:
       timeout-seconds: 60
   skills:
+    # ===== Skill 系统配置 =====
+    # 支持 Java 原生 Skill、Markdown 声明式 Skill、MCP 外部工具
+    # LLM 不可用时 Skill 搜索降级为关键词匹配模式
     enabled: true
     max-concurrent-activations: 5
     directory: "${user.home}/.zhiwei/skills"
@@ -296,6 +306,9 @@ lifepilot:
   datasource:
     busy-timeout: 5000
   gateway:
+    # ===== Gateway 中间件管道配置 =====
+    # 6 层中间件：Auth → RateLimit → Security → Router → Execution → Audit
+    # Channel 适配器（企微/钉钉/飞书）需自行申请对应平台开发者凭证
     enabled: true
     middleware:
       auth:
@@ -393,8 +406,11 @@ lifepilot:
       timeout: 300000
       heartbeat-interval: 30000
     cors:
+      # CORS 跨域配置：开发环境（5173）和 Docker 部署（80/同源）
       allowed-origins:
         - "http://localhost:5173"
+        - "http://localhost:80"
+        - "http://localhost"
       allow-credentials: true
   media:
     image:

@@ -130,10 +130,11 @@ public class AgentAutoConfiguration {
      */
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnBean(LlmRouter.class)
     public AgentLoop agentLoop(StateReducer stateReducer,
                                ContextAssembler contextAssembler,
                                LlmRouter llmRouter,
-                               MultimodalRouter multimodalRouter,
+                               @Autowired(required = false) MultimodalRouter multimodalRouter,
                                ObjectMapper objectMapper,
                                SessionManager sessionManager,
                                @Autowired(required = false) ConversationViewService conversationViewService,
@@ -149,11 +150,12 @@ public class AgentAutoConfiguration {
                                @Autowired(required = false) RealtimeExtractor realtimeExtractor,
                                PromptRegistry promptRegistry,
                                @Autowired(required = false) MediaDataExtractor mediaDataExtractor) {
-        log.info("Agent 引擎初始化完成（追踪{}，记忆系统{}，情景记忆{}，实时提取{}）",
+        log.info("Agent 引擎初始化完成（追踪{}，记忆系统{}，情景记忆{}，实时提取{}，多模态{}）",
                 traceRecorder != null ? "已启用" : "未启用",
                 workingMemory != null ? "已启用" : "未启用",
                 episodicMemory != null ? "已启用" : "未启用",
-                realtimeExtractor != null ? "已启用" : "未启用");
+                realtimeExtractor != null ? "已启用" : "未启用",
+                multimodalRouter != null ? "已启用" : "未启用（纯文本模式）");
         return new AgentLoop(stateReducer, contextAssembler, llmRouter, multimodalRouter,
                 traceRecorder, objectMapper, sessionManager, conversationViewService, actionParser, agentToolProvider,
                 config, workingMemory, conversationHistoryStore, sessionKnowledgeBaseRepository,

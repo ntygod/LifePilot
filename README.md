@@ -1,347 +1,321 @@
-# ZhiWei
+# ZhiWei（知微）
 
-> **见微知著，你的 AI 伙伴**
+> 见微知著，你的 AI 伙伴
 
-[![Java](https://img.shields.io/badge/Java-22-orange.svg)](https://www.oracle.com/java/)
+[![Java](https://img.shields.io/badge/Java-22-orange.svg)](https://adoptium.net/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.3-brightgreen.svg)](https://spring.io/projects/spring-boot)
 [![Spring AI](https://img.shields.io/badge/Spring%20AI-1.1.2-blue.svg)](https://spring.io/projects/spring-ai)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**ZhiWei** 是一个本地运行的个人 AI Agent 助手，核心定位为"见微知著，你的 AI 伙伴"。它不只是被动执行用户命令，而是具备**主动智能能力**——观察用户的行为模式，主动提供建议和帮助。
+ZhiWei 是一个本地运行的个人 AI Agent 助手。它不只是被动执行用户命令，而是具备主动智能能力——观察用户的行为模式，主动提供建议和帮助。所有数据存储在本地，隐私完全由你掌控。
 
 ## ✨ 核心特性
 
 ### 🧠 四层认知记忆系统
-- **工作记忆**：当前对话上下文
-- **情景记忆**：历史对话和事件
-- **语义记忆**：提取的知识和概念
-- **程序记忆**：学习到的技能和流程
-- **时序知识图谱**：实体和关系带时间维度，支持时间旅行查询
+- L1 工作记忆（当前对话上下文）+ L2 情景记忆（历史对话和事件）
+- L3 语义记忆（知识和概念提取）+ L4 程序记忆（学习到的技能和流程）
+- 时序知识图谱：实体和关系带时间维度，支持时间旅行查询
+- 记忆巩固管线（情景→语义 / 情景→程序）+ MaRS 认知遗忘策略
 
-### 🎯 Agent Skills 技能系统
-- **统一架构**：Java 原生、YAML 声明式、MCP 外部工具三层混合
-- **Skill 自扩展**：Agent 运行时自动创建 YAML Skill
-- **零代码开发**：通过 YAML 文件定义技能，无需编程
-- **运行时热加载**：修改 YAML 文件即时生效
+### 🤖 Agent 引擎
+- AgentLoop 控制循环 + StateReducer 纯函数状态转换
+- ContextAssembler 上下文组装（记忆检索 + 对话压缩 + Token 预算动态分配）
+- 主动推理引擎：两阶段推理（规则快速过滤 + LLM 精细判断）+ 智能降频
 
-### 🔀 多 LLM 服务商支持
-- **智能路由**：根据场景自动选择最佳模型
-- **故障转移**：自动切换到备用服务商
-- **熔断保护**：防止服务异常影响系统稳定性
-- **支持模型**：Ollama（本地）、DeepSeek、百度文心、通义千问、智谱 GLM 等
+### 🔀 多 LLM 智能路由
+- 场景路由：根据任务类型自动选择最佳模型
+- 熔断器 + 故障转移 + 语义缓存
+- 支持 DeepSeek / OpenAI / 通义千问 / Ollama（本地）等多家服务商
+- LLM 服务商通过 Web UI 管理，运行时动态配置
+
+### 🎯 Skill 技能系统
+- 三层混合架构：Java 原生 Skill + YAML 声明式 Skill + MCP 外部工具
+- Skill 自扩展：Agent 运行时自动检测能力缺口，生成 YAML Skill
+- YAML Skill 运行时热加载，修改即时生效
+- 内置 Skill：待办管理 / 日程管理 / 习惯追踪 / 记忆查询
+
+### 📚 知识库管理
+- 多格式文档解析（PDF / Word / Markdown / TXT）
+- 多分块策略（固定大小 / 语义 / 标题）
+- 混合检索（向量 + FTS5 全文 + 知识图谱遍历）+ 可选 Reranker 精排
 
 ### 🔌 MCP 协议支持
-- **标准协议**：支持 Model Context Protocol (MCP)
-- **双向桥接**：内置工具可暴露为 MCP Tool
-- **生态丰富**：接入 filesystem、browser、github 等 MCP Server
+- 完整的 MCP Client + Server 实现
+- 双向桥接：内置工具可暴露为 MCP Tool
+- 接入 filesystem、browser、github 等 MCP Server
 
-### 🔮 主动推理引擎
-- **智能提醒**：在合适的时机主动提供建议
-- **降频机制**：避免过度打扰用户
-- **两阶段推理**：规则引擎快速过滤 + LLM 精细判断
+### 🤝 多 Agent 协作
+- AgentRegistry + AgentDefinition 注册管理
+- HandoffTool 委托工具模式，SubAgent 独立预算和上下文
+- 预设专家 Agent（写作 / 分析 / 调研）
 
-### 🔍 Trace 级可观测性
-- **完整追踪**：每个决策都可追溯和回放
-- **护栏引擎**：自动检测和阻止高风险操作
-- **数据脱敏**：敏感信息自动脱敏保护隐私
+### 🔄 工作流引擎
+- YAML 声明式工作流定义
+- 多种触发器：Cron / Event / Condition / Signal
+- 工作流状态持久化 + 崩溃恢复
+
+### 🌐 Gateway 中间件
+- 6 层中间件管道（Auth → RateLimit → Security → Router → Execution → Audit）
+- Channel 适配器：企业微信 / 钉钉 / 飞书 / Telegram
+
+### 🎨 多模态能力
+- 图片 / 文档 / 音频 / 视频处理
+- MultimodalRouter 自动路由到支持多模态的 LLM
+
+### 🛡️ 代码执行沙箱
+- Process / Docker 双模式沙箱
+- CodeValidator 危险操作预检 + 护栏集成
+
+### 🔍 可观测性
+- Trace 级完整追踪，每个决策可追溯和回放
+- 护栏引擎：自动检测和阻止高风险操作
+- DataRedactor 敏感信息自动脱敏
+- Agentic Evals 评估框架：五维规则评估 + LLM-as-a-Judge
+
+### 🔗 协议支持
+- A2A 协议：Agent Card 能力声明 + 跨系统 Agent 互操作
+- 插件市场：Skill / Agent / Workflow 发布与安装
+
+### 🔄 外部数据源同步
+- CalDAV / Todoist / 滴答清单 / Obsidian 连接器
+- 冲突解决策略（Last-Write-Wins / 用户确认）
+
+### 🖥️ Web UI
+- Vue 3 SPA，27 个页面视图
+- SSE 流式对话 + A2UI Generative UI 渲染
 
 ### 🏠 本地优先架构
-- **隐私保护**：所有数据存储在本地 `~/.zhiwei/`
-- **零外部依赖**：SQLite + sqlite-vec，无需额外服务
-- **完全掌控**：你完全掌控自己的数据
+- 所有数据存储在本地 `~/.zhiwei/`
+- SQLite + sqlite-vec，零外部服务依赖
+- 单 JAR 部署，开箱即用
+
+## 📸 界面预览
+
+<!-- TODO: 添加实际截图 -->
+> 截图待补充
 
 ## 🚀 快速开始
 
-### 前置条件
-
-- **Java 22+**（必需）
-- **Maven 3.9.x**（必需）
-- 至少一个 LLM 服务商的 API Key，或本地安装 [Ollama](https://ollama.ai)
-
-### 安装步骤
-
-1. **克隆项目**
-```bash
-git clone https://github.com/your-username/lifepilot.git
-cd lifepilot
-```
-
-2. **配置 LLM 服务商**
-
-编辑 `src/main/resources/application.yml`，配置至少一个 LLM 服务商：
-
-```yaml
-lifepilot:
-  llm:
-    providers:
-      - id: deepseek-main
-        type: deepseek
-        api-url: https://api.deepseek.com/v1
-        api-key: ${DEEPSEEK_API_KEY}
-        model-name: deepseek-chat
-        priority: 1
-```
-
-3. **设置环境变量**
+### 方式一：Docker Compose（推荐）
 
 ```bash
-# Linux / macOS
-export DEEPSEEK_API_KEY=your-api-key
+git clone https://github.com/your-username/zhiwei.git
+cd zhiwei
 
-# Windows (PowerShell)
-$env:DEEPSEEK_API_KEY="your-api-key"
+# 配置环境变量（至少填入一个 LLM API Key）
+cp .env.example .env
+# 编辑 .env，填入 DEEPSEEK_API_KEY 或 OPENAI_API_KEY
+
+# 启动
+docker compose up -d
+
+# 访问 http://localhost
 ```
 
-4. **启动应用**
+### 方式二：JAR 包手动启动
+
+前置条件：Java 22+（[下载地址](https://adoptium.net/)）
 
 ```bash
-# 使用 Maven
-mvn spring-boot:run
+git clone https://github.com/your-username/zhiwei.git
+cd zhiwei
 
-# 或构建后运行
-mvn clean package
-java -jar target/zhiwei-0.2.0-SNAPSHOT.jar
+# 1. 构建后端
+mvn clean package -DskipTests
+
+# 2. 启动后端
+./start.sh          # Linux / macOS
+start.bat           # Windows
+# 后端默认监听 8080 端口，可通过 ZHIWEI_PORT 环境变量自定义
+
+# 3. 构建并启动前端
+cd zhiwei-web
+npm install
+npm run dev
+# 访问 http://localhost:5173
 ```
 
 ### 首次使用
 
-启动后，你可以通过以下方式与 ZhiWei 交互：
+1. 启动后访问 Web UI
+2. 进入「设置 → 模型管理」页面，配置至少一个 LLM 服务商
+3. 回到对话页面，开始与 ZhiWei 交互
 
-1. **CLI 模式**（默认）
-```bash
-java -jar zhiwei.jar --mode cli
-```
-
-2. **Web UI 模式**
-```bash
-java -jar zhiwei.jar --mode web
-# 访问 http://localhost:8080
-```
-
-3. **系统托盘模式**
-```bash
-java -jar zhiwei.jar --mode tray
-```
-
-### 使用示例
-
-```
-你：你好，我是小明
-ZhiWei：你好小明！很高兴认识你。我是 ZhiWei，你的 AI 伙伴。
-         有什么我可以帮你的吗？
-
-你：帮我创建一个明天下午3点的会议，和产品团队讨论Q2规划
-ZhiWei：✅ 已创建日程「产品团队Q2规划讨论」
-         📅 明天 15:00-16:00
-         🔔 明天 14:45 会提醒你
-
-你：再帮我加个待办，会前准备Q1数据汇总
-ZhiWei：✅ 已创建待办「准备Q1数据汇总」
-         🔴 优先级：高
-         ⏰ 截止时间：明天 14:30（会议前 30 分钟）
-
-你：看看我今天的安排
-ZhiWei：📊 今日概览：
-         📅 日程：2 项
-           09:00 团队周会
-           14:00 客户回访
-         📋 待办：4 项未完成（1 项高优先级）
-         🎯 习惯：晨跑待打卡
-```
+> LLM 服务商配置已迁移到数据库，通过 Web UI 管理，无需手动编辑 application.yml。
+> 环境变量（如 `DEEPSEEK_API_KEY`）仅用于 Docker 部署时的初始化注入。
 
 ## 📋 配置说明
 
-### 基础配置
-
-在 `src/main/resources/application.yml` 中配置：
-
-```yaml
-lifepilot:
-  # 数据存储路径（默认 ~/.zhiwei/）
-  data-dir: ~/.zhiwei
-
-  # LLM 服务商配置
-  llm:
-    providers:
-      - id: deepseek-main
-        type: deepseek
-        api-url: https://api.deepseek.com/v1
-        api-key: ${DEEPSEEK_API_KEY}
-        model-name: deepseek-chat
-        timeout-seconds: 30
-        priority: 1
-        scenes: [intent_understanding, task_planning, chat]
-
-  # MCP Server 配置
-  mcp:
-    servers:
-      - name: filesystem
-        command: npx
-        args: ["-y", "@modelcontextprotocol/server-filesystem", "/home/user/documents"]
-        transport: stdio
-
-  # Skill 配置
-  skills:
-    user-skills-dir: ~/.zhiwei/skills
-    auto-generated-require-confirmation: true
-    max-activation-depth: 2
-```
-
 ### 环境变量
 
-敏感信息（API 密钥等）建议通过环境变量配置：
+敏感信息通过环境变量注入，不要硬编码在配置文件中：
 
 ```bash
-# LLM 服务商密钥
-export DEEPSEEK_API_KEY=your-deepseek-api-key
-export WENXIN_API_KEY=your-wenxin-api-key
-export QWEN_API_KEY=your-qwen-api-key
-export GLM_API_KEY=your-glm-api-key
+# LLM 服务商 API Key（至少配置一个）
+export DEEPSEEK_API_KEY=your-key
+export OPENAI_API_KEY=your-key
+export QWEN_API_KEY=your-key
+
+# 可选
+export SEARCH_API_KEY=your-key
+export RERANKER_API_KEY=your-key
 ```
 
-> ⚠️ **安全提示**：不要将 API 密钥直接写在 `application.yml` 中，也不要提交到版本控制系统。
+### 自定义端口
+
+```bash
+# 后端端口（默认 8080）
+export ZHIWEI_PORT=9090
+
+# Docker 部署时前端端口（默认 80）
+export ZHIWEI_WEB_PORT=3000
+```
+
+### Docker 部署配置
+
+Docker Compose 使用 `.env` 文件管理环境变量，参考 `.env.example` 模板。
+
+后端 JVM 参数可通过 `JAVA_OPTS` 环境变量覆盖（默认 `-Xmx512m -Xms256m -XX:+UseG1GC`）。
 
 ## 🛠️ 技术栈
 
-| 层级 | 技术选型 | 版本 | 说明 |
-|------|---------|------|------|
-| **语言** | Java | 22 | Record/Sealed/Pattern Matching/Virtual Thread |
-| **框架** | Spring Boot | 3.5.x | Web 框架、自动配置、Actuator |
-| **AI 集成** | Spring AI | 1.1.2 | AI 原生集成、Advisor 模式、MCP 支持 |
-| **构建工具** | Maven | 3.9.x | 标准化依赖管理 |
-| **数据库** | SQLite | 3.51+ | 零运维、本地优先、WAL 模式 |
-| **向量存储** | sqlite-vec | 0.1.x | SQLite 原生扩展、无额外进程 |
-| **CLI** | JLine 3 | 3.28+ | 补全、高亮、历史记录 |
-| **前端** | Vue 3 + Vite | 3.5 / 6.x | 轻量 SPA、响应式 |
-| **状态管理** | Pinia | 3.x | Vue 3 状态管理 |
-| **测试** | JUnit 5 + jqwik | 5.11+ / 1.9.x | 单元测试 + 属性测试 |
+| 层级 | 技术 | 版本 | 说明 |
+|------|------|------|------|
+| 语言 | Java | 22 | Record / Sealed / Pattern Matching / Virtual Thread |
+| 框架 | Spring Boot | 3.5.3 | Web、自动配置、Actuator |
+| AI 集成 | Spring AI | 1.1.2 | Advisor 模式、MCP 支持、结构化输出 |
+| 构建 | Maven | 3.9.x | 依赖管理 |
+| 数据库 | SQLite | 3.49+ | WAL 模式、FTS5 全文索引 |
+| 向量存储 | sqlite-vec | 0.1.x | SQLite 原生向量扩展 |
+| 数据库迁移 | Flyway | 10.x | 版本化 Schema 管理 |
+| 前端 | Vue 3 + Vite | 3.5 / 6.x | TypeScript SPA |
+| 状态管理 | Pinia | 3.x | Vue 3 状态管理 |
+| UI 组件 | Reka UI + Tailwind CSS | 2.x / 4.x | 无头组件 + 原子化 CSS |
+| 图表 | ECharts + vue-echarts | 6.x / 8.x | 数据可视化 |
+| 测试 | JUnit 5 + jqwik | 5.11+ / 1.9.x | 单元测试 + 属性测试 |
+| 前端测试 | Vitest + fast-check | 3.x / 4.x | 前端单元测试 + 属性测试 |
 
 ## 📁 项目结构
 
 ```
 zhiwei/
-├── src/
-│   ├── main/
-│   │   ├── java/com/lifepilot/
-│   │   │   ├── agent/          # Agent 引擎
-│   │   │   ├── memory/         # 记忆系统
-│   │   │   ├── llm/            # LLM 路由
-│   │   │   ├── skill/          # 技能插件
-│   │   │   ├── mcp/            # MCP 协议
-│   │   │   ├── interaction/    # 交互层（CLI/Web/Tray）
-│   │   │   ├── knowledge/      # 知识库
-│   │   │   ├── observability/  # 可观测性
-│   │   │   └── workflow/       # 工作流引擎
-│   │   └── resources/
-│   │       ├── application.yml # 配置文件
-│   │       └── db/migration/   # 数据库迁移脚本
-│   └── test/                   # 测试代码
-├── zhiwei-web/              # 前端项目
-│   ├── src/
-│   │   ├── components/         # Vue 组件
-│   │   ├── views/              # 页面视图
-│   │   ├── stores/             # Pinia 状态管理
-│   │   └── router/             # 路由配置
-│   └── package.json
-├── docs/                       # 文档目录
-│   ├── ARCHITECTURE.md         # 架构设计文档
-│   ├── FEATURES.md             # 功能说明文档
-│   ├── ROADMAP.md              # 路线图
-│   ├── architecture/           # 架构详细设计
-│   └── features/               # 功能详细说明
-├── pom.xml                     # Maven 配置
-└── README.md                   # 本文件
+├── src/main/java/com/lifepilot/
+│   ├── a2a/             # A2A 协议（Agent-to-Agent 互操作）
+│   ├── agent/           # Agent 引擎（AgentLoop / StateReducer / ContextAssembler）
+│   ├── config/          # 全局配置
+│   ├── conversation/    # 对话管理
+│   ├── eval/            # Agentic Evals 评估框架
+│   ├── guardrail/       # 护栏引擎（风险检测 / 数据脱敏）
+│   ├── interaction/     # 交互层（Web / CLI）
+│   ├── knowledge/       # 知识库管理（文档解析 / 分块 / 检索）
+│   ├── llm/             # LLM 路由（多服务商 / 熔断 / 故障转移）
+│   ├── marketplace/     # 插件市场
+│   ├── mcp/             # MCP 协议（Client / Server / 桥接）
+│   ├── media/           # 多模态处理
+│   ├── memory/          # 四层记忆系统 + 知识图谱
+│   ├── meta/            # 元能力（主动推理 / 信号采集）
+│   ├── multiagent/      # 多 Agent 协作
+│   ├── observability/   # 可观测性（Trace / 评估）
+│   ├── prompt/          # Prompt 管理
+│   ├── sandbox/         # 代码执行沙箱
+│   ├── skill/           # Skill 系统（注册 / 搜索 / 自扩展）
+│   ├── sync/            # 外部数据源同步
+│   ├── tool/            # 工具系统（ToolContract / DynamicToolRegistry）
+│   └── workflow/        # 工作流引擎
+├── src/main/resources/
+│   ├── application.yml          # 主配置
+│   ├── application-docker.yml   # Docker 环境配置
+│   └── db/migration/            # Flyway 迁移脚本
+├── zhiwei-web/                  # 前端项目（Vue 3 + Vite + Pinia）
+│   ├── src/views/               # 27 个页面视图
+│   ├── src/components/          # Vue 组件
+│   ├── src/stores/              # Pinia 状态管理
+│   └── Dockerfile               # 前端 Docker 构建（Nginx）
+├── docker-compose.yml           # Docker Compose 编排
+├── Dockerfile                   # 后端 Docker 构建（多阶段）
+├── start.sh / start.bat         # 一键启动脚本
+├── .env.example                 # 环境变量模板
+└── docs/                        # 项目文档
 ```
 
-## 🎯 核心能力
+## ⚠️ 已知限制
 
-### 内置 Skills
+- 需要配置至少一个 LLM 服务商（DeepSeek / OpenAI / Ollama 等）才能使用对话功能
+- 单用户设计，不支持多用户账户和权限隔离
+- SQLite 存储，适合个人使用场景，不支持集群部署
+- 详细限制说明请参阅 [已知限制文档](docs/KNOWN-LIMITATIONS.md)
 
-- **📋 待办管理**：创建、查询、完成待办事项
-- **📅 日程管理**：安排会议、设置提醒
-- **🎯 习惯追踪**：记录和追踪日常习惯
-- **📚 知识库管理**：文档解析、知识提取、智能检索
-- **🔍 记忆查询**：查询历史对话和知识
+## 🗺️ 后续计划
 
-### 扩展能力
+### 短期目标
+- Web UI 功能页面完善（知识库管理、Skill/MCP 管理、轨迹回放、工作流管理等页面）
+- 性能优化：引入缓存机制减少 Token 消耗，缩短首字响应时间
 
-- **YAML Skill**：通过 YAML 文件定义新技能
-- **MCP 工具**：接入 MCP Server 扩展能力
-- **Java 插件**：开发原生 Java 插件
-
-## 📚 文档
-
-- [架构设计文档](docs/ARCHITECTURE.md) - 详细的系统架构设计
-- [功能说明文档](docs/FEATURES.md) - 完整的功能特性说明
-- [开发路线图](docs/ROADMAP.md) - 未来功能规划
-- [Skill 开发指南](docs/features/skill-development.md) - 如何开发自定义 Skill
+### 中长期目标
+- Agentic GraphRAG：用图检索 Skill 替代 SQL CTE 穷举遍历，提升知识图谱查询效率
+- Idle-Driven 记忆巩固：空闲事件驱动替代定时触发，更智能的记忆管理
+- GraalVM native image：探索原生编译，消除 Java 运行时依赖
+- docs 目录下的架构文档和特性文档全面整理更新
 
 ## 🧪 开发指南
 
 ### 本地开发
 
-1. **克隆项目**
 ```bash
-git clone https://github.com/your-username/lifepilot.git
-cd lifepilot
-```
+# 克隆项目
+git clone https://github.com/your-username/zhiwei.git
+cd zhiwei
 
-2. **安装依赖**
-```bash
-# 后端依赖（Maven 自动下载）
-mvn clean install
+# 后端（Maven 自动下载依赖）
+mvn clean install -DskipTests
 
-# 前端依赖
+# 前端
 cd zhiwei-web
 npm install
+
+# 启动后端开发服务器
+mvn spring-boot:run
+
+# 启动前端开发服务器（新终端）
+cd zhiwei-web
+npm run dev
 ```
 
-3. **运行测试**
+### 运行测试
+
 ```bash
 # 后端测试
 mvn test
 
 # 前端测试
 cd zhiwei-web
-npm test
-```
-
-4. **启动开发服务器**
-```bash
-# 后端
-mvn spring-boot:run
-
-# 前端（新终端）
-cd zhiwei-web
-npm run dev
+npm run test:run
 ```
 
 ### 构建发布
 
 ```bash
-# 构建后端 JAR
-mvn clean package
+# 构建后端 JAR（产出 target/zhiwei.jar）
+mvn clean package -DskipTests
 
-# 构建前端
+# 构建前端（产出 zhiwei-web/dist/）
 cd zhiwei-web
 npm run build
 ```
 
 ## 🤝 贡献指南
 
-我们欢迎所有形式的贡献！请遵循以下步骤：
-
 1. Fork 本仓库
-2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
+2. 创建特性分支 (`git checkout -b feature/your-feature`)
+3. 提交更改 (`git commit -m 'feat: 添加某功能'`)
+4. 推送到分支 (`git push origin feature/your-feature`)
 5. 开启 Pull Request
 
 ### 代码规范
 
-- 遵循 Java 编码规范
-- 使用 Lombok 减少样板代码
-- 编写单元测试覆盖核心逻辑
+- Java 22 特性优先：Record、Sealed Class、Pattern Matching、Virtual Thread
+- 中文注释、中文日志、中文测试方法名
+- 提交消息格式：`<type>(<scope>): <中文描述>`
 - 提交前运行 `mvn clean test` 确保测试通过
 
 ## 📄 许可证
@@ -350,18 +324,14 @@ npm run build
 
 ## 🙏 致谢
 
-- [Spring AI](https://spring.io/projects/spring-ai) - AI 原生集成框架
-- [OpenClaw](https://github.com/openclaw/openclaw) - 参考了部分架构设计
-- [AstrBot](https://github.com/astrbot/astrbot) - 参考了部分设计理念
-- [MCP](https://modelcontextprotocol.io/) - Model Context Protocol 标准
-
-## 📞 联系方式
-
-- **Issues**：[GitHub Issues](https://github.com/your-username/lifepilot/issues)
-- **讨论**：[GitHub Discussions](https://github.com/your-username/lifepilot/discussions)
+- [Spring AI](https://spring.io/projects/spring-ai) — AI 原生集成框架
+- [MCP](https://modelcontextprotocol.io/) — Model Context Protocol 标准
+- [A2A](https://google.github.io/A2A/) — Agent-to-Agent 协议
+- [OpenClaw](https://github.com/openclaw/openclaw) — 参考了部分架构设计
+- [AstrBot](https://github.com/astrbot/astrbot) — 参考了部分设计理念
 
 ---
 
-**ZhiWei** — 见微知著，你的 AI 伙伴
+ZhiWei（知微）— 见微知著，你的 AI 伙伴
 
 本地运行 · 隐私优先 · 越用越懂你
