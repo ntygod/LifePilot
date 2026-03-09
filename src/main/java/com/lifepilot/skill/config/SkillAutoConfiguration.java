@@ -35,6 +35,7 @@ import org.slf4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -174,10 +175,11 @@ public class SkillAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnBean({HybridRetriever.class, SemanticMemory.class})
     public MemorySkillProvider memorySkillProvider(HybridRetriever hybridRetriever,
                                                    SemanticMemory semanticMemory,
                                                    PromptRegistry promptRegistry) {
-        log.info("Skill 系统: 注册 MemorySkillProvider");
+        log.info("Skill 系统: 注册 MemorySkillProvider（记忆系统已就绪）");
         return new MemorySkillProvider(hybridRetriever, semanticMemory, promptRegistry);
     }
 
