@@ -21,6 +21,7 @@ import {
   Plus,
   Trash2,
 } from 'lucide-vue-next'
+import { stateConfig } from '@/constants/workflowState'
 
 const store = useWorkflowStore()
 const activeTab = ref<'detail' | 'executions'>('detail')
@@ -131,13 +132,9 @@ async function onWorkflowSaved(wf: WorkflowDetail) {
   showForm.value = false
 }
 
-const stateBadge: Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' | 'destructive' }> = {
-  PENDING: { label: '等待中', variant: 'secondary' },
-  RUNNING: { label: '运行中', variant: 'default' },
-  COMPLETED: { label: '已完成', variant: 'outline' },
-  FAILED: { label: '失败', variant: 'destructive' },
-  CANCELLED: { label: '已取消', variant: 'secondary' },
-}
+const stateBadge = Object.fromEntries(
+  Object.entries(stateConfig).map(([k, v]) => [k, { label: v.label, variant: v.badgeVariant }])
+) as Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' | 'destructive' }>
 
 function formatDuration(start?: string, end?: string): string {
   if (!start || !end) return '-'
@@ -385,8 +382,11 @@ function formatDuration(start?: string, end?: string): string {
                       >
                         {{ stateBadge[exec.state]?.label ?? exec.state }}
                       </Badge>
+                      <Badge v-if="exec.state === 'PAUSED'" variant="outline" class="border-amber-400 text-amber-700 text-xs">
+                        审批中
+                      </Badge>
                       <span class="text-sm text-muted-foreground">
-                        步骤: {{ exec.currentStepIndex + 1 }} / {{ store.current?.steps.length || '?' }}
+                        步骤: {{ (exec.completedStepIds?.length ?? 0) }} / {{ store.current?.steps.length || '?' }}
                       </span>
                       <span
                         v-if="exec.startedAt && exec.completedAt"
@@ -405,6 +405,7 @@ function formatDuration(start?: string, end?: string): string {
                     <ExecutionDetail
                       :execution="exec"
                       :total-steps="store.current?.steps.length ?? 0"
+                      :steps="store.current?.steps"
                     />
                   </div>
                 </Card>
