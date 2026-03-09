@@ -1,11 +1,11 @@
 spring:
   application:
-    name: lifepilot
+    name: zhiwei
   jackson:
     serialization:
       write-dates-as-timestamps: false
   datasource:
-    url: "jdbc:sqlite:${user.home}/.lifepilot/lifepilot.db?enable_load_extension=true"
+    url: "jdbc:sqlite:${user.home}/.zhiwei/zhiwei.db?enable_load_extension=true"
     driver-class-name: org.sqlite.JDBC
   flyway:
     enabled: true
@@ -81,7 +81,7 @@ lifepilot:
     multi-agent:
       enabled: true
       max-delegation-depth: 2
-      agent-definitions-path: "${user.home}/.lifepilot/agents/"
+      agent-definitions-path: "${user.home}/.zhiwei/agents/"
       register-handoff-tools: true
       hot-reload:
         enabled: true
@@ -96,7 +96,7 @@ lifepilot:
       enabled: true
       api-key: ${LIFEPILOT_A2A_API_KEY:}
       agent-name: ZhiWei
-      agent-description: 个人生活助手
+      agent-description: 个人助手
       agent-version: 1.0.0
       protocol-version: 0.2.5
       streaming-enabled: true
@@ -146,7 +146,7 @@ lifepilot:
     max-retention-days: 180
     embedding-dimensions: 1024
     semantic-match-threshold: 0.92
-    vector-db-url: "jdbc:sqlite:${user.home}/.lifepilot/vectors.db"
+    vector-db-url: "jdbc:sqlite:${user.home}/.zhiwei/vectors.db"
     token-budget:
       system-prompt-ratio: 0.10
       user-message-ratio: 0.15
@@ -199,7 +199,7 @@ lifepilot:
   skills:
     enabled: true
     max-concurrent-activations: 5
-    directory: "${user.home}/.lifepilot/skills"
+    directory: "${user.home}/.zhiwei/skills"
     hot-reload-debounce-ms: 500
     skill-filename: SKILL.md
     auto-generation:
@@ -225,7 +225,7 @@ lifepilot:
       default-top-k: 10
   knowledge:
     enabled: true
-    data-dir: "${user.home}/.lifepilot/data"
+    data-dir: "${user.home}/.zhiwei/data"
     max-file-size: 104857600
     chunking:
       default-strategy: smart
@@ -433,9 +433,9 @@ lifepilot:
         - "(?i)disregard\\s+(all\\s+)?(above|previous)"
         - "(?i)forget\\s+(all\\s+)?previous"
     install-dirs:
-      skills: "${user.home}/.lifepilot/skills"
-      agents: "${user.home}/.lifepilot/agents"
-      workflows: "${user.home}/.lifepilot/workflows"
+      skills: "${user.home}/.zhiwei/skills"
+      agents: "${user.home}/.zhiwei/agents"
+      workflows: "${user.home}/.zhiwei/workflows"
   mcp:
     enabled: true
     server:
@@ -453,7 +453,7 @@ lifepilot:
     # 最大循环迭代次数（LoopStep）
     max-loop-iterations: 100
     # 工作流 YAML 定义文件目录
-    definitions-dir: "${user.home}/.lifepilot/workflows"
+    definitions-dir: "${user.home}/.zhiwei/workflows"
     # 崩溃恢复开关
     crash-recovery-enabled: true
     # YAML 文件扫描间隔（秒）
@@ -510,7 +510,7 @@ lifepilot:
       # 是否启用网络
       network-enabled: false
       # 镜像前缀
-      image-prefix: "lifepilot/sandbox-"
+      image-prefix: "zhiwei/sandbox-"
   sync:
     # 同步模块总开关
     enabled: true
@@ -583,7 +583,7 @@ lifepilot:
       max-latency-samples: 1000
   eval:
     enabled: false
-    scenario-directory: "${user.home}/.lifepilot/eval/scenarios"
+    scenario-directory: "${user.home}/.zhiwei/eval/scenarios"
     default-pass-threshold: 0.7
     degradation-threshold: 0.1
     llm-judge:
