@@ -1,4 +1,4 @@
-package com.lifepilot.sync.connector.obsidian;
+﻿package com.lifepilot.sync.connector.obsidian;
 
 import org.junit.jupiter.api.Test;
 
@@ -304,7 +304,7 @@ class YamlFrontmatterParserTest {
         frontmatter.put("status", "PENDING");
         frontmatter.put("dueDate", "2026-03-01");
         frontmatter.put("tags", List.of("购物", "日常"));
-        frontmatter.put("lifepilot_id", "uuid-xxx");
+        frontmatter.put("zhiwei_id", "uuid-xxx");
         var body = "任务描述正文";
 
         var formatted = YamlFrontmatterParser.format(frontmatter, body);
