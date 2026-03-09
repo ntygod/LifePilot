@@ -81,8 +81,9 @@ public class ExecutionMiddleware implements GatewayMiddleware {
     }
 
     private GatewayResponse processSync(GatewayMessage message, MiddlewareChain chain) {
-        // 1. GatewayMessage → AgentRequest
+        // 1. GatewayMessage → AgentRequest，从 WebMetadata 提取会话级模型配置
         List<MediaContent> mediaContents = buildMediaContents(message);
+        String preferredProvider = extractPreferredProvider(message);
         var agentRequest = new AgentRequest(
                 message.contentAsText(),
                 message.sessionId(),
@@ -91,7 +92,7 @@ public class ExecutionMiddleware implements GatewayMiddleware {
                 null,
                 null,
                 0,
-                null,
+                preferredProvider,
                 null,
                 mediaContents
         );
@@ -173,11 +174,15 @@ public class ExecutionMiddleware implements GatewayMiddleware {
         // 4. 创建取消信号令牌，超时/断开时触发 cancel() 通知 coreLoop 停止
         var cancellationToken = new com.lifepilot.agent.CancellationToken();
 
-        // 5. 在后台异步执行 AgentLoop，并通过 SSE 发送事件
+        // 5. 注册取消信号令牌到 SseSessionManager，SSE 回调触发时自动传递取消信号
+        sseSessionManager.registerCancellationToken(streamId, cancellationToken);
+
+        // 6. 在后台异步执行 AgentLoop，并通过 SSE 发送事件
         int timeoutSeconds = properties.execution().timeoutSeconds();
         CompletableFuture.runAsync(() -> {
             try {
                 List<MediaContent> mediaContents = buildMediaContents(message);
+                String streamPreferredProvider = extractPreferredProvider(message);
                 var agentRequest = new AgentRequest(
                         message.contentAsText(),
                         message.sessionId(),
@@ -186,7 +191,7 @@ public class ExecutionMiddleware implements GatewayMiddleware {
                         null,
                         null,
                         0,
-                        null,
+                        streamPreferredProvider,
                         null,
                         mediaContents
                 );
@@ -244,6 +249,19 @@ public class ExecutionMiddleware implements GatewayMiddleware {
                         Map.of()
                 ))
                 .toList();
+    }
+
+    /**
+     * 从 GatewayMessage 的 channelMetadata 中提取会话级偏好 Provider。
+     *
+     * @param message 网关消息
+     * @return preferredProvider，若未携带则返回 null
+     */
+    private String extractPreferredProvider(GatewayMessage message) {
+        if (message.channelMetadata() instanceof ChannelMetadata.WebMetadata webMeta) {
+            return webMeta.preferredProvider();
+        }
+        return null;
     }
 
     @Override

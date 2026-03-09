@@ -27,15 +27,17 @@ public sealed interface ChannelMetadata
     /**
      * Web 通道元数据。
      *
-     * @param userAgent    用户代理字符串
-     * @param remoteAddr   远程地址
-     * @param sessionToken 会话令牌（可空）
-     * @param acceptsSse   是否接受 SSE 流式响应
+     * @param userAgent         用户代理字符串
+     * @param remoteAddr        远程地址
+     * @param sessionToken      会话令牌（可空）
+     * @param acceptsSse        是否接受 SSE 流式响应
+     * @param preferredProvider 会话级偏好 LLM Provider（可空，使用默认路由）
      * @author zsg
      * @since 2026-02-25
      */
     record WebMetadata(String userAgent, String remoteAddr,
-                       @Nullable String sessionToken, boolean acceptsSse)
+                       @Nullable String sessionToken, boolean acceptsSse,
+                       @Nullable String preferredProvider)
             implements ChannelMetadata {
 
         @Override
@@ -43,6 +45,7 @@ public sealed interface ChannelMetadata
             return ChannelType.WEB;
         }
     }
+
 
     /**
      * 企业微信通道元数据。

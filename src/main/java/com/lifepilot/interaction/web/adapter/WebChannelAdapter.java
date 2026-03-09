@@ -214,7 +214,7 @@ public class WebChannelAdapter extends AbstractChannelAdapter {
                 .sessionId(sessionId)
                 .content(content)
                 .attachments(attachments)
-                .channelMetadata(buildWebMetadata(httpRequest, acceptsSse))
+                .channelMetadata(buildWebMetadata(httpRequest, acceptsSse, request.preferredProvider()))
                 .timestamp(Instant.now())
                 .build();
     }
@@ -238,7 +238,7 @@ public class WebChannelAdapter extends AbstractChannelAdapter {
                 .userId(DEFAULT_WEB_USER)
                 .sessionId(request.sessionId())
                 .content(content)
-                .channelMetadata(buildWebMetadata(httpRequest, false))
+                .channelMetadata(buildWebMetadata(httpRequest, false, null))
                 .timestamp(Instant.now())
                 .build();
     }
@@ -246,21 +246,24 @@ public class WebChannelAdapter extends AbstractChannelAdapter {
     /**
      * 从 HttpServletRequest 构建 WebMetadata。
      *
-     * @param httpRequest HTTP 请求（可为 null）
-     * @param acceptsSse  是否接受 SSE 流式响应
+     * @param httpRequest       HTTP 请求（可为 null）
+     * @param acceptsSse        是否接受 SSE 流式响应
+     * @param preferredProvider 会话级偏好 LLM Provider（可为 null）
      * @return Web 通道元数据
      */
     private ChannelMetadata.WebMetadata buildWebMetadata(HttpServletRequest httpRequest,
-                                                          boolean acceptsSse) {
+                                                          boolean acceptsSse,
+                                                          String preferredProvider) {
         if (httpRequest == null) {
-            return new ChannelMetadata.WebMetadata("unknown", "unknown", null, acceptsSse);
+            return new ChannelMetadata.WebMetadata("unknown", "unknown", null, acceptsSse, preferredProvider);
         }
         var userAgent = httpRequest.getHeader("User-Agent");
         return new ChannelMetadata.WebMetadata(
                 userAgent != null ? userAgent : "unknown",
                 httpRequest.getRemoteAddr(),
                 null,
-                acceptsSse
+                acceptsSse,
+                preferredProvider
         );
     }
 
