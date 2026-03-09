@@ -4299,7 +4299,7 @@ YAML 声明式工具是 ZhiWei 三层工具架构的中间层（Layer 2）。它
 ### 8.2 YAML Skill 定义格式
 
 ```yaml
-# ~/.lifepilot/skills/weather-query.yml
+# ~/.zhiwei/skills/weather-query.yml
 # YAML Skill 示例：天气查询
 
 id: weather-query
@@ -4349,7 +4349,7 @@ tags:
 ```
 
 ```yaml
-# ~/.lifepilot/skills/git-status.yml
+# ~/.zhiwei/skills/git-status.yml
 # YAML Skill 示例：Git 状态查询（Shell 类型）
 
 id: git-status
@@ -4378,7 +4378,7 @@ tags:
 ```
 
 ```yaml
-# ~/.lifepilot/skills/daily-summary.yml
+# ~/.zhiwei/skills/daily-summary.yml
 # YAML Skill 示例：每日总结（Chain 类型 — 多步骤链式调用）
 
 id: daily-summary
@@ -4603,7 +4603,7 @@ import java.util.concurrent.Executors;
 /**
  * YAML Skill 加载器。
  *
- * <p>从 ~/.lifepilot/skills/ 目录加载用户定义的 YAML Skill，
+ * <p>从 ~/.zhiwei/skills/ 目录加载用户定义的 YAML Skill，
  * 转换为 YamlTool 并注册到 DynamicToolRegistry。</p>
  *
  * <p>功能：

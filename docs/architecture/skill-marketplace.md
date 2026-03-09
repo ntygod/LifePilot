@@ -119,7 +119,7 @@ SkillSecurityScanner.scan()  ← 安全扫描
     │  └─ 生成 SecurityReport
     │
     ▼
-写入本地 skills 目录  ← ~/.lifepilot/skills/{id}.yaml
+写入本地 skills 目录  ← ~/.zhiwei/skills/{id}.yaml
     │
     ▼
 YamlSkillLoader.loadFile()  ← 复用已有加载逻辑

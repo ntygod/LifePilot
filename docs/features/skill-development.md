@@ -6,12 +6,12 @@
 
 ## 1. YAML 声明式 Skill（推荐入门）
 
-最简单的扩展方式，无需编写 Java 代码。将 YAML 文件放到 `~/.lifepilot/skills/` 目录即可，运行时自动热加载。
+最简单的扩展方式，无需编写 Java 代码。将 YAML 文件放到 `~/.zhiwei/skills/` 目录即可，运行时自动热加载。
 
 ### 1.1 基础模板
 
 ```yaml
-# ~/.lifepilot/skills/my-skill.yml
+# ~/.zhiwei/skills/my-skill.yml
 skill:
   id: my-skill                    # 唯一标识
   name: 我的技能                    # 显示名称

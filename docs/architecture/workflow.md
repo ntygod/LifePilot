@@ -534,7 +534,7 @@ ZhiWei 选择快照恢复，因为单机 SQLite 场景下步骤级精度已足�
 
 ### 12.1 文件监控
 
-WorkflowRegistry 定期扫描配置目录（默认 `~/.lifepilot/workflows`），检测 YAML 文件变更：
+WorkflowRegistry 定期扫描配置目录（默认 `~/.zhiwei/workflows`），检测 YAML 文件变更：
 
 ```
 每 30 秒（可配置）：
@@ -560,7 +560,7 @@ lifepilot:
     # 是否启用工作流引擎
     enabled: true
     # 工作流定义目录
-    definitions-dir: "~/.lifepilot/workflows"
+    definitions-dir: "~/.zhiwei/workflows"
     # 默认步骤超时（秒）
     default-step-timeout-seconds: 300
     # 最大并行分支数

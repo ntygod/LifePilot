@@ -174,7 +174,7 @@ Java 原生内置 Skill（`SkillDiscoverySkillProvider`），封装已有的 `Ma
 ZhiWei 的 Skill 格式：
 
 ```
-~/.lifepilot/skills/{skill-name}/
+~/.zhiwei/skills/{skill-name}/
 └── SKILL.md          # YAML Frontmatter + Markdown 指令体
 ```
 

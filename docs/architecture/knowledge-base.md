@@ -57,7 +57,7 @@ ZhiWei 的知识库管理设计综合了 2024-2026 年 RAG 和知识管理领域
 
 | # | 原则 | 说明 | 体现 |
 |---|------|------|------|
-| 1 | **本地优先** (Local-First) | 所有文档数据和索引存储在 `~/.lifepilot/data/`，零外部依赖 | SQLite + sqlite-vec 单机方案；文档原文存储在本地文件系统 |
+| 1 | **本地优先** (Local-First) | 所有文档数据和索引存储在 `~/.zhiwei/data/`，零外部依赖 | SQLite + sqlite-vec 单机方案；文档原文存储在本地文件系统 |
 | 2 | **认知融合** (Cognitive Integration) | 文档知识不是孤立存在，而是与四层认知记忆深度融合 | 文档实体写入 L3 语义记忆；文档程序写入 L4 程序记忆；统一 HybridRetriever 检索 |
 | 3 | **隐私感知** (Privacy-Aware) | 个人文档可能包含高度敏感信息，隐私保护贯穿全流程 | 文档解析和分块在本地完成；LLM 提取前 DataRedactor 脱敏；敏感文档标记和分级 |
 | 4 | **增量处理** (Incremental Processing) | 文档更新时仅处理变更部分，避免全量重建 | 内容哈希检测变更；分块级增量索引；实体级增量提取 |
@@ -581,7 +581,7 @@ sequenceDiagram
     User->>API: POST /api/knowledge-bases/{kbId}/documents
     API->>KBM: importDocument(kbId, file)
     KBM->>DB: INSERT documents (status=UPLOADING)
-    KBM->>KBM: 保存文件到 ~/.lifepilot/data/documents/{kbId}/
+    KBM->>KBM: 保存文件到 ~/.zhiwei/data/documents/{kbId}/
     KBM->>DB: UPDATE documents SET status=PARSING
     KBM->>DI: ingest(kbId, filePath) [Virtual Thread]
     KBM-->>API: 返回 Document (status=PARSING)
@@ -6295,7 +6295,7 @@ lifepilot:
 
 | 配置键 | 类型 | 默认值 | 说明 |
 |--------|------|--------|------|
-| `lifepilot.knowledge.data-dir` | String | `~/.lifepilot/data` | 数据存储根目录 |
+| `lifepilot.knowledge.data-dir` | String | `~/.zhiwei/data` | 数据存储根目录 |
 | `lifepilot.knowledge.max-file-size` | long | `104857600` | 最大文件大小（100MB） |
 | `lifepilot.knowledge.chunking.default-strategy` | String | `smart` | 默认分块策略 |
 | `lifepilot.knowledge.chunking.fixed-size.chunk-size` | int | `1024` | 固定分块大小 |

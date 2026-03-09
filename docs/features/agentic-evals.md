@@ -150,7 +150,7 @@ List<EvalResult> history = evalStore.findByScenarioId("weather-query-001", 20);
 | 配置键 | 默认值 | 说明 |
 |--------|--------|------|
 | `lifepilot.eval.enabled` | `false` | 评估框架总开关，需显式开启 |
-| `lifepilot.eval.scenario-directory` | `~/.lifepilot/eval/scenarios` | Benchmark YAML 目录 |
+| `lifepilot.eval.scenario-directory` | `~/.zhiwei/eval/scenarios` | Benchmark YAML 目录 |
 | `lifepilot.eval.default-pass-threshold` | `0.7` | 默认通过阈值 |
 | `lifepilot.eval.degradation-threshold` | `0.1` | 退化检测阈值 |
 | `lifepilot.eval.llm-judge.scene` | `eval-judge` | LLM Judge 场景名 |

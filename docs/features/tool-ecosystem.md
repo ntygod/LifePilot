@@ -34,7 +34,7 @@ ZhiWei 设计了三层混合工具生态系统，将统一管理不同来源的�
 ## 2. YAML 声明式工具示例
 
 ```yaml
-# ~/.lifepilot/skills/weather-query.yml
+# ~/.zhiwei/skills/weather-query.yml
 skill:
   id: weather-query
   name: 天气查询

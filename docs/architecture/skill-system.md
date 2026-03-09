@@ -153,7 +153,7 @@ Skill 可以声明 `suggestedTools` 列表，建议 Agent 优先使用哪些工�
 
 #### 原则 4：社区兼容
 
-ZhiWei 的 Skill 格式必须与 Anthropic Agent Skills 开放标准兼容。社区发布的 SKILL.md 文件夹可以直接放入 `~/.lifepilot/skills/` 目录使用，无需任何转换。
+ZhiWei 的 Skill 格式必须与 Anthropic Agent Skills 开放标准兼容。社区发布的 SKILL.md 文件夹可以直接放入 `~/.zhiwei/skills/` 目录使用，无需任何转换。
 
 #### 原则 5：自扩展安全 — 三重验证 + 用户确认
 
@@ -437,7 +437,7 @@ Agent 上下文结构：
 兼容 Anthropic Agent Skills 开放标准：
 
 ```
-~/.lifepilot/skills/
+~/.zhiwei/skills/
 ├── writing-assistant/
 │   ├── SKILL.md              # 指令文件（必需）
 │   ├── scripts/              # 辅助脚本（可选）
@@ -737,4 +737,4 @@ lifepilot:
 ### 13.3 社区兼容性测试
 
 - 使用 Anthropic Agent Skills 标准的示例 SKILL.md 文件验证解析兼容性
-- 验证社区 Skill 文件夹可直接放入 `~/.lifepilot/skills/` 使用
+- 验证社区 Skill 文件夹可直接放入 `~/.zhiwei/skills/` 使用

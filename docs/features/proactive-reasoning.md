@@ -104,7 +104,7 @@ ZhiWei：📅 提醒：15 分钟后有「团队周会」（会议室A）
 ### 2.3 工作流定义
 
 ```yaml
-# ~/.lifepilot/workflows/weekly-report.yml
+# ~/.zhiwei/workflows/weekly-report.yml
 workflow:
   id: weekly-report-assist
   name: 周报辅助
