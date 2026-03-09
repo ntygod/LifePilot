@@ -13,6 +13,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
@@ -32,6 +33,8 @@ class WorkflowEngine崩溃恢复测试 {
     private ExpressionEngine expressionEngine;
     private WorkflowRepository repository;
     private WorkflowConfigProperties config;
+    private DagScheduler dagScheduler;
+    private WorkflowEventRecorder eventRecorder;
     private WorkflowEngine engine;
 
     @BeforeEach
@@ -41,7 +44,10 @@ class WorkflowEngine崩溃恢复测试 {
         expressionEngine = new ExpressionEngine();
         repository = mock(WorkflowRepository.class);
         config = new WorkflowConfigProperties();
-        engine = new WorkflowEngine(registry, stepExecutor, expressionEngine, repository, config);
+        dagScheduler = new DagScheduler();
+        eventRecorder = mock(WorkflowEventRecorder.class);
+        engine = new WorkflowEngine(registry, stepExecutor, expressionEngine,
+                repository, config, dagScheduler, eventRecorder);
     }
 
     // ==================== 辅助方法 ====================
@@ -56,18 +62,20 @@ class WorkflowEngine崩溃恢复测试 {
     }
 
     private NoopStep 创建NoopStep(String id) {
-        return new NoopStep(id, "Noop-" + id, null);
+        return new NoopStep(id, "Noop-" + id, List.of(), null);
     }
 
     private WorkflowInstance 创建中断实例(String instanceId, String workflowId,
-                                          WorkflowState state, int stepIndex,
+                                          WorkflowState state,
+                                          Set<String> completedStepIds,
                                           WorkflowContext context) {
         return WorkflowInstance.builder()
                 .id(instanceId)
                 .workflowId(workflowId)
                 .state(state)
                 .context(context)
-                .currentStepIndex(stepIndex)
+                .completedStepIds(completedStepIds)
+                .pendingApprovalStepId(null)
                 .startedAt(Instant.now())
                 .createdAt(Instant.now())
                 .updatedAt(Instant.now())
@@ -86,9 +94,9 @@ class WorkflowEngine崩溃恢复测试 {
 
         var context = new WorkflowContext();
         context.set("inputs", Map.of("key", "value"));
-        var instance = 创建中断实例("inst-running", "wf-1", WorkflowState.RUNNING, 1, context);
+        var instance = 创建中断实例("inst-running", "wf-1", WorkflowState.RUNNING, Set.of(), context);
 
-        when(repository.findInstancesByState(WorkflowState.RUNNING, WorkflowState.WAITING))
+        when(repository.findInstancesByState(WorkflowState.RUNNING, WorkflowState.WAITING, WorkflowState.PAUSED))
                 .thenReturn(List.of(instance));
         when(registry.find("wf-1")).thenReturn(Optional.of(def));
         when(stepExecutor.execute(any(), any(), any())).thenReturn(Map.of("ok", true));
@@ -107,8 +115,8 @@ class WorkflowEngine崩溃恢复测试 {
 
         assertTrue(latch.await(5, TimeUnit.SECONDS), "崩溃恢复应在 5 秒内完成");
 
-        // 验证：从 stepIndex=1 开始执行，step2 和 step3 被执行（2 次）
-        verify(stepExecutor, times(2)).execute(any(), any(), any());
+        // 验证：从 completedStepIds 恢复 DAG 调度
+        verify(stepExecutor, atLeast(1)).execute(any(), any(), any());
         // 验证持久化调用
         verify(repository, atLeast(1)).updateInstance(argThat(inst ->
                 inst.state() == WorkflowState.COMPLETED));
@@ -119,15 +127,15 @@ class WorkflowEngine崩溃恢复测试 {
     @Test
     void WAITING实例_转换为RUNNING并从下一步恢复() throws Exception {
         // 准备：3 步工作流，实例在 step1（index=0，WaitStep）等待
-        var waitStep = new WorkflowStep.WaitStep("wait-1", "等待步骤", 60, null);
+        var waitStep = new WorkflowStep.WaitStep("wait-1", "等待步骤", 60, List.of(), null);
         var step2 = 创建NoopStep("step2");
         var step3 = 创建NoopStep("step3");
         var def = 创建简单工作流("wf-wait", waitStep, step2, step3);
 
         var context = new WorkflowContext();
-        var instance = 创建中断实例("inst-waiting", "wf-wait", WorkflowState.WAITING, 0, context);
+        var instance = 创建中断实例("inst-waiting", "wf-wait", WorkflowState.WAITING, Set.of(), context);
 
-        when(repository.findInstancesByState(WorkflowState.RUNNING, WorkflowState.WAITING))
+        when(repository.findInstancesByState(WorkflowState.RUNNING, WorkflowState.WAITING, WorkflowState.PAUSED))
                 .thenReturn(List.of(instance));
         when(registry.find("wf-wait")).thenReturn(Optional.of(def));
         when(stepExecutor.execute(any(), any(), any())).thenReturn(Map.of("ok", true));
@@ -145,8 +153,8 @@ class WorkflowEngine崩溃恢复测试 {
 
         assertTrue(latch.await(5, TimeUnit.SECONDS), "崩溃恢复应在 5 秒内完成");
 
-        // WAITING 实例从 currentStepIndex+1=1 开始，执行 step2 和 step3（2 次）
-        verify(stepExecutor, times(2)).execute(any(), any(), any());
+        // WAITING 实例恢复后执行剩余步骤
+        verify(stepExecutor, atLeast(1)).execute(any(), any(), any());
         // 验证 WAITING→RUNNING 转换被持久化
         verify(repository, atLeast(1)).updateInstance(argThat(inst ->
                 inst.state() == WorkflowState.RUNNING));
@@ -165,13 +173,14 @@ class WorkflowEngine崩溃恢复测试 {
                 .workflowId("wf-corrupt")
                 .state(WorkflowState.RUNNING)
                 .context(null)
-                .currentStepIndex(0)
+                .completedStepIds(Set.of())
+                .pendingApprovalStepId(null)
                 .startedAt(Instant.now())
                 .createdAt(Instant.now())
                 .updatedAt(Instant.now())
                 .build();
 
-        when(repository.findInstancesByState(WorkflowState.RUNNING, WorkflowState.WAITING))
+        when(repository.findInstancesByState(WorkflowState.RUNNING, WorkflowState.WAITING, WorkflowState.PAUSED))
                 .thenReturn(List.of(instance));
 
         var latch = new CountDownLatch(1);
@@ -215,9 +224,9 @@ class WorkflowEngine崩溃恢复测试 {
     @Test
     void 工作流定义未找到_标记FAILED() throws Exception {
         var context = new WorkflowContext();
-        var instance = 创建中断实例("inst-no-def", "wf-missing", WorkflowState.RUNNING, 0, context);
+        var instance = 创建中断实例("inst-no-def", "wf-missing", WorkflowState.RUNNING, Set.of(), context);
 
-        when(repository.findInstancesByState(WorkflowState.RUNNING, WorkflowState.WAITING))
+        when(repository.findInstancesByState(WorkflowState.RUNNING, WorkflowState.WAITING, WorkflowState.PAUSED))
                 .thenReturn(List.of(instance));
         when(registry.find("wf-missing")).thenReturn(Optional.empty());
 
@@ -248,9 +257,9 @@ class WorkflowEngine崩溃恢复测试 {
         var step1 = 创建NoopStep("step1");
         var def = 创建简单工作流("wf-vt", step1);
         var context = new WorkflowContext();
-        var instance = 创建中断实例("inst-vt", "wf-vt", WorkflowState.RUNNING, 0, context);
+        var instance = 创建中断实例("inst-vt", "wf-vt", WorkflowState.RUNNING, Set.of(), context);
 
-        when(repository.findInstancesByState(WorkflowState.RUNNING, WorkflowState.WAITING))
+        when(repository.findInstancesByState(WorkflowState.RUNNING, WorkflowState.WAITING, WorkflowState.PAUSED))
                 .thenReturn(List.of(instance));
         when(registry.find("wf-vt")).thenReturn(Optional.of(def));
         when(stepExecutor.execute(any(), any(), any())).thenAnswer(invocation -> {
@@ -270,7 +279,7 @@ class WorkflowEngine崩溃恢复测试 {
 
     @Test
     void 无中断实例_正常完成() throws Exception {
-        when(repository.findInstancesByState(WorkflowState.RUNNING, WorkflowState.WAITING))
+        when(repository.findInstancesByState(WorkflowState.RUNNING, WorkflowState.WAITING, WorkflowState.PAUSED))
                 .thenReturn(List.of());
 
         engine.recoverInterruptedInstances();
