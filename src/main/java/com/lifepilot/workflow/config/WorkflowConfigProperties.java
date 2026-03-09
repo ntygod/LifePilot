@@ -37,6 +37,9 @@ public class WorkflowConfigProperties {
     /** YAML 文件扫描间隔（秒），默认 30。 */
     private int scanIntervalSeconds = 30;
 
+    /** 是否在启动时释放内置工作流模板到用户目录，默认 true。 */
+    private boolean seedBuiltinWorkflows = true;
+
     /** 重试策略配置。 */
     private Retry retry = new Retry();
 
@@ -63,6 +66,9 @@ public class WorkflowConfigProperties {
 
     public int getScanIntervalSeconds() { return scanIntervalSeconds; }
     public void setScanIntervalSeconds(int scanIntervalSeconds) { this.scanIntervalSeconds = scanIntervalSeconds; }
+
+    public boolean isSeedBuiltinWorkflows() { return seedBuiltinWorkflows; }
+    public void setSeedBuiltinWorkflows(boolean seedBuiltinWorkflows) { this.seedBuiltinWorkflows = seedBuiltinWorkflows; }
 
     public Retry getRetry() { return retry; }
     public void setRetry(Retry retry) { this.retry = retry; }
