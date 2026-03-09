@@ -196,6 +196,9 @@ lifepilot:
       reflection-summary-max-importance: 0.8
       max-forget-per-run: 100
       privacy-aware-boost: 0.3
+    # AUDN 实体提取
+    extraction:
+      timeout-seconds: 60
   skills:
     enabled: true
     max-concurrent-activations: 5

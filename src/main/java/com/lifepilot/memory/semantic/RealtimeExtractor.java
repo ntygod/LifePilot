@@ -1,6 +1,7 @@
 package com.lifepilot.memory.semantic;
 
 import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.memory.config.MemoryProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -8,6 +9,9 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * 实时实体提取器 — 每轮对话后异步提取关键实体写入 L3。
@@ -27,11 +31,14 @@ public class RealtimeExtractor {
 
     private final LlmRouter llmRouter;
     private final SemanticMemory semanticMemory;
+    private final int extractionTimeoutSeconds;
 
     public RealtimeExtractor(LlmRouter llmRouter,
-                             SemanticMemory semanticMemory) {
+                             SemanticMemory semanticMemory,
+                             MemoryProperties properties) {
         this.llmRouter = llmRouter;
         this.semanticMemory = semanticMemory;
+        this.extractionTimeoutSeconds = properties.getExtraction().getTimeoutSeconds();
     }
 
     /**
@@ -97,12 +104,25 @@ public class RealtimeExtractor {
         return sb.toString();
     }
 
-    /** 调用 LLM 获取 AUDN 决策列表。 */
+    /** 调用 LLM 获取 AUDN 决策列表（带独立超时控制）。 */
     private List<AudnDecision> callLlmForAudnDecisions(String conversationText) {
         String prompt = buildAudnPrompt(conversationText);
-        // 使用 List.class 获取结构化输出，LLM 返回 AudnDecision 列表
-        var result = llmRouter.callEntity("knowledge_extraction", prompt, AudnDecisionList.class);
-        return result != null ? result.decisions() : List.of();
+        try {
+            var result = CompletableFuture.supplyAsync(() ->
+                            llmRouter.callEntity("knowledge_extraction", prompt, AudnDecisionList.class))
+                    .orTimeout(extractionTimeoutSeconds, TimeUnit.SECONDS)
+                    .join();
+            return result != null ? result.decisions() : List.of();
+        } catch (Exception e) {
+            // CompletableFuture.join() 包装为 CompletionException，解包判断是否超时
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            if (cause instanceof TimeoutException) {
+                log.warn("AUDN 实体提取超时: timeoutSeconds={}", extractionTimeoutSeconds);
+            } else {
+                log.warn("AUDN 实体提取 LLM 调用失败: error={}", cause.getMessage());
+            }
+            return List.of();
+        }
     }
 
     /** 构建 AUDN 提示词。 */
