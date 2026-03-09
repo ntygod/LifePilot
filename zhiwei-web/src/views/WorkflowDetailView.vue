@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { stateConfig } from '@/constants/workflowState'
 
 const route = useRoute()
 const router = useRouter()
@@ -77,13 +78,9 @@ async function showExecutions() {
   await workflowStore.fetchExecutions(workflow.value.id)
 }
 
-const stateBadge: Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' | 'destructive' }> = {
-  PENDING: { label: '等待中', variant: 'secondary' },
-  RUNNING: { label: '运行中', variant: 'default' },
-  COMPLETED: { label: '已完成', variant: 'outline' },
-  FAILED: { label: '失败', variant: 'destructive' },
-  CANCELLED: { label: '已取消', variant: 'secondary' },
-}
+const stateBadge = Object.fromEntries(
+  Object.entries(stateConfig).map(([k, v]) => [k, { label: v.label, variant: v.badgeVariant }])
+) as Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' | 'destructive' }>
 
 function formatDuration(start?: string, end?: string): string {
   if (!start || !end) return '-'
@@ -230,6 +227,32 @@ function formatDuration(start?: string, end?: string): string {
                           条件: <span class="font-mono">{{ (step as any).condition }}</span>
                         </span>
                       </div>
+                      <!-- 依赖关系 -->
+                      <div v-if="(step as any).dependsOn && (step as any).dependsOn.length > 0" class="flex items-center gap-1 mt-1 flex-wrap">
+                        <span class="text-xs text-muted-foreground">依赖:</span>
+                        <Badge
+                          v-for="dep in (step as any).dependsOn"
+                          :key="dep"
+                          variant="outline"
+                          class="text-xs cursor-pointer hover:bg-primary/10"
+                        >
+                          {{ dep }}
+                        </Badge>
+                      </div>
+                      <!-- ApprovalStep 特殊标记 -->
+                      <div v-if="(step as any).type === 'ApprovalStep' || (step as any).message" class="mt-1 space-y-1">
+                        <Badge variant="outline" class="border-amber-400 text-amber-700 text-xs">人工审批</Badge>
+                        <div v-if="(step as any).message" class="text-xs text-muted-foreground">
+                          审批消息: {{ (step as any).message }}
+                        </div>
+                        <div v-if="(step as any).approvers?.length" class="text-xs text-muted-foreground">
+                          审批人: {{ (step as any).approvers.join(', ') }}
+                        </div>
+                        <div v-if="(step as any).timeoutSeconds" class="text-xs text-muted-foreground">
+                          超时: {{ (step as any).timeoutSeconds }}s
+                          <span v-if="(step as any).autoApproveOnTimeout">（超时自动批准）</span>
+                        </div>
+                      </div>
                       <details class="mt-2">
                         <summary class="text-xs text-muted-foreground cursor-pointer hover:text-foreground">
                           查看完整配置
@@ -287,7 +310,7 @@ function formatDuration(start?: string, end?: string): string {
                       {{ stateBadge[exec.state]?.label ?? exec.state }}
                     </Badge>
                     <span class="text-sm text-muted-foreground">
-                      当前步骤: {{ exec.currentStepIndex + 1 }} / {{ workflow.steps.length }}
+                      当前步骤: {{ (exec.completedStepIds?.length ?? 0) }} / {{ workflow.steps.length }}
                     </span>
                   </div>
                   <span class="text-xs text-muted-foreground">{{ new Date(exec.createdAt).toLocaleString() }}</span>
