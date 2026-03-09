@@ -25,9 +25,13 @@ import org.springframework.lang.Nullable;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -805,11 +809,15 @@ public class ContextAssembler {
         // EXECUTING 阶段直接执行工具，不经过 LLM，无需系统提示词
         if (phase == AgentPhase.EXECUTING) return "";
         String roleDefinition = promptRegistry.render("agent/role-definition");
-        // 用户画像移至 User Prompt 半稳定区，System Prompt 保持会话内不变
         String phaseKey = "agent/" + phase.name().toLowerCase();
+
+        // 注入时间锚点（所有阶段共享变量 Map，understanding.st 使用时间变量，其他阶段忽略）
+        var now = ZonedDateTime.now();
         return promptRegistry.render(phaseKey, Map.of(
                 "roleDefinition", roleDefinition,
-                "userProfile", ""));
+                "currentDateTime", now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
+                "timezone", ZoneId.systemDefault().getId(),
+                "locale", Locale.getDefault().toLanguageTag()));
     }
 
     /**
