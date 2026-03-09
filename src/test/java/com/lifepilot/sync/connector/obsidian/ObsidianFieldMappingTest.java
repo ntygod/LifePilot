@@ -1,4 +1,4 @@
-﻿package com.lifepilot.sync.connector.obsidian;
+package com.lifepilot.sync.connector.obsidian;
 
 import com.lifepilot.skill.builtin.habit.HabitItem;
 import com.lifepilot.skill.builtin.schedule.ScheduleItem;

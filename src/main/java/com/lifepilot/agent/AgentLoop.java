@@ -1,4 +1,4 @@
-﻿﻿package com.lifepilot.agent;
+package com.lifepilot.agent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.config.AgentConfigProperties;
@@ -631,13 +631,16 @@ public class AgentLoop {
                                                   SseSessionManager sseManager,
                                                   String tempTurnId) {
         try {
-            String scene = mapPhaseToScene(state.phase());
+            String defaultScene = mapPhaseToScene(state.phase());
 
             // Fix 9: 优先使用 preferredProvider 路由，未指定时回退到 mapPhaseToScene
+            final String scene;
             if (request.preferredProvider() != null && !request.preferredProvider().isBlank()) {
                 scene = request.preferredProvider();
                 log.debug("流式调用使用 preferredProvider 路由: provider={}, phase={}, traceId={}",
                         request.preferredProvider(), state.phase(), state.traceId());
+            } else {
+                scene = defaultScene;
             }
 
             String systemPrompt = assembledContext.systemPrompt();

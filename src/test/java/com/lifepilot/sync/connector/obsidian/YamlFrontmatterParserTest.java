@@ -1,4 +1,4 @@
-﻿package com.lifepilot.sync.connector.obsidian;
+package com.lifepilot.sync.connector.obsidian;
 
 import org.junit.jupiter.api.Test;
 

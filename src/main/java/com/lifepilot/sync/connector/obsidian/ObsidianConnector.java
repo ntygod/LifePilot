@@ -1,4 +1,4 @@
-﻿package com.lifepilot.sync.connector.obsidian;
+package com.lifepilot.sync.connector.obsidian;
 
 import com.lifepilot.sync.config.SyncProperties;
 import com.lifepilot.sync.connector.JsonHelper;
