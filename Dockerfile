@@ -20,4 +20,6 @@ COPY --from=builder /build/target/zhiwei.jar zhiwei.jar
 RUN mkdir -p /data
 EXPOSE 8080
 
-ENTRYPOINT ["java", "-jar", "zhiwei.jar"]
+# JVM 默认参数，可通过 docker-compose 环境变量 JAVA_OPTS 覆盖
+ENV JAVA_OPTS="-Xmx512m -Xms256m -XX:+UseG1GC"
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar zhiwei.jar"]
