@@ -1,5 +1,6 @@
 package com.lifepilot.interaction.web.sse;
 
+import com.lifepilot.agent.CancellationToken;
 import com.lifepilot.interaction.web.config.WebProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,6 +28,7 @@ public class SseSessionManager {
     private static final Logger log = LoggerFactory.getLogger(SseSessionManager.class);
 
     private final ConcurrentHashMap<String, SseEmitter> emitters = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, CancellationToken> cancellationTokens = new ConcurrentHashMap<>();
     private final WebProperties properties;
     private final ScheduledExecutorService heartbeatScheduler;
 
@@ -35,6 +37,19 @@ public class SseSessionManager {
         this.heartbeatScheduler = Executors.newScheduledThreadPool(
                 1, Thread.ofVirtual().name("sse-heartbeat-", 0).factory()
         );
+    }
+
+    /**
+     * 注册取消信号令牌，关联到指定 streamId。
+     *
+     * <p>当 SSE 回调（完成/超时/错误）触发时，自动调用 token.cancel() 通知 AgentLoop 停止执行。</p>
+     *
+     * @param streamId 流式传输标识
+     * @param token    取消信号令牌
+     */
+    public void registerCancellationToken(String streamId, CancellationToken token) {
+        cancellationTokens.put(streamId, token);
+        log.debug("CancellationToken 已注册: streamId={}", streamId);
     }
 
     /**
@@ -48,14 +63,17 @@ public class SseSessionManager {
 
         emitter.onCompletion(() -> {
             emitters.remove(streamId);
+            cancelToken(streamId);
             log.debug("SseEmitter 完成: streamId={}", streamId);
         });
         emitter.onTimeout(() -> {
             emitters.remove(streamId);
+            cancelToken(streamId);
             log.info("SseEmitter 超时: streamId={}", streamId);
         });
         emitter.onError(ex -> {
             emitters.remove(streamId);
+            cancelToken(streamId);
             log.warn("SseEmitter 异常: streamId={}", streamId, ex);
         });
 
@@ -168,6 +186,7 @@ public class SseSessionManager {
      */
     public void closeEmitter(String streamId) {
         var emitter = emitters.remove(streamId);
+        cancelToken(streamId);
         if (emitter != null) {
             emitter.complete();
             log.debug("SseEmitter 已关闭: streamId={}", streamId);
@@ -200,6 +219,19 @@ public class SseSessionManager {
     }
 
     /**
+     * 取消指定 streamId 关联的 CancellationToken（如已注册）。
+     *
+     * @param streamId 流式传输标识
+     */
+    private void cancelToken(String streamId) {
+        var token = cancellationTokens.remove(streamId);
+        if (token != null) {
+            token.cancel();
+            log.debug("CancellationToken 已触发取消: streamId={}", streamId);
+        }
+    }
+
+    /**
      * 停止所有心跳并关闭所有 SseEmitter。
      */
     public void shutdown() {
@@ -222,6 +254,7 @@ public class SseSessionManager {
             }
         });
         emitters.clear();
+        cancellationTokens.clear();
         log.info("SseSessionManager 已关闭，清理 {} 个连接", count);
     }
 
