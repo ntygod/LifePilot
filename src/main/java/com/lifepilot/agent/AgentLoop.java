@@ -1,4 +1,4 @@
-package com.lifepilot.agent;
+﻿package com.lifepilot.agent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.config.AgentConfigProperties;
@@ -263,11 +263,13 @@ public class AgentLoop {
             if (traceRecorder != null && traceContext != null) {
                 String finalOutput = state.finalOutput();
                 boolean success = error == null && state.terminationReason() == null;
-                String errorType = error != null ? error.getClass().getSimpleName() : null;
-                String errorDetail = error != null
-                        ? error.getMessage()
+                // errorMessage: 异常消息（人类可读的错误描述）
+                String errorMessage = error != null ? error.getMessage() : null;
+                // terminationReason: 异常类名或业务终止原因
+                String terminationReason = error != null
+                        ? error.getClass().getSimpleName()
                         : state.terminationReason();
-                traceRecorder.endTrace(traceContext, finalOutput, success, errorType, errorDetail);
+                traceRecorder.endTrace(traceContext, finalOutput, success, errorMessage, terminationReason);
             }
 
             // 发送 done 事件或 error 事件
@@ -367,11 +369,13 @@ public class AgentLoop {
             if (traceRecorder != null && traceContext != null) {
                 String finalOutput = state.finalOutput();
                 boolean success = error == null && state.terminationReason() == null;
-                String errorType = error != null ? error.getClass().getSimpleName() : null;
-                String errorDetail = error != null
-                        ? error.getMessage()
+                // errorMessage: 异常消息（人类可读的错误描述）
+                String errorMessage = error != null ? error.getMessage() : null;
+                // terminationReason: 异常类名或业务终止原因
+                String terminationReason = error != null
+                        ? error.getClass().getSimpleName()
                         : state.terminationReason();
-                traceRecorder.endTrace(traceContext, finalOutput, success, errorType, errorDetail);
+                traceRecorder.endTrace(traceContext, finalOutput, success, errorMessage, terminationReason);
             }
         }
     }
@@ -867,34 +871,40 @@ public class AgentLoop {
             // 优先使用 .entity() 方法进行类型安全解析
             // 对于支持的阶段，直接使用 .entity() 解析
             // 对于不支持的阶段（EXECUTING），使用 .content() + ActionParser
+            // 缓存 LLM 响应文本，降级路径复用而非重新调用 LLM
+            String cachedResponseText = null;
             try {
-                // 每次调用都构建新的 PromptSpec，避免“已消费”的 builder 带来的不可预期行为。
+                // 每次调用都构建新的 PromptSpec，避免"已消费"的 builder 带来的不可预期行为。
                 return switch (state.phase()) {
                     case UNDERSTANDING -> {
                         var prompt = buildPrompt(chatClient, systemPrompt, toolCallbacks);
-                        Action.IntentUnderstood parsed = prompt.user(userText).call()
-                                .entity(Action.IntentUnderstood.class);
+                        var callResponse = prompt.user(userText).call();
+                        cachedResponseText = callResponse.content();
+                        Action.IntentUnderstood parsed = callResponse.entity(Action.IntentUnderstood.class);
                         log.debug("LLM entity 解析成功: phase={}, traceId={}", state.phase(), state.traceId());
                         yield parsed;
                     }
                     case PLANNING -> {
                         var prompt = buildPrompt(chatClient, systemPrompt, toolCallbacks);
-                        Action.PlanGenerated parsed = prompt.user(userText).call()
-                                .entity(Action.PlanGenerated.class);
+                        var callResponse = prompt.user(userText).call();
+                        cachedResponseText = callResponse.content();
+                        Action.PlanGenerated parsed = callResponse.entity(Action.PlanGenerated.class);
                         log.debug("LLM entity 解析成功: phase={}, traceId={}", state.phase(), state.traceId());
                         yield parsed;
                     }
                     case REFLECTING -> {
                         var prompt = buildPrompt(chatClient, systemPrompt, toolCallbacks);
-                        Action.ReflectionComplete parsed = prompt.user(userText).call()
-                                .entity(Action.ReflectionComplete.class);
+                        var callResponse = prompt.user(userText).call();
+                        cachedResponseText = callResponse.content();
+                        Action.ReflectionComplete parsed = callResponse.entity(Action.ReflectionComplete.class);
                         log.debug("LLM entity 解析成功: phase={}, traceId={}", state.phase(), state.traceId());
                         yield parsed;
                     }
                     case RESPONDING -> {
                         var prompt = buildPrompt(chatClient, systemPrompt, toolCallbacks);
-                        Action.ResponseGenerated parsed = prompt.user(userText).call()
-                                .entity(Action.ResponseGenerated.class);
+                        var callResponse = prompt.user(userText).call();
+                        cachedResponseText = callResponse.content();
+                        Action.ResponseGenerated parsed = callResponse.entity(Action.ResponseGenerated.class);
                         log.debug("LLM entity 解析成功: phase={}, traceId={}", state.phase(), state.traceId());
                         yield parsed;
                     }
@@ -906,11 +916,17 @@ public class AgentLoop {
                 };
                 
             } catch (Exception e) {
-                // .entity() 解析失败，降级到手动解析
+                // .entity() 解析失败，降级到手动解析（复用缓存的响应文本，不重新调用 LLM）
                 log.warn("entity() 解析失败，降级到手动解析: phase={}, error={}, traceId={}", 
                          state.phase(), e.getMessage(), state.traceId());
                 
-                // 降级路径：统一走 content + ActionParser
+                if (cachedResponseText != null) {
+                    // 直接对缓存文本执行 ActionParser.parse()，避免第二次 LLM 调用
+                    return actionParser.parse(state.phase(), cachedResponseText);
+                }
+                // 理论上不会到达此处（异常在 .entity() 阶段抛出，cachedResponseText 已赋值）
+                log.error("降级路径缓存为空，回退到重新调用 LLM: phase={}, traceId={}", 
+                          state.phase(), state.traceId());
                 var prompt = buildPrompt(chatClient, systemPrompt, toolCallbacks);
                 String response = prompt.user(userText).call().content();
                 return actionParser.parse(state.phase(), response != null ? response : "");
