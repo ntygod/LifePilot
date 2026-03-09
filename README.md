@@ -1,13 +1,13 @@
 # ZhiWei
 
-> **了解你生活全貌的 AI 伙伴**
+> **见微知著，你的 AI 伙伴**
 
 [![Java](https://img.shields.io/badge/Java-22-orange.svg)](https://www.oracle.com/java/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.3-brightgreen.svg)](https://spring.io/projects/spring-boot)
 [![Spring AI](https://img.shields.io/badge/Spring%20AI-1.1.2-blue.svg)](https://spring.io/projects/spring-ai)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**ZhiWei** 是一个本地运行的个人 AI Agent 助手，核心定位为"了解你生活全貌的 AI 伙伴"。它不只是被动执行用户命令，而是具备**主动智能能力**——观察用户的生活模式，主动提供建议和帮助。
+**ZhiWei** 是一个本地运行的个人 AI Agent 助手，核心定位为"见微知著，你的 AI 伙伴"。它不只是被动执行用户命令，而是具备**主动智能能力**——观察用户的行为模式，主动提供建议和帮助。
 
 ## ✨ 核心特性
 
@@ -46,7 +46,7 @@
 - **数据脱敏**：敏感信息自动脱敏保护隐私
 
 ### 🏠 本地优先架构
-- **隐私保护**：所有数据存储在本地 `~/.lifepilot/`
+- **隐私保护**：所有数据存储在本地 `~/.zhiwei/`
 - **零外部依赖**：SQLite + sqlite-vec，无需额外服务
 - **完全掌控**：你完全掌控自己的数据
 
@@ -100,7 +100,7 @@ mvn spring-boot:run
 
 # 或构建后运行
 mvn clean package
-java -jar target/lifepilot-0.1.0-SNAPSHOT.jar
+java -jar target/zhiwei-0.2.0-SNAPSHOT.jar
 ```
 
 ### 首次使用
@@ -109,18 +109,18 @@ java -jar target/lifepilot-0.1.0-SNAPSHOT.jar
 
 1. **CLI 模式**（默认）
 ```bash
-java -jar lifepilot.jar --mode cli
+java -jar zhiwei.jar --mode cli
 ```
 
 2. **Web UI 模式**
 ```bash
-java -jar lifepilot.jar --mode web
+java -jar zhiwei.jar --mode web
 # 访问 http://localhost:8080
 ```
 
 3. **系统托盘模式**
 ```bash
-java -jar lifepilot.jar --mode tray
+java -jar zhiwei.jar --mode tray
 ```
 
 ### 使用示例
@@ -157,8 +157,8 @@ ZhiWei：📊 今日概览：
 
 ```yaml
 lifepilot:
-  # 数据存储路径（默认 ~/.lifepilot/）
-  data-dir: ~/.lifepilot
+  # 数据存储路径（默认 ~/.zhiwei/）
+  data-dir: ~/.zhiwei
 
   # LLM 服务商配置
   llm:
@@ -182,7 +182,7 @@ lifepilot:
 
   # Skill 配置
   skills:
-    user-skills-dir: ~/.lifepilot/skills
+    user-skills-dir: ~/.zhiwei/skills
     auto-generated-require-confirmation: true
     max-activation-depth: 2
 ```
@@ -219,7 +219,7 @@ export GLM_API_KEY=your-glm-api-key
 ## 📁 项目结构
 
 ```
-lifepilot/
+zhiwei/
 ├── src/
 │   ├── main/
 │   │   ├── java/com/lifepilot/
@@ -236,7 +236,7 @@ lifepilot/
 │   │       ├── application.yml # 配置文件
 │   │       └── db/migration/   # 数据库迁移脚本
 │   └── test/                   # 测试代码
-├── lifepilot-web/              # 前端项目
+├── zhiwei-web/              # 前端项目
 │   ├── src/
 │   │   ├── components/         # Vue 组件
 │   │   ├── views/              # 页面视图
@@ -292,7 +292,7 @@ cd lifepilot
 mvn clean install
 
 # 前端依赖
-cd lifepilot-web
+cd zhiwei-web
 npm install
 ```
 
@@ -302,7 +302,7 @@ npm install
 mvn test
 
 # 前端测试
-cd lifepilot-web
+cd zhiwei-web
 npm test
 ```
 
@@ -312,7 +312,7 @@ npm test
 mvn spring-boot:run
 
 # 前端（新终端）
-cd lifepilot-web
+cd zhiwei-web
 npm run dev
 ```
 
@@ -323,7 +323,7 @@ npm run dev
 mvn clean package
 
 # 构建前端
-cd lifepilot-web
+cd zhiwei-web
 npm run build
 ```
 
@@ -362,6 +362,6 @@ npm run build
 
 ---
 
-**ZhiWei** — 了解你生活全貌的 AI 伙伴
+**ZhiWei** — 见微知著，你的 AI 伙伴
 
 本地运行 · 隐私优先 · 越用越懂你
