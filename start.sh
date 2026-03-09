@@ -17,7 +17,7 @@ if [ -z "$JAVA_MAJOR" ] || [ "$JAVA_MAJOR" -lt 22 ]; then
 fi
 
 # 3. 创建数据目录
-DATA_DIR="${HOME}/.lifepilot"
+DATA_DIR="${HOME}/.zhiwei"
 mkdir -p "${DATA_DIR}"
 
 # 4. 计算 JVM 内存参数（系统内存 50%，上限 2048MB，检测失败回退 512MB）
@@ -42,5 +42,5 @@ echo "使用 JVM 最大内存: ${XMX}m"
 
 # 5. 启动应用
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-exec java -Xmx${XMX}m -jar "${SCRIPT_DIR}/lifepilot.jar"
+exec java -Xmx${XMX}m -jar "${SCRIPT_DIR}/zhiwei.jar"
 
