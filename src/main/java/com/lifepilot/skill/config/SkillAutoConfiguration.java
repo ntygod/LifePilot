@@ -32,6 +32,7 @@ import com.lifepilot.skill.validation.SecurityValidator;
 import com.lifepilot.skill.validation.SkillValidationPipeline;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.slf4j.Logger;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -85,8 +86,12 @@ public class SkillAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public SkillSearchIndex skillSearchIndex(LlmRouter llmRouter) {
-        log.info("Skill 系统: 注册 SkillSearchIndex");
+    public SkillSearchIndex skillSearchIndex(@Autowired(required = false) LlmRouter llmRouter) {
+        if (llmRouter == null) {
+            log.warn("Skill 系统: LlmRouter 不可用，SkillSearchIndex 降级为关键词匹配模式");
+        } else {
+            log.info("Skill 系统: 注册 SkillSearchIndex（向量搜索模式）");
+        }
         return new SkillSearchIndex(llmRouter);
     }
 
