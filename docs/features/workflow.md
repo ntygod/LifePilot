@@ -9,9 +9,12 @@
 ZhiWei 工作流引擎让你通过 YAML 文件定义多步骤自动化流程，无需编写任何代码。把 YAML 文件放到指定目录，引擎自动检测并注册——即写即用。
 
 核心能力：
-- 9 种步骤类型覆盖常见自动化场景
+- 10 种步骤类型覆盖常见自动化场景（含审批步骤）
+- DAG 依赖声明，无依赖步骤自动并行执行
 - 表达式引擎支持变量传递和条件判断
 - 定时 / 事件 / 手动三种触发方式
+- Human-in-the-Loop 审批步骤，工作流暂停等待人工确认
+- 事件审计日志，完整记录执行时间线
 - 崩溃恢复，长时间工作流不会因重启丢失
 - 热加载，修改 YAML 无需重启应用
 
@@ -82,6 +85,7 @@ steps:
 | sub-workflow | 调用子工作流 | 复用已有的工作流定义 |
 | wait | 等待指定时间 | 发送提醒后等待 5 分钟再检查 |
 | noop | 空操作占位 | 条件分支的 else 不需要操作时 |
+| approval | 人工审批确认 | 发布前确认内容、高风险操作确认 |
 
 ### 3.2 Skill 步骤
 
@@ -442,4 +446,76 @@ lifepilot:
       initial-delay-ms: 500                # 重试初始延迟
       max-delay-ms: 5000                   # 重试最大延迟
       max-attempts: 3                      # 最大重试次数
+    approval:
+      default-timeout-seconds: 86400       # 审批默认超时（24小时）
+      auto-approve-on-timeout: false       # 超时后是否自动批准
+    event-audit:
+      enabled: true                        # 是否启用事件审计
+      retention-days: 90                   # 审计日志保留天数
 ```
+
+
+## 11. DAG 依赖声明
+
+步骤之间可以通过 `dependsOn` 字段声明依赖关系。没有依赖的步骤会自动并行执行，无需手动包裹 `parallel` 步骤。
+
+```yaml
+steps:
+  - id: fetch-todos
+    name: 获取待办
+    type: skill
+    skillId: todo.list
+    # 无 dependsOn，立即执行
+
+  - id: fetch-habits
+    name: 获取习惯
+    type: skill
+    skillId: habit.summary
+    # 无 dependsOn，与 fetch-todos 并行执行
+
+  - id: generate-report
+    name: 生成报告
+    type: llm
+    scene: chat
+    prompt: "根据待办和习惯数据生成报告..."
+    dependsOn:
+      - fetch-todos
+      - fetch-habits
+    # 等两个数据源都完成后再执行
+```
+
+不写 `dependsOn` 的工作流和以前一样按顺序执行，完全向后兼容。
+
+## 12. 审批步骤（Human-in-the-Loop）
+
+审批步骤让工作流在关键节点暂停，等待人工确认后再继续。
+
+```yaml
+- id: confirm-publish
+  name: 确认发布
+  type: approval
+  message: "即将发布周报到企微群，请确认内容无误"
+  timeoutSeconds: 86400
+  autoApproveOnTimeout: false
+```
+
+| 字段 | 说明 | 默认值 |
+|------|------|--------|
+| message | 展示给审批人的消息 | （必填） |
+| approvers | 审批人列表 | ["owner"] |
+| timeoutSeconds | 超时时间（秒） | 86400（24小时） |
+| autoApproveOnTimeout | 超时后是否自动批准 | false |
+
+审批决策通过 `WorkflowEngine.approve()` API 提交。拒绝时工作流标记为失败，批准后从下一步继续执行。
+
+## 13. 事件审计日志
+
+工作流引擎自动记录执行过程中的关键事件，形成完整的审计时间线：
+
+- 实例创建和状态变化
+- 每个步骤的开始、完成、失败、跳过
+- 审批请求和审批决策
+
+审计日志是追加写入的，不影响工作流执行性能。可通过 `retention-days` 配置自动清理过期记录。
+
+这些审计数据未来将作为 Web UI 轨迹回放页的数据源。

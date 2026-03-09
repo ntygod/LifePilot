@@ -23,6 +23,9 @@
 - [11. 崩溃恢复](#11-崩溃恢复)
 - [12. 热加载机制](#12-热加载机制)
 - [13. 配置参考](#13-配置参考)
+- [14. DAG 执行模型](#14-dag-执行模型)
+- [15. ApprovalStep — Human-in-the-Loop](#15-approvalstep--human-in-the-loop)
+- [16. 事件审计日志](#16-事件审计日志)
 
 ---
 
@@ -52,7 +55,7 @@ ZhiWei 自动化（YAML 声明式）：
 
 #### 原则 2：sealed interface 穷举，编译期安全
 
-WorkflowStep（9 种）、WorkflowTrigger（3 种）、ErrorStrategy（4 种）均使用 sealed interface + switch 表达式。新增步骤类型时，编译器强制处理所有分支，杜绝遗漏。
+WorkflowStep（10 种）、WorkflowTrigger（3 种）、ErrorStrategy（4 种）均使用 sealed interface + switch 表达式。新增步骤类型时，编译器强制处理所有分支，杜绝遗漏。
 
 #### 原则 3：不可变状态机，每次转换生成新实例
 
@@ -107,11 +110,11 @@ Content was rephrased for compliance with licensing restrictions.
 
 ### 2.4 未来演进方向
 
-1. **DAG 执行模型** — 为步骤添加 `dependsOn` 字段，引擎自动拓扑排序并并行执行
-2. **Event Sourcing** — 如需更强审计和回放能力，可升级为事件日志
-3. **Human-in-the-Loop** — 添加 ApprovalStep，工作流暂停等待用户确认
-4. **可视化编辑器** — Web UI 阶段提供拖拽式工作流编辑器
-5. **Durable Execution** — 如需跨进程持久执行保证，可引入 Journal 模式
+1. ~~**DAG 执行模型**~~ — ✅ 已纳入 workflow-advanced spec
+2. ~~**Event Sourcing（轻量审计日志）**~~ — ✅ 已纳入 workflow-advanced spec
+3. ~~**Human-in-the-Loop（ApprovalStep）**~~ — ✅ 已纳入 workflow-advanced spec
+4. **可视化编辑器** — Web UI 阶段（模块 19）提供拖拽式工作流编辑器，依赖 DAG 模型完成
+5. ~~**Durable Execution**~~ — 已评估，单机 SQLite 部署场景下快照恢复已足够，不引入 Journal 模式
 
 ---
 
@@ -165,16 +168,21 @@ com.lifepilot.workflow
 ├── model/
 │   ├── WorkflowDefinition.java          // 工作流定义 record
 │   ├── WorkflowInstance.java            // 工作流实例 record
-│   ├── WorkflowStep.java               // sealed interface（9 种步骤）
+│   ├── WorkflowStep.java               // sealed interface（10 种步骤）
 │   ├── WorkflowTrigger.java            // sealed interface（3 种触发器）
 │   ├── WorkflowState.java              // 实例状态枚举
 │   ├── StepState.java                  // 步骤状态枚举
 │   ├── ErrorStrategy.java              // sealed interface（4 种策略）
 │   ├── WorkflowContext.java            // 变量上下文
-│   └── StepLog.java                    // 步骤执行日志 record
+│   ├── StepLog.java                    // 步骤执行日志 record
+│   ├── ApprovalDecision.java           // 审批决策 record
+│   ├── WorkflowEvent.java              // 审计事件 record
+│   └── WorkflowEventType.java          // 审计事件类型枚举
 ├── engine/
 │   ├── WorkflowEngine.java             // 执行引擎
-│   └── StepExecutor.java               // 步骤分发器
+│   ├── StepExecutor.java               // 步骤分发器
+│   ├── DagScheduler.java               // DAG 拓扑排序 + 并行调度
+│   └── WorkflowEventRecorder.java      // 审计事件记录器
 ├── expression/
 │   ├── ExpressionEngine.java           // 表达式引擎
 │   ├── ExpressionToken.java            // 词法 token
@@ -243,7 +251,10 @@ public class WorkflowEngine {
     /** 取消正在执行的工作流实例。 */
     WorkflowInstance cancel(String instanceId);
 
-    /** 崩溃恢复：扫描 RUNNING/WAITING 实例并恢复。 */
+    /** 审批决策：批准或拒绝 ApprovalStep。 */
+    WorkflowInstance approve(String instanceId, String stepId, ApprovalDecision decision);
+
+    /** 崩溃恢复：扫描 RUNNING/WAITING/PAUSED 实例并恢复。 */
     void recoverInterruptedInstances();
 }
 ```
@@ -256,15 +267,23 @@ execute(workflowId, inputs):
   2. 创建 WorkflowInstance(state=CREATED, context=inputs)
   3. 状态转换 CREATED → RUNNING
   4. repository.saveInstance(instance)
-  5. for step in definition.steps():
-       a. expressionEngine.resolveMap(step.params, context) → 解析表达式
-       b. stepExecutor.execute(step, context, expressionEngine) → 执行步骤
-       c. context.set("steps.{stepId}.output", result) → 存储输出
-       d. repository.insertStepLog(log) → 记录日志
-       e. repository.updateInstance(instance) → Checkpointing
-  6. 状态转换 RUNNING → COMPLETED
-  7. repository.updateInstance(instance)
+  5. dagScheduler.buildExecutionPlan(definition.steps()) → 拓扑排序
+  6. while dagScheduler.hasNext():
+       a. readySteps = dagScheduler.getReadySteps(completedStepIds)
+       b. 并行执行 readySteps（Virtual Thread）:
+          - expressionEngine.resolveMap(step.params, context) → 解析表达式
+          - stepExecutor.execute(step, context, expressionEngine) → 执行步骤
+          - context.set("steps.{stepId}.output", result) → 存储输出
+          - eventRecorder.record(STEP_COMPLETED, ...) → 记录审计事件
+          - repository.insertStepLog(log) → 记录日志
+       c. completedStepIds.addAll(readySteps.ids)
+       d. repository.updateInstance(instance) → Checkpointing
+  7. 状态转换 RUNNING → COMPLETED
+  8. eventRecorder.record(INSTANCE_STATE_CHANGED, ...)
+  9. repository.updateInstance(instance)
 ```
+
+> 注：当步骤无 `dependsOn` 字段时，DagScheduler 退化为顺序执行（等价于原有行为）。
 
 ### 4.4 Virtual Thread 执行
 
@@ -276,7 +295,7 @@ WorkflowEngine 的 execute() 方法在 Virtual Thread 上执行，不阻塞平�
 
 ### 5.1 职责
 
-StepExecutor 使用 switch 表达式穷举匹配 WorkflowStep 的 9 种子类型，将每种步骤分发到对应的执行逻辑。
+StepExecutor 使用 switch 表达式穷举匹配 WorkflowStep 的 10 种子类型，将每种步骤分发到对应的执行逻辑。
 
 ### 5.2 分发矩阵
 
@@ -291,6 +310,7 @@ StepExecutor 使用 switch 表达式穷举匹配 WorkflowStep 的 9 种子类型
 | SubWorkflowStep | WorkflowRegistry.find() → 递归执行嵌套工作流 | 注册中心 |
 | NoopStep | 直接返回空结果 | — |
 | WaitStep | Thread.sleep() on Virtual Thread，实例状态转 WAITING | — |
+| ApprovalStep | 实例状态转 PAUSED，等待外部审批决策 | — |
 
 ### 5.3 ParallelStep 并发执行
 
@@ -386,7 +406,7 @@ void scanAndRegister(Path directory);               // 扫描目录注册
 
 注册时执行以下验证：
 - 必填字段检查（id、name、steps 不为空）
-- 步骤类型合法性（必须是 9 种 sealed 子类型之一）
+- 步骤类型合法性（必须是 10 种 sealed 子类型之一）
 - 步骤 ID 唯一性（同一工作流内不重复）
 - 表达式语法预检（`${...}` 格式正确）
 
@@ -436,9 +456,9 @@ stateDiagram-v2
     RUNNING --> FAILED : 步骤失败 + Fail 策略
     RUNNING --> CANCELLED : cancel()
     RUNNING --> WAITING : WaitStep
-    RUNNING --> PAUSED : pause()（预留）
+    RUNNING --> PAUSED : ApprovalStep（等待审批）
     WAITING --> RUNNING : 等待时间到期
-    PAUSED --> RUNNING : resume()（预留）
+    PAUSED --> RUNNING : approve()（审批通过/拒绝）
     COMPLETED --> [*]
     FAILED --> [*]
     CANCELLED --> [*]
@@ -507,14 +527,18 @@ Step C 失败 + Compensate 策略：
 ### 11.2 恢复流程
 
 ```
-1. 查询 workflow_instances 表，state IN ('RUNNING', 'WAITING')
+1. 查询 workflow_instances 表，state IN ('RUNNING', 'WAITING', 'PAUSED')
 2. 对每个中断实例：
    a. 解析 context_json → WorkflowContext
    b. 如果解析失败 → 标记 FAILED，记录 "崩溃恢复失败：上下文数据损坏"
-   c. 如果 state=RUNNING → 从 current_step_index 继续执行
+   c. 如果 state=RUNNING → 根据 completedStepIds 恢复 DAG 调度，继续执行未完成步骤
    d. 如果 state=WAITING → 检查等待时间是否已过期
       - 已过期 → 转为 RUNNING，从下一步继续
       - 未过期 → 重新调度等待
+   e. 如果 state=PAUSED → 检查 ApprovalStep 超时
+      - 已超时且 autoApproveOnTimeout=true → 自动批准，转为 RUNNING
+      - 已超时且 autoApproveOnTimeout=false → 标记 FAILED
+      - 未超时 → 保持 PAUSED，等待外部审批
 ```
 
 ### 11.3 设计决策：快照恢复 vs Event Sourcing
@@ -578,4 +602,264 @@ lifepilot:
       initial-delay-ms: 500
       max-delay-ms: 5000
       max-attempts: 3
+    # 审批步骤配置
+    approval:
+      default-timeout-seconds: 86400
+      auto-approve-on-timeout: false
+    # 事件审计配置
+    event-audit:
+      enabled: true
+      retention-days: 90
 ```
+
+---
+
+## 14. DAG 执行模型
+
+### 14.1 设计动机
+
+原有工作流引擎使用顺序列表 + `currentStepIndex` 驱动执行，步骤只能串行。当多个步骤之间无数据依赖时（如同时获取待办和习惯数据），只能通过 ParallelStep 显式包裹。DAG 模型允许用户通过 `dependsOn` 字段声明步骤间依赖，引擎自动拓扑排序并并行执行无依赖步骤。
+
+### 14.2 YAML 语法扩展
+
+每个步骤新增可选字段 `dependsOn`（字符串列表），声明该步骤依赖哪些前置步骤：
+
+```yaml
+steps:
+  - id: fetch-todos
+    name: 获取待办
+    type: skill
+    skillId: todo.list
+    # 无 dependsOn = 无前置依赖，立即可执行
+
+  - id: fetch-habits
+    name: 获取习惯
+    type: skill
+    skillId: habit.summary
+    # 无 dependsOn = 与 fetch-todos 并行执行
+
+  - id: generate-report
+    name: 生成报告
+    type: llm
+    scene: chat
+    prompt: ...
+    dependsOn:
+      - fetch-todos
+      - fetch-habits
+    # 等待 fetch-todos 和 fetch-habits 都完成后执行
+```
+
+向后兼容：当所有步骤都没有 `dependsOn` 字段时，DagScheduler 退化为按列表顺序串行执行，等价于原有行为。
+
+### 14.3 DagScheduler 核心设计
+
+```java
+public class DagScheduler {
+    /** 构建执行计划：拓扑排序 + 环检测。 */
+    ExecutionPlan buildExecutionPlan(List<WorkflowStep> steps);
+
+    /** 获取当前可执行的步骤（所有前置依赖已完成）。 */
+    List<WorkflowStep> getReadySteps(Set<String> completedStepIds);
+
+    /** 是否还有未完成的步骤。 */
+    boolean hasNext(Set<String> completedStepIds);
+}
+```
+
+拓扑排序算法：采用 Kahn 算法（BFS 入度法），时间复杂度 O(V+E)。
+
+```
+buildExecutionPlan(steps):
+  1. 构建邻接表和入度表
+  2. 将入度为 0 的步骤加入就绪队列
+  3. BFS 遍历，每处理一个节点，将其后继的入度减 1
+  4. 如果处理的节点数 < 总步骤数 → 检测到环，抛出异常
+  5. 返回 ExecutionPlan（拓扑序 + 层级信息）
+```
+
+环检测：在 `WorkflowRegistry.register()` 阶段执行，注册时即拒绝包含环的工作流定义。
+
+### 14.4 WorkflowInstance 变更
+
+```
+原有：currentStepIndex (int) — 顺序执行位置
+新增：completedStepIds (Set<String>) — 已完成步骤 ID 集合
+新增：pendingApprovalStepId (String, nullable) — 当前等待审批的步骤 ID
+```
+
+`completedStepIds` 序列化为 JSON 数组存入 `context_json`，崩溃恢复时从中恢复 DAG 调度状态。
+
+### 14.5 并行执行策略
+
+```
+while dagScheduler.hasNext(completedStepIds):
+  readySteps = dagScheduler.getReadySteps(completedStepIds)
+  if readySteps.size() == 1:
+    // 单步骤，直接在当前 Virtual Thread 执行
+    execute(readySteps[0])
+  else:
+    // 多步骤，Virtual Thread 并发执行
+    futures = readySteps.map(step -> CompletableFuture.supplyAsync(() -> execute(step)))
+    CompletableFuture.allOf(futures).join()
+  completedStepIds.addAll(readySteps.ids)
+```
+
+复用已有的 `max-parallel-branches` 配置限制最大并发数。
+
+---
+
+## 15. ApprovalStep — Human-in-the-Loop
+
+### 15.1 设计动机
+
+某些工作流步骤需要人工确认后才能继续（如发布内容、执行高风险操作、确认数据变更）。ApprovalStep 是 WorkflowStep sealed interface 的第 10 个 permit，实现 Human-in-the-Loop 模式。
+
+### 15.2 YAML 语法
+
+```yaml
+- id: confirm-publish
+  name: 确认发布
+  type: approval
+  message: "即将发布周报到企微群，请确认内容无误"
+  approvers:
+    - owner
+  timeoutSeconds: 86400
+  autoApproveOnTimeout: false
+```
+
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| message | String | 是 | — | 展示给审批人的消息 |
+| approvers | List\<String\> | 否 | ["owner"] | 审批人列表（当前仅支持 owner） |
+| timeoutSeconds | int | 否 | 86400 (24h) | 审批超时时间（秒） |
+| autoApproveOnTimeout | boolean | 否 | false | 超时后是否自动批准 |
+
+### 15.3 执行流程
+
+```
+StepExecutor 遇到 ApprovalStep:
+  1. 记录审计事件 APPROVAL_REQUESTED
+  2. 将审批信息写入 WorkflowContext (steps.{stepId}.approval)
+  3. 实例状态转换 RUNNING → PAUSED
+  4. 持久化实例（含 pendingApprovalStepId）
+  5. 返回，执行循环暂停
+
+外部调用 WorkflowEngine.approve(instanceId, stepId, decision):
+  1. 验证 instanceId 和 stepId 匹配
+  2. 验证实例状态为 PAUSED
+  3. 记录审计事件 APPROVAL_DECIDED
+  4. 将决策写入 context (steps.{stepId}.approval.decision)
+  5. 如果 decision = APPROVED:
+     - 实例状态转换 PAUSED → RUNNING
+     - 从下一个就绪步骤继续 DAG 执行
+  6. 如果 decision = REJECTED:
+     - 实例状态转换 PAUSED → FAILED
+     - 记录拒绝原因
+```
+
+### 15.4 ApprovalDecision record
+
+```java
+public record ApprovalDecision(
+    Decision decision,    // APPROVED / REJECTED
+    String decidedBy,     // 决策人
+    String reason,        // 决策原因（可选）
+    Instant decidedAt     // 决策时间
+) {
+    public enum Decision { APPROVED, REJECTED }
+}
+```
+
+### 15.5 超时处理
+
+崩溃恢复时检查 PAUSED 实例的 ApprovalStep 超时：
+- 已超时 + `autoApproveOnTimeout=true` → 自动批准，继续执行
+- 已超时 + `autoApproveOnTimeout=false` → 标记 FAILED
+- 未超时 → 保持 PAUSED
+
+---
+
+## 16. 事件审计日志
+
+### 16.1 设计动机
+
+工作流执行过程中的关键事件需要可追溯的审计记录。不同于 §11 的快照恢复（只保留最新状态），事件审计日志是追加写入（append-only）的完整时间线，用于：
+- 执行历史回溯（某个工作流实例经历了哪些状态变化）
+- 审批审计（谁在什么时间批准/拒绝了什么）
+- 故障分析（步骤失败的时间线和上下文）
+- 未来 Web UI 轨迹回放页的数据源
+
+### 16.2 WorkflowEventType 枚举
+
+| 事件类型 | 触发时机 | 关键数据 |
+|---------|---------|---------|
+| INSTANCE_CREATED | 工作流实例创建 | workflowId, inputs |
+| INSTANCE_STATE_CHANGED | 实例状态转换 | oldState, newState |
+| STEP_STARTED | 步骤开始执行 | stepId, stepType |
+| STEP_COMPLETED | 步骤执行成功 | stepId, durationMs, outputSummary |
+| STEP_FAILED | 步骤执行失败 | stepId, errorMessage, errorStrategy |
+| STEP_SKIPPED | 步骤被跳过 | stepId, reason |
+| APPROVAL_REQUESTED | ApprovalStep 等待审批 | stepId, message, approvers |
+| APPROVAL_DECIDED | 审批决策完成 | stepId, decision, decidedBy |
+
+### 16.3 WorkflowEvent record
+
+```java
+public record WorkflowEvent(
+    String id,              // UUID
+    String instanceId,      // 工作流实例 ID
+    String workflowId,      // 工作流定义 ID
+    WorkflowEventType type, // 事件类型
+    String stepId,          // 步骤 ID（可选，实例级事件为 null）
+    String dataJson,        // 事件数据 JSON
+    Instant createdAt       // 事件时间
+) {}
+```
+
+### 16.4 数据库 Schema（Flyway V30）
+
+```sql
+CREATE TABLE workflow_events (
+    id          TEXT PRIMARY KEY,
+    instance_id TEXT NOT NULL,
+    workflow_id TEXT NOT NULL,
+    type        TEXT NOT NULL,
+    step_id     TEXT,
+    data_json   TEXT,
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+    FOREIGN KEY (instance_id) REFERENCES workflow_instances(id)
+);
+
+CREATE INDEX idx_workflow_events_instance_id ON workflow_events(instance_id);
+CREATE INDEX idx_workflow_events_type ON workflow_events(type);
+CREATE INDEX idx_workflow_events_created_at ON workflow_events(created_at);
+```
+
+### 16.5 WorkflowEventRecorder
+
+```java
+public class WorkflowEventRecorder {
+    /** 记录事件（追加写入，不修改已有记录）。 */
+    void record(WorkflowEventType type, String instanceId, String workflowId,
+                @Nullable String stepId, @Nullable Map<String, Object> data);
+
+    /** 查询实例的事件时间线。 */
+    List<WorkflowEvent> getTimeline(String instanceId);
+
+    /** 查询指定类型的事件。 */
+    List<WorkflowEvent> getEventsByType(WorkflowEventType type, Instant since);
+
+    /** 清理过期事件（按 retention-days 配置）。 */
+    int purgeExpiredEvents();
+}
+```
+
+### 16.6 集成点
+
+WorkflowEventRecorder 在以下位置被调用：
+- `WorkflowEngine.execute()` — INSTANCE_CREATED, INSTANCE_STATE_CHANGED
+- `WorkflowEngine.approve()` — APPROVAL_DECIDED
+- `StepExecutor.execute()` — STEP_STARTED, STEP_COMPLETED, STEP_FAILED, STEP_SKIPPED
+- `StepExecutor` 处理 ApprovalStep — APPROVAL_REQUESTED
+
+事件记录是异步的（fire-and-forget），不影响工作流执行的主路径性能。记录失败只打 WARN 日志，不中断工作流。
