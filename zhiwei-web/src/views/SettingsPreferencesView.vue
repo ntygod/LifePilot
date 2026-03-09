@@ -98,7 +98,7 @@ const timeFormatOptions = [
 
 function restartOnboarding() {
   if (confirm('确定要重新开始新手引导吗？')) {
-    localStorage.removeItem('lifepilot_onboarding_completed')
+    localStorage.removeItem('zhiwei_onboarding_completed')
     window.location.reload()
   }
 }

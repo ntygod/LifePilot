@@ -26,7 +26,7 @@ onMounted(() => {
   installShortcuts()
 
   // 检查是否已完成 onboarding
-  const completed = localStorage.getItem('lifepilot_onboarding_completed')
+  const completed = localStorage.getItem('zhiwei_onboarding_completed')
   if (!completed) {
     showOnboarding.value = true
   }
