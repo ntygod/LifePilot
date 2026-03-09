@@ -151,10 +151,10 @@ class WorkflowRegistry热加载测试 {
 
     @Test
     void resolveDefinitionsDir_波浪号路径_替换为用户主目录() {
-        Path resolved = WorkflowRegistry.resolveDefinitionsDir("~/.lifepilot/workflows");
+        Path resolved = WorkflowRegistry.resolveDefinitionsDir("~/.zhiwei/workflows");
         String userHome = System.getProperty("user.home");
         assertThat(resolved.toString()).startsWith(userHome);
-        assertThat(resolved.toString()).endsWith(".lifepilot" + resolved.getFileSystem().getSeparator() + "workflows");
+        assertThat(resolved.toString()).endsWith(".zhiwei" + resolved.getFileSystem().getSeparator() + "workflows");
     }
 
     @Test

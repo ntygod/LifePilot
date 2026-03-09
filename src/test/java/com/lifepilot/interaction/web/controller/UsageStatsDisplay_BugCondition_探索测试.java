@@ -93,7 +93,7 @@ class UsageStatsDisplay_BugCondition_探索测试 {
     @DisplayName("Bug1_前端UsageStats接口应使用inputTokens而非promptTokens")
     void bug1_前端UsageStats接口应使用inputTokens而非promptTokens() throws IOException {
         // 读取前端 TypeScript 类型定义文件
-        Path typesFile = Path.of("lifepilot-web/src/types/index.ts");
+        Path typesFile = Path.of("zhiwei-web/src/types/index.ts");
         assertTrue(Files.exists(typesFile), "前端类型定义文件应存在: " + typesFile);
 
         String content = Files.readString(typesFile);
