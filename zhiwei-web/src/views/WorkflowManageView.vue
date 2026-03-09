@@ -4,6 +4,7 @@ import { useWorkflowStore } from '@/stores/workflow'
 import type { WorkflowDetail, WorkflowItem } from '@/types'
 import WorkflowForm from '@/components/workflow/WorkflowForm.vue'
 import ExecutionDetail from '@/components/workflow/ExecutionDetail.vue'
+import StepDetailCard from '@/components/workflow/StepDetailCard.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import ErrorState from '@/components/common/ErrorState.vue'
 import Pagination from '@/components/common/Pagination.vue'
@@ -316,39 +317,12 @@ function formatDuration(start?: string, end?: string): string {
                   <CardTitle class="text-sm">步骤（{{ store.current.steps.length }}）</CardTitle>
                 </CardHeader>
                 <CardContent class="space-y-xs">
-                  <div
+                  <StepDetailCard
                     v-for="(step, i) in store.current.steps"
-                    :key="i"
-                    class="p-sm rounded-lg border border-border bg-muted/30"
-                  >
-                    <div class="flex items-start gap-sm">
-                      <div
-                        class="flex-shrink-0 w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-medium"
-                      >
-                        {{ i + 1 }}
-                      </div>
-                      <div class="flex-1">
-                        <div class="font-medium text-foreground mb-xs">
-                          {{ (step as any).name || (step as any).type || `步骤 ${i + 1}` }}
-                        </div>
-                        <div v-if="(step as any).description" class="text-sm text-muted-foreground mb-xs">
-                          {{ (step as any).description }}
-                        </div>
-                        <div v-if="(step as any).agentId" class="text-xs text-muted-foreground">
-                          Agent: {{ (step as any).agentId }}
-                        </div>
-                        <div v-if="(step as any).toolId" class="text-xs text-muted-foreground">
-                          工具: {{ (step as any).toolId }}
-                        </div>
-                        <details class="mt-xs">
-                          <summary class="text-xs text-muted-foreground cursor-pointer hover:text-foreground">
-                            查看完整配置
-                          </summary>
-                          <pre class="mt-xs p-sm rounded-lg bg-muted text-xs overflow-x-auto">{{ JSON.stringify(step, null, 2) }}</pre>
-                        </details>
-                      </div>
-                    </div>
-                  </div>
+                    :key="(step as any).id || i"
+                    :step="step"
+                    :index="i"
+                  />
                 </CardContent>
               </Card>
             </TabsContent>
