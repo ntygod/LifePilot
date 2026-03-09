@@ -20,6 +20,7 @@ import com.lifepilot.workflow.model.WorkflowStep.ParallelStep;
 import com.lifepilot.workflow.model.WorkflowStep.SkillStep;
 import com.lifepilot.workflow.model.WorkflowStep.SubWorkflowStep;
 import com.lifepilot.workflow.model.WorkflowStep.ToolStep;
+import com.lifepilot.workflow.model.WorkflowStep.ApprovalStep;
 import com.lifepilot.workflow.model.WorkflowStep.WaitStep;
 import com.lifepilot.workflow.model.WorkflowTrigger;
 
@@ -213,6 +214,20 @@ public class WorkflowYamlPrinter {
                 map.put("type", "wait");
                 map.put("durationSeconds", s.durationSeconds());
             }
+            case ApprovalStep s -> {
+                map.put("type", "approval");
+                map.put("message", s.message());
+                if (!s.approvers().isEmpty()) {
+                    map.put("approvers", new ArrayList<>(s.approvers()));
+                }
+                map.put("timeoutSeconds", s.timeoutSeconds());
+                map.put("autoApproveOnTimeout", s.autoApproveOnTimeout());
+            }
+        }
+
+        // dependsOn（非空时输出）
+        if (step.dependsOn() != null && !step.dependsOn().isEmpty()) {
+            map.put("dependsOn", new ArrayList<>(step.dependsOn()));
         }
 
         // 错误策略（仅在非 null 时输出）

@@ -10,22 +10,23 @@ import com.lifepilot.workflow.repository.WorkflowRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
 import java.time.Instant;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Semaphore;
 
 /**
- * 工作流执行引擎 — 负责实例创建、状态机驱动、步骤分发和错误处理。
+ * 工作流执行引擎 — 负责实例创建、DAG 调度、状态机驱动、步骤分发和错误处理。
  *
  * <p>核心职责：
  * <ul>
  *   <li>创建 {@link WorkflowInstance} 并驱动状态机转换</li>
- *   <li>遍历 {@link WorkflowDefinition#steps()} 并委托 {@link StepExecutor} 执行</li>
- *   <li>按 {@link ErrorStrategy} 分发错误处理（Retry / Skip / Fail / Compensate）</li>
- *   <li>处理 WaitStep（转换为 WAITING 状态）和 SubWorkflowStep（递归执行）</li>
- *   <li>每次状态转换后持久化到 SQLite</li>
- *   <li>崩溃恢复：扫描 RUNNING/WAITING 实例并恢复执行</li>
+ *   <li>基于 {@link DagScheduler} 进行 DAG 拓扑排序和并行调度</li>
+ *   <li>委托 {@link StepExecutor} 执行步骤，按 {@link ErrorStrategy} 分发错误处理</li>
+ *   <li>处理 WaitStep（WAITING）、ApprovalStep（PAUSED）和 SubWorkflowStep（递归执行）</li>
+ *   <li>通过 {@link WorkflowEventRecorder} 记录审计事件</li>
+ *   <li>崩溃恢复：扫描 RUNNING/WAITING/PAUSED 实例并恢复执行</li>
  * </ul>
  *
  * @author zsg
@@ -40,25 +41,29 @@ public class WorkflowEngine {
     private final ExpressionEngine expressionEngine;
     private final WorkflowRepository repository;
     private final WorkflowConfigProperties config;
+    private final DagScheduler dagScheduler;
+    private final WorkflowEventRecorder eventRecorder;
 
     public WorkflowEngine(WorkflowRegistry registry,
                           StepExecutor stepExecutor,
                           ExpressionEngine expressionEngine,
                           WorkflowRepository repository,
-                          WorkflowConfigProperties config) {
+                          WorkflowConfigProperties config,
+                          DagScheduler dagScheduler,
+                          WorkflowEventRecorder eventRecorder) {
         this.registry = registry;
         this.stepExecutor = stepExecutor;
         this.expressionEngine = expressionEngine;
         this.repository = repository;
         this.config = config;
+        this.dagScheduler = dagScheduler;
+        this.eventRecorder = eventRecorder;
     }
 
     // ==================== 公开 API ====================
 
     /**
      * 执行工作流（手动触发或触发器调用）。
-     *
-     * <p>流程：查找定义 → 创建实例(CREATED) → 转换为 RUNNING → 遍历步骤 → 终态。
      *
      * @param workflowId 工作流定义 ID
      * @param inputs     工作流输入参数
@@ -80,20 +85,85 @@ public class WorkflowEngine {
         WorkflowInstance instance = repository.findInstance(instanceId)
                 .orElseThrow(() -> new IllegalArgumentException("工作流实例未找到: id=" + instanceId));
 
-        // 仅 WAITING 状态可恢复
         WorkflowInstance running = transition(instance, WorkflowState.RUNNING);
         if (running == instance) {
-            // 转换被拒绝，返回当前实例
             return instance;
         }
 
-        // 查找工作流定义
         WorkflowDefinition definition = registry.find(running.workflowId())
                 .orElseThrow(() -> new IllegalArgumentException(
                         "工作流定义未找到: workflowId=" + running.workflowId()));
 
-        // 从 currentStepIndex + 1 继续执行（WaitStep 已完成，执行下一步）
-        return executeSteps(running, definition.steps(), running.currentStepIndex() + 1, 0);
+        // 从 completedStepIds 恢复 DAG 调度
+        return executeDag(running, definition.steps(),
+                new HashSet<>(running.completedStepIds()), 0);
+    }
+
+    /**
+     * 处理审批决策。
+     *
+     * @param instanceId 工作流实例 ID
+     * @param stepId     审批步骤 ID
+     * @param decision   审批决策
+     * @return 更新后的实例
+     * @throws IllegalStateException 实例不是 PAUSED 状态或 stepId 不匹配时抛出
+     */
+    public WorkflowInstance approve(String instanceId, String stepId, ApprovalDecision decision) {
+        WorkflowInstance instance = repository.findInstance(instanceId)
+                .orElseThrow(() -> new IllegalArgumentException("工作流实例未找到: id=" + instanceId));
+
+        if (instance.state() != WorkflowState.PAUSED) {
+            throw new IllegalStateException(
+                    "工作流实例不是 PAUSED 状态: instanceId=" + instanceId + ", state=" + instance.state());
+        }
+        if (!stepId.equals(instance.pendingApprovalStepId())) {
+            throw new IllegalStateException(
+                    "审批步骤 ID 不匹配: expected=" + instance.pendingApprovalStepId() + ", actual=" + stepId);
+        }
+
+        // 记录审批决策事件
+        eventRecorder.record(WorkflowEventType.APPROVAL_DECIDED, instanceId, instance.workflowId(),
+                stepId, Map.of("decision", decision.decision().name(), "decidedBy", decision.decidedBy()));
+
+        // 将决策写入 context
+        instance.context().set("steps." + stepId + ".approval.decision", decision.decision().name());
+        instance.context().set("steps." + stepId + ".approval.decidedBy", decision.decidedBy());
+        if (decision.reason() != null) {
+            instance.context().set("steps." + stepId + ".approval.reason", decision.reason());
+        }
+
+        if (decision.decision() == ApprovalDecision.Decision.APPROVED) {
+            // 清除 pendingApprovalStepId，转换 PAUSED→RUNNING
+            WorkflowInstance cleared = instance.toBuilder()
+                    .pendingApprovalStepId(null)
+                    .updatedAt(Instant.now())
+                    .build();
+            WorkflowInstance running = transition(cleared, WorkflowState.RUNNING);
+
+            // 将审批步骤加入已完成集合
+            Set<String> completed = new HashSet<>(running.completedStepIds());
+            completed.add(stepId);
+            WorkflowInstance updated = running.toBuilder()
+                    .completedStepIds(Set.copyOf(completed))
+                    .updatedAt(Instant.now())
+                    .build();
+            repository.updateInstance(updated);
+
+            // 从下一个就绪步骤继续 DAG 执行
+            String workflowId = updated.workflowId();
+            WorkflowDefinition definition = registry.find(workflowId)
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            "工作流定义未找到: workflowId=" + workflowId));
+
+            log.info("审批通过，恢复 DAG 执行: instanceId={}, stepId={}", instanceId, stepId);
+            return executeDag(updated, definition.steps(), completed, 0);
+        } else {
+            // REJECTED → FAILED
+            log.info("审批拒绝，工作流失败: instanceId={}, stepId={}, reason={}",
+                    instanceId, stepId, decision.reason());
+            return failWorkflow(instance,
+                    "审批被拒绝: stepId=" + stepId + ", decidedBy=" + decision.decidedBy());
+        }
     }
 
     /**
@@ -106,14 +176,11 @@ public class WorkflowEngine {
     public WorkflowInstance cancel(String instanceId) {
         WorkflowInstance instance = repository.findInstance(instanceId)
                 .orElseThrow(() -> new IllegalArgumentException("工作流实例未找到: id=" + instanceId));
-
         return transition(instance, WorkflowState.CANCELLED);
     }
 
     /**
-     * 崩溃恢复：扫描 RUNNING/WAITING 实例并恢复执行。
-     *
-     * <p>使用 Virtual Thread 执行，避免阻塞主启动序列。
+     * 崩溃恢复：扫描 RUNNING/WAITING/PAUSED 实例并恢复执行。
      */
     public void recoverInterruptedInstances() {
         if (!config.isCrashRecoveryEnabled()) {
@@ -125,7 +192,7 @@ public class WorkflowEngine {
             try {
                 log.info("开始崩溃恢复：扫描中断的工作流实例");
                 List<WorkflowInstance> interrupted = repository.findInstancesByState(
-                        WorkflowState.RUNNING, WorkflowState.WAITING);
+                        WorkflowState.RUNNING, WorkflowState.WAITING, WorkflowState.PAUSED);
 
                 if (interrupted.isEmpty()) {
                     log.info("崩溃恢复完成：无中断实例");
@@ -151,14 +218,12 @@ public class WorkflowEngine {
     private WorkflowInstance executeInternal(String workflowId,
                                              Map<String, Object> inputs,
                                              int nestingDepth) {
-        // 嵌套深度检查
         if (nestingDepth > config.getMaxNestingDepth()) {
             throw new IllegalStateException(
                     "子工作流嵌套深度超过上限: depth=" + nestingDepth
                     + ", maxNestingDepth=" + config.getMaxNestingDepth());
         }
 
-        // 1. 查找工作流定义
         WorkflowDefinition definition = registry.find(workflowId)
                 .orElseThrow(() -> new IllegalArgumentException("工作流定义未找到: workflowId=" + workflowId));
 
@@ -166,7 +231,7 @@ public class WorkflowEngine {
             throw new IllegalArgumentException("工作流已禁用: workflowId=" + workflowId);
         }
 
-        // 2. 创建实例（CREATED 状态）
+        // 创建实例（CREATED 状态）
         Instant now = Instant.now();
         WorkflowContext context = new WorkflowContext();
         if (inputs != null) {
@@ -178,7 +243,8 @@ public class WorkflowEngine {
                 .workflowId(workflowId)
                 .state(WorkflowState.CREATED)
                 .context(context)
-                .currentStepIndex(0)
+                .completedStepIds(Set.of())
+                .pendingApprovalStepId(null)
                 .createdAt(now)
                 .updatedAt(now)
                 .build();
@@ -186,62 +252,135 @@ public class WorkflowEngine {
         repository.saveInstance(instance);
         log.info("工作流实例创建: instanceId={}, workflowId={}", instance.id(), workflowId);
 
-        // 3. CREATED → RUNNING
+        // 记录审计事件
+        eventRecorder.record(WorkflowEventType.INSTANCE_CREATED, instance.id(), workflowId,
+                null, Map.of("workflowId", workflowId));
+
+        // CREATED → RUNNING
         instance = transition(instance, WorkflowState.RUNNING);
 
-        // 4. 遍历步骤执行
-        return executeSteps(instance, definition.steps(), 0, nestingDepth);
+        // DAG 执行
+        return executeDag(instance, definition.steps(), new HashSet<>(), nestingDepth);
     }
 
     /**
-     * 从指定索引开始遍历执行步骤列表。
+     * DAG 执行循环：拓扑排序 → 并行调度 → checkpoint。
+     *
+     * @param instance         当前工作流实例
+     * @param steps            步骤列表
+     * @param completedStepIds 已完成步骤 ID 集合（可变）
+     * @param nestingDepth     嵌套深度
+     * @return 执行完成后的实例
      */
-    private WorkflowInstance executeSteps(WorkflowInstance instance,
-                                          List<WorkflowStep> steps,
-                                          int startIndex,
-                                          int nestingDepth) {
-        for (int i = startIndex; i < steps.size(); i++) {
-            WorkflowStep step = steps.get(i);
+    private WorkflowInstance executeDag(WorkflowInstance instance,
+                                        List<WorkflowStep> steps,
+                                        Set<String> completedStepIds,
+                                        int nestingDepth) {
+        dagScheduler.buildExecutionPlan(steps);
 
-            // 更新 currentStepIndex 并持久化
+        while (dagScheduler.hasNext(completedStepIds)) {
+            List<WorkflowStep> readySteps = dagScheduler.getReadySteps(completedStepIds);
+            if (readySteps.isEmpty()) {
+                log.error("DAG 调度异常：hasNext=true 但无就绪步骤: instanceId={}", instance.id());
+                return failWorkflow(instance, "DAG 调度异常：无就绪步骤");
+            }
+
+            if (readySteps.size() == 1) {
+                // 单步直接执行
+                WorkflowStep step = readySteps.getFirst();
+                eventRecorder.record(WorkflowEventType.STEP_STARTED, instance.id(),
+                        instance.workflowId(), step.id(),
+                        Map.of("stepType", extractStepType(step)));
+
+                instance = executeStepWithErrorHandling(instance, step, nestingDepth);
+
+                // 检查非 RUNNING 状态（PAUSED/WAITING/FAILED/CANCELLED）
+                if (instance.state() != WorkflowState.RUNNING) {
+                    return instance;
+                }
+                completedStepIds.add(step.id());
+            } else {
+                // 多步 Virtual Thread 并发执行
+                Semaphore semaphore = new Semaphore(config.getMaxParallelBranches());
+                List<CompletableFuture<StepResult>> futures = new ArrayList<>();
+
+                for (WorkflowStep step : readySteps) {
+                    eventRecorder.record(WorkflowEventType.STEP_STARTED, instance.id(),
+                            instance.workflowId(), step.id(),
+                            Map.of("stepType", extractStepType(step)));
+
+                    final WorkflowInstance currentInstance = instance;
+                    futures.add(CompletableFuture.supplyAsync(() -> {
+                        try {
+                            semaphore.acquire();
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            return new StepResult(step.id(), null,
+                                    new WorkflowStepException(step.id(), "并发执行被中断"));
+                        }
+                        try {
+                            WorkflowInstance result = executeStepWithErrorHandling(
+                                    currentInstance, step, nestingDepth);
+                            return new StepResult(step.id(), result, null);
+                        } catch (Exception e) {
+                            return new StepResult(step.id(), null, e);
+                        } finally {
+                            semaphore.release();
+                        }
+                    }, Thread.ofVirtual().factory()::newThread));
+                }
+
+                // 等待所有并发步骤完成
+                CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).join();
+
+                // 检查结果
+                for (CompletableFuture<StepResult> future : futures) {
+                    StepResult result = future.join();
+                    if (result.error() != null) {
+                        log.error("并发步骤执行失败: stepId={}, error={}",
+                                result.stepId(), result.error().getMessage());
+                        return failWorkflow(instance,
+                                "并发步骤执行失败: stepId=" + result.stepId());
+                    }
+                    if (result.instance() != null
+                            && result.instance().state() != WorkflowState.RUNNING) {
+                        // 非 RUNNING 状态（PAUSED/WAITING/FAILED）
+                        return result.instance();
+                    }
+                    completedStepIds.add(result.stepId());
+                }
+                // 合并最新 context（并发步骤可能修改了 context）
+                instance = instance.toBuilder().updatedAt(Instant.now()).build();
+            }
+
+            // Checkpoint：更新 completedStepIds 并持久化
             instance = instance.toBuilder()
-                    .currentStepIndex(i)
+                    .completedStepIds(Set.copyOf(completedStepIds))
                     .updatedAt(Instant.now())
                     .build();
             repository.updateInstance(instance);
-
-            // 执行步骤（含错误处理）
-            instance = executeStepWithErrorHandling(instance, step, i, nestingDepth);
-
-            // 检查是否进入 WAITING 状态（WaitStep）
-            if (instance.state() == WorkflowState.WAITING) {
-                log.info("工作流进入 WAITING 状态: instanceId={}, stepIndex={}", instance.id(), i);
-                return instance;
-            }
-
-            // 检查是否已失败或取消
-            if (instance.state() == WorkflowState.FAILED
-                    || instance.state() == WorkflowState.CANCELLED) {
-                return instance;
-            }
         }
 
-        // 所有步骤执行完成 → COMPLETED
-        instance = transition(instance, WorkflowState.COMPLETED);
-        return instance;
+        // 所有步骤完成 → COMPLETED
+        return transition(instance, WorkflowState.COMPLETED);
     }
+
+    /** 并发步骤执行结果。 */
+    private record StepResult(String stepId,
+                              WorkflowInstance instance,
+                              Exception error) {}
 
     /**
      * 执行单个步骤，包含错误处理逻辑。
      */
     private WorkflowInstance executeStepWithErrorHandling(WorkflowInstance instance,
                                                           WorkflowStep step,
-                                                          int stepIndex,
                                                           int nestingDepth) {
         String stepType = extractStepType(step);
-        ErrorStrategy strategy = step.errorStrategy() != null
-                ? step.errorStrategy()
-                : new Fail(); // 无策略时默认 Fail
+        ErrorStrategy strategy = step.errorStrategy();
+        if (strategy == null) {
+            strategy = new Fail();
+        }
 
         return switch (strategy) {
             case Retry retry -> executeWithRetry(instance, step, stepType, retry, nestingDepth);
@@ -252,9 +391,7 @@ public class WorkflowEngine {
     }
 
     /**
-     * 执行步骤并处理结果（成功/WaitStep/SubWorkflowStep）。
-     *
-     * @return 更新后的实例，或在失败时抛出异常
+     * 执行步骤核心逻辑（成功/WaitStep/ApprovalStep/SubWorkflowStep）。
      */
     private WorkflowInstance executeStepCore(WorkflowInstance instance,
                                              WorkflowStep step,
@@ -267,12 +404,36 @@ public class WorkflowEngine {
 
             // 检查 WaitStep 特殊标记
             if ("wait".equals(output.get("__type"))) {
-                // 记录 StepLog（COMPLETED 状态，WaitStep 本身执行成功）
+                insertStepLog(instance.id(), step.id(), stepType, StepState.COMPLETED,
+                        attempt, null, toJson(output), null, stepStart);
+                return transition(instance, WorkflowState.WAITING);
+            }
+
+            // 检查 ApprovalStep 特殊标记
+            if ("approval".equals(output.get("__type"))) {
                 insertStepLog(instance.id(), step.id(), stepType, StepState.COMPLETED,
                         attempt, null, toJson(output), null, stepStart);
 
-                // 转换为 WAITING 状态
-                return transition(instance, WorkflowState.WAITING);
+                // 将审批信息写入 context
+                instance.context().set("steps." + step.id() + ".approval", output);
+                instance.context().set("steps." + step.id() + ".pausedAt", Instant.now().toString());
+
+                // 设置 pendingApprovalStepId
+                instance = instance.toBuilder()
+                        .pendingApprovalStepId(step.id())
+                        .updatedAt(Instant.now())
+                        .build();
+
+                // 记录审计事件
+                eventRecorder.record(WorkflowEventType.APPROVAL_REQUESTED, instance.id(),
+                        instance.workflowId(), step.id(), output);
+
+                // 转换为 PAUSED 状态
+                instance = transition(instance, WorkflowState.PAUSED);
+                repository.updateInstance(instance);
+                log.info("工作流进入 PAUSED 状态（等待审批）: instanceId={}, stepId={}",
+                        instance.id(), step.id());
+                return instance;
             }
 
             // 检查 SubWorkflowStep 特殊标记
@@ -284,17 +445,14 @@ public class WorkflowEngine {
                 log.info("执行子工作流: parentInstanceId={}, subWorkflowId={}, nestingDepth={}",
                         instance.id(), subWorkflowId, nestingDepth + 1);
 
-                // 递归执行子工作流
                 WorkflowInstance subInstance = executeInternal(subWorkflowId, subParams, nestingDepth + 1);
 
-                // 将子工作流结果存入上下文
                 Map<String, Object> subOutput = Map.of(
                         "instanceId", subInstance.id(),
                         "state", subInstance.state().name()
                 );
                 instance.context().set("steps." + step.id() + ".output", subOutput);
 
-                // 记录 StepLog
                 StepState subStepState = subInstance.state() == WorkflowState.COMPLETED
                         ? StepState.COMPLETED : StepState.FAILED;
                 insertStepLog(instance.id(), step.id(), stepType, subStepState,
@@ -306,25 +464,31 @@ public class WorkflowEngine {
                             + ", state=" + subInstance.state());
                 }
 
+                eventRecorder.record(WorkflowEventType.STEP_COMPLETED, instance.id(),
+                        instance.workflowId(), step.id(),
+                        Map.of("durationMs", Duration.between(stepStart, Instant.now()).toMillis()));
                 return instance.toBuilder().updatedAt(Instant.now()).build();
             }
 
             // 普通步骤：存储输出到上下文
             instance.context().set("steps." + step.id() + ".output", output);
-
-            // 记录 StepLog
             insertStepLog(instance.id(), step.id(), stepType, StepState.COMPLETED,
                     attempt, null, toJson(output), null, stepStart);
 
+            eventRecorder.record(WorkflowEventType.STEP_COMPLETED, instance.id(),
+                    instance.workflowId(), step.id(),
+                    Map.of("durationMs", Duration.between(stepStart, Instant.now()).toMillis()));
             return instance.toBuilder().updatedAt(Instant.now()).build();
 
         } catch (Exception e) {
-            // 存储错误到上下文
             instance.context().set("steps." + step.id() + ".error", e.getMessage());
-
-            // 记录失败 StepLog
             insertStepLog(instance.id(), step.id(), stepType, StepState.FAILED,
                     attempt, null, null, e.getMessage(), stepStart);
+
+            eventRecorder.record(WorkflowEventType.STEP_FAILED, instance.id(),
+                    instance.workflowId(), step.id(),
+                    Map.of("errorMessage", e.getMessage() != null ? e.getMessage() : "unknown",
+                           "errorStrategy", extractStepType(step)));
 
             throw e instanceof WorkflowStepException wse ? wse
                     : new WorkflowStepException(step.id(), e.getMessage(), e);
@@ -333,14 +497,9 @@ public class WorkflowEngine {
 
     // ==================== 错误策略分发 ====================
 
-    /**
-     * Retry 策略：指数退避重试，耗尽后回退到 Fail。
-     */
     private WorkflowInstance executeWithRetry(WorkflowInstance instance,
-                                              WorkflowStep step,
-                                              String stepType,
-                                              Retry retry,
-                                              int nestingDepth) {
+                                              WorkflowStep step, String stepType,
+                                              Retry retry, int nestingDepth) {
         int maxAttempts = retry.maxAttempts();
         long initialDelay = retry.initialDelayMs();
         long maxDelay = retry.maxDelayMs();
@@ -351,56 +510,39 @@ public class WorkflowEngine {
             } catch (Exception e) {
                 log.warn("步骤执行失败（重试 {}/{}）: stepId={}, error={}",
                         attempt, maxAttempts, step.id(), e.getMessage());
-
                 if (attempt < maxAttempts) {
-                    // 指数退避等待
                     long delay = Math.min(initialDelay * (long) Math.pow(2, attempt - 1), maxDelay);
-                    log.debug("重试等待: stepId={}, delayMs={}", step.id(), delay);
                     try {
                         Thread.sleep(delay);
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
-                        log.warn("重试等待被中断: stepId={}", step.id());
                         break;
                     }
                 }
             }
         }
-
-        // 重试耗尽，回退到 Fail
-        log.warn("重试耗尽，回退到 Fail 策略: stepId={}, maxAttempts={}", step.id(), maxAttempts);
         return failWorkflow(instance, "步骤重试耗尽: stepId=" + step.id());
     }
 
-    /**
-     * Skip 策略：标记步骤为 SKIPPED，继续执行。
-     */
     private WorkflowInstance executeWithSkip(WorkflowInstance instance,
-                                             WorkflowStep step,
-                                             String stepType,
-                                             Skip skip,
-                                             int nestingDepth) {
+                                             WorkflowStep step, String stepType,
+                                             Skip skip, int nestingDepth) {
         try {
             return executeStepCore(instance, step, stepType, 1, nestingDepth);
         } catch (Exception e) {
-            log.warn("步骤执行失败，Skip 跳过: stepId={}, reason={}, error={}",
-                    step.id(), skip.reason(), e.getMessage());
-
-            // 记录 SKIPPED StepLog
+            log.warn("步骤执行失败，Skip 跳过: stepId={}, reason={}", step.id(), skip.reason());
             insertStepLog(instance.id(), step.id(), stepType, StepState.SKIPPED,
                     1, null, null, "Skip: " + skip.reason() + " | " + e.getMessage(),
                     Instant.now());
-
+            eventRecorder.record(WorkflowEventType.STEP_SKIPPED, instance.id(),
+                    instance.workflowId(), step.id(),
+                    Map.of("reason", skip.reason()));
             return instance.toBuilder().updatedAt(Instant.now()).build();
         }
     }
 
-    /**
-     * Fail 策略：步骤失败时终止工作流。
-     */
     private WorkflowInstance executeWithFail(WorkflowInstance instance,
-                                             WorkflowStep step,
-                                             String stepType,
+                                             WorkflowStep step, String stepType,
                                              int nestingDepth) {
         try {
             return executeStepCore(instance, step, stepType, 1, nestingDepth);
@@ -410,40 +552,26 @@ public class WorkflowEngine {
         }
     }
 
-    /**
-     * Compensate 策略：执行补偿步骤后标记失败。
-     */
     private WorkflowInstance executeWithCompensate(WorkflowInstance instance,
-                                                    WorkflowStep step,
-                                                    String stepType,
-                                                    Compensate compensate,
-                                                    int nestingDepth) {
+                                                   WorkflowStep step, String stepType,
+                                                   ErrorStrategy.Compensate compensate,
+                                                   int nestingDepth) {
         try {
             return executeStepCore(instance, step, stepType, 1, nestingDepth);
         } catch (Exception e) {
-            log.warn("步骤执行失败，执行补偿步骤: stepId={}, compensationStepId={}",
-                    step.id(), compensate.compensationStep().id());
-
-            // 执行补偿步骤
+            log.warn("步骤执行失败，执行补偿步骤: stepId={}, error={}", step.id(), e.getMessage());
             try {
                 WorkflowStep compStep = compensate.compensationStep();
-                String compStepType = extractStepType(compStep);
-                Instant compStart = Instant.now();
-
+                String compType = extractStepType(compStep);
                 Map<String, Object> compOutput = stepExecutor.execute(
                         compStep, instance.context(), expressionEngine);
                 instance.context().set("steps." + compStep.id() + ".output", compOutput);
-
-                insertStepLog(instance.id(), compStep.id(), compStepType, StepState.COMPLETED,
-                        1, null, toJson(compOutput), null, compStart);
-
-                log.info("补偿步骤执行成功: compensationStepId={}", compStep.id());
+                insertStepLog(instance.id(), compStep.id(), compType, StepState.COMPLETED,
+                        1, null, toJson(compOutput), null, Instant.now());
+                log.info("补偿步骤执行成功: compStepId={}", compStep.id());
             } catch (Exception compEx) {
-                log.error("补偿步骤执行失败: compensationStepId={}, error={}",
-                        compensate.compensationStep().id(), compEx.getMessage());
+                log.error("补偿步骤执行失败: stepId={}, compError={}", step.id(), compEx.getMessage());
             }
-
-            // 补偿后仍标记工作流为 FAILED
             return failWorkflow(instance,
                     "步骤执行失败（已补偿）: stepId=" + step.id() + ", error=" + e.getMessage());
         }
@@ -452,181 +580,212 @@ public class WorkflowEngine {
     // ==================== 状态机 ====================
 
     /**
-     * 执行状态转换，拒绝无效转换。
-     *
-     * <p>有效转换：
-     * <ul>
-     *   <li>CREATED → RUNNING</li>
-     *   <li>RUNNING → COMPLETED / FAILED / CANCELLED / WAITING</li>
-     *   <li>WAITING → RUNNING</li>
-     * </ul>
-     *
-     * @param instance   当前实例
-     * @param targetState 目标状态
-     * @return 转换后的新实例，无效转换时返回原实例不变
+     * 状态机转换 — 验证转换合法性，更新实例状态并持久化。
      */
-    private WorkflowInstance transition(WorkflowInstance instance, WorkflowState targetState) {
-        WorkflowState currentState = instance.state();
-
-        if (!isValidTransition(currentState, targetState)) {
-            log.warn("无效状态转换被拒绝: instanceId={}, from={}, to={}",
-                    instance.id(), currentState, targetState);
+    private WorkflowInstance transition(WorkflowInstance instance, WorkflowState to) {
+        WorkflowState from = instance.state();
+        if (from == to) {
+            return instance;
+        }
+        if (!isValidTransition(from, to)) {
+            log.warn("非法状态转换: instanceId={}, from={}, to={}", instance.id(), from, to);
             return instance;
         }
 
-        Instant now = Instant.now();
-        var builder = instance.toBuilder()
-                .state(targetState)
-                .updatedAt(now);
+        // 记录状态变更审计事件
+        eventRecorder.record(WorkflowEventType.INSTANCE_STATE_CHANGED, instance.id(),
+                instance.workflowId(), null,
+                Map.of("oldState", from.name(), "newState", to.name()));
 
-        // 设置 startedAt（CREATED → RUNNING）
-        if (currentState == WorkflowState.CREATED && targetState == WorkflowState.RUNNING) {
+        Instant now = Instant.now();
+        var builder = instance.toBuilder().state(to).updatedAt(now);
+
+        // 设置时间戳
+        if (to == WorkflowState.RUNNING && instance.startedAt() == null) {
             builder.startedAt(now);
         }
-
-        // 设置 completedAt（终态）
-        if (targetState == WorkflowState.COMPLETED
-                || targetState == WorkflowState.FAILED
-                || targetState == WorkflowState.CANCELLED) {
+        if (to == WorkflowState.COMPLETED || to == WorkflowState.FAILED || to == WorkflowState.CANCELLED) {
             builder.completedAt(now);
         }
 
-        WorkflowInstance newInstance = builder.build();
-        repository.updateInstance(newInstance);
-
-        log.info("工作流状态转换: instanceId={}, {} → {}", instance.id(), currentState, targetState);
-        return newInstance;
+        WorkflowInstance updated = builder.build();
+        repository.updateInstance(updated);
+        log.info("工作流状态转换: instanceId={}, {} → {}", instance.id(), from, to);
+        return updated;
     }
 
     /**
-     * 检查状态转换是否有效。
+     * 验证状态转换是否合法。
      */
     private boolean isValidTransition(WorkflowState from, WorkflowState to) {
         return switch (from) {
             case CREATED -> to == WorkflowState.RUNNING;
-            case RUNNING -> to == WorkflowState.COMPLETED
-                    || to == WorkflowState.FAILED
-                    || to == WorkflowState.CANCELLED
-                    || to == WorkflowState.WAITING;
+            case RUNNING -> to == WorkflowState.COMPLETED || to == WorkflowState.FAILED
+                            || to == WorkflowState.CANCELLED || to == WorkflowState.WAITING
+                            || to == WorkflowState.PAUSED;
+            case PAUSED -> to == WorkflowState.RUNNING || to == WorkflowState.FAILED;
             case WAITING -> to == WorkflowState.RUNNING;
-            case PAUSED -> to == WorkflowState.RUNNING;
             case COMPLETED, FAILED, CANCELLED -> false;
         };
     }
 
     /**
-     * 将工作流标记为 FAILED。
+     * 将工作流标记为失败。
      */
     private WorkflowInstance failWorkflow(WorkflowInstance instance, String reason) {
+        log.error("工作流执行失败: instanceId={}, reason={}", instance.id(), reason);
         WorkflowInstance failed = instance.toBuilder()
-                .state(WorkflowState.FAILED)
                 .failureReason(reason)
-                .completedAt(Instant.now())
                 .updatedAt(Instant.now())
                 .build();
-        repository.updateInstance(failed);
-        log.error("工作流执行失败: instanceId={}, reason={}", instance.id(), reason);
-        return failed;
+        return transition(failed, WorkflowState.FAILED);
     }
 
-    // ==================== 崩溃恢复 ====================
-
     /**
-     * 恢复单个中断实例。
+     * 崩溃恢复单个实例。
      */
     private void recoverInstance(WorkflowInstance instance) {
         try {
-            log.info("崩溃恢复实例: instanceId={}, state={}, stepIndex={}",
-                    instance.id(), instance.state(), instance.currentStepIndex());
-
-            // 验证上下文数据完整性
-            if (instance.context() == null) {
-                markRecoveryFailed(instance);
-                return;
-            }
-
-            // 尝试序列化/反序列化验证上下文
-            try {
-                String json = instance.context().toJson();
-                WorkflowContext.fromJson(json);
-            } catch (Exception e) {
-                log.error("崩溃恢复失败：上下文数据损坏: instanceId={}", instance.id(), e);
-                markRecoveryFailed(instance);
-                return;
-            }
-
-            // 查找工作流定义
-            var defOpt = registry.find(instance.workflowId());
-            if (defOpt.isEmpty()) {
-                log.error("崩溃恢复失败：工作流定义未找到: instanceId={}, workflowId={}",
-                        instance.id(), instance.workflowId());
-                markRecoveryFailed(instance);
-                return;
-            }
-
-            WorkflowDefinition definition = defOpt.get();
-
-            if (instance.state() == WorkflowState.RUNNING) {
-                // RUNNING 实例：从 currentStepIndex 恢复执行
-                WorkflowInstance result = executeSteps(instance, definition.steps(),
-                        instance.currentStepIndex(), 0);
-                log.info("崩溃恢复完成: instanceId={}, finalState={}", instance.id(), result.state());
-            } else if (instance.state() == WorkflowState.WAITING) {
-                // WAITING 实例：恢复为 RUNNING 并从下一步继续
-                WorkflowInstance running = transition(instance, WorkflowState.RUNNING);
-                if (running != instance) {
-                    WorkflowInstance result = executeSteps(running, definition.steps(),
-                            running.currentStepIndex() + 1, 0);
-                    log.info("崩溃恢复完成（WAITING→RUNNING）: instanceId={}, finalState={}",
-                            instance.id(), result.state());
+            switch (instance.state()) {
+                case RUNNING -> {
+                    log.info("崩溃恢复 RUNNING 实例: instanceId={}", instance.id());
+                    WorkflowDefinition definition = registry.find(instance.workflowId()).orElse(null);
+                    if (definition == null) {
+                        markRecoveryFailed(instance, "工作流定义未找到");
+                        return;
+                    }
+                    Set<String> completed = new HashSet<>(instance.completedStepIds());
+                    executeDag(instance, definition.steps(), completed, 0);
                 }
+                case WAITING -> {
+                    log.info("崩溃恢复 WAITING 实例: instanceId={}", instance.id());
+                    WorkflowDefinition definition = registry.find(instance.workflowId()).orElse(null);
+                    if (definition == null) {
+                        markRecoveryFailed(instance, "工作流定义未找到");
+                        return;
+                    }
+                    WorkflowInstance running = transition(instance, WorkflowState.RUNNING);
+                    if (running.state() == WorkflowState.RUNNING) {
+                        Set<String> completed = new HashSet<>(running.completedStepIds());
+                        executeDag(running, definition.steps(), completed, 0);
+                    }
+                }
+                case PAUSED -> {
+                    log.info("崩溃恢复 PAUSED 实例: instanceId={}", instance.id());
+                    String pendingStepId = instance.pendingApprovalStepId();
+                    if (pendingStepId == null) {
+                        markRecoveryFailed(instance, "PAUSED 实例缺少 pendingApprovalStepId");
+                        return;
+                    }
+
+                    // 从 context 读取 pausedAt 时间戳
+                    Object pausedAtObj = instance.context().get("steps." + pendingStepId + ".pausedAt");
+                    if (pausedAtObj == null) {
+                        // 无法判断超时，保持 PAUSED
+                        log.info("PAUSED 实例无 pausedAt 信息，保持 PAUSED: instanceId={}", instance.id());
+                        return;
+                    }
+
+                    Instant pausedAt = Instant.parse(pausedAtObj.toString());
+                    // 查找 ApprovalStep 的超时配置
+                    WorkflowDefinition definition = registry.find(instance.workflowId()).orElse(null);
+                    if (definition == null) {
+                        markRecoveryFailed(instance, "工作流定义未找到");
+                        return;
+                    }
+
+                    int timeoutSeconds = config.getApproval().getDefaultTimeoutSeconds();
+                    boolean autoApprove = config.getApproval().isAutoApproveOnTimeout();
+
+                    // 尝试从步骤定义获取超时配置
+                    for (WorkflowStep step : definition.steps()) {
+                        if (step.id().equals(pendingStepId)
+                                && step instanceof WorkflowStep.ApprovalStep approval) {
+                            timeoutSeconds = approval.timeoutSeconds();
+                            autoApprove = approval.autoApproveOnTimeout();
+                            break;
+                        }
+                    }
+
+                    Duration elapsed = Duration.between(pausedAt, Instant.now());
+                    if (elapsed.getSeconds() < timeoutSeconds) {
+                        // 未超时，保持 PAUSED
+                        log.info("PAUSED 实例未超时，保持 PAUSED: instanceId={}, elapsed={}s, timeout={}s",
+                                instance.id(), elapsed.getSeconds(), timeoutSeconds);
+                        return;
+                    }
+
+                    // 已超时
+                    if (autoApprove) {
+                        log.info("PAUSED 实例超时，自动批准: instanceId={}, stepId={}",
+                                instance.id(), pendingStepId);
+                        ApprovalDecision autoDecision = new ApprovalDecision(
+                                ApprovalDecision.Decision.APPROVED,
+                                "system-auto-approve",
+                                "审批超时自动批准",
+                                Instant.now()
+                        );
+                        approve(instance.id(), pendingStepId, autoDecision);
+                    } else {
+                        log.info("PAUSED 实例超时，标记失败: instanceId={}, stepId={}",
+                                instance.id(), pendingStepId);
+                        failWorkflow(instance,
+                                "审批超时: stepId=" + pendingStepId + ", timeout=" + timeoutSeconds + "s");
+                    }
+                }
+                default -> log.warn("崩溃恢复跳过非预期状态: instanceId={}, state={}",
+                        instance.id(), instance.state());
             }
         } catch (Exception e) {
-            log.error("崩溃恢复实例异常: instanceId={}", instance.id(), e);
-            markRecoveryFailed(instance);
+            log.error("崩溃恢复实例失败: instanceId={}, error={}", instance.id(), e.getMessage(), e);
+            markRecoveryFailed(instance, e.getMessage());
         }
     }
 
     /**
-     * 标记实例崩溃恢复失败。
+     * 标记恢复失败的实例为 FAILED。
      */
-    private void markRecoveryFailed(WorkflowInstance instance) {
-        WorkflowInstance failed = instance.toBuilder()
-                .state(WorkflowState.FAILED)
-                .failureReason("崩溃恢复失败：上下文数据损坏")
-                .completedAt(Instant.now())
-                .updatedAt(Instant.now())
-                .build();
-        repository.updateInstance(failed);
+    private void markRecoveryFailed(WorkflowInstance instance, String reason) {
+        try {
+            failWorkflow(instance, "崩溃恢复失败: " + reason);
+        } catch (Exception e) {
+            log.error("标记恢复失败也失败了: instanceId={}, error={}", instance.id(), e.getMessage());
+        }
     }
 
     // ==================== 工具方法 ====================
 
     /**
-     * 从 WorkflowStep 类名提取步骤类型字符串。
-     *
-     * <p>例如：SkillStep → "skill"，ToolStep → "tool"，ConditionStep → "condition"。
+     * 提取步骤类型名称。
      */
     private String extractStepType(WorkflowStep step) {
-        String simpleName = step.getClass().getSimpleName();
-        // 去掉 "Step" 后缀并转小写
-        if (simpleName.endsWith("Step")) {
-            return simpleName.substring(0, simpleName.length() - 4).toLowerCase();
-        }
-        return simpleName.toLowerCase();
+        return switch (step) {
+            case WorkflowStep.SkillStep _ -> "skill";
+            case WorkflowStep.ToolStep _ -> "tool";
+            case WorkflowStep.LlmStep _ -> "llm";
+            case WorkflowStep.ConditionStep _ -> "condition";
+            case WorkflowStep.LoopStep _ -> "loop";
+            case WorkflowStep.ParallelStep _ -> "parallel";
+            case WorkflowStep.SubWorkflowStep _ -> "sub-workflow";
+            case WorkflowStep.NoopStep _ -> "noop";
+            case WorkflowStep.WaitStep _ -> "wait";
+            case WorkflowStep.ApprovalStep _ -> "approval";
+        };
     }
 
     /**
-     * 将 Map 序列化为 JSON 字符串（用于 StepLog）。
+     * 将 Map 序列化为 JSON 字符串。
      */
-    private String toJson(Map<String, Object> map) {
-        if (map == null || map.isEmpty()) {
+    @org.springframework.lang.Nullable
+    private String toJson(@org.springframework.lang.Nullable Map<String, Object> data) {
+        if (data == null || data.isEmpty()) {
             return null;
         }
         try {
-            return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(map);
+            return new com.fasterxml.jackson.databind.ObjectMapper()
+                    .writeValueAsString(data);
         } catch (Exception e) {
-            log.warn("Map 序列化为 JSON 失败", e);
+            log.warn("JSON 序列化失败", e);
             return null;
         }
     }
@@ -636,33 +795,23 @@ public class WorkflowEngine {
      */
     private void insertStepLog(String instanceId, String stepId, String stepType,
                                 StepState state, int attempt,
-                                String inputJson, String outputJson, String errorMessage,
+                                @org.springframework.lang.Nullable String inputJson,
+                                @org.springframework.lang.Nullable String outputJson,
+                                @org.springframework.lang.Nullable String errorMessage,
                                 Instant startedAt) {
-        Instant now = Instant.now();
-        Long durationMs = (startedAt != null)
-                ? java.time.Duration.between(startedAt, now).toMillis()
-                : null;
-
-        StepLog stepLog = new StepLog(
-                UUID.randomUUID().toString(),
-                instanceId,
-                stepId,
-                stepType,
-                state,
-                attempt,
-                inputJson,
-                outputJson,
-                errorMessage,
-                startedAt,
-                now,
-                durationMs,
-                now
-        );
-
         try {
+            Instant now = Instant.now();
+            long durationMs = Duration.between(startedAt, now).toMillis();
+            StepLog stepLog = new StepLog(
+                    UUID.randomUUID().toString(),
+                    instanceId, stepId, stepType, state, attempt,
+                    inputJson, outputJson, errorMessage,
+                    startedAt, now, durationMs, now
+            );
             repository.insertStepLog(stepLog);
         } catch (Exception e) {
-            log.warn("步骤日志插入失败: instanceId={}, stepId={}", instanceId, stepId, e);
+            log.warn("步骤日志写入失败: instanceId={}, stepId={}, error={}",
+                    instanceId, stepId, e.getMessage());
         }
     }
 }

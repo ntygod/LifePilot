@@ -16,6 +16,7 @@ import org.springframework.scheduling.support.CronTrigger;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ScheduledFuture;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -60,7 +61,7 @@ class WorkflowTriggerManager测试 {
                 .name("测试工作流-" + id)
                 .enabled(true)
                 .triggers(List.of(triggers))
-                .steps(List.of(new NoopStep("s1", "步骤1", null)))
+                .steps(List.of(new NoopStep("s1", "步骤1", List.of(), null)))
                 .build();
     }
 
@@ -69,7 +70,8 @@ class WorkflowTriggerManager测试 {
                 .id("inst-" + workflowId)
                 .workflowId(workflowId)
                 .state(WorkflowState.RUNNING)
-                .currentStepIndex(0)
+                .completedStepIds(Set.of())
+                .pendingApprovalStepId(null)
                 .createdAt(Instant.now())
                 .updatedAt(Instant.now())
                 .build();

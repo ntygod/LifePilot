@@ -24,11 +24,14 @@ import com.lifepilot.workflow.model.WorkflowStep.ParallelStep;
 import com.lifepilot.workflow.model.WorkflowStep.SkillStep;
 import com.lifepilot.workflow.model.WorkflowStep.SubWorkflowStep;
 import com.lifepilot.workflow.model.WorkflowStep.ToolStep;
+import com.lifepilot.workflow.model.WorkflowStep.ApprovalStep;
 import com.lifepilot.workflow.model.WorkflowStep.WaitStep;
 import com.lifepilot.workflow.model.WorkflowTrigger;
 import com.lifepilot.workflow.model.WorkflowTrigger.CronTrigger;
 import com.lifepilot.workflow.model.WorkflowTrigger.EventTrigger;
 import com.lifepilot.workflow.model.WorkflowTrigger.ManualTrigger;
+
+import com.lifepilot.workflow.config.WorkflowConfigProperties;
 
 /**
  * YAML 工作流定义解析器。
@@ -36,8 +39,9 @@ import com.lifepilot.workflow.model.WorkflowTrigger.ManualTrigger;
  * <p>使用 SnakeYAML 将 YAML 字符串解析为 {@link WorkflowDefinition}。
  * 解析过程中收集所有校验错误，通过 {@link Result} 返回成功或失败结果。
  *
- * <p>支持解析全部 9 种步骤类型、3 种触发器类型和 4 种错误策略。
- * 校验规则包括：必填字段检查、未知步骤类型检测、重复步骤 ID 检测（递归检查嵌套步骤）。
+ * <p>支持解析全部 10 种步骤类型、3 种触发器类型和 4 种错误策略。
+ * 校验规则包括：必填字段检查、未知步骤类型检测、重复步骤 ID 检测（递归检查嵌套步骤）、
+ * dependsOn 引用验证。
  *
  * @author zsg
  * @since 2026-02-26
@@ -46,9 +50,27 @@ public class WorkflowYamlParser {
 
     private static final Logger log = LoggerFactory.getLogger(WorkflowYamlParser.class);
 
+    private final WorkflowConfigProperties configProperties;
+
+    /**
+     * 构造解析器（无配置注入，使用默认值）。
+     */
+    public WorkflowYamlParser() {
+        this.configProperties = null;
+    }
+
+    /**
+     * 构造解析器，注入配置属性用于 ApprovalStep 默认值。
+     *
+     * @param configProperties 工作流配置属性
+     */
+    public WorkflowYamlParser(WorkflowConfigProperties configProperties) {
+        this.configProperties = configProperties;
+    }
+
     private static final Set<String> KNOWN_STEP_TYPES = Set.of(
             "skill", "tool", "llm", "condition", "loop", "parallel",
-            "sub-workflow", "noop", "wait"
+            "sub-workflow", "noop", "wait", "approval"
     );
 
     private static final Set<String> KNOWN_TRIGGER_TYPES = Set.of("cron", "event", "manual");
@@ -111,6 +133,17 @@ public class WorkflowYamlParser {
         List<WorkflowStep> steps = parseSteps(root.get("steps"), errors, stepIds);
         if (steps.isEmpty() && root.containsKey("steps")) {
             errors.add("steps 列表不能为空");
+        }
+
+        // 后置验证：dependsOn 引用的步骤 ID 必须存在
+        for (WorkflowStep step : steps) {
+            if (step.dependsOn() != null) {
+                for (String dep : step.dependsOn()) {
+                    if (!stepIds.contains(dep)) {
+                        errors.add("步骤 '%s' 的 dependsOn 引用了不存在的步骤 ID: %s".formatted(step.id(), dep));
+                    }
+                }
+            }
         }
 
         // 解析元数据
@@ -299,16 +332,20 @@ public class WorkflowYamlParser {
         // 解析错误策略
         ErrorStrategy errorStrategy = parseErrorStrategy(map.get("errorStrategy"), id, errors, stepIds);
 
+        // 解析 dependsOn（可选）
+        List<String> dependsOn = parseDependsOn(map.get("dependsOn"));
+
         return switch (type) {
-            case "skill" -> parseSkillStep(id, name, map, errorStrategy, errors);
-            case "tool" -> parseToolStep(id, name, map, errorStrategy, errors);
-            case "llm" -> parseLlmStep(id, name, map, errorStrategy, errors);
-            case "condition" -> parseConditionStep(id, name, map, errorStrategy, errors, stepIds);
-            case "loop" -> parseLoopStep(id, name, map, errorStrategy, errors, stepIds);
-            case "parallel" -> parseParallelStep(id, name, map, errorStrategy, errors, stepIds);
-            case "sub-workflow" -> parseSubWorkflowStep(id, name, map, errorStrategy, errors);
-            case "noop" -> new NoopStep(id, name, errorStrategy);
-            case "wait" -> parseWaitStep(id, name, map, errorStrategy, errors);
+            case "skill" -> parseSkillStep(id, name, map, dependsOn, errorStrategy, errors);
+            case "tool" -> parseToolStep(id, name, map, dependsOn, errorStrategy, errors);
+            case "llm" -> parseLlmStep(id, name, map, dependsOn, errorStrategy, errors);
+            case "condition" -> parseConditionStep(id, name, map, dependsOn, errorStrategy, errors, stepIds);
+            case "loop" -> parseLoopStep(id, name, map, dependsOn, errorStrategy, errors, stepIds);
+            case "parallel" -> parseParallelStep(id, name, map, dependsOn, errorStrategy, errors, stepIds);
+            case "sub-workflow" -> parseSubWorkflowStep(id, name, map, dependsOn, errorStrategy, errors);
+            case "noop" -> new NoopStep(id, name, dependsOn, errorStrategy);
+            case "wait" -> parseWaitStep(id, name, map, dependsOn, errorStrategy, errors);
+            case "approval" -> parseApprovalStep(id, name, map, dependsOn, errorStrategy, errors);
             default -> {
                 errors.add("步骤 '%s' 未知步骤类型: %s".formatted(id, type));
                 yield null;
@@ -319,6 +356,7 @@ public class WorkflowYamlParser {
     // ==================== 各步骤类型解析 ====================
 
     private SkillStep parseSkillStep(String id, String name, Map<String, Object> map,
+                                     List<String> dependsOn,
                                      ErrorStrategy errorStrategy, List<String> errors) {
         String skillId = getString(map, "skillId");
         if (skillId == null || skillId.isBlank()) {
@@ -326,10 +364,11 @@ public class WorkflowYamlParser {
             return null;
         }
         Map<String, String> params = parseStringMap(map.get("params"));
-        return new SkillStep(id, name, skillId, params, errorStrategy);
+        return new SkillStep(id, name, skillId, params, dependsOn, errorStrategy);
     }
 
     private ToolStep parseToolStep(String id, String name, Map<String, Object> map,
+                                   List<String> dependsOn,
                                    ErrorStrategy errorStrategy, List<String> errors) {
         String toolId = getString(map, "toolId");
         if (toolId == null || toolId.isBlank()) {
@@ -337,10 +376,11 @@ public class WorkflowYamlParser {
             return null;
         }
         Map<String, String> params = parseStringMap(map.get("params"));
-        return new ToolStep(id, name, toolId, params, errorStrategy);
+        return new ToolStep(id, name, toolId, params, dependsOn, errorStrategy);
     }
 
     private LlmStep parseLlmStep(String id, String name, Map<String, Object> map,
+                                  List<String> dependsOn,
                                   ErrorStrategy errorStrategy, List<String> errors) {
         String scene = getString(map, "scene");
         if (scene == null || scene.isBlank()) {
@@ -354,10 +394,11 @@ public class WorkflowYamlParser {
             return null;
         }
         String outputSchema = getString(map, "outputSchema");
-        return new LlmStep(id, name, scene, promptTemplate, outputSchema, errorStrategy);
+        return new LlmStep(id, name, scene, promptTemplate, outputSchema, dependsOn, errorStrategy);
     }
 
     private ConditionStep parseConditionStep(String id, String name, Map<String, Object> map,
+                                             List<String> dependsOn,
                                              ErrorStrategy errorStrategy, List<String> errors,
                                              Set<String> stepIds) {
         String condition = getString(map, "condition");
@@ -367,10 +408,11 @@ public class WorkflowYamlParser {
         }
         List<WorkflowStep> thenSteps = parseSteps(map.get("then"), errors, stepIds);
         List<WorkflowStep> elseSteps = parseSteps(map.get("else"), errors, stepIds);
-        return new ConditionStep(id, name, condition, thenSteps, elseSteps, errorStrategy);
+        return new ConditionStep(id, name, condition, thenSteps, elseSteps, dependsOn, errorStrategy);
     }
 
     private LoopStep parseLoopStep(String id, String name, Map<String, Object> map,
+                                   List<String> dependsOn,
                                    ErrorStrategy errorStrategy, List<String> errors,
                                    Set<String> stepIds) {
         String items = getString(map, "items");
@@ -384,11 +426,12 @@ public class WorkflowYamlParser {
             return null;
         }
         List<WorkflowStep> body = parseSteps(map.get("body"), errors, stepIds);
-        return new LoopStep(id, name, items, loopVar, body, errorStrategy);
+        return new LoopStep(id, name, items, loopVar, body, dependsOn, errorStrategy);
     }
 
     @SuppressWarnings("unchecked")
     private ParallelStep parseParallelStep(String id, String name, Map<String, Object> map,
+                                           List<String> dependsOn,
                                            ErrorStrategy errorStrategy, List<String> errors,
                                            Set<String> stepIds) {
         Object branchesObj = map.get("branches");
@@ -422,10 +465,11 @@ public class WorkflowYamlParser {
             }
             branches.add(branchSteps);
         }
-        return new ParallelStep(id, name, branches, errorStrategy);
+        return new ParallelStep(id, name, branches, dependsOn, errorStrategy);
     }
 
     private SubWorkflowStep parseSubWorkflowStep(String id, String name, Map<String, Object> map,
+                                                  List<String> dependsOn,
                                                   ErrorStrategy errorStrategy, List<String> errors) {
         String workflowId = getString(map, "workflowId");
         if (workflowId == null || workflowId.isBlank()) {
@@ -433,10 +477,11 @@ public class WorkflowYamlParser {
             return null;
         }
         Map<String, String> params = parseStringMap(map.get("params"));
-        return new SubWorkflowStep(id, name, workflowId, params, errorStrategy);
+        return new SubWorkflowStep(id, name, workflowId, params, dependsOn, errorStrategy);
     }
 
     private WaitStep parseWaitStep(String id, String name, Map<String, Object> map,
+                                   List<String> dependsOn,
                                    ErrorStrategy errorStrategy, List<String> errors) {
         Object durationObj = map.get("durationSeconds");
         if (durationObj == null) {
@@ -450,7 +495,74 @@ public class WorkflowYamlParser {
             errors.add("步骤 '%s' (wait) durationSeconds 必须是数字类型".formatted(id));
             return null;
         }
-        return new WaitStep(id, name, durationSeconds, errorStrategy);
+        return new WaitStep(id, name, durationSeconds, dependsOn, errorStrategy);
+    }
+
+    /**
+     * 解析 ApprovalStep。
+     */
+    private ApprovalStep parseApprovalStep(String id, String name, Map<String, Object> map,
+                                           List<String> dependsOn,
+                                           ErrorStrategy errorStrategy, List<String> errors) {
+        String message = getString(map, "message");
+        if (message == null || message.isBlank()) {
+            errors.add("步骤 '%s' (approval) 缺失必填字段: message".formatted(id));
+            return null;
+        }
+        List<String> approvers = parseStringList(map.get("approvers"));
+        if (approvers.isEmpty()) {
+            approvers = List.of("owner");
+        }
+        // 默认值从配置读取，配置不存在时使用硬编码默认值
+        int defaultTimeout = configProperties != null
+                ? configProperties.getApproval().getDefaultTimeoutSeconds() : 86400;
+        boolean defaultAutoApprove = configProperties != null
+                && configProperties.getApproval().isAutoApproveOnTimeout();
+
+        int timeoutSeconds = getInt(map, "timeoutSeconds", defaultTimeout);
+        boolean autoApproveOnTimeout = getBoolean(map, "autoApproveOnTimeout", defaultAutoApprove);
+
+        return new ApprovalStep(id, name, message, approvers, timeoutSeconds,
+                autoApproveOnTimeout, dependsOn, errorStrategy);
+    }
+
+    /**
+     * 解析 dependsOn 字段为 List&lt;String&gt;。
+     */
+    private static List<String> parseDependsOn(Object dependsOnObj) {
+        if (dependsOnObj == null) {
+            return List.of();
+        }
+        if (dependsOnObj instanceof List<?> list) {
+            List<String> result = new ArrayList<>();
+            for (Object item : list) {
+                if (item != null) {
+                    result.add(String.valueOf(item));
+                }
+            }
+            return List.copyOf(result);
+        }
+        // 单个字符串也支持
+        return List.of(String.valueOf(dependsOnObj));
+    }
+
+    /**
+     * 解析字符串列表。
+     */
+    private static List<String> parseStringList(Object obj) {
+        if (obj == null) {
+            return List.of();
+        }
+        if (obj instanceof List<?> list) {
+            List<String> result = new ArrayList<>();
+            for (Object item : list) {
+                if (item != null) {
+                    result.add(String.valueOf(item));
+                }
+            }
+            return List.copyOf(result);
+        }
+        return List.of(String.valueOf(obj));
     }
 
     // ==================== 错误策略解析 ====================

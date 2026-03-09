@@ -43,6 +43,12 @@ public class WorkflowConfigProperties {
     /** 重试策略配置。 */
     private Retry retry = new Retry();
 
+    /** 审批步骤配置。 */
+    private Approval approval = new Approval();
+
+    /** 事件审计配置。 */
+    private EventAudit eventAudit = new EventAudit();
+
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
 
@@ -73,6 +79,12 @@ public class WorkflowConfigProperties {
     public Retry getRetry() { return retry; }
     public void setRetry(Retry retry) { this.retry = retry; }
 
+    public Approval getApproval() { return approval; }
+    public void setApproval(Approval approval) { this.approval = approval; }
+
+    public EventAudit getEventAudit() { return eventAudit; }
+    public void setEventAudit(EventAudit eventAudit) { this.eventAudit = eventAudit; }
+
     /**
      * 重试策略配置 — 控制步骤失败时的指数退避重试参数。
      *
@@ -98,5 +110,47 @@ public class WorkflowConfigProperties {
 
         public int getMaxAttempts() { return maxAttempts; }
         public void setMaxAttempts(int maxAttempts) { this.maxAttempts = maxAttempts; }
+    }
+
+    /**
+     * 审批步骤配置 — 控制 ApprovalStep 的默认超时和自动审批行为。
+     *
+     * @author zsg
+     * @since 2026-03-09
+     */
+    public static class Approval {
+
+        /** 默认审批超时时间（秒），默认 86400（24 小时）。 */
+        private int defaultTimeoutSeconds = 86400;
+
+        /** 超时后是否自动批准，默认 false。 */
+        private boolean autoApproveOnTimeout = false;
+
+        public int getDefaultTimeoutSeconds() { return defaultTimeoutSeconds; }
+        public void setDefaultTimeoutSeconds(int defaultTimeoutSeconds) { this.defaultTimeoutSeconds = defaultTimeoutSeconds; }
+
+        public boolean isAutoApproveOnTimeout() { return autoApproveOnTimeout; }
+        public void setAutoApproveOnTimeout(boolean autoApproveOnTimeout) { this.autoApproveOnTimeout = autoApproveOnTimeout; }
+    }
+
+    /**
+     * 事件审计配置 — 控制工作流审计事件的记录和清理策略。
+     *
+     * @author zsg
+     * @since 2026-03-09
+     */
+    public static class EventAudit {
+
+        /** 是否启用事件审计记录，默认 true。 */
+        private boolean enabled = true;
+
+        /** 事件保留天数，超过后自动清理，默认 90。 */
+        private int retentionDays = 90;
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+
+        public int getRetentionDays() { return retentionDays; }
+        public void setRetentionDays(int retentionDays) { this.retentionDays = retentionDays; }
     }
 }

@@ -4,8 +4,10 @@ import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.skill.activation.SkillActivator;
 import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
+import com.lifepilot.workflow.engine.DagScheduler;
 import com.lifepilot.workflow.engine.StepExecutor;
 import com.lifepilot.workflow.engine.WorkflowEngine;
+import com.lifepilot.workflow.engine.WorkflowEventRecorder;
 import com.lifepilot.workflow.expression.ExpressionEngine;
 import com.lifepilot.workflow.parser.WorkflowYamlParser;
 import com.lifepilot.workflow.parser.WorkflowYamlPrinter;
@@ -55,8 +57,8 @@ public class WorkflowAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public WorkflowYamlParser workflowYamlParser() {
-        return new WorkflowYamlParser();
+    public WorkflowYamlParser workflowYamlParser(WorkflowConfigProperties config) {
+        return new WorkflowYamlParser(config);
     }
 
     @Bean
@@ -80,14 +82,29 @@ public class WorkflowAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    public DagScheduler dagScheduler() {
+        return new DagScheduler();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public WorkflowEventRecorder workflowEventRecorder(JdbcTemplate jdbcTemplate,
+                                                        WorkflowConfigProperties config) {
+        return new WorkflowEventRecorder(jdbcTemplate, config);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     public WorkflowRegistry workflowRegistry(WorkflowRepository repository,
                                               WorkflowYamlParser parser,
                                               WorkflowYamlPrinter printer,
                                               WorkflowConfigProperties config,
-                                              TaskScheduler workflowTaskScheduler) {
+                                              TaskScheduler workflowTaskScheduler,
+                                              DagScheduler dagScheduler) {
         var registry = new WorkflowRegistry(repository, parser, printer);
         registry.setConfigProperties(config);
         registry.setTaskScheduler(workflowTaskScheduler);
+        registry.setDagScheduler(dagScheduler);
         log.info("工作流注册中心初始化完成");
         return registry;
     }
@@ -108,9 +125,12 @@ public class WorkflowAutoConfiguration {
                                           StepExecutor stepExecutor,
                                           ExpressionEngine expressionEngine,
                                           WorkflowRepository repository,
-                                          WorkflowConfigProperties config) {
+                                          WorkflowConfigProperties config,
+                                          DagScheduler dagScheduler,
+                                          WorkflowEventRecorder eventRecorder) {
         log.info("工作流执行引擎初始化完成");
-        return new WorkflowEngine(registry, stepExecutor, expressionEngine, repository, config);
+        return new WorkflowEngine(registry, stepExecutor, expressionEngine, repository,
+                config, dagScheduler, eventRecorder);
     }
 
     @Bean

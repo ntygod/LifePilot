@@ -21,7 +21,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 工作流步骤分发器 — 使用 switch 表达式穷举匹配 9 种步骤类型。
+ * 工作流步骤分发器 — 使用 switch 表达式穷举匹配 10 种步骤类型。
  *
  * <p>根据 {@link WorkflowStep} 的具体类型分发到对应的执行逻辑：
  * <ul>
@@ -73,7 +73,7 @@ public class StepExecutor {
     /**
      * 执行单个步骤，返回步骤输出。
      *
-     * <p>使用 switch 表达式穷举匹配 {@link WorkflowStep} 的 9 种子类型，
+     * <p>使用 switch 表达式穷举匹配 {@link WorkflowStep} 的 10 种子类型，
      * 确保编译期覆盖所有步骤类型。
      *
      * @param step             待执行的步骤
@@ -96,6 +96,7 @@ public class StepExecutor {
             case SubWorkflowStep s -> executeSubWorkflow(s, context, expressionEngine);
             case NoopStep s -> executeNoop(s);
             case WaitStep s -> executeWait(s);
+            case ApprovalStep s -> executeApproval(s);
         };
 
         log.debug("步骤执行完成: stepId={}, outputKeys={}", step.id(), result.keySet());
@@ -370,6 +371,22 @@ public class StepExecutor {
         return Map.of(
                 "__type", "wait",
                 "durationSeconds", step.durationSeconds()
+        );
+    }
+
+    /**
+     * 执行 ApprovalStep — 返回特殊标记 Map，由 WorkflowEngine 处理状态转换为 PAUSED。
+     */
+    private Map<String, Object> executeApproval(ApprovalStep step) {
+        log.info("执行 ApprovalStep: stepId={}, message={}, approvers={}",
+                step.id(), step.message(), step.approvers());
+
+        return Map.of(
+                "__type", "approval",
+                "message", step.message(),
+                "approvers", step.approvers(),
+                "timeoutSeconds", step.timeoutSeconds(),
+                "autoApproveOnTimeout", step.autoApproveOnTimeout()
         );
     }
 
