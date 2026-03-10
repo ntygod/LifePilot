@@ -507,6 +507,10 @@ lifepilot:
       max-delay-ms: 5000
       # 最大重试次数
       max-attempts: 3
+    # 唤醒调度器配置
+    wakeup:
+      # 扫描间隔（秒）
+      scan-interval-seconds: 10
   sandbox:
     # 沙箱总开关
     enabled: true

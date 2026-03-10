@@ -49,6 +49,9 @@ public class WorkflowConfigProperties {
     /** 事件审计配置。 */
     private EventAudit eventAudit = new EventAudit();
 
+    /** 唤醒调度器配置。 */
+    private Wakeup wakeup = new Wakeup();
+
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
 
@@ -84,6 +87,9 @@ public class WorkflowConfigProperties {
 
     public EventAudit getEventAudit() { return eventAudit; }
     public void setEventAudit(EventAudit eventAudit) { this.eventAudit = eventAudit; }
+
+    public Wakeup getWakeup() { return wakeup; }
+    public void setWakeup(Wakeup wakeup) { this.wakeup = wakeup; }
 
     /**
      * 重试策略配置 — 控制步骤失败时的指数退避重试参数。
@@ -152,5 +158,20 @@ public class WorkflowConfigProperties {
 
         public int getRetentionDays() { return retentionDays; }
         public void setRetentionDays(int retentionDays) { this.retentionDays = retentionDays; }
+    }
+
+    /**
+     * 唤醒调度器配置 — 控制 WakeupScheduler 的扫描间隔。
+     *
+     * @author zsg
+     * @since 2026-03-10
+     */
+    public static class Wakeup {
+
+        /** 扫描间隔（秒），默认 10。 */
+        private int scanIntervalSeconds = 10;
+
+        public int getScanIntervalSeconds() { return scanIntervalSeconds; }
+        public void setScanIntervalSeconds(int scanIntervalSeconds) { this.scanIntervalSeconds = scanIntervalSeconds; }
     }
 }
