@@ -280,7 +280,7 @@ public class ToolController {
             }
 
             // 注册到 DynamicToolRegistry
-            toolRegistry.registerYamlTools(List.of(tool));
+            toolRegistry.registerSkillTools(List.of(tool));
 
             log.info("Tool 创建成功: id={}, name={}", id, name);
             Map<String, Object> detail = toToolDetail(tool);
@@ -367,8 +367,8 @@ public class ToolController {
             }
 
             // 注销旧 Tool，注册新 Tool
-            toolRegistry.unregisterYamlTool(id);
-            toolRegistry.registerYamlTools(List.of(updatedTool));
+            toolRegistry.unregisterSkillTool(id);
+            toolRegistry.registerSkillTools(List.of(updatedTool));
 
             log.info("Tool 更新成功: id={}", id);
             Map<String, Object> detail = toToolDetail(updatedTool);
@@ -429,7 +429,7 @@ public class ToolController {
             }
             
             // 从注册中心注销
-            toolRegistry.unregisterYamlTool(id);
+            toolRegistry.unregisterSkillTool(id);
         } else if (tool.layer() == ToolLayer.JAVA_NATIVE) {
             toolRegistry.unregisterBuiltinTool(id);
         }
