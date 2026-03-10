@@ -8,6 +8,7 @@ import com.lifepilot.datastore.engine.AggregationEngine;
 import com.lifepilot.datastore.engine.QueryEngine;
 import com.lifepilot.datastore.model.Collection;
 import com.lifepilot.datastore.model.CollectionType;
+import com.lifepilot.datastore.model.Document;
 import com.lifepilot.datastore.model.PropertyDefinition;
 import com.lifepilot.datastore.repository.CollectionRepository;
 import com.lifepilot.datastore.repository.DocumentRepository;
@@ -17,6 +18,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Optional;
 
@@ -205,7 +209,182 @@ public class DataStoreManager {
         return deleted;
     }
 
-    // ---- 文档操作（Task 7.2 实现） ----
+    // ---- 文档操作 ----
+
+    /**
+     * 向集合中添加文档。
+     *
+     * <p>执行集合存在性检查、文档数量限额、文档大小限额、JSON 合法性校验、
+     * 属性定义校验、METRIC recordedAt 校验，然后 INSERT 文档并同步 FTS5（NOTE 类型）。</p>
+     *
+     * @param collectionId 目标集合 ID
+     * @param dataJson     文档数据 JSON
+     * @param recordedAt   记录时间（METRIC 类型必填，ISO 8601）
+     * @return 创建的文档
+     * @throws IllegalArgumentException 集合不存在、JSON 无效、属性校验失败、recordedAt 格式非法
+     * @throws IllegalStateException    文档数量已达上限
+     */
+    public Document addDocument(String collectionId, String dataJson,
+                                @Nullable String recordedAt) {
+        // 1. 集合存在性检查
+        var collection = collectionRepository.findById(collectionId)
+                .orElseThrow(() -> new IllegalArgumentException("集合不存在: id=" + collectionId));
+
+        // 2. 文档数量限额检查
+        int docCount = documentRepository.countByCollection(collectionId);
+        if (docCount >= properties.getMaxDocumentsPerCollection()) {
+            throw new IllegalStateException(
+                    "集合文档数量已达上限: " + properties.getMaxDocumentsPerCollection());
+        }
+
+        // 3. 文档大小限额检查
+        if (dataJson.getBytes(StandardCharsets.UTF_8).length > properties.getMaxDocumentSizeBytes()) {
+            throw new IllegalArgumentException(
+                    "文档大小超过限制: " + properties.getMaxDocumentSizeBytes() + " bytes");
+        }
+
+        // 4. JSON 合法性校验
+        try {
+            MAPPER.readTree(dataJson);
+        } catch (JsonProcessingException e) {
+            throw new IllegalArgumentException("无效的 JSON 数据: " + e.getMessage(), e);
+        }
+
+        // 5. 属性定义校验
+        List<PropertyDefinition> propDefs = deserializeProperties(collection.propertiesJson());
+        if (!propDefs.isEmpty()) {
+            var errors = propertyValidator.validate(propDefs, dataJson);
+            if (!errors.isEmpty()) {
+                throw new IllegalArgumentException("属性校验失败: " + errors);
+            }
+        }
+
+        // 6. METRIC 类型 recordedAt 校验
+        if (collection.type() == CollectionType.METRIC) {
+            if (recordedAt == null || recordedAt.isBlank()) {
+                throw new IllegalArgumentException("METRIC 类型文档必须包含 recordedAt 字段");
+            }
+            try {
+                DateTimeFormatter.ISO_DATE_TIME.parse(recordedAt);
+            } catch (DateTimeParseException e) {
+                throw new IllegalArgumentException(
+                        "recordedAt 格式非法，期望 ISO 8601: " + recordedAt, e);
+            }
+        }
+
+        // 7. 构建 Document 并插入
+        var document = Document.builder()
+                .collectionId(collectionId)
+                .dataJson(dataJson)
+                .recordedAt(recordedAt)
+                .build();
+        String documentId = documentRepository.insert(document);
+
+        // 8. NOTE 类型同步 FTS5
+        if (collection.type() == CollectionType.NOTE) {
+            String ftsContent = extractFtsContent(dataJson);
+            documentRepository.insertFts(documentId, ftsContent);
+        }
+
+        log.info("文档添加完成: id={}, collectionId={}", documentId, collectionId);
+
+        // 9. 返回创建的文档
+        return documentRepository.findById(documentId).orElseThrow(
+                () -> new IllegalStateException("文档创建后查询失败: id=" + documentId));
+    }
+
+    /**
+     * 根据 ID 获取文档。
+     *
+     * @param id 文档 ID
+     * @return 文档 Optional
+     */
+    public Optional<Document> getDocument(String id) {
+        return documentRepository.findById(id);
+    }
+
+    /**
+     * 更新文档数据。
+     *
+     * <p>执行文档存在性检查、大小限额、JSON 合法性校验、属性定义校验，
+     * 然后更新文档并同步 FTS5（NOTE 类型）。</p>
+     *
+     * @param id       文档 ID
+     * @param dataJson 新的文档数据 JSON
+     * @return 是否更新成功
+     * @throws IllegalArgumentException 文档不存在、JSON 无效、属性校验失败
+     */
+    public boolean updateDocument(String id, String dataJson) {
+        // 1. 文档存在性检查
+        var existingDoc = documentRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("文档不存在: id=" + id));
+
+        // 2. 文档大小限额检查
+        if (dataJson.getBytes(StandardCharsets.UTF_8).length > properties.getMaxDocumentSizeBytes()) {
+            throw new IllegalArgumentException(
+                    "文档大小超过限制: " + properties.getMaxDocumentSizeBytes() + " bytes");
+        }
+
+        // 3. JSON 合法性校验
+        try {
+            MAPPER.readTree(dataJson);
+        } catch (JsonProcessingException e) {
+            throw new IllegalArgumentException("无效的 JSON 数据: " + e.getMessage(), e);
+        }
+
+        // 4. 属性定义校验
+        var collection = collectionRepository.findById(existingDoc.collectionId())
+                .orElseThrow(() -> new IllegalStateException(
+                        "文档所属集合不存在: collectionId=" + existingDoc.collectionId()));
+        List<PropertyDefinition> propDefs = deserializeProperties(collection.propertiesJson());
+        if (!propDefs.isEmpty()) {
+            var errors = propertyValidator.validate(propDefs, dataJson);
+            if (!errors.isEmpty()) {
+                throw new IllegalArgumentException("属性校验失败: " + errors);
+            }
+        }
+
+        // 5. 更新文档
+        documentRepository.update(id, dataJson);
+
+        // 6. NOTE 类型同步 FTS5
+        if (collection.type() == CollectionType.NOTE) {
+            String ftsContent = extractFtsContent(dataJson);
+            documentRepository.updateFts(id, ftsContent);
+        }
+
+        log.info("文档更新完成: id={}", id);
+        return true;
+    }
+
+    /**
+     * 删除文档。
+     *
+     * <p>删除文档记录，NOTE 类型同步清理 FTS5 索引。</p>
+     *
+     * @param id 文档 ID
+     * @return 是否删除成功
+     * @throws IllegalArgumentException 文档不存在
+     */
+    public boolean deleteDocument(String id) {
+        // 1. 文档存在性检查
+        var existingDoc = documentRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("文档不存在: id=" + id));
+
+        // 2. 查找集合以判断类型
+        var collection = collectionRepository.findById(existingDoc.collectionId());
+
+        // 3. NOTE 类型清理 FTS5
+        if (collection.isPresent() && collection.get().type() == CollectionType.NOTE) {
+            documentRepository.deleteFts(id);
+        }
+
+        // 4. 删除文档
+        documentRepository.delete(id);
+
+        log.info("文档删除完成: id={}", id);
+        return true;
+    }
 
     // ---- 查询操作（Task 7.3 实现） ----
 
@@ -257,5 +436,25 @@ public class DataStoreManager {
         if (!documents.isEmpty()) {
             log.info("FTS5 条目清理完成: collectionId={}, 文档数={}", collectionId, documents.size());
         }
+    }
+
+    /**
+     * 从文档 JSON 中提取 FTS5 索引内容。
+     *
+     * <p>优先提取 "content" 字段的文本值，若不存在则使用完整 JSON 字符串。</p>
+     *
+     * @param dataJson 文档数据 JSON
+     * @return 用于 FTS5 索引的文本内容
+     */
+    private String extractFtsContent(String dataJson) {
+        try {
+            var root = MAPPER.readTree(dataJson);
+            if (root != null && root.has("content") && root.get("content").isTextual()) {
+                return root.get("content").asText();
+            }
+        } catch (JsonProcessingException e) {
+            log.debug("FTS 内容提取时 JSON 解析失败，使用原始 JSON: {}", e.getMessage());
+        }
+        return dataJson;
     }
 }
