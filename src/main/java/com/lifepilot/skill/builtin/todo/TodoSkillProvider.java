@@ -1,8 +1,15 @@
 package com.lifepilot.skill.builtin.todo;
 
+import com.lifepilot.agent.proactive.candidate.CandidateProvider;
+import com.lifepilot.agent.proactive.model.InitiativeType;
+import com.lifepilot.agent.proactive.model.ProactiveCandidate;
+import com.lifepilot.agent.proactive.model.Signal;
+import com.lifepilot.agent.proactive.model.SignalBundle;
+import com.lifepilot.agent.proactive.model.Urgency;
+import com.lifepilot.agent.proactive.signal.SignalSource;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.skill.builtin.BuiltinSkill;
-import com.lifepilot.skill.builtin.BuiltinSkillProvider;
+import com.lifepilot.skill.builtin.ProactiveSkillProvider;
 import com.lifepilot.skill.model.SkillDefinition;
 import com.lifepilot.skill.model.SkillSource;
 import com.lifepilot.tool.BuiltinTool;
@@ -13,6 +20,9 @@ import com.lifepilot.tool.schema.JsonSchema;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -20,13 +30,14 @@ import java.util.Map;
  * 待办管理内置 Skill 提供者。
  *
  * <p>注册 6 个待办 CRUD 工具到 DynamicToolRegistry，
- * 提供待办管理 Skill 定义蓝图。</p>
+ * 提供待办管理 Skill 定义蓝图。实现 {@link ProactiveSkillProvider}，
+ * 提供待办截止日期信号源和候选提供者。</p>
  *
  * @author zsg
  * @since 2026-02-25
  */
 @BuiltinSkill(id = "todo", order = 10)
-public class TodoSkillProvider implements BuiltinSkillProvider {
+public class TodoSkillProvider implements ProactiveSkillProvider {
 
     private static final Logger log = LoggerFactory.getLogger(TodoSkillProvider.class);
 
@@ -68,6 +79,18 @@ public class TodoSkillProvider implements BuiltinSkillProvider {
         toolRegistry.registerBuiltinTool(buildDeleteTool());
         toolRegistry.registerBuiltinTool(buildCompleteTool());
         log.info("待办 Skill 工具注册完成: count=6");
+    }
+
+    // ---- ProactiveSkillProvider 实现 ----
+
+    @Override
+    public List<SignalSource> signalSources() {
+        return List.of(new TodoSignalSource());
+    }
+
+    @Override
+    public List<CandidateProvider> candidateProviders() {
+        return List.of(new TodoCandidateProvider());
     }
 
     // ---- 工具构建方法 ----
@@ -288,6 +311,88 @@ public class TodoSkillProvider implements BuiltinSkillProvider {
                     }
                 })
                 .build();
+    }
+
+    // ---- 主动推理内部类 ----
+
+    /**
+     * 待办截止日期信号源 — 收集 24 小时内到期的 PENDING 待办信号。
+     *
+     * <p>根据距截止时间的剩余时长计算紧急度：
+     * &lt; 2h → HIGH，&lt; 6h → MEDIUM，其余 → LOW。</p>
+     */
+    private class TodoSignalSource implements SignalSource {
+
+        @Override
+        public String id() {
+            return "todo-signal";
+        }
+
+        @Override
+        public List<Signal> collect() {
+            List<TodoItem> pendingTodos = todoRepository.list("PENDING", null);
+            Instant now = Instant.now();
+            Instant deadline = now.plus(Duration.ofHours(24));
+            List<Signal> signals = new ArrayList<>();
+
+            for (TodoItem todo : pendingTodos) {
+                if (todo.dueDate() == null) {
+                    continue;
+                }
+                try {
+                    Instant dueInstant = Instant.parse(todo.dueDate());
+                    // 仅收集 24 小时内到期且尚未过期的待办
+                    if (dueInstant.isAfter(now) && !dueInstant.isAfter(deadline)) {
+                        Duration remaining = Duration.between(now, dueInstant);
+                        Urgency urgency = remaining.toHours() < 2 ? Urgency.HIGH
+                                : remaining.toHours() < 6 ? Urgency.MEDIUM
+                                : Urgency.LOW;
+
+                        signals.add(Signal.builder()
+                                .typeId("deadline_reminder")
+                                .urgency(urgency)
+                                .summary("待办「%s」将于 %s 到期".formatted(todo.title(), todo.dueDate()))
+                                .sourceId("todo-signal")
+                                .subjectId(todo.id())
+                                .metadata(Map.of(
+                                        "todoId", todo.id(),
+                                        "title", todo.title(),
+                                        "dueDate", todo.dueDate()))
+                                .build());
+                    }
+                } catch (Exception e) {
+                    log.warn("解析待办截止日期失败: todoId={}, dueDate={}", todo.id(), todo.dueDate(), e);
+                }
+            }
+
+            log.debug("待办信号收集完成: count={}", signals.size());
+            return List.copyOf(signals);
+        }
+    }
+
+    /**
+     * 待办候选提供者 — 将 deadline_reminder 信号映射为 NOTIFICATION 候选。
+     */
+    private class TodoCandidateProvider implements CandidateProvider {
+
+        @Override
+        public String id() {
+            return "todo-candidate";
+        }
+
+        @Override
+        public List<ProactiveCandidate> evaluate(SignalBundle signals) {
+            return signals.signals().stream()
+                    .filter(s -> "deadline_reminder".equals(s.typeId()))
+                    .filter(s -> "todo-signal".equals(s.sourceId()))
+                    .map(s -> new ProactiveCandidate(
+                            "deadline_reminder",
+                            s.urgency(),
+                            s.summary(),
+                            s.subjectId(),
+                            InitiativeType.NOTIFICATION))
+                    .toList();
+        }
     }
 
     // ---- 辅助方法 ----
