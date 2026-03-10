@@ -1,8 +1,15 @@
 package com.lifepilot.skill.builtin.habit;
 
+import com.lifepilot.agent.proactive.candidate.CandidateProvider;
+import com.lifepilot.agent.proactive.model.InitiativeType;
+import com.lifepilot.agent.proactive.model.ProactiveCandidate;
+import com.lifepilot.agent.proactive.model.Signal;
+import com.lifepilot.agent.proactive.model.SignalBundle;
+import com.lifepilot.agent.proactive.model.Urgency;
+import com.lifepilot.agent.proactive.signal.SignalSource;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.skill.builtin.BuiltinSkill;
-import com.lifepilot.skill.builtin.BuiltinSkillProvider;
+import com.lifepilot.skill.builtin.ProactiveSkillProvider;
 import com.lifepilot.skill.model.SkillDefinition;
 import com.lifepilot.skill.model.SkillSource;
 import com.lifepilot.tool.BuiltinTool;
@@ -13,7 +20,12 @@ import com.lifepilot.tool.schema.JsonSchema;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -21,13 +33,14 @@ import java.util.Map;
  * 习惯养成内置 Skill 提供者。
  *
  * <p>注册 7 个习惯管理工具到 DynamicToolRegistry，
- * 提供习惯养成 Skill 定义蓝图。</p>
+ * 提供习惯养成 Skill 定义蓝图。实现 {@link ProactiveSkillProvider}，
+ * 提供习惯打卡提醒和连续打卡风险信号源及候选提供者。</p>
  *
  * @author zsg
  * @since 2026-02-25
  */
 @BuiltinSkill(id = "habit", order = 30)
-public class HabitSkillProvider implements BuiltinSkillProvider {
+public class HabitSkillProvider implements ProactiveSkillProvider {
 
     private static final Logger log = LoggerFactory.getLogger(HabitSkillProvider.class);
 
@@ -71,6 +84,18 @@ public class HabitSkillProvider implements BuiltinSkillProvider {
         toolRegistry.registerBuiltinTool(buildStreakTool());
         toolRegistry.registerBuiltinTool(buildCompletionRateTool());
         log.info("习惯 Skill 工具注册完成: count=7");
+    }
+
+    // ---- ProactiveSkillProvider 实现 ----
+
+    @Override
+    public List<SignalSource> signalSources() {
+        return List.of(new HabitSignalSource());
+    }
+
+    @Override
+    public List<CandidateProvider> candidateProviders() {
+        return List.of(new HabitCandidateProvider());
     }
 
     // ---- 工具构建方法 ----
@@ -295,6 +320,119 @@ public class HabitSkillProvider implements BuiltinSkillProvider {
                 .build();
     }
 
+    // ---- 主动推理内部类 ----
+
+    /**
+     * 习惯打卡信号源 — 收集今日尚未打卡的习惯信号和连续打卡风险信号。
+     *
+     * <p>对每个尚未打卡的习惯产生 {@code habit_reminder} 信号，
+     * 紧急度根据目标打卡时间计算：已过目标时间 → HIGH，距目标 2 小时内 → MEDIUM，其余 → LOW。
+     * 若该习惯有连续打卡记录（currentStreak &gt; 0），额外产生 {@code streak_at_risk} 信号。</p>
+     */
+    private class HabitSignalSource implements SignalSource {
+
+        @Override
+        public String id() {
+            return "habit-signal";
+        }
+
+        @Override
+        public List<Signal> collect() {
+            List<HabitItem> habits = habitRepository.list();
+            Instant now = Instant.now();
+            LocalDate today = LocalDate.now();
+            List<Signal> signals = new ArrayList<>();
+
+            for (HabitItem habit : habits) {
+                try {
+                    // 检查今日是否已打卡：计算今日时间范围内的完成率
+                    Instant dayStart = today.atStartOfDay(ZoneId.systemDefault()).toInstant();
+                    double todayRate = habitRepository.calculateCompletionRate(
+                            habit.id(), dayStart, now);
+                    boolean checkedInToday = todayRate > 0;
+
+                    if (!checkedInToday) {
+                        // 根据目标打卡时间计算紧急度
+                        Urgency urgency = Urgency.LOW;
+                        if (habit.targetTime() != null) {
+                            try {
+                                LocalTime target = LocalTime.parse(habit.targetTime());
+                                LocalTime nowTime = LocalTime.now();
+                                if (nowTime.isAfter(target)) {
+                                    urgency = Urgency.HIGH;
+                                } else {
+                                    Duration remaining = Duration.between(nowTime, target);
+                                    urgency = remaining.toHours() < 2 ? Urgency.MEDIUM : Urgency.LOW;
+                                }
+                            } catch (Exception e) {
+                                // targetTime 解析失败，保持 LOW
+                            }
+                        }
+
+                        // 产生 habit_reminder 信号
+                        signals.add(Signal.builder()
+                                .typeId("habit_reminder")
+                                .urgency(urgency)
+                                .summary("习惯「%s」今日尚未打卡".formatted(habit.name()))
+                                .sourceId("habit-signal")
+                                .subjectId(habit.id())
+                                .metadata(Map.of(
+                                        "habitId", habit.id(),
+                                        "name", habit.name(),
+                                        "frequency", habit.frequency().name()))
+                                .build());
+
+                        // 若有连续打卡记录，额外产生 streak_at_risk 信号
+                        if (habit.currentStreak() > 0) {
+                            signals.add(Signal.builder()
+                                    .typeId("streak_at_risk")
+                                    .urgency(Urgency.HIGH)
+                                    .summary("习惯「%s」连续打卡 %d 天，今日尚未打卡，存在中断风险"
+                                            .formatted(habit.name(), habit.currentStreak()))
+                                    .sourceId("habit-signal")
+                                    .subjectId(habit.id())
+                                    .metadata(Map.of(
+                                            "habitId", habit.id(),
+                                            "name", habit.name(),
+                                            "currentStreak", habit.currentStreak()))
+                                    .build());
+                        }
+                    }
+                } catch (Exception e) {
+                    log.warn("习惯信号收集失败: habitId={}, name={}", habit.id(), habit.name(), e);
+                }
+            }
+
+            log.debug("习惯信号收集完成: count={}", signals.size());
+            return List.copyOf(signals);
+        }
+    }
+
+    /**
+     * 习惯候选提供者 — 将 habit_reminder 和 streak_at_risk 信号映射为 NOTIFICATION 候选。
+     */
+    private class HabitCandidateProvider implements CandidateProvider {
+
+        @Override
+        public String id() {
+            return "habit-candidate";
+        }
+
+        @Override
+        public List<ProactiveCandidate> evaluate(SignalBundle signals) {
+            return signals.signals().stream()
+                    .filter(s -> "habit-signal".equals(s.sourceId()))
+                    .filter(s -> "habit_reminder".equals(s.typeId()) || "streak_at_risk".equals(s.typeId()))
+                    .map(s -> new ProactiveCandidate(
+                            s.typeId(),
+                            s.urgency(),
+                            s.summary(),
+                            s.subjectId(),
+                            InitiativeType.NOTIFICATION))
+                    .toList();
+        }
+    }
+
     // ---- 辅助方法 ----
 
     /** 将 HabitItem 转换为 Map 用于 ToolResult。 */
@@ -310,3 +448,5 @@ public class HabitSkillProvider implements BuiltinSkillProvider {
         return Map.copyOf(map);
     }
 }
+
+
