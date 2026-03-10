@@ -18,6 +18,8 @@ import com.lifepilot.eval.report.ReportSummary;
 import com.lifepilot.eval.scenario.BenchmarkScenario;
 import com.lifepilot.eval.scenario.ScenarioLoader;
 import com.lifepilot.eval.store.EvalStore;
+import com.lifepilot.tool.BuiltinTool;
+import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -95,8 +97,12 @@ public class EvalEngine {
         var startTime = Instant.now();
 
         try {
-            // 1. 构造 AgentRequest 并执行 Agent（带超时控制）
-            var request = new AgentRequest(scenario.userInput(), "eval-" + scenario.id(), "eval");
+            // 0. 注册 Mock 工具（如果场景定义了 mockToolResponses）
+            List<String> mockToolIds = registerMockTools(scenario);
+
+            try {
+                // 1. 构造 AgentRequest 并执行 Agent（带超时控制）
+                var request = new AgentRequest(scenario.userInput(), "eval-" + scenario.id(), "eval");
 
             int timeout = scenario.timeoutSeconds() > 0
                     ? scenario.timeoutSeconds()
@@ -172,6 +178,11 @@ public class EvalEngine {
                     scenario.id(), evalRunId, evalResult.overallScore(), elapsed);
             return evalResult;
 
+            } finally {
+                // 注销 Mock 工具
+                unregisterMockTools(mockToolIds);
+            }
+
         } catch (Exception e) {
             log.error("场景评估异常: scenarioId={}, error={}", scenario.id(), e.getMessage(), e);
             return buildFailedResult(scenario, evalRunId, "Agent 执行异常: " + e.getClass().getSimpleName() + " - " + e.getMessage());
@@ -209,6 +220,61 @@ public class EvalEngine {
                 evalRunId, summary.totalScenarios(), summary.passCount(), summary.failCount());
 
         return summary;
+    }
+
+    /**
+     * 注册 Mock 工具到 DynamicToolRegistry。
+     *
+     * <p>当场景定义了 mockToolResponses 时，为每个 toolId 构建临时 BuiltinTool 并注册。
+     * 注册失败时记录 WARN 日志，跳过该工具继续执行。</p>
+     *
+     * @param scenario 场景定义
+     * @return 已注册的 Mock 工具 ID 列表（用于后续注销）
+     */
+    private List<String> registerMockTools(BenchmarkScenario scenario) {
+        var mockResponses = scenario.mockToolResponses();
+        if (mockResponses == null || mockResponses.isEmpty()) {
+            return List.of();
+        }
+
+        List<String> registeredIds = new ArrayList<>();
+        for (var entry : mockResponses.entrySet()) {
+            String toolId = entry.getKey();
+            String responseJson = entry.getValue();
+            try {
+                var mockTool = BuiltinTool.builder()
+                        .id(toolId)
+                        .name("mock-" + toolId)
+                        .description("Mock 工具: " + toolId)
+                        .executor(input -> ToolResult.success(Map.of("response", responseJson)))
+                        .build();
+                toolRegistry.registerBuiltinTool(mockTool);
+                registeredIds.add(toolId);
+                log.debug("Mock 工具注册成功: toolId={}", toolId);
+            } catch (Exception e) {
+                log.warn("Mock 工具注册失败，跳过: toolId={}, error={}", toolId, e.getMessage());
+            }
+        }
+
+        if (!registeredIds.isEmpty()) {
+            log.info("Mock 工具注册完成: scenarioId={}, count={}", scenario.id(), registeredIds.size());
+        }
+        return registeredIds;
+    }
+
+    /**
+     * 注销 Mock 工具。
+     *
+     * @param mockToolIds 需要注销的工具 ID 列表
+     */
+    private void unregisterMockTools(List<String> mockToolIds) {
+        for (String toolId : mockToolIds) {
+            try {
+                toolRegistry.unregisterBuiltinTool(toolId);
+            } catch (Exception e) {
+                log.warn("Mock 工具注销失败: toolId={}, error={}", toolId, e.getMessage());
+            }
+        }
     }
 
     /**
