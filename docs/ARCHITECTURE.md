@@ -220,6 +220,8 @@ graph TB
 
 | 主题 | 文档 |
 |------|------|
+| 记忆进阶（巩固/遗忘/混合检索） | [架构](architecture/memory-advanced.md) · [特性](features/memory-advanced.md) |
+| 内置 Skill（Todo/Schedule/Habit/Memory） | [架构](architecture/builtin-skills.md) · [特性](features/builtin-skills.md) |
 | 主动推理引擎 | [架构](architecture/proactive-reasoning.md) · [特性](features/proactive-reasoning.md) |
 | 部署与运维 | [架构](architecture/deployment.md) · [特性](features/deployment.md) |
 | 性能优化 | [架构](architecture/performance-optimization.md) · [特性](features/performance-optimization.md) |
