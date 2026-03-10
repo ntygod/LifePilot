@@ -102,7 +102,9 @@ public class EvalEngine {
 
             try {
                 // 1. 构造 AgentRequest 并执行 Agent（带超时控制）
-                var request = new AgentRequest(scenario.userInput(), "eval-" + scenario.id(), "eval");
+                String systemPrompt = buildSystemPrompt(scenario);
+                var request = new AgentRequest(scenario.userInput(), "eval-" + scenario.id(), "eval",
+                        systemPrompt, null, null, 0, null, null, null);
 
             int timeout = scenario.timeoutSeconds() > 0
                     ? scenario.timeoutSeconds()
@@ -220,6 +222,22 @@ public class EvalEngine {
                 evalRunId, summary.totalScenarios(), summary.passCount(), summary.failCount());
 
         return summary;
+    }
+
+    /**
+     * 从 BenchmarkScenario 的 initialContext 构建 systemPrompt。
+     *
+     * @param scenario 场景定义
+     * @return systemPrompt 字符串，无 initialContext 时返回 null
+     */
+    private String buildSystemPrompt(BenchmarkScenario scenario) {
+        var ctx = scenario.initialContext();
+        if (ctx == null || ctx.isEmpty()) {
+            return null;
+        }
+        return ctx.entrySet().stream()
+                .map(e -> e.getKey() + ": " + e.getValue())
+                .collect(java.util.stream.Collectors.joining("\n", "初始上下文:\n", ""));
     }
 
     /**
