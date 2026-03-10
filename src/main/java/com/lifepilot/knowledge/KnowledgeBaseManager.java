@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -42,14 +43,21 @@ public class KnowledgeBaseManager {
     /**
      * 创建新知识库。
      *
-     * @param name           知识库名称
-     * @param description    描述
-     * @param embeddingModel 嵌入模型名称
+     * @param name             知识库名称
+     * @param description      描述
+     * @param embeddingModel   嵌入模型名称
+     * @param rerankerModel    重排序模型（可选）
+     * @param chunkingStrategy 分块策略（可选，默认 "smart"）
+     * @param chunkingConfig   分块配置参数（可选）
+     * @param tags             标签列表（可选）
      * @return 创建的知识库
      */
     @Transactional
-    public KnowledgeBase createKnowledgeBase(String name, String description, String embeddingModel) {
-        KnowledgeBase kb = KnowledgeBase.create(name, description, embeddingModel);
+    public KnowledgeBase createKnowledgeBase(String name, String description, String embeddingModel,
+                                             String rerankerModel, String chunkingStrategy,
+                                             Map<String, Object> chunkingConfig, List<String> tags) {
+        KnowledgeBase kb = KnowledgeBase.create(name, description, embeddingModel,
+                rerankerModel, chunkingStrategy, chunkingConfig, tags);
         kbRepository.save(kb);
         log.info("知识库创建成功: id={}, name={}", kb.id(), kb.name());
         return kb;
@@ -89,30 +97,22 @@ public class KnowledgeBaseManager {
     /**
      * 更新知识库信息。null 参数表示不更新对应字段。
      *
-     * @param id          知识库 id
-     * @param name        新名称（null 不更新）
-     * @param description 新描述（null 不更新）
+     * @param id               知识库 id
+     * @param name             新名称（null 不更新）
+     * @param description      新描述（null 不更新）
+     * @param embeddingModel   新嵌入模型（null 不更新）
+     * @param rerankerModel    新重排序模型（null 不更新）
+     * @param chunkingStrategy 新分块策略（null 不更新）
+     * @param chunkingConfig   新分块配置（null 不更新）
+     * @param tags             新标签列表（null 不更新）
      * @return 更新后的知识库
      * @throws KnowledgeBaseNotFoundException 知识库不存在时抛出
      */
     @Transactional
-    public KnowledgeBase updateKnowledgeBase(String id, String name, String description) {
-        return updateKnowledgeBase(id, name, description, null);
-    }
-
-    /**
-     * 更新知识库信息。null 参数表示不更新对应字段。
-     *
-     * @param id          知识库 id
-     * @param name        新名称（null 不更新）
-     * @param description 新描述（null 不更新）
-     * @param tags        新标签列表（null 不更新）
-     * @return 更新后的知识库
-     * @throws KnowledgeBaseNotFoundException 知识库不存在时抛出
-     */
-    @Transactional
-    public KnowledgeBase updateKnowledgeBase(String id, String name, String description, 
-                                            List<String> tags) {
+    public KnowledgeBase updateKnowledgeBase(String id, String name, String description,
+                                             String embeddingModel, String rerankerModel,
+                                             String chunkingStrategy, Map<String, Object> chunkingConfig,
+                                             List<String> tags) {
         KnowledgeBase existing = kbRepository.findById(id)
                 .orElseThrow(() -> new KnowledgeBaseNotFoundException("知识库不存在: id=" + id));
 
@@ -120,10 +120,10 @@ public class KnowledgeBaseManager {
                 existing.id(),
                 name != null ? name : existing.name(),
                 description != null ? description : existing.description(),
-                existing.embeddingModel(),
-                existing.rerankerModel(),
-                existing.chunkingStrategy(),
-                existing.chunkingConfig(),
+                embeddingModel != null ? embeddingModel : existing.embeddingModel(),
+                rerankerModel != null ? rerankerModel : existing.rerankerModel(),
+                chunkingStrategy != null ? chunkingStrategy : existing.chunkingStrategy(),
+                chunkingConfig != null ? chunkingConfig : existing.chunkingConfig(),
                 existing.documentCount(),
                 existing.totalChunks(),
                 tags != null ? tags : existing.tags(),
@@ -131,9 +131,7 @@ public class KnowledgeBaseManager {
                 Instant.now()
         );
         kbRepository.save(updated);
-        log.info("知识库更新成功: id={}, description={}, tags={}", id, 
-                description != null ? "已更新" : "未更新",
-                tags != null ? "已更新" : "未更新");
+        log.info("知识库更新成功: id={}", id);
         return updated;
     }
 
@@ -146,6 +144,30 @@ public class KnowledgeBaseManager {
     public void deleteKnowledgeBase(String id) {
         kbRepository.deleteById(id);
         log.info("知识库删除成功: id={}", id);
+    }
+
+    /**
+     * 列出指定文档的分块（支持 offset/limit 分页）。
+     *
+     * @param documentId 文档 id
+     * @param offset     偏移量
+     * @param limit      每页数量
+     * @return 分块列表（按 chunkIndex 升序）
+     */
+    public List<com.lifepilot.knowledge.chunking.DocumentChunk> listDocumentChunks(String documentId,
+                                                                                    int offset, int limit) {
+        // 使用 chunkIndex 范围查询实现分页
+        return chunkRepository.findByDocumentIdAndChunkIndexRange(documentId, offset, offset + limit - 1);
+    }
+
+    /**
+     * 统计指定文档的分块数量。
+     *
+     * @param documentId 文档 id
+     * @return 分块数量
+     */
+    public int countDocumentChunks(String documentId) {
+        return chunkRepository.countByDocumentId(documentId);
     }
 
     /**

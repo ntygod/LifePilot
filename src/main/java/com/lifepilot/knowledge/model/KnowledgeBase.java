@@ -34,21 +34,33 @@ public record KnowledgeBase(
     /**
      * 创建新知识库的工厂方法。
      *
-     * <p>自动生成 UUID，设置默认分块策略为 "smart"，
-     * 文档数和分块数初始化为 0。</p>
+     * <p>自动生成 UUID，文档数和分块数初始化为 0。
+     * 可选参数为 null 时使用默认值。</p>
      *
-     * @param name           知识库名称
-     * @param description    知识库描述
-     * @param embeddingModel Embedding 模型标识
+     * @param name             知识库名称
+     * @param description      知识库描述
+     * @param embeddingModel   Embedding 模型标识
+     * @param rerankerModel    重排序模型标识（可选）
+     * @param chunkingStrategy 分块策略（可选，默认 "smart"）
+     * @param chunkingConfig   分块配置参数（可选）
+     * @param tags             标签列表（可选）
      * @return 新创建的知识库实例
      */
     public static KnowledgeBase create(String name, String description,
-                                       String embeddingModel) {
+                                       String embeddingModel,
+                                       @Nullable String rerankerModel,
+                                       @Nullable String chunkingStrategy,
+                                       @Nullable Map<String, Object> chunkingConfig,
+                                       @Nullable List<String> tags) {
         Instant now = Instant.now();
         return new KnowledgeBase(
                 UUID.randomUUID().toString(),
                 name, description, embeddingModel,
-                null, "smart", Map.of(),
-                0, 0, List.of(), now, now);
+                rerankerModel,
+                chunkingStrategy != null ? chunkingStrategy : "smart",
+                chunkingConfig != null ? chunkingConfig : Map.of(),
+                0, 0,
+                tags != null ? tags : List.of(),
+                now, now);
     }
 }
