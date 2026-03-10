@@ -189,9 +189,10 @@ public class SkillAutoConfiguration {
     @ConditionalOnMissingBean
     public BuiltinSkillRegistrar builtinSkillRegistrar(List<BuiltinSkillProvider> providers,
                                                        SkillRegistry skillRegistry,
-                                                       DynamicToolRegistry toolRegistry) {
+                                                       DynamicToolRegistry toolRegistry,
+                                                       SkillConfigProperties skillConfigProperties) {
         log.info("Skill 系统: 注册 BuiltinSkillRegistrar, providers={}", providers.size());
-        return new BuiltinSkillRegistrar(providers, skillRegistry, toolRegistry);
+        return new BuiltinSkillRegistrar(providers, skillRegistry, toolRegistry, skillConfigProperties);
     }
 
     // ==================== Markdown 解析与热加载 ====================

@@ -1,5 +1,11 @@
 package com.lifepilot.skill.builtin;
 
+import com.lifepilot.agent.proactive.candidate.CandidateProvider;
+import com.lifepilot.agent.proactive.model.ProactiveCandidate;
+import com.lifepilot.agent.proactive.model.Signal;
+import com.lifepilot.agent.proactive.model.SignalBundle;
+import com.lifepilot.agent.proactive.signal.SignalSource;
+import com.lifepilot.skill.config.SkillConfigProperties;
 import com.lifepilot.skill.model.*;
 import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
@@ -23,6 +29,7 @@ class BuiltinSkillRegistrarTest {
 
     private SkillRegistry skillRegistry;
     private DynamicToolRegistry toolRegistry;
+    private SkillConfigProperties skillConfigProperties;
 
     /** 记录注册顺序的列表。 */
     private final List<String> registrationOrder = new ArrayList<>();
@@ -31,6 +38,7 @@ class BuiltinSkillRegistrarTest {
     void setUp() {
         skillRegistry = mock(SkillRegistry.class);
         toolRegistry = mock(DynamicToolRegistry.class);
+        skillConfigProperties = new SkillConfigProperties();
         when(skillRegistry.register(any())).thenReturn(true);
         registrationOrder.clear();
     }
@@ -41,7 +49,7 @@ class BuiltinSkillRegistrarTest {
         var provider10 = new Order10Provider(registrationOrder);
 
         var registrar = new BuiltinSkillRegistrar(
-                List.of(provider30, provider10), skillRegistry, toolRegistry);
+                List.of(provider30, provider10), skillRegistry, toolRegistry, skillConfigProperties);
 
         registrar.registerAll();
 
@@ -56,7 +64,7 @@ class BuiltinSkillRegistrarTest {
         var goodProvider = new Order10Provider(registrationOrder);
 
         var registrar = new BuiltinSkillRegistrar(
-                List.of(failProvider, goodProvider), skillRegistry, toolRegistry);
+                List.of(failProvider, goodProvider), skillRegistry, toolRegistry, skillConfigProperties);
 
         registrar.registerAll();
 
@@ -68,7 +76,7 @@ class BuiltinSkillRegistrarTest {
     @Test
     void 空Provider列表不报错() {
         var registrar = new BuiltinSkillRegistrar(
-                List.of(), skillRegistry, toolRegistry);
+                List.of(), skillRegistry, toolRegistry, skillConfigProperties);
 
         registrar.registerAll();
 
@@ -81,7 +89,7 @@ class BuiltinSkillRegistrarTest {
         var plainProvider = new PlainProvider(registrationOrder);
 
         var registrar = new BuiltinSkillRegistrar(
-                List.of(plainProvider, annotatedProvider), skillRegistry, toolRegistry);
+                List.of(plainProvider, annotatedProvider), skillRegistry, toolRegistry, skillConfigProperties);
 
         registrar.registerAll();
 
@@ -94,12 +102,75 @@ class BuiltinSkillRegistrarTest {
         var failToolsProvider = new FailOnRegisterToolsProvider();
 
         var registrar = new BuiltinSkillRegistrar(
-                List.of(failToolsProvider), skillRegistry, toolRegistry);
+                List.of(failToolsProvider), skillRegistry, toolRegistry, skillConfigProperties);
 
         registrar.registerAll();
 
         // registerTools 失败后不应调用 skillRegistry.register
         verify(skillRegistry, never()).register(any());
+    }
+
+    @Test
+    void 禁用的Skill跳过注册() {
+        // 禁用 todo Skill
+        skillConfigProperties.getBuiltin().getTodo().setEnabled(false);
+
+        var todoProvider = new TodoProvider(registrationOrder);
+        var scheduleProvider = new ScheduleProvider(registrationOrder);
+
+        var registrar = new BuiltinSkillRegistrar(
+                List.of(todoProvider, scheduleProvider), skillRegistry, toolRegistry, skillConfigProperties);
+
+        registrar.registerAll();
+
+        // 只有 schedule 被注册，todo 被跳过
+        assertThat(registrationOrder).containsExactly("schedule");
+        verify(skillRegistry, times(1)).register(any());
+    }
+
+    @Test
+    void ProactiveSkillProvider收集信号源和候选提供者() {
+        var proactiveProvider = new ProactiveTestProvider(registrationOrder);
+
+        var registrar = new BuiltinSkillRegistrar(
+                List.of(proactiveProvider), skillRegistry, toolRegistry, skillConfigProperties);
+
+        registrar.registerAll();
+
+        assertThat(registrar.getRegisteredSignalSources()).hasSize(1);
+        assertThat(registrar.getRegisteredSignalSources().getFirst().id()).isEqualTo("test-signal");
+        assertThat(registrar.getRegisteredCandidateProviders()).hasSize(1);
+        assertThat(registrar.getRegisteredCandidateProviders().getFirst().id()).isEqualTo("test-candidate");
+    }
+
+    @Test
+    void 禁用的ProactiveSkillProvider不收集信号源() {
+        // 禁用 todo Skill
+        skillConfigProperties.getBuiltin().getTodo().setEnabled(false);
+
+        var proactiveProvider = new ProactiveTestProvider(registrationOrder);
+
+        var registrar = new BuiltinSkillRegistrar(
+                List.of(proactiveProvider), skillRegistry, toolRegistry, skillConfigProperties);
+
+        registrar.registerAll();
+
+        // 禁用后不收集信号源和候选提供者
+        assertThat(registrar.getRegisteredSignalSources()).isEmpty();
+        assertThat(registrar.getRegisteredCandidateProviders()).isEmpty();
+    }
+
+    @Test
+    void 非ProactiveSkillProvider不影响信号源列表() {
+        var normalProvider = new Order10Provider(registrationOrder);
+
+        var registrar = new BuiltinSkillRegistrar(
+                List.of(normalProvider), skillRegistry, toolRegistry, skillConfigProperties);
+
+        registrar.registerAll();
+
+        assertThat(registrar.getRegisteredSignalSources()).isEmpty();
+        assertThat(registrar.getRegisteredCandidateProviders()).isEmpty();
     }
 
     // ─────────────────────────────────────────────
@@ -187,6 +258,76 @@ class BuiltinSkillRegistrarTest {
         @Override
         public void registerTools(DynamicToolRegistry toolRegistry) {
             throw new RuntimeException("模拟 registerTools 失败");
+        }
+    }
+
+    /** 模拟 todo Skill 的 Provider。 */
+    @BuiltinSkill(id = "todo", order = 10)
+    static class TodoProvider implements BuiltinSkillProvider {
+        private final List<String> order;
+
+        TodoProvider(List<String> order) { this.order = order; }
+
+        @Override
+        public SkillDefinition provide() { return buildDefinition("todo"); }
+
+        @Override
+        public void registerTools(DynamicToolRegistry toolRegistry) {
+            order.add("todo");
+        }
+    }
+
+    /** 模拟 schedule Skill 的 Provider。 */
+    @BuiltinSkill(id = "schedule", order = 20)
+    static class ScheduleProvider implements BuiltinSkillProvider {
+        private final List<String> order;
+
+        ScheduleProvider(List<String> order) { this.order = order; }
+
+        @Override
+        public SkillDefinition provide() { return buildDefinition("schedule"); }
+
+        @Override
+        public void registerTools(DynamicToolRegistry toolRegistry) {
+            order.add("schedule");
+        }
+    }
+
+    /** 实现 ProactiveSkillProvider 的测试 Provider。 */
+    @BuiltinSkill(id = "todo", order = 10)
+    static class ProactiveTestProvider implements ProactiveSkillProvider {
+        private final List<String> order;
+
+        ProactiveTestProvider(List<String> order) { this.order = order; }
+
+        @Override
+        public SkillDefinition provide() { return buildDefinition("todo"); }
+
+        @Override
+        public void registerTools(DynamicToolRegistry toolRegistry) {
+            order.add("proactive-todo");
+        }
+
+        @Override
+        public List<SignalSource> signalSources() {
+            return List.of(new SignalSource() {
+                @Override
+                public String id() { return "test-signal"; }
+
+                @Override
+                public List<Signal> collect() { return List.of(); }
+            });
+        }
+
+        @Override
+        public List<CandidateProvider> candidateProviders() {
+            return List.of(new CandidateProvider() {
+                @Override
+                public String id() { return "test-candidate"; }
+
+                @Override
+                public List<ProactiveCandidate> evaluate(SignalBundle signals) { return List.of(); }
+            });
         }
     }
 }
