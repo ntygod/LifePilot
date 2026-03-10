@@ -1,287 +1,86 @@
-# 代码执行沙箱
+# 代码执行沙箱 — 特性说明
 
-> 本文档从 [FEATURES.md](../FEATURES.md) 拆分而来，对应 Phase 4 模块 16。
+> **文档性质**：特性说明文档
+> **模块归属**：`com.lifepilot.sandbox`
+> **最后更新**：2026-03
 
-> 📋 详细架构设计参见 [architecture/sandbox.md](../architecture/sandbox.md)。
+## 1. 功能概述
 
-## 1. 概述
+沙箱模块让 Agent 能够在安全隔离的环境中执行用户请求的代码。支持 Python、JavaScript、Shell 三种语言，提供两种隔离策略（进程隔离和 Docker 容器隔离），执行前自动进行危险操作预检，执行过程全程审计记录。作为 CRITICAL 风险级别工具，每次执行都需要经过护栏系统确认。
 
-ZhiWei 代码执行沙箱让 AI Agent 能够安全地运行用户提供的代码片段。支持 Python、JavaScript 和 Shell 三种语言，适用于数据处理、计算、脚本自动化等场景。
+## 2. 核心特性
 
-核心能力：
-- 三层安全防护：代码预检 → 用户确认 → 沙箱隔离执行
-- 两种隔离方案：ProcessBuilder 轻量沙箱（默认）和 Docker 容器强隔离（可选）
-- 会话级沙箱复用，避免冷启动开销
-- 全链路审计日志，执行可追溯
-- 与工具系统深度集成，Agent 透明调用
+### 2.1 多语言支持
 
-## 2. 快速开始
+支持三种编程语言的代码执行：
+- Python（python3）：数据分析、脚本计算
+- JavaScript（node）：前端逻辑验证、JSON 处理
+- Shell（bash）：系统命令、文件操作
 
-### 2.1 默认配置即可使用
+语言运行时路径可通过配置自定义。
 
-代码执行沙箱默认启用，使用 ProcessBuilder 轻量方案，无需额外安装。
-只需确保系统中安装了对应语言的运行时：
+### 2.2 双重隔离策略
 
-- Python：`python3` 命令可用
-- JavaScript：`node` 命令可用
-- Shell：`bash` 命令可用
+ProcessBooter（默认）：基于 ProcessBuilder 的轻量级进程隔离，零外部依赖。在隔离临时目录中执行，清洗环境变量仅保留 PATH，超时强制终止进程。
 
-### 2.2 Agent 自动调用
+DockerBooter：基于 Docker 容器的强隔离，提供内存/CPU/磁盘资源限制和网络隔离（默认禁用网络）。需要宿主机安装 Docker，适合对安全性要求更高的场景。
 
-当用户请求涉及代码执行时，Agent 会自动调用 `code.execute` 工具：
+### 2.3 危险操作预检
 
-```
-用户：帮我用 Python 计算 1 到 100 的质数之和
+CodeValidator 在代码执行前进行正则模式匹配预检，按语言维护危险模式列表：
+- Python：检测 `os.system`、`subprocess`、`eval`、`exec`、文件删除等
+- JavaScript：检测 `child_process`、`eval`、`fs.unlink` 等
+- Shell：检测 `rm -rf`、`dd`、`mkfs`、网络命令等
 
-Agent 调用 code.execute：
-  language: python
-  code: |
-    primes = [n for n in range(2, 101) if all(n % i != 0 for i in range(2, int(n**0.5)+1))]
-    print(f"质数列表: {primes}")
-    print(f"质数之和: {sum(primes)}")
+违规分为 CRITICAL（拒绝执行）、HIGH、MEDIUM 三个级别。
 
-执行结果：
-  质数列表: [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97]
-  质数之和: 1060
-```
+### 2.4 会话级实例复用
 
-由于代码执行是 CRITICAL 风险操作，执行前会请求用户确认。
+同一会话的多次代码执行复用同一个沙箱实例，避免频繁创建/销毁。会话支持 TTL 自动续期（每次访问刷新过期时间），过期会话自动清理并释放资源。
 
-## 3. 安全模型
+### 2.5 执行审计
 
-### 3.1 三层防御
+每次代码执行（含预检拒绝）都持久化审计记录到 SQLite，记录语言、代码哈希、执行状态、耗时、输出大小等信息。审计写入失败降级跳过，不影响主流程。
 
-代码执行经过三道安全关卡，任何一层拦截即终止执行：
+### 2.6 护栏集成
 
-**第一层：代码预检（CodeValidator）**
-- 静态扫描代码中的危险模式（如 `rm -rf /`、`os.system()`、`eval()`）
-- CRITICAL 级违规直接拒绝，不进入后续流程
-- 检测规则可配置，支持自定义
+CodeExecuteTool 注册为 CRITICAL 风险级别的 BuiltinTool，执行前必须经过护栏系统的用户确认和二次验证，确保用户知晓并授权代码执行。
 
-**第二层：护栏审批（GuardrailPolicy）**
-- 代码执行工具标记为 CRITICAL 风险等级
-- 需要用户明确确认执行意图
-- 需要二次验证（防止误操作）
+## 3. 使用场景
 
-**第三层：沙箱隔离（SandboxBooter）**
-- 代码在隔离环境中执行，不直接访问宿主系统
-- 超时自动终止，防止无限循环
-- 输出截断，防止内存溢出
+用户请求 Agent 进行数据计算时，Agent 生成 Python 代码并通过沙箱执行，返回计算结果。沙箱在执行前自动预检代码安全性，在隔离环境中运行，超时自动终止。
 
-### 3.2 代码预检示例
+用户请求 Agent 验证一段 JavaScript 逻辑时，Agent 在沙箱中执行代码并返回输出。同一对话中的多次执行复用同一个沙箱会话，工作目录中的文件在会话期间持久保留。
 
-```
-用户代码：
-  import os
-  os.system("rm -rf /")
+用户请求 Agent 执行系统命令查看文件信息时，Agent 生成 Shell 脚本在沙箱中执行。CodeValidator 预检会拦截危险命令（如 `rm -rf /`），拒绝执行并告知用户。
 
-预检结果：
-  ❌ CRITICAL 违规：检测到 os.system() 系统命令调用
-  ❌ CRITICAL 违规：检测到 rm -rf 危险删除操作
-  → 执行被拒绝
-```
+## 4. 配置项
 
-```
-用户代码：
-  import requests
-  data = requests.get("https://api.example.com/data").json()
-  print(data)
+| 配置键 | 默认值 | 说明 |
+|--------|--------|------|
+| `lifepilot.sandbox.enabled` | `true` | 沙箱总开关 |
+| `lifepilot.sandbox.booter` | `process` | 隔离策略（process / docker） |
+| `lifepilot.sandbox.supported-languages` | `[python, javascript, shell]` | 支持的语言 |
+| `lifepilot.sandbox.execution-timeout-seconds` | `30` | 执行超时（秒） |
+| `lifepilot.sandbox.max-output-bytes` | `65536` | 输出最大字节数（64KB） |
+| `lifepilot.sandbox.session.ttl-seconds` | `600` | 会话 TTL（10 分钟） |
+| `lifepilot.sandbox.session.max-active-sessions` | `5` | 最大活跃会话数 |
+| `lifepilot.sandbox.validator.enabled` | `true` | 预检开关 |
+| `lifepilot.sandbox.validator.reject-critical` | `true` | 是否拒绝 CRITICAL 违规 |
+| `lifepilot.sandbox.docker.memory-limit-mb` | `256` | Docker 内存限制 |
+| `lifepilot.sandbox.docker.cpu-limit` | `1.0` | Docker CPU 限制 |
+| `lifepilot.sandbox.docker.network-enabled` | `false` | Docker 网络开关 |
 
-预检结果：
-  ⚠️ MEDIUM 警告：检测到 requests 网络请求库
-  → 记录日志，继续执行（需用户确认）
-```
+## 5. 限制与未来方向
 
-## 4. 沙箱类型
+当前限制：
+- 仅支持 Python、JavaScript、Shell 三种语言
+- ProcessBooter 的隔离强度有限，依赖操作系统进程隔离
+- 危险操作预检基于正则匹配，可能存在误报或漏报
+- 不支持代码执行的实时输出流（仅返回最终结果）
 
-### 4.1 ProcessBuilder 轻量沙箱（默认）
-
-基于 Java ProcessBuilder，零外部依赖，适用于大多数场景。
-
-**特点**：
-- 无需安装任何额外软件
-- 启动速度极快（<10ms）
-- 每次执行在独立临时目录中运行
-- 超时自动终止进程
-- 环境变量清洗，不暴露敏感信息
-
-**局限**：
-- 无法限制 CPU / 内存使用
-- 无法限制网络访问
-- 隔离强度依赖操作系统权限
-
-**适用场景**：开发调试、可信代码执行、简单计算和数据处理。
-
-### 4.2 Docker 容器沙箱（可选）
-
-基于 Docker 容器，提供完整的资源隔离，需要安装 Docker Engine。
-
-**特点**：
-- 完整的文件系统隔离（容器内独立文件系统）
-- CPU / 内存 / 磁盘资源限制
-- 默认断网，防止数据外泄
-- 只读根文件系统，仅工作目录可写
-- 容器退出后自动清理
-
-**配置方式**：
-
-```yaml
-lifepilot:
-  sandbox:
-    booter: docker
-    docker:
-      memory-limit-mb: 256
-      cpu-limit: 1.0
-      network-enabled: false
-```
-
-**适用场景**：生产环境、不可信代码执行、需要严格资源控制的场景。
-
-### 4.3 Docker 不可用时的降级
-
-如果配置了 Docker 沙箱但 Docker Engine 不可用：
-- `booter: docker` 时：拒绝执行，提示用户安装 Docker 或切换到 process 模式
-- `booter: process` 时：正常使用 ProcessBuilder 方案
-
-## 5. 支持的语言
-
-| 语言 | 运行时命令 | 文件扩展名 | 典型场景 |
-|------|-----------|-----------|---------|
-| Python | `python3` | `.py` | 数据处理、科学计算、API 调用、文件批处理 |
-| JavaScript | `node` | `.js` | JSON 处理、文本转换、Web 数据解析 |
-| Shell | `bash` | `.sh` | 系统管理、文件操作、命令行自动化 |
-
-运行时路径可通过配置自定义：
-
-```yaml
-lifepilot:
-  sandbox:
-    runtime-paths:
-      python: "/usr/local/bin/python3.12"
-      javascript: "/usr/local/bin/node"
-      shell: "/bin/bash"
-```
-
-## 6. 会话级沙箱复用
-
-同一 Agent 会话内的多次代码执行复用同一个沙箱实例，好处是：
-
-- 前一步安装的依赖（如 `pip install pandas`）在后续步骤中可用
-- 前一步生成的文件在后续步骤中可读取
-- 避免每次执行的冷启动开销
-
-### 6.1 会话生命周期
-
-```
-创建会话沙箱 → 执行代码 → [TTL 重置] → 执行代码 → [TTL 重置] → ... → 空闲超时 → 自动销毁
-```
-
-- 默认 TTL：10 分钟（每次执行自动续期）
-- 最大同时活跃会话：5 个
-- 超出限制时拒绝创建新会话，提示用户等待
-
-### 6.2 多步骤执行示例
-
-```
-步骤 1：安装依赖
-  language: python
-  code: |
-    import subprocess
-    subprocess.run(["pip", "install", "pandas"], check=True)
-    print("pandas 安装成功")
-
-步骤 2：处理数据（复用同一沙箱，pandas 已可用）
-  language: python
-  code: |
-    import pandas as pd
-    df = pd.DataFrame({"name": ["Alice", "Bob"], "score": [95, 87]})
-    df.to_csv("/workspace/result.csv", index=False)
-    print(df.describe())
-
-步骤 3：读取结果（复用同一沙箱，文件已存在）
-  language: python
-  code: |
-    with open("/workspace/result.csv") as f:
-        print(f.read())
-```
-
-## 7. 审计日志
-
-每次代码执行都会记录审计日志，包含：
-- 执行时间、会话 ID
-- 语言类型、代码哈希（SHA-256，不存储原始代码）
-- 沙箱类型（process / docker）
-- 预检结果（通过/违规数量）
-- 执行结果（退出码、输出长度、耗时）
-- 执行状态（COMPLETED / TIMEOUT / FAILED / REJECTED）
-
-审计日志存储在 SQLite 中，可通过 API 查询。
-
-## 8. 配置
-
-```yaml
-lifepilot:
-  sandbox:
-    enabled: true                          # 是否启用代码执行沙箱
-    booter: process                        # 沙箱类型：process / docker
-    supported-languages:                   # 支持的语言
-      - python
-      - javascript
-      - shell
-    execution-timeout-seconds: 30          # 执行超时
-    max-output-bytes: 65536                # 输出最大字节数（64KB）
-    session:
-      ttl-seconds: 600                     # 会话 TTL（10 分钟）
-      max-active-sessions: 5              # 最大同时活跃会话
-      cleanup-interval-seconds: 60         # 清理扫描间隔
-    validator:
-      enabled: true                        # 是否启用代码预检
-      reject-critical: true                # CRITICAL 违规是否直接拒绝
-    docker:                                # Docker 沙箱配置
-      memory-limit-mb: 256                 # 内存限制
-      cpu-limit: 1.0                       # CPU 限制
-      disk-limit-mb: 512                   # 磁盘限制
-      network-enabled: false               # 是否允许网络
-      image-prefix: "lifepilot/sandbox-"   # 镜像前缀
-    runtime-paths:                         # 语言运行时路径
-      python: "python3"
-      javascript: "node"
-      shell: "bash"
-```
-
-## 9. 使用场景
-
-### 9.1 数据处理
-
-```
-用户：帮我分析这组销售数据，计算每月平均销售额
-
-Agent 生成 Python 代码，调用 pandas 进行数据分析，
-输出统计结果和趋势图描述。
-```
-
-### 9.2 文件批处理
-
-```
-用户：把 ~/downloads 下所有 .csv 文件合并成一个
-
-Agent 生成 Shell 脚本，遍历目录合并文件。
-（注意：ProcessBooter 下需要用户确认文件路径访问权限）
-```
-
-### 9.3 计算与验证
-
-```
-用户：验证一下这个正则表达式能不能匹配所有邮箱格式
-
-Agent 生成 Python 测试脚本，用多组测试用例验证正则表达式。
-```
-
-### 9.4 API 数据获取
-
-```
-用户：帮我查一下今天的汇率
-
-Agent 生成 Python 代码调用公开 API。
-（注意：需要 Docker 沙箱允许网络访问，或 ProcessBooter 默认允许网络）
-```
+未来方向：
+- 支持更多语言（Java、Go、Rust）
+- 基于 AST 的深度代码安全分析
+- 实时输出流（SSE 推送执行过程）
+- 沙箱资源使用统计和配额管理
