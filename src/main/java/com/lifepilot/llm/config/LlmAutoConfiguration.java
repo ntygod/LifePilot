@@ -7,6 +7,7 @@ import com.lifepilot.llm.circuit.CircuitBreakerManager;
 import com.lifepilot.llm.registry.ProviderHealthChecker;
 import com.lifepilot.llm.registry.ProviderRegistry;
 import com.lifepilot.llm.service.LlmProviderService;
+import com.lifepilot.skill.registry.SkillSearchIndex;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.advisor.api.CallAdvisor;
@@ -109,6 +110,15 @@ public class LlmAutoConfiguration {
                 });
             }
             cbManager.purgeStaleBreakers(activeKeys);
+        }
+
+        // 在 Provider 注册完成后，重建 Skill Embedding 索引（修复启动顺序问题）
+        if (ctx.getBeanNamesForType(SkillSearchIndex.class).length > 0) {
+            var searchIndex = ctx.getBean(SkillSearchIndex.class);
+            int rebuilt = searchIndex.reindexAll();
+            if (rebuilt > 0) {
+                log.info("Skill Embedding 索引重建完成: 重建数量={}", rebuilt);
+            }
         }
 
         // 连接预热：对云端 Provider 发起轻量级健康检查，建立 TCP 连接

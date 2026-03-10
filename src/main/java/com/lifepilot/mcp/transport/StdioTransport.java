@@ -436,9 +436,14 @@ public final class StdioTransport implements McpTransport {
         return null;
     }
 
-    /** 定位 node.exe 的绝对路径。 */
+    /**
+     * 定位 node.exe 的绝对路径。
+     *
+     * <p>Windows 上使用 where.exe 查找，非 Windows 使用 which。</p>
+     */
     private static String resolveNodeExe() {
-        String path = runCommandForOutput("where.exe", "node.exe");
+        String whichCmd = isWindows() ? "where.exe" : "which";
+        String path = runCommandForOutput(whichCmd, "node");
         if (path != null) {
             var nodeExe = new File(path);
             if (nodeExe.exists()) return nodeExe.getAbsolutePath();
@@ -446,10 +451,25 @@ public final class StdioTransport implements McpTransport {
         return null;
     }
 
-    /** 运行命令并返回第一行输出（去除首尾空白），失败返回 null。 */
+    /**
+     * 运行命令并返回第一行输出（去除首尾空白），失败返回 null。
+     *
+     * <p>Windows 上 npm / npx 等命令实际是 .cmd 脚本，
+     * 必须通过 cmd.exe /c 执行，否则 ProcessBuilder 找不到可执行文件。</p>
+     */
     private static String runCommandForOutput(String... command) {
         try {
-            var proc = new ProcessBuilder(command)
+            List<String> actualCommand;
+            if (isWindows()) {
+                // Windows 上通过 cmd.exe /c 执行，确保 .cmd / .bat 脚本可被识别
+                actualCommand = new ArrayList<>();
+                actualCommand.add("cmd.exe");
+                actualCommand.add("/c");
+                actualCommand.addAll(List.of(command));
+            } else {
+                actualCommand = List.of(command);
+            }
+            var proc = new ProcessBuilder(actualCommand)
                     .redirectErrorStream(true)
                     .start();
             String output;

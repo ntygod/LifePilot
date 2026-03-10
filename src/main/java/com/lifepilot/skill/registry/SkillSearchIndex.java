@@ -75,6 +75,40 @@ public class SkillSearchIndex {
     }
 
     /**
+     * 重建所有已索引 Skill 的 Embedding 向量。
+     *
+     * <p>在 LLM Provider 就绪后调用，将之前降级为关键词索引的 Skill
+     * 重新生成 Embedding 向量。仅对尚未拥有 Embedding 的 Skill 执行。</p>
+     *
+     * @return 成功重建的 Skill 数量
+     */
+    public int reindexAll() {
+        if (llmRouter == null) {
+            log.debug("LlmRouter 不可用，跳过 Embedding 重建");
+            return 0;
+        }
+        int rebuilt = 0;
+        for (var entry : skillTexts.entrySet()) {
+            String skillId = entry.getKey();
+            if (embeddings.containsKey(skillId)) {
+                continue; // 已有 Embedding，跳过
+            }
+            try {
+                float[] vector = llmRouter.embed(entry.getValue());
+                embeddings.put(skillId, vector);
+                rebuilt++;
+                log.debug("Skill Embedding 重建成功: skillId={}", skillId);
+            } catch (LlmUnavailableException e) {
+                log.debug("Skill Embedding 重建失败: skillId={}, 原因={}", skillId, e.getMessage());
+            }
+        }
+        if (rebuilt > 0) {
+            log.info("Skill Embedding 重建完成: 成功={}, 总数={}", rebuilt, skillTexts.size());
+        }
+        return rebuilt;
+    }
+
+    /**
      * 搜索 Skill，返回 Top-K 结果。
      *
      * <p>当 LlmRouter 可用时，使用向量语义搜索（余弦相似度 &gt; 0.5）。
