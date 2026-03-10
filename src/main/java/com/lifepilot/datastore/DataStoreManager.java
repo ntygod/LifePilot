@@ -23,6 +23,12 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+import com.lifepilot.datastore.model.AggregationRequest;
+import com.lifepilot.datastore.model.AggregationResult;
+import com.lifepilot.datastore.model.QueryRequest;
 
 /**
  * 数据存储管理门面 — 提供集合和文档的完整 CRUD 操作的统一入口。
@@ -386,7 +392,112 @@ public class DataStoreManager {
         return true;
     }
 
-    // ---- 查询操作（Task 7.3 实现） ----
+    // ---- 查询操作 ----
+
+    /**
+     * 按条件查询文档。
+     *
+     * <p>委托 QueryEngine 构建参数化 SQL，再由 DocumentRepository 执行查询。
+     * 索引感知：有 Generated Column 的字段走 B-tree 索引，否则走 json_extract。</p>
+     *
+     * @param request 查询请求（包含集合 ID、过滤条件、排序、分页）
+     * @return 匹配的文档列表
+     * @throws IllegalArgumentException 集合不存在
+     */
+    public List<Document> queryDocuments(QueryRequest request) {
+        // 1. 集合存在性检查
+        var collection = collectionRepository.findById(request.collectionId())
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "集合不存在: id=" + request.collectionId()));
+
+        // 2. 获取已索引字段
+        List<PropertyDefinition> propDefs = deserializeProperties(collection.propertiesJson());
+        Set<String> indexedFields = propDefs.stream()
+                .filter(p -> p.type().isIndexable())
+                .map(PropertyDefinition::name)
+                .collect(Collectors.toSet());
+
+        // 3. 集合 ID 前缀
+        String collectionIdPrefix = request.collectionId().substring(0, 8);
+
+        // 4. 构建 SQL 并执行
+        var sqlWithParams = queryEngine.buildQuery(request, indexedFields, collectionIdPrefix);
+        var results = documentRepository.query(sqlWithParams.sql(), sqlWithParams.params());
+
+        log.debug("文档查询完成: collectionId={}, 结果数={}", request.collectionId(), results.size());
+        return List.copyOf(results);
+    }
+
+    /**
+     * 全文搜索文档。
+     *
+     * <p>仅支持 NOTE 类型集合，委托 DocumentRepository 执行 FTS5 搜索。</p>
+     *
+     * @param collectionId 集合 ID
+     * @param query        搜索关键词
+     * @param limit        返回数量上限
+     * @return 匹配的文档列表，按相关性排序
+     * @throws IllegalArgumentException 集合不存在或非 NOTE 类型
+     */
+    public List<Document> searchDocuments(String collectionId, String query, int limit) {
+        // 1. 集合存在性检查
+        var collection = collectionRepository.findById(collectionId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "集合不存在: id=" + collectionId));
+
+        // 2. 校验集合类型
+        if (collection.type() != CollectionType.NOTE) {
+            throw new IllegalArgumentException("全文搜索仅支持 NOTE 类型集合");
+        }
+
+        // 3. 执行 FTS5 搜索
+        var results = documentRepository.searchFts(collectionId, query, limit);
+
+        log.debug("全文搜索完成: collectionId={}, query={}, 结果数={}",
+                collectionId, query, results.size());
+        return List.copyOf(results);
+    }
+
+    /**
+     * 时序聚合查询。
+     *
+     * <p>仅支持 METRIC 类型集合，委托 AggregationEngine 构建 SQL，
+     * 再由 DocumentRepository 执行聚合查询。</p>
+     *
+     * @param request 聚合请求（包含集合 ID、聚合字段、函数、时间分组和范围）
+     * @return 聚合结果列表
+     * @throws IllegalArgumentException 集合不存在或非 METRIC 类型
+     */
+    public List<AggregationResult> aggregate(AggregationRequest request) {
+        // 1. 集合存在性检查
+        var collection = collectionRepository.findById(request.collectionId())
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "集合不存在: id=" + request.collectionId()));
+
+        // 2. 校验集合类型
+        if (collection.type() != CollectionType.METRIC) {
+            throw new IllegalArgumentException("时序聚合仅支持 METRIC 类型集合");
+        }
+
+        // 3. 获取已索引字段
+        List<PropertyDefinition> propDefs = deserializeProperties(collection.propertiesJson());
+        Set<String> indexedFields = propDefs.stream()
+                .filter(p -> p.type().isIndexable())
+                .map(PropertyDefinition::name)
+                .collect(Collectors.toSet());
+
+        // 4. 集合 ID 前缀
+        String collectionIdPrefix = request.collectionId().substring(0, 8);
+
+        // 5. 构建 SQL 并执行
+        var sqlWithParams = aggregationEngine.buildAggregation(
+                request, indexedFields, collectionIdPrefix);
+        var results = documentRepository.aggregate(sqlWithParams.sql(), sqlWithParams.params());
+
+        log.debug("时序聚合完成: collectionId={}, func={}, 结果数={}",
+                request.collectionId(), request.func(), results.size());
+        return List.copyOf(results);
+    }
 
     // ---- 内部方法 ----
 
