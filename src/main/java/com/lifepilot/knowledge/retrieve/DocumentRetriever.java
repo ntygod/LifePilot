@@ -4,9 +4,11 @@ import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
 import com.lifepilot.knowledge.index.FtsIndexer;
 import com.lifepilot.knowledge.index.VectorIndexer;
 import com.lifepilot.knowledge.model.DocumentSearchResult;
+import com.lifepilot.knowledge.model.KnowledgeBase;
 import com.lifepilot.knowledge.model.ScoreBreakdown;
 import com.lifepilot.knowledge.rerank.Reranker;
 import com.lifepilot.knowledge.repository.DocumentChunkRepository;
+import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
@@ -35,6 +37,7 @@ public class DocumentRetriever {
     @Nullable
     private final QueryEnhancer queryEnhancer;
     private final DocumentChunkRepository chunkRepository;
+    private final KnowledgeBaseRepository kbRepository;
     private final KnowledgeBaseProperties.Retrieval config;
 
     /**
@@ -45,18 +48,21 @@ public class DocumentRetriever {
      * @param reranker        可选 Reranker（精排）
      * @param queryEnhancer   查询增强器（可选）
      * @param chunkRepository 分块数据访问层（上下文窗口扩展）
+     * @param kbRepository    知识库数据访问层（per-KB 模型解析）
      * @param config          检索配置
      */
     public DocumentRetriever(@Nullable VectorIndexer vectorIndexer, FtsIndexer ftsIndexer,
                               Optional<Reranker> reranker,
                               @Nullable QueryEnhancer queryEnhancer,
                               DocumentChunkRepository chunkRepository,
+                              KnowledgeBaseRepository kbRepository,
                               KnowledgeBaseProperties.Retrieval config) {
         this.vectorIndexer = vectorIndexer;
         this.ftsIndexer = ftsIndexer;
         this.reranker = reranker;
         this.queryEnhancer = queryEnhancer;
         this.chunkRepository = chunkRepository;
+        this.kbRepository = kbRepository;
         this.config = config;
         log.info("DocumentRetriever 初始化完成: topK={}, rrfK={}, reranker={}, queryEnhancer={}, contextWindowSize={}",
                 config.defaultTopK(), config.rrfK(),
@@ -82,6 +88,10 @@ public class DocumentRetriever {
         int effectiveTopK = topK > 0 ? topK : config.defaultTopK();
         int candidateK = effectiveTopK * 3;
 
+        // 0. 解析 per-KB 模型配置
+        String embeddingModel = resolveEmbeddingModel(kbIds);
+        String rerankerModel = resolveRerankerModel(kbIds);
+
         // 1. 查询增强
         QueryEnhancer.EnhancedQuery enhanced = enhanceQuery(query);
 
@@ -92,7 +102,7 @@ public class DocumentRetriever {
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             // HyDE 模式使用假设文档 Embedding 进行向量搜索
             var vectorFuture = CompletableFuture.supplyAsync(
-                    () -> safeVectorSearch(enhanced, kbIds, candidateK), executor);
+                    () -> safeVectorSearch(enhanced, kbIds, candidateK, embeddingModel), executor);
             var ftsFuture = CompletableFuture.supplyAsync(
                     () -> safeFtsSearch(enhanced, kbIds, candidateK), executor);
 
@@ -118,7 +128,7 @@ public class DocumentRetriever {
         // 6. 可选精排
         if (reranker.isPresent() && !fused.isEmpty()) {
             try {
-                var reranked = reranker.get().rerank(query, fused, effectiveTopK);
+                var reranked = reranker.get().rerank(query, fused, effectiveTopK, rerankerModel);
                 log.debug("精排完成: input={}, output={}", fused.size(), reranked.size());
                 fused = reranked;
             } catch (Exception e) {
@@ -132,6 +142,40 @@ public class DocumentRetriever {
                 fused.size(), fused.size(), elapsed);
 
         return List.copyOf(fused);
+    }
+
+    /**
+     * 解析跨知识库的 embeddingModel。
+     * 所有 KB 的 embeddingModel 一致时返回该模型，否则返回 null（回退到默认）。
+     */
+    private @Nullable String resolveEmbeddingModel(List<String> kbIds) {
+        var models = kbIds.stream()
+                .map(id -> kbRepository.findById(id).map(KnowledgeBase::embeddingModel).orElse(null))
+                .filter(m -> m != null && !m.isBlank())
+                .distinct()
+                .toList();
+        if (models.size() == 1) return models.getFirst();
+        if (models.size() > 1) {
+            log.warn("跨知识库搜索检测到不同 embeddingModel，回退到默认: models={}", models);
+        }
+        return null;
+    }
+
+    /**
+     * 解析跨知识库的 rerankerModel。
+     * 所有 KB 的 rerankerModel 一致时返回该模型，否则返回 null（回退到默认）。
+     */
+    private @Nullable String resolveRerankerModel(List<String> kbIds) {
+        var models = kbIds.stream()
+                .map(id -> kbRepository.findById(id).map(KnowledgeBase::rerankerModel).orElse(null))
+                .filter(m -> m != null && !m.isBlank())
+                .distinct()
+                .toList();
+        if (models.size() == 1) return models.getFirst();
+        if (models.size() > 1) {
+            log.warn("跨知识库搜索检测到不同 rerankerModel，回退到默认: models={}", models);
+        }
+        return null;
     }
 
     /**
@@ -287,7 +331,8 @@ public class DocumentRetriever {
      * 安全执行向量搜索，支持 HyDE 和 Rewrite 模式。
      */
     private List<DocumentSearchResult> safeVectorSearch(QueryEnhancer.EnhancedQuery enhanced,
-                                                         List<String> kbIds, int topK) {
+                                                         List<String> kbIds, int topK,
+                                                         @Nullable String embeddingModel) {
         if (vectorIndexer == null) {
             return List.of();
         }
@@ -301,19 +346,19 @@ public class DocumentRetriever {
             if (!enhanced.rewrittenQueries().isEmpty()) {
                 var allResults = new LinkedHashMap<String, DocumentSearchResult>();
                 // 先检索原始查询
-                for (var r : vectorIndexer.searchSimilar(enhanced.primaryQuery(), kbIds, topK)) {
+                for (var r : vectorIndexer.searchSimilar(enhanced.primaryQuery(), kbIds, topK, embeddingModel)) {
                     allResults.putIfAbsent(r.chunkId(), r);
                 }
                 // 再检索改写查询
                 for (var rewrite : enhanced.rewrittenQueries()) {
-                    for (var r : vectorIndexer.searchSimilar(rewrite, kbIds, topK)) {
+                    for (var r : vectorIndexer.searchSimilar(rewrite, kbIds, topK, embeddingModel)) {
                         allResults.putIfAbsent(r.chunkId(), r);
                     }
                 }
                 return new ArrayList<>(allResults.values());
             }
 
-            return vectorIndexer.searchSimilar(enhanced.primaryQuery(), kbIds, topK);
+            return vectorIndexer.searchSimilar(enhanced.primaryQuery(), kbIds, topK, embeddingModel);
         } catch (Exception e) {
             log.warn("向量搜索失败，降级跳过: {}", e.getMessage());
             return List.of();

@@ -239,8 +239,10 @@ public class KnowledgeAutoConfiguration {
                                                 Optional<Reranker> reranker,
                                                 @Nullable QueryEnhancer queryEnhancer,
                                                 DocumentChunkRepository chunkRepository,
+                                                KnowledgeBaseRepository kbRepository,
                                                 KnowledgeBaseProperties props) {
-        return new DocumentRetriever(vectorIndexer, ftsIndexer, reranker, queryEnhancer, chunkRepository, props.retrieval());
+        return new DocumentRetriever(vectorIndexer, ftsIndexer, reranker, queryEnhancer,
+                chunkRepository, kbRepository, props.retrieval());
     }
 
     // ---- 导入管线 ----
