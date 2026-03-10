@@ -40,37 +40,36 @@
 
 ### 3.1 部署架构总览
 
+```mermaid
+graph TB
+    subgraph 用户访问
+        Browser["浏览器"]
+        IM["IM Channel<br/>企微/钉钉/飞书"]
+    end
 
+    subgraph Nginx["Nginx 反向代理"]
+        Static["/ → 前端静态资源"]
+        API["/api/* → 后端 REST/SSE"]
+        Webhook["/webhook/* → IM Webhook"]
+    end
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      用户访问方式                             │
-│                                                             │
-│   浏览器 ──→ http://localhost:5173 (开发)                    │
-│              http://localhost (Docker/Nginx)                 │
-│                                                             │
-│   IM Channel ──→ 企微/钉钉/飞书 Webhook                      │
-└──────────────────────┬──────────────────────────────────────┘
-                       │
-┌──────────────────────▼──────────────────────────────────────┐
-│                   Nginx 反向代理                              │
-│                                                             │
-│   /           → 前端静态资源（Vue 3 SPA）                     │
-│   /api/*      → 后端 REST API (http://backend:8080)         │
-│   /api/chat/* → 后端 SSE 流式端点                             │
-│   /webhook/*  → 后端 IM Channel Webhook                      │
-└──────────────────────┬──────────────────────────────────────┘
-                       │
-┌──────────────────────▼──────────────────────────────────────┐
-│              Spring Boot 后端（纯 REST/SSE 服务）              │
-│                                                             │
-│   java -jar lifepilot.jar                                   │
-│                                                             │
-│   ├─ REST Controller 层（Chat / Settings / Skill / ...）     │
-│   ├─ MessageGateway + 中间件管道                              │
-│   ├─ Agent 引擎 + 工具系统 + 记忆系统 + ...                   │
-│   └─ SQLite + sqlite-vec（数据目录：~/.zhiwei/）           │
-└─────────────────────────────────────────────────────────────┘
+    subgraph Backend["Spring Boot 后端 (lifepilot.jar)"]
+        Controller["REST Controller 层"]
+        Gateway["MessageGateway + 中间件管道"]
+        Engine["Agent 引擎 + 工具系统 + 记忆系统"]
+        DB["SQLite + sqlite-vec<br/>数据目录: ~/.zhiwei/"]
+    end
+
+    subgraph Frontend["前端 (lifepilot-web)"]
+        SPA["Vue 3 SPA<br/>Vite + Pinia"]
+    end
+
+    Browser --> Nginx
+    IM --> Webhook
+    Static --> SPA
+    API --> Controller
+    Webhook --> Controller
+    Controller --> Gateway --> Engine --> DB
 ```
 
 ### 3.2 架构简化：删除 CLI / Tray / LaunchMode

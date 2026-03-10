@@ -47,47 +47,25 @@ Web UI 模块为 ZhiWei 提供浏览器端交互界面，是 Phase 5 的核心�
 
 ### 3.1 整体架构
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│              前端独立项目 (lifepilot-web)                       │
-│                      浏览器 (Vue 3 SPA)                       │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐                    │
-│  │ ChatView │  │ Settings │  │  Layout  │                    │
-│  │ 对话页面  │  │ 设置页面  │  │ 布局框架  │                    │
-│  └────┬─────┘  └────┬─────┘  └──────────┘                    │
-│       │              │                                        │
-│  ┌────┴──────────────┴──────────────────────┐                │
-│  │  ┌─────────────────┐  ┌────────────────┐ │                │
-│  │  │ StreamingText   │  │ A2uiRenderer   │ │                │
-│  │  │ Markdown 渲染    │  │ Generative UI  │ │                │
-│  │  └─────────────────┘  └────────────────┘ │                │
-│  │     Pinia Store 层                        │                │
-│  │  chatStore / settingsStore / a2uiStore    │                │
-│  └────┬──────────────────────────────────────┘                │
-│       │  fetch / ReadableStream (token + ui 事件)             │
-└───────┼──────────────────────────────────────────────────────┘
-        │ HTTP / SSE（跨域或同域反向代理）
-┌───────┼──────────────────────────────────────────────────────┐
-│       ▼              后端 (lifepilot Java 项目)                │
-│  ┌─────────────────────┐                                     │
-│  │  ChatController     │  REST + SSE 端点（token + ui 事件）  │
-│  │  SettingsController │  设置 API                            │
-│  └────┬────────────────┘                                     │
-│       │                                                       │
-│  ┌────▼────────────────┐                                     │
-│  │ WebChannelAdapter   │  ChannelAdapter 实现                 │
-│  └────┬────────────────┘                                     │
-│       │                                                       │
-│  ┌────▼────────────────┐                                     │
-│  │  MessageGateway     │  已有中间件管道                       │
-│  │  (Auth → RateLimit  │                                     │
-│  │   → Security →      │                                     │
-│  │   Router →          │                                     │
-│  │   Execution →       │                                     │
-│  │   Audit)            │                                     │
-│  └─────────────────────┘                                     │
-│              Spring Boot 后端                                 │
-└──────────────────────────────────────────────────────────────┘
+```mermaid
+graph TB
+    subgraph Frontend["前端独立项目 (lifepilot-web) — 浏览器"]
+        CV["ChatView<br/>对话页面"]
+        SV["SettingsView<br/>设置页面"]
+        ST["StreamingText<br/>Markdown 渲染"]
+        AR["A2uiRenderer<br/>Generative UI"]
+        PS["Pinia Store 层<br/>chatStore / settingsStore / a2uiStore"]
+        CV & SV --> ST & AR --> PS
+    end
+
+    PS -- "fetch / ReadableStream<br/>HTTP + SSE" --> CC
+
+    subgraph Backend["后端 (lifepilot Java 项目)"]
+        CC["ChatController / SettingsController<br/>REST + SSE 端点"]
+        WA["WebChannelAdapter<br/>ChannelAdapter 实现"]
+        MG["MessageGateway<br/>Auth → RateLimit → Security → Router → Execution → Audit"]
+        CC --> WA --> MG
+    end
 ```
 
 ### 3.2 后端 API 层设计
