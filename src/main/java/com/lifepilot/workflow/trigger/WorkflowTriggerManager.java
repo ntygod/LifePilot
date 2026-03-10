@@ -44,7 +44,7 @@ public class WorkflowTriggerManager implements GenericApplicationListener {
     private final WorkflowRepository repository;
     private final TaskScheduler taskScheduler;
 
-    /** 已注册的 Cron 调度任务，key 为 workflowId，用于取消调度。 */
+    /** 已注册的 Cron 调度任务，key 为 workflowId#triggerIndex，支持多 Cron。 */
     private final ConcurrentHashMap<String, ScheduledFuture<?>> cronTasks = new ConcurrentHashMap<>();
 
     /** 已注册的事件触发器映射，key 为 eventType，value 为 workflowId 列表。 */
@@ -79,12 +79,12 @@ public class WorkflowTriggerManager implements GenericApplicationListener {
      * 为单个工作流定义注册触发器。
      */
     public void registerTriggers(WorkflowDefinition definition) {
-        for (WorkflowTrigger trigger : definition.triggers()) {
-            switch (trigger) {
-                case WorkflowTrigger.CronTrigger cron -> registerCron(definition.id(), cron);
+        List<WorkflowTrigger> triggers = definition.triggers();
+        for (int i = 0; i < triggers.size(); i++) {
+            switch (triggers.get(i)) {
+                case WorkflowTrigger.CronTrigger cron -> registerCron(definition.id(), i, cron);
                 case WorkflowTrigger.EventTrigger event -> registerEvent(definition.id(), event);
                 case WorkflowTrigger.ManualTrigger _ -> {
-                    // ManualTrigger 无需注册，仅通过 WorkflowEngine.execute() 调用
                     log.debug("ManualTrigger 跳过注册: workflowId={}", definition.id());
                 }
             }
@@ -95,12 +95,16 @@ public class WorkflowTriggerManager implements GenericApplicationListener {
      * 注销指定工作流的所有触发器。
      */
     public void unregisterTriggers(String workflowId) {
-        // 取消 Cron 调度
-        ScheduledFuture<?> future = cronTasks.remove(workflowId);
-        if (future != null) {
-            future.cancel(false);
-            log.info("Cron 调度已取消: workflowId={}", workflowId);
-        }
+        // 按 workflowId 前缀匹配，取消所有关联的 Cron 调度
+        String prefix = workflowId + "#";
+        cronTasks.entrySet().removeIf(entry -> {
+            if (entry.getKey().startsWith(prefix)) {
+                entry.getValue().cancel(false);
+                log.info("Cron 调度已取消: key={}", entry.getKey());
+                return true;
+            }
+            return false;
+        });
 
         // 移除事件绑定
         eventBindings.values().forEach(ids -> ids.remove(workflowId));
@@ -108,12 +112,13 @@ public class WorkflowTriggerManager implements GenericApplicationListener {
 
     // ==================== CronTrigger ====================
 
-    private void registerCron(String workflowId, WorkflowTrigger.CronTrigger cron) {
+    private void registerCron(String workflowId, int triggerIndex, WorkflowTrigger.CronTrigger cron) {
         try {
+            String key = workflowId + "#" + triggerIndex;
             var springCron = new org.springframework.scheduling.support.CronTrigger(cron.cron());
             ScheduledFuture<?> future = taskScheduler.schedule(
                     () -> fireCron(workflowId), springCron);
-            cronTasks.put(workflowId, future);
+            cronTasks.put(key, future);
             log.info("Cron 调度已注册: workflowId={}, cron={}", workflowId, cron.cron());
         } catch (IllegalArgumentException e) {
             log.warn("Cron 表达式无效，跳过注册: workflowId={}, cron={}, 原因={}",
