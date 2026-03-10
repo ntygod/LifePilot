@@ -4,7 +4,7 @@ import com.lifepilot.agent.proactive.FrequencyStateManager;
 import com.lifepilot.agent.proactive.NotificationDispatcher;
 import com.lifepilot.agent.proactive.ProactiveReasoner;
 import com.lifepilot.agent.proactive.ResponseTracker;
-import com.lifepilot.agent.proactive.RuleEngine;
+import com.lifepilot.agent.proactive.PolicyEngine;
 import com.lifepilot.agent.proactive.SignalCollector;
 import com.lifepilot.agent.proactive.channel.GatewayNotificationChannel;
 import com.lifepilot.agent.proactive.channel.LogNotificationChannel;
@@ -91,9 +91,9 @@ public class ProactiveAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public RuleEngine ruleEngine(FrequencyStateManager frequencyStateManager,
+    public PolicyEngine ruleEngine(FrequencyStateManager frequencyStateManager,
                                   ProactiveConfigProperties config) {
-        return new RuleEngine(frequencyStateManager, config);
+        return new PolicyEngine(frequencyStateManager, config);
     }
 
     @Bean
@@ -115,7 +115,7 @@ public class ProactiveAutoConfiguration {
     @ConditionalOnMissingBean
     @ConditionalOnBean(SignalCollector.class)
     public ProactiveReasoner proactiveReasoner(SignalCollector signalCollector,
-                                                RuleEngine ruleEngine,
+                                                PolicyEngine ruleEngine,
                                                 FrequencyStateManager frequencyStateManager,
                                                 NotificationDispatcher notificationDispatcher,
                                                 ResponseTracker responseTracker,

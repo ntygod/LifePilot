@@ -28,7 +28,7 @@ public class ProactiveReasoner {
     private static final Logger log = LoggerFactory.getLogger(ProactiveReasoner.class);
 
     private final SignalCollector signalCollector;
-    private final RuleEngine ruleEngine;
+    private final PolicyEngine ruleEngine;
     private final FrequencyStateManager frequencyStateManager;
     private final NotificationDispatcher notificationDispatcher;
     private final ResponseTracker responseTracker;
@@ -37,7 +37,7 @@ public class ProactiveReasoner {
     private final PromptRegistry promptRegistry;
 
     public ProactiveReasoner(SignalCollector signalCollector,
-                              RuleEngine ruleEngine,
+                              PolicyEngine ruleEngine,
                               FrequencyStateManager frequencyStateManager,
                               NotificationDispatcher notificationDispatcher,
                               ResponseTracker responseTracker,
