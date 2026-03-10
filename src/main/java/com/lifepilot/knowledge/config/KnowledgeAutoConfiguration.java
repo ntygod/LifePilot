@@ -122,7 +122,6 @@ public class KnowledgeAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean(LlmRouter.class)
     @ConditionalOnProperty(prefix = "lifepilot.knowledge.chunking.semantic-chunking", name = "enabled",
             havingValue = "true")
     public SemanticChunker semanticChunker(LlmRouter llmRouter, RecursiveChunker recursiveChunker,
@@ -164,7 +163,6 @@ public class KnowledgeAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean(LlmRouter.class)
     public VectorIndexer vectorIndexer(LlmRouter llmRouter, JdbcTemplate jdbcTemplate,
                                        KnowledgeBaseProperties props) {
         return new VectorIndexer(llmRouter, jdbcTemplate, props.vectorIndexer());
@@ -188,7 +186,6 @@ public class KnowledgeAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean(LlmRouter.class)
     public ChunkContextEnricher chunkContextEnricher(LlmRouter llmRouter,
                                                      KnowledgeBaseProperties props,
                                                      PromptRegistry promptRegistry) {
@@ -199,7 +196,6 @@ public class KnowledgeAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean(LlmRouter.class)
     public KnowledgeExtractionPipeline knowledgeExtractionPipeline(LlmRouter llmRouter,
                                                                     SemanticMemory semanticMemory,
                                                                     KnowledgeBaseProperties props) {
@@ -210,7 +206,6 @@ public class KnowledgeAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean(LlmRouter.class)
     @ConditionalOnProperty(prefix = "lifepilot.knowledge.query-enhancer", name = "mode",
             matchIfMissing = false)
     public QueryEnhancer queryEnhancer(LlmRouter llmRouter, KnowledgeBaseProperties props) {

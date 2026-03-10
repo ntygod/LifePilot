@@ -627,7 +627,7 @@ lifepilot:
       snapshot-interval-seconds: 300
       max-latency-samples: 1000
   eval:
-    enabled: false
+    enabled: true
     scenario-directory: "${user.home}/.zhiwei/eval/scenarios"
     default-pass-threshold: 0.7
     degradation-threshold: 0.1
@@ -638,6 +638,8 @@ lifepilot:
       max-retries: 1
     store:
       default-query-limit: 50
+    execution:
+      default-timeout-seconds: 60
   # 元能力系统配置
   meta:
     infra:

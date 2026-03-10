@@ -114,7 +114,6 @@ public class MediaAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean(ProviderRegistry.class)
     public MultimodalRouter multimodalRouter(
             ProviderRegistry providerRegistry,
             CircuitBreakerManager circuitBreakerManager,

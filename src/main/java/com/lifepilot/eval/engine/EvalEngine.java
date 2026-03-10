@@ -3,11 +3,13 @@ package com.lifepilot.eval.engine;
 import com.lifepilot.agent.AgentLoop;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.agent.model.AgentResponse;
-import com.lifepilot.observability.trace.LlmCallStep;
-import com.lifepilot.observability.trace.TraceRecorder;
+import com.lifepilot.observability.evaluation.EvaluationConfig;
+import com.lifepilot.observability.evaluation.EvaluationCore;
+import com.lifepilot.observability.evaluation.EvaluationResult;
+import com.lifepilot.observability.trace.TraceNotFoundException;
+import com.lifepilot.observability.trace.TraceQuery;
 import com.lifepilot.observability.trace.TraceStep;
 import com.lifepilot.eval.config.EvalConfigProperties;
-import com.lifepilot.eval.evaluator.TrajectoryEvaluator;
 import com.lifepilot.eval.judge.JudgeResult;
 import com.lifepilot.eval.judge.LlmJudge;
 import com.lifepilot.eval.model.EvalResult;
@@ -16,20 +18,27 @@ import com.lifepilot.eval.report.ReportSummary;
 import com.lifepilot.eval.scenario.BenchmarkScenario;
 import com.lifepilot.eval.scenario.ScenarioLoader;
 import com.lifepilot.eval.store.EvalStore;
+import com.lifepilot.tool.BuiltinTool;
+import com.lifepilot.tool.model.ToolResult;
+import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 评估引擎 — 协调场景加载、Agent 执行、轨迹采集、评估、报告。
  *
  * <p>核心职责：</p>
  * <ul>
- *   <li>执行单个场景评估：Agent 执行 → 采集轨迹 → 规则评估 → 可选 LLM Judge → 异步持久化</li>
+ *   <li>执行单个场景评估：Agent 执行 → TraceQuery 获取真实轨迹 → EvaluationCore 评估 → 可选 LLM Judge → 异步持久化</li>
  *   <li>执行批量场景评估：遍历场景列表 → 逐个评估 → 生成汇总报告</li>
  * </ul>
  *
@@ -44,28 +53,31 @@ public class EvalEngine {
 
     private final ScenarioLoader scenarioLoader;
     private final AgentLoop agentLoop;
-    private final TraceRecorder traceRecorder;
-    private final TrajectoryEvaluator trajectoryEvaluator;
+    private final TraceQuery traceQuery;
+    private final EvaluationCore evaluationCore;
     private final LlmJudge llmJudge;
     private final EvalStore evalStore;
     private final EvalReport evalReport;
+    private final DynamicToolRegistry toolRegistry;
     private final EvalConfigProperties config;
 
     public EvalEngine(ScenarioLoader scenarioLoader,
                       AgentLoop agentLoop,
-                      TraceRecorder traceRecorder,
-                      TrajectoryEvaluator trajectoryEvaluator,
+                      TraceQuery traceQuery,
+                      EvaluationCore evaluationCore,
                       LlmJudge llmJudge,
                       EvalStore evalStore,
                       EvalReport evalReport,
+                      DynamicToolRegistry toolRegistry,
                       EvalConfigProperties config) {
         this.scenarioLoader = scenarioLoader;
         this.agentLoop = agentLoop;
-        this.traceRecorder = traceRecorder;
-        this.trajectoryEvaluator = trajectoryEvaluator;
+        this.traceQuery = traceQuery;
+        this.evaluationCore = evaluationCore;
         this.llmJudge = llmJudge;
         this.evalStore = evalStore;
         this.evalReport = evalReport;
+        this.toolRegistry = toolRegistry;
         this.config = config;
         log.info("EvalEngine 初始化完成");
     }
@@ -73,48 +85,116 @@ public class EvalEngine {
     /**
      * 执行单个场景评估。
      *
-     * <p>流程：执行 Agent → 构建合成轨迹 → 规则评估 → 可选 LLM Judge → 异步持久化。</p>
+     * <p>流程：执行 Agent → TraceQuery 获取真实轨迹 → EvaluationCore 评估 → 可选 LLM Judge → 异步持久化。</p>
      * <p>Agent 执行超时或异常时，该场景评分为 0.0，记录到 violations。</p>
      *
-     * @param scenario Benchmark 场景
+     * @param scenario  Benchmark 场景
+     * @param evalRunId 评估运行 ID（批量模式传入统一 ID）
      * @return 评估结果
      */
-    public EvalResult evaluateScenario(BenchmarkScenario scenario) {
-        log.info("开始评估场景: scenarioId={}, name={}", scenario.id(), scenario.name());
+    public EvalResult evaluateScenario(BenchmarkScenario scenario, String evalRunId) {
+        log.info("开始评估场景: scenarioId={}, evalRunId={}", scenario.id(), evalRunId);
+        var startTime = Instant.now();
 
         try {
-            // 1. 构造 AgentRequest 并执行 Agent（评估场景目前不携带多模态媒体）
-            var request = new AgentRequest(scenario.userInput(), "eval-" + scenario.id(), "eval");
-            AgentResponse response = agentLoop.run(request);
+            // 0. 注册 Mock 工具（如果场景定义了 mockToolResponses）
+            List<String> mockToolIds = registerMockTools(scenario);
 
-            // 2. 构建合成轨迹步骤（AgentLoop 内部管理轨迹，外部无法直接获取步骤）
-            List<TraceStep> syntheticSteps = buildSyntheticSteps(response, scenario);
+            try {
+                // 1. 构造 AgentRequest 并执行 Agent（带超时控制）
+                String systemPrompt = buildSystemPrompt(scenario);
+                var request = new AgentRequest(scenario.userInput(), "eval-" + scenario.id(), "eval",
+                        systemPrompt, null, null, 0, null, null, null);
 
-            // 3. 规则评估
-            EvalResult evalResult = trajectoryEvaluator.evaluate(syntheticSteps, scenario);
+            int timeout = scenario.timeoutSeconds() > 0
+                    ? scenario.timeoutSeconds()
+                    : config.getExecution().getDefaultTimeoutSeconds();
 
-            // 4. 可选 LLM Judge 语义评估
+            AgentResponse response;
+            try {
+                response = CompletableFuture.supplyAsync(
+                        () -> agentLoop.run(request),
+                        Executors.newVirtualThreadPerTaskExecutor()
+                ).orTimeout(timeout, TimeUnit.SECONDS).join();
+            } catch (java.util.concurrent.CompletionException ce) {
+                if (ce.getCause() instanceof java.util.concurrent.TimeoutException) {
+                    log.warn("Agent 执行超时: scenarioId={}, timeout={}s", scenario.id(), timeout);
+                    return buildFailedResult(scenario, evalRunId,
+                            "Agent 执行超时: 超过 %d 秒限制".formatted(timeout));
+                }
+                throw ce.getCause() instanceof Exception ex ? ex : ce;
+            }
+
+            // 2. 通过 TraceQuery 获取真实轨迹步骤
+            String traceId = response.traceId();
+            List<TraceStep> steps;
+            if (traceId == null || traceId.isBlank()) {
+                log.warn("AgentResponse traceId 为空，评分降级: scenarioId={}", scenario.id());
+                return buildFailedResult(scenario, evalRunId, "traceId 为空，无法获取轨迹步骤");
+            }
+
+            try {
+                steps = traceQuery.getSteps(traceId);
+            } catch (TraceNotFoundException e) {
+                log.warn("TraceQuery 获取步骤失败: scenarioId={}, traceId={}, error={}",
+                        scenario.id(), traceId, e.getMessage());
+                return buildFailedResult(scenario, evalRunId, "轨迹步骤获取失败: " + e.getMessage());
+            }
+
+            // 3. EvaluationCore 五维评估
+            EvaluationConfig evalConfig = buildEvaluationConfig(scenario);
+            EvaluationResult coreResult = evaluationCore.evaluate(steps, evalConfig, traceId);
+
+            // 4. 构建 EvalResult
+            EvalResult evalResult = EvalResult.builder()
+                    .evalId(UUID.randomUUID().toString())
+                    .traceId(traceId)
+                    .scenarioId(scenario.id())
+                    .dimensionScores(Map.of(
+                            "toolSelection", coreResult.toolSelectionScore(),
+                            "parameterValidity", coreResult.parameterValidityScore(),
+                            "stepEfficiency", coreResult.stepEfficiencyScore(),
+                            "policyCompliance", coreResult.policyComplianceScore(),
+                            "tokenEfficiency", coreResult.tokenEfficiencyScore()
+                    ))
+                    .overallScore(coreResult.overallScore())
+                    .violations(coreResult.violations())
+                    .suggestions(coreResult.suggestions())
+                    .llmJudgeScore(null)
+                    .llmJudgeJustification(null)
+                    .llmJudgeTokensUsed(0)
+                    .evaluatedAt(Instant.now())
+                    .gitCommitHash(resolveGitCommitHash())
+                    .gitBranch(resolveGitBranch())
+                    .evalRunId(evalRunId)
+                    .build();
+
+            // 5. 可选 LLM Judge 语义评估
             evalResult = applyLlmJudge(evalResult, response, scenario);
-
-            // 5. 填充元数据
-            evalResult = enrichMetadata(evalResult);
 
             // 6. 异步持久化
             evalStore.persistAsync(evalResult);
 
-            log.info("场景评估完成: scenarioId={}, overallScore={}", scenario.id(), evalResult.overallScore());
+            long elapsed = java.time.Duration.between(startTime, Instant.now()).toMillis();
+            log.info("场景评估完成: scenarioId={}, evalRunId={}, overallScore={}, 耗时={}ms",
+                    scenario.id(), evalRunId, evalResult.overallScore(), elapsed);
             return evalResult;
+
+            } finally {
+                // 注销 Mock 工具
+                unregisterMockTools(mockToolIds);
+            }
 
         } catch (Exception e) {
             log.error("场景评估异常: scenarioId={}, error={}", scenario.id(), e.getMessage(), e);
-            return buildFailedResult(scenario, e);
+            return buildFailedResult(scenario, evalRunId, "Agent 执行异常: " + e.getClass().getSimpleName() + " - " + e.getMessage());
         }
     }
 
     /**
      * 执行批量场景评估。
      *
-     * <p>遍历场景列表逐个评估，收集所有结果后生成汇总报告。
+     * <p>evalRunId 在循环前生成，作为参数传入 evaluateScenario，确保批次内所有结果共享同一 ID。
      * 单个场景失败不影响其他场景的评估。</p>
      *
      * @param scenarios 场景列表
@@ -126,10 +206,15 @@ public class EvalEngine {
 
         List<EvalResult> results = new ArrayList<>();
         for (BenchmarkScenario scenario : scenarios) {
-            EvalResult result = evaluateScenario(scenario);
-            // 统一设置 evalRunId
-            result = result.toBuilder().evalRunId(evalRunId).build();
-            results.add(result);
+            try {
+                EvalResult result = evaluateScenario(scenario, evalRunId);
+                results.add(result);
+            } catch (Exception e) {
+                log.error("批量评估中场景异常: scenarioId={}, evalRunId={}, error={}",
+                        scenario.id(), evalRunId, e.getMessage(), e);
+                results.add(buildFailedResult(scenario, evalRunId,
+                        "批量评估异常: " + e.getClass().getSimpleName() + " - " + e.getMessage()));
+            }
         }
 
         ReportSummary summary = evalReport.generateSummary(results, evalRunId);
@@ -140,42 +225,94 @@ public class EvalEngine {
     }
 
     /**
-     * 从 AgentResponse 构建合成轨迹步骤。
+     * 从 BenchmarkScenario 的 initialContext 构建 systemPrompt。
      *
-     * <p>AgentLoop 内部管理轨迹记录和持久化，外部无法直接获取 TraceStep 列表。
-     * 因此根据 AgentResponse 的元数据构建合成步骤，供 TrajectoryEvaluator 评估。
-     * 使用新的 TraceStep sealed interface 子类型：LlmCallStep 用于 Token 统计，
-     * StateTransitionStep 用于步骤计数。</p>
-     *
-     * @param response AgentResponse
      * @param scenario 场景定义
-     * @return 合成轨迹步骤列表
+     * @return systemPrompt 字符串，无 initialContext 时返回 null
      */
-    private List<TraceStep> buildSyntheticSteps(AgentResponse response, BenchmarkScenario scenario) {
-        List<TraceStep> steps = new ArrayList<>();
-        int stepCount = Math.max(response.stepCount(), 1);
-        int tokensPerStep = stepCount > 0 ? response.tokensUsed() / stepCount : 0;
+    private String buildSystemPrompt(BenchmarkScenario scenario) {
+        var ctx = scenario.initialContext();
+        if (ctx == null || ctx.isEmpty()) {
+            return null;
+        }
+        return ctx.entrySet().stream()
+                .map(e -> e.getKey() + ": " + e.getValue())
+                .collect(java.util.stream.Collectors.joining("\n", "初始上下文:\n", ""));
+    }
 
-        for (int i = 0; i < stepCount; i++) {
-            // 使用 LlmCallStep 携带 Token 统计信息
-            var step = new LlmCallStep(
-                    i,
-                    Instant.now(),
-                    java.time.Duration.ZERO,
-                    "synthetic",           // providerId
-                    "synthetic",           // modelId
-                    "eval",                // scene
-                    tokensPerStep,         // inputTokens
-                    0,                     // outputTokens
-                    java.time.Duration.ZERO, // latency
-                    false,                 // cacheHit
-                    0.0,                   // temperature
-                    null                   // finishReason
-            );
-            steps.add(step);
+    /**
+     * 注册 Mock 工具到 DynamicToolRegistry。
+     *
+     * <p>当场景定义了 mockToolResponses 时，为每个 toolId 构建临时 BuiltinTool 并注册。
+     * 注册失败时记录 WARN 日志，跳过该工具继续执行。</p>
+     *
+     * @param scenario 场景定义
+     * @return 已注册的 Mock 工具 ID 列表（用于后续注销）
+     */
+    private List<String> registerMockTools(BenchmarkScenario scenario) {
+        var mockResponses = scenario.mockToolResponses();
+        if (mockResponses == null || mockResponses.isEmpty()) {
+            return List.of();
         }
 
-        return steps;
+        List<String> registeredIds = new ArrayList<>();
+        for (var entry : mockResponses.entrySet()) {
+            String toolId = entry.getKey();
+            String responseJson = entry.getValue();
+            try {
+                var mockTool = BuiltinTool.builder()
+                        .id(toolId)
+                        .name("mock-" + toolId)
+                        .description("Mock 工具: " + toolId)
+                        .executor(input -> ToolResult.success(Map.of("response", responseJson)))
+                        .build();
+                toolRegistry.registerBuiltinTool(mockTool);
+                registeredIds.add(toolId);
+                log.debug("Mock 工具注册成功: toolId={}", toolId);
+            } catch (Exception e) {
+                log.warn("Mock 工具注册失败，跳过: toolId={}, error={}", toolId, e.getMessage());
+            }
+        }
+
+        if (!registeredIds.isEmpty()) {
+            log.info("Mock 工具注册完成: scenarioId={}, count={}", scenario.id(), registeredIds.size());
+        }
+        return registeredIds;
+    }
+
+    /**
+     * 注销 Mock 工具。
+     *
+     * @param mockToolIds 需要注销的工具 ID 列表
+     */
+    private void unregisterMockTools(List<String> mockToolIds) {
+        for (String toolId : mockToolIds) {
+            try {
+                toolRegistry.unregisterBuiltinTool(toolId);
+            } catch (Exception e) {
+                log.warn("Mock 工具注销失败: toolId={}, error={}", toolId, e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * 从 BenchmarkScenario 构建 EvaluationConfig。
+     *
+     * @param scenario 场景定义
+     * @return 评估配置
+     */
+    private EvaluationConfig buildEvaluationConfig(BenchmarkScenario scenario) {
+        Map<String, Double> weights = scenario.dimensionWeights();
+        return new EvaluationConfig(
+                weights.getOrDefault("toolSelection", 0.2),
+                weights.getOrDefault("parameterValidity", 0.2),
+                weights.getOrDefault("stepEfficiency", 0.2),
+                weights.getOrDefault("policyCompliance", 0.2),
+                weights.getOrDefault("tokenEfficiency", 0.2),
+                scenario.expectedStepCount(),
+                scenario.expectedTokenBudget(),
+                scenario.expectedToolCalls()
+        );
     }
 
     /**
@@ -216,40 +353,21 @@ public class EvalEngine {
     }
 
     /**
-     * 填充评估结果的元数据（Git 信息、evalRunId）。
+     * 构建失败场景的评估结果（评分 0.0，错误信息记录到 violations）。
      *
-     * @param evalResult 原始评估结果
-     * @return 填充元数据后的评估结果
-     */
-    private EvalResult enrichMetadata(EvalResult evalResult) {
-        String gitCommitHash = resolveGitCommitHash();
-        String gitBranch = resolveGitBranch();
-
-        return evalResult.toBuilder()
-                .gitCommitHash(gitCommitHash)
-                .gitBranch(gitBranch)
-                .evalRunId(evalResult.evalRunId() != null
-                        ? evalResult.evalRunId() : UUID.randomUUID().toString())
-                .build();
-    }
-
-    /**
-     * 构建失败场景的评估结果（评分 0.0，异常信息记录到 violations）。
-     *
-     * @param scenario 场景定义
-     * @param e        异常
+     * @param scenario  场景定义
+     * @param evalRunId 评估运行 ID
+     * @param reason    失败原因
      * @return 失败评估结果
      */
-    private EvalResult buildFailedResult(BenchmarkScenario scenario, Exception e) {
-        String errorMessage = "Agent 执行异常: " + e.getClass().getSimpleName() + " - " + e.getMessage();
-
+    private EvalResult buildFailedResult(BenchmarkScenario scenario, String evalRunId, String reason) {
         EvalResult failedResult = EvalResult.builder()
                 .evalId(UUID.randomUUID().toString())
                 .traceId("")
                 .scenarioId(scenario.id())
-                .dimensionScores(java.util.Map.of())
+                .dimensionScores(Map.of())
                 .overallScore(0.0)
-                .violations(List.of(errorMessage))
+                .violations(List.of(reason))
                 .suggestions(List.of())
                 .llmJudgeScore(null)
                 .llmJudgeJustification(null)
@@ -257,7 +375,7 @@ public class EvalEngine {
                 .evaluatedAt(Instant.now())
                 .gitCommitHash(resolveGitCommitHash())
                 .gitBranch(resolveGitBranch())
-                .evalRunId(UUID.randomUUID().toString())
+                .evalRunId(evalRunId)
                 .build();
 
         // 异步持久化失败结果

@@ -1,0 +1,19 @@
+id: tool-calling
+name: 工具调用场景
+userInput: "帮我查看今天的待办事项"
+expectedToolCalls:
+  - todo-list
+dimensionWeights:
+  toolSelection: 0.3
+  parameterValidity: 0.2
+  stepEfficiency: 0.2
+  policyCompliance: 0.2
+  tokenEfficiency: 0.1
+timeoutSeconds: 60
+expectedStepCount: 3
+expectedTokenBudget: 1000
+mockToolResponses:
+  todo-list: '{"items": [{"title": "完成评估模块优化", "done": false}]}'
+tags:
+  - tool
+  - todo

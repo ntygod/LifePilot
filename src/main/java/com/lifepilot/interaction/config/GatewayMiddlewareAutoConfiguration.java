@@ -100,7 +100,6 @@ public class GatewayMiddlewareAutoConfiguration {
     // ── 执行相关 ──────────────────────────────────────────────────
 
     @Bean
-    @ConditionalOnBean(AgentLoop.class)
     public ExecutionMiddleware executionMiddleware(AgentLoop agentLoop,
                                                    GatewayProperties properties,
                                                    ApplicationContext applicationContext,

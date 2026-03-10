@@ -27,6 +27,7 @@ import com.lifepilot.multiagent.model.AgentSource;
 import com.lifepilot.multiagent.registry.AgentRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.lang.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -68,7 +69,7 @@ public class AgentController {
     private final ContextAssembler contextAssembler;
 
     public AgentController(AgentRegistry agentRegistry,
-                           AgentLoop agentLoop,
+                           @Nullable AgentLoop agentLoop,
                            KnowledgeBaseManager knowledgeBaseManager,
                            ContextAssembler contextAssembler) {
         this.agentRegistry = agentRegistry;
@@ -296,6 +297,10 @@ public class AgentController {
     @PostMapping("/{id}/test-chat")
     public ResponseEntity<?> testChat(@PathVariable String id,
                                        @RequestBody TestChatRequest request) {
+        if (agentLoop == null) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(
+                    new ErrorResponse(503, "Agent 引擎未启用（LLM 不可用）", Instant.now()));
+        }
         log.info("Agent 测试对话请求: agentId={}, messageLength={}", id, request.message().length());
 
         // 1. 查找 Agent 定义

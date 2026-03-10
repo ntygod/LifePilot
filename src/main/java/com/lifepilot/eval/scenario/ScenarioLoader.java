@@ -50,7 +50,13 @@ public class ScenarioLoader {
     public List<BenchmarkScenario> loadAll() {
         var directory = Path.of(config.getScenarioDirectory());
         if (!Files.exists(directory)) {
-            throw new ScenarioLoadException("场景目录不存在: " + directory);
+            try {
+                Files.createDirectories(directory);
+                log.info("场景目录不存在，已自动创建: path={}", directory);
+            } catch (IOException e) {
+                throw new ScenarioLoadException("场景目录创建失败: " + directory, e);
+            }
+            return List.of();
         }
         if (!Files.isDirectory(directory)) {
             throw new ScenarioLoadException("场景路径不是目录: " + directory);
@@ -69,6 +75,9 @@ public class ScenarioLoader {
         }
 
         validateScenarios(scenarios);
+        if (scenarios.isEmpty()) {
+            log.warn("场景目录为空，无可用场景: path={}", directory);
+        }
         return List.copyOf(scenarios);
     }
 

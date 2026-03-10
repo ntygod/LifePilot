@@ -52,7 +52,8 @@ public class EvalTestExtension implements BeforeEachCallback, AfterEachCallback 
 
         // 加载场景并执行评估
         var scenario = scenarioLoader.loadById(scenarioId);
-        var result = evalEngine.evaluateScenario(scenario);
+        String evalRunId = java.util.UUID.randomUUID().toString();
+        var result = evalEngine.evaluateScenario(scenario, evalRunId);
 
         // 存储结果供后续使用
         getStore(context).put(EVAL_RESULT_KEY, result);

@@ -3,9 +3,11 @@ package com.lifepilot.eval.engine;
 import com.lifepilot.agent.AgentLoop;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.agent.model.AgentResponse;
-import com.lifepilot.observability.trace.TraceRecorder;
+import com.lifepilot.observability.evaluation.EvaluationCore;
+import com.lifepilot.observability.evaluation.EvaluationResult;
+import com.lifepilot.observability.trace.TraceNotFoundException;
+import com.lifepilot.observability.trace.TraceQuery;
 import com.lifepilot.eval.config.EvalConfigProperties;
-import com.lifepilot.eval.evaluator.TrajectoryEvaluator;
 import com.lifepilot.eval.judge.JudgeResult;
 import com.lifepilot.eval.judge.LlmJudge;
 import com.lifepilot.eval.model.EvalResult;
@@ -14,6 +16,7 @@ import com.lifepilot.eval.report.ReportSummary;
 import com.lifepilot.eval.scenario.BenchmarkScenario;
 import com.lifepilot.eval.scenario.ScenarioLoader;
 import com.lifepilot.eval.store.EvalStore;
+import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -28,7 +31,7 @@ import static org.mockito.Mockito.*;
 /**
  * EvalEngine 协调流程单元测试。
  *
- * <p>Mock AgentLoop、TraceRecorder、LlmJudge 等依赖，
+ * <p>Mock AgentLoop、TraceQuery、EvaluationCore、LlmJudge 等依赖，
  * 验证 evaluateScenario 和 evaluateBatch 的完整协调流程，
  * 以及 Agent 异常场景的降级处理。</p>
  *
@@ -39,11 +42,12 @@ class EvalEngineTest {
 
     private ScenarioLoader scenarioLoader;
     private AgentLoop agentLoop;
-    private TraceRecorder traceRecorder;
-    private TrajectoryEvaluator trajectoryEvaluator;
+    private TraceQuery traceQuery;
+    private EvaluationCore evaluationCore;
     private LlmJudge llmJudge;
     private EvalStore evalStore;
     private EvalReport evalReport;
+    private DynamicToolRegistry toolRegistry;
     private EvalConfigProperties config;
     private EvalEngine evalEngine;
 
@@ -51,17 +55,18 @@ class EvalEngineTest {
     void setUp() {
         scenarioLoader = mock(ScenarioLoader.class);
         agentLoop = mock(AgentLoop.class);
-        traceRecorder = mock(TraceRecorder.class);
-        trajectoryEvaluator = mock(TrajectoryEvaluator.class);
+        traceQuery = mock(TraceQuery.class);
+        evaluationCore = mock(EvaluationCore.class);
         llmJudge = mock(LlmJudge.class);
         evalStore = mock(EvalStore.class);
         evalReport = mock(EvalReport.class);
+        toolRegistry = mock(DynamicToolRegistry.class);
         config = new EvalConfigProperties();
 
         evalEngine = new EvalEngine(
-                scenarioLoader, agentLoop, traceRecorder,
-                trajectoryEvaluator, llmJudge, evalStore,
-                evalReport, config);
+                scenarioLoader, agentLoop, traceQuery,
+                evaluationCore, llmJudge, evalStore,
+                evalReport, toolRegistry, config);
     }
 
     /** 构建测试用 BenchmarkScenario（无 LLM Judge）。 */
@@ -97,19 +102,14 @@ class EvalEngineTest {
         return new AgentResponse("trace-001", "session-001", "Agent 输出内容", 500, 3, null);
     }
 
-    /** 构建 Mock EvalResult。 */
-    private static EvalResult buildEvalResult(String scenarioId, double overallScore) {
-        return EvalResult.builder()
-                .evalId("eval-001")
-                .traceId("trace-001")
-                .scenarioId(scenarioId)
-                .dimensionScores(Map.of("toolSelection", 0.9, "stepEfficiency", 0.8))
-                .overallScore(overallScore)
-                .violations(List.of())
-                .suggestions(List.of())
-                .llmJudgeTokensUsed(0)
-                .evaluatedAt(Instant.now())
-                .build();
+    /** 构建 Mock EvaluationResult。 */
+    private static EvaluationResult buildEvaluationResult(String traceId) {
+        return new EvaluationResult(
+                traceId, Instant.now(),
+                0.9, 0.85, 0.8, 1.0, 0.75,
+                0.85, 3, 500,
+                List.of(), List.of()
+        );
     }
 
     // --- 正常评估流程 ---
@@ -118,20 +118,25 @@ class EvalEngineTest {
     void 正常评估流程_Agent执行成功_返回评估结果() {
         var scenario = buildScenario("s-001");
         var agentResponse = buildAgentResponse();
-        var expectedResult = buildEvalResult("s-001", 0.85);
+        var coreResult = buildEvaluationResult("trace-001");
 
         when(agentLoop.run(any(AgentRequest.class))).thenReturn(agentResponse);
-        when(trajectoryEvaluator.evaluate(anyList(), eq(scenario))).thenReturn(expectedResult);
+        when(traceQuery.getSteps("trace-001")).thenReturn(List.of());
+        when(evaluationCore.evaluate(anyList(), any(), eq("trace-001"))).thenReturn(coreResult);
 
-        var result = evalEngine.evaluateScenario(scenario);
+        var result = evalEngine.evaluateScenario(scenario, "run-001");
 
         assertNotNull(result);
         assertEquals("s-001", result.scenarioId());
+        assertEquals("trace-001", result.traceId());
+        assertEquals("run-001", result.evalRunId());
         assertEquals(0.85, result.overallScore(), 0.0001);
         // 验证 AgentLoop 被调用
         verify(agentLoop).run(any(AgentRequest.class));
-        // 验证 TrajectoryEvaluator 被调用
-        verify(trajectoryEvaluator).evaluate(anyList(), eq(scenario));
+        // 验证 TraceQuery 被调用
+        verify(traceQuery).getSteps("trace-001");
+        // 验证 EvaluationCore 被调用
+        verify(evaluationCore).evaluate(anyList(), any(), eq("trace-001"));
         // 验证异步持久化被调用
         verify(evalStore).persistAsync(any(EvalResult.class));
         // 无 llmJudgeCriteria，LlmJudge 不应被调用
@@ -146,18 +151,55 @@ class EvalEngineTest {
         when(agentLoop.run(any(AgentRequest.class)))
                 .thenThrow(new RuntimeException("Agent 执行超时"));
 
-        var result = evalEngine.evaluateScenario(scenario);
+        var result = evalEngine.evaluateScenario(scenario, "run-002");
 
         assertNotNull(result);
         assertEquals("s-002", result.scenarioId());
+        assertEquals("run-002", result.evalRunId());
         assertEquals(0.0, result.overallScore(), 0.0001);
         assertFalse(result.violations().isEmpty());
         assertTrue(result.violations().stream()
                 .anyMatch(v -> v.contains("Agent 执行异常") && v.contains("Agent 执行超时")));
         // 异常场景也应异步持久化
         verify(evalStore).persistAsync(any(EvalResult.class));
-        // TrajectoryEvaluator 不应被调用
-        verify(trajectoryEvaluator, never()).evaluate(anyList(), any());
+        // TraceQuery 不应被调用
+        verify(traceQuery, never()).getSteps(anyString());
+    }
+
+    // --- traceId 为空降级 ---
+
+    @Test
+    void traceId为空_返回评分0且violations包含原因() {
+        var scenario = buildScenario("s-008");
+        var agentResponse = new AgentResponse("", "session-001", "输出", 500, 3, null);
+
+        when(agentLoop.run(any(AgentRequest.class))).thenReturn(agentResponse);
+
+        var result = evalEngine.evaluateScenario(scenario, "run-008");
+
+        assertNotNull(result);
+        assertEquals(0.0, result.overallScore(), 0.0001);
+        assertTrue(result.violations().stream().anyMatch(v -> v.contains("traceId 为空")));
+        verify(traceQuery, never()).getSteps(anyString());
+    }
+
+    // --- TraceQuery 异常降级 ---
+
+    @Test
+    void TraceQuery获取步骤失败_返回评分0() {
+        var scenario = buildScenario("s-009");
+        var agentResponse = buildAgentResponse();
+
+        when(agentLoop.run(any(AgentRequest.class))).thenReturn(agentResponse);
+        when(traceQuery.getSteps("trace-001"))
+                .thenThrow(new TraceNotFoundException("轨迹不存在: traceId=trace-001"));
+
+        var result = evalEngine.evaluateScenario(scenario, "run-009");
+
+        assertNotNull(result);
+        assertEquals(0.0, result.overallScore(), 0.0001);
+        assertTrue(result.violations().stream().anyMatch(v -> v.contains("轨迹步骤获取失败")));
+        verify(evaluationCore, never()).evaluate(anyList(), any(), anyString());
     }
 
     // --- 带 LLM Judge 的评估 ---
@@ -166,19 +208,19 @@ class EvalEngineTest {
     void 带LlmJudge的场景_Judge被调用且结果合并() {
         var scenario = buildScenarioWithJudge("s-003");
         var agentResponse = buildAgentResponse();
-        var evalResult = buildEvalResult("s-003", 0.80);
+        var coreResult = buildEvaluationResult("trace-001");
         var judgeResult = new JudgeResult(0.9, "输出质量良好", 120, false);
 
         when(agentLoop.run(any(AgentRequest.class))).thenReturn(agentResponse);
-        when(trajectoryEvaluator.evaluate(anyList(), eq(scenario))).thenReturn(evalResult);
+        when(traceQuery.getSteps("trace-001")).thenReturn(List.of());
+        when(evaluationCore.evaluate(anyList(), any(), eq("trace-001"))).thenReturn(coreResult);
         when(llmJudge.judge(eq("Agent 输出内容"), eq(".*"), eq("回答应包含关键信息")))
                 .thenReturn(judgeResult);
 
-        var result = evalEngine.evaluateScenario(scenario);
+        var result = evalEngine.evaluateScenario(scenario, "run-003");
 
         assertNotNull(result);
         assertEquals("s-003", result.scenarioId());
-        // LLM Judge 结果应合并到 EvalResult
         Double judgeScore = result.llmJudgeScore();
         assertNotNull(judgeScore);
         assertEquals(0.9, judgeScore.doubleValue(), 0.0001);
@@ -193,12 +235,13 @@ class EvalEngineTest {
     void 无LlmJudge的场景_Judge不被调用() {
         var scenario = buildScenario("s-004");
         var agentResponse = buildAgentResponse();
-        var evalResult = buildEvalResult("s-004", 0.75);
+        var coreResult = buildEvaluationResult("trace-001");
 
         when(agentLoop.run(any(AgentRequest.class))).thenReturn(agentResponse);
-        when(trajectoryEvaluator.evaluate(anyList(), eq(scenario))).thenReturn(evalResult);
+        when(traceQuery.getSteps("trace-001")).thenReturn(List.of());
+        when(evaluationCore.evaluate(anyList(), any(), eq("trace-001"))).thenReturn(coreResult);
 
-        var result = evalEngine.evaluateScenario(scenario);
+        var result = evalEngine.evaluateScenario(scenario, "run-004");
 
         assertNotNull(result);
         assertNull(result.llmJudgeScore());
@@ -212,32 +255,33 @@ class EvalEngineTest {
         var scenario1 = buildScenario("s-005");
         var scenario2 = buildScenario("s-006");
         var agentResponse = buildAgentResponse();
-        var evalResult1 = buildEvalResult("s-005", 0.85);
-        var evalResult2 = buildEvalResult("s-006", 0.70);
+        var coreResult = buildEvaluationResult("trace-001");
         var expectedSummary = ReportSummary.builder()
                 .evalRunId("run-001")
                 .totalScenarios(2)
                 .passCount(2)
                 .failCount(0)
-                .averageOverallScore(0.775)
+                .averageOverallScore(0.85)
                 .dimensionAverages(Map.of())
                 .degraded(false)
                 .evaluatedAt(Instant.now())
                 .build();
 
         when(agentLoop.run(any(AgentRequest.class))).thenReturn(agentResponse);
-        when(trajectoryEvaluator.evaluate(anyList(), eq(scenario1))).thenReturn(evalResult1);
-        when(trajectoryEvaluator.evaluate(anyList(), eq(scenario2))).thenReturn(evalResult2);
+        when(traceQuery.getSteps("trace-001")).thenReturn(List.of());
+        when(evaluationCore.evaluate(anyList(), any(), eq("trace-001"))).thenReturn(coreResult);
         when(evalReport.generateSummary(anyList(), anyString())).thenReturn(expectedSummary);
 
         var summary = evalEngine.evaluateBatch(List.of(scenario1, scenario2));
 
         assertNotNull(summary);
         assertEquals(2, summary.totalScenarios());
-        // AgentLoop 应被调用两次（每个场景一次）
+        // AgentLoop 应被调用两次
         verify(agentLoop, times(2)).run(any(AgentRequest.class));
-        // TrajectoryEvaluator 应被调用两次
-        verify(trajectoryEvaluator, times(2)).evaluate(anyList(), any(BenchmarkScenario.class));
+        // TraceQuery 应被调用两次
+        verify(traceQuery, times(2)).getSteps("trace-001");
+        // EvaluationCore 应被调用两次
+        verify(evaluationCore, times(2)).evaluate(anyList(), any(), eq("trace-001"));
         // EvalReport.generateSummary 应被调用一次
         verify(evalReport).generateSummary(anyList(), anyString());
         // 异步持久化应被调用两次
@@ -250,12 +294,13 @@ class EvalEngineTest {
     void 评估完成后_异步持久化被调用() {
         var scenario = buildScenario("s-007");
         var agentResponse = buildAgentResponse();
-        var evalResult = buildEvalResult("s-007", 0.90);
+        var coreResult = buildEvaluationResult("trace-001");
 
         when(agentLoop.run(any(AgentRequest.class))).thenReturn(agentResponse);
-        when(trajectoryEvaluator.evaluate(anyList(), eq(scenario))).thenReturn(evalResult);
+        when(traceQuery.getSteps("trace-001")).thenReturn(List.of());
+        when(evaluationCore.evaluate(anyList(), any(), eq("trace-001"))).thenReturn(coreResult);
 
-        evalEngine.evaluateScenario(scenario);
+        evalEngine.evaluateScenario(scenario, "run-007");
 
         verify(evalStore).persistAsync(argThat(result ->
                 result.scenarioId().equals("s-007")));

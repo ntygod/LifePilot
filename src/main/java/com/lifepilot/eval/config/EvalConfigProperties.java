@@ -32,6 +32,9 @@ public class EvalConfigProperties {
     /** LLM Judge 配置。 */
     private LlmJudge llmJudge = new LlmJudge();
 
+    /** 执行配置。 */
+    private Execution execution = new Execution();
+
     /** 持久化配置。 */
     private Store store = new Store();
 
@@ -71,6 +74,21 @@ public class EvalConfigProperties {
 
         /** 历史查询默认限制，默认 50。 */
         private int defaultQueryLimit = 50;
+
+    }
+
+    /**
+     * 执行配置 — 控制评估执行的行为参数。
+     *
+     * @author zsg
+     * @since 2026-03-10
+     */
+    @Setter
+    @Getter
+    public static class Execution {
+
+        /** 默认超时时间（秒），默认 60。 */
+        private int defaultTimeoutSeconds = 60;
 
     }
 }

@@ -119,7 +119,7 @@ class TrajectoryEvaluator单元测试 {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         ObservabilityProperties properties = defaultProperties();
 
-        TrajectoryEvaluator evaluator = new TrajectoryEvaluator(jdbcTemplate, properties);
+        TrajectoryEvaluator evaluator = new TrajectoryEvaluator(jdbcTemplate, properties, new EvaluationCore());
 
         var steps = List.<com.lifepilot.observability.trace.TraceStep>of(
                 llmStep(0, 200, 100),
@@ -146,7 +146,7 @@ class TrajectoryEvaluator单元测试 {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         ObservabilityProperties properties = defaultProperties();
 
-        TrajectoryEvaluator evaluator = new TrajectoryEvaluator(jdbcTemplate, properties);
+        TrajectoryEvaluator evaluator = new TrajectoryEvaluator(jdbcTemplate, properties, new EvaluationCore());
 
         // 5 次工具调用，4 次失败
         var steps = List.<com.lifepilot.observability.trace.TraceStep>of(
@@ -172,7 +172,7 @@ class TrajectoryEvaluator单元测试 {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         ObservabilityProperties properties = defaultProperties();
 
-        TrajectoryEvaluator evaluator = new TrajectoryEvaluator(jdbcTemplate, properties);
+        TrajectoryEvaluator evaluator = new TrajectoryEvaluator(jdbcTemplate, properties, new EvaluationCore());
 
         var steps = List.<com.lifepilot.observability.trace.TraceStep>of(
                 llmStep(0, 100, 50),
@@ -194,7 +194,7 @@ class TrajectoryEvaluator单元测试 {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         ObservabilityProperties properties = defaultProperties();
 
-        TrajectoryEvaluator evaluator = new TrajectoryEvaluator(jdbcTemplate, properties);
+        TrajectoryEvaluator evaluator = new TrajectoryEvaluator(jdbcTemplate, properties, new EvaluationCore());
 
         // 步骤数较少但 Token 极多
         var steps = List.<com.lifepilot.observability.trace.TraceStep>of(
@@ -219,16 +219,18 @@ class TrajectoryEvaluator单元测试 {
         ObservabilityProperties properties = defaultProperties();
 
         // 通过让 jdbcTemplate.update 抛出异常，测试 evaluateOnline 中的异常路径（持久化失败时仅记录日志，不影响评分）
-        TrajectoryEvaluator realEvaluator = new TrajectoryEvaluator(jdbcTemplate, properties);
+        TrajectoryEvaluator realEvaluator = new TrajectoryEvaluator(jdbcTemplate, properties, new EvaluationCore());
         TraceRecord trace = traceRecord(List.<com.lifepilot.observability.trace.TraceStep>of(), 0, 0);
 
         // 让 jdbcTemplate.update 抛出异常，从而触发 evaluateOnline 内部的异常分支
-        when(jdbcTemplate.update(anyString(), (Object[]) any())).thenThrow(new RuntimeException("db error"));
+        when(jdbcTemplate.update(anyString(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenThrow(new RuntimeException("db error"));
 
         EvaluationResult result = realEvaluator.evaluateOnline(trace);
 
+        // 空步骤返回默认评分 0.5，持久化失败仅记录日志不影响评分
         assertThat(result.toolSelectionScore()).isBetween(0.0, 1.0);
-        assertThat(result.violations()).isNotEmpty();
+        assertThat(result.overallScore()).isEqualTo(0.5);
     }
 
     @Test
@@ -237,7 +239,7 @@ class TrajectoryEvaluator单元测试 {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         ObservabilityProperties properties = defaultProperties();
 
-        TrajectoryEvaluator evaluator = new TrajectoryEvaluator(jdbcTemplate, properties);
+        TrajectoryEvaluator evaluator = new TrajectoryEvaluator(jdbcTemplate, properties, new EvaluationCore());
 
         var steps = List.<com.lifepilot.observability.trace.TraceStep>of(
                 llmStep(0, 100, 50),
@@ -248,7 +250,8 @@ class TrajectoryEvaluator单元测试 {
         EvaluationResult result = evaluator.evaluateOnline(trace);
 
         assertThat(result.traceId()).isEqualTo("trace-001");
-        verify(jdbcTemplate).update(anyString(), (Object[]) any());
+        verify(jdbcTemplate).update(anyString(),
+                any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 }
 

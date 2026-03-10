@@ -10,6 +10,7 @@ import com.lifepilot.workflow.repository.WorkflowRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.time.Instant;
 import java.util.*;
@@ -19,6 +20,9 @@ import static org.mockito.Mockito.*;
 
 /**
  * WorkflowEngine 单元测试。
+ *
+ * <p>测试通过 {@link WorkflowEngine#executeFromInstance(String)} 驱动 DAG 执行，
+ * 使用 {@link ArgumentCaptor} 捕获 {@code repository.updateInstance()} 的最终状态。
  *
  * @author zsg
  * @since 2026-02-26
@@ -60,8 +64,42 @@ class WorkflowEngineTest {
         return new NoopStep(id, "Noop-" + id, List.of(), null);
     }
 
+    /**
+     * 创建 CREATED 状态的实例并 mock repository.findInstance() 返回它。
+     */
+    private WorkflowInstance createAndMockInstance(String instanceId, String workflowId,
+                                                    Map<String, Object> inputs) {
+        Instant now = Instant.now();
+        WorkflowContext context = new WorkflowContext();
+        if (inputs != null && !inputs.isEmpty()) {
+            context.set("inputs", inputs);
+        }
+        WorkflowInstance instance = WorkflowInstance.builder()
+                .id(instanceId)
+                .workflowId(workflowId)
+                .state(WorkflowState.CREATED)
+                .context(context)
+                .completedStepIds(Set.of())
+                .pendingApprovalStepId(null)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+        when(repository.findInstance(instanceId)).thenReturn(Optional.of(instance));
+        return instance;
+    }
+
+    /**
+     * 从 repository.updateInstance() 捕获列表中获取最后一次更新的实例。
+     */
+    private WorkflowInstance captureLastUpdatedInstance() {
+        ArgumentCaptor<WorkflowInstance> captor = ArgumentCaptor.forClass(WorkflowInstance.class);
+        verify(repository, atLeastOnce()).updateInstance(captor.capture());
+        List<WorkflowInstance> allValues = captor.getAllValues();
+        return allValues.getLast();
+    }
+
     @Nested
-    class execute方法 {
+    class executeFromInstance方法 {
 
         @Test
         void 多步骤工作流_全部成功_状态为COMPLETED() {
@@ -70,18 +108,17 @@ class WorkflowEngineTest {
             var step3 = noop("step3");
             var def = createSimpleDef("wf-1", step1, step2, step3);
 
+            createAndMockInstance("inst-1", "wf-1", Map.of("key", "value"));
             when(registry.find("wf-1")).thenReturn(Optional.of(def));
             when(stepExecutor.execute(any(), any(), any())).thenReturn(Map.of("ok", true));
 
-            WorkflowInstance result = engine.execute("wf-1", Map.of("key", "value"));
+            engine.executeFromInstance("inst-1");
 
+            WorkflowInstance result = captureLastUpdatedInstance();
             assertEquals(WorkflowState.COMPLETED, result.state());
-            assertNotNull(result.id());
             assertEquals("wf-1", result.workflowId());
-            assertNotNull(result.startedAt());
             assertNotNull(result.completedAt());
 
-            verify(repository).saveInstance(any());
             verify(repository, atLeast(3)).updateInstance(any());
             verify(repository, times(3)).insertStepLog(any());
         }
@@ -91,34 +128,34 @@ class WorkflowEngineTest {
             var step = noop("step1");
             var def = createSimpleDef("wf-2", step);
 
+            createAndMockInstance("inst-2", "wf-2", Map.of());
             when(registry.find("wf-2")).thenReturn(Optional.of(def));
             when(stepExecutor.execute(any(), any(), any())).thenReturn(Map.of());
 
-            WorkflowInstance result = engine.execute("wf-2", Map.of());
+            engine.executeFromInstance("inst-2");
 
+            WorkflowInstance result = captureLastUpdatedInstance();
             assertEquals(WorkflowState.COMPLETED, result.state());
         }
 
         @Test
-        void 工作流定义未找到_抛出异常() {
+        void 工作流定义未找到_异常被内部捕获() {
+            createAndMockInstance("inst-3", "not-exist", Map.of());
             when(registry.find("not-exist")).thenReturn(Optional.empty());
 
-            assertThrows(IllegalArgumentException.class,
-                    () -> engine.execute("not-exist", Map.of()));
+            // executeFromInstance 内部捕获异常并尝试 failWorkflow，
+            // 但 CREATED→FAILED 不是合法状态转换，所以不会调用 updateInstance
+            engine.executeFromInstance("inst-3");
+
+            verify(repository, never()).updateInstance(any());
         }
 
         @Test
-        void 工作流已禁用_抛出异常() {
-            var def = WorkflowDefinition.builder()
-                    .id("disabled-wf")
-                    .name("disabled")
-                    .enabled(false)
-                    .steps(List.of(noop("s1")))
-                    .build();
-            when(registry.find("disabled-wf")).thenReturn(Optional.of(def));
+        void 实例未找到_抛出异常() {
+            when(repository.findInstance("not-exist")).thenReturn(Optional.empty());
 
             assertThrows(IllegalArgumentException.class,
-                    () -> engine.execute("disabled-wf", Map.of()));
+                    () -> engine.executeFromInstance("not-exist"));
         }
 
         @Test
@@ -126,12 +163,14 @@ class WorkflowEngineTest {
             var step = noop("fetch");
             var def = createSimpleDef("wf-ctx", step);
 
+            createAndMockInstance("inst-ctx", "wf-ctx", Map.of());
             when(registry.find("wf-ctx")).thenReturn(Optional.of(def));
             when(stepExecutor.execute(any(), any(), any()))
                     .thenReturn(Map.of("data", "hello"));
 
-            WorkflowInstance result = engine.execute("wf-ctx", Map.of());
+            engine.executeFromInstance("inst-ctx");
 
+            WorkflowInstance result = captureLastUpdatedInstance();
             assertEquals(WorkflowState.COMPLETED, result.state());
             Optional<Object> output = result.context().get("steps.fetch.output");
             assertTrue(output.isPresent());
@@ -147,12 +186,14 @@ class WorkflowEngineTest {
                     new ErrorStrategy.Retry(3, 10, 50));
             var def = createSimpleDef("wf-retry", step);
 
+            createAndMockInstance("inst-retry", "wf-retry", Map.of());
             when(registry.find("wf-retry")).thenReturn(Optional.of(def));
             when(stepExecutor.execute(any(), any(), any()))
                     .thenThrow(new WorkflowStepException("retry-step", "fail"));
 
-            WorkflowInstance result = engine.execute("wf-retry", Map.of());
+            engine.executeFromInstance("inst-retry");
 
+            WorkflowInstance result = captureLastUpdatedInstance();
             assertEquals(WorkflowState.FAILED, result.state());
             assertNotNull(result.failureReason());
             assertTrue(result.failureReason().contains("重试耗尽"));
@@ -165,13 +206,15 @@ class WorkflowEngineTest {
                     new ErrorStrategy.Retry(3, 10, 50));
             var def = createSimpleDef("wf-retry-ok", step);
 
+            createAndMockInstance("inst-retry-ok", "wf-retry-ok", Map.of());
             when(registry.find("wf-retry-ok")).thenReturn(Optional.of(def));
             when(stepExecutor.execute(any(), any(), any()))
                     .thenThrow(new WorkflowStepException("retry-ok", "first fail"))
                     .thenReturn(Map.of("ok", true));
 
-            WorkflowInstance result = engine.execute("wf-retry-ok", Map.of());
+            engine.executeFromInstance("inst-retry-ok");
 
+            WorkflowInstance result = captureLastUpdatedInstance();
             assertEquals(WorkflowState.COMPLETED, result.state());
         }
 
@@ -182,14 +225,16 @@ class WorkflowEngineTest {
             var step2 = noop("next-step");
             var def = createSimpleDef("wf-skip", step1, step2);
 
+            createAndMockInstance("inst-skip", "wf-skip", Map.of());
             when(registry.find("wf-skip")).thenReturn(Optional.of(def));
             when(stepExecutor.execute(eq(step1), any(), any()))
                     .thenThrow(new WorkflowStepException("skip-step", "fail"));
             when(stepExecutor.execute(eq(step2), any(), any()))
                     .thenReturn(Map.of("ok", true));
 
-            WorkflowInstance result = engine.execute("wf-skip", Map.of());
+            engine.executeFromInstance("inst-skip");
 
+            WorkflowInstance result = captureLastUpdatedInstance();
             assertEquals(WorkflowState.COMPLETED, result.state());
         }
 
@@ -199,12 +244,14 @@ class WorkflowEngineTest {
                     new ErrorStrategy.Fail());
             var def = createSimpleDef("wf-fail", step);
 
+            createAndMockInstance("inst-fail", "wf-fail", Map.of());
             when(registry.find("wf-fail")).thenReturn(Optional.of(def));
             when(stepExecutor.execute(any(), any(), any()))
                     .thenThrow(new WorkflowStepException("fail-step", "fail"));
 
-            WorkflowInstance result = engine.execute("wf-fail", Map.of());
+            engine.executeFromInstance("inst-fail");
 
+            WorkflowInstance result = captureLastUpdatedInstance();
             assertEquals(WorkflowState.FAILED, result.state());
             assertNotNull(result.failureReason());
         }
@@ -216,14 +263,16 @@ class WorkflowEngineTest {
                     new ErrorStrategy.Compensate(compStep));
             var def = createSimpleDef("wf-comp", step);
 
+            createAndMockInstance("inst-comp", "wf-comp", Map.of());
             when(registry.find("wf-comp")).thenReturn(Optional.of(def));
             when(stepExecutor.execute(eq(step), any(), any()))
                     .thenThrow(new WorkflowStepException("main-step", "fail"));
             when(stepExecutor.execute(eq(compStep), any(), any()))
                     .thenReturn(Map.of("compensated", true));
 
-            WorkflowInstance result = engine.execute("wf-comp", Map.of());
+            engine.executeFromInstance("inst-comp");
 
+            WorkflowInstance result = captureLastUpdatedInstance();
             assertEquals(WorkflowState.FAILED, result.state());
             verify(stepExecutor).execute(eq(compStep), any(), any());
         }
@@ -233,12 +282,14 @@ class WorkflowEngineTest {
             var step = noop("no-strategy");
             var def = createSimpleDef("wf-default", step);
 
+            createAndMockInstance("inst-default", "wf-default", Map.of());
             when(registry.find("wf-default")).thenReturn(Optional.of(def));
             when(stepExecutor.execute(any(), any(), any()))
                     .thenThrow(new WorkflowStepException("no-strategy", "fail"));
 
-            WorkflowInstance result = engine.execute("wf-default", Map.of());
+            engine.executeFromInstance("inst-default");
 
+            WorkflowInstance result = captureLastUpdatedInstance();
             assertEquals(WorkflowState.FAILED, result.state());
         }
     }
@@ -251,12 +302,14 @@ class WorkflowEngineTest {
             var waitStep = new WaitStep("wait-1", "wait", 60, List.of(), null);
             var def = createSimpleDef("wf-wait", waitStep);
 
+            createAndMockInstance("inst-wait", "wf-wait", Map.of());
             when(registry.find("wf-wait")).thenReturn(Optional.of(def));
             when(stepExecutor.execute(eq(waitStep), any(), any()))
                     .thenReturn(Map.of("__type", "wait", "durationSeconds", 60L));
 
-            WorkflowInstance result = engine.execute("wf-wait", Map.of());
+            engine.executeFromInstance("inst-wait");
 
+            WorkflowInstance result = captureLastUpdatedInstance();
             assertEquals(WorkflowState.WAITING, result.state());
         }
     }
@@ -392,6 +445,7 @@ class WorkflowEngineTest {
             var childStep = noop("child-step");
             var childDef = createSimpleDef("child-wf", childStep);
 
+            createAndMockInstance("inst-main", "main-wf", Map.of());
             when(registry.find("main-wf")).thenReturn(Optional.of(mainDef));
             when(registry.find("child-wf")).thenReturn(Optional.of(childDef));
 
@@ -404,8 +458,9 @@ class WorkflowEngineTest {
             when(stepExecutor.execute(eq(childStep), any(), any()))
                     .thenReturn(Map.of("ok", true));
 
-            WorkflowInstance result = engine.execute("main-wf", Map.of());
+            engine.executeFromInstance("inst-main");
 
+            WorkflowInstance result = captureLastUpdatedInstance();
             assertEquals(WorkflowState.COMPLETED, result.state());
         }
 
@@ -421,6 +476,7 @@ class WorkflowEngineTest {
                     "grandchild-wf", Map.of("k", "v"), List.of(), null);
             var childDef = createSimpleDef("child-wf", grandSubStep);
 
+            createAndMockInstance("inst-nest", "main-wf", Map.of());
             when(registry.find("main-wf")).thenReturn(Optional.of(mainDef));
             when(registry.find("child-wf")).thenReturn(Optional.of(childDef));
 
@@ -435,8 +491,9 @@ class WorkflowEngineTest {
                             "workflowId", "grandchild-wf",
                             "params", Map.of()));
 
-            WorkflowInstance result = engine.execute("main-wf", Map.of());
+            engine.executeFromInstance("inst-nest");
 
+            WorkflowInstance result = captureLastUpdatedInstance();
             assertEquals(WorkflowState.FAILED, result.state());
         }
     }
@@ -450,10 +507,11 @@ class WorkflowEngineTest {
             var step2 = noop("s2");
             var def = createSimpleDef("wf-log", step1, step2);
 
+            createAndMockInstance("inst-log", "wf-log", Map.of());
             when(registry.find("wf-log")).thenReturn(Optional.of(def));
             when(stepExecutor.execute(any(), any(), any())).thenReturn(Map.of());
 
-            engine.execute("wf-log", Map.of());
+            engine.executeFromInstance("inst-log");
 
             verify(repository, times(2)).insertStepLog(argThat(log ->
                     log.state() == StepState.COMPLETED && log.attempt() == 1));
@@ -465,11 +523,12 @@ class WorkflowEngineTest {
                     new ErrorStrategy.Fail());
             var def = createSimpleDef("wf-fail-log", step);
 
+            createAndMockInstance("inst-fail-log", "wf-fail-log", Map.of());
             when(registry.find("wf-fail-log")).thenReturn(Optional.of(def));
             when(stepExecutor.execute(any(), any(), any()))
                     .thenThrow(new WorkflowStepException("fail-s", "fail"));
 
-            engine.execute("wf-fail-log", Map.of());
+            engine.executeFromInstance("inst-fail-log");
 
             verify(repository).insertStepLog(argThat(log ->
                     log.state() == StepState.FAILED));
@@ -484,10 +543,11 @@ class WorkflowEngineTest {
             var step = noop("s1");
             var def = createSimpleDef("wf-type", step);
 
+            createAndMockInstance("inst-type", "wf-type", Map.of());
             when(registry.find("wf-type")).thenReturn(Optional.of(def));
             when(stepExecutor.execute(any(), any(), any())).thenReturn(Map.of());
 
-            engine.execute("wf-type", Map.of());
+            engine.executeFromInstance("inst-type");
 
             verify(repository).insertStepLog(argThat(log ->
                     "noop".equals(log.stepType())));

@@ -3,6 +3,7 @@ package com.lifepilot.interaction.web.controller;
 import com.lifepilot.interaction.web.model.ErrorResponse;
 import com.lifepilot.interaction.web.model.TriggerWorkflowRequest;
 import com.lifepilot.workflow.config.WorkflowConfigProperties;
+import com.lifepilot.workflow.engine.WorkflowCommandService;
 import com.lifepilot.workflow.engine.WorkflowEngine;
 import com.lifepilot.workflow.engine.WorkflowEventRecorder;
 import com.lifepilot.workflow.model.ApprovalDecision;
@@ -42,6 +43,7 @@ public class WorkflowController {
 
     private final WorkflowRegistry workflowRegistry;
     private final WorkflowEngine workflowEngine;
+    private final WorkflowCommandService workflowCommandService;
     private final WorkflowRepository workflowRepository;
     private final WorkflowEventRecorder workflowEventRecorder;
     private final WorkflowYamlParser yamlParser;
@@ -51,6 +53,7 @@ public class WorkflowController {
 
     public WorkflowController(WorkflowRegistry workflowRegistry,
                                WorkflowEngine workflowEngine,
+                               WorkflowCommandService workflowCommandService,
                                WorkflowRepository workflowRepository,
                                WorkflowEventRecorder workflowEventRecorder,
                                WorkflowYamlParser yamlParser,
@@ -58,6 +61,7 @@ public class WorkflowController {
                                WorkflowConfigProperties workflowConfig) {
         this.workflowRegistry = workflowRegistry;
         this.workflowEngine = workflowEngine;
+        this.workflowCommandService = workflowCommandService;
         this.workflowRepository = workflowRepository;
         this.workflowEventRecorder = workflowEventRecorder;
         this.yamlParser = yamlParser;
@@ -372,9 +376,13 @@ public class WorkflowController {
 
         Map<String, Object> inputs = (request != null && request.inputs() != null)
                 ? request.inputs() : Map.of();
-        var instance = workflowEngine.execute(id, inputs);
-        log.info("工作流触发成功: workflowId={}, instanceId={}", id, instance.id());
-        return ResponseEntity.ok(instance);
+        String instanceId = workflowCommandService.start(id, inputs);
+        log.info("工作流触发成功: workflowId={}, instanceId={}", id, instanceId);
+        return ResponseEntity.accepted().body(Map.of(
+                "instanceId", instanceId,
+                "workflowId", id,
+                "message", "工作流已提交异步执行"
+        ));
     }
 
     /**
