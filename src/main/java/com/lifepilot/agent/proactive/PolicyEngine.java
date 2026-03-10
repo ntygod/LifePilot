@@ -11,6 +11,8 @@ import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 
+// NotificationTypeRegistry 已移除：PolicyEngine 不直接使用，冷却期查询由 FrequencyStateManager 负责
+
 /**
  * 策略引擎 — 全局策略过滤 + 遍历所有 CandidateProvider 收集候选。
  *
@@ -27,16 +29,13 @@ public class PolicyEngine {
     private final List<CandidateProvider> candidateProviders;
     private final FrequencyStateManager frequencyStateManager;
     private final ProactiveConfigProperties config;
-    private final NotificationTypeRegistry typeRegistry;
 
     public PolicyEngine(List<CandidateProvider> candidateProviders,
                         FrequencyStateManager frequencyStateManager,
-                        ProactiveConfigProperties config,
-                        NotificationTypeRegistry typeRegistry) {
+                        ProactiveConfigProperties config) {
         this.candidateProviders = List.copyOf(candidateProviders);
         this.frequencyStateManager = frequencyStateManager;
         this.config = config;
-        this.typeRegistry = typeRegistry;
     }
 
     /**

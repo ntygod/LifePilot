@@ -29,16 +29,6 @@ public class ProactiveConfigProperties {
     /** 免打扰结束小时（0-23），默认 8。 */
     private int quietHoursEnd = 8;
 
-    /** 各通知类型独立冷却时间（分钟），键为 typeId（snake_case）。 */
-    private Map<String, Integer> cooldownMinutesPerType = new HashMap<>(Map.of(
-            "deadline_reminder", 60,
-            "schedule_reminder", 30,
-            "habit_reminder", 120,
-            "streak_at_risk", 240,
-            "daily_summary", 1440,
-            "weekly_review", 10080
-    ));
-
     /** 每日总结触发小时（0-23），默认 21 点。 */
     private int dailySummaryHour = 21;
 
@@ -79,21 +69,6 @@ public class ProactiveConfigProperties {
 
     public int getQuietHoursEnd() { return quietHoursEnd; }
     public void setQuietHoursEnd(int quietHoursEnd) { this.quietHoursEnd = quietHoursEnd; }
-
-    public Map<String, Integer> getCooldownMinutesPerType() { return cooldownMinutesPerType; }
-    public void setCooldownMinutesPerType(Map<String, Integer> cooldownMinutesPerType) {
-        this.cooldownMinutesPerType = cooldownMinutesPerType;
-    }
-
-    /**
-     * 获取指定通知类型的冷却时间（分钟），未配置时 fallback 120 分钟。
-     *
-     * @param typeId 通知类型标识（snake_case）
-     * @return 冷却时间（分钟）
-     */
-    public int getCooldownMinutesForType(String typeId) {
-        return cooldownMinutesPerType.getOrDefault(typeId, 120);
-    }
 
     public int getDailySummaryHour() { return dailySummaryHour; }
     public void setDailySummaryHour(int dailySummaryHour) { this.dailySummaryHour = dailySummaryHour; }

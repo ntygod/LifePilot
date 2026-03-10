@@ -137,7 +137,7 @@ public class ProactiveReasoner {
                 frequencyStateManager.updateLastNotified(candidate.typeId(), candidate.subjectId());
 
                 // 开始追踪
-                responseTracker.track(candidate.typeId());
+                responseTracker.track(candidate.typeId(), candidate.subjectId());
 
             } catch (LlmUnavailableException e) {
                 log.warn("LLM 不可用，跳过候选: typeId={}, error={}", candidate.typeId(), e.getMessage());

@@ -42,6 +42,7 @@ public class SignalCollector {
      */
     public SignalBundle collect() {
         var now = LocalDateTime.now();
+        var instantNow = Instant.now();
         var signals = new ArrayList<Signal>();
         for (SignalSource source : signalSources) {
             try {
@@ -50,40 +51,41 @@ public class SignalCollector {
                 log.warn("信号源收集失败: sourceId={}, error={}", source.id(), e.getMessage());
             }
         }
+
+        // 一次查询同时计算交互时长和最近对话数量，避免重复访问 EpisodicMemory
+        var behaviorSignals = collectBehaviorSignals(instantNow);
+
         return SignalBundle.builder()
                 .currentTime(now)
                 .dayOfWeek(now.getDayOfWeek())
-                .timeSinceLastInteraction(collectTimeSinceLastInteraction(Instant.now()))
-                .recentConversationCount(collectRecentConversationCount())
+                .timeSinceLastInteraction(behaviorSignals.timeSinceLastInteraction())
+                .recentConversationCount(behaviorSignals.recentConversationCount())
                 .signals(signals)
                 .build();
     }
 
-    /** 收集最近 24 小时对话数量。 */
-    private int collectRecentConversationCount() {
+    /**
+     * 一次查询 EpisodicMemory，同时计算交互时长和最近 24 小时对话数量。
+     */
+    private BehaviorSignals collectBehaviorSignals(Instant now) {
         try {
             var recent = episodicMemory.getRecent(100);
-            var cutoff = Instant.now().minus(Duration.ofHours(24));
-            return (int) recent.stream()
+            // 距上次交互时长
+            var timeSinceLastInteraction = recent.isEmpty()
+                    ? Duration.ofDays(999)
+                    : Duration.between(recent.getFirst().createdAt(), now);
+            // 最近 24 小时对话数量
+            var cutoff = now.minus(Duration.ofHours(24));
+            var recentCount = (int) recent.stream()
                     .filter(c -> c.createdAt().isAfter(cutoff))
                     .count();
+            return new BehaviorSignals(timeSinceLastInteraction, recentCount);
         } catch (Exception e) {
             log.warn("行为信号收集失败: error={}", e.getMessage());
-            return 0;
+            return new BehaviorSignals(Duration.ofDays(999), 0);
         }
     }
 
-    /** 计算距上次交互的时长。 */
-    private Duration collectTimeSinceLastInteraction(Instant now) {
-        try {
-            var recent = episodicMemory.getRecent(1);
-            if (recent.isEmpty()) {
-                return Duration.ofDays(999);
-            }
-            return Duration.between(recent.getFirst().createdAt(), now);
-        } catch (Exception e) {
-            log.warn("交互时长计算失败: error={}", e.getMessage());
-            return Duration.ofDays(999);
-        }
-    }
+    /** 行为信号聚合结果。 */
+    private record BehaviorSignals(Duration timeSinceLastInteraction, int recentConversationCount) {}
 }

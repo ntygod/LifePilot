@@ -2,6 +2,7 @@ package com.lifepilot.agent.proactive;
 
 import com.lifepilot.agent.proactive.config.ProactiveConfigProperties;
 import com.lifepilot.agent.proactive.model.TrackingEntry;
+import org.springframework.lang.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,11 +40,13 @@ public class ResponseTracker {
     /**
      * 开始追踪一个已发送通知。
      *
-     * @param typeId 通知类型标识
+     * @param typeId    通知类型标识
+     * @param subjectId 主体标识（可选）
      */
-    public void track(String typeId) {
-        pending.put(typeId, new TrackingEntry(typeId, Instant.now()));
-        log.debug("开始追踪通知响应: typeId={}", typeId);
+    public void track(String typeId, @Nullable String subjectId) {
+        var cacheKey = buildCacheKey(typeId, subjectId);
+        pending.put(cacheKey, new TrackingEntry(typeId, subjectId, Instant.now()));
+        log.debug("开始追踪通知响应: typeId={}, subjectId={}", typeId, subjectId);
     }
 
     /**
@@ -59,11 +62,11 @@ public class ResponseTracker {
         // 遍历待追踪条目，检查关键词相关性
         var toRemove = new ArrayList<String>();
         for (var entry : pending.entrySet()) {
-            var typeId = entry.getKey();
-            if (isRelated(typeId, userMessage)) {
-                frequencyStateManager.recordAcknowledged(typeId, null);
-                toRemove.add(typeId);
-                log.debug("通知被确认: typeId={}", typeId);
+            var tracking = entry.getValue();
+            if (isRelated(tracking.typeId(), userMessage)) {
+                frequencyStateManager.recordAcknowledged(tracking.typeId(), tracking.subjectId());
+                toRemove.add(entry.getKey());
+                log.debug("通知被确认: typeId={}, subjectId={}", tracking.typeId(), tracking.subjectId());
             }
         }
         toRemove.forEach(pending::remove);
@@ -88,10 +91,12 @@ public class ResponseTracker {
             }
         }
 
-        for (var typeId : expired) {
-            pending.remove(typeId);
-            frequencyStateManager.recordIgnored(typeId, null);
-            log.debug("通知响应超时，标记为忽略: typeId={}", typeId);
+        for (var cacheKey : expired) {
+            var tracking = pending.remove(cacheKey);
+            if (tracking != null) {
+                frequencyStateManager.recordIgnored(tracking.typeId(), tracking.subjectId());
+                log.debug("通知响应超时，标记为忽略: typeId={}, subjectId={}", tracking.typeId(), tracking.subjectId());
+            }
         }
     }
 
@@ -108,5 +113,12 @@ public class ResponseTracker {
         return typeRegistry.resolve(typeId)
                 .map(def -> def.keywords().stream().anyMatch(message::contains))
                 .orElse(false);
+    }
+
+    /**
+     * 构建缓存键，与 FrequencyStateManager 保持一致。
+     */
+    private String buildCacheKey(String typeId, @Nullable String subjectId) {
+        return subjectId != null && !subjectId.isEmpty() ? typeId + ":" + subjectId : typeId;
     }
 }
