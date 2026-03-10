@@ -638,6 +638,8 @@ lifepilot:
       max-retries: 1
     store:
       default-query-limit: 50
+    execution:
+      default-timeout-seconds: 60
   # 元能力系统配置
   meta:
     infra:
