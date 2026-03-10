@@ -7,7 +7,7 @@ package com.lifepilot.workflow.model;
  * <ul>
  *   <li>{@link CronTrigger} — 按 Cron 表达式定时触发</li>
  *   <li>{@link EventTrigger} — 监听 Spring ApplicationEvent 事件触发</li>
- *   <li>{@link ManualTrigger} — 仅通过 WorkflowEngine.execute() 手动触发</li>
+ *   <li>{@link ManualTrigger} — 仅通过 WorkflowCommandService.start() 手动触发</li>
  * </ul>
  *
  * @author zsg

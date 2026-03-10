@@ -63,21 +63,6 @@ public class WorkflowEngine {
     // ==================== 公开 API ====================
 
     /**
-     * 执行工作流（手动触发或触发器调用）。
-     *
-     * @deprecated 由 {@link WorkflowCommandService#start(String, Map)} 替代，
-     *             将在所有调用点迁移完成后移除。
-     * @param workflowId 工作流定义 ID
-     * @param inputs     工作流输入参数
-     * @return 执行完成后的工作流实例
-     * @throws IllegalArgumentException 工作流定义未找到或已禁用时抛出
-     */
-    @Deprecated(forRemoval = true)
-    public WorkflowInstance execute(String workflowId, Map<String, Object> inputs) {
-        return executeInternal(workflowId, inputs, 0);
-    }
-
-    /**
      * 从已创建的实例开始执行 DAG（由 WorkflowRunner 在 Virtual Thread 上调用）。
      *
      * <p>加载实例 → CREATED→RUNNING → executeDag() → 异常时转为 FAILED。

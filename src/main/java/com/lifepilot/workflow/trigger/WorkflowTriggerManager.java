@@ -27,7 +27,7 @@ import java.util.concurrent.ScheduledFuture;
  * <ul>
  *   <li>为包含 {@link WorkflowTrigger.CronTrigger} 的工作流注册定时调度任务</li>
  *   <li>为包含 {@link WorkflowTrigger.EventTrigger} 的工作流监听 Spring ApplicationEvent</li>
- *   <li>{@link WorkflowTrigger.ManualTrigger} 仅通过 {@code WorkflowEngine.execute()} 显式调用，无需注册</li>
+ *   <li>{@link WorkflowTrigger.ManualTrigger} 仅通过 {@code WorkflowCommandService.start()} 显式调用，无需注册</li>
  * </ul>
  *
  * <p>CronTrigger 触发时检查同一工作流是否有 RUNNING 实例，有则跳过并记录 INFO 日志。
