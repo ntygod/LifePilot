@@ -70,7 +70,8 @@ class DocumentChunkRepositoryTest {
         jdbcTemplate.execute("DELETE FROM documents");
         jdbcTemplate.execute("DELETE FROM knowledge_bases");
         // 创建前置知识库和文档
-        var kb = KnowledgeBase.create("测试知识库", "描述", "model");
+        var kb = KnowledgeBase.create("测试知识库", "描述", "model",
+                null, null, null, null);
         kbRepository.save(kb);
         knowledgeBaseId = kb.id();
 

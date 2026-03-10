@@ -62,7 +62,8 @@ class KnowledgeBaseRepositoryTest {
 
     @Test
     void save_findById_roundTrip() {
-        var kb = KnowledgeBase.create("测试知识库", "测试描述", "text-embedding-3-small");
+        var kb = KnowledgeBase.create("测试知识库", "测试描述", "text-embedding-3-small",
+                null, null, null, null);
 
         repository.save(kb);
         var found = repository.findById(kb.id());
@@ -84,7 +85,8 @@ class KnowledgeBaseRepositoryTest {
 
     @Test
     void save_upsert_更新已有记录() {
-        var kb = KnowledgeBase.create("原始名称", "原始描述", "model-v1");
+        var kb = KnowledgeBase.create("原始名称", "原始描述", "model-v1",
+                null, null, null, null);
         repository.save(kb);
 
         // 使用相同 id 保存更新后的记录
@@ -157,7 +159,8 @@ class KnowledgeBaseRepositoryTest {
 
     @Test
     void deleteById_删除已有记录() {
-        var kb = KnowledgeBase.create("待删除", "描述", "model");
+        var kb = KnowledgeBase.create("待删除", "描述", "model",
+                null, null, null, null);
         repository.save(kb);
         assertThat(repository.findById(kb.id())).isPresent();
 
@@ -173,7 +176,8 @@ class KnowledgeBaseRepositoryTest {
 
     @Test
     void updateDocumentCount_更新文档数和分块数() {
-        var kb = KnowledgeBase.create("知识库", "描述", "model");
+        var kb = KnowledgeBase.create("知识库", "描述", "model",
+                null, null, null, null);
         repository.save(kb);
 
         repository.updateDocumentCount(kb.id(), 10, 500);

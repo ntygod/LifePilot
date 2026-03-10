@@ -76,7 +76,8 @@ class KnowledgeBaseManagerTest {
 
     @Test
     void createKnowledgeBase_getKnowledgeBase_roundTrip() {
-        var kb = manager.createKnowledgeBase("测试知识库", "测试描述", "text-embedding-3-small");
+        var kb = manager.createKnowledgeBase("测试知识库", "测试描述", "text-embedding-3-small",
+                null, null, null, null);
 
         var found = manager.getKnowledgeBase(kb.id());
 
@@ -93,7 +94,8 @@ class KnowledgeBaseManagerTest {
 
     @Test
     void createKnowledgeBase_出现在listKnowledgeBases中() {
-        var kb = manager.createKnowledgeBase("列表测试", "描述", "model");
+        var kb = manager.createKnowledgeBase("列表测试", "描述", "model",
+                null, null, null, null);
 
         var list = manager.listKnowledgeBases();
 
@@ -102,9 +104,11 @@ class KnowledgeBaseManagerTest {
 
     @Test
     void updateKnowledgeBase_更新名称和描述() {
-        var kb = manager.createKnowledgeBase("原始名称", "原始描述", "model");
+        var kb = manager.createKnowledgeBase("原始名称", "原始描述", "model",
+                null, null, null, null);
 
-        var updated = manager.updateKnowledgeBase(kb.id(), "新名称", "新描述");
+        var updated = manager.updateKnowledgeBase(kb.id(), "新名称", "新描述",
+                null, null, null, null, null);
 
         assertThat(updated.name()).isEqualTo("新名称");
         assertThat(updated.description()).isEqualTo("新描述");
@@ -117,29 +121,34 @@ class KnowledgeBaseManagerTest {
 
     @Test
     void updateKnowledgeBase_null参数不更新对应字段() {
-        var kb = manager.createKnowledgeBase("保持名称", "保持描述", "model");
+        var kb = manager.createKnowledgeBase("保持名称", "保持描述", "model",
+                null, null, null, null);
 
         // null name 不更新名称
-        var updated1 = manager.updateKnowledgeBase(kb.id(), null, "新描述");
+        var updated1 = manager.updateKnowledgeBase(kb.id(), null, "新描述",
+                null, null, null, null, null);
         assertThat(updated1.name()).isEqualTo("保持名称");
         assertThat(updated1.description()).isEqualTo("新描述");
 
         // null description 不更新描述
-        var updated2 = manager.updateKnowledgeBase(kb.id(), "新名称", null);
+        var updated2 = manager.updateKnowledgeBase(kb.id(), "新名称", null,
+                null, null, null, null, null);
         assertThat(updated2.name()).isEqualTo("新名称");
         assertThat(updated2.description()).isEqualTo("新描述");
     }
 
     @Test
     void updateKnowledgeBase_不存在的id_抛出KnowledgeBaseNotFoundException() {
-        assertThatThrownBy(() -> manager.updateKnowledgeBase("non-existent-id", "名称", "描述"))
+        assertThatThrownBy(() -> manager.updateKnowledgeBase("non-existent-id", "名称", "描述",
+                null, null, null, null, null))
                 .isInstanceOf(KnowledgeBaseNotFoundException.class);
     }
 
     @Test
     void deleteKnowledgeBase_级联删除文档和分块() {
         // 创建知识库
-        var kb = manager.createKnowledgeBase("待删除知识库", "描述", "model");
+        var kb = manager.createKnowledgeBase("待删除知识库", "描述", "model",
+                null, null, null, null);
 
         // 手动插入文档
         var docId = UUID.randomUUID().toString();
@@ -179,7 +188,8 @@ class KnowledgeBaseManagerTest {
 
     @Test
     void listDocuments_返回指定知识库的文档() {
-        var kb = manager.createKnowledgeBase("文档列表测试", "描述", "model");
+        var kb = manager.createKnowledgeBase("文档列表测试", "描述", "model",
+                null, null, null, null);
 
         var doc1 = new Document(
                 UUID.randomUUID().toString(), kb.id(), "doc1.md", "/path/doc1.md", 512,
@@ -204,7 +214,8 @@ class KnowledgeBaseManagerTest {
 
     @Test
     void removeDocument_删除文档和关联分块() {
-        var kb = manager.createKnowledgeBase("删除文档测试", "描述", "model");
+        var kb = manager.createKnowledgeBase("删除文档测试", "描述", "model",
+                null, null, null, null);
 
         var docId = UUID.randomUUID().toString();
         var doc = new Document(
