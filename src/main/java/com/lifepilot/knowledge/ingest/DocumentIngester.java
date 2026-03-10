@@ -195,7 +195,7 @@ public class DocumentIngester {
             // 5. INDEXING（向量 + FTS5 并行）
             publishProgress(doc, DocumentStatus.INDEXING, 60, "构建索引中");
             updateStage(doc.id(), DocumentStatus.INDEXING);
-            doIndex(chunks);
+            doIndex(chunks, doc.knowledgeBaseId());
 
             // 6. EXTRACTING（异步，可降级）
             publishProgress(doc, DocumentStatus.EXTRACTING, 80, "知识提取中");
@@ -236,7 +236,7 @@ public class DocumentIngester {
                     var chunks = doChunkAndEnrich(doc, parseResult);
                     chunkRepository.saveAll(chunks);
                     docRepository.updateChunkCount(doc.id(), chunks.size());
-                    doIndex(chunks);
+                    doIndex(chunks, doc.knowledgeBaseId());
                     doExtract(doc.id(), chunks);
                     docRepository.updateStatus(doc.id(), DocumentStatus.READY, null);
                     refreshKnowledgeBaseCounts(doc.knowledgeBaseId());
@@ -245,7 +245,7 @@ public class DocumentIngester {
                 case "CHUNKING" -> {
                     // 分块已保存，从索引开始
                     var chunks = chunkRepository.findByDocumentId(doc.id());
-                    doIndex(chunks);
+                    doIndex(chunks, doc.knowledgeBaseId());
                     doExtract(doc.id(), chunks);
                     docRepository.updateStatus(doc.id(), DocumentStatus.READY, null);
                     refreshKnowledgeBaseCounts(doc.knowledgeBaseId());
@@ -415,11 +415,16 @@ public class DocumentIngester {
         return chunks;
     }
 
-    private void doIndex(List<DocumentChunk> chunks) {
+    private void doIndex(List<DocumentChunk> chunks, String kbId) {
+        // 从知识库配置读取 embeddingModel
+        String embeddingModel = kbRepository.findById(kbId)
+                .map(kb -> kb.embeddingModel())
+                .orElse(null);
+
         // 向量索引（可选）和 FTS5 索引并行执行
         var vectorFuture = CompletableFuture.runAsync(() -> {
                     if (vectorIndexer != null) {
-                        vectorIndexer.indexChunks(chunks);
+                        vectorIndexer.indexChunks(chunks, embeddingModel);
                     } else {
                         log.warn("VectorIndexer 不可用，已降级跳过向量索引（仅构建 FTS5）");
                     }

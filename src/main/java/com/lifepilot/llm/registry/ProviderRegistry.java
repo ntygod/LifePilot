@@ -97,6 +97,20 @@ public class ProviderRegistry {
     }
 
     /**
+     * 按模型名查询已启用的 Provider，按 priority 升序排序。
+     *
+     * @param modelName 模型名称（精确匹配 {@link ProviderConfig#modelName()}）
+     * @return 匹配的 Provider 配置列表（不可变）
+     */
+    public List<ProviderConfig> findByModelName(String modelName) {
+        return configs.values().stream()
+                .filter(ProviderConfig::enabled)
+                .filter(c -> c.modelName().equals(modelName))
+                .sorted(Comparator.comparingInt(ProviderConfig::priority))
+                .toList();
+    }
+
+    /**
      * 获取 Provider 适配器。
      *
      * @param providerId Provider ID

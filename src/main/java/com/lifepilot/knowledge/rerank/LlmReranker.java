@@ -9,6 +9,7 @@ import com.lifepilot.llm.LlmUnavailableException;
 import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.lang.Nullable;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -44,12 +45,18 @@ public final class LlmReranker implements Reranker {
 
     @Override
     public List<DocumentSearchResult> rerank(String query, List<DocumentSearchResult> candidates, int topK) {
+        return rerank(query, candidates, topK, null);
+    }
+
+    @Override
+    public List<DocumentSearchResult> rerank(String query, List<DocumentSearchResult> candidates,
+                                              int topK, @Nullable String modelName) {
         if (candidates.isEmpty()) {
             return candidates;
         }
         return switch (config.llmMode()) {
-            case "listwise" -> rerankListwise(query, candidates, topK);
-            default -> rerankPointwise(query, candidates, topK);
+            case "listwise" -> rerankListwise(query, candidates, topK, modelName);
+            default -> rerankPointwise(query, candidates, topK, modelName);
         };
     }
 
@@ -59,18 +66,18 @@ public final class LlmReranker implements Reranker {
      */
     private List<DocumentSearchResult> rerankListwise(String query,
                                                        List<DocumentSearchResult> candidates,
-                                                       int topK) {
+                                                       int topK, @Nullable String modelName) {
         try {
             List<DocumentSearchResult> sorted;
             if (candidates.size() <= config.listwiseMaxCandidates()) {
-                sorted = listwiseSinglePass(query, candidates);
+                sorted = listwiseSinglePass(query, candidates, modelName);
             } else {
-                sorted = listwiseSlidingWindow(query, candidates);
+                sorted = listwiseSlidingWindow(query, candidates, modelName);
             }
             return sorted.stream().limit(topK).toList();
         } catch (Exception e) {
             log.warn("Listwise 精排失败，回退到 Pointwise: {}", e.getMessage());
-            return rerankPointwise(query, candidates, topK);
+            return rerankPointwise(query, candidates, topK, modelName);
         }
     }
 
@@ -78,7 +85,8 @@ public final class LlmReranker implements Reranker {
      * 单次 Listwise 排序。
      */
     private List<DocumentSearchResult> listwiseSinglePass(String query,
-                                                           List<DocumentSearchResult> candidates) {
+                                                           List<DocumentSearchResult> candidates,
+                                                           @Nullable String modelName) {
         var idMap = new LinkedHashMap<String, DocumentSearchResult>();
         var docsText = new StringBuilder();
 
@@ -94,7 +102,7 @@ public final class LlmReranker implements Reranker {
                 "query", query,
                 "documents", docsText.toString()));
 
-        List<String> rankedIds = llmRouter.callEntity(SCENE, prompt, RankedIds.class).ids();
+        List<String> rankedIds = llmRouter.callEntity(SCENE, prompt, RankedIds.class, modelName).ids();
         if (rankedIds == null || rankedIds.isEmpty()) {
             throw new RuntimeException("Listwise 返回空排序列表");
         }
@@ -124,14 +132,15 @@ public final class LlmReranker implements Reranker {
      * 保留前半部分，与下一批合并继续排序。
      */
     private List<DocumentSearchResult> listwiseSlidingWindow(String query,
-                                                              List<DocumentSearchResult> candidates) {
+                                                              List<DocumentSearchResult> candidates,
+                                                              @Nullable String modelName) {
         int windowSize = config.listwiseMaxCandidates();
         var remaining = new ArrayList<>(candidates);
         var finalized = new ArrayList<DocumentSearchResult>();
 
         while (remaining.size() > windowSize) {
             var window = remaining.subList(0, windowSize);
-            var sorted = listwiseSinglePass(query, new ArrayList<>(window));
+            var sorted = listwiseSinglePass(query, new ArrayList<>(window), modelName);
             int keepCount = windowSize / 2;
             finalized.addAll(sorted.subList(0, keepCount));
             remaining = new ArrayList<>(sorted.subList(keepCount, sorted.size()));
@@ -144,7 +153,7 @@ public final class LlmReranker implements Reranker {
 
         // 最后一批直接排序
         if (!remaining.isEmpty()) {
-            var sorted = listwiseSinglePass(query, remaining);
+            var sorted = listwiseSinglePass(query, remaining, modelName);
             finalized.addAll(sorted);
         }
         return finalized;
@@ -155,14 +164,15 @@ public final class LlmReranker implements Reranker {
      */
     private List<DocumentSearchResult> rerankPointwise(String query,
                                                         List<DocumentSearchResult> candidates,
-                                                        int topK) {
+                                                        int topK,
+                                                        @Nullable String modelName) {
         var scored = new ArrayList<Map.Entry<DocumentSearchResult, Double>>();
 
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             var futures = new ArrayList<CompletableFuture<Map.Entry<DocumentSearchResult, Double>>>();
             for (var candidate : candidates) {
                 futures.add(CompletableFuture.supplyAsync(() -> {
-                    double score = scoreCandidate(query, candidate);
+                    double score = scoreCandidate(query, candidate, modelName);
                     return Map.entry(candidate, score);
                 }, executor));
             }
@@ -187,13 +197,14 @@ public final class LlmReranker implements Reranker {
     /**
      * 评估单个 query-document 对的相关性分数。
      */
-    private double scoreCandidate(String query, DocumentSearchResult candidate) {
+    private double scoreCandidate(String query, DocumentSearchResult candidate,
+                                   @Nullable String modelName) {
         var prompt = promptRegistry.render("knowledge/rerank-pointwise", Map.of(
                 "query", query,
                 "document", truncateContent(candidate.content(), 500)));
 
         try {
-            ScoreResponse response = llmRouter.callEntity(SCENE, prompt, ScoreResponse.class);
+            ScoreResponse response = llmRouter.callEntity(SCENE, prompt, ScoreResponse.class, modelName);
             if (response != null && response.score() != null) {
                 return Math.max(0.0, Math.min(1.0, response.score()));
             }
@@ -205,7 +216,7 @@ public final class LlmReranker implements Reranker {
 
         // 降级到手动解析
         try {
-            var response = llmRouter.call(SCENE, prompt, null);
+            var response = llmRouter.call(SCENE, prompt, null, modelName);
             return Double.parseDouble(response.content().trim());
         } catch (LlmUnavailableException e) {
             log.warn("LLM 精排不可用: {}", e.getMessage());
