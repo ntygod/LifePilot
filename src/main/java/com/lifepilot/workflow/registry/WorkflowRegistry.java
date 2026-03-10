@@ -176,6 +176,11 @@ public class WorkflowRegistry {
             log.warn("工作流定义持久化失败: id={}, 原因={}", definition.id(), e.getMessage());
         }
 
+        // 注册成功且已启用时，通知触发器管理器注册触发器
+        if (definition.enabled() && triggerManager != null) {
+            triggerManager.registerTriggers(definition);
+        }
+
         return true;
     }
 
@@ -226,11 +231,20 @@ public class WorkflowRegistry {
     /**
      * 根据 ID 查找工作流定义。
      *
+     * <p>优先从内存缓存读取，缓存未命中时回退数据库查询并填充缓存。
+     *
      * @param workflowId 工作流定义 ID
      * @return 工作流定义 Optional，未找到时返回 empty
      */
     public Optional<WorkflowDefinition> find(String workflowId) {
-        return Optional.ofNullable(definitions.get(workflowId));
+        WorkflowDefinition cached = definitions.get(workflowId);
+        if (cached != null) {
+            return Optional.of(cached);
+        }
+        // 缓存未命中，回退数据库
+        Optional<WorkflowDefinition> fromDb = repository.findDefinition(workflowId);
+        fromDb.ifPresent(def -> definitions.put(def.id(), def));
+        return fromDb;
     }
 
     /**
@@ -351,6 +365,8 @@ public class WorkflowRegistry {
                     String previousId = fileToWorkflowId.get(filePath);
                     if (previousId != null && !previousId.equals(ok.value().id())) {
                         disable(previousId);
+                    } else if (previousId != null) {
+                        // 同一 workflowId 更新：先注销旧触发器，register() 内部会注册新触发器
                         notifyTriggerUnregister(previousId);
                     }
                     if (register(ok.value())) {
@@ -472,6 +488,15 @@ public class WorkflowRegistry {
             repository.updateDefinitionEnabled(workflowId, enabled);
         } catch (Exception e) {
             log.warn("工作流定义{}持久化失败: id={}, 原因={}", enabled ? "启用" : "禁用", workflowId, e.getMessage());
+        }
+
+        // 通知触发器管理器：启用时注册触发器，禁用时注销触发器
+        if (triggerManager != null) {
+            if (enabled) {
+                triggerManager.registerTriggers(updated);
+            } else {
+                triggerManager.unregisterTriggers(workflowId);
+            }
         }
 
         log.info("工作流定义{}: id={}", enabled ? "启用" : "禁用", workflowId);
