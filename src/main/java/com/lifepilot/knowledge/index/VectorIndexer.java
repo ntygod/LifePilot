@@ -9,6 +9,7 @@ import com.lifepilot.llm.LlmRouter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.lang.Nullable;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -74,7 +75,7 @@ public class VectorIndexer {
      * @return 索引结果
      * @throws IndexingException 所有重试均失败
      */
-    public IndexingResult indexChunks(List<DocumentChunk> chunks) {
+    public IndexingResult indexChunks(List<DocumentChunk> chunks, @Nullable String embeddingModel) {
         if (chunks.isEmpty()) {
             return new IndexingResult(0, 0, 0);
         }
@@ -86,7 +87,7 @@ public class VectorIndexer {
         for (int i = 0; i < chunks.size(); i += config.batchSize()) {
             int end = Math.min(i + config.batchSize(), chunks.size());
             var batch = chunks.subList(i, end);
-            indexBatchWithRetry(batch);
+            indexBatchWithRetry(batch, embeddingModel);
             totalIndexed += batch.size();
             log.debug("向量索引批次完成: {}/{}", totalIndexed, chunks.size());
         }
@@ -135,8 +136,9 @@ public class VectorIndexer {
      * @param topK  返回数量
      * @return 搜索结果列表（按相似度降序）
      */
-    public List<DocumentSearchResult> searchSimilar(String query, List<String> kbIds, int topK) {
-        float[] queryVector = llmRouter.embed(query);
+    public List<DocumentSearchResult> searchSimilar(String query, List<String> kbIds, int topK,
+                                                     @Nullable String embeddingModel) {
+        float[] queryVector = llmRouter.embed(query, embeddingModel);
         return searchByEmbedding(queryVector, kbIds, topK);
     }
 
@@ -194,13 +196,13 @@ public class VectorIndexer {
     /**
      * 带重试的批量索引。
      */
-    private void indexBatchWithRetry(List<DocumentChunk> batch) {
+    private void indexBatchWithRetry(List<DocumentChunk> batch, @Nullable String embeddingModel) {
         int maxAttempts = config.maxRetries() + 1;
         long delay = 500L;
 
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
-                indexBatch(batch);
+                indexBatch(batch, embeddingModel);
                 return;
             } catch (Exception e) {
                 if (attempt == maxAttempts) {
@@ -217,10 +219,10 @@ public class VectorIndexer {
     /**
      * 执行单批次向量索引。
      */
-    private void indexBatch(List<DocumentChunk> batch) {
+    private void indexBatch(List<DocumentChunk> batch, @Nullable String embeddingModel) {
         var sql = "INSERT INTO chunk_embeddings (chunk_id, embedding) VALUES (?, ?)";
         for (var chunk : batch) {
-            float[] embedding = llmRouter.embed(chunk.embeddingText());
+            float[] embedding = llmRouter.embed(chunk.embeddingText(), embeddingModel);
             var vectorStr = vectorToString(embedding);
             jdbcTemplate.update(sql, chunk.id(), vectorStr);
         }
