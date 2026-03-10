@@ -43,7 +43,7 @@ public class DataStoreAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public DocumentRepository documentRepository(JdbcTemplate jdbcTemplate) {
+    public DocumentRepository dataStoreDocumentRepository(JdbcTemplate jdbcTemplate) {
         log.info("数据存储: 注册 DocumentRepository");
         return new DocumentRepository(jdbcTemplate);
     }

@@ -61,7 +61,7 @@ public class EvalAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public TrajectoryEvaluator trajectoryEvaluator(EvaluationCore evaluationCore) {
+    public TrajectoryEvaluator evalTrajectoryEvaluator(EvaluationCore evaluationCore) {
         log.info("注册 TrajectoryEvaluator Bean（委托 EvaluationCore）");
         return new TrajectoryEvaluator(evaluationCore);
     }
