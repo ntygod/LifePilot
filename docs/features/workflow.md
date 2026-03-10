@@ -25,15 +25,15 @@
 | LoopStep | 循环遍历集合，对每个元素执行 body 步骤 |
 | ParallelStep | Virtual Thread 并行执行多个分支 |
 | SubWorkflowStep | 调用子工作流，支持嵌套编排 |
-| WaitStep | 等待指定时长后继续 |
-| ApprovalStep | 人工审批，暂停工作流等待决策 |
+| WaitStep | 等待指定时长，持久化 wakeUpAt 到数据库，由 WakeupScheduler 到时自动唤醒恢复执行 |
+| ApprovalStep | 人工审批，暂停工作流等待决策；支持运行时超时检测，超时后根据配置自动批准或标记失败 |
 | NoopStep | 空操作，直接跳过 |
 
 ### 2.3 三种触发方式
 
-- Cron 定时触发：按 Cron 表达式周期性执行，同一工作流有 RUNNING 实例时自动跳过
-- 事件触发：监听 Spring ApplicationEvent，事件发生时自动执行
-- 手动触发：通过 `WorkflowEngine.execute()` 显式调用
+- Cron 定时触发：按 Cron 表达式周期性执行，同一工作流有 RUNNING 实例时自动跳过。触发器在工作流注册/启用/禁用/热加载时实时注册或注销，无需重启
+- 事件触发：监听 Spring ApplicationEvent，事件发生时自动执行。触发器生命周期与 Cron 一致
+- 手动触发：通过 `WorkflowCommandService.start()` 异步调用
 
 ### 2.4 DAG 依赖调度
 
@@ -53,17 +53,28 @@
 
 ### 2.7 人工审批
 
-ApprovalStep 暂停工作流等待审批决策。支持配置审批人列表、超时时间和超时自动批准。审批决策通过 `WorkflowEngine.approve()` 提交。
+ApprovalStep 暂停工作流等待审批决策。支持配置审批人列表、超时时间和超时自动批准。审批决策通过 `WorkflowEngine.approve()` 提交。WakeupScheduler 在运行时持续检测审批超时，超时后根据 `auto-approve-on-timeout` 配置自动批准或标记实例失败，不再仅依赖重启恢复。
 
-### 2.8 状态持久化与崩溃恢复
+### 2.8 异步非阻塞执行
 
-工作流实例状态、已完成步骤集合、变量上下文全部持久化到 SQLite。应用重启后自动检测中断的实例（RUNNING/WAITING/PAUSED 状态），从断点恢复执行。
+WorkflowCommandService 作为外部调用的首选入口，`start()` 方法创建实例后立即返回 instanceId，工作流在 Virtual Thread 上由 WorkflowRunner 异步执行。调用方不会被工作流执行阻塞，可通过 `getStatus()` 查询执行进度。触发器、API、定时器均通过 CommandService 提交，不再直接调用 WorkflowEngine。
 
-### 2.9 YAML 热加载
+### 2.9 阻塞实例自动唤醒
+
+WakeupScheduler 定时扫描数据库中 wakeUpAt 已过期的 WAITING/PAUSED 实例：
+- WAITING 实例（WaitStep）：到达唤醒时间后自动恢复执行
+- PAUSED 实例（ApprovalStep）：超时后根据配置自动批准或标记失败
+- 扫描间隔通过 `lifepilot.workflow.wakeup.scan-interval-seconds` 配置，默认 10 秒
+
+### 2.10 状态持久化与崩溃恢复
+
+工作流实例状态、已完成步骤集合、变量上下文、阻塞信息（wakeUpAt/blockedStepId/blockedReason）全部持久化到 SQLite。应用重启后自动检测中断的实例（RUNNING/WAITING/PAUSED 状态），从断点恢复执行。
+
+### 2.11 YAML 热加载
 
 WorkflowRegistry 定时扫描工作流目录，自动检测新增、修改和删除的 YAML 文件。修改后的工作流定义自动更新注册，无需重启应用。
 
-### 2.10 审计事件追踪
+### 2.12 审计事件追踪
 
 记录工作流执行全过程的审计事件（实例创建/状态变更、步骤开始/完成/失败/跳过、审批请求/决策），支持按实例查询事件时间线，过期事件自动清理。
 
@@ -87,10 +98,14 @@ WorkflowRegistry 定时扫描工作流目录，自动检测新增、修改和删
 | `lifepilot.workflow.max-loop-iterations` | `100` | 最大循环迭代次数 |
 | `lifepilot.workflow.crash-recovery-enabled` | `true` | 崩溃恢复开关 |
 | `lifepilot.workflow.scan-interval-seconds` | `30` | YAML 文件扫描间隔（秒） |
+| `lifepilot.workflow.seed-builtin-workflows` | `true` | 启动时释放内置工作流模板 |
 | `lifepilot.workflow.retry.initial-delay-ms` | `500` | 重试初始延迟（毫秒） |
 | `lifepilot.workflow.retry.max-delay-ms` | `5000` | 重试最大延迟（毫秒） |
 | `lifepilot.workflow.retry.max-attempts` | `3` | 最大重试次数 |
 | `lifepilot.workflow.approval.default-timeout-seconds` | `86400` | 审批默认超时（24 小时） |
+| `lifepilot.workflow.approval.auto-approve-on-timeout` | `false` | 超时后是否自动批准 |
+| `lifepilot.workflow.wakeup.scan-interval-seconds` | `10` | WakeupScheduler 扫描间隔（秒） |
+| `lifepilot.workflow.event-audit.enabled` | `true` | 审计事件记录开关 |
 | `lifepilot.workflow.event-audit.retention-days` | `90` | 审计事件保留天数 |
 
 ## 5. 限制与未来方向

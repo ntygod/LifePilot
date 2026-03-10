@@ -15,11 +15,14 @@ flowchart TD
     subgraph "工作流引擎"
         YP["WorkflowYamlParser<br/>YAML 解析"]
         REG["WorkflowRegistry<br/>注册中心 + 热加载"]
+        CMD["WorkflowCommandService<br/>异步命令入口"]
+        RUNNER["WorkflowRunner<br/>Virtual Thread 执行器"]
         ENG["WorkflowEngine<br/>执行引擎"]
-        DAG["DagScheduler<br/>Kahn 拓扑排序"]
+        DAG["DagScheduler<br/>Kahn 拓扑排序（无状态纯函数）"]
         SE["StepExecutor<br/>步骤执行器"]
         EXP["ExpressionEngine<br/>表达式引擎"]
         TM["WorkflowTriggerManager<br/>触发器管理"]
+        WS["WakeupScheduler<br/>阻塞实例唤醒"]
         ER["WorkflowEventRecorder<br/>审计事件记录"]
     end
 
@@ -37,8 +40,10 @@ flowchart TD
     YP --> REG
     REG --> REPO
     REG --> TM
-    TM --> ENG
+    TM --> CMD
     TM --> SCHED
+    CMD --> RUNNER
+    RUNNER --> ENG
     ENG --> DAG
     ENG --> SE
     ENG --> ER
@@ -47,6 +52,8 @@ flowchart TD
     SE --> TOOL
     SE --> LLM
     ENG --> REPO
+    WS --> REPO
+    WS --> CMD
 
 
 ## 3. 核心组件
@@ -66,38 +73,64 @@ flowchart TD
 ### 3.3 WorkflowEngine
 
 - 职责：工作流执行引擎，管理实例生命周期和状态转换
-- 核心方法：`execute(workflowId, inputs)` 创建并执行实例、`resume(instanceId)` 恢复暂停实例、`approve(instanceId, stepId, decision)` 提交审批决策、`cancel(instanceId)` 取消实例、`recoverInterruptedInstances()` 崩溃恢复
+- 核心方法：`executeFromInstance(instance, definition)` 从已创建实例开始执行、`resumeFromBlocked(instance, definition)` 恢复阻塞实例（将 blockedStepId 加入 completedStepIds 后清除阻塞字段继续执行）、`resume(instanceId)` 恢复暂停实例、`approve(instanceId, stepId, decision)` 提交审批决策、`cancel(instanceId)` 取消实例、`recoverInterruptedInstances()` 崩溃恢复
+- 废弃方法：`execute(workflowId, inputs)` 已标记 `@Deprecated`，保留仅供 SubWorkflowStep 递归调用
 - 状态机转换由 `isValidTransition()` 强制校验
 
-### 3.4 DagScheduler
+### 3.4 WorkflowRunner
+
+- 职责：异步工作流执行器，在 Virtual Thread 上运行工作流
+- 核心方法：`submitAsync(instance, definition)` 提交新实例异步执行、`submitAsyncResume(instance, definition)` 提交阻塞实例异步恢复
+- 内部使用 `Executors.newVirtualThreadPerTaskExecutor()` 创建 Virtual Thread 执行器
+- 异常处理：捕获执行异常后将实例状态更新为 FAILED 并记录审计事件
+
+### 3.5 WorkflowCommandService
+
+- 职责：异步非阻塞命令入口，替代原 `WorkflowEngine.execute()` 作为外部调用的首选入口
+- 核心方法：`start(workflowId, inputs)` 创建实例并提交异步执行，立即返回 instanceId、`resume(instanceId)` 恢复阻塞实例、`cancel(instanceId)` 取消实例、`getStatus(instanceId)` 查询实例状态
+- 调用链路：CommandService → WorkflowRunner → WorkflowEngine
+
+### 3.6 WakeupScheduler
+
+- 职责：定时扫描数据库中过期的 WAITING/PAUSED 实例，自动恢复或超时处理
+- 核心方法：`scan()` 扫描 wakeUpAt 已过期的实例
+- WAITING 实例：到达唤醒时间后通过 CommandService 恢复执行
+- PAUSED（ApprovalStep）实例：解析 blockedReason 中的超时配置（格式 `approval:timeout={N}s,autoApprove={bool}`），超时后根据 autoApprove 配置自动批准或标记失败
+- 调度间隔通过 `lifepilot.workflow.wakeup.scan-interval-seconds` 配置，在 AutoConfiguration 的 `onApplicationReady` 中注册定时任务
+
+### 3.7 DagScheduler
 
 - 职责：基于 Kahn 算法的 DAG 拓扑排序与并行调度
-- 无状态组件，所有状态通过参数传入
+- 无状态纯函数组件，所有状态（步骤列表、已完成步骤集合）通过参数传入，不持有实例字段
 - 退化模式：当所有步骤均无 `dependsOn` 声明时，按列表原始顺序串行执行
 - 环检测：拓扑排序后检查处理节点数，不等于总数则抛出异常
 
-### 3.5 WorkflowRegistry
+### 3.8 WorkflowRegistry
 
 - 职责：工作流定义注册中心，支持 YAML 文件热加载
+- 数据库作为定义的单一真实来源（Single Source of Truth），`find()` 方法优先查内存缓存，未命中时回退到数据库查询
 - 定时扫描 `~/.zhiwei/workflows` 目录，检测新增/修改/删除的 YAML 文件
-- 启动时从数据库加载已注册定义，与文件系统同步
+- 热加载时先注销旧定义的触发器，再注册新定义的触发器（unregister-before-register）
+- 注册/启用/禁用工作流时通知 WorkflowTriggerManager 实时注册或注销触发器
 - 注册时执行校验（步骤 ID 唯一性、触发器合法性等）
 
-### 3.6 WorkflowTriggerManager
+### 3.9 WorkflowTriggerManager
 
 - 职责：统一管理 Cron 定时调度和 Spring 事件监听
+- 依赖 WorkflowCommandService（而非 WorkflowEngine），触发时通过 CommandService 异步启动工作流
+- cronTasks 使用 `workflowId#triggerIndex` 复合键，支持同一工作流多个 Cron 触发器
 - 实现 `GenericApplicationListener`，监听所有 Spring ApplicationEvent 并按 eventType 名称过滤
 - Cron 触发时检查同一工作流是否有 RUNNING 实例，有则跳过
-- ManualTrigger 无需注册，仅通过 `WorkflowEngine.execute()` 调用
+- ManualTrigger 无需注册，通过 `WorkflowCommandService.start()` 调用
 
-### 3.7 ExpressionEngine
+### 3.10 ExpressionEngine
 
 - 职责：工作流表达式解析和求值
 - 模板解析：`${variable.path}` 变量替换
 - 条件求值：支持比较运算符（`==`/`!=`/`>`/`<`/`>=`/`<=`）、逻辑运算符（`&&`/`||`/`!`）
 - 内置递归下降解析器（ConditionParser），不依赖外部表达式库
 
-### 3.8 WorkflowEventRecorder
+### 3.11 WorkflowEventRecorder
 
 - 职责：审计事件记录，追踪工作流执行全过程
 - 事件类型：实例创建/状态变更、步骤开始/完成/失败/跳过、审批请求/决策
@@ -109,6 +142,8 @@ flowchart TD
 ```mermaid
 sequenceDiagram
     participant C as 调用方
+    participant CMD as WorkflowCommandService
+    participant RUNNER as WorkflowRunner
     participant ENG as WorkflowEngine
     participant DAG as DagScheduler
     participant SE as StepExecutor
@@ -116,16 +151,19 @@ sequenceDiagram
     participant REPO as WorkflowRepository
     participant ER as EventRecorder
 
-    C->>ENG: execute(workflowId, inputs)
-    ENG->>REPO: findDefinition(workflowId)
-    ENG->>REPO: saveInstance(CREATED)
+    C->>CMD: start(workflowId, inputs)
+    CMD->>REPO: findDefinition(workflowId)
+    CMD->>REPO: saveInstance(CREATED)
+    CMD-->>C: instanceId（立即返回）
+    CMD->>RUNNER: submitAsync(instance, definition)
+    RUNNER->>ENG: executeFromInstance(instance, definition)
     ENG->>ER: record(INSTANCE_CREATED)
     ENG->>ENG: transition(CREATED → RUNNING)
     ENG->>DAG: buildExecutionPlan(steps)
     DAG-->>ENG: ExecutionPlan（拓扑排序）
 
     loop DAG 调度循环
-        ENG->>DAG: getReadySteps(completedIds)
+        ENG->>DAG: getReadySteps(steps, completedIds)
         DAG-->>ENG: 就绪步骤列表
         ENG->>ER: record(STEP_STARTED)
         ENG->>SE: executeStep(step, context)
@@ -137,7 +175,27 @@ sequenceDiagram
 
     ENG->>ENG: transition(RUNNING → COMPLETED)
     ENG->>REPO: updateInstance(COMPLETED)
-    ENG-->>C: WorkflowInstance
+```
+
+#### WaitStep/ApprovalStep 阻塞与唤醒流程
+
+```mermaid
+sequenceDiagram
+    participant ENG as WorkflowEngine
+    participant REPO as WorkflowRepository
+    participant WS as WakeupScheduler
+    participant CMD as WorkflowCommandService
+
+    Note over ENG: WaitStep 执行
+    ENG->>REPO: updateInstance(WAITING, wakeUpAt, blockedStepId)
+
+    Note over WS: 定时扫描
+    WS->>REPO: findExpiredInstances(now)
+    REPO-->>WS: [expired instances]
+    WS->>CMD: resume(instanceId)
+    CMD->>ENG: resumeFromBlocked(instance, definition)
+    ENG->>ENG: blockedStepId → completedStepIds, 清除阻塞字段
+    ENG->>ENG: 继续 DAG 调度
 ```
 
 ### 状态机
@@ -202,5 +260,6 @@ stateDiagram-v2
 | `lifepilot.workflow.retry.max-attempts` | `3` | 最大重试次数 |
 | `lifepilot.workflow.approval.default-timeout-seconds` | `86400` | 审批默认超时（秒） |
 | `lifepilot.workflow.approval.auto-approve-on-timeout` | `false` | 超时后是否自动批准 |
+| `lifepilot.workflow.wakeup.scan-interval-seconds` | `10` | WakeupScheduler 扫描间隔（秒） |
 | `lifepilot.workflow.event-audit.enabled` | `true` | 审计事件记录开关 |
 | `lifepilot.workflow.event-audit.retention-days` | `90` | 事件保留天数 |
