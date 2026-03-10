@@ -1,116 +1,51 @@
-# 提示词管理特性说明
+# 提示词管理 — 特性说明
+
+> **文档性质**：特性说明文档
+> **模块归属**：`com.lifepilot.prompt`
+> **最后更新**：2026-03
 
 ## 1. 功能概述
 
-提示词管理特性将项目中 14 处硬编码 LLM 提示词统一外部化到 classpath 资源文件（`.st` 模板），通过 Spring AI PromptTemplate 实现模板化管理，同时对提示词内容进行结构化优化。
-
-用户价值：
-- 提示词独立于代码迭代，修改后无需重新编译
-- 统一的模板引擎消除变量插值方式不一致问题
-- 结构化提示词提升 LLM 响应质量和一致性
+提示词管理模块提供统一的提示词模板管理能力，将 LLM 提示词从业务代码中解耦为独立的模板文件。系统中所有需要构造提示词的模块（Agent 引擎、记忆系统、知识库、Skill 系统等）通过 `PromptRegistry` 获取渲染后的提示词，实现提示词的集中管理、独立维护和版本控制。
 
 ## 2. 核心特性
 
-### 2.1 PromptRegistry 提示词注册中心
+### 2.1 模板自动扫描与注册
 
-- 启动时自动扫描 `classpath:prompts/` 目录，注册所有 `.st` 模板文件
-- 提供 `render(key, variables)` 统一渲染接口
-- ConcurrentHashMap 缓存已加载模板，避免重复 I/O
-- 模板键与文件路径映射：`agent/understanding` → `prompts/agent/understanding.st`
+启动时自动扫描 `classpath:prompts/` 目录下所有 `.st` 模板文件，按目录结构生成模板键（如 `agent/understanding`），注册到内存缓存中。无需手动配置模板列表。
 
-### 2.2 提示词模板外部化
+### 2.2 变量替换渲染
 
-- 所有 LLM 提示词从 Java 源码迁移到 `src/main/resources/prompts/` 目录
-- 使用 Spring AI PromptTemplate（StringTemplate 4 引擎）
-- 变量占位符：`{variable}` 语法
-- 支持条件渲染和列表迭代
+基于 Spring AI `PromptTemplate`（StringTemplate 格式），支持 `{variableName}` 变量占位符。调用 `render(key, variables)` 传入变量 Map 即可获得渲染后的提示词文本。
 
-### 2.3 提示词内容结构化优化
+### 2.3 按功能域组织
 
-- 采用 XML 标签分区：`<role>` / `<context>` / `<instructions>` / `<constraints>` / `<output_format>`
-- 遵循 Context Engineering 范式优化信息密度
-- 为关键提示词补充 few-shot 示例
-- 统一输出格式约束
+模板按功能域分目录管理，当前包含 7 个域约 20 个模板：
+- `agent/` — Agent 各执行阶段的系统提示词
+- `memory/` — 对话压缩和实体压缩提示词
+- `knowledge/` — 重排序和分块上下文增强提示词
+- `proactive/` — 主动推理评估提示词
+- `semantic/` — 实体消歧义提示词
+- `skill/` — 内置 Skill 的 instructions 提示词
+- `generation/` — Skill 自动生成提示词
+
+### 2.4 提示词与代码分离
+
+提示词以独立 `.st` 文件存储在 resources 目录中，修改提示词内容无需重新编译 Java 代码。支持通过配置 `lifepilot.prompt.base-path` 自定义模板根目录。
 
 ## 3. 使用场景
 
-### 场景 1：修改 Agent 阶段提示词
-编辑 `src/main/resources/prompts/agent/understanding.st`，重启应用即可生效，无需修改 Java 代码。
-
-### 场景 2：新增 Skill 提示词
-在 `src/main/resources/prompts/skill/` 下创建新的 `.st` 文件，PromptRegistry 自动发现并注册。
-
-### 场景 3：动态变量注入
-```java
-var prompt = promptRegistry.render("proactive/evaluation", Map.of(
-    "maxContentLength", config.getMaxContentLength(),
-    "type", candidate.type(),
-    "urgency", candidate.urgency(),
-    "reason", candidate.reason()
-));
-```
+Agent 引擎在每个执行阶段（理解、规划、反思、响应）通过 PromptRegistry 获取对应的系统提示词，注入角色定义、时间锚点等动态变量。记忆系统在对话压缩时渲染压缩提示词，在实体冲突检测时渲染消歧义提示词。知识库在文档检索后通过重排序提示词对候选结果精排。内置 Skill 在注册时通过 PromptRegistry 获取各自的 instructions 文本。Skill 自动生成功能通过渲染生成提示词构造 LLM 请求。
 
 ## 4. 配置项
 
 | 配置键 | 默认值 | 说明 |
 |--------|--------|------|
-| lifepilot.prompt.base-path | classpath:prompts/ | 提示词模板根目录 |
+| `lifepilot.prompt.base-path` | `classpath:prompts/` | 模板文件根目录 |
 
-## 5. Agent 提示词内容增强（Phase 2）
+## 5. 限制与未来方向
 
-在 Phase 1 完成外部化基础设施后，Phase 2 聚焦于提升 Agent 阶段提示词的内容质量，基于 2025-2026 前沿调研成果（Context Engineering、Lost-in-the-Middle、Spring AI 结构化输出等）进行系统性优化。
-
-### 5.1 角色定义增强
-
-- 从单行描述扩展为四维角色定义：身份声明、核心能力范围、行为准则、交互风格
-- 核心能力覆盖：待办管理、日程安排、习惯追踪、记忆管理、知识库检索、数据同步
-- 行为准则：隐私保护、诚实承认能力边界、工具优先、主动澄清
-- 交互风格：简洁友好、中文为主、适度 emoji
-- 字数控制在 300 字以内，为动态上下文预留窗口预算
-
-### 5.2 冗余格式指令清理
-
-- 移除 UNDERSTANDING/PLANNING/REFLECTING 三个阶段的 `<constraints>`、`<output_format>`、`<examples>` 中的 JSON 格式指令
-- 原因：Spring AI `.entity()` 自动注入 JSON Schema，手动格式指令冗余且可能冲突
-- RESPONDING 阶段保留自然语言输出指令（不使用 `.entity()`）
-
-### 5.3 记忆上下文使用引导
-
-- 为 UNDERSTANDING/PLANNING/REFLECTING 三个阶段添加 `<context_guide>` 分区
-- 解释四种上下文区域的含义和使用方式：相关记忆、知识库片段、跨会话参考、推理上下文
-- 引导 LLM 将记忆内容视为参考而非绝对事实，不确定时主动确认
-
-### 5.4 工具选择策略
-
-- PLANNING 阶段新增 `<tool_strategy>` 分区
-- 四项策略：直接匹配优先、数据依赖排序、参数提取与澄清、选择理由说明
-
-### 5.5 反思评估维度
-
-- REFLECTING 阶段新增 `<evaluation_dimensions>` 分区
-- 三个评估维度：完整性、准确性、意图匹配
-- 要求 needsReplanning=true 时提供具体调整方向
-
-### 5.6 响应人格与风格
-
-- RESPONDING 阶段新增 `<tone_style>` 和 `<response_structure>` 分区
-- 基础语气：友好、简洁、专业
-- 按任务类型适配：信息查询简洁直接、错误场景诚恳并提供替代方案
-- 回复结构：核心回答 → 补充说明 → 后续建议
-
-### 5.7 死代码清理与常量迁移
-
-- 删除 `executing.st`（EXECUTING 阶段直接执行工具，不经过 LLM）
-- 将 AgentLoop 中硬编码的 `STREAMING_OUTPUT_CONSTRAINT` 迁移到 `streaming-constraint.st` 模板
-
-## 6. 限制与未来扩展
-
-### 当前限制
-- 模板仅支持 classpath 加载，不支持运行时热更新
-- 无提示词版本管理和 A/B 测试能力
-- 无提示词效果评估指标
-
-### 未来扩展方向
-- 集成 Promptfoo 进行提示词回归测试
-- 支持文件系统监听实现热更新
-- 提示词版本化 + 效果对比评估
+- 模板在启动时一次性加载，运行时修改 `.st` 文件需要重启生效
+- 当前不支持模板热加载或动态刷新
+- 未来可增加模板版本管理和 A/B 测试能力
+- 未来可支持从外部目录（如用户配置目录）加载自定义模板覆盖内置模板
