@@ -32,7 +32,7 @@ ZhiWei 是一个本地运行的个人 AI Agent 助手。它不只是被动执行
 - 三层混合架构：Java 原生 Skill + YAML 声明式 Skill + MCP 外部工具
 - Skill 自扩展：Agent 运行时自动检测能力缺口，生成 YAML Skill
 - YAML Skill 运行时热加载，修改即时生效
-- 内置 Skill：待办管理 / 日程管理 / 习惯追踪 / 记忆查询
+- 内置 Skill：待办管理 / 日程管理 / 习惯追踪 / 记忆查询 / 通用数据存储
 
 ### 📚 知识库管理
 - 多格式文档解析（PDF / Word / Markdown / TXT）
@@ -83,6 +83,12 @@ ZhiWei 是一个本地运行的个人 AI Agent 助手。它不只是被动执行
 ### 🖥️ Web UI
 - Vue 3 SPA，27 个页面视图
 - SSE 流式对话 + A2UI Generative UI 渲染
+
+### 📦 通用数据存储
+- Schema-Free JSON 文档持久化，三种集合类型（Document / Note / Metric）
+- 可选属性定义：声明后获得类型校验 + SQLite Generated Column 索引加速
+- 7 个 Agent 工具：集合 CRUD + 文档 CRUD + 时序聚合
+- FTS5 全文搜索（Note 类型）+ 时序聚合分析（Metric 类型）
 
 ### 🏠 本地优先架构
 - 所有数据存储在本地 `~/.zhiwei/`
@@ -204,6 +210,7 @@ zhiwei/
 │   ├── agent/           # Agent 引擎（AgentLoop / StateReducer / ContextAssembler）
 │   ├── config/          # 全局配置
 │   ├── conversation/    # 对话管理
+│   ├── datastore/       # 通用数据存储（Schema-Free JSON 文档 / 全文搜索 / 时序聚合）
 │   ├── eval/            # Agentic Evals 评估框架
 │   ├── guardrail/       # 护栏引擎（风险检测 / 数据脱敏）
 │   ├── interaction/     # 交互层（Web / CLI）

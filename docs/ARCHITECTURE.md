@@ -55,6 +55,7 @@ graph TB
         MCP["MCP 协议<br/>外部工具桥接"]
         WF["工作流引擎<br/>YAML 声明式编排"]
         SANDBOX["代码沙箱<br/>安全执行环境"]
+        DS["通用数据存储<br/>JSON 文档/全文搜索/时序聚合"]
     end
 
     subgraph "知识层"
@@ -94,6 +95,7 @@ graph TB
     TOOL --> MCP
     SKILL --> WF
     SKILL --> SANDBOX
+    DS --> DB
     CTX --> MEM
     CTX --> KB
     CTX --> PROMPT
@@ -127,6 +129,7 @@ graph TB
 | `skill` | Skill 注册/激活/热加载、内置 Skill、自扩展（Gap 检测 + YAML 生成） | [架构](architecture/skill-system.md) · [特性](features/skill-system.md) |
 | `interaction` | CLI 交互、MessageGateway、中间件管道、Channel 适配器、Web 端点 | [架构](architecture/cli-interaction.md) · [架构](architecture/gateway-middleware.md) · [特性](features/gateway-channels.md) |
 | `conversation` | 对话历史存储、会话视图查询 | [架构](architecture/conversation.md) · [特性](features/conversation.md) |
+| `datastore` | 通用数据存储（Schema-Free JSON 文档、全文搜索、时序聚合、7 个 Agent 工具） | [架构](architecture/generic-data-store.md) · [特性](features/generic-data-store.md) |
 | `workflow` | YAML 声明式工作流、触发器（Cron/Event/Condition/Signal）、状态持久化 | [架构](architecture/workflow.md) · [特性](features/workflow.md) |
 | `sandbox` | 代码执行沙箱（Process/Docker/Remote）、会话复用、危险操作预检 | [架构](architecture/sandbox.md) · [特性](features/sandbox.md) |
 | `media` | 多模态处理（图片预处理、音频、文档格式检测） | [架构](architecture/multimodal.md) · [特性](features/multimodal.md) |
@@ -180,6 +183,7 @@ graph LR
         V5["V5~V6: 记忆系统"]
         V7["V7: 语义记忆 + 知识图谱"]
         V8["V8+: 后续模块"]
+        V44["V44: 通用数据存储"]
     end
 
     V1 --> SQL
