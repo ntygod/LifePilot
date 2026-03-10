@@ -78,7 +78,7 @@ public class DynamicToolRegistry {
     public void registerYamlTools(List<ToolContract> yamlTools) {
         List<String> registeredIds = new ArrayList<>();
         for (ToolContract tool : yamlTools) {
-            if (registerWithPriority(tool, ToolLayer.YAML_DECLARATIVE, "yaml")) {
+            if (registerWithPriority(tool, ToolLayer.SKILL_DECLARATIVE, "skill")) {
                 yamlToolIds.put(tool.id(), Boolean.TRUE);
                 registeredIds.add(tool.id());
             }
@@ -87,7 +87,7 @@ public class DynamicToolRegistry {
             guardrailEngine.addAllowedTools(registeredIds);
             invalidateSnapshot();
             eventPublisher.publishEvent(new ToolsRegistered(
-                    List.copyOf(registeredIds), ToolLayer.YAML_DECLARATIVE, "yaml"));
+                    List.copyOf(registeredIds), ToolLayer.SKILL_DECLARATIVE, "skill"));
             log.info("YAML 工具注册完成: count={}", registeredIds.size());
         }
     }

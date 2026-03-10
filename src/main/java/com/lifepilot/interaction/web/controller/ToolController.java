@@ -4,7 +4,7 @@ import com.lifepilot.interaction.web.model.ErrorResponse;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.tool.ToolContract;
-import com.lifepilot.tool.YamlTool;
+import com.lifepilot.tool.SkillTool;
 import com.lifepilot.tool.model.ToolBudget;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolLayer;
@@ -256,7 +256,7 @@ public class ToolController {
             List<String> tags = (List<String>) request.getOrDefault("tags", List.of());
 
             // 创建 YamlTool（当前版本不支持直接执行，仅用于注册和显示）
-            YamlTool tool = new YamlTool(
+            SkillTool tool = new SkillTool(
                     id,
                     name,
                     description,
@@ -311,10 +311,10 @@ public class ToolController {
                     .body(new ErrorResponse(404, "Tool 不存在: id=" + id, Instant.now()));
         }
 
-        // 检查是否为 YAML Tool（只有 YAML Tool 可以更新）
-        if (existingTool.layer() != ToolLayer.YAML_DECLARATIVE) {
+        // 检查是否为 Skill Tool（只有 Skill Tool 可以更新）
+        if (existingTool.layer() != ToolLayer.SKILL_DECLARATIVE) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(new ErrorResponse(400, "只能更新用户创建的 Tool（YAML 类型）", Instant.now()));
+                    .body(new ErrorResponse(400, "只能更新用户创建的 Tool（Skill 类型）", Instant.now()));
         }
 
         try {
@@ -343,7 +343,7 @@ public class ToolController {
             @SuppressWarnings("unchecked")
             List<String> tags = (List<String>) request.getOrDefault("tags", existingTool.tags());
 
-            YamlTool updatedTool = new YamlTool(
+            SkillTool updatedTool = new SkillTool(
                     id,
                     name,
                     description,
@@ -416,7 +416,7 @@ public class ToolController {
         }
 
         // 删除 Tool
-        if (tool.layer() == ToolLayer.YAML_DECLARATIVE) {
+        if (tool.layer() == ToolLayer.SKILL_DECLARATIVE) {
             // 从文件系统删除
             if (persistenceService == null) {
                 return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
@@ -515,7 +515,7 @@ public class ToolController {
     private String getSourceString(ToolLayer layer) {
         return switch (layer) {
             case JAVA_NATIVE -> "builtin";
-            case YAML_DECLARATIVE -> "yaml";
+            case SKILL_DECLARATIVE -> "skill";
             case MCP_EXTERNAL -> "mcp";
         };
     }

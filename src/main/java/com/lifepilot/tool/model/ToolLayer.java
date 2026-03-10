@@ -14,8 +14,8 @@ public enum ToolLayer {
     /** MCP 外部工具 — 优先级最低（1）。 */
     MCP_EXTERNAL(1),
 
-    /** YAML 声明式工具 — 优先级中等（2）。 */
-    YAML_DECLARATIVE(2),
+    /** Skill 声明式工具 — 优先级中等（2）。 */
+    SKILL_DECLARATIVE(2),
 
     /** Java 原生工具 — 优先级最高（3）。 */
     JAVA_NATIVE(3);
