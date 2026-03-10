@@ -276,10 +276,10 @@ public class WorkflowEngine {
                                         List<WorkflowStep> steps,
                                         Set<String> completedStepIds,
                                         int nestingDepth) {
-        dagScheduler.buildExecutionPlan(steps);
+        ExecutionPlan plan = dagScheduler.buildExecutionPlan(steps);
 
-        while (dagScheduler.hasNext(completedStepIds)) {
-            List<WorkflowStep> readySteps = dagScheduler.getReadySteps(completedStepIds);
+        while (dagScheduler.hasNext(plan, completedStepIds)) {
+            List<WorkflowStep> readySteps = dagScheduler.getReadySteps(plan, completedStepIds);
             if (readySteps.isEmpty()) {
                 log.error("DAG 调度异常：hasNext=true 但无就绪步骤: instanceId={}", instance.id());
                 return failWorkflow(instance, "DAG 调度异常：无就绪步骤");

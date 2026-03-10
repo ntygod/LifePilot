@@ -15,19 +15,21 @@ import com.lifepilot.workflow.model.WorkflowStep;
 /**
  * DAG 拓扑排序与并行调度器。
  *
- * <p>无状态组件，所有状态通过参数传入。使用 Kahn 算法进行拓扑排序和环检测。
+ * <p>无状态纯函数组件，所有状态通过参数传入，不持有任何实例字段。
+ * 使用 Kahn 算法进行拓扑排序和环检测。
  * 当步骤均无 dependsOn 声明时，退化为按列表原始顺序串行执行（每个步骤隐式依赖前一个）。
+ *
+ * <p>多个工作流实例可安全并发调用本组件的所有方法。
  *
  * @author zsg
  * @since 2026-03-09
  */
 public class DagScheduler {
 
-    /** 当前执行计划（由 buildExecutionPlan 构建）。 */
-    private ExecutionPlan currentPlan;
-
     /**
      * 构建执行计划：Kahn 拓扑排序 + 环检测。
+     *
+     * <p>纯函数，仅返回 ExecutionPlan，不存储任何状态。
      *
      * <p>当所有步骤的 dependsOn 均为空时，退化为按列表原始顺序串行：
      * 每个步骤隐式依赖前一个步骤。
@@ -71,32 +73,29 @@ public class DagScheduler {
         // Kahn 拓扑排序
         List<String> topologicalOrder = kahnSort(stepMap.keySet(), dependencyMap);
 
-        this.currentPlan = new ExecutionPlan(
+        return new ExecutionPlan(
                 List.copyOf(topologicalOrder),
                 Map.copyOf(stepMap),
                 Map.copyOf(dependencyMap)
         );
-        return this.currentPlan;
     }
 
     /**
      * 获取当前可执行的步骤（所有前置依赖均已在 completedStepIds 中）。
      *
+     * @param plan             执行计划
      * @param completedStepIds 已完成步骤 ID 集合
      * @return 就绪步骤列表
      */
-    public List<WorkflowStep> getReadySteps(Set<String> completedStepIds) {
-        if (currentPlan == null) {
-            return List.of();
-        }
+    public List<WorkflowStep> getReadySteps(ExecutionPlan plan, Set<String> completedStepIds) {
         List<WorkflowStep> ready = new ArrayList<>();
-        for (String stepId : currentPlan.topologicalOrder()) {
+        for (String stepId : plan.topologicalOrder()) {
             if (completedStepIds.contains(stepId)) {
                 continue; // 已完成，跳过
             }
-            Set<String> deps = currentPlan.dependencyMap().getOrDefault(stepId, Set.of());
+            Set<String> deps = plan.dependencyMap().getOrDefault(stepId, Set.of());
             if (completedStepIds.containsAll(deps)) {
-                ready.add(currentPlan.stepMap().get(stepId));
+                ready.add(plan.stepMap().get(stepId));
             }
         }
         return List.copyOf(ready);
@@ -105,14 +104,12 @@ public class DagScheduler {
     /**
      * 是否还有未完成的步骤。
      *
+     * @param plan             执行计划
      * @param completedStepIds 已完成步骤 ID 集合
      * @return true 表示还有未完成步骤
      */
-    public boolean hasNext(Set<String> completedStepIds) {
-        if (currentPlan == null) {
-            return false;
-        }
-        return completedStepIds.size() < currentPlan.stepMap().size();
+    public boolean hasNext(ExecutionPlan plan, Set<String> completedStepIds) {
+        return completedStepIds.size() < plan.stepMap().size();
     }
 
     // ==================== 内部方法 ====================
@@ -177,3 +174,5 @@ public class DagScheduler {
         return sorted;
     }
 }
+
+
