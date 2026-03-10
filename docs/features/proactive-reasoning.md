@@ -1,145 +1,91 @@
-# 主动推理与认知记忆增强工作流
+# 主动推理引擎 — 特性说明
 
-> 本文档从 [FEATURES.md](../FEATURES.md) 拆分而来，对应原文 §2.11 / §2.12 章节。
+> **文档性质**：特性说明文档
+> **模块归属**：`com.lifepilot.agent.proactive`
+> **最后更新**：2026-03
 
-> ✅ 主动推理引擎已实现（Phase 3，模块 12）。详细架构设计参见 [architecture/proactive-reasoning.md](../architecture/proactive-reasoning.md)。
+## 1. 功能概述
 
-## 1. 主动推理与智能提醒 (ProactiveReasoner)
+主动推理引擎让知微从"被动应答"进化为"主动关怀"——在用户未发起对话时，自动感知待办截止、日程临近、习惯打卡等场景，生成个性化提醒推送给用户。引擎通过智能降频机制学习用户偏好，避免过度打扰。
 
-ZhiWei 不只是等你提问，它将在合适的时机主动帮助你。这是 ZhiWei 最核心的差异化能力之一。
+## 2. 核心特性
 
-### 1.1 两阶段推理
+### 2.1 两阶段推理管线
 
-```mermaid
-flowchart TD
-    A[定时触发 / 事件触发] --> B[Stage 1: 信号收集 + 规则引擎]
-    B --> C{通过规则过滤?}
-    C -->|免打扰时段| D[跳过]
-    C -->|提醒已关闭| D
-    C -->|已降频未到间隔| D
-    C -->|无触发信号| D
-    C -->|通过| E[Stage 2: LLM 智能评估]
-    E --> F{值得打扰用户?}
-    F -->|否| D
-    F -->|是| G[生成提醒内容]
-    G --> H[选择通知通道]
-    H --> I[发送提醒]
-    I --> J[追踪用户响应]
-    J --> K[更新频率状态机]
-```
+推理过程分为两个阶段：Stage 1 由规则引擎进行确定性过滤（执行时间 < 10ms），快速筛选出候选提醒；Stage 2 由 LLM 对候选进行精细评估，判断是否值得发送并生成个性化内容。HIGH 紧急度候选跳过 LLM 直接模板渲染，确保紧急通知零延迟。
 
-**Stage 1（规则引擎，< 10ms）**：快速收集信号并过滤，避免不必要的 LLM 调用。
+### 2.2 六种通知类型
 
-信号类型：
-- 时间信号：当前时间、距上次交互时长
-- 任务信号：即将到期待办、即将开始日程
-- 习惯信号：待打卡习惯、连续打卡即将中断
-- 行为信号：用户活跃度、最近交互模式
+| 类型 | 触发条件 | 紧急度 |
+|------|---------|--------|
+| 待办截止提醒 | 24 小时内到期的 PENDING/IN_PROGRESS 待办 | ≤2h HIGH / ≤12h MEDIUM / 其他 LOW |
+| 日程开始提醒 | 30 分钟内开始的日程 | HIGH |
+| 习惯打卡提醒 | 今日未打卡的习惯 | LOW |
+| 连续打卡风险 | 有连续打卡记录但今日未打卡 | MEDIUM |
+| 每日总结 | 每天指定时间触发 | LOW |
+| 每周回顾 | 每周指定日期和时间触发 | LOW |
 
-**Stage 2（LLM 评估，~500ms）**：综合用户画像和历史反馈，判断是否值得打扰。
+### 2.3 三态智能降频
 
-### 1.2 智能降频状态机
+每个通知类型独立维护频率状态，根据用户响应行为自动调整：
 
-每个提醒类型独立维护频率状态：
+- NORMAL：所有紧急度均发送
+- REDUCED：连续忽略达到阈值后进入，仅发送 HIGH/MEDIUM，冷却期延长
+- MUTED：继续忽略后进入静默，仅发送 HIGH 紧急度
 
-```
-NORMAL ──[连续忽略 ≥ 3]──→ REDUCED ──[连续忽略 ≥ 3]──→ MUTED
-  ↑                           ↑                           │
-  └──[用户确认 1 次]──────────┘──[用户确认 1 次]───────────┘
-```
+用户一旦确认（回复相关消息），立即恢复到 NORMAL 状态。降频是渐进的，恢复是即时的。
 
-| 状态 | 行为 | 说明 |
-|------|------|------|
-| NORMAL | 按正常间隔发送 | 默认状态 |
-| REDUCED | 发送间隔 ×3 | 用户可能不太关注此类提醒 |
-| MUTED | 仅高紧急度时发送 | 用户明确不想被打扰 |
+### 2.4 多通道通知分发
 
-**关键设计**：降频是渐进的，恢复是即时的。用户只要响应一次就恢复频率，避免"沉默螺旋"。
+通知根据紧急程度路由到不同通道：
 
-### 1.3 触发场景示例
+- HIGH/MEDIUM：遍历所有已注册通道广播（日志通道 + Gateway 通道）
+- LOW：入队被动通知队列，等待用户下次交互时附带展示
 
-```
-[周五 14:00]
-ZhiWei：📝 检测到你通常这个时候准备周报。
-         本周完成了 8 项待办，参加了 5 场会议。
-         需要我帮你生成周报草稿吗？
+Gateway 通道桥接 ChannelAdapter，可将通知推送到企微、钉钉、飞书等外部渠道。
 
-[周二 08:45]  
-ZhiWei：📅 提醒：15 分钟后有「团队周会」（会议室A）
-         💡 上周会议遗留了 2 个 Action Item 待跟进：
-         1. 确认 Q2 预算方案
-         2. 更新项目时间线
-```
+### 2.5 免打扰时段
 
-## 2. 认知记忆增强工作流
+支持配置免打扰时段（默认 22:00 ~ 08:00），时段内所有推理周期自动跳过。支持跨午夜时段配置。
 
-超越传统的定时任务和事件触发，将构建"记忆驱动的自动化"工作流引擎。这是 ZhiWei 的原创设计。
+### 2.6 用户响应追踪
 
-### 2.1 传统自动化 vs 记忆驱动自动化
+通过关键词匹配判断用户消息是否与已发送通知相关。每种通知类型关联一组中文/英文关键词（如待办截止关联"待办""截止""到期""deadline"）。超过响应窗口未回复的通知标记为忽略，触发降频。
 
-| 维度 | 传统自动化（如 Cron） | ZhiWei 记忆驱动自动化 |
-|------|----------------------|--------------------------|
-| 触发方式 | 固定时间 / 固定事件 | 记忆模式匹配 + 时间 + 事件 |
-| 上下文感知 | 无 | 完整认知记忆 + 知识图谱 |
-| 决策能力 | 固定规则 | ProactiveReasoner 动态推理 |
-| 学习能力 | 无 | 根据执行结果优化触发策略 |
+## 3. 使用场景
 
-### 2.2 记忆模式触发示例
+用户设置了一个明天下午 2 点截止的待办"提交季度报告"。当天上午 10 点，主动推理引擎在定时推理周期中收集到该信号，规则引擎判定距截止 4 小时，紧急度为 MEDIUM。LLM 评估后生成个性化提醒："季度报告还有 4 小时截止，建议现在开始整理数据。"通知通过 Gateway 推送到用户的企微。
 
-```
-场景：ZhiWei 发现你最近三周每周五下午都会查看周报数据
+用户收到后回复"好的，马上处理"，ResponseTracker 检测到关键词"待办"匹配，将该类型频率状态恢复为 NORMAL。
 
-触发条件：
-  - 记忆模式：连续 3 次「周五下午 + 查看周报」行为
-  - 时间条件：周五 14:00
-  - 置信度：> 0.8
+如果用户连续 3 次忽略习惯打卡提醒，该类型自动降频到 REDUCED，之后只在 MEDIUM 以上紧急度时才发送（如连续打卡风险）。
 
-自动动作：
-  1. 从知识图谱获取本周关键事项
-  2. 调用数据查询工具汇总本周数据
-  3. 生成周报草稿
-  4. 推送通知：「检测到你通常这个时候准备周报，已为你生成草稿 📝」
-```
+## 4. 配置项
 
-### 2.3 工作流定义
+| 配置键 | 默认值 | 说明 |
+|--------|--------|------|
+| `lifepilot.agent.proactive.enabled` | `true` | 是否启用主动推理 |
+| `lifepilot.agent.proactive.interval-ms` | `1800000` | 推理周期间隔（毫秒） |
+| `lifepilot.agent.proactive.quiet-hours-start` | `22` | 免打扰开始小时（0-23） |
+| `lifepilot.agent.proactive.quiet-hours-end` | `8` | 免打扰结束小时（0-23） |
+| `lifepilot.agent.proactive.cooldown-minutes-per-type.*` | 按类型 | 各通知类型独立冷却时间（分钟） |
+| `lifepilot.agent.proactive.daily-summary-hour` | `21` | 每日总结触发小时 |
+| `lifepilot.agent.proactive.weekly-review-day` | `7` | 每周回顾触发星期（1=周一，7=周日） |
+| `lifepilot.agent.proactive.weekly-review-hour` | `10` | 每周回顾触发小时 |
+| `lifepilot.agent.proactive.response-window-minutes` | `30` | 用户响应窗口（分钟） |
+| `lifepilot.agent.proactive.ignore-threshold` | `3` | 连续忽略降频阈值 |
+| `lifepilot.agent.proactive.reduced-multiplier` | `3` | REDUCED 状态冷却期倍数 |
+| `lifepilot.agent.proactive.max-content-length` | `100` | 通知内容最大字符数 |
+| `lifepilot.agent.proactive.type-enabled.*` | `true` | 各通知类型独立启用开关 |
 
-```yaml
-# ~/.zhiwei/workflows/weekly-report.yml
-workflow:
-  id: weekly-report-assist
-  name: 周报辅助
-  description: 基于记忆模式自动准备周报
+## 5. 限制与未来方向
 
-  triggers:
-    - type: memory-pattern          # 记忆模式触发
-      pattern: "周五下午 + 查看周报"
-      min-occurrences: 3
-      confidence: 0.8
-    - type: schedule                # 兜底定时触发
-      cron: "0 0 14 ? * FRI"
+当前限制：
+- 关键词匹配判断用户响应相关性，准确率有限，未来可引入语义匹配
+- 信号源仅覆盖内置技能（待办/日程/习惯），未来可扩展到外部数据源同步的事件
+- 被动通知队列为内存队列，重启后丢失，未来可持久化
 
-  context:
-    memory-query:
-      - "本周完成的任务"
-      - "本周重要会议"
-      - "本周待解决问题"
-
-  steps:
-    - name: 收集数据
-      action: knowledge-graph.query
-      params:
-        time-range: this-week
-        entity-types: [事件, 待办]
-
-    - name: 生成周报
-      action: llm.generate
-      params:
-        prompt-template: weekly-report
-        context: "${steps.收集数据.result}"
-
-    - name: 推送通知
-      action: notification.send
-      params:
-        title: 周报草稿已就绪
-        body: "${steps.生成周报.result.summary}"
-```
+未来方向：
+- 基于用户行为模式学习最佳推送时间
+- 支持用户自定义规则（如"每天 9 点提醒我查看邮件"）
+- 引入 Idle-Driven 触发机制，在用户空闲时主动推送而非固定间隔
