@@ -8,6 +8,8 @@
 
 知微预装四个核心内置 Skill，覆盖个人生产力的核心场景。Agent 通过 `skills` 工具发现和激活这些 Skill，获取专业指令和工具列表后精准完成任务。内置 Skill 的工具直接操作 SQLite 数据库，执行确定性强、响应快速。
 
+其中 Todo、Schedule、Habit 三个 Skill 实现 `ProactiveSkillProvider` 接口，自动向主动推理引擎贡献信号源和候选提供者，实现"Skill 自包含主动推理能力"的插件化架构。每个内置 Skill 支持独立的启用/禁用配置开关。
+
 ## 2. 核心特性
 
 ### 2.1 待办管理（Todo Skill）
@@ -90,22 +92,23 @@ Memory Skill 是唯一直接操作记忆系统的内置 Skill，条件装配依�
 
 ## 4. 配置项
 
-内置 Skill 通过 Skill 系统统一配置，无独立配置项。
-
 | 配置键 | 默认值 | 说明 |
 |--------|--------|------|
 | `lifepilot.skills.enabled` | `true` | 控制所有内置 Skill 的注册 |
+| `lifepilot.skills.builtin.todo.enabled` | `true` | Todo Skill 启用开关 |
+| `lifepilot.skills.builtin.schedule.enabled` | `true` | Schedule Skill 启用开关 |
+| `lifepilot.skills.builtin.habit.enabled` | `true` | Habit Skill 启用开关 |
 
-MemorySkillProvider 额外依赖记忆系统 Bean 的可用性（`@ConditionalOnBean`）。
+MemorySkillProvider 始终注册（不受 `builtin.{id}.enabled` 控制），但依赖记忆系统 Bean 的可用性（`@ConditionalOnBean`）。禁用某个 Skill 时，其工具注册、蓝图注册和主动推理贡献均被跳过。
 
 ## 5. 限制与未来方向
 
 **当前限制**：
 - 内置 Skill 之间无直接协作机制，跨 Skill 协作依赖 Agent 层面的工具调用编排
-- 待办和日程的提醒功能依赖 ProactiveReasoner，非 Skill 内部实现
 - 习惯打卡无防重复机制，同一天可多次打卡
 
 **未来方向**：
 - 跨 Skill 智能关联：待办截止提醒自动关联日程冲突检测
 - 习惯数据可视化：通过 Web UI 展示打卡趋势图
 - 更多内置 Skill：笔记管理、财务记账等
+- 第三方 Skill 通过实现 ProactiveSkillProvider 扩展主动推理能力

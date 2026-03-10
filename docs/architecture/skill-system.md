@@ -53,8 +53,9 @@ graph TB
 
     subgraph "桥接与内置 bridge / builtin"
         STB["SkillToToolBridge<br/>统一 skills 工具"]
-        BSR["BuiltinSkillRegistrar<br/>ApplicationReady 注册"]
+        BSR["BuiltinSkillRegistrar<br/>ApplicationReady 注册<br/>配置开关 + ProactiveSkillProvider 检测"]
         BSP["BuiltinSkillProvider<br/>Todo / Schedule / Habit / Memory"]
+        PSP["ProactiveSkillProvider<br/>extends BuiltinSkillProvider<br/>signalSources() + candidateProviders()"]
     end
 
     subgraph "审计 audit"
@@ -73,6 +74,7 @@ graph TB
     STB --> SR
     STB --> SA
     BSR --> BSP
+    BSR --> PSP
     BSR --> SR
     SAR -.->|"监听事件"| SR
     SAR -.->|"监听事件"| SA
@@ -132,11 +134,13 @@ sealed interface，穷举四种来源，每种来源携带不同元数据：
 
 注册统一的 `skills` 工具到 `DynamicToolRegistry`，通过 `action` 参数分发两种操作：`list_skills`（返回所有 Skill 的 Discovery 摘要）和 `activate_skill`（激活指定 Skill，返回指令和建议工具）。Agent 通过调用此工具实现 Skill 的渐进式发现和按需激活。
 
-### 3.10 BuiltinSkillRegistrar + BuiltinSkillProvider（内置 Skill）
+### 3.10 BuiltinSkillRegistrar + BuiltinSkillProvider + ProactiveSkillProvider（内置 Skill）
 
-`BuiltinSkillRegistrar` 在 `ApplicationReadyEvent` 时收集所有 `BuiltinSkillProvider` Bean，按 `@BuiltinSkill` 注解的 `order` 升序排列，依次注册工具和 Skill 定义。单个注册失败不中断启动流程。
+`BuiltinSkillRegistrar` 在 `ApplicationReadyEvent` 时收集所有 `BuiltinSkillProvider` Bean，按 `@BuiltinSkill` 注解的 `order` 升序排列，依次注册工具和 Skill 定义。注入 `SkillConfigProperties`，注册前检查 `builtin.isEnabled(skillId)` 配置开关，禁用时跳过该 Skill 的全部注册。单个注册失败不中断启动流程。
 
-四个内置 Skill 提供者：`TodoSkillProvider`、`ScheduleSkillProvider`、`HabitSkillProvider`、`MemorySkillProvider`（条件装配，依赖 HybridRetriever 和 SemanticMemory）。
+若 Provider 实现了 `ProactiveSkillProvider` 接口（extends `BuiltinSkillProvider`），额外收集其 `signalSources()` 和 `candidateProviders()` 到内部列表，暴露 `getRegisteredSignalSources()` 和 `getRegisteredCandidateProviders()` 方法供 `ProactiveAutoConfiguration` 使用。
+
+四个内置 Skill 提供者：`TodoSkillProvider`、`ScheduleSkillProvider`、`HabitSkillProvider`（均实现 `ProactiveSkillProvider`）、`MemorySkillProvider`（条件装配，依赖 HybridRetriever 和 SemanticMemory，不参与主动推理）。Memory Skill 始终注册，不受配置开关控制。
 
 ### 3.11 SkillAuditRepository（审计追溯）
 
@@ -261,6 +265,7 @@ sequenceDiagram
 | 记忆系统 (`com.lifepilot.memory`) | Skill → Memory | MemorySkillProvider 依赖 HybridRetriever 和 SemanticMemory（条件装配） |
 | Prompt 管理 (`com.lifepilot.prompt`) | Skill → Prompt | SkillGenerator 通过 PromptRegistry 渲染生成 Prompt；内置 Skill 通过 PromptRegistry 加载指令模板 |
 | 可观测性 (`com.lifepilot.observability`) | Skill → Observability | SkillToToolBridge 引用 RiskLevel 枚举设置工具风险等级 |
+| 主动推理 (`com.lifepilot.agent.proactive`) | Skill → Proactive | BuiltinSkillRegistrar 收集 ProactiveSkillProvider 的 SignalSource 和 CandidateProvider，供 ProactiveAutoConfiguration 注入主动推理管线 |
 
 ## 7. 配置参考
 
@@ -284,3 +289,6 @@ sequenceDiagram
 | `lifepilot.skills.chain-action.max-steps` | `5` | 串联动作最大步数 |
 | `lifepilot.skills.http-action.ssrf-protection-enabled` | `true` | SSRF 防护开关 |
 | `lifepilot.skills.http-action.timeout-seconds` | `30` | HTTP 动作超时（秒） |
+| `lifepilot.skills.builtin.todo.enabled` | `true` | Todo Skill 启用开关 |
+| `lifepilot.skills.builtin.schedule.enabled` | `true` | Schedule Skill 启用开关 |
+| `lifepilot.skills.builtin.habit.enabled` | `true` | Habit Skill 启用开关 |
