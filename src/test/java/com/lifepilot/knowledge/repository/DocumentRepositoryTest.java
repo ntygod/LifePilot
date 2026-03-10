@@ -66,7 +66,8 @@ class DocumentRepositoryTest {
         jdbcTemplate.execute("DELETE FROM documents");
         jdbcTemplate.execute("DELETE FROM knowledge_bases");
         // 创建前置知识库
-        var kb = KnowledgeBase.create("测试知识库", "描述", "model");
+        var kb = KnowledgeBase.create("测试知识库", "描述", "model",
+                null, null, null, null);
         kbRepository.save(kb);
         knowledgeBaseId = kb.id();
     }
@@ -150,7 +151,8 @@ class DocumentRepositoryTest {
     @Test
     void findByKnowledgeBaseId_不同知识库的文档不混淆() {
         // 创建第二个知识库
-        var kb2 = KnowledgeBase.create("另一个知识库", "描述", "model");
+        var kb2 = KnowledgeBase.create("另一个知识库", "描述", "model",
+                null, null, null, null);
         kbRepository.save(kb2);
 
         var doc1 = createTestDocument(UUID.randomUUID().toString(), "doc1.md");
