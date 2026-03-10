@@ -28,6 +28,7 @@ import com.lifepilot.memory.working.WorkingMemory;
 import com.lifepilot.observability.redactor.DataRedactor;
 import com.lifepilot.observability.trace.TraceRecorder;
 import com.lifepilot.prompt.PromptRegistry;
+import com.lifepilot.llm.config.LlmAutoConfiguration;
 import com.lifepilot.tool.config.ToolAutoConfiguration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -50,7 +51,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * @author zsg
  * @since 2026-07-20
  */
-@AutoConfiguration(after = ToolAutoConfiguration.class)
+@AutoConfiguration(after = {ToolAutoConfiguration.class, LlmAutoConfiguration.class})
 @EnableConfigurationProperties(AgentConfigProperties.class)
 @ConditionalOnProperty(prefix = "lifepilot.agent", name = "enabled",
         havingValue = "true", matchIfMissing = true)
@@ -124,13 +125,11 @@ public class AgentAutoConfiguration {
     /**
      * 统一的 AgentLoop bean 创建方法。
      *
-     * <p>通过 {@code @Autowired(required = false)} 注入 {@link TraceRecorder}，
-     * 在依赖注入阶段自动解析，彻底消除 {@code @ConditionalOnBean} 跨
-     * auto-configuration 评估时序问题。</p>
+     * <p>通过 {@code @Autowired(required = false)} 注入可选依赖，
+     * 在依赖注入阶段自动解析。</p>
      */
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean(LlmRouter.class)
     public AgentLoop agentLoop(StateReducer stateReducer,
                                ContextAssembler contextAssembler,
                                LlmRouter llmRouter,

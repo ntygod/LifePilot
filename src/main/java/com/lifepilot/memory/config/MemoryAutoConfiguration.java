@@ -110,7 +110,7 @@ public class MemoryAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean({EpisodicMemory.class, LlmRouter.class})
+    @ConditionalOnBean({EpisodicMemory.class})
     public CompressionService compressionService(EpisodicMemory episodicMemory,
                                                  LlmRouter llmRouter,
                                                  PromptRegistry promptRegistry) {
@@ -204,7 +204,6 @@ public class MemoryAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean(LlmRouter.class)
     public VectorSearcher vectorSearcher(
             @Qualifier("vectorJdbcTemplate") JdbcTemplate vectorJdbcTemplate,
             JdbcTemplate jdbcTemplate,
@@ -248,7 +247,7 @@ public class MemoryAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean({SemanticMemory.class, LlmRouter.class})
+    @ConditionalOnBean({SemanticMemory.class})
     public RealtimeExtractor realtimeExtractor(LlmRouter llmRouter,
                                                SemanticMemory semanticMemory) {
         log.info("记忆系统: 注册 RealtimeExtractor（AUDN 实时实体提取）");
@@ -306,7 +305,7 @@ public class MemoryAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean({ProceduralMemory.class, VectorSearcher.class, LlmRouter.class})
+    @ConditionalOnBean({ProceduralMemory.class, VectorSearcher.class})
     public IntentMatcher intentMatcher(
             ProceduralMemory proceduralMemory,
             VectorSearcher vectorSearcher,
@@ -335,7 +334,7 @@ public class MemoryAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean({ProceduralMemory.class, LlmRouter.class})
+    @ConditionalOnBean({ProceduralMemory.class})
     public EpisodicToProceduralConsolidator episodicToProceduralConsolidator(
             JdbcTemplate jdbcTemplate,
             ProceduralMemory proceduralMemory,
