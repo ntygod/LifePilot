@@ -1,7 +1,9 @@
 package com.lifepilot.knowledge.ingest;
 
+import com.lifepilot.knowledge.chunking.ChunkingConfig;
 import com.lifepilot.knowledge.chunking.ChunkingStrategy;
 import com.lifepilot.knowledge.chunking.DocumentChunk;
+import com.lifepilot.knowledge.chunking.FixedSizeChunker;
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
 import com.lifepilot.knowledge.detect.DuplicateDetector;
 import com.lifepilot.knowledge.enricher.ChunkContextEnricher;
@@ -44,6 +46,7 @@ public class DocumentIngester {
 
     private final FormatDetector formatDetector;
     private final ChunkingStrategy smartChunker;
+    private final Map<String, ChunkingStrategy> chunkerRegistry;
     @Nullable
     private final ChunkContextEnricher contextEnricher;
     @Nullable
@@ -57,12 +60,14 @@ public class DocumentIngester {
     private final KnowledgeBaseRepository kbRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final KnowledgeBaseProperties props;
+    private final ChunkingConfig defaultChunkingConfig;
 
     /**
      * 构造文档导入管线。
      */
     public DocumentIngester(FormatDetector formatDetector,
                             ChunkingStrategy smartChunker,
+                            Map<String, ChunkingStrategy> chunkerRegistry,
                             @Nullable ChunkContextEnricher contextEnricher,
                             @Nullable VectorIndexer vectorIndexer,
                             FtsIndexer ftsIndexer,
@@ -72,9 +77,11 @@ public class DocumentIngester {
                             DocumentChunkRepository chunkRepository,
                             KnowledgeBaseRepository kbRepository,
                             ApplicationEventPublisher eventPublisher,
-                            KnowledgeBaseProperties props) {
+                            KnowledgeBaseProperties props,
+                            ChunkingConfig defaultChunkingConfig) {
         this.formatDetector = formatDetector;
         this.smartChunker = smartChunker;
+        this.chunkerRegistry = chunkerRegistry;
         this.contextEnricher = contextEnricher;
         this.vectorIndexer = vectorIndexer;
         this.ftsIndexer = ftsIndexer;
@@ -85,10 +92,12 @@ public class DocumentIngester {
         this.kbRepository = kbRepository;
         this.eventPublisher = eventPublisher;
         this.props = props;
-        log.info("DocumentIngester 初始化完成: vectorIndexer={}, contextEnricher={}, extractionPipeline={}",
+        this.defaultChunkingConfig = defaultChunkingConfig;
+        log.info("DocumentIngester 初始化完成: vectorIndexer={}, contextEnricher={}, extractionPipeline={}, chunkerRegistry={}",
                 vectorIndexer != null ? "启用" : "未启用",
                 contextEnricher != null ? "可用" : "不可用",
-                extractionPipeline != null ? "可用" : "不可用");
+                extractionPipeline != null ? "可用" : "不可用",
+                chunkerRegistry.keySet());
     }
 
     /**
@@ -276,7 +285,11 @@ public class DocumentIngester {
     }
 
     private List<DocumentChunk> doChunk(Document doc, ParseResult parseResult) {
-        var rawChunks = smartChunker.chunk(parseResult.text(), Map.of());
+        // 根据知识库的 chunkingStrategy 选择分块器
+        ChunkingStrategy selectedChunker = resolveChunker(doc.knowledgeBaseId());
+        Map<String, String> metadata = resolveChunkingConfigMetadata(doc.knowledgeBaseId());
+
+        var rawChunks = selectedChunker.chunk(parseResult.text(), metadata);
         // 填充 documentId 和 knowledgeBaseId
         return rawChunks.stream()
                 .map(c -> new DocumentChunk(
@@ -285,6 +298,108 @@ public class DocumentIngester {
                         c.tokenCount(), c.contentHash(), c.headingHierarchy(),
                         c.pageNumber(), c.metadata()))
                 .toList();
+    }
+
+    /**
+     * 根据知识库的 chunkingStrategy 解析对应的分块器。
+     *
+     * <p>如果知识库配置了 chunkingConfig 且策略为 fixed-size，
+     * 则构造临时 ChunkingConfig 覆盖全局默认值，创建临时分块器实例。
+     * 策略为 "smart" 或未知时回退到全局 SmartChunker。</p>
+     *
+     * @param kbId 知识库 ID
+     * @return 选中的分块器
+     */
+    private ChunkingStrategy resolveChunker(String kbId) {
+        var kbOpt = kbRepository.findById(kbId);
+        if (kbOpt.isEmpty()) {
+            log.warn("知识库不存在，回退到 SmartChunker: kbId={}", kbId);
+            return smartChunker;
+        }
+        var kb = kbOpt.get();
+        String strategy = kb.chunkingStrategy();
+
+        // "smart" 或空策略回退到全局 SmartChunker
+        if (strategy == null || strategy.isBlank() || "smart".equals(strategy)) {
+            return smartChunker;
+        }
+
+        // 从注册表查找对应分块器
+        var chunker = chunkerRegistry.get(strategy);
+        if (chunker == null) {
+            log.warn("未知分块策略，回退到 SmartChunker: strategy={}, kbId={}", strategy, kbId);
+            return smartChunker;
+        }
+
+        // 如果知识库有自定义 chunkingConfig，构造临时分块器
+        var kbConfig = kb.chunkingConfig();
+        if (kbConfig != null && !kbConfig.isEmpty()) {
+            return createConfiguredChunker(strategy, kbConfig, chunker);
+        }
+
+        log.debug("使用 per-KB 分块策略: strategy={}, kbId={}", strategy, kbId);
+        return chunker;
+    }
+
+    /**
+     * 根据知识库的 chunkingConfig 构造临时分块器实例。
+     *
+     * <p>从 chunkingConfig 中提取 maxChunkSize、minChunkSize、overlapSize 等参数，
+     * 覆盖全局默认 ChunkingConfig，创建新的分块器实例。</p>
+     */
+    private ChunkingStrategy createConfiguredChunker(String strategy, Map<String, Object> kbConfig,
+                                                      ChunkingStrategy fallback) {
+        try {
+            int maxChunkSize = getIntOrDefault(kbConfig, "maxChunkSize", defaultChunkingConfig.maxChunkSize());
+            int minChunkSize = getIntOrDefault(kbConfig, "minChunkSize", defaultChunkingConfig.minChunkSize());
+            int overlapSize = getIntOrDefault(kbConfig, "overlapSize", defaultChunkingConfig.overlapSize());
+            int maxChunkTokens = getIntOrDefault(kbConfig, "maxChunkTokens", defaultChunkingConfig.maxChunkTokens());
+
+            var customConfig = new ChunkingConfig(
+                    maxChunkSize, minChunkSize, overlapSize, maxChunkTokens,
+                    defaultChunkingConfig.respectSentences(),
+                    defaultChunkingConfig.respectParagraphs(),
+                    defaultChunkingConfig.enableContextPrefix());
+
+            // 仅 fixed-size 策略支持临时配置覆盖（其他策略需要额外构造参数）
+            if ("fixed-size".equals(strategy)) {
+                log.debug("使用自定义 ChunkingConfig 构造临时 FixedSizeChunker: config={}", kbConfig);
+                return new FixedSizeChunker(customConfig);
+            }
+
+            // 其他策略暂不支持临时配置覆盖，使用全局实例
+            log.debug("策略 {} 暂不支持 chunkingConfig 覆盖，使用全局实例", strategy);
+            return fallback;
+        } catch (Exception e) {
+            log.warn("构造临时分块器失败，回退到全局实例: strategy={}, error={}", strategy, e.getMessage());
+            return fallback;
+        }
+    }
+
+    /**
+     * 从 chunkingConfig Map 中提取 int 值，不存在时返回默认值。
+     */
+    private static int getIntOrDefault(Map<String, Object> config, String key, int defaultValue) {
+        var value = config.get(key);
+        if (value instanceof Number n) {
+            return n.intValue();
+        }
+        if (value instanceof String s) {
+            try {
+                return Integer.parseInt(s);
+            } catch (NumberFormatException ignored) {
+                // 忽略
+            }
+        }
+        return defaultValue;
+    }
+
+    /**
+     * 从知识库的 chunkingConfig 中提取元数据（传递给分块器的 metadata 参数）。
+     */
+    private Map<String, String> resolveChunkingConfigMetadata(String kbId) {
+        // 当前不传递额外元数据，保持与原有行为一致
+        return Map.of();
     }
 
     private List<DocumentChunk> doChunkAndEnrich(Document doc, ParseResult parseResult) {

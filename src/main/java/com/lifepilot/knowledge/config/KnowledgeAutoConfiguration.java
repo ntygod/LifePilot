@@ -34,6 +34,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.lang.Nullable;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -252,6 +253,10 @@ public class KnowledgeAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public DocumentIngester documentIngester(FormatDetector formatDetector, SmartChunker smartChunker,
+                                              FixedSizeChunker fixedSizeChunker,
+                                              RecursiveChunker recursiveChunker,
+                                              HeadingChunker headingChunker,
+                                              @Nullable SemanticChunker semanticChunker,
                                               @Nullable ChunkContextEnricher contextEnricher,
                                               @Nullable VectorIndexer vectorIndexer, FtsIndexer ftsIndexer,
                                               DuplicateDetector duplicateDetector,
@@ -260,10 +265,21 @@ public class KnowledgeAutoConfiguration {
                                               DocumentChunkRepository chunkRepository,
                                               KnowledgeBaseRepository kbRepository,
                                               ApplicationEventPublisher eventPublisher,
-                                              KnowledgeBaseProperties props) {
-        return new DocumentIngester(formatDetector, smartChunker, contextEnricher,
+                                              KnowledgeBaseProperties props,
+                                              ChunkingConfig chunkingConfig) {
+        // 构建分块器注册表
+        var registry = new java.util.HashMap<String, ChunkingStrategy>();
+        registry.put(fixedSizeChunker.strategyName(), fixedSizeChunker);
+        registry.put(recursiveChunker.strategyName(), recursiveChunker);
+        registry.put(headingChunker.strategyName(), headingChunker);
+        registry.put(smartChunker.strategyName(), smartChunker);
+        if (semanticChunker != null) {
+            registry.put(semanticChunker.strategyName(), semanticChunker);
+        }
+        log.info("分块器注册表: {}", registry.keySet());
+        return new DocumentIngester(formatDetector, smartChunker, Map.copyOf(registry), contextEnricher,
                 vectorIndexer, ftsIndexer, duplicateDetector, extractionPipeline,
-                docRepository, chunkRepository, kbRepository, eventPublisher, props);
+                docRepository, chunkRepository, kbRepository, eventPublisher, props, chunkingConfig);
     }
 
     // ---- 管理服务 ----
