@@ -21,3 +21,4 @@ com.lifepilot.a2a.config.A2aAutoConfiguration
 com.lifepilot.observability.config.ObservabilityAutoConfiguration
 com.lifepilot.marketplace.config.MarketplaceAutoConfiguration
 com.lifepilot.meta.config.MetaAutoConfiguration
+com.lifepilot.datastore.config.DataStoreAutoConfiguration
