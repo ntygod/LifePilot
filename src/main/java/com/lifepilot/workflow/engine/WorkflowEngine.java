@@ -485,7 +485,7 @@ public class WorkflowEngine {
 
             // 检查 WaitStep 特殊标记
             if ("wait".equals(output.get("__type"))) {
-                int durationSeconds = (int) output.get("durationSeconds");
+                int durationSeconds = ((Number) output.get("durationSeconds")).intValue();
                 insertStepLog(instance.id(), step.id(), stepType, StepState.COMPLETED,
                         attempt, null, toJson(output), null, stepStart);
 
@@ -505,7 +505,7 @@ public class WorkflowEngine {
 
             // 检查 ApprovalStep 特殊标记
             if ("approval".equals(output.get("__type"))) {
-                int timeoutSeconds = (int) output.get("timeoutSeconds");
+                int timeoutSeconds = ((Number) output.get("timeoutSeconds")).intValue();
                 boolean autoApproveOnTimeout = (boolean) output.get("autoApproveOnTimeout");
                 insertStepLog(instance.id(), step.id(), stepType, StepState.COMPLETED,
                         attempt, null, toJson(output), null, stepStart);
