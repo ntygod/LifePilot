@@ -433,7 +433,7 @@ public class ContextAssembler {
             var notifications = passiveNotificationQueue.drainAll();
             if (notifications.isEmpty()) return List.of();
             return notifications.stream()
-                    .map(n -> "[%s] %s (%s)".formatted(n.type(), n.content(), n.sentAt()))
+                    .map(n -> "[%s] %s (%s)".formatted(n.typeId(), n.content(), n.sentAt()))
                     .toList();
         } catch (Exception e) {
             log.warn("被动通知队列 drain 失败，降级跳过: error={}", e.getMessage());

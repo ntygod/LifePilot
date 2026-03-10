@@ -25,6 +25,6 @@ public class LogNotificationChannel implements NotificationChannel {
     @Override
     public void send(ProactiveNotification notification) {
         log.info("主动提醒 [{}][{}]: {}",
-                notification.type(), notification.urgency(), notification.content());
+                notification.typeId(), notification.urgency(), notification.content());
     }
 }
