@@ -20,6 +20,9 @@ import lombok.Builder;
  * @param context                工作流变量上下文（存储输入参数、步骤输出和中间变量）
  * @param completedStepIds       已完成步骤 ID 集合（DAG 执行进度追踪）
  * @param pendingApprovalStepId  当前等待审批的步骤 ID（PAUSED 状态时非空）
+ * @param wakeUpAt               预期唤醒时间（WAITING 状态）或审批超时时间（PAUSED 状态）
+ * @param blockedStepId          导致实例阻塞的步骤 ID
+ * @param blockedReason          阻塞原因描述（如 "wait:60s" 或 "approval:timeout=86400s"）
  * @param startedAt              实例开始执行时间（CREATED→RUNNING 时设置）
  * @param completedAt            实例完成时间（终态时设置）
  * @param failureReason          失败原因（FAILED 状态时设置）
@@ -36,6 +39,9 @@ public record WorkflowInstance(
         WorkflowContext context,
         Set<String> completedStepIds,
         @Nullable String pendingApprovalStepId,
+        @Nullable Instant wakeUpAt,
+        @Nullable String blockedStepId,
+        @Nullable String blockedReason,
         @Nullable Instant startedAt,
         @Nullable Instant completedAt,
         @Nullable String failureReason,
