@@ -156,8 +156,9 @@ public class WorkflowRepository {
                 INSERT INTO workflow_instances
                     (id, workflow_id, state, input_json, context_json,
                      completed_step_ids_json, pending_approval_step_id,
+                     wake_up_at, blocked_step_id, blocked_reason,
                      started_at, completed_at, failure_reason, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 instance.id(),
                 instance.workflowId(),
@@ -166,6 +167,9 @@ public class WorkflowRepository {
                 instance.context() != null ? instance.context().toJson() : null,
                 serializeStepIds(instance.completedStepIds()),
                 instance.pendingApprovalStepId(),
+                toText(instance.wakeUpAt()),
+                instance.blockedStepId(),
+                instance.blockedReason(),
                 toText(instance.startedAt()),
                 toText(instance.completedAt()),
                 instance.failureReason(),
@@ -185,6 +189,7 @@ public class WorkflowRepository {
                 UPDATE workflow_instances SET
                     state = ?, context_json = ?,
                     completed_step_ids_json = ?, pending_approval_step_id = ?,
+                    wake_up_at = ?, blocked_step_id = ?, blocked_reason = ?,
                     started_at = ?, completed_at = ?, failure_reason = ?, updated_at = ?
                 WHERE id = ?
                 """,
@@ -192,6 +197,9 @@ public class WorkflowRepository {
                 instance.context() != null ? instance.context().toJson() : null,
                 serializeStepIds(instance.completedStepIds()),
                 instance.pendingApprovalStepId(),
+                toText(instance.wakeUpAt()),
+                instance.blockedStepId(),
+                instance.blockedReason(),
                 toText(instance.startedAt()),
                 toText(instance.completedAt()),
                 instance.failureReason(),
@@ -244,6 +252,30 @@ public class WorkflowRepository {
                 .map(WorkflowState::name)
                 .toArray();
         return jdbcTemplate.query(sql, instanceRowMapper, params);
+    }
+
+    /**
+     * 查询到期的 WAITING 实例（state='WAITING' 且 wakeUpAt <= now）。
+     *
+     * @param now 当前时间
+     * @return 到期的 WAITING 实例列表
+     */
+    public List<WorkflowInstance> findExpiredWaitingInstances(Instant now) {
+        return jdbcTemplate.query(
+                "SELECT * FROM workflow_instances WHERE state = 'WAITING' AND wake_up_at IS NOT NULL AND wake_up_at <= ?",
+                instanceRowMapper, now.toString());
+    }
+
+    /**
+     * 查询超时的 PAUSED 实例（state='PAUSED' 且 wakeUpAt <= now）。
+     *
+     * @param now 当前时间
+     * @return 超时的 PAUSED 实例列表
+     */
+    public List<WorkflowInstance> findExpiredPausedInstances(Instant now) {
+        return jdbcTemplate.query(
+                "SELECT * FROM workflow_instances WHERE state = 'PAUSED' AND wake_up_at IS NOT NULL AND wake_up_at <= ?",
+                instanceRowMapper, now.toString());
     }
 
     // ==================== StepLog ====================
@@ -324,6 +356,9 @@ public class WorkflowRepository {
                 .context(context)
                 .completedStepIds(deserializeStepIds(rs.getString("completed_step_ids_json")))
                 .pendingApprovalStepId(rs.getString("pending_approval_step_id"))
+                .wakeUpAt(parseInstant(rs.getString("wake_up_at")))
+                .blockedStepId(rs.getString("blocked_step_id"))
+                .blockedReason(rs.getString("blocked_reason"))
                 .startedAt(parseInstant(rs.getString("started_at")))
                 .completedAt(parseInstant(rs.getString("completed_at")))
                 .failureReason(rs.getString("failure_reason"))

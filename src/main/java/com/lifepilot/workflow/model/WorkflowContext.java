@@ -4,9 +4,9 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 工作流变量上下文，存储输入参数、步骤输出和中间变量。
@@ -29,14 +29,14 @@ public class WorkflowContext {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
-    private final Map<String, Object> data;
+    private final ConcurrentHashMap<String, Object> data;
 
     public WorkflowContext() {
-        this.data = new HashMap<>();
+        this.data = new ConcurrentHashMap<>();
     }
 
     public WorkflowContext(Map<String, Object> data) {
-        this.data = new HashMap<>(data);
+        this.data = new ConcurrentHashMap<>(data);
     }
 
     /**
@@ -82,7 +82,7 @@ public class WorkflowContext {
             if (next instanceof Map<?, ?> map) {
                 current = (Map<String, Object>) map;
             } else {
-                Map<String, Object> newMap = new HashMap<>();
+                Map<String, Object> newMap = new ConcurrentHashMap<>();
                 current.put(segments[i], newMap);
                 current = newMap;
             }

@@ -6,8 +6,11 @@ import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.workflow.engine.DagScheduler;
 import com.lifepilot.workflow.engine.StepExecutor;
+import com.lifepilot.workflow.engine.WakeupScheduler;
+import com.lifepilot.workflow.engine.WorkflowCommandService;
 import com.lifepilot.workflow.engine.WorkflowEngine;
 import com.lifepilot.workflow.engine.WorkflowEventRecorder;
+import com.lifepilot.workflow.engine.WorkflowRunner;
 import com.lifepilot.workflow.expression.ExpressionEngine;
 import com.lifepilot.workflow.parser.WorkflowYamlParser;
 import com.lifepilot.workflow.parser.WorkflowYamlPrinter;
@@ -23,6 +26,7 @@ import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -146,15 +150,38 @@ public class WorkflowAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public WorkflowTriggerManager workflowTriggerManager(WorkflowEngine engine,
+    public WorkflowRunner workflowRunner(WorkflowEngine engine) {
+        return new WorkflowRunner(engine);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public WorkflowCommandService workflowCommandService(WorkflowRegistry registry,
+                                                          WorkflowRepository repository,
+                                                          WorkflowRunner runner,
+                                                          WorkflowEventRecorder eventRecorder) {
+        return new WorkflowCommandService(registry, repository, runner, eventRecorder);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public WakeupScheduler wakeupScheduler(WorkflowRepository repository,
+                                            WorkflowRunner runner,
+                                            WorkflowEventRecorder eventRecorder) {
+        return new WakeupScheduler(repository, runner, eventRecorder);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public WorkflowTriggerManager workflowTriggerManager(WorkflowCommandService commandService,
                                                           WorkflowRegistry registry,
                                                           WorkflowRepository repository,
                                                           TaskScheduler workflowTaskScheduler) {
-        return new WorkflowTriggerManager(engine, registry, repository, workflowTaskScheduler);
+        return new WorkflowTriggerManager(commandService, registry, repository, workflowTaskScheduler);
     }
 
     /**
-     * 应用启动完成后依次执行：内置工作流释放、崩溃恢复、触发器注册和 YAML 热加载。
+     * 应用启动完成后依次执行：内置工作流释放、崩溃恢复、触发器注册、YAML 热加载和唤醒调度。
      */
     @EventListener(ApplicationReadyEvent.class)
     public void onApplicationReady(ApplicationReadyEvent event) {
@@ -176,7 +203,14 @@ public class WorkflowAutoConfiguration {
         // ④ YAML 热加载（会扫描用户目录，发现刚释放的文件）
         ctx.getBean(WorkflowRegistry.class).startScheduledScan();
 
-        log.info("工作流崩溃恢复、触发器注册和 YAML 热加载已完成");
+        // ⑤ 启动唤醒调度器定时扫描
+        var wakeupScheduler = ctx.getBean(WakeupScheduler.class);
+        var taskScheduler = ctx.getBean("workflowTaskScheduler", TaskScheduler.class);
+        int wakeupInterval = config.getWakeup().getScanIntervalSeconds();
+        taskScheduler.scheduleAtFixedRate(wakeupScheduler::scan, Duration.ofSeconds(wakeupInterval));
+        log.info("唤醒调度器已启动: interval={}s", wakeupInterval);
+
+        log.info("工作流崩溃恢复、触发器注册、YAML 热加载和唤醒调度已完成");
     }
 
     /**

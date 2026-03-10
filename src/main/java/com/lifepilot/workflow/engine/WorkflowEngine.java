@@ -65,14 +65,95 @@ public class WorkflowEngine {
     /**
      * 执行工作流（手动触发或触发器调用）。
      *
+     * @deprecated 由 {@link WorkflowCommandService#start(String, Map)} 替代，
+     *             将在所有调用点迁移完成后移除。
      * @param workflowId 工作流定义 ID
      * @param inputs     工作流输入参数
      * @return 执行完成后的工作流实例
      * @throws IllegalArgumentException 工作流定义未找到或已禁用时抛出
      */
+    @Deprecated(forRemoval = true)
     public WorkflowInstance execute(String workflowId, Map<String, Object> inputs) {
         return executeInternal(workflowId, inputs, 0);
     }
+
+    /**
+     * 从已创建的实例开始执行 DAG（由 WorkflowRunner 在 Virtual Thread 上调用）。
+     *
+     * <p>加载实例 → CREATED→RUNNING → executeDag() → 异常时转为 FAILED。
+     *
+     * @param instanceId 工作流实例 ID
+     * @throws IllegalArgumentException 实例或定义未找到时抛出
+     */
+    public void executeFromInstance(String instanceId) {
+        WorkflowInstance instance = repository.findInstance(instanceId)
+                .orElseThrow(() -> new IllegalArgumentException("工作流实例未找到: id=" + instanceId));
+
+        String workflowId = instance.workflowId();
+        try {
+            WorkflowDefinition definition = registry.find(workflowId)
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            "工作流定义未找到: workflowId=" + workflowId));
+
+            // CREATED → RUNNING
+            instance = transition(instance, WorkflowState.RUNNING);
+
+            // DAG 执行
+            executeDag(instance, definition.steps(), new HashSet<>(instance.completedStepIds()), 0);
+        } catch (Exception e) {
+            log.error("工作流执行异常: instanceId={}, error={}", instanceId, e.getMessage(), e);
+            failWorkflow(instance, "执行异常: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 从阻塞状态恢复执行（由 WakeupScheduler 触发）。
+     *
+     * <p>加载实例 → 将 blockedStepId 加入已完成集合 → 清除阻塞字段 →
+     * WAITING→RUNNING → 从下一步继续 DAG 执行。
+     *
+     * @param instanceId 工作流实例 ID
+     */
+    public void resumeFromBlocked(String instanceId) {
+        WorkflowInstance instance = repository.findInstance(instanceId)
+                .orElseThrow(() -> new IllegalArgumentException("工作流实例未找到: id=" + instanceId));
+
+        // 记录原始阻塞步骤 ID（清除前保存，用于日志）
+        String originalBlockedStepId = instance.blockedStepId();
+        String workflowId = instance.workflowId();
+
+        try {
+            // 将 blockedStepId 加入已完成集合
+            Set<String> completed = new HashSet<>(instance.completedStepIds());
+            if (originalBlockedStepId != null) {
+                completed.add(originalBlockedStepId);
+            }
+
+            // 清除阻塞字段，转换为 RUNNING
+            instance = instance.toBuilder()
+                    .completedStepIds(Set.copyOf(completed))
+                    .wakeUpAt(null)
+                    .blockedStepId(null)
+                    .blockedReason(null)
+                    .updatedAt(Instant.now())
+                    .build();
+            instance = transition(instance, WorkflowState.RUNNING);
+
+            WorkflowDefinition definition = registry.find(workflowId)
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            "工作流定义未找到: workflowId=" + workflowId));
+
+            log.info("从阻塞状态恢复 DAG 执行: instanceId={}, 原阻塞步骤={}",
+                    instanceId, originalBlockedStepId);
+
+            executeDag(instance, definition.steps(), completed, 0);
+        } catch (Exception e) {
+            log.error("恢复阻塞工作流异常: instanceId={}, error={}", instanceId, e.getMessage(), e);
+            failWorkflow(instance, "恢复执行异常: " + e.getMessage());
+        }
+    }
+
+
 
     /**
      * 恢复中断的工作流实例（从 WAITING 状态恢复）。
@@ -276,10 +357,10 @@ public class WorkflowEngine {
                                         List<WorkflowStep> steps,
                                         Set<String> completedStepIds,
                                         int nestingDepth) {
-        dagScheduler.buildExecutionPlan(steps);
+        ExecutionPlan plan = dagScheduler.buildExecutionPlan(steps);
 
-        while (dagScheduler.hasNext(completedStepIds)) {
-            List<WorkflowStep> readySteps = dagScheduler.getReadySteps(completedStepIds);
+        while (dagScheduler.hasNext(plan, completedStepIds)) {
+            List<WorkflowStep> readySteps = dagScheduler.getReadySteps(plan, completedStepIds);
             if (readySteps.isEmpty()) {
                 log.error("DAG 调度异常：hasNext=true 但无就绪步骤: instanceId={}", instance.id());
                 return failWorkflow(instance, "DAG 调度异常：无就绪步骤");
@@ -404,13 +485,28 @@ public class WorkflowEngine {
 
             // 检查 WaitStep 特殊标记
             if ("wait".equals(output.get("__type"))) {
+                int durationSeconds = ((Number) output.get("durationSeconds")).intValue();
                 insertStepLog(instance.id(), step.id(), stepType, StepState.COMPLETED,
                         attempt, null, toJson(output), null, stepStart);
-                return transition(instance, WorkflowState.WAITING);
+
+                // 持久化唤醒信息
+                Instant wakeUpAt = Instant.now().plusSeconds(durationSeconds);
+                instance = instance.toBuilder()
+                        .wakeUpAt(wakeUpAt)
+                        .blockedStepId(step.id())
+                        .blockedReason("wait:" + durationSeconds + "s")
+                        .updatedAt(Instant.now())
+                        .build();
+                instance = transition(instance, WorkflowState.WAITING);
+                log.info("工作流进入 WAITING 状态: instanceId={}, stepId={}, wakeUpAt={}",
+                        instance.id(), step.id(), wakeUpAt);
+                return instance;
             }
 
             // 检查 ApprovalStep 特殊标记
             if ("approval".equals(output.get("__type"))) {
+                int timeoutSeconds = ((Number) output.get("timeoutSeconds")).intValue();
+                boolean autoApproveOnTimeout = (boolean) output.get("autoApproveOnTimeout");
                 insertStepLog(instance.id(), step.id(), stepType, StepState.COMPLETED,
                         attempt, null, toJson(output), null, stepStart);
 
@@ -418,9 +514,13 @@ public class WorkflowEngine {
                 instance.context().set("steps." + step.id() + ".approval", output);
                 instance.context().set("steps." + step.id() + ".pausedAt", Instant.now().toString());
 
-                // 设置 pendingApprovalStepId
+                // 持久化超时信息和审批步骤 ID
+                Instant wakeUpAt = Instant.now().plusSeconds(timeoutSeconds);
                 instance = instance.toBuilder()
                         .pendingApprovalStepId(step.id())
+                        .wakeUpAt(wakeUpAt)
+                        .blockedStepId(step.id())
+                        .blockedReason("approval:timeout=" + timeoutSeconds + "s,autoApprove=" + autoApproveOnTimeout)
                         .updatedAt(Instant.now())
                         .build();
 
@@ -430,9 +530,8 @@ public class WorkflowEngine {
 
                 // 转换为 PAUSED 状态
                 instance = transition(instance, WorkflowState.PAUSED);
-                repository.updateInstance(instance);
-                log.info("工作流进入 PAUSED 状态（等待审批）: instanceId={}, stepId={}",
-                        instance.id(), step.id());
+                log.info("工作流进入 PAUSED 状态（等待审批）: instanceId={}, stepId={}, wakeUpAt={}",
+                        instance.id(), step.id(), wakeUpAt);
                 return instance;
             }
 
