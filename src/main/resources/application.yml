@@ -62,12 +62,12 @@ lifepilot:
       quiet-hours-start: 22
       quiet-hours-end: 8
       cooldown-minutes-per-type:
-        DEADLINE_REMINDER: 60
-        SCHEDULE_REMINDER: 30
-        HABIT_REMINDER: 120
-        STREAK_AT_RISK: 240
-        DAILY_SUMMARY: 1440
-        WEEKLY_REVIEW: 10080
+        deadline_reminder: 60
+        schedule_reminder: 30
+        habit_reminder: 120
+        streak_at_risk: 240
+        daily_summary: 1440
+        weekly_review: 10080
       daily-summary-hour: 21
       weekly-review-day: 7
       weekly-review-hour: 10

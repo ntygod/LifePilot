@@ -1,9 +1,8 @@
 package com.lifepilot.agent.proactive.config;
 
-import com.lifepilot.agent.proactive.model.NotificationType;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -30,14 +29,14 @@ public class ProactiveConfigProperties {
     /** 免打扰结束小时（0-23），默认 8。 */
     private int quietHoursEnd = 8;
 
-    /** 各通知类型独立冷却时间（分钟）。 */
-    private Map<NotificationType, Integer> cooldownMinutesPerType = new EnumMap<>(Map.of(
-            NotificationType.DEADLINE_REMINDER, 60,
-            NotificationType.SCHEDULE_REMINDER, 30,
-            NotificationType.HABIT_REMINDER, 120,
-            NotificationType.STREAK_AT_RISK, 240,
-            NotificationType.DAILY_SUMMARY, 1440,
-            NotificationType.WEEKLY_REVIEW, 10080
+    /** 各通知类型独立冷却时间（分钟），键为 typeId（snake_case）。 */
+    private Map<String, Integer> cooldownMinutesPerType = new HashMap<>(Map.of(
+            "deadline_reminder", 60,
+            "schedule_reminder", 30,
+            "habit_reminder", 120,
+            "streak_at_risk", 240,
+            "daily_summary", 1440,
+            "weekly_review", 10080
     ));
 
     /** 每日总结触发小时（0-23），默认 21 点。 */
@@ -64,8 +63,8 @@ public class ProactiveConfigProperties {
     /** LLM 生成通知内容最大字符数，默认 100。 */
     private int maxContentLength = 100;
 
-    /** 各 NotificationType 的启用状态，默认全部启用。 */
-    private Map<NotificationType, Boolean> typeEnabled = new EnumMap<>(NotificationType.class);
+    /** 各通知类型的启用状态，键为 typeId（snake_case），默认全部启用。 */
+    private Map<String, Boolean> typeEnabled = new HashMap<>();
 
     // ─── getter / setter ───
 
@@ -81,19 +80,19 @@ public class ProactiveConfigProperties {
     public int getQuietHoursEnd() { return quietHoursEnd; }
     public void setQuietHoursEnd(int quietHoursEnd) { this.quietHoursEnd = quietHoursEnd; }
 
-    public Map<NotificationType, Integer> getCooldownMinutesPerType() { return cooldownMinutesPerType; }
-    public void setCooldownMinutesPerType(Map<NotificationType, Integer> cooldownMinutesPerType) {
+    public Map<String, Integer> getCooldownMinutesPerType() { return cooldownMinutesPerType; }
+    public void setCooldownMinutesPerType(Map<String, Integer> cooldownMinutesPerType) {
         this.cooldownMinutesPerType = cooldownMinutesPerType;
     }
 
     /**
      * 获取指定通知类型的冷却时间（分钟），未配置时 fallback 120 分钟。
      *
-     * @param type 通知类型
+     * @param typeId 通知类型标识（snake_case）
      * @return 冷却时间（分钟）
      */
-    public int getCooldownMinutesForType(NotificationType type) {
-        return cooldownMinutesPerType.getOrDefault(type, 120);
+    public int getCooldownMinutesForType(String typeId) {
+        return cooldownMinutesPerType.getOrDefault(typeId, 120);
     }
 
     public int getDailySummaryHour() { return dailySummaryHour; }
@@ -120,16 +119,16 @@ public class ProactiveConfigProperties {
     public int getMaxContentLength() { return maxContentLength; }
     public void setMaxContentLength(int maxContentLength) { this.maxContentLength = maxContentLength; }
 
-    public Map<NotificationType, Boolean> getTypeEnabled() { return typeEnabled; }
-    public void setTypeEnabled(Map<NotificationType, Boolean> typeEnabled) { this.typeEnabled = typeEnabled; }
+    public Map<String, Boolean> getTypeEnabled() { return typeEnabled; }
+    public void setTypeEnabled(Map<String, Boolean> typeEnabled) { this.typeEnabled = typeEnabled; }
 
     /**
      * 判断指定通知类型是否启用。
      *
-     * @param type 通知类型
+     * @param typeId 通知类型标识（snake_case）
      * @return 是否启用（默认 true）
      */
-    public boolean isTypeEnabled(NotificationType type) {
-        return typeEnabled.getOrDefault(type, true);
+    public boolean isTypeEnabled(String typeId) {
+        return typeEnabled.getOrDefault(typeId, true);
     }
 }
