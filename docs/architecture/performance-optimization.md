@@ -1,10 +1,8 @@
-﻿# 性能优化架构设计：缓存机制与 TTFT 优化
+﻿# 性能优化 — 架构设计
 
-> **文档性质**：深度架构设计文档（Developer-Facing）
-> **目标读者**：核心开发者、架构评审者
+> **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.llm`（缓存层）+ `com.lifepilot.agent`（TTFT 优化）
 > **最后更新**：2026-03
-> **从属关系**：本文档为模块依赖图 §26 的调研产出，覆盖两个优化方向
 
 ---
 
@@ -382,25 +380,35 @@ SimilarityEvaluator (接口)
 
 ### 5.1 三层缓存架构
 
-`
-请求入口（LlmRouter.call / stream）
-  │
-  ├─ L1: Provider Prefix Caching（Provider 侧，零改动）
-  │     ├─ 通过 Prompt 结构优化激活
-  │     ├─ System Prompt + 工具定义 = 稳定前缀
-  │     └─ 节省 50-90% 输入 Token 成本 + 降低 TTFT
-  │
-  ├─ L2: SemanticCache（应用层，需实现）
-  │     ├─ 基于 sqlite-vec 向量相似度匹配
-  │     ├─ scene 维度隔离 + TTL 失效
-  │     ├─ 命中时直接返回缓存响应，节省 100% Token
-  │     └─ 已有架构设计（llm-router.md §7.6），需落地
-  │
-  └─ L3: Tool Result Cache（应用层，可选）
-        ├─ 相同工具 + 相同参数 = 缓存命中
-        ├─ 适用于幂等工具（查询类）
-        └─ 非幂等工具（写入类）不缓存
-`
+```mermaid
+flowchart LR
+    Request["LlmRouter.call / stream"] --> L1
+    
+    subgraph L1["L1: Provider Prefix Caching"]
+        direction TB
+        L1A["Provider 侧 KV Cache<br/>零应用层改动"]
+        L1B["System Prompt + 工具定义 = 稳定前缀"]
+    end
+    
+    L1 --> L2
+    
+    subgraph L2["L2: SemanticCache"]
+        direction TB
+        L2A["sqlite-vec 向量相似度匹配"]
+        L2B["scene 维度隔离 + TTL 失效"]
+    end
+    
+    L2 -->|未命中| L3
+    L2 -->|命中| Return["直接返回缓存响应"]
+    
+    subgraph L3["L3: Tool Result Cache"]
+        direction TB
+        L3A["相同工具 + 相同参数 = 缓存命中"]
+        L3B["仅适用于幂等工具"]
+    end
+    
+    L3 --> Provider["LLM Provider"]
+```
 
 ### 5.2 L1: Provider Prefix Caching 优化
 

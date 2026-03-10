@@ -1,105 +1,55 @@
-# 混合工具生态
+# 工具系统 — 特性说明
 
-> 本文档从 [FEATURES.md](../FEATURES.md) 拆分而来，对应原文 §2.6 / §2.16 章节。
+> **文档性质**：特性说明文档
+> **模块归属**：`com.lifepilot.tool`
+> **最后更新**：2026-03
 
-> ⚠️ 本文档描述的是目标功能设计，尚未实现。
+## 1. 功能概述
 
-ZhiWei 设计了三层混合工具生态系统，将统一管理不同来源的工具，让 Agent 无需关心工具的实现方式。
+工具系统为 Agent 提供与外部世界交互的能力，支持三种工具来源：Java 内置工具、YAML 声明式工具和 MCP 外部工具。统一的工具契约确保所有工具具有一致的输入输出规范、风险等级声明和执行保障。
 
-## 1. 三层架构
+## 2. 核心特性
 
-```
-┌─────────────────────────────────────────────────────┐
-│              统一工具注册中心                          │
-│           (DynamicToolRegistry)                      │
-├────────────────┬────────────────┬───────────────────┤
-│  Layer 1       │  Layer 2       │  Layer 3          │
-│  MCP 外部工具   │  YAML 声明式    │  Java 原生插件    │
-├────────────────┼────────────────┼───────────────────┤
-│ 远程服务调用    │ 配置文件解析     │ Spring Bean 扫描  │
-│ stdio / SSE    │ 模板引擎渲染     │ 编译时类型安全     │
-│ 动态发现       │ 零代码开发       │ 完整 Spring 生态   │
-│ 跨语言支持     │ 运行时热加载     │ 性能最优           │
-└────────────────┴────────────────┴───────────────────┘
-```
+### 2.1 三种工具来源
 
-| 层级 | 工具类型 | 优先级 | 适用场景 |
-|------|---------|--------|---------|
-| Layer 3 | Java 原生插件 | 最高 | 核心能力，性能要求高 |
-| Layer 2 | YAML 声明式 Skill | 中 | 用户自定义扩展，快速迭代 |
-| Layer 1 | MCP 外部工具 | 基础 | 接入外部生态，跨语言支持 |
+- **BuiltinTool**：Java 代码实现的内置工具，性能最优，可靠性最高
+- **YamlTool**：YAML 文件声明的工具，支持热加载，适合快速扩展
+- **McpTool**：通过 MCP 协议桥接的外部工具，接入第三方工具生态
 
-**统一体验**：无论工具来源如何，Agent 看到的是统一的工具描述格式。`AgentToolProvider` 自动聚合三层工具，对 `AgentLoop` 完全透明。
+### 2.2 统一工具契约
 
-## 2. YAML 声明式工具示例
+所有工具实现 ToolContract sealed interface，包含 ID、描述、输入输出 Schema、风险等级、幂等性声明、执行预算等标准化属性。LLM 通过工具描述和 Schema 理解工具用途。
 
-```yaml
-# ~/.zhiwei/skills/weather-query.yml
-skill:
-  id: weather-query
-  name: 天气查询
-  description: 查询指定城市的天气信息
+### 2.3 四级风险分级
 
-  parameters:
-    - name: city
-      type: string
-      required: true
-      description: 城市名称
-    - name: days
-      type: integer
-      required: false
-      default: 1
-      description: 预报天数
+工具按风险等级分为 LOW（自动执行）、MEDIUM（自动执行 + 审计记录）、HIGH（需用户确认）、CRITICAL（确认 + 二次验证）。执行管道在调用前自动检查风险等级。
 
-  action:
-    type: http
-    method: GET
-    url: "https://api.weather.com/v1/forecast"
-    headers:
-      Authorization: "Bearer ${env.WEATHER_API_KEY}"
-    query:
-      location: "${params.city}"
-      days: "${params.days}"
+### 2.4 执行管道保障
 
-  output:
-    template: |
-      🌤️ ${params.city} 天气：
-      温度：${result.temperature}°C
-      天气：${result.condition}
-      建议：${result.suggestion}
+工具执行经过完整管道：护栏预检 → 幂等查重 → 超时控制 → 重试（指数退避）→ 实际执行。幂等工具的重复调用直接返回缓存结果。
 
-  # 关联认知记忆（ZhiWei 独有）
-  memory:
-    read:
-      - "用户偏好.出行习惯"
-    write:
-      - entity: "天气记录"
-        attributes: ["城市", "温度", "日期"]
-```
+### 2.5 动态注册
 
-> 与竞品的关键差异：声明式工具可以读写认知记忆和知识图谱，实现"有记忆的工具"。
+DynamicToolRegistry 支持运行时动态注册和注销工具。Skill 激活时自动注册关联工具，MCP 服务器连接时自动注册远程工具。
 
-## 3. Browser 工具 / 网页信息提取
+### 2.6 层次优先级
 
-轻量级网页信息提取能力，让 ZhiWei 能够从互联网获取实时信息。
+当不同来源的工具 ID 冲突时，按 BuiltinTool > YamlTool > McpTool 的优先级覆盖，确保内置工具行为不被外部工具意外替换。
 
-| 能力 | 实现方案 | 说明 |
-|------|----------|------|
-| 网页搜索 | 搜索引擎 API | 支持 Google / Bing / DuckDuckGo |
-| 内容提取 | Jsoup | HTML 解析、正文提取、结构化数据抽取 |
-| 动态页面 | HtmlUnit | JavaScript 渲染后的页面内容获取 |
-| 截图 | HtmlUnit / Playwright | 页面截图保存 |
+## 3. 使用场景
 
-**自动知识沉淀**：提取的网页内容经过结构化处理后，自动写入知识图谱。下次询问相同主题时，优先从本地知识图谱检索，减少重复抓取。知识图谱中的网页信息带有时效标记，过期后自动触发更新。
+Agent 在规划阶段决定需要调用哪些工具（如查询待办列表、搜索知识库、执行代码），执行阶段通过工具系统逐步调用。工具系统自动处理参数校验、风险检查、超时重试等细节，Agent 只需关注工具调用结果。
 
-```
-你：帮我查一下明天北京的天气
+## 4. 配置项
 
-ZhiWei：正在搜索天气信息...
-         🌤️ 北京明天天气：
-         温度：18-26°C，晴转多云
-         空气质量：良（AQI 68）
-         建议：适合户外活动，注意防晒
+| 配置键 | 默认值 | 说明 |
+|--------|--------|------|
+| `lifepilot.tool.enabled` | `true` | 是否启用工具系统 |
+| `lifepilot.tool.pipeline.default-timeout` | — | 默认执行超时 |
+| `lifepilot.tool.pipeline.max-retries` | — | 默认最大重试次数 |
 
-         [信息来源：中国天气网，已存入知识图谱]
-```
+## 5. 限制与未来方向
+
+- YAML 工具的执行逻辑目前依赖 LLM 解释，复杂逻辑建议使用 BuiltinTool
+- 工具执行结果的结构化程度依赖各工具实现质量
+- 未来计划：工具执行结果的自动摘要、工具推荐排序优化

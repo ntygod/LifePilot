@@ -1,159 +1,79 @@
-# A2A 协议支持功能说明
+# A2A 协议支持 — 特性说明
 
-> **模块编号**：22（Phase 6）
-> **最后更新**：2026-02-27
-
----
+> **文档性质**：特性说明文档
+> **模块归属**：`com.lifepilot.a2a`
+> **最后更新**：2026-03
 
 ## 1. 功能概述
 
-### 1.1 核心价值
-
-A2A（Agent-to-Agent）协议支持使 ZhiWei 能够与其他 AI Agent 系统进行标准化通信。用户可以：
-
-- 让 ZhiWei 调用外部专业 Agent（如企业内部的报表 Agent、翻译 Agent）
-- 将 ZhiWei 的能力暴露给其他系统（如企业工作流平台调用 ZhiWei 的规划能力）
-- 构建跨系统的 Agent 协作网络
-
-### 1.2 双重角色
-
-ZhiWei 同时扮演两个角色：
-
-| 角色 | 说明 | 典型场景 |
-|------|------|---------|
-| A2A Server | 暴露自身 Agent 能力供外部调用 | 企业系统调用 ZhiWei 的写作/规划能力 |
-| A2A Client | 发现并调用外部 A2A Agent | ZhiWei 调用企业内部的数据分析 Agent |
-
----
+A2A 协议支持使知微能够与其他 A2A 兼容的 Agent 系统进行跨系统互操作。知微既可以作为 A2A Server 对外暴露自身能力供其他 Agent 调用，也可以作为 A2A Client 发现和调用远程 Agent，实现跨系统的 Agent 协作。
 
 ## 2. 核心特性
 
-### 2.1 Agent Card 能力声明
+### 2.1 A2A Server — 对外暴露能力
 
-ZhiWei 自动生成标准 A2A Agent Card，暴露在 `/.well-known/agent.json` 路径。Agent Card 包含：
+知微作为 A2A Server 提供标准化的 REST 端点：
+- `/.well-known/agent.json`：Agent Card 能力声明，自动从 AgentRegistry 生成 skills 列表
+- `/api/a2a/message/send`：同步消息处理
+- `/api/a2a/message/stream`：SSE 流式消息处理（可配置开关）
+- `/api/a2a/tasks/{id}`：Task 查询和取消
 
-- ZhiWei 的名称、描述、版本
-- 所有已注册 Agent 映射为 A2A skills（writer / life-coach / planner 等）
-- 支持的输入/输出模式（text）
-- 认证要求（API Key）
-- 流式响应能力声明
+支持 API Key 认证，保护端点安全。
 
-外部系统通过标准发现路径即可了解 ZhiWei 的全部能力。
+### 2.2 A2A Client — 调用远程 Agent
 
-### 2.2 A2A Server — 接收外部请求
+知微作为 A2A Client 支持：
+- 远程 Agent 发现：通过 `/.well-known/agent.json` 获取 Agent Card
+- 消息发送：向远程 Agent 发送任务消息
+- Task 生命周期管理：查询 Task 状态、取消 Task
+- 自动发现：启动时自动发现配置列表中的远程 Agent
 
-外部 Agent 可以向 ZhiWei 发送消息，ZhiWei 自动路由到对应的内部 Agent 执行：
+### 2.3 远程 Agent 工具化
 
-```
-外部 Agent → POST /api/a2a/message/send
-           → ZhiWei 解析消息
-           → 路由到 writer / life-coach / planner
-           → 执行并返回结果（Task + Artifact）
-```
+已发现的远程 Agent 自动注册为本地 BuiltinTool（ID 格式 `a2a_remote_{name}`），本地 Agent 可像调用本地工具一样调用远程 Agent，无需感知 A2A 协议细节。
 
-支持同步响应和 SSE 流式响应两种模式。
+### 2.4 Agent Card 缓存
 
-### 2.3 A2A Client — 调用外部 Agent
+远程 Agent Card 缓存在内存中，支持 TTL 过期自动刷新。刷新失败时使用旧缓存兜底，确保服务可用性。
 
-用户可以配置远程 A2A Agent 的 URL，ZhiWei 自动发现其能力并注册为可调用工具：
+### 2.5 多态消息内容
 
-```
-用户: 帮我用公司的数据分析 Agent 分析这个月的销售数据
-主 Agent: [调用 a2a_remote_data_analyst(task="分析本月销售数据")]
-         → A2aClientService.sendMessage() → 远程 Agent 执行
-         → 结果返回主 Agent → 整合回复用户
-```
+消息内容支持三种类型：文本（Text）、文件（File）、结构化数据（Data），通过 `sealed interface` 建模，JSON 序列化时自动区分类型。
 
-远程 Agent 自动注册为 BuiltinTool（工具 ID 格式：`a2a_remote_{agentName}`），主 Agent 的 LLM 可通过 Function Call 自主决策何时调用。
+### 2.6 Task 状态机
 
-### 2.4 Task 生命周期管理
-
-A2A 协议的 Task 支持长时间运行的异步任务：
-
-- 任务提交后立即返回 Task ID
-- 外部系统可轮询 Task 状态
-- 支持 SSE 实时推送状态更新
-- 支持任务取消
-
-Task 状态流转：submitted → working → completed / failed / canceled
-
----
+Task 具有完整的生命周期状态：SUBMITTED → WORKING → COMPLETED / FAILED / CANCELED / INPUT_REQUIRED / REJECTED / AUTH_REQUIRED。终态判断内聚在枚举中。
 
 ## 3. 使用场景
 
-### 3.1 ZhiWei 作为 Server
+企业内部部署了多个 A2A 兼容的 Agent 系统（如知微负责个人助手、另一个系统负责数据分析），通过 A2A 协议实现跨系统协作。用户向知微提出"分析上周销售数据"的请求，知微通过 `a2a_remote_data_analyst` 工具将分析任务委托给远程数据分析 Agent，获取结果后整合呈现给用户。
 
-企业工作流平台调用 ZhiWei 的写作能力：
-
-```
-企业系统 → 发现 ZhiWei Agent Card（GET /.well-known/agent.json）
-        → 找到 "writer" skill
-        → 发送消息（POST /api/a2a/message/send）
-           { "task": "撰写本周团队周报", "skillId": "writer" }
-        → ZhiWei 执行写作任务
-        → 返回 Task（含 Artifact：周报内容）
-```
-
-### 3.2 ZhiWei 作为 Client
-
-用户让 ZhiWei 调用外部翻译 Agent：
-
-```
-用户: 把这段话翻译成英文（使用公司的翻译服务）
-主 Agent: [发现远程 translator Agent 的能力]
-        → [调用 a2a_remote_translator(task="翻译：...")]
-        → 远程 Agent 返回翻译结果
-主 Agent: 翻译结果是：...
-```
-
-### 3.3 多 Agent 跨系统协作
-
-ZhiWei 协调本地和远程 Agent 完成复杂任务：
-
-```
-用户: 帮我准备明天的客户演示
-主 Agent: [调用本地 planner 规划演示流程]
-        → [调用远程 slide_generator 生成幻灯片]
-        → [调用本地 writer 撰写演讲稿]
-        → 整合所有结果返回用户
-```
-
----
+外部 Agent 系统也可以通过知微的 A2A Server 端点调用知微的能力，如调用知微的日程管理、待办管理等 Skill。
 
 ## 4. 配置项
 
 | 配置键 | 默认值 | 说明 |
 |--------|--------|------|
-| `lifepilot.a2a.enabled` | `true` | 是否启用 A2A 协议支持 |
-| `lifepilot.a2a.server.enabled` | `true` | 是否启用 A2A Server |
-| `lifepilot.a2a.server.api-key` | 空 | Server 端 API Key（空则不启用认证） |
-| `lifepilot.a2a.server.agent-name` | `ZhiWei` | Agent Card 中的名称 |
-| `lifepilot.a2a.server.agent-description` | `个人生活助手` | Agent Card 中的描述 |
-| `lifepilot.a2a.server.streaming-enabled` | `true` | 是否支持 SSE 流式响应 |
-| `lifepilot.a2a.client.enabled` | `true` | 是否启用 A2A Client |
-| `lifepilot.a2a.client.remote-agents` | 空列表 | 远程 Agent URL 列表 |
-| `lifepilot.a2a.client.connect-timeout-seconds` | `10` | 连接超时 |
-| `lifepilot.a2a.client.read-timeout-seconds` | `60` | 读取超时 |
-| `lifepilot.a2a.task.ttl-minutes` | `60` | Task 内存存储 TTL |
+| `lifepilot.a2a.enabled` | `true` | A2A 模块总开关 |
+| `lifepilot.a2a.server.enabled` | `true` | Server 端开关 |
+| `lifepilot.a2a.server.api-key` | `""` | API Key 认证（空则不启用） |
+| `lifepilot.a2a.server.streaming-enabled` | `true` | SSE 流式端点开关 |
+| `lifepilot.a2a.client.enabled` | `true` | Client 端开关 |
+| `lifepilot.a2a.client.remote-agents` | `[]` | 远程 Agent URL 列表 |
+| `lifepilot.a2a.client.connect-timeout-seconds` | `10` | 连接超时（秒） |
+| `lifepilot.a2a.client.read-timeout-seconds` | `60` | 读取超时（秒） |
+| `lifepilot.a2a.client.card-cache-ttl-minutes` | `30` | Card 缓存 TTL（分钟） |
 
----
+## 5. 限制与未来方向
 
-## 5. 限制与未来扩展
+当前限制：
+- Task 存储为内存实现，重启后丢失
+- 不支持 A2A 推送通知（Push Notification）
+- 流式端点仅支持 SSE，不支持 WebSocket
+- 远程调用为同步阻塞，不支持异步轮询
 
-### 5.1 当前限制
-
-- 仅支持 HTTP+JSON/REST 传输（不支持 JSON-RPC 2.0 和 gRPC）
-- 仅支持 API Key 认证（不支持 OAuth 2.0 / OpenID Connect）
-- Task 存储在内存中，重启后丢失
-- 不支持 Push Notification（仅支持轮询和 SSE）
-- 仅支持 text 输入/输出模式（不支持 file / data）
-- 远程 Agent 需手动配置 URL（不支持自动发现/注册中心）
-
-### 5.2 未来扩展方向
-
-- OAuth 2.0 认证支持（上云部署时）
-- Push Notification 支持（Webhook 回调）
-- 多模态 Part 支持（file / data）
-- Agent 注册中心集成（自动发现远程 Agent）
-- Task 持久化（SQLite 存储，支持跨重启恢复）
-- 迁移到官方 A2A Java SDK（当 Spring Boot 集成成熟时）
+未来方向：
+- Task 持久化到 SQLite
+- 支持 A2A Push Notification 机制
+- 支持异步 Task 轮询模式
+- 远程 Agent 健康检查和自动重连

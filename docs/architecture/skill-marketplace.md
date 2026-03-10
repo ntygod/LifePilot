@@ -1,5 +1,9 @@
 # Skill 市场架构设计
 
+> **文档性质**：架构设计文档
+> **模块归属**：`com.lifepilot.marketplace`
+> **最后更新**：2026-03
+
 ## 1. 模块定位与职责边界
 
 Skill 市场（模块 25）为 ZhiWei 提供 Skill 的发布、发现、安装和版本管理能力。它是 Skill 系统（模块 10）和 MCP 协议支持（模块 4）的上层扩展，不改变已有 Skill 运行时行为，仅增加分发渠道。
@@ -33,31 +37,38 @@ Skill 市场（模块 25）为 ZhiWei 提供 Skill 的发布、发现、安装�
 
 ### 3.1 分层架构
 
-```
-┌─────────────────────────────────────────────┐
-│              REST API 层                     │
-│  MarketplaceController                       │
-│  GET /api/marketplace/skills                 │
-│  POST /api/marketplace/skills/{id}/install   │
-│  DELETE /api/marketplace/skills/{id}         │
-│  POST /api/marketplace/index/refresh         │
-│  GET /api/marketplace/updates                │
-├─────────────────────────────────────────────┤
-│              服务层                           │
-│  MarketplaceService                          │
-│  ├─ IndexManager（索引获取与缓存）            │
-│  ├─ SkillInstaller（下载、校验、安装）        │
-│  ├─ SkillSecurityScanner（安全扫描）          │
-│  └─ VersionResolver（版本比较与升级检测）     │
-├─────────────────────────────────────────────┤
-│              数据层                           │
-│  installed_skills 表（SQLite）               │
-│  marketplace_index_cache 表（SQLite）        │
-├─────────────────────────────────────────────┤
-│              已有模块                         │
-│  SkillRegistry / YamlSkillLoader /           │
-│  SkillDefinitionValidator / GuardrailEngine  │
-└─────────────────────────────────────────────┘
+```mermaid
+graph TB
+    subgraph API["REST API 层"]
+        MC["MarketplaceController"]
+    end
+
+    subgraph Service["服务层"]
+        MS["MarketplaceService"]
+        IM["IndexManager<br/>索引获取与缓存"]
+        SI["SkillInstaller<br/>下载、校验、安装"]
+        SS["SkillSecurityScanner<br/>安全扫描"]
+        VR["VersionResolver<br/>版本比较与升级检测"]
+    end
+
+    subgraph Data["数据层 (SQLite)"]
+        IS["installed_skills 表"]
+        IC["marketplace_index_cache 表"]
+    end
+
+    subgraph Existing["已有模块"]
+        SR["SkillRegistry"]
+        YL["YamlSkillLoader"]
+        SV["SkillDefinitionValidator"]
+        GE["GuardrailEngine"]
+    end
+
+    MC --> MS
+    MS --> IM & SI & SS & VR
+    IM --> IC
+    SI --> IS
+    SI --> YL & SV
+    SS --> GE
 ```
 
 ### 3.2 索引机制

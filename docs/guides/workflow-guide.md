@@ -90,7 +90,7 @@ steps:                   # 步骤列表（必填，至少一个步骤）
 
 ## 步骤类型详解
 
-知微支持 9 种步骤类型，覆盖常见自动化场景。
+知微支持 10 种步骤类型，覆盖常见自动化场景。
 
 ### 通用字段
 
@@ -373,6 +373,43 @@ steps:
   name: 无操作
   type: noop
 ```
+
+### 人工审批步骤（approval）
+
+暂停工作流等待人工审批决策。引擎遇到 ApprovalStep 时将工作流状态从 RUNNING 转换为 PAUSED，等待外部通过 API 提交审批决策。
+
+```yaml
+- id: review
+  name: 人工审核
+  type: approval
+  message: "请审核以下内容是否可以发布"  # 审批消息（必填）
+  approvers:                              # 审批人列表（可选）
+    - admin
+  timeoutSeconds: 86400                   # 超时时间，默认 24 小时（可选）
+  autoApproveOnTimeout: false             # 超时后是否自动批准（可选）
+```
+
+| 字段 | 必填 | 说明 |
+|------|------|------|
+| message | ✅ | 展示给审批人的消息 |
+| approvers | ❌ | 审批人列表 |
+| timeoutSeconds | ❌ | 审批超时时间（秒），默认 86400（24 小时） |
+| autoApproveOnTimeout | ❌ | 超时后是否自动批准，默认 false |
+
+**实际案例** — 内置「智能内容审核」工作流中的人工审批：
+
+```yaml
+- id: human-review
+  name: 人工审核
+  type: approval
+  message: "内容风险等级较高，请人工审核"
+  approvers:
+    - content-admin
+  timeoutSeconds: 3600
+  autoApproveOnTimeout: false
+```
+
+审批通过后工作流继续执行后续步骤，审批拒绝则工作流终止。可通过 `POST /api/workflows/executions/{instanceId}/steps/{stepId}/approve` 提交审批决策。
 
 ---
 
@@ -918,13 +955,19 @@ lifepilot:
     default-step-timeout-seconds: 300       # 默认步骤超时（秒）
     max-parallel-branches: 10               # 最大并行分支数
     max-nesting-depth: 3                    # 子工作流最大嵌套深度
-    max-loop-iterations: 100                # 循环最大迭代次数
+    max-loop-iterations: 100               # 循环最大迭代次数
     crash-recovery-enabled: true            # 崩溃恢复开关
     scan-interval-seconds: 30               # 热加载扫描间隔（秒）
     retry:
       initial-delay-ms: 500                 # 重试初始延迟（毫秒）
       max-delay-ms: 5000                    # 重试最大延迟（毫秒）
       max-attempts: 3                       # 最大重试次数
+    approval:
+      default-timeout-seconds: 86400        # 审批默认超时（秒，24 小时）
+      auto-approve-on-timeout: false        # 超时后是否自动批准
+    event-audit:
+      enabled: true                         # 是否启用事件审计记录
+      retention-days: 90                    # 事件保留天数
 ```
 
 ---

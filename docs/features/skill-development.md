@@ -1,212 +1,100 @@
-# Skill 开发指南
+# Skill 开发指南 — 特性说明
 
-> 本文档从 [FEATURES.md](../FEATURES.md) 拆分而来，对应原文第五章节。
+> **文档性质**：特性说明文档
+> **模块归属**：`com.lifepilot.skill`
+> **最后更新**：2026-03
 
-> ✅ Skill 开发体系已实现（Phase 3，模块 10），支持 YAML 声明式 Skill 和 Java 原生插件两种扩展方式。
+## 1. 功能概述
 
-## 1. YAML 声明式 Skill（推荐入门）
+知微支持两种 Skill 扩展方式：Markdown 声明式 Skill（推荐）和 Java 原生内置 Skill。用户通过在 `~/.zhiwei/skills/` 目录下创建 SKILL.md 文件夹即可定义自定义 Skill，系统自动热加载。此外，系统还能通过 LLM 自动检测能力缺口并生成新 Skill。
 
-最简单的扩展方式，无需编写 Java 代码。将 YAML 文件放到 `~/.zhiwei/skills/` 目录即可，运行时自动热加载。
+## 2. 核心特性
 
-### 1.1 基础模板
+### 2.1 Markdown 声明式 Skill（推荐）
 
-```yaml
-# ~/.zhiwei/skills/my-skill.yml
-skill:
-  id: my-skill                    # 唯一标识
-  name: 我的技能                    # 显示名称
-  description: 技能的简要描述        # Agent 用此判断何时激活
-  version: "1.0"
-  source: USER_DEFINED
+每个 Skill 以文件夹形式存在，文件夹内包含 `SKILL.md` 主定义文件和可选的 `references/` 子目录：
 
-  # 触发意图（可选，不指定则由 Agent 自行判断）
-  intents:
-    - my_skill.action1
-    - my_skill.action2
-
-  # 输入参数定义
-  parameters:
-    - name: param1
-      type: string
-      required: true
-      description: 参数说明
-    - name: param2
-      type: integer
-      required: false
-      default: 10
-      description: 可选参数
-
-  # 执行动作
-  action:
-    type: http                     # http / shell / chain / template
-    method: GET
-    url: "https://api.example.com/endpoint"
-    headers:
-      Authorization: "Bearer ${env.MY_API_KEY}"
-    query:
-      q: "${params.param1}"
-      limit: "${params.param2}"
-
-  # 结果模板
-  output:
-    template: |
-      查询结果：${result.data}
-
-  # 记忆访问（可选）
-  memory:
-    read: []
-    write: []
+```
+~/.zhiwei/skills/
+  └── my-skill/
+      ├── SKILL.md          # 主定义文件
+      └── references/       # 可选参考文件
+          └── example.md
 ```
 
-### 1.2 支持的动作类型
+`SKILL.md` 采用 YAML Frontmatter + Markdown Body 格式：
+- YAML Frontmatter 定义元数据（id、name、description、version、suggestedTools 等）
+- Markdown Body 定义 Skill 指令（instructions），即激活后注入 Agent 上下文的专业指导
 
-**HTTP 调用：**
+### 2.2 热加载
 
-```yaml
-action:
-  type: http
-  method: POST
-  url: "https://api.example.com/data"
-  headers:
-    Content-Type: application/json
-  body:
-    key: "${params.value}"
-```
+保存 SKILL.md 后系统自动检测变更并重新加载，无需重启：
+- 新建文件夹：自动加载并注册
+- 修改 SKILL.md：500ms 防抖后重新解析注册
+- 删除文件夹：自动注销对应 Skill
+- 解析失败：保留上一个有效版本，不影响已注册的 Skill
 
-**Shell 命令：**
+### 2.3 三重安全验证
 
-```yaml
-action:
-  type: shell
-  command: "curl -s https://api.example.com/${params.query}"
-  timeout-seconds: 10
-```
+所有用户定义和自动生成的 Skill 必须通过三阶段验证：
 
-**技能串联：**
+1. **格式验证**（FormatValidator）：校验 YAML Frontmatter 格式和必填字段
+2. **安全验证**（SecurityValidator）：校验 suggestedTools 白名单、风险等级、预算上限，检测 Prompt 注入
+3. **沙箱验证**（SandboxValidator）：在隔离环境中验证 Skill 定义的内部一致性
 
-```yaml
-action:
-  type: chain
-  steps:
-    - skill: weather-query
-      params:
-        city: "${params.city}"
-      output: weather_data
-    - skill: notification-send
-      params:
-        message: "今天${params.city}天气：${weather_data.condition}"
-```
+### 2.4 Java 原生内置 Skill
 
-## 2. Java 原生插件（高级）
+需要直接访问 Spring 生态、数据库操作或复杂业务逻辑时，可实现 `BuiltinSkillProvider` 接口：
 
-需要更强能力（直接访问 Spring 生态、数据库操作、复杂业务逻辑）时，可以开发 Java 原生插件。
+- 实现 `provide()` 返回 `SkillDefinition` 蓝图
+- 实现 `registerTools()` 注册工具到 `DynamicToolRegistry`
+- 标注 `@BuiltinSkill(id = "xxx", order = n)` 注解
+- 系统启动时由 `BuiltinSkillRegistrar` 自动扫描注册
 
-### 2.1 实现步骤
+### 2.5 LLM 驱动的 Skill 自生成
 
-1. 实现 `SkillPlugin` 接口
-2. 标注为 Spring `@Component`
-3. 系统启动时自动扫描注册
+当用户请求超出现有 Skill 能力范围时，系统可自动生成新 Skill：
 
-```java
-package com.lifepilot.skill.plugins;
+1. `SkillGapDetector` 检测能力缺口
+2. `SkillGenerator` 调用 LLM 生成 SKILL.md 内容
+3. 生成的 Skill 经过三重验证
+4. 用户确认后持久化到 `~/.zhiwei/skills/auto/{skill-id}/SKILL.md`
 
-import com.lifepilot.skill.SkillPlugin;
-import com.lifepilot.skill.SkillResult;
-import org.springframework.stereotype.Component;
+自动生成的 Skill 默认 `userConfirmed=false`，必须用户确认后才能激活。
 
-/**
- * 自定义技能插件示例。
- * 
- * 实现 SkillPlugin 接口并标注 @Component，
- * 系统启动时会自动扫描并注册此插件。
- */
-@Component
-public class MyCustomPlugin implements SkillPlugin {
+## 3. 使用场景
 
-    @Override
-    public String getId() { 
-        return "my-custom-plugin"; 
-    }
+**场景一：创建自定义领域 Skill**
 
-    @Override
-    public String getDescription() { 
-        return "我的自定义插件，用于处理特定业务逻辑"; 
-    }
+用户在 `~/.zhiwei/skills/code-review/` 目录下创建 `SKILL.md`，定义代码审查的专业指令和建议工具。保存后系统自动热加载，Agent 在后续对话中即可发现和激活该 Skill。
 
-    @Override
-    public List<String> getSupportedIntents() {
-        return List.of("my_plugin.query", "my_plugin.update");
-    }
+**场景二：系统自动补全能力**
 
-    @Override
-    public String getInputSchema() {
-        return """
-            {
-              "type": "object",
-              "properties": {
-                "action": { "type": "string", "enum": ["query", "update"] },
-                "target": { "type": "string", "description": "操作目标" }
-              },
-              "required": ["action", "target"]
-            }
-            """;
-    }
+用户请求"帮我分析这份财务报表"，系统检测到没有匹配的 Skill，自动生成财务分析 Skill。经验证和用户确认后，Skill 持久化并可在后续对话中复用。
 
-    @Override
-    public String getOutputSchema() {
-        return """
-            {
-              "type": "object",
-              "properties": {
-                "status": { "type": "string" },
-                "data": { "type": "object" }
-              }
-            }
-            """;
-    }
+**场景三：开发内置 Skill 插件**
 
-    @Override
-    public RiskLevel getRiskLevel() {
-        return RiskLevel.LOW;  // 只读操作
-    }
+开发者实现 `BuiltinSkillProvider` 接口，注册专业工具和 Skill 定义。通过 `@BuiltinSkill` 注解控制注册顺序，系统启动时自动加载。
 
-    @Override
-    public SkillResult execute(String intent, Map<String, Object> params) {
-        // 实现你的业务逻辑
-        String target = (String) params.get("target");
-        
-        return switch (intent) {
-            case "my_plugin.query" -> {
-                var data = doQuery(target);
-                yield SkillResult.success("查询完成", data);
-            }
-            case "my_plugin.update" -> {
-                doUpdate(target);
-                yield SkillResult.success("更新完成");
-            }
-            default -> SkillResult.error("不支持的操作: " + intent);
-        };
-    }
-    
-    private Map<String, Object> doQuery(String target) {
-        // 查询逻辑...
-        return Map.of("result", "查询结果");
-    }
-    
-    private void doUpdate(String target) {
-        // 更新逻辑...
-    }
-}
-```
+## 4. 配置项
 
-### 2.2 工具契约（ToolContract）
+| 配置键 | 默认值 | 说明 |
+|--------|--------|------|
+| `lifepilot.skills.directory` | `~/.zhiwei/skills` | Skill 文件目录 |
+| `lifepilot.skills.skill-filename` | `SKILL.md` | Skill 定义文件名 |
+| `lifepilot.skills.hot-reload-debounce-ms` | `500` | 热加载防抖间隔（毫秒） |
+| `lifepilot.skills.auto-generation.enabled` | `true` | 自生成功能开关 |
+| `lifepilot.skills.validation.max-name-length` | `128` | 名称最大长度 |
+| `lifepilot.skills.validation.max-instructions-length` | `10000` | 指令最大长度 |
 
-每个插件的工具调用都遵循严格的契约：
+## 5. 限制与未来方向
 
-| 契约要素 | 说明 |
-|---------|------|
-| `inputSchema` | JSON Schema 定义输入参数，Agent 调用前自动校验 |
-| `outputSchema` | JSON Schema 定义输出格式，确保结构化返回 |
-| `riskLevel` | 风险等级声明，护栏引擎据此决定是否需要用户确认 |
-| `idempotent` | 是否幂等，影响重试策略 |
-| `budget` | 超时、重试次数、成本上限 |
+**当前限制**：
+- Markdown Skill 不支持直接定义工具执行逻辑，只能通过 suggestedTools 引用已注册的工具
+- 自动生成的 Skill 质量受 LLM 能力限制，复杂领域可能需要人工调整
+- 热加载仅监听一级子目录，不支持嵌套目录结构
+
+**未来方向**：
+- Skill 模板市场：提供常用领域的 SKILL.md 模板
+- Skill 版本管理：支持 Skill 的版本迭代和回滚
+- 可视化 Skill 编辑器：通过 Web UI 创建和编辑 Skill

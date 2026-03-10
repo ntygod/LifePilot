@@ -1,41 +1,63 @@
-# 多 LLM 服务商支持
+# LLM 路由 — 特性说明
 
-> 本文档从 [FEATURES.md](../FEATURES.md) 拆分而来，对应原文 §2.4 章节。
+> **文档性质**：特性说明文档
+> **模块归属**：`com.lifepilot.llm`
+> **最后更新**：2026-03
 
-> ⚠️ 本文档描述的是目标功能设计，尚未实现。
+## 1. 功能概述
 
-灵活配置多个大语言模型，按场景智能选择，平衡成本、效果和隐私。
+LLM Router 为知微提供统一的大模型调用能力，支持多 Provider 动态路由、自动故障转移和语义缓存。用户只需配置 Provider 信息，系统自动根据调用场景选择最优模型，并在 Provider 故障时无感切换到备选方案。
 
-## 1. 支持的服务商
+## 2. 核心特性
 
-| 服务商 | 类型 | 适用场景 | 特点 |
-|--------|------|----------|------|
-| Ollama | 本地模型 | 隐私敏感场景、离线使用 | 数据完全不出本机 |
-| DeepSeek | 云端 API | 意图理解、任务规划、复杂推理 | 性价比高，中文能力强 |
-| 百度文心 | 云端 API | 中文对话、知识提取 | 国内服务，延迟低 |
-| 阿里通义千问 | 云端 API | 通用对话、代码辅助 | 多模态支持好 |
-| 智谱 GLM | 云端 API | 通用对话、推理任务 | 国产大模型，合规性好 |
-| 更多... | 可扩展 | 按需接入 | 实现 ProviderAdapter 接口即可 |
+### 2.1 多 Provider 支持
 
-## 2. 智能路由
+支持 7 种 LLM Provider 类型：Ollama（本地）、DeepSeek、通义千问、智谱 GLM、文心一言、HuggingFace TEI、OpenAI 兼容 API。通过 `application.yml` 配置即可接入，无需修改代码。
 
-LlmRouter 根据任务场景自动选择最合适的模型：
+### 2.2 场景路由
 
-```mermaid
-flowchart TD
-    A[用户请求] --> B{场景识别}
-    B -->|意图理解| C[DeepSeek / 通义千问]
-    B -->|知识提取| D[文心 / DeepSeek]
-    B -->|日常对话| E[Ollama 本地 / 任意云端]
-    B -->|隐私敏感| F[Ollama 本地模型]
-    
-    C --> G{主模型可用?}
-    G -->|是| H[执行]
-    G -->|否| I[自动故障转移到备选模型]
-    I --> H
-```
+定义 13 种调用场景（如 `chat`、`agent-reasoning`、`embedding`、`memory_compression` 等），每个 Provider 声明自己支持的场景，路由层自动匹配。不同场景可使用不同模型，例如 embedding 使用专用嵌入模型，对话使用通用大模型。
 
-- **场景路由**：为不同场景（意图理解、任务规划、知识提取、日常对话）指定不同模型
-- **优先级故障转移**：某个服务商不可用时，自动切换到备选模型
-- **熔断器保护**：连续失败达到阈值后自动熔断，避免无效重试
-- **降级模式**：所有服务商不可用时，基础功能仍可使用
+### 2.3 熔断器与故障转移
+
+每个 Provider 的每种能力类型独立维护熔断器状态（Closed → Open → HalfOpen）。当某个 Provider 连续失败达到阈值时自动熔断，请求自动转移到下一个可用 Provider。恢复后自动探测并重新启用。
+
+### 2.4 指数退避重试
+
+失败后采用指数退避策略重试（初始 500ms，倍数 2.0，上限 5s），最多重试 2 次，避免对故障 Provider 造成额外压力。
+
+### 2.5 语义缓存
+
+基于 sqlite-vec 向量相似度的语义缓存。对于语义相近的 Prompt，直接返回缓存结果，减少 LLM 调用次数和 Token 消耗。
+
+### 2.6 多能力声明
+
+Provider 可声明 8 种能力：Chat、Embedding、Structured Output、Function Calling、Streaming、Vision、TTS、STT。路由层根据调用需求自动筛选具备对应能力的 Provider。
+
+### 2.7 流式响应
+
+支持 `stream()` 和 `streamWithInfo()` 流式调用，返回 `Flux<String>` 或 `StreamingLlmResponse`，适用于 Web UI 的 SSE 实时输出。
+
+## 3. 使用场景
+
+用户在 `application.yml` 中配置多个 LLM Provider（如一个本地 Ollama 用于日常对话，一个 DeepSeek 用于复杂推理，一个 TEI 用于向量嵌入）。系统启动后自动注册所有 Provider，Agent 引擎调用时根据场景自动选择最优 Provider。当某个 Provider 服务中断时，系统自动切换到备选 Provider，用户无感知。
+
+## 4. 配置项
+
+| 配置键 | 默认值 | 说明 |
+|--------|--------|------|
+| `lifepilot.llm.providers.{id}.type` | — | Provider 类型 |
+| `lifepilot.llm.providers.{id}.base-url` | — | API 基础 URL |
+| `lifepilot.llm.providers.{id}.api-key` | — | API 密钥 |
+| `lifepilot.llm.providers.{id}.model` | — | 模型名称 |
+| `lifepilot.llm.providers.{id}.scenes` | — | 支持的场景列表 |
+| `lifepilot.llm.providers.{id}.capabilities` | — | 能力声明 |
+| `lifepilot.llm.providers.{id}.priority` | — | 优先级（数值越小优先级越高） |
+| `lifepilot.llm.circuit-breaker.failure-threshold` | — | 熔断失败阈值 |
+| `lifepilot.llm.circuit-breaker.recovery-timeout` | — | 熔断恢复超时 |
+
+## 5. 限制与未来方向
+
+- 当前语义缓存依赖 sqlite-vec，大规模缓存场景下性能待评估
+- 暂不支持 Provider 级别的 Token 用量统计和成本控制面板
+- 未来计划：引入缓存机制进一步减少 Token 消耗，缩短首字响应时间（TTFT）
