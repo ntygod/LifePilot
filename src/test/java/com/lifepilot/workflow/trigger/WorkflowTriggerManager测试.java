@@ -1,6 +1,6 @@
 package com.lifepilot.workflow.trigger;
 
-import com.lifepilot.workflow.engine.WorkflowEngine;
+import com.lifepilot.workflow.engine.WorkflowCommandService;
 import com.lifepilot.workflow.model.*;
 import com.lifepilot.workflow.model.WorkflowStep.NoopStep;
 import com.lifepilot.workflow.registry.WorkflowRegistry;
@@ -35,7 +35,7 @@ import static org.mockito.Mockito.*;
 @SuppressWarnings("NullableProblems")
 class WorkflowTriggerManager测试 {
 
-    private WorkflowEngine engine;
+    private WorkflowCommandService commandService;
     private WorkflowRegistry registry;
     private WorkflowRepository repository;
     private TaskScheduler taskScheduler;
@@ -45,12 +45,12 @@ class WorkflowTriggerManager测试 {
     @SuppressWarnings("unchecked")
     @BeforeEach
     void setUp() {
-        engine = mock(WorkflowEngine.class);
+        commandService = mock(WorkflowCommandService.class);
         registry = mock(WorkflowRegistry.class);
         repository = mock(WorkflowRepository.class);
         taskScheduler = mock(TaskScheduler.class);
         mockFuture = mock(ScheduledFuture.class);
-        manager = new WorkflowTriggerManager(engine, registry, repository, taskScheduler);
+        manager = new WorkflowTriggerManager(commandService, registry, repository, taskScheduler);
     }
 
     // ==================== 辅助方法 ====================
@@ -139,7 +139,7 @@ class WorkflowTriggerManager测试 {
             // 手动触发 fireCron
             捕获CronRunnable().run();
 
-            verify(engine, never()).execute(anyString(), anyMap());
+            verify(commandService, never()).start(anyString(), anyMap());
         }
 
         @Test
@@ -154,7 +154,7 @@ class WorkflowTriggerManager测试 {
 
             捕获CronRunnable().run();
 
-            verify(engine).execute(eq("wf-cron2"), eq(Map.of()));
+            verify(commandService).start(eq("wf-cron2"), eq(Map.of()));
         }
     }
 
@@ -171,7 +171,7 @@ class WorkflowTriggerManager测试 {
 
             manager.onApplicationEvent(new CustomTestEvent(this));
 
-            verify(engine).execute(eq("wf-event"), eq(Map.of("eventType", "CustomTestEvent")));
+            verify(commandService).start(eq("wf-event"), eq(Map.of("eventType", "CustomTestEvent")));
         }
 
         @Test
@@ -182,7 +182,7 @@ class WorkflowTriggerManager测试 {
 
             manager.onApplicationEvent(new CustomTestEvent(this));
 
-            verify(engine, never()).execute(anyString(), anyMap());
+            verify(commandService, never()).start(anyString(), anyMap());
         }
 
         /** 测试用自定义事件。 */
@@ -214,7 +214,7 @@ class WorkflowTriggerManager测试 {
 
             // 事件触发不再生效
             manager.onApplicationEvent(new UnregTestEvent(this));
-            verify(engine, never()).execute(eq("wf-unreg"), anyMap());
+            verify(commandService, never()).start(eq("wf-unreg"), anyMap());
         }
 
         /** 测试用自定义事件。 */

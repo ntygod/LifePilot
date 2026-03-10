@@ -1,6 +1,6 @@
 package com.lifepilot.workflow.trigger;
 
-import com.lifepilot.workflow.engine.WorkflowEngine;
+import com.lifepilot.workflow.engine.WorkflowCommandService;
 import com.lifepilot.workflow.model.WorkflowDefinition;
 import com.lifepilot.workflow.model.WorkflowState;
 import com.lifepilot.workflow.model.WorkflowTrigger;
@@ -39,7 +39,7 @@ public class WorkflowTriggerManager implements GenericApplicationListener {
 
     private static final Logger log = LoggerFactory.getLogger(WorkflowTriggerManager.class);
 
-    private final WorkflowEngine engine;
+    private final WorkflowCommandService commandService;
     private final WorkflowRegistry registry;
     private final WorkflowRepository repository;
     private final TaskScheduler taskScheduler;
@@ -50,11 +50,11 @@ public class WorkflowTriggerManager implements GenericApplicationListener {
     /** 已注册的事件触发器映射，key 为 eventType，value 为 workflowId 列表。 */
     private final ConcurrentHashMap<String, List<String>> eventBindings = new ConcurrentHashMap<>();
 
-    public WorkflowTriggerManager(WorkflowEngine engine,
+    public WorkflowTriggerManager(WorkflowCommandService commandService,
                                    WorkflowRegistry registry,
                                    WorkflowRepository repository,
                                    TaskScheduler taskScheduler) {
-        this.engine = engine;
+        this.commandService = commandService;
         this.registry = registry;
         this.repository = repository;
         this.taskScheduler = taskScheduler;
@@ -139,7 +139,7 @@ public class WorkflowTriggerManager implements GenericApplicationListener {
             }
 
             log.info("Cron 触发执行: workflowId={}", workflowId);
-            engine.execute(workflowId, Map.of());
+            commandService.start(workflowId, Map.of());
         } catch (Exception e) {
             log.error("Cron 触发执行失败: workflowId={}, 原因={}", workflowId, e.getMessage());
         }
@@ -179,7 +179,7 @@ public class WorkflowTriggerManager implements GenericApplicationListener {
             try {
                 log.info("事件触发执行: workflowId={}, eventType={}", workflowId, eventTypeName);
                 // 将事件类名作为输入参数
-                engine.execute(workflowId, Map.of("eventType", eventTypeName));
+                commandService.start(workflowId, Map.of("eventType", eventTypeName));
             } catch (Exception e) {
                 log.error("事件触发执行失败: workflowId={}, eventType={}, 原因={}",
                         workflowId, eventTypeName, e.getMessage());
