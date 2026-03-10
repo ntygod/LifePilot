@@ -1,521 +1,108 @@
-# 工作流/自动化编排
-
-> 本文档从 [FEATURES.md](../FEATURES.md) 拆分而来，对应 Phase 4 模块 15。
-
-> 📋 工作流引擎 spec 已创建（Phase 4）。详细架构设计参见 [architecture/workflow.md](../architecture/workflow.md)。
-
-## 1. 概述
-
-ZhiWei 工作流引擎让你通过 YAML 文件定义多步骤自动化流程，无需编写任何代码。把 YAML 文件放到指定目录，引擎自动检测并注册——即写即用。
-
-核心能力：
-- 10 种步骤类型覆盖常见自动化场景（含审批步骤）
-- DAG 依赖声明，无依赖步骤自动并行执行
-- 表达式引擎支持变量传递和条件判断
-- 定时 / 事件 / 手动三种触发方式
-- Human-in-the-Loop 审批步骤，工作流暂停等待人工确认
-- 事件审计日志，完整记录执行时间线
-- 崩溃恢复，长时间工作流不会因重启丢失
-- 热加载，修改 YAML 无需重启应用
-
-## 2. 快速开始
-
-### 2.1 创建你的第一个工作流
-
-在 `~/.zhiwei/workflows/` 目录下创建 YAML 文件：
-
-```yaml
-# ~/.zhiwei/workflows/daily-review.yml
-id: daily-review
-name: 每日回顾
-description: 每天晚上自动生成当日任务回顾
-version: "1.0"
-
-triggers:
-  - type: cron
-    cron: "0 21 * * *"    # 每天 21:00
-
-inputs:
-  userId:
-    type: string
-    required: true
-
-steps:
-  - id: fetch-tasks
-    name: 获取今日任务
-    type: skill
-    skillId: todo.list
-    params:
-      filter: "today"
-      userId: "${inputs.userId}"
-
-  - id: generate-review
-    name: 生成回顾
-    type: llm
-    scene: chat
-    prompt: |
-      请根据以下任务列表生成简洁的每日回顾：
-      ${steps.fetch-tasks.output.tasks}
-
-  - id: notify
-    name: 发送通知
-    type: tool
-    toolId: notification.send
-    params:
-      message: "${steps.generate-review.output.content}"
-    errorStrategy:
-      type: skip
-      reason: "通知发送失败不影响主流程"
-```
-
-保存后 ZhiWei 会在 30 秒内自动检测并注册这个工作流。
-
-## 3. 步骤类型
-
-### 3.1 步骤类型一览
-
-| 类型 | 用途 | 示例场景 |
-|------|------|---------|
-| skill | 调用已注册的 Skill | 查询待办、创建日程、打卡习惯 |
-| tool | 调用已注册的工具 | 发送通知、HTTP 请求、文件操作 |
-| llm | 调用 LLM 生成内容 | 生成摘要、分析数据、翻译文本 |
-| condition | 条件分支 | 根据任务数量决定是否生成报告 |
-| loop | 循环遍历 | 对每个待办项逐一处理 |
-| parallel | 并行执行 | 同时查询多个数据源 |
-| sub-workflow | 调用子工作流 | 复用已有的工作流定义 |
-| wait | 等待指定时间 | 发送提醒后等待 5 分钟再检查 |
-| noop | 空操作占位 | 条件分支的 else 不需要操作时 |
-| approval | 人工审批确认 | 发布前确认内容、高风险操作确认 |
-
-### 3.2 Skill 步骤
-
-调用 ZhiWei 已注册的 Skill（内置或 YAML 自定义 Skill）：
-
-```yaml
-- id: create-todo
-  name: 创建待办
-  type: skill
-  skillId: todo.create
-  params:
-    title: "周报：${inputs.weekNumber}"
-    priority: high
-```
-
-### 3.3 Tool 步骤
-
-调用已注册的工具（内置工具或 MCP 工具）：
-
-```yaml
-- id: send-message
-  name: 发送消息
-  type: tool
-  toolId: notification.send
-  params:
-    channel: wecom
-    message: "${steps.generate.output.content}"
-```
-
-### 3.4 LLM 步骤
-
-调用 LLM 进行推理或生成：
-
-```yaml
-- id: summarize
-  name: 生成摘要
-  type: llm
-  scene: chat
-  prompt: "请用 3 句话总结以下内容：${steps.fetch-data.output.text}"
-```
-
-### 3.5 条件步骤
-
-根据表达式结果执行不同分支：
-
-```yaml
-- id: check-count
-  name: 检查任务数量
-  type: condition
-  condition: "${steps.fetch-tasks.output.count} > 0"
-  then:
-    - id: process
-      name: 处理任务
-      type: skill
-      skillId: todo.process
-      params:
-        tasks: "${steps.fetch-tasks.output.tasks}"
-  else:
-    - id: skip
-      name: 无任务
-      type: noop
-```
-
-### 3.6 循环步骤
-
-遍历集合，对每个元素执行一组步骤：
-
-```yaml
-- id: process-each
-  name: 逐项处理
-  type: loop
-  items: "${steps.fetch-tasks.output.tasks}"
-  loopVar: task
-  body:
-    - id: analyze
-      name: 分析任务
-      type: llm
-      scene: chat
-      prompt: "分析这个任务的优先级：${task}"
-```
-
-循环中可通过 `${task}` 访问当前元素，`${task_index}` 访问当前索引。
-
-### 3.7 并行步骤
-
-同时执行多个分支，所有分支完成后继续：
-
-```yaml
-- id: parallel-fetch
-  name: 并行获取数据
-  type: parallel
-  branches:
-    - - id: fetch-todos
-        name: 获取待办
-        type: skill
-        skillId: todo.list
-        params:
-          filter: "this-week"
-    - - id: fetch-habits
-        name: 获取习惯
-        type: skill
-        skillId: habit.list
-        params:
-          filter: "active"
-```
-
-### 3.8 子工作流步骤
-
-调用另一个已注册的工作流：
-
-```yaml
-- id: run-cleanup
-  name: 执行清理
-  type: sub-workflow
-  workflowId: data-cleanup
-  params:
-    scope: "${inputs.scope}"
-```
-
-子工作流最大嵌套深度为 3 层（可配置），防止无限递归。
+# 工作流编排引擎 — 特性说明
 
-## 4. 表达式语法
+> **文档性质**：特性说明文档
+> **模块归属**：`com.lifepilot.workflow`
+> **最后更新**：2026-03
 
-工作流使用 `${...}` 语法在步骤之间传递数据和做条件判断。
+## 1. 功能概述
 
-### 4.1 变量引用
+工作流模块让用户通过 YAML 文件定义自动化任务编排，将多个 Skill、Tool、LLM 调用组合为可复用的自动化流程。引擎负责解析 YAML 定义、按 DAG 依赖调度执行、管理实例状态、持久化执行进度，并在崩溃后自动恢复中断的实例。
 
-```yaml
-# 引用输入参数
-"${inputs.userId}"
+## 2. 核心特性
 
-# 引用前一步骤的输出（支持嵌套路径）
-"${steps.fetch-tasks.output.items}"
-"${steps.fetch-tasks.output.items[0].title}"
+### 2.1 YAML 声明式工作流定义
 
-# 引用循环变量
-"${task}"
-"${task_index}"
-```
+通过 YAML 文件描述工作流蓝图，包含步骤列表、触发器、输入参数和元数据。YAML 文件放置在 `~/.zhiwei/workflows` 目录下，引擎定时扫描并自动加载变更。
 
-### 4.2 条件表达式
-
-用于 condition 步骤的条件判断：
-
-```yaml
-# 比较运算
-"${steps.check.output.count} > 0"
-"${inputs.mode} == 'auto'"
-"${steps.score.output.value} >= 80"
+### 2.2 十种步骤类型
 
-# 逻辑运算
-"${steps.a.output.ok} == true && ${steps.b.output.ok} == true"
-"${steps.check.output.count} > 0 || ${inputs.force} == true"
-```
+| 步骤类型 | 说明 |
+|---------|------|
+| SkillStep | 调用已注册的 Skill |
+| ToolStep | 调用已注册的 Tool |
+| LlmStep | 调用 LLM 生成内容，支持结构化输出 |
+| ConditionStep | 条件分支，根据表达式选择 then/else 路径 |
+| LoopStep | 循环遍历集合，对每个元素执行 body 步骤 |
+| ParallelStep | Virtual Thread 并行执行多个分支 |
+| SubWorkflowStep | 调用子工作流，支持嵌套编排 |
+| WaitStep | 等待指定时长后继续 |
+| ApprovalStep | 人工审批，暂停工作流等待决策 |
+| NoopStep | 空操作，直接跳过 |
 
-支持的运算符：`==`、`!=`、`>`、`<`、`>=`、`<=`、`&&`、`||`、`!`
+### 2.3 三种触发方式
 
-## 5. 触发器
+- Cron 定时触发：按 Cron 表达式周期性执行，同一工作流有 RUNNING 实例时自动跳过
+- 事件触发：监听 Spring ApplicationEvent，事件发生时自动执行
+- 手动触发：通过 `WorkflowEngine.execute()` 显式调用
 
-### 5.1 定时触发（Cron）
+### 2.4 DAG 依赖调度
 
-按 cron 表达式定时执行：
+步骤通过 `dependsOn` 声明前置依赖，引擎使用 Kahn 拓扑排序确定执行顺序。无依赖的步骤可并行执行。当所有步骤均无 `dependsOn` 时，退化为按列表顺序串行执行。自动检测环依赖并报错。
 
-```yaml
-triggers:
-  - type: cron
-    cron: "0 21 * * *"      # 每天 21:00
-  - type: cron
-    cron: "0 9 * * MON"     # 每周一 09:00
-```
+### 2.5 四种错误处理策略
 
-如果上一次执行尚未完成，新的定时触发会被跳过，避免重复执行。
+每个步骤可独立配置错误处理策略：
+- Retry：指数退避重试，耗尽后回退到 Fail
+- Skip：跳过当前步骤，记录原因，继续执行后续步骤
+- Fail：终止工作流，标记为 FAILED
+- Compensate：执行补偿步骤后标记失败（Saga Pattern）
 
-### 5.2 事件触发
+### 2.6 表达式引擎
 
-监听 Spring ApplicationEvent，事件发布时自动执行：
+步骤参数支持 `${variable.path}` 变量替换，从工作流上下文中解析嵌套路径。条件步骤支持比较运算符和逻辑运算符组合的条件表达式。
 
-```yaml
-triggers:
-  - type: event
-    eventType: "TodoCreatedEvent"
-```
+### 2.7 人工审批
 
-事件的 payload 数据会作为工作流输入参数传入。
+ApprovalStep 暂停工作流等待审批决策。支持配置审批人列表、超时时间和超时自动批准。审批决策通过 `WorkflowEngine.approve()` 提交。
 
-### 5.3 手动触发
+### 2.8 状态持久化与崩溃恢复
 
-只能通过 API 或 CLI 手动执行：
+工作流实例状态、已完成步骤集合、变量上下文全部持久化到 SQLite。应用重启后自动检测中断的实例（RUNNING/WAITING/PAUSED 状态），从断点恢复执行。
 
-```yaml
-triggers:
-  - type: manual
-```
+### 2.9 YAML 热加载
 
-一个工作流可以同时配置多种触发器。
+WorkflowRegistry 定时扫描工作流目录，自动检测新增、修改和删除的 YAML 文件。修改后的工作流定义自动更新注册，无需重启应用。
 
-## 6. 错误处理
-
-每个步骤可以独立配置错误处理策略：
-
-### 6.1 重试（Retry）
-
-```yaml
-errorStrategy:
-  type: retry
-  maxAttempts: 3
-  initialDelayMs: 500
-  maxDelayMs: 5000
-```
-
-使用指数退避重试，所有重试耗尽后工作流标记为失败。
-
-### 6.2 跳过（Skip）
-
-```yaml
-errorStrategy:
-  type: skip
-  reason: "通知发送失败不影响主流程"
-```
-
-步骤失败时跳过，继续执行后续步骤。适用于非关键步骤。
-
-### 6.3 失败（Fail）
-
-```yaml
-errorStrategy:
-  type: fail
-```
-
-步骤失败时立即终止工作流。这是未配置策略时的默认行为。
-
-### 6.4 补偿（Compensate）
-
-```yaml
-errorStrategy:
-  type: compensate
-  compensationStep:
-    id: rollback-order
-    name: 撤销订单
-    type: tool
-    toolId: order.cancel
-    params:
-      orderId: "${steps.create-order.output.orderId}"
-```
-
-步骤失败时执行补偿操作（如撤销 API 调用），然后标记工作流为失败。借鉴 Saga 模式。
-
-## 7. 崩溃恢复
-
-工作流引擎在每个步骤执行后自动保存执行快照（当前状态、变量上下文、执行位置）。如果应用意外重启：
-
-- 正在执行的工作流会从上次完成的步骤继续执行
-- 正在等待的工作流会检查等待时间是否已过期，过期则继续，未过期则重新等待
-- 上下文数据损坏的工作流会被标记为失败并记录错误日志
-
-恢复过程在应用启动时自动执行，不阻塞其他功能的初始化。
-
-## 8. 热加载
-
-工作流引擎每 30 秒（可配置）扫描一次工作流定义目录：
-
-- 新增 YAML 文件 → 自动解析并注册
-- 修改 YAML 文件 → 自动更新注册
-- 删除 YAML 文件 → 禁用对应工作流（保留已有实例历史）
-- 解析失败 → 跳过该文件，不影响其他工作流
-
-无需重启应用，修改 YAML 文件后等待片刻即可生效。
-
-## 9. 完整示例：周报自动化
-
-```yaml
-id: weekly-report
-name: 周报自动化
-description: 每周五下午自动收集数据并生成周报
-version: "1.0"
-
-triggers:
-  - type: cron
-    cron: "0 16 * * FRI"    # 每周五 16:00
-
-inputs:
-  userId:
-    type: string
-    required: true
-    description: 用户 ID
-
-steps:
-  # 并行获取本周数据
-  - id: fetch-data
-    name: 并行获取数据
-    type: parallel
-    branches:
-      - - id: fetch-todos
-          name: 获取本周待办
-          type: skill
-          skillId: todo.list
-          params:
-            filter: "this-week"
-            userId: "${inputs.userId}"
-      - - id: fetch-habits
-          name: 获取本周习惯
-          type: skill
-          skillId: habit.summary
-          params:
-            period: "this-week"
-            userId: "${inputs.userId}"
-
-  # 检查是否有数据
-  - id: check-data
-    name: 检查数据
-    type: condition
-    condition: "${steps.fetch-todos.output.count} > 0"
-    then:
-      # 用 LLM 生成周报
-      - id: generate-report
-        name: 生成周报
-        type: llm
-        scene: chat
-        prompt: |
-          请根据以下数据生成本周工作周报：
-          
-          待办完成情况：${steps.fetch-todos.output.tasks}
-          习惯打卡情况：${steps.fetch-habits.output.summary}
-          
-          要求：简洁明了，分为"本周完成"和"下周计划"两部分。
-    else:
-      - id: no-data
-        name: 无数据
-        type: noop
-
-  # 发送通知
-  - id: notify
-    name: 发送周报
-    type: tool
-    toolId: notification.send
-    params:
-      title: "本周周报已生成"
-      message: "${steps.generate-report.output.content}"
-    errorStrategy:
-      type: skip
-      reason: "通知失败不影响周报生成"
-```
-
-## 10. 配置
-
-```yaml
-lifepilot:
-  workflow:
-    enabled: true                          # 是否启用工作流引擎
-    definitions-dir: "~/.zhiwei/workflows"  # YAML 文件目录
-    default-step-timeout-seconds: 300      # 默认步骤超时
-    max-parallel-branches: 10              # 最大并行分支数
-    max-nesting-depth: 3                   # 子工作流最大嵌套深度
-    max-loop-iterations: 100               # 循环最大迭代次数
-    crash-recovery-enabled: true           # 崩溃恢复开关
-    scan-interval-seconds: 30              # 热加载扫描间隔
-    retry:
-      initial-delay-ms: 500                # 重试初始延迟
-      max-delay-ms: 5000                   # 重试最大延迟
-      max-attempts: 3                      # 最大重试次数
-    approval:
-      default-timeout-seconds: 86400       # 审批默认超时（24小时）
-      auto-approve-on-timeout: false       # 超时后是否自动批准
-    event-audit:
-      enabled: true                        # 是否启用事件审计
-      retention-days: 90                   # 审计日志保留天数
-```
-
-
-## 11. DAG 依赖声明
-
-步骤之间可以通过 `dependsOn` 字段声明依赖关系。没有依赖的步骤会自动并行执行，无需手动包裹 `parallel` 步骤。
-
-```yaml
-steps:
-  - id: fetch-todos
-    name: 获取待办
-    type: skill
-    skillId: todo.list
-    # 无 dependsOn，立即执行
-
-  - id: fetch-habits
-    name: 获取习惯
-    type: skill
-    skillId: habit.summary
-    # 无 dependsOn，与 fetch-todos 并行执行
-
-  - id: generate-report
-    name: 生成报告
-    type: llm
-    scene: chat
-    prompt: "根据待办和习惯数据生成报告..."
-    dependsOn:
-      - fetch-todos
-      - fetch-habits
-    # 等两个数据源都完成后再执行
-```
-
-不写 `dependsOn` 的工作流和以前一样按顺序执行，完全向后兼容。
-
-## 12. 审批步骤（Human-in-the-Loop）
-
-审批步骤让工作流在关键节点暂停，等待人工确认后再继续。
-
-```yaml
-- id: confirm-publish
-  name: 确认发布
-  type: approval
-  message: "即将发布周报到企微群，请确认内容无误"
-  timeoutSeconds: 86400
-  autoApproveOnTimeout: false
-```
-
-| 字段 | 说明 | 默认值 |
-|------|------|--------|
-| message | 展示给审批人的消息 | （必填） |
-| approvers | 审批人列表 | ["owner"] |
-| timeoutSeconds | 超时时间（秒） | 86400（24小时） |
-| autoApproveOnTimeout | 超时后是否自动批准 | false |
-
-审批决策通过 `WorkflowEngine.approve()` API 提交。拒绝时工作流标记为失败，批准后从下一步继续执行。
-
-## 13. 事件审计日志
-
-工作流引擎自动记录执行过程中的关键事件，形成完整的审计时间线：
-
-- 实例创建和状态变化
-- 每个步骤的开始、完成、失败、跳过
-- 审批请求和审批决策
-
-审计日志是追加写入的，不影响工作流执行性能。可通过 `retention-days` 配置自动清理过期记录。
-
-这些审计数据未来将作为 Web UI 轨迹回放页的数据源。
+### 2.10 审计事件追踪
+
+记录工作流执行全过程的审计事件（实例创建/状态变更、步骤开始/完成/失败/跳过、审批请求/决策），支持按实例查询事件时间线，过期事件自动清理。
+
+## 3. 使用场景
+
+用户定义一个"每日晚间总结"工作流：Cron 触发器设置为每天 21:00，第一步调用 Skill 查询当天待办完成情况，第二步调用 LLM 生成日报摘要，第三步通过 Tool 发送消息通知。三个步骤按顺序串行执行。
+
+用户定义一个"数据同步"工作流：手动触发，第一步并行调用多个 SyncConnector 同步外部数据源，第二步条件判断是否有冲突，有冲突则进入人工审批步骤等待用户决策，无冲突则直接完成。
+
+用户定义一个"周报生成"工作流：Cron 触发器设置为每周五 18:00，循环遍历本周所有对话记录，对每条记录调用 LLM 提取关键信息，最后汇总生成周报。
+
+## 4. 配置项
+
+| 配置键 | 默认值 | 说明 |
+|--------|--------|------|
+| `lifepilot.workflow.enabled` | `true` | 工作流引擎总开关 |
+| `lifepilot.workflow.definitions-dir` | `~/.zhiwei/workflows` | YAML 定义文件目录 |
+| `lifepilot.workflow.default-step-timeout-seconds` | `300` | 步骤默认超时时间（秒） |
+| `lifepilot.workflow.max-parallel-branches` | `10` | 最大并行分支数 |
+| `lifepilot.workflow.max-nesting-depth` | `3` | 最大子工作流嵌套深度 |
+| `lifepilot.workflow.max-loop-iterations` | `100` | 最大循环迭代次数 |
+| `lifepilot.workflow.crash-recovery-enabled` | `true` | 崩溃恢复开关 |
+| `lifepilot.workflow.scan-interval-seconds` | `30` | YAML 文件扫描间隔（秒） |
+| `lifepilot.workflow.retry.initial-delay-ms` | `500` | 重试初始延迟（毫秒） |
+| `lifepilot.workflow.retry.max-delay-ms` | `5000` | 重试最大延迟（毫秒） |
+| `lifepilot.workflow.retry.max-attempts` | `3` | 最大重试次数 |
+| `lifepilot.workflow.approval.default-timeout-seconds` | `86400` | 审批默认超时（24 小时） |
+| `lifepilot.workflow.event-audit.retention-days` | `90` | 审计事件保留天数 |
+
+## 5. 限制与未来方向
+
+当前限制：
+- 工作流定义仅支持 YAML 文件，不支持 Web UI 可视化编辑
+- 并行步骤的分支间不支持数据共享，各分支独立执行
+- 子工作流嵌套深度限制为 3 层
+- 表达式引擎仅支持基础比较和逻辑运算，不支持函数调用
+
+未来方向：
+- Web UI 工作流可视化编辑器（拖拽式）
+- 工作流模板市场，支持社区共享
+- 更丰富的表达式函数（字符串处理、日期计算等）
+- 工作流版本管理和回滚
