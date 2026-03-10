@@ -1,8 +1,8 @@
 # Web UI 架构设计
 
-> **模块编号**：Phase 5 — 模块 18
-> **依赖模块**：Gateway + Channel 适配器（模块 13）、Agent 引擎（模块 2）、LLM Router（模块 1）
-> **最后更新**：2026-02-26
+> **文档性质**：架构设计文档
+> **模块归属**：`com.lifepilot.interaction.web`（后端）+ `lifepilot-web`（前端）
+> **最后更新**：2026-03
 
 ---
 
