@@ -27,6 +27,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 评估引擎 — 协调场景加载、Agent 执行、轨迹采集、评估、报告。
@@ -92,9 +95,27 @@ public class EvalEngine {
         var startTime = Instant.now();
 
         try {
-            // 1. 构造 AgentRequest 并执行 Agent
+            // 1. 构造 AgentRequest 并执行 Agent（带超时控制）
             var request = new AgentRequest(scenario.userInput(), "eval-" + scenario.id(), "eval");
-            AgentResponse response = agentLoop.run(request);
+
+            int timeout = scenario.timeoutSeconds() > 0
+                    ? scenario.timeoutSeconds()
+                    : config.getExecution().getDefaultTimeoutSeconds();
+
+            AgentResponse response;
+            try {
+                response = CompletableFuture.supplyAsync(
+                        () -> agentLoop.run(request),
+                        Executors.newVirtualThreadPerTaskExecutor()
+                ).orTimeout(timeout, TimeUnit.SECONDS).join();
+            } catch (java.util.concurrent.CompletionException ce) {
+                if (ce.getCause() instanceof java.util.concurrent.TimeoutException) {
+                    log.warn("Agent 执行超时: scenarioId={}, timeout={}s", scenario.id(), timeout);
+                    return buildFailedResult(scenario, evalRunId,
+                            "Agent 执行超时: 超过 %d 秒限制".formatted(timeout));
+                }
+                throw ce.getCause() instanceof Exception ex ? ex : ce;
+            }
 
             // 2. 通过 TraceQuery 获取真实轨迹步骤
             String traceId = response.traceId();
