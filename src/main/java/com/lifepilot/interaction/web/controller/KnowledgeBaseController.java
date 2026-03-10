@@ -91,7 +91,11 @@ public class KnowledgeBaseController {
         var kb = kbManager.createKnowledgeBase(
                 request.name(),
                 request.description() != null ? request.description() : "",
-                request.embeddingModel() != null ? request.embeddingModel() : "default");
+                request.embeddingModel() != null ? request.embeddingModel() : "default",
+                request.rerankerModel(),
+                request.chunkingStrategy(),
+                request.chunkingConfig(),
+                request.tags());
         log.info("知识库创建成功: id={}, name={}", kb.id(), kb.name());
         return ResponseEntity.status(HttpStatus.CREATED).body(kb);
     }
@@ -112,8 +116,12 @@ public class KnowledgeBaseController {
         try {
             KnowledgeBase updated = kbManager.updateKnowledgeBase(
                     id,
-                    null, // name 不支持更新
+                    request.name(),
                     request.description(),
+                    request.embeddingModel(),
+                    request.rerankerModel(),
+                    request.chunkingStrategy(),
+                    request.chunkingConfig(),
                     request.tags()
             );
             log.info("知识库更新成功: id={}", id);
@@ -138,6 +146,38 @@ public class KnowledgeBaseController {
     public ResponseEntity<List<Document>> listDocuments(@PathVariable String id) {
         log.debug("查询文档列表: kbId={}", id);
         return ResponseEntity.ok(kbManager.listDocuments(id));
+    }
+
+    /** 查询文档分块列表（支持分页）。 */
+    @GetMapping("/{id}/documents/{docId}/chunks")
+    public ResponseEntity<?> listDocumentChunks(@PathVariable String id,
+                                                @PathVariable String docId,
+                                                @RequestParam(defaultValue = "0") int offset,
+                                                @RequestParam(defaultValue = "50") int limit) {
+        // 验证知识库存在
+        if (kbManager.getKnowledgeBase(id).isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    new ErrorResponse(404, "知识库不存在: id=" + id, Instant.now()));
+        }
+        // 验证文档存在且属于该知识库
+        var docRepo = this.documentRepository;
+        if (docRepo == null) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(
+                    new ErrorResponse(503, "文档功能未启用", Instant.now()));
+        }
+        var docOpt = docRepo.findById(docId);
+        if (docOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    new ErrorResponse(404, "文档不存在: id=" + docId, Instant.now()));
+        }
+        if (!docOpt.get().knowledgeBaseId().equals(id)) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    new ErrorResponse(404, "文档不属于指定知识库", Instant.now()));
+        }
+        var chunks = kbManager.listDocumentChunks(docId, offset, limit);
+        int total = kbManager.countDocumentChunks(docId);
+        log.debug("查询文档分块: docId={}, offset={}, limit={}, total={}", docId, offset, limit, total);
+        return ResponseEntity.ok(Map.of("chunks", chunks, "total", total));
     }
 
     /** 上传文档到知识库。 */
