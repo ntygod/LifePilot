@@ -119,14 +119,13 @@ public class ProactiveAutoConfiguration {
                                       DailySummaryCandidateProvider dailySummaryProvider,
                                       WeeklyReviewCandidateProvider weeklyReviewProvider,
                                       FrequencyStateManager frequencyStateManager,
-                                      ProactiveConfigProperties config,
-                                      NotificationTypeRegistry typeRegistry) {
+                                      ProactiveConfigProperties config) {
         // 合并来自 BuiltinSkillRegistrar 的候选提供者 + 独立候选提供者
         List<CandidateProvider> allProviders = new ArrayList<>(builtinSkillRegistrar.getRegisteredCandidateProviders());
         allProviders.add(dailySummaryProvider);
         allProviders.add(weeklyReviewProvider);
         log.info("主动推理: PolicyEngine 初始化，候选提供者数量={}", allProviders.size());
-        return new PolicyEngine(allProviders, frequencyStateManager, config, typeRegistry);
+        return new PolicyEngine(allProviders, frequencyStateManager, config);
     }
 
     @Bean
