@@ -137,6 +137,70 @@ public class LlmRouter {
     }
 
     /**
+     * 执行文本生成调用，优先按模型名路由，未找到时回退到 scene-based 路由。
+     *
+     * @param scene        场景名称
+     * @param prompt       提示词
+     * @param outputSchema 输出 Schema（可选）
+     * @param modelName    指定模型名（可选，null 时回退到 scene-based 路由）
+     * @return 统一响应
+     * @throws LlmUnavailableException 所有候选 Provider 均失败
+     */
+    public LlmResponse call(String scene, String prompt, @Nullable String outputSchema,
+                            @Nullable String modelName) {
+        if (modelName == null || modelName.isBlank()) {
+            return call(scene, prompt, outputSchema);
+        }
+        var byModel = providerRegistry.findByModelName(modelName).stream()
+                .filter(c -> c.hasCapability(ProviderCapability.CHAT))
+                .filter(c -> circuitBreakerManager.isCallPermitted(c.id(), "CHAT"))
+                .toList();
+        if (byModel.isEmpty()) {
+            log.warn("指定 modelName 未找到可用 Provider，回退到 scene 路由: modelName={}, scene={}",
+                    modelName, scene);
+            return call(scene, prompt, outputSchema);
+        }
+        return callWithCandidates(scene, prompt, outputSchema, byModel);
+    }
+
+    /**
+     * 使用指定候选列表执行文本生成调用（内部复用方法）。
+     */
+    private LlmResponse callWithCandidates(String scene, String prompt,
+                                            @Nullable String outputSchema,
+                                            List<ProviderConfig> candidates) {
+        var attemptedProviders = new ArrayList<String>();
+        Exception lastException = null;
+        for (int i = 0; i < candidates.size(); i++) {
+            var config = candidates.get(i);
+            attemptedProviders.add(config.id());
+            try {
+                var adapter = providerRegistry.getAdapter(config.id());
+                var timeout = Duration.ofSeconds(config.timeoutSeconds());
+                var response = adapter.call(prompt, outputSchema, timeout);
+                circuitBreakerManager.recordSuccess(config.id(), "CHAT");
+                log.info("LLM 调用成功（模型路由）: scene={}, provider={}, model={}",
+                        scene, config.id(), response.modelName());
+                if (semanticCache != null) {
+                    try {
+                        semanticCache.putAsync(scene, null, prompt, response.content(), response.modelName());
+                    } catch (Exception e) {
+                        log.warn("LLM 缓存写入异常: scene={}, error={}", scene, e.getMessage());
+                    }
+                }
+                return response;
+            } catch (Exception e) {
+                circuitBreakerManager.recordFailure(config.id(), "CHAT");
+                lastException = e;
+                log.warn("LLM 调用失败: scene={}, provider={}, error={}", scene, config.id(), e.getMessage());
+                if (i < candidates.size() - 1) sleepBackoff(i);
+            }
+        }
+        throw new LlmUnavailableException(
+                "所有候选 Provider 调用失败: scene=" + scene, scene, attemptedProviders, lastException);
+    }
+
+    /**
      * 执行结构化输出调用，优先选择支持 STRUCTURED_OUTPUT 的 Provider。
      *
      * @param scene        场景名称
@@ -185,6 +249,62 @@ public class LlmRouter {
             }
         }
 
+        throw new LlmUnavailableException(
+                "所有候选 Provider callEntity 失败: scene=" + scene,
+                scene, attemptedProviders, lastException);
+    }
+
+    /**
+     * 执行结构化输出调用，优先按模型名路由，未找到时回退到 scene-based 路由。
+     *
+     * @param scene        场景名称
+     * @param prompt       提示词
+     * @param responseType 响应类型
+     * @param modelName    指定模型名（可选，null 时回退到 scene-based 路由）
+     * @param <T>          响应泛型
+     * @return 结构化响应对象
+     * @throws LlmUnavailableException 所有候选 Provider 均失败
+     */
+    public <T> T callEntity(String scene, String prompt, Class<T> responseType,
+                            @Nullable String modelName) {
+        if (modelName == null || modelName.isBlank()) {
+            return callEntity(scene, prompt, responseType);
+        }
+        var byModel = providerRegistry.findByModelName(modelName).stream()
+                .filter(c -> c.hasCapability(ProviderCapability.CHAT))
+                .filter(c -> circuitBreakerManager.isCallPermitted(c.id(), "CHAT"))
+                .toList();
+        if (byModel.isEmpty()) {
+            log.warn("指定 modelName 未找到可用 Provider，回退到 scene 路由: modelName={}, scene={}",
+                    modelName, scene);
+            return callEntity(scene, prompt, responseType);
+        }
+        // 将支持 STRUCTURED_OUTPUT 的排在前面
+        var sorted = new ArrayList<>(byModel.stream()
+                .filter(c -> c.hasCapability(ProviderCapability.STRUCTURED_OUTPUT))
+                .toList());
+        byModel.stream()
+                .filter(c -> !c.hasCapability(ProviderCapability.STRUCTURED_OUTPUT))
+                .forEach(sorted::add);
+
+        var attemptedProviders = new ArrayList<String>();
+        Exception lastException = null;
+        for (int i = 0; i < sorted.size(); i++) {
+            var config = sorted.get(i);
+            attemptedProviders.add(config.id());
+            try {
+                var adapter = providerRegistry.getAdapter(config.id());
+                T result = adapter.callEntity(prompt, responseType);
+                circuitBreakerManager.recordSuccess(config.id(), "CHAT");
+                return result;
+            } catch (Exception e) {
+                circuitBreakerManager.recordFailure(config.id(), "CHAT");
+                lastException = e;
+                log.warn("LLM callEntity 失败（模型路由）: scene={}, provider={}, error={}",
+                        scene, config.id(), e.getMessage());
+                if (i < sorted.size() - 1) sleepBackoff(i);
+            }
+        }
         throw new LlmUnavailableException(
                 "所有候选 Provider callEntity 失败: scene=" + scene,
                 scene, attemptedProviders, lastException);
@@ -285,6 +405,48 @@ public class LlmRouter {
 
         throw new LlmUnavailableException(
                 "所有 EMBEDDING Provider 调用失败",
+                LlmScene.EMBEDDING, attemptedProviders, lastException);
+    }
+
+    /**
+     * 执行文本嵌入，优先按模型名路由，未找到时回退到默认 EMBEDDING Provider。
+     *
+     * @param text      待嵌入文本
+     * @param modelName 指定模型名（可选，null 时回退到默认 EMBEDDING Provider）
+     * @return 嵌入向量
+     * @throws LlmUnavailableException 所有 EMBEDDING Provider 均失败
+     */
+    public float[] embed(String text, @Nullable String modelName) {
+        if (modelName == null || modelName.isBlank()) {
+            return embed(text);
+        }
+        var byModel = providerRegistry.findByModelName(modelName).stream()
+                .filter(c -> c.hasCapability(ProviderCapability.EMBEDDING))
+                .filter(c -> circuitBreakerManager.isCallPermitted(c.id(), "EMBEDDING"))
+                .toList();
+        if (byModel.isEmpty()) {
+            log.warn("指定 embeddingModel 未找到可用 Provider，回退到默认: modelName={}", modelName);
+            return embed(text);
+        }
+        var attemptedProviders = new ArrayList<String>();
+        Exception lastException = null;
+        for (int i = 0; i < byModel.size(); i++) {
+            var config = byModel.get(i);
+            attemptedProviders.add(config.id());
+            try {
+                var adapter = providerRegistry.getAdapter(config.id());
+                float[] result = adapter.embed(text);
+                circuitBreakerManager.recordSuccess(config.id(), "EMBEDDING");
+                return result;
+            } catch (Exception e) {
+                circuitBreakerManager.recordFailure(config.id(), "EMBEDDING");
+                lastException = e;
+                log.warn("Embedding 调用失败（模型路由）: provider={}, error={}", config.id(), e.getMessage());
+                if (i < byModel.size() - 1) sleepBackoff(i);
+            }
+        }
+        throw new LlmUnavailableException(
+                "所有 EMBEDDING Provider 调用失败（模型路由）",
                 LlmScene.EMBEDDING, attemptedProviders, lastException);
     }
 
