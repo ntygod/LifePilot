@@ -1,6 +1,7 @@
 package com.lifepilot.agent.proactive;
 
 import com.lifepilot.agent.proactive.config.ProactiveConfigProperties;
+import com.lifepilot.agent.proactive.model.ProactiveCandidate;
 import com.lifepilot.agent.proactive.model.ProactiveNotification;
 import com.lifepilot.agent.proactive.model.Urgency;
 import com.lifepilot.llm.LlmRouter;
@@ -17,7 +18,7 @@ import java.util.UUID;
 /**
  * 主动推理引擎 — 两阶段推理管线编排。
  *
- * <p>Stage 1（RuleEngine）：确定性规则过滤，生成候选列表。
+ * <p>Stage 1（PolicyEngine）：确定性规则过滤，生成候选列表。
  * Stage 2（LLM）：精细判断候选是否值得发送，生成个性化内容。</p>
  *
  * @author zsg
@@ -28,7 +29,7 @@ public class ProactiveReasoner {
     private static final Logger log = LoggerFactory.getLogger(ProactiveReasoner.class);
 
     private final SignalCollector signalCollector;
-    private final PolicyEngine ruleEngine;
+    private final PolicyEngine policyEngine;
     private final FrequencyStateManager frequencyStateManager;
     private final NotificationDispatcher notificationDispatcher;
     private final ResponseTracker responseTracker;
@@ -37,7 +38,7 @@ public class ProactiveReasoner {
     private final PromptRegistry promptRegistry;
 
     public ProactiveReasoner(SignalCollector signalCollector,
-                              PolicyEngine ruleEngine,
+                              PolicyEngine policyEngine,
                               FrequencyStateManager frequencyStateManager,
                               NotificationDispatcher notificationDispatcher,
                               ResponseTracker responseTracker,
@@ -45,7 +46,7 @@ public class ProactiveReasoner {
                               ProactiveConfigProperties config,
                               PromptRegistry promptRegistry) {
         this.signalCollector = signalCollector;
-        this.ruleEngine = ruleEngine;
+        this.policyEngine = policyEngine;
         this.frequencyStateManager = frequencyStateManager;
         this.notificationDispatcher = notificationDispatcher;
         this.responseTracker = responseTracker;
@@ -77,20 +78,20 @@ public class ProactiveReasoner {
         // 1. 收集信号
         var signals = signalCollector.collect();
 
-        // 2. 规则过滤，生成候选列表
-        var candidates = ruleEngine.evaluate(signals);
+        // 2. 策略引擎过滤，生成候选列表
+        var candidates = policyEngine.evaluate(signals);
         if (candidates.isEmpty()) {
             log.debug("本次推理无候选提醒");
             return;
         }
 
-        log.debug("规则引擎生成候选: count={}", candidates.size());
+        log.debug("策略引擎生成候选: count={}", candidates.size());
 
         // 3. 逐候选处理
         for (var candidate : candidates) {
             // 频率控制
-            if (!frequencyStateManager.shouldSend(candidate.type(), candidate.urgency())) {
-                log.debug("频率控制拒绝: type={}, urgency={}", candidate.type(), candidate.urgency());
+            if (!frequencyStateManager.shouldSend(candidate.typeId(), candidate.subjectId(), candidate.urgency())) {
+                log.debug("频率控制拒绝: typeId={}, urgency={}", candidate.typeId(), candidate.urgency());
                 continue;
             }
 
@@ -108,7 +109,7 @@ public class ProactiveReasoner {
 
                     // LLM 判定不值得发送
                     if (content == null || content.isBlank() || content.contains("SKIP")) {
-                        log.debug("LLM 判定跳过: type={}", candidate.type());
+                        log.debug("LLM 判定跳过: typeId={}", candidate.typeId());
                         continue;
                     }
                 }
@@ -121,7 +122,7 @@ public class ProactiveReasoner {
                 // 构造通知
                 var notification = new ProactiveNotification(
                         UUID.randomUUID().toString(),
-                        candidate.type(),
+                        candidate.typeId(),
                         candidate.urgency(),
                         content,
                         "log",
@@ -130,18 +131,18 @@ public class ProactiveReasoner {
                 );
 
                 // 分发通知
-                notificationDispatcher.dispatch(notification);
+                notificationDispatcher.dispatch(notification, candidate.initiativeType());
 
                 // 更新最后通知时间
-                frequencyStateManager.updateLastNotified(candidate.type());
+                frequencyStateManager.updateLastNotified(candidate.typeId(), candidate.subjectId());
 
                 // 开始追踪
-                responseTracker.track(candidate.type());
+                responseTracker.track(candidate.typeId());
 
             } catch (LlmUnavailableException e) {
-                log.warn("LLM 不可用，跳过候选: type={}, error={}", candidate.type(), e.getMessage());
+                log.warn("LLM 不可用，跳过候选: typeId={}, error={}", candidate.typeId(), e.getMessage());
             } catch (Exception e) {
-                log.warn("候选处理异常: type={}, error={}", candidate.type(), e.getMessage());
+                log.warn("候选处理异常: typeId={}, error={}", candidate.typeId(), e.getMessage());
             }
         }
 
@@ -150,25 +151,25 @@ public class ProactiveReasoner {
     }
 
     /**
-     * 渲染 HIGH 紧急度模板，失败时降级为 candidate.reason()。
+     * 渲染 HIGH 紧急度模板，失败时降级为 candidate.summary()。
      */
-    private String renderHighUrgencyTemplate(com.lifepilot.agent.proactive.model.ProactiveCandidate candidate) {
+    private String renderHighUrgencyTemplate(ProactiveCandidate candidate) {
         try {
-            var templateKey = "proactive/high-urgency/" + candidate.type().name().toLowerCase();
-            return promptRegistry.render(templateKey, Map.of("reason", candidate.reason()));
+            var templateKey = "proactive/high-urgency/" + candidate.typeId();
+            return promptRegistry.render(templateKey, Map.of("reason", candidate.summary()));
         } catch (Exception e) {
-            log.warn("HIGH 紧急度模板渲染失败，降级为原始原因: type={}, error={}", candidate.type(), e.getMessage());
-            return candidate.reason();
+            log.warn("HIGH 紧急度模板渲染失败，降级为原始摘要: typeId={}, error={}", candidate.typeId(), e.getMessage());
+            return candidate.summary();
         }
     }
 
     /** 构建 LLM 评估提示词。 */
-    private String buildEvaluationPrompt(com.lifepilot.agent.proactive.model.ProactiveCandidate candidate) {
+    private String buildEvaluationPrompt(ProactiveCandidate candidate) {
         return promptRegistry.render("proactive/evaluation", Map.of(
                 "maxContentLength", String.valueOf(config.getMaxContentLength()),
-                "type", candidate.type(),
+                "type", candidate.typeId(),
                 "urgency", candidate.urgency(),
-                "reason", candidate.reason()
+                "reason", candidate.summary()
         ));
     }
 }
