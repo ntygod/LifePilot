@@ -50,6 +50,12 @@ public class SkillConfigProperties {
     /** HTTP 动作配置。 */
     private HttpAction httpAction = new HttpAction();
 
+    /** 内置 Skill 配置。 */
+    private Builtin builtin = new Builtin();
+
+    public Builtin getBuiltin() { return builtin; }
+    public void setBuiltin(Builtin builtin) { this.builtin = builtin; }
+
     /**
      * Skill 定义校验限制配置。
      *
@@ -192,5 +198,61 @@ public class SkillConfigProperties {
 
         public int getTimeoutSeconds() { return timeoutSeconds; }
         public void setTimeoutSeconds(int timeoutSeconds) { this.timeoutSeconds = timeoutSeconds; }
+    }
+
+    /**
+     * 内置 Skill 开关配置。
+     *
+     * <p>通过 {@code lifepilot.skills.builtin.{skill-id}.enabled} 控制各内置 Skill 的启用/禁用。
+     * Memory Skill 始终启用，不受配置开关控制。</p>
+     *
+     * @author zsg
+     * @since 2026-03-10
+     */
+    public static class Builtin {
+
+        private SkillToggle todo = new SkillToggle();
+        private SkillToggle schedule = new SkillToggle();
+        private SkillToggle habit = new SkillToggle();
+
+        public SkillToggle getTodo() { return todo; }
+        public void setTodo(SkillToggle todo) { this.todo = todo; }
+
+        public SkillToggle getSchedule() { return schedule; }
+        public void setSchedule(SkillToggle schedule) { this.schedule = schedule; }
+
+        public SkillToggle getHabit() { return habit; }
+        public void setHabit(SkillToggle habit) { this.habit = habit; }
+
+        /**
+         * 根据 Skill ID 查询是否启用。Memory Skill 始终启用。
+         *
+         * @param skillId Skill 标识
+         * @return 是否启用
+         */
+        public boolean isEnabled(String skillId) {
+            return switch (skillId) {
+                case "todo" -> todo.isEnabled();
+                case "schedule" -> schedule.isEnabled();
+                case "habit" -> habit.isEnabled();
+                case "memory" -> true;
+                default -> true;
+            };
+        }
+
+        /**
+         * 单个 Skill 的启用/禁用开关。
+         *
+         * @author zsg
+         * @since 2026-03-10
+         */
+        public static class SkillToggle {
+
+            /** 是否启用，默认 true。 */
+            private boolean enabled = true;
+
+            public boolean isEnabled() { return enabled; }
+            public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        }
     }
 }

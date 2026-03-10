@@ -215,6 +215,13 @@ lifepilot:
     directory: "${user.home}/.zhiwei/skills"
     hot-reload-debounce-ms: 500
     skill-filename: SKILL.md
+    builtin:
+      todo:
+        enabled: true
+      schedule:
+        enabled: true
+      habit:
+        enabled: true
     auto-generation:
       enabled: true
       gap-threshold: 0.6
