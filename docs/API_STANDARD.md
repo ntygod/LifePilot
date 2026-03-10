@@ -1,9 +1,9 @@
-# API 标准规范
+# 知微 API 标准规范
 
-本文档定义 ZhiWei 项目前后端 API 交互的统一标准，作为后端实现与前端对齐的规范依据。
+本文档定义知微（ZhiWei）项目前后端 API 交互的统一标准，作为后端实现与前端对齐的规范依据。
 
 - **版本**: 1.0
-- **更新日期**: 2026-02-28
+- **更新日期**: 2026-03
 - **API 前缀**: `/api`（除特别说明，如 `/mcp`）
 
 ## 目录
@@ -179,14 +179,13 @@ Content-Type: multipart/form-data
 {
   "code": 404,
   "message": "知识库不存在: id=kb-123",
-  "detail": "KnowledgeBaseNotFoundException",
-  "traceId": "trace-abc-123",
-  "timestamp": "2026-02-28T10:05:00Z"
+  "timestamp": "2026-02-28T10:05:00.000Z"
 }
 ```
 
-- `detail` / `traceId` 可能为 `null`
-- `traceId` 从日志 MDC 中读取（若存在）
+- `code`：HTTP 状态码
+- `message`：错误描述
+- `timestamp`：ISO 8601 时间戳（`Instant`）
 
 ### 6.2 全局异常处理
 
@@ -305,10 +304,27 @@ Content-Type: application/json
 | 事件类型 | 说明 | 数据结构 |
 |---------|------|---------|
 | `token` | 增量文本片段事件 | `{"content": "文本片段"}` |
+| `reasoning` | 推理过程事件（Reasoning Timeline） | `{"content": "推理片段"}` |
 | `ui` | UI 组件更新事件 | `{"components": [...]}` |
 | `done` | 消息完成事件 | `{"messageId": "...", "content": "...", "timestamp": ..., "tokenUsage": {...}, "usage": {...}, "sources": [...], "toolsSummary": [...], "traceId": "..."}` |
 | `error` | 错误事件 | `{"code": 500, "message": "...", "traceId": "..."}` |
 | `heartbeat` | 心跳事件 | `""`（空字符串） |
+
+#### Trace 模块事件类型
+
+| 事件类型 | 说明 | 数据结构 |
+|---------|------|---------|
+| `trace-start` | Trace 开始事件 | `{"traceId": "..."}` |
+| `trace-step` | Trace 步骤事件 | `{"traceId": "...", "step": {...}}` |
+| `trace-end` | Trace 结束事件 | `{"traceId": "..."}` |
+| `agent-delegated` | Agent 委托事件（handoff 工具调用前发送） | `{"agentId": "...", "targetAgentId": "..."}` |
+
+#### 其他事件类型
+
+| 事件类型 | 说明 | 数据结构 |
+|---------|------|---------|
+| `notification` | 主动通知事件 | `{"type": "...", "content": "..."}` |
+| `media` | 媒体数据事件（图片/音频等） | `{"mediaType": "...", "data": "..."}` |
 
 **`done` 事件完整字段说明**：
 - `messageId`（必填）：消息 ID
@@ -351,6 +367,9 @@ Content-Type: application/json
 event: token
 data: {"content":"Hello"}
 
+event: reasoning
+data: {"content":"正在分析用户意图..."}
+
 event: token
 data: {"content":" World"}
 
@@ -376,7 +395,7 @@ data: {
 }
 
 event: error
-data: {"code":500,"message":"处理失败","traceId":"trace-abc-123"}
+data: {"code":500,"message":"处理失败","timestamp":"2026-02-28T10:05:00.000Z"}
 
 event: heartbeat
 data: 
