@@ -1,6 +1,7 @@
 package com.lifepilot.observability.config;
 
 import com.lifepilot.agent.config.AgentAutoConfiguration;
+import com.lifepilot.observability.evaluation.EvaluationCore;
 import com.lifepilot.observability.evaluation.TrajectoryEvaluator;
 import com.lifepilot.observability.guardrail.GuardrailAdvisor;
 import com.lifepilot.observability.guardrail.GuardrailEngine;
@@ -117,11 +118,19 @@ public class ObservabilityAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    public EvaluationCore evaluationCore() {
+        log.info("可观测性: 注册 EvaluationCore 共享五维评估核心");
+        return new EvaluationCore();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     @ConditionalOnProperty(prefix = "lifepilot.observability.evaluation", name = "enabled",
             havingValue = "true", matchIfMissing = true)
     public TrajectoryEvaluator trajectoryEvaluator(JdbcTemplate jdbcTemplate,
-                                                    ObservabilityProperties properties) {
+                                                    ObservabilityProperties properties,
+                                                    EvaluationCore evaluationCore) {
         log.info("可观测性: 注册 TrajectoryEvaluator 轨迹评估引擎");
-        return new TrajectoryEvaluator(jdbcTemplate, properties);
+        return new TrajectoryEvaluator(jdbcTemplate, properties, evaluationCore);
     }
 }
