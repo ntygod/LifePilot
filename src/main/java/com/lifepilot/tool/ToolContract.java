@@ -1,4 +1,4 @@
-﻿package com.lifepilot.tool;
+package com.lifepilot.tool;
 
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.model.ToolBudget;

@@ -1,7 +1,7 @@
 package com.lifepilot.tool.yaml;
 
 import com.lifepilot.observability.guardrail.RiskLevel;
-import com.lifepilot.tool.YamlTool;
+import com.lifepilot.tool.SkillTool;
 import org.springframework.stereotype.Component;
 import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.Yaml;
@@ -10,23 +10,23 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * YAML Tool 序列化器 — 将 YamlTool 序列化为 YAML 字符串。
+ * Skill Tool 序列化器 — 将 SkillTool 序列化为 YAML 字符串。
  *
- * <p>用于 YAML Tool 的持久化。输出的 YAML 格式符合工具定义规范。</p>
+ * <p>用于 Skill Tool 的持久化。输出的 YAML 格式符合工具定义规范。</p>
  *
  * @author zsg
  * @since 2026-02-28
  */
 @Component
-public class YamlToolSerializer {
+public class SkillToolSerializer {
 
     /**
-     * 将 YamlTool 序列化为 YAML 字符串。
+     * 将 SkillTool 序列化为 YAML 字符串。
      *
-     * @param tool YAML Tool
+     * @param tool Skill Tool
      * @return YAML 格式字符串
      */
-    public String serialize(YamlTool tool) {
+    public String serialize(SkillTool tool) {
         Map<String, Object> root = new LinkedHashMap<>();
         
         root.put("id", tool.id());

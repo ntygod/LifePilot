@@ -11,7 +11,7 @@ import com.lifepilot.tool.model.ToolLayer;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.tool.schema.JsonSchema;
-import com.lifepilot.tool.yaml.YamlToolPersistenceService;
+import com.lifepilot.tool.yaml.SkillToolPersistenceService;
 import com.lifepilot.workflow.model.WorkflowDefinition;
 import com.lifepilot.workflow.model.WorkflowStep;
 import com.lifepilot.workflow.registry.WorkflowRegistry;
@@ -55,12 +55,12 @@ public class ToolController {
     private final DynamicToolRegistry toolRegistry;
     private final SkillRegistry skillRegistry;
     private final WorkflowRegistry workflowRegistry;
-    private final YamlToolPersistenceService persistenceService;
+    private final SkillToolPersistenceService persistenceService;
 
     public ToolController(DynamicToolRegistry toolRegistry,
                           SkillRegistry skillRegistry,
                           WorkflowRegistry workflowRegistry,
-                          @Nullable YamlToolPersistenceService persistenceService) {
+                          @Nullable SkillToolPersistenceService persistenceService) {
         this.toolRegistry = toolRegistry;
         this.skillRegistry = skillRegistry;
         this.workflowRegistry = workflowRegistry;
@@ -255,7 +255,7 @@ public class ToolController {
             @SuppressWarnings("unchecked")
             List<String> tags = (List<String>) request.getOrDefault("tags", List.of());
 
-            // 创建 YamlTool（当前版本不支持直接执行，仅用于注册和显示）
+            // 创建 SkillTool（当前版本不支持直接执行，仅用于注册和显示）
             SkillTool tool = new SkillTool(
                     id,
                     name,

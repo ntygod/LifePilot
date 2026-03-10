@@ -5,7 +5,7 @@ import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.ToolContract;
 import com.lifepilot.tool.McpTool;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
-import com.lifepilot.tool.YamlTool;
+import com.lifepilot.tool.SkillTool;
 
 import java.util.List;
 
@@ -53,7 +53,7 @@ public class ToolDiscoveryService {
     private ToolSummary toSummary(ToolContract tool) {
         String sourceType = switch (tool) {
             case BuiltinTool _ -> "builtin";
-            case YamlTool _ -> "skill";
+            case SkillTool _ -> "skill";
             case McpTool _ -> "mcp";
         };
         return new ToolSummary(tool.id(), tool.name(), tool.description(), sourceType);
