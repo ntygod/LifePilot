@@ -2,7 +2,7 @@
 
 > **文档性质**：特性说明文档
 > **模块归属**：`com.lifepilot.eval`
-> **最后更新**：2026-03
+> **最后更新**：2026-03（eval-optimization 重构后更新）
 
 ## 1. 功能概述
 
@@ -16,15 +16,15 @@ Agentic Evals 提供系统化的 Agent 行为评估能力，帮助开发者量�
 
 ### 2.2 五维规则评估
 
-基于 `sealed interface` 的五个评估维度，每个维度独立评分（0.0~1.0）并提供违规项和改进建议：
+基于 `EvaluationCore` 共享评估核心（位于 observability 模块），统一 eval 和 observability 两个模块的五维评估逻辑。五个评估维度独立评分（0.0~1.0）：
 
-- 工具选择正确性：Agent 是否选择了场景期望的工具
+- 工具选择正确性：Agent 是否选择了场景期望的工具（LCS 算法计算匹配度）
 - 参数合法性：工具调用参数是否符合约束
 - 步骤效率：完成任务的步骤数与期望值的偏差
 - 策略合规：是否遵循安全策略和护栏规则
 - Token 效率：Token 消耗是否在预算范围内
 
-综合评分通过场景定义的维度权重加权计算。
+综合评分通过场景定义的维度权重加权计算。eval 模块的 `TrajectoryEvaluator` 和 observability 模块的 `TrajectoryEvaluator` 均委托给 `EvaluationCore` 执行评估。
 
 ### 2.3 LLM-as-a-Judge 语义评估
 
@@ -61,10 +61,11 @@ Agentic Evals 提供系统化的 Agent 行为评估能力，帮助开发者量�
 
 | 配置键 | 默认值 | 说明 |
 |--------|--------|------|
-| `lifepilot.eval.enabled` | `true` | 评估框架总开关 |
-| `lifepilot.eval.scenario-directory` | `${user.home}/.zhiwei/eval/scenarios` | 场景 YAML 文件目录 |
+| `lifepilot.eval.enabled` | `true` | 评估框架总开关（matchIfMissing=true） |
+| `lifepilot.eval.scenario-directory` | `${user.home}/.zhiwei/eval/scenarios` | 场景 YAML 文件目录（不存在时自动创建） |
 | `lifepilot.eval.default-pass-threshold` | `0.7` | 默认通过阈值（0.0~1.0） |
 | `lifepilot.eval.degradation-threshold` | `0.1` | 退化检测阈值 |
+| `lifepilot.eval.execution.default-timeout-seconds` | `60` | Agent 执行默认超时（秒） |
 | `lifepilot.eval.llm-judge.scene` | `eval-judge` | LLM Judge 使用的 LlmRouter 场景 |
 | `lifepilot.eval.llm-judge.timeout-seconds` | `30` | LLM 调用超时（秒） |
 | `lifepilot.eval.llm-judge.fallback-score` | `0.5` | LLM 降级时的默认评分 |
@@ -74,7 +75,6 @@ Agentic Evals 提供系统化的 Agent 行为评估能力，帮助开发者量�
 ## 5. 限制与未来方向
 
 当前限制：
-- 合成轨迹步骤基于 AgentResponse 元数据构建，无法获取 Agent 内部真实轨迹步骤
 - LLM Judge 的 `callEntity()` 路径不返回 Token 使用量统计
 - 评估场景不支持多轮对话，仅支持单轮输入-输出评估
 

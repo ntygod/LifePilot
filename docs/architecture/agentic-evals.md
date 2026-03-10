@@ -2,7 +2,7 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.eval`
-> **最后更新**：2026-03
+> **最后更新**：2026-03（eval-optimization 重构后更新）
 
 ## 1. 模块概述
 
@@ -24,16 +24,15 @@ graph TB
 
     subgraph "评估执行"
         AL["AgentLoop<br/>Agent 执行"]
-        TE["TrajectoryEvaluator<br/>轨迹评估协调器"]
+        TQ["TraceQuery<br/>轨迹查询"]
+        TE_E["TrajectoryEvaluator<br/>eval 轨迹评估"]
+        TE_O["TrajectoryEvaluator<br/>observability 轨迹评估"]
         LJ["LlmJudge<br/>LLM 语义评判"]
     end
 
-    subgraph "五维评估器"
-        TS["ToolSelectionEvaluator<br/>工具选择正确性"]
-        PV["ParameterValidityEvaluator<br/>参数合法性"]
-        SE["StepEfficiencyEvaluator<br/>步骤效率"]
-        PC["PolicyComplianceEvaluator<br/>策略合规"]
-        TK["TokenEfficiencyEvaluator<br/>Token 效率"]
+    subgraph "共享评估核心（observability 模块）"
+        EC["EvaluationCore<br/>五维评估核心"]
+        ECfg["EvaluationConfig<br/>评估参数 record"]
     end
 
     subgraph "结果与报告"
@@ -47,11 +46,15 @@ graph TB
     EE --> SL
     SL --> BS
     EE --> AL
-    EE --> TE
+    AL --"AgentResponse(traceId)"--> EE
+    EE --> TQ
+    TQ --"List&lt;TraceStep&gt;"--> EE
+    EE --> TE_E
+    TE_E --> EC
+    TE_O --> EC
+    EC --> ECfg
     EE --> LJ
-    TE --> TS & PV & SE & PC & TK
-    TS & PV & SE & PC & TK --> TE
-    TE --> ER
+    TE_E --> ER
     LJ --> ER
     EE --> ES
     EE --> RP
@@ -69,29 +72,31 @@ YAML 声明式评估用例，定义用户输入、期望工具调用序列、维
 
 ### 3.2 ScenarioLoader — 场景加载器
 
-从配置目录加载 `*.yml` / `*.yaml` 文件，使用 Jackson YAML 反序列化为 `BenchmarkScenario`。支持全量加载、按 ID 加载、按标签过滤。加载后执行校验：场景 ID 唯一性、维度权重和为 1.0（容差 0.001）。
+从配置目录加载 `*.yml` / `*.yaml` 文件，使用 Jackson YAML 反序列化为 `BenchmarkScenario`。支持全量加载、按 ID 加载、按标签过滤。加载后执行校验：场景 ID 唯一性、维度权重和为 1.0（容差 0.001）。场景目录不存在时自动创建并返回空列表，空目录返回空列表并记录 WARN 日志。
 
 ### 3.3 EvalEngine — 评估引擎
 
-核心协调器，编排完整评估流程。单场景评估流程：构造 `AgentRequest` → 调用 `AgentLoop.run()` → 构建合成轨迹步骤 → `TrajectoryEvaluator` 规则评估 → 可选 `LlmJudge` 语义评估 → 填充 Git 元数据 → 异步持久化。批量评估遍历场景列表逐个执行，单场景失败不影响其他场景，失败场景评分为 0.0。
+核心协调器，编排完整评估流程。单场景评估流程：构造 `AgentRequest` → 调用 `AgentLoop.run()`（Virtual Thread + `CompletableFuture.orTimeout` 超时控制）→ 通过 `TraceQuery.getSteps(traceId)` 获取真实轨迹步骤 → `TrajectoryEvaluator` 规则评估 → 可选 `LlmJudge` 语义评估 → 填充 Git 元数据 → 异步持久化。
 
-### 3.4 TrajectoryEvaluator — 轨迹评估协调器
+`evaluateScenario` 接受 `evalRunId` 参数，批量评估时在循环前生成统一 UUID 传入，确保同批次结果共享 evalRunId。支持 Mock 工具响应注入（通过 `DynamicToolRegistry` 临时注册/注销）和 `initialContext` 注入（作为 systemPrompt 前缀）。单场景失败不影响其他场景，失败场景评分为 0.0。
 
-协调五个 `DimensionEvaluator`，对每个维度调用 `evaluate()` 获取 `DimensionScore`，根据场景定义的 `dimensionWeights` 计算加权综合评分，汇总所有违规项和改进建议，构建 `EvalResult`。
+### 3.4 EvaluationCore — 共享五维评估核心（observability 模块）
 
-### 3.5 DimensionEvaluator — 维度评估器
+统一 eval 和 observability 两个模块的五维评估逻辑，放置在 `com.lifepilot.observability.evaluation` 包下避免循环依赖。接受 `List<TraceStep>` 和 `EvaluationConfig`，执行五维评估：
 
-`sealed interface`，五个 permit 对应五个评估维度：
+- 工具选择正确性：LCS(expectedToolCalls, actualToolCalls) / max(expected.size, actual.size)
+- 参数合法性：基于 ToolCallStep 的 success 状态统计
+- 步骤效率：min(expectedStepCount / actualSteps, 1.0)
+- 策略合规：1.0 - (blockedGuardrailCount / totalSteps)
+- Token 效率：min(expectedTokenBudget / actualTokens, 1.0)
 
-| 评估器 | 维度 | 评估内容 |
-|--------|------|---------|
-| `ToolSelectionEvaluator` | 工具选择正确性 | Agent 是否选择了正确的工具 |
-| `ParameterValidityEvaluator` | 参数合法性 | 工具调用参数是否合法 |
-| `StepEfficiencyEvaluator` | 步骤效率 | 完成任务的步骤数是否合理 |
-| `PolicyComplianceEvaluator` | 策略合规 | 是否遵循安全策略和护栏规则 |
-| `TokenEfficiencyEvaluator` | Token 效率 | Token 消耗是否在预算内 |
+加权求和计算 overallScore，各维度评分限制在 [0.0, 1.0]。空步骤列表返回默认评分（所有维度 0.5）。
 
-每个评估器返回 `DimensionScore` record（评分 0.0~1.0 + 违规项 + 改进建议）。
+`EvaluationConfig` record 包含五维权重、expectedStepCount、expectedTokenBudget、expectedToolCalls，eval 模块从 `BenchmarkScenario` 构建，observability 模块从 `ObservabilityProperties` 构建。
+
+### 3.5 TrajectoryEvaluator — 轨迹评估协调器
+
+eval 和 observability 模块各有一个 `TrajectoryEvaluator`，均委托给 `EvaluationCore` 执行评估。eval 版本从 `BenchmarkScenario` 构建 `EvaluationConfig`，observability 版本从 `ObservabilityProperties` 构建。
 
 ### 3.6 LlmJudge — LLM 语义评判
 
@@ -118,23 +123,22 @@ YAML 声明式评估用例，定义用户输入、期望工具调用序列、维
 sequenceDiagram
     participant JU as JUnit / 调用方
     participant EE as EvalEngine
-    participant SL as ScenarioLoader
     participant AL as AgentLoop
+    participant TQ as TraceQuery
     participant TE as TrajectoryEvaluator
-    participant DE as DimensionEvaluator ×5
+    participant EC as EvaluationCore
     participant LJ as LlmJudge
     participant ES as EvalStore
 
-    JU->>EE: evaluateScenario(scenario)
-    EE->>AL: run(AgentRequest)
-    AL-->>EE: AgentResponse
-    EE->>EE: buildSyntheticSteps()
+    JU->>EE: evaluateScenario(scenario, evalRunId)
+    EE->>EE: 注册 Mock 工具（如有）
+    EE->>AL: run(AgentRequest)（Virtual Thread + orTimeout）
+    AL-->>EE: AgentResponse(traceId)
+    EE->>TQ: getSteps(traceId)
+    TQ-->>EE: List<TraceStep>
     EE->>TE: evaluate(steps, scenario)
-    loop 五个维度
-        TE->>DE: evaluate(steps, scenario)
-        DE-->>TE: DimensionScore
-    end
-    TE->>TE: 加权计算 overallScore
+    TE->>EC: evaluate(steps, config)
+    EC-->>TE: EvaluationResult
     TE-->>EE: EvalResult
     alt 场景定义了 llmJudgeCriteria
         EE->>LJ: judge(actualOutput, expected, criteria)
@@ -143,6 +147,7 @@ sequenceDiagram
     end
     EE->>EE: enrichMetadata(git info)
     EE->>ES: persistAsync(result)
+    EE->>EE: 注销 Mock 工具（如有）
     EE-->>JU: EvalResult
 ```
 
@@ -169,10 +174,13 @@ sequenceDiagram
 
 | 决策 | 选择 | 理由 |
 |------|------|------|
-| 评估维度建模 | `sealed interface` + 5 个 permit | 编译时穷举保证，新增维度必须显式处理 |
+| 评估逻辑共享 | `EvaluationCore` 放置在 observability 模块 | eval 依赖 observability（TraceStep 等类型定义在 observability），避免循环依赖，eval 和 observability 的 TrajectoryEvaluator 均委托给 EvaluationCore |
+| 轨迹获取方式 | 通过 `TraceQuery.getSteps(traceId)` 获取真实轨迹 | 替代原有的 `buildSyntheticSteps()` 合成方式，获取 Agent 内部真实执行步骤，评估结果更准确 |
+| 超时控制 | Virtual Thread + `CompletableFuture.orTimeout` | 利用 Java 22 虚拟线程，超时后记录违规并评分为 0.0 |
+| evalRunId 生成 | 批量评估前生成 UUID，作为参数传入 `evaluateScenario` | 确保同批次结果共享 evalRunId，持久化时已携带正确的批次 ID |
+| Mock 工具注入 | 通过 `DynamicToolRegistry` 临时注册/注销 | 场景可定义 Mock 工具响应，执行完成后在 finally 块中清理 |
 | 场景定义格式 | YAML 声明式 | 非开发者也能编写场景，与 Skill YAML 风格一致 |
 | LLM Judge 降级策略 | callEntity → 手动解析 → 简化 Prompt | 三级降级确保评估不因 LLM 解析失败而中断 |
-| 合成轨迹步骤 | 从 AgentResponse 构建 | AgentLoop 内部管理轨迹，外部无法直接获取 TraceStep |
 | 异步持久化 | Virtual Thread | 评估结果写入不阻塞评估流程，利用 Java 22 虚拟线程 |
 | 退化检测 | 平均分差值阈值 | 简单有效，可配置阈值，避免过度复杂的统计方法 |
 
@@ -181,19 +189,20 @@ sequenceDiagram
 | 集成模块 | 方向 | 说明 |
 |---------|------|------|
 | Agent 引擎（`agent`） | eval → agent | `EvalEngine` 调用 `AgentLoop.run()` 执行场景 |
-| 可观测性（`observability`） | eval → observability | 使用 `TraceStep` sealed interface 子类型构建合成轨迹 |
+| 可观测性（`observability`） | eval → observability | 通过 `TraceQuery.getSteps(traceId)` 获取真实轨迹步骤；`EvaluationCore` 提供共享五维评估逻辑 |
 | LLM Router（`llm`） | eval → llm | `LlmJudge` 通过 `LlmRouter` 调用 LLM 进行语义评估 |
-| 工具系统（`tool`） | eval → tool | `TrajectoryEvaluator` 注入 `DynamicToolRegistry` |
+| 工具系统（`tool`） | eval → tool | `EvalEngine` 通过 `DynamicToolRegistry` 注入/注销 Mock 工具 |
 | JUnit 5 | eval ← junit | `@EvalTest` / `@EvalSuite` 注解驱动评估执行 |
 
 ## 7. 配置参考
 
 | 配置键 | 默认值 | 说明 |
 |--------|--------|------|
-| `lifepilot.eval.enabled` | `true` | 评估框架总开关 |
+| `lifepilot.eval.enabled` | `true` | 评估框架总开关（matchIfMissing=true） |
 | `lifepilot.eval.scenario-directory` | `${user.home}/.zhiwei/eval/scenarios` | 场景 YAML 目录 |
 | `lifepilot.eval.default-pass-threshold` | `0.7` | 默认通过阈值 |
 | `lifepilot.eval.degradation-threshold` | `0.1` | 退化检测阈值（平均分差值） |
+| `lifepilot.eval.execution.default-timeout-seconds` | `60` | Agent 执行默认超时（秒） |
 | `lifepilot.eval.llm-judge.scene` | `eval-judge` | LLM Judge 场景名称 |
 | `lifepilot.eval.llm-judge.timeout-seconds` | `30` | LLM 调用超时 |
 | `lifepilot.eval.llm-judge.fallback-score` | `0.5` | 降级默认评分 |
