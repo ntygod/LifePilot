@@ -1,8 +1,15 @@
 package com.lifepilot.skill.builtin.schedule;
 
+import com.lifepilot.agent.proactive.candidate.CandidateProvider;
+import com.lifepilot.agent.proactive.model.InitiativeType;
+import com.lifepilot.agent.proactive.model.ProactiveCandidate;
+import com.lifepilot.agent.proactive.model.Signal;
+import com.lifepilot.agent.proactive.model.SignalBundle;
+import com.lifepilot.agent.proactive.model.Urgency;
+import com.lifepilot.agent.proactive.signal.SignalSource;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.skill.builtin.BuiltinSkill;
-import com.lifepilot.skill.builtin.BuiltinSkillProvider;
+import com.lifepilot.skill.builtin.ProactiveSkillProvider;
 import com.lifepilot.skill.model.SkillDefinition;
 import com.lifepilot.skill.model.SkillSource;
 import com.lifepilot.tool.BuiltinTool;
@@ -13,6 +20,9 @@ import com.lifepilot.tool.schema.JsonSchema;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -20,13 +30,14 @@ import java.util.Map;
  * 日程管理内置 Skill 提供者。
  *
  * <p>注册 6 个日程 CRUD 工具到 DynamicToolRegistry，
- * 提供日程管理 Skill 定义蓝图。</p>
+ * 提供日程管理 Skill 定义蓝图。实现 {@link ProactiveSkillProvider}，
+ * 提供日程提醒信号源和候选提供者。</p>
  *
  * @author zsg
  * @since 2026-02-25
  */
 @BuiltinSkill(id = "schedule", order = 20)
-public class ScheduleSkillProvider implements BuiltinSkillProvider {
+public class ScheduleSkillProvider implements ProactiveSkillProvider {
 
     private static final Logger log = LoggerFactory.getLogger(ScheduleSkillProvider.class);
 
@@ -68,6 +79,18 @@ public class ScheduleSkillProvider implements BuiltinSkillProvider {
         toolRegistry.registerBuiltinTool(buildDeleteTool());
         toolRegistry.registerBuiltinTool(buildConflictsTool());
         log.info("日程 Skill 工具注册完成: count=6");
+    }
+
+    // ---- ProactiveSkillProvider 实现 ----
+
+    @Override
+    public List<SignalSource> signalSources() {
+        return List.of(new ScheduleSignalSource());
+    }
+
+    @Override
+    public List<CandidateProvider> candidateProviders() {
+        return List.of(new ScheduleCandidateProvider());
     }
 
     // ---- 工具构建方法 ----
@@ -273,6 +296,88 @@ public class ScheduleSkillProvider implements BuiltinSkillProvider {
                     }
                 })
                 .build();
+    }
+
+    // ---- 主动推理内部类 ----
+
+    /**
+     * 日程提醒信号源 — 收集 60 分钟内即将开始的日程信号。
+     *
+     * <p>根据距开始时间的剩余时长计算紧急度：
+     * &lt; 15min → HIGH，&lt; 30min → MEDIUM，其余 → LOW。</p>
+     */
+    private class ScheduleSignalSource implements SignalSource {
+
+        @Override
+        public String id() {
+            return "schedule-signal";
+        }
+
+        @Override
+        public List<Signal> collect() {
+            List<ScheduleItem> schedules = scheduleRepository.list();
+            Instant now = Instant.now();
+            Instant horizon = now.plus(Duration.ofMinutes(60));
+            List<Signal> signals = new ArrayList<>();
+
+            for (ScheduleItem schedule : schedules) {
+                if (schedule.startTime() == null) {
+                    continue;
+                }
+                try {
+                    Instant startInstant = Instant.parse(schedule.startTime());
+                    // 仅收集 60 分钟内即将开始且尚未过去的日程
+                    if (startInstant.isAfter(now) && !startInstant.isAfter(horizon)) {
+                        Duration remaining = Duration.between(now, startInstant);
+                        Urgency urgency = remaining.toMinutes() < 15 ? Urgency.HIGH
+                                : remaining.toMinutes() < 30 ? Urgency.MEDIUM
+                                : Urgency.LOW;
+
+                        signals.add(Signal.builder()
+                                .typeId("schedule_reminder")
+                                .urgency(urgency)
+                                .summary("日程「%s」将于 %s 开始".formatted(schedule.title(), schedule.startTime()))
+                                .sourceId("schedule-signal")
+                                .subjectId(schedule.id())
+                                .metadata(Map.of(
+                                        "scheduleId", schedule.id(),
+                                        "title", schedule.title(),
+                                        "startTime", schedule.startTime()))
+                                .build());
+                    }
+                } catch (Exception e) {
+                    log.warn("解析日程开始时间失败: scheduleId={}, startTime={}", schedule.id(), schedule.startTime(), e);
+                }
+            }
+
+            log.debug("日程信号收集完成: count={}", signals.size());
+            return List.copyOf(signals);
+        }
+    }
+
+    /**
+     * 日程候选提供者 — 将 schedule_reminder 信号映射为 NOTIFICATION 候选。
+     */
+    private class ScheduleCandidateProvider implements CandidateProvider {
+
+        @Override
+        public String id() {
+            return "schedule-candidate";
+        }
+
+        @Override
+        public List<ProactiveCandidate> evaluate(SignalBundle signals) {
+            return signals.signals().stream()
+                    .filter(s -> "schedule_reminder".equals(s.typeId()))
+                    .filter(s -> "schedule-signal".equals(s.sourceId()))
+                    .map(s -> new ProactiveCandidate(
+                            "schedule_reminder",
+                            s.urgency(),
+                            s.summary(),
+                            s.subjectId(),
+                            InitiativeType.NOTIFICATION))
+                    .toList();
+        }
     }
 
     // ---- 辅助方法 ----

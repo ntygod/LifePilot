@@ -10,11 +10,11 @@ import com.lifepilot.tool.schema.JsonSchema;
 import java.util.List;
 
 /**
- * YAML 声明式工具（Layer 2）— 工具注册表中的 YAML 工具类型标记。
+ * Skill 声明式工具（Layer 2）— 工具注册表中的 Skill 工具类型标记。
  *
  * <p>作为 {@link ToolContract} sealed interface 的 permit 之一，
  * 用于在 {@link com.lifepilot.tool.registry.DynamicToolRegistry} 中
- * 标识 YAML 来源的工具。实际的 YAML Skill 执行通过
+ * 标识 Skill 来源的工具。实际的 Skill 执行通过
  * {@code SkillActivator} 路径完成，不经过 {@code execute()} 方法。</p>
  *
  * @param id 工具唯一标识
@@ -29,7 +29,7 @@ import java.util.List;
  * @author zsg
  * @since 2026-02-24
  */
-public record YamlTool(
+public record SkillTool(
         String id,
         String name,
         String description,
@@ -43,7 +43,7 @@ public record YamlTool(
 
     @Override
     public ToolLayer layer() {
-        return ToolLayer.YAML_DECLARATIVE;
+        return ToolLayer.SKILL_DECLARATIVE;
     }
 
     @Override
@@ -54,6 +54,6 @@ public record YamlTool(
     @Override
     public ToolResult execute(ToolInput input) {
         throw new UnsupportedOperationException(
-                "YamlTool 不支持直接执行，YAML Skill 应通过 SkillActivator 路径调用");
+                "SkillTool 不支持直接执行，Skill 应通过 SkillActivator 路径调用");
     }
 }

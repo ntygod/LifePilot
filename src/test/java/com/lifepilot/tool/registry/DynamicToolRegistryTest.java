@@ -108,7 +108,7 @@ class DynamicToolRegistryTest {
         var counts = registry.getToolCountByLayer();
         assertEquals(1, counts.getOrDefault(ToolLayer.JAVA_NATIVE, 0));
         assertEquals(1, counts.getOrDefault(ToolLayer.MCP_EXTERNAL, 0));
-        assertEquals(0, counts.getOrDefault(ToolLayer.YAML_DECLARATIVE, 0));
+        assertEquals(0, counts.getOrDefault(ToolLayer.SKILL_DECLARATIVE, 0));
     }
 
     @Test

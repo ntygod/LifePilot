@@ -39,7 +39,7 @@ public class GatewayNotificationChannel implements NotificationChannel {
     @Override
     public void send(ProactiveNotification notification) {
         if (adapters.isEmpty()) {
-            log.info("无可用 ChannelAdapter，通知降级为日志: type={}", notification.type());
+            log.info("无可用 ChannelAdapter，通知降级为日志: typeId={}", notification.typeId());
             return;
         }
 
@@ -49,7 +49,7 @@ public class GatewayNotificationChannel implements NotificationChannel {
                 adapter.sendResponse("system", response);
             } catch (Exception e) {
                 log.warn("通知发送失败: channel={}, type={}, error={}",
-                        adapter.channelType(), notification.type(), e.getMessage());
+                        adapter.channelType(), notification.typeId(), e.getMessage());
             }
         }
     }
@@ -64,7 +64,7 @@ public class GatewayNotificationChannel implements NotificationChannel {
                 new ResponseContent.TextContent(notification.content()),
                 List.of(),
                 Map.of(
-                        "notificationType", notification.type().name(),
+                        "notificationType", notification.typeId(),
                         "urgency", notification.urgency().name(),
                         "notificationId", notification.id()
                 ),

@@ -2,6 +2,7 @@ package com.lifepilot.agent.proactive;
 
 import com.lifepilot.agent.proactive.channel.NotificationChannel;
 import com.lifepilot.agent.proactive.channel.PassiveNotificationQueue;
+import com.lifepilot.agent.proactive.model.InitiativeType;
 import com.lifepilot.agent.proactive.model.ProactiveNotification;
 import com.lifepilot.agent.proactive.model.Urgency;
 import org.slf4j.Logger;
@@ -11,10 +12,14 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.util.List;
 
 /**
- * 通知分发器 — 根据紧急程度选择通道并发送。
+ * 通知分发器 — 根据 {@link InitiativeType} 和紧急程度选择分发策略。
  *
- * <p>HIGH/MEDIUM → 遍历所有通道分发，LOW → 被动队列。
- * 同时持久化到 proactive_notifications 表。</p>
+ * <ul>
+ *   <li>{@link InitiativeType#NOTIFICATION}：HIGH/MEDIUM → 遍历所有通道广播，LOW → 被动队列</li>
+ *   <li>{@link InitiativeType#PASSIVE_HINT}：直接入队被动队列，等待用户下次交互时附带展示</li>
+ * </ul>
+ *
+ * <p>同时持久化到 proactive_notifications 表。</p>
  *
  * @author zsg
  * @since 2026-02-25
@@ -38,23 +43,32 @@ public class NotificationDispatcher {
     /**
      * 分发通知。
      *
-     * @param notification 通知
+     * @param notification   通知
+     * @param initiativeType 主动介入类型
      */
-    public void dispatch(ProactiveNotification notification) {
-        // 根据紧急程度路由
+    public void dispatch(ProactiveNotification notification, InitiativeType initiativeType) {
+        // PASSIVE_HINT → 直接入队被动队列
+        if (initiativeType == InitiativeType.PASSIVE_HINT) {
+            passiveQueue.enqueue(notification);
+            log.info("被动提示入队: typeId={}", notification.typeId());
+            persistNotification(notification);
+            return;
+        }
+
+        // NOTIFICATION → 根据紧急程度路由
         if (notification.urgency() == Urgency.LOW) {
             passiveQueue.enqueue(notification);
-            log.info("通知入队被动队列: type={}, urgency={}", notification.type(), notification.urgency());
+            log.info("通知入队被动队列: typeId={}, urgency={}", notification.typeId(), notification.urgency());
         } else {
             // HIGH/MEDIUM 遍历所有通道分发，单通道失败不中断
             for (NotificationChannel channel : channels) {
                 try {
                     channel.send(notification);
-                    log.info("通知已发送: type={}, urgency={}, channel={}",
-                            notification.type(), notification.urgency(), channel.id());
+                    log.info("通知已发送: typeId={}, urgency={}, channel={}",
+                            notification.typeId(), notification.urgency(), channel.id());
                 } catch (Exception e) {
-                    log.warn("通知发送失败: channel={}, type={}, error={}",
-                            channel.id(), notification.type(), e.getMessage());
+                    log.warn("通知发送失败: channel={}, typeId={}, error={}",
+                            channel.id(), notification.typeId(), e.getMessage());
                 }
             }
         }
@@ -71,7 +85,7 @@ public class NotificationDispatcher {
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                     notification.id(),
-                    notification.type().name(),
+                    notification.typeId(),
                     notification.urgency().name(),
                     notification.content(),
                     notification.channel(),

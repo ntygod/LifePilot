@@ -18,7 +18,7 @@ import java.util.List;
  * @author zsg
  * @since 2026-02-24
  */
-public sealed interface ToolContract permits BuiltinTool, YamlTool, McpTool {
+public sealed interface ToolContract permits BuiltinTool, SkillTool, McpTool {
 
     /** 工具唯一标识（全局唯一，格式：{namespace}.{name}）。 */
     String id();

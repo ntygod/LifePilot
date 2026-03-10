@@ -1,7 +1,6 @@
 package com.lifepilot.agent.proactive;
 
 import com.lifepilot.agent.proactive.config.ProactiveConfigProperties;
-import com.lifepilot.agent.proactive.model.NotificationType;
 import com.lifepilot.agent.proactive.model.TrackingEntry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,7 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * 用户响应追踪器 — 追踪通知响应并反馈给 FrequencyStateManager。
  *
- * <p>使用关键词匹配判断用户消息与通知的相关性。
+ * <p>使用 {@link NotificationTypeRegistry} 查询关键词进行用户消息相关性匹配。
  * 超过响应窗口的条目标记为忽略。</p>
  *
  * @author zsg
@@ -26,22 +25,25 @@ public class ResponseTracker {
 
     private final FrequencyStateManager frequencyStateManager;
     private final ProactiveConfigProperties config;
-    private final ConcurrentHashMap<NotificationType, TrackingEntry> pending = new ConcurrentHashMap<>();
+    private final NotificationTypeRegistry typeRegistry;
+    private final ConcurrentHashMap<String, TrackingEntry> pending = new ConcurrentHashMap<>();
 
     public ResponseTracker(FrequencyStateManager frequencyStateManager,
-                            ProactiveConfigProperties config) {
+                           ProactiveConfigProperties config,
+                           NotificationTypeRegistry typeRegistry) {
         this.frequencyStateManager = frequencyStateManager;
         this.config = config;
+        this.typeRegistry = typeRegistry;
     }
 
     /**
      * 开始追踪一个已发送通知。
      *
-     * @param type 通知类型
+     * @param typeId 通知类型标识
      */
-    public void track(NotificationType type) {
-        pending.put(type, new TrackingEntry(type, Instant.now()));
-        log.debug("开始追踪通知响应: type={}", type);
+    public void track(String typeId) {
+        pending.put(typeId, new TrackingEntry(typeId, Instant.now()));
+        log.debug("开始追踪通知响应: typeId={}", typeId);
     }
 
     /**
@@ -55,13 +57,13 @@ public class ResponseTracker {
         }
 
         // 遍历待追踪条目，检查关键词相关性
-        var toRemove = new ArrayList<NotificationType>();
+        var toRemove = new ArrayList<String>();
         for (var entry : pending.entrySet()) {
-            var type = entry.getKey();
-            if (isRelated(type, userMessage)) {
-                frequencyStateManager.recordAcknowledged(type);
-                toRemove.add(type);
-                log.debug("通知被确认: type={}", type);
+            var typeId = entry.getKey();
+            if (isRelated(typeId, userMessage)) {
+                frequencyStateManager.recordAcknowledged(typeId, null);
+                toRemove.add(typeId);
+                log.debug("通知被确认: typeId={}", typeId);
             }
         }
         toRemove.forEach(pending::remove);
@@ -77,7 +79,7 @@ public class ResponseTracker {
 
         var windowMs = (long) config.getResponseWindowMinutes() * 60_000L;
         var now = Instant.now();
-        var expired = new ArrayList<NotificationType>();
+        var expired = new ArrayList<String>();
 
         for (var entry : pending.entrySet()) {
             var elapsed = Duration.between(entry.getValue().sentAt(), now).toMillis();
@@ -86,17 +88,25 @@ public class ResponseTracker {
             }
         }
 
-        for (var type : expired) {
-            pending.remove(type);
-            frequencyStateManager.recordIgnored(type);
-            log.debug("通知响应超时，标记为忽略: type={}", type);
+        for (var typeId : expired) {
+            pending.remove(typeId);
+            frequencyStateManager.recordIgnored(typeId, null);
+            log.debug("通知响应超时，标记为忽略: typeId={}", typeId);
         }
     }
 
     /**
      * 判断用户消息是否与指定通知类型相关（关键词匹配）。
+     *
+     * <p>从 {@link NotificationTypeRegistry} 查询关键词，未找到时返回 false。</p>
+     *
+     * @param typeId  通知类型标识
+     * @param message 用户消息
+     * @return 是否相关
      */
-    private boolean isRelated(NotificationType type, String message) {
-        return type.keywords().stream().anyMatch(message::contains);
+    private boolean isRelated(String typeId, String message) {
+        return typeRegistry.resolve(typeId)
+                .map(def -> def.keywords().stream().anyMatch(message::contains))
+                .orElse(false);
     }
 }

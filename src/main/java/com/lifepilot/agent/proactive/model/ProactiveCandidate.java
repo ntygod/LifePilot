@@ -1,13 +1,20 @@
 package com.lifepilot.agent.proactive.model;
 
+import org.springframework.lang.Nullable;
+
 /**
- * 候选提醒 — 通过 RuleEngine 过滤后进入 LLM 评估的提醒候选。
+ * 候选记录 — 表示一个值得考虑主动介入的机会。
+ *
+ * <p>通过 PolicyEngine 过滤后进入分发流程。typeId 为字符串标识（如 "deadline_reminder"），
+ * 替代原有的 NotificationType 枚举，支持动态注册的通知类型。</p>
  *
  * @author zsg
  * @since 2026-02-25
  */
 public record ProactiveCandidate(
-        NotificationType type,
+        String typeId,
         Urgency urgency,
-        String reason
+        String summary,
+        @Nullable String subjectId,
+        InitiativeType initiativeType
 ) {}

@@ -1,7 +1,6 @@
 package com.lifepilot.interaction.web;
 
 import com.lifepilot.agent.proactive.channel.GatewayNotificationChannel;
-import com.lifepilot.agent.proactive.model.NotificationType;
 import com.lifepilot.agent.proactive.model.ProactiveNotification;
 import com.lifepilot.agent.proactive.model.Urgency;
 import com.lifepilot.interaction.channel.ChannelAdapter;
@@ -46,7 +45,7 @@ class ProactiveNotification_Gateway_SSE_集成测试 {
         // Given
         var notification = new ProactiveNotification(
                 UUID.randomUUID().toString(),
-                NotificationType.DEADLINE_REMINDER,
+                "deadline_reminder",
                 Urgency.HIGH,
                 "待办「提交报告」将在 1 小时内到期",
                 "gateway",
@@ -61,7 +60,7 @@ class ProactiveNotification_Gateway_SSE_集成测试 {
         assertEquals(1, capturedResponses.size(), "应有 1 个响应被发送");
         var response = capturedResponses.getFirst();
         assertNotNull(response.metadata(), "响应应包含 metadata");
-        assertEquals("DEADLINE_REMINDER", response.metadata().get("notificationType"),
+        assertEquals("deadline_reminder", response.metadata().get("notificationType"),
                 "metadata 应包含 notificationType");
         assertEquals("HIGH", response.metadata().get("urgency"),
                 "metadata 应包含 urgency");
@@ -74,7 +73,7 @@ class ProactiveNotification_Gateway_SSE_集成测试 {
         // Given
         var notification = new ProactiveNotification(
                 "test-id-123",
-                NotificationType.SCHEDULE_REMINDER,
+                "schedule_reminder",
                 Urgency.MEDIUM,
                 "下午 3 点有会议",
                 "gateway",
@@ -106,7 +105,7 @@ class ProactiveNotification_Gateway_SSE_集成测试 {
 
         var notification = new ProactiveNotification(
                 UUID.randomUUID().toString(),
-                NotificationType.HABIT_REMINDER,
+                "habit_reminder",
                 Urgency.LOW,
                 "该喝水了",
                 "gateway",
@@ -128,7 +127,7 @@ class ProactiveNotification_Gateway_SSE_集成测试 {
         var emptyChannel = new GatewayNotificationChannel(List.of());
         var notification = new ProactiveNotification(
                 UUID.randomUUID().toString(),
-                NotificationType.DAILY_SUMMARY,
+                "daily_summary",
                 Urgency.LOW,
                 "今日总结",
                 "gateway",
@@ -150,7 +149,7 @@ class ProactiveNotification_Gateway_SSE_集成测试 {
 
         var notification = new ProactiveNotification(
                 UUID.randomUUID().toString(),
-                NotificationType.STREAK_AT_RISK,
+                "streak_at_risk",
                 Urgency.MEDIUM,
                 "连续打卡即将中断",
                 "gateway",
@@ -170,7 +169,7 @@ class ProactiveNotification_Gateway_SSE_集成测试 {
         // Given
         var event = new NotificationSseEvent(
                 "evt-001",
-                NotificationType.DEADLINE_REMINDER,
+                "deadline_reminder",
                 Urgency.HIGH,
                 "紧急提醒内容",
                 Instant.now().toString()
@@ -178,7 +177,7 @@ class ProactiveNotification_Gateway_SSE_集成测试 {
 
         // Then
         assertEquals("evt-001", event.id());
-        assertEquals(NotificationType.DEADLINE_REMINDER, event.type());
+        assertEquals("deadline_reminder", event.typeId());
         assertEquals(Urgency.HIGH, event.urgency());
         assertEquals("紧急提醒内容", event.content());
         assertNotNull(event.timestamp());

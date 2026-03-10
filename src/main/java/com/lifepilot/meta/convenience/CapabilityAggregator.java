@@ -238,7 +238,7 @@ public class CapabilityAggregator {
     private CapabilityInfo toCapabilityInfo(ToolContract tool) {
         String source = switch (tool.layer()) {
             case JAVA_NATIVE -> "builtin";
-            case YAML_DECLARATIVE -> "yaml";
+            case SKILL_DECLARATIVE -> "skill";
             case MCP_EXTERNAL -> "mcp";
         };
         return new CapabilityInfo(

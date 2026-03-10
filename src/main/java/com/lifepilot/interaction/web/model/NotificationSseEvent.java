@@ -1,6 +1,5 @@
 package com.lifepilot.interaction.web.model;
 
-import com.lifepilot.agent.proactive.model.NotificationType;
 import com.lifepilot.agent.proactive.model.Urgency;
 
 /**
@@ -11,7 +10,7 @@ import com.lifepilot.agent.proactive.model.Urgency;
  */
 public record NotificationSseEvent(
         String id,
-        NotificationType type,
+        String typeId,
         Urgency urgency,
         String content,
         String timestamp

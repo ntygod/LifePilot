@@ -1,7 +1,7 @@
 package com.lifepilot.tool.yaml;
 
 import com.lifepilot.observability.guardrail.RiskLevel;
-import com.lifepilot.tool.YamlTool;
+import com.lifepilot.tool.SkillTool;
 import com.lifepilot.tool.model.ToolBudget;
 import com.lifepilot.tool.schema.JsonSchema;
 import org.slf4j.Logger;
@@ -16,25 +16,25 @@ import java.time.Duration;
 import java.util.*;
 
 /**
- * YAML Tool 加载器 — 从文件系统加载 YAML Tool。
+ * Skill Tool 加载器 — 从文件系统加载 Skill Tool。
  *
- * <p>解析 YAML 文件并转换为 YamlTool 对象。</p>
+ * <p>解析 YAML 文件并转换为 SkillTool 对象。</p>
  *
  * @author zsg
  * @since 2026-02-28
  */
 @Component
-public class YamlToolLoader {
+public class SkillToolLoader {
 
-    private static final Logger log = LoggerFactory.getLogger(YamlToolLoader.class);
+    private static final Logger log = LoggerFactory.getLogger(SkillToolLoader.class);
 
     /**
-     * 从文件加载 YAML Tool。
+     * 从文件加载 Skill Tool。
      *
      * @param filePath YAML 文件路径
-     * @return YAML Tool，解析失败返回 Optional.empty()
+     * @return Skill Tool，解析失败返回 Optional.empty()
      */
-    public Optional<YamlTool> loadFile(Path filePath) {
+    public Optional<SkillTool> loadFile(Path filePath) {
         try {
             // 读取文件内容
             String content = Files.readString(filePath);
@@ -50,24 +50,24 @@ public class YamlToolLoader {
             @SuppressWarnings("unchecked")
             Map<String, Object> yamlMap = (Map<String, Object>) map;
             
-            // 转换为 YamlTool
-            return Optional.of(parseYamlTool(yamlMap));
+            // 转换为 SkillTool
+            return Optional.of(parseSkillTool(yamlMap));
         } catch (IOException e) {
-            log.warn("读取 YAML Tool 文件失败: file={}, error={}", filePath, e.getMessage());
+            log.warn("读取 Skill Tool 文件失败: file={}, error={}", filePath, e.getMessage());
             return Optional.empty();
         } catch (Exception e) {
-            log.warn("解析 YAML Tool 失败: file={}, error={}", filePath, e.getMessage());
+            log.warn("解析 Skill Tool 失败: file={}, error={}", filePath, e.getMessage());
             return Optional.empty();
         }
     }
 
     /**
-     * 从 YAML Map 解析为 YamlTool。
+     * 从 YAML Map 解析为 SkillTool。
      *
      * @param yamlMap YAML Map
-     * @return YamlTool
+     * @return SkillTool
      */
-    private YamlTool parseYamlTool(Map<String, Object> yamlMap) {
+    private SkillTool parseSkillTool(Map<String, Object> yamlMap) {
         // 必填字段
         String id = getString(yamlMap, "id");
         String name = getString(yamlMap, "name");
@@ -104,7 +104,7 @@ public class YamlToolLoader {
         @SuppressWarnings("unchecked")
         List<String> tags = (List<String>) yamlMap.getOrDefault("tags", List.of());
         
-        return new YamlTool(
+        return new SkillTool(
                 id,
                 name,
                 description,

@@ -35,8 +35,8 @@ public class DynamicToolRegistry {
     /** MCP Server 工具索引：serverName → 工具 ID 列表。 */
     private final ConcurrentHashMap<String, List<String>> serverToolIndex = new ConcurrentHashMap<>();
 
-    /** YAML 工具 ID 集合。 */
-    private final ConcurrentHashMap<String, Boolean> yamlToolIds = new ConcurrentHashMap<>();
+    /** Skill 工具 ID 集合。 */
+    private final ConcurrentHashMap<String, Boolean> skillToolIds = new ConcurrentHashMap<>();
 
     private final GuardrailEngine guardrailEngine;
     private final ApplicationEventPublisher eventPublisher;
@@ -71,15 +71,15 @@ public class DynamicToolRegistry {
     }
 
     /**
-     * 批量注册 YAML 声明式工具（Layer 2）。
+     * 批量注册 Skill 声明式工具（Layer 2）。
      *
-     * @param yamlTools YAML 工具列表
+     * @param skillTools Skill 工具列表
      */
-    public void registerYamlTools(List<ToolContract> yamlTools) {
+    public void registerSkillTools(List<ToolContract> skillTools) {
         List<String> registeredIds = new ArrayList<>();
-        for (ToolContract tool : yamlTools) {
-            if (registerWithPriority(tool, ToolLayer.YAML_DECLARATIVE, "yaml")) {
-                yamlToolIds.put(tool.id(), Boolean.TRUE);
+        for (ToolContract tool : skillTools) {
+            if (registerWithPriority(tool, ToolLayer.SKILL_DECLARATIVE, "skill")) {
+                skillToolIds.put(tool.id(), Boolean.TRUE);
                 registeredIds.add(tool.id());
             }
         }
@@ -87,8 +87,8 @@ public class DynamicToolRegistry {
             guardrailEngine.addAllowedTools(registeredIds);
             invalidateSnapshot();
             eventPublisher.publishEvent(new ToolsRegistered(
-                    List.copyOf(registeredIds), ToolLayer.YAML_DECLARATIVE, "yaml"));
-            log.info("YAML 工具注册完成: count={}", registeredIds.size());
+                    List.copyOf(registeredIds), ToolLayer.SKILL_DECLARATIVE, "skill"));
+            log.info("Skill 工具注册完成: count={}", registeredIds.size());
         }
     }
 
@@ -187,40 +187,40 @@ public class DynamicToolRegistry {
     }
 
     /**
-     * 注销指定 ID 的 YAML 工具。
+     * 注销指定 ID 的 Skill 工具。
      *
      * @param toolId 工具 ID
      * @return 是否成功注销
      */
-    public boolean unregisterYamlTool(String toolId) {
+    public boolean unregisterSkillTool(String toolId) {
         ToolContract removed = tools.remove(toolId);
         if (removed != null) {
             toolLayers.remove(toolId);
-            yamlToolIds.remove(toolId);
+            skillToolIds.remove(toolId);
             guardrailEngine.removeAllowedTools(List.of(toolId));
             invalidateSnapshot();
             eventPublisher.publishEvent(new ToolsUnregistered(
-                    List.of(toolId), "yaml"));
-            log.info("YAML 工具注销完成: id={}", toolId);
+                    List.of(toolId), "skill"));
+            log.info("Skill 工具注销完成: id={}", toolId);
             return true;
         }
         return false;
     }
 
-    /** 注销所有 YAML 工具（热加载前调用）。 */
-    public void unregisterYamlTools() {
-        List<String> toolIds = new ArrayList<>(yamlToolIds.keySet());
+    /** 注销所有 Skill 工具（热加载前调用）。 */
+    public void unregisterSkillTools() {
+        List<String> toolIds = new ArrayList<>(skillToolIds.keySet());
         if (!toolIds.isEmpty()) {
             toolIds.forEach(id -> {
                 tools.remove(id);
                 toolLayers.remove(id);
             });
-            yamlToolIds.clear();
+            skillToolIds.clear();
             guardrailEngine.removeAllowedTools(toolIds);
             invalidateSnapshot();
             eventPublisher.publishEvent(new ToolsUnregistered(
-                    List.copyOf(toolIds), "yaml-reload"));
-            log.info("YAML 工具注销完成: count={}", toolIds.size());
+                    List.copyOf(toolIds), "skill-reload"));
+            log.info("Skill 工具注销完成: count={}", toolIds.size());
         }
     }
 

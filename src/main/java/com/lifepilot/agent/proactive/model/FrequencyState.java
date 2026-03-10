@@ -3,7 +3,7 @@ package com.lifepilot.agent.proactive.model;
 /**
  * 频率状态枚举 — 三态状态机。
  *
- * <p>每个 {@link NotificationType} 独立维护一个频率状态。
+ * <p>每个通知类型（typeId）独立维护一个频率状态。
  * 降频是渐进的（NORMAL → REDUCED → MUTED），恢复是即时的（任意状态 → NORMAL）。</p>
  *
  * @author zsg

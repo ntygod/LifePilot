@@ -2,23 +2,27 @@ package com.lifepilot.agent.proactive.config;
 
 import com.lifepilot.agent.proactive.FrequencyStateManager;
 import com.lifepilot.agent.proactive.NotificationDispatcher;
+import com.lifepilot.agent.proactive.NotificationTypeRegistry;
 import com.lifepilot.agent.proactive.ProactiveReasoner;
 import com.lifepilot.agent.proactive.ResponseTracker;
-import com.lifepilot.agent.proactive.RuleEngine;
+import com.lifepilot.agent.proactive.PolicyEngine;
 import com.lifepilot.agent.proactive.SignalCollector;
+import com.lifepilot.agent.proactive.candidate.CandidateProvider;
+import com.lifepilot.agent.proactive.candidate.DailySummaryCandidateProvider;
+import com.lifepilot.agent.proactive.candidate.WeeklyReviewCandidateProvider;
 import com.lifepilot.agent.proactive.channel.GatewayNotificationChannel;
 import com.lifepilot.agent.proactive.channel.LogNotificationChannel;
 import com.lifepilot.agent.proactive.channel.NotificationChannel;
 import com.lifepilot.agent.proactive.channel.PassiveNotificationQueue;
+import com.lifepilot.agent.proactive.signal.SignalSource;
 import com.lifepilot.interaction.channel.ChannelAdapter;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.prompt.PromptRegistry;
+import com.lifepilot.skill.builtin.BuiltinSkillRegistrar;
 
+import java.util.ArrayList;
 import java.util.List;
-import com.lifepilot.skill.builtin.habit.HabitRepository;
-import com.lifepilot.skill.builtin.schedule.ScheduleRepository;
-import com.lifepilot.skill.builtin.todo.TodoRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -68,9 +72,18 @@ public class ProactiveAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    public NotificationTypeRegistry notificationTypeRegistry() {
+        var registry = new NotificationTypeRegistry();
+        log.info("主动推理: NotificationTypeRegistry 初始化完成，已注册 {} 种默认类型", registry.listAll().size());
+        return registry;
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     public FrequencyStateManager frequencyStateManager(JdbcTemplate jdbcTemplate,
-                                                        ProactiveConfigProperties config) {
-        var manager = new FrequencyStateManager(jdbcTemplate, config);
+                                                        ProactiveConfigProperties config,
+                                                        NotificationTypeRegistry typeRegistry) {
+        var manager = new FrequencyStateManager(jdbcTemplate, config, typeRegistry);
         manager.loadPersistedStates();
         log.info("主动推理: FrequencyStateManager 初始化完成，已加载持久化状态");
         return manager;
@@ -78,22 +91,42 @@ public class ProactiveAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean({TodoRepository.class, ScheduleRepository.class,
-            HabitRepository.class, EpisodicMemory.class})
-    public SignalCollector signalCollector(TodoRepository todoRepository,
-                                           ScheduleRepository scheduleRepository,
-                                           HabitRepository habitRepository,
-                                           EpisodicMemory episodicMemory,
-                                           JdbcTemplate jdbcTemplate) {
-        return new SignalCollector(todoRepository, scheduleRepository,
-                habitRepository, episodicMemory, jdbcTemplate);
+    @ConditionalOnBean({BuiltinSkillRegistrar.class, EpisodicMemory.class})
+    public SignalCollector signalCollector(BuiltinSkillRegistrar builtinSkillRegistrar,
+                                           EpisodicMemory episodicMemory) {
+        // 合并来自 BuiltinSkillRegistrar 的信号源
+        List<SignalSource> allSignalSources = new ArrayList<>(builtinSkillRegistrar.getRegisteredSignalSources());
+        log.info("主动推理: SignalCollector 初始化，信号源数量={}", allSignalSources.size());
+        return new SignalCollector(allSignalSources, episodicMemory);
     }
 
     @Bean
     @ConditionalOnMissingBean
-    public RuleEngine ruleEngine(FrequencyStateManager frequencyStateManager,
-                                  ProactiveConfigProperties config) {
-        return new RuleEngine(frequencyStateManager, config);
+    public DailySummaryCandidateProvider dailySummaryCandidateProvider(ProactiveConfigProperties config) {
+        return new DailySummaryCandidateProvider(config);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public WeeklyReviewCandidateProvider weeklyReviewCandidateProvider(ProactiveConfigProperties config) {
+        return new WeeklyReviewCandidateProvider(config);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(BuiltinSkillRegistrar.class)
+    public PolicyEngine policyEngine(BuiltinSkillRegistrar builtinSkillRegistrar,
+                                      DailySummaryCandidateProvider dailySummaryProvider,
+                                      WeeklyReviewCandidateProvider weeklyReviewProvider,
+                                      FrequencyStateManager frequencyStateManager,
+                                      ProactiveConfigProperties config,
+                                      NotificationTypeRegistry typeRegistry) {
+        // 合并来自 BuiltinSkillRegistrar 的候选提供者 + 独立候选提供者
+        List<CandidateProvider> allProviders = new ArrayList<>(builtinSkillRegistrar.getRegisteredCandidateProviders());
+        allProviders.add(dailySummaryProvider);
+        allProviders.add(weeklyReviewProvider);
+        log.info("主动推理: PolicyEngine 初始化，候选提供者数量={}", allProviders.size());
+        return new PolicyEngine(allProviders, frequencyStateManager, config, typeRegistry);
     }
 
     @Bean
@@ -107,15 +140,16 @@ public class ProactiveAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public ResponseTracker responseTracker(FrequencyStateManager frequencyStateManager,
-                                            ProactiveConfigProperties config) {
-        return new ResponseTracker(frequencyStateManager, config);
+                                            ProactiveConfigProperties config,
+                                            NotificationTypeRegistry typeRegistry) {
+        return new ResponseTracker(frequencyStateManager, config, typeRegistry);
     }
 
     @Bean
     @ConditionalOnMissingBean
     @ConditionalOnBean(SignalCollector.class)
     public ProactiveReasoner proactiveReasoner(SignalCollector signalCollector,
-                                                RuleEngine ruleEngine,
+                                                PolicyEngine policyEngine,
                                                 FrequencyStateManager frequencyStateManager,
                                                 NotificationDispatcher notificationDispatcher,
                                                 ResponseTracker responseTracker,
@@ -123,7 +157,7 @@ public class ProactiveAutoConfiguration {
                                                 ProactiveConfigProperties config,
                                                 PromptRegistry promptRegistry) {
         log.info("主动推理引擎初始化完成");
-        return new ProactiveReasoner(signalCollector, ruleEngine, frequencyStateManager,
+        return new ProactiveReasoner(signalCollector, policyEngine, frequencyStateManager,
                 notificationDispatcher, responseTracker, llmRouter, config, promptRegistry);
     }
 }

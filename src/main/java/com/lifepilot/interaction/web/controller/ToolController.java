@@ -4,14 +4,14 @@ import com.lifepilot.interaction.web.model.ErrorResponse;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.tool.ToolContract;
-import com.lifepilot.tool.YamlTool;
+import com.lifepilot.tool.SkillTool;
 import com.lifepilot.tool.model.ToolBudget;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolLayer;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.tool.schema.JsonSchema;
-import com.lifepilot.tool.yaml.YamlToolPersistenceService;
+import com.lifepilot.tool.yaml.SkillToolPersistenceService;
 import com.lifepilot.workflow.model.WorkflowDefinition;
 import com.lifepilot.workflow.model.WorkflowStep;
 import com.lifepilot.workflow.registry.WorkflowRegistry;
@@ -55,12 +55,12 @@ public class ToolController {
     private final DynamicToolRegistry toolRegistry;
     private final SkillRegistry skillRegistry;
     private final WorkflowRegistry workflowRegistry;
-    private final YamlToolPersistenceService persistenceService;
+    private final SkillToolPersistenceService persistenceService;
 
     public ToolController(DynamicToolRegistry toolRegistry,
                           SkillRegistry skillRegistry,
                           WorkflowRegistry workflowRegistry,
-                          @Nullable YamlToolPersistenceService persistenceService) {
+                          @Nullable SkillToolPersistenceService persistenceService) {
         this.toolRegistry = toolRegistry;
         this.skillRegistry = skillRegistry;
         this.workflowRegistry = workflowRegistry;
@@ -255,8 +255,8 @@ public class ToolController {
             @SuppressWarnings("unchecked")
             List<String> tags = (List<String>) request.getOrDefault("tags", List.of());
 
-            // 创建 YamlTool（当前版本不支持直接执行，仅用于注册和显示）
-            YamlTool tool = new YamlTool(
+            // 创建 SkillTool（当前版本不支持直接执行，仅用于注册和显示）
+            SkillTool tool = new SkillTool(
                     id,
                     name,
                     description,
@@ -280,7 +280,7 @@ public class ToolController {
             }
 
             // 注册到 DynamicToolRegistry
-            toolRegistry.registerYamlTools(List.of(tool));
+            toolRegistry.registerSkillTools(List.of(tool));
 
             log.info("Tool 创建成功: id={}, name={}", id, name);
             Map<String, Object> detail = toToolDetail(tool);
@@ -311,10 +311,10 @@ public class ToolController {
                     .body(new ErrorResponse(404, "Tool 不存在: id=" + id, Instant.now()));
         }
 
-        // 检查是否为 YAML Tool（只有 YAML Tool 可以更新）
-        if (existingTool.layer() != ToolLayer.YAML_DECLARATIVE) {
+        // 检查是否为 Skill Tool（只有 Skill Tool 可以更新）
+        if (existingTool.layer() != ToolLayer.SKILL_DECLARATIVE) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(new ErrorResponse(400, "只能更新用户创建的 Tool（YAML 类型）", Instant.now()));
+                    .body(new ErrorResponse(400, "只能更新用户创建的 Tool（Skill 类型）", Instant.now()));
         }
 
         try {
@@ -343,7 +343,7 @@ public class ToolController {
             @SuppressWarnings("unchecked")
             List<String> tags = (List<String>) request.getOrDefault("tags", existingTool.tags());
 
-            YamlTool updatedTool = new YamlTool(
+            SkillTool updatedTool = new SkillTool(
                     id,
                     name,
                     description,
@@ -367,8 +367,8 @@ public class ToolController {
             }
 
             // 注销旧 Tool，注册新 Tool
-            toolRegistry.unregisterYamlTool(id);
-            toolRegistry.registerYamlTools(List.of(updatedTool));
+            toolRegistry.unregisterSkillTool(id);
+            toolRegistry.registerSkillTools(List.of(updatedTool));
 
             log.info("Tool 更新成功: id={}", id);
             Map<String, Object> detail = toToolDetail(updatedTool);
@@ -416,7 +416,7 @@ public class ToolController {
         }
 
         // 删除 Tool
-        if (tool.layer() == ToolLayer.YAML_DECLARATIVE) {
+        if (tool.layer() == ToolLayer.SKILL_DECLARATIVE) {
             // 从文件系统删除
             if (persistenceService == null) {
                 return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
@@ -429,7 +429,7 @@ public class ToolController {
             }
             
             // 从注册中心注销
-            toolRegistry.unregisterYamlTool(id);
+            toolRegistry.unregisterSkillTool(id);
         } else if (tool.layer() == ToolLayer.JAVA_NATIVE) {
             toolRegistry.unregisterBuiltinTool(id);
         }
@@ -515,7 +515,7 @@ public class ToolController {
     private String getSourceString(ToolLayer layer) {
         return switch (layer) {
             case JAVA_NATIVE -> "builtin";
-            case YAML_DECLARATIVE -> "yaml";
+            case SKILL_DECLARATIVE -> "skill";
             case MCP_EXTERNAL -> "mcp";
         };
     }

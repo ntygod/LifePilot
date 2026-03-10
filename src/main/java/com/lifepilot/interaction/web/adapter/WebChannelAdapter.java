@@ -10,7 +10,6 @@ import java.util.Map;
 import java.util.UUID;
 
 import com.lifepilot.agent.proactive.channel.PassiveNotificationQueue;
-import com.lifepilot.agent.proactive.model.NotificationType;
 import com.lifepilot.agent.proactive.model.Urgency;
 import com.lifepilot.interaction.channel.AbstractChannelAdapter;
 import com.lifepilot.interaction.config.GatewayProperties;
@@ -102,8 +101,7 @@ public class WebChannelAdapter extends AbstractChannelAdapter {
         var metadata = response.metadata();
         if (metadata != null && metadata.containsKey("notificationType") && sseSessionManager != null) {
             try {
-                var typeStr = String.valueOf(metadata.get("notificationType"));
-                var type = NotificationType.valueOf(typeStr);
+                var typeId = String.valueOf(metadata.get("notificationType"));
                 var urgencyStr = metadata.containsKey("urgency")
                         ? String.valueOf(metadata.get("urgency")) : "LOW";
                 var urgency = Urgency.valueOf(urgencyStr);
@@ -112,10 +110,10 @@ public class WebChannelAdapter extends AbstractChannelAdapter {
                 var content = response.content() != null ? response.content().toPlainText() : "";
 
                 var event = new NotificationSseEvent(
-                        notificationId, type, urgency, content,
+                        notificationId, typeId, urgency, content,
                         java.time.Instant.now().toString());
                 sseSessionManager.broadcastNotification(event);
-                log.debug("通知 SSE 广播完成: type={}, urgency={}", type, urgency);
+                log.debug("通知 SSE 广播完成: typeId={}, urgency={}", typeId, urgency);
                 return;
             } catch (Exception e) {
                 log.warn("通知 SSE 广播失败，降级为默认处理: userId={}, error={}", userId, e.getMessage());
@@ -141,7 +139,7 @@ public class WebChannelAdapter extends AbstractChannelAdapter {
             var notifications = passiveNotificationQueue.drainAll();
             for (var n : notifications) {
                 var event = new NotificationSseEvent(
-                        n.id(), n.type(), n.urgency(), n.content(),
+                        n.id(), n.typeId(), n.urgency(), n.content(),
                         n.sentAt().toString());
                 sseSessionManager.broadcastNotification(event);
             }
