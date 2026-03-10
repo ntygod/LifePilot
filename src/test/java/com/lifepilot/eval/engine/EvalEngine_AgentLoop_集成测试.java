@@ -3,9 +3,9 @@ package com.lifepilot.eval.engine;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.AgentLoop;
 import com.lifepilot.agent.model.AgentResponse;
-import com.lifepilot.observability.trace.TraceRecorder;
+import com.lifepilot.observability.evaluation.EvaluationCore;
+import com.lifepilot.observability.trace.TraceQuery;
 import com.lifepilot.eval.config.EvalConfigProperties;
-import com.lifepilot.eval.evaluator.*;
 import com.lifepilot.eval.judge.LlmJudge;
 import com.lifepilot.eval.model.EvalResult;
 import com.lifepilot.eval.report.EvalReport;
@@ -75,7 +75,7 @@ class EvalEngine_AgentLoop_集成测试 {
     // ---- Mock 依赖 ----
     private AgentLoop agentLoop;
     private LlmRouter llmRouter;
-    private TraceRecorder traceRecorder;
+    private TraceQuery traceQuery;
     private DynamicToolRegistry toolRegistry;
 
     @BeforeEach
@@ -93,11 +93,14 @@ class EvalEngine_AgentLoop_集成测试 {
         // 2. Mock 外部依赖
         agentLoop = mock(AgentLoop.class);
         llmRouter = mock(LlmRouter.class);
-        traceRecorder = mock(TraceRecorder.class);
+        traceQuery = mock(TraceQuery.class);
         toolRegistry = mock(DynamicToolRegistry.class);
 
-        // DynamicToolRegistry.resolve() 默认返回空（合成步骤无 toolId）
+        // DynamicToolRegistry.resolve() 默认返回空
         when(toolRegistry.resolve(anyString())).thenReturn(Optional.empty());
+
+        // TraceQuery.getSteps() 默认返回空列表
+        when(traceQuery.getSteps(anyString())).thenReturn(List.of());
 
         // 3. 配置
         var config = new EvalConfigProperties();
@@ -117,20 +120,13 @@ class EvalEngine_AgentLoop_集成测试 {
         scenarioLoader = new ScenarioLoader(config);
         evalStore = new EvalStore(jdbcTemplate, objectMapper);
 
-        List<DimensionEvaluator> evaluators = List.of(
-                new ToolSelectionEvaluator(),
-                new ParameterValidityEvaluator(toolRegistry),
-                new StepEfficiencyEvaluator(),
-                new PolicyComplianceEvaluator(),
-                new TokenEfficiencyEvaluator()
-        );
-        var trajectoryEvaluator = new TrajectoryEvaluator(evaluators, toolRegistry);
+        var evaluationCore = new EvaluationCore();
         var llmJudge = new LlmJudge(llmRouter, config);
         evalReport = new EvalReport(evalStore, config);
 
         evalEngine = new EvalEngine(
-                scenarioLoader, agentLoop, traceRecorder,
-                trajectoryEvaluator, llmJudge, evalStore, evalReport, config
+                scenarioLoader, agentLoop, traceQuery,
+                evaluationCore, llmJudge, evalStore, evalReport, toolRegistry, config
         );
     }
 
@@ -173,7 +169,7 @@ class EvalEngine_AgentLoop_集成测试 {
                 .findFirst().orElseThrow();
 
         // 执行评估
-        EvalResult result = evalEngine.evaluateScenario(weatherScenario);
+        EvalResult result = evalEngine.evaluateScenario(weatherScenario, "run-integration-001");
 
         // 验证评估结果
         assertThat(result).isNotNull();
@@ -215,7 +211,7 @@ class EvalEngine_AgentLoop_集成测试 {
                 .findFirst().orElseThrow();
 
         // 执行评估
-        EvalResult result = evalEngine.evaluateScenario(todoScenario);
+        EvalResult result = evalEngine.evaluateScenario(todoScenario, "run-integration-002");
 
         // 验证 LLM Judge 未被调用
         assertThat(result.llmJudgeScore()).isNull();
