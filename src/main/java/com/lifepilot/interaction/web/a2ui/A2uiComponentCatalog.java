@@ -1,4 +1,4 @@
-﻿package com.lifepilot.interaction.web.a2ui;
+package com.lifepilot.interaction.web.a2ui;
 
 import org.springframework.lang.Nullable;
 

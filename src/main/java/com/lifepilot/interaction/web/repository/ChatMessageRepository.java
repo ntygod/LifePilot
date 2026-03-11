@@ -1,4 +1,4 @@
-﻿package com.lifepilot.interaction.web.repository;
+package com.lifepilot.interaction.web.repository;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.interaction.web.a2ui.A2uiPayloadSupport;

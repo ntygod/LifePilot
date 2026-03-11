@@ -1,4 +1,4 @@
-﻿package com.lifepilot.prompt.config;
+package com.lifepilot.prompt.config;
 
 import com.lifepilot.prompt.PromptRegistry;
 import org.junit.jupiter.api.Test;

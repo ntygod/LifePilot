@@ -1,4 +1,4 @@
-﻿﻿package com.lifepilot.interaction.web.a2ui;
+package com.lifepilot.interaction.web.a2ui;
 
 import com.lifepilot.interaction.web.model.A2uiComponent;
 import com.lifepilot.interaction.web.model.A2uiComponentTree;

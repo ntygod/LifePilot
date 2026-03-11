@@ -13,6 +13,7 @@ import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.repository.MessageFeedbackRepository;
 import com.lifepilot.interaction.web.service.ChatSessionService;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
+import com.lifepilot.interaction.web.service.WebUserConfirmationService;
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -58,6 +59,8 @@ class ChatController_A2uiContract_测试 {
     ProactiveConfigProperties proactiveConfigProperties;
     @Mock
     ResponseTracker responseTracker;
+    @Mock
+    WebUserConfirmationService confirmationService;
 
     @BeforeEach
     void setUp() {
@@ -69,7 +72,8 @@ class ChatController_A2uiContract_测试 {
                 attachmentRepository,
                 knowledgeBaseProperties,
                 proactiveConfigProperties,
-                responseTracker
+                responseTracker,
+                confirmationService
         );
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }

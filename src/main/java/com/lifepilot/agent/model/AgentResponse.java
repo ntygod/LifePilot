@@ -1,4 +1,4 @@
-﻿package com.lifepilot.agent.model;
+package com.lifepilot.agent.model;
 
 import com.lifepilot.interaction.web.model.A2uiComponent;
 import org.springframework.lang.Nullable;
