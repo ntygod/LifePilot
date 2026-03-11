@@ -978,10 +978,11 @@ public class ContextAssembler {
             }
         }
 
-        // 7. 推理上下文（动态区）
+        // 7. 推理上下文（动态区）— 排除检索来源的 ReasoningSlot（已在"相关记忆"区域展示）
         var reasoningSlots = slots.stream()
                 .filter(s -> s instanceof ReasoningSlot)
                 .map(s -> (ReasoningSlot) s)
+                .filter(rs -> !"hybrid-retrieval".equals(rs.source()))
                 .toList();
         if (!reasoningSlots.isEmpty()) {
             sb.append("\n推理上下文:\n");
