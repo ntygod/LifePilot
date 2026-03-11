@@ -169,6 +169,16 @@ public sealed interface MessageContent
 
         @Override
         public String toPlainText() {
+            // A2UI 信号转换为自然语言描述，便于 Agent 理解用户交互意图
+            if ("a2ui_signal".equals(eventType)) {
+                var signalName = payload.getOrDefault("name", "unknown");
+                var signalPayload = payload.getOrDefault("payload", Map.of());
+                return """
+                        用户通过 UI 组件触发了操作：
+                        - 信号名称：%s
+                        - 信号数据：%s
+                        请根据此操作继续处理。""".formatted(signalName, signalPayload);
+            }
             return "[事件: %s]".formatted(eventType);
         }
     }
