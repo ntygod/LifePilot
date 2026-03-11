@@ -99,15 +99,13 @@ public class WorkflowAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public WorkflowRegistry workflowRegistry(WorkflowRepository repository,
-                                              WorkflowYamlParser parser,
-                                              WorkflowYamlPrinter printer,
+    public WorkflowRegistry workflowRegistry(WorkflowYamlParser parser,
                                               WorkflowConfigProperties config,
                                               TaskScheduler workflowTaskScheduler,
                                               DagScheduler dagScheduler,
                                               DynamicToolRegistry toolRegistry,
                                               SkillRegistry skillRegistry) {
-        var registry = new WorkflowRegistry(repository, parser, printer);
+        var registry = new WorkflowRegistry(parser);
         registry.setConfigProperties(config);
         registry.setTaskScheduler(workflowTaskScheduler);
         registry.setDagScheduler(dagScheduler);

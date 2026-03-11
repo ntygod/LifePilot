@@ -195,10 +195,10 @@ public class WorkflowController {
     }
 
     /**
-     * 删除 Workflow（软删除定义 + 删除 YAML 文件 + 从注册表移除）。
+     * 删除 Workflow（删除 YAML 文件 + 从注册表移除）。
      *
-     * <p>为保留执行历史（workflow_instances 外键），后端不会物理删除数据库中的定义行，
-     * 而是将其标记为 deleted 并从注册表中移除。</p>
+     * <p>工作流定义的权威来源为文件系统中的 YAML 文件，删除操作仅删除文件并从注册表注销。
+     * 已有的执行实例历史（workflow_instances）不受影响。</p>
      *
      * @param id Workflow ID
      * @return 204 成功，404 不存在
@@ -214,12 +214,8 @@ public class WorkflowController {
         }
 
         try {
-            // 软删除 DB 定义（保留历史）
-            workflowRepository.markDefinitionDeleted(id);
-
             // 删除文件系统中的 YAML（兼容 .yaml/.yml）
             if (!Files.exists(workflowsDirectory)) {
-                // 目录不存在时认为无文件可删
                 log.debug("workflowsDirectory 不存在，跳过删除文件: dir={}", workflowsDirectory);
             } else {
                 Files.deleteIfExists(workflowsDirectory.resolve(id + ".yaml"));

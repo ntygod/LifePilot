@@ -3,19 +3,14 @@ package com.lifepilot.workflow.registry;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import com.lifepilot.workflow.parser.WorkflowYamlParser;
-import com.lifepilot.workflow.parser.WorkflowYamlPrinter;
-import com.lifepilot.workflow.repository.WorkflowRepository;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 /**
  * WorkflowRegistry YAML 文件热加载单元测试。
@@ -27,9 +22,7 @@ import static org.mockito.Mockito.when;
  */
 class WorkflowRegistry热加载测试 {
 
-    private WorkflowRepository repository;
     private WorkflowYamlParser parser;
-    private WorkflowYamlPrinter printer;
     private WorkflowRegistry registry;
 
     @TempDir
@@ -47,11 +40,8 @@ class WorkflowRegistry热加载测试 {
 
     @BeforeEach
     void setUp() {
-        repository = mock(WorkflowRepository.class);
         parser = new WorkflowYamlParser();
-        printer = new WorkflowYamlPrinter();
-        when(repository.findAllDefinitions()).thenReturn(List.of());
-        registry = new WorkflowRegistry(repository, parser, printer);
+        registry = new WorkflowRegistry(parser);
     }
 
     // ==================== 新增文件检测 ====================

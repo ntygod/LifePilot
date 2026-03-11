@@ -8,8 +8,6 @@ import com.lifepilot.workflow.model.Result;
 import com.lifepilot.workflow.model.WorkflowDefinition;
 import com.lifepilot.workflow.model.WorkflowStep;
 import com.lifepilot.workflow.parser.WorkflowYamlParser;
-import com.lifepilot.workflow.parser.WorkflowYamlPrinter;
-import com.lifepilot.workflow.repository.WorkflowRepository;
 import com.lifepilot.workflow.trigger.WorkflowTriggerManager;
 import lombok.Setter;
 import org.slf4j.Logger;
@@ -48,9 +46,7 @@ public class WorkflowRegistry {
     private static final Logger log = LoggerFactory.getLogger(WorkflowRegistry.class);
 
     private final ConcurrentHashMap<String, WorkflowDefinition> definitions = new ConcurrentHashMap<>();
-    private final WorkflowRepository repository;
     private final WorkflowYamlParser parser;
-    private final WorkflowYamlPrinter printer;
 
     /** 文件路径 → 最后修改时间，用于检测文件变更。 */
     private final ConcurrentHashMap<String, Instant> fileLastModified = new ConcurrentHashMap<>();
@@ -122,21 +118,15 @@ public class WorkflowRegistry {
     }
 
     /**
-     * 构造 WorkflowRegistry，注入持久化仓储、YAML 解析器和打印器。
+     * 构造 WorkflowRegistry，注入 YAML 解析器。
      *
-     * <p>构造完成后自动从数据库加载所有已有工作流定义到内存。
+     * <p>工作流定义仅通过 {@link #startScheduledScan()} 的文件扫描加载到内存缓存，
+     * 不再从数据库预加载。
      *
-     * @param repository 工作流持久化仓储
-     * @param parser     YAML 解析器
-     * @param printer    YAML 打印器
+     * @param parser YAML 解析器
      */
-    public WorkflowRegistry(WorkflowRepository repository,
-                             WorkflowYamlParser parser,
-                             WorkflowYamlPrinter printer) {
-        this.repository = repository;
+    public WorkflowRegistry(WorkflowYamlParser parser) {
         this.parser = parser;
-        this.printer = printer;
-        loadFromDatabase();
     }
 
     /**
@@ -182,7 +172,7 @@ public class WorkflowRegistry {
      * 验证失败时返回 {@code false} 并记录 WARN 日志。
      *
      * <p>如果已存在相同 ID 的定义，则更新已有定义并记录 INFO 日志。
-     * 注册成功后同时持久化到数据库。
+     * 注册仅更新内存缓存，不持久化到数据库（定义的权威来源为 YAML 文件）。
      *
      * @param definition 工作流定义
      * @return 注册成功返回 {@code true}，验证失败返回 {@code false}
@@ -207,14 +197,6 @@ public class WorkflowRegistry {
             log.info("工作流定义更新: id={}, name={}", definition.id(), definition.name());
         } else {
             log.info("工作流定义注册成功: id={}, name={}", definition.id(), definition.name());
-        }
-
-        // 持久化到数据库
-        try {
-            String yamlContent = printer.print(definition);
-            repository.saveDefinition(definition, yamlContent);
-        } catch (Exception e) {
-            log.warn("工作流定义持久化失败: id={}, 原因={}", definition.id(), e.getMessage());
         }
 
         // 注册成功且已启用时，通知触发器管理器注册触发器
@@ -247,7 +229,7 @@ public class WorkflowRegistry {
     /**
      * 启用工作流定义。
      *
-     * <p>同时更新内存和数据库中的启用状态。
+     * <p>仅更新内存中的启用状态。
      *
      * @param workflowId 工作流定义 ID
      * @return 启用成功返回 {@code true}，未找到返回 {@code false}
@@ -260,7 +242,7 @@ public class WorkflowRegistry {
      * 禁用工作流定义。
      *
      * <p>禁用后阻止新实例创建，但允许运行中实例完成。
-     * 同时更新内存和数据库中的启用状态。
+     * 仅更新内存中的启用状态。
      *
      * @param workflowId 工作流定义 ID
      * @return 禁用成功返回 {@code true}，未找到返回 {@code false}
@@ -272,20 +254,13 @@ public class WorkflowRegistry {
     /**
      * 根据 ID 查找工作流定义。
      *
-     * <p>优先从内存缓存读取，缓存未命中时回退数据库查询并填充缓存。
+     * <p>仅从内存缓存查找，缓存由 {@link #startScheduledScan()} 的文件扫描填充。
      *
      * @param workflowId 工作流定义 ID
      * @return 工作流定义 Optional，未找到时返回 empty
      */
     public Optional<WorkflowDefinition> find(String workflowId) {
-        WorkflowDefinition cached = definitions.get(workflowId);
-        if (cached != null) {
-            return Optional.of(cached);
-        }
-        // 缓存未命中，回退数据库
-        Optional<WorkflowDefinition> fromDb = repository.findDefinition(workflowId);
-        fromDb.ifPresent(def -> definitions.put(def.id(), def));
-        return fromDb;
+        return Optional.ofNullable(definitions.get(workflowId));
     }
 
     /**
@@ -461,21 +436,6 @@ public class WorkflowRegistry {
     // ==================== 内部方法 ====================
 
     /**
-     * 从数据库加载所有工作流定义到内存。
-     */
-    private void loadFromDatabase() {
-        try {
-            List<WorkflowDefinition> loaded = repository.findAllDefinitions();
-            for (WorkflowDefinition def : loaded) {
-                definitions.put(def.id(), def);
-            }
-            log.info("从数据库加载工作流定义: count={}", loaded.size());
-        } catch (Exception e) {
-            log.warn("从数据库加载工作流定义失败: 原因={}", e.getMessage());
-        }
-    }
-
-    /**
      * 验证工作流定义的必填字段。
      *
      * @param definition 工作流定义
@@ -542,7 +502,7 @@ public class WorkflowRegistry {
     }
 
     /**
-     * 更新工作流定义的启用状态（内存 + 数据库）。
+     * 更新工作流定义的启用状态（仅内存）。
      */
     private boolean updateEnabled(String workflowId, boolean enabled) {
         WorkflowDefinition existing = definitions.get(workflowId);
@@ -553,12 +513,6 @@ public class WorkflowRegistry {
 
         WorkflowDefinition updated = existing.toBuilder().enabled(enabled).build();
         definitions.put(workflowId, updated);
-
-        try {
-            repository.updateDefinitionEnabled(workflowId, enabled);
-        } catch (Exception e) {
-            log.warn("工作流定义{}持久化失败: id={}, 原因={}", enabled ? "启用" : "禁用", workflowId, e.getMessage());
-        }
 
         // 通知触发器管理器：启用时注册触发器，禁用时注销触发器
         if (triggerManager != null) {
