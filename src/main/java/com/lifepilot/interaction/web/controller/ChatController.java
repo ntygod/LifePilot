@@ -181,15 +181,21 @@ public class ChatController {
             } else {
                 // 成功的非流式响应：发送 done 事件
                 log.debug("流式端点收到非流式响应，发送 done 事件后关闭");
-                var text = response.content() != null ? response.content().toPlainText() : "";
+                var chatResponse = toChatResponse(response);
                 var doneDataBuilder = new java.util.HashMap<String, Object>();
-                doneDataBuilder.put("messageId", response.responseId());
-                doneDataBuilder.put("content", text);
+                doneDataBuilder.put("messageId", chatResponse.messageId());
+                doneDataBuilder.put("content", chatResponse.content());
                 if (request.sessionId() != null) {
                     doneDataBuilder.put("sessionId", request.sessionId());
                 }
                 if (response.tokenUsage() != null) {
                     doneDataBuilder.put("tokenUsage", response.tokenUsage());
+                }
+                if (chatResponse.traceId() != null) {
+                    doneDataBuilder.put("traceId", chatResponse.traceId());
+                }
+                if (chatResponse.a2uiComponents() != null && !chatResponse.a2uiComponents().isEmpty()) {
+                    doneDataBuilder.put("a2uiComponents", chatResponse.a2uiComponents());
                 }
                 doneDataBuilder.put("timestamp", Instant.now().toEpochMilli());
                 var doneEvent = SseEmitter.event()
@@ -476,12 +482,7 @@ public class ChatController {
 
         log.debug("收到 A2UI 信号: name={}, sessionId={}", request.name(), request.sessionId());
         var response = adapter.processSignal(request, httpRequest);
-
-        var text = response.content() != null ? response.content().toPlainText() : "";
-        return ResponseEntity.ok(Map.of(
-                "responseId", response.responseId(),
-                "content", text
-        ));
+        return ResponseEntity.ok(toChatResponse(response));
     }
 
     /**
@@ -766,11 +767,19 @@ public class ChatController {
             case ResponseContent.StreamingContent sc -> sc.toPlainText();
             case null -> "";
         };
+        @SuppressWarnings("unchecked")
+        List<A2uiComponent> a2uiComponents = response.metadata() != null
+                ? (List<A2uiComponent>) response.metadata().get("a2uiComponents")
+                : null;
+        String traceId = response.metadata() != null
+                ? (String) response.metadata().get("traceId")
+                : null;
         return new ChatResponse(
                 response.responseId(),
                 text,
-                null,
-                response.tokenUsage()
+                a2uiComponents,
+                response.tokenUsage(),
+                traceId
         );
     }
 }

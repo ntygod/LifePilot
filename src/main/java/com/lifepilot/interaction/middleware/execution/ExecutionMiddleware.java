@@ -21,6 +21,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -109,10 +110,20 @@ public class ExecutionMiddleware implements GatewayMiddleware {
             var tokenUsage = new TokenUsage(0, totalTokens, totalTokens, DEFAULT_MODEL_ID);
             chain.context().set(MiddlewareContext.KEY_AGENT_RESPONSE, agentResponse);
             chain.context().set(MiddlewareContext.KEY_TOKEN_USAGE, tokenUsage);
-
+            var metadata = new LinkedHashMap<String, Object>();
+            if (agentResponse.traceId() != null && !agentResponse.traceId().isBlank()) {
+                metadata.put("traceId", agentResponse.traceId());
+            }
+            if (agentResponse.a2uiComponents() != null && !agentResponse.a2uiComponents().isEmpty()) {
+                metadata.put("a2uiComponents", agentResponse.a2uiComponents());
+            }
             return GatewayResponse.success(message.channelType(),
                             new ResponseContent.TextContent(agentResponse.content()))
-                    .toBuilder().tokenUsage(tokenUsage).build();
+                    .toBuilder()
+                    .responseId(agentResponse.messageId())
+                    .tokenUsage(tokenUsage)
+                    .metadata(metadata)
+                    .build();
 
         } catch (TimeoutException e) {
             // 超时后取消底层任务，配合 coreLoop 的中断检查点终止 AgentLoop

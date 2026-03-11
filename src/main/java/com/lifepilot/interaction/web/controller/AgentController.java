@@ -351,7 +351,8 @@ public class AgentController {
                     messageId,
                     agentResponse.content(),
                     null, // a2ui（测试对话暂不支持）
-                    tokenUsage
+                    tokenUsage,
+                    agentResponse.traceId()
             );
 
             log.info("Agent 测试对话完成: agentId={}, messageId={}, tokensUsed={}, steps={}",
