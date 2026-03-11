@@ -3,6 +3,8 @@ package com.lifepilot.workflow.model;
 import java.util.List;
 import java.util.Map;
 
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import com.fasterxml.jackson.annotation.JsonSubTypes;
 import org.springframework.lang.Nullable;
 
 /**
@@ -25,6 +27,19 @@ import org.springframework.lang.Nullable;
  * @author zsg
  * @since 2026-02-26
  */
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
+@JsonSubTypes({
+        @JsonSubTypes.Type(value = WorkflowStep.SkillStep.class, name = "skill"),
+        @JsonSubTypes.Type(value = WorkflowStep.ToolStep.class, name = "tool"),
+        @JsonSubTypes.Type(value = WorkflowStep.LlmStep.class, name = "llm"),
+        @JsonSubTypes.Type(value = WorkflowStep.ConditionStep.class, name = "condition"),
+        @JsonSubTypes.Type(value = WorkflowStep.LoopStep.class, name = "loop"),
+        @JsonSubTypes.Type(value = WorkflowStep.ParallelStep.class, name = "parallel"),
+        @JsonSubTypes.Type(value = WorkflowStep.SubWorkflowStep.class, name = "sub-workflow"),
+        @JsonSubTypes.Type(value = WorkflowStep.NoopStep.class, name = "noop"),
+        @JsonSubTypes.Type(value = WorkflowStep.WaitStep.class, name = "wait"),
+        @JsonSubTypes.Type(value = WorkflowStep.ApprovalStep.class, name = "approval")
+})
 public sealed interface WorkflowStep permits
         WorkflowStep.SkillStep,
         WorkflowStep.ToolStep,

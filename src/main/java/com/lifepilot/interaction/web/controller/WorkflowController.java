@@ -2,6 +2,8 @@ package com.lifepilot.interaction.web.controller;
 
 import com.lifepilot.interaction.web.model.ErrorResponse;
 import com.lifepilot.interaction.web.model.TriggerWorkflowRequest;
+import com.lifepilot.interaction.web.model.WorkflowDetailDto;
+import com.lifepilot.interaction.web.model.WorkflowItemDto;
 import com.lifepilot.workflow.config.WorkflowConfigProperties;
 import com.lifepilot.workflow.engine.InputValidationResult;
 import com.lifepilot.workflow.engine.InputValidator;
@@ -126,7 +128,7 @@ public class WorkflowController {
             }
 
             log.info("Workflow 创建成功: id={}, name={}", definition.id(), definition.name());
-            return ResponseEntity.status(HttpStatus.CREATED).body(definition);
+            return ResponseEntity.status(HttpStatus.CREATED).body(WorkflowDetailDto.from(definition));
         } catch (Exception e) {
             log.error("创建 Workflow 失败", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
@@ -188,7 +190,7 @@ public class WorkflowController {
             }
 
             log.info("Workflow 更新成功: id={}", id);
-            return ResponseEntity.ok(definition);
+            return ResponseEntity.ok(WorkflowDetailDto.from(definition));
         } catch (Exception e) {
             log.error("更新 Workflow 失败: id={}", id, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
@@ -244,7 +246,10 @@ public class WorkflowController {
     @GetMapping
     public ResponseEntity<?> listWorkflows() {
         log.debug("查询工作流列表");
-        return ResponseEntity.ok(workflowRegistry.listAll());
+        var dtos = workflowRegistry.listAll().stream()
+                .map(WorkflowItemDto::from)
+                .toList();
+        return ResponseEntity.ok(dtos);
     }
 
     /**
@@ -256,6 +261,7 @@ public class WorkflowController {
     @GetMapping("/{id}")
     public ResponseEntity<?> getWorkflow(@PathVariable String id) {
         return workflowRegistry.find(id)
+                .map(WorkflowDetailDto::from)
                 .<ResponseEntity<?>>map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(
                         new ErrorResponse(404, "工作流不存在: id=" + id, Instant.now())));

@@ -1,5 +1,8 @@
 package com.lifepilot.workflow.model;
 
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import com.fasterxml.jackson.annotation.JsonSubTypes;
+
 /**
  * 步骤错误处理策略 sealed interface。
  *
@@ -14,6 +17,13 @@ package com.lifepilot.workflow.model;
  * @author zsg
  * @since 2026-02-26
  */
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
+@JsonSubTypes({
+        @JsonSubTypes.Type(value = ErrorStrategy.Retry.class, name = "retry"),
+        @JsonSubTypes.Type(value = ErrorStrategy.Skip.class, name = "skip"),
+        @JsonSubTypes.Type(value = ErrorStrategy.Fail.class, name = "fail"),
+        @JsonSubTypes.Type(value = ErrorStrategy.Compensate.class, name = "compensate")
+})
 public sealed interface ErrorStrategy permits
         ErrorStrategy.Retry,
         ErrorStrategy.Skip,
