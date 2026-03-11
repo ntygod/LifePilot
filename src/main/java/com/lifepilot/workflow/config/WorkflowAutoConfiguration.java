@@ -195,17 +195,17 @@ public class WorkflowAutoConfiguration {
         // 延迟注入 triggerManager 到 registry，避免循环依赖
         ctx.getBean(WorkflowRegistry.class).setTriggerManager(ctx.getBean(WorkflowTriggerManager.class));
 
-        // ① 释放内置工作流到用户目录（在崩溃恢复和热加载之前）
+        // ① 释放内置工作流到用户目录（在热加载和崩溃恢复之前）
         seedBuiltinWorkflows(config);
 
-        // ② 崩溃恢复
+        // ② YAML 热加载（首次全量扫描同步完成，确保所有定义加载到内存）
+        ctx.getBean(WorkflowRegistry.class).startScheduledScan();
+
+        // ③ 崩溃恢复（在热加载之后，确保 registry 中已有所有工作流定义）
         ctx.getBean(WorkflowEngine.class).recoverInterruptedInstances();
 
-        // ③ 触发器注册
+        // ④ 触发器注册
         ctx.getBean(WorkflowTriggerManager.class).registerAllTriggers();
-
-        // ④ YAML 热加载（会扫描用户目录，发现刚释放的文件）
-        ctx.getBean(WorkflowRegistry.class).startScheduledScan();
 
         // ⑤ 启动唤醒调度器定时扫描
         var wakeupScheduler = ctx.getBean(WakeupScheduler.class);
@@ -214,7 +214,7 @@ public class WorkflowAutoConfiguration {
         taskScheduler.scheduleAtFixedRate(wakeupScheduler::scan, Duration.ofSeconds(wakeupInterval));
         log.info("唤醒调度器已启动: interval={}s", wakeupInterval);
 
-        log.info("工作流崩溃恢复、触发器注册、YAML 热加载和唤醒调度已完成");
+        log.info("工作流 YAML 热加载、崩溃恢复、触发器注册和唤醒调度已完成");
     }
 
     /**
