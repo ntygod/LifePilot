@@ -42,7 +42,6 @@
 你必须严格输出以下 JSON 格式，不要包含任何其他文字或 markdown 标记。
 注意：下面示例中的外层花括号使用全角字符，仅为避免模板引擎将其识别为占位符；实际输出时请使用标准 JSON 对象。
 
-```json
 ｛
   "summary": "对用户意图的简洁概括",
   "needsClarification": false,
@@ -51,7 +50,6 @@
   "entities": ["实体1", "实体2"],
   "complexity": "SIMPLE | MODERATE | COMPLEX"
 ｝
-```
 
 字段说明：
 - summary（必填）：一句话概括用户意图
@@ -63,7 +61,6 @@
 
 示例 1 — 简单问候：
 用户输入："你好"
-```json
 ｛
   "summary": "用户打招呼",
   "needsClarification": false,
@@ -72,11 +69,9 @@
   "entities": [],
   "complexity": "SIMPLE"
 ｝
-```
 
 示例 2 — 中等复杂度任务：
 用户输入："帮我把明天下午三点的会议改到后天上午十点"
-```json
 ｛
   "summary": "用户要求修改会议时间，从明天下午三点改到后天上午十点",
   "needsClarification": false,
@@ -85,11 +80,9 @@
   "entities": ["明天下午三点", "后天上午十点", "会议"],
   "complexity": "MODERATE"
 ｝
-```
 
 示例 3 — 信息不足需要澄清：
 用户输入："帮我订个餐厅"
-```json
 ｛
   "summary": "用户想预订餐厅，但缺少具体信息",
   "needsClarification": true,
@@ -98,5 +91,4 @@
   "entities": ["餐厅"],
   "complexity": "MODERATE"
 ｝
-```
 </output_format>

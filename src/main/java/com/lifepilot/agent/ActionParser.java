@@ -209,6 +209,10 @@ public class ActionParser {
      */
     private String fixJson(String content) {
         String fixed = content;
+        // 全角标点→半角标点（LLM 受提示词模板中全角示例影响，可能输出全角 JSON）
+        fixed = fixed.replace('｛', '{').replace('｝', '}')
+                     .replace('［', '[').replace('］', ']')
+                     .replace('：', ':').replace('，', ',');
         // 移除尾部逗号（在 } 或 ] 前）
         fixed = fixed.replaceAll(",\\s*([}\\]])", "$1");
         // 单引号转双引号（简单处理，不处理字符串内的单引号）
@@ -406,8 +410,9 @@ public class ActionParser {
         if (text == null || text.isBlank()) {
             return false;
         }
-        // 以 { 或 [ 开头说明可能是 JSON（即使格式有误也不应兜底为自然语言）
-        if (text.startsWith("{") || text.startsWith("[")) {
+        // 以 { 或 [ 开头（含全角变体）说明可能是 JSON（即使格式有误也不应兜底为自然语言）
+        if (text.startsWith("{") || text.startsWith("[")
+                || text.startsWith("｛") || text.startsWith("［")) {
             return false;
         }
         // 包含 JSON 关键字段标记，说明可能是被截断或格式错误的 JSON
