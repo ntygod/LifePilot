@@ -157,7 +157,9 @@ public record AgentState(
         return new AgentResponse(
                 traceId, sessionId,
                 finalOutput != null ? finalOutput : "",
-                budget.tokensUsed(), stepCount, terminationReason
+                budget.tokensUsed(), stepCount, terminationReason,
+                null,
+                null
         );
     }
 }
