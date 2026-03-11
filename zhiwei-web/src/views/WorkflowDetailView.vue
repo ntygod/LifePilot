@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowLeft,
@@ -22,6 +22,7 @@ import PageContainer from '@/components/layout/PageContainer.vue'
 import PageHeader from '@/components/layout/PageHeader.vue'
 import PageSection from '@/components/layout/PageSection.vue'
 import EventTimeline from '@/components/workflow/EventTimeline.vue'
+import WorkflowInputDialog from '@/components/workflow/WorkflowInputDialog.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -46,6 +47,7 @@ const activeTab = ref<'detail' | 'executions'>('detail')
 const triggerLoading = ref(false)
 const yamlLoading = ref(false)
 const yamlDefinition = ref('')
+const showInputDialog = ref(false)
 const expandedExecutions = ref<Set<string>>(new Set())
 const executionDetailsLoading = ref<Record<string, boolean>>({})
 
@@ -185,15 +187,33 @@ async function handleToggle() {
 async function handleTrigger() {
   if (!workflow.value || triggerLoading.value) return
 
+  // 检查是否有输入参数定义
+  const inputs = workflow.value.inputs
+  if (inputs && Object.keys(inputs).length > 0) {
+    showInputDialog.value = true
+    return
+  }
+
+  // 无输入参数，直接触发
+  await doTrigger()
+}
+
+async function doTrigger(inputs?: Record<string, unknown>) {
   triggerLoading.value = true
   try {
-    await workflowStore.trigger(workflow.value.id)
+    const execution = await workflowStore.trigger(workflow.value!.id, inputs)
+    showInputDialog.value = false
     resetExecutionUiState()
-    await workflowStore.fetchExecutions(workflow.value.id)
+    await workflowStore.fetchExecutions(workflow.value!.id)
     activeTab.value = 'executions'
     uiStore.showToast('success', '工作流已触发')
+
+    // 开始轮询执行进度
+    if (execution) {
+      startPolling(execution.id)
+    }
   } catch (event: any) {
-    uiStore.showToast('error', event?.message || workflowStore.error || '触发工作流失败。')
+    uiStore.showToast('error', event?.message || '触发工作流失败。')
   } finally {
     triggerLoading.value = false
   }
@@ -218,6 +238,35 @@ function formatDate(dateStr?: string) {
   return new Date(dateStr).toLocaleString('zh-CN')
 }
 
+// 执行进度轮询
+const pollingTimer = ref<ReturnType<typeof setInterval> | null>(null)
+const pollingInstanceId = ref<string | null>(null)
+
+function startPolling(instanceId: string) {
+  stopPolling()
+  pollingInstanceId.value = instanceId
+  pollingTimer.value = setInterval(async () => {
+    if (!workflow.value) return
+    await workflowStore.fetchExecutions(workflow.value.id)
+    const instance = workflowStore.executions.find(e => e.id === instanceId)
+    if (instance && ['COMPLETED', 'FAILED', 'CANCELLED'].includes(instance.state)) {
+      stopPolling()
+      await loadExecutionDetails(instanceId)
+      if (!expandedExecutions.value.has(instanceId)) {
+        expandedExecutions.value.add(instanceId)
+      }
+    }
+  }, 3000)
+}
+
+function stopPolling() {
+  if (pollingTimer.value) {
+    clearInterval(pollingTimer.value)
+    pollingTimer.value = null
+  }
+  pollingInstanceId.value = null
+}
+
 function goBack() {
   router.push('/workflows')
 }
@@ -225,6 +274,8 @@ function goBack() {
 onMounted(async () => {
   await loadData()
 })
+
+onUnmounted(() => stopPolling())
 
 watch(() => route.params.id, async () => {
   activeTab.value = 'detail'
@@ -612,6 +663,14 @@ watch(() => route.params.id, async () => {
               </PageSection>
             </TabsContent>
           </Tabs>
+
+          <WorkflowInputDialog
+            :open="showInputDialog"
+            :inputs="workflow.inputs ?? {}"
+            :loading="triggerLoading"
+            @update:open="showInputDialog = $event"
+            @confirm="doTrigger"
+          />
         </template>
       </div>
     </PageContainer>

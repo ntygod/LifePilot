@@ -62,11 +62,19 @@ public class WorkflowCommandService {
             throw new IllegalArgumentException("工作流已禁用: workflowId=" + workflowId);
         }
 
+        // 防御性输入校验（安全网）
+        InputValidationResult validation = InputValidator.validate(definition.inputs(), inputs);
+        if (!validation.valid()) {
+            throw new IllegalArgumentException(
+                    "缺少必填输入参数: " + String.join(", ", validation.missingParams()));
+        }
+
         // 创建实例（CREATED 状态）
         Instant now = Instant.now();
         WorkflowContext context = new WorkflowContext();
-        if (inputs != null) {
-            context.set("inputs", inputs);
+        Map<String, Object> mergedInputs = validation.mergedInputs();
+        if (!mergedInputs.isEmpty()) {
+            context.set("inputs", mergedInputs);
         }
 
         WorkflowInstance instance = WorkflowInstance.builder()
