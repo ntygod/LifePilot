@@ -171,8 +171,9 @@ public class WorkflowAutoConfiguration {
     @ConditionalOnMissingBean
     public WakeupScheduler wakeupScheduler(WorkflowRepository repository,
                                             WorkflowRunner runner,
-                                            WorkflowEventRecorder eventRecorder) {
-        return new WakeupScheduler(repository, runner, eventRecorder);
+                                            WorkflowEventRecorder eventRecorder,
+                                            WorkflowEngine engine) {
+        return new WakeupScheduler(repository, runner, eventRecorder, engine);
     }
 
     @Bean

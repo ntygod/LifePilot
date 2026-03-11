@@ -9,6 +9,7 @@ import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.lifepilot.workflow.model.ApprovalDecision;
 import com.lifepilot.workflow.model.WorkflowEventType;
 import com.lifepilot.workflow.model.WorkflowInstance;
 import com.lifepilot.workflow.model.WorkflowState;
@@ -38,13 +39,16 @@ public class WakeupScheduler {
     private final WorkflowRepository repository;
     private final WorkflowRunner runner;
     private final WorkflowEventRecorder eventRecorder;
+    private final WorkflowEngine engine;
 
     public WakeupScheduler(WorkflowRepository repository,
                            WorkflowRunner runner,
-                           WorkflowEventRecorder eventRecorder) {
+                           WorkflowEventRecorder eventRecorder,
+                           WorkflowEngine engine) {
         this.repository = repository;
         this.runner = runner;
         this.eventRecorder = eventRecorder;
+        this.engine = engine;
     }
 
     /**
@@ -91,12 +95,19 @@ public class WakeupScheduler {
             log.info("审批超时自动批准: instanceId={}, stepId={}",
                     instance.id(), instance.blockedStepId());
 
-            // 自动批准 → 提交异步恢复
-            runner.submitAsyncResume(instance.id());
-
-            eventRecorder.record(WorkflowEventType.APPROVAL_DECIDED, instance.id(),
-                    instance.workflowId(), instance.blockedStepId(),
-                    Map.of("decision", "AUTO_APPROVED", "reason", "timeout"));
+            // 通过 engine.approve() 执行自动批准，正确清除 pendingApprovalStepId 并记录决策
+            String stepId = instance.pendingApprovalStepId();
+            if (stepId == null) {
+                log.warn("审批超时但 pendingApprovalStepId 为空: instanceId={}", instance.id());
+                return;
+            }
+            ApprovalDecision autoDecision = new ApprovalDecision(
+                    ApprovalDecision.Decision.APPROVED,
+                    "system-auto-approve",
+                    "审批超时自动批准",
+                    Instant.now()
+            );
+            engine.approve(instance.id(), stepId, autoDecision);
         } else {
             log.info("审批超时标记失败: instanceId={}, stepId={}",
                     instance.id(), instance.blockedStepId());
