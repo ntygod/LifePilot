@@ -1990,7 +1990,7 @@ public class AgentLoop {
      * <p>职责：根据本轮 Action 更新 counters，并在超过阈值时返回强制终止的 Action。</p>
      */
     private static final class LoopCounters {
-        private int consecutiveBlocks = 0;
+        private int totalBlocks = 0;
         private int consecutiveParseFailures = 0;
 
         Action onAction(Action action, AgentState state, LoopLimits limits) {
@@ -2020,13 +2020,11 @@ public class AgentLoop {
 
         private Action updateBlockedCounter(Action action, LoopLimits limits) {
             if (action instanceof Action.Blocked) {
-                consecutiveBlocks++;
-                if (consecutiveBlocks >= limits.maxConsecutiveBlocks()) {
-                    log.warn("连续护栏阻断达到上限: count={}", consecutiveBlocks);
-                    return new Action.BudgetExhausted("连续护栏阻断达到上限: " + limits.maxConsecutiveBlocks());
+                totalBlocks++;
+                if (totalBlocks >= limits.maxConsecutiveBlocks()) {
+                    log.warn("累计护栏阻断达到上限: count={}", totalBlocks);
+                    return new Action.BudgetExhausted("累计护栏阻断达到上限: " + limits.maxConsecutiveBlocks());
                 }
-            } else {
-                consecutiveBlocks = 0;
             }
             return null;
         }
