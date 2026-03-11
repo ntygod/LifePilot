@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import type { WorkflowItem, WorkflowDetail, WorkflowExecution, WorkflowEvent, ApprovalRequest } from '@/types'
+import type { WorkflowItem, WorkflowDetail, WorkflowExecution, WorkflowEvent, StepLog, ApprovalRequest } from '@/types'
 import { workflowApi } from '@/api/client'
 
 export const useWorkflowStore = defineStore('workflow', () => {
@@ -9,6 +9,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   const executions = ref<WorkflowExecution[]>([])
   const currentInstance = ref<WorkflowExecution | null>(null)
   const eventTimeline = ref<WorkflowEvent[]>([])
+  const stepLogs = ref<StepLog[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
 
@@ -158,9 +159,18 @@ export const useWorkflowStore = defineStore('workflow', () => {
     }
   }
 
+  async function fetchStepLogs(instanceId: string) {
+    error.value = null
+    try {
+      stepLogs.value = await workflowApi.getStepLogs(instanceId)
+    } catch (e: any) {
+      error.value = e.message ?? '加载步骤日志失败'
+    }
+  }
+
   return {
-    list, current, executions, currentInstance, eventTimeline, loading, error,
+    list, current, executions, currentInstance, eventTimeline, stepLogs, loading, error,
     fetchList, fetchDetail, enable, disable, trigger, fetchExecutions,
-    create, update, remove, approve, fetchInstance, fetchEventTimeline
+    create, update, remove, approve, fetchInstance, fetchEventTimeline, fetchStepLogs
   }
 })
