@@ -1,5 +1,7 @@
 package com.lifepilot.interaction.web.repository;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.interaction.web.model.A2uiComponentTree;
 import com.lifepilot.interaction.web.model.MessageInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,9 +27,11 @@ public class ChatMessageRepository {
     private static final Logger log = LoggerFactory.getLogger(ChatMessageRepository.class);
 
     private final JdbcTemplate jdbcTemplate;
+    private final ObjectMapper objectMapper;
 
-    public ChatMessageRepository(JdbcTemplate jdbcTemplate) {
+    public ChatMessageRepository(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
         this.jdbcTemplate = jdbcTemplate;
+        this.objectMapper = objectMapper;
     }
 
     public record ChatMessageRow(
@@ -37,12 +41,20 @@ public class ChatMessageRepository {
             String content,
             @Nullable String reasoningSummary,
             @Nullable String traceId,
+            @Nullable String a2uiComponentsJson,
             Instant createdAt
     ) {}
 
     /**
      * 插入一条历史消息。
      *
+     * @param sessionId            会话 ID
+     * @param role                 角色（user / assistant / system）
+     * @param content              文本内容
+     * @param reasoningSummary     推理概要（可选）
+     * @param traceId              关联 traceId（可选）
+     * @param createdAt            创建时间
+     * @param a2uiComponentsJson   A2UI 组件树 JSON（可选）
      * @return messageId
      */
     public String insert(String sessionId,
@@ -50,43 +62,49 @@ public class ChatMessageRepository {
                          String content,
                          @Nullable String reasoningSummary,
                          @Nullable String traceId,
-                         Instant createdAt) {
+                         Instant createdAt,
+                         @Nullable String a2uiComponentsJson) {
         String id = UUID.randomUUID().toString();
         Instant ts = createdAt != null ? createdAt : Instant.now();
         jdbcTemplate.update("""
                         INSERT INTO chat_messages
-                        (id, session_id, role, content, reasoning_summary, trace_id, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        (id, session_id, role, content, reasoning_summary, trace_id, a2ui_components_json, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                 id, sessionId, role, content,
-                reasoningSummary, traceId, ts.toString());
-        log.debug("插入 chat_messages: id={}, sessionId={}, role={}", id, sessionId, role);
+                reasoningSummary, traceId, a2uiComponentsJson, ts.toString());
+        log.debug("插入 chat_messages: id={}, sessionId={}, role={}, hasA2ui={}",
+                id, sessionId, role, a2uiComponentsJson != null);
         return id;
     }
 
     /** 按时间顺序查询会话消息。 */
     public List<MessageInfo> findMessageInfosBySessionId(String sessionId) {
         return jdbcTemplate.query("""
-                        SELECT id, role, content, reasoning_summary, created_at
+                        SELECT id, role, content, reasoning_summary, a2ui_components_json, created_at
                         FROM chat_messages
                         WHERE session_id = ?
                         ORDER BY created_at ASC
                         """,
-                (rs, rowNum) -> new MessageInfo(
-                        rs.getString("id"),
-                        rs.getString("role"),
-                        rs.getString("content"),
-                        null,
-                        Instant.parse(rs.getString("created_at")),
-                        rs.getString("reasoning_summary")
-                ),
+                (rs, rowNum) -> {
+                    String a2uiJson = rs.getString("a2ui_components_json");
+                    A2uiComponentTree a2ui = deserializeA2ui(a2uiJson);
+                    return new MessageInfo(
+                            rs.getString("id"),
+                            rs.getString("role"),
+                            rs.getString("content"),
+                            a2ui,
+                            Instant.parse(rs.getString("created_at")),
+                            rs.getString("reasoning_summary")
+                    );
+                },
                 sessionId);
     }
 
     /** 按时间顺序查询会话消息（带内部字段）。 */
     public List<ChatMessageRow> findRowsBySessionId(String sessionId) {
         return jdbcTemplate.query("""
-                        SELECT id, session_id, role, content, reasoning_summary, trace_id, created_at
+                        SELECT id, session_id, role, content, reasoning_summary, trace_id, a2ui_components_json, created_at
                         FROM chat_messages
                         WHERE session_id = ?
                         ORDER BY created_at ASC
@@ -98,6 +116,7 @@ public class ChatMessageRepository {
                         rs.getString("content"),
                         rs.getString("reasoning_summary"),
                         rs.getString("trace_id"),
+                        rs.getString("a2ui_components_json"),
                         Instant.parse(rs.getString("created_at"))
                 ),
                 sessionId);
@@ -129,5 +148,23 @@ public class ChatMessageRepository {
     public int deleteById(String messageId) {
         return jdbcTemplate.update("DELETE FROM chat_messages WHERE id = ?", messageId);
     }
-}
 
+    /**
+     * 反序列化 A2UI 组件树 JSON。
+     *
+     * @param json JSON 字符串（可为 null）
+     * @return A2uiComponentTree 或 null
+     */
+    @Nullable
+    private A2uiComponentTree deserializeA2ui(@Nullable String json) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(json, A2uiComponentTree.class);
+        } catch (Exception e) {
+            log.warn("A2UI 组件树 JSON 反序列化失败: error={}", e.getMessage());
+            return null;
+        }
+    }
+}

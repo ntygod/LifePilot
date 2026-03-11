@@ -352,7 +352,8 @@ public class ChatSessionService {
                     originalMsg.content(),
                     originalMsg.reasoningSummary(),
                     originalMsg.traceId(),
-                    originalMsg.createdAt()
+                    originalMsg.createdAt(),
+                    originalMsg.a2uiComponentsJson()
             );
         }
 

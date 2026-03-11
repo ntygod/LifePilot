@@ -46,7 +46,7 @@ public class JdbcConversationHistoryStore implements ConversationHistoryStore {
                                     String userMessage,
                                     @Nullable String traceId) {
         Instant ts = Instant.now();
-        String messageId = messageRepository.insert(sessionId, "user", userMessage, null, traceId, ts);
+        String messageId = messageRepository.insert(sessionId, "user", userMessage, null, traceId, ts, null);
         sessionRepository.appendMessageMeta(sessionId, ts, truncatePreview(userMessage));
         log.debug("用户消息已同步写入: sessionId={}, messageId={}", sessionId, messageId);
         return messageId;
@@ -67,7 +67,7 @@ public class JdbcConversationHistoryStore implements ConversationHistoryStore {
                                          @Nullable String traceId) {
         Instant ts = Instant.now();
         String messageId = messageRepository.insert(sessionId, "assistant", assistantMessage,
-                reasoningSummary, traceId, ts);
+                reasoningSummary, traceId, ts, null);
         sessionRepository.appendMessageMeta(sessionId, ts, truncatePreview(assistantMessage));
         log.debug("助手消息已同步写入: sessionId={}, messageId={}", sessionId, messageId);
         return messageId;
@@ -115,7 +115,7 @@ public class JdbcConversationHistoryStore implements ConversationHistoryStore {
         }
 
         Instant ts = Instant.now();
-        messageRepository.insert(sessionId, "system", systemMessage, null, traceId, ts);
+        messageRepository.insert(sessionId, "system", systemMessage, null, traceId, ts, null);
         sessionRepository.appendMessageMeta(sessionId, ts, truncatePreview(systemMessage));
 
         log.debug("系统消息已追加: sessionId={}, traceIdPresent={}",

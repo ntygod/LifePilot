@@ -82,7 +82,7 @@ class MessagePersistence_BugCondition_探索测试 {
                 )
                 """);
 
-        messageRepository = new ChatMessageRepository(jdbcTemplate);
+        messageRepository = new ChatMessageRepository(jdbcTemplate, new ObjectMapper());
         sessionRepository = new ChatSessionRepository(jdbcTemplate, new ObjectMapper());
         historyStore = new JdbcConversationHistoryStore(sessionRepository, messageRepository);
     }
