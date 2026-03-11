@@ -43,7 +43,7 @@ const helperText = computed(() => {
 })
 
 async function handleClick() {
-  if (props.disabled || isSending.value || !props.signal || !chatStore.activeSessionId) return
+  if (props.disabled || props.streaming || isSending.value || !props.signal || !chatStore.activeSessionId) return
   await emitSignal(props.signal, chatStore.activeSessionId, signalContext.value)
 }
 
@@ -60,7 +60,7 @@ function handleKeydown(event: KeyboardEvent) {
     <Button
       type="button"
       :variant="variant"
-      :disabled="disabled || isSending"
+      :disabled="disabled || streaming || isSending"
       class="min-w-[5.5rem]"
       :aria-busy="isSending"
       @click="handleClick"

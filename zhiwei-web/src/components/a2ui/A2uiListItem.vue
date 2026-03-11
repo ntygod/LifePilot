@@ -33,7 +33,7 @@ const signalState = computed(() => (
 const isSending = computed(() => signalState.value?.status === 'sending')
 
 async function handleClick() {
-  if (isSending.value || !props.signal || !chatStore.activeSessionId) return
+  if (props.streaming || isSending.value || !props.signal || !chatStore.activeSessionId) return
   await emitSignal(props.signal, chatStore.activeSessionId, signalContext.value)
 }
 

@@ -35,7 +35,7 @@ const isSending = computed(() => signalState.value?.status === 'sending')
 const hasError = computed(() => signalState.value?.status === 'error')
 
 async function handleClick() {
-  if (isSending.value || !props.signal || !chatStore.activeSessionId) return
+  if (props.streaming || isSending.value || !props.signal || !chatStore.activeSessionId) return
   await emitSignal(props.signal, chatStore.activeSessionId, signalContext.value)
 }
 
@@ -58,7 +58,7 @@ function handleKeydown(event: KeyboardEvent) {
       hasError && 'border-destructive/22 bg-destructive/6 text-destructive',
       isSending && 'cursor-wait',
     ]"
-    :disabled="!signal || isSending"
+    :disabled="streaming || !signal || isSending"
     :aria-busy="isSending"
     @click="handleClick"
     @keydown="handleKeydown"
