@@ -168,6 +168,8 @@ export interface SseDoneEvent {
   messageId: string
   /** 可选：完整消息内容（非流式响应时由后端直接返回） */
   content?: string
+  /** 可选：本轮回答附带的 A2UI 组件树快照 */
+  a2uiComponents?: A2uiComponent[]
   /** 可选：Token 使用统计 */
   tokenUsage?: TokenUsage
   /** 可选：聚合后的 Token 使用概要（input/output/total），与后端 doneData.usage 对齐 */
@@ -220,8 +222,9 @@ export interface SseMediaEvent {
 export interface ChatResponse {
   messageId: string
   content: string
-  a2ui?: { components: A2uiComponent[] }
+  a2uiComponents?: A2uiComponent[]
   tokenUsage?: TokenUsage
+  traceId?: string
   /** 本轮对话中使用到的知识库 / 文档来源等（由后端返回，前端只做轻量展示） */
   sources?: SourceSummary[]
 }

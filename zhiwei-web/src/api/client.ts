@@ -50,6 +50,7 @@ import type {
   ErrorTrendDaily,
   McpConnectionLog
 } from '@/types'
+import { mapBackendMessage } from '@/utils/a2ui'
 
 // API 基础路径（开发环境通过 Vite proxy 转发）
 const BASE = '/api'
@@ -171,8 +172,17 @@ export const chatApi = {
   },
 
   /** 获取会话历史消息 */
-  getSessionMessages(sessionId: string): Promise<Message[]> {
-    return request(`/chat/sessions/${sessionId}/messages`)
+  async getSessionMessages(sessionId: string): Promise<Message[]> {
+    const messages = await request<Array<{
+      id: string
+      role: 'user' | 'assistant'
+      content: string
+      a2uiComponents?: unknown
+      timestamp: string | number
+      reasoningSummary?: string | null
+      traceId?: string | null
+    }>>(`/chat/sessions/${sessionId}/messages`)
+    return messages.map(mapBackendMessage)
   },
 
   /** 更新会话（标题、置顶、归档等） */
@@ -237,7 +247,7 @@ export const chatApi = {
   },
 
   /** A2UI 信号回传 */
-  sendSignal(name: string, payload: Record<string, unknown>, sessionId: string): Promise<unknown> {
+  sendSignal(name: string, payload: Record<string, unknown>, sessionId: string): Promise<ChatResponse> {
     return request('/chat/signals', {
       method: 'POST',
       body: JSON.stringify({ name, payload, sessionId })
