@@ -132,6 +132,33 @@ public class SseSessionManager {
     }
 
     /**
+     * 按前缀广播事件到匹配的 SseEmitter。
+     *
+     * <p>遍历所有已注册的 emitter，向 streamId 以指定前缀开头的 emitter 发送事件。
+     * 单个 emitter 发送失败时关闭该连接，不影响其他 emitter。</p>
+     *
+     * @param prefix    streamId 前缀（如 "mcp-status-"）
+     * @param eventType 事件类型
+     * @param data      事件数据
+     */
+    public void broadcastByPrefix(String prefix, String eventType, Object data) {
+        emitters.forEach((streamId, emitter) -> {
+            if (streamId.startsWith(prefix)) {
+                try {
+                    var event = SseEmitter.event()
+                            .name(eventType)
+                            .data(data);
+                    emitter.send(event);
+                } catch (IOException e) {
+                    log.warn("前缀广播失败，关闭连接: streamId={}, prefix={}", streamId, prefix);
+                    closeEmitter(streamId);
+                }
+            }
+        });
+    }
+
+
+    /**
      * 获取已注册的 SseEmitter（不创建新实例）。
      *
      * @param streamId 流式传输标识
