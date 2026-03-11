@@ -67,6 +67,8 @@
 
 飞书通过事件订阅 v2.0 推送加密 JSON 消息。适配器解密消息、验证 Token，支持事件去重（基于 eventId 缓存）。响应支持富文本（Post）格式。
 
+详细接入步骤可参考：[guides/feishu-integration-guide.md](../guides/feishu-integration-guide.md)
+
 ### 3.5 快速路径命令
 
 以 `/` 开头的命令消息（如 `/todo list`）被 RouterMiddleware 识别后走快速路径，直接路由到对应 Skill，跳过 LLM 推理。延迟 < 100ms，不消耗 Token。

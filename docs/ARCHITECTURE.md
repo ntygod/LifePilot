@@ -233,4 +233,5 @@ graph TB
 | API 端点清单 | [API_ENDPOINTS.md](API_ENDPOINTS.md) |
 | API 规范标准 | [API_STANDARD.md](API_STANDARD.md) |
 | 工作流使用指南 | [guides/workflow-guide.md](guides/workflow-guide.md) |
+| 飞书接入指南 | [guides/feishu-integration-guide.md](guides/feishu-integration-guide.md) |
 | 已知限制 | [KNOWN-LIMITATIONS.md](KNOWN-LIMITATIONS.md) |
