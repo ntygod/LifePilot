@@ -668,6 +668,13 @@ public class AgentLoop {
                 } else {
                     streamingSystemPrompt = streamingSystemPrompt + "\n" + streamingConstraint;
                 }
+
+                // A2UI 提示词注入（仅当功能启用时）
+                if (a2uiProperties != null && a2uiProperties.enabled()) {
+                    String a2uiPrompt = promptRegistry.render("agent/a2ui-component-catalog",
+                            Map.of("maxComponents", a2uiProperties.maxComponentsPerTree()));
+                    streamingSystemPrompt = streamingSystemPrompt + "\n" + a2uiPrompt;
+                }
             }
 
             // 获取工具回调（与非流式路径一致，让 LLM 看到可用工具）
