@@ -3,6 +3,8 @@ package com.lifepilot.interaction.web.controller;
 import com.lifepilot.interaction.web.model.ErrorResponse;
 import com.lifepilot.interaction.web.model.TriggerWorkflowRequest;
 import com.lifepilot.workflow.config.WorkflowConfigProperties;
+import com.lifepilot.workflow.engine.InputValidationResult;
+import com.lifepilot.workflow.engine.InputValidator;
 import com.lifepilot.workflow.engine.WorkflowCommandService;
 import com.lifepilot.workflow.engine.WorkflowEngine;
 import com.lifepilot.workflow.engine.WorkflowEventRecorder;
@@ -355,7 +357,17 @@ public class WorkflowController {
 
         Map<String, Object> inputs = (request != null && request.inputs() != null)
                 ? request.inputs() : Map.of();
-        String instanceId = workflowCommandService.start(id, inputs);
+
+        // 输入参数校验
+        InputValidationResult validation = InputValidator.validate(defOpt.get().inputs(), inputs);
+        if (!validation.valid()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
+                    new ErrorResponse(400,
+                            "缺少必填输入参数: " + String.join(", ", validation.missingParams()),
+                            Instant.now()));
+        }
+
+        String instanceId = workflowCommandService.start(id, validation.mergedInputs());
         log.info("工作流触发成功: workflowId={}, instanceId={}", id, instanceId);
         return ResponseEntity.accepted().body(Map.of(
                 "instanceId", instanceId,
