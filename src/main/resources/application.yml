@@ -199,6 +199,9 @@ lifepilot:
     # AUDN 实体提取
     extraction:
       timeout-seconds: 60
+    # 混合检索相关性过滤
+    retrieval:
+      min-fused-score: 0.035
   skills:
     # ===== Skill 系统配置 =====
     # 支持 Java 原生 Skill、Markdown 声明式 Skill、MCP 外部工具
