@@ -1110,18 +1110,9 @@ public class AgentLoop {
             } catch (Exception e) {
                 // .entity() 解析失败，降级到手动解析（复用缓存的响应文本，不重新调用 LLM）
                 if (cachedResponseText != null) {
-                    String trimmed = cachedResponseText.strip();
-                    // 自然语言文本检测：function calling 后 LLM 返回自然语言是预期行为，静默降级
-                    if (!trimmed.startsWith("{") && !trimmed.startsWith("[")
-                            && !trimmed.contains("\"action\":") && !trimmed.contains("\"type\":")
-                            && !trimmed.contains("\"action\" :")) {
-                        log.debug("entity() 解析失败，响应为自然语言文本，直接降级为 ResponseGenerated: phase={}, length={}, traceId={}",
-                                  state.phase(), trimmed.length(), state.traceId());
-                        return new Action.ResponseGenerated(cachedResponseText, List.of());
-                    }
-                    // 看起来像 JSON 但解析失败：保留 WARN 并走 ActionParser 完整解析链
-                    log.warn("entity() 解析失败，降级到手动解析: phase={}, error={}, traceId={}",
-                             state.phase(), e.getMessage(), state.traceId());
+                    // 统一交给 ActionParser 多策略解析链处理（含 Markdown 提取、JSON 修复、自然语言兜底）
+                    log.debug("entity() 解析失败，降级到 ActionParser: phase={}, error={}, traceId={}",
+                              state.phase(), e.getMessage(), state.traceId());
                     return actionParser.parse(state.phase(), cachedResponseText);
                 }
                 // 理论上不会到达此处（异常在 .entity() 阶段抛出，cachedResponseText 已赋值）
