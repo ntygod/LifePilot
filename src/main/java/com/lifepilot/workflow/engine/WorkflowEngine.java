@@ -498,7 +498,24 @@ public class WorkflowEngine {
                                              int nestingDepth) {
         Instant stepStart = Instant.now();
         try {
-            Map<String, Object> output = stepExecutor.execute(step, instance.context(), expressionEngine);
+            // 步骤级超时保护：包装在 CompletableFuture 中，超时后抛出 TimeoutException
+            Map<String, Object> output;
+            final WorkflowInstance currentInstance = instance;
+            try {
+                output = CompletableFuture.supplyAsync(
+                        () -> stepExecutor.execute(step, currentInstance.context(), expressionEngine),
+                        Thread.ofVirtual().factory()::newThread
+                ).orTimeout(config.getDefaultStepTimeoutSeconds(), java.util.concurrent.TimeUnit.SECONDS)
+                 .join();
+            } catch (java.util.concurrent.CompletionException ce) {
+                // 解包 CompletionException，提取原始异常
+                Throwable cause = ce.getCause();
+                if (cause instanceof java.util.concurrent.TimeoutException) {
+                    throw new WorkflowStepException(step.id(),
+                            "步骤执行超时: timeout=" + config.getDefaultStepTimeoutSeconds() + "s");
+                }
+                throw cause instanceof Exception ex ? ex : new RuntimeException(cause);
+            }
 
             // 检查 WaitStep 特殊标记
             if ("wait".equals(output.get("__type"))) {
