@@ -962,3 +962,25 @@ export interface ToolTestHistoryItem {
   input: Record<string, any>
   result: ToolTestResponse
 }
+
+
+// ========== MCP Server 状态 SSE 推送类型 ==========
+
+/** MCP Server 状态快照（SSE mcp-status-snapshot 事件数据） */
+export interface McpStatusSnapshot {
+  servers: Array<{
+    serverName: string
+    state: McpServer['state']
+    connectedSince?: string
+    lastError?: string
+  }>
+}
+
+/** MCP Server 状态变化（SSE mcp-status-change 事件数据） */
+export interface McpStatusChange {
+  serverName: string
+  oldState: McpServer['state']
+  newState: McpServer['state']
+  timestamp: string
+  error?: string
+}

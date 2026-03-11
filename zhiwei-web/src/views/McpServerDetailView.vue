@@ -13,6 +13,7 @@ import {
 } from 'lucide-vue-next'
 import { mcpApi } from '@/api/client'
 import { useSkillStore } from '@/stores/skill'
+import { useMcpStatusStream } from '@/composables/useMcpStatusStream'
 import { useUiStore } from '@/stores/ui'
 import type { McpConnectionLog, McpServerConfig } from '@/types'
 import Breadcrumb from '@/components/global/Breadcrumb.vue'
@@ -33,6 +34,9 @@ const route = useRoute()
 const router = useRouter()
 const skillStore = useSkillStore()
 const uiStore = useUiStore()
+
+// SSE 实时状态订阅
+useMcpStatusStream()
 
 const serverName = computed(() => route.params.id as string)
 const server = computed(() => skillStore.mcpServers.find(item => item.name === serverName.value))
