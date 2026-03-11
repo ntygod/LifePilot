@@ -253,8 +253,18 @@ public class AgentLoop {
                 // 同步写入助手消息到 chat_messages，获取后端生成的 messageId
                 if (conversationHistoryStore != null && finalContent != null && !finalContent.isBlank()) {
                     try {
+                        // 序列化 A2UI 组件树（如有）
+                        String a2uiJson = null;
+                        if (lastCollectedA2uiTrees != null && !lastCollectedA2uiTrees.isEmpty()) {
+                            try {
+                                a2uiJson = objectMapper.writeValueAsString(lastCollectedA2uiTrees);
+                            } catch (Exception ex) {
+                                log.warn("A2UI 组件树序列化失败: error={}", ex.getMessage());
+                            }
+                            lastCollectedA2uiTrees = null; // 清理
+                        }
                         assistantMessageId = conversationHistoryStore.appendAssistantMessage(
-                                state.sessionId(), finalContent, reasoningSummary, state.traceId(), null);
+                                state.sessionId(), finalContent, reasoningSummary, state.traceId(), a2uiJson);
                     } catch (Exception e) {
                         log.warn("助手消息同步写入失败: sessionId={}, error={}", state.sessionId(), e.getMessage());
                     }
@@ -821,6 +831,13 @@ public class AgentLoop {
                     fullPrompt,
                     responseContent,
                     null);
+
+            // 保存收集的 A2UI 组件树供持久化使用
+            if (collectedA2uiTrees != null && !collectedA2uiTrees.isEmpty()) {
+                this.lastCollectedA2uiTrees = List.copyOf(collectedA2uiTrees);
+            } else {
+                this.lastCollectedA2uiTrees = null;
+            }
 
             // 解析为 ResponseGenerated Action（suggestions 为空列表）
             return new Action.ResponseGenerated(responseContent, List.of());
