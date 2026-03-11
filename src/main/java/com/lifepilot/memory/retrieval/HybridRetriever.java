@@ -1,5 +1,6 @@
 package com.lifepilot.memory.retrieval;
 
+import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.procedural.IntentMatcher;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
@@ -40,6 +41,7 @@ public class HybridRetriever {
     private final SemanticMemory semanticMemory;
     @Nullable
     private final IntentMatcher intentMatcher;
+    private final MemoryProperties memoryProperties;
     private final ExecutorService virtualThreadExecutor;
 
     /** 最近一次 retrieve() 中 L4 程序记忆匹配结果（线程安全，每次 retrieve 重置）。 */
@@ -52,12 +54,14 @@ public class HybridRetriever {
                            FtsSearcher ftsSearcher,
                            GraphTraverser graphTraverser,
                            SemanticMemory semanticMemory,
-                           @Nullable IntentMatcher intentMatcher) {
+                           @Nullable IntentMatcher intentMatcher,
+                           MemoryProperties memoryProperties) {
         this.vectorSearcher = vectorSearcher;
         this.ftsSearcher = ftsSearcher;
         this.graphTraverser = graphTraverser;
         this.semanticMemory = semanticMemory;
         this.intentMatcher = intentMatcher;
+        this.memoryProperties = memoryProperties;
         this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
     }
 
@@ -183,6 +187,19 @@ public class HybridRetriever {
                 .sorted()
                 .limit(topK)
                 .toList();
+
+        // 新增：fusedScore 阈值过滤
+        float minScore = memoryProperties.getRetrieval().getMinFusedScore();
+        if (minScore > 0.0f) {
+            int beforeCount = finalResults.size();
+            finalResults = finalResults.stream()
+                    .filter(r -> r.fusedScore() >= minScore)
+                    .toList();
+            if (log.isDebugEnabled() && beforeCount != finalResults.size()) {
+                log.debug("混合检索: 相关性过滤, 阈值={}, 过滤前={}, 过滤后={}",
+                        minScore, beforeCount, finalResults.size());
+            }
+        }
 
         // 7. 批量更新 access_count
         updateAccessCounts(finalResults);
