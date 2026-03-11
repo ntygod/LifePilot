@@ -446,6 +446,21 @@ public class WorkflowController {
         return ResponseEntity.ok(workflowEventRecorder.getTimeline(instanceId));
     }
 
+    /**
+     * 获取实例步骤执行日志。
+     *
+     * @param instanceId 实例 ID
+     * @return 步骤日志列表（按 createdAt 升序），不存在返回 404
+     */
+    @GetMapping("/executions/{instanceId}/step-logs")
+    public ResponseEntity<?> getStepLogs(@PathVariable String instanceId) {
+        if (workflowRepository.findInstance(instanceId).isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(new ErrorResponse(404, "工作流实例未找到: id=" + instanceId, Instant.now()));
+        }
+        return ResponseEntity.ok(workflowRepository.findStepLogs(instanceId));
+    }
+
     // ── 辅助方法 ──────────────────────────────────────────
 
     /** 审批请求 DTO。 */

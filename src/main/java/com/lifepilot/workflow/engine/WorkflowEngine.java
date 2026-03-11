@@ -80,11 +80,16 @@ public class WorkflowEngine {
                     .orElseThrow(() -> new IllegalArgumentException(
                             "工作流定义未找到: workflowId=" + workflowId));
 
+            log.info("开始执行工作流: instanceId={}, workflowId={}, 步骤数={}",
+                    instanceId, workflowId, definition.steps().size());
+
             // CREATED → RUNNING
             instance = transition(instance, WorkflowState.RUNNING);
 
             // DAG 执行
             executeDag(instance, definition.steps(), new HashSet<>(instance.completedStepIds()), 0);
+
+            log.info("工作流执行完成: instanceId={}, workflowId={}", instanceId, workflowId);
         } catch (Exception e) {
             log.error("工作流执行异常: instanceId={}, error={}", instanceId, e.getMessage(), e);
             failWorkflow(instance, "执行异常: " + e.getMessage());
@@ -343,13 +348,24 @@ public class WorkflowEngine {
                                         Set<String> completedStepIds,
                                         int nestingDepth) {
         ExecutionPlan plan = dagScheduler.buildExecutionPlan(steps);
+        int totalSteps = plan.stepMap().size();
+        int round = 0;
+
+        log.info("DAG 执行开始: instanceId={}, 总步骤数={}, 已完成={}",
+                instance.id(), totalSteps, completedStepIds.size());
 
         while (dagScheduler.hasNext(plan, completedStepIds)) {
+            round++;
             List<WorkflowStep> readySteps = dagScheduler.getReadySteps(plan, completedStepIds);
             if (readySteps.isEmpty()) {
                 log.error("DAG 调度异常：hasNext=true 但无就绪步骤: instanceId={}", instance.id());
                 return failWorkflow(instance, "DAG 调度异常：无就绪步骤");
             }
+
+            log.info("DAG 第 {} 轮: instanceId={}, 就绪步骤={}, 已完成={}/{}",
+                    round, instance.id(),
+                    readySteps.stream().map(s -> s.id() + "(" + extractStepType(s) + ")").toList(),
+                    completedStepIds.size(), totalSteps);
 
             if (readySteps.size() == 1) {
                 // 单步直接执行
@@ -460,6 +476,8 @@ public class WorkflowEngine {
         }
 
         // 所有步骤完成 → COMPLETED
+        log.info("DAG 执行完成: instanceId={}, 总步骤={}, 总轮次={}",
+                instance.id(), totalSteps, round);
         return transition(instance, WorkflowState.COMPLETED);
     }
 
@@ -497,6 +515,8 @@ public class WorkflowEngine {
                                              int attempt,
                                              int nestingDepth) {
         Instant stepStart = Instant.now();
+        log.info("步骤开始执行: instanceId={}, stepId={}, stepType={}, attempt={}",
+                instance.id(), step.id(), stepType, attempt);
         try {
             // 步骤级超时保护：包装在 CompletableFuture 中，超时后抛出 TimeoutException
             Map<String, Object> output;
@@ -608,12 +628,19 @@ public class WorkflowEngine {
             insertStepLog(instance.id(), step.id(), stepType, StepState.COMPLETED,
                     attempt, null, toJson(output), null, stepStart);
 
+            long durationMs = Duration.between(stepStart, Instant.now()).toMillis();
+            log.info("步骤执行成功: instanceId={}, stepId={}, stepType={}, 耗时={}ms",
+                    instance.id(), step.id(), stepType, durationMs);
+
             eventRecorder.record(WorkflowEventType.STEP_COMPLETED, instance.id(),
                     instance.workflowId(), step.id(),
                     Map.of("durationMs", Duration.between(stepStart, Instant.now()).toMillis()));
             return instance.toBuilder().updatedAt(Instant.now()).build();
 
         } catch (Exception e) {
+            long durationMs = Duration.between(stepStart, Instant.now()).toMillis();
+            log.error("步骤执行失败: instanceId={}, stepId={}, stepType={}, 耗时={}ms, error={}",
+                    instance.id(), step.id(), stepType, durationMs, e.getMessage());
             instance.context().set("steps." + step.id() + ".error", e.getMessage());
             insertStepLog(instance.id(), step.id(), stepType, StepState.FAILED,
                     attempt, null, null, e.getMessage(), stepStart);
