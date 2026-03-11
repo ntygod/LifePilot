@@ -1,4 +1,4 @@
-package com.lifepilot.interaction.web.repository;
+﻿package com.lifepilot.interaction.web.repository;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.interaction.web.a2ui.A2uiPayloadSupport;
@@ -15,7 +15,10 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Repository for persisted Web chat messages.
+ * Web 聊天消息持久化仓库。
+ *
+ * @author zsg
+ * @since 2026-03-05
  */
 @Repository
 public class ChatMessageRepository {
@@ -58,7 +61,7 @@ public class ChatMessageRepository {
                         """,
                 id, sessionId, role, content,
                 reasoningSummary, traceId, a2uiComponentsJson, ts.toString());
-        log.debug("Insert chat_messages row: id={}, sessionId={}, role={}, hasA2ui={}",
+        log.debug("插入 chat_messages 记录: id={}, sessionId={}, role={}, hasA2ui={}",
                 id, sessionId, role, a2uiComponentsJson != null);
         return id;
     }

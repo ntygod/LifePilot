@@ -1,4 +1,4 @@
-package com.lifepilot.prompt.config;
+﻿package com.lifepilot.prompt.config;
 
 import com.lifepilot.prompt.PromptRegistry;
 import org.junit.jupiter.api.Test;
@@ -18,7 +18,7 @@ class PromptAutoConfiguration_集成测试 {
             .withConfiguration(AutoConfigurations.of(PromptAutoConfiguration.class));
 
     @Test
-    void promptRegistryBeanIsRegistered() {
+    void promptRegistry_Bean已注册() {
         contextRunner.run(context -> {
             assertTrue(context.containsBean("promptRegistry"));
             var registry = context.getBean(PromptRegistry.class);
@@ -27,7 +27,7 @@ class PromptAutoConfiguration_集成测试 {
     }
 
     @Test
-    void registersTwentyThreeTemplates() {
+    void 注册23个模板() {
         contextRunner.run(context -> {
             var registry = context.getBean(PromptRegistry.class);
             assertEquals(23, registry.size(), "unexpected template keys: " + registry.keys());
@@ -35,7 +35,7 @@ class PromptAutoConfiguration_集成测试 {
     }
 
     @Test
-    void registersExpectedTemplateKeysWithoutLegacyA2uiPrompt() {
+    void 注册预期模板键_不含旧版A2UI提示词() {
         contextRunner.run(context -> {
             var registry = context.getBean(PromptRegistry.class);
             var expectedKeys = Set.of(
@@ -60,7 +60,7 @@ class PromptAutoConfiguration_集成测试 {
     }
 
     @Test
-    void rendersTemplatesWithoutVariables() {
+    void 无变量模板可正常渲染() {
         contextRunner.run(context -> {
             var registry = context.getBean(PromptRegistry.class);
             String result = registry.render("agent/role-definition");

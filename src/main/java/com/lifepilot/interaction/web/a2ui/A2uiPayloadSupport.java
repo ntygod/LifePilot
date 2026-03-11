@@ -1,4 +1,4 @@
-package com.lifepilot.interaction.web.a2ui;
+﻿﻿package com.lifepilot.interaction.web.a2ui;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.interaction.web.model.A2uiComponentTree;
@@ -9,7 +9,10 @@ import org.springframework.lang.Nullable;
 import java.util.List;
 
 /**
- * A2UI payload helpers shared by streaming, sync responses, and history restore.
+ * A2UI 载荷工具类，供流式响应、同步响应和历史恢复共用。
+ *
+ * @author zsg
+ * @since 2026-03-11
  */
 public final class A2uiPayloadSupport {
 
@@ -50,7 +53,7 @@ public final class A2uiPayloadSupport {
         try {
             return normalizeTree(objectMapper.readValue(json, A2uiComponentTree.class));
         } catch (Exception e) {
-            log.warn("A2UI stored payload deserialize failed: error={}", e.getMessage());
+            log.warn("A2UI 存储载荷反序列化失败: error={}", e.getMessage());
         }
         return null;
     }
@@ -74,7 +77,7 @@ public final class A2uiPayloadSupport {
         }
         if (segment instanceof StreamingA2uiParser.Segment.A2uiSegment(var json)) {
             if (latestTree != null) {
-                log.warn("Multiple A2UI blocks detected in one response; keeping the first valid block");
+                log.warn("单次响应中检测到多个 A2UI 块，保留第一个有效块");
                 return latestTree;
             }
             var parsedTree = parseTree(json, objectMapper, maxComponentsPerTree);
@@ -91,12 +94,12 @@ public final class A2uiPayloadSupport {
             var normalizedTree = normalizeTree(objectMapper.readValue(json, A2uiComponentTree.class));
             var validation = A2uiComponentValidator.validate(normalizedTree, maxComponentsPerTree);
             if (!validation.valid()) {
-                log.warn("A2UI payload validation failed: errors={}", validation.errors());
+                log.warn("A2UI 载荷校验失败: errors={}", validation.errors());
                 return null;
             }
             return validation.truncatedTree() != null ? validation.truncatedTree() : normalizedTree;
         } catch (Exception e) {
-            log.warn("A2UI payload parse failed: error={}", e.getMessage());
+            log.warn("A2UI 载荷解析失败: error={}", e.getMessage());
             return null;
         }
     }

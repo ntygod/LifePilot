@@ -1,4 +1,4 @@
-package com.lifepilot.interaction.web.a2ui;
+﻿package com.lifepilot.interaction.web.a2ui;
 
 import org.springframework.lang.Nullable;
 
@@ -9,10 +9,12 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * Backend source of truth for the A2UI component contract.
+ * A2UI 组件目录，后端组件契约的唯一真实来源。
  *
- * <p>The runtime validator and the RESPONDING prompt should evolve together,
- * so both are driven from this catalog.</p>
+ * <p>运行时校验器和 RESPONDING 阶段提示词均由此目录驱动，确保两者同步演进。</p>
+ *
+ * @author zsg
+ * @since 2026-03-11
  */
 public final class A2uiComponentCatalog {
 

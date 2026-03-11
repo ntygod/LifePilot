@@ -1,4 +1,4 @@
-package com.lifepilot.agent.model;
+﻿package com.lifepilot.agent.model;
 
 import com.lifepilot.interaction.web.model.A2uiComponent;
 import org.springframework.lang.Nullable;
@@ -6,7 +6,10 @@ import org.springframework.lang.Nullable;
 import java.util.List;
 
 /**
- * Agent response payload returned from the synchronous execution path.
+ * Agent 同步执行路径返回的响应载荷。
+ *
+ * @author zsg
+ * @since 2026-02-24
  */
 public record AgentResponse(
         String traceId,

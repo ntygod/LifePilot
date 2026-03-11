@@ -1,4 +1,4 @@
-package com.lifepilot.interaction.web.a2ui;
+﻿﻿package com.lifepilot.interaction.web.a2ui;
 
 import com.lifepilot.interaction.web.model.A2uiComponent;
 import com.lifepilot.interaction.web.model.A2uiComponentTree;
@@ -15,7 +15,10 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Structural validator for A2UI component trees.
+ * A2UI 组件树结构校验器。
+ *
+ * @author zsg
+ * @since 2026-03-11
  */
 public final class A2uiComponentValidator {
 
@@ -239,7 +242,7 @@ public final class A2uiComponentValidator {
             }
             case "Progress" -> validateProgress(component, errors);
             default -> {
-                // Unsupported types are handled earlier.
+                // 未注册类型已在前面校验过
             }
         }
     }

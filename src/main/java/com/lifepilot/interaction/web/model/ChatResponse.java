@@ -1,4 +1,4 @@
-package com.lifepilot.interaction.web.model;
+﻿package com.lifepilot.interaction.web.model;
 
 import com.lifepilot.interaction.model.TokenUsage;
 import org.springframework.lang.Nullable;
@@ -6,7 +6,10 @@ import org.springframework.lang.Nullable;
 import java.util.List;
 
 /**
- * Non-streaming chat response payload used by both sendMessage and A2UI signal reply.
+ * 非流式聊天响应载荷，供 sendMessage 和 A2UI 信号回复共用。
+ *
+ * @author zsg
+ * @since 2026-02-26
  */
 public record ChatResponse(
         String messageId,
