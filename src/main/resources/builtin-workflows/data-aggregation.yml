@@ -28,7 +28,7 @@ steps:
       - - id: fetch-todo-stats
           name: 获取待办统计
           type: skill
-          skillId: todo.statistics
+          skillId: todo
           params:
             period: last-7-days
         - id: analyze-todo-trend
@@ -47,7 +47,7 @@ steps:
       - - id: fetch-schedule-stats
           name: 获取日程统计
           type: skill
-          skillId: schedule.statistics
+          skillId: schedule
           params:
             period: last-7-days
         - id: analyze-schedule-load
@@ -66,14 +66,14 @@ steps:
       - - id: fetch-habit-stats
           name: 获取习惯统计
           type: skill
-          skillId: habit.statistics
+          skillId: habit
           params:
             period: last-7-days
 
   - id: fetch-external-data
     name: 获取外部数据
     type: tool
-    toolId: web.search
+    toolId: builtin.web.search
     params:
       query: "行业动态 本周要闻"
       maxResults: "5"
@@ -114,7 +114,7 @@ steps:
       - fetch-external-data
 
   - id: format-report
-    name: 格式化报告
+    name: 格式化报告（待实现）
     type: tool
     toolId: document.format
     params:
@@ -123,9 +123,12 @@ steps:
       template: weekly-report
     dependsOn:
       - synthesize-report
+    errorStrategy:
+      type: skip
+      reason: 文档格式化工具尚未实现，跳过
 
   - id: save-report
-    name: 保存报告
+    name: 保存报告（待实现）
     type: tool
     toolId: document.save
     params:
@@ -134,11 +137,14 @@ steps:
       category: weekly-report
     dependsOn:
       - format-report
+    errorStrategy:
+      type: skip
+      reason: 文档保存工具尚未实现，跳过
 
   - id: send-report
     name: 发送报告
     type: tool
-    toolId: notification.send
+    toolId: builtin.interact.notify
     params:
       channel: email
       title: "${inputs.reportTitle}"
