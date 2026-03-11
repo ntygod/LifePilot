@@ -7,6 +7,10 @@ import com.lifepilot.agent.context.AssembledContext;
 import com.lifepilot.agent.context.ContextAssembler;
 import com.lifepilot.agent.media.MediaDataExtractor;
 import com.lifepilot.agent.model.*;
+import com.lifepilot.interaction.web.a2ui.A2uiComponentValidator;
+import com.lifepilot.interaction.web.a2ui.StreamingA2uiParser;
+import com.lifepilot.interaction.web.config.A2uiProperties;
+import com.lifepilot.interaction.web.model.A2uiComponentTree;
 import com.lifepilot.agent.session.SessionManager;
 import com.lifepilot.conversation.ConversationHistoryStore;
 import com.lifepilot.conversation.ConversationTurnView;
@@ -87,6 +91,11 @@ public class AgentLoop {
     private final PromptRegistry promptRegistry;
     @Nullable
     private final MediaDataExtractor mediaDataExtractor;
+    @Nullable
+    private final A2uiProperties a2uiProperties;
+
+    /** 最近一次流式调用中收集的 A2UI 组件树，供持久化使用。 */
+    private volatile List<A2uiComponentTree> lastCollectedA2uiTrees;
 
     /** 当前执行的取消信号令牌，供外部调用方（ExecutionMiddleware、SseSessionManager）访问。 */
     private volatile CancellationToken cancellationToken;
@@ -108,7 +117,8 @@ public class AgentLoop {
                      @Nullable KnowledgeBaseRepository knowledgeBaseRepository,
                      @Nullable RealtimeExtractor realtimeExtractor,
                      PromptRegistry promptRegistry,
-                     @Nullable MediaDataExtractor mediaDataExtractor) {
+                     @Nullable MediaDataExtractor mediaDataExtractor,
+                     @Nullable A2uiProperties a2uiProperties) {
         this.stateReducer = stateReducer;
         this.contextAssembler = contextAssembler;
         this.llmRouter = llmRouter;
@@ -127,6 +137,7 @@ public class AgentLoop {
         this.knowledgeBaseRepository = knowledgeBaseRepository;
         this.promptRegistry = promptRegistry;
         this.mediaDataExtractor = mediaDataExtractor;
+        this.a2uiProperties = a2uiProperties;
     }
 
     /**
