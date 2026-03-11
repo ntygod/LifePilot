@@ -17,8 +17,10 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Instant;
+import java.time.ZoneId;
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -48,6 +50,9 @@ class ContextAssemblerTest {
         var strategy = new DefaultMemoryRetrievalStrategy();
         assembler = new ContextAssembler(config, hybridRetriever,
                 workingMemory, tokenBudgetAllocator, strategy, dataRedactor, promptRegistry);
+        lenient().when(promptRegistry.render("agent/role-definition")).thenReturn("你是知微");
+        lenient().when(promptRegistry.render(argThat(key -> key != null && key.startsWith("agent/")), anyMap()))
+                .thenAnswer(invocation -> "阶段提示词: " + invocation.getArgument(0));
     }
 
     // --- 辅助方法 ---
@@ -226,6 +231,45 @@ class ContextAssemblerTest {
         // 应使用静态降级分配，不抛异常
         assertNotNull(context);
         assertNotNull(context.tokenBudget());
+    }
+
+    @Test
+    void 系统提示词模板异常时使用紧急兜底提示词() {
+        var state = createState(AgentPhase.UNDERSTANDING, "测试查询");
+        when(hybridRetriever.retrieve(anyString(), anyInt(), any())).thenReturn(List.of());
+        when(workingMemory.getContext(anyString())).thenReturn(List.of());
+        when(tokenBudgetAllocator.allocate(anyInt(), anyInt(), anyFloat(), anyBoolean()))
+                .thenReturn(createAllocation());
+        when(promptRegistry.render("agent/role-definition"))
+                .thenThrow(new IllegalArgumentException("The template string is not valid."));
+
+        var context = assembler.assemble(state);
+
+        assertNotNull(context);
+        assertTrue(context.degraded());
+        assertThat(context.systemPrompt()).contains("阶段：意图理解");
+        assertThat(context.systemPrompt()).contains("请只输出 JSON 对象");
+    }
+
+    @Test
+    void buildUserPrompt包含当前时间与时区() {
+        var state = createState(AgentPhase.UNDERSTANDING, "测试查询");
+
+        var prompt = assembler.buildUserPrompt(state);
+
+        assertThat(prompt).contains("当前时间:");
+        assertThat(prompt).contains(ZoneId.systemDefault().getId());
+    }
+
+    @Test
+    void buildEnhancedUserPrompt包含当前时间与时区() {
+        var state = createState(AgentPhase.UNDERSTANDING, "测试查询");
+
+        var prompt = assembler.buildEnhancedUserPrompt(
+                state, List.of(), List.of(), List.of(), List.of(), null);
+
+        assertThat(prompt).contains("当前时间:");
+        assertThat(prompt).contains(ZoneId.systemDefault().getId());
     }
 
     @Test

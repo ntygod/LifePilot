@@ -71,6 +71,7 @@ class MessagePersistence_Preservation_保持测试 {
                     content          TEXT NOT NULL,
                     reasoning_summary TEXT,
                     trace_id         TEXT,
+                    a2ui_components_json TEXT,
                     created_at       TEXT NOT NULL,
                     FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
                 )
@@ -174,6 +175,42 @@ class MessagePersistence_Preservation_保持测试 {
         assertEquals("第二轮助手回复", messages.get(3).content());
         assertEquals("第三轮用户消息", messages.get(4).content());
         assertEquals("第三轮助手回复", messages.get(5).content());
+    }
+
+    @Test
+    void findMessageInfos_保留A2ui组件和TraceId() {
+        String sessionId = UUID.randomUUID().toString();
+        String now = Instant.now().toString();
+        jdbcTemplate.update("""
+                INSERT INTO chat_sessions (id, title, message_count, is_pinned, archived, created_at, updated_at)
+                VALUES (?, 'A2UI会话', 0, 0, 0, ?, ?)
+                """, sessionId, now, now);
+
+        String a2uiJson = """
+                {"components":[
+                  {"id":"card-1","type":"Card","properties":{"title":"待办面板"},"children":["btn-1"],"signal":null},
+                  {"id":"btn-1","type":"Button","properties":{"label":"刷新"},"children":[],"signal":{"name":"panel.refresh","payload":{"section":"todos"}}}
+                ]}
+                """;
+
+        historyStore.appendAssistantMessage(
+                sessionId,
+                "这是当前面板",
+                "已生成结构化面板",
+                "trace-a2ui-1",
+                a2uiJson
+        );
+
+        List<MessageInfo> messages = messageRepository.findMessageInfosBySessionId(sessionId);
+
+        assertEquals(1, messages.size());
+        MessageInfo assistant = messages.getFirst();
+        assertEquals("assistant", assistant.role());
+        assertEquals("trace-a2ui-1", assistant.traceId());
+        assertNotNull(assistant.a2uiComponents());
+        assertEquals(2, assistant.a2uiComponents().size());
+        assertEquals("card-1", assistant.a2uiComponents().getFirst().id());
+        assertEquals("panel.refresh", assistant.a2uiComponents().get(1).signal().name());
     }
 
     /**

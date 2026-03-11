@@ -77,6 +77,7 @@ class MessagePersistence_BugCondition_探索测试 {
                     content          TEXT NOT NULL,
                     reasoning_summary TEXT,
                     trace_id         TEXT,
+                    a2ui_components_json TEXT,
                     created_at       TEXT NOT NULL,
                     FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
                 )
