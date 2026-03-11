@@ -34,9 +34,9 @@ public sealed interface Action permits
             List<String> entities,
             TaskComplexity complexity
     ) implements Action {
-        /** 紧凑构造器 — 防御性拷贝。 */
+        /** 紧凑构造器 — null 防御 + 防御性拷贝。 */
         public IntentUnderstood {
-            entities = List.copyOf(entities);
+            entities = (entities == null || entities.isEmpty()) ? List.of() : List.copyOf(entities);
         }
     }
 
@@ -46,9 +46,9 @@ public sealed interface Action permits
             int estimatedTokens,
             String rationale
     ) implements Action {
-        /** 紧凑构造器 — 防御性拷贝。 */
+        /** 紧凑构造器 — null 防御 + 防御性拷贝。 */
         public PlanGenerated {
-            steps = List.copyOf(steps);
+            steps = (steps == null || steps.isEmpty()) ? List.of() : List.copyOf(steps);
         }
     }
 
@@ -77,9 +77,9 @@ public sealed interface Action permits
             String content,
             List<String> suggestions
     ) implements Action {
-        /** 紧凑构造器 — 防御性拷贝。 */
+        /** 紧凑构造器 — null 防御 + 防御性拷贝。 */
         public ResponseGenerated {
-            suggestions = List.copyOf(suggestions);
+            suggestions = (suggestions == null || suggestions.isEmpty()) ? List.of() : List.copyOf(suggestions);
         }
     }
 
