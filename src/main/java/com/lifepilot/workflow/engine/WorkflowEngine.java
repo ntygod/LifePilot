@@ -791,17 +791,10 @@ public class WorkflowEngine {
                     executeDag(instance, definition.steps(), completed, 0);
                 }
                 case WAITING -> {
-                    log.info("崩溃恢复 WAITING 实例: instanceId={}", instance.id());
-                    WorkflowDefinition definition = registry.find(instance.workflowId()).orElse(null);
-                    if (definition == null) {
-                        markRecoveryFailed(instance, "工作流定义未找到");
-                        return;
-                    }
-                    WorkflowInstance running = transition(instance, WorkflowState.RUNNING);
-                    if (running.state() == WorkflowState.RUNNING) {
-                        Set<String> completed = new HashSet<>(running.completedStepIds());
-                        executeDag(running, definition.steps(), completed, 0);
-                    }
+                    log.info("崩溃恢复 WAITING 实例: instanceId={}, blockedStepId={}",
+                            instance.id(), instance.blockedStepId());
+                    // 复用 resumeFromBlocked：清除阻塞字段、将 blockedStepId 加入已完成集合、从下一步继续
+                    resumeFromBlocked(instance.id());
                 }
                 case PAUSED -> {
                     log.info("崩溃恢复 PAUSED 实例: instanceId={}", instance.id());
