@@ -213,12 +213,12 @@ function deserializeConfig(type: StepType, obj: Record<string, unknown>): StepCo
     case 'skill':
       return {
         skillId: String(obj.skillId ?? ''),
-        params: toStringRecord(obj.params),
+        params: toUnknownRecord(obj.params),
       }
     case 'tool':
       return {
         toolId: String(obj.toolId ?? ''),
-        params: toStringRecord(obj.params),
+        params: toUnknownRecord(obj.params),
       }
     case 'llm':
       return {
@@ -247,7 +247,7 @@ function deserializeConfig(type: StepType, obj: Record<string, unknown>): StepCo
     case 'sub-workflow':
       return {
         workflowId: String(obj.workflowId ?? ''),
-        params: toStringRecord(obj.params),
+        params: toUnknownRecord(obj.params),
       }
     case 'wait':
       return {
@@ -342,13 +342,9 @@ function deserializeInputs(obj: unknown): InputParamModel[] {
 // ========== 工具函数 ==========
 
 /** 将 unknown 转为 Record<string, string>，非对象返回空 map */
-function toStringRecord(obj: unknown): Record<string, string> {
+function toUnknownRecord(obj: unknown): Record<string, unknown> {
   if (obj == null || typeof obj !== 'object' || Array.isArray(obj)) return {}
-  const result: Record<string, string> = {}
-  for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
-    result[k] = String(v ?? '')
-  }
-  return result
+  return { ...(obj as Record<string, unknown>) }
 }
 
 /** 将 unknown 转为 string[]，非数组返回空数组 */

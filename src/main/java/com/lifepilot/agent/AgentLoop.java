@@ -1024,12 +1024,13 @@ public class AgentLoop {
                         yield parsed;
                     }
                     case RESPONDING -> {
+                        // RESPONDING 阶段直接获取文本，无需 JSON 结构化解析
                         var prompt = buildPrompt(chatClient, systemPrompt, toolCallbacks);
-                        var callResponse = prompt.user(userText).call();
-                        cachedResponseText = callResponse.content();
-                        Action.ResponseGenerated parsed = callResponse.entity(Action.ResponseGenerated.class);
-                        log.debug("LLM entity 解析成功: phase={}, traceId={}", state.phase(), state.traceId());
-                        yield parsed;
+                        String content = prompt.user(userText).call().content();
+                        cachedResponseText = content;
+                        log.debug("RESPONDING 阶段直接获取文本: traceId={}, length={}",
+                                state.traceId(), content != null ? content.length() : 0);
+                        yield new Action.ResponseGenerated(content != null ? content : "", List.of());
                     }
                     default -> {
                         var prompt = buildPrompt(chatClient, systemPrompt, toolCallbacks);

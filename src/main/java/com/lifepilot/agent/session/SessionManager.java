@@ -198,7 +198,7 @@ public class SessionManager {
             if (!expiredSessionIds.isEmpty() && workingMemory != null) {
                 for (String sessionId : expiredSessionIds) {
                     try {
-                        workingMemory.flush(sessionId);
+                        workingMemory.flush(sessionId, "会话过期清理");
                         log.debug("过期会话触发 WorkingMemory.flush: sessionId={}", sessionId);
                     } catch (Exception e) {
                         log.warn("过期会话触发 WorkingMemory.flush 失败: sessionId={}, error={}",

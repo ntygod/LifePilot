@@ -1,17 +1,58 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import type { WorkflowItem, WorkflowDetail, WorkflowExecution, WorkflowEvent, StepLog, ApprovalRequest } from '@/types'
+import type {
+  ApprovalRequest,
+  StepLog,
+  WorkflowDetail,
+  WorkflowEvent,
+  WorkflowExecution,
+  WorkflowItem,
+} from '@/types'
 import { workflowApi } from '@/api/client'
+
+type WorkflowYamlPayload = { yaml: string } | { yamlContent: string }
 
 export const useWorkflowStore = defineStore('workflow', () => {
   const list = ref<WorkflowItem[]>([])
   const current = ref<WorkflowDetail | null>(null)
   const executions = ref<WorkflowExecution[]>([])
   const currentInstance = ref<WorkflowExecution | null>(null)
-  const eventTimeline = ref<WorkflowEvent[]>([])
-  const stepLogs = ref<StepLog[]>([])
+  const eventTimelineByInstance = ref<Record<string, WorkflowEvent[]>>({})
+  const stepLogsByInstance = ref<Record<string, StepLog[]>>({})
   const loading = ref(false)
   const error = ref<string | null>(null)
+
+  function hasEventTimeline(instanceId: string) {
+    return Object.prototype.hasOwnProperty.call(eventTimelineByInstance.value, instanceId)
+  }
+
+  function hasStepLogs(instanceId: string) {
+    return Object.prototype.hasOwnProperty.call(stepLogsByInstance.value, instanceId)
+  }
+
+  function getEventTimeline(instanceId: string) {
+    return eventTimelineByInstance.value[instanceId] ?? []
+  }
+
+  function getStepLogs(instanceId: string) {
+    return stepLogsByInstance.value[instanceId] ?? []
+  }
+
+  function clearExecutionDetails(instanceId?: string) {
+    if (!instanceId) {
+      eventTimelineByInstance.value = {}
+      stepLogsByInstance.value = {}
+      return
+    }
+
+    const nextEventTimeline = { ...eventTimelineByInstance.value }
+    delete nextEventTimeline[instanceId]
+    eventTimelineByInstance.value = nextEventTimeline
+
+    const nextStepLogs = { ...stepLogsByInstance.value }
+    delete nextStepLogs[instanceId]
+    stepLogsByInstance.value = nextStepLogs
+  }
 
   async function fetchList() {
     loading.value = true
@@ -19,7 +60,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     try {
       list.value = await workflowApi.list()
     } catch (e: any) {
-      error.value = e.message ?? '加载工作流列表失败'
+      error.value = e.message ?? '鍔犺浇宸ヤ綔娴佸垪琛ㄥけ璐?'
     } finally {
       loading.value = false
     }
@@ -30,7 +71,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     try {
       current.value = await workflowApi.get(id)
     } catch (e: any) {
-      error.value = e.message ?? '加载工作流详情失败'
+      error.value = e.message ?? '鍔犺浇宸ヤ綔娴佽鎯呭け璐?'
     }
   }
 
@@ -38,12 +79,11 @@ export const useWorkflowStore = defineStore('workflow', () => {
     error.value = null
     try {
       await workflowApi.enable(id)
-      // 更新本地状态
       const item = list.value.find(w => w.id === id)
       if (item) item.enabled = true
       if (current.value?.id === id) current.value = { ...current.value, enabled: true }
     } catch (e: any) {
-      error.value = e.message ?? '启用工作流失败'
+      error.value = e.message ?? '鍚敤宸ヤ綔娴佸け璐?'
     }
   }
 
@@ -55,7 +95,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
       if (item) item.enabled = false
       if (current.value?.id === id) current.value = { ...current.value, enabled: false }
     } catch (e: any) {
-      error.value = e.message ?? '禁用工作流失败'
+      error.value = e.message ?? '绂佺敤宸ヤ綔娴佸け璐?'
     }
   }
 
@@ -66,20 +106,19 @@ export const useWorkflowStore = defineStore('workflow', () => {
       executions.value.unshift(execution)
       return execution
     } catch (e: any) {
-      error.value = e.message ?? '触发工作流失败'
+      error.value = e.message ?? '瑙﹀彂宸ヤ綔娴佸け璐?'
     }
   }
 
   async function fetchExecutions(id: string) {
     error.value = null
+    clearExecutionDetails()
     try {
       executions.value = await workflowApi.listExecutions(id)
     } catch (e: any) {
-      error.value = e.message ?? '加载执行历史失败'
+      error.value = e.message ?? '鍔犺浇鎵ц鍘嗗彶澶辫触'
     }
   }
-
-  type WorkflowYamlPayload = { yaml: string } | { yamlContent: string }
 
   async function create(data: WorkflowYamlPayload) {
     error.value = null
@@ -88,7 +127,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
       await fetchList()
       return workflow
     } catch (e: any) {
-      error.value = e.message ?? '创建工作流失败'
+      error.value = e.message ?? '鍒涘缓宸ヤ綔娴佸け璐?'
       throw e
     }
   }
@@ -103,7 +142,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
       }
       return workflow
     } catch (e: any) {
-      error.value = e.message ?? '更新工作流失败'
+      error.value = e.message ?? '鏇存柊宸ヤ綔娴佸け璐?'
       throw e
     }
   }
@@ -112,15 +151,14 @@ export const useWorkflowStore = defineStore('workflow', () => {
     error.value = null
     try {
       await workflowApi.delete(id)
-      // 更新本地列表
       list.value = list.value.filter(w => w.id !== id)
-      // 如果当前详情正是被删除的工作流，清空 current / executions
       if (current.value?.id === id) {
         current.value = null
         executions.value = []
+        clearExecutionDetails()
       }
     } catch (e: any) {
-      error.value = e.message ?? '删除工作流失败'
+      error.value = e.message ?? '鍒犻櫎宸ヤ綔娴佸け璐?'
       throw e
     }
   }
@@ -129,14 +167,12 @@ export const useWorkflowStore = defineStore('workflow', () => {
     error.value = null
     try {
       const updated = await workflowApi.approve(instanceId, stepId, req)
-      // 更新 executions 列表中对应实例
       const idx = executions.value.findIndex(e => e.id === instanceId)
       if (idx !== -1) executions.value[idx] = updated
-      // 更新 currentInstance
       if (currentInstance.value?.id === instanceId) currentInstance.value = updated
       return updated
     } catch (e: any) {
-      error.value = e.message ?? '审批操作失败'
+      error.value = e.message ?? '瀹℃壒鎿嶄綔澶辫触'
       throw e
     }
   }
@@ -146,31 +182,74 @@ export const useWorkflowStore = defineStore('workflow', () => {
     try {
       currentInstance.value = await workflowApi.getInstance(instanceId)
     } catch (e: any) {
-      error.value = e.message ?? '加载实例详情失败'
+      error.value = e.message ?? '鍔犺浇瀹炰緥璇︽儏澶辫触'
     }
   }
 
   async function fetchEventTimeline(instanceId: string) {
     error.value = null
+    if (hasEventTimeline(instanceId)) {
+      return getEventTimeline(instanceId)
+    }
+
     try {
-      eventTimeline.value = await workflowApi.getEventTimeline(instanceId)
+      const timeline = await workflowApi.getEventTimeline(instanceId)
+      eventTimelineByInstance.value = {
+        ...eventTimelineByInstance.value,
+        [instanceId]: timeline,
+      }
+      return timeline
     } catch (e: any) {
-      error.value = e.message ?? '加载事件时间线失败'
+      error.value = e.message ?? '鍔犺浇浜嬩欢鏃堕棿绾垮け璐?'
+      return []
     }
   }
 
   async function fetchStepLogs(instanceId: string) {
     error.value = null
+    if (hasStepLogs(instanceId)) {
+      return getStepLogs(instanceId)
+    }
+
     try {
-      stepLogs.value = await workflowApi.getStepLogs(instanceId)
+      const logs = await workflowApi.getStepLogs(instanceId)
+      stepLogsByInstance.value = {
+        ...stepLogsByInstance.value,
+        [instanceId]: logs,
+      }
+      return logs
     } catch (e: any) {
-      error.value = e.message ?? '加载步骤日志失败'
+      error.value = e.message ?? '鍔犺浇姝ラ鏃ュ織澶辫触'
+      return []
     }
   }
 
   return {
-    list, current, executions, currentInstance, eventTimeline, stepLogs, loading, error,
-    fetchList, fetchDetail, enable, disable, trigger, fetchExecutions,
-    create, update, remove, approve, fetchInstance, fetchEventTimeline, fetchStepLogs
+    list,
+    current,
+    executions,
+    currentInstance,
+    eventTimelineByInstance,
+    stepLogsByInstance,
+    loading,
+    error,
+    hasEventTimeline,
+    hasStepLogs,
+    getEventTimeline,
+    getStepLogs,
+    clearExecutionDetails,
+    fetchList,
+    fetchDetail,
+    enable,
+    disable,
+    trigger,
+    fetchExecutions,
+    create,
+    update,
+    remove,
+    approve,
+    fetchInstance,
+    fetchEventTimeline,
+    fetchStepLogs,
   }
 })

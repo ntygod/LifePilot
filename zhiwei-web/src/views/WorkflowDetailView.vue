@@ -6,7 +6,6 @@ import {
   ChevronDown,
   ChevronRight,
   Clock3,
-  FileCode2,
   GitBranch,
   Play,
   Rows3,
@@ -22,13 +21,14 @@ import type { BreadcrumbItem } from '@/components/global/Breadcrumb.vue'
 import PageContainer from '@/components/layout/PageContainer.vue'
 import PageHeader from '@/components/layout/PageHeader.vue'
 import PageSection from '@/components/layout/PageSection.vue'
+import EventTimeline from '@/components/workflow/EventTimeline.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { stateConfig as stateConfigMap } from '@/constants/workflowState'
 import { useUiStore } from '@/stores/ui'
 import { useWorkflowStore } from '@/stores/workflow'
-import { stateConfig as stateConfigMap } from '@/constants/workflowState'
 
 const YamlEditor = defineAsyncComponent(() => import('@/components/editor/YamlEditor.vue'))
 
@@ -46,54 +46,21 @@ const activeTab = ref<'detail' | 'executions'>('detail')
 const triggerLoading = ref(false)
 const yamlLoading = ref(false)
 const yamlDefinition = ref('')
+const expandedExecutions = ref<Set<string>>(new Set())
+const executionDetailsLoading = ref<Record<string, boolean>>({})
 
 const breadcrumbItems = computed<BreadcrumbItem[]>(() => [
   { label: '工作流', to: { name: 'workflows' } },
   { label: workflow.value?.name ?? '详情' },
 ])
 
-const stateConfig = stateConfigMap
+const stateBadge = Object.fromEntries(
+  Object.entries(stateConfigMap).map(([key, value]) => [
+    key,
+    { label: value.label, variant: value.badgeVariant },
+  ]),
+) as Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' | 'destructive' }>
 
-/** 记录每个执行实例的展开状态 */
-const expandedExecutions = ref<Set<string>>(new Set())
-
-/** 切换执行实例的展开/折叠 */
-async function toggleExecution(instanceId: string) {
-  if (expandedExecutions.value.has(instanceId)) {
-    expandedExecutions.value.delete(instanceId)
-  } else {
-    expandedExecutions.value.add(instanceId)
-    // 并行加载事件时间线和步骤日志
-    await Promise.all([
-      workflowStore.fetchEventTimeline(instanceId),
-      workflowStore.fetchStepLogs(instanceId),
-    ])
-  }
-}
-
-/** 解析事件 dataJson */
-function parseEventData(dataJson?: string): Record<string, unknown> | null {
-  if (!dataJson) return null
-  try {
-    return JSON.parse(dataJson)
-  } catch {
-    return null
-  }
-}
-
-/** 事件类型中文映射 */
-const eventTypeLabels: Record<string, string> = {
-  INSTANCE_CREATED: '实例创建',
-  INSTANCE_STATE_CHANGED: '状态变更',
-  STEP_STARTED: '步骤开始',
-  STEP_COMPLETED: '步骤完成',
-  STEP_FAILED: '步骤失败',
-  STEP_SKIPPED: '步骤跳过',
-  APPROVAL_REQUESTED: '审批请求',
-  APPROVAL_DECIDED: '审批决定',
-}
-
-/** 步骤日志状态样式 */
 const stepLogStateClass: Record<string, string> = {
   COMPLETED: 'bg-green-100 text-green-800',
   FAILED: 'bg-red-100 text-red-800',
@@ -106,29 +73,70 @@ const stepLogStateLabel: Record<string, string> = {
   SKIPPED: '跳过',
 }
 
-const stateBadge = Object.fromEntries(
-  Object.entries(stateConfig).map(([key, value]) => [key, { label: value.label, variant: value.badgeVariant }]),
-) as Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' | 'destructive' }>
-
 const stepCount = computed(() => workflow.value?.steps?.length ?? 0)
 const triggerCount = computed(() => workflow.value?.triggerTypes?.length ?? 0)
 const approvalStepCount = computed(() => (
   workflow.value?.steps?.filter(step => (step as any).type === 'ApprovalStep' || (step as any).message).length ?? 0
 ))
 
-onMounted(async () => {
-  await loadData()
-})
+function setExecutionLoading(instanceId: string, loading: boolean) {
+  executionDetailsLoading.value = {
+    ...executionDetailsLoading.value,
+    [instanceId]: loading,
+  }
+}
 
-watch(() => route.params.id, async () => {
-  activeTab.value = 'detail'
-  await loadData()
-})
+function isExecutionLoading(instanceId: string) {
+  return executionDetailsLoading.value[instanceId] ?? false
+}
+
+function getExecutionStepLogs(instanceId: string) {
+  return workflowStore.getStepLogs(instanceId)
+}
+
+function getExecutionTimeline(instanceId: string) {
+  return workflowStore.getEventTimeline(instanceId)
+}
+
+async function loadExecutionDetails(instanceId: string) {
+  if (isExecutionLoading(instanceId)) return
+
+  const hasTimeline = workflowStore.hasEventTimeline(instanceId)
+  const hasStepLogs = workflowStore.hasStepLogs(instanceId)
+  if (hasTimeline && hasStepLogs) return
+
+  setExecutionLoading(instanceId, true)
+  try {
+    await Promise.all([
+      workflowStore.fetchEventTimeline(instanceId),
+      workflowStore.fetchStepLogs(instanceId),
+    ])
+  } finally {
+    setExecutionLoading(instanceId, false)
+  }
+}
+
+async function toggleExecution(instanceId: string) {
+  if (expandedExecutions.value.has(instanceId)) {
+    expandedExecutions.value.delete(instanceId)
+    return
+  }
+
+  expandedExecutions.value.add(instanceId)
+  await loadExecutionDetails(instanceId)
+}
+
+function resetExecutionUiState() {
+  expandedExecutions.value = new Set()
+  executionDetailsLoading.value = {}
+}
 
 async function loadData() {
   pageLoading.value = true
   pageError.value = null
   yamlDefinition.value = ''
+  resetExecutionUiState()
+  workflowStore.clearExecutionDetails()
 
   try {
     await workflowStore.fetchDetail(workflowId.value)
@@ -180,6 +188,7 @@ async function handleTrigger() {
   triggerLoading.value = true
   try {
     await workflowStore.trigger(workflow.value.id)
+    resetExecutionUiState()
     await workflowStore.fetchExecutions(workflow.value.id)
     activeTab.value = 'executions'
     uiStore.showToast('success', '工作流已触发')
@@ -193,6 +202,7 @@ async function handleTrigger() {
 async function showExecutions() {
   if (!workflow.value) return
   activeTab.value = 'executions'
+  resetExecutionUiState()
   await workflowStore.fetchExecutions(workflow.value.id)
 }
 
@@ -211,6 +221,15 @@ function formatDate(dateStr?: string) {
 function goBack() {
   router.push('/workflows')
 }
+
+onMounted(async () => {
+  await loadData()
+})
+
+watch(() => route.params.id, async () => {
+  activeTab.value = 'detail'
+  await loadData()
+})
 </script>
 
 <template>
@@ -221,7 +240,7 @@ function goBack() {
           <Breadcrumb :items="breadcrumbItems" class="min-w-0" />
           <Button type="button" variant="ghost" class="w-fit" @click="goBack">
             <ArrowLeft class="size-4" />
-            返回工作流列表
+            返回列表
           </Button>
         </div>
 
@@ -261,9 +280,9 @@ function goBack() {
 
         <template v-else>
           <PageHeader
-            eyebrow="工作流详情"
+            eyebrow="工作流"
             :title="workflow.name"
-            :description="workflow.description || '查看触发方式、步骤内容和最近执行历史。'"
+            :description="workflow.description || '查看触发方式、步骤内容和最近执行记录。'"
           >
             <template #actions>
               <Button variant="outline" @click="handleToggle">
@@ -276,22 +295,38 @@ function goBack() {
             </template>
 
             <template #meta>
-              <MetricCard label="状态" :value="workflow.enabled ? '已启用' : '已禁用'" hint="关闭后将不会被新的触发器拉起。">
+              <MetricCard
+                label="状态"
+                :value="workflow.enabled ? '已启用' : '已禁用'"
+                hint="关闭后不会再被新的触发器拉起。"
+              >
                 <template #icon>
                   <ShieldCheck class="size-5" />
                 </template>
               </MetricCard>
-              <MetricCard label="触发器" :value="triggerCount" hint="当前声明的触发器类型数量。">
+              <MetricCard
+                label="触发器"
+                :value="triggerCount"
+                hint="当前定义里已编排好的触发方式数量。"
+              >
                 <template #icon>
                   <GitBranch class="size-5" />
                 </template>
               </MetricCard>
-              <MetricCard label="步骤数" :value="stepCount" hint="用来衡量当前编排规模和复杂度。">
+              <MetricCard
+                label="步骤"
+                :value="stepCount"
+                hint="当前定义里已编排好的步骤数量。"
+              >
                 <template #icon>
                   <Rows3 class="size-5" />
                 </template>
               </MetricCard>
-              <MetricCard label="已加载执行记录" :value="workflowStore.executions.length" hint="当前页面已经拉到本地的执行历史数量。">
+              <MetricCard
+                label="已加载记录"
+                :value="workflowStore.executions.length"
+                hint="当前页已经拉取到的执行历史数量。"
+              >
                 <template #icon>
                   <Clock3 class="size-5" />
                 </template>
@@ -302,18 +337,18 @@ function goBack() {
           <Tabs
             :model-value="activeTab"
             class="space-y-5"
-            @update:model-value="(value) => { const nextValue = String(value); if (nextValue === 'executions') showExecutions(); else activeTab = nextValue as 'detail' | 'executions' }"
+            @update:model-value="(value) => { const nextValue = String(value); if (nextValue === 'executions') void showExecutions(); else activeTab = nextValue as 'detail' | 'executions' }"
           >
             <TabsList class="inline-flex h-auto flex-wrap rounded-full border border-border/70 bg-muted/55 p-1">
-              <TabsTrigger value="detail">定义</TabsTrigger>
-              <TabsTrigger value="executions">执行历史</TabsTrigger>
+              <TabsTrigger value="detail">详情</TabsTrigger>
+              <TabsTrigger value="executions">执行记录</TabsTrigger>
             </TabsList>
 
             <TabsContent value="detail" class="space-y-5">
               <PageSection
                 eyebrow="基础信息"
                 title="工作流信息"
-                description="先看说明和触发方式，再决定查看步骤还是执行记录。"
+                description="先看说明和触发方式，再决定要查看步骤定义还是执行记录。"
               >
                 <div class="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(260px,0.85fr)]">
                   <div class="detail-card p-4 sm:p-5">
@@ -354,7 +389,7 @@ function goBack() {
                       </div>
 
                       <p class="text-sm leading-6 text-muted-foreground">
-                        先看触发器和版本信息，再决定是继续读步骤定义，还是切到执行历史排查一次运行。
+                        先看触发器和版本信息，再决定是继续看步骤定义，还是切到执行历史排查某一次运行。
                       </p>
                     </div>
                   </div>
@@ -466,7 +501,7 @@ function goBack() {
                 <StatePanel
                   v-if="workflowStore.executions.length === 0"
                   title="还没有执行记录"
-                  description="可以手动触发工作流，或等待触发器运行后生成执行历史。"
+                  description="可以手动触发工作流，或等待触发器运行后生成执行记录。"
                 >
                   <template #icon>
                     <TimerReset class="size-5" />
@@ -484,7 +519,6 @@ function goBack() {
                     :key="execution.id"
                     class="list-card overflow-hidden"
                   >
-                    <!-- 执行摘要（可点击展开） -->
                     <div
                       class="flex cursor-pointer flex-col gap-4 p-4 transition-colors hover:bg-muted/30"
                       @click="toggleExecution(execution.id)"
@@ -515,22 +549,35 @@ function goBack() {
                         </div>
                       </div>
 
-                      <div v-if="execution.failureReason" class="rounded-[calc(var(--radius)+4px)] border border-destructive/20 bg-destructive/6 px-4 py-3 text-sm text-destructive">
+                      <div
+                        v-if="execution.failureReason"
+                        class="rounded-[calc(var(--radius)+4px)] border border-destructive/20 bg-destructive/6 px-4 py-3 text-sm text-destructive"
+                      >
                         {{ execution.failureReason }}
                       </div>
                     </div>
 
-                    <!-- 展开详情：事件时间线 + 步骤日志 -->
-                    <div v-if="expandedExecutions.has(execution.id)" class="border-t border-border/60 bg-muted/20 p-4 space-y-5">
-                      <!-- 步骤日志 -->
+                    <div
+                      v-if="expandedExecutions.has(execution.id)"
+                      class="space-y-5 border-t border-border/60 bg-muted/20 p-4"
+                    >
                       <div>
                         <div class="surface-label mb-3 text-[0.68rem]">步骤日志</div>
-                        <div v-if="workflowStore.stepLogs.length === 0" class="text-sm text-muted-foreground">
+                        <div
+                          v-if="isExecutionLoading(execution.id) && !workflowStore.hasStepLogs(execution.id)"
+                          class="text-sm text-muted-foreground"
+                        >
+                          正在加载步骤日志...
+                        </div>
+                        <div
+                          v-else-if="getExecutionStepLogs(execution.id).length === 0"
+                          class="text-sm text-muted-foreground"
+                        >
                           暂无步骤日志
                         </div>
                         <div v-else class="space-y-2">
                           <div
-                            v-for="log in workflowStore.stepLogs"
+                            v-for="log in getExecutionStepLogs(execution.id)"
                             :key="log.id"
                             class="flex flex-wrap items-center gap-2 rounded-lg border border-border/50 bg-background px-3 py-2 text-sm"
                           >
@@ -543,7 +590,7 @@ function goBack() {
                               {{ stepLogStateLabel[log.state] ?? log.state }}
                             </span>
                             <span class="text-xs text-muted-foreground">
-                              第 {{ log.attempt }} 次 · {{ log.durationMs }}ms
+                              第 {{ log.attempt }} 次 · {{ log.durationMs ?? '-' }}ms
                             </span>
                             <span v-if="log.errorMessage" class="basis-full text-xs text-destructive">
                               {{ log.errorMessage }}
@@ -552,26 +599,12 @@ function goBack() {
                         </div>
                       </div>
 
-                      <!-- 事件时间线 -->
                       <div>
                         <div class="surface-label mb-3 text-[0.68rem]">事件时间线</div>
-                        <div v-if="workflowStore.eventTimeline.length === 0" class="text-sm text-muted-foreground">
-                          暂无事件记录
-                        </div>
-                        <div v-else class="space-y-1">
-                          <div
-                            v-for="event in workflowStore.eventTimeline"
-                            :key="event.id"
-                            class="flex flex-wrap items-baseline gap-2 rounded-md px-3 py-1.5 text-sm odd:bg-muted/30"
-                          >
-                            <span class="shrink-0 text-xs text-muted-foreground">{{ formatDate(event.createdAt) }}</span>
-                            <Badge variant="outline" class="text-xs">{{ eventTypeLabels[event.type] ?? event.type }}</Badge>
-                            <span v-if="event.stepId" class="font-mono text-xs text-muted-foreground">{{ event.stepId }}</span>
-                            <span v-if="parseEventData(event.dataJson)" class="basis-full font-mono text-xs text-muted-foreground">
-                              {{ JSON.stringify(parseEventData(event.dataJson)) }}
-                            </span>
-                          </div>
-                        </div>
+                        <EventTimeline
+                          :events="getExecutionTimeline(execution.id)"
+                          :loading="isExecutionLoading(execution.id) && !workflowStore.hasEventTimeline(execution.id)"
+                        />
                       </div>
                     </div>
                   </article>

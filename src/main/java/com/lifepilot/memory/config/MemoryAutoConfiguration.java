@@ -24,9 +24,11 @@ import com.lifepilot.memory.working.DefaultSlotEvictionPolicy;
 import com.lifepilot.memory.working.SlotEvictionPolicy;
 import com.lifepilot.memory.working.TokenBudgetAllocator;
 import com.lifepilot.memory.working.WorkingMemory;
+import com.lifepilot.memory.working.WorkingMemoryWal;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -98,14 +100,28 @@ public class MemoryAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    public WorkingMemoryWal workingMemoryWal(JdbcTemplate jdbcTemplate) {
+        log.info("记忆系统: 注册 WorkingMemoryWal");
+        return new WorkingMemoryWal(jdbcTemplate);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     public WorkingMemory workingMemory(
             MemoryProperties properties,
             EpisodicMemory episodicMemory,
             TokenBudgetAllocator tokenBudgetAllocator,
             SlotEvictionPolicy slotEvictionPolicy,
-            MemoryEventRecorder memoryEventRecorder) {
+            MemoryEventRecorder memoryEventRecorder,
+            WorkingMemoryWal workingMemoryWal) {
         log.info("记忆系统: 注册 WorkingMemory, Token 预算={}", properties.getWorkingMemoryTokenBudget());
-        return new WorkingMemory(properties, episodicMemory, tokenBudgetAllocator, slotEvictionPolicy, memoryEventRecorder);
+        var wm = new WorkingMemory(properties, episodicMemory, tokenBudgetAllocator,
+                slotEvictionPolicy, memoryEventRecorder, workingMemoryWal);
+
+        // 启动时恢复：检查 WAL 表残留记录，直接 flush 到 L2
+        recoverFromWal(wm, episodicMemory, workingMemoryWal);
+
+        return wm;
     }
 
     @Bean
@@ -134,6 +150,57 @@ public class MemoryAutoConfiguration {
             return;
         }
         workingMemory.cleanupIdleSessions(java.time.Duration.ofMinutes(timeoutMinutes));
+    }
+
+    /**
+     * 系统关闭时将所有活跃 L1 会话 flush 到 L2，防止数据丢失。
+     */
+    @PreDestroy
+    public void flushAllOnShutdown() {
+        WorkingMemory workingMemory = this.workingMemoryProvider.getIfAvailable();
+        if (workingMemory == null) {
+            return;
+        }
+        log.info("系统关闭: 开始 flush 所有 L1 会话到 L2");
+        workingMemory.flushAll("系统关闭");
+        log.info("系统关闭: L1 会话 flush 完成");
+    }
+
+    /**
+     * 启动时从 WAL 表恢复上次异常退出未 flush 的会话数据。
+     *
+     * <p>将残留的 WAL 记录按 session 分组，逐个 append 到 L1 后立即 flush 到 L2，
+     * 恢复完成后清空 WAL 表。仅在启动时执行一次，不影响运行时性能。</p>
+     */
+    private void recoverFromWal(WorkingMemory workingMemory,
+                                EpisodicMemory episodicMemory,
+                                WorkingMemoryWal wal) {
+        try {
+            var pendingSessions = wal.loadPendingSessions();
+            if (pendingSessions.isEmpty()) {
+                return;
+            }
+            log.info("WAL 恢复: 检测到 {} 个未 flush 的会话，开始恢复", pendingSessions.size());
+            for (var entry : pendingSessions.entrySet()) {
+                String sessionId = entry.getKey();
+                var slots = entry.getValue();
+                try {
+                    // 将 WAL 记录恢复到 L1，然后立即 flush 到 L2
+                    for (var slot : slots) {
+                        workingMemory.append(sessionId, slot);
+                    }
+                    workingMemory.flush(sessionId, "WAL 恢复");
+                    log.info("WAL 恢复: sessionId={}, 槽位数={}", sessionId, slots.size());
+                } catch (Exception e) {
+                    log.warn("WAL 恢复失败: sessionId={}, error={}", sessionId, e.getMessage());
+                }
+            }
+            // 恢复完成后清空 WAL 表
+            wal.clearAll();
+            log.info("WAL 恢复完成");
+        } catch (Exception e) {
+            log.warn("WAL 恢复过程异常: error={}", e.getMessage());
+        }
     }
 
     // --- 向量数据库 ---

@@ -37,3 +37,65 @@
 
 重要：对于简单问候（如"你好"、"hi"、"早上好"、"在吗"）和闲聊，必须标记为 complexity="SIMPLE"。
 </instructions>
+
+<output_format>
+你必须严格输出以下 JSON 格式，不要包含任何其他文字或 markdown 标记：
+
+```json
+{
+  "summary": "对用户意图的简洁概括",
+  "needsClarification": false,
+  "clarificationQuestion": null,
+  "canProceed": true,
+  "entities": ["实体1", "实体2"],
+  "complexity": "SIMPLE | MODERATE | COMPLEX"
+}
+```
+
+字段说明：
+- summary（必填）：一句话概括用户意图
+- needsClarification（必填）：是否需要向用户澄清，布尔值
+- clarificationQuestion（可选）：需要澄清时的问题，不需要时为 null
+- canProceed（必填）：信息是否足够继续执行，布尔值
+- entities（必填）：提取的关键实体列表，无实体时为空数组 []
+- complexity（必填）：任务复杂度，只能是 SIMPLE、MODERATE、COMPLEX 之一
+
+示例 1 — 简单问候：
+用户输入："你好"
+```json
+{
+  "summary": "用户打招呼",
+  "needsClarification": false,
+  "clarificationQuestion": null,
+  "canProceed": true,
+  "entities": [],
+  "complexity": "SIMPLE"
+}
+```
+
+示例 2 — 中等复杂度任务：
+用户输入："帮我把明天下午三点的会议改到后天上午十点"
+```json
+{
+  "summary": "用户要求修改会议时间，从明天下午三点改到后天上午十点",
+  "needsClarification": false,
+  "clarificationQuestion": null,
+  "canProceed": true,
+  "entities": ["明天下午三点", "后天上午十点", "会议"],
+  "complexity": "MODERATE"
+}
+```
+
+示例 3 — 信息不足需要澄清：
+用户输入："帮我订个餐厅"
+```json
+{
+  "summary": "用户想预订餐厅，但缺少具体信息",
+  "needsClarification": true,
+  "clarificationQuestion": "请问你想预订哪天、几点、几位用餐？有偏好的菜系或地点吗？",
+  "canProceed": false,
+  "entities": ["餐厅"],
+  "complexity": "MODERATE"
+}
+```
+</output_format>

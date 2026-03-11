@@ -35,6 +35,7 @@ public class WorkingMemory {
     private final TokenBudgetAllocator tokenBudgetAllocator;
     private final SlotEvictionPolicy slotEvictionPolicy;
     private final MemoryEventRecorder memoryEventRecorder;
+    private final WorkingMemoryWal wal;
 
     /** 会话槽位列表。 */
     private final ConcurrentHashMap<String, List<WorkingMemorySlot>> sessions = new ConcurrentHashMap<>();
@@ -46,30 +47,20 @@ public class WorkingMemory {
     private final ConcurrentHashMap<String, Instant> lastActivity = new ConcurrentHashMap<>();
 
     /**
-     * 使用显式策略的构造函数。
+     * 完整构造函数（含 WAL 持久化支持）。
      */
     public WorkingMemory(MemoryProperties properties,
                          EpisodicMemory episodicMemory,
                          TokenBudgetAllocator tokenBudgetAllocator,
                          SlotEvictionPolicy slotEvictionPolicy,
-                         MemoryEventRecorder memoryEventRecorder) {
+                         MemoryEventRecorder memoryEventRecorder,
+                         WorkingMemoryWal wal) {
         this.properties = properties;
         this.episodicMemory = episodicMemory;
         this.tokenBudgetAllocator = tokenBudgetAllocator;
         this.slotEvictionPolicy = slotEvictionPolicy;
         this.memoryEventRecorder = memoryEventRecorder;
-    }
-
-    /**
-     * 兼容旧调用方的构造函数。
-     *
-     * <p>在未显式提供策略实例时，使用默认策略。</p>
-     */
-    public WorkingMemory(MemoryProperties properties, EpisodicMemory episodicMemory) {
-        this(properties, episodicMemory,
-                new TokenBudgetAllocator(properties),
-                new DefaultSlotEvictionPolicy(),
-                null);
+        this.wal = wal;
     }
 
     /**
@@ -85,6 +76,11 @@ public class WorkingMemory {
         slots.add(slot);
         tokenUsage.compute(sessionId, (k, v) -> (v == null ? 0 : v) + slot.tokenCount());
         lastActivity.put(sessionId, Instant.now());
+
+        // 同步写入 WAL（SQLite WAL 模式下单行 insert 微秒级，失败不阻塞主流程）
+        if (wal != null) {
+            wal.append(sessionId, slot);
+        }
 
         // 记录工作记忆追加事件（观测性失败不影响主流程）
         if (memoryEventRecorder != null) {
@@ -147,16 +143,6 @@ public class WorkingMemory {
         synchronized (slots) {
             return List.copyOf(slots);
         }
-    }
-
-    /**
-     * 获取会话的 Token 总使用量。
-     *
-     * @param sessionId 会话 ID
-     * @return Token 总量，会话不存在时返回 0
-     */
-    public int getTokenCount(String sessionId) {
-        return tokenUsage.getOrDefault(sessionId, 0);
     }
 
     /**
@@ -242,36 +228,36 @@ public class WorkingMemory {
         tokenUsage.remove(sessionId);
         lastActivity.remove(sessionId);
 
+        // flush 成功后清除该会话的 WAL 记录
+        if (wal != null) {
+            wal.clearSession(sessionId);
+        }
+
         return record;
     }
 
-    /**
-     * 兼容旧调用方的 flush 重载。
-     *
-     * <p>
-     * 仍然支持只传入 {@code sessionId} 的用法，内部使用默认 goal。
-     * 建议新的调用路径优先使用 {@link #flush(String, String)}。
-     * </p>
-     *
-     * @param sessionId 会话 ID
-     */
-    public void flush(String sessionId) {
-        flush(sessionId, "会话记录");
-    }
+
 
     /**
-     * 会话结束高层封装方法。
+     * 将所有活跃会话的 L1 数据 flush 到 L2，用于系统关闭等场景防止数据丢失。
      *
-     * <p>
-     * 调用方应在「会话真正结束」时调用此方法，而不是依赖空闲/过期清理任务。
-     * </p>
+     * <p>逐个会话 flush，单个会话失败不影响其他会话。</p>
      *
-     * @param sessionId 会话 ID
-     * @param goal      会话目标/意图摘要
-     * @return 持久化后的 {@link ConversationRecord}，如无可持久化消息则返回 {@code null}
+     * @param goal flush 目标描述
      */
-    public ConversationRecord endSession(String sessionId, String goal) {
-        return flush(sessionId, goal);
+    public void flushAll(String goal) {
+        var sessionIds = List.copyOf(sessions.keySet());
+        if (sessionIds.isEmpty()) {
+            return;
+        }
+        log.info("批量 flush 所有活跃会话到 L2: 会话数={}, goal={}", sessionIds.size(), goal);
+        for (var sessionId : sessionIds) {
+            try {
+                flush(sessionId, goal);
+            } catch (Exception e) {
+                log.warn("批量 flush 会话失败: sessionId={}, error={}", sessionId, e.getMessage());
+            }
+        }
     }
 
     /**
@@ -306,7 +292,7 @@ public class WorkingMemory {
 
         for (var sessionId : idleSessions) {
             try {
-                flush(sessionId);
+                flush(sessionId, "空闲会话清理");
                 log.info("清理空闲会话并 flush 到 L2: sessionId={}, idleMinutes>{}",
                         sessionId, idleThreshold.toMinutes());
             } catch (Exception e) {
