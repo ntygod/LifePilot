@@ -13,17 +13,8 @@ import org.junit.jupiter.api.io.TempDir;
 import com.lifepilot.workflow.model.WorkflowDefinition;
 import com.lifepilot.workflow.model.WorkflowStep;
 import com.lifepilot.workflow.parser.WorkflowYamlParser;
-import com.lifepilot.workflow.parser.WorkflowYamlPrinter;
-import com.lifepilot.workflow.repository.WorkflowRepository;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 /**
  * WorkflowRegistry 单元测试。
@@ -33,18 +24,13 @@ import static org.mockito.Mockito.when;
  */
 class WorkflowRegistryTest {
 
-    private WorkflowRepository repository;
     private WorkflowYamlParser parser;
-    private WorkflowYamlPrinter printer;
     private WorkflowRegistry registry;
 
     @BeforeEach
     void setUp() {
-        repository = mock(WorkflowRepository.class);
         parser = new WorkflowYamlParser();
-        printer = new WorkflowYamlPrinter();
-        when(repository.findAllDefinitions()).thenReturn(List.of());
-        registry = new WorkflowRegistry(repository, parser, printer);
+        registry = new WorkflowRegistry(parser);
     }
 
 
@@ -73,7 +59,6 @@ class WorkflowRegistryTest {
 
         assertThat(result).isTrue();
         assertThat(registry.find("wf-1")).isPresent().hasValue(def);
-        verify(repository).saveDefinition(eq(def), anyString());
     }
 
     @Test
@@ -89,7 +74,6 @@ class WorkflowRegistryTest {
         boolean result = registry.register(def);
 
         assertThat(result).isFalse();
-        verify(repository, never()).saveDefinition(any(), anyString());
     }
 
     @Test
@@ -103,7 +87,6 @@ class WorkflowRegistryTest {
         boolean result = registry.register(def);
 
         assertThat(result).isFalse();
-        verify(repository, never()).saveDefinition(any(), anyString());
     }
 
     @Test
@@ -117,7 +100,6 @@ class WorkflowRegistryTest {
         boolean result = registry.register(def);
 
         assertThat(result).isFalse();
-        verify(repository, never()).saveDefinition(any(), anyString());
     }
 
     @Test
@@ -163,7 +145,6 @@ class WorkflowRegistryTest {
         assertThat(result).isTrue();
         assertThat(registry.find("wf-1")).isPresent()
                 .hasValueSatisfying(def -> assertThat(def.enabled()).isTrue());
-        verify(repository).updateDefinitionEnabled("wf-1", true);
     }
 
     @Test
@@ -175,7 +156,6 @@ class WorkflowRegistryTest {
         assertThat(result).isTrue();
         assertThat(registry.find("wf-1")).isPresent()
                 .hasValueSatisfying(def -> assertThat(def.enabled()).isFalse());
-        verify(repository).updateDefinitionEnabled("wf-1", false);
     }
 
     @Test
@@ -313,15 +293,4 @@ class WorkflowRegistryTest {
         assertThat(registry.find("valid-wf")).isPresent();
     }
 
-    // ==================== 启动时加载数据库 ====================
-
-    @Test
-    void 构造时从数据库加载已有定义() {
-        WorkflowDefinition dbDef = createDefinition("db-wf", "数据库工作流");
-        when(repository.findAllDefinitions()).thenReturn(List.of(dbDef));
-
-        WorkflowRegistry newRegistry = new WorkflowRegistry(repository, parser, printer);
-
-        assertThat(newRegistry.find("db-wf")).isPresent().hasValue(dbDef);
-    }
 }
