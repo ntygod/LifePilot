@@ -56,6 +56,8 @@ lifepilot:
     context:
       max-context-tokens: 32000
       output-reserved-tokens: 4000
+      success-step-max-length: 200
+      failed-step-max-length: 80
     proactive:
       enabled: true
       interval-ms: 1800000
