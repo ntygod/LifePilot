@@ -467,10 +467,19 @@ export interface WorkflowItem {
   version: string
 }
 
+/** 工作流输入参数定义（对齐后端 WorkflowInputParam record） */
+export interface WorkflowInputParam {
+  name: string
+  type: 'string' | 'number' | 'boolean' | 'list' | 'map'
+  required: boolean
+  defaultValue?: unknown
+  description?: string
+}
+
 /** 工作流详情 */
 export interface WorkflowDetail extends WorkflowItem {
   triggers: unknown[]
-  inputs: Record<string, unknown>
+  inputs: Record<string, WorkflowInputParam>
   steps: unknown[]
   metadata: Record<string, string>
   yaml?: string
