@@ -2,6 +2,8 @@ package com.lifepilot.knowledge;
 
 import com.lifepilot.knowledge.exception.DocumentNotFoundException;
 import com.lifepilot.knowledge.exception.KnowledgeBaseNotFoundException;
+import com.lifepilot.knowledge.index.FtsIndexer;
+import com.lifepilot.knowledge.index.VectorIndexer;
 import com.lifepilot.knowledge.model.Document;
 import com.lifepilot.knowledge.model.KnowledgeBase;
 import com.lifepilot.knowledge.repository.DocumentChunkRepository;
@@ -9,6 +11,7 @@ import com.lifepilot.knowledge.repository.DocumentRepository;
 import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.lang.Nullable;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
@@ -31,13 +34,19 @@ public class KnowledgeBaseManager {
     private final KnowledgeBaseRepository kbRepository;
     private final DocumentRepository docRepository;
     private final DocumentChunkRepository chunkRepository;
+    private final @Nullable VectorIndexer vectorIndexer;
+    private final FtsIndexer ftsIndexer;
 
     public KnowledgeBaseManager(KnowledgeBaseRepository kbRepository,
                                 DocumentRepository docRepository,
-                                DocumentChunkRepository chunkRepository) {
+                                DocumentChunkRepository chunkRepository,
+                                @Nullable VectorIndexer vectorIndexer,
+                                FtsIndexer ftsIndexer) {
         this.kbRepository = kbRepository;
         this.docRepository = docRepository;
         this.chunkRepository = chunkRepository;
+        this.vectorIndexer = vectorIndexer;
+        this.ftsIndexer = ftsIndexer;
     }
 
     /**
@@ -136,12 +145,31 @@ public class KnowledgeBaseManager {
     }
 
     /**
-     * 删除知识库（级联删除文档和分块，依赖数据库 ON DELETE CASCADE）。
+     * 删除知识库及其所有关联数据（文档、分块、向量索引、FTS5 索引）。
+     *
+     * <p>删除顺序：逐文档清理向量索引 → 逐文档清理 FTS5 索引 → 删除知识库（CASCADE 删除文档和分块）。
+     * 显式清理索引而非依赖 CASCADE，因为 vec0 虚拟表不支持 FK/触发器联动。
      *
      * @param id 知识库 id
      */
     @Transactional
     public void deleteKnowledgeBase(String id) {
+        // 1. 查询该知识库下所有文档
+        List<Document> docs = docRepository.findByKnowledgeBaseId(id);
+
+        // 2. 逐文档清理向量索引（vec0 虚拟表无法通过 CASCADE 自动清理）
+        if (vectorIndexer != null) {
+            for (Document doc : docs) {
+                vectorIndexer.removeByDocumentId(doc.id());
+            }
+        }
+
+        // 3. 逐文档清理 FTS5 索引（显式清理，不依赖 CASCADE 触发器的可靠性）
+        for (Document doc : docs) {
+            ftsIndexer.removeByDocumentId(doc.id());
+        }
+
+        // 4. 删除知识库（CASCADE 自动删除 documents 和 document_chunks）
         kbRepository.deleteById(id);
         log.info("知识库删除成功: id={}", id);
     }
@@ -183,6 +211,9 @@ public class KnowledgeBaseManager {
     /**
      * 删除文档及其关联分块，并更新知识库统计。
      *
+     * <p>删除顺序：向量索引 → 分块（FTS5 触发器自动清理）→ 文档 → 刷新统计。
+     * 向量索引必须在分块删除之前清理，因为 {@code removeByDocumentId} 依赖子查询 {@code document_chunks} 表。
+     *
      * @param documentId 文档 id
      * @throws DocumentNotFoundException 文档不存在时抛出
      */
@@ -192,10 +223,19 @@ public class KnowledgeBaseManager {
                 .orElseThrow(() -> new DocumentNotFoundException("文档不存在: id=" + documentId));
 
         String kbId = doc.knowledgeBaseId();
+
+        // 1. 清理向量索引（在删除分块之前，因为 removeByDocumentId 依赖子查询 document_chunks）
+        if (vectorIndexer != null) {
+            vectorIndexer.removeByDocumentId(documentId);
+        }
+
+        // 2. 删除分块（FTS5 触发器自动清理 document_chunks_fts）
         chunkRepository.deleteByDocumentId(documentId);
+
+        // 3. 删除文档
         docRepository.deleteById(documentId);
 
-        // 刷新知识库的文档数和分块数
+        // 4. 刷新知识库的文档数和分块数
         var remainingDocs = docRepository.findByKnowledgeBaseId(kbId);
         int docCount = remainingDocs.size();
         int totalChunks = remainingDocs.stream().mapToInt(Document::chunkCount).sum();

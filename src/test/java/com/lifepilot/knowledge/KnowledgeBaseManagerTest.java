@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.knowledge.chunking.DocumentChunk;
 import com.lifepilot.knowledge.exception.DocumentNotFoundException;
 import com.lifepilot.knowledge.exception.KnowledgeBaseNotFoundException;
+import com.lifepilot.knowledge.index.FtsIndexer;
 import com.lifepilot.knowledge.model.Document;
 import com.lifepilot.knowledge.model.DocumentStatus;
 import com.lifepilot.knowledge.repository.DocumentChunkRepository;
@@ -67,7 +68,8 @@ class KnowledgeBaseManagerTest {
         kbRepository = new KnowledgeBaseRepository(jdbcTemplate, objectMapper);
         docRepository = new DocumentRepository(jdbcTemplate, objectMapper);
         chunkRepository = new DocumentChunkRepository(jdbcTemplate, objectMapper);
-        manager = new KnowledgeBaseManager(kbRepository, docRepository, chunkRepository);
+        manager = new KnowledgeBaseManager(kbRepository, docRepository, chunkRepository,
+                null, new FtsIndexer(jdbcTemplate));
         // 清理测试数据
         jdbcTemplate.execute("DELETE FROM document_chunks");
         jdbcTemplate.execute("DELETE FROM documents");

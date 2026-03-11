@@ -285,8 +285,11 @@ public class KnowledgeAutoConfiguration {
     @ConditionalOnMissingBean
     public KnowledgeBaseManager knowledgeBaseManager(KnowledgeBaseRepository kbRepository,
                                                      DocumentRepository docRepository,
-                                                     DocumentChunkRepository chunkRepository) {
+                                                     DocumentChunkRepository chunkRepository,
+                                                     @Nullable VectorIndexer vectorIndexer,
+                                                     FtsIndexer ftsIndexer) {
         log.info("知识库模块初始化完成");
-        return new KnowledgeBaseManager(kbRepository, docRepository, chunkRepository);
+        return new KnowledgeBaseManager(kbRepository, docRepository, chunkRepository,
+                vectorIndexer, ftsIndexer);
     }
 }
