@@ -413,6 +413,7 @@ lifepilot:
     sse:
       timeout: 300000
       heartbeat-interval: 30000
+      mcp-status-timeout: 1800000
     cors:
       # CORS 跨域配置：开发环境（5173）和 Docker 部署（80/同源）
       allowed-origins:

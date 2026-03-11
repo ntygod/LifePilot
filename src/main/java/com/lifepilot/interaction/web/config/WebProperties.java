@@ -24,10 +24,12 @@ public record WebProperties(
      *
      * @param timeout           SSE 连接超时时间（毫秒），默认 300000（5 分钟）
      * @param heartbeatInterval SSE 心跳间隔（毫秒），默认 30000（30 秒）
+     * @param mcpStatusTimeout  MCP Server 状态 SSE 连接超时时间（毫秒），默认 1800000（30 分钟）
      */
     public record SseProperties(
             @DefaultValue("300000") long timeout,
-            @DefaultValue("30000") long heartbeatInterval
+            @DefaultValue("30000") long heartbeatInterval,
+            @DefaultValue("1800000") long mcpStatusTimeout
     ) {}
 
     /**
