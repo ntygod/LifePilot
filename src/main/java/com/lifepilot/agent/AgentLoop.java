@@ -697,19 +697,20 @@ public class AgentLoop {
                 streamingSystemPrompt = appendPromptSection(streamingSystemPrompt, streamingConstraint);
             }
 
-            // 获取工具回调（与非流式路径一致，让 LLM 看到可用工具）
-            var toolCallbacks = agentToolProvider.getToolCallbacks(state);
-            if (!toolCallbacks.isEmpty()) {
-                log.debug("流式调用已注册工具回调: count={}, phase={}, traceId={}",
-                        toolCallbacks.size(), state.phase(), state.traceId());
-            }
+            // RESPONDING 流式阶段不注册工具回调。
+            // 原因：Spring AI 的 .stream().content() 会静默执行 function calling，
+            // 但 AgentLoop 无法拦截和记录这些调用（不会写入 TraceContext），
+            // 导致思维链和工具统计中看不到工具调用信息。
+            // RESPONDING 阶段的职责是生成自然语言回复，工具调用应在 EXECUTING 阶段完成。
+            // 仅获取工具列表用于日志记录（不注入到 ChatClient）。
+            var toolCallbacksForLog = agentToolProvider.getToolCallbacks(state);
 
             // 构建完整提示词（仅用于日志和 trace 记录）
             String fullPrompt = (streamingSystemPrompt != null && !streamingSystemPrompt.isBlank()
                     ? streamingSystemPrompt + "\n\n" : "") + userText;
 
             // 打印完整提示词（便于调试）
-            logLlmPromptIfEnabled(scene, state.phase(), state.traceId(), streamingSystemPrompt, userText, toolCallbacks, fullPrompt);
+            logLlmPromptIfEnabled(scene, state.phase(), state.traceId(), streamingSystemPrompt, userText, toolCallbacksForLog, fullPrompt);
 
             // 构建流式响应 Flux 和 Provider 元信息
             reactor.core.publisher.Flux<String> tokenStream;
@@ -726,9 +727,9 @@ public class AgentLoop {
                 providerId = streaming.providerId();
                 modelId = streaming.modelId();
             } else {
-                // 文本路径：通过 ChatClient 注入 toolCallbacks，走 function calling 协议
+                // 文本路径：不注入 toolCallbacks，避免 LLM 触发不可追踪的 function call
                 var clientInfo = llmRouter.getChatClientWithInfo(scene);
-                var prompt = buildPrompt(clientInfo.client(), streamingSystemPrompt, toolCallbacks);
+                var prompt = buildPrompt(clientInfo.client(), streamingSystemPrompt, List.of());
                 tokenStream = prompt.user(userText).stream().content();
                 providerId = clientInfo.providerId();
                 modelId = clientInfo.modelId();
@@ -1057,71 +1058,43 @@ public class AgentLoop {
                 return executeNextPlannedToolStep(state, toolCallbacks);
             }
             
-            // 优先使用 .entity() 方法进行类型安全解析
-            // 对于支持的阶段，直接使用 .entity() 解析
-            // 对于不支持的阶段（EXECUTING），使用 .content() + ActionParser
-            // 缓存 LLM 响应文本，降级路径复用而非重新调用 LLM
-            String cachedResponseText = null;
-            try {
-                // 每次调用都构建新的 PromptSpec，避免"已消费"的 builder 带来的不可预期行为。
-                return switch (state.phase()) {
-                    case UNDERSTANDING -> {
-                        var prompt = buildPrompt(chatClient, systemPrompt, toolCallbacks);
-                        var callResponse = prompt.user(userText).call();
-                        cachedResponseText = callResponse.content();
-                        Action.IntentUnderstood parsed = callResponse.entity(Action.IntentUnderstood.class);
-                        log.debug("LLM entity 解析成功: phase={}, traceId={}", state.phase(), state.traceId());
-                        yield parsed;
-                    }
-                    case PLANNING -> {
-                        var prompt = buildPrompt(chatClient, systemPrompt, toolCallbacks);
-                        var callResponse = prompt.user(userText).call();
-                        cachedResponseText = callResponse.content();
-                        Action.PlanGenerated parsed = callResponse.entity(Action.PlanGenerated.class);
-                        log.debug("LLM entity 解析成功: phase={}, traceId={}", state.phase(), state.traceId());
-                        yield parsed;
-                    }
-                    case REFLECTING -> {
-                        var prompt = buildPrompt(chatClient, systemPrompt, toolCallbacks);
-                        var callResponse = prompt.user(userText).call();
-                        cachedResponseText = callResponse.content();
-                        Action.ReflectionComplete parsed = callResponse.entity(Action.ReflectionComplete.class);
-                        log.debug("LLM entity 解析成功: phase={}, traceId={}", state.phase(), state.traceId());
-                        yield parsed;
-                    }
-                    case RESPONDING -> {
-                        // RESPONDING 阶段直接获取文本，无需 JSON 结构化解析
-                        var prompt = buildPrompt(chatClient, systemPrompt, toolCallbacks);
-                        String content = prompt.user(userText).call().content();
-                        var extracted = extractA2uiContent(content);
-                        cachedResponseText = extracted.visibleText();
-                        lastCollectedA2uiTree = extracted.tree();
-                        log.debug("RESPONDING 阶段直接获取文本: traceId={}, length={}",
-                                state.traceId(), cachedResponseText != null ? cachedResponseText.length() : 0);
-                        yield new Action.ResponseGenerated(cachedResponseText != null ? cachedResponseText : "", List.of());
-                    }
-                    default -> {
-                        var prompt = buildPrompt(chatClient, systemPrompt, toolCallbacks);
-                        String response = prompt.user(userText).call().content();
-                        yield actionParser.parse(state.phase(), response != null ? response : "");
-                    }
-                };
-                
-            } catch (Exception e) {
-                // .entity() 解析失败，降级到手动解析（复用缓存的响应文本，不重新调用 LLM）
-                if (cachedResponseText != null) {
-                    // 统一交给 ActionParser 多策略解析链处理（含 Markdown 提取、JSON 修复、自然语言兜底）
-                    log.debug("entity() 解析失败，降级到 ActionParser: phase={}, error={}, traceId={}",
-                              state.phase(), e.getMessage(), state.traceId());
-                    return actionParser.parse(state.phase(), cachedResponseText);
+            // 直接使用 .content() + ActionParser 解析 LLM 响应。
+            // 不使用 .entity()：Spring AI 的 .entity() 与 .content() 不能在同一个
+            // CallResponseSpec 上先后调用（advisor 链一次性消费），导致每次都降级。
+            // 统一走 ActionParser 多策略解析链（含 Markdown 提取、JSON 修复、自然语言兜底），
+            // 既避免了无效的 entity() 调用开销，也简化了异常处理路径。
+            //
+            // UNDERSTANDING / PLANNING / REFLECTING 阶段不注册工具回调。
+            // 原因：Spring AI 的 .call() 会自动执行 function calling（如 builtin.todo.list），
+            // LLM 看到工具执行结果后会生成自然语言总结而非预期的 JSON 结构化输出，
+            // 导致 ActionParser 将其识别为 ResponseGenerated，Agent 跳过 EXECUTING 直接终止。
+            // 工具定义已通过 ContextAssembler 以文本形式包含在 systemPrompt 中，
+            // LLM 仍能感知可用工具并在 PLANNING 阶段规划工具调用步骤。
+            return switch (state.phase()) {
+                case UNDERSTANDING, PLANNING, REFLECTING -> {
+                    var prompt = buildPrompt(chatClient, systemPrompt, List.of());
+                    String raw = prompt.user(userText).call().content();
+                    log.debug("LLM 响应获取成功: phase={}, traceId={}, length={}",
+                            state.phase(), state.traceId(), raw != null ? raw.length() : 0);
+                    yield actionParser.parse(state.phase(), raw != null ? raw : "");
                 }
-                // 理论上不会到达此处（异常在 .entity() 阶段抛出，cachedResponseText 已赋值）
-                log.error("降级路径缓存为空，回退到重新调用 LLM: phase={}, traceId={}", 
-                          state.phase(), state.traceId());
-                var prompt = buildPrompt(chatClient, systemPrompt, toolCallbacks);
-                String response = prompt.user(userText).call().content();
-                return actionParser.parse(state.phase(), response != null ? response : "");
-            }
+                case RESPONDING -> {
+                    // RESPONDING 阶段同样不注册工具回调，避免静默 function calling
+                    var prompt = buildPrompt(chatClient, systemPrompt, List.of());
+                    String content = prompt.user(userText).call().content();
+                    var extracted = extractA2uiContent(content);
+                    String visibleText = extracted.visibleText();
+                    lastCollectedA2uiTree = extracted.tree();
+                    log.debug("RESPONDING 阶段直接获取文本: traceId={}, length={}",
+                            state.traceId(), visibleText != null ? visibleText.length() : 0);
+                    yield new Action.ResponseGenerated(visibleText != null ? visibleText : "", List.of());
+                }
+                default -> {
+                    var prompt = buildPrompt(chatClient, systemPrompt, List.of());
+                    String response = prompt.user(userText).call().content();
+                    yield actionParser.parse(state.phase(), response != null ? response : "");
+                }
+            };
             
         } catch (GuardrailBlockedException e) {
             // 护栏拦截 — 转换为 Blocked Action
