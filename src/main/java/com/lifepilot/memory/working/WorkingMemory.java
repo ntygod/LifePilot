@@ -226,6 +226,28 @@ public class WorkingMemory {
 
 
     /**
+     * 将所有活跃会话的 L1 数据 flush 到 L2，用于系统关闭等场景防止数据丢失。
+     *
+     * <p>逐个会话 flush，单个会话失败不影响其他会话。</p>
+     *
+     * @param goal flush 目标描述
+     */
+    public void flushAll(String goal) {
+        var sessionIds = List.copyOf(sessions.keySet());
+        if (sessionIds.isEmpty()) {
+            return;
+        }
+        log.info("批量 flush 所有活跃会话到 L2: 会话数={}, goal={}", sessionIds.size(), goal);
+        for (var sessionId : sessionIds) {
+            try {
+                flush(sessionId, goal);
+            } catch (Exception e) {
+                log.warn("批量 flush 会话失败: sessionId={}, error={}", sessionId, e.getMessage());
+            }
+        }
+    }
+
+    /**
      * 清理空闲会话：超过给定空闲阈值后，自动 flush 到 L2 并从 L1 中移除。
      *
      * <p>由定时任务调用，避免工作记忆无限增长。</p>

@@ -27,6 +27,7 @@ import com.lifepilot.memory.working.WorkingMemory;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -134,6 +135,20 @@ public class MemoryAutoConfiguration {
             return;
         }
         workingMemory.cleanupIdleSessions(java.time.Duration.ofMinutes(timeoutMinutes));
+    }
+
+    /**
+     * 系统关闭时将所有活跃 L1 会话 flush 到 L2，防止数据丢失。
+     */
+    @PreDestroy
+    public void flushAllOnShutdown() {
+        WorkingMemory workingMemory = this.workingMemoryProvider.getIfAvailable();
+        if (workingMemory == null) {
+            return;
+        }
+        log.info("系统关闭: 开始 flush 所有 L1 会话到 L2");
+        workingMemory.flushAll("系统关闭");
+        log.info("系统关闭: L1 会话 flush 完成");
     }
 
     // --- 向量数据库 ---
