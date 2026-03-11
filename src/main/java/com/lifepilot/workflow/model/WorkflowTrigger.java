@@ -1,5 +1,8 @@
 package com.lifepilot.workflow.model;
 
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import com.fasterxml.jackson.annotation.JsonSubTypes;
+
 /**
  * 工作流触发器 sealed interface。
  *
@@ -13,6 +16,12 @@ package com.lifepilot.workflow.model;
  * @author zsg
  * @since 2026-02-26
  */
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
+@JsonSubTypes({
+        @JsonSubTypes.Type(value = WorkflowTrigger.CronTrigger.class, name = "cron"),
+        @JsonSubTypes.Type(value = WorkflowTrigger.EventTrigger.class, name = "event"),
+        @JsonSubTypes.Type(value = WorkflowTrigger.ManualTrigger.class, name = "manual")
+})
 public sealed interface WorkflowTrigger permits
         WorkflowTrigger.CronTrigger,
         WorkflowTrigger.EventTrigger,
