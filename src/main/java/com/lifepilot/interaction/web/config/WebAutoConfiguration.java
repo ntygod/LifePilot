@@ -38,7 +38,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  */
 @AutoConfiguration
 @ConditionalOnProperty(name = "lifepilot.gateway.channels.web.enabled", havingValue = "true")
-@EnableConfigurationProperties(WebProperties.class)
+@EnableConfigurationProperties({WebProperties.class, A2uiProperties.class})
 public class WebAutoConfiguration {
 
     private static final Logger log = LoggerFactory.getLogger(WebAutoConfiguration.class);

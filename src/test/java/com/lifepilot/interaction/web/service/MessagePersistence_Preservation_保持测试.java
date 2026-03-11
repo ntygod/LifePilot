@@ -76,7 +76,7 @@ class MessagePersistence_Preservation_保持测试 {
                 )
                 """);
 
-        messageRepository = new ChatMessageRepository(jdbcTemplate);
+        messageRepository = new ChatMessageRepository(jdbcTemplate, new ObjectMapper());
         sessionRepository = new ChatSessionRepository(jdbcTemplate, new ObjectMapper());
         historyStore = new JdbcConversationHistoryStore(sessionRepository, messageRepository);
     }

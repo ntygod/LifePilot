@@ -34,25 +34,29 @@ class PromptAutoConfiguration_集成测试 {
     }
 
     @Test
-    void 已注册模板数量为20() {
+    void 已注册模板数量为24() {
         contextRunner.run(context -> {
             var registry = context.getBean(PromptRegistry.class);
-            assertEquals(20, registry.size(),
-                    "应注册 20 个模板，实际: " + registry.keys());
+            assertEquals(24, registry.size(),
+                    "应注册 24 个模板，实际: " + registry.keys());
         });
     }
 
     @Test
-    void 全部20个模板键均已注册() {
+    void 全部24个模板键均已注册() {
         contextRunner.run(context -> {
             var registry = context.getBean(PromptRegistry.class);
             var expectedKeys = Set.of(
                     "agent/role-definition", "agent/understanding", "agent/planning",
-                    "agent/executing", "agent/reflecting", "agent/responding",
+                    "agent/reflecting", "agent/responding", "agent/streaming-constraint",
+                    "agent/a2ui-component-catalog",
                     "skill/todo", "skill/schedule", "skill/habit", "skill/memory", "skill/sync",
+                    "skill/datastore",
                     "memory/compression-summary", "memory/compression-keypoints", "memory/entity-compression",
                     "knowledge/chunk-context", "knowledge/rerank-pointwise", "knowledge/rerank-listwise",
-                    "proactive/evaluation", "generation/skill-generation", "semantic/entity-disambiguation"
+                    "proactive/evaluation", "proactive/high-urgency/deadline_reminder",
+                    "proactive/high-urgency/schedule_reminder",
+                    "generation/skill-generation", "semantic/entity-disambiguation"
             );
 
             var actualKeys = registry.keys();

@@ -420,6 +420,10 @@ lifepilot:
         - "http://localhost:80"
         - "http://localhost"
       allow-credentials: true
+  a2ui:
+    # A2UI（Agent-to-UI）生成功能配置
+    enabled: true
+    max-components-per-tree: 50
   media:
     image:
       max-size-bytes: 10485760

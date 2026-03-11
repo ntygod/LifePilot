@@ -7,6 +7,10 @@ import com.lifepilot.agent.context.AssembledContext;
 import com.lifepilot.agent.context.ContextAssembler;
 import com.lifepilot.agent.media.MediaDataExtractor;
 import com.lifepilot.agent.model.*;
+import com.lifepilot.interaction.web.a2ui.A2uiComponentValidator;
+import com.lifepilot.interaction.web.a2ui.StreamingA2uiParser;
+import com.lifepilot.interaction.web.config.A2uiProperties;
+import com.lifepilot.interaction.web.model.A2uiComponentTree;
 import com.lifepilot.agent.session.SessionManager;
 import com.lifepilot.conversation.ConversationHistoryStore;
 import com.lifepilot.conversation.ConversationTurnView;
@@ -87,6 +91,11 @@ public class AgentLoop {
     private final PromptRegistry promptRegistry;
     @Nullable
     private final MediaDataExtractor mediaDataExtractor;
+    @Nullable
+    private final A2uiProperties a2uiProperties;
+
+    /** 最近一次流式调用中收集的 A2UI 组件树，供持久化使用。 */
+    private volatile List<A2uiComponentTree> lastCollectedA2uiTrees;
 
     /** 当前执行的取消信号令牌，供外部调用方（ExecutionMiddleware、SseSessionManager）访问。 */
     private volatile CancellationToken cancellationToken;
@@ -108,7 +117,8 @@ public class AgentLoop {
                      @Nullable KnowledgeBaseRepository knowledgeBaseRepository,
                      @Nullable RealtimeExtractor realtimeExtractor,
                      PromptRegistry promptRegistry,
-                     @Nullable MediaDataExtractor mediaDataExtractor) {
+                     @Nullable MediaDataExtractor mediaDataExtractor,
+                     @Nullable A2uiProperties a2uiProperties) {
         this.stateReducer = stateReducer;
         this.contextAssembler = contextAssembler;
         this.llmRouter = llmRouter;
@@ -127,6 +137,7 @@ public class AgentLoop {
         this.knowledgeBaseRepository = knowledgeBaseRepository;
         this.promptRegistry = promptRegistry;
         this.mediaDataExtractor = mediaDataExtractor;
+        this.a2uiProperties = a2uiProperties;
     }
 
     /**
@@ -242,8 +253,18 @@ public class AgentLoop {
                 // 同步写入助手消息到 chat_messages，获取后端生成的 messageId
                 if (conversationHistoryStore != null && finalContent != null && !finalContent.isBlank()) {
                     try {
+                        // 序列化 A2UI 组件树（如有）
+                        String a2uiJson = null;
+                        if (lastCollectedA2uiTrees != null && !lastCollectedA2uiTrees.isEmpty()) {
+                            try {
+                                a2uiJson = objectMapper.writeValueAsString(lastCollectedA2uiTrees);
+                            } catch (Exception ex) {
+                                log.warn("A2UI 组件树序列化失败: error={}", ex.getMessage());
+                            }
+                            lastCollectedA2uiTrees = null; // 清理
+                        }
                         assistantMessageId = conversationHistoryStore.appendAssistantMessage(
-                                state.sessionId(), finalContent, reasoningSummary, state.traceId());
+                                state.sessionId(), finalContent, reasoningSummary, state.traceId(), a2uiJson);
                     } catch (Exception e) {
                         log.warn("助手消息同步写入失败: sessionId={}, error={}", state.sessionId(), e.getMessage());
                     }
@@ -350,7 +371,7 @@ public class AgentLoop {
             if (conversationHistoryStore != null && state.finalOutput() != null && !state.finalOutput().isBlank()) {
                 try {
                     conversationHistoryStore.appendAssistantMessage(
-                            state.sessionId(), state.finalOutput(), state.reasoningSummary(), state.traceId());
+                            state.sessionId(), state.finalOutput(), state.reasoningSummary(), state.traceId(), null);
                 } catch (Exception e) {
                     log.warn("助手消息同步写入失败: sessionId={}, error={}", state.sessionId(), e.getMessage());
                 }
@@ -657,6 +678,13 @@ public class AgentLoop {
                 } else {
                     streamingSystemPrompt = streamingSystemPrompt + "\n" + streamingConstraint;
                 }
+
+                // A2UI 提示词注入（仅当功能启用时）
+                if (a2uiProperties != null && a2uiProperties.enabled()) {
+                    String a2uiPrompt = promptRegistry.render("agent/a2ui-component-catalog",
+                            Map.of("maxComponents", a2uiProperties.maxComponentsPerTree()));
+                    streamingSystemPrompt = streamingSystemPrompt + "\n" + a2uiPrompt;
+                }
             }
 
             // 获取工具回调（与非流式路径一致，让 LLM 看到可用工具）
@@ -704,16 +732,75 @@ public class AgentLoop {
                 throw new IllegalStateException("streaming response is null");
             }
 
-            // 订阅流式响应，发送 token 事件
+            // A2UI 流式解析器（仅当功能启用时创建）
+            final boolean a2uiEnabled = a2uiProperties != null && a2uiProperties.enabled();
+            final StreamingA2uiParser a2uiParser = a2uiEnabled ? new StreamingA2uiParser() : null;
+            final List<A2uiComponentTree> collectedA2uiTrees = a2uiEnabled ? new ArrayList<>() : null;
+            final int maxComponents = a2uiEnabled ? a2uiProperties.maxComponentsPerTree() : 0;
+
+            // 订阅流式响应，发送 token / ui 事件
             tokenStream.doOnNext(token -> {
                 contentBuilder.append(token);
-                int index = tokenIndex[0]++;
-                sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
-                        "sessionId", request.sessionId(),
-                        "turnId", tempTurnId,
-                        "content", token,
-                        "index", index
-                ));
+                if (a2uiParser != null) {
+                    // A2UI 模式：通过解析器分离文本和组件
+                    var segments = a2uiParser.feed(token);
+                    for (var segment : segments) {
+                        switch (segment) {
+                            case StreamingA2uiParser.Segment.TextSegment(var text) -> {
+                                if (!text.isEmpty()) {
+                                    sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
+                                            "sessionId", request.sessionId(),
+                                            "turnId", tempTurnId,
+                                            "content", text,
+                                            "index", tokenIndex[0]++
+                                    ));
+                                }
+                            }
+                            case StreamingA2uiParser.Segment.A2uiSegment(var json) -> {
+                                try {
+                                    var tree = objectMapper.readValue(json, A2uiComponentTree.class);
+                                    var result = A2uiComponentValidator.validate(tree, maxComponents);
+                                    if (result.valid()) {
+                                        collectedA2uiTrees.add(result.truncatedTree() != null ? result.truncatedTree() : tree);
+                                        sseManager.sendEvent(streamId, SseEventType.UI, Map.of(
+                                                "sessionId", request.sessionId(),
+                                                "turnId", tempTurnId,
+                                                "components", (result.truncatedTree() != null ? result.truncatedTree() : tree).components()
+                                        ));
+                                    } else {
+                                        log.warn("A2UI 组件树校验失败: errors={}", result.errors());
+                                    }
+                                } catch (Exception e) {
+                                    log.warn("A2UI JSON 解析失败: error={}", e.getMessage());
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // 非 A2UI 模式：直接发送 token 事件（保持原有逻辑）
+                    sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
+                            "sessionId", request.sessionId(),
+                            "turnId", tempTurnId,
+                            "content", token,
+                            "index", tokenIndex[0]++
+                    ));
+                }
+            })
+            .doOnComplete(() -> {
+                // A2UI 模式：刷出剩余缓冲
+                if (a2uiParser != null) {
+                    var remaining = a2uiParser.flush();
+                    for (var segment : remaining) {
+                        if (segment instanceof StreamingA2uiParser.Segment.TextSegment(var text) && !text.isEmpty()) {
+                            sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
+                                    "sessionId", request.sessionId(),
+                                    "turnId", tempTurnId,
+                                    "content", text,
+                                    "index", tokenIndex[0]++
+                            ));
+                        }
+                    }
+                }
             })
             .doOnError(error -> {
                 log.error("流式 LLM 调用失败: scene={}, error={}", scene, error.getMessage(), error);
@@ -744,6 +831,13 @@ public class AgentLoop {
                     fullPrompt,
                     responseContent,
                     null);
+
+            // 保存收集的 A2UI 组件树供持久化使用
+            if (collectedA2uiTrees != null && !collectedA2uiTrees.isEmpty()) {
+                this.lastCollectedA2uiTrees = List.copyOf(collectedA2uiTrees);
+            } else {
+                this.lastCollectedA2uiTrees = null;
+            }
 
             // 解析为 ResponseGenerated Action（suggestions 为空列表）
             return new Action.ResponseGenerated(responseContent, List.of());

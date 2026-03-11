@@ -13,6 +13,7 @@ import com.lifepilot.agent.session.SessionManager;
 import com.lifepilot.conversation.ConversationHistoryStore;
 import com.lifepilot.conversation.ConversationViewService;
 import com.lifepilot.conversation.DefaultConversationViewService;
+import com.lifepilot.interaction.web.config.A2uiProperties;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.knowledge.repository.DocumentRepository;
 import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
@@ -148,16 +149,18 @@ public class AgentAutoConfiguration {
                                @Autowired(required = false) KnowledgeBaseRepository knowledgeBaseRepository,
                                @Autowired(required = false) RealtimeExtractor realtimeExtractor,
                                PromptRegistry promptRegistry,
-                               @Autowired(required = false) MediaDataExtractor mediaDataExtractor) {
-        log.info("Agent 引擎初始化完成（追踪{}，记忆系统{}，情景记忆{}，实时提取{}，多模态{}）",
+                               @Autowired(required = false) MediaDataExtractor mediaDataExtractor,
+                               @Autowired(required = false) A2uiProperties a2uiProperties) {
+        log.info("Agent 引擎初始化完成（追踪{}，记忆系统{}，情景记忆{}，实时提取{}，多模态{}，A2UI{}）",
                 traceRecorder != null ? "已启用" : "未启用",
                 workingMemory != null ? "已启用" : "未启用",
                 episodicMemory != null ? "已启用" : "未启用",
                 realtimeExtractor != null ? "已启用" : "未启用",
-                multimodalRouter != null ? "已启用" : "未启用（纯文本模式）");
+                multimodalRouter != null ? "已启用" : "未启用（纯文本模式）",
+                a2uiProperties != null && a2uiProperties.enabled() ? "已启用" : "未启用");
         return new AgentLoop(stateReducer, contextAssembler, llmRouter, multimodalRouter,
                 traceRecorder, objectMapper, sessionManager, conversationViewService, actionParser, agentToolProvider,
                 config, workingMemory, conversationHistoryStore, sessionKnowledgeBaseRepository,
-                knowledgeBaseRepository, realtimeExtractor, promptRegistry, mediaDataExtractor);
+                knowledgeBaseRepository, realtimeExtractor, promptRegistry, mediaDataExtractor, a2uiProperties);
     }
 }
