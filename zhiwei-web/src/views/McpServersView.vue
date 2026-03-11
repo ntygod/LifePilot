@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Cable, RefreshCw, Server, ServerOff, Sparkles } from 'lucide-vue-next'
 import { useSkillStore } from '@/stores/skill'
+import { useMcpStatusStream } from '@/composables/useMcpStatusStream'
 import MetricCard from '@/components/common/MetricCard.vue'
 import SearchBar from '@/components/common/SearchBar.vue'
 import StatePanel from '@/components/common/StatePanel.vue'
@@ -16,6 +17,9 @@ import { Skeleton } from '@/components/ui/skeleton'
 
 const router = useRouter()
 const skillStore = useSkillStore()
+
+// SSE 实时状态订阅
+useMcpStatusStream()
 
 const searchQuery = ref('')
 const showCreateDialog = ref(false)

@@ -11,6 +11,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.event.EventListener;
 
@@ -42,8 +43,9 @@ public class McpAutoConfiguration {
     @ConditionalOnMissingBean
     public McpServerRegistry mcpServerRegistry(
             McpToolAdapter mcpToolAdapter,
-            DynamicToolRegistry dynamicToolRegistry) {
-        return new McpServerRegistry(mcpToolAdapter, dynamicToolRegistry);
+            DynamicToolRegistry dynamicToolRegistry,
+            ApplicationEventPublisher eventPublisher) {
+        return new McpServerRegistry(mcpToolAdapter, dynamicToolRegistry, eventPublisher);
     }
 
     @Bean
