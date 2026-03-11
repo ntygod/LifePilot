@@ -35,6 +35,7 @@ public class WorkingMemory {
     private final TokenBudgetAllocator tokenBudgetAllocator;
     private final SlotEvictionPolicy slotEvictionPolicy;
     private final MemoryEventRecorder memoryEventRecorder;
+    private final WorkingMemoryWal wal;
 
     /** 会话槽位列表。 */
     private final ConcurrentHashMap<String, List<WorkingMemorySlot>> sessions = new ConcurrentHashMap<>();
@@ -46,18 +47,20 @@ public class WorkingMemory {
     private final ConcurrentHashMap<String, Instant> lastActivity = new ConcurrentHashMap<>();
 
     /**
-     * 使用显式策略的构造函数。
+     * 完整构造函数（含 WAL 持久化支持）。
      */
     public WorkingMemory(MemoryProperties properties,
                          EpisodicMemory episodicMemory,
                          TokenBudgetAllocator tokenBudgetAllocator,
                          SlotEvictionPolicy slotEvictionPolicy,
-                         MemoryEventRecorder memoryEventRecorder) {
+                         MemoryEventRecorder memoryEventRecorder,
+                         WorkingMemoryWal wal) {
         this.properties = properties;
         this.episodicMemory = episodicMemory;
         this.tokenBudgetAllocator = tokenBudgetAllocator;
         this.slotEvictionPolicy = slotEvictionPolicy;
         this.memoryEventRecorder = memoryEventRecorder;
+        this.wal = wal;
     }
 
     /**
@@ -73,6 +76,11 @@ public class WorkingMemory {
         slots.add(slot);
         tokenUsage.compute(sessionId, (k, v) -> (v == null ? 0 : v) + slot.tokenCount());
         lastActivity.put(sessionId, Instant.now());
+
+        // 同步写入 WAL（SQLite WAL 模式下单行 insert 微秒级，失败不阻塞主流程）
+        if (wal != null) {
+            wal.append(sessionId, slot);
+        }
 
         // 记录工作记忆追加事件（观测性失败不影响主流程）
         if (memoryEventRecorder != null) {
@@ -219,6 +227,11 @@ public class WorkingMemory {
         sessions.remove(sessionId);
         tokenUsage.remove(sessionId);
         lastActivity.remove(sessionId);
+
+        // flush 成功后清除该会话的 WAL 记录
+        if (wal != null) {
+            wal.clearSession(sessionId);
+        }
 
         return record;
     }
