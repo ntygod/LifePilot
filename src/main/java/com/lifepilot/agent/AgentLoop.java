@@ -722,16 +722,75 @@ public class AgentLoop {
                 throw new IllegalStateException("streaming response is null");
             }
 
-            // 订阅流式响应，发送 token 事件
+            // A2UI 流式解析器（仅当功能启用时创建）
+            final boolean a2uiEnabled = a2uiProperties != null && a2uiProperties.enabled();
+            final StreamingA2uiParser a2uiParser = a2uiEnabled ? new StreamingA2uiParser() : null;
+            final List<A2uiComponentTree> collectedA2uiTrees = a2uiEnabled ? new ArrayList<>() : null;
+            final int maxComponents = a2uiEnabled ? a2uiProperties.maxComponentsPerTree() : 0;
+
+            // 订阅流式响应，发送 token / ui 事件
             tokenStream.doOnNext(token -> {
                 contentBuilder.append(token);
-                int index = tokenIndex[0]++;
-                sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
-                        "sessionId", request.sessionId(),
-                        "turnId", tempTurnId,
-                        "content", token,
-                        "index", index
-                ));
+                if (a2uiParser != null) {
+                    // A2UI 模式：通过解析器分离文本和组件
+                    var segments = a2uiParser.feed(token);
+                    for (var segment : segments) {
+                        switch (segment) {
+                            case StreamingA2uiParser.Segment.TextSegment(var text) -> {
+                                if (!text.isEmpty()) {
+                                    sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
+                                            "sessionId", request.sessionId(),
+                                            "turnId", tempTurnId,
+                                            "content", text,
+                                            "index", tokenIndex[0]++
+                                    ));
+                                }
+                            }
+                            case StreamingA2uiParser.Segment.A2uiSegment(var json) -> {
+                                try {
+                                    var tree = objectMapper.readValue(json, A2uiComponentTree.class);
+                                    var result = A2uiComponentValidator.validate(tree, maxComponents);
+                                    if (result.valid()) {
+                                        collectedA2uiTrees.add(result.truncatedTree() != null ? result.truncatedTree() : tree);
+                                        sseManager.sendEvent(streamId, SseEventType.UI, Map.of(
+                                                "sessionId", request.sessionId(),
+                                                "turnId", tempTurnId,
+                                                "components", (result.truncatedTree() != null ? result.truncatedTree() : tree).components()
+                                        ));
+                                    } else {
+                                        log.warn("A2UI 组件树校验失败: errors={}", result.errors());
+                                    }
+                                } catch (Exception e) {
+                                    log.warn("A2UI JSON 解析失败: error={}", e.getMessage());
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // 非 A2UI 模式：直接发送 token 事件（保持原有逻辑）
+                    sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
+                            "sessionId", request.sessionId(),
+                            "turnId", tempTurnId,
+                            "content", token,
+                            "index", tokenIndex[0]++
+                    ));
+                }
+            })
+            .doOnComplete(() -> {
+                // A2UI 模式：刷出剩余缓冲
+                if (a2uiParser != null) {
+                    var remaining = a2uiParser.flush();
+                    for (var segment : remaining) {
+                        if (segment instanceof StreamingA2uiParser.Segment.TextSegment(var text) && !text.isEmpty()) {
+                            sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
+                                    "sessionId", request.sessionId(),
+                                    "turnId", tempTurnId,
+                                    "content", text,
+                                    "index", tokenIndex[0]++
+                            ));
+                        }
+                    }
+                }
             })
             .doOnError(error -> {
                 log.error("流式 LLM 调用失败: scene={}, error={}", scene, error.getMessage(), error);
