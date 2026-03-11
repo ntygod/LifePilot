@@ -244,6 +244,14 @@ export const chatApi = {
     })
   },
 
+  /** 工具确认响应 */
+  respondToolConfirmation(requestId: string, confirmed: boolean, reason?: string): Promise<void> {
+    return request(`/chat/tool-confirmations/${requestId}`, {
+      method: 'POST',
+      body: JSON.stringify({ requestId, confirmed, reason })
+    })
+  },
+
   /**
    * 上传单个消息附件（图片/文件）。
    *

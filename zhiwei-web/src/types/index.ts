@@ -206,6 +206,17 @@ export interface SseErrorEvent {
   traceId?: string
 }
 
+/** 工具确认请求（SSE 事件 payload） */
+export interface ToolConfirmationRequest {
+  requestId: string
+  toolId: string
+  toolName: string
+  riskLevel: 'HIGH' | 'CRITICAL'
+  approvalMode: string
+  message: string
+  timestamp: string
+}
+
 /** SSE 媒体数据事件（截图等二进制数据通过独立事件传输，避免被截断） */
 export interface SseMediaEvent {
   /** 媒体字段名（如 screenshot） */

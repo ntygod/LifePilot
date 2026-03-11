@@ -25,6 +25,7 @@ import EmptyState from '@/components/chat/EmptyState.vue'
 import MessageList from '@/components/chat/MessageList.vue'
 import SessionConfigPanel from '@/components/chat/SessionConfigPanel.vue'
 import SessionSidebar from '@/components/chat/SessionSidebar.vue'
+import ToolConfirmationDialog from '@/components/chat/ToolConfirmationDialog.vue'
 import { useChat } from '@/composables/useChat'
 import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
 import { useChatStore } from '@/stores/chat'
@@ -49,6 +50,7 @@ const {
   reasoningStatusText,
   reasoningEvents,
   streamingA2uiComponents,
+  pendingToolConfirmation,
 } = useChat()
 
 const scrollContainer = ref<HTMLElement | null>(null)
@@ -560,6 +562,12 @@ function closeInspectorPanels() {
         <div class="overflow-hidden rounded-[calc(var(--radius)+2px)] border border-border/70 bg-card/92">
           <ChatInput :disabled="isStreaming" @send="handleSend" />
         </div>
+
+        <!-- 工具确认对话框 -->
+        <ToolConfirmationDialog
+          :request="pendingToolConfirmation"
+          @resolved="pendingToolConfirmation = null"
+        />
       </div>
     </PageContainer>
   </div>

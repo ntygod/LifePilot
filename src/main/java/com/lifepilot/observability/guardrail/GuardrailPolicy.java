@@ -30,6 +30,22 @@ public sealed interface GuardrailPolicy
      * 优先级（数值越小优先级越高）。
      */
     int priority();
+
+    /**
+     * 创建工具风险策略实例。
+     *
+     * @param policyId         策略 ID
+     * @param enabled          是否启用
+     * @param priority         优先级
+     * @param toolRiskMapping  工具 ID → 风险等级映射
+     * @param defaultRiskLevel 默认风险等级
+     * @return 工具风险策略
+     */
+    static GuardrailPolicy toolRiskPolicy(String policyId, boolean enabled, int priority,
+                                           Map<String, RiskLevel> toolRiskMapping,
+                                           RiskLevel defaultRiskLevel) {
+        return new ToolRiskPolicy(policyId, enabled, priority, toolRiskMapping, defaultRiskLevel);
+    }
 }
 
 /**

@@ -8,6 +8,7 @@ import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.repository.MessageFeedbackRepository;
 import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
+import com.lifepilot.interaction.web.service.WebUserConfirmationService;
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
 import com.lifepilot.agent.proactive.ResponseTracker;
 import com.lifepilot.agent.proactive.config.ProactiveConfigProperties;
@@ -74,6 +75,8 @@ public class ChatController {
     private final ProactiveConfigProperties proactiveConfig;
     @org.springframework.lang.Nullable
     private final ResponseTracker responseTracker;
+    @org.springframework.lang.Nullable
+    private final WebUserConfirmationService confirmationService;
 
     public ChatController(WebChannelAdapter adapter, SseSessionManager sseManager,
                           com.lifepilot.interaction.web.service.ChatSessionService sessionService,
@@ -81,7 +84,8 @@ public class ChatController {
                           AttachmentRepository attachmentRepository,
                           KnowledgeBaseProperties knowledgeBaseProperties,
                           ProactiveConfigProperties proactiveConfig,
-                          @org.springframework.lang.Nullable ResponseTracker responseTracker) {
+                          @org.springframework.lang.Nullable ResponseTracker responseTracker,
+                          @org.springframework.lang.Nullable WebUserConfirmationService confirmationService) {
         this.adapter = adapter;
         this.sseManager = sseManager;
         this.sessionService = sessionService;
@@ -90,6 +94,7 @@ public class ChatController {
         this.knowledgeBaseProperties = knowledgeBaseProperties;
         this.proactiveConfig = proactiveConfig;
         this.responseTracker = responseTracker;
+        this.confirmationService = confirmationService;
     }
 
     /**
@@ -449,6 +454,30 @@ public class ChatController {
         long timeout = proactiveConfig.getNotificationSseTimeoutMs();
         log.debug("创建通知 SSE 流: streamId={}, timeout={}ms", streamId, timeout);
         return sseManager.createNotificationEmitter(streamId, timeout);
+    }
+
+    /**
+     * 工具确认响应端点。
+     *
+     * <p>前端确认对话框提交确认/拒绝结果，解除 {@link WebUserConfirmationService} 的阻塞等待。</p>
+     *
+     * @param requestId 确认请求 ID
+     * @param response  确认响应（confirmed + 可选 reason）
+     * @return 200 成功，404 requestId 不存在或已过期
+     */
+    @PostMapping("/tool-confirmations/{requestId}")
+    public ResponseEntity<?> handleToolConfirmation(
+            @PathVariable String requestId,
+            @RequestBody ConfirmationResponse response) {
+        if (confirmationService == null) {
+            log.debug("WebUserConfirmationService 未注入，确认端点不可用");
+            return ResponseEntity.notFound().build();
+        }
+        boolean resolved = confirmationService.resolveConfirmation(requestId, response.confirmed());
+        if (!resolved) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok().build();
     }
 
     /**

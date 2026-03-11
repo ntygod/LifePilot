@@ -6,7 +6,9 @@ import com.lifepilot.interaction.gateway.MessageGateway;
 import com.lifepilot.interaction.web.adapter.WebChannelAdapter;
 import com.lifepilot.interaction.web.controller.WebExceptionHandler;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
+import com.lifepilot.interaction.web.service.WebUserConfirmationService;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
+import com.lifepilot.observability.config.ObservabilityProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -64,6 +66,15 @@ public class WebAutoConfiguration {
     public WebExceptionHandler webExceptionHandler() {
         log.info("注册 WebExceptionHandler");
         return new WebExceptionHandler();
+    }
+
+    @Bean
+    public WebUserConfirmationService webUserConfirmationService(
+            SseSessionManager sseSessionManager,
+            ObservabilityProperties observabilityProperties) {
+        long timeout = observabilityProperties.getGuardrail().getConfirmationTimeoutSeconds();
+        log.info("注册 WebUserConfirmationService: timeout={}s", timeout);
+        return new WebUserConfirmationService(sseSessionManager, timeout);
     }
 
     // 注意：ChatController、SettingsController、KnowledgeBaseController、SkillController、

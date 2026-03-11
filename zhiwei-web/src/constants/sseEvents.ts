@@ -39,6 +39,9 @@ export const SSE_EVENT_TYPES = {
   TASK_ARTIFACT_UPDATE: 'task-artifact-update',
   /** 任务完成事件 */
   TASK_COMPLETE: 'task-complete',
+  // 护栏模块事件类型
+  /** 工具确认请求事件 */
+  TOOL_CONFIRMATION_REQUEST: 'tool-confirmation-request',
 } as const
 
 /**
