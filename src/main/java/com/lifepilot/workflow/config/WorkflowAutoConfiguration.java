@@ -190,30 +190,34 @@ public class WorkflowAutoConfiguration {
     public void onApplicationReady(ApplicationReadyEvent event) {
         var ctx = event.getApplicationContext();
         var config = ctx.getBean(WorkflowConfigProperties.class);
+        var registry = ctx.getBean(WorkflowRegistry.class);
 
         // 延迟注入 triggerManager 到 registry，避免循环依赖
-        ctx.getBean(WorkflowRegistry.class).setTriggerManager(ctx.getBean(WorkflowTriggerManager.class));
+        registry.setTriggerManager(ctx.getBean(WorkflowTriggerManager.class));
 
         // ① 释放内置工作流到用户目录（在热加载和崩溃恢复之前）
         seedBuiltinWorkflows(config);
 
-        // ② YAML 热加载（首次全量扫描同步完成，确保所有定义加载到内存）
-        ctx.getBean(WorkflowRegistry.class).startScheduledScan();
+        // ② YAML 热加载（首次全量扫描同步完成，register() 中 startupPhase=true 跳过触发器注册）
+        registry.startScheduledScan();
 
-        // ③ 崩溃恢复（在热加载之后，确保 registry 中已有所有工作流定义）
-        ctx.getBean(WorkflowEngine.class).recoverInterruptedInstances();
-
-        // ④ 触发器注册
+        // ③ 触发器统一注册（一次性，避免与 register() 中的注册重复）
         ctx.getBean(WorkflowTriggerManager.class).registerAllTriggers();
 
-        // ⑤ 启动唤醒调度器定时扫描
+        // ④ 切换到热加载模式（此后 register() 将正常注册触发器）
+        registry.setStartupPhase(false);
+
+        // ⑤ 崩溃恢复（同步执行，触发器已就绪，不会与 cron 竞态）
+        ctx.getBean(WorkflowEngine.class).recoverInterruptedInstances();
+
+        // ⑥ 启动唤醒调度器定时扫描
         var wakeupScheduler = ctx.getBean(WakeupScheduler.class);
         var taskScheduler = ctx.getBean("workflowTaskScheduler", TaskScheduler.class);
         int wakeupInterval = config.getWakeup().getScanIntervalSeconds();
         taskScheduler.scheduleAtFixedRate(wakeupScheduler::scan, Duration.ofSeconds(wakeupInterval));
         log.info("唤醒调度器已启动: interval={}s", wakeupInterval);
 
-        log.info("工作流 YAML 热加载、崩溃恢复、触发器注册和唤醒调度已完成");
+        log.info("工作流启动序列完成: YAML热加载 → 触发器注册 → 崩溃恢复 → 唤醒调度");
     }
 
     /**

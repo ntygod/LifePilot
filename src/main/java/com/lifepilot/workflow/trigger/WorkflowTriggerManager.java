@@ -115,6 +115,14 @@ public class WorkflowTriggerManager implements GenericApplicationListener {
     private void registerCron(String workflowId, int triggerIndex, WorkflowTrigger.CronTrigger cron) {
         try {
             String key = workflowId + "#" + triggerIndex;
+
+            // 先取消已有的 ScheduledFuture，防止重复注册导致 cron 双倍触发
+            ScheduledFuture<?> existing = cronTasks.get(key);
+            if (existing != null) {
+                existing.cancel(false);
+                log.debug("Cron 调度已取消旧实例: key={}", key);
+            }
+
             var springCron = new org.springframework.scheduling.support.CronTrigger(cron.cron());
             ScheduledFuture<?> future = taskScheduler.schedule(
                     () -> fireCron(workflowId), springCron);
@@ -153,8 +161,14 @@ public class WorkflowTriggerManager implements GenericApplicationListener {
     // ==================== EventTrigger ====================
 
     private void registerEvent(String workflowId, WorkflowTrigger.EventTrigger event) {
-        eventBindings.computeIfAbsent(event.eventType(),
-                k -> new java.util.concurrent.CopyOnWriteArrayList<>()).add(workflowId);
+        List<String> ids = eventBindings.computeIfAbsent(event.eventType(),
+                k -> new java.util.concurrent.CopyOnWriteArrayList<>());
+        // 去重：同一 workflowId 在同一 eventType 下只注册一次
+        if (ids.contains(workflowId)) {
+            log.debug("事件触发器已存在，跳过重复注册: workflowId={}, eventType={}", workflowId, event.eventType());
+            return;
+        }
+        ids.add(workflowId);
         log.info("事件触发器已注册: workflowId={}, eventType={}", workflowId, event.eventType());
     }
 

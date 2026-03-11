@@ -37,15 +37,15 @@ steps:
       maxDelayMs: 5000
 
   - id: search-knowledge-base
-    name: 搜索知识库（待实现）
+    name: 搜索知识库
     type: tool
-    toolId: knowledge.search
+    toolId: builtin.memory.search
     params:
       query: "${inputs.topic}"
-      topK: "5"
+      limit: "5"
     errorStrategy:
       type: skip
-      reason: 知识库搜索工具尚未实现，跳过
+      reason: 知识库搜索失败时仍可基于其他来源继续
 
   - id: search-memory
     name: 搜索历史记忆
@@ -142,19 +142,18 @@ steps:
       - quality-review
 
   - id: publish-result
-    name: 发布调研成果（待实现）
+    name: 发布调研成果
     type: tool
-    toolId: knowledge.ingest
+    toolId: builtin.memory.create
     params:
-      title: "调研报告：${inputs.topic}"
       content: "${steps.deep-analysis.output.result}"
-      category: research
-      target: "${inputs.publishTarget}"
+      tags: "research,${inputs.topic}"
+      importance: "high"
     dependsOn:
       - approval-gate
     errorStrategy:
       type: skip
-      reason: 知识库写入工具尚未实现，跳过
+      reason: 知识持久化失败不影响通知流程
 
   - id: notify-stakeholders
     name: 通知相关方

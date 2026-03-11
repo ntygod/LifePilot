@@ -94,6 +94,22 @@ public class WorkflowRegistry {
     @Setter
     private SkillRegistry skillRegistry;
 
+    /** 启动阶段标志位：启动阶段 register() 跳过触发器注册，由 registerAllTriggers() 统一处理。 */
+    private volatile boolean startupPhase = true;
+
+    /**
+     * 设置启动阶段标志位。
+     *
+     * <p>启动序列完成后调用 {@code setStartupPhase(false)} 切换到热加载模式，
+     * 此后 {@link #register(WorkflowDefinition)} 将正常通知触发器管理器注册触发器。
+     *
+     * @param startupPhase 是否处于启动阶段
+     */
+    public void setStartupPhase(boolean startupPhase) {
+        this.startupPhase = startupPhase;
+        log.info("工作流注册中心启动阶段标志: startupPhase={}", startupPhase);
+    }
+
     /**
      * 工作流定义校验结果。
      *
@@ -200,7 +216,8 @@ public class WorkflowRegistry {
         }
 
         // 注册成功且已启用时，通知触发器管理器注册触发器
-        if (definition.enabled() && triggerManager != null) {
+        // 启动阶段跳过（由 registerAllTriggers() 统一处理），避免重复注册
+        if (!startupPhase && definition.enabled() && triggerManager != null) {
             triggerManager.registerTriggers(definition);
         }
 
@@ -500,6 +517,35 @@ public class WorkflowRegistry {
 
         return warnings.isEmpty() ? ValidationResult.ok() : ValidationResult.withWarnings(warnings);
     }
+    /**
+     * 检查工作流定义中所有步骤引用的资源是否可用。
+     *
+     * <p>遍历 ToolStep 和 SkillStep，检查 toolId/skillId 是否在对应注册表中存在。
+     * 返回不可用资源的描述列表，空列表表示所有资源可用。
+     *
+     * @param definition 工作流定义
+     * @return 不可用资源描述列表
+     */
+    public List<String> checkResourceAvailability(WorkflowDefinition definition) {
+        List<String> missing = new ArrayList<>();
+        for (WorkflowStep step : definition.steps()) {
+            switch (step) {
+                case WorkflowStep.ToolStep ts -> {
+                    if (toolRegistry != null && toolRegistry.resolve(ts.toolId()).isEmpty()) {
+                        missing.add("toolId=" + ts.toolId() + " (stepId=" + ts.id() + ")");
+                    }
+                }
+                case WorkflowStep.SkillStep ss -> {
+                    if (skillRegistry != null && skillRegistry.find(ss.skillId()).isEmpty()) {
+                        missing.add("skillId=" + ss.skillId() + " (stepId=" + ss.id() + ")");
+                    }
+                }
+                default -> { /* 其他步骤类型无需检查外部资源 */ }
+            }
+        }
+        return List.copyOf(missing);
+    }
+
 
     /**
      * 更新工作流定义的启用状态（仅内存）。

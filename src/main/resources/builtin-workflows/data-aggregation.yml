@@ -114,32 +114,37 @@ steps:
       - fetch-external-data
 
   - id: format-report
-    name: 格式化报告（待实现）
-    type: tool
-    toolId: document.format
-    params:
-      content: "${steps.synthesize-report.output.result}"
-      format: markdown
-      template: weekly-report
+    name: 格式化报告
+    type: llm
+    scene: workflow
+    prompt: |
+      请将以下报告内容格式化为结构清晰的 Markdown 文档：
+
+      ${steps.synthesize-report.output.result}
+
+      格式要求：
+      1. 使用标准 Markdown 语法
+      2. 添加目录结构
+      3. 数据部分使用表格展示
+      4. 关键指标加粗标注
+      5. 保持内容完整，不要删减
+
+      直接输出格式化后的 Markdown 文档。
     dependsOn:
       - synthesize-report
-    errorStrategy:
-      type: skip
-      reason: 文档格式化工具尚未实现，跳过
 
   - id: save-report
-    name: 保存报告（待实现）
+    name: 保存报告
     type: tool
-    toolId: document.save
+    toolId: builtin.datastore.add_document
     params:
-      title: "${inputs.reportTitle}"
-      content: "${steps.format-report.output.result}"
-      category: weekly-report
+      collection: weekly-reports
+      data: '{"title": "${inputs.reportTitle}", "content": "${steps.format-report.output.result}", "category": "weekly-report"}'
     dependsOn:
       - format-report
     errorStrategy:
       type: skip
-      reason: 文档保存工具尚未实现，跳过
+      reason: 报告保存失败不影响发送
 
   - id: send-report
     name: 发送报告

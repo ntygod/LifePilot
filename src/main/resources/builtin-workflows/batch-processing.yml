@@ -27,16 +27,17 @@ metadata:
   complexity: advanced
 steps:
   - id: fetch-task-list
-    name: 获取待处理任务列表（待实现）
+    name: 获取待处理任务列表
     type: tool
-    toolId: queue.fetch-pending
+    toolId: builtin.datastore.query_documents
     params:
-      source: "${inputs.taskSource}"
+      collection: "${inputs.taskSource}"
+      filter: '{"status": "pending"}'
       limit: "${inputs.maxItems}"
-      status: pending
+      sort: '{"created_at": "asc"}'
     errorStrategy:
       type: skip
-      reason: 队列获取工具尚未实现，跳过
+      reason: 任务集合可能尚未创建，跳过
 
   - id: validate-tasks
     name: 校验任务数据
@@ -90,40 +91,57 @@ steps:
               maxDelayMs: 3000
         else:
           - id: execute-general-task
-            name: 执行通用任务（待实现）
-            type: tool
-            toolId: task.execute
-            params:
-              taskId: "${currentTask.id}"
-              type: "${currentTask.type}"
-              payload: "${currentTask.payload}"
-              dryRun: "${inputs.dryRun}"
-            errorStrategy:
-              type: skip
-              reason: 通用任务执行工具尚未实现，跳过
+            name: 执行通用任务
+            type: llm
+            scene: workflow
+            prompt: |
+              请根据以下任务信息决定执行策略并输出执行结果：
+
+              ## 任务信息
+              - 任务 ID：${currentTask.id}
+              - 任务类型：${currentTask.type}
+              - 任务载荷：${currentTask.payload}
+              - 试运行模式：${inputs.dryRun}
+
+              支持的任务类型：
+              - notification：发送通知
+              - cleanup：清理过期数据
+              - transform：数据转换
+
+              如果是试运行模式，只输出将要执行的操作，不实际执行。
+
+              输出 JSON 格式：
+              {
+                "taskId": "任务ID",
+                "action": "执行的操作描述",
+                "success": true/false,
+                "message": "执行结果说明"
+              }
       - id: update-task-status
-        name: 更新任务状态（待实现）
+        name: 更新任务状态
         type: tool
-        toolId: queue.update-status
+        toolId: builtin.datastore.update_document
         params:
-          taskId: "${currentTask.id}"
-          status: completed
+          collection: "${inputs.taskSource}"
+          documentId: "${currentTask.id}"
+          data: '{"status": "completed"}'
         errorStrategy:
           type: skip
-          reason: 队列状态更新工具尚未实现，跳过
+          reason: 状态更新失败不阻塞后续任务处理
 
   - id: collect-results
-    name: 汇总处理结果（待实现）
+    name: 汇总处理结果
     type: tool
-    toolId: queue.collect-results
+    toolId: builtin.datastore.query_documents
     params:
-      source: "${inputs.taskSource}"
-      batchId: "${steps.fetch-task-list.output.result.batchId}"
+      collection: "${inputs.taskSource}"
+      filter: '{"status": {"$ne": "pending"}}'
+      limit: "${inputs.maxItems}"
     dependsOn:
       - process-each-task
     errorStrategy:
       type: skip
-      reason: 结果汇总工具尚未实现，跳过
+      reason: 结果汇总失败不影响已完成的处理
 
   - id: generate-summary
     name: 生成处理汇总报告

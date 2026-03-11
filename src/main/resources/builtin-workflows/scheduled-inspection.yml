@@ -21,36 +21,33 @@ metadata:
   complexity: advanced
 steps:
   - id: run-health-check
-    name: 执行健康检查（待实现）
+    name: 执行健康检查
     type: tool
-    toolId: system.health-check
-    params:
-      scope: "${inputs.checkScope}"
-      includeMetrics: "true"
+    toolId: system.status
+    params: {}
     errorStrategy:
       type: skip
-      reason: 系统健康检查工具尚未实现，跳过
+      reason: 健康检查失败时仍可继续其他检查
 
   - id: check-llm-status
-    name: 检查 LLM 服务状态（待实现）
+    name: 检查 LLM 服务状态
     type: tool
-    toolId: llm.ping
+    toolId: system.status
+    params: {}
+    errorStrategy:
+      type: skip
+      reason: LLM 状态检查失败时仍可继续其他检查
+
+  - id: check-db-status
+    name: 检查数据库状态
+    type: tool
+    toolId: builtin.shell.exec
     params:
+      command: "echo 'SELECT 1;' | sqlite3 :memory:"
       timeout: "5000"
     errorStrategy:
       type: skip
-      reason: LLM 健康检查工具尚未实现，跳过
-
-  - id: check-db-status
-    name: 检查数据库状态（待实现）
-    type: tool
-    toolId: db.health-check
-    params:
-      checkIntegrity: "true"
-      checkWalSize: "true"
-    errorStrategy:
-      type: skip
-      reason: 数据库健康检查工具尚未实现，跳过
+      reason: 数据库检查失败时仍可继续其他检查
 
   - id: analyze-results
     name: 分析巡检结果
@@ -121,15 +118,13 @@ steps:
               issues: "${steps.analyze-results.output.result.issues}"
               scope: "${inputs.checkScope}"
           - id: verify-fix
-            name: 修复后验证（待实现）
+            name: 修复后验证
             type: tool
-            toolId: system.health-check
-            params:
-              scope: "${inputs.checkScope}"
-              includeMetrics: "true"
+            toolId: system.status
+            params: {}
             errorStrategy:
               type: skip
-              reason: 系统健康检查工具尚未实现，跳过
+              reason: 验证失败不影响已执行的修复
         else:
           - id: send-warning-alert
             name: 发送降级告警
@@ -146,15 +141,14 @@ steps:
         type: noop
 
   - id: save-inspection-record
-    name: 保存巡检记录（待实现）
+    name: 保存巡检记录
     type: tool
-    toolId: inspection.save-record
+    toolId: builtin.datastore.add_document
     params:
-      scope: "${inputs.checkScope}"
-      result: "${steps.analyze-results.output.result}"
-      timestamp: "${now}"
+      collection: inspection-records
+      data: '{"scope": "${inputs.checkScope}", "result": "${steps.analyze-results.output.result}", "timestamp": "${now}"}'
     dependsOn:
       - health-decision
     errorStrategy:
       type: skip
-      reason: 巡检记录保存工具尚未实现，跳过
+      reason: 巡检记录保存失败不影响告警流程

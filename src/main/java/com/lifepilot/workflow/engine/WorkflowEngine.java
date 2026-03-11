@@ -259,26 +259,25 @@ public class WorkflowEngine {
             return;
         }
 
-        Thread.ofVirtual().name("workflow-crash-recovery").start(() -> {
-            try {
-                log.info("开始崩溃恢复：扫描中断的工作流实例");
-                List<WorkflowInstance> interrupted = repository.findInstancesByState(
-                        WorkflowState.RUNNING, WorkflowState.WAITING, WorkflowState.PAUSED);
+        // 同步执行崩溃恢复，确保在触发器注册完成后、cron 触发新实例之前完成
+        try {
+            log.info("开始崩溃恢复：扫描中断的工作流实例");
+            List<WorkflowInstance> interrupted = repository.findInstancesByState(
+                    WorkflowState.RUNNING, WorkflowState.WAITING, WorkflowState.PAUSED);
 
-                if (interrupted.isEmpty()) {
-                    log.info("崩溃恢复完成：无中断实例");
-                    return;
-                }
-
-                log.info("崩溃恢复：发现 {} 个中断实例", interrupted.size());
-                for (WorkflowInstance instance : interrupted) {
-                    recoverInstance(instance);
-                }
-                log.info("崩溃恢复完成");
-            } catch (Exception e) {
-                log.error("崩溃恢复过程发生异常", e);
+            if (interrupted.isEmpty()) {
+                log.info("崩溃恢复完成：无中断实例");
+                return;
             }
-        });
+
+            log.info("崩溃恢复：发现 {} 个中断实例", interrupted.size());
+            for (WorkflowInstance instance : interrupted) {
+                recoverInstance(instance);
+            }
+            log.info("崩溃恢复完成");
+        } catch (Exception e) {
+            log.error("崩溃恢复过程发生异常", e);
+        }
     }
 
     // ==================== 内部执行逻辑 ====================
@@ -812,6 +811,13 @@ public class WorkflowEngine {
                     WorkflowDefinition definition = registry.find(instance.workflowId()).orElse(null);
                     if (definition == null) {
                         markRecoveryFailed(instance, "工作流定义未找到");
+                        return;
+                    }
+                    // 预检资源可用性，避免执行到步骤时才失败
+                    List<String> missingResources = registry.checkResourceAvailability(definition);
+                    if (!missingResources.isEmpty()) {
+                        markRecoveryFailed(instance,
+                                "工作流定义引用了不可用的资源: " + String.join(", ", missingResources));
                         return;
                     }
                     Set<String> completed = new HashSet<>(instance.completedStepIds());
