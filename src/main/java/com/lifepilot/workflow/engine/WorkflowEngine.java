@@ -399,20 +399,52 @@ public class WorkflowEngine {
                 // 等待所有并发步骤完成
                 CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).join();
 
-                // 检查结果
-                for (CompletableFuture<StepResult> future : futures) {
-                    StepResult result = future.join();
+                // 收集所有结果，统一聚合判断
+                List<StepResult> results = futures.stream()
+                        .map(CompletableFuture::join)
+                        .toList();
+
+                // 收集失败信息（error 不为空 或 instance 状态为 FAILED）
+                List<String> failedMessages = new ArrayList<>();
+                WorkflowInstance nonRunningInstance = null;
+
+                for (StepResult result : results) {
                     if (result.error() != null) {
                         log.error("并发步骤执行失败: stepId={}, error={}",
                                 result.stepId(), result.error().getMessage());
-                        return failWorkflow(instance,
-                                "并发步骤执行失败: stepId=" + result.stepId());
+                        failedMessages.add("stepId=" + result.stepId()
+                                + ": " + result.error().getMessage());
+                    } else if (result.instance() != null
+                            && result.instance().state() == WorkflowState.FAILED) {
+                        log.error("并发步骤执行失败: stepId={}, state=FAILED",
+                                result.stepId());
+                        String reason = result.instance().failureReason() != null
+                                ? result.instance().failureReason()
+                                : "未知原因";
+                        failedMessages.add("stepId=" + result.stepId()
+                                + ": " + reason);
+                    } else if (result.instance() != null
+                            && result.instance().state() != WorkflowState.RUNNING
+                            && nonRunningInstance == null) {
+                        // 非 RUNNING 且非 FAILED 状态（PAUSED/WAITING）
+                        nonRunningInstance = result.instance();
                     }
-                    if (result.instance() != null
-                            && result.instance().state() != WorkflowState.RUNNING) {
-                        // 非 RUNNING 状态（PAUSED/WAITING/FAILED）
-                        return result.instance();
-                    }
+                }
+
+                // 存在失败步骤 → 只调用一次 failWorkflow，合并错误信息
+                if (!failedMessages.isEmpty()) {
+                    String mergedReason = "并发步骤执行失败: "
+                            + String.join("; ", failedMessages);
+                    return failWorkflow(instance, mergedReason);
+                }
+
+                // 存在非 RUNNING 状态（PAUSED/WAITING）→ 返回该实例
+                if (nonRunningInstance != null) {
+                    return nonRunningInstance;
+                }
+
+                // 所有步骤都成功 → 将所有 stepId 加入 completedStepIds
+                for (StepResult result : results) {
                     completedStepIds.add(result.stepId());
                 }
                 // 合并最新 context（并发步骤可能修改了 context）
