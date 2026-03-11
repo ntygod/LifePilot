@@ -9,6 +9,7 @@ package com.lifepilot.interaction.web.sse;
  * <ul>
  *   <li>Chat 模块：{@link #TOKEN}, {@link #UI}, {@link #DONE}, {@link #ERROR}, {@link #HEARTBEAT}</li>
  *   <li>A2A 模块：{@link #TASK_STATUS_UPDATE}, {@link #TASK_ARTIFACT_UPDATE}, {@link #TASK_COMPLETE}</li>
+ *   <li>MCP 模块：{@link #MCP_STATUS_SNAPSHOT}, {@link #MCP_STATUS_CHANGE}</li>
  * </ul>
  * 
  * @author zsg
@@ -64,6 +65,13 @@ public final class SseEventType {
 
     /** 主动通知事件 */
     public static final String NOTIFICATION = "notification";
+
+    // MCP 模块事件类型
+    /** MCP Server 状态初始快照事件 */
+    public static final String MCP_STATUS_SNAPSHOT = "mcp-status-snapshot";
+
+    /** MCP Server 状态变化事件 */
+    public static final String MCP_STATUS_CHANGE = "mcp-status-change";
 
     // 媒体模块事件类型
     /** 媒体数据事件（图片/音频等大体积二进制数据） */
