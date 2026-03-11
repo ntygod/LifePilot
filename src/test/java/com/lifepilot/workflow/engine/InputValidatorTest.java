@@ -1,0 +1,196 @@
+package com.lifepilot.workflow.engine;
+
+import java.util.HashMap;
+import java.util.Map;
+
+import org.junit.jupiter.api.Test;
+
+import com.lifepilot.workflow.model.WorkflowInputParam;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+/**
+ * InputValidator 单元测试，覆盖正确性属性 P1-P4。
+ *
+ * @author zsg
+ * @since 2026-03-11
+ */
+class InputValidatorTest {
+
+    // ── P1: 必填参数完整性 ──────────────────────────────
+
+    @Test
+    void P1_缺少必填参数_校验失败() {
+        var paramDefs = Map.of(
+                "topic", new WorkflowInputParam("topic", "string", true, null, "研究主题")
+        );
+
+        var result = InputValidator.validate(paramDefs, Map.of());
+
+        assertFalse(result.valid());
+        assertEquals(1, result.missingParams().size());
+        assertTrue(result.missingParams().contains("topic"));
+    }
+
+    @Test
+    void P1_缺少多个必填参数_全部列出() {
+        var paramDefs = Map.of(
+                "topic", new WorkflowInputParam("topic", "string", true, null, null),
+                "depth", new WorkflowInputParam("depth", "string", true, null, null)
+        );
+
+        var result = InputValidator.validate(paramDefs, Map.of());
+
+        assertFalse(result.valid());
+        assertEquals(2, result.missingParams().size());
+        assertTrue(result.missingParams().contains("topic"));
+        assertTrue(result.missingParams().contains("depth"));
+    }
+
+    @Test
+    void P1_必填参数已提供_校验通过() {
+        var paramDefs = Map.of(
+                "topic", new WorkflowInputParam("topic", "string", true, null, null)
+        );
+
+        var result = InputValidator.validate(paramDefs, Map.of("topic", "AI"));
+
+        assertTrue(result.valid());
+        assertTrue(result.missingParams().isEmpty());
+        assertEquals("AI", result.mergedInputs().get("topic"));
+    }
+
+    @Test
+    void P1_必填参数有默认值且用户未提供_校验通过() {
+        var paramDefs = Map.of(
+                "topic", new WorkflowInputParam("topic", "string", true, "默认主题", null)
+        );
+
+        var result = InputValidator.validate(paramDefs, Map.of());
+
+        assertTrue(result.valid());
+        assertTrue(result.missingParams().isEmpty());
+        assertEquals("默认主题", result.mergedInputs().get("topic"));
+    }
+
+    // ── P2: 默认值填充幂等性 ──────────────────────────────
+
+    @Test
+    void P2_可选参数未提供且有默认值_填入默认值() {
+        var paramDefs = Map.of(
+                "depth", new WorkflowInputParam("depth", "string", false, "standard", "搜索深度")
+        );
+
+        var result = InputValidator.validate(paramDefs, Map.of());
+
+        assertTrue(result.valid());
+        assertEquals("standard", result.mergedInputs().get("depth"));
+    }
+
+    @Test
+    void P2_可选参数已提供_保留用户值() {
+        var paramDefs = Map.of(
+                "depth", new WorkflowInputParam("depth", "string", false, "standard", null)
+        );
+
+        var result = InputValidator.validate(paramDefs, Map.of("depth", "deep"));
+
+        assertTrue(result.valid());
+        assertEquals("deep", result.mergedInputs().get("depth"));
+    }
+
+    @Test
+    void P2_可选参数未提供且无默认值_不出现在mergedInputs() {
+        var paramDefs = Map.of(
+                "note", new WorkflowInputParam("note", "string", false, null, null)
+        );
+
+        var result = InputValidator.validate(paramDefs, Map.of());
+
+        assertTrue(result.valid());
+        assertFalse(result.mergedInputs().containsKey("note"));
+    }
+
+    // ── P3: 空定义透传 ──────────────────────────────────
+
+    @Test
+    void P3_空paramDefs_直接通过() {
+        var result = InputValidator.validate(Map.of(), Map.of("extra", "value"));
+
+        assertTrue(result.valid());
+        assertTrue(result.missingParams().isEmpty());
+        assertEquals("value", result.mergedInputs().get("extra"));
+    }
+
+    @Test
+    void P3_null_paramDefs_直接通过() {
+        var result = InputValidator.validate(null, Map.of("key", "val"));
+
+        assertTrue(result.valid());
+        assertEquals("val", result.mergedInputs().get("key"));
+    }
+
+    @Test
+    void P3_null_userInputs_空定义_通过() {
+        var result = InputValidator.validate(Map.of(), null);
+
+        assertTrue(result.valid());
+        assertTrue(result.mergedInputs().isEmpty());
+    }
+
+    // ── P4: 多余参数忽略 ──────────────────────────────────
+
+    @Test
+    void P4_多余参数保留在mergedInputs中() {
+        var paramDefs = Map.of(
+                "topic", new WorkflowInputParam("topic", "string", true, null, null)
+        );
+        var userInputs = new HashMap<String, Object>();
+        userInputs.put("topic", "AI");
+        userInputs.put("extraParam", "should-be-kept");
+
+        var result = InputValidator.validate(paramDefs, userInputs);
+
+        assertTrue(result.valid());
+        assertEquals("AI", result.mergedInputs().get("topic"));
+        assertEquals("should-be-kept", result.mergedInputs().get("extraParam"));
+    }
+
+    @Test
+    void P4_多余参数不影响校验结果() {
+        var paramDefs = Map.of(
+                "topic", new WorkflowInputParam("topic", "string", true, null, null)
+        );
+        var userInputs = new HashMap<String, Object>();
+        userInputs.put("unknownField", 42);
+
+        var result = InputValidator.validate(paramDefs, userInputs);
+
+        assertFalse(result.valid());
+        assertTrue(result.missingParams().contains("topic"));
+        assertEquals(42, result.mergedInputs().get("unknownField"));
+    }
+
+    // ── 综合场景 ──────────────────────────────────────────
+
+    @Test
+    void 混合场景_必填加可选加多余() {
+        var paramDefs = Map.of(
+                "topic", new WorkflowInputParam("topic", "string", true, null, null),
+                "depth", new WorkflowInputParam("depth", "string", false, "standard", null),
+                "format", new WorkflowInputParam("format", "string", true, null, null)
+        );
+        var userInputs = new HashMap<String, Object>();
+        userInputs.put("topic", "量子计算");
+        userInputs.put("extra", "bonus");
+
+        var result = InputValidator.validate(paramDefs, userInputs);
+
+        assertFalse(result.valid());
+        assertEquals(1, result.missingParams().size());
+        assertTrue(result.missingParams().contains("format"));
+        assertEquals("量子计算", result.mergedInputs().get("topic"));
+        assertEquals("standard", result.mergedInputs().get("depth"));
+        assertEquals("bonus", result.mergedInputs().get("extra"));
+    }
+}
