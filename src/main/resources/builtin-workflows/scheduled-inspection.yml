@@ -21,35 +21,36 @@ metadata:
   complexity: advanced
 steps:
   - id: run-health-check
-    name: 执行健康检查
+    name: 执行健康检查（待实现）
     type: tool
     toolId: system.health-check
     params:
       scope: "${inputs.checkScope}"
       includeMetrics: "true"
     errorStrategy:
-      type: retry
-      maxAttempts: 2
-      initialDelayMs: 2000
-      maxDelayMs: 8000
+      type: skip
+      reason: 系统健康检查工具尚未实现，跳过
 
   - id: check-llm-status
-    name: 检查 LLM 服务状态
+    name: 检查 LLM 服务状态（待实现）
     type: tool
     toolId: llm.ping
     params:
       timeout: "5000"
     errorStrategy:
       type: skip
-      reason: LLM 服务不可用时跳过，不阻塞其他检查
+      reason: LLM 健康检查工具尚未实现，跳过
 
   - id: check-db-status
-    name: 检查数据库状态
+    name: 检查数据库状态（待实现）
     type: tool
     toolId: db.health-check
     params:
       checkIntegrity: "true"
       checkWalSize: "true"
+    errorStrategy:
+      type: skip
+      reason: 数据库健康检查工具尚未实现，跳过
 
   - id: analyze-results
     name: 分析巡检结果
@@ -97,7 +98,7 @@ steps:
           - id: send-critical-alert
             name: 发送紧急告警
             type: tool
-            toolId: notification.send
+            toolId: builtin.interact.notify
             params:
               channel: urgent
               title: "系统紧急告警"
@@ -120,17 +121,20 @@ steps:
               issues: "${steps.analyze-results.output.result.issues}"
               scope: "${inputs.checkScope}"
           - id: verify-fix
-            name: 修复后验证
+            name: 修复后验证（待实现）
             type: tool
             toolId: system.health-check
             params:
               scope: "${inputs.checkScope}"
               includeMetrics: "true"
+            errorStrategy:
+              type: skip
+              reason: 系统健康检查工具尚未实现，跳过
         else:
           - id: send-warning-alert
             name: 发送降级告警
             type: tool
-            toolId: notification.send
+            toolId: builtin.interact.notify
             params:
               channel: webhook
               title: "系统降级告警"
@@ -142,7 +146,7 @@ steps:
         type: noop
 
   - id: save-inspection-record
-    name: 保存巡检记录
+    name: 保存巡检记录（待实现）
     type: tool
     toolId: inspection.save-record
     params:
@@ -153,4 +157,4 @@ steps:
       - health-decision
     errorStrategy:
       type: skip
-      reason: 记录保存失败不影响巡检流程
+      reason: 巡检记录保存工具尚未实现，跳过
