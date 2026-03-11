@@ -104,11 +104,15 @@ public class WorkflowAutoConfiguration {
                                               WorkflowYamlPrinter printer,
                                               WorkflowConfigProperties config,
                                               TaskScheduler workflowTaskScheduler,
-                                              DagScheduler dagScheduler) {
+                                              DagScheduler dagScheduler,
+                                              DynamicToolRegistry toolRegistry,
+                                              SkillRegistry skillRegistry) {
         var registry = new WorkflowRegistry(repository, parser, printer);
         registry.setConfigProperties(config);
         registry.setTaskScheduler(workflowTaskScheduler);
         registry.setDagScheduler(dagScheduler);
+        registry.setToolRegistry(toolRegistry);
+        registry.setSkillRegistry(skillRegistry);
         log.info("工作流注册中心初始化完成");
         return registry;
     }
