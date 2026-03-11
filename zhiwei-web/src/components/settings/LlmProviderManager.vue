@@ -79,9 +79,12 @@ const sceneOptions = [
   { value: 'proactive_reasoning', label: '主动推理' },
   { value: 'code_generation', label: '代码生成' },
   { value: 'embedding', label: '向量化' },
-  { value: 'agent-reasoning', label: '智能体推理' },
-  { value: 'agent-tool-calling', label: '智能体工具调用' },
-  { value: 'agent-generation', label: '智能体生成' },
+  { value: 'agent_reasoning', label: '智能体推理' },
+  { value: 'agent_tool_calling', label: '智能体工具调用' },
+  { value: 'agent_generation', label: '智能体生成' },
+  { value: 'skill_generation', label: '技能生成' },
+  { value: 'knowledge_rerank', label: '知识库精排' },
+  { value: 'document_summary', label: '文档总结' },
 ]
 
 const deleteConfirmMessage = computed(() => {
@@ -102,7 +105,7 @@ function resetForm() {
     modelName: '',
     timeoutSeconds: 30,
     priority: 0,
-    scenes: ['chat', 'agent-reasoning', 'agent-tool-calling', 'agent-generation'],
+    scenes: ['chat', 'agent_reasoning', 'agent_tool_calling', 'agent_generation'],
     capabilities: ['CHAT'],
     enabled: true,
     costPerInputToken: 0,

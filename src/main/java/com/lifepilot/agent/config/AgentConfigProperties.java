@@ -42,11 +42,11 @@ public class AgentConfigProperties {
         private int maxConsecutiveBlocks = 3;
         private int maxConsecutiveParseFailures = 3;
         private Map<String, String> sceneMapping = Map.of(
-                "understanding", "agent-reasoning",
-                "planning", "agent-reasoning",
-                "executing", "agent-tool-calling",
-                "reflecting", "agent-reasoning",
-                "responding", "agent-generation"
+                "understanding", "agent_reasoning",
+                "planning", "agent_reasoning",
+                "executing", "agent_tool_calling",
+                "reflecting", "agent_reasoning",
+                "responding", "agent_generation"
         );
 
         public int getMaxIterations() { return maxIterations; }
