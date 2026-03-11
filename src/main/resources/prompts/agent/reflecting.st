@@ -27,3 +27,37 @@
 如果当前工具结果与上一轮高度相似：设置 satisfied=false, needsReplanning=false，在 summary 中说明"检测到重复结果"，建议直接告知用户数据现状。
 </duplicate_result_detection>
 </instructions>
+
+<output_format>
+你必须严格输出以下 JSON 格式，不要包含任何其他文字或 markdown 标记。
+注意：下面示例中的外层花括号使用全角字符，仅为避免模板引擎将其识别为占位符；实际输出时请使用标准 JSON 对象。
+
+｛
+  "satisfied": true,
+  "adjustmentPlan": null,
+  "summary": "评估总结",
+  "needsReplanning": false
+｝
+
+字段说明：
+- satisfied（必填）：执行结果是否满足用户目标，布尔值
+- adjustmentPlan（可选）：需要重规划时的调整方向，不需要时为 null
+- summary（必填）：评估总结，一句话概括评估结论
+- needsReplanning（必填）：是否需要重新规划，布尔值
+
+示例 1 — 执行成功：
+｛
+  "satisfied": true,
+  "adjustmentPlan": null,
+  "summary": "待办已成功创建，内容和时间均符合用户要求",
+  "needsReplanning": false
+｝
+
+示例 2 — 需要重规划：
+｛
+  "satisfied": false,
+  "adjustmentPlan": "日程查询返回空结果，需要扩大时间范围从本周改为本月重新查询",
+  "summary": "未找到匹配的日程，需要调整查询范围",
+  "needsReplanning": true
+｝
+</output_format>
