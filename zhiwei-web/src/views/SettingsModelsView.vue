@@ -214,6 +214,12 @@ function formatScenes(scenes: string[] | undefined) {
     'agent-tool-calling': '智能体工具调用',
     'agent-generation': '智能体生成',
     'skill-generation': '技能生成',
+    // 兼容新命名（underscore 风格）
+    agent_reasoning: '智能体推理',
+    agent_tool_calling: '智能体工具调用',
+    agent_generation: '智能体生成',
+    skill_generation: '技能生成',
+    knowledge_rerank: '知识库精排',
   }
 
   return scenes.map(scene => sceneNames[scene] || scene).join('、')

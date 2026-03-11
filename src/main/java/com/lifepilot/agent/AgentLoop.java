@@ -958,7 +958,7 @@ public class AgentLoop {
                                          AssembledContext assembledContext) {
         try {
             // 场景统一由 AgentPhase 映射，避免将 preferredProvider 误用为场景名
-            // 这样 ProviderConfig.scenes 只需维护标准场景常量（如 intent_understanding、agent-reasoning 等）
+            // 这样 ProviderConfig.scenes 只需维护标准场景常量（如 intent_understanding、agent_reasoning 等）
             String scene = mapPhaseToScene(state.phase());
 
             // Fix 9: 优先使用 preferredProvider 路由，未指定时回退到 mapPhaseToScene
@@ -1040,11 +1040,19 @@ public class AgentLoop {
                 
             } catch (Exception e) {
                 // .entity() 解析失败，降级到手动解析（复用缓存的响应文本，不重新调用 LLM）
-                log.warn("entity() 解析失败，降级到手动解析: phase={}, error={}, traceId={}", 
-                         state.phase(), e.getMessage(), state.traceId());
-                
                 if (cachedResponseText != null) {
-                    // 直接对缓存文本执行 ActionParser.parse()，避免第二次 LLM 调用
+                    String trimmed = cachedResponseText.strip();
+                    // 自然语言文本检测：function calling 后 LLM 返回自然语言是预期行为，静默降级
+                    if (!trimmed.startsWith("{") && !trimmed.startsWith("[")
+                            && !trimmed.contains("\"action\":") && !trimmed.contains("\"type\":")
+                            && !trimmed.contains("\"action\" :")) {
+                        log.debug("entity() 解析失败，响应为自然语言文本，直接降级为 ResponseGenerated: phase={}, length={}, traceId={}",
+                                  state.phase(), trimmed.length(), state.traceId());
+                        return new Action.ResponseGenerated(cachedResponseText, List.of());
+                    }
+                    // 看起来像 JSON 但解析失败：保留 WARN 并走 ActionParser 完整解析链
+                    log.warn("entity() 解析失败，降级到手动解析: phase={}, error={}, traceId={}",
+                             state.phase(), e.getMessage(), state.traceId());
                     return actionParser.parse(state.phase(), cachedResponseText);
                 }
                 // 理论上不会到达此处（异常在 .entity() 阶段抛出，cachedResponseText 已赋值）

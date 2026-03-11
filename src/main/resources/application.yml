@@ -43,11 +43,11 @@ lifepilot:
       max-iterations: 50
       max-consecutive-blocks: 3
       scene-mapping:
-        understanding: agent-reasoning
-        planning: agent-reasoning
-        executing: agent-tool-calling
-        reflecting: agent-reasoning
-        responding: agent-generation
+        understanding: agent_reasoning
+        planning: agent_reasoning
+        executing: agent_tool_calling
+        reflecting: agent_reasoning
+        responding: agent_generation
     budget:
       default-max-tokens: 32000
       default-max-steps: 20

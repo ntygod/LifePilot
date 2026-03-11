@@ -146,7 +146,7 @@ class SkillGapDetectorTest {
         when(skillRegistry.listSummaries()).thenReturn(List.of("todo: 待办管理"));
         when(skillRegistry.search("帮我查汇率")).thenReturn(List.of());
         when(llmRouter.call(eq(LlmScene.SKILL_GENERATION), anyString(), isNull()))
-                .thenThrow(new LlmUnavailableException("无可用 Provider", "skill-generation", List.of()));
+                .thenThrow(new LlmUnavailableException("无可用 Provider", "skill_generation", List.of()));
 
         var result = detector.detectGap("帮我查汇率");
 

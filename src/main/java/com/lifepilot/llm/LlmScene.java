@@ -31,13 +31,15 @@ public final class LlmScene {
     /** 主动推理 */
     public static final String PROACTIVE_REASONING = "proactive_reasoning";
     /** Agent 推理（意图理解 / 任务规划 / 反思评估） */
-    public static final String AGENT_REASONING = "agent-reasoning";
+    public static final String AGENT_REASONING = "agent_reasoning";
     /** Agent 工具调用 */
-    public static final String AGENT_TOOL_CALLING = "agent-tool-calling";
+    public static final String AGENT_TOOL_CALLING = "agent_tool_calling";
     /** Agent 响应生成 */
-    public static final String AGENT_GENERATION = "agent-generation";
+    public static final String AGENT_GENERATION = "agent_generation";
     /** Skill 生成 */
-    public static final String SKILL_GENERATION = "skill-generation";
+    public static final String SKILL_GENERATION = "skill_generation";
+    /** 知识库精排 */
+    public static final String KNOWLEDGE_RERANK = "knowledge_rerank";
 
     private LlmScene() {
         // 阻止实例化
@@ -54,7 +56,7 @@ public final class LlmScene {
                 KNOWLEDGE_EXTRACTION, MEMORY_COMPRESSION, DOCUMENT_SUMMARY,
                 EMBEDDING, PROACTIVE_REASONING,
                 AGENT_REASONING, AGENT_TOOL_CALLING, AGENT_GENERATION,
-                SKILL_GENERATION
+                SKILL_GENERATION, KNOWLEDGE_RERANK
         );
     }
 }
