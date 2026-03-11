@@ -61,18 +61,6 @@ public class WorkingMemory {
     }
 
     /**
-     * 兼容旧调用方的构造函数。
-     *
-     * <p>在未显式提供策略实例时，使用默认策略。</p>
-     */
-    public WorkingMemory(MemoryProperties properties, EpisodicMemory episodicMemory) {
-        this(properties, episodicMemory,
-                new TokenBudgetAllocator(properties),
-                new DefaultSlotEvictionPolicy(),
-                null);
-    }
-
-    /**
      * 追加槽位到会话，超预算时执行重要度加权淘汰。
      *
      * @param sessionId 会话 ID
@@ -147,16 +135,6 @@ public class WorkingMemory {
         synchronized (slots) {
             return List.copyOf(slots);
         }
-    }
-
-    /**
-     * 获取会话的 Token 总使用量。
-     *
-     * @param sessionId 会话 ID
-     * @return Token 总量，会话不存在时返回 0
-     */
-    public int getTokenCount(String sessionId) {
-        return tokenUsage.getOrDefault(sessionId, 0);
     }
 
     /**
@@ -245,34 +223,7 @@ public class WorkingMemory {
         return record;
     }
 
-    /**
-     * 兼容旧调用方的 flush 重载。
-     *
-     * <p>
-     * 仍然支持只传入 {@code sessionId} 的用法，内部使用默认 goal。
-     * 建议新的调用路径优先使用 {@link #flush(String, String)}。
-     * </p>
-     *
-     * @param sessionId 会话 ID
-     */
-    public void flush(String sessionId) {
-        flush(sessionId, "会话记录");
-    }
 
-    /**
-     * 会话结束高层封装方法。
-     *
-     * <p>
-     * 调用方应在「会话真正结束」时调用此方法，而不是依赖空闲/过期清理任务。
-     * </p>
-     *
-     * @param sessionId 会话 ID
-     * @param goal      会话目标/意图摘要
-     * @return 持久化后的 {@link ConversationRecord}，如无可持久化消息则返回 {@code null}
-     */
-    public ConversationRecord endSession(String sessionId, String goal) {
-        return flush(sessionId, goal);
-    }
 
     /**
      * 清理空闲会话：超过给定空闲阈值后，自动 flush 到 L2 并从 L1 中移除。
@@ -306,7 +257,7 @@ public class WorkingMemory {
 
         for (var sessionId : idleSessions) {
             try {
-                flush(sessionId);
+                flush(sessionId, "空闲会话清理");
                 log.info("清理空闲会话并 flush 到 L2: sessionId={}, idleMinutes>{}",
                         sessionId, idleThreshold.toMinutes());
             } catch (Exception e) {
