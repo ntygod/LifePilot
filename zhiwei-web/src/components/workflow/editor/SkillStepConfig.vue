@@ -1,14 +1,15 @@
 <!--
   Skill 步骤配置组件。
-  配置 skillId（通过搜索选择器从已注册 Skill 中选择）和 params（JSON 格式）。
+  配置 skillId（通过搜索选择器从已注册 Skill 中选择）和 params。
+  Skill 无 inputSchema，SchemaParamsEditor 自动回退到 JSON 编辑模式。
 -->
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
 import type { SkillStepConfig } from '@/composables/useWorkflowModel'
-import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { useSkillStore } from '@/stores/skill'
 import ResourceCombobox from './ResourceCombobox.vue'
+import SchemaParamsEditor from './SchemaParamsEditor.vue'
 import type { ResourceOption } from './ResourceCombobox.vue'
 
 const props = defineProps<{
@@ -34,24 +35,12 @@ const skillOptions = computed<ResourceOption[]>(() =>
   }))
 )
 
-/** params 序列化为 JSON 文本展示 */
-const paramsText = computed(() => {
-  const entries = Object.entries(props.modelValue.params ?? {})
-  return entries.length > 0 ? JSON.stringify(props.modelValue.params, null, 2) : ''
-})
-
 function updateSkillId(val: string) {
-  emit('update:modelValue', { ...props.modelValue, skillId: val })
+  emit('update:modelValue', { ...props.modelValue, skillId: val, params: {} })
 }
 
-function updateParams(val: string | number) {
-  const text = String(val)
-  try {
-    const parsed = text.trim() ? JSON.parse(text) : {}
-    emit('update:modelValue', { ...props.modelValue, params: parsed })
-  } catch {
-    // JSON 解析失败时不更新，保留用户输入
-  }
+function updateParams(val: Record<string, unknown>) {
+  emit('update:modelValue', { ...props.modelValue, params: val })
 }
 </script>
 
@@ -69,15 +58,10 @@ function updateParams(val: string | number) {
         @update:model-value="updateSkillId"
       />
     </div>
-    <div class="space-y-1.5">
-      <Label class="text-xs">参数（JSON）</Label>
-      <Textarea
-        :model-value="paramsText"
-        placeholder='{"key": "value"}'
-        rows="4"
-        class="text-sm font-mono"
-        @update:model-value="updateParams"
-      />
-    </div>
+    <SchemaParamsEditor
+      :model-value="modelValue.params ?? {}"
+      :schema="null"
+      @update:model-value="updateParams"
+    />
   </div>
 </template>
