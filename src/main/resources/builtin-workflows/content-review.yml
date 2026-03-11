@@ -26,12 +26,15 @@ metadata:
   complexity: advanced
 steps:
   - id: preprocess
-    name: 内容预处理
+    name: 内容预处理（待实现）
     type: tool
     toolId: text.normalize
     params:
       text: "${inputs.content}"
       stripHtml: "true"
+    errorStrategy:
+      type: skip
+      reason: 文本规范化工具尚未实现，跳过
 
   - id: llm-risk-analysis
     name: LLM 风险分析
@@ -64,7 +67,7 @@ steps:
       - preprocess
 
   - id: keyword-scan
-    name: 关键词扫描
+    name: 关键词扫描（待实现）
     type: tool
     toolId: content.keyword-scan
     params:
@@ -72,6 +75,9 @@ steps:
       ruleSet: default
     dependsOn:
       - preprocess
+    errorStrategy:
+      type: skip
+      reason: 关键词扫描工具尚未实现，跳过
 
   - id: risk-decision
     name: 风险等级判定
@@ -102,31 +108,40 @@ steps:
         condition: "${steps.human-approval.output.approved} == true"
         then:
           - id: mark-approved-manual
-            name: 标记人工通过
+            name: 标记人工通过（待实现）
             type: tool
             toolId: content.update-status
             params:
               contentId: "${inputs.content}"
               status: approved
               reviewer: manual
+            errorStrategy:
+              type: skip
+              reason: 内容状态更新工具尚未实现，跳过
         else:
           - id: mark-rejected
-            name: 标记拒绝
+            name: 标记拒绝（待实现）
             type: tool
             toolId: content.update-status
             params:
               contentId: "${inputs.content}"
               status: rejected
               reviewer: manual
+            errorStrategy:
+              type: skip
+              reason: 内容状态更新工具尚未实现，跳过
     else:
       - id: auto-approve
-        name: 自动通过
+        name: 自动通过（待实现）
         type: tool
         toolId: content.update-status
         params:
           contentId: "${inputs.content}"
           status: approved
           reviewer: auto
+        errorStrategy:
+          type: skip
+          reason: 内容状态更新工具尚未实现，跳过
 
   - id: generate-report
     name: 生成审核报告
@@ -155,7 +170,7 @@ steps:
   - id: send-notification
     name: 发送审核通知
     type: tool
-    toolId: notification.send
+    toolId: builtin.interact.notify
     params:
       channel: webhook
       title: "内容审核完成"

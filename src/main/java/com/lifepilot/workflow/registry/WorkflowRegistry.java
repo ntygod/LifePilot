@@ -1,9 +1,12 @@
 package com.lifepilot.workflow.registry;
 
+import com.lifepilot.skill.registry.SkillRegistry;
+import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.workflow.config.WorkflowConfigProperties;
 import com.lifepilot.workflow.engine.DagScheduler;
 import com.lifepilot.workflow.model.Result;
 import com.lifepilot.workflow.model.WorkflowDefinition;
+import com.lifepilot.workflow.model.WorkflowStep;
 import com.lifepilot.workflow.parser.WorkflowYamlParser;
 import com.lifepilot.workflow.parser.WorkflowYamlPrinter;
 import com.lifepilot.workflow.repository.WorkflowRepository;
@@ -18,6 +21,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
@@ -85,6 +89,37 @@ public class WorkflowRegistry {
      */
     @Setter
     private DagScheduler dagScheduler;
+
+    /** 工具注册表引用，用于校验 ToolStep 的 toolId 存在性。 */
+    @Setter
+    private DynamicToolRegistry toolRegistry;
+
+    /** Skill 注册表引用，用于校验 SkillStep 的 skillId 存在性。 */
+    @Setter
+    private SkillRegistry skillRegistry;
+
+    /**
+     * 工作流定义校验结果。
+     *
+     * @param valid    是否通过基本校验（id/name/steps 非空 + DAG 无环）
+     * @param warnings 资源 ID 校验警告列表（不阻止注册）
+     */
+    public record ValidationResult(boolean valid, List<String> warnings) {
+        /** 校验通过且无警告。 */
+        public static ValidationResult ok() {
+            return new ValidationResult(true, List.of());
+        }
+
+        /** 校验失败。 */
+        public static ValidationResult fail() {
+            return new ValidationResult(false, List.of());
+        }
+
+        /** 校验通过但有警告。 */
+        public static ValidationResult withWarnings(List<String> warnings) {
+            return new ValidationResult(true, List.copyOf(warnings));
+        }
+    }
 
     /**
      * 构造 WorkflowRegistry，注入持久化仓储、YAML 解析器和打印器。
@@ -154,8 +189,14 @@ public class WorkflowRegistry {
      */
     public boolean register(WorkflowDefinition definition) {
         // 验证必填字段
-        if (!validate(definition)) {
+        ValidationResult validation = validate(definition);
+        if (!validation.valid()) {
             return false;
+        }
+
+        // 记录资源校验警告
+        if (!validation.warnings().isEmpty()) {
+            log.info("工作流定义注册（含 {} 条资源警告）: id={}", validation.warnings().size(), definition.id());
         }
 
         // 检查是否为更新
@@ -440,22 +481,22 @@ public class WorkflowRegistry {
      * @param definition 工作流定义
      * @return 验证通过返回 {@code true}，否则返回 {@code false}
      */
-    private boolean validate(WorkflowDefinition definition) {
+    private ValidationResult validate(WorkflowDefinition definition) {
         if (definition == null) {
             log.warn("工作流定义验证失败: 定义为 null");
-            return false;
+            return ValidationResult.fail();
         }
         if (definition.id() == null || definition.id().isBlank()) {
             log.warn("工作流定义验证失败: id 为空");
-            return false;
+            return ValidationResult.fail();
         }
         if (definition.name() == null || definition.name().isBlank()) {
             log.warn("工作流定义验证失败: name 为空");
-            return false;
+            return ValidationResult.fail();
         }
         if (definition.steps() == null || definition.steps().isEmpty()) {
             log.warn("工作流定义验证失败: steps 为空, id={}", definition.id());
-            return false;
+            return ValidationResult.fail();
         }
 
         // DAG 环检测
@@ -464,11 +505,40 @@ public class WorkflowRegistry {
                 dagScheduler.buildExecutionPlan(definition.steps());
             } catch (IllegalArgumentException e) {
                 log.warn("工作流定义验证失败: 步骤存在环依赖, id={}, error={}", definition.id(), e.getMessage());
-                return false;
+                return ValidationResult.fail();
             }
         }
 
-        return true;
+        // 资源 ID 存在性校验（仅警告，不阻止注册）
+        List<String> warnings = new ArrayList<>();
+        for (WorkflowStep step : definition.steps()) {
+            switch (step) {
+                case WorkflowStep.ToolStep ts -> {
+                    if (toolRegistry != null && toolRegistry.resolve(ts.toolId()).isEmpty()) {
+                        String msg = "步骤 '" + ts.id() + "' 引用的 toolId '" + ts.toolId() + "' 未在注册表中找到";
+                        warnings.add(msg);
+                        log.warn("工作流资源校验警告: workflowId={}, {}", definition.id(), msg);
+                    }
+                }
+                case WorkflowStep.SkillStep ss -> {
+                    if (skillRegistry != null && skillRegistry.find(ss.skillId()).isEmpty()) {
+                        String msg = "步骤 '" + ss.id() + "' 引用的 skillId '" + ss.skillId() + "' 未在注册表中找到";
+                        warnings.add(msg);
+                        log.warn("工作流资源校验警告: workflowId={}, {}", definition.id(), msg);
+                    }
+                }
+                case WorkflowStep.SubWorkflowStep sw -> {
+                    if (find(sw.workflowId()).isEmpty()) {
+                        String msg = "步骤 '" + sw.id() + "' 引用的 workflowId '" + sw.workflowId() + "' 未在注册表中找到";
+                        warnings.add(msg);
+                        log.warn("工作流资源校验警告: workflowId={}, {}", definition.id(), msg);
+                    }
+                }
+                default -> { /* LLM、Condition、Loop 等步骤无需校验外部资源 */ }
+            }
+        }
+
+        return warnings.isEmpty() ? ValidationResult.ok() : ValidationResult.withWarnings(warnings);
     }
 
     /**

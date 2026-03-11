@@ -27,7 +27,7 @@ metadata:
   complexity: advanced
 steps:
   - id: fetch-task-list
-    name: 获取待处理任务列表
+    name: 获取待处理任务列表（待实现）
     type: tool
     toolId: queue.fetch-pending
     params:
@@ -35,10 +35,8 @@ steps:
       limit: "${inputs.maxItems}"
       status: pending
     errorStrategy:
-      type: retry
-      maxAttempts: 3
-      initialDelayMs: 1000
-      maxDelayMs: 5000
+      type: skip
+      reason: 队列获取工具尚未实现，跳过
 
   - id: validate-tasks
     name: 校验任务数据
@@ -80,7 +78,7 @@ steps:
           - id: execute-data-sync
             name: 执行数据同步
             type: tool
-            toolId: sync.execute
+            toolId: builtin.sync.trigger
             params:
               taskId: "${currentTask.id}"
               payload: "${currentTask.payload}"
@@ -92,7 +90,7 @@ steps:
               maxDelayMs: 3000
         else:
           - id: execute-general-task
-            name: 执行通用任务
+            name: 执行通用任务（待实现）
             type: tool
             toolId: task.execute
             params:
@@ -101,12 +99,10 @@ steps:
               payload: "${currentTask.payload}"
               dryRun: "${inputs.dryRun}"
             errorStrategy:
-              type: retry
-              maxAttempts: 2
-              initialDelayMs: 500
-              maxDelayMs: 3000
+              type: skip
+              reason: 通用任务执行工具尚未实现，跳过
       - id: update-task-status
-        name: 更新任务状态
+        name: 更新任务状态（待实现）
         type: tool
         toolId: queue.update-status
         params:
@@ -114,10 +110,10 @@ steps:
           status: completed
         errorStrategy:
           type: skip
-          reason: 状态更新失败不阻塞后续任务处理
+          reason: 队列状态更新工具尚未实现，跳过
 
   - id: collect-results
-    name: 汇总处理结果
+    name: 汇总处理结果（待实现）
     type: tool
     toolId: queue.collect-results
     params:
@@ -125,6 +121,9 @@ steps:
       batchId: "${steps.fetch-task-list.output.result.batchId}"
     dependsOn:
       - process-each-task
+    errorStrategy:
+      type: skip
+      reason: 结果汇总工具尚未实现，跳过
 
   - id: generate-summary
     name: 生成处理汇总报告
@@ -157,7 +156,7 @@ steps:
   - id: send-summary
     name: 发送汇总通知
     type: tool
-    toolId: notification.send
+    toolId: builtin.interact.notify
     params:
       channel: webhook
       title: "批量任务处理完成"

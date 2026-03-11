@@ -26,7 +26,7 @@ steps:
   - id: search-web
     name: 搜索网络资料
     type: tool
-    toolId: web.search
+    toolId: builtin.web.search
     params:
       query: "${inputs.topic}"
       maxResults: "10"
@@ -37,7 +37,7 @@ steps:
       maxDelayMs: 5000
 
   - id: search-knowledge-base
-    name: 搜索知识库
+    name: 搜索知识库（待实现）
     type: tool
     toolId: knowledge.search
     params:
@@ -45,13 +45,14 @@ steps:
       topK: "5"
     errorStrategy:
       type: skip
-      reason: 知识库搜索失败时仍可基于网络资料继续
+      reason: 知识库搜索工具尚未实现，跳过
 
   - id: search-memory
     name: 搜索历史记忆
     type: skill
-    skillId: memory.search
+    skillId: memory
     params:
+      operation: search
       query: "${inputs.topic}"
       limit: "10"
     errorStrategy:
@@ -141,7 +142,7 @@ steps:
       - quality-review
 
   - id: publish-result
-    name: 发布调研成果
+    name: 发布调研成果（待实现）
     type: tool
     toolId: knowledge.ingest
     params:
@@ -152,20 +153,13 @@ steps:
     dependsOn:
       - approval-gate
     errorStrategy:
-      type: compensate
-      compensationStep:
-        id: rollback-publish
-        name: 回滚发布
-        type: tool
-        toolId: knowledge.delete
-        params:
-          title: "调研报告：${inputs.topic}"
-          reason: "发布失败自动回滚"
+      type: skip
+      reason: 知识库写入工具尚未实现，跳过
 
   - id: notify-stakeholders
     name: 通知相关方
     type: tool
-    toolId: notification.send
+    toolId: builtin.interact.notify
     params:
       channel: webhook
       title: "调研报告已发布：${inputs.topic}"
@@ -180,8 +174,9 @@ steps:
   - id: save-to-memory
     name: 存入长期记忆
     type: skill
-    skillId: memory.save
+    skillId: memory
     params:
+      operation: save
       content: "${steps.deep-analysis.output.result}"
       tags: "research,${inputs.topic}"
       importance: "high"
