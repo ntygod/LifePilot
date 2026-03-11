@@ -1,64 +1,83 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
-import { knowledgeBaseApi } from '@/api/client'
-import type { KnowledgeBase } from '@/types'
-import { Search, Filter, Tag, Edit2, X } from 'lucide-vue-next'
-import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
-import ErrorState from '@/components/common/ErrorState.vue'
-import EmptyState from '@/components/common/EmptyState.vue'
+import {
+  ArrowUpRight,
+  Clock3,
+  Database,
+  Edit2,
+  Files,
+  Filter,
+  Layers3,
+  Plus,
+  Search,
+  Tag,
+  Trash2,
+  X,
+} from 'lucide-vue-next'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import MetricCard from '@/components/common/MetricCard.vue'
+import StatePanel from '@/components/common/StatePanel.vue'
+import PageContainer from '@/components/layout/PageContainer.vue'
+import PageSection from '@/components/layout/PageSection.vue'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Skeleton } from '@/components/ui/skeleton'
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from '@/components/ui/select'
-import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
-} from '@/components/ui/dialog'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
+import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
+import type { KnowledgeBase } from '@/types'
 
 const store = useKnowledgeBaseStore()
 const router = useRouter()
 
-// 创建对话框
 const showCreate = ref(false)
-const createForm = ref({ name: '', description: '', tags: [] as string[] })
+const createForm = ref({
+  name: '',
+  description: '',
+  tags: [] as string[],
+})
 
-// 编辑对话框
 const editingKb = ref<KnowledgeBase | null>(null)
-const editForm = ref({ description: '', tags: [] as string[] })
+const editForm = ref({
+  description: '',
+  tags: [] as string[],
+})
 
-// 删除确认
 const deleteTarget = ref<{ type: 'kb' | 'doc'; id: string; kbId?: string; name: string } | null>(null)
 
-// 搜索和过滤
 const searchQuery = ref('')
 const selectedTags = ref<string[]>([])
 const timeRange = ref<string>('all')
 const showFilters = ref(false)
 
-// 所有标签（从知识库列表中提取）
 const allTags = computed(() => {
   const tags = new Set<string>()
-  store.list.forEach(kb => {
-    // TODO: 如果后端支持tags字段，从kb.tags中提取
+  store.list.forEach(() => {
+    // The backend has not exposed knowledge base tags yet.
   })
   return Array.from(tags)
 })
 
-onMounted(() => store.fetchList())
-
-// 过滤后的知识库列表
 const filteredKbs = computed(() => {
   let result = [...store.list]
 
-  // 搜索过滤
   if (searchQuery.value.trim()) {
     const query = searchQuery.value.toLowerCase()
     result = result.filter(kb => {
@@ -68,24 +87,67 @@ const filteredKbs = computed(() => {
     })
   }
 
-  // 标签过滤
   if (selectedTags.value.length > 0) {
-    // TODO: 如果后端支持tags字段，使用kb.tags进行过滤
+    // The backend has not exposed knowledge base tags yet.
   }
 
-  // 时间范围过滤
   if (timeRange.value !== 'all') {
     const now = Date.now()
     const days = timeRange.value === '7d' ? 7 : 30
     const cutoff = now - days * 24 * 60 * 60 * 1000
-    result = result.filter(kb => {
-      const updated = new Date(kb.updatedAt).getTime()
-      return updated >= cutoff
-    })
+    result = result.filter(kb => new Date(kb.updatedAt).getTime() >= cutoff)
   }
 
   return result
 })
+
+const totalDocuments = computed(() => (
+  store.list.reduce((sum, kb) => sum + kb.documentCount, 0)
+))
+
+const totalChunks = computed(() => (
+  store.list.reduce((sum, kb) => sum + kb.totalChunks, 0)
+))
+
+const latestUpdate = computed(() => {
+  if (store.list.length === 0) return '暂无更新'
+  const latest = [...store.list]
+    .sort((first, second) => new Date(second.updatedAt).getTime() - new Date(first.updatedAt).getTime())[0]
+  return formatDate(latest.updatedAt)
+})
+
+const hasFilters = computed(() => (
+  Boolean(searchQuery.value.trim())
+  || selectedTags.value.length > 0
+  || timeRange.value !== 'all'
+))
+const timeRangeLabel = computed(() => {
+  if (timeRange.value === '7d') return '最近 7 天'
+  if (timeRange.value === '30d') return '最近 30 天'
+  return '全部时间'
+})
+const filterKeywordLabel = computed(() => searchQuery.value.trim() || '未设置')
+
+const showDeleteConfirm = computed({
+  get: () => deleteTarget.value !== null,
+  set: (value: boolean) => {
+    if (!value) {
+      deleteTarget.value = null
+    }
+  },
+})
+
+onMounted(() => {
+  void store.fetchList()
+})
+
+function formatDate(dateStr: string) {
+  return new Date(dateStr).toLocaleDateString('zh-CN', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  })
+}
 
 function selectKb(kb: KnowledgeBase) {
   router.push(`/knowledge-bases/${kb.id}`)
@@ -104,7 +166,7 @@ function startEdit(kb: KnowledgeBase) {
   editingKb.value = kb
   editForm.value = {
     description: kb.description || '',
-    tags: [] // TODO: 从kb.tags获取
+    tags: [],
   }
 }
 
@@ -114,234 +176,394 @@ async function handleUpdate() {
     await store.fetchList()
     editingKb.value = null
   } catch (error) {
-    console.error('更新知识库失败:', error)
+    console.error('更新知识库失败', error)
   }
 }
 
 async function confirmDelete() {
   if (!deleteTarget.value) return
+
   if (deleteTarget.value.type === 'kb') {
     await store.remove(deleteTarget.value.id)
   } else if (deleteTarget.value.kbId) {
     await store.removeDocument(deleteTarget.value.kbId, deleteTarget.value.id)
   }
+
   deleteTarget.value = null
 }
-
-// 删除确认对话框状态
-const showDeleteConfirm = computed({
-  get: () => deleteTarget.value !== null,
-  set: (val: boolean) => { if (!val) deleteTarget.value = null }
-})
 
 function toggleTag(tag: string) {
   const index = selectedTags.value.indexOf(tag)
   if (index === -1) {
     selectedTags.value.push(tag)
-  } else {
-    selectedTags.value.splice(index, 1)
+    return
   }
+  selectedTags.value.splice(index, 1)
 }
 
+function clearFilters() {
+  searchQuery.value = ''
+  selectedTags.value = []
+  timeRange.value = 'all'
+}
 </script>
 
 <template>
-  <div class="flex flex-col h-full">
-    <div class="flex-1 overflow-y-auto">
-      <div class="max-w-[1200px] mx-auto px-md md:px-lg py-lg">
-        <!-- 错误提示（非致命，列表已有数据时展示横幅） -->
-        <div
-          v-if="store.error && store.list.length > 0"
-          class="mb-md px-md py-sm rounded-md bg-destructive/10 text-destructive text-sm flex items-center justify-between"
-        >
-          <span>{{ store.error }}</span>
-          <Button variant="ghost" size="icon-sm" @click="store.error = null">
-            <X :size="16" />
-          </Button>
-        </div>
-
-        <!-- 知识库列表视图 -->
-        <div>
-          <div class="flex items-center justify-between mb-lg gap-sm">
-            <h2 class="text-2xl font-semibold text-foreground leading-tight">
-              知识库管理
-            </h2>
-            <Button @click="showCreate = true">新建知识库</Button>
-          </div>
-
-          <!-- 搜索和过滤栏 -->
-          <div class="mb-md space-y-sm">
-            <div class="flex flex-wrap items-center gap-sm">
-              <div class="relative flex-1 min-w-[220px]">
-                <Search
-                  class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground"
-                />
-                <Input
-                  v-model="searchQuery"
-                  type="search"
-                  placeholder="搜索知识库（名称或描述）…"
-                  class="pl-8"
-                />
+  <div class="h-full overflow-y-auto">
+    <PageContainer size="wide" class="py-6 sm:py-8">
+      <div class="page-stack">
+        <header class="space-y-5 border-b border-border/70 pb-6">
+          <div class="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+            <div class="space-y-3">
+              <div class="surface-label">知识库</div>
+              <div class="space-y-2">
+                <h1 class="text-3xl font-semibold tracking-tight text-foreground">
+                  知识库
+                </h1>
+                <p class="max-w-[50rem] text-sm leading-7 text-muted-foreground">
+                  先看知识资产的规模和最近活跃度，再进入单个知识库继续管理文档、分块和检索效果。
+                </p>
               </div>
-              <Button
-                variant="outline"
-                :class="showFilters ? 'bg-accent text-accent-foreground' : ''"
-                @click="showFilters = !showFilters"
-              >
-                <Filter :size="16" />
-                <span>过滤</span>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-3">
+              <Button type="button" @click="showCreate = true">
+                <Plus class="size-4" />
+                新建知识库
               </Button>
             </div>
+          </div>
 
-            <!-- 过滤选项 -->
-            <div
-              v-if="showFilters"
-              class="px-md py-sm rounded-lg border border-border bg-muted/40 space-y-md"
-            >
-              <!-- 标签过滤 -->
-              <div>
-                <Label class="text-xs text-muted-foreground mb-xs block">标签</Label>
-                <div class="flex flex-wrap gap-sm">
-                  <Badge
-                    v-for="tag in allTags"
-                    :key="tag"
-                    :variant="selectedTags.includes(tag) ? 'default' : 'outline'"
-                    class="cursor-pointer"
-                    @click="toggleTag(tag)"
+          <section class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <MetricCard label="知识库总数" :value="store.list.length" hint="当前已经接入、可以继续维护的知识库数量。">
+              <template #icon>
+                <Database class="size-5" />
+              </template>
+            </MetricCard>
+            <MetricCard label="文档总量" :value="totalDocuments" hint="所有知识库累计收录的文档数量。">
+              <template #icon>
+                <Files class="size-5" />
+              </template>
+            </MetricCard>
+            <MetricCard label="分块总量" :value="totalChunks" hint="已经完成切分、可参与检索的文本分段。">
+              <template #icon>
+                <Layers3 class="size-5" />
+              </template>
+            </MetricCard>
+            <MetricCard label="最近更新" :value="latestUpdate" hint="方便快速定位最近活跃的知识资产。">
+              <template #icon>
+                <Clock3 class="size-5" />
+              </template>
+            </MetricCard>
+          </section>
+        </header>
+
+        <StatePanel
+          v-if="store.error && store.list.length > 0"
+          title="列表加载出现了问题"
+          :description="store.error"
+          tone="danger"
+        >
+          <template #icon>
+            <Database class="size-5" />
+          </template>
+          <template #actions>
+            <Button type="button" variant="outline" @click="store.error = null">
+              <X class="size-4" />
+              关闭提示
+            </Button>
+            <Button type="button" @click="store.fetchList()">
+              重新加载
+            </Button>
+          </template>
+        </StatePanel>
+
+        <PageSection
+          eyebrow="筛选"
+          title="查找知识库"
+          description="先按名称和更新时间缩小范围，再决定要继续补文档还是检查检索质量。"
+        >
+          <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+            <div class="space-y-4">
+              <div class="flex flex-wrap gap-2 text-xs">
+                <span class="filter-pill">关键字：{{ filterKeywordLabel }}</span>
+                <span class="filter-pill">更新时间：{{ timeRangeLabel }}</span>
+                <span class="filter-pill">标签：{{ selectedTags.length > 0 ? `${selectedTags.length} 个` : '未使用' }}</span>
+              </div>
+
+              <div class="flex flex-col gap-3 xl:flex-row xl:items-center">
+                <div class="relative min-w-[260px] flex-1 xl:max-w-[36rem]">
+                  <Search class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    v-model="searchQuery"
+                    type="search"
+                    placeholder="搜索知识库名称或描述"
+                    class="pl-9"
+                  />
+                </div>
+
+                <div class="flex flex-wrap items-center gap-3">
+                  <Select v-model="timeRange">
+                    <SelectTrigger class="w-full sm:w-[180px]">
+                      <SelectValue placeholder="更新时间" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">全部时间</SelectItem>
+                      <SelectItem value="7d">最近 7 天</SelectItem>
+                      <SelectItem value="30d">最近 30 天</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    :class="showFilters ? 'bg-accent text-accent-foreground' : ''"
+                    @click="showFilters = !showFilters"
                   >
-                    <Tag :size="12" />
-                    {{ tag }}
-                  </Badge>
+                    <Filter class="size-4" />
+                    {{ showFilters ? '收起筛选' : '更多筛选' }}
+                  </Button>
                 </div>
               </div>
 
-              <!-- 时间范围过滤 -->
-              <div>
-                <Label class="text-xs text-muted-foreground mb-xs block">更新时间</Label>
-                <Select v-model="timeRange">
-                  <SelectTrigger class="w-full h-8 text-xs">
-                    <SelectValue placeholder="全部" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">全部</SelectItem>
-                    <SelectItem value="7d">最近7天</SelectItem>
-                    <SelectItem value="30d">最近30天</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div
+                v-if="showFilters"
+                class="grid gap-4 rounded-[calc(var(--radius)+4px)] border border-border/70 bg-background/55 p-4 lg:grid-cols-[minmax(0,1fr)_220px]"
+              >
+                <div class="space-y-3">
+                  <div class="surface-label text-[0.68rem]">标签</div>
+                  <div v-if="allTags.length > 0" class="flex flex-wrap gap-2">
+                    <Badge
+                      v-for="tag in allTags"
+                      :key="tag"
+                      :variant="selectedTags.includes(tag) ? 'default' : 'outline'"
+                      class="cursor-pointer px-3 py-1"
+                      @click="toggleTag(tag)"
+                    >
+                      <Tag class="size-3.5" />
+                      {{ tag }}
+                    </Badge>
+                  </div>
+                  <div
+                    v-else
+                    class="rounded-[calc(var(--radius)+4px)] border border-dashed border-border/70 bg-muted/35 px-4 py-3 text-sm text-muted-foreground"
+                  >
+                    当前还没有可用标签，先按名称或时间筛选。
+                  </div>
+                </div>
+
+                <div class="space-y-3">
+                  <div class="surface-label text-[0.68rem]">当前状态</div>
+                  <div class="grid gap-2 text-sm text-muted-foreground">
+                    <div class="filter-pill justify-between">
+                      <span>搜索关键字</span>
+                      <span class="font-medium text-foreground">{{ filterKeywordLabel }}</span>
+                    </div>
+                    <div class="filter-pill justify-between">
+                      <span>更新时间</span>
+                      <span class="font-medium text-foreground">{{ timeRangeLabel }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="grid gap-3 text-sm text-muted-foreground">
+              <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/58 px-4 py-3">
+                <div class="mb-1 text-sm font-medium text-foreground">当前结果</div>
+                <p>{{ filteredKbs.length }} / {{ store.list.length }}</p>
+              </div>
+              <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/58 px-4 py-3">
+                <div class="mb-1 text-sm font-medium text-foreground">继续管理</div>
+                <p>进入详情后可上传文档、重建分块和测试检索。</p>
+              </div>
+              <div v-if="hasFilters" class="flex justify-start">
+                <Button type="button" variant="ghost" class="px-0" @click="clearFilters">
+                  清空筛选
+                </Button>
+              </div>
+            </div>
+          </div>
+        </PageSection>
+
+        <PageSection
+          eyebrow="目录"
+          title="全部知识库"
+          :description="hasFilters ? '结果已按关键字或更新时间过滤。' : '先在目录里判断哪个知识库最近活跃，再点进去继续处理。'"
+        >
+          <div v-if="store.loading" class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div
+              v-for="index in 6"
+              :key="index"
+              class="rounded-[calc(var(--radius)+6px)] border border-border/70 bg-background/72 p-5"
+            >
+              <div class="flex items-start justify-between gap-3">
+                <div class="flex items-center gap-3">
+                  <Skeleton class="h-11 w-11 rounded-2xl" />
+                  <div class="space-y-2">
+                    <Skeleton class="h-4 w-32" />
+                    <Skeleton class="h-4 w-20 rounded-full" />
+                  </div>
+                </div>
+                <Skeleton class="h-8 w-16 rounded-full" />
+              </div>
+              <div class="mt-5 space-y-2">
+                <Skeleton class="h-4 w-full" />
+                <Skeleton class="h-4 w-3/4" />
+              </div>
+              <div class="mt-5 grid gap-3 sm:grid-cols-2">
+                <Skeleton class="h-16 rounded-[calc(var(--radius)+4px)]" />
+                <Skeleton class="h-16 rounded-[calc(var(--radius)+4px)]" />
               </div>
             </div>
           </div>
 
-          <!-- Skeleton 加载占位符 -->
-          <div v-if="store.loading" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-md">
-            <Card v-for="i in 6" :key="i" class="overflow-hidden">
-              <CardHeader class="pb-2">
-                <Skeleton class="h-5 w-3/4" />
-              </CardHeader>
-              <CardContent class="pb-2">
-                <Skeleton class="h-4 w-full mb-2" />
-                <Skeleton class="h-4 w-2/3" />
-              </CardContent>
-              <CardFooter>
-                <Skeleton class="h-3 w-1/2" />
-              </CardFooter>
-            </Card>
-          </div>
-
-          <!-- 错误状态 -->
-          <ErrorState
+          <StatePanel
             v-else-if="store.error && filteredKbs.length === 0"
+            title="知识库列表加载失败"
             :description="store.error"
-            action-label="重试"
-            :show-action="true"
-            @action="store.fetchList()"
-          />
-
-          <!-- 空状态引导 -->
-          <EmptyState
-            v-else-if="filteredKbs.length === 0 && !searchQuery && selectedTags.length === 0 && timeRange === 'all'"
-            icon="📚"
-            title="暂无知识库"
-            description="创建知识库后，可以上传文档并进行语义检索"
-            action-label="新建知识库"
-            :show-action="true"
-            @action="showCreate = true"
-          />
-
-          <!-- 搜索/过滤无结果 -->
-          <EmptyState
-            v-else-if="filteredKbs.length === 0"
-            icon="🔍"
-            title="没有找到匹配的知识库"
-            description="尝试调整搜索关键词或过滤条件"
-          />
-
-          <div
-            v-else
-            class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-md"
+            tone="danger"
           >
-            <Card
+            <template #icon>
+              <Database class="size-5" />
+            </template>
+            <template #actions>
+              <Button type="button" variant="outline" @click="store.fetchList()">
+                重试
+              </Button>
+            </template>
+          </StatePanel>
+
+          <StatePanel
+            v-else-if="filteredKbs.length === 0 && !hasFilters"
+            title="还没有知识库"
+            description="创建知识库后，就可以继续上传文档、解析分块并接入问答检索。"
+          >
+            <template #icon>
+              <Database class="size-5" />
+            </template>
+            <template #actions>
+              <Button type="button" @click="showCreate = true">
+                <Plus class="size-4" />
+                新建知识库
+              </Button>
+            </template>
+          </StatePanel>
+
+          <StatePanel
+            v-else-if="filteredKbs.length === 0"
+            title="没有匹配的知识库"
+            description="尝试调整搜索关键字或清空筛选条件。"
+          >
+            <template #icon>
+              <Search class="size-5" />
+            </template>
+            <template #actions>
+              <Button type="button" variant="outline" @click="clearFilters">
+                清空筛选
+              </Button>
+            </template>
+          </StatePanel>
+
+          <div v-else class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <article
               v-for="kb in filteredKbs"
               :key="kb.id"
-              class="list-card cursor-pointer group"
+              class="list-card group relative cursor-pointer p-5"
               @click="selectKb(kb)"
             >
-              <CardHeader class="pb-2">
-                <div class="flex items-start justify-between gap-sm">
-                  <CardTitle class="text-sm leading-snug truncate flex-1">
-                    {{ kb.name }}
-                  </CardTitle>
-                  <div class="flex items-center gap-xs opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      class="size-7"
-                      title="编辑"
-                      @click.stop="startEdit(kb)"
-                    >
-                      <Edit2 :size="14" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      class="size-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                      title="删除"
-                      @click.stop="deleteTarget = { type: 'kb', id: kb.id, name: kb.name }"
-                    >
-                      <X :size="14" />
-                    </Button>
+              <div class="flex items-start justify-between gap-3">
+                <div class="flex min-w-0 items-start gap-3">
+                  <div class="flex size-12 shrink-0 items-center justify-center rounded-2xl border border-border/70 bg-background/75 text-primary transition-transform duration-200 group-hover:-translate-y-0.5">
+                    <Database class="size-5" />
+                  </div>
+                  <div class="min-w-0 space-y-2">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <h3 class="truncate text-base font-semibold tracking-tight text-foreground">
+                        {{ kb.name }}
+                      </h3>
+                      <Badge variant="outline" class="text-xs">
+                        {{ kb.documentCount }} 篇文档
+                      </Badge>
+                      <span class="surface-chip">更新于 {{ formatDate(kb.updatedAt) }}</span>
+                    </div>
+                    <div class="flex flex-wrap gap-2 text-xs">
+                      <span class="surface-chip">向量模型 {{ kb.embeddingModel || '未配置' }}</span>
+                      <span class="surface-chip">分块 {{ kb.totalChunks }}</span>
+                    </div>
                   </div>
                 </div>
-              </CardHeader>
-              <CardContent class="pb-2">
-                <p class="text-sm text-muted-foreground line-clamp-2 leading-normal">
-                  {{ kb.description || '无描述' }}
-                </p>
-                <div class="flex items-center gap-md mt-sm text-xs text-muted-foreground">
-                  <span>{{ kb.documentCount }} 篇文档</span>
-                  <span>{{ kb.totalChunks }} 个分块</span>
-                </div>
-              </CardContent>
-              <CardFooter class="pt-0">
-                <div class="text-xs text-muted-foreground">
-                  更新于 {{ new Date(kb.updatedAt).toLocaleDateString() }}
-                </div>
-              </CardFooter>
-            </Card>
-          </div>
-        </div>
-      </div>
-    </div>
 
-    <!-- 创建对话框 -->
+                <div class="flex items-center gap-1 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    class="size-8"
+                    title="编辑"
+                    @click.stop="startEdit(kb)"
+                  >
+                    <Edit2 class="size-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    class="size-8 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                    title="删除"
+                    @click.stop="deleteTarget = { type: 'kb', id: kb.id, name: kb.name }"
+                  >
+                    <Trash2 class="size-4" />
+                  </Button>
+                </div>
+              </div>
+
+              <p class="mt-4 line-clamp-3 text-sm leading-6 text-muted-foreground">
+                {{ kb.description || '这个知识库还没有描述信息。' }}
+              </p>
+
+              <div class="mt-5 grid gap-3 sm:grid-cols-2">
+                <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/58 px-4 py-3">
+                  <div class="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
+                    <Files class="size-4 text-primary" />
+                    文档数
+                  </div>
+                  <p class="text-sm text-muted-foreground">{{ kb.documentCount }} 篇</p>
+                </div>
+
+                <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/58 px-4 py-3">
+                  <div class="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
+                    <Layers3 class="size-4 text-primary" />
+                    分块数
+                  </div>
+                  <p class="text-sm text-muted-foreground">{{ kb.totalChunks }} 个</p>
+                </div>
+              </div>
+
+              <div class="mt-5 flex items-center justify-between gap-3 text-sm">
+                <span class="text-muted-foreground">适合继续补文档、检查分块和验证检索。</span>
+                <span class="inline-flex items-center gap-1 font-medium text-primary transition-colors group-hover:text-primary/80">
+                  进入知识库
+                  <ArrowUpRight class="size-4" />
+                </span>
+              </div>
+            </article>
+          </div>
+        </PageSection>
+      </div>
+    </PageContainer>
+
     <Dialog v-model:open="showCreate">
-      <DialogContent class="sm:max-w-[448px]">
+      <DialogContent class="shell-card border-border/70 sm:max-w-[520px]">
         <DialogHeader>
           <DialogTitle>新建知识库</DialogTitle>
-          <DialogDescription>创建一个新的知识库来管理文档和语义检索</DialogDescription>
+          <DialogDescription>
+            创建新的知识库容器，用来托管文档、分块和检索测试。
+          </DialogDescription>
         </DialogHeader>
-        <form class="space-y-4" @submit.prevent="handleCreate">
-          <div class="space-y-1.5">
+
+        <form class="grid gap-4 py-2" @submit.prevent="handleCreate">
+          <div class="space-y-2">
             <Label for="kb-name">名称</Label>
             <Input
               id="kb-name"
@@ -349,63 +571,78 @@ function toggleTag(tag: string) {
               placeholder="输入知识库名称"
             />
           </div>
-          <div class="space-y-1.5">
+
+          <div class="space-y-2">
             <Label for="kb-desc">描述</Label>
             <Textarea
               id="kb-desc"
               v-model="createForm.description"
-              :rows="3"
+              :rows="4"
               placeholder="输入知识库描述"
               class="resize-none"
             />
           </div>
+
           <DialogFooter>
-            <Button type="button" variant="outline" @click="showCreate = false">取消</Button>
-            <Button type="submit">创建</Button>
+            <Button type="button" variant="outline" @click="showCreate = false">
+              取消
+            </Button>
+            <Button type="submit">
+              创建
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
 
-    <!-- 编辑对话框 -->
-    <Dialog :open="!!editingKb" @update:open="(val: boolean) => { if (!val) editingKb = null }">
-      <DialogContent class="sm:max-w-[448px]">
+    <Dialog :open="!!editingKb" @update:open="(value: boolean) => { if (!value) editingKb = null }">
+      <DialogContent class="shell-card border-border/70 sm:max-w-[520px]">
         <DialogHeader>
           <DialogTitle>编辑知识库</DialogTitle>
-          <DialogDescription>修改知识库的描述和标签信息</DialogDescription>
+          <DialogDescription>
+            补充描述和标签，方便后续查找和整理。
+          </DialogDescription>
         </DialogHeader>
-        <form class="space-y-4" @submit.prevent="handleUpdate">
-          <div class="space-y-1.5">
+
+        <form class="grid gap-4 py-2" @submit.prevent="handleUpdate">
+          <div class="space-y-2">
             <Label>描述</Label>
             <Textarea
               v-model="editForm.description"
-              :rows="3"
+              :rows="4"
               placeholder="输入知识库描述"
               class="resize-none"
             />
           </div>
-          <div class="space-y-1.5">
+
+          <div class="space-y-2">
             <Label>标签</Label>
             <Input
               :model-value="editForm.tags.join(', ')"
-              placeholder="输入标签，用逗号分隔"
-              @update:model-value="editForm.tags = ($event as string).split(',').map((t: string) => t.trim()).filter((t: string) => t)"
+              placeholder="输入标签，使用逗号分隔"
+              @update:model-value="editForm.tags = ($event as string).split(',').map((tag: string) => tag.trim()).filter((tag: string) => tag)"
             />
-            <p class="text-xs text-muted-foreground">标签功能待后端支持</p>
+            <p class="text-xs text-muted-foreground">
+              标签暂不可用，后续版本会开放。
+            </p>
           </div>
+
           <DialogFooter>
-            <Button type="button" variant="outline" @click="editingKb = null">取消</Button>
-            <Button type="submit">保存</Button>
+            <Button type="button" variant="outline" @click="editingKb = null">
+              取消
+            </Button>
+            <Button type="submit">
+              保存
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
 
-    <!-- 删除确认对话框 -->
     <ConfirmDialog
       v-model:show="showDeleteConfirm"
-      title="确认删除"
-      :message="deleteTarget ? `确定要删除${deleteTarget.type === 'kb' ? '知识库' : '文档'}「${deleteTarget.name}」吗？此操作不可撤销。` : ''"
+      title="删除知识库"
+      :message="deleteTarget ? `确认删除「${deleteTarget.name}」吗？此操作不可撤销。` : ''"
       confirm-label="删除"
       confirm-variant="destructive"
       @confirm="confirmDelete"

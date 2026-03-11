@@ -1,72 +1,116 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { MessageCircle, Wrench, Shield, ArrowRight, BarChart3, Download, ServerOff } from 'lucide-vue-next'
-import { useTraceStore } from '@/stores/trace'
-import type { TraceItem, TraceStep } from '@/types'
+import {
+  Activity,
+  ArrowLeft,
+  ArrowRight,
+  BarChart3,
+  Download,
+  MessageCircle,
+  ServerOff,
+  Shield,
+  Wrench,
+} from 'lucide-vue-next'
 import { SSE_EVENT_TYPES } from '@/constants/sseEvents'
+import type { TraceItem, TraceStep } from '@/types'
 import SearchBar from '@/components/common/SearchBar.vue'
 import FilterChips from '@/components/common/FilterChips.vue'
-import EmptyState from '@/components/common/EmptyState.vue'
-import ErrorState from '@/components/common/ErrorState.vue'
+import MetricCard from '@/components/common/MetricCard.vue'
+import StatePanel from '@/components/common/StatePanel.vue'
+import PageContainer from '@/components/layout/PageContainer.vue'
+import PageHeader from '@/components/layout/PageHeader.vue'
 import StepDurationChart from '@/components/trace/StepDurationChart.vue'
-import { Card, CardContent, CardHeader } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useTraceStore } from '@/stores/trace'
 
-const store = useTraceStore()
-const expandedSteps = ref<Set<string>>(new Set())
-const route = useRoute()
-
-// 搜索与筛选
-const searchKeyword = ref('')
-const statusFilter = ref<'all' | 'success' | 'failure'>('all')
-const lastSearchedKeyword = ref('')
-
-// 时间范围筛选（列表过滤用）
-const timeRangeFilter = ref<'all' | '24h' | '7d' | '30d'>('all')
+type StatusFilter = 'all' | 'success' | 'failure'
+type TimeRangeFilter = 'all' | '24h' | '7d' | '30d'
+type OverviewWindow = '24h' | '7d' | '30d'
+type InternalStepType = 'llm' | 'tool' | 'guardrail' | 'state' | 'evaluation'
 
 const TIME_RANGE_OPTIONS = [
-  { value: 'all', label: '全部' },
-  { value: '24h', label: '最近 24 小时' },
-  { value: '7d', label: '最近 7 天' },
-  { value: '30d', label: '最近 30 天' },
-]
+  { value: 'all', label: '全部时间' },
+  { value: '24h', label: '24h' },
+  { value: '7d', label: '7d' },
+  { value: '30d', label: '30d' },
+] satisfies { value: TimeRangeFilter; label: string }[]
 
-const TIME_RANGE_MS: Record<string, number> = {
+const OVERVIEW_WINDOW_OPTIONS = [
+  { value: '24h', label: '24h' },
+  { value: '7d', label: '7d' },
+  { value: '30d', label: '30d' },
+] satisfies { value: OverviewWindow; label: string }[]
+
+const TIME_RANGE_MS: Record<Exclude<TimeRangeFilter, 'all'>, number> = {
   '24h': 24 * 60 * 60 * 1000,
   '7d': 7 * 24 * 60 * 60 * 1000,
   '30d': 30 * 24 * 60 * 60 * 1000,
 }
 
-// 概览统计时间窗口
-const timeWindow = ref<'24h' | '7d' | '30d'>('7d')
+const stepTypeConfig: Record<InternalStepType, {
+  label: string
+  badgeClass: string
+  cardClass: string
+  icon: any
+}> = {
+  llm: {
+    label: 'LLM',
+    badgeClass: 'border-sky-200/80 bg-sky-50/80 text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-200',
+    cardClass: 'border-sky-200/70 bg-sky-50/40 dark:border-sky-500/20 dark:bg-sky-500/10',
+    icon: MessageCircle,
+  },
+  tool: {
+    label: '工具',
+    badgeClass: 'border-violet-200/80 bg-violet-50/80 text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-200',
+    cardClass: 'border-violet-200/70 bg-violet-50/40 dark:border-violet-500/20 dark:bg-violet-500/10',
+    icon: Wrench,
+  },
+  guardrail: {
+    label: '护栏',
+    badgeClass: 'border-amber-200/80 bg-amber-50/80 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200',
+    cardClass: 'border-amber-200/70 bg-amber-50/40 dark:border-amber-500/20 dark:bg-amber-500/10',
+    icon: Shield,
+  },
+  state: {
+    label: '状态',
+    badgeClass: 'border-slate-200/80 bg-slate-50/80 text-slate-700 dark:border-slate-500/20 dark:bg-slate-500/10 dark:text-slate-200',
+    cardClass: 'border-slate-200/70 bg-slate-50/40 dark:border-slate-500/20 dark:bg-slate-500/10',
+    icon: ArrowRight,
+  },
+  evaluation: {
+    label: '评估',
+    badgeClass: 'border-emerald-200/80 bg-emerald-50/80 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-200',
+    cardClass: 'border-emerald-200/70 bg-emerald-50/40 dark:border-emerald-500/20 dark:bg-emerald-500/10',
+    icon: BarChart3,
+  },
+}
 
-// 导出状态
+const store = useTraceStore()
+const route = useRoute()
+const expandedSteps = ref<Set<string>>(new Set())
+const searchKeyword = ref('')
+const lastSearchedKeyword = ref('')
+const statusFilter = ref<StatusFilter>('all')
+const timeRangeFilter = ref<TimeRangeFilter>('all')
+const timeWindow = ref<OverviewWindow>('7d')
 const exporting = ref(false)
-
-// 服务不可用状态（后端 API 返回 404/503 等）
 const serviceUnavailable = ref(false)
-
-// 实时 SSE 订阅（Trace Step Stream）
 const liveConnected = ref(false)
 const liveError = ref<string | null>(null)
 let liveSource: EventSource | null = null
 
-// 计算当前是否处于搜索模式
 const isSearching = computed(() => lastSearchedKeyword.value.trim().length > 0)
 
-// 当前展示的列表（考虑搜索、状态筛选与时间范围过滤）
 const filteredTraces = computed<TraceItem[]>(() => {
   const baseList = isSearching.value ? store.searchResults : store.list
 
   return baseList.filter((trace) => {
-    // 状态过滤
     if (statusFilter.value === 'success' && !trace.success) return false
     if (statusFilter.value === 'failure' && trace.success) return false
 
-    // 时间范围过滤
     if (timeRangeFilter.value !== 'all') {
       const cutoff = Date.now() - TIME_RANGE_MS[timeRangeFilter.value]
       if (new Date(trace.createdAt).getTime() < cutoff) return false
@@ -77,18 +121,111 @@ const filteredTraces = computed<TraceItem[]>(() => {
 })
 
 const totalPages = computed(() => Math.ceil(store.total / store.pageSize))
+const filteredCount = computed(() => filteredTraces.value.length)
+const successLabel = computed(() => store.overviewStats ? `${(store.overviewStats.successRate * 100).toFixed(1)}%` : '—')
+const avgDurationLabel = computed(() => store.overviewStats ? formatDuration(store.overviewStats.avgDurationMs) : '—')
+const currentOverviewLabel = computed(() => (
+  OVERVIEW_WINDOW_OPTIONS.find(option => option.value === timeWindow.value)?.label ?? '7d'
+))
+const detailTitle = computed(() => displayUserMessage(store.current?.userMessage))
+const detailStatus = computed(() => store.current?.success ? '成功' : '失败')
+const currentStepCount = computed(() => store.steps.length || store.current?.totalSteps || 0)
+const currentTokens = computed(() => store.current?.totalTokens ?? 0)
+const currentDuration = computed(() => store.current ? formatDuration(store.current.durationMs) : '—')
+const liveStatus = computed(() => {
+  if (liveConnected.value) return '实时流已连接'
+  if (liveError.value) return liveError.value
+  return '等待实时更新'
+})
+const overviewItems = computed(() => [
+  {
+    label: '轨迹数量',
+    value: store.overviewStats?.totalTraces ?? store.total,
+    description: '当前统计范围内的运行记录。',
+  },
+  {
+    label: '成功率',
+    value: successLabel.value,
+    description: '当前统计范围内的成功占比。',
+  },
+  {
+    label: '平均步骤数',
+    value: store.overviewStats?.avgSteps?.toFixed(1) ?? '—',
+    description: '每条轨迹平均捕获的步骤数量。',
+  },
+  {
+    label: '平均耗时',
+    value: avgDurationLabel.value,
+    description: '当前统计范围内单条轨迹的平均时长。',
+  },
+])
+const detailItems = computed(() => [
+  {
+    label: '状态',
+    value: detailStatus.value,
+    description: '本次运行最终状态。',
+  },
+  {
+    label: '步骤',
+    value: currentStepCount.value,
+    description: '当前已捕获的回放步骤。',
+  },
+  {
+    label: '词元数',
+    value: currentTokens.value.toLocaleString(),
+    description: '本次运行的总词元用量。',
+  },
+  {
+    label: '耗时',
+    value: currentDuration.value,
+    description: '端到端运行时长。',
+  },
+])
+const detailMetaItems = computed(() => [
+  {
+    label: '创建时间',
+    value: formatDate(store.current?.createdAt),
+    mono: false,
+  },
+  {
+    label: '会话 ID',
+    value: store.current?.sessionId ?? '未记录',
+    mono: true,
+  },
+  {
+    label: '模型',
+    value: store.current?.modelId || '未记录',
+    mono: false,
+  },
+  {
+    label: '终止原因',
+    value: store.current?.terminationReason || '未知',
+    mono: false,
+  },
+])
+const evaluationItems = computed(() => {
+  if (!store.evaluation) return []
+  return [
+    { key: 'toolSelectionScore', label: '工具选择', value: store.evaluation.toolSelectionScore },
+    { key: 'parameterValidityScore', label: '参数有效性', value: store.evaluation.parameterValidityScore },
+    { key: 'stepEfficiencyScore', label: '步骤效率', value: store.evaluation.stepEfficiencyScore },
+    { key: 'policyComplianceScore', label: '策略合规性', value: store.evaluation.policyComplianceScore },
+    { key: 'tokenEfficiencyScore', label: '词元效率', value: store.evaluation.tokenEfficiencyScore },
+  ]
+})
 
 onMounted(async () => {
   try {
     await Promise.all([store.fetchList(), store.fetchOverviewStats(timeWindow.value)])
   } catch {
-    // fetchList/fetchOverviewStats 内部已处理 error，此处仅做兜底
+    // store handles user-facing errors
   }
-  // 检测服务不可用（后端 Controller 未注册导致 404 等）
+
   if (store.error && store.list.length === 0) {
     serviceUnavailable.value = true
     return
   }
+
   const initialId = route.query.id as string | undefined
   if (initialId) {
     await selectTrace(initialId)
@@ -108,7 +245,7 @@ function stopLiveStream() {
 
 function startLiveStream(traceId: string) {
   stopLiveStream()
-  liveError.value = null
+
   try {
     liveSource = new EventSource(`/api/traces/${traceId}/stream`)
 
@@ -116,26 +253,25 @@ function startLiveStream(traceId: string) {
       liveConnected.value = true
     })
 
-    liveSource.addEventListener(SSE_EVENT_TYPES.TRACE_STEP, (ev) => {
+    liveSource.addEventListener(SSE_EVENT_TYPES.TRACE_STEP, (event) => {
       try {
-        const step = JSON.parse((ev as MessageEvent).data) as TraceStep
-        const idx = store.steps.findIndex((s) => s.id === step.id)
-        if (idx >= 0) {
-          store.steps[idx] = step
+        const step = JSON.parse((event as MessageEvent).data) as TraceStep
+        const index = store.steps.findIndex(existing => existing.id === step.id)
+
+        if (index >= 0) {
+          store.steps[index] = step
         } else {
           store.steps.push(step)
         }
-        store.steps.sort((a, b) => a.stepIndex - b.stepIndex)
-      } catch (e) {
-        // 忽略单条解析失败
-        console.warn('trace-step 事件解析失败', e)
+
+        store.steps.sort((left, right) => left.stepIndex - right.stepIndex)
+      } catch (error) {
+        console.warn('Failed to parse trace step event', error)
       }
     })
 
     liveSource.addEventListener(SSE_EVENT_TYPES.TRACE_END, () => {
-      liveConnected.value = false
       stopLiveStream()
-      // Trace 结束后刷新一次详情与步骤，确保与落盘结果一致
       if (store.current?.id) {
         void Promise.all([store.fetchDetail(store.current.id), store.fetchSteps(store.current.id)])
       }
@@ -143,10 +279,10 @@ function startLiveStream(traceId: string) {
 
     liveSource.onerror = () => {
       liveConnected.value = false
-      liveError.value = '实时连接已断开'
+      liveError.value = '实时流已断开'
     }
-  } catch (e: any) {
-    liveError.value = e?.message ?? '无法建立实时连接'
+  } catch (error: any) {
+    liveError.value = error?.message ?? '无法建立实时流连接'
   }
 }
 
@@ -158,11 +294,10 @@ async function handleSearch() {
 function handleClearSearch() {
   searchKeyword.value = ''
   lastSearchedKeyword.value = ''
-  // 清空搜索结果，回到默认分页列表
   store.searchResults = []
 }
 
-async function handleChangeTimeWindow(window: '24h' | '7d' | '30d') {
+async function handleChangeTimeWindow(window: OverviewWindow) {
   if (timeWindow.value === window) return
   timeWindow.value = window
   await store.fetchOverviewStats(window)
@@ -189,15 +324,26 @@ function toggleStep(stepId: string) {
   }
 }
 
+function isExpanded(stepId: string) {
+  return expandedSteps.value.has(stepId)
+}
+
+function expandToolOutput(stepId: string) {
+  expandedSteps.value.add(`${stepId}-full`)
+}
+
+function isToolOutputExpanded(stepId: string) {
+  return expandedSteps.value.has(`${stepId}-full`)
+}
+
 function truncate(text: string, max = 500): string {
-  return text.length > max ? text.slice(0, max) + '...' : text
+  return text.length > max ? `${text.slice(0, max)}...` : text
 }
 
 function displayUserMessage(text: string | undefined | null): string {
   const raw = (text ?? '').trim()
-  if (!raw) return '（内容未保存）'
-  if (raw === '[[content_not_persisted]]') return '（内容未保存）'
-  return text as string
+  if (!raw || raw === '[[content_not_persisted]]') return '（内容未持久化）'
+  return raw
 }
 
 function formatDuration(ms: number): string {
@@ -205,7 +351,11 @@ function formatDuration(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`
 }
 
-// 评分相关工具函数
+function formatDate(value: string | undefined): string {
+  if (!value) return '—'
+  return new Date(value).toLocaleString('zh-CN')
+}
+
 function scorePercent(score: number | undefined): string {
   if (score == null || Number.isNaN(score)) return '0%'
   const clamped = Math.max(0, Math.min(1, score))
@@ -215,59 +365,16 @@ function scorePercent(score: number | undefined): string {
 function scoreColor(score: number | undefined): string {
   if (score == null || Number.isNaN(score)) return 'bg-muted'
   if (score < 0.5) return 'bg-red-500'
-  if (score < 0.7) return 'bg-yellow-500'
-  return 'bg-green-500'
+  if (score < 0.7) return 'bg-amber-500'
+  return 'bg-emerald-500'
 }
 
-// 步骤类型与样式映射
-type InternalStepType = 'llm' | 'tool' | 'guardrail' | 'state' | 'evaluation'
-
-const stepTypeConfig: Record<InternalStepType, {
-  label: string
-  borderClass: string
-  dotClass: string
-  badgeClass: string
-  icon: any
-}> = {
-  llm: {
-    label: 'LLM 调用',
-    borderClass: 'border-blue-300',
-    dotClass: 'bg-blue-500',
-    badgeClass: 'bg-blue-50 text-blue-700',
-    icon: MessageCircle,
-  },
-  tool: {
-    label: '工具调用',
-    borderClass: 'border-purple-300',
-    dotClass: 'bg-purple-500',
-    badgeClass: 'bg-purple-50 text-purple-700',
-    icon: Wrench,
-  },
-  guardrail: {
-    label: '护栏检查',
-    borderClass: 'border-amber-300',
-    dotClass: 'bg-amber-500',
-    badgeClass: 'bg-amber-50 text-amber-700',
-    icon: Shield,
-  },
-  state: {
-    label: '阶段切换',
-    borderClass: 'border-slate-300',
-    dotClass: 'bg-slate-500',
-    badgeClass: 'bg-slate-50 text-slate-700',
-    icon: ArrowRight,
-  },
-  evaluation: {
-    label: '轨迹评估',
-    borderClass: 'border-emerald-300',
-    dotClass: 'bg-emerald-500',
-    badgeClass: 'bg-emerald-50 text-emerald-700',
-    icon: BarChart3,
-  },
+function scoreValue(score: number | undefined): string {
+  if (score == null || Number.isNaN(score)) return '0.00'
+  return score.toFixed(2)
 }
 
 function resolveStepType(step: TraceStep): InternalStepType {
-  // 简单启发式判断，兼容后端尚未显式返回 stepType 的情况
   if (step.toolId) return 'tool'
   if (step.blocked || step.blockReason) return 'guardrail'
   if (step.actionType?.toLowerCase().includes('evaluation')) return 'evaluation'
@@ -279,12 +386,12 @@ function getStepConfig(step: TraceStep) {
   return stepTypeConfig[resolveStepType(step)]
 }
 
-function parseJsonSafe<T = any>(value?: string | null): T | null {
-  if (!value) return null
+function formatJson(value?: string | null): string {
+  if (!value) return '未捕获结构化载荷。'
   try {
-    return JSON.parse(value) as T
+    return JSON.stringify(JSON.parse(value), null, 2)
   } catch {
-    return null
+    return value
   }
 }
 
@@ -298,382 +405,468 @@ async function handleExportCurrent() {
   }
 }
 
-/** 重新检查服务可用性 */
 async function handleRetryServiceCheck() {
   serviceUnavailable.value = false
   store.error = null
   await store.fetchList()
+
   if (store.error && store.list.length === 0) {
     serviceUnavailable.value = true
   } else {
-    // 服务恢复，加载概览统计
     await store.fetchOverviewStats(timeWindow.value)
   }
 }
 </script>
 
 <template>
-  <div class="flex flex-col h-full">
-    <div class="flex-1 overflow-y-auto">
-      <div class="max-w-[1200px] mx-auto px-md md:px-lg py-lg">
-        <!-- 服务不可用提示（后端 API 未注册或不可达） -->
-        <div v-if="serviceUnavailable" class="flex flex-col items-center justify-center py-16 px-4 text-center">
-          <div class="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
-            <ServerOff class="w-7 h-7 text-muted-foreground" />
-          </div>
-          <h3 class="text-lg font-semibold text-foreground mb-2">功能未启用或服务不可用</h3>
-          <p class="text-sm text-muted-foreground mb-6 max-w-[448px]">
-            轨迹回放功能当前不可用，可能是相关服务尚未启用或后端未正确配置。请检查后端服务状态后重试。
-          </p>
-          <Button variant="outline" size="sm" @click="handleRetryServiceCheck">
-            重新检查
-          </Button>
-        </div>
-
-        <!-- 一般性错误提示 -->
-        <ErrorState
-          v-else-if="store.error && !store.loading"
-          title="加载失败"
-          :description="store.error"
-          action-label="重试"
-          :show-action="true"
-          @action="store.fetchList()"
-        />
-
-        <!-- 轨迹列表 -->
+  <div class="h-full overflow-y-auto">
+    <PageContainer size="wide" class="py-6 sm:py-8">
+      <div class="page-stack">
         <template v-if="!store.current">
-          <h2 class="text-xl font-semibold text-foreground mb-4">轨迹回放</h2>
-
-          <!-- 搜索栏 + 状态筛选 -->
-          <div class="mb-4 flex flex-wrap items-center gap-4">
-            <div class="flex-1 flex items-center gap-3 min-w-[260px]">
-              <SearchBar
-                v-model="searchKeyword"
-                placeholder="按用户问题或 Trace ID 搜索轨迹…"
-                class="flex-1"
-                @search="handleSearch"
-              />
-              <Button size="sm" @click="handleSearch">搜索</Button>
-              <Button
-                v-if="isSearching"
-                variant="outline"
-                size="sm"
-                @click="handleClearSearch"
-              >
-                清空
-              </Button>
-            </div>
-
-            <div class="flex items-center gap-4 text-xs">
-              <span class="text-muted-foreground">状态：</span>
-              <Button
-                size="sm"
-                :variant="statusFilter === 'all' ? 'secondary' : 'ghost'"
-                @click="statusFilter = 'all'"
-              >
-                全部
-              </Button>
-              <Button
-                size="sm"
-                :variant="statusFilter === 'success' ? 'secondary' : 'ghost'"
-                :class="statusFilter === 'success' ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' : ''"
-                @click="statusFilter = 'success'"
-              >
-                仅成功
-              </Button>
-              <Button
-                size="sm"
-                :variant="statusFilter === 'failure' ? 'secondary' : 'ghost'"
-                :class="statusFilter === 'failure' ? 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100' : ''"
-                @click="statusFilter = 'failure'"
-              >
-                仅失败
-              </Button>
-            </div>
-          </div>
-
-          <!-- 时间范围筛选 -->
-          <div class="mb-4 flex items-center gap-3">
-            <span class="text-xs text-muted-foreground">时间范围：</span>
-            <FilterChips
-              v-model="timeRangeFilter"
-              :options="TIME_RANGE_OPTIONS"
-            />
-          </div>
-
-          <!-- 概览统计卡片 -->
-          <div class="mb-6 space-y-4">
-            <div class="flex items-center justify-between gap-4">
-              <p class="text-sm text-muted-foreground">
-                最近整体运行情况
-              </p>
-              <div class="flex items-center gap-2 text-xs">
-                <Button
-                  v-for="tw in (['24h', '7d', '30d'] as const)"
-                  :key="tw"
-                  size="sm"
-                  :variant="timeWindow === tw ? 'secondary' : 'ghost'"
-                  class="rounded-full"
-                  @click="handleChangeTimeWindow(tw)"
-                >
-                  {{ tw === '24h' ? '24 小时' : tw === '7d' ? '7 天' : '30 天' }}
-                </Button>
-              </div>
-            </div>
-
-            <!-- 统计卡片 Skeleton 占位符 -->
-            <div
-              v-if="!store.overviewStats"
-              class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4"
-            >
-              <div v-for="i in 5" :key="i" class="stat-block">
-                <Skeleton class="h-3 w-16 mb-2" />
-                <Skeleton class="h-6 w-20" />
-              </div>
-            </div>
-
-            <!-- 统计卡片实际内容 -->
-            <div
-              v-else
-              class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4"
-            >
-              <div class="stat-block">
-                <p class="text-xs text-muted-foreground mb-1">轨迹总数</p>
-                <p class="text-xl font-semibold text-foreground leading-tight">
-                  {{ store.overviewStats.totalTraces }}
-                </p>
-              </div>
-              <div class="stat-block">
-                <p class="text-xs text-muted-foreground mb-1">成功率</p>
-                <p class="text-xl font-semibold text-foreground leading-tight">
-                  {{ (store.overviewStats.successRate * 100).toFixed(1) }}%
-                </p>
-              </div>
-              <div class="stat-block">
-                <p class="text-xs text-muted-foreground mb-1">平均步骤数</p>
-                <p class="text-xl font-semibold text-foreground leading-tight">
-                  {{ store.overviewStats.avgSteps.toFixed(1) }}
-                </p>
-              </div>
-              <div class="stat-block">
-                <p class="text-xs text-muted-foreground mb-1">平均耗时</p>
-                <p class="text-xl font-semibold text-foreground leading-tight">
-                  {{ formatDuration(store.overviewStats.avgDurationMs) }}
-                </p>
-              </div>
-              <div class="stat-block">
-                <p class="text-xs text-muted-foreground mb-1">总 Token 消耗</p>
-                <p class="text-xl font-semibold text-foreground leading-tight">
-                  {{ store.overviewStats.totalTokens }}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <!-- Skeleton 加载占位符 -->
-          <div v-if="store.loading && !isSearching" class="space-y-4">
-            <Card v-for="i in 4" :key="i" class="list-card">
-              <CardContent class="p-4">
-                <div class="flex items-center gap-4">
-                  <Skeleton class="w-2 h-2 rounded-full" />
-                  <Skeleton class="h-4 flex-1" />
-                  <Skeleton class="h-4 w-16" />
+          <PageHeader
+            eyebrow="运行轨迹"
+            title="最近运行记录"
+            description="先找到要查看的运行记录，再进入详情检查步骤、评估和最终输出。"
+          >
+            <template #actions>
+              <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/55 px-4 py-4 text-sm">
+                <div class="surface-label mb-2 text-[0.68rem]">当前视图</div>
+                <div class="font-medium text-foreground">
+                  {{ filteredCount }} 条可见记录
                 </div>
-                <div class="flex items-center gap-4 mt-2">
-                  <Skeleton class="h-3 w-12" />
-                  <Skeleton class="h-3 w-20" />
-                  <div class="ml-auto">
-                    <Skeleton class="h-3 w-32" />
+                <p class="mt-1 max-w-[18rem] leading-6 text-muted-foreground">
+                  统计窗口 {{ currentOverviewLabel }}，可继续用筛选条件收窄列表。
+                </p>
+              </div>
+            </template>
+            <template #meta>
+              <MetricCard
+                v-for="item in overviewItems"
+                :key="item.label"
+                :label="item.label"
+                :value="item.value"
+                :hint="item.description"
+                class="h-full"
+              />
+            </template>
+          </PageHeader>
+
+          <StatePanel
+            v-if="serviceUnavailable"
+            title="运行轨迹服务暂时不可用"
+            description="当前无法读取运行轨迹，请稍后再试。"
+            tone="warning"
+          >
+            <template #icon>
+              <ServerOff class="size-5" />
+            </template>
+            <template #actions>
+              <Button variant="outline" size="sm" @click="handleRetryServiceCheck">
+                重试
+              </Button>
+            </template>
+          </StatePanel>
+
+          <template v-else>
+            <section class="detail-card p-5">
+              <div class="flex flex-col gap-5">
+                <div class="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+                  <div class="space-y-1">
+                    <h2 class="section-title text-foreground">
+                      查找与筛选
+                    </h2>
+                    <p class="text-sm text-muted-foreground">
+                      按用户消息、运行结果和时间范围收窄列表，再进入单条回放。
+                    </p>
+                  </div>
+                  <div class="text-sm text-muted-foreground">
+                    当前显示 {{ filteredCount }} 条
                   </div>
                 </div>
-              </CardContent>
-            </Card>
-          </div>
 
-          <!-- 空状态 -->
-          <EmptyState
-            v-else-if="isSearching && lastSearchedKeyword && store.searchResults.length === 0"
-            icon="🔍"
-            title="未找到匹配的轨迹"
-            description="尝试调整搜索关键词或筛选条件"
-          />
-          <EmptyState
-            v-else-if="!isSearching && filteredTraces.length === 0 && store.list.length === 0"
-            icon="📋"
-            title="暂无轨迹记录"
-            description="当 Agent 执行对话后，轨迹将自动记录在此"
-          />
-          <EmptyState
-            v-else-if="!isSearching && filteredTraces.length === 0 && store.list.length > 0"
-            icon="🔍"
-            title="无匹配结果"
-            description="当前筛选条件下没有轨迹，尝试调整状态或时间范围"
-          />
+                <div class="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                  <div class="flex min-w-0 flex-1 flex-col gap-3 lg:flex-row lg:items-center">
+                    <div class="min-w-0 flex-1">
+                      <SearchBar
+                        v-model="searchKeyword"
+                        placeholder="按轨迹 ID 或用户消息搜索..."
+                        aria-label="搜索运行轨迹"
+                        @search="handleSearch"
+                      />
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2">
+                      <Button size="sm" @click="handleSearch">
+                        搜索
+                      </Button>
+                      <Button
+                        v-if="isSearching"
+                        variant="outline"
+                        size="sm"
+                        @click="handleClearSearch"
+                      >
+                        清空
+                      </Button>
+                    </div>
+                  </div>
 
-          <!-- 轨迹列表卡片 -->
-          <div v-else class="space-y-4">
-            <Card
-              v-for="trace in filteredTraces"
-              :key="trace.id"
-              class="list-card cursor-pointer"
-              @click="selectTrace(trace.id)"
-            >
-              <CardContent class="p-4">
-                <div class="flex items-center gap-4">
-                  <span
-                    class="w-2 h-2 rounded-full shrink-0"
-                    :class="trace.success ? 'bg-green-500' : 'bg-red-500'"
-                  />
-                  <span class="text-sm text-foreground truncate flex-1">{{ displayUserMessage(trace.userMessage) }}</span>
-                  <span class="text-xs text-muted-foreground shrink-0">{{ formatDuration(trace.durationMs) }}</span>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <Button
+                      size="sm"
+                      :variant="statusFilter === 'all' ? 'secondary' : 'ghost'"
+                      @click="statusFilter = 'all'"
+                    >
+                      全部
+                    </Button>
+                    <Button
+                      size="sm"
+                      :variant="statusFilter === 'success' ? 'secondary' : 'ghost'"
+                      @click="statusFilter = 'success'"
+                    >
+                      成功
+                    </Button>
+                    <Button
+                      size="sm"
+                      :variant="statusFilter === 'failure' ? 'secondary' : 'ghost'"
+                      @click="statusFilter = 'failure'"
+                    >
+                      失败
+                    </Button>
+                  </div>
                 </div>
-                <div class="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
-                  <span>{{ trace.totalSteps }} 步</span>
-                  <span>{{ trace.totalTokens }} tokens</span>
-                  <span class="ml-auto">{{ new Date(trace.createdAt).toLocaleString() }}</span>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
 
-          <!-- 分页 -->
-          <div
-            v-if="totalPages > 1 && !isSearching"
-            class="flex items-center justify-center gap-4 mt-6"
-          >
-            <Button
-              variant="outline"
-              size="sm"
-              :disabled="store.page <= 0"
-              @click="store.fetchList(store.page - 1)"
-            >
-              上一页
-            </Button>
-            <span class="text-sm text-muted-foreground">{{ store.page + 1 }} / {{ totalPages }}</span>
-            <Button
-              variant="outline"
-              size="sm"
-              :disabled="store.page >= totalPages - 1"
-              @click="store.fetchList(store.page + 1)"
-            >
-              下一页
-            </Button>
-          </div>
+                <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div class="flex flex-wrap items-center gap-3">
+                    <span class="surface-label text-[0.68rem]">筛选范围</span>
+                    <FilterChips v-model="timeRangeFilter" :options="TIME_RANGE_OPTIONS" />
+                  </div>
+
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="surface-label text-[0.68rem]">统计范围</span>
+                    <Button
+                      v-for="option in OVERVIEW_WINDOW_OPTIONS"
+                      :key="option.value"
+                      size="sm"
+                      :variant="timeWindow === option.value ? 'secondary' : 'ghost'"
+                      class="rounded-full"
+                      @click="handleChangeTimeWindow(option.value)"
+                    >
+                      {{ option.label }}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="space-y-4">
+              <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                <div class="space-y-1">
+                  <div class="surface-label">运行列表</div>
+                  <h2 class="section-title text-foreground">
+                    已记录的执行
+                  </h2>
+                </div>
+                <div class="text-sm text-muted-foreground">
+                  {{ isSearching
+                    ? `搜索“${lastSearchedKeyword}”共匹配 ${filteredCount} 条结果。`
+                    : `筛选后共显示 ${filteredCount} 条运行轨迹。` }}
+                </div>
+              </div>
+
+              <div v-if="store.loading" class="grid gap-4">
+                <div
+                  v-for="index in 5"
+                  :key="index"
+                  class="detail-card space-y-4 p-5"
+                >
+                  <div class="flex items-center gap-3">
+                    <Skeleton class="h-3 w-3 rounded-full" />
+                    <Skeleton class="h-4 flex-1" />
+                    <Skeleton class="h-4 w-20" />
+                  </div>
+                  <div class="grid gap-3 md:grid-cols-4">
+                    <Skeleton class="h-3 w-20" />
+                    <Skeleton class="h-3 w-24" />
+                    <Skeleton class="h-3 w-28" />
+                    <Skeleton class="h-3 w-32 md:justify-self-end" />
+                  </div>
+                </div>
+              </div>
+
+              <StatePanel
+                v-else-if="store.error"
+                title="无法加载运行轨迹列表"
+                :description="store.error"
+                tone="danger"
+              >
+                <template #icon>
+                  <Activity class="size-5" />
+                </template>
+                <template #actions>
+                  <Button variant="outline" size="sm" @click="store.fetchList()">
+                    重试
+                  </Button>
+                </template>
+              </StatePanel>
+
+              <StatePanel
+                v-else-if="isSearching && lastSearchedKeyword && store.searchResults.length === 0"
+                title="没有匹配搜索条件的运行轨迹"
+                description="可以换个关键词、清空筛选条件，或回到默认列表。"
+              >
+                <template #icon>
+                  <MessageCircle class="size-5" />
+                </template>
+              </StatePanel>
+
+              <StatePanel
+                v-else-if="!isSearching && filteredTraces.length === 0 && store.list.length === 0"
+                title="暂时还没有运行轨迹"
+                description="有新的运行记录后，会显示执行过程、耗时和结果。"
+              >
+                <template #icon>
+                  <Activity class="size-5" />
+                </template>
+              </StatePanel>
+
+              <StatePanel
+                v-else-if="filteredTraces.length === 0"
+                title="没有符合当前筛选条件的运行轨迹"
+                description="可以调整状态筛选或放宽时间范围，把运行记录重新显示出来。"
+              >
+                <template #icon>
+                  <Shield class="size-5" />
+                </template>
+              </StatePanel>
+
+              <div v-else class="space-y-3">
+                <button
+                  v-for="trace in filteredTraces"
+                  :key="trace.id"
+                  type="button"
+                  class="list-card w-full p-5 text-left"
+                  @click="selectTrace(trace.id)"
+                >
+                  <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div class="min-w-0 space-y-3">
+                      <div class="flex flex-wrap items-center gap-2">
+                        <Badge
+                          variant="outline"
+                          :class="trace.success
+                            ? 'border-emerald-200/80 bg-emerald-50/80 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-200'
+                            : 'border-red-200/80 bg-red-50/80 text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-200'"
+                        >
+                          {{ trace.success ? '成功' : '失败' }}
+                        </Badge>
+                        <Badge variant="outline" class="font-mono text-[0.72rem]">
+                          {{ trace.id }}
+                        </Badge>
+                        <span class="text-xs text-muted-foreground">
+                          {{ formatDate(trace.createdAt) }}
+                        </span>
+                      </div>
+
+                      <div class="text-lg font-semibold tracking-tight text-foreground">
+                        {{ displayUserMessage(trace.userMessage) }}
+                      </div>
+
+                      <div class="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+                        <span>{{ trace.totalSteps }} 步</span>
+                        <span>{{ trace.totalTokens.toLocaleString() }} 词元</span>
+                        <span>{{ formatDuration(trace.durationMs) }}</span>
+                        <span class="font-mono">{{ trace.sessionId }}</span>
+                      </div>
+                    </div>
+
+                    <div class="flex items-center gap-2 text-sm text-muted-foreground">
+                      <span>打开回放</span>
+                      <ArrowRight class="size-4" />
+                    </div>
+                  </div>
+                </button>
+
+                <div
+                  v-if="totalPages > 1 && !isSearching"
+                  class="flex flex-col gap-3 border-t border-border/70 pt-4 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div class="text-sm text-muted-foreground">
+                    第 {{ store.page + 1 }} / {{ totalPages }} 页
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      :disabled="store.page <= 0"
+                      @click="store.fetchList(store.page - 1)"
+                    >
+                      上一页
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      :disabled="store.page >= totalPages - 1"
+                      @click="store.fetchList(store.page + 1)"
+                    >
+                      下一页
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </template>
         </template>
 
-        <!-- 轨迹详情 -->
         <template v-else>
-          <div class="flex items-center gap-3 mb-4">
-            <Button variant="ghost" size="sm" @click="backToList">← 返回</Button>
-            <h2 class="text-xl font-semibold text-foreground truncate">
-              {{ displayUserMessage(store.current.userMessage) }}
-            </h2>
-            <Badge v-if="liveConnected" variant="outline">实时中</Badge>
-            <Badge
-              v-else-if="liveError"
-              variant="destructive"
-              :title="liveError"
+          <div class="space-y-4 border-b border-border/70 pb-6">
+            <PageHeader
+              eyebrow="运行轨迹"
+              :title="detailTitle"
+              description="查看这次运行的状态、步骤、评估结果和最终输出。"
+              class="border-b-0 pb-0"
             >
-              实时断开
-            </Badge>
-            <Button
-              variant="outline"
-              size="sm"
-              class="ml-auto"
-              :disabled="exporting"
-              @click="handleExportCurrent"
-            >
-              <Download class="w-4 h-4" />
-              <span>{{ exporting ? '导出中…' : '导出 JSON' }}</span>
-            </Button>
+              <template #actions>
+                <div class="flex flex-col gap-3 lg:items-end">
+                  <div class="flex flex-wrap items-center gap-2 lg:justify-end">
+                    <Badge
+                      variant="outline"
+                      :class="store.current.success
+                        ? 'border-emerald-200/80 bg-emerald-50/80 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-200'
+                        : 'border-red-200/80 bg-red-50/80 text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-200'"
+                    >
+                      {{ detailStatus }}
+                    </Badge>
+                    <Badge
+                      v-if="liveConnected"
+                      variant="outline"
+                      class="border-emerald-200/80 bg-emerald-50/80 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-200"
+                    >
+                      实时
+                    </Badge>
+                    <Badge
+                      v-else-if="liveError"
+                      variant="outline"
+                      class="border-amber-200/80 bg-amber-50/80 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200"
+                    >
+                      流已暂停
+                    </Badge>
+                  </div>
+
+                  <div class="flex flex-wrap items-center gap-3 lg:justify-end">
+                    <Button variant="outline" @click="backToList">
+                      <ArrowLeft class="size-4" />
+                      返回列表
+                    </Button>
+                    <Button variant="outline" :disabled="exporting" @click="handleExportCurrent">
+                      <Download class="size-4" />
+                      {{ exporting ? '导出中...' : '导出 JSON' }}
+                    </Button>
+                  </div>
+                </div>
+              </template>
+
+              <template #meta>
+                <MetricCard
+                  v-for="item in detailItems"
+                  :key="item.label"
+                  :label="item.label"
+                  :value="item.value"
+                  :hint="item.description"
+                  class="h-full"
+                />
+              </template>
+            </PageHeader>
+
+            <section class="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(280px,0.85fr)]">
+              <article class="detail-card p-5">
+                <div class="surface-label mb-3">执行摘要</div>
+                <div class="grid gap-3 md:grid-cols-2">
+                  <div
+                    v-for="item in detailMetaItems"
+                    :key="item.label"
+                    class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/55 px-4 py-3 text-sm"
+                  >
+                    <div class="text-xs text-muted-foreground">{{ item.label }}</div>
+                    <div
+                      class="mt-1 text-foreground"
+                      :class="item.mono ? 'break-all font-mono text-[0.82rem]' : 'break-words'"
+                    >
+                      {{ item.value }}
+                    </div>
+                  </div>
+                </div>
+              </article>
+
+              <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/55 px-4 py-4">
+                <div class="surface-label mb-2 text-[0.68rem]">实时流状态</div>
+                <div class="text-sm font-medium text-foreground">{{ liveStatus }}</div>
+                <p class="mt-1 text-sm leading-6 text-muted-foreground">
+                  实时状态会随着流连接、重放结束或异常中断自动刷新。
+                </p>
+              </div>
+            </section>
           </div>
 
-          <!-- 汇总信息 -->
-          <Card class="detail-card mb-6">
-            <CardContent class="p-4 flex items-center gap-6 text-sm">
-              <div class="flex items-center gap-2">
-                <span
-                  class="w-2 h-2 rounded-full"
-                  :class="store.current.success ? 'bg-green-500' : 'bg-red-500'"
-                />
-                <span>{{ store.current.success ? '成功' : '失败' }}</span>
-              </div>
-              <span>{{ store.current.totalSteps }} 步</span>
-              <span>{{ store.current.totalTokens }} tokens</span>
-              <span>{{ formatDuration(store.current.durationMs) }}</span>
-              <span v-if="store.current.modelId" class="text-muted-foreground">{{ store.current.modelId }}</span>
-            </CardContent>
-          </Card>
-
-          <!-- 步骤耗时分布 -->
-          <Card
-            v-if="store.steps.length > 0 && store.current.durationMs > 0"
-            class="detail-card mb-6"
+          <StatePanel
+            v-if="store.current.errorMessage"
+            title="当前运行轨迹以错误结束"
+            :description="store.current.errorMessage"
+            tone="danger"
           >
-            <CardHeader class="pb-2">
-              <h3 class="text-sm font-medium text-foreground">步骤耗时分布</h3>
-            </CardHeader>
-            <CardContent>
+            <template #icon>
+              <ServerOff class="size-5" />
+            </template>
+          </StatePanel>
+
+          <section
+            v-if="store.steps.length > 0 && store.current.durationMs > 0"
+            class="detail-card overflow-hidden"
+          >
+            <div class="border-b border-border/70 px-5 py-4">
+              <div class="space-y-1">
+                <div class="surface-label">耗时分布</div>
+                <h2 class="section-title text-foreground">
+                  步骤耗时拆解
+                </h2>
+                <p class="text-sm text-muted-foreground">
+                  对比每个回放步骤在整条运行轨迹中的耗时占比。
+                </p>
+              </div>
+            </div>
+            <div class="p-5">
               <StepDurationChart
                 :steps="store.steps"
                 :total-duration-ms="store.current.durationMs"
               />
-            </CardContent>
-          </Card>
+            </div>
+          </section>
 
-          <div v-if="store.current.errorMessage" class="mb-4 p-3 rounded-md bg-destructive/10 text-destructive text-sm">
-            {{ store.current.errorMessage }}
-          </div>
-
-          <!-- 评估分数区域 -->
-          <Card v-if="store.evaluation" class="detail-card mb-6">
-            <CardHeader class="pb-2">
-              <div class="flex items-center justify-between">
-                <div>
-                  <h3 class="text-sm font-medium text-foreground leading-tight">
-                    评估分数
-                  </h3>
-                  <p class="text-xs text-muted-foreground">
-                    基于多维度对本次轨迹质量进行离线评估
-                  </p>
-                </div>
-                <div class="text-right">
-                  <p class="text-xs text-muted-foreground">
-                    综合评分
-                  </p>
-                  <p
-                    class="text-xl font-semibold leading-tight"
-                    :class="store.evaluation.overallScore < 0.5
-                      ? 'text-red-500'
-                      : store.evaluation.overallScore < 0.7
-                        ? 'text-yellow-500'
-                        : 'text-green-500'"
-                  >
-                    {{ store.evaluation.overallScore.toFixed(2) }}
-                  </p>
-                </div>
+          <section
+            v-if="store.evaluation"
+            class="detail-card overflow-hidden"
+          >
+            <div class="border-b border-border/70 px-5 py-4">
+              <div class="space-y-1">
+                <div class="surface-label">评估</div>
+                <h2 class="section-title text-foreground">
+                  离线质量评估
+                </h2>
+                <p class="text-sm text-muted-foreground">
+                  查看这条运行轨迹在执行完成后的评分结果和建议。
+                </p>
               </div>
-            </CardHeader>
-            <CardContent>
-              <div class="space-y-3">
+            </div>
+
+            <div class="grid gap-5 p-5 xl:grid-cols-[minmax(0,1fr)_280px]">
+              <div class="space-y-4">
                 <div
-                  v-for="item in [
-                    { key: 'toolSelectionScore', label: '工具选择合理性', value: store.evaluation.toolSelectionScore },
-                    { key: 'parameterValidityScore', label: '参数合法性与幂等性', value: store.evaluation.parameterValidityScore },
-                    { key: 'stepEfficiencyScore', label: '步骤效率', value: store.evaluation.stepEfficiencyScore },
-                    { key: 'policyComplianceScore', label: '策略与护栏合规', value: store.evaluation.policyComplianceScore },
-                    { key: 'tokenEfficiencyScore', label: 'Token 使用效率', value: store.evaluation.tokenEfficiencyScore },
-                  ]"
+                  v-for="item in evaluationItems"
                   :key="item.key"
-                  class="space-y-1"
+                  class="space-y-2"
                 >
-                  <div class="flex items-center justify-between text-xs">
+                  <div class="flex items-center justify-between gap-3 text-sm">
                     <span class="text-muted-foreground">{{ item.label }}</span>
-                    <span class="font-medium text-foreground">
-                      {{ item.value.toFixed(2) }}
-                    </span>
+                    <span class="font-medium text-foreground">{{ scoreValue(item.value) }}</span>
                   </div>
-                  <div class="h-1.5 rounded-full bg-muted overflow-hidden">
+                  <div class="h-2 overflow-hidden rounded-full bg-muted/70">
                     <div
                       class="h-full rounded-full"
                       :class="scoreColor(item.value)"
@@ -682,165 +875,195 @@ async function handleRetryServiceCheck() {
                   </div>
                 </div>
 
-                <div class="mt-3 grid grid-cols-2 gap-3 text-xs text-muted-foreground">
-                  <div>
-                    <p>实际步骤数：{{ store.evaluation.actualSteps }}</p>
-                    <p>实际 Token：{{ store.evaluation.actualTokens }}</p>
-                  </div>
-                  <div class="text-right">
-                    <p>
-                      评估时间：{{ new Date(store.evaluation.evaluatedAt).toLocaleString() }}
-                    </p>
-                  </div>
-                </div>
-
-                <div
-                  v-if="store.evaluation.violations.length"
-                  class="mt-3"
-                >
-                  <p class="text-xs font-medium text-destructive mb-1">
-                    违规项
-                  </p>
-                  <ul class="list-disc list-inside text-xs text-destructive">
-                    <li v-for="v in store.evaluation.violations" :key="v">
-                      {{ v }}
+                <div v-if="store.evaluation.violations.length" class="rounded-[calc(var(--radius)+6px)] border border-destructive/20 bg-destructive/6 p-4">
+                  <div class="text-sm font-medium text-destructive">违规项</div>
+                  <ul class="mt-2 space-y-1 text-sm text-destructive/90">
+                    <li v-for="violation in store.evaluation.violations" :key="violation">
+                      {{ violation }}
                     </li>
                   </ul>
                 </div>
 
-                <div
-                  v-if="store.evaluation.suggestions.length"
-                  class="mt-3"
-                >
-                  <p class="text-xs font-medium text-foreground mb-1">
-                    优化建议
-                  </p>
-                  <ul class="list-disc list-inside text-xs text-muted-foreground">
-                    <li v-for="s in store.evaluation.suggestions" :key="s">
-                      {{ s }}
+                <div v-if="store.evaluation.suggestions.length" class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/55 p-4">
+                  <div class="text-sm font-medium text-foreground">建议</div>
+                  <ul class="mt-2 space-y-1 text-sm text-muted-foreground">
+                    <li v-for="suggestion in store.evaluation.suggestions" :key="suggestion">
+                      {{ suggestion }}
                     </li>
                   </ul>
                 </div>
               </div>
-            </CardContent>
-          </Card>
 
-          <!-- 时间线 -->
-          <div class="space-y-0">
-            <div
-              v-for="step in store.steps"
-              :key="step.id"
-              class="relative pl-6 pb-4 border-l-2 last:border-l-0"
-              :class="getStepConfig(step).borderClass"
-            >
-              <!-- 节点圆点 -->
-              <div
-                class="absolute -left-[5px] top-0 w-2 h-2 rounded-full"
-                :class="getStepConfig(step).dotClass"
-              />
-
-              <div
-                class="cursor-pointer"
-                @click="toggleStep(step.id)"
-              >
-                <div class="flex items-center gap-3 text-sm">
-                  <span class="font-mono text-muted-foreground">#{{ step.stepIndex }}</span>
-                  <span class="text-foreground">{{ step.actionType }}</span>
-                  <Badge variant="outline" :class="getStepConfig(step).badgeClass">
-                    <component
-                      :is="getStepConfig(step).icon"
-                      class="w-3 h-3"
-                    />
-                    <span>{{ getStepConfig(step).label }}</span>
-                  </Badge>
-                  <span v-if="step.toolId" class="font-mono text-xs text-muted-foreground">{{ step.toolId }}</span>
-                  <span class="text-xs text-muted-foreground ml-auto">{{ step.phaseBefore }} → {{ step.phaseAfter }}</span>
-                  <span class="text-xs text-muted-foreground">{{ formatDuration(step.latencyMs) }}</span>
+              <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/55 p-5">
+                <div class="surface-label mb-2 text-[0.68rem]">综合评分</div>
+                <div class="text-4xl font-semibold tracking-tight text-foreground">
+                  {{ scoreValue(store.evaluation.overallScore) }}
                 </div>
-                <div v-if="step.blocked" class="text-xs text-yellow-600 mt-1">
-                  护栏拦截：{{ step.blockReason }}
+                <div class="mt-4 space-y-2 text-sm text-muted-foreground">
+                  <div class="flex items-center justify-between gap-3">
+                    <span>实际步骤数</span>
+                    <span class="text-foreground">{{ store.evaluation.actualSteps }}</span>
+                  </div>
+                  <div class="flex items-center justify-between gap-3">
+                    <span>实际词元数</span>
+                    <span class="text-foreground">{{ store.evaluation.actualTokens }}</span>
+                  </div>
+                  <div class="flex items-center justify-between gap-3">
+                    <span>评估时间</span>
+                    <span class="text-right text-foreground">{{ formatDate(store.evaluation.evaluatedAt) }}</span>
+                  </div>
                 </div>
-              </div>
-
-              <!-- 展开详情 -->
-              <div v-if="expandedSteps.has(step.id)" class="mt-2 space-y-2 text-xs">
-                <!-- LLM 调用详情 -->
-                <template v-if="resolveStepType(step) === 'llm'">
-                  <div class="space-y-1">
-                    <span class="text-muted-foreground">模型调用详情：</span>
-                    <pre class="p-2 rounded-md bg-muted whitespace-pre-wrap break-words">{{ parseJsonSafe(step.actionJson) }}</pre>
-                  </div>
-                </template>
-
-                <!-- 工具调用详情 -->
-                <template v-else-if="resolveStepType(step) === 'tool'">
-                  <div v-if="step.toolInputJson" class="space-y-1">
-                    <span class="text-muted-foreground">输入：</span>
-                    <pre class="p-2 rounded-md bg-muted whitespace-pre-wrap break-words">{{ step.toolInputJson }}</pre>
-                  </div>
-                  <div v-if="step.toolOutput" class="space-y-1">
-                    <span class="text-muted-foreground">输出：</span>
-                    <pre class="p-2 rounded-md bg-muted whitespace-pre-wrap break-words">{{ expandedSteps.has(step.id + '-full') ? step.toolOutput : truncate(step.toolOutput) }}</pre>
-                    <Button
-                      v-if="step.toolOutput.length > 500 && !expandedSteps.has(step.id + '-full')"
-                      variant="link"
-                      size="sm"
-                      class="h-auto p-0"
-                      @click.stop="expandedSteps.add(step.id + '-full')"
-                    >
-                      展开全部
-                    </Button>
-                  </div>
-                  <div class="flex items-center gap-2 text-xs text-muted-foreground">
-                    <span>执行耗时：{{ formatDuration(step.latencyMs) }}</span>
-                    <span>Tokens：{{ step.tokensUsed }}</span>
-                  </div>
-                </template>
-
-                <!-- 护栏步骤详情 -->
-                <template v-else-if="resolveStepType(step) === 'guardrail'">
-                  <div v-if="step.actionJson" class="space-y-1">
-                    <span class="text-muted-foreground">护栏检查详情：</span>
-                    <pre class="p-2 rounded-md bg-muted whitespace-pre-wrap break-words">{{ step.actionJson }}</pre>
-                  </div>
-                </template>
-
-                <!-- 状态切换步骤详情 -->
-                <template v-else-if="resolveStepType(step) === 'state'">
-                  <div class="space-y-1">
-                    <span class="text-muted-foreground">阶段切换</span>
-                    <p class="text-xs text-foreground">
-                      {{ step.phaseBefore }} → {{ step.phaseAfter }}
-                    </p>
-                  </div>
-                  <div v-if="step.actionJson" class="space-y-1">
-                    <span class="text-muted-foreground">动作摘要：</span>
-                    <pre class="p-2 rounded-md bg-muted whitespace-pre-wrap break-words">{{ step.actionJson }}</pre>
-                  </div>
-                </template>
-
-                <!-- 评估步骤详情 -->
-                <template v-else>
-                  <div class="space-y-1">
-                    <span class="text-muted-foreground">评估详情：</span>
-                    <pre class="p-2 rounded-md bg-muted whitespace-pre-wrap break-words">{{ step.actionJson }}</pre>
-                  </div>
-                </template>
               </div>
             </div>
-          </div>
+          </section>
 
-          <!-- 最终输出 -->
-          <Card v-if="store.current.finalOutput" class="detail-card mt-6">
-            <CardHeader class="pb-2">
-              <h3 class="text-sm font-medium text-foreground">最终输出</h3>
-            </CardHeader>
-            <CardContent>
-              <p class="text-sm text-muted-foreground whitespace-pre-wrap">{{ store.current.finalOutput }}</p>
-            </CardContent>
-          </Card>
+          <section class="space-y-4">
+            <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+              <div class="space-y-1">
+                <div class="surface-label">回放</div>
+                <h2 class="section-title text-foreground">
+                  逐步执行过程
+                </h2>
+              </div>
+              <div class="text-sm text-muted-foreground">
+                当前运行轨迹共捕获 {{ store.steps.length }} 个步骤。
+              </div>
+            </div>
+
+              <StatePanel
+                v-if="store.steps.length === 0"
+                title="未捕获到回放步骤"
+                description="当前选中的运行轨迹暂时没有步骤数据。"
+              >
+                <template #icon>
+                  <Activity class="size-5" />
+                </template>
+              </StatePanel>
+
+              <div v-else class="space-y-4">
+                <article
+                  v-for="step in store.steps"
+                  :key="step.id"
+                  :class="['detail-card overflow-hidden border p-0', getStepConfig(step).cardClass]"
+                >
+                  <button
+                    type="button"
+                    class="flex w-full flex-col gap-4 px-5 py-4 text-left"
+                    @click="toggleStep(step.id)"
+                  >
+                    <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div class="min-w-0 space-y-3">
+                        <div class="flex flex-wrap items-center gap-2">
+                          <Badge variant="outline" class="font-mono text-[0.72rem]">
+                            #{{ step.stepIndex }}
+                          </Badge>
+                          <Badge variant="outline" :class="getStepConfig(step).badgeClass">
+                            <component :is="getStepConfig(step).icon" class="size-3.5" />
+                            {{ getStepConfig(step).label }}
+                          </Badge>
+                          <span v-if="step.toolId" class="font-mono text-xs text-muted-foreground">
+                            {{ step.toolId }}
+                          </span>
+                        </div>
+
+                        <div class="text-base font-semibold tracking-tight text-foreground">
+                          {{ step.actionType }}
+                        </div>
+
+                        <div class="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+                          <span>{{ step.phaseBefore }} → {{ step.phaseAfter }}</span>
+                          <span>{{ formatDuration(step.latencyMs) }}</span>
+                          <span>{{ step.tokensUsed.toLocaleString() }} 词元</span>
+                          <span>{{ formatDate(step.createdAt) }}</span>
+                        </div>
+
+                        <div
+                          v-if="step.blocked"
+                          class="rounded-xl border border-amber-200/80 bg-amber-50/80 px-3 py-2 text-sm text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200"
+                        >
+                          护栏阻止了该步骤：{{ step.blockReason }}
+                        </div>
+                      </div>
+
+                      <div class="text-sm text-muted-foreground">
+                        {{ isExpanded(step.id) ? '收起' : '展开' }}
+                      </div>
+                    </div>
+                  </button>
+
+                  <div v-if="isExpanded(step.id)" class="soft-divider" />
+
+                  <div v-if="isExpanded(step.id)" class="grid gap-4 px-5 py-4 xl:grid-cols-2">
+                    <div class="space-y-2">
+                      <div class="surface-label text-[0.68rem]">载荷</div>
+                      <pre class="max-h-[420px] overflow-auto rounded-[calc(var(--radius)+2px)] border border-border/70 bg-background/80 p-4 text-xs leading-6 text-muted-foreground">{{ formatJson(step.actionJson) }}</pre>
+                    </div>
+
+                    <div class="space-y-4">
+                      <div v-if="step.toolInputJson" class="space-y-2">
+                        <div class="surface-label text-[0.68rem]">工具输入</div>
+                        <pre class="max-h-[220px] overflow-auto rounded-[calc(var(--radius)+2px)] border border-border/70 bg-background/80 p-4 text-xs leading-6 text-muted-foreground">{{ formatJson(step.toolInputJson) }}</pre>
+                      </div>
+
+                      <div v-if="step.toolOutput" class="space-y-2">
+                        <div class="surface-label text-[0.68rem]">工具输出</div>
+                        <pre class="max-h-[260px] overflow-auto rounded-[calc(var(--radius)+2px)] border border-border/70 bg-background/80 p-4 text-xs leading-6 text-muted-foreground">{{ isToolOutputExpanded(step.id) ? step.toolOutput : truncate(step.toolOutput) }}</pre>
+                        <Button
+                          v-if="step.toolOutput.length > 500 && !isToolOutputExpanded(step.id)"
+                          variant="outline"
+                          size="sm"
+                          @click.stop="expandToolOutput(step.id)"
+                        >
+                          查看完整输出
+                        </Button>
+                      </div>
+
+                      <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/55 p-4">
+                        <div class="surface-label mb-2 text-[0.68rem]">执行元数据</div>
+                        <div class="space-y-2 text-sm text-muted-foreground">
+                          <div class="flex items-center justify-between gap-3">
+                            <span>成功</span>
+                            <span class="text-foreground">{{ step.success ? '是' : '否' }}</span>
+                          </div>
+                          <div class="flex items-center justify-between gap-3">
+                            <span>耗时</span>
+                            <span class="text-foreground">{{ formatDuration(step.latencyMs) }}</span>
+                          </div>
+                          <div class="flex items-center justify-between gap-3">
+                            <span>词元数</span>
+                            <span class="text-foreground">{{ step.tokensUsed.toLocaleString() }}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </article>
+              </div>
+          </section>
+
+          <section
+            v-if="store.current.finalOutput"
+            class="detail-card overflow-hidden"
+          >
+            <div class="border-b border-border/70 px-5 py-4">
+              <div class="space-y-1">
+                <div class="surface-label">最终输出</div>
+                <h2 class="section-title text-foreground">
+                  最终响应
+                </h2>
+                <p class="text-sm text-muted-foreground">
+                  当前运行轨迹中保存的终端响应或助手最终输出。
+                </p>
+              </div>
+            </div>
+            <div class="p-5">
+              <div class="whitespace-pre-wrap text-sm leading-7 text-muted-foreground">
+                {{ store.current.finalOutput }}
+              </div>
+            </div>
+          </section>
         </template>
       </div>
-    </div>
+    </PageContainer>
   </div>
 </template>

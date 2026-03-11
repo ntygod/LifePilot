@@ -1,250 +1,399 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { useAgentStore } from '@/stores/agent'
-import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
-import type { AgentSummary } from '@/types'
-import SearchBar from '@/components/common/SearchBar.vue'
-import EmptyState from '@/components/common/EmptyState.vue'
-import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  ArrowUpRight,
+  Bot,
+  Cpu,
+  Database,
+  Plus,
+  Search,
+  Workflow,
+} from 'lucide-vue-next'
+import MetricCard from '@/components/common/MetricCard.vue'
+import StatePanel from '@/components/common/StatePanel.vue'
+import PageContainer from '@/components/layout/PageContainer.vue'
 import { Badge } from '@/components/ui/badge'
-import { Skeleton } from '@/components/ui/skeleton'
+import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from '@/components/ui/select'
-import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
-} from '@/components/ui/dialog'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Textarea } from '@/components/ui/textarea'
+import { useAgentStore } from '@/stores/agent'
+import { useUiStore } from '@/stores/ui'
 
 const router = useRouter()
 const agentStore = useAgentStore()
-const kbStore = useKnowledgeBaseStore()
+const uiStore = useUiStore()
 
 const searchQuery = ref('')
 const typeFilter = ref<string>('all')
 const statusFilter = ref<string>('all')
 const showCreateDialog = ref(false)
-const deleteTarget = ref<AgentSummary | null>(null)
-const showDeleteConfirm = ref(false)
 
 const newAgent = ref({
   name: '',
   description: '',
   type: 'custom' as 'default' | 'custom' | 'workflow',
-  tags: [] as string[]
+  tags: [] as string[],
 })
+
+const typeLabel: Record<string, string> = {
+  default: '默认',
+  custom: '自定义',
+  workflow: '工作流',
+}
 
 onMounted(async () => {
   await agentStore.fetchAgents()
-  await kbStore.fetchKnowledgeBases()
 })
 
 const filteredAgents = computed(() => {
   let result = agentStore.agents
 
-  if (searchQuery.value) {
-    const q = searchQuery.value.toLowerCase()
-    result = result.filter(a =>
-      a.name.toLowerCase().includes(q) ||
-      a.description?.toLowerCase().includes(q)
+  if (searchQuery.value.trim()) {
+    const query = searchQuery.value.trim().toLowerCase()
+    result = result.filter(agent =>
+      agent.name.toLowerCase().includes(query)
+      || agent.description?.toLowerCase().includes(query),
     )
   }
 
-  if (typeFilter.value && typeFilter.value !== 'all') {
-    result = result.filter(a => a.type === typeFilter.value)
+  if (typeFilter.value !== 'all') {
+    result = result.filter(agent => agent.type === typeFilter.value)
   }
 
-  if (statusFilter.value && statusFilter.value !== 'all') {
+  if (statusFilter.value !== 'all') {
     if (statusFilter.value === 'enabled') {
-      result = result.filter(a => a.enabled)
+      result = result.filter(agent => agent.enabled)
     } else if (statusFilter.value === 'disabled') {
-      result = result.filter(a => !a.enabled)
+      result = result.filter(agent => !agent.enabled)
     }
   }
 
   return result
 })
 
+const totalAgents = computed(() => agentStore.agents.length)
+const enabledAgents = computed(() => agentStore.agents.filter(agent => agent.enabled).length)
+const workflowAgents = computed(() => agentStore.agents.filter(agent => agent.type === 'workflow').length)
+const linkedKnowledgeBases = computed(() => agentStore.agents.reduce((count, agent) => count + agent.knowledgeBaseCount, 0))
+
+const hasFilters = computed(() => (
+  Boolean(searchQuery.value.trim()) || typeFilter.value !== 'all' || statusFilter.value !== 'all'
+))
+const typeFilterLabel = computed(() => {
+  if (typeFilter.value === 'all') return '全部类型'
+  return typeLabel[typeFilter.value] ?? typeFilter.value
+})
+const statusFilterLabel = computed(() => {
+  if (statusFilter.value === 'enabled') return '已启用'
+  if (statusFilter.value === 'disabled') return '已禁用'
+  return '全部状态'
+})
+
+function resetForm() {
+  newAgent.value = {
+    name: '',
+    description: '',
+    type: 'custom',
+    tags: [],
+  }
+}
+
+function openAgent(agentId: string) {
+  router.push(`/agents/${agentId}`)
+}
+
+async function reloadAgents() {
+  await agentStore.fetchAgents()
+}
+
 async function handleCreate() {
   if (!newAgent.value.name.trim()) {
-    alert('请输入 Agent 名称')
+    uiStore.showToast('error', '请输入智能体名称')
     return
   }
+
   try {
     const agent = await agentStore.createAgent(newAgent.value)
     showCreateDialog.value = false
-    newAgent.value = { name: '', description: '', type: 'custom', tags: [] }
+    resetForm()
+    uiStore.showToast('success', '智能体创建成功')
     router.push(`/agents/${agent.id}`)
-  } catch (e: any) {
-    alert(e.message || '创建失败')
+  } catch (event: any) {
+    uiStore.showToast('error', event?.message || '创建失败')
   }
 }
 
-function confirmDelete(agent: AgentSummary) {
-  deleteTarget.value = agent
-  showDeleteConfirm.value = true
-}
-
-async function handleDelete() {
-  if (!deleteTarget.value) return
-  try {
-    await agentStore.deleteAgent(deleteTarget.value.id)
-    deleteTarget.value = null
-    showDeleteConfirm.value = false
-  } catch (e: any) {
-    alert(e.message || '删除失败')
-  }
+function clearFilters() {
+  searchQuery.value = ''
+  typeFilter.value = 'all'
+  statusFilter.value = 'all'
 }
 
 function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleString('zh-CN')
-}
-
-const typeLabel: Record<string, string> = {
-  default: '默认',
-  custom: '自定义',
-  workflow: '工作流'
+  return new Date(dateStr).toLocaleString('zh-CN', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }
 </script>
 
 <template>
-  <div class="flex flex-col h-full overflow-hidden">
-    <!-- 头部操作栏 -->
-    <div class="flex-shrink-0 border-b border-border">
-      <div class="max-w-[1200px] mx-auto px-md md:px-lg py-md">
-        <div class="flex items-center justify-between mb-md gap-sm">
-          <h2 class="text-2xl font-semibold text-foreground leading-tight">
-            Agent 管理
-          </h2>
-          <Button @click="showCreateDialog = true">
-            新建 Agent
-          </Button>
-        </div>
-
-        <!-- 搜索和过滤 -->
-        <div class="flex flex-wrap gap-sm">
-          <SearchBar
-            v-model="searchQuery"
-            placeholder="搜索 Agent 名称或描述..."
-            class="flex-1 min-w-[220px]"
-          />
-          <Select v-model="typeFilter">
-            <SelectTrigger class="w-[130px]">
-              <SelectValue placeholder="全部类型" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部类型</SelectItem>
-              <SelectItem value="default">默认</SelectItem>
-              <SelectItem value="custom">自定义</SelectItem>
-              <SelectItem value="workflow">工作流</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select v-model="statusFilter">
-            <SelectTrigger class="w-[130px]">
-              <SelectValue placeholder="全部状态" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部状态</SelectItem>
-              <SelectItem value="enabled">已启用</SelectItem>
-              <SelectItem value="disabled">已禁用</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-    </div>
-
-    <!-- Agent 列表 -->
-    <div class="flex-1 overflow-y-auto">
-      <div class="max-w-[1200px] mx-auto px-md md:px-lg py-lg">
-        <!-- Skeleton 加载占位符 -->
-        <div v-if="agentStore.loading" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-md">
-          <Card v-for="i in 6" :key="i">
-            <CardHeader class="pb-2">
-              <div class="flex items-center justify-between">
-                <div class="flex items-center gap-xs">
-                  <Skeleton class="h-5 w-24" />
-                  <Skeleton class="h-5 w-14 rounded-full" />
-                </div>
-                <Skeleton class="h-5 w-14 rounded-full" />
-              </div>
-            </CardHeader>
-            <CardContent class="pb-3">
-              <Skeleton class="h-4 w-full mb-2" />
-              <Skeleton class="h-4 w-2/3 mb-3" />
-              <div class="flex gap-md">
-                <Skeleton class="h-3 w-20" />
-                <Skeleton class="h-3 w-16" />
-              </div>
-              <div class="flex gap-xs mt-2">
-                <Skeleton class="h-5 w-12 rounded-full" />
-                <Skeleton class="h-5 w-12 rounded-full" />
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        <!-- 空状态 -->
-        <EmptyState
-          v-else-if="filteredAgents.length === 0 && !searchQuery && typeFilter === 'all' && statusFilter === 'all'"
-          icon="🤖"
-          title="暂无 Agent"
-          description="点击「新建 Agent」创建你的第一个 Agent"
-        />
-
-        <!-- 搜索/过滤无结果 -->
-        <EmptyState
-          v-else-if="filteredAgents.length === 0"
-          icon="🔍"
-          title="未找到匹配的 Agent"
-          description="尝试调整搜索关键词或筛选条件"
-        />
-
-        <!-- Agent 卡片网格 -->
-        <div
-          v-else
-          class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-md"
-        >
-          <Card
-            v-for="agent in filteredAgents"
-            :key="agent.id"
-            class="list-card cursor-pointer group"
-            @click="router.push(`/agents/${agent.id}`)"
-          >
-            <CardHeader class="pb-2">
-              <div class="flex items-start justify-between gap-sm">
-                <div class="flex items-center gap-xs">
-                  <CardTitle class="text-sm leading-snug">
-                    {{ agent.name }}
-                  </CardTitle>
-                  <Badge
-                    :variant="agent.enabled ? 'default' : 'secondary'"
-                    class="text-xs"
-                    :class="agent.enabled ? 'status-btn-active' : 'status-btn-inactive'"
-                  >
-                    {{ agent.enabled ? '已启用' : '已禁用' }}
-                  </Badge>
-                </div>
-                <Badge variant="outline" class="shrink-0 text-xs">
-                  {{ typeLabel[agent.type] ?? agent.type }}
-                </Badge>
-              </div>
-            </CardHeader>
-            <CardContent class="pb-3">
-              <p class="text-sm text-muted-foreground mb-sm line-clamp-2 leading-normal">
-                {{ agent.description || '无描述' }}
+  <div class="h-full overflow-y-auto">
+    <PageContainer size="wide" class="py-6 sm:py-8">
+      <div class="mx-auto flex max-w-[1180px] flex-col gap-6">
+        <header class="space-y-4 border-b border-border/70 pb-5">
+          <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div class="max-w-3xl space-y-2">
+              <div class="surface-label">智能体</div>
+              <h1 class="text-3xl font-semibold tracking-tight text-foreground">智能体目录</h1>
+              <p class="text-sm leading-6 text-muted-foreground">
+                先看哪些智能体正在工作、接了多少知识，再决定进入详情页继续改模型、工具或知识库配置。
               </p>
-              <div class="flex items-center gap-md text-xs text-muted-foreground">
-                <span>模型: {{ agent.modelId || '未设置' }}</span>
-                <span>知识库: {{ agent.knowledgeBaseCount }}</span>
+            </div>
+
+            <Button type="button" @click="showCreateDialog = true">
+              <Plus class="size-4" />
+              新建智能体
+            </Button>
+          </div>
+
+          <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <MetricCard label="智能体总数" :value="totalAgents" hint="当前目录里可继续维护和调试的智能体数量。">
+              <template #icon>
+                <Bot class="size-5" />
+              </template>
+            </MetricCard>
+            <MetricCard label="已启用" :value="enabledAgents" hint="当前可直接在工作流或对话里使用的智能体。">
+              <template #icon>
+                <Cpu class="size-5" />
+              </template>
+            </MetricCard>
+            <MetricCard label="工作流型" :value="workflowAgents" hint="适合多步骤编排和流程化执行的智能体。">
+              <template #icon>
+                <Workflow class="size-5" />
+              </template>
+            </MetricCard>
+            <MetricCard label="知识库连接" :value="linkedKnowledgeBases" hint="所有智能体累计连接的知识库次数。">
+              <template #icon>
+                <Database class="size-5" />
+              </template>
+            </MetricCard>
+          </div>
+        </header>
+
+        <section class="detail-card p-5">
+          <div class="space-y-4">
+            <div class="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+              <div class="space-y-1">
+                <div class="surface-label">筛选与排查</div>
+                <p class="text-sm leading-6 text-muted-foreground">
+                  先按名称找目标，再按类型和启用状态缩小范围，能更快定位需要继续调整的智能体。
+                </p>
               </div>
-              <div v-if="agent.tags && agent.tags.length > 0" class="flex items-center gap-xs mt-sm">
+
+              <div class="flex flex-wrap gap-2 text-xs">
+                <span class="filter-pill">类型：{{ typeFilterLabel }}</span>
+                <span class="filter-pill">状态：{{ statusFilterLabel }}</span>
+                <span class="filter-pill">当前结果：{{ filteredAgents.length }}</span>
+              </div>
+            </div>
+
+            <div class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+              <div class="flex flex-1 flex-col gap-3 md:flex-row md:items-center">
+                <div class="relative min-w-[240px] flex-1 xl:max-w-[28rem]">
+                  <Search class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    v-model="searchQuery"
+                    type="search"
+                    placeholder="搜索智能体名称或描述"
+                    class="pl-9"
+                  />
+                </div>
+
+                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:flex">
+                  <Select v-model="typeFilter">
+                    <SelectTrigger class="w-full lg:w-[150px]">
+                      <SelectValue placeholder="全部类型" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">全部类型</SelectItem>
+                      <SelectItem value="default">默认</SelectItem>
+                      <SelectItem value="custom">自定义</SelectItem>
+                      <SelectItem value="workflow">工作流</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  <Select v-model="statusFilter">
+                    <SelectTrigger class="w-full lg:w-[150px]">
+                      <SelectValue placeholder="全部状态" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">全部状态</SelectItem>
+                      <SelectItem value="enabled">已启用</SelectItem>
+                      <SelectItem value="disabled">已禁用</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div class="flex items-center gap-3 text-sm text-muted-foreground">
+                <span>结果 {{ filteredAgents.length }}</span>
+                <Button v-if="hasFilters" type="button" variant="ghost" @click="clearFilters">
+                  清空筛选
+                </Button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="space-y-4">
+          <div class="flex items-center justify-between gap-3">
+            <div>
+              <h2 class="text-lg font-semibold text-foreground">全部智能体</h2>
+              <p class="text-sm text-muted-foreground">
+                {{ hasFilters ? '已按名称、类型和状态筛选。' : '先从目录里判断谁在工作、谁需要继续配置。' }}
+              </p>
+            </div>
+            <div class="text-sm text-muted-foreground">{{ filteredAgents.length }} 个结果</div>
+          </div>
+
+          <div v-if="agentStore.loading" class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div
+              v-for="index in 6"
+              :key="index"
+              class="rounded-[calc(var(--radius)+2px)] border border-border/70 bg-card/92 p-5"
+            >
+              <div class="flex items-center justify-between gap-3">
+                <div class="space-y-2">
+                  <Skeleton class="h-4 w-28" />
+                  <Skeleton class="h-4 w-16 rounded-full" />
+                </div>
+                <Skeleton class="h-5 w-12 rounded-full" />
+              </div>
+              <div class="mt-4 space-y-2">
+                <Skeleton class="h-4 w-full" />
+                <Skeleton class="h-4 w-3/4" />
+              </div>
+              <div class="mt-5 grid gap-2 sm:grid-cols-2">
+                <Skeleton class="h-14 rounded-xl" />
+                <Skeleton class="h-14 rounded-xl" />
+              </div>
+            </div>
+          </div>
+
+          <StatePanel
+            v-else-if="agentStore.error"
+            title="智能体列表加载失败"
+            :description="agentStore.error"
+            tone="danger"
+          >
+            <template #actions>
+              <Button type="button" variant="outline" @click="reloadAgents">
+                重新加载
+              </Button>
+            </template>
+          </StatePanel>
+
+          <StatePanel
+            v-else-if="filteredAgents.length === 0"
+            :title="hasFilters ? '没有匹配的智能体' : '还没有任何智能体'"
+              :description="hasFilters
+                ? '可以放宽名称、类型或状态条件后再试。'
+                : '创建后可查看模型、知识库和启用状态。'"
+          >
+            <template #actions>
+              <Button v-if="hasFilters" type="button" variant="outline" @click="clearFilters">
+                清空筛选
+              </Button>
+              <Button v-else type="button" @click="showCreateDialog = true">
+                <Plus class="size-4" />
+                新建智能体
+              </Button>
+            </template>
+          </StatePanel>
+
+          <div v-else class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <article
+              v-for="agent in filteredAgents"
+              :key="agent.id"
+              class="list-card group cursor-pointer p-5"
+              @click="openAgent(agent.id)"
+            >
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0 space-y-2">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <h3 class="truncate text-base font-semibold text-foreground">
+                      {{ agent.name }}
+                    </h3>
+                    <Badge
+                      :variant="agent.enabled ? 'default' : 'secondary'"
+                      class="text-xs"
+                      :class="agent.enabled ? 'status-btn-active' : 'status-btn-inactive'"
+                    >
+                      {{ agent.enabled ? '已启用' : '已禁用' }}
+                    </Badge>
+                  </div>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <Badge variant="outline" class="text-xs">
+                      {{ typeLabel[agent.type] ?? agent.type }}
+                    </Badge>
+                    <Badge variant="outline" class="text-xs">
+                      {{ agent.source || '内置' }}
+                    </Badge>
+                    <span class="surface-chip">{{ formatDate(agent.updatedAt) }}</span>
+                  </div>
+                </div>
+
+                <div class="flex size-11 shrink-0 items-center justify-center rounded-2xl border border-border/70 bg-background/80 text-primary transition-transform duration-200 group-hover:-translate-y-0.5">
+                  <Bot class="size-4" />
+                </div>
+              </div>
+
+              <p class="mt-4 line-clamp-3 text-sm leading-6 text-muted-foreground">
+                {{ agent.description || '这个智能体还没有描述信息。' }}
+              </p>
+
+              <div class="mt-5 grid gap-3 sm:grid-cols-2">
+                <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/58 px-4 py-3">
+                  <div class="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
+                    <Cpu class="size-4 text-primary" />
+                    模型
+                  </div>
+                  <p class="truncate text-sm text-muted-foreground">{{ agent.modelId || '未设置' }}</p>
+                </div>
+
+                <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/58 px-4 py-3">
+                  <div class="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
+                    <Database class="size-4 text-primary" />
+                    知识库
+                  </div>
+                  <p class="text-sm text-muted-foreground">{{ agent.knowledgeBaseCount }} 个已连接</p>
+                </div>
+              </div>
+
+              <div v-if="agent.tags && agent.tags.length > 0" class="mt-4 flex flex-wrap gap-2">
                 <Badge
-                  v-for="tag in agent.tags.slice(0, 3)"
+                  v-for="tag in agent.tags.slice(0, 4)"
                   :key="tag"
                   variant="secondary"
                   class="text-xs"
@@ -252,41 +401,50 @@ const typeLabel: Record<string, string> = {
                   {{ tag }}
                 </Badge>
               </div>
-              <div class="text-xs text-muted-foreground mt-xs">
-                更新于: {{ formatDate(agent.updatedAt) }}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    </div>
 
-    <!-- 创建对话框 -->
+              <div class="mt-5 flex items-center justify-between gap-3 text-sm text-muted-foreground">
+                <span>适合继续调整模型、知识库和启用状态。</span>
+                <span class="inline-flex items-center gap-1 font-medium text-primary transition-colors group-hover:text-primary/80">
+                  查看详情
+                  <ArrowUpRight class="size-4" />
+                </span>
+              </div>
+            </article>
+          </div>
+        </section>
+      </div>
+    </PageContainer>
+
     <Dialog v-model:open="showCreateDialog">
-      <DialogContent class="sm:max-w-[448px]">
+      <DialogContent class="sm:max-w-[540px]">
         <DialogHeader>
-          <DialogTitle>新建 Agent</DialogTitle>
-          <DialogDescription>创建一个新的 Agent 实例</DialogDescription>
+          <DialogTitle>新建智能体</DialogTitle>
+          <DialogDescription>
+            先填名称、描述和类型，其他配置可以进详情页继续补。
+          </DialogDescription>
         </DialogHeader>
-        <div class="space-y-4 py-2">
+
+        <div class="grid gap-4 py-2">
           <div class="space-y-2">
             <Label for="agent-name">名称 *</Label>
             <Input
               id="agent-name"
               v-model="newAgent.name"
-              placeholder="输入 Agent 名称"
+              placeholder="输入智能体名称"
             />
           </div>
+
           <div class="space-y-2">
             <Label for="agent-desc">描述</Label>
             <Textarea
               id="agent-desc"
               v-model="newAgent.description"
-              placeholder="输入 Agent 描述"
-              :rows="3"
+              placeholder="简要描述它负责的工作"
+              :rows="4"
               class="resize-none"
             />
           </div>
+
           <div class="space-y-2">
             <Label>类型</Label>
             <Select v-model="newAgent.type">
@@ -300,6 +458,7 @@ const typeLabel: Record<string, string> = {
             </Select>
           </div>
         </div>
+
         <DialogFooter>
           <Button variant="outline" @click="showCreateDialog = false">
             取消
@@ -310,19 +469,5 @@ const typeLabel: Record<string, string> = {
         </DialogFooter>
       </DialogContent>
     </Dialog>
-
-    <!-- 删除确认对话框 -->
-    <ConfirmDialog
-      v-if="deleteTarget"
-      :show="showDeleteConfirm"
-      title="确认删除"
-      :message="`确定要删除 Agent「${deleteTarget.name}」吗？此操作不可撤销。`"
-      confirm-label="删除"
-      cancel-label="取消"
-      confirm-variant="destructive"
-      @confirm="handleDelete"
-      @cancel="deleteTarget = null; showDeleteConfirm = false"
-      @update:show="showDeleteConfirm = $event"
-    />
   </div>
 </template>

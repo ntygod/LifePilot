@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { Database, SlidersHorizontal, Sparkles, X } from 'lucide-vue-next'
 import type { SessionConfig, KnowledgeBase } from '@/types'
 import type { LlmProvider } from '@/api/client'
-import { X } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -29,16 +29,37 @@ const localTemperature = ref(props.temperature ?? 0.7)
 const localMaxTokens = ref(props.maxTokens ?? 2000)
 const localKbIds = ref<string[]>(props.knowledgeBaseIds ?? [])
 
-// 同步外部 prop 变化
-watch(() => props.modelId, v => { localModelId.value = v ?? '' })
-watch(() => props.temperature, v => { localTemperature.value = v ?? 0.7 })
-watch(() => props.maxTokens, v => { localMaxTokens.value = v ?? 2000 })
-watch(() => props.knowledgeBaseIds, v => { localKbIds.value = v ?? [] })
+const selectedProviderLabel = computed(() => {
+  if (!localModelId.value) return '跟随默认模型'
+  const provider = props.providers.find(item => item.id === localModelId.value)
+  return provider?.displayName || provider?.modelName || provider?.id || '已选模型'
+})
+
+const selectedKnowledgeBases = computed(() =>
+  props.knowledgeBases.filter(item => localKbIds.value.includes(item.id)),
+)
+
+const temperatureSummary = computed(() => {
+  if (localTemperature.value <= 0.4) return '偏稳'
+  if (localTemperature.value >= 1.2) return '偏发散'
+  return '平衡'
+})
+
+const maxTokensSummary = computed(() => {
+  if (localMaxTokens.value >= 6000) return '长回复'
+  if (localMaxTokens.value <= 1200) return '短回复'
+  return '常规长度'
+})
+
+watch(() => props.modelId, value => { localModelId.value = value ?? '' })
+watch(() => props.temperature, value => { localTemperature.value = value ?? 0.7 })
+watch(() => props.maxTokens, value => { localMaxTokens.value = value ?? 2000 })
+watch(() => props.knowledgeBaseIds, value => { localKbIds.value = value ?? [] })
 
 function emitUpdate() {
-  // 约束范围
   const temp = Math.min(2, Math.max(0, localTemperature.value))
   const tokens = Math.min(8000, Math.max(100, localMaxTokens.value))
+
   emit('update', {
     modelId: localModelId.value || undefined,
     temperature: temp,
@@ -48,8 +69,8 @@ function emitUpdate() {
 }
 
 function onModelChange(value: unknown) {
-  const v = String(value ?? '')
-  localModelId.value = v === '__default__' ? '' : v
+  const nextValue = String(value ?? '')
+  localModelId.value = nextValue === '__default__' ? '' : nextValue
   emitUpdate()
 }
 
@@ -65,93 +86,174 @@ function onMaxTokensChange(value: string | number) {
   emitUpdate()
 }
 
+function normalizeCheckboxValue(value: boolean | 'indeterminate') {
+  return value === true
+}
+
 function toggleKb(id: string, checked: boolean) {
   if (checked) {
     if (!localKbIds.value.includes(id)) {
       localKbIds.value.push(id)
     }
   } else {
-    const idx = localKbIds.value.indexOf(id)
-    if (idx >= 0) {
-      localKbIds.value.splice(idx, 1)
+    const index = localKbIds.value.indexOf(id)
+    if (index >= 0) {
+      localKbIds.value.splice(index, 1)
     }
   }
+
   emitUpdate()
 }
 </script>
 
 <template>
-  <div class="rounded-lg border border-border bg-card p-4 space-y-4 text-sm">
-    <div class="flex items-center justify-between">
-      <span class="font-medium text-foreground">会话配置</span>
+  <div class="detail-card p-4 text-sm sm:p-5">
+    <div class="flex flex-col gap-3 border-b border-border/60 pb-4 sm:flex-row sm:items-start sm:justify-between">
+      <div class="space-y-2">
+        <div class="surface-label">会话配置</div>
+        <div class="text-sm font-semibold text-foreground sm:text-base">决定这一轮对话怎么回答、接什么资料</div>
+        <p class="text-sm leading-6 text-muted-foreground">
+          这里的调整会立刻作用在当前会话里，适合在开始前先把模型、回答长度和知识范围定好。
+        </p>
+      </div>
+
       <Button
         variant="ghost"
         size="icon-sm"
+        class="self-end sm:self-start"
         @click="emit('close')"
       >
         <X :size="16" />
       </Button>
     </div>
 
-    <!-- 模型选择 -->
-    <div class="space-y-1.5">
-      <Label class="text-xs text-muted-foreground">模型</Label>
-      <Select :model-value="localModelId || '__default__'" @update:model-value="onModelChange">
-        <SelectTrigger class="w-full">
-          <SelectValue placeholder="默认模型" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="__default__">默认模型</SelectItem>
-          <SelectItem v-for="p in providers" :key="p.id" :value="p.id">
-            {{ p.displayName || p.modelName || p.id }}
-          </SelectItem>
-        </SelectContent>
-      </Select>
+    <div class="mt-4 flex flex-wrap gap-2 text-xs">
+      <span class="surface-chip">模型 {{ selectedProviderLabel }}</span>
+      <span class="surface-chip">回答倾向 {{ temperatureSummary }}</span>
+      <span class="surface-chip">知识库 {{ selectedKnowledgeBases.length }} 个</span>
     </div>
 
-    <!-- 温度 -->
-    <div class="space-y-1.5">
-      <Label class="text-xs text-muted-foreground">
-        温度：{{ localTemperature.toFixed(1) }}
-      </Label>
-      <Slider
-        :model-value="[localTemperature]"
-        :min="0"
-        :max="2"
-        :step="0.1"
-        @update:model-value="onTemperatureChange"
-      />
-    </div>
+    <div class="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_220px]">
+      <div class="space-y-4">
+        <section class="space-y-2">
+          <Label class="text-xs text-muted-foreground">回答模型</Label>
+          <Select :model-value="localModelId || '__default__'" @update:model-value="onModelChange">
+            <SelectTrigger class="w-full bg-background/80">
+              <SelectValue placeholder="默认模型" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__default__">跟随默认模型</SelectItem>
+              <SelectItem v-for="provider in providers" :key="provider.id" :value="provider.id">
+                {{ provider.displayName || provider.modelName || provider.id }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+          <p class="text-xs leading-5 text-muted-foreground">
+            如果不指定，这轮会沿用系统当前默认模型。
+          </p>
+        </section>
 
-    <!-- 最大 Token -->
-    <div class="space-y-1.5">
-      <Label class="text-xs text-muted-foreground">最大 Token</Label>
-      <Input
-        type="number"
-        :model-value="localMaxTokens"
-        :min="100"
-        :max="8000"
-        :step="100"
-        @update:model-value="onMaxTokensChange"
-      />
-    </div>
-
-    <!-- 知识库多选 -->
-    <div v-if="knowledgeBases.length > 0" class="space-y-1.5">
-      <Label class="text-xs text-muted-foreground">关联知识库</Label>
-      <div class="space-y-1 max-h-32 overflow-y-auto">
-        <label
-          v-for="kb in knowledgeBases"
-          :key="kb.id"
-          class="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5"
-        >
-          <Checkbox
-            :model-value="localKbIds.includes(kb.id)"
-            @update:model-value="(checked: boolean) => toggleKb(kb.id, checked)"
+        <section class="space-y-3">
+          <div class="flex items-center justify-between gap-3">
+            <Label class="text-xs text-muted-foreground">回答温度</Label>
+            <span class="surface-chip">{{ localTemperature.toFixed(1) }}</span>
+          </div>
+          <Slider
+            :model-value="[localTemperature]"
+            :min="0"
+            :max="2"
+            :step="0.1"
+            @update:model-value="onTemperatureChange"
           />
-          <span class="text-sm text-foreground">{{ kb.name }}</span>
-        </label>
+          <p class="text-xs leading-5 text-muted-foreground">
+            现在是 {{ temperatureSummary }} 模式，越低越稳，越高越容易发散联想。
+          </p>
+        </section>
+
+        <section class="space-y-2">
+          <div class="flex items-center justify-between gap-3">
+            <Label class="text-xs text-muted-foreground">最大回答长度</Label>
+            <span class="surface-chip">{{ maxTokensSummary }}</span>
+          </div>
+          <Input
+            type="number"
+            class="bg-background/80"
+            :model-value="localMaxTokens"
+            :min="100"
+            :max="8000"
+            :step="100"
+            @update:model-value="onMaxTokensChange"
+          />
+          <p class="text-xs leading-5 text-muted-foreground">
+            控制单轮回复上限，适合避免回答过短或展开过多。
+          </p>
+        </section>
+
+        <section v-if="knowledgeBases.length > 0" class="space-y-3">
+          <div class="flex items-center justify-between gap-3">
+            <Label class="text-xs text-muted-foreground">接入知识库</Label>
+            <span class="surface-chip">{{ selectedKnowledgeBases.length }} / {{ knowledgeBases.length }}</span>
+          </div>
+
+          <div class="grid max-h-56 gap-2 overflow-y-auto pr-1 scrollbar-thin">
+            <label
+              v-for="kb in knowledgeBases"
+              :key="kb.id"
+              class="list-card flex cursor-pointer items-start gap-3 px-3 py-3"
+            >
+              <Checkbox
+                :model-value="localKbIds.includes(kb.id)"
+                class="mt-0.5"
+                @update:model-value="(checked) => toggleKb(kb.id, normalizeCheckboxValue(checked))"
+              />
+              <div class="min-w-0 space-y-1">
+                <div class="text-sm font-medium text-foreground">{{ kb.name }}</div>
+                <p class="text-xs leading-5 text-muted-foreground">
+                  选中后，这轮提问可以直接检索这部分资料。
+                </p>
+              </div>
+            </label>
+          </div>
+        </section>
       </div>
+
+      <aside class="space-y-3">
+        <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/58 px-4 py-3">
+          <div class="mb-2 flex items-center gap-2 text-sm font-medium text-foreground">
+            <Sparkles class="size-4 text-primary" />
+            当前回答策略
+          </div>
+          <div class="space-y-1 text-sm text-muted-foreground">
+            <p>模型：{{ selectedProviderLabel }}</p>
+            <p>温度：{{ temperatureSummary }}</p>
+            <p>长度：{{ maxTokensSummary }}</p>
+          </div>
+        </div>
+
+        <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/58 px-4 py-3">
+          <div class="mb-2 flex items-center gap-2 text-sm font-medium text-foreground">
+            <Database class="size-4 text-primary" />
+            资料接入
+          </div>
+          <p class="text-sm text-muted-foreground">
+            {{
+              selectedKnowledgeBases.length > 0
+                ? `本轮会接入 ${selectedKnowledgeBases.length} 个知识库。`
+                : '当前没有挂载知识库，会只基于对话上下文回答。'
+            }}
+          </p>
+        </div>
+
+        <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/58 px-4 py-3">
+          <div class="mb-2 flex items-center gap-2 text-sm font-medium text-foreground">
+            <SlidersHorizontal class="size-4 text-primary" />
+            调整建议
+          </div>
+          <p class="text-sm text-muted-foreground">
+            起草和发散阶段可以把温度调高；整理纪要、排障和结构化输出更适合维持在当前或更低。
+          </p>
+        </div>
+      </aside>
     </div>
   </div>
 </template>

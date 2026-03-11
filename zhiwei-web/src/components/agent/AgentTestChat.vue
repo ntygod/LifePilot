@@ -268,10 +268,10 @@ function formatTime(ts: number): string {
   <div class="flex flex-col h-full border border-border rounded-lg overflow-hidden bg-background">
     <!-- 顶部 Token 统计条 -->
     <div class="flex items-center justify-between px-4 py-2 border-b border-border bg-muted/30 shrink-0">
-      <div class="flex items-center gap-4 text-xs text-muted-foreground">
-        <span>Prompt: <strong class="text-foreground">{{ tokenUsage?.promptTokens ?? 0 }}</strong></span>
-        <span>Completion: <strong class="text-foreground">{{ tokenUsage?.completionTokens ?? 0 }}</strong></span>
-        <span>Total: <strong class="text-foreground">{{ tokenUsage?.totalTokens ?? 0 }}</strong></span>
+      <div data-token-usage class="flex items-center gap-4 text-xs text-muted-foreground">
+        <span>提示词：<strong class="text-foreground">{{ tokenUsage?.promptTokens ?? 0 }}</strong></span>
+        <span>回复：<strong class="text-foreground">{{ tokenUsage?.completionTokens ?? 0 }}</strong></span>
+        <span>总计：<strong class="text-foreground">{{ tokenUsage?.totalTokens ?? 0 }}</strong></span>
       </div>
       <Button
         variant="ghost"

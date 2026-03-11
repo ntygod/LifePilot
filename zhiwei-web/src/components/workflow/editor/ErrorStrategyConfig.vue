@@ -33,8 +33,8 @@ const selectedType = computed<StrategyOption>(() => {
 })
 
 /** 策略类型变更时，发射带默认值的新模型 */
-function onTypeChange(value: string) {
-  const type = value as StrategyOption
+function onTypeChange(value: unknown) {
+  const type = String(value ?? 'none') as StrategyOption
   if (type === 'none') {
     emit('update:modelValue', null)
     return

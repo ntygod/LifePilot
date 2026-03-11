@@ -6,10 +6,10 @@ defineProps<{
 </script>
 
 <template>
-  <div class="overflow-x-auto rounded-md border border-border">
+  <div class="overflow-x-auto rounded-[calc(var(--radius)+4px)] border border-border/70 bg-background/72">
     <table class="w-full text-sm">
       <thead>
-        <tr class="border-b border-border bg-muted">
+        <tr class="border-b border-border/70 bg-muted/60">
           <th
             v-for="col in columns"
             :key="col.key"
@@ -24,7 +24,7 @@ defineProps<{
         <tr
           v-for="(row, i) in rows"
           :key="i"
-          class="border-b border-border last:border-b-0 hover:bg-muted/50 transition-colors"
+          class="border-b border-border/60 transition-colors last:border-b-0 hover:bg-accent/40"
         >
           <td
             v-for="col in columns"

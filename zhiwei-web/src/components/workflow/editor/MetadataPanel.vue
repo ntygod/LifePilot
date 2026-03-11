@@ -57,9 +57,9 @@ function removeTrigger(index: number) {
 }
 
 /** 更新指定索引触发器的类型，重置类型专属字段 */
-function updateTriggerType(index: number, type: string) {
+function updateTriggerType(index: number, type: unknown) {
   const updated = [...props.triggers]
-  const triggerType = type as TriggerModel['type']
+  const triggerType = String(type ?? 'manual') as TriggerModel['type']
   const newTrigger: TriggerModel = { type: triggerType }
   if (triggerType === 'cron') newTrigger.cron = ''
   if (triggerType === 'event') newTrigger.eventType = ''

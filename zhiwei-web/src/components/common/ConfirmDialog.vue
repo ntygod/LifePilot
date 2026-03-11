@@ -45,19 +45,21 @@ function handleCancel() {
 
 <template>
   <AlertDialog :open="show" @update:open="$emit('update:show', $event)">
-    <AlertDialogContent>
+    <AlertDialogContent class="sm:max-w-[440px]">
       <AlertDialogHeader>
-        <AlertDialogTitle>{{ title }}</AlertDialogTitle>
-        <AlertDialogDescription class="whitespace-pre-wrap">
+        <AlertDialogTitle class="text-left text-lg font-semibold tracking-tight">
+          {{ title }}
+        </AlertDialogTitle>
+        <AlertDialogDescription class="whitespace-pre-wrap text-left leading-6">
           {{ message }}
         </AlertDialogDescription>
       </AlertDialogHeader>
-      <AlertDialogFooter>
+      <AlertDialogFooter class="gap-2">
         <AlertDialogCancel @click="handleCancel">
           {{ cancelLabel }}
         </AlertDialogCancel>
         <AlertDialogAction
-          :class="confirmVariant === 'destructive' ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90' : ''"
+          :class="confirmVariant === 'destructive' ? 'bg-destructive text-white hover:bg-destructive/90' : ''"
           @click="handleConfirm"
         >
           {{ confirmLabel }}

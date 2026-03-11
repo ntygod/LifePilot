@@ -10,15 +10,16 @@
   @since 2026-03-16
 -->
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { computed, defineAsyncComponent, ref } from 'vue'
 import { agentApi } from '@/api/client'
 import type { ContextPreviewResponse } from '@/types'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import TokenBudgetChart from '@/components/agent/TokenBudgetChart.vue'
 import { Search, ChevronDown, ChevronRight, AlertCircle, Eye } from 'lucide-vue-next'
+
+const TokenBudgetChart = defineAsyncComponent(() => import('@/components/agent/TokenBudgetChart.vue'))
 
 const props = defineProps<{
   agentId: string
@@ -72,7 +73,7 @@ async function fetchPreview() {
     // 默认展开有内容的段落
     expandedSegments.value.clear()
   } catch (e: unknown) {
-    const msg = (e as any)?.message ?? '上下文预览请求失败'
+    const msg = (e as any)?.message ?? '发送内容加载失败'
     error.value = msg
     // 保留用户输入，不清空 inputMessage
   } finally {
@@ -96,7 +97,7 @@ function onKeydown(e: KeyboardEvent) {
       <CardHeader class="pb-3">
         <CardTitle class="text-base flex items-center gap-2">
           <Search :size="16" />
-          上下文预览
+          发送内容
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -106,7 +107,7 @@ function onKeydown(e: KeyboardEvent) {
             :disabled="loading"
             class="flex-1 resize-none rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 disabled:opacity-50"
             :rows="2"
-            placeholder="输入测试消息，查看 ContextAssembler 组装结果..."
+            placeholder="输入测试消息，查看发送给模型的内容..."
             @keydown="onKeydown"
           />
           <Button

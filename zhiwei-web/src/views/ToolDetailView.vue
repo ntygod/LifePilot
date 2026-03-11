@@ -1,16 +1,33 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useToolStore } from '@/stores/tool'
+import {
+  ArrowLeft,
+  Blocks,
+  Braces,
+  CircleDollarSign,
+  Clock3,
+  FileCog,
+  PackageSearch,
+  ShieldAlert,
+  TestTube2,
+  Wrench,
+} from 'lucide-vue-next'
 import { toolApi } from '@/api/client'
-import ToolTestDialog from '@/components/tool/ToolTestDialog.vue'
-import YamlEditor from '@/components/editor/YamlEditor.vue'
+import MetricCard from '@/components/common/MetricCard.vue'
+import StatePanel from '@/components/common/StatePanel.vue'
 import Breadcrumb from '@/components/global/Breadcrumb.vue'
 import type { BreadcrumbItem } from '@/components/global/Breadcrumb.vue'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import PageContainer from '@/components/layout/PageContainer.vue'
+import PageHeader from '@/components/layout/PageHeader.vue'
+import PageSection from '@/components/layout/PageSection.vue'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useToolStore } from '@/stores/tool'
+
+const YamlEditor = defineAsyncComponent(() => import('@/components/editor/YamlEditor.vue'))
+const ToolTestDialog = defineAsyncComponent(() => import('@/components/tool/ToolTestDialog.vue'))
 
 const route = useRoute()
 const router = useRouter()
@@ -18,336 +35,469 @@ const toolStore = useToolStore()
 
 const toolId = computed(() => route.params.id as string)
 const tool = computed(() => toolStore.currentTool)
+
+const pageLoading = ref(true)
+const pageError = ref<string | null>(null)
 const showTestDialog = ref(false)
 const usage = ref<any | null>(null)
-const usageLoading = ref(true)
-
-// YAML 编辑器状态
+const usageLoading = ref(false)
+const usageError = ref<string | null>(null)
+const yamlLoading = ref(false)
 const toolYamlContent = ref('')
-const yamlLoading = ref(true)
 
-// 面包屑导航
 const breadcrumbItems = computed<BreadcrumbItem[]>(() => [
   { label: '工具', to: { name: 'tools' } },
-  { label: tool.value?.displayName || tool.value?.name || '...' }
+  { label: tool.value?.displayName || tool.value?.name || '详情' },
 ])
 
-onMounted(async () => {
-  await toolStore.fetchToolDetail(toolId.value)
-  // 加载 YAML 定义（仅 yaml 来源工具）
-  if (tool.value?.source === 'yaml') {
-    try {
-      toolYamlContent.value = await toolApi.getToolYaml(toolId.value)
-    } catch {
-      // YAML 加载失败不阻塞详情展示
-    } finally {
-      yamlLoading.value = false
-    }
-  } else {
-    yamlLoading.value = false
-  }
-  try {
-    usage.value = await toolStore.fetchToolUsage(toolId.value)
-  } catch {
-    // 使用情况查询失败时不阻塞详情展示
-  } finally {
-    usageLoading.value = false
-  }
-})
-
 const sourceLabel: Record<string, string> = {
-  builtin: 'Builtin',
+  builtin: '内置',
   yaml: 'YAML',
   mcp: 'MCP',
 }
 
-const riskBadge: Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' | 'destructive' }> = {
-  LOW: { label: '低风险', variant: 'secondary' },
-  MEDIUM: { label: '中风险', variant: 'outline' },
-  HIGH: { label: '高风险', variant: 'destructive' },
+const riskBadge: Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' | 'destructive'; class: string }> = {
+  LOW: {
+    label: '低风险',
+    variant: 'secondary',
+    class: 'status-btn-inactive',
+  },
+  MEDIUM: {
+    label: '中风险',
+    variant: 'outline',
+    class: 'border-amber-200/70 bg-amber-50 text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300',
+  },
+  HIGH: {
+    label: '高风险',
+    variant: 'destructive',
+    class: 'border-destructive/25 bg-destructive/8 text-destructive',
+  },
+}
+
+const displayName = computed(() => tool.value?.displayName || tool.value?.name || '工具详情')
+const sourceValue = computed(() => sourceLabel[tool.value?.source ?? ''] ?? tool.value?.source ?? '未知')
+const riskValue = computed(() => riskBadge[tool.value?.riskLevel ?? '']?.label ?? tool.value?.riskLevel ?? '未知')
+const totalUsage = computed(() => {
+  if (!usage.value) return 0
+  return (usage.value.skillCount ?? 0) + (usage.value.workflowCount ?? 0)
+})
+const hasSchemas = computed(() => Boolean(tool.value?.inputSchema || tool.value?.outputSchema))
+const hasBudget = computed(() => Boolean(tool.value?.budget))
+const hasYamlEditor = computed(() => tool.value?.source === 'yaml')
+const hasSideEffects = computed(() => Boolean(tool.value?.sideEffects?.length))
+
+onMounted(async () => {
+  await loadData()
+})
+
+watch(() => route.params.id, async () => {
+  showTestDialog.value = false
+  await loadData()
+})
+
+async function loadData() {
+  pageLoading.value = true
+  pageError.value = null
+  usage.value = null
+  usageError.value = null
+  toolYamlContent.value = ''
+
+  try {
+    await toolStore.fetchToolDetail(toolId.value)
+    await Promise.allSettled([
+      loadYamlDefinition(),
+      loadUsage(),
+    ])
+  } catch (event: any) {
+    pageError.value = event?.message || toolStore.error || '加载工具详情失败。'
+  } finally {
+    pageLoading.value = false
+  }
+}
+
+async function loadYamlDefinition() {
+  yamlLoading.value = true
+
+  if (!hasYamlEditor.value) {
+    yamlLoading.value = false
+    return
+  }
+
+  try {
+    toolYamlContent.value = await toolApi.getToolYaml(toolId.value)
+  } finally {
+    yamlLoading.value = false
+  }
+}
+
+async function loadUsage() {
+  usageLoading.value = true
+  usageError.value = null
+  try {
+    usage.value = await toolStore.fetchToolUsage(toolId.value)
+  } catch (event: any) {
+    usage.value = null
+    usageError.value = event?.message || toolStore.error || '加载引用信息失败。'
+  } finally {
+    usageLoading.value = false
+  }
+}
+
+async function handleSaveYaml(content: string) {
+  await toolApi.updateToolYaml(toolId.value, content)
+  await toolStore.fetchToolDetail(toolId.value)
+}
+
+function formatMoney(cents?: number) {
+  if (cents == null) return '未设置'
+  return `$${(cents / 100).toFixed(2)}`
+}
+
+function goBack() {
+  router.push('/tools')
+}
+
+function formatUsageLabel(items: number, singular: string, plural: string) {
+  return `${items} 个${items === 1 ? singular : plural}`
 }
 </script>
 
 <template>
-  <div class="flex flex-col h-full overflow-hidden">
-    <!-- 头部 -->
-    <div class="flex-shrink-0 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div class="max-w-[1200px] mx-auto px-md md:px-lg py-md">
-        <!-- 面包屑导航 -->
-        <Breadcrumb :items="breadcrumbItems" class="mb-2" />
-        <div class="flex items-center justify-between gap-sm">
-          <div class="flex items-center gap-3">
-            <h2 class="text-2xl font-semibold text-foreground leading-tight">
-              {{ tool?.displayName || tool?.name || '加载中...' }}
-            </h2>
-            <Badge :variant="tool?.source === 'yaml' ? 'default' : 'secondary'">
-              {{ sourceLabel[tool?.source ?? ''] ?? tool?.source ?? '...' }}
-            </Badge>
-          </div>
-          <Button variant="outline" @click="showTestDialog = true">
-            测试调用
+  <div class="h-full overflow-y-auto">
+    <PageContainer size="wide" class="py-6 sm:py-8">
+      <div class="page-stack">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <Breadcrumb :items="breadcrumbItems" class="min-w-0" />
+          <Button type="button" variant="ghost" class="w-fit" @click="goBack">
+            <ArrowLeft class="size-4" />
+            返回工具列表
           </Button>
         </div>
-      </div>
-    </div>
 
-    <!-- 内容区域 -->
-    <div class="flex-1 overflow-y-auto">
-      <!-- Skeleton 加载占位符 -->
-      <div v-if="!tool" class="max-w-[1200px] mx-auto px-md md:px-lg py-lg space-y-6">
-        <Card>
-          <CardHeader>
-            <Skeleton class="h-6 w-1/4" />
-          </CardHeader>
-          <CardContent class="space-y-3">
-            <Skeleton class="h-4 w-1/3" />
-            <Skeleton class="h-4 w-1/2" />
-            <Skeleton class="h-4 w-full" />
-            <div class="flex gap-4">
-              <Skeleton class="h-5 w-20 rounded-full" />
-              <Skeleton class="h-5 w-20 rounded-full" />
-              <Skeleton class="h-5 w-16" />
+        <template v-if="pageLoading">
+          <div class="space-y-5">
+            <div class="space-y-3 border-b border-border/70 pb-6">
+              <Skeleton class="h-5 w-20" />
+              <Skeleton class="h-10 w-72" />
+              <Skeleton class="h-5 w-full max-w-[42rem]" />
             </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <Skeleton class="h-6 w-1/5" />
-          </CardHeader>
-          <CardContent>
-            <Skeleton class="h-24 w-full rounded-md" />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <Skeleton class="h-6 w-1/5" />
-          </CardHeader>
-          <CardContent class="space-y-2">
-            <Skeleton class="h-4 w-1/2" />
-            <Skeleton class="h-4 w-1/3" />
-          </CardContent>
-        </Card>
-      </div>
+            <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <Skeleton v-for="index in 4" :key="index" class="h-28 rounded-[calc(var(--radius)+6px)]" />
+            </div>
+            <Skeleton class="h-[240px] rounded-[calc(var(--radius)+6px)]" />
+            <Skeleton class="h-[320px] rounded-[calc(var(--radius)+6px)]" />
+          </div>
+        </template>
 
-      <!-- 详情内容 -->
-      <div v-else class="max-w-[1200px] mx-auto px-md md:px-lg py-lg space-y-6">
-        <!-- 基础信息 -->
-        <Card class="detail-card">
-          <CardHeader>
-            <CardTitle class="section-title">基础信息</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div class="space-y-3 text-sm">
-              <div>
-                <span class="text-muted-foreground">工具 ID：</span>
-                <span class="font-mono">{{ tool.id }}</span>
-              </div>
-              <div>
-                <span class="text-muted-foreground">显示名：</span>
-                <span>{{ tool.displayName || tool.name }}</span>
-              </div>
-              <div>
-                <span class="text-muted-foreground">描述：</span>
-                <p class="mt-1">{{ tool.description || '无描述' }}</p>
-              </div>
-              <div class="flex items-center gap-4 flex-wrap">
-                <div class="flex items-center gap-1.5">
-                  <span class="text-muted-foreground">来源：</span>
-                  <Badge variant="secondary">
-                    {{ sourceLabel[tool.source] ?? tool.source }}
-                  </Badge>
+        <StatePanel
+          v-else-if="pageError || !tool"
+          title="工具详情暂时不可用"
+          :description="pageError || toolStore.error || '没有找到对应的工具。'"
+          tone="danger"
+        >
+          <template #icon>
+            <Wrench class="size-5" />
+          </template>
+          <template #actions>
+            <Button type="button" variant="outline" @click="goBack">
+              返回列表
+            </Button>
+            <Button type="button" @click="loadData">
+              重试
+            </Button>
+          </template>
+        </StatePanel>
+
+        <template v-else>
+          <PageHeader
+            eyebrow="工具详情"
+            :title="displayName"
+            :description="tool.description || '查看这个工具的用途、运行限制、YAML 定义和使用情况。'"
+          >
+            <template #actions>
+              <Button type="button" variant="outline" @click="loadUsage">
+                刷新引用信息
+              </Button>
+              <Button type="button" @click="showTestDialog = true">
+                <TestTube2 class="size-4" />
+                测试工具
+              </Button>
+            </template>
+
+            <template #meta>
+              <MetricCard label="来源" :value="sourceValue" hint="当前工具实现对应的接入来源。">
+                <template #icon>
+                  <FileCog class="size-5" />
+                </template>
+              </MetricCard>
+              <MetricCard label="风险级别" :value="riskValue" hint="当前工具的执行风险提示。">
+                <template #icon>
+                  <ShieldAlert class="size-5" />
+                </template>
+              </MetricCard>
+              <MetricCard label="幂等性" :value="tool.idempotent ? '是' : '否'" hint="重复调用是否预期产生相同结果。">
+                <template #icon>
+                  <Blocks class="size-5" />
+                </template>
+              </MetricCard>
+              <MetricCard label="下游引用" :value="usageLoading ? '加载中...' : totalUsage" hint="技能和工作流当前对它的引用总数。">
+                <template #icon>
+                  <PackageSearch class="size-5" />
+                </template>
+              </MetricCard>
+            </template>
+          </PageHeader>
+
+          <PageSection
+            eyebrow="基础信息"
+            title="工具说明"
+            description="先了解用途，再查看参数要求和执行限制。"
+          >
+            <div class="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(260px,0.85fr)]">
+              <div class="detail-card p-4 sm:p-5">
+                <div class="space-y-4">
+                  <div>
+                    <div class="surface-label mb-2 text-[0.68rem]">说明</div>
+                    <p class="text-sm leading-7 text-foreground">
+                      {{ tool.description || '这个工具暂时还没有说明。' }}
+                    </p>
+                  </div>
+
+                  <div v-if="hasSideEffects" class="border-t border-border/60 pt-4">
+                    <div class="surface-label mb-3 text-[0.68rem]">执行提醒</div>
+                    <ul class="space-y-2 text-sm text-muted-foreground">
+                      <li
+                        v-for="(effect, index) in tool.sideEffects"
+                        :key="`${tool.id}-effect-${index}`"
+                        class="flex items-start gap-2"
+                      >
+                        <span class="mt-1 size-1.5 rounded-full bg-primary/70" />
+                        <span class="leading-6">{{ effect }}</span>
+                      </li>
+                    </ul>
+                  </div>
+
+                  <div v-if="tool.tags?.length" class="border-t border-border/60 pt-4">
+                    <div class="surface-label mb-3 text-[0.68rem]">标签</div>
+                    <div class="flex flex-wrap gap-2">
+                      <Badge v-for="tag in tool.tags" :key="tag" variant="secondary">
+                        {{ tag }}
+                      </Badge>
+                    </div>
+                  </div>
                 </div>
-                <div class="flex items-center gap-1.5">
-                  <span class="text-muted-foreground">风险等级：</span>
-                  <Badge
-                    :variant="riskBadge[tool.riskLevel]?.variant ?? 'outline'"
-                  >
-                    {{ riskBadge[tool.riskLevel]?.label ?? tool.riskLevel }}
-                  </Badge>
-                </div>
-                <div>
-                  <span class="text-muted-foreground">幂等性：</span>
-                  <span>{{ tool.idempotent ? '是' : '否' }}</span>
-                </div>
               </div>
-              <div v-if="tool.exportable !== undefined">
-                <span class="text-muted-foreground">可导出：</span>
-                <span>{{ tool.exportable ? '是' : '否' }}</span>
-              </div>
-              <div v-if="tool.tags && tool.tags.length > 0">
-                <span class="text-muted-foreground">标签：</span>
-                <div class="flex flex-wrap gap-1 mt-1">
-                  <Badge
-                    v-for="tag in tool.tags"
-                    :key="tag"
-                    variant="secondary"
-                  >
-                    {{ tag }}
-                  </Badge>
+
+              <div class="rounded-[calc(var(--radius)+2px)] border border-dashed border-border/60 bg-background/48 p-4">
+                <div class="space-y-4">
+                  <div>
+                    <div class="surface-label text-[0.68rem]">当前对象</div>
+                    <p class="mt-2 break-all font-mono text-sm text-muted-foreground">{{ tool.id }}</p>
+                  </div>
+
+                  <div class="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                    <span class="surface-chip">类型：{{ tool.type }}</span>
+                    <span class="surface-chip">来源：{{ sourceValue }}</span>
+                    <span class="surface-chip">{{ tool.exportable ? '支持导出' : '不支持导出' }}</span>
+                  </div>
+
+                  <p class="text-sm leading-6 text-muted-foreground">
+                    先判断来源、类型和执行影响，再进入参数、预算和 YAML 定义继续查看细节。
+                  </p>
                 </div>
               </div>
             </div>
-          </CardContent>
-        </Card>
+          </PageSection>
 
-        <!-- 行为与副作用说明 -->
-        <Card v-if="tool.sideEffects && tool.sideEffects.length > 0" class="detail-card">
-          <CardHeader>
-            <CardTitle class="section-title">行为与副作用说明</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ul class="space-y-2 text-sm">
-              <li
-                v-for="(effect, index) in tool.sideEffects"
-                :key="index"
-                class="flex items-start gap-2"
+          <div class="grid gap-5 2xl:grid-cols-2">
+            <PageSection
+              eyebrow="参数"
+              title="输入与输出说明"
+              :description="hasSchemas ? '查看这个工具接收什么参数、返回什么结果。' : '这个工具暂时没有提供输入或输出说明。'"
+            >
+              <StatePanel
+                v-if="!hasSchemas"
+                title="暂无参数说明"
+                description="后续补充输入或输出说明后，可在此查看。"
               >
-                <span class="text-muted-foreground">•</span>
-                <span>{{ effect }}</span>
-              </li>
-            </ul>
-          </CardContent>
-        </Card>
+                <template #icon>
+                  <Braces class="size-5" />
+                </template>
+              </StatePanel>
 
-        <!-- Schema 信息 -->
-        <Card v-if="tool.inputSchema || tool.outputSchema" class="detail-card">
-          <CardHeader>
-            <CardTitle class="section-title">Schema</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div class="space-y-4">
-              <div v-if="tool.inputSchema">
-                <h4 class="text-sm font-medium text-foreground mb-2">输入 Schema</h4>
-                <pre class="p-3 rounded-md bg-muted text-xs overflow-x-auto">{{ JSON.stringify(tool.inputSchema, null, 2) }}</pre>
-              </div>
-              <div v-if="tool.outputSchema">
-                <h4 class="text-sm font-medium text-foreground mb-2">输出 Schema</h4>
-                <pre class="p-3 rounded-md bg-muted text-xs overflow-x-auto">{{ JSON.stringify(tool.outputSchema, null, 2) }}</pre>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+              <div v-else class="space-y-4">
+                <div v-if="tool.inputSchema" class="rounded-[calc(var(--radius)+6px)] border border-border/70 bg-background/72 p-4">
+                  <div class="surface-label mb-3 text-[0.68rem]">输入结构</div>
+                  <pre class="overflow-x-auto rounded-[calc(var(--radius)+4px)] bg-muted/55 p-4 text-xs leading-6 text-foreground">{{ JSON.stringify(tool.inputSchema, null, 2) }}</pre>
+                </div>
 
-        <!-- YAML 定义（仅 yaml 来源工具展示） -->
-        <Card v-if="tool.source === 'yaml'" class="detail-card">
-          <CardHeader>
-            <div class="flex items-center justify-between">
-              <CardTitle class="section-title">YAML 定义</CardTitle>
-              <Badge variant="outline">{{ sourceLabel[tool.source] }}</Badge>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <Skeleton v-if="yamlLoading" class="h-64 w-full" />
+                <div v-if="tool.outputSchema" class="rounded-[calc(var(--radius)+6px)] border border-border/70 bg-background/72 p-4">
+                  <div class="surface-label mb-3 text-[0.68rem]">输出结构</div>
+                  <pre class="overflow-x-auto rounded-[calc(var(--radius)+4px)] bg-muted/55 p-4 text-xs leading-6 text-foreground">{{ JSON.stringify(tool.outputSchema, null, 2) }}</pre>
+                </div>
+              </div>
+            </PageSection>
+
+            <PageSection
+              eyebrow="预算"
+              title="执行约束"
+              :description="hasBudget ? '查看超时、重试次数和成本上限。' : '当前还没有预算配置。'"
+            >
+              <StatePanel
+                v-if="!hasBudget"
+                title="暂无运行预算"
+                description="当前还没有设置超时、重试次数或成本上限。"
+              >
+                <template #icon>
+                  <CircleDollarSign class="size-5" />
+                </template>
+              </StatePanel>
+
+              <div v-else class="detail-card p-4 sm:p-5">
+                <div class="grid gap-4 sm:grid-cols-3">
+                  <div class="space-y-1.5">
+                    <div class="flex items-center gap-2 text-sm font-medium text-foreground">
+                      <Clock3 class="size-4 text-primary" />
+                      超时
+                    </div>
+                    <p class="text-sm text-muted-foreground">
+                      {{ tool.budget?.timeoutSeconds != null ? `${tool.budget.timeoutSeconds}s` : '未设置' }}
+                    </p>
+                  </div>
+                  <div class="space-y-1.5 sm:border-l sm:border-border/60 sm:pl-4">
+                    <div class="flex items-center gap-2 text-sm font-medium text-foreground">
+                      <Blocks class="size-4 text-primary" />
+                      最大重试次数
+                    </div>
+                    <p class="text-sm text-muted-foreground">
+                      {{ tool.budget?.maxRetries ?? '未设置' }}
+                    </p>
+                  </div>
+                  <div class="space-y-1.5 sm:border-l sm:border-border/60 sm:pl-4">
+                    <div class="flex items-center gap-2 text-sm font-medium text-foreground">
+                      <CircleDollarSign class="size-4 text-primary" />
+                      成本上限
+                    </div>
+                    <p class="text-sm text-muted-foreground">
+                      {{ formatMoney(tool.budget?.maxCostCents) }}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </PageSection>
+          </div>
+
+          <PageSection
+            v-if="hasYamlEditor"
+            eyebrow="定义"
+            title="YAML 源文件"
+            description="查看或编辑工具的 YAML 定义。"
+          >
+            <Skeleton v-if="yamlLoading" class="h-72 w-full rounded-[calc(var(--radius)+6px)]" />
             <YamlEditor
               v-else
               v-model="toolYamlContent"
-              title="Tool YAML"
-              :on-save="async (content: string) => {
-                await toolApi.updateToolYaml(toolId, content)
-                await toolStore.fetchToolDetail(toolId)
-              }"
+              title="工具 YAML"
+              :on-save="handleSaveYaml"
             />
-          </CardContent>
-        </Card>
+          </PageSection>
 
-        <!-- 预算配置 -->
-        <Card v-if="tool.budget" class="detail-card">
-          <CardHeader>
-            <CardTitle class="section-title">预算配置</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div class="space-y-2 text-sm">
-              <div v-if="tool.budget.timeoutSeconds">
-                <span class="text-muted-foreground">超时时间：</span>
-                <span>{{ tool.budget.timeoutSeconds }} 秒</span>
-              </div>
-              <div v-if="tool.budget.maxRetries">
-                <span class="text-muted-foreground">最大重试次数：</span>
-                <span>{{ tool.budget.maxRetries }}</span>
-              </div>
-              <div v-if="tool.budget.maxCostCents">
-                <span class="text-muted-foreground">最大成本：</span>
-                <span>{{ (tool.budget.maxCostCents / 100).toFixed(2) }} 元</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+          <PageSection
+            eyebrow="引用"
+            title="这个工具被谁用到"
+            description="查看哪些技能或工作流正在使用这个工具。"
+          >
+            <StatePanel
+              v-if="usageError"
+              title="引用信息暂时不可用"
+              :description="usageError"
+              tone="warning"
+            >
+              <template #icon>
+                <PackageSearch class="size-5" />
+              </template>
+              <template #actions>
+                <Button variant="outline" @click="loadUsage">
+                  重新加载
+                </Button>
+              </template>
+            </StatePanel>
 
-        <!-- 使用情况 -->
-        <Card class="detail-card">
-          <CardHeader>
-            <CardTitle class="section-title">使用情况</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <!-- Skeleton 加载占位符 -->
-            <div v-if="usageLoading" class="space-y-3">
-              <Skeleton class="h-4 w-1/2" />
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-md">
-                <div class="space-y-2">
-                  <Skeleton class="h-4 w-1/4" />
-                  <Skeleton class="h-9 w-full" />
-                  <Skeleton class="h-9 w-full" />
-                </div>
-                <div class="space-y-2">
-                  <Skeleton class="h-4 w-1/4" />
-                  <Skeleton class="h-9 w-full" />
-                </div>
-              </div>
+            <div v-else-if="usageLoading" class="grid gap-3 xl:grid-cols-2">
+              <Skeleton class="h-40 rounded-[calc(var(--radius)+6px)]" />
+              <Skeleton class="h-40 rounded-[calc(var(--radius)+6px)]" />
             </div>
 
-            <div v-else-if="usage" class="space-y-3 text-sm">
-              <div class="text-muted-foreground">
-                被 {{ usage.skillCount ?? 0 }} 个 Skill 和 {{ usage.workflowCount ?? 0 }} 个 Workflow 使用。
-              </div>
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-md">
-                <div>
-                  <h4 class="text-sm font-medium text-foreground mb-xs">Skills</h4>
-                  <div v-if="usage.usedBySkills && usage.usedBySkills.length > 0" class="space-y-xs">
-                    <Button
-                      v-for="skill in usage.usedBySkills"
-                      :key="skill.id"
-                      variant="outline"
-                      class="w-full justify-between"
-                      @click="router.push(`/skills/${skill.id}`)"
-                    >
-                      <span class="truncate">{{ skill.name }}</span>
-                      <span class="text-xs text-muted-foreground">查看</span>
+            <div v-else class="grid gap-5 xl:grid-cols-2">
+              <div class="space-y-3">
+                <div class="surface-label text-[0.68rem]">
+                  {{ formatUsageLabel(usage?.usedBySkills?.length ?? 0, '技能', '技能') }}
+                </div>
+
+                <StatePanel
+                  v-if="!usage?.usedBySkills?.length"
+                  title="暂无关联技能"
+                  description="有技能接入这个工具后，会显示在列表中。"
+                >
+                  <template #icon>
+                    <FileCog class="size-5" />
+                  </template>
+                </StatePanel>
+
+                <article
+                  v-for="skill in usage?.usedBySkills ?? []"
+                  :key="skill.id"
+                  class="list-card p-4"
+                >
+                  <div class="flex items-center justify-between gap-4">
+                    <div>
+                      <div class="text-sm font-medium text-foreground">{{ skill.name }}</div>
+                      <div class="text-sm text-muted-foreground">这个技能当前引用了该工具。</div>
+                    </div>
+                    <Button type="button" variant="outline" @click="router.push(`/skills/${skill.id}`)">
+                      打开技能
                     </Button>
                   </div>
-                  <div v-else class="text-xs text-muted-foreground">
-                    暂无 Skill 使用此 Tool
-                  </div>
+                </article>
+              </div>
+
+              <div class="space-y-3">
+                <div class="surface-label text-[0.68rem]">
+                  {{ formatUsageLabel(usage?.usedByWorkflows?.length ?? 0, '工作流', '工作流') }}
                 </div>
-                <div>
-                  <h4 class="text-sm font-medium text-foreground mb-xs">Workflows</h4>
-                  <div v-if="usage.usedByWorkflows && usage.usedByWorkflows.length > 0" class="space-y-xs">
-                    <Button
-                      v-for="wf in usage.usedByWorkflows"
-                      :key="wf.id"
-                      variant="outline"
-                      class="w-full justify-between"
-                      @click="router.push(`/workflows/${wf.id}`)"
-                    >
-                      <span class="truncate">{{ wf.name }}</span>
-                      <span class="text-xs text-muted-foreground">查看</span>
+
+                <StatePanel
+                  v-if="!usage?.usedByWorkflows?.length"
+                  title="暂无关联工作流"
+                  description="有工作流接入这个工具后，会显示在列表中。"
+                >
+                  <template #icon>
+                    <PackageSearch class="size-5" />
+                  </template>
+                </StatePanel>
+
+                <article
+                  v-for="workflow in usage?.usedByWorkflows ?? []"
+                  :key="workflow.id"
+                  class="list-card p-4"
+                >
+                  <div class="flex items-center justify-between gap-4">
+                    <div>
+                      <div class="text-sm font-medium text-foreground">{{ workflow.name }}</div>
+                      <div class="text-sm text-muted-foreground">这个工作流当前引用了该工具。</div>
+                    </div>
+                    <Button type="button" variant="outline" @click="router.push(`/workflows/${workflow.id}`)">
+                      打开工作流
                     </Button>
                   </div>
-                  <div v-else class="text-xs text-muted-foreground">
-                    暂无 Workflow 使用此 Tool
-                  </div>
-                </div>
+                </article>
               </div>
             </div>
-
-            <div v-else class="text-sm text-muted-foreground">
-              使用情况查询失败
-            </div>
-          </CardContent>
-        </Card>
+          </PageSection>
+        </template>
       </div>
-    </div>
+    </PageContainer>
 
-    <!-- 测试对话框 -->
     <ToolTestDialog
       v-if="showTestDialog && tool"
       :tool="tool"

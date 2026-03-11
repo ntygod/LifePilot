@@ -1,10 +1,19 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
-import { useToolStore } from '@/stores/tool'
-import type { ToolDetail, ToolTestResponse, ToolTestHistoryItem } from '@/types'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
+import { computed, ref, watch } from 'vue'
+import type { ToolDetail, ToolTestHistoryItem, ToolTestResponse } from '@/types'
+import FormDialogShell from '@/components/common/FormDialogShell.vue'
+import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
+import { useToolStore } from '@/stores/tool'
 
 const props = defineProps<{
   tool: ToolDetail | null
@@ -20,127 +29,123 @@ const testArguments = ref<Record<string, any>>({})
 const testLoading = ref(false)
 const testResult = ref<ToolTestResponse | null>(null)
 const errors = ref<Record<string, string>>({})
-
-// 新增状态：结果 Tab 切换、测试历史、最近请求
 const resultTab = ref<'formatted' | 'json'>('formatted')
 const testHistory = ref<ToolTestHistoryItem[]>([])
 const lastRequest = ref<Record<string, any> | null>(null)
 
-// 根据 inputSchema 生成表单字段
 const formFields = computed(() => {
-  if (!props.tool?.inputSchema) return []
-  
+  if (!props.tool?.inputSchema) {
+    return []
+  }
+
   const schema = props.tool.inputSchema
   const properties = schema.properties || {}
   const required = schema.required || []
-  
+
   return Object.keys(properties).map(key => {
-    const prop = properties[key]
+    const field = properties[key]
     return {
       key,
-      label: prop.title || key,
-      type: prop.type || 'string',
-      description: prop.description || '',
+      label: field.title || key,
+      type: field.type || 'string',
+      description: field.description || '',
       required: required.includes(key),
-      default: prop.default,
-      enum: prop.enum,
-      format: prop.format
+      default: field.default,
+      enum: field.enum,
+      format: field.format,
     }
   })
 })
 
-// 初始化表单数据
-watch(() => props.tool, (tool) => {
-  if (tool) {
-    testArguments.value = {}
-    testResult.value = null
-    errors.value = {}
-    resultTab.value = 'formatted'
-    lastRequest.value = null
-    
-    // 设置默认值
-    formFields.value.forEach(field => {
-      if (field.default !== undefined) {
-        testArguments.value[field.key] = field.default
-      } else if (field.type === 'object') {
-        testArguments.value[field.key] = {}
-      } else if (field.type === 'array') {
-        testArguments.value[field.key] = []
-      } else if (field.type === 'boolean') {
-        testArguments.value[field.key] = false
-      } else if (field.type === 'number' || field.type === 'integer') {
-        testArguments.value[field.key] = 0
-      } else {
-        testArguments.value[field.key] = ''
-      }
-    })
+watch(() => props.tool, () => {
+  if (!props.tool) {
+    return
   }
+
+  testArguments.value = {}
+  testResult.value = null
+  errors.value = {}
+  resultTab.value = 'formatted'
+  lastRequest.value = null
+
+  formFields.value.forEach(field => {
+    if (field.default !== undefined) {
+      testArguments.value[field.key] = field.default
+    } else if (field.type === 'object') {
+      testArguments.value[field.key] = {}
+    } else if (field.type === 'array') {
+      testArguments.value[field.key] = []
+    } else if (field.type === 'boolean') {
+      testArguments.value[field.key] = false
+    } else if (field.type === 'number' || field.type === 'integer') {
+      testArguments.value[field.key] = 0
+    } else {
+      testArguments.value[field.key] = ''
+    }
+  })
 }, { immediate: true })
 
-// 表单验证
-function validate(): boolean {
+function validate() {
   errors.value = {}
   let valid = true
-  
+
   formFields.value.forEach(field => {
     if (field.required && (testArguments.value[field.key] === undefined || testArguments.value[field.key] === '')) {
       errors.value[field.key] = `${field.label} 是必填项`
       valid = false
     }
   })
-  
+
   return valid
 }
 
-// 添加测试历史记录
 function addHistoryItem(input: Record<string, any>, result: ToolTestResponse) {
   const item: ToolTestHistoryItem = {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     timestamp: Date.now(),
     input: { ...input },
-    result
+    result,
   }
+
   testHistory.value.push(item)
-  // 最多保留 5 条
+
   if (testHistory.value.length > 5) {
     testHistory.value.shift()
   }
 }
 
-// 运行测试
 async function runTest() {
-  if (!props.tool) return
-  
-  if (!validate()) return
-  
+  if (!props.tool || !validate()) {
+    return
+  }
+
   testLoading.value = true
   testResult.value = null
   errors.value = {}
-  
-  // 记录请求 JSON
+
   const inputSnapshot = { ...testArguments.value }
   lastRequest.value = {
     toolId: props.tool.id,
-    input: inputSnapshot
+    input: inputSnapshot,
   }
-  
+
   try {
     const result = await toolStore.testTool({
       toolId: props.tool.id,
-      input: testArguments.value
+      input: testArguments.value,
     })
     testResult.value = result
     addHistoryItem(inputSnapshot, result)
-  } catch (e: any) {
+  } catch (error: any) {
     const errorResult: ToolTestResponse = {
       success: false,
       output: {},
-      error: e.message || '测试失败',
+      error: error.message || '测试失败',
       meta: {
         durationMs: 0,
         toolId: props.tool.id,
-        action: 'test'
-      }
+        action: 'test',
+      },
     }
     testResult.value = errorResult
     addHistoryItem(inputSnapshot, errorResult)
@@ -149,7 +154,6 @@ async function runTest() {
   }
 }
 
-// 关闭对话框时清空历史
 function closeDialog() {
   testHistory.value = []
   lastRequest.value = null
@@ -159,218 +163,189 @@ function closeDialog() {
 </script>
 
 <template>
-  <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]" @click.self="closeDialog">
-    <div class="bg-card border border-border rounded-lg p-6 w-full max-w-3xl shadow-lg max-h-[90vh] overflow-y-auto">
-      <div class="flex items-center justify-between mb-4">
-        <h3 class="text-lg font-semibold text-foreground">
-          测试 Tool: {{ tool?.name || tool?.id }}
-        </h3>
-        <button
-          class="text-muted-foreground hover:text-foreground text-2xl leading-none"
-          type="button"
-          aria-label="关闭测试对话框"
-          @click="closeDialog"
-        >×</button>
-      </div>
+  <FormDialogShell
+    :title="`测试工具：${tool?.name || tool?.id || ''}`"
+    description="填写测试参数后，可立即查看返回结果和最近一次记录。"
+    content-class="sm:max-w-[960px]"
+    body-class="space-y-6"
+    @close="closeDialog"
+  >
+    <div v-if="tool" class="space-y-6">
+      <section class="rounded-2xl border border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
+        <p v-if="tool.description">{{ tool.description }}</p>
+        <p class="mt-1">
+          工具 ID：<span class="font-mono text-foreground">{{ tool.id }}</span>
+        </p>
+      </section>
 
-      <div v-if="tool" class="space-y-4">
-        <!-- Tool 基本信息 -->
-        <div class="text-sm text-muted-foreground">
-          <p v-if="tool.description">{{ tool.description }}</p>
-          <p class="mt-1">ID: <span class="font-mono">{{ tool.id }}</span></p>
+      <section v-if="testHistory.length > 0" class="space-y-3">
+        <h4 class="text-sm font-medium text-foreground">最近测试记录</h4>
+        <div class="space-y-2">
+          <button
+            v-for="item in testHistory"
+            :key="item.id"
+            type="button"
+            class="flex w-full items-center justify-between rounded-2xl border border-border/70 bg-background/80 px-4 py-3 text-left text-xs transition-colors hover:bg-accent/60"
+            @click="testArguments = { ...item.input }"
+          >
+            <span class="text-muted-foreground">{{ new Date(item.timestamp).toLocaleTimeString() }}</span>
+            <span :class="item.result.success ? 'text-emerald-600' : 'text-destructive'">
+              {{ item.result.success ? '成功' : '失败' }}
+            </span>
+          </button>
         </div>
+      </section>
 
-        <!-- 测试历史记录 -->
-        <div v-if="testHistory.length > 0" class="mb-4 border-b border-border pb-4">
-          <h4 class="text-sm font-medium text-foreground mb-2">最近测试记录</h4>
-          <div class="space-y-1">
-            <button
-              v-for="item in testHistory"
-              :key="item.id"
-              class="w-full text-left p-2 rounded-md hover:bg-muted text-xs"
-              @click="testArguments = { ...item.input }"
-            >
-              <span class="text-muted-foreground">{{ new Date(item.timestamp).toLocaleTimeString() }}</span>
-              <span :class="item.result.success ? 'text-green-600' : 'text-destructive'" class="ml-2">
-                {{ item.result.success ? '成功' : '失败' }}
-              </span>
-            </button>
-          </div>
-        </div>
+      <section v-if="formFields.length > 0" class="space-y-4">
+        <h4 class="text-sm font-medium text-foreground">输入参数</h4>
 
-        <!-- 参数表单 -->
-        <div v-if="formFields.length > 0" class="space-y-4">
-          <h4 class="text-sm font-medium text-foreground">输入参数</h4>
-          
-          <div v-for="field in formFields" :key="field.key" class="space-y-1">
-            <label class="block text-sm font-medium text-foreground">
-              {{ field.label }}
-              <span v-if="field.required" class="text-destructive">*</span>
-            </label>
-            
-            <p v-if="field.description" class="text-xs text-muted-foreground mb-1">
-              {{ field.description }}
-            </p>
+        <div v-for="field in formFields" :key="field.key" class="space-y-2">
+          <label class="text-sm font-medium text-foreground">
+            {{ field.label }}
+            <span v-if="field.required" class="text-destructive">*</span>
+          </label>
 
-            <!-- 字符串输入 -->
-            <Input
-              v-if="field.type === 'string' && !field.enum && field.format !== 'textarea'"
-              v-model="testArguments[field.key]"
-              type="text"
-              :class="{ 'border-destructive': errors[field.key] }"
-              :placeholder="field.description || `输入 ${field.label}`"
-            />
+          <p v-if="field.description" class="text-xs text-muted-foreground">
+            {{ field.description }}
+          </p>
 
-            <!-- 多行文本 -->
-            <Textarea
-              v-else-if="field.type === 'string' && field.format === 'textarea'"
-              v-model="testArguments[field.key]"
-              rows="4"
-              class="font-mono text-sm"
-              :class="{ 'border-destructive': errors[field.key] }"
-              :placeholder="field.description || `输入 ${field.label}`"
-            />
+          <Input
+            v-if="field.type === 'string' && !field.enum && field.format !== 'textarea'"
+            v-model="testArguments[field.key]"
+            :class="{ 'border-destructive': errors[field.key] }"
+            :placeholder="field.description || `输入 ${field.label}`"
+          />
 
-            <!-- 枚举选择 -->
-            <select
-              v-else-if="field.enum && field.enum.length > 0"
-              v-model="testArguments[field.key]"
-              class="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-              :class="{ 'border-destructive': errors[field.key] }"
-            >
-              <option value="">请选择...</option>
-              <option v-for="option in field.enum" :key="option" :value="option">
+          <Textarea
+            v-else-if="field.type === 'string' && field.format === 'textarea'"
+            v-model="testArguments[field.key]"
+            rows="4"
+            class="font-mono text-sm"
+            :class="{ 'border-destructive': errors[field.key] }"
+            :placeholder="field.description || `输入 ${field.label}`"
+          />
+
+          <Select
+            v-else-if="field.enum && field.enum.length > 0"
+            :model-value="testArguments[field.key]"
+            @update:model-value="(value) => testArguments[field.key] = value"
+          >
+            <SelectTrigger :class="{ 'border-destructive': errors[field.key] }">
+              <SelectValue placeholder="请选择" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="option in field.enum" :key="String(option)" :value="option">
                 {{ option }}
-              </option>
-            </select>
+              </SelectItem>
+            </SelectContent>
+          </Select>
 
-            <!-- 数字输入 -->
-            <Input
-              v-else-if="field.type === 'number' || field.type === 'integer'"
-              :model-value="String(testArguments[field.key])"
-              @update:model-value="testArguments[field.key] = Number($event)"
-              type="number"
-              :class="{ 'border-destructive': errors[field.key] }"
-              :placeholder="field.description || `输入 ${field.label}`"
+          <Input
+            v-else-if="field.type === 'number' || field.type === 'integer'"
+            :model-value="String(testArguments[field.key])"
+            type="number"
+            :class="{ 'border-destructive': errors[field.key] }"
+            :placeholder="field.description || `输入 ${field.label}`"
+            @update:model-value="testArguments[field.key] = Number($event)"
+          />
+
+          <label v-else-if="field.type === 'boolean'" class="flex items-center gap-3 rounded-2xl border border-border/70 bg-background/80 px-4 py-3">
+            <Checkbox
+              :model-value="testArguments[field.key]"
+              @update:model-value="testArguments[field.key] = Boolean($event)"
             />
+            <span class="text-sm text-muted-foreground">{{ field.description || '启用此项' }}</span>
+          </label>
 
-            <!-- 布尔值 -->
-            <div v-else-if="field.type === 'boolean'" class="flex items-center gap-2">
-              <Checkbox
-                :model-value="testArguments[field.key]"
-                @update:model-value="testArguments[field.key] = $event"
-              />
-              <span class="text-sm text-muted-foreground">{{ field.description || '启用' }}</span>
-            </div>
-
-            <!-- JSON 对象/数组 -->
-            <Textarea
-              v-else-if="field.type === 'object' || field.type === 'array'"
-              :model-value="typeof testArguments[field.key] === 'object' ? JSON.stringify(testArguments[field.key], null, 2) : testArguments[field.key]"
-              rows="6"
-              class="font-mono text-sm"
-              :class="{ 'border-destructive': errors[field.key] }"
-              placeholder='例如: {"key": "value"} 或 ["item1", "item2"]'
-              @input="(e: Event) => {
-                const value = (e.target as HTMLTextAreaElement).value
-                try {
-                  if (value.trim()) {
-                    testArguments[field.key] = JSON.parse(value)
-                    delete errors[field.key]
-                  } else {
-                    testArguments[field.key] = field.type === 'array' ? [] : {}
-                  }
-                } catch (err) {
-                  errors[field.key] = '无效的 JSON 格式'
+          <Textarea
+            v-else-if="field.type === 'object' || field.type === 'array'"
+            :model-value="typeof testArguments[field.key] === 'object' ? JSON.stringify(testArguments[field.key], null, 2) : testArguments[field.key]"
+            rows="6"
+            class="font-mono text-sm"
+            :class="{ 'border-destructive': errors[field.key] }"
+            placeholder='例如：{"key":"value"} 或 ["item1","item2"]'
+            @input="(event: Event) => {
+              const value = (event.target as HTMLTextAreaElement).value
+              try {
+                if (value.trim()) {
+                  testArguments[field.key] = JSON.parse(value)
+                  delete errors[field.key]
+                } else {
+                  testArguments[field.key] = field.type === 'array' ? [] : {}
                 }
-              }"
-            />
+              } catch {
+                errors[field.key] = 'JSON 格式不合法'
+              }
+            }"
+          />
 
-            <p v-if="errors[field.key]" class="text-xs text-destructive mt-1">
-              {{ errors[field.key] }}
-            </p>
+          <p v-if="errors[field.key]" class="text-xs text-destructive">{{ errors[field.key] }}</p>
+        </div>
+      </section>
+
+      <section v-else class="rounded-2xl border border-dashed border-border/70 bg-muted/15 px-4 py-6 text-center text-sm text-muted-foreground">
+        当前工具不需要输入参数
+      </section>
+
+      <section v-if="testResult" class="space-y-4 border-t border-border/70 pt-6">
+        <div class="flex gap-2">
+          <Button size="sm" :variant="resultTab === 'formatted' ? 'default' : 'outline'" @click="resultTab = 'formatted'">
+            格式化视图
+          </Button>
+          <Button size="sm" :variant="resultTab === 'json' ? 'default' : 'outline'" @click="resultTab = 'json'">
+            JSON 视图
+          </Button>
+        </div>
+
+        <div v-if="resultTab === 'formatted'" class="space-y-3 text-sm">
+          <div class="flex items-center gap-2">
+            <span class="text-muted-foreground">状态：</span>
+            <span
+              class="rounded-full px-2 py-0.5 text-xs"
+              :class="testResult.success ? 'bg-emerald-500/10 text-emerald-600' : 'bg-destructive/10 text-destructive'"
+            >
+              {{ testResult.success ? '成功' : '失败' }}
+            </span>
+          </div>
+
+          <div v-if="testResult.error" class="rounded-2xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-destructive">
+            {{ testResult.error }}
+          </div>
+
+          <div v-if="testResult.output">
+            <div class="mb-2 font-medium text-foreground">输出</div>
+            <pre class="overflow-x-auto rounded-2xl bg-muted px-4 py-3 text-xs">{{ JSON.stringify(testResult.output, null, 2) }}</pre>
+          </div>
+
+          <div v-if="testResult.meta" class="space-y-1 text-xs text-muted-foreground">
+            <div>执行耗时：{{ testResult.meta.durationMs }}ms</div>
+            <div>工具 ID：<span class="font-mono">{{ testResult.meta.toolId }}</span></div>
+            <div v-if="testResult.meta.action">动作：{{ testResult.meta.action }}</div>
           </div>
         </div>
 
-        <!-- 无参数提示 -->
-        <div v-else class="text-sm text-muted-foreground py-4 text-center">
-          此 Tool 无需输入参数
-        </div>
-
-        <!-- 操作按钮 -->
-        <div class="flex justify-end gap-2 pt-4 border-t border-border">
-          <button
-            class="h-9 px-4 rounded-md text-sm border border-input hover:bg-accent transition-colors"
-            type="button"
-            @click="closeDialog"
-          >取消</button>
-          <button
-            class="h-9 px-4 rounded-md text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
-            type="button"
-            :disabled="testLoading"
-            @click="runTest"
-          >{{ testLoading ? '测试中...' : '运行测试' }}</button>
-        </div>
-
-        <!-- 测试结果（含 Tab 切换） -->
-        <div v-if="testResult" class="mt-4 border-t border-border pt-4">
-          <div class="flex items-center gap-2 mb-3">
-            <button
-              class="px-3 py-1 rounded-md text-sm"
-              :class="resultTab === 'formatted' ? 'bg-primary text-primary-foreground' : 'bg-muted'"
-              @click="resultTab = 'formatted'"
-            >格式化视图</button>
-            <button
-              class="px-3 py-1 rounded-md text-sm"
-              :class="resultTab === 'json' ? 'bg-primary text-primary-foreground' : 'bg-muted'"
-              @click="resultTab = 'json'"
-            >JSON 视图</button>
+        <div v-else class="grid gap-4 lg:grid-cols-2">
+          <div>
+            <h5 class="mb-2 text-xs font-medium text-muted-foreground">请求 JSON</h5>
+            <pre class="overflow-x-auto rounded-2xl bg-muted px-4 py-3 text-xs">{{ JSON.stringify(lastRequest, null, 2) }}</pre>
           </div>
-
-          <!-- 格式化视图：保留现有渲染逻辑 -->
-          <div v-if="resultTab === 'formatted'" class="space-y-2">
-            <!-- 状态 -->
-            <div class="flex items-center gap-2">
-              <span class="text-sm text-muted-foreground">状态：</span>
-              <span
-                class="text-sm px-2 py-0.5 rounded-full"
-                :class="testResult.success ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'"
-              >{{ testResult.success ? '成功' : '失败' }}</span>
-            </div>
-
-            <!-- 错误信息（增强：展示错误类型和完整错误响应） -->
-            <div v-if="testResult.error" class="text-sm text-destructive">
-              <span class="font-medium">错误：</span>
-              <p class="mt-1 whitespace-pre-wrap break-words">{{ testResult.error }}</p>
-            </div>
-
-            <!-- 输出结果 -->
-            <div v-if="testResult.output" class="text-sm">
-              <span class="font-medium text-foreground">输出：</span>
-              <pre class="mt-1 p-3 rounded-md bg-muted text-xs whitespace-pre-wrap break-words overflow-x-auto">{{ JSON.stringify(testResult.output, null, 2) }}</pre>
-            </div>
-
-            <!-- 元数据 -->
-            <div v-if="testResult.meta" class="text-xs text-muted-foreground space-y-1">
-              <div>执行时间：{{ testResult.meta.durationMs }}ms</div>
-              <div>Tool ID：<span class="font-mono">{{ testResult.meta.toolId }}</span></div>
-              <div v-if="testResult.meta.action">操作：{{ testResult.meta.action }}</div>
-            </div>
-          </div>
-
-          <!-- JSON 视图 -->
-          <div v-else class="space-y-3">
-            <div>
-              <h5 class="text-xs font-medium text-muted-foreground mb-1">请求 JSON</h5>
-              <pre class="p-3 rounded-md bg-muted text-xs overflow-x-auto">{{ JSON.stringify(lastRequest, null, 2) }}</pre>
-            </div>
-            <div>
-              <h5 class="text-xs font-medium text-muted-foreground mb-1">响应 JSON</h5>
-              <pre class="p-3 rounded-md bg-muted text-xs overflow-x-auto">{{ JSON.stringify(testResult, null, 2) }}</pre>
-            </div>
+          <div>
+            <h5 class="mb-2 text-xs font-medium text-muted-foreground">响应 JSON</h5>
+            <pre class="overflow-x-auto rounded-2xl bg-muted px-4 py-3 text-xs">{{ JSON.stringify(testResult, null, 2) }}</pre>
           </div>
         </div>
-      </div>
+      </section>
     </div>
-  </div>
+
+    <template #footer>
+      <div class="flex justify-end gap-3">
+        <Button variant="outline" @click="closeDialog">
+          关闭
+        </Button>
+        <Button :disabled="testLoading || !tool" @click="runTest">
+          {{ testLoading ? '测试中...' : '运行测试' }}
+        </Button>
+      </div>
+    </template>
+  </FormDialogShell>
 </template>

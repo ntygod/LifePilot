@@ -8,6 +8,12 @@ const props = defineProps<{
   components: A2uiComponent[]
   /** 要渲染的根节点 ID 列表（不传则自动计算顶层节点） */
   rootIds?: string[]
+  /** 当前组件树所属消息 ID */
+  messageId?: string
+  /** 当前组件树所属轨迹 ID */
+  traceId?: string
+  /** 当前是否仍处于流式生成阶段 */
+  streaming?: boolean
 }>()
 
 /** 按 ID 索引组件，便于子节点查找 */
@@ -33,7 +39,8 @@ const rootComponents = computed(() => {
       childIds.add(childId)
     }
   }
-  return props.components.filter(c => !childIds.has(c.id))
+  const roots = props.components.filter(c => !childIds.has(c.id))
+  return roots.length > 0 ? roots : props.components.slice(0, 1)
 })
 
 /** 获取指定组件的子节点 */
@@ -51,12 +58,19 @@ function getChildren(component: A2uiComponent): A2uiComponent[] {
       v-bind="comp.properties"
       :signal="comp.signal"
       :type="comp.type"
+      :component-id="comp.id"
+      :message-id="props.messageId"
+      :trace-id="props.traceId"
+      :streaming="props.streaming"
     >
       <!-- 递归渲染子节点 -->
       <A2uiRenderer
         v-if="getChildren(comp).length"
         :components="components"
         :root-ids="comp.children"
+        :message-id="props.messageId"
+        :trace-id="props.traceId"
+        :streaming="props.streaming"
       />
     </component>
   </template>

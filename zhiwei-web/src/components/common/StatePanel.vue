@@ -1,0 +1,56 @@
+<script setup lang="ts">
+import type { HTMLAttributes } from 'vue'
+import { computed, useSlots } from 'vue'
+import { cn } from '@/lib/utils'
+
+interface Props {
+  title: string
+  description?: string
+  tone?: 'default' | 'warning' | 'danger'
+  class?: HTMLAttributes['class']
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  tone: 'default',
+})
+
+const slots = useSlots()
+
+const toneClass = computed(() => {
+  if (props.tone === 'warning') return 'border-amber-300/75 bg-amber-50/72 dark:border-amber-500/28 dark:bg-amber-500/10'
+  if (props.tone === 'danger') return 'border-destructive/28 bg-destructive/6'
+  return 'border-border/70 bg-card/92'
+})
+</script>
+
+<template>
+  <div :class="cn('state-panel rounded-[calc(var(--radius)+2px)] border px-5 py-5 sm:px-6', toneClass, props.class)">
+    <div class="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
+      <div class="flex min-w-0 flex-1 items-start gap-4">
+        <div
+          v-if="slots.icon"
+          class="flex size-11 shrink-0 items-center justify-center rounded-2xl border border-border/70 bg-background/82 text-primary"
+        >
+          <slot name="icon" />
+        </div>
+
+        <div class="min-w-0 flex-1 space-y-2">
+          <h3 class="text-lg font-semibold tracking-tight text-foreground">
+            {{ props.title }}
+          </h3>
+          <p v-if="props.description" class="max-w-[42rem] text-sm leading-6 text-muted-foreground sm:text-[0.95rem]">
+            {{ props.description }}
+          </p>
+        </div>
+      </div>
+
+      <div v-if="slots.actions" class="flex flex-wrap items-center gap-3 sm:shrink-0 sm:justify-end">
+        <slot name="actions" />
+      </div>
+    </div>
+
+    <div v-if="slots.default" class="mt-5 border-t border-border/60 pt-4">
+      <slot />
+    </div>
+  </div>
+</template>

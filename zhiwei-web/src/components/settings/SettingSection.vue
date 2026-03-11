@@ -7,23 +7,23 @@ defineProps<{
 </script>
 
 <template>
-  <div class="detail-card text-card-foreground">
-    <div class="p-4 border-b">
-      <div class="flex items-center justify-between gap-2">
+  <section class="text-card-foreground">
+    <div class="flex items-start justify-between gap-4 border-b border-border/70 pb-3">
+      <div class="min-w-0 space-y-1">
         <div class="flex items-center gap-2">
-          <span v-if="icon" class="text-lg">{{ icon }}</span>
-          <h3 class="text-base font-semibold">{{ title }}</h3>
+          <span v-if="icon" class="text-base text-muted-foreground">{{ icon }}</span>
+          <h3 class="text-base font-semibold text-foreground">{{ title }}</h3>
         </div>
-        <div v-if="$slots['header-actions']" class="flex items-center gap-2">
-          <slot name="header-actions" />
-        </div>
+        <p v-if="description" class="text-sm leading-6 text-muted-foreground">
+          {{ description }}
+        </p>
       </div>
-      <p v-if="description" class="text-xs text-muted-foreground mt-1">
-        {{ description }}
-      </p>
+      <div v-if="$slots['header-actions']" class="flex items-center gap-2">
+        <slot name="header-actions" />
+      </div>
     </div>
-    <div class="p-4 space-y-4">
+    <div class="divide-y divide-border/60">
       <slot />
     </div>
-  </div>
+  </section>
 </template>

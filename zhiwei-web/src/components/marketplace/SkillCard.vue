@@ -4,7 +4,6 @@ import type { ExtensionPackage, InstallResult, SecurityReport } from '@/types'
 import { marketplaceApi } from '@/api/marketplace'
 import SecurityReportDialog from './SecurityReportDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
-import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 
@@ -24,9 +23,9 @@ const installing = ref(false)
 
 // 扩展类型标签映射
 const typeLabel: Record<string, string> = {
-  SKILL: 'Skill',
-  AGENT: 'Agent',
-  WORKFLOW: 'Workflow',
+  SKILL: '技能',
+  AGENT: '智能体',
+  WORKFLOW: '工作流',
 }
 
 const typeVariant: Record<string, 'default' | 'secondary' | 'outline'> = {
@@ -123,47 +122,45 @@ async function handleUpgrade() {
 </script>
 
 <template>
-  <Card class="list-card flex flex-col">
-    <CardHeader class="pb-2">
-      <!-- 头部：名称 + 已验证徽章 -->
-      <div class="flex items-start justify-between gap-sm">
-        <div class="flex-1 min-w-0">
-          <div class="flex items-center gap-1.5">
-            <h3 class="font-medium text-foreground text-sm leading-snug truncate">
+  <article class="list-card flex h-full flex-col p-5">
+    <div class="space-y-4">
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0 flex-1 space-y-2">
+          <div class="flex flex-wrap items-center gap-2">
+            <h3 class="truncate text-base font-semibold tracking-tight text-foreground">
               {{ skill.name }}
             </h3>
             <Badge :variant="typeVariant[skill.type] ?? 'outline'" class="shrink-0 text-[10px]">
               {{ typeLabel[skill.type] ?? skill.type }}
             </Badge>
             <Badge v-if="skill.verified" variant="secondary" class="shrink-0">
-              ✓ 已验证
+              已验证
+            </Badge>
+            <Badge v-if="hasUpdate" variant="outline" class="shrink-0">
+              可更新
             </Badge>
           </div>
-          <p class="text-xs text-muted-foreground mt-0.5">
-            {{ skill.author }} · v{{ skill.version }}
+          <div class="flex flex-wrap gap-2 text-xs text-muted-foreground">
+            <span class="surface-chip">作者 {{ skill.author }}</span>
+            <span class="surface-chip">版本 v{{ skill.version }}</span>
+            <span v-if="skill.installed" class="surface-chip surface-chip-strong">已安装 v{{ skill.installedVersion }}</span>
+          </div>
+          <p class="line-clamp-3 text-sm leading-6 text-muted-foreground">
+            {{ skill.description || '暂无描述' }}
           </p>
         </div>
       </div>
-    </CardHeader>
 
-    <CardContent class="flex-1 flex flex-col pb-3">
-      <!-- 描述 -->
-      <p class="text-xs text-muted-foreground line-clamp-2 leading-normal mb-sm flex-1">
-        {{ skill.description || '暂无描述' }}
-      </p>
-
-      <!-- 前置条件 -->
-      <div v-if="skill.requirements && skill.requirements.length > 0" class="mb-sm">
-        <p class="text-[10px] text-muted-foreground mb-0.5">前置条件：</p>
-        <div class="flex flex-wrap gap-1">
+      <div v-if="skill.requirements && skill.requirements.length > 0" class="space-y-2">
+        <div class="surface-label text-[0.68rem]">前置条件</div>
+        <div class="flex flex-wrap gap-2">
           <Badge v-for="req in skill.requirements" :key="req" variant="outline" class="text-[10px]">
             {{ req }}
           </Badge>
         </div>
       </div>
 
-      <!-- 标签 -->
-      <div v-if="skill.tags.length > 0" class="flex flex-wrap gap-1 mb-sm">
+      <div v-if="skill.tags.length > 0" class="flex flex-wrap gap-2">
         <Badge
           v-for="t in skill.tags.slice(0, 4)"
           :key="t"
@@ -176,17 +173,13 @@ async function handleUpgrade() {
         </Badge>
       </div>
 
-      <!-- 底部：下载量 + 安装状态 + 操作按钮 -->
-      <div class="flex items-center justify-between mt-auto pt-sm border-t border-border">
-        <div class="flex items-center gap-2 text-xs text-muted-foreground">
-          <span>↓ {{ skill.downloads }}</span>
-          <span v-if="skill.installed" class="text-primary">
-            已安装 v{{ skill.installedVersion }}
-          </span>
+      <div class="mt-4 flex items-center justify-between gap-3 border-t border-border/60 pt-4">
+        <div class="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+          <span>下载 {{ skill.downloads }}</span>
+          <span v-if="hasUpdate">有新版本可升级</span>
         </div>
 
         <div class="flex items-center gap-1.5">
-          <!-- 升级按钮 -->
           <Button
             v-if="skill.installed && hasUpdate"
             size="sm"
@@ -196,7 +189,6 @@ async function handleUpgrade() {
             {{ upgrading ? '升级中...' : '升级' }}
           </Button>
 
-          <!-- 卸载按钮 -->
           <Button
             v-if="skill.installed"
             variant="outline"
@@ -208,7 +200,6 @@ async function handleUpgrade() {
             {{ uninstalling ? '卸载中...' : '卸载' }}
           </Button>
 
-          <!-- 安装按钮 -->
           <Button
             v-if="!skill.installed"
             size="sm"
@@ -220,13 +211,11 @@ async function handleUpgrade() {
         </div>
       </div>
 
-      <!-- 错误提示 -->
-      <p v-if="errorMsg" class="text-xs text-destructive mt-xs">
+      <p v-if="errorMsg" class="text-xs text-destructive">
         {{ errorMsg }}
       </p>
-    </CardContent>
+    </div>
 
-    <!-- 安全报告对话框 -->
     <SecurityReportDialog
       v-if="securityReport"
       v-model:show="showSecurityDialog"
@@ -236,14 +225,13 @@ async function handleUpgrade() {
       @cancel="showSecurityDialog = false"
     />
 
-    <!-- 卸载确认对话框 -->
     <ConfirmDialog
       v-model:show="showUninstallConfirm"
       title="确认卸载"
-      :message="`确定要卸载「${skill.name}」吗？卸载后将从本地移除该 Skill。`"
+      :message="`确定要卸载「${skill.name}」吗？卸载后将从本地移除该技能。`"
       confirm-label="卸载"
       confirm-variant="destructive"
       @confirm="handleUninstall"
     />
-  </Card>
+  </article>
 </template>

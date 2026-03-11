@@ -10,9 +10,10 @@ import { ref, computed, watch, onMounted, shallowRef } from 'vue'
 import { VueMonacoEditor, useMonaco } from '@guolao/vue-monaco-editor'
 import { Marked } from 'marked'
 import { markedHighlight } from 'marked-highlight'
-import hljs from 'highlight.js'
 import * as yaml from 'yaml'
 import { useUiStore } from '@/stores/ui'
+import { highlightCode } from '@/lib/highlight'
+import '@/plugins/monaco'
 
 // ========== Props & Emits ==========
 
@@ -52,10 +53,7 @@ const markedInstance = new Marked(
   markedHighlight({
     langPrefix: 'hljs language-',
     highlight(code: string, lang: string) {
-      if (lang && hljs.getLanguage(lang)) {
-        return hljs.highlight(code, { language: lang }).value
-      }
-      return hljs.highlightAuto(code).value
+      return highlightCode(code, lang)
     },
   }),
 )

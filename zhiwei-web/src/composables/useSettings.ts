@@ -16,6 +16,13 @@ export function useSettings() {
     theme: store.theme,
     language: store.language,
     llmProvider: store.llmProvider,
+    layoutDensity: store.layoutDensity,
+    fontSize: store.fontSize,
+    timeFormat: store.timeFormat,
+    showTokenUsage: store.showTokenUsage,
+    autoExpandCodeBlocks: store.autoExpandCodeBlocks,
+    collapseLongReplies: store.collapseLongReplies,
+    collapseThreshold: store.collapseThreshold,
     enableStreaming: store.enableStreaming,
     enableFunctionCall: store.enableFunctionCall,
     enableKnowledgeBase: store.enableKnowledgeBase,
@@ -42,6 +49,13 @@ export function useSettings() {
     store.theme = newSettings.theme
     store.language = newSettings.language
     store.llmProvider = newSettings.llmProvider
+    if (newSettings.layoutDensity) store.layoutDensity = newSettings.layoutDensity
+    if (newSettings.fontSize) store.fontSize = newSettings.fontSize
+    if (newSettings.timeFormat) store.timeFormat = newSettings.timeFormat
+    if (newSettings.showTokenUsage !== undefined) store.showTokenUsage = newSettings.showTokenUsage
+    if (newSettings.autoExpandCodeBlocks !== undefined) store.autoExpandCodeBlocks = newSettings.autoExpandCodeBlocks
+    if (newSettings.collapseLongReplies !== undefined) store.collapseLongReplies = newSettings.collapseLongReplies
+    if (newSettings.collapseThreshold !== undefined) store.collapseThreshold = newSettings.collapseThreshold
     if (newSettings.enableStreaming !== undefined) store.enableStreaming = newSettings.enableStreaming
     if (newSettings.enableFunctionCall !== undefined) store.enableFunctionCall = newSettings.enableFunctionCall
     if (newSettings.enableKnowledgeBase !== undefined) store.enableKnowledgeBase = newSettings.enableKnowledgeBase

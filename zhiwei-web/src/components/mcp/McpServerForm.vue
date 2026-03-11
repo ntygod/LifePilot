@@ -7,109 +7,194 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from '@/components/ui/select'
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from '@/components/ui/dialog'
 
 const props = defineProps<{ server?: McpServer | null; mode: 'create' | 'edit' }>()
 const emit = defineEmits<{ close: []; saved: [server: McpServer] }>()
+
 const store = useSkillStore()
 
 const formData = ref({
-  name: '', transport: 'STDIO' as 'STDIO' | 'STREAMABLE_HTTP' | 'SSE_LEGACY',
-  command: '', args: [] as string[], url: '', env: {} as Record<string, string>,
-  timeout: 30, autoConnect: true, reconnect: true, reconnectDelay: 1000,
-  maxReconnectAttempts: 5, healthCheckInterval: 60
+  name: '',
+  transport: 'STDIO' as 'STDIO' | 'STREAMABLE_HTTP' | 'SSE_LEGACY',
+  command: '',
+  args: [] as string[],
+  url: '',
+  env: {} as Record<string, string>,
+  timeout: 30,
+  autoConnect: true,
+  reconnect: true,
+  reconnectDelay: 1000,
+  maxReconnectAttempts: 5,
+  healthCheckInterval: 60,
 })
 
 const loading = ref(false)
 const errors = ref<Record<string, string>>({})
+const pendingArg = ref('')
 
-watch(() => props.server, (server) => {
-  if (server?.config) {
-    const config = server.config
-    formData.value = {
-      name: server.name,
-      transport: (config.transport === 'stdio' ? 'STDIO' : config.transport === 'sse' ? 'SSE_LEGACY' : config.transport) as any,
-      command: config.command || '', args: config.args || [], url: config.url || config.baseUrl || '',
-      env: config.env || {},
-      timeout: typeof config.timeout === 'number' ? config.timeout : (typeof config.timeoutSeconds === 'number' ? config.timeoutSeconds : 30),
-      autoConnect: config.autoConnect ?? true, reconnect: config.reconnect ?? true,
-      reconnectDelay: typeof config.reconnectDelay === 'number' ? config.reconnectDelay : 1000,
-      maxReconnectAttempts: config.maxReconnectAttempts ?? (typeof config.maxRetries === 'number' ? config.maxRetries : 5),
-      healthCheckInterval: typeof config.healthCheckInterval === 'number' ? config.healthCheckInterval : 60
+watch(
+  () => props.server,
+  (server) => {
+    if (server?.config) {
+      const config = server.config
+      formData.value = {
+        name: server.name,
+        transport: (config.transport === 'stdio'
+          ? 'STDIO'
+          : config.transport === 'sse'
+            ? 'SSE_LEGACY'
+            : config.transport) as 'STDIO' | 'STREAMABLE_HTTP' | 'SSE_LEGACY',
+        command: config.command || '',
+        args: config.args || [],
+        url: config.url || config.baseUrl || '',
+        env: config.env || {},
+        timeout: typeof config.timeout === 'number'
+          ? config.timeout
+          : (typeof config.timeoutSeconds === 'number' ? config.timeoutSeconds : 30),
+        autoConnect: config.autoConnect ?? true,
+        reconnect: config.reconnect ?? true,
+        reconnectDelay: typeof config.reconnectDelay === 'number' ? config.reconnectDelay : 1000,
+        maxReconnectAttempts: config.maxReconnectAttempts
+          ?? (typeof config.maxRetries === 'number' ? config.maxRetries : 5),
+        healthCheckInterval: typeof config.healthCheckInterval === 'number' ? config.healthCheckInterval : 60,
+      }
+    } else if (props.mode === 'create') {
+      formData.value = {
+        name: '',
+        transport: 'STDIO',
+        command: '',
+        args: [],
+        url: '',
+        env: {},
+        timeout: 30,
+        autoConnect: true,
+        reconnect: true,
+        reconnectDelay: 1000,
+        maxReconnectAttempts: 5,
+        healthCheckInterval: 60,
+      }
     }
-  } else if (props.mode === 'create') {
-    formData.value = {
-      name: '', transport: 'STDIO', command: '', args: [], url: '', env: {},
-      timeout: 30, autoConnect: true, reconnect: true, reconnectDelay: 1000,
-      maxReconnectAttempts: 5, healthCheckInterval: 60
-    }
-  }
-}, { immediate: true })
+
+    pendingArg.value = ''
+  },
+  { immediate: true },
+)
 
 function validate(): boolean {
   errors.value = {}
-  if (!formData.value.name.trim()) errors.value.name = '名称不能为空'
-  if (formData.value.transport === 'STDIO' && !formData.value.command.trim()) errors.value.command = '命令不能为空'
-  if (formData.value.transport !== 'STDIO' && !formData.value.url.trim()) errors.value.url = 'URL 不能为空'
+
+  if (!formData.value.name.trim()) {
+    errors.value.name = '必须填写服务器名称。'
+  }
+
+  if (formData.value.transport === 'STDIO' && !formData.value.command.trim()) {
+    errors.value.command = '使用 STDIO 传输方式时必须填写命令。'
+  }
+
+  if (formData.value.transport !== 'STDIO' && !formData.value.url.trim()) {
+    errors.value.url = '使用 HTTP 或 SSE 传输方式时必须填写地址。'
+  }
+
   return Object.keys(errors.value).length === 0
 }
 
 async function handleSubmit() {
   if (!validate()) return
+
   loading.value = true
+
   try {
     const data: any = {
-      name: formData.value.name, transport: formData.value.transport,
-      timeout: formData.value.timeout, autoConnect: formData.value.autoConnect,
-      reconnect: formData.value.reconnect, reconnectDelay: formData.value.reconnectDelay,
+      name: formData.value.name,
+      transport: formData.value.transport,
+      timeout: formData.value.timeout,
+      autoConnect: formData.value.autoConnect,
+      reconnect: formData.value.reconnect,
+      reconnectDelay: formData.value.reconnectDelay,
       maxReconnectAttempts: formData.value.maxReconnectAttempts,
-      healthCheckInterval: formData.value.healthCheckInterval
+      healthCheckInterval: formData.value.healthCheckInterval,
     }
+
     if (formData.value.transport === 'STDIO') {
       data.command = formData.value.command
       if (formData.value.args.length > 0) data.args = formData.value.args
-    } else { data.url = formData.value.url }
-    if (Object.keys(formData.value.env).length > 0) data.env = formData.value.env
+    } else {
+      data.url = formData.value.url
+    }
 
-    let server: McpServer
-    if (props.mode === 'create') server = await store.createMcpServer(data)
-    else server = await store.updateMcpServer(props.server!.name, data)
+    if (Object.keys(formData.value.env).length > 0) {
+      data.env = formData.value.env
+    }
+
+    const server = props.mode === 'create'
+      ? await store.createMcpServer(data)
+      : await store.updateMcpServer(props.server!.name, data)
+
     emit('saved', server)
     emit('close')
-  } catch (e) { /* 错误已在 store 中处理 */ }
-  finally { loading.value = false }
+  } finally {
+    loading.value = false
+  }
 }
 
 function addArg() {
-  const arg = prompt('请输入参数:')
-  if (arg) formData.value.args.push(arg)
+  const arg = pendingArg.value.trim()
+  if (!arg) return
+  formData.value.args.push(arg)
+  pendingArg.value = ''
 }
 
-function removeArg(index: number) { formData.value.args.splice(index, 1) }
+function removeArg(index: number) {
+  formData.value.args.splice(index, 1)
+}
+
+function normalizeCheckboxValue(value: boolean | 'indeterminate') {
+  return value === true
+}
 </script>
+
 <template>
-  <Dialog :open="true" @update:open="(v: boolean) => { if (!v) emit('close') }">
+  <Dialog :open="true" @update:open="(open: boolean) => { if (!open) emit('close') }">
     <DialogContent class="sm:max-w-[672px] max-h-[90vh] overflow-y-auto">
       <DialogHeader>
-        <DialogTitle>{{ mode === 'create' ? '新建 MCP Server' : '编辑 MCP Server' }}</DialogTitle>
-        <DialogDescription>配置 MCP Server 的连接信息和参数</DialogDescription>
+        <DialogTitle>{{ mode === 'create' ? '新建 MCP 服务器' : '编辑 MCP 服务器' }}</DialogTitle>
+        <DialogDescription>
+          设置服务器的连接方式、超时和自动重连规则。
+        </DialogDescription>
       </DialogHeader>
 
-      <form @submit.prevent="handleSubmit" class="space-y-4">
+      <form class="space-y-4" @submit.prevent="handleSubmit">
         <div class="space-y-2">
           <Label>名称 <span class="text-destructive">*</span></Label>
-          <Input v-model="formData.name" :disabled="mode === 'edit'" :class="{ 'border-destructive': errors.name }" />
+          <Input
+            v-model="formData.name"
+            :disabled="mode === 'edit'"
+            :class="{ 'border-destructive': errors.name }"
+            placeholder="filesystem-server"
+          />
           <p v-if="errors.name" class="text-xs text-destructive">{{ errors.name }}</p>
         </div>
 
         <div class="space-y-2">
-          <Label>传输类型 <span class="text-destructive">*</span></Label>
+          <Label>传输方式 <span class="text-destructive">*</span></Label>
           <Select v-model="formData.transport">
-            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
             <SelectContent>
               <SelectItem value="STDIO">STDIO</SelectItem>
               <SelectItem value="STREAMABLE_HTTP">STREAMABLE_HTTP</SelectItem>
@@ -121,48 +206,91 @@ function removeArg(index: number) { formData.value.args.splice(index, 1) }
         <template v-if="formData.transport === 'STDIO'">
           <div class="space-y-2">
             <Label>命令 <span class="text-destructive">*</span></Label>
-            <Input v-model="formData.command" placeholder="例如: node" :class="{ 'border-destructive': errors.command }" />
+            <Input
+              v-model="formData.command"
+              placeholder="node"
+              :class="{ 'border-destructive': errors.command }"
+            />
             <p v-if="errors.command" class="text-xs text-destructive">{{ errors.command }}</p>
           </div>
+
           <div class="space-y-2">
             <Label>参数</Label>
-            <div class="flex flex-wrap gap-2 mb-2">
-              <span v-for="(arg, index) in formData.args" :key="index"
-                class="inline-flex items-center gap-1 px-2 py-1 bg-accent text-accent-foreground rounded-md text-sm">
+            <div class="flex flex-wrap gap-2" v-if="formData.args.length > 0">
+              <span
+                v-for="(arg, index) in formData.args"
+                :key="`${arg}-${index}`"
+                class="inline-flex items-center gap-1 rounded-md bg-accent px-2 py-1 text-sm text-accent-foreground"
+              >
                 {{ arg }}
-                <button type="button" class="hover:text-destructive" @click="removeArg(index)">×</button>
+                <button type="button" class="hover:text-destructive" @click="removeArg(index)">x</button>
               </span>
             </div>
-            <Button type="button" variant="outline" size="sm" @click="addArg">+ 添加参数</Button>
+            <div class="flex items-center gap-2">
+              <Input
+                v-model="pendingArg"
+                placeholder="添加命令参数"
+                @keydown.enter.prevent="addArg"
+              />
+              <Button type="button" variant="outline" size="sm" @click="addArg">
+                添加
+              </Button>
+            </div>
           </div>
         </template>
 
         <template v-else>
           <div class="space-y-2">
-            <Label>URL <span class="text-destructive">*</span></Label>
-            <Input v-model="formData.url" placeholder="例如: http://localhost:3000" :class="{ 'border-destructive': errors.url }" />
+            <Label>地址 <span class="text-destructive">*</span></Label>
+            <Input
+              v-model="formData.url"
+              placeholder="http://localhost:3000"
+              :class="{ 'border-destructive': errors.url }"
+            />
             <p v-if="errors.url" class="text-xs text-destructive">{{ errors.url }}</p>
           </div>
         </template>
 
-        <div class="space-y-2">
-          <Label>超时（秒）</Label>
-          <Input v-model.number="formData.timeout" type="number" :min="1" />
+        <div class="grid gap-4 sm:grid-cols-3">
+          <div class="space-y-2">
+            <Label>超时时间（秒）</Label>
+            <Input v-model.number="formData.timeout" type="number" :min="1" />
+          </div>
+          <div class="space-y-2">
+            <Label>重连延迟（毫秒）</Label>
+            <Input v-model.number="formData.reconnectDelay" type="number" :min="0" />
+          </div>
+          <div class="space-y-2">
+            <Label>最大重连次数</Label>
+            <Input v-model.number="formData.maxReconnectAttempts" type="number" :min="0" />
+          </div>
         </div>
 
         <div class="flex items-center gap-2">
-          <Checkbox id="autoConnect" :model-value="formData.autoConnect" @update:model-value="(v: boolean) => formData.autoConnect = v" />
-          <Label for="autoConnect" class="cursor-pointer">自动连接</Label>
+          <Checkbox
+            id="autoConnect"
+            :model-value="formData.autoConnect"
+            @update:model-value="(value) => formData.autoConnect = normalizeCheckboxValue(value)"
+          />
+          <Label for="autoConnect" class="cursor-pointer">启动时自动连接</Label>
         </div>
 
         <div class="flex items-center gap-2">
-          <Checkbox id="reconnect" :model-value="formData.reconnect" @update:model-value="(v: boolean) => formData.reconnect = v" />
-          <Label for="reconnect" class="cursor-pointer">自动重连</Label>
+          <Checkbox
+            id="reconnect"
+            :model-value="formData.reconnect"
+            @update:model-value="(value) => formData.reconnect = normalizeCheckboxValue(value)"
+          />
+          <Label for="reconnect" class="cursor-pointer">失败后自动重连</Label>
         </div>
 
         <DialogFooter>
-          <Button type="button" variant="outline" @click="emit('close')">取消</Button>
-          <Button type="submit" :disabled="loading">{{ loading ? '保存中...' : '保存' }}</Button>
+          <Button type="button" variant="outline" @click="emit('close')">
+            取消
+          </Button>
+          <Button type="submit" :disabled="loading">
+            {{ loading ? '保存中...' : '保存' }}
+          </Button>
         </DialogFooter>
       </form>
     </DialogContent>
