@@ -20,7 +20,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.lang.Nullable;
 import org.springframework.web.bind.annotation.*;
 
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -126,10 +125,6 @@ public class WorkflowController {
 
             log.info("Workflow 创建成功: id={}, name={}", definition.id(), definition.name());
             return ResponseEntity.status(HttpStatus.CREATED).body(definition);
-        } catch (IOException e) {
-            log.error("创建 Workflow 失败", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(new ErrorResponse(500, "创建失败: " + e.getMessage(), Instant.now()));
         } catch (Exception e) {
             log.error("创建 Workflow 失败", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
@@ -192,10 +187,6 @@ public class WorkflowController {
 
             log.info("Workflow 更新成功: id={}", id);
             return ResponseEntity.ok(definition);
-        } catch (IOException e) {
-            log.error("更新 Workflow 失败: id={}", id, e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(new ErrorResponse(500, "更新失败: " + e.getMessage(), Instant.now()));
         } catch (Exception e) {
             log.error("更新 Workflow 失败: id={}", id, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
@@ -240,10 +231,6 @@ public class WorkflowController {
 
             log.info("Workflow 删除成功: id={}", id);
             return ResponseEntity.noContent().build();
-        } catch (IOException e) {
-            log.error("删除 Workflow 失败: id={}", id, e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(new ErrorResponse(500, "删除失败: " + e.getMessage(), Instant.now()));
         } catch (Exception e) {
             log.error("删除 Workflow 失败: id={}", id, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
@@ -307,10 +294,6 @@ public class WorkflowController {
             }
 
             return ResponseEntity.ok(Map.of("yamlContent", yamlContent));
-        } catch (IOException e) {
-            log.error("读取 Workflow YAML 失败: id={}", id, e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(new ErrorResponse(500, "读取失败: " + e.getMessage(), Instant.now()));
         } catch (Exception e) {
             log.error("读取 Workflow YAML 失败: id={}", id, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)

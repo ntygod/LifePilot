@@ -157,7 +157,7 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
             // 如果 Provider 只有 EMBEDDING 能力（纯 embedding Provider），使用 embeddingModel 进行健康检查
             else if (config.hasCapability(ProviderCapability.EMBEDDING) && embeddingModel != null) {
                 float[] embedding = embeddingModel.embed("ping");
-                return embedding != null && embedding.length > 0;
+                return embedding.length > 0;
             }
             // 既没有 CHAT 也没有 EMBEDDING 能力，视为不健康
             else {
