@@ -1,6 +1,7 @@
 package com.lifepilot.interaction.web.model;
 
 import java.time.Instant;
+import java.util.List;
 
 import org.springframework.lang.Nullable;
 
@@ -20,7 +21,8 @@ public record MessageInfo(
         String id,
         String role,
         String content,
-        @Nullable A2uiComponentTree a2ui,
+        @Nullable List<A2uiComponent> a2uiComponents,
         Instant timestamp,
-        @Nullable String reasoningSummary
+        @Nullable String reasoningSummary,
+        @Nullable String traceId
 ) {}

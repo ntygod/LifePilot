@@ -1,45 +1,14 @@
 import { ref } from 'vue'
 import { chatApi } from '@/api/client'
-import type { A2uiComponent, A2uiSignal, A2uiSignalContext } from '@/types'
+import type { A2uiSignal, A2uiSignalContext, ChatResponse } from '@/types'
 import { useA2uiStore } from '@/stores/a2ui'
 import { useChatStore } from '@/stores/chat'
+import { extractA2uiComponents } from '@/utils/a2ui'
 
-function isA2uiComponentArray(value: unknown): value is A2uiComponent[] {
-  return Array.isArray(value)
-    && value.every(item =>
-      item
-      && typeof item === 'object'
-      && typeof (item as A2uiComponent).id === 'string'
-      && typeof (item as A2uiComponent).type === 'string'
-      && Array.isArray((item as A2uiComponent).children),
-    )
+function hasAssistantText(response: ChatResponse) {
+  return Boolean(response.content?.trim())
 }
 
-export function extractA2uiComponents(payload: unknown): A2uiComponent[] | null {
-  if (!payload || typeof payload !== 'object') return null
-
-  const record = payload as Record<string, unknown>
-  const candidates: unknown[] = [
-    record.components,
-    (record.a2ui as { components?: unknown } | undefined)?.components,
-    (record.ui as { components?: unknown } | undefined)?.components,
-    (record.message as { a2uiComponents?: unknown } | undefined)?.a2uiComponents,
-    ((record.message as { a2ui?: { components?: unknown } } | undefined)?.a2ui)?.components,
-  ]
-
-  for (const candidate of candidates) {
-    if (isA2uiComponentArray(candidate)) {
-      return candidate
-    }
-  }
-
-  return null
-}
-
-/**
- * A2UI 信号 composable，封装信号发送逻辑。
- * 调用 POST /api/chat/signals 将用户交互信号回传给 Agent。
- */
 export function useA2uiSignal() {
   const sending = ref(false)
   const error = ref<string | null>(null)
@@ -82,7 +51,6 @@ export function useA2uiSignal() {
     }
   }
 
-  /** 发送 A2UI 信号 */
   async function emitSignal(
     signal: A2uiSignal,
     sessionId: string,
@@ -110,16 +78,25 @@ export function useA2uiSignal() {
       )
 
       const components = extractA2uiComponents(response)
-      if (components) {
-        if (signalContext.messageId) {
-          chatStore.updateMessage(signalContext.messageId, {
-            a2uiComponents: components,
-          })
-        } else {
-          a2uiStore.updateComponents(components, {
-            traceId: signalContext.traceId ?? a2uiStore.currentTraceId,
-          })
-        }
+      if (components && (response.traceId || signalContext.traceId)) {
+        a2uiStore.setCurrentTraceId(response.traceId ?? signalContext.traceId ?? null)
+      }
+
+      if (hasAssistantText(response) || (!signalContext.messageId && components?.length)) {
+        chatStore.upsertMessage({
+          id: response.messageId,
+          role: 'assistant',
+          content: response.content ?? '',
+          a2uiComponents: components ?? undefined,
+          timestamp: Date.now(),
+          traceId: response.traceId,
+          tokenUsage: response.tokenUsage,
+          modelId: response.tokenUsage?.modelId,
+        })
+      } else if (components && signalContext.messageId) {
+        chatStore.updateMessage(signalContext.messageId, {
+          a2uiComponents: components,
+        })
       }
 
       a2uiStore.setSignalState(signalContext, {

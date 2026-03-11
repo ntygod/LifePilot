@@ -276,7 +276,7 @@ public class ContextAssembler {
     private AssembledContext assembleBasic(AgentState state) {
         int totalTokens = config.getContext().getMaxContextTokens();
         var tokenBudget = TokenBudget.allocate(state.phase(), totalTokens);
-        String systemPrompt = buildSystemPrompt(state.phase());
+        String systemPrompt = safeBuildSystemPrompt(state.phase());
         String userPrompt = buildUserPrompt(state);
         return new AssembledContext(systemPrompt, userPrompt, List.of(), tokenBudget,
                 0, 0.0f, 0, false);
@@ -294,7 +294,7 @@ public class ContextAssembler {
     private AssembledContext buildFallbackContext(AgentState state) {
         int totalTokens = config.getContext().getMaxContextTokens();
         var tokenBudget = TokenBudget.allocate(state.phase(), totalTokens);
-        String systemPrompt = buildSystemPrompt(state.phase());
+        String systemPrompt = safeBuildSystemPrompt(state.phase());
         String userPrompt = buildUserPrompt(state);
         return new AssembledContext(systemPrompt, userPrompt, List.of(), tokenBudget,
                 0, 0.0f, 0, true);
@@ -820,9 +820,88 @@ public class ContextAssembler {
                 "locale", Locale.getDefault().toLanguageTag()));
     }
 
+    private String safeBuildSystemPrompt(AgentPhase phase) {
+        try {
+            return buildSystemPrompt(phase);
+        } catch (Exception e) {
+            log.error("系统提示词渲染失败，使用紧急兜底提示词: phase={}, error={}",
+                    phase, e.getMessage());
+            return buildEmergencySystemPrompt(phase);
+        }
+    }
+
+    private String buildEmergencySystemPrompt(AgentPhase phase) {
+        if (phase == AgentPhase.TERMINATED || phase == AgentPhase.EXECUTING) {
+            return "";
+        }
+
+        var now = ZonedDateTime.now();
+        String timeContext = "当前时间：" + now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+                + "，时区：" + ZoneId.systemDefault().getId()
+                + "，区域：" + Locale.getDefault().toLanguageTag();
+
+        return switch (phase) {
+            case UNDERSTANDING -> """
+                    你是知微（ZhiWei），一个可靠、友好、谨慎的 AI 助手。
+                    阶段：意图理解
+                    %s
+
+                    请只输出 JSON 对象，不要输出 markdown。
+                    字段必须包含：
+                    - summary: string
+                    - needsClarification: boolean
+                    - clarificationQuestion: string | null
+                    - canProceed: boolean
+                    - entities: string[]
+                    - complexity: "SIMPLE" | "MODERATE" | "COMPLEX"
+                    """.formatted(timeContext);
+            case PLANNING -> """
+                    你是知微（ZhiWei），一个可靠、友好、谨慎的 AI 助手。
+                    阶段：任务规划
+                    %s
+
+                    请只输出 JSON 对象，不要输出 markdown。
+                    字段必须包含：
+                    - steps: PlanStep[]
+                    - estimatedTokens: number
+                    - rationale: string
+
+                    每个 PlanStep 必须包含：
+                    - index: number
+                    - toolId: string
+                    - params: object
+                    - dependsOn: number[]
+                    - description: string
+                    """.formatted(timeContext);
+            case REFLECTING -> """
+                    你是知微（ZhiWei），一个可靠、友好、谨慎的 AI 助手。
+                    阶段：反思评估
+                    %s
+
+                    请只输出 JSON 对象，不要输出 markdown。
+                    字段必须包含：
+                    - satisfied: boolean
+                    - adjustmentPlan: string | null
+                    - summary: string
+                    - needsReplanning: boolean
+                    """.formatted(timeContext);
+            case RESPONDING -> """
+                    你是知微（ZhiWei），一个可靠、友好、谨慎的 AI 助手。
+                    阶段：生成响应
+                    %s
+
+                    请只输出 JSON 对象，不要输出 markdown。
+                    字段必须包含：
+                    - content: string
+                    - suggestions: string[]
+                    """.formatted(timeContext);
+            case EXECUTING, TERMINATED -> "";
+        };
+    }
+
     /**
      * 构建增强版 User Prompt（结构化内容区域）。
-     * 顺序：用户画像 → 对话历史 → 相关记忆 → 知识库片段 → 跨会话参考 → 工具结果 → 推理上下文 → 已执行步骤 → 当前用户请求 → 预算剩余
+     * 顺序：当前时间 → 用户画像 → 对话历史 → 相关记忆 → 知识库片段 → 跨会话参考 → 工具结果 → 推理上下文 → 已执行步骤 → 当前用户请求 → 预算剩余
      */
     String buildEnhancedUserPrompt(AgentState state,
                                    List<String> memories,
@@ -832,9 +911,12 @@ public class ContextAssembler {
                                    @Nullable String userProfile) {
         var sb = new StringBuilder();
 
+        // 0. 当前时间锚点：帮助模型在用户提示词中也感知明确的时区/区域上下文
+        sb.append(buildCurrentDateTimeContextLine()).append("\n");
+
         // 1. 用户画像（半稳定区，从 System Prompt 移至此处）
         if (userProfile != null && !userProfile.isBlank()) {
-            sb.append("用户画像:\n").append(userProfile).append("\n");
+            sb.append("\n用户画像:\n").append(userProfile).append("\n");
         }
 
         // 1.5 被动通知（首次对话时 drain）
@@ -939,6 +1021,7 @@ public class ContextAssembler {
      */
     String buildUserPrompt(AgentState state) {
         var sb = new StringBuilder();
+        sb.append(buildCurrentDateTimeContextLine()).append("\n");
         sb.append("用户请求: ").append(state.goal()).append("\n");
         sb.append("预算剩余: Token=").append(state.budget().tokensRemaining())
                 .append(", 已用步骤=").append(state.stepCount()).append("\n");
@@ -963,6 +1046,13 @@ public class ContextAssembler {
         }
 
         return sb.toString();
+    }
+
+    private String buildCurrentDateTimeContextLine() {
+        var now = ZonedDateTime.now();
+        return "当前时间: " + now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+                + ", 时区: " + ZoneId.systemDefault().getId()
+                + ", 区域: " + Locale.getDefault().toLanguageTag();
     }
 
     // --- 可观测性日志 ---

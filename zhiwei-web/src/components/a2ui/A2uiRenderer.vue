@@ -2,52 +2,71 @@
 import { computed } from 'vue'
 import type { A2uiComponent } from '@/types'
 import { resolveComponent } from './componentCatalog'
+import { normalizeA2uiComponents } from '@/utils/a2ui'
 
 const props = defineProps<{
-  /** 扁平邻接表组件数组 */
   components: A2uiComponent[]
-  /** 要渲染的根节点 ID 列表（不传则自动计算顶层节点） */
   rootIds?: string[]
-  /** 当前组件树所属消息 ID */
   messageId?: string
-  /** 当前组件树所属轨迹 ID */
   traceId?: string
-  /** 当前是否仍处于流式生成阶段 */
   streaming?: boolean
+  visitedIds?: string[]
+  depth?: number
 }>()
 
-/** 按 ID 索引组件，便于子节点查找 */
+const MAX_DEPTH = 12
+
+const normalizedComponents = computed(() => normalizeA2uiComponents(props.components))
+
 const componentMap = computed(() => {
   const map = new Map<string, A2uiComponent>()
-  for (const c of props.components) {
-    map.set(c.id, c)
+  for (const component of normalizedComponents.value) {
+    map.set(component.id, component)
   }
   return map
 })
 
-/** 计算根节点：如果传入 rootIds 则使用，否则找出不被任何节点引用为 children 的节点 */
+const visitedSet = computed(() => new Set(props.visitedIds ?? []))
+const currentDepth = computed(() => props.depth ?? 0)
+const canRenderChildren = computed(() => currentDepth.value < MAX_DEPTH)
+
 const rootComponents = computed(() => {
   if (props.rootIds) {
     return props.rootIds
+      .filter(id => !visitedSet.value.has(id))
       .map(id => componentMap.value.get(id))
-      .filter((c): c is A2uiComponent => c !== undefined)
+      .filter((component): component is A2uiComponent => component !== undefined)
   }
-  // 收集所有被引用为子节点的 ID
+
   const childIds = new Set<string>()
-  for (const c of props.components) {
-    for (const childId of c.children) {
+  for (const component of normalizedComponents.value) {
+    for (const childId of component.children) {
       childIds.add(childId)
     }
   }
-  const roots = props.components.filter(c => !childIds.has(c.id))
-  return roots.length > 0 ? roots : props.components.slice(0, 1)
+
+  const roots = normalizedComponents.value.filter(component =>
+    !childIds.has(component.id) && !visitedSet.value.has(component.id),
+  )
+
+  return roots.length > 0
+    ? roots
+    : normalizedComponents.value.filter(component => !visitedSet.value.has(component.id)).slice(0, 1)
 })
 
-/** 获取指定组件的子节点 */
 function getChildren(component: A2uiComponent): A2uiComponent[] {
+  if (!canRenderChildren.value) {
+    return []
+  }
+
   return component.children
+    .filter(id => !visitedSet.value.has(id))
     .map(id => componentMap.value.get(id))
-    .filter((c): c is A2uiComponent => c !== undefined)
+    .filter((child): child is A2uiComponent => child !== undefined)
+}
+
+function nextVisitedIds(component: A2uiComponent) {
+  return [...visitedSet.value, component.id]
 }
 </script>
 
@@ -63,14 +82,15 @@ function getChildren(component: A2uiComponent): A2uiComponent[] {
       :trace-id="props.traceId"
       :streaming="props.streaming"
     >
-      <!-- 递归渲染子节点 -->
       <A2uiRenderer
         v-if="getChildren(comp).length"
-        :components="components"
+        :components="normalizedComponents"
         :root-ids="comp.children"
         :message-id="props.messageId"
         :trace-id="props.traceId"
         :streaming="props.streaming"
+        :visited-ids="nextVisitedIds(comp)"
+        :depth="currentDepth + 1"
       />
     </component>
   </template>

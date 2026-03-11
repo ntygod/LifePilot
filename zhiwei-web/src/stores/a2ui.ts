@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { A2uiComponent, A2uiSignalContext, A2uiSignalRuntime } from '@/types'
+import { normalizeA2uiComponents } from '@/utils/a2ui'
 
 export const useA2uiStore = defineStore('a2ui', () => {
   // 当前 A2UI 组件列表（邻接表扁平数组）
@@ -10,7 +11,7 @@ export const useA2uiStore = defineStore('a2ui', () => {
 
   /** 更新组件树 */
   function updateComponents(newComponents: A2uiComponent[], context?: { traceId?: string | null }) {
-    components.value = newComponents
+    components.value = normalizeA2uiComponents(newComponents)
     if (context && 'traceId' in context) {
       currentTraceId.value = context.traceId ?? null
     }

@@ -41,7 +41,7 @@ const signalState = computed(() => (
 const isSending = computed(() => signalState.value?.status === 'sending')
 
 async function handleChange() {
-  if (!props.signal || !chatStore.activeSessionId) return
+  if (props.streaming || !props.signal || !chatStore.activeSessionId) return
   await emitSignal(
     { name: props.signal.name, payload: { ...props.signal.payload, value: inputValue.value } },
     chatStore.activeSessionId,
@@ -74,7 +74,7 @@ function handleKeydown(event: KeyboardEvent) {
         type="text"
         :placeholder="placeholder"
         class="pr-10"
-        :disabled="isSending"
+        :disabled="streaming || isSending"
         @change="handleChange"
         @keydown="handleKeydown"
       />

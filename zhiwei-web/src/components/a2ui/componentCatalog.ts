@@ -14,8 +14,27 @@ import A2uiTable from './A2uiTable.vue'
 import A2uiCodeBlock from './A2uiCodeBlock.vue'
 import A2uiProgress from './A2uiProgress.vue'
 
-/** A2UI 组件类型 → Vue 组件映射注册表 */
-const catalog: Record<string, Component> = {
+/** A2UI registered component types. Keep this list aligned with the backend catalog contract. */
+export const A2UI_COMPONENT_TYPES = [
+  'Text',
+  'Card',
+  'Button',
+  'TextField',
+  'List',
+  'ListItem',
+  'DatePicker',
+  'Chip',
+  'Divider',
+  'Image',
+  'Table',
+  'CodeBlock',
+  'Progress',
+] as const
+
+export type A2uiRegisteredComponentType = typeof A2UI_COMPONENT_TYPES[number]
+
+/** A2UI component type -> Vue component registry */
+const catalog: Record<A2uiRegisteredComponentType, Component> = {
   Text: A2uiText,
   Card: A2uiCard,
   Button: A2uiButton,
@@ -31,9 +50,9 @@ const catalog: Record<string, Component> = {
   Progress: A2uiProgress,
 }
 
-/** 根据 type 解析对应的 Vue 组件，未注册类型返回 A2uiFallback */
+/** Resolve a Vue component by type, or fall back when the type is unknown. */
 export function resolveComponent(type: string): Component {
-  return catalog[type] ?? A2uiFallback
+  return catalog[type as A2uiRegisteredComponentType] ?? A2uiFallback
 }
 
 export default catalog

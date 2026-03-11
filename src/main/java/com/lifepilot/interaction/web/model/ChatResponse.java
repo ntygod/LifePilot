@@ -1,21 +1,21 @@
-package com.lifepilot.interaction.web.model;
+﻿package com.lifepilot.interaction.web.model;
 
 import com.lifepilot.interaction.model.TokenUsage;
 import org.springframework.lang.Nullable;
 
+import java.util.List;
+
 /**
- * 非流式消息响应体。
+ * 非流式聊天响应载荷，供 sendMessage 和 A2UI 信号回复共用。
  *
- * @param messageId  消息 ID
- * @param content    文本内容
- * @param a2ui       A2UI 组件树（可为 null）
- * @param tokenUsage Token 消耗统计（可为 null）
  * @author zsg
- * @since 2026-02-27
+ * @since 2026-02-26
  */
 public record ChatResponse(
         String messageId,
         String content,
-        @Nullable A2uiComponentTree a2ui,
-        @Nullable TokenUsage tokenUsage
-) {}
+        @Nullable List<A2uiComponent> a2uiComponents,
+        @Nullable TokenUsage tokenUsage,
+        @Nullable String traceId
+) {
+}

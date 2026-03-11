@@ -121,12 +121,13 @@ export function useChat() {
       }
       // 网络 / HTTP 级错误，视为本条消息发送失败
       const message = e instanceof Error ? e.message : '请求失败'
+      const uiMessage = `网络异常：${message}`
       // 网络 / HTTP 级错误统一归为"网络异常"
-      error.value = `网络异常：${message}`
+      error.value = uiMessage
       if (currentUserMessageId) {
         chatStore.updateMessage(currentUserMessageId, {
           status: 'error',
-          errorMessage: message
+          errorMessage: uiMessage
         })
       }
       // 确保流式状态被重置
@@ -195,12 +196,13 @@ export function useChat() {
     } catch (e) {
       // SSE 解析错误，更新用户消息状态
       const message = e instanceof Error ? e.message : 'SSE 解析失败'
+      const uiMessage = `流式响应解析失败：${message}`
       console.error('SSE 解析错误:', e)
-      error.value = `流式响应解析失败：${message}`
+      error.value = uiMessage
       if (currentUserMessageId) {
         chatStore.updateMessage(currentUserMessageId, {
           status: 'error',
-          errorMessage: message
+          errorMessage: uiMessage
         })
       }
       chatStore.resetStreaming()
@@ -307,9 +309,9 @@ export function useChat() {
             reasoningEvents: reasoningEvents.value.length > 0
               ? [...reasoningEvents.value]
               : undefined,
-            a2uiComponents: a2uiStore.components.length > 0
-              ? [...a2uiStore.components]
-              : undefined,
+            a2uiComponents: event.a2uiComponents?.length
+              ? [...event.a2uiComponents]
+              : (a2uiStore.components.length > 0 ? [...a2uiStore.components] : undefined),
             timestamp,
             traceId: event.traceId,
             attachments: extraAttachments.length > 0 ? extraAttachments : undefined,
@@ -350,10 +352,6 @@ export function useChat() {
             uiMessage = '请求无法完成，可能是参数或权限问题：' + event.message
           } else {
             uiMessage = event.message || '对话过程中发生未知错误'
-          }
-
-          if (event.traceId) {
-            uiMessage += '（可前往"轨迹"页面查看该次执行详情）'
           }
 
           error.value = uiMessage

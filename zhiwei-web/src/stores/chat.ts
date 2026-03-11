@@ -34,6 +34,15 @@ export const useChatStore = defineStore('chat', () => {
     messages.value.push(message)
   }
 
+  function upsertMessage(message: Message) {
+    const index = messages.value.findIndex(item => item.id === message.id)
+    if (index === -1) {
+      messages.value.push(message)
+      return
+    }
+    messages.value[index] = { ...messages.value[index], ...message }
+  }
+
   /** 按 ID 局部更新单条消息（用于状态 / 错误标记等） */
   function updateMessage(id: string, patch: Partial<Message>) {
     const index = messages.value.findIndex(m => m.id === id)
@@ -116,6 +125,7 @@ export const useChatStore = defineStore('chat', () => {
     loadSessions,
     loadMessages,
     addMessage,
+    upsertMessage,
     updateMessage,
     replaceMessageId,
     createSession,
