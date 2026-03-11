@@ -12,6 +12,7 @@ import type {
   TokenUsage,
   ReasoningEvent,
   ChatAttachment,
+  ToolConfirmationRequest,
 } from '@/types'
 
 /**
@@ -39,6 +40,8 @@ export function useChat() {
   const reasoningStatusText = ref<string | null>(null)
   // 当前轮流式媒体数据（截图等），DONE 事件时合并到消息附件
   const streamingMedia = ref<SseMediaEvent[]>([])
+  // 当前待处理的工具确认请求
+  const pendingToolConfirmation = ref<ToolConfirmationRequest | null>(null)
   let abortController: AbortController | null = null
   // 当前这轮请求对应的用户消息 ID，用于在错误 / 完成时回写状态
   let currentUserMessageId: string | null = null
@@ -369,6 +372,12 @@ export function useChat() {
         case SSE_EVENT_TYPES.HEARTBEAT:
           // 心跳事件，忽略
           break
+        case SSE_EVENT_TYPES.TOOL_CONFIRMATION_REQUEST: {
+          // 工具确认请求：弹出确认对话框
+          const payload: ToolConfirmationRequest = JSON.parse(data)
+          pendingToolConfirmation.value = payload
+          break
+        }
         default:
           // 未知事件类型，记录警告但不影响流程
           console.warn('未知的 SSE 事件类型:', eventType)
@@ -440,5 +449,7 @@ export function useChat() {
     // 当前轮流式媒体数据（截图等），供组件实时预览
     streamingMedia,
     streamingA2uiComponents: a2uiStore.components,
+    // 当前待处理的工具确认请求
+    pendingToolConfirmation,
   }
 }
