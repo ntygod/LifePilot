@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.Duration;
 import java.util.List;
@@ -41,6 +42,9 @@ class McpServerRegistryTest {
     private DynamicToolRegistry mockToolRegistry;
 
     @Mock
+    private ApplicationEventPublisher mockEventPublisher;
+
+    @Mock
     private McpClient mockClient;
 
     private McpServerConfig config;
@@ -60,7 +64,7 @@ class McpServerRegistryTest {
                 .build();
 
         // 子类覆盖 createClient() 返回 Mock
-        registry = new McpServerRegistry(mockToolAdapter, mockToolRegistry) {
+        registry = new McpServerRegistry(mockToolAdapter, mockToolRegistry, mockEventPublisher) {
             @Override
             McpClient createClient(McpServerConfig cfg) {
                 return mockClient;

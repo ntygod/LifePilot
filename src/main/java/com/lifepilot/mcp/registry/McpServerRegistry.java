@@ -7,6 +7,8 @@ import com.lifepilot.tool.ToolContract;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.lang.Nullable;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -31,13 +33,16 @@ public class McpServerRegistry {
 
     private final McpToolAdapter toolAdapter;
     private final DynamicToolRegistry toolRegistry;
+    private final ApplicationEventPublisher eventPublisher;
     private final ScheduledExecutorService scheduler;
 
     public McpServerRegistry(
             McpToolAdapter toolAdapter,
-            DynamicToolRegistry toolRegistry) {
+            DynamicToolRegistry toolRegistry,
+            ApplicationEventPublisher eventPublisher) {
         this.toolAdapter = toolAdapter;
         this.toolRegistry = toolRegistry;
+        this.eventPublisher = eventPublisher;
         this.scheduler = Executors.newScheduledThreadPool(1, Thread.ofVirtual().factory());
     }
 
@@ -240,14 +245,38 @@ public class McpServerRegistry {
     }
 
     /** 更新 Server 状态。 */
-    private void updateState(String serverName, McpServerState state) {
-        servers.computeIfPresent(serverName, (k, entry) ->
-                entry.toBuilder().state(state).build());
+    private void updateState(String serverName, McpServerState newState) {
+        servers.computeIfPresent(serverName, (k, entry) -> {
+            var oldState = entry.state();
+            var updated = entry.toBuilder().state(newState).build();
+            if (oldState != newState) {
+                publishStateChangedEvent(serverName, oldState, newState, null);
+            }
+            return updated;
+        });
     }
 
     /** 更新 Server 条目。 */
     private void updateEntry(String serverName,
                              java.util.function.UnaryOperator<McpServerEntry> updater) {
-        servers.computeIfPresent(serverName, (k, entry) -> updater.apply(entry));
+        servers.computeIfPresent(serverName, (k, entry) -> {
+            var updated = updater.apply(entry);
+            if (entry.state() != updated.state()) {
+                publishStateChangedEvent(serverName, entry.state(), updated.state(), updated.lastError());
+            }
+            return updated;
+        });
+    }
+
+    /** 安全发布状态变化事件，异常不影响主流程。 */
+    private void publishStateChangedEvent(String serverName, McpServerState oldState,
+                                          McpServerState newState, @Nullable String error) {
+        try {
+            eventPublisher.publishEvent(new McpServerStateChangedEvent(
+                    serverName, oldState, newState, Instant.now(), error));
+        } catch (Exception e) {
+            log.warn("MCP Server 状态变化事件发布失败: server={}, {}→{}, error={}",
+                    serverName, oldState, newState, e.getMessage());
+        }
     }
 }
