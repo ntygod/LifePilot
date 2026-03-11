@@ -120,7 +120,7 @@ class MultiAgentLoopFaultConditionTest {
 
         // 构造 ToolBridgeAgentToolProvider
         var pipeline = mock(ToolExecutionPipeline.class);
-        var provider = new com.lifepilot.tool.bridge.ToolBridgeAgentToolProvider(toolRegistry, pipeline);
+        var provider = new com.lifepilot.tool.bridge.ToolBridgeAgentToolProvider(toolRegistry, pipeline, null);
 
         // 执行：获取工具列表
         var callbacks = provider.getToolCallbacks(state);

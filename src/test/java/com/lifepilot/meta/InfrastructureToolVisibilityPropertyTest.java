@@ -81,7 +81,7 @@ class InfrastructureToolVisibilityPropertyTest {
         List<ToolContract> allTools = buildAllTools();
         when(toolRegistry.getToolSnapshot()).thenReturn(allTools);
 
-        var provider = new ToolBridgeAgentToolProvider(toolRegistry, pipeline);
+        var provider = new ToolBridgeAgentToolProvider(toolRegistry, pipeline, null);
 
         // 构造 AgentState，白名单为随机生成的 allowedToolIds
         AgentState state = buildState(allowedToolIds);

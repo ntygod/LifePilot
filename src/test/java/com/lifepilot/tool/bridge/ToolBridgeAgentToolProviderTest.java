@@ -51,7 +51,7 @@ class ToolBridgeAgentToolProviderTest {
 
     @BeforeEach
     void setUp() {
-        provider = new ToolBridgeAgentToolProvider(toolRegistry, pipeline);
+        provider = new ToolBridgeAgentToolProvider(toolRegistry, pipeline, null);
 
         infraTool1 = BuiltinTool.builder()
                 .id("builtin.env.datetime")

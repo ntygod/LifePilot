@@ -129,7 +129,7 @@ class AgentStateAllowedToolIdsPropertyTest {
 
         // 构造 provider
         var pipeline = mock(ToolExecutionPipeline.class);
-        var provider = new ToolBridgeAgentToolProvider(toolRegistry, pipeline);
+        var provider = new ToolBridgeAgentToolProvider(toolRegistry, pipeline, null);
 
         // 执行
         List<ToolCallback> callbacks = provider.getToolCallbacks(state);
@@ -176,7 +176,7 @@ class AgentStateAllowedToolIdsPropertyTest {
         AgentState state = AgentState.init(request);
 
         var pipeline = mock(ToolExecutionPipeline.class);
-        var provider = new ToolBridgeAgentToolProvider(toolRegistry, pipeline);
+        var provider = new ToolBridgeAgentToolProvider(toolRegistry, pipeline, null);
 
         List<ToolCallback> callbacks = provider.getToolCallbacks(state);
 
