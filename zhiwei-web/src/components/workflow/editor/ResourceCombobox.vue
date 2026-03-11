@@ -100,14 +100,14 @@ watch(open, (isOpen) => {
         </svg>
       </Button>
     </PopoverTrigger>
-    <PopoverContent class="w-[--reka-popover-trigger-width] p-0" align="start">
+    <PopoverContent class="w-[--reka-popover-trigger-width] p-0" align="start" :collision-padding="8" :avoid-collisions="true" side="bottom">
       <Command>
         <CommandInput
           v-model="searchQuery"
           :placeholder="searchPlaceholder"
           class="h-8 text-sm"
         />
-        <CommandList class="max-h-48">
+        <CommandList class="max-h-56">
           <CommandEmpty>
             <span v-if="loading" class="text-muted-foreground text-xs">加载中...</span>
             <span v-else class="text-muted-foreground text-xs">{{ emptyText }}</span>

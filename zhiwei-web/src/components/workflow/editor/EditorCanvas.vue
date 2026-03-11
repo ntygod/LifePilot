@@ -91,8 +91,8 @@ function autoLayoutNewNodes() {
 
 // ── 画布内容区域尺寸（确保 SVG 和内容区域足够大） ──
 const canvasSize = computed(() => {
-  let maxX = 600
-  let maxY = 400
+  let maxX = 800
+  let maxY = 600
   for (const pos of Object.values(positions.value)) {
     maxX = Math.max(maxX, pos.x + NODE_WIDTH + 60)
     maxY = Math.max(maxY, pos.y + NODE_HEIGHT + 60)

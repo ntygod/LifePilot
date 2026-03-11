@@ -140,11 +140,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown))
   <FormDialogShell
     :title="mode === 'create' ? '新建工作流' : mode === 'edit' ? '编辑工作流' : '复制工作流'"
     description="可通过可视化方式或 YAML 方式编辑工作流。"
-    content-class="sm:max-w-[min(1200px,calc(100vw-3rem))]"
+    content-class="sm:max-w-[min(1400px,calc(100vw-2rem))]"
     body-class="!overflow-hidden !px-0 !py-0"
     @close="emit('close')"
   >
-    <form id="workflow-form" class="flex h-[80vh] flex-col" @submit.prevent="handleSubmit">
+    <form id="workflow-form" class="flex h-[85vh] flex-col" @submit.prevent="handleSubmit">
       <div class="flex items-center gap-2 border-b border-border/70 px-6 py-4">
         <Button
           type="button"
