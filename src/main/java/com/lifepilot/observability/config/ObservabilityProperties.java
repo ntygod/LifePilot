@@ -78,6 +78,9 @@ public class ObservabilityProperties {
         /** 速率限制配置。 */
         private RateLimit rateLimit = new RateLimit();
 
+        /** 工具确认等待超时时间（秒），默认 60。 */
+        private int confirmationTimeoutSeconds = 60;
+
         /**
          * 工具风险配置。
          */

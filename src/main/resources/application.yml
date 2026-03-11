@@ -598,6 +598,7 @@ lifepilot:
       use-scoped-value: true
     guardrail:
       enabled: true
+      confirmation-timeout-seconds: 60
       tool-risk:
         default-risk-level: LOW
         tool-risk-mapping: {}
