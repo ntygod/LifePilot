@@ -89,12 +89,32 @@ const lastAssistantMessage = computed(() => {
   return null
 })
 
+const latestTraceMessage = computed(() => {
+  for (let index = chatStore.messages.length - 1; index >= 0; index -= 1) {
+    if (chatStore.messages[index].traceId) return chatStore.messages[index]
+  }
+  return null
+})
+
+const latestUserErrorMessage = computed(() => {
+  for (let index = chatStore.messages.length - 1; index >= 0; index -= 1) {
+    const message = chatStore.messages[index]
+    if (message.role === 'user' && message.status === 'error') return message
+  }
+  return null
+})
+
+const showGlobalErrorPanel = computed(() => (
+  Boolean(error.value)
+  && (!latestUserErrorMessage.value || latestUserErrorMessage.value.errorMessage !== error.value)
+))
+
 const lastToolsSummary = computed(() => lastAssistantMessage.value?.toolsSummary ?? [])
 const lastSources = computed(() => lastAssistantMessage.value?.sources ?? [])
 const lastKbSources = computed(() => lastSources.value.filter(source => source.type === 'knowledgeBase'))
 const lastTraceTarget = computed(() => (
-  lastAssistantMessage.value?.traceId
-    ? { name: 'traces', query: { id: lastAssistantMessage.value.traceId } }
+  latestTraceMessage.value?.traceId
+    ? { name: 'traces', query: { id: latestTraceMessage.value.traceId } }
     : { name: 'traces' }
 ))
 
@@ -523,11 +543,11 @@ function closeInspectorPanels() {
           </div>
         </div>
 
-        <div v-if="error || isStreaming" class="grid gap-3 lg:grid-cols-2">
+        <div v-if="showGlobalErrorPanel || isStreaming" class="space-y-3">
           <StatePanel
-            v-if="error"
+            v-if="showGlobalErrorPanel"
             title="本轮对话出现错误"
-            :description="error"
+            :description="error ?? undefined"
             tone="danger"
           >
             <template #actions>
