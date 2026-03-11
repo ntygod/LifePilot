@@ -208,9 +208,9 @@ public class StateReducer {
                     .build();
         }
         if (a.riskLevel() == RiskLevel.HIGH) {
-            validateTransition(state.phase(), AgentPhase.UNDERSTANDING);
+            validateTransition(state.phase(), AgentPhase.PLANNING);
             return state.toBuilder()
-                    .phase(AgentPhase.UNDERSTANDING)
+                    .phase(AgentPhase.PLANNING)
                     .stepCount(state.stepCount() + 1)
                     .steps(appendStep(state.steps(), a.toolId(), false, a.reason(), true, 0, 0))
                     .build();
