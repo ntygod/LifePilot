@@ -243,7 +243,7 @@ public class AgentLoop {
                 if (conversationHistoryStore != null && finalContent != null && !finalContent.isBlank()) {
                     try {
                         assistantMessageId = conversationHistoryStore.appendAssistantMessage(
-                                state.sessionId(), finalContent, reasoningSummary, state.traceId());
+                                state.sessionId(), finalContent, reasoningSummary, state.traceId(), null);
                     } catch (Exception e) {
                         log.warn("助手消息同步写入失败: sessionId={}, error={}", state.sessionId(), e.getMessage());
                     }
@@ -350,7 +350,7 @@ public class AgentLoop {
             if (conversationHistoryStore != null && state.finalOutput() != null && !state.finalOutput().isBlank()) {
                 try {
                     conversationHistoryStore.appendAssistantMessage(
-                            state.sessionId(), state.finalOutput(), state.reasoningSummary(), state.traceId());
+                            state.sessionId(), state.finalOutput(), state.reasoningSummary(), state.traceId(), null);
                 } catch (Exception e) {
                     log.warn("助手消息同步写入失败: sessionId={}, error={}", state.sessionId(), e.getMessage());
                 }

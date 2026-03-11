@@ -64,10 +64,11 @@ public class JdbcConversationHistoryStore implements ConversationHistoryStore {
     public String appendAssistantMessage(String sessionId,
                                          String assistantMessage,
                                          @Nullable String reasoningSummary,
-                                         @Nullable String traceId) {
+                                         @Nullable String traceId,
+                                         @Nullable String a2uiComponentsJson) {
         Instant ts = Instant.now();
         String messageId = messageRepository.insert(sessionId, "assistant", assistantMessage,
-                reasoningSummary, traceId, ts, null);
+                reasoningSummary, traceId, ts, a2uiComponentsJson);
         sessionRepository.appendMessageMeta(sessionId, ts, truncatePreview(assistantMessage));
         log.debug("助手消息已同步写入: sessionId={}, messageId={}", sessionId, messageId);
         return messageId;
@@ -93,7 +94,7 @@ public class JdbcConversationHistoryStore implements ConversationHistoryStore {
             appendUserMessage(sessionId, userMessage, traceId);
         }
         if (assistantMessage != null && !assistantMessage.isBlank()) {
-            appendAssistantMessage(sessionId, assistantMessage, reasoningSummary, traceId);
+            appendAssistantMessage(sessionId, assistantMessage, reasoningSummary, traceId, null);
         }
 
         log.debug("对话历史已追加: sessionId={}, hasUser={}, hasAssistant={}",
