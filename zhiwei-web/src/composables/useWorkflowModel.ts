@@ -20,13 +20,13 @@ export type StepType =
 /** Skill 步骤配置 */
 export interface SkillStepConfig {
   skillId: string
-  params: Record<string, string>
+  params: Record<string, unknown>
 }
 
 /** 工具步骤配置 */
 export interface ToolStepConfig {
   toolId: string
-  params: Record<string, string>
+  params: Record<string, unknown>
 }
 
 /** LLM 步骤配置 */
@@ -58,7 +58,7 @@ export interface ParallelStepConfig {
 /** 子工作流步骤配置 */
 export interface SubWorkflowStepConfig {
   workflowId: string
-  params: Record<string, string>
+  params: Record<string, unknown>
 }
 
 /** 等待步骤配置 */
