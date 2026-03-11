@@ -3,6 +3,8 @@ import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowLeft,
+  ChevronDown,
+  ChevronRight,
   Clock3,
   FileCode2,
   GitBranch,
@@ -26,7 +28,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useUiStore } from '@/stores/ui'
 import { useWorkflowStore } from '@/stores/workflow'
-import { stateConfig } from '@/constants/workflowState'
+import { stateConfig as stateConfigMap } from '@/constants/workflowState'
 
 const YamlEditor = defineAsyncComponent(() => import('@/components/editor/YamlEditor.vue'))
 
@@ -49,6 +51,60 @@ const breadcrumbItems = computed<BreadcrumbItem[]>(() => [
   { label: '工作流', to: { name: 'workflows' } },
   { label: workflow.value?.name ?? '详情' },
 ])
+
+const stateConfig = stateConfigMap
+
+/** 记录每个执行实例的展开状态 */
+const expandedExecutions = ref<Set<string>>(new Set())
+
+/** 切换执行实例的展开/折叠 */
+async function toggleExecution(instanceId: string) {
+  if (expandedExecutions.value.has(instanceId)) {
+    expandedExecutions.value.delete(instanceId)
+  } else {
+    expandedExecutions.value.add(instanceId)
+    // 并行加载事件时间线和步骤日志
+    await Promise.all([
+      workflowStore.fetchEventTimeline(instanceId),
+      workflowStore.fetchStepLogs(instanceId),
+    ])
+  }
+}
+
+/** 解析事件 dataJson */
+function parseEventData(dataJson?: string): Record<string, unknown> | null {
+  if (!dataJson) return null
+  try {
+    return JSON.parse(dataJson)
+  } catch {
+    return null
+  }
+}
+
+/** 事件类型中文映射 */
+const eventTypeLabels: Record<string, string> = {
+  INSTANCE_CREATED: '实例创建',
+  INSTANCE_STATE_CHANGED: '状态变更',
+  STEP_STARTED: '步骤开始',
+  STEP_COMPLETED: '步骤完成',
+  STEP_FAILED: '步骤失败',
+  STEP_SKIPPED: '步骤跳过',
+  APPROVAL_REQUESTED: '审批请求',
+  APPROVAL_DECIDED: '审批决定',
+}
+
+/** 步骤日志状态样式 */
+const stepLogStateClass: Record<string, string> = {
+  COMPLETED: 'bg-green-100 text-green-800',
+  FAILED: 'bg-red-100 text-red-800',
+  SKIPPED: 'bg-gray-100 text-gray-800',
+}
+
+const stepLogStateLabel: Record<string, string> = {
+  COMPLETED: '成功',
+  FAILED: '失败',
+  SKIPPED: '跳过',
+}
 
 const stateBadge = Object.fromEntries(
   Object.entries(stateConfig).map(([key, value]) => [key, { label: value.label, variant: value.badgeVariant }]),
@@ -426,12 +482,20 @@ function goBack() {
                   <article
                     v-for="execution in workflowStore.executions"
                     :key="execution.id"
-                    class="list-card p-4"
+                    class="list-card overflow-hidden"
                   >
-                    <div class="flex flex-col gap-4">
+                    <!-- 执行摘要（可点击展开） -->
+                    <div
+                      class="flex cursor-pointer flex-col gap-4 p-4 transition-colors hover:bg-muted/30"
+                      @click="toggleExecution(execution.id)"
+                    >
                       <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div class="space-y-2">
                           <div class="flex flex-wrap items-center gap-2">
+                            <component
+                              :is="expandedExecutions.has(execution.id) ? ChevronDown : ChevronRight"
+                              class="size-4 shrink-0 text-muted-foreground"
+                            />
                             <Badge :variant="stateBadge[execution.state]?.variant ?? 'secondary'">
                               {{ stateBadge[execution.state]?.label ?? execution.state }}
                             </Badge>
@@ -453,6 +517,61 @@ function goBack() {
 
                       <div v-if="execution.failureReason" class="rounded-[calc(var(--radius)+4px)] border border-destructive/20 bg-destructive/6 px-4 py-3 text-sm text-destructive">
                         {{ execution.failureReason }}
+                      </div>
+                    </div>
+
+                    <!-- 展开详情：事件时间线 + 步骤日志 -->
+                    <div v-if="expandedExecutions.has(execution.id)" class="border-t border-border/60 bg-muted/20 p-4 space-y-5">
+                      <!-- 步骤日志 -->
+                      <div>
+                        <div class="surface-label mb-3 text-[0.68rem]">步骤日志</div>
+                        <div v-if="workflowStore.stepLogs.length === 0" class="text-sm text-muted-foreground">
+                          暂无步骤日志
+                        </div>
+                        <div v-else class="space-y-2">
+                          <div
+                            v-for="log in workflowStore.stepLogs"
+                            :key="log.id"
+                            class="flex flex-wrap items-center gap-2 rounded-lg border border-border/50 bg-background px-3 py-2 text-sm"
+                          >
+                            <span class="font-mono text-xs text-muted-foreground">{{ log.stepId }}</span>
+                            <Badge variant="outline" class="text-xs">{{ log.stepType }}</Badge>
+                            <span
+                              class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium"
+                              :class="stepLogStateClass[log.state] ?? 'bg-gray-100 text-gray-800'"
+                            >
+                              {{ stepLogStateLabel[log.state] ?? log.state }}
+                            </span>
+                            <span class="text-xs text-muted-foreground">
+                              第 {{ log.attempt }} 次 · {{ log.durationMs }}ms
+                            </span>
+                            <span v-if="log.errorMessage" class="basis-full text-xs text-destructive">
+                              {{ log.errorMessage }}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- 事件时间线 -->
+                      <div>
+                        <div class="surface-label mb-3 text-[0.68rem]">事件时间线</div>
+                        <div v-if="workflowStore.eventTimeline.length === 0" class="text-sm text-muted-foreground">
+                          暂无事件记录
+                        </div>
+                        <div v-else class="space-y-1">
+                          <div
+                            v-for="event in workflowStore.eventTimeline"
+                            :key="event.id"
+                            class="flex flex-wrap items-baseline gap-2 rounded-md px-3 py-1.5 text-sm odd:bg-muted/30"
+                          >
+                            <span class="shrink-0 text-xs text-muted-foreground">{{ formatDate(event.createdAt) }}</span>
+                            <Badge variant="outline" class="text-xs">{{ eventTypeLabels[event.type] ?? event.type }}</Badge>
+                            <span v-if="event.stepId" class="font-mono text-xs text-muted-foreground">{{ event.stepId }}</span>
+                            <span v-if="parseEventData(event.dataJson)" class="basis-full font-mono text-xs text-muted-foreground">
+                              {{ JSON.stringify(parseEventData(event.dataJson)) }}
+                            </span>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </article>

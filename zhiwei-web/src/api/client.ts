@@ -31,6 +31,7 @@ import type {
   WorkflowEvent,
   WorkflowExecution,
   WorkflowItem,
+  StepLog,
   ApprovalRequest,
   UsageStats,
   AgentStats,
@@ -763,6 +764,10 @@ export const workflowApi = {
   /** 获取实例事件时间线 */
   getEventTimeline(instanceId: string): Promise<WorkflowEvent[]> {
     return request(`/workflows/executions/${instanceId}/events`)
+  },
+  /** 获取实例步骤执行日志 */
+  getStepLogs(instanceId: string): Promise<StepLog[]> {
+    return request(`/workflows/executions/${instanceId}/step-logs`)
   }
 }
 

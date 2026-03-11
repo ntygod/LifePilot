@@ -84,7 +84,7 @@ public class StepExecutor {
     public Map<String, Object> execute(WorkflowStep step,
                                        WorkflowContext context,
                                        ExpressionEngine expressionEngine) {
-        log.debug("步骤执行开始: stepId={}, stepType={}", step.id(), step.getClass().getSimpleName());
+        log.info("步骤分发: stepId={}, stepType={}", step.id(), step.getClass().getSimpleName());
 
         Map<String, Object> result = switch (step) {
             case SkillStep s -> executeSkill(s, context, expressionEngine);
@@ -99,7 +99,7 @@ public class StepExecutor {
             case ApprovalStep s -> executeApproval(s);
         };
 
-        log.debug("步骤执行完成: stepId={}, outputKeys={}", step.id(), result.keySet());
+        log.info("步骤分发完成: stepId={}, outputKeys={}", step.id(), result.keySet());
         return result;
     }
 
@@ -158,6 +158,10 @@ public class StepExecutor {
         output.put("data", toolResult.data());
         if (toolResult.error() != null) {
             output.put("error", toolResult.error());
+            log.warn("ToolStep 执行返回错误: stepId={}, toolId={}, error={}",
+                    step.id(), step.toolId(), toolResult.error());
+        } else {
+            log.info("ToolStep 执行成功: stepId={}, toolId={}, ok={}", step.id(), step.toolId(), toolResult.ok());
         }
         return Map.copyOf(output);
     }
@@ -181,6 +185,10 @@ public class StepExecutor {
         // 3. 调用 LLM
         var llmResponse = llmRouter.call(step.scene(), resolvedPrompt, resolvedSchema);
 
+        log.info("LlmStep 调用完成: stepId={}, scene={}, provider={}, model={}, 输入tokens={}, 输出tokens={}, 耗时={}ms",
+                step.id(), step.scene(), llmResponse.providerId(), llmResponse.modelName(),
+                llmResponse.inputTokens(), llmResponse.outputTokens(), llmResponse.latencyMs());
+
         // 4. 转换为输出 Map
         return Map.of(
                 "content", llmResponse.content(),
@@ -201,7 +209,8 @@ public class StepExecutor {
         log.info("执行 ConditionStep: stepId={}, condition={}", step.id(), step.condition());
 
         boolean conditionResult = expressionEngine.evaluateCondition(step.condition(), context);
-        log.debug("条件求值结果: stepId={}, result={}", step.id(), conditionResult);
+        log.info("ConditionStep 求值: stepId={}, condition={}, result={}, 分支={}",
+                step.id(), step.condition(), conditionResult, conditionResult ? "then" : "else");
 
         List<WorkflowStep> branch = conditionResult ? step.thenSteps() : step.elseSteps();
         String branchName = conditionResult ? "then" : "else";
@@ -267,6 +276,8 @@ public class StepExecutor {
             iterationOutputs.add(Map.copyOf(bodyOutput));
         }
 
+        log.info("LoopStep 完成: stepId={}, 迭代次数={}", step.id(), iterationOutputs.size());
+
         return Map.of(
                 "iterations", iterationOutputs.size(),
                 "results", List.copyOf(iterationOutputs)
@@ -323,6 +334,8 @@ public class StepExecutor {
                         step.id(), "ParallelStep 等待分支完成时被中断");
             }
         }
+
+        log.info("ParallelStep 完成: stepId={}, 分支数={}", step.id(), step.branches().size());
 
         return Map.of(
                 "branchCount", step.branches().size(),

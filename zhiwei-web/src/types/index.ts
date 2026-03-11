@@ -519,6 +519,23 @@ export interface ApprovalRequest {
   reason?: string
 }
 
+/** 工作流步骤执行日志 */
+export interface StepLog {
+  id: string
+  instanceId: string
+  stepId: string
+  stepType: string
+  state: 'COMPLETED' | 'FAILED' | 'SKIPPED'
+  attempt: number
+  inputJson?: string
+  outputJson?: string
+  errorMessage?: string
+  startedAt: string
+  completedAt: string
+  durationMs: number
+  createdAt: string
+}
+
 /** Agent 列表项 */
 export interface AgentSummary {
   id: string
