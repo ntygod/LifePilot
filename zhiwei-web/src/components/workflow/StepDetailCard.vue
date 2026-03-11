@@ -113,7 +113,7 @@ const PROMPT_TRUNCATE_LENGTH = 120
         <!-- SkillStep -->
         <template v-if="step.type === 'skill'">
           <div class="text-xs text-muted-foreground mb-xs">
-            Skill: <span class="text-foreground font-mono">{{ step.skillId }}</span>
+            技能：<span class="text-foreground font-mono">{{ step.skillId }}</span>
           </div>
           <table v-if="getParams(step).length > 0" class="text-xs w-full">
             <tr v-for="[k, v] in getParams(step)" :key="k" class="border-b border-border/50 last:border-0">
@@ -142,7 +142,7 @@ const PROMPT_TRUNCATE_LENGTH = 120
             场景: <span class="text-foreground">{{ step.scene }}</span>
           </div>
           <div v-if="step.prompt || step.promptTemplate" class="text-xs mb-xs">
-            <span class="text-muted-foreground">Prompt: </span>
+            <span class="text-muted-foreground">提示词：</span>
             <details class="inline">
               <summary class="cursor-pointer text-foreground hover:text-primary">
                 {{ ((step.prompt || step.promptTemplate) as string).slice(0, PROMPT_TRUNCATE_LENGTH) }}{{ ((step.prompt || step.promptTemplate) as string).length > PROMPT_TRUNCATE_LENGTH ? '...' : '' }}
@@ -151,7 +151,7 @@ const PROMPT_TRUNCATE_LENGTH = 120
             </details>
           </div>
           <div v-if="step.outputSchema" class="text-xs text-muted-foreground">
-            OutputSchema: <span class="font-mono text-foreground">{{ step.outputSchema }}</span>
+            输出 Schema：<span class="font-mono text-foreground">{{ step.outputSchema }}</span>
           </div>
         </template>
 
@@ -162,7 +162,7 @@ const PROMPT_TRUNCATE_LENGTH = 120
           </div>
           <!-- then 分支 -->
           <div v-if="step.thenSteps?.length || step.then?.length" class="mt-xs">
-            <div class="text-xs text-muted-foreground mb-xs font-medium">✅ Then 分支:</div>
+            <div class="text-xs text-muted-foreground mb-xs font-medium">✅ 条件满足分支：</div>
             <div class="ml-md space-y-xs">
               <StepDetailCard
                 v-for="(nested, ni) in (step.thenSteps || step.then)"
@@ -174,7 +174,7 @@ const PROMPT_TRUNCATE_LENGTH = 120
           </div>
           <!-- else 分支 -->
           <div v-if="step.elseSteps?.length || step.else?.length" class="mt-xs">
-            <div class="text-xs text-muted-foreground mb-xs font-medium">❌ Else 分支:</div>
+            <div class="text-xs text-muted-foreground mb-xs font-medium">❌ 否则分支：</div>
             <div class="ml-md space-y-xs">
               <StepDetailCard
                 v-for="(nested, ni) in (step.elseSteps || step.else)"

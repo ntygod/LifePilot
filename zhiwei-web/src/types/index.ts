@@ -85,6 +85,21 @@ export interface A2uiSignal {
   payload: Record<string, unknown>
 }
 
+/** A2UI 信号上下文（前端本地与回传时附带） */
+export interface A2uiSignalContext {
+  componentId?: string
+  messageId?: string
+  traceId?: string
+  signalName?: string
+}
+
+/** A2UI 交互运行时状态 */
+export interface A2uiSignalRuntime {
+  status: 'idle' | 'sending' | 'success' | 'error'
+  error?: string | null
+  updatedAt: number
+}
+
 /** Token 消耗统计 */
 export interface TokenUsage {
   promptTokens: number
@@ -100,6 +115,13 @@ export interface UserSettings {
   theme: 'light' | 'dark' | 'system'
   language: string
   llmProvider: string
+  layoutDensity?: 'compact' | 'standard'
+  fontSize?: 'small' | 'medium' | 'large'
+  timeFormat?: '12h' | '24h'
+  showTokenUsage?: boolean
+  autoExpandCodeBlocks?: boolean
+  collapseLongReplies?: boolean
+  collapseThreshold?: number
   enableStreaming?: boolean
   enableFunctionCall?: boolean
   enableKnowledgeBase?: boolean
@@ -347,7 +369,14 @@ export interface SkillDetail extends SkillSummary {
 /** MCP Server */
 export interface McpServer {
   name: string
-  state: 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'RECONNECTING'
+  state:
+    | 'DISCONNECTED'
+    | 'CONNECTING'
+    | 'CONNECTED'
+    | 'RECONNECTING'
+    | 'INITIALIZING'
+    | 'HEALTH_CHECK'
+    | 'DISCONNECTING'
   toolCount: number
   connectedSince?: string
   lastError?: string

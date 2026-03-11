@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import type { TokenUsage, ReasoningEvent, ToolCallSummary, SourceSummary } from '@/types'
-import { ChevronDown, ChevronRight, X } from 'lucide-vue-next'
+import { computed, ref } from 'vue'
+import { ChevronDown, ChevronRight, Cpu, Database, Hammer, Route } from 'lucide-vue-next'
 import { RouterLink } from 'vue-router'
+import type { TokenUsage, ReasoningEvent, ToolCallSummary, SourceSummary } from '@/types'
+import InspectorRail from '@/components/layout/InspectorRail.vue'
 
-defineProps<{
+const props = defineProps<{
   tokenUsage: TokenUsage | null
   modelId: string | null
   prompt: string | null
@@ -18,7 +19,24 @@ const emit = defineEmits<{
   (e: 'close'): void
 }>()
 
-// 各 section 折叠状态
+const toolSuccessCount = computed(() => props.toolsSummary.filter(item => item.success !== false).length)
+const modelSummary = computed(() => props.modelId || '发送消息后显示')
+const tokenSummary = computed(() => (
+  props.tokenUsage
+    ? `总词元 ${props.tokenUsage.totalTokens}`
+    : '发送后会补充词元统计'
+))
+const toolSummary = computed(() => (
+  props.toolsSummary.length > 0
+    ? `${toolSuccessCount.value} / ${props.toolsSummary.length} 次成功`
+    : '本轮没有工具调用'
+))
+const knowledgeSummary = computed(() => (
+  props.kbSources.length > 0
+    ? `命中 ${props.kbSources.length} 条知识来源`
+    : '本轮没有知识库命中'
+))
+
 const sections = ref({
   token: true,
   prompt: false,
@@ -33,149 +51,200 @@ function toggle(key: keyof typeof sections.value) {
 </script>
 
 <template>
-  <div class="hidden lg:flex w-80 border-l border-border bg-background/60 text-xs flex-col">
-    <!-- 头部 -->
-    <div class="px-3 py-2 border-b border-border flex items-center justify-between">
-      <span class="font-medium text-foreground/80 text-[11px]">最近一轮调试概要</span>
-      <button
-        type="button"
-        class="text-muted-foreground hover:text-foreground transition-colors"
-        @click="emit('close')"
-      >
-        <X :size="14" />
-      </button>
-    </div>
+  <InspectorRail
+    title="对话详情"
+    description="查看本轮对话使用的模型、词元和知识库命中情况。"
+    @close="emit('close')"
+  >
+    <template #eyebrow>
+      调试
+    </template>
 
-    <div class="flex-1 overflow-y-auto px-3 py-2 space-y-1 text-[11px] text-muted-foreground">
-      <!-- 模型与 Token -->
-      <button
-        type="button"
-        class="w-full flex items-center gap-1 py-1.5 text-left font-medium text-foreground/80 hover:text-foreground"
-        @click="toggle('token')"
-      >
-        <component :is="sections.token ? ChevronDown : ChevronRight" :size="12" />
-        <span>模型与 Token</span>
-      </button>
-      <div v-if="sections.token" class="pl-4 pb-2">
-        <template v-if="tokenUsage">
-          <p>模型：{{ modelId || '未知模型' }}</p>
-          <p>Tokens：{{ tokenUsage.totalTokens }}（提示 {{ tokenUsage.promptTokens }} / 回答 {{ tokenUsage.completionTokens }}）</p>
-        </template>
-        <p v-else>暂无统计信息，发送一条消息后将在此展示。</p>
-      </div>
+    <div class="space-y-4 text-sm">
+      <section class="grid gap-3">
+        <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/58 px-4 py-3">
+          <div class="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
+            <Cpu class="size-4 text-primary" />
+            模型与词元
+          </div>
+          <p class="text-sm text-muted-foreground">{{ modelSummary }}</p>
+          <p class="mt-1 text-xs text-muted-foreground">{{ tokenSummary }}</p>
+        </div>
 
-      <!-- Prompt 摘要 -->
-      <button
-        type="button"
-        class="w-full flex items-center gap-1 py-1.5 text-left font-medium text-foreground/80 hover:text-foreground"
-        @click="toggle('prompt')"
-      >
-        <component :is="sections.prompt ? ChevronDown : ChevronRight" :size="12" />
-        <span>Prompt 摘要</span>
-      </button>
-      <div v-if="sections.prompt" class="pl-4 pb-2">
-        <p v-if="prompt">{{ prompt }}</p>
-        <p v-else>暂未记录本轮 Prompt 摘要。</p>
-      </div>
+        <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/58 px-4 py-3">
+          <div class="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
+            <Hammer class="size-4 text-primary" />
+            工具调用
+          </div>
+          <p class="text-sm text-muted-foreground">{{ toolSummary }}</p>
+        </div>
 
-      <!-- 推理过程 -->
-      <button
-        type="button"
-        class="w-full flex items-center gap-1 py-1.5 text-left font-medium text-foreground/80 hover:text-foreground"
-        @click="toggle('reasoning')"
-      >
-        <component :is="sections.reasoning ? ChevronDown : ChevronRight" :size="12" />
-        <span>推理过程</span>
-      </button>
-      <div v-if="sections.reasoning" class="pl-4 pb-2">
-        <div v-if="reasoningEvents.length > 0" class="space-y-1">
-          <div
-            v-for="event in reasoningEvents"
-            :key="event.id"
-            class="flex items-start gap-2"
-          >
+        <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/58 px-4 py-3">
+          <div class="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
+            <Database class="size-4 text-primary" />
+            知识来源
+          </div>
+          <p class="text-sm text-muted-foreground">{{ knowledgeSummary }}</p>
+        </div>
+      </section>
+
+      <section data-token-usage class="detail-card p-4">
+        <button
+          type="button"
+          class="flex w-full items-center justify-between gap-3 text-left text-sm font-medium text-foreground"
+          @click="toggle('token')"
+        >
+          <span class="flex items-center gap-2">
+            <component :is="sections.token ? ChevronDown : ChevronRight" class="size-4 text-muted-foreground" />
+            <Cpu class="size-4 text-primary" />
+            <span>模型与词元</span>
+          </span>
+          <span class="surface-chip">{{ tokenUsage ? '已记录' : '等待本轮消息' }}</span>
+        </button>
+        <div v-if="sections.token" class="mt-3 space-y-2 text-sm text-muted-foreground">
+          <template v-if="tokenUsage">
+            <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/55 px-3 py-3">
+              <p>模型：{{ modelId || '未知模型' }}</p>
+              <p>总词元：{{ tokenUsage.totalTokens }}</p>
+              <p>提示 {{ tokenUsage.promptTokens }} / 回答 {{ tokenUsage.completionTokens }}</p>
+            </div>
+          </template>
+          <p v-else>暂无统计信息，发送消息后即可查看。</p>
+        </div>
+      </section>
+
+      <section class="detail-card p-4">
+        <button
+          type="button"
+          class="flex w-full items-center justify-between gap-3 text-left text-sm font-medium text-foreground"
+          @click="toggle('prompt')"
+        >
+          <span class="flex items-center gap-2">
+            <component :is="sections.prompt ? ChevronDown : ChevronRight" class="size-4 text-muted-foreground" />
+            <Route class="size-4 text-primary" />
+            <span>提示词摘要</span>
+          </span>
+          <span class="surface-chip">{{ prompt ? '已记录' : '暂无内容' }}</span>
+        </button>
+        <div v-if="sections.prompt" class="mt-3 text-sm leading-6 text-muted-foreground">
+          <p v-if="prompt" class="whitespace-pre-wrap break-words">{{ prompt }}</p>
+          <p v-else>暂未记录本轮提示词摘要。</p>
+        </div>
+      </section>
+
+      <section class="detail-card p-4">
+        <button
+          type="button"
+          class="flex w-full items-center justify-between gap-3 text-left text-sm font-medium text-foreground"
+          @click="toggle('reasoning')"
+        >
+          <span class="flex items-center gap-2">
+            <component :is="sections.reasoning ? ChevronDown : ChevronRight" class="size-4 text-muted-foreground" />
+            <Route class="size-4 text-primary" />
+            <span>推理过程</span>
+          </span>
+          <span class="surface-chip">{{ reasoningEvents.length }} 条事件</span>
+        </button>
+        <div v-if="sections.reasoning" class="mt-3 space-y-2">
+          <div v-if="reasoningEvents.length > 0" class="space-y-2">
             <div
-              class="mt-[3px] w-1.5 h-1.5 rounded-full shrink-0"
-              :class="event.type === 'ERROR' ? 'bg-destructive' : event.type.startsWith('TOOL_CALL') ? 'bg-primary' : 'bg-muted-foreground/60'"
-            />
-            <div>
-              <span class="text-foreground/90 font-medium">{{ event.title }}</span>
-              <span v-if="event.toolName" class="ml-1 px-1 py-0.5 rounded-full bg-muted text-[10px]">
-                工具：{{ event.toolName }}
-              </span>
-              <p v-if="event.description" class="text-[10px] text-muted-foreground/90">{{ event.description }}</p>
+              v-for="event in reasoningEvents"
+              :key="event.id"
+              class="list-card px-3 py-3"
+            >
+              <div class="flex items-center gap-2 text-sm font-medium text-foreground">
+                <span
+                  class="inline-flex h-2 w-2 rounded-full"
+                  :class="event.type === 'ERROR'
+                    ? 'bg-destructive'
+                    : event.type.startsWith('TOOL_CALL')
+                      ? 'bg-primary'
+                      : 'bg-muted-foreground/60'"
+                />
+                <span>{{ event.title }}</span>
+              </div>
+              <p v-if="event.description" class="mt-1 text-xs leading-5 text-muted-foreground">
+                {{ event.description }}
+              </p>
+              <p v-if="event.toolName" class="mt-1 text-xs text-primary">工具：{{ event.toolName }}</p>
             </div>
           </div>
+          <p v-else class="text-sm text-muted-foreground">暂无推理事件。</p>
         </div>
-        <p v-else>暂无推理事件。</p>
-      </div>
+      </section>
 
-      <!-- 工具统计 -->
-      <button
-        type="button"
-        class="w-full flex items-center gap-1 py-1.5 text-left font-medium text-foreground/80 hover:text-foreground"
-        @click="toggle('tools')"
-      >
-        <component :is="sections.tools ? ChevronDown : ChevronRight" :size="12" />
-        <span>工具统计</span>
-      </button>
-      <div v-if="sections.tools" class="pl-4 pb-2">
-        <div v-if="toolsSummary.length > 0" class="space-y-0.5">
-          <p>共调用 {{ toolsSummary.length }} 次工具</p>
-          <div
-            v-for="(tool, i) in toolsSummary.slice(0, 5)"
-            :key="tool.toolId + ':' + i"
-            class="flex items-center justify-between gap-2"
-          >
-            <span class="truncate text-foreground/80">{{ tool.toolId }}</span>
-            <span class="shrink-0 text-[10px]">
-              <span :class="tool.success === false ? 'text-destructive' : 'text-emerald-500'">
-                {{ tool.success === false ? '失败' : '成功' }}
-              </span>
-              <span class="mx-1 text-muted-foreground/60">•</span>
-              <span>{{ tool.latencyMs }}ms</span>
-            </span>
+      <section class="detail-card p-4">
+        <button
+          type="button"
+          class="flex w-full items-center justify-between gap-3 text-left text-sm font-medium text-foreground"
+          @click="toggle('tools')"
+        >
+          <span class="flex items-center gap-2">
+            <component :is="sections.tools ? ChevronDown : ChevronRight" class="size-4 text-muted-foreground" />
+            <Hammer class="size-4 text-primary" />
+            <span>工具调用</span>
+          </span>
+          <span class="surface-chip">{{ toolsSummary.length }} 次</span>
+        </button>
+        <div v-if="sections.tools" class="mt-3 space-y-2 text-sm text-muted-foreground">
+          <div v-if="toolsSummary.length > 0" class="space-y-2">
+            <div
+              v-for="(tool, index) in toolsSummary.slice(0, 5)"
+              :key="`${tool.toolId}:${index}`"
+              class="list-card px-3 py-3"
+            >
+              <div class="flex items-center justify-between gap-3">
+                <span class="truncate text-foreground">{{ tool.toolId }}</span>
+                <span class="shrink-0 text-xs">
+                  <span :class="tool.success === false ? 'text-destructive' : 'text-emerald-500'">
+                    {{ tool.success === false ? '失败' : '成功' }}
+                  </span>
+                  <span class="mx-1 text-muted-foreground/60">•</span>
+                  <span>{{ tool.latencyMs }}ms</span>
+                </span>
+              </div>
+            </div>
           </div>
+          <p v-else>暂无工具调用统计。</p>
         </div>
-        <p v-else>暂无工具调用统计。</p>
-      </div>
+      </section>
 
-      <!-- 知识库来源 -->
-      <button
-        type="button"
-        class="w-full flex items-center gap-1 py-1.5 text-left font-medium text-foreground/80 hover:text-foreground"
-        @click="toggle('kb')"
-      >
-        <component :is="sections.kb ? ChevronDown : ChevronRight" :size="12" />
-        <span>知识库来源</span>
-      </button>
-      <div v-if="sections.kb" class="pl-4 pb-2">
-        <div v-if="kbSources.length > 0" class="space-y-0.5">
-          <p>本轮命中 {{ kbSources.length }} 个知识库：</p>
-          <div v-for="kb in kbSources.slice(0, 4)" :key="kb.id" class="truncate text-foreground/80">
-            {{ kb.name }} <span class="text-muted-foreground/70">({{ kb.id }})</span>
+      <section class="detail-card p-4">
+        <button
+          type="button"
+          class="flex w-full items-center justify-between gap-3 text-left text-sm font-medium text-foreground"
+          @click="toggle('kb')"
+        >
+          <span class="flex items-center gap-2">
+            <component :is="sections.kb ? ChevronDown : ChevronRight" class="size-4 text-muted-foreground" />
+            <Database class="size-4 text-primary" />
+            <span>知识来源</span>
+          </span>
+          <span class="surface-chip">{{ kbSources.length }} 条</span>
+        </button>
+        <div v-if="sections.kb" class="mt-3 space-y-2 text-sm text-muted-foreground">
+          <div v-if="kbSources.length > 0" class="space-y-2">
+            <div
+              v-for="kb in kbSources.slice(0, 4)"
+              :key="kb.id"
+              class="list-card px-3 py-3"
+            >
+              <div class="truncate text-foreground">{{ kb.name }}</div>
+              <div class="mt-1 text-xs text-muted-foreground">ID: {{ kb.id }}</div>
+            </div>
           </div>
+          <p v-else>暂无知识库命中记录。</p>
         </div>
-        <p v-else>暂无知识库命中记录。</p>
-      </div>
+      </section>
     </div>
 
-    <!-- 底部链接 -->
-    <div class="px-3 py-2 border-t border-border">
+    <template #footer>
       <RouterLink
-        v-if="traceId"
-        :to="{ name: 'traces', query: { id: traceId } }"
-        class="text-[11px] text-primary hover:underline underline-offset-2"
+        :to="traceId ? { name: 'traces', query: { id: traceId } } : { name: 'traces' }"
+        class="text-sm font-medium text-primary transition-colors hover:text-primary/80"
       >
-        查看完整轨迹
+        {{ traceId ? '前往轨迹详情' : '前往轨迹列表' }}
       </RouterLink>
-      <RouterLink
-        v-else
-        :to="{ name: 'traces' }"
-        class="text-[11px] text-muted-foreground hover:underline underline-offset-2"
-      >
-        查看轨迹列表
-      </RouterLink>
-    </div>
-  </div>
+    </template>
+  </InspectorRail>
 </template>

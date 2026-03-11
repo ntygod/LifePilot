@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { Message, ReasoningEvent } from '@/types'
+import type { A2uiComponent, Message, ReasoningEvent } from '@/types'
 import MessageBubble from './MessageBubble.vue'
 import { motion } from 'motion-v'
 
@@ -12,6 +12,8 @@ const props = defineProps<{
   streamingContent?: string
   /** 流式推理中的实时推理事件（可选） */
   streamingReasoningEvents?: ReasoningEvent[]
+  /** 流式阶段中的 A2UI 组件树（可选） */
+  streamingA2uiComponents?: A2uiComponent[]
   /** 文本搜索关键字（可选），用于高亮匹配内容 */
   query?: string
 }>()
@@ -84,6 +86,7 @@ function highlight(text: string): string {
           :streaming="isStreaming && index === sortedMessages.length - 1 && msg.role === 'assistant'"
           :streaming-content="streamingContent"
           :streaming-reasoning-events="(isStreaming && index === sortedMessages.length - 1 && msg.role === 'assistant') ? streamingReasoningEvents : undefined"
+          :streaming-a2ui-components="(isStreaming && index === sortedMessages.length - 1 && msg.role === 'assistant') ? streamingA2uiComponents : undefined"
           :is-last-assistant="msg.id === lastAssistantId"
           @retry="(m: Message) => emit('retry', m)"
           @like="(m: Message) => emit('like', m)"
@@ -107,6 +110,7 @@ function highlight(text: string): string {
         :streaming="true"
         :streaming-content="streamingContent"
         :streaming-reasoning-events="streamingReasoningEvents"
+        :streaming-a2ui-components="streamingA2uiComponents"
       />
     </MotionDiv>
   </div>

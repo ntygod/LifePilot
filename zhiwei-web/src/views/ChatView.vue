@@ -1,23 +1,36 @@
 <script setup lang="ts">
-import { ref, nextTick, watch, onMounted, computed } from 'vue'
-import { useRoute, useRouter, RouterLink } from 'vue-router'
-import { useChatStore } from '@/stores/chat'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
+import {
+  LibraryBig,
+  MessageSquareText,
+  Puzzle,
+  Search,
+  Settings2,
+  SlidersHorizontal,
+  Sparkles,
+  Square,
+} from 'lucide-vue-next'
+import { chatApi, llmProviderApi } from '@/api/client'
+import type { LlmProvider } from '@/api/client'
+import type { ChatAttachment, Message, SessionConfig } from '@/types'
+import MetricCard from '@/components/common/MetricCard.vue'
+import StatePanel from '@/components/common/StatePanel.vue'
+import PageContainer from '@/components/layout/PageContainer.vue'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import ChatInput from '@/components/chat/ChatInput.vue'
+import DebugDrawer from '@/components/chat/DebugDrawer.vue'
+import EmptyState from '@/components/chat/EmptyState.vue'
+import MessageList from '@/components/chat/MessageList.vue'
+import SessionConfigPanel from '@/components/chat/SessionConfigPanel.vue'
+import SessionSidebar from '@/components/chat/SessionSidebar.vue'
+import { useChat } from '@/composables/useChat'
 import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
+import { useChatStore } from '@/stores/chat'
 import { useSkillStore } from '@/stores/skill'
 import { useUiStore } from '@/stores/ui'
-import { useChat } from '@/composables/useChat'
-import { chatApi, llmProviderApi } from '@/api/client'
-import type { Message, ChatAttachment, SessionConfig } from '@/types'
-import type { LlmProvider } from '@/api/client'
-import { Info, Puzzle, LibraryBig, SlidersHorizontal, Settings2 } from 'lucide-vue-next'
-import { Input } from '@/components/ui/input'
 import { copyToClipboard } from '@/utils/clipboard'
-import MessageList from '@/components/chat/MessageList.vue'
-import ChatInput from '@/components/chat/ChatInput.vue'
-import EmptyState from '@/components/chat/EmptyState.vue'
-import DebugDrawer from '@/components/chat/DebugDrawer.vue'
-import SessionSidebar from '@/components/chat/SessionSidebar.vue'
-import SessionConfigPanel from '@/components/chat/SessionConfigPanel.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -35,90 +48,138 @@ const {
   lastPrompt,
   reasoningStatusText,
   reasoningEvents,
+  streamingA2uiComponents,
 } = useChat()
 
-const scrollContainer = ref<HTMLElement>()
+const scrollContainer = ref<HTMLElement | null>(null)
 const searchQuery = ref('')
-// 面板开关
 const showDebugDrawer = ref(false)
 const showSessionSidebar = ref(false)
 const showConfigPanel = ref(false)
-
-// LLM Provider 列表（用于 SessionConfigPanel）
 const providers = ref<LlmProvider[]>([])
-// 仅保留有 Chat 能力的 Provider（过滤 Embedding / Rerank 等非对话模型）
+
 const chatProviders = computed(() =>
-  providers.value.filter(p =>
-    !p.capabilities || p.capabilities.length === 0 || p.capabilities.some(c => c.toLowerCase() === 'chat')
-  )
+  providers.value.filter(provider =>
+    !provider.capabilities
+    || provider.capabilities.length === 0
+    || provider.capabilities.some(capability => capability.toLowerCase() === 'chat'),
+  ),
 )
 
-// 顶部上下文指示条数据
 const hasKnowledgeBases = computed(() => kbStore.list.length > 0)
 const hasSkills = computed(() => skillStore.skills.length > 0)
 
-// 当前会话信息
 const currentSession = computed(() => {
   if (!chatStore.activeSessionId) return null
-  return chatStore.sessions.find(s => s.id === chatStore.activeSessionId) || null
+  return chatStore.sessions.find(session => session.id === chatStore.activeSessionId) || null
 })
 
-// 最近一条 AI 消息及其执行摘要
+const hasMessageSearch = computed(() => searchQuery.value.trim().length > 0)
+const matchedMessageCount = computed(() => {
+  const query = searchQuery.value.trim().toLowerCase()
+  if (!query) return chatStore.messages.length
+
+  return chatStore.messages.filter(message => message.content.toLowerCase().includes(query)).length
+})
+
 const lastAssistantMessage = computed(() => {
-  for (let i = chatStore.messages.length - 1; i >= 0; i -= 1) {
-    if (chatStore.messages[i].role === 'assistant') return chatStore.messages[i]
+  for (let index = chatStore.messages.length - 1; index >= 0; index -= 1) {
+    if (chatStore.messages[index].role === 'assistant') return chatStore.messages[index]
   }
   return null
 })
 
 const lastToolsSummary = computed(() => lastAssistantMessage.value?.toolsSummary ?? [])
 const lastSources = computed(() => lastAssistantMessage.value?.sources ?? [])
-const lastKbSources = computed(() => lastSources.value.filter(s => s.type === 'knowledgeBase'))
+const lastKbSources = computed(() => lastSources.value.filter(source => source.type === 'knowledgeBase'))
+const lastTraceTarget = computed(() => (
+  lastAssistantMessage.value?.traceId
+    ? { name: 'traces', query: { id: lastAssistantMessage.value.traceId } }
+    : { name: 'traces' }
+))
+
+const headerTitle = computed(() => currentSession.value?.title?.trim() || '新对话')
+const headerDescription = computed(() => {
+  if (chatStore.messages.length > 0) {
+    return `本次对话共有 ${chatStore.messages.length} 条消息，继续追问时会沿用已有上下文和最近设置。`
+  }
+  return '从一个问题、片段或待办开始，发送后会自动保留上下文。'
+})
+
+const contextLabel = computed(() => lastModelId.value || '默认模型')
+const skillLabel = computed(() => hasSkills.value ? `${skillStore.skills.length} 个可用` : '未启用')
+const knowledgeLabel = computed(() => hasKnowledgeBases.value ? `${kbStore.list.length} 个知识库` : '未挂载')
+const streamingLabel = computed(() => {
+  if (isStreaming.value) return reasoningStatusText.value || '正在生成回答'
+  return '待命'
+})
+const conversationStatusValue = computed(() => isStreaming.value ? '处理中' : '可继续')
+const conversationStatusHint = computed(() => (
+  isStreaming.value
+    ? (reasoningStatusText.value || '系统正在整理上下文并生成回答。')
+    : '上下文已经保留在当前会话里，可以继续追问。'
+))
+const messageSummaryHint = computed(() => (
+  chatStore.messages.length > 0
+    ? '当前会话已有内容沉淀，适合继续往前推进。'
+    : '从一句需求、一段资料或一个待办开始就可以。'
+))
+const resourceSummaryHint = computed(() => {
+  if (!hasSkills.value && !hasKnowledgeBases.value) return '还没挂载技能或知识库，先聊天也完全没问题。'
+  return '需要时可以在会话配置里切换技能和知识库。'
+})
+const traceSummaryValue = computed(() => lastAssistantMessage.value?.traceId ? '已记录轨迹' : '等待新消息')
+const traceSummaryHint = computed(() => (
+  lastToolsSummary.value.length > 0
+    ? `最近一轮调用工具 ${lastToolsSummary.value.length} 次，命中知识库 ${lastKbSources.value.length} 次。`
+    : '发送消息后，这里会展示最近一轮执行情况。'
+))
+const messageSearchHint = computed(() => (
+  hasMessageSearch.value
+    ? `当前关键词命中 ${matchedMessageCount.value} 条消息，方便快速回看上下文。`
+    : '可以按关键词回看当前会话里的结论、资料和历史提问。'
+))
 
 onMounted(async () => {
-  // 根据路由参数确定当前会话
   const sessionId = route.params.sessionId as string | undefined
   if (sessionId && sessionId !== chatStore.activeSessionId) {
     chatStore.activeSessionId = sessionId
   } else if (!sessionId && !chatStore.activeSessionId) {
-    // 新对话页面：立即创建会话
     try {
       await chatStore.startNewSession()
-    } catch (e) {
-      console.error('创建新会话失败:', e)
+    } catch (event) {
+      console.error('创建新会话失败:', event)
     }
   }
-  // 拉取知识库 / Skill / Provider 列表
+
   void kbStore.fetchList()
   void skillStore.fetchSkills()
   try {
     providers.value = await llmProviderApi.listEnabledProviders()
   } catch {
-    // Provider 列表拉取失败不阻塞页面
+    // Provider 列表拉取失败不阻塞页面。
   }
 })
 
-// 路由变化时同步 activeSessionId
 watch(
   () => route.params.sessionId as string | undefined,
   async (sessionId) => {
     if (!sessionId) {
-      // 导航到新对话页面：立即创建会话
       chatStore.activeSessionId = null
       try {
         await chatStore.startNewSession()
-      } catch (e) {
-        console.error('创建新会话失败:', e)
+      } catch (event) {
+        console.error('创建新会话失败:', event)
       }
       return
     }
+
     if (sessionId !== chatStore.activeSessionId) {
       chatStore.activeSessionId = sessionId
     }
-  }
+  },
 )
 
-// 自动滚动到底部
 function scrollToBottom() {
   nextTick(() => {
     if (scrollContainer.value) {
@@ -126,10 +187,9 @@ function scrollToBottom() {
     }
   })
 }
+
 watch(() => chatStore.messages.length, scrollToBottom)
 watch(() => chatStore.streamingContent, scrollToBottom)
-
-// ── 事件处理 ──
 
 async function handleSend(payload: {
   content: string
@@ -145,14 +205,13 @@ async function handleSend(payload: {
   await sendMessage(payload.content, payload.attachmentIds, payload.attachments, payload.sessionConfig)
 }
 
-/** 空状态示例问题点击 */
 function handleEmptyStateSend(content: string) {
-  handleSend({ content })
+  void handleSend({ content })
 }
 
 async function handleRetry(message: Message) {
   if (message.status === 'error') {
-    const index = chatStore.messages.findIndex(m => m.id === message.id)
+    const index = chatStore.messages.findIndex(item => item.id === message.id)
     if (index !== -1) {
       chatStore.messages.splice(index, 1)
       if (message.role === 'user') {
@@ -166,52 +225,45 @@ async function handleRetry(message: Message) {
   await sendMessage(message.content)
 }
 
-/** 重新生成：找到最后一条 AI 消息对应的用户消息，删除 AI 消息后重新发送 */
-async function handleRegenerate(assistantMsg: Message) {
-  // 找到该 AI 消息之前最近的用户消息
-  const sorted = [...chatStore.messages].sort((a, b) => a.timestamp - b.timestamp)
-  const aiIdx = sorted.findIndex(m => m.id === assistantMsg.id)
-  if (aiIdx < 0) return
+async function handleRegenerate(assistantMessage: Message) {
+  const sorted = [...chatStore.messages].sort((left, right) => left.timestamp - right.timestamp)
+  const assistantIndex = sorted.findIndex(message => message.id === assistantMessage.id)
+  if (assistantIndex < 0) return
 
-  let userMsg: Message | null = null
-  for (let i = aiIdx - 1; i >= 0; i--) {
-    if (sorted[i].role === 'user') {
-      userMsg = sorted[i]
+  let userMessage: Message | null = null
+  for (let index = assistantIndex - 1; index >= 0; index -= 1) {
+    if (sorted[index].role === 'user') {
+      userMessage = sorted[index]
       break
     }
   }
-  if (!userMsg) return
+  if (!userMessage) return
 
-  // 删除该 AI 消息
-  const removeIdx = chatStore.messages.findIndex(m => m.id === assistantMsg.id)
-  if (removeIdx !== -1) {
-    chatStore.messages.splice(removeIdx, 1)
+  const removeIndex = chatStore.messages.findIndex(message => message.id === assistantMessage.id)
+  if (removeIndex !== -1) {
+    chatStore.messages.splice(removeIndex, 1)
   }
 
-  // 重新发送用户消息内容
-  await sendMessage(userMsg.content)
+  await sendMessage(userMessage.content)
 }
 
-/** 分叉会话 */
 async function handleFork(message: Message) {
   if (!chatStore.activeSessionId) return
   try {
     const newSession = await chatApi.forkSession(chatStore.activeSessionId, message.id)
     uiStore.showToast('success', '会话分叉成功')
     router.push({ name: 'conversationDetail', params: { sessionId: newSession.id } })
-  } catch (e) {
+  } catch (event) {
     uiStore.showToast('error', '分叉会话失败，请稍后重试')
-    console.error('分叉会话失败:', e)
+    console.error('分叉会话失败:', event)
   }
 }
 
-/** 复制消息内容 */
 async function handleCopy(content: string) {
   const ok = await copyToClipboard(content)
   uiStore.showToast(ok ? 'success' : 'error', ok ? '已复制到剪贴板' : '复制失败')
 }
 
-/** 点赞 */
 async function handleLike(message: Message) {
   try {
     await chatApi.submitFeedback(message.id, 'like')
@@ -220,7 +272,6 @@ async function handleLike(message: Message) {
   }
 }
 
-/** 点踩 */
 async function handleDislike(message: Message, feedback?: string) {
   try {
     await chatApi.submitFeedback(message.id, 'dislike', feedback)
@@ -229,12 +280,10 @@ async function handleDislike(message: Message, feedback?: string) {
   }
 }
 
-/** 清空当前会话 */
 async function handleClearSession() {
   await chatStore.clearCurrentSessionMessages()
 }
 
-/** 会话配置更新 */
 async function handleConfigUpdate(config: SessionConfig) {
   if (!chatStore.activeSessionId) return
   try {
@@ -245,7 +294,6 @@ async function handleConfigUpdate(config: SessionConfig) {
   }
 }
 
-/** 更新会话标题 */
 async function handleUpdateSessionTitle(title: string) {
   if (!chatStore.activeSessionId || !title.trim()) return
   try {
@@ -255,212 +303,264 @@ async function handleUpdateSessionTitle(title: string) {
     uiStore.showToast('error', '更新会话标题失败')
   }
 }
+
+function closeInspectorPanels() {
+  showSessionSidebar.value = false
+  showDebugDrawer.value = false
+}
 </script>
 
 <template>
-  <div class="flex flex-col h-full overflow-hidden">
-    <!-- 顶部上下文指示条 -->
-    <div class="sticky top-0 z-20 border-b border-border/30 bg-card/60 backdrop-blur-xl dark:bg-card/40 dark:backdrop-blur-2xl">
-      <div class="max-w-[1200px] mx-auto h-16 flex items-center justify-between px-md md:px-lg">
-        <!-- 左侧 pills -->
-        <div class="flex items-center gap-sm text-xs font-medium text-muted-foreground min-w-0">
-          <div
-            class="inline-flex items-center gap-xs px-sm py-xs rounded-full bg-muted/50 border border-border hover:bg-muted/70 transition-colors"
-            title="上下文配置"
-          >
-            <span class="inline-flex w-1.5 h-1.5 rounded-full bg-green-500" />
-            <span class="truncate">上下文：{{ lastModelId ? lastModelId : '默认' }}</span>
-          </div>
-
-          <div
-            class="hidden md:inline-flex items-center gap-xs px-sm py-xs rounded-full bg-muted/50 border border-border hover:bg-muted/70 transition-colors"
-            title="技能状态"
-          >
-            <Puzzle :size="14" class="text-muted-foreground" />
-            <span>技能：{{ hasSkills ? `${skillStore.skills.length} 个活跃` : '未启用' }}</span>
-          </div>
-
-          <div
-            class="hidden md:inline-flex items-center gap-xs px-sm py-xs rounded-full bg-muted/50 border border-border hover:bg-muted/70 transition-colors"
-            title="知识库状态"
-          >
-            <LibraryBig :size="14" class="text-muted-foreground" />
-            <span>知识库：{{ hasKnowledgeBases ? `已配置 ${kbStore.list.length} 个` : '未挂载' }}</span>
-          </div>
-
-          <div
-            v-if="reasoningStatusText"
-            class="hidden lg:inline-flex items-center gap-xs px-sm py-xs rounded-full bg-muted/50 border border-border"
-          >
-            <span>状态：{{ reasoningStatusText }}</span>
-          </div>
-        </div>
-
-        <!-- 右侧操作 -->
-        <div class="flex items-center gap-sm shrink-0">
-          <!-- 会话配置按钮 -->
-          <button
-            v-if="chatStore.activeSessionId"
-            type="button"
-            class="p-2 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors
-                   focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            :title="showConfigPanel ? '隐藏配置' : '会话配置'"
-            @click="showConfigPanel = !showConfigPanel"
-          >
-            <Settings2 :size="18" />
-          </button>
-
-          <button
-            v-if="chatStore.activeSessionId"
-            type="button"
-            class="p-2 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors
-                   focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            :title="showSessionSidebar ? '隐藏会话信息' : '会话信息'"
-            @click="showSessionSidebar = !showSessionSidebar"
-          >
-            <Info :size="18" />
-          </button>
-
-          <button
-            type="button"
-            class="inline-flex items-center gap-xs px-sm py-xs rounded-lg border border-border text-sm font-medium
-                   text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors
-                   focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            :class="showDebugDrawer ? 'bg-muted/60 text-foreground' : ''"
-            @click="showDebugDrawer = !showDebugDrawer"
-          >
-            <SlidersHorizontal :size="16" />
-            <span>调试视图</span>
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- 消息区域 + 右侧侧栏 -->
-    <div class="flex-1 overflow-hidden">
-      <div class="max-w-[1200px] mx-auto flex h-full overflow-hidden">
-        <!-- 消息区域 -->
-        <div
-          ref="scrollContainer"
-          class="flex-1 min-w-0 overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-border"
-        >
-          <!-- 空状态 -->
-          <EmptyState
-            v-if="chatStore.messages.length === 0 && !isStreaming"
-            @send="handleEmptyStateSend"
-          />
-
-          <!-- 消息列表 + 顶部搜索 / 过滤条 -->
-          <div v-else class="max-w-4xl mx-auto p-md md:p-xl space-y-xl pb-24">
-            <!-- 会话配置面板（内联在消息区顶部） -->
-            <SessionConfigPanel
-              v-if="showConfigPanel"
-              :model-id="lastModelId ?? undefined"
-              :providers="chatProviders"
-              :knowledge-bases="kbStore.list"
-              @update="handleConfigUpdate"
-              @close="showConfigPanel = false"
-            />
-
-            <div class="flex items-center gap-sm">
-              <Input
-                v-model="searchQuery"
-                type="search"
-                placeholder="在当前对话中搜索（按内容关键字）…"
-                class="flex-1"
-              />
-              <span class="text-xs text-muted-foreground whitespace-nowrap">
-                共 {{ chatStore.messages.length }} 条
-              </span>
-              <button
-                v-if="chatStore.activeSessionId && chatStore.messages.length > 0"
-                type="button"
-                class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-border text-xs font-medium
-                       text-muted-foreground hover:text-destructive hover:border-destructive/70 hover:bg-destructive/5
-                       transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                @click="handleClearSession"
-              >
-                清空当前会话
-              </button>
+  <div class="h-full overflow-hidden">
+    <PageContainer size="wide" class="flex h-full min-h-0 flex-col py-4 sm:py-6">
+      <div class="mx-auto flex h-full w-full max-w-[1460px] min-h-0 flex-col gap-4">
+        <header class="space-y-4 border-b border-border/70 pb-4">
+          <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div class="max-w-4xl min-w-0 space-y-2">
+              <div class="surface-label">对话</div>
+              <h1 class="truncate text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+                {{ headerTitle }}
+              </h1>
+              <p class="text-sm leading-6 text-muted-foreground">
+                {{ headerDescription }}
+              </p>
             </div>
 
-            <MessageList
-              :messages="chatStore.messages"
-              :is-streaming="isStreaming"
-              :streaming-content="chatStore.streamingContent"
-              :streaming-reasoning-events="reasoningEvents"
-              :query="searchQuery"
-              @retry="handleRetry"
-              @like="handleLike"
-              @dislike="handleDislike"
-              @fork="handleFork"
-              @regenerate="handleRegenerate"
-              @copy="handleCopy"
-            />
+            <div class="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                :class="showConfigPanel && 'status-btn-active'"
+                @click="showConfigPanel = !showConfigPanel"
+              >
+                <Settings2 class="size-4" />
+                {{ showConfigPanel ? '收起配置' : '会话配置' }}
+              </Button>
+              <Button
+                v-if="chatStore.activeSessionId"
+                type="button"
+                variant="outline"
+                :class="showSessionSidebar && 'status-btn-active'"
+                @click="showSessionSidebar = !showSessionSidebar"
+              >
+                <LibraryBig class="size-4" />
+                {{ showSessionSidebar ? '收起信息' : '会话信息' }}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                :class="showDebugDrawer && 'status-btn-active'"
+                @click="showDebugDrawer = !showDebugDrawer"
+              >
+                <SlidersHorizontal class="size-4" />
+                {{ showDebugDrawer ? '收起调试' : '轨迹与调试' }}
+              </Button>
+              <Button v-if="isStreaming" type="button" variant="destructive" @click="abort">
+                <Square class="size-4" />
+                停止生成
+              </Button>
+            </div>
+          </div>
+
+          <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <MetricCard label="当前状态" :value="conversationStatusValue" :hint="conversationStatusHint">
+              <template #icon>
+                <Sparkles class="size-5" />
+              </template>
+              <span class="surface-chip" :class="isStreaming && 'surface-chip-strong'">
+                {{ streamingLabel }}
+              </span>
+            </MetricCard>
+
+            <MetricCard label="消息" :value="chatStore.messages.length" :hint="messageSummaryHint">
+              <template #icon>
+                <MessageSquareText class="size-5" />
+              </template>
+            </MetricCard>
+
+            <MetricCard label="模型与资源" :value="contextLabel" :hint="resourceSummaryHint">
+              <template #icon>
+                <Puzzle class="size-5" />
+              </template>
+              <div class="flex flex-wrap gap-2">
+                <span class="surface-chip">技能 {{ skillLabel }}</span>
+                <span class="surface-chip">知识库 {{ knowledgeLabel }}</span>
+              </div>
+            </MetricCard>
+
+            <MetricCard label="最近执行" :value="traceSummaryValue" :hint="traceSummaryHint">
+              <template #icon>
+                <LibraryBig class="size-5" />
+              </template>
+              <RouterLink
+                :to="lastTraceTarget"
+                class="inline-flex items-center gap-1 text-sm font-medium text-primary transition-colors hover:text-primary/80"
+              >
+                查看轨迹
+              </RouterLink>
+            </MetricCard>
+          </div>
+        </header>
+
+        <div class="flex min-h-0 flex-1 gap-4">
+          <section class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[calc(var(--radius)+2px)] border border-border/70 bg-card/92">
+            <div class="border-b border-border/70 px-4 py-4 sm:px-5">
+              <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div class="relative w-full max-w-[24rem]">
+                  <Search class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    v-model="searchQuery"
+                    type="search"
+                    placeholder="搜索当前会话内容"
+                    class="pl-9"
+                  />
+                </div>
+
+                <div class="flex flex-wrap items-center gap-2">
+                  <RouterLink
+                    :to="lastTraceTarget"
+                    class="inline-flex h-9 items-center justify-center rounded-lg border border-border/70 bg-background/80 px-4 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent/75 hover:text-foreground"
+                  >
+                    查看轨迹
+                  </RouterLink>
+                  <Button
+                    v-if="chatStore.activeSessionId && chatStore.messages.length > 0"
+                    type="button"
+                    variant="ghost"
+                    @click="handleClearSession"
+                  >
+                    清空当前会话
+                  </Button>
+                </div>
+              </div>
+
+              <div class="mt-3 flex flex-wrap gap-2 text-xs">
+                <span class="filter-pill">工具调用 {{ lastToolsSummary.length }} 次</span>
+                <span class="filter-pill">知识库命中 {{ lastKbSources.length }} 次</span>
+                <span class="filter-pill">最近模型 {{ contextLabel }}</span>
+                <span v-if="hasMessageSearch" class="surface-chip surface-chip-strong">搜索命中 {{ matchedMessageCount }} 条</span>
+              </div>
+
+              <div class="mt-3 flex flex-col gap-2 rounded-[calc(var(--radius)+2px)] border border-dashed border-border/60 bg-background/50 px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <p class="text-sm text-muted-foreground">
+                  {{ messageSearchHint }}
+                </p>
+                <button
+                  v-if="hasMessageSearch"
+                  type="button"
+                  class="inline-flex items-center gap-1 text-sm font-medium text-primary transition-colors hover:text-primary/80"
+                  @click="searchQuery = ''"
+                >
+                  清空搜索
+                </button>
+              </div>
+
+              <div v-if="showConfigPanel" class="mt-4">
+                <SessionConfigPanel
+                  :model-id="lastModelId ?? undefined"
+                  :providers="chatProviders"
+                  :knowledge-bases="kbStore.list"
+                  @close="showConfigPanel = false"
+                  @update="handleConfigUpdate"
+                />
+              </div>
+            </div>
+
+            <div
+              ref="scrollContainer"
+              class="min-h-0 flex-1 overflow-y-auto bg-grid-soft scrollbar-thin scrollbar-track-transparent scrollbar-thumb-border"
+            >
+              <div v-if="chatStore.messages.length === 0 && !isStreaming" class="flex h-full items-center justify-center p-6">
+                <EmptyState @send="handleEmptyStateSend" />
+              </div>
+
+              <div v-else class="mx-auto w-full max-w-4xl p-4 pb-16 sm:p-6 xl:p-8">
+                <MessageList
+                  :messages="chatStore.messages"
+                  :is-streaming="isStreaming"
+                  :streaming-content="chatStore.streamingContent"
+                  :streaming-reasoning-events="reasoningEvents"
+                  :streaming-a2ui-components="streamingA2uiComponents"
+                  :query="searchQuery"
+                  @retry="handleRetry"
+                  @like="handleLike"
+                  @dislike="handleDislike"
+                  @fork="handleFork"
+                  @regenerate="handleRegenerate"
+                  @copy="handleCopy"
+                />
+              </div>
+            </div>
+          </section>
+
+          <div
+            v-if="showSessionSidebar || showDebugDrawer"
+            class="fixed inset-0 z-40 bg-background/62 p-3 backdrop-blur-sm xl:static xl:z-auto xl:w-[320px] xl:bg-transparent xl:p-0 xl:backdrop-blur-0"
+            @click.self="closeInspectorPanels"
+          >
+            <div class="ml-auto flex h-full w-full max-w-[320px] flex-col gap-4 overflow-y-auto xl:h-auto xl:max-w-none xl:overflow-visible">
+              <SessionSidebar
+                v-if="showSessionSidebar && chatStore.activeSessionId"
+                :session="currentSession"
+                :knowledge-bases="kbStore.list"
+                :message-count="chatStore.messages.length"
+                @close="showSessionSidebar = false"
+                @update-title="handleUpdateSessionTitle"
+              />
+
+              <DebugDrawer
+                v-if="showDebugDrawer"
+                :token-usage="lastTokenUsage"
+                :model-id="lastModelId"
+                :prompt="lastPrompt"
+                :reasoning-events="reasoningEvents"
+                :tools-summary="lastToolsSummary"
+                :kb-sources="lastKbSources"
+                :trace-id="lastAssistantMessage?.traceId"
+                @close="showDebugDrawer = false"
+              />
+            </div>
           </div>
         </div>
 
-        <!-- 右侧会话信息侧栏 -->
-        <SessionSidebar
-          v-if="showSessionSidebar && chatStore.activeSessionId"
-          class="flex-shrink-0"
-          :session="currentSession"
-          :knowledge-bases="kbStore.list"
-          :message-count="chatStore.messages.length"
-          @close="showSessionSidebar = false"
-          @update-title="handleUpdateSessionTitle"
-        />
+        <div v-if="error || isStreaming" class="grid gap-3 lg:grid-cols-2">
+          <StatePanel
+            v-if="error"
+            title="本轮对话出现错误"
+            :description="error"
+            tone="danger"
+          >
+            <template #actions>
+              <Button type="button" variant="outline" @click="error = null">
+                关闭
+              </Button>
+              <RouterLink
+                :to="{ name: 'traces' }"
+                class="inline-flex h-9 items-center justify-center rounded-lg border border-border/70 bg-background/80 px-4 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent/75 hover:text-foreground"
+              >
+                查看执行轨迹
+              </RouterLink>
+            </template>
+          </StatePanel>
 
-        <!-- 右侧调试抽屉 -->
-        <DebugDrawer
-          v-if="showDebugDrawer"
-          class="flex-shrink-0"
-          :token-usage="lastTokenUsage"
-          :model-id="lastModelId"
-          :prompt="lastPrompt"
-          :reasoning-events="reasoningEvents"
-          :tools-summary="lastToolsSummary"
-          :kb-sources="lastKbSources"
-          :trace-id="lastAssistantMessage?.traceId"
-          @close="showDebugDrawer = false"
-        />
+          <StatePanel
+            v-if="isStreaming"
+            title="正在生成回答"
+            :description="reasoningStatusText || '系统正在整理上下文、推理步骤和最终回答。'"
+          >
+            <template #actions>
+              <Button type="button" variant="destructive" @click="abort">
+                <Square class="size-4" />
+                停止生成
+              </Button>
+            </template>
+          </StatePanel>
+        </div>
+
+        <div class="overflow-hidden rounded-[calc(var(--radius)+2px)] border border-border/70 bg-card/92">
+          <ChatInput :disabled="isStreaming" @send="handleSend" />
+        </div>
       </div>
-    </div>
-
-    <!-- 错误提示 -->
-    <div
-      v-if="error"
-      class="px-md md:px-lg py-md bg-destructive/10 text-destructive text-sm flex items-center justify-center gap-sm"
-    >
-      <span>{{ error }}</span>
-      <button
-        class="underline-offset-2 hover:underline"
-        type="button"
-        @click="error = null"
-      >
-        关闭
-      </button>
-      <RouterLink
-        :to="{ name: 'traces' }"
-        class="underline-offset-2 hover:underline"
-      >
-        查看执行轨迹
-      </RouterLink>
-    </div>
-
-    <!-- 流式进行中提示 -->
-    <div v-if="isStreaming" class="flex justify-center items-center gap-2 py-2 text-xs text-muted-foreground">
-      <span class="inline-flex h-2 w-2 rounded-full bg-primary animate-pulse" />
-      <span>正在生成回答…</span>
-      <button
-        class="underline-offset-2 hover:underline hover:text-foreground transition-colors"
-        @click="abort"
-      >
-        停止生成
-      </button>
-    </div>
-
-    <!-- 输入框 -->
-    <ChatInput :disabled="isStreaming" @send="handleSend" />
+    </PageContainer>
   </div>
 </template>

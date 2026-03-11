@@ -50,10 +50,10 @@ function updateTimeout(val: string | number) {
   })
 }
 
-function updateAutoApprove(checked: boolean) {
+function updateAutoApprove(checked: boolean | 'indeterminate') {
   emit('update:modelValue', {
     ...props.modelValue,
-    autoApproveOnTimeout: checked,
+    autoApproveOnTimeout: checked === true,
   })
 }
 </script>

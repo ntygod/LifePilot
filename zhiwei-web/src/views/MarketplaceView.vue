@@ -1,248 +1,321 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { Download, RefreshCw, ServerOff, ShieldCheck, Store } from 'lucide-vue-next'
 import type { ExtensionPackage } from '@/types'
 import { marketplaceApi } from '@/api/marketplace'
+import MetricCard from '@/components/common/MetricCard.vue'
+import Pagination from '@/components/common/Pagination.vue'
+import StatePanel from '@/components/common/StatePanel.vue'
+import PageContainer from '@/components/layout/PageContainer.vue'
+import PageHeader from '@/components/layout/PageHeader.vue'
+import PageSection from '@/components/layout/PageSection.vue'
 import MarketplaceFilters from '@/components/marketplace/MarketplaceFilters.vue'
 import SkillCard from '@/components/marketplace/SkillCard.vue'
-import EmptyState from '@/components/common/EmptyState.vue'
-import ErrorState from '@/components/common/ErrorState.vue'
-import Pagination from '@/components/common/Pagination.vue'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ServerOff } from 'lucide-vue-next'
 
-// 搜索与筛选状态
 const search = ref('')
 const tag = ref('')
 const extensionType = ref('')
 const page = ref(0)
 const size = 20
 
-// 数据状态
 const skills = ref<ExtensionPackage[]>([])
 const totalPages = ref(0)
 const totalElements = ref(0)
 const loading = ref(false)
 const error = ref('')
 const refreshing = ref(false)
-
-// 服务不可用状态（后端 API 返回 404/503 等）
 const serviceUnavailable = ref(false)
-
-// 更新信息
 const updates = ref<ExtensionPackage[]>([])
-const updateIds = computed(() => new Set(updates.value.map(u => u.id)))
 
-// 从所有 Skill 中提取可用标签（去重）
+const updateIds = computed(() => new Set(updates.value.map(item => item.id)))
+const installedCount = computed(() => skills.value.filter(skill => skill.installed).length)
+const verifiedCount = computed(() => skills.value.filter(skill => skill.verified).length)
+const hasFilters = computed(() => Boolean(search.value) || Boolean(tag.value) || Boolean(extensionType.value))
+const extensionTypeLabel = computed(() => {
+  if (!extensionType.value) return '全部类型'
+  if (extensionType.value === 'SKILL') return '技能'
+  if (extensionType.value === 'AGENT') return '智能体'
+  if (extensionType.value === 'WORKFLOW') return '工作流'
+  return extensionType.value
+})
+const tagLabel = computed(() => tag.value || '全部标签')
+
 const availableTags = computed(() => {
   const tagSet = new Set<string>()
-  skills.value.forEach(s => s.tags?.forEach(t => tagSet.add(t)))
+  skills.value.forEach(skill => skill.tags?.forEach(tagValue => tagSet.add(tagValue)))
   return Array.from(tagSet).sort()
 })
 
-/** 加载扩展列表 */
 async function loadSkills() {
   loading.value = true
   error.value = ''
+
   try {
     const result = await marketplaceApi.getSkills({
       type: extensionType.value || undefined,
       search: search.value || undefined,
       tag: tag.value || undefined,
       page: page.value,
-      size
+      size,
     })
     skills.value = result.content
     totalPages.value = result.totalPages
     totalElements.value = result.totalElements
-  } catch (e: any) {
-    error.value = e.message || '加载失败'
+  } catch (event: any) {
+    error.value = event?.message || '加载市场扩展包失败。'
   } finally {
     loading.value = false
   }
 }
 
-/** 加载可用更新 */
 async function loadUpdates() {
   try {
     updates.value = await marketplaceApi.getUpdates()
   } catch {
-    // 更新检查失败不阻塞主流程
+    // Non-blocking by design.
   }
 }
 
-/** 刷新索引 */
 async function handleRefresh() {
   refreshing.value = true
   try {
     await marketplaceApi.refreshIndex()
     await loadSkills()
     await loadUpdates()
-  } catch (e: any) {
-    error.value = e.message || '刷新失败'
+  } catch (event: any) {
+    error.value = event?.message || '刷新市场索引失败。'
   } finally {
     refreshing.value = false
   }
 }
 
-/** 搜索/筛选变化时重置分页并重新加载 */
+function clearFilters() {
+  search.value = ''
+  tag.value = ''
+  extensionType.value = ''
+  page.value = 0
+}
+
 watch([search, tag, extensionType], () => {
   page.value = 0
-  loadSkills()
+  void loadSkills()
 })
 
 function handlePageChange(newPage: number) {
   page.value = newPage
-  loadSkills()
+  void loadSkills()
 }
 
 function handleRefreshAfterAction() {
-  loadSkills()
-  loadUpdates()
+  void loadSkills()
+  void loadUpdates()
 }
 
-/** 重新检查服务可用性 */
 async function handleRetryServiceCheck() {
   serviceUnavailable.value = false
   error.value = ''
   await loadSkills()
+
   if (error.value && skills.value.length === 0) {
     serviceUnavailable.value = true
   } else {
-    // 服务恢复，加载更新信息
     await loadUpdates()
   }
 }
 
 onMounted(() => {
-  loadSkills().then(() => {
-    // 检测服务不可用（后端 Controller 未注册导致 404 等）
+  void loadSkills().then(() => {
     if (error.value && skills.value.length === 0) {
       serviceUnavailable.value = true
       return
     }
-    loadUpdates()
+    void loadUpdates()
   })
 })
 </script>
 
 <template>
-  <div class="flex flex-col h-full">
-    <div class="flex-1 overflow-y-auto">
-      <div class="max-w-[1200px] mx-auto px-md md:px-lg py-lg">
+  <div class="h-full overflow-y-auto">
+    <PageContainer size="wide" class="py-6 sm:py-8">
+      <div class="page-stack">
+        <PageHeader
+          eyebrow="市场"
+          title="扩展市场"
+          description="先判断哪些扩展已经装到本地、哪些存在更新，再决定是安装新能力还是继续升级已有扩展。"
+        >
+          <template #actions>
+            <Button variant="outline" :disabled="refreshing" @click="handleRefresh">
+              <RefreshCw class="size-4" :class="refreshing ? 'animate-spin' : ''" />
+              {{ refreshing ? '刷新中...' : '刷新索引' }}
+            </Button>
+          </template>
 
-        <!-- 页面标题 -->
-        <div class="flex items-center justify-between mb-md gap-sm">
-          <div class="space-y-xs">
-            <h2 class="text-2xl font-semibold text-foreground leading-tight">
-              扩展市场
-            </h2>
-            <p class="text-sm text-muted-foreground">
-              发现和安装社区贡献的 Skill、Agent 和 Workflow，扩展 ZhiWei 的能力。
-            </p>
+          <template #meta>
+            <MetricCard label="当前可见" :value="totalElements" hint="当前搜索和筛选条件下返回的扩展包数量。">
+              <template #icon>
+                <Store class="size-5" />
+              </template>
+            </MetricCard>
+            <MetricCard label="已安装" :value="installedCount" hint="当前结果集中本地已经接入的扩展包。">
+              <template #icon>
+                <Download class="size-5" />
+              </template>
+            </MetricCard>
+            <MetricCard label="可更新" :value="updates.length" hint="市场中存在新版本、值得回头处理的扩展。">
+              <template #icon>
+                <RefreshCw class="size-5" />
+              </template>
+            </MetricCard>
+            <MetricCard label="已验证" :value="verifiedCount" hint="当前筛选结果中已通过验证的扩展数量。">
+              <template #icon>
+                <ShieldCheck class="size-5" />
+              </template>
+            </MetricCard>
+          </template>
+        </PageHeader>
+
+        <PageSection
+          eyebrow="筛选"
+          title="查找扩展"
+          description="按关键词、类型和标签缩小范围。"
+        >
+          <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
+            <div class="min-w-0">
+              <MarketplaceFilters
+                v-model:search="search"
+                v-model:tag="tag"
+                v-model:type="extensionType"
+                :available-tags="availableTags"
+              />
+            </div>
+
+            <div class="rounded-[calc(var(--radius)+2px)] border border-dashed border-border/60 bg-background/48 px-4 py-4">
+              <div class="space-y-3">
+                <div>
+                  <div class="surface-label text-[0.68rem]">当前视图</div>
+                  <p class="mt-2 text-sm leading-6 text-muted-foreground">
+                    可直接在目录里判断安装状态、更新机会和可信度，再决定是否进入安装或升级动作。
+                  </p>
+                </div>
+
+                <div class="flex flex-wrap gap-2 text-xs">
+                  <span class="filter-pill">结果：{{ totalElements }}</span>
+                  <span class="filter-pill">类型：{{ extensionTypeLabel }}</span>
+                  <span class="filter-pill">标签：{{ tagLabel }}</span>
+                  <span v-if="search" class="filter-pill">关键词：{{ search }}</span>
+                </div>
+
+                <Button v-if="hasFilters" variant="ghost" class="px-0" @click="clearFilters">
+                  清空筛选
+                </Button>
+              </div>
+            </div>
           </div>
-          <Button
-            variant="outline"
-            :disabled="refreshing"
-            @click="handleRefresh"
-          >
-            {{ refreshing ? '刷新中...' : '刷新索引' }}
-          </Button>
-        </div>
+        </PageSection>
 
-        <!-- 搜索与筛选 -->
-        <div class="mb-md">
-          <MarketplaceFilters
-            v-model:search="search"
-            v-model:tag="tag"
-            v-model:type="extensionType"
-            :available-tags="availableTags"
-          />
-        </div>
+        <StatePanel
+          v-if="serviceUnavailable"
+          title="市场服务暂时不可用"
+          description="当前无法连接扩展市场，请稍后重试。"
+          tone="warning"
+        >
+          <template #icon>
+            <ServerOff class="size-5" />
+          </template>
+          <template #actions>
+            <Button variant="outline" size="sm" @click="handleRetryServiceCheck">
+              重试
+            </Button>
+          </template>
+        </StatePanel>
 
-        <!-- 服务不可用提示（后端 API 未注册或不可达） -->
-        <div v-if="serviceUnavailable" class="flex flex-col items-center justify-center py-16 px-4 text-center">
-          <div class="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
-            <ServerOff class="w-7 h-7 text-muted-foreground" />
-          </div>
-          <h3 class="text-lg font-semibold text-foreground mb-2">功能未启用或服务不可用</h3>
-          <p class="text-sm text-muted-foreground mb-6 max-w-[448px]">
-            扩展市场功能当前不可用，可能是相关服务尚未启用或后端未正确配置。请检查后端服务状态后重试。
-          </p>
-          <Button variant="outline" size="sm" @click="handleRetryServiceCheck">
-            重新检查
-          </Button>
-        </div>
-
-        <!-- Skeleton 加载占位符 -->
-        <div v-if="loading" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-md">
-          <Card v-for="i in 6" :key="i">
-            <CardHeader class="pb-2">
-              <div class="flex items-center gap-1.5">
-                <Skeleton class="h-4 w-1/3" />
-                <Skeleton class="h-5 w-14 rounded-full" />
-              </div>
-              <Skeleton class="h-3 w-1/4 mt-1" />
-            </CardHeader>
-            <CardContent class="pb-3">
-              <Skeleton class="h-3 w-full mb-1" />
-              <Skeleton class="h-3 w-2/3 mb-3" />
-              <div class="flex gap-1 mb-3">
-                <Skeleton class="h-5 w-12 rounded-full" />
-                <Skeleton class="h-5 w-16 rounded-full" />
-                <Skeleton class="h-5 w-10 rounded-full" />
-              </div>
-              <div class="flex items-center justify-between pt-sm border-t border-border">
-                <Skeleton class="h-3 w-16" />
-                <Skeleton class="h-7 w-16 rounded-md" />
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        <!-- 错误状态（serviceUnavailable 时不显示，由上方专用提示覆盖） -->
-        <ErrorState
-          v-else-if="error && !serviceUnavailable"
-          title="加载失败"
+        <StatePanel
+          v-else-if="error && !loading"
+          title="无法加载市场扩展包"
           :description="error"
-          action-label="重试"
-          :show-action="true"
-          @action="loadSkills"
-        />
+          tone="danger"
+        >
+          <template #icon>
+            <Store class="size-5" />
+          </template>
+          <template #actions>
+            <Button variant="outline" size="sm" @click="loadSkills">
+              重试
+            </Button>
+          </template>
+        </StatePanel>
 
-        <!-- Skill 卡片网格 -->
-        <template v-else-if="skills.length > 0">
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-md">
-            <SkillCard
-              v-for="skill in skills"
-              :key="skill.id"
-              :skill="skill"
-              :has-update="updateIds.has(skill.id)"
-              @refresh="handleRefreshAfterAction"
+        <PageSection
+          eyebrow="扩展包"
+          title="可用扩展"
+          description="浏览当前市场索引中的可安装技能、智能体和工作流。"
+        >
+          <div v-if="loading" class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div
+              v-for="index in 6"
+              :key="index"
+              class="rounded-[calc(var(--radius)+6px)] border border-border/70 bg-background/72 p-5"
+            >
+              <div class="space-y-3">
+                <div class="flex items-center gap-2">
+                  <Skeleton class="h-4 w-28" />
+                  <Skeleton class="h-5 w-14 rounded-full" />
+                </div>
+                <Skeleton class="h-3 w-32" />
+                <Skeleton class="h-3 w-full" />
+                <Skeleton class="h-3 w-2/3" />
+                <div class="flex gap-2">
+                  <Skeleton class="h-5 w-14 rounded-full" />
+                  <Skeleton class="h-5 w-14 rounded-full" />
+                </div>
+                <div class="flex items-center justify-between border-t border-border pt-3">
+                  <Skeleton class="h-3 w-20" />
+                  <Skeleton class="h-8 w-20 rounded-md" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <StatePanel
+            v-else-if="skills.length === 0"
+            title="没有匹配当前筛选条件的市场扩展包"
+            description="可以清空搜索词、切换扩展类型，或刷新市场索引后重试。"
+          >
+            <template #icon>
+              <Store class="size-5" />
+            </template>
+            <template #actions>
+              <Button variant="outline" @click="handleRefresh">
+                刷新索引
+              </Button>
+              <Button v-if="hasFilters" variant="ghost" @click="clearFilters">
+                清空筛选
+              </Button>
+            </template>
+          </StatePanel>
+
+          <div v-else class="space-y-5">
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <SkillCard
+                v-for="skill in skills"
+                :key="skill.id"
+                :skill="skill"
+                :has-update="updateIds.has(skill.id)"
+                @refresh="handleRefreshAfterAction"
+              />
+            </div>
+
+            <Pagination
+              v-if="totalPages > 1"
+              :page="page"
+              :page-count="totalPages"
+              @change="handlePageChange"
             />
           </div>
-
-          <!-- 分页 -->
-          <Pagination
-            v-if="totalPages > 1"
-            :page="page"
-            :page-count="totalPages"
-            @change="handlePageChange"
-          />
-        </template>
-
-        <!-- 空状态 -->
-        <EmptyState
-          v-else
-          icon="🏪"
-          title="暂无可用扩展"
-          description="市场中还没有扩展，请尝试刷新索引或稍后再来。"
-          action-label="刷新索引"
-          :show-action="true"
-          @action="handleRefresh"
-        />
+        </PageSection>
       </div>
-    </div>
+    </PageContainer>
   </div>
 </template>

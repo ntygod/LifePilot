@@ -4,6 +4,8 @@
 *.iml
 .cursor/
 .kiro/
+.codex/
+.codex-edge/
 
 # === OS ===
 .DS_Store

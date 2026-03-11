@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
-import EmptyState from '@/components/common/EmptyState.vue'
+import { Compass, MoveLeft } from 'lucide-vue-next'
+import StatePanel from '@/components/common/StatePanel.vue'
+import PageContainer from '@/components/layout/PageContainer.vue'
+import { Button } from '@/components/ui/button'
 
 const router = useRouter()
 
@@ -14,26 +17,27 @@ function goBack() {
 </script>
 
 <template>
-  <div class="flex items-center justify-center min-h-screen p-6">
-    <EmptyState
-      icon="⚠️"
-      title="页面不存在"
-      description="抱歉，您访问的页面不存在或已被删除。"
-    >
-      <template #actions>
-        <button
-          @click="goBack"
-          class="px-4 py-2 rounded-md bg-secondary text-secondary-foreground hover:bg-secondary/80 transition-colors"
-        >
-          返回上一页
-        </button>
-        <button
-          @click="goHome"
-          class="px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-        >
-          返回首页
-        </button>
-      </template>
-    </EmptyState>
+  <div class="min-h-full overflow-y-auto">
+    <PageContainer class="flex min-h-[70vh] items-center py-10 sm:py-14">
+      <StatePanel
+        title="未找到该页面"
+        description="页面地址可能已变更、被删除，或暂时不可用。"
+        class="w-full"
+      >
+        <template #icon>
+          <Compass class="size-5" />
+        </template>
+
+        <template #actions>
+          <Button variant="outline" @click="goBack">
+            <MoveLeft class="size-4" />
+            返回上一页
+          </Button>
+          <Button @click="goHome">
+            返回首页
+          </Button>
+        </template>
+      </StatePanel>
+    </PageContainer>
   </div>
 </template>

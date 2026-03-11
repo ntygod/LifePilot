@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Paperclip, FileText, X, Image, FileAudio2, FileVideo } from 'lucide-vue-next'
-import { Textarea } from '@/components/ui/textarea'
+import { FileAudio2, FileText, FileVideo, Image, Paperclip, X } from 'lucide-vue-next'
 import { chatApi } from '@/api/client'
+import { Textarea } from '@/components/ui/textarea'
 import type { ChatAttachment } from '@/types'
 
 const props = defineProps<{
@@ -18,95 +18,109 @@ const emit = defineEmits<{
 }>()
 
 const input = ref('')
-// 基础长度限制：主要防止一次性粘贴超长内容导致请求失败
 const maxLength = 4000
 const inputLength = computed(() => input.value.length)
 
-// 附件相关（本地选中的文件列表）
 const attachments = ref<File[]>([])
 const fileInput = ref<HTMLInputElement | null>(null)
 const isUploading = ref(false)
 const uploadError = ref<string | null>(null)
 
-// Prompt模板相关
 const showTemplates = ref(false)
 const promptTemplates = [
-  { name: '总结', content: '请帮我总结以下内容：\n\n' },
-  { name: '翻译', content: '请将以下内容翻译成英文：\n\n' },
-  { name: '改写', content: '请帮我改写以下内容，使其更加简洁明了：\n\n' },
+  { name: '整理要点', content: '请帮我整理以下内容的重点、结论和待办：\n\n' },
+  { name: '翻译成英文', content: '请将以下内容翻译成英文，保留原意和结构：\n\n' },
+  { name: '重写表达', content: '请帮我改写以下内容，让表达更清楚、更精炼：\n\n' },
   { name: '代码审查', content: '请审查以下代码，指出潜在问题和改进建议：\n\n' },
-  { name: '解释', content: '请详细解释以下概念：\n\n' }
-]
+  { name: '解释概念', content: '请解释以下概念，并补充一个贴近实际的例子：\n\n' },
+] as const
 
-function handleKeydown(e: KeyboardEvent) {
-  // Enter 发送，Shift+Enter 换行
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault()
-    submit()
+const sendDisabled = computed(() => props.disabled || !input.value.trim() || isUploading.value)
+const attachmentSummary = computed(() => {
+  if (attachments.value.length === 0) return '可附加图片、音频、视频或文档'
+  return `已选 ${attachments.value.length} 个附件`
+})
+const footerHint = computed(() => {
+  if (isUploading.value) return '正在上传附件，完成后会自动继续发送。'
+  if (props.disabled) return '当前回复还在生成，稍候即可继续输入。'
+  if (attachments.value.length > 0) return 'Enter 发送时会连同附件一起上传。'
+  return '按 Enter 发送，Shift + Enter 换行。'
+})
+
+function handleKeydown(event: KeyboardEvent) {
+  if (event.key === 'Enter' && !event.shiftKey) {
+    event.preventDefault()
+    void submit()
   }
 }
 
 async function submit() {
   const content = input.value.trim()
-  if (!content || props.disabled || isUploading.value) return
+  if (!content || sendDisabled.value) return
 
-  // 如果有附件，先上传到后端，获取附件 ID 列表
   let attachmentIds: string[] | undefined
   let uploadedAttachments: ChatAttachment[] | undefined
+
   if (attachments.value.length > 0) {
     isUploading.value = true
     uploadError.value = null
+
     try {
-      const sessionId = undefined
       const uploaded = await Promise.all(
-        attachments.value.map(file => chatApi.uploadAttachment(file, sessionId))
+        attachments.value.map(file => chatApi.uploadAttachment(file, undefined)),
       )
-      attachmentIds = uploaded.map(a => a.fileId)
+      attachmentIds = uploaded.map(item => item.fileId)
       uploadedAttachments = uploaded
-    } catch (e) {
-      // 上传失败时，不发送消息，给出错误提示，允许用户重试
-      console.error('附件上传失败:', e)
-      uploadError.value = e instanceof Error ? e.message : '附件上传失败，请重试或移除附件'
-      isUploading.value = false
+    } catch (error) {
+      console.error('附件上传失败:', error)
+      uploadError.value = error instanceof Error ? error.message : '附件上传失败，请重试或移除附件'
       return
     } finally {
       isUploading.value = false
     }
   }
 
-  emit('send', { content, attachmentIds, attachments: uploadedAttachments })
+  emit('send', {
+    content,
+    attachmentIds,
+    attachments: uploadedAttachments,
+  })
+
   input.value = ''
   attachments.value = []
   uploadError.value = null
+  showTemplates.value = false
 }
 
 function handleFileSelect() {
   fileInput.value?.click()
 }
 
-function handleFileChange(e: Event) {
-  const input = e.target as HTMLInputElement
-  const files = input.files
+function handleFileChange(event: Event) {
+  const target = event.target as HTMLInputElement
+  const files = target.files
   if (!files) return
-  
-  Array.from(files).forEach(file => {
-    if (!attachments.value.find(f => f.name === file.name && f.size === file.size)) {
+
+  for (const file of Array.from(files)) {
+    const duplicated = attachments.value.some(item => item.name === file.name && item.size === file.size)
+    if (!duplicated) {
       attachments.value.push(file)
     }
-  })
-  input.value = ''
+  }
+
+  target.value = ''
 }
 
 function removeAttachment(index: number) {
   attachments.value.splice(index, 1)
 }
 
-function insertTemplate(template: typeof promptTemplates[0]) {
+function insertTemplate(template: (typeof promptTemplates)[number]) {
   input.value = template.content + input.value
   showTemplates.value = false
 }
 
-function formatFileSize(bytes: number): string {
+function formatFileSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
@@ -114,6 +128,7 @@ function formatFileSize(bytes: number): string {
 
 function getFileIcon(file: File) {
   const type = file.type || ''
+
   if (type.startsWith('image/')) return Image
   if (type.startsWith('audio/')) return FileAudio2
   if (type.startsWith('video/')) return FileVideo
@@ -121,105 +136,105 @@ function getFileIcon(file: File) {
 }
 
 defineExpose({
-  isUploading,
   input,
-  getFileIcon
+  isUploading,
+  getFileIcon,
 })
 </script>
 
 <template>
-  <!-- 输入区域（对齐 stitch：浮层感、rounded-2xl、shadow-lg、底部提示） -->
-  <div class="bg-background/90 backdrop-blur-md supports-[backdrop-filter]:bg-background/60 pt-sm pb-lg px-md md:px-lg border-t border-transparent">
-    <div class="max-w-4xl mx-auto">
-      <!-- 附件列表 -->
-      <div v-if="attachments.length > 0" class="pt-sm pb-xs flex flex-wrap gap-sm">
+  <div class="bg-transparent px-4 py-4 sm:px-5">
+    <div class="mx-auto max-w-4xl space-y-3">
+      <div v-if="attachments.length > 0" class="flex flex-wrap gap-2">
         <div
           v-for="(file, index) in attachments"
-          :key="index"
-          class="inline-flex items-center gap-xs px-sm py-xs rounded-lg bg-muted text-xs text-foreground"
+          :key="`${file.name}-${file.size}-${index}`"
+          class="list-card inline-flex items-center gap-2 px-3 py-2 text-xs"
         >
-          <component :is="getFileIcon(file)" :size="12" />
-          <span class="max-w-[200px] truncate">{{ file.name }}</span>
+          <component :is="getFileIcon(file)" class="size-3.5 text-muted-foreground" />
+          <span class="max-w-[220px] truncate text-foreground">{{ file.name }}</span>
           <span class="text-muted-foreground">({{ formatFileSize(file.size) }})</span>
           <button
             type="button"
-            class="text-muted-foreground hover:text-destructive transition-colors"
+            class="rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted/80 hover:text-destructive"
             @click="removeAttachment(index)"
           >
-            <X :size="12" />
+            <X class="size-3" />
           </button>
         </div>
       </div>
 
-      <div class="relative">
-        <div
-          class="rounded-xl border border-border bg-card shadow-sm overflow-hidden flex flex-col
-                 focus-within:ring-2 focus-within:ring-ring focus-within:border-transparent transition-all duration-200 p-2"
-        >
+      <div
+        class="overflow-hidden rounded-[calc(var(--radius)+8px)] border border-border/70 bg-card/80 shadow-[0_24px_40px_-28px_hsl(var(--shadow-color)/0.42)] transition-all duration-200"
+        :class="sendDisabled ? '' : 'hover:border-primary/24 focus-within:border-primary/24 focus-within:shadow-[0_28px_46px_-30px_hsl(var(--shadow-color)/0.5)]'"
+      >
+        <div class="px-3 pt-3">
           <Textarea
             v-model="input"
             :disabled="disabled"
             :maxlength="maxLength"
-            placeholder="问任何问题，或粘贴文本让 AI 分析…"
+            placeholder="输入问题，或粘贴资料继续往下处理…"
             rows="1"
-            class="border-0 focus-visible:ring-0 shadow-none resize-none
-                   min-h-[56px] max-h-[200px] text-base bg-transparent"
+            class="min-h-[64px] max-h-[220px] resize-none border-0 bg-transparent px-1 text-base shadow-none focus-visible:ring-0"
             @keydown="handleKeydown"
             @click="showTemplates = false"
           />
+        </div>
 
-          <div class="flex items-center justify-between px-sm pb-sm">
-            <div class="flex items-center gap-sm">
-              <!-- Prompt 模板下拉 -->
+        <div class="border-t border-border/60 bg-background/38 px-3 py-3">
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div class="flex flex-wrap items-center gap-2">
               <div class="relative">
                 <button
                   type="button"
-                  class="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors
-                         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  class="filter-pill text-sm"
                   :disabled="disabled"
-                  title="Prompt 模板"
                   @click="showTemplates = !showTemplates"
                 >
-                  <FileText :size="18" />
+                  <FileText class="size-4" />
+                  模板
                 </button>
+
                 <Transition
                   enter-active-class="transition-all duration-200 ease-out"
-                  enter-from-class="opacity-0 scale-95 translate-y-2"
-                  enter-to-class="opacity-100 scale-100 translate-y-0"
+                  enter-from-class="translate-y-2 scale-95 opacity-0"
+                  enter-to-class="translate-y-0 scale-100 opacity-100"
                   leave-active-class="transition-all duration-150 ease-in"
-                  leave-from-class="opacity-100 scale-100 translate-y-0"
-                  leave-to-class="opacity-0 scale-95 translate-y-2"
+                  leave-from-class="translate-y-0 scale-100 opacity-100"
+                  leave-to-class="translate-y-2 scale-95 opacity-0"
                 >
                   <div
                     v-if="showTemplates"
-                    class="absolute bottom-full mb-1 left-0 w-48 rounded-md border border-border bg-card shadow-lg z-10 overflow-hidden"
+                    class="absolute bottom-full left-0 z-10 mb-2 w-52 rounded-[calc(var(--radius)+4px)] border border-border/70 bg-card/96 p-2 shadow-[0_20px_36px_-28px_hsl(var(--shadow-color)/0.45)]"
                   >
-                    <div class="p-1">
-                      <div
-                        v-for="template in promptTemplates"
-                        :key="template.name"
-                        class="px-3 py-1.5 rounded text-xs text-foreground hover:bg-accent cursor-pointer transition-colors duration-150"
-                        @click="insertTemplate(template)"
-                      >
-                        {{ template.name }}
-                      </div>
+                    <div class="mb-2 px-2 text-[11px] font-medium tracking-[0.08em] text-muted-foreground">
+                      常用模板
                     </div>
+                    <button
+                      v-for="template in promptTemplates"
+                      :key="template.name"
+                      type="button"
+                      class="flex w-full items-center rounded-lg px-2 py-2 text-left text-sm text-foreground transition-colors hover:bg-accent/75"
+                      @click="insertTemplate(template)"
+                    >
+                      {{ template.name }}
+                    </button>
                   </div>
                 </Transition>
               </div>
 
-              <!-- 附件上传按钮 -->
               <button
                 type="button"
-                class="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors
-                       disabled:opacity-50 disabled:cursor-not-allowed
-                       focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                class="filter-pill text-sm disabled:cursor-not-allowed disabled:opacity-50"
                 :disabled="disabled"
-                title="附件"
                 @click="handleFileSelect"
               >
-                <Paperclip :size="18" />
+                <Paperclip class="size-4" />
+                附件
               </button>
+
+              <span class="surface-chip">{{ attachmentSummary }}</span>
+
               <input
                 ref="fileInput"
                 type="file"
@@ -228,22 +243,18 @@ defineExpose({
                 class="hidden"
                 @change="handleFileChange"
               />
-
             </div>
 
-            <div class="flex items-center gap-sm">
-              <span class="text-xs text-muted-foreground hidden sm:inline-block">
-                {{ inputLength }} / {{ maxLength }}
-              </span>
+            <div class="flex items-center gap-3 self-end sm:self-auto">
+              <span class="text-xs text-muted-foreground">{{ inputLength }} / {{ maxLength }}</span>
+
               <button
-                :disabled="disabled || !input.trim() || isUploading"
-                class="w-10 h-10 rounded-full shadow-sm flex items-center justify-center
-                       transition-all duration-200 active:scale-[0.98]
-                       disabled:opacity-50 disabled:cursor-not-allowed
-                       focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                :class="(disabled || !input.trim() || isUploading)
-                  ? 'bg-muted text-muted-foreground border border-border hover:bg-muted'
-                  : 'bg-primary text-primary-foreground hover:bg-primary/90 hover:shadow-md'"
+                type="button"
+                :disabled="sendDisabled"
+                class="flex h-11 w-11 items-center justify-center rounded-full border transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                :class="sendDisabled
+                  ? 'border-border bg-muted text-muted-foreground'
+                  : 'border-primary bg-primary text-primary-foreground shadow-[0_16px_28px_-18px_hsl(var(--shadow-color)/0.45)] hover:-translate-y-0.5 hover:bg-primary/92'"
                 @click="submit"
               >
                 <svg
@@ -256,7 +267,7 @@ defineExpose({
                   stroke-width="2"
                   stroke-linecap="round"
                   stroke-linejoin="round"
-                  class="-rotate-45 translate-x-0.5 -translate-y-0.5"
+                  class="-translate-y-0.5 translate-x-0.5 -rotate-45"
                 >
                   <path d="m22 2-7 20-4-9-9-4Z" />
                   <path d="M22 2 11 13" />
@@ -267,16 +278,16 @@ defineExpose({
         </div>
       </div>
 
-      <div class="text-center mt-xs">
-        <p class="text-[10px] text-muted-foreground">
-          按 Enter 发送，Shift + Enter 换行。ZhiWei 可能会出错。请核实重要信息。
-          <span v-if="isUploading" class="ml-2 text-primary">正在上传附件…</span>
-          <span v-else-if="disabled" class="ml-2">正在生成回答，稍候即可继续输入</span>
-        </p>
+      <div
+        v-if="uploadError"
+        class="rounded-[calc(var(--radius)+4px)] border border-destructive/20 bg-destructive/6 px-3 py-2 text-xs text-destructive"
+      >
+        {{ uploadError }}
       </div>
 
-      <div v-if="uploadError" class="mt-xs text-xs text-destructive">
-        {{ uploadError }}
+      <div class="flex flex-wrap items-center justify-between gap-2 px-1 text-[11px] text-muted-foreground">
+        <p>{{ footerHint }}</p>
+        <span v-if="isUploading" class="surface-chip surface-chip-strong">正在上传附件</span>
       </div>
     </div>
   </div>

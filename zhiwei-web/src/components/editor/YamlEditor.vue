@@ -12,6 +12,7 @@ import { ref, computed, watch, onMounted, shallowRef } from 'vue'
 import { VueMonacoEditor, useMonaco } from '@guolao/vue-monaco-editor'
 import * as yaml from 'yaml'
 import { useUiStore } from '@/stores/ui'
+import '@/plugins/monaco'
 
 // ========== Props & Emits ==========
 

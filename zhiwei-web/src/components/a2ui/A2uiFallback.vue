@@ -9,7 +9,7 @@ if (props.type) {
 </script>
 
 <template>
-  <div class="rounded border border-dashed border-muted-foreground/30 p-2 text-xs text-muted-foreground">
+  <div class="rounded-[calc(var(--radius)+4px)] border border-dashed border-border/70 bg-background/55 px-3 py-2 text-xs text-muted-foreground">
     未知组件: {{ type ?? 'unknown' }}
   </div>
 </template>

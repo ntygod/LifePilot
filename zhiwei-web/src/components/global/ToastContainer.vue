@@ -1,61 +1,69 @@
 <script setup lang="ts">
-import { useUiStore } from '@/stores/ui'
-import { CheckCircle2, XCircle, Info, X } from 'lucide-vue-next'
 import { computed } from 'vue'
 import { AnimatePresence, motion } from 'motion-v'
+import { CheckCircle2, Info, X, XCircle } from 'lucide-vue-next'
+import { useUiStore } from '@/stores/ui'
 
 const MotionDiv = motion.div
-
 const uiStore = useUiStore()
 
-// 反转顺序，最新在最上方
 const reversedToasts = computed(() => [...uiStore.toasts].reverse())
 
-/** 根据 toast 类型返回对应图标组件 */
 function iconFor(type: 'success' | 'error' | 'info') {
   switch (type) {
-    case 'success': return CheckCircle2
-    case 'error': return XCircle
-    case 'info': return Info
+    case 'success':
+      return CheckCircle2
+    case 'error':
+      return XCircle
+    case 'info':
+      return Info
   }
 }
 
-/** 根据 toast 类型返回对应颜色 class */
 function colorFor(type: 'success' | 'error' | 'info') {
   switch (type) {
-    case 'success': return 'text-green-500'
-    case 'error': return 'text-red-500'
-    case 'info': return 'text-blue-500'
+    case 'success':
+      return 'text-emerald-500'
+    case 'error':
+      return 'text-red-500'
+    case 'info':
+      return 'text-sky-500'
+  }
+}
+
+function surfaceFor(type: 'success' | 'error' | 'info') {
+  switch (type) {
+    case 'success':
+      return 'border-emerald-500/20 bg-[linear-gradient(135deg,rgba(16,185,129,0.12),rgba(255,255,255,0))]'
+    case 'error':
+      return 'border-red-500/20 bg-[linear-gradient(135deg,rgba(239,68,68,0.12),rgba(255,255,255,0))]'
+    case 'info':
+      return 'border-sky-500/20 bg-[linear-gradient(135deg,rgba(14,165,233,0.12),rgba(255,255,255,0))]'
   }
 }
 </script>
 
 <template>
-  <!-- Toast 通知容器：固定右上角，z-50 -->
-  <div class="fixed top-4 right-4 z-50 flex flex-col gap-2 w-80">
+  <div aria-live="polite" class="fixed top-4 right-4 z-50 flex w-80 flex-col gap-2">
     <AnimatePresence>
       <MotionDiv
         v-for="toast in reversedToasts"
         :key="toast.id"
-        :initial="{ x: '100%' }"
-        :animate="{ x: 0 }"
+        :initial="{ x: '100%', opacity: 0 }"
+        :animate="{ x: 0, opacity: 1 }"
         :exit="{ x: '100%', opacity: 0 }"
         :transition="{ type: 'spring', stiffness: 300, damping: 25 }"
         :exit-transition="{ duration: 0.2 }"
       >
         <div
-          class="flex items-start gap-3 rounded-lg border bg-background px-4 py-3 shadow-lg"
+          :class="surfaceFor(toast.type)"
+          class="flex items-start gap-3 rounded-2xl border bg-background/95 px-4 py-3 shadow-[0_24px_55px_-28px_hsl(var(--shadow-color)/0.85)] backdrop-blur-xl"
         >
-          <!-- 类型图标 -->
-          <component :is="iconFor(toast.type)" :size="18" :class="colorFor(toast.type)" class="shrink-0 mt-0.5" />
-
-          <!-- 消息文本 -->
-          <span class="flex-1 text-sm text-foreground break-words">{{ toast.message }}</span>
-
-          <!-- 手动关闭按钮 -->
+          <component :is="iconFor(toast.type)" :size="18" :class="colorFor(toast.type)" class="mt-0.5 shrink-0" />
+          <span class="flex-1 break-words text-sm text-foreground">{{ toast.message }}</span>
           <button
             type="button"
-            class="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+            class="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
             @click="uiStore.clearToast(toast.id)"
           >
             <X :size="14" />

@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import type { Message } from '@/types'
-import { copyToClipboard } from '@/utils/clipboard'
-import { Copy, GitBranch, RefreshCw } from 'lucide-vue-next'
 import { ref } from 'vue'
 import { RouterLink } from 'vue-router'
+import { Copy, GitBranch, RefreshCw } from 'lucide-vue-next'
+import type { Message } from '@/types'
+import { copyToClipboard } from '@/utils/clipboard'
 
 defineProps<{
   message: Message
@@ -20,55 +20,48 @@ const copyLabel = ref('复制')
 
 async function handleCopy(content: string) {
   const success = await copyToClipboard(content)
-  if (success) {
-    copyLabel.value = '已复制'
-    setTimeout(() => { copyLabel.value = '复制' }, 2000)
-  } else {
-    copyLabel.value = '复制失败'
-    setTimeout(() => { copyLabel.value = '复制' }, 2000)
-  }
+  copyLabel.value = success ? '已复制' : '复制失败'
+  window.setTimeout(() => {
+    copyLabel.value = '复制'
+  }, 2000)
   emit('copy', content)
 }
 </script>
 
 <template>
-  <div class="flex items-center gap-md">
-    <!-- 复制 -->
+  <div class="flex flex-wrap items-center gap-2">
     <button
       type="button"
-      class="flex items-center gap-xs text-xs text-muted-foreground hover:text-foreground transition-colors"
+      class="surface-chip transition-colors hover:border-border/70 hover:bg-background/80 hover:text-foreground"
       @click="handleCopy(message.content)"
     >
-      <Copy :size="14" />
+      <Copy class="size-3.5" />
       <span>{{ copyLabel }}</span>
     </button>
 
-    <!-- 分叉 -->
     <button
       type="button"
-      class="flex items-center gap-xs text-xs text-muted-foreground hover:text-foreground transition-colors"
+      class="surface-chip transition-colors hover:border-border/70 hover:bg-background/80 hover:text-foreground"
       @click="emit('fork', message)"
     >
-      <GitBranch :size="14" />
+      <GitBranch class="size-3.5" />
       <span>分叉</span>
     </button>
 
-    <!-- 重新生成（仅最后一条 assistant 消息） -->
     <button
       v-if="isLastAssistant"
       type="button"
-      class="flex items-center gap-xs text-xs text-muted-foreground hover:text-foreground transition-colors"
+      class="surface-chip transition-colors hover:border-border/70 hover:bg-background/80 hover:text-foreground"
       @click="emit('regenerate', message)"
     >
-      <RefreshCw :size="14" />
+      <RefreshCw class="size-3.5" />
       <span>重新生成</span>
     </button>
 
-    <!-- 查看轨迹 -->
     <RouterLink
       v-if="message.traceId"
       :to="{ name: 'traces', query: { id: message.traceId } }"
-      class="ml-auto text-xs text-primary hover:underline underline-offset-2"
+      class="surface-chip surface-chip-strong ml-0 transition-colors hover:opacity-85 sm:ml-auto"
     >
       查看执行轨迹
     </RouterLink>

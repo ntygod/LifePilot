@@ -1,190 +1,333 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { AlertTriangle, ArrowUpRight, FileText, Sparkles, Wrench } from 'lucide-vue-next'
 import { useToolStore } from '@/stores/tool'
+import MetricCard from '@/components/common/MetricCard.vue'
 import SearchBar from '@/components/common/SearchBar.vue'
-import EmptyState from '@/components/common/EmptyState.vue'
-import ErrorState from '@/components/common/ErrorState.vue'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import StatePanel from '@/components/common/StatePanel.vue'
+import PageContainer from '@/components/layout/PageContainer.vue'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select'
 
 const router = useRouter()
 const toolStore = useToolStore()
 
 const searchQuery = ref('')
-const sourceFilter = ref<string>('all')
-const riskFilter = ref<string>('all')
+const sourceFilter = ref('all')
+const riskFilter = ref('all')
 
-onMounted(() => {
-  toolStore.fetchTools()
-})
+const sourceLabel: Record<string, string> = {
+  builtin: 'Java 原生',
+  yaml: 'YAML 工具',
+  mcp: 'MCP 工具',
+}
+
+const riskTone: Record<string, string> = {
+  LOW: 'border-emerald-200/80 bg-emerald-50/80 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-200',
+  MEDIUM: 'border-amber-200/80 bg-amber-50/80 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200',
+  HIGH: 'border-red-200/80 bg-red-50/80 text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-200',
+}
 
 const filteredTools = computed(() => {
   let result = toolStore.tools
 
-  if (searchQuery.value) {
-    const q = searchQuery.value.toLowerCase()
-    result = result.filter(t =>
-      t.name.toLowerCase().includes(q) ||
-      t.displayName?.toLowerCase().includes(q) ||
-      t.description?.toLowerCase().includes(q)
+  if (searchQuery.value.trim()) {
+    const keyword = searchQuery.value.trim().toLowerCase()
+    result = result.filter(tool =>
+      tool.name.toLowerCase().includes(keyword)
+      || tool.displayName?.toLowerCase().includes(keyword)
+      || tool.description?.toLowerCase().includes(keyword),
     )
   }
 
-  if (sourceFilter.value && sourceFilter.value !== 'all') {
-    result = result.filter(t => t.source === sourceFilter.value)
+  if (sourceFilter.value !== 'all') {
+    result = result.filter(tool => tool.source === sourceFilter.value)
   }
 
-  if (riskFilter.value && riskFilter.value !== 'all') {
-    result = result.filter(t => t.riskLevel === riskFilter.value)
+  if (riskFilter.value !== 'all') {
+    result = result.filter(tool => tool.riskLevel === riskFilter.value)
   }
 
   return result
 })
 
-const sourceLabel: Record<string, string> = {
-  builtin: 'Java 原生',
-  yaml: 'YAML Tool',
-  mcp: 'MCP 工具',
+const enabledCount = computed(() => toolStore.tools.filter(tool => tool.enabled).length)
+const mcpCount = computed(() => toolStore.tools.filter(tool => tool.source === 'mcp').length)
+const highRiskCount = computed(() => toolStore.tools.filter(tool => tool.riskLevel === 'HIGH').length)
+const hasFilters = computed(() => Boolean(searchQuery.value.trim()) || sourceFilter.value !== 'all' || riskFilter.value !== 'all')
+const sourceFilterLabel = computed(() => {
+  if (sourceFilter.value === 'all') return '全部来源'
+  return sourceLabel[sourceFilter.value] ?? sourceFilter.value
+})
+const riskFilterLabel = computed(() => {
+  if (riskFilter.value === 'all') return '全部风险'
+  if (riskFilter.value === 'LOW') return '低风险'
+  if (riskFilter.value === 'MEDIUM') return '中风险'
+  return '高风险'
+})
+
+function openTool(id: string) {
+  void router.push(`/tools/${id}`)
 }
 
-const riskBadge: Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' | 'destructive' }> = {
-  LOW: { label: '低风险', variant: 'secondary' },
-  MEDIUM: { label: '中风险', variant: 'outline' },
-  HIGH: { label: '高风险', variant: 'destructive' },
+function clearFilters() {
+  searchQuery.value = ''
+  sourceFilter.value = 'all'
+  riskFilter.value = 'all'
 }
+
+onMounted(() => {
+  void toolStore.fetchTools()
+})
 </script>
 
 <template>
-  <div class="flex flex-col h-full overflow-hidden">
-    <!-- 头部操作栏 -->
-    <div class="flex-shrink-0 border-b border-border">
-      <div class="max-w-[1200px] mx-auto px-md md:px-lg py-md">
-        <h2 class="text-2xl font-semibold text-foreground mb-md leading-tight">工具管理</h2>
+  <div class="h-full overflow-y-auto">
+    <PageContainer size="wide" class="py-6 sm:py-8">
+      <div class="mx-auto flex max-w-[1180px] flex-col gap-6">
+        <header class="space-y-4 border-b border-border/70 pb-5">
+          <div class="max-w-3xl space-y-2">
+            <div class="surface-label">工具</div>
+            <h1 class="text-3xl font-semibold tracking-tight text-foreground">工具目录</h1>
+            <p class="text-sm leading-6 text-muted-foreground">
+              先看工具的来源、风险和启用状态，再决定是进入详情页继续测试，还是调整接入方式。
+            </p>
+          </div>
 
-        <!-- 搜索和过滤 -->
-        <div class="flex flex-wrap gap-sm">
-          <SearchBar
-            v-model="searchQuery"
-            placeholder="搜索工具名称或描述..."
-            class="flex-1 min-w-[220px]"
-          />
-          <Select v-model="sourceFilter">
-            <SelectTrigger class="w-[140px]">
-              <SelectValue placeholder="全部来源" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部来源</SelectItem>
-              <SelectItem value="builtin">Java 原生</SelectItem>
-              <SelectItem value="yaml">YAML Tool</SelectItem>
-              <SelectItem value="mcp">MCP 工具</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select v-model="riskFilter">
-            <SelectTrigger class="w-[150px]">
-              <SelectValue placeholder="全部风险等级" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部风险等级</SelectItem>
-              <SelectItem value="LOW">低风险</SelectItem>
-              <SelectItem value="MEDIUM">中风险</SelectItem>
-              <SelectItem value="HIGH">高风险</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-    </div>
+          <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <MetricCard label="工具总数" :value="toolStore.tools.length" hint="包含内置工具、YAML 工具和 MCP 工具。">
+              <template #icon>
+                <Wrench class="size-5" />
+              </template>
+            </MetricCard>
+            <MetricCard label="已启用" :value="enabledCount" hint="当前可以直接参与调用的工具数量。">
+              <template #icon>
+                <Sparkles class="size-5" />
+              </template>
+            </MetricCard>
+            <MetricCard label="MCP 来源" :value="mcpCount" hint="由 MCP 服务器暴露出来的外部能力。">
+              <template #icon>
+                <FileText class="size-5" />
+              </template>
+            </MetricCard>
+            <MetricCard label="高风险" :value="highRiskCount" hint="建议优先确认执行边界和权限控制。">
+              <template #icon>
+                <AlertTriangle class="size-5" />
+              </template>
+            </MetricCard>
+          </div>
+        </header>
 
-    <!-- Tool 列表 -->
-    <div class="flex-1 overflow-y-auto">
-      <div class="max-w-[1200px] mx-auto px-md md:px-lg py-lg">
-        <!-- Skeleton 加载占位符 -->
-        <div v-if="toolStore.loading" class="space-y-sm">
-          <Card v-for="i in 5" :key="i">
-            <CardHeader class="pb-2">
-              <div class="flex items-center gap-sm">
-                <Skeleton class="h-5 w-1/4" />
-                <Skeleton class="h-5 w-16 rounded-full" />
-                <Skeleton class="h-5 w-16 rounded-full" />
-                <Skeleton class="h-5 w-16 rounded-full" />
+        <section class="detail-card p-5">
+          <div class="space-y-4">
+            <div class="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+              <div class="space-y-1">
+                <div class="surface-label">筛选与检查</div>
+                <p class="text-sm leading-6 text-muted-foreground">
+                  先搜工具名，再按来源和风险级别缩小范围，避免在长列表里来回找。
+                </p>
               </div>
-            </CardHeader>
-            <CardContent class="pb-3">
-              <Skeleton class="h-4 w-full mb-2" />
-              <Skeleton class="h-3 w-1/3" />
-            </CardContent>
-          </Card>
-        </div>
 
-        <!-- 错误状态 -->
-        <ErrorState
-          v-else-if="toolStore.error && filteredTools.length === 0"
-          title="加载失败"
-          :description="toolStore.error"
-          action-label="重试"
-          :show-action="true"
-          @action="toolStore.fetchTools()"
-        />
+              <div class="flex flex-wrap gap-2 text-xs">
+                <span class="filter-pill">来源：{{ sourceFilterLabel }}</span>
+                <span class="filter-pill">风险：{{ riskFilterLabel }}</span>
+                <span class="filter-pill">当前结果：{{ filteredTools.length }}</span>
+              </div>
+            </div>
 
-        <!-- 空状态 -->
-        <EmptyState
-          v-else-if="filteredTools.length === 0 && !searchQuery && sourceFilter === 'all' && riskFilter === 'all'"
-          icon="🔧"
-          title="暂无工具"
-          description="工具会在 Skill 注册或 MCP Server 连接后自动出现"
-        />
+            <div class="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+              <div class="grid flex-1 gap-3 md:grid-cols-[minmax(0,1fr)_180px_180px]">
+                <SearchBar
+                  v-model="searchQuery"
+                  placeholder="按工具名、显示名或描述搜索"
+                />
+                <Select v-model="sourceFilter">
+                  <SelectTrigger>
+                    <SelectValue placeholder="来源" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部来源</SelectItem>
+                    <SelectItem value="builtin">Java 原生</SelectItem>
+                    <SelectItem value="yaml">YAML 工具</SelectItem>
+                    <SelectItem value="mcp">MCP 工具</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select v-model="riskFilter">
+                  <SelectTrigger>
+                    <SelectValue placeholder="风险" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部风险</SelectItem>
+                    <SelectItem value="LOW">低风险</SelectItem>
+                    <SelectItem value="MEDIUM">中风险</SelectItem>
+                    <SelectItem value="HIGH">高风险</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
 
-        <!-- 搜索/过滤无结果 -->
-        <EmptyState
-          v-else-if="filteredTools.length === 0"
-          icon="🔍"
-          title="未找到匹配的工具"
-          description="尝试调整搜索关键词或筛选条件"
-        />
+              <div class="flex items-center gap-3 text-sm text-muted-foreground">
+                <span>结果 {{ filteredTools.length }}</span>
+                <Button v-if="hasFilters" type="button" variant="ghost" @click="clearFilters">
+                  清空筛选
+                </Button>
+              </div>
+            </div>
+          </div>
+        </section>
 
-        <!-- 工具卡片列表 -->
-        <div v-else class="space-y-sm">
-          <Card
-            v-for="tool in filteredTools"
-            :key="tool.id"
-            class="list-card cursor-pointer group"
-            @click="router.push(`/tools/${tool.id}`)"
-          >
-            <CardHeader class="pb-2">
-              <div class="flex items-start justify-between gap-sm">
-                <div class="flex-1 min-w-0">
-                  <div class="flex items-center gap-xs mb-xs flex-wrap">
-                    <CardTitle class="text-sm leading-snug">
-                      {{ tool.displayName || tool.name }}
-                    </CardTitle>
-                    <Badge variant="default" class="text-xs">默认可用</Badge>
-                    <Badge variant="secondary">
-                      {{ sourceLabel[tool.source] ?? tool.source }}
-                    </Badge>
-                    <Badge
-                      :variant="riskBadge[tool.riskLevel]?.variant ?? 'outline'"
-                    >
-                      {{ riskBadge[tool.riskLevel]?.label ?? tool.riskLevel }}
-                    </Badge>
+        <section class="space-y-4">
+          <div class="flex items-center justify-between gap-3">
+            <div>
+              <h2 class="text-lg font-semibold text-foreground">可用工具</h2>
+              <p class="text-sm text-muted-foreground">
+                先在目录里确认来源、风险和可用状态，再进入详情页继续测试和配置。
+              </p>
+            </div>
+            <div class="text-sm text-muted-foreground">{{ filteredTools.length }} 条结果</div>
+          </div>
+
+          <div v-if="toolStore.loading" class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div
+              v-for="index in 6"
+              :key="index"
+              class="list-card p-5"
+            >
+              <div class="space-y-4">
+                <div class="flex items-center justify-between gap-2">
+                  <div class="space-y-2">
+                    <Skeleton class="h-5 w-32" />
+                    <div class="flex items-center gap-2">
+                      <Skeleton class="h-5 w-16 rounded-full" />
+                      <Skeleton class="h-5 w-16 rounded-full" />
+                    </div>
                   </div>
+                  <Skeleton class="h-10 w-10 rounded-2xl" />
+                </div>
+                <div class="space-y-2">
+                  <Skeleton class="h-5 w-32" />
+                  <Skeleton class="h-4 w-full" />
+                  <Skeleton class="h-4 w-2/3" />
+                </div>
+                <div class="grid gap-3 sm:grid-cols-2">
+                  <Skeleton class="h-16 rounded-[calc(var(--radius)+4px)]" />
+                  <Skeleton class="h-16 rounded-[calc(var(--radius)+4px)]" />
                 </div>
               </div>
-            </CardHeader>
-            <CardContent class="pb-3">
-              <p class="text-sm text-muted-foreground mb-xs leading-normal">
-                {{ tool.description || '无描述' }}
-              </p>
-              <div class="text-xs text-muted-foreground">
-                ID: {{ tool.id }} | 来源: {{ tool.source }}
+            </div>
+          </div>
+
+          <StatePanel
+            v-else-if="toolStore.error && toolStore.tools.length === 0"
+            title="工具目录暂时不可用"
+            :description="toolStore.error"
+            tone="danger"
+          >
+            <template #actions>
+              <Button type="button" variant="outline" @click="toolStore.fetchTools()">
+                重试
+              </Button>
+            </template>
+          </StatePanel>
+
+          <StatePanel
+            v-else-if="toolStore.tools.length === 0"
+            title="暂无已注册工具"
+            description="导入或接入工具后，会统一显示在列表中。"
+          />
+
+          <StatePanel
+            v-else-if="filteredTools.length === 0"
+            title="没有匹配当前筛选条件的工具"
+            description="可以放宽来源或风险筛选，或者清空搜索关键词后重试。"
+          >
+            <template #actions>
+              <Button type="button" variant="outline" @click="clearFilters">
+                清空筛选
+              </Button>
+            </template>
+          </StatePanel>
+
+          <div v-else class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <button
+              v-for="tool in filteredTools"
+              :key="tool.id"
+              type="button"
+              class="list-card group flex w-full flex-col gap-4 p-5 text-left"
+              @click="openTool(tool.id)"
+            >
+              <div class="flex items-start justify-between gap-4">
+                <div class="min-w-0 flex-1 space-y-3">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <h3 class="text-base font-semibold text-foreground">
+                      {{ tool.displayName || tool.name }}
+                    </h3>
+                    <Badge variant="outline">
+                      {{ sourceLabel[tool.source] ?? tool.source }}
+                    </Badge>
+                    <Badge variant="outline" :class="riskTone[tool.riskLevel] ?? ''">
+                      {{ tool.riskLevel }}
+                    </Badge>
+                    <Badge
+                      variant="outline"
+                      :class="tool.enabled
+                        ? 'border-emerald-200/80 bg-emerald-50/80 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-200'
+                        : 'border-slate-200/80 bg-slate-50/80 text-slate-700 dark:border-slate-500/20 dark:bg-slate-500/10 dark:text-slate-200'"
+                    >
+                      {{ tool.enabled ? '已启用' : '已停用' }}
+                    </Badge>
+                  </div>
+
+                  <div class="flex flex-wrap gap-2 text-xs">
+                    <span class="surface-chip font-mono">{{ tool.id }}</span>
+                    <span class="surface-chip">{{ tool.type }}</span>
+                  </div>
+
+                  <p class="line-clamp-3 text-sm leading-6 text-muted-foreground">
+                    {{ tool.description || '这个工具暂时还没有说明。' }}
+                  </p>
+                </div>
+
+                <div class="flex size-11 shrink-0 items-center justify-center rounded-2xl border border-border/70 bg-background/78 text-primary transition-transform duration-200 group-hover:-translate-y-0.5">
+                  <Wrench class="size-5" />
+                </div>
               </div>
-            </CardContent>
-          </Card>
-        </div>
+
+              <div class="grid gap-3 sm:grid-cols-2">
+                <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/58 px-4 py-3">
+                  <div class="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
+                    <FileText class="size-4 text-primary" />
+                    来源与类型
+                  </div>
+                  <p class="text-sm text-muted-foreground">
+                    {{ sourceLabel[tool.source] ?? tool.source }} · {{ tool.type }}
+                  </p>
+                </div>
+
+                <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/58 px-4 py-3">
+                  <div class="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
+                    <AlertTriangle class="size-4 text-primary" />
+                    执行特性
+                  </div>
+                  <p class="text-sm text-muted-foreground">
+                    {{ tool.idempotent ? '幂等操作，可重复执行' : '可能修改状态，建议先确认输入' }}
+                  </p>
+                </div>
+              </div>
+
+              <div class="flex items-center justify-between gap-3 text-sm">
+                <span class="text-muted-foreground">适合先看配置，再进入详情页试运行。</span>
+                <span class="inline-flex items-center gap-1 font-medium text-primary transition-colors group-hover:text-primary/80">
+                  查看详情
+                  <ArrowUpRight class="size-4" />
+                </span>
+              </div>
+            </button>
+          </div>
+        </section>
       </div>
-    </div>
+    </PageContainer>
   </div>
 </template>

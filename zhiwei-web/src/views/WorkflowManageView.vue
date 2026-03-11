@@ -1,68 +1,85 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { ArrowLeft, ChevronDown, ChevronRight, Copy, Edit2, PauseCircle, Play, Plus, Sparkles, Trash2, Workflow } from 'lucide-vue-next'
 import { useWorkflowStore } from '@/stores/workflow'
 import type { WorkflowDetail, WorkflowItem } from '@/types'
+import { stateConfig } from '@/constants/workflowState'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import MetricCard from '@/components/common/MetricCard.vue'
+import StatePanel from '@/components/common/StatePanel.vue'
+import Pagination from '@/components/common/Pagination.vue'
+import PageContainer from '@/components/layout/PageContainer.vue'
+import PageHeader from '@/components/layout/PageHeader.vue'
+import PageSection from '@/components/layout/PageSection.vue'
 import WorkflowForm from '@/components/workflow/WorkflowForm.vue'
 import ExecutionDetail from '@/components/workflow/ExecutionDetail.vue'
 import StepDetailCard from '@/components/workflow/StepDetailCard.vue'
-import EmptyState from '@/components/common/EmptyState.vue'
-import ErrorState from '@/components/common/ErrorState.vue'
-import Pagination from '@/components/common/Pagination.vue'
-import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import {
-  ChevronDown,
-  ChevronRight,
-  Copy,
-  Edit2,
-  Plus,
-  Trash2,
-} from 'lucide-vue-next'
-import { stateConfig } from '@/constants/workflowState'
 
 const store = useWorkflowStore()
+
 const activeTab = ref<'detail' | 'executions'>('detail')
 const triggerLoading = ref(false)
-
 const showForm = ref(false)
 const formMode = ref<'create' | 'edit' | 'duplicate'>('create')
 const selectedWorkflow = ref<WorkflowDetail | null>(null)
-
-// 删除确认对话框
 const showDeleteConfirm = ref(false)
+const expandedExecId = ref<string | null>(null)
 
-// 执行历史分页
 const EXEC_PAGE_SIZE = 10
 const execPage = ref(0)
+
+const enabledWorkflowCount = computed(() => store.list.filter(item => item.enabled).length)
+const disabledWorkflowCount = computed(() => store.list.filter(item => !item.enabled).length)
+const triggerTypeCount = computed(() => {
+  const triggerTypes = new Set(store.list.flatMap(item => item.triggerTypes ?? []))
+  return triggerTypes.size
+})
+const stepCount = computed(() => store.current?.steps?.length ?? 0)
+const currentTriggerTypes = computed(() => store.current?.triggerTypes ?? [])
+const currentSteps = computed(() => store.current?.steps ?? [])
 
 const pagedExecutions = computed(() => {
   const start = execPage.value * EXEC_PAGE_SIZE
   return store.executions.slice(start, start + EXEC_PAGE_SIZE)
 })
 
-const execPageCount = computed(() =>
-  Math.ceil(store.executions.length / EXEC_PAGE_SIZE)
-)
+const execPageCount = computed(() => Math.ceil(store.executions.length / EXEC_PAGE_SIZE))
+const showExecPagination = computed(() => store.executions.length > EXEC_PAGE_SIZE)
 
-const showExecPagination = computed(() =>
-  store.executions.length > EXEC_PAGE_SIZE
-)
+const stateBadge = Object.fromEntries(
+  Object.entries(stateConfig).map(([key, value]) => [
+    key,
+    { label: value.label, variant: value.badgeVariant },
+  ]),
+) as Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' | 'destructive' }>
 
-// 执行详情展开状态
-const expandedExecId = ref<string | null>(null)
+function formatDuration(start?: string, end?: string) {
+  if (!start || !end) return '-'
+  const durationMs = new Date(end).getTime() - new Date(start).getTime()
+  if (durationMs < 1000) return `${durationMs}ms`
+  return `${(durationMs / 1000).toFixed(1)}s`
+}
+
+function handleTabChange(value: string | number) {
+  const nextValue = String(value)
+  if (nextValue === 'executions' && store.current) {
+    void showExecutions(store.current.id)
+    return
+  }
+
+  activeTab.value = nextValue === 'executions' ? 'executions' : 'detail'
+}
 
 function toggleExecDetail(execId: string) {
   expandedExecId.value = expandedExecId.value === execId ? null : execId
 }
 
-onMounted(() => store.fetchList())
-
-async function selectWorkflow(wf: WorkflowItem) {
-  await store.fetchDetail(wf.id)
+async function selectWorkflow(workflow: WorkflowItem) {
+  await store.fetchDetail(workflow.id)
   activeTab.value = 'detail'
 }
 
@@ -121,285 +138,419 @@ function requestDelete() {
 
 async function confirmDelete() {
   if (!store.current) return
-  const wf = store.current
+  const workflow = store.current
   showDeleteConfirm.value = false
-  await store.remove(wf.id)
+  await store.remove(workflow.id)
   backToList()
   await store.fetchList()
 }
 
-async function onWorkflowSaved(wf: WorkflowDetail) {
-  await store.fetchDetail(wf.id)
+async function onWorkflowSaved(workflow: WorkflowDetail) {
+  await store.fetchDetail(workflow.id)
   showForm.value = false
 }
 
-const stateBadge = Object.fromEntries(
-  Object.entries(stateConfig).map(([k, v]) => [k, { label: v.label, variant: v.badgeVariant }])
-) as Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' | 'destructive' }>
-
-function formatDuration(start?: string, end?: string): string {
-  if (!start || !end) return '-'
-  const ms = new Date(end).getTime() - new Date(start).getTime()
-  if (ms < 1000) return `${ms}ms`
-  return `${(ms / 1000).toFixed(1)}s`
-}
+onMounted(() => {
+  void store.fetchList()
+})
 </script>
 
 <template>
-  <div class="flex flex-col h-full overflow-hidden">
-    <div class="flex-1 overflow-y-auto">
-      <div class="max-w-[1200px] mx-auto px-md md:px-lg py-lg">
-        <!-- 错误提示（详情页内联错误） -->
-        <div v-if="store.error && store.current" class="mb-sm p-sm rounded-lg bg-destructive/10 text-destructive text-sm">
-          {{ store.error }}
-        </div>
-
-        <!-- 工作流列表 -->
+  <div class="h-full overflow-y-auto">
+    <PageContainer size="wide" class="py-6 sm:py-8">
+      <div class="page-stack">
         <template v-if="!store.current">
-          <div class="flex items-center justify-between mb-md">
-            <h2 class="text-2xl font-semibold text-foreground leading-tight">工作流管理</h2>
-            <Button @click="openCreate">
-              <Plus class="w-4 h-4 mr-1" />
-              新建工作流
-            </Button>
-          </div>
+          <PageHeader
+            eyebrow="工作流"
+            title="工作流目录"
+            description="先判断哪些流程正在可用、哪些已经停用，再进入详情页继续编辑步骤、触发器和执行记录。"
+          >
+            <template #actions>
+              <Button @click="openCreate">
+                <Plus class="size-4" />
+                新建工作流
+              </Button>
+            </template>
 
-          <!-- Skeleton 加载占位符 -->
-          <div v-if="store.loading" class="space-y-sm">
-            <Card v-for="i in 4" :key="i">
-              <CardHeader class="pb-2">
-                <div class="flex items-center gap-sm">
-                  <Skeleton class="h-5 w-1/4" />
-                  <Skeleton class="h-5 w-16 rounded-full" />
-                  <Skeleton class="h-5 w-12" />
-                </div>
-              </CardHeader>
-              <CardContent class="pb-3">
-                <Skeleton class="h-4 w-full mb-2" />
-                <div class="flex gap-xs">
-                  <Skeleton class="h-5 w-16 rounded-full" />
-                  <Skeleton class="h-5 w-16 rounded-full" />
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+            <template #meta>
+              <MetricCard label="全部工作流" :value="store.list.length" hint="当前目录中可继续维护和查看的全部流程。">
+                <template #icon>
+                  <Workflow class="size-5" />
+                </template>
+              </MetricCard>
+              <MetricCard label="已启用" :value="enabledWorkflowCount" hint="当前可以直接触发或进入自动执行的流程。">
+                <template #icon>
+                  <Play class="size-5" />
+                </template>
+              </MetricCard>
+              <MetricCard label="已停用" :value="disabledWorkflowCount" hint="暂时下线或等待重新整理的流程。">
+                <template #icon>
+                  <PauseCircle class="size-5" />
+                </template>
+              </MetricCard>
+              <MetricCard label="触发器类型" :value="triggerTypeCount" hint="目录里当前正在使用的触发方式种类。">
+                <template #icon>
+                  <Sparkles class="size-5" />
+                </template>
+              </MetricCard>
+            </template>
+          </PageHeader>
 
-          <!-- 错误状态 -->
-          <ErrorState
-            v-else-if="store.error"
+          <StatePanel
+            v-if="store.error && !store.loading"
+            title="工作流加载失败"
             :description="store.error"
-            action-label="重试"
-            :show-action="true"
-            @action="store.fetchList()"
-          />
+            tone="danger"
+          >
+            <template #icon>
+              <Workflow class="size-5" />
+            </template>
+            <template #actions>
+              <Button variant="outline" @click="store.fetchList()">
+                重试
+              </Button>
+            </template>
+          </StatePanel>
 
-          <!-- 空状态 -->
-          <EmptyState
-            v-else-if="store.list.length === 0"
-            icon="⚙️"
-            title="暂无工作流"
-            description="通过 YAML 定义你的第一个自动化流程。你可以先从「手动触发 + 工具步骤」的模板开始。"
-            action-label="新建工作流"
-            :show-action="true"
-            @action="openCreate"
-          />
-
-          <!-- 工作流卡片列表 -->
-          <div v-else class="space-y-sm">
-            <Card
-              v-for="wf in store.list"
-              :key="wf.id"
-              class="cursor-pointer hover:-translate-y-0.5 hover:shadow-md hover:border-primary/50 transition-all duration-200 group"
-              @click="selectWorkflow(wf)"
-            >
-              <CardHeader class="pb-2">
-                <div class="flex items-center gap-sm">
-                  <CardTitle class="text-sm leading-snug">{{ wf.name }}</CardTitle>
-                  <Badge :variant="wf.enabled ? 'default' : 'secondary'">
-                    {{ wf.enabled ? '已启用' : '已禁用' }}
-                  </Badge>
-                  <span class="text-xs text-muted-foreground">v{{ wf.version }}</span>
-                </div>
-              </CardHeader>
-              <CardContent class="pb-3">
-                <p class="text-sm text-muted-foreground mb-xs leading-normal">
-                  {{ wf.description || '无描述' }}
-                </p>
-                <div class="flex items-center flex-wrap gap-xs">
-                  <Badge
-                    v-for="trigger in wf.triggerTypes"
-                    :key="trigger"
-                    variant="outline"
-                  >
-                    {{ trigger }}
-                  </Badge>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </template>
-
-        <!-- 工作流详情 -->
-        <template v-else>
-          <div class="flex items-center gap-sm mb-sm">
-            <Button variant="ghost" size="sm" @click="backToList">
-              ← 返回
-            </Button>
-            <h2 class="text-2xl font-semibold text-foreground leading-tight">{{ store.current.name }}</h2>
-            <Badge :variant="store.current.enabled ? 'default' : 'secondary'">
-              {{ store.current.enabled ? '已启用' : '已禁用' }}
-            </Badge>
-          </div>
-
-          <!-- 操作按钮 -->
-          <div class="flex items-center gap-sm mb-md">
-            <Button
-              variant="outline"
-              size="sm"
-              @click="handleToggle(store.current!.id, store.current!.enabled)"
-            >
-              {{ store.current.enabled ? '禁用' : '启用' }}
-            </Button>
-            <Button
-              size="sm"
-              :disabled="!store.current.enabled || triggerLoading"
-              @click="handleTrigger(store.current!.id)"
-            >
-              {{ triggerLoading ? '触发中...' : '手动触发' }}
-            </Button>
-            <div class="flex-1" />
-            <Button variant="outline" size="sm" @click="openEdit">
-              <Edit2 class="w-4 h-4 mr-1" />
-              编辑
-            </Button>
-            <Button variant="outline" size="sm" @click="openDuplicate">
-              <Copy class="w-4 h-4 mr-1" />
-              复制
-            </Button>
-            <Button variant="outline" size="sm" class="border-destructive/30 text-destructive hover:bg-destructive/10" @click="requestDelete">
-              <Trash2 class="w-4 h-4 mr-1" />
-              删除
-            </Button>
-          </div>
-
-          <!-- Tab 切换 -->
-          <Tabs :model-value="activeTab" @update:model-value="(v) => { const val = String(v); if (val === 'executions') showExecutions(store.current!.id); else activeTab = val as 'detail' | 'executions'; }">
-            <TabsList class="mb-md">
-              <TabsTrigger value="detail">详情</TabsTrigger>
-              <TabsTrigger value="executions">执行历史</TabsTrigger>
-            </TabsList>
-
-            <!-- 详情 Tab -->
-            <TabsContent value="detail" class="space-y-sm text-sm">
-              <Card>
-                <CardContent class="pt-md space-y-sm">
-                  <div>
-                    <span class="text-muted-foreground">描述：</span>
-                    <p class="mt-xs leading-normal">{{ store.current.description || '无描述' }}</p>
+          <PageSection
+            v-else
+            eyebrow="目录"
+            title="可用工作流"
+            description="浏览工作流定义和触发器类型，选择要继续处理的流程。"
+          >
+            <div v-if="store.loading" class="grid gap-4 xl:grid-cols-2">
+              <div
+                v-for="index in 4"
+                :key="index"
+                class="rounded-[calc(var(--radius)+6px)] border border-border/70 bg-background/72 p-5"
+              >
+                <div class="space-y-3">
+                  <Skeleton class="h-5 w-40" />
+                  <Skeleton class="h-4 w-full" />
+                  <Skeleton class="h-4 w-2/3" />
+                  <div class="flex gap-2">
+                    <Skeleton class="h-6 w-20 rounded-full" />
+                    <Skeleton class="h-6 w-16 rounded-full" />
                   </div>
-                  <div>
-                    <span class="text-muted-foreground">触发器：</span>
-                    <div class="flex flex-wrap gap-xs mt-xs">
+                </div>
+              </div>
+            </div>
+
+            <StatePanel
+              v-else-if="store.list.length === 0"
+              title="还没有工作流"
+              description="先创建一个工作流，再补充步骤、触发器和执行设置。"
+            >
+              <template #icon>
+                <Workflow class="size-5" />
+              </template>
+              <template #actions>
+                <Button @click="openCreate">
+                  新建工作流
+                </Button>
+              </template>
+            </StatePanel>
+
+            <div v-else class="grid gap-4 xl:grid-cols-2">
+              <article
+                v-for="workflow in store.list"
+                :key="workflow.id"
+                class="list-card cursor-pointer p-5"
+                @click="selectWorkflow(workflow)"
+              >
+                <div class="flex items-start justify-between gap-4">
+                  <div class="space-y-3">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <h3 class="text-base font-semibold text-foreground">
+                        {{ workflow.name }}
+                      </h3>
+                      <Badge :variant="workflow.enabled ? 'default' : 'secondary'">
+                        {{ workflow.enabled ? '已启用' : '已禁用' }}
+                      </Badge>
+                      <Badge variant="outline">
+                        v{{ workflow.version }}
+                      </Badge>
+                    </div>
+                    <p class="text-sm leading-6 text-muted-foreground">
+                      {{ workflow.description || '这个工作流还没有说明。' }}
+                    </p>
+                    <div class="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                      <span class="surface-chip">触发器 {{ workflow.triggerTypes?.length ?? 0 }}</span>
+                      <span class="surface-chip">版本 v{{ workflow.version }}</span>
+                      <span class="surface-chip">{{ workflow.enabled ? '可直接触发' : '需先启用' }}</span>
+                    </div>
+                    <div v-if="workflow.triggerTypes?.length" class="flex flex-wrap gap-2">
                       <Badge
-                        v-for="trigger in store.current.triggerTypes"
-                        :key="trigger"
+                        v-for="trigger in workflow.triggerTypes ?? []"
+                        :key="`${workflow.id}-${trigger}`"
                         variant="outline"
                       >
                         {{ trigger }}
                       </Badge>
                     </div>
                   </div>
-                </CardContent>
-              </Card>
+                </div>
 
-              <Card v-if="store.current.steps.length > 0">
-                <CardHeader class="pb-2">
-                  <CardTitle class="text-sm">步骤（{{ store.current.steps.length }}）</CardTitle>
-                </CardHeader>
-                <CardContent class="space-y-xs">
+                <div class="mt-4 flex items-center justify-between gap-3 border-t border-border/60 pt-4">
+                  <div class="text-xs text-muted-foreground">
+                    从目录进入后，可继续查看步骤定义和执行历史。
+                  </div>
+                  <Button variant="ghost" size="sm">
+                    查看详情
+                  </Button>
+                </div>
+              </article>
+            </div>
+          </PageSection>
+        </template>
+
+        <template v-else>
+          <header class="space-y-5 border-b border-border/70 pb-6">
+            <div class="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+              <div class="space-y-3">
+                <div class="surface-label">工作流</div>
+                <div class="space-y-2">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <h1 class="text-3xl font-semibold tracking-tight text-foreground">
+                      {{ store.current.name }}
+                    </h1>
+                    <Badge :variant="store.current.enabled ? 'default' : 'secondary'">
+                      {{ store.current.enabled ? '已启用' : '已禁用' }}
+                    </Badge>
+                    <Badge variant="outline">
+                      v{{ store.current.version }}
+                    </Badge>
+                  </div>
+                  <p class="max-w-[50rem] text-sm leading-7 text-muted-foreground">
+                    {{ store.current.description || '查看工作流步骤、触发器和执行记录。' }}
+                  </p>
+                </div>
+              </div>
+
+              <div class="flex flex-wrap items-center gap-3">
+                <Button variant="outline" @click="backToList">
+                  <ArrowLeft class="size-4" />
+                  返回列表
+                </Button>
+                <Button variant="outline" @click="handleToggle(store.current.id, store.current.enabled)">
+                  {{ store.current.enabled ? '禁用' : '启用' }}
+                </Button>
+                <Button :disabled="!store.current.enabled || triggerLoading" @click="handleTrigger(store.current.id)">
+                  <Play class="size-4" />
+                  {{ triggerLoading ? '触发中...' : '立即触发' }}
+                </Button>
+                <Button variant="outline" @click="openEdit">
+                  <Edit2 class="size-4" />
+                  编辑
+                </Button>
+                <Button variant="outline" @click="openDuplicate">
+                  <Copy class="size-4" />
+                  复制
+                </Button>
+                <Button variant="destructive" @click="requestDelete">
+                  <Trash2 class="size-4" />
+                  删除
+                </Button>
+              </div>
+            </div>
+
+            <section class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <MetricCard label="版本" :value="`v${store.current.version}`" hint="当前正在查看的工作流版本。">
+                <template #icon>
+                  <Copy class="size-5" />
+                </template>
+              </MetricCard>
+              <MetricCard label="步骤" :value="stepCount" hint="当前定义里已经编排好的步骤数量。">
+                <template #icon>
+                  <Workflow class="size-5" />
+                </template>
+              </MetricCard>
+              <MetricCard label="触发器" :value="currentTriggerTypes.length" hint="这条流程现在可接收的触发方式。">
+                <template #icon>
+                  <Sparkles class="size-5" />
+                </template>
+                <div v-if="currentTriggerTypes.length > 0" class="flex flex-wrap gap-2">
+                  <span
+                    v-for="trigger in currentTriggerTypes.slice(0, 3)"
+                    :key="`${store.current.id}-metric-${trigger}`"
+                    class="surface-chip"
+                  >
+                    {{ trigger }}
+                  </span>
+                </div>
+              </MetricCard>
+              <MetricCard label="已加载记录" :value="store.executions.length" hint="当前页已经拉取到的执行历史数量。">
+                <template #icon>
+                  <Play class="size-5" />
+                </template>
+              </MetricCard>
+            </section>
+          </header>
+
+          <StatePanel
+            v-if="store.error && store.current"
+            title="工作流数据存在警告"
+            :description="store.error"
+            tone="warning"
+          >
+            <template #icon>
+              <Workflow class="size-5" />
+            </template>
+          </StatePanel>
+
+          <Tabs :model-value="activeTab" @update:model-value="handleTabChange">
+            <TabsList>
+              <TabsTrigger value="detail">
+                详情
+              </TabsTrigger>
+              <TabsTrigger value="executions">
+                执行记录
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="detail" class="mt-5 space-y-5">
+              <PageSection
+                eyebrow="信息"
+                title="定义摘要"
+                description="先看说明、标识信息和触发器，再进入步骤细节。"
+              >
+                <div class="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(280px,0.85fr)]">
+                  <div class="detail-card p-4">
+                    <div class="surface-label mb-2 text-[0.68rem]">说明</div>
+                    <p class="text-sm leading-7 text-foreground">
+                      {{ store.current.description || '这个工作流还没有说明。' }}
+                    </p>
+                  </div>
+
+                  <div class="grid gap-3">
+                    <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/58 px-4 py-3">
+                      <div class="mb-1 text-sm font-medium text-foreground">工作流 ID</div>
+                      <p class="break-all font-mono text-sm text-muted-foreground">{{ store.current.id }}</p>
+                    </div>
+                    <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/58 px-4 py-3">
+                      <div class="mb-1 text-sm font-medium text-foreground">状态</div>
+                      <p class="text-sm text-muted-foreground">{{ store.current.enabled ? '已启用' : '已禁用' }}</p>
+                    </div>
+                    <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/58 px-4 py-3">
+                      <div class="mb-1 text-sm font-medium text-foreground">触发器</div>
+                      <div class="flex flex-wrap gap-2">
+                        <Badge
+                          v-for="trigger in currentTriggerTypes"
+                          :key="`${store.current.id}-${trigger}`"
+                          variant="outline"
+                        >
+                          {{ trigger }}
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </PageSection>
+
+              <PageSection
+                eyebrow="步骤"
+                :title="`工作流步骤（${currentSteps.length}）`"
+                description="逐步查看工作流里的每个节点和配置。"
+              >
+                <StatePanel
+                  v-if="currentSteps.length === 0"
+                  title="还没有定义步骤"
+                  description="当前工作流详情中还没有可执行步骤。"
+                >
+                  <template #icon>
+                    <Sparkles class="size-5" />
+                  </template>
+                </StatePanel>
+
+                <div v-else class="space-y-3">
                   <StepDetailCard
-                    v-for="(step, i) in store.current.steps"
-                    :key="(step as any).id || i"
+                    v-for="(step, index) in currentSteps"
+                    :key="(step as any).id || index"
                     :step="step"
-                    :index="i"
+                    :index="index"
                   />
-                </CardContent>
-              </Card>
+                </div>
+              </PageSection>
             </TabsContent>
 
-            <!-- 执行历史 Tab -->
-            <TabsContent value="executions" class="space-y-sm">
-              <EmptyState
-                v-if="store.executions.length === 0"
-                icon="📋"
-                title="暂无执行记录"
-                description="手动触发或等待定时触发后，执行记录将在此展示。"
-              />
-              <template v-else>
-                <Card
-                  v-for="exec in pagedExecutions"
-                  :key="exec.id"
-                  class="hover:-translate-y-0.5 hover:shadow-md hover:border-primary/50 transition-all duration-200"
+            <TabsContent value="executions" class="mt-5 space-y-5">
+              <PageSection
+                eyebrow="历史记录"
+                title="执行历史"
+                description="查看最近执行记录，按需展开某次执行的详细信息。"
+              >
+                <StatePanel
+                  v-if="store.executions.length === 0"
+                  title="暂无执行历史"
+                  description="可以手动触发工作流，或等待已配置的触发器自动运行。"
                 >
-                  <!-- 执行记录摘要行（可点击展开） -->
-                  <div
-                    class="flex items-start justify-between p-md cursor-pointer"
-                    @click="toggleExecDetail(exec.id)"
+                  <template #icon>
+                    <Play class="size-5" />
+                  </template>
+                </StatePanel>
+
+                <div v-else class="space-y-4">
+                  <article
+                    v-for="execution in pagedExecutions"
+                    :key="execution.id"
+                    class="overflow-hidden rounded-[calc(var(--radius)+6px)] border border-border/70 bg-background/72"
                   >
-                    <div class="flex items-center gap-sm flex-1">
-                      <component
-                        :is="expandedExecId === exec.id ? ChevronDown : ChevronRight"
-                        class="w-4 h-4 text-muted-foreground flex-shrink-0"
+                    <button
+                      type="button"
+                      class="flex w-full items-start justify-between gap-4 p-5 text-left"
+                      @click="toggleExecDetail(execution.id)"
+                    >
+                      <div class="flex min-w-0 items-start gap-3">
+                        <component
+                          :is="expandedExecId === execution.id ? ChevronDown : ChevronRight"
+                          class="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                        />
+                        <div class="space-y-2">
+                          <div class="flex flex-wrap items-center gap-2">
+                            <Badge :variant="stateBadge[execution.state]?.variant ?? 'secondary'">
+                              {{ stateBadge[execution.state]?.label ?? execution.state }}
+                            </Badge>
+                            <Badge v-if="execution.state === 'PAUSED'" variant="outline">
+                              等待审批
+                            </Badge>
+                          </div>
+                          <div class="text-sm text-muted-foreground">
+                            步骤 {{ execution.completedStepIds?.length ?? 0 }} / {{ currentSteps.length }}
+                          </div>
+                        </div>
+                      </div>
+                      <div class="space-y-1 text-right text-xs text-muted-foreground">
+                        <div>{{ new Date(execution.createdAt).toLocaleString() }}</div>
+                        <div v-if="execution.startedAt && execution.completedAt">
+                          {{ formatDuration(execution.startedAt, execution.completedAt) }}
+                        </div>
+                      </div>
+                    </button>
+
+                    <div v-if="expandedExecId === execution.id" class="border-t border-border/60 p-5 pt-4">
+                      <ExecutionDetail
+                        :execution="execution"
+                        :total-steps="currentSteps.length"
+                        :steps="store.current?.steps"
                       />
-                      <Badge
-                        :variant="stateBadge[exec.state]?.variant ?? 'secondary'"
-                      >
-                        {{ stateBadge[exec.state]?.label ?? exec.state }}
-                      </Badge>
-                      <Badge v-if="exec.state === 'PAUSED'" variant="outline" class="border-amber-400 text-amber-700 text-xs">
-                        审批中
-                      </Badge>
-                      <span class="text-sm text-muted-foreground">
-                        步骤: {{ (exec.completedStepIds?.length ?? 0) }} / {{ store.current?.steps.length || '?' }}
-                      </span>
-                      <span
-                        v-if="exec.startedAt && exec.completedAt"
-                        class="text-xs text-muted-foreground"
-                      >
-                        耗时: {{ formatDuration(exec.startedAt, exec.completedAt) }}
-                      </span>
                     </div>
-                    <span class="text-xs text-muted-foreground shrink-0">
-                      {{ new Date(exec.createdAt).toLocaleString() }}
-                    </span>
-                  </div>
+                  </article>
 
-                  <!-- 展开的执行详情 -->
-                  <div v-if="expandedExecId === exec.id" class="px-md pb-md">
-                    <ExecutionDetail
-                      :execution="exec"
-                      :total-steps="store.current?.steps.length ?? 0"
-                      :steps="store.current?.steps"
-                    />
-                  </div>
-                </Card>
-
-                <!-- 分页 -->
-                <Pagination
-                  v-if="showExecPagination"
-                  :page="execPage"
-                  :page-count="execPageCount"
-                  size="sm"
-                  @change="execPage = $event"
-                />
-              </template>
+                  <Pagination
+                    v-if="showExecPagination"
+                    :page="execPage"
+                    :page-count="execPageCount"
+                    size="sm"
+                    @change="execPage = $event"
+                  />
+                </div>
+              </PageSection>
             </TabsContent>
           </Tabs>
         </template>
       </div>
-    </div>
+    </PageContainer>
 
-    <!-- 工作流表单 -->
     <WorkflowForm
       v-if="showForm"
       :workflow="selectedWorkflow"
@@ -408,12 +559,11 @@ function formatDuration(start?: string, end?: string): string {
       @saved="onWorkflowSaved"
     />
 
-    <!-- 删除确认对话框 -->
     <ConfirmDialog
       v-if="showDeleteConfirm"
       :show="showDeleteConfirm"
       title="删除工作流"
-      :message="`确认删除工作流「${store.current?.name}」？此操作不可撤销。`"
+      :message="`确定删除工作流 ${store.current?.name} 吗？此操作不可恢复。`"
       confirm-label="删除"
       confirm-variant="destructive"
       @confirm="confirmDelete"

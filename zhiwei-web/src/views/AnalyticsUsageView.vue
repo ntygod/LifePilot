@@ -1,93 +1,168 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue'
-import { analyticsApi, traceApi } from '@/api/client'
-import type { UsageStats, ErrorTrendDaily } from '@/types'
-import { Calendar, TrendingUp, DollarSign, Zap, AlertTriangle } from 'lucide-vue-next'
-import EmptyState from '@/components/common/EmptyState.vue'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { DatePicker } from '@/components/ui/date-picker'
+import { computed, onMounted, ref, watch } from 'vue'
+import { AlertTriangle, Calendar, TrendingUp } from 'lucide-vue-next'
 import VChart from 'vue-echarts'
+import { analyticsApi, traceApi } from '@/api/client'
+import type { ErrorTrendDaily, UsageStats } from '@/types'
+import '@/plugins/echarts'
+import MetricCard from '@/components/common/MetricCard.vue'
+import StatePanel from '@/components/common/StatePanel.vue'
+import PageContainer from '@/components/layout/PageContainer.vue'
+import PageHeader from '@/components/layout/PageHeader.vue'
+import PageSection from '@/components/layout/PageSection.vue'
+import { Button } from '@/components/ui/button'
+import { DatePicker } from '@/components/ui/date-picker'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 const loading = ref(false)
 const stats = ref<UsageStats | null>(null)
 const error = ref<string | null>(null)
 
-// 错误趋势状态
 const errorTrend = ref<ErrorTrendDaily[]>([])
 const errorTrendLoading = ref(false)
 const selectedDate = ref<string | null>(null)
 const errorDetails = ref<Array<{ time: string; type: string; summary: string }>>([])
 
-// 时间范围选项
 const timeRangeOptions = [
   { label: '最近 7 天', value: '7d' },
   { label: '最近 30 天', value: '30d' },
-  { label: '自定义', value: 'custom' }
+  { label: '自定义', value: 'custom' },
 ]
 
 const selectedRange = ref<'7d' | '30d' | 'custom'>('7d')
 const customFrom = ref('')
 const customTo = ref('')
 
-// 时间范围变更时自动刷新数据
-watch(selectedRange, () => {
-  selectedDate.value = null
-  errorDetails.value = []
-  loadStats()
-  loadErrorTrend()
+const dailyStats = computed(() => stats.value?.dailyStats ?? [])
+const hasUsageContent = computed(() =>
+  Boolean(stats.value) && (
+    (stats.value?.totalRequests ?? 0) > 0
+    || (stats.value?.totalTokens ?? 0) > 0
+    || dailyStats.value.length > 0
+    || errorTrend.value.length > 0
+  ),
+)
+const errorDays = computed(() => errorTrend.value.filter(item => item.totalErrors > 0).length)
+const peakUsageDay = computed(() => {
+  if (dailyStats.value.length === 0) return null
+  return [...dailyStats.value].sort((left, right) => right.tokens - left.tokens)[0]
 })
+const showInitialLoading = computed(() => (
+  loading.value
+  && !stats.value
+  && dailyStats.value.length === 0
+  && errorTrend.value.length === 0
+))
 
-watch([customFrom, customTo], () => {
-  if (selectedRange.value === 'custom') {
-    loadStats()
-    loadErrorTrend()
-  }
-})
-
-// 计算时间范围
 const timeRange = computed(() => {
   const now = new Date()
   const to = now.toISOString().split('T')[0]
-  
+
   if (selectedRange.value === '7d') {
     const from = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
     return {
       from: from.toISOString().split('T')[0],
-      to
+      to,
     }
-  } else if (selectedRange.value === '30d') {
+  }
+
+  if (selectedRange.value === '30d') {
     const from = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
     return {
       from: from.toISOString().split('T')[0],
-      to
-    }
-  } else {
-    return {
-      from: customFrom.value || new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      to: customTo.value || to
+      to,
     }
   }
+
+  return {
+    from: customFrom.value || new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    to: customTo.value || to,
+  }
 })
+
+const currentRangeLabel = computed(() => (
+  selectedRange.value === 'custom'
+    ? '自定义区间'
+    : timeRangeOptions.find(item => item.value === selectedRange.value)?.label ?? '最近 7 天'
+))
+const rangeSummary = computed(() => `${timeRange.value.from} 至 ${timeRange.value.to}`)
+
+const summaryItems = computed(() => [
+  {
+    key: 'requests',
+    label: '请求总量',
+    value: formatNumber(stats.value?.totalRequests),
+    note: '当前时间范围内的累计请求次数',
+  },
+  {
+    key: 'tokens',
+    label: '词元总量',
+    value: formatNumber(stats.value?.totalTokens),
+    note: '输入与输出词元合计',
+  },
+  {
+    key: 'input',
+    label: '输入词元',
+    value: formatNumber(stats.value?.inputTokens),
+    note: '用户消息与上下文消耗',
+  },
+  {
+    key: 'output',
+    label: '输出词元',
+    value: formatNumber(stats.value?.outputTokens),
+    note: '模型返回内容消耗',
+  },
+])
+const digestItems = computed(() => [
+  {
+    label: '当前范围',
+    value: rangeSummary.value,
+    note: hasUsageContent.value ? '该窗口内已有请求记录。' : '该窗口内暂时没有可用用量数据。',
+  },
+  {
+    label: '请求与错误',
+    value: `${formatNumber(stats.value?.totalRequests)} 次请求 / ${errorDays.value} 天有错误`,
+    note: errorTrend.value.length > 0 ? '可继续查看错误集中出现的日期。' : '当前还没有错误趋势数据。',
+  },
+  {
+    label: '词元结构',
+    value: `输入 ${formatNumber(stats.value?.inputTokens)} / 输出 ${formatNumber(stats.value?.outputTokens)}`,
+    note: '用这个比例大致判断当前请求更偏输入还是输出。',
+  },
+])
+const errorOverviewItems = computed(() => [
+  {
+    label: '有错天数',
+    value: String(errorDays.value),
+    hint: '至少出现过一次错误的日期数量。',
+  },
+  {
+    label: '趋势点数',
+    value: String(errorTrend.value.length),
+    hint: '当前时间范围内记录到的错误日期数量。',
+  },
+  {
+    label: '选中日期',
+    value: selectedDate.value || '未选择',
+    hint: '点选图上的日期后，可查看当天详情。',
+  },
+])
 
 async function loadStats() {
   loading.value = true
   error.value = null
-  
+
   try {
-    // 优先使用 analytics API，如果不存在则使用 traces API
     try {
       const range = timeRange.value
       stats.value = await analyticsApi.getUsageStats({
-        from: range.from + 'T00:00:00Z',
-        to: range.to + 'T23:59:59Z'
+        from: `${range.from}T00:00:00Z`,
+        to: `${range.to}T23:59:59Z`,
       })
-    } catch (e: any) {
-      // 如果 analytics API 不存在，使用 traces API 的统计接口
-      if (e.status === 404 || e.message?.includes('404')) {
-        const window = selectedRange.value === '7d' ? '7d' : selectedRange.value === '30d' ? '30d' : '7d'
+    } catch (requestError: any) {
+      if (requestError.status === 404 || requestError.message?.includes('404')) {
+        const window = selectedRange.value === '30d' ? '30d' : '7d'
         const overview = await traceApi.getOverviewStats(window as '24h' | '7d' | '30d')
-        
-        // 转换 traces API 数据格式为 UsageStats
         stats.value = {
           totalRequests: overview.totalTraces || 0,
           totalTokens: overview.totalTokens || 0,
@@ -96,104 +171,98 @@ async function loadStats() {
           estimatedCost: undefined,
           timeRange: {
             from: timeRange.value.from,
-            to: timeRange.value.to
+            to: timeRange.value.to,
           },
-          dailyStats: []
+          dailyStats: [],
         }
       } else {
-        throw e
+        throw requestError
       }
     }
-  } catch (e: any) {
-    error.value = e.message || '加载统计数据失败'
-    console.error('Failed to load usage stats:', e)
+  } catch (requestError: any) {
+    error.value = requestError?.message || '加载用量统计失败。'
+    console.error('加载用量统计失败:', requestError)
+    stats.value = null
   } finally {
     loading.value = false
   }
 }
 
-onMounted(() => {
-  loadStats()
-  loadErrorTrend()
-})
-
-// 格式化数字
-function formatNumber(num: number | undefined | null): string {
-  // 处理 undefined、null 或非数字类型
-  if (num === undefined || num === null) {
-    return '0'
-  }
-  
-  // 确保是数字类型
-  const numValue = typeof num === 'number' ? num : Number(num)
-  
-  // 检查是否为有效数字
-  if (isNaN(numValue) || !isFinite(numValue)) {
-    return '0'
-  }
-  
-  // 确保是正数（处理负数情况）
-  const absValue = Math.abs(numValue)
-  
-  if (absValue >= 1000000) {
-    return (absValue / 1000000).toFixed(2) + 'M'
-  } else if (absValue >= 1000) {
-    return (absValue / 1000).toFixed(2) + 'K'
-  }
-  return Math.floor(absValue).toString()
-}
-
-// 计算柱状图柱子高度（按最大值等比缩放）
-function getBarHeight(tokens: number): string {
-  if (!stats.value?.dailyStats || stats.value.dailyStats.length === 0) return '0%'
-  const max = Math.max(...stats.value.dailyStats.map(d => d.tokens))
-  if (max === 0) return '0%'
-  return Math.max((tokens / max) * 100, 2) + '%'
-}
-
-// 加载错误趋势数据
 async function loadErrorTrend() {
   errorTrendLoading.value = true
   try {
     const range = timeRange.value
     errorTrend.value = await analyticsApi.getErrorTrend({
-      from: range.from + 'T00:00:00Z',
-      to: range.to + 'T23:59:59Z',
+      from: `${range.from}T00:00:00Z`,
+      to: `${range.to}T23:59:59Z`,
     })
-  } catch (e: any) {
-    console.error('加载错误趋势失败:', e)
+  } catch (requestError) {
+    console.error('加载错误趋势失败:', requestError)
     errorTrend.value = []
   } finally {
     errorTrendLoading.value = false
   }
 }
 
-// 异常标记判定：当天 totalErrors > 前 7 天平均值 × 2
-function computeAnomalyIndices(data: ErrorTrendDaily[]): number[] {
+async function refreshAll() {
+  selectedDate.value = null
+  errorDetails.value = []
+  await Promise.all([
+    loadStats(),
+    loadErrorTrend(),
+  ])
+}
+
+function formatNumber(value: number | undefined | null) {
+  if (value === undefined || value === null) return '0'
+
+  const numericValue = typeof value === 'number' ? value : Number(value)
+  if (Number.isNaN(numericValue) || !Number.isFinite(numericValue)) return '0'
+
+  const absoluteValue = Math.abs(numericValue)
+  if (absoluteValue >= 1000000) return `${(absoluteValue / 1000000).toFixed(2)}M`
+  if (absoluteValue >= 1000) return `${(absoluteValue / 1000).toFixed(2)}K`
+  return Math.floor(absoluteValue).toString()
+}
+
+function formatCost(cost?: number) {
+  if (cost === undefined || cost === null) return '暂无'
+  if (cost < 0.01) return '< $0.01'
+  return `$${cost.toFixed(2)}`
+}
+
+function getBarHeight(tokens: number) {
+  if (dailyStats.value.length === 0) return '0%'
+  const max = Math.max(...dailyStats.value.map(item => item.tokens))
+  if (max === 0) return '0%'
+  return `${Math.max((tokens / max) * 100, 2)}%`
+}
+
+function computeAnomalyIndices(data: ErrorTrendDaily[]) {
   const indices: number[] = []
-  for (let i = 0; i < data.length; i++) {
-    // 取前 7 天（不含当天）的平均值
-    const start = Math.max(0, i - 7)
-    const prevDays = data.slice(start, i)
-    if (prevDays.length === 0) continue
-    const avg = prevDays.reduce((sum, d) => sum + d.totalErrors, 0) / prevDays.length
-    if (avg > 0 && data[i].totalErrors > avg * 2) {
-      indices.push(i)
+
+  for (let index = 0; index < data.length; index += 1) {
+    const start = Math.max(0, index - 7)
+    const previousDays = data.slice(start, index)
+    if (previousDays.length === 0) continue
+
+    const average = previousDays.reduce((sum, item) => sum + item.totalErrors, 0) / previousDays.length
+    if (average > 0 && data[index].totalErrors > average * 2) {
+      indices.push(index)
     }
   }
+
   return indices
 }
 
-// 错误趋势 ECharts 配置
 const errorTrendChartOption = computed(() => {
   const data = errorTrend.value
   if (data.length === 0) return {}
 
   const anomalyIndices = computeAnomalyIndices(data)
-  // 构建 markPoint 数据：在异常日期渲染红色标记
-  const markPointData = anomalyIndices.map(idx => ({
-    coord: [idx, data[idx].totalErrors],
-    value: data[idx].totalErrors,
+  const markPointData = anomalyIndices.map(index => ({
+    coord: [index, data[index].totalErrors],
+    value: data[index].totalErrors,
     itemStyle: { color: '#ef4444' },
     symbol: 'circle',
     symbolSize: 12,
@@ -206,16 +275,16 @@ const errorTrendChartOption = computed(() => {
         if (!Array.isArray(params) || params.length === 0) return ''
         const dateLabel = data[params[0].dataIndex]?.date ?? ''
         let html = `<div style="font-weight:600;margin-bottom:4px">${dateLabel}</div>`
-        for (const p of params) {
-          html += `<div>${p.marker} ${p.seriesName}: <b>${p.value}</b></div>`
+        for (const item of params) {
+          html += `<div>${item.marker} ${item.seriesName}: <b>${item.value}</b></div>`
         }
         const total = data[params[0].dataIndex]?.totalErrors ?? 0
-        html += `<div style="margin-top:4px;color:#888">总计: ${total}</div>`
+        html += `<div style="margin-top:4px;color:#888">总计：${total}</div>`
         return html
       },
     },
     legend: {
-      data: ['Agent 错误', 'Tool 错误'],
+      data: ['智能体错误', '工具错误'],
       bottom: 0,
     },
     grid: {
@@ -226,7 +295,7 @@ const errorTrendChartOption = computed(() => {
     },
     xAxis: {
       type: 'category' as const,
-      data: data.map(d => d.date.slice(5)), // MM-DD
+      data: data.map(item => item.date.slice(5)),
       axisLabel: { fontSize: 11 },
     },
     yAxis: {
@@ -235,20 +304,19 @@ const errorTrendChartOption = computed(() => {
     },
     series: [
       {
-        name: 'Agent 错误',
+        name: '智能体错误',
         type: 'line' as const,
-        data: data.map(d => d.agentErrors),
+        data: data.map(item => item.agentErrors),
         smooth: true,
         itemStyle: { color: '#3b82f6' },
         lineStyle: { color: '#3b82f6' },
         areaStyle: { color: 'rgba(59, 130, 246, 0.08)' },
-        // 在 Agent 错误线上标注异常点
         markPoint: markPointData.length > 0
           ? {
               data: markPointData,
               label: {
                 show: true,
-                formatter: '⚠',
+                formatter: '!',
                 fontSize: 10,
                 position: 'top' as const,
               },
@@ -256,299 +324,369 @@ const errorTrendChartOption = computed(() => {
           : undefined,
       },
       {
-        name: 'Tool 错误',
+        name: '工具错误',
         type: 'line' as const,
-        data: data.map(d => d.toolErrors),
+        data: data.map(item => item.toolErrors),
         smooth: true,
-        itemStyle: { color: '#8b5cf6' },
-        lineStyle: { color: '#8b5cf6' },
-        areaStyle: { color: 'rgba(139, 92, 246, 0.08)' },
+        itemStyle: { color: '#f97316' },
+        lineStyle: { color: '#f97316' },
+        areaStyle: { color: 'rgba(249, 115, 22, 0.08)' },
       },
     ],
   }
 })
 
-// 点击折线图数据点，展示该天错误详情
 function onErrorChartClick(params: any) {
   if (!params || params.dataIndex === undefined) return
-  const idx = params.dataIndex
-  const day = errorTrend.value[idx]
+
+  const day = errorTrend.value[params.dataIndex]
   if (!day) return
 
   selectedDate.value = day.date
 
-  // 生成 mock 错误详情（后端详情 API 为可选，此处使用模拟数据）
   const details: Array<{ time: string; type: string; summary: string }> = []
-  for (let i = 0; i < day.agentErrors; i++) {
+
+  for (let index = 0; index < day.agentErrors; index += 1) {
     const hour = String(8 + Math.floor(Math.random() * 12)).padStart(2, '0')
-    const min = String(Math.floor(Math.random() * 60)).padStart(2, '0')
-    const sec = String(Math.floor(Math.random() * 60)).padStart(2, '0')
+    const minute = String(Math.floor(Math.random() * 60)).padStart(2, '0')
+    const second = String(Math.floor(Math.random() * 60)).padStart(2, '0')
     details.push({
-      time: `${hour}:${min}:${sec}`,
-      type: 'Agent 错误',
-      summary: ['Budget 超限', 'LLM 响应超时', '状态转换异常', '上下文组装失败'][i % 4],
+      time: `${hour}:${minute}:${second}`,
+      type: '智能体错误',
+      summary: ['超出预算限制', '模型响应超时', '状态流转失败', '上下文组装失败'][index % 4],
     })
   }
-  for (let i = 0; i < day.toolErrors; i++) {
+
+  for (let index = 0; index < day.toolErrors; index += 1) {
     const hour = String(8 + Math.floor(Math.random() * 12)).padStart(2, '0')
-    const min = String(Math.floor(Math.random() * 60)).padStart(2, '0')
-    const sec = String(Math.floor(Math.random() * 60)).padStart(2, '0')
+    const minute = String(Math.floor(Math.random() * 60)).padStart(2, '0')
+    const second = String(Math.floor(Math.random() * 60)).padStart(2, '0')
     details.push({
-      time: `${hour}:${min}:${sec}`,
-      type: 'Tool 错误',
-      summary: ['MCP 连接超时', '工具执行失败', '参数校验错误', '权限不足'][i % 4],
+      time: `${hour}:${minute}:${second}`,
+      type: '工具错误',
+      summary: ['MCP 连接超时', '工具执行失败', '参数校验失败', '权限不足'][index % 4],
     })
   }
-  // 按时间排序
-  errorDetails.value = details.sort((a, b) => a.time.localeCompare(b.time))
+
+  errorDetails.value = details.sort((left, right) => left.time.localeCompare(right.time))
 }
 
-// 格式化费用
-function formatCost(cost?: number): string {
-  if (cost === undefined || cost === null) return 'N/A'
-  if (cost < 0.01) return '< $0.01'
-  return '$' + cost.toFixed(2)
-}
+watch(selectedRange, () => {
+  void refreshAll()
+})
+
+watch([customFrom, customTo], () => {
+  if (selectedRange.value === 'custom') {
+    void refreshAll()
+  }
+})
+
+onMounted(() => {
+  void refreshAll()
+})
 </script>
 
 <template>
-  <div class="flex flex-col h-full overflow-hidden bg-background">
-    <!-- 顶部标题和筛选 -->
-    <div class="flex-shrink-0 border-b border-border">
-      <div class="max-w-[1200px] mx-auto px-md md:px-lg py-md flex items-center justify-between gap-md">
-        <div>
-          <h1 class="text-2xl font-semibold text-foreground leading-tight">用量总览</h1>
-          <p class="mt-1 text-sm text-muted-foreground">
-            查看请求次数、Token 用量趋势和费用预估
-          </p>
-        </div>
+  <div class="h-full overflow-y-auto">
+    <PageContainer size="wide" class="py-6 sm:py-8">
+      <div class="page-stack">
+        <PageHeader
+          eyebrow="用量分析"
+          title="用量概览"
+          description="查看请求量、词元消耗、成本估算和错误趋势。"
+        >
+          <template #actions>
+            <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/55 px-4 py-4 text-sm">
+              <div class="surface-label mb-2 text-[0.68rem]">统计窗口</div>
+              <div class="font-medium text-foreground">{{ rangeSummary }}</div>
+              <p class="mt-1 max-w-[18rem] leading-6 text-muted-foreground">
+                当前按 {{ currentRangeLabel }} 汇总，口径与系统统计保持一致。
+              </p>
+            </div>
+          </template>
+          <template #meta>
+            <MetricCard
+              v-for="item in summaryItems"
+              :key="item.key"
+              :label="item.label"
+              :value="item.value"
+              :hint="item.note"
+              class="h-full"
+            >
+              <span class="surface-chip">{{ rangeSummary }}</span>
+            </MetricCard>
+          </template>
+        </PageHeader>
 
-        <div class="flex items-center gap-md">
-          <!-- 时间范围选择 -->
-          <div class="flex items-center gap-xs">
-            <Calendar :size="18" class="text-muted-foreground" />
-            <Select v-model="selectedRange">
-              <SelectTrigger size="sm" class="w-[130px]">
-                <SelectValue placeholder="选择时间范围" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem v-for="opt in timeRangeOptions" :key="opt.value" :value="opt.value">
-                  {{ opt.label }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+        <section class="detail-card p-5">
+          <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div class="flex flex-wrap items-center gap-3">
+              <span class="text-sm font-medium text-foreground">时间范围</span>
+              <Select v-model="selectedRange">
+                <SelectTrigger class="w-[160px] bg-background">
+                  <SelectValue placeholder="选择时间范围" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="option in timeRangeOptions" :key="option.value" :value="option.value">
+                    {{ option.label }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
 
-          <!-- 自定义日期范围 -->
-          <div v-if="selectedRange === 'custom'" class="flex items-center gap-xs">
-            <DatePicker v-model="customFrom" placeholder="开始日期" class="w-[150px]" />
-            <span class="text-muted-foreground text-sm">至</span>
-            <DatePicker v-model="customTo" placeholder="结束日期" class="w-[150px]" />
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 内容区域 -->
-    <div class="flex-1 overflow-y-auto">
-      <div class="max-w-[1200px] mx-auto px-md md:px-lg py-lg">
-        <!-- 加载状态 -->
-        <div v-if="loading" class="flex items-center justify-center py-lg">
-          <div class="text-sm text-muted-foreground">加载中...</div>
-        </div>
-
-        <!-- 错误状态 -->
-        <div v-else-if="error" class="py-lg">
-          <EmptyState
-            title="加载失败"
-            :description="error"
-            action-label="重试"
-            :show-action="true"
-            @action="loadStats"
-          />
-        </div>
-
-        <!-- 统计数据 -->
-        <div v-else-if="stats" class="space-y-md">
-          <!-- 统计卡片 -->
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-md">
-            <div class="stat-block p-md">
-              <div class="flex items-center justify-between mb-xs">
-                <span class="text-sm text-muted-foreground">总请求数</span>
-                <Zap :size="18" class="text-muted-foreground" />
-              </div>
-              <div class="text-2xl font-semibold text-foreground">
-                {{ formatNumber(stats.totalRequests) }}
+              <div v-if="selectedRange === 'custom'" class="flex flex-wrap items-center gap-2">
+                <DatePicker v-model="customFrom" placeholder="开始日期" class="w-[160px]" />
+                <DatePicker v-model="customTo" placeholder="结束日期" class="w-[160px]" />
               </div>
             </div>
 
-            <div class="stat-block p-md">
-              <div class="flex items-center justify-between mb-xs">
-                <span class="text-sm text-muted-foreground">总 Token 数</span>
-                <TrendingUp :size="18" class="text-muted-foreground" />
-              </div>
-              <div class="text-2xl font-semibold text-foreground">
-                {{ formatNumber(stats.totalTokens) }}
-              </div>
-              <div class="mt-xs text-xs text-muted-foreground">
-                输入: {{ formatNumber(stats.inputTokens) }} /
-                输出: {{ formatNumber(stats.outputTokens) }}
-              </div>
-            </div>
-
-            <div class="stat-block p-md">
-              <div class="flex items-center justify-between mb-xs">
-                <span class="text-sm text-muted-foreground">输入 Token</span>
-              </div>
-              <div class="text-2xl font-semibold text-foreground">
-                {{ formatNumber(stats.inputTokens) }}
-              </div>
-            </div>
-
-            <div class="stat-block p-md">
-              <div class="flex items-center justify-between mb-xs">
-                <span class="text-sm text-muted-foreground">输出 Token</span>
-              </div>
-              <div class="text-2xl font-semibold text-foreground">
-                {{ formatNumber(stats.outputTokens) }}
-              </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="surface-chip surface-chip-strong">{{ currentRangeLabel }}</span>
+              <span class="surface-chip">自动同步错误趋势</span>
             </div>
           </div>
+        </section>
 
-          <!-- 费用预估 -->
-          <div v-if="stats.estimatedCost !== undefined" class="detail-card p-md">
-            <div class="flex items-center gap-xs mb-sm">
-              <DollarSign :size="18" class="text-muted-foreground" />
-              <h2 class="section-title leading-snug">费用预估</h2>
-            </div>
-            <div class="text-3xl font-semibold text-foreground">
-              {{ formatCost(stats.estimatedCost) }}
-            </div>
-            <p class="mt-xs text-sm text-muted-foreground">
-              基于当前 Token 用量和模型定价估算
-            </p>
-          </div>
+        <StatePanel
+          v-if="showInitialLoading"
+          title="正在汇总用量数据"
+          description="正在加载当前时间范围内的请求量、词元数据和错误趋势。"
+        >
+          <template #icon>
+            <TrendingUp class="size-5" />
+          </template>
+        </StatePanel>
 
-          <!-- 每日趋势（如果有数据） -->
-          <div v-if="stats.dailyStats && stats.dailyStats.length > 0" class="detail-card p-md">
-            <h2 class="section-title mb-sm">每日趋势</h2>
-            <!-- 柱状图 -->
-            <div class="flex items-end gap-1 h-40 mb-md">
-              <div
-                v-for="day in stats.dailyStats"
-                :key="'chart-' + day.date"
-                class="flex-1 flex flex-col items-center gap-1"
-              >
-                <div
-                  class="w-full bg-primary/80 rounded-t transition-all hover:bg-primary min-w-0"
-                  :style="{ height: getBarHeight(day.tokens) }"
-                  :title="`${day.date}: ${formatNumber(day.tokens)} Tokens · ${formatNumber(day.requests)} 次请求`"
-                ></div>
-                <span class="text-[10px] text-muted-foreground truncate w-full text-center">
-                  {{ day.date.slice(5) }}
-                </span>
-              </div>
-            </div>
-            <div class="space-y-xs">
-              <div
-                v-for="day in stats.dailyStats"
-                :key="day.date"
-                class="flex items-center justify-between p-sm rounded-lg bg-muted/50"
-              >
-                <div>
-                  <div class="text-sm font-medium text-foreground">{{ day.date }}</div>
-                  <div class="text-xs text-muted-foreground mt-0.5">
-                    {{ formatNumber(day.requests) }} 次请求 · {{ formatNumber(day.tokens) }} Tokens
-                  </div>
-                </div>
-                <div class="text-right">
-                  <div class="text-sm font-medium text-foreground">
-                    {{ formatCost(day.cost) }}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+        <StatePanel
+          v-if="error"
+          title="统计数据暂时不可用"
+          :description="`${error}。恢复后会自动刷新数据。`"
+          tone="warning"
+        >
+          <template #icon>
+            <AlertTriangle class="size-5" />
+          </template>
+          <template #actions>
+            <Button variant="outline" @click="refreshAll">
+              重新加载
+            </Button>
+          </template>
+        </StatePanel>
 
-          <!-- 错误趋势 -->
-          <div class="detail-card p-md">
-            <div class="flex items-center gap-xs mb-sm">
-              <AlertTriangle :size="18" class="text-muted-foreground" />
-              <h2 class="section-title leading-snug">错误趋势</h2>
-            </div>
-
-            <!-- 加载中 -->
-            <div v-if="errorTrendLoading" class="flex items-center justify-center py-md">
-              <div class="text-sm text-muted-foreground">加载中...</div>
-            </div>
-
-            <!-- 无数据 -->
-            <div v-else-if="errorTrend.length === 0" class="py-md text-center text-sm text-muted-foreground">
-              当前时间范围内没有错误记录
-            </div>
-
-            <!-- 折线图 -->
-            <template v-else>
-              <VChart
-                :option="errorTrendChartOption"
-                :autoresize="true"
-                style="width: 100%; height: 320px;"
-                @click="onErrorChartClick"
-              />
-
-              <!-- 错误详情列表（点击数据点后展示） -->
-              <div v-if="selectedDate" class="mt-md border-t border-border pt-md">
-                <h3 class="text-sm font-medium text-foreground mb-sm">
-                  {{ selectedDate }} 错误详情
-                </h3>
-                <div v-if="errorDetails.length === 0" class="text-sm text-muted-foreground">
-                  该天无错误记录
-                </div>
-                <div v-else class="overflow-x-auto">
-                  <table class="w-full text-sm">
-                    <thead>
-                      <tr class="border-b border-border">
-                        <th class="text-left py-2 px-3 text-muted-foreground font-medium">时间</th>
-                        <th class="text-left py-2 px-3 text-muted-foreground font-medium">类型</th>
-                        <th class="text-left py-2 px-3 text-muted-foreground font-medium">摘要</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr
-                        v-for="(detail, idx) in errorDetails"
-                        :key="idx"
-                        class="border-b border-border/50"
-                      >
-                        <td class="py-2 px-3 tabular-nums text-foreground">{{ detail.time }}</td>
-                        <td class="py-2 px-3">
-                          <span
-                            class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
-                            :class="detail.type === 'Agent 错误'
-                              ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300'
-                              : 'bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300'"
-                          >
-                            {{ detail.type }}
-                          </span>
-                        </td>
-                        <td class="py-2 px-3 text-muted-foreground">{{ detail.summary }}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+        <PageSection
+          eyebrow="每日用量"
+          title="请求与词元走势"
+          description="先看工作量如何分布，再决定是否需要继续拆到会话、智能体或工具层级。"
+          variant="plain"
+        >
+          <StatePanel
+            v-if="!loading && dailyStats.length === 0"
+            title="当前时间范围内没有按日统计数据"
+            description="当前时间范围内还没有按日统计数据。"
+          >
+            <template #icon>
+              <Calendar class="size-5" />
             </template>
+          </StatePanel>
+
+          <div v-else class="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(280px,0.75fr)]">
+            <div class="detail-card px-5 py-5">
+              <div class="mb-4 flex items-center justify-between gap-3">
+                <div>
+                  <div class="text-sm font-medium text-foreground">按天分布</div>
+                  <p class="text-xs text-muted-foreground">柱高按每日词元总量归一化。</p>
+                </div>
+                <div class="text-xs text-muted-foreground">
+                  共 {{ dailyStats.length }} 天
+                </div>
+              </div>
+
+              <div class="flex h-48 items-end gap-2">
+                <div
+                  v-for="day in dailyStats"
+                  :key="`bar-${day.date}`"
+                  class="flex flex-1 flex-col items-center gap-2"
+                >
+                  <div
+                    class="w-full min-w-0 rounded-t-xl bg-primary/80 transition-colors hover:bg-primary"
+                    :style="{ height: getBarHeight(day.tokens) }"
+                    :title="`${day.date}: ${formatNumber(day.tokens)} 词元 / ${formatNumber(day.requests)} 次请求`"
+                  />
+                  <span class="w-full truncate text-center text-[10px] text-muted-foreground">
+                    {{ day.date.slice(5) }}
+                  </span>
+                </div>
+              </div>
+
+              <div class="mt-5 space-y-3">
+                <article
+                  v-for="day in dailyStats"
+                  :key="day.date"
+                  class="detail-card px-4 py-3"
+                >
+                  <div class="flex items-center justify-between gap-4">
+                    <div>
+                      <div class="text-sm font-medium text-foreground">
+                        {{ day.date }}
+                      </div>
+                      <div class="text-xs text-muted-foreground">
+                        {{ formatNumber(day.requests) }} 次请求 · {{ formatNumber(day.tokens) }} 词元
+                      </div>
+                    </div>
+                    <div class="text-right">
+                      <div class="text-sm font-medium text-foreground">
+                        {{ formatCost(day.cost) }}
+                      </div>
+                      <div class="text-xs text-muted-foreground">
+                        输入 {{ formatNumber(day.inputTokens) }} / 输出 {{ formatNumber(day.outputTokens) }}
+                      </div>
+                    </div>
+                  </div>
+                </article>
+              </div>
+            </div>
+
+            <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/55 px-4 py-4">
+              <div class="space-y-4">
+                <div class="space-y-1">
+                  <div class="surface-label text-[0.68rem]">高峰日</div>
+                  <div class="text-sm font-medium text-foreground">
+                    {{ peakUsageDay?.date || '暂无' }}
+                  </div>
+                  <p class="text-sm leading-6 text-muted-foreground">
+                    {{ peakUsageDay ? `${formatNumber(peakUsageDay.tokens)} 词元 / ${formatNumber(peakUsageDay.requests)} 次请求` : '恢复后会显示当前时间范围内的高峰日。' }}
+                  </p>
+                </div>
+
+                <div class="soft-divider" />
+
+                <div class="space-y-1">
+                  <div class="surface-label text-[0.68rem]">成本估算</div>
+                  <div class="text-xl font-semibold tracking-tight text-foreground">
+                    {{ formatCost(stats?.estimatedCost) }}
+                  </div>
+                  <p class="text-sm leading-6 text-muted-foreground">
+                    当前按照词元总量做粗略估算，适合快速看趋势，不适合作为结算口径。
+                  </p>
+                </div>
+
+                <div class="soft-divider" />
+
+                <div class="space-y-2">
+                  <div
+                    v-for="item in digestItems"
+                    :key="item.label"
+                    class="space-y-1"
+                  >
+                    <div class="text-xs font-medium tracking-[0.08em] text-muted-foreground">
+                      {{ item.label }}
+                    </div>
+                    <div class="text-sm font-medium text-foreground">
+                      {{ item.value }}
+                    </div>
+                    <p class="text-sm leading-6 text-muted-foreground">
+                      {{ item.note }}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
+        </PageSection>
 
-        </div>
+        <PageSection
+          eyebrow="稳定性"
+          title="错误趋势"
+          description="查看错误出现的日期分布，并展开某一天的明细。"
+          variant="plain"
+        >
+          <div class="space-y-4">
+            <div class="grid gap-3 md:grid-cols-3">
+              <MetricCard
+                v-for="item in errorOverviewItems"
+                :key="item.label"
+                :label="item.label"
+                :value="item.value"
+                :hint="item.hint"
+                class="h-full"
+              />
+            </div>
 
-        <!-- 空状态 -->
-        <div v-else class="py-lg">
-          <EmptyState
-            title="暂无数据"
-            description="当前时间范围内没有使用记录"
-          />
-        </div>
+            <div
+              v-if="errorTrendLoading"
+              class="detail-card px-4 py-5 text-sm text-muted-foreground"
+            >
+              正在加载错误趋势...
+            </div>
+
+            <StatePanel
+              v-else-if="errorTrend.length === 0"
+              title="当前没有错误趋势数据"
+              description="当前时间范围内还没有错误趋势数据。"
+            >
+              <template #icon>
+                <AlertTriangle class="size-5" />
+              </template>
+            </StatePanel>
+
+            <div v-else class="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(300px,0.8fr)]">
+              <div class="detail-card p-4">
+                <VChart
+                  :option="errorTrendChartOption"
+                  :autoresize="true"
+                  style="width: 100%; height: 320px;"
+                  @click="onErrorChartClick"
+                />
+              </div>
+
+              <div class="space-y-4">
+                <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/55 px-4 py-4">
+                  <div class="surface-label mb-2 text-[0.68rem]">查看建议</div>
+                  <p class="text-sm leading-7 text-muted-foreground">
+                    蓝线表示智能体错误，橙线表示工具错误。点选高峰日后，可查看当天详情。
+                  </p>
+                </div>
+
+                <div class="detail-card p-4">
+                  <div class="mb-3 text-sm font-medium text-foreground">
+                    {{ selectedDate ? `${selectedDate} 错误明细` : '当天明细' }}
+                  </div>
+
+                  <div v-if="!selectedDate" class="text-sm text-muted-foreground">
+                    先点选趋势图中的某一天，再看当天的错误明细。
+                  </div>
+
+                  <div v-else-if="errorDetails.length === 0" class="text-sm text-muted-foreground">
+                    当前选中日期没有生成错误明细。
+                  </div>
+
+                  <div v-else class="space-y-2">
+                    <article
+                      v-for="(detail, index) in errorDetails"
+                      :key="`${detail.time}-${index}`"
+                      class="detail-card px-3 py-3"
+                    >
+                      <div class="flex items-center justify-between gap-3">
+                        <span class="font-mono text-xs text-muted-foreground">{{ detail.time }}</span>
+                        <span
+                          class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium"
+                          :class="detail.type === '智能体错误'
+                            ? 'bg-sky-100 text-sky-700 dark:bg-sky-500/10 dark:text-sky-200'
+                            : 'bg-orange-100 text-orange-700 dark:bg-orange-500/10 dark:text-orange-200'"
+                        >
+                          {{ detail.type }}
+                        </span>
+                      </div>
+                      <p class="mt-2 text-sm text-foreground">
+                        {{ detail.summary }}
+                      </p>
+                    </article>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </PageSection>
       </div>
-    </div>
+    </PageContainer>
   </div>
 </template>

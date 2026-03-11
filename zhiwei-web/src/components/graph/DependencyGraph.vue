@@ -9,6 +9,7 @@
 -->
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
+import 'd3-transition'
 import {
   forceSimulation,
   forceLink,
@@ -38,9 +39,9 @@ const NODE_COLORS: Record<string, string> = {
 
 // 节点类型中文标签
 const TYPE_LABELS: Record<string, string> = {
-  AGENT: 'Agent',
-  SKILL: 'Skill',
-  TOOL: 'Tool',
+  AGENT: '智能体',
+  SKILL: '技能',
+  TOOL: '工具',
 }
 
 // 节点半径
@@ -84,6 +85,10 @@ const simLinks = ref<SimLink[]>([])
 // 当前变换状态（缩放/平移）
 const transform = ref({ x: 0, y: 0, k: 1 })
 
+function getLinkNodeId(value: SimNode | string | number): string {
+  return typeof value === 'object' ? value.id : String(value)
+}
+
 // ========== 计算属性 ==========
 
 // 搜索匹配的节点 ID 集合
@@ -103,8 +108,8 @@ const connectedNodeIds = computed<Set<string>>(() => {
   const sid = selectedNode.value.id
   const ids = new Set<string>([sid])
   for (const link of simLinks.value) {
-    const src = typeof link.source === 'object' ? (link.source as SimNode).id : link.source
-    const tgt = typeof link.target === 'object' ? (link.target as SimNode).id : link.target
+    const src = getLinkNodeId(link.source)
+    const tgt = getLinkNodeId(link.target)
     if (src === sid) ids.add(tgt)
     if (tgt === sid) ids.add(src)
   }
@@ -117,8 +122,8 @@ const connectedLinkIndices = computed<Set<number>>(() => {
   const sid = selectedNode.value.id
   const indices = new Set<number>()
   simLinks.value.forEach((link, i) => {
-    const src = typeof link.source === 'object' ? (link.source as SimNode).id : link.source
-    const tgt = typeof link.target === 'object' ? (link.target as SimNode).id : link.target
+    const src = getLinkNodeId(link.source)
+    const tgt = getLinkNodeId(link.target)
     if (src === sid || tgt === sid) indices.add(i)
   })
   return indices
@@ -219,7 +224,7 @@ function handleSearch() {
   const svgEl = select(svgRef.value)
   const targetX = svgWidth.value / 2 - node.x * transform.value.k
   const targetY = svgHeight.value / 2 - node.y * transform.value.k
-  svgEl.transition().duration(500).call(
+  ;(svgEl as any).transition().duration(500).call(
     zoomBehavior.transform as any,
     zoomIdentity.translate(targetX, targetY).scale(transform.value.k)
   )
@@ -359,7 +364,7 @@ watch(searchQuery, (val) => {
     <div class="flex-1 flex flex-col min-w-0">
       <!-- 搜索栏 -->
       <div class="flex items-center gap-2 p-3 border-b border-border">
-        <div class="relative flex-1 max-w-sm">
+        <div class="relative flex-1 max-w-[24rem]">
           <input
             v-model="searchQuery"
             type="text"

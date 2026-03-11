@@ -7,7 +7,7 @@ defineProps<{
 <template>
   <hr
     v-if="!orientation || orientation === 'horizontal'"
-    class="border-t border-border my-2"
+    class="my-3 border-t border-border/70"
   />
-  <div v-else class="border-l border-border mx-2 self-stretch" />
+  <div v-else class="mx-2 self-stretch border-l border-border/70" />
 </template>

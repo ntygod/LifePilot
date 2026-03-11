@@ -128,6 +128,7 @@ export function useChat() {
       }
       // 确保流式状态被重置
       chatStore.resetStreaming()
+      a2uiStore.clearComponents()
     } finally {
       isStreaming.value = false
       chatStore.isStreaming = false
@@ -200,6 +201,7 @@ export function useChat() {
         })
       }
       chatStore.resetStreaming()
+      a2uiStore.clearComponents()
     } finally {
       reader.releaseLock()
     }
@@ -213,6 +215,7 @@ export function useChat() {
           const payload: { sessionId?: string; turnId?: string; traceId?: string; timestamp?: number; userMessageId?: string } = JSON.parse(data)
           if (payload.traceId && currentUserMessageId) {
             chatStore.updateMessage(currentUserMessageId, { traceId: payload.traceId })
+            a2uiStore.setCurrentTraceId(payload.traceId)
           }
           // 用后端返回的 userMessageId 替换前端临时 ID，确保前后端 ID 一致
           if (payload.userMessageId && currentUserMessageId) {
@@ -235,7 +238,7 @@ export function useChat() {
         }
         case SSE_EVENT_TYPES.UI: {
           const event: { components: A2uiComponent[] } = JSON.parse(data)
-          a2uiStore.updateComponents(event.components)
+          a2uiStore.updateComponents(event.components, { traceId: a2uiStore.currentTraceId })
           break
         }
         case SSE_EVENT_TYPES.MEDIA: {
@@ -329,6 +332,7 @@ export function useChat() {
             chatStore.updateMessage(currentUserMessageId, { status: 'success' })
           }
           chatStore.resetStreaming()
+          a2uiStore.clearComponents()
           break
         }
         case SSE_EVENT_TYPES.ERROR: {
@@ -359,6 +363,7 @@ export function useChat() {
             })
           }
           chatStore.resetStreaming()
+          a2uiStore.clearComponents()
           break
         }
         case SSE_EVENT_TYPES.HEARTBEAT:
@@ -381,6 +386,7 @@ export function useChat() {
           })
         }
         chatStore.resetStreaming()
+        a2uiStore.clearComponents()
       }
     }
   }
@@ -417,6 +423,7 @@ export function useChat() {
   function abort() {
     abortController?.abort()
     chatStore.resetStreaming()
+    a2uiStore.clearComponents()
   }
 
   return {
@@ -431,6 +438,7 @@ export function useChat() {
     reasoningEvents,
     reasoningStatusText,
     // 当前轮流式媒体数据（截图等），供组件实时预览
-    streamingMedia
+    streamingMedia,
+    streamingA2uiComponents: a2uiStore.components,
   }
 }

@@ -5,7 +5,11 @@ defineProps<{
 </script>
 
 <template>
-  <component :is="ordered ? 'ol' : 'ul'" class="space-y-1 text-sm">
+  <component
+    :is="ordered ? 'ol' : 'ul'"
+    class="space-y-2 text-sm"
+    :class="ordered ? 'list-decimal pl-5' : 'list-none'"
+  >
     <slot />
   </component>
 </template>

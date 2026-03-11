@@ -13,6 +13,6 @@ defineProps<{
     :alt="alt ?? ''"
     :width="width"
     :height="height"
-    class="rounded-md max-w-full"
+    class="max-w-full rounded-[calc(var(--radius)+4px)] border border-border/60 bg-background/60 object-cover"
   />
 </template>

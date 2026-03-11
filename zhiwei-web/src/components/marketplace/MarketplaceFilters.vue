@@ -65,9 +65,9 @@ function handleTypeChange(val: string | undefined) {
         @update:model-value="handleTypeChange($event === 'all' ? '' : ($event as string))"
       >
         <ToggleGroupItem value="all">全部</ToggleGroupItem>
-        <ToggleGroupItem value="SKILL">Skill</ToggleGroupItem>
-        <ToggleGroupItem value="AGENT">Agent</ToggleGroupItem>
-        <ToggleGroupItem value="WORKFLOW">Workflow</ToggleGroupItem>
+        <ToggleGroupItem value="SKILL">技能</ToggleGroupItem>
+        <ToggleGroupItem value="AGENT">智能体</ToggleGroupItem>
+        <ToggleGroupItem value="WORKFLOW">工作流</ToggleGroupItem>
       </ToggleGroup>
     </div>
 

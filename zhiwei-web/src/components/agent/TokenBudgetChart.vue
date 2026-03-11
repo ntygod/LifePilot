@@ -13,6 +13,7 @@
 import { computed } from 'vue'
 import VChart from 'vue-echarts'
 import type { TokenBudgetData } from '@/types'
+import '@/plugins/echarts'
 
 // Props 定义
 const props = defineProps<{
