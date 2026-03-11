@@ -494,6 +494,7 @@ public class LlmRouter {
 
     /**
      * 查找可用候选 Provider：场景匹配 → 能力过滤 → 熔断器过滤。
+     * 场景无匹配时回退到按能力查找，确保不会因 scene 缺失而直接抛异常。
      */
     private List<ProviderConfig> findAvailableCandidates(String scene,
                                                           ProviderCapability requiredCapability) {
@@ -508,21 +509,17 @@ public class LlmRouter {
                         c.id(), requiredCapability.name()))
                 .toList();
         
-        if (candidates.isEmpty() && !byScene.isEmpty()) {
-            log.warn("场景匹配到 Provider 但无可用候选: scene={}, 匹配的Provider={}, 需要能力={}",
-                    scene,
-                    byScene.stream().map(c -> c.id() + "(能力:" + c.capabilities() + ")").toList(),
-                    requiredCapability);
-        } else if (candidates.isEmpty()) {
-            log.warn("场景无匹配 Provider: scene={}, 已注册Provider={}, 各Provider场景={}",
-                    scene,
-                    providerRegistry.registeredIds(),
-                    providerRegistry.registeredIds().stream()
-                            .map(id -> {
-                                var config = providerRegistry.getConfig(id);
-                                return config.map(c -> id + ":" + c.scenes()).orElse(id + ":未找到");
-                            })
-                            .toList());
+        // 场景无匹配时回退到按能力查找
+        if (candidates.isEmpty()) {
+            var fallback = providerRegistry.findByCapability(requiredCapability).stream()
+                    .filter(c -> circuitBreakerManager.isCallPermitted(c.id(), requiredCapability.name()))
+                    .toList();
+            if (!fallback.isEmpty()) {
+                log.info("场景 '{}' 无匹配 Provider，回退到能力路由: capability={}, 候选数={}",
+                        scene, requiredCapability, fallback.size());
+                return fallback;
+            }
+            log.warn("场景 '{}' 无匹配 Provider，能力回退也无可用候选: capability={}", scene, requiredCapability);
         }
         
         return candidates;
