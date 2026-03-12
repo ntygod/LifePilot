@@ -65,7 +65,7 @@ class SemanticCache_BugCondition_探索测试 {
 
         // Act 2: 模拟 Provider 就绪后调用 lookup
         // 期望行为：lookup 应触发延迟初始化（ensureVecInitialized），而非直接返回 empty
-        cache.lookup("test-scene", null, "测试 prompt");
+        cache.lookup("test-scene", null, "default", "测试 prompt");
 
         // Assert: 验证 embed 被调用了至少 2 次
         // 第 1 次：构造函数中 initVec0Table（失败）
@@ -98,7 +98,7 @@ class SemanticCache_BugCondition_探索测试 {
         SemanticCache cache = new SemanticCache(config, llmRouter, jdbcTemplate);
 
         // Act 2: 调用 putAsync — 期望触发延迟初始化
-        cache.putAsync("test-scene", null, "测试 prompt", "测试响应", "test-model");
+        cache.putAsync("test-scene", null, "default", "测试 prompt", "测试响应", "test-model");
 
         // 等待异步操作完成
         try { Thread.sleep(500); } catch (InterruptedException ignored) {}
@@ -139,7 +139,7 @@ class SemanticCache_BugCondition_探索测试 {
         SemanticCache cache = new SemanticCache(config, llmRouter, jdbcTemplate);
 
         // Act: 调用 lookup — 期望行为是触发延迟初始化并执行向量搜索
-        cache.lookup("test-scene", null, "测试 prompt");
+        cache.lookup("test-scene", null, "default", "测试 prompt");
 
         // Assert: 在修复后，lookup 应该尝试延迟初始化并执行向量搜索
         // 即使最终因为数据库为空返回 empty，embed("probe") 应该被再次调用（延迟初始化）
