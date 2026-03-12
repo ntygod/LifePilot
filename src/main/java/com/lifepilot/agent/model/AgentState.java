@@ -159,6 +159,7 @@ public record AgentState(
                 finalOutput != null ? finalOutput : "",
                 budget.tokensUsed(), stepCount, terminationReason,
                 null,
+                null,
                 null
         );
     }

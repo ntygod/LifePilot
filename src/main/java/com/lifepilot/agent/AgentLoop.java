@@ -300,8 +300,8 @@ public class AgentLoop {
             if (error != null) {
                 sendStreamError(sseManager, streamId, 500,
                         "处理失败: " + error.getMessage(), state.traceId());
-            } else {
                 // 推理结束事件（在 DONE 之前发送，便于前端时间线展示）
+            } else {
                 sendReasoningEvent(
                         sseManager, streamId, request.sessionId(), tempTurnId,
                         "ANSWER_FINALIZED", "回答已生成", "本轮推理与回答已完成。",
@@ -410,7 +410,8 @@ public class AgentLoop {
                     state.stepCount(),
                     state.terminationReason(),
                     assistantMessageId,
-                    finalA2uiTree != null ? finalA2uiTree.components() : null
+                    finalA2uiTree != null ? finalA2uiTree.components() : null,
+                    tokenUsage
             );
 
         } catch (Exception e) {
@@ -674,16 +675,13 @@ public class AgentLoop {
                                                   SseSessionManager sseManager,
                                                   String tempTurnId) {
         try {
-            String defaultScene = mapPhaseToScene(state.phase());
+            String scene = mapPhaseToScene(state.phase());
+            String preferredProviderId = request.preferredProvider();
 
             // Fix 9: 优先使用 preferredProvider 路由，未指定时回退到 mapPhaseToScene
-            final String scene;
-            if (request.preferredProvider() != null && !request.preferredProvider().isBlank()) {
-                scene = request.preferredProvider();
-                log.debug("流式调用使用 preferredProvider 路由: provider={}, phase={}, traceId={}",
-                        request.preferredProvider(), state.phase(), state.traceId());
-            } else {
-                scene = defaultScene;
+            if (preferredProviderId != null && !preferredProviderId.isBlank()) {
+                log.debug("流式调用使用 preferredProvider 路由: provider={}, scene={}, phase={}, traceId={}",
+                        preferredProviderId, scene, state.phase(), state.traceId());
             }
 
             String systemPrompt = enrichRespondingSystemPrompt(assembledContext.systemPrompt(), state.phase());
@@ -721,14 +719,14 @@ public class AgentLoop {
             if (mediaList != null && !mediaList.isEmpty() && multimodalRouter != null) {
                 // 多模态路径：暂沿用 MultimodalRouter（ChatClient 多模态流式支持后续接入）
                 MultimodalRequest mmRequest = new MultimodalRequest(
-                        scene, fullPrompt, mediaList, null);
+                        scene, fullPrompt, mediaList, null, preferredProviderId);
                 StreamingLlmResponse streaming = multimodalRouter.streamWithInfo(mmRequest);
                 tokenStream = streaming.stream();
                 providerId = streaming.providerId();
                 modelId = streaming.modelId();
             } else {
                 // 文本路径：不注入 toolCallbacks，避免 LLM 触发不可追踪的 function call
-                var clientInfo = llmRouter.getChatClientWithInfo(scene);
+                var clientInfo = llmRouter.getChatClientWithInfo(scene, preferredProviderId);
                 var prompt = buildPrompt(clientInfo.client(), streamingSystemPrompt, List.of());
                 tokenStream = prompt.user(userText).stream().content();
                 providerId = clientInfo.providerId();
@@ -1029,11 +1027,12 @@ public class AgentLoop {
             String scene = mapPhaseToScene(state.phase());
 
             // Fix 9: 优先使用 preferredProvider 路由，未指定时回退到 mapPhaseToScene
+            String preferredProviderId = request.preferredProvider();
             ChatClient chatClient;
-            if (request.preferredProvider() != null && !request.preferredProvider().isBlank()) {
-                chatClient = llmRouter.getChatClient(request.preferredProvider());
-                log.debug("使用 preferredProvider 路由: provider={}, phase={}, traceId={}",
-                        request.preferredProvider(), state.phase(), state.traceId());
+            if (preferredProviderId != null && !preferredProviderId.isBlank()) {
+                chatClient = llmRouter.getChatClient(scene, preferredProviderId);
+                log.debug("使用 preferredProvider 路由: provider={}, scene={}, phase={}, traceId={}",
+                        preferredProviderId, scene, state.phase(), state.traceId());
             } else {
                 chatClient = llmRouter.getChatClient(scene);
             }
@@ -1228,13 +1227,24 @@ public class AgentLoop {
             );
         }
 
-        // 若是 handoff 工具，注入调用方上下文（depth / traceId / sessionId）
+        // 若是 handoff 工具，注入调用方上下文（depth / traceId / sessionId + 工具结果摘要）
         Map<String, Object> params = step.params();
         if (toolId.startsWith(HandoffToolFactory.TOOL_ID_PREFIX)) {
             params = new HashMap<>(params);
             params.put("_callerDepth", state.depth());
             params.put("_callerTraceId", state.traceId());
             params.put("_callerSessionId", state.sessionId());
+
+            // 当 LLM 未显式传递 context 时，自动注入父 Agent 已积累的工具结果摘要
+            Object existingContext = params.get("context");
+            if (existingContext == null || existingContext.toString().isBlank()) {
+                String toolResultsSummary = buildToolResultsSummary(state.steps());
+                if (toolResultsSummary != null && !toolResultsSummary.isEmpty()) {
+                    params.put("context", toolResultsSummary);
+                    log.debug("Handoff 自动注入父 Agent 工具结果摘要: toolId={}, summaryLength={}",
+                            toolId, toolResultsSummary.length());
+                }
+            }
 
             // 流式路径：在 handoff 工具调用前发送 agent_delegated 进度事件
             if (sseManager != null && streamId != null && turnId != null) {
@@ -1447,6 +1457,42 @@ public class AgentLoop {
             case Action.ErrorRecovery a -> "错误恢复: " + a.errorMessage();
             case Action.SubAgentResult a -> "子 Agent: " + a.skillId();
         };
+    }
+
+    /**
+     * 从已执行的步骤记录中构建工具结果摘要，用于 handoff 时自动注入上下文。
+     *
+     * <p>仅保留成功且有输出的工具调用结果，每条截断至 2000 字符，
+     * 总摘要截断至 8000 字符，避免 Token 预算溢出。</p>
+     *
+     * @param steps 当前 Agent 已执行的步骤记录列表
+     * @return 工具结果摘要文本，若无有效结果则返回 null
+     */
+    @Nullable
+    String buildToolResultsSummary(List<StepRecord> steps) {
+        if (steps == null || steps.isEmpty()) {
+            return null;
+        }
+        var sb = new StringBuilder();
+        int maxPerStep = 2000;
+        int maxTotal = 8000;
+        for (var step : steps) {
+            if (!step.success() || step.toolId() == null || step.output() == null || step.output().isBlank()) {
+                continue;
+            }
+            String output = step.output().length() > maxPerStep
+                    ? step.output().substring(0, maxPerStep) + "...[截断]"
+                    : step.output();
+            sb.append("[工具: ").append(step.toolId()).append("]\n")
+              .append(output).append("\n\n");
+            if (sb.length() >= maxTotal) {
+                sb.setLength(maxTotal);
+                sb.append("...[摘要截断]");
+                break;
+            }
+        }
+        String result = sb.toString().strip();
+        return result.isEmpty() ? null : result;
     }
 
     /** 异步后处理：会话快照持久化和 L2 flush。 */
