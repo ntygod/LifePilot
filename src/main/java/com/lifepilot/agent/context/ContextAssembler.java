@@ -80,6 +80,8 @@ public class ContextAssembler {
     @Nullable private final PassiveNotificationQueue passiveNotificationQueue;
     // 查询精炼器：清洗用户输入提升检索召回质量，可选注入
     @Nullable private final QueryRefiner queryRefiner;
+    // 记忆配置：用户画像查询等参数，可选注入
+    @Nullable private final com.lifepilot.memory.config.MemoryProperties memoryProperties;
 
     /** 请求级检索缓存 — 同一 traceId + query + topK 组合只执行一次实际检索。 */
     private final ConcurrentHashMap<String, List<RetrievalResult>> retrievalCache = new ConcurrentHashMap<>();
@@ -100,6 +102,7 @@ public class ContextAssembler {
         this.documentRepository = null;
         this.passiveNotificationQueue = null;
         this.queryRefiner = null;
+        this.memoryProperties = null;
     }
 
     /** 完整版构造器（注入记忆系统依赖）。 */
@@ -111,7 +114,7 @@ public class ContextAssembler {
                             @Nullable DataRedactor dataRedactor,
                             PromptRegistry promptRegistry) {
         this(config, hybridRetriever, workingMemory, tokenBudgetAllocator, retrievalStrategy, dataRedactor,
-                null, null, null, null, null, null, null, promptRegistry);
+                null, null, null, null, null, null, null, null, promptRegistry);
     }
 
     /** 完整版构造器（注入记忆系统 + 可选知识库检索 + 可选 L2 情景记忆 + 可选 L3 语义记忆 + 可选被动通知队列 + 可选查询精炼器依赖）。 */
@@ -128,6 +131,7 @@ public class ContextAssembler {
                             @Nullable SemanticMemory semanticMemory,
                             @Nullable PassiveNotificationQueue passiveNotificationQueue,
                             @Nullable QueryRefiner queryRefiner,
+                            @Nullable com.lifepilot.memory.config.MemoryProperties memoryProperties,
                             PromptRegistry promptRegistry) {
         this.config = config;
         this.hybridRetriever = hybridRetriever;
@@ -143,6 +147,7 @@ public class ContextAssembler {
         this.documentRepository = documentRepository;
         this.passiveNotificationQueue = passiveNotificationQueue;
         this.queryRefiner = queryRefiner;
+        this.memoryProperties = memoryProperties;
     }
 
     /** 判断是否为完整版模式。 */
@@ -244,7 +249,7 @@ public class ContextAssembler {
             var tokenBudget = buildTokenBudget(state.phase(), budgetAllocation,
                     formattedMemories, truncatedSlots, systemPrompt);
             // 用户画像从 System Prompt 移至 User Prompt 半稳定区
-            String userProfile = safeGetUserProfile(semanticMemory);
+            String userProfile = safeGetUserProfile(semanticMemory, refinedQuery);
             String userPrompt = buildEnhancedUserPrompt(state, formattedMemories, kbSnippets,
                     formattedCrossSession, truncatedSlots, userProfile);
 
@@ -478,15 +483,59 @@ public class ContextAssembler {
     /**
      * 安全查询用户画像实体，异常时返回空字符串。
      *
-     * <p>从 L3 语义记忆中查询 type=PERSON 且 isCurrent=true 的实体，
-     * 格式化为结构化文本注入 System Prompt。查询失败或结果为空时跳过注入。</p>
+     * <p>从 L3 语义记忆中查询 PREFERENCE/HABIT/GOAL 三种类型的当前实体，
+     * 对候选实体做关键词匹配过滤，无匹配时按 importanceScore 降序兜底，
+     * 总数上限 maxUserProfileEntities。</p>
+     *
+     * @param semanticMemory 语义记忆（可空）
+     * @param refinedQuery   精炼后的查询文本，用于关键词匹配
+     * @return 格式化的用户画像文本，无数据时返回空字符串
      */
-    private String safeGetUserProfile(@Nullable SemanticMemory semanticMemory) {
+    private String safeGetUserProfile(@Nullable SemanticMemory semanticMemory, String refinedQuery) {
         if (semanticMemory == null) return "";
         try {
-            var personEntities = semanticMemory.findCurrentByType(EntityType.PERSON);
-            if (personEntities.isEmpty()) return "";
-            return formatUserProfile(personEntities);
+            // 查询 PREFERENCE/HABIT/GOAL 三种类型替代 PERSON
+            var candidates = new ArrayList<TemporalEntity>();
+            for (var type : List.of(EntityType.PREFERENCE, EntityType.HABIT, EntityType.GOAL)) {
+                candidates.addAll(semanticMemory.findCurrentByType(type));
+            }
+            if (candidates.isEmpty()) return "";
+
+            // 读取配置（memoryProperties 可空时使用默认值）
+            int maxEntities = memoryProperties != null
+                    ? memoryProperties.getRetrieval().getMaxUserProfileEntities() : 10;
+            int fallbackCount = memoryProperties != null
+                    ? memoryProperties.getRetrieval().getFallbackUserProfileCount() : 3;
+
+            // 关键词匹配过滤：将 refinedQuery 按空白分词，匹配 textRepresentation()
+            List<TemporalEntity> matched = List.of();
+            if (refinedQuery != null && !refinedQuery.isBlank()) {
+                var keywords = List.of(refinedQuery.split("\\s+"));
+                matched = candidates.stream()
+                        .filter(e -> {
+                            String text = e.textRepresentation().toLowerCase();
+                            return keywords.stream().anyMatch(kw -> text.contains(kw.toLowerCase()));
+                        })
+                        .toList();
+            }
+
+            List<TemporalEntity> selected;
+            if (!matched.isEmpty()) {
+                // 有匹配：按 importanceScore 降序，截取上限
+                selected = matched.stream()
+                        .sorted(Comparator.comparingDouble(TemporalEntity::importanceScore).reversed())
+                        .limit(maxEntities)
+                        .toList();
+            } else {
+                // 无匹配：按 importanceScore 降序取前 fallbackCount 条兜底
+                selected = candidates.stream()
+                        .sorted(Comparator.comparingDouble(TemporalEntity::importanceScore).reversed())
+                        .limit(fallbackCount)
+                        .toList();
+            }
+
+            if (selected.isEmpty()) return "";
+            return formatUserProfile(selected);
         } catch (Exception e) {
             log.warn("用户画像查询失败，降级跳过: error={}", e.getMessage());
             return "";
@@ -496,14 +545,14 @@ public class ContextAssembler {
     /**
      * 格式化用户画像实体为结构化文本。
      *
-     * <p>每个 PERSON 实体输出名称、描述和属性键值对，
-     * 用于注入到 System Prompt 的角色定义之后。</p>
+     * <p>每个实体输出类型标签、名称、描述和属性键值对，
+     * 用于注入到 User Prompt 的半稳定区。</p>
      */
-    String formatUserProfile(List<TemporalEntity> personEntities) {
-        if (personEntities.isEmpty()) return "";
+    String formatUserProfile(List<TemporalEntity> entities) {
+        if (entities.isEmpty()) return "";
         var sb = new StringBuilder("\n\n用户画像:\n");
-        for (var entity : personEntities) {
-            sb.append("- ").append(entity.name());
+        for (var entity : entities) {
+            sb.append("- [").append(entity.type().label()).append("] ").append(entity.name());
             if (entity.description() != null && !entity.description().isBlank()) {
                 sb.append(": ").append(entity.description());
             }
