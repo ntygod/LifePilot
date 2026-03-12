@@ -236,8 +236,8 @@ public class ContextAssembler {
                     formatCrossSessionFragments(crossSessionFragments),
                     budgetAllocation.crossSessionBudget());
 
-            // 6. 将检索上下文注入 L1（ReasoningSlot），并格式化检索结果
-            slots = injectRetrievalReasoningSlots(workingMemory, state.sessionId(), truncatedMemories, procedureHintSlot, slots);
+            // 6. 将 L4 程序提示注入 L1（ReasoningSlot），并格式化检索结果
+            slots = injectProcedureReasoningSlot(workingMemory, state.sessionId(), procedureHintSlot, slots);
             var formattedMemories = formatRetrievalResults(truncatedMemories);
             int workingMemoryTokens = truncatedSlots.stream()
                     .mapToInt(WorkingMemorySlot::tokenCount).sum();
@@ -656,17 +656,22 @@ public class ContextAssembler {
      * - 只在 full mode 下执行，异常时静默降级，不影响主流程。
      * </p>
      */
-    private List<WorkingMemorySlot> injectRetrievalReasoningSlots(WorkingMemory memory,
-                                                                  String sessionId,
-                                                                  List<RetrievalResult> truncatedMemories,
-                                                                  Optional<ReasoningSlot> procedureHintSlot,
-                                                                  List<WorkingMemorySlot> existingSlots) {
+    /**
+     * 将 L4 程序提示以 ReasoningSlot 的形式注入到 L1 工作记忆。
+     *
+     * <p>检索结果仅通过 User Prompt 的"相关记忆"section 单次注入，
+     * 不再重复写入 L1 ReasoningSlot，避免双重注入导致 Token 膨胀。</p>
+     */
+    private List<WorkingMemorySlot> injectProcedureReasoningSlot(WorkingMemory memory,
+                                                                 String sessionId,
+                                                                 Optional<ReasoningSlot> procedureHintSlot,
+                                                                 List<WorkingMemorySlot> existingSlots) {
         if (sessionId == null || sessionId.isBlank()) {
             return existingSlots;
         }
         var updated = new ArrayList<>(existingSlots != null ? existingSlots : List.of());
         try {
-            // 1) L4 程序提示 → ReasoningSlot（若尚未存在）
+            // L4 程序提示 → ReasoningSlot（若尚未存在）
             if (procedureHintSlot != null && procedureHintSlot.isPresent()) {
                 ReasoningSlot slot = procedureHintSlot.get();
                 if (slot.thought() != null && !slot.thought().isBlank()) {
@@ -680,29 +685,8 @@ public class ContextAssembler {
                     }
                 }
             }
-
-            // 2) 检索到的语义记忆 → ReasoningSlot（只注入前若干条，避免污染 L1）
-            int maxInjected = Math.min(5, truncatedMemories.size());
-            for (int i = 0; i < maxInjected; i++) {
-                RetrievalResult result = truncatedMemories.get(i);
-                String thought = formatSingleResult(result);
-                if (thought == null || thought.isBlank()) {
-                    continue;
-                }
-                // 去重检查：与第 1 段（L4 程序提示）的去重逻辑一致
-                boolean alreadyExists = updated.stream()
-                        .filter(s -> s instanceof ReasoningSlot)
-                        .map(s -> (ReasoningSlot) s)
-                        .anyMatch(rs -> rs.thought() != null && rs.thought().equals(thought));
-                if (alreadyExists) {
-                    continue;
-                }
-                ReasoningSlot reasoningSlot = ReasoningSlot.retrievalContext(thought, estimateTokens(thought));
-                memory.append(sessionId, reasoningSlot);
-                updated.add(reasoningSlot);
-            }
         } catch (Exception e) {
-            log.warn("检索上下文注入 L1 失败: sessionId={}, error={}", sessionId, e.getMessage());
+            log.warn("L4 程序提示注入 L1 失败: sessionId={}, error={}", sessionId, e.getMessage());
         }
         return List.copyOf(updated);
     }
