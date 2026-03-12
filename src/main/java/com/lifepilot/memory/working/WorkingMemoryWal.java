@@ -1,6 +1,6 @@
 package com.lifepilot.memory.working;
 
-import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.slf4j.Logger;
@@ -13,14 +13,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 工作记忆 WAL（Write-Ahead Log）持久化服务。
+ * Working-memory WAL persistence.
  *
- * <p>在 {@link WorkingMemory#append} 时同步写入一条轻量级 WAL 记录到 SQLite，
- * 在 {@link WorkingMemory#flush} 成功后按 session_id 批量删除。
- * 应用启动时检查 WAL 表残留记录，恢复未 flush 的会话数据。</p>
- *
- * @author zsg
- * @since 2026-03-11
+ * <p>The WAL keeps lightweight slot records in SQLite so unfinished L1 sessions
+ * can be recovered on next startup.
  */
 public class WorkingMemoryWal {
 
@@ -33,19 +29,11 @@ public class WorkingMemoryWal {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = new ObjectMapper();
         this.objectMapper.registerModule(new JavaTimeModule());
-        // 启用多态类型信息，以便反序列化时区分 ConversationSlot / ToolResultSlot / ReasoningSlot
-        this.objectMapper.activateDefaultTyping(
-                objectMapper.getPolymorphicTypeValidator(),
-                ObjectMapper.DefaultTyping.NON_FINAL,
-                JsonTypeInfo.As.PROPERTY
-        );
+        this.objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     }
 
     /**
-     * 追加一条 WAL 记录（与内存 append 同步调用）。
-     *
-     * @param sessionId 会话 ID
-     * @param slot      槽位对象
+     * Append one WAL record.
      */
     public void append(String sessionId, WorkingMemorySlot slot) {
         try {
@@ -54,25 +42,23 @@ public class WorkingMemoryWal {
                 case ToolResultSlot _ -> "TOOL_RESULT";
                 case ReasoningSlot _ -> "REASONING";
             };
-            String slotJson = objectMapper.writeValueAsString(slot);
+            String slotJson = objectMapper.writerFor(WorkingMemorySlot.class).writeValueAsString(slot);
             jdbcTemplate.update(
                     "INSERT INTO working_memory_wal (session_id, slot_type, slot_json) VALUES (?, ?, ?)",
                     sessionId, slotType, slotJson);
         } catch (Exception e) {
-            // WAL 写入失败不阻塞主流程，仅记录警告
             log.warn("WAL 写入失败: sessionId={}, error={}", sessionId, e.getMessage());
         }
     }
 
     /**
-     * 删除指定会话的所有 WAL 记录（flush 成功后调用）。
-     *
-     * @param sessionId 会话 ID
+     * Delete all WAL rows for one session after a successful flush.
      */
     public void clearSession(String sessionId) {
         try {
             int deleted = jdbcTemplate.update(
-                    "DELETE FROM working_memory_wal WHERE session_id = ?", sessionId);
+                    "DELETE FROM working_memory_wal WHERE session_id = ?",
+                    sessionId);
             if (deleted > 0) {
                 log.debug("WAL 清理: sessionId={}, 删除记录数={}", sessionId, deleted);
             }
@@ -82,26 +68,33 @@ public class WorkingMemoryWal {
     }
 
     /**
-     * 加载所有残留的 WAL 记录，按 session_id 分组返回。
+     * Load all pending WAL rows grouped by session.
      *
-     * <p>启动时调用，用于恢复上次异常退出未 flush 的会话数据。</p>
-     *
-     * @return session_id → 槽位列表的映射，无残留时返回空 Map
+     * <p>Rows that cannot be deserialized are treated as invalid startup residue
+     * and deleted immediately instead of attempting legacy-format recovery.</p>
      */
     public Map<String, List<WorkingMemorySlot>> loadPendingSessions() {
         Map<String, List<WorkingMemorySlot>> result = new LinkedHashMap<>();
         try {
+            List<Long> invalidWalIds = new ArrayList<>();
             var rows = jdbcTemplate.queryForList(
-                    "SELECT session_id, slot_type, slot_json FROM working_memory_wal ORDER BY id ASC");
+                    "SELECT id, session_id, slot_json FROM working_memory_wal ORDER BY id ASC");
             for (var row : rows) {
+                long walId = ((Number) row.get("id")).longValue();
                 String sessionId = (String) row.get("session_id");
                 String slotJson = (String) row.get("slot_json");
                 try {
                     WorkingMemorySlot slot = objectMapper.readValue(slotJson, WorkingMemorySlot.class);
-                    result.computeIfAbsent(sessionId, k -> new ArrayList<>()).add(slot);
+                    result.computeIfAbsent(sessionId, ignored -> new ArrayList<>()).add(slot);
                 } catch (Exception e) {
-                    log.warn("WAL 记录反序列化失败: sessionId={}, error={}", sessionId, e.getMessage());
+                    invalidWalIds.add(walId);
                 }
+            }
+            if (!invalidWalIds.isEmpty()) {
+                for (Long walId : invalidWalIds) {
+                    jdbcTemplate.update("DELETE FROM working_memory_wal WHERE id = ?", walId);
+                }
+                log.warn("WAL 检测到 {} 条无效记录，已自动删除", invalidWalIds.size());
             }
         } catch (Exception e) {
             log.warn("WAL 加载失败: error={}", e.getMessage());
@@ -110,7 +103,7 @@ public class WorkingMemoryWal {
     }
 
     /**
-     * 清空所有 WAL 记录（恢复完成后调用）。
+     * Delete all WAL rows after recovery completes.
      */
     public void clearAll() {
         try {

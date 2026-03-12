@@ -1,5 +1,8 @@
 package com.lifepilot.memory.working;
 
+import com.fasterxml.jackson.annotation.JsonSubTypes;
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
+
 import java.time.Instant;
 
 /**
@@ -10,6 +13,12 @@ import java.time.Instant;
  * @author zsg
  * @since 2026-02-24
  */
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
+@JsonSubTypes({
+        @JsonSubTypes.Type(value = ConversationSlot.class, name = "CONVERSATION"),
+        @JsonSubTypes.Type(value = ToolResultSlot.class, name = "TOOL_RESULT"),
+        @JsonSubTypes.Type(value = ReasoningSlot.class, name = "REASONING")
+})
 public sealed interface WorkingMemorySlot
         permits ConversationSlot, ToolResultSlot, ReasoningSlot {
 
