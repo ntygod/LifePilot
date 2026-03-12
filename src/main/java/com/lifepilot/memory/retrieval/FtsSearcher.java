@@ -46,7 +46,8 @@ public class FtsSearcher {
                     """
                     SELECT te.id, te.type, te.name, te.description,
                            -bm25(messages_fts) AS score,
-                           te.last_accessed_at, te.importance_score, te.valid_to
+                           te.last_accessed_at, te.importance_score, te.valid_to,
+                           te.updated_at
                     FROM messages_fts
                     JOIN messages m ON messages_fts.rowid = m.rowid
                     JOIN temporal_entities te ON te.source_conversation_id = m.conversation_id
@@ -60,6 +61,7 @@ public class FtsSearcher {
                     (rs, rowNum) -> {
                         String lastAccessedStr = rs.getString("last_accessed_at");
                         String validToStr = rs.getString("valid_to");
+                        String updatedAtStr = rs.getString("updated_at");
                         return new RankedItem(
                                 rs.getString("id"),
                                 rs.getString("type"),
@@ -68,7 +70,8 @@ public class FtsSearcher {
                                 rs.getFloat("score"),
                                 lastAccessedStr != null ? Instant.parse(lastAccessedStr) : null,
                                 rs.getFloat("importance_score"),
-                                validToStr != null ? Instant.parse(validToStr) : null);
+                                validToStr != null ? Instant.parse(validToStr) : null,
+                                updatedAtStr != null ? Instant.parse(updatedAtStr) : null);
                     },
                     escapedQuery, topK);
         } catch (Exception e) {
