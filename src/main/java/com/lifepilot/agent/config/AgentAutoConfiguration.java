@@ -88,7 +88,7 @@ public class AgentAutoConfiguration {
             return new ContextAssembler(config, hybridRetriever,
                     workingMemory, tokenBudgetAllocator, strategy, dataRedactor,
                     documentRetriever, sessionKnowledgeBaseRepository, documentRepository,
-                    episodicMemory, semanticMemory, passiveNotificationQueue, promptRegistry);
+                    episodicMemory, semanticMemory, passiveNotificationQueue, null, promptRegistry);
         }
         log.warn("Agent 引擎: 注册基础版 ContextAssembler（记忆系统部分或全部不可用，记忆检索功能已降级）");
         return new ContextAssembler(config, promptRegistry);

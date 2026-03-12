@@ -12,6 +12,7 @@ import com.lifepilot.knowledge.retrieve.DocumentRetriever;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.memory.episodic.MessageRecord;
 import com.lifepilot.memory.retrieval.HybridRetriever;
+import com.lifepilot.memory.retrieval.QueryRefiner;
 import com.lifepilot.memory.retrieval.RetrievalResult;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
@@ -77,6 +78,8 @@ public class ContextAssembler {
     @Nullable private final DocumentRepository documentRepository;
     // 被动通知队列：首次对话时 drain 并注入上下文，可选注入
     @Nullable private final PassiveNotificationQueue passiveNotificationQueue;
+    // 查询精炼器：清洗用户输入提升检索召回质量，可选注入
+    @Nullable private final QueryRefiner queryRefiner;
 
     /** 请求级检索缓存 — 同一 traceId + query + topK 组合只执行一次实际检索。 */
     private final ConcurrentHashMap<String, List<RetrievalResult>> retrievalCache = new ConcurrentHashMap<>();
@@ -96,6 +99,7 @@ public class ContextAssembler {
         this.sessionKnowledgeBaseRepository = null;
         this.documentRepository = null;
         this.passiveNotificationQueue = null;
+        this.queryRefiner = null;
     }
 
     /** 完整版构造器（注入记忆系统依赖）。 */
@@ -107,10 +111,10 @@ public class ContextAssembler {
                             @Nullable DataRedactor dataRedactor,
                             PromptRegistry promptRegistry) {
         this(config, hybridRetriever, workingMemory, tokenBudgetAllocator, retrievalStrategy, dataRedactor,
-                null, null, null, null, null, null, promptRegistry);
+                null, null, null, null, null, null, null, promptRegistry);
     }
 
-    /** 完整版构造器（注入记忆系统 + 可选知识库检索 + 可选 L2 情景记忆 + 可选 L3 语义记忆 + 可选被动通知队列依赖）。 */
+    /** 完整版构造器（注入记忆系统 + 可选知识库检索 + 可选 L2 情景记忆 + 可选 L3 语义记忆 + 可选被动通知队列 + 可选查询精炼器依赖）。 */
     public ContextAssembler(AgentConfigProperties config,
                             HybridRetriever hybridRetriever,
                             WorkingMemory workingMemory,
@@ -123,6 +127,7 @@ public class ContextAssembler {
                             @Nullable EpisodicMemory episodicMemory,
                             @Nullable SemanticMemory semanticMemory,
                             @Nullable PassiveNotificationQueue passiveNotificationQueue,
+                            @Nullable QueryRefiner queryRefiner,
                             PromptRegistry promptRegistry) {
         this.config = config;
         this.hybridRetriever = hybridRetriever;
@@ -137,6 +142,7 @@ public class ContextAssembler {
         this.sessionKnowledgeBaseRepository = sessionKnowledgeBaseRepository;
         this.documentRepository = documentRepository;
         this.passiveNotificationQueue = passiveNotificationQueue;
+        this.queryRefiner = queryRefiner;
     }
 
     /** 判断是否为完整版模式。 */
@@ -168,7 +174,10 @@ public class ContextAssembler {
                 return buildMinimalContext(state);
             }
 
-            // 2. 四路并行检索（Virtual Thread）
+            // 1.5 查询精炼：清洗用户输入提升检索召回质量
+            String refinedQuery = safeRefineQuery(state.goal());
+
+            // 2. 四路并行检索（Virtual Thread）— 使用精炼后的查询
             List<RetrievalResult> retrievalResults;
             List<String> kbSnippets;
             List<WorkingMemorySlot> slots;
@@ -177,13 +186,13 @@ public class ContextAssembler {
 
             try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
                 var retrievalFuture = CompletableFuture.supplyAsync(
-                        () -> cachedRetrieve(state.traceId(), state.goal(), strategyConfig), executor);
+                        () -> cachedRetrieve(state.traceId(), refinedQuery, strategyConfig), executor);
                 var kbFuture = CompletableFuture.supplyAsync(
-                        () -> safeRetrieveKnowledgeBaseSnippets(state.sessionId(), state.goal(), 5), executor);
+                        () -> safeRetrieveKnowledgeBaseSnippets(state.sessionId(), refinedQuery, 5), executor);
                 var slotsFuture = CompletableFuture.supplyAsync(
                         () -> safeGetSessionHistory(workingMemory, state.sessionId(), state.goal()), executor);
                 var crossSessionFuture = CompletableFuture.supplyAsync(
-                        () -> safeSearchCrossSession(episodicMemory, state.goal(), state.sessionId()), executor);
+                        () -> safeSearchCrossSession(episodicMemory, refinedQuery, state.sessionId()), executor);
 
                 CompletableFuture.allOf(retrievalFuture, kbFuture, slotsFuture, crossSessionFuture).join();
 
@@ -194,10 +203,10 @@ public class ContextAssembler {
             } catch (Exception parallelEx) {
                 // Virtual Thread 创建失败时降级为串行执行
                 log.warn("并行检索异常，降级为串行: error={}", parallelEx.getMessage());
-                retrievalResults = cachedRetrieve(state.traceId(), state.goal(), strategyConfig);
-                kbSnippets = safeRetrieveKnowledgeBaseSnippets(state.sessionId(), state.goal(), 5);
+                retrievalResults = cachedRetrieve(state.traceId(), refinedQuery, strategyConfig);
+                kbSnippets = safeRetrieveKnowledgeBaseSnippets(state.sessionId(), refinedQuery, 5);
                 slots = safeGetSessionHistory(workingMemory, state.sessionId(), state.goal());
-                crossSessionFragments = safeSearchCrossSession(episodicMemory, state.goal(), state.sessionId());
+                crossSessionFragments = safeSearchCrossSession(episodicMemory, refinedQuery, state.sessionId());
             }
 
             // L4: 可选意图匹配提示（来自 HybridRetriever 内部的 IntentMatcher 结果）
@@ -301,6 +310,31 @@ public class ContextAssembler {
     }
 
     // --- 降级容错方法 ---
+
+    /**
+     * 安全执行查询精炼，异常时降级返回原始输入。
+     *
+     * @param rawGoal 用户原始输入
+     * @return 精炼后的查询文本，精炼失败时返回原始输入
+     */
+    private String safeRefineQuery(String rawGoal) {
+        if (queryRefiner == null || rawGoal == null || rawGoal.isBlank()) {
+            return rawGoal;
+        }
+        try {
+            String refined = queryRefiner.refine(rawGoal);
+            if (refined == null || refined.isBlank()) {
+                return rawGoal;
+            }
+            if (!refined.equals(rawGoal) && log.isDebugEnabled()) {
+                log.debug("查询精炼: 原始={}, 精炼后={}", truncate(rawGoal, 50), truncate(refined, 50));
+            }
+            return refined;
+        } catch (Exception e) {
+            log.warn("查询精炼失败，降级使用原始输入: error={}", e.getMessage());
+            return rawGoal;
+        }
+    }
 
     /** 安全执行记忆检索，异常时返回空列表。 */
     private List<RetrievalResult> safeRetrieve(HybridRetriever retriever, String query, RetrievalStrategyConfig config) {
