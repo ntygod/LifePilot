@@ -212,9 +212,6 @@ public class HybridRetriever {
             }
         }
 
-        // 7. 批量更新 access_count
-        updateAccessCounts(finalResults);
-
         log.debug("混合检索: query={}, 向量={}, FTS={}, 图={}, 融合结果={}",
                 query, vectorItems.size(), ftsResults.size(), graphResults.size(), finalResults.size());
         return finalResults;
@@ -324,8 +321,15 @@ public class HybridRetriever {
         }
     }
 
-    /** 批量更新结果实体的 access_count。 */
-    private void updateAccessCounts(List<RetrievalResult> results) {
+    /**
+     * 批量更新结果实体的 access_count。
+     *
+     * <p>由 ContextAssembler 在 truncateByBudget 之后调用，
+     * 仅对最终注入上下文的实体更新访问计数。</p>
+     *
+     * @param results 最终注入上下文的检索结果列表
+     */
+    public void updateAccessCounts(List<RetrievalResult> results) {
         try {
             for (var result : results) {
                 semanticMemory.incrementAccessCount(result.entityId());
