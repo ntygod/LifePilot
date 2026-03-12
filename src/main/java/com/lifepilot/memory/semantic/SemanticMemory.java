@@ -253,6 +253,68 @@ public class SemanticMemory {
         return list.stream().collect(Collectors.toMap(TemporalEntity::id, e -> e));
     }
 
+    /**
+     * 统计当前有效实体总数。
+     *
+     * @return 当前有效实体数量
+     */
+    public long countCurrent() {
+        var count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM temporal_entities WHERE is_current = 1",
+                Long.class);
+        return count != null ? count : 0L;
+    }
+
+    /**
+     * 统计当前有效关系总数。
+     *
+     * @return 当前有效关系数量
+     */
+    public long countCurrentRelations() {
+        var count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM temporal_relations WHERE valid_to IS NULL",
+                Long.class);
+        return count != null ? count : 0L;
+    }
+
+    /**
+     * 查询所有当前有效关系。
+     *
+     * @return 当前有效关系列表
+     */
+    public List<TemporalRelation> findAllCurrentRelations() {
+        return jdbcTemplate.query(
+                "SELECT * FROM temporal_relations WHERE valid_to IS NULL ORDER BY created_at DESC",
+                (rs, rowNum) -> mapRowToRelation(rs));
+    }
+
+    /**
+     * 查询与指定实体相关的所有当前有效关系（作为 source 或 target）。
+     *
+     * @param entityId 实体 ID
+     * @return 相关关系列表
+     */
+    public List<TemporalRelation> findRelationsByEntityId(String entityId) {
+        return jdbcTemplate.query(
+                "SELECT * FROM temporal_relations WHERE (source_entity_id = ? OR target_entity_id = ?) AND valid_to IS NULL ORDER BY created_at DESC",
+                (rs, rowNum) -> mapRowToRelation(rs),
+                entityId, entityId);
+    }
+
+    /**
+     * 按 ID 查找单个实体。
+     *
+     * @param entityId 实体 ID
+     * @return 实体（如存在）
+     */
+    public Optional<TemporalEntity> findById(String entityId) {
+        var results = jdbcTemplate.query(
+                "SELECT * FROM temporal_entities WHERE id = ?",
+                (rs, rowNum) -> mapRowToEntity(rs),
+                entityId);
+        return results.isEmpty() ? Optional.empty() : Optional.of(results.getFirst());
+    }
+
     // --- 内部方法 ---
 
     /** 通知检索引擎数据已变更，重置 knownEmpty 短路标记。 */
@@ -333,6 +395,23 @@ public class SemanticMemory {
                 lastAccessedStr != null ? Instant.parse(lastAccessedStr) : null,
                 Instant.parse(rs.getString("created_at")),
                 Instant.parse(rs.getString("updated_at"))
+        );
+    }
+
+    /** ResultSet 行映射为 TemporalRelation。 */
+    private TemporalRelation mapRowToRelation(java.sql.ResultSet rs) throws java.sql.SQLException {
+        String validToStr = rs.getString("valid_to");
+        return new TemporalRelation(
+                rs.getString("id"),
+                rs.getString("source_entity_id"),
+                rs.getString("target_entity_id"),
+                rs.getString("relation_type"),
+                rs.getFloat("strength"),
+                rs.getString("properties_json"),
+                Instant.parse(rs.getString("valid_from")),
+                validToStr != null ? Instant.parse(validToStr) : null,
+                rs.getString("source_conversation_id"),
+                Instant.parse(rs.getString("created_at"))
         );
     }
 }

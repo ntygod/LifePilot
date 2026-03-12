@@ -299,6 +299,56 @@ public class EpisodicMemory {
     }
 
     /**
+     * 统计对话记录总数。
+     *
+     * @return 对话总数
+     */
+    public long countConversations() {
+        var count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM conversations", Long.class);
+        return count != null ? count : 0L;
+    }
+
+    /**
+     * 分页查询对话列表（不加载消息，仅返回摘要信息）。
+     *
+     * @param page 页码（从 0 开始）
+     * @param size 每页大小
+     * @return 对话记录列表（messages 为空列表）
+     */
+    public List<ConversationRecord> listConversations(int page, int size) {
+        int offset = page * size;
+        return jdbcTemplate.query(
+                "SELECT id, session_id, goal, summary, created_at, updated_at " +
+                        "FROM conversations ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                (rs, rowNum) -> new ConversationRecord(
+                        rs.getString("id"),
+                        rs.getString("session_id"),
+                        rs.getString("goal"),
+                        rs.getString("summary"),
+                        List.of(),
+                        Instant.parse(rs.getString("created_at")),
+                        Instant.parse(rs.getString("updated_at"))),
+                size, offset);
+    }
+
+    /**
+     * 删除指定对话记录及其所有消息。
+     *
+     * @param conversationId 对话 ID
+     * @return 是否删除成功（对话存在则返回 true）
+     */
+    @Transactional
+    public boolean delete(String conversationId) {
+        jdbcTemplate.update("DELETE FROM messages WHERE conversation_id = ?", conversationId);
+        int rows = jdbcTemplate.update("DELETE FROM conversations WHERE id = ?", conversationId);
+        if (rows > 0) {
+            log.info("情景记忆: 删除对话, id={}", conversationId);
+        }
+        return rows > 0;
+    }
+
+    /**
      * 对指定对话执行渐进式压缩。
      *
      * <p>仅更新未 pinned 且当前压缩层级低于目标层级的消息。</p>
