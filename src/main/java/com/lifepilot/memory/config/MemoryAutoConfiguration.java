@@ -8,7 +8,12 @@ import com.lifepilot.memory.consolidation.EpisodicToProceduralConsolidator;
 import com.lifepilot.memory.consolidation.EpisodicToSemanticConsolidator;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.memory.retrieval.QueryRefiner;
+import com.lifepilot.memory.forgetting.EntityExpirationJob;
 import com.lifepilot.memory.forgetting.ForgettingEngine;
+import com.lifepilot.memory.feedback.FeedbackProcessor;
+import com.lifepilot.interaction.web.repository.MessageFeedbackRepository;
+import com.lifepilot.memory.retrieval.InjectionRecordRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.memory.procedural.IntentMatcher;
 import com.lifepilot.memory.procedural.ProceduralMemory;
@@ -454,6 +459,36 @@ public class MemoryAutoConfiguration {
         log.info("记忆系统: 注册 ForgettingEngine, LLM={}",
                 llmRouter != null ? "可用" : "不可用");
         return new ForgettingEngine(semanticMemory, llmRouter, jdbcTemplate, properties, promptRegistry);
+    }
+
+    // --- 反馈闭环 ---
+
+    @Bean
+    @ConditionalOnMissingBean
+    public InjectionRecordRepository injectionRecordRepository(JdbcTemplate jdbcTemplate,
+                                                               ObjectMapper objectMapper) {
+        log.info("记忆系统: 注册 InjectionRecordRepository");
+        return new InjectionRecordRepository(jdbcTemplate, objectMapper);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(SemanticMemory.class)
+    public FeedbackProcessor feedbackProcessor(
+            InjectionRecordRepository injectionRecordRepository,
+            SemanticMemory semanticMemory,
+            MessageFeedbackRepository feedbackRepository,
+            MemoryProperties properties) {
+        log.info("记忆系统: 注册 FeedbackProcessor");
+        return new FeedbackProcessor(injectionRecordRepository, semanticMemory,
+                feedbackRepository, properties);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public EntityExpirationJob entityExpirationJob(JdbcTemplate jdbcTemplate) {
+        log.info("记忆系统: 注册 EntityExpirationJob");
+        return new EntityExpirationJob(jdbcTemplate);
     }
 
     // --- 工具方法 ---
