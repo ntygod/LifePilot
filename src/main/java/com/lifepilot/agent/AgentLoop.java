@@ -1071,22 +1071,22 @@ public class AgentLoop {
             // PLANNING 阶段通过 formatToolListSection() 将可用工具列表以文本形式注入 userText，
             // 使 LLM 感知可用工具并在 PLANNING 阶段规划工具调用步骤。
             return switch (state.phase()) {
-                case PLANNING -> {
+                case UNDERSTANDING, REFLECTING,PLANNING -> {
                     // PLANNING 阶段：在 userText 中追加可用工具列表（toolId + description）
                     String planningUserText = userText + formatToolListSection(toolCallbacks);
                     var prompt = buildPrompt(chatClient, systemPrompt, List.of());
                     String raw = prompt.user(planningUserText).call().content();
-                    log.debug("LLM 响应获取成功: phase=PLANNING, traceId={}, length={}",
-                            state.traceId(), raw != null ? raw.length() : 0);
+                    log.debug("LLM 响应获取成功: phase={}, traceId={}, raw={}",
+                            state.phase(), state.traceId(), raw);
                     yield actionParser.parse(state.phase(), raw != null ? raw : "");
                 }
-                case UNDERSTANDING, REFLECTING -> {
-                    var prompt = buildPrompt(chatClient, systemPrompt, List.of());
-                    String raw = prompt.user(userText).call().content();
-                    log.debug("LLM 响应获取成功: phase={}, traceId={}, length={}",
-                            state.phase(), state.traceId(), raw != null ? raw.length() : 0);
-                    yield actionParser.parse(state.phase(), raw != null ? raw : "");
-                }
+//                case UNDERSTANDING, REFLECTING -> {
+//                    var prompt = buildPrompt(chatClient, systemPrompt, List.of());
+//                    String raw = prompt.user(userText).call().content();
+//                    log.debug("LLM 响应获取成功: phase={}, traceId={}, length={}",
+//                            state.phase(), state.traceId(), raw != null ? raw.length() : 0);
+//                    yield actionParser.parse(state.phase(), raw != null ? raw : "");
+//                }
                 case RESPONDING -> {
                     // RESPONDING 阶段同样不注册工具回调，避免静默 function calling
                     var prompt = buildPrompt(chatClient, systemPrompt, List.of());
@@ -1323,7 +1323,7 @@ public class AgentLoop {
         return new Action.ToolResult(
                 toolId,
                 success,
-                output != null ? output : "",
+                output,
                 0,
                 latencyMs,
                 hasMore

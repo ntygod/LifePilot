@@ -291,13 +291,14 @@ export function useChat() {
           const timestamp = event.timestamp ?? Date.now()
           // 合并流式媒体数据到附件列表（截图等通过 MEDIA 事件独立传输的二进制数据）
           for (const media of streamingMedia.value) {
+            const mimeType = media.mimeType ?? 'application/octet-stream'
             extraAttachments.push({
               fileId: crypto.randomUUID(),
-              url: `data:${media.mimeType};base64,${media.data}`,
-              filename: `${media.field}.${media.mimeType.split('/')[1] ?? 'bin'}`,
-              size: Math.round(media.data.length * 0.75),
-              type: media.mimeType,
-              isImage: media.mimeType.startsWith('image/')
+              url: `data:${mimeType};base64,${media.data ?? ''}`,
+              filename: `${media.field ?? 'media'}.${mimeType.split('/')[1] ?? 'bin'}`,
+              size: Math.round((media.data?.length ?? 0) * 0.75),
+              type: mimeType,
+              isImage: mimeType.startsWith('image/')
             })
           }
           // 将完整消息存入消息列表

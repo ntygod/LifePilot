@@ -40,16 +40,15 @@
 
 <output_format>
 你必须严格输出以下 JSON 格式，不要包含任何其他文字或 markdown 标记。
-注意：下面示例中的外层花括号使用全角字符，仅为避免模板引擎将其识别为占位符；实际输出时请使用标准 JSON 对象。
 
-｛
+{
   "summary": "对用户意图的简洁概括",
   "needsClarification": false,
   "clarificationQuestion": null,
   "canProceed": true,
   "entities": ["实体1", "实体2"],
   "complexity": "SIMPLE | MODERATE | COMPLEX"
-｝
+}
 
 字段说明：
 - summary（必填）：一句话概括用户意图
