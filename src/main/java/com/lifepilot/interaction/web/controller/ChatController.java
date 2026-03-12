@@ -20,6 +20,8 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import com.lifepilot.memory.feedback.FeedbackProcessor;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -29,6 +31,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * 对话 REST + SSE 端点，处理消息发送、会话管理和 A2UI 信号回传。
@@ -77,6 +80,8 @@ public class ChatController {
     private final ResponseTracker responseTracker;
     @org.springframework.lang.Nullable
     private final WebUserConfirmationService confirmationService;
+    @org.springframework.lang.Nullable
+    private final FeedbackProcessor feedbackProcessor;
 
     public ChatController(WebChannelAdapter adapter, SseSessionManager sseManager,
                           com.lifepilot.interaction.web.service.ChatSessionService sessionService,
@@ -85,7 +90,8 @@ public class ChatController {
                           KnowledgeBaseProperties knowledgeBaseProperties,
                           ProactiveConfigProperties proactiveConfig,
                           @org.springframework.lang.Nullable ResponseTracker responseTracker,
-                          @org.springframework.lang.Nullable WebUserConfirmationService confirmationService) {
+                          @org.springframework.lang.Nullable WebUserConfirmationService confirmationService,
+                          @org.springframework.lang.Nullable FeedbackProcessor feedbackProcessor) {
         this.adapter = adapter;
         this.sseManager = sseManager;
         this.sessionService = sessionService;
@@ -95,6 +101,7 @@ public class ChatController {
         this.proactiveConfig = proactiveConfig;
         this.responseTracker = responseTracker;
         this.confirmationService = confirmationService;
+        this.feedbackProcessor = feedbackProcessor;
     }
 
     /**
@@ -696,6 +703,18 @@ public class ChatController {
             // 保存反馈
             feedbackRepository.save(messageId, sessionId, request.type(), request.feedback());
             log.info("消息反馈保存成功: messageId={}, type={}", messageId, request.type());
+
+            // 异步调用 FeedbackProcessor 调整关联实体 importanceScore
+            if (feedbackProcessor != null) {
+                CompletableFuture.runAsync(() -> {
+                    try {
+                        feedbackProcessor.processFeedback(messageId, request.type());
+                    } catch (Exception ex) {
+                        log.warn("反馈处理失败: messageId={}, error={}", messageId, ex.getMessage());
+                    }
+                });
+            }
+
             return ResponseEntity.noContent().build();
         } catch (Exception e) {
             log.error("保存消息反馈时发生错误: messageId={}", messageId, e);
