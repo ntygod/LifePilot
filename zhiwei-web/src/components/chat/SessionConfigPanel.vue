@@ -11,7 +11,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 
 const props = defineProps<{
-  modelId?: string
+  preferredProviderId?: string
   temperature?: number
   maxTokens?: number
   knowledgeBaseIds?: string[]
@@ -24,15 +24,15 @@ const emit = defineEmits<{
   (e: 'close'): void
 }>()
 
-const localModelId = ref(props.modelId ?? '')
+const localPreferredProviderId = ref(props.preferredProviderId ?? '')
 const localTemperature = ref(props.temperature ?? 0.7)
 const localMaxTokens = ref(props.maxTokens ?? 2000)
 const localKbIds = ref<string[]>(props.knowledgeBaseIds ?? [])
 
 const selectedProviderLabel = computed(() => {
-  if (!localModelId.value) return '跟随默认模型'
-  const provider = props.providers.find(item => item.id === localModelId.value)
-  return provider?.displayName || provider?.modelName || provider?.id || '已选模型'
+  if (!localPreferredProviderId.value) return '跟随场景默认'
+  const provider = props.providers.find(item => item.id === localPreferredProviderId.value)
+  return provider?.displayName || provider?.modelName || provider?.id || '已选择 Provider'
 })
 
 const selectedKnowledgeBases = computed(() =>
@@ -46,36 +46,44 @@ const temperatureSummary = computed(() => {
 })
 
 const maxTokensSummary = computed(() => {
-  if (localMaxTokens.value >= 6000) return '长回复'
-  if (localMaxTokens.value <= 1200) return '短回复'
+  if (localMaxTokens.value >= 6000) return '长回答'
+  if (localMaxTokens.value <= 1200) return '短回答'
   return '常规长度'
 })
 
-watch(() => props.modelId, value => { localModelId.value = value ?? '' })
-watch(() => props.temperature, value => { localTemperature.value = value ?? 0.7 })
-watch(() => props.maxTokens, value => { localMaxTokens.value = value ?? 2000 })
-watch(() => props.knowledgeBaseIds, value => { localKbIds.value = value ?? [] })
+watch(() => props.preferredProviderId, value => {
+  localPreferredProviderId.value = value ?? ''
+})
+watch(() => props.temperature, value => {
+  localTemperature.value = value ?? 0.7
+})
+watch(() => props.maxTokens, value => {
+  localMaxTokens.value = value ?? 2000
+})
+watch(() => props.knowledgeBaseIds, value => {
+  localKbIds.value = value ?? []
+})
 
 function emitUpdate() {
-  const temp = Math.min(2, Math.max(0, localTemperature.value))
-  const tokens = Math.min(8000, Math.max(100, localMaxTokens.value))
+  const temperature = Math.min(2, Math.max(0, localTemperature.value))
+  const maxTokens = Math.min(8000, Math.max(100, localMaxTokens.value))
 
   emit('update', {
-    modelId: localModelId.value || undefined,
-    temperature: temp,
-    maxTokens: tokens,
+    preferredProviderId: localPreferredProviderId.value || undefined,
+    temperature,
+    maxTokens,
     knowledgeBaseIds: localKbIds.value.length > 0 ? localKbIds.value : undefined,
   })
 }
 
-function onModelChange(value: unknown) {
+function onPreferredProviderChange(value: unknown) {
   const nextValue = String(value ?? '')
-  localModelId.value = nextValue === '__default__' ? '' : nextValue
+  localPreferredProviderId.value = nextValue === '__default__' ? '' : nextValue
   emitUpdate()
 }
 
 function onTemperatureChange(value: number[] | undefined) {
-  if (value) {
+  if (value?.length) {
     localTemperature.value = value[0]
   }
   emitUpdate()
@@ -111,9 +119,11 @@ function toggleKb(id: string, checked: boolean) {
     <div class="flex flex-col gap-3 border-b border-border/60 pb-4 sm:flex-row sm:items-start sm:justify-between">
       <div class="space-y-2">
         <div class="surface-label">会话配置</div>
-        <div class="text-sm font-semibold text-foreground sm:text-base">决定这一轮对话怎么回答、接什么资料</div>
+        <div class="text-sm font-semibold text-foreground sm:text-base">
+          决定这个会话优先使用哪个 Provider、回答风格和资料范围
+        </div>
         <p class="text-sm leading-6 text-muted-foreground">
-          这里的调整会立刻作用在当前会话里，适合在开始前先把模型、回答长度和知识范围定好。
+          这里的调整会立即作用在当前会话里，适合在开聊前先把模型偏好、回答长度和知识范围定好。
         </p>
       </div>
 
@@ -128,7 +138,7 @@ function toggleKb(id: string, checked: boolean) {
     </div>
 
     <div class="mt-4 flex flex-wrap gap-2 text-xs">
-      <span class="surface-chip">模型 {{ selectedProviderLabel }}</span>
+      <span class="surface-chip">Provider {{ selectedProviderLabel }}</span>
       <span class="surface-chip">回答倾向 {{ temperatureSummary }}</span>
       <span class="surface-chip">知识库 {{ selectedKnowledgeBases.length }} 个</span>
     </div>
@@ -136,20 +146,23 @@ function toggleKb(id: string, checked: boolean) {
     <div class="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_220px]">
       <div class="space-y-4">
         <section class="space-y-2">
-          <Label class="text-xs text-muted-foreground">回答模型</Label>
-          <Select :model-value="localModelId || '__default__'" @update:model-value="onModelChange">
+          <Label class="text-xs text-muted-foreground">优先 Provider</Label>
+          <Select
+            :model-value="localPreferredProviderId || '__default__'"
+            @update:model-value="onPreferredProviderChange"
+          >
             <SelectTrigger class="w-full bg-background/80">
-              <SelectValue placeholder="默认模型" />
+              <SelectValue placeholder="默认 Provider" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="__default__">跟随默认模型</SelectItem>
+              <SelectItem value="__default__">跟随场景默认</SelectItem>
               <SelectItem v-for="provider in providers" :key="provider.id" :value="provider.id">
                 {{ provider.displayName || provider.modelName || provider.id }}
               </SelectItem>
             </SelectContent>
           </Select>
           <p class="text-xs leading-5 text-muted-foreground">
-            如果不指定，这轮会沿用系统当前默认模型。
+            如果不指定，这个会话会先看场景默认，再回退到全局默认和自动路由。
           </p>
         </section>
 
@@ -204,12 +217,12 @@ function toggleKb(id: string, checked: boolean) {
               <Checkbox
                 :model-value="localKbIds.includes(kb.id)"
                 class="mt-0.5"
-                @update:model-value="(checked) => toggleKb(kb.id, normalizeCheckboxValue(checked))"
+                @update:model-value="checked => toggleKb(kb.id, normalizeCheckboxValue(checked))"
               />
               <div class="min-w-0 space-y-1">
                 <div class="text-sm font-medium text-foreground">{{ kb.name }}</div>
                 <p class="text-xs leading-5 text-muted-foreground">
-                  选中后，这轮提问可以直接检索这部分资料。
+                  选中后，这个会话里的提问可以直接检索这些资料。
                 </p>
               </div>
             </label>
@@ -224,7 +237,7 @@ function toggleKb(id: string, checked: boolean) {
             当前回答策略
           </div>
           <div class="space-y-1 text-sm text-muted-foreground">
-            <p>模型：{{ selectedProviderLabel }}</p>
+            <p>Provider：{{ selectedProviderLabel }}</p>
             <p>温度：{{ temperatureSummary }}</p>
             <p>长度：{{ maxTokensSummary }}</p>
           </div>
@@ -250,7 +263,7 @@ function toggleKb(id: string, checked: boolean) {
             调整建议
           </div>
           <p class="text-sm text-muted-foreground">
-            起草和发散阶段可以把温度调高；整理纪要、排障和结构化输出更适合维持在当前或更低。
+            草稿和发散阶段可以把温度调高；整理纪要、排障和结构化输出更适合保持在当前或更低。
           </p>
         </div>
       </aside>

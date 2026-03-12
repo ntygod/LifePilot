@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { CheckCircle2, ChevronDown, Cpu, Loader2, RefreshCw, Trash2, XCircle } from 'lucide-vue-next'
 import { llmProviderApi, settingsApi } from '@/api/client'
 import type { LlmProvider } from '@/api/client'
@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/select'
 import { useSettings } from '@/composables/useSettings'
 import { useUiStore } from '@/stores/ui'
+import type { UserSettings } from '@/types'
 
 const { settings, loading, error, loadSettings, saveSettings } = useSettings()
 const uiStore = useUiStore()
@@ -28,6 +29,7 @@ const providers = ref<LlmProvider[]>([])
 const loadingProviders = ref(false)
 const providerLoadError = ref<string | null>(null)
 const defaultProvider = ref('')
+const sceneProviders = ref<Record<string, string>>({})
 const showProviderManager = ref(false)
 const expandedProviders = ref<Set<string>>(new Set())
 const showDeleteConfirm = ref(false)
@@ -35,24 +37,140 @@ const deletingProviderId = ref<string | null>(null)
 const healthStatus = ref<Record<string, boolean>>({})
 const checkingHealth = ref<Set<string>>(new Set())
 
+const SCENE_LABELS: Record<string, string> = {
+  chat: '通用聊天',
+  intent_understanding: '意图理解',
+  task_planning: '任务规划',
+  knowledge_extraction: '知识提取',
+  memory_compression: '记忆压缩',
+  proactive_reasoning: '主动推理',
+  code_generation: '代码生成',
+  document_summary: '文档总结',
+  agent_reasoning: 'Agent 推理',
+  agent_tool_calling: 'Agent 工具调用',
+  agent_generation: 'Agent 最终生成',
+  skill_generation: '技能生成',
+  knowledge_rerank: '知识重排',
+}
+
+const SCENE_DESCRIPTIONS: Record<string, string> = {
+  chat: '适合普通对话、问答和泛化聊天。',
+  intent_understanding: '偏前置理解环节，适合分类、识别、拆解需求。',
+  task_planning: '适合做步骤规划和执行方案生成。',
+  knowledge_extraction: '适合抽取结构化信息和关键信息。',
+  memory_compression: '适合总结历史上下文，压缩记忆。',
+  proactive_reasoning: '适合复杂推理和主动建议场景。',
+  code_generation: '适合代码生成、修复和解释。',
+  document_summary: '适合长文总结、提炼重点。',
+  agent_reasoning: 'Agent 在行动前的主要推理模型。',
+  agent_tool_calling: 'Agent 在调工具前的判断与选择。',
+  agent_generation: 'Agent 组织最终答复时使用的模型。',
+  skill_generation: '自动生成技能或提示模板的场景。',
+  knowledge_rerank: '知识检索后的精排与重排序。',
+}
+
+const SCENE_ORDER = [
+  'chat',
+  'agent_reasoning',
+  'agent_tool_calling',
+  'agent_generation',
+  'intent_understanding',
+  'task_planning',
+  'knowledge_extraction',
+  'knowledge_rerank',
+  'document_summary',
+  'code_generation',
+  'memory_compression',
+  'proactive_reasoning',
+  'skill_generation',
+] as const
+
 const healthyCount = computed(() => providers.value.filter(provider => getProviderHealth(provider.id) === 'healthy').length)
 const checkedCount = computed(() => providers.value.filter(provider => getProviderHealth(provider.id) !== 'unknown').length)
 const defaultProviderLabel = computed(() => {
   const provider = providers.value.find(item => item.id === defaultProvider.value)
   return provider?.displayName || provider?.id || defaultProvider.value || '未设置'
 })
+const availableScenes = computed(() => {
+  const seen = new Set<string>()
+  for (const provider of providers.value) {
+    for (const scene of provider.scenes ?? []) {
+      if (scene) seen.add(scene)
+    }
+  }
+
+  return [...seen].sort((left, right) => {
+    const leftIndex = SCENE_ORDER.indexOf(left as typeof SCENE_ORDER[number])
+    const rightIndex = SCENE_ORDER.indexOf(right as typeof SCENE_ORDER[number])
+
+    if (leftIndex === -1 && rightIndex === -1) return left.localeCompare(right)
+    if (leftIndex === -1) return 1
+    if (rightIndex === -1) return -1
+    return leftIndex - rightIndex
+  })
+})
+const sceneRoutingItems = computed(() =>
+  availableScenes.value.map(scene => ({
+    scene,
+    label: SCENE_LABELS[scene] || scene,
+    description: SCENE_DESCRIPTIONS[scene] || '为这个场景单独指定优先 Provider，未指定时会继续走全局默认和自动路由。',
+    providers: providers.value.filter(provider => (provider.scenes ?? []).includes(scene)),
+    selectedProviderId: sceneProviders.value[scene] ?? '',
+  })),
+)
 const currentStatusItems = computed(() => [
   { label: '提供商总数', value: String(providers.value.length) },
   { label: '已检查', value: String(checkedCount.value) },
   { label: '健康', value: String(healthyCount.value) },
   { label: '默认提供商', value: defaultProviderLabel.value },
+  { label: '场景映射', value: String(Object.keys(sceneProviders.value).length) },
 ])
+
+function normalizeDefaultProvider(providerId: string) {
+  if (!providerId || providers.value.length === 0) return providerId
+  return providers.value.some(provider => provider.id === providerId) ? providerId : ''
+}
+
+function normalizeSceneProviders(value: Record<string, string> | undefined) {
+  const entries = Object.entries(value ?? {}).filter(([, providerId]) => Boolean(providerId))
+  if (providers.value.length === 0) {
+    return Object.fromEntries(entries)
+  }
+
+  return Object.fromEntries(
+    entries.filter(([scene, providerId]) => {
+      const provider = providers.value.find(item => item.id === providerId)
+      return provider != null && ((provider.scenes ?? []).length === 0 || (provider.scenes ?? []).includes(scene))
+    }),
+  )
+}
+
+function syncRoutingSettings() {
+  defaultProvider.value = normalizeDefaultProvider(settings.value.llmProvider || '')
+  sceneProviders.value = normalizeSceneProviders(settings.value.sceneProviders)
+}
+
+function buildSettingsPayload(
+  overrides: Partial<Pick<UserSettings, 'llmProvider' | 'sceneProviders'>>,
+): UserSettings {
+  return {
+    ...settings.value,
+    llmProvider: overrides.llmProvider ?? defaultProvider.value,
+    sceneProviders: overrides.sceneProviders ?? sceneProviders.value,
+  }
+}
+
+watch(settings, () => {
+  syncRoutingSettings()
+})
+
+watch(providers, () => {
+  syncRoutingSettings()
+})
 
 onMounted(async () => {
   await loadSettings()
-  if (settings.value) {
-    defaultProvider.value = settings.value.llmProvider || ''
-  }
+  syncRoutingSettings()
   await loadProviders()
 })
 
@@ -158,15 +276,38 @@ function toggleProviderExpanded(providerId: string) {
 
 async function handleDefaultProviderChange(value: unknown) {
   const nextValue = String(value ?? '')
-  defaultProvider.value = nextValue
-  if (!nextValue) return
+  const normalizedValue = nextValue === '__auto__' ? '' : nextValue
+  defaultProvider.value = normalizedValue
 
   try {
-    await saveSettings({ ...(settings.value ?? {}), llmProvider: nextValue } as never)
+    await saveSettings(buildSettingsPayload({ llmProvider: normalizedValue }))
     uiStore.showToast('success', '默认提供商已更新。')
   } catch (event) {
     console.error('Failed to save default provider:', event)
+    syncRoutingSettings()
     uiStore.showToast('error', '保存默认提供商失败。')
+  }
+}
+
+async function handleSceneProviderChange(scene: string, value: unknown) {
+  const nextValue = String(value ?? '')
+  const nextSceneProviders = { ...sceneProviders.value }
+
+  if (!nextValue || nextValue === '__inherit__') {
+    delete nextSceneProviders[scene]
+  } else {
+    nextSceneProviders[scene] = nextValue
+  }
+
+  sceneProviders.value = nextSceneProviders
+
+  try {
+    await saveSettings(buildSettingsPayload({ sceneProviders: nextSceneProviders }))
+    uiStore.showToast('success', '场景路由已更新')
+  } catch (event) {
+    console.error(`Failed to save scene provider for ${scene}:`, event)
+    syncRoutingSettings()
+    uiStore.showToast('error', '保存场景路由失败')
   }
 }
 
@@ -235,14 +376,27 @@ async function handleDelete() {
 
   loadingProviders.value = true
   try {
-    await llmProviderApi.deleteProvider(deletingProviderId.value)
+    const deletedProviderId = deletingProviderId.value
+    await llmProviderApi.deleteProvider(deletedProviderId)
     await loadProviders()
 
-    if (deletingProviderId.value === defaultProvider.value) {
-      defaultProvider.value = ''
-      if (settings.value) {
-        await saveSettings({ ...settings.value, llmProvider: '' } as never)
-      }
+    const nextDefaultProvider = normalizeDefaultProvider(
+      deletedProviderId === defaultProvider.value ? '' : defaultProvider.value,
+    )
+    const nextSceneProviders = normalizeSceneProviders(
+      Object.fromEntries(
+        Object.entries(sceneProviders.value).filter(([, providerId]) => providerId !== deletedProviderId),
+      ),
+    )
+
+    if (nextDefaultProvider !== defaultProvider.value
+      || Object.keys(nextSceneProviders).length !== Object.keys(sceneProviders.value).length) {
+      defaultProvider.value = nextDefaultProvider
+      sceneProviders.value = nextSceneProviders
+      await saveSettings(buildSettingsPayload({
+        llmProvider: nextDefaultProvider,
+        sceneProviders: nextSceneProviders,
+      }))
     }
 
     showDeleteConfirm.value = false
@@ -250,6 +404,7 @@ async function handleDelete() {
     uiStore.showToast('success', '提供商已删除。')
   } catch (event: any) {
     console.error('Failed to delete provider:', event)
+    syncRoutingSettings()
     uiStore.showToast('error', event?.message || '删除提供商失败。')
   } finally {
     loadingProviders.value = false
@@ -319,7 +474,7 @@ const deleteConfirmMessage = computed(() => {
           <SettingSection title="默认提供商" description="未单独指定模型时，会优先使用这里的服务。">
             <SettingItem label="默认模型提供商" description="用于需要默认模型的场景。" required>
               <Select
-                :model-value="defaultProvider"
+                :model-value="defaultProvider || '__auto__'"
                 :disabled="loadingProviders"
                 @update:model-value="handleDefaultProviderChange"
               >
@@ -327,12 +482,66 @@ const deleteConfirmMessage = computed(() => {
                   <SelectValue placeholder="选择默认提供商" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="__auto__">
+                    自动路由
+                  </SelectItem>
                   <SelectItem v-for="provider in providers" :key="provider.id" :value="provider.id">
                     {{ provider.displayName || provider.id }}
                   </SelectItem>
                 </SelectContent>
               </Select>
             </SettingItem>
+          </SettingSection>
+
+          <SettingSection title="场景路由" description="先看场景默认，再看全局默认，最后自动选择可用 Provider。">
+            <div v-if="sceneRoutingItems.length === 0" class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/55 px-4 py-4 text-sm text-muted-foreground">
+              当前还没有声明场景的 Provider。先在 Provider 管理里给模型配置适用场景，这里就能分别指定。
+            </div>
+
+            <div v-else class="grid gap-4 lg:grid-cols-2">
+              <article
+                v-for="item in sceneRoutingItems"
+                :key="item.scene"
+                class="rounded-[calc(var(--radius)+6px)] border border-border/70 bg-background/65 p-4"
+              >
+                <div class="space-y-1">
+                  <div class="text-sm font-medium text-foreground">{{ item.label }}</div>
+                  <p class="text-sm leading-6 text-muted-foreground">{{ item.description }}</p>
+                </div>
+
+                <div class="mt-4">
+                  <Select
+                    :model-value="item.selectedProviderId || '__inherit__'"
+                    :disabled="loadingProviders || item.providers.length === 0"
+                    @update:model-value="value => handleSceneProviderChange(item.scene, value)"
+                  >
+                    <SelectTrigger class="w-full">
+                      <SelectValue placeholder="跟随全局默认 / 自动路由" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__inherit__">
+                        跟随全局默认 / 自动路由
+                      </SelectItem>
+                      <SelectItem
+                        v-for="provider in item.providers"
+                        :key="provider.id"
+                        :value="provider.id"
+                      >
+                        {{ provider.displayName || provider.id }}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <p class="mt-3 text-xs leading-5 text-muted-foreground">
+                  {{
+                    item.providers.length > 0
+                      ? `可选 Provider: ${item.providers.map(provider => provider.displayName || provider.id).join(' / ')}`
+                      : '暂无兼容 Provider'
+                  }}
+                </p>
+              </article>
+            </div>
           </SettingSection>
 
           <SettingSection title="提供商列表" description="展开后可查看配置摘要、健康状态和支持能力。">

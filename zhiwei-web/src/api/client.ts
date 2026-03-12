@@ -2,6 +2,7 @@ import type {
   ChatAttachment,
   ChatResponse,
   ChatSession,
+  ChatSessionDetail,
   CreateKbRequest,
   DocumentChunk,
   ErrorResponse,
@@ -18,6 +19,7 @@ import type {
   SkillSummary,
   TestRetrievalResult,
   AgentDetail,
+  CreateAgentRequest,
   AgentSummary,
   ToolDetail,
   ToolSummary,
@@ -26,6 +28,7 @@ import type {
   TraceDetail,
   TraceItem,
   TraceStep,
+  UpdateAgentRequest,
   UserSettings,
   WorkflowDetail,
   WorkflowEvent,
@@ -185,6 +188,11 @@ export const chatApi = {
     return messages.map(mapBackendMessage)
   },
 
+  /** 鑾峰彇浼氳瘽璇︽儏 */
+  getSession(sessionId: string): Promise<ChatSessionDetail> {
+    return request(`/chat/sessions/${sessionId}`)
+  },
+
   /** 更新会话（标题、置顶、归档等） */
   updateSession(sessionId: string, updates: { title?: string; pinned?: boolean; archived?: boolean }): Promise<ChatSession> {
     return request(`/chat/sessions/${sessionId}`, {
@@ -201,7 +209,7 @@ export const chatApi = {
   updateSessionConfig(
     sessionId: string,
     config: {
-      modelId?: string
+      preferredProviderId?: string
       temperature?: number
       maxTokens?: number
       knowledgeBaseIds?: string[]
@@ -896,13 +904,13 @@ export const agentApi = {
   get(id: string): Promise<AgentDetail> {
     return request(`/agents/${id}`)
   },
-  create(data: Partial<AgentDetail>): Promise<AgentDetail> {
+  create(data: CreateAgentRequest): Promise<AgentDetail> {
     return request('/agents', {
       method: 'POST',
       body: JSON.stringify(data)
     })
   },
-  update(id: string, data: Partial<AgentDetail>): Promise<AgentDetail> {
+  update(id: string, data: UpdateAgentRequest): Promise<AgentDetail> {
     return request(`/agents/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data)

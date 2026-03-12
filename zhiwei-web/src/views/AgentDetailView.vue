@@ -68,7 +68,7 @@ const basicInfo = ref({ name: '', description: '', tags: [] as string[] })
 const systemPrompt = ref('')
 const systemPromptDirty = ref(false)
 const systemPromptSaving = ref(false)
-const modelConfig = ref({ modelId: '', temperature: 0.7, maxTokens: 2000, topP: 1.0 })
+const llmConfig = ref({ preferredProviderId: '', temperature: 0.7, maxTokens: 2000, topP: 1.0 })
 const selectedKbs = ref<Array<{ id: string; name: string; topK?: number; maxContextTokens?: number }>>([])
 const enabledTools = ref<string[]>([])
 const showKbDialog = ref(false)
@@ -84,7 +84,7 @@ const agentMarkdownAvailable = computed(() => (
   agent.value?.source === 'MarkdownDefined' || agent.value?.source === 'Builtin'
 ))
 
-const availableModels = computed(() => (
+const availableProviders = computed(() => (
   settingsStore.providers.map(provider => ({
     id: provider.id,
     name: provider.displayName || provider.id,
@@ -168,11 +168,11 @@ function initFormData() {
   }
   systemPrompt.value = agent.value.systemPrompt || ''
   systemPromptDirty.value = false
-  modelConfig.value = {
-    modelId: agent.value.modelConfig?.modelId || '',
-    temperature: agent.value.modelConfig?.temperature ?? 0.7,
-    maxTokens: agent.value.modelConfig?.maxTokens ?? 2000,
-    topP: agent.value.modelConfig?.topP ?? 1.0,
+  llmConfig.value = {
+    preferredProviderId: agent.value.preferredProviderId || agent.value.llmConfig?.preferredProviderId || '',
+    temperature: agent.value.llmConfig?.temperature ?? 0.7,
+    maxTokens: agent.value.llmConfig?.maxTokens ?? 2000,
+    topP: agent.value.llmConfig?.topP ?? 1.0,
   }
   selectedKbs.value = (agent.value.knowledgeBases || []).map(item => ({ ...item }))
   enabledTools.value = [...(agent.value.enabledTools || [])]
@@ -232,16 +232,15 @@ async function saveSystemPrompt() {
   }
 }
 
-async function saveModelConfig() {
+async function saveLlmConfig() {
   if (!agent.value) return
   try {
-    const payload: any = {
-      modelId: modelConfig.value.modelId,
-      temperature: modelConfig.value.temperature,
-      maxTokens: modelConfig.value.maxTokens,
-      metadata: {},
+    const payload = {
+      preferredProviderId: llmConfig.value.preferredProviderId || undefined,
+      temperature: llmConfig.value.temperature,
+      maxTokens: llmConfig.value.maxTokens,
+      topP: llmConfig.value.topP,
     }
-    if (modelConfig.value.topP != null) payload.metadata.topP = modelConfig.value.topP
     await agentStore.updateAgent(agent.value.id, payload)
     initFormData()
   } catch (event: any) {
@@ -259,7 +258,7 @@ async function saveKnowledgeBases() {
       if (knowledgeBase.maxContextTokens != null) metadata[`${prefix}maxContextTokens`] = knowledgeBase.maxContextTokens
     }
     await agentStore.updateAgent(agent.value.id, {
-      knowledgeBases: selectedKbs.value,
+      knowledgeBaseIds: selectedKbs.value.map(knowledgeBase => knowledgeBase.id),
       metadata,
     })
     showKbDialog.value = false
@@ -273,7 +272,7 @@ async function saveKnowledgeBases() {
 async function saveTools() {
   if (!agent.value) return
   try {
-    await agentStore.updateAgent(agent.value.id, { enabledTools: enabledTools.value })
+    await agentStore.updateAgent(agent.value.id, { toolIds: enabledTools.value })
     showToolsDialog.value = false
     initFormData()
     uiStore.showToast('success', '工具配置已保存')
@@ -352,14 +351,14 @@ function toggleTool(toolId: string) {
 
 function updateTemperature(value: number[] | undefined) {
   if (!value) return
-  modelConfig.value.temperature = value[0]
-  void saveModelConfig()
+  llmConfig.value.temperature = value[0]
+  void saveLlmConfig()
 }
 
 function updateTopP(value: number[] | undefined) {
   if (!value) return
-  modelConfig.value.topP = value[0]
-  void saveModelConfig()
+  llmConfig.value.topP = value[0]
+  void saveLlmConfig()
 }
 
 function formatDate(dateStr: string) {
@@ -438,7 +437,7 @@ function goBack() {
                   <Bot class="size-5" />
                 </template>
               </MetricCard>
-              <MetricCard label="默认模型" :value="modelConfig.modelId || '未设置'" hint="当前推理请求默认走的模型入口。">
+              <MetricCard label="默认模型配置" :value="llmConfig.preferredProviderId || '未设置'" hint="当前推理请求默认使用的模型配置入口。">
                 <template #icon>
                   <Cpu class="size-5" />
                 </template>
@@ -569,28 +568,28 @@ function goBack() {
                   <div class="grid gap-4">
                     <div class="space-y-2">
                       <Label>模型</Label>
-                      <Select v-model="modelConfig.modelId" @update:model-value="saveModelConfig">
+                      <Select v-model="llmConfig.preferredProviderId" @update:model-value="saveLlmConfig">
                         <SelectTrigger>
-                          <SelectValue placeholder="选择模型" />
+                          <SelectValue placeholder="选择模型配置" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem v-for="model in availableModels" :key="model.id" :value="model.id">
-                            {{ model.name }}
+                          <SelectItem v-for="provider in availableProviders" :key="provider.id" :value="provider.id">
+                            {{ provider.name }}
                           </SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
                     <div class="space-y-2">
                       <Label>最大词元数</Label>
-                      <Input v-model.number="modelConfig.maxTokens" type="number" :min="1" @change="saveModelConfig" />
+                      <Input v-model.number="llmConfig.maxTokens" type="number" :min="1" @change="saveLlmConfig" />
                     </div>
                     <div class="space-y-3">
-                      <Label>温度：{{ modelConfig.temperature }}</Label>
-                      <Slider :model-value="[modelConfig.temperature]" :min="0" :max="2" :step="0.1" @update:model-value="updateTemperature" />
+                      <Label>温度：{{ llmConfig.temperature }}</Label>
+                      <Slider :model-value="[llmConfig.temperature]" :min="0" :max="2" :step="0.1" @update:model-value="updateTemperature" />
                     </div>
                     <div class="space-y-3">
-                      <Label>Top-P：{{ modelConfig.topP }}</Label>
-                      <Slider :model-value="[modelConfig.topP]" :min="0" :max="1" :step="0.01" @update:model-value="updateTopP" />
+                      <Label>Top-P：{{ llmConfig.topP }}</Label>
+                      <Slider :model-value="[llmConfig.topP]" :min="0" :max="1" :step="0.01" @update:model-value="updateTopP" />
                     </div>
                   </div>
                 </PageSection>

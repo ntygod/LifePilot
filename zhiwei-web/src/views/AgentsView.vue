@@ -49,7 +49,6 @@ const showCreateDialog = ref(false)
 const newAgent = ref({
   name: '',
   description: '',
-  type: 'custom' as 'default' | 'custom' | 'workflow',
   tags: [] as string[],
 })
 
@@ -111,7 +110,6 @@ function resetForm() {
   newAgent.value = {
     name: '',
     description: '',
-    type: 'custom',
     tags: [],
   }
 }
@@ -131,7 +129,11 @@ async function handleCreate() {
   }
 
   try {
-    const agent = await agentStore.createAgent(newAgent.value)
+    const agent = await agentStore.createAgent({
+      name: newAgent.value.name,
+      description: newAgent.value.description,
+      tags: newAgent.value.tags,
+    })
     showCreateDialog.value = false
     resetForm()
     uiStore.showToast('success', '智能体创建成功')
@@ -379,7 +381,7 @@ function formatDate(dateStr: string) {
                     <Cpu class="size-4 text-primary" />
                     模型
                   </div>
-                  <p class="truncate text-sm text-muted-foreground">{{ agent.modelId || '未设置' }}</p>
+                  <p class="truncate text-sm text-muted-foreground">{{ agent.preferredProviderId || '未设置' }}</p>
                 </div>
 
                 <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/58 px-4 py-3">
@@ -445,18 +447,6 @@ function formatDate(dateStr: string) {
             />
           </div>
 
-          <div class="space-y-2">
-            <Label>类型</Label>
-            <Select v-model="newAgent.type">
-              <SelectTrigger class="w-full">
-                <SelectValue placeholder="选择类型" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="custom">自定义</SelectItem>
-                <SelectItem value="workflow">工作流</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
         </div>
 
         <DialogFooter>

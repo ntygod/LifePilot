@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
+import * as yaml from 'yaml'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowLeft,
@@ -16,6 +17,7 @@ import {
 import { workflowApi } from '@/api/client'
 import MetricCard from '@/components/common/MetricCard.vue'
 import StatePanel from '@/components/common/StatePanel.vue'
+import { useWorkflowExecutionStream } from '@/composables/useWorkflowExecutionStream'
 import Breadcrumb from '@/components/global/Breadcrumb.vue'
 import type { BreadcrumbItem } from '@/components/global/Breadcrumb.vue'
 import PageContainer from '@/components/layout/PageContainer.vue'
@@ -30,6 +32,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { stateConfig as stateConfigMap } from '@/constants/workflowState'
 import { useUiStore } from '@/stores/ui'
 import { useWorkflowStore } from '@/stores/workflow'
+import type { WorkflowInputParam } from '@/types'
 
 const YamlEditor = defineAsyncComponent(() => import('@/components/editor/YamlEditor.vue'))
 
@@ -37,6 +40,12 @@ const route = useRoute()
 const router = useRouter()
 const workflowStore = useWorkflowStore()
 const uiStore = useUiStore()
+const {
+  connectWorkflow,
+  connectInstance,
+  disconnectInstance,
+  disconnectAll,
+} = useWorkflowExecutionStream()
 
 const workflowId = computed(() => route.params.id as string)
 const workflow = computed(() => workflowStore.current)
@@ -50,6 +59,8 @@ const yamlDefinition = ref('')
 const showInputDialog = ref(false)
 const expandedExecutionId = ref<string | null>(null)
 const executionDetailsLoading = ref<Record<string, boolean>>({})
+const triggerFormError = ref<string | null>(null)
+const triggerFieldErrors = ref<Record<string, string>>({})
 
 const breadcrumbItems = computed<BreadcrumbItem[]>(() => [
   { label: '工作流', to: { name: 'workflows' } },
@@ -80,6 +91,149 @@ const triggerCount = computed(() => workflow.value?.triggerTypes?.length ?? 0)
 const approvalStepCount = computed(() => (
   workflow.value?.steps?.filter(step => (step as any).type === 'ApprovalStep' || (step as any).message).length ?? 0
 ))
+const inputTypes = new Set<WorkflowInputParam['type']>(['string', 'number', 'boolean', 'list', 'map'])
+
+function normalizeWorkflowInputParam(key: string, value: unknown): WorkflowInputParam | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null
+  }
+
+  const raw = value as Partial<Record<keyof WorkflowInputParam, unknown>>
+  const rawType = typeof raw.type === 'string' ? raw.type : 'string'
+  const type = inputTypes.has(rawType as WorkflowInputParam['type'])
+    ? rawType as WorkflowInputParam['type']
+    : 'string'
+
+  return {
+    name: typeof raw.name === 'string' && raw.name.trim() !== '' ? raw.name : key,
+    type,
+    required: Boolean(raw.required),
+    defaultValue: raw.defaultValue,
+    description: typeof raw.description === 'string' ? raw.description : undefined,
+  }
+}
+
+function parseWorkflowInputsFromYaml(content: string) {
+  if (!content.trim()) return {} as Record<string, WorkflowInputParam>
+
+  try {
+    const parsed = yaml.parse(content) as { inputs?: Record<string, unknown> } | null
+    const rawInputs = parsed?.inputs
+    if (!rawInputs || typeof rawInputs !== 'object' || Array.isArray(rawInputs)) {
+      return {} as Record<string, WorkflowInputParam>
+    }
+
+    return Object.entries(rawInputs).reduce<Record<string, WorkflowInputParam>>((result, [key, value]) => {
+      const normalized = normalizeWorkflowInputParam(key, value)
+      if (normalized) {
+        result[key] = normalized
+      }
+      return result
+    }, {})
+  } catch {
+    return {} as Record<string, WorkflowInputParam>
+  }
+}
+
+const workflowInputs = computed<Record<string, WorkflowInputParam>>(() => {
+  const detailInputs = workflow.value?.inputs
+  if (detailInputs && Object.keys(detailInputs).length > 0) {
+    return detailInputs
+  }
+
+  return parseWorkflowInputsFromYaml(yamlDefinition.value)
+})
+
+const workflowInputEntries = computed(() => (
+  Object.entries(workflowInputs.value).sort(([leftKey, leftParam], [rightKey, rightParam]) => {
+    if (leftParam.required !== rightParam.required) {
+      return Number(rightParam.required) - Number(leftParam.required)
+    }
+
+    return leftKey.localeCompare(rightKey)
+  })
+))
+
+const requiredInputCount = computed(() => workflowInputEntries.value.filter(([, param]) => param.required).length)
+const hasManualTrigger = computed(() => workflow.value?.triggerTypes?.includes('manual') ?? false)
+const showManualTriggerGuide = computed(() => hasManualTrigger.value && workflowInputEntries.value.length > 0)
+
+function getInputLabel(key: string, param: WorkflowInputParam) {
+  return param.name || key
+}
+
+function getInputTypeLabel(type: WorkflowInputParam['type']) {
+  switch (type) {
+    case 'number':
+      return '数字'
+    case 'boolean':
+      return '开关'
+    case 'list':
+      return '列表'
+    case 'map':
+      return '对象'
+    default:
+      return '文本'
+  }
+}
+
+function formatInputDefaultValue(value: unknown) {
+  if (value === undefined || value === null || value === '') return null
+  if (typeof value === 'string') return value
+
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return String(value)
+  }
+}
+
+function clearTriggerValidation() {
+  triggerFormError.value = null
+  triggerFieldErrors.value = {}
+}
+
+function openInputDialog() {
+  clearTriggerValidation()
+  showInputDialog.value = true
+}
+
+function handleTriggerFieldChange(key: string) {
+  if (triggerFormError.value) {
+    triggerFormError.value = null
+  }
+
+  if (triggerFieldErrors.value[key]) {
+    const nextErrors = { ...triggerFieldErrors.value }
+    delete nextErrors[key]
+    triggerFieldErrors.value = nextErrors
+  }
+}
+
+function extractMissingInputNames(message: string) {
+  const segments = message.split(/[:：]/, 2)
+  const rawNames = segments[1] ?? ''
+  return rawNames
+    .split(/[，,]/)
+    .map(name => name.trim())
+    .filter(Boolean)
+}
+
+function applyTriggerValidationError(message: string) {
+  if (!message.includes('缺少必填输入参数')) return false
+  if (workflowInputEntries.value.length === 0) return false
+
+  const missingNames = extractMissingInputNames(message)
+  triggerFormError.value = '还缺少必填参数，请补全后再触发。'
+  triggerFieldErrors.value = missingNames.reduce<Record<string, string>>((result, key) => {
+    const param = workflowInputs.value[key]
+    result[key] = `${param?.name || key}为必填项`
+    return result
+  }, {})
+  showInputDialog.value = true
+
+  return true
+}
 
 function setExecutionLoading(instanceId: string, loading: boolean) {
   executionDetailsLoading.value = {
@@ -105,17 +259,13 @@ async function loadExecutionDetails(instanceId: string) {
 
   const hasTimeline = workflowStore.hasEventTimeline(instanceId)
   const hasStepLogs = workflowStore.hasStepLogs(instanceId)
-  if (hasTimeline && hasStepLogs) return
+  if (hasTimeline && hasStepLogs) {
+    connectInstance(instanceId)
+    return
+  }
 
   setExecutionLoading(instanceId, true)
-  try {
-    await Promise.all([
-      workflowStore.fetchEventTimeline(instanceId),
-      workflowStore.fetchStepLogs(instanceId),
-    ])
-  } finally {
-    setExecutionLoading(instanceId, false)
-  }
+  connectInstance(instanceId)
 }
 
 function isExecutionExpanded(instanceId: string) {
@@ -125,6 +275,7 @@ function isExecutionExpanded(instanceId: string) {
 async function toggleExecution(instanceId: string) {
   if (isExecutionExpanded(instanceId)) {
     expandedExecutionId.value = null
+    disconnectInstance()
     return
   }
 
@@ -135,14 +286,18 @@ async function toggleExecution(instanceId: string) {
 function resetExecutionUiState() {
   expandedExecutionId.value = null
   executionDetailsLoading.value = {}
+  disconnectInstance()
 }
 
 async function loadData() {
   pageLoading.value = true
   pageError.value = null
   yamlDefinition.value = ''
+  disconnectAll()
   resetExecutionUiState()
+  workflowStore.setExecutions([])
   workflowStore.clearExecutionDetails()
+  clearTriggerValidation()
 
   try {
     await workflowStore.fetchDetail(workflowId.value)
@@ -152,6 +307,7 @@ async function loadData() {
       return
     }
 
+    connectWorkflow(workflow.value.id)
     await loadYamlDefinition()
   } finally {
     pageLoading.value = false
@@ -170,6 +326,9 @@ async function loadYamlDefinition() {
 async function handleSaveYaml(content: string) {
   await workflowApi.updateWorkflowYaml(workflowId.value, content)
   await workflowStore.fetchDetail(workflowId.value)
+  if (workflow.value) {
+    connectWorkflow(workflow.value.id)
+  }
 }
 
 async function handleToggle() {
@@ -184,40 +343,44 @@ async function handleToggle() {
       uiStore.showToast('success', '工作流已启用')
     }
   } catch (event: any) {
-    uiStore.showToast('error', event?.message || workflowStore.error || '更新工作流状态失败。')
+    uiStore.showToast('error', event?.message || workflowStore.error || '更新工作流状态失败')
   }
 }
 
 async function handleTrigger() {
   if (!workflow.value || triggerLoading.value) return
 
-  // 检查是否有输入参数定义
-  const inputs = workflow.value.inputs
-  if (inputs && Object.keys(inputs).length > 0) {
-    showInputDialog.value = true
+  if (workflowInputEntries.value.length > 0) {
+    openInputDialog()
     return
   }
 
-  // 无输入参数，直接触发
   await doTrigger()
 }
 
 async function doTrigger(inputs?: Record<string, unknown>) {
+  if (!workflow.value) return
+
   triggerLoading.value = true
+  clearTriggerValidation()
+
   try {
-    const execution = await workflowStore.trigger(workflow.value!.id, inputs)
+    const execution = await workflowStore.trigger(workflow.value.id, inputs)
+
     showInputDialog.value = false
     resetExecutionUiState()
-    await workflowStore.fetchExecutions(workflow.value!.id)
+    connectWorkflow(workflow.value.id)
     activeTab.value = 'executions'
+    expandedExecutionId.value = execution.id
+    setExecutionLoading(execution.id, true)
     uiStore.showToast('success', '工作流已触发')
 
-    // 开始轮询执行进度
-    if (execution) {
-      startPolling(execution.id)
-    }
+    connectInstance(execution.id)
   } catch (event: any) {
-    uiStore.showToast('error', event?.message || '触发工作流失败。')
+    const message = event?.message || workflowStore.error || '触发工作流失败'
+    if (!applyTriggerValidationError(message)) {
+      uiStore.showToast('error', message)
+    }
   } finally {
     triggerLoading.value = false
   }
@@ -227,7 +390,7 @@ async function showExecutions() {
   if (!workflow.value) return
   activeTab.value = 'executions'
   resetExecutionUiState()
-  await workflowStore.fetchExecutions(workflow.value.id)
+  connectWorkflow(workflow.value.id)
 }
 
 function formatDuration(start?: string, end?: string) {
@@ -242,35 +405,6 @@ function formatDate(dateStr?: string) {
   return new Date(dateStr).toLocaleString('zh-CN')
 }
 
-// 执行进度轮询
-const pollingTimer = ref<ReturnType<typeof setInterval> | null>(null)
-const pollingInstanceId = ref<string | null>(null)
-
-function startPolling(instanceId: string) {
-  stopPolling()
-  pollingInstanceId.value = instanceId
-  pollingTimer.value = setInterval(async () => {
-    if (!workflow.value) return
-    await workflowStore.fetchExecutions(workflow.value.id)
-    const instance = workflowStore.executions.find(e => e.id === instanceId)
-    if (instance && ['COMPLETED', 'FAILED', 'CANCELLED'].includes(instance.state)) {
-      stopPolling()
-      await loadExecutionDetails(instanceId)
-      if (!isExecutionExpanded(instanceId)) {
-        expandedExecutionId.value = instanceId
-      }
-    }
-  }, 3000)
-}
-
-function stopPolling() {
-  if (pollingTimer.value) {
-    clearInterval(pollingTimer.value)
-    pollingTimer.value = null
-  }
-  pollingInstanceId.value = null
-}
-
 function goBack() {
   router.push('/workflows')
 }
@@ -279,7 +413,24 @@ onMounted(async () => {
   await loadData()
 })
 
-onUnmounted(() => stopPolling())
+onUnmounted(() => disconnectAll())
+
+watch(
+  () => {
+    const instanceId = expandedExecutionId.value
+    return [
+      instanceId,
+      instanceId ? workflowStore.hasEventTimeline(instanceId) : false,
+      instanceId ? workflowStore.hasStepLogs(instanceId) : false,
+    ] as const
+  },
+  ([instanceId, hasTimeline, hasStepLogs]) => {
+    if (instanceId && hasTimeline && hasStepLogs) {
+      setExecutionLoading(instanceId, false)
+    }
+  },
+  { immediate: true },
+)
 
 watch(() => route.params.id, async () => {
   activeTab.value = 'detail'
@@ -388,6 +539,43 @@ watch(() => route.params.id, async () => {
               </MetricCard>
             </template>
           </PageHeader>
+
+          <StatePanel
+            v-if="showManualTriggerGuide"
+            title="手动触发前需要先填写参数"
+            :description="`这个工作流包含 ${workflowInputEntries.length} 个输入参数，其中 ${requiredInputCount} 个为必填。点击“立即触发”会先打开参数表单。`"
+            tone="warning"
+          >
+            <template #icon>
+              <Play class="size-5" />
+            </template>
+            <template #actions>
+              <Button :disabled="triggerLoading" @click="openInputDialog">
+                填写参数并触发
+              </Button>
+            </template>
+
+            <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              <div
+                v-for="[key, param] in workflowInputEntries"
+                :key="key"
+                class="rounded-2xl border border-amber-200/70 bg-background/78 p-4"
+              >
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="text-sm font-medium text-foreground">{{ getInputLabel(key, param) }}</span>
+                  <Badge variant="outline">{{ getInputTypeLabel(param.type) }}</Badge>
+                  <Badge v-if="param.required" variant="secondary">必填</Badge>
+                  <Badge v-else variant="outline">可选</Badge>
+                </div>
+                <p v-if="param.description" class="mt-2 text-sm leading-6 text-muted-foreground">
+                  {{ param.description }}
+                </p>
+                <p v-if="formatInputDefaultValue(param.defaultValue)" class="mt-2 text-xs text-muted-foreground">
+                  默认值：{{ formatInputDefaultValue(param.defaultValue) }}
+                </p>
+              </div>
+            </div>
+          </StatePanel>
 
           <Tabs
             :model-value="activeTab"
@@ -671,10 +859,13 @@ watch(() => route.params.id, async () => {
 
           <WorkflowInputDialog
             :open="showInputDialog"
-            :inputs="workflow.inputs ?? {}"
+            :inputs="workflowInputs"
             :loading="triggerLoading"
+            :field-errors="triggerFieldErrors"
+            :form-error="triggerFormError"
             @update:open="showInputDialog = $event"
             @confirm="doTrigger"
+            @change="handleTriggerFieldChange"
           />
         </template>
       </div>

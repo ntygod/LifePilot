@@ -52,7 +52,7 @@ export function useChat() {
     attachmentIds?: string[],
     attachments?: ChatAttachment[],
     sessionConfig?: {
-      modelId?: string
+      preferredProviderId?: string
       temperature?: number
       maxTokens?: number
       knowledgeBaseIds?: string[]

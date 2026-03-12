@@ -30,10 +30,20 @@ export interface ToolStepConfig {
 }
 
 /** LLM 步骤配置 */
+export interface LlmMediaConfig {
+  source: string
+  mimeType?: string
+  fileName?: string
+}
+
 export interface LlmStepConfig {
   scene: string
+  capability: 'CHAT' | 'EMBEDDING' | 'STRUCTURED_OUTPUT' | 'FUNCTION_CALLING' | 'STREAMING' | 'VISION' | 'TTS' | 'STT'
   promptTemplate: string
   outputSchema?: string
+  modelName?: string
+  preferredProviderId?: string
+  media: LlmMediaConfig[]
 }
 
 /** 条件分支步骤配置 */
@@ -164,7 +174,15 @@ function createDefaultConfig(type: StepType): StepConfig {
     case 'tool':
       return { toolId: '', params: {} }
     case 'llm':
-      return { scene: '', promptTemplate: '', outputSchema: undefined }
+      return {
+        scene: '',
+        capability: 'CHAT',
+        promptTemplate: '',
+        outputSchema: undefined,
+        modelName: undefined,
+        preferredProviderId: undefined,
+        media: [],
+      }
     case 'condition':
       return { condition: '', thenSteps: [], elseSteps: [] }
     case 'loop':
@@ -219,6 +237,8 @@ function validateStep(step: StepModel): string[] {
     }
     case 'llm': {
       const c = config as LlmStepConfig
+      if (c.scene.trim().toLowerCase() === 'workflow') errors.push('scene 不能再使用 workflow，请填写真实任务意图')
+      if (!c.capability.trim()) errors.push('capability 不能为空')
       if (!c.scene.trim()) errors.push('scene 不能为空')
       if (!c.promptTemplate.trim()) errors.push('promptTemplate 不能为空')
       break
@@ -252,6 +272,12 @@ function validateStep(step: StepModel): string[] {
     case 'parallel':
     case 'noop':
       break
+  }
+  if (step.type === 'llm') {
+    const c = config as LlmStepConfig
+    if (c.media.some(item => !item.source.trim())) errors.push('media 中存在未填写 source 的条目')
+    if (c.capability === 'VISION' && c.media.length === 0) errors.push('VISION 节点至少需要一个 media 输入')
+    if (c.media.length > 0 && c.capability !== 'VISION') errors.push('配置了 media 的节点 capability 必须为 VISION')
   }
   return errors
 }

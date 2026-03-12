@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ArrowLeft, ChevronDown, ChevronRight, Copy, Edit2, PauseCircle, Play, Plus, Sparkles, Trash2, Workflow } from 'lucide-vue-next'
+import { useWorkflowExecutionStream } from '@/composables/useWorkflowExecutionStream'
 import { useWorkflowStore } from '@/stores/workflow'
-import type { WorkflowDetail, WorkflowItem } from '@/types'
+import { useUiStore } from '@/stores/ui'
+import type { WorkflowDetail, WorkflowInputParam, WorkflowItem } from '@/types'
 import { stateConfig } from '@/constants/workflowState'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import MetricCard from '@/components/common/MetricCard.vue'
@@ -12,6 +14,7 @@ import PageContainer from '@/components/layout/PageContainer.vue'
 import PageHeader from '@/components/layout/PageHeader.vue'
 import PageSection from '@/components/layout/PageSection.vue'
 import WorkflowForm from '@/components/workflow/WorkflowForm.vue'
+import WorkflowInputDialog from '@/components/workflow/WorkflowInputDialog.vue'
 import ExecutionDetail from '@/components/workflow/ExecutionDetail.vue'
 import StepDetailCard from '@/components/workflow/StepDetailCard.vue'
 import { Badge } from '@/components/ui/badge'
@@ -20,14 +23,24 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 const store = useWorkflowStore()
+const uiStore = useUiStore()
+const {
+  connectWorkflow,
+  connectInstance,
+  disconnectInstance,
+  disconnectAll,
+} = useWorkflowExecutionStream()
 
 const activeTab = ref<'detail' | 'executions'>('detail')
 const triggerLoading = ref(false)
 const showForm = ref(false)
+const showInputDialog = ref(false)
 const formMode = ref<'create' | 'edit' | 'duplicate'>('create')
 const selectedWorkflow = ref<WorkflowDetail | null>(null)
 const showDeleteConfirm = ref(false)
 const expandedExecId = ref<string | null>(null)
+const triggerFormError = ref<string | null>(null)
+const triggerFieldErrors = ref<Record<string, string>>({})
 
 const EXEC_PAGE_SIZE = 10
 const execPage = ref(0)
@@ -41,6 +54,26 @@ const triggerTypeCount = computed(() => {
 const stepCount = computed(() => store.current?.steps?.length ?? 0)
 const currentTriggerTypes = computed(() => store.current?.triggerTypes ?? [])
 const currentSteps = computed(() => store.current?.steps ?? [])
+const currentInputs = computed<Record<string, WorkflowInputParam>>(() => store.current?.inputs ?? {})
+const currentInputEntries = computed(() => (
+  Object.entries(currentInputs.value).sort(([leftKey, leftParam], [rightKey, rightParam]) => {
+    if (leftParam.required !== rightParam.required) {
+      return Number(rightParam.required) - Number(leftParam.required)
+    }
+
+    return leftKey.localeCompare(rightKey)
+  })
+))
+const requiredInputCount = computed(() => currentInputEntries.value.filter(([, input]) => input.required).length)
+const showTriggerInputGuide = computed(() => (
+  Boolean(store.current)
+  && currentTriggerTypes.value.includes('manual')
+  && currentInputEntries.value.length > 0
+))
+const showWorkflowWarning = computed(() => {
+  if (!store.current || !store.error) return false
+  return !store.error.includes('缺少必填输入参数')
+})
 
 const pagedExecutions = computed(() => {
   const start = execPage.value * EXEC_PAGE_SIZE
@@ -71,23 +104,118 @@ function handleTabChange(value: string | number) {
     return
   }
 
+  disconnectInstance()
   activeTab.value = nextValue === 'executions' ? 'executions' : 'detail'
 }
 
 function toggleExecDetail(execId: string) {
-  expandedExecId.value = expandedExecId.value === execId ? null : execId
+  if (expandedExecId.value === execId) {
+    expandedExecId.value = null
+    disconnectInstance()
+    return
+  }
+
+  expandedExecId.value = execId
+  connectInstance(execId)
+}
+
+function getInputLabel(key: string, input: WorkflowInputParam) {
+  return input.name || key
+}
+
+function getInputTypeLabel(type: WorkflowInputParam['type']) {
+  switch (type) {
+    case 'number':
+      return '数字'
+    case 'boolean':
+      return '开关'
+    case 'list':
+      return '列表'
+    case 'map':
+      return '对象'
+    default:
+      return '文本'
+  }
+}
+
+function formatInputDefaultValue(value: unknown) {
+  if (value === undefined || value === null || value === '') return null
+  if (typeof value === 'string') return value
+
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return String(value)
+  }
+}
+
+function clearTriggerValidation() {
+  triggerFormError.value = null
+  triggerFieldErrors.value = {}
+}
+
+function openInputDialog() {
+  clearTriggerValidation()
+  store.error = null
+  showInputDialog.value = true
+}
+
+function handleTriggerFieldChange(key: string) {
+  if (triggerFormError.value) {
+    triggerFormError.value = null
+  }
+
+  if (triggerFieldErrors.value[key]) {
+    const nextErrors = { ...triggerFieldErrors.value }
+    delete nextErrors[key]
+    triggerFieldErrors.value = nextErrors
+  }
+}
+
+function extractMissingInputNames(message: string) {
+  const segments = message.split(/[:：]/, 2)
+  const rawNames = segments[1] ?? ''
+  return rawNames
+    .split(/[，,]/)
+    .map(name => name.trim())
+    .filter(Boolean)
+}
+
+function applyTriggerValidationError(message: string) {
+  if (!message.includes('缺少必填输入参数')) return false
+
+  const missingNames = extractMissingInputNames(message)
+  triggerFormError.value = '还缺少必填参数，请补全后再触发。'
+  triggerFieldErrors.value = missingNames.reduce<Record<string, string>>((result, key) => {
+    const input = currentInputs.value[key]
+    result[key] = `${input?.name || key}为必填项`
+    return result
+  }, {})
+  showInputDialog.value = true
+  store.error = null
+
+  return true
 }
 
 async function selectWorkflow(workflow: WorkflowItem) {
+  disconnectInstance()
+  store.setExecutions([])
+  store.clearExecutionDetails()
   await store.fetchDetail(workflow.id)
+  connectWorkflow(workflow.id)
   activeTab.value = 'detail'
+  clearTriggerValidation()
 }
 
 function backToList() {
   store.current = null
-  store.executions = []
+  store.setExecutions([])
+  store.clearExecutionDetails()
   expandedExecId.value = null
   execPage.value = 0
+  showInputDialog.value = false
+  clearTriggerValidation()
+  disconnectAll()
 }
 
 async function handleToggle(id: string, enabled: boolean) {
@@ -99,16 +227,43 @@ async function handleToggle(id: string, enabled: boolean) {
 }
 
 async function handleTrigger(id: string) {
+  if (currentInputEntries.value.length > 0) {
+    openInputDialog()
+    return
+  }
+
+  await doTrigger(id)
+}
+
+async function doTrigger(id: string, inputs?: Record<string, unknown>) {
   triggerLoading.value = true
-  await store.trigger(id)
-  triggerLoading.value = false
+  clearTriggerValidation()
+
+  try {
+    const execution = await store.trigger(id, inputs)
+    showInputDialog.value = false
+    connectWorkflow(id)
+    activeTab.value = 'executions'
+    execPage.value = 0
+    expandedExecId.value = execution.id
+    connectInstance(execution.id)
+    uiStore.showToast('success', '工作流已触发')
+  } catch (error: any) {
+    const message = error?.message || store.error || '触发工作流失败'
+    if (!applyTriggerValidationError(message)) {
+      uiStore.showToast('error', message)
+    }
+  } finally {
+    triggerLoading.value = false
+  }
 }
 
 async function showExecutions(id: string) {
   activeTab.value = 'executions'
   execPage.value = 0
   expandedExecId.value = null
-  await store.fetchExecutions(id)
+  disconnectInstance()
+  connectWorkflow(id)
 }
 
 function openCreate() {
@@ -147,11 +302,16 @@ async function confirmDelete() {
 
 async function onWorkflowSaved(workflow: WorkflowDetail) {
   await store.fetchDetail(workflow.id)
+  connectWorkflow(workflow.id)
   showForm.value = false
 }
 
 onMounted(() => {
   void store.fetchList()
+})
+
+onBeforeUnmount(() => {
+  disconnectAll()
 })
 </script>
 
@@ -388,14 +548,51 @@ onMounted(() => {
           </header>
 
           <StatePanel
-            v-if="store.error && store.current"
+            v-if="showWorkflowWarning"
             title="工作流数据存在警告"
-            :description="store.error"
+            :description="store.error || undefined"
             tone="warning"
           >
             <template #icon>
               <Workflow class="size-5" />
             </template>
+          </StatePanel>
+
+          <StatePanel
+            v-if="showTriggerInputGuide"
+            title="手动触发前需要先填写参数"
+            :description="`这个工作流包含 ${currentInputEntries.length} 个输入参数，其中 ${requiredInputCount} 个为必填。点击“立即触发”会先打开参数表单。`"
+            tone="warning"
+          >
+            <template #icon>
+              <Play class="size-5" />
+            </template>
+            <template #actions>
+              <Button :disabled="triggerLoading" @click="openInputDialog">
+                填写参数并触发
+              </Button>
+            </template>
+
+            <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              <div
+                v-for="[key, input] in currentInputEntries"
+                :key="key"
+                class="rounded-2xl border border-amber-200/70 bg-background/78 p-4"
+              >
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="text-sm font-medium text-foreground">{{ getInputLabel(key, input) }}</span>
+                  <Badge variant="outline">{{ getInputTypeLabel(input.type) }}</Badge>
+                  <Badge v-if="input.required" variant="secondary">必填</Badge>
+                  <Badge v-else variant="outline">可选</Badge>
+                </div>
+                <p v-if="input.description" class="mt-2 text-sm leading-6 text-muted-foreground">
+                  {{ input.description }}
+                </p>
+                <p v-if="formatInputDefaultValue(input.defaultValue)" class="mt-2 text-xs text-muted-foreground">
+                  默认值：{{ formatInputDefaultValue(input.defaultValue) }}
+                </p>
+              </div>
+            </div>
           </StatePanel>
 
           <Tabs :model-value="activeTab" @update:model-value="handleTabChange">
@@ -550,6 +747,17 @@ onMounted(() => {
         </template>
       </div>
     </PageContainer>
+
+    <WorkflowInputDialog
+      :open="showInputDialog"
+      :inputs="currentInputs"
+      :loading="triggerLoading"
+      :field-errors="triggerFieldErrors"
+      :form-error="triggerFormError"
+      @update:open="showInputDialog = $event"
+      @confirm="doTrigger(store.current!.id, $event)"
+      @change="handleTriggerFieldChange"
+    />
 
     <WorkflowForm
       v-if="showForm"

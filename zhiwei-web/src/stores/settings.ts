@@ -7,6 +7,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const theme = ref<'light' | 'dark' | 'system'>('system')
   const language = ref('zh-CN')
   const llmProvider = ref('')
+  const sceneProviders = ref<Record<string, string>>({})
   const layoutDensity = ref<'compact' | 'standard'>('standard')
   const fontSize = ref<'small' | 'medium' | 'large'>('medium')
   const timeFormat = ref<'12h' | '24h'>('24h')
@@ -26,6 +27,7 @@ export const useSettingsStore = defineStore('settings', () => {
     theme.value = s.theme
     language.value = s.language
     llmProvider.value = s.llmProvider
+    sceneProviders.value = s.sceneProviders ?? {}
     layoutDensity.value = s.layoutDensity ?? 'standard'
     fontSize.value = s.fontSize ?? 'medium'
     timeFormat.value = s.timeFormat ?? '24h'
@@ -45,6 +47,7 @@ export const useSettingsStore = defineStore('settings', () => {
       theme: theme.value,
       language: language.value,
       llmProvider: llmProvider.value,
+      sceneProviders: sceneProviders.value,
       layoutDensity: layoutDensity.value,
       fontSize: fontSize.value,
       timeFormat: timeFormat.value,
@@ -61,6 +64,7 @@ export const useSettingsStore = defineStore('settings', () => {
     theme.value = saved.theme
     language.value = saved.language
     llmProvider.value = saved.llmProvider
+    sceneProviders.value = saved.sceneProviders ?? {}
     layoutDensity.value = saved.layoutDensity ?? 'standard'
     fontSize.value = saved.fontSize ?? 'medium'
     timeFormat.value = saved.timeFormat ?? '24h'
@@ -84,7 +88,7 @@ export const useSettingsStore = defineStore('settings', () => {
   }
 
   return { 
-    theme, language, llmProvider,
+    theme, language, llmProvider, sceneProviders,
     layoutDensity, fontSize, timeFormat, showTokenUsage, autoExpandCodeBlocks, collapseLongReplies, collapseThreshold,
     enableStreaming, enableFunctionCall, enableKnowledgeBase, enableToolCall,
     providers,

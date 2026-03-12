@@ -3,7 +3,7 @@
  * 步骤 DAG 依赖可视化组件。
  * 使用 Kahn 拓扑排序分层 + CSS Grid 布局 + SVG 连线。
  */
-import { computed, ref, onMounted, onUpdated, nextTick } from 'vue'
+import { computed, ref, onBeforeUnmount, onMounted, nextTick, watch } from 'vue'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
@@ -163,8 +163,30 @@ function updateLines() {
   lines.value = newLines
 }
 
-onMounted(() => nextTick(updateLines))
-onUpdated(() => nextTick(updateLines))
+function scheduleUpdateLines() {
+  void nextTick(updateLines)
+}
+
+onMounted(() => {
+  scheduleUpdateLines()
+  window.addEventListener('resize', scheduleUpdateLines)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', scheduleUpdateLines)
+})
+
+watch(
+  [
+    typedSteps,
+    () => props.completedStepIds.join(','),
+    () => props.pendingApprovalStepId ?? '',
+  ],
+  () => {
+    scheduleUpdateLines()
+  },
+  { deep: true, flush: 'post' },
+)
 </script>
 
 <template>

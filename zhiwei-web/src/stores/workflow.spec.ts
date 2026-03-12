@@ -122,4 +122,29 @@ describe('useWorkflowStore execution detail cache', () => {
     expect(store.getEventTimeline('exec-a')).toEqual([])
     expect(store.getStepLogs('exec-a')).toEqual([])
   })
+
+  it('prepends a triggered execution to the execution list', async () => {
+    workflowApiMock.trigger.mockResolvedValueOnce(makeExecution('exec-new'))
+
+    const store = useWorkflowStore()
+    const execution = await store.trigger('workflow-1', { topic: 'AI' })
+
+    expect(execution?.id).toBe('exec-new')
+    expect(store.executions[0]?.id).toBe('exec-new')
+    expect(workflowApiMock.trigger).toHaveBeenCalledWith('workflow-1', { topic: 'AI' })
+  })
+
+  it('rethrows trigger errors so the view can render validation feedback', async () => {
+    const error = {
+      code: 400,
+      message: '缺少必填输入参数: topic',
+      timestamp: '2026-03-12T00:00:00.000Z',
+    }
+    workflowApiMock.trigger.mockRejectedValueOnce(error)
+
+    const store = useWorkflowStore()
+
+    await expect(store.trigger('workflow-1')).rejects.toEqual(error)
+    expect(store.error).toBe(error.message)
+  })
 })

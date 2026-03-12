@@ -33,21 +33,86 @@ const eventTypeConfig: Record<WorkflowEventType, { label: string; icon: typeof P
   APPROVAL_DECIDED: { label: '审批决定', icon: ShieldCheck, color: 'text-green-500' },
 }
 
+const stateLabels: Record<string, string> = {
+  CREATED: '已创建',
+  RUNNING: '执行中',
+  PAUSED: '等待审批',
+  WAITING: '等待唤醒',
+  COMPLETED: '已完成',
+  FAILED: '失败',
+  CANCELLED: '已取消',
+}
+
 function getConfig(type: WorkflowEventType) {
   return eventTypeConfig[type] ?? { label: type, icon: PlusCircle, color: 'text-gray-500' }
 }
 
+function parseEventData(event: WorkflowEvent) {
+  if (!event.dataJson) return null
+  try {
+    return JSON.parse(event.dataJson) as Record<string, unknown>
+  } catch {
+    return null
+  }
+}
+
 function getEventColor(event: WorkflowEvent) {
-  if (event.type === 'APPROVAL_DECIDED' && event.dataJson) {
-    try {
-      const data = JSON.parse(event.dataJson)
-      if (data.decision === 'REJECTED') return 'text-red-500'
-    } catch {
-      return eventTypeConfig[event.type]?.color ?? 'text-gray-500'
-    }
+  const data = parseEventData(event)
+  if (event.type === 'APPROVAL_DECIDED' && data?.decision === 'REJECTED') {
+    return 'text-red-500'
   }
 
   return eventTypeConfig[event.type]?.color ?? 'text-gray-500'
+}
+
+function getEventSummary(event: WorkflowEvent) {
+  const data = parseEventData(event)
+  if (!data) return null
+
+  if (event.type === 'INSTANCE_STATE_CHANGED') {
+    const oldState = typeof data.oldState === 'string' ? data.oldState : typeof data.from === 'string' ? data.from : undefined
+    const newState = typeof data.newState === 'string' ? data.newState : typeof data.to === 'string' ? data.to : undefined
+    if (oldState && newState) {
+      return `${stateLabels[oldState] ?? oldState} -> ${stateLabels[newState] ?? newState}`
+    }
+  }
+
+  if (event.type === 'STEP_STARTED') {
+    const stepType = typeof data.stepType === 'string' ? data.stepType : null
+    return stepType ? `开始执行 ${stepType} 节点` : '步骤开始执行'
+  }
+
+  if (event.type === 'STEP_COMPLETED') {
+    const durationMs = typeof data.durationMs === 'number' ? data.durationMs : null
+    return durationMs != null ? `执行完成，耗时 ${durationMs}ms` : '步骤执行完成'
+  }
+
+  if (event.type === 'STEP_FAILED') {
+    const errorMessage = typeof data.errorMessage === 'string' ? data.errorMessage : null
+    return errorMessage ?? '步骤执行失败'
+  }
+
+  if (event.type === 'STEP_SKIPPED') {
+    const reason = typeof data.reason === 'string' ? data.reason : null
+    return reason ?? '步骤已跳过'
+  }
+
+  if (event.type === 'APPROVAL_REQUESTED') {
+    const approvers = Array.isArray(data.approvers) ? data.approvers.join(', ') : null
+    return approvers ? `等待审批人: ${approvers}` : '等待人工审批'
+  }
+
+  if (event.type === 'APPROVAL_DECIDED') {
+    const decision = typeof data.decision === 'string' ? data.decision : null
+    const decidedBy = typeof data.decidedBy === 'string' ? data.decidedBy : null
+    const decisionLabel = decision === 'APPROVED' ? '已通过' : decision === 'REJECTED' ? '已拒绝' : decision
+    if (decisionLabel && decidedBy) {
+      return `${decisionLabel}，处理人 ${decidedBy}`
+    }
+    return decisionLabel
+  }
+
+  return null
 }
 
 function getEventDetails(event: WorkflowEvent) {
@@ -126,8 +191,13 @@ function toggleEventExpanded(eventId: string) {
               {{ event.stepId }}
             </span>
           </div>
+
           <div class="mt-0.5 text-xs text-muted-foreground">
             {{ formatTime(event.createdAt) }}
+          </div>
+
+          <div v-if="getEventSummary(event)" class="mt-1 text-sm text-foreground">
+            {{ getEventSummary(event) }}
           </div>
 
           <div v-if="event.dataJson" class="mt-1">

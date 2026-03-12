@@ -16,6 +16,15 @@ export interface ChatSession {
   type?: string
 }
 
+export interface ChatSessionDetail extends ChatSession {
+  knowledgeBaseIds: string[]
+  preferredProviderId?: string
+  temperature?: number
+  maxTokens?: number
+  messageCount: number
+  totalTokens: number
+}
+
 /** 聊天消息附件（前端展示用） */
 export interface ChatAttachment {
   /** 后端返回的文件 ID（用于后续多模态路由与检索） */
@@ -58,8 +67,9 @@ export interface Message {
   attachments?: ChatAttachment[]
   /** 可选：本条消息对应的 Token 使用统计（如后端在 DONE 事件中返回） */
   tokenUsage?: TokenUsage
-  /** 可选：本条消息对应的模型 ID（如可用），用于消息级调试展示 */
   modelId?: string
+  /** 可选：本条消息对应的模型 ID（如可用），用于消息级调试展示 */
+  preferredProviderId?: string
   /** 可选：本轮执行涉及到的知识库 / 文档等来源摘要 */
   sources?: SourceSummary[]
   /** 可选：本轮执行涉及到的工具调用摘要列表 */
@@ -115,6 +125,7 @@ export interface UserSettings {
   theme: 'light' | 'dark' | 'system'
   language: string
   llmProvider: string
+  sceneProviders?: Record<string, string>
   layoutDensity?: 'compact' | 'standard'
   fontSize?: 'small' | 'medium' | 'large'
   timeFormat?: '12h' | '24h'
@@ -270,7 +281,7 @@ export interface ErrorResponse {
 
 /** 会话配置（模型/温度/最大 Token/知识库选择） */
 export interface SessionConfig {
-  modelId?: string
+  preferredProviderId?: string
   temperature?: number
   maxTokens?: number
   knowledgeBaseIds?: string[]
@@ -513,6 +524,10 @@ export interface WorkflowExecution {
   updatedAt: string
 }
 
+export interface WorkflowExecutionsSnapshot {
+  executions: WorkflowExecution[]
+}
+
 /** 工作流审计事件类型 */
 export type WorkflowEventType =
   | 'INSTANCE_CREATED'
@@ -533,6 +548,10 @@ export interface WorkflowEvent {
   stepId?: string
   dataJson?: string
   createdAt: string
+}
+
+export interface WorkflowTimelineSnapshot {
+  events: WorkflowEvent[]
 }
 
 /** 审批请求 */
@@ -559,15 +578,36 @@ export interface StepLog {
   createdAt: string
 }
 
+export interface WorkflowStepLogsSnapshot {
+  stepLogs: StepLog[]
+}
+
 /** Agent 列表项 */
+export type AgentType = 'default' | 'custom' | 'workflow' | 'marketplace'
+
+export interface AgentLlmConfig {
+  preferredProviderId?: string
+  temperature?: number
+  maxTokens?: number
+  topP?: number
+}
+
+export interface AgentKnowledgeBaseBinding {
+  id: string
+  name: string
+  topK?: number
+  maxContextTokens?: number
+}
+
 export interface AgentSummary {
   id: string
   name: string
   description?: string
-  type: 'default' | 'custom' | 'workflow'
-  modelId?: string
+  type: AgentType
+  preferredProviderId?: string
   knowledgeBaseCount: number
   enabled: boolean
+  status: string
   updatedAt: string
   createdAt: string
   tags?: string[]
@@ -579,19 +619,37 @@ export interface AgentSummary {
 /** Agent 详情 */
 export interface AgentDetail extends AgentSummary {
   systemPrompt: string
-  modelConfig: {
-    modelId: string
-    temperature?: number
-    maxTokens?: number
-    topP?: number
-  }
-  knowledgeBases: Array<{
-    id: string
-    name: string
-    topK?: number
-    maxContextTokens?: number
-  }>
+  llmConfig: AgentLlmConfig
+  knowledgeBases: AgentKnowledgeBaseBinding[]
   enabledTools: string[]
+  metadata?: Record<string, unknown>
+}
+
+export interface CreateAgentRequest {
+  name: string
+  description?: string
+  systemPrompt?: string
+  preferredProviderId?: string
+  temperature?: number
+  maxTokens?: number
+  topP?: number
+  knowledgeBaseIds?: string[]
+  toolIds?: string[]
+  tags?: string[]
+  metadata?: Record<string, unknown>
+}
+
+export interface UpdateAgentRequest {
+  name?: string
+  description?: string
+  systemPrompt?: string
+  preferredProviderId?: string
+  temperature?: number
+  maxTokens?: number
+  topP?: number
+  knowledgeBaseIds?: string[]
+  toolIds?: string[]
+  tags?: string[]
   metadata?: Record<string, unknown>
 }
 

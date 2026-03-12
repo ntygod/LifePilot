@@ -16,6 +16,7 @@ export function useSettings() {
     theme: store.theme,
     language: store.language,
     llmProvider: store.llmProvider,
+    sceneProviders: store.sceneProviders,
     layoutDensity: store.layoutDensity,
     fontSize: store.fontSize,
     timeFormat: store.timeFormat,
@@ -49,6 +50,7 @@ export function useSettings() {
     store.theme = newSettings.theme
     store.language = newSettings.language
     store.llmProvider = newSettings.llmProvider
+    store.sceneProviders = newSettings.sceneProviders ?? {}
     if (newSettings.layoutDensity) store.layoutDensity = newSettings.layoutDensity
     if (newSettings.fontSize) store.fontSize = newSettings.fontSize
     if (newSettings.timeFormat) store.timeFormat = newSettings.timeFormat

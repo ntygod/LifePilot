@@ -89,9 +89,20 @@ function serializeStep(step: StepModel): Record<string, unknown> {
     case 'llm': {
       const c = config as LlmStepConfig
       obj.scene = c.scene
+      obj.capability = c.capability
       // 关键映射：前端 promptTemplate → YAML prompt
       obj.prompt = c.promptTemplate
       if (c.outputSchema) obj.outputSchema = c.outputSchema
+      if (c.modelName) obj.modelName = c.modelName
+      if (c.preferredProviderId) obj.preferredProviderId = c.preferredProviderId
+      if (c.media.length > 0) {
+        obj.media = c.media.map(item => {
+          const media: Record<string, unknown> = { source: item.source }
+          if (item.mimeType) media.mimeType = item.mimeType
+          if (item.fileName) media.fileName = item.fileName
+          return media
+        })
+      }
       break
     }
     case 'condition': {
@@ -223,9 +234,21 @@ function deserializeConfig(type: StepType, obj: Record<string, unknown>): StepCo
     case 'llm':
       return {
         scene: String(obj.scene ?? ''),
+        capability: String(obj.capability ?? 'CHAT') as LlmStepConfig['capability'],
         // 关键映射：YAML prompt → 前端 promptTemplate
         promptTemplate: String(obj.prompt ?? ''),
         outputSchema: obj.outputSchema != null ? String(obj.outputSchema) : undefined,
+        modelName: obj.modelName != null ? String(obj.modelName) : undefined,
+        preferredProviderId: obj.preferredProviderId != null ? String(obj.preferredProviderId) : undefined,
+        media: Array.isArray(obj.media)
+          ? obj.media
+            .filter((item): item is Record<string, unknown> => item != null && typeof item === 'object')
+            .map(item => ({
+              source: String(item.source ?? ''),
+              mimeType: item.mimeType != null ? String(item.mimeType) : undefined,
+              fileName: item.fileName != null ? String(item.fileName) : undefined,
+            }))
+          : [],
       }
     case 'condition':
       return {

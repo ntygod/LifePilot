@@ -41,7 +41,7 @@ function createDefaultConfig(type: StepType): StepConfig {
   switch (type) {
     case 'skill': return { skillId: '', params: {} }
     case 'tool': return { toolId: '', params: {} }
-    case 'llm': return { scene: '', promptTemplate: '', outputSchema: undefined }
+    case 'llm': return { scene: '', capability: 'CHAT', promptTemplate: '', outputSchema: undefined, modelName: undefined, preferredProviderId: undefined, media: [] }
     case 'condition': return { condition: '', thenSteps: [], elseSteps: [] }
     case 'loop': return { items: '', loopVar: 'item', body: [] }
     case 'parallel': return { branches: [[]] }

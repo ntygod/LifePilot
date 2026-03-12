@@ -59,12 +59,30 @@ const showDebugDrawer = ref(false)
 const showSessionSidebar = ref(false)
 const showConfigPanel = ref(false)
 const providers = ref<LlmProvider[]>([])
+const activeSessionConfig = ref<SessionConfig>({
+  temperature: 0.7,
+  maxTokens: 2000,
+  knowledgeBaseIds: [],
+})
+
+const CHAT_SCENES = new Set([
+  'chat',
+  'agent_reasoning',
+  'agent_tool_calling',
+  'agent_generation',
+])
 
 const chatProviders = computed(() =>
   providers.value.filter(provider =>
-    !provider.capabilities
-    || provider.capabilities.length === 0
-    || provider.capabilities.some(capability => capability.toLowerCase() === 'chat'),
+    (
+      !provider.capabilities
+      || provider.capabilities.length === 0
+      || provider.capabilities.some(capability => capability.toLowerCase() === 'chat')
+    ) && (
+      !provider.scenes
+      || provider.scenes.length === 0
+      || provider.scenes.some(scene => CHAT_SCENES.has(scene))
+    ),
   ),
 )
 
@@ -75,6 +93,38 @@ const currentSession = computed(() => {
   if (!chatStore.activeSessionId) return null
   return chatStore.sessions.find(session => session.id === chatStore.activeSessionId) || null
 })
+
+function resetActiveSessionConfig() {
+  activeSessionConfig.value = {
+    temperature: 0.7,
+    maxTokens: 2000,
+    knowledgeBaseIds: [],
+  }
+}
+
+async function loadActiveSessionConfig(sessionId: string | null) {
+  if (!sessionId) {
+    resetActiveSessionConfig()
+    return
+  }
+
+  try {
+    const detail = await chatApi.getSession(sessionId)
+    if (chatStore.activeSessionId !== sessionId) return
+
+    activeSessionConfig.value = {
+      preferredProviderId: detail.preferredProviderId ?? undefined,
+      temperature: detail.temperature ?? 0.7,
+      maxTokens: detail.maxTokens ?? 2000,
+      knowledgeBaseIds: detail.knowledgeBaseIds ?? [],
+    }
+  } catch (event) {
+    console.warn('加载会话配置失败:', event)
+    if (chatStore.activeSessionId === sessionId) {
+      resetActiveSessionConfig()
+    }
+  }
+}
 
 const hasMessageSearch = computed(() => searchQuery.value.trim().length > 0)
 const matchedMessageCount = computed(() => {
@@ -202,6 +252,14 @@ watch(
   },
 )
 
+watch(
+  () => chatStore.activeSessionId,
+  sessionId => {
+    void loadActiveSessionConfig(sessionId)
+  },
+  { immediate: true },
+)
+
 function scrollToBottom() {
   nextTick(() => {
     if (scrollContainer.value) {
@@ -218,7 +276,7 @@ async function handleSend(payload: {
   attachmentIds?: string[]
   attachments?: ChatAttachment[]
   sessionConfig?: {
-    modelId?: string
+    preferredProviderId?: string
     temperature?: number
     maxTokens?: number
     knowledgeBaseIds?: string[]
@@ -310,6 +368,12 @@ async function handleConfigUpdate(config: SessionConfig) {
   if (!chatStore.activeSessionId) return
   try {
     await chatApi.updateSessionConfig(chatStore.activeSessionId, config)
+    activeSessionConfig.value = {
+      preferredProviderId: config.preferredProviderId,
+      temperature: config.temperature ?? activeSessionConfig.value.temperature,
+      maxTokens: config.maxTokens ?? activeSessionConfig.value.maxTokens,
+      knowledgeBaseIds: config.knowledgeBaseIds ?? [],
+    }
     uiStore.showToast('success', '配置已更新')
   } catch {
     uiStore.showToast('error', '配置更新失败')
@@ -479,7 +543,10 @@ function closeInspectorPanels() {
 
               <div v-if="showConfigPanel" class="mt-4">
                 <SessionConfigPanel
-                  :model-id="lastModelId ?? undefined"
+                  :preferred-provider-id="activeSessionConfig.preferredProviderId"
+                  :temperature="activeSessionConfig.temperature"
+                  :max-tokens="activeSessionConfig.maxTokens"
+                  :knowledge-base-ids="activeSessionConfig.knowledgeBaseIds"
                   :providers="chatProviders"
                   :knowledge-bases="kbStore.list"
                   @close="showConfigPanel = false"

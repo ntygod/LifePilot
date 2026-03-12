@@ -16,12 +16,14 @@ const props = defineProps<{
 }>()
 
 const store = useWorkflowStore()
-const timelineLoading = ref(false)
 const activeTab = ref('overview')
 
 const currentState = computed(() => getStateConfig(props.execution.state))
 const progressText = computed(() => `${props.execution.completedStepIds?.length ?? 0} / ${props.totalSteps}`)
 const timeline = computed(() => store.getEventTimeline(props.execution.id))
+const timelineLoading = computed(() => (
+  activeTab.value === 'timeline' && !store.hasEventTimeline(props.execution.id)
+))
 
 const duration = computed(() => {
   const { startedAt, completedAt } = props.execution
@@ -42,22 +44,8 @@ async function onApproved() {
   await store.fetchInstance(props.execution.id)
 }
 
-async function loadTimeline() {
-  if (store.hasEventTimeline(props.execution.id)) return
-
-  timelineLoading.value = true
-  try {
-    await store.fetchEventTimeline(props.execution.id)
-  } finally {
-    timelineLoading.value = false
-  }
-}
-
 function onTabChange(tab: string | number) {
   activeTab.value = String(tab)
-  if (String(tab) === 'timeline') {
-    void loadTimeline()
-  }
 }
 </script>
 

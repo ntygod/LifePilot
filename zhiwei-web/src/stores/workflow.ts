@@ -12,6 +12,24 @@ import { workflowApi } from '@/api/client'
 
 type WorkflowYamlPayload = { yaml: string } | { yamlContent: string }
 
+function sortExecutions(items: WorkflowExecution[]) {
+  return [...items].sort((left, right) => (
+    new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()
+  ))
+}
+
+function sortEvents(events: WorkflowEvent[]) {
+  return [...events].sort((left, right) => (
+    new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime()
+  ))
+}
+
+function sortStepLogs(stepLogs: StepLog[]) {
+  return [...stepLogs].sort((left, right) => (
+    new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime()
+  ))
+}
+
 export const useWorkflowStore = defineStore('workflow', () => {
   const list = ref<WorkflowItem[]>([])
   const current = ref<WorkflowDetail | null>(null)
@@ -54,13 +72,63 @@ export const useWorkflowStore = defineStore('workflow', () => {
     stepLogsByInstance.value = nextStepLogs
   }
 
+  function setExecutions(items: WorkflowExecution[]) {
+    executions.value = sortExecutions(items)
+  }
+
+  function upsertExecution(execution: WorkflowExecution) {
+    const index = executions.value.findIndex(item => item.id === execution.id)
+    if (index === -1) {
+      executions.value = sortExecutions([execution, ...executions.value])
+    } else {
+      const next = [...executions.value]
+      next[index] = execution
+      executions.value = sortExecutions(next)
+    }
+
+    if (currentInstance.value?.id === execution.id) {
+      currentInstance.value = execution
+    }
+  }
+
+  function setCurrentInstance(execution: WorkflowExecution | null) {
+    currentInstance.value = execution
+    if (execution) {
+      upsertExecution(execution)
+    }
+  }
+
+  function setEventTimeline(instanceId: string, events: WorkflowEvent[]) {
+    const deduplicated = Array.from(new Map(events.map(event => [event.id, event])).values())
+    eventTimelineByInstance.value = {
+      ...eventTimelineByInstance.value,
+      [instanceId]: sortEvents(deduplicated),
+    }
+  }
+
+  function appendEventTimeline(instanceId: string, event: WorkflowEvent) {
+    setEventTimeline(instanceId, [...getEventTimeline(instanceId), event])
+  }
+
+  function setStepLogs(instanceId: string, stepLogs: StepLog[]) {
+    const deduplicated = Array.from(new Map(stepLogs.map(stepLog => [stepLog.id, stepLog])).values())
+    stepLogsByInstance.value = {
+      ...stepLogsByInstance.value,
+      [instanceId]: sortStepLogs(deduplicated),
+    }
+  }
+
+  function appendStepLog(instanceId: string, stepLog: StepLog) {
+    setStepLogs(instanceId, [...getStepLogs(instanceId), stepLog])
+  }
+
   async function fetchList() {
     loading.value = true
     error.value = null
     try {
       list.value = await workflowApi.list()
     } catch (e: any) {
-      error.value = e.message ?? '鍔犺浇宸ヤ綔娴佸垪琛ㄥけ璐?'
+      error.value = e.message ?? '加载工作流列表失败'
     } finally {
       loading.value = false
     }
@@ -71,7 +139,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     try {
       current.value = await workflowApi.get(id)
     } catch (e: any) {
-      error.value = e.message ?? '鍔犺浇宸ヤ綔娴佽鎯呭け璐?'
+      error.value = e.message ?? '加载工作流详情失败'
     }
   }
 
@@ -79,11 +147,11 @@ export const useWorkflowStore = defineStore('workflow', () => {
     error.value = null
     try {
       await workflowApi.enable(id)
-      const item = list.value.find(w => w.id === id)
+      const item = list.value.find(workflow => workflow.id === id)
       if (item) item.enabled = true
       if (current.value?.id === id) current.value = { ...current.value, enabled: true }
     } catch (e: any) {
-      error.value = e.message ?? '鍚敤宸ヤ綔娴佸け璐?'
+      error.value = e.message ?? '启用工作流失败'
     }
   }
 
@@ -91,11 +159,11 @@ export const useWorkflowStore = defineStore('workflow', () => {
     error.value = null
     try {
       await workflowApi.disable(id)
-      const item = list.value.find(w => w.id === id)
+      const item = list.value.find(workflow => workflow.id === id)
       if (item) item.enabled = false
       if (current.value?.id === id) current.value = { ...current.value, enabled: false }
     } catch (e: any) {
-      error.value = e.message ?? '绂佺敤宸ヤ綔娴佸け璐?'
+      error.value = e.message ?? '禁用工作流失败'
     }
   }
 
@@ -103,10 +171,11 @@ export const useWorkflowStore = defineStore('workflow', () => {
     error.value = null
     try {
       const execution = await workflowApi.trigger(id, inputs)
-      executions.value.unshift(execution)
+      upsertExecution(execution)
       return execution
     } catch (e: any) {
-      error.value = e.message ?? '瑙﹀彂宸ヤ綔娴佸け璐?'
+      error.value = e.message ?? '触发工作流失败'
+      throw e
     }
   }
 
@@ -114,9 +183,9 @@ export const useWorkflowStore = defineStore('workflow', () => {
     error.value = null
     clearExecutionDetails()
     try {
-      executions.value = await workflowApi.listExecutions(id)
+      setExecutions(await workflowApi.listExecutions(id))
     } catch (e: any) {
-      error.value = e.message ?? '鍔犺浇鎵ц鍘嗗彶澶辫触'
+      error.value = e.message ?? '加载执行记录失败'
     }
   }
 
@@ -127,7 +196,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
       await fetchList()
       return workflow
     } catch (e: any) {
-      error.value = e.message ?? '鍒涘缓宸ヤ綔娴佸け璐?'
+      error.value = e.message ?? '创建工作流失败'
       throw e
     }
   }
@@ -142,7 +211,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
       }
       return workflow
     } catch (e: any) {
-      error.value = e.message ?? '鏇存柊宸ヤ綔娴佸け璐?'
+      error.value = e.message ?? '更新工作流失败'
       throw e
     }
   }
@@ -151,14 +220,15 @@ export const useWorkflowStore = defineStore('workflow', () => {
     error.value = null
     try {
       await workflowApi.delete(id)
-      list.value = list.value.filter(w => w.id !== id)
+      list.value = list.value.filter(workflow => workflow.id !== id)
       if (current.value?.id === id) {
         current.value = null
         executions.value = []
+        currentInstance.value = null
         clearExecutionDetails()
       }
     } catch (e: any) {
-      error.value = e.message ?? '鍒犻櫎宸ヤ綔娴佸け璐?'
+      error.value = e.message ?? '删除工作流失败'
       throw e
     }
   }
@@ -167,12 +237,11 @@ export const useWorkflowStore = defineStore('workflow', () => {
     error.value = null
     try {
       const updated = await workflowApi.approve(instanceId, stepId, req)
-      const idx = executions.value.findIndex(e => e.id === instanceId)
-      if (idx !== -1) executions.value[idx] = updated
-      if (currentInstance.value?.id === instanceId) currentInstance.value = updated
+      upsertExecution(updated)
+      currentInstance.value = updated
       return updated
     } catch (e: any) {
-      error.value = e.message ?? '瀹℃壒鎿嶄綔澶辫触'
+      error.value = e.message ?? '提交审批失败'
       throw e
     }
   }
@@ -180,9 +249,12 @@ export const useWorkflowStore = defineStore('workflow', () => {
   async function fetchInstance(instanceId: string) {
     error.value = null
     try {
-      currentInstance.value = await workflowApi.getInstance(instanceId)
+      const execution = await workflowApi.getInstance(instanceId)
+      setCurrentInstance(execution)
+      return execution
     } catch (e: any) {
-      error.value = e.message ?? '鍔犺浇瀹炰緥璇︽儏澶辫触'
+      error.value = e.message ?? '加载执行实例失败'
+      return null
     }
   }
 
@@ -194,13 +266,10 @@ export const useWorkflowStore = defineStore('workflow', () => {
 
     try {
       const timeline = await workflowApi.getEventTimeline(instanceId)
-      eventTimelineByInstance.value = {
-        ...eventTimelineByInstance.value,
-        [instanceId]: timeline,
-      }
+      setEventTimeline(instanceId, timeline)
       return timeline
     } catch (e: any) {
-      error.value = e.message ?? '鍔犺浇浜嬩欢鏃堕棿绾垮け璐?'
+      error.value = e.message ?? '加载事件时间线失败'
       return []
     }
   }
@@ -213,13 +282,10 @@ export const useWorkflowStore = defineStore('workflow', () => {
 
     try {
       const logs = await workflowApi.getStepLogs(instanceId)
-      stepLogsByInstance.value = {
-        ...stepLogsByInstance.value,
-        [instanceId]: logs,
-      }
+      setStepLogs(instanceId, logs)
       return logs
     } catch (e: any) {
-      error.value = e.message ?? '鍔犺浇姝ラ鏃ュ織澶辫触'
+      error.value = e.message ?? '加载步骤日志失败'
       return []
     }
   }
@@ -238,6 +304,13 @@ export const useWorkflowStore = defineStore('workflow', () => {
     getEventTimeline,
     getStepLogs,
     clearExecutionDetails,
+    setExecutions,
+    upsertExecution,
+    setCurrentInstance,
+    setEventTimeline,
+    appendEventTimeline,
+    setStepLogs,
+    appendStepLog,
     fetchList,
     fetchDetail,
     enable,

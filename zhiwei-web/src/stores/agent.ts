@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import type { AgentSummary, AgentDetail } from '@/types'
+import type { AgentSummary, AgentDetail, CreateAgentRequest, UpdateAgentRequest } from '@/types'
 import { agentApi } from '@/api/client'
 
 export const useAgentStore = defineStore('agent', () => {
@@ -32,7 +32,7 @@ export const useAgentStore = defineStore('agent', () => {
     }
   }
 
-  async function createAgent(data: Partial<AgentDetail>) {
+  async function createAgent(data: CreateAgentRequest) {
     loading.value = true
     error.value = null
     try {
@@ -47,7 +47,7 @@ export const useAgentStore = defineStore('agent', () => {
     }
   }
 
-  async function updateAgent(id: string, data: Partial<AgentDetail>) {
+  async function updateAgent(id: string, data: UpdateAgentRequest) {
     loading.value = true
     error.value = null
     try {
