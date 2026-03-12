@@ -373,7 +373,8 @@ class MultiAgentLoopFaultConditionTest {
                     "INSERT INTO messages_fts(rowid, content) SELECT rowid, content FROM messages");
 
             // 构造 EpisodicMemory
-            var episodicMemory = new com.lifepilot.memory.episodic.EpisodicMemory(jdbcTemplate);
+            var episodicMemory = new com.lifepilot.memory.episodic.EpisodicMemory(
+                    jdbcTemplate, new com.lifepilot.memory.config.MemoryProperties());
 
             // 执行：使用包含冒号的中文查询（FTS5 特殊字符）
             // 当前代码 BUG：冒号被 FTS5 解析为列限定符，触发 SQL 语法错误

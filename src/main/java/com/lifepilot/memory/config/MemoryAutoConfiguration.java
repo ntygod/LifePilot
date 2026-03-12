@@ -94,9 +94,9 @@ public class MemoryAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public EpisodicMemory episodicMemory(JdbcTemplate jdbcTemplate) {
+    public EpisodicMemory episodicMemory(JdbcTemplate jdbcTemplate, MemoryProperties properties) {
         log.info("记忆系统: 注册 EpisodicMemory");
-        return new EpisodicMemory(jdbcTemplate);
+        return new EpisodicMemory(jdbcTemplate, properties);
     }
 
     @Bean
