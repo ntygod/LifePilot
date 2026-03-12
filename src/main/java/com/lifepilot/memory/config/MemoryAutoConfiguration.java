@@ -7,6 +7,7 @@ import com.lifepilot.memory.consolidation.ConsolidationPipeline;
 import com.lifepilot.memory.consolidation.EpisodicToProceduralConsolidator;
 import com.lifepilot.memory.consolidation.EpisodicToSemanticConsolidator;
 import com.lifepilot.memory.episodic.EpisodicMemory;
+import com.lifepilot.memory.retrieval.QueryRefiner;
 import com.lifepilot.memory.forgetting.ForgettingEngine;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.memory.procedural.IntentMatcher;
@@ -83,6 +84,13 @@ public class MemoryAutoConfiguration {
     public TokenBudgetAllocator tokenBudgetAllocator(MemoryProperties properties) {
         log.info("记忆系统: 注册 TokenBudgetAllocator");
         return new TokenBudgetAllocator(properties);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public QueryRefiner queryRefiner(MemoryProperties properties) {
+        log.info("记忆系统: 注册 QueryRefiner");
+        return new QueryRefiner(properties);
     }
 
     @Bean
