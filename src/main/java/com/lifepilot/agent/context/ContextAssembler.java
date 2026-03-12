@@ -236,6 +236,9 @@ public class ContextAssembler {
                     formatCrossSessionFragments(crossSessionFragments),
                     budgetAllocation.crossSessionBudget());
 
+            // 5.2 对最终注入上下文的结果更新 accessCount（截断后而非检索时）
+            safeUpdateAccessCounts(truncatedMemories);
+
             // 6. 将 L4 程序提示注入 L1（ReasoningSlot），并格式化检索结果
             slots = injectProcedureReasoningSlot(workingMemory, state.sessionId(), procedureHintSlot, slots);
             var formattedMemories = formatRetrievalResults(truncatedMemories);
@@ -595,6 +598,23 @@ public class ContextAssembler {
                     (int) (total * 0.10),   // systemPromptBudget
                     (int) (total * 0.15),   // userMessageBudget
                     total);
+        }
+    }
+
+    /**
+     * 安全更新最终注入上下文的实体 accessCount，异常时 WARN 日志不影响主流程。
+     *
+     * @param truncatedResults 经过预算截断后的最终检索结果
+     */
+    private void safeUpdateAccessCounts(List<RetrievalResult> truncatedResults) {
+        if (hybridRetriever == null || truncatedResults == null || truncatedResults.isEmpty()) {
+            return;
+        }
+        try {
+            hybridRetriever.updateAccessCounts(truncatedResults);
+        } catch (Exception e) {
+            log.warn("accessCount 更新失败，降级跳过: count={}, error={}",
+                    truncatedResults.size(), e.getMessage());
         }
     }
 
