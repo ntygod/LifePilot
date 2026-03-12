@@ -98,8 +98,10 @@ ZhiWei 是一个本地运行的个人 AI Agent 助手。它不只是被动执行
 ## 📸 界面预览
 
 <!-- TODO: 添加实际截图 -->
-> 截图待补充
 
+![img.png](img.png)
+![img_1.png](img_1.png)
+![img_2.png](img_2.png)
 ## 🚀 快速开始
 
 ### 方式一：Docker Compose（推荐）
