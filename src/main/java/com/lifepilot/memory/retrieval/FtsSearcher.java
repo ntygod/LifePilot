@@ -65,7 +65,8 @@ public class FtsSearcher {
                                 rs.getString("description"),
                                 rs.getFloat("score"),
                                 lastAccessedStr != null ? Instant.parse(lastAccessedStr) : null,
-                                rs.getFloat("importance_score"));
+                                rs.getFloat("importance_score"),
+                                null);
                     },
                     escapedQuery, topK);
         } catch (Exception e) {

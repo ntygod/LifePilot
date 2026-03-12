@@ -266,7 +266,8 @@ public class HybridRetriever {
                             entity.description(),
                             vr.similarity(),
                             entity.lastAccessedAt(),
-                            entity.importanceScore()));
+                            entity.importanceScore(),
+                            entity.validTo()));
                 } else {
                     // 实体可能已归档，仅用 entityId 和 similarity 构建
                     items.add(new RankedItem(
@@ -276,7 +277,8 @@ public class HybridRetriever {
                             null,
                             vr.similarity(),
                             null,
-                            0.0f));
+                            0.0f,
+                            null));
                 }
             }
         } catch (Exception e) {
