@@ -73,7 +73,8 @@ class ChatController_A2uiContract_测试 {
                 knowledgeBaseProperties,
                 proactiveConfigProperties,
                 responseTracker,
-                confirmationService
+                confirmationService,
+                null
         );
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }

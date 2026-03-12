@@ -261,6 +261,44 @@ public class ProceduralMemory {
         }
     }
 
+    /**
+     * 查询所有操作模板，按 created_at 降序。
+     *
+     * @return 操作模板列表
+     */
+    public List<ProcedureTemplate> listAllTemplates() {
+        var results = jdbcTemplate.query(
+                "SELECT * FROM procedure_templates ORDER BY created_at DESC",
+                (rs, rowNum) -> mapRowToTemplate(rs));
+        return List.copyOf(results);
+    }
+
+    /**
+     * 查询所有偏好规则，按 category 和 key 排序。
+     *
+     * @return 偏好规则列表
+     */
+    public List<PreferenceRule> listAllPreferences() {
+        var results = jdbcTemplate.query(
+                "SELECT * FROM preference_rules ORDER BY category, key",
+                (rs, rowNum) -> mapRowToPreference(rs));
+        return List.copyOf(results);
+    }
+
+    /**
+     * 删除指定偏好规则。
+     *
+     * @param ruleId 偏好规则 ID
+     * @return 是否删除成功
+     */
+    public boolean deletePreference(String ruleId) {
+        int rows = jdbcTemplate.update("DELETE FROM preference_rules WHERE rule_id = ?", ruleId);
+        if (rows > 0) {
+            log.info("程序记忆: 删除偏好规则, ruleId={}", ruleId);
+        }
+        return rows > 0;
+    }
+
     // ========== 策略模式 ==========
 
     /**

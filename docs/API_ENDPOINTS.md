@@ -8,6 +8,7 @@
 
 - [Chat（对话 + SSE）](#chat对话--sse)
 - [Sessions（会话管理）](#sessions会话管理)
+- [Memories（记忆管理）](#memories记忆管理)
 - [Signals / Notifications（A2UI 信号 + 通知）](#signals--notifications)
 - [Agents（多 Agent 管理）](#agents多-agent-管理)
 - [Tools（工具管理）](#tools工具管理)
@@ -56,6 +57,57 @@
 | DELETE | `/api/chat/sessions/{id}` | `deleteSession` | 删除会话（204） |
 | POST | `/api/chat/sessions/batch` | `batchUpdateSessions` | 批量操作（pin/archive/delete） |
 | POST | `/api/chat/sessions/{id}/fork` | `forkSession` | 分叉会话（从指定消息复制上下文） |
+
+---
+
+## Memories（记忆管理）
+
+来源：`MemoryController`，Base Path: `/api/memories`
+
+> 所有端点在记忆系统未启用时返回 503 Service Unavailable。
+
+### 统计与搜索
+
+| Method | Path | Handler | 备注 |
+|--------|------|---------|------|
+| GET | `/api/memories/stats` | `getStats` | 记忆统计概览（L2/L3/L4 各层计数） |
+| GET | `/api/memories/search` | `search` | 统一记忆搜索（q/topK 参数，调用 HybridRetriever） |
+
+### L3 语义记忆（实体 + 关系）
+
+| Method | Path | Handler | 备注 |
+|--------|------|---------|------|
+| GET | `/api/memories/entities` | `listEntities` | 实体分页列表（type/q/timeFrom/timeTo/sortBy/order 过滤排序） |
+| GET | `/api/memories/entities/{id}` | `getEntity` | 实体详情 |
+| GET | `/api/memories/entities/{id}/history` | `getEntityHistory` | 实体版本历史 |
+| GET | `/api/memories/entities/{id}/related` | `getRelatedEntities` | 关联实体列表 |
+| DELETE | `/api/memories/entities/{id}` | `archiveEntity` | 归档实体（软删除，204） |
+| GET | `/api/memories/relations` | `listRelations` | 关系分页列表（entityId/relationType 过滤，附带实体名称） |
+
+### L2 情景记忆（对话）
+
+| Method | Path | Handler | 备注 |
+|--------|------|---------|------|
+| GET | `/api/memories/conversations` | `listConversations` | 对话分页列表（q/timeFrom/timeTo 过滤） |
+| GET | `/api/memories/conversations/{id}` | `getConversation` | 对话详情（含消息列表） |
+| DELETE | `/api/memories/conversations/{id}` | `deleteConversation` | 删除对话（204） |
+
+### L4 程序记忆（模板 + 偏好）
+
+| Method | Path | Handler | 备注 |
+|--------|------|---------|------|
+| GET | `/api/memories/templates` | `listTemplates` | 响应模板列表（category 过滤） |
+| GET | `/api/memories/templates/{id}` | `getTemplate` | 模板详情 |
+| DELETE | `/api/memories/templates/{id}` | `deleteTemplate` | 删除模板（204） |
+| GET | `/api/memories/preferences` | `listPreferences` | 用户偏好列表（category 过滤） |
+| DELETE | `/api/memories/preferences/{id}` | `deletePreference` | 删除偏好（204） |
+
+### 遗忘日志 + 巩固
+
+| Method | Path | Handler | 备注 |
+|--------|------|---------|------|
+| GET | `/api/memories/forgetting-logs` | `listForgettingLogs` | 遗忘日志分页列表（timeFrom/timeTo/strategy 过滤） |
+| POST | `/api/memories/consolidate` | `triggerConsolidation` | 手动触发记忆巩固（AtomicBoolean 防重入，Virtual Thread 异步，202） |
 
 ---
 
