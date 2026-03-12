@@ -14,14 +14,12 @@ import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 语义缓存 — 基于 sqlite-vec 向量相似度匹配的 LLM 响应缓存。
  *
- * <p>按 scene + agentPhase 维度隔离，TTL + LRU 混合淘汰。
+ * <p>按 scene + agentPhase + responseFormatKey 维度隔离，TTL + LRU 混合淘汰。
  * 所有数据库操作异常 catch 后降级（lookup 返回 empty，putAsync 静默跳过）。
  *
  * @author zsg
@@ -30,6 +28,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public class SemanticCache {
 
     private static final Logger log = LoggerFactory.getLogger(SemanticCache.class);
+    private static final String DEFAULT_RESPONSE_FORMAT_KEY = "text";
 
     private final CacheConfigEntry config;
     private final LlmRouter llmRouter;
@@ -112,12 +111,16 @@ public class SemanticCache {
     /**
      * 查询缓存：计算 prompt 的 Embedding，在指定 scene + phase 维度内执行向量相似度搜索。
      *
-     * @param scene  LLM 场景
-     * @param phase  Agent 阶段（可为 null，null 时不限制阶段）
-     * @param prompt 请求 Prompt
+     * @param scene             LLM 场景
+     * @param phase             Agent 阶段（可为 null，null 时不限制阶段）
+     * @param responseFormatKey 响应格式隔离键，结构化输出与自由文本必须分桶
+     * @param prompt            请求 Prompt
      * @return 命中的缓存条目，未命中返回 Optional.empty()
      */
-    public Optional<CacheEntry> lookup(String scene, @Nullable String phase, String prompt) {
+    public Optional<CacheEntry> lookup(String scene,
+                                       @Nullable String phase,
+                                       String responseFormatKey,
+                                       String prompt) {
         totalQueries.incrementAndGet();
 
         if (!ensureVecInitialized()) {
@@ -147,15 +150,16 @@ public class SemanticCache {
             // 3. JOIN semantic_cache 表，过滤 scene + phase + TTL + 相似度阈值
             var cutoff = Instant.now().minus(config.getTtlSeconds(), ChronoUnit.SECONDS);
             String cutoffStr = DateTimeFormatter.ISO_INSTANT.format(cutoff);
+            String normalizedResponseFormatKey = normalizeResponseFormatKey(responseFormatKey);
 
             for (var candidate : candidates) {
                 float similarity = 1.0f - candidate.distance() / 2.0f;
                 if (similarity < config.getSimilarityThreshold()) continue;
 
                 var rows = jdbcTemplate.query(
-                        "SELECT id, response_text, scene, agent_phase, model_name, " +
+                        "SELECT id, response_text, scene, agent_phase, response_format_key, model_name, " +
                         "similarity_score, hit_count, created_at, last_accessed_at " +
-                        "FROM semantic_cache WHERE id = ? AND scene = ?" +
+                        "FROM semantic_cache WHERE id = ? AND scene = ? AND response_format_key = ?" +
                         (phase != null ? " AND agent_phase = ?" : " AND agent_phase IS NULL") +
                         " AND created_at > ?",
                         (rs, rowNum) -> new CacheEntry(
@@ -163,14 +167,15 @@ public class SemanticCache {
                                 rs.getString("response_text"),
                                 rs.getString("scene"),
                                 rs.getString("agent_phase"),
+                                rs.getString("response_format_key"),
                                 rs.getString("model_name"),
                                 similarity,
                                 rs.getInt("hit_count"),
                                 Instant.parse(rs.getString("created_at")),
                                 Instant.parse(rs.getString("last_accessed_at"))),
                         phase != null
-                                ? new Object[]{candidate.cacheId(), scene, phase, cutoffStr}
-                                : new Object[]{candidate.cacheId(), scene, cutoffStr});
+                                ? new Object[]{candidate.cacheId(), scene, normalizedResponseFormatKey, phase, cutoffStr}
+                                : new Object[]{candidate.cacheId(), scene, normalizedResponseFormatKey, cutoffStr});
 
                 if (!rows.isEmpty()) {
                     var entry = rows.getFirst();
@@ -183,7 +188,8 @@ public class SemanticCache {
                     hitCount.incrementAndGet();
                     // 估算节省 Token：按响应长度 / 4 粗略估算
                     estimatedSavedTokens.addAndGet(entry.responseText().length() / 4);
-                    log.debug("语义缓存命中: id={}, similarity={}, scene={}", entry.id(), similarity, scene);
+                    log.debug("语义缓存命中: id={}, similarity={}, scene={}, format={}",
+                            entry.id(), similarity, scene, normalizedResponseFormatKey);
                     return Optional.of(entry);
                 }
             }
@@ -201,40 +207,47 @@ public class SemanticCache {
     /**
      * 异步写入缓存。
      *
-     * @param scene     LLM 场景
-     * @param phase     Agent 阶段（可为 null）
-     * @param prompt    请求 Prompt
-     * @param response  LLM 响应文本
-     * @param modelName 生成响应的模型名称
+     * @param scene             LLM 场景
+     * @param phase             Agent 阶段（可为 null）
+     * @param responseFormatKey 响应格式隔离键，结构化输出与自由文本必须分桶
+     * @param prompt            请求 Prompt
+     * @param response          LLM 响应文本
+     * @param modelName         生成响应的模型名称
      */
-    public void putAsync(String scene, @Nullable String phase, String prompt,
-                         String response, String modelName) {
+    public void putAsync(String scene,
+                         @Nullable String phase,
+                         String responseFormatKey,
+                         String prompt,
+                         String response,
+                         String modelName) {
         if (!ensureVecInitialized()) return;
 
-        CompletableFuture.runAsync(() -> {
+        Thread.ofVirtual().start(() -> {
             try {
                 float[] embedding = llmRouter.embed(prompt);
                 byte[] vectorBytes = floatArrayToBytes(embedding);
                 String id = UUID.randomUUID().toString();
                 String now = DateTimeFormatter.ISO_INSTANT.format(Instant.now());
+                String normalizedResponseFormatKey = normalizeResponseFormatKey(responseFormatKey);
 
                 // 写入 semantic_cache 关系表
                 jdbcTemplate.update(
                         "INSERT INTO semantic_cache (id, query_embedding, response_text, scene, " +
-                        "agent_phase, model_name, similarity_score, hit_count, created_at, last_accessed_at) " +
-                        "VALUES (?, ?, ?, ?, ?, ?, 1.0, 0, ?, ?)",
-                        id, vectorBytes, response, scene, phase, modelName, now, now);
+                        "agent_phase, response_format_key, model_name, similarity_score, hit_count, created_at, last_accessed_at) " +
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, 1.0, 0, ?, ?)",
+                        id, vectorBytes, response, scene, phase, normalizedResponseFormatKey, modelName, now, now);
 
                 // 写入 semantic_cache_vec 向量表
                 jdbcTemplate.update(
                         "INSERT INTO semantic_cache_vec (cache_id, embedding) VALUES (?, ?)",
                         id, vectorBytes);
 
-                log.debug("语义缓存写入: id={}, scene={}, phase={}", id, scene, phase);
+                log.debug("语义缓存写入: id={}, scene={}, phase={}, format={}",
+                        id, scene, phase, normalizedResponseFormatKey);
             } catch (Exception e) {
                 log.warn("语义缓存写入异常，静默跳过: error={}", e.getMessage());
             }
-        }, Executors.newVirtualThreadPerTaskExecutor());
+        });
     }
 
     /**
@@ -323,6 +336,12 @@ public class SemanticCache {
                 missCount.get(),
                 entryCount,
                 estimatedSavedTokens.get());
+    }
+
+    private String normalizeResponseFormatKey(@Nullable String responseFormatKey) {
+        return responseFormatKey == null || responseFormatKey.isBlank()
+                ? DEFAULT_RESPONSE_FORMAT_KEY
+                : responseFormatKey.trim();
     }
 
     // --- 工具方法 ---

@@ -12,8 +12,12 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.lang.Nullable;
 import reactor.core.publisher.Flux;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.List;
 
 /**
@@ -33,12 +37,15 @@ public class LlmRouter {
     private final ProviderRegistry providerRegistry;
     private final CircuitBreakerManager circuitBreakerManager;
     private final ExponentialBackoff backoff;
+    @Nullable private final LlmRoutingPreferenceResolver routingPreferenceResolver;
     @Nullable private volatile SemanticCache semanticCache;
 
     public LlmRouter(ProviderRegistry providerRegistry,
-                     CircuitBreakerManager circuitBreakerManager) {
+                     CircuitBreakerManager circuitBreakerManager,
+                     @Nullable LlmRoutingPreferenceResolver routingPreferenceResolver) {
         this.providerRegistry = providerRegistry;
         this.circuitBreakerManager = circuitBreakerManager;
+        this.routingPreferenceResolver = routingPreferenceResolver;
         this.backoff = ExponentialBackoff.defaults();
         log.info("LlmRouter 初始化完成");
     }
@@ -62,13 +69,54 @@ public class LlmRouter {
      * @throws LlmUnavailableException 所有候选 Provider 均失败
      */
     public LlmResponse call(String scene, String prompt, @Nullable String outputSchema) {
+        return callWithPreferredProvider(scene, prompt, outputSchema, null, null);
+    }
+
+    public LlmResponse call(String scene,
+                            ProviderCapability requiredCapability,
+                            String prompt,
+                            @Nullable String outputSchema,
+                            @Nullable String modelName,
+                            @Nullable String preferredProviderId) {
+        return call(scene, requiredCapability, prompt, outputSchema, modelName, preferredProviderId, null);
+    }
+
+    public LlmResponse call(String scene,
+                            ProviderCapability requiredCapability,
+                            String prompt,
+                            @Nullable String outputSchema,
+                            @Nullable String modelName,
+                            @Nullable String preferredProviderId,
+                            @Nullable Duration timeoutOverride) {
+        if (requiredCapability == ProviderCapability.CHAT) {
+            if (modelName != null && !modelName.isBlank()) {
+                return call(scene, prompt, outputSchema, modelName, timeoutOverride);
+            }
+            return callWithPreferredProvider(scene, prompt, outputSchema, preferredProviderId, timeoutOverride);
+        }
+        return callWithCapability(scene, requiredCapability, prompt, outputSchema, modelName, preferredProviderId, timeoutOverride);
+    }
+
+    public LlmResponse callWithPreferredProvider(String scene, String prompt,
+                                                 @Nullable String outputSchema,
+                                                 @Nullable String preferredProviderId) {
+        return callWithPreferredProvider(scene, prompt, outputSchema, preferredProviderId, null);
+    }
+
+    public LlmResponse callWithPreferredProvider(String scene, String prompt,
+                                                 @Nullable String outputSchema,
+                                                 @Nullable String preferredProviderId,
+                                                 @Nullable Duration timeoutOverride) {
+        String normalizedScene = normalizeScene(scene);
+        String responseFormatKey = responseFormatKey(outputSchema);
         // 缓存查询（在 Provider 故障转移循环前）
         if (semanticCache != null) {
             try {
-                var cached = semanticCache.lookup(scene, null, prompt);
+                var cached = semanticCache.lookup(normalizedScene, null, responseFormatKey, prompt);
                 if (cached.isPresent()) {
                     CacheEntry entry = cached.get();
-                    log.debug("LLM 缓存命中: scene={}, cacheId={}", scene, entry.id());
+                    log.debug("LLM 缓存命中: scene={}, format={}, cacheId={}",
+                            scene, responseFormatKey, entry.id());
                     return LlmResponse.cached(entry.responseText(), "cache", entry.modelName());
                 }
             } catch (Exception e) {
@@ -76,7 +124,7 @@ public class LlmRouter {
             }
         }
 
-        var candidates = findAvailableCandidates(scene, ProviderCapability.CHAT);
+        var candidates = findAvailableCandidates(normalizedScene, ProviderCapability.CHAT, preferredProviderId);
         if (candidates.isEmpty()) {
             throw new LlmUnavailableException(
                     "无可用 Provider: scene=" + scene, scene, List.of());
@@ -91,7 +139,7 @@ public class LlmRouter {
 
             try {
                 var adapter = providerRegistry.getAdapter(config.id());
-                var timeout = Duration.ofSeconds(config.timeoutSeconds());
+                var timeout = effectiveTimeout(config, timeoutOverride);
                 
                 // 记录提示词（用于调试）
                 log.debug("LLM 调用开始: scene={}, provider={}, prompt={}", 
@@ -111,7 +159,9 @@ public class LlmRouter {
                 // 异步写入缓存
                 if (semanticCache != null) {
                     try {
-                        semanticCache.putAsync(scene, null, prompt, response.content(), response.modelName());
+                        semanticCache.putAsync(
+                                normalizedScene, null, responseFormatKey,
+                                prompt, response.content(), response.modelName());
                     } catch (Exception e) {
                         log.warn("LLM 缓存写入异常，静默跳过: scene={}, error={}", scene, e.getMessage());
                     }
@@ -148,8 +198,14 @@ public class LlmRouter {
      */
     public LlmResponse call(String scene, String prompt, @Nullable String outputSchema,
                             @Nullable String modelName) {
+        return call(scene, prompt, outputSchema, modelName, null);
+    }
+
+    public LlmResponse call(String scene, String prompt, @Nullable String outputSchema,
+                            @Nullable String modelName,
+                            @Nullable Duration timeoutOverride) {
         if (modelName == null || modelName.isBlank()) {
-            return call(scene, prompt, outputSchema);
+            return callWithPreferredProvider(scene, prompt, outputSchema, null, timeoutOverride);
         }
         var byModel = providerRegistry.findByModelName(modelName).stream()
                 .filter(c -> c.hasCapability(ProviderCapability.CHAT))
@@ -158,17 +214,52 @@ public class LlmRouter {
         if (byModel.isEmpty()) {
             log.warn("指定 modelName 未找到可用 Provider，回退到 scene 路由: modelName={}, scene={}",
                     modelName, scene);
-            return call(scene, prompt, outputSchema);
+            return callWithPreferredProvider(scene, prompt, outputSchema, null, timeoutOverride);
         }
-        return callWithCandidates(scene, prompt, outputSchema, byModel);
+        return callWithCandidates(scene, prompt, outputSchema, byModel, timeoutOverride);
     }
 
     /**
      * 使用指定候选列表执行文本生成调用（内部复用方法）。
      */
-    private LlmResponse callWithCandidates(String scene, String prompt,
-                                            @Nullable String outputSchema,
-                                            List<ProviderConfig> candidates) {
+    private LlmResponse callWithCapability(String scene,
+                                           ProviderCapability requiredCapability,
+                                           String prompt,
+                                           @Nullable String outputSchema,
+                                           @Nullable String modelName,
+                                           @Nullable String preferredProviderId,
+                                           @Nullable Duration timeoutOverride) {
+        String normalizedScene = normalizeScene(scene);
+        String responseFormatKey = responseFormatKey(outputSchema);
+        boolean cacheable = requiredCapability == ProviderCapability.STRUCTURED_OUTPUT;
+
+        if (cacheable && semanticCache != null) {
+            try {
+                var cached = semanticCache.lookup(normalizedScene, null, responseFormatKey, prompt);
+                if (cached.isPresent()) {
+                    CacheEntry entry = cached.get();
+                    log.debug("LLM 缓存命中: scene={}, capability={}, format={}, cacheId={}",
+                            scene, requiredCapability, responseFormatKey, entry.id());
+                    return LlmResponse.cached(entry.responseText(), "cache", entry.modelName());
+                }
+            } catch (Exception e) {
+                log.warn("LLM 缓存查询异常，跳过缓存: scene={}, capability={}, error={}",
+                        scene, requiredCapability, e.getMessage());
+            }
+        }
+
+        var candidates = (modelName != null && !modelName.isBlank()
+                ? providerRegistry.findByModelName(modelName).stream()
+                    .filter(c -> c.hasCapability(requiredCapability))
+                    .filter(c -> circuitBreakerManager.isCallPermitted(c.id(), requiredCapability.name()))
+                    .toList()
+                : findAvailableCandidates(normalizedScene, requiredCapability, preferredProviderId));
+
+        if (candidates.isEmpty()) {
+            throw new LlmUnavailableException(
+                    "无可用 Provider: scene=" + scene, scene, List.of());
+        }
+
         var attemptedProviders = new ArrayList<String>();
         Exception lastException = null;
         for (int i = 0; i < candidates.size(); i++) {
@@ -176,14 +267,70 @@ public class LlmRouter {
             attemptedProviders.add(config.id());
             try {
                 var adapter = providerRegistry.getAdapter(config.id());
-                var timeout = Duration.ofSeconds(config.timeoutSeconds());
+                var timeout = effectiveTimeout(config, timeoutOverride);
+                var response = adapter.call(prompt, outputSchema, timeout);
+                circuitBreakerManager.recordSuccess(config.id(), requiredCapability.name());
+                if (cacheable && semanticCache != null) {
+                    try {
+                        semanticCache.putAsync(
+                                normalizedScene, null, responseFormatKey,
+                                prompt, response.content(), response.modelName());
+                    } catch (Exception e) {
+                        log.warn("LLM 缓存写入异常，静默跳过: scene={}, capability={}, error={}",
+                                scene, requiredCapability, e.getMessage());
+                    }
+                }
+                return response;
+            } catch (Exception e) {
+                circuitBreakerManager.recordFailure(config.id(), requiredCapability.name());
+                lastException = e;
+                log.warn("LLM 调用失败: scene={}, capability={}, provider={}, error={}",
+                        scene, requiredCapability, config.id(), e.getMessage());
+                if (i < candidates.size() - 1) {
+                    sleepBackoff(i);
+                }
+            }
+        }
+        throw new LlmUnavailableException(
+                "所有候选 Provider 调用失败: scene=" + scene, scene, attemptedProviders, lastException);
+    }
+
+    private LlmResponse callWithCandidates(String scene, String prompt,
+                                            @Nullable String outputSchema,
+                                            List<ProviderConfig> candidates,
+                                            @Nullable Duration timeoutOverride) {
+        String normalizedScene = normalizeScene(scene);
+        String responseFormatKey = responseFormatKey(outputSchema);
+        if (semanticCache != null) {
+            try {
+                var cached = semanticCache.lookup(normalizedScene, null, responseFormatKey, prompt);
+                if (cached.isPresent()) {
+                    CacheEntry entry = cached.get();
+                    log.debug("LLM 缓存命中: scene={}, format={}, cacheId={}",
+                            scene, responseFormatKey, entry.id());
+                    return LlmResponse.cached(entry.responseText(), "cache", entry.modelName());
+                }
+            } catch (Exception e) {
+                log.warn("LLM 缓存查询异常，跳过缓存: scene={}, error={}", scene, e.getMessage());
+            }
+        }
+        var attemptedProviders = new ArrayList<String>();
+        Exception lastException = null;
+        for (int i = 0; i < candidates.size(); i++) {
+            var config = candidates.get(i);
+            attemptedProviders.add(config.id());
+            try {
+                var adapter = providerRegistry.getAdapter(config.id());
+                var timeout = effectiveTimeout(config, timeoutOverride);
                 var response = adapter.call(prompt, outputSchema, timeout);
                 circuitBreakerManager.recordSuccess(config.id(), "CHAT");
                 log.info("LLM 调用成功（模型路由）: scene={}, provider={}, model={}",
                         scene, config.id(), response.modelName());
                 if (semanticCache != null) {
                     try {
-                        semanticCache.putAsync(scene, null, prompt, response.content(), response.modelName());
+                        semanticCache.putAsync(
+                                normalizedScene, null, responseFormatKey,
+                                prompt, response.content(), response.modelName());
                     } catch (Exception e) {
                         log.warn("LLM 缓存写入异常: scene={}, error={}", scene, e.getMessage());
                     }
@@ -211,8 +358,9 @@ public class LlmRouter {
      * @throws LlmUnavailableException 所有候选 Provider 均失败
      */
     public <T> T callEntity(String scene, String prompt, Class<T> responseType) {
+        String normalizedScene = normalizeScene(scene);
         // 优先选择支持 STRUCTURED_OUTPUT 的 Provider
-        var candidates = findAvailableCandidates(scene, ProviderCapability.CHAT);
+        var candidates = findAvailableCandidates(normalizedScene, ProviderCapability.CHAT);
         // 将支持 STRUCTURED_OUTPUT 的排在前面
         var sorted = new ArrayList<>(candidates.stream()
                 .filter(c -> c.hasCapability(ProviderCapability.STRUCTURED_OUTPUT))
@@ -267,8 +415,9 @@ public class LlmRouter {
      */
     public <T> T callEntity(String scene, String prompt, Class<T> responseType,
                             @Nullable String modelName) {
+        String normalizedScene = normalizeScene(scene);
         if (modelName == null || modelName.isBlank()) {
-            return callEntity(scene, prompt, responseType);
+            return callEntity(normalizedScene, prompt, responseType);
         }
         var byModel = providerRegistry.findByModelName(modelName).stream()
                 .filter(c -> c.hasCapability(ProviderCapability.CHAT))
@@ -277,7 +426,7 @@ public class LlmRouter {
         if (byModel.isEmpty()) {
             log.warn("指定 modelName 未找到可用 Provider，回退到 scene 路由: modelName={}, scene={}",
                     modelName, scene);
-            return callEntity(scene, prompt, responseType);
+            return callEntity(normalizedScene, prompt, responseType);
         }
         // 将支持 STRUCTURED_OUTPUT 的排在前面
         var sorted = new ArrayList<>(byModel.stream()
@@ -318,7 +467,15 @@ public class LlmRouter {
      * @throws LlmUnavailableException 无可用 Provider
      */
     public ChatClient getChatClient(String scene) {
-        var candidates = findAvailableCandidates(scene, ProviderCapability.CHAT);
+        return getChatClient(scene, null);
+    }
+
+    /**
+     * 获取最高优先级可用 Provider 的 ChatClient，可显式指定优先 Provider。
+     */
+    public ChatClient getChatClient(String scene, @Nullable String preferredProviderId) {
+        String normalizedScene = normalizeScene(scene);
+        var candidates = findAvailableCandidates(normalizedScene, ProviderCapability.CHAT, preferredProviderId);
         for (var config : candidates) {
             var adapter = providerRegistry.getAdapter(config.id());
             var client = adapter.chatClient();
@@ -347,7 +504,15 @@ public class LlmRouter {
      * @throws LlmUnavailableException 无可用流式 Provider
      */
     public ChatClientInfo getChatClientWithInfo(String scene) {
-        var candidates = findAvailableCandidates(scene, ProviderCapability.CHAT)
+        return getChatClientWithInfo(scene, null);
+    }
+
+    /**
+     * 获取支持流式的最高优先级 Provider 的 ChatClient 及元信息，可显式指定优先 Provider。
+     */
+    public ChatClientInfo getChatClientWithInfo(String scene, @Nullable String preferredProviderId) {
+        String normalizedScene = normalizeScene(scene);
+        var candidates = findAvailableCandidates(normalizedScene, ProviderCapability.CHAT, preferredProviderId)
                 .stream()
                 .filter(ProviderConfig::supportsStreaming)
                 .toList();
@@ -473,7 +638,16 @@ public class LlmRouter {
      * @throws LlmUnavailableException 无可用 STREAMING Provider
      */
     public StreamingLlmResponse streamWithInfo(String scene, String prompt) {
-        var candidates = findAvailableCandidates(scene, ProviderCapability.CHAT)
+        return streamWithInfo(scene, prompt, null);
+    }
+
+    /**
+     * 执行流式文本生成，并返回附带 Provider/模型信息的响应包装，可显式指定优先 Provider。
+     */
+    public StreamingLlmResponse streamWithInfo(String scene, String prompt,
+                                               @Nullable String preferredProviderId) {
+        String normalizedScene = normalizeScene(scene);
+        var candidates = findAvailableCandidates(normalizedScene, ProviderCapability.CHAT, preferredProviderId)
                 .stream()
                 .filter(ProviderConfig::supportsStreaming)
                 .toList();
@@ -490,6 +664,12 @@ public class LlmRouter {
         return new StreamingLlmResponse(adapter.stream(prompt), config.id(), config.modelName());
     }
 
+    public List<ProviderConfig> getAvailableCandidates(String scene,
+                                                       ProviderCapability requiredCapability,
+                                                       @Nullable String preferredProviderId) {
+        return findAvailableCandidates(normalizeScene(scene), requiredCapability, preferredProviderId);
+    }
+
     // --- 内部方法 ---
 
     /**
@@ -498,22 +678,33 @@ public class LlmRouter {
      */
     private List<ProviderConfig> findAvailableCandidates(String scene,
                                                           ProviderCapability requiredCapability) {
+        return findAvailableCandidates(scene, requiredCapability, null);
+    }
+
+    private List<ProviderConfig> findAvailableCandidates(String scene,
+                                                          ProviderCapability requiredCapability,
+                                                          @Nullable String explicitPreferredProviderId) {
+        String preferredProviderId = resolvePreferredProvider(scene, explicitPreferredProviderId);
         var byScene = providerRegistry.findByScene(scene);
         log.debug("场景匹配结果: scene={}, 匹配数量={}, providers={}",
                 scene, byScene.size(),
                 byScene.stream().map(ProviderConfig::id).toList());
         
-        var candidates = byScene.stream()
+        List<ProviderConfig> candidates = byScene.stream()
                 .filter(c -> c.hasCapability(requiredCapability))
                 .filter(c -> circuitBreakerManager.isCallPermitted(
                         c.id(), requiredCapability.name()))
                 .toList();
+        candidates = prioritizePreferredProvider(
+                candidates, preferredProviderId, requiredCapability, scene, false);
         
         // 场景无匹配时回退到按能力查找
         if (candidates.isEmpty()) {
-            var fallback = providerRegistry.findByCapability(requiredCapability).stream()
+            List<ProviderConfig> fallback = providerRegistry.findByCapability(requiredCapability).stream()
                     .filter(c -> circuitBreakerManager.isCallPermitted(c.id(), requiredCapability.name()))
                     .toList();
+            fallback = prioritizePreferredProvider(
+                    fallback, preferredProviderId, requiredCapability, scene, true);
             if (!fallback.isEmpty()) {
                 log.info("场景 '{}' 无匹配 Provider，回退到能力路由: capability={}, 候选数={}",
                         scene, requiredCapability, fallback.size());
@@ -523,6 +714,44 @@ public class LlmRouter {
         }
         
         return candidates;
+    }
+
+    @Nullable
+    private String resolvePreferredProvider(String scene, @Nullable String explicitPreferredProviderId) {
+        if (explicitPreferredProviderId != null && !explicitPreferredProviderId.isBlank()) {
+            return explicitPreferredProviderId;
+        }
+        if (routingPreferenceResolver == null) {
+            return null;
+        }
+        return routingPreferenceResolver.preferredProviderForScene(normalizeScene(scene));
+    }
+
+    private List<ProviderConfig> prioritizePreferredProvider(List<ProviderConfig> candidates,
+                                                             @Nullable String preferredProviderId,
+                                                             ProviderCapability requiredCapability,
+                                                             String scene,
+                                                             boolean allowCapabilityFallback) {
+        if (preferredProviderId == null || preferredProviderId.isBlank()) {
+            return candidates;
+        }
+
+        var preferredConfig = providerRegistry.getConfig(preferredProviderId)
+                .filter(config -> config.hasCapability(requiredCapability))
+                .filter(config -> circuitBreakerManager.isCallPermitted(
+                        config.id(), requiredCapability.name()))
+                .filter(config -> allowCapabilityFallback || config.supportsScene(scene));
+
+        if (preferredConfig.isEmpty()) {
+            return candidates;
+        }
+
+        var ordered = new ArrayList<ProviderConfig>();
+        ordered.add(preferredConfig.get());
+        candidates.stream()
+                .filter(config -> !config.id().equals(preferredProviderId))
+                .forEach(ordered::add);
+        return ordered;
     }
 
     /**
@@ -535,5 +764,29 @@ public class LlmRouter {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
+    }
+
+    private Duration effectiveTimeout(ProviderConfig config, @Nullable Duration timeoutOverride) {
+        return timeoutOverride != null ? timeoutOverride : Duration.ofSeconds(config.timeoutSeconds());
+    }
+
+    private String responseFormatKey(@Nullable String outputSchema) {
+        if (outputSchema == null || outputSchema.isBlank()) {
+            return "text";
+        }
+        return "json:" + sha256Hex(outputSchema.trim());
+    }
+
+    private String sha256Hex(String value) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(digest.digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 不可用", e);
+        }
+    }
+
+    private String normalizeScene(String scene) {
+        return scene == null ? "" : scene.trim();
     }
 }

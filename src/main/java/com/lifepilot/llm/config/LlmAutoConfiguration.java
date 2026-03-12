@@ -1,6 +1,7 @@
 package com.lifepilot.llm.config;
 
 import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.llm.LlmRoutingPreferenceResolver;
 import com.lifepilot.llm.adapter.ProviderAdapterFactory;
 import com.lifepilot.llm.cache.SemanticCache;
 import com.lifepilot.llm.circuit.CircuitBreakerManager;
@@ -166,8 +167,9 @@ public class LlmAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public LlmRouter llmRouter(ProviderRegistry providerRegistry,
-                                CircuitBreakerManager circuitBreakerManager) {
-        return new LlmRouter(providerRegistry, circuitBreakerManager);
+                                CircuitBreakerManager circuitBreakerManager,
+                                @Nullable LlmRoutingPreferenceResolver routingPreferenceResolver) {
+        return new LlmRouter(providerRegistry, circuitBreakerManager, routingPreferenceResolver);
     }
 
     @Bean

@@ -15,8 +15,25 @@ public record MultimodalRequest(
     String scene,
     String text,
     List<MediaContent> mediaList,
-    @Nullable String outputSchema
+    @Nullable String outputSchema,
+    @Nullable String preferredProviderId,
+    @Nullable String modelName
 ) {
+    public MultimodalRequest(String scene,
+                             String text,
+                             List<MediaContent> mediaList,
+                             @Nullable String outputSchema) {
+        this(scene, text, mediaList, outputSchema, null, null);
+    }
+
+    public MultimodalRequest(String scene,
+                             String text,
+                             List<MediaContent> mediaList,
+                             @Nullable String outputSchema,
+                             @Nullable String preferredProviderId) {
+        this(scene, text, mediaList, outputSchema, preferredProviderId, null);
+    }
+
     public MultimodalRequest {
         Objects.requireNonNull(scene, "场景不能为空");
         Objects.requireNonNull(text, "文本提示词不能为空");

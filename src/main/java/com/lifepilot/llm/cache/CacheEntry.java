@@ -13,6 +13,7 @@ public record CacheEntry(
         String responseText,
         String scene,
         String agentPhase,
+        String responseFormatKey,
         String modelName,
         float similarityScore,
         int hitCount,

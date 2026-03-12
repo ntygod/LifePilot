@@ -22,12 +22,17 @@ import reactor.core.publisher.Flux;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * 基于 Spring AI 的统一 Provider 适配器。
  *
  * <p>封装 {@link ChatModel}、{@link EmbeddingModel}（可选）和 {@link ChatClient}（延迟构建），
- * 提供统一的调用接口。
+ * 提供统一的调用接口，支持超时控制。
  *
  * @author zsg
  * @since 2026-02-24
@@ -42,18 +47,9 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
     private final EmbeddingModel embeddingModel;
     private final List<CallAdvisor> defaultAdvisors;
 
-    // 延迟构建的 ChatClient
     @Nullable
     private volatile ChatClient chatClient;
 
-    /**
-     * 创建 Spring AI Provider 适配器。
-     *
-     * @param config         Provider 配置
-     * @param chatModel      Chat 模型
-     * @param embeddingModel Embedding 模型（可选）
-     * @param defaultAdvisors 默认 Advisor 列表（可选）
-     */
     public SpringAiProviderAdapter(ProviderConfig config,
                                    ChatModel chatModel,
                                    @Nullable EmbeddingModel embeddingModel,
@@ -67,7 +63,7 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
     @Override
     public LlmResponse call(String prompt, @Nullable String outputSchema, Duration timeout) {
         long start = System.currentTimeMillis();
-        ChatResponse response = chatModel.call(new Prompt(prompt));
+        ChatResponse response = executeWithTimeout(() -> chatModel.call(new Prompt(prompt)), timeout);
         long latencyMs = System.currentTimeMillis() - start;
 
         var usage = response.getMetadata().getUsage();
@@ -110,10 +106,7 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
                     "Provider 不支持 STREAMING 能力: id=" + config.id());
         }
         return chatModel.stream(new Prompt(prompt))
-                .mapNotNull(response -> {
-                    var result = response.getResult();
-                    return result.getOutput().getText();
-                })
+                .mapNotNull(response -> response.getResult().getOutput().getText())
                 .filter(text -> text != null && !text.isEmpty());
     }
 
@@ -129,10 +122,6 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
         return Optional.of(chatClient);
     }
 
-    /**
-     * 构建 ChatClient，注入默认 Advisor 链。
-     * Advisor 执行顺序：GuardrailAdvisor(100) → TraceAdvisor(200)
-     */
     private ChatClient buildChatClient() {
         var builder = ChatClient.builder(chatModel);
         if (!defaultAdvisors.isEmpty()) {
@@ -144,29 +133,21 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
     @Override
     public boolean healthCheck() {
         try {
-            // 如果 Provider 有 CHAT 能力，使用 chatModel 进行健康检查
             if (config.hasCapability(ProviderCapability.CHAT)) {
                 ChatResponse response = chatModel.call(new Prompt("ping"));
-                if (response == null || response.getResult() == null
-                        || response.getResult().getOutput() == null) {
+                if (response == null || response.getResult() == null || response.getResult().getOutput() == null) {
                     return false;
                 }
                 String text = response.getResult().getOutput().getText();
                 return text != null && !text.isBlank();
             }
-            // 如果 Provider 只有 EMBEDDING 能力（纯 embedding Provider），使用 embeddingModel 进行健康检查
-            else if (config.hasCapability(ProviderCapability.EMBEDDING) && embeddingModel != null) {
+            if (config.hasCapability(ProviderCapability.EMBEDDING) && embeddingModel != null) {
                 float[] embedding = embeddingModel.embed("ping");
                 return embedding.length > 0;
             }
-            // 既没有 CHAT 也没有 EMBEDDING 能力，视为不健康
-            else {
-                log.debug("Provider 既没有 CHAT 也没有 EMBEDDING 能力: id={}", config.id());
-                return false;
-            }
+            log.debug("Provider 既没有 CHAT 也没有 EMBEDDING 能力: id={}", config.id());
+            return false;
         } catch (Exception e) {
-            // 连接失败是常见情况，使用 DEBUG 级别避免过多日志
-            // 仅在 ProviderHealthChecker 中记录汇总信息
             log.debug("Provider 健康检查失败: id={}, error={}", config.id(), e.getMessage());
             return false;
         }
@@ -178,12 +159,10 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
             throw new UnsupportedOperationException("Provider 不支持 VISION 能力: " + config.id());
         }
 
-        // 将 MediaContent 列表转换为 Spring AI Media 对象列表
         List<Media> mediaList = mediaContents.stream()
                 .map(mc -> new Media(MimeTypeUtils.parseMimeType(mc.mimeType()), new ByteArrayResource(mc.data())))
                 .toList();
 
-        // 构建多模态消息
         var builder = UserMessage.builder().text(prompt);
         for (Media media : mediaList) {
             builder.media(media);
@@ -191,7 +170,7 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
         UserMessage userMessage = builder.build();
 
         long start = System.currentTimeMillis();
-        ChatResponse response = chatModel.call(new Prompt(userMessage));
+        ChatResponse response = executeWithTimeout(() -> chatModel.call(new Prompt(userMessage)), timeout);
         long latencyMs = System.currentTimeMillis() - start;
 
         var usage = response.getMetadata().getUsage();
@@ -216,12 +195,10 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
             throw new UnsupportedOperationException("Provider 不支持 VISION 能力: " + config.id());
         }
 
-        // 将 MediaContent 列表转换为 Spring AI Media 对象列表
         List<Media> mediaList = mediaContents.stream()
                 .map(mc -> new Media(MimeTypeUtils.parseMimeType(mc.mimeType()), new ByteArrayResource(mc.data())))
                 .toList();
 
-        // 构建多模态消息
         var builder = UserMessage.builder().text(prompt);
         for (Media media : mediaList) {
             builder.media(media);
@@ -229,28 +206,46 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
         UserMessage userMessage = builder.build();
 
         return chatModel.stream(new Prompt(userMessage))
-                .mapNotNull(response -> {
-                    var result = response.getResult();
-                    return result.getOutput().getText();
-                })
+                .mapNotNull(response -> response.getResult().getOutput().getText())
                 .filter(text -> text != null && !text.isEmpty());
     }
 
-    /**
-     * 获取 Provider 配置。
-     *
-     * @return Provider 配置
-     */
     public ProviderConfig config() {
         return config;
     }
 
-    /**
-     * 获取底层 ChatModel。
-     *
-     * @return ChatModel 实例
-     */
     public ChatModel chatModel() {
         return chatModel;
+    }
+
+    @Nullable
+    public EmbeddingModel embeddingModel() {
+        return embeddingModel;
+    }
+
+    private <T> T executeWithTimeout(Callable<T> action, Duration timeout) {
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            var future = executor.submit(action);
+            try {
+                return future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+            } catch (TimeoutException e) {
+                future.cancel(true);
+                throw new RuntimeException("LLM 调用超时: " + timeout.toSeconds() + "s", e);
+            } catch (InterruptedException e) {
+                future.cancel(true);
+                Thread.currentThread().interrupt();
+                throw new RuntimeException("LLM 调用被中断", e);
+            } catch (ExecutionException e) {
+                Throwable cause = e.getCause();
+                if (cause instanceof RuntimeException runtimeException) {
+                    throw runtimeException;
+                }
+                throw new RuntimeException(cause);
+            }
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeException("LLM 调用失败", e);
+        }
     }
 }

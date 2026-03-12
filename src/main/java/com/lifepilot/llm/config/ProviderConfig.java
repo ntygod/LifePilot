@@ -73,7 +73,13 @@ public record ProviderConfig(
      * @return 支持返回 true
      */
     public boolean supportsScene(String scene) {
-        return scenes.contains(scene);
+        if (scene == null || scene.isBlank()) {
+            return false;
+        }
+        String expectedScene = scene.trim();
+        return scenes.stream()
+                .map(String::trim)
+                .anyMatch(expectedScene::equals);
     }
 
     /**
