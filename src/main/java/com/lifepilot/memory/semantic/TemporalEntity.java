@@ -52,4 +52,9 @@ public record TemporalEntity(
     public boolean isActive() {
         return isCurrent && validTo == null;
     }
+
+    /** 判断实体是否已过期：validTo 非空且早于当前时间。 */
+    public boolean isExpired() {
+        return validTo != null && validTo.isBefore(Instant.now());
+    }
 }
