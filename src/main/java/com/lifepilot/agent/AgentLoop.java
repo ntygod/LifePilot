@@ -28,6 +28,7 @@ import com.lifepilot.llm.LlmUnavailableException;
 import com.lifepilot.llm.StreamingLlmResponse;
 import com.lifepilot.llm.multimodal.MultimodalRequest;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
+import com.lifepilot.memory.retrieval.InjectionRecordRepository;
 import com.lifepilot.memory.working.ConversationSlot;
 import com.lifepilot.memory.working.WorkingMemory;
 import com.lifepilot.memory.working.WorkingMemorySlot;
@@ -95,9 +96,14 @@ public class AgentLoop {
     private final MediaDataExtractor mediaDataExtractor;
     @Nullable
     private final A2uiProperties a2uiProperties;
+    @Nullable
+    private final InjectionRecordRepository injectionRecordRepository;
 
     /** 最近一次流式调用中收集的 A2UI 组件树，供持久化使用。 */
     private volatile A2uiComponentTree lastCollectedA2uiTree;
+
+    /** 最近一次上下文组装中注入的记忆实体 ID 列表，供注入记录持久化使用。 */
+    private volatile List<String> lastInjectedEntityIds = List.of();
 
     /** 当前执行的取消信号令牌，供外部调用方（ExecutionMiddleware、SseSessionManager）访问。 */
     private volatile CancellationToken cancellationToken;
@@ -120,7 +126,8 @@ public class AgentLoop {
                      @Nullable RealtimeExtractor realtimeExtractor,
                      PromptRegistry promptRegistry,
                      @Nullable MediaDataExtractor mediaDataExtractor,
-                     @Nullable A2uiProperties a2uiProperties) {
+                     @Nullable A2uiProperties a2uiProperties,
+                     @Nullable InjectionRecordRepository injectionRecordRepository) {
         this.stateReducer = stateReducer;
         this.contextAssembler = contextAssembler;
         this.llmRouter = llmRouter;
@@ -140,6 +147,7 @@ public class AgentLoop {
         this.promptRegistry = promptRegistry;
         this.mediaDataExtractor = mediaDataExtractor;
         this.a2uiProperties = a2uiProperties;
+        this.injectionRecordRepository = injectionRecordRepository;
     }
 
     /**
@@ -272,6 +280,9 @@ public class AgentLoop {
                     }
                 }
 
+                // 持久化注入记录（关联 assistantMessageId 与注入的记忆实体）
+                persistInjectionRecord(assistantMessageId, state.sessionId());
+
                 // 异步后处理（会话快照 + AUDN 实体提取，不含对话历史）
                 asyncPostProcess(state);
 
@@ -395,6 +406,9 @@ public class AgentLoop {
                     log.warn("助手消息同步写入失败: sessionId={}, error={}", state.sessionId(), e.getMessage());
                 }
             }
+
+            // 持久化注入记录（关联 assistantMessageId 与注入的记忆实体）
+            persistInjectionRecord(assistantMessageId, state.sessionId());
 
             // 异步后处理（会话快照 + AUDN 实体提取，不含对话历史）
             asyncPostProcess(state);
@@ -647,6 +661,9 @@ public class AgentLoop {
 
     private AssembledContext assembleContext(AgentRequest request, AgentState state) {
         var assembled = contextAssembler.assemble(state);
+
+        // 捕获注入的记忆实体 ID，供后续持久化注入记录
+        lastInjectedEntityIds = assembled.injectedEntityIds();
 
         // SubAgent 场景：注入 Agent 专属 System Prompt（来自 AgentDefinition / 子 Agent 激活）
         String requestSystemPrompt = request.systemPrompt();
@@ -1521,6 +1538,24 @@ public class AgentLoop {
                         finalState.sessionId(), e.getMessage());
             }
         });
+    }
+
+    /**
+     * 持久化注入记录 — 将本次注入的记忆实体 ID 关联到助手消息。
+     * 仅当 injectedEntityIds 非空且 messageId 有效时写入，失败不影响主流程。
+     */
+    private void persistInjectionRecord(@Nullable String messageId, @Nullable String sessionId) {
+        var entityIds = lastInjectedEntityIds;
+        if (injectionRecordRepository == null || entityIds.isEmpty()
+                || messageId == null || messageId.isBlank()) {
+            return;
+        }
+        try {
+            injectionRecordRepository.save(messageId, sessionId, entityIds);
+            log.debug("注入记录已持久化: messageId={}, entityCount={}", messageId, entityIds.size());
+        } catch (Exception e) {
+            log.warn("注入记录持久化失败: messageId={}, error={}", messageId, e.getMessage());
+        }
     }
 
     /**

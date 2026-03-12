@@ -216,6 +216,13 @@ lifepilot:
       low-quality-budget-ratio: 0.5
       max-user-profile-entities: 10
       fallback-user-profile-count: 3
+      time-decay-rate: 0.002
+      min-time-decay-factor: 0.5
+    # 反馈闭环配置
+    feedback:
+      like-boost: 0.1
+      dislike-penalty: 0.05
+      expiration-cron: "0 0 * * * *"
   skills:
     # ===== Skill 系统配置 =====
     # 支持 Java 原生 Skill、Markdown 声明式 Skill、MCP 外部工具

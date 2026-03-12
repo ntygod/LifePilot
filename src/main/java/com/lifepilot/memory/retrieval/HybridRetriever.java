@@ -164,6 +164,16 @@ public class HybridRetriever {
 
             float fusedScore = rrfScore + recencyBoost + impBoost;
 
+            // 时间衰减: 基于 updatedAt 与当前时间的天数差，线性衰减
+            float timeDecayFactor = 1.0f;
+            if (acc.updatedAt != null) {
+                long daysSinceUpdate = Duration.between(acc.updatedAt, now).toDays();
+                float decayRate = memoryProperties.getRetrieval().getTimeDecayRate();
+                float minDecay = memoryProperties.getRetrieval().getMinTimeDecayFactor();
+                timeDecayFactor = Math.max(minDecay, 1.0f - daysSinceUpdate * decayRate);
+            }
+            float finalScore = fusedScore * timeDecayFactor;
+
             var breakdown = new RetrievalResult.ScoreBreakdown(
                     acc.vectorScore, acc.vectorScore * adaptedWeights.vectorWeight(),
                     acc.ftsScore, acc.ftsScore * adaptedWeights.ftsWeight(),
@@ -172,7 +182,7 @@ public class HybridRetriever {
 
             results.add(new RetrievalResult(
                     acc.entityId, acc.entityType, acc.name, acc.description,
-                    fusedScore, breakdown, acc.sourcePath,
+                    finalScore, breakdown, acc.sourcePath,
                     acc.lastAccessedAt, acc.importanceScore, acc.validTo));
         }
 
@@ -275,7 +285,8 @@ public class HybridRetriever {
                             vr.similarity(),
                             entity.lastAccessedAt(),
                             entity.importanceScore(),
-                            entity.validTo()));
+                            entity.validTo(),
+                            entity.updatedAt()));
                 } else {
                     // 实体可能已归档，仅用 entityId 和 similarity 构建
                     items.add(new RankedItem(
@@ -286,6 +297,7 @@ public class HybridRetriever {
                             vr.similarity(),
                             null,
                             0.0f,
+                            null,
                             null));
                 }
             }
@@ -348,6 +360,7 @@ public class HybridRetriever {
         final Instant lastAccessedAt;
         final float importanceScore;
         final Instant validTo;
+        final Instant updatedAt;
         float rrfScore;
         float vectorScore;
         float ftsScore;
@@ -362,6 +375,7 @@ public class HybridRetriever {
             this.lastAccessedAt = item.lastAccessedAt();
             this.importanceScore = item.importanceScore();
             this.validTo = item.validTo();
+            this.updatedAt = item.updatedAt();
         }
     }
 }

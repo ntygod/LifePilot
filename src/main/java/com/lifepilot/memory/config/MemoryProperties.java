@@ -91,6 +91,9 @@ public class MemoryProperties {
     /** 检索配置。 */
     private Retrieval retrieval = new Retrieval();
 
+    /** 反馈闭环配置。 */
+    private Feedback feedback = new Feedback();
+
     public TokenBudget getTokenBudget() { return tokenBudget; }
     public void setTokenBudget(TokenBudget tokenBudget) { this.tokenBudget = tokenBudget; }
 
@@ -108,6 +111,9 @@ public class MemoryProperties {
 
     public Retrieval getRetrieval() { return retrieval; }
     public void setRetrieval(Retrieval retrieval) { this.retrieval = retrieval; }
+
+    public Feedback getFeedback() { return feedback; }
+    public void setFeedback(Feedback feedback) { this.feedback = feedback; }
 
     /**
      * Token 预算分配配置 — 控制上下文窗口四区域的预算比例和场景切换阈值。
@@ -468,6 +474,12 @@ public static class Retrieval {
         /** 无关键词匹配时兜底注入的用户画像数量。 */
         private int fallbackUserProfileCount = 3;
 
+        /** 时间衰减率 — 每天衰减的比例（线性衰减）。 */
+        private float timeDecayRate = 0.002f;
+
+        /** 时间衰减因子最小值 — 防止老实体完全被忽略。 */
+        private float minTimeDecayFactor = 0.5f;
+
         public float getMinFusedScore() { return minFusedScore; }
         public void setMinFusedScore(float minFusedScore) { this.minFusedScore = minFusedScore; }
 
@@ -491,5 +503,38 @@ public static class Retrieval {
 
         public int getFallbackUserProfileCount() { return fallbackUserProfileCount; }
         public void setFallbackUserProfileCount(int fallbackUserProfileCount) { this.fallbackUserProfileCount = fallbackUserProfileCount; }
+
+        public float getTimeDecayRate() { return timeDecayRate; }
+        public void setTimeDecayRate(float timeDecayRate) { this.timeDecayRate = timeDecayRate; }
+
+        public float getMinTimeDecayFactor() { return minTimeDecayFactor; }
+        public void setMinTimeDecayFactor(float minTimeDecayFactor) { this.minTimeDecayFactor = minTimeDecayFactor; }
+    }
+
+    /**
+     * 反馈闭环配置 — 控制用户反馈对 importanceScore 的调整幅度和过期归档调度。
+     *
+     * @author zsg
+     * @since 2026-03-13
+     */
+    public static class Feedback {
+
+        /** like 反馈的 importanceScore 正向调整步长。 */
+        private float likeBoost = 0.1f;
+
+        /** dislike 反馈的 importanceScore 负向调整步长。 */
+        private float dislikePenalty = 0.05f;
+
+        /** 过期实体归档定时任务 Cron 表达式（默认每小时执行一次）。 */
+        private String expirationCron = "0 0 * * * *";
+
+        public float getLikeBoost() { return likeBoost; }
+        public void setLikeBoost(float likeBoost) { this.likeBoost = likeBoost; }
+
+        public float getDislikePenalty() { return dislikePenalty; }
+        public void setDislikePenalty(float dislikePenalty) { this.dislikePenalty = dislikePenalty; }
+
+        public String getExpirationCron() { return expirationCron; }
+        public void setExpirationCron(String expirationCron) { this.expirationCron = expirationCron; }
     }
 }

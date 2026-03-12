@@ -64,6 +64,7 @@ class AgentLoopStreamingFailureTest {
                 null,
                 mock(PromptRegistry.class),
                 null,
+                null,
                 null
         );
 
@@ -98,7 +99,8 @@ class AgentLoopStreamingFailureTest {
                 0,
                 0.0f,
                 0,
-                false
+                false,
+                List.of()
         );
 
         // 流式路由直接抛异常，触发 ErrorRecovery + system message persistence

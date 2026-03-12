@@ -42,6 +42,7 @@ class AgentLoopExecutingPlanTest {
                 null, null, null, null, null,
                 mock(PromptRegistry.class),
                 null,
+                null,
                 null
         );
 
@@ -99,6 +100,7 @@ class AgentLoopExecutingPlanTest {
                 null, null, null, null, null,
                 mock(PromptRegistry.class),
                 null,
+                null,
                 null
         );
 
@@ -154,6 +156,7 @@ class AgentLoopExecutingPlanTest {
                 new AgentConfigProperties(),
                 null, null, null, null, null,
                 mock(PromptRegistry.class),
+                null,
                 null,
                 null
         );

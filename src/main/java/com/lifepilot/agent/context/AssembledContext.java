@@ -13,6 +13,7 @@ import java.util.List;
  * @param topRetrievalScore   最高 fusedScore
  * @param workingMemoryTokens WorkingMemory 注入的 Token 总数
  * @param degraded            是否发生降级
+ * @param injectedEntityIds   本次注入的记忆实体 ID 列表
  *
  * @author zsg
  * @since 2026-07-20
@@ -25,11 +26,13 @@ public record AssembledContext(
         int retrievalCount,
         float topRetrievalScore,
         int workingMemoryTokens,
-        boolean degraded
+        boolean degraded,
+        List<String> injectedEntityIds
 ) {
     /** 紧凑构造器 — 防御性拷贝。 */
     public AssembledContext {
         retrievedMemories = List.copyOf(retrievedMemories);
+        injectedEntityIds = List.copyOf(injectedEntityIds);
     }
 
     /** 返回 tokenBudget.totalConsumed()。 */
@@ -47,7 +50,8 @@ public record AssembledContext(
                 retrievalCount(),
                 topRetrievalScore(),
                 workingMemoryTokens(),
-                degraded()
+                degraded(),
+                injectedEntityIds()
         );
     }
 }

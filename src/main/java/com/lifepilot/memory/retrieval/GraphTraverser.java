@@ -70,7 +70,7 @@ public class GraphTraverser {
                     )
                     SELECT te.id, te.type, te.name, te.description,
                            MIN(g.depth) AS min_depth,
-                           te.last_accessed_at, te.importance_score
+                           te.last_accessed_at, te.importance_score, te.updated_at
                     FROM graph g
                     JOIN temporal_entities te ON te.id = g.entity_id
                     WHERE te.is_current = 1 AND te.id != ?
@@ -83,6 +83,7 @@ public class GraphTraverser {
                         // depth=1 得分 1.0，depth=2 得分 0.5
                         float score = depth == 1 ? 1.0f : 0.5f;
                         String lastAccessedStr = rs.getString("last_accessed_at");
+                        String updatedAtStr = rs.getString("updated_at");
                         return new RankedItem(
                                 rs.getString("id"),
                                 rs.getString("type"),
@@ -91,7 +92,8 @@ public class GraphTraverser {
                                 score,
                                 lastAccessedStr != null ? Instant.parse(lastAccessedStr) : null,
                                 rs.getFloat("importance_score"),
-                                null);
+                                null,
+                                updatedAtStr != null ? Instant.parse(updatedAtStr) : null);
                     },
                     startEntityId, startEntityId, startEntityId, startEntityId, topK);
         } catch (Exception e) {

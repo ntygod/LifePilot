@@ -6,6 +6,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -76,4 +78,17 @@ public class MessageFeedbackRepository {
             return null;
         }
     }
+
+    /**
+     * 按消息 ID 查询所有反馈记录。
+     *
+     * @param messageId 消息 ID
+     * @return 反馈记录列表（包含 type、feedback、created_at 字段），按 created_at ASC 排序
+     */
+    public List<Map<String, Object>> findByMessageId(String messageId) {
+        return jdbcTemplate.queryForList(
+                "SELECT type, feedback, created_at FROM message_feedback WHERE message_id = ? ORDER BY created_at ASC",
+                messageId);
+    }
+
 }
