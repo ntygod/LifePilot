@@ -143,6 +143,7 @@ function updateInputField(index: number, field: string, value: unknown) {
 
     <!-- 展开/折叠按钮 -->
     <button
+      type="button"
       class="mt-2 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
       @click="expanded = !expanded"
     >
@@ -161,7 +162,7 @@ function updateInputField(index: number, field: string, value: unknown) {
       <div>
         <div class="mb-2 flex items-center justify-between">
           <span class="text-xs font-medium">触发器</span>
-          <Button variant="ghost" size="sm" class="h-6 px-2 text-xs" @click="addTrigger">
+          <Button type="button" variant="ghost" size="sm" class="h-6 px-2 text-xs" @click="addTrigger">
             <Plus class="mr-1 h-3 w-3" />
             添加触发器
           </Button>
@@ -212,6 +213,7 @@ function updateInputField(index: number, field: string, value: unknown) {
 
           <!-- 删除按钮 -->
           <Button
+            type="button"
             variant="ghost"
             size="icon"
             class="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
@@ -228,7 +230,7 @@ function updateInputField(index: number, field: string, value: unknown) {
       <div>
         <div class="mb-2 flex items-center justify-between">
           <span class="text-xs font-medium">输入参数</span>
-          <Button variant="ghost" size="sm" class="h-6 px-2 text-xs" @click="addInput">
+          <Button type="button" variant="ghost" size="sm" class="h-6 px-2 text-xs" @click="addInput">
             <Plus class="mr-1 h-3 w-3" />
             添加参数
           </Button>
@@ -242,6 +244,7 @@ function updateInputField(index: number, field: string, value: unknown) {
           <div class="mb-2 flex items-center justify-between">
             <span class="text-xs text-muted-foreground">参数 {{ idx + 1 }}</span>
             <Button
+              type="button"
               variant="ghost"
               size="icon"
               class="h-6 w-6 text-muted-foreground hover:text-destructive"

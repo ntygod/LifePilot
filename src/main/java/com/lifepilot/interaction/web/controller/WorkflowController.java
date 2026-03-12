@@ -476,7 +476,7 @@ public class WorkflowController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(new ErrorResponse(404, "工作流实例未找到: id=" + instanceId, Instant.now()));
         }
-        return ResponseEntity.ok(workflowRepository.findStepLogs(instanceId));
+        return ResponseEntity.ok(workflowRepository.findStepLogsSummary(instanceId));
     }
 
     // ── 辅助方法 ──────────────────────────────────────────

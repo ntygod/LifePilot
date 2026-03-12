@@ -194,7 +194,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown))
 
     <template #footer>
       <div class="flex justify-end gap-3">
-        <Button variant="outline" @click="emit('close')">
+        <Button type="button" variant="outline" @click="emit('close')">
           取消
         </Button>
         <Button form="workflow-form" type="submit" :disabled="loading">

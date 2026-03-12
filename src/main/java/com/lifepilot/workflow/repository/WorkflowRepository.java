@@ -322,6 +322,39 @@ public class WorkflowRepository {
                 stepLogRowMapper, instanceId);
     }
 
+    /**
+     * 查询指定实例的步骤日志摘要。
+     *
+     * <p>工作流详情页只展示步骤状态、耗时和错误信息，不需要传输 input/output
+     * 这类大字段，避免大响应体拖慢前端展开交互。
+     *
+     * @param instanceId 工作流实例 ID
+     * @return 轻量步骤日志列表
+     */
+    public List<StepLog> findStepLogsSummary(String instanceId) {
+        return jdbcTemplate.query(
+                """
+                SELECT id,
+                       instance_id,
+                       step_id,
+                       step_type,
+                       state,
+                       attempt,
+                       NULL AS input_json,
+                       NULL AS output_json,
+                       error_message,
+                       started_at,
+                       completed_at,
+                       duration_ms,
+                       created_at
+                FROM workflow_step_logs
+                WHERE instance_id = ?
+                ORDER BY created_at ASC
+                """,
+                stepLogRowMapper,
+                instanceId);
+    }
+
     // ==================== 内部方法 ====================
 
     /**
