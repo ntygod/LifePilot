@@ -6,6 +6,7 @@ import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import com.lifepilot.llm.config.ProviderCapability;
 import com.lifepilot.workflow.model.ErrorStrategy;
 import com.lifepilot.workflow.model.Result;
 import com.lifepilot.workflow.model.WorkflowDefinition;
@@ -101,8 +102,9 @@ class WorkflowYamlPrinterTest {
         var definition = WorkflowDefinition.builder()
                 .id("llm-wf").name("LLM 工作流")
                 .steps(List.of(
-                        new LlmStep("l1", "生成内容", "chat", "请总结以下内容",
-                                "{\"type\":\"object\"}", List.of(), null)
+                        new LlmStep("l1", "生成内容", "chat", ProviderCapability.CHAT,
+                                "请总结以下内容", "{\"type\":\"object\"}",
+                                null, null, List.of(), List.of(), null)
                 )).build();
 
         var yaml = printer.print(definition);
@@ -114,8 +116,34 @@ class WorkflowYamlPrinterTest {
         var parsed = ((Result.Ok<WorkflowDefinition, List<String>>) result).value();
         var step = (LlmStep) parsed.steps().getFirst();
         assertEquals("chat", step.scene());
+        assertEquals(ProviderCapability.CHAT, step.capability());
         assertEquals("请总结以下内容", step.promptTemplate());
         assertEquals("{\"type\":\"object\"}", step.outputSchema());
+    }
+
+    @Test
+    void VisionLlmStep_mediaRoundTrip() {
+        var definition = WorkflowDefinition.builder()
+                .id("vision-wf").name("Vision Workflow")
+                .steps(List.of(
+                        new LlmStep("vision-1", "Image Review", "content_review", ProviderCapability.VISION,
+                                "Describe the image", "{\"type\":\"object\"}",
+                                null, "provider-1",
+                                List.of(new MediaRef("${inputs.image}", "image/png", "upload.png")),
+                                List.of(), null)
+                )).build();
+
+        var yaml = printer.print(definition);
+        assertTrue(yaml.contains("media:"));
+
+        var result = parser.parse(yaml);
+        assertInstanceOf(Result.Ok.class, result);
+        var parsed = ((Result.Ok<WorkflowDefinition, List<String>>) result).value();
+        var step = (LlmStep) parsed.steps().getFirst();
+        assertEquals(ProviderCapability.VISION, step.capability());
+        assertEquals(1, step.media().size());
+        assertEquals("${inputs.image}", step.media().getFirst().source());
+        assertEquals("provider-1", step.preferredProviderId());
     }
 
     @Test

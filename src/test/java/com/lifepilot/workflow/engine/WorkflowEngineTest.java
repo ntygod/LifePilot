@@ -14,6 +14,7 @@ import org.mockito.ArgumentCaptor;
 
 import java.time.Instant;
 import java.util.*;
+import java.util.concurrent.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -532,6 +533,54 @@ class WorkflowEngineTest {
 
             verify(repository).insertStepLog(argThat(log ->
                     log.state() == StepState.FAILED));
+        }
+    }
+
+    @Nested
+    class 并发执行 {
+
+        @Test
+        void 并发分支一条失败时快速返回并取消其他分支() throws Exception {
+            var root = noop("root");
+            var fastFail = new NoopStep("fast-fail", "fast-fail", List.of("root"), null);
+            var slowStep = new NoopStep("slow-step", "slow-step", List.of("root"), null);
+            var def = createSimpleDef("wf-parallel-fail-fast", root, fastFail, slowStep);
+
+            createAndMockInstance("inst-parallel-fail-fast", "wf-parallel-fail-fast", Map.of());
+            when(registry.find("wf-parallel-fail-fast")).thenReturn(Optional.of(def));
+
+            CountDownLatch slowStarted = new CountDownLatch(1);
+
+            when(stepExecutor.execute(eq(root), any(), any())).thenReturn(Map.of("ok", true));
+
+            when(stepExecutor.execute(eq(slowStep), any(), any())).thenAnswer(invocation -> {
+                slowStarted.countDown();
+                try {
+                    Thread.sleep(10_000);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new WorkflowStepException("slow-step", "slow interrupted", e);
+                }
+                return Map.of("ok", true);
+            });
+            when(stepExecutor.execute(eq(fastFail), any(), any())).thenAnswer(invocation -> {
+                assertTrue(slowStarted.await(1, TimeUnit.SECONDS));
+                throw new WorkflowStepException("fast-fail", "boom");
+            });
+
+            ExecutorService executorService = Executors.newSingleThreadExecutor();
+            try {
+                Future<?> future = executorService.submit(() -> engine.executeFromInstance("inst-parallel-fail-fast"));
+                future.get(2, TimeUnit.SECONDS);
+            } finally {
+                executorService.shutdownNow();
+            }
+
+            WorkflowInstance result = captureLastUpdatedInstance();
+            assertEquals(WorkflowState.FAILED, result.state());
+            assertTrue(result.failureReason().contains("fast-fail"));
+            verify(repository, never()).insertStepLog(argThat(log ->
+                    "slow-step".equals(log.stepId()) && log.state() == StepState.FAILED));
         }
     }
 

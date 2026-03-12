@@ -5,6 +5,7 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import com.lifepilot.llm.config.ProviderCapability;
 import com.lifepilot.workflow.model.ErrorStrategy;
 import com.lifepilot.workflow.model.Result;
 import com.lifepilot.workflow.model.WorkflowDefinition;
@@ -139,6 +140,7 @@ class WorkflowYamlParserTest {
                     name: LLM步骤
                     type: llm
                     scene: chat
+                    capability: CHAT
                     prompt: "请生成回顾"
                     outputSchema: '{"type":"object"}'
                 """;
@@ -147,6 +149,30 @@ class WorkflowYamlParserTest {
         assertEquals("chat", step.scene());
         assertEquals("请生成回顾", step.promptTemplate());
         assertEquals("{\"type\":\"object\"}", step.outputSchema());
+    }
+
+    @Test
+    void 解析VisionLlmStep_media() {
+        String yaml = """
+                id: test
+                name: test
+                steps:
+                  - id: s1
+                    name: vision
+                    type: llm
+                    scene: content_review
+                    capability: VISION
+                    prompt: "describe"
+                    media:
+                      - source: "${inputs.image}"
+                        mimeType: image/png
+                        fileName: upload.png
+                """;
+        var def = parseOk(yaml);
+        var step = (LlmStep) def.steps().getFirst();
+        assertEquals(ProviderCapability.VISION, step.capability());
+        assertEquals(1, step.media().size());
+        assertEquals("${inputs.image}", step.media().getFirst().source());
     }
 
     @Test

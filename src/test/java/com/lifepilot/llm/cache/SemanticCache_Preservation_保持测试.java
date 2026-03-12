@@ -49,7 +49,7 @@ class SemanticCache_Preservation_保持测试 {
         SemanticCache cache = new SemanticCache(config, llmRouter, jdbcTemplate);
 
         // Act: 调用 lookup
-        var result = cache.lookup("test-scene", null, "测试 prompt");
+        var result = cache.lookup("test-scene", null, "text", "测试 prompt");
 
         // Assert: embed 被调用了 2 次 — 构造时 embed("probe") + lookup 中 embed("测试 prompt")
         verify(llmRouter).embed("probe");
@@ -81,7 +81,7 @@ class SemanticCache_Preservation_保持测试 {
         SemanticCache cache = new SemanticCache(config, llmRouter, jdbcTemplate);
 
         // Act: 调用 putAsync
-        cache.putAsync("test-scene", "PLANNING", "写入 prompt", "测试响应", "test-model");
+        cache.putAsync("test-scene", "PLANNING", "text", "写入 prompt", "测试响应", "test-model");
 
         // 等待异步操作完成
         Thread.sleep(500);
@@ -116,9 +116,9 @@ class SemanticCache_Preservation_保持测试 {
         SemanticCache cache = new SemanticCache(config, llmRouter, jdbcTemplate);
 
         // Act: 多次调用 lookup 和 putAsync
-        cache.lookup("scene-1", null, "prompt-1");
-        cache.lookup("scene-2", "PLANNING", "prompt-2");
-        cache.putAsync("scene-3", null, "prompt-1", "响应", "model");
+        cache.lookup("scene-1", null, "text", "prompt-1");
+        cache.lookup("scene-2", "PLANNING", "text", "prompt-2");
+        cache.putAsync("scene-3", null, "text", "prompt-1", "响应", "model");
 
         // 等待异步操作完成
         Thread.sleep(500);
