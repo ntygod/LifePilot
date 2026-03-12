@@ -188,6 +188,17 @@ public class HybridRetriever {
                 .limit(topK)
                 .toList();
 
+        // 兜底过期过滤：过滤掉 validTo 已过期的结果（SQL 层已过滤，此处防御向量路径遗漏）
+        {
+            int beforeExpiry = finalResults.size();
+            finalResults = finalResults.stream()
+                    .filter(r -> r.validTo() == null || r.validTo().isAfter(now))
+                    .toList();
+            if (log.isDebugEnabled() && beforeExpiry != finalResults.size()) {
+                log.debug("混合检索: 过期过滤, 过滤前={}, 过滤后={}", beforeExpiry, finalResults.size());
+            }
+        }
+
         // 新增：fusedScore 阈值过滤
         float minScore = memoryProperties.getRetrieval().getMinFusedScore();
         if (minScore > 0.0f) {
