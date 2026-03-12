@@ -16,6 +16,7 @@ import com.lifepilot.memory.retrieval.GraphTraverser;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.semantic.ConflictDetector;
+import com.lifepilot.memory.semantic.ExtractionValidator;
 import com.lifepilot.memory.semantic.RealtimeExtractor;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.VersionMerger;
@@ -314,11 +315,19 @@ public class MemoryAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean({SemanticMemory.class})
+    public ExtractionValidator extractionValidator(MemoryProperties properties) {
+        log.info("记忆系统: 注册 ExtractionValidator");
+        return new ExtractionValidator(properties);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean({SemanticMemory.class, ExtractionValidator.class})
     public RealtimeExtractor realtimeExtractor(LlmRouter llmRouter,
-                                               SemanticMemory semanticMemory) {
+                                               SemanticMemory semanticMemory,
+                                               ExtractionValidator extractionValidator) {
         log.info("记忆系统: 注册 RealtimeExtractor（AUDN 实时实体提取）");
-        return new RealtimeExtractor(llmRouter, semanticMemory, properties);
+        return new RealtimeExtractor(llmRouter, semanticMemory, properties, extractionValidator);
     }
 
     // --- 混合检索引擎 ---

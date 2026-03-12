@@ -402,8 +402,38 @@ public class MemoryProperties {
         /** AUDN 实体提取 LLM 调用超时（秒），默认 60。 */
         private int timeoutSeconds = 60;
 
+        /** 单次提取最大实体数，默认 10。 */
+        private int maxEntitiesPerExtraction = 10;
+
+        /** 最小提取置信度阈值 [0.0, 1.0]，低于此值的决策将被丢弃，默认 0.3。 */
+        private float minExtractionConfidence = 0.3f;
+
+        /** 实体名称最大长度，默认 100。 */
+        private int maxEntityNameLength = 100;
+
+        /** 描述最小长度，ADD 类型决策的 description 低于此值将被丢弃，默认 2。 */
+        private int minDescriptionLength = 2;
+
+        /** 注入提示词的已有实体摘要上限，默认 50。 */
+        private int existingEntitySummaryLimit = 50;
+
         public int getTimeoutSeconds() { return timeoutSeconds; }
         public void setTimeoutSeconds(int timeoutSeconds) { this.timeoutSeconds = timeoutSeconds; }
+
+        public int getMaxEntitiesPerExtraction() { return maxEntitiesPerExtraction; }
+        public void setMaxEntitiesPerExtraction(int maxEntitiesPerExtraction) { this.maxEntitiesPerExtraction = maxEntitiesPerExtraction; }
+
+        public float getMinExtractionConfidence() { return minExtractionConfidence; }
+        public void setMinExtractionConfidence(float minExtractionConfidence) { this.minExtractionConfidence = minExtractionConfidence; }
+
+        public int getMaxEntityNameLength() { return maxEntityNameLength; }
+        public void setMaxEntityNameLength(int maxEntityNameLength) { this.maxEntityNameLength = maxEntityNameLength; }
+
+        public int getMinDescriptionLength() { return minDescriptionLength; }
+        public void setMinDescriptionLength(int minDescriptionLength) { this.minDescriptionLength = minDescriptionLength; }
+
+        public int getExistingEntitySummaryLimit() { return existingEntitySummaryLimit; }
+        public void setExistingEntitySummaryLimit(int existingEntitySummaryLimit) { this.existingEntitySummaryLimit = existingEntitySummaryLimit; }
     }
 
     /**
