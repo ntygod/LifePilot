@@ -47,7 +47,7 @@ class ReasoningSlotDedup_BugCondition_探索测试 {
         return new RetrievalResult(
                 "entity-" + name, entityType, name, description, score,
                 new RetrievalResult.ScoreBreakdown(0.5f, 0.3f, 0.3f, 0.2f, 0.2f, 0.1f, 0.05f, 0.05f),
-                "test-path", Instant.now(), 0.5f
+                "test-path", Instant.now(), 0.5f, null
         );
     }
 

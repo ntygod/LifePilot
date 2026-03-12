@@ -85,7 +85,7 @@ class ContextAssemblerTest {
                 0.5f, 0.25f, 0.3f, 0.15f, 0.2f, 0.1f, 0.05f, 0.02f);
         return new RetrievalResult(entityId, "PERSON", name,
                 name + " 的描述", score, breakdown, "vector+fts",
-                Instant.now(), 0.5f);
+                Instant.now(), 0.5f, null);
     }
 
     private BudgetAllocation createAllocation() {

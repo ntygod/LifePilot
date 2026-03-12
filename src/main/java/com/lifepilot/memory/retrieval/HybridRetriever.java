@@ -173,7 +173,7 @@ public class HybridRetriever {
             results.add(new RetrievalResult(
                     acc.entityId, acc.entityType, acc.name, acc.description,
                     fusedScore, breakdown, acc.sourcePath,
-                    acc.lastAccessedAt, acc.importanceScore));
+                    acc.lastAccessedAt, acc.importanceScore, acc.validTo));
         }
 
         // 6. 按 entity_id 去重（保留 fusedScore 最高），排序，截取 topK
@@ -332,6 +332,7 @@ public class HybridRetriever {
         final String description;
         final Instant lastAccessedAt;
         final float importanceScore;
+        final Instant validTo;
         float rrfScore;
         float vectorScore;
         float ftsScore;
@@ -345,6 +346,7 @@ public class HybridRetriever {
             this.description = item.description();
             this.lastAccessedAt = item.lastAccessedAt();
             this.importanceScore = item.importanceScore();
+            this.validTo = item.validTo();
         }
     }
 }
