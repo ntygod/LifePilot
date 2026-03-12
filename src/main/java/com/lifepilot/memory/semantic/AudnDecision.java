@@ -15,6 +15,8 @@ import java.util.Map;
  * @param entityType 实体类型
  * @param description 实体描述（ADD/UPDATE 时使用）
  * @param properties 实体属性键值对（ADD/UPDATE 时使用）
+ * @param extractionConfidence LLM 提取置信度 [0.0, 1.0]，可能为 null
+ * @param importanceScore 信息重要性评分 [0.0, 1.0]，可能为 null
  * @author zsg
  * @since 2026-03-05
  */
@@ -23,5 +25,7 @@ public record AudnDecision(
         String entityName,
         EntityType entityType,
         @Nullable String description,
-        @Nullable Map<String, Object> properties
+        @Nullable Map<String, Object> properties,
+        @Nullable Float extractionConfidence,
+        @Nullable Float importanceScore
 ) {}
