@@ -33,13 +33,18 @@ public record TemporalEntity(
         properties = properties != null ? Map.copyOf(properties) : Map.of();
     }
 
-    /** 拼接 name + description + properties 关键值为文本，用于向量化。 */
+    /** 拼接类型标签 + name + description + properties 为自然语言文本，用于向量化。 */
     public String textRepresentation() {
-        var sb = new StringBuilder(name);
+        var sb = new StringBuilder("[").append(type.label()).append("] ").append(name);
         if (description != null && !description.isBlank()) {
-            sb.append(" ").append(description);
+            sb.append(": ").append(description);
         }
-        properties.forEach((k, v) -> sb.append(" ").append(k).append(":").append(v));
+        if (!properties.isEmpty()) {
+            var propParts = properties.entrySet().stream()
+                    .map(e -> e.getKey() + ": " + e.getValue())
+                    .toList();
+            sb.append("，").append(String.join("，", propParts));
+        }
         return sb.toString();
     }
 
