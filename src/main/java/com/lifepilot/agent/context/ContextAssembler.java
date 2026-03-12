@@ -259,7 +259,10 @@ public class ContextAssembler {
             var context = new AssembledContext(
                     systemPrompt, userPrompt, formattedMemories,
                     tokenBudget, retrievalCount, topScore,
-                    workingMemoryTokens, degraded, List.of());
+                    workingMemoryTokens, degraded,
+                    truncatedMemories.stream()
+                            .map(RetrievalResult::entityId)
+                            .toList());
 
             // 9. 各区域 Token 消耗明细日志
             if (log.isDebugEnabled()) {
