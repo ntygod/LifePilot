@@ -12,6 +12,7 @@ import com.lifepilot.knowledge.retrieve.DocumentRetriever;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.memory.episodic.MessageRecord;
 import com.lifepilot.memory.retrieval.HybridRetriever;
+import com.lifepilot.memory.retrieval.QueryRefiner;
 import com.lifepilot.memory.retrieval.RetrievalResult;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
@@ -77,6 +78,10 @@ public class ContextAssembler {
     @Nullable private final DocumentRepository documentRepository;
     // 被动通知队列：首次对话时 drain 并注入上下文，可选注入
     @Nullable private final PassiveNotificationQueue passiveNotificationQueue;
+    // 查询精炼器：清洗用户输入提升检索召回质量，可选注入
+    @Nullable private final QueryRefiner queryRefiner;
+    // 记忆配置：用户画像查询等参数，可选注入
+    @Nullable private final com.lifepilot.memory.config.MemoryProperties memoryProperties;
 
     /** 请求级检索缓存 — 同一 traceId + query + topK 组合只执行一次实际检索。 */
     private final ConcurrentHashMap<String, List<RetrievalResult>> retrievalCache = new ConcurrentHashMap<>();
@@ -96,6 +101,8 @@ public class ContextAssembler {
         this.sessionKnowledgeBaseRepository = null;
         this.documentRepository = null;
         this.passiveNotificationQueue = null;
+        this.queryRefiner = null;
+        this.memoryProperties = null;
     }
 
     /** 完整版构造器（注入记忆系统依赖）。 */
@@ -107,10 +114,10 @@ public class ContextAssembler {
                             @Nullable DataRedactor dataRedactor,
                             PromptRegistry promptRegistry) {
         this(config, hybridRetriever, workingMemory, tokenBudgetAllocator, retrievalStrategy, dataRedactor,
-                null, null, null, null, null, null, promptRegistry);
+                null, null, null, null, null, null, null, null, promptRegistry);
     }
 
-    /** 完整版构造器（注入记忆系统 + 可选知识库检索 + 可选 L2 情景记忆 + 可选 L3 语义记忆 + 可选被动通知队列依赖）。 */
+    /** 完整版构造器（注入记忆系统 + 可选知识库检索 + 可选 L2 情景记忆 + 可选 L3 语义记忆 + 可选被动通知队列 + 可选查询精炼器依赖）。 */
     public ContextAssembler(AgentConfigProperties config,
                             HybridRetriever hybridRetriever,
                             WorkingMemory workingMemory,
@@ -123,6 +130,8 @@ public class ContextAssembler {
                             @Nullable EpisodicMemory episodicMemory,
                             @Nullable SemanticMemory semanticMemory,
                             @Nullable PassiveNotificationQueue passiveNotificationQueue,
+                            @Nullable QueryRefiner queryRefiner,
+                            @Nullable com.lifepilot.memory.config.MemoryProperties memoryProperties,
                             PromptRegistry promptRegistry) {
         this.config = config;
         this.hybridRetriever = hybridRetriever;
@@ -137,6 +146,8 @@ public class ContextAssembler {
         this.sessionKnowledgeBaseRepository = sessionKnowledgeBaseRepository;
         this.documentRepository = documentRepository;
         this.passiveNotificationQueue = passiveNotificationQueue;
+        this.queryRefiner = queryRefiner;
+        this.memoryProperties = memoryProperties;
     }
 
     /** 判断是否为完整版模式。 */
@@ -168,7 +179,10 @@ public class ContextAssembler {
                 return buildMinimalContext(state);
             }
 
-            // 2. 四路并行检索（Virtual Thread）
+            // 1.5 查询精炼：清洗用户输入提升检索召回质量
+            String refinedQuery = safeRefineQuery(state.goal());
+
+            // 2. 四路并行检索（Virtual Thread）— 使用精炼后的查询
             List<RetrievalResult> retrievalResults;
             List<String> kbSnippets;
             List<WorkingMemorySlot> slots;
@@ -177,13 +191,13 @@ public class ContextAssembler {
 
             try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
                 var retrievalFuture = CompletableFuture.supplyAsync(
-                        () -> cachedRetrieve(state.traceId(), state.goal(), strategyConfig), executor);
+                        () -> cachedRetrieve(state.traceId(), refinedQuery, strategyConfig), executor);
                 var kbFuture = CompletableFuture.supplyAsync(
-                        () -> safeRetrieveKnowledgeBaseSnippets(state.sessionId(), state.goal(), 5), executor);
+                        () -> safeRetrieveKnowledgeBaseSnippets(state.sessionId(), refinedQuery, 5), executor);
                 var slotsFuture = CompletableFuture.supplyAsync(
                         () -> safeGetSessionHistory(workingMemory, state.sessionId(), state.goal()), executor);
                 var crossSessionFuture = CompletableFuture.supplyAsync(
-                        () -> safeSearchCrossSession(episodicMemory, state.goal(), state.sessionId()), executor);
+                        () -> safeSearchCrossSession(episodicMemory, refinedQuery, state.sessionId()), executor);
 
                 CompletableFuture.allOf(retrievalFuture, kbFuture, slotsFuture, crossSessionFuture).join();
 
@@ -194,10 +208,10 @@ public class ContextAssembler {
             } catch (Exception parallelEx) {
                 // Virtual Thread 创建失败时降级为串行执行
                 log.warn("并行检索异常，降级为串行: error={}", parallelEx.getMessage());
-                retrievalResults = cachedRetrieve(state.traceId(), state.goal(), strategyConfig);
-                kbSnippets = safeRetrieveKnowledgeBaseSnippets(state.sessionId(), state.goal(), 5);
+                retrievalResults = cachedRetrieve(state.traceId(), refinedQuery, strategyConfig);
+                kbSnippets = safeRetrieveKnowledgeBaseSnippets(state.sessionId(), refinedQuery, 5);
                 slots = safeGetSessionHistory(workingMemory, state.sessionId(), state.goal());
-                crossSessionFragments = safeSearchCrossSession(episodicMemory, state.goal(), state.sessionId());
+                crossSessionFragments = safeSearchCrossSession(episodicMemory, refinedQuery, state.sessionId());
             }
 
             // L4: 可选意图匹配提示（来自 HybridRetriever 内部的 IntentMatcher 结果）
@@ -222,8 +236,11 @@ public class ContextAssembler {
                     formatCrossSessionFragments(crossSessionFragments),
                     budgetAllocation.crossSessionBudget());
 
-            // 6. 将检索上下文注入 L1（ReasoningSlot），并格式化检索结果
-            slots = injectRetrievalReasoningSlots(workingMemory, state.sessionId(), truncatedMemories, procedureHintSlot, slots);
+            // 5.2 对最终注入上下文的结果更新 accessCount（截断后而非检索时）
+            safeUpdateAccessCounts(truncatedMemories);
+
+            // 6. 将 L4 程序提示注入 L1（ReasoningSlot），并格式化检索结果
+            slots = injectProcedureReasoningSlot(workingMemory, state.sessionId(), procedureHintSlot, slots);
             var formattedMemories = formatRetrievalResults(truncatedMemories);
             int workingMemoryTokens = truncatedSlots.stream()
                     .mapToInt(WorkingMemorySlot::tokenCount).sum();
@@ -235,7 +252,7 @@ public class ContextAssembler {
             var tokenBudget = buildTokenBudget(state.phase(), budgetAllocation,
                     formattedMemories, truncatedSlots, systemPrompt);
             // 用户画像从 System Prompt 移至 User Prompt 半稳定区
-            String userProfile = safeGetUserProfile(semanticMemory);
+            String userProfile = safeGetUserProfile(semanticMemory, refinedQuery);
             String userPrompt = buildEnhancedUserPrompt(state, formattedMemories, kbSnippets,
                     formattedCrossSession, truncatedSlots, userProfile);
 
@@ -301,6 +318,31 @@ public class ContextAssembler {
     }
 
     // --- 降级容错方法 ---
+
+    /**
+     * 安全执行查询精炼，异常时降级返回原始输入。
+     *
+     * @param rawGoal 用户原始输入
+     * @return 精炼后的查询文本，精炼失败时返回原始输入
+     */
+    private String safeRefineQuery(String rawGoal) {
+        if (queryRefiner == null || rawGoal == null || rawGoal.isBlank()) {
+            return rawGoal;
+        }
+        try {
+            String refined = queryRefiner.refine(rawGoal);
+            if (refined == null || refined.isBlank()) {
+                return rawGoal;
+            }
+            if (!refined.equals(rawGoal) && log.isDebugEnabled()) {
+                log.debug("查询精炼: 原始={}, 精炼后={}", truncate(rawGoal, 50), truncate(refined, 50));
+            }
+            return refined;
+        } catch (Exception e) {
+            log.warn("查询精炼失败，降级使用原始输入: error={}", e.getMessage());
+            return rawGoal;
+        }
+    }
 
     /** 安全执行记忆检索，异常时返回空列表。 */
     private List<RetrievalResult> safeRetrieve(HybridRetriever retriever, String query, RetrievalStrategyConfig config) {
@@ -444,15 +486,59 @@ public class ContextAssembler {
     /**
      * 安全查询用户画像实体，异常时返回空字符串。
      *
-     * <p>从 L3 语义记忆中查询 type=PERSON 且 isCurrent=true 的实体，
-     * 格式化为结构化文本注入 System Prompt。查询失败或结果为空时跳过注入。</p>
+     * <p>从 L3 语义记忆中查询 PREFERENCE/HABIT/GOAL 三种类型的当前实体，
+     * 对候选实体做关键词匹配过滤，无匹配时按 importanceScore 降序兜底，
+     * 总数上限 maxUserProfileEntities。</p>
+     *
+     * @param semanticMemory 语义记忆（可空）
+     * @param refinedQuery   精炼后的查询文本，用于关键词匹配
+     * @return 格式化的用户画像文本，无数据时返回空字符串
      */
-    private String safeGetUserProfile(@Nullable SemanticMemory semanticMemory) {
+    private String safeGetUserProfile(@Nullable SemanticMemory semanticMemory, String refinedQuery) {
         if (semanticMemory == null) return "";
         try {
-            var personEntities = semanticMemory.findCurrentByType(EntityType.PERSON);
-            if (personEntities.isEmpty()) return "";
-            return formatUserProfile(personEntities);
+            // 查询 PREFERENCE/HABIT/GOAL 三种类型替代 PERSON
+            var candidates = new ArrayList<TemporalEntity>();
+            for (var type : List.of(EntityType.PREFERENCE, EntityType.HABIT, EntityType.GOAL)) {
+                candidates.addAll(semanticMemory.findCurrentByType(type));
+            }
+            if (candidates.isEmpty()) return "";
+
+            // 读取配置（memoryProperties 可空时使用默认值）
+            int maxEntities = memoryProperties != null
+                    ? memoryProperties.getRetrieval().getMaxUserProfileEntities() : 10;
+            int fallbackCount = memoryProperties != null
+                    ? memoryProperties.getRetrieval().getFallbackUserProfileCount() : 3;
+
+            // 关键词匹配过滤：将 refinedQuery 按空白分词，匹配 textRepresentation()
+            List<TemporalEntity> matched = List.of();
+            if (refinedQuery != null && !refinedQuery.isBlank()) {
+                var keywords = List.of(refinedQuery.split("\\s+"));
+                matched = candidates.stream()
+                        .filter(e -> {
+                            String text = e.textRepresentation().toLowerCase();
+                            return keywords.stream().anyMatch(kw -> text.contains(kw.toLowerCase()));
+                        })
+                        .toList();
+            }
+
+            List<TemporalEntity> selected;
+            if (!matched.isEmpty()) {
+                // 有匹配：按 importanceScore 降序，截取上限
+                selected = matched.stream()
+                        .sorted(Comparator.comparingDouble(TemporalEntity::importanceScore).reversed())
+                        .limit(maxEntities)
+                        .toList();
+            } else {
+                // 无匹配：按 importanceScore 降序取前 fallbackCount 条兜底
+                selected = candidates.stream()
+                        .sorted(Comparator.comparingDouble(TemporalEntity::importanceScore).reversed())
+                        .limit(fallbackCount)
+                        .toList();
+            }
+
+            if (selected.isEmpty()) return "";
+            return formatUserProfile(selected);
         } catch (Exception e) {
             log.warn("用户画像查询失败，降级跳过: error={}", e.getMessage());
             return "";
@@ -462,14 +548,14 @@ public class ContextAssembler {
     /**
      * 格式化用户画像实体为结构化文本。
      *
-     * <p>每个 PERSON 实体输出名称、描述和属性键值对，
-     * 用于注入到 System Prompt 的角色定义之后。</p>
+     * <p>每个实体输出类型标签、名称、描述和属性键值对，
+     * 用于注入到 User Prompt 的半稳定区。</p>
      */
-    String formatUserProfile(List<TemporalEntity> personEntities) {
-        if (personEntities.isEmpty()) return "";
+    String formatUserProfile(List<TemporalEntity> entities) {
+        if (entities.isEmpty()) return "";
         var sb = new StringBuilder("\n\n用户画像:\n");
-        for (var entity : personEntities) {
-            sb.append("- ").append(entity.name());
+        for (var entity : entities) {
+            sb.append("- [").append(entity.type().label()).append("] ").append(entity.name());
             if (entity.description() != null && !entity.description().isBlank()) {
                 sb.append(": ").append(entity.description());
             }
@@ -512,6 +598,23 @@ public class ContextAssembler {
                     (int) (total * 0.10),   // systemPromptBudget
                     (int) (total * 0.15),   // userMessageBudget
                     total);
+        }
+    }
+
+    /**
+     * 安全更新最终注入上下文的实体 accessCount，异常时 WARN 日志不影响主流程。
+     *
+     * @param truncatedResults 经过预算截断后的最终检索结果
+     */
+    private void safeUpdateAccessCounts(List<RetrievalResult> truncatedResults) {
+        if (hybridRetriever == null || truncatedResults == null || truncatedResults.isEmpty()) {
+            return;
+        }
+        try {
+            hybridRetriever.updateAccessCounts(truncatedResults);
+        } catch (Exception e) {
+            log.warn("accessCount 更新失败，降级跳过: count={}, error={}",
+                    truncatedResults.size(), e.getMessage());
         }
     }
 
@@ -573,17 +676,22 @@ public class ContextAssembler {
      * - 只在 full mode 下执行，异常时静默降级，不影响主流程。
      * </p>
      */
-    private List<WorkingMemorySlot> injectRetrievalReasoningSlots(WorkingMemory memory,
-                                                                  String sessionId,
-                                                                  List<RetrievalResult> truncatedMemories,
-                                                                  Optional<ReasoningSlot> procedureHintSlot,
-                                                                  List<WorkingMemorySlot> existingSlots) {
+    /**
+     * 将 L4 程序提示以 ReasoningSlot 的形式注入到 L1 工作记忆。
+     *
+     * <p>检索结果仅通过 User Prompt 的"相关记忆"section 单次注入，
+     * 不再重复写入 L1 ReasoningSlot，避免双重注入导致 Token 膨胀。</p>
+     */
+    private List<WorkingMemorySlot> injectProcedureReasoningSlot(WorkingMemory memory,
+                                                                 String sessionId,
+                                                                 Optional<ReasoningSlot> procedureHintSlot,
+                                                                 List<WorkingMemorySlot> existingSlots) {
         if (sessionId == null || sessionId.isBlank()) {
             return existingSlots;
         }
         var updated = new ArrayList<>(existingSlots != null ? existingSlots : List.of());
         try {
-            // 1) L4 程序提示 → ReasoningSlot（若尚未存在）
+            // L4 程序提示 → ReasoningSlot（若尚未存在）
             if (procedureHintSlot != null && procedureHintSlot.isPresent()) {
                 ReasoningSlot slot = procedureHintSlot.get();
                 if (slot.thought() != null && !slot.thought().isBlank()) {
@@ -597,29 +705,8 @@ public class ContextAssembler {
                     }
                 }
             }
-
-            // 2) 检索到的语义记忆 → ReasoningSlot（只注入前若干条，避免污染 L1）
-            int maxInjected = Math.min(5, truncatedMemories.size());
-            for (int i = 0; i < maxInjected; i++) {
-                RetrievalResult result = truncatedMemories.get(i);
-                String thought = formatSingleResult(result);
-                if (thought == null || thought.isBlank()) {
-                    continue;
-                }
-                // 去重检查：与第 1 段（L4 程序提示）的去重逻辑一致
-                boolean alreadyExists = updated.stream()
-                        .filter(s -> s instanceof ReasoningSlot)
-                        .map(s -> (ReasoningSlot) s)
-                        .anyMatch(rs -> rs.thought() != null && rs.thought().equals(thought));
-                if (alreadyExists) {
-                    continue;
-                }
-                ReasoningSlot reasoningSlot = ReasoningSlot.retrievalContext(thought, estimateTokens(thought));
-                memory.append(sessionId, reasoningSlot);
-                updated.add(reasoningSlot);
-            }
         } catch (Exception e) {
-            log.warn("检索上下文注入 L1 失败: sessionId={}, error={}", sessionId, e.getMessage());
+            log.warn("L4 程序提示注入 L1 失败: sessionId={}, error={}", sessionId, e.getMessage());
         }
         return List.copyOf(updated);
     }

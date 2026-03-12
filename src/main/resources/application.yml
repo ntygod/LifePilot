@@ -209,6 +209,13 @@ lifepilot:
     # 混合检索相关性过滤
     retrieval:
       min-fused-score: 0.035
+      query-max-length: 100
+      query-min-length: 10
+      min-cross-session-bm25-score: 1.0
+      low-quality-score-threshold: 0.3
+      low-quality-budget-ratio: 0.5
+      max-user-profile-entities: 10
+      fallback-user-profile-count: 3
   skills:
     # ===== Skill 系统配置 =====
     # 支持 Java 原生 Skill、Markdown 声明式 Skill、MCP 外部工具

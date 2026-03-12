@@ -442,12 +442,54 @@ public class MemoryProperties {
      * @author zsg
      * @since 2026-03-15
      */
-    public static class Retrieval {
+public static class Retrieval {
 
         /** RRF 融合分数最低阈值，低于此值的检索结果将被过滤。0.0 表示不过滤。 */
         private float minFusedScore = 0.035f;
 
+        /** 查询精炼后最大长度（字符数），超过则截断。 */
+        private int queryMaxLength = 100;
+
+        /** 查询最短长度（字符数），短于此值跳过精炼直接返回原文。 */
+        private int queryMinLength = 10;
+
+        /** 跨会话 BM25 搜索最低分数阈值，低于此值的结果被过滤。 */
+        private float minCrossSessionBm25Score = 1.0f;
+
+        /** 检索质量低分阈值，topScore 低于此值时触发预算缩减。 */
+        private float lowQualityScoreThreshold = 0.3f;
+
+        /** 低质量检索时知识实体预算缩减比例（0~1）。 */
+        private float lowQualityBudgetRatio = 0.5f;
+
+        /** 用户画像实体最大注入数量。 */
+        private int maxUserProfileEntities = 10;
+
+        /** 无关键词匹配时兜底注入的用户画像数量。 */
+        private int fallbackUserProfileCount = 3;
+
         public float getMinFusedScore() { return minFusedScore; }
         public void setMinFusedScore(float minFusedScore) { this.minFusedScore = minFusedScore; }
+
+        public int getQueryMaxLength() { return queryMaxLength; }
+        public void setQueryMaxLength(int queryMaxLength) { this.queryMaxLength = queryMaxLength; }
+
+        public int getQueryMinLength() { return queryMinLength; }
+        public void setQueryMinLength(int queryMinLength) { this.queryMinLength = queryMinLength; }
+
+        public float getMinCrossSessionBm25Score() { return minCrossSessionBm25Score; }
+        public void setMinCrossSessionBm25Score(float minCrossSessionBm25Score) { this.minCrossSessionBm25Score = minCrossSessionBm25Score; }
+
+        public float getLowQualityScoreThreshold() { return lowQualityScoreThreshold; }
+        public void setLowQualityScoreThreshold(float lowQualityScoreThreshold) { this.lowQualityScoreThreshold = lowQualityScoreThreshold; }
+
+        public float getLowQualityBudgetRatio() { return lowQualityBudgetRatio; }
+        public void setLowQualityBudgetRatio(float lowQualityBudgetRatio) { this.lowQualityBudgetRatio = lowQualityBudgetRatio; }
+
+        public int getMaxUserProfileEntities() { return maxUserProfileEntities; }
+        public void setMaxUserProfileEntities(int maxUserProfileEntities) { this.maxUserProfileEntities = maxUserProfileEntities; }
+
+        public int getFallbackUserProfileCount() { return fallbackUserProfileCount; }
+        public void setFallbackUserProfileCount(int fallbackUserProfileCount) { this.fallbackUserProfileCount = fallbackUserProfileCount; }
     }
 }

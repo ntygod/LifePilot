@@ -7,6 +7,7 @@ import com.lifepilot.memory.consolidation.ConsolidationPipeline;
 import com.lifepilot.memory.consolidation.EpisodicToProceduralConsolidator;
 import com.lifepilot.memory.consolidation.EpisodicToSemanticConsolidator;
 import com.lifepilot.memory.episodic.EpisodicMemory;
+import com.lifepilot.memory.retrieval.QueryRefiner;
 import com.lifepilot.memory.forgetting.ForgettingEngine;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.memory.procedural.IntentMatcher;
@@ -87,6 +88,13 @@ public class MemoryAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    public QueryRefiner queryRefiner(MemoryProperties properties) {
+        log.info("记忆系统: 注册 QueryRefiner");
+        return new QueryRefiner(properties);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     public SlotEvictionPolicy slotEvictionPolicy() {
         log.info("记忆系统: 注册默认 SlotEvictionPolicy");
         return new DefaultSlotEvictionPolicy();
@@ -94,9 +102,9 @@ public class MemoryAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public EpisodicMemory episodicMemory(JdbcTemplate jdbcTemplate) {
+    public EpisodicMemory episodicMemory(JdbcTemplate jdbcTemplate, MemoryProperties properties) {
         log.info("记忆系统: 注册 EpisodicMemory");
-        return new EpisodicMemory(jdbcTemplate);
+        return new EpisodicMemory(jdbcTemplate, properties);
     }
 
     @Bean

@@ -18,7 +18,8 @@ public record RetrievalResult(
         ScoreBreakdown scoreBreakdown,
         String sourcePath,
         @Nullable Instant lastAccessedAt,
-        float importanceScore
+        float importanceScore,
+        @Nullable Instant validTo
 ) implements Comparable<RetrievalResult> {
 
     @Override

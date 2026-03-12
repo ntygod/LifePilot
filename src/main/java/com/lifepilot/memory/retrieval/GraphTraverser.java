@@ -90,7 +90,8 @@ public class GraphTraverser {
                                 rs.getString("description"),
                                 score,
                                 lastAccessedStr != null ? Instant.parse(lastAccessedStr) : null,
-                                rs.getFloat("importance_score"));
+                                rs.getFloat("importance_score"),
+                                null);
                     },
                     startEntityId, startEntityId, startEntityId, startEntityId, topK);
         } catch (Exception e) {

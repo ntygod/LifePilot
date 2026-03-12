@@ -1,5 +1,6 @@
 package com.lifepilot.memory.episodic;
 
+import com.lifepilot.memory.config.MemoryProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -25,13 +26,15 @@ public class EpisodicMemory {
     private static final Logger log = LoggerFactory.getLogger(EpisodicMemory.class);
 
     private final JdbcTemplate jdbcTemplate;
+    private final MemoryProperties properties;
 
     /** 记忆写入回调 — 通知检索引擎数据已变更（重置 knownEmpty 短路标记）。 */
     @Nullable
     private Runnable writeCallback;
 
-    public EpisodicMemory(JdbcTemplate jdbcTemplate) {
+    public EpisodicMemory(JdbcTemplate jdbcTemplate, MemoryProperties properties) {
         this.jdbcTemplate = jdbcTemplate;
+        this.properties = properties;
     }
 
     /**
@@ -233,6 +236,7 @@ public class EpisodicMemory {
             return List.of();
         }
         try {
+            float minBm25 = properties.getRetrieval().getMinCrossSessionBm25Score();
             return jdbcTemplate.query(
                     "SELECT m.id, m.conversation_id, m.role, m.content, m.compressed_content, " +
                             "m.compression_level, m.is_pinned, m.tool_call_json, m.token_count, m.created_at " +
@@ -240,6 +244,7 @@ public class EpisodicMemory {
                             "JOIN messages_fts fts ON m.rowid = fts.rowid " +
                             "JOIN conversations c ON m.conversation_id = c.id " +
                             "WHERE messages_fts MATCH ? AND c.session_id != ? " +
+                            "AND -bm25(messages_fts) > ? " +
                             "ORDER BY bm25(messages_fts) " +
                             "LIMIT ?",
                     (rs, rowNum) -> new MessageRecord(
@@ -253,7 +258,7 @@ public class EpisodicMemory {
                             rs.getString("tool_call_json"),
                             rs.getInt("token_count"),
                             Instant.parse(rs.getString("created_at"))),
-                    escapeFts5Query(query), excludeSessionId, limit);
+                    escapeFts5Query(query), excludeSessionId, minBm25, limit);
         } catch (Exception e) {
             log.warn("跨会话排除检索失败: query={}, excludeSessionId={}, error={}",
                     query, excludeSessionId, e.getMessage());

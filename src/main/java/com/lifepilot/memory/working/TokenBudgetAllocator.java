@@ -23,9 +23,11 @@ public class TokenBudgetAllocator {
     private static final Logger log = LoggerFactory.getLogger(TokenBudgetAllocator.class);
 
     private final MemoryProperties.TokenBudget budgetConfig;
+    private final MemoryProperties.Retrieval retrievalConfig;
 
     public TokenBudgetAllocator(MemoryProperties properties) {
         this.budgetConfig = properties.getTokenBudget();
+        this.retrievalConfig = properties.getRetrieval();
     }
 
     /**
@@ -76,6 +78,19 @@ public class TokenBudgetAllocator {
 
         // 六区域初始分配：按比例分配但不超过各自 max 上限
         int[] budgets = computeInitialBudgets(remaining, sessionWeight, retrievalWeight);
+
+        // 低质量检索时缩减知识实体预算，释放给当前会话
+        if (topRetrievalScore > 0 && topRetrievalScore < retrievalConfig.getLowQualityScoreThreshold()) {
+            int originalKnowledge = budgets[IDX_KNOWLEDGE_ENTITY];
+            budgets[IDX_KNOWLEDGE_ENTITY] = Math.round(originalKnowledge * retrievalConfig.getLowQualityBudgetRatio());
+            int released = originalKnowledge - budgets[IDX_KNOWLEDGE_ENTITY];
+            // 释放预算给当前会话，但不超过 max 上限
+            budgets[IDX_CURRENT_SESSION] = Math.min(
+                    budgetConfig.getCurrentSessionMax(),
+                    budgets[IDX_CURRENT_SESSION] + released);
+            log.debug("低质量检索预算缩减: topScore={}, 知识实体 {}→{}, 释放 {} 给当前会话",
+                    topRetrievalScore, originalKnowledge, budgets[IDX_KNOWLEDGE_ENTITY], released);
+        }
 
         // 优先级截断：当六区域总和超过 remaining 时，按优先级从低到高截断
         truncateByPriority(budgets, remaining);

@@ -173,7 +173,7 @@ public class HybridRetriever {
             results.add(new RetrievalResult(
                     acc.entityId, acc.entityType, acc.name, acc.description,
                     fusedScore, breakdown, acc.sourcePath,
-                    acc.lastAccessedAt, acc.importanceScore));
+                    acc.lastAccessedAt, acc.importanceScore, acc.validTo));
         }
 
         // 6. 按 entity_id 去重（保留 fusedScore 最高），排序，截取 topK
@@ -188,6 +188,17 @@ public class HybridRetriever {
                 .limit(topK)
                 .toList();
 
+        // 兜底过期过滤：过滤掉 validTo 已过期的结果（SQL 层已过滤，此处防御向量路径遗漏）
+        {
+            int beforeExpiry = finalResults.size();
+            finalResults = finalResults.stream()
+                    .filter(r -> r.validTo() == null || r.validTo().isAfter(now))
+                    .toList();
+            if (log.isDebugEnabled() && beforeExpiry != finalResults.size()) {
+                log.debug("混合检索: 过期过滤, 过滤前={}, 过滤后={}", beforeExpiry, finalResults.size());
+            }
+        }
+
         // 新增：fusedScore 阈值过滤
         float minScore = memoryProperties.getRetrieval().getMinFusedScore();
         if (minScore > 0.0f) {
@@ -200,9 +211,6 @@ public class HybridRetriever {
                         minScore, beforeCount, finalResults.size());
             }
         }
-
-        // 7. 批量更新 access_count
-        updateAccessCounts(finalResults);
 
         log.debug("混合检索: query={}, 向量={}, FTS={}, 图={}, 融合结果={}",
                 query, vectorItems.size(), ftsResults.size(), graphResults.size(), finalResults.size());
@@ -266,7 +274,8 @@ public class HybridRetriever {
                             entity.description(),
                             vr.similarity(),
                             entity.lastAccessedAt(),
-                            entity.importanceScore()));
+                            entity.importanceScore(),
+                            entity.validTo()));
                 } else {
                     // 实体可能已归档，仅用 entityId 和 similarity 构建
                     items.add(new RankedItem(
@@ -276,7 +285,8 @@ public class HybridRetriever {
                             null,
                             vr.similarity(),
                             null,
-                            0.0f));
+                            0.0f,
+                            null));
                 }
             }
         } catch (Exception e) {
@@ -311,8 +321,15 @@ public class HybridRetriever {
         }
     }
 
-    /** 批量更新结果实体的 access_count。 */
-    private void updateAccessCounts(List<RetrievalResult> results) {
+    /**
+     * 批量更新结果实体的 access_count。
+     *
+     * <p>由 ContextAssembler 在 truncateByBudget 之后调用，
+     * 仅对最终注入上下文的实体更新访问计数。</p>
+     *
+     * @param results 最终注入上下文的检索结果列表
+     */
+    public void updateAccessCounts(List<RetrievalResult> results) {
         try {
             for (var result : results) {
                 semanticMemory.incrementAccessCount(result.entityId());
@@ -330,6 +347,7 @@ public class HybridRetriever {
         final String description;
         final Instant lastAccessedAt;
         final float importanceScore;
+        final Instant validTo;
         float rrfScore;
         float vectorScore;
         float ftsScore;
@@ -343,6 +361,7 @@ public class HybridRetriever {
             this.description = item.description();
             this.lastAccessedAt = item.lastAccessedAt();
             this.importanceScore = item.importanceScore();
+            this.validTo = item.validTo();
         }
     }
 }

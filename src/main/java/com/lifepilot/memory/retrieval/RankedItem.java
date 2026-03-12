@@ -16,5 +16,6 @@ public record RankedItem(
         @Nullable String description,
         float score,
         @Nullable Instant lastAccessedAt,
-        float importanceScore
+        float importanceScore,
+        @Nullable Instant validTo
 ) {}
