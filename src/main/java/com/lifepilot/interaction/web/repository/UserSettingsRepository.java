@@ -1,5 +1,7 @@
 package com.lifepilot.interaction.web.repository;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.interaction.web.model.UserSettings;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,9 +29,11 @@ public class UserSettingsRepository {
     private static final String DEFAULT_SETTINGS_ID = "default";
 
     private final JdbcTemplate jdbcTemplate;
+    private final ObjectMapper objectMapper;
 
-    public UserSettingsRepository(JdbcTemplate jdbcTemplate) {
+    public UserSettingsRepository(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
         this.jdbcTemplate = jdbcTemplate;
+        this.objectMapper = objectMapper;
     }
 
     /**
@@ -56,14 +60,15 @@ public class UserSettingsRepository {
         String now = Instant.now().toString();
         jdbcTemplate.update("""
                 INSERT INTO user_settings (
-                    id, theme, language, llm_provider,
+                    id, theme, language, llm_provider, scene_providers,
                     enable_streaming, enable_function_call, enable_knowledge_base, enable_tool_call,
                     created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     theme = excluded.theme,
                     language = excluded.language,
                     llm_provider = excluded.llm_provider,
+                    scene_providers = excluded.scene_providers,
                     enable_streaming = excluded.enable_streaming,
                     enable_function_call = excluded.enable_function_call,
                     enable_knowledge_base = excluded.enable_knowledge_base,
@@ -74,6 +79,7 @@ public class UserSettingsRepository {
                 settings.theme(),
                 settings.language(),
                 settings.llmProvider(),
+                serializeSceneProviders(settings.sceneProviders()),
                 settings.enableStreaming() ? 1 : 0,
                 settings.enableFunctionCall() ? 1 : 0,
                 settings.enableKnowledgeBase() ? 1 : 0,
@@ -105,7 +111,7 @@ public class UserSettingsRepository {
      */
     private UserSettings createDefaultSettings() {
         UserSettings defaultSettings = new UserSettings(
-                "system", "zh-CN", "ollama-qwen2.5", true, true, true, true);
+                "system", "zh-CN", "", java.util.Map.of(), true, true, true, true);
         save(defaultSettings);
         return defaultSettings;
     }
@@ -118,10 +124,33 @@ public class UserSettingsRepository {
                 rs.getString("theme"),
                 rs.getString("language"),
                 rs.getString("llm_provider"),
+                deserializeSceneProviders(rs.getString("scene_providers")),
                 rs.getInt("enable_streaming") == 1,
                 rs.getInt("enable_function_call") == 1,
                 rs.getInt("enable_knowledge_base") == 1,
                 rs.getInt("enable_tool_call") == 1
         );
+    }
+
+    private String serializeSceneProviders(java.util.Map<String, String> sceneProviders) {
+        try {
+            return objectMapper.writeValueAsString(sceneProviders != null ? sceneProviders : java.util.Map.of());
+        } catch (Exception e) {
+            log.warn("场景 Provider 配置序列化失败，使用空对象: error={}", e.getMessage());
+            return "{}";
+        }
+    }
+
+    private java.util.Map<String, String> deserializeSceneProviders(String json) {
+        if (json == null || json.isBlank()) {
+            return java.util.Map.of();
+        }
+        try {
+            java.util.Map<String, String> result = objectMapper.readValue(json, new TypeReference<>() {});
+            return result != null ? java.util.Map.copyOf(result) : java.util.Map.of();
+        } catch (Exception e) {
+            log.warn("场景 Provider 配置反序列化失败，使用空对象: error={}", e.getMessage());
+            return java.util.Map.of();
+        }
     }
 }

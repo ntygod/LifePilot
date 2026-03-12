@@ -1,13 +1,8 @@
 package com.lifepilot.interaction.config;
 
-import java.util.List;
-import java.util.function.Function;
-import java.util.stream.Collectors;
-
 import com.lifepilot.agent.AgentLoop;
 import com.lifepilot.interaction.middleware.audit.AuditEventRepository;
 import com.lifepilot.interaction.middleware.audit.AuditMiddleware;
-import com.lifepilot.observability.redactor.DataRedactor;
 import com.lifepilot.interaction.middleware.auth.AuthMiddleware;
 import com.lifepilot.interaction.middleware.auth.AuthStrategy;
 import com.lifepilot.interaction.middleware.execution.ExecutionMiddleware;
@@ -17,52 +12,40 @@ import com.lifepilot.interaction.middleware.security.PromptInjectionDetector;
 import com.lifepilot.interaction.middleware.security.SecurityMiddleware;
 import com.lifepilot.interaction.middleware.security.SensitiveDataDetector;
 import com.lifepilot.interaction.middleware.security.TrustScoreCalculator;
-import com.lifepilot.interaction.web.repository.AttachmentRepository;
+import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
-import com.lifepilot.observability.trace.TraceRecorder;
+import com.lifepilot.observability.redactor.DataRedactor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-/**
- * Gateway 中间件自动配置，注册所有 6 个中间件 Bean 和支撑 Bean。
- *
- * <p>在 {@link GatewayAutoConfiguration} 之后加载，确保 Pipeline 和 Gateway 已注册。
- * 通过 {@code lifepilot.gateway.enabled} 条件控制整体启用。</p>
- *
- * @author zsg
- * @since 2026-02-25
- */
+import java.util.List;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
 @AutoConfiguration(after = GatewayAutoConfiguration.class)
 @ConditionalOnProperty(name = "lifepilot.gateway.enabled", matchIfMissing = true)
 public class GatewayMiddlewareAutoConfiguration {
 
     private static final Logger log = LoggerFactory.getLogger(GatewayMiddlewareAutoConfiguration.class);
 
-    // ── 认证相关 ──────────────────────────────────────────────────
-
     @Bean
     public AuthMiddleware authMiddleware(List<AuthStrategy> strategies, GatewayProperties properties) {
         var strategyMap = strategies.stream()
                 .collect(Collectors.toMap(AuthStrategy::supportedChannel, Function.identity()));
-        log.info("注册 AuthMiddleware，策略数量: {}", strategyMap.size());
+        log.info("注册 AuthMiddleware: 策略数={}", strategyMap.size());
         return new AuthMiddleware(strategyMap, properties);
     }
-
-    // ── 限流相关 ──────────────────────────────────────────────────
 
     @Bean
     public RateLimitMiddleware rateLimitMiddleware(GatewayProperties properties) {
         log.info("注册 RateLimitMiddleware");
         return new RateLimitMiddleware(properties);
     }
-
-    // ── 安全相关 ──────────────────────────────────────────────────
 
     @Bean
     public PromptInjectionDetector promptInjectionDetector() {
@@ -85,11 +68,8 @@ public class GatewayMiddlewareAutoConfiguration {
                                                  TrustScoreCalculator trustScoreCalculator,
                                                  GatewayProperties properties) {
         log.info("注册 SecurityMiddleware");
-        return new SecurityMiddleware(injectionDetector, sensitiveDataDetector,
-                trustScoreCalculator, properties);
+        return new SecurityMiddleware(injectionDetector, sensitiveDataDetector, trustScoreCalculator, properties);
     }
-
-    // ── 路由相关 ──────────────────────────────────────────────────
 
     @Bean
     public RouterMiddleware routerMiddleware(GatewayProperties properties) {
@@ -97,34 +77,19 @@ public class GatewayMiddlewareAutoConfiguration {
         return new RouterMiddleware(properties);
     }
 
-    // ── 执行相关 ──────────────────────────────────────────────────
-
     @Bean
     public ExecutionMiddleware executionMiddleware(AgentLoop agentLoop,
                                                    GatewayProperties properties,
-                                                   ApplicationContext applicationContext,
-                                                   AttachmentRepository attachmentRepository) {
+                                                   ObjectProvider<SseSessionManager> sseSessionManagerProvider,
+                                                   ChatSessionRepository chatSessionRepository) {
         log.info("注册 ExecutionMiddleware");
-        // 尝试获取 SseSessionManager，如果不存在则为 null（流式功能将不可用）
-        SseSessionManager sseSessionManager = null;
-        try {
-            if (applicationContext.containsBean("sseSessionManager")) {
-                sseSessionManager = applicationContext.getBean(SseSessionManager.class);
-            }
-        } catch (Exception e) {
-            log.debug("SseSessionManager 不可用，流式功能将禁用: {}", e.getMessage());
-        }
-        // 尝试获取 TraceRecorder，如果不存在则为 null（可观测性增强将不可用）
-        TraceRecorder traceRecorder = null;
-        try {
-            traceRecorder = applicationContext.getBean(TraceRecorder.class);
-        } catch (Exception e) {
-            log.debug("TraceRecorder 不可用，可观测性增强将禁用: {}", e.getMessage());
-        }
-        return new ExecutionMiddleware(agentLoop, properties, attachmentRepository, sseSessionManager, traceRecorder);
+        return new ExecutionMiddleware(
+                agentLoop,
+                properties,
+                chatSessionRepository,
+                sseSessionManagerProvider.getIfAvailable()
+        );
     }
-
-    // ── 审计相关 ──────────────────────────────────────────────────
 
     @Bean
     public AuditEventRepository auditEventRepository(JdbcTemplate jdbcTemplate) {
@@ -138,5 +103,4 @@ public class GatewayMiddlewareAutoConfiguration {
         log.info("注册 AuditMiddleware");
         return new AuditMiddleware(repository, redactor, properties);
     }
-
 }

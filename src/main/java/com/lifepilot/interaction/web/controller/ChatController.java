@@ -640,8 +640,8 @@ public class ChatController {
     public ResponseEntity<?> updateSessionConfig(
             @PathVariable String id,
             @RequestBody SessionConfigRequest request) {
-        log.debug("更新会话配置: sessionId={}, modelId={}, temperature={}, maxTokens={}, knowledgeBaseIds={}",
-                id, request.modelId(), request.temperature(), request.maxTokens(), request.knowledgeBaseIds());
+        log.debug("更新会话配置: sessionId={}, preferredProviderId={}, temperature={}, maxTokens={}, knowledgeBaseIds={}",
+                id, request.preferredProviderId(), request.temperature(), request.maxTokens(), request.knowledgeBaseIds());
         
         try {
             sessionService.updateSessionConfig(id, request);

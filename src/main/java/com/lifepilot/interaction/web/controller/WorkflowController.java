@@ -4,15 +4,21 @@ import com.lifepilot.interaction.web.model.ErrorResponse;
 import com.lifepilot.interaction.web.model.TriggerWorkflowRequest;
 import com.lifepilot.interaction.web.model.WorkflowDetailDto;
 import com.lifepilot.interaction.web.model.WorkflowItemDto;
+import com.lifepilot.interaction.web.sse.SseEventType;
+import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.workflow.config.WorkflowConfigProperties;
 import com.lifepilot.workflow.engine.InputValidationResult;
 import com.lifepilot.workflow.engine.InputValidator;
 import com.lifepilot.workflow.engine.WorkflowCommandService;
 import com.lifepilot.workflow.engine.WorkflowEngine;
 import com.lifepilot.workflow.engine.WorkflowEventRecorder;
+import com.lifepilot.workflow.engine.WorkflowRealtimeEventHub;
 import com.lifepilot.workflow.model.ApprovalDecision;
 import com.lifepilot.workflow.model.Result;
+import com.lifepilot.workflow.model.StepLog;
 import com.lifepilot.workflow.model.WorkflowDefinition;
+import com.lifepilot.workflow.model.WorkflowEvent;
+import com.lifepilot.workflow.model.WorkflowInstance;
 import com.lifepilot.workflow.parser.WorkflowYamlParser;
 import com.lifepilot.workflow.parser.WorkflowYamlPrinter;
 import com.lifepilot.workflow.registry.WorkflowRegistry;
@@ -20,15 +26,19 @@ import com.lifepilot.workflow.repository.WorkflowRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.lang.Nullable;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * 工作流管理 REST Controller。
@@ -49,6 +59,8 @@ public class WorkflowController {
     private final WorkflowCommandService workflowCommandService;
     private final WorkflowRepository workflowRepository;
     private final WorkflowEventRecorder workflowEventRecorder;
+    private final WorkflowRealtimeEventHub workflowRealtimeEventHub;
+    private final SseSessionManager sseSessionManager;
     private final WorkflowYamlParser yamlParser;
     private final WorkflowYamlPrinter yamlPrinter;
     private final WorkflowConfigProperties workflowConfig;
@@ -59,6 +71,8 @@ public class WorkflowController {
                                WorkflowCommandService workflowCommandService,
                                WorkflowRepository workflowRepository,
                                WorkflowEventRecorder workflowEventRecorder,
+                               WorkflowRealtimeEventHub workflowRealtimeEventHub,
+                               SseSessionManager sseSessionManager,
                                WorkflowYamlParser yamlParser,
                                WorkflowYamlPrinter yamlPrinter,
                                WorkflowConfigProperties workflowConfig) {
@@ -67,6 +81,8 @@ public class WorkflowController {
         this.workflowCommandService = workflowCommandService;
         this.workflowRepository = workflowRepository;
         this.workflowEventRecorder = workflowEventRecorder;
+        this.workflowRealtimeEventHub = workflowRealtimeEventHub;
+        this.sseSessionManager = sseSessionManager;
         this.yamlParser = yamlParser;
         this.yamlPrinter = yamlPrinter;
         this.workflowConfig = workflowConfig;
@@ -374,12 +390,10 @@ public class WorkflowController {
         }
 
         String instanceId = workflowCommandService.start(id, validation.mergedInputs());
+        var instance = workflowRepository.findInstance(instanceId)
+                .orElseThrow(() -> new IllegalStateException("Workflow instance not found after trigger: id=" + instanceId));
         log.info("工作流触发成功: workflowId={}, instanceId={}", id, instanceId);
-        return ResponseEntity.accepted().body(Map.of(
-                "instanceId", instanceId,
-                "workflowId", id,
-                "message", "工作流已提交异步执行"
-        ));
+        return ResponseEntity.accepted().body(instance);
     }
 
     /**
@@ -396,6 +410,31 @@ public class WorkflowController {
                     new ErrorResponse(404, "工作流不存在: id=" + id, Instant.now()));
         }
         return ResponseEntity.ok(workflowRepository.findInstancesByWorkflowId(id));
+    }
+
+    @GetMapping(value = "/{id}/executions/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter streamWorkflowExecutions(@PathVariable String id) {
+        if (workflowRegistry.find(id).isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "工作流不存在: id=" + id);
+        }
+
+        String streamId = "workflow-executions-" + id + "-" + UUID.randomUUID();
+        SseEmitter emitter = sseSessionManager.createEmitter(streamId);
+        AutoCloseable executionSubscription = workflowRealtimeEventHub.onWorkflowExecution(
+                id,
+                execution -> sseSessionManager.sendEvent(
+                        streamId,
+                        SseEventType.WORKFLOW_EXECUTION_UPDATED,
+                        execution
+                )
+        );
+        registerSseCleanup(emitter, streamId, executionSubscription);
+        sseSessionManager.sendEvent(
+                streamId,
+                SseEventType.WORKFLOW_EXECUTIONS_SNAPSHOT,
+                new WorkflowExecutionsSnapshot(workflowRepository.findInstancesByWorkflowId(id))
+        );
+        return emitter;
     }
 
     // ── 执行实例端点 ──────────────────────────────────────
@@ -422,6 +461,52 @@ public class WorkflowController {
      * @param request    审批请求
      * @return 更新后的实例，404 不存在，400 状态/步骤不匹配
      */
+    @GetMapping(value = "/executions/{instanceId}/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter streamInstance(@PathVariable String instanceId) {
+        var instance = workflowRepository.findInstance(instanceId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "工作流实例未找到: id=" + instanceId));
+
+        String streamId = "workflow-instance-" + instanceId + "-" + UUID.randomUUID();
+        SseEmitter emitter = sseSessionManager.createEmitter(streamId);
+        AutoCloseable executionSubscription = workflowRealtimeEventHub.onInstanceExecution(
+                instanceId,
+                updated -> sseSessionManager.sendEvent(
+                        streamId,
+                        SseEventType.WORKFLOW_EXECUTION_UPDATED,
+                        updated
+                )
+        );
+        AutoCloseable eventSubscription = workflowRealtimeEventHub.onInstanceEvent(
+                instanceId,
+                event -> sseSessionManager.sendEvent(
+                        streamId,
+                        SseEventType.WORKFLOW_EVENT_CREATED,
+                        event
+                )
+        );
+        AutoCloseable stepLogSubscription = workflowRealtimeEventHub.onInstanceStepLog(
+                instanceId,
+                stepLog -> sseSessionManager.sendEvent(
+                        streamId,
+                        SseEventType.WORKFLOW_STEP_LOG_CREATED,
+                        stepLog
+                )
+        );
+        registerSseCleanup(emitter, streamId, executionSubscription, eventSubscription, stepLogSubscription);
+        sseSessionManager.sendEvent(streamId, SseEventType.WORKFLOW_EXECUTION_SNAPSHOT, instance);
+        sseSessionManager.sendEvent(
+                streamId,
+                SseEventType.WORKFLOW_TIMELINE_SNAPSHOT,
+                new WorkflowTimelineSnapshot(workflowEventRecorder.getTimeline(instanceId))
+        );
+        sseSessionManager.sendEvent(
+                streamId,
+                SseEventType.WORKFLOW_STEP_LOGS_SNAPSHOT,
+                new WorkflowStepLogsSnapshot(workflowRepository.findStepLogsSummary(instanceId))
+        );
+        return emitter;
+    }
+
     @PostMapping("/executions/{instanceId}/steps/{stepId}/approve")
     public ResponseEntity<?> approveStep(@PathVariable String instanceId,
                                          @PathVariable String stepId,
@@ -483,6 +568,35 @@ public class WorkflowController {
 
     /** 审批请求 DTO。 */
     record ApproveRequest(String decision, String decidedBy, @Nullable String reason) {}
+
+    record WorkflowExecutionsSnapshot(List<WorkflowInstance> executions) {}
+
+    record WorkflowTimelineSnapshot(List<WorkflowEvent> events) {}
+
+    record WorkflowStepLogsSnapshot(List<StepLog> stepLogs) {}
+
+    private void registerSseCleanup(SseEmitter emitter, String streamId, AutoCloseable... closables) {
+        Runnable cleanup = () -> {
+            closeQuietly(closables);
+            sseSessionManager.closeEmitter(streamId);
+        };
+        emitter.onCompletion(cleanup);
+        emitter.onTimeout(cleanup);
+        emitter.onError(ex -> cleanup.run());
+    }
+
+    private void closeQuietly(AutoCloseable... closables) {
+        for (AutoCloseable closable : closables) {
+            if (closable == null) {
+                continue;
+            }
+            try {
+                closable.close();
+            } catch (Exception closeError) {
+                log.debug("关闭工作流 SSE 订阅失败: {}", closeError.getMessage(), closeError);
+            }
+        }
+    }
 
     private String getString(Map<String, Object> map, String key) {
         Object value = map.get(key);

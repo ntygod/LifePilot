@@ -73,6 +73,28 @@ public final class SseEventType {
     /** MCP Server 状态变化事件 */
     public static final String MCP_STATUS_CHANGE = "mcp-status-change";
 
+    // Workflow 模块事件类型
+    /** 工作流执行列表快照事件 */
+    public static final String WORKFLOW_EXECUTIONS_SNAPSHOT = "workflow-executions-snapshot";
+
+    /** 工作流执行实例快照事件 */
+    public static final String WORKFLOW_EXECUTION_SNAPSHOT = "workflow-execution-snapshot";
+
+    /** 工作流执行实例更新事件 */
+    public static final String WORKFLOW_EXECUTION_UPDATED = "workflow-execution-updated";
+
+    /** 工作流事件时间线快照事件 */
+    public static final String WORKFLOW_TIMELINE_SNAPSHOT = "workflow-timeline-snapshot";
+
+    /** 工作流事件新增事件 */
+    public static final String WORKFLOW_EVENT_CREATED = "workflow-event-created";
+
+    /** 工作流步骤日志快照事件 */
+    public static final String WORKFLOW_STEP_LOGS_SNAPSHOT = "workflow-step-logs-snapshot";
+
+    /** 工作流步骤日志新增事件 */
+    public static final String WORKFLOW_STEP_LOG_CREATED = "workflow-step-log-created";
+
     // 媒体模块事件类型
     /** 媒体数据事件（图片/音频等大体积二进制数据） */
     public static final String MEDIA = "media";

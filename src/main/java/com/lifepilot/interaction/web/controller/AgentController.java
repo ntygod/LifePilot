@@ -119,6 +119,7 @@ public class AgentController {
     private AgentSummary toAgentSummary(AgentDefinition agent) {
         // 判断类型
         String agentType = determineType(agent.source());
+        String agentSource = determineSource(agent.source());
 
         // 判断状态（从 metadata 中提取）
         String agentStatus = extractStatus(agent.metadata());
@@ -128,9 +129,7 @@ public class AgentController {
         List<String> agentTags = extractTags(agent.metadata());
 
         // 提取模型 ID（从 preferredProvider 或 metadata）
-        String modelId = agent.preferredProvider() != null
-                ? agent.preferredProvider()
-                : agent.metadata().getOrDefault("modelId", "").toString();
+        String preferredProviderId = resolvePreferredProviderId(agent);
 
         // 知识库数量（从 metadata 中的 knowledgeBaseIds 获取）
         List<String> kbIds = extractKnowledgeBaseIds(agent.metadata());
@@ -145,7 +144,8 @@ public class AgentController {
                 agent.name(),
                 agent.description(),
                 agentType,
-                modelId,
+                agentSource,
+                preferredProviderId,
                 knowledgeBaseCount,
                 updatedAt,
                 createdAt,
@@ -173,6 +173,17 @@ public class AgentController {
     /**
      * 从 metadata 中提取标签。
      */
+    private String determineSource(AgentSource source) {
+        if (source instanceof AgentSource.Builtin) {
+            return "Builtin";
+        } else if (source instanceof AgentSource.MarkdownDefined) {
+            return "MarkdownDefined";
+        } else if (source instanceof AgentSource.Marketplace) {
+            return "Marketplace";
+        }
+        return source.getClass().getSimpleName();
+    }
+
     private List<String> extractTags(java.util.Map<String, String> metadata) {
         if (metadata == null || metadata.isEmpty()) {
             return List.of();
@@ -312,6 +323,7 @@ public class AgentController {
         }
 
         AgentDefinition agent = agentOpt.get();
+        String preferredProviderId = resolvePreferredProviderId(agent);
 
         // 2. 验证消息内容
         if (request.message().isBlank()) {
@@ -330,7 +342,7 @@ public class AgentController {
                     agent.budget().toAgentBudget(),
                     null, // 无父 traceId
                     0,    // 深度为 0
-                    agent.preferredProvider(),
+                    preferredProviderId,
                     agent.allowedTools(),
                     null // 测试对话暂不携带多模态内容
             );
@@ -340,11 +352,11 @@ public class AgentController {
 
             // 5. 构建 ChatResponse
             String messageId = UUID.randomUUID().toString();
-            TokenUsage tokenUsage = new TokenUsage(
+            TokenUsage tokenUsage = agentResponse.tokenUsage() != null ? agentResponse.tokenUsage() : new TokenUsage(
                     0, // promptTokens（AgentResponse 中没有详细分解）
                     0, // completionTokens
                     agentResponse.tokensUsed(), // totalTokens
-                    agent.preferredProvider() != null ? agent.preferredProvider() : "unknown"
+                    "unknown"
             );
 
             ChatResponse chatResponse = new ChatResponse(
@@ -391,6 +403,7 @@ public class AgentController {
         }
 
         AgentDefinition agent = agentOpt.get();
+        String preferredProviderId = resolvePreferredProviderId(agent);
 
         try {
             // 2. 构造临时 AgentState（UNDERSTANDING 阶段）
@@ -404,7 +417,7 @@ public class AgentController {
                     agent.systemPrompt(),
                     agent.budget().toAgentBudget(),
                     null, 0,
-                    agent.preferredProvider(),
+                    preferredProviderId,
                     agent.allowedTools(),
                     null
             );
@@ -485,28 +498,31 @@ public class AgentController {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
                     new ErrorResponse(400, "Agent 名称不能为空", Instant.now()));
         }
-        if (request.systemPrompt() == null || request.systemPrompt().isBlank()) {
+        if (request.systemPrompt() != null && request.systemPrompt().isBlank()) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
                     new ErrorResponse(400, "System Prompt 不能为空", Instant.now()));
         }
 
         // 2. 生成 Agent ID
         String agentId = "custom-" + UUID.randomUUID().toString().substring(0, 8);
+        Instant now = Instant.now();
+        String agentName = request.name().strip();
+        String description = normalizeOptionalText(request.description());
 
         // 3. 构建 metadata
-        Map<String, String> metadata = buildMetadata(request, Instant.now(), Instant.now());
+        Map<String, String> metadata = buildMetadata(request, now, now);
 
         // 4. 构建 AgentDefinition
         AgentDefinition agentDef = AgentDefinition.builder()
                 .id(agentId)
-                .name(request.name())
-                .description(request.description() != null ? request.description() : "")
-                .systemPrompt(request.systemPrompt())
+                .name(agentName)
+                .description(description != null ? description : "")
+                .systemPrompt(resolveSystemPrompt(agentName, description, request.systemPrompt()))
                 .allowedTools(request.toolIds() != null ? request.toolIds() : List.of())
                 .canDelegate(false) // 自定义 Agent 默认不允许委托
                 .budget(AgentBudget.DEFAULT)
-                .preferredProvider(request.modelId())
-                .source(new AgentSource.MarkdownDefined(null, Instant.now()))
+                .preferredProvider(normalizeOptionalText(request.preferredProviderId()))
+                .source(new AgentSource.MarkdownDefined(null, now))
                 .metadata(metadata)
                 .build();
 
@@ -543,23 +559,38 @@ public class AgentController {
                     new ErrorResponse(404, "Agent 不存在: id=" + id, Instant.now()));
         }
 
+        if (request.name() != null && request.name().isBlank()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
+                    new ErrorResponse(400, "Agent 名称不能为空", Instant.now()));
+        }
+        if (request.systemPrompt() != null && request.systemPrompt().isBlank()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
+                    new ErrorResponse(400, "System Prompt 不能为空", Instant.now()));
+        }
+
         AgentDefinition existing = agentOpt.get();
 
         // 2. 构建更新的 metadata（合并现有 metadata）
         Map<String, String> existingMetadata = existing.metadata() != null ? existing.metadata() : Map.of();
         Instant createdAt = extractInstant(existingMetadata, "createdAt", Instant.now());
         Map<String, String> metadata = buildUpdateMetadata(request, existingMetadata, createdAt, Instant.now());
+        String preferredProviderId = request.preferredProviderId() != null
+                ? normalizeOptionalText(request.preferredProviderId())
+                : resolvePreferredProviderId(existing);
+        String nextName = request.name() != null ? request.name().strip() : existing.name();
+        String nextDescription = request.description() != null ? request.description().strip() : existing.description();
+        String nextSystemPrompt = request.systemPrompt() != null ? request.systemPrompt().strip() : existing.systemPrompt();
 
         // 3. 构建更新的 AgentDefinition
         AgentDefinition updatedDef = AgentDefinition.builder()
                 .id(id)
-                .name(request.name() != null ? request.name() : existing.name())
-                .description(request.description() != null ? request.description() : existing.description())
-                .systemPrompt(request.systemPrompt() != null ? request.systemPrompt() : existing.systemPrompt())
+                .name(nextName)
+                .description(nextDescription)
+                .systemPrompt(nextSystemPrompt)
                 .allowedTools(request.toolIds() != null ? request.toolIds() : existing.allowedTools())
                 .canDelegate(existing.canDelegate())
                 .budget(existing.budget())
-                .preferredProvider(request.modelId() != null ? request.modelId() : existing.preferredProvider())
+                .preferredProvider(preferredProviderId)
                 .source(existing.source())
                 .metadata(metadata)
                 .build();
@@ -691,12 +722,11 @@ public class AgentController {
     private AgentDetail toAgentDetail(AgentDefinition agent) {
         // 基本信息
         String agentType = determineType(agent.source());
+        String agentSource = determineSource(agent.source());
         String agentStatus = extractStatus(agent.metadata());
         boolean enabled = "enabled".equalsIgnoreCase(agentStatus);
         List<String> agentTags = extractTags(agent.metadata());
-        String modelId = agent.preferredProvider() != null
-                ? agent.preferredProvider()
-                : agent.metadata().getOrDefault("modelId", "").toString();
+        String preferredProviderId = resolvePreferredProviderId(agent);
 
         // 知识库信息
         List<String> kbIds = extractKnowledgeBaseIds(agent.metadata());
@@ -722,21 +752,11 @@ public class AgentController {
 
         // 模型配置
         Map<String, String> metadata = agent.metadata() != null ? agent.metadata() : Map.of();
-        Double temperature = metadata.containsKey("temperature") 
-                ? Double.parseDouble(metadata.get("temperature")) 
-                : null;
-        Integer maxTokens = metadata.containsKey("maxTokens") 
-                ? Integer.parseInt(metadata.get("maxTokens")) 
-                : null;
-        Double topP = metadata.containsKey("topP") 
-                ? Double.parseDouble(metadata.get("topP")) 
-                : null;
-
-        AgentDetail.ModelConfig modelConfig = new AgentDetail.ModelConfig(
-                modelId,
-                temperature,
-                maxTokens,
-                topP
+        AgentDetail.LlmConfig llmConfig = new AgentDetail.LlmConfig(
+                preferredProviderId,
+                parseDouble(metadata, "temperature"),
+                parseInteger(metadata, "maxTokens"),
+                parseDouble(metadata, "topP")
         );
 
         // 时间戳
@@ -746,7 +766,9 @@ public class AgentController {
         // 元数据（转换为 Map<String, Object>）
         Map<String, Object> metadataObj = new LinkedHashMap<>();
         for (Map.Entry<String, String> entry : metadata.entrySet()) {
-            metadataObj.put(entry.getKey(), entry.getValue());
+            if (!"modelId".equals(entry.getKey()) && !"preferredProviderId".equals(entry.getKey())) {
+                metadataObj.put(entry.getKey(), entry.getValue());
+            }
         }
 
         return new AgentDetail(
@@ -754,7 +776,8 @@ public class AgentController {
                 agent.name(),
                 agent.description(),
                 agentType,
-                modelId,
+                agentSource,
+                preferredProviderId,
                 knowledgeBaseCount,
                 updatedAt,
                 createdAt,
@@ -762,9 +785,9 @@ public class AgentController {
                 agentStatus,
                 agentTags,
                 agent.systemPrompt(),
-                modelConfig,
+                llmConfig,
                 knowledgeBases,
-                agent.allowedTools(),
+                agent.allowedTools() != null ? agent.allowedTools() : List.of(),
                 metadataObj
         );
     }
@@ -845,14 +868,14 @@ public class AgentController {
         }
         
         // 模型配置
-        if (request.modelId() != null) {
-            metadata.put("modelId", request.modelId());
-        }
         if (request.temperature() != null) {
             metadata.put("temperature", request.temperature().toString());
         }
         if (request.maxTokens() != null) {
             metadata.put("maxTokens", request.maxTokens().toString());
+        }
+        if (request.topP() != null) {
+            metadata.put("topP", request.topP().toString());
         }
         
         // 知识库 ID 列表
@@ -861,13 +884,7 @@ public class AgentController {
         }
         
         // 其他元数据
-        if (request.metadata() != null) {
-            for (Map.Entry<String, Object> entry : request.metadata().entrySet()) {
-                if (!metadata.containsKey(entry.getKey())) {
-                    metadata.put(entry.getKey(), entry.getValue().toString());
-                }
-            }
-        }
+        mergeCustomMetadata(metadata, request.metadata());
         
         return metadata;
     }
@@ -880,6 +897,8 @@ public class AgentController {
                                                      Instant createdAt, 
                                                      Instant updatedAt) {
         Map<String, String> metadata = new LinkedHashMap<>(existingMetadata);
+        metadata.remove("modelId");
+        metadata.remove("preferredProviderId");
         
         // 时间戳（保持不变）
         metadata.put("createdAt", createdAt.toString());
@@ -893,39 +912,131 @@ public class AgentController {
         // 标签（如果请求中提供了，则更新）
         if (request.tags() != null) {
             if (request.tags().isEmpty()) {
-                metadata.put("tags", "");
+                metadata.remove("tags");
             } else {
                 metadata.put("tags", String.join(",", request.tags()));
             }
         }
         
         // 模型配置（如果请求中提供了，则更新）
-        if (request.modelId() != null) {
-            metadata.put("modelId", request.modelId());
-        }
         if (request.temperature() != null) {
             metadata.put("temperature", request.temperature().toString());
         }
         if (request.maxTokens() != null) {
             metadata.put("maxTokens", request.maxTokens().toString());
         }
+        if (request.topP() != null) {
+            metadata.put("topP", request.topP().toString());
+        }
         
         // 知识库 ID 列表（如果请求中提供了，则更新）
         if (request.knowledgeBaseIds() != null) {
+            metadata.keySet().removeIf(key -> key.startsWith("kb."));
             if (request.knowledgeBaseIds().isEmpty()) {
-                metadata.put("knowledgeBaseIds", "");
+                metadata.remove("knowledgeBaseIds");
             } else {
                 metadata.put("knowledgeBaseIds", String.join(",", request.knowledgeBaseIds()));
             }
         }
         
         // 其他元数据（如果请求中提供了，则更新）
-        if (request.metadata() != null) {
-            for (Map.Entry<String, Object> entry : request.metadata().entrySet()) {
-                metadata.put(entry.getKey(), entry.getValue().toString());
-            }
-        }
+        mergeCustomMetadata(metadata, request.metadata());
         
         return metadata;
+    }
+
+    @Nullable
+    private String resolvePreferredProviderId(AgentDefinition agent) {
+        String preferredProviderId = normalizeOptionalText(agent.preferredProvider());
+        if (preferredProviderId != null) {
+            return preferredProviderId;
+        }
+
+        Map<String, String> metadata = agent.metadata() != null ? agent.metadata() : Map.of();
+        String metadataPreferredProviderId = normalizeOptionalText(metadata.get("preferredProviderId"));
+        if (metadataPreferredProviderId != null) {
+            return metadataPreferredProviderId;
+        }
+
+        return normalizeOptionalText(metadata.get("modelId"));
+    }
+
+    private String resolveSystemPrompt(String agentName,
+                                       @Nullable String description,
+                                       @Nullable String explicitSystemPrompt) {
+        String systemPrompt = normalizeOptionalText(explicitSystemPrompt);
+        if (systemPrompt != null) {
+            return systemPrompt;
+        }
+
+        if (description != null) {
+            return "You are " + agentName + ". Focus on this responsibility: " + description;
+        }
+
+        return "You are " + agentName + ". Help the user clearly and accurately.";
+    }
+
+    @Nullable
+    private String normalizeOptionalText(@Nullable String value) {
+        if (value == null) {
+            return null;
+        }
+
+        String normalized = value.strip();
+        return normalized.isEmpty() ? null : normalized;
+    }
+
+    @Nullable
+    private Integer parseInteger(Map<String, String> metadata, String key) {
+        String value = normalizeOptionalText(metadata.get(key));
+        if (value == null) {
+            return null;
+        }
+
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    @Nullable
+    private Double parseDouble(Map<String, String> metadata, String key) {
+        String value = normalizeOptionalText(metadata.get(key));
+        if (value == null) {
+            return null;
+        }
+
+        try {
+            return Double.parseDouble(value);
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    private void mergeCustomMetadata(Map<String, String> metadata, @Nullable Map<String, Object> customMetadata) {
+        if (customMetadata == null || customMetadata.isEmpty()) {
+            return;
+        }
+
+        for (Map.Entry<String, Object> entry : customMetadata.entrySet()) {
+            if (entry.getValue() == null || isManagedMetadataKey(entry.getKey())) {
+                continue;
+            }
+            metadata.put(entry.getKey(), entry.getValue().toString());
+        }
+    }
+
+    private boolean isManagedMetadataKey(String key) {
+        return "modelId".equals(key)
+                || "preferredProviderId".equals(key)
+                || "createdAt".equals(key)
+                || "updatedAt".equals(key)
+                || "status".equals(key)
+                || "tags".equals(key)
+                || "temperature".equals(key)
+                || "maxTokens".equals(key)
+                || "topP".equals(key)
+                || "knowledgeBaseIds".equals(key);
     }
 }

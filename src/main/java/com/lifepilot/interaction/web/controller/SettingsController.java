@@ -75,12 +75,9 @@ public class SettingsController {
         if (settings.language() == null || settings.language().isBlank()) {
             throw new IllegalArgumentException("语言不能为空");
         }
-        if (settings.llmProvider() == null || settings.llmProvider().isBlank()) {
-            throw new IllegalArgumentException("LLM Provider 不能为空");
-        }
 
-        log.debug("更新用户设置: theme={}, language={}, llmProvider={}",
-                settings.theme(), settings.language(), settings.llmProvider());
+        log.debug("更新用户设置: theme={}, language={}, llmProvider={}, sceneProviders={}",
+                settings.theme(), settings.language(), settings.llmProvider(), settings.sceneProviders());
         settingsRepository.save(settings);
         UserSettings savedSettings = settingsRepository.getSettings();
         return ResponseEntity.ok(savedSettings);

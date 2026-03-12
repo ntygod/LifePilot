@@ -364,6 +364,7 @@ public class ChatSessionRepository {
         // 合并配置
         Map<String, Object> mergedConfig = new HashMap<>(existingConfig);
         mergedConfig.putAll(config);
+        mergedConfig.entrySet().removeIf(entry -> entry.getValue() == null);
         
         // 序列化为 JSON
         String configJson = serializeConfig(mergedConfig);
