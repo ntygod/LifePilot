@@ -201,6 +201,19 @@ public class SemanticMemory {
                 now, now, entityId);
     }
 
+    /**
+     * 更新实体的 importanceScore。
+     *
+     * @param entityId 实体 ID
+     * @param newScore 新的 importanceScore（已裁剪到 [0.0, 1.0]）
+     */
+    public void updateImportanceScore(String entityId, float newScore) {
+        var now = Instant.now().toString();
+        jdbcTemplate.update(
+                "UPDATE temporal_entities SET importance_score = ?, updated_at = ? WHERE id = ?",
+                newScore, now, entityId);
+    }
+
     /** 添加关系。 */
     public void addRelation(TemporalRelation relation) {
         jdbcTemplate.update(
