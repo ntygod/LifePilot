@@ -201,6 +201,11 @@ lifepilot:
     # AUDN 实体提取
     extraction:
       timeout-seconds: 60
+      max-entities-per-extraction: 10
+      min-extraction-confidence: 0.3
+      max-entity-name-length: 100
+      min-description-length: 2
+      existing-entity-summary-limit: 50
     # 混合检索相关性过滤
     retrieval:
       min-fused-score: 0.035
