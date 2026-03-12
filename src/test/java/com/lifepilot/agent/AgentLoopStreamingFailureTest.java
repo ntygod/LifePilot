@@ -64,6 +64,7 @@ class AgentLoopStreamingFailureTest {
                 null,
                 mock(PromptRegistry.class),
                 null,
+                null,
                 null
         );
 

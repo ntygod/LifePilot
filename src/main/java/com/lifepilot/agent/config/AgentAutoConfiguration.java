@@ -22,6 +22,7 @@ import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.memory.retrieval.HybridRetriever;
+import com.lifepilot.memory.retrieval.InjectionRecordRepository;
 import com.lifepilot.memory.semantic.RealtimeExtractor;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.working.TokenBudgetAllocator;
@@ -152,7 +153,8 @@ public class AgentAutoConfiguration {
                                @Autowired(required = false) RealtimeExtractor realtimeExtractor,
                                PromptRegistry promptRegistry,
                                @Autowired(required = false) MediaDataExtractor mediaDataExtractor,
-                               @Autowired(required = false) A2uiProperties a2uiProperties) {
+                               @Autowired(required = false) A2uiProperties a2uiProperties,
+                               @Autowired(required = false) InjectionRecordRepository injectionRecordRepository) {
         log.info("Agent 引擎初始化完成（追踪{}，记忆系统{}，情景记忆{}，实时提取{}，多模态{}，A2UI{}）",
                 traceRecorder != null ? "已启用" : "未启用",
                 workingMemory != null ? "已启用" : "未启用",
@@ -163,6 +165,7 @@ public class AgentAutoConfiguration {
         return new AgentLoop(stateReducer, contextAssembler, llmRouter, multimodalRouter,
                 traceRecorder, objectMapper, sessionManager, conversationViewService, actionParser, agentToolProvider,
                 config, workingMemory, conversationHistoryStore, sessionKnowledgeBaseRepository,
-                knowledgeBaseRepository, realtimeExtractor, promptRegistry, mediaDataExtractor, a2uiProperties);
+                knowledgeBaseRepository, realtimeExtractor, promptRegistry, mediaDataExtractor, a2uiProperties,
+                injectionRecordRepository);
     }
 }
