@@ -89,6 +89,15 @@ public class ActionParser {
                 log.debug("从 Markdown 代码块提取 JSON 成功: phase={}", phase);
                 return result;
             }
+            // 策略 2.5: Markdown 代码块提取后 fixJson 重试（处理全角字符）
+            String extractedFixed = fixJson(extracted);
+            if (!extractedFixed.equals(extracted)) {
+                result = tryParse(phase, extractedFixed);
+                if (result != null) {
+                    log.debug("Markdown 代码块提取 + fixJson 后解析成功: phase={}", phase);
+                    return result;
+                }
+            }
         }
 
         // 策略 3: JSON 修复

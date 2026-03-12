@@ -1064,14 +1064,23 @@ public class AgentLoop {
             // 统一走 ActionParser 多策略解析链（含 Markdown 提取、JSON 修复、自然语言兜底），
             // 既避免了无效的 entity() 调用开销，也简化了异常处理路径。
             //
-            // UNDERSTANDING / PLANNING / REFLECTING 阶段不注册工具回调。
+            // UNDERSTANDING / PLANNING / REFLECTING 阶段不注册工具回调到 ChatClient。
             // 原因：Spring AI 的 .call() 会自动执行 function calling（如 builtin.todo.list），
             // LLM 看到工具执行结果后会生成自然语言总结而非预期的 JSON 结构化输出，
             // 导致 ActionParser 将其识别为 ResponseGenerated，Agent 跳过 EXECUTING 直接终止。
-            // 工具定义已通过 ContextAssembler 以文本形式包含在 systemPrompt 中，
-            // LLM 仍能感知可用工具并在 PLANNING 阶段规划工具调用步骤。
+            // PLANNING 阶段通过 formatToolListSection() 将可用工具列表以文本形式注入 userText，
+            // 使 LLM 感知可用工具并在 PLANNING 阶段规划工具调用步骤。
             return switch (state.phase()) {
-                case UNDERSTANDING, PLANNING, REFLECTING -> {
+                case PLANNING -> {
+                    // PLANNING 阶段：在 userText 中追加可用工具列表（toolId + description）
+                    String planningUserText = userText + formatToolListSection(toolCallbacks);
+                    var prompt = buildPrompt(chatClient, systemPrompt, List.of());
+                    String raw = prompt.user(planningUserText).call().content();
+                    log.debug("LLM 响应获取成功: phase=PLANNING, traceId={}, length={}",
+                            state.traceId(), raw != null ? raw.length() : 0);
+                    yield actionParser.parse(state.phase(), raw != null ? raw : "");
+                }
+                case UNDERSTANDING, REFLECTING -> {
                     var prompt = buildPrompt(chatClient, systemPrompt, List.of());
                     String raw = prompt.user(userText).call().content();
                     log.debug("LLM 响应获取成功: phase={}, traceId={}, length={}",
@@ -1104,6 +1113,27 @@ public class AgentLoop {
             log.warn("LLM 不可用: error={}", e.getMessage());
             return new Action.BudgetExhausted("LLM 不可用: " + e.getMessage());
         }
+    }
+
+    /**
+     * 格式化可用工具列表为文本段落，用于注入 PLANNING 阶段的 userText。
+     *
+     * <p>格式：每行一个工具，{@code - toolId: description}。
+     * 仅包含 toolId 和 description，不含 inputSchema（PLANNING 阶段只需选对工具）。</p>
+     *
+     * @param toolCallbacks 工具回调列表
+     * @return 格式化的工具列表文本（含前导换行和标题），空列表返回空字符串
+     */
+    private String formatToolListSection(List<ToolCallback> toolCallbacks) {
+        if (toolCallbacks == null || toolCallbacks.isEmpty()) {
+            return "";
+        }
+        var sb = new StringBuilder("\n\n## 可用工具列表\n");
+        for (var tc : toolCallbacks) {
+            var def = tc.getToolDefinition();
+            sb.append("- ").append(def.name()).append(": ").append(def.description()).append("\n");
+        }
+        return sb.toString();
     }
 
     /**
@@ -1990,7 +2020,7 @@ public class AgentLoop {
      * <p>职责：根据本轮 Action 更新 counters，并在超过阈值时返回强制终止的 Action。</p>
      */
     private static final class LoopCounters {
-        private int consecutiveBlocks = 0;
+        private int totalBlocks = 0;
         private int consecutiveParseFailures = 0;
 
         Action onAction(Action action, AgentState state, LoopLimits limits) {
@@ -2020,13 +2050,11 @@ public class AgentLoop {
 
         private Action updateBlockedCounter(Action action, LoopLimits limits) {
             if (action instanceof Action.Blocked) {
-                consecutiveBlocks++;
-                if (consecutiveBlocks >= limits.maxConsecutiveBlocks()) {
-                    log.warn("连续护栏阻断达到上限: count={}", consecutiveBlocks);
-                    return new Action.BudgetExhausted("连续护栏阻断达到上限: " + limits.maxConsecutiveBlocks());
+                totalBlocks++;
+                if (totalBlocks >= limits.maxConsecutiveBlocks()) {
+                    log.warn("累计护栏阻断达到上限: count={}", totalBlocks);
+                    return new Action.BudgetExhausted("累计护栏阻断达到上限: " + limits.maxConsecutiveBlocks());
                 }
-            } else {
-                consecutiveBlocks = 0;
             }
             return null;
         }
