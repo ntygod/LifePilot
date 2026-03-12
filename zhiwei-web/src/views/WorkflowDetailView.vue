@@ -48,7 +48,7 @@ const triggerLoading = ref(false)
 const yamlLoading = ref(false)
 const yamlDefinition = ref('')
 const showInputDialog = ref(false)
-const expandedExecutions = ref<Set<string>>(new Set())
+const expandedExecutionId = ref<string | null>(null)
 const executionDetailsLoading = ref<Record<string, boolean>>({})
 
 const breadcrumbItems = computed<BreadcrumbItem[]>(() => [
@@ -118,18 +118,22 @@ async function loadExecutionDetails(instanceId: string) {
   }
 }
 
+function isExecutionExpanded(instanceId: string) {
+  return expandedExecutionId.value === instanceId
+}
+
 async function toggleExecution(instanceId: string) {
-  if (expandedExecutions.value.has(instanceId)) {
-    expandedExecutions.value.delete(instanceId)
+  if (isExecutionExpanded(instanceId)) {
+    expandedExecutionId.value = null
     return
   }
 
-  expandedExecutions.value.add(instanceId)
+  expandedExecutionId.value = instanceId
   await loadExecutionDetails(instanceId)
 }
 
 function resetExecutionUiState() {
-  expandedExecutions.value = new Set()
+  expandedExecutionId.value = null
   executionDetailsLoading.value = {}
 }
 
@@ -252,8 +256,8 @@ function startPolling(instanceId: string) {
     if (instance && ['COMPLETED', 'FAILED', 'CANCELLED'].includes(instance.state)) {
       stopPolling()
       await loadExecutionDetails(instanceId)
-      if (!expandedExecutions.value.has(instanceId)) {
-        expandedExecutions.value.add(instanceId)
+      if (!isExecutionExpanded(instanceId)) {
+        expandedExecutionId.value = instanceId
       }
     }
   }, 3000)
@@ -570,15 +574,16 @@ watch(() => route.params.id, async () => {
                     :key="execution.id"
                     class="list-card overflow-hidden"
                   >
-                    <div
-                      class="flex cursor-pointer flex-col gap-4 p-4 transition-colors hover:bg-muted/30"
+                    <button
+                      type="button"
+                      class="flex w-full flex-col gap-4 p-4 text-left transition-colors hover:bg-muted/30"
                       @click="toggleExecution(execution.id)"
                     >
                       <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div class="space-y-2">
                           <div class="flex flex-wrap items-center gap-2">
                             <component
-                              :is="expandedExecutions.has(execution.id) ? ChevronDown : ChevronRight"
+                              :is="isExecutionExpanded(execution.id) ? ChevronDown : ChevronRight"
                               class="size-4 shrink-0 text-muted-foreground"
                             />
                             <Badge :variant="stateBadge[execution.state]?.variant ?? 'secondary'">
@@ -606,10 +611,10 @@ watch(() => route.params.id, async () => {
                       >
                         {{ execution.failureReason }}
                       </div>
-                    </div>
+                    </button>
 
                     <div
-                      v-if="expandedExecutions.has(execution.id)"
+                      v-if="isExecutionExpanded(execution.id)"
                       class="space-y-5 border-t border-border/60 bg-muted/20 p-4"
                     >
                       <div>

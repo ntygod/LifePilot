@@ -85,6 +85,7 @@ watch(open, (isOpen) => {
   <Popover v-model:open="open">
     <PopoverTrigger as-child>
       <Button
+        type="button"
         variant="outline"
         role="combobox"
         :aria-expanded="open"

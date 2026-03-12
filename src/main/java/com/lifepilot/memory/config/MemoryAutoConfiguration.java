@@ -350,7 +350,7 @@ public class MemoryAutoConfiguration {
         log.info("记忆系统: 注册 HybridRetriever, L4 意图匹配={}",
                 intentMatcher != null ? "启用" : "禁用");
         var retriever = new HybridRetriever(vectorSearcher, ftsSearcher, graphTraverser,
-                semanticMemory, intentMatcher);
+                semanticMemory, intentMatcher, properties);
         // 注入写入回调：记忆写入后重置 knownEmpty 短路标记，避免永久短路
         semanticMemory.setWriteCallback(retriever::resetEmptyFlag);
         episodicMemory.setWriteCallback(retriever::resetEmptyFlag);

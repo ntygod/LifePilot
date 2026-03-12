@@ -228,12 +228,12 @@ public class ContextAssembler {
             int workingMemoryTokens = truncatedSlots.stream()
                     .mapToInt(WorkingMemorySlot::tokenCount).sum();
 
-            // 7. 构建 TokenBudget
-            var tokenBudget = buildTokenBudget(state.phase(), budgetAllocation,
-                    formattedMemories, truncatedSlots);
-
-            // 8. 构建 Prompt
+            // 7. 构建 systemPrompt（单次构建，复用于 TokenBudget 和最终输出）
             String systemPrompt = buildSystemPrompt(state.phase());
+
+            // 8. 构建 TokenBudget（传入已构建的 systemPrompt，避免重复构建）
+            var tokenBudget = buildTokenBudget(state.phase(), budgetAllocation,
+                    formattedMemories, truncatedSlots, systemPrompt);
             // 用户画像从 System Prompt 移至 User Prompt 半稳定区
             String userProfile = safeGetUserProfile(semanticMemory);
             String userPrompt = buildEnhancedUserPrompt(state, formattedMemories, kbSnippets,
@@ -772,13 +772,14 @@ public class ContextAssembler {
     /** 构建 TokenBudget，映射 BudgetAllocation 到 TokenBudget 槽位。 */
     private TokenBudget buildTokenBudget(AgentPhase phase, BudgetAllocation allocation,
                                          List<String> formattedMemories,
-                                         List<WorkingMemorySlot> slots) {
+                                         List<WorkingMemorySlot> slots,
+                                         String systemPrompt) {
         // 静态分配获取 toolSchema/toolResult/reserved 的比例
         int totalTokens = config.getContext().getMaxContextTokens();
         var staticBudget = TokenBudget.allocate(phase, totalTokens);
 
-        // 计算实际消耗
-        int systemPromptUsed = estimateTokens(buildSystemPrompt(phase));
+        // 计算实际消耗（使用传入的 systemPrompt，避免重复构建）
+        int systemPromptUsed = estimateTokens(systemPrompt);
         int historyUsed = slots.stream().mapToInt(WorkingMemorySlot::tokenCount).sum();
         int memoryUsed = formattedMemories.stream().mapToInt(this::estimateTokens).sum();
 
@@ -978,10 +979,11 @@ public class ContextAssembler {
             }
         }
 
-        // 7. 推理上下文（动态区）
+        // 7. 推理上下文（动态区）— 排除检索来源的 ReasoningSlot（已在"相关记忆"区域展示）
         var reasoningSlots = slots.stream()
                 .filter(s -> s instanceof ReasoningSlot)
                 .map(s -> (ReasoningSlot) s)
+                .filter(rs -> !"hybrid-retrieval".equals(rs.source()))
                 .toList();
         if (!reasoningSlots.isEmpty()) {
             sb.append("\n推理上下文:\n");
@@ -990,15 +992,18 @@ public class ContextAssembler {
             }
         }
 
-        // 8. 已执行步骤（动态区）
+        // 8. 已执行步骤（动态区）— 按 success 区分截断长度
         if (!state.steps().isEmpty()) {
             sb.append("\n已执行步骤:\n");
             for (int i = 0; i < state.steps().size(); i++) {
                 StepRecord step = state.steps().get(i);
+                int truncLen = step.success()
+                        ? config.getContext().getSuccessStepMaxLength()
+                        : config.getContext().getFailedStepMaxLength();
                 sb.append("  ").append(i + 1).append(". ")
                         .append(step.toolId() != null ? step.toolId() : "系统")
                         .append(" - ").append(step.success() ? "成功" : "失败")
-                        .append(": ").append(truncate(step.output(), 200))
+                        .append(": ").append(truncate(step.output(), truncLen))
                         .append("\n");
             }
         }
@@ -1030,10 +1035,13 @@ public class ContextAssembler {
             sb.append("已执行步骤:\n");
             for (int i = 0; i < state.steps().size(); i++) {
                 StepRecord step = state.steps().get(i);
+                int truncLen = step.success()
+                        ? config.getContext().getSuccessStepMaxLength()
+                        : config.getContext().getFailedStepMaxLength();
                 sb.append("  ").append(i + 1).append(". ")
                         .append(step.toolId() != null ? step.toolId() : "系统")
                         .append(" - ").append(step.success() ? "成功" : "失败")
-                        .append(": ").append(truncate(step.output(), 200))
+                        .append(": ").append(truncate(step.output(), truncLen))
                         .append("\n");
             }
         }

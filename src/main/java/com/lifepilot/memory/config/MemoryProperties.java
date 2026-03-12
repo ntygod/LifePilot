@@ -88,6 +88,9 @@ public class MemoryProperties {
     /** 实体提取配置。 */
     private Extraction extraction = new Extraction();
 
+    /** 检索配置。 */
+    private Retrieval retrieval = new Retrieval();
+
     public TokenBudget getTokenBudget() { return tokenBudget; }
     public void setTokenBudget(TokenBudget tokenBudget) { this.tokenBudget = tokenBudget; }
 
@@ -102,6 +105,9 @@ public class MemoryProperties {
 
     public Extraction getExtraction() { return extraction; }
     public void setExtraction(Extraction extraction) { this.extraction = extraction; }
+
+    public Retrieval getRetrieval() { return retrieval; }
+    public void setRetrieval(Retrieval retrieval) { this.retrieval = retrieval; }
 
     /**
      * Token 预算分配配置 — 控制上下文窗口四区域的预算比例和场景切换阈值。
@@ -398,5 +404,20 @@ public class MemoryProperties {
 
         public int getTimeoutSeconds() { return timeoutSeconds; }
         public void setTimeoutSeconds(int timeoutSeconds) { this.timeoutSeconds = timeoutSeconds; }
+    }
+
+    /**
+     * 检索配置 — 控制混合检索结果的相关性过滤参数。
+     *
+     * @author zsg
+     * @since 2026-03-15
+     */
+    public static class Retrieval {
+
+        /** RRF 融合分数最低阈值，低于此值的检索结果将被过滤。0.0 表示不过滤。 */
+        private float minFusedScore = 0.035f;
+
+        public float getMinFusedScore() { return minFusedScore; }
+        public void setMinFusedScore(float minFusedScore) { this.minFusedScore = minFusedScore; }
     }
 }

@@ -590,6 +590,7 @@ function onDocumentClickForMenu() {
       >
         <template v-if="contextMenu.type === 'step'">
           <button
+            type="button"
             class="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-popover-foreground hover:bg-accent"
             @click="ctxDeleteStep"
           >
@@ -597,6 +598,7 @@ function onDocumentClickForMenu() {
             删除步骤
           </button>
           <button
+            type="button"
             class="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-popover-foreground hover:bg-accent"
             @click="ctxDisconnectAll"
           >
@@ -606,6 +608,7 @@ function onDocumentClickForMenu() {
         </template>
         <template v-if="contextMenu.type === 'line'">
           <button
+            type="button"
             class="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-popover-foreground hover:bg-accent"
             @click="ctxDisconnectLine"
           >

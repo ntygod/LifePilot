@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import {
   CheckCircle2,
   Play,
@@ -19,6 +20,7 @@ defineProps<{
 }>()
 
 const eventDetailsCache = new Map<string, string | null>()
+const expandedEventIds = ref<Set<string>>(new Set())
 
 const eventTypeConfig: Record<WorkflowEventType, { label: string; icon: typeof PlusCircle; color: string }> = {
   INSTANCE_CREATED: { label: '实例创建', icon: PlusCircle, color: 'text-gray-500' },
@@ -64,6 +66,20 @@ function getEventDetails(event: WorkflowEvent) {
 
 function formatTime(iso: string) {
   return new Date(iso).toLocaleString()
+}
+
+function isEventExpanded(eventId: string) {
+  return expandedEventIds.value.has(eventId)
+}
+
+function toggleEventExpanded(eventId: string) {
+  const next = new Set(expandedEventIds.value)
+  if (next.has(eventId)) {
+    next.delete(eventId)
+  } else {
+    next.add(eventId)
+  }
+  expandedEventIds.value = next
 }
 </script>
 
@@ -114,12 +130,19 @@ function formatTime(iso: string) {
             {{ formatTime(event.createdAt) }}
           </div>
 
-          <details v-if="event.dataJson" class="mt-1">
-            <summary class="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
-              查看详情
-            </summary>
-            <pre class="mt-1 max-h-40 overflow-x-auto rounded bg-muted p-2 text-xs">{{ getEventDetails(event) }}</pre>
-          </details>
+          <div v-if="event.dataJson" class="mt-1">
+            <button
+              type="button"
+              class="cursor-pointer text-xs text-muted-foreground hover:text-foreground"
+              @click="toggleEventExpanded(event.id)"
+            >
+              {{ isEventExpanded(event.id) ? '收起详情' : '查看详情' }}
+            </button>
+            <pre
+              v-if="isEventExpanded(event.id)"
+              class="mt-1 max-h-40 overflow-x-auto rounded bg-muted p-2 text-xs"
+            >{{ getEventDetails(event) }}</pre>
+          </div>
         </div>
       </div>
     </div>

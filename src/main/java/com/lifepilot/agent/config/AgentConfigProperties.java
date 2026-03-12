@@ -77,14 +77,23 @@ public class AgentConfigProperties {
     }
 
     /** 上下文配置。 */
+/** 上下文配置。 */
     public static class ContextConfig {
         private int maxContextTokens = 32000;
         private int outputReservedTokens = 4000;
+        /** 成功步骤输出截断长度。 */
+        private int successStepMaxLength = 200;
+        /** 失败步骤输出截断长度。 */
+        private int failedStepMaxLength = 80;
 
         public int getMaxContextTokens() { return maxContextTokens; }
         public void setMaxContextTokens(int maxContextTokens) { this.maxContextTokens = maxContextTokens; }
         public int getOutputReservedTokens() { return outputReservedTokens; }
         public void setOutputReservedTokens(int outputReservedTokens) { this.outputReservedTokens = outputReservedTokens; }
+        public int getSuccessStepMaxLength() { return successStepMaxLength; }
+        public void setSuccessStepMaxLength(int successStepMaxLength) { this.successStepMaxLength = successStepMaxLength; }
+        public int getFailedStepMaxLength() { return failedStepMaxLength; }
+        public void setFailedStepMaxLength(int failedStepMaxLength) { this.failedStepMaxLength = failedStepMaxLength; }
     }
 
     /** 会话配置。 */

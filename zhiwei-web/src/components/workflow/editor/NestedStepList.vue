@@ -97,7 +97,7 @@ function updateStepField(index: number, field: keyof StepModel, value: unknown) 
     <!-- 标签 + 添加按钮 -->
     <div class="flex items-center justify-between">
       <span class="text-xs font-medium text-muted-foreground">{{ label }}</span>
-      <Button variant="ghost" size="sm" class="h-6 px-2 text-xs" @click="addStep">
+      <Button type="button" variant="ghost" size="sm" class="h-6 px-2 text-xs" @click="addStep">
         <Plus class="mr-1 h-3 w-3" />
         添加步骤
       </Button>
@@ -119,6 +119,7 @@ function updateStepField(index: number, field: keyof StepModel, value: unknown) 
     >
       <!-- 删除按钮 -->
       <button
+        type="button"
         class="absolute right-1 top-1 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
         title="删除步骤"
         @click="removeStep(index)"

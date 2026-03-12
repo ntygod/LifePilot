@@ -4,7 +4,10 @@ import com.lifepilot.workflow.config.WorkflowConfigProperties;
 import com.lifepilot.workflow.engine.StepExecutor.WorkflowStepException;
 import com.lifepilot.workflow.expression.ExpressionEngine;
 import com.lifepilot.workflow.model.*;
-import com.lifepilot.workflow.model.ErrorStrategy.*;
+import com.lifepilot.workflow.model.ErrorStrategy.Compensate;
+import com.lifepilot.workflow.model.ErrorStrategy.Fail;
+import com.lifepilot.workflow.model.ErrorStrategy.Retry;
+import com.lifepilot.workflow.model.ErrorStrategy.Skip;
 import com.lifepilot.workflow.registry.WorkflowRegistry;
 import com.lifepilot.workflow.repository.WorkflowRepository;
 import org.slf4j.Logger;
@@ -13,8 +16,7 @@ import org.slf4j.LoggerFactory;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Semaphore;
+import java.util.concurrent.*;
 
 /**
  * 工作流执行引擎 — 负责实例创建、DAG 调度、状态机驱动、步骤分发和错误处理。
@@ -35,6 +37,8 @@ import java.util.concurrent.Semaphore;
 public class WorkflowEngine {
 
     private static final Logger log = LoggerFactory.getLogger(WorkflowEngine.class);
+    // CompletableFuture 需要的是“会启动任务”的 Executor；ThreadFactory#newThread 只会创建线程，不会 start。
+    private static final Executor VIRTUAL_THREAD_EXECUTOR = command -> Thread.ofVirtual().start(command);
 
     private final WorkflowRegistry registry;
     private final StepExecutor stepExecutor;
@@ -408,7 +412,7 @@ public class WorkflowEngine {
                         } finally {
                             semaphore.release();
                         }
-                    }, Thread.ofVirtual().factory()::newThread));
+                    }, VIRTUAL_THREAD_EXECUTOR));
                 }
 
                 // 等待所有并发步骤完成
@@ -523,13 +527,13 @@ public class WorkflowEngine {
             try {
                 output = CompletableFuture.supplyAsync(
                         () -> stepExecutor.execute(step, currentInstance.context(), expressionEngine),
-                        Thread.ofVirtual().factory()::newThread
-                ).orTimeout(config.getDefaultStepTimeoutSeconds(), java.util.concurrent.TimeUnit.SECONDS)
+                        VIRTUAL_THREAD_EXECUTOR
+                ).orTimeout(config.getDefaultStepTimeoutSeconds(), TimeUnit.SECONDS)
                  .join();
-            } catch (java.util.concurrent.CompletionException ce) {
+            } catch (CompletionException ce) {
                 // 解包 CompletionException，提取原始异常
                 Throwable cause = ce.getCause();
-                if (cause instanceof java.util.concurrent.TimeoutException) {
+                if (cause instanceof TimeoutException) {
                     throw new WorkflowStepException(step.id(),
                             "步骤执行超时: timeout=" + config.getDefaultStepTimeoutSeconds() + "s");
                 }

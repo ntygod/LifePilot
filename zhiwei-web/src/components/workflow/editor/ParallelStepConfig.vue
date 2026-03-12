@@ -43,7 +43,7 @@ function updateBranch(index: number, steps: StepModel[]) {
     <!-- 标题 + 添加分支按钮 -->
     <div class="flex items-center justify-between">
       <span class="text-xs font-medium text-muted-foreground">并行分支</span>
-      <Button variant="ghost" size="sm" class="h-6 px-2 text-xs" @click="addBranch">
+      <Button type="button" variant="ghost" size="sm" class="h-6 px-2 text-xs" @click="addBranch">
         <Plus class="mr-1 h-3 w-3" />
         添加分支
       </Button>
@@ -69,6 +69,7 @@ function updateBranch(index: number, steps: StepModel[]) {
       <div class="flex items-center justify-between">
         <span class="text-xs font-medium">分支 {{ index + 1 }}</span>
         <Button
+          type="button"
           variant="ghost"
           size="sm"
           class="h-6 px-2 text-xs text-destructive hover:text-destructive"
