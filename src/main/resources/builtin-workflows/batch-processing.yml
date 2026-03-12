@@ -42,9 +42,21 @@ steps:
   - id: validate-tasks
     name: 校验任务数据
     type: llm
-    scene: workflow
+    scene: knowledge_extraction
+    capability: STRUCTURED_OUTPUT
+    outputSchema: |
+      {
+        "type": "object",
+        "properties": {
+          "validTasks": { "type": "array" },
+          "invalidTasks": { "type": "array" },
+          "totalValid": { "type": "number" },
+          "totalInvalid": { "type": "number" }
+        },
+        "required": ["validTasks", "invalidTasks", "totalValid", "totalInvalid"]
+      }
     prompt: |
-      请校验以下待处理任务列表的数据完整性：
+      请校验以下待处理任务列表的数据完整性，并严格输出 JSON 结果：
 
       ${steps.fetch-task-list.output.result}
 
@@ -52,14 +64,6 @@ steps:
       1. 每条任务必须包含 id、type、payload 字段
       2. payload 不能为空
       3. type 必须是已知类型（data-sync / notification / cleanup / transform）
-
-      输出 JSON 格式：
-      {
-        "validTasks": [有效任务列表],
-        "invalidTasks": [无效任务及原因],
-        "totalValid": 数量,
-        "totalInvalid": 数量
-      }
     dependsOn:
       - fetch-task-list
 
@@ -93,11 +97,21 @@ steps:
           - id: execute-general-task
             name: 执行通用任务
             type: llm
-            scene: workflow
+            scene: task_planning
+            capability: STRUCTURED_OUTPUT
+            outputSchema: |
+              {
+                "type": "object",
+                "properties": {
+                  "taskId": { "type": "string" },
+                  "action": { "type": "string" },
+                  "success": { "type": "boolean" },
+                  "message": { "type": "string" }
+                },
+                "required": ["taskId", "action", "success", "message"]
+              }
             prompt: |
-              请根据以下任务信息决定执行策略并输出执行结果：
-
-              ## 任务信息
+              请根据以下任务信息决定执行策略并输出结果：
               - 任务 ID：${currentTask.id}
               - 任务类型：${currentTask.type}
               - 任务载荷：${currentTask.payload}
@@ -107,16 +121,6 @@ steps:
               - notification：发送通知
               - cleanup：清理过期数据
               - transform：数据转换
-
-              如果是试运行模式，只输出将要执行的操作，不实际执行。
-
-              输出 JSON 格式：
-              {
-                "taskId": "任务ID",
-                "action": "执行的操作描述",
-                "success": true/false,
-                "message": "执行结果说明"
-              }
       - id: update-task-status
         name: 更新任务状态
         type: tool
@@ -146,7 +150,8 @@ steps:
   - id: generate-summary
     name: 生成处理汇总报告
     type: llm
-    scene: workflow
+    scene: document_summary
+    capability: CHAT
     prompt: |
       请根据以下批量处理结果生成汇总报告：
 
@@ -164,10 +169,10 @@ steps:
       试运行：${inputs.dryRun}
 
       请输出：
-      1. **处理概览**：总数、成功数、失败数、跳过数
-      2. **失败任务明细**：列出失败任务 ID 和失败原因
-      3. **性能统计**：平均处理时长、最慢任务
-      4. **建议**：基于结果的优化建议
+      1. 处理概览
+      2. 失败任务明细
+      3. 性能统计
+      4. 建议
     dependsOn:
       - collect-results
 
@@ -177,7 +182,7 @@ steps:
     toolId: builtin.interact.notify
     params:
       channel: webhook
-      title: "批量任务处理完成"
+      title: 批量任务处理完成
       body: "${steps.generate-summary.output.result}"
       recipient: ops-team
     dependsOn:

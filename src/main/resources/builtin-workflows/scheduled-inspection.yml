@@ -52,9 +52,21 @@ steps:
   - id: analyze-results
     name: 分析巡检结果
     type: llm
-    scene: workflow
+    scene: agent_reasoning
+    capability: STRUCTURED_OUTPUT
+    outputSchema: |
+      {
+        "type": "object",
+        "properties": {
+          "overallStatus": { "type": "string" },
+          "score": { "type": "number" },
+          "issues": { "type": "array" },
+          "recommendation": { "type": "string" }
+        },
+        "required": ["overallStatus", "score", "issues", "recommendation"]
+      }
     prompt: |
-      请分析以下系统巡检结果，判断系统健康状态：
+      请分析以下系统巡检结果，判断系统健康状态，并严格输出 JSON 结果：
 
       ## 系统健康检查
       ${steps.run-health-check.output.result}
@@ -67,14 +79,6 @@ steps:
 
       ## 告警阈值
       ${inputs.alertThreshold}%
-
-      请输出 JSON 格式：
-      {
-        "overallStatus": "healthy|degraded|critical",
-        "score": 0-100,
-        "issues": [{"component": "组件名", "severity": "low|medium|high|critical", "description": "问题描述"}],
-        "recommendation": "处理建议"
-      }
     dependsOn:
       - run-health-check
       - check-llm-status
@@ -98,7 +102,7 @@ steps:
             toolId: builtin.interact.notify
             params:
               channel: urgent
-              title: "系统紧急告警"
+              title: 系统紧急告警
               body: "${steps.analyze-results.output.result.recommendation}"
               recipient: ops-team
             errorStrategy:
@@ -132,7 +136,7 @@ steps:
             toolId: builtin.interact.notify
             params:
               channel: webhook
-              title: "系统降级告警"
+              title: 系统降级告警
               body: "${steps.analyze-results.output.result.recommendation}"
               recipient: ops-team
     else:

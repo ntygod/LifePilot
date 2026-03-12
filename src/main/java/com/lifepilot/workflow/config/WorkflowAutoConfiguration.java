@@ -1,6 +1,7 @@
 package com.lifepilot.workflow.config;
 
 import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.skill.activation.SkillActivator;
 import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
@@ -10,8 +11,11 @@ import com.lifepilot.workflow.engine.WakeupScheduler;
 import com.lifepilot.workflow.engine.WorkflowCommandService;
 import com.lifepilot.workflow.engine.WorkflowEngine;
 import com.lifepilot.workflow.engine.WorkflowEventRecorder;
+import com.lifepilot.workflow.engine.WorkflowRealtimeEventHub;
 import com.lifepilot.workflow.engine.WorkflowRunner;
 import com.lifepilot.workflow.expression.ExpressionEngine;
+import com.lifepilot.workflow.model.Result;
+import com.lifepilot.workflow.model.WorkflowDefinition;
 import com.lifepilot.workflow.parser.WorkflowYamlParser;
 import com.lifepilot.workflow.parser.WorkflowYamlPrinter;
 import com.lifepilot.workflow.registry.WorkflowRegistry;
@@ -20,36 +24,30 @@ import com.lifepilot.workflow.trigger.WorkflowTriggerManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.core.io.Resource;
-import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
-
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.time.Duration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.event.EventListener;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Duration;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
 /**
- * 工作流引擎 Spring Boot 自动配置。
- *
- * <p>通过 {@code lifepilot.workflow.enabled=true}（默认）激活，
- * 注册工作流引擎全部 Bean：解析器、表达式引擎、持久化仓储、步骤执行器、
- * 注册中心和核心引擎。
- *
- * <p>依赖已有模块：SkillRegistry、SkillActivator、DynamicToolRegistry、
- * LlmRouter、JdbcTemplate。
- *
- * @author zsg
- * @since 2026-02-26
+ * Workflow engine auto-configuration.
  */
 @AutoConfiguration
 @EnableConfigurationProperties(WorkflowConfigProperties.class)
@@ -80,8 +78,9 @@ public class WorkflowAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public WorkflowRepository workflowRepository(JdbcTemplate jdbcTemplate,
-                                                   WorkflowYamlParser yamlParser) {
-        return new WorkflowRepository(jdbcTemplate, yamlParser);
+                                                 WorkflowYamlParser yamlParser,
+                                                 WorkflowRealtimeEventHub realtimeEventHub) {
+        return new WorkflowRepository(jdbcTemplate, yamlParser, realtimeEventHub);
     }
 
     @Bean
@@ -92,19 +91,26 @@ public class WorkflowAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    public WorkflowRealtimeEventHub workflowRealtimeEventHub() {
+        return new WorkflowRealtimeEventHub();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     public WorkflowEventRecorder workflowEventRecorder(JdbcTemplate jdbcTemplate,
-                                                        WorkflowConfigProperties config) {
-        return new WorkflowEventRecorder(jdbcTemplate, config);
+                                                       WorkflowConfigProperties config,
+                                                       WorkflowRealtimeEventHub realtimeEventHub) {
+        return new WorkflowEventRecorder(jdbcTemplate, config, realtimeEventHub);
     }
 
     @Bean
     @ConditionalOnMissingBean
     public WorkflowRegistry workflowRegistry(WorkflowYamlParser parser,
-                                              WorkflowConfigProperties config,
-                                              TaskScheduler workflowTaskScheduler,
-                                              DagScheduler dagScheduler,
-                                              DynamicToolRegistry toolRegistry,
-                                              SkillRegistry skillRegistry) {
+                                             WorkflowConfigProperties config,
+                                             TaskScheduler workflowTaskScheduler,
+                                             DagScheduler dagScheduler,
+                                             DynamicToolRegistry toolRegistry,
+                                             SkillRegistry skillRegistry) {
         var registry = new WorkflowRegistry(parser);
         registry.setConfigProperties(config);
         registry.setTaskScheduler(workflowTaskScheduler);
@@ -118,22 +124,23 @@ public class WorkflowAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public StepExecutor workflowStepExecutor(SkillRegistry skillRegistry,
-                                              SkillActivator skillActivator,
-                                              DynamicToolRegistry toolRegistry,
-                                              LlmRouter llmRouter,
-                                              WorkflowConfigProperties config) {
-        return new StepExecutor(skillRegistry, skillActivator, toolRegistry, llmRouter, config);
+                                             SkillActivator skillActivator,
+                                             DynamicToolRegistry toolRegistry,
+                                             LlmRouter llmRouter,
+                                             MultimodalRouter multimodalRouter,
+                                             WorkflowConfigProperties config) {
+        return new StepExecutor(skillRegistry, skillActivator, toolRegistry, llmRouter, multimodalRouter, config);
     }
 
     @Bean
     @ConditionalOnMissingBean
     public WorkflowEngine workflowEngine(WorkflowRegistry registry,
-                                          StepExecutor stepExecutor,
-                                          ExpressionEngine expressionEngine,
-                                          WorkflowRepository repository,
-                                          WorkflowConfigProperties config,
-                                          DagScheduler dagScheduler,
-                                          WorkflowEventRecorder eventRecorder) {
+                                         StepExecutor stepExecutor,
+                                         ExpressionEngine expressionEngine,
+                                         WorkflowRepository repository,
+                                         WorkflowConfigProperties config,
+                                         DagScheduler dagScheduler,
+                                         WorkflowEventRecorder eventRecorder) {
         log.info("工作流执行引擎初始化完成");
         return new WorkflowEngine(registry, stepExecutor, expressionEngine, repository,
                 config, dagScheduler, eventRecorder);
@@ -159,128 +166,124 @@ public class WorkflowAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public WorkflowCommandService workflowCommandService(WorkflowRegistry registry,
-                                                          WorkflowRepository repository,
-                                                          WorkflowRunner runner,
-                                                          WorkflowEventRecorder eventRecorder) {
+                                                         WorkflowRepository repository,
+                                                         WorkflowRunner runner,
+                                                         WorkflowEventRecorder eventRecorder) {
         return new WorkflowCommandService(registry, repository, runner, eventRecorder);
     }
 
     @Bean
     @ConditionalOnMissingBean
     public WakeupScheduler wakeupScheduler(WorkflowRepository repository,
-                                            WorkflowRunner runner,
-                                            WorkflowEventRecorder eventRecorder,
-                                            WorkflowEngine engine) {
+                                           WorkflowRunner runner,
+                                           WorkflowEventRecorder eventRecorder,
+                                           WorkflowEngine engine) {
         return new WakeupScheduler(repository, runner, eventRecorder, engine);
     }
 
     @Bean
     @ConditionalOnMissingBean
     public WorkflowTriggerManager workflowTriggerManager(WorkflowCommandService commandService,
-                                                          WorkflowRegistry registry,
-                                                          WorkflowRepository repository,
-                                                          TaskScheduler workflowTaskScheduler) {
+                                                         WorkflowRegistry registry,
+                                                         WorkflowRepository repository,
+                                                         TaskScheduler workflowTaskScheduler) {
         return new WorkflowTriggerManager(commandService, registry, repository, workflowTaskScheduler);
     }
 
-    /**
-     * 应用启动完成后依次执行：内置工作流释放、崩溃恢复、触发器注册、YAML 热加载和唤醒调度。
-     */
     @EventListener(ApplicationReadyEvent.class)
     public void onApplicationReady(ApplicationReadyEvent event) {
         var ctx = event.getApplicationContext();
         var config = ctx.getBean(WorkflowConfigProperties.class);
+        var parser = ctx.getBean(WorkflowYamlParser.class);
         var registry = ctx.getBean(WorkflowRegistry.class);
 
-        // 延迟注入 triggerManager 到 registry，避免循环依赖
         registry.setTriggerManager(ctx.getBean(WorkflowTriggerManager.class));
 
-        // ① 释放内置工作流到用户目录（在热加载和崩溃恢复之前）
-        seedBuiltinWorkflows(config);
-
-        // ② YAML 热加载（首次全量扫描同步完成，register() 中 startupPhase=true 跳过触发器注册）
         registry.startScheduledScan();
-
-        // ③ 触发器统一注册（一次性，避免与 register() 中的注册重复）
+        loadBuiltinWorkflows(parser, registry, localWorkflowStems(config));
         ctx.getBean(WorkflowTriggerManager.class).registerAllTriggers();
-
-        // ④ 切换到热加载模式（此后 register() 将正常注册触发器）
         registry.setStartupPhase(false);
-
-        // ⑤ 崩溃恢复（同步执行，触发器已就绪，不会与 cron 竞态）
         ctx.getBean(WorkflowEngine.class).recoverInterruptedInstances();
 
-        // ⑥ 启动唤醒调度器定时扫描
         var wakeupScheduler = ctx.getBean(WakeupScheduler.class);
         var taskScheduler = ctx.getBean("workflowTaskScheduler", TaskScheduler.class);
         int wakeupInterval = config.getWakeup().getScanIntervalSeconds();
         taskScheduler.scheduleAtFixedRate(wakeupScheduler::scan, Duration.ofSeconds(wakeupInterval));
         log.info("唤醒调度器已启动: interval={}s", wakeupInterval);
-
-        log.info("工作流启动序列完成: YAML热加载 → 触发器注册 → 崩溃恢复 → 唤醒调度");
+        log.info("工作流启动序列完成: 本地热加载 -> 内置补齐 -> 触发器注册 -> 崩溃恢复 -> 唤醒调度");
     }
 
-    /**
-     * 将 classpath 中的内置工作流模板释放到用户工作流目录。
-     *
-     * <p>仅当用户目录中不存在同名文件时才复制，不覆盖用户已修改的版本。
-     * 释放后由已有的热加载扫描机制自动发现并注册。</p>
-     */
-    private void seedBuiltinWorkflows(WorkflowConfigProperties config) {
-        if (!config.isSeedBuiltinWorkflows()) {
-            log.debug("内置工作流释放已禁用");
-            return;
-        }
-
-        // 解析用户工作流目录路径（处理 ~ 前缀）
-        String dirPath = config.getDefinitionsDir();
-        if (dirPath.startsWith("~")) {
-            dirPath = System.getProperty("user.home") + dirPath.substring(1);
-        }
-        Path targetDir = Path.of(dirPath);
-
-        // 确保目录存在
-        try {
-            Files.createDirectories(targetDir);
-        } catch (IOException e) {
-            log.warn("创建工作流目录失败: path={}, error={}", targetDir, e.getMessage());
-            return;
-        }
-
+    private void loadBuiltinWorkflows(WorkflowYamlParser parser,
+                                      WorkflowRegistry registry,
+                                      Set<String> localWorkflowStems) {
         try {
             var resolver = new PathMatchingResourcePatternResolver();
             Resource[] resources = resolver.getResources("classpath:builtin-workflows/*.yml");
-            int seeded = 0;
+            int loaded = 0;
+            int skipped = 0;
 
             for (Resource resource : resources) {
+                String filename = resource.getFilename();
+                if (filename == null) {
+                    continue;
+                }
+                String fileStem = fileStem(filename);
+                if (localWorkflowStems.contains(fileStem)) {
+                    skipped++;
+                    log.info("内置工作流检测到本地同名文件，跳过程序包版本: file={}", filename);
+                    continue;
+                }
                 try {
-                    String filename = resource.getFilename();
-                    if (filename == null) {
-                        continue;
-                    }
-                    Path targetFile = targetDir.resolve(filename);
-
-                    if (Files.exists(targetFile)) {
-                        log.debug("内置工作流已存在，跳过: file={}", filename);
-                        continue;
-                    }
-
-                    try (var in = resource.getInputStream()) {
-                        Files.copy(in, targetFile);
-                        seeded++;
-                        log.info("内置工作流已释放: file={}", filename);
+                    String yaml = resource.getContentAsString(StandardCharsets.UTF_8);
+                    Result<WorkflowDefinition, List<String>> result = parser.parse(yaml);
+                    switch (result) {
+                        case Result.Ok<WorkflowDefinition, List<String>> ok -> {
+                            if (registry.find(ok.value().id()).isPresent()) {
+                                skipped++;
+                                log.info("内置工作流检测到本地已加载同 ID 定义，跳过程序包版本: file={}, id={}",
+                                        filename, ok.value().id());
+                                continue;
+                            }
+                            if (registry.registerBuiltin(ok.value(), filename)) {
+                                loaded++;
+                                log.info("内置工作流已加载: file={}, id={}", filename, ok.value().id());
+                            }
+                        }
+                        case Result.Err<WorkflowDefinition, List<String>> err ->
+                                log.warn("内置工作流解析失败，已跳过: file={}, errors={}", filename, err.error());
                     }
                 } catch (IOException e) {
-                    log.warn("内置工作流释放失败: file={}, error={}",
-                            resource.getFilename(), e.getMessage());
+                    log.warn("读取内置工作流失败: file={}, error={}", filename, e.getMessage());
                 }
             }
 
-            if (seeded > 0) {
-                log.info("内置工作流释放完成: 新增={}", seeded);
-            }
+            log.info("内置工作流加载完成: loaded={}, skipped={}", loaded, skipped);
         } catch (IOException e) {
-            log.debug("内置工作流资源目录不存在或为空: error={}", e.getMessage());
+            log.debug("未找到内置工作流资源目录: error={}", e.getMessage());
         }
+    }
+
+    private Set<String> localWorkflowStems(WorkflowConfigProperties config) {
+        Path definitionsDir = WorkflowRegistry.resolveDefinitionsDir(config.getDefinitionsDir());
+        if (!Files.isDirectory(definitionsDir)) {
+            return Set.of();
+        }
+        Set<String> stems = new HashSet<>();
+        try (var files = Files.list(definitionsDir)) {
+            files.filter(Files::isRegularFile)
+                    .map(path -> path.getFileName().toString())
+                    .filter(name -> name.endsWith(".yml") || name.endsWith(".yaml"))
+                    .map(this::fileStem)
+                    .forEach(stems::add);
+        } catch (IOException e) {
+            log.warn("读取本地工作流目录失败，将继续加载内置工作流: dir={}, error={}", definitionsDir, e.getMessage());
+            return Set.of();
+        }
+        return Set.copyOf(stems);
+    }
+
+    private String fileStem(String fileName) {
+        int dotIndex = fileName.lastIndexOf('.');
+        return dotIndex > 0 ? fileName.substring(0, dotIndex) : fileName;
     }
 }

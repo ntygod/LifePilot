@@ -5,6 +5,7 @@ import java.util.Map;
 
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
+import com.lifepilot.llm.config.ProviderCapability;
 import org.springframework.lang.Nullable;
 
 /**
@@ -95,6 +96,17 @@ public sealed interface WorkflowStep permits
                     @Nullable ErrorStrategy errorStrategy) implements WorkflowStep {}
 
     /**
+     * LLM/多模态节点引用的媒体输入。
+     *
+     * @param source   媒体来源，可为文件路径、data URL 或 Base64 字符串
+     * @param mimeType 可选 MIME 类型，Base64 场景建议显式填写
+     * @param fileName 可选文件名
+     */
+    record MediaRef(String source,
+                    @Nullable String mimeType,
+                    @Nullable String fileName) {}
+
+    /**
      * LLM 步骤，调用 LlmRouter 生成内容。
      *
      * @param id             步骤唯一标识
@@ -105,8 +117,12 @@ public sealed interface WorkflowStep permits
      * @param dependsOn      DAG 依赖的前置步骤 ID 列表
      * @param errorStrategy  错误处理策略
      */
-    record LlmStep(String id, String name, String scene, String promptTemplate,
+    record LlmStep(String id, String name, String scene, ProviderCapability capability,
+                   String promptTemplate,
                    @Nullable String outputSchema,
+                   @Nullable String modelName,
+                   @Nullable String preferredProviderId,
+                   List<MediaRef> media,
                    List<String> dependsOn,
                    @Nullable ErrorStrategy errorStrategy) implements WorkflowStep {}
 

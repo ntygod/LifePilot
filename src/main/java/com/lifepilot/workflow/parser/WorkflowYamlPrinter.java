@@ -170,10 +170,32 @@ public class WorkflowYamlPrinter {
             case LlmStep s -> {
                 map.put("type", "llm");
                 map.put("scene", s.scene());
+                map.put("capability", s.capability().name());
                 // record 字段 promptTemplate 映射为 YAML key "prompt"
                 map.put("prompt", s.promptTemplate());
                 if (s.outputSchema() != null && !s.outputSchema().isEmpty()) {
                     map.put("outputSchema", s.outputSchema());
+                }
+                if (s.modelName() != null && !s.modelName().isEmpty()) {
+                    map.put("modelName", s.modelName());
+                }
+                if (s.preferredProviderId() != null && !s.preferredProviderId().isEmpty()) {
+                    map.put("preferredProviderId", s.preferredProviderId());
+                }
+                if (s.media() != null && !s.media().isEmpty()) {
+                    List<Map<String, Object>> media = new ArrayList<>();
+                    for (var mediaRef : s.media()) {
+                        Map<String, Object> mediaMap = new LinkedHashMap<>();
+                        mediaMap.put("source", mediaRef.source());
+                        if (mediaRef.mimeType() != null && !mediaRef.mimeType().isEmpty()) {
+                            mediaMap.put("mimeType", mediaRef.mimeType());
+                        }
+                        if (mediaRef.fileName() != null && !mediaRef.fileName().isEmpty()) {
+                            mediaMap.put("fileName", mediaRef.fileName());
+                        }
+                        media.add(mediaMap);
+                    }
+                    map.put("media", media);
                 }
             }
             case ConditionStep s -> {

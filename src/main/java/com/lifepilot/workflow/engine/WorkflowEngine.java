@@ -387,87 +387,92 @@ public class WorkflowEngine {
             } else {
                 // 多步 Virtual Thread 并发执行
                 Semaphore semaphore = new Semaphore(config.getMaxParallelBranches());
-                List<CompletableFuture<StepResult>> futures = new ArrayList<>();
+                ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+                CompletionService<StepResult> completionService = new ExecutorCompletionService<>(executor);
+                List<Future<StepResult>> futures = new ArrayList<>();
 
-                for (WorkflowStep step : readySteps) {
-                    eventRecorder.record(WorkflowEventType.STEP_STARTED, instance.id(),
-                            instance.workflowId(), step.id(),
-                            Map.of("stepType", extractStepType(step)));
+                try {
+                    for (WorkflowStep step : readySteps) {
+                        eventRecorder.record(WorkflowEventType.STEP_STARTED, instance.id(),
+                                instance.workflowId(), step.id(),
+                                Map.of("stepType", extractStepType(step)));
 
-                    final WorkflowInstance currentInstance = instance;
-                    futures.add(CompletableFuture.supplyAsync(() -> {
+                        final WorkflowInstance currentInstance = instance;
+                        futures.add(completionService.submit(() -> {
+                            try {
+                                semaphore.acquire();
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                                return new StepResult(step.id(), null,
+                                        new WorkflowStepException(step.id(), "并发执行被中断"));
+                            }
+                            try {
+                                WorkflowInstance result = executeStepWithErrorHandling(
+                                        currentInstance, step, nestingDepth);
+                                return new StepResult(step.id(), result, null);
+                            } catch (Exception e) {
+                                return new StepResult(step.id(), null, e);
+                            } finally {
+                                semaphore.release();
+                            }
+                        }));
+                    }
+
+                    List<StepResult> results = new ArrayList<>(readySteps.size());
+                    WorkflowInstance nonRunningInstance = null;
+                    List<String> failedMessages = new ArrayList<>();
+
+                    for (int i = 0; i < readySteps.size(); i++) {
+                        StepResult result;
                         try {
-                            semaphore.acquire();
+                            result = completionService.take().get();
                         } catch (InterruptedException e) {
                             Thread.currentThread().interrupt();
-                            return new StepResult(step.id(), null,
-                                    new WorkflowStepException(step.id(), "并发执行被中断"));
+                            cancelPendingFutures(futures);
+                            return failWorkflow(instance, "并发步骤执行被中断");
+                        } catch (ExecutionException e) {
+                            Throwable cause = e.getCause();
+                            Exception exception = cause instanceof Exception ex
+                                    ? ex
+                                    : new RuntimeException(cause);
+                            result = new StepResult("unknown", null, exception);
                         }
-                        try {
-                            WorkflowInstance result = executeStepWithErrorHandling(
-                                    currentInstance, step, nestingDepth);
-                            return new StepResult(step.id(), result, null);
-                        } catch (Exception e) {
-                            return new StepResult(step.id(), null, e);
-                        } finally {
-                            semaphore.release();
+
+                        results.add(result);
+
+                        if (isFailedStepResult(result)) {
+                            String failedMessage = buildFailedMessage(result);
+                            log.error("并发步骤执行失败: {}", failedMessage);
+                            failedMessages.add(failedMessage);
+                            cancelPendingFutures(futures);
+                            String mergedReason = "并发步骤执行失败: "
+                                    + String.join("; ", failedMessages);
+                            return failWorkflow(instance, mergedReason);
                         }
-                    }, VIRTUAL_THREAD_EXECUTOR));
-                }
 
-                // 等待所有并发步骤完成
-                CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).join();
-
-                // 收集所有结果，统一聚合判断
-                List<StepResult> results = futures.stream()
-                        .map(CompletableFuture::join)
-                        .toList();
-
-                // 收集失败信息（error 不为空 或 instance 状态为 FAILED）
-                List<String> failedMessages = new ArrayList<>();
-                WorkflowInstance nonRunningInstance = null;
-
-                for (StepResult result : results) {
-                    if (result.error() != null) {
-                        log.error("并发步骤执行失败: stepId={}, error={}",
-                                result.stepId(), result.error().getMessage());
-                        failedMessages.add("stepId=" + result.stepId()
-                                + ": " + result.error().getMessage());
-                    } else if (result.instance() != null
-                            && result.instance().state() == WorkflowState.FAILED) {
-                        log.error("并发步骤执行失败: stepId={}, state=FAILED",
-                                result.stepId());
-                        String reason = result.instance().failureReason() != null
-                                ? result.instance().failureReason()
-                                : "未知原因";
-                        failedMessages.add("stepId=" + result.stepId()
-                                + ": " + reason);
-                    } else if (result.instance() != null
-                            && result.instance().state() != WorkflowState.RUNNING
-                            && nonRunningInstance == null) {
-                        // 非 RUNNING 且非 FAILED 状态（PAUSED/WAITING）
-                        nonRunningInstance = result.instance();
+                        if (result.instance() != null
+                                && result.instance().state() != WorkflowState.RUNNING
+                                && nonRunningInstance == null) {
+                            // 非 RUNNING 且非 FAILED 状态（PAUSED/WAITING）
+                            nonRunningInstance = result.instance();
+                        }
                     }
-                }
 
-                // 存在失败步骤 → 只调用一次 failWorkflow，合并错误信息
-                if (!failedMessages.isEmpty()) {
-                    String mergedReason = "并发步骤执行失败: "
-                            + String.join("; ", failedMessages);
-                    return failWorkflow(instance, mergedReason);
-                }
+                    // 存在非 RUNNING 状态（PAUSED/WAITING）→ 返回该实例
+                    if (nonRunningInstance != null) {
+                        return nonRunningInstance;
+                    }
 
-                // 存在非 RUNNING 状态（PAUSED/WAITING）→ 返回该实例
-                if (nonRunningInstance != null) {
-                    return nonRunningInstance;
+                    // 所有步骤都成功 → 将所有 stepId 加入 completedStepIds
+                    for (StepResult result : results) {
+                        completedStepIds.add(result.stepId());
+                    }
+                    // 合并最新 context（并发步骤可能修改了 context）
+                    instance = instance.toBuilder().updatedAt(Instant.now()).build();
+                } finally {
+                    cancelPendingFutures(futures);
+                    executor.shutdownNow();
                 }
-
-                // 所有步骤都成功 → 将所有 stepId 加入 completedStepIds
-                for (StepResult result : results) {
-                    completedStepIds.add(result.stepId());
-                }
-                // 合并最新 context（并发步骤可能修改了 context）
-                instance = instance.toBuilder().updatedAt(Instant.now()).build();
             }
 
             // Checkpoint：更新 completedStepIds 并持久化
@@ -488,6 +493,34 @@ public class WorkflowEngine {
     private record StepResult(String stepId,
                               WorkflowInstance instance,
                               Exception error) {}
+
+    private boolean isFailedStepResult(StepResult result) {
+        return result.error() != null
+                || (result.instance() != null && result.instance().state() == WorkflowState.FAILED);
+    }
+
+    private String buildFailedMessage(StepResult result) {
+        if (result.error() != null) {
+            return "stepId=" + result.stepId() + ": " + result.error().getMessage();
+        }
+        String reason = result.instance() != null && result.instance().failureReason() != null
+                ? result.instance().failureReason()
+                : "未知原因";
+        return "stepId=" + result.stepId() + ": " + reason;
+    }
+
+    private void cancelPendingFutures(List<? extends Future<?>> futures) {
+        for (Future<?> future : futures) {
+            if (!future.isDone()) {
+                future.cancel(true);
+            }
+        }
+    }
+
+    private boolean isStepCancellation(Exception e) {
+        return Thread.currentThread().isInterrupted()
+                || "步骤执行被中断".equals(e.getMessage());
+    }
 
     /**
      * 执行单个步骤，包含错误处理逻辑。
@@ -524,19 +557,22 @@ public class WorkflowEngine {
             // 步骤级超时保护：包装在 CompletableFuture 中，超时后抛出 TimeoutException
             Map<String, Object> output;
             final WorkflowInstance currentInstance = instance;
+            CompletableFuture<Map<String, Object>> stepFuture = CompletableFuture.supplyAsync(
+                    () -> stepExecutor.execute(step, currentInstance.context(), expressionEngine),
+                    VIRTUAL_THREAD_EXECUTOR
+            );
             try {
-                output = CompletableFuture.supplyAsync(
-                        () -> stepExecutor.execute(step, currentInstance.context(), expressionEngine),
-                        VIRTUAL_THREAD_EXECUTOR
-                ).orTimeout(config.getDefaultStepTimeoutSeconds(), TimeUnit.SECONDS)
-                 .join();
-            } catch (CompletionException ce) {
-                // 解包 CompletionException，提取原始异常
-                Throwable cause = ce.getCause();
-                if (cause instanceof TimeoutException) {
-                    throw new WorkflowStepException(step.id(),
-                            "步骤执行超时: timeout=" + config.getDefaultStepTimeoutSeconds() + "s");
-                }
+                output = stepFuture.get(config.getDefaultStepTimeoutSeconds(), TimeUnit.SECONDS);
+            } catch (TimeoutException e) {
+                stepFuture.cancel(true);
+                throw new WorkflowStepException(step.id(),
+                        "步骤执行超时: timeout=" + config.getDefaultStepTimeoutSeconds() + "s", e);
+            } catch (InterruptedException e) {
+                stepFuture.cancel(true);
+                Thread.currentThread().interrupt();
+                throw new WorkflowStepException(step.id(), "步骤执行被中断", e);
+            } catch (ExecutionException e) {
+                Throwable cause = e.getCause();
                 throw cause instanceof Exception ex ? ex : new RuntimeException(cause);
             }
 
@@ -641,6 +677,13 @@ public class WorkflowEngine {
             return instance.toBuilder().updatedAt(Instant.now()).build();
 
         } catch (Exception e) {
+            if (isStepCancellation(e)) {
+                log.info("步骤执行已取消: instanceId={}, stepId={}, stepType={}",
+                        instance.id(), step.id(), stepType);
+                throw e instanceof WorkflowStepException wse ? wse
+                        : new WorkflowStepException(step.id(), e.getMessage(), e);
+            }
+
             long durationMs = Duration.between(stepStart, Instant.now()).toMillis();
             log.error("步骤执行失败: instanceId={}, stepId={}, stepType={}, 耗时={}ms, error={}",
                     instance.id(), step.id(), stepType, durationMs, e.getMessage());
@@ -671,6 +714,10 @@ public class WorkflowEngine {
             try {
                 return executeStepCore(instance, step, stepType, attempt, nestingDepth);
             } catch (Exception e) {
+                if (isStepCancellation(e)) {
+                    throw e instanceof WorkflowStepException wse ? wse
+                            : new WorkflowStepException(step.id(), e.getMessage(), e);
+                }
                 log.warn("步骤执行失败（重试 {}/{}）: stepId={}, error={}",
                         attempt, maxAttempts, step.id(), e.getMessage());
                 if (attempt < maxAttempts) {
@@ -693,6 +740,10 @@ public class WorkflowEngine {
         try {
             return executeStepCore(instance, step, stepType, 1, nestingDepth);
         } catch (Exception e) {
+            if (isStepCancellation(e)) {
+                throw e instanceof WorkflowStepException wse ? wse
+                        : new WorkflowStepException(step.id(), e.getMessage(), e);
+            }
             log.warn("步骤执行失败，Skip 跳过: stepId={}, reason={}", step.id(), skip.reason());
             insertStepLog(instance.id(), step.id(), stepType, StepState.SKIPPED,
                     1, null, null, "Skip: " + skip.reason() + " | " + e.getMessage(),
@@ -710,6 +761,10 @@ public class WorkflowEngine {
         try {
             return executeStepCore(instance, step, stepType, 1, nestingDepth);
         } catch (Exception e) {
+            if (isStepCancellation(e)) {
+                throw e instanceof WorkflowStepException wse ? wse
+                        : new WorkflowStepException(step.id(), e.getMessage(), e);
+            }
             log.error("步骤执行失败，Fail 终止工作流: stepId={}, error={}", step.id(), e.getMessage());
             return failWorkflow(instance, "步骤执行失败: stepId=" + step.id() + ", error=" + e.getMessage());
         }
@@ -722,6 +777,10 @@ public class WorkflowEngine {
         try {
             return executeStepCore(instance, step, stepType, 1, nestingDepth);
         } catch (Exception e) {
+            if (isStepCancellation(e)) {
+                throw e instanceof WorkflowStepException wse ? wse
+                        : new WorkflowStepException(step.id(), e.getMessage(), e);
+            }
             log.warn("步骤执行失败，执行补偿步骤: stepId={}, error={}", step.id(), e.getMessage());
             try {
                 WorkflowStep compStep = compensate.compensationStep();

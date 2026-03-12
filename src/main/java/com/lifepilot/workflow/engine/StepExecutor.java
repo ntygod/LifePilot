@@ -1,6 +1,12 @@
 package com.lifepilot.workflow.engine;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.llm.config.ProviderCapability;
+import com.lifepilot.llm.multimodal.MediaContent;
+import com.lifepilot.llm.multimodal.MultimodalRequest;
+import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.skill.activation.SkillActivator;
 import com.lifepilot.skill.model.SkillActivation;
 import com.lifepilot.skill.registry.SkillRegistry;
@@ -17,6 +23,11 @@ import com.lifepilot.workflow.model.WorkflowStep.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -42,11 +53,13 @@ import java.util.concurrent.ConcurrentHashMap;
 public class StepExecutor {
 
     private static final Logger log = LoggerFactory.getLogger(StepExecutor.class);
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final SkillRegistry skillRegistry;
     private final SkillActivator skillActivator;
     private final DynamicToolRegistry toolRegistry;
     private final LlmRouter llmRouter;
+    private final MultimodalRouter multimodalRouter;
     private final WorkflowConfigProperties config;
 
     /**
@@ -62,11 +75,13 @@ public class StepExecutor {
                         SkillActivator skillActivator,
                         DynamicToolRegistry toolRegistry,
                         LlmRouter llmRouter,
+                        MultimodalRouter multimodalRouter,
                         WorkflowConfigProperties config) {
         this.skillRegistry = skillRegistry;
         this.skillActivator = skillActivator;
         this.toolRegistry = toolRegistry;
         this.llmRouter = llmRouter;
+        this.multimodalRouter = multimodalRouter;
         this.config = config;
     }
 
@@ -158,11 +173,18 @@ public class StepExecutor {
         output.put("data", toolResult.data());
         if (toolResult.error() != null) {
             output.put("error", toolResult.error());
-            log.warn("ToolStep 执行返回错误: stepId={}, toolId={}, error={}",
-                    step.id(), step.toolId(), toolResult.error());
-        } else {
-            log.info("ToolStep 执行成功: stepId={}, toolId={}, ok={}", step.id(), step.toolId(), toolResult.ok());
         }
+
+        if (!toolResult.ok()) {
+            String errorMessage = toolResult.error() != null && !toolResult.error().isBlank()
+                    ? toolResult.error()
+                    : "工具执行失败: toolId=" + step.toolId();
+            log.warn("ToolStep 执行失败: stepId={}, toolId={}, error={}",
+                    step.id(), step.toolId(), errorMessage);
+            throw new WorkflowStepException(step.id(), errorMessage);
+        }
+
+        log.info("ToolStep 执行成功: stepId={}, toolId={}, ok={}", step.id(), step.toolId(), true);
         return Map.copyOf(output);
     }
 
@@ -183,14 +205,35 @@ public class StepExecutor {
                 : null;
 
         // 3. 调用 LLM
-        var llmResponse = llmRouter.call(step.scene(), resolvedPrompt, resolvedSchema);
+        List<MediaContent> resolvedMedia = resolveMedia(step, context, expressionEngine);
+        Duration timeout = Duration.ofSeconds(config.getDefaultStepTimeoutSeconds());
+        var llmResponse = resolvedMedia.isEmpty()
+                ? llmRouter.call(
+                    step.scene(),
+                    step.capability(),
+                    resolvedPrompt,
+                    resolvedSchema,
+                    step.modelName(),
+                    step.preferredProviderId(),
+                    timeout
+                )
+                : multimodalRouter.call(new MultimodalRequest(
+                    step.scene(),
+                    resolvedPrompt,
+                    resolvedMedia,
+                    resolvedSchema,
+                    step.preferredProviderId(),
+                    step.modelName()
+                ), timeout);
 
         log.info("LlmStep 调用完成: stepId={}, scene={}, provider={}, model={}, 输入tokens={}, 输出tokens={}, 耗时={}ms",
                 step.id(), step.scene(), llmResponse.providerId(), llmResponse.modelName(),
                 llmResponse.inputTokens(), llmResponse.outputTokens(), llmResponse.latencyMs());
 
         // 4. 转换为输出 Map
+        Object result = parseLlmResult(step, llmResponse.content());
         return Map.of(
+                "result", result,
                 "content", llmResponse.content(),
                 "providerId", llmResponse.providerId(),
                 "modelName", llmResponse.modelName(),
@@ -408,6 +451,196 @@ public class StepExecutor {
     /**
      * 将 Map&lt;String, String&gt; 转换为 Map&lt;String, Object&gt;。
      */
+    private Object parseLlmResult(LlmStep step, String content) {
+        if (step.outputSchema() == null || step.outputSchema().isBlank()) {
+            return content;
+        }
+        try {
+            return parseStructuredJson(content);
+        } catch (Exception e) {
+            String normalized = extractStructuredJsonCandidate(content);
+            if (!normalized.equals(content)) {
+                try {
+                    return parseStructuredJson(normalized);
+                } catch (Exception ignored) {
+                    // 继续抛出更清晰的主异常。
+                }
+            }
+            throw new WorkflowStepException(
+                    step.id(),
+                    "LLM 输出不是有效 JSON，无法满足 outputSchema: " + e.getMessage(),
+                    e
+            );
+        }
+    }
+
+    private Object parseStructuredJson(String content) throws Exception {
+        return OBJECT_MAPPER.readValue(content, new TypeReference<Object>() {});
+    }
+
+    private String extractStructuredJsonCandidate(String content) {
+        String trimmed = content == null ? "" : content.trim();
+        if (trimmed.isEmpty()) {
+            return trimmed;
+        }
+
+        if (trimmed.startsWith("```")) {
+            int firstLineBreak = trimmed.indexOf('\n');
+            if (firstLineBreak >= 0) {
+                int closingFence = trimmed.lastIndexOf("```");
+                if (closingFence > firstLineBreak) {
+                    return trimmed.substring(firstLineBreak + 1, closingFence).trim();
+                }
+            }
+        }
+
+        int objectStart = trimmed.indexOf('{');
+        int objectEnd = trimmed.lastIndexOf('}');
+        if (objectStart >= 0 && objectEnd > objectStart) {
+            return trimmed.substring(objectStart, objectEnd + 1).trim();
+        }
+
+        int arrayStart = trimmed.indexOf('[');
+        int arrayEnd = trimmed.lastIndexOf(']');
+        if (arrayStart >= 0 && arrayEnd > arrayStart) {
+            return trimmed.substring(arrayStart, arrayEnd + 1).trim();
+        }
+
+        return trimmed;
+    }
+
+    private List<MediaContent> resolveMedia(LlmStep step,
+                                            WorkflowContext context,
+                                            ExpressionEngine expressionEngine) {
+        if (step.media() == null || step.media().isEmpty()) {
+            return List.of();
+        }
+        if (step.capability() != ProviderCapability.VISION) {
+            throw new WorkflowStepException(step.id(), "配置了 media 的 LLM 步骤必须使用 VISION capability");
+        }
+
+        List<MediaContent> mediaContents = new ArrayList<>(step.media().size());
+        for (int index = 0; index < step.media().size(); index++) {
+            MediaRef mediaRef = step.media().get(index);
+            String source = expressionEngine.resolve(mediaRef.source(), context);
+            String mimeType = mediaRef.mimeType() != null
+                    ? expressionEngine.resolve(mediaRef.mimeType(), context)
+                    : null;
+            String fileName = mediaRef.fileName() != null
+                    ? expressionEngine.resolve(mediaRef.fileName(), context)
+                    : null;
+            mediaContents.add(toMediaContent(step.id(), index, source, mimeType, fileName));
+        }
+        return List.copyOf(mediaContents);
+    }
+
+    private MediaContent toMediaContent(String stepId,
+                                        int index,
+                                        String source,
+                                        String mimeType,
+                                        String fileName) {
+        if (source == null || source.isBlank()) {
+            throw new WorkflowStepException(stepId, "media[" + index + "] source 不能为空");
+        }
+
+        String trimmedSource = source.trim();
+        if (trimmedSource.startsWith("data:")) {
+            return parseDataUrl(stepId, index, trimmedSource, mimeType, fileName);
+        }
+
+        try {
+            Path candidatePath = Path.of(trimmedSource);
+            if (Files.exists(candidatePath)) {
+                try {
+                    byte[] data = Files.readAllBytes(candidatePath);
+                    String resolvedMimeType = firstNonBlank(
+                            mimeType,
+                            Files.probeContentType(candidatePath),
+                            "application/octet-stream"
+                    );
+                    String resolvedFileName = firstNonBlank(
+                            fileName,
+                            candidatePath.getFileName() != null ? candidatePath.getFileName().toString() : null,
+                            "media-" + index
+                    );
+                    return new MediaContent(
+                            stepId + "-media-" + index,
+                            resolvedMimeType,
+                            data,
+                            resolvedFileName,
+                            data.length,
+                            Map.of("source", "file", "path", candidatePath.toString())
+                    );
+                } catch (Exception e) {
+                    throw new WorkflowStepException(stepId, "读取 media[" + index + "] 文件失败: " + e.getMessage(), e);
+                }
+            }
+        } catch (Exception ignored) {
+            // 不是合法文件路径时，继续尝试按 Base64 解析。
+        }
+
+        try {
+            byte[] data = Base64.getDecoder().decode(trimmedSource);
+            return new MediaContent(
+                    stepId + "-media-" + index,
+                    firstNonBlank(mimeType, "application/octet-stream"),
+                    data,
+                    firstNonBlank(fileName, "media-" + index),
+                    data.length,
+                    Map.of("source", "base64")
+            );
+        } catch (IllegalArgumentException e) {
+            throw new WorkflowStepException(
+                    stepId,
+                    "media[" + index + "] 既不是可读取文件，也不是合法的 data URL / Base64",
+                    e
+            );
+        }
+    }
+
+    private MediaContent parseDataUrl(String stepId,
+                                      int index,
+                                      String dataUrl,
+                                      String mimeType,
+                                      String fileName) {
+        int commaIndex = dataUrl.indexOf(',');
+        if (commaIndex < 0) {
+            throw new WorkflowStepException(stepId, "media[" + index + "] data URL 格式无效");
+        }
+
+        String metadata = dataUrl.substring(5, commaIndex);
+        String payload = dataUrl.substring(commaIndex + 1);
+        boolean base64 = metadata.contains(";base64");
+        String inferredMimeType = metadata.isBlank()
+                ? "application/octet-stream"
+                : metadata.replace(";base64", "");
+
+        try {
+            byte[] data = base64
+                    ? Base64.getDecoder().decode(payload)
+                    : URLDecoder.decode(payload, StandardCharsets.UTF_8).getBytes(StandardCharsets.UTF_8);
+            return new MediaContent(
+                    stepId + "-media-" + index,
+                    firstNonBlank(mimeType, inferredMimeType, "application/octet-stream"),
+                    data,
+                    firstNonBlank(fileName, "media-" + index),
+                    data.length,
+                    Map.of("source", "data-url")
+            );
+        } catch (IllegalArgumentException e) {
+            throw new WorkflowStepException(stepId, "media[" + index + "] data URL Base64 解码失败", e);
+        }
+    }
+
+    private String firstNonBlank(String... candidates) {
+        for (String candidate : candidates) {
+            if (candidate != null && !candidate.isBlank()) {
+                return candidate;
+            }
+        }
+        return "";
+    }
+
     private Map<String, Object> toObjectMap(Map<String, String> stringMap) {
         if (stringMap == null || stringMap.isEmpty()) {
             return Map.of();

@@ -7,6 +7,7 @@ import com.lifepilot.workflow.model.WorkflowContext;
 import com.lifepilot.workflow.model.WorkflowDefinition;
 import com.lifepilot.workflow.model.WorkflowInstance;
 import com.lifepilot.workflow.model.WorkflowState;
+import com.lifepilot.workflow.engine.WorkflowRealtimeEventHub;
 import com.lifepilot.workflow.parser.WorkflowYamlParser;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -43,13 +44,17 @@ public class WorkflowRepository {
 
     private final JdbcTemplate jdbcTemplate;
     private final WorkflowYamlParser yamlParser;
+    private final WorkflowRealtimeEventHub realtimeEventHub;
     private final ObjectMapper objectMapper;
     private final RowMapper<WorkflowInstance> instanceRowMapper;
     private final RowMapper<StepLog> stepLogRowMapper;
 
-    public WorkflowRepository(JdbcTemplate jdbcTemplate, WorkflowYamlParser yamlParser) {
+    public WorkflowRepository(JdbcTemplate jdbcTemplate,
+                              WorkflowYamlParser yamlParser,
+                              WorkflowRealtimeEventHub realtimeEventHub) {
         this.jdbcTemplate = jdbcTemplate;
         this.yamlParser = yamlParser;
+        this.realtimeEventHub = realtimeEventHub;
         this.objectMapper = new ObjectMapper();
         this.instanceRowMapper = this::mapInstance;
         this.stepLogRowMapper = this::mapStepLog;
@@ -177,6 +182,7 @@ public class WorkflowRepository {
                 toText(instance.updatedAt()));
         log.info("工作流实例保存成功: id={}, workflowId={}, state={}",
                 instance.id(), instance.workflowId(), instance.state());
+        realtimeEventHub.publishExecution(instance);
     }
 
     /**
@@ -207,6 +213,7 @@ public class WorkflowRepository {
                 instance.id());
         log.debug("工作流实例更新: id={}, state={}, completedSteps={}",
                 instance.id(), instance.state(), instance.completedStepIds().size());
+        realtimeEventHub.publishExecution(instance);
     }
 
     /**
@@ -308,6 +315,7 @@ public class WorkflowRepository {
                 toText(stepLog.createdAt()));
         log.debug("步骤日志插入: instanceId={}, stepId={}, state={}, attempt={}",
                 stepLog.instanceId(), stepLog.stepId(), stepLog.state(), stepLog.attempt());
+        realtimeEventHub.publishStepLog(stepLog);
     }
 
     /**
