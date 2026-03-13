@@ -23,6 +23,8 @@ import lombok.Builder;
  * @param triggers    触发器列表
  * @param inputs      输入参数定义（参数名 → 参数定义）
  * @param steps       步骤列表（按执行顺序排列）
+ * @param variables   工作流级变量定义（变量名 → 默认值，支持 ${} 表达式引用 inputs）
+ * @param tags        工作流标签列表（用于分类筛选）
  * @param metadata    自定义元数据
  * @author zsg
  * @since 2026-02-26
@@ -37,6 +39,8 @@ public record WorkflowDefinition(
         List<WorkflowTrigger> triggers,
         Map<String, WorkflowInputParam> inputs,
         List<WorkflowStep> steps,
+        Map<String, Object> variables,
+        List<String> tags,
         Map<String, String> metadata
 ) {
 
@@ -50,6 +54,8 @@ public record WorkflowDefinition(
         triggers = triggers == null ? List.of() : List.copyOf(triggers);
         inputs = inputs == null ? Map.of() : Map.copyOf(inputs);
         steps = List.copyOf(steps);
+        variables = variables == null ? Map.of() : Map.copyOf(variables);
+        tags = tags == null ? List.of() : List.copyOf(tags);
         metadata = metadata == null ? Map.of() : Map.copyOf(metadata);
     }
 }
