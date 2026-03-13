@@ -182,8 +182,10 @@ public class WorkflowAutoConfiguration {
                                                          WorkflowEventRecorder eventRecorder,
                                                          ExpressionEngine expressionEngine,
                                                          WorkflowConfigProperties config,
-                                                         DryRunEngine dryRunEngine) {
-        return new WorkflowCommandService(registry, repository, runner, eventRecorder, expressionEngine, config, dryRunEngine);
+                                                         DryRunEngine dryRunEngine,
+                                                         WorkflowYamlParser parser,
+                                                         DagScheduler dagScheduler) {
+        return new WorkflowCommandService(registry, repository, runner, eventRecorder, expressionEngine, config, dryRunEngine, parser, dagScheduler);
     }
 
     @Bean

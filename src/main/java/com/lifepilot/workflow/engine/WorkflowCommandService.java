@@ -1,7 +1,9 @@
 package com.lifepilot.workflow.engine;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -13,10 +15,14 @@ import org.springframework.lang.Nullable;
 
 import com.lifepilot.workflow.config.WorkflowConfigProperties;
 import com.lifepilot.workflow.expression.ExpressionEngine;
+import com.lifepilot.workflow.model.Result;
+import com.lifepilot.workflow.model.ValidationResponse;
 import com.lifepilot.workflow.model.WorkflowContext;
+import com.lifepilot.workflow.model.WorkflowDefinition;
 import com.lifepilot.workflow.model.WorkflowEventType;
 import com.lifepilot.workflow.model.WorkflowInstance;
 import com.lifepilot.workflow.model.WorkflowState;
+import com.lifepilot.workflow.parser.WorkflowYamlParser;
 import com.lifepilot.workflow.registry.WorkflowRegistry;
 import com.lifepilot.workflow.repository.WorkflowRepository;
 
@@ -42,6 +48,8 @@ public class WorkflowCommandService {
     private final ExpressionEngine expressionEngine;
     private final WorkflowConfigProperties config;
     private final DryRunEngine dryRunEngine;
+    private final WorkflowYamlParser parser;
+    private final DagScheduler dagScheduler;
 
     public WorkflowCommandService(WorkflowRegistry registry,
                                   WorkflowRepository repository,
@@ -49,7 +57,9 @@ public class WorkflowCommandService {
                                   WorkflowEventRecorder eventRecorder,
                                   ExpressionEngine expressionEngine,
                                   WorkflowConfigProperties config,
-                                  DryRunEngine dryRunEngine) {
+                                  DryRunEngine dryRunEngine,
+                                  WorkflowYamlParser parser,
+                                  DagScheduler dagScheduler) {
         this.registry = registry;
         this.repository = repository;
         this.runner = runner;
@@ -57,6 +67,8 @@ public class WorkflowCommandService {
         this.expressionEngine = expressionEngine;
         this.config = config;
         this.dryRunEngine = dryRunEngine;
+        this.parser = parser;
+        this.dagScheduler = dagScheduler;
     }
 
     /**
@@ -224,4 +236,46 @@ public class WorkflowCommandService {
                 .orElseThrow(() -> new IllegalArgumentException("工作流定义未找到: workflowId=" + workflowId));
         return dryRunEngine.dryRun(definition, inputs);
     }
+
+    /**
+     * 校验 YAML 工作流定义。
+     *
+     * @param yamlContent YAML 内容
+     * @return 校验响应
+     */
+    public ValidationResponse validateYaml(String yamlContent) {
+        List<String> errors = new ArrayList<>();
+        List<String> warnings = new ArrayList<>();
+        boolean dagValid = true;
+        String dagError = null;
+
+        // 1. YAML 语法解析
+        Result<WorkflowDefinition, List<String>> parseResult = parser.parse(yamlContent);
+        if (parseResult instanceof Result.Err<WorkflowDefinition, List<String>> err) {
+            return new ValidationResponse(false, err.error(), List.of(), false, "解析失败，无法校验 DAG");
+        }
+
+        WorkflowDefinition definition = ((Result.Ok<WorkflowDefinition, List<String>>) parseResult).value();
+
+        // 2. 语义校验
+        if (definition.steps().isEmpty()) {
+            warnings.add("工作流未定义任何步骤");
+        }
+        if (definition.name() == null || definition.name().isBlank()) {
+            errors.add("工作流名称不能为空");
+        }
+
+        // 3. DAG 环检测
+        try {
+            dagScheduler.buildExecutionPlan(definition.steps());
+        } catch (IllegalArgumentException e) {
+            dagValid = false;
+            dagError = e.getMessage();
+            errors.add("DAG 存在环: " + e.getMessage());
+        }
+
+        boolean valid = errors.isEmpty();
+        return new ValidationResponse(valid, errors, warnings, dagValid, dagError);
+    }
+
 }
