@@ -10,6 +10,7 @@ import com.lifepilot.llm.registry.ProviderRegistry;
 import com.lifepilot.media.MediaProcessor;
 import com.lifepilot.media.MediaValidator;
 import com.lifepilot.media.video.VideoProcessor;
+import com.lifepilot.notification.NotificationService;
 import com.lifepilot.skill.activation.SkillActivator;
 import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
@@ -56,6 +57,9 @@ class StepExecutorTest {
     @Mock
     private LlmRouter llmRouter;
 
+    @Mock
+    private NotificationService notificationService;
+
     private StepExecutor executor;
     private ExpressionEngine expressionEngine;
     private MultimodalRouter multimodalRouter;
@@ -84,7 +88,8 @@ class StepExecutorTest {
                 toolRegistry,
                 llmRouter,
                 multimodalRouter,
-                new WorkflowConfigProperties()
+                new WorkflowConfigProperties(),
+                notificationService
         );
         expressionEngine = new ExpressionEngine();
         capturedMultimodalRequest = null;
