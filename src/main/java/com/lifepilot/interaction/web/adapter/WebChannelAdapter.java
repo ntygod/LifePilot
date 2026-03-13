@@ -9,7 +9,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-import com.lifepilot.agent.proactive.channel.PassiveNotificationQueue;
 import com.lifepilot.notification.Urgency;
 import com.lifepilot.interaction.channel.AbstractChannelAdapter;
 import com.lifepilot.interaction.config.GatewayProperties;
@@ -55,17 +54,14 @@ public class WebChannelAdapter extends AbstractChannelAdapter {
 
     private final AttachmentRepository attachmentRepository;
     @Nullable private final SseSessionManager sseSessionManager;
-    @Nullable private final PassiveNotificationQueue passiveNotificationQueue;
 
     public WebChannelAdapter(MessageGateway gateway,
                              GatewayProperties properties,
                              AttachmentRepository attachmentRepository,
-                             @Nullable SseSessionManager sseSessionManager,
-                             @Nullable PassiveNotificationQueue passiveNotificationQueue) {
+                             @Nullable SseSessionManager sseSessionManager) {
         super(gateway, properties);
         this.attachmentRepository = attachmentRepository;
         this.sseSessionManager = sseSessionManager;
-        this.passiveNotificationQueue = passiveNotificationQueue;
     }
 
     @Override
@@ -122,33 +118,6 @@ public class WebChannelAdapter extends AbstractChannelAdapter {
 
         // Web 通道的响应通过 Controller 直接返回，此方法用于异步场景
         log.debug("Web 通道异步响应: userId={}, statusCode={}", userId, response.statusCode());
-
-        // 被动通知 drain：将队列中 LOW 紧急度通知通过 SSE 推送给 Web 客户端
-        drainAndBroadcastPassiveNotifications();
-    }
-
-    /**
-     * drain 被动通知队列并通过 SSE 广播 LOW 紧急度通知。
-     *
-     * <p>在每次 Web 响应发送后调用，将积压的被动通知推送给前端。
-     * 异常时静默降级，不影响主流程。</p>
-     */
-    private void drainAndBroadcastPassiveNotifications() {
-        if (passiveNotificationQueue == null || sseSessionManager == null) return;
-        try {
-            var notifications = passiveNotificationQueue.drainAll();
-            for (var n : notifications) {
-                var event = new NotificationSseEvent(
-                        n.id(), n.typeId(), n.urgency(), n.content(),
-                        n.sentAt().toString());
-                sseSessionManager.broadcastNotification(event);
-            }
-            if (!notifications.isEmpty()) {
-                log.debug("被动通知 SSE 广播完成: count={}", notifications.size());
-            }
-        } catch (Exception e) {
-            log.warn("被动通知 SSE 广播失败，降级跳过: error={}", e.getMessage());
-        }
     }
 
     /**
