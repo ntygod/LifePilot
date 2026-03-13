@@ -30,5 +30,11 @@ public enum WorkflowEventType {
     APPROVAL_REQUESTED,
 
     /** 审批决策完成。 */
-    APPROVAL_DECIDED
+    APPROVAL_DECIDED,
+
+    /** 步骤重试（每次重试时记录）。 */
+    STEP_RETRIED,
+
+    /** 步骤重试耗尽。 */
+    STEP_RETRY_EXHAUSTED
 }
