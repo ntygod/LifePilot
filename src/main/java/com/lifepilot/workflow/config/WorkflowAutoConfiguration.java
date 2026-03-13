@@ -8,6 +8,7 @@ import com.lifepilot.skill.activation.SkillActivator;
 import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.workflow.engine.DagScheduler;
+import com.lifepilot.workflow.engine.DryRunEngine;
 import com.lifepilot.workflow.engine.StepExecutor;
 import com.lifepilot.workflow.engine.WakeupScheduler;
 import com.lifepilot.workflow.engine.WorkflowCommandService;
@@ -169,13 +170,20 @@ public class WorkflowAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    public DryRunEngine dryRunEngine(DagScheduler dagScheduler, ExpressionEngine expressionEngine) {
+        return new DryRunEngine(dagScheduler, expressionEngine);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     public WorkflowCommandService workflowCommandService(WorkflowRegistry registry,
                                                          WorkflowRepository repository,
                                                          WorkflowRunner runner,
                                                          WorkflowEventRecorder eventRecorder,
                                                          ExpressionEngine expressionEngine,
-                                                         WorkflowConfigProperties config) {
-        return new WorkflowCommandService(registry, repository, runner, eventRecorder, expressionEngine, config);
+                                                         WorkflowConfigProperties config,
+                                                         DryRunEngine dryRunEngine) {
+        return new WorkflowCommandService(registry, repository, runner, eventRecorder, expressionEngine, config, dryRunEngine);
     }
 
     @Bean

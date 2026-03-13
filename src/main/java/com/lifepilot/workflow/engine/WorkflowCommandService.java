@@ -41,19 +41,22 @@ public class WorkflowCommandService {
     private final WorkflowEventRecorder eventRecorder;
     private final ExpressionEngine expressionEngine;
     private final WorkflowConfigProperties config;
+    private final DryRunEngine dryRunEngine;
 
     public WorkflowCommandService(WorkflowRegistry registry,
                                   WorkflowRepository repository,
                                   WorkflowRunner runner,
                                   WorkflowEventRecorder eventRecorder,
                                   ExpressionEngine expressionEngine,
-                                  WorkflowConfigProperties config) {
+                                  WorkflowConfigProperties config,
+                                  DryRunEngine dryRunEngine) {
         this.registry = registry;
         this.repository = repository;
         this.runner = runner;
         this.eventRecorder = eventRecorder;
         this.expressionEngine = expressionEngine;
         this.config = config;
+        this.dryRunEngine = dryRunEngine;
     }
 
     /**
@@ -207,5 +210,18 @@ public class WorkflowCommandService {
      */
     public Optional<WorkflowInstance> getStatus(String instanceId) {
         return repository.findInstance(instanceId);
+    }
+
+    /**
+     * 试运行工作流：模拟执行，不持久化状态。
+     *
+     * @param workflowId 工作流定义 ID
+     * @param inputs     输入参数（可空）
+     * @return 试运行结果
+     */
+    public DryRunResult dryRun(String workflowId, @Nullable Map<String, Object> inputs) {
+        var definition = registry.find(workflowId)
+                .orElseThrow(() -> new IllegalArgumentException("工作流定义未找到: workflowId=" + workflowId));
+        return dryRunEngine.dryRun(definition, inputs);
     }
 }
