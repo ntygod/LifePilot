@@ -1,12 +1,15 @@
 package com.lifepilot.workflow.repository;
 
+import com.lifepilot.workflow.model.DailyTrend;
 import com.lifepilot.workflow.model.Result;
 import com.lifepilot.workflow.model.StepLog;
 import com.lifepilot.workflow.model.StepState;
+import com.lifepilot.workflow.model.StepStats;
 import com.lifepilot.workflow.model.WorkflowContext;
 import com.lifepilot.workflow.model.WorkflowDefinition;
 import com.lifepilot.workflow.model.WorkflowInstance;
 import com.lifepilot.workflow.model.WorkflowState;
+import com.lifepilot.workflow.model.WorkflowStats;
 import com.lifepilot.workflow.engine.WorkflowRealtimeEventHub;
 import com.lifepilot.workflow.parser.WorkflowYamlParser;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -364,6 +367,119 @@ public class WorkflowRepository {
                 """,
                 stepLogRowMapper,
                 instanceId);
+    }
+
+    // ==================== 执行统计聚合查询 ====================
+
+    /**
+     * 查询工作流执行统计（基于 workflow_instances 表聚合）。
+     *
+     * <p>统计各状态实例数、已完成实例的平均耗时，以及最近 7 天的每日执行趋势。
+     *
+     * @param workflowId 工作流 ID
+     * @return 工作流执行统计
+     */
+    public WorkflowStats queryWorkflowStats(String workflowId) {
+        // 按状态聚合实例数
+        String countSql = """
+                SELECT
+                    COUNT(*) AS total,
+                    SUM(CASE WHEN state = 'COMPLETED' THEN 1 ELSE 0 END) AS completed,
+                    SUM(CASE WHEN state = 'FAILED' THEN 1 ELSE 0 END) AS failed,
+                    SUM(CASE WHEN state = 'CANCELLED' THEN 1 ELSE 0 END) AS cancelled,
+                    SUM(CASE WHEN state IN ('RUNNING', 'WAITING', 'PAUSED') THEN 1 ELSE 0 END) AS running
+                FROM workflow_instances
+                WHERE workflow_id = ?
+                """;
+
+        int[] counts = {0, 0, 0, 0, 0};
+        jdbcTemplate.query(countSql, rs -> {
+            counts[0] = rs.getInt("total");
+            counts[1] = rs.getInt("completed");
+            counts[2] = rs.getInt("failed");
+            counts[3] = rs.getInt("cancelled");
+            counts[4] = rs.getInt("running");
+        }, workflowId);
+
+        // 已完成实例的平均耗时
+        String avgSql = """
+                SELECT AVG(CAST((julianday(completed_at) - julianday(started_at)) * 86400000 AS INTEGER)) AS avg_ms
+                FROM workflow_instances
+                WHERE workflow_id = ? AND state = 'COMPLETED' AND completed_at IS NOT NULL AND started_at IS NOT NULL
+                """;
+
+        long[] avgDuration = {0};
+        jdbcTemplate.query(avgSql, rs -> {
+            avgDuration[0] = rs.getLong("avg_ms");
+        }, workflowId);
+
+        // 最近 7 天每日执行趋势
+        String trendSql = """
+                SELECT
+                    date(created_at) AS day,
+                    COUNT(*) AS total_count,
+                    SUM(CASE WHEN state = 'COMPLETED' THEN 1 ELSE 0 END) AS success_count,
+                    SUM(CASE WHEN state = 'FAILED' THEN 1 ELSE 0 END) AS failed_count
+                FROM workflow_instances
+                WHERE workflow_id = ? AND created_at >= date('now', '-7 days')
+                GROUP BY date(created_at)
+                ORDER BY day ASC
+                """;
+
+        List<DailyTrend> trends = jdbcTemplate.query(trendSql, (rs, rowNum) ->
+                new DailyTrend(
+                        rs.getString("day"),
+                        rs.getInt("total_count"),
+                        rs.getInt("success_count"),
+                        rs.getInt("failed_count")
+                ), workflowId);
+
+        return new WorkflowStats(
+                workflowId,
+                counts[0], counts[1], counts[2], counts[3], counts[4],
+                avgDuration[0],
+                trends
+        );
+    }
+
+    /**
+     * 查询工作流步骤执行统计（基于 workflow_step_logs 表聚合）。
+     *
+     * <p>按 step_id、step_type 分组，统计各步骤的执行次数、成功/失败数、
+     * 平均/最大耗时和总重试次数。
+     *
+     * @param workflowId 工作流 ID
+     * @return 步骤执行统计列表
+     */
+    public List<StepStats> queryStepStats(String workflowId) {
+        String sql = """
+                SELECT
+                    sl.step_id,
+                    sl.step_type,
+                    COUNT(*) AS total_count,
+                    SUM(CASE WHEN sl.state = 'COMPLETED' THEN 1 ELSE 0 END) AS success_count,
+                    SUM(CASE WHEN sl.state = 'FAILED' THEN 1 ELSE 0 END) AS failed_count,
+                    COALESCE(AVG(sl.duration_ms), 0) AS avg_duration_ms,
+                    COALESCE(MAX(sl.duration_ms), 0) AS max_duration_ms,
+                    COALESCE(SUM(sl.retry_count), 0) AS total_retries
+                FROM workflow_step_logs sl
+                JOIN workflow_instances wi ON sl.instance_id = wi.id
+                WHERE wi.workflow_id = ?
+                GROUP BY sl.step_id, sl.step_type
+                ORDER BY sl.step_id
+                """;
+
+        return jdbcTemplate.query(sql, (rs, rowNum) ->
+                new StepStats(
+                        rs.getString("step_id"),
+                        rs.getString("step_type"),
+                        rs.getInt("total_count"),
+                        rs.getInt("success_count"),
+                        rs.getInt("failed_count"),
+                        rs.getLong("avg_duration_ms"),
+                        rs.getLong("max_duration_ms"),
+                        rs.getInt("total_retries")
+                ), workflowId);
     }
 
     // ==================== 内部方法 ====================
