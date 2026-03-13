@@ -2,6 +2,7 @@ package com.lifepilot.workflow.engine;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -15,6 +16,9 @@ import org.springframework.lang.Nullable;
 
 import com.lifepilot.workflow.config.WorkflowConfigProperties;
 import com.lifepilot.workflow.expression.ExpressionEngine;
+import com.lifepilot.workflow.model.DagData;
+import com.lifepilot.workflow.model.DagEdge;
+import com.lifepilot.workflow.model.DagNode;
 import com.lifepilot.workflow.model.Result;
 import com.lifepilot.workflow.model.ValidationResponse;
 import com.lifepilot.workflow.model.WorkflowContext;
@@ -22,6 +26,7 @@ import com.lifepilot.workflow.model.WorkflowDefinition;
 import com.lifepilot.workflow.model.WorkflowEventType;
 import com.lifepilot.workflow.model.WorkflowInstance;
 import com.lifepilot.workflow.model.WorkflowState;
+import com.lifepilot.workflow.model.WorkflowStep;
 import com.lifepilot.workflow.parser.WorkflowYamlParser;
 import com.lifepilot.workflow.registry.WorkflowRegistry;
 import com.lifepilot.workflow.repository.WorkflowRepository;
@@ -276,6 +281,69 @@ public class WorkflowCommandService {
 
         boolean valid = errors.isEmpty();
         return new ValidationResponse(valid, errors, warnings, dagValid, dagError);
+    }
+
+    /**
+     * 生成工作流 DAG 依赖图数据。
+     *
+     * @param workflowId 工作流 ID
+     * @return DAG 数据
+     */
+    public DagData buildDagData(String workflowId) {
+        var definition = registry.find(workflowId)
+                .orElseThrow(() -> new IllegalArgumentException("工作流定义未找到: workflowId=" + workflowId));
+
+        ExecutionPlan plan = dagScheduler.buildExecutionPlan(definition.steps());
+
+        // 计算拓扑层级
+        Map<String, Integer> levelMap = new HashMap<>();
+        for (String stepId : plan.topologicalOrder()) {
+            Set<String> deps = plan.dependencyMap().getOrDefault(stepId, Set.of());
+            int maxDepLevel = -1;
+            for (String dep : deps) {
+                maxDepLevel = Math.max(maxDepLevel, levelMap.getOrDefault(dep, 0));
+            }
+            levelMap.put(stepId, maxDepLevel + 1);
+        }
+
+        // 构建节点
+        List<DagNode> nodes = new ArrayList<>();
+        for (String stepId : plan.topologicalOrder()) {
+            WorkflowStep step = plan.stepMap().get(stepId);
+            String stepType = extractStepType(step);
+            nodes.add(new DagNode(stepId, stepType, step.name(), levelMap.getOrDefault(stepId, 0)));
+        }
+
+        // 构建边
+        List<DagEdge> edges = new ArrayList<>();
+        for (var entry : plan.dependencyMap().entrySet()) {
+            String to = entry.getKey();
+            for (String from : entry.getValue()) {
+                edges.add(new DagEdge(from, to));
+            }
+        }
+
+        int maxLevel = levelMap.values().stream().mapToInt(Integer::intValue).max().orElse(0) + 1;
+        return new DagData(nodes, edges, maxLevel);
+    }
+
+    /**
+     * 提取步骤类型名称。
+     */
+    private String extractStepType(WorkflowStep step) {
+        return switch (step) {
+            case WorkflowStep.SkillStep _ -> "skill";
+            case WorkflowStep.ToolStep _ -> "tool";
+            case WorkflowStep.LlmStep _ -> "llm";
+            case WorkflowStep.ConditionStep _ -> "condition";
+            case WorkflowStep.LoopStep _ -> "loop";
+            case WorkflowStep.ParallelStep _ -> "parallel";
+            case WorkflowStep.SubWorkflowStep _ -> "sub-workflow";
+            case WorkflowStep.NoopStep _ -> "noop";
+            case WorkflowStep.WaitStep _ -> "wait";
+            case WorkflowStep.ApprovalStep _ -> "approval";
+            case WorkflowStep.NotifyStep _ -> "notify";
+        };
     }
 
 }
