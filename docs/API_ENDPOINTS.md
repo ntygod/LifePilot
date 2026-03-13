@@ -10,6 +10,8 @@
 - [Sessions（会话管理）](#sessions会话管理)
 - [Memories（记忆管理）](#memories记忆管理)
 - [Signals / Notifications（A2UI 信号 + 通知）](#signals--notifications)
+- [Notifications（通知管理）](#notifications通知管理)
+- [Notification Settings（通知设置）](#notification-settings通知设置)
 - [Agents（多 Agent 管理）](#agents多-agent-管理)
 - [Tools（工具管理）](#tools工具管理)
 - [Skills（技能管理）](#skills技能管理)
@@ -119,6 +121,29 @@
 |--------|------|---------|------|
 | POST | `/api/chat/signals` | `handleSignal` | A2UI 信号回传 |
 | GET | `/api/chat/notifications/stream` | `notificationStream` | 主动推理通知 SSE 流 |
+
+---
+
+## Notifications（通知管理）
+
+来源：`NotificationController`，Base Path: `/api/notifications`
+
+| Method | Path | Handler | 备注 |
+|--------|------|---------|------|
+| GET | `/api/notifications` | `listNotifications` | 通知历史分页查询（page/size/urgency 过滤，按 sentAt 降序） |
+| PUT | `/api/notifications/{id}/read` | `markAsRead` | 标记单条通知已读（404 if 不存在） |
+| PUT | `/api/notifications/read-all` | `markAllAsRead` | 批量标记所有通知已读，返回更新数量 |
+
+---
+
+## Notification Settings（通知设置）
+
+来源：`NotificationSettingsController`，Base Path: `/api/notification-settings`
+
+| Method | Path | Handler | 备注 |
+|--------|------|---------|------|
+| GET | `/api/notification-settings` | `listSettings` | 查询当前用户通知设置列表 |
+| PUT | `/api/notification-settings/{typeId}` | `updateSetting` | 更新指定通知类型设置（UPSERT） |
 
 ---
 

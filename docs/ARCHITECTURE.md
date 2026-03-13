@@ -140,6 +140,7 @@ graph TB
 | `marketplace` | 插件市场、Skill 发布/发现/安装、安全审核 | [架构](architecture/skill-marketplace.md) · [特性](features/skill-marketplace.md) |
 | `meta` | 元能力（便捷指令、基础设施工具） | [架构](architecture/meta-capabilities.md) · [特性](features/meta-capabilities.md) |
 | `prompt` | Prompt 模板注册与管理 | [架构](architecture/prompt-management.md) · [特性](features/prompt-management.md) |
+| `notification` | 统一通知服务、Urgency 路由、多渠道广播、被动队列持久化、通知管理 API | [架构](architecture/notification.md) · [特性](features/notification.md) |
 | `observability` | 轨迹记录/查询、GuardrailAdvisor、数据脱敏、轨迹评估 | [架构](architecture/observability.md) · [特性](features/observability.md) |
 | `config` | 全局数据源配置、Flyway 迁移（纯基础设施，不单独出模块文档） | — |
 
@@ -227,6 +228,7 @@ graph TB
 | 记忆进阶（巩固/遗忘/混合检索） | [架构](architecture/memory-advanced.md) · [特性](features/memory-advanced.md) |
 | 内置 Skill（Todo/Schedule/Habit/Memory） | [架构](architecture/builtin-skills.md) · [特性](features/builtin-skills.md) |
 | 主动推理引擎 | [架构](architecture/proactive-reasoning.md) · [特性](features/proactive-reasoning.md) |
+| 通知系统 | [架构](architecture/notification.md) · [特性](features/notification.md) |
 | 部署与运维 | [架构](architecture/deployment.md) · [特性](features/deployment.md) |
 | 性能优化 | [架构](architecture/performance-optimization.md) · [特性](features/performance-optimization.md) |
 | Web UI | [架构](architecture/web-ui.md) · [特性](features/web-ui.md) |

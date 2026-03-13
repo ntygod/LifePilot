@@ -58,6 +58,7 @@
 | Channel 适配器 | 企业微信 / 钉钉 / 飞书 / Webhook 四个渠道适配 | [特性](features/gateway-channels.md) |
 | 对话管理 | 对话历史存储、会话视图查询 | [特性](features/conversation.md) |
 | 主动推理 | 两阶段推理引擎、智能降频、信号采集，主动提供建议 | [特性](features/proactive-reasoning.md) |
+| 通知系统 | 统一通知服务、Urgency 路由、多渠道广播、富媒体支持、被动队列持久化 | [特性](features/notification.md) |
 
 ### 3.4 高级能力
 
