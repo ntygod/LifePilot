@@ -4,6 +4,8 @@ import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.memory.config.MemoryProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.lang.Nullable;
 
 import java.time.Instant;
 import java.util.Comparator;
@@ -35,16 +37,19 @@ public class RealtimeExtractor {
     private final ExtractionValidator extractionValidator;
     private final int extractionTimeoutSeconds;
     private final int existingEntitySummaryLimit;
+    private final JdbcTemplate jdbcTemplate;
 
     public RealtimeExtractor(LlmRouter llmRouter,
                              SemanticMemory semanticMemory,
                              MemoryProperties properties,
-                             ExtractionValidator extractionValidator) {
+                             ExtractionValidator extractionValidator,
+                             JdbcTemplate jdbcTemplate) {
         this.llmRouter = llmRouter;
         this.semanticMemory = semanticMemory;
         this.extractionValidator = extractionValidator;
         this.extractionTimeoutSeconds = properties.getExtraction().getTimeoutSeconds();
         this.existingEntitySummaryLimit = properties.getExtraction().getExistingEntitySummaryLimit();
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     /**
@@ -212,9 +217,33 @@ public class RealtimeExtractor {
     /** 执行单条 AUDN 决策。 */
     private void executeDecision(AudnDecision decision, String sessionId) {
         switch (decision.operation()) {
-            case ADD -> executeAdd(decision, sessionId);
-            case UPDATE -> executeUpdate(decision, sessionId);
-            case DELETE -> executeDelete(decision);
+            case ADD -> {
+                try {
+                    executeAdd(decision, sessionId);
+                    logExtractionEvent(sessionId, decision, true, null);
+                } catch (Exception e) {
+                    logExtractionEvent(sessionId, decision, false, e.getMessage());
+                    throw e;
+                }
+            }
+            case UPDATE -> {
+                try {
+                    executeUpdate(decision, sessionId);
+                    logExtractionEvent(sessionId, decision, true, null);
+                } catch (Exception e) {
+                    logExtractionEvent(sessionId, decision, false, e.getMessage());
+                    throw e;
+                }
+            }
+            case DELETE -> {
+                try {
+                    executeDelete(decision);
+                    logExtractionEvent(sessionId, decision, true, null);
+                } catch (Exception e) {
+                    logExtractionEvent(sessionId, decision, false, e.getMessage());
+                    throw e;
+                }
+            }
             case NOOP -> { /* 跳过 */ }
         }
     }
@@ -282,6 +311,27 @@ public class RealtimeExtractor {
         }
         semanticMemory.archive(existing.get());
         log.debug("AUDN DELETE: name={}, type={}", decision.entityName(), decision.entityType());
+    }
+
+    /** 记录提取事件日志到 extraction_event_log 表。 */
+    private void logExtractionEvent(String sessionId, AudnDecision decision,
+                                     boolean success, @Nullable String errorMessage) {
+        try {
+            jdbcTemplate.update(
+                "INSERT INTO extraction_event_log(id, session_id, operation, entity_name, entity_type, extraction_confidence, importance_score, success, error_message, created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                UUID.randomUUID().toString(),
+                sessionId,
+                decision.operation().name(),
+                decision.entityName(),
+                decision.entityType().name(),
+                decision.extractionConfidence(),
+                decision.importanceScore(),
+                success ? 1 : 0,
+                errorMessage,
+                Instant.now().toString());
+        } catch (Exception e) {
+            log.warn("提取事件日志写入失败: sessionId={}, error={}", sessionId, e.getMessage());
+        }
     }
 
     /**
