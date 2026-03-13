@@ -3,7 +3,6 @@ package com.lifepilot.memory.forgetting;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.memory.config.MemoryProperties;
-import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
 import com.lifepilot.prompt.PromptRegistry;
@@ -15,7 +14,6 @@ import org.springframework.scheduling.annotation.Scheduled;
 
 import java.time.Instant;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -32,13 +30,6 @@ import java.util.UUID;
 public class ForgettingEngine {
 
     private static final Logger log = LoggerFactory.getLogger(ForgettingEngine.class);
-
-    /** 受保护的实体类型 — 这些类型的实体永不被遗忘。 */
-    private static final Set<EntityType> PROTECTED_TYPES = Set.of(
-            EntityType.PREFERENCE, EntityType.HABIT, EntityType.GOAL);
-
-    /** 受保护的重要度阈值 — importanceScore ≥ 此值的实体永不被遗忘。 */
-    private static final float PROTECTION_THRESHOLD = 0.9f;
 
     private final SemanticMemory semanticMemory;
     @Nullable
@@ -148,10 +139,11 @@ public class ForgettingEngine {
      * @return 是否受保护
      */
     private boolean isProtected(TemporalEntity entity) {
-        if (PROTECTED_TYPES.contains(entity.type())) {
+        var config = properties.getForgetting();
+        if (config.getProtectedTypes().contains(entity.type().name())) {
             return true;
         }
-        return entity.importanceScore() >= PROTECTION_THRESHOLD;
+        return entity.importanceScore() >= config.getProtectionThreshold();
     }
 
     /**
