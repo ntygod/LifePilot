@@ -1,5 +1,6 @@
 package com.lifepilot.interaction.web.controller;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.interaction.web.model.ErrorResponse;
 import com.lifepilot.interaction.web.model.TriggerWorkflowRequest;
 import com.lifepilot.interaction.web.model.WorkflowDetailDto;
@@ -20,6 +21,7 @@ import com.lifepilot.workflow.model.ValidationResponse;
 import com.lifepilot.workflow.model.WorkflowDefinition;
 import com.lifepilot.workflow.model.WorkflowEvent;
 import com.lifepilot.workflow.model.WorkflowInstance;
+import com.lifepilot.workflow.model.WorkflowTrigger;
 import com.lifepilot.workflow.parser.WorkflowYamlParser;
 import com.lifepilot.workflow.parser.WorkflowYamlPrinter;
 import com.lifepilot.workflow.registry.WorkflowRegistry;
@@ -34,13 +36,18 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 
 /**
  * 工作流管理 REST Controller。
@@ -66,6 +73,7 @@ public class WorkflowController {
     private final WorkflowYamlParser yamlParser;
     private final WorkflowYamlPrinter yamlPrinter;
     private final WorkflowConfigProperties workflowConfig;
+    private final ObjectMapper objectMapper;
     private final Path workflowsDirectory;
 
     public WorkflowController(WorkflowRegistry workflowRegistry,
@@ -88,6 +96,7 @@ public class WorkflowController {
         this.yamlParser = yamlParser;
         this.yamlPrinter = yamlPrinter;
         this.workflowConfig = workflowConfig;
+        this.objectMapper = new ObjectMapper();
         String dir = workflowConfig.getDefinitionsDir();
         // 处理 ~ 符号
         if (dir.startsWith("~")) {
@@ -453,6 +462,74 @@ public class WorkflowController {
     }
 
     /**
+     * Webhook 触发工作流执行。
+     *
+     * <p>外部系统通过 POST /api/workflows/{id}/webhook 触发工作流。
+     * 配置了 {@code secret} 时验证 {@code X-Webhook-Signature} HMAC-SHA256 签名。
+     *
+     * @param id        工作流 ID
+     * @param body      JSON 请求体作为工作流输入参数
+     * @param signature X-Webhook-Signature 请求头
+     * @return 202 触发成功，400 已禁用/未配置 Webhook，401 签名验证失败，404 不存在
+     */
+    @PostMapping("/{id}/webhook")
+    public ResponseEntity<?> webhookTrigger(@PathVariable String id,
+                                             @RequestBody(required = false) Map<String, Object> body,
+                                             @RequestHeader(value = "X-Webhook-Signature", required = false) String signature) {
+        // 1. 检查工作流是否存在
+        var defOpt = workflowRegistry.find(id);
+        if (defOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    new ErrorResponse(404, "工作流不存在: id=" + id, Instant.now()));
+        }
+
+        var definition = defOpt.get();
+
+        // 2. 检查工作流是否启用
+        if (!definition.enabled()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
+                    new ErrorResponse(400, "工作流已禁用，不可通过 Webhook 触发", Instant.now()));
+        }
+
+        // 3. 检查是否配置了 WebhookTrigger
+        var webhookTrigger = definition.triggers().stream()
+                .filter(t -> t instanceof WorkflowTrigger.WebhookTrigger)
+                .map(t -> (WorkflowTrigger.WebhookTrigger) t)
+                .findFirst();
+
+        if (webhookTrigger.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
+                    new ErrorResponse(400, "工作流未配置 Webhook 触发器", Instant.now()));
+        }
+
+        // 4. 签名验证（配置了 secret 时）
+        String secret = webhookTrigger.get().secret();
+        if (secret != null) {
+            try {
+                String payload = objectMapper.writeValueAsString(body != null ? body : Map.of());
+                if (!verifyWebhookSignature(secret, payload, signature)) {
+                    log.warn("Webhook 签名验证失败: workflowId={}", id);
+                    return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(
+                            new ErrorResponse(401, "Webhook 签名验证失败", Instant.now()));
+                }
+            } catch (Exception e) {
+                log.error("Webhook 签名验证异常: workflowId={}", id, e);
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(
+                        new ErrorResponse(401, "Webhook 签名验证失败", Instant.now()));
+            }
+        }
+
+        // 5. 触发工作流
+        Map<String, Object> inputs = body != null ? body : Map.of();
+        String instanceId = workflowCommandService.start(id, inputs);
+        var instance = workflowRepository.findInstance(instanceId)
+                .orElseThrow(() -> new IllegalStateException("Webhook 触发后实例未找到: instanceId=" + instanceId));
+
+        log.info("Webhook 触发工作流成功: workflowId={}, instanceId={}", id, instanceId);
+        return ResponseEntity.accepted().body(instance);
+    }
+
+    /**
      * 获取指定工作流的执行历史。
      *
      * @param id 工作流 ID
@@ -763,5 +840,27 @@ public class WorkflowController {
     private String getString(Map<String, Object> map, String key) {
         Object value = map.get(key);
         return value != null ? value.toString() : null;
+    }
+
+    /**
+     * 验证 Webhook HMAC-SHA256 签名。
+     *
+     * @param secret    签名密钥
+     * @param payload   请求体原文
+     * @param signature X-Webhook-Signature 头部值（格式: sha256=<hex>）
+     * @return 签名是否匹配
+     */
+    private boolean verifyWebhookSignature(String secret, String payload, String signature) {
+        if (signature == null || !signature.startsWith("sha256=")) return false;
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            byte[] hash = mac.doFinal(payload.getBytes(StandardCharsets.UTF_8));
+            String expected = "sha256=" + HexFormat.of().formatHex(hash);
+            return expected.equals(signature);
+        } catch (Exception e) {
+            log.warn("HMAC-SHA256 签名计算失败: {}", e.getMessage());
+            return false;
+        }
     }
 }
