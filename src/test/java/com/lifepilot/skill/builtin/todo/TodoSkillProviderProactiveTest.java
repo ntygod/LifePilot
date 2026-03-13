@@ -3,6 +3,7 @@ package com.lifepilot.skill.builtin.todo;
 import com.lifepilot.agent.proactive.candidate.CandidateProvider;
 import com.lifepilot.agent.proactive.model.*;
 import com.lifepilot.agent.proactive.signal.SignalSource;
+import com.lifepilot.notification.Urgency;
 import com.lifepilot.prompt.PromptRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
