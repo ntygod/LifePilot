@@ -652,6 +652,20 @@ public class WorkflowController {
     }
 
     /**
+     * 导入工作流定义（从 YAML 内容解析并注册）。
+     *
+     * <p>语义上等同于创建工作流，ID 冲突时返回 409，解析失败返回 400。</p>
+     *
+     * @param request 包含 yamlContent 的请求体
+     * @return 201 导入成功，400 解析失败，409 ID 冲突
+     */
+    @PostMapping("/import")
+    public ResponseEntity<?> importWorkflow(@RequestBody Map<String, Object> request) {
+        log.debug("导入 Workflow: request={}", request);
+        return createWorkflow(request);
+    }
+
+    /**
      * 导出单个工作流定义为 YAML。
      *
      * @param id 工作流 ID
