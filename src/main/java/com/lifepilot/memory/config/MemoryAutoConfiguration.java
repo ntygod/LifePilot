@@ -338,9 +338,10 @@ public class MemoryAutoConfiguration {
     @ConditionalOnBean({SemanticMemory.class, ExtractionValidator.class})
     public RealtimeExtractor realtimeExtractor(LlmRouter llmRouter,
                                                SemanticMemory semanticMemory,
-                                               ExtractionValidator extractionValidator) {
+                                               ExtractionValidator extractionValidator,
+                                               JdbcTemplate jdbcTemplate) {
         log.info("记忆系统: 注册 RealtimeExtractor（AUDN 实时实体提取）");
-        return new RealtimeExtractor(llmRouter, semanticMemory, properties, extractionValidator);
+        return new RealtimeExtractor(llmRouter, semanticMemory, properties, extractionValidator, jdbcTemplate);
     }
 
     // --- 混合检索引擎 ---
