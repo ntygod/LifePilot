@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
 
+import com.lifepilot.workflow.config.WorkflowConfigProperties;
 import com.lifepilot.workflow.expression.ExpressionEngine;
 import com.lifepilot.workflow.model.WorkflowContext;
 import com.lifepilot.workflow.model.WorkflowEventType;
@@ -39,17 +40,20 @@ public class WorkflowCommandService {
     private final WorkflowRunner runner;
     private final WorkflowEventRecorder eventRecorder;
     private final ExpressionEngine expressionEngine;
+    private final WorkflowConfigProperties config;
 
     public WorkflowCommandService(WorkflowRegistry registry,
                                   WorkflowRepository repository,
                                   WorkflowRunner runner,
                                   WorkflowEventRecorder eventRecorder,
-                                  ExpressionEngine expressionEngine) {
+                                  ExpressionEngine expressionEngine,
+                                  WorkflowConfigProperties config) {
         this.registry = registry;
         this.repository = repository;
         this.runner = runner;
         this.eventRecorder = eventRecorder;
         this.expressionEngine = expressionEngine;
+        this.config = config;
     }
 
     /**
@@ -72,6 +76,29 @@ public class WorkflowCommandService {
         if (!validation.valid()) {
             throw new IllegalArgumentException(
                     "缺少必填输入参数: " + String.join(", ", validation.missingParams()));
+        }
+
+        // 速率限制检查
+        WorkflowConfigProperties.RateLimit rateLimit = config.getRateLimit();
+
+        // 全局并发实例数检查
+        java.util.List<WorkflowInstance> runningInstances = repository.findInstancesByState(
+                WorkflowState.RUNNING, WorkflowState.WAITING, WorkflowState.PAUSED);
+        if (runningInstances.size() >= rateLimit.getMaxConcurrentInstances()) {
+            throw new IllegalStateException(
+                    "全局并发实例数已达上限: current=" + runningInstances.size()
+                    + ", max=" + rateLimit.getMaxConcurrentInstances());
+        }
+
+        // 单工作流并发实例数检查
+        long workflowRunningCount = runningInstances.stream()
+                .filter(i -> workflowId.equals(i.workflowId()))
+                .count();
+        if (workflowRunningCount >= rateLimit.getMaxInstancesPerWorkflow()) {
+            throw new IllegalStateException(
+                    "工作流并发实例数已达上限: workflowId=" + workflowId
+                    + ", current=" + workflowRunningCount
+                    + ", max=" + rateLimit.getMaxInstancesPerWorkflow());
         }
 
         // 创建实例（CREATED 状态）

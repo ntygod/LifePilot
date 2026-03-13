@@ -171,8 +171,9 @@ public class WorkflowAutoConfiguration {
                                                          WorkflowRepository repository,
                                                          WorkflowRunner runner,
                                                          WorkflowEventRecorder eventRecorder,
-                                                         ExpressionEngine expressionEngine) {
-        return new WorkflowCommandService(registry, repository, runner, eventRecorder, expressionEngine);
+                                                         ExpressionEngine expressionEngine,
+                                                         WorkflowConfigProperties config) {
+        return new WorkflowCommandService(registry, repository, runner, eventRecorder, expressionEngine, config);
     }
 
     @Bean
