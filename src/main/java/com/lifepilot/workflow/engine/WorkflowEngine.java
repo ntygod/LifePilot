@@ -724,6 +724,10 @@ public class WorkflowEngine {
                 }
                 log.warn("步骤执行失败（重试 {}/{}）: stepId={}, error={}",
                         attempt, maxAttempts, step.id(), e.getMessage());
+                // 记录重试事件
+                eventRecorder.record(WorkflowEventType.STEP_RETRIED, instance.id(),
+                        instance.workflowId(), step.id(),
+                        Map.of("attempt", attempt, "maxAttempts", maxAttempts, "error", e.getMessage()));
                 if (attempt < maxAttempts) {
                     long delay = Math.min(initialDelay * (long) Math.pow(2, attempt - 1), maxDelay);
                     try {
@@ -735,6 +739,10 @@ public class WorkflowEngine {
                 }
             }
         }
+        // 记录重试耗尽事件
+        eventRecorder.record(WorkflowEventType.STEP_RETRY_EXHAUSTED, instance.id(),
+                instance.workflowId(), step.id(),
+                Map.of("maxAttempts", maxAttempts));
         return failWorkflow(instance, "步骤重试耗尽: stepId=" + step.id());
     }
 
@@ -1033,7 +1041,7 @@ public class WorkflowEngine {
                     UUID.randomUUID().toString(),
                     instanceId, stepId, stepType, state, attempt,
                     inputJson, outputJson, errorMessage,
-                    startedAt, now, durationMs, 0, now
+                    startedAt, now, durationMs, attempt, now
             );
             repository.insertStepLog(stepLog);
         } catch (Exception e) {
