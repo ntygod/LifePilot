@@ -82,7 +82,8 @@ public class AgentAutoConfiguration {
                                              @Autowired(required = false) SemanticMemory semanticMemory,
                                              @Autowired(required = false) PassiveNotificationQueue passiveNotificationQueue,
                                              @Autowired(required = false) com.lifepilot.memory.retrieval.QueryRefiner queryRefiner,
-                                             @Autowired(required = false) com.lifepilot.memory.config.MemoryProperties memoryProperties) {
+                                             @Autowired(required = false) com.lifepilot.memory.config.MemoryProperties memoryProperties,
+                                             @Autowired(required = false) LlmRouter llmRouter) {
         if (hybridRetriever != null && workingMemory != null && tokenBudgetAllocator != null) {
             log.info("Agent 引擎: 注册完整版 ContextAssembler（记忆系统已就绪，L2 情景记忆{}，L3 语义记忆{}）",
                     episodicMemory != null ? "已启用" : "未启用",
@@ -91,7 +92,7 @@ public class AgentAutoConfiguration {
             return new ContextAssembler(config, hybridRetriever,
                     workingMemory, tokenBudgetAllocator, strategy, dataRedactor,
                     documentRetriever, sessionKnowledgeBaseRepository, documentRepository,
-                    episodicMemory, semanticMemory, passiveNotificationQueue, queryRefiner, memoryProperties, promptRegistry);
+                    episodicMemory, semanticMemory, passiveNotificationQueue, queryRefiner, memoryProperties, llmRouter, promptRegistry);
         }
         log.warn("Agent 引擎: 注册基础版 ContextAssembler（记忆系统部分或全部不可用，记忆检索功能已降级）");
         return new ContextAssembler(config, promptRegistry);
