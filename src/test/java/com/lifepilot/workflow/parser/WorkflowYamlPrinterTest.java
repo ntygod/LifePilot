@@ -279,8 +279,8 @@ class WorkflowYamlPrinterTest {
         var definition = WorkflowDefinition.builder()
                 .id("input-wf").name("输入工作流")
                 .inputs(Map.of(
-                        "userId", new WorkflowInputParam("userId", "string", true, null, "用户ID"),
-                        "count", new WorkflowInputParam("count", "number", false, 10, "数量")
+                        "userId", new WorkflowInputParam("userId", "string", true, null, "用户ID", null, null, null, null, null, null),
+                        "count", new WorkflowInputParam("count", "number", false, 10, "数量", null, null, null, null, null, null)
                 ))
                 .steps(List.of(new NoopStep("s1", "步骤", List.of(), null, null)))
                 .build();

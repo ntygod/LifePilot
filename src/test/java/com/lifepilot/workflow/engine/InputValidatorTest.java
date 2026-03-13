@@ -22,7 +22,7 @@ class InputValidatorTest {
     @Test
     void P1_缺少必填参数_校验失败() {
         var paramDefs = Map.of(
-                "topic", new WorkflowInputParam("topic", "string", true, null, "研究主题")
+                "topic", new WorkflowInputParam("topic", "string", true, null, "研究主题", null, null, null, null, null, null)
         );
 
         var result = InputValidator.validate(paramDefs, Map.of());
@@ -35,8 +35,8 @@ class InputValidatorTest {
     @Test
     void P1_缺少多个必填参数_全部列出() {
         var paramDefs = Map.of(
-                "topic", new WorkflowInputParam("topic", "string", true, null, null),
-                "depth", new WorkflowInputParam("depth", "string", true, null, null)
+                "topic", new WorkflowInputParam("topic", "string", true, null, null, null, null, null, null, null, null),
+                "depth", new WorkflowInputParam("depth", "string", true, null, null, null, null, null, null, null, null)
         );
 
         var result = InputValidator.validate(paramDefs, Map.of());
@@ -50,7 +50,7 @@ class InputValidatorTest {
     @Test
     void P1_必填参数已提供_校验通过() {
         var paramDefs = Map.of(
-                "topic", new WorkflowInputParam("topic", "string", true, null, null)
+                "topic", new WorkflowInputParam("topic", "string", true, null, null, null, null, null, null, null, null)
         );
 
         var result = InputValidator.validate(paramDefs, Map.of("topic", "AI"));
@@ -63,7 +63,7 @@ class InputValidatorTest {
     @Test
     void P1_必填参数有默认值且用户未提供_校验通过() {
         var paramDefs = Map.of(
-                "topic", new WorkflowInputParam("topic", "string", true, "默认主题", null)
+                "topic", new WorkflowInputParam("topic", "string", true, "默认主题", null, null, null, null, null, null, null)
         );
 
         var result = InputValidator.validate(paramDefs, Map.of());
@@ -78,7 +78,7 @@ class InputValidatorTest {
     @Test
     void P2_可选参数未提供且有默认值_填入默认值() {
         var paramDefs = Map.of(
-                "depth", new WorkflowInputParam("depth", "string", false, "standard", "搜索深度")
+                "depth", new WorkflowInputParam("depth", "string", false, "standard", "搜索深度", null, null, null, null, null, null)
         );
 
         var result = InputValidator.validate(paramDefs, Map.of());
@@ -90,7 +90,7 @@ class InputValidatorTest {
     @Test
     void P2_可选参数已提供_保留用户值() {
         var paramDefs = Map.of(
-                "depth", new WorkflowInputParam("depth", "string", false, "standard", null)
+                "depth", new WorkflowInputParam("depth", "string", false, "standard", null, null, null, null, null, null, null)
         );
 
         var result = InputValidator.validate(paramDefs, Map.of("depth", "deep"));
@@ -102,7 +102,7 @@ class InputValidatorTest {
     @Test
     void P2_可选参数未提供且无默认值_不出现在mergedInputs() {
         var paramDefs = Map.of(
-                "note", new WorkflowInputParam("note", "string", false, null, null)
+                "note", new WorkflowInputParam("note", "string", false, null, null, null, null, null, null, null, null)
         );
 
         var result = InputValidator.validate(paramDefs, Map.of());
@@ -143,7 +143,7 @@ class InputValidatorTest {
     @Test
     void P4_多余参数保留在mergedInputs中() {
         var paramDefs = Map.of(
-                "topic", new WorkflowInputParam("topic", "string", true, null, null)
+                "topic", new WorkflowInputParam("topic", "string", true, null, null, null, null, null, null, null, null)
         );
         var userInputs = new HashMap<String, Object>();
         userInputs.put("topic", "AI");
@@ -159,7 +159,7 @@ class InputValidatorTest {
     @Test
     void P4_多余参数不影响校验结果() {
         var paramDefs = Map.of(
-                "topic", new WorkflowInputParam("topic", "string", true, null, null)
+                "topic", new WorkflowInputParam("topic", "string", true, null, null, null, null, null, null, null, null)
         );
         var userInputs = new HashMap<String, Object>();
         userInputs.put("unknownField", 42);
@@ -176,9 +176,9 @@ class InputValidatorTest {
     @Test
     void 混合场景_必填加可选加多余() {
         var paramDefs = Map.of(
-                "topic", new WorkflowInputParam("topic", "string", true, null, null),
-                "depth", new WorkflowInputParam("depth", "string", false, "standard", null),
-                "format", new WorkflowInputParam("format", "string", true, null, null)
+                "topic", new WorkflowInputParam("topic", "string", true, null, null, null, null, null, null, null, null),
+                "depth", new WorkflowInputParam("depth", "string", false, "standard", null, null, null, null, null, null, null),
+                "format", new WorkflowInputParam("format", "string", true, null, null, null, null, null, null, null, null)
         );
         var userInputs = new HashMap<String, Object>();
         userInputs.put("topic", "量子计算");

@@ -216,7 +216,8 @@ public class WorkflowYamlParser {
                     type,
                     required,
                     defaultValue,
-                    getString(pm, "description")
+                    getString(pm, "description"),
+                    null, null, null, null, null, null
             ));
         }
         return inputs;
