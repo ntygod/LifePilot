@@ -2,7 +2,7 @@ package com.lifepilot.interaction.web;
 
 import com.lifepilot.agent.proactive.channel.GatewayNotificationChannel;
 import com.lifepilot.agent.proactive.model.ProactiveNotification;
-import com.lifepilot.agent.proactive.model.Urgency;
+import com.lifepilot.notification.Urgency;
 import com.lifepilot.interaction.channel.ChannelAdapter;
 import com.lifepilot.interaction.model.GatewayResponse;
 import com.lifepilot.interaction.web.model.NotificationSseEvent;

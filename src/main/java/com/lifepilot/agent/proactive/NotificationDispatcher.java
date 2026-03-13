@@ -4,7 +4,7 @@ import com.lifepilot.agent.proactive.channel.NotificationChannel;
 import com.lifepilot.agent.proactive.channel.PassiveNotificationQueue;
 import com.lifepilot.agent.proactive.model.InitiativeType;
 import com.lifepilot.agent.proactive.model.ProactiveNotification;
-import com.lifepilot.agent.proactive.model.Urgency;
+import com.lifepilot.notification.Urgency;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;

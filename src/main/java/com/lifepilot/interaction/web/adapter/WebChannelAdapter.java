@@ -10,7 +10,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import com.lifepilot.agent.proactive.channel.PassiveNotificationQueue;
-import com.lifepilot.agent.proactive.model.Urgency;
+import com.lifepilot.notification.Urgency;
 import com.lifepilot.interaction.channel.AbstractChannelAdapter;
 import com.lifepilot.interaction.config.GatewayProperties;
 import com.lifepilot.interaction.gateway.MessageGateway;

@@ -1,6 +1,6 @@
 package com.lifepilot.interaction.web.model;
 
-import com.lifepilot.agent.proactive.model.Urgency;
+import com.lifepilot.notification.Urgency;
 
 /**
  * SSE 通知事件载荷。

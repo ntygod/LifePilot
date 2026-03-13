@@ -1,5 +1,7 @@
 package com.lifepilot.agent.proactive.model;
 
+import com.lifepilot.notification.Urgency;
+
 /**
  * 频率状态枚举 — 三态状态机。
  *

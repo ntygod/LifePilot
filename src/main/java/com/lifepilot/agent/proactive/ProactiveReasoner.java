@@ -3,7 +3,7 @@ package com.lifepilot.agent.proactive;
 import com.lifepilot.agent.proactive.config.ProactiveConfigProperties;
 import com.lifepilot.agent.proactive.model.ProactiveCandidate;
 import com.lifepilot.agent.proactive.model.ProactiveNotification;
-import com.lifepilot.agent.proactive.model.Urgency;
+import com.lifepilot.notification.Urgency;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.LlmUnavailableException;
 import com.lifepilot.prompt.PromptRegistry;

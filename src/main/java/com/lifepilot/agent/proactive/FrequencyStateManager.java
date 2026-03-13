@@ -4,7 +4,7 @@ import com.lifepilot.agent.proactive.config.ProactiveConfigProperties;
 import com.lifepilot.agent.proactive.model.FrequencyState;
 import com.lifepilot.agent.proactive.model.FrequencyStateEntry;
 import com.lifepilot.agent.proactive.model.NotificationTypeDefinition;
-import com.lifepilot.agent.proactive.model.Urgency;
+import com.lifepilot.notification.Urgency;
 import org.springframework.lang.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
