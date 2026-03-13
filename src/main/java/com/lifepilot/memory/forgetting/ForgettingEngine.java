@@ -22,7 +22,7 @@ import java.util.UUID;
  * <p>核心流程：获取当前实体 → 过滤受保护实体 → HybridPolicy 四阶段遗忘 →
  * 执行遗忘动作（归档/压缩/删除）→ 记录遗忘日志。</p>
  *
- * <p>受保护实体（永不遗忘）：PREFERENCE/HABIT/GOAL 类型、importanceScore ≥ 0.9。</p>
+ * <p>受保护实体（永不遗忘）：由 {@code protectedTypes} 和 {@code protectionThreshold} 配置控制。</p>
  *
  * @author zsg
  * @since 2026-03-01
@@ -131,8 +131,8 @@ public class ForgettingEngine {
      *
      * <p>受保护条件（满足任一即受保护）：
      * <ul>
-     *   <li>实体类型为 PREFERENCE / HABIT / GOAL</li>
-     *   <li>importanceScore ≥ 0.9</li>
+     *   <li>实体类型在 {@code protectedTypes} 配置列表中（默认 PREFERENCE / HABIT / GOAL）</li>
+     *   <li>importanceScore ≥ {@code protectionThreshold} 配置值（默认 0.9）</li>
      * </ul></p>
      *
      * @param entity 目标实体
