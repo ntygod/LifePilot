@@ -288,13 +288,12 @@ public class MemoryAutoConfiguration {
     @ConditionalOnMissingBean
     public VectorSearcher vectorSearcher(
             @Qualifier("vectorJdbcTemplate") JdbcTemplate vectorJdbcTemplate,
-            JdbcTemplate jdbcTemplate,
             LlmRouter llmRouter,
             MemoryProperties properties) {
         boolean vecLoaded = isVecExtensionLoaded(vectorJdbcTemplate);
         log.info("记忆系统: 注册 VectorSearcher, vecExtensionLoaded={}, dimensions={}",
                 vecLoaded, properties.getEmbeddingDimensions());
-        return new VectorSearcher(vectorJdbcTemplate, jdbcTemplate, llmRouter,
+        return new VectorSearcher(vectorJdbcTemplate, llmRouter,
                 vecLoaded, properties.getEmbeddingDimensions());
     }
 
