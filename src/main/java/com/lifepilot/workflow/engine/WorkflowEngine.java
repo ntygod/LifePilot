@@ -923,7 +923,7 @@ public class WorkflowEngine {
                     for (WorkflowStep step : definition.steps()) {
                         if (step.id().equals(pendingStepId)
                                 && step instanceof WorkflowStep.ApprovalStep approval) {
-                            timeoutSeconds = approval.timeoutSeconds();
+                            timeoutSeconds = approval.approvalTimeoutSeconds();
                             autoApprove = approval.autoApproveOnTimeout();
                             break;
                         }

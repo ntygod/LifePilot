@@ -452,7 +452,7 @@ public class StepExecutor {
                 "__type", "approval",
                 "message", step.message(),
                 "approvers", step.approvers(),
-                "timeoutSeconds", step.timeoutSeconds(),
+                "timeoutSeconds", step.approvalTimeoutSeconds(),
                 "autoApproveOnTimeout", step.autoApproveOnTimeout()
         );
     }

@@ -69,6 +69,9 @@ public sealed interface WorkflowStep permits
     /** DAG 依赖声明，列出当前步骤依赖的前置步骤 ID。 */
     List<String> dependsOn();
 
+    /** 步骤级超时时间（秒），为 null 时使用全局默认值。 */
+    @Nullable Integer timeoutSeconds();
+
     /**
      * Skill 步骤，通过 SkillActivator 激活已注册的 Skill。
      *
@@ -82,7 +85,8 @@ public sealed interface WorkflowStep permits
     record SkillStep(String id, String name, String skillId,
                      Map<String, String> params,
                      List<String> dependsOn,
-                     @Nullable ErrorStrategy errorStrategy) implements WorkflowStep {}
+                     @Nullable ErrorStrategy errorStrategy,
+                     @Nullable Integer timeoutSeconds) implements WorkflowStep {}
 
     /**
      * Tool 步骤，通过 DynamicToolRegistry 查找并执行工具。
@@ -97,7 +101,8 @@ public sealed interface WorkflowStep permits
     record ToolStep(String id, String name, String toolId,
                     Map<String, String> params,
                     List<String> dependsOn,
-                    @Nullable ErrorStrategy errorStrategy) implements WorkflowStep {}
+                    @Nullable ErrorStrategy errorStrategy,
+                    @Nullable Integer timeoutSeconds) implements WorkflowStep {}
 
     /**
      * LLM/多模态节点引用的媒体输入。
@@ -128,7 +133,8 @@ public sealed interface WorkflowStep permits
                    @Nullable String preferredProviderId,
                    List<MediaRef> media,
                    List<String> dependsOn,
-                   @Nullable ErrorStrategy errorStrategy) implements WorkflowStep {}
+                   @Nullable ErrorStrategy errorStrategy,
+                   @Nullable Integer timeoutSeconds) implements WorkflowStep {}
 
     /**
      * 条件分支步骤，根据表达式求值结果选择执行 then 或 else 分支。
@@ -145,7 +151,8 @@ public sealed interface WorkflowStep permits
                          List<WorkflowStep> thenSteps,
                          List<WorkflowStep> elseSteps,
                          List<String> dependsOn,
-                         @Nullable ErrorStrategy errorStrategy) implements WorkflowStep {}
+                         @Nullable ErrorStrategy errorStrategy,
+                         @Nullable Integer timeoutSeconds) implements WorkflowStep {}
 
     /**
      * 循环步骤，遍历集合对每个元素执行 body 步骤。
@@ -163,7 +170,8 @@ public sealed interface WorkflowStep permits
     record LoopStep(String id, String name, String items, String loopVar,
                     List<WorkflowStep> body,
                     List<String> dependsOn,
-                    @Nullable ErrorStrategy errorStrategy) implements WorkflowStep {}
+                    @Nullable ErrorStrategy errorStrategy,
+                    @Nullable Integer timeoutSeconds) implements WorkflowStep {}
 
     /**
      * 并行步骤，使用 Virtual Thread 并发执行多个分支。
@@ -177,7 +185,8 @@ public sealed interface WorkflowStep permits
     record ParallelStep(String id, String name,
                         List<List<WorkflowStep>> branches,
                         List<String> dependsOn,
-                        @Nullable ErrorStrategy errorStrategy) implements WorkflowStep {}
+                        @Nullable ErrorStrategy errorStrategy,
+                        @Nullable Integer timeoutSeconds) implements WorkflowStep {}
 
     /**
      * 子工作流步骤，查找并执行另一个已注册的工作流。
@@ -192,7 +201,8 @@ public sealed interface WorkflowStep permits
     record SubWorkflowStep(String id, String name, String workflowId,
                            Map<String, String> params,
                            List<String> dependsOn,
-                           @Nullable ErrorStrategy errorStrategy) implements WorkflowStep {}
+                           @Nullable ErrorStrategy errorStrategy,
+                           @Nullable Integer timeoutSeconds) implements WorkflowStep {}
 
     /**
      * 空操作步骤，不执行任何操作，直接返回空结果。
@@ -204,7 +214,8 @@ public sealed interface WorkflowStep permits
      */
     record NoopStep(String id, String name,
                     List<String> dependsOn,
-                    @Nullable ErrorStrategy errorStrategy) implements WorkflowStep {}
+                    @Nullable ErrorStrategy errorStrategy,
+                    @Nullable Integer timeoutSeconds) implements WorkflowStep {}
 
     /**
      * 等待步骤，暂停工作流执行指定时长。
@@ -219,7 +230,8 @@ public sealed interface WorkflowStep permits
      */
     record WaitStep(String id, String name, long durationSeconds,
                     List<String> dependsOn,
-                    @Nullable ErrorStrategy errorStrategy) implements WorkflowStep {}
+                    @Nullable ErrorStrategy errorStrategy,
+                    @Nullable Integer timeoutSeconds) implements WorkflowStep {}
 
     /**
      * 人工审批步骤，暂停工作流等待审批决策。
@@ -231,17 +243,18 @@ public sealed interface WorkflowStep permits
      * @param name                  步骤名称
      * @param message               审批消息（展示给审批人）
      * @param approvers             审批人列表
-     * @param timeoutSeconds        审批超时时间（秒）
+     * @param approvalTimeoutSeconds 审批超时时间（秒）
      * @param autoApproveOnTimeout  超时后是否自动批准
      * @param dependsOn             DAG 依赖的前置步骤 ID 列表
      * @param errorStrategy         错误处理策略
      */
     record ApprovalStep(String id, String name, String message,
                         List<String> approvers,
-                        int timeoutSeconds,
+                        int approvalTimeoutSeconds,
                         boolean autoApproveOnTimeout,
                         List<String> dependsOn,
-                        @Nullable ErrorStrategy errorStrategy) implements WorkflowStep {}
+                        @Nullable ErrorStrategy errorStrategy,
+                        @Nullable Integer timeoutSeconds) implements WorkflowStep {}
 
     /**
      * 通知步骤，通过 NotificationService 发送通知。
@@ -259,5 +272,6 @@ public sealed interface WorkflowStep permits
                       String content, String contentType,
                       Urgency urgency,
                       List<String> dependsOn,
-                      @Nullable ErrorStrategy errorStrategy) implements WorkflowStep {}
+                      @Nullable ErrorStrategy errorStrategy,
+                      @Nullable Integer timeoutSeconds) implements WorkflowStep {}
 }

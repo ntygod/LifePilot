@@ -73,7 +73,7 @@ class StepExecutor_NotifyStep_测试 {
 
             var step = new NotifyStep("notify-1", "通知步骤",
                     "${inputs.userId}", "你的${inputs.taskName}已完成",
-                    "TEXT", Urgency.HIGH, List.of(), null);
+                    "TEXT", Urgency.HIGH, List.of(), null, null);
 
             stepExecutor.execute(step, context, expressionEngine);
 
@@ -97,7 +97,7 @@ class StepExecutor_NotifyStep_测试 {
             when(notificationService.send(any())).thenReturn(List.of("n-1"));
 
             var step = new NotifyStep("notify-1", "通知", "user-1", "纯文本",
-                    "TEXT", Urgency.MEDIUM, List.of(), null);
+                    "TEXT", Urgency.MEDIUM, List.of(), null, null);
 
             stepExecutor.execute(step, new WorkflowContext(), expressionEngine);
 
@@ -111,7 +111,7 @@ class StepExecutor_NotifyStep_测试 {
             when(notificationService.send(any())).thenReturn(List.of("n-1"));
 
             var step = new NotifyStep("notify-2", "通知", "user-1", "# 标题",
-                    "MARKDOWN", Urgency.MEDIUM, List.of(), null);
+                    "MARKDOWN", Urgency.MEDIUM, List.of(), null, null);
 
             stepExecutor.execute(step, new WorkflowContext(), expressionEngine);
 
@@ -125,7 +125,7 @@ class StepExecutor_NotifyStep_测试 {
             when(notificationService.send(any())).thenReturn(List.of("n-1"));
 
             var step = new NotifyStep("notify-3", "通知", "user-1", "卡片内容",
-                    "CARD", Urgency.HIGH, List.of(), null);
+                    "CARD", Urgency.HIGH, List.of(), null, null);
 
             stepExecutor.execute(step, new WorkflowContext(), expressionEngine);
 
@@ -145,7 +145,7 @@ class StepExecutor_NotifyStep_测试 {
             when(notificationService.send(any())).thenReturn(List.of("n-1", "n-2"));
 
             var step = new NotifyStep("notify-1", "通知步骤", "user-1", "测试内容",
-                    "TEXT", Urgency.HIGH, List.of(), null);
+                    "TEXT", Urgency.HIGH, List.of(), null, null);
 
             stepExecutor.execute(step, new WorkflowContext(), expressionEngine);
 
@@ -169,7 +169,7 @@ class StepExecutor_NotifyStep_测试 {
             when(notificationService.send(any())).thenReturn(List.of("n-1", "n-2"));
 
             var step = new NotifyStep("notify-1", "通知步骤", "user-1", "测试",
-                    "TEXT", Urgency.MEDIUM, List.of(), null);
+                    "TEXT", Urgency.MEDIUM, List.of(), null, null);
 
             var result = stepExecutor.execute(step, new WorkflowContext(), expressionEngine);
 

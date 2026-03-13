@@ -295,7 +295,7 @@ public class WorkflowYamlParser {
             case "loop" -> parseLoopStep(id, name, map, dependsOn, errorStrategy, errors, stepIds);
             case "parallel" -> parseParallelStep(id, name, map, dependsOn, errorStrategy, errors, stepIds);
             case "sub-workflow" -> parseSubWorkflowStep(id, name, map, dependsOn, errorStrategy, errors);
-            case "noop" -> new NoopStep(id, name, dependsOn, errorStrategy);
+            case "noop" -> new NoopStep(id, name, dependsOn, errorStrategy, null);
             case "wait" -> parseWaitStep(id, name, map, dependsOn, errorStrategy, errors);
             case "approval" -> parseApprovalStep(id, name, map, dependsOn, errorStrategy, errors);
             default -> {
@@ -314,7 +314,7 @@ public class WorkflowYamlParser {
             errors.add("步骤 '%s' (skill) 缺少必填字段: skillId".formatted(id));
             return null;
         }
-        return new SkillStep(id, name, skillId, parseStringMap(map.get("params")), dependsOn, errorStrategy);
+        return new SkillStep(id, name, skillId, parseStringMap(map.get("params")), dependsOn, errorStrategy, null);
     }
 
     private ToolStep parseToolStep(String id, String name, Map<String, Object> map,
@@ -326,7 +326,7 @@ public class WorkflowYamlParser {
             errors.add("步骤 '%s' (tool) 缺少必填字段: toolId".formatted(id));
             return null;
         }
-        return new ToolStep(id, name, toolId, parseStringMap(map.get("params")), dependsOn, errorStrategy);
+        return new ToolStep(id, name, toolId, parseStringMap(map.get("params")), dependsOn, errorStrategy, null);
     }
 
     private LlmStep parseLlmStep(String id, String name, Map<String, Object> map,
@@ -387,7 +387,8 @@ public class WorkflowYamlParser {
                 preferredProviderId,
                 media,
                 dependsOn,
-                errorStrategy
+                errorStrategy,
+                null
         );
     }
 
@@ -403,7 +404,7 @@ public class WorkflowYamlParser {
         }
         List<WorkflowStep> thenSteps = parseSteps(map.get("then"), errors, stepIds);
         List<WorkflowStep> elseSteps = parseSteps(map.get("else"), errors, stepIds);
-        return new ConditionStep(id, name, condition, thenSteps, elseSteps, dependsOn, errorStrategy);
+        return new ConditionStep(id, name, condition, thenSteps, elseSteps, dependsOn, errorStrategy, null);
     }
 
     private LoopStep parseLoopStep(String id, String name, Map<String, Object> map,
@@ -421,7 +422,7 @@ public class WorkflowYamlParser {
             errors.add("步骤 '%s' (loop) 缺少必填字段: loopVar".formatted(id));
             return null;
         }
-        return new LoopStep(id, name, items, loopVar, parseSteps(map.get("body"), errors, stepIds), dependsOn, errorStrategy);
+        return new LoopStep(id, name, items, loopVar, parseSteps(map.get("body"), errors, stepIds), dependsOn, errorStrategy, null);
     }
 
     @SuppressWarnings("unchecked")
@@ -462,7 +463,7 @@ public class WorkflowYamlParser {
             }
             branches.add(branchSteps);
         }
-        return new ParallelStep(id, name, branches, dependsOn, errorStrategy);
+        return new ParallelStep(id, name, branches, dependsOn, errorStrategy, null);
     }
 
     private SubWorkflowStep parseSubWorkflowStep(String id, String name, Map<String, Object> map,
@@ -474,7 +475,7 @@ public class WorkflowYamlParser {
             errors.add("步骤 '%s' (sub-workflow) 缺少必填字段: workflowId".formatted(id));
             return null;
         }
-        return new SubWorkflowStep(id, name, workflowId, parseStringMap(map.get("params")), dependsOn, errorStrategy);
+        return new SubWorkflowStep(id, name, workflowId, parseStringMap(map.get("params")), dependsOn, errorStrategy, null);
     }
 
     private WaitStep parseWaitStep(String id, String name, Map<String, Object> map,
@@ -493,7 +494,7 @@ public class WorkflowYamlParser {
             errors.add("步骤 '%s' (wait) durationSeconds 必须是数字类型".formatted(id));
             return null;
         }
-        return new WaitStep(id, name, durationSeconds, dependsOn, errorStrategy);
+        return new WaitStep(id, name, durationSeconds, dependsOn, errorStrategy, null);
     }
 
     private ApprovalStep parseApprovalStep(String id, String name, Map<String, Object> map,
@@ -519,7 +520,7 @@ public class WorkflowYamlParser {
         int timeoutSeconds = getInt(map, "timeoutSeconds", defaultTimeout);
         boolean autoApproveOnTimeout = getBoolean(map, "autoApproveOnTimeout", defaultAutoApprove);
         return new ApprovalStep(id, name, message, approvers, timeoutSeconds,
-                autoApproveOnTimeout, dependsOn, errorStrategy);
+                autoApproveOnTimeout, dependsOn, errorStrategy, null);
     }
 
     private static List<String> parseDependsOn(Object dependsOnObj) {

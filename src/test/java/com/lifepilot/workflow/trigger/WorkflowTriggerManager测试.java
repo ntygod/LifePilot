@@ -61,7 +61,7 @@ class WorkflowTriggerManager测试 {
                 .name("测试工作流-" + id)
                 .enabled(true)
                 .triggers(List.of(triggers))
-                .steps(List.of(new NoopStep("s1", "步骤1", List.of(), null)))
+                .steps(List.of(new NoopStep("s1", "步骤1", List.of(), null, null)))
                 .build();
     }
 

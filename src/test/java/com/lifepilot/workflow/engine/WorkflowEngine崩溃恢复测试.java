@@ -62,7 +62,7 @@ class WorkflowEngine崩溃恢复测试 {
     }
 
     private NoopStep 创建NoopStep(String id) {
-        return new NoopStep(id, "Noop-" + id, List.of(), null);
+        return new NoopStep(id, "Noop-" + id, List.of(), null, null);
     }
 
     private WorkflowInstance 创建中断实例(String instanceId, String workflowId,
@@ -127,7 +127,7 @@ class WorkflowEngine崩溃恢复测试 {
     @Test
     void WAITING实例_转换为RUNNING并从下一步恢复() throws Exception {
         // 准备：3 步工作流，实例在 step1（index=0，WaitStep）等待
-        var waitStep = new WorkflowStep.WaitStep("wait-1", "等待步骤", 60, List.of(), null);
+        var waitStep = new WorkflowStep.WaitStep("wait-1", "等待步骤", 60, List.of(), null, null);
         var step2 = 创建NoopStep("step2");
         var step3 = 创建NoopStep("step3");
         var def = 创建简单工作流("wf-wait", waitStep, step2, step3);

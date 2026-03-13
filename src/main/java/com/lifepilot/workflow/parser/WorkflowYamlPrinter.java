@@ -21,6 +21,7 @@ import com.lifepilot.workflow.model.WorkflowStep.SkillStep;
 import com.lifepilot.workflow.model.WorkflowStep.SubWorkflowStep;
 import com.lifepilot.workflow.model.WorkflowStep.ToolStep;
 import com.lifepilot.workflow.model.WorkflowStep.ApprovalStep;
+import com.lifepilot.workflow.model.WorkflowStep.NotifyStep;
 import com.lifepilot.workflow.model.WorkflowStep.WaitStep;
 import com.lifepilot.workflow.model.WorkflowTrigger;
 
@@ -242,8 +243,15 @@ public class WorkflowYamlPrinter {
                 if (!s.approvers().isEmpty()) {
                     map.put("approvers", new ArrayList<>(s.approvers()));
                 }
-                map.put("timeoutSeconds", s.timeoutSeconds());
+                map.put("timeoutSeconds", s.approvalTimeoutSeconds());
                 map.put("autoApproveOnTimeout", s.autoApproveOnTimeout());
+            }
+            case NotifyStep s -> {
+                map.put("type", "notify");
+                map.put("targetUserId", s.targetUserId());
+                map.put("content", s.content());
+                map.put("contentType", s.contentType());
+                map.put("urgency", s.urgency().name());
             }
         }
 

@@ -62,7 +62,7 @@ class WorkflowEngineTest {
     }
 
     private NoopStep noop(String id) {
-        return new NoopStep(id, "Noop-" + id, List.of(), null);
+        return new NoopStep(id, "Noop-" + id, List.of(), null, null);
     }
 
     /**
@@ -184,7 +184,7 @@ class WorkflowEngineTest {
         @Test
         void Retry策略_重试耗尽后回退到Fail() {
             var step = new NoopStep("retry-step", "retry", List.of(),
-                    new ErrorStrategy.Retry(3, 10, 50));
+                    new ErrorStrategy.Retry(3, 10, 50), null);
             var def = createSimpleDef("wf-retry", step);
 
             createAndMockInstance("inst-retry", "wf-retry", Map.of());
@@ -204,7 +204,7 @@ class WorkflowEngineTest {
         @Test
         void Retry策略_第二次成功() {
             var step = new NoopStep("retry-ok", "retry-ok", List.of(),
-                    new ErrorStrategy.Retry(3, 10, 50));
+                    new ErrorStrategy.Retry(3, 10, 50), null);
             var def = createSimpleDef("wf-retry-ok", step);
 
             createAndMockInstance("inst-retry-ok", "wf-retry-ok", Map.of());
@@ -222,7 +222,7 @@ class WorkflowEngineTest {
         @Test
         void Skip策略_跳过失败步骤继续执行() {
             var step1 = new NoopStep("skip-step", "skip", List.of(),
-                    new ErrorStrategy.Skip("optional"));
+                    new ErrorStrategy.Skip("optional"), null);
             var step2 = noop("next-step");
             var def = createSimpleDef("wf-skip", step1, step2);
 
@@ -242,7 +242,7 @@ class WorkflowEngineTest {
         @Test
         void Fail策略_步骤失败终止工作流() {
             var step = new NoopStep("fail-step", "fail", List.of(),
-                    new ErrorStrategy.Fail());
+                    new ErrorStrategy.Fail(), null);
             var def = createSimpleDef("wf-fail", step);
 
             createAndMockInstance("inst-fail", "wf-fail", Map.of());
@@ -261,7 +261,7 @@ class WorkflowEngineTest {
         void Compensate策略_执行补偿步骤() {
             var compStep = noop("comp-step");
             var step = new NoopStep("main-step", "main", List.of(),
-                    new ErrorStrategy.Compensate(compStep));
+                    new ErrorStrategy.Compensate(compStep), null);
             var def = createSimpleDef("wf-comp", step);
 
             createAndMockInstance("inst-comp", "wf-comp", Map.of());
@@ -300,7 +300,7 @@ class WorkflowEngineTest {
 
         @Test
         void WaitStep_转换为WAITING状态() {
-            var waitStep = new WaitStep("wait-1", "wait", 60, List.of(), null);
+            var waitStep = new WaitStep("wait-1", "wait", 60, List.of(), null, null);
             var def = createSimpleDef("wf-wait", waitStep);
 
             createAndMockInstance("inst-wait", "wf-wait", Map.of());
@@ -320,7 +320,7 @@ class WorkflowEngineTest {
 
         @Test
         void 从WAITING状态恢复执行() {
-            var step1 = new WaitStep("wait-1", "wait", 60, List.of(), null);
+            var step1 = new WaitStep("wait-1", "wait", 60, List.of(), null, null);
             var step2 = noop("after-wait");
             var def = createSimpleDef("wf-resume", step1, step2);
 
@@ -440,7 +440,7 @@ class WorkflowEngineTest {
         @Test
         void 子工作流执行成功() {
             var subStep = new SubWorkflowStep("sub-1", "sub",
-                    "child-wf", Map.of("k", "v"), List.of(), null);
+                    "child-wf", Map.of("k", "v"), List.of(), null, null);
             var mainDef = createSimpleDef("main-wf", subStep);
 
             var childStep = noop("child-step");
@@ -470,11 +470,11 @@ class WorkflowEngineTest {
             config.setMaxNestingDepth(1);
 
             var subStep = new SubWorkflowStep("sub-1", "sub",
-                    "child-wf", Map.of("k", "v"), List.of(), null);
+                    "child-wf", Map.of("k", "v"), List.of(), null, null);
             var mainDef = createSimpleDef("main-wf", subStep);
 
             var grandSubStep = new SubWorkflowStep("grand-sub", "grand",
-                    "grandchild-wf", Map.of("k", "v"), List.of(), null);
+                    "grandchild-wf", Map.of("k", "v"), List.of(), null, null);
             var childDef = createSimpleDef("child-wf", grandSubStep);
 
             createAndMockInstance("inst-nest", "main-wf", Map.of());
@@ -521,7 +521,7 @@ class WorkflowEngineTest {
         @Test
         void 失败步骤也记录StepLog() {
             var step = new NoopStep("fail-s", "fail", List.of(),
-                    new ErrorStrategy.Fail());
+                    new ErrorStrategy.Fail(), null);
             var def = createSimpleDef("wf-fail-log", step);
 
             createAndMockInstance("inst-fail-log", "wf-fail-log", Map.of());
@@ -542,8 +542,8 @@ class WorkflowEngineTest {
         @Test
         void 并发分支一条失败时快速返回并取消其他分支() throws Exception {
             var root = noop("root");
-            var fastFail = new NoopStep("fast-fail", "fast-fail", List.of("root"), null);
-            var slowStep = new NoopStep("slow-step", "slow-step", List.of("root"), null);
+            var fastFail = new NoopStep("fast-fail", "fast-fail", List.of("root"), null, null);
+            var slowStep = new NoopStep("slow-step", "slow-step", List.of("root"), null, null);
             var def = createSimpleDef("wf-parallel-fail-fast", root, fastFail, slowStep);
 
             createAndMockInstance("inst-parallel-fail-fast", "wf-parallel-fail-fast", Map.of());

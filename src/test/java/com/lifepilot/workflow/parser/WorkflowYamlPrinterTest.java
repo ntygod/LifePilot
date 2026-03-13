@@ -43,7 +43,7 @@ class WorkflowYamlPrinterTest {
         var definition = WorkflowDefinition.builder()
                 .id("test-wf").name("测试工作流")
                 .description("一个简单的测试工作流").version("1.0").enabled(true)
-                .steps(List.of(new NoopStep("step1", "空操作", List.of(), null)))
+                .steps(List.of(new NoopStep("step1", "空操作", List.of(), null, null)))
                 .build();
 
         var yaml = printer.print(definition);
@@ -64,7 +64,7 @@ class WorkflowYamlPrinterTest {
                 .steps(List.of(
                         new SkillStep("s1", "调用技能", "todo.list",
                                 Map.of("filter", "today", "userId", "${inputs.userId}"),
-                                List.of(), null)
+                                List.of(), null, null)
                 )).build();
 
         var yaml = printer.print(definition);
@@ -84,7 +84,7 @@ class WorkflowYamlPrinterTest {
                 .id("tool-wf").name("Tool 工作流")
                 .steps(List.of(
                         new ToolStep("t1", "发送通知", "notification.send",
-                                Map.of("message", "hello"), List.of(), null)
+                                Map.of("message", "hello"), List.of(), null, null)
                 )).build();
 
         var yaml = printer.print(definition);
@@ -104,7 +104,7 @@ class WorkflowYamlPrinterTest {
                 .steps(List.of(
                         new LlmStep("l1", "生成内容", "chat", ProviderCapability.CHAT,
                                 "请总结以下内容", "{\"type\":\"object\"}",
-                                null, null, List.of(), List.of(), null)
+                                null, null, List.of(), List.of(), null, null)
                 )).build();
 
         var yaml = printer.print(definition);
@@ -130,7 +130,7 @@ class WorkflowYamlPrinterTest {
                                 "Describe the image", "{\"type\":\"object\"}",
                                 null, "provider-1",
                                 List.of(new MediaRef("${inputs.image}", "image/png", "upload.png")),
-                                List.of(), null)
+                                List.of(), null, null)
                 )).build();
 
         var yaml = printer.print(definition);
@@ -152,9 +152,9 @@ class WorkflowYamlPrinterTest {
                 .id("cond-wf").name("条件工作流")
                 .steps(List.of(
                         new ConditionStep("c1", "检查条件", "${steps.s1.output.count} > 0",
-                                List.of(new NoopStep("then1", "有数据", List.of(), null)),
-                                List.of(new NoopStep("else1", "无数据", List.of(), null)),
-                                List.of(), null)
+                                List.of(new NoopStep("then1", "有数据", List.of(), null, null)),
+                                List.of(new NoopStep("else1", "无数据", List.of(), null, null)),
+                                List.of(), null, null)
                 )).build();
 
         var yaml = printer.print(definition);
@@ -176,8 +176,8 @@ class WorkflowYamlPrinterTest {
                 .id("loop-wf").name("循环工作流")
                 .steps(List.of(
                         new LoopStep("lp1", "遍历任务", "${steps.fetch.output.items}", "item",
-                                List.of(new NoopStep("body1", "处理", List.of(), null)),
-                                List.of(), null)
+                                List.of(new NoopStep("body1", "处理", List.of(), null, null)),
+                                List.of(), null, null)
                 )).build();
 
         var yaml = printer.print(definition);
@@ -198,9 +198,9 @@ class WorkflowYamlPrinterTest {
                 .steps(List.of(
                         new ParallelStep("p1", "并行执行",
                                 List.of(
-                                        List.of(new NoopStep("b1s1", "分支1步骤1", List.of(), null)),
-                                        List.of(new NoopStep("b2s1", "分支2步骤1", List.of(), null))
-                                ), List.of(), null)
+                                        List.of(new NoopStep("b1s1", "分支1步骤1", List.of(), null, null)),
+                                        List.of(new NoopStep("b2s1", "分支2步骤1", List.of(), null, null))
+                                ), List.of(), null, null)
                 )).build();
 
         var yaml = printer.print(definition);
@@ -220,7 +220,7 @@ class WorkflowYamlPrinterTest {
                 .id("sub-wf").name("子工作流")
                 .steps(List.of(
                         new SubWorkflowStep("sw1", "调用子流程", "child-wf",
-                                Map.of("key", "value"), List.of(), null)
+                                Map.of("key", "value"), List.of(), null, null)
                 )).build();
 
         var yaml = printer.print(definition);
@@ -237,7 +237,7 @@ class WorkflowYamlPrinterTest {
     void WaitStep_roundTrip() {
         var definition = WorkflowDefinition.builder()
                 .id("wait-wf").name("等待工作流")
-                .steps(List.of(new WaitStep("w1", "等待", 60, List.of(), null)))
+                .steps(List.of(new WaitStep("w1", "等待", 60, List.of(), null, null)))
                 .build();
 
         var yaml = printer.print(definition);
@@ -258,7 +258,7 @@ class WorkflowYamlPrinterTest {
                         new EventTrigger("task.completed"),
                         new ManualTrigger()
                 ))
-                .steps(List.of(new NoopStep("s1", "步骤", List.of(), null)))
+                .steps(List.of(new NoopStep("s1", "步骤", List.of(), null, null)))
                 .build();
 
         var yaml = printer.print(definition);
@@ -282,7 +282,7 @@ class WorkflowYamlPrinterTest {
                         "userId", new WorkflowInputParam("userId", "string", true, null, "用户ID"),
                         "count", new WorkflowInputParam("count", "number", false, 10, "数量")
                 ))
-                .steps(List.of(new NoopStep("s1", "步骤", List.of(), null)))
+                .steps(List.of(new NoopStep("s1", "步骤", List.of(), null, null)))
                 .build();
 
         var yaml = printer.print(definition);
@@ -304,7 +304,7 @@ class WorkflowYamlPrinterTest {
                 .id("retry-wf").name("重试工作流")
                 .steps(List.of(
                         new NoopStep("s1", "步骤", List.of(),
-                                new ErrorStrategy.Retry(5, 1000, 10000))
+                                new ErrorStrategy.Retry(5, 1000, 10000), null)
                 )).build();
 
         var yaml = printer.print(definition);
@@ -324,7 +324,7 @@ class WorkflowYamlPrinterTest {
                 .id("skip-wf").name("跳过工作流")
                 .steps(List.of(
                         new NoopStep("s1", "步骤", List.of(),
-                                new ErrorStrategy.Skip("非关键步骤"))
+                                new ErrorStrategy.Skip("非关键步骤"), null)
                 )).build();
 
         var yaml = printer.print(definition);
@@ -341,7 +341,7 @@ class WorkflowYamlPrinterTest {
         var definition = WorkflowDefinition.builder()
                 .id("fail-wf").name("失败工作流")
                 .steps(List.of(
-                        new NoopStep("s1", "步骤", List.of(), new ErrorStrategy.Fail())
+                        new NoopStep("s1", "步骤", List.of(), new ErrorStrategy.Fail(), null)
                 )).build();
 
         var yaml = printer.print(definition);
@@ -354,13 +354,13 @@ class WorkflowYamlPrinterTest {
 
     @Test
     void 错误策略Compensate_递归序列化() {
-        var compStep = new NoopStep("comp1", "补偿操作", List.of(), null);
+        var compStep = new NoopStep("comp1", "补偿操作", List.of(), null, null);
         var definition = WorkflowDefinition.builder()
                 .id("comp-wf").name("补偿工作流")
                 .steps(List.of(
                         new ToolStep("s1", "关键操作", "api.call",
                                 Map.of("url", "https://example.com"),
-                                List.of(), new ErrorStrategy.Compensate(compStep))
+                                List.of(), new ErrorStrategy.Compensate(compStep), null)
                 )).build();
 
         var yaml = printer.print(definition);
@@ -377,7 +377,7 @@ class WorkflowYamlPrinterTest {
     void 省略空可选字段() {
         var definition = WorkflowDefinition.builder()
                 .id("minimal-wf").name("最小工作流").enabled(true)
-                .steps(List.of(new NoopStep("s1", "步骤", List.of(), null)))
+                .steps(List.of(new NoopStep("s1", "步骤", List.of(), null, null)))
                 .build();
 
         var yaml = printer.print(definition);
@@ -395,7 +395,7 @@ class WorkflowYamlPrinterTest {
         var definition = WorkflowDefinition.builder()
                 .id("meta-wf").name("元数据工作流")
                 .metadata(Map.of("author", "test", "category", "daily"))
-                .steps(List.of(new NoopStep("s1", "步骤", List.of(), null)))
+                .steps(List.of(new NoopStep("s1", "步骤", List.of(), null, null)))
                 .build();
 
         var yaml = printer.print(definition);
@@ -411,7 +411,7 @@ class WorkflowYamlPrinterTest {
     void disabled工作流_输出enabled字段() {
         var definition = WorkflowDefinition.builder()
                 .id("disabled-wf").name("禁用工作流").enabled(false)
-                .steps(List.of(new NoopStep("s1", "步骤", List.of(), null)))
+                .steps(List.of(new NoopStep("s1", "步骤", List.of(), null, null)))
                 .build();
 
         var yaml = printer.print(definition);
