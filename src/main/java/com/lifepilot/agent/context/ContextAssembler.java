@@ -4,7 +4,7 @@ import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.model.AgentPhase;
 import com.lifepilot.agent.model.AgentState;
 import com.lifepilot.agent.model.StepRecord;
-import com.lifepilot.agent.proactive.channel.PassiveNotificationQueue;
+import com.lifepilot.notification.PassiveNotificationQueue;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.knowledge.model.DocumentSearchResult;
 import com.lifepilot.knowledge.repository.DocumentRepository;
@@ -547,7 +547,7 @@ public class ContextAssembler {
             var notifications = passiveNotificationQueue.drainAll();
             if (notifications.isEmpty()) return List.of();
             return notifications.stream()
-                    .map(n -> "[%s] %s (%s)".formatted(n.typeId(), n.content(), n.sentAt()))
+                    .map(n -> "[%s] %s (%s)".formatted(n.typeId(), n.contentJson(), n.enqueuedAt()))
                     .toList();
         } catch (Exception e) {
             log.warn("被动通知队列 drain 失败，降级跳过: error={}", e.getMessage());

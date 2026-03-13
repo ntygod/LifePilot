@@ -8,7 +8,7 @@ import com.lifepilot.agent.StateReducer;
 import com.lifepilot.agent.context.ContextAssembler;
 import com.lifepilot.agent.context.DefaultMemoryRetrievalStrategy;
 import com.lifepilot.agent.media.MediaDataExtractor;
-import com.lifepilot.agent.proactive.channel.PassiveNotificationQueue;
+import com.lifepilot.notification.PassiveNotificationQueue;
 import com.lifepilot.agent.session.SessionManager;
 import com.lifepilot.conversation.ConversationHistoryStore;
 import com.lifepilot.conversation.ConversationViewService;
