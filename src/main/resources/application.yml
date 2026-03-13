@@ -556,6 +556,12 @@ lifepilot:
     wakeup:
       # 扫描间隔（秒）
       scan-interval-seconds: 10
+    # 速率限制配置
+    rate-limit:
+      # 全局最大并发实例数
+      max-concurrent-instances: 20
+      # 单个工作流最大并发实例数
+      max-instances-per-workflow: 3
   sandbox:
     # 沙箱总开关
     enabled: true

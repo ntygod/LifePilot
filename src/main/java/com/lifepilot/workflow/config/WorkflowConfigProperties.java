@@ -51,6 +51,9 @@ public class WorkflowConfigProperties {
     /** 唤醒调度器配置。 */
     private Wakeup wakeup = new Wakeup();
 
+    /** 速率限制配置。 */
+    private RateLimit rateLimit = new RateLimit();
+
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
 
@@ -86,6 +89,9 @@ public class WorkflowConfigProperties {
 
     public Wakeup getWakeup() { return wakeup; }
     public void setWakeup(Wakeup wakeup) { this.wakeup = wakeup; }
+
+    public RateLimit getRateLimit() { return rateLimit; }
+    public void setRateLimit(RateLimit rateLimit) { this.rateLimit = rateLimit; }
 
     /**
      * 重试策略配置 — 控制步骤失败时的指数退避重试参数。
@@ -169,5 +175,26 @@ public class WorkflowConfigProperties {
 
         public int getScanIntervalSeconds() { return scanIntervalSeconds; }
         public void setScanIntervalSeconds(int scanIntervalSeconds) { this.scanIntervalSeconds = scanIntervalSeconds; }
+    }
+
+    /**
+     * 速率限制配置 — 控制工作流实例的并发执行数量，防止系统过载。
+     *
+     * @author zsg
+     * @since 2026-03-13
+     */
+    public static class RateLimit {
+
+        /** 全局最大并发实例数，默认 20。 */
+        private int maxConcurrentInstances = 20;
+
+        /** 单个工作流最大并发实例数，默认 3。 */
+        private int maxInstancesPerWorkflow = 3;
+
+        public int getMaxConcurrentInstances() { return maxConcurrentInstances; }
+        public void setMaxConcurrentInstances(int maxConcurrentInstances) { this.maxConcurrentInstances = maxConcurrentInstances; }
+
+        public int getMaxInstancesPerWorkflow() { return maxInstancesPerWorkflow; }
+        public void setMaxInstancesPerWorkflow(int maxInstancesPerWorkflow) { this.maxInstancesPerWorkflow = maxInstancesPerWorkflow; }
     }
 }
