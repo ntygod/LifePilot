@@ -9,6 +9,8 @@ import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.springframework.jdbc.core.JdbcTemplate;
+
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -18,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -42,6 +45,7 @@ public class HybridRetriever {
     @Nullable
     private final IntentMatcher intentMatcher;
     private final MemoryProperties memoryProperties;
+    private final JdbcTemplate jdbcTemplate;
     private final ExecutorService virtualThreadExecutor;
 
     /** 最近一次 retrieve() 中 L4 程序记忆匹配结果（线程安全，每次 retrieve 重置）。 */
@@ -55,13 +59,15 @@ public class HybridRetriever {
                            GraphTraverser graphTraverser,
                            SemanticMemory semanticMemory,
                            @Nullable IntentMatcher intentMatcher,
-                           MemoryProperties memoryProperties) {
+                           MemoryProperties memoryProperties,
+                           JdbcTemplate jdbcTemplate) {
         this.vectorSearcher = vectorSearcher;
         this.ftsSearcher = ftsSearcher;
         this.graphTraverser = graphTraverser;
         this.semanticMemory = semanticMemory;
         this.intentMatcher = intentMatcher;
         this.memoryProperties = memoryProperties;
+        this.jdbcTemplate = jdbcTemplate;
         this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
     }
 
@@ -91,6 +97,8 @@ public class HybridRetriever {
             log.debug("混合检索: 已知数据为空，短路返回");
             return List.of();
         }
+
+        long startTime = System.currentTimeMillis();
 
         // 1. 并行执行三路检索 + 可选 L4 意图匹配
         var vectorFuture = CompletableFuture.supplyAsync(
@@ -222,8 +230,16 @@ public class HybridRetriever {
             }
         }
 
-        log.debug("混合检索: query={}, 向量={}, FTS={}, 图={}, 融合结果={}",
-                query, vectorItems.size(), ftsResults.size(), graphResults.size(), finalResults.size());
+        // 记录检索事件日志
+        long durationMs = System.currentTimeMillis() - startTime;
+        float topFused = finalResults.isEmpty() ? 0.0f : finalResults.getFirst().fusedScore();
+        logRetrievalEvent(query, topK,
+                vectorItems.size(), ftsResults.size(), graphResults.size(),
+                deduped.size(), finalResults.size(), topFused, durationMs);
+
+        log.debug("混合检索: query={}, 向量={}, FTS={}, 图={}, 融合结果={}, 耗时={}ms",
+                query, vectorItems.size(), ftsResults.size(), graphResults.size(),
+                finalResults.size(), durationMs);
         return finalResults;
     }
 
@@ -348,6 +364,29 @@ public class HybridRetriever {
             }
         } catch (Exception e) {
             log.warn("混合检索: 批量更新 access_count 失败, error={}", e.getMessage());
+        }
+    }
+
+    /**
+     * 记录检索事件日志到 retrieval_event_log 表。
+     *
+     * <p>写入失败时 WARN 日志降级，不影响检索结果返回。</p>
+     */
+    private void logRetrievalEvent(String query, int topK,
+                                    int vectorCount, int ftsCount, int graphCount,
+                                    int fusedCount, int finalCount,
+                                    float topFusedScore, long durationMs) {
+        try {
+            jdbcTemplate.update(
+                    "INSERT INTO retrieval_event_log(id, query, top_k, vector_count, fts_count, graph_count, fused_count, final_count, top_fused_score, duration_ms, created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                    UUID.randomUUID().toString(),
+                    query, topK,
+                    vectorCount, ftsCount, graphCount,
+                    fusedCount, finalCount,
+                    topFusedScore, durationMs,
+                    Instant.now().toString());
+        } catch (Exception e) {
+            log.warn("检索事件日志写入失败: error={}", e.getMessage());
         }
     }
 
