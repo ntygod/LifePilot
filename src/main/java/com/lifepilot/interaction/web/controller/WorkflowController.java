@@ -40,6 +40,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -856,6 +857,127 @@ public class WorkflowController {
                     .body(new ErrorResponse(404, "工作流实例未找到: id=" + instanceId, Instant.now()));
         }
         return ResponseEntity.ok(workflowRepository.findStepLogsSummary(instanceId));
+    }
+
+    // ── 步骤类型元数据端点 ────────────────────────────────
+
+    /**
+     * 获取所有步骤类型及其可配置参数的元数据定义。
+     *
+     * <p>返回 11 种步骤类型的参数 Schema，供前端动态渲染步骤配置表单。
+     * 动态资源（Skill/Tool/LLM 场景）的具体列表需通过对应注册表查询。
+     *
+     * @return 步骤类型元数据（stepTypes + commonParams）
+     */
+    @GetMapping("/step-types")
+    public ResponseEntity<?> getStepTypes() {
+        log.debug("查询步骤类型参数 Schema");
+        return ResponseEntity.ok(Map.of(
+                "stepTypes", buildStepTypeMetadata(),
+                "commonParams", buildCommonParams()
+        ));
+    }
+
+    /**
+     * 构建所有步骤类型的参数元数据。
+     */
+    private List<Map<String, Object>> buildStepTypeMetadata() {
+        List<Map<String, Object>> types = new ArrayList<>();
+
+        // skill
+        types.add(stepType("skill", "Skill 调用", "调用已注册的 Skill 执行", List.of(
+                param("skillId", "string", true, "目标 Skill ID（引用已注册的 Skill）"),
+                param("params", "map", false, "传递给 Skill 的参数（支持 ${} 表达式）")
+        )));
+
+        // tool
+        types.add(stepType("tool", "Tool 调用", "调用已注册的 Tool 执行", List.of(
+                param("toolId", "string", true, "目标 Tool ID（引用已注册的 Tool）"),
+                param("params", "map", false, "传递给 Tool 的参数（支持 ${} 表达式）")
+        )));
+
+        // llm
+        types.add(stepType("llm", "LLM 调用", "调用 LLM 生成内容", List.of(
+                param("scene", "string", true, "LLM 场景标识（引用已注册的场景）"),
+                param("capability", "string", true, "能力要求（CHAT / VISION / AUDIO 等）"),
+                param("promptTemplate", "string", true, "提示词模板（支持 ${} 表达式）"),
+                param("outputSchema", "string", false, "输出 JSON Schema（结构化输出）"),
+                param("modelName", "string", false, "指定模型名称"),
+                param("preferredProviderId", "string", false, "首选供应商 ID")
+        )));
+
+        // condition
+        types.add(stepType("condition", "条件分支", "根据表达式求值选择 then/else 分支", List.of(
+                param("condition", "string", true, "条件表达式"),
+                param("thenSteps", "list", true, "条件为 true 时执行的步骤"),
+                param("elseSteps", "list", false, "条件为 false 时执行的步骤")
+        )));
+
+        // loop
+        types.add(stepType("loop", "循环遍历", "遍历集合对每个元素执行 body 步骤", List.of(
+                param("items", "string", true, "集合表达式（解析为 List）"),
+                param("loopVar", "string", true, "循环变量名"),
+                param("body", "list", true, "每次迭代执行的步骤列表")
+        )));
+
+        // parallel
+        types.add(stepType("parallel", "并行执行", "使用 Virtual Thread 并发执行多个分支", List.of(
+                param("branches", "list", true, "并行分支列表")
+        )));
+
+        // sub-workflow
+        types.add(stepType("sub-workflow", "子工作流", "调用另一个已注册的工作流", List.of(
+                param("workflowId", "string", true, "目标工作流 ID"),
+                param("params", "map", false, "传递给子工作流的输入参数")
+        )));
+
+        // noop
+        types.add(stepType("noop", "空操作", "不执行任何操作，直接跳过", List.of()));
+
+        // wait
+        types.add(stepType("wait", "等待", "暂停工作流执行指定时长", List.of(
+                param("durationSeconds", "number", true, "等待时长（秒）")
+        )));
+
+        // approval
+        types.add(stepType("approval", "人工审批", "暂停工作流等待审批决策", List.of(
+                param("message", "string", true, "审批消息"),
+                param("approvers", "list", true, "审批人列表"),
+                param("approvalTimeoutSeconds", "number", true, "审批超时时间（秒）"),
+                param("autoApproveOnTimeout", "boolean", false, "超时后是否自动批准")
+        )));
+
+        // notify
+        types.add(stepType("notify", "通知", "通过 NotificationService 发送通知", List.of(
+                param("targetUserId", "string", true, "目标用户 ID（支持 ${} 表达式）"),
+                param("content", "string", true, "通知内容模板（支持 ${} 表达式）"),
+                param("contentType", "string", true, "内容类型：TEXT / MARKDOWN / CARD"),
+                param("urgency", "string", true, "紧急程度：LOW / NORMAL / HIGH / URGENT")
+        )));
+
+        return types;
+    }
+
+    /**
+     * 构建所有步骤类型共有的通用参数列表。
+     */
+    private List<Map<String, Object>> buildCommonParams() {
+        return List.of(
+                param("id", "string", true, "步骤唯一标识"),
+                param("name", "string", true, "步骤名称"),
+                param("dependsOn", "list", false, "DAG 依赖的前置步骤 ID 列表"),
+                param("timeoutSeconds", "number", false, "步骤级超时时间（秒）"),
+                param("errorStrategy", "object", false, "错误处理策略")
+        );
+    }
+
+    private Map<String, Object> stepType(String type, String label, String description,
+                                         List<Map<String, Object>> params) {
+        return Map.of("type", type, "label", label, "description", description, "params", params);
+    }
+
+    private Map<String, Object> param(String name, String type, boolean required, String description) {
+        return Map.of("name", name, "type", type, "required", required, "description", description);
     }
 
     // ── 辅助方法 ──────────────────────────────────────────
