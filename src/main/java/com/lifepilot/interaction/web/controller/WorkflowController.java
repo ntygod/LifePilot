@@ -36,6 +36,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -255,14 +256,18 @@ public class WorkflowController {
     }
 
     /**
-     * 获取所有工作流定义列表。
+     * 获取工作流定义列表，支持按标签筛选。
      *
+     * @param tag 可选标签过滤参数
      * @return 工作流定义列表
      */
     @GetMapping
-    public ResponseEntity<?> listWorkflows() {
-        log.debug("查询工作流列表");
-        var dtos = workflowRegistry.listAll().stream()
+    public ResponseEntity<?> listWorkflows(@RequestParam(required = false) String tag) {
+        log.debug("查询工作流列表: tag={}", tag);
+        var definitions = (tag != null && !tag.isBlank())
+                ? workflowRegistry.findByTag(tag)
+                : workflowRegistry.listAll();
+        var dtos = definitions.stream()
                 .map(WorkflowItemDto::from)
                 .toList();
         return ResponseEntity.ok(dtos);
@@ -410,6 +415,112 @@ public class WorkflowController {
                     new ErrorResponse(404, "工作流不存在: id=" + id, Instant.now()));
         }
         return ResponseEntity.ok(workflowRepository.findInstancesByWorkflowId(id));
+    }
+
+    /**
+     * 获取工作流执行统计。
+     *
+     * @param id 工作流 ID
+     * @return WorkflowStats，不存在返回 404
+     */
+    @GetMapping("/{id}/stats")
+    public ResponseEntity<?> getWorkflowStats(@PathVariable String id) {
+        if (workflowRegistry.find(id).isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    new ErrorResponse(404, "工作流不存在: id=" + id, Instant.now()));
+        }
+        return ResponseEntity.ok(workflowRepository.queryWorkflowStats(id));
+    }
+
+    /**
+     * 获取工作流步骤执行统计。
+     *
+     * @param id 工作流 ID
+     * @return List<StepStats>，不存在返回 404
+     */
+    @GetMapping("/{id}/step-stats")
+    public ResponseEntity<?> getStepStats(@PathVariable String id) {
+        if (workflowRegistry.find(id).isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    new ErrorResponse(404, "工作流不存在: id=" + id, Instant.now()));
+        }
+        return ResponseEntity.ok(workflowRepository.queryStepStats(id));
+    }
+
+    /**
+     * 获取工作流实例上下文数据快照。
+     *
+     * @param instanceId 实例 ID
+     * @return context 数据，不存在返回 404
+     */
+    @GetMapping("/executions/{instanceId}/context")
+    public ResponseEntity<?> getInstanceContext(@PathVariable String instanceId) {
+        return workflowRepository.findInstance(instanceId)
+                .<ResponseEntity<?>>map(instance -> ResponseEntity.ok(instance.context().getData()))
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                        new ErrorResponse(404, "工作流实例未找到: id=" + instanceId, Instant.now())));
+    }
+
+    /**
+     * 获取指定步骤的输出详情（输出数据 + 执行耗时 + 重试次数 + 错误信息）。
+     *
+     * @param instanceId 实例 ID
+     * @param stepId     步骤 ID
+     * @return 步骤输出 Map，实例不存在返回 404
+     */
+    @GetMapping("/executions/{instanceId}/steps/{stepId}/output")
+    public ResponseEntity<?> getStepOutput(@PathVariable String instanceId,
+                                           @PathVariable String stepId) {
+        var instanceOpt = workflowRepository.findInstance(instanceId);
+        if (instanceOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    new ErrorResponse(404, "工作流实例未找到: id=" + instanceId, Instant.now()));
+        }
+
+        var instance = instanceOpt.get();
+
+        // 从 context 读取步骤输出
+        Object output = instance.context().get("steps." + stepId + ".output").orElse(null);
+
+        // 从 StepLog 查询执行详情（取最新一条）
+        var stepLogs = workflowRepository.findStepLogs(instanceId).stream()
+                .filter(sl -> stepId.equals(sl.stepId()))
+                .toList();
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("output", output);
+
+        if (stepLogs.isEmpty()) {
+            // 步骤尚未执行
+            result.put("state", "PENDING");
+            result.put("durationMs", null);
+            result.put("retryCount", 0);
+            result.put("errorMessage", null);
+        } else {
+            // 取最后一条日志（最终状态）
+            var lastLog = stepLogs.getLast();
+            result.put("state", lastLog.state().name());
+            result.put("durationMs", lastLog.durationMs());
+            result.put("retryCount", lastLog.retryCount());
+            result.put("errorMessage", lastLog.errorMessage());
+        }
+
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * 获取工作流 DAG 依赖图数据。
+     *
+     * @param id 工作流 ID
+     * @return DagData，不存在返回 404
+     */
+    @GetMapping("/{id}/dag")
+    public ResponseEntity<?> getDagData(@PathVariable String id) {
+        if (workflowRegistry.find(id).isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    new ErrorResponse(404, "工作流不存在: id=" + id, Instant.now()));
+        }
+        return ResponseEntity.ok(workflowCommandService.buildDagData(id));
     }
 
     @GetMapping(value = "/{id}/executions/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
