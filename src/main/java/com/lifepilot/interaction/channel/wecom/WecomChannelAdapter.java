@@ -15,6 +15,7 @@ import com.lifepilot.interaction.model.ChannelType;
 import com.lifepilot.interaction.model.GatewayMessage;
 import com.lifepilot.interaction.model.GatewayResponse;
 import com.lifepilot.interaction.model.MessageContent;
+import com.lifepilot.interaction.model.ResponseContent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.xml.sax.InputSource;
@@ -155,8 +156,19 @@ public class WecomChannelAdapter extends AbstractChannelAdapter {
 
     @Override
     protected void doSendResponse(String userId, GatewayResponse response) {
-        String text = converter.convert(response.content());
-        if (response.content() instanceof com.lifepilot.interaction.model.ResponseContent.MarkdownContent) {
+        ResponseContent content = response.content();
+        String text = converter.convert(content);
+
+        if (converter.shouldUseNews(content)) {
+            // ImageContent → 图文消息
+            if (content instanceof ResponseContent.ImageContent img) {
+                apiClient.sendNews(userId, img.altText(),
+                        img.caption() != null ? img.caption() : "",
+                        img.imageUrl(), img.imageUrl());
+            } else {
+                apiClient.sendText(userId, text);
+            }
+        } else if (content instanceof ResponseContent.MarkdownContent) {
             apiClient.sendMarkdown(userId, text);
         } else {
             apiClient.sendText(userId, text);

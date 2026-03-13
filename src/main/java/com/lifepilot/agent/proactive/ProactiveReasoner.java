@@ -2,18 +2,18 @@ package com.lifepilot.agent.proactive;
 
 import com.lifepilot.agent.proactive.config.ProactiveConfigProperties;
 import com.lifepilot.agent.proactive.model.ProactiveCandidate;
-import com.lifepilot.agent.proactive.model.ProactiveNotification;
-import com.lifepilot.agent.proactive.model.Urgency;
+import com.lifepilot.interaction.model.ResponseContent;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.LlmUnavailableException;
+import com.lifepilot.notification.NotificationRequest;
+import com.lifepilot.notification.NotificationService;
+import com.lifepilot.notification.Urgency;
 import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 
-import java.time.Instant;
 import java.util.Map;
-import java.util.UUID;
 
 /**
  * 主动推理引擎 — 两阶段推理管线编排。
@@ -31,7 +31,7 @@ public class ProactiveReasoner {
     private final SignalCollector signalCollector;
     private final PolicyEngine policyEngine;
     private final FrequencyStateManager frequencyStateManager;
-    private final NotificationDispatcher notificationDispatcher;
+    private final NotificationService notificationService;
     private final ResponseTracker responseTracker;
     private final LlmRouter llmRouter;
     private final ProactiveConfigProperties config;
@@ -40,7 +40,7 @@ public class ProactiveReasoner {
     public ProactiveReasoner(SignalCollector signalCollector,
                               PolicyEngine policyEngine,
                               FrequencyStateManager frequencyStateManager,
-                              NotificationDispatcher notificationDispatcher,
+                              NotificationService notificationService,
                               ResponseTracker responseTracker,
                               LlmRouter llmRouter,
                               ProactiveConfigProperties config,
@@ -48,7 +48,7 @@ public class ProactiveReasoner {
         this.signalCollector = signalCollector;
         this.policyEngine = policyEngine;
         this.frequencyStateManager = frequencyStateManager;
-        this.notificationDispatcher = notificationDispatcher;
+        this.notificationService = notificationService;
         this.responseTracker = responseTracker;
         this.llmRouter = llmRouter;
         this.config = config;
@@ -119,19 +119,16 @@ public class ProactiveReasoner {
                     content = content.substring(0, config.getMaxContentLength());
                 }
 
-                // 构造通知
-                var notification = new ProactiveNotification(
-                        UUID.randomUUID().toString(),
-                        candidate.typeId(),
+                // 构造通知请求，通过 NotificationService 发送
+                var request = new NotificationRequest(
+                        "system",
+                        new ResponseContent.TextContent(content),
                         candidate.urgency(),
-                        content,
-                        "log",
-                        "PENDING",
-                        Instant.now()
+                        null,
+                        candidate.typeId(),
+                        Map.of("initiativeType", candidate.initiativeType().name())
                 );
-
-                // 分发通知
-                notificationDispatcher.dispatch(notification, candidate.initiativeType());
+                notificationService.send(request);
 
                 // 更新最后通知时间
                 frequencyStateManager.updateLastNotified(candidate.typeId(), candidate.subjectId());

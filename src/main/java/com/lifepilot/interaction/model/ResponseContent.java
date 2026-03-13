@@ -2,6 +2,8 @@ package com.lifepilot.interaction.model;
 
 import java.util.List;
 
+import org.springframework.lang.Nullable;
+
 /**
  * 响应内容 sealed interface，穷举所有响应类型。
  *
@@ -15,6 +17,7 @@ public sealed interface ResponseContent
         permits ResponseContent.TextContent,
                 ResponseContent.MarkdownContent,
                 ResponseContent.CardContent,
+                ResponseContent.ImageContent,
                 ResponseContent.StreamingContent {
 
     /**
@@ -86,6 +89,24 @@ public sealed interface ResponseContent
          * @since 2026-02-25
          */
         public record CardAction(String label, String url) {}
+    }
+
+    /**
+     * 图片响应。
+     *
+     * @param imageUrl 图片 URL
+     * @param altText  替代文本
+     * @param caption  图片说明（可选）
+     * @author zsg
+     * @since 2026-03-13
+     */
+    record ImageContent(String imageUrl, String altText, @Nullable String caption) implements ResponseContent {
+        @Override
+        public String toPlainText() {
+            return caption != null
+                ? "[图片: %s] %s".formatted(altText, caption)
+                : "[图片: %s]".formatted(altText);
+        }
     }
 
     /**

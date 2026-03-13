@@ -4,7 +4,7 @@ import com.lifepilot.agent.proactive.config.ProactiveConfigProperties;
 import com.lifepilot.agent.proactive.model.InitiativeType;
 import com.lifepilot.agent.proactive.model.ProactiveCandidate;
 import com.lifepilot.agent.proactive.model.SignalBundle;
-import com.lifepilot.agent.proactive.model.Urgency;
+import com.lifepilot.notification.Urgency;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

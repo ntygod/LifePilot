@@ -30,6 +30,7 @@ public class WecomMessageConverter implements MessageConverter {
             case ResponseContent.TextContent text -> text.text();
             case ResponseContent.MarkdownContent md -> md.markdown();
             case ResponseContent.CardContent card -> formatCard(card);
+            case ResponseContent.ImageContent img -> formatImageAsLink(img);
             case ResponseContent.StreamingContent stream -> stream.toPlainText();
         };
     }
@@ -45,5 +46,27 @@ public class WecomMessageConverter implements MessageConverter {
             }
         }
         return sb.toString();
+    }
+
+    /**
+     * 将图片内容降级为图文链接格式。
+     */
+    private static String formatImageAsLink(ResponseContent.ImageContent img) {
+        var sb = new StringBuilder();
+        if (img.caption() != null && !img.caption().isBlank()) {
+            sb.append(img.caption()).append("\n\n");
+        }
+        sb.append("[").append(img.altText()).append("](").append(img.imageUrl()).append(")");
+        return sb.toString();
+    }
+
+    /**
+     * 判断响应内容是否应使用图文消息格式。
+     *
+     * @param content 响应内容
+     * @return 是否使用图文消息格式
+     */
+    public boolean shouldUseNews(ResponseContent content) {
+        return content instanceof ResponseContent.ImageContent;
     }
 }

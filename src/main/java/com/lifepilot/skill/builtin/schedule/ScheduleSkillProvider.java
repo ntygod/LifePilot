@@ -5,7 +5,7 @@ import com.lifepilot.agent.proactive.model.InitiativeType;
 import com.lifepilot.agent.proactive.model.ProactiveCandidate;
 import com.lifepilot.agent.proactive.model.Signal;
 import com.lifepilot.agent.proactive.model.SignalBundle;
-import com.lifepilot.agent.proactive.model.Urgency;
+import com.lifepilot.notification.Urgency;
 import com.lifepilot.agent.proactive.signal.SignalSource;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.skill.builtin.BuiltinSkill;

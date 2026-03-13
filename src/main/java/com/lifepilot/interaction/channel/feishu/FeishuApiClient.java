@@ -71,6 +71,38 @@ public class FeishuApiClient {
         doSend(token, chatId, body);
     }
 
+    /**
+     * 发送交互式消息卡片。
+     *
+     * @param chatId   目标会话 ID
+     * @param cardJson 卡片 JSON 内容
+     */
+    public void sendInteractiveCard(String chatId, String cardJson) {
+        var token = getTenantAccessToken();
+        Map<String, Object> body = Map.of(
+                "receive_id", chatId,
+                "msg_type", "interactive",
+                "content", cardJson
+        );
+        doSend(token, chatId, body);
+    }
+
+    /**
+     * 发送图片消息。
+     *
+     * @param chatId   目标会话 ID
+     * @param imageKey 飞书图片 key
+     */
+    public void sendImage(String chatId, String imageKey) {
+        var token = getTenantAccessToken();
+        Map<String, Object> body = Map.of(
+                "receive_id", chatId,
+                "msg_type", "image",
+                "content", "{\"image_key\":\"%s\"}".formatted(escapeJson(imageKey))
+        );
+        doSend(token, chatId, body);
+    }
+
     private void doSend(String token, String receiveId, Map<String, Object> body) {
         try {
             restClient.post()

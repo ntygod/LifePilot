@@ -30,6 +30,7 @@ public class DingtalkMessageConverter implements MessageConverter {
             case ResponseContent.TextContent text -> text.text();
             case ResponseContent.MarkdownContent md -> md.markdown();
             case ResponseContent.CardContent card -> formatActionCard(card);
+            case ResponseContent.ImageContent img -> img.toPlainText();
             case ResponseContent.StreamingContent stream -> stream.toPlainText();
         };
     }
@@ -47,6 +48,7 @@ public class DingtalkMessageConverter implements MessageConverter {
             case ResponseContent.MarkdownContent __ -> true;
             case ResponseContent.CardContent __ -> true;
             case ResponseContent.TextContent text -> text.text().length() > 500;
+            case ResponseContent.ImageContent __ -> false;
             case ResponseContent.StreamingContent __ -> false;
         };
     }

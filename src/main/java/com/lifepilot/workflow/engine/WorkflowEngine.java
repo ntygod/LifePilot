@@ -992,6 +992,7 @@ public class WorkflowEngine {
             case WorkflowStep.NoopStep _ -> "noop";
             case WorkflowStep.WaitStep _ -> "wait";
             case WorkflowStep.ApprovalStep _ -> "approval";
+            case WorkflowStep.NotifyStep _ -> "notify";
         };
     }
 

@@ -507,6 +507,12 @@ lifepilot:
     server:
       enabled: false
     servers: []
+  notification:
+    # ===== 通知模块配置 =====
+    enabled: true
+    passive-drain-interval: 60
+    history-page-size: 20
+    max-history-page-size: 100
   workflow:
     # 工作流引擎总开关
     enabled: true

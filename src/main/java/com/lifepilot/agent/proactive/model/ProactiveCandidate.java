@@ -1,5 +1,6 @@
 package com.lifepilot.agent.proactive.model;
 
+import com.lifepilot.notification.Urgency;
 import org.springframework.lang.Nullable;
 
 /**

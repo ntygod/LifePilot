@@ -182,13 +182,18 @@ public class FeishuChannelAdapter extends AbstractChannelAdapter {
     protected void doSendResponse(String userId, GatewayResponse response) {
         // 飞书通过 chat_id 发送消息，从 metadata 中提取
         String chatId = extractChatId(response);
+        String target = chatId != null ? chatId : userId;
         ResponseContent content = response.content();
         String text = converter.convert(content);
 
-        if (converter.shouldUsePost(content)) {
-            apiClient.sendPost(chatId != null ? chatId : userId, text);
+        if (converter.shouldUseInteractiveCard(content)) {
+            apiClient.sendInteractiveCard(target, text);
+        } else if (converter.shouldUseImage(content)) {
+            apiClient.sendImage(target, text);
+        } else if (converter.shouldUsePost(content)) {
+            apiClient.sendPost(target, text);
         } else {
-            apiClient.sendText(chatId != null ? chatId : userId, text);
+            apiClient.sendText(target, text);
         }
     }
 

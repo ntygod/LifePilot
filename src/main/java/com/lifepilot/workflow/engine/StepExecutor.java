@@ -7,6 +7,9 @@ import com.lifepilot.llm.config.ProviderCapability;
 import com.lifepilot.llm.multimodal.MediaContent;
 import com.lifepilot.llm.multimodal.MultimodalRequest;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
+import com.lifepilot.notification.NotificationRequest;
+import com.lifepilot.notification.NotificationService;
+import com.lifepilot.interaction.model.ResponseContent;
 import com.lifepilot.skill.activation.SkillActivator;
 import com.lifepilot.skill.model.SkillActivation;
 import com.lifepilot.skill.registry.SkillRegistry;
@@ -32,7 +35,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 工作流步骤分发器 — 使用 switch 表达式穷举匹配 10 种步骤类型。
+ * 工作流步骤分发器 — 使用 switch 表达式穷举匹配 11 种步骤类型。
  *
  * <p>根据 {@link WorkflowStep} 的具体类型分发到对应的执行逻辑：
  * <ul>
@@ -45,6 +48,8 @@ import java.util.concurrent.ConcurrentHashMap;
  *   <li>{@link SubWorkflowStep} → 返回特殊标记，由 WorkflowEngine 处理</li>
  *   <li>{@link NoopStep} → 返回空 Map</li>
  *   <li>{@link WaitStep} → 返回特殊标记，由 WorkflowEngine 处理状态转换</li>
+ *   <li>{@link ApprovalStep} → 返回特殊标记，由 WorkflowEngine 处理审批</li>
+ *   <li>{@link NotifyStep} → 解析表达式 + 构造 ResponseContent + 调用 NotificationService</li>
  * </ul>
  *
  * @author zsg
@@ -61,34 +66,39 @@ public class StepExecutor {
     private final LlmRouter llmRouter;
     private final MultimodalRouter multimodalRouter;
     private final WorkflowConfigProperties config;
+    private final NotificationService notificationService;
 
     /**
      * 构造步骤分发器。
      *
-     * @param skillRegistry  Skill 注册中心
-     * @param skillActivator Skill 激活器
-     * @param toolRegistry   动态工具注册中心
-     * @param llmRouter      LLM 路由器
-     * @param config         工作流配置属性
+     * @param skillRegistry       Skill 注册中心
+     * @param skillActivator      Skill 激活器
+     * @param toolRegistry        动态工具注册中心
+     * @param llmRouter           LLM 路由器
+     * @param multimodalRouter    多模态路由器
+     * @param config              工作流配置属性
+     * @param notificationService 通知服务
      */
     public StepExecutor(SkillRegistry skillRegistry,
                         SkillActivator skillActivator,
                         DynamicToolRegistry toolRegistry,
                         LlmRouter llmRouter,
                         MultimodalRouter multimodalRouter,
-                        WorkflowConfigProperties config) {
+                        WorkflowConfigProperties config,
+                        NotificationService notificationService) {
         this.skillRegistry = skillRegistry;
         this.skillActivator = skillActivator;
         this.toolRegistry = toolRegistry;
         this.llmRouter = llmRouter;
         this.multimodalRouter = multimodalRouter;
         this.config = config;
+        this.notificationService = notificationService;
     }
 
     /**
      * 执行单个步骤，返回步骤输出。
      *
-     * <p>使用 switch 表达式穷举匹配 {@link WorkflowStep} 的 10 种子类型，
+     * <p>使用 switch 表达式穷举匹配 {@link WorkflowStep} 的 11 种子类型，
      * 确保编译期覆盖所有步骤类型。
      *
      * @param step             待执行的步骤
@@ -112,6 +122,7 @@ public class StepExecutor {
             case NoopStep s -> executeNoop(s);
             case WaitStep s -> executeWait(s);
             case ApprovalStep s -> executeApproval(s);
+            case NotifyStep s -> executeNotify(s, context, expressionEngine);
         };
 
         log.info("步骤分发完成: stepId={}, outputKeys={}", step.id(), result.keySet());
@@ -443,6 +454,46 @@ public class StepExecutor {
                 "approvers", step.approvers(),
                 "timeoutSeconds", step.timeoutSeconds(),
                 "autoApproveOnTimeout", step.autoApproveOnTimeout()
+        );
+    }
+
+    /**
+     * 执行 NotifyStep — 解析表达式，构造 ResponseContent，调用 NotificationService 发送通知。
+     */
+    private Map<String, Object> executeNotify(NotifyStep step,
+                                              WorkflowContext context,
+                                              ExpressionEngine expressionEngine) {
+        log.info("执行 NotifyStep: stepId={}, targetUserId={}, contentType={}",
+                step.id(), step.targetUserId(), step.contentType());
+
+        // 1. 解析表达式
+        String resolvedUserId = expressionEngine.resolve(step.targetUserId(), context);
+        String resolvedContent = expressionEngine.resolve(step.content(), context);
+
+        // 2. 根据 contentType 构造 ResponseContent
+        ResponseContent responseContent = switch (step.contentType().toUpperCase()) {
+            case "MARKDOWN" -> new ResponseContent.MarkdownContent(resolvedContent);
+            case "CARD" -> new ResponseContent.CardContent(resolvedContent, "", List.of());
+            default -> new ResponseContent.TextContent(resolvedContent);
+        };
+
+        // 3. 调用 NotificationService
+        var request = new NotificationRequest(
+                resolvedUserId,
+                responseContent,
+                step.urgency(),
+                null,
+                null,
+                Map.of("workflowStepId", step.id())
+        );
+        var notificationIds = notificationService.send(request);
+
+        log.info("NotifyStep 发送完成: stepId={}, notificationCount={}", step.id(), notificationIds.size());
+
+        return Map.of(
+                "success", true,
+                "notificationIds", notificationIds,
+                "targetUserId", resolvedUserId
         );
     }
 

@@ -812,6 +812,7 @@ public class ChatController {
             case ResponseContent.TextContent tc -> tc.text();
             case ResponseContent.MarkdownContent mc -> mc.markdown();
             case ResponseContent.CardContent cc -> cc.toPlainText();
+            case ResponseContent.ImageContent img -> img.toPlainText();
             case ResponseContent.StreamingContent sc -> sc.toPlainText();
             case null -> "";
         };

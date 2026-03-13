@@ -22,3 +22,4 @@ com.lifepilot.observability.config.ObservabilityAutoConfiguration
 com.lifepilot.marketplace.config.MarketplaceAutoConfiguration
 com.lifepilot.meta.config.MetaAutoConfiguration
 com.lifepilot.datastore.config.DataStoreAutoConfiguration
+com.lifepilot.notification.config.NotificationAutoConfiguration

@@ -6,12 +6,13 @@ import java.util.Map;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.lifepilot.llm.config.ProviderCapability;
+import com.lifepilot.notification.Urgency;
 import org.springframework.lang.Nullable;
 
 /**
  * 工作流步骤类型 sealed interface。
  *
- * <p>定义工作流中可执行的十种步骤类型：
+ * <p>定义工作流中可执行的十一种步骤类型：
  * <ul>
  *   <li>{@link SkillStep} — 调用已注册的 Skill 执行</li>
  *   <li>{@link ToolStep} — 调用已注册的 Tool 执行</li>
@@ -23,6 +24,7 @@ import org.springframework.lang.Nullable;
  *   <li>{@link NoopStep} — 空操作，直接跳过</li>
  *   <li>{@link WaitStep} — 等待指定时长后继续</li>
  *   <li>{@link ApprovalStep} — 人工审批步骤，暂停工作流等待审批决策</li>
+ *   <li>{@link NotifyStep} — 通知步骤，通过 NotificationService 发送通知</li>
  * </ul>
  *
  * @author zsg
@@ -39,7 +41,8 @@ import org.springframework.lang.Nullable;
         @JsonSubTypes.Type(value = WorkflowStep.SubWorkflowStep.class, name = "sub-workflow"),
         @JsonSubTypes.Type(value = WorkflowStep.NoopStep.class, name = "noop"),
         @JsonSubTypes.Type(value = WorkflowStep.WaitStep.class, name = "wait"),
-        @JsonSubTypes.Type(value = WorkflowStep.ApprovalStep.class, name = "approval")
+        @JsonSubTypes.Type(value = WorkflowStep.ApprovalStep.class, name = "approval"),
+        @JsonSubTypes.Type(value = WorkflowStep.NotifyStep.class, name = "notify")
 })
 public sealed interface WorkflowStep permits
         WorkflowStep.SkillStep,
@@ -51,7 +54,8 @@ public sealed interface WorkflowStep permits
         WorkflowStep.SubWorkflowStep,
         WorkflowStep.NoopStep,
         WorkflowStep.WaitStep,
-        WorkflowStep.ApprovalStep {
+        WorkflowStep.ApprovalStep,
+        WorkflowStep.NotifyStep {
 
     /** 步骤唯一标识。 */
     String id();
@@ -238,4 +242,22 @@ public sealed interface WorkflowStep permits
                         boolean autoApproveOnTimeout,
                         List<String> dependsOn,
                         @Nullable ErrorStrategy errorStrategy) implements WorkflowStep {}
+
+    /**
+     * 通知步骤，通过 NotificationService 发送通知。
+     *
+     * @param id            步骤唯一标识
+     * @param name          步骤名称
+     * @param targetUserId  目标用户 ID（支持 ${} 表达式）
+     * @param content       通知内容模板（支持 ${} 表达式）
+     * @param contentType   内容类型：TEXT / MARKDOWN / CARD
+     * @param urgency       紧急程度
+     * @param dependsOn     DAG 依赖的前置步骤 ID 列表
+     * @param errorStrategy 错误处理策略
+     */
+    record NotifyStep(String id, String name, String targetUserId,
+                      String content, String contentType,
+                      Urgency urgency,
+                      List<String> dependsOn,
+                      @Nullable ErrorStrategy errorStrategy) implements WorkflowStep {}
 }

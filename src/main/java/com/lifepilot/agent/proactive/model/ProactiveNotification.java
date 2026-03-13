@@ -1,5 +1,7 @@
 package com.lifepilot.agent.proactive.model;
 
+import com.lifepilot.notification.Urgency;
+
 import java.time.Instant;
 
 /**
