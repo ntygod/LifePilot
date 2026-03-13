@@ -1,6 +1,7 @@
 package com.lifepilot.workflow.engine;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -10,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
 
+import com.lifepilot.workflow.expression.ExpressionEngine;
 import com.lifepilot.workflow.model.WorkflowContext;
 import com.lifepilot.workflow.model.WorkflowEventType;
 import com.lifepilot.workflow.model.WorkflowInstance;
@@ -36,15 +38,18 @@ public class WorkflowCommandService {
     private final WorkflowRepository repository;
     private final WorkflowRunner runner;
     private final WorkflowEventRecorder eventRecorder;
+    private final ExpressionEngine expressionEngine;
 
     public WorkflowCommandService(WorkflowRegistry registry,
                                   WorkflowRepository repository,
                                   WorkflowRunner runner,
-                                  WorkflowEventRecorder eventRecorder) {
+                                  WorkflowEventRecorder eventRecorder,
+                                  ExpressionEngine expressionEngine) {
         this.registry = registry;
         this.repository = repository;
         this.runner = runner;
         this.eventRecorder = eventRecorder;
+        this.expressionEngine = expressionEngine;
     }
 
     /**
@@ -75,6 +80,21 @@ public class WorkflowCommandService {
         Map<String, Object> mergedInputs = validation.mergedInputs();
         if (!mergedInputs.isEmpty()) {
             context.set("inputs", mergedInputs);
+        }
+
+        // 解析并注入工作流级变量到 vars 命名空间
+        if (!definition.variables().isEmpty()) {
+            Map<String, Object> resolvedVars = new LinkedHashMap<>();
+            for (var entry : definition.variables().entrySet()) {
+                Object value = entry.getValue();
+                if (value instanceof String strVal && strVal.contains("${")) {
+                    resolvedVars.put(entry.getKey(), expressionEngine.resolve(strVal, context));
+                } else {
+                    resolvedVars.put(entry.getKey(), value);
+                }
+            }
+            context.set("vars", resolvedVars);
+            log.debug("工作流变量注入完成: workflowId={}, vars={}", workflowId, resolvedVars.keySet());
         }
 
         WorkflowInstance instance = WorkflowInstance.builder()
