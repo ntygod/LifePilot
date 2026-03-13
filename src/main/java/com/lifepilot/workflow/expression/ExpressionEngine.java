@@ -5,7 +5,9 @@ import com.lifepilot.workflow.model.WorkflowException.ExpressionException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Matcher;
@@ -34,6 +36,25 @@ public class ExpressionEngine {
 
     /** 匹配 ${...} 占位符的正则 */
     private static final Pattern PLACEHOLDER_PATTERN = Pattern.compile("\\$\\{([^}]+)}");
+
+    /** 函数注册表，管理内置函数和自定义函数 */
+    private final FunctionRegistry functionRegistry;
+
+    /**
+     * 使用默认内置函数注册表构造。
+     */
+    public ExpressionEngine() {
+        this.functionRegistry = FunctionRegistry.createWithBuiltins();
+    }
+
+    /**
+     * 使用指定函数注册表构造。
+     *
+     * @param functionRegistry 函数注册表
+     */
+    public ExpressionEngine(FunctionRegistry functionRegistry) {
+        this.functionRegistry = functionRegistry;
+    }
 
     /**
      * 解析字符串中的 {@code ${...}} 表达式，替换为 {@link WorkflowContext} 中的值。
@@ -105,7 +126,7 @@ public class ExpressionEngine {
         log.debug("条件表达式解析: 原始='{}', 解析后='{}'", condition, resolved);
 
         // 递归下降解析器求值
-        ConditionParser parser = new ConditionParser(resolved, condition);
+        ConditionParser parser = new ConditionParser(resolved, condition, functionRegistry);
         boolean result = parser.parseExpression();
         parser.expectEnd();
         return result;
@@ -142,11 +163,13 @@ public class ExpressionEngine {
     private static class ConditionParser {
         private final String input;
         private final String originalExpression;
+        private final FunctionRegistry functionRegistry;
         private int pos;
 
-        ConditionParser(String input, String originalExpression) {
+        ConditionParser(String input, String originalExpression, FunctionRegistry functionRegistry) {
             this.input = input;
             this.originalExpression = originalExpression;
+            this.functionRegistry = functionRegistry;
             this.pos = 0;
         }
 
@@ -319,8 +342,60 @@ public class ExpressionEngine {
             if ("true".equals(token)) return Boolean.TRUE;
             if ("false".equals(token)) return Boolean.FALSE;
             if ("null".equals(token)) return null;
+
+            // 检测函数调用：标识符后跟 '('
+            skipWhitespace();
+            if (pos < input.length() && input.charAt(pos) == '(') {
+                return parseFunctionCall(token);
+            }
+
             // 作为已解析的标识符值返回
             return token;
+        }
+
+        /**
+         * 解析函数调用：functionName(arg1, arg2, ...)
+         * 参数通过递归调用 parseComparison() 解析，支持嵌套函数调用。
+         */
+        private Object parseFunctionCall(String functionName) {
+            pos++; // 跳过 '('
+            List<Object> args = new ArrayList<>();
+            skipWhitespace();
+
+            // 空参数列表
+            if (pos < input.length() && input.charAt(pos) == ')') {
+                pos++;
+            } else {
+                // 解析逗号分隔的参数
+                while (true) {
+                    Object arg = parseComparison();
+                    args.add(arg);
+                    skipWhitespace();
+                    if (pos < input.length() && input.charAt(pos) == ',') {
+                        pos++; // 跳过 ','
+                    } else if (pos < input.length() && input.charAt(pos) == ')') {
+                        pos++; // 跳过 ')'
+                        break;
+                    } else {
+                        throw new ExpressionEvaluationException(
+                                new ExpressionException(originalExpression,
+                                        "函数 " + functionName + " 调用语法错误: 期望 ',' 或 ')'，位置 " + pos,
+                                        pos));
+                    }
+                }
+            }
+
+            // 查找函数
+            Optional<ExpressionFunction> func = functionRegistry.find(functionName);
+            if (func.isEmpty()) {
+                throw new ExpressionEvaluationException(
+                        new ExpressionException(originalExpression,
+                                "未知函数: " + functionName + "，可用函数: " + functionRegistry.listNames(),
+                                pos));
+            }
+
+            // 执行函数（ExpressionFunction 内部负责参数类型校验，不匹配时抛出 ExpressionEvaluationException）
+            return func.get().apply(args);
         }
 
         private boolean isIdentifierChar(char ch) {
