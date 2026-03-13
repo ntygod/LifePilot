@@ -4,6 +4,7 @@ import com.lifepilot.knowledge.extract.KnowledgeExtractionPipeline;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.memory.compression.CompressionService;
 import com.lifepilot.memory.consolidation.ConsolidationPipeline;
+import com.lifepilot.memory.consolidation.EntityDeduplicator;
 import com.lifepilot.memory.consolidation.EpisodicToProceduralConsolidator;
 import com.lifepilot.memory.consolidation.EpisodicToSemanticConsolidator;
 import com.lifepilot.memory.episodic.EpisodicMemory;
@@ -443,6 +444,20 @@ public class MemoryAutoConfiguration {
             MemoryProperties properties) {
         log.info("记忆系统: 注册 ConsolidationPipeline");
         return new ConsolidationPipeline(semanticConsolidator, proceduralConsolidator, properties);
+    }
+
+    // --- 实体去重 ---
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean({SemanticMemory.class, VectorSearcher.class})
+    public EntityDeduplicator entityDeduplicator(
+            SemanticMemory semanticMemory,
+            VectorSearcher vectorSearcher,
+            JdbcTemplate jdbcTemplate,
+            MemoryProperties properties) {
+        log.info("记忆系统: 注册 EntityDeduplicator");
+        return new EntityDeduplicator(semanticMemory, vectorSearcher, jdbcTemplate, properties);
     }
 
     // --- 遗忘引擎 ---
