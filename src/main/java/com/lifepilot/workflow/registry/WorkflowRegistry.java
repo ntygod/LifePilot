@@ -159,6 +159,18 @@ public class WorkflowRegistry {
                 .toList();
     }
 
+    /**
+     * 按标签筛选工作流定义。
+     *
+     * @param tag 标签
+     * @return 包含该标签的工作流定义列表
+     */
+    public List<WorkflowDefinition> findByTag(String tag) {
+        return definitions.values().stream()
+                .filter(def -> def.tags().contains(tag))
+                .toList();
+    }
+
     void performScan(Path directory) {
         if (!Files.isDirectory(directory)) {
             log.debug("工作流定义目录不存在，跳过扫描: path={}", directory);
