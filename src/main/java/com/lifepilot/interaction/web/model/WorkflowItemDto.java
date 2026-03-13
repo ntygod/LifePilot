@@ -47,6 +47,7 @@ public record WorkflowItemDto(
             case WorkflowTrigger.CronTrigger _ -> "cron";
             case WorkflowTrigger.EventTrigger _ -> "event";
             case WorkflowTrigger.ManualTrigger _ -> "manual";
+            case WorkflowTrigger.WebhookTrigger _ -> "webhook";
         };
     }
 }

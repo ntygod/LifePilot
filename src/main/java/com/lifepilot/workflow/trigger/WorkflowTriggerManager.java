@@ -87,6 +87,9 @@ public class WorkflowTriggerManager implements GenericApplicationListener {
                 case WorkflowTrigger.ManualTrigger _ -> {
                     log.debug("ManualTrigger 跳过注册: workflowId={}", definition.id());
                 }
+                case WorkflowTrigger.WebhookTrigger _ -> {
+                    log.debug("WebhookTrigger 跳过注册（由 Controller 处理）: workflowId={}", definition.id());
+                }
             }
         }
     }

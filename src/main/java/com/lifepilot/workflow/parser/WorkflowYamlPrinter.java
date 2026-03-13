@@ -111,6 +111,7 @@ public class WorkflowYamlPrinter {
                 map.put("eventType", event.eventType());
             }
             case WorkflowTrigger.ManualTrigger _ -> map.put("type", "manual");
+            case WorkflowTrigger.WebhookTrigger _ -> map.put("type", "webhook");
         }
         return map;
     }
