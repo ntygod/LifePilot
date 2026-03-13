@@ -16,6 +16,7 @@ import com.lifepilot.workflow.engine.WorkflowRealtimeEventHub;
 import com.lifepilot.workflow.model.ApprovalDecision;
 import com.lifepilot.workflow.model.Result;
 import com.lifepilot.workflow.model.StepLog;
+import com.lifepilot.workflow.model.ValidationResponse;
 import com.lifepilot.workflow.model.WorkflowDefinition;
 import com.lifepilot.workflow.model.WorkflowEvent;
 import com.lifepilot.workflow.model.WorkflowInstance;
@@ -425,6 +426,30 @@ public class WorkflowController {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
                     new ErrorResponse(400, "试运行失败: " + e.getMessage(), Instant.now()));
         }
+    }
+
+    /**
+     * 校验 YAML 工作流定义。
+     *
+     * <p>语法正确但有语义警告时返回 200，语法错误时返回 400。</p>
+     *
+     * @param request 包含 yamlContent 的请求体
+     * @return ValidationResponse，400 参数错误或语法错误
+     */
+    @PostMapping("/validate")
+    public ResponseEntity<?> validateYaml(@RequestBody Map<String, Object> request) {
+        String yamlContent = getString(request, "yamlContent");
+        if (yamlContent == null || yamlContent.isBlank()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(new ErrorResponse(400, "yamlContent 不能为空", Instant.now()));
+        }
+
+        ValidationResponse validationResponse = workflowCommandService.validateYaml(yamlContent);
+
+        if (!validationResponse.valid()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(validationResponse);
+        }
+        return ResponseEntity.ok(validationResponse);
     }
 
     /**
