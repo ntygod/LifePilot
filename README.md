@@ -54,6 +54,13 @@ ZhiWei 是一个本地运行的个人 AI Agent 助手。它不只是被动执行
 - 多种触发器：Cron / Event / Condition / Signal
 - 工作流状态持久化 + 崩溃恢复
 
+### 🔔 统一通知系统
+- 独立 NotificationService 接口，主动推理 / 工作流 / 未来模块统一调用
+- Urgency 路由：HIGH/MEDIUM 实时多渠道广播，LOW 入队被动队列定时推送
+- 富媒体支持：文本 / Markdown / 交互式卡片 / 图片，各渠道自动适配渲染
+- 被动队列 SQLite 持久化，重启不丢失
+- 通知管理 API：历史查询、已读标记、用户通知偏好设置
+
 ### 🌐 Gateway 中间件
 - 6 层中间件管道（Auth → RateLimit → Security → Router → Execution → Audit）
 - Channel 适配器：企业微信 / 钉钉 / 飞书 / Telegram
@@ -224,6 +231,7 @@ zhiwei/
 │   ├── memory/          # 四层记忆系统 + 知识图谱
 │   ├── meta/            # 元能力（主动推理 / 信号采集）
 │   ├── multiagent/      # 多 Agent 协作
+│   ├── notification/    # 统一通知系统（Urgency 路由 / 多渠道广播 / 被动队列）
 │   ├── observability/   # 可观测性（Trace / 评估）
 │   ├── prompt/          # Prompt 管理
 │   ├── sandbox/         # 代码执行沙箱
