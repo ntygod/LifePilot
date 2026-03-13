@@ -161,9 +161,9 @@ public class WorkflowRepository {
                 INSERT INTO workflow_instances
                     (id, workflow_id, state, input_json, context_json,
                      completed_step_ids_json, pending_approval_step_id,
-                     wake_up_at, blocked_step_id, blocked_reason,
+                     wake_up_at, blocked_step_id, blocked_reason, trace_id,
                      started_at, completed_at, failure_reason, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 instance.id(),
                 instance.workflowId(),
@@ -175,6 +175,7 @@ public class WorkflowRepository {
                 toText(instance.wakeUpAt()),
                 instance.blockedStepId(),
                 instance.blockedReason(),
+                instance.traceId(),
                 toText(instance.startedAt()),
                 toText(instance.completedAt()),
                 instance.failureReason(),
@@ -195,7 +196,7 @@ public class WorkflowRepository {
                 UPDATE workflow_instances SET
                     state = ?, context_json = ?,
                     completed_step_ids_json = ?, pending_approval_step_id = ?,
-                    wake_up_at = ?, blocked_step_id = ?, blocked_reason = ?,
+                    wake_up_at = ?, blocked_step_id = ?, blocked_reason = ?, trace_id = ?,
                     started_at = ?, completed_at = ?, failure_reason = ?, updated_at = ?
                 WHERE id = ?
                 """,
@@ -206,6 +207,7 @@ public class WorkflowRepository {
                 toText(instance.wakeUpAt()),
                 instance.blockedStepId(),
                 instance.blockedReason(),
+                instance.traceId(),
                 toText(instance.startedAt()),
                 toText(instance.completedAt()),
                 instance.failureReason(),
@@ -400,6 +402,7 @@ public class WorkflowRepository {
                 .wakeUpAt(parseInstant(rs.getString("wake_up_at")))
                 .blockedStepId(rs.getString("blocked_step_id"))
                 .blockedReason(rs.getString("blocked_reason"))
+                .traceId(rs.getString("trace_id"))
                 .startedAt(parseInstant(rs.getString("started_at")))
                 .completedAt(parseInstant(rs.getString("completed_at")))
                 .failureReason(rs.getString("failure_reason"))

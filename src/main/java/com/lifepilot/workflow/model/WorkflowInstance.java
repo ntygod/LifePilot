@@ -25,6 +25,7 @@ import lombok.Builder;
  * @param blockedReason          阻塞原因描述（如 "wait:60s" 或 "approval:timeout=86400s"）
  * @param startedAt              实例开始执行时间（CREATED→RUNNING 时设置）
  * @param completedAt            实例完成时间（终态时设置）
+ * @param traceId                Observability 追踪 ID（执行开始时生成）
  * @param failureReason          失败原因（FAILED 状态时设置）
  * @param createdAt              实例创建时间
  * @param updatedAt              实例最后更新时间
@@ -42,6 +43,7 @@ public record WorkflowInstance(
         @Nullable Instant wakeUpAt,
         @Nullable String blockedStepId,
         @Nullable String blockedReason,
+        @Nullable String traceId,
         @Nullable Instant startedAt,
         @Nullable Instant completedAt,
         @Nullable String failureReason,
