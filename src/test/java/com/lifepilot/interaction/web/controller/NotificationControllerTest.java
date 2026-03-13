@@ -1,0 +1,142 @@
+package com.lifepilot.interaction.web.controller;
+
+import com.lifepilot.notification.NotificationRecord;
+import com.lifepilot.notification.NotificationRepository;
+import com.lifepilot.notification.Urgency;
+import com.lifepilot.notification.config.NotificationProperties;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
+
+import static org.hamcrest.Matchers.*;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+
+/**
+ * {@link NotificationController} 集成测试（MockMvc standalone）。
+ *
+ * @author zsg
+ * @since 2026-03-13
+ */
+@ExtendWith(MockitoExtension.class)
+class NotificationControllerTest {
+
+    @Mock private NotificationRepository notificationRepository;
+
+    private NotificationProperties properties;
+    private MockMvc mockMvc;
+
+    private static final Instant NOW = Instant.parse("2026-03-13T10:00:00Z");
+
+    @BeforeEach
+    void setUp() {
+        properties = new NotificationProperties();
+        var controller = new NotificationController(notificationRepository, properties);
+        mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
+    }
+
+    private NotificationRecord testRecord(String id, Urgency urgency) {
+        return new NotificationRecord(id, "user-1", "alert", urgency,
+                "{\"text\":\"test\"}", "WEB", "UNREAD", "SENT",
+                null, NOW, NOW, NOW);
+    }
+
+    // ── GET /api/notifications ────────────────────────────
+
+    @Nested
+    class 分页查询 {
+
+        @Test
+        void 分页查询通知历史() throws Exception {
+            var records = List.of(testRecord("n-1", Urgency.HIGH), testRecord("n-2", Urgency.MEDIUM));
+            when(notificationRepository.findByUserId(eq("user-1"), eq(0), anyInt()))
+                    .thenReturn(records);
+            when(notificationRepository.countByUserId("user-1")).thenReturn(2L);
+
+            mockMvc.perform(get("/api/notifications")
+                            .param("userId", "user-1")
+                            .param("page", "0"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.items", hasSize(2)))
+                    .andExpect(jsonPath("$.total", is(2)))
+                    .andExpect(jsonPath("$.page", is(0)));
+        }
+
+        @Test
+        void urgency过滤查询() throws Exception {
+            var records = List.of(testRecord("n-1", Urgency.HIGH));
+            when(notificationRepository.findByUserIdAndUrgency(eq("user-1"), eq("HIGH"), eq(0), anyInt()))
+                    .thenReturn(records);
+            when(notificationRepository.countByUserIdAndUrgency("user-1", "HIGH")).thenReturn(1L);
+
+            mockMvc.perform(get("/api/notifications")
+                            .param("userId", "user-1")
+                            .param("urgency", "HIGH"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.items", hasSize(1)))
+                    .andExpect(jsonPath("$.items[0].urgency", is("HIGH")));
+        }
+
+        @Test
+        void 无效urgency返回400() throws Exception {
+            mockMvc.perform(get("/api/notifications")
+                            .param("userId", "user-1")
+                            .param("urgency", "INVALID"))
+                    .andExpect(status().isBadRequest());
+        }
+    }
+
+    // ── PUT /api/notifications/{id}/read ──────────────────
+
+    @Nested
+    class 标记已读 {
+
+        @Test
+        void 标记单条通知已读() throws Exception {
+            var record = testRecord("n-1", Urgency.HIGH);
+            when(notificationRepository.findById("n-1")).thenReturn(Optional.of(record));
+
+            mockMvc.perform(put("/api/notifications/n-1/read"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.id", is("n-1")));
+
+            verify(notificationRepository).markAsRead("n-1");
+        }
+
+        @Test
+        void 通知不存在返回404() throws Exception {
+            when(notificationRepository.findById("not-exist")).thenReturn(Optional.empty());
+
+            mockMvc.perform(put("/api/notifications/not-exist/read"))
+                    .andExpect(status().isNotFound());
+        }
+    }
+
+    // ── PUT /api/notifications/read-all ───────────────────
+
+    @Nested
+    class 批量标记已读 {
+
+        @Test
+        void 标记所有通知已读_返回updatedCount() throws Exception {
+            when(notificationRepository.markAllAsRead("user-1")).thenReturn(5);
+
+            mockMvc.perform(put("/api/notifications/read-all")
+                            .param("userId", "user-1"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.updatedCount", is(5)));
+        }
+    }
+}
