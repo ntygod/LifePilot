@@ -396,13 +396,16 @@ public class WorkflowController {
         Map<String, Object> inputs = (request != null && request.inputs() != null)
                 ? request.inputs() : Map.of();
 
-        // 输入参数校验
+        // 输入参数校验（含必填检查 + 正则校验）
         InputValidationResult validation = InputValidator.validate(defOpt.get().inputs(), inputs);
         if (!validation.valid()) {
+            List<String> allErrors = new ArrayList<>();
+            if (!validation.missingParams().isEmpty()) {
+                allErrors.add("缺少必填输入参数: " + String.join(", ", validation.missingParams()));
+            }
+            allErrors.addAll(validation.validationErrors());
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
-                    new ErrorResponse(400,
-                            "缺少必填输入参数: " + String.join(", ", validation.missingParams()),
-                            Instant.now()));
+                    new ErrorResponse(400, String.join("; ", allErrors), Instant.now()));
         }
 
         String instanceId = workflowCommandService.start(id, validation.mergedInputs());
@@ -520,9 +523,21 @@ public class WorkflowController {
             }
         }
 
-        // 5. 触发工作流
+        // 5. 输入参数校验（含必填检查 + 正则校验）
         Map<String, Object> inputs = body != null ? body : Map.of();
-        String instanceId = workflowCommandService.start(id, inputs);
+        InputValidationResult validation = InputValidator.validate(definition.inputs(), inputs);
+        if (!validation.valid()) {
+            List<String> allErrors = new ArrayList<>();
+            if (!validation.missingParams().isEmpty()) {
+                allErrors.add("缺少必填输入参数: " + String.join(", ", validation.missingParams()));
+            }
+            allErrors.addAll(validation.validationErrors());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
+                    new ErrorResponse(400, String.join("; ", allErrors), Instant.now()));
+        }
+
+        // 6. 触发工作流
+        String instanceId = workflowCommandService.start(id, validation.mergedInputs());
         var instance = workflowRepository.findInstance(instanceId)
                 .orElseThrow(() -> new IllegalStateException("Webhook 触发后实例未找到: instanceId=" + instanceId));
 

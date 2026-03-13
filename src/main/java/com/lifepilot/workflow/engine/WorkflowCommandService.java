@@ -94,8 +94,12 @@ public class WorkflowCommandService {
         // 防御性输入校验（安全网）
         InputValidationResult validation = InputValidator.validate(definition.inputs(), inputs);
         if (!validation.valid()) {
-            throw new IllegalArgumentException(
-                    "缺少必填输入参数: " + String.join(", ", validation.missingParams()));
+            java.util.List<String> allErrors = new java.util.ArrayList<>();
+            if (!validation.missingParams().isEmpty()) {
+                allErrors.add("缺少必填输入参数: " + String.join(", ", validation.missingParams()));
+            }
+            allErrors.addAll(validation.validationErrors());
+            throw new IllegalArgumentException(String.join("; ", allErrors));
         }
 
         // 速率限制检查

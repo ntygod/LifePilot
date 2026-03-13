@@ -171,6 +171,101 @@ class InputValidatorTest {
         assertEquals(42, result.mergedInputs().get("unknownField"));
     }
 
+    // ── P5: 正则校验 ──────────────────────────────────────
+
+    @Test
+    void P5_字符串值匹配正则_校验通过() {
+        var paramDefs = Map.of(
+                "email", new WorkflowInputParam("email", "string", true, null, null, null, null, null, null, "^[\\w.]+@[\\w.]+$", "邮箱格式不正确")
+        );
+
+        var result = InputValidator.validate(paramDefs, Map.of("email", "test@example.com"));
+
+        assertTrue(result.valid());
+        assertTrue(result.validationErrors().isEmpty());
+    }
+
+    @Test
+    void P5_字符串值不匹配正则_校验失败并返回validationMessage() {
+        var paramDefs = Map.of(
+                "email", new WorkflowInputParam("email", "string", true, null, null, null, null, null, null, "^[\\w.]+@[\\w.]+$", "邮箱格式不正确")
+        );
+
+        var result = InputValidator.validate(paramDefs, Map.of("email", "not-an-email"));
+
+        assertFalse(result.valid());
+        assertEquals(1, result.validationErrors().size());
+        assertEquals("邮箱格式不正确", result.validationErrors().getFirst());
+        assertTrue(result.missingParams().isEmpty());
+    }
+
+    @Test
+    void P5_validationMessage为null时_使用默认错误消息() {
+        var paramDefs = Map.of(
+                "code", new WorkflowInputParam("code", "string", true, null, null, null, null, null, null, "^\\d{6}$", null)
+        );
+
+        var result = InputValidator.validate(paramDefs, Map.of("code", "abc"));
+
+        assertFalse(result.valid());
+        assertEquals(1, result.validationErrors().size());
+        assertTrue(result.validationErrors().getFirst().contains("code"));
+    }
+
+    @Test
+    void P5_非字符串值_跳过正则校验() {
+        var paramDefs = Map.of(
+                "count", new WorkflowInputParam("count", "number", true, null, null, null, null, null, null, "^\\d+$", "必须为数字")
+        );
+
+        var result = InputValidator.validate(paramDefs, Map.of("count", 42));
+
+        assertTrue(result.valid());
+        assertTrue(result.validationErrors().isEmpty());
+    }
+
+    @Test
+    void P5_validationPattern为null_跳过正则校验() {
+        var paramDefs = Map.of(
+                "name", new WorkflowInputParam("name", "string", true, null, null, null, null, null, null, null, null)
+        );
+
+        var result = InputValidator.validate(paramDefs, Map.of("name", "任意值"));
+
+        assertTrue(result.valid());
+        assertTrue(result.validationErrors().isEmpty());
+    }
+
+    @Test
+    void P5_缺少必填参数且正则校验失败_两种错误同时返回() {
+        var paramDefs = Map.of(
+                "topic", new WorkflowInputParam("topic", "string", true, null, null, null, null, null, null, null, null),
+                "email", new WorkflowInputParam("email", "string", true, null, null, null, null, null, null, "^[\\w.]+@[\\w.]+$", "邮箱格式不正确")
+        );
+        var userInputs = new HashMap<String, Object>();
+        userInputs.put("email", "bad-email");
+
+        var result = InputValidator.validate(paramDefs, userInputs);
+
+        assertFalse(result.valid());
+        assertEquals(1, result.missingParams().size());
+        assertTrue(result.missingParams().contains("topic"));
+        assertEquals(1, result.validationErrors().size());
+        assertEquals("邮箱格式不正确", result.validationErrors().getFirst());
+    }
+
+    @Test
+    void P5_默认值也参与正则校验() {
+        var paramDefs = Map.of(
+                "code", new WorkflowInputParam("code", "string", false, "invalid", null, null, null, null, null, "^\\d{6}$", "验证码必须为6位数字")
+        );
+
+        var result = InputValidator.validate(paramDefs, Map.of());
+
+        assertFalse(result.valid());
+        assertEquals("验证码必须为6位数字", result.validationErrors().getFirst());
+    }
+
     // ── 综合场景 ──────────────────────────────────────────
 
     @Test
