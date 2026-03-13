@@ -651,6 +651,47 @@ public class WorkflowController {
         return ResponseEntity.ok(workflowCommandService.buildDagData(id));
     }
 
+    /**
+     * 导出单个工作流定义为 YAML。
+     *
+     * @param id 工作流 ID
+     * @return 包含 id 和 yamlContent 的 JSON，不存在返回 404
+     */
+    @GetMapping("/{id}/export")
+    public ResponseEntity<?> exportWorkflow(@PathVariable String id) {
+        var defOpt = workflowRegistry.find(id);
+        if (defOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    new ErrorResponse(404, "工作流不存在: id=" + id, Instant.now()));
+        }
+
+        String yamlContent = yamlPrinter.print(defOpt.get());
+        log.info("工作流导出成功: id={}", id);
+        return ResponseEntity.ok(Map.of("id", id, "yamlContent", yamlContent));
+    }
+
+    /**
+     * 批量导出工作流定义为 YAML。
+     *
+     * <p>对于不存在的 ID，yamlContent 返回 null。</p>
+     *
+     * @param ids 工作流 ID 列表（逗号分隔）
+     * @return JSON 数组，每项包含 id 和 yamlContent
+     */
+    @GetMapping("/export")
+    public ResponseEntity<?> exportWorkflows(@RequestParam List<String> ids) {
+        var results = ids.stream().map(id -> {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("id", id);
+            var defOpt = workflowRegistry.find(id);
+            item.put("yamlContent", defOpt.map(yamlPrinter::print).orElse(null));
+            return item;
+        }).toList();
+        log.info("工作流批量导出完成: 请求数={}, 成功数={}", ids.size(),
+                results.stream().filter(r -> r.get("yamlContent") != null).count());
+        return ResponseEntity.ok(results);
+    }
+
     @GetMapping(value = "/{id}/executions/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter streamWorkflowExecutions(@PathVariable String id) {
         if (workflowRegistry.find(id).isEmpty()) {
