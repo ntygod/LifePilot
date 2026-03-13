@@ -299,8 +299,8 @@ public class WorkflowRepository {
                 INSERT INTO workflow_step_logs
                     (id, instance_id, step_id, step_type, state, attempt,
                      input_json, output_json, error_message,
-                     started_at, completed_at, duration_ms, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     started_at, completed_at, duration_ms, retry_count, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 stepLog.id(),
                 stepLog.instanceId(),
@@ -314,6 +314,7 @@ public class WorkflowRepository {
                 toText(stepLog.startedAt()),
                 toText(stepLog.completedAt()),
                 stepLog.durationMs(),
+                stepLog.retryCount(),
                 toText(stepLog.createdAt()));
         log.debug("步骤日志插入: instanceId={}, stepId={}, state={}, attempt={}",
                 stepLog.instanceId(), stepLog.stepId(), stepLog.state(), stepLog.attempt());
@@ -429,6 +430,7 @@ public class WorkflowRepository {
                 parseInstant(rs.getString("started_at")),
                 parseInstant(rs.getString("completed_at")),
                 durationMs,
+                rs.getInt("retry_count"),
                 parseInstant(rs.getString("created_at"))
         );
     }

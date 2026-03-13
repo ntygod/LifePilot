@@ -1029,7 +1029,7 @@ public class WorkflowEngine {
                     UUID.randomUUID().toString(),
                     instanceId, stepId, stepType, state, attempt,
                     inputJson, outputJson, errorMessage,
-                    startedAt, now, durationMs, now
+                    startedAt, now, durationMs, 0, now
             );
             repository.insertStepLog(stepLog);
         } catch (Exception e) {

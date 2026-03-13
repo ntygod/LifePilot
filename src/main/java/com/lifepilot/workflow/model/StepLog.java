@@ -23,6 +23,7 @@ import org.springframework.lang.Nullable;
  * @param startedAt     步骤开始执行时间（可选）
  * @param completedAt   步骤完成时间（可选）
  * @param durationMs    步骤执行耗时（毫秒，可选）
+ * @param retryCount    重试次数（0 表示未重试）
  * @param createdAt     日志创建时间
  * @author zsg
  * @since 2026-02-26
@@ -40,6 +41,7 @@ public record StepLog(
         @Nullable Instant startedAt,
         @Nullable Instant completedAt,
         @Nullable Long durationMs,
+        int retryCount,
         Instant createdAt
 ) {
 }
