@@ -77,7 +77,7 @@ class WorkflowRegistryBuiltinGuardTest {
                 .id(id)
                 .name(name)
                 .enabled(true)
-                .steps(List.of(new WorkflowStep.NoopStep("step1", "测试步骤", List.of(), null)))
+                .steps(List.of(new WorkflowStep.NoopStep("step1", "测试步骤", List.of(), null, null)))
                 .build();
     }
 }

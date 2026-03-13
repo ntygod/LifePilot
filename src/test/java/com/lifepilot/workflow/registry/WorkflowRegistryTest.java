@@ -41,7 +41,7 @@ class WorkflowRegistryTest {
                 .id(id)
                 .name(name)
                 .enabled(enabled)
-                .steps(List.of(new WorkflowStep.NoopStep("step1", "测试步骤", List.of(), null)))
+                .steps(List.of(new WorkflowStep.NoopStep("step1", "测试步骤", List.of(), null, null)))
                 .build();
     }
 
@@ -68,7 +68,7 @@ class WorkflowRegistryTest {
         WorkflowDefinition def = WorkflowDefinition.builder()
                 .id("  ")
                 .name("测试")
-                .steps(List.of(new WorkflowStep.NoopStep("s1", "步骤", List.of(), null)))
+                .steps(List.of(new WorkflowStep.NoopStep("s1", "步骤", List.of(), null, null)))
                 .build();
 
         boolean result = registry.register(def);
@@ -81,7 +81,7 @@ class WorkflowRegistryTest {
         WorkflowDefinition def = WorkflowDefinition.builder()
                 .id("wf-1")
                 .name("  ")
-                .steps(List.of(new WorkflowStep.NoopStep("s1", "步骤", List.of(), null)))
+                .steps(List.of(new WorkflowStep.NoopStep("s1", "步骤", List.of(), null, null)))
                 .build();
 
         boolean result = registry.register(def);

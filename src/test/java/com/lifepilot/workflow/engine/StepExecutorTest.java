@@ -112,6 +112,7 @@ class StepExecutorTest {
                 null,
                 List.of(),
                 List.of(),
+                null,
                 null
         );
 
@@ -149,6 +150,7 @@ class StepExecutorTest {
                 "provider-vision",
                 List.of(new MediaRef("data:image/png;base64,AQID", null, "upload.png")),
                 List.of(),
+                null,
                 null
         );
 
@@ -182,6 +184,7 @@ class StepExecutorTest {
                 null,
                 List.of(),
                 List.of(),
+                null,
                 null
         );
 
@@ -225,6 +228,7 @@ class StepExecutorTest {
                 null,
                 List.of(),
                 List.of(),
+                null,
                 null
         );
 
