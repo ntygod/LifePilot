@@ -133,6 +133,77 @@ public class ExpressionEngine {
     }
 
     /**
+     * 试运行解析结果。
+     *
+     * @param resolved        解析后的字符串（缺失变量用占位符替代）
+     * @param unresolvedPaths 未解析的变量路径列表
+     */
+    public record DryRunResolveResult(String resolved, List<String> unresolvedPaths) {
+        public DryRunResolveResult {
+            unresolvedPaths = unresolvedPaths == null ? List.of() : List.copyOf(unresolvedPaths);
+        }
+    }
+
+    /**
+     * 试运行模式解析字符串中的 {@code ${...}} 表达式。
+     *
+     * <p>与 {@link #resolve} 类似，但缺失变量时返回占位符 {@code <未解析: path>} 而非抛异常，
+     * 同时收集所有未解析的变量路径。
+     *
+     * @param template 包含 {@code ${...}} 占位符的模板字符串
+     * @param context  工作流变量上下文
+     * @return 试运行解析结果（含占位符的字符串 + 未解析路径列表）
+     */
+    public DryRunResolveResult resolveDryRun(String template, WorkflowContext context) {
+        if (template == null) {
+            return new DryRunResolveResult(null, List.of());
+        }
+
+        List<String> unresolvedPaths = new ArrayList<>();
+        Matcher matcher = PLACEHOLDER_PATTERN.matcher(template);
+        StringBuilder result = new StringBuilder();
+        while (matcher.find()) {
+            String path = matcher.group(1).trim();
+            Optional<Object> value = context.get(path);
+            if (value.isPresent()) {
+                matcher.appendReplacement(result, Matcher.quoteReplacement(String.valueOf(value.get())));
+            } else {
+                unresolvedPaths.add(path);
+                matcher.appendReplacement(result, Matcher.quoteReplacement("<未解析: " + path + ">"));
+            }
+        }
+        matcher.appendTail(result);
+        return new DryRunResolveResult(result.toString(), unresolvedPaths);
+    }
+
+    /**
+     * 试运行模式解析 Map 中所有 String 值的表达式。
+     *
+     * <p>缺失变量时使用占位符替代，不抛异常。
+     *
+     * @param params  包含表达式的参数 Map
+     * @param context 工作流变量上下文
+     * @return 解析后的参数 Map（新实例）和未解析路径列表
+     */
+    public DryRunResolveResult resolveDryRunMap(Map<String, Object> params, WorkflowContext context) {
+        if (params == null || params.isEmpty()) {
+            return new DryRunResolveResult("{}", List.of());
+        }
+        List<String> allUnresolved = new ArrayList<>();
+        Map<String, Object> resolved = new HashMap<>(params.size());
+        for (var entry : params.entrySet()) {
+            if (entry.getValue() instanceof String strValue) {
+                DryRunResolveResult r = resolveDryRun(strValue, context);
+                resolved.put(entry.getKey(), r.resolved());
+                allUnresolved.addAll(r.unresolvedPaths());
+            } else {
+                resolved.put(entry.getKey(), entry.getValue());
+            }
+        }
+        return new DryRunResolveResult(resolved.toString(), allUnresolved);
+    }
+
+    /**
      * 从 WorkflowContext 中解析变量路径。
      */
     private Object resolveVariable(String path, WorkflowContext context) {
