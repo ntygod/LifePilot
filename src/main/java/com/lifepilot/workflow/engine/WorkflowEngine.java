@@ -561,12 +561,16 @@ public class WorkflowEngine {
                     () -> stepExecutor.execute(step, currentInstance.context(), expressionEngine),
                     VIRTUAL_THREAD_EXECUTOR
             );
+            // 步骤级超时优先于全局默认值
+            int timeout = step.timeoutSeconds() != null
+                    ? step.timeoutSeconds()
+                    : config.getDefaultStepTimeoutSeconds();
             try {
-                output = stepFuture.get(config.getDefaultStepTimeoutSeconds(), TimeUnit.SECONDS);
+                output = stepFuture.get(timeout, TimeUnit.SECONDS);
             } catch (TimeoutException e) {
                 stepFuture.cancel(true);
                 throw new WorkflowStepException(step.id(),
-                        "步骤执行超时: timeout=" + config.getDefaultStepTimeoutSeconds() + "s", e);
+                        "步骤执行超时: timeout=" + timeout + "s", e);
             } catch (InterruptedException e) {
                 stepFuture.cancel(true);
                 Thread.currentThread().interrupt();
