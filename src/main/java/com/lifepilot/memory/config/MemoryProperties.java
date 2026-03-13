@@ -2,6 +2,8 @@ package com.lifepilot.memory.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+import java.util.Set;
+
 /**
  * 记忆系统配置属性。
  *
@@ -393,6 +395,12 @@ public class MemoryProperties {
         /** PII 实体遗忘优先级额外权重，默认 0.3。 */
         private float privacyAwareBoost = 0.3f;
 
+        /** 受保护的重要度阈值 — importanceScore ≥ 此值的实体永不被遗忘，默认 0.9。 */
+        private float protectionThreshold = 0.9f;
+
+        /** 受保护的实体类型列表 — 这些类型的实体永不被遗忘，默认 PREFERENCE/HABIT/GOAL。 */
+        private Set<String> protectedTypes = Set.of("PREFERENCE", "HABIT", "GOAL");
+
         public String getCron() { return cron; }
         public void setCron(String cron) { this.cron = cron; }
 
@@ -419,6 +427,12 @@ public class MemoryProperties {
 
         public float getPrivacyAwareBoost() { return privacyAwareBoost; }
         public void setPrivacyAwareBoost(float privacyAwareBoost) { this.privacyAwareBoost = privacyAwareBoost; }
+
+        public float getProtectionThreshold() { return protectionThreshold; }
+        public void setProtectionThreshold(float protectionThreshold) { this.protectionThreshold = protectionThreshold; }
+
+        public Set<String> getProtectedTypes() { return protectedTypes; }
+        public void setProtectedTypes(Set<String> protectedTypes) { this.protectedTypes = protectedTypes; }
     }
 
     /**
