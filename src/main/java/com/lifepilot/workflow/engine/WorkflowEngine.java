@@ -1,5 +1,7 @@
 package com.lifepilot.workflow.engine;
 
+import com.lifepilot.observability.trace.TraceContext;
+import com.lifepilot.observability.trace.TraceRecorder;
 import com.lifepilot.workflow.config.WorkflowConfigProperties;
 import com.lifepilot.workflow.engine.StepExecutor.WorkflowStepException;
 import com.lifepilot.workflow.expression.ExpressionEngine;
@@ -47,6 +49,7 @@ public class WorkflowEngine {
     private final WorkflowConfigProperties config;
     private final DagScheduler dagScheduler;
     private final WorkflowEventRecorder eventRecorder;
+    private final TraceRecorder traceRecorder;
 
     public WorkflowEngine(WorkflowRegistry registry,
                           StepExecutor stepExecutor,
@@ -54,7 +57,8 @@ public class WorkflowEngine {
                           WorkflowRepository repository,
                           WorkflowConfigProperties config,
                           DagScheduler dagScheduler,
-                          WorkflowEventRecorder eventRecorder) {
+                          WorkflowEventRecorder eventRecorder,
+                          TraceRecorder traceRecorder) {
         this.registry = registry;
         this.stepExecutor = stepExecutor;
         this.expressionEngine = expressionEngine;
@@ -62,6 +66,7 @@ public class WorkflowEngine {
         this.config = config;
         this.dagScheduler = dagScheduler;
         this.eventRecorder = eventRecorder;
+        this.traceRecorder = traceRecorder;
     }
 
     // ==================== 公开 API ====================
@@ -79,6 +84,7 @@ public class WorkflowEngine {
                 .orElseThrow(() -> new IllegalArgumentException("工作流实例未找到: id=" + instanceId));
 
         String workflowId = instance.workflowId();
+        TraceContext traceContext = null;
         try {
             WorkflowDefinition definition = registry.find(workflowId)
                     .orElseThrow(() -> new IllegalArgumentException(
@@ -87,6 +93,15 @@ public class WorkflowEngine {
             log.info("开始执行工作流: instanceId={}, workflowId={}, 步骤数={}",
                     instanceId, workflowId, definition.steps().size());
 
+            // 创建追踪上下文
+            String traceId = UUID.randomUUID().toString();
+            traceContext = traceRecorder.startTrace(traceId, instanceId, "工作流执行: " + workflowId);
+
+            // 将 traceId 写入实例并持久化
+            instance = instance.toBuilder().traceId(traceId).updatedAt(Instant.now()).build();
+            repository.updateInstance(instance);
+            log.info("工作流追踪开始: instanceId={}, traceId={}", instanceId, traceId);
+
             // CREATED → RUNNING
             instance = transition(instance, WorkflowState.RUNNING);
 
@@ -94,8 +109,12 @@ public class WorkflowEngine {
             executeDag(instance, definition.steps(), new HashSet<>(instance.completedStepIds()), 0);
 
             log.info("工作流执行完成: instanceId={}, workflowId={}", instanceId, workflowId);
+            traceRecorder.endTrace(traceContext, null, true, null, null);
         } catch (Exception e) {
             log.error("工作流执行异常: instanceId={}, error={}", instanceId, e.getMessage(), e);
+            if (traceContext != null) {
+                traceRecorder.endTrace(traceContext, null, false, e.getMessage(), "执行异常");
+            }
             failWorkflow(instance, "执行异常: " + e.getMessage());
         }
     }

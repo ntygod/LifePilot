@@ -1,5 +1,6 @@
 package com.lifepilot.workflow.engine;
 
+import com.lifepilot.observability.trace.TraceRecorder;
 import com.lifepilot.workflow.config.WorkflowConfigProperties;
 import com.lifepilot.workflow.expression.ExpressionEngine;
 import com.lifepilot.workflow.model.*;
@@ -35,6 +36,7 @@ class WorkflowEngine崩溃恢复测试 {
     private WorkflowConfigProperties config;
     private DagScheduler dagScheduler;
     private WorkflowEventRecorder eventRecorder;
+    private TraceRecorder traceRecorder;
     private WorkflowEngine engine;
 
     @BeforeEach
@@ -46,8 +48,9 @@ class WorkflowEngine崩溃恢复测试 {
         config = new WorkflowConfigProperties();
         dagScheduler = new DagScheduler();
         eventRecorder = mock(WorkflowEventRecorder.class);
+        traceRecorder = mock(TraceRecorder.class);
         engine = new WorkflowEngine(registry, stepExecutor, expressionEngine,
-                repository, config, dagScheduler, eventRecorder);
+                repository, config, dagScheduler, eventRecorder, traceRecorder);
     }
 
     // ==================== 辅助方法 ====================

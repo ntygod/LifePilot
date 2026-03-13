@@ -1,5 +1,6 @@
 package com.lifepilot.workflow.engine;
 
+import com.lifepilot.observability.trace.TraceRecorder;
 import com.lifepilot.workflow.config.WorkflowConfigProperties;
 import com.lifepilot.workflow.engine.StepExecutor.WorkflowStepException;
 import com.lifepilot.workflow.expression.ExpressionEngine;
@@ -37,6 +38,7 @@ class WorkflowEngineTest {
     private WorkflowConfigProperties config;
     private DagScheduler dagScheduler;
     private WorkflowEventRecorder eventRecorder;
+    private TraceRecorder traceRecorder;
     private WorkflowEngine engine;
 
     @BeforeEach
@@ -48,8 +50,9 @@ class WorkflowEngineTest {
         config = new WorkflowConfigProperties();
         dagScheduler = new DagScheduler();
         eventRecorder = mock(WorkflowEventRecorder.class);
+        traceRecorder = mock(TraceRecorder.class);
         engine = new WorkflowEngine(registry, stepExecutor, expressionEngine,
-                repository, config, dagScheduler, eventRecorder);
+                repository, config, dagScheduler, eventRecorder, traceRecorder);
     }
 
     private WorkflowDefinition createSimpleDef(String id, WorkflowStep... steps) {

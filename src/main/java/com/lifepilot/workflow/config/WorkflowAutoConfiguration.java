@@ -3,6 +3,7 @@ package com.lifepilot.workflow.config;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.notification.NotificationService;
+import com.lifepilot.observability.trace.TraceRecorder;
 import com.lifepilot.skill.activation.SkillActivator;
 import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
@@ -142,10 +143,11 @@ public class WorkflowAutoConfiguration {
                                          WorkflowRepository repository,
                                          WorkflowConfigProperties config,
                                          DagScheduler dagScheduler,
-                                         WorkflowEventRecorder eventRecorder) {
+                                         WorkflowEventRecorder eventRecorder,
+                                         TraceRecorder traceRecorder) {
         log.info("工作流执行引擎初始化完成");
         return new WorkflowEngine(registry, stepExecutor, expressionEngine, repository,
-                config, dagScheduler, eventRecorder);
+                config, dagScheduler, eventRecorder, traceRecorder);
     }
 
     @Bean
