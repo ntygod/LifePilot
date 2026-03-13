@@ -22,7 +22,6 @@ public class VectorSearcher {
     private static final Logger log = LoggerFactory.getLogger(VectorSearcher.class);
 
     private final JdbcTemplate vectorJdbcTemplate;
-    private final JdbcTemplate mainJdbcTemplate;
     private final LlmRouter llmRouter;
     private final boolean vecExtensionLoaded;
     private final int embeddingDimensions;
@@ -31,18 +30,15 @@ public class VectorSearcher {
      * 构造 VectorSearcher。
      *
      * @param vectorJdbcTemplate 向量数据库 JdbcTemplate
-     * @param mainJdbcTemplate   主数据库 JdbcTemplate
      * @param llmRouter          LLM 路由器（用于 embed）
      * @param vecExtensionLoaded sqlite-vec 扩展是否已加载
      * @param embeddingDimensions 向量维度
      */
     public VectorSearcher(JdbcTemplate vectorJdbcTemplate,
-                          JdbcTemplate mainJdbcTemplate,
                           LlmRouter llmRouter,
                           boolean vecExtensionLoaded,
                           int embeddingDimensions) {
         this.vectorJdbcTemplate = vectorJdbcTemplate;
-        this.mainJdbcTemplate = mainJdbcTemplate;
         this.llmRouter = llmRouter;
         this.vecExtensionLoaded = vecExtensionLoaded;
         this.embeddingDimensions = embeddingDimensions;

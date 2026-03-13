@@ -3,7 +3,6 @@ package com.lifepilot.memory.forgetting;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.memory.config.MemoryProperties;
-import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
 import com.lifepilot.prompt.PromptRegistry;
@@ -15,7 +14,6 @@ import org.springframework.scheduling.annotation.Scheduled;
 
 import java.time.Instant;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -24,7 +22,7 @@ import java.util.UUID;
  * <p>核心流程：获取当前实体 → 过滤受保护实体 → HybridPolicy 四阶段遗忘 →
  * 执行遗忘动作（归档/压缩/删除）→ 记录遗忘日志。</p>
  *
- * <p>受保护实体（永不遗忘）：PREFERENCE/HABIT/GOAL 类型、importanceScore ≥ 0.9。</p>
+ * <p>受保护实体（永不遗忘）：由 {@code protectedTypes} 和 {@code protectionThreshold} 配置控制。</p>
  *
  * @author zsg
  * @since 2026-03-01
@@ -32,13 +30,6 @@ import java.util.UUID;
 public class ForgettingEngine {
 
     private static final Logger log = LoggerFactory.getLogger(ForgettingEngine.class);
-
-    /** 受保护的实体类型 — 这些类型的实体永不被遗忘。 */
-    private static final Set<EntityType> PROTECTED_TYPES = Set.of(
-            EntityType.PREFERENCE, EntityType.HABIT, EntityType.GOAL);
-
-    /** 受保护的重要度阈值 — importanceScore ≥ 此值的实体永不被遗忘。 */
-    private static final float PROTECTION_THRESHOLD = 0.9f;
 
     private final SemanticMemory semanticMemory;
     @Nullable
@@ -120,9 +111,9 @@ public class ForgettingEngine {
 
         for (var entity : selected) {
             try {
-                var action = executeForgetAction(entity, config);
+                var result = executeForgetAction(entity, config);
                 var priority = priorityCalculator.calculate(entity);
-                logForgetting(entity, hybrid.name(), action, priority);
+                logForgetting(entity, hybrid.name(), result.action(), priority, result.compressionSummary());
                 forgottenCount++;
             } catch (Exception e) {
                 log.warn("遗忘引擎: 实体遗忘失败, id={}, name={}, error={}",
@@ -140,19 +131,23 @@ public class ForgettingEngine {
      *
      * <p>受保护条件（满足任一即受保护）：
      * <ul>
-     *   <li>实体类型为 PREFERENCE / HABIT / GOAL</li>
-     *   <li>importanceScore ≥ 0.9</li>
+     *   <li>实体类型在 {@code protectedTypes} 配置列表中（默认 PREFERENCE / HABIT / GOAL）</li>
+     *   <li>importanceScore ≥ {@code protectionThreshold} 配置值（默认 0.9）</li>
      * </ul></p>
      *
      * @param entity 目标实体
      * @return 是否受保护
      */
     private boolean isProtected(TemporalEntity entity) {
-        if (PROTECTED_TYPES.contains(entity.type())) {
+        var config = properties.getForgetting();
+        if (config.getProtectedTypes().contains(entity.type().name())) {
             return true;
         }
-        return entity.importanceScore() >= PROTECTION_THRESHOLD;
+        return entity.importanceScore() >= config.getProtectionThreshold();
     }
+
+    /** 遗忘动作执行结果 — 携带动作名称和可选的压缩摘要。 */
+    private record ForgetActionResult(String action, @Nullable String compressionSummary) {}
 
     /**
      * 对单个实体执行遗忘动作。
@@ -166,9 +161,9 @@ public class ForgettingEngine {
      *
      * @param entity 目标实体
      * @param config 遗忘配置
-     * @return 执行的动作名称
+     * @return 遗忘动作结果（含动作名称和可选压缩摘要）
      */
-    private String executeForgetAction(TemporalEntity entity, MemoryProperties.Forgetting config) {
+    private ForgetActionResult executeForgetAction(TemporalEntity entity, MemoryProperties.Forgetting config) {
         var minImportance = config.getReflectionSummaryMinImportance();
         var maxImportance = config.getReflectionSummaryMaxImportance();
 
@@ -184,19 +179,19 @@ public class ForgettingEngine {
                         entity.id(), entity.name(), summary.length());
                 // 压缩后归档原实体
                 semanticMemory.archive(entity);
-                return "COMPRESSED";
+                return new ForgetActionResult("COMPRESSED", summary);
             } catch (Exception e) {
                 log.warn("遗忘引擎: LLM 压缩失败, 降级为归档, id={}, error={}",
                         entity.id(), e.getMessage());
                 // 降级为归档
                 semanticMemory.archive(entity);
-                return "ARCHIVED";
+                return new ForgetActionResult("ARCHIVED", null);
             }
         }
 
         // 默认：归档
         semanticMemory.archive(entity);
-        return "ARCHIVED";
+        return new ForgetActionResult("ARCHIVED", null);
     }
 
     /**
@@ -216,15 +211,17 @@ public class ForgettingEngine {
     /**
      * 记录遗忘日志到 forgetting_log 表。
      *
-     * @param entity   被遗忘的实体
-     * @param strategy 使用的策略名称
-     * @param action   执行的动作
-     * @param priority 遗忘优先级
+     * @param entity              被遗忘的实体
+     * @param strategy            使用的策略名称
+     * @param action              执行的动作
+     * @param priority            遗忘优先级
+     * @param compressionSummary  LLM 压缩摘要（COMPRESSED 时非空，ARCHIVED 时为 null）
      */
     private void logForgetting(TemporalEntity entity, String strategy,
-                                String action, float priority) {
+                                String action, float priority,
+                                @Nullable String compressionSummary) {
         jdbcTemplate.update(
-                "INSERT INTO forgetting_log(id, entity_id, entity_name, strategy, action_taken, forgetting_priority, reason, created_at) VALUES(?,?,?,?,?,?,?,?)",
+                "INSERT INTO forgetting_log(id, entity_id, entity_name, strategy, action_taken, forgetting_priority, reason, compression_summary, created_at) VALUES(?,?,?,?,?,?,?,?,?)",
                 UUID.randomUUID().toString(),
                 entity.id(),
                 entity.name(),
@@ -232,6 +229,7 @@ public class ForgettingEngine {
                 action,
                 priority,
                 "MaRS 遗忘引擎自动执行",
+                compressionSummary,
                 Instant.now().toString());
     }
 }

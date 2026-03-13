@@ -265,6 +265,100 @@ public class MemoryController {
         return ResponseEntity.noContent().build();
     }
 
+    /**
+     * 手动创建实体。
+     *
+     * <p>extractionConfidence 固定为 1.0 表示手动创建。</p>
+     */
+    @PostMapping("/entities")
+    public ResponseEntity<EntityDetailDto> createEntity(@RequestBody EntityCreateRequest request) {
+        requireMemoryEnabled();
+
+        // 校验 name 非空
+        if (request.name() == null || request.name().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "实体名称不能为空");
+        }
+
+        // 校验 type 为有效 EntityType
+        EntityType entityType;
+        try {
+            entityType = EntityType.valueOf(request.type());
+        } catch (IllegalArgumentException | NullPointerException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "无效的实体类型: " + request.type());
+        }
+
+        var now = Instant.now();
+        float importance = request.importanceScore() != null ? request.importanceScore() : 0.5f;
+        var entity = new TemporalEntity(
+                UUID.randomUUID().toString(),
+                entityType,
+                request.name().trim(),
+                request.description(),
+                request.properties() != null ? request.properties() : Map.of(),
+                1,
+                true,
+                now,
+                null,
+                null,
+                1.0f,  // extractionConfidence=1.0 表示手动创建
+                importance,
+                0,
+                null,
+                now,
+                now
+        );
+
+        semanticMemory.upsertWithConflictDetection(entity, null);
+        log.info("手动创建实体: id={}, name={}, type={}", entity.id(), entity.name(), entity.type());
+        return ResponseEntity.status(HttpStatus.CREATED).body(toEntityDetail(entity));
+    }
+
+    /**
+     * 更新实体。
+     *
+     * <p>仅允许更新当前有效实体（isCurrent=true），已归档实体返回 404。</p>
+     */
+    @PutMapping("/entities/{id}")
+    public EntityDetailDto updateEntity(@PathVariable String id,
+                                        @RequestBody EntityUpdateRequest request) {
+        requireMemoryEnabled();
+
+        var existing = semanticMemory.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "实体不存在: " + id));
+
+        if (!existing.isCurrent()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "实体已归档: " + id);
+        }
+
+        // 合并更新字段
+        String description = request.description() != null ? request.description() : existing.description();
+        Map<String, Object> properties = request.properties() != null ? request.properties() : existing.properties();
+        float importance = request.importanceScore() != null ? request.importanceScore() : existing.importanceScore();
+
+        var updated = new TemporalEntity(
+                existing.id(),
+                existing.type(),
+                existing.name(),
+                description,
+                properties,
+                existing.version(),
+                true,
+                existing.validFrom(),
+                existing.validTo(),
+                existing.sourceConversationId(),
+                existing.extractionConfidence(),
+                importance,
+                existing.accessCount(),
+                existing.lastAccessedAt(),
+                existing.createdAt(),
+                Instant.now()
+        );
+
+        semanticMemory.upsertWithConflictDetection(updated, null);
+        log.info("更新实体: id={}, name={}", updated.id(), updated.name());
+        return toEntityDetail(updated);
+    }
+
     // ========== Req 3: L3 关系查询 ==========
 
     /**

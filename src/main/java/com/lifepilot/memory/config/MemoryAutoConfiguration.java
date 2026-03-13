@@ -288,13 +288,12 @@ public class MemoryAutoConfiguration {
     @ConditionalOnMissingBean
     public VectorSearcher vectorSearcher(
             @Qualifier("vectorJdbcTemplate") JdbcTemplate vectorJdbcTemplate,
-            JdbcTemplate jdbcTemplate,
             LlmRouter llmRouter,
             MemoryProperties properties) {
         boolean vecLoaded = isVecExtensionLoaded(vectorJdbcTemplate);
         log.info("记忆系统: 注册 VectorSearcher, vecExtensionLoaded={}, dimensions={}",
                 vecLoaded, properties.getEmbeddingDimensions());
-        return new VectorSearcher(vectorJdbcTemplate, jdbcTemplate, llmRouter,
+        return new VectorSearcher(vectorJdbcTemplate, llmRouter,
                 vecLoaded, properties.getEmbeddingDimensions());
     }
 
@@ -339,9 +338,10 @@ public class MemoryAutoConfiguration {
     @ConditionalOnBean({SemanticMemory.class, ExtractionValidator.class})
     public RealtimeExtractor realtimeExtractor(LlmRouter llmRouter,
                                                SemanticMemory semanticMemory,
-                                               ExtractionValidator extractionValidator) {
+                                               ExtractionValidator extractionValidator,
+                                               JdbcTemplate jdbcTemplate) {
         log.info("记忆系统: 注册 RealtimeExtractor（AUDN 实时实体提取）");
-        return new RealtimeExtractor(llmRouter, semanticMemory, properties, extractionValidator);
+        return new RealtimeExtractor(llmRouter, semanticMemory, properties, extractionValidator, jdbcTemplate);
     }
 
     // --- 混合检索引擎 ---
@@ -369,11 +369,12 @@ public class MemoryAutoConfiguration {
             GraphTraverser graphTraverser,
             SemanticMemory semanticMemory,
             EpisodicMemory episodicMemory,
-            @Nullable IntentMatcher intentMatcher) {
+            @Nullable IntentMatcher intentMatcher,
+            JdbcTemplate jdbcTemplate) {
         log.info("记忆系统: 注册 HybridRetriever, L4 意图匹配={}",
                 intentMatcher != null ? "启用" : "禁用");
         var retriever = new HybridRetriever(vectorSearcher, ftsSearcher, graphTraverser,
-                semanticMemory, intentMatcher, properties);
+                semanticMemory, intentMatcher, properties, jdbcTemplate);
         // 注入写入回调：记忆写入后重置 knownEmpty 短路标记，避免永久短路
         semanticMemory.setWriteCallback(retriever::resetEmptyFlag);
         episodicMemory.setWriteCallback(retriever::resetEmptyFlag);
