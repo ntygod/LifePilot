@@ -402,6 +402,32 @@ public class WorkflowController {
     }
 
     /**
+     * 试运行工作流：模拟执行，不持久化状态，不产生副作用。
+     *
+     * @param id     工作流 ID
+     * @param inputs 可选输入参数
+     * @return DryRunResult，404 不存在，400 参数错误
+     */
+    @PostMapping("/{id}/dry-run")
+    public ResponseEntity<?> dryRun(@PathVariable String id,
+                                     @RequestBody(required = false) Map<String, Object> inputs) {
+        var defOpt = workflowRegistry.find(id);
+        if (defOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    new ErrorResponse(404, "工作流不存在: id=" + id, Instant.now()));
+        }
+
+        try {
+            var result = workflowCommandService.dryRun(id, inputs);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            log.error("试运行失败: workflowId={}", id, e);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
+                    new ErrorResponse(400, "试运行失败: " + e.getMessage(), Instant.now()));
+        }
+    }
+
+    /**
      * 获取指定工作流的执行历史。
      *
      * @param id 工作流 ID
