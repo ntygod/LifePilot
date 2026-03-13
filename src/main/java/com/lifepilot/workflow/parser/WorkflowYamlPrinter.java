@@ -9,6 +9,7 @@ import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.Yaml;
 
 import com.lifepilot.workflow.model.ErrorStrategy;
+import com.lifepilot.workflow.model.OptionItem;
 import com.lifepilot.workflow.model.WorkflowDefinition;
 import com.lifepilot.workflow.model.WorkflowInputParam;
 import com.lifepilot.workflow.model.WorkflowStep;
@@ -67,6 +68,16 @@ public class WorkflowYamlPrinter {
         // enabled 默认为 true，仅在 false 时输出
         if (!definition.enabled()) {
             root.put("enabled", false);
+        }
+
+        // 工作流级变量（非空时输出）
+        if (!definition.variables().isEmpty()) {
+            root.put("variables", new LinkedHashMap<>(definition.variables()));
+        }
+
+        // 工作流标签（非空时输出）
+        if (!definition.tags().isEmpty()) {
+            root.put("tags", new ArrayList<>(definition.tags()));
         }
 
         if (!definition.triggers().isEmpty()) {
@@ -135,6 +146,32 @@ public class WorkflowYamlPrinter {
         }
         if (param.description() != null && !param.description().isEmpty()) {
             map.put("description", param.description());
+        }
+        // InputParam 元数据字段（非 null 时输出）
+        if (param.inputType() != null) {
+            map.put("inputType", param.inputType());
+        }
+        if (param.options() != null && !param.options().isEmpty()) {
+            List<Map<String, Object>> optionsList = new ArrayList<>();
+            for (OptionItem opt : param.options()) {
+                Map<String, Object> optMap = new LinkedHashMap<>();
+                optMap.put("value", opt.value());
+                optMap.put("label", opt.label());
+                optionsList.add(optMap);
+            }
+            map.put("options", optionsList);
+        }
+        if (param.placeholder() != null) {
+            map.put("placeholder", param.placeholder());
+        }
+        if (param.example() != null) {
+            map.put("example", param.example());
+        }
+        if (param.validationPattern() != null) {
+            map.put("validationPattern", param.validationPattern());
+        }
+        if (param.validationMessage() != null) {
+            map.put("validationMessage", param.validationMessage());
         }
         return map;
     }
@@ -254,6 +291,11 @@ public class WorkflowYamlPrinter {
                 map.put("contentType", s.contentType());
                 map.put("urgency", s.urgency().name());
             }
+        }
+
+        // 步骤级超时（非 null 时输出）
+        if (step.timeoutSeconds() != null) {
+            map.put("timeoutSeconds", step.timeoutSeconds());
         }
 
         // dependsOn（非空时输出）
