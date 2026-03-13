@@ -30,7 +30,7 @@ const emit = defineEmits<{
 /** 所有步骤类型列表 */
 const ALL_STEP_TYPES: StepType[] = [
   'skill', 'tool', 'llm', 'condition', 'loop',
-  'parallel', 'sub-workflow', 'noop', 'wait', 'approval',
+  'parallel', 'sub-workflow', 'noop', 'wait', 'approval', 'notify',
 ]
 
 /** 步骤计数器，用于生成唯一 ID */
@@ -49,6 +49,7 @@ function createDefaultConfig(type: StepType): StepConfig {
     case 'noop': return {}
     case 'wait': return { durationSeconds: 60 }
     case 'approval': return { message: '', approvers: [], timeoutSeconds: 3600, autoApproveOnTimeout: false }
+    case 'notify': return { targetUserId: '', content: '', contentType: 'TEXT', urgency: 'NORMAL' }
   }
 }
 

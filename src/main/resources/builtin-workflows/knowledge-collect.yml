@@ -1,0 +1,117 @@
+id: knowledge-collect
+name: 定时知识采集
+description: 每天定时从网络采集特定主题的最新信息，经过去重和摘要后保存到知识库
+version: "1.0"
+triggers:
+  - type: cron
+    cron: "0 0 6 * * *"
+inputs:
+  topics:
+    type: string
+    required: true
+    description: 要采集的主题列表（逗号分隔）
+  maxResultsPerTopic:
+    type: string
+    required: false
+    defaultValue: "5"
+    description: 每个主题最多采集的结果数
+metadata:
+  category: 知识管理
+  complexity: intermediate
+steps:
+  - id: parse-topics
+    name: 解析主题列表
+    type: llm
+    scene: knowledge_extraction
+    capability: STRUCTURED_OUTPUT
+    outputSchema: |
+      {
+        "type": "object",
+        "properties": {
+          "topics": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["topics"]
+      }
+    prompt: |
+      将以下主题字符串解析为数组：
+
+      ${inputs.topics}
+
+      输出 JSON：
+      {"topics": ["主题1", "主题2", ...]}
+
+  - id: collect-each-topic
+    name: 循环采集每个主题
+    type: loop
+    items: "${steps.parse-topics.output.result.topics}"
+    loopVar: currentTopic
+    dependsOn:
+      - parse-topics
+    body:
+      - id: search-topic
+        name: 网络搜索
+        type: tool
+        toolId: builtin.web.search
+        params:
+          query: "${currentTopic}"
+          maxResults: "${inputs.maxResultsPerTopic}"
+
+      - id: deduplicate
+        name: 去重处理
+        type: llm
+        scene: knowledge_extraction
+        capability: STRUCTURED_OUTPUT
+        outputSchema: |
+          {
+            "type": "object",
+            "properties": {
+              "deduplicatedItems": { "type": "array" }
+            },
+            "required": ["deduplicatedItems"]
+          }
+        prompt: |
+          对以下搜索结果进行去重和过滤，保留有价值的条目：
+
+          ${steps.search-topic.output.result}
+
+          输出 JSON：
+          {"deduplicatedItems": ["去重后的结果"]}
+        dependsOn:
+          - search-topic
+
+      - id: summarize
+        name: 生成摘要
+        type: llm
+        scene: document_summary
+        capability: CHAT
+        prompt: |
+          为以下内容生成简洁摘要：
+
+          ${steps.deduplicate.output.result}
+        dependsOn:
+          - deduplicate
+
+      - id: save-to-knowledge
+        name: 保存到知识库
+        type: skill
+        skillId: memory
+        params:
+          operation: save
+          content: "${steps.summarize.output.result}"
+          tags: "knowledge-collect,${currentTopic}"
+          importance: medium
+        dependsOn:
+          - summarize
+
+  - id: notify-completion
+    name: 通知完成
+    type: notify
+    targetUserId: owner
+    content: |
+      知识采集完成！
+
+      已采集主题：${inputs.topics}
+    contentType: TEXT
+    urgency: LOW
+    dependsOn:
+      - collect-each-topic

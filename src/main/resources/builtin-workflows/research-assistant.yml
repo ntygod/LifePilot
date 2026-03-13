@@ -1,0 +1,145 @@
+id: research-assistant
+name: 调研助手
+description: 多源信息搜索与深度分析，经人工审批后发布调研成果，支持网络搜索、知识库和记忆检索
+version: "1.0"
+triggers:
+  - type: manual
+inputs:
+  topic:
+    type: string
+    required: true
+    description: 调研主题
+  depth:
+    type: string
+    required: false
+    defaultValue: standard
+    description: 调研深度（brief/standard/deep）
+metadata:
+  category: 知识管理
+  complexity: advanced
+steps:
+  - id: search-web
+    name: 网络搜索
+    type: tool
+    toolId: builtin.web.search
+    params:
+      query: "${inputs.topic}"
+      maxResults: "10"
+    errorStrategy:
+      type: retry
+      maxAttempts: 2
+
+  - id: search-knowledge
+    name: 知识库搜索
+    type: tool
+    toolId: builtin.datastore.query_documents
+    params:
+      collection: knowledge-base
+      filter: "{\"tags\": {\"$contains\": \"${inputs.topic}\"}}"
+      limit: "5"
+    errorStrategy:
+      type: skip
+
+  - id: search-memory
+    name: 记忆搜索
+    type: skill
+    skillId: memory
+    params:
+      operation: search
+      query: "${inputs.topic}"
+      limit: "10"
+    errorStrategy:
+      type: skip
+
+  - id: deep-analysis
+    name: 深度分析
+    type: llm
+    scene: agent_reasoning
+    capability: CHAT
+    prompt: |
+      针对主题"${inputs.topic}"进行深度调研分析。
+
+      ## 调研深度
+      ${inputs.depth}
+
+      ## 网络搜索结果
+      ${steps.search-web.output.result}
+
+      ## 知识库相关内容
+      ${steps.search-knowledge.output.result}
+
+      ## 历史记忆
+      ${steps.search-memory.output.result}
+
+      请按结构输出调研报告。
+    dependsOn:
+      - search-web
+      - search-knowledge
+      - search-memory
+
+  - id: quality-check
+    name: 质量检查
+    type: llm
+    scene: agent_reasoning
+    capability: STRUCTURED_OUTPUT
+    outputSchema: |
+      {
+        "type": "object",
+        "properties": {
+          "passCheck": { "type": "boolean" },
+          "issues": { "type": "array" }
+        },
+        "required": ["passCheck", "issues"]
+      }
+    prompt: |
+      检查以下调研报告的质量：
+
+      ${steps.deep-analysis.output.result}
+
+      输出 JSON：
+      {"passCheck": true/false, "issues": ["问题列表"]}
+    dependsOn:
+      - deep-analysis
+
+  - id: approval-gate
+    name: 审批环节
+    type: approval
+    message: |
+      调研报告审批请求：
+      - 主题：${inputs.topic}
+      - 深度：${inputs.depth}
+    approvers:
+      - owner
+    timeoutSeconds: 86400
+    autoApproveOnTimeout: false
+    dependsOn:
+      - quality-check
+
+  - id: publish-result
+    name: 发布成果
+    type: skill
+    skillId: memory
+    params:
+      operation: save
+      content: "${steps.deep-analysis.output.result}"
+      tags: "research,${inputs.topic}"
+      importance: high
+    dependsOn:
+      - approval-gate
+    errorStrategy:
+      type: skip
+
+  - id: notify-complete
+    name: 通知完成
+    type: notify
+    targetUserId: owner
+    content: |
+      调研报告已完成：${inputs.topic}
+
+      ${steps.deep-analysis.output.result}
+    contentType: MARKDOWN
+    urgency: LOW
+    dependsOn:
+      - publish-result
+    errorStrategy:
+      type: skip

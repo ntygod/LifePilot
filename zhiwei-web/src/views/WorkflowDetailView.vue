@@ -7,11 +7,13 @@ import {
   ChevronDown,
   ChevronRight,
   Clock3,
+  Download,
   GitBranch,
   Play,
   Rows3,
   ShieldCheck,
   TimerReset,
+  Upload,
   Workflow,
 } from 'lucide-vue-next'
 import { workflowApi } from '@/api/client'
@@ -25,6 +27,7 @@ import PageHeader from '@/components/layout/PageHeader.vue'
 import PageSection from '@/components/layout/PageSection.vue'
 import EventTimeline from '@/components/workflow/EventTimeline.vue'
 import WorkflowInputDialog from '@/components/workflow/WorkflowInputDialog.vue'
+import DryRunDialog from '@/components/workflow/DryRunDialog.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -33,6 +36,7 @@ import { stateConfig as stateConfigMap } from '@/constants/workflowState'
 import { useUiStore } from '@/stores/ui'
 import { useWorkflowStore } from '@/stores/workflow'
 import type { WorkflowInputParam } from '@/types'
+import type { WorkflowStats, StepStats } from '@/types'
 
 const YamlEditor = defineAsyncComponent(() => import('@/components/editor/YamlEditor.vue'))
 
@@ -57,10 +61,35 @@ const triggerLoading = ref(false)
 const yamlLoading = ref(false)
 const yamlDefinition = ref('')
 const showInputDialog = ref(false)
+const showDryRunDialog = ref(false)
+const exportLoading = ref(false)
+const importLoading = ref(false)
 const expandedExecutionId = ref<string | null>(null)
 const executionDetailsLoading = ref<Record<string, boolean>>({})
 const triggerFormError = ref<string | null>(null)
 const triggerFieldErrors = ref<Record<string, string>>({})
+
+// 执行统计
+const workflowStats = ref<WorkflowStats | null>(null)
+const stepStats = ref<StepStats[]>([])
+const statsLoading = ref(false)
+
+async function loadStats() {
+  if (!workflowId.value) return
+  statsLoading.value = true
+  try {
+    const [stats, steps] = await Promise.all([
+      workflowApi.getStats(workflowId.value),
+      workflowApi.getStepStats(workflowId.value)
+    ])
+    workflowStats.value = stats
+    stepStats.value = steps
+  } catch (e) {
+    console.error('加载统计失败:', e)
+  } finally {
+    statsLoading.value = false
+  }
+}
 
 const breadcrumbItems = computed<BreadcrumbItem[]>(() => [
   { label: '工作流', to: { name: 'workflows' } },
@@ -309,6 +338,7 @@ async function loadData() {
 
     connectWorkflow(workflow.value.id)
     await loadYamlDefinition()
+    await loadStats()
   } finally {
     pageLoading.value = false
   }
@@ -400,6 +430,13 @@ function formatDuration(start?: string, end?: string) {
   return `${(ms / 1000).toFixed(1)}s`
 }
 
+function formatDurationMs(ms: number) {
+  if (!ms || ms < 0) return '-'
+  if (ms < 1000) return `${ms}ms`
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`
+  return `${(ms / 60000).toFixed(1)}min`
+}
+
 function formatDate(dateStr?: string) {
   if (!dateStr) return '-'
   return new Date(dateStr).toLocaleString('zh-CN')
@@ -407,6 +444,56 @@ function formatDate(dateStr?: string) {
 
 function goBack() {
   router.push('/workflows')
+}
+
+/** 导出当前工作流为 YAML 文件 */
+async function handleExport() {
+  if (!workflowId.value) return
+  exportLoading.value = true
+  try {
+    const result = await workflowApi.exportWorkflow(workflowId.value)
+    const blob = new Blob([result.yamlContent], { type: 'text/yaml' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${result.id}.yaml`
+    a.click()
+    URL.revokeObjectURL(url)
+    uiStore.showToast('success', '已导出工作流')
+  } catch (e) {
+    console.error('导出失败:', e)
+    uiStore.showToast('error', '导出失败')
+  } finally {
+    exportLoading.value = false
+  }
+}
+
+/** 导入工作流（选择文件后创建新工作流并跳转） */
+function triggerImport() {
+  const input = document.createElement('input')
+  input.type = 'file'
+  input.accept = '.yaml,.yml'
+  input.onchange = handleImportFile
+  input.click()
+}
+
+async function handleImportFile(event: Event) {
+  const input = event.target as HTMLInputElement
+  if (!input.files || input.files.length === 0) return
+  importLoading.value = true
+  try {
+    const content = await input.files[0].text()
+    const created = await workflowApi.importWorkflow(content)
+    uiStore.showToast('success', '已导入工作流')
+    await workflowStore.fetchDetail(created.id)
+    router.push({ name: 'workflowDetail', params: { id: created.id } })
+  } catch (e) {
+    console.error('导入失败:', e)
+    uiStore.showToast('error', '导入失败')
+  } finally {
+    importLoading.value = false
+    input.value = ''
+  }
 }
 
 onMounted(async () => {
@@ -491,13 +578,27 @@ watch(() => route.params.id, async () => {
             :description="workflow.description || '查看触发方式、步骤内容和最近执行记录。'"
           >
             <template #actions>
-              <Button variant="outline" @click="handleToggle">
-                {{ workflow.enabled ? '禁用工作流' : '启用工作流' }}
-              </Button>
-              <Button :disabled="!workflow.enabled || triggerLoading" @click="handleTrigger">
-                <Play class="size-4" />
-                {{ triggerLoading ? '触发中...' : '立即触发' }}
-              </Button>
+              <div class="flex flex-nowrap items-center gap-2 overflow-x-auto pb-1 md:gap-3">
+                <Button variant="outline" size="sm" class="shrink-0" @click="handleToggle">
+                  {{ workflow.enabled ? '禁用' : '启用' }}
+                </Button>
+                <Button variant="outline" size="sm" class="shrink-0" @click="showDryRunDialog = true">
+                  <Play class="size-4" />
+                  试运行
+                </Button>
+                <Button size="sm" class="shrink-0" :disabled="!workflow.enabled || triggerLoading" @click="handleTrigger">
+                  <Play class="size-4" />
+                  {{ triggerLoading ? '触发中...' : '立即触发' }}
+                </Button>
+                <Button variant="outline" size="sm" class="shrink-0" :disabled="exportLoading" @click="handleExport">
+                  <Download class="size-4" />
+                  {{ exportLoading ? '导出中...' : '导出' }}
+                </Button>
+                <Button variant="outline" size="sm" class="shrink-0" :disabled="importLoading" @click="triggerImport">
+                  <Upload class="size-4" />
+                  {{ importLoading ? '导入中...' : '导入' }}
+                </Button>
+              </div>
             </template>
 
             <template #meta>
@@ -535,6 +636,27 @@ watch(() => route.params.id, async () => {
               >
                 <template #icon>
                   <Clock3 class="size-5" />
+                </template>
+              </MetricCard>
+              <!-- 执行统计卡片 -->
+              <MetricCard
+                v-if="workflowStats"
+                label="执行统计"
+                :value="`${workflowStats.successCount}/${workflowStats.totalExecutions}`"
+                :hint="`成功率 ${((workflowStats.successCount / workflowStats.totalExecutions) * 100).toFixed(1)}%`"
+              >
+                <template #icon>
+                  <TimerReset class="size-5" />
+                </template>
+              </MetricCard>
+              <MetricCard
+                v-if="workflowStats"
+                label="平均耗时"
+                :value="formatDurationMs(workflowStats.avgDurationMs)"
+                hint="工作流平均执行时长。"
+              >
+                <template #icon>
+                  <TimerReset class="size-5" />
                 </template>
               </MetricCard>
             </template>
@@ -866,6 +988,13 @@ watch(() => route.params.id, async () => {
             @update:open="showInputDialog = $event"
             @confirm="doTrigger"
             @change="handleTriggerFieldChange"
+          />
+
+          <DryRunDialog
+            :open="showDryRunDialog"
+            :workflow-id="workflowId"
+            :inputs="workflowInputs"
+            @update:open="showDryRunDialog = $event"
           />
         </template>
       </div>

@@ -13,6 +13,7 @@ const VALID_STEP_TYPES: ReadonlySet<string> = new Set<StepType>([
   'noop',
   'wait',
   'approval',
+  'notify',
 ])
 
 /**

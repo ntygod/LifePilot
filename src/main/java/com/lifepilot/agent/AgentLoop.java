@@ -1064,9 +1064,6 @@ public class AgentLoop {
                         toolCallbacks.size(), state.phase(), state.traceId());
             }
 
-            // 打印完整提示词（便于调试）
-            logLlmPromptIfEnabled(scene, state.phase(), state.traceId(), systemPrompt, userText, toolCallbacks, null);
-
             // EXECUTING 阶段：不依赖 LLM 输出 JSON 来“描述工具调用”。
             // 直接按 ExecutionPlan 执行当前步骤的工具，并将结果封装为 Action.ToolResult，
             // 这样可以彻底规避 JSON 解析失败导致的循环中断。
@@ -1091,6 +1088,7 @@ public class AgentLoop {
                     // PLANNING 阶段：在 userText 中追加可用工具列表（toolId + description）
                     String planningUserText = userText + formatToolListSection(toolCallbacks);
                     var prompt = buildPrompt(chatClient, systemPrompt, List.of());
+                    logLlmPromptIfEnabled(scene, state.phase(), state.traceId(), systemPrompt, planningUserText, null, null);
                     String raw = prompt.user(planningUserText).call().content();
                     log.debug("LLM 响应获取成功: phase={}, traceId={}, raw={}",
                             state.phase(), state.traceId(), raw);
@@ -1106,6 +1104,7 @@ public class AgentLoop {
                 case RESPONDING -> {
                     // RESPONDING 阶段同样不注册工具回调，避免静默 function calling
                     var prompt = buildPrompt(chatClient, systemPrompt, List.of());
+                    logLlmPromptIfEnabled(scene, state.phase(), state.traceId(), systemPrompt, userText, null, null);
                     String content = prompt.user(userText).call().content();
                     var extracted = extractA2uiContent(content);
                     String visibleText = extracted.visibleText();
@@ -1116,6 +1115,7 @@ public class AgentLoop {
                 }
                 default -> {
                     var prompt = buildPrompt(chatClient, systemPrompt, List.of());
+                    logLlmPromptIfEnabled(scene, state.phase(), state.traceId(), systemPrompt, userText, null, null);
                     String response = prompt.user(userText).call().content();
                     yield actionParser.parse(state.phase(), response != null ? response : "");
                 }

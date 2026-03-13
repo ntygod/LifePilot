@@ -25,6 +25,13 @@ import static org.junit.jupiter.api.Assertions.*;
  * <p>验证 {@code src/main/resources/builtin-workflows/} 目录下所有 YAML 文件
  * 均能被 {@link WorkflowYamlParser} 正确解析，确保内置模板不含语法或结构错误。
  *
+ * <p>当前包含 8 个预置工作流，按复杂度分为：
+ * <ul>
+ *   <li>Beginner: daily-reminder, weekly-summary, habit-tracker</li>
+ *   <li>Intermediate: knowledge-collect, batch-task</li>
+ *   <li>Advanced: data-insight, content-review, research-assistant</li>
+ * </ul>
+ *
  * @author zsg
  * @since 2026-03-09
  */
@@ -34,11 +41,14 @@ class BuiltinWorkflow_解析验证_集成测试 {
 
     /** 预期的内置工作流文件名列表 */
     private static final List<String> EXPECTED_FILES = List.of(
+            "daily-reminder.yml",
+            "weekly-summary.yml",
+            "habit-tracker.yml",
+            "knowledge-collect.yml",
+            "batch-task.yml",
+            "data-insight.yml",
             "content-review.yml",
-            "data-aggregation.yml",
-            "batch-processing.yml",
-            "scheduled-inspection.yml",
-            "research-approval.yml"
+            "research-assistant.yml"
     );
 
     private WorkflowYamlParser parser;
@@ -51,15 +61,15 @@ class BuiltinWorkflow_解析验证_集成测试 {
     // ==================== 文件完整性验证 ====================
 
     @Test
-    void 内置工作流目录_恰好包含5个YAML文件() throws IOException {
+    void 内置工作流目录_恰好包含8个YAML文件() throws IOException {
         List<String> yamlFiles = new ArrayList<>();
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(BUILTIN_DIR, "*.yml")) {
             for (Path path : stream) {
                 yamlFiles.add(path.getFileName().toString());
             }
         }
-        assertEquals(5, yamlFiles.size(),
-                "内置工作流目录应恰好包含 5 个 YAML 文件，实际: " + yamlFiles);
+        assertEquals(8, yamlFiles.size(),
+                "内置工作流目录应恰好包含 8 个 YAML 文件，实际: " + yamlFiles);
     }
 
     @Test

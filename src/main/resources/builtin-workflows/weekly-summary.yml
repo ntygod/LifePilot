@@ -1,0 +1,94 @@
+id: weekly-summary
+name: 周报自动生成
+description: 每周五自动汇总本周的待办完成情况、日程安排和习惯数据，生成周报并保存到知识库
+version: "1.0"
+triggers:
+  - type: cron
+    cron: "0 0 18 * * 5"
+inputs:
+  weekOffset:
+    type: string
+    required: false
+    defaultValue: "0"
+    description: 周数偏移（0=本周，-1=上周）
+metadata:
+  category: 效率提升
+  complexity: beginner
+steps:
+  - id: fetch-todo-stats
+    name: 获取待办统计
+    type: skill
+    skillId: todo
+    params:
+      operation: stats
+      period: last-7-days
+
+  - id: fetch-schedule-stats
+    name: 获取日程统计
+    type: skill
+    skillId: schedule
+    params:
+      period: last-7-days
+
+  - id: fetch-habit-stats
+    name: 获取习惯追踪数据
+    type: skill
+    skillId: habit
+    params:
+      period: last-7-days
+
+  - id: synthesize-report
+    name: 生成周报
+    type: llm
+    scene: document_summary
+    capability: CHAT
+    prompt: |
+      请根据以下数据生成一份简洁的周报：
+
+      ## 待办统计
+      ${steps.fetch-todo-stats.output.result}
+
+      ## 日程统计
+      ${steps.fetch-schedule-stats.output.result}
+
+      ## 习惯追踪
+      ${steps.fetch-habit-stats.output.result}
+
+      请按以下结构输出：
+      1. 本周概览（完成率、亮点）
+      2. 数据详情
+      3. 下周建议
+    dependsOn:
+      - fetch-todo-stats
+      - fetch-schedule-stats
+      - fetch-habit-stats
+
+  - id: save-to-memory
+    name: 保存到知识库
+    type: skill
+    skillId: memory
+    params:
+      operation: save
+      content: "${steps.synthesize-report.output.result}"
+      tags: "weekly-summary,周报"
+      importance: medium
+    dependsOn:
+      - synthesize-report
+
+  - id: send-notification
+    name: 发送周报通知
+    type: notify
+    targetUserId: owner
+    content: |
+      本周周报已生成！
+
+      ${steps.synthesize-report.output.result}
+
+      点击查看完整周报。
+    contentType: MARKDOWN
+    urgency: LOW
+    dependsOn:
+      - save-to-memory
+    errorStrategy:
+      type: skip
+      reason: 通知失败不影响周报保存

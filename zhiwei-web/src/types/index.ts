@@ -490,6 +490,7 @@ export interface WorkflowItem {
   enabled: boolean
   triggerTypes: string[]
   version: string
+  tags?: string[]
 }
 
 /** 工作流输入参数定义（对齐后端 WorkflowInputParam record） */
@@ -569,6 +570,7 @@ export interface StepLog {
   stepType: string
   state: 'COMPLETED' | 'FAILED' | 'SKIPPED'
   attempt: number
+  retryCount: number
   inputJson?: string
   outputJson?: string
   errorMessage?: string
@@ -580,6 +582,123 @@ export interface StepLog {
 
 export interface WorkflowStepLogsSnapshot {
   stepLogs: StepLog[]
+}
+
+// ========== 工作流成熟化需求类型定义 ==========
+
+/** 工作流执行统计 */
+export interface WorkflowStats {
+  workflowId: string
+  totalExecutions: number
+  successCount: number
+  failedCount: number
+  avgDurationMs: number
+  recentTrend: DailyTrend[]
+}
+
+/** 每日执行趋势 */
+export interface DailyTrend {
+  date: string
+  count: number
+  successCount: number
+}
+
+/** 步骤执行统计 */
+export interface StepStats {
+  stepId: string
+  stepType: string
+  executionCount: number
+  successRate: number
+  avgDurationMs: number
+  maxDurationMs: number
+  totalRetries: number
+}
+
+/** 步骤输出详情 */
+export interface StepOutput {
+  stepId: string
+  output: unknown
+  durationMs: number
+  retryCount: number
+  errorMessage?: string
+  state: string
+}
+
+/** DAG 数据 */
+export interface DagData {
+  nodes: DagNode[]
+  edges: DagEdge[]
+  levels: string[][]
+}
+
+/** DAG 节点 */
+export interface DagNode {
+  id: string
+  name: string
+  type: string
+  dependsOn: string[]
+}
+
+/** DAG 边 */
+export interface DagEdge {
+  from: string
+  to: string
+}
+
+/** 试运行结果 */
+export interface DryRunResult {
+  steps: DryRunStepTrace[]
+  dagOrder: string[]
+  warnings: string[]
+}
+
+/** 试运行步骤轨迹 */
+export interface DryRunStepTrace {
+  stepId: string
+  stepName: string
+  stepType: string
+  resolvedParams: Record<string, unknown>
+  conditionResult?: boolean
+  branch?: string
+  loopIterations?: number
+}
+
+/** YAML 校验响应 */
+export interface ValidationResponse {
+  valid: boolean
+  errors: string[]
+  warnings: string[]
+  dagValid: boolean
+  dagError?: string
+}
+
+/** 步骤类型 Schema */
+export interface StepTypeSchema {
+  stepType: string
+  label: string
+  description: string
+  params: ParamSchema[]
+}
+
+/** 参数 Schema */
+export interface ParamSchema {
+  name: string
+  type: string
+  required: boolean
+  defaultValue?: unknown
+  description?: string
+  inputType?: string
+  options?: OptionItem[]
+  placeholder?: string
+  example?: string
+  validationPattern?: string
+  validationMessage?: string
+}
+
+/** 选项项 */
+export interface OptionItem {
+  value: string
+  label: string
 }
 
 /** Agent 列表项 */

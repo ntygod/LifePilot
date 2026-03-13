@@ -10,8 +10,10 @@
 - [快速入门](#快速入门)
 - [工作流结构](#工作流结构)
 - [步骤类型详解](#步骤类型详解)
-- [表达式语法](#表达式语法)
+- [表达式语法与函数](#表达式语法与函数)
 - [触发器](#触发器)
+- [工作流变量与常量](#工作流变量与常量)
+- [工作流标签](#工作流标签)
 - [输入参数](#输入参数)
 - [错误处理](#错误处理)
 - [内置工作流模板](#内置工作流模板)
@@ -84,6 +86,8 @@ steps:                   # 步骤列表（必填，至少一个步骤）
 | version | ❌ | 版本号，字符串格式 |
 | triggers | ❌ | 触发器列表，不配置则只能手动执行 |
 | inputs | ❌ | 输入参数定义 |
+| variables | ❌ | 工作流级变量定义 |
+| tags | ❌ | 工作流标签列表，用于分类和筛选 |
 | steps | ✅ | 步骤列表，按顺序执行 |
 
 ---
@@ -100,9 +104,18 @@ steps:                   # 步骤列表（必填，至少一个步骤）
 - id: step-id        # 步骤唯一标识（必填，同一工作流内不重复）
   name: 步骤名称      # 显示名称（必填）
   type: skill         # 步骤类型（必填）
+  timeoutSeconds: 300 # 步骤超时时间（可选，单位：秒）
   errorStrategy:      # 错误处理策略（可选）
     type: skip
 ```
+
+|| 字段 | 必填 | 说明 |
+||------|------|------|
+|| id | ✅ | 步骤唯一标识，同一工作流内不重复 |
+|| name | ✅ | 显示名称 |
+|| type | ✅ | 步骤类型 |
+|| timeoutSeconds | ❌ | 步骤级超时时间（秒），默认使用全局配置（300秒） |
+|| errorStrategy | ❌ | 错误处理策略 |
 
 ### Skill 步骤（skill）
 
@@ -184,9 +197,13 @@ steps:
 
 | 字段 | 必填 | 说明 |
 |------|------|------|
-| scene | ✅ | LLM 路由场景（如 workflow、chat） |
-| prompt | ✅ | 提示词模板，支持 `${...}` 表达式引用上下文数据 |
-| outputSchema | ❌ | 结构化输出的 JSON Schema |
+|  scene | ✅ | LLM 路由场景（如 workflow、chat） |
+|  prompt | ✅ | 提示词模板，支持 `${...}` 表达式引用上下文数据 |
+|  outputSchema | ❌ | 结构化输出的 JSON Schema |
+|  capability | ❌ | LLM 能力：CHAT / STRUCTURED_OUTPUT / VISION / FUNCTION_CALLING |
+|  modelName | ❌ | 指定模型名称 |
+|  preferredProviderId | ❌ | 首选 Provider ID |
+|  media | ❌ | 媒体输入列表 |
 
 **实际案例** — 内置「会议纪要」工作流中的两步 LLM 链式调用：
 
@@ -226,6 +243,62 @@ steps:
 ```
 
 这个例子展示了 LLM 步骤的链式调用：第一步生成完整纪要，第二步从纪要中提取待办。第二步引用了第一步的输出 `${steps.generate-notes.output.result}`。
+
+### LLM 增强能力
+
+#### capability 能力字段
+
+`capability` 字段指定 LLM 步骤的具体能力：
+
+```yaml
+- id: analyze-image
+  name: 分析图片
+  type: llm
+  scene: workflow
+  capability: VISION                    # 视觉理解能力
+  prompt: "描述这张图片的内容"
+  media:
+    - type: image
+      url: "${inputs.imageUrl}"
+```
+
+**可选值：**
+
+- `CHAT`：默认能力，进行对话
+- `STRUCTURED_OUTPUT`：结构化输出，按 outputSchema 输出 JSON
+- `VISION`：视觉理解，分析图片内容
+- `FUNCTION_CALLING`：函数调用，让 LLM 决定调用哪些工具
+
+#### 指定模型和 Provider
+
+```yaml
+- id: generate-report
+  name: 生成专业报告
+  type: llm
+  scene: workflow
+  modelName: gpt-4o                     # 指定使用 GPT-4o
+  preferredProviderId: openai           # 指定 Provider
+  prompt: "生成详细报告"
+```
+
+#### 媒体输入（Vision）
+
+```yaml
+- id: extract-from-image
+  name: 从图片提取信息
+  type: llm
+  scene: workflow
+  capability: VISION
+  prompt: "从这张发票图片中提取金额、日期、开票方信息"
+  media:
+    - type: image
+      url: "${steps.download.output.imageUrl}"
+```
+
+`media` 支持的图片来源：
+- `url`：直接图片 URL
+- `base64`：Base64 编码图片数据
+- `fileId`：知微文件系统中的文件 ID
 
 ### 并行步骤（parallel）
 
@@ -411,11 +484,61 @@ steps:
 
 审批通过后工作流继续执行后续步骤，审批拒绝则工作流终止。可通过 `POST /api/workflows/executions/{instanceId}/steps/{stepId}/approve` 提交审批决策。
 
+### 通知步骤（notify）
+
+发送通知给指定用户。支持多种内容格式和紧急程度。
+
+```yaml
+- id: send-notification
+  name: 发送通知
+  type: notify
+  targetUserId: "${inputs.userId}"    # 目标用户ID（可选）
+  content: "任务已完成"                # 通知内容（必填）
+  contentType: CARD                   # 内容类型：TEXT / MARKDOWN / CARD
+  urgency: NORMAL                     # 紧急程度：LOW / NORMAL / HIGH
+```
+
+|| 字段 | 必填 | 说明 |
+||------|------|------|
+|| targetUserId | ❌ | 目标用户ID，默认发送给当前用户 |
+|| content | ✅ | 通知内容 |
+|| contentType | ❌ | 内容类型：TEXT（纯文本）、MARKDOWN（Markdown格式）、CARD（卡片样式） |
+|| urgency | ❌ | 紧急程度：LOW（低）、NORMAL（普通）、HIGH（高） |
+
+**contentType 说明：**
+
+- `TEXT`：纯文本，适合简单消息
+- `MARKDOWN`：支持 Markdown 格式渲染
+- `CARD`：卡片样式，包含标题、正文、底部按钮，适合需要用户操作的场景
+
+**urgency 说明：**
+
+- `LOW`：低优先级，通知静默展示
+- `NORMAL`：普通优先级，正常通知
+- `HIGH`：高优先级，强制提醒用户
+
+**实际案例 — 内置「每日待办提醒」工作流中的通知：**
+
+```yaml
+- id: send-reminder
+  name: 发送提醒通知
+  type: notify
+  targetUserId: "${inputs.userId}"
+  content: |
+    ## 待办提醒
+
+    您有 **${steps.filter.output.count}** 项待办即将到期：
+
+    ${steps.format.output.result}
+  contentType: MARKDOWN
+  urgency: HIGH
+```
+
 ---
 
-## 表达式语法
+## 表达式语法与函数
 
-工作流使用 `${...}` 语法在步骤之间传递数据和做条件判断。
+工作流使用 `${...}` 语法在步骤之间传递数据和做条件判断。除基础变量引用外，还支持丰富的内置函数。
 
 ### 变量引用
 
@@ -431,6 +554,78 @@ steps:
 # 引用循环变量
 "${url}"              # 当前元素
 "${url_index}"        # 当前索引（从 0 开始）
+
+# 引用工作流级变量（需在 variables 中定义）
+"${vars.apiEndpoint}"
+"${vars.maxRetries}"
+```
+
+### 内置函数
+
+表达式引擎提供四类内置函数，可直接在 `${...}` 中调用。
+
+#### 字符串函数
+
+| 函数 | 说明 | 示例 |
+|------|------|------|
+| `len(str)` | 返回字符串长度 | `${len("hello")}` → 5 |
+| `upper(str)` | 转为大写 | `${upper("hello")}` → "HELLO" |
+| `lower(str)` | 转为小写 | `${lower("HELLO")}` → "hello" |
+| `trim(str)` | 去除首尾空白 | `${trim("  hello  ")}` → "hello" |
+| `substring(str, start, end?)` | 截取子串 | `${substring("hello", 1, 3)}` → "el" |
+| `replace(str, target, replacement)` | 替换内容 | `${replace("a-b", "-", "_")}` → "a_b" |
+| `contains(str, search)` | 是否包含 | `${contains("hello", "ll")}` → true |
+| `split(str, delimiter)` | 分割为列表 | `${split("a,b,c", ",")}` → ["a","b","c"] |
+| `join(list, delimiter)` | 列表拼接 | `${join(["a","b"], "-")}` → "a-b" |
+
+#### 日期函数
+
+| 函数 | 说明 | 示例 |
+|------|------|------|
+| `now()` | 当前时间（ISO 8601） | `${now()}` → "2026-03-13T10:30:00Z" |
+| `formatDate(date, pattern)` | 格式化日期 | `${formatDate("2026-03-13", "yyyy年MM月dd日")}` → "2026年03月13日" |
+| `parseDate(dateStr)` | 解析为 ISO 格式 | `${parseDate("2026-03-13")}` → "2026-03-13T00:00:00" |
+| `addDays(date, days)` | 增加天数 | `${addDays("2026-03-13", 7)}` → "2026-03-20T00:00:00" |
+| `addHours(date, hours)` | 增加小时数 | `${addHours("2026-03-13T10:00", 2)}` → "2026-03-13T12:00:00" |
+| `daysBetween(date1, date2)` | 计算天数差 | `${daysBetween("2026-03-13", "2026-03-20")}` → 7 |
+
+#### 集合函数
+
+| 函数 | 说明 | 示例 |
+|------|------|------|
+| `size(collection)` | 返回集合大小 | `${size([1,2,3])}` → 3 |
+| `first(list)` | 返回第一个元素 | `${first([1,2,3])}` → 1 |
+| `last(list)` | 返回最后一个元素 | `${last([1,2,3])}` → 3 |
+| `flatten(list)` | 展平嵌套列表 | `${flatten([[1,2],[3]])}` → [1,2,3] |
+| `distinct(list)` | 去重 | `${distinct([1,2,2,3])}` → [1,2,3] |
+
+#### 数学函数
+
+| 函数 | 说明 | 示例 |
+|------|------|------|
+| `min(a, b)` | 最小值 | `${min(3, 5)}` → 3 |
+| `max(a, b)` | 最大值 | `${max(3, 5)}` → 5 |
+| `abs(n)` | 绝对值 | `${abs(-5)}` → 5 |
+| `round(n)` | 四舍五入 | `${round(3.6)}` → 4 |
+| `ceil(n)` | 向上取整 | `${ceil(3.1)}` → 4 |
+| `floor(n)` | 向下取整 | `${floor(3.9)}` → 3 |
+
+### 函数嵌套调用
+
+函数可以嵌套使用，引擎会从内到外依次计算：
+
+```yaml
+# 字符串处理链
+"${upper(trim(${steps.input.output.text}))}"
+
+# 集合操作链
+"${join(distinct(flatten(${steps.multiList.output.result})), ", ")}"
+
+# 日期计算链
+"${formatDate(addDays(${inputs.startDate}, ${inputs.days}), "yyyy-MM-dd")}"
+
+# 条件表达式中使用函数
+"${size(${steps.items.output.result}) > 0 && contains(${steps.status.output.result}, "ok")}"
 ```
 
 ### 在提示词中使用
@@ -468,7 +663,7 @@ prompt: |
 
 ## 触发器
 
-工作流支持三种触发方式，可以同时配置多种触发器。
+工作流支持四种触发方式，可以同时配置多种触发器。
 
 ### 定时触发（cron）
 
@@ -501,6 +696,40 @@ triggers:
 
 事件的 payload 数据会作为工作流输入参数传入。
 
+### Webhook 触发（webhook）
+
+外部系统（如 GitHub、飞书机器人等）可通过 Webhook 触发工作流执行：
+
+```yaml
+triggers:
+  - type: webhook
+    secret: "your-webhook-secret"  # 可选，签名密钥
+```
+
+**调用方式：**
+
+```bash
+curl -X POST http://localhost:8080/api/workflows/{workflowId}/webhook \
+  -H "Content-Type: application/json" \
+  -d '{"key": "value"}'
+```
+
+**签名验证（可选）：**
+
+如果配置了 `secret`，请求头需包含签名：
+
+```bash
+# 生成签名（HMAC-SHA256）
+signature=$(echo -n '{"key":"value"}' | openssl dgst -sha256 -hmac "your-webhook-secret" | cut -d' ' -f2)
+
+curl -X POST http://localhost:8080/api/workflows/{workflowId}/webhook \
+  -H "Content-Type: application/json" \
+  -H "X-Webhook-Signature: ${signature}" \
+  -d '{"key": "value"}'
+```
+
+Webhook 触发器适合与外部系统集成，如接收 GitHub Push 事件、飞书消息卡片回调等。
+
 ### 手动触发（manual）
 
 只能通过 API 或 CLI 手动执行：
@@ -511,6 +740,94 @@ triggers:
 ```
 
 内置的「网页摘要」「会议纪要」「调研报告」三个工作流都使用手动触发，因为它们需要用户提供输入数据。
+
+---
+
+## 工作流变量与常量
+
+工作流支持定义级变量，用于存储工作流级别的常量值，避免在多个步骤中硬编码。
+
+### 定义变量
+
+```yaml
+variables:
+  apiEndpoint: "https://api.example.com"
+  maxRetries: 3
+  timeout: 30
+```
+
+### 引用变量
+
+在步骤中通过 `${vars.key}` 语法引用：
+
+```yaml
+steps:
+  - id: call-api
+    name: 调用 API
+    type: tool
+    toolId: http.request
+    params:
+      url: "${vars.apiEndpoint}/users"
+      timeout: "${vars.timeout}"
+```
+
+### 变量与输入参数的区别
+
+| 特性 | variables | inputs |
+|------|-----------|-------|
+| 用途 | 工作流内部的常量 | 用户提供的输入数据 |
+| 来源 | 工作流定义中硬编码 | 触发时外部传入 |
+| 变化频率 | 固定不变 | 每次执行可能不同 |
+| 引用方式 | `${vars.key}` | `${inputs.key}` |
+
+### 使用场景
+
+- 存储 API 端点、认证令牌等配置
+- 定义业务规则阈值
+- 集中管理超时、重试次数等策略参数
+
+---
+
+## 工作流标签
+
+工作流支持添加标签，用于分类和筛选。
+
+### 定义标签
+
+```yaml
+tags:
+  - "自动化"
+  - "每日"
+  - "通知"
+```
+
+### 标签筛选用法
+
+在列表接口中通过标签筛选工作流：
+
+```bash
+GET /api/workflows?tags=自动化,每日
+```
+
+返回同时包含「自动化」和「每日」标签的工作流。
+
+### 动态标签
+
+支持在步骤中使用表达式动态生成标签：
+
+```yaml
+tags:
+  - "工作流"
+  - "${inputs.category}"
+```
+
+第二个标签会根据输入参数 `category` 的值动态生成。
+
+### 使用场景
+
+- 按业务场景分类工作流（如「财务」「运营」「技术」）
+- 按触发方式分类（如「定时」「手动」「事件」）
+- 按复杂程度分类（如「简单」「中等」「复杂」）
 
 ---
 
@@ -555,6 +872,38 @@ inputs:
 ```
 
 列表类型的输入可以在 loop 步骤中遍历：`items: "${inputs.urls}"`。
+
+### 参数元数据（引导式配置）
+
+输入参数支持元数据字段，用于前端引导式配置：
+
+```yaml
+inputs:
+  category:
+    type: string
+    required: true
+    description: 选择分类
+    inputType: select                    # 前端渲染为下拉选择器
+    options:                             # 下拉选项
+      - value: "tech"
+        label: "技术"
+      - value: "life"
+        label: "生活"
+    placeholder: "请选择分类"            # 输入提示
+  keyword:
+    type: string
+    required: false
+    description: 搜索关键词
+    placeholder: "输入关键词"             # 占位符
+    example: "人工智能"                    # 示例值
+```
+
+|| 元数据字段 | 说明 |
+||-----------|------|
+|| inputType | 前端控件类型：select / text / number / boolean / textarea / date |
+|| options | 下拉选项列表，仅 inputType 为 select 时有效 |
+|| placeholder | 输入框占位提示 |
+|| example | 示例值，帮助用户理解 |
 
 ---
 
@@ -604,11 +953,26 @@ errorStrategy:
 errorStrategy:
   type: retry
   maxAttempts: 3           # 最大重试次数
-  initialDelayMs: 500      # 初始延迟（毫秒）
-  maxDelayMs: 5000         # 最大延迟（毫秒）
+  initialDelayMs: 500     # 初始延迟（毫秒）
+  maxDelayMs: 5000        # 最大延迟（毫秒）
 ```
 
 适用于网络抖动、临时不可用等可恢复错误。
+
+**步骤级配置与全局配置的优先级：**
+
+步骤级 `errorStrategy.retry` 配置会覆盖全局的重试配置。全局默认配置在 `application.yml` 中：
+
+```yaml
+lifepilot:
+  workflow:
+    retry:
+      initial-delay-ms: 500   # 默认初始延迟
+      max-delay-ms: 5000     # 默认最大延迟
+      max-attempts: 3        # 默认最大重试次数
+```
+
+在步骤中单独配置后，以步骤级配置为准。
 
 ### 失败（fail）
 
@@ -639,7 +1003,7 @@ errorStrategy:
 
 ## 内置工作流模板
 
-知微首次启动时会自动释放 5 个内置工作流模板到 `~/.zhiwei/workflows/` 目录。你可以直接使用、修改或删除它们。删除后重启应用会重新释放。
+知微首次启动时会自动释放 8 个内置工作流模板到 `~/.zhiwei/workflows/` 目录。你可以直接使用、修改或删除它们。删除后重启应用会重新释放。
 
 这些模板覆盖了工作流引擎的所有高级特性：ConditionStep 条件分支、LoopStep 循环处理、ParallelStep 并行执行、ApprovalStep 人工审批、SubWorkflowStep 子工作流、WaitStep 等待、ErrorStrategy 错误策略、DAG dependsOn 依赖编排。
 
@@ -662,84 +1026,134 @@ ToolStep(预处理) → [LlmStep(风险分析) ∥ ToolStep(关键词扫描)]（
 
 **适合学习：** DAG 依赖编排（dependsOn）、条件分支嵌套、人工审批流程、错误重试策略。
 
-### 2. 多源数据聚合报告（data-aggregation.yml）
-
-**触发方式：** 每周一早上 9:00 自动执行，或手动触发
-
-**功能：** 并行从多个数据源（待办、日程、习惯）采集信息并分析，LLM 综合生成聚合报告，格式化后保存并发送。
-
-**步骤流程：**
-```
-ParallelStep(3 个分支各含 SkillStep + LlmStep 链)
-  → ToolStep(获取外部数据, errorStrategy=skip)
-  → LlmStep(综合分析) → ToolStep(格式化) → [ToolStep(保存) ∥ ToolStep(发送)]
-```
-
-**涉及的步骤类型：** parallel（分支内含多步骤链）、skill、llm、tool
-
-**适合学习：** 并行分支内的多步骤串联、DAG 多依赖汇聚、skip 错误策略、retry 错误策略。
-
-### 3. 批量任务处理（batch-processing.yml）
+### 2. 批量任务处理（batch-task.yml）
 
 **触发方式：** 每天凌晨 2:00 自动执行，或手动触发
 
-**功能：** 获取待处理任务列表，LLM 校验数据完整性，循环逐条处理每个任务（按类型路由到不同处理器），最终生成处理汇总报告。
+**功能：** 从任务队列中获取待处理任务，循环逐条处理，支持任务分类（通知类/其他）和错误重试，最终生成处理汇总报告。
 
 **步骤流程：**
 ```
-ToolStep(获取任务列表) → LlmStep(校验数据)
+ToolStep(获取任务列表) → ConditionStep(检查队列)
   → LoopStep(逐条处理)
-    → ConditionStep(任务分类路由)
-      → then: ToolStep(数据同步, retry)
-      → else: ToolStep(通用任务, retry)
+    → LlmStep(任务分类)
+    → ConditionStep(分类路由)
+      → then: LlmStep(处理通知任务, retry)
+      → else: LlmStep(处理通用任务, skip)
     → ToolStep(更新状态, skip)
-  → ToolStep(汇总结果) → LlmStep(生成报告) → ToolStep(发送通知)
+  → LlmStep(生成报告, skip)
 ```
 
 **涉及的步骤类型：** loop（含嵌套 condition）、condition、tool、llm
 
 **适合学习：** 循环步骤 + 嵌套条件分支、循环变量引用（loopVar）、多种错误策略组合（retry + skip）。
 
-### 4. 定时巡检与告警（scheduled-inspection.yml）
+### 3. 每日待办提醒（daily-reminder.yml）
 
-**触发方式：** 每 30 分钟自动执行
+**触发方式：** 每天早上 8:00 自动执行
 
-**功能：** 执行系统健康检查（系统、LLM、数据库），LLM 分析巡检结果，根据严重程度分级告警，紧急情况等待冷却后触发自动修复子工作流。
-
-**步骤流程：**
-```
-[ToolStep(健康检查) ∥ ToolStep(LLM 状态) ∥ ToolStep(数据库状态)]（DAG 并行）
-  → LlmStep(分析结果)
-  → ConditionStep(健康判定)
-    → then: ConditionStep(严重程度)
-      → critical: ToolStep(紧急告警) → WaitStep(冷却 60s) → SubWorkflowStep(自动修复) → ToolStep(验证)
-      → degraded: ToolStep(降级告警)
-    → else: NoopStep(记录健康)
-  → ToolStep(保存巡检记录)
-```
-
-**涉及的步骤类型：** tool、llm、condition（嵌套）、wait、sub-workflow、noop
-
-**适合学习：** WaitStep 冷却等待、SubWorkflowStep 子工作流调用、嵌套条件分支、skip 错误策略。
-
-### 5. 多步骤调研与审批（research-approval.yml）
-
-**触发方式：** 手动触发，需要输入调研主题
-
-**功能：** 多源信息搜索（网络 + 知识库 + 记忆），LLM 深度分析并质量评审，经人工审批后发布调研成果，失败时自动执行补偿回滚。
+**功能：** 自动检查待办事项，对即将到期的任务发送提醒通知，帮助用户管理日常任务。
 
 **步骤流程：**
 ```
-[ToolStep(搜索网络) ∥ ToolStep(搜索知识库) ∥ SkillStep(搜索记忆)]（DAG 并行）
-  → LlmStep(深度分析) → LlmStep(质量评审)
-  → ApprovalStep(成果审批)
-  → ToolStep(发布, errorStrategy=compensate → 回滚)
-  → [ToolStep(通知) ∥ SkillStep(存入记忆)]（DAG 并行）
+SkillStep(获取待办) → LlmStep(筛选紧急待办)
+  → ConditionStep(检查是否有紧急待办)
+    → then: NotifyStep(发送提醒)
+    → else: NoopStep(记录无紧急待办)
 ```
 
-**涉及的步骤类型：** tool、skill、llm、approval
+**涉及的步骤类型：** skill、llm、condition、notify、noop
 
-**适合学习：** compensate 补偿错误策略（发布失败自动回滚）、DAG 多源并行汇聚、审批流程、skip 降级策略。
+**适合学习：** SkillStep 调用、LLM 结构化输出、条件分支、NotifyStep 通知。
+
+### 4. 定时知识采集（knowledge-collect.yml）
+
+**触发方式：** 每天早上 6:00 自动执行，需要输入采集主题
+
+**功能：** 从网络采集特定主题的最新信息，经过去重和摘要后保存到知识库。
+
+**步骤流程：**
+```
+LlmStep(解析主题) → LoopStep(循环采集每个主题)
+  → ToolStep(网络搜索) → LlmStep(去重处理)
+  → LlmStep(生成摘要) → SkillStep(保存到知识库)
+→ NotifyStep(通知完成)
+```
+
+**涉及的步骤类型：** loop、tool、llm、skill
+
+**适合学习：** LoopStep 循环处理、循环变量引用、多步骤串联。
+
+### 5. 调研助手（research-assistant.yml）
+
+**触发方式：** 手动触发，需要输入调研主题和深度
+
+**功能：** 多源信息搜索与深度分析，经人工审批后发布调研成果，支持网络搜索、知识库和记忆检索。
+
+**步骤流程：**
+```
+[ToolStep(网络搜索) ∥ ToolStep(知识库搜索) ∥ SkillStep(记忆搜索)]（DAG 并行）
+  → LlmStep(深度分析) → LlmStep(质量检查)
+  → ApprovalStep(审批环节)
+  → SkillStep(发布成果, skip) → NotifyStep(通知完成)
+```
+
+**涉及的步骤类型：** tool、skill、llm、approval、notify
+
+**适合学习：** DAG 多源并行汇聚、审批流程、skip 降级策略。
+
+### 6. 多源数据分析（data-insight.yml）
+
+**触发方式：** 每周一早上 10:00 自动执行，或手动触发
+
+**功能：** 并行从多个数据源（待办、日程、习惯、记忆）获取数据，LLM 综合分析后生成数据洞察报告。
+
+**步骤流程：**
+```
+ParallelStep(多分支)
+  分支1: [SkillStep(待办) ∥ SkillStep(日程) ∥ SkillStep(习惯) ∥ SkillStep(记忆)]
+  分支2: [ToolStep(行业动态, skip)]
+→ LlmStep(综合分析) → LlmStep(格式化报告)
+→ ToolStep(保存报告) → NotifyStep(发送通知)
+```
+
+**涉及的步骤类型：** parallel（分支内含多步骤链）、skill、llm、tool、notify
+
+**适合学习：** 并行分支内的多步骤串联、DAG 多依赖汇聚、skip 错误策略。
+
+### 7. 周报自动生成（weekly-summary.yml）
+
+**触发方式：** 每周五下午 6:00 自动执行
+
+**功能：** 汇总本周的待办完成情况、日程安排和习惯数据，生成周报并保存到知识库。
+
+**步骤流程：**
+```
+[SkillStep(待办统计) ∥ SkillStep(日程统计) ∥ SkillStep(习惯统计)]（并行）
+→ LlmStep(生成周报) → SkillStep(保存到知识库)
+→ NotifyStep(发送周报, skip)
+```
+
+**涉及的步骤类型：** parallel、skill、llm、notify
+
+**适合学习：** 并行数据获取、SkillStep 调用、notify skip 策略。
+
+### 8. 习惯追踪周报（habit-tracker.yml）
+
+**触发方式：** 每周一早上 9:00 自动执行
+
+**功能：** 每周汇总习惯追踪数据，分析习惯坚持情况，生成改进建议并发送通知。
+
+**步骤流程：**
+```
+SkillStep(获取习惯数据) → LlmStep(分析习惯数据)
+→ LlmStep(生成鼓励文案)
+→ NotifyStep(发送习惯周报, skip)
+```
+
+**涉及的步骤类型：** skill、llm、notify
+
+**适合学习：** 简单的线性流程、LLM 结构化输出、通知发送。
 
 ### 自定义内置工作流
 
@@ -969,6 +1383,321 @@ lifepilot:
       enabled: true                         # 是否启用事件审计记录
       retention-days: 90                    # 事件保留天数
 ```
+
+---
+
+## DAG 依赖图数据
+
+工作流引擎提供 DAG（有向无环图）数据接口，用于前端可视化展示步骤之间的依赖关系。
+
+### 获取 DAG 数据
+
+```bash
+GET /api/workflows/{id}/dag
+```
+
+**响应示例：**
+
+```json
+{
+  "nodes": [
+    {"id": "step-1", "name": "获取数据", "type": "skill"},
+    {"id": "step-2", "name": "处理数据", "type": "llm"},
+    {"id": "step-3", "name": "发送通知", "type": "notify"}
+  ],
+  "edges": [
+    {"from": "step-1", "to": "step-2"},
+    {"from": "step-2", "to": "step-3"}
+  ]
+}
+```
+
+- `nodes`：工作流中的所有步骤
+- `edges`：步骤之间的依赖关系（from → to）
+
+此接口主要用于前端工作流可视化编辑器，展示步骤的执行顺序和依赖关系。
+
+---
+
+## 试运行（Dry-Run）模式
+
+在正式执行工作流之前，可以先进行试运行（Dry-Run）测试，模拟执行流程但不实际调用外部服务。
+
+### 试运行接口
+
+```bash
+POST /api/workflows/{id}/dry-run
+Content-Type: application/json
+
+{
+  "inputs": {
+    "topic": "测试主题"
+  }
+}
+```
+
+**响应示例：**
+
+```json
+{
+  "workflowId": "research-assistant",
+  "dagValid": true,
+  "traces": [
+    {
+      "stepId": "search",
+      "stepName": "搜索信息",
+      "status": "SIMULATED",
+      "output": "（模拟输出）将搜索「测试主题」相关内容"
+    },
+    {
+      "stepId": "analyze",
+      "stepName": "分析内容",
+      "status": "PENDING",
+      "output": null
+    }
+  ],
+  "warnings": []
+}
+```
+
+**响应字段说明：**
+
+- `dagValid`：DAG 是否有效（无环）
+- `traces`：每个步骤的模拟执行轨迹
+  - `status`：SIMULATED（已模拟）、PENDING（待执行）
+  - `output`：模拟的输出内容
+- `warnings`：执行警告信息（如缺失的输入参数）
+
+试运行模式适合：
+- 测试工作流逻辑是否正确
+- 验证表达式是否能正确解析
+- 预览步骤执行顺序
+
+---
+
+## 执行统计与指标
+
+工作流引擎提供执行统计接口，帮你了解工作流的运行状况。
+
+### 工作流执行统计
+
+```bash
+GET /api/workflows/{id}/stats
+```
+
+**响应示例：**
+
+```json
+{
+  "workflowId": "daily-reminder",
+  "totalExecutions": 150,
+  "successCount": 142,
+  "failedCount": 8,
+  "successRate": 0.947,
+  "avgDurationSeconds": 12.5,
+  "lastExecutionTime": "2026-03-13T08:00:00Z"
+}
+```
+
+### 步骤执行统计
+
+```bash
+GET /api/workflows/{id}/step-stats
+```
+
+**响应示例：**
+
+```json
+{
+  "workflowId": "daily-reminder",
+  "stepStats": [
+    {
+      "stepId": "fetch-todos",
+      "stepName": "获取待办",
+      "executionCount": 150,
+      "successCount": 150,
+      "avgDurationMs": 120,
+      "errorCount": 0
+    },
+    {
+      "stepId": "send-notify",
+      "stepName": "发送通知",
+      "executionCount": 145,
+      "successCount": 142,
+      "avgDurationMs": 350,
+      "errorCount": 3
+    }
+  ]
+}
+```
+
+这些统计信息有助于：
+- 监控工作流健康状况
+- 识别执行瓶颈
+- 优化工作流性能
+
+---
+
+## 实例上下文查看
+
+工作流执行过程中，每个步骤的输出都会保存在实例上下文中。可以通过 API 查看执行详情和步骤输出。
+
+### 查看实例上下文
+
+```bash
+GET /api/workflows/executions/{instanceId}/context
+```
+
+**响应示例：**
+
+```json
+{
+  "inputs": {
+    "topic": "AI发展趋势"
+  },
+  "vars": {
+    "apiEndpoint": "https://api.example.com"
+  },
+  "steps": {
+    "search": {
+      "output": {
+        "result": "搜索到 10 条相关内容"
+      },
+      "status": "COMPLETED"
+    },
+    "analyze": {
+      "output": null,
+      "status": "PENDING"
+    }
+  }
+}
+```
+
+### 查看单个步骤输出
+
+```bash
+GET /api/workflows/executions/{instanceId}/steps/{stepId}/output
+```
+
+**响应示例：**
+
+```json
+{
+  "stepId": "search",
+  "stepName": "搜索信息",
+  "status": "COMPLETED",
+  "output": {
+    "result": "搜索到 10 条相关内容",
+    "count": 10,
+    "items": [...]
+  }
+}
+```
+
+**使用场景：**
+
+- 调试工作流执行问题
+- 检查某个步骤的输出是否符合预期
+- 追溯工作流执行历史
+
+---
+
+## 工作流导入导出
+
+支持将工作流导出为 YAML 文件，或从 YAML 文件导入工作流。
+
+### 导出单个工作流
+
+```bash
+GET /api/workflows/{id}/export
+```
+
+返回 YAML 格式的工作流定义。
+
+### 批量导出工作流
+
+```bash
+GET /api/workflows/export?ids=workflow-1,workflow-2,workflow-3
+```
+
+返回 ZIP 压缩包，包含多个 YAML 文件。
+
+### 导入工作流
+
+```bash
+POST /api/workflows/import
+Content-Type: application/json
+
+{
+  "yaml": "id: my-workflow\nname: 我的工作流\n...",
+  "overwrite": false
+}
+```
+
+- `yaml`：工作流的 YAML 内容
+- `overwrite`：是否覆盖已存在的工作流（默认 false）
+
+导入成功后，工作流会自动注册到系统中。
+
+---
+
+## YAML 校验增强
+
+工作流引擎提供 YAML 语法校验功能，在导入或保存工作流前进行验证。
+
+### 校验接口
+
+```bash
+POST /api/workflows/validate
+Content-Type: application/json
+
+{
+  "yaml": "id: my-workflow\nname: 测试工作流\n..."
+}
+```
+
+**响应示例（校验通过）：**
+
+```json
+{
+  "valid": true,
+  "errors": [],
+  "warnings": [
+    {
+      "stepId": "step-1",
+      "message": "步骤未配置 timeoutSeconds，建议为长时间运行的步骤配置超时时间"
+    }
+  ]
+}
+```
+
+**响应示例（校验失败）：**
+
+```json
+{
+  "valid": false,
+  "errors": [
+    {
+      "stepId": "step-2",
+      "message": "步骤类型「llm」缺少必填字段「scene」"
+    }
+  ],
+  "warnings": []
+}
+```
+
+**响应字段说明：**
+
+- `valid`：校验是否通过
+- `errors`：错误列表（导致校验失败）
+- `warnings`：警告列表（不影响校验通过，但建议修复）
+
+校验内容包括：
+- YAML 语法正确性
+- 必填字段是否缺失
+- 步骤类型是否正确
+- 表达式语法是否有效
+- DAG 是否有环
 
 ---
 

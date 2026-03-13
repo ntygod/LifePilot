@@ -1,0 +1,139 @@
+id: batch-task
+name: 批量任务处理
+description: 从任务队列中获取待处理任务，循环逐条处理，支持任务分类和错误重试
+version: "1.0"
+triggers:
+  - type: cron
+    cron: "0 0 2 * * *"
+  - type: manual
+inputs:
+  queueName:
+    type: string
+    required: false
+    defaultValue: task-queue
+    description: 任务队列名称
+  maxItems:
+    type: string
+    required: false
+    defaultValue: "50"
+    description: 单次最大处理数量
+metadata:
+  category: 自动化运维
+  complexity: intermediate
+steps:
+  - id: fetch-tasks
+    name: 获取待处理任务
+    type: tool
+    toolId: builtin.datastore.query_documents
+    params:
+      collection: "${inputs.queueName}"
+      filter: '{"status": "pending"}'
+      limit: "${inputs.maxItems}"
+    errorStrategy:
+      type: skip
+      reason: 队列可能为空
+
+  - id: check-empty
+    name: 检查队列是否为空
+    type: condition
+    condition: "${steps.fetch-tasks.output.result.size} > 0"
+    dependsOn:
+      - fetch-tasks
+    then:
+      - id: process-tasks
+        name: 循环处理任务
+        type: loop
+        items: "${steps.fetch-tasks.output.result}"
+        loopVar: task
+        dependsOn:
+          - check-empty
+        body:
+          - id: classify-task
+            name: 任务分类
+            type: llm
+            scene: agent_reasoning
+            capability: STRUCTURED_OUTPUT
+            outputSchema: |
+              {
+                "type": "object",
+                "properties": {
+                  "category": { "type": "string" },
+                  "priority": { "type": "string" },
+                  "action": { "type": "string" }
+                },
+                "required": ["category", "priority", "action"]
+              }
+            prompt: |
+              分析以下任务，确定其分类和处理优先级：
+
+              ${task}
+
+              输出 JSON：
+              {"category": "notification|cleanup|data|sync|other", "priority": "high|medium|low", "action": "建议的处理动作"}
+
+          - id: execute-task-notification
+            name: 处理通知任务
+            type: condition
+            condition: "${steps.classify-task.output.result.category} == 'notification'"
+            then:
+              - id: handle-notification
+                name: 执行通知
+                type: llm
+                scene: agent_reasoning
+                capability: CHAT
+                prompt: |
+                  执行通知任务：
+
+                  ${task}
+                errorStrategy:
+                  type: retry
+                  maxAttempts: 2
+
+          - id: execute-task-other
+            name: 处理其他任务
+            type: condition
+            condition: "${steps.classify-task.output.result.category} != 'notification'"
+            then:
+              - id: handle-other
+                name: 执行通用任务
+                type: llm
+                scene: agent_reasoning
+                capability: CHAT
+                prompt: |
+                  执行通用任务处理：
+
+                  ${task}
+
+                  建议动作：${steps.classify-task.output.result.action}
+                errorStrategy:
+                  type: skip
+                  reason: 通用任务处理失败不影响其他任务
+
+          - id: mark-completed
+            name: 标记任务完成
+            type: tool
+            toolId: builtin.datastore.update_document
+            params:
+              collection: "${inputs.queueName}"
+              documentId: "${task.id}"
+              data: '{"status": "completed", "processedAt": "${now}"}'
+            errorStrategy:
+              type: skip
+              reason: 状态更新失败不影响继续处理
+    else:
+      - id: log-empty
+        name: 记录空队列
+        type: noop
+
+  - id: generate-report
+    name: 生成处理报告
+    type: llm
+    scene: document_summary
+    capability: CHAT
+    prompt: |
+      生成批量任务处理汇总报告。
+    dependsOn:
+      - check-empty
+    errorStrategy:
+      type: skip
+      reason: 报告生成失败不影响任务处理完成

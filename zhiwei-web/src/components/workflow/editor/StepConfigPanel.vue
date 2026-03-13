@@ -16,6 +16,7 @@ import type {
   WaitStepConfig as WaitStepConfigType,
   ApprovalStepConfig as ApprovalStepConfigType,
   NoopStepConfig as NoopStepConfigType,
+  NotifyStepConfig as NotifyStepConfigType,
 } from '@/composables/useWorkflowModel'
 import { STEP_TYPE_META } from '@/components/workflow/editor/stepTypeMeta'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -31,6 +32,7 @@ import SubWorkflowStepConfig from '@/components/workflow/editor/SubWorkflowStepC
 import WaitStepConfig from '@/components/workflow/editor/WaitStepConfig.vue'
 import ApprovalStepConfig from '@/components/workflow/editor/ApprovalStepConfig.vue'
 import NoopStepConfig from '@/components/workflow/editor/NoopStepConfig.vue'
+import NotifyStepConfig from '@/components/workflow/editor/NotifyStepConfig.vue'
 import ConditionStepConfig from '@/components/workflow/editor/ConditionStepConfig.vue'
 import LoopStepConfig from '@/components/workflow/editor/LoopStepConfig.vue'
 import ParallelStepConfig from '@/components/workflow/editor/ParallelStepConfig.vue'
@@ -134,6 +136,11 @@ function updateField(field: keyof StepModel, value: unknown) {
             <ApprovalStepConfig
               v-else-if="step.type === 'approval'"
               :model-value="(step.config as ApprovalStepConfigType)"
+              @update:model-value="updateField('config', $event)"
+            />
+            <NotifyStepConfig
+              v-else-if="step.type === 'notify'"
+              :model-value="(step.config as NotifyStepConfigType)"
               @update:model-value="updateField('config', $event)"
             />
             <NoopStepConfig

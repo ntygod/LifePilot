@@ -11,12 +11,13 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 /**
- * 内置 find-skills Skill 提取器 — 启动时将 SKILL.md 从 classpath 提取到用户 Skill 目录。
+ * 内置 Skill 提取器 — 启动时将 SKILL.md 从 classpath 提取到用户 Skill 目录。
  *
- * <p>从 classpath 读取 {@code builtin-skills/find-skills/SKILL.md}，
- * 提取到用户 Skill 目录（{@code ~/.zhiwei/skills/builtin.find-skills/SKILL.md}）。
+ * <p>从 classpath 读取内置 SKILL.md（如 find-skills、workflow-creator），
+ * 提取到用户 Skill 目录（{@code ~/.zhiwei/skills/{skill-id}/SKILL.md}）。
  * 后续由 {@link com.lifepilot.skill.markdown.MarkdownSkillLoader} 作为 UserDefined Skill 加载，
  * 用户可在文件系统中查看和编辑。</p>
  *
@@ -32,9 +33,6 @@ public class SkillDiscoveryRegistrar implements InitializingBean {
     /** SKILL.md 文件名。 */
     private static final String SKILL_MD_FILENAME = "SKILL.md";
 
-    /** 提取到用户目录时的文件夹名，与 SKILL.md 中的 id 一致。 */
-    private static final String FIND_SKILLS_FOLDER = "builtin.find-skills";
-
     private final MetaProperties properties;
     private final SkillConfigProperties skillConfig;
 
@@ -46,46 +44,67 @@ public class SkillDiscoveryRegistrar implements InitializingBean {
 
     @Override
     public void afterPropertiesSet() {
-        extractFindSkillsToUserDirectory();
+        extractBuiltinSkillsToUserDirectory();
     }
 
     /**
-     * 将 find-skills SKILL.md 从 classpath 提取到用户 Skill 目录。
+     * 将所有内置 SKILL.md 从 classpath 提取到用户 Skill 目录。
      *
-     * <p>提取目标：{@code {skillsDirectory}/builtin.find-skills/SKILL.md}。
-     * 如果目标文件已存在，跳过提取以保留用户自定义内容。
-     * 后续由 MarkdownSkillLoader 在 ApplicationReadyEvent 时扫描加载。</p>
+     * <p>遍历配置的 builtinSkillPaths，提取每个到对应目录。
+     * 如果目标文件已存在，跳过提取以保留用户自定义内容。</p>
      */
-    void extractFindSkillsToUserDirectory() {
+    void extractBuiltinSkillsToUserDirectory() {
         var skillDiscovery = properties.getSkillDiscovery();
         if (!skillDiscovery.isEnabled()) {
-            log.debug("find-skills 发现功能已禁用，跳过提取");
+            log.debug("Skill 发现功能已禁用，跳过提取");
             return;
         }
 
-        var resourcePath = skillDiscovery.getBuiltinSkillPath() + "/" + SKILL_MD_FILENAME;
+        var builtinPaths = skillDiscovery.getBuiltinSkillPaths();
+        if (builtinPaths == null || builtinPaths.isEmpty()) {
+            log.debug("未配置内置 Skill 路径");
+            return;
+        }
+
+        for (var path : builtinPaths) {
+            extractSingleSkill(path);
+        }
+    }
+
+    /**
+     * 提取单个内置 Skill 到用户目录。
+     *
+     * @param resourcePath classpath 下的资源路径，如 builtin-skills/find-skills
+     */
+    private void extractSingleSkill(String resourcePath) {
+        var skillId = extractSkillId(resourcePath);
+        if (skillId == null) {
+            log.warn("无法从路径提取 Skill ID: path={}", resourcePath);
+            return;
+        }
 
         // 1. 从 classpath 读取 SKILL.md
         String content;
+        var fullResourcePath = resourcePath + "/" + SKILL_MD_FILENAME;
         try {
-            var resource = new ClassPathResource(resourcePath);
+            var resource = new ClassPathResource(fullResourcePath);
             if (!resource.exists()) {
-                log.warn("find-skills SKILL.md 未找到: path={}", resourcePath);
+                log.warn("内置 Skill SKILL.md 未找到: path={}", fullResourcePath);
                 return;
             }
             content = resource.getContentAsString(StandardCharsets.UTF_8);
         } catch (IOException e) {
-            log.warn("find-skills SKILL.md 读取失败: path={}, error={}", resourcePath, e.getMessage());
+            log.warn("内置 Skill SKILL.md 读取失败: path={}, error={}", fullResourcePath, e.getMessage());
             return;
         }
 
         // 2. 确定目标路径
-        Path targetFolder = Path.of(skillConfig.getDirectory(), FIND_SKILLS_FOLDER);
+        Path targetFolder = Path.of(skillConfig.getDirectory(), skillId);
         Path targetFile = targetFolder.resolve(SKILL_MD_FILENAME);
 
         // 3. 如果目标文件已存在，跳过（不覆盖用户自定义内容）
         if (Files.exists(targetFile)) {
-            log.debug("find-skills SKILL.md 已存在于用户目录，跳过提取: path={}", targetFile);
+            log.debug("内置 Skill SKILL.md 已存在于用户目录，跳过提取: skillId={}, path={}", skillId, targetFile);
             return;
         }
 
@@ -93,9 +112,34 @@ public class SkillDiscoveryRegistrar implements InitializingBean {
         try {
             Files.createDirectories(targetFolder);
             Files.writeString(targetFile, content, StandardCharsets.UTF_8);
-            log.info("find-skills SKILL.md 已提取到用户目录: path={}", targetFile);
+            log.info("内置 Skill SKILL.md 已提取到用户目录: skillId={}, path={}", skillId, targetFile);
         } catch (IOException e) {
-            log.warn("find-skills SKILL.md 提取失败: path={}, error={}", targetFile, e.getMessage());
+            log.warn("内置 Skill SKILL.md 提取失败: skillId={}, path={}, error={}", skillId, targetFile, e.getMessage());
         }
+    }
+
+    /**
+     * 从资源路径提取 Skill ID。
+     *
+     * <p>例如：
+     * - builtin-skills/find-skills → builtin.find-skills
+     * - builtin-skills/workflow-creator → builtin.workflow-creator
+     *
+     * @param resourcePath 资源路径
+     * @return Skill ID 或 null（提取失败时）
+     */
+    private String extractSkillId(String resourcePath) {
+        if (resourcePath == null || resourcePath.isEmpty()) {
+            return null;
+        }
+
+        // 去掉前缀 builtin-skills/ 或类似的
+        String suffix = resourcePath;
+        if (resourcePath.contains("/")) {
+            suffix = resourcePath.substring(resourcePath.lastIndexOf('/') + 1);
+        }
+
+        // 转换为 Skill ID 格式（用点号分隔）
+        return "builtin." + suffix;
     }
 }

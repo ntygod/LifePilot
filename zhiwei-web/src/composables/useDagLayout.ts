@@ -1,15 +1,19 @@
 import type { StepModel } from './useWorkflowModel'
+import type { CanvasNode } from './useNestedSteps'
 
 /**
  * DAG 拓扑排序与环路检测 composable。
  *
  * 提供两个纯函数：
- * - computeLayers: Kahn 拓扑排序分层
+ * - computeLayers: Kahn 拓扑排序分层（用于原始 StepModel[]）
+ * - computeCanvasLayers: Kahn 拓扑排序分层（用于扁平化的 CanvasNode[]，支持分支嵌套）
  * - wouldCreateCycle: DFS 环路检测
  */
 export function useDagLayout(): {
   /** Kahn 拓扑排序分层，返回 string[][]（每层的步骤 ID 列表） */
   computeLayers: (steps: StepModel[]) => string[][]
+  /** Kahn 拓扑排序分层（用于扁平化的 CanvasNode[]），返回 string[][]（每层的 canvas ID 列表） */
+  computeCanvasLayers: (canvasNodes: CanvasNode[]) => string[][]
   /** DFS 环路检测，返回 true 表示添加 edge 后会产生环路 */
   wouldCreateCycle: (steps: StepModel[], fromId: string, toId: string) => boolean
 } {
@@ -39,6 +43,92 @@ export function useDagLayout(): {
 
     while (queue.length > 0) {
       layers.push([...queue])
+      const nextQueue: string[] = []
+      for (const id of queue) {
+        for (const next of (adj.get(id) ?? [])) {
+          inDegree.set(next, inDegree.get(next)! - 1)
+          if (inDegree.get(next) === 0) nextQueue.push(next)
+        }
+      }
+      queue = nextQueue
+    }
+
+    return layers
+  }
+
+  /**
+   * Kahn 拓扑排序分层算法（用于扁平化的 CanvasNode[]）。
+   * 
+   * 與 computeLayers 不同，這裡需要處理：
+   * 1. 使用 canvasId 而非 stepId
+   * 2. 分支內的節點從屬於同一個"虛擬層"
+   * 3. 同一分支內的節點按順序排列
+   * 
+   * @param canvasNodes 扁平的畫布節點列表
+   * @returns 分層結果，每層為 canvasId 數組
+   */
+  function computeCanvasLayers(canvasNodes: CanvasNode[]): string[][] {
+    // 構建入度表和鄰接表
+    const inDegree = new Map<string, number>()
+    const adj = new Map<string, string[]>()
+
+    for (const node of canvasNodes) {
+      inDegree.set(node.canvasId, node.dependsOn.length)
+      for (const dep of node.dependsOn) {
+        if (!adj.has(dep)) adj.set(dep, [])
+        adj.get(dep)!.push(node.canvasId)
+      }
+    }
+
+    // 構建分支分組映射
+    const branchNodes = new Map<string, string[]>() // parentId -> [child canvasIds]
+    for (const node of canvasNodes) {
+      if (node.parentStepId) {
+        if (!branchNodes.has(node.parentStepId)) {
+          branchNodes.set(node.parentStepId, [])
+        }
+        branchNodes.get(node.parentStepId)!.push(node.canvasId)
+      }
+    }
+
+    const layers: string[][] = []
+    // 初始隊列：入度為0的節點
+    let queue = canvasNodes.filter(n => n.dependsOn.length === 0).map(n => n.canvasId)
+
+    while (queue.length > 0) {
+      // 對當前層的節點進行分組：根節點 vs 分支節點
+      const rootNodes: string[] = []
+      const branchGroups: Map<string, string[]> = new Map()
+
+      for (const id of queue) {
+        const node = canvasNodes.find(n => n.canvasId === id)
+        if (!node) continue
+
+        if (node.branch === 'root') {
+          rootNodes.push(id)
+        } else {
+          // 分支節點，按父節點分組
+          const parentId = node.parentStepId!
+          if (!branchGroups.has(parentId)) {
+            branchGroups.set(parentId, [])
+          }
+          branchGroups.get(parentId)!.push(id)
+        }
+      }
+
+      // 首先添加根節點
+      if (rootNodes.length > 0) {
+        layers.push(rootNodes)
+      }
+
+      // 然後添加每個分支組（作為同一層）
+      for (const [, group] of branchGroups) {
+        if (group.length > 0) {
+          layers.push(group)
+        }
+      }
+
+      // 計算下一層
       const nextQueue: string[] = []
       for (const id of queue) {
         for (const next of (adj.get(id) ?? [])) {
@@ -93,5 +183,5 @@ export function useDagLayout(): {
     return false
   }
 
-  return { computeLayers, wouldCreateCycle }
+  return { computeLayers, computeCanvasLayers, wouldCreateCycle }
 }

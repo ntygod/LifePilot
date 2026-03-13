@@ -1,0 +1,124 @@
+id: data-insight
+name: 多源数据分析
+description: 并行从多个数据源获取数据，LLM 综合分析后生成数据洞察报告
+version: "1.0"
+triggers:
+  - type: cron
+    cron: "0 0 10 * * 1"
+  - type: manual
+inputs:
+  analysisType:
+    type: string
+    required: false
+    defaultValue: weekly
+    description: 分析类型（weekly/monthly/quarterly）
+metadata:
+  category: 数据分析
+  complexity: advanced
+steps:
+  - id: fetch-data-sources
+    name: 并行获取多源数据
+    type: parallel
+    branches:
+      - - id: todo-data
+          name: 获取待办数据
+          type: skill
+          skillId: todo
+          params:
+            operation: stats
+            period: last-7-days
+        - id: schedule-data
+          name: 获取日程数据
+          type: skill
+          skillId: schedule
+          params:
+            period: last-7-days
+        - id: habit-data
+          name: 获取习惯数据
+          type: skill
+          skillId: habit
+          params:
+            period: last-7-days
+        - id: memory-data
+          name: 获取记忆数据
+          type: skill
+          skillId: memory
+          params:
+            operation: search
+            query: "${inputs.analysisType}"
+            limit: "20"
+      - - id: web-trends
+          name: 获取行业动态
+          type: tool
+          toolId: builtin.web.search
+          params:
+            query: "行业趋势 最新资讯"
+            maxResults: "5"
+          errorStrategy:
+            type: skip
+            reason: 外部数据获取失败不影响分析
+
+  - id: synthesize-insight
+    name: 综合分析生成洞察
+    type: llm
+    scene: agent_reasoning
+    capability: CHAT
+    prompt: |
+      请根据以下多源数据进行综合分析，生成数据洞察报告：
+
+      ## 待办数据
+      ${steps.todo-data.output.result}
+
+      ## 日程数据
+      ${steps.schedule-data.output.result}
+
+      ## 习惯数据
+      ${steps.habit-data.output.result}
+
+      ## 记忆数据
+      ${steps.memory-data.output.result}
+
+      ## 行业动态
+      ${steps.web-trends.output.result}
+
+      请按以下结构输出：
+      1. 核心发现
+      2. 趋势分析
+      3. 行动建议
+    dependsOn:
+      - fetch-data-sources
+
+  - id: format-report
+    name: 格式化报告
+    type: llm
+    scene: document_summary
+    capability: CHAT
+    prompt: |
+      将以下数据洞察报告格式化为美观的 Markdown：
+
+      ${steps.synthesize-insight.output.result}
+    dependsOn:
+      - synthesize-insight
+
+  - id: save-report
+    name: 保存报告
+    type: tool
+    toolId: builtin.datastore.add_document
+    params:
+      collection: data-insights
+      data: '{"title": "${inputs.analysisType} 数据洞察", "content": "${steps.format-report.output.result}", "type": "${inputs.analysisType}"}'
+    dependsOn:
+      - format-report
+
+  - id: notify-report
+    name: 发送报告通知
+    type: notify
+    targetUserId: owner
+    content: |
+      ${inputs.analysisType} 数据洞察报告已生成！
+
+      ${steps.format-report.output.result}
+    contentType: MARKDOWN
+    urgency: MEDIUM
+    dependsOn:
+      - save-report

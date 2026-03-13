@@ -66,9 +66,9 @@ flowchart TD
 
 ### 3.2 WorkflowStep（sealed interface）
 
-- 职责：定义十种步骤类型的类型层次
+- 职责：定义**十一种**步骤类型的类型层次
 - 公共接口：`id()`、`name()`、`errorStrategy()`、`dependsOn()`（DAG 依赖声明）
-- 步骤类型：`SkillStep`（调用 Skill）、`ToolStep`（调用 Tool）、`LlmStep`（调用 LLM）、`ConditionStep`（条件分支）、`LoopStep`（循环遍历）、`ParallelStep`（Virtual Thread 并行）、`SubWorkflowStep`（子工作流）、`NoopStep`（空操作）、`WaitStep`（定时等待）、`ApprovalStep`（人工审批）
+- 步骤类型：`SkillStep`（调用 Skill）、`ToolStep`（调用 Tool）、`LlmStep`（调用 LLM）、`ConditionStep`（条件分支）、`LoopStep`（循环遍历）、`ParallelStep`（Virtual Thread 并行）、`SubWorkflowStep`（子工作流）、`NoopStep`（空操作）、`WaitStep`（定时等待）、`ApprovalStep`（人工审批）、`NotifyStep`（通知发送）
 
 ### 3.3 WorkflowEngine
 

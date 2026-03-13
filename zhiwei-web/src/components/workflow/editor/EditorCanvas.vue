@@ -2,11 +2,13 @@
   编排画布组件。
   基于绝对定位 + SVG 连线层的交互式 DAG 画布。
   支持节点自由拖拽、连接锚点拖拽连线、键盘删除、右键上下文菜单。
+  支持条件分支、循环、并行等嵌套步骤的可视化渲染。
 -->
 <script setup lang="ts">
 import { computed, ref, triggerRef, watch, onMounted, onUnmounted } from 'vue'
 import type { StepModel, StepType } from '@/composables/useWorkflowModel'
 import { useDagLayout } from '@/composables/useDagLayout'
+import { flattenNestedSteps, getConditionExits, type CanvasNode, type BranchType, type ConditionExits } from '@/composables/useNestedSteps'
 import { STEP_TYPE_META } from '@/components/workflow/editor/stepTypeMeta'
 import { PackagePlus, Trash2, Unlink } from 'lucide-vue-next'
 
@@ -19,13 +21,17 @@ const props = defineProps<{
 const emit = defineEmits<{
   'select-step': [stepId: string]
   'drop-step': [type: StepType]
-  'connect': [fromId: string, toId: string]
+  'connect': [fromId: string, toId: string, branch?: 'then' | 'else']
   'disconnect': [fromId: string, toId: string]
   'delete-step': [stepId: string]
 }>()
 
-const { computeLayers } = useDagLayout()
+const { computeCanvasLayers } = useDagLayout()
 const containerRef = ref<HTMLElement | null>(null)
+
+// ── 扁平化的画布節點計算 ──
+const canvasNodes = computed<CanvasNode[]>(() => flattenNestedSteps(props.steps))
+const conditionExits = computed<Map<string, ConditionExits>>(() => getConditionExits(canvasNodes.value))
 
 // ── 节点位置状态（使用普通对象，确保 Vue 响应式追踪可靠） ──
 const positions = ref<Record<string, { x: number; y: number }>>({})
@@ -52,9 +58,10 @@ function setPos(stepId: string, pos: { x: number; y: number }) {
 /**
  * 根据拓扑分层计算初始位置。
  * 仅为没有位置的新节点分配位置，已有位置的节点保持不变。
+ * 使用扁平化的画布节点进行分层计算。
  */
 function autoLayoutNewNodes() {
-  const layers = computeLayers(props.steps)
+  const layers = computeCanvasLayers(canvasNodes.value)
   const newPositions = { ...positions.value }
   let changed = false
 
@@ -63,9 +70,9 @@ function autoLayoutNewNodes() {
     const layerWidth = layer.length * NODE_WIDTH + (layer.length - 1) * NODE_GAP_X
     const startX = PADDING_LEFT + Math.max(0, (400 - layerWidth) / 2)
     for (let nodeIdx = 0; nodeIdx < layer.length; nodeIdx++) {
-      const stepId = layer[nodeIdx]
-      if (!(stepId in newPositions)) {
-        newPositions[stepId] = {
+      const canvasId = layer[nodeIdx]
+      if (!(canvasId in newPositions)) {
+        newPositions[canvasId] = {
           x: startX + nodeIdx * (NODE_WIDTH + NODE_GAP_X),
           y: PADDING_TOP + layerIdx * (NODE_HEIGHT + LAYER_GAP_Y),
         }
@@ -75,9 +82,9 @@ function autoLayoutNewNodes() {
   }
 
   // 清理已删除步骤的位置
-  const stepIds = new Set(props.steps.map(s => s.id))
+  const canvasIds = new Set(canvasNodes.value.map(n => n.canvasId))
   for (const id of Object.keys(newPositions)) {
-    if (!stepIds.has(id)) {
+    if (!canvasIds.has(id)) {
       delete newPositions[id]
       changed = true
     }
@@ -102,25 +109,65 @@ const canvasSize = computed(() => {
 
 // ── SVG 连线计算 ──
 /** 基于位置状态计算连线坐标（不依赖 DOM） */
-const lines = computed(() => {
-  const result: Array<{ x1: number; y1: number; x2: number; y2: number; fromId: string; toId: string }> = []
-  for (const step of props.steps) {
-    for (const dep of step.dependsOn) {
-      const fromPos = positions.value[dep]
-      const toPos = positions.value[step.id]
+/** 连线类型：普通連線、分支Then連線、分支Else連線 */
+type LineType = 'normal' | 'then' | 'else'
+
+interface LineData {
+  x1: number; y1: number; x2: number; y2: number
+  fromId: string; toId: string
+  lineType: LineType
+}
+
+const lines = computed<LineData[]>(() => {
+  const result: LineData[] = []
+  
+  // 遍歷所有畫布節點，計算連線
+  for (const node of canvasNodes.value) {
+    for (const depId of node.dependsOn) {
+      const fromPos = positions.value[depId]
+      const toPos = positions.value[node.canvasId]
       if (!fromPos || !toPos) continue
+      
+      // 判斷這條連線的類型
+      let lineType: LineType = 'normal'
+      
+      // 如果目標節點是分支內的節點，且依賴於父節點，則標記為分支連線
+      if (node.branch !== 'root' && depId === node.parentStepId) {
+        lineType = node.branch === 'then' ? 'then' : 'else'
+      }
+      
       result.push({
         x1: fromPos.x + NODE_WIDTH / 2,
         y1: fromPos.y + NODE_HEIGHT,
         x2: toPos.x + NODE_WIDTH / 2,
         y2: toPos.y,
-        fromId: dep,
-        toId: step.id,
+        fromId: depId,
+        toId: node.canvasId,
+        lineType,
       })
     }
   }
+  
   return result
 })
+
+/** 獲取連線顏色 */
+function getLineColor(line: LineData): string {
+  if (line.lineType === 'then') return '#22c55e' // 綠色 - Then
+  if (line.lineType === 'else') return '#ef4444' // 紅色 - Else
+  return isLineHighlighted(line) ? 'hsl(var(--primary))' : '#9ca3af'
+}
+
+/** 獲取連線寬度 */
+function getLineWidth(line: LineData): number {
+  return isLineHighlighted(line) ? 2.5 : 1.5
+}
+
+/** 獲取連線樣式 */
+function getLineDash(line: LineData): string {
+  if (line.lineType !== 'normal') return 'none' // 分支連線用實線
+  return isLineHighlighted(line) ? 'none' : '6 3'
+}
 
 
 // ── 悬停高亮状态 ──
@@ -152,13 +199,40 @@ const dragOffset = ref({ x: 0, y: 0 })
 /** 临时连线：从源锚点到鼠标位置 */
 const tempLine = computed(() => {
   if (!connectingFrom.value) return null
-  const fromPos = positions.value[connectingFrom.value]
-  if (!fromPos) return null
-  return {
-    x1: fromPos.x + NODE_WIDTH / 2,
-    y1: fromPos.y + NODE_HEIGHT,
-    x2: mousePos.value.x,
-    y2: mousePos.value.y,
+  
+  // 解析 connectingFrom，可能是普通節點ID或條件節點的 Then/Else 出口
+  const parts = connectingFrom.value.split('-')
+  const isConditionBranch = parts.length >= 2 && (parts[parts.length - 1] === 'then' || parts[parts.length - 1] === 'else')
+  
+  let sourceId: string
+  let sourcePos: { x: number; y: number } | undefined
+  
+  if (isConditionBranch) {
+    // 條件節點的 Then/Else 出口
+    sourceId = parts.slice(0, -1).join('-') // 移除最後的 then/else
+    sourcePos = positions.value[sourceId]
+    if (!sourcePos) return null
+    
+    // Then 出口在左側，Else 出口在右側
+    const branch = parts[parts.length - 1] as 'then' | 'else'
+    const offsetX = branch === 'then' ? -NODE_WIDTH / 4 : NODE_WIDTH / 4
+    
+    return {
+      x1: sourcePos.x + NODE_WIDTH / 2 + offsetX,
+      y1: sourcePos.y + NODE_HEIGHT,
+      x2: mousePos.value.x,
+      y2: mousePos.value.y,
+    }
+  } else {
+    // 普通節點
+    sourcePos = positions.value[connectingFrom.value]
+    if (!sourcePos) return null
+    return {
+      x1: sourcePos.x + NODE_WIDTH / 2,
+      y1: sourcePos.y + NODE_HEIGHT,
+      x2: mousePos.value.x,
+      y2: mousePos.value.y,
+    }
   }
 })
 
@@ -234,6 +308,42 @@ function onAnchorMouseDown(e: MouseEvent, stepId: string) {
   updateMousePos(e)
   document.addEventListener('mousemove', onConnectMouseMove)
   document.addEventListener('mouseup', onConnectMouseUp)
+}
+
+/** 條件節點的 Then/Else 出口錨點拖拽開始 */
+function onConditionAnchorMouseDown(e: MouseEvent, stepId: string, branch: 'then' | 'else') {
+  e.stopPropagation()
+  e.preventDefault()
+  // 使用特殊的連接ID：stepId + '-' + branch
+  connectingFrom.value = `${stepId}-${branch}`
+  updateMousePos(e)
+  document.addEventListener('mousemove', onConnectMouseMove)
+  document.addEventListener('mouseup', onConditionAnchorMouseUp)
+}
+
+/** 條件節點出口錨點連接完成 */
+function onConditionAnchorMouseUp(e: MouseEvent) {
+  // 這裡需要處理特殊的連接邏輯
+  // 當從 Then 出口連接時，目標節點應該被添加到 thenSteps
+  // 當從 Else 出口連接時，目標節點應該被添加到 elseSteps
+  // 目前的實現只是發送普通的 connect 事件，需要在父組件處理
+  if (connectingFrom.value) {
+    const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null
+    const anchorInput = el?.closest('[data-anchor-input]') as HTMLElement | null
+    if (anchorInput) {
+      const targetId = anchorInput.getAttribute('data-anchor-input')
+      if (targetId) {
+        // 解析連接的源和目標
+        const parts = connectingFrom.value.split('-')
+        const sourceStepId = parts.slice(0, -1).join('-') // 移除最後的 then/else
+        const branch = parts[parts.length - 1] as 'then' | 'else'
+        
+        // 發送帶分支信息的連接事件
+        emit('connect', sourceStepId, targetId, branch)
+      }
+    }
+  }
+  cancelConnection()
 }
 
 /** 鼠标释放在顶部入口锚点上 → 完成连线 */
@@ -380,22 +490,43 @@ function isLineHighlighted(line: { fromId: string; toId: string }): boolean {
   return line.fromId === hoveredStepId.value || line.toId === hoveredStepId.value
 }
 
+// ── 辅助函数：獲取節點的顯示名稱 ──
+function getNodeDisplayName(node: CanvasNode): string {
+  if (node.branch === 'root') {
+    return node.name || node.stepId
+  }
+  // 分支內的節點顯示分支類型前綴
+  const branchLabel = node.branch === 'then' ? 'Then' : node.branch === 'else' ? 'Else' : node.branch === 'loop' ? 'Loop' : node.branch
+  return `${branchLabel}: ${node.name || node.stepId}`
+}
+
+// ── 辅助函数：獲取節點的分支標籤 ──
+function getBranchLabel(branch: BranchType): string {
+  switch (branch) {
+    case 'root': return ''
+    case 'then': return 'Then'
+    case 'else': return 'Else'
+    case 'loop': return 'Loop'
+    default: return (branch as string).replace('branch-', 'Branch ')
+  }
+}
+
 // ── 步骤变化监听 ──
 /**
  * 确保每个步骤都有位置。
- * 使用 steps ID 列表的 join 作为 watch 源，避免 deep watch 的同引用问题。
+ * 使用 canvasNodes 的 canvasId 列表的 join 作为 watch 源，避免 deep watch 的同引用问题。
  */
 watch(
-  () => props.steps.map(s => s.id).join(','),
+  () => canvasNodes.value.map(n => n.canvasId).join(','),
   () => {
     let needAutoLayout = false
     const newPositions = { ...positions.value }
 
     // 为没有位置的新步骤分配位置
-    for (const step of props.steps) {
-      if (!(step.id in newPositions)) {
+    for (const node of canvasNodes.value) {
+      if (!(node.canvasId in newPositions)) {
         if (pendingDropPos.value) {
-          newPositions[step.id] = { ...pendingDropPos.value }
+          newPositions[node.canvasId] = { ...pendingDropPos.value }
           pendingDropPos.value = null
         } else {
           needAutoLayout = true
@@ -404,7 +535,7 @@ watch(
     }
 
     // 清理已删除步骤的位置
-    const currentIds = new Set(props.steps.map(s => s.id))
+    const currentIds = new Set(canvasNodes.value.map(n => n.canvasId))
     for (const id of Object.keys(newPositions)) {
       if (!currentIds.has(id)) {
         delete newPositions[id]
@@ -448,7 +579,7 @@ function onDocumentClickForMenu() {
   >
     <!-- 空画布引导提示 -->
     <div
-      v-if="steps.length === 0"
+      v-if="canvasNodes.length === 0"
       class="flex h-full items-center justify-center"
     >
       <div class="flex flex-col items-center gap-3 text-muted-foreground">
@@ -482,15 +613,15 @@ function onDocumentClickForMenu() {
           <path
             :d="bezierPath(line)"
             fill="none"
-            :stroke="isLineHighlighted(line) ? 'hsl(var(--primary))' : '#9ca3af'"
-            :stroke-width="isLineHighlighted(line) ? 2.5 : 1.5"
-            :stroke-dasharray="isLineHighlighted(line) ? 'none' : '6 3'"
+            :stroke="getLineColor(line)"
+            :stroke-width="getLineWidth(line)"
+            :stroke-dasharray="getLineDash(line)"
             class="pointer-events-none transition-all duration-150"
           />
           <!-- 箭头标记 -->
           <polygon
             :points="arrowPoints(line)"
-            :fill="isLineHighlighted(line) ? 'hsl(var(--primary))' : '#9ca3af'"
+            :fill="getLineColor(line)"
             class="pointer-events-none transition-all duration-150"
           />
         </template>
@@ -513,68 +644,113 @@ function onDocumentClickForMenu() {
         :class="connectingFrom ? 'z-[4]' : 'z-[2]'"
       >
         <div
-          v-for="step in steps"
-          :key="step.id"
-          :data-step-id="step.id"
+          v-for="node in canvasNodes"
+          :key="node.canvasId"
+          :data-step-id="node.canvasId"
           class="group/node absolute flex flex-col gap-1.5 rounded-lg border-2 bg-background px-3 py-2.5 shadow-sm transition-shadow select-none"
           :class="[
-            draggingNodeId === step.id ? 'cursor-grabbing shadow-lg' : 'cursor-grab hover:shadow-md',
-            selectedStepId === step.id
+            draggingNodeId === node.canvasId ? 'cursor-grabbing shadow-lg' : 'cursor-grab hover:shadow-md',
+            selectedStepId === node.stepId
               ? 'border-primary ring-2 ring-primary/20'
-              : validationErrors.has(step.id)
+              : validationErrors.has(node.stepId)
                 ? 'border-destructive ring-2 ring-destructive/20'
                 : 'border-border hover:border-primary/50',
+            // 分支節點的特殊樣式
+            node.branch === 'then' ? 'bg-green-50/80 dark:bg-green-950/40 border-green-200 dark:border-green-800' :
+            node.branch === 'else' ? 'bg-red-50/80 dark:bg-red-950/40 border-red-200 dark:border-red-800' :
+            node.branch === 'loop' ? 'bg-blue-50/80 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800' :
+            ''
           ]"
           :style="{
-            left: getPos(step.id).x + 'px',
-            top: getPos(step.id).y + 'px',
+            left: getPos(node.canvasId).x + 'px',
+            top: getPos(node.canvasId).y + 'px',
             width: NODE_WIDTH + 'px',
           }"
-          @mousedown="onNodeMouseDown($event, step.id)"
-          @click.stop="emit('select-step', step.id)"
-          @contextmenu="onNodeContextMenu($event, step.id)"
-          @mouseenter="onNodeMouseEnter(step.id)"
+          @mousedown="onNodeMouseDown($event, node.canvasId)"
+          @click.stop="emit('select-step', node.stepId)"
+          @contextmenu="onNodeContextMenu($event, node.canvasId)"
+          @mouseenter="onNodeMouseEnter(node.canvasId)"
           @mouseleave="onNodeMouseLeave"
         >
-          <!-- 顶部入口锚点 -->
+          <!-- 顶部入口锚点：根節點顯示，分支節點隱藏（因為已經通過分支連線連接） -->
           <div
-            :data-anchor-input="step.id"
+            v-if="node.branch === 'root'"
+            :data-anchor-input="node.canvasId"
             class="absolute -top-2 left-1/2 z-10 h-4 w-4 -translate-x-1/2 cursor-crosshair rounded-full border-2 border-background transition-all hover:scale-125"
             :class="connectingFrom
               ? 'bg-primary/70 scale-110 animate-pulse'
               : 'bg-gray-400 opacity-50 group-hover/node:opacity-100 group-hover/node:bg-primary/60'"
-            @mouseup.stop="onAnchorMouseUp($event, step.id)"
+            @mouseup.stop="onAnchorMouseUp($event, node.canvasId)"
           />
 
           <!-- 上部：图标 + 名称 + ID -->
           <div class="flex items-center gap-2">
             <component
-              :is="STEP_TYPE_META[step.type].icon"
+              :is="STEP_TYPE_META[node.type].icon"
               class="h-4 w-4 shrink-0 transition-colors"
-              :class="selectedStepId === step.id ? 'text-primary' : 'text-muted-foreground group-hover/node:text-primary/70'"
+              :class="selectedStepId === node.stepId ? 'text-primary' : 'text-muted-foreground group-hover/node:text-primary/70'"
             />
             <div class="min-w-0">
               <div class="truncate text-xs font-medium">
-                {{ step.name || step.id }}
+                {{ getNodeDisplayName(node) }}
               </div>
               <div class="truncate text-[10px] text-muted-foreground">
-                {{ step.id }}
+                {{ node.stepId }}
               </div>
             </div>
           </div>
-          <!-- 类型标签 -->
-          <span class="inline-flex w-fit items-center rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-            {{ STEP_TYPE_META[step.type].label }}
-          </span>
+          
+          <!-- 分支標籤 + 類型標籤 -->
+          <div class="flex items-center gap-1 flex-wrap">
+            <span v-if="getBranchLabel(node.branch)" 
+              class="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+              :class="node.branch === 'then' ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' :
+                     node.branch === 'else' ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300' :
+                     node.branch === 'loop' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300' :
+                     'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300'"
+            >
+              {{ getBranchLabel(node.branch) }}
+            </span>
+            <span class="inline-flex w-fit items-center rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+              {{ STEP_TYPE_META[node.type].label }}
+            </span>
+          </div>
 
           <!-- 底部出口锚点 -->
+          <!-- 條件節點有兩個出口：Then 和 Else -->
+          <template v-if="node.type === 'condition'">
+            <!-- Then 出口錨點 -->
+            <div
+              :data-anchor-output="node.canvasId + '-then'"
+              class="absolute -bottom-2 left-1/4 z-10 h-4 w-4 -translate-x-1/2 cursor-crosshair rounded-full border-2 border-background transition-all hover:scale-125"
+              :class="connectingFrom === node.canvasId + '-then'
+                ? 'bg-green-500 scale-125'
+                : 'bg-green-400 opacity-50 group-hover/node:opacity-100 group-hover/node:bg-green-500'"
+              @mousedown.stop="onConditionAnchorMouseDown($event, node.canvasId, 'then')"
+            >
+              <span class="absolute -bottom-4 left-1/2 -translate-x-1/2 text-[8px] font-medium text-green-600 dark:text-green-400 whitespace-nowrap">Then</span>
+            </div>
+            <!-- Else 出口錨點 -->
+            <div
+              :data-anchor-output="node.canvasId + '-else'"
+              class="absolute -bottom-2 left-3/4 z-10 h-4 w-4 -translate-x-1/2 cursor-crosshair rounded-full border-2 border-background transition-all hover:scale-125"
+              :class="connectingFrom === node.canvasId + '-else'
+                ? 'bg-red-500 scale-125'
+                : 'bg-red-400 opacity-50 group-hover/node:opacity-100 group-hover/node:bg-red-500'"
+              @mousedown.stop="onConditionAnchorMouseDown($event, node.canvasId, 'else')"
+            >
+              <span class="absolute -bottom-4 left-1/2 -translate-x-1/2 text-[8px] font-medium text-red-600 dark:text-red-400 whitespace-nowrap">Else</span>
+            </div>
+          </template>
+          <!-- 普通節點只有一個出口 -->
           <div
-            :data-anchor-output="step.id"
+            v-else
+            :data-anchor-output="node.canvasId"
             class="absolute -bottom-2 left-1/2 z-10 h-4 w-4 -translate-x-1/2 cursor-crosshair rounded-full border-2 border-background transition-all hover:scale-125"
-            :class="connectingFrom === step.id
+            :class="connectingFrom === node.canvasId
               ? 'bg-primary scale-125'
               : 'bg-gray-400 opacity-50 group-hover/node:opacity-100 group-hover/node:bg-primary/60'"
-            @mousedown.stop="onAnchorMouseDown($event, step.id)"
+            @mousedown.stop="onAnchorMouseDown($event, node.canvasId)"
           />
         </div>
       </div>

@@ -14,7 +14,7 @@
 
 通过 YAML 文件描述工作流蓝图，包含步骤列表、触发器、输入参数和元数据。YAML 文件放置在 `~/.zhiwei/workflows` 目录下，引擎定时扫描并自动加载变更。
 
-### 2.2 十种步骤类型
+### 2.2 十一种步骤类型
 
 | 步骤类型 | 说明 |
 |---------|------|
@@ -28,6 +28,7 @@
 | WaitStep | 等待指定时长，持久化 wakeUpAt 到数据库，由 WakeupScheduler 到时自动唤醒恢复执行 |
 | ApprovalStep | 人工审批，暂停工作流等待决策；支持运行时超时检测，超时后根据配置自动批准或标记失败 |
 | NoopStep | 空操作，直接跳过 |
+| **NotifyStep** | **通过 NotificationService 发送通知，支持 TEXT/MARKDOWN/CARD 三种内容类型和紧急程度配置** |
 
 ### 2.3 三种触发方式
 
@@ -55,6 +56,28 @@
 
 ApprovalStep 暂停工作流等待审批决策。支持配置审批人列表、超时时间和超时自动批准。审批决策通过 `WorkflowEngine.approve()` 提交。WakeupScheduler 在运行时持续检测审批超时，超时后根据 `auto-approve-on-timeout` 配置自动批准或标记实例失败，不再仅依赖重启恢复。
 
+### 2.8 NotifyStep 通知步骤
+
+NotifyStep 是工作流内置的通知步骤，通过 NotificationService 发送通知。与旧的 `builtin.interact.notify` 工具相比，NotifyStep 更简洁且支持紧急程度路由。
+
+```yaml
+- id: send-notification
+  name: 发送通知
+  type: notify
+  targetUserId: owner
+  content: |
+    工作流执行完成！
+    结果：${steps.previous.output.result}
+  contentType: MARKDOWN
+  urgency: MEDIUM
+```
+
+**参数说明**：
+- `targetUserId`：目标用户 ID，支持 `${}` 表达式
+- `content`：通知内容模板，支持变量替换
+- `contentType`：内容类型，可选 TEXT / MARKDOWN / CARD
+- `urgency`：紧急程度，可选 HIGH / MEDIUM / LOW
+
 ### 2.8 异步非阻塞执行
 
 WorkflowCommandService 作为外部调用的首选入口，`start()` 方法创建实例后立即返回 instanceId，工作流在 Virtual Thread 上由 WorkflowRunner 异步执行。调用方不会被工作流执行阻塞，可通过 `getStatus()` 查询执行进度。触发器、API、定时器均通过 CommandService 提交，不再直接调用 WorkflowEngine。
@@ -80,11 +103,18 @@ WorkflowRegistry 定时扫描工作流目录，自动检测新增、修改和删
 
 ## 3. 使用场景
 
-用户定义一个"每日晚间总结"工作流：Cron 触发器设置为每天 21:00，第一步调用 Skill 查询当天待办完成情况，第二步调用 LLM 生成日报摘要，第三步通过 Tool 发送消息通知。三个步骤按顺序串行执行。
+### 入门场景
+- **每日待办提醒**：Cron 定时触发早上 8 点执行，获取待办列表后筛选紧急任务，通过 NotifyStep 发送通知
+- **周报自动生成**：Cron 每周五触发，并行调用 todo/schedule/habit 三个 Skill 获取数据，LLM 生成周报后保存到知识库
 
-用户定义一个"数据同步"工作流：手动触发，第一步并行调用多个 SyncConnector 同步外部数据源，第二步条件判断是否有冲突，有冲突则进入人工审批步骤等待用户决策，无冲突则直接完成。
+### 中级场景
+- **定时知识采集**：每天早上从网络采集指定主题的最新信息，经过去重和摘要后自动保存到记忆
+- **批量任务处理**：从任务队列循环获取待处理任务，根据任务类型路由到不同处理逻辑，支持错误重试
 
-用户定义一个"周报生成"工作流：Cron 触发器设置为每周五 18:00，循环遍历本周所有对话记录，对每条记录调用 LLM 提取关键信息，最后汇总生成周报。
+### 高级场景
+- **多源数据分析**：并行从多个数据源获取数据，LLM 综合分析生成数据洞察报告
+- **智能内容审核**：多维度 LLM 风险分析，高风险内容进入人工审批，低风险自动通过
+- **调研助手**：多源搜索 + LLM 分析 + 人工审批 + 自动发布到知识库
 
 ## 4. 配置项
 

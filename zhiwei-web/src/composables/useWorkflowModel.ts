@@ -16,6 +16,7 @@ export type StepType =
   | 'noop'
   | 'wait'
   | 'approval'
+  | 'notify'
 
 /** Skill 步骤配置 */
 export interface SkillStepConfig {
@@ -84,6 +85,14 @@ export interface ApprovalStepConfig {
   autoApproveOnTimeout: boolean
 }
 
+/** 通知步骤配置 */
+export interface NotifyStepConfig {
+  targetUserId: string
+  content: string
+  contentType: 'TEXT' | 'MARKDOWN' | 'HTML'
+  urgency: 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT'
+}
+
 /** 空操作步骤配置 */
 export interface NoopStepConfig {}
 
@@ -98,6 +107,7 @@ export type StepConfig =
   | SubWorkflowStepConfig
   | WaitStepConfig
   | ApprovalStepConfig
+  | NotifyStepConfig
   | NoopStepConfig
 
 /** 错误策略模型 */
@@ -162,6 +172,7 @@ const STEP_TYPE_LABELS: Record<StepType, string> = {
   'noop': '空操作',
   'wait': '等待步骤',
   'approval': '审批步骤',
+  'notify': '通知步骤',
 }
 
 // ========== 默认配置工厂 ==========
@@ -197,6 +208,8 @@ function createDefaultConfig(type: StepType): StepConfig {
       return { durationSeconds: 60 }
     case 'approval':
       return { message: '', approvers: [], timeoutSeconds: 3600, autoApproveOnTimeout: false }
+    case 'notify':
+      return { targetUserId: '', content: '', contentType: 'TEXT', urgency: 'NORMAL' }
   }
 }
 

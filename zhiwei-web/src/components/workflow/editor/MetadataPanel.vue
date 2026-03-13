@@ -5,7 +5,7 @@
   触发器和输入参数区域可折叠展开。
 -->
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import type { TriggerModel, InputParamModel } from '@/composables/useWorkflowModel'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -29,6 +29,7 @@ const props = defineProps<{
   version: string
   triggers: TriggerModel[]
   inputs: InputParamModel[]
+  variables?: Record<string, string>
 }>()
 
 const emit = defineEmits<{
@@ -38,10 +39,47 @@ const emit = defineEmits<{
   'update:version': [value: string]
   'update:triggers': [value: TriggerModel[]]
   'update:inputs': [value: InputParamModel[]]
+  'update:variables': [value: Record<string, string>]
 }>()
 
 /** 折叠状态：触发器和输入参数区域 */
 const expanded = ref(false)
+
+// 默认空对象
+const defaultVariables = computed(() => props.variables ?? {})
+
+// 转换为数组便于渲染
+const variablesList = computed(() => {
+  const vars = defaultVariables.value
+  return Object.entries(vars).map(([key, value]) => ({ key, value }))
+})
+
+// ========== 工作流变量操作 ==========
+
+function addVariable() {
+  const currentVars = props.variables ?? {}
+  emit('update:variables', { ...currentVars, '': '' })
+}
+
+function removeVariable(key: string) {
+  const currentVars = { ...(props.variables ?? {}) }
+  delete currentVars[key]
+  emit('update:variables', currentVars)
+}
+
+function updateVariableKey(oldKey: string, newKey: string) {
+  const currentVars = { ...(props.variables ?? {}) }
+  const value = currentVars[oldKey]
+  delete currentVars[oldKey]
+  currentVars[newKey] = value
+  emit('update:variables', currentVars)
+}
+
+function updateVariableValue(key: string, value: string) {
+  const currentVars = { ...(props.variables ?? {}) }
+  currentVars[key] = value
+  emit('update:variables', currentVars)
+}
 
 // ========== 触发器操作 ==========
 
@@ -305,6 +343,61 @@ function updateInputField(index: number, field: string, value: unknown) {
                 @update:model-value="updateInputField(idx, 'required', $event)"
               />
               <Label class="text-xs">必填</Label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 工作流变量配置区域 -->
+      <Separator />
+
+      <div>
+        <div class="mb-2 flex items-center justify-between">
+          <span class="text-xs font-medium">工作流变量</span>
+          <Button type="button" variant="ghost" size="sm" class="h-6 px-2 text-xs" @click="addVariable">
+            <Plus class="mr-1 h-3 w-3" />
+            添加变量
+          </Button>
+        </div>
+
+        <div v-if="variablesList.length === 0" class="text-xs text-muted-foreground">
+          暂无工作流变量，使用 ${vars.key} 在步骤参数中引用
+        </div>
+
+        <div v-for="(variable, idx) in variablesList" :key="idx" class="mb-3 rounded-md border p-2">
+          <div class="mb-2 flex items-center justify-between">
+            <span class="text-xs text-muted-foreground">变量 {{ idx + 1 }}</span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              class="h-6 w-6 text-muted-foreground hover:text-destructive"
+              @click="removeVariable(variable.key)"
+            >
+              <X class="h-3 w-3" />
+            </Button>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2">
+            <!-- 变量名 -->
+            <div class="space-y-1">
+              <Label class="text-xs">变量名</Label>
+              <Input
+                :model-value="variable.key"
+                placeholder="varName"
+                class="h-7 text-xs font-mono"
+                @update:model-value="updateVariableKey(variable.key, $event as string)"
+              />
+            </div>
+            <!-- 变量值 -->
+            <div class="space-y-1">
+              <Label class="text-xs">值（支持 ${} 表达式）</Label>
+              <Input
+                :model-value="variable.value"
+                placeholder="${inputs.xxx} 或固定值"
+                class="h-7 text-xs font-mono"
+                @update:model-value="updateVariableValue(variable.key, $event as string)"
+              />
             </div>
           </div>
         </div>

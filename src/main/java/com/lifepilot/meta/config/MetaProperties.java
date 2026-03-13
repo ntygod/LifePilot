@@ -241,8 +241,11 @@ public class MetaProperties {
         /** 功能开关，默认 true。 */
         private boolean enabled = true;
 
-        /** 内置 Skill 资源路径，默认 builtin-skills/find-skills。 */
-        private String builtinSkillPath = "builtin-skills/find-skills";
+        /** 内置 Skill 资源路径列表，默认包含 find-skills 和 workflow-creator。 */
+        private List<String> builtinSkillPaths = List.of(
+                "builtin-skills/find-skills",
+                "builtin-skills/workflow-creator"
+        );
     }
 
     /**

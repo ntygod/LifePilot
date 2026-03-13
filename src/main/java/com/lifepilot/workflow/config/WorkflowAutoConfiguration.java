@@ -44,6 +44,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 import java.util.HashSet;
 import java.util.List;
@@ -215,8 +216,10 @@ public class WorkflowAutoConfiguration {
 
         registry.setTriggerManager(ctx.getBean(WorkflowTriggerManager.class));
 
+        // 先同步内置工作流到用户目录
+        loadBuiltinWorkflows(parser, registry, config, localWorkflowStems(config));
+        // 再启动扫描，加载用户目录中的所有工作流
         registry.startScheduledScan();
-        loadBuiltinWorkflows(parser, registry, localWorkflowStems(config));
         ctx.getBean(WorkflowTriggerManager.class).registerAllTriggers();
         registry.setStartupPhase(false);
         ctx.getBean(WorkflowEngine.class).recoverInterruptedInstances();
@@ -226,17 +229,26 @@ public class WorkflowAutoConfiguration {
         int wakeupInterval = config.getWakeup().getScanIntervalSeconds();
         taskScheduler.scheduleAtFixedRate(wakeupScheduler::scan, Duration.ofSeconds(wakeupInterval));
         log.info("唤醒调度器已启动: interval={}s", wakeupInterval);
-        log.info("工作流启动序列完成: 本地热加载 -> 内置补齐 -> 触发器注册 -> 崩溃恢复 -> 唤醒调度");
+        log.info("工作流启动序列完成: 内置同步 -> 本地热加载 -> 触发器注册 -> 崩溃恢复 -> 唤醒调度");
     }
 
     private void loadBuiltinWorkflows(WorkflowYamlParser parser,
                                       WorkflowRegistry registry,
+                                      WorkflowConfigProperties config,
                                       Set<String> localWorkflowStems) {
+        Path definitionsDir = WorkflowRegistry.resolveDefinitionsDir(config.getDefinitionsDir());
+        int loaded = 0;
+        int skipped = 0;
+        int synced = 0;
+
         try {
+            // 确保目录存在
+            if (!Files.exists(definitionsDir)) {
+                Files.createDirectories(definitionsDir);
+            }
+
             var resolver = new PathMatchingResourcePatternResolver();
             Resource[] resources = resolver.getResources("classpath:builtin-workflows/*.yml");
-            int loaded = 0;
-            int skipped = 0;
 
             for (Resource resource : resources) {
                 String filename = resource.getFilename();
@@ -244,36 +256,36 @@ public class WorkflowAutoConfiguration {
                     continue;
                 }
                 String fileStem = fileStem(filename);
+
+                // 尝试读取内置工作流 YAML
+                String yaml;
+                try {
+                    yaml = resource.getContentAsString(StandardCharsets.UTF_8);
+                } catch (IOException e) {
+                    log.warn("读取内置工作流失败: file={}, error={}", filename, e.getMessage());
+                    continue;
+                }
+
+                // 检查本地是否已存在
                 if (localWorkflowStems.contains(fileStem)) {
                     skipped++;
                     log.info("内置工作流检测到本地同名文件，跳过程序包版本: file={}", filename);
+                    // 仍然需要从本地加载
                     continue;
                 }
+
+                // 本地不存在，写入用户目录
                 try {
-                    String yaml = resource.getContentAsString(StandardCharsets.UTF_8);
-                    Result<WorkflowDefinition, List<String>> result = parser.parse(yaml);
-                    switch (result) {
-                        case Result.Ok<WorkflowDefinition, List<String>> ok -> {
-                            if (registry.find(ok.value().id()).isPresent()) {
-                                skipped++;
-                                log.info("内置工作流检测到本地已加载同 ID 定义，跳过程序包版本: file={}, id={}",
-                                        filename, ok.value().id());
-                                continue;
-                            }
-                            if (registry.registerBuiltin(ok.value(), filename)) {
-                                loaded++;
-                                log.info("内置工作流已加载: file={}, id={}", filename, ok.value().id());
-                            }
-                        }
-                        case Result.Err<WorkflowDefinition, List<String>> err ->
-                                log.warn("内置工作流解析失败，已跳过: file={}, errors={}", filename, err.error());
-                    }
+                    Path targetFile = definitionsDir.resolve(filename);
+                    Files.writeString(targetFile, yaml, StandardOpenOption.CREATE_NEW);
+                    synced++;
+                    log.info("内置工作流已同步到用户目录: file={}, path={}", filename, targetFile);
                 } catch (IOException e) {
-                    log.warn("读取内置工作流失败: file={}, error={}", filename, e.getMessage());
+                    log.warn("同步内置工作流到用户目录失败: file={}, error={}", filename, e.getMessage());
                 }
             }
 
-            log.info("内置工作流加载完成: loaded={}, skipped={}", loaded, skipped);
+            log.info("内置工作流同步完成: loaded={}, skipped={}, synced={}", loaded, skipped, synced);
         } catch (IOException e) {
             log.debug("未找到内置工作流资源目录: error={}", e.getMessage());
         }

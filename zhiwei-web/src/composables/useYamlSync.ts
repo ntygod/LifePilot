@@ -144,6 +144,14 @@ function serializeStep(step: StepModel): Record<string, unknown> {
       obj.autoApproveOnTimeout = c.autoApproveOnTimeout
       break
     }
+    case 'notify': {
+      const c = config as NotifyStepConfig
+      obj.targetUserId = c.targetUserId
+      obj.content = c.content
+      obj.contentType = c.contentType
+      obj.urgency = c.urgency
+      break
+    }
     case 'noop':
       // 无额外字段
       break
@@ -282,6 +290,13 @@ function deserializeConfig(type: StepType, obj: Record<string, unknown>): StepCo
         approvers: toStringArray(obj.approvers),
         timeoutSeconds: toNumber(obj.timeoutSeconds, 3600),
         autoApproveOnTimeout: Boolean(obj.autoApproveOnTimeout ?? false),
+      }
+    case 'notify':
+      return {
+        targetUserId: String(obj.targetUserId ?? ''),
+        content: String(obj.content ?? ''),
+        contentType: String(obj.contentType ?? 'TEXT'),
+        urgency: String(obj.urgency ?? 'NORMAL'),
       }
     case 'noop':
     default:

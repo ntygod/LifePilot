@@ -51,7 +51,21 @@ import type {
   ToolDailyTrend,
   ToolAnalyticsResponse,
   ErrorTrendDaily,
-  McpConnectionLog
+  McpConnectionLog,
+  // 工作流成熟化新增类型
+  WorkflowStats,
+  StepStats,
+  DailyTrend,
+  StepOutput,
+  DagData,
+  DagNode,
+  DagEdge,
+  DryRunResult,
+  DryRunStepTrace,
+  ValidationResponse,
+  StepTypeSchema,
+  ParamSchema,
+  OptionItem
 } from '@/types'
 import { mapBackendMessage } from '@/utils/a2ui'
 
@@ -794,6 +808,90 @@ export const workflowApi = {
   /** 获取实例步骤执行日志 */
   getStepLogs(instanceId: string): Promise<StepLog[]> {
     return request(`/workflows/executions/${instanceId}/step-logs`)
+  },
+
+  // ========== 新增 API：工作流成熟化需求 ==========
+
+  /** 获取工作流执行统计 */
+  getStats(id: string): Promise<WorkflowStats> {
+    return request(`/workflows/${id}/stats`)
+  },
+
+  /** 获取工作流步骤统计 */
+  getStepStats(id: string): Promise<StepStats[]> {
+    return request(`/workflows/${id}/step-stats`)
+  },
+
+  /** 获取执行实例的完整上下文 */
+  getExecutionContext(instanceId: string): Promise<Record<string, unknown>> {
+    return request(`/workflows/executions/${instanceId}/context`)
+  },
+
+  /** 获取指定步骤的输出 */
+  getStepOutput(instanceId: string, stepId: string): Promise<StepOutput> {
+    return request(`/workflows/executions/${instanceId}/steps/${stepId}/output`)
+  },
+
+  /** 获取工作流 DAG 依赖图数据 */
+  getDag(id: string): Promise<DagData> {
+    return request(`/workflows/${id}/dag`)
+  },
+
+  /** 试运行工作流 */
+  dryRun(id: string, inputs?: Record<string, unknown>): Promise<DryRunResult> {
+    return request(`/workflows/${id}/dry-run`, {
+      method: 'POST',
+      body: JSON.stringify({ inputs })
+    })
+  },
+
+  /** 校验 YAML 语法和语义 */
+  validateYaml(yaml: string): Promise<ValidationResponse> {
+    return request('/workflows/validate', {
+      method: 'POST',
+      body: JSON.stringify({ yamlContent: yaml })
+    })
+  },
+
+  /** 触发 Webhook */
+  triggerWebhook(id: string, body: Record<string, unknown>, signature?: string): Promise<WorkflowExecution> {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (signature) {
+      headers['X-Webhook-Signature'] = signature
+    }
+    return request(`/workflows/${id}/webhook`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body)
+    })
+  },
+
+  /** 导出单个工作流 */
+  exportWorkflow(id: string): Promise<{ id: string; yamlContent: string }> {
+    return request(`/workflows/${id}/export`)
+  },
+
+  /** 批量导出工作流 */
+  exportWorkflows(ids: string[]): Promise<Array<{ id: string; yamlContent: string }>> {
+    return request(`/workflows/export?ids=${ids.join(',')}`)
+  },
+
+  /** 导入工作流 */
+  importWorkflow(yamlContent: string): Promise<WorkflowDetail> {
+    return request('/workflows/import', {
+      method: 'POST',
+      body: JSON.stringify({ yamlContent })
+    })
+  },
+
+  /** 获取步骤类型参数 Schema */
+  getStepTypes(): Promise<StepTypeSchema[]> {
+    return request('/workflows/step-types')
+  },
+
+  /** 按标签筛选工作流列表 */
+  listByTag(tag: string): Promise<WorkflowItem[]> {
+    return request(`/workflows?tag=${encodeURIComponent(tag)}`)
   }
 }
 

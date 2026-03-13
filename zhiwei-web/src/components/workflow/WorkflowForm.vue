@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, onBeforeUnmount, onMounted } from 'vue'
 import type { WorkflowDetail } from '@/types'
+import type { ValidationResponse } from '@/types'
 import { workflowApi } from '@/api/client'
 import FormDialogShell from '@/components/common/FormDialogShell.vue'
 import { Button } from '@/components/ui/button'
@@ -28,6 +29,8 @@ const formData = ref({
 
 const loading = ref(false)
 const errors = ref<Record<string, string>>({})
+const validationResult = ref<ValidationResponse | null>(null)
+const validating = ref(false)
 
 type EditorTab = 'visual' | 'yaml'
 const editorTab = ref<EditorTab>(props.mode === 'create' ? 'visual' : 'yaml')
@@ -103,10 +106,36 @@ function validateYaml() {
   return Object.keys(errors.value).length === 0
 }
 
+async function validateWorkflow() {
+  validating.value = true
+  try {
+    validationResult.value = await workflowApi.validateYaml(formData.value.yaml)
+    return validationResult.value
+  } catch (e) {
+    console.error('校验失败:', e)
+    return null
+  } finally {
+    validating.value = false
+  }
+}
+
 async function handleSubmit() {
   if (!validateYaml()) {
     uiStore.showToast('error', '请先修正 YAML 配置')
     return
+  }
+
+  // 保存前先进行 YAML 校验
+  const result = await validateWorkflow()
+  if (result && !result.valid) {
+    // 有语法错误，阻止保存
+    uiStore.showToast('error', `YAML 语法错误: ${result.errors.join(', ')}`)
+    return
+  }
+
+  // 有警告但不阻止保存
+  if (result && result.warnings.length > 0) {
+    uiStore.showToast('warning', `存在 ${result.warnings.length} 个警告，请留意`)
   }
 
   loading.value = true

@@ -15,6 +15,7 @@ import {
   Circle,
   Clock,
   ShieldCheck,
+  Bell,
 } from 'lucide-vue-next'
 
 /** 步骤类型元数据 */
@@ -39,4 +40,5 @@ export const STEP_TYPE_META: Record<StepType, StepTypeMeta> = {
   'noop':         { icon: Circle,      label: '空操作',     description: '占位，不执行操作' },
   'wait':         { icon: Clock,       label: '等待步骤',   description: '等待指定时长' },
   'approval':     { icon: ShieldCheck, label: '审批步骤',   description: '暂停等待人工审批' },
+  'notify':       { icon: Bell,        label: '通知步骤',   description: '发送通知消息' },
 }

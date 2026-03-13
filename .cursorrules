@@ -1,305 +1,582 @@
-# ZhiWei Web UI 设计规范与开发指南
+# ZhiWei（知微）项目开发规范
 
-> 基于项目设计系统文档 (`docs/ui-design-optimization.md`) 和 UI/UX 最佳实践
+> 基于项目最新架构文档（`docs/ARCHITECTURE.md`）和实际技术栈
+> **最后更新**：2026-03
 
-## 项目技术栈
+---
 
-- **前端框架**: Vue 3 + Composition API + TypeScript
-- **UI 组件库**: shadcn-vue (New York 风格)
+## 一、项目技术栈总览
+
+### 后端（Spring Boot）
+- **语言**: Java 22（优先使用 Record、Sealed Interface、Pattern Matching、Virtual Thread）
+- **框架**: Spring Boot 3.5.3
+- **AI 集成**: Spring AI 1.1.2（Advisor 模式、MCP 支持、结构化输出）
+- **构建**: Maven 3.9.x
+- **数据库**: SQLite 3.49+（WAL 模式、FTS5 全文索引）+ sqlite-vec 0.1.x（向量存储）
+- **迁移**: Flyway 10.x
+
+### 前端（Vue 3 SPA）
+- **框架**: Vue 3.5+（Composition API + `<script setup lang="ts">`）
+- **UI 组件库**: **Reka UI 2.x**（不是 shadcn-vue）
 - **样式系统**: Tailwind CSS 4.x + CSS Variables
-- **状态管理**: Pinia
+- **状态管理**: Pinia 3.x
 - **路由**: Vue Router 4.x
 - **图标库**: lucide-vue-next
 - **构建工具**: Vite 6.x
 
-## 设计系统核心原则
+---
 
-### 1. 间距系统 (Spacing System)
+## 二、后端开发规范
 
-**基础单位**: 4px (0.25rem)
+### 2.1 Java 代码风格
 
-**标准刻度**:
-- `xs` = 4px (0.25rem)
-- `sm` = 8px (0.5rem)  
-- `md` = 16px (1rem)
-- `lg` = 24px (1.5rem)
-- `xl` = 32px (2rem)
-- `2xl` = 48px (3rem)
+**必须使用 Java 22 特性**：
+- **Record**：用于不可变数据传输对象（DTO）、事件封装
+- **Sealed Interface/Class**：用于有限状态机、策略模式
+- **Pattern Matching**：`instanceof` + switch 模式匹配
+- **Virtual Thread**：IO 密集型操作优先使用
 
-**使用规则**:
-- 组件内间距: `p-md` (16px) 或 `px-md py-sm` (16px/8px)
-- 组件间距: `gap-md` (16px) 或 `gap-lg` (24px)
-- 页面边距: `px-lg` (24px) 桌面端，`px-md` (16px) 移动端
-- 消息间距: 统一使用 `py-lg` (24px)
+```java
+// ✅ 正确：使用 Record 作为 DTO
+public record ChatRequest(String sessionId, List<Message> messages) {}
 
-**禁止**: 使用任意值如 `p-3`, `px-5` 等，必须使用标准刻度
+// ✅ 正确：Sealed Interface 限制实现
+public sealed interface AgentState permits IdleState, RunningState, WaitingState {
+    AgentState transition(Event event);
+}
 
-### 2. 排版系统 (Typography)
-
-**字体层级**:
-- Display/页面大标题: `text-3xl` (28-30px)
-- Page Title: `text-2xl` (24px) + `font-semibold` + `leading-tight`
-- Section Title: `text-xl` (20px) + `leading-snug`
-- Body 正文: `text-base` (16px) + `leading-normal`
-- Body 次要: `text-sm` (14px) + `leading-normal`
-- Meta 辅助: `text-xs` (12px) + `text-muted-foreground`
-
-**字重规范**:
-- 标题: `font-semibold` (600)
-- 小标题/标签: `font-medium` (500)
-- 正文: `font-normal` (400)
-- 禁止使用 `font-bold` (700)，除非极少数强烈强调场景
-
-**字体家族**:
-- 中文主字体: `system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif`
-- 等宽字体: `"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace`
-
-### 3. 配色系统 (Color System)
-
-**品牌风格**: 专业的 SaaS 蓝 + 中性灰，偏冷静、理性
-
-**色板结构** (遵循 shadcn-vue):
-- `background` / `foreground` - 页面背景/前景
-- `card` / `card-foreground` - 卡片背景/前景
-- `muted` / `muted-foreground` - 次要背景/文字
-- `primary` / `primary-foreground` - 主色/主色文字
-- `accent` / `accent-foreground` - 强调色/强调色文字
-- `destructive` / `destructive-foreground` - 危险色/危险色文字
-- `border` / `input` - 边框/输入框边框
-- `ring` - 焦点环颜色
-
-**对比度要求**:
-- 正文与背景: ≥ 4.5:1 (WCAG AA)
-- 大字号(≥18px)与背景: ≥ 3:1
-- 辅助文字仍需满足可读性，避免过浅
-
-**使用规范**:
-- `primary`: 主按钮、主要操作入口、用户消息气泡背景
-- `accent`: 选中态导航、侧边栏当前项、空状态高亮区域
-- `destructive`: 仅用于删除、危险操作
-- `muted`/`card`: AI 消息气泡背景、卡片背景、快捷提示
-
-### 4. 圆角系统 (Radius System)
-
-**圆角层级**:
-- `rounded-sm`: 4px - Tag、小徽标
-- `rounded-lg`: 8px - 按钮、卡片、小弹层
-- `rounded-2xl`: 16px - 消息气泡、输入框、空状态大卡片
-- `rounded-full`: 全圆 - 头像、圆形按钮、图标按钮
-
-**组件圆角规则**:
-- 消息气泡: 基础 `rounded-2xl` (16px)
-  - 用户消息: 右下角 `rounded-br-sm` (制造"尖角"效果)
-  - AI 消息: 左下角 `rounded-bl-sm`
-- 输入框: `rounded-2xl` (与消息气泡保持一致)
-- 侧边栏项/菜单项: `rounded-lg` (避免过度圆润)
-
-### 5. 阴影系统 (Elevation)
-
-**阴影层级**:
-- `shadow-sm`: 轻微浮起 - 消息气泡、选中态卡片
-- `shadow-md`: 模块卡片、弹出层
-- `shadow-lg`: 对话框、模态框
-- `shadow-xl`: 大型对话框
-
-**使用场景**:
-- 按钮 hover: `hover:shadow-md`
-- 卡片: `shadow-sm`
-- 弹出层: `shadow-md` 或 `shadow-lg`
-
-### 6. 布局约束 (Layout Constraints)
-
-**最大宽度**:
-- 消息内容区域: `max-w-[768px]` (ChatGPT 风格)
-- 整体容器: `max-w-[1200px]` (Claude 风格)
-
-**布局结构**:
-```vue
-<div class="flex flex-col h-full">
-  <div class="flex-1 overflow-y-auto">
-    <div class="max-w-[768px] mx-auto px-lg py-lg">
-      <!-- 消息列表 -->
-    </div>
-  </div>
-  <div class="border-t border-border bg-card">
-    <div class="max-w-[768px] mx-auto px-lg py-md">
-      <!-- 输入框 -->
-    </div>
-  </div>
-</div>
+// ✅ 正确：Pattern Matching
+public String describe(Object obj) {
+    return switch (obj) {
+        case String s -> "字符串: " + s;
+        case Number n -> "数字: " + n;
+        case null -> "空值";
+        default -> "未知类型";
+    };
+}
 ```
 
-**侧边栏宽度**: `--sidebar-width: 260px`
+**禁止事项**：
+- 禁止使用 Lombok `@Data`（改用 Record 或手动定义 getter/setter）
+- 禁止使用 `public` 字段暴露数据（使用封装）
+- 禁止魔法数字/字符串（使用常量枚举或配置类）
 
-### 7. 交互与动效 (Interaction & Motion)
+### 2.2 包结构规范
 
-**动画原则**:
-- 时长: 150-250ms 为主，不超过 300ms
-- 缓动: `cubic-bezier(0.22, 0.61, 0.36, 1)` (ease-out)
-- 有意义: 只为状态变化、层级变化添加动效
+```
+com.lifepilot/
+├── llm/              # 多模型路由、熔断器、故障转移
+├── agent/            # Agent 控制循环、状态机、上下文组装
+├── tool/             # 工具契约、动态注册、执行管道
+├── guardrail/        # 安全护栏策略
+├── mcp/              # Model Context Protocol 客户端/服务器
+├── memory/           # 四层记忆（工作/情景/语义/程序）
+├── knowledge/        # 知识库、文档解析、检索
+├── skill/            # Skill 注册、热加载、自扩展
+├── interaction/      # CLI/Web/Channel 适配器
+├── conversation/     # 对话历史、会话管理
+├── datastore/        # 通用数据存储（Schema-Free JSON）
+├── workflow/         # YAML 声明式工作流
+├── sandbox/          # 代码执行沙箱
+├── media/            # 多模态处理
+├── sync/             # 外部数据源同步
+├── eval/             # Agentic Evals 评估框架
+├── multiagent/       # 多 Agent 协作
+├── a2a/              # A2A 协议实现
+├── marketplace/      # 插件市场
+├── meta/             # 元能力
+├── prompt/           # Prompt 模板管理
+├── notification/     # 统一通知系统
+├── observability/    # 轨迹记录、可观测性
+└── config/           # 全局配置
+```
 
-**关键场景**:
-- 按钮 hover: `transition-all duration-200 hover:bg-primary/90 hover:shadow-md`
-- 消息出现: 淡入 + 轻微位移 (`animate-fade-in-up`)
-- Focus 状态: `focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2`
-- Active 状态: `active:scale-[0.98]`
+### 2.3 命名与注释规范
 
-**禁止事项**:
-- 禁止长时间(>500ms)且无意义的 Loading 动画
-- 禁止频繁闪烁、高饱和度的动效
-- 禁止大面积位移造成"页面抖动"
+**命名规则**：
+- 类名/接口名：PascalCase（`AgentLoop`、`MemoryService`）
+- 方法名/变量名：camelCase（`getSession`、`chatHistory`）
+- 常量：SCREAMING_SNAKE_CASE（`MAX_RETRY_COUNT`）
+- 包名：全小写（`com.lifepilot.agent`）
 
-### 8. 响应式设计 (Responsive)
+**注释规范**：
+- **必须使用中文注释**
+- 类和方法使用 Javadoc 风格注释，说明业务意图
+- 复杂逻辑添加行内注释说明
+- 日志使用中文，清晰说明操作上下文
 
-**断点策略** (Tailwind 默认):
-- `sm`: 640px
-- `md`: 768px
-- `lg`: 1024px
-- `xl`: 1280px
+```java
+/**
+ * Agent 控制循环，负责协调工具调用和 LLM 响应
+ * 
+ * 工作流程：
+ * 1. 接收用户消息
+ * 2. 组装上下文（记忆检索 + 对话压缩）
+ * 3. 调用 LLM 生成响应
+ * 4. 处理工具调用请求
+ * 5. 返回结果或继续循环
+ */
+public class AgentLoop {
+    /**
+     * 执行单轮对话
+     *
+     * @param sessionId 会话 ID
+     * @param userMessage 用户消息
+     * @return Agent 响应
+     */
+    public AgentResponse execute(String sessionId, String userMessage) {
+        log.info("开始处理会话 {} 的用户消息", sessionId);
+        // ... 实现逻辑
+    }
+}
+```
 
-**布局规则**:
-- ≤ `md`: 侧边栏默认折叠，内容宽度 `px-md` (16px)
-- ≥ `lg`: 启用固定侧边栏 + 内容区域，最大宽度 1200px
-- 消息列表: 始终使用 `max-w-[768px] mx-auto`
+### 2.4 日志规范
 
-**滚动与高度**:
-- 主布局: `h-screen`，顶部/底部固定，中间 `overflow-y-auto`
-- 避免双滚动条
+- 使用 SLF4J + Logback
+- 日志级别使用：
+  - `ERROR`：业务异常需要干预
+  - `WARN`：可恢复的异常或需要关注
+  - `INFO`：关键业务流程（用户交互、工具调用、LLM 请求）
+  - `DEBUG`：开发调试信息
+- 禁止在日志中打印敏感信息（密码、Token、个人隐私）
 
-### 9. 图标规范 (Iconography)
+```java
+// ✅ 正确：结构化日志
+log.info("用户 {} 开始新会话，会话ID: {}", userId, sessionId);
+log.warn("LLM 调用失败，尝试第 {} 次重试", retryCount);
+log.error("工具 {} 执行异常: {}", toolName, e.getMessage(), e);
 
-**图标风格**:
-- 使用线性 SVG 图标 (lucide-vue-next 风格)
-- 线宽统一: `stroke-width="1.5"` 或 `2`
-- 拐角圆润: `stroke-linecap="round"` + `stroke-linejoin="round"`
+// ❌ 错误：日志级别不当
+log.info("收到请求");  // 太泛
+log.error("连接数据库", e);  // 非关键错误用 WARN
+```
 
-**尺寸规范**:
-- 按钮图标: `w-4 h-4` (16px)
-- 导航图标: `w-4 h-4` 或 `w-5 h-5` (16px/20px)
-- 空状态图标: `w-8 h-8` (32px)
-- 与文字间距: `gap-2` (8px)
+### 2.5 数据库规范
 
-**禁止**: 使用 emoji 作为图标，必须使用 SVG
+**Flyway 迁移脚本**：
+- 位置：`src/main/resources/db/migration/`
+- 命名格式：`V{版本号}__{描述}.sql`
+- 示例：`V57__create_notification_history.sql`
 
-### 10. 组件规范 (Component Guidelines)
+```sql
+-- ✅ 正确：包含注释说明业务意图
+-- 通知历史表：存储所有发送过的通知记录
+-- 用于通知重发、未读统计、用户通知偏好设置
+CREATE TABLE notification_history (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    urgency TEXT NOT NULL CHECK (urgency IN ('HIGH', 'MEDIUM', 'LOW')),
+    content TEXT NOT NULL,
+    sent_at TEXT NOT NULL,
+    read_at TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+);
 
-#### Chat 消息 (MessageBubble)
-- 圆角: `rounded-2xl` (16px)，角色方向圆角差异
-- 间距: 外 `py-lg` (24px)，内 `px-4 py-3` (16px/12px)
-- 头像: `gap-2` (8px) 间距，AI/用户配色区分
-- 用户消息: 右对齐，`bg-primary text-primary-foreground`，右下角 `rounded-br-sm`
-- AI 消息: 左对齐，`bg-muted text-foreground`，左下角 `rounded-bl-sm`
+-- 创建索引加速查询
+CREATE INDEX idx_notification_session ON notification_history(session_id);
+CREATE INDEX idx_notification_urgency ON notification_history(urgency);
+```
 
-#### 输入框 (ChatInput)
-- 多行、自动扩展，高度 `min-h-[52px] max-h-[200px]`
-- 圆角: `rounded-2xl` (16px)
-- 内边距: `px-4 py-3` (16px/12px)
-- 右侧圆形发送按钮: `rounded-full w-10 h-10`
-- Focus: `focus:ring-2 focus:ring-ring focus:border-transparent`
+**SQL 编码规范**：
+- 关键字大写：`SELECT`、`FROM`、`WHERE`
+- 表名/列名：snake_case
+- 避免 `SELECT *`，明确列出需要的列
+- 使用参数化查询防止 SQL 注入
 
-#### 侧边栏 (Sidebar)
-- 宽度: `w-[260px]` (使用 `--sidebar-width` 变量)
-- 背景: `bg-card/50 backdrop-blur-sm` (半透明 + 模糊)
-- 会话项: `rounded-lg`，hover/active 状态一致
-- 选中态: `bg-accent text-accent-foreground shadow-sm`
+### 2.6 API 设计规范
 
-#### 按钮 (Button)
-- 基础样式: `rounded-lg px-4 py-2 text-sm font-medium`
-- 主按钮: `bg-primary text-primary-foreground`
-- Hover: `hover:bg-primary/90 hover:shadow-md`
-- Focus: `focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2`
-- Active: `active:scale-[0.98]`
-- Disabled: `disabled:opacity-50 disabled:cursor-not-allowed`
+参考 `docs/API_STANDARD.md`，核心原则：
 
-#### 空状态 (Empty State)
-- 图标 + 标题 + 描述 + 建议操作
-- 图标容器: `w-16 h-16 rounded-full bg-primary/10`
-- 标题: `text-xl font-semibold`
-- 描述: `text-sm text-muted-foreground max-w-md`
-- 建议按钮: `px-4 py-2 rounded-lg bg-muted text-muted-foreground hover:bg-accent`
+- RESTful 风格，资源命名使用名词复数
+- 响应格式统一：`{ code, message, data }`
+- 分页响应：`{ items: [], total, page, pageSize }`
+- 错误响应：包含错误码和用户友好消息
+- 列表接口支持排序和过滤参数
 
-### 11. 无障碍与可用性 (Accessibility)
+```java
+// ✅ 正确：统一的 API 响应格式
+public record ApiResponse<T>(int code, String message, T data) {
+    public static <T> ApiResponse<T> success(T data) {
+        return new ApiResponse<>(0, "success", data);
+    }
+    
+    public static <T> ApiResponse<T> error(int code, String message) {
+        return new ApiResponse<>(code, message, null);
+    }
+}
+```
 
-**键盘操作**:
-- 所有可交互元素可通过 `Tab` 访问
-- 使用 `focus-visible` 或 `focus:ring` 提供明显焦点样式
-- 输入框支持: `Enter` 发送，`Shift+Enter` 换行
+### 2.7 测试规范
 
-**状态反馈**:
-- 加载: 骨架屏 / Loading 指示器
-- 成功: 轻量提示或状态变化
-- 错误: 红色文本 + 适度图标，定位在错误字段附近
+- 单元测试：JUnit 5 + Mockito
+- 集成测试：Spring Boot Test
+- 测试方法名使用中文，描述测试场景
+- 测试类放在 `src/test/java` 对应包下
 
-**文案规范**:
-- 占位符使用具体示例句，避免"请输入内容"
-- 错误提示说明原因与解决方式
+```java
+/**
+ * AgentLoop 单元测试
+ */
+class AgentLoopTest {
+    
+    @Test
+    void 应该正确处理用户消息并返回响应() {
+        // given
+        String sessionId = "test-session";
+        String userMessage = "帮我创建一个待办";
+        
+        // when
+        AgentResponse response = agentLoop.execute(sessionId, userMessage);
+        
+        // then
+        assertThat(response).isNotNull();
+        assertThat(response.content()).isNotEmpty();
+    }
+    
+    @Test
+    void 应该在工具调用失败时重试() {
+        // given
+        when(toolExecutor.execute(any())).thenThrow(new ToolException("模拟失败"));
+        
+        // when & then
+        assertThatThrownBy(() -> agentLoop.execute("session", "message"))
+            .isInstanceOf(AgentException.class);
+    }
+}
+```
 
-### 12. 代码规范
+---
 
-**Vue 3 Composition API**:
-- 使用 `<script setup lang="ts">`
-- Props 使用 `defineProps<T>()` 或 `withDefaults(defineProps<T>(), {...})`
-- Emits 使用 `defineEmits<T>()`
-- 响应式数据优先使用 `ref`，复杂对象使用 `reactive` 或 `ref`
+## 三、前端开发规范
 
-**样式类名**:
-- 优先使用 Tailwind 工具类
-- 复杂样式使用 CSS Variables (`var(--spacing-md)`)
-- 避免内联样式，除非动态值
+### 3.1 技术栈确认
 
-**组件命名**:
-- PascalCase: `MessageBubble.vue`, `ChatInput.vue`
-- 文件名与组件名保持一致
+> **重要**：项目使用的是 **Reka UI**，不是 shadcn-vue！
 
-**类型定义**:
-- 使用 TypeScript 严格模式
-- 接口定义放在 `src/types/index.ts`
-- Props/Emits 使用 TypeScript 类型
+```javascript
+// package.json 关键依赖
+{
+  "reka-ui": "^2.9.0",
+  "tailwindcss": "^4.1.7",
+  "vue": "^3.5.13",
+  "pinia": "^3.0.2",
+  "vue-router": "^4.5.0"
+}
+```
 
-### 13. UI/UX 最佳实践
+### 3.2 Vue 3 组件规范
 
-**视觉层次**:
-- 使用颜色、大小、字重建立清晰的视觉层次
-- 重要信息使用 `font-semibold` + `text-foreground`
-- 次要信息使用 `text-muted-foreground`
+**组件结构**：
+```vue
+<script setup lang="ts">
+import { ref, computed, onMounted } from 'vue'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import type { User } from '@/types'
 
-**一致性**:
-- 相同功能的组件使用相同的样式
-- 间距、圆角、颜色保持一致
-- 交互反馈保持一致
+// Props 定义
+interface Props {
+  title: string
+  items?: User[]
+  loading?: boolean
+}
 
-**性能优化**:
-- 使用 `v-show` 而非 `v-if` 用于频繁切换的显示/隐藏
-- 长列表使用虚拟滚动
-- 图片使用懒加载
+const props = withDefaults(defineProps<Props>(), {
+  items: () => [],
+  loading: false
+})
 
-**用户体验**:
-- 提供即时反馈（按钮点击、表单提交）
-- 使用骨架屏而非空白加载状态
-- 错误信息清晰、可操作
-- 空状态提供引导和操作建议
+// Emits 定义
+const emit = defineEmits<{
+  select: [user: User]
+  refresh: []
+}>()
 
-## 开发检查清单
+// 响应式状态
+const searchQuery = ref('')
 
-在提交代码前，确保:
+// 计算属性
+const filteredItems = computed(() => 
+  props.items.filter(item => 
+    item.name.includes(searchQuery.value)
+  )
+)
 
-- [ ] 间距使用标准刻度 (xs/sm/md/lg/xl/2xl)
-- [ ] 字体大小符合排版系统规范
-- [ ] 颜色使用设计系统色板，不使用硬编码颜色
-- [ ] 圆角使用标准层级 (sm/lg/2xl/full)
-- [ ] 按钮有完整的 hover/focus/active/disabled 状态
-- [ ] 响应式设计在移动端和桌面端都正常
-- [ ] 所有可交互元素有焦点样式
-- [ ] 动画时长不超过 300ms
-- [ ] 图标使用 SVG，不使用 emoji
-- [ ] 空状态有图标、标题、描述和建议操作
-- [ ] TypeScript 类型定义完整
-- [ ] 代码通过 ESLint 检查
+// 生命周期
+onMounted(() => {
+  console.log('组件挂载')
+})
 
-## 参考文档
+// 方法
+function handleSelect(user: User) {
+  emit('select', user)
+}
+</script>
 
-- 项目设计系统: `docs/ui-design-optimization.md`
-- Web UI 架构: `docs/architecture/web-ui.md`
-- shadcn-vue 文档: https://www.shadcn-vue.com/
-- Tailwind CSS 文档: https://tailwindcss.com/docs
-- Vue 3 文档: https://vuejs.org/
+<template>
+  <div class="flex flex-col gap-md">
+    <Input 
+      v-model="searchQuery"
+      placeholder="搜索用户..."
+    />
+    <div class="flex gap-sm">
+      <Button 
+        v-for="item in filteredItems"
+        :key="item.id"
+        @click="handleSelect(item)"
+      >
+        {{ item.name }}
+      </Button>
+    </div>
+  </div>
+</template>
+```
+
+### 3.3 样式规范
+
+**使用 Tailwind CSS 4.x 标准刻度**：
+
+| 刻度 | CSS | 用途 |
+|------|-----|------|
+| `xs` | 4px (0.25rem) | 微小间距 |
+| `sm` | 8px (0.5rem) | 组件内紧凑间距 |
+| `md` | 16px (1rem) | 组件内标准间距 |
+| `lg` | 24px (1.5rem) | 组件间标准间距 |
+| `xl` | 32px (2rem) | 区块间间距 |
+| `2xl` | 48px (3rem) | 大区块间距 |
+
+**禁止**：使用 `p-3`、`px-5` 等任意值，必须使用标准刻度
+
+**排版层级**：
+- 页面大标题：`text-3xl font-semibold`
+- 页面标题：`text-2xl font-semibold leading-tight`
+- 区块标题：`text-xl font-semibold leading-snug`
+- 正文：`text-base font-normal`
+- 次要文字：`text-sm text-muted-foreground`
+- 辅助信息：`text-xs text-muted-foreground`
+
+**组件圆角**：
+- Tag/徽标：`rounded-sm`（4px）
+- 按钮/卡片：`rounded-lg`（8px）
+- 消息气泡/输入框：`rounded-2xl`（16px）
+- 头像/图标按钮：`rounded-full`
+
+### 3.4 Reka UI 组件使用
+
+```vue
+<script setup>
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter 
+} from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
+</script>
+
+<template>
+  <Dialog>
+    <DialogContent>
+      <DialogHeader>
+        <DialogTitle>确认删除</DialogTitle>
+        <DialogDescription>
+          此操作不可撤销，确定要删除吗？
+        </DialogDescription>
+      </DialogHeader>
+      <DialogFooter>
+        <Button variant="outline">取消</Button>
+        <Button variant="destructive">删除</Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
+</template>
+```
+
+### 3.5 状态管理（Pinia）
+
+```typescript
+// stores/chat.ts
+import { defineStore } from 'pinia'
+import { ref, computed } from 'vue'
+import type { Message, Session } from '@/types'
+
+export const useChatStore = defineStore('chat', () => {
+  // 状态
+  const sessions = ref<Session[]>([])
+  const currentSessionId = ref<string | null>(null)
+  const messages = ref<Message[]>([])
+  const loading = ref(false)
+  
+  // 计算属性
+  const currentSession = computed(() => 
+    sessions.value.find(s => s.id === currentSessionId.value)
+  )
+  
+  // Actions
+  async function sendMessage(content: string) {
+    loading.value = true
+    try {
+      // 发送消息逻辑
+    } finally {
+      loading.value = false
+    }
+  }
+  
+  return {
+    sessions,
+    currentSessionId,
+    messages,
+    loading,
+    currentSession,
+    sendMessage
+  }
+})
+```
+
+### 3.6 路由规范
+
+```typescript
+// router/index.ts
+import { createRouter, createWebHistory } from 'vue-router'
+
+const routes = [
+  {
+    path: '/',
+    name: 'home',
+    component: () => import('@/views/HomeView.vue')
+  },
+  {
+    path: '/chat/:sessionId?',
+    name: 'chat',
+    component: () => import('@/views/ChatView.vue')
+  },
+  {
+    path: '/settings',
+    name: 'settings',
+    component: () => import('@/views/SettingsView.vue'),
+    meta: { title: '设置' }
+  }
+]
+
+const router = createRouter({
+  history: createWebHistory(),
+  routes
+})
+
+export default router
+```
+
+---
+
+## 四、Git 提交规范
+
+### 4.1 提交消息格式
+
+```
+<type>(<scope>): <中文描述>
+
+[可选的正文]
+
+[可选的脚注]
+```
+
+**Type 类型**：
+- `feat`: 新功能
+- `fix`: Bug 修复
+- `docs`: 文档更新
+- `style`: 样式调整（不影响功能）
+- `refactor`: 重构（既不是新功能也不是修复）
+- `test`: 测试相关
+- `chore`: 构建/工具链更新
+
+**示例**：
+```
+feat(agent): 添加主动推理引擎的信号采集能力
+
+实现了两阶段推理机制：
+1. 规则快速过滤
+2. LLM 精细判断
+
+Closes #123
+```
+
+### 4.2 分支命名
+
+- 特性分支：`feature/<功能名>`
+- 修复分支：`fix/<问题描述>`
+- 热修复分支：`hotfix/<问题描述>`
+
+---
+
+## 五、开发工作流
+
+### 5.1 后端开发
+
+```bash
+# 启动后端开发服务器
+mvn spring-boot:run
+
+# 运行测试
+mvn test
+
+# 构建 JAR
+mvn clean package -DskipTests
+```
+
+### 5.2 前端开发
+
+```bash
+cd zhiwei-web
+
+# 安装依赖
+npm install
+
+# 启动开发服务器（默认 localhost:5173）
+npm run dev
+
+# 运行测试
+npm run test:run
+
+# 构建生产版本
+npm run build
+```
+
+---
+
+## 六、参考文档
+
+- 架构总览：`docs/ARCHITECTURE.md`
+- API 标准：`docs/API_STANDARD.md`
+- 记忆系统：`docs/architecture/memory-system.md`
+- Agent 引擎：`docs/architecture/agent-engine.md`
+- Skill 系统：`docs/architecture/skill-system.md`
+- Reka UI 文档：https://reka-ui.com/
+- Tailwind CSS：https://tailwindcss.com/docs
+- Vue 3 文档：https://vuejs.org/
+
+---
+
+## 七、开发检查清单
+
+### 后端
+- [ ] 使用 Java 22 特性（Record、Sealed、Pattern Matching）
+- [ ] 使用中文注释和中文日志
+- [ ] 数据库迁移脚本包含业务说明
+- [ ] API 响应格式统一
+- [ ] 测试覆盖核心逻辑
+- [ ] 提交消息符合规范
+
+### 前端
+- [ ] 使用 Reka UI（不是 shadcn-vue）
+- [ ] 样式使用标准刻度（xs/sm/md/lg/xl/2xl）
+- [ ] 排版符合层级规范
+- [ ] 组件使用 TypeScript 类型
+- [ ] 状态管理使用 Pinia
+- [ ] 响应式设计适配移动端
+
+---
+
+> 本规范覆盖项目前后端完整开发指导，如有不一致处，以实际代码和最新文档为准。

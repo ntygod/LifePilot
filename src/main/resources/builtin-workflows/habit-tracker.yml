@@ -1,0 +1,93 @@
+id: habit-tracker
+name: 习惯追踪周报
+description: 每周汇总习惯追踪数据，分析习惯坚持情况，生成改进建议并发送通知
+version: "1.0"
+triggers:
+  - type: cron
+    cron: "0 0 9 * * 1"
+inputs:
+  habitNames:
+    type: string
+    required: false
+    defaultValue: ""
+    description: 要追踪的习惯名称列表（逗号分隔，空则追踪所有）
+metadata:
+  category: 自我提升
+  complexity: beginner
+steps:
+  - id: fetch-habit-data
+    name: 获取习惯数据
+    type: skill
+    skillId: habit
+    params:
+      operation: report
+      period: last-7-days
+
+  - id: analyze-habits
+    name: 分析习惯数据
+    type: llm
+    scene: agent_reasoning
+    capability: STRUCTURED_OUTPUT
+    outputSchema: |
+      {
+        "type": "object",
+        "properties": {
+          "completionRate": { "type": "number" },
+          "bestHabit": { "type": "string" },
+          "needsImprovement": { "type": "array" },
+          "suggestions": { "type": "array" }
+        },
+        "required": ["completionRate", "bestHabit", "needsImprovement", "suggestions"]
+      }
+    prompt: |
+      请分析以下习惯追踪数据：
+
+      ${steps.fetch-habit-data.output.result}
+
+      输出 JSON：
+      {
+        "completionRate": 完成率百分比,
+        "bestHabit": 表现最好的习惯,
+        "needsImprovement": ["需要改进的习惯列表"],
+        "suggestions": ["改进建议列表"]
+      }
+    dependsOn:
+      - fetch-habit-data
+
+  - id: generate-motivation
+    name: 生成鼓励文案
+    type: llm
+    scene: agent_reasoning
+    capability: CHAT
+    prompt: |
+      基于以下习惯分析数据，生成一段鼓励的话：
+
+      ${steps.analyze-habits.output.result}
+    dependsOn:
+      - analyze-habits
+
+  - id: send-habit-report
+    name: 发送习惯周报
+    type: notify
+    targetUserId: owner
+    content: |
+      ## 本周习惯追踪报告
+
+      完成率：${steps.analyze-habits.output.result.completionRate}%
+      
+      表现最佳：${steps.analyze-habits.output.result.bestHabit}
+      
+      需要改进：
+      ${steps.analyze-habits.output.result.needsImprovement}
+      
+      改进建议：
+      ${steps.analyze-habits.output.result.suggestions}
+
+      ${steps.generate-motivation.output.result}
+    contentType: MARKDOWN
+    urgency: LOW
+    dependsOn:
+      - analyze-habits
+    errorStrategy:
+      type: skip
+      reason: 通知发送失败不影响流程

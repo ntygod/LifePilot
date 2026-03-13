@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { ArrowLeft, ChevronDown, ChevronRight, Copy, Edit2, PauseCircle, Play, Plus, Sparkles, Trash2, Workflow } from 'lucide-vue-next'
+import { ArrowLeft, ChevronDown, ChevronRight, Copy, Download, Edit2, Info, PauseCircle, Play, Plus, Sparkles, Trash2, Upload, Workflow } from 'lucide-vue-next'
 import { useWorkflowExecutionStream } from '@/composables/useWorkflowExecutionStream'
+import { workflowApi } from '@/api/client'
 import { useWorkflowStore } from '@/stores/workflow'
 import { useUiStore } from '@/stores/ui'
 import type { WorkflowDetail, WorkflowInputParam, WorkflowItem } from '@/types'
@@ -15,12 +16,27 @@ import PageHeader from '@/components/layout/PageHeader.vue'
 import PageSection from '@/components/layout/PageSection.vue'
 import WorkflowForm from '@/components/workflow/WorkflowForm.vue'
 import WorkflowInputDialog from '@/components/workflow/WorkflowInputDialog.vue'
+import DryRunDialog from '@/components/workflow/DryRunDialog.vue'
 import ExecutionDetail from '@/components/workflow/ExecutionDetail.vue'
 import StepDetailCard from '@/components/workflow/StepDetailCard.vue'
+import StepTypeSchemaPanel from '@/components/workflow/StepTypeSchemaPanel.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 const store = useWorkflowStore()
 const uiStore = useUiStore()
@@ -35,12 +51,115 @@ const activeTab = ref<'detail' | 'executions'>('detail')
 const triggerLoading = ref(false)
 const showForm = ref(false)
 const showInputDialog = ref(false)
+const showDryRunDialog = ref(false)
 const formMode = ref<'create' | 'edit' | 'duplicate'>('create')
 const selectedWorkflow = ref<WorkflowDetail | null>(null)
 const showDeleteConfirm = ref(false)
 const expandedExecId = ref<string | null>(null)
 const triggerFormError = ref<string | null>(null)
 const triggerFieldErrors = ref<Record<string, string>>({})
+
+// 标签筛选
+const selectedTag = ref<string>('')
+const availableTags = computed(() => {
+  const tags = new Set<string>()
+  store.list.forEach(w => (w.tags ?? []).forEach(t => tags.add(t)))
+  return Array.from(tags).sort()
+})
+const filteredList = computed(() => {
+  if (!selectedTag.value) return store.list
+  return store.list.filter(w => (w.tags ?? []).includes(selectedTag.value))
+})
+
+// 导入导出
+const importLoading = ref(false)
+const exportLoading = ref(false)
+const showSchemaPanel = ref(false)
+
+async function handleExport(workflowId: string) {
+  exportLoading.value = true
+  try {
+    const result = await workflowApi.exportWorkflow(workflowId)
+    // 创建下载链接
+    const blob = new Blob([result.yamlContent], { type: 'text/yaml' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${result.id}.yaml`
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch (e) {
+    console.error('导出失败:', e)
+  } finally {
+    exportLoading.value = false
+  }
+}
+
+async function handleBatchExport() {
+  if (filteredList.value.length === 0) return
+  exportLoading.value = true
+  try {
+    const ids = filteredList.value.map(w => w.id)
+    const results = await workflowApi.exportWorkflows(ids)
+    // 批量下载为 JSON 文件
+    const blob = new Blob([JSON.stringify(results, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `workflows-export-${new Date().toISOString().slice(0, 10)}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch (e) {
+    console.error('批量导出失败:', e)
+  } finally {
+    exportLoading.value = false
+  }
+}
+
+/** 从详情区点击「导入」时触发文件选择 */
+function triggerImportFromDetail() {
+  const input = document.createElement('input')
+  input.type = 'file'
+  input.accept = '.yaml,.yml,.json'
+  input.onchange = (e: Event) => handleImport(e)
+  input.click()
+}
+
+async function handleImport(event: Event) {
+  const input = event.target as HTMLInputElement
+  if (!input.files || input.files.length === 0) return
+
+  importLoading.value = true
+  try {
+    const file = input.files[0]
+    const content = await file.text()
+
+    // 判断是 YAML 还是 JSON
+    let yamlContent = content
+    if (file.name.endsWith('.json')) {
+      // JSON 文件可能是批量导出格式
+      const data = JSON.parse(content)
+      if (Array.isArray(data)) {
+        // 批量导入，依次导入每个
+        for (const item of data) {
+          if (item.yamlContent) {
+            await workflowApi.importWorkflow(item.yamlContent)
+          }
+        }
+        await store.fetchList()
+        return
+      }
+    }
+
+    await workflowApi.importWorkflow(yamlContent)
+    await store.fetchList()
+  } catch (e) {
+    console.error('导入失败:', e)
+  } finally {
+    importLoading.value = false
+    input.value = ''
+  }
+}
 
 const EXEC_PAGE_SIZE = 10
 const execPage = ref(0)
@@ -330,6 +449,10 @@ onBeforeUnmount(() => {
                 <Plus class="size-4" />
                 新建工作流
               </Button>
+              <Button variant="outline" @click="showSchemaPanel = true">
+                <Info class="size-4" />
+                步骤类型
+              </Button>
             </template>
 
             <template #meta>
@@ -378,6 +501,49 @@ onBeforeUnmount(() => {
             title="可用工作流"
             description="浏览工作流定义和触发器类型，选择要继续处理的流程。"
           >
+            <!-- 标签筛选 -->
+            <div v-if="availableTags.length > 0" class="mb-4 flex items-center gap-2">
+              <span class="text-sm text-muted-foreground">标签筛选:</span>
+              <Select v-model="selectedTag">
+                <SelectTrigger class="w-40">
+                  <SelectValue placeholder="全部" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">全部</SelectItem>
+                  <SelectItem v-for="tag in availableTags" :key="tag" :value="tag">
+                    {{ tag }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <span v-if="selectedTag" class="text-xs text-muted-foreground">
+                (已筛选: {{ filteredList.length }} 个)
+              </span>
+              <!-- 批量操作按钮 -->
+              <DropdownMenu>
+                <DropdownMenuTrigger as-child>
+                  <Button variant="outline" size="sm" class="ml-auto">
+                    批量操作
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent>
+                  <DropdownMenuItem @click="handleBatchExport">
+                    批量导出
+                  </DropdownMenuItem>
+                  <DropdownMenuItem as-label>
+                    <label class="flex cursor-pointer items-center">
+                      导入工作流
+                      <input
+                        type="file"
+                        accept=".yaml,.yml,.json"
+                        class="hidden"
+                        @change="handleImport"
+                      >
+                    </label>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+
             <div v-if="store.loading" class="grid gap-4 xl:grid-cols-2">
               <div
                 v-for="index in 4"
@@ -413,7 +579,7 @@ onBeforeUnmount(() => {
 
             <div v-else class="grid gap-4 xl:grid-cols-2">
               <article
-                v-for="workflow in store.list"
+                v-for="workflow in filteredList"
                 :key="workflow.id"
                 class="list-card cursor-pointer p-5"
                 @click="selectWorkflow(workflow)"
@@ -446,6 +612,17 @@ onBeforeUnmount(() => {
                         variant="outline"
                       >
                         {{ trigger }}
+                      </Badge>
+                    </div>
+                    <!-- 标签展示 -->
+                    <div v-if="workflow.tags?.length" class="flex flex-wrap gap-1 mt-2">
+                      <Badge
+                        v-for="tag in workflow.tags ?? []"
+                        :key="`${workflow.id}-tag-${tag}`"
+                        variant="secondary"
+                        class="text-xs"
+                      >
+                        {{ tag }}
                       </Badge>
                     </div>
                   </div>
@@ -487,27 +664,39 @@ onBeforeUnmount(() => {
                 </div>
               </div>
 
-              <div class="flex flex-wrap items-center gap-3">
-                <Button variant="outline" @click="backToList">
+              <div class="flex flex-wrap items-center gap-2 overflow-x-auto pb-1 md:gap-3">
+                <Button variant="outline" size="sm" class="shrink-0" @click="backToList">
                   <ArrowLeft class="size-4" />
                   返回列表
                 </Button>
-                <Button variant="outline" @click="handleToggle(store.current.id, store.current.enabled)">
+                <Button variant="outline" size="sm" class="shrink-0" @click="handleToggle(store.current.id, store.current.enabled)">
                   {{ store.current.enabled ? '禁用' : '启用' }}
                 </Button>
-                <Button :disabled="!store.current.enabled || triggerLoading" @click="handleTrigger(store.current.id)">
+                <Button variant="outline" size="sm" class="shrink-0" @click="showDryRunDialog = true">
+                  <Play class="size-4" />
+                  试运行
+                </Button>
+                <Button size="sm" class="shrink-0" :disabled="!store.current.enabled || triggerLoading" @click="handleTrigger(store.current.id)">
                   <Play class="size-4" />
                   {{ triggerLoading ? '触发中...' : '立即触发' }}
                 </Button>
-                <Button variant="outline" @click="openEdit">
+                <Button variant="outline" size="sm" class="shrink-0" :disabled="exportLoading" @click="handleExport(store.current.id)">
+                  <Download class="size-4" />
+                  {{ exportLoading ? '导出中...' : '导出' }}
+                </Button>
+                <Button variant="outline" size="sm" class="shrink-0" :disabled="importLoading" @click="triggerImportFromDetail">
+                  <Upload class="size-4" />
+                  {{ importLoading ? '导入中...' : '导入' }}
+                </Button>
+                <Button variant="outline" size="sm" class="shrink-0" @click="openEdit">
                   <Edit2 class="size-4" />
                   编辑
                 </Button>
-                <Button variant="outline" @click="openDuplicate">
+                <Button variant="outline" size="sm" class="shrink-0" @click="openDuplicate">
                   <Copy class="size-4" />
                   复制
                 </Button>
-                <Button variant="destructive" @click="requestDelete">
+                <Button variant="destructive" size="sm" class="shrink-0" @click="requestDelete">
                   <Trash2 class="size-4" />
                   删除
                 </Button>
@@ -757,6 +946,17 @@ onBeforeUnmount(() => {
       @update:open="showInputDialog = $event"
       @confirm="doTrigger(store.current!.id, $event)"
       @change="handleTriggerFieldChange"
+    />
+    <DryRunDialog
+      :open="showDryRunDialog"
+      :workflow-id="store.current?.id ?? ''"
+      :inputs="currentInputs"
+      @update:open="showDryRunDialog = $event"
+    />
+
+    <StepTypeSchemaPanel
+      :open="showSchemaPanel"
+      @update:open="showSchemaPanel = $event"
     />
 
     <WorkflowForm

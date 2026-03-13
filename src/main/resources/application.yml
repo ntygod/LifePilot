@@ -738,7 +738,9 @@ lifepilot:
       debounce-millis: 500
     skill-discovery:
       enabled: true
-      builtin-skill-path: builtin-skills/find-skills
+      builtin-skill-paths:
+        - builtin-skills/find-skills
+        - builtin-skills/workflow-creator
     mcp-installer:
       enabled: true
       command: npx

@@ -92,8 +92,16 @@ function onDeleteStep(stepId: string) {
 }
 
 /** 画布连线 */
-function onConnect(fromId: string, toId: string) {
-  addDependency(fromId, toId)
+function onConnect(fromId: string, toId: string, branch?: 'then' | 'else') {
+  // 如果有 branch 參數，則添加到對應的分支中
+  if (branch) {
+    // 根據 branch 參數找到目標節點應該添加到哪個分支
+    // 這裡的邏輯需要根據實際的步驟結構來處理
+    console.log(`Connecting from ${fromId} to ${toId} in branch ${branch}`)
+    // TODO: 實現分支內的連接邏輯
+  } else {
+    addDependency(fromId, toId)
+  }
 }
 
 /** 画布断开连线 */
