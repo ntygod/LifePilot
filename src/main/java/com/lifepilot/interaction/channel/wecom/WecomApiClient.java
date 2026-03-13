@@ -72,6 +72,32 @@ public class WecomApiClient {
         doSend(token, body);
     }
 
+    /**
+     * 发送图文消息。
+     *
+     * @param userId      目标用户 ID
+     * @param title       标题
+     * @param description 描述
+     * @param url         链接地址
+     * @param picurl      图片链接
+     */
+    public void sendNews(String userId, String title, String description,
+                         String url, String picurl) {
+        var token = getAccessToken();
+        var body = Map.of(
+                "touser", userId,
+                "msgtype", "news",
+                "agentid", corpId,
+                "news", Map.of("articles", java.util.List.of(
+                        Map.of("title", title,
+                               "description", description,
+                               "url", url,
+                               "picurl", picurl)
+                ))
+        );
+        doSend(token, body);
+    }
+
     private void doSend(String token, Map<String, Object> body) {
         try {
             restClient.post()
