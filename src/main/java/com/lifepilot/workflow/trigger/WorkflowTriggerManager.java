@@ -17,6 +17,7 @@ import org.springframework.scheduling.TaskScheduler;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
 
@@ -49,6 +50,9 @@ public class WorkflowTriggerManager implements GenericApplicationListener {
 
     /** 已注册的事件触发器映射，key 为 eventType，value 为 workflowId 列表。 */
     private final ConcurrentHashMap<String, List<String>> eventBindings = new ConcurrentHashMap<>();
+
+    /** 已注册的 Webhook 触发器映射，key 为 workflowId。 */
+    private final ConcurrentHashMap<String, WorkflowTrigger.WebhookTrigger> webhookBindings = new ConcurrentHashMap<>();
 
     public WorkflowTriggerManager(WorkflowCommandService commandService,
                                    WorkflowRegistry registry,
@@ -87,8 +91,9 @@ public class WorkflowTriggerManager implements GenericApplicationListener {
                 case WorkflowTrigger.ManualTrigger _ -> {
                     log.debug("ManualTrigger 跳过注册: workflowId={}", definition.id());
                 }
-                case WorkflowTrigger.WebhookTrigger _ -> {
-                    log.debug("WebhookTrigger 跳过注册（由 Controller 处理）: workflowId={}", definition.id());
+                case WorkflowTrigger.WebhookTrigger webhook -> {
+                    webhookBindings.put(definition.id(), webhook);
+                    log.info("Webhook 触发器已注册: workflowId={}", definition.id());
                 }
             }
         }
@@ -111,6 +116,19 @@ public class WorkflowTriggerManager implements GenericApplicationListener {
 
         // 移除事件绑定
         eventBindings.values().forEach(ids -> ids.remove(workflowId));
+
+        // 移除 Webhook 绑定
+        webhookBindings.remove(workflowId);
+    }
+
+    /**
+     * 查找指定工作流的 Webhook 触发器。
+     *
+     * @param workflowId 工作流 ID
+     * @return Webhook 触发器，未注册时返回 empty
+     */
+    public Optional<WorkflowTrigger.WebhookTrigger> findWebhookTrigger(String workflowId) {
+        return Optional.ofNullable(webhookBindings.get(workflowId));
     }
 
     // ==================== CronTrigger ====================
