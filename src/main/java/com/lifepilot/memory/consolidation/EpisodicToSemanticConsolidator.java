@@ -143,6 +143,9 @@ public class EpisodicToSemanticConsolidator {
     /**
      * 统计每个实体在文本中的提及次数。
      *
+     * <p>纯英文名称使用 {@code \b} 词边界正则匹配，中文/混合名称使用子串匹配。
+     * 短名称（长度 ≤ shortNameThreshold）且为纯英文时强制使用词边界匹配。</p>
+     *
      * @param text     全部对话文本
      * @param entities 当前 L3 实体列表
      * @return 实体 ID → 提及次数映射（仅包含提及次数 > 0 的实体）
@@ -150,11 +153,33 @@ public class EpisodicToSemanticConsolidator {
     private Map<String, Integer> countEntityMentions(String text, List<TemporalEntity> entities) {
         Map<String, Integer> mentionCounts = new HashMap<>();
         String lowerText = text.toLowerCase();
+        int shortNameThreshold = properties.getConsolidation().getShortNameThreshold();
+
+        // 为需要正则匹配的实体缓存编译后的 Pattern
+        Map<String, java.util.regex.Pattern> patternCache = new HashMap<>();
 
         for (var entity : entities) {
-            int count = countMentions(lowerText, entity.name().toLowerCase());
-            if (count > 0) {
-                mentionCounts.put(entity.id(), count);
+            String name = entity.name().toLowerCase();
+            if (name.isEmpty()) continue;
+
+            boolean latin = isLatinName(name);
+            boolean forceWordBoundary = latin && name.length() <= shortNameThreshold;
+
+            // 纯英文名称或短名称强制词边界匹配
+            if (latin || forceWordBoundary) {
+                var pattern = patternCache.computeIfAbsent(name, n -> {
+                    try {
+                        return java.util.regex.Pattern.compile("\\b" + java.util.regex.Pattern.quote(n) + "\\b");
+                    } catch (Exception e) {
+                        log.warn("词边界正则编译失败，降级为子串匹配: name={}, error={}", n, e.getMessage());
+                        return null;
+                    }
+                });
+                int count = (pattern != null) ? countWithPattern(lowerText, pattern) : countSubstring(lowerText, name);
+                if (count > 0) mentionCounts.put(entity.id(), count);
+            } else {
+                int count = countSubstring(lowerText, name);
+                if (count > 0) mentionCounts.put(entity.id(), count);
             }
         }
         return mentionCounts;
@@ -280,14 +305,54 @@ public class EpisodicToSemanticConsolidator {
     }
 
     /**
-     * 统计 name 在 text 中出现的次数（大小写不敏感，调用方已转小写）。
+     * 统计 name 在 text 中出现的次数。
+     * 纯英文名称使用词边界正则匹配，中文/混合名称使用子串匹配。
+     * 正则编译失败时降级为子串匹配。
      */
-    private int countMentions(String text, String name) {
-        if (name.isEmpty()) {
-            return 0;
+    int countMentions(String text, String name) {
+        if (name == null || name.isEmpty()) return 0;
+        if (isLatinName(name)) {
+            return countWithWordBoundary(text, name);
         }
+        return countSubstring(text, name);
+    }
+
+    /**
+     * 判断名称是否为纯英文（仅含 ASCII 字母、数字、空格、连字符）。
+     */
+    private boolean isLatinName(String name) {
+        return name.chars().allMatch(c -> (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+                || (c >= '0' && c <= '9') || c == ' ' || c == '-');
+    }
+
+    /**
+     * 使用词边界正则匹配统计出现次数，编译失败时降级为子串匹配。
+     */
+    private int countWithWordBoundary(String text, String name) {
+        try {
+            var pattern = java.util.regex.Pattern.compile("\\b" + java.util.regex.Pattern.quote(name) + "\\b");
+            return countWithPattern(text, pattern);
+        } catch (Exception e) {
+            log.warn("词边界正则编译失败，降级为子串匹配: name={}, error={}", name, e.getMessage());
+            return countSubstring(text, name);
+        }
+    }
+
+    /**
+     * 使用已编译的 Pattern 统计匹配次数。
+     */
+    private int countWithPattern(String text, java.util.regex.Pattern pattern) {
+        var matcher = pattern.matcher(text);
         int count = 0;
-        int idx = 0;
+        while (matcher.find()) count++;
+        return count;
+    }
+
+    /**
+     * 子串匹配统计出现次数（原始逻辑，用于中文/混合名称）。
+     */
+    private int countSubstring(String text, String name) {
+        int count = 0, idx = 0;
         while ((idx = text.indexOf(name, idx)) != -1) {
             count++;
             idx += name.length();

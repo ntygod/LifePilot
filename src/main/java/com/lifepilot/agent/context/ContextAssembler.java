@@ -82,6 +82,8 @@ public class ContextAssembler {
     @Nullable private final QueryRefiner queryRefiner;
     // 记忆配置：用户画像查询等参数，可选注入
     @Nullable private final com.lifepilot.memory.config.MemoryProperties memoryProperties;
+    // LLM 路由器：用于跨会话语义过滤的 embedding 计算，可选注入
+    @Nullable private final com.lifepilot.llm.LlmRouter llmRouter;
 
     /** 请求级检索缓存 — 同一 traceId + query + topK 组合只执行一次实际检索。 */
     private final ConcurrentHashMap<String, List<RetrievalResult>> retrievalCache = new ConcurrentHashMap<>();
@@ -103,6 +105,7 @@ public class ContextAssembler {
         this.passiveNotificationQueue = null;
         this.queryRefiner = null;
         this.memoryProperties = null;
+        this.llmRouter = null;
     }
 
     /** 完整版构造器（注入记忆系统依赖）。 */
@@ -114,10 +117,10 @@ public class ContextAssembler {
                             @Nullable DataRedactor dataRedactor,
                             PromptRegistry promptRegistry) {
         this(config, hybridRetriever, workingMemory, tokenBudgetAllocator, retrievalStrategy, dataRedactor,
-                null, null, null, null, null, null, null, null, promptRegistry);
+                null, null, null, null, null, null, null, null, null, promptRegistry);
     }
 
-    /** 完整版构造器（注入记忆系统 + 可选知识库检索 + 可选 L2 情景记忆 + 可选 L3 语义记忆 + 可选被动通知队列 + 可选查询精炼器依赖）。 */
+    /** 完整版构造器（注入记忆系统 + 可选知识库检索 + 可选 L2 情景记忆 + 可选 L3 语义记忆 + 可选被动通知队列 + 可选查询精炼器 + 可选 LlmRouter 依赖）。 */
     public ContextAssembler(AgentConfigProperties config,
                             HybridRetriever hybridRetriever,
                             WorkingMemory workingMemory,
@@ -132,6 +135,7 @@ public class ContextAssembler {
                             @Nullable PassiveNotificationQueue passiveNotificationQueue,
                             @Nullable QueryRefiner queryRefiner,
                             @Nullable com.lifepilot.memory.config.MemoryProperties memoryProperties,
+                            @Nullable com.lifepilot.llm.LlmRouter llmRouter,
                             PromptRegistry promptRegistry) {
         this.config = config;
         this.hybridRetriever = hybridRetriever;
@@ -148,6 +152,7 @@ public class ContextAssembler {
         this.passiveNotificationQueue = passiveNotificationQueue;
         this.queryRefiner = queryRefiner;
         this.memoryProperties = memoryProperties;
+        this.llmRouter = llmRouter;
     }
 
     /** 判断是否为完整版模式。 */
@@ -231,7 +236,8 @@ public class ContextAssembler {
             // 5. 按预算截断
             var truncatedMemories = truncateByBudget(retrievalResults, budgetAllocation.knowledgeEntityBudget());
             var truncatedSlots = truncateSlotsByBudget(slots, budgetAllocation.currentSessionBudget());
-            // 5.1 跨会话片段格式化并按预算截断
+            // 5.1 跨会话语义过滤 + 格式化并按预算截断
+            crossSessionFragments = filterBySemanticSimilarity(crossSessionFragments, refinedQuery);
             var formattedCrossSession = truncateStringsByBudget(
                     formatCrossSessionFragments(crossSessionFragments),
                     budgetAllocation.crossSessionBudget());
@@ -467,6 +473,69 @@ public class ContextAssembler {
             log.warn("L2 跨会话检索降级: sessionId={}, error={}", sessionId, e.getMessage());
             return List.of();
         }
+    }
+
+    /**
+     * 对跨会话消息列表执行语义相似度过滤。
+     *
+     * <p>使用 LlmRouter.embed() 计算查询与每条消息的余弦相似度，
+     * 过滤掉低于阈值的消息。embedding 服务不可用时降级跳过语义过滤。</p>
+     *
+     * @param fragments    跨会话消息列表
+     * @param refinedQuery 精炼后的查询文本
+     * @return 语义相关的消息列表
+     */
+    private List<MessageRecord> filterBySemanticSimilarity(
+            List<MessageRecord> fragments, String refinedQuery) {
+        if (fragments == null || fragments.isEmpty()) return List.of();
+        if (llmRouter == null) {
+            log.debug("跨会话语义过滤: LlmRouter 为 null，跳过语义过滤");
+            return fragments;
+        }
+        float threshold = memoryProperties != null
+                ? memoryProperties.getRetrieval().getMinCrossSessionSemanticScore() : 0.3f;
+        try {
+            float[] queryEmbedding = llmRouter.embed(refinedQuery);
+            var filtered = fragments.stream()
+                    .filter(msg -> {
+                        try {
+                            String content = msg.effectiveContent();
+                            if (content == null || content.isBlank()) return false;
+                            float[] msgEmbedding = llmRouter.embed(content);
+                            float similarity = cosineSimilarity(queryEmbedding, msgEmbedding);
+                            return similarity >= threshold;
+                        } catch (Exception e) {
+                            // 单条消息 embedding 失败时保留该消息
+                            return true;
+                        }
+                    })
+                    .toList();
+            if (filtered.isEmpty()) {
+                log.debug("跨会话语义过滤: 过滤后结果为空，跳过跨会话片段注入");
+                return List.of();
+            }
+            log.debug("跨会话语义过滤: 原始={}, 过滤后={}, threshold={}",
+                    fragments.size(), filtered.size(), threshold);
+            return filtered;
+        } catch (Exception e) {
+            log.warn("跨会话语义过滤降级: embedding 服务不可用, error={}", e.getMessage());
+            return fragments;
+        }
+    }
+
+    /**
+     * 计算两个向量的余弦相似度。
+     */
+    private float cosineSimilarity(float[] a, float[] b) {
+        if (a.length != b.length || a.length == 0) return 0.0f;
+        float dotProduct = 0.0f, normA = 0.0f, normB = 0.0f;
+        for (int i = 0; i < a.length; i++) {
+            dotProduct += a[i] * b[i];
+            normA += a[i] * a[i];
+            normB += b[i] * b[i];
+        }
+        float denominator = (float) (Math.sqrt(normA) * Math.sqrt(normB));
+        return denominator == 0.0f ? 0.0f : dotProduct / denominator;
     }
 
     /**

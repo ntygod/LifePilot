@@ -303,6 +303,18 @@ public class MemoryProperties {
         /** 最小执行步数过滤阈值，默认 2。 */
         private int minExecutionSteps = 2;
 
+        /** 去重定时 Cron 表达式，默认每日凌晨 4:30。 */
+        private String dedupCron = "0 30 4 * * *";
+
+        /** 去重语义相似度阈值 [0.0, 1.0]，默认 0.90。 */
+        private float dedupSimilarityThreshold = 0.90f;
+
+        /** 每次去重最大合并数，默认 50。 */
+        private int maxDedupPerRun = 50;
+
+        /** 短名称阈值（字符数），纯英文名称长度 ≤ 此值时强制词边界匹配，默认 2。 */
+        private int shortNameThreshold = 2;
+
         public String getCron() { return cron; }
         public void setCron(String cron) { this.cron = cron; }
 
@@ -332,6 +344,18 @@ public class MemoryProperties {
 
         public int getMinExecutionSteps() { return minExecutionSteps; }
         public void setMinExecutionSteps(int minExecutionSteps) { this.minExecutionSteps = minExecutionSteps; }
+
+        public String getDedupCron() { return dedupCron; }
+        public void setDedupCron(String dedupCron) { this.dedupCron = dedupCron; }
+
+        public float getDedupSimilarityThreshold() { return dedupSimilarityThreshold; }
+        public void setDedupSimilarityThreshold(float dedupSimilarityThreshold) { this.dedupSimilarityThreshold = dedupSimilarityThreshold; }
+
+        public int getMaxDedupPerRun() { return maxDedupPerRun; }
+        public void setMaxDedupPerRun(int maxDedupPerRun) { this.maxDedupPerRun = maxDedupPerRun; }
+
+        public int getShortNameThreshold() { return shortNameThreshold; }
+        public void setShortNameThreshold(int shortNameThreshold) { this.shortNameThreshold = shortNameThreshold; }
     }
 
     /**
@@ -480,6 +504,9 @@ public static class Retrieval {
         /** 时间衰减因子最小值 — 防止老实体完全被忽略。 */
         private float minTimeDecayFactor = 0.5f;
 
+        /** 跨会话消息语义相似度最低阈值 [0.0, 1.0]，默认 0.3。 */
+        private float minCrossSessionSemanticScore = 0.3f;
+
         public float getMinFusedScore() { return minFusedScore; }
         public void setMinFusedScore(float minFusedScore) { this.minFusedScore = minFusedScore; }
 
@@ -509,6 +536,9 @@ public static class Retrieval {
 
         public float getMinTimeDecayFactor() { return minTimeDecayFactor; }
         public void setMinTimeDecayFactor(float minTimeDecayFactor) { this.minTimeDecayFactor = minTimeDecayFactor; }
+
+        public float getMinCrossSessionSemanticScore() { return minCrossSessionSemanticScore; }
+        public void setMinCrossSessionSemanticScore(float minCrossSessionSemanticScore) { this.minCrossSessionSemanticScore = minCrossSessionSemanticScore; }
     }
 
     /**
