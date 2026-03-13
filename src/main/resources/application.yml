@@ -187,6 +187,10 @@ lifepilot:
       min-cluster-size: 2
       max-templates-per-run: 10
       min-execution-steps: 2
+      dedup-cron: "0 30 4 * * *"
+      dedup-similarity-threshold: 0.90
+      max-dedup-per-run: 50
+      short-name-threshold: 2
     # 遗忘引擎
     forgetting:
       cron: "0 0 4 * * SUN"
@@ -218,6 +222,7 @@ lifepilot:
       fallback-user-profile-count: 3
       time-decay-rate: 0.002
       min-time-decay-factor: 0.5
+      min-cross-session-semantic-score: 0.3
     # 反馈闭环配置
     feedback:
       like-boost: 0.1
