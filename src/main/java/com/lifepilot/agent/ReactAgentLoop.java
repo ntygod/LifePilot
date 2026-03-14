@@ -242,7 +242,9 @@ public class ReactAgentLoop {
             @Nullable TraceContext traceContext,
             Instant loopStart,
             IterationCallback callback,
-            CancellationToken cancellationToken) {
+            CancellationToken cancellationToken,
+            @Nullable SseSessionManager sseManager,
+            @Nullable String streamId) {
 
         int maxIterations = config.getLoop().getMaxIterations();
         int maxConsecutiveFailures = config.getLoop().getMaxConsecutiveFailures();
@@ -328,7 +330,7 @@ public class ReactAgentLoop {
                 // 逐个执行 tool call
                 for (var tc : toolCalls) {
                     state = executeToolCall(state, tc, toolCallbacks, traceContext,
-                            cancellationToken, null, null);
+                            cancellationToken, sseManager, streamId);
                     if (cancellationToken.isCancelled()) break;
                 }
 
@@ -443,7 +445,7 @@ public class ReactAgentLoop {
 
         // 媒体数据提取
         String observationOutput = rawOutput;
-        if (success && mediaDataExtractor != null && rawOutput != null) {
+        if (success && mediaDataExtractor != null) {
             var extraction = mediaDataExtractor.extract(toolId, rawOutput);
             observationOutput = extraction.sanitizedOutput();
 
@@ -561,7 +563,8 @@ public class ReactAgentLoop {
 
             // 核心循环 — 非流式回调
             var callback = new NonStreamingCallback(request);
-            state = coreLoop(state, request, traceContext, loopStart, callback, token);
+            state = coreLoop(state, request, traceContext, loopStart, callback, token,
+                    null, null);
 
             // 构建推理概要
             if (state.terminationReason() == null) {
@@ -675,7 +678,8 @@ public class ReactAgentLoop {
             // 核心循环 — 流式回调
             var callback = new StreamingCallback(
                     sseManager, streamId, request.sessionId(), tempTurnId, request);
-            state = coreLoop(state, request, traceContext, loopStart, callback, token);
+            state = coreLoop(state, request, traceContext, loopStart, callback, token,
+                    sseManager, streamId);
 
             // 检查流式错误
             if (callback.hasStreamingError()) {
