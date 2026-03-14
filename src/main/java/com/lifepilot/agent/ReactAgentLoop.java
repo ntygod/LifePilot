@@ -140,4 +140,44 @@ public class ReactAgentLoop {
                               List<ToolCallback> toolCallbacks,
                               @Nullable TraceContext traceContext);
     }
+
+    /**
+     * 构建 Spring AI 消息列表。
+     *
+     * <p>将 AssembledContext 的 systemPrompt / userPrompt 和历史 ReactStep
+     * 转换为 Spring AI Message 序列。</p>
+     *
+     * @param ctx   组装后的上下文
+     * @param state 当前状态
+     * @return 消息列表（至少 1 条 system + 1 条 user）
+     */
+    List<Message> buildMessages(AssembledContext ctx, ReactAgentState state) {
+        var messages = new ArrayList<Message>();
+
+        // System Prompt（含记忆、知识库等上下文）
+        messages.add(new SystemMessage(ctx.systemPrompt()));
+
+        // User Prompt（含用户请求、对话历史等）
+        messages.add(new UserMessage(ctx.userPrompt()));
+
+        // 历史 ReactStep 转换为 assistant / tool messages
+        // Spring AI ChatClient 在单次 call() 内自动管理 tool call 往返，
+        // 跨迭代的历史由我们手动维护
+        for (var step : state.steps()) {
+            switch (step) {
+                case ReactStep.Thought t ->
+                    messages.add(new AssistantMessage(t.content()));
+                case ReactStep.ToolCall tc ->
+                    messages.add(new AssistantMessage(
+                            "调用工具: " + tc.toolId() + "，参数: " + tc.inputJson()));
+                case ReactStep.Observation obs ->
+                    messages.add(new UserMessage(
+                            "[工具结果] " + obs.toolId() + "：" + obs.output()));
+                case ReactStep.Answer a ->
+                    messages.add(new AssistantMessage(a.content()));
+            }
+        }
+
+        return messages;
+    }
 }
