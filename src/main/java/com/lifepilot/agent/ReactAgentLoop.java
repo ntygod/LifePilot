@@ -8,15 +8,10 @@ import com.lifepilot.agent.model.*;
 import com.lifepilot.agent.session.SessionManager;
 import com.lifepilot.conversation.ConversationHistoryStore;
 import com.lifepilot.conversation.ConversationViewService;
-import com.lifepilot.interaction.model.TokenUsage;
-import com.lifepilot.interaction.web.a2ui.A2uiComponentCatalog;
-import com.lifepilot.interaction.web.a2ui.A2uiComponentValidator;
-import com.lifepilot.interaction.web.a2ui.A2uiPayloadSupport;
-import com.lifepilot.interaction.web.a2ui.StreamingA2uiParser;
 import com.lifepilot.interaction.web.config.A2uiProperties;
 import com.lifepilot.interaction.web.model.A2uiComponentTree;
-import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
+import com.lifepilot.observability.trace.LlmCallStep;
 import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.llm.LlmRouter;
@@ -179,5 +174,230 @@ public class ReactAgentLoop {
         }
 
         return messages;
+    }
+
+    // ===== 核心 ReAct 循环 =====
+
+    /**
+     * ReAct 核心循环 — run() 和 runStreaming() 的共享实现。
+     *
+     * <p>终止条件（任一满足即退出）：
+     * <ol>
+     *   <li>LLM 返回纯文本（无 tool call）→ 正常完成</li>
+     *   <li>Budget 任一维度超限 → 降级响应</li>
+     *   <li>CancellationToken 被触发 → 中断</li>
+     *   <li>迭代次数达到 maxIterations → 强制终止</li>
+     *   <li>连续失败达到 maxConsecutiveFailures → 强制终止</li>
+     * </ol></p>
+     *
+     * @param state             当前状态（done == false）
+     * @param request           原始请求
+     * @param traceContext      追踪上下文（可为 null）
+     * @param loopStart         循环开始时间
+     * @param callback          LLM 调用回调（同步 / 流式）
+     * @param cancellationToken 取消信号
+     * @return 循环结束后的状态（done == true 或被取消）
+     */
+    ReactAgentState coreLoop(
+            ReactAgentState state,
+            AgentRequest request,
+            @Nullable TraceContext traceContext,
+            Instant loopStart,
+            IterationCallback callback,
+            CancellationToken cancellationToken) {
+
+        int maxIterations = config.getLoop().getMaxIterations();
+        int maxConsecutiveFailures = config.getLoop().getMaxConsecutiveFailures();
+        int consecutiveFailures = 0;
+
+        for (int iteration = 0; !state.isDone(); iteration++) {
+            // 1. 取消信号检查
+            if (cancellationToken.isCancelled() || Thread.currentThread().isInterrupted()) {
+                log.info("ReAct 循环被取消: traceId={}, iteration={}", state.traceId(), iteration);
+                break;
+            }
+
+            // 2. 迭代硬限制
+            if (iteration >= maxIterations) {
+                log.warn("ReAct 循环达到迭代上限: traceId={}, maxIterations={}",
+                        state.traceId(), maxIterations);
+                state = DegradedResponseBuilder.terminateWithReason(
+                        state, "循环次数达到硬限制: " + maxIterations);
+                break;
+            }
+
+            // 3. 更新 Budget 已用时长 + 检查超限
+            state = state.toBuilder()
+                    .budget(state.budget().withElapsed(Duration.between(loopStart, Instant.now())))
+                    .build();
+            if (state.budget().exceeded()) {
+                log.warn("ReAct 循环预算超限: traceId={}, reason={}",
+                        state.traceId(), state.budget().exceedReason());
+                state = DegradedResponseBuilder.terminateWithReason(
+                        state, state.budget().exceedReason());
+                break;
+            }
+
+            // 4. 组装上下文（临时桥接：转换为旧 AgentState，Task 13.3 后移除）
+            var legacyState = toLegacyAgentState(state);
+            var assembledContext = contextAssembler.assemble(legacyState);
+
+            // 5. 构建 Spring AI 消息列表 + 获取工具回调
+            var messages = buildMessages(assembledContext, state);
+            var toolCallbacks = agentToolProvider.getToolCallbacks(legacyState);
+
+            log.debug("ReAct 迭代开始: traceId={}, iteration={}, stepCount={}, toolCount={}",
+                    state.traceId(), iteration, state.stepCount(), toolCallbacks.size());
+
+            // 6. 调用 LLM（通过 IterationCallback 抽象同步/流式）
+            var iterationStart = Instant.now();
+            ChatResponse chatResponse;
+            try {
+                chatResponse = callback.callLlm(request, messages, toolCallbacks, traceContext);
+            } catch (Exception e) {
+                log.error("LLM 调用异常: traceId={}, iteration={}, error={}",
+                        state.traceId(), iteration, e.getMessage());
+                consecutiveFailures++;
+                if (consecutiveFailures >= maxConsecutiveFailures) {
+                    state = DegradedResponseBuilder.terminateWithReason(
+                            state, "连续 LLM 调用失败达到上限: " + maxConsecutiveFailures);
+                    break;
+                }
+                // 记录失败观察并继续下一次迭代
+                state = state.appendStep(new ReactStep.Observation(
+                        "llm", false, "LLM 调用失败: " + e.getMessage(), 0));
+                continue;
+            }
+            var iterationDuration = Duration.between(iterationStart, Instant.now());
+
+            // 7. 解析响应
+            // Spring AI ChatClient.call() 自动执行 function calling 并返回最终文本。
+            String content = extractContent(chatResponse);
+            int responseTokens = estimateTokens(chatResponse);
+
+            if (content != null && !content.isBlank()) {
+                // LLM 返回了文本内容 → 记录为最终回答
+                state = state.appendStep(new ReactStep.Answer(content));
+                state = state.toBuilder()
+                        .done(true)
+                        .finalOutput(content)
+                        .budget(state.budget().deductTokens(responseTokens))
+                        .build();
+
+                // Trace 记录 LLM 调用
+                recordLlmStep(traceContext, state.stepCount() - 1, iterationStart,
+                        iterationDuration, responseTokens);
+
+                log.info("ReAct 循环完成: traceId={}, iterations={}, stepCount={}, tokensUsed={}",
+                        state.traceId(), iteration + 1, state.stepCount(),
+                        state.budget().tokensUsed());
+            } else {
+                // LLM 返回空内容 — 视为异常
+                log.warn("LLM 返回空内容: traceId={}, iteration={}", state.traceId(), iteration);
+                consecutiveFailures++;
+                if (consecutiveFailures >= maxConsecutiveFailures) {
+                    state = DegradedResponseBuilder.terminateWithReason(
+                            state, "连续空响应达到上限: " + maxConsecutiveFailures);
+                    break;
+                }
+            }
+
+            // 8. 更新 Budget 已用时长
+            state = state.toBuilder()
+                    .budget(state.budget().withElapsed(Duration.between(loopStart, Instant.now())))
+                    .build();
+
+            // 连续成功时重置失败计数
+            if (content != null && !content.isBlank()) {
+                consecutiveFailures = 0;
+            }
+        }
+
+        return state;
+    }
+
+    // ===== 辅助方法 =====
+
+    /**
+     * 从 ChatResponse 提取文本内容。
+     *
+     * @param chatResponse LLM 响应
+     * @return 文本内容，无内容时返回 null
+     */
+    @Nullable
+    private String extractContent(ChatResponse chatResponse) {
+        if (chatResponse == null) return null;
+        var result = chatResponse.getResult();
+        if (result == null) return null;
+        var output = result.getOutput();
+        if (output == null) return null;
+        return output.getText();
+    }
+
+    /**
+     * 从 ChatResponse 估算 Token 消耗。
+     *
+     * @param chatResponse LLM 响应
+     * @return 估算的 Token 数
+     */
+    private int estimateTokens(ChatResponse chatResponse) {
+        if (chatResponse == null || chatResponse.getMetadata() == null) return 0;
+        var usage = chatResponse.getMetadata().getUsage();
+        if (usage == null) return 0;
+        return (int) (usage.getPromptTokens() + usage.getCompletionTokens());
+    }
+
+    /**
+     * 记录 LLM 调用步骤到 Trace。
+     */
+    private void recordLlmStep(@Nullable TraceContext traceContext, int stepIndex,
+                                Instant timestamp, Duration duration, int tokens) {
+        if (traceContext == null) return;
+        try {
+            var step = new LlmCallStep(
+                    stepIndex, timestamp, duration,
+                    "unknown", // providerId — Task 9.2 补充完整
+                    "unknown", // modelId — Task 9.2 补充完整
+                    config.getLoop().getLlmScene(),
+                    tokens / 2, tokens / 2, // 粗略拆分 input/output
+                    duration, false, 0.7, null);
+            traceRecorder.recordStep(traceContext, step);
+        } catch (Exception e) {
+            log.debug("Trace 记录失败，降级跳过: error={}", e.getMessage());
+        }
+    }
+
+    /**
+     * 临时桥接 — 将 ReactAgentState 转换为旧 AgentState。
+     *
+     * <p>供 ContextAssembler.assemble() 和 AgentToolProvider.getToolCallbacks() 使用，
+     * 这两个接口在 Task 13 中将改为直接接受 ReactAgentState，届时移除此方法。</p>
+     *
+     * @param reactState ReAct 状态
+     * @return 旧版 AgentState（phase 固定为 UNDERSTANDING，使用完整检索策略）
+     */
+    private AgentState toLegacyAgentState(ReactAgentState reactState) {
+        return AgentState.builder()
+                .traceId(reactState.traceId())
+                .sessionId(reactState.sessionId())
+                .goal(reactState.goal())
+                .phase(AgentPhase.UNDERSTANDING)
+                .channel(reactState.channel())
+                .steps(List.of())
+                .stepCount(reactState.stepCount())
+                .plan(null)
+                .planStepIndex(0)
+                .revisionCount(0)
+                .shortTermMemory(reactState.shortTermMemory())
+                .mentionedEntities(reactState.mentionedEntities())
+                .budget(reactState.budget())
+                .parentTraceId(reactState.parentTraceId())
+                .depth(reactState.depth())
+                .done(reactState.done())
+                .finalOutput(reactState.finalOutput())
+                .terminationReason(reactState.terminationReason())
+                .reasoningSummary(reactState.reasoningSummary())
+                .allowedToolIds(reactState.allowedToolIds())
+                .build();
     }
 }
