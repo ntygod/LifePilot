@@ -63,7 +63,7 @@ import java.util.stream.Collectors;
 public class ReactAgentLoop {
 
     private static final Logger log = LoggerFactory.getLogger(ReactAgentLoop.class);
-    private static final String DEFAULT_MODEL_ID = "unknown";
+    private static final String DEFAULT_MODEL_ID = "ZhiWei";
 
     // ===== 核心依赖（必需） =====
     private final ContextAssembler contextAssembler;
@@ -76,7 +76,7 @@ public class ReactAgentLoop {
     private final PromptRegistry promptRegistry;
 
     // ===== 可选依赖（@Nullable） =====
-    @Nullable private final MultimodalRouter multimodalRouter;
+    @Nullable private final MultimodalRouter multimodalRouter; // 预留：多模态流式请求
     @Nullable private final MediaDataExtractor mediaDataExtractor;
     @Nullable private final WorkingMemory workingMemory;
     @Nullable private final ConversationHistoryStore conversationHistoryStore;
@@ -129,6 +129,18 @@ public class ReactAgentLoop {
         this.sessionKnowledgeBaseRepository = sessionKnowledgeBaseRepository;
         this.knowledgeBaseRepository = knowledgeBaseRepository;
         this.a2uiProperties = a2uiProperties;
+    }
+
+    /** 获取当前取消令牌（外部可调用 cancel() 中断循环）。 */
+    @Nullable
+    public CancellationToken getCancellationToken() {
+        return cancellationToken;
+    }
+
+    /** 获取多模态路由器（预留：多模态流式请求）。 */
+    @Nullable
+    public MultimodalRouter getMultimodalRouter() {
+        return multimodalRouter;
     }
 
     /**
@@ -293,8 +305,7 @@ public class ReactAgentLoop {
             var iterationDuration = Duration.between(iterationStart, Instant.now());
 
             // 6. 解析 LLM 响应
-            var assistantMessage = chatResponse.getResult() != null
-                    ? chatResponse.getResult().getOutput() : null;
+            var assistantMessage = chatResponse.getResult().getOutput();
             int responseTokens = estimateTokens(chatResponse);
             String providerId = callback.getProviderId();
             String modelId = callback.getModelId();
@@ -304,7 +315,7 @@ public class ReactAgentLoop {
                     iterationDuration, responseTokens, providerId, modelId);
 
             // 7. 判断是否有 tool call 请求
-            if (assistantMessage != null && assistantMessage.hasToolCalls()) {
+            if (assistantMessage.hasToolCalls()) {
                 // === ReAct: Action 阶段 — 处理 tool call ===
                 var toolCalls = assistantMessage.getToolCalls();
 
@@ -329,7 +340,7 @@ public class ReactAgentLoop {
 
             } else {
                 // === ReAct: Answer 阶段 — 纯文本响应 ===
-                String content = assistantMessage != null ? assistantMessage.getText() : null;
+                String content = assistantMessage.getText();
                 if (content != null && !content.isBlank()) {
                     state = state.appendStep(new ReactStep.Answer(content));
                     state = state.toBuilder()
@@ -896,10 +907,9 @@ public class ReactAgentLoop {
 
             // 非流式调用获取完整响应
             ChatResponse chatResponse = chatModelInfo.chatModel().call(prompt);
-            var assistantMsg = chatResponse.getResult() != null
-                    ? chatResponse.getResult().getOutput() : null;
+            var assistantMsg = chatResponse.getResult().getOutput();
 
-            if (assistantMsg != null && assistantMsg.hasToolCalls()) {
+            if (assistantMsg.hasToolCalls()) {
                 // LLM 要调用工具 — 发送 TOOL_CALLING 推理事件，不流式输出
                 for (var tc : assistantMsg.getToolCalls()) {
                     sendReasoningEvent(sseManager, streamId, sessionId, turnId,
@@ -913,7 +923,7 @@ public class ReactAgentLoop {
             }
 
             // LLM 返回纯文本 — 流式推送 token
-            String content = assistantMsg != null ? assistantMsg.getText() : "";
+            String content = assistantMsg.getText();
             this.finalContent = content;
 
             // 逐字符模拟流式推送（实际内容已完整获取）
