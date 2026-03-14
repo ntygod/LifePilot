@@ -4,7 +4,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.context.AssembledContext;
 import com.lifepilot.agent.context.ContextAssembler;
-import com.lifepilot.agent.model.*;
+import com.lifepilot.agent.media.MediaDataExtractor;
+import com.lifepilot.agent.model.AgentRequest;
+import com.lifepilot.agent.model.AgentResponse;
+import com.lifepilot.agent.model.ReactAgentState;
+import com.lifepilot.agent.model.ReactStep;
 import com.lifepilot.agent.session.SessionManager;
 import com.lifepilot.conversation.ConversationHistoryStore;
 import com.lifepilot.conversation.ConversationViewService;
@@ -20,10 +24,10 @@ import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
-import com.lifepilot.agent.media.MediaDataExtractor;
 import com.lifepilot.memory.retrieval.InjectionRecordRepository;
 import com.lifepilot.memory.semantic.RealtimeExtractor;
 import com.lifepilot.memory.working.WorkingMemory;
+import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.observability.trace.LlmCallStep;
 import com.lifepilot.observability.trace.ToolCallStep;
 import com.lifepilot.observability.trace.TraceContext;
@@ -559,7 +563,7 @@ public class ReactAgentLoop {
                     toolId, "execute", inputJson,
                     outputJson != null ? outputJson : "",
                     success, success ? null : outputJson,
-                    com.lifepilot.observability.guardrail.RiskLevel.LOW);
+                    RiskLevel.LOW);
             traceRecorder.recordStep(traceContext, step);
         } catch (Exception e) {
             log.debug("Trace 工具步骤记录失败: error={}", e.getMessage());
