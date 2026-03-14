@@ -89,7 +89,7 @@ public class ReactAgentLoop {
 
     // ===== 运行时状态（volatile） =====
     private volatile A2uiComponentTree lastCollectedA2uiTree;
-    private volatile List<String> lastInjectedEntityIds = List.of();
+    private final List<String> lastInjectedEntityIds = List.of();
     private volatile CancellationToken cancellationToken;
 
     public ReactAgentLoop(
@@ -312,9 +312,9 @@ public class ReactAgentLoop {
             String providerId = callback.getProviderId();
             String modelId = callback.getModelId();
 
-            // 记录 LLM 调用到 Trace
+            // 记录 LLM 调用到 Trace（从 ChatResponse 提取真实 Token 用量和完成原因）
             recordLlmStep(traceContext, state.stepCount(), iterationStart,
-                    iterationDuration, responseTokens, providerId, modelId);
+                    iterationDuration, chatResponse, providerId, modelId);
 
             // 7. 判断是否有 tool call 请求
             if (assistantMessage.hasToolCalls()) {
@@ -407,6 +407,12 @@ public class ReactAgentLoop {
             @Nullable SseSessionManager sseManager,
             @Nullable String streamId) {
 
+        // 取消信号检查 — 避免在已取消的情况下继续执行工具
+        if (cancellationToken.isCancelled()) {
+            log.info("工具执行前检测到取消信号: toolId={}", tc.name());
+            return state;
+        }
+
         String toolId = tc.name();
         String inputJson = tc.arguments();
 
@@ -483,24 +489,58 @@ public class ReactAgentLoop {
 
     /** 从 ChatResponse 估算 Token 消耗。 */
     private int estimateTokens(ChatResponse chatResponse) {
-        if (chatResponse == null || chatResponse.getMetadata() == null) return 0;
+        if (chatResponse == null) return 0;
         var usage = chatResponse.getMetadata().getUsage();
         if (usage == null) return 0;
         return (int) (usage.getPromptTokens() + usage.getCompletionTokens());
     }
 
     /** 记录 LLM 调用步骤到 Trace（含真实 providerId / modelId）。 */
+    /**
+     * 记录 LLM 调用步骤到 Trace。
+     *
+     * <p>从 ChatResponse 元数据中提取真实的 Token 用量和完成原因，
+     * 避免使用硬编码估算值。</p>
+     *
+     * @param traceContext 追踪上下文
+     * @param stepIndex    步骤序号
+     * @param timestamp    调用开始时间
+     * @param duration     调用耗时
+     * @param chatResponse LLM 原始响应（用于提取 Token 用量和完成原因）
+     * @param providerId   LLM 提供商 ID
+     * @param modelId      模型 ID
+     */
     private void recordLlmStep(@Nullable TraceContext traceContext, int stepIndex,
-                               Instant timestamp, Duration duration, int tokens,
+                               Instant timestamp, Duration duration,
+                               ChatResponse chatResponse,
                                String providerId, String modelId) {
         if (traceContext == null) return;
         try {
+            // 从 ChatResponse 元数据提取真实 Token 用量
+            int inputTokens = 0;
+            int outputTokens = 0;
+            var usage = chatResponse.getMetadata().getUsage();
+            if (usage != null) {
+                inputTokens = (int) usage.getPromptTokens();
+                outputTokens = (int) usage.getCompletionTokens();
+            }
+
+            // 从 Generation 元数据提取完成原因
+            String finishReason = null;
+            var resultMetadata = chatResponse.getResult().getMetadata();
+            if (resultMetadata != null) {
+                finishReason = resultMetadata.getFinishReason();
+            }
+
             var step = new LlmCallStep(
                     stepIndex, timestamp, duration,
                     providerId, modelId,
                     config.getLoop().getLlmScene(),
-                    tokens / 2, tokens / 2,
-                    duration, false, 0.7, null);
+                    inputTokens, outputTokens,
+                    duration,
+                    false,  // cacheHit — Spring AI ChatResponse 不提供此信息
+                    0.0,    // temperature — ChatResponse 不包含请求侧参数
+                    finishReason);
             traceRecorder.recordStep(traceContext, step);
         } catch (Exception e) {
             log.debug("Trace LLM 步骤记录失败: error={}", e.getMessage());
@@ -1425,8 +1465,8 @@ public class ReactAgentLoop {
 
     /** 调试日志 — 打印完整 LLM 提示词。 */
     private void logLlmPromptIfEnabled(String scene, @Nullable String systemPrompt,
-                                        @Nullable String userText,
-                                        @Nullable List<ToolCallback> toolCallbacks) {
+                                       @Nullable String userText,
+                                       @Nullable List<ToolCallback> toolCallbacks) {
         if (config == null || config.getDebug() == null || !config.getDebug().isLogLlmPrompts()) {
             return;
         }
@@ -1456,8 +1496,8 @@ public class ReactAgentLoop {
 
     /** 持久化流式系统错误消息到对话历史和 L1。 */
     private void persistStreamingSystemError(@Nullable String sessionId,
-                                              @Nullable String traceId,
-                                              @Nullable Exception e) {
+                                             @Nullable String traceId,
+                                             @Nullable Exception e) {
         try {
             if (sessionId == null || sessionId.isBlank()) return;
             String detail = e != null ? e.getMessage() : "unknown";
