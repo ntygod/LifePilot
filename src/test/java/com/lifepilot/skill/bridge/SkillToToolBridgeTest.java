@@ -3,6 +3,7 @@ package com.lifepilot.skill.bridge;
 import com.lifepilot.observability.guardrail.GuardrailEngine;
 import com.lifepilot.skill.activation.SkillActivationException;
 import com.lifepilot.skill.activation.SkillActivator;
+import com.lifepilot.skill.config.SkillConfigProperties;
 import com.lifepilot.skill.model.SkillActivation;
 import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.tool.BuiltinTool;
@@ -174,7 +175,7 @@ class SkillToToolBridgeTest {
         private List<String> summaries = List.of();
 
         StubSkillRegistry() {
-            super(null, null, null, null);
+            super(null, null, new NoOpEventPublisher(), new SkillConfigProperties());
         }
 
         void setSummaries(List<String> summaries) {

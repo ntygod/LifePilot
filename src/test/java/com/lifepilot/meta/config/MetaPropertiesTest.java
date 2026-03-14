@@ -117,7 +117,7 @@ class MetaPropertiesTest {
             var props = context.getBean(MetaProperties.class);
             var sd = props.getSkillDiscovery();
             assertThat(sd.isEnabled()).isTrue();
-            assertThat(sd.getBuiltinSkillPath()).isEqualTo("builtin-skills/find-skills");
+            assertThat(sd.getBuiltinSkillPaths()).contains("builtin-skills/find-skills");
         });
     }
 

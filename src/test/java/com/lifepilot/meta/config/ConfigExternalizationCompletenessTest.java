@@ -143,7 +143,7 @@ class ConfigExternalizationCompletenessTest {
     void SkillDiscovery默认值正确() {
         var sd = props.getSkillDiscovery();
         assertThat(sd.isEnabled()).isTrue();
-        assertThat(sd.getBuiltinSkillPath()).isEqualTo("builtin-skills/find-skills");
+        assertThat(sd.getBuiltinSkillPaths()).contains("builtin-skills/find-skills");
     }
 
     // ── McpInstaller 默认值 ──────────────────────────────────
