@@ -40,14 +40,10 @@ lifepilot:
       # 打印每次调用 LLM 时发送的完整提示词（可能包含隐私/密钥），仅建议本地/受控环境开启
       log-llm-prompts: true
     loop:
-      max-iterations: 50
-      max-consecutive-blocks: 3
-      scene-mapping:
-        understanding: agent_reasoning
-        planning: agent_reasoning
-        executing: agent_tool_calling
-        reflecting: agent_reasoning
-        responding: agent_generation
+      # ReAct 循环配置
+      max-iterations: 25
+      max-consecutive-failures: 3
+      llm-scene: agent_react
     budget:
       default-max-tokens: 32000
       default-max-steps: 20

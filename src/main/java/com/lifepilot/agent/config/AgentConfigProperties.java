@@ -2,8 +2,6 @@ package com.lifepilot.agent.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-import java.util.Map;
-
 /**
  * Agent 引擎配置属性。
  *
@@ -36,27 +34,21 @@ public class AgentConfigProperties {
     public DebugConfig getDebug() { return debug; }
     public void setDebug(DebugConfig debug) { this.debug = debug; }
 
-    /** 循环配置。 */
+    /** ReAct 循环配置（替代原 LoopConfig）。 */
     public static class LoopConfig {
-        private int maxIterations = 50;
-        private int maxConsecutiveBlocks = 3;
-        private int maxConsecutiveParseFailures = 3;
-        private Map<String, String> sceneMapping = Map.of(
-                "understanding", "agent_reasoning",
-                "planning", "agent_reasoning",
-                "executing", "agent_tool_calling",
-                "reflecting", "agent_reasoning",
-                "responding", "agent_generation"
-        );
+        /** 单次循环最大迭代次数。 */
+        private int maxIterations = 25;
+        /** 连续工具调用失败最大次数。 */
+        private int maxConsecutiveFailures = 3;
+        /** LLM 调用场景标识。 */
+        private String llmScene = "agent_react";
 
         public int getMaxIterations() { return maxIterations; }
         public void setMaxIterations(int maxIterations) { this.maxIterations = maxIterations; }
-        public int getMaxConsecutiveBlocks() { return maxConsecutiveBlocks; }
-        public void setMaxConsecutiveBlocks(int maxConsecutiveBlocks) { this.maxConsecutiveBlocks = maxConsecutiveBlocks; }
-        public int getMaxConsecutiveParseFailures() { return maxConsecutiveParseFailures; }
-        public void setMaxConsecutiveParseFailures(int maxConsecutiveParseFailures) { this.maxConsecutiveParseFailures = maxConsecutiveParseFailures; }
-        public Map<String, String> getSceneMapping() { return sceneMapping; }
-        public void setSceneMapping(Map<String, String> sceneMapping) { this.sceneMapping = sceneMapping; }
+        public int getMaxConsecutiveFailures() { return maxConsecutiveFailures; }
+        public void setMaxConsecutiveFailures(int maxConsecutiveFailures) { this.maxConsecutiveFailures = maxConsecutiveFailures; }
+        public String getLlmScene() { return llmScene; }
+        public void setLlmScene(String llmScene) { this.llmScene = llmScene; }
     }
 
     /** 预算配置。 */
