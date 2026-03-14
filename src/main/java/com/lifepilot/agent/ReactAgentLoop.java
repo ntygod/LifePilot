@@ -8,18 +8,26 @@ import com.lifepilot.agent.model.*;
 import com.lifepilot.agent.session.SessionManager;
 import com.lifepilot.conversation.ConversationHistoryStore;
 import com.lifepilot.conversation.ConversationViewService;
+import com.lifepilot.interaction.model.TokenUsage;
+import com.lifepilot.interaction.web.a2ui.A2uiComponentCatalog;
+import com.lifepilot.interaction.web.a2ui.A2uiPayloadSupport;
+import com.lifepilot.interaction.web.a2ui.StreamingA2uiParser;
 import com.lifepilot.interaction.web.config.A2uiProperties;
 import com.lifepilot.interaction.web.model.A2uiComponentTree;
-import com.lifepilot.interaction.web.sse.SseSessionManager;
-import com.lifepilot.observability.trace.LlmCallStep;
-import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
+import com.lifepilot.interaction.web.sse.SseEventType;
+import com.lifepilot.interaction.web.sse.SseSessionManager;
+import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
 import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.llm.StreamingLlmResponse;
+import com.lifepilot.llm.multimodal.MultimodalRequest;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.agent.media.MediaDataExtractor;
 import com.lifepilot.memory.retrieval.InjectionRecordRepository;
 import com.lifepilot.memory.semantic.RealtimeExtractor;
 import com.lifepilot.memory.working.WorkingMemory;
+import com.lifepilot.observability.trace.LlmCallStep;
+import com.lifepilot.observability.trace.ToolCallStep;
 import com.lifepilot.observability.trace.TraceContext;
 import com.lifepilot.observability.trace.TraceRecorder;
 import com.lifepilot.prompt.PromptRegistry;
@@ -29,10 +37,12 @@ import org.springframework.ai.chat.messages.*;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.lang.Nullable;
+import reactor.core.publisher.Flux;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.*;;
+import java.util.*;
+import java.util.stream.Collectors;;
 
 /**
  * ReAct Agent 循环 — 替代原六阶段状态机 AgentLoop。
@@ -49,6 +59,7 @@ import java.util.*;;
 public class ReactAgentLoop {
 
     private static final Logger log = LoggerFactory.getLogger(ReactAgentLoop.class);
+    private static final String DEFAULT_MODEL_ID = "unknown";
 
     // ===== 核心依赖（必需） =====
     private final ContextAssembler contextAssembler;
@@ -489,6 +500,158 @@ public class ReactAgentLoop {
         }
     }
 
+    // ===== SSE 流式执行入口 =====
+
+    /**
+     * SSE 流式执行 ReAct 循环。
+     *
+     * <p>完整流程与 run() 一致，但通过 SSE 推送 TOKEN / REASONING / DONE 事件。</p>
+     *
+     * @param request           Agent 请求
+     * @param streamId          SSE 流标识
+     * @param sseManager        SSE 会话管理器
+     * @param cancellationToken 取消信号
+     */
+    public void runStreaming(AgentRequest request, String streamId,
+                             SseSessionManager sseManager,
+                             CancellationToken cancellationToken) {
+        ReactAgentState state = ReactAgentState.init(request);
+        TraceContext traceContext = null;
+        Instant loopStart = Instant.now();
+        Exception error = null;
+        String finalContent = "";
+        TokenUsage finalTokenUsage = null;
+        String reasoningSummary = null;
+        String tempTurnId = UUID.randomUUID().toString();
+        String userMessageId = null;
+        String assistantMessageId = null;
+
+        var token = cancellationToken;
+        this.cancellationToken = token;
+
+        try {
+            state = initState(request);
+
+            // 用户消息写入 L1
+            writeUserMessageToL1(state);
+
+            // 同步写入用户消息到 chat_messages
+            if (conversationHistoryStore != null && state.goal() != null && !state.goal().isBlank()) {
+                try {
+                    userMessageId = conversationHistoryStore.appendUserMessage(
+                            state.sessionId(), state.goal(), state.traceId());
+                } catch (Exception e) {
+                    log.warn("用户消息同步写入失败: sessionId={}, error={}", state.sessionId(), e.getMessage());
+                }
+            }
+
+            // TRACE_START 事件
+            if (state.traceId() != null) {
+                var traceStartData = new HashMap<String, Object>();
+                traceStartData.put("sessionId", request.sessionId());
+                traceStartData.put("turnId", tempTurnId);
+                traceStartData.put("traceId", state.traceId());
+                traceStartData.put("timestamp", Instant.now().toEpochMilli());
+                if (userMessageId != null) {
+                    traceStartData.put("userMessageId", userMessageId);
+                }
+                sseManager.sendEvent(streamId, SseEventType.TRACE_START, traceStartData);
+            }
+
+            // AGENT_START 推理事件
+            sendReasoningEvent(sseManager, streamId, request.sessionId(), tempTurnId,
+                    "AGENT_START", "开始处理请求",
+                    "Agent 已接收到用户请求，正在准备上下文与预算。",
+                    null, Map.of());
+
+            traceContext = startTraceIfEnabled(state, request);
+            loopStart = Instant.now();
+
+            // 核心循环 — 流式回调
+            var callback = new StreamingCallback(sseManager, streamId, request.sessionId(), tempTurnId);
+            state = coreLoop(state, request, traceContext, loopStart, callback, token);
+
+            // 检查流式错误
+            if (callback.hasStreamingError()) {
+                error = callback.getStreamingError();
+            } else {
+                // 归一化最终输出
+                String callbackContent = callback.getFinalContent();
+                finalContent = state.finalOutput() != null
+                        ? state.finalOutput()
+                        : (callbackContent != null ? callbackContent : finalContent);
+                var extractedFinalContent = extractA2uiContent(finalContent);
+                A2uiComponentTree finalA2uiTree = extractedFinalContent.tree();
+                finalContent = extractedFinalContent.visibleText();
+                lastCollectedA2uiTree = finalA2uiTree != null ? finalA2uiTree : lastCollectedA2uiTree;
+
+                if (state.terminationReason() == null) {
+                    reasoningSummary = buildReasoningSummary(state, traceContext);
+                    state = state.toBuilder()
+                            .finalOutput(finalContent)
+                            .reasoningSummary(reasoningSummary)
+                            .build();
+                }
+
+                // AI 响应写入 L1
+                writeAssistantMessageToL1(state);
+
+                // 同步写入助手消息到 chat_messages
+                String a2uiJson = serializeA2uiTree(lastCollectedA2uiTree);
+                if (conversationHistoryStore != null
+                        && ((finalContent != null && !finalContent.isBlank()) || a2uiJson != null)) {
+                    try {
+                        assistantMessageId = conversationHistoryStore.appendAssistantMessage(
+                                state.sessionId(),
+                                finalContent != null ? finalContent : "",
+                                reasoningSummary, state.traceId(), a2uiJson);
+                    } catch (Exception e) {
+                        log.warn("助手消息同步写入失败: sessionId={}, error={}", state.sessionId(), e.getMessage());
+                    }
+                }
+
+                // 持久化注入记录
+                persistInjectionRecord(assistantMessageId, state.sessionId());
+
+                // 异步后处理
+                asyncPostProcess(state);
+
+                // 聚合 Token 使用量
+                finalTokenUsage = aggregateTokenUsage(traceContext);
+            }
+        } catch (Exception e) {
+            log.error("流式 Agent 循环异常终止: error={}", e.getMessage(), e);
+            error = e;
+        } finally {
+            // 轨迹记录
+            if (traceRecorder != null && traceContext != null) {
+                String finalOutput = state.finalOutput();
+                boolean success = error == null && state.terminationReason() == null;
+                String errorMessage = error != null ? error.getMessage() : null;
+                String terminationReason = error != null
+                        ? error.getClass().getSimpleName()
+                        : state.terminationReason();
+                traceRecorder.endTrace(traceContext, finalOutput, success, errorMessage, terminationReason);
+            }
+
+            // 发送 DONE 或 ERROR 事件
+            if (error != null) {
+                sendStreamError(sseManager, streamId, 500,
+                        "处理失败: " + error.getMessage(), state.traceId());
+            } else {
+                sendReasoningEvent(sseManager, streamId, request.sessionId(), tempTurnId,
+                        "ANSWER_FINALIZED", "回答已生成", "本轮推理与回答已完成。",
+                        null, Map.of());
+                var doneData = buildDoneEventPayload(
+                        request, state, tempTurnId, finalTokenUsage,
+                        traceContext, reasoningSummary, finalContent, assistantMessageId);
+                sseManager.sendEvent(streamId, SseEventType.DONE, doneData);
+                lastCollectedA2uiTree = null;
+                sseManager.closeEmitter(streamId);
+            }
+        }
+    }
+
     // ===== 非流式 LLM 回调 =====
 
     /**
@@ -534,6 +697,205 @@ public class ReactAgentLoop {
 
             return spec.call().chatResponse();
         }
+    }
+
+    // ===== 流式 LLM 回调 =====
+
+    /**
+     * 流式迭代回调 — runStreaming() 使用。
+     *
+     * <p>通过 Flux&lt;String&gt; 流式调用 LLM，逐 token 发送 SSE TOKEN 事件，
+     * 支持 A2UI 流式解析和多模态路径。</p>
+     */
+    private class StreamingCallback implements IterationCallback {
+
+        private final SseSessionManager sseManager;
+        private final String streamId;
+        private final String sessionId;
+        private final String turnId;
+
+        @Nullable private Exception streamingError;
+        @Nullable private String finalContent;
+
+        StreamingCallback(SseSessionManager sseManager, String streamId,
+                          String sessionId, String turnId) {
+            this.sseManager = sseManager;
+            this.streamId = streamId;
+            this.sessionId = sessionId;
+            this.turnId = turnId;
+        }
+
+        @Override
+        public ChatResponse callLlm(AgentRequest request,
+                                     List<Message> messages,
+                                     List<ToolCallback> toolCallbacks,
+                                     @Nullable TraceContext traceContext) {
+            // CONTEXT_LOADING 推理事件
+            sendReasoningEvent(sseManager, streamId, sessionId, turnId,
+                    "CONTEXT_LOADING", "分析问题与上下文",
+                    "正在梳理本轮问题、会话历史与可用记忆。",
+                    null, Map.of());
+
+            // MEMORY_RETRIEVAL 推理事件
+            sendReasoningEvent(sseManager, streamId, sessionId, turnId,
+                    "MEMORY_RETRIEVAL", "检索相关记忆",
+                    "已基于最近对话与知识收集相关记忆，用于本轮推理。",
+                    null, Map.of());
+
+            // ANSWER_DRAFTING 推理事件
+            sendReasoningEvent(sseManager, streamId, sessionId, turnId,
+                    "ANSWER_DRAFTING", "正在生成回答",
+                    "模型正在根据上下文整理最终回答。",
+                    null, Map.of());
+
+            String scene = config.getLoop().getLlmScene();
+            String preferredProviderId = request.preferredProvider();
+
+            // 从消息列表提取 system/user 文本
+            String systemText = messages.stream()
+                    .filter(m -> m instanceof SystemMessage)
+                    .map(m -> ((SystemMessage) m).getText())
+                    .findFirst().orElse("");
+            String userText = messages.stream()
+                    .filter(m -> m instanceof UserMessage)
+                    .map(m -> ((UserMessage) m).getText())
+                    .findFirst().orElse("");
+
+            // 追加流式约束提示词
+            String streamingSystemPrompt = appendPromptSection(systemText,
+                    promptRegistry.render("agent/streaming-constraint"));
+
+            // A2UI 系统提示词注入
+            if (isA2uiEnabled()) {
+                streamingSystemPrompt = appendPromptSection(streamingSystemPrompt,
+                        A2uiComponentCatalog.renderPrompt(a2uiProperties.maxComponentsPerTree()));
+            }
+
+            // 调试日志
+            logLlmPromptIfEnabled(scene, streamingSystemPrompt, userText, toolCallbacks);
+
+            // 构建完整提示词（用于 trace 记录）
+            String fullPrompt = (streamingSystemPrompt != null && !streamingSystemPrompt.isBlank()
+                    ? streamingSystemPrompt + "\n\n" : "") + userText;
+
+            // 构建流式响应
+            Flux<String> tokenStream;
+            String providerId;
+            String modelId;
+
+            var mediaList = request.mediaContents();
+            if (mediaList != null && !mediaList.isEmpty() && multimodalRouter != null) {
+                // 多模态路径
+                var mmRequest = new MultimodalRequest(
+                        scene, fullPrompt, mediaList, null, preferredProviderId);
+                var streaming = multimodalRouter.streamWithInfo(mmRequest);
+                tokenStream = streaming.stream();
+                providerId = streaming.providerId();
+                modelId = streaming.modelId();
+            } else {
+                // 纯文本路径 — 流式不注入 toolCallbacks，避免不可追踪的 function call
+                var clientInfo = llmRouter.getChatClientWithInfo(scene, preferredProviderId);
+                var prompt = clientInfo.client().prompt();
+                if (streamingSystemPrompt != null && !streamingSystemPrompt.isBlank()) {
+                    prompt = prompt.system(streamingSystemPrompt);
+                }
+                tokenStream = prompt.user(userText).stream().content();
+                providerId = clientInfo.providerId();
+                modelId = clientInfo.modelId();
+            }
+
+            if (tokenStream == null) {
+                throw new IllegalStateException("流式响应为 null");
+            }
+
+            // A2UI 流式解析器
+            boolean a2uiEnabled = isA2uiEnabled();
+            StreamingA2uiParser a2uiParser = a2uiEnabled ? new StreamingA2uiParser() : null;
+            A2uiComponentTree[] latestA2uiTree = {null};
+            int maxComponents = a2uiEnabled ? a2uiProperties.maxComponentsPerTree() : 0;
+
+            StringBuilder contentBuilder = new StringBuilder();
+            int[] tokenIndex = {0};
+            Instant start = Instant.now();
+
+            // 订阅流式响应
+            tokenStream.doOnNext(tok -> {
+                contentBuilder.append(tok);
+                if (a2uiParser != null) {
+                    var segments = a2uiParser.feed(tok);
+                    for (var segment : segments) {
+                        switch (segment) {
+                            case StreamingA2uiParser.Segment.TextSegment(var text) -> {
+                                if (!text.isEmpty()) {
+                                    sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
+                                            "sessionId", sessionId,
+                                            "turnId", turnId,
+                                            "content", text,
+                                            "index", tokenIndex[0]++));
+                                }
+                            }
+                            case StreamingA2uiParser.Segment.A2uiSegment(var json) -> {
+                                if (latestA2uiTree[0] == null) {
+                                    var tree = parseAndValidateA2uiTree(json, maxComponents);
+                                    if (tree != null) {
+                                        latestA2uiTree[0] = tree;
+                                        sseManager.sendEvent(streamId, SseEventType.UI, Map.of(
+                                                "sessionId", sessionId,
+                                                "turnId", turnId,
+                                                "components", tree.components()));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
+                            "sessionId", sessionId,
+                            "turnId", turnId,
+                            "content", tok,
+                            "index", tokenIndex[0]++));
+                }
+            })
+            .doOnComplete(() -> {
+                if (a2uiParser != null) {
+                    var remaining = a2uiParser.flush();
+                    for (var segment : remaining) {
+                        if (segment instanceof StreamingA2uiParser.Segment.TextSegment(var text)
+                                && !text.isEmpty()) {
+                            sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
+                                    "sessionId", sessionId,
+                                    "turnId", turnId,
+                                    "content", text,
+                                    "index", tokenIndex[0]++));
+                        }
+                    }
+                }
+            })
+            .doOnError(err -> log.error("流式 LLM 调用失败: scene={}, error={}", scene, err.getMessage(), err))
+            .blockLast();
+
+            String rawContent = contentBuilder.toString();
+            this.finalContent = rawContent;
+
+            // 更新 A2UI 树
+            if (latestA2uiTree[0] != null) {
+                lastCollectedA2uiTree = latestA2uiTree[0];
+            }
+
+            // 记录流式 LLM Step
+            recordStreamingLlmStep(traceContext, start, providerId, modelId,
+                    scene, fullPrompt, rawContent, null);
+
+            // 构造一个合成的 ChatResponse 供 coreLoop 解析
+            // 流式模式下 content 已收集完毕，构造一个包含文本的 ChatResponse
+            var generation = new org.springframework.ai.chat.model.Generation(
+                    new AssistantMessage(rawContent));
+            return new ChatResponse(List.of(generation));
+        }
+
+        boolean hasStreamingError() { return streamingError != null; }
+        @Nullable Exception getStreamingError() { return streamingError; }
+        @Nullable String getFinalContent() { return finalContent; }
     }
 
     // ===== 状态初始化 =====
@@ -737,5 +1099,332 @@ public class ReactAgentLoop {
                 .count();
         long otherChars = text.length() - cjkChars;
         return Math.max(1, (int) (cjkChars + otherChars / 4));
+    }
+
+    // ===== SSE 推理事件 =====
+
+    /**
+     * 发送 REASONING SSE 事件。
+     */
+    private void sendReasoningEvent(SseSessionManager sseManager, String streamId,
+                                     String sessionId, String turnId,
+                                     String type, String title, String description,
+                                     @Nullable String toolName, Map<String, Object> extra) {
+        try {
+            var eventDetail = new HashMap<String, Object>();
+            eventDetail.put("id", UUID.randomUUID().toString());
+            eventDetail.put("type", type);
+            eventDetail.put("title", title);
+            eventDetail.put("description", description);
+            eventDetail.put("createdAt", Instant.now().toString());
+            eventDetail.put("extra", extra != null ? extra : Map.of());
+            if (toolName != null) {
+                eventDetail.put("toolName", toolName);
+            }
+            var eventPayload = new HashMap<String, Object>();
+            eventPayload.put("sessionId", sessionId);
+            eventPayload.put("turnId", turnId);
+            eventPayload.put("event", eventDetail);
+            sseManager.sendEvent(streamId, SseEventType.REASONING, eventPayload);
+        } catch (Exception e) {
+            log.debug("发送 reasoning 事件失败: type={}, error={}", type, e.getMessage());
+        }
+    }
+
+    /**
+     * 发送 SSE ERROR 事件并关闭连接。
+     */
+    private void sendStreamError(SseSessionManager sseManager, String streamId,
+                                  int code, String message, @Nullable String traceId) {
+        var errorData = new HashMap<String, Object>();
+        errorData.put("code", code);
+        errorData.put("message", message);
+        if (traceId != null) {
+            errorData.put("traceId", traceId);
+        }
+        sseManager.sendEvent(streamId, SseEventType.ERROR, errorData);
+        sseManager.closeEmitter(streamId);
+    }
+
+    // ===== DONE 事件构建 =====
+
+    /**
+     * 构建 DONE 事件 payload。
+     */
+    private Map<String, Object> buildDoneEventPayload(AgentRequest request,
+                                                       ReactAgentState state,
+                                                       String tempTurnId,
+                                                       @Nullable TokenUsage finalTokenUsage,
+                                                       @Nullable TraceContext traceContext,
+                                                       @Nullable String reasoningSummary,
+                                                       @Nullable String finalContent,
+                                                       @Nullable String assistantMessageId) {
+        var doneData = new HashMap<String, Object>();
+        doneData.put("messageId", assistantMessageId != null ? assistantMessageId : tempTurnId);
+        doneData.put("sessionId", request.sessionId());
+        doneData.put("turnId", tempTurnId);
+
+        if (finalTokenUsage != null) {
+            var tokenUsageMap = new HashMap<String, Object>();
+            tokenUsageMap.put("promptTokens", finalTokenUsage.promptTokens());
+            tokenUsageMap.put("completionTokens", finalTokenUsage.completionTokens());
+            tokenUsageMap.put("totalTokens", finalTokenUsage.totalTokens());
+            tokenUsageMap.put("modelId", finalTokenUsage.modelId());
+            doneData.put("tokenUsage", tokenUsageMap);
+        }
+
+        // 工具调用摘要
+        if (traceContext != null && !traceContext.steps().isEmpty()) {
+            var toolSummaries = new ArrayList<Map<String, Object>>();
+            for (var step : traceContext.steps()) {
+                if (step instanceof ToolCallStep toolStep) {
+                    var toolSummary = new HashMap<String, Object>();
+                    toolSummary.put("toolId", toolStep.toolId());
+                    toolSummary.put("action", toolStep.toolAction());
+                    toolSummary.put("success", toolStep.success());
+                    toolSummary.put("latencyMs", toolStep.duration().toMillis());
+                    toolSummaries.add(toolSummary);
+                }
+            }
+            if (!toolSummaries.isEmpty()) {
+                doneData.put("toolsSummary", toolSummaries);
+            }
+        }
+
+        // 知识库来源
+        var sources = buildKnowledgeSources(request.sessionId());
+        if (!sources.isEmpty()) {
+            doneData.put("sources", sources);
+        }
+
+        doneData.put("timestamp", Instant.now().toEpochMilli());
+        if (state.traceId() != null) {
+            doneData.put("traceId", state.traceId());
+        }
+        if (reasoningSummary != null) {
+            doneData.put("reasoningSummary", reasoningSummary);
+        }
+        if (lastCollectedA2uiTree != null && !lastCollectedA2uiTree.components().isEmpty()) {
+            doneData.put("a2uiComponents", lastCollectedA2uiTree.components());
+        }
+
+        var contents = new ArrayList<Map<String, Object>>();
+        if (finalContent != null && !finalContent.isBlank()) {
+            var textContent = new HashMap<String, Object>();
+            textContent.put("type", "TEXT");
+            textContent.put("text", finalContent);
+            contents.add(textContent);
+        }
+        doneData.put("contents", contents);
+        return doneData;
+    }
+
+    // ===== 知识库来源 =====
+
+    /**
+     * 构建知识库来源摘要。
+     */
+    private List<Map<String, Object>> buildKnowledgeSources(@Nullable String sessionId) {
+        if (sessionId == null || sessionId.isBlank() || sessionKnowledgeBaseRepository == null) {
+            return List.of();
+        }
+        try {
+            var kbIds = sessionKnowledgeBaseRepository.findKnowledgeBaseIdsBySessionId(sessionId);
+            if (kbIds == null || kbIds.isEmpty()) return List.of();
+            var result = new ArrayList<Map<String, Object>>();
+            for (String kbId : kbIds) {
+                if (kbId == null || kbId.isBlank()) continue;
+                String name = kbId;
+                if (knowledgeBaseRepository != null) {
+                    try {
+                        var kbOpt = knowledgeBaseRepository.findById(kbId);
+                        if (kbOpt.isPresent() && kbOpt.get().name() != null
+                                && !kbOpt.get().name().isBlank()) {
+                            name = kbOpt.get().name();
+                        }
+                    } catch (Exception ignore) { /* 回退为 ID */ }
+                }
+                var source = new HashMap<String, Object>();
+                source.put("type", "knowledgeBase");
+                source.put("id", kbId);
+                source.put("name", name);
+                result.add(source);
+            }
+            return Collections.unmodifiableList(result);
+        } catch (Exception e) {
+            log.debug("构建知识库来源摘要失败: sessionId={}, error={}", sessionId, e.getMessage());
+            return List.of();
+        }
+    }
+
+    // ===== Token 聚合 =====
+
+    /**
+     * 从 TraceContext 聚合 Token 使用量。
+     */
+    private TokenUsage aggregateTokenUsage(@Nullable TraceContext traceContext) {
+        String modelId = DEFAULT_MODEL_ID;
+        int promptTokens = 0;
+        int completionTokens = 0;
+        if (traceContext != null) {
+            promptTokens = traceContext.totalInputTokens();
+            completionTokens = traceContext.totalOutputTokens();
+            var steps = traceContext.steps();
+            for (int i = steps.size() - 1; i >= 0; i--) {
+                var step = steps.get(i);
+                if (step instanceof LlmCallStep llmStep) {
+                    modelId = llmStep.modelId();
+                    break;
+                }
+            }
+        }
+        return new TokenUsage(promptTokens, completionTokens,
+                promptTokens + completionTokens, modelId);
+    }
+
+    // ===== 流式 LLM Trace 记录 =====
+
+    /**
+     * 记录流式 LLM 调用步骤到 Trace。
+     */
+    private void recordStreamingLlmStep(@Nullable TraceContext traceContext,
+                                         Instant startTime, String providerId,
+                                         String modelId, String scene,
+                                         @Nullable String prompt, @Nullable String output,
+                                         @Nullable Exception error) {
+        if (traceRecorder == null || traceContext == null) return;
+        Instant end = Instant.now();
+        Duration d = Duration.between(startTime, end);
+        int inputTokens = estimateTextTokens(prompt != null ? prompt : "");
+        int outputTokens = error != null ? 0 : estimateTextTokens(output != null ? output : "");
+        String finishReason = error != null ? ("error: " + error.getMessage()) : "stream_complete";
+        int stepIndex = traceContext.steps() != null ? traceContext.steps().size() : 0;
+        var step = new LlmCallStep(
+                stepIndex, end, d,
+                providerId != null ? providerId : "unknown",
+                modelId != null ? modelId : "unknown",
+                scene != null ? scene : "unknown",
+                inputTokens, outputTokens, d, false, 0.0d, finishReason);
+        traceRecorder.recordStep(traceContext, step);
+    }
+
+    // ===== A2UI 辅助方法 =====
+
+    /**
+     * 判断 A2UI 功能是否启用。
+     */
+    private boolean isA2uiEnabled() {
+        return a2uiProperties != null && a2uiProperties.enabled();
+    }
+
+    /**
+     * 从非流式响应中提取 A2UI 内容。
+     */
+    private A2uiPayloadSupport.ParsedA2uiContent extractA2uiContent(@Nullable String content) {
+        if (!isA2uiEnabled()) {
+            return new A2uiPayloadSupport.ParsedA2uiContent(content != null ? content : "", null);
+        }
+        return A2uiPayloadSupport.extractContent(content, objectMapper, a2uiProperties.maxComponentsPerTree());
+    }
+
+    /**
+     * 序列化 A2UI 组件树为 JSON。
+     */
+    @Nullable
+    private String serializeA2uiTree(@Nullable A2uiComponentTree tree) {
+        if (tree == null || tree.components().isEmpty()) return null;
+        try {
+            return objectMapper.writeValueAsString(tree);
+        } catch (Exception e) {
+            log.warn("A2UI 组件树序列化失败: error={}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 解析并校验 A2UI JSON 为组件树。
+     */
+    @Nullable
+    private A2uiComponentTree parseAndValidateA2uiTree(String json, int maxComponents) {
+        try {
+            var tree = A2uiPayloadSupport.normalizeTree(
+                    objectMapper.readValue(json, A2uiComponentTree.class));
+            var validation = com.lifepilot.interaction.web.a2ui.A2uiComponentValidator
+                    .validate(tree, maxComponents);
+            if (!validation.valid()) {
+                log.warn("A2UI 载荷校验失败: errors={}", validation.errors());
+                return null;
+            }
+            return validation.truncatedTree() != null ? validation.truncatedTree() : tree;
+        } catch (Exception e) {
+            log.warn("A2UI 载荷解析失败: error={}", e.getMessage());
+            return null;
+        }
+    }
+
+    // ===== 提示词辅助 =====
+
+    /**
+     * 拼接提示词段落。
+     */
+    @Nullable
+    private String appendPromptSection(@Nullable String base, @Nullable String extra) {
+        if (extra == null || extra.isBlank()) return base;
+        if (base == null || base.isBlank()) return extra;
+        return base + "\n" + extra;
+    }
+
+    /**
+     * 调试日志 — 打印完整 LLM 提示词。
+     */
+    private void logLlmPromptIfEnabled(String scene, @Nullable String systemPrompt,
+                                        @Nullable String userText,
+                                        @Nullable List<ToolCallback> toolCallbacks) {
+        if (config == null || config.getDebug() == null || !config.getDebug().isLogLlmPrompts()) {
+            return;
+        }
+        List<String> toolNames = new ArrayList<>();
+        if (toolCallbacks != null && !toolCallbacks.isEmpty()) {
+            toolNames = toolCallbacks.stream()
+                    .filter(Objects::nonNull)
+                    .map(cb -> cb.getToolDefinition().name())
+                    .distinct()
+                    .collect(Collectors.toList());
+        }
+        log.info("""
+                ========== LLM PROMPT ==========
+                scene={} traceId=react
+                tools={}
+                -------- SYSTEM --------
+                {}
+                -------- USER --------
+                {}
+                ========= END PROMPT ==========""",
+                scene, toolNames,
+                systemPrompt != null ? systemPrompt : "",
+                userText != null ? userText : "");
+    }
+
+    // ===== 流式错误持久化 =====
+
+    /**
+     * 持久化流式系统错误消息到对话历史和 L1。
+     */
+    private void persistStreamingSystemError(@Nullable String sessionId,
+                                              @Nullable String traceId,
+                                              @Nullable Exception e) {
+        try {
+            if (sessionId == null || sessionId.isBlank()) return;
+            String detail = e != null ? e.getMessage() : "unknown";
+            String content = "系统提示：模型服务暂时不可用，请稍后重试。\n（错误信息）" + detail;
+            if (conversationHistoryStore != null) {
+                conversationHistoryStore.appendSystemMessage(sessionId, content, traceId);
+            }
+            if (workingMemory != null) {
+                int tokens = estimateTextTokens(content);
+                workingMemory.append(sessionId,
+                        com.lifepilot.memory.working.ConversationSlot.systemMessage(content, tokens));
+            }
+        } catch (Exception ignore) { /* 不影响主流程 */ }
     }
 }
