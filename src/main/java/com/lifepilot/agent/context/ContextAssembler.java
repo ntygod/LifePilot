@@ -955,15 +955,17 @@ public class ContextAssembler {
     // --- Prompt 构建 ---
 
     /**
-     * 构建 ReAct 架构通用 System Prompt。
+     * 构建 ReAct 架构专用 System Prompt。
+     *
+     * <p>使用 {@code agent/react-system} 模板，包含角色定义、ReAct 循环行为指令、
+     * 工具使用规范、上下文利用指南、回复风格和真实性约束。</p>
      *
      * @return System Prompt 文本
      */
     String buildReactSystemPrompt() {
         String roleDefinition = promptRegistry.render("agent/role-definition");
         var now = ZonedDateTime.now();
-        // ReAct 架构使用 understanding 模板（最通用的对话模板）
-        return promptRegistry.render("agent/understanding", Map.of(
+        return promptRegistry.render("agent/react-system", Map.of(
                 "roleDefinition", roleDefinition,
                 "currentDateTime", now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
                 "timezone", ZoneId.systemDefault().getId(),

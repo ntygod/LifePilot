@@ -27,10 +27,10 @@ class PromptAutoConfiguration_集成测试 {
     }
 
     @Test
-    void 注册20个模板() {
+    void 注册21个模板() {
         contextRunner.run(context -> {
             var registry = context.getBean(PromptRegistry.class);
-            assertEquals(20, registry.size(), "unexpected template keys: " + registry.keys());
+            assertEquals(21, registry.size(), "unexpected template keys: " + registry.keys());
         });
     }
 
@@ -40,7 +40,7 @@ class PromptAutoConfiguration_集成测试 {
             var registry = context.getBean(PromptRegistry.class);
             var expectedKeys = Set.of(
                     "agent/role-definition", "agent/understanding",
-                    "agent/streaming-constraint",
+                    "agent/streaming-constraint", "agent/react-system",
                     "skill/todo", "skill/schedule", "skill/habit", "skill/memory", "skill/sync",
                     "skill/datastore",
                     "memory/compression-summary", "memory/compression-keypoints", "memory/entity-compression",
