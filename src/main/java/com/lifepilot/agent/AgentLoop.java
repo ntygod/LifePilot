@@ -1454,11 +1454,10 @@ public class AgentLoop {
         return newState;
     }
 
-    /** 根据 AgentPhase 映射 LLM 场景。 */
+    /** 根据 AgentPhase 映射 LLM 场景（旧架构遗留，待删除）。 */
     private String mapPhaseToScene(AgentPhase phase) {
-        var mapping = config.getLoop().getSceneMapping();
-        String key = phase.name().toLowerCase();
-        return mapping.getOrDefault(key, LlmScene.AGENT_REASONING);
+        // 旧 sceneMapping 已移除，使用固定默认值
+        return LlmScene.AGENT_REASONING;
     }
 
     /** 从 Action 中提取摘要信息。 */
@@ -2085,12 +2084,11 @@ public class AgentLoop {
                               int maxConsecutiveBlocks,
                               int maxConsecutiveParseFailures) {
         static LoopLimits from(AgentConfigProperties config) {
-            int configuredMaxParseFailures = config.getLoop().getMaxConsecutiveParseFailures();
-            int maxConsecutiveParseFailures = configuredMaxParseFailures > 0 ? configuredMaxParseFailures : 3;
+            // 旧配置字段已移除，使用固定默认值（此文件待删除）
             return new LoopLimits(
                     config.getLoop().getMaxIterations(),
-                    config.getLoop().getMaxConsecutiveBlocks(),
-                    maxConsecutiveParseFailures
+                    3,
+                    3
             );
         }
     }
