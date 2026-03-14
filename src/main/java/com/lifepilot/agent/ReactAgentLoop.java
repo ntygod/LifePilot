@@ -32,7 +32,7 @@ import org.springframework.lang.Nullable;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.*;
+import java.util.*;;
 
 /**
  * ReAct Agent 循环 — 替代原六阶段状态机 AgentLoop。
@@ -399,5 +399,343 @@ public class ReactAgentLoop {
                 .reasoningSummary(reactState.reasoningSummary())
                 .allowedToolIds(reactState.allowedToolIds())
                 .build();
+    }
+
+    // ===== 同步执行入口 =====
+
+    /**
+     * 同步执行 ReAct 循环。
+     *
+     * <p>完整流程：初始化状态 → L1 写入用户消息 → 持久化用户消息 →
+     * 启动 Trace → coreLoop → L1 写入助手响应 → 持久化助手消息 →
+     * 异步后处理 → 构建 AgentResponse。</p>
+     *
+     * @param request Agent 请求
+     * @return Agent 响应
+     */
+    public AgentResponse run(AgentRequest request) {
+        ReactAgentState state = ReactAgentState.init(request);
+        TraceContext traceContext = null;
+        Instant loopStart = Instant.now();
+        Exception error = null;
+
+        var token = new CancellationToken();
+        this.cancellationToken = token;
+
+        try {
+            state = initState(request);
+
+            // 用户消息写入 L1（在 assembleContext 之前，确保对话历史完整）
+            writeUserMessageToL1(state);
+
+            // 同步写入用户消息到 chat_messages
+            persistUserMessage(state);
+
+            traceContext = startTraceIfEnabled(state, request);
+
+            // Trace 启动后重新计时
+            loopStart = Instant.now();
+
+            // 核心循环 — 非流式回调
+            state = coreLoop(state, request, traceContext, loopStart,
+                    new NonStreamingCallback(), token);
+
+            // 构建推理概要
+            if (state.terminationReason() == null) {
+                String summary = buildReasoningSummary(state, traceContext);
+                state = state.toBuilder().reasoningSummary(summary).build();
+            }
+
+            // AI 响应写入 L1
+            writeAssistantMessageToL1(state);
+
+            // 同步写入助手消息到 chat_messages
+            String assistantMessageId = persistAssistantMessage(state);
+
+            // 持久化注入记录
+            persistInjectionRecord(assistantMessageId, state.sessionId());
+
+            // 异步后处理（会话快照 + AUDN 实体提取）
+            asyncPostProcess(state);
+
+            return new AgentResponse(
+                    state.traceId(),
+                    state.sessionId(),
+                    state.finalOutput() != null ? state.finalOutput() : "",
+                    state.budget().tokensUsed(),
+                    state.stepCount(),
+                    state.terminationReason(),
+                    assistantMessageId,
+                    null, // a2uiComponents — Task 8 补充
+                    null  // tokenUsage — Task 9.2 补充
+            );
+
+        } catch (Exception e) {
+            log.error("ReAct 循环异常终止: error={}", e.getMessage(), e);
+            error = e;
+            // 使用旧 AgentState 构建错误响应（AgentResponse.error 依赖旧类型）
+            return AgentResponse.error(toLegacyAgentState(state), e);
+        } finally {
+            if (traceRecorder != null && traceContext != null) {
+                String finalOutput = state.finalOutput();
+                boolean success = error == null && state.terminationReason() == null;
+                String errorMessage = error != null ? error.getMessage() : null;
+                String terminationReason = error != null
+                        ? error.getClass().getSimpleName()
+                        : state.terminationReason();
+                traceRecorder.endTrace(traceContext, finalOutput, success,
+                        errorMessage, terminationReason);
+            }
+        }
+    }
+
+    // ===== 非流式 LLM 回调 =====
+
+    /**
+     * 非流式迭代回调 — run() 使用。
+     *
+     * <p>通过 ChatClient.prompt().system().user().toolCallbacks().call() 同步调用 LLM。
+     * Spring AI 自动处理 function calling 并返回最终文本。</p>
+     */
+    private class NonStreamingCallback implements IterationCallback {
+        @Override
+        public ChatResponse callLlm(AgentRequest request,
+                                     List<Message> messages,
+                                     List<ToolCallback> toolCallbacks,
+                                     @Nullable TraceContext traceContext) {
+            String scene = config.getLoop().getLlmScene();
+            var chatClient = llmRouter.getChatClient(scene, request.preferredProvider());
+
+            // 从消息列表提取 system/user 文本
+            String systemText = messages.stream()
+                    .filter(m -> m instanceof SystemMessage)
+                    .map(m -> ((SystemMessage) m).getText())
+                    .findFirst().orElse("");
+            String userText = messages.stream()
+                    .filter(m -> m instanceof UserMessage)
+                    .map(m -> ((UserMessage) m).getText())
+                    .findFirst().orElse("");
+
+            var spec = chatClient.prompt();
+            if (!systemText.isBlank()) {
+                spec = spec.system(systemText);
+            }
+            spec = spec.user(userText);
+
+            // 注入工具回调
+            if (toolCallbacks != null && !toolCallbacks.isEmpty()) {
+                ToolCallback[] callbacks = toolCallbacks.stream()
+                        .filter(Objects::nonNull)
+                        .toArray(ToolCallback[]::new);
+                if (callbacks.length > 0) {
+                    spec = spec.toolCallbacks(callbacks);
+                }
+            }
+
+            return spec.call().chatResponse();
+        }
+    }
+
+    // ===== 状态初始化 =====
+
+    /**
+     * 初始化 ReAct 状态 — 查找已有会话或创建新状态。
+     */
+    private ReactAgentState initState(AgentRequest request) {
+        var existingSession = sessionManager.findSession(request.sessionId());
+        if (existingSession.isPresent()) {
+            var snapshot = existingSession.get();
+            var state = ReactAgentState.fromSession(snapshot, request);
+            hydrateWorkingMemoryFromConversationView(snapshot.sessionId());
+            return state;
+        }
+        return ReactAgentState.init(request);
+    }
+
+    /**
+     * 启动 Trace（如果 TraceRecorder 可用）。
+     */
+    @Nullable
+    private TraceContext startTraceIfEnabled(ReactAgentState state, AgentRequest request) {
+        if (traceRecorder == null) return null;
+        return traceRecorder.startTrace(state.traceId(), state.sessionId(), request.message());
+    }
+
+    // ===== L1 工作记忆读写 =====
+
+    /**
+     * 将用户消息写入 L1 工作记忆。
+     */
+    private void writeUserMessageToL1(ReactAgentState state) {
+        if (workingMemory == null || state.goal() == null || state.goal().isBlank()) return;
+        try {
+            int tokens = estimateTextTokens(state.goal());
+            var slot = com.lifepilot.memory.working.ConversationSlot.userMessage(
+                    state.goal(), tokens);
+            workingMemory.append(state.sessionId(), slot);
+        } catch (Exception e) {
+            log.warn("用户消息写入 L1 失败，降级为无对话历史: sessionId={}, error={}",
+                    state.sessionId(), e.getMessage());
+        }
+    }
+
+    /**
+     * 将 AI 响应写入 L1 工作记忆。
+     */
+    private void writeAssistantMessageToL1(ReactAgentState state) {
+        if (workingMemory == null) return;
+        String response = state.finalOutput();
+        if (response == null || response.isBlank()) return;
+        try {
+            int tokens = estimateTextTokens(response);
+            var slot = com.lifepilot.memory.working.ConversationSlot.assistantMessage(
+                    response, tokens);
+            workingMemory.append(state.sessionId(), slot);
+        } catch (Exception e) {
+            log.warn("AI 响应写入 L1 失败: sessionId={}, error={}",
+                    state.sessionId(), e.getMessage());
+        }
+    }
+
+    /**
+     * 当 L1 为空时，从 ConversationViewService 回灌对话历史。
+     */
+    private void hydrateWorkingMemoryFromConversationView(String sessionId) {
+        if (workingMemory == null || conversationViewService == null
+                || sessionId == null || sessionId.isBlank()) return;
+        try {
+            var existingSlots = workingMemory.getContext(sessionId);
+            if (existingSlots != null && !existingSlots.isEmpty()) return;
+
+            var turns = conversationViewService.getRecentTurns(
+                    sessionId, config.getSession().getMaxRecentTurns());
+            for (var turn : turns) {
+                if (turn.content() != null && !turn.content().isBlank()) {
+                    if ("user".equalsIgnoreCase(turn.role())) {
+                        workingMemory.append(sessionId,
+                                com.lifepilot.memory.working.ConversationSlot.userMessage(
+                                        turn.content(), estimateTextTokens(turn.content())));
+                    } else if ("assistant".equalsIgnoreCase(turn.role())) {
+                        workingMemory.append(sessionId,
+                                com.lifepilot.memory.working.ConversationSlot.assistantMessage(
+                                        turn.content(), estimateTextTokens(turn.content())));
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("L1 对话历史回灌失败: sessionId={}, error={}", sessionId, e.getMessage());
+        }
+    }
+
+    // ===== 对话历史持久化 =====
+
+    /**
+     * 同步写入用户消息到 chat_messages。
+     */
+    private void persistUserMessage(ReactAgentState state) {
+        if (conversationHistoryStore == null
+                || state.goal() == null || state.goal().isBlank()) return;
+        try {
+            conversationHistoryStore.appendUserMessage(
+                    state.sessionId(), state.goal(), state.traceId());
+        } catch (Exception e) {
+            log.warn("用户消息同步写入失败: sessionId={}, error={}",
+                    state.sessionId(), e.getMessage());
+        }
+    }
+
+    /**
+     * 同步写入助手消息到 chat_messages。
+     *
+     * @return 后端生成的 messageId（可为 null）
+     */
+    @Nullable
+    private String persistAssistantMessage(ReactAgentState state) {
+        if (conversationHistoryStore == null) return null;
+        String output = state.finalOutput();
+        if (output == null || output.isBlank()) return null;
+        try {
+            return conversationHistoryStore.appendAssistantMessage(
+                    state.sessionId(), output, state.reasoningSummary(),
+                    state.traceId(), null);
+        } catch (Exception e) {
+            log.warn("助手消息同步写入失败: sessionId={}, error={}",
+                    state.sessionId(), e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 持久化注入记录 — 将本次注入的记忆实体 ID 关联到助手消息。
+     */
+    private void persistInjectionRecord(@Nullable String messageId,
+                                         @Nullable String sessionId) {
+        var entityIds = lastInjectedEntityIds;
+        if (injectionRecordRepository == null || entityIds.isEmpty()
+                || messageId == null || messageId.isBlank()) return;
+        try {
+            injectionRecordRepository.save(messageId, sessionId, entityIds);
+            log.debug("注入记录已持久化: messageId={}, entityCount={}", messageId, entityIds.size());
+        } catch (Exception e) {
+            log.warn("注入记录持久化失败: messageId={}, error={}", messageId, e.getMessage());
+        }
+    }
+
+    // ===== 异步后处理 =====
+
+    /**
+     * 异步后处理 — 会话快照持久化 + AUDN 实体提取。
+     */
+    private void asyncPostProcess(ReactAgentState finalState) {
+        // 临时桥接：SessionManager.saveSession 目前接受 AgentState
+        var legacyState = toLegacyAgentState(finalState);
+        Thread.startVirtualThread(() -> {
+            try {
+                sessionManager.saveSession(legacyState);
+            } catch (Exception e) {
+                log.warn("会话快照持久化失败: sessionId={}, error={}",
+                        finalState.sessionId(), e.getMessage());
+            }
+            try {
+                if (realtimeExtractor != null && finalState.finalOutput() != null) {
+                    realtimeExtractor.extractAsync(
+                            finalState.sessionId(),
+                            finalState.goal(),
+                            finalState.finalOutput());
+                }
+            } catch (Exception e) {
+                log.warn("AUDN 实时实体提取失败: sessionId={}, error={}",
+                        finalState.sessionId(), e.getMessage());
+            }
+        });
+    }
+
+    // ===== 推理概要 =====
+
+    /**
+     * 构建推理概要字符串。
+     */
+    private String buildReasoningSummary(ReactAgentState state,
+                                          @Nullable TraceContext traceContext) {
+        int steps = state.stepCount();
+        int tokens = state.budget() != null ? state.budget().tokensUsed() : 0;
+        String modelId = "agent";
+        // Task 9.2 将从 TraceContext 聚合更精确的 Token 和模型信息
+        return "本轮推理已完成，使用模型 %s，经历 %d 个推理步骤，累计约 %d 个 Token。"
+                .formatted(modelId, steps, tokens);
+    }
+
+    // ===== Token 估算 =====
+
+    /**
+     * 估算文本 Token 数（中文按 1 字 1 Token，英文按 4 字符 1 Token）。
+     */
+    private int estimateTextTokens(String text) {
+        if (text == null || text.isEmpty()) return 0;
+        long cjkChars = text.chars()
+                .filter(c -> Character.UnicodeScript.of(c) == Character.UnicodeScript.HAN)
+                .count();
+        long otherChars = text.length() - cjkChars;
+        return Math.max(1, (int) (cjkChars + otherChars / 4));
     }
 }
