@@ -899,21 +899,17 @@ public class ReactAgentLoop {
             String scene = config.getLoop().getLlmScene();
             String preferredProviderId = request.preferredProvider();
 
-            // 提取 system 文本（用于追加流式约束和 A2UI 提示词）
+            // 提取 system 文本，通过 ContextAssembler 集中增强（流式约束 + A2UI）
             String systemText = messages.stream()
                     .filter(m -> m instanceof SystemMessage)
                     .map(m -> ((SystemMessage) m).getText())
                     .findFirst().orElse("");
 
-            // 追加流式约束提示词
-            String streamingSystemPrompt = appendPromptSection(systemText,
-                    promptRegistry.render("agent/streaming-constraint"));
-
-            // A2UI 系统提示词注入
-            if (isA2uiEnabled()) {
-                streamingSystemPrompt = appendPromptSection(streamingSystemPrompt,
-                        A2uiComponentCatalog.renderPrompt(a2uiProperties.maxComponentsPerTree()));
-            }
+            String a2uiPrompt = isA2uiEnabled()
+                    ? A2uiComponentCatalog.renderPrompt(a2uiProperties.maxComponentsPerTree())
+                    : null;
+            String streamingSystemPrompt = contextAssembler.enhanceSystemPromptForStreaming(
+                    systemText, a2uiPrompt);
 
             // 先尝试用 ChatModel 做一次非流式调用检测 tool call
             // 如果 LLM 要调用工具，直接返回含 tool call 的 ChatResponse（不流式输出）
@@ -1479,14 +1475,6 @@ public class ReactAgentLoop {
     }
 
     // ===== 提示词辅助 =====
-
-    /** 拼接提示词段落。 */
-    @Nullable
-    private String appendPromptSection(@Nullable String base, @Nullable String extra) {
-        if (extra == null || extra.isBlank()) return base;
-        if (base == null || base.isBlank()) return extra;
-        return base + "\n" + extra;
-    }
 
     /**
      * 调试日志 — 打印发送给 LLM 的完整消息列表。
