@@ -4,7 +4,7 @@ import com.lifepilot.a2a.client.A2aClientService;
 import com.lifepilot.a2a.client.RemoteAgentRegistry;
 import com.lifepilot.a2a.client.RemoteAgentToolFactory;
 import com.lifepilot.a2a.server.*;
-import com.lifepilot.agent.AgentLoop;
+import com.lifepilot.agent.ReactAgentLoop;
 import com.lifepilot.multiagent.config.MultiAgentAutoConfiguration;
 import com.lifepilot.multiagent.execution.AgentExecutor;
 import com.lifepilot.multiagent.registry.AgentRegistry;
@@ -63,10 +63,10 @@ public class A2aAutoConfiguration {
             havingValue = "true", matchIfMissing = true)
     public A2aAgentExecutor a2aAgentExecutor(AgentRegistry agentRegistry,
                                               AgentExecutor agentExecutor,
-                                              AgentLoop agentLoop,
+                                              ReactAgentLoop reactAgentLoop,
                                               A2aTaskStore taskStore) {
         log.info("A2A Server: 注册 A2aAgentExecutor");
-        return new A2aAgentExecutor(agentRegistry, agentExecutor, agentLoop, taskStore);
+        return new A2aAgentExecutor(agentRegistry, agentExecutor, reactAgentLoop, taskStore);
     }
 
     @Bean

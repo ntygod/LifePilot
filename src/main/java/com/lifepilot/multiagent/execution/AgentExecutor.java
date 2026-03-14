@@ -1,17 +1,15 @@
 package com.lifepilot.multiagent.execution;
 
-import com.lifepilot.agent.AgentLoop;
+import com.lifepilot.agent.ReactAgentLoop;
 import com.lifepilot.agent.model.Action;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.agent.model.AgentResponse;
-import com.lifepilot.agent.model.AgentState;
 import com.lifepilot.multiagent.config.MultiAgentProperties;
 import com.lifepilot.multiagent.model.AgentDefinition;
 import com.lifepilot.tool.ToolContract;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.lang.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -19,8 +17,8 @@ import java.util.List;
 /**
  * Agent 执行器 — 隔离执行子 Agent 任务。
  *
- * <p>执行流程：检查委托深度 → 创建独立 Budget → 构建 AgentRequest
- * → 调用 AgentLoop.run() → 转换为 SubAgentResult。
+ * <p>执行流程：检查委托深度 → 构建 allowedToolIds → 构造 AgentRequest
+ * → 调用 ReactAgentLoop.run() → 转换为 SubAgentResult。
  * 所有异常均被捕获，返回 success=false 的 SubAgentResult。</p>
  *
  * @author zsg
@@ -30,14 +28,14 @@ public class AgentExecutor {
 
     private static final Logger log = LoggerFactory.getLogger(AgentExecutor.class);
 
-    private final AgentLoop agentLoop;
+    private final ReactAgentLoop reactAgentLoop;
     private final DynamicToolRegistry toolRegistry;
     private final MultiAgentProperties config;
 
-    public AgentExecutor(AgentLoop agentLoop,
+    public AgentExecutor(ReactAgentLoop reactAgentLoop,
                          DynamicToolRegistry toolRegistry,
                          MultiAgentProperties config) {
-        this.agentLoop = agentLoop;
+        this.reactAgentLoop = reactAgentLoop;
         this.toolRegistry = toolRegistry;
         this.config = config;
     }
@@ -45,18 +43,13 @@ public class AgentExecutor {
     /**
      * 执行 Agent 委托任务。
      *
-     * @param definition  Agent 蓝图
-     * @param task        委托任务描述
-     * @param context     附加上下文（可选）
-     * @param parentState 父 Agent 状态
+     * @param definition Agent 蓝图
+     * @param request    已构造的 AgentRequest（含 depth、parentTraceId 等）
      * @return SubAgentResult（success=true 或 success=false）
      */
-    public Action.SubAgentResult execute(AgentDefinition definition,
-                                         String task,
-                                         @Nullable String context,
-                                         AgentState parentState) {
+    public Action.SubAgentResult execute(AgentDefinition definition, AgentRequest request) {
         String agentId = definition.id();
-        int newDepth = parentState.depth() + 1;
+        int newDepth = request.depth() + 1;
 
         // 1. 检查委托深度
         if (newDepth > config.getMaxDelegationDepth()) {
@@ -69,41 +62,33 @@ public class AgentExecutor {
         }
 
         try {
-            // 2. 创建独立 Budget
-            var subBudget = definition.budget().toAgentBudget();
+            // 2. 构建 allowedToolIds（canDelegate=false 时排除 handoff_to_* 工具 + 父作用域交集）
+            List<String> allowedToolIds = buildAllowedToolIds(definition, request.allowedToolIds());
 
-            // 3. 构建 allowedToolIds（canDelegate=false 时排除 handoff_to_* 工具 + 父作用域交集）
-            List<String> allowedToolIds = buildAllowedToolIds(definition, parentState);
-
-            // 4. 组装任务消息
-            String message = context != null
-                    ? "任务: %s\n上下文: %s".formatted(task, context)
-                    : task;
-
-            // 5. 构建 AgentRequest（子 Agent 委托目前不携带多模态媒体）
+            // 3. 构造子 Agent 请求（覆盖 depth + allowedToolIds）
             var subRequest = new AgentRequest(
-                    message,
-                    parentState.sessionId(),
-                    parentState.channel(),
-                    definition.systemPrompt(),
-                    subBudget,
-                    parentState.traceId(),
+                    request.message(),
+                    request.sessionId(),
+                    request.channel(),
+                    request.systemPrompt(),
+                    request.budget(),
+                    request.parentTraceId(),
                     newDepth,
-                    definition.preferredProvider(),
+                    request.preferredProvider(),
                     allowedToolIds,
-                    null
+                    null // 子 Agent 委托不携带多模态媒体
             );
 
-            // 6. 执行 AgentLoop
-            log.info("Agent 委托执行开始: agentId={}, depth={}, task={}",
-                    agentId, newDepth, task.length() > 100 ? task.substring(0, 100) + "..." : task);
+            // 4. 执行 ReactAgentLoop
+            log.info("Agent 委托执行开始: agentId={}, depth={}, messageLen={}",
+                    agentId, newDepth, request.message().length());
 
-            AgentResponse response = agentLoop.run(subRequest);
+            AgentResponse response = reactAgentLoop.run(subRequest);
 
             log.info("Agent 委托执行完成: agentId={}, tokensUsed={}, steps={}",
                     agentId, response.tokensUsed(), response.stepCount());
 
-            // 7. 转换为 SubAgentResult — 澄清终止视为成功（父 Agent 可展示澄清问题）
+            // 5. 转换为 SubAgentResult — 澄清终止视为成功（父 Agent 可展示澄清问题）
             boolean success = response.terminationReason() == null
                     || "需要用户澄清".equals(response.terminationReason());
             return new Action.SubAgentResult(
@@ -136,11 +121,12 @@ public class AgentExecutor {
      * 取与父 Agent 作用域的交集，防止通过委托实现权限提升。
      * Infrastructure 工具（tags 含 "infrastructure"）始终保留，不受交集约束。</p>
      *
-     * @param definition  子 Agent 蓝图
-     * @param parentState 父 Agent 状态
+     * @param definition       子 Agent 蓝图
+     * @param parentAllowedIds 父 Agent 的工具白名单（可为 null）
      * @return 子 Agent 的有效工具 ID 列表
      */
-    private List<String> buildAllowedToolIds(AgentDefinition definition, AgentState parentState) {
+    private List<String> buildAllowedToolIds(AgentDefinition definition,
+                                             List<String> parentAllowedIds) {
         String selfHandoffId = HandoffToolFactory.TOOL_ID_PREFIX + definition.id();
         var result = new ArrayList<String>();
         for (String toolId : definition.allowedTools()) {
@@ -163,9 +149,8 @@ public class AgentExecutor {
         }
 
         // 父 Agent 作用域交集约束
-        var parentAllowed = parentState.allowedToolIds();
-        if (parentAllowed != null && !parentAllowed.isEmpty()) {
-            result.retainAll(parentAllowed);
+        if (parentAllowedIds != null && !parentAllowedIds.isEmpty()) {
+            result.retainAll(parentAllowedIds);
         }
 
         // infrastructure 工具始终保留
