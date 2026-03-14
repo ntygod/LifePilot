@@ -528,6 +528,41 @@ public class LlmRouter {
     }
 
     /**
+     * ChatModel 附带 Provider 元信息（用于手动 tool calling 场景）。
+     *
+     * @param chatModel  ChatModel 实例
+     * @param providerId Provider ID
+     * @param modelId    模型 ID
+     */
+    public record ChatModelInfo(org.springframework.ai.chat.model.ChatModel chatModel,
+                                String providerId, String modelId) {}
+
+    /**
+     * 获取最高优先级 Provider 的 ChatModel 及元信息。
+     *
+     * <p>用于需要手动控制 tool calling 的场景（如 ReAct 循环），
+     * 调用方可通过 {@code ChatModel.call(Prompt)} 获取原始响应，
+     * 自行解析 tool call 请求并执行。</p>
+     *
+     * @param scene               场景名称
+     * @param preferredProviderId 优先 Provider ID（可为 null）
+     * @return ChatModel + providerId + modelId
+     * @throws LlmUnavailableException 无可用 Provider
+     */
+    public ChatModelInfo getChatModelWithInfo(String scene, @Nullable String preferredProviderId) {
+        String normalizedScene = normalizeScene(scene);
+        var candidates = findAvailableCandidates(normalizedScene, ProviderCapability.CHAT, preferredProviderId);
+        for (var config : candidates) {
+            var adapter = providerRegistry.getAdapter(config.id());
+            if (adapter instanceof com.lifepilot.llm.adapter.SpringAiProviderAdapter springAdapter) {
+                return new ChatModelInfo(springAdapter.chatModel(), config.id(), config.modelName());
+            }
+        }
+        throw new LlmUnavailableException(
+                "无可用 ChatModel: scene=" + scene, scene, List.of());
+    }
+
+    /**
      * 执行文本嵌入，使用独立 EMBEDDING 熔断器隔离。
      *
      * @param text 待嵌入文本
