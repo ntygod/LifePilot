@@ -1,6 +1,6 @@
 package com.lifepilot.eval.engine;
 
-import com.lifepilot.agent.AgentLoop;
+import com.lifepilot.agent.ReactAgentLoop;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.agent.model.AgentResponse;
 import com.lifepilot.observability.evaluation.EvaluationConfig;
@@ -52,7 +52,7 @@ public class EvalEngine {
     private static final Logger log = LoggerFactory.getLogger(EvalEngine.class);
 
     private final ScenarioLoader scenarioLoader;
-    private final AgentLoop agentLoop;
+    private final ReactAgentLoop reactAgentLoop;
     private final TraceQuery traceQuery;
     private final EvaluationCore evaluationCore;
     private final LlmJudge llmJudge;
@@ -62,7 +62,7 @@ public class EvalEngine {
     private final EvalConfigProperties config;
 
     public EvalEngine(ScenarioLoader scenarioLoader,
-                      AgentLoop agentLoop,
+                      ReactAgentLoop reactAgentLoop,
                       TraceQuery traceQuery,
                       EvaluationCore evaluationCore,
                       LlmJudge llmJudge,
@@ -71,7 +71,7 @@ public class EvalEngine {
                       DynamicToolRegistry toolRegistry,
                       EvalConfigProperties config) {
         this.scenarioLoader = scenarioLoader;
-        this.agentLoop = agentLoop;
+        this.reactAgentLoop = reactAgentLoop;
         this.traceQuery = traceQuery;
         this.evaluationCore = evaluationCore;
         this.llmJudge = llmJudge;
@@ -113,7 +113,7 @@ public class EvalEngine {
             AgentResponse response;
             try {
                 response = CompletableFuture.supplyAsync(
-                        () -> agentLoop.run(request),
+                        () -> reactAgentLoop.run(request),
                         Executors.newVirtualThreadPerTaskExecutor()
                 ).orTimeout(timeout, TimeUnit.SECONDS).join();
             } catch (java.util.concurrent.CompletionException ce) {

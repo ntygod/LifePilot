@@ -32,7 +32,8 @@ public record AgentResponse(
         this(traceId, sessionId, content, tokensUsed, stepCount, terminationReason, null, null, null);
     }
 
-    public static AgentResponse error(AgentState state, Exception exception) {
+    /** 从 ReactAgentState 构建错误响应。 */
+    public static AgentResponse error(ReactAgentState state, Exception exception) {
         return new AgentResponse(
                 state.traceId(),
                 state.sessionId(),

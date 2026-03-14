@@ -1,7 +1,7 @@
 package com.lifepilot.tool.bridge;
 
 import com.lifepilot.agent.AgentToolProvider;
-import com.lifepilot.agent.model.AgentState;
+import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.tool.ToolContract;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.pipeline.ToolExecutionPipeline;
@@ -52,7 +52,7 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
     }
 
     @Override
-    public List<ToolCallback> getToolCallbacks(AgentState state) {
+    public List<ToolCallback> getToolCallbacks(ReactAgentState state) {
         List<ToolContract> tools = toolRegistry.getToolSnapshot();
         var allowedToolIds = state.allowedToolIds();
         if (allowedToolIds != null && !allowedToolIds.isEmpty()) {

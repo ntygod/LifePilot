@@ -4,7 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.config.AgentConfigProperties;
-import com.lifepilot.agent.model.AgentState;
+import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.memory.working.WorkingMemory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -97,7 +97,7 @@ public class SessionManager {
      *
      * @param state 当前 Agent 状态
      */
-    public void saveSession(AgentState state) {
+    public void saveSession(ReactAgentState state) {
         try {
             int maxTurns = config.getSession().getMaxRecentTurns();
             var existing = findSession(state.sessionId());

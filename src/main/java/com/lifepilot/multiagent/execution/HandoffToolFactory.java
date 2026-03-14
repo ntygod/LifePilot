@@ -1,8 +1,6 @@
 package com.lifepilot.multiagent.execution;
 
-import com.lifepilot.agent.model.AgentPhase;
-import com.lifepilot.agent.model.AgentState;
-import com.lifepilot.agent.model.Budget;
+import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.multiagent.model.AgentDefinition;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.BuiltinTool;
@@ -71,36 +69,32 @@ public class HandoffToolFactory {
                         String context = input.getOptionalParam("context", String.class)
                                 .orElse(null);
 
-                        // 从 ToolInput 读取调用方上下文（由 AgentLoop 注入）
+                        // 从 ToolInput 读取调用方上下文（由 ReactAgentLoop 注入）
                         int callerDepth = input.getOptionalParam("_callerDepth", Integer.class).orElse(0);
                         String callerTraceId = input.getOptionalParam("_callerTraceId", String.class).orElse(null);
                         String callerSessionId = input.getOptionalParam("_callerSessionId", String.class)
                                 .orElse("handoff-" + UUID.randomUUID().toString().substring(0, 8));
 
-                        // 创建最小 parentState 用于深度检查和轨迹关联
-                        AgentState minimalParentState = AgentState.builder()
-                                .traceId(UUID.randomUUID().toString())
-                                .sessionId(callerSessionId)
-                                .goal(task)
-                                .phase(AgentPhase.EXECUTING)
-                                .channel("internal")
-                                .steps(List.of())
-                                .stepCount(0)
-                                .plan(null)
-                                .planStepIndex(0)
-                                .revisionCount(0)
-                                .shortTermMemory(List.of())
-                                .mentionedEntities(List.of())
-                                .budget(Budget.defaultBudget())
-                                .parentTraceId(callerTraceId)
-                                .depth(callerDepth)
-                                .done(false)
-                                .finalOutput(null)
-                                .terminationReason(null)
-                                .allowedToolIds(null)
-                                .build();
+                        // 组装任务消息
+                        String message = context != null
+                                ? "任务: %s\n上下文: %s".formatted(task, context)
+                                : task;
 
-                        var result = agentExecutor.execute(definition, task, context, minimalParentState);
+                        // 直接构造 AgentRequest（不再构造旧 AgentState）
+                        var subRequest = new AgentRequest(
+                                message,
+                                callerSessionId,
+                                "internal",
+                                definition.systemPrompt(),
+                                definition.budget().toAgentBudget(),
+                                callerTraceId,
+                                callerDepth,
+                                definition.preferredProvider(),
+                                null, // allowedToolIds 由 AgentExecutor 计算
+                                null  // 子 Agent 委托不携带多模态媒体
+                        );
+
+                        var result = agentExecutor.execute(definition, subRequest);
 
                         if (result.success()) {
                             return ToolResult.success(Map.of(

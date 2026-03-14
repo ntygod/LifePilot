@@ -1,12 +1,12 @@
 package com.lifepilot.interaction.web.controller;
 
-import com.lifepilot.agent.AgentLoop;
+import com.lifepilot.agent.ReactAgentLoop;
 import com.lifepilot.agent.context.AssembledContext;
 import com.lifepilot.agent.context.ContextAssembler;
 import com.lifepilot.agent.context.TokenBudget;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.agent.model.AgentResponse;
-import com.lifepilot.agent.model.AgentState;
+import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.interaction.model.TokenUsage;
 import com.lifepilot.interaction.web.model.AgentDetail;
 import com.lifepilot.interaction.web.model.AgentSummary;
@@ -64,16 +64,16 @@ public class AgentController {
     private static final Logger log = LoggerFactory.getLogger(AgentController.class);
 
     private final AgentRegistry agentRegistry;
-    private final AgentLoop agentLoop;
+    private final ReactAgentLoop reactAgentLoop;
     private final KnowledgeBaseManager knowledgeBaseManager;
     private final ContextAssembler contextAssembler;
 
     public AgentController(AgentRegistry agentRegistry,
-                           @Nullable AgentLoop agentLoop,
+                           @Nullable ReactAgentLoop reactAgentLoop,
                            KnowledgeBaseManager knowledgeBaseManager,
                            ContextAssembler contextAssembler) {
         this.agentRegistry = agentRegistry;
-        this.agentLoop = agentLoop;
+        this.reactAgentLoop = reactAgentLoop;
         this.knowledgeBaseManager = knowledgeBaseManager;
         this.contextAssembler = contextAssembler;
     }
@@ -308,7 +308,7 @@ public class AgentController {
     @PostMapping("/{id}/test-chat")
     public ResponseEntity<?> testChat(@PathVariable String id,
                                        @RequestBody TestChatRequest request) {
-        if (agentLoop == null) {
+        if (reactAgentLoop == null) {
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(
                     new ErrorResponse(503, "Agent 引擎未启用（LLM 不可用）", Instant.now()));
         }
@@ -348,7 +348,7 @@ public class AgentController {
             );
 
             // 4. 执行 Agent 对话
-            AgentResponse agentResponse = agentLoop.run(agentRequest);
+            AgentResponse agentResponse = reactAgentLoop.run(agentRequest);
 
             // 5. 构建 ChatResponse
             String messageId = UUID.randomUUID().toString();
@@ -406,7 +406,7 @@ public class AgentController {
         String preferredProviderId = resolvePreferredProviderId(agent);
 
         try {
-            // 2. 构造临时 AgentState（UNDERSTANDING 阶段）
+            // 2. 构造临时 ReactAgentState（用于上下文组装预览）
             String sessionId = request.sessionId() != null
                     ? request.sessionId()
                     : "preview:" + UUID.randomUUID();
@@ -421,7 +421,7 @@ public class AgentController {
                     agent.allowedTools(),
                     null
             );
-            AgentState state = AgentState.init(agentRequest);
+            ReactAgentState state = ReactAgentState.init(agentRequest);
 
             // 3. 调用 ContextAssembler 组装上下文
             AssembledContext assembled = contextAssembler.assemble(state);
