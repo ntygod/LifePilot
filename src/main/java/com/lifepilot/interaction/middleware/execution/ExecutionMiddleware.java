@@ -1,6 +1,6 @@
 package com.lifepilot.interaction.middleware.execution;
 
-import com.lifepilot.agent.AgentLoop;
+import com.lifepilot.agent.ReactAgentLoop;
 import com.lifepilot.agent.CancellationToken;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.agent.model.AgentResponse;
@@ -36,17 +36,17 @@ public class ExecutionMiddleware implements GatewayMiddleware {
     private static final Logger log = LoggerFactory.getLogger(ExecutionMiddleware.class);
     private static final String DEFAULT_MODEL_ID = "agent";
 
-    private final AgentLoop agentLoop;
+    private final ReactAgentLoop reactAgentLoop;
     private final GatewayProperties properties;
     private final ChatSessionRepository chatSessionRepository;
     @Nullable
     private final SseSessionManager sseSessionManager;
 
-    public ExecutionMiddleware(AgentLoop agentLoop,
+    public ExecutionMiddleware(ReactAgentLoop reactAgentLoop,
                                GatewayProperties properties,
                                ChatSessionRepository chatSessionRepository,
                                @Nullable SseSessionManager sseSessionManager) {
-        this.agentLoop = agentLoop;
+        this.reactAgentLoop = reactAgentLoop;
         this.properties = properties;
         this.chatSessionRepository = chatSessionRepository;
         this.sseSessionManager = sseSessionManager;
@@ -70,7 +70,7 @@ public class ExecutionMiddleware implements GatewayMiddleware {
         CompletableFuture<AgentResponse> future = null;
 
         try {
-            future = CompletableFuture.supplyAsync(() -> agentLoop.run(agentRequest));
+            future = CompletableFuture.supplyAsync(() -> reactAgentLoop.run(agentRequest));
             int timeoutSeconds = properties.execution().timeoutSeconds();
             AgentResponse agentResponse = future.get(timeoutSeconds, TimeUnit.SECONDS);
 
@@ -158,7 +158,7 @@ public class ExecutionMiddleware implements GatewayMiddleware {
                               SseSessionManager manager,
                               CancellationToken cancellationToken) {
         try {
-            agentLoop.runStreaming(agentRequest, streamId, manager, cancellationToken);
+            reactAgentLoop.runStreaming(agentRequest, streamId, manager, cancellationToken);
         } catch (Exception e) {
             log.error("流式处理异常: messageId={}, streamId={}", message.messageId(), streamId, e);
             Map<String, Object> errorData = new LinkedHashMap<>();

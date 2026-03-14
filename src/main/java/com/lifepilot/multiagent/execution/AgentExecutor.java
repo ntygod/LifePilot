@@ -1,7 +1,6 @@
 package com.lifepilot.multiagent.execution;
 
 import com.lifepilot.agent.ReactAgentLoop;
-import com.lifepilot.agent.model.Action;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.agent.model.AgentResponse;
 import com.lifepilot.multiagent.config.MultiAgentProperties;
@@ -47,7 +46,7 @@ public class AgentExecutor {
      * @param request    已构造的 AgentRequest（含 depth、parentTraceId 等）
      * @return SubAgentResult（success=true 或 success=false）
      */
-    public Action.SubAgentResult execute(AgentDefinition definition, AgentRequest request) {
+    public SubAgentResult execute(AgentDefinition definition, AgentRequest request) {
         String agentId = definition.id();
         int newDepth = request.depth() + 1;
 
@@ -55,7 +54,7 @@ public class AgentExecutor {
         if (newDepth > config.getMaxDelegationDepth()) {
             log.warn("Agent 委托深度超限: agentId={}, depth={}, maxDepth={}",
                     agentId, newDepth, config.getMaxDelegationDepth());
-            return new Action.SubAgentResult(
+            return new SubAgentResult(
                     "", agentId, false,
                     "委托深度超限: depth=%d, maxDepth=%d".formatted(newDepth, config.getMaxDelegationDepth()),
                     0);
@@ -91,7 +90,7 @@ public class AgentExecutor {
             // 5. 转换为 SubAgentResult — 澄清终止视为成功（父 Agent 可展示澄清问题）
             boolean success = response.terminationReason() == null
                     || "需要用户澄清".equals(response.terminationReason());
-            return new Action.SubAgentResult(
+            return new SubAgentResult(
                     response.traceId(),
                     agentId,
                     success,
@@ -100,7 +99,7 @@ public class AgentExecutor {
 
         } catch (Exception e) {
             log.warn("Agent 委托执行异常: agentId={}, error={}", agentId, e.getMessage(), e);
-            return new Action.SubAgentResult(
+            return new SubAgentResult(
                     "", agentId, false,
                     "Agent 执行异常: " + e.getMessage(),
                     0);

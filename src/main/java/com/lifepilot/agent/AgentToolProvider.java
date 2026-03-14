@@ -1,6 +1,6 @@
 package com.lifepilot.agent;
 
-import com.lifepilot.agent.model.AgentState;
+import com.lifepilot.agent.model.ReactAgentState;
 import org.springframework.ai.tool.ToolCallback;
 
 import java.util.List;
@@ -19,8 +19,8 @@ public interface AgentToolProvider {
     /**
      * 获取工具回调列表。
      *
-     * @param state 当前 Agent 状态
+     * @param state 当前 ReAct Agent 状态
      * @return 工具回调列表（Spring AI ToolCallback）
      */
-    List<ToolCallback> getToolCallbacks(AgentState state);
+    List<ToolCallback> getToolCallbacks(ReactAgentState state);
 }

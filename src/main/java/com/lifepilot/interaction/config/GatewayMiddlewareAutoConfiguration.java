@@ -1,6 +1,6 @@
 package com.lifepilot.interaction.config;
 
-import com.lifepilot.agent.AgentLoop;
+import com.lifepilot.agent.ReactAgentLoop;
 import com.lifepilot.interaction.middleware.audit.AuditEventRepository;
 import com.lifepilot.interaction.middleware.audit.AuditMiddleware;
 import com.lifepilot.interaction.middleware.auth.AuthMiddleware;
@@ -78,13 +78,13 @@ public class GatewayMiddlewareAutoConfiguration {
     }
 
     @Bean
-    public ExecutionMiddleware executionMiddleware(AgentLoop agentLoop,
+    public ExecutionMiddleware executionMiddleware(ReactAgentLoop reactAgentLoop,
                                                    GatewayProperties properties,
                                                    ObjectProvider<SseSessionManager> sseSessionManagerProvider,
                                                    ChatSessionRepository chatSessionRepository) {
         log.info("注册 ExecutionMiddleware");
         return new ExecutionMiddleware(
-                agentLoop,
+                reactAgentLoop,
                 properties,
                 chatSessionRepository,
                 sseSessionManagerProvider.getIfAvailable()

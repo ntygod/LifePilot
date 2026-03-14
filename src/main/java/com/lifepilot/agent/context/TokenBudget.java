@@ -1,11 +1,11 @@
 package com.lifepilot.agent.context;
 
-import com.lifepilot.agent.model.AgentPhase;
+import com.lifepilot.memory.retrieval.RetrievalWeights;
 
 /**
  * Token 预算分配与消耗记录。
  *
- * <p>根据 AgentPhase 按预定义比例将总 Token 预算分配到六个槽位，
+ * <p>将总 Token 预算按预定义比例分配到六个槽位，
  * 并跟踪各槽位的实际消耗。</p>
  *
  * @author zsg
@@ -26,38 +26,19 @@ public record TokenBudget(
 ) {
 
     /**
-     * 根据阶段和总 Token 数按比例创建预算分配。
+     * ReAct 架构默认预算分配（使用广泛检索比例）。
      *
-     * <p>分配比例（System / History / Memory / ToolSchema / ToolResult / Reserved）：
-     * <ul>
-     *   <li>UNDERSTANDING: 15% / 30% / 35% / 10% / 0% / 10%</li>
-     *   <li>PLANNING:      15% / 20% / 15% / 35% / 5% / 10%</li>
-     *   <li>EXECUTING:     10% / 10% / 5%  / 40% / 25% / 10%</li>
-     *   <li>REFLECTING:    10% / 15% / 10% / 5%  / 50% / 10%</li>
-     *   <li>RESPONDING:    15% / 25% / 20% / 0%  / 30% / 10%</li>
-     * </ul>
+     * <p>分配比例：System 15% / History 30% / Memory 35% / ToolSchema 10% / ToolResult 0% / Reserved 10%</p>
      *
-     * @param phase       当前 AgentPhase（不可为 TERMINATED）
      * @param totalTokens 总 Token 预算
      * @return 分配后的 TokenBudget
      */
-    public static TokenBudget allocate(AgentPhase phase, int totalTokens) {
-        // 比例数组：[system, history, memory, toolSchema, toolResult, reserved]
-        int[] percentages = switch (phase) {
-            case UNDERSTANDING -> new int[]{15, 30, 35, 10, 0, 10};
-            case PLANNING      -> new int[]{15, 20, 15, 35, 5, 10};
-            case EXECUTING     -> new int[]{10, 10, 5, 40, 25, 10};
-            case REFLECTING    -> new int[]{10, 15, 10, 5, 50, 10};
-            case RESPONDING    -> new int[]{15, 25, 20, 0, 30, 10};
-            case TERMINATED    -> new int[]{0, 0, 0, 0, 0, 0};
-        };
-
-        int system = totalTokens * percentages[0] / 100;
-        int history = totalTokens * percentages[1] / 100;
-        int memory = totalTokens * percentages[2] / 100;
-        int toolSchema = totalTokens * percentages[3] / 100;
-        int toolResult = totalTokens * percentages[4] / 100;
-        // reserved 取剩余部分，避免整数截断导致总和不等于 totalTokens
+    public static TokenBudget allocateDefault(int totalTokens) {
+        int system = totalTokens * 15 / 100;
+        int history = totalTokens * 30 / 100;
+        int memory = totalTokens * 35 / 100;
+        int toolSchema = totalTokens * 10 / 100;
+        int toolResult = 0;
         int reserved = totalTokens - system - history - memory - toolSchema - toolResult;
 
         return new TokenBudget(
