@@ -4,7 +4,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.context.AssembledContext;
 import com.lifepilot.agent.context.ContextAssembler;
-import com.lifepilot.agent.model.*;
+import com.lifepilot.agent.media.MediaDataExtractor;
+import com.lifepilot.agent.model.AgentRequest;
+import com.lifepilot.agent.model.AgentResponse;
+import com.lifepilot.agent.model.ReactAgentState;
+import com.lifepilot.agent.model.ReactStep;
 import com.lifepilot.agent.session.SessionManager;
 import com.lifepilot.conversation.ConversationHistoryStore;
 import com.lifepilot.conversation.ConversationViewService;
@@ -20,10 +24,10 @@ import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
-import com.lifepilot.agent.media.MediaDataExtractor;
 import com.lifepilot.memory.retrieval.InjectionRecordRepository;
 import com.lifepilot.memory.semantic.RealtimeExtractor;
 import com.lifepilot.memory.working.WorkingMemory;
+import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.observability.trace.LlmCallStep;
 import com.lifepilot.observability.trace.ToolCallStep;
 import com.lifepilot.observability.trace.TraceContext;
@@ -559,7 +563,7 @@ public class ReactAgentLoop {
                     toolId, "execute", inputJson,
                     outputJson != null ? outputJson : "",
                     success, success ? null : outputJson,
-                    com.lifepilot.observability.guardrail.RiskLevel.LOW);
+                    RiskLevel.LOW);
             traceRecorder.recordStep(traceContext, step);
         } catch (Exception e) {
             log.debug("Trace 工具步骤记录失败: error={}", e.getMessage());
@@ -895,14 +899,10 @@ public class ReactAgentLoop {
             String scene = config.getLoop().getLlmScene();
             String preferredProviderId = request.preferredProvider();
 
-            // 提取 system/user 文本
+            // 提取 system 文本（用于追加流式约束和 A2UI 提示词）
             String systemText = messages.stream()
                     .filter(m -> m instanceof SystemMessage)
                     .map(m -> ((SystemMessage) m).getText())
-                    .findFirst().orElse("");
-            String userText = messages.stream()
-                    .filter(m -> m instanceof UserMessage)
-                    .map(m -> ((UserMessage) m).getText())
                     .findFirst().orElse("");
 
             // 追加流式约束提示词
@@ -914,12 +914,6 @@ public class ReactAgentLoop {
                 streamingSystemPrompt = appendPromptSection(streamingSystemPrompt,
                         A2uiComponentCatalog.renderPrompt(a2uiProperties.maxComponentsPerTree()));
             }
-
-            logLlmPromptIfEnabled(scene, streamingSystemPrompt, userText, toolCallbacks);
-
-            // 构建完整提示词（用于 trace 记录）
-            String fullPrompt = (streamingSystemPrompt != null && !streamingSystemPrompt.isBlank()
-                    ? streamingSystemPrompt + "\n\n" : "") + userText;
 
             // 先尝试用 ChatModel 做一次非流式调用检测 tool call
             // 如果 LLM 要调用工具，直接返回含 tool call 的 ChatResponse（不流式输出）
@@ -947,6 +941,9 @@ public class ReactAgentLoop {
                         streamingSystemPrompt != null ? streamingSystemPrompt : systemText));
             }
 
+            // 调试日志 — 记录最终发送给 LLM 的完整消息列表
+            logLlmPromptIfEnabled(scene, enhancedMessages, toolCallbacks);
+
             var prompt = new Prompt(enhancedMessages, optionsBuilder.build());
 
             // 非流式调用获取完整响应
@@ -962,7 +959,7 @@ public class ReactAgentLoop {
                 }
                 // 记录流式 LLM Step
                 recordStreamingLlmStep(traceContext, Instant.now(), providerId, modelId,
-                        scene, fullPrompt, assistantMsg.getText(), null);
+                        scene, chatResponse, null);
                 return chatResponse;
             }
 
@@ -977,7 +974,7 @@ public class ReactAgentLoop {
 
             // 记录流式 LLM Step
             recordStreamingLlmStep(traceContext, Instant.now(), providerId, modelId,
-                    scene, fullPrompt, content, null);
+                    scene, chatResponse, null);
 
             return chatResponse;
         }
@@ -1237,25 +1234,53 @@ public class ReactAgentLoop {
 
     // ===== 流式 LLM Trace 记录 =====
 
-    /** 记录流式 LLM 调用步骤到 Trace。 */
+    /**
+     * 记录流式 LLM 调用步骤到 Trace。
+     *
+     * <p>从 ChatResponse 元数据提取真实 Token 用量和完成原因，
+     * 与 {@link #recordLlmStep} 保持一致的数据提取逻辑。</p>
+     */
     private void recordStreamingLlmStep(@Nullable TraceContext traceContext,
                                         Instant startTime, String providerId,
                                         String modelId, String scene,
-                                        @Nullable String prompt, @Nullable String output,
+                                        ChatResponse chatResponse,
                                         @Nullable Exception error) {
         if (traceRecorder == null || traceContext == null) return;
         Instant end = Instant.now();
         Duration d = Duration.between(startTime, end);
-        int inputTokens = estimateTextTokens(prompt != null ? prompt : "");
-        int outputTokens = error != null ? 0 : estimateTextTokens(output != null ? output : "");
-        String finishReason = error != null ? ("error: " + error.getMessage()) : "stream_complete";
+
+        // 从 ChatResponse 元数据提取真实 Token 用量
+        int inputTokens = 0;
+        int outputTokens = 0;
+        if (chatResponse != null) {
+            var usage = chatResponse.getMetadata().getUsage();
+            if (usage != null) {
+                inputTokens = (int) usage.getPromptTokens();
+                outputTokens = error != null ? 0 : (int) usage.getCompletionTokens();
+            }
+        }
+
+        // 从 Generation 元数据提取完成原因
+        String finishReason;
+        if (error != null) {
+            finishReason = "error: " + error.getMessage();
+        } else if (chatResponse != null) {
+            var resultMetadata = chatResponse.getResult().getMetadata();
+            finishReason = resultMetadata != null ? resultMetadata.getFinishReason() : null;
+        } else {
+            finishReason = null;
+        }
+
         int stepIndex = traceContext.steps() != null ? traceContext.steps().size() : 0;
         var step = new LlmCallStep(
                 stepIndex, end, d,
                 providerId != null ? providerId : DEFAULT_MODEL_ID,
                 modelId != null ? modelId : DEFAULT_MODEL_ID,
                 scene != null ? scene : "unknown",
-                inputTokens, outputTokens, d, false, 0.0d, finishReason);
+                inputTokens, outputTokens, d,
+                false,  // cacheHit — Spring AI 不提供
+                0.0,    // temperature — ChatResponse 不包含请求侧参数
+                finishReason);
         traceRecorder.recordStep(traceContext, step);
     }
 
@@ -1463,9 +1488,13 @@ public class ReactAgentLoop {
         return base + "\n" + extra;
     }
 
-    /** 调试日志 — 打印完整 LLM 提示词。 */
-    private void logLlmPromptIfEnabled(String scene, @Nullable String systemPrompt,
-                                       @Nullable String userText,
+    /**
+     * 调试日志 — 打印发送给 LLM 的完整消息列表。
+     *
+     * <p>记录最终发送的所有 Message（包括 SystemMessage、UserMessage、
+     * 历史 AssistantMessage/ToolResponseMessage），确保日志与实际请求一致。</p>
+     */
+    private void logLlmPromptIfEnabled(String scene, List<Message> messages,
                                        @Nullable List<ToolCallback> toolCallbacks) {
         if (config == null || config.getDebug() == null || !config.getDebug().isLogLlmPrompts()) {
             return;
@@ -1478,18 +1507,33 @@ public class ReactAgentLoop {
                     .distinct()
                     .collect(Collectors.toList());
         }
+        var sb = new StringBuilder();
+        for (int i = 0; i < messages.size(); i++) {
+            var msg = messages.get(i);
+            String type = msg.getClass().getSimpleName();
+            String content = switch (msg) {
+                case SystemMessage sm -> sm.getText();
+                case UserMessage um -> um.getText();
+                case AssistantMessage am -> {
+                    String text = am.getText() != null ? am.getText() : "";
+                    if (am.hasToolCalls()) {
+                        text += " [tool_calls=" + am.getToolCalls().size() + "]";
+                    }
+                    yield text;
+                }
+                default -> msg.toString();
+            };
+            sb.append("  [").append(i).append("] ").append(type).append(": ")
+                    .append(content != null ? content : "").append("\n");
+        }
         log.info("""
                 ========== LLM PROMPT ==========
                 scene={} traceId=react
                 tools={}
-                -------- SYSTEM --------
-                {}
-                -------- USER --------
-                {}
-                ========= END PROMPT ==========""",
-                scene, toolNames,
-                systemPrompt != null ? systemPrompt : "",
-                userText != null ? userText : "");
+                messageCount={}
+                -------- MESSAGES --------
+                {}========= END PROMPT ==========""",
+                scene, toolNames, messages.size(), sb);
     }
 
     // ===== 流式错误持久化 =====
