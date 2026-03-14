@@ -972,6 +972,29 @@ public class ContextAssembler {
                 "locale", Locale.getDefault().toLanguageTag()));
     }
 
+    /**
+     * 增强系统提示词 — 追加流式约束和可选的 A2UI 提示词。
+     *
+     * <p>将流式输出约束（{@code agent/streaming-constraint}）和可选的 A2UI 组件目录
+     * 追加到基础系统提示词之后，集中管理提示词组装逻辑。</p>
+     *
+     * @param baseSystemPrompt 基础系统提示词
+     * @param a2uiPrompt       A2UI 组件目录提示词（可空，未启用时传 null）
+     * @return 增强后的系统提示词
+     */
+    public String enhanceSystemPromptForStreaming(String baseSystemPrompt,
+                                                  @Nullable String a2uiPrompt) {
+        String streamingConstraint = promptRegistry.render("agent/streaming-constraint");
+        var sb = new StringBuilder(baseSystemPrompt != null ? baseSystemPrompt : "");
+        if (streamingConstraint != null && !streamingConstraint.isBlank()) {
+            sb.append("\n").append(streamingConstraint);
+        }
+        if (a2uiPrompt != null && !a2uiPrompt.isBlank()) {
+            sb.append("\n").append(a2uiPrompt);
+        }
+        return sb.toString();
+    }
+
     private String safeReactSystemPrompt() {
         try {
             return buildReactSystemPrompt();
@@ -991,7 +1014,10 @@ public class ContextAssembler {
 
     /**
      * 构建增强版 User Prompt（结构化内容区域）。
-     * 顺序：当前时间 → 用户画像 → 对话历史 → 相关记忆 → 知识库片段 → 跨会话参考 → 当前用户请求 → 预算剩余
+     *
+     * <p>使用 {@code agent/react-user-prompt} 模板渲染，各区域数据预格式化后作为模板变量传入。
+     * 顺序：当前时间 → 用户画像 → 被动通知 → 对话历史 → 相关记忆 → 知识库片段 → 跨会话参考
+     * → 工具结果 → 推理上下文 → 当前用户请求 → 预算剩余</p>
      */
     String buildEnhancedUserPrompt(ReactAgentState state,
                                    List<String> memories,
@@ -999,118 +1025,119 @@ public class ContextAssembler {
                                    List<String> crossSessionFragments,
                                    List<WorkingMemorySlot> slots,
                                    @Nullable String userProfile) {
-        var sb = new StringBuilder();
+        var now = ZonedDateTime.now();
+        var vars = new java.util.HashMap<String, Object>();
+        vars.put("currentDateTime", now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
+        vars.put("timezone", ZoneId.systemDefault().getId());
+        vars.put("locale", Locale.getDefault().toLanguageTag());
+        vars.put("userGoal", state.goal() != null ? state.goal() : "");
+        vars.put("tokensRemaining", String.valueOf(state.budget().tokensRemaining()));
+        vars.put("stepCount", String.valueOf(state.stepCount()));
 
-        // 0. 当前时间锚点：帮助模型在用户提示词中也感知明确的时区/区域上下文
-        sb.append(buildCurrentDateTimeContextLine()).append("\n");
+        // 各区域预格式化为文本块，空区域传空字符串（模板中直接拼接，空字符串不产生多余内容）
+        vars.put("userProfileSection", formatUserProfileSection(userProfile));
+        vars.put("passiveNotificationsSection", formatPassiveNotificationsSection());
+        vars.put("conversationHistorySection", formatConversationHistorySection(slots));
+        vars.put("memoriesSection", formatListSection("相关记忆", memories));
+        vars.put("knowledgeBaseSection", formatListSection("知识库片段", knowledgeBaseSnippets));
+        vars.put("crossSessionSection", formatListSection("跨会话参考", crossSessionFragments));
+        vars.put("toolResultsSection", formatToolResultsSection(slots));
+        vars.put("reasoningContextSection", formatReasoningContextSection(slots));
 
-        // 1. 用户画像（半稳定区，从 System Prompt 移至此处）
-        if (userProfile != null && !userProfile.isBlank()) {
-            sb.append("\n用户画像:\n").append(userProfile).append("\n");
-        }
-
-        // 1.5 被动通知（首次对话时 drain）
-        var passiveSection = safeDrainPassiveNotifications();
-        if (!passiveSection.isEmpty()) {
-            sb.append("\n待处理提醒:\n");
-            for (var line : passiveSection) {
-                sb.append("  - ").append(line).append("\n");
-            }
-        }
-
-        // 2. 对话历史（半稳定区，按 createdAt 时序）
-        var conversationSlots = slots.stream()
-                .filter(s -> s instanceof ConversationSlot)
-                .map(s -> (ConversationSlot) s)
-                .sorted(Comparator.comparing(ConversationSlot::createdAt))
-                .toList();
-        if (!conversationSlots.isEmpty()) {
-            sb.append("\n对话历史:\n");
-            for (var cs : conversationSlots) {
-                sb.append("  [").append(cs.role()).append("] ").append(cs.content()).append("\n");
-            }
-        }
-
-        // 3. 相关记忆（动态区）
-        if (!memories.isEmpty()) {
-            sb.append("\n相关记忆:\n");
-            for (var memory : memories) {
-                sb.append("  - ").append(memory).append("\n");
-            }
-        }
-
-        // 4. 知识库片段（动态区）
-        if (knowledgeBaseSnippets != null && !knowledgeBaseSnippets.isEmpty()) {
-            sb.append("\n知识库片段:\n");
-            for (var snippet : knowledgeBaseSnippets) {
-                sb.append("  - ").append(snippet).append("\n");
-            }
-        }
-
-        // 5. 跨会话参考（动态区）
-        if (crossSessionFragments != null && !crossSessionFragments.isEmpty()) {
-            sb.append("\n跨会话参考:\n");
-            for (var fragment : crossSessionFragments) {
-                sb.append("  - ").append(fragment).append("\n");
-            }
-        }
-
-        // 6. 工具结果（动态区）
-        var toolSlots = slots.stream()
-                .filter(s -> s instanceof ToolResultSlot)
-                .map(s -> (ToolResultSlot) s)
-                .toList();
-        if (!toolSlots.isEmpty()) {
-            sb.append("\n工具结果:\n");
-            for (var ts : toolSlots) {
-                sb.append("  ").append(ts.toolId()).append(".").append(ts.toolAction())
-                        .append(" → ").append(truncate(ts.result(), 200)).append("\n");
-            }
-        }
-
-        // 7. 推理上下文（动态区）— 排除检索来源的 ReasoningSlot（已在"相关记忆"区域展示）
-        var reasoningSlots = slots.stream()
-                .filter(s -> s instanceof ReasoningSlot)
-                .map(s -> (ReasoningSlot) s)
-                .filter(rs -> !"hybrid-retrieval".equals(rs.source()))
-                .toList();
-        if (!reasoningSlots.isEmpty()) {
-            sb.append("\n推理上下文:\n");
-            for (var rs : reasoningSlots) {
-                sb.append("  [").append(rs.source()).append("] ").append(rs.thought()).append("\n");
-            }
-        }
-
-        // 8. 当前用户请求（动态区）
-        sb.append("\n用户请求: ").append(state.goal()).append("\n");
-
-        // 9. 预算剩余
-        sb.append("\n预算剩余: Token=").append(state.budget().tokensRemaining())
-                .append(", 已用步骤=").append(state.stepCount()).append("\n");
-
-        return sb.toString();
+        return promptRegistry.render("agent/react-user-prompt", vars);
     }
 
     /**
      * 构建基础版 User Prompt（无记忆检索）。
      *
+     * <p>使用 {@code agent/react-user-prompt-basic} 模板渲染。</p>
+     *
      * @param state 当前 ReAct Agent 状态
      * @return User Prompt 文本
      */
     String buildUserPrompt(ReactAgentState state) {
-        var sb = new StringBuilder();
-        sb.append(buildCurrentDateTimeContextLine()).append("\n");
-        sb.append("用户请求: ").append(state.goal()).append("\n");
-        sb.append("预算剩余: Token=").append(state.budget().tokensRemaining())
-                .append(", 已用步骤=").append(state.stepCount()).append("\n");
+        var now = ZonedDateTime.now();
+        return promptRegistry.render("agent/react-user-prompt-basic", Map.of(
+                "currentDateTime", now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
+                "timezone", ZoneId.systemDefault().getId(),
+                "locale", Locale.getDefault().toLanguageTag(),
+                "userGoal", state.goal() != null ? state.goal() : "",
+                "tokensRemaining", String.valueOf(state.budget().tokensRemaining()),
+                "stepCount", String.valueOf(state.stepCount())));
+    }
+
+    // --- 模板区域格式化辅助方法 ---
+
+    /** 格式化用户画像区域。 */
+    private String formatUserProfileSection(@Nullable String userProfile) {
+        if (userProfile == null || userProfile.isBlank()) return "";
+        return "\n用户画像:\n" + userProfile;
+    }
+
+    /** 格式化被动通知区域。 */
+    private String formatPassiveNotificationsSection() {
+        var notifications = safeDrainPassiveNotifications();
+        if (notifications.isEmpty()) return "";
+        var sb = new StringBuilder("\n待处理提醒:\n");
+        for (var line : notifications) {
+            sb.append("  - ").append(line).append("\n");
+        }
         return sb.toString();
     }
 
-    private String buildCurrentDateTimeContextLine() {
-        var now = ZonedDateTime.now();
-        return "当前时间: " + now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
-                + ", 时区: " + ZoneId.systemDefault().getId()
-                + ", 区域: " + Locale.getDefault().toLanguageTag();
+    /** 格式化对话历史区域（按 createdAt 时序）。 */
+    private String formatConversationHistorySection(List<WorkingMemorySlot> slots) {
+        var conversationSlots = slots.stream()
+                .filter(s -> s instanceof ConversationSlot)
+                .map(s -> (ConversationSlot) s)
+                .sorted(Comparator.comparing(ConversationSlot::createdAt))
+                .toList();
+        if (conversationSlots.isEmpty()) return "";
+        var sb = new StringBuilder("\n对话历史:\n");
+        for (var cs : conversationSlots) {
+            sb.append("  [").append(cs.role()).append("] ").append(cs.content()).append("\n");
+        }
+        return sb.toString();
+    }
+
+    /** 格式化通用列表区域（相关记忆 / 知识库片段 / 跨会话参考）。 */
+    private String formatListSection(String title, @Nullable List<String> items) {
+        if (items == null || items.isEmpty()) return "";
+        var sb = new StringBuilder("\n").append(title).append(":\n");
+        for (var item : items) {
+            sb.append("  - ").append(item).append("\n");
+        }
+        return sb.toString();
+    }
+
+    /** 格式化工具结果区域。 */
+    private String formatToolResultsSection(List<WorkingMemorySlot> slots) {
+        var toolSlots = slots.stream()
+                .filter(s -> s instanceof ToolResultSlot)
+                .map(s -> (ToolResultSlot) s)
+                .toList();
+        if (toolSlots.isEmpty()) return "";
+        var sb = new StringBuilder("\n工具结果:\n");
+        for (var ts : toolSlots) {
+            sb.append("  ").append(ts.toolId()).append(".").append(ts.toolAction())
+                    .append(" → ").append(truncate(ts.result(), 200)).append("\n");
+        }
+        return sb.toString();
+    }
+
+    /** 格式化推理上下文区域（排除检索来源的 ReasoningSlot）。 */
+    private String formatReasoningContextSection(List<WorkingMemorySlot> slots) {
+        var reasoningSlots = slots.stream()
+                .filter(s -> s instanceof ReasoningSlot)
+                .map(s -> (ReasoningSlot) s)
+                .filter(rs -> !"hybrid-retrieval".equals(rs.source()))
+                .toList();
+        if (reasoningSlots.isEmpty()) return "";
+        var sb = new StringBuilder("\n推理上下文:\n");
+        for (var rs : reasoningSlots) {
+            sb.append("  [").append(rs.source()).append("] ").append(rs.thought()).append("\n");
+        }
+        return sb.toString();
     }
 
     // --- 可观测性日志 ---
