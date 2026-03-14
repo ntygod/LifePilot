@@ -19,8 +19,6 @@ import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
 import com.lifepilot.llm.LlmRouter;
-import com.lifepilot.llm.StreamingLlmResponse;
-import com.lifepilot.llm.multimodal.MultimodalRequest;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.agent.media.MediaDataExtractor;
 import com.lifepilot.memory.retrieval.InjectionRecordRepository;
@@ -35,23 +33,29 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.*;
 import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.model.tool.DefaultToolCallingChatOptions;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.lang.Nullable;
-import reactor.core.publisher.Flux;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
-import java.util.stream.Collectors;;
+import java.util.stream.Collectors;
 
 /**
- * ReAct Agent 循环 — 替代原六阶段状态机 AgentLoop。
+ * ReAct Agent 循环 — 真正的 Thought → Action → Observation 架构。
  *
- * <p>核心循环：Thought → Action → Observation，直到 LLM 返回纯文本（无 tool call）
- * 或预算耗尽 / 取消信号触发。</p>
+ * <p>核心循环每次迭代：
+ * <ol>
+ *   <li>调用 LLM（禁用自动 tool calling）获取原始响应</li>
+ *   <li>检查响应是否包含 tool call 请求</li>
+ *   <li>若有 tool call → 记录 ToolCall 步骤 → 手动执行工具 → 记录 Observation 步骤 → 继续循环</li>
+ *   <li>若无 tool call（纯文本）→ 记录 Answer 步骤 → 循环结束</li>
+ * </ol>
  *
- * <p>通过 Spring AI 原生 function calling（ChatClient + ToolCallback）实现工具调用，
- * 移除了原架构的 ActionParser 和显式阶段枚举。</p>
+ * <p>通过 {@code ChatModel.call(Prompt)} + {@code internalToolExecutionEnabled=false}
+ * 实现手动 tool calling 控制，确保每个工具调用都被显式记录到 ReAct 步骤和 Trace 中。</p>
  *
  * @author zsg
  * @since 2026-03-14
@@ -129,68 +133,87 @@ public class ReactAgentLoop {
 
     /**
      * 迭代回调 — 抽象 LLM 调用方式（同步 / 流式）。
+     *
+     * <p>返回原始 ChatResponse（不自动执行 tool call），
+     * 由 coreLoop 负责解析 tool call 并手动执行。</p>
      */
     @FunctionalInterface
     interface IterationCallback {
         /**
-         * 调用 LLM 并返回响应。
+         * 调用 LLM 并返回原始响应（不自动执行 tool call）。
          *
          * @param request       原始请求
          * @param messages      Spring AI 消息列表
-         * @param toolCallbacks 工具回调列表
+         * @param toolCallbacks 工具回调列表（用于构建 tool definition，不自动执行）
          * @param traceContext  追踪上下文
-         * @return LLM 响应
+         * @return LLM 原始响应（可能包含 tool call 请求）
          */
         ChatResponse callLlm(AgentRequest request,
-                              List<Message> messages,
-                              List<ToolCallback> toolCallbacks,
-                              @Nullable TraceContext traceContext);
+                             List<Message> messages,
+                             List<ToolCallback> toolCallbacks,
+                             @Nullable TraceContext traceContext);
+
+        /** 获取本次调用的 Provider ID（用于 Trace 记录）。 */
+        default String getProviderId() { return DEFAULT_MODEL_ID; }
+
+        /** 获取本次调用的 Model ID（用于 Trace 记录）。 */
+        default String getModelId() { return DEFAULT_MODEL_ID; }
     }
 
     /**
      * 构建 Spring AI 消息列表。
      *
      * <p>将 AssembledContext 的 systemPrompt / userPrompt 和历史 ReactStep
-     * 转换为 Spring AI Message 序列。</p>
-     *
-     * @param ctx   组装后的上下文
-     * @param state 当前状态
-     * @return 消息列表（至少 1 条 system + 1 条 user）
+     * 转换为 Spring AI Message 序列。工具调用历史使用 Spring AI 原生的
+     * AssistantMessage（含 toolCalls）+ ToolResponseMessage 格式，
+     * 确保 LLM 能正确理解多轮 tool calling 上下文。</p>
      */
     List<Message> buildMessages(AssembledContext ctx, ReactAgentState state) {
         var messages = new ArrayList<Message>();
-
-        // System Prompt（含记忆、知识库等上下文）
         messages.add(new SystemMessage(ctx.systemPrompt()));
-
-        // User Prompt（含用户请求、对话历史等）
         messages.add(new UserMessage(ctx.userPrompt()));
 
-        // 历史 ReactStep 转换为 assistant / tool messages
-        // Spring AI ChatClient 在单次 call() 内自动管理 tool call 往返，
-        // 跨迭代的历史由我们手动维护
+        // 历史 ReactStep 转换为 Spring AI 消息
         for (var step : state.steps()) {
             switch (step) {
                 case ReactStep.Thought t ->
-                    messages.add(new AssistantMessage(t.content()));
-                case ReactStep.ToolCall tc ->
-                    messages.add(new AssistantMessage(
-                            "调用工具: " + tc.toolId() + "，参数: " + tc.inputJson()));
-                case ReactStep.Observation obs ->
-                    messages.add(new UserMessage(
-                            "[工具结果] " + obs.toolId() + "：" + obs.output()));
+                        messages.add(new AssistantMessage(t.content()));
+                case ReactStep.ToolCall tc -> {
+                    // 构建 AssistantMessage 携带 tool call 元数据（使用 Builder API）
+                    var toolCall = new AssistantMessage.ToolCall(
+                            tc.toolId(), "function", tc.toolId(), tc.inputJson());
+                    messages.add(AssistantMessage.builder()
+                            .content("")
+                            .toolCalls(List.of(toolCall))
+                            .build());
+                }
+                case ReactStep.Observation obs -> {
+                    // 使用 ToolResponseMessage 传递工具执行结果（使用 Builder API）
+                    var toolResponse = ToolResponseMessage.builder()
+                            .responses(List.of(new ToolResponseMessage.ToolResponse(
+                                    obs.toolId(), obs.toolId(), obs.output())))
+                            .build();
+                    messages.add(toolResponse);
+                }
                 case ReactStep.Answer a ->
-                    messages.add(new AssistantMessage(a.content()));
+                        messages.add(new AssistantMessage(a.content()));
             }
         }
-
         return messages;
     }
 
     // ===== 核心 ReAct 循环 =====
 
     /**
-     * ReAct 核心循环 — run() 和 runStreaming() 的共享实现。
+     * ReAct 核心循环 — 真正的 Thought → Action → Observation 架构。
+     *
+     * <p>每次迭代：
+     * <ol>
+     *   <li>调用 LLM（禁用自动 tool calling）获取原始响应</li>
+     *   <li>检查 AssistantMessage.hasToolCalls()</li>
+     *   <li>若有 tool call → 记录 ToolCall 步骤 → 手动执行 → 媒体提取 → 记录 Observation → 继续</li>
+     *   <li>若无 tool call → 记录 Answer → done=true</li>
+     * </ol>
      *
      * <p>终止条件（任一满足即退出）：
      * <ol>
@@ -199,15 +222,7 @@ public class ReactAgentLoop {
      *   <li>CancellationToken 被触发 → 中断</li>
      *   <li>迭代次数达到 maxIterations → 强制终止</li>
      *   <li>连续失败达到 maxConsecutiveFailures → 强制终止</li>
-     * </ol></p>
-     *
-     * @param state             当前状态（done == false）
-     * @param request           原始请求
-     * @param traceContext      追踪上下文（可为 null）
-     * @param loopStart         循环开始时间
-     * @param callback          LLM 调用回调（同步 / 流式）
-     * @param cancellationToken 取消信号
-     * @return 循环结束后的状态（done == true 或被取消）
+     * </ol>
      */
     ReactAgentState coreLoop(
             ReactAgentState state,
@@ -249,17 +264,15 @@ public class ReactAgentLoop {
                 break;
             }
 
-            // 4. 组装上下文
+            // 4. 组装上下文 + 构建消息 + 获取工具回调
             var assembledContext = contextAssembler.assemble(state);
-
-            // 5. 构建 Spring AI 消息列表 + 获取工具回调
             var messages = buildMessages(assembledContext, state);
             var toolCallbacks = agentToolProvider.getToolCallbacks(state);
 
             log.debug("ReAct 迭代开始: traceId={}, iteration={}, stepCount={}, toolCount={}",
                     state.traceId(), iteration, state.stepCount(), toolCallbacks.size());
 
-            // 6. 调用 LLM（通过 IterationCallback 抽象同步/流式）
+            // 5. 调用 LLM（不自动执行 tool call）
             var iterationStart = Instant.now();
             ChatResponse chatResponse;
             try {
@@ -273,42 +286,71 @@ public class ReactAgentLoop {
                             state, "连续 LLM 调用失败达到上限: " + maxConsecutiveFailures);
                     break;
                 }
-                // 记录失败观察并继续下一次迭代
                 state = state.appendStep(new ReactStep.Observation(
                         "llm", false, "LLM 调用失败: " + e.getMessage(), 0));
                 continue;
             }
             var iterationDuration = Duration.between(iterationStart, Instant.now());
 
-            // 7. 解析响应
-            // Spring AI ChatClient.call() 自动执行 function calling 并返回最终文本。
-            String content = extractContent(chatResponse);
+            // 6. 解析 LLM 响应
+            var assistantMessage = chatResponse.getResult() != null
+                    ? chatResponse.getResult().getOutput() : null;
             int responseTokens = estimateTokens(chatResponse);
+            String providerId = callback.getProviderId();
+            String modelId = callback.getModelId();
 
-            if (content != null && !content.isBlank()) {
-                // LLM 返回了文本内容 → 记录为最终回答
-                state = state.appendStep(new ReactStep.Answer(content));
+            // 记录 LLM 调用到 Trace
+            recordLlmStep(traceContext, state.stepCount(), iterationStart,
+                    iterationDuration, responseTokens, providerId, modelId);
+
+            // 7. 判断是否有 tool call 请求
+            if (assistantMessage != null && assistantMessage.hasToolCalls()) {
+                // === ReAct: Action 阶段 — 处理 tool call ===
+                var toolCalls = assistantMessage.getToolCalls();
+
+                // 如果 LLM 同时返回了文本（思考内容），记录为 Thought
+                String thoughtText = assistantMessage.getText();
+                if (thoughtText != null && !thoughtText.isBlank()) {
+                    state = state.appendStep(new ReactStep.Thought(thoughtText));
+                }
+
+                // 逐个执行 tool call
+                for (var tc : toolCalls) {
+                    state = executeToolCall(state, tc, toolCallbacks, traceContext,
+                            cancellationToken, null, null);
+                    if (cancellationToken.isCancelled()) break;
+                }
+
+                // 扣减 Token 预算
                 state = state.toBuilder()
-                        .done(true)
-                        .finalOutput(content)
                         .budget(state.budget().deductTokens(responseTokens))
                         .build();
+                consecutiveFailures = 0;
 
-                // Trace 记录 LLM 调用
-                recordLlmStep(traceContext, state.stepCount() - 1, iterationStart,
-                        iterationDuration, responseTokens);
-
-                log.info("ReAct 循环完成: traceId={}, iterations={}, stepCount={}, tokensUsed={}",
-                        state.traceId(), iteration + 1, state.stepCount(),
-                        state.budget().tokensUsed());
             } else {
-                // LLM 返回空内容 — 视为异常
-                log.warn("LLM 返回空内容: traceId={}, iteration={}", state.traceId(), iteration);
-                consecutiveFailures++;
-                if (consecutiveFailures >= maxConsecutiveFailures) {
-                    state = DegradedResponseBuilder.terminateWithReason(
-                            state, "连续空响应达到上限: " + maxConsecutiveFailures);
-                    break;
+                // === ReAct: Answer 阶段 — 纯文本响应 ===
+                String content = assistantMessage != null ? assistantMessage.getText() : null;
+                if (content != null && !content.isBlank()) {
+                    state = state.appendStep(new ReactStep.Answer(content));
+                    state = state.toBuilder()
+                            .done(true)
+                            .finalOutput(content)
+                            .budget(state.budget().deductTokens(responseTokens))
+                            .build();
+                    consecutiveFailures = 0;
+
+                    log.info("ReAct 循环完成: traceId={}, iterations={}, stepCount={}, tokensUsed={}",
+                            state.traceId(), iteration + 1, state.stepCount(),
+                            state.budget().tokensUsed());
+                } else {
+                    // LLM 返回空内容
+                    log.warn("LLM 返回空内容: traceId={}, iteration={}", state.traceId(), iteration);
+                    consecutiveFailures++;
+                    if (consecutiveFailures >= maxConsecutiveFailures) {
+                        state = DegradedResponseBuilder.terminateWithReason(
+                                state, "连续空响应达到上限: " + maxConsecutiveFailures);
+                        break;
+                    }
                 }
             }
 
@@ -316,40 +358,117 @@ public class ReactAgentLoop {
             state = state.toBuilder()
                     .budget(state.budget().withElapsed(Duration.between(loopStart, Instant.now())))
                     .build();
+        }
 
-            // 连续成功时重置失败计数
-            if (content != null && !content.isBlank()) {
-                consecutiveFailures = 0;
+        return state;
+    }
+
+    /**
+     * 手动执行单个 tool call，记录 ToolCall + Observation 步骤。
+     *
+     * <p>流程：
+     * <ol>
+     *   <li>在 toolCallbacks 中查找匹配的 ToolCallback</li>
+     *   <li>记录 ToolCall 步骤</li>
+     *   <li>调用 ToolCallback.call(arguments)</li>
+     *   <li>媒体数据提取（如有）</li>
+     *   <li>记录 Observation 步骤</li>
+     *   <li>记录 ToolCallStep 到 Trace</li>
+     * </ol>
+     *
+     * @param state             当前状态
+     * @param tc                LLM 请求的 tool call
+     * @param toolCallbacks     可用工具回调列表
+     * @param traceContext      追踪上下文
+     * @param cancellationToken 取消信号
+     * @param sseManager        SSE 管理器（流式模式下非 null，用于发送 MEDIA 事件）
+     * @param streamId          SSE 流 ID（流式模式下非 null）
+     * @return 更新后的状态
+     */
+    private ReactAgentState executeToolCall(
+            ReactAgentState state,
+            AssistantMessage.ToolCall tc,
+            List<ToolCallback> toolCallbacks,
+            @Nullable TraceContext traceContext,
+            CancellationToken cancellationToken,
+            @Nullable SseSessionManager sseManager,
+            @Nullable String streamId) {
+
+        String toolId = tc.name();
+        String inputJson = tc.arguments();
+
+        // 记录 ToolCall 步骤
+        var toolCallStart = Instant.now();
+        state = state.appendStep(new ReactStep.ToolCall(toolId, inputJson, 0));
+
+        // 查找匹配的 ToolCallback
+        ToolCallback matchedCallback = toolCallbacks.stream()
+                .filter(Objects::nonNull)
+                .filter(cb -> cb.getToolDefinition().name().equals(toolId))
+                .findFirst()
+                .orElse(null);
+
+        if (matchedCallback == null) {
+            log.warn("未找到工具回调: toolId={}", toolId);
+            state = state.appendStep(new ReactStep.Observation(
+                    toolId, false, "工具未注册: " + toolId, 0));
+            recordToolCallStep(traceContext, state.stepCount() - 1, toolCallStart,
+                    toolId, inputJson, "工具未注册: " + toolId, false);
+            return state;
+        }
+
+        // 执行工具
+        String rawOutput;
+        boolean success;
+        try {
+            rawOutput = matchedCallback.call(inputJson);
+            success = true;
+        } catch (Exception e) {
+            log.warn("工具执行失败: toolId={}, error={}", toolId, e.getMessage());
+            rawOutput = "工具执行异常: " + e.getMessage();
+            success = false;
+        }
+        var toolCallDuration = Duration.between(toolCallStart, Instant.now());
+
+        // 媒体数据提取
+        String observationOutput = rawOutput;
+        if (success && mediaDataExtractor != null && rawOutput != null) {
+            var extraction = mediaDataExtractor.extract(toolId, rawOutput);
+            observationOutput = extraction.sanitizedOutput();
+
+            // 流式模式下发送 MEDIA 事件
+            if (sseManager != null && streamId != null && !extraction.mediaItems().isEmpty()) {
+                for (var mediaItem : extraction.mediaItems()) {
+                    var mediaData = new HashMap<String, Object>();
+                    mediaData.put("toolId", toolId);
+                    mediaData.put("mediaType", mediaItem.mediaType());
+                    mediaData.put("encoding", mediaItem.encoding());
+                    mediaData.put("data", mediaItem.data());
+                    mediaData.put("fieldName", mediaItem.fieldName());
+                    mediaData.put("metadata", mediaItem.metadata());
+                    sseManager.sendEvent(streamId, SseEventType.MEDIA, mediaData);
+                }
             }
         }
+
+        // 记录 Observation 步骤
+        int obsTokens = estimateTextTokens(observationOutput != null ? observationOutput : "");
+        state = state.appendStep(new ReactStep.Observation(
+                toolId, success, observationOutput != null ? observationOutput : "", obsTokens));
+
+        // 记录 ToolCallStep 到 Trace
+        recordToolCallStep(traceContext, state.stepCount() - 1, toolCallStart,
+                toolId, inputJson, rawOutput, success);
+
+        log.debug("工具执行完成: toolId={}, success={}, latencyMs={}",
+                toolId, success, toolCallDuration.toMillis());
 
         return state;
     }
 
     // ===== 辅助方法 =====
 
-    /**
-     * 从 ChatResponse 提取文本内容。
-     *
-     * @param chatResponse LLM 响应
-     * @return 文本内容，无内容时返回 null
-     */
-    @Nullable
-    private String extractContent(ChatResponse chatResponse) {
-        if (chatResponse == null) return null;
-        var result = chatResponse.getResult();
-        if (result == null) return null;
-        var output = result.getOutput();
-        if (output == null) return null;
-        return output.getText();
-    }
-
-    /**
-     * 从 ChatResponse 估算 Token 消耗。
-     *
-     * @param chatResponse LLM 响应
-     * @return 估算的 Token 数
-     */
+    /** 从 ChatResponse 估算 Token 消耗。 */
     private int estimateTokens(ChatResponse chatResponse) {
         if (chatResponse == null || chatResponse.getMetadata() == null) return 0;
         var usage = chatResponse.getMetadata().getUsage();
@@ -357,24 +476,51 @@ public class ReactAgentLoop {
         return (int) (usage.getPromptTokens() + usage.getCompletionTokens());
     }
 
-    /**
-     * 记录 LLM 调用步骤到 Trace。
-     */
+    /** 记录 LLM 调用步骤到 Trace（含真实 providerId / modelId）。 */
     private void recordLlmStep(@Nullable TraceContext traceContext, int stepIndex,
-                                Instant timestamp, Duration duration, int tokens) {
+                               Instant timestamp, Duration duration, int tokens,
+                               String providerId, String modelId) {
         if (traceContext == null) return;
         try {
             var step = new LlmCallStep(
                     stepIndex, timestamp, duration,
-                    "unknown", // providerId — Task 9.2 补充完整
-                    "unknown", // modelId — Task 9.2 补充完整
+                    providerId, modelId,
                     config.getLoop().getLlmScene(),
-                    tokens / 2, tokens / 2, // 粗略拆分 input/output
+                    tokens / 2, tokens / 2,
                     duration, false, 0.7, null);
             traceRecorder.recordStep(traceContext, step);
         } catch (Exception e) {
-            log.debug("Trace 记录失败，降级跳过: error={}", e.getMessage());
+            log.debug("Trace LLM 步骤记录失败: error={}", e.getMessage());
         }
+    }
+
+    /** 记录工具调用步骤到 Trace。 */
+    private void recordToolCallStep(@Nullable TraceContext traceContext, int stepIndex,
+                                    Instant startTime, String toolId, String inputJson,
+                                    @Nullable String outputJson, boolean success) {
+        if (traceContext == null || traceRecorder == null) return;
+        try {
+            var duration = Duration.between(startTime, Instant.now());
+            var step = new ToolCallStep(
+                    stepIndex, Instant.now(), duration,
+                    toolId, "execute", inputJson,
+                    outputJson != null ? outputJson : "",
+                    success, success ? null : outputJson,
+                    com.lifepilot.observability.guardrail.RiskLevel.LOW);
+            traceRecorder.recordStep(traceContext, step);
+        } catch (Exception e) {
+            log.debug("Trace 工具步骤记录失败: error={}", e.getMessage());
+        }
+    }
+
+    /** 估算文本 Token 数（中文按 1 字 1 Token，英文按 4 字符 1 Token）。 */
+    private int estimateTextTokens(String text) {
+        if (text == null || text.isEmpty()) return 0;
+        long cjkChars = text.chars()
+                .filter(c -> Character.UnicodeScript.of(c) == Character.UnicodeScript.HAN)
+                .count();
+        long otherChars = text.length() - cjkChars;
+        return Math.max(1, (int) (cjkChars + otherChars / 4));
     }
 
     // ===== 同步执行入口 =====
@@ -385,9 +531,6 @@ public class ReactAgentLoop {
      * <p>完整流程：初始化状态 → L1 写入用户消息 → 持久化用户消息 →
      * 启动 Trace → coreLoop → L1 写入助手响应 → 持久化助手消息 →
      * 异步后处理 → 构建 AgentResponse。</p>
-     *
-     * @param request Agent 请求
-     * @return Agent 响应
      */
     public AgentResponse run(AgentRequest request) {
         ReactAgentState state = ReactAgentState.init(request);
@@ -400,21 +543,14 @@ public class ReactAgentLoop {
 
         try {
             state = initState(request);
-
-            // 用户消息写入 L1（在 assembleContext 之前，确保对话历史完整）
             writeUserMessageToL1(state);
-
-            // 同步写入用户消息到 chat_messages
             persistUserMessage(state);
-
             traceContext = startTraceIfEnabled(state, request);
-
-            // Trace 启动后重新计时
             loopStart = Instant.now();
 
             // 核心循环 — 非流式回调
-            state = coreLoop(state, request, traceContext, loopStart,
-                    new NonStreamingCallback(), token);
+            var callback = new NonStreamingCallback(request);
+            state = coreLoop(state, request, traceContext, loopStart, callback, token);
 
             // 构建推理概要
             if (state.terminationReason() == null) {
@@ -422,17 +558,17 @@ public class ReactAgentLoop {
                 state = state.toBuilder().reasoningSummary(summary).build();
             }
 
-            // AI 响应写入 L1
             writeAssistantMessageToL1(state);
-
-            // 同步写入助手消息到 chat_messages
             String assistantMessageId = persistAssistantMessage(state);
-
-            // 持久化注入记录
             persistInjectionRecord(assistantMessageId, state.sessionId());
-
-            // 异步后处理（会话快照 + AUDN 实体提取）
             asyncPostProcess(state);
+
+            // 聚合 Token 使用量
+            TokenUsage tokenUsage = aggregateTokenUsage(traceContext);
+
+            // 提取 A2UI 组件
+            var a2uiComponents = lastCollectedA2uiTree != null
+                    ? lastCollectedA2uiTree.components() : null;
 
             return new AgentResponse(
                     state.traceId(),
@@ -442,14 +578,13 @@ public class ReactAgentLoop {
                     state.stepCount(),
                     state.terminationReason(),
                     assistantMessageId,
-                    null, // a2uiComponents — Task 8 补充
-                    null  // tokenUsage — Task 9.2 补充
+                    a2uiComponents,
+                    tokenUsage
             );
 
         } catch (Exception e) {
             log.error("ReAct 循环异常终止: error={}", e.getMessage(), e);
             error = e;
-            // 使用 ReactAgentState 构建错误响应
             return AgentResponse.error(state, e);
         } finally {
             if (traceRecorder != null && traceContext != null) {
@@ -470,12 +605,9 @@ public class ReactAgentLoop {
     /**
      * SSE 流式执行 ReAct 循环。
      *
-     * <p>完整流程与 run() 一致，但通过 SSE 推送 TOKEN / REASONING / DONE 事件。</p>
-     *
-     * @param request           Agent 请求
-     * @param streamId          SSE 流标识
-     * @param sseManager        SSE 会话管理器
-     * @param cancellationToken 取消信号
+     * <p>完整流程与 run() 一致，但通过 SSE 推送 TOKEN / REASONING / MEDIA / DONE 事件。
+     * 流式模式下同样支持 tool calling — LLM 返回 tool call 时暂停流式输出，
+     * 执行工具后将结果回传 LLM 继续生成。</p>
      */
     public void runStreaming(AgentRequest request, String streamId,
                              SseSessionManager sseManager,
@@ -496,8 +628,6 @@ public class ReactAgentLoop {
 
         try {
             state = initState(request);
-
-            // 用户消息写入 L1
             writeUserMessageToL1(state);
 
             // 同步写入用户消息到 chat_messages
@@ -523,7 +653,6 @@ public class ReactAgentLoop {
                 sseManager.sendEvent(streamId, SseEventType.TRACE_START, traceStartData);
             }
 
-            // AGENT_START 推理事件
             sendReasoningEvent(sseManager, streamId, request.sessionId(), tempTurnId,
                     "AGENT_START", "开始处理请求",
                     "Agent 已接收到用户请求，正在准备上下文与预算。",
@@ -533,7 +662,8 @@ public class ReactAgentLoop {
             loopStart = Instant.now();
 
             // 核心循环 — 流式回调
-            var callback = new StreamingCallback(sseManager, streamId, request.sessionId(), tempTurnId);
+            var callback = new StreamingCallback(
+                    sseManager, streamId, request.sessionId(), tempTurnId, request);
             state = coreLoop(state, request, traceContext, loopStart, callback, token);
 
             // 检查流式错误
@@ -558,10 +688,8 @@ public class ReactAgentLoop {
                             .build();
                 }
 
-                // AI 响应写入 L1
                 writeAssistantMessageToL1(state);
 
-                // 同步写入助手消息到 chat_messages
                 String a2uiJson = serializeA2uiTree(lastCollectedA2uiTree);
                 if (conversationHistoryStore != null
                         && ((finalContent != null && !finalContent.isBlank()) || a2uiJson != null)) {
@@ -575,20 +703,14 @@ public class ReactAgentLoop {
                     }
                 }
 
-                // 持久化注入记录
                 persistInjectionRecord(assistantMessageId, state.sessionId());
-
-                // 异步后处理
                 asyncPostProcess(state);
-
-                // 聚合 Token 使用量
                 finalTokenUsage = aggregateTokenUsage(traceContext);
             }
         } catch (Exception e) {
             log.error("流式 Agent 循环异常终止: error={}", e.getMessage(), e);
             error = e;
         } finally {
-            // 轨迹记录
             if (traceRecorder != null && traceContext != null) {
                 String finalOutput = state.finalOutput();
                 boolean success = error == null && state.terminationReason() == null;
@@ -599,7 +721,6 @@ public class ReactAgentLoop {
                 traceRecorder.endTrace(traceContext, finalOutput, success, errorMessage, terminationReason);
             }
 
-            // 发送 DONE 或 ERROR 事件
             if (error != null) {
                 sendStreamError(sseManager, streamId, 500,
                         "处理失败: " + error.getMessage(), state.traceId());
@@ -622,46 +743,51 @@ public class ReactAgentLoop {
     /**
      * 非流式迭代回调 — run() 使用。
      *
-     * <p>通过 ChatClient.prompt().system().user().toolCallbacks().call() 同步调用 LLM。
-     * Spring AI 自动处理 function calling 并返回最终文本。</p>
+     * <p>通过 {@code ChatModel.call(Prompt)} 直接调用 LLM，
+     * 设置 {@code internalToolExecutionEnabled=false} 禁用自动 tool calling，
+     * 返回原始 ChatResponse 供 coreLoop 解析 tool call 并手动执行。</p>
      */
     private class NonStreamingCallback implements IterationCallback {
+        private final AgentRequest request;
+        private String providerId = DEFAULT_MODEL_ID;
+        private String modelId = DEFAULT_MODEL_ID;
+
+        NonStreamingCallback(AgentRequest request) {
+            this.request = request;
+        }
+
         @Override
-        public ChatResponse callLlm(AgentRequest request,
-                                     List<Message> messages,
-                                     List<ToolCallback> toolCallbacks,
-                                     @Nullable TraceContext traceContext) {
+        public ChatResponse callLlm(AgentRequest req,
+                                    List<Message> messages,
+                                    List<ToolCallback> toolCallbacks,
+                                    @Nullable TraceContext traceContext) {
             String scene = config.getLoop().getLlmScene();
-            var chatClient = llmRouter.getChatClient(scene, request.preferredProvider());
 
-            // 从消息列表提取 system/user 文本
-            String systemText = messages.stream()
-                    .filter(m -> m instanceof SystemMessage)
-                    .map(m -> ((SystemMessage) m).getText())
-                    .findFirst().orElse("");
-            String userText = messages.stream()
-                    .filter(m -> m instanceof UserMessage)
-                    .map(m -> ((UserMessage) m).getText())
-                    .findFirst().orElse("");
+            // 获取 ChatModel + Provider 元信息
+            var chatModelInfo = llmRouter.getChatModelWithInfo(scene, request.preferredProvider());
+            this.providerId = chatModelInfo.providerId();
+            this.modelId = chatModelInfo.modelId();
 
-            var spec = chatClient.prompt();
-            if (!systemText.isBlank()) {
-                spec = spec.system(systemText);
-            }
-            spec = spec.user(userText);
+            // 构建 ChatOptions：注入工具定义但禁用自动执行
+            var optionsBuilder = DefaultToolCallingChatOptions.builder()
+                    .internalToolExecutionEnabled(false);
 
-            // 注入工具回调
             if (toolCallbacks != null && !toolCallbacks.isEmpty()) {
-                ToolCallback[] callbacks = toolCallbacks.stream()
+                var validCallbacks = toolCallbacks.stream()
                         .filter(Objects::nonNull)
-                        .toArray(ToolCallback[]::new);
-                if (callbacks.length > 0) {
-                    spec = spec.toolCallbacks(callbacks);
+                        .toList();
+                if (!validCallbacks.isEmpty()) {
+                    optionsBuilder.toolCallbacks(validCallbacks);
                 }
             }
 
-            return spec.call().chatResponse();
+            // 构建 Prompt 并调用 ChatModel
+            var prompt = new Prompt(messages, optionsBuilder.build());
+            return chatModelInfo.chatModel().call(prompt);
         }
+
+        @Override public String getProviderId() { return providerId; }
+        @Override public String getModelId() { return modelId; }
     }
 
     // ===== 流式 LLM 回调 =====
@@ -669,8 +795,9 @@ public class ReactAgentLoop {
     /**
      * 流式迭代回调 — runStreaming() 使用。
      *
-     * <p>通过 Flux&lt;String&gt; 流式调用 LLM，逐 token 发送 SSE TOKEN 事件，
-     * 支持 A2UI 流式解析和多模态路径。</p>
+     * <p>通过 ChatModel.stream(Prompt) 流式调用 LLM，逐 token 发送 SSE TOKEN 事件。
+     * 当 LLM 返回 tool call 请求时，收集完整响应后构造含 tool call 的 ChatResponse
+     * 供 coreLoop 手动执行工具。</p>
      */
     private class StreamingCallback implements IterationCallback {
 
@@ -678,45 +805,42 @@ public class ReactAgentLoop {
         private final String streamId;
         private final String sessionId;
         private final String turnId;
+        private final AgentRequest request;
 
+        private String providerId = DEFAULT_MODEL_ID;
+        private String modelId = DEFAULT_MODEL_ID;
         @Nullable private Exception streamingError;
         @Nullable private String finalContent;
 
         StreamingCallback(SseSessionManager sseManager, String streamId,
-                          String sessionId, String turnId) {
+                          String sessionId, String turnId, AgentRequest request) {
             this.sseManager = sseManager;
             this.streamId = streamId;
             this.sessionId = sessionId;
             this.turnId = turnId;
+            this.request = request;
         }
 
         @Override
-        public ChatResponse callLlm(AgentRequest request,
-                                     List<Message> messages,
-                                     List<ToolCallback> toolCallbacks,
-                                     @Nullable TraceContext traceContext) {
-            // CONTEXT_LOADING 推理事件
+        public ChatResponse callLlm(AgentRequest req,
+                                    List<Message> messages,
+                                    List<ToolCallback> toolCallbacks,
+                                    @Nullable TraceContext traceContext) {
+            // 推理事件
             sendReasoningEvent(sseManager, streamId, sessionId, turnId,
                     "CONTEXT_LOADING", "分析问题与上下文",
-                    "正在梳理本轮问题、会话历史与可用记忆。",
-                    null, Map.of());
-
-            // MEMORY_RETRIEVAL 推理事件
+                    "正在梳理本轮问题、会话历史与可用记忆。", null, Map.of());
             sendReasoningEvent(sseManager, streamId, sessionId, turnId,
                     "MEMORY_RETRIEVAL", "检索相关记忆",
-                    "已基于最近对话与知识收集相关记忆，用于本轮推理。",
-                    null, Map.of());
-
-            // ANSWER_DRAFTING 推理事件
+                    "已基于最近对话与知识收集相关记忆，用于本轮推理。", null, Map.of());
             sendReasoningEvent(sseManager, streamId, sessionId, turnId,
                     "ANSWER_DRAFTING", "正在生成回答",
-                    "模型正在根据上下文整理最终回答。",
-                    null, Map.of());
+                    "模型正在根据上下文整理最终回答。", null, Map.of());
 
             String scene = config.getLoop().getLlmScene();
             String preferredProviderId = request.preferredProvider();
 
-            // 从消息列表提取 system/user 文本
+            // 提取 system/user 文本
             String systemText = messages.stream()
                     .filter(m -> m instanceof SystemMessage)
                     .map(m -> ((SystemMessage) m).getText())
@@ -736,138 +860,132 @@ public class ReactAgentLoop {
                         A2uiComponentCatalog.renderPrompt(a2uiProperties.maxComponentsPerTree()));
             }
 
-            // 调试日志
             logLlmPromptIfEnabled(scene, streamingSystemPrompt, userText, toolCallbacks);
 
             // 构建完整提示词（用于 trace 记录）
             String fullPrompt = (streamingSystemPrompt != null && !streamingSystemPrompt.isBlank()
                     ? streamingSystemPrompt + "\n\n" : "") + userText;
 
-            // 构建流式响应
-            Flux<String> tokenStream;
-            String providerId;
-            String modelId;
+            // 先尝试用 ChatModel 做一次非流式调用检测 tool call
+            // 如果 LLM 要调用工具，直接返回含 tool call 的 ChatResponse（不流式输出）
+            // 如果 LLM 返回纯文本，则走流式路径逐 token 推送
+            var chatModelInfo = llmRouter.getChatModelWithInfo(scene, preferredProviderId);
+            this.providerId = chatModelInfo.providerId();
+            this.modelId = chatModelInfo.modelId();
 
-            var mediaList = request.mediaContents();
-            if (mediaList != null && !mediaList.isEmpty() && multimodalRouter != null) {
-                // 多模态路径
-                var mmRequest = new MultimodalRequest(
-                        scene, fullPrompt, mediaList, null, preferredProviderId);
-                var streaming = multimodalRouter.streamWithInfo(mmRequest);
-                tokenStream = streaming.stream();
-                providerId = streaming.providerId();
-                modelId = streaming.modelId();
-            } else {
-                // 纯文本路径 — 流式不注入 toolCallbacks，避免不可追踪的 function call
-                var clientInfo = llmRouter.getChatClientWithInfo(scene, preferredProviderId);
-                var prompt = clientInfo.client().prompt();
-                if (streamingSystemPrompt != null && !streamingSystemPrompt.isBlank()) {
-                    prompt = prompt.system(streamingSystemPrompt);
+            // 构建带工具定义但禁用自动执行的 ChatOptions
+            var optionsBuilder = DefaultToolCallingChatOptions.builder()
+                    .internalToolExecutionEnabled(false);
+            if (toolCallbacks != null && !toolCallbacks.isEmpty()) {
+                var validCallbacks = toolCallbacks.stream()
+                        .filter(Objects::nonNull)
+                        .toList();
+                if (!validCallbacks.isEmpty()) {
+                    optionsBuilder.toolCallbacks(validCallbacks);
                 }
-                tokenStream = prompt.user(userText).stream().content();
-                providerId = clientInfo.providerId();
-                modelId = clientInfo.modelId();
             }
 
-            if (tokenStream == null) {
-                throw new IllegalStateException("流式响应为 null");
+            // 替换 system message 为增强版
+            var enhancedMessages = new ArrayList<>(messages);
+            if (!enhancedMessages.isEmpty() && enhancedMessages.getFirst() instanceof SystemMessage) {
+                enhancedMessages.set(0, new SystemMessage(
+                        streamingSystemPrompt != null ? streamingSystemPrompt : systemText));
             }
 
-            // A2UI 流式解析器
-            boolean a2uiEnabled = isA2uiEnabled();
-            StreamingA2uiParser a2uiParser = a2uiEnabled ? new StreamingA2uiParser() : null;
-            A2uiComponentTree[] latestA2uiTree = {null};
-            int maxComponents = a2uiEnabled ? a2uiProperties.maxComponentsPerTree() : 0;
+            var prompt = new Prompt(enhancedMessages, optionsBuilder.build());
 
-            StringBuilder contentBuilder = new StringBuilder();
-            int[] tokenIndex = {0};
-            Instant start = Instant.now();
+            // 非流式调用获取完整响应
+            ChatResponse chatResponse = chatModelInfo.chatModel().call(prompt);
+            var assistantMsg = chatResponse.getResult() != null
+                    ? chatResponse.getResult().getOutput() : null;
 
-            // 订阅流式响应
-            tokenStream.doOnNext(tok -> {
-                contentBuilder.append(tok);
-                if (a2uiParser != null) {
-                    var segments = a2uiParser.feed(tok);
-                    for (var segment : segments) {
-                        switch (segment) {
-                            case StreamingA2uiParser.Segment.TextSegment(var text) -> {
-                                if (!text.isEmpty()) {
-                                    sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
-                                            "sessionId", sessionId,
-                                            "turnId", turnId,
-                                            "content", text,
-                                            "index", tokenIndex[0]++));
-                                }
-                            }
-                            case StreamingA2uiParser.Segment.A2uiSegment(var json) -> {
-                                if (latestA2uiTree[0] == null) {
-                                    var tree = parseAndValidateA2uiTree(json, maxComponents);
-                                    if (tree != null) {
-                                        latestA2uiTree[0] = tree;
-                                        sseManager.sendEvent(streamId, SseEventType.UI, Map.of(
-                                                "sessionId", sessionId,
-                                                "turnId", turnId,
-                                                "components", tree.components()));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
-                            "sessionId", sessionId,
-                            "turnId", turnId,
-                            "content", tok,
-                            "index", tokenIndex[0]++));
+            if (assistantMsg != null && assistantMsg.hasToolCalls()) {
+                // LLM 要调用工具 — 发送 TOOL_CALLING 推理事件，不流式输出
+                for (var tc : assistantMsg.getToolCalls()) {
+                    sendReasoningEvent(sseManager, streamId, sessionId, turnId,
+                            "TOOL_CALLING", "调用工具: " + tc.name(),
+                            "正在执行工具 " + tc.name(), tc.name(), Map.of());
                 }
-            })
-            .doOnComplete(() -> {
-                if (a2uiParser != null) {
-                    var remaining = a2uiParser.flush();
-                    for (var segment : remaining) {
-                        if (segment instanceof StreamingA2uiParser.Segment.TextSegment(var text)
-                                && !text.isEmpty()) {
-                            sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
-                                    "sessionId", sessionId,
-                                    "turnId", turnId,
-                                    "content", text,
-                                    "index", tokenIndex[0]++));
-                        }
-                    }
-                }
-            })
-            .doOnError(err -> log.error("流式 LLM 调用失败: scene={}, error={}", scene, err.getMessage(), err))
-            .blockLast();
+                // 记录流式 LLM Step
+                recordStreamingLlmStep(traceContext, Instant.now(), providerId, modelId,
+                        scene, fullPrompt, assistantMsg.getText(), null);
+                return chatResponse;
+            }
 
-            String rawContent = contentBuilder.toString();
-            this.finalContent = rawContent;
+            // LLM 返回纯文本 — 流式推送 token
+            String content = assistantMsg != null ? assistantMsg.getText() : "";
+            this.finalContent = content;
 
-            // 更新 A2UI 树
-            if (latestA2uiTree[0] != null) {
-                lastCollectedA2uiTree = latestA2uiTree[0];
+            // 逐字符模拟流式推送（实际内容已完整获取）
+            if (content != null && !content.isBlank()) {
+                streamContentToSse(content);
             }
 
             // 记录流式 LLM Step
-            recordStreamingLlmStep(traceContext, start, providerId, modelId,
-                    scene, fullPrompt, rawContent, null);
+            recordStreamingLlmStep(traceContext, Instant.now(), providerId, modelId,
+                    scene, fullPrompt, content, null);
 
-            // 构造一个合成的 ChatResponse 供 coreLoop 解析
-            // 流式模式下 content 已收集完毕，构造一个包含文本的 ChatResponse
-            var generation = new org.springframework.ai.chat.model.Generation(
-                    new AssistantMessage(rawContent));
-            return new ChatResponse(List.of(generation));
+            return chatResponse;
+        }
+
+        /** 将文本内容逐段推送为 SSE TOKEN 事件。 */
+        private void streamContentToSse(String content) {
+            // A2UI 流式解析
+            boolean a2uiEnabled = isA2uiEnabled();
+            StreamingA2uiParser a2uiParser = a2uiEnabled ? new StreamingA2uiParser() : null;
+            int maxComponents = a2uiEnabled ? a2uiProperties.maxComponentsPerTree() : 0;
+            int tokenIndex = 0;
+
+            if (a2uiParser != null) {
+                var segments = a2uiParser.feed(content);
+                for (var segment : segments) {
+                    switch (segment) {
+                        case StreamingA2uiParser.Segment.TextSegment(var text) -> {
+                            if (!text.isEmpty()) {
+                                sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
+                                        "sessionId", sessionId, "turnId", turnId,
+                                        "content", text, "index", tokenIndex++));
+                            }
+                        }
+                        case StreamingA2uiParser.Segment.A2uiSegment(var json) -> {
+                            var tree = parseAndValidateA2uiTree(json, maxComponents);
+                            if (tree != null) {
+                                lastCollectedA2uiTree = tree;
+                                sseManager.sendEvent(streamId, SseEventType.UI, Map.of(
+                                        "sessionId", sessionId, "turnId", turnId,
+                                        "components", tree.components()));
+                            }
+                        }
+                    }
+                }
+                var remaining = a2uiParser.flush();
+                for (var seg : remaining) {
+                    if (seg instanceof StreamingA2uiParser.Segment.TextSegment(var text)
+                            && !text.isEmpty()) {
+                        sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
+                                "sessionId", sessionId, "turnId", turnId,
+                                "content", text, "index", tokenIndex++));
+                    }
+                }
+            } else {
+                // 无 A2UI — 直接推送完整文本
+                sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
+                        "sessionId", sessionId, "turnId", turnId,
+                        "content", content, "index", 0));
+            }
         }
 
         boolean hasStreamingError() { return streamingError != null; }
         @Nullable Exception getStreamingError() { return streamingError; }
         @Nullable String getFinalContent() { return finalContent; }
+
+        @Override public String getProviderId() { return providerId; }
+        @Override public String getModelId() { return modelId; }
     }
 
     // ===== 状态初始化 =====
 
-    /**
-     * 初始化 ReAct 状态 — 查找已有会话或创建新状态。
-     */
+    /** 初始化 ReAct 状态 — 查找已有会话或创建新状态。 */
     private ReactAgentState initState(AgentRequest request) {
         var existingSession = sessionManager.findSession(request.sessionId());
         if (existingSession.isPresent()) {
@@ -879,9 +997,7 @@ public class ReactAgentLoop {
         return ReactAgentState.init(request);
     }
 
-    /**
-     * 启动 Trace（如果 TraceRecorder 可用）。
-     */
+    /** 启动 Trace（如果 TraceRecorder 可用）。 */
     @Nullable
     private TraceContext startTraceIfEnabled(ReactAgentState state, AgentRequest request) {
         if (traceRecorder == null) return null;
@@ -890,9 +1006,7 @@ public class ReactAgentLoop {
 
     // ===== L1 工作记忆读写 =====
 
-    /**
-     * 将用户消息写入 L1 工作记忆。
-     */
+    /** 将用户消息写入 L1 工作记忆。 */
     private void writeUserMessageToL1(ReactAgentState state) {
         if (workingMemory == null || state.goal() == null || state.goal().isBlank()) return;
         try {
@@ -901,14 +1015,12 @@ public class ReactAgentLoop {
                     state.goal(), tokens);
             workingMemory.append(state.sessionId(), slot);
         } catch (Exception e) {
-            log.warn("用户消息写入 L1 失败，降级为无对话历史: sessionId={}, error={}",
+            log.warn("用户消息写入 L1 失败: sessionId={}, error={}",
                     state.sessionId(), e.getMessage());
         }
     }
 
-    /**
-     * 将 AI 响应写入 L1 工作记忆。
-     */
+    /** 将 AI 响应写入 L1 工作记忆。 */
     private void writeAssistantMessageToL1(ReactAgentState state) {
         if (workingMemory == null) return;
         String response = state.finalOutput();
@@ -924,16 +1036,13 @@ public class ReactAgentLoop {
         }
     }
 
-    /**
-     * 当 L1 为空时，从 ConversationViewService 回灌对话历史。
-     */
+    /** 当 L1 为空时，从 ConversationViewService 回灌对话历史。 */
     private void hydrateWorkingMemoryFromConversationView(String sessionId) {
         if (workingMemory == null || conversationViewService == null
                 || sessionId == null || sessionId.isBlank()) return;
         try {
             var existingSlots = workingMemory.getContext(sessionId);
             if (existingSlots != null && !existingSlots.isEmpty()) return;
-
             var turns = conversationViewService.getRecentTurns(
                     sessionId, config.getSession().getMaxRecentTurns());
             for (var turn : turns) {
@@ -956,9 +1065,7 @@ public class ReactAgentLoop {
 
     // ===== 对话历史持久化 =====
 
-    /**
-     * 同步写入用户消息到 chat_messages。
-     */
+    /** 同步写入用户消息到 chat_messages。 */
     private void persistUserMessage(ReactAgentState state) {
         if (conversationHistoryStore == null
                 || state.goal() == null || state.goal().isBlank()) return;
@@ -971,11 +1078,7 @@ public class ReactAgentLoop {
         }
     }
 
-    /**
-     * 同步写入助手消息到 chat_messages。
-     *
-     * @return 后端生成的 messageId（可为 null）
-     */
+    /** 同步写入助手消息到 chat_messages。 */
     @Nullable
     private String persistAssistantMessage(ReactAgentState state) {
         if (conversationHistoryStore == null) return null;
@@ -992,11 +1095,9 @@ public class ReactAgentLoop {
         }
     }
 
-    /**
-     * 持久化注入记录 — 将本次注入的记忆实体 ID 关联到助手消息。
-     */
+    /** 持久化注入记录。 */
     private void persistInjectionRecord(@Nullable String messageId,
-                                         @Nullable String sessionId) {
+                                        @Nullable String sessionId) {
         var entityIds = lastInjectedEntityIds;
         if (injectionRecordRepository == null || entityIds.isEmpty()
                 || messageId == null || messageId.isBlank()) return;
@@ -1010,9 +1111,7 @@ public class ReactAgentLoop {
 
     // ===== 异步后处理 =====
 
-    /**
-     * 异步后处理 — 会话快照持久化 + AUDN 实体提取。
-     */
+    /** 异步后处理 — 会话快照持久化 + AUDN 实体提取。 */
     private void asyncPostProcess(ReactAgentState finalState) {
         Thread.startVirtualThread(() -> {
             try {
@@ -1037,42 +1136,82 @@ public class ReactAgentLoop {
 
     // ===== 推理概要 =====
 
-    /**
-     * 构建推理概要字符串。
-     */
+    /** 构建推理概要字符串（从 TraceContext 提取真实模型信息）。 */
     private String buildReasoningSummary(ReactAgentState state,
-                                          @Nullable TraceContext traceContext) {
+                                         @Nullable TraceContext traceContext) {
         int steps = state.stepCount();
         int tokens = state.budget() != null ? state.budget().tokensUsed() : 0;
-        String modelId = "agent";
-        // Task 9.2 将从 TraceContext 聚合更精确的 Token 和模型信息
+        String modelId = DEFAULT_MODEL_ID;
+
+        // 从 TraceContext 提取最后一次 LLM 调用的模型 ID
+        if (traceContext != null) {
+            var traceSteps = traceContext.steps();
+            for (int i = traceSteps.size() - 1; i >= 0; i--) {
+                if (traceSteps.get(i) instanceof LlmCallStep llmStep) {
+                    modelId = llmStep.modelId();
+                    tokens = traceContext.totalInputTokens() + traceContext.totalOutputTokens();
+                    break;
+                }
+            }
+        }
+
         return "本轮推理已完成，使用模型 %s，经历 %d 个推理步骤，累计约 %d 个 Token。"
                 .formatted(modelId, steps, tokens);
     }
 
-    // ===== Token 估算 =====
+    // ===== Token 聚合 =====
 
-    /**
-     * 估算文本 Token 数（中文按 1 字 1 Token，英文按 4 字符 1 Token）。
-     */
-    private int estimateTextTokens(String text) {
-        if (text == null || text.isEmpty()) return 0;
-        long cjkChars = text.chars()
-                .filter(c -> Character.UnicodeScript.of(c) == Character.UnicodeScript.HAN)
-                .count();
-        long otherChars = text.length() - cjkChars;
-        return Math.max(1, (int) (cjkChars + otherChars / 4));
+    /** 从 TraceContext 聚合 Token 使用量。 */
+    private TokenUsage aggregateTokenUsage(@Nullable TraceContext traceContext) {
+        String modelId = DEFAULT_MODEL_ID;
+        int promptTokens = 0;
+        int completionTokens = 0;
+        if (traceContext != null) {
+            promptTokens = traceContext.totalInputTokens();
+            completionTokens = traceContext.totalOutputTokens();
+            var steps = traceContext.steps();
+            for (int i = steps.size() - 1; i >= 0; i--) {
+                if (steps.get(i) instanceof LlmCallStep llmStep) {
+                    modelId = llmStep.modelId();
+                    break;
+                }
+            }
+        }
+        return new TokenUsage(promptTokens, completionTokens,
+                promptTokens + completionTokens, modelId);
+    }
+
+    // ===== 流式 LLM Trace 记录 =====
+
+    /** 记录流式 LLM 调用步骤到 Trace。 */
+    private void recordStreamingLlmStep(@Nullable TraceContext traceContext,
+                                        Instant startTime, String providerId,
+                                        String modelId, String scene,
+                                        @Nullable String prompt, @Nullable String output,
+                                        @Nullable Exception error) {
+        if (traceRecorder == null || traceContext == null) return;
+        Instant end = Instant.now();
+        Duration d = Duration.between(startTime, end);
+        int inputTokens = estimateTextTokens(prompt != null ? prompt : "");
+        int outputTokens = error != null ? 0 : estimateTextTokens(output != null ? output : "");
+        String finishReason = error != null ? ("error: " + error.getMessage()) : "stream_complete";
+        int stepIndex = traceContext.steps() != null ? traceContext.steps().size() : 0;
+        var step = new LlmCallStep(
+                stepIndex, end, d,
+                providerId != null ? providerId : DEFAULT_MODEL_ID,
+                modelId != null ? modelId : DEFAULT_MODEL_ID,
+                scene != null ? scene : "unknown",
+                inputTokens, outputTokens, d, false, 0.0d, finishReason);
+        traceRecorder.recordStep(traceContext, step);
     }
 
     // ===== SSE 推理事件 =====
 
-    /**
-     * 发送 REASONING SSE 事件。
-     */
+    /** 发送 REASONING SSE 事件。 */
     private void sendReasoningEvent(SseSessionManager sseManager, String streamId,
-                                     String sessionId, String turnId,
-                                     String type, String title, String description,
-                                     @Nullable String toolName, Map<String, Object> extra) {
+                                    String sessionId, String turnId,
+                                    String type, String title, String description,
+                                    @Nullable String toolName, Map<String, Object> extra) {
         try {
             var eventDetail = new HashMap<String, Object>();
             eventDetail.put("id", UUID.randomUUID().toString());
@@ -1094,11 +1233,9 @@ public class ReactAgentLoop {
         }
     }
 
-    /**
-     * 发送 SSE ERROR 事件并关闭连接。
-     */
+    /** 发送 SSE ERROR 事件并关闭连接。 */
     private void sendStreamError(SseSessionManager sseManager, String streamId,
-                                  int code, String message, @Nullable String traceId) {
+                                 int code, String message, @Nullable String traceId) {
         var errorData = new HashMap<String, Object>();
         errorData.put("code", code);
         errorData.put("message", message);
@@ -1111,17 +1248,15 @@ public class ReactAgentLoop {
 
     // ===== DONE 事件构建 =====
 
-    /**
-     * 构建 DONE 事件 payload。
-     */
+    /** 构建 DONE 事件 payload。 */
     private Map<String, Object> buildDoneEventPayload(AgentRequest request,
-                                                       ReactAgentState state,
-                                                       String tempTurnId,
-                                                       @Nullable TokenUsage finalTokenUsage,
-                                                       @Nullable TraceContext traceContext,
-                                                       @Nullable String reasoningSummary,
-                                                       @Nullable String finalContent,
-                                                       @Nullable String assistantMessageId) {
+                                                      ReactAgentState state,
+                                                      String tempTurnId,
+                                                      @Nullable TokenUsage finalTokenUsage,
+                                                      @Nullable TraceContext traceContext,
+                                                      @Nullable String reasoningSummary,
+                                                      @Nullable String finalContent,
+                                                      @Nullable String assistantMessageId) {
         var doneData = new HashMap<String, Object>();
         doneData.put("messageId", assistantMessageId != null ? assistantMessageId : tempTurnId);
         doneData.put("sessionId", request.sessionId());
@@ -1184,9 +1319,7 @@ public class ReactAgentLoop {
 
     // ===== 知识库来源 =====
 
-    /**
-     * 构建知识库来源摘要。
-     */
+    /** 构建知识库来源摘要。 */
     private List<Map<String, Object>> buildKnowledgeSources(@Nullable String sessionId) {
         if (sessionId == null || sessionId.isBlank() || sessionKnowledgeBaseRepository == null) {
             return List.of();
@@ -1220,69 +1353,14 @@ public class ReactAgentLoop {
         }
     }
 
-    // ===== Token 聚合 =====
-
-    /**
-     * 从 TraceContext 聚合 Token 使用量。
-     */
-    private TokenUsage aggregateTokenUsage(@Nullable TraceContext traceContext) {
-        String modelId = DEFAULT_MODEL_ID;
-        int promptTokens = 0;
-        int completionTokens = 0;
-        if (traceContext != null) {
-            promptTokens = traceContext.totalInputTokens();
-            completionTokens = traceContext.totalOutputTokens();
-            var steps = traceContext.steps();
-            for (int i = steps.size() - 1; i >= 0; i--) {
-                var step = steps.get(i);
-                if (step instanceof LlmCallStep llmStep) {
-                    modelId = llmStep.modelId();
-                    break;
-                }
-            }
-        }
-        return new TokenUsage(promptTokens, completionTokens,
-                promptTokens + completionTokens, modelId);
-    }
-
-    // ===== 流式 LLM Trace 记录 =====
-
-    /**
-     * 记录流式 LLM 调用步骤到 Trace。
-     */
-    private void recordStreamingLlmStep(@Nullable TraceContext traceContext,
-                                         Instant startTime, String providerId,
-                                         String modelId, String scene,
-                                         @Nullable String prompt, @Nullable String output,
-                                         @Nullable Exception error) {
-        if (traceRecorder == null || traceContext == null) return;
-        Instant end = Instant.now();
-        Duration d = Duration.between(startTime, end);
-        int inputTokens = estimateTextTokens(prompt != null ? prompt : "");
-        int outputTokens = error != null ? 0 : estimateTextTokens(output != null ? output : "");
-        String finishReason = error != null ? ("error: " + error.getMessage()) : "stream_complete";
-        int stepIndex = traceContext.steps() != null ? traceContext.steps().size() : 0;
-        var step = new LlmCallStep(
-                stepIndex, end, d,
-                providerId != null ? providerId : "unknown",
-                modelId != null ? modelId : "unknown",
-                scene != null ? scene : "unknown",
-                inputTokens, outputTokens, d, false, 0.0d, finishReason);
-        traceRecorder.recordStep(traceContext, step);
-    }
-
     // ===== A2UI 辅助方法 =====
 
-    /**
-     * 判断 A2UI 功能是否启用。
-     */
+    /** 判断 A2UI 功能是否启用。 */
     private boolean isA2uiEnabled() {
         return a2uiProperties != null && a2uiProperties.enabled();
     }
 
-    /**
-     * 从非流式响应中提取 A2UI 内容。
-     */
+    /** 从非流式响应中提取 A2UI 内容。 */
     private A2uiPayloadSupport.ParsedA2uiContent extractA2uiContent(@Nullable String content) {
         if (!isA2uiEnabled()) {
             return new A2uiPayloadSupport.ParsedA2uiContent(content != null ? content : "", null);
@@ -1290,9 +1368,7 @@ public class ReactAgentLoop {
         return A2uiPayloadSupport.extractContent(content, objectMapper, a2uiProperties.maxComponentsPerTree());
     }
 
-    /**
-     * 序列化 A2UI 组件树为 JSON。
-     */
+    /** 序列化 A2UI 组件树为 JSON。 */
     @Nullable
     private String serializeA2uiTree(@Nullable A2uiComponentTree tree) {
         if (tree == null || tree.components().isEmpty()) return null;
@@ -1304,9 +1380,7 @@ public class ReactAgentLoop {
         }
     }
 
-    /**
-     * 解析并校验 A2UI JSON 为组件树。
-     */
+    /** 解析并校验 A2UI JSON 为组件树。 */
     @Nullable
     private A2uiComponentTree parseAndValidateA2uiTree(String json, int maxComponents) {
         try {
@@ -1327,9 +1401,7 @@ public class ReactAgentLoop {
 
     // ===== 提示词辅助 =====
 
-    /**
-     * 拼接提示词段落。
-     */
+    /** 拼接提示词段落。 */
     @Nullable
     private String appendPromptSection(@Nullable String base, @Nullable String extra) {
         if (extra == null || extra.isBlank()) return base;
@@ -1337,9 +1409,7 @@ public class ReactAgentLoop {
         return base + "\n" + extra;
     }
 
-    /**
-     * 调试日志 — 打印完整 LLM 提示词。
-     */
+    /** 调试日志 — 打印完整 LLM 提示词。 */
     private void logLlmPromptIfEnabled(String scene, @Nullable String systemPrompt,
                                         @Nullable String userText,
                                         @Nullable List<ToolCallback> toolCallbacks) {
@@ -1370,9 +1440,7 @@ public class ReactAgentLoop {
 
     // ===== 流式错误持久化 =====
 
-    /**
-     * 持久化流式系统错误消息到对话历史和 L1。
-     */
+    /** 持久化流式系统错误消息到对话历史和 L1。 */
     private void persistStreamingSystemError(@Nullable String sessionId,
                                               @Nullable String traceId,
                                               @Nullable Exception e) {
