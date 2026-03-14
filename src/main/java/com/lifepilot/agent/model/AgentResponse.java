@@ -45,4 +45,19 @@ public record AgentResponse(
                 null
         );
     }
+
+    /** 从 ReactAgentState 构建错误响应。 */
+    public static AgentResponse error(ReactAgentState state, Exception exception) {
+        return new AgentResponse(
+                state.traceId(),
+                state.sessionId(),
+                "处理请求时发生错误: " + exception.getMessage(),
+                state.budget().tokensUsed(),
+                state.stepCount(),
+                "异常终止: " + exception.getClass().getSimpleName(),
+                null,
+                null,
+                null
+        );
+    }
 }

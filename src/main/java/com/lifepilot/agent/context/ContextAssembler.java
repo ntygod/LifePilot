@@ -1,9 +1,7 @@
 package com.lifepilot.agent.context;
 
 import com.lifepilot.agent.config.AgentConfigProperties;
-import com.lifepilot.agent.model.AgentPhase;
-import com.lifepilot.agent.model.AgentState;
-import com.lifepilot.agent.model.StepRecord;
+import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.notification.PassiveNotificationQueue;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.knowledge.model.DocumentSearchResult;
@@ -167,7 +165,7 @@ public class ContextAssembler {
      * @param state 当前 Agent 状态
      * @return 增强版 AssembledContext
      */
-    public AssembledContext assemble(AgentState state) {
+    public AssembledContext assemble(ReactAgentState state) {
         // 基础版走原有逻辑
         if (!isFullMode()) {
             return assembleBasic(state);
@@ -177,8 +175,8 @@ public class ContextAssembler {
         boolean degraded = false;
 
         try {
-            // 1. 获取检索策略
-            var strategyConfig = retrievalStrategy.getStrategy(state.phase());
+            // 1. 获取检索策略（ReAct 架构无阶段区分，使用默认策略）
+            var strategyConfig = retrievalStrategy.getDefaultStrategy();
 
             if (strategyConfig.skip()) {
                 return buildMinimalContext(state);
@@ -251,11 +249,11 @@ public class ContextAssembler {
             int workingMemoryTokens = truncatedSlots.stream()
                     .mapToInt(WorkingMemorySlot::tokenCount).sum();
 
-            // 7. 构建 systemPrompt（单次构建，复用于 TokenBudget 和最终输出）
-            String systemPrompt = buildSystemPrompt(state.phase());
+            // 7. 构建 systemPrompt（ReAct 架构使用通用角色定义）
+            String systemPrompt = buildReactSystemPrompt();
 
-            // 8. 构建 TokenBudget（传入已构建的 systemPrompt，避免重复构建）
-            var tokenBudget = buildTokenBudget(state.phase(), budgetAllocation,
+            // 8. 构建 TokenBudget（ReAct 架构使用默认分配）
+            var tokenBudget = buildTokenBudgetDefault(budgetAllocation,
                     formattedMemories, truncatedSlots, systemPrompt);
             // 用户画像从 System Prompt 移至 User Prompt 半稳定区
             String userProfile = safeGetUserProfile(semanticMemory, refinedQuery);
@@ -299,28 +297,28 @@ public class ContextAssembler {
     // --- 基础版逻辑 ---
 
     /** 基础版组装（无记忆检索）。 */
-    private AssembledContext assembleBasic(AgentState state) {
+    private AssembledContext assembleBasic(ReactAgentState state) {
         int totalTokens = config.getContext().getMaxContextTokens();
-        var tokenBudget = TokenBudget.allocate(state.phase(), totalTokens);
-        String systemPrompt = safeBuildSystemPrompt(state.phase());
+        var tokenBudget = TokenBudget.allocateDefault(totalTokens);
+        String systemPrompt = safeReactSystemPrompt();
         String userPrompt = buildUserPrompt(state);
         return new AssembledContext(systemPrompt, userPrompt, List.of(), tokenBudget,
                 0, 0.0f, 0, false, List.of());
     }
 
-    /** TERMINATED 阶段返回最小化上下文。 */
-    private AssembledContext buildMinimalContext(AgentState state) {
+    /** 返回最小化上下文。 */
+    private AssembledContext buildMinimalContext(ReactAgentState state) {
         int totalTokens = config.getContext().getMaxContextTokens();
-        var tokenBudget = TokenBudget.allocate(state.phase(), totalTokens);
+        var tokenBudget = TokenBudget.allocateDefault(totalTokens);
         return new AssembledContext("", "", List.of(), tokenBudget,
                 0, 0.0f, 0, false, List.of());
     }
 
     /** 异常兜底降级上下文。 */
-    private AssembledContext buildFallbackContext(AgentState state) {
+    private AssembledContext buildFallbackContext(ReactAgentState state) {
         int totalTokens = config.getContext().getMaxContextTokens();
-        var tokenBudget = TokenBudget.allocate(state.phase(), totalTokens);
-        String systemPrompt = safeBuildSystemPrompt(state.phase());
+        var tokenBudget = TokenBudget.allocateDefault(totalTokens);
+        String systemPrompt = safeReactSystemPrompt();
         String userPrompt = buildUserPrompt(state);
         return new AssembledContext(systemPrompt, userPrompt, List.of(), tokenBudget,
                 0, 0.0f, 0, true, List.of());
@@ -928,16 +926,14 @@ public class ContextAssembler {
 
     // --- TokenBudget 构建 ---
 
-    /** 构建 TokenBudget，映射 BudgetAllocation 到 TokenBudget 槽位。 */
-    private TokenBudget buildTokenBudget(AgentPhase phase, BudgetAllocation allocation,
-                                         List<String> formattedMemories,
-                                         List<WorkingMemorySlot> slots,
-                                         String systemPrompt) {
-        // 静态分配获取 toolSchema/toolResult/reserved 的比例
+    /** 构建 TokenBudget（ReAct 架构默认分配）。 */
+    private TokenBudget buildTokenBudgetDefault(BudgetAllocation allocation,
+                                                List<String> formattedMemories,
+                                                List<WorkingMemorySlot> slots,
+                                                String systemPrompt) {
         int totalTokens = config.getContext().getMaxContextTokens();
-        var staticBudget = TokenBudget.allocate(phase, totalTokens);
+        var staticBudget = TokenBudget.allocateDefault(totalTokens);
 
-        // 计算实际消耗（使用传入的 systemPrompt，避免重复构建）
         int systemPromptUsed = estimateTokens(systemPrompt);
         int historyUsed = slots.stream().mapToInt(WorkingMemorySlot::tokenCount).sum();
         int memoryUsed = formattedMemories.stream().mapToInt(this::estimateTokens).sum();
@@ -959,111 +955,43 @@ public class ContextAssembler {
     // --- Prompt 构建 ---
 
     /**
-     * 构建阶段专用 System Prompt。
+     * 构建 ReAct 架构通用 System Prompt。
      *
-     * @param phase 当前阶段
      * @return System Prompt 文本
      */
-    String buildSystemPrompt(AgentPhase phase) {
-        if (phase == AgentPhase.TERMINATED) return "";
-        // EXECUTING 阶段直接执行工具，不经过 LLM，无需系统提示词
-        if (phase == AgentPhase.EXECUTING) return "";
+    String buildReactSystemPrompt() {
         String roleDefinition = promptRegistry.render("agent/role-definition");
-        String phaseKey = "agent/" + phase.name().toLowerCase();
-
-        // 注入时间锚点（所有阶段共享变量 Map，understanding.st 使用时间变量，其他阶段忽略）
         var now = ZonedDateTime.now();
-        return promptRegistry.render(phaseKey, Map.of(
+        // ReAct 架构使用 understanding 模板（最通用的对话模板）
+        return promptRegistry.render("agent/understanding", Map.of(
                 "roleDefinition", roleDefinition,
                 "currentDateTime", now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
                 "timezone", ZoneId.systemDefault().getId(),
                 "locale", Locale.getDefault().toLanguageTag()));
     }
 
-    private String safeBuildSystemPrompt(AgentPhase phase) {
+    private String safeReactSystemPrompt() {
         try {
-            return buildSystemPrompt(phase);
+            return buildReactSystemPrompt();
         } catch (Exception e) {
-            log.error("系统提示词渲染失败，使用紧急兜底提示词: phase={}, error={}",
-                    phase, e.getMessage());
-            return buildEmergencySystemPrompt(phase);
+            log.error("系统提示词渲染失败，使用紧急兜底提示词: error={}", e.getMessage());
+            var now = ZonedDateTime.now();
+            String timeContext = "当前时间：" + now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+                    + "，时区：" + ZoneId.systemDefault().getId()
+                    + "，区域：" + Locale.getDefault().toLanguageTag();
+            return """
+                    你是知微（ZhiWei），一个可靠、友好、谨慎的 AI 助手。
+                    %s
+                    请根据用户请求提供帮助。
+                    """.formatted(timeContext);
         }
-    }
-
-    private String buildEmergencySystemPrompt(AgentPhase phase) {
-        if (phase == AgentPhase.TERMINATED || phase == AgentPhase.EXECUTING) {
-            return "";
-        }
-
-        var now = ZonedDateTime.now();
-        String timeContext = "当前时间：" + now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
-                + "，时区：" + ZoneId.systemDefault().getId()
-                + "，区域：" + Locale.getDefault().toLanguageTag();
-
-        return switch (phase) {
-            case UNDERSTANDING -> """
-                    你是知微（ZhiWei），一个可靠、友好、谨慎的 AI 助手。
-                    阶段：意图理解
-                    %s
-
-                    请只输出 JSON 对象，不要输出 markdown。
-                    字段必须包含：
-                    - summary: string
-                    - needsClarification: boolean
-                    - clarificationQuestion: string | null
-                    - canProceed: boolean
-                    - entities: string[]
-                    - complexity: "SIMPLE" | "MODERATE" | "COMPLEX"
-                    """.formatted(timeContext);
-            case PLANNING -> """
-                    你是知微（ZhiWei），一个可靠、友好、谨慎的 AI 助手。
-                    阶段：任务规划
-                    %s
-
-                    请只输出 JSON 对象，不要输出 markdown。
-                    字段必须包含：
-                    - steps: PlanStep[]
-                    - estimatedTokens: number
-                    - rationale: string
-
-                    每个 PlanStep 必须包含：
-                    - index: number
-                    - toolId: string
-                    - params: object
-                    - dependsOn: number[]
-                    - description: string
-                    """.formatted(timeContext);
-            case REFLECTING -> """
-                    你是知微（ZhiWei），一个可靠、友好、谨慎的 AI 助手。
-                    阶段：反思评估
-                    %s
-
-                    请只输出 JSON 对象，不要输出 markdown。
-                    字段必须包含：
-                    - satisfied: boolean
-                    - adjustmentPlan: string | null
-                    - summary: string
-                    - needsReplanning: boolean
-                    """.formatted(timeContext);
-            case RESPONDING -> """
-                    你是知微（ZhiWei），一个可靠、友好、谨慎的 AI 助手。
-                    阶段：生成响应
-                    %s
-
-                    请只输出 JSON 对象，不要输出 markdown。
-                    字段必须包含：
-                    - content: string
-                    - suggestions: string[]
-                    """.formatted(timeContext);
-            case EXECUTING, TERMINATED -> "";
-        };
     }
 
     /**
      * 构建增强版 User Prompt（结构化内容区域）。
-     * 顺序：当前时间 → 用户画像 → 对话历史 → 相关记忆 → 知识库片段 → 跨会话参考 → 工具结果 → 推理上下文 → 已执行步骤 → 当前用户请求 → 预算剩余
+     * 顺序：当前时间 → 用户画像 → 对话历史 → 相关记忆 → 知识库片段 → 跨会话参考 → 当前用户请求 → 预算剩余
      */
-    String buildEnhancedUserPrompt(AgentState state,
+    String buildEnhancedUserPrompt(ReactAgentState state,
                                    List<String> memories,
                                    List<String> knowledgeBaseSnippets,
                                    List<String> crossSessionFragments,
@@ -1151,26 +1079,10 @@ public class ContextAssembler {
             }
         }
 
-        // 8. 已执行步骤（动态区）— 按 success 区分截断长度
-        if (!state.steps().isEmpty()) {
-            sb.append("\n已执行步骤:\n");
-            for (int i = 0; i < state.steps().size(); i++) {
-                StepRecord step = state.steps().get(i);
-                int truncLen = step.success()
-                        ? config.getContext().getSuccessStepMaxLength()
-                        : config.getContext().getFailedStepMaxLength();
-                sb.append("  ").append(i + 1).append(". ")
-                        .append(step.toolId() != null ? step.toolId() : "系统")
-                        .append(" - ").append(step.success() ? "成功" : "失败")
-                        .append(": ").append(truncate(step.output(), truncLen))
-                        .append("\n");
-            }
-        }
-
-        // 9. 当前用户请求（动态区，移至末尾紧邻预算）
+        // 8. 当前用户请求（动态区）
         sb.append("\n用户请求: ").append(state.goal()).append("\n");
 
-        // 10. 预算剩余
+        // 9. 预算剩余
         sb.append("\n预算剩余: Token=").append(state.budget().tokensRemaining())
                 .append(", 已用步骤=").append(state.stepCount()).append("\n");
 
@@ -1180,38 +1092,15 @@ public class ContextAssembler {
     /**
      * 构建基础版 User Prompt（无记忆检索）。
      *
-     * @param state 当前 Agent 状态
+     * @param state 当前 ReAct Agent 状态
      * @return User Prompt 文本
      */
-    String buildUserPrompt(AgentState state) {
+    String buildUserPrompt(ReactAgentState state) {
         var sb = new StringBuilder();
         sb.append(buildCurrentDateTimeContextLine()).append("\n");
         sb.append("用户请求: ").append(state.goal()).append("\n");
         sb.append("预算剩余: Token=").append(state.budget().tokensRemaining())
                 .append(", 已用步骤=").append(state.stepCount()).append("\n");
-
-        if (!state.steps().isEmpty()) {
-            sb.append("已执行步骤:\n");
-            for (int i = 0; i < state.steps().size(); i++) {
-                StepRecord step = state.steps().get(i);
-                int truncLen = step.success()
-                        ? config.getContext().getSuccessStepMaxLength()
-                        : config.getContext().getFailedStepMaxLength();
-                sb.append("  ").append(i + 1).append(". ")
-                        .append(step.toolId() != null ? step.toolId() : "系统")
-                        .append(" - ").append(step.success() ? "成功" : "失败")
-                        .append(": ").append(truncate(step.output(), truncLen))
-                        .append("\n");
-            }
-        }
-
-        var plan = state.plan();
-        if (plan != null) {
-            sb.append("当前计划: ").append(plan.rationale()).append("\n");
-            sb.append("计划进度: ").append(state.planStepIndex())
-                    .append("/").append(plan.steps().size()).append("\n");
-        }
-
         return sb.toString();
     }
 
@@ -1225,11 +1114,11 @@ public class ContextAssembler {
     // --- 可观测性日志 ---
 
     /** 记录组装指标。 */
-    private void logAssemblyMetrics(AgentState state, AssembledContext context, Instant startTime) {
+    private void logAssemblyMetrics(ReactAgentState state, AssembledContext context, Instant startTime) {
         long durationMs = Duration.between(startTime, Instant.now()).toMillis();
 
-        log.info("上下文组装完成: phase={}, sessionId={}, totalTokensConsumed={}, assemblyDurationMs={}",
-                state.phase(), state.sessionId(), context.totalTokens(), durationMs);
+        log.info("上下文组装完成: sessionId={}, totalTokensConsumed={}, assemblyDurationMs={}",
+                state.sessionId(), context.totalTokens(), durationMs);
 
         if (!context.retrievedMemories().isEmpty()) {
             log.debug("检索结果详情: count={}, topScore={}, memories={}",

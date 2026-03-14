@@ -249,13 +249,12 @@ public class ReactAgentLoop {
                 break;
             }
 
-            // 4. 组装上下文（临时桥接：转换为旧 AgentState，Task 13.3 后移除）
-            var legacyState = toLegacyAgentState(state);
-            var assembledContext = contextAssembler.assemble(legacyState);
+            // 4. 组装上下文
+            var assembledContext = contextAssembler.assemble(state);
 
             // 5. 构建 Spring AI 消息列表 + 获取工具回调
             var messages = buildMessages(assembledContext, state);
-            var toolCallbacks = agentToolProvider.getToolCallbacks(legacyState);
+            var toolCallbacks = agentToolProvider.getToolCallbacks(state);
 
             log.debug("ReAct 迭代开始: traceId={}, iteration={}, stepCount={}, toolCount={}",
                     state.traceId(), iteration, state.stepCount(), toolCallbacks.size());
@@ -378,40 +377,6 @@ public class ReactAgentLoop {
         }
     }
 
-    /**
-     * 临时桥接 — 将 ReactAgentState 转换为旧 AgentState。
-     *
-     * <p>供 ContextAssembler.assemble() 和 AgentToolProvider.getToolCallbacks() 使用，
-     * 这两个接口在 Task 13 中将改为直接接受 ReactAgentState，届时移除此方法。</p>
-     *
-     * @param reactState ReAct 状态
-     * @return 旧版 AgentState（phase 固定为 UNDERSTANDING，使用完整检索策略）
-     */
-    private AgentState toLegacyAgentState(ReactAgentState reactState) {
-        return AgentState.builder()
-                .traceId(reactState.traceId())
-                .sessionId(reactState.sessionId())
-                .goal(reactState.goal())
-                .phase(AgentPhase.UNDERSTANDING)
-                .channel(reactState.channel())
-                .steps(List.of())
-                .stepCount(reactState.stepCount())
-                .plan(null)
-                .planStepIndex(0)
-                .revisionCount(0)
-                .shortTermMemory(reactState.shortTermMemory())
-                .mentionedEntities(reactState.mentionedEntities())
-                .budget(reactState.budget())
-                .parentTraceId(reactState.parentTraceId())
-                .depth(reactState.depth())
-                .done(reactState.done())
-                .finalOutput(reactState.finalOutput())
-                .terminationReason(reactState.terminationReason())
-                .reasoningSummary(reactState.reasoningSummary())
-                .allowedToolIds(reactState.allowedToolIds())
-                .build();
-    }
-
     // ===== 同步执行入口 =====
 
     /**
@@ -484,8 +449,8 @@ public class ReactAgentLoop {
         } catch (Exception e) {
             log.error("ReAct 循环异常终止: error={}", e.getMessage(), e);
             error = e;
-            // 使用旧 AgentState 构建错误响应（AgentResponse.error 依赖旧类型）
-            return AgentResponse.error(toLegacyAgentState(state), e);
+            // 使用 ReactAgentState 构建错误响应
+            return AgentResponse.error(state, e);
         } finally {
             if (traceRecorder != null && traceContext != null) {
                 String finalOutput = state.finalOutput();
@@ -1049,11 +1014,9 @@ public class ReactAgentLoop {
      * 异步后处理 — 会话快照持久化 + AUDN 实体提取。
      */
     private void asyncPostProcess(ReactAgentState finalState) {
-        // 临时桥接：SessionManager.saveSession 目前接受 AgentState
-        var legacyState = toLegacyAgentState(finalState);
         Thread.startVirtualThread(() -> {
             try {
-                sessionManager.saveSession(legacyState);
+                sessionManager.saveSession(finalState);
             } catch (Exception e) {
                 log.warn("会话快照持久化失败: sessionId={}, error={}",
                         finalState.sessionId(), e.getMessage());

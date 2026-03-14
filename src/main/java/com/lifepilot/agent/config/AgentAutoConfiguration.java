@@ -1,10 +1,8 @@
 package com.lifepilot.agent.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lifepilot.agent.ActionParser;
-import com.lifepilot.agent.AgentLoop;
+import com.lifepilot.agent.ReactAgentLoop;
 import com.lifepilot.agent.AgentToolProvider;
-import com.lifepilot.agent.StateReducer;
 import com.lifepilot.agent.context.ContextAssembler;
 import com.lifepilot.agent.context.DefaultMemoryRetrievalStrategy;
 import com.lifepilot.agent.media.MediaDataExtractor;
@@ -62,12 +60,6 @@ public class AgentAutoConfiguration {
     private static final Logger log = LoggerFactory.getLogger(AgentAutoConfiguration.class);
 
     @Bean
-    @ConditionalOnMissingBean
-    public StateReducer stateReducer() {
-        return new StateReducer();
-    }
-
-    @Bean
     @ConditionalOnMissingBean(ContextAssembler.class)
     public ContextAssembler contextAssembler(AgentConfigProperties config,
                                              PromptRegistry promptRegistry,
@@ -117,56 +109,46 @@ public class AgentAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public ActionParser actionParser(ObjectMapper objectMapper) {
-        return new ActionParser(objectMapper);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
     public MediaDataExtractor mediaDataExtractor(ObjectMapper objectMapper) {
         return new MediaDataExtractor(objectMapper);
     }
 
     /**
-     * 统一的 AgentLoop bean 创建方法。
+     * ReactAgentLoop bean — ReAct 架构核心循环。
      *
      * <p>通过 {@code @Autowired(required = false)} 注入可选依赖，
      * 在依赖注入阶段自动解析。</p>
      */
     @Bean
     @ConditionalOnMissingBean
-    public AgentLoop agentLoop(StateReducer stateReducer,
-                               ContextAssembler contextAssembler,
+    public ReactAgentLoop reactAgentLoop(ContextAssembler contextAssembler,
                                LlmRouter llmRouter,
-                               @Autowired(required = false) MultimodalRouter multimodalRouter,
+                               @Autowired(required = false) TraceRecorder traceRecorder,
                                ObjectMapper objectMapper,
                                SessionManager sessionManager,
-                               @Autowired(required = false) ConversationViewService conversationViewService,
-                               ActionParser actionParser,
                                AgentToolProvider agentToolProvider,
                                AgentConfigProperties config,
-                               @Autowired(required = false) TraceRecorder traceRecorder,
+                               PromptRegistry promptRegistry,
+                               @Autowired(required = false) MultimodalRouter multimodalRouter,
+                               @Autowired(required = false) MediaDataExtractor mediaDataExtractor,
                                @Autowired(required = false) WorkingMemory workingMemory,
-                               @Autowired(required = false) EpisodicMemory episodicMemory,
                                @Autowired(required = false) ConversationHistoryStore conversationHistoryStore,
+                               @Autowired(required = false) ConversationViewService conversationViewService,
+                               @Autowired(required = false) RealtimeExtractor realtimeExtractor,
+                               @Autowired(required = false) InjectionRecordRepository injectionRecordRepository,
                                @Autowired(required = false) SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
                                @Autowired(required = false) KnowledgeBaseRepository knowledgeBaseRepository,
-                               @Autowired(required = false) RealtimeExtractor realtimeExtractor,
-                               PromptRegistry promptRegistry,
-                               @Autowired(required = false) MediaDataExtractor mediaDataExtractor,
-                               @Autowired(required = false) A2uiProperties a2uiProperties,
-                               @Autowired(required = false) InjectionRecordRepository injectionRecordRepository) {
-        log.info("Agent 引擎初始化完成（追踪{}，记忆系统{}，情景记忆{}，实时提取{}，多模态{}，A2UI{}）",
+                               @Autowired(required = false) A2uiProperties a2uiProperties) {
+        log.info("Agent 引擎初始化完成（ReAct 架构，追踪{}，记忆系统{}，实时提取{}，多模态{}，A2UI{}）",
                 traceRecorder != null ? "已启用" : "未启用",
                 workingMemory != null ? "已启用" : "未启用",
-                episodicMemory != null ? "已启用" : "未启用",
                 realtimeExtractor != null ? "已启用" : "未启用",
                 multimodalRouter != null ? "已启用" : "未启用（纯文本模式）",
                 a2uiProperties != null && a2uiProperties.enabled() ? "已启用" : "未启用");
-        return new AgentLoop(stateReducer, contextAssembler, llmRouter, multimodalRouter,
-                traceRecorder, objectMapper, sessionManager, conversationViewService, actionParser, agentToolProvider,
-                config, workingMemory, conversationHistoryStore, sessionKnowledgeBaseRepository,
-                knowledgeBaseRepository, realtimeExtractor, promptRegistry, mediaDataExtractor, a2uiProperties,
-                injectionRecordRepository);
+        return new ReactAgentLoop(contextAssembler, llmRouter, traceRecorder, objectMapper,
+                sessionManager, agentToolProvider, config, promptRegistry,
+                multimodalRouter, mediaDataExtractor, workingMemory, conversationHistoryStore,
+                conversationViewService, realtimeExtractor, injectionRecordRepository,
+                sessionKnowledgeBaseRepository, knowledgeBaseRepository, a2uiProperties);
     }
 }
