@@ -295,6 +295,7 @@ export interface KnowledgeBase {
   name: string
   description: string
   embeddingModel: string
+  rerankerModel?: string
   documentCount: number
   totalChunks: number
   createdAt: string

@@ -74,6 +74,7 @@ const kb = ref<{
   description?: string
   tags?: string[]
   embeddingModel?: string
+  rerankerModel?: string
   updatedAt?: string
 } | null>(null)
 const stats = ref<KbStats | null>(null)
@@ -634,6 +635,7 @@ function clearDocumentFilters() {
 
                       <div class="flex flex-wrap gap-2 text-xs text-muted-foreground">
                         <span class="surface-chip">向量模型：{{ kb.embeddingModel || '未配置' }}</span>
+                        <span class="surface-chip">精排模型：{{ kb.rerankerModel || '使用全局配置' }}</span>
                         <span class="surface-chip">更新于 {{ kb.updatedAt ? formatDate(kb.updatedAt) : '暂无' }}</span>
                         <span class="surface-chip">{{ hasDocumentFilters ? '文档筛选已启用' : '文档筛选未启用' }}</span>
                       </div>
