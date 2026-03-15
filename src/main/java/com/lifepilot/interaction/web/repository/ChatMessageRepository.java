@@ -82,7 +82,8 @@ public class ChatMessageRepository {
                             tree != null ? tree.components() : null,
                             Instant.parse(rs.getString("created_at")),
                             rs.getString("reasoning_summary"),
-                            rs.getString("trace_id")
+                            rs.getString("trace_id"),
+                            null
                     );
                 },
                 sessionId);
