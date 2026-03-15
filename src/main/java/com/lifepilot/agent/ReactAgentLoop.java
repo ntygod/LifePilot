@@ -725,7 +725,7 @@ public class ReactAgentLoop {
 
         try {
             state = initState(effectiveRequest);
-            writeUserMessageToL1(state);
+            writeUserMessageToL1(state, effectiveRequest.mediaContents());
             persistUserMessage(state);
             traceContext = startTraceIfEnabled(state, effectiveRequest);
             loopStart = Instant.now();
@@ -837,7 +837,7 @@ public class ReactAgentLoop {
 
         try {
             state = initState(effectiveRequest);
-            writeUserMessageToL1(state);
+            writeUserMessageToL1(state, effectiveRequest.mediaContents());
 
             // 同步写入用户消息到 chat_messages
             if (conversationHistoryStore != null && state.goal() != null && !state.goal().isBlank()) {
@@ -1269,13 +1269,31 @@ public class ReactAgentLoop {
 
     // ===== L1 工作记忆读写 =====
 
-    /** 将用户消息写入 L1 工作记忆。 */
-    private void writeUserMessageToL1(ReactAgentState state) {
+    /**
+     * 将用户消息写入 L1 工作记忆。
+     *
+     * <p>当请求包含媒体内容时，在消息末尾附加元信息标注（MIME 类型 + 文件名），
+     * 不存储原始二进制数据到 WorkingMemory。</p>
+     *
+     * @param state           当前 Agent 状态
+     * @param mediaContents   请求关联的媒体内容列表（可空）
+     */
+    private void writeUserMessageToL1(ReactAgentState state,
+                                      @Nullable List<MediaContent> mediaContents) {
         if (workingMemory == null || state.goal() == null || state.goal().isBlank()) return;
         try {
-            int tokens = estimateTextTokens(state.goal());
-            var slot = com.lifepilot.memory.working.ConversationSlot.userMessage(
-                    state.goal(), tokens);
+            String content = state.goal();
+
+            // 附加媒体元信息标注（不含二进制数据）
+            if (mediaContents != null && !mediaContents.isEmpty()) {
+                String annotation = mediaContents.stream()
+                        .map(mc -> mc.mimeType() + ": " + (mc.fileName() != null ? mc.fileName() : "unnamed"))
+                        .collect(Collectors.joining(", "));
+                content = content + "\n[附件: " + annotation + "]";
+            }
+
+            int tokens = estimateTextTokens(content);
+            var slot = com.lifepilot.memory.working.ConversationSlot.userMessage(content, tokens);
             workingMemory.append(state.sessionId(), slot);
         } catch (Exception e) {
             log.warn("用户消息写入 L1 失败: sessionId={}, error={}",
