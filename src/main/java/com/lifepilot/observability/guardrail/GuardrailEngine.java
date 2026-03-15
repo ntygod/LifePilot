@@ -200,9 +200,20 @@ public class GuardrailEngine {
 
     /**
      * 评估工具风险策略。
+     *
+     * <p>优先使用策略中的显式映射，其次使用工具自身声明的风险等级，
+     * 最后才降级到策略默认等级。</p>
      */
     private GuardrailResult evaluateToolRisk(ToolRiskPolicy policy, ToolContract tool) {
-        RiskLevel riskLevel = policy.toolRiskMapping().getOrDefault(tool.id(), policy.defaultRiskLevel());
+        // 优先级：策略显式映射 > 工具自身声明 > 策略默认
+        RiskLevel riskLevel;
+        if (policy.toolRiskMapping().containsKey(tool.id())) {
+            riskLevel = policy.toolRiskMapping().get(tool.id());
+        } else if (tool.riskLevel() != null) {
+            riskLevel = tool.riskLevel();
+        } else {
+            riskLevel = policy.defaultRiskLevel();
+        }
         ApprovalMode mode = riskLevel.toApprovalMode();
 
         return switch (mode) {
