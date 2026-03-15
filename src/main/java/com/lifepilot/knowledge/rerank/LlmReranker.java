@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
 import com.lifepilot.knowledge.model.DocumentSearchResult;
 import com.lifepilot.knowledge.model.ScoreBreakdown;
+import com.lifepilot.llm.LlmRequest;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.LlmUnavailableException;
 import com.lifepilot.prompt.PromptRegistry;
@@ -75,6 +76,14 @@ public final class LlmReranker implements Reranker {
                 sorted = listwiseSlidingWindow(query, candidates, modelName);
             }
             return sorted.stream().limit(topK).toList();
+        } catch (LlmUnavailableException e) {
+            log.warn("Listwise 精排 LLM 不可用，回退到 Pointwise: scene={}, error={}", SCENE, e.getMessage());
+            try {
+                return rerankPointwise(query, candidates, topK, modelName);
+            } catch (LlmUnavailableException e2) {
+                log.warn("Pointwise 回退也失败，降级返回原始候选列表: scene={}, error={}", SCENE, e2.getMessage());
+                return degradeFallback(candidates, topK);
+            }
         } catch (Exception e) {
             log.warn("Listwise 精排失败，回退到 Pointwise: {}", e.getMessage());
             return rerankPointwise(query, candidates, topK, modelName);
@@ -102,7 +111,9 @@ public final class LlmReranker implements Reranker {
                 "query", query,
                 "documents", docsText.toString()));
 
-        List<String> rankedIds = llmRouter.callEntity(SCENE, prompt, RankedIds.class, modelName).ids();
+        List<String> rankedIds = llmRouter.callEntity(
+                LlmRequest.builder(SCENE, prompt).modelName(modelName).build(),
+                RankedIds.class).ids();
         if (rankedIds == null || rankedIds.isEmpty()) {
             throw new RuntimeException("Listwise 返回空排序列表");
         }
@@ -161,6 +172,7 @@ public final class LlmReranker implements Reranker {
 
     /**
      * Pointwise 精排增强：支持 Virtual Thread 并行分批 + 低分阈值过滤。
+     * LLM 完全不可用时降级返回原始候选列表按分数降序截取 topK。
      */
     private List<DocumentSearchResult> rerankPointwise(String query,
                                                         List<DocumentSearchResult> candidates,
@@ -180,9 +192,16 @@ public final class LlmReranker implements Reranker {
                 try {
                     scored.add(future.join());
                 } catch (Exception e) {
+                    // CompletableFuture 包装的 LlmUnavailableException 向上传播
+                    if (e.getCause() instanceof LlmUnavailableException lue) {
+                        throw lue;
+                    }
                     log.debug("Pointwise 评分异常: {}", e.getMessage());
                 }
             }
+        } catch (LlmUnavailableException e) {
+            log.warn("Pointwise 精排 LLM 不可用，降级返回原始候选列表: scene={}, error={}", SCENE, e.getMessage());
+            return degradeFallback(candidates, topK);
         }
 
         return scored.stream()
@@ -204,7 +223,9 @@ public final class LlmReranker implements Reranker {
                 "document", truncateContent(candidate.content(), 500)));
 
         try {
-            ScoreResponse response = llmRouter.callEntity(SCENE, prompt, ScoreResponse.class, modelName);
+            ScoreResponse response = llmRouter.callEntity(
+                    LlmRequest.builder(SCENE, prompt).modelName(modelName).build(),
+                    ScoreResponse.class);
             if (response != null && response.score() != null) {
                 return Math.max(0.0, Math.min(1.0, response.score()));
             }
@@ -216,7 +237,8 @@ public final class LlmReranker implements Reranker {
 
         // 降级到手动解析
         try {
-            var response = llmRouter.call(SCENE, prompt, null, modelName);
+            var response = llmRouter.call(
+                    LlmRequest.builder(SCENE, prompt).modelName(modelName).build());
             return Double.parseDouble(response.content().trim());
         } catch (LlmUnavailableException e) {
             log.warn("LLM 精排不可用: {}", e.getMessage());
@@ -225,6 +247,16 @@ public final class LlmReranker implements Reranker {
             log.debug("LLM 精排手动解析失败: {}", e.getMessage());
             return candidate.score();
         }
+    }
+
+    /**
+     * 降级回退：返回原始候选列表按分数降序截取 topK。
+     */
+    private List<DocumentSearchResult> degradeFallback(List<DocumentSearchResult> candidates, int topK) {
+        return candidates.stream()
+                .sorted(Comparator.comparingDouble(DocumentSearchResult::score).reversed())
+                .limit(topK)
+                .toList();
     }
 
     /**

@@ -1,5 +1,6 @@
 package com.lifepilot.skill.generation;
 
+import com.lifepilot.llm.LlmRequest;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.LlmScene;
@@ -97,7 +98,7 @@ class SkillGapDetectorTest {
                 }
                 """;
         var llmResponse = new LlmResponse(llmJson, 100, 200, "provider-1", "gpt-4", 500, false);
-        when(llmRouter.call(eq(LlmScene.SKILL_GENERATION), anyString(), isNull()))
+        when(llmRouter.call(any(LlmRequest.class)))
                 .thenReturn(llmResponse);
 
         var result = detector.detectGap("帮我查汇率");
@@ -127,7 +128,7 @@ class SkillGapDetectorTest {
                 ```
                 """;
         var llmResponse = new LlmResponse(llmContent, 80, 150, "provider-1", "gpt-4", 400, false);
-        when(llmRouter.call(eq(LlmScene.SKILL_GENERATION), anyString(), isNull()))
+        when(llmRouter.call(any(LlmRequest.class)))
                 .thenReturn(llmResponse);
 
         var result = detector.detectGap("帮我翻译文档");
@@ -145,7 +146,7 @@ class SkillGapDetectorTest {
     void detectGap_LLM调用失败返回空结果_记录WARN日志() {
         when(skillRegistry.listSummaries()).thenReturn(List.of("todo: 待办管理"));
         when(skillRegistry.search("帮我查汇率")).thenReturn(List.of());
-        when(llmRouter.call(eq(LlmScene.SKILL_GENERATION), anyString(), isNull()))
+        when(llmRouter.call(any(LlmRequest.class)))
                 .thenThrow(new LlmUnavailableException("无可用 Provider", "skill_generation", List.of()));
 
         var result = detector.detectGap("帮我查汇率");
@@ -159,7 +160,7 @@ class SkillGapDetectorTest {
         when(skillRegistry.search("帮我查汇率")).thenReturn(List.of());
 
         var llmResponse = new LlmResponse("这不是JSON", 50, 30, "provider-1", "gpt-4", 300, false);
-        when(llmRouter.call(eq(LlmScene.SKILL_GENERATION), anyString(), isNull()))
+        when(llmRouter.call(any(LlmRequest.class)))
                 .thenReturn(llmResponse);
 
         var result = detector.detectGap("帮我查汇率");

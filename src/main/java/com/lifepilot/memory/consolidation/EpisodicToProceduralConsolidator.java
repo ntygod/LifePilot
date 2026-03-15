@@ -1,5 +1,6 @@
 package com.lifepilot.memory.consolidation;
 
+import com.lifepilot.llm.LlmRequest;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.llm.LlmUnavailableException;
@@ -319,7 +320,7 @@ public class EpisodicToProceduralConsolidator {
                 """.formatted(combinedSequences);
 
         var extraction = llmRouter.callEntity(
-                LlmScene.KNOWLEDGE_EXTRACTION, prompt, TemplateExtraction.class);
+                LlmRequest.of(LlmScene.KNOWLEDGE_EXTRACTION, prompt), TemplateExtraction.class);
 
         if (extraction == null || extraction.name() == null || extraction.name().isBlank()) {
             log.warn("程序巩固: LLM 返回空模板, clusterSize={}", cluster.size());

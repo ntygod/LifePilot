@@ -1,5 +1,6 @@
 package com.lifepilot.memory.semantic;
 
+import com.lifepilot.llm.LlmRequest;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.memory.config.MemoryProperties;
 import org.slf4j.Logger;
@@ -127,7 +128,7 @@ public class RealtimeExtractor {
         String prompt = buildAudnPrompt(conversationText);
         try {
             var result = CompletableFuture.supplyAsync(() ->
-                            llmRouter.callEntity("knowledge_extraction", prompt, AudnDecisionList.class))
+                            llmRouter.callEntity(LlmRequest.of("knowledge_extraction", prompt), AudnDecisionList.class))
                     .orTimeout(extractionTimeoutSeconds, TimeUnit.SECONDS)
                     .join();
             return result != null ? result.decisions() : List.of();

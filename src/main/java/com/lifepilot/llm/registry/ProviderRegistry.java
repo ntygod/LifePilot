@@ -97,17 +97,40 @@ public class ProviderRegistry {
     }
 
     /**
-     * 按模型名查询已启用的 Provider，按 priority 升序排序。
+     * 按模型名查询已启用的 Provider，支持三级匹配：精确 → 包含 → 空列表。
      *
-     * @param modelName 模型名称（精确匹配 {@link ProviderConfig#modelName()}）
+     * <p>包含匹配为双向：注册的 modelName 包含查询字符串，或查询字符串包含注册的 modelName。
+     * 匹配结果按 priority 升序排序，仅返回 enabled 状态的 Provider。
+     *
+     * @param modelName 模型名称查询字符串
      * @return 匹配的 Provider 配置列表（不可变）
      */
     public List<ProviderConfig> findByModelName(String modelName) {
-        return configs.values().stream()
+        if (modelName == null || modelName.isBlank()) return List.of();
+
+        // 第一级：精确匹配
+        var exact = configs.values().stream()
                 .filter(ProviderConfig::enabled)
                 .filter(c -> c.modelName().equals(modelName))
                 .sorted(Comparator.comparingInt(ProviderConfig::priority))
                 .toList();
+        if (!exact.isEmpty()) return exact;
+
+        // 第二级：包含匹配（双向）
+        String query = modelName.toLowerCase();
+        var fuzzy = configs.values().stream()
+                .filter(ProviderConfig::enabled)
+                .filter(c -> {
+                    String registered = c.modelName().toLowerCase();
+                    return registered.contains(query) || query.contains(registered);
+                })
+                .sorted(Comparator.comparingInt(ProviderConfig::priority))
+                .toList();
+        if (!fuzzy.isEmpty()) {
+            log.info("模型名模糊匹配命中: query='{}', 匹配={}",
+                    modelName, fuzzy.stream().map(ProviderConfig::modelName).toList());
+        }
+        return fuzzy;
     }
 
     /**

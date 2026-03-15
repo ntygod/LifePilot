@@ -1,5 +1,6 @@
 package com.lifepilot.workflow.engine;
 
+import com.lifepilot.llm.LlmRequest;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.config.ProviderCapability;
@@ -117,15 +118,7 @@ class StepExecutorTest {
         );
 
         LlmResponse response = new LlmResponse("{\"answer\":\"ok\"}", 12, 6, "provider-1", "model-x", 18, false);
-        when(llmRouter.call(
-                "code_generation",
-                ProviderCapability.STRUCTURED_OUTPUT,
-                "{\"topic\":\"事务\"}",
-                "{\"type\":\"object\"}",
-                "model-x",
-                null,
-                Duration.ofSeconds(300)
-        )).thenReturn(response);
+        when(llmRouter.call(any(LlmRequest.class))).thenReturn(response);
 
         Map<String, Object> result = executor.execute(step, context, expressionEngine);
 
@@ -197,15 +190,7 @@ class StepExecutorTest {
                 12,
                 false
         );
-        when(llmRouter.call(
-                "agent_reasoning",
-                ProviderCapability.STRUCTURED_OUTPUT,
-                "analyze",
-                "{\"type\":\"object\"}",
-                null,
-                null,
-                Duration.ofSeconds(300)
-        )).thenReturn(response);
+        when(llmRouter.call(any(LlmRequest.class))).thenReturn(response);
 
         Map<String, Object> result = executor.execute(step, context, expressionEngine);
 
@@ -241,15 +226,7 @@ class StepExecutorTest {
                 12,
                 false
         );
-        when(llmRouter.call(
-                "agent_reasoning",
-                ProviderCapability.STRUCTURED_OUTPUT,
-                "analyze",
-                "{\"type\":\"object\"}",
-                null,
-                null,
-                Duration.ofSeconds(300)
-        )).thenReturn(response);
+        when(llmRouter.call(any(LlmRequest.class))).thenReturn(response);
 
         StepExecutor.WorkflowStepException exception = assertThrows(
                 StepExecutor.WorkflowStepException.class,

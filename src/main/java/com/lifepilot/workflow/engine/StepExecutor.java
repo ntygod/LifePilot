@@ -2,6 +2,7 @@ package com.lifepilot.workflow.engine;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.llm.LlmRequest;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.config.ProviderCapability;
 import com.lifepilot.llm.multimodal.MediaContent;
@@ -219,15 +220,13 @@ public class StepExecutor {
         List<MediaContent> resolvedMedia = resolveMedia(step, context, expressionEngine);
         Duration timeout = Duration.ofSeconds(config.getDefaultStepTimeoutSeconds());
         var llmResponse = resolvedMedia.isEmpty()
-                ? llmRouter.call(
-                    step.scene(),
-                    step.capability(),
-                    resolvedPrompt,
-                    resolvedSchema,
-                    step.modelName(),
-                    step.preferredProviderId(),
-                    timeout
-                )
+                ? llmRouter.call(LlmRequest.builder(step.scene(), resolvedPrompt)
+                    .requiredCapability(step.capability())
+                    .outputSchema(resolvedSchema)
+                    .modelName(step.modelName())
+                    .preferredProviderId(step.preferredProviderId())
+                    .timeoutOverride(timeout)
+                    .build())
                 : multimodalRouter.call(new MultimodalRequest(
                     step.scene(),
                     resolvedPrompt,

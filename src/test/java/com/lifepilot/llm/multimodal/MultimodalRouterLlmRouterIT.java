@@ -1,5 +1,6 @@
 package com.lifepilot.llm.multimodal;
 
+import com.lifepilot.llm.LlmRequest;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.circuit.CircuitBreakerManager;
@@ -72,12 +73,12 @@ class MultimodalRouterLlmRouterIT {
         );
 
         LlmResponse expected = new LlmResponse("hi", 1, 1, "p1", "m", 10, false);
-        when(llmRouter.call("chat", "你好", null)).thenReturn(expected);
+        when(llmRouter.call(any(LlmRequest.class))).thenReturn(expected);
 
         LlmResponse actual = multimodalRouter.call(request);
 
         assertEquals(expected, actual);
-        Mockito.verify(llmRouter).call("chat", "你好", null);
+        Mockito.verify(llmRouter).call(any(LlmRequest.class));
     }
 
     // 说明：包含图片的多模态路径在单元测试 MultimodalRouterTest 中已充分覆盖，
