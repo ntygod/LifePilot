@@ -6,6 +6,7 @@ import com.lifepilot.sandbox.model.ExecutionRequest;
 import com.lifepilot.sandbox.model.Language;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
+import com.lifepilot.tool.model.ToolResultMeta;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -94,6 +95,11 @@ public class CodeExecuteToolExecutor {
             log.debug("代码执行完成: language={}, exitCode={}, durationMs={}",
                     languageStr, result.exitCode(), result.durationMs());
 
+            // exitCode 非零视为执行失败
+            if (result.exitCode() != 0) {
+                return new ToolResult(false, Map.copyOf(data),
+                        "代码执行失败: exitCode=" + result.exitCode(), ToolResultMeta.empty());
+            }
             return ToolResult.success(Map.copyOf(data));
         } catch (Exception e) {
             log.error("代码执行失败: language={}, error={}", languageStr, e.getMessage(), e);
