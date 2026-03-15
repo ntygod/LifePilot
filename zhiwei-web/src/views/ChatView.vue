@@ -67,9 +67,7 @@ const activeSessionConfig = ref<SessionConfig>({
 
 const CHAT_SCENES = new Set([
   'chat',
-  'agent_reasoning',
-  'agent_tool_calling',
-  'agent_generation',
+  'agent_react',
 ])
 
 const chatProviders = computed(() =>

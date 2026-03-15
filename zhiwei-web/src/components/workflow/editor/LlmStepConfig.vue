@@ -74,7 +74,7 @@ function removeMedia(index: number) {
         <Label class="text-xs">任务意图 Scene</Label>
         <Input
           :model-value="modelValue.scene"
-          placeholder="例如：document_summary / code_generation"
+          placeholder="例如：chat / agent_react / knowledge_extraction"
           class="h-8 text-sm"
           @update:model-value="updateRequiredField('scene', $event)"
         />

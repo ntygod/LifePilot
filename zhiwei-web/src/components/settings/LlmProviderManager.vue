@@ -71,20 +71,14 @@ const capabilityOptions = [
 ]
 
 const sceneOptions = [
-  { value: 'intent_understanding', label: '意图理解' },
-  { value: 'task_planning', label: '任务规划' },
-  { value: 'knowledge_extraction', label: '知识提取' },
   { value: 'chat', label: '通用对话' },
+  { value: 'agent_react', label: 'Agent 推理' },
+  { value: 'knowledge_extraction', label: '知识提取' },
+  { value: 'knowledge_rerank', label: '知识库精排' },
   { value: 'memory_compression', label: '记忆压缩' },
   { value: 'proactive_reasoning', label: '主动推理' },
-  { value: 'code_generation', label: '代码生成' },
-  { value: 'embedding', label: '向量化' },
-  { value: 'agent_reasoning', label: '智能体推理' },
-  { value: 'agent_tool_calling', label: '智能体工具调用' },
-  { value: 'agent_generation', label: '智能体生成' },
   { value: 'skill_generation', label: '技能生成' },
-  { value: 'knowledge_rerank', label: '知识库精排' },
-  { value: 'document_summary', label: '文档总结' },
+  { value: 'embedding', label: '向量化' },
 ]
 
 const deleteConfirmMessage = computed(() => {
@@ -105,7 +99,7 @@ function resetForm() {
     modelName: '',
     timeoutSeconds: 30,
     priority: 0,
-    scenes: ['chat', 'agent_reasoning', 'agent_tool_calling', 'agent_generation'],
+    scenes: ['chat', 'agent_react'],
     capabilities: ['CHAT'],
     enabled: true,
     costPerInputToken: 0,

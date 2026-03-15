@@ -38,51 +38,36 @@ const healthStatus = ref<Record<string, boolean>>({})
 const checkingHealth = ref<Set<string>>(new Set())
 
 const SCENE_LABELS: Record<string, string> = {
-  chat: '通用聊天',
-  intent_understanding: '意图理解',
-  task_planning: '任务规划',
+  chat: '通用对话',
+  agent_react: 'Agent 推理',
   knowledge_extraction: '知识提取',
+  knowledge_rerank: '知识精排',
   memory_compression: '记忆压缩',
   proactive_reasoning: '主动推理',
-  code_generation: '代码生成',
-  document_summary: '文档总结',
-  agent_reasoning: 'Agent 推理',
-  agent_tool_calling: 'Agent 工具调用',
-  agent_generation: 'Agent 最终生成',
   skill_generation: '技能生成',
-  knowledge_rerank: '知识重排',
+  embedding: '向量化',
 }
 
 const SCENE_DESCRIPTIONS: Record<string, string> = {
   chat: '适合普通对话、问答和泛化聊天。',
-  intent_understanding: '偏前置理解环节，适合分类、识别、拆解需求。',
-  task_planning: '适合做步骤规划和执行方案生成。',
+  agent_react: 'Agent ReAct 循环中的推理、工具调用与最终生成。',
   knowledge_extraction: '适合抽取结构化信息和关键信息。',
+  knowledge_rerank: '知识检索后的精排与重排序。',
   memory_compression: '适合总结历史上下文，压缩记忆。',
   proactive_reasoning: '适合复杂推理和主动建议场景。',
-  code_generation: '适合代码生成、修复和解释。',
-  document_summary: '适合长文总结、提炼重点。',
-  agent_reasoning: 'Agent 在行动前的主要推理模型。',
-  agent_tool_calling: 'Agent 在调工具前的判断与选择。',
-  agent_generation: 'Agent 组织最终答复时使用的模型。',
   skill_generation: '自动生成技能或提示模板的场景。',
-  knowledge_rerank: '知识检索后的精排与重排序。',
+  embedding: '文本向量化嵌入。',
 }
 
 const SCENE_ORDER = [
   'chat',
-  'agent_reasoning',
-  'agent_tool_calling',
-  'agent_generation',
-  'intent_understanding',
-  'task_planning',
+  'agent_react',
   'knowledge_extraction',
   'knowledge_rerank',
-  'document_summary',
-  'code_generation',
   'memory_compression',
   'proactive_reasoning',
   'skill_generation',
+  'embedding',
 ] as const
 
 const healthyCount = computed(() => providers.value.filter(provider => getProviderHealth(provider.id) === 'healthy').length)
@@ -342,25 +327,14 @@ function formatScenes(scenes: string[] | undefined) {
   if (!scenes || scenes.length === 0) return '无'
 
   const sceneNames: Record<string, string> = {
-    intent_understanding: '意图理解',
-    task_planning: '任务规划',
-    knowledge_extraction: '知识提取',
     chat: '对话',
+    agent_react: 'Agent 推理',
+    knowledge_extraction: '知识提取',
+    knowledge_rerank: '知识精排',
     memory_compression: '记忆压缩',
     proactive_reasoning: '主动推理',
-    code_generation: '代码生成',
-    embedding: '向量嵌入',
-    document_summary: '文档总结',
-    'agent-reasoning': '智能体推理',
-    'agent-tool-calling': '智能体工具调用',
-    'agent-generation': '智能体生成',
-    'skill-generation': '技能生成',
-    // 兼容新命名（underscore 风格）
-    agent_reasoning: '智能体推理',
-    agent_tool_calling: '智能体工具调用',
-    agent_generation: '智能体生成',
     skill_generation: '技能生成',
-    knowledge_rerank: '知识库精排',
+    embedding: '向量嵌入',
   }
 
   return scenes.map(scene => sceneNames[scene] || scene).join('、')
