@@ -25,6 +25,10 @@ import com.lifepilot.multiagent.model.AgentBudget;
 import com.lifepilot.multiagent.model.AgentDefinition;
 import com.lifepilot.multiagent.model.AgentSource;
 import com.lifepilot.multiagent.registry.AgentRegistry;
+import com.lifepilot.multiagent.config.MultiAgentProperties;
+import com.lifepilot.multiagent.loader.AgentMarkdownLoader;
+import com.lifepilot.multiagent.loader.AgentMarkdownParser;
+import com.lifepilot.multiagent.loader.AgentMarkdownSerializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
@@ -40,12 +44,16 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -67,15 +75,27 @@ public class AgentController {
     private final ReactAgentLoop reactAgentLoop;
     private final KnowledgeBaseManager knowledgeBaseManager;
     private final ContextAssembler contextAssembler;
+    private final AgentMarkdownParser markdownParser;
+    private final AgentMarkdownSerializer markdownSerializer;
+    private final AgentMarkdownLoader markdownLoader;
+    private final MultiAgentProperties multiAgentConfig;
 
     public AgentController(AgentRegistry agentRegistry,
                            @Nullable ReactAgentLoop reactAgentLoop,
                            KnowledgeBaseManager knowledgeBaseManager,
-                           ContextAssembler contextAssembler) {
+                           ContextAssembler contextAssembler,
+                           AgentMarkdownParser markdownParser,
+                           AgentMarkdownSerializer markdownSerializer,
+                           AgentMarkdownLoader markdownLoader,
+                           MultiAgentProperties multiAgentConfig) {
         this.agentRegistry = agentRegistry;
         this.reactAgentLoop = reactAgentLoop;
         this.knowledgeBaseManager = knowledgeBaseManager;
         this.contextAssembler = contextAssembler;
+        this.markdownParser = markdownParser;
+        this.markdownSerializer = markdownSerializer;
+        this.markdownLoader = markdownLoader;
+        this.multiAgentConfig = multiAgentConfig;
     }
 
     /**
@@ -1038,5 +1058,119 @@ public class AgentController {
                 || "maxTokens".equals(key)
                 || "topP".equals(key)
                 || "knowledgeBaseIds".equals(key);
+    }
+
+    // ==================== Agent Markdown 定义 ====================
+
+    /**
+     * 获取 Agent 的 Markdown 定义。
+     *
+     * <p>对于 MarkdownDefined 来源的 Agent，优先读取文件系统中的原始 .md 文件；
+     * 对于 Builtin 和其他来源，通过序列化器动态生成。</p>
+     *
+     * @param id Agent ID
+     * @return Markdown 文本
+     */
+    @GetMapping(value = "/{id}/markdown", produces = "text/markdown")
+    public ResponseEntity<?> getAgentMarkdown(@PathVariable String id) {
+        var agentOpt = agentRegistry.find(id);
+        if (agentOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    new ErrorResponse(404, "Agent 不存在: id=" + id, Instant.now()));
+        }
+
+        AgentDefinition agent = agentOpt.get();
+
+        // MarkdownDefined 来源：优先读取原始文件
+        if (agent.source() instanceof AgentSource.MarkdownDefined md
+                && md.filePath() != null) {
+            Path filePath = Path.of(md.filePath());
+            if (Files.exists(filePath)) {
+                try {
+                    String content = Files.readString(filePath);
+                    return ResponseEntity.ok(content);
+                } catch (IOException e) {
+                    log.warn("读取 Agent Markdown 文件失败: id={}, path={}", id, filePath);
+                }
+            }
+        }
+
+        // 回退：通过序列化器生成
+        String markdown = markdownSerializer.serialize(agent);
+        return ResponseEntity.ok(markdown);
+    }
+
+    /**
+     * 更新 Agent 的 Markdown 定义。
+     *
+     * <p>解析提交的 Markdown 内容，更新 Agent 注册并持久化到文件系统。
+     * 仅支持 MarkdownDefined 来源的 Agent 和通过 API 创建的自定义 Agent。</p>
+     *
+     * @param id      Agent ID
+     * @param content Markdown 文本
+     * @return 更新后的 Agent 详情
+     */
+    @PutMapping(value = "/{id}/markdown", consumes = "text/plain")
+    public ResponseEntity<?> updateAgentMarkdown(@PathVariable String id,
+                                                  @RequestBody String content) {
+        var agentOpt = agentRegistry.find(id);
+        if (agentOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    new ErrorResponse(404, "Agent 不存在: id=" + id, Instant.now()));
+        }
+
+        AgentDefinition existing = agentOpt.get();
+
+        // Builtin Agent 不允许通过 Markdown 更新
+        if (existing.source() instanceof AgentSource.Builtin) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
+                    new ErrorResponse(400, "内置 Agent 不支持 Markdown 编辑", Instant.now()));
+        }
+
+        // 解析 Markdown 内容
+        var parsed = markdownParser.parse(content, Path.of(id + ".md"));
+        if (parsed.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
+                    new ErrorResponse(400, "Agent Markdown 解析失败，请检查格式", Instant.now()));
+        }
+
+        AgentDefinition parsedDef = parsed.get();
+
+        // 验证 ID 一致性
+        if (!parsedDef.id().equals(id)) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
+                    new ErrorResponse(400, "Markdown 中的 id 必须与路径参数一致", Instant.now()));
+        }
+
+        try {
+            // 持久化到文件系统
+            String agentPath = multiAgentConfig.getAgentDefinitionsPath();
+            if (agentPath.startsWith("~")) {
+                agentPath = System.getProperty("user.home") + agentPath.substring(1);
+            }
+            Path directory = Path.of(agentPath);
+            if (!Files.exists(directory)) {
+                Files.createDirectories(directory);
+            }
+            Path filePath = directory.resolve(id + ".md");
+            Files.writeString(filePath, content);
+
+            // 通过 loader 重新加载（设置正确的 source）
+            Optional<AgentDefinition> loaded = markdownLoader.loadFromFile(filePath);
+            if (loaded.isEmpty()) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
+                        new ErrorResponse(400, "Agent 更新失败，请检查定义", Instant.now()));
+            }
+
+            agentRegistry.register(loaded.get());
+            log.info("Agent Markdown 更新成功: id={}", id);
+
+            AgentDetail detail = toAgentDetail(loaded.get());
+            return ResponseEntity.ok(detail);
+        } catch (IOException e) {
+            log.error("Agent Markdown 持久化失败: id={}, error={}", id, e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
+                    new ErrorResponse(500, "保存失败: " + e.getMessage(), Instant.now()));
+        }
     }
 }

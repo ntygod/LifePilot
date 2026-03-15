@@ -8,6 +8,7 @@ import com.lifepilot.multiagent.execution.AgentExecutor;
 import com.lifepilot.multiagent.execution.HandoffToolFactory;
 import com.lifepilot.multiagent.loader.AgentMarkdownLoader;
 import com.lifepilot.multiagent.loader.AgentMarkdownParser;
+import com.lifepilot.multiagent.loader.AgentMarkdownSerializer;
 import com.lifepilot.multiagent.model.AgentDefinition;
 import com.lifepilot.multiagent.model.AgentSource;
 import com.lifepilot.multiagent.registry.AgentRegistry;
@@ -81,6 +82,13 @@ public class MultiAgentAutoConfiguration {
     public AgentMarkdownParser agentMarkdownParser(MultiAgentProperties config) {
         log.info("多 Agent 协作: 注册 AgentMarkdownParser");
         return new AgentMarkdownParser(config);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public AgentMarkdownSerializer agentMarkdownSerializer() {
+        log.info("多 Agent 协作: 注册 AgentMarkdownSerializer");
+        return new AgentMarkdownSerializer();
     }
 
     @Bean
