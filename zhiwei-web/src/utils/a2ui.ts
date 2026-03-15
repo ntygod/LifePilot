@@ -1,4 +1,13 @@
-import type { A2uiComponent, Message } from '@/types'
+import type { A2uiComponent, ChatAttachment, Message } from '@/types'
+
+/** 后端附件数据结构（对应 AttachmentInfo record） */
+interface BackendAttachment {
+  id: string
+  fileName: string
+  fileSize: number
+  mimeType: string
+  url?: string | null
+}
 
 type BackendMessageLike = {
   id: string
@@ -8,6 +17,7 @@ type BackendMessageLike = {
   timestamp: string | number
   reasoningSummary?: string | null
   traceId?: string | null
+  attachments?: BackendAttachment[] | null
 }
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
@@ -54,6 +64,16 @@ export function parseMessageTimestamp(timestamp: string | number): number {
 
 export function mapBackendMessage(message: BackendMessageLike): Message {
   const components = extractA2uiComponents(message)
+  const attachments: ChatAttachment[] | undefined = message.attachments?.length
+    ? message.attachments.map(att => ({
+        fileId: att.id,
+        url: att.url ?? '',
+        filename: att.fileName,
+        size: att.fileSize,
+        type: att.mimeType,
+        isImage: att.mimeType.startsWith('image/'),
+      }))
+    : undefined
   return {
     id: message.id,
     role: message.role,
@@ -62,5 +82,6 @@ export function mapBackendMessage(message: BackendMessageLike): Message {
     timestamp: parseMessageTimestamp(message.timestamp),
     reasoningSummary: message.reasoningSummary ?? undefined,
     traceId: message.traceId ?? undefined,
+    attachments,
   }
 }
