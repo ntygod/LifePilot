@@ -22,7 +22,9 @@ import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
+import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.llm.multimodal.MultimodalRequest;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.memory.retrieval.InjectionRecordRepository;
 import com.lifepilot.memory.semantic.RealtimeExtractor;
@@ -37,6 +39,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.*;
 import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.content.Media;
 import org.springframework.ai.model.tool.DefaultToolCallingChatOptions;
@@ -595,6 +598,37 @@ public class ReactAgentLoop {
         return Math.max(1, (int) (cjkChars + otherChars / 4));
     }
 
+    /**
+     * 将 LlmResponse 适配为 Spring AI ChatResponse。
+     *
+     * <p>MultimodalRouter 返回 LlmResponse（content + token 用量），
+     * 而 coreLoop 需要 ChatResponse（含 AssistantMessage），此方法完成适配。</p>
+     *
+     * @param llmResponse 多模态路由返回的 LLM 响应
+     * @return 适配后的 ChatResponse
+     */
+    private ChatResponse adaptToChatResponse(LlmResponse llmResponse) {
+        var assistantMessage = new AssistantMessage(llmResponse.content());
+        var generation = new Generation(assistantMessage);
+        return new ChatResponse(List.of(generation));
+    }
+
+    /**
+     * 从消息列表中提取第一个 UserMessage 的文本内容。
+     *
+     * <p>用于构造 MultimodalRequest 时提取用户提示词文本。</p>
+     *
+     * @param messages Spring AI 消息列表
+     * @return 用户消息文本，未找到时返回空字符串
+     */
+    private String extractUserText(List<Message> messages) {
+        return messages.stream()
+                .filter(m -> m instanceof UserMessage)
+                .map(m -> ((UserMessage) m).getText())
+                .findFirst()
+                .orElse("");
+    }
+
     // ===== 同步执行入口 =====
 
     /**
@@ -836,8 +870,27 @@ public class ReactAgentLoop {
                                     List<ToolCallback> toolCallbacks,
                                     @Nullable TraceContext traceContext) {
             String scene = config.getLoop().getLlmScene();
+            boolean hasMedia = req.mediaContents() != null && !req.mediaContents().isEmpty();
 
-            // 获取 ChatModel + Provider 元信息
+            // 多模态路由：有媒体内容且 MultimodalRouter 可用时走多模态路径
+            if (hasMedia && multimodalRouter != null) {
+                var multimodalRequest = new MultimodalRequest(
+                        scene,
+                        extractUserText(messages),
+                        req.mediaContents(),
+                        null,
+                        req.preferredProvider(),
+                        null
+                );
+                LlmResponse llmResponse = multimodalRouter.call(multimodalRequest);
+                this.providerId = llmResponse.providerId();
+                this.modelId = llmResponse.modelName();
+                log.debug("非流式多模态路由完成: scene={}, provider={}, model={}",
+                        scene, this.providerId, this.modelId);
+                return adaptToChatResponse(llmResponse);
+            }
+
+            // 纯文本路由：原有 LlmRouter 路径
             var chatModelInfo = llmRouter.getChatModelWithInfo(scene, request.preferredProvider());
             this.providerId = chatModelInfo.providerId();
             this.modelId = chatModelInfo.modelId();
