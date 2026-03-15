@@ -1227,3 +1227,94 @@ export const notificationApi = {
     return request(`/notifications/read-all?userId=${encodeURIComponent(userId)}`, { method: 'PUT' })
   }
 }
+
+// ========== 记忆管理 API ==========
+
+import type {
+  MemoryStats,
+  MemorySearchResult,
+  EntitySummary,
+  EntityDetail,
+  EntityListParams,
+  EntityCreateRequest,
+  EntityUpdateRequest,
+  RelationItem,
+  RelationListParams,
+  ConversationSummary,
+  ConversationDetail,
+  ConversationListParams,
+  ProcedureTemplate,
+  TemplateListParams,
+  PreferenceRule,
+  ForgettingLog,
+  ForgettingLogListParams,
+} from '@/types'
+
+/** 将参数对象转为 URL 查询字符串，跳过 undefined 和空字符串 */
+function toQueryString(params: Record<string, unknown>): string {
+  const query = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== '') {
+      query.append(key, String(value))
+    }
+  }
+  return query.toString()
+}
+
+/** 记忆管理 API */
+export const memoryApi = {
+  // 统计概览
+  getStats: () => request<MemoryStats>('/memories/stats'),
+
+  // 统一搜索
+  search: (q: string, topK = 10) =>
+    request<MemorySearchResult[]>(`/memories/search?q=${encodeURIComponent(q)}&topK=${topK}`),
+
+  // 手动巩固
+  triggerConsolidation: () =>
+    request<{ status: string; message: string }>('/memories/consolidate', { method: 'POST' }),
+
+  // L3 实体
+  listEntities: (params: EntityListParams) =>
+    request<PageResult<EntitySummary>>(`/memories/entities?${toQueryString(params)}`),
+  getEntity: (id: string) => request<EntityDetail>(`/memories/entities/${id}`),
+  getEntityHistory: (id: string) => request<EntityDetail[]>(`/memories/entities/${id}/history`),
+  getRelatedEntities: (id: string, maxDepth = 2) =>
+    request<EntitySummary[]>(`/memories/entities/${id}/related?maxDepth=${maxDepth}`),
+  createEntity: (req: EntityCreateRequest) =>
+    request<EntityDetail>('/memories/entities', { method: 'POST', body: JSON.stringify(req) }),
+  updateEntity: (id: string, req: EntityUpdateRequest) =>
+    request<EntityDetail>(`/memories/entities/${id}`, { method: 'PUT', body: JSON.stringify(req) }),
+  deleteEntity: (id: string) =>
+    request<void>(`/memories/entities/${id}`, { method: 'DELETE' }),
+
+  // L3 关系
+  listRelations: (params: RelationListParams) =>
+    request<PageResult<RelationItem>>(`/memories/relations?${toQueryString(params)}`),
+
+  // L2 对话
+  listConversations: (params: ConversationListParams) =>
+    request<PageResult<ConversationSummary>>(`/memories/conversations?${toQueryString(params)}`),
+  getConversation: (id: string) => request<ConversationDetail>(`/memories/conversations/${id}`),
+  deleteConversation: (id: string) =>
+    request<void>(`/memories/conversations/${id}`, { method: 'DELETE' }),
+
+  // L4 模板
+  listTemplates: (params: TemplateListParams) =>
+    request<PageResult<ProcedureTemplate>>(`/memories/templates?${toQueryString(params)}`),
+  getTemplate: (id: string) => request<ProcedureTemplate>(`/memories/templates/${id}`),
+  deleteTemplate: (id: string) =>
+    request<void>(`/memories/templates/${id}`, { method: 'DELETE' }),
+
+  // L4 偏好
+  listPreferences: (category?: string) =>
+    request<PreferenceRule[]>(
+      `/memories/preferences${category ? `?category=${encodeURIComponent(category)}` : ''}`
+    ),
+  deletePreference: (id: string) =>
+    request<void>(`/memories/preferences/${id}`, { method: 'DELETE' }),
+
+  // 遗忘日志
+  listForgettingLogs: (params: ForgettingLogListParams) =>
+    request<PageResult<ForgettingLog>>(`/memories/forgetting-logs?${toQueryString(params)}`),
+}

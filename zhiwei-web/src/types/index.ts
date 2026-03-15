@@ -1237,3 +1237,241 @@ export interface NotificationItem {
   metadataJson?: string
   sentAt: string  // ISO 8601
 }
+
+
+// ========== 记忆管理类型定义 ==========
+
+/** 记忆统计概览（对应 MemoryStatsDto） */
+export interface MemoryStats {
+  conversationCount: number
+  entityCount: number
+  entityCountByType: Record<string, number>
+  relationCount: number
+  templateCount: number
+  preferenceCount: number
+  forgettingLogCount: number
+  lastForgettingTime: string | null
+}
+
+/** 统一搜索结果（对应 MemorySearchResultDto） */
+export interface MemorySearchResult {
+  entityId: string
+  entityType: string
+  name: string
+  description: string | null
+  relevanceScore: number
+}
+
+/** 实体列表项（对应 EntitySummaryDto） */
+export interface EntitySummary {
+  id: string
+  type: string
+  typeLabel: string
+  name: string
+  description: string | null
+  importanceScore: number
+  accessCount: number
+  version: number
+  createdAt: string
+  updatedAt: string
+}
+
+/** 实体详情（对应 EntityDetailDto） */
+export interface EntityDetail {
+  id: string
+  type: string
+  typeLabel: string
+  name: string
+  description: string | null
+  properties: Record<string, unknown>
+  version: number
+  isCurrent: boolean
+  validFrom: string
+  validTo: string | null
+  sourceConversationId: string | null
+  extractionConfidence: number
+  importanceScore: number
+  accessCount: number
+  lastAccessedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+/** 实体创建请求 */
+export interface EntityCreateRequest {
+  name: string
+  type: string
+  description?: string
+  properties?: Record<string, unknown>
+  importanceScore?: number
+}
+
+/** 实体更新请求 */
+export interface EntityUpdateRequest {
+  description?: string
+  properties?: Record<string, unknown>
+  importanceScore?: number
+}
+
+/** 实体列表查询参数 */
+export interface EntityListParams {
+  page?: number
+  size?: number
+  type?: string
+  q?: string
+  timeFrom?: string
+  timeTo?: string
+  sortBy?: string
+  order?: string
+}
+
+/** 关系列表项（对应 RelationDto） */
+export interface RelationItem {
+  id: string
+  sourceEntityId: string
+  sourceEntityName: string
+  sourceEntityType: string
+  targetEntityId: string
+  targetEntityName: string
+  targetEntityType: string
+  relationType: string
+  strength: number
+  validFrom: string
+  validTo: string | null
+  createdAt: string
+}
+
+/** 关系列表查询参数 */
+export interface RelationListParams {
+  page?: number
+  size?: number
+  entityId?: string
+  relationType?: string
+}
+
+/** 对话列表项（对应 ConversationSummaryDto） */
+export interface ConversationSummary {
+  id: string
+  sessionId: string
+  goal: string
+  summary: string | null
+  messageCount: number
+  createdAt: string
+}
+
+/** 对话详情（对应 ConversationRecord） */
+export interface ConversationDetail {
+  id: string
+  sessionId: string
+  goal: string
+  summary: string | null
+  messages: MessageRecord[]
+  createdAt: string
+  updatedAt: string
+}
+
+/** 消息记录（对应 MessageRecord） */
+export interface MessageRecord {
+  id: string
+  conversationId: string
+  role: string
+  content: string
+  compressedContent: string | null
+  compressionLevel: 'ORIGINAL' | 'SUMMARY' | 'KEYPOINTS' | 'ARCHIVED'
+  isPinned: boolean
+  toolCallJson: string | null
+  tokenCount: number
+  createdAt: string
+}
+
+/** 对话列表查询参数 */
+export interface ConversationListParams {
+  page?: number
+  size?: number
+  q?: string
+  timeFrom?: string
+  timeTo?: string
+}
+
+/** 操作模板（对应 ProcedureTemplate） */
+export interface ProcedureTemplate {
+  templateId: string
+  name: string
+  description: string
+  triggerIntent: string
+  steps: TemplateStep[]
+  variables: Record<string, string>
+  successRate: number
+  useCount: number
+  lastUsedAt: string | null
+  sourceTraceIds: string[]
+  createdAt: string
+  updatedAt: string
+}
+
+/** 模板步骤 */
+export interface TemplateStep {
+  stepIndex: number
+  action: string
+  toolName: string | null
+  parameters: Record<string, unknown>
+  expectedOutcome: string | null
+}
+
+/** 偏好规则（对应 PreferenceRule） */
+export interface PreferenceRule {
+  ruleId: string
+  category: string
+  key: string
+  value: string
+  confidence: number
+  learnedFrom: string
+  observationCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+/** 模板列表查询参数 */
+export interface TemplateListParams {
+  page?: number
+  size?: number
+  q?: string
+  sortBy?: string
+  order?: string
+}
+
+/** 遗忘日志（对应 ForgettingLogDto） */
+export interface ForgettingLog {
+  id: string
+  entityId: string
+  entityName: string
+  strategy: string
+  actionTaken: string
+  forgettingPriority: number
+  reason: string
+  createdAt: string
+}
+
+/** 遗忘日志查询参数 */
+export interface ForgettingLogListParams {
+  page?: number
+  size?: number
+  timeFrom?: string
+  timeTo?: string
+  strategy?: string
+}
+
+/** 实体类型枚举映射 */
+export const ENTITY_TYPES = [
+  { value: 'PERSON', label: '人物' },
+  { value: 'ORGANIZATION', label: '组织' },
+  { value: 'PLACE', label: '地点' },
+  { value: 'EVENT', label: '事件' },
+  { value: 'PROJECT', label: '项目' },
+  { value: 'TOPIC', label: '话题' },
+  { value: 'PREFERENCE', label: '偏好' },
+  { value: 'HABIT', label: '习惯' },
+  { value: 'GOAL', label: '目标' },
+  { value: 'SKILL', label: '技能' },
+  { value: 'CUSTOM', label: '自定义' },
+] as const
