@@ -142,7 +142,8 @@ public class AgentAutoConfiguration {
                                @Autowired(required = false) InjectionRecordRepository injectionRecordRepository,
                                @Autowired(required = false) SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
                                @Autowired(required = false) KnowledgeBaseRepository knowledgeBaseRepository,
-                               @Autowired(required = false) A2uiProperties a2uiProperties) {
+                               @Autowired(required = false) A2uiProperties a2uiProperties,
+                               @Autowired(required = false) com.lifepilot.interaction.web.repository.AttachmentRepository attachmentRepository) {
         log.info("Agent 引擎初始化完成（ReAct 架构，追踪{}，记忆系统{}，实时提取{}，多模态{}，A2UI{}）",
                 traceRecorder != null ? "已启用" : "未启用",
                 workingMemory != null ? "已启用" : "未启用",
@@ -154,6 +155,6 @@ public class AgentAutoConfiguration {
                 multimodalRouter, mediaDataExtractor, mediaValidator, mediaProcessor,
                 workingMemory, conversationHistoryStore,
                 conversationViewService, realtimeExtractor, injectionRecordRepository,
-                sessionKnowledgeBaseRepository, knowledgeBaseRepository, a2uiProperties);
+                sessionKnowledgeBaseRepository, knowledgeBaseRepository, a2uiProperties, attachmentRepository);
     }
 }

@@ -24,5 +24,6 @@ public record MessageInfo(
         @Nullable List<A2uiComponent> a2uiComponents,
         Instant timestamp,
         @Nullable String reasoningSummary,
-        @Nullable String traceId
+        @Nullable String traceId,
+        @Nullable List<AttachmentInfo> attachments
 ) {}

@@ -199,6 +199,7 @@ export const chatApi = {
       timestamp: string | number
       reasoningSummary?: string | null
       traceId?: string | null
+      attachments?: Array<{ id: string; fileName: string; fileSize: number; mimeType: string; url?: string | null }> | null
     }>>(`/chat/sessions/${sessionId}/messages`)
     return messages.map(mapBackendMessage)
   },
