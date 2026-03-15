@@ -1,5 +1,6 @@
 package com.lifepilot.llm.multimodal;
 
+import com.lifepilot.llm.LlmRequest;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.LlmUnavailableException;
@@ -81,12 +82,12 @@ class MultimodalRouterTest {
         );
 
         LlmResponse expected = new LlmResponse("hi", 1, 1, "p1", "m", 10, false);
-        when(llmRouter.call("chat", "你好", null)).thenReturn(expected);
+        when(llmRouter.call(any(LlmRequest.class))).thenReturn(expected);
 
         LlmResponse actual = router.call(request);
 
         assertSame(expected, actual);
-        verify(llmRouter).call("chat", "你好", null);
+        verify(llmRouter).call(any(LlmRequest.class));
         verifyNoInteractions(providerRegistry);
     }
 

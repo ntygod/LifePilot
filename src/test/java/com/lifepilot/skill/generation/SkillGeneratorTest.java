@@ -1,5 +1,6 @@
 package com.lifepilot.skill.generation;
 
+import com.lifepilot.llm.LlmRequest;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.prompt.PromptRegistry;
@@ -92,7 +93,7 @@ class SkillGeneratorTest {
                 你是一个专业的写作助手，帮助用户进行各类写作任务。
                 """;
 
-        when(llmRouter.call(anyString(), anyString(), any()))
+        when(llmRouter.call(any(LlmRequest.class)))
                 .thenReturn(new LlmResponse(llmContent, 100, 200, "openai", "gpt-4", 500, false));
         when(validationPipeline.validate(anyString()))
                 .thenReturn(SkillValidationResult.allPassed());
@@ -131,7 +132,7 @@ class SkillGeneratorTest {
         var gap = new SkillGap(0.7, "bad-skill", "坏Skill",
                 "请求", List.of(), "原因");
 
-        when(llmRouter.call(anyString(), anyString(), any()))
+        when(llmRouter.call(any(LlmRequest.class)))
                 .thenReturn(new LlmResponse("内容", 50, 100, "openai", "gpt-4", 300, false));
         when(validationPipeline.validate(anyString()))
                 .thenReturn(SkillValidationResult.failed(
@@ -153,7 +154,7 @@ class SkillGeneratorTest {
         var gap = new SkillGap(0.9, "fail-skill", "失败Skill",
                 "请求", List.of(), "原因");
 
-        when(llmRouter.call(anyString(), anyString(), any()))
+        when(llmRouter.call(any(LlmRequest.class)))
                 .thenThrow(new RuntimeException("LLM 服务不可用"));
 
         var result = generator.generate(gap);

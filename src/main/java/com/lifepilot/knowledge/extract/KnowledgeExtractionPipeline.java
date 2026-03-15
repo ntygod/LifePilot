@@ -3,6 +3,7 @@ package com.lifepilot.knowledge.extract;
 import com.lifepilot.knowledge.chunking.DocumentChunk;
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
 import com.lifepilot.knowledge.model.ExtractionResult;
+import com.lifepilot.llm.LlmRequest;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.LlmUnavailableException;
 import com.lifepilot.memory.semantic.EntityType;
@@ -106,7 +107,7 @@ public class KnowledgeExtractionPipeline {
         var prompt = buildExtractionPrompt(contentBuilder.toString());
 
         // 使用结构化输出提取
-        var response = llmRouter.callEntity(SCENE, prompt, ExtractionResponse.class);
+        var response = llmRouter.callEntity(LlmRequest.of(SCENE, prompt), ExtractionResponse.class);
 
         int entityCount = 0;
         int relationCount = 0;

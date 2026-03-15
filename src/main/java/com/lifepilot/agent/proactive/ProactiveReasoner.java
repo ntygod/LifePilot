@@ -3,6 +3,7 @@ package com.lifepilot.agent.proactive;
 import com.lifepilot.agent.proactive.config.ProactiveConfigProperties;
 import com.lifepilot.agent.proactive.model.ProactiveCandidate;
 import com.lifepilot.interaction.model.ResponseContent;
+import com.lifepilot.llm.LlmRequest;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.LlmUnavailableException;
 import com.lifepilot.notification.NotificationRequest;
@@ -104,7 +105,7 @@ public class ProactiveReasoner {
                 } else {
                     // MEDIUM/LOW：LLM 评估
                     var prompt = buildEvaluationPrompt(candidate);
-                    var llmResponse = llmRouter.call("proactive_reasoning", prompt, null);
+                    var llmResponse = llmRouter.call(LlmRequest.of("proactive_reasoning", prompt));
                     content = llmResponse.content();
 
                     // LLM 判定不值得发送

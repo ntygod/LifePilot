@@ -1,6 +1,7 @@
 package com.lifepilot.eval.judge;
 
 import com.lifepilot.eval.config.EvalConfigProperties;
+import com.lifepilot.llm.LlmRequest;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.LlmUnavailableException;
@@ -31,7 +32,6 @@ class LlmJudgeTest {
     void setUp() {
         llmRouter = mock(LlmRouter.class);
         config = new EvalConfigProperties();
-        // 使用默认配置：scene=eval-judge, fallbackScore=0.5, maxRetries=1
         judge = new LlmJudge(llmRouter, config);
     }
 
@@ -47,7 +47,7 @@ class LlmJudgeTest {
         var response = buildResponse("""
                 {"score": 0.85, "justification": "输出质量良好"}
                 """, 50, 30);
-        when(llmRouter.call(anyString(), anyString(), isNull())).thenReturn(response);
+        when(llmRouter.call(any(LlmRequest.class))).thenReturn(response);
 
         var result = judge.judge("实际输出", "期望模式", "评估标准");
 
@@ -55,8 +55,7 @@ class LlmJudgeTest {
         assertEquals("输出质量良好", result.justification());
         assertEquals(80, result.tokensUsed());
         assertFalse(result.fallback());
-        // 只调用一次（无重试）
-        verify(llmRouter, times(1)).call(anyString(), anyString(), isNull());
+        verify(llmRouter, times(1)).call(any(LlmRequest.class));
     }
 
     @Test
@@ -66,7 +65,7 @@ class LlmJudgeTest {
                 {"score": 0.9, "justification": "非常好的回答"}
                 ```
                 """, 40, 20);
-        when(llmRouter.call(anyString(), anyString(), isNull())).thenReturn(response);
+        when(llmRouter.call(any(LlmRequest.class))).thenReturn(response);
 
         var result = judge.judge("实际输出", "期望模式", "评估标准");
 
@@ -78,7 +77,7 @@ class LlmJudgeTest {
     @Test
     void 纯数字响应_通过正则提取评分() {
         var response = buildResponse("0.65", 30, 10);
-        when(llmRouter.call(anyString(), anyString(), isNull())).thenReturn(response);
+        when(llmRouter.call(any(LlmRequest.class))).thenReturn(response);
 
         var result = judge.judge("实际输出", "期望模式", "评估标准");
 
@@ -90,7 +89,7 @@ class LlmJudgeTest {
 
     @Test
     void LLM调用异常_返回降级结果() {
-        when(llmRouter.call(anyString(), anyString(), isNull()))
+        when(llmRouter.call(any(LlmRequest.class)))
                 .thenThrow(new LlmUnavailableException("连接超时", "eval-judge", List.of("provider-1")));
 
         var result = judge.judge("实际输出", "期望模式", "评估标准");
@@ -99,18 +98,16 @@ class LlmJudgeTest {
         assertTrue(result.justification().contains("LLM 调用失败"));
         assertEquals(0, result.tokensUsed());
         assertTrue(result.fallback());
-        // 异常时不重试（直接进入 catch 块）
-        verify(llmRouter, times(1)).call(anyString(), anyString(), isNull());
+        verify(llmRouter, times(1)).call(any(LlmRequest.class));
     }
 
     // --- 重试场景 ---
 
     @Test
     void 不可解析响应_重试成功() {
-        // 第一次返回无法解析的内容，第二次（简化 Prompt）返回纯数字
         var gibberishResponse = buildResponse("这是一段无法解析为评分的文本，没有任何数字", 50, 30);
         var retryResponse = buildResponse("0.75", 20, 10);
-        when(llmRouter.call(anyString(), anyString(), isNull()))
+        when(llmRouter.call(any(LlmRequest.class)))
                 .thenReturn(gibberishResponse)
                 .thenReturn(retryResponse);
 
@@ -118,18 +115,15 @@ class LlmJudgeTest {
 
         assertEquals(0.75, result.score(), 0.0001);
         assertFalse(result.fallback());
-        // 总 token = 第一次(80) + 第二次(30) = 110
         assertEquals(110, result.tokensUsed());
-        // 调用两次：第一次完整 Prompt + 第二次简化 Prompt
-        verify(llmRouter, times(2)).call(anyString(), anyString(), isNull());
+        verify(llmRouter, times(2)).call(any(LlmRequest.class));
     }
 
     @Test
     void 重试也失败_返回降级结果() {
-        // 两次都返回无法解析的内容
         var gibberishResponse1 = buildResponse("完全无法解析的乱码内容，没有数字", 50, 30);
         var gibberishResponse2 = buildResponse("依然无法解析，还是没有数字", 20, 10);
-        when(llmRouter.call(anyString(), anyString(), isNull()))
+        when(llmRouter.call(any(LlmRequest.class)))
                 .thenReturn(gibberishResponse1)
                 .thenReturn(gibberishResponse2);
 
@@ -138,9 +132,8 @@ class LlmJudgeTest {
         assertEquals(0.5, result.score(), 0.0001);
         assertTrue(result.justification().contains("降级评分"));
         assertTrue(result.fallback());
-        // 总 token = 第一次(80) + 第二次(30) = 110
         assertEquals(110, result.tokensUsed());
-        verify(llmRouter, times(2)).call(anyString(), anyString(), isNull());
+        verify(llmRouter, times(2)).call(any(LlmRequest.class));
     }
 
     // --- 评分裁剪场景 ---
@@ -150,7 +143,7 @@ class LlmJudgeTest {
         var response = buildResponse("""
                 {"score": 1.5, "justification": "超出范围"}
                 """, 40, 20);
-        when(llmRouter.call(anyString(), anyString(), isNull())).thenReturn(response);
+        when(llmRouter.call(any(LlmRequest.class))).thenReturn(response);
 
         var result = judge.judge("实际输出", "期望模式", "评估标准");
 
@@ -163,7 +156,7 @@ class LlmJudgeTest {
         var response = buildResponse("""
                 {"score": -0.3, "justification": "负数评分"}
                 """, 40, 20);
-        when(llmRouter.call(anyString(), anyString(), isNull())).thenReturn(response);
+        when(llmRouter.call(any(LlmRequest.class))).thenReturn(response);
 
         var result = judge.judge("实际输出", "期望模式", "评估标准");
 

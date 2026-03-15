@@ -1,6 +1,7 @@
 package com.lifepilot.llm.multimodal;
 
 import com.lifepilot.llm.ExponentialBackoff;
+import com.lifepilot.llm.LlmRequest;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.LlmUnavailableException;
@@ -73,16 +74,13 @@ public class MultimodalRouter {
         boolean hasImages = mediaList.stream().anyMatch(mc -> mc.mimeType().startsWith("image/"));
         if (!hasImages) {
             log.debug("无图片附件，委托 LlmRouter: scene={}", request.scene());
-            if (request.modelName() != null && !request.modelName().isBlank()) {
-                return llmRouter.call(request.scene(), text, request.outputSchema(), request.modelName(), timeoutOverride);
-            }
-            return llmRouter.callWithPreferredProvider(
-                    request.scene(),
-                    text,
-                    request.outputSchema(),
-                    request.preferredProviderId(),
-                    timeoutOverride
-            );
+            var llmRequest = LlmRequest.builder(request.scene(), text)
+                    .outputSchema(request.outputSchema())
+                    .modelName(request.modelName())
+                    .preferredProviderId(request.preferredProviderId())
+                    .timeoutOverride(timeoutOverride)
+                    .build();
+            return llmRouter.call(llmRequest);
         }
 
         mediaValidator.validateAll(mediaList);
