@@ -55,7 +55,7 @@ const providerTypes = [
   { value: 'QWEN', label: 'Qwen' },
   { value: 'GLM', label: 'GLM' },
   { value: 'WENXIN', label: 'Wenxin' },
-  { value: 'TEI', label: 'TEI（本地向量）' },
+  { value: 'TEI', label: 'TEI（本地推理）' },
   { value: 'OPENAI_COMPATIBLE', label: 'OpenAI 兼容' },
 ]
 
@@ -68,6 +68,7 @@ const capabilityOptions = [
   { value: 'VISION', label: '视觉理解' },
   { value: 'TTS', label: '文本转语音' },
   { value: 'STT', label: '语音转文本' },
+  { value: 'RERANK', label: '重排序' },
 ]
 
 const sceneOptions = [

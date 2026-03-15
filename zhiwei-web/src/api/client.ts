@@ -616,8 +616,11 @@ export const knowledgeBaseApi = {
   deleteDocument(kbId: string, docId: string): Promise<void> {
     return request(`/knowledge-bases/${kbId}/documents/${docId}`, { method: 'DELETE' })
   },
-  getDocumentChunks(kbId: string, docId: string, offset = 0, limit = 100): Promise<DocumentChunk[]> {
-    return request(`/knowledge-bases/${kbId}/documents/${docId}/chunks?offset=${offset}&limit=${limit}`)
+  async getDocumentChunks(kbId: string, docId: string, offset = 0, limit = 100): Promise<DocumentChunk[]> {
+    const res = await request<{ chunks: DocumentChunk[]; total: number }>(
+      `/knowledge-bases/${kbId}/documents/${docId}/chunks?offset=${offset}&limit=${limit}`,
+    )
+    return res.chunks
   },
   retryDocument(kbId: string, docId: string): Promise<void> {
     return request(`/knowledge-bases/${kbId}/documents/${docId}/retry`, { method: 'POST' })

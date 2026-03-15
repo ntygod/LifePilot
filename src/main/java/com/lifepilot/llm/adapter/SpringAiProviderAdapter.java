@@ -133,22 +133,47 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
     @Override
     public boolean healthCheck() {
         try {
-            if (config.hasCapability(ProviderCapability.CHAT)) {
-                ChatResponse response = chatModel.call(new Prompt("ping"));
-                if (response == null || response.getResult() == null || response.getResult().getOutput() == null) {
-                    return false;
-                }
-                String text = response.getResult().getOutput().getText();
-                return text != null && !text.isBlank();
+            // TEI 服务（embedding / reranker）没有 OpenAI 兼容的 chat 接口，通过 /health 端点检查
+            if (config.type() == com.lifepilot.llm.config.ProviderType.TEI) {
+                return checkHealthEndpoint(config.apiUrl());
             }
+            // EMBEDDING 类型通过 embeddingModel 验证
             if (config.hasCapability(ProviderCapability.EMBEDDING) && embeddingModel != null) {
                 float[] embedding = embeddingModel.embed("ping");
                 return embedding.length > 0;
             }
-            log.debug("Provider 既没有 CHAT 也没有 EMBEDDING 能力: id={}", config.id());
-            return false;
+            // CHAT 及其他类型通过 chatModel 验证连通性
+            ChatResponse response = chatModel.call(new Prompt("ping"));
+            if (response == null || response.getResult() == null || response.getResult().getOutput() == null) {
+                return false;
+            }
+            String text = response.getResult().getOutput().getText();
+            return text != null && !text.isBlank();
         } catch (Exception e) {
             log.debug("Provider 健康检查失败: id={}, error={}", config.id(), e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * 通过 HTTP GET /health 端点检查 Provider 健康状态（适用于 TEI 等非 LLM 服务）。
+     *
+     * @param apiUrl Provider 的 API 基础地址
+     * @return 健康返回 true
+     */
+    private boolean checkHealthEndpoint(String apiUrl) {
+        try {
+            String baseUrl = apiUrl.endsWith("/") ? apiUrl.substring(0, apiUrl.length() - 1) : apiUrl;
+            var uri = java.net.URI.create(baseUrl + "/health");
+            var request = java.net.http.HttpRequest.newBuilder(uri)
+                    .GET()
+                    .timeout(Duration.ofSeconds(5))
+                    .build();
+            var response = java.net.http.HttpClient.newHttpClient()
+                    .send(request, java.net.http.HttpResponse.BodyHandlers.discarding());
+            return response.statusCode() == 200;
+        } catch (Exception e) {
+            log.debug("Provider /health 端点检查失败: id={}, error={}", config.id(), e.getMessage());
             return false;
         }
     }

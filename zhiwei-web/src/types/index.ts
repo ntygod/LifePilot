@@ -931,7 +931,7 @@ export interface LlmProviderDetail {
 }
 
 /** Provider 能力类型 */
-export type ProviderCapability = 'STREAMING' | 'FUNCTION_CALLING' | 'EMBEDDING' | 'VISION' | 'AUDIO'
+export type ProviderCapability = 'STREAMING' | 'FUNCTION_CALLING' | 'EMBEDDING' | 'VISION' | 'AUDIO' | 'RERANK'
 
 // ========== 模块 20: Observability 统计与评估 ==========
 

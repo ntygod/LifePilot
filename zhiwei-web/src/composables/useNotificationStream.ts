@@ -14,6 +14,10 @@ import type { NotificationItem } from '@/types'
 export function useNotificationStream() {
   const connected = ref(false)
   let eventSource: EventSource | null = null
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  let reconnectAttempts = 0
+  const MAX_RECONNECT_ATTEMPTS = 10
+  const BASE_RECONNECT_DELAY = 3000
 
   function connect() {
     if (eventSource) return
@@ -37,19 +41,34 @@ export function useNotificationStream() {
 
     eventSource.onopen = () => {
       connected.value = true
+      reconnectAttempts = 0
     }
 
     eventSource.onerror = () => {
       connected.value = false
+      // 清理旧连接，允许重连
+      eventSource?.close()
+      eventSource = null
+
+      if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+        const delay = BASE_RECONNECT_DELAY * Math.pow(2, Math.min(reconnectAttempts, 4))
+        reconnectAttempts++
+        reconnectTimer = setTimeout(() => connect(), delay)
+      }
     }
   }
 
   function disconnect() {
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer)
+      reconnectTimer = null
+    }
     if (eventSource) {
       eventSource.close()
       eventSource = null
       connected.value = false
     }
+    reconnectAttempts = MAX_RECONNECT_ATTEMPTS // 阻止自动重连
   }
 
   onMounted(() => connect())

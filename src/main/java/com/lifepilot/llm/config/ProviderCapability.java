@@ -22,6 +22,8 @@ public enum ProviderCapability {
     /** 文字转语音能力 */
     TTS,
     /** 语音转文字能力 */
-    STT
+    STT,
+    /** 重排序能力 */
+    RERANK
 }
 

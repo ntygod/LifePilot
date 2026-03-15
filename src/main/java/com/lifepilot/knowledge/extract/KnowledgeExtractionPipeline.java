@@ -112,12 +112,14 @@ public class KnowledgeExtractionPipeline {
         int entityCount = 0;
         int relationCount = 0;
 
-        // 写入实体
+        // 写入实体，同时建立 name → id 映射供关系解析使用
+        var entityNameToId = new HashMap<String, String>();
         if (response.entities() != null) {
             for (var entityInfo : response.entities()) {
                 try {
                     var entity = toTemporalEntity(entityInfo);
                     semanticMemory.upsertWithConflictDetection(entity, documentId);
+                    entityNameToId.put(entityInfo.name(), entity.id());
                     entityCount++;
                 } catch (Exception e) {
                     log.warn("实体写入失败: name={}, error={}", entityInfo.name(), e.getMessage());
@@ -125,11 +127,18 @@ public class KnowledgeExtractionPipeline {
             }
         }
 
-        // 写入关系
+        // 写入关系，将实体名称解析为实际 ID
         if (response.relations() != null) {
             for (var relationInfo : response.relations()) {
                 try {
-                    var relation = toTemporalRelation(relationInfo, documentId);
+                    var sourceId = resolveEntityId(relationInfo.sourceEntity(), entityNameToId);
+                    var targetId = resolveEntityId(relationInfo.targetEntity(), entityNameToId);
+                    if (sourceId == null || targetId == null) {
+                        log.debug("关系跳过: 无法解析实体ID, source={}, target={}",
+                                relationInfo.sourceEntity(), relationInfo.targetEntity());
+                        continue;
+                    }
+                    var relation = toTemporalRelation(relationInfo, sourceId, targetId, documentId);
                     semanticMemory.addRelation(relation);
                     relationCount++;
                 } catch (Exception e) {
@@ -166,14 +175,37 @@ public class KnowledgeExtractionPipeline {
                 0.7f, 0.5f, 0, null, now, now);
     }
 
-    private TemporalRelation toTemporalRelation(ExtractionResponse.RelationInfo info, String documentId) {
+    private TemporalRelation toTemporalRelation(ExtractionResponse.RelationInfo info,
+                                                String sourceId, String targetId,
+                                                String documentId) {
         var now = Instant.now();
         return new TemporalRelation(
                 UUID.randomUUID().toString(),
-                info.sourceEntity(), info.targetEntity(),
+                sourceId, targetId,
                 info.relationType(),
                 Math.max(0.0f, Math.min(1.0f, info.strength())),
                 null, now, null, documentId, now);
+    }
+
+    /**
+     * 将实体名称解析为数据库中的实际 ID。
+     * 优先从当前批次的映射中查找，找不到则从数据库按名称查找。
+     */
+    private String resolveEntityId(String entityName, Map<String, String> nameToId) {
+        // 优先从当前批次映射查找
+        var id = nameToId.get(entityName);
+        if (id != null) {
+            return id;
+        }
+        // 回退：从数据库按名称查找（遍历所有类型）
+        for (var type : EntityType.values()) {
+            var found = semanticMemory.findCurrentByNameAndType(entityName, type);
+            if (found.isPresent()) {
+                nameToId.put(entityName, found.get().id());
+                return found.get().id();
+            }
+        }
+        return null;
     }
 
     private EntityType parseEntityType(String type) {

@@ -310,6 +310,7 @@ function formatCapabilities(capabilities: string[] | undefined) {
     VISION: '视觉',
     TTS: '文本转语音',
     STT: '语音转文本',
+    RERANK: '重排序',
   }
 
   return capabilities.map(capability => capabilityNames[capability] || capability).join('、')
