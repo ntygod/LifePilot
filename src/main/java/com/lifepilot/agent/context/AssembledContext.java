@@ -1,9 +1,12 @@
 package com.lifepilot.agent.context;
 
+import com.lifepilot.llm.multimodal.MediaContent;
+import org.springframework.lang.Nullable;
+
 import java.util.List;
 
 /**
- * 增强版上下文快照 — 携带检索元数据。
+ * 增强版上下文快照 — 携带检索元数据与多模态媒体内容。
  *
  * @param systemPrompt        System Prompt 文本
  * @param userPrompt          User Prompt 文本
@@ -14,6 +17,7 @@ import java.util.List;
  * @param workingMemoryTokens WorkingMemory 注入的 Token 总数
  * @param degraded            是否发生降级
  * @param injectedEntityIds   本次注入的记忆实体 ID 列表
+ * @param mediaContents       当前请求关联的多模态媒体内容（可空）
  *
  * @author zsg
  * @since 2026-07-20
@@ -27,12 +31,16 @@ public record AssembledContext(
         float topRetrievalScore,
         int workingMemoryTokens,
         boolean degraded,
-        List<String> injectedEntityIds
+        List<String> injectedEntityIds,
+        @Nullable List<MediaContent> mediaContents
 ) {
     /** 紧凑构造器 — 防御性拷贝。 */
     public AssembledContext {
         retrievedMemories = List.copyOf(retrievedMemories);
         injectedEntityIds = List.copyOf(injectedEntityIds);
+        if (mediaContents != null) {
+            mediaContents = List.copyOf(mediaContents);
+        }
     }
 
     /** 返回 tokenBudget.totalConsumed()。 */
@@ -51,7 +59,24 @@ public record AssembledContext(
                 topRetrievalScore(),
                 workingMemoryTokens(),
                 degraded(),
-                injectedEntityIds()
+                injectedEntityIds(),
+                mediaContents()
+        );
+    }
+
+    /** 基于当前上下文，注入媒体内容，返回新实例。 */
+    public AssembledContext withMediaContents(@Nullable List<MediaContent> newMediaContents) {
+        return new AssembledContext(
+                systemPrompt(),
+                userPrompt(),
+                retrievedMemories(),
+                tokenBudget(),
+                retrievalCount(),
+                topRetrievalScore(),
+                workingMemoryTokens(),
+                degraded(),
+                injectedEntityIds(),
+                newMediaContents
         );
     }
 }

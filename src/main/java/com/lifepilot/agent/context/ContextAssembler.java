@@ -266,7 +266,8 @@ public class ContextAssembler {
                     workingMemoryTokens, degraded,
                     truncatedMemories.stream()
                             .map(RetrievalResult::entityId)
-                            .toList());
+                            .toList(),
+                    null);
 
             // 9. 各区域 Token 消耗明细日志
             if (log.isDebugEnabled()) {
@@ -303,7 +304,7 @@ public class ContextAssembler {
         String systemPrompt = safeReactSystemPrompt();
         String userPrompt = buildUserPrompt(state);
         return new AssembledContext(systemPrompt, userPrompt, List.of(), tokenBudget,
-                0, 0.0f, 0, false, List.of());
+                0, 0.0f, 0, false, List.of(), null);
     }
 
     /** 返回最小化上下文。 */
@@ -311,7 +312,7 @@ public class ContextAssembler {
         int totalTokens = config.getContext().getMaxContextTokens();
         var tokenBudget = TokenBudget.allocateDefault(totalTokens);
         return new AssembledContext("", "", List.of(), tokenBudget,
-                0, 0.0f, 0, false, List.of());
+                0, 0.0f, 0, false, List.of(), null);
     }
 
     /** 异常兜底降级上下文。 */
@@ -321,7 +322,7 @@ public class ContextAssembler {
         String systemPrompt = safeReactSystemPrompt();
         String userPrompt = buildUserPrompt(state);
         return new AssembledContext(systemPrompt, userPrompt, List.of(), tokenBudget,
-                0, 0.0f, 0, true, List.of());
+                0, 0.0f, 0, true, List.of(), null);
     }
 
     // --- 降级容错方法 ---
