@@ -23,6 +23,7 @@ import EntityPanel from './EntityPanel.vue'
 import RelationPanel from './RelationPanel.vue'
 import ConversationPanel from './ConversationPanel.vue'
 import TemplatePanel from './TemplatePanel.vue'
+import PreferencePanel from './PreferencePanel.vue'
 
 const store = useMemoryStore()
 
@@ -208,9 +209,7 @@ function clearSearch() {
               <TemplatePanel />
             </TabsContent>
             <TabsContent value="preferences">
-              <div class="detail-card p-6 text-center text-sm text-muted-foreground">
-                偏好规则面板（待实现）
-              </div>
+              <PreferencePanel />
             </TabsContent>
             <TabsContent value="forgetting-logs">
               <div class="detail-card p-6 text-center text-sm text-muted-foreground">
