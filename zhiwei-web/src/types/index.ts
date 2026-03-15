@@ -1213,3 +1213,25 @@ export interface McpStatusChange {
   timestamp: string
   error?: string
 }
+
+// ========== 通知中心类型定义 ==========
+
+/** 通知紧急程度 */
+export type NotificationUrgency = 'HIGH' | 'MEDIUM' | 'LOW'
+
+/** 通知已读状态 */
+export type NotificationReadStatus = 'UNREAD' | 'READ'
+
+/** 通知条目（对齐后端 NotificationDto） */
+export interface NotificationItem {
+  id: string
+  userId: string
+  typeId?: string
+  urgency: NotificationUrgency
+  contentJson: string
+  channel: string
+  readStatus: NotificationReadStatus
+  status: string
+  metadataJson?: string
+  sentAt: string  // ISO 8601
+}
