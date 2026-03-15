@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, computed, watch } from 'vue'
-import { settingsApi } from '@/api/client'
-import type { RerankerSettings, RerankerSettingsRequest } from '@/api/client'
+import { settingsApi, llmProviderApi } from '@/api/client'
+import type { RerankerSettings, RerankerSettingsRequest, LlmProvider } from '@/api/client'
 import SettingSection from '@/components/settings/SettingSection.vue'
 import SettingItem from '@/components/settings/SettingItem.vue'
 import { Button } from '@/components/ui/button'
@@ -22,6 +22,10 @@ const saving = ref(false)
 const saveError = ref<string | null>(null)
 const saveSuccess = ref(false)
 
+// 已启用的 LLM Provider 列表，用于模型选择下拉
+const providers = ref<LlmProvider[]>([])
+const loadingProviders = ref(false)
+
 const form = ref<RerankerSettingsRequest>({
   enabled: false,
   type: 'llm',
@@ -40,8 +44,20 @@ const isLlmType = computed(() => form.value.type === 'llm')
 const isApiType = computed(() => form.value.type === 'api')
 
 onMounted(async () => {
-  await loadRerankerSettings()
+  await Promise.all([loadRerankerSettings(), loadProviders()])
 })
+
+async function loadProviders() {
+  loadingProviders.value = true
+  try {
+    providers.value = await llmProviderApi.listEnabledProviders()
+  } catch (e) {
+    console.error('加载 LLM Provider 列表失败:', e)
+    providers.value = []
+  } finally {
+    loadingProviders.value = false
+  }
+}
 
 async function loadRerankerSettings() {
   loading.value = true
@@ -139,8 +155,20 @@ async function handleSave() {
           </Select>
         </SettingItem>
 
-        <SettingItem label="模型名称" description="精排使用的模型标识。">
-          <Input v-model="form.model" placeholder="如 gpt-4o-mini" class="w-56" />
+        <SettingItem label="精排模型" description="选择用于精排的 LLM 模型，或在 API 模式下手动输入。">
+          <template v-if="isLlmType">
+            <Select v-model="form.model">
+              <SelectTrigger class="w-56">
+                <SelectValue placeholder="选择模型" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="p in providers" :key="p.id" :value="p.modelName">
+                  {{ p.displayName || p.modelName }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </template>
+          <Input v-else v-model="form.model" placeholder="如 rerank-v3" class="w-56" />
         </SettingItem>
 
         <SettingItem label="返回数量" description="精排后保留的最大结果数。">
