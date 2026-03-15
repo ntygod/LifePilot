@@ -1,6 +1,7 @@
 package com.lifepilot.agent.model;
 
 import com.lifepilot.agent.session.SessionSnapshot;
+import com.lifepilot.llm.multimodal.MediaContent;
 import lombok.Builder;
 import org.springframework.lang.Nullable;
 
@@ -35,7 +36,8 @@ public record ReactAgentState(
         @Nullable String finalOutput,
         @Nullable String terminationReason,
         @Nullable String reasoningSummary,
-        @Nullable List<String> allowedToolIds
+        @Nullable List<String> allowedToolIds,
+        @Nullable List<MediaContent> pendingMedia
 ) {
 
     /** 紧凑构造器 — 防御性拷贝。 */
@@ -44,6 +46,7 @@ public record ReactAgentState(
         shortTermMemory = List.copyOf(shortTermMemory);
         mentionedEntities = List.copyOf(mentionedEntities);
         allowedToolIds = allowedToolIds != null ? List.copyOf(allowedToolIds) : null;
+        pendingMedia = pendingMedia != null ? List.copyOf(pendingMedia) : null;
     }
 
     /**
@@ -69,6 +72,7 @@ public record ReactAgentState(
                 .finalOutput(null)
                 .terminationReason(null)
                 .allowedToolIds(request.allowedToolIds())
+                .pendingMedia(null)
                 .build();
     }
 
@@ -96,6 +100,7 @@ public record ReactAgentState(
                 .finalOutput(null)
                 .terminationReason(null)
                 .allowedToolIds(request.allowedToolIds())
+                .pendingMedia(null)
                 .build();
     }
 
@@ -116,6 +121,31 @@ public record ReactAgentState(
         return this.toBuilder()
                 .steps(List.copyOf(newSteps))
                 .stepCount(stepCount + 1)
+                .build();
+    }
+
+    /**
+     * 追加待注入媒体内容，返回新实例。
+     *
+     * @param media 要追加的媒体内容
+     * @return 包含新媒体的新状态实例
+     */
+    public ReactAgentState appendPendingMedia(MediaContent media) {
+        var newMedia = pendingMedia != null ? new ArrayList<>(pendingMedia) : new ArrayList<MediaContent>();
+        newMedia.add(media);
+        return this.toBuilder()
+                .pendingMedia(List.copyOf(newMedia))
+                .build();
+    }
+
+    /**
+     * 清除待注入媒体缓冲区，返回新实例。
+     *
+     * @return pendingMedia 为 null 的新状态实例
+     */
+    public ReactAgentState clearPendingMedia() {
+        return this.toBuilder()
+                .pendingMedia(null)
                 .build();
     }
 }

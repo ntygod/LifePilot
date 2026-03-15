@@ -12,7 +12,8 @@ import java.util.Map;
 /**
  * 浏览器导航工具 — 使用 Playwright 导航到指定 URL 并返回页面快照。
  *
- * <p>RiskLevel MEDIUM。当 {@link BrowserSessionManager} 不可用时返回优雅降级提示。</p>
+ * <p>RiskLevel MEDIUM。当 {@link BrowserSessionManager} 不可用时返回优雅降级提示。
+ * 文本快照通过 {@link TextSnapshotCleaner} 清洗后返回，移除 JS/CSS 等噪声内容。</p>
  *
  * @author zsg
  * @since 2026-03-08
@@ -23,9 +24,13 @@ public class BrowserNavigateToolExecutor {
 
     @Nullable
     private final BrowserSessionManager sessionManager;
+    @Nullable
+    private final TextSnapshotCleaner textSnapshotCleaner;
 
-    public BrowserNavigateToolExecutor(@Nullable BrowserSessionManager sessionManager) {
+    public BrowserNavigateToolExecutor(@Nullable BrowserSessionManager sessionManager,
+                                       @Nullable TextSnapshotCleaner textSnapshotCleaner) {
         this.sessionManager = sessionManager;
+        this.textSnapshotCleaner = textSnapshotCleaner;
     }
 
     /**
@@ -58,8 +63,10 @@ public class BrowserNavigateToolExecutor {
             String title = page.navigate(url);
             String textSnapshot = page.textContent();
 
-            // 截断过长的文本快照
-            if (textSnapshot != null && textSnapshot.length() > 10000) {
+            // 使用 TextSnapshotCleaner 清洗，降级为简单截断
+            if (textSnapshotCleaner != null) {
+                textSnapshot = textSnapshotCleaner.clean(textSnapshot);
+            } else if (textSnapshot != null && textSnapshot.length() > 10000) {
                 textSnapshot = textSnapshot.substring(0, 10000) + "...[文本已截断]";
             }
 
