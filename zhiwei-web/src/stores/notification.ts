@@ -31,11 +31,11 @@ export const useNotificationStore = defineStore('notification', () => {
     return sseUnreadCount.value ?? listCount
   })
 
-  /** 加载通知列表（分页） */
-  async function fetchNotifications(page?: number): Promise<void> {
+  /** 加载通知列表（分页，支持 urgency 筛选） */
+  async function fetchNotifications(page?: number, urgency?: string): Promise<void> {
     loading.value = true
     try {
-      const result = await notificationApi.listNotifications('default', page)
+      const result = await notificationApi.listNotifications('default', page, undefined, urgency)
       if (page && page > 0) {
         // 追加分页数据
         notifications.value = [...notifications.value, ...result.items]
