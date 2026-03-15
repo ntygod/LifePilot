@@ -1,5 +1,6 @@
 package com.lifepilot.meta.convenience;
 
+import com.lifepilot.mcp.registry.McpServerRegistry;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.multiagent.model.AgentBudget;
 import com.lifepilot.multiagent.model.AgentDefinition;
@@ -13,6 +14,7 @@ import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.workflow.registry.WorkflowRegistry;
+import com.lifepilot.workflow.repository.WorkflowRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -38,6 +40,8 @@ class IntrospectionSkillProviderTest {
     private DynamicToolRegistry toolRegistry;
     private WorkflowRegistry workflowRegistry;
     private IntrospectionSkillProvider provider;
+    private WorkflowRepository workflowRepository;
+    private McpServerRegistry mcpServerRegistry;
 
     @BeforeEach
     void setUp() {
@@ -57,7 +61,7 @@ class IntrospectionSkillProviderTest {
                 skillRegistry, agentRegistry, toolRegistry, workflowRegistry, properties);
 
         provider = new IntrospectionSkillProvider(
-                aggregator, skillRegistry, agentRegistry, toolRegistry, workflowRegistry);
+                aggregator, skillRegistry, agentRegistry, toolRegistry, workflowRegistry, workflowRepository, mcpServerRegistry);
     }
 
     @Test

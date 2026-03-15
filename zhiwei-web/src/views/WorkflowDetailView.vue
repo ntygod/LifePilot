@@ -662,43 +662,6 @@ watch(() => route.params.id, async () => {
             </template>
           </PageHeader>
 
-          <StatePanel
-            v-if="showManualTriggerGuide"
-            title="手动触发前需要先填写参数"
-            :description="`这个工作流包含 ${workflowInputEntries.length} 个输入参数，其中 ${requiredInputCount} 个为必填。点击“立即触发”会先打开参数表单。`"
-            tone="warning"
-          >
-            <template #icon>
-              <Play class="size-5" />
-            </template>
-            <template #actions>
-              <Button :disabled="triggerLoading" @click="openInputDialog">
-                填写参数并触发
-              </Button>
-            </template>
-
-            <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              <div
-                v-for="[key, param] in workflowInputEntries"
-                :key="key"
-                class="rounded-2xl border border-amber-200/70 bg-background/78 p-4"
-              >
-                <div class="flex flex-wrap items-center gap-2">
-                  <span class="text-sm font-medium text-foreground">{{ getInputLabel(key, param) }}</span>
-                  <Badge variant="outline">{{ getInputTypeLabel(param.type) }}</Badge>
-                  <Badge v-if="param.required" variant="secondary">必填</Badge>
-                  <Badge v-else variant="outline">可选</Badge>
-                </div>
-                <p v-if="param.description" class="mt-2 text-sm leading-6 text-muted-foreground">
-                  {{ param.description }}
-                </p>
-                <p v-if="formatInputDefaultValue(param.defaultValue)" class="mt-2 text-xs text-muted-foreground">
-                  默认值：{{ formatInputDefaultValue(param.defaultValue) }}
-                </p>
-              </div>
-            </div>
-          </StatePanel>
-
           <Tabs
             :model-value="activeTab"
             class="space-y-5"

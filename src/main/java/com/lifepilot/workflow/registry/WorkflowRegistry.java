@@ -8,10 +8,13 @@ import com.lifepilot.workflow.model.Result;
 import com.lifepilot.workflow.model.WorkflowDefinition;
 import com.lifepilot.workflow.model.WorkflowStep;
 import com.lifepilot.workflow.parser.WorkflowYamlParser;
+import com.lifepilot.workflow.parser.WorkflowYamlPrinter;
+import com.lifepilot.workflow.repository.WorkflowRepository;
 import com.lifepilot.workflow.trigger.WorkflowTriggerManager;
 import lombok.Setter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.lang.Nullable;
 import org.springframework.scheduling.TaskScheduler;
 
 import java.io.IOException;
@@ -42,6 +45,17 @@ public class WorkflowRegistry {
     private final ConcurrentHashMap<String, Instant> fileLastModified = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, String> fileToWorkflowId = new ConcurrentHashMap<>();
     private static volatile String duplicateStemSignature = "";
+
+    /** 持久化仓储，注册时同步写入数据库以满足外键约束。 */
+    @Setter
+    @Nullable
+    private WorkflowRepository repository;
+
+    /** YAML 序列化器，当原始 YAML 不可用时用于生成持久化内容。 */
+    @Setter
+    @Nullable
+    private WorkflowYamlPrinter yamlPrinter;
+
     @Setter
     private WorkflowConfigProperties configProperties;
 
@@ -103,6 +117,17 @@ public class WorkflowRegistry {
     }
 
     public boolean register(WorkflowDefinition definition) {
+        return register(definition, null);
+    }
+
+    /**
+     * 注册工作流定义（带 YAML 原文），同时持久化到数据库。
+     *
+     * @param definition  工作流定义
+     * @param yamlContent YAML 原文（可空，为空时通过 YamlPrinter 生成）
+     * @return 注册是否成功
+     */
+    public boolean register(WorkflowDefinition definition, @Nullable String yamlContent) {
         ValidationResult validation = validate(definition);
         if (!validation.valid()) {
             return false;
@@ -114,6 +139,10 @@ public class WorkflowRegistry {
 
         boolean isUpdate = definitions.containsKey(definition.id());
         definitions.put(definition.id(), definition);
+
+        // 同步持久化到数据库，确保 workflow_instances 外键约束可满足
+        persistDefinition(definition, yamlContent);
+
         if (isUpdate) {
             log.info("工作流定义已更新: id={}, name={}", definition.id(), definition.name());
         } else {
@@ -126,6 +155,25 @@ public class WorkflowRegistry {
         return true;
     }
 
+    /**
+     * 将工作流定义持久化到数据库。
+     * 优先使用传入的 YAML 原文，否则通过 YamlPrinter 生成。
+     */
+    private void persistDefinition(WorkflowDefinition definition, @Nullable String yamlContent) {
+        if (repository == null) {
+            return;
+        }
+        try {
+            String yaml = yamlContent;
+            if (yaml == null || yaml.isBlank()) {
+                yaml = (yamlPrinter != null) ? yamlPrinter.print(definition) : "";
+            }
+            repository.saveDefinition(definition, yaml);
+        } catch (Exception e) {
+            log.warn("工作流定义持久化失败（不影响内存注册）: id={}, error={}", definition.id(), e.getMessage());
+        }
+    }
+
     public boolean unregister(String workflowId) {
         WorkflowDefinition removed = definitions.remove(workflowId);
         if (removed == null) {
@@ -133,6 +181,16 @@ public class WorkflowRegistry {
             return false;
         }
         notifyTriggerUnregister(workflowId);
+
+        // 同步软删除到数据库
+        if (repository != null) {
+            try {
+                repository.markDefinitionDeleted(workflowId);
+            } catch (Exception e) {
+                log.warn("工作流定义软删除持久化失败: id={}, error={}", workflowId, e.getMessage());
+            }
+        }
+
         log.info("工作流定义已注销: id={}", workflowId);
         return true;
     }
@@ -254,7 +312,7 @@ public class WorkflowRegistry {
             Result<WorkflowDefinition, List<String>> result = parser.parse(yaml);
             switch (result) {
                 case Result.Ok<WorkflowDefinition, List<String>> ok -> {
-                    if (register(ok.value())) {
+                    if (register(ok.value(), yaml)) {
                         fileLastModified.put(filePath, lastModified);
                         fileToWorkflowId.put(filePath, ok.value().id());
                         log.info("热加载: 新增工作流文件: file={}, id={}", file.getFileName(), ok.value().id());
@@ -283,7 +341,7 @@ public class WorkflowRegistry {
                         notifyTriggerUnregister(previousId);
                     }
 
-                    if (register(ok.value())) {
+                    if (register(ok.value(), yaml)) {
                         fileLastModified.put(filePath, lastModified);
                         fileToWorkflowId.put(filePath, ok.value().id());
                         log.info("热加载: 更新工作流文件: file={}, id={}", file.getFileName(), ok.value().id());
@@ -388,6 +446,16 @@ public class WorkflowRegistry {
 
         WorkflowDefinition updated = existing.toBuilder().enabled(enabled).build();
         definitions.put(workflowId, updated);
+
+        // 同步启用状态到数据库
+        if (repository != null) {
+            try {
+                repository.updateDefinitionEnabled(workflowId, enabled);
+            } catch (Exception e) {
+                log.warn("工作流启用状态持久化失败: id={}, error={}", workflowId, e.getMessage());
+            }
+        }
+
         if (triggerManager != null) {
             if (enabled) {
                 triggerManager.registerTriggers(updated);

@@ -17,8 +17,6 @@ import com.lifepilot.workflow.engine.WorkflowEventRecorder;
 import com.lifepilot.workflow.engine.WorkflowRealtimeEventHub;
 import com.lifepilot.workflow.engine.WorkflowRunner;
 import com.lifepilot.workflow.expression.ExpressionEngine;
-import com.lifepilot.workflow.model.Result;
-import com.lifepilot.workflow.model.WorkflowDefinition;
 import com.lifepilot.workflow.parser.WorkflowYamlParser;
 import com.lifepilot.workflow.parser.WorkflowYamlPrinter;
 import com.lifepilot.workflow.registry.WorkflowRegistry;
@@ -47,7 +45,6 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Set;
 
 /**
@@ -114,13 +111,17 @@ public class WorkflowAutoConfiguration {
                                              TaskScheduler workflowTaskScheduler,
                                              DagScheduler dagScheduler,
                                              DynamicToolRegistry toolRegistry,
-                                             SkillRegistry skillRegistry) {
+                                             SkillRegistry skillRegistry,
+                                             WorkflowRepository workflowRepository,
+                                             WorkflowYamlPrinter workflowYamlPrinter) {
         var registry = new WorkflowRegistry(parser);
         registry.setConfigProperties(config);
         registry.setTaskScheduler(workflowTaskScheduler);
         registry.setDagScheduler(dagScheduler);
         registry.setToolRegistry(toolRegistry);
         registry.setSkillRegistry(skillRegistry);
+        registry.setRepository(workflowRepository);
+        registry.setYamlPrinter(workflowYamlPrinter);
         log.info("工作流注册中心初始化完成");
         return registry;
     }
