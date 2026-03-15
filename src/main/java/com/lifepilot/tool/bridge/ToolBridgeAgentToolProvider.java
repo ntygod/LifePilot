@@ -52,7 +52,7 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
     }
 
     @Override
-    public List<ToolCallback> getToolCallbacks(ReactAgentState state) {
+    public List<ToolCallback> getToolCallbacks(ReactAgentState state, @Nullable String streamId) {
         List<ToolContract> tools = toolRegistry.getToolSnapshot();
         var allowedToolIds = state.allowedToolIds();
         if (allowedToolIds != null && !allowedToolIds.isEmpty()) {
@@ -66,7 +66,7 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
             log.debug("生成 ToolCallback: count={}", tools.size());
         }
         return tools.stream()
-                .map(this::toToolCallback)
+                .map(t -> toToolCallback(t, streamId))
                 .toList();
     }
 
@@ -74,9 +74,10 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
      * 将 ToolContract 转换为 Spring AI ToolCallback。
      *
      * @param tool 工具契约
+     * @param streamId SSE 流标识（用于精确推送确认请求，可选）
      * @return Spring AI ToolCallback
      */
-    private ToolCallback toToolCallback(ToolContract tool) {
+    private ToolCallback toToolCallback(ToolContract tool, @Nullable String streamId) {
         ToolDefinition definition = DefaultToolDefinition.builder()
                 .name(tool.id())
                 .description(tool.description())
@@ -96,7 +97,7 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
                 Map<String, Object> params = parseInput(toolInput);
                 String traceId = UUID.randomUUID().toString();
                 Instant start = Instant.now();
-                ToolResult result = pipeline.execute(tool.id(), params, traceId, null);
+                ToolResult result = pipeline.execute(tool.id(), params, traceId, null, streamId);
                 // 记录 ToolCallStep 到当前 TraceContext（Spring AI function calling 路径）
                 if (traceRecorder != null) {
                     traceRecorder.currentContext().ifPresent(ctx -> {

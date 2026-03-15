@@ -6,6 +6,7 @@ import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.tool.ToolContract;
 import com.lifepilot.tool.model.ToolInput;
+import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,7 +43,8 @@ public class WebUserConfirmationService implements UserConfirmationService {
     }
 
     @Override
-    public boolean requestConfirmation(ToolContract tool, ToolInput input, String message) {
+    public boolean requestConfirmation(ToolContract tool, ToolInput input, String message,
+                                       @Nullable String streamId) {
         String requestId = UUID.randomUUID().toString();
         var future = new CompletableFuture<Boolean>();
         pendingConfirmations.put(requestId, future);
@@ -51,13 +53,18 @@ public class WebUserConfirmationService implements UserConfirmationService {
         var request = new ConfirmationRequest(
                 requestId, tool.id(), tool.name(),
                 tool.riskLevel().name(), tool.riskLevel().toApprovalMode().name(),
-                message, Instant.now().toString());
+                message, streamId, Instant.now().toString());
 
-        // 通过 SSE 广播到所有活跃聊天流
-        sseSessionManager.broadcastByPrefix("chat-",
-                SseEventType.TOOL_CONFIRMATION_REQUEST, request);
-        log.info("工具确认请求已发送: requestId={}, toolId={}, riskLevel={}",
-                requestId, tool.id(), tool.riskLevel());
+        // 通过 SSE 精确推送到发起请求的聊天流
+        if (streamId != null) {
+            sseSessionManager.sendEvent(streamId,
+                    SseEventType.TOOL_CONFIRMATION_REQUEST, request);
+            log.info("工具确认请求已精确推送: requestId={}, toolId={}, streamId={}",
+                    requestId, tool.id(), streamId);
+        } else {
+            log.warn("工具确认请求无 streamId，跳过 SSE 推送: requestId={}, toolId={}",
+                    requestId, tool.id());
+        }
 
         try {
             return future.get(confirmationTimeoutSeconds, TimeUnit.SECONDS);

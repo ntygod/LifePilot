@@ -12,6 +12,7 @@ package com.lifepilot.interaction.web.model;
  * @param riskLevel    风险等级名称（HIGH / CRITICAL）
  * @param approvalMode 审批模式名称（USER_CONFIRM / USER_CONFIRM_WITH_VERIFICATION）
  * @param message      确认消息（由 GuardrailEngine 生成）
+ * @param streamId     发起请求的 SSE 流标识（前端可用于关联确认对话框与聊天窗口）
  * @param timestamp    请求时间戳（ISO 8601 格式）
  * @author zsg
  * @since 2026-03-11
@@ -23,5 +24,6 @@ public record ConfirmationRequest(
         String riskLevel,
         String approvalMode,
         String message,
+        String streamId,
         String timestamp
 ) {}

@@ -2,6 +2,7 @@ package com.lifepilot.interaction;
 
 import com.lifepilot.tool.ToolContract;
 import com.lifepilot.tool.model.ToolInput;
+import jakarta.annotation.Nullable;
 
 /**
  * 用户确认服务接口。
@@ -20,7 +21,9 @@ public interface UserConfirmationService {
      * @param tool 工具契约
      * @param input 工具输入
      * @param message 确认消息
+     * @param streamId SSE 流标识（Web 场景下用于精确推送，CLI 场景为 null）
      * @return 用户是否确认
      */
-    boolean requestConfirmation(ToolContract tool, ToolInput input, String message);
+    boolean requestConfirmation(ToolContract tool, ToolInput input, String message,
+                                @Nullable String streamId);
 }

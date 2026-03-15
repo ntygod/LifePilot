@@ -57,9 +57,7 @@ public class ToolExecutionPipeline {
     }
 
     /**
-     * 执行工具调用 — 管线唯一入口。
-     *
-     * <p>流程：解析 → 校验 → 护栏 → 幂等 → 执行（含超时+重试） → 返回。</p>
+     * 执行工具调用（无 SSE 流标识）— 便捷重载。
      *
      * @param toolId 工具 ID
      * @param parameters 调用参数
@@ -69,6 +67,24 @@ public class ToolExecutionPipeline {
      */
     public ToolResult execute(String toolId, Map<String, Object> parameters,
                               String traceId, @Nullable String idempotencyKey) {
+        return execute(toolId, parameters, traceId, idempotencyKey, null);
+    }
+
+    /**
+     * 执行工具调用 — 管线唯一入口。
+     *
+     * <p>流程：解析 → 校验 → 护栏 → 幂等 → 执行（含超时+重试） → 返回。</p>
+     *
+     * @param toolId 工具 ID
+     * @param parameters 调用参数
+     * @param traceId 轨迹 ID（用于日志关联）
+     * @param idempotencyKey 幂等键（可选）
+     * @param streamId SSE 流标识（用于精确推送确认请求，可选）
+     * @return 结构化执行结果
+     */
+    public ToolResult execute(String toolId, Map<String, Object> parameters,
+                              String traceId, @Nullable String idempotencyKey,
+                              @Nullable String streamId) {
         Instant start = Instant.now();
         log.debug("管线开始: toolId={}, traceId={}, params={}", toolId, traceId, parameters);
 
@@ -100,7 +116,7 @@ public class ToolExecutionPipeline {
             }
             case GuardrailResult.NeedsConfirmation confirm -> {
                 boolean confirmed = confirmationService.requestConfirmation(
-                        tool, input, confirm.message());
+                        tool, input, confirm.message(), streamId);
                 if (!confirmed) {
                     log.info("用户拒绝执行: toolId={}", toolId);
                     return ToolResult.error("用户拒绝执行",
