@@ -721,6 +721,7 @@ lifepilot:
         idle-timeout-seconds: 300
         tool-timeout-seconds: 30
         install-timeout-seconds: 600
+        text-snapshot-max-length: 10000
       code-execute:
         enabled: true
         default-language: python

@@ -162,6 +162,9 @@ public class MetaProperties {
 
             /** 浏览器安装超时（秒），默认 600（10 分钟）。 */
             private int installTimeoutSeconds = 600;
+
+            /** 文本快照清洗后最大长度（字符），默认 10000。 */
+            private int textSnapshotMaxLength = 10000;
         }
 
         /**
