@@ -137,10 +137,7 @@ async function handleSave() {
       <!-- 全局精排配置 -->
       <SettingSection title="全局精排" icon="🔀" description="控制检索结果的二次排序策略，提升相关性。">
         <SettingItem label="启用精排" description="开启后，检索结果将经过精排模型二次排序。">
-          <Switch
-            :checked="form.enabled"
-            @update:checked="(v: boolean) => form.enabled = v"
-          />
+          <Switch v-model="form.enabled" />
         </SettingItem>
 
         <SettingItem label="精排类型" description="选择使用 LLM 或外部 API 进行精排。">
@@ -221,10 +218,7 @@ async function handleSave() {
       <!-- 记忆精排配置 -->
       <SettingSection title="记忆精排" icon="💾" description="控制记忆检索结果是否经过精排，需先启用全局精排。">
         <SettingItem label="启用记忆精排" description="开启后，记忆检索的融合结果将经过 Reranker 二次排序。">
-          <Switch
-            :checked="form.memoryRerankEnabled"
-            @update:checked="(v: boolean) => form.memoryRerankEnabled = v"
-          />
+          <Switch v-model="form.memoryRerankEnabled" />
         </SettingItem>
 
         <SettingItem label="记忆精排 TopK" description="记忆精排后保留的最大结果数。">
