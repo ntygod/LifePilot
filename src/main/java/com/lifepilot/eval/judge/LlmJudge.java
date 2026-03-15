@@ -2,6 +2,7 @@ package com.lifepilot.eval.judge;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.lifepilot.eval.config.EvalConfigProperties;
+import com.lifepilot.llm.LlmRequest;
 import com.lifepilot.llm.LlmRouter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -53,7 +54,7 @@ public class LlmJudge {
             var prompt = buildPrompt(actualOutput, expectedPattern, criteria);
             
             try {
-                JudgeResponse response = llmRouter.callEntity(scene, prompt, JudgeResponse.class);
+                JudgeResponse response = llmRouter.callEntity(LlmRequest.of(scene, prompt), JudgeResponse.class);
                 
                 if (response != null && response.score() != null) {
                     var score = clampScore(response.score());
@@ -93,7 +94,7 @@ public class LlmJudge {
         try {
             // 使用 call() 方法获取原始响应
             var prompt = buildPrompt(actualOutput, expectedPattern, criteria);
-            var response = llmRouter.call(scene, prompt, null);
+            var response = llmRouter.call(LlmRequest.of(scene, prompt));
             var tokensUsed = response.totalTokens();
 
             var parsed = parseResponse(response.content());
@@ -124,7 +125,7 @@ public class LlmJudge {
 
         try {
             var simplifiedPrompt = buildSimplifiedPrompt(actualOutput, expectedPattern, criteria);
-            var response = llmRouter.call(scene, simplifiedPrompt, null);
+            var response = llmRouter.call(LlmRequest.of(scene, simplifiedPrompt));
             var totalTokens = previousTokens + response.totalTokens();
 
             var score = parseScoreFromText(response.content());

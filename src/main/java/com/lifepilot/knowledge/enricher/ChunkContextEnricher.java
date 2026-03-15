@@ -2,6 +2,7 @@ package com.lifepilot.knowledge.enricher;
 
 import com.lifepilot.knowledge.chunking.DocumentChunk;
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
+import com.lifepilot.llm.LlmRequest;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.LlmUnavailableException;
 import com.lifepilot.prompt.PromptRegistry;
@@ -133,7 +134,7 @@ public class ChunkContextEnricher {
 
                 for (var subBatch : subBatches) {
                     var prompt = buildBatchPrompt(subBatch, documentSummary);
-                    LlmResponse response = llmRouter.call(SCENE, prompt, null);
+                    LlmResponse response = llmRouter.call(LlmRequest.of(SCENE, prompt));
                     llmCallCount++;
 
                     List<String> prefixes = parseBatchResponse(response.content());
@@ -299,7 +300,7 @@ public class ChunkContextEnricher {
      */
     private String generatePrefix(DocumentChunk chunk, String documentSummary) {
         var prompt = buildPrompt(chunk, documentSummary);
-        var response = llmRouter.call(SCENE, prompt, null);
+        var response = llmRouter.call(LlmRequest.of(SCENE, prompt));
         var prefix = response.content().trim();
 
         // 截断超长前缀（按字符粗略限制，实际 Token 数由 LLM 控制）

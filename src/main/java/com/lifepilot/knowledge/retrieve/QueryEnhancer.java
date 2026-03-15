@@ -1,6 +1,7 @@
 package com.lifepilot.knowledge.retrieve;
 
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
+import com.lifepilot.llm.LlmRequest;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.LlmUnavailableException;
 import org.slf4j.Logger;
@@ -121,7 +122,7 @@ public class QueryEnhancer {
     private String callWithTimeout(String prompt) {
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             Future<String> future = executor.submit(
-                    () -> llmRouter.call(SCENE, prompt, null).content());
+                    () -> llmRouter.call(LlmRequest.of(SCENE, prompt)).content());
             return future.get(config.timeoutMs(), TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
             log.warn("查询增强超时: timeoutMs={}", config.timeoutMs());
