@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, type Component } from 'vue'
 import { storeToRefs } from 'pinia'
-import { Loader2 } from 'lucide-vue-next'
+import { Lightbulb, GitBranch, Settings, Bell, Loader2, AlertCircle } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { useNotificationStore } from '@/stores/notification'
 import { parseNotificationContent } from '@/utils/notificationContent'
+import { formatRelativeTime } from '@/utils/relativeTime'
+import NotificationDetail from '@/components/notification/NotificationDetail.vue'
 import type { NotificationItem, NotificationUrgency } from '@/types'
 
 const notificationStore = useNotificationStore()
@@ -16,6 +18,23 @@ const currentPage = ref(0)
 /** 是否还有更多数据可加载 */
 const hasMore = ref(true)
 
+/** 错误状态 */
+const error = ref<string | null>(null)
+
+/** 当前展开的通知 ID */
+const expandedId = ref<string | null>(null)
+
+/** 紧急程度筛选标签定义 */
+const urgencyFilters = [
+  { label: '全部', value: undefined },
+  { label: '紧急', value: 'HIGH' },
+  { label: '中等', value: 'MEDIUM' },
+  { label: '低', value: 'LOW' },
+] as const
+
+/** 当前激活的筛选值 */
+const activeFilter = ref<string | undefined>(undefined)
+
 /** 紧急程度 badge 样式映射 */
 const urgencyConfig: Record<NotificationUrgency, { label: string; variant: 'destructive' | 'default' | 'secondary' }> = {
   HIGH: { label: '紧急', variant: 'destructive' },
@@ -23,22 +42,16 @@ const urgencyConfig: Record<NotificationUrgency, { label: string; variant: 'dest
   LOW: { label: '低', variant: 'secondary' },
 }
 
-/** 计算相对时间 */
-function formatRelativeTime(sentAt: string): string {
-  const now = Date.now()
-  const sent = new Date(sentAt).getTime()
-  const diffMs = now - sent
+/** 通知类型图标映射 */
+const typeIconMap: Record<string, Component> = {
+  proactive: Lightbulb,
+  workflow: GitBranch,
+  system: Settings,
+}
 
-  if (diffMs < 0 || diffMs < 60_000) return '刚刚'
-
-  const minutes = Math.floor(diffMs / 60_000)
-  if (minutes < 60) return `${minutes}分钟前`
-
-  const hours = Math.floor(diffMs / 3_600_000)
-  if (hours < 24) return `${hours}小时前`
-
-  const days = Math.floor(diffMs / 86_400_000)
-  return `${days}天前`
+/** 获取通知类型图标，未知 typeId 回退到 Bell */
+function getTypeIcon(typeId?: string): Component {
+  return (typeId && typeIconMap[typeId]) || Bell
 }
 
 /** 获取通知内容摘要 */
@@ -46,9 +59,10 @@ function getSummary(item: NotificationItem): string {
   return parseNotificationContent(item.contentJson).summary
 }
 
-/** 点击通知条目，标记已读 */
+/** 点击通知条目，切换展开/收起，展开未读通知时自动标记已读 */
 function handleClickNotification(item: NotificationItem) {
-  if (item.readStatus === 'UNREAD') {
+  expandedId.value = expandedId.value === item.id ? null : item.id
+  if (expandedId.value === item.id && item.readStatus === 'UNREAD') {
     notificationStore.markAsRead(item.id)
   }
 }
@@ -56,6 +70,20 @@ function handleClickNotification(item: NotificationItem) {
 /** 全部标记已读 */
 function handleMarkAllAsRead() {
   notificationStore.markAllAsRead()
+}
+
+/** 切换紧急程度筛选 */
+async function handleFilterChange(value: string | undefined) {
+  activeFilter.value = value
+  currentPage.value = 0
+  hasMore.value = true
+  expandedId.value = null
+  error.value = null
+  try {
+    await notificationStore.fetchNotifications(0, activeFilter.value)
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '加载通知列表失败'
+  }
 }
 
 /** 滚动到底部加载更多 */
@@ -73,18 +101,35 @@ function handleScroll(event: Event) {
 async function loadMore() {
   const nextPage = currentPage.value + 1
   const prevLength = notifications.value.length
-  await notificationStore.fetchNotifications(nextPage)
-  // 如果加载后列表长度没变，说明没有更多数据
-  if (notifications.value.length === prevLength) {
-    hasMore.value = false
-  } else {
-    currentPage.value = nextPage
+  try {
+    await notificationStore.fetchNotifications(nextPage, activeFilter.value)
+    if (notifications.value.length === prevLength) {
+      hasMore.value = false
+    } else {
+      currentPage.value = nextPage
+    }
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '加载更多通知失败'
+  }
+}
+
+/** 重试加载 */
+async function handleRetry() {
+  error.value = null
+  try {
+    await notificationStore.fetchNotifications(currentPage.value, activeFilter.value)
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '加载通知列表失败'
   }
 }
 
 // 组件挂载时加载初始数据
-onMounted(() => {
-  notificationStore.fetchNotifications()
+onMounted(async () => {
+  try {
+    await notificationStore.fetchNotifications(0, activeFilter.value)
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '加载通知列表失败'
+  }
 })
 </script>
 
@@ -104,6 +149,21 @@ onMounted(() => {
       </Button>
     </div>
 
+    <!-- 紧急程度筛选标签栏 -->
+    <div class="flex items-center gap-1 border-b px-4 py-2">
+      <button
+        v-for="filter in urgencyFilters"
+        :key="filter.label"
+        class="rounded-md px-2.5 py-1 text-xs transition-colors"
+        :class="activeFilter === filter.value
+          ? 'border-b-2 border-primary font-medium text-primary'
+          : 'text-muted-foreground hover:text-foreground'"
+        @click="handleFilterChange(filter.value)"
+      >
+        {{ filter.label }}
+      </button>
+    </div>
+
     <!-- 通知列表 -->
     <div
       class="max-h-96 overflow-y-auto"
@@ -112,9 +172,22 @@ onMounted(() => {
       <!-- 加载中（首次加载） -->
       <div
         v-if="loading && notifications.length === 0"
-        class="flex items-center justify-center py-8"
+        class="flex flex-col items-center justify-center gap-2 py-8"
       >
         <Loader2 class="size-5 animate-spin text-muted-foreground" />
+        <span class="text-sm text-muted-foreground">加载中...</span>
+      </div>
+
+      <!-- 错误状态 -->
+      <div
+        v-else-if="error"
+        class="flex flex-col items-center justify-center gap-2 py-8"
+      >
+        <AlertCircle class="size-5 text-destructive" />
+        <span class="text-sm text-destructive">{{ error }}</span>
+        <Button variant="outline" size="sm" @click="handleRetry">
+          重试
+        </Button>
       </div>
 
       <!-- 空状态 -->
@@ -122,7 +195,7 @@ onMounted(() => {
         v-else-if="notifications.length === 0"
         class="flex items-center justify-center py-8 text-sm text-muted-foreground"
       >
-        暂无通知
+        {{ activeFilter ? '该分类下暂无通知' : '暂无通知' }}
       </div>
 
       <!-- 通知条目列表 -->
@@ -130,33 +203,46 @@ onMounted(() => {
         <div
           v-for="item in notifications"
           :key="item.id"
-          class="flex cursor-pointer gap-3 border-b px-4 py-3 transition-colors last:border-b-0 hover:bg-accent/50"
-          :class="{ 'bg-accent/20': item.readStatus === 'UNREAD' }"
-          @click="handleClickNotification(item)"
         >
-          <!-- 未读蓝色圆点 -->
-          <div class="flex shrink-0 pt-1.5">
-            <span
-              v-if="item.readStatus === 'UNREAD'"
-              class="block h-2 w-2 rounded-full bg-blue-500"
-            />
-            <span v-else class="block h-2 w-2" />
+          <!-- 通知条目行 -->
+          <div
+            class="flex cursor-pointer gap-3 border-b px-4 py-3 transition-colors last:border-b-0 hover:bg-accent/50"
+            :class="{ 'bg-accent/20': item.readStatus === 'UNREAD' }"
+            @click="handleClickNotification(item)"
+          >
+            <!-- 类型图标 + 未读圆点 -->
+            <div class="flex shrink-0 items-start gap-1.5 pt-0.5">
+              <span
+                v-if="item.readStatus === 'UNREAD'"
+                class="mt-1 block h-2 w-2 shrink-0 rounded-full bg-blue-500"
+              />
+              <span v-else class="mt-1 block h-2 w-2 shrink-0" />
+              <component :is="getTypeIcon(item.typeId)" class="size-4 text-muted-foreground" />
+            </div>
+
+            <!-- 通知内容 -->
+            <div class="flex min-w-0 flex-1 flex-col gap-1">
+              <p class="truncate text-sm">{{ getSummary(item) }}</p>
+              <div class="flex items-center gap-2">
+                <Badge
+                  :variant="urgencyConfig[item.urgency].variant"
+                  class="px-1.5 py-0 text-[10px]"
+                >
+                  {{ urgencyConfig[item.urgency].label }}
+                </Badge>
+                <span class="text-xs text-muted-foreground">
+                  {{ formatRelativeTime(item.sentAt) }}
+                </span>
+              </div>
+            </div>
           </div>
 
-          <!-- 通知内容 -->
-          <div class="flex min-w-0 flex-1 flex-col gap-1">
-            <p class="truncate text-sm">{{ getSummary(item) }}</p>
-            <div class="flex items-center gap-2">
-              <Badge
-                :variant="urgencyConfig[item.urgency].variant"
-                class="px-1.5 py-0 text-[10px]"
-              >
-                {{ urgencyConfig[item.urgency].label }}
-              </Badge>
-              <span class="text-xs text-muted-foreground">
-                {{ formatRelativeTime(item.sentAt) }}
-              </span>
-            </div>
+          <!-- 展开的通知详情 -->
+          <div
+            v-if="expandedId === item.id"
+            class="border-b bg-muted/30"
+          >
+            <NotificationDetail :content-json="item.contentJson" />
           </div>
         </div>
 

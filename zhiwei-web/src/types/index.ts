@@ -1238,6 +1238,21 @@ export interface NotificationItem {
   sentAt: string  // ISO 8601
 }
 
+/** 详情解析结果 */
+export interface ParsedDetail {
+  type: 'TEXT' | 'MARKDOWN' | 'CARD' | 'UNKNOWN'
+  /** TEXT: 完整文本; MARKDOWN: 原始 markdown; CARD: 无 */
+  text?: string
+  /** MARKDOWN: 渲染后的 HTML */
+  html?: string
+  /** CARD: 标题 */
+  title?: string
+  /** CARD: 正文 */
+  body?: string
+  /** CARD: 操作按钮列表 */
+  actions?: Array<{ label: string; url?: string }>
+}
+
 
 // ========== 记忆管理类型定义 ==========
 

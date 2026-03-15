@@ -1,5 +1,8 @@
 /** 通知内容解析工具函数 */
 
+import { marked } from 'marked'
+import type { ParsedDetail } from '@/types'
+
 // Markdown 摘要最大长度
 const MARKDOWN_SUMMARY_MAX_LENGTH = 100
 
@@ -89,4 +92,43 @@ function buildCardSummary(title?: string, body?: string): string {
   const combined = parts.join(' — ')
   if (combined.length <= MARKDOWN_SUMMARY_MAX_LENGTH) return combined
   return combined.slice(0, MARKDOWN_SUMMARY_MAX_LENGTH) + '…'
+}
+
+/**
+ * 解析通知 contentJson 为详情渲染数据。
+ * TEXT → 完整文本; MARKDOWN → marked 渲染为 HTML; CARD → 结构化卡片数据
+ */
+export function parseNotificationDetail(contentJson: string): ParsedDetail {
+  try {
+    const parsed = JSON.parse(contentJson)
+
+    if (!parsed || typeof parsed !== 'object' || !parsed.type) {
+      return { type: 'UNKNOWN', text: contentJson }
+    }
+
+    switch (parsed.type) {
+      case 'TEXT':
+        return { type: 'TEXT', text: parsed.text ?? contentJson }
+
+      case 'MARKDOWN': {
+        const markdown = parsed.markdown ?? ''
+        const html = marked.parse(markdown) as string
+        return { type: 'MARKDOWN', text: markdown, html }
+      }
+
+      case 'CARD':
+        return {
+          type: 'CARD',
+          title: parsed.title,
+          body: parsed.body,
+          actions: parsed.actions ?? [],
+        }
+
+      default:
+        return { type: 'UNKNOWN', text: contentJson }
+    }
+  } catch {
+    // JSON 解析失败，降级为原始文本
+    return { type: 'UNKNOWN', text: contentJson }
+  }
 }
