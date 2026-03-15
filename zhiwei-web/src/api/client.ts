@@ -66,7 +66,9 @@ import type {
   ValidationResponse,
   StepTypeSchema,
   ParamSchema,
-  OptionItem
+  OptionItem,
+  // 通知中心类型
+  NotificationItem
 } from '@/types'
 import { mapBackendMessage } from '@/utils/a2ui'
 
@@ -1162,5 +1164,28 @@ export const dependencyApi = {
   /** 获取依赖关系图 */
   getGraph(): Promise<DependencyGraphResponse> {
     return request('/dependencies/graph')
+  }
+}
+
+/** 通知管理 API */
+export const notificationApi = {
+  /** 获取通知列表（分页） */
+  listNotifications(userId: string, page?: number, size?: number, urgency?: string): Promise<PageResult<NotificationItem>> {
+    const params = new URLSearchParams()
+    params.append('userId', userId)
+    if (page !== undefined) params.append('page', String(page))
+    if (size !== undefined) params.append('size', String(size))
+    if (urgency) params.append('urgency', urgency)
+    return request(`/notifications?${params.toString()}`)
+  },
+
+  /** 标记单条通知已读 */
+  markAsRead(id: string): Promise<NotificationItem> {
+    return request(`/notifications/${id}/read`, { method: 'PUT' })
+  },
+
+  /** 标记所有通知已读 */
+  markAllAsRead(userId: string): Promise<{ updatedCount: number }> {
+    return request(`/notifications/read-all?userId=${encodeURIComponent(userId)}`, { method: 'PUT' })
   }
 }

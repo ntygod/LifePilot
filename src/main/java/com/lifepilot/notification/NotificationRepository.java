@@ -132,6 +132,19 @@ public class NotificationRepository {
     }
 
     /**
+     * 统计用户未读通知数量。
+     *
+     * @param userId 用户 ID
+     * @return 未读通知数量
+     */
+    public long countUnreadByUserId(String userId) {
+        var count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM notification_history WHERE user_id = ? AND read_status = 'UNREAD'",
+                Long.class, userId);
+        return count != null ? count : 0L;
+    }
+
+    /**
      * 标记单条通知为已读。
      *
      * @param id 通知 ID
