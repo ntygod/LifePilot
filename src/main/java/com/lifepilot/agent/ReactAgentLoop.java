@@ -18,6 +18,7 @@ import com.lifepilot.interaction.web.a2ui.A2uiPayloadSupport;
 import com.lifepilot.interaction.web.a2ui.StreamingA2uiParser;
 import com.lifepilot.interaction.web.config.A2uiProperties;
 import com.lifepilot.interaction.web.model.A2uiComponentTree;
+import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
@@ -106,12 +107,15 @@ public class ReactAgentLoop {
     @Nullable private final A2uiProperties a2uiProperties;
 
     // ===== 可选依赖（附件持久化） =====
-    @Nullable private final com.lifepilot.interaction.web.repository.AttachmentRepository attachmentRepository;
+    @Nullable private final AttachmentRepository attachmentRepository;
 
     // ===== 运行时状态（volatile） =====
     private volatile A2uiComponentTree lastCollectedA2uiTree;
     private final List<String> lastInjectedEntityIds = List.of();
     private volatile CancellationToken cancellationToken;
+
+    /** 收集本轮工具执行中通过 SSE MEDIA 事件发送的媒体数据，用于流式完成后持久化到附件表。 */
+    private final List<MediaDataExtractor.MediaItem> collectedToolMedia = new ArrayList<>();
 
     public ReactAgentLoop(
             ContextAssembler contextAssembler,
@@ -134,7 +138,7 @@ public class ReactAgentLoop {
             @Nullable SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
             @Nullable KnowledgeBaseRepository knowledgeBaseRepository,
             @Nullable A2uiProperties a2uiProperties,
-            @Nullable com.lifepilot.interaction.web.repository.AttachmentRepository attachmentRepository) {
+            @Nullable AttachmentRepository attachmentRepository) {
         this.contextAssembler = contextAssembler;
         this.llmRouter = llmRouter;
         this.traceRecorder = traceRecorder;
@@ -530,6 +534,9 @@ public class ReactAgentLoop {
 
             // 将图片类型的媒体写入 pendingMedia 缓冲区，供下一次迭代 LLM 视觉分析
             if (!extraction.mediaItems().isEmpty()) {
+                // 收集到实例级列表，用于流式完成后持久化到附件表
+                collectedToolMedia.addAll(extraction.mediaItems());
+
                 for (var mediaItem : extraction.mediaItems()) {
                     if (mediaItem.mediaType().startsWith("image/")) {
                         try {
@@ -577,7 +584,6 @@ public class ReactAgentLoop {
         return (int) (usage.getPromptTokens() + usage.getCompletionTokens());
     }
 
-    /** 记录 LLM 调用步骤到 Trace（含真实 providerId / modelId）。 */
     /**
      * 记录 LLM 调用步骤到 Trace。
      *
@@ -702,7 +708,7 @@ public class ReactAgentLoop {
     private List<MediaContent> extractMediaContentsFromMessages(List<Message> messages) {
         var result = new ArrayList<MediaContent>();
         for (var msg : messages) {
-            if (msg instanceof UserMessage um && um.getMedia() != null) {
+            if (msg instanceof UserMessage um) {
                 for (var media : um.getMedia()) {
                     try {
                         // 优先 ByteArrayResource 快速路径，兼容 Spring AI 可能的 Resource 包装
@@ -809,6 +815,7 @@ public class ReactAgentLoop {
 
         try {
             state = initState(effectiveRequest);
+            collectedToolMedia.clear();
             writeUserMessageToL1(state, effectiveRequest.mediaContents());
             persistUserMessage(state);
             traceContext = startTraceIfEnabled(state, effectiveRequest);
@@ -828,6 +835,7 @@ public class ReactAgentLoop {
             writeAssistantMessageToL1(state);
             String assistantMessageId = persistAssistantMessage(state);
             persistInjectionRecord(assistantMessageId, state.sessionId());
+            persistToolMediaAttachments(assistantMessageId, state.sessionId());
             asyncPostProcess(state);
 
             // 聚合 Token 使用量
@@ -922,6 +930,7 @@ public class ReactAgentLoop {
 
         try {
             state = initState(effectiveRequest);
+            collectedToolMedia.clear();
             writeUserMessageToL1(state, effectiveRequest.mediaContents());
 
             // 同步写入用户消息到 chat_messages
@@ -1002,7 +1011,10 @@ public class ReactAgentLoop {
 
                 persistInjectionRecord(assistantMessageId, state.sessionId());
 
-                // 持久化工具产生的媒体附件到 message_attachments 表
+                // 持久化工具产生的媒体附件（截图等通过 SSE MEDIA 事件发送的数据）
+                persistToolMediaAttachments(assistantMessageId, state.sessionId());
+
+                // 持久化用户上传的媒体附件到 message_attachments 表
                 if (attachmentRepository != null && assistantMessageId != null
                         && effectiveRequest.mediaContents() != null && !effectiveRequest.mediaContents().isEmpty()) {
                     for (var mc : effectiveRequest.mediaContents()) {
@@ -1083,7 +1095,7 @@ public class ReactAgentLoop {
             boolean messagesHaveMedia = messages.stream()
                     .filter(m -> m instanceof UserMessage)
                     .map(m -> (UserMessage) m)
-                    .anyMatch(um -> um.getMedia() != null && !um.getMedia().isEmpty());
+                    .anyMatch(um -> !um.getMedia().isEmpty());
 
             // 多模态路由：messages 中有 Media 且 MultimodalRouter 可用时走多模态路径
             if (messagesHaveMedia && multimodalRouter != null) {
@@ -1107,7 +1119,7 @@ public class ReactAgentLoop {
                 return adaptToChatResponse(llmResponse);
             }
 
-            if (messagesHaveMedia && multimodalRouter == null) {
+            if (messagesHaveMedia) {
                 log.warn("消息包含媒体内容但 MultimodalRouter 不可用，回退到纯文本路由");
             }
 
@@ -1518,6 +1530,39 @@ public class ReactAgentLoop {
         } catch (Exception e) {
             log.warn("注入记录持久化失败: messageId={}, error={}", messageId, e.getMessage());
         }
+    }
+
+    /**
+     * 持久化工具产生的媒体附件到 message_attachments 表。
+     *
+     * <p>将本轮 ReAct 循环中通过 SSE MEDIA 事件发送的媒体数据（截图等）
+     * 写入附件表，确保页面刷新后仍能加载。</p>
+     *
+     * @param assistantMessageId 助手消息 ID
+     * @param sessionId          会话 ID
+     */
+    private void persistToolMediaAttachments(@Nullable String assistantMessageId,
+                                             @Nullable String sessionId) {
+        if (attachmentRepository == null || assistantMessageId == null
+                || collectedToolMedia.isEmpty()) {
+            return;
+        }
+        for (var mediaItem : collectedToolMedia) {
+            try {
+                String ext = guessExtension(mediaItem.mediaType());
+                String fileName = mediaItem.fieldName() + "." + ext;
+                String dataUri = "data:" + mediaItem.mediaType() + ";base64," + mediaItem.data();
+                long sizeBytes = Math.round(mediaItem.data().length() * 0.75);
+                attachmentRepository.save(assistantMessageId, sessionId,
+                        fileName, "", sizeBytes, mediaItem.mediaType(), dataUri);
+            } catch (Exception e) {
+                log.warn("工具媒体附件持久化失败: field={}, error={}",
+                        mediaItem.fieldName(), e.getMessage());
+            }
+        }
+        log.debug("工具媒体附件持久化完成: sessionId={}, count={}",
+                sessionId, collectedToolMedia.size());
+        collectedToolMedia.clear();
     }
 
     // ===== 异步后处理 =====
