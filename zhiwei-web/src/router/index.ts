@@ -170,6 +170,11 @@ const router = createRouter({
       name: 'settingsShortcuts',
       component: () => import('@/views/SettingsView.vue')
     },
+    {
+      path: '/settings/reranker',
+      name: 'settingsReranker',
+      component: () => import('@/views/SettingsView.vue')
+    },
 
     /**
      * Trace / 轨迹
