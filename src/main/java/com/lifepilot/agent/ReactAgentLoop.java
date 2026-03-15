@@ -25,8 +25,12 @@ import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.StreamingLlmResponse;
+import com.lifepilot.llm.multimodal.MediaContent;
 import com.lifepilot.llm.multimodal.MultimodalRequest;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
+import com.lifepilot.media.MediaProcessor;
+import com.lifepilot.media.MediaValidationException;
+import com.lifepilot.media.MediaValidator;
 import com.lifepilot.memory.retrieval.InjectionRecordRepository;
 import com.lifepilot.memory.semantic.RealtimeExtractor;
 import com.lifepilot.memory.working.WorkingMemory;
@@ -89,6 +93,8 @@ public class ReactAgentLoop {
     // ===== 可选依赖（@Nullable） =====
     @Nullable private final MultimodalRouter multimodalRouter; // 预留：多模态流式请求
     @Nullable private final MediaDataExtractor mediaDataExtractor;
+    @Nullable private final MediaValidator mediaValidator;
+    @Nullable private final MediaProcessor mediaProcessor;
     @Nullable private final WorkingMemory workingMemory;
     @Nullable private final ConversationHistoryStore conversationHistoryStore;
     @Nullable private final ConversationViewService conversationViewService;
@@ -114,6 +120,8 @@ public class ReactAgentLoop {
             PromptRegistry promptRegistry,
             @Nullable MultimodalRouter multimodalRouter,
             @Nullable MediaDataExtractor mediaDataExtractor,
+            @Nullable MediaValidator mediaValidator,
+            @Nullable MediaProcessor mediaProcessor,
             @Nullable WorkingMemory workingMemory,
             @Nullable ConversationHistoryStore conversationHistoryStore,
             @Nullable ConversationViewService conversationViewService,
@@ -132,6 +140,8 @@ public class ReactAgentLoop {
         this.promptRegistry = promptRegistry;
         this.multimodalRouter = multimodalRouter;
         this.mediaDataExtractor = mediaDataExtractor;
+        this.mediaValidator = mediaValidator;
+        this.mediaProcessor = mediaProcessor;
         this.workingMemory = workingMemory;
         this.conversationHistoryStore = conversationHistoryStore;
         this.conversationViewService = conversationViewService;
@@ -303,6 +313,10 @@ public class ReactAgentLoop {
 
             // 4. 组装上下文 + 构建消息 + 获取工具回调
             var assembledContext = contextAssembler.assemble(state);
+            // 首轮迭代注入媒体内容到上下文
+            if (state.steps().isEmpty() && hasMultimodalContent(request)) {
+                assembledContext = assembledContext.withMediaContents(request.mediaContents());
+            }
             var messages = buildMessages(assembledContext, state);
             var toolCallbacks = agentToolProvider.getToolCallbacks(state);
 
@@ -630,6 +644,43 @@ public class ReactAgentLoop {
                 .orElse("");
     }
 
+    // ===== 多模态辅助方法 =====
+
+    /** 判断请求是否包含多模态内容。 */
+    private boolean hasMultimodalContent(AgentRequest request) {
+        return request.mediaContents() != null && !request.mediaContents().isEmpty();
+    }
+
+    /**
+     * 媒体校验与预处理 — 在进入 coreLoop 之前执行。
+     *
+     * <p>校验通过后对图片执行预处理（压缩、格式转换），返回处理后的媒体内容列表。
+     * 校验失败时抛出 {@link MediaValidationException}，由调用方捕获并返回错误响应。</p>
+     *
+     * @param mediaContents 原始媒体内容列表
+     * @return 预处理后的媒体内容列表
+     * @throws MediaValidationException 校验失败时抛出
+     */
+    private List<MediaContent> validateAndPreprocessMedia(List<MediaContent> mediaContents) {
+        // 校验所有媒体内容
+        mediaValidator.validateAll(mediaContents);
+
+        // 提取图片类型执行预处理
+        List<MediaContent> images = mediaContents.stream()
+                .filter(mc -> mc.mimeType().startsWith("image/"))
+                .toList();
+        List<MediaContent> processedImages = mediaProcessor.processAll(images);
+
+        // 合并非图片媒体（视频等由 MultimodalRouter 内部处理）
+        List<MediaContent> nonImages = mediaContents.stream()
+                .filter(mc -> !mc.mimeType().startsWith("image/"))
+                .toList();
+        var result = new ArrayList<MediaContent>(processedImages.size() + nonImages.size());
+        result.addAll(processedImages);
+        result.addAll(nonImages);
+        return List.copyOf(result);
+    }
+
     // ===== 同步执行入口 =====
 
     /**
@@ -648,16 +699,40 @@ public class ReactAgentLoop {
         var token = new CancellationToken();
         this.cancellationToken = token;
 
+        // 媒体校验与预处理 — 在进入 coreLoop 之前执行
+        List<MediaContent> processedMedia = null;
+        if (hasMultimodalContent(request)) {
+            if (multimodalRouter == null) {
+                log.warn("请求包含媒体内容但 MultimodalRouter 未注入，降级为纯文本: sessionId={}",
+                        request.sessionId());
+            } else if (mediaValidator != null && mediaProcessor != null) {
+                try {
+                    processedMedia = validateAndPreprocessMedia(request.mediaContents());
+                } catch (MediaValidationException e) {
+                    log.warn("媒体校验失败: sessionId={}, error={}", request.sessionId(), e.getMessage());
+                    return AgentResponse.error(state, e);
+                }
+            }
+        }
+
+        // 如果有预处理后的媒体，替换请求中的 mediaContents
+        final AgentRequest effectiveRequest = processedMedia != null
+                ? new AgentRequest(request.message(), request.sessionId(), request.channel(),
+                        request.systemPrompt(), request.budget(), request.parentTraceId(),
+                        request.depth(), request.preferredProvider(), request.allowedToolIds(),
+                        processedMedia)
+                : request;
+
         try {
-            state = initState(request);
+            state = initState(effectiveRequest);
             writeUserMessageToL1(state);
             persistUserMessage(state);
-            traceContext = startTraceIfEnabled(state, request);
+            traceContext = startTraceIfEnabled(state, effectiveRequest);
             loopStart = Instant.now();
 
             // 核心循环 — 非流式回调
-            var callback = new NonStreamingCallback(request);
-            state = coreLoop(state, request, traceContext, loopStart, callback, token,
+            var callback = new NonStreamingCallback(effectiveRequest);
+            state = coreLoop(state, effectiveRequest, traceContext, loopStart, callback, token,
                     null, null);
 
             // 构建推理概要
@@ -734,8 +809,34 @@ public class ReactAgentLoop {
         var token = cancellationToken;
         this.cancellationToken = token;
 
+        // 媒体校验与预处理 — 在进入 coreLoop 之前执行
+        List<MediaContent> processedMedia = null;
+        if (hasMultimodalContent(request)) {
+            if (multimodalRouter == null) {
+                log.warn("请求包含媒体内容但 MultimodalRouter 未注入，降级为纯文本: sessionId={}",
+                        request.sessionId());
+            } else if (mediaValidator != null && mediaProcessor != null) {
+                try {
+                    processedMedia = validateAndPreprocessMedia(request.mediaContents());
+                } catch (MediaValidationException e) {
+                    log.warn("媒体校验失败: sessionId={}, error={}", request.sessionId(), e.getMessage());
+                    sendStreamError(sseManager, streamId, 400,
+                            "媒体校验失败: " + e.getMessage(), state.traceId());
+                    return;
+                }
+            }
+        }
+
+        // 如果有预处理后的媒体，替换请求中的 mediaContents
+        final AgentRequest effectiveRequest = processedMedia != null
+                ? new AgentRequest(request.message(), request.sessionId(), request.channel(),
+                        request.systemPrompt(), request.budget(), request.parentTraceId(),
+                        request.depth(), request.preferredProvider(), request.allowedToolIds(),
+                        processedMedia)
+                : request;
+
         try {
-            state = initState(request);
+            state = initState(effectiveRequest);
             writeUserMessageToL1(state);
 
             // 同步写入用户消息到 chat_messages
@@ -766,13 +867,13 @@ public class ReactAgentLoop {
                     "Agent 已接收到用户请求，正在准备上下文与预算。",
                     null, Map.of());
 
-            traceContext = startTraceIfEnabled(state, request);
+            traceContext = startTraceIfEnabled(state, effectiveRequest);
             loopStart = Instant.now();
 
             // 核心循环 — 流式回调
             var callback = new StreamingCallback(
-                    sseManager, streamId, request.sessionId(), tempTurnId, request);
-            state = coreLoop(state, request, traceContext, loopStart, callback, token,
+                    sseManager, streamId, request.sessionId(), tempTurnId, effectiveRequest);
+            state = coreLoop(state, effectiveRequest, traceContext, loopStart, callback, token,
                     sseManager, streamId);
 
             // 检查流式错误

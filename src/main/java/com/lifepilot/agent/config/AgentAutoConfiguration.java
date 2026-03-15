@@ -18,6 +18,8 @@ import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
 import com.lifepilot.knowledge.retrieve.DocumentRetriever;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
+import com.lifepilot.media.MediaProcessor;
+import com.lifepilot.media.MediaValidator;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.InjectionRecordRepository;
@@ -131,6 +133,8 @@ public class AgentAutoConfiguration {
                                PromptRegistry promptRegistry,
                                @Autowired(required = false) MultimodalRouter multimodalRouter,
                                @Autowired(required = false) MediaDataExtractor mediaDataExtractor,
+                               @Autowired(required = false) MediaValidator mediaValidator,
+                               @Autowired(required = false) MediaProcessor mediaProcessor,
                                @Autowired(required = false) WorkingMemory workingMemory,
                                @Autowired(required = false) ConversationHistoryStore conversationHistoryStore,
                                @Autowired(required = false) ConversationViewService conversationViewService,
@@ -147,7 +151,8 @@ public class AgentAutoConfiguration {
                 a2uiProperties != null && a2uiProperties.enabled() ? "已启用" : "未启用");
         return new ReactAgentLoop(contextAssembler, llmRouter, traceRecorder, objectMapper,
                 sessionManager, agentToolProvider, config, promptRegistry,
-                multimodalRouter, mediaDataExtractor, workingMemory, conversationHistoryStore,
+                multimodalRouter, mediaDataExtractor, mediaValidator, mediaProcessor,
+                workingMemory, conversationHistoryStore,
                 conversationViewService, realtimeExtractor, injectionRecordRepository,
                 sessionKnowledgeBaseRepository, knowledgeBaseRepository, a2uiProperties);
     }
