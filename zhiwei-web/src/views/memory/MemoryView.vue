@@ -20,6 +20,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { useMemoryStore } from '@/stores/memory'
 import type { MemorySearchResult } from '@/types'
 import EntityPanel from './EntityPanel.vue'
+import RelationPanel from './RelationPanel.vue'
 
 const store = useMemoryStore()
 
@@ -196,9 +197,7 @@ function clearSearch() {
               <EntityPanel />
             </TabsContent>
             <TabsContent value="relations">
-              <div class="detail-card p-6 text-center text-sm text-muted-foreground">
-                关系查看面板（待实现）
-              </div>
+              <RelationPanel />
             </TabsContent>
             <TabsContent value="conversations">
               <div class="detail-card p-6 text-center text-sm text-muted-foreground">
