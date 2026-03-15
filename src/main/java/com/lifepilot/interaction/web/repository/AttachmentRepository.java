@@ -7,7 +7,11 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * 消息附件数据访问层。
@@ -113,5 +117,69 @@ public class AttachmentRepository {
                 "SELECT COUNT(*) FROM chat_sessions WHERE id = ?",
                 Integer.class, sessionId);
         return count != null && count > 0;
+    }
+
+    /**
+     * 根据消息 ID 查询关联的附件列表。
+     *
+     * @param messageId 消息 ID
+     * @return 附件记录列表
+     */
+    public List<AttachmentRecord> findByMessageId(String messageId) {
+        return jdbcTemplate.query(
+                "SELECT id, session_id, file_name, file_path, file_size, mime_type, url " +
+                        "FROM message_attachments WHERE message_id = ?",
+                (rs, rowNum) -> new AttachmentRecord(
+                        rs.getString("id"),
+                        rs.getString("session_id"),
+                        rs.getString("file_name"),
+                        rs.getString("file_path"),
+                        rs.getLong("file_size"),
+                        rs.getString("mime_type"),
+                        rs.getString("url")
+                ),
+                messageId
+        );
+    }
+
+    /**
+     * 根据多个消息 ID 批量查询附件，按 message_id 分组返回。
+     *
+     * @param messageIds 消息 ID 列表
+     * @return message_id → 附件列表的映射
+     */
+    public Map<String, List<AttachmentRecord>> findByMessageIds(List<String> messageIds) {
+        if (messageIds == null || messageIds.isEmpty()) {
+            return Map.of();
+        }
+        String placeholders = String.join(",", Collections.nCopies(messageIds.size(), "?"));
+        String sql = "SELECT id, message_id, session_id, file_name, file_path, file_size, mime_type, url " +
+                "FROM message_attachments WHERE message_id IN (" + placeholders + ")";
+
+        record Row(String id, String messageId, String sessionId, String fileName,
+                   String filePath, long fileSize, String mimeType, String url) {}
+
+        List<Row> rows = jdbcTemplate.query(sql,
+                (rs, rowNum) -> new Row(
+                        rs.getString("id"),
+                        rs.getString("message_id"),
+                        rs.getString("session_id"),
+                        rs.getString("file_name"),
+                        rs.getString("file_path"),
+                        rs.getLong("file_size"),
+                        rs.getString("mime_type"),
+                        rs.getString("url")
+                ),
+                messageIds.toArray()
+        );
+
+        return rows.stream().collect(Collectors.groupingBy(
+                Row::messageId,
+                Collectors.mapping(
+                        r -> new AttachmentRecord(r.id(), r.sessionId(), r.fileName(),
+                                r.filePath(), r.fileSize(), r.mimeType(), r.url()),
+                        Collectors.toList()
+                )
+        ));
     }
 }
