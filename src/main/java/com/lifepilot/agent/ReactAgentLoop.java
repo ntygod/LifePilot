@@ -563,11 +563,8 @@ public class ReactAgentLoop {
             }
 
             // 从 Generation 元数据提取完成原因
-            String finishReason = null;
             var resultMetadata = chatResponse.getResult().getMetadata();
-            if (resultMetadata != null) {
-                finishReason = resultMetadata.getFinishReason();
-            }
+            String finishReason = resultMetadata.getFinishReason();
 
             var step = new LlmCallStep(
                     stepIndex, timestamp, duration,
@@ -750,8 +747,9 @@ public class ReactAgentLoop {
             TokenUsage tokenUsage = aggregateTokenUsage(traceContext);
 
             // 提取 A2UI 组件
-            var a2uiComponents = lastCollectedA2uiTree != null
-                    ? lastCollectedA2uiTree.components() : null;
+            var cachedTree = lastCollectedA2uiTree;
+            var a2uiComponents = cachedTree != null
+                    ? cachedTree.components() : null;
 
             return new AgentResponse(
                     state.traceId(),
@@ -888,7 +886,9 @@ public class ReactAgentLoop {
                 var extractedFinalContent = extractA2uiContent(finalContent);
                 A2uiComponentTree finalA2uiTree = extractedFinalContent.tree();
                 finalContent = extractedFinalContent.visibleText();
-                lastCollectedA2uiTree = finalA2uiTree != null ? finalA2uiTree : lastCollectedA2uiTree;
+                if (finalA2uiTree != null) {
+                    lastCollectedA2uiTree = finalA2uiTree;
+                }
 
                 if (state.terminationReason() == null) {
                     reasoningSummary = buildReasoningSummary(state, traceContext);
@@ -1611,8 +1611,9 @@ public class ReactAgentLoop {
         if (reasoningSummary != null) {
             doneData.put("reasoningSummary", reasoningSummary);
         }
-        if (lastCollectedA2uiTree != null && !lastCollectedA2uiTree.components().isEmpty()) {
-            doneData.put("a2uiComponents", lastCollectedA2uiTree.components());
+        var cachedA2uiTree = lastCollectedA2uiTree;
+        if (cachedA2uiTree != null && !cachedA2uiTree.components().isEmpty()) {
+            doneData.put("a2uiComponents", cachedA2uiTree.components());
         }
 
         var contents = new ArrayList<Map<String, Object>>();
