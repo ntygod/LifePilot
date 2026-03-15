@@ -2,6 +2,7 @@ package com.lifepilot.memory.config;
 
 import com.lifepilot.knowledge.extract.KnowledgeExtractionPipeline;
 import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.knowledge.rerank.Reranker;
 import com.lifepilot.memory.compression.CompressionService;
 import com.lifepilot.memory.consolidation.ConsolidationPipeline;
 import com.lifepilot.memory.consolidation.EntityDeduplicator;
@@ -370,11 +371,13 @@ public class MemoryAutoConfiguration {
             SemanticMemory semanticMemory,
             EpisodicMemory episodicMemory,
             @Nullable IntentMatcher intentMatcher,
+            @Nullable Reranker reranker,
             JdbcTemplate jdbcTemplate) {
-        log.info("记忆系统: 注册 HybridRetriever, L4 意图匹配={}",
-                intentMatcher != null ? "启用" : "禁用");
+        log.info("记忆系统: 注册 HybridRetriever, L4 意图匹配={}, Reranker={}",
+                intentMatcher != null ? "启用" : "禁用",
+                reranker != null ? "启用" : "禁用");
         var retriever = new HybridRetriever(vectorSearcher, ftsSearcher, graphTraverser,
-                semanticMemory, intentMatcher, properties, jdbcTemplate);
+                semanticMemory, intentMatcher, properties, jdbcTemplate, reranker);
         // 注入写入回调：记忆写入后重置 knownEmpty 短路标记，避免永久短路
         semanticMemory.setWriteCallback(retriever::resetEmptyFlag);
         episodicMemory.setWriteCallback(retriever::resetEmptyFlag);

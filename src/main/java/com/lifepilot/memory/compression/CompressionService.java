@@ -1,5 +1,6 @@
 package com.lifepilot.memory.compression;
 
+import com.lifepilot.llm.LlmRequest;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.memory.episodic.CompressionLevel;
@@ -81,7 +82,7 @@ public class CompressionService {
                 return;
             }
 
-            var response = llmRouter.call(LlmScene.MEMORY_COMPRESSION, prompt, null);
+            var response = llmRouter.call(LlmRequest.of(LlmScene.MEMORY_COMPRESSION, prompt));
             String compressed = response.content();
             Map<String, String> compressedTexts = new HashMap<>();
             for (var msg : compressible) {

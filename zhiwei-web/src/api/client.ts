@@ -4,6 +4,7 @@ import type {
   ChatSession,
   ChatSessionDetail,
   CreateKbRequest,
+  UpdateKbRequest,
   DocumentChunk,
   ErrorResponse,
   KbDocument,
@@ -389,7 +390,50 @@ export const settingsApi = {
   /** 获取所有 Provider 的健康状态 */
   getProviderHealth(): Promise<Record<string, boolean>> {
     return request('/settings/providers/health')
+  },
+
+  /** 获取全局 Reranker 配置 */
+  getRerankerSettings(): Promise<RerankerSettings> {
+    return request('/settings/reranker')
+  },
+
+  /** 更新全局 Reranker 配置 */
+  updateRerankerSettings(settings: RerankerSettingsRequest): Promise<RerankerSettings> {
+    return request('/settings/reranker', {
+      method: 'PUT',
+      body: JSON.stringify(settings)
+    })
   }
+}
+
+/** Reranker 配置响应 */
+export interface RerankerSettings {
+  enabled: boolean
+  type: string
+  model: string
+  topK: number
+  llmMode: string
+  apiProvider: string
+  apiKey: string
+  apiEndpoint: string
+  apiTimeoutMs: number
+  memoryRerankEnabled: boolean
+  memoryRerankTopK: number
+}
+
+/** Reranker 配置请求 */
+export interface RerankerSettingsRequest {
+  enabled?: boolean
+  type?: string
+  model?: string
+  topK?: number
+  llmMode?: string
+  apiProvider?: string
+  apiKey?: string
+  apiEndpoint?: string
+  apiTimeoutMs?: number
+  memoryRerankEnabled?: boolean
+  memoryRerankTopK?: number
 }
 
 /** LLM Provider 管理 API */
@@ -499,6 +543,12 @@ export const knowledgeBaseApi = {
   },
   get(id: string): Promise<KnowledgeBase> {
     return request(`/knowledge-bases/${id}`)
+  },
+  update(id: string, req: UpdateKbRequest): Promise<KnowledgeBase> {
+    return request(`/knowledge-bases/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(req)
+    })
   },
   delete(id: string): Promise<void> {
     return request(`/knowledge-bases/${id}`, { method: 'DELETE' })

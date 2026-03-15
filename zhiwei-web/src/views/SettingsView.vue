@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Cpu, Keyboard, Palette } from 'lucide-vue-next'
+import { Cpu, Keyboard, Palette, Sparkles } from 'lucide-vue-next'
 import MetricCard from '@/components/common/MetricCard.vue'
 import PageContainer from '@/components/layout/PageContainer.vue'
 import PageHeader from '@/components/layout/PageHeader.vue'
@@ -13,6 +13,7 @@ import {
 } from '@/lib/settingsDisplay'
 import SettingsModelsView from '@/views/SettingsModelsView.vue'
 import SettingsPreferencesView from '@/views/SettingsPreferencesView.vue'
+import SettingsRerankerView from '@/views/SettingsRerankerView.vue'
 import SettingsShortcutsView from '@/views/SettingsShortcutsView.vue'
 
 const route = useRoute()
@@ -24,6 +25,7 @@ const viewMap: Record<string, Component> = {
   '/settings/preferences': SettingsPreferencesView,
   '/settings/models': SettingsModelsView,
   '/settings/shortcuts': SettingsShortcutsView,
+  '/settings/reranker': SettingsRerankerView,
 }
 
 const navigationItems = [
@@ -44,6 +46,12 @@ const navigationItems = [
     label: '快捷键',
     description: '查阅现有键盘操作和组合键。',
     icon: Keyboard,
+  },
+  {
+    path: '/settings/reranker',
+    label: '精排设置',
+    description: '全局精排模型、API 配置和记忆精排开关。',
+    icon: Sparkles,
   },
 ] as const
 

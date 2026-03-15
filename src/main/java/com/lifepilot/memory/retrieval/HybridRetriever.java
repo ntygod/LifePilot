@@ -1,5 +1,7 @@
 package com.lifepilot.memory.retrieval;
 
+import com.lifepilot.knowledge.rerank.RerankCandidate;
+import com.lifepilot.knowledge.rerank.Reranker;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.procedural.IntentMatcher;
 import com.lifepilot.memory.semantic.SemanticMemory;
@@ -18,12 +20,14 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
 
 /**
  * 三路混合检索引擎 — 并行执行向量检索、全文搜索、图遍历，通过加权 RRF 融合排序。
@@ -47,6 +51,8 @@ public class HybridRetriever {
     private final MemoryProperties memoryProperties;
     private final JdbcTemplate jdbcTemplate;
     private final ExecutorService virtualThreadExecutor;
+    @Nullable
+    private final Reranker reranker;
 
     /** 最近一次 retrieve() 中 L4 程序记忆匹配结果（线程安全，每次 retrieve 重置）。 */
     private volatile ReasoningSlot lastProcedureSlot;
@@ -60,7 +66,8 @@ public class HybridRetriever {
                            SemanticMemory semanticMemory,
                            @Nullable IntentMatcher intentMatcher,
                            MemoryProperties memoryProperties,
-                           JdbcTemplate jdbcTemplate) {
+                           JdbcTemplate jdbcTemplate,
+                           @Nullable Reranker reranker) {
         this.vectorSearcher = vectorSearcher;
         this.ftsSearcher = ftsSearcher;
         this.graphTraverser = graphTraverser;
@@ -68,6 +75,7 @@ public class HybridRetriever {
         this.intentMatcher = intentMatcher;
         this.memoryProperties = memoryProperties;
         this.jdbcTemplate = jdbcTemplate;
+        this.reranker = reranker;
         this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
     }
 
@@ -195,6 +203,41 @@ public class HybridRetriever {
         }
 
         // 6. 按 entity_id 去重（保留 fusedScore 最高），排序，截取 topK
+        // 5.5 可选精排（Reranker 可用且记忆精排已启用时）
+        var rerankerConfig = memoryProperties.getReranker();
+        if (reranker != null && rerankerConfig.isEnabled()) {
+            try {
+                var candidates = results.stream()
+                        .map(r -> new RerankCandidate(
+                                r.entityId(),
+                                r.name() + " " + (r.description() != null ? r.description() : ""),
+                                r.fusedScore()))
+                        .toList();
+                var reranked = reranker.rerankGeneric(query, candidates, rerankerConfig.getTopK());
+                var resultMap = new HashMap<String, RetrievalResult>();
+                for (var r : results) resultMap.put(r.entityId(), r);
+                results = reranked.stream()
+                        .map(rc -> {
+                            var original = resultMap.get(rc.id());
+                            if (original == null) return null;
+                            return new RetrievalResult(
+                                    original.entityId(), original.entityType(),
+                                    original.name(), original.description(),
+                                    (float) rc.score(), original.scoreBreakdown(),
+                                    original.sourcePath(), original.lastAccessedAt(),
+                                    original.importanceScore(), original.validTo());
+                        })
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toCollection(ArrayList::new));
+                log.debug("记忆精排完成: input={}, output={}", candidates.size(), results.size());
+            } catch (Exception e) {
+                log.warn("记忆精排失败，降级使用未精排结果: {}", e.getMessage());
+            }
+        } else if (rerankerConfig.isEnabled() && reranker == null) {
+            log.warn("记忆精排已启用但 Reranker Bean 不存在，跳过精排");
+        }
+
+        // 6.5 按 entity_id 去重（保留 fusedScore 最高），排序，截取 topK
         Map<String, RetrievalResult> deduped = new HashMap<>();
         for (var result : results) {
             deduped.merge(result.entityId(), result,

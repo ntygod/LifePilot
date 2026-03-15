@@ -1,5 +1,6 @@
 package com.lifepilot.memory.forgetting;
 
+import com.lifepilot.llm.LlmRequest;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.memory.config.MemoryProperties;
@@ -173,7 +174,7 @@ public class ForgettingEngine {
                 && llmRouter != null) {
             try {
                 var prompt = buildCompressionPrompt(entity);
-                var response = llmRouter.call(LlmScene.MEMORY_COMPRESSION, prompt, null);
+                var response = llmRouter.call(LlmRequest.of(LlmScene.MEMORY_COMPRESSION, prompt));
                 var summary = response.content();
                 log.debug("遗忘引擎: 实体压缩成功, id={}, name={}, 摘要长度={}",
                         entity.id(), entity.name(), summary.length());

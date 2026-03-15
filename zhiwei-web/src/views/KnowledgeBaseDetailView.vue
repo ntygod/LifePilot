@@ -27,6 +27,7 @@ import type {
   ProcessingLog,
   TestRetrievalResult,
   UploadFileItem,
+  UpdateKbRequest,
 } from '@/types'
 import { SUPPORTED_TYPES } from '@/utils/fileUtils'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
@@ -74,6 +75,7 @@ const kb = ref<{
   description?: string
   tags?: string[]
   embeddingModel?: string
+  rerankerModel?: string
   updatedAt?: string
 } | null>(null)
 const stats = ref<KbStats | null>(null)
@@ -104,6 +106,9 @@ const isUploading = ref(false)
 const selectedDocIds = ref<Set<string>>(new Set())
 const showBatchDeleteConfirm = ref(false)
 const batchDeleting = ref(false)
+
+const rerankerModelInput = ref('')
+const savingRerankerModel = ref(false)
 
 const acceptTypes = Array.from(SUPPORTED_TYPES)
 
@@ -244,6 +249,7 @@ async function loadData() {
       knowledgeBaseApi.listDocuments(kbId.value),
     ])
     kb.value = kbResponse
+    rerankerModelInput.value = kbResponse.rerankerModel || ''
     stats.value = statsResponse
     documents.value = documentsResponse
   } catch (event: any) {
@@ -447,6 +453,25 @@ async function testRetrieval() {
   }
 }
 
+async function saveRerankerModel() {
+  if (!kbId.value) return
+  savingRerankerModel.value = true
+  try {
+    const value = rerankerModelInput.value.trim()
+    const updated = await knowledgeBaseApi.update(kbId.value, {
+      rerankerModel: value || null,
+    })
+    if (kb.value) {
+      kb.value = { ...kb.value, rerankerModel: updated.rerankerModel }
+    }
+    uiStore.showToast('success', '精排模型已更新')
+  } catch (e: any) {
+    uiStore.showToast('error', e?.message || '保存精排模型失败')
+  } finally {
+    savingRerankerModel.value = false
+  }
+}
+
 function clearDocumentFilters() {
   searchQuery.value = ''
   filterType.value = 'all'
@@ -634,6 +659,7 @@ function clearDocumentFilters() {
 
                       <div class="flex flex-wrap gap-2 text-xs text-muted-foreground">
                         <span class="surface-chip">向量模型：{{ kb.embeddingModel || '未配置' }}</span>
+                        <span class="surface-chip">精排模型：{{ kb.rerankerModel || '使用全局配置' }}</span>
                         <span class="surface-chip">更新于 {{ kb.updatedAt ? formatDate(kb.updatedAt) : '暂无' }}</span>
                         <span class="surface-chip">{{ hasDocumentFilters ? '文档筛选已启用' : '文档筛选未启用' }}</span>
                       </div>
@@ -644,6 +670,27 @@ function clearDocumentFilters() {
                           <span v-for="type in acceptedFileTypes" :key="type" class="surface-chip">
                             {{ type }}
                           </span>
+                        </div>
+                      </div>
+
+                      <div class="space-y-2 border-t border-border/60 pt-4">
+                        <div class="surface-label text-[0.68rem]">精排模型</div>
+                        <div class="flex items-center gap-2">
+                          <Input
+                            v-model="rerankerModelInput"
+                            placeholder="留空使用全局配置"
+                            class="h-8 flex-1 text-xs"
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            class="h-8 text-xs"
+                            :disabled="savingRerankerModel"
+                            @click="saveRerankerModel"
+                          >
+                            {{ savingRerankerModel ? '保存中...' : '保存' }}
+                          </Button>
                         </div>
                       </div>
                     </div>

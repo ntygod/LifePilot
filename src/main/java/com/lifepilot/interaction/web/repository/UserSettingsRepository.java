@@ -141,6 +141,40 @@ public class UserSettingsRepository {
         }
     }
 
+    /**
+     * 读取 Reranker 配置 JSON。
+     *
+     * @return reranker_config_json 列的值，不存在或为空时返回 "{}"
+     */
+    public String getRerankerConfig() {
+        var results = jdbcTemplate.query(
+                "SELECT reranker_config_json FROM user_settings WHERE id = ?",
+                (rs, rowNum) -> rs.getString("reranker_config_json"),
+                DEFAULT_SETTINGS_ID);
+        String json = results.stream().findFirst().orElse(null);
+        if (json == null || json.isBlank()) {
+            return "{}";
+        }
+        return json;
+    }
+
+    /**
+     * 保存 Reranker 配置 JSON。
+     *
+     * <p>如果 user_settings 行不存在，先创建默认行再更新。
+     *
+     * @param json Reranker 配置 JSON 字符串
+     */
+    public void saveRerankerConfig(String json) {
+        // 确保 default 行存在
+        getSettings();
+        String now = Instant.now().toString();
+        jdbcTemplate.update(
+                "UPDATE user_settings SET reranker_config_json = ?, updated_at = ? WHERE id = ?",
+                json, now, DEFAULT_SETTINGS_ID);
+        log.debug("Reranker 配置已保存: json={}", json);
+    }
+
     private java.util.Map<String, String> deserializeSceneProviders(String json) {
         if (json == null || json.isBlank()) {
             return java.util.Map.of();

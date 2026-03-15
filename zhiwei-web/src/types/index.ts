@@ -295,6 +295,7 @@ export interface KnowledgeBase {
   name: string
   description: string
   embeddingModel: string
+  rerankerModel?: string
   documentCount: number
   totalChunks: number
   createdAt: string
@@ -306,6 +307,17 @@ export interface CreateKbRequest {
   name: string
   description: string
   embeddingModel?: string
+}
+
+/** 更新知识库请求 */
+export interface UpdateKbRequest {
+  name?: string
+  description?: string
+  embeddingModel?: string
+  rerankerModel?: string | null
+  chunkingStrategy?: string
+  chunkingConfig?: Record<string, unknown>
+  tags?: string[]
 }
 
 /** 知识库文档 */

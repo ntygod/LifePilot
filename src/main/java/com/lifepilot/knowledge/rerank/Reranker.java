@@ -3,6 +3,7 @@ package com.lifepilot.knowledge.rerank;
 import com.lifepilot.knowledge.model.DocumentSearchResult;
 import org.springframework.lang.Nullable;
 
+import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -35,5 +36,22 @@ public sealed interface Reranker permits LlmReranker, ApiReranker {
     default List<DocumentSearchResult> rerank(String query, List<DocumentSearchResult> candidates,
                                               int topK, @Nullable String modelName) {
         return rerank(query, candidates, topK);
+    }
+
+    /**
+     * 通用精排 — 对任意类型的候选列表进行精排。
+     *
+     * <p>default 实现按原始 score 降序截取 topK，子类应 override 提供实际精排逻辑。
+     *
+     * @param query      查询文本
+     * @param candidates 候选列表
+     * @param topK       返回数量
+     * @return 按精排分数降序排列的候选列表
+     */
+    default List<RerankCandidate> rerankGeneric(String query, List<RerankCandidate> candidates, int topK) {
+        return candidates.stream()
+                .sorted(Comparator.comparingDouble(RerankCandidate::score).reversed())
+                .limit(topK)
+                .toList();
     }
 }

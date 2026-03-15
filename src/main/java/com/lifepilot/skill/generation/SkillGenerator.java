@@ -1,5 +1,6 @@
 package com.lifepilot.skill.generation;
 
+import com.lifepilot.llm.LlmRequest;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.prompt.PromptRegistry;
@@ -83,7 +84,7 @@ public class SkillGenerator {
         // 2. 调用 LLM 生成 SKILL.md
         String rawContent;
         try {
-            var response = llmRouter.call(LlmScene.SKILL_GENERATION, prompt, null);
+            var response = llmRouter.call(LlmRequest.of(LlmScene.SKILL_GENERATION, prompt));
             rawContent = response.content();
         } catch (Exception e) {
             log.error("LLM 调用失败，Skill 生成终止: gap={}, error={}", gap.suggestedId(), e.getMessage());

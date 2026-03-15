@@ -61,6 +61,81 @@ public final class LlmReranker implements Reranker {
         };
     }
 
+    @Override
+    public List<RerankCandidate> rerankGeneric(String query, List<RerankCandidate> candidates, int topK) {
+        if (candidates.isEmpty()) return candidates;
+        try {
+            var scored = scoreCandidatesGeneric(query, candidates);
+            return scored.stream()
+                    .sorted(Comparator.<Map.Entry<RerankCandidate, Double>>comparingDouble(Map.Entry::getValue).reversed())
+                    .limit(topK)
+                    .map(e -> new RerankCandidate(e.getKey().id(), e.getKey().content(), e.getValue()))
+                    .toList();
+        } catch (Exception e) {
+            log.warn("LlmReranker rerankGeneric 失败，降级返回原始结果: {}", e.getMessage());
+            return candidates.stream()
+                    .sorted(Comparator.comparingDouble(RerankCandidate::score).reversed())
+                    .limit(topK)
+                    .toList();
+        }
+    }
+
+    /**
+     * 对通用候选列表进行 Pointwise 评分 — 复用 LLM 评分逻辑。
+     */
+    private List<Map.Entry<RerankCandidate, Double>> scoreCandidatesGeneric(String query,
+                                                                             List<RerankCandidate> candidates) {
+        var scored = new ArrayList<Map.Entry<RerankCandidate, Double>>();
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            var futures = new ArrayList<CompletableFuture<Map.Entry<RerankCandidate, Double>>>();
+            for (var candidate : candidates) {
+                futures.add(CompletableFuture.supplyAsync(() -> {
+                    double score = scoreCandidateGeneric(query, candidate);
+                    return Map.entry(candidate, score);
+                }, executor));
+            }
+            for (var future : futures) {
+                try {
+                    scored.add(future.join());
+                } catch (Exception e) {
+                    if (e.getCause() instanceof LlmUnavailableException lue) throw lue;
+                    log.debug("Pointwise 通用评分异常: {}", e.getMessage());
+                }
+            }
+        }
+        return scored;
+    }
+
+    /**
+     * 评估单个通用候选项的相关性分数。
+     */
+    private double scoreCandidateGeneric(String query, RerankCandidate candidate) {
+        var prompt = promptRegistry.render("knowledge/rerank-pointwise", Map.of(
+                "query", query,
+                "document", truncateContent(candidate.content(), 500)));
+        try {
+            ScoreResponse response = llmRouter.callEntity(
+                    LlmRequest.builder(SCENE, prompt).build(), ScoreResponse.class);
+            if (response != null && response.score() != null) {
+                return Math.max(0.0, Math.min(1.0, response.score()));
+            }
+        } catch (LlmUnavailableException e) {
+            throw e;
+        } catch (Exception e) {
+            log.debug("LLM 通用精排 callEntity 解析失败: error={}", e.getMessage());
+        }
+        // 降级到手动解析
+        try {
+            var response = llmRouter.call(LlmRequest.builder(SCENE, prompt).build());
+            return Double.parseDouble(response.content().trim());
+        } catch (LlmUnavailableException e) {
+            throw e;
+        } catch (Exception e) {
+            log.debug("LLM 通用精排手动解析失败: {}", e.getMessage());
+            return candidate.score();
+        }
+    }
+
     /**
      * Listwise 精排：一次 LLM 调用排序所有候选。
      * 候选数 > listwiseMaxCandidates 时使用滑动窗口分批排序。

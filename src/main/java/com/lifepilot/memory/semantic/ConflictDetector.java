@@ -1,5 +1,6 @@
 package com.lifepilot.memory.semantic;
 
+import com.lifepilot.llm.LlmRequest;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.prompt.PromptRegistry;
@@ -127,7 +128,7 @@ public class ConflictDetector {
                 "entityA", newEntity.textRepresentation(),
                 "entityB", candidate.textRepresentation()
         ));
-        var response = llmRouter.call("knowledge_extraction", prompt, null);
+        var response = llmRouter.call(LlmRequest.of("knowledge_extraction", prompt));
         return response.content().trim().toLowerCase().contains("true");
     }
 
