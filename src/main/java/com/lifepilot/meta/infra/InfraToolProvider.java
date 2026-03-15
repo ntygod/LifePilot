@@ -134,7 +134,9 @@ public class InfraToolProvider implements BuiltinSkillProvider {
         toolRegistry.registerBuiltinTool(buildShellExecTool(shellExecExecutor));
 
         // 浏览器自动化工具（4 个）
-        var navigateExecutor = new BrowserNavigateToolExecutor(browserSessionManager);
+        var textSnapshotCleaner = new TextSnapshotCleaner(
+                properties.getInfra().getBrowser().getTextSnapshotMaxLength());
+        var navigateExecutor = new BrowserNavigateToolExecutor(browserSessionManager, textSnapshotCleaner);
         var clickExecutor = new BrowserClickToolExecutor(browserSessionManager);
         var inputExecutor = new BrowserInputToolExecutor(browserSessionManager);
         var screenshotExecutor = new BrowserScreenshotToolExecutor(browserSessionManager);

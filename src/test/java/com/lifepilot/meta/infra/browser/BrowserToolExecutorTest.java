@@ -28,7 +28,7 @@ class BrowserToolExecutorTest {
 
         @Test
         void navigate_sessionManager为null时返回降级提示() {
-            var executor = new BrowserNavigateToolExecutor(null);
+            var executor = new BrowserNavigateToolExecutor(null, null);
             ToolResult result = executor.execute(buildInput(Map.of("url", "https://example.com")));
 
             assertThat(result.ok()).isFalse();
@@ -68,16 +68,13 @@ class BrowserToolExecutorTest {
             when(manager.isAvailable()).thenReturn(false);
             when(manager.getUnavailableMessage()).thenReturn("浏览器功能未配置，请安装 Playwright");
 
-            var executor = new BrowserNavigateToolExecutor(manager);
+            var executor = new BrowserNavigateToolExecutor(manager, null);
             ToolResult result = executor.execute(buildInput(Map.of("url", "https://example.com")));
 
             assertThat(result.ok()).isFalse();
             assertThat(result.error()).contains("Playwright");
         }
     }
-
-    // ─────────────────────────────────────────────
-    //  Navigate 工具测试
     // ─────────────────────────────────────────────
 
     @Nested
@@ -86,7 +83,7 @@ class BrowserToolExecutorTest {
         @Test
         void execute_缺少url参数返回错误() {
             var manager = mockAvailableManager();
-            var executor = new BrowserNavigateToolExecutor(manager);
+            var executor = new BrowserNavigateToolExecutor(manager, null);
 
             ToolResult result = executor.execute(buildInput(Map.of()));
 
@@ -103,7 +100,7 @@ class BrowserToolExecutorTest {
             when(page.textContent()).thenReturn("Example Domain body text");
             when(page.url()).thenReturn("https://example.com");
 
-            var executor = new BrowserNavigateToolExecutor(manager);
+            var executor = new BrowserNavigateToolExecutor(manager, null);
             ToolResult result = executor.execute(buildInput(Map.of("url", "https://example.com")));
 
             assertThat(result.ok()).isTrue();
@@ -121,7 +118,7 @@ class BrowserToolExecutorTest {
             when(page.textContent()).thenReturn("Body");
             when(page.url()).thenReturn("https://example.com");
 
-            var executor = new BrowserNavigateToolExecutor(manager);
+            var executor = new BrowserNavigateToolExecutor(manager, null);
             ToolResult result = executor.execute(buildInput(Map.of(
                     "url", "https://example.com",
                     "sessionId", "my-session"
@@ -136,7 +133,7 @@ class BrowserToolExecutorTest {
             var manager = mockAvailableManager();
             when(manager.getOrCreatePage("default")).thenThrow(new RuntimeException("连接超时"));
 
-            var executor = new BrowserNavigateToolExecutor(manager);
+            var executor = new BrowserNavigateToolExecutor(manager, null);
             ToolResult result = executor.execute(buildInput(Map.of("url", "https://example.com")));
 
             assertThat(result.ok()).isFalse();
