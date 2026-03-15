@@ -1,227 +1,118 @@
-# WorkflowCreator Skill
+---
+id: builtin.workflow-creator
+name: "工作流创建助手"
+description: "通过对话方式引导用户创建工作流 YAML 定义，支持 10 种步骤类型、4 种触发方式和多种错误处理策略，生成后自动保存到 ~/.zhiwei/workflows/ 目录"
+version: "1.0.0"
+suggested-tools:
+  - builtin.shell.exec
+---
 
-> 本 Skill 帮助用户通过对话方式创建完整的工作流定义，并自动注册到知微系统。
+# 工作流创建指南
 
-## 触发条件
+你是 ZhiWei 的工作流创建助手。当用户需要创建自动化工作流时，通过对话引导用户完成工作流定义，生成 YAML 文件并保存。
 
-用户请求以下内容时自动触发：
-- 创建工作流
-- 新建自动化流程
-- 创建一个 Workflow
-- 定义一个业务流程
+## 创建流程
 
-## 功能概述
+1. 收集基本信息：名称（kebab-case ID + 中文显示名）、描述、用途
+2. 确定触发方式：手动（manual）、定时（cron）、事件（event）、Webhook（webhook）
+3. 设计步骤流程：选择步骤类型、确定执行顺序和依赖关系
+4. 配置输入参数（如需要）：参数名、类型、是否必填、默认值
+5. 配置错误处理策略（如需要）：fail / skip / retry / compensate
+6. 生成 YAML 并保存到 `~/.zhiwei/workflows/{workflowId}.yml`
 
-WorkflowCreator 是一个对话式工作流创建助手，通过引导用户完成以下步骤来创建工作流：
-
-1. 收集基本信息（名称、描述、用途）
-2. 确定触发方式（手动、定时、事件、Webhook）
-3. 设计步骤流程（步骤类型、依赖关系）
-4. 配置输入参数
-5. 配置高级选项（错误处理、超时、重试）
-6. 生成并注册工作流
-
-## 对话流程
-
-### 步骤 1：收集基本信息
-
-询问用户以下问题：
-- 工作流名称（name）：用户希望如何称呼这个工作流？
-- 工作流描述（description）：这个工作流是用来做什么的？
-- 使用场景：什么时候会用到这个工作流？
-
-### 步骤 2：确定触发方式
-
-询问用户工作流应该如何触发：
-
-**选项 A：手动触发**
-- 适用场景：需要用户主动启动的工作流
-- 需要确定：需要哪些输入参数？
-
-**选项 B：定时触发（cron）**
-- 适用场景：周期性执行的任务
-- 需要确定：
-  - 执行频率（每天/每周/每月）
-  - 具体时间点
-  - 提供 cron 表达式示例供用户参考
-
-**选项 C：事件触发（event）**
-- 适用场景：响应系统事件
-- 需要确定：监听什么事件？（如 TodoCreatedEvent）
-
-**选项 D：Webhook 触发**
-- 适用场景：与外部系统集成
-- 需要确定：是否需要签名验证？
-
-### 步骤 3：设计步骤流程
-
-询问用户工作流需要哪些步骤：
-
-1. **需要几个步骤？**
-2. **每个步骤做什么？**
-   - 调用 Skill（skill）
-   - 调用工具（tool）
-   - 调用 LLM 生成内容（llm）
-   - 判断条件（condition）
-   - 循环处理（loop）
-   - 并行执行（parallel）
-   - 发送通知（notify）
-   - 人工审批（approval）
-   - 等待一段时间（wait）
-
-3. **步骤之间的执行顺序？**
-   - 顺序执行
-   - 有条件分支
-   - 需要并行处理
-
-**推荐使用内置工作流模板：**
-- 如果用户不确定如何设计，可以推荐使用内置模板：
-  - 智能内容审核（content-review.yml）
-  - 批量任务处理（batch-task.yml）
-  - 每日待办提醒（daily-reminder.yml）
-  - 定时知识采集（knowledge-collect.yml）
-  - 调研助手（research-assistant.yml）
-  - 多源数据分析（data-insight.yml）
-  - 周报自动生成（weekly-summary.yml）
-  - 习惯追踪周报（habit-tracker.yml）
-
-### 步骤 4：配置输入参数
-
-如果选择手动触发或定时触发，需要定义输入参数：
-
-询问每个参数：
-- 参数名称
-- 参数类型（string / list / number / boolean）
-- 是否必填
-- 默认值（可选）
-- 参数描述
-
-**高级选项：**
-- inputType：前端控件类型（select / text / number / textarea）
-- options：下拉选项（当 inputType 为 select 时）
-- placeholder：输入提示
-- example：示例值
-
-### 步骤 5：配置高级选项
-
-**错误处理策略：**
-- fail：失败时终止工作流（默认）
-- skip：失败时跳过继续执行
-- retry：失败时重试
-- compensate：失败时执行补偿操作
-
-**超时配置：**
-- 步骤级超时：单个步骤的最大执行时间
-- 全局默认超时：在 application.yml 中配置
-
-**重试策略（当 errorStrategy 为 retry 时）：**
-- maxAttempts：最大重试次数
-- initialDelayMs：初始延迟（毫秒）
-- maxDelayMs：最大延迟（毫秒）
-
-### 步骤 6：生成工作流
-
-根据收集的信息生成 YAML 文件：
+## 工作流 YAML 结构
 
 ```yaml
-id: ${workflowId}
-name: ${workflowName}
-description: ${description}
-version: "1.0"
-triggers:
-  - type: ${triggerType}
-    ${triggerConfig}
-inputs:
-${inputsConfig}
-variables:
-${variablesConfig}
-metadata:
-  category: ${category}
-  complexity: ${complexity}
-steps:
-${stepsConfig}
+id: workflow-id          # 唯一标识，kebab-case（必填）
+name: 工作流名称          # 显示名称（必填）
+description: 功能描述     # 可选
+version: "1.0"           # 可选
+triggers:                # 触发器列表
+  - type: manual
+inputs:                  # 输入参数定义
+  paramName:
+    type: string         # string / list / number / boolean
+    required: true
+    defaultValue: "默认值"
+    description: 参数说明
+variables:               # 工作流级常量
+  key: "value"
+tags:                    # 分类标签
+  - "标签"
+steps:                   # 步骤列表（必填，至少一个）
+  - id: step-id
+    name: 步骤名称
+    type: skill
 ```
 
-### 步骤 7：保存并注册
+## 支持的步骤类型
 
-1. 将生成的 YAML 保存到 `~/.zhiwei/workflows/${workflowId}.yml`
-2. 调用校验接口验证语法：`POST /api/workflows/validate`
-3. 通知用户工作流已创建成功
-4. 提供执行方式说明
+| 类型 | 用途 | 关键字段 |
+|------|------|---------|
+| skill | 调用已注册 Skill | skillId, params |
+| tool | 调用工具 | toolId, params |
+| llm | LLM 生成内容 | scene, prompt, capability, modelName |
+| condition | 条件分支 | condition, then, else |
+| loop | 循环遍历 | items, loopVar, body |
+| parallel | 并行执行 | branches |
+| notify | 发送通知 | targetUserId, content, contentType, urgency |
+| approval | 人工审批 | message, approvers, timeoutSeconds |
+| wait | 等待 | durationSeconds |
+| sub-workflow | 调用子工作流 | workflowId, params |
+| noop | 空操作 | （无） |
 
-## 输出格式
+## 触发方式
 
-生成的 YAML 文件示例：
+- 手动触发：`type: manual`
+- 定时触发：`type: cron`，cron 格式为 6 位 `秒 分 时 日 月 周`
+- 事件触发：`type: event`，指定 `eventType`
+- Webhook 触发：`type: webhook`，可选 `secret` 签名密钥
 
-```yaml
-id: daily-news-digest
-name: 每日新闻摘要
-description: 每天自动搜索热点新闻并生成摘要
-version: "1.0"
-triggers:
-  - type: cron
-    cron: "0 30 7 * * *"
-inputs:
-  topic:
-    type: string
-    required: false
-    defaultValue: "今日热点新闻"
-    description: 搜索主题
-  maxResults:
-    type: number
-    required: false
-    defaultValue: 10
-    description: 最大结果数
-tags:
-  - "自动化"
-  - "每日"
-  - "资讯"
-steps:
-  - id: search-news
-    name: 搜索新闻
-    type: tool
-    toolId: web.search
-    params:
-      query: "${inputs.topic}"
-      maxResults: "${inputs.maxResults}"
-  - id: generate-summary
-    name: 生成摘要
-    type: llm
-    scene: workflow
-    prompt: |
-      请根据以下搜索结果生成新闻摘要：
+## 表达式语法
 
-      ${steps.search-news.output.result}
+步骤间通过 `${...}` 传递数据：
 
-      要求：
-      1. 选取最重要的 ${inputs.maxResults} 条新闻
-      2. 每条新闻用 2-3 句话概括
-      3. 按重要性排序
-  - id: send-notification
-    name: 发送通知
-    type: notify
-    targetUserId: "${inputs.userId}"
-    content: "${steps.generate-summary.output.result}"
-    contentType: MARKDOWN
-    urgency: NORMAL
-    errorStrategy:
-      type: skip
-```
+- 输入参数：`${inputs.paramName}`
+- 步骤输出：`${steps.stepId.output.result}`
+- 循环变量：`${loopVar}` / `${loopVar_index}`
+- 工作流变量：`${vars.key}`
+- 内置函数：`len()`, `upper()`, `now()`, `size()`, `min()` 等
 
-## 错误处理
+## 错误处理策略
 
-如果用户提供的需求不完整或存在冲突：
-- 明确指出问题所在
-- 提供具体的修改建议
-- 不要生成可能产生错误的工作流
+每个步骤可配置 `errorStrategy`：
 
-## 参考资料
+- `fail`：失败终止（默认）
+- `skip`：失败跳过，继续后续步骤
+- `retry`：指数退避重试（maxAttempts, initialDelayMs, maxDelayMs）
+- `compensate`：失败时执行补偿步骤
 
-创建工作流时，可以参考知微工作流用户指南：
-- 文档位置：`docs/guides/workflow-guide.md`
-- 包含内容：
-  - 10 种步骤类型详解
-  - 表达式语法与函数
-  - 触发器配置
-  - 错误处理策略
-  - 高级特性
+## 内置模板参考
+
+如果用户不确定如何设计，推荐参考内置模板：
+
+| 模板 | 场景 | 核心步骤类型 |
+|------|------|------------|
+| content-review | 智能内容审核 | condition + approval + llm |
+| batch-task | 批量任务处理 | loop + condition + llm |
+| daily-reminder | 每日待办提醒 | skill + condition + notify |
+| knowledge-collect | 定时知识采集 | loop + tool + llm + skill |
+| research-assistant | 调研助手 | parallel + llm + approval |
+| data-insight | 多源数据分析 | parallel + skill + llm |
+| weekly-summary | 周报自动生成 | parallel + skill + llm |
+| habit-tracker | 习惯追踪周报 | skill + llm + notify |
+
+## 保存与注册
+
+生成的 YAML 保存到 `~/.zhiwei/workflows/{workflowId}.yml`，知微会在 30 秒内自动检测并注册，无需重启。
+
+保存前可调用校验接口验证语法：`POST /api/workflows/validate`
+
+## 注意事项
+
+- 工作流 ID 使用英文 kebab-case，显示名称使用中文
+- cron 表达式使用 6 位格式（含秒）
+- 子工作流最大嵌套深度为 3 层
+- 循环最大迭代次数为 100
+- 步骤默认超时 300 秒
+- 详细语法参考：`docs/guides/workflow-guide.md`
