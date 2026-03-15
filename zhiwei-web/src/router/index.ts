@@ -59,6 +59,15 @@ const router = createRouter({
     },
 
     /**
+     * 记忆管理
+     */
+    {
+      path: '/memories',
+      name: 'memories',
+      component: () => import('@/views/memory/MemoryView.vue')
+    },
+
+    /**
      * Agent & 工作流 / 扩展
      */
     {

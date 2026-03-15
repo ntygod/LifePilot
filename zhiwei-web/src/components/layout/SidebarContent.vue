@@ -6,6 +6,7 @@ import {
   BarChart3,
   BookOpen,
   Bot,
+  Brain,
   ChevronRight,
   GitBranch,
   MessageSquare,
@@ -74,6 +75,12 @@ const navSections: Array<{ title: string; items: NavItem[] }> = [
         label: '知识库',
         icon: BookOpen,
         path: '/knowledge-bases',
+      },
+      {
+        id: 'memories',
+        label: '记忆管理',
+        icon: Brain,
+        path: '/memories',
       },
       {
         id: 'workspace',
