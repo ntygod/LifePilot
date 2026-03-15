@@ -30,7 +30,7 @@ public class MediaDataExtractor {
     private static final int MIN_MEDIA_LENGTH = 1000;
 
     /** 媒体字段替换后的占位符。 */
-    public static final String PLACEHOLDER = "[已通过媒体事件发送到前端]";
+    public static final String PLACEHOLDER = "[截图已成功获取，图片数据已嵌入到本次对话中供视觉分析]";
 
     private final ObjectMapper objectMapper;
 

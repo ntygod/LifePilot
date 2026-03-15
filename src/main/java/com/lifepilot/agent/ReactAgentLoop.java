@@ -692,6 +692,57 @@ public class ReactAgentLoop {
                 .orElse("");
     }
 
+    /**
+     * 将完整消息列表序列化为文本，供多模态路由使用。
+     *
+     * <p>多模态路由最终调用 adapter.callWithMedia(text, images)，只接受单个 text 参数。
+     * 当存在工具调用历史时，仅传递用户原始文本会导致 LLM 丢失上下文。
+     * 此方法将 SystemMessage、UserMessage（纯文本部分）、AssistantMessage（含 tool call）
+     * 和 ToolResponseMessage 序列化为结构化文本，确保视觉模型拥有完整推理上下文。</p>
+     *
+     * @param messages Spring AI 消息列表
+     * @return 包含完整对话上下文的文本
+     */
+    private String buildConversationContextText(List<Message> messages) {
+        // 如果没有工具调用历史，直接返回用户文本即可
+        boolean hasToolHistory = messages.stream().anyMatch(m -> m instanceof ToolResponseMessage);
+        if (!hasToolHistory) {
+            return extractUserText(messages);
+        }
+
+        var sb = new StringBuilder();
+        for (var msg : messages) {
+            switch (msg) {
+                case SystemMessage sm -> {
+                    sb.append("[系统指令]\n").append(sm.getText()).append("\n\n");
+                }
+                case UserMessage um -> {
+                    sb.append("[用户消息]\n").append(um.getText()).append("\n\n");
+                }
+                case AssistantMessage am -> {
+                    if (am.hasToolCalls()) {
+                        for (var tc : am.getToolCalls()) {
+                            sb.append("[工具调用] ").append(tc.name())
+                                    .append("\n参数: ").append(tc.arguments()).append("\n\n");
+                        }
+                    }
+                    String text = am.getText();
+                    if (text != null && !text.isBlank()) {
+                        sb.append("[助手思考]\n").append(text).append("\n\n");
+                    }
+                }
+                case ToolResponseMessage trm -> {
+                    for (var resp : trm.getResponses()) {
+                        sb.append("[工具结果] ").append(resp.name())
+                                .append("\n").append(resp.responseData()).append("\n\n");
+                    }
+                }
+                default -> { /* 忽略其他消息类型 */ }
+            }
+        }
+        return sb.toString().strip();
+    }
+
     // ===== 多模态辅助方法 =====
 
     /** 判断请求是否包含多模态内容。 */
@@ -1105,7 +1156,7 @@ public class ReactAgentLoop {
                         : extractMediaContentsFromMessages(messages);
                 var multimodalRequest = new MultimodalRequest(
                         scene,
-                        extractUserText(messages),
+                        buildConversationContextText(messages),
                         mediaContents,
                         null,
                         req.preferredProvider(),
@@ -1212,7 +1263,7 @@ public class ReactAgentLoop {
                         : extractMediaContentsFromMessages(messages);
                 var multimodalRequest = new MultimodalRequest(
                         scene,
-                        extractUserText(messages),
+                        buildConversationContextText(messages),
                         mediaContents,
                         null,
                         req.preferredProvider(),
