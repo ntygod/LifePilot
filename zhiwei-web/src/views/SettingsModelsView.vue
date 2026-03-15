@@ -76,11 +76,13 @@ const defaultProviderLabel = computed(() => {
   const provider = providers.value.find(item => item.id === defaultProvider.value)
   return provider?.displayName || provider?.id || defaultProvider.value || '未设置'
 })
+const VALID_SCENES = new Set(SCENE_ORDER)
+
 const availableScenes = computed(() => {
   const seen = new Set<string>()
   for (const provider of providers.value) {
     for (const scene of provider.scenes ?? []) {
-      if (scene) seen.add(scene)
+      if (scene && VALID_SCENES.has(scene)) seen.add(scene)
     }
   }
 
