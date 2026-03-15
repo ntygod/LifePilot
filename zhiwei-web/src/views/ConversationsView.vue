@@ -334,9 +334,6 @@ async function batchDelete() {
             <div class="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
               <div class="space-y-1">
                 <div class="surface-label">筛选与整理</div>
-                <p class="text-sm leading-6 text-muted-foreground">
-                  先搜标题或最近消息，再根据置顶状态和更新时间缩小范围。
-                </p>
               </div>
 
               <div class="flex flex-wrap gap-2 text-xs">
@@ -425,7 +422,7 @@ async function batchDelete() {
             <div>
               <h2 class="text-lg font-semibold text-foreground">全部会话</h2>
               <p class="text-sm text-muted-foreground">
-                {{ showArchived ? '当前显示归档内容，可回看但不打扰日常工作。' : '按更新时间和置顶状态排序，方便继续往前处理。' }}
+                {{ showArchived ? '当前显示归档内容，可回看但不打扰日常工作。' : '按更新时间和置顶状态排序' }}
               </p>
             </div>
             <div class="text-sm text-muted-foreground">{{ filteredSessions.length }} 条结果</div>

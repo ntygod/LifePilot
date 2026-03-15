@@ -96,19 +96,19 @@ const summaryItems = computed(() => [
   },
   {
     key: 'tokens',
-    label: '词元总量',
+    label: 'token总量',
     value: formatNumber(stats.value?.totalTokens),
-    note: '输入与输出词元合计',
+    note: '输入与输出token合计',
   },
   {
     key: 'input',
-    label: '输入词元',
+    label: '输入token',
     value: formatNumber(stats.value?.inputTokens),
     note: '用户消息与上下文消耗',
   },
   {
     key: 'output',
-    label: '输出词元',
+    label: '输出token',
     value: formatNumber(stats.value?.outputTokens),
     note: '模型返回内容消耗',
   },
@@ -125,7 +125,7 @@ const digestItems = computed(() => [
     note: errorTrend.value.length > 0 ? '可继续查看错误集中出现的日期。' : '当前还没有错误趋势数据。',
   },
   {
-    label: '词元结构',
+    label: 'token结构',
     value: `输入 ${formatNumber(stats.value?.inputTokens)} / 输出 ${formatNumber(stats.value?.outputTokens)}`,
     note: '用这个比例大致判断当前请求更偏输入还是输出。',
   },
@@ -393,7 +393,7 @@ onMounted(() => {
         <PageHeader
           eyebrow="用量分析"
           title="用量概览"
-          description="查看请求量、词元消耗、成本估算和错误趋势。"
+          description="查看请求量、token消耗、成本估算和错误趋势。"
         >
           <template #actions>
             <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/55 px-4 py-4 text-sm">
@@ -449,7 +449,7 @@ onMounted(() => {
         <StatePanel
           v-if="showInitialLoading"
           title="正在汇总用量数据"
-          description="正在加载当前时间范围内的请求量、词元数据和错误趋势。"
+          description="正在加载当前时间范围内的请求量、token数据和错误趋势。"
         >
           <template #icon>
             <TrendingUp class="size-5" />
@@ -474,8 +474,8 @@ onMounted(() => {
 
         <PageSection
           eyebrow="每日用量"
-          title="请求与词元走势"
-          description="先看工作量如何分布，再决定是否需要继续拆到会话、智能体或工具层级。"
+          title="请求与token走势"
+          description="工作量分布情况"
           variant="plain"
         >
           <StatePanel
@@ -493,7 +493,7 @@ onMounted(() => {
               <div class="mb-4 flex items-center justify-between gap-3">
                 <div>
                   <div class="text-sm font-medium text-foreground">按天分布</div>
-                  <p class="text-xs text-muted-foreground">柱高按每日词元总量归一化。</p>
+                  <p class="text-xs text-muted-foreground">柱高按每日token总量归一化。</p>
                 </div>
                 <div class="text-xs text-muted-foreground">
                   共 {{ dailyStats.length }} 天
@@ -509,7 +509,7 @@ onMounted(() => {
                   <div
                     class="w-full min-w-0 rounded-t-xl bg-primary/80 transition-colors hover:bg-primary"
                     :style="{ height: getBarHeight(day.tokens) }"
-                    :title="`${day.date}: ${formatNumber(day.tokens)} 词元 / ${formatNumber(day.requests)} 次请求`"
+                    :title="`${day.date}: ${formatNumber(day.tokens)} token / ${formatNumber(day.requests)} 次请求`"
                   />
                   <span class="w-full truncate text-center text-[10px] text-muted-foreground">
                     {{ day.date.slice(5) }}
@@ -529,7 +529,7 @@ onMounted(() => {
                         {{ day.date }}
                       </div>
                       <div class="text-xs text-muted-foreground">
-                        {{ formatNumber(day.requests) }} 次请求 · {{ formatNumber(day.tokens) }} 词元
+                        {{ formatNumber(day.requests) }} 次请求 · {{ formatNumber(day.tokens) }} token
                       </div>
                     </div>
                     <div class="text-right">
@@ -553,7 +553,7 @@ onMounted(() => {
                     {{ peakUsageDay?.date || '暂无' }}
                   </div>
                   <p class="text-sm leading-6 text-muted-foreground">
-                    {{ peakUsageDay ? `${formatNumber(peakUsageDay.tokens)} 词元 / ${formatNumber(peakUsageDay.requests)} 次请求` : '恢复后会显示当前时间范围内的高峰日。' }}
+                    {{ peakUsageDay ? `${formatNumber(peakUsageDay.tokens)} token / ${formatNumber(peakUsageDay.requests)} 次请求` : '恢复后会显示当前时间范围内的高峰日。' }}
                   </p>
                 </div>
 
@@ -565,7 +565,7 @@ onMounted(() => {
                     {{ formatCost(stats?.estimatedCost) }}
                   </div>
                   <p class="text-sm leading-6 text-muted-foreground">
-                    当前按照词元总量做粗略估算，适合快速看趋势，不适合作为结算口径。
+                    当前按照token总量做粗略估算，适合快速看趋势，不适合作为结算口径。
                   </p>
                 </div>
 

@@ -441,7 +441,7 @@ onMounted(() => {
                   <th class="px-4 py-3 text-right font-medium text-foreground">调用次数</th>
                   <th class="px-4 py-3 text-right font-medium text-foreground">平均响应时间</th>
                   <th class="px-4 py-3 text-right font-medium text-foreground">失败率</th>
-                  <th class="px-4 py-3 text-right font-medium text-foreground">总词元</th>
+                  <th class="px-4 py-3 text-right font-medium text-foreground">总token</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-border/70">

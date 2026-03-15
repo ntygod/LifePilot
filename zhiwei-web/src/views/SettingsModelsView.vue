@@ -333,8 +333,8 @@ function formatCost(inputCost: number, outputCost: number) {
     return '免费'
   }
 
-  const input = inputCost > 0 ? `$${(inputCost / 10000).toFixed(2)} / 每 100 万输入词元` : ''
-  const output = outputCost > 0 ? `$${(outputCost / 10000).toFixed(2)} / 每 100 万输出词元` : ''
+  const input = inputCost > 0 ? `$${(inputCost / 10000).toFixed(2)} / 每 100 万输入token` : ''
+  const output = outputCost > 0 ? `$${(outputCost / 10000).toFixed(2)} / 每 100 万输出token` : ''
   return [input, output].filter(Boolean).join(' | ') || '免费'
 }
 
@@ -705,7 +705,7 @@ const deleteConfirmMessage = computed(() => {
                           <div class="space-y-1">
                             <div class="text-xs text-muted-foreground">上下文窗口</div>
                             <div class="text-sm leading-6 text-foreground">
-                              {{ provider.maxContextWindow ? `${provider.maxContextWindow.toLocaleString()} 词元` : '未设置' }}
+                              {{ provider.maxContextWindow ? `${provider.maxContextWindow.toLocaleString()} token` : '未设置' }}
                             </div>
                           </div>
                         </div>

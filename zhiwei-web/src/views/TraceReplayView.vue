@@ -171,9 +171,9 @@ const detailItems = computed(() => [
     description: '当前已捕获的回放步骤。',
   },
   {
-    label: '词元数',
+    label: 'token数',
     value: currentTokens.value.toLocaleString(),
-    description: '本次运行的总词元用量。',
+    description: '本次运行的总token用量。',
   },
   {
     label: '耗时',
@@ -210,7 +210,7 @@ const evaluationItems = computed(() => {
     { key: 'parameterValidityScore', label: '参数有效性', value: store.evaluation.parameterValidityScore },
     { key: 'stepEfficiencyScore', label: '步骤效率', value: store.evaluation.stepEfficiencyScore },
     { key: 'policyComplianceScore', label: '策略合规性', value: store.evaluation.policyComplianceScore },
-    { key: 'tokenEfficiencyScore', label: '词元效率', value: store.evaluation.tokenEfficiencyScore },
+    { key: 'tokenEfficiencyScore', label: 'token效率', value: store.evaluation.tokenEfficiencyScore },
   ]
 })
 
@@ -671,7 +671,7 @@ async function handleRetryServiceCheck() {
 
                       <div class="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
                         <span>{{ trace.totalSteps }} 步</span>
-                        <span>{{ trace.totalTokens.toLocaleString() }} 词元</span>
+                        <span>{{ trace.totalTokens.toLocaleString() }} token</span>
                         <span>{{ formatDuration(trace.durationMs) }}</span>
                         <span class="font-mono">{{ trace.sessionId }}</span>
                       </div>
@@ -905,7 +905,7 @@ async function handleRetryServiceCheck() {
                     <span class="text-foreground">{{ store.evaluation.actualSteps }}</span>
                   </div>
                   <div class="flex items-center justify-between gap-3">
-                    <span>实际词元数</span>
+                    <span>实际token数</span>
                     <span class="text-foreground">{{ store.evaluation.actualTokens }}</span>
                   </div>
                   <div class="flex items-center justify-between gap-3">
@@ -973,7 +973,7 @@ async function handleRetryServiceCheck() {
                         <div class="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
                           <span>{{ step.phaseBefore }} → {{ step.phaseAfter }}</span>
                           <span>{{ formatDuration(step.latencyMs) }}</span>
-                          <span>{{ step.tokensUsed.toLocaleString() }} 词元</span>
+                          <span>{{ step.tokensUsed.toLocaleString() }} token</span>
                           <span>{{ formatDate(step.createdAt) }}</span>
                         </div>
 
@@ -1030,7 +1030,7 @@ async function handleRetryServiceCheck() {
                             <span class="text-foreground">{{ formatDuration(step.latencyMs) }}</span>
                           </div>
                           <div class="flex items-center justify-between gap-3">
-                            <span>词元数</span>
+                            <span>token数</span>
                             <span class="text-foreground">{{ step.tokensUsed.toLocaleString() }}</span>
                           </div>
                         </div>

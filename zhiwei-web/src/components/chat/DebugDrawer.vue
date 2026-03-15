@@ -23,8 +23,8 @@ const toolSuccessCount = computed(() => props.toolsSummary.filter(item => item.s
 const modelSummary = computed(() => props.modelId || '发送消息后显示')
 const tokenSummary = computed(() => (
   props.tokenUsage
-    ? `总词元 ${props.tokenUsage.totalTokens}`
-    : '发送后会补充词元统计'
+    ? `总token ${props.tokenUsage.totalTokens}`
+    : '发送后会补充token统计'
 ))
 const toolSummary = computed(() => (
   props.toolsSummary.length > 0
@@ -53,7 +53,7 @@ function toggle(key: keyof typeof sections.value) {
 <template>
   <InspectorRail
     title="对话详情"
-    description="查看本轮对话使用的模型、词元和知识库命中情况。"
+    description="查看本轮对话使用的模型、token和知识库命中情况。"
     @close="emit('close')"
   >
     <template #eyebrow>
@@ -65,7 +65,7 @@ function toggle(key: keyof typeof sections.value) {
         <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/58 px-4 py-3">
           <div class="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
             <Cpu class="size-4 text-primary" />
-            模型与词元
+            模型与token
           </div>
           <p class="text-sm text-muted-foreground">{{ modelSummary }}</p>
           <p class="mt-1 text-xs text-muted-foreground">{{ tokenSummary }}</p>
@@ -97,7 +97,7 @@ function toggle(key: keyof typeof sections.value) {
           <span class="flex items-center gap-2">
             <component :is="sections.token ? ChevronDown : ChevronRight" class="size-4 text-muted-foreground" />
             <Cpu class="size-4 text-primary" />
-            <span>模型与词元</span>
+            <span>模型与token</span>
           </span>
           <span class="surface-chip">{{ tokenUsage ? '已记录' : '等待本轮消息' }}</span>
         </button>
@@ -105,7 +105,7 @@ function toggle(key: keyof typeof sections.value) {
           <template v-if="tokenUsage">
             <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/55 px-3 py-3">
               <p>模型：{{ modelId || '未知模型' }}</p>
-              <p>总词元：{{ tokenUsage.totalTokens }}</p>
+              <p>总token：{{ tokenUsage.totalTokens }}</p>
               <p>提示 {{ tokenUsage.promptTokens }} / 回答 {{ tokenUsage.completionTokens }}</p>
             </div>
           </template>

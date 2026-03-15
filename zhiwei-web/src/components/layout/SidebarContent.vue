@@ -250,7 +250,7 @@ const pinnedSessionCount = computed(() => chatStore.sessions.filter(session => s
           <div class="space-y-1">
             <div class="text-sm font-semibold text-foreground">知微</div>
             <p class="text-xs leading-5 text-muted-foreground">
-              常用入口、最近对话和设置都留在左侧，方便随时切换工作上下文。
+              见微知著，知微知所。
             </p>
           </div>
           <div class="flex flex-wrap gap-2 text-[11px]">
@@ -280,7 +280,6 @@ const pinnedSessionCount = computed(() => chatStore.sessions.filter(session => s
         <div class="flex items-center justify-between px-2">
           <div>
             <div class="nav-section-title">最近会话</div>
-            <p class="mt-1 text-xs text-muted-foreground">直接回到最近处理中或需要接手的上下文。</p>
           </div>
         </div>
 

@@ -62,7 +62,7 @@ const previewSummaryItems = computed(() => [
   { label: '主题', value: previewTheme.value },
   { label: '密度', value: getDensityDisplayLabel(form.value.layoutDensity) },
   { label: '字号', value: getFontSizeDisplayLabel(form.value.fontSize) },
-  { label: '词元显示', value: form.value.showTokenUsage ? '显示' : '隐藏' },
+  { label: 'token显示', value: form.value.showTokenUsage ? '显示' : '隐藏' },
 ])
 
 onMounted(async () => {
@@ -270,8 +270,8 @@ const timeFormatOptions = [
             </SettingItem>
           </SettingSection>
 
-          <SettingSection title="阅读习惯" description="控制词元显示、代码块展开和长回复折叠。">
-            <SettingItem label="显示词元用量" description="在支持的页面显示提示词和回复的词元统计。">
+          <SettingSection title="阅读习惯" description="控制token显示、代码块展开和长回复折叠。">
+            <SettingItem label="显示token用量" description="在支持的页面显示提示词和回复的token统计。">
               <Switch
                 :model-value="form.showTokenUsage"
                 @update:model-value="(value) => updateBooleanSetting('showTokenUsage', value)"

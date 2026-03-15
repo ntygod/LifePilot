@@ -220,9 +220,6 @@ function clearFilters() {
                 <h1 class="text-3xl font-semibold tracking-tight text-foreground">
                   知识库
                 </h1>
-                <p class="max-w-[50rem] text-sm leading-7 text-muted-foreground">
-                  先看知识资产的规模和最近活跃度，再进入单个知识库继续管理文档、分块和检索效果。
-                </p>
               </div>
             </div>
 
@@ -281,7 +278,6 @@ function clearFilters() {
         <PageSection
           eyebrow="筛选"
           title="查找知识库"
-          description="先按名称和更新时间缩小范围，再决定要继续补文档还是检查检索质量。"
         >
           <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
             <div class="space-y-4">
@@ -389,7 +385,7 @@ function clearFilters() {
         <PageSection
           eyebrow="目录"
           title="全部知识库"
-          :description="hasFilters ? '结果已按关键字或更新时间过滤。' : '先在目录里判断哪个知识库最近活跃，再点进去继续处理。'"
+          :description="hasFilters ? '结果已按关键字或更新时间过滤。' : ''"
         >
           <div v-if="store.loading" class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             <div

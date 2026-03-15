@@ -168,9 +168,6 @@ function formatDate(dateStr: string) {
             <div class="max-w-3xl space-y-2">
               <div class="surface-label">智能体</div>
               <h1 class="text-3xl font-semibold tracking-tight text-foreground">智能体目录</h1>
-              <p class="text-sm leading-6 text-muted-foreground">
-                先看哪些智能体正在工作、接了多少知识，再决定进入详情页继续改模型、工具或知识库配置。
-              </p>
             </div>
 
             <Button type="button" @click="showCreateDialog = true">

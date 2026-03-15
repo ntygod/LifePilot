@@ -564,7 +564,7 @@ function goBack() {
               </PageSection>
 
               <div class="grid gap-5 2xl:grid-cols-2">
-                <PageSection eyebrow="模型" title="推理参数" description="调整模型、最大词元数和采样参数。">
+                <PageSection eyebrow="模型" title="推理参数" description="调整模型、最大token数和采样参数。">
                   <div class="grid gap-4">
                     <div class="space-y-2">
                       <Label>模型</Label>
@@ -580,7 +580,7 @@ function goBack() {
                       </Select>
                     </div>
                     <div class="space-y-2">
-                      <Label>最大词元数</Label>
+                      <Label>最大token数</Label>
                       <Input v-model.number="llmConfig.maxTokens" type="number" :min="1" @change="saveLlmConfig" />
                     </div>
                     <div class="space-y-3">
@@ -608,7 +608,7 @@ function goBack() {
                           <div class="text-sm font-medium text-foreground">{{ knowledgeBase.name }}</div>
                           <div class="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
                             <span class="surface-chip">Top-K {{ knowledgeBase.topK || 5 }}</span>
-                            <span class="surface-chip">最大上下文 {{ knowledgeBase.maxContextTokens || 2000 }} 词元</span>
+                            <span class="surface-chip">最大上下文 {{ knowledgeBase.maxContextTokens || 2000 }} token</span>
                           </div>
                         </div>
                         <Badge variant="outline">已关联</Badge>
@@ -714,7 +714,7 @@ function goBack() {
                   type="number"
                   :min="100"
                   :max="10000"
-                  placeholder="最大词元数"
+                  placeholder="最大token数"
                   class="w-full sm:w-32"
                   @update:model-value="(value: string | number) => { const found = selectedKbs.find(item => item.id === knowledgeBase.id); if (found) found.maxContextTokens = Number(value) }"
                 />

@@ -370,7 +370,7 @@ watch(
                           分块 #{{ chunk.chunkIndex + 1 }}
                         </h3>
                         <Badge variant="outline">
-                          {{ chunk.tokenCount }} 词元
+                          {{ chunk.tokenCount }} token
                         </Badge>
                         <Badge v-if="chunk.pageNumber" variant="outline">
                           第 {{ chunk.pageNumber }} 页
@@ -484,7 +484,7 @@ watch(
                           分块 #{{ chunk.chunkIndex + 1 }}
                         </span>
                         <span class="text-xs text-muted-foreground">
-                          {{ chunk.tokenCount }} 词元
+                          {{ chunk.tokenCount }} token
                         </span>
                       </div>
                       <p class="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
