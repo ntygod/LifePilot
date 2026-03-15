@@ -15,10 +15,12 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * 向量索引服务 — 批量向量化分块并存入 sqlite-vec。
+ * 向量索引服务 — 批量向量化分块并存入 sqlite-vec（vectors.db）。
  *
- * <p>使用 {@link LlmRouter#embed(String)} 生成向量，批量写入 chunk_embeddings 表。
- * 失败时指数退避重试，最多重试 {@code maxRetries} 次。
+ * <p>向量数据存储在独立的 vectors.db 中（通过 vectorJdbcTemplate），
+ * 文档分块元数据存储在主数据库中（通过 mainJdbcTemplate）。
+ * 检索时采用两步查询：先在 vectors.db 中做 KNN 搜索拿到 chunk_id + distance，
+ * 再回主库查 document_chunks 详情。
  *
  * @author zsg
  * @since 2026-02-25
@@ -28,68 +30,71 @@ public class VectorIndexer {
     private static final Logger log = LoggerFactory.getLogger(VectorIndexer.class);
 
     private final LlmRouter llmRouter;
-    private final JdbcTemplate jdbcTemplate;
+    /** 向量数据库 JdbcTemplate（vectors.db，已加载 sqlite-vec 扩展） */
+    private final JdbcTemplate vectorJdbcTemplate;
+    /** 主数据库 JdbcTemplate（zhiwei.db，存储 document_chunks 等业务表） */
+    private final JdbcTemplate mainJdbcTemplate;
     private final KnowledgeBaseProperties.VectorIndexer config;
 
     /**
      * 构造向量索引服务。
      *
-     * @param llmRouter    LLM 路由器（用于 Embedding）
-     * @param jdbcTemplate JDBC 模板
-     * @param config       向量索引配置
+     * @param llmRouter          LLM 路由器（用于 Embedding）
+     * @param vectorJdbcTemplate 向量数据库 JdbcTemplate（vectors.db）
+     * @param mainJdbcTemplate   主数据库 JdbcTemplate（zhiwei.db）
+     * @param config             向量索引配置
      */
-    public VectorIndexer(LlmRouter llmRouter, JdbcTemplate jdbcTemplate,
+    public VectorIndexer(LlmRouter llmRouter,
+                         JdbcTemplate vectorJdbcTemplate,
+                         JdbcTemplate mainJdbcTemplate,
                          KnowledgeBaseProperties.VectorIndexer config) {
         this.llmRouter = llmRouter;
-        this.jdbcTemplate = jdbcTemplate;
+        this.vectorJdbcTemplate = vectorJdbcTemplate;
+        this.mainJdbcTemplate = mainJdbcTemplate;
         this.config = config;
 
-        // 程序化创建 chunk_embeddings vec0 虚拟表（sqlite-vec 可用时）
+        // 在 vectors.db 中创建 chunk_embeddings vec0 虚拟表
         initVec0Table();
 
-        log.info("VectorIndexer 初始化完成: batchSize={}, maxRetries={}, dimension={}",
+        log.info("VectorIndexer 初始化完成: batchSize={}, maxRetries={}, dimension={}, db=vectors.db",
                 config.batchSize(), config.maxRetries(), config.embeddingDimension());
     }
 
     /**
-     * 程序化创建 chunk_embeddings vec0 虚拟表，sqlite-vec 不可用时跳过。
+     * 在 vectors.db 中创建 chunk_embeddings vec0 虚拟表，sqlite-vec 不可用时跳过。
      *
      * <p>如果表已存在但维度与配置不一致，自动删除并重建（数据需重新索引）。
      */
     private void initVec0Table() {
         int targetDim = config.embeddingDimension();
         try {
-            // 检测已有表的维度是否匹配：插入零向量探测，失败说明维度不一致
             boolean needRecreate = false;
             try {
-                // 先尝试创建（如果表不存在则直接成功）
-                jdbcTemplate.execute(
+                vectorJdbcTemplate.execute(
                         "CREATE VIRTUAL TABLE IF NOT EXISTS chunk_embeddings USING vec0(" +
                         "chunk_id TEXT PRIMARY KEY, " +
                         "embedding float[" + targetDim + "]" +
                         ")");
-                // 表存在后，用零向量探测维度是否匹配
+                // 用零向量探测维度是否匹配
                 float[] probe = new float[targetDim];
                 String probeVector = vectorToString(probe);
-                jdbcTemplate.update(
+                vectorJdbcTemplate.update(
                         "INSERT INTO chunk_embeddings (chunk_id, embedding) VALUES (?, ?)",
                         "__dim_probe__", probeVector);
-                // 探测成功，维度匹配，清理探测数据
-                jdbcTemplate.update("DELETE FROM chunk_embeddings WHERE chunk_id = ?", "__dim_probe__");
+                vectorJdbcTemplate.update("DELETE FROM chunk_embeddings WHERE chunk_id = ?", "__dim_probe__");
             } catch (Exception probeEx) {
                 String msg = probeEx.getMessage() != null ? probeEx.getMessage() : "";
                 if (msg.contains("dimension") || msg.contains("Expected")) {
                     log.warn("向量索引: 检测到维度不匹配，将删除并重建 chunk_embeddings 表 (目标维度={})", targetDim);
                     needRecreate = true;
                 } else {
-                    // 其他错误（如 sqlite-vec 未加载），直接抛出
                     throw probeEx;
                 }
             }
 
             if (needRecreate) {
-                jdbcTemplate.execute("DROP TABLE IF EXISTS chunk_embeddings");
-                jdbcTemplate.execute(
+                vectorJdbcTemplate.execute("DROP TABLE IF EXISTS chunk_embeddings");
+                vectorJdbcTemplate.execute(
                         "CREATE VIRTUAL TABLE chunk_embeddings USING vec0(" +
                         "chunk_id TEXT PRIMARY KEY, " +
                         "embedding float[" + targetDim + "]" +
@@ -106,10 +111,8 @@ public class VectorIndexer {
     /**
      * 批量向量化分块并写入索引。
      *
-     * <p>按 batchSize 分批调用 Embedding API，每个分块使用 {@link DocumentChunk#embeddingText()}
-     * 作为输入。失败时指数退避重试。
-     *
-     * @param chunks 待索引的分块列表
+     * @param chunks         待索引的分块列表
+     * @param embeddingModel 嵌入模型名称（可选）
      * @return 索引结果
      * @throws IndexingException 所有重试均失败
      */
@@ -121,7 +124,6 @@ public class VectorIndexer {
         long startTime = System.currentTimeMillis();
         int totalIndexed = 0;
 
-        // 按 batchSize 分批处理
         for (int i = 0; i < chunks.size(); i += config.batchSize()) {
             int end = Math.min(i + config.batchSize(), chunks.size());
             var batch = chunks.subList(i, end);
@@ -146,32 +148,38 @@ public class VectorIndexer {
         }
         var placeholders = chunkIds.stream().map(id -> "?").collect(Collectors.joining(","));
         var sql = "DELETE FROM chunk_embeddings WHERE chunk_id IN (" + placeholders + ")";
-        jdbcTemplate.update(sql, chunkIds.toArray());
+        vectorJdbcTemplate.update(sql, chunkIds.toArray());
         log.debug("删除向量索引: count={}", chunkIds.size());
     }
 
     /**
      * 删除指定文档的所有向量索引。
      *
+     * <p>先从主库查询该文档的所有分块 ID，再从 vectors.db 中删除对应向量。
+     *
      * @param documentId 文档 ID
      */
     public void removeByDocumentId(String documentId) {
-        // 通过子查询找到该文档的所有分块 ID 并删除
-        var sql = """
-                DELETE FROM chunk_embeddings
-                WHERE chunk_id IN (
-                    SELECT id FROM document_chunks WHERE document_id = ?
-                )""";
-        int deleted = jdbcTemplate.update(sql, documentId);
-        log.debug("删除文档向量索引: documentId={}, deleted={}", documentId, deleted);
+        // 第一步：从主库查询该文档的所有分块 ID
+        List<String> chunkIds = mainJdbcTemplate.queryForList(
+                "SELECT id FROM document_chunks WHERE document_id = ?",
+                String.class, documentId);
+        if (chunkIds.isEmpty()) {
+            log.debug("删除文档向量索引: documentId={}, 无分块需删除", documentId);
+            return;
+        }
+        // 第二步：从 vectors.db 中批量删除
+        removeChunkEmbeddings(chunkIds);
+        log.debug("删除文档向量索引: documentId={}, deleted={}", documentId, chunkIds.size());
     }
 
     /**
      * 向量相似度搜索。
      *
-     * @param query 查询文本
-     * @param kbIds 知识库 ID 列表
-     * @param topK  返回数量
+     * @param query          查询文本
+     * @param kbIds          知识库 ID 列表
+     * @param topK           返回数量
+     * @param embeddingModel 嵌入模型名称（可选）
      * @return 搜索结果列表（按相似度降序）
      */
     public List<DocumentSearchResult> searchSimilar(String query, List<String> kbIds, int topK,
@@ -183,6 +191,9 @@ public class VectorIndexer {
     /**
      * 基于预计算 Embedding 向量的相似度搜索（用于 HyDE 模式）。
      *
+     * <p>两步查询：先在 vectors.db 中做 KNN 搜索拿到 chunk_id + distance，
+     * 再回主库查 document_chunks 详情并过滤知识库。
+     *
      * @param embedding 预计算的 Embedding 向量
      * @param kbIds     知识库 ID 列表
      * @param topK      返回数量
@@ -191,45 +202,70 @@ public class VectorIndexer {
     public List<DocumentSearchResult> searchByEmbedding(float[] embedding, List<String> kbIds, int topK) {
         String vectorParam = vectorToString(embedding);
 
-        // sqlite-vec KNN 查询 + 联合 document_chunks 表过滤知识库
+        // 第一步：在 vectors.db 中做 KNN 搜索，多取一些候选（因为后续要按知识库过滤）
+        int candidateK = topK * 3;
+        var candidates = vectorJdbcTemplate.query(
+                "SELECT chunk_id, distance FROM chunk_embeddings " +
+                "WHERE embedding MATCH ? AND k = ? ORDER BY distance",
+                (rs, rowNum) -> new VectorCandidate(
+                        rs.getString("chunk_id"),
+                        rs.getDouble("distance")),
+                vectorParam, candidateK);
+
+        if (candidates.isEmpty()) {
+            return List.of();
+        }
+
+        // 第二步：回主库查 document_chunks 详情并过滤知识库
+        var chunkIds = candidates.stream().map(VectorCandidate::chunkId).toList();
+        var distanceMap = new HashMap<String, Double>();
+        for (var c : candidates) {
+            distanceMap.put(c.chunkId(), c.distance());
+        }
+
+        var chunkPlaceholders = chunkIds.stream().map(id -> "?").collect(Collectors.joining(","));
         var kbPlaceholders = kbIds.stream().map(id -> "?").collect(Collectors.joining(","));
         var sql = """
-                SELECT ce.chunk_id, ce.distance,
-                       dc.document_id, dc.knowledge_base_id, dc.content, dc.context_prefix,
-                       dc.heading_hierarchy_json, dc.metadata_json
-                FROM chunk_embeddings ce
-                JOIN document_chunks dc ON ce.chunk_id = dc.id
-                WHERE ce.embedding MATCH ?
-                  AND ce.k = ?
-                  AND dc.knowledge_base_id IN (%s)
-                ORDER BY ce.distance""".formatted(kbPlaceholders);
+                SELECT id, document_id, knowledge_base_id, content, context_prefix,
+                       heading_hierarchy_json, metadata_json
+                FROM document_chunks
+                WHERE id IN (%s)
+                  AND knowledge_base_id IN (%s)""".formatted(chunkPlaceholders, kbPlaceholders);
 
         var params = new ArrayList<Object>();
-        params.add(vectorParam);
-        params.add(topK);
+        params.addAll(chunkIds);
         params.addAll(kbIds);
 
-        return jdbcTemplate.query(sql, (rs, rowNum) -> {
+        var results = mainJdbcTemplate.query(sql, (rs, rowNum) -> {
+            String chunkId = rs.getString("id");
+            double distance = distanceMap.getOrDefault(chunkId, 1.0);
             String headingJson = rs.getString("heading_hierarchy_json");
             List<String> headings = headingJson != null && !headingJson.isBlank()
                     ? parseJsonList(headingJson) : List.of();
             return new DocumentSearchResult(
-                    rs.getString("chunk_id"),
+                    chunkId,
                     rs.getString("document_id"),
                     rs.getString("knowledge_base_id"),
                     rs.getString("content"),
                     Optional.ofNullable(rs.getString("context_prefix")),
                     headings,
-                    1.0 - rs.getDouble("distance"), // 距离转相似度
+                    1.0 - distance, // 距离转相似度
                     "vector",
                     Map.of()
             );
         }, params.toArray());
+
+        // 按相似度降序排序，取 topK
+        return results.stream()
+                .sorted(Comparator.comparingDouble(DocumentSearchResult::score).reversed())
+                .limit(topK)
+                .toList();
     }
 
-
-
     // ---- 内部方法 ----
+
+    /** KNN 搜索候选结果。 */
+    private record VectorCandidate(String chunkId, double distance) {}
 
     /**
      * 带重试的批量索引。
@@ -262,7 +298,7 @@ public class VectorIndexer {
         for (var chunk : batch) {
             float[] embedding = llmRouter.embed(chunk.embeddingText(), embeddingModel);
             var vectorStr = vectorToString(embedding);
-            jdbcTemplate.update(sql, chunk.id(), vectorStr);
+            vectorJdbcTemplate.update(sql, chunk.id(), vectorStr);
         }
     }
 
@@ -283,7 +319,6 @@ public class VectorIndexer {
      * 简单 JSON 数组解析（用于 heading_hierarchy_json）。
      */
     private List<String> parseJsonList(String json) {
-        // 简单解析 ["a","b","c"] 格式
         if (json == null || json.equals("[]")) return List.of();
         var content = json.substring(1, json.length() - 1);
         if (content.isBlank()) return List.of();
