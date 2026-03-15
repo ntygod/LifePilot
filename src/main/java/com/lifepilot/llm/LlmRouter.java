@@ -27,6 +27,8 @@ import java.util.List;
  * 成功时调用 recordSuccess 并返回 {@link LlmResponse}，
  * 所有候选失败时抛出 {@link LlmUnavailableException}。
  *
+ * <p>统一入口：{@link #call(LlmRequest)} 和 {@link #callEntity(LlmRequest, Class)}。
+ *
  * @author zsg
  * @since 2026-02-24
  */
@@ -60,53 +62,54 @@ public class LlmRouter {
     }
 
     /**
-     * 执行文本生成调用，按优先级故障转移。
+     * 统一文本生成入口 — 接受 {@link LlmRequest} 参数对象。
      *
-     * @param scene        场景名称
-     * @param prompt       提示词
-     * @param outputSchema 输出 Schema（可选）
+     * <p>路由优先级：modelName → scene → requiredCapability 回退。
+     *
+     * @param request 请求参数对象
      * @return 统一响应
      * @throws LlmUnavailableException 所有候选 Provider 均失败
      */
-    public LlmResponse call(String scene, String prompt, @Nullable String outputSchema) {
-        return callWithPreferredProvider(scene, prompt, outputSchema, null, null);
-    }
-
-    public LlmResponse call(String scene,
-                            ProviderCapability requiredCapability,
-                            String prompt,
-                            @Nullable String outputSchema,
-                            @Nullable String modelName,
-                            @Nullable String preferredProviderId) {
-        return call(scene, requiredCapability, prompt, outputSchema, modelName, preferredProviderId, null);
-    }
-
-    public LlmResponse call(String scene,
-                            ProviderCapability requiredCapability,
-                            String prompt,
-                            @Nullable String outputSchema,
-                            @Nullable String modelName,
-                            @Nullable String preferredProviderId,
-                            @Nullable Duration timeoutOverride) {
-        if (requiredCapability == ProviderCapability.CHAT) {
-            if (modelName != null && !modelName.isBlank()) {
-                return call(scene, prompt, outputSchema, modelName, timeoutOverride);
+    public LlmResponse call(LlmRequest request) {
+        if (request.requiredCapability() == ProviderCapability.CHAT) {
+            if (request.modelName() != null && !request.modelName().isBlank()) {
+                return callByModelName(request.scene(), request.prompt(),
+                        request.outputSchema(), request.modelName(), request.timeoutOverride());
             }
-            return callWithPreferredProvider(scene, prompt, outputSchema, preferredProviderId, timeoutOverride);
+            return callByScene(request.scene(), request.prompt(),
+                    request.outputSchema(), request.preferredProviderId(), request.timeoutOverride());
         }
-        return callWithCapability(scene, requiredCapability, prompt, outputSchema, modelName, preferredProviderId, timeoutOverride);
+        return callWithCapability(request.scene(), request.requiredCapability(),
+                request.prompt(), request.outputSchema(), request.modelName(),
+                request.preferredProviderId(), request.timeoutOverride());
     }
 
-    public LlmResponse callWithPreferredProvider(String scene, String prompt,
-                                                 @Nullable String outputSchema,
-                                                 @Nullable String preferredProviderId) {
-        return callWithPreferredProvider(scene, prompt, outputSchema, preferredProviderId, null);
+    /**
+     * 统一结构化输出入口 — 接受 {@link LlmRequest} 参数对象和响应类型。
+     *
+     * <p>优先选择支持 STRUCTURED_OUTPUT 的 Provider，按 modelName → scene 路由。
+     *
+     * @param request      请求参数对象
+     * @param responseType 响应类型
+     * @param <T>          响应泛型
+     * @return 结构化响应对象
+     * @throws LlmUnavailableException 所有候选 Provider 均失败
+     */
+    public <T> T callEntity(LlmRequest request, Class<T> responseType) {
+        String normalizedScene = normalizeScene(request.scene());
+        if (request.modelName() != null && !request.modelName().isBlank()) {
+            return callEntityByModelName(normalizedScene, request.prompt(),
+                    responseType, request.modelName());
+        }
+        return callEntityByScene(normalizedScene, request.prompt(), responseType);
     }
 
-    public LlmResponse callWithPreferredProvider(String scene, String prompt,
-                                                 @Nullable String outputSchema,
-                                                 @Nullable String preferredProviderId,
-                                                 @Nullable Duration timeoutOverride) {
+    // ========== 内部路由方法（原 public 重载方法重构为 private） ==========
+
+    private LlmResponse callByScene(String scene, String prompt,
+                                    @Nullable String outputSchema,
+                                    @Nullable String preferredProviderId,
+                                    @Nullable Duration timeoutOverride) {
         String normalizedScene = normalizeScene(scene);
         String responseFormatKey = responseFormatKey(outputSchema);
         // 缓存查询（在 Provider 故障转移循环前）
@@ -187,25 +190,18 @@ public class LlmRouter {
     }
 
     /**
-     * 执行文本生成调用，优先按模型名路由，未找到时回退到 scene-based 路由。
-     *
-     * @param scene        场景名称
-     * @param prompt       提示词
-     * @param outputSchema 输出 Schema（可选）
-     * @param modelName    指定模型名（可选，null 时回退到 scene-based 路由）
-     * @return 统一响应
-     * @throws LlmUnavailableException 所有候选 Provider 均失败
+     * 按模型名路由文本生成调用，未找到时回退到 scene-based 路由。
      */
-    public LlmResponse call(String scene, String prompt, @Nullable String outputSchema,
+    private LlmResponse callByModelName(String scene, String prompt, @Nullable String outputSchema,
                             @Nullable String modelName) {
-        return call(scene, prompt, outputSchema, modelName, null);
+        return callByModelName(scene, prompt, outputSchema, modelName, null);
     }
 
-    public LlmResponse call(String scene, String prompt, @Nullable String outputSchema,
+    private LlmResponse callByModelName(String scene, String prompt, @Nullable String outputSchema,
                             @Nullable String modelName,
                             @Nullable Duration timeoutOverride) {
         if (modelName == null || modelName.isBlank()) {
-            return callWithPreferredProvider(scene, prompt, outputSchema, null, timeoutOverride);
+            return callByScene(scene, prompt, outputSchema, null, timeoutOverride);
         }
         var byModel = providerRegistry.findByModelName(modelName).stream()
                 .filter(c -> c.hasCapability(ProviderCapability.CHAT))
@@ -214,7 +210,7 @@ public class LlmRouter {
         if (byModel.isEmpty()) {
             log.warn("指定 modelName 未找到可用 Provider，回退到 scene 路由: modelName={}, scene={}",
                     modelName, scene);
-            return callWithPreferredProvider(scene, prompt, outputSchema, null, timeoutOverride);
+            return callByScene(scene, prompt, outputSchema, null, timeoutOverride);
         }
         return callWithCandidates(scene, prompt, outputSchema, byModel, timeoutOverride);
     }
@@ -348,16 +344,9 @@ public class LlmRouter {
     }
 
     /**
-     * 执行结构化输出调用，优先选择支持 STRUCTURED_OUTPUT 的 Provider。
-     *
-     * @param scene        场景名称
-     * @param prompt       提示词
-     * @param responseType 响应类型
-     * @param <T>          响应泛型
-     * @return 结构化响应对象
-     * @throws LlmUnavailableException 所有候选 Provider 均失败
+     * 按 scene 路由结构化输出调用，优先选择支持 STRUCTURED_OUTPUT 的 Provider。
      */
-    public <T> T callEntity(String scene, String prompt, Class<T> responseType) {
+    private <T> T callEntityByScene(String scene, String prompt, Class<T> responseType) {
         String normalizedScene = normalizeScene(scene);
         // 优先选择支持 STRUCTURED_OUTPUT 的 Provider
         var candidates = findAvailableCandidates(normalizedScene, ProviderCapability.CHAT);
@@ -403,21 +392,13 @@ public class LlmRouter {
     }
 
     /**
-     * 执行结构化输出调用，优先按模型名路由，未找到时回退到 scene-based 路由。
-     *
-     * @param scene        场景名称
-     * @param prompt       提示词
-     * @param responseType 响应类型
-     * @param modelName    指定模型名（可选，null 时回退到 scene-based 路由）
-     * @param <T>          响应泛型
-     * @return 结构化响应对象
-     * @throws LlmUnavailableException 所有候选 Provider 均失败
+     * 按模型名路由结构化输出调用，未找到时回退到 scene-based 路由。
      */
-    public <T> T callEntity(String scene, String prompt, Class<T> responseType,
+    private <T> T callEntityByModelName(String scene, String prompt, Class<T> responseType,
                             @Nullable String modelName) {
         String normalizedScene = normalizeScene(scene);
         if (modelName == null || modelName.isBlank()) {
-            return callEntity(normalizedScene, prompt, responseType);
+            return callEntityByScene(normalizedScene, prompt, responseType);
         }
         var byModel = providerRegistry.findByModelName(modelName).stream()
                 .filter(c -> c.hasCapability(ProviderCapability.CHAT))
@@ -426,7 +407,7 @@ public class LlmRouter {
         if (byModel.isEmpty()) {
             log.warn("指定 modelName 未找到可用 Provider，回退到 scene 路由: modelName={}, scene={}",
                     modelName, scene);
-            return callEntity(normalizedScene, prompt, responseType);
+            return callEntityByScene(normalizedScene, prompt, responseType);
         }
         // 将支持 STRUCTURED_OUTPUT 的排在前面
         var sorted = new ArrayList<>(byModel.stream()
