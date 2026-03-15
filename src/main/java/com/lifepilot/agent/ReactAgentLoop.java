@@ -105,6 +105,9 @@ public class ReactAgentLoop {
     @Nullable private final KnowledgeBaseRepository knowledgeBaseRepository;
     @Nullable private final A2uiProperties a2uiProperties;
 
+    // ===== 可选依赖（附件持久化） =====
+    @Nullable private final com.lifepilot.interaction.web.repository.AttachmentRepository attachmentRepository;
+
     // ===== 运行时状态（volatile） =====
     private volatile A2uiComponentTree lastCollectedA2uiTree;
     private final List<String> lastInjectedEntityIds = List.of();
@@ -130,7 +133,8 @@ public class ReactAgentLoop {
             @Nullable InjectionRecordRepository injectionRecordRepository,
             @Nullable SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
             @Nullable KnowledgeBaseRepository knowledgeBaseRepository,
-            @Nullable A2uiProperties a2uiProperties) {
+            @Nullable A2uiProperties a2uiProperties,
+            @Nullable com.lifepilot.interaction.web.repository.AttachmentRepository attachmentRepository) {
         this.contextAssembler = contextAssembler;
         this.llmRouter = llmRouter;
         this.traceRecorder = traceRecorder;
@@ -151,6 +155,7 @@ public class ReactAgentLoop {
         this.sessionKnowledgeBaseRepository = sessionKnowledgeBaseRepository;
         this.knowledgeBaseRepository = knowledgeBaseRepository;
         this.a2uiProperties = a2uiProperties;
+        this.attachmentRepository = attachmentRepository;
     }
 
     /** 获取当前取消令牌（外部可调用 cancel() 中断循环）。 */
@@ -996,6 +1001,24 @@ public class ReactAgentLoop {
                 }
 
                 persistInjectionRecord(assistantMessageId, state.sessionId());
+
+                // 持久化工具产生的媒体附件到 message_attachments 表
+                if (attachmentRepository != null && assistantMessageId != null
+                        && effectiveRequest.mediaContents() != null && !effectiveRequest.mediaContents().isEmpty()) {
+                    for (var mc : effectiveRequest.mediaContents()) {
+                        try {
+                            String fileName = mc.fileName() != null ? mc.fileName()
+                                    : "media-" + UUID.randomUUID().toString().substring(0, 8) + "." + guessExtension(mc.mimeType());
+                            String dataUri = "data:" + mc.mimeType() + ";base64," + java.util.Base64.getEncoder().encodeToString(mc.data());
+                            attachmentRepository.save(assistantMessageId, state.sessionId(),
+                                    fileName, "", mc.sizeBytes(), mc.mimeType(), dataUri);
+                        } catch (Exception e) {
+                            log.warn("媒体附件持久化失败: sessionId={}, error={}", state.sessionId(), e.getMessage());
+                        }
+                    }
+                    log.debug("媒体附件持久化完成: sessionId={}, count={}", state.sessionId(), effectiveRequest.mediaContents().size());
+                }
+
                 asyncPostProcess(state);
                 finalTokenUsage = aggregateTokenUsage(traceContext);
             }
@@ -1867,6 +1890,20 @@ public class ReactAgentLoop {
     }
 
     // ===== 流式错误持久化 =====
+
+    /** 根据 MIME 类型猜测文件扩展名。 */
+    private static String guessExtension(String mimeType) {
+        if (mimeType == null) return "bin";
+        return switch (mimeType) {
+            case "image/png" -> "png";
+            case "image/jpeg", "image/jpg" -> "jpg";
+            case "image/gif" -> "gif";
+            case "image/webp" -> "webp";
+            case "image/svg+xml" -> "svg";
+            case "application/pdf" -> "pdf";
+            default -> "bin";
+        };
+    }
 
     /** 持久化流式系统错误消息到对话历史和 L1。 */
     private void persistStreamingSystemError(@Nullable String sessionId,
