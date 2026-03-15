@@ -21,6 +21,8 @@ export const SSE_EVENT_TYPES = {
   TASK_ARTIFACT_UPDATE: 'task-artifact-update',
   TASK_COMPLETE: 'task-complete',
 
+  NOTIFICATION: 'notification',
+
   MCP_STATUS_SNAPSHOT: 'mcp-status-snapshot',
   MCP_STATUS_CHANGE: 'mcp-status-change',
 
