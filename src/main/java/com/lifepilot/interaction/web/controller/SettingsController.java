@@ -19,6 +19,7 @@ import org.springframework.lang.Nullable;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -316,6 +317,94 @@ public class SettingsController {
     }
 
     // ==================== Reranker 辅助方法 ====================
+
+    // ==================== 知识库全局配置端点 ====================
+
+    /**
+     * 获取知识库全局配置。
+     *
+     * <p>优先从数据库读取持久化配置，若为空则从 {@link KnowledgeBaseProperties} 读取默认值。</p>
+     *
+     * @return 知识库配置响应
+     */
+    @GetMapping("/knowledge")
+    public ResponseEntity<Map<String, Object>> getKnowledgeSettings() {
+        log.debug("获取知识库全局配置");
+        String json = settingsRepository.getKnowledgeConfig();
+        Map<String, Object> config = deserializeRerankerConfig(json);
+
+        var props = knowledgeBaseProperties != null
+                ? knowledgeBaseProperties
+                : new KnowledgeBaseProperties(null, 0, true, null, null, null, null, null, null, null);
+
+        var chunking = props.chunking();
+        var retrieval = props.retrieval();
+        var vectorIndexer = props.vectorIndexer();
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("enabled", getConfigValue(config, "enabled", Boolean.class, props.enabled()));
+        result.put("maxFileSize", getConfigValue(config, "maxFileSize", Long.class, props.maxFileSize()));
+
+        // 分块配置
+        Map<String, Object> chunkingConfig = new LinkedHashMap<>();
+        chunkingConfig.put("defaultStrategy", getConfigValue(config, "chunkingStrategy", String.class, chunking.defaultStrategy()));
+        chunkingConfig.put("chunkSize", getConfigValue(config, "chunkSize", Integer.class, chunking.fixedSize().chunkSize()));
+        chunkingConfig.put("overlapSize", getConfigValue(config, "overlapSize", Integer.class, chunking.fixedSize().overlapSize()));
+        chunkingConfig.put("maxChunkTokens", getConfigValue(config, "maxChunkTokens", Integer.class, chunking.fixedSize().maxChunkTokens()));
+        result.put("chunking", chunkingConfig);
+
+        // 检索配置
+        Map<String, Object> retrievalConfig = new LinkedHashMap<>();
+        retrievalConfig.put("defaultTopK", getConfigValue(config, "retrievalTopK", Integer.class, retrieval.defaultTopK()));
+        retrievalConfig.put("vectorWeight", getConfigValue(config, "vectorWeight", Double.class, retrieval.vectorWeight()));
+        retrievalConfig.put("ftsWeight", getConfigValue(config, "ftsWeight", Double.class, retrieval.ftsWeight()));
+        retrievalConfig.put("minRelevanceScore", getConfigValue(config, "minRelevanceScore", Double.class, retrieval.minRelevanceScore()));
+        result.put("retrieval", retrievalConfig);
+
+        // 向量索引配置
+        Map<String, Object> vectorConfig = new LinkedHashMap<>();
+        vectorConfig.put("embeddingDimension", getConfigValue(config, "embeddingDimension", Integer.class, vectorIndexer.embeddingDimension()));
+        vectorConfig.put("batchSize", getConfigValue(config, "vectorBatchSize", Integer.class, vectorIndexer.batchSize()));
+        result.put("vectorIndexer", vectorConfig);
+
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * 更新知识库全局配置。
+     *
+     * @param request 知识库配置更新请求
+     * @return 更新后的知识库配置
+     */
+    @PutMapping("/knowledge")
+    public ResponseEntity<Map<String, Object>> updateKnowledgeSettings(
+            @RequestBody Map<String, Object> request) {
+        log.info("更新知识库全局配置");
+
+        String existingJson = settingsRepository.getKnowledgeConfig();
+        Map<String, Object> config = deserializeRerankerConfig(existingJson);
+
+        // 合并顶层字段
+        for (String key : List.of("enabled", "maxFileSize", "chunkingStrategy",
+                "chunkSize", "overlapSize", "maxChunkTokens",
+                "retrievalTopK", "vectorWeight", "ftsWeight", "minRelevanceScore",
+                "embeddingDimension", "vectorBatchSize")) {
+            if (request.containsKey(key)) {
+                config.put(key, request.get(key));
+            }
+        }
+
+        try {
+            String updatedJson = objectMapper.writeValueAsString(config);
+            settingsRepository.saveKnowledgeConfig(updatedJson);
+        } catch (Exception e) {
+            log.error("知识库配置序列化失败: error={}", e.getMessage());
+            return ResponseEntity.internalServerError().build();
+        }
+
+        // 返回完整配置
+        return getKnowledgeSettings();
+    }
 
     /**
      * 对 apiKey 进行掩码处理，仅保留末尾 4 位。

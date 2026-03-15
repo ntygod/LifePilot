@@ -406,6 +406,19 @@ export const settingsApi = {
       method: 'PUT',
       body: JSON.stringify(settings)
     })
+  },
+
+  /** 获取知识库全局配置 */
+  getKnowledgeSettings(): Promise<KnowledgeSettings> {
+    return request('/settings/knowledge')
+  },
+
+  /** 更新知识库全局配置 */
+  updateKnowledgeSettings(settings: Record<string, unknown>): Promise<KnowledgeSettings> {
+    return request('/settings/knowledge', {
+      method: 'PUT',
+      body: JSON.stringify(settings)
+    })
   }
 }
 
@@ -437,6 +450,28 @@ export interface RerankerSettingsRequest {
   apiTimeoutMs?: number
   memoryRerankEnabled?: boolean
   memoryRerankTopK?: number
+}
+
+/** 知识库全局配置响应 */
+export interface KnowledgeSettings {
+  enabled: boolean
+  maxFileSize: number
+  chunking: {
+    defaultStrategy: string
+    chunkSize: number
+    overlapSize: number
+    maxChunkTokens: number
+  }
+  retrieval: {
+    defaultTopK: number
+    vectorWeight: number
+    ftsWeight: number
+    minRelevanceScore: number
+  }
+  vectorIndexer: {
+    embeddingDimension: number
+    batchSize: number
+  }
 }
 
 /** LLM Provider 管理 API */

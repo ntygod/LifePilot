@@ -175,6 +175,11 @@ const router = createRouter({
       name: 'settingsReranker',
       component: () => import('@/views/SettingsView.vue')
     },
+    {
+      path: '/settings/knowledge',
+      name: 'settingsKnowledge',
+      component: () => import('@/views/SettingsView.vue')
+    },
 
     /**
      * Trace / 轨迹

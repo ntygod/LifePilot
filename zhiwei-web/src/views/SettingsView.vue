@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Cpu, Keyboard, Palette, Sparkles } from 'lucide-vue-next'
+import { Cpu, Database, Keyboard, Palette, Sparkles } from 'lucide-vue-next'
 import MetricCard from '@/components/common/MetricCard.vue'
 import PageContainer from '@/components/layout/PageContainer.vue'
 import PageHeader from '@/components/layout/PageHeader.vue'
@@ -14,6 +14,7 @@ import {
 import SettingsModelsView from '@/views/SettingsModelsView.vue'
 import SettingsPreferencesView from '@/views/SettingsPreferencesView.vue'
 import SettingsRerankerView from '@/views/SettingsRerankerView.vue'
+import SettingsKnowledgeView from '@/views/SettingsKnowledgeView.vue'
 import SettingsShortcutsView from '@/views/SettingsShortcutsView.vue'
 
 const route = useRoute()
@@ -26,6 +27,7 @@ const viewMap: Record<string, Component> = {
   '/settings/models': SettingsModelsView,
   '/settings/shortcuts': SettingsShortcutsView,
   '/settings/reranker': SettingsRerankerView,
+  '/settings/knowledge': SettingsKnowledgeView,
 }
 
 const navigationItems = [
@@ -52,6 +54,12 @@ const navigationItems = [
     label: '精排设置',
     description: '全局精排模型、API 配置和记忆精排开关。',
     icon: Sparkles,
+  },
+  {
+    path: '/settings/knowledge',
+    label: '知识库',
+    description: '分块策略、检索参数和向量索引全局配置。',
+    icon: Database,
   },
 ] as const
 
