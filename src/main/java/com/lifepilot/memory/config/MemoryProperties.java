@@ -96,6 +96,9 @@ public class MemoryProperties {
     /** 反馈闭环配置。 */
     private Feedback feedback = new Feedback();
 
+    /** 记忆精排配置。 */
+    private Reranker reranker = new Reranker();
+
     public TokenBudget getTokenBudget() { return tokenBudget; }
     public void setTokenBudget(TokenBudget tokenBudget) { this.tokenBudget = tokenBudget; }
 
@@ -116,6 +119,9 @@ public class MemoryProperties {
 
     public Feedback getFeedback() { return feedback; }
     public void setFeedback(Feedback feedback) { this.feedback = feedback; }
+
+    public Reranker getReranker() { return reranker; }
+    public void setReranker(Reranker reranker) { this.reranker = reranker; }
 
     /**
      * Token 预算分配配置 — 控制上下文窗口四区域的预算比例和场景切换阈值。
@@ -580,5 +586,26 @@ public static class Retrieval {
 
         public String getExpirationCron() { return expirationCron; }
         public void setExpirationCron(String expirationCron) { this.expirationCron = expirationCron; }
+    }
+
+    /**
+     * 记忆精排配置 — 控制 HybridRetriever 中可选的 Reranker 精排步骤。
+     *
+     * @author zsg
+     * @since 2026-03-15
+     */
+    public static class Reranker {
+
+        /** 记忆精排开关，默认 false。 */
+        private boolean enabled = false;
+
+        /** 精排返回数量，默认 10。 */
+        private int topK = 10;
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+
+        public int getTopK() { return topK; }
+        public void setTopK(int topK) { this.topK = topK; }
     }
 }
