@@ -2,6 +2,7 @@ package com.lifepilot.interaction;
 
 import com.lifepilot.tool.ToolContract;
 import com.lifepilot.tool.model.ToolInput;
+import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -20,7 +21,8 @@ public class NoOpUserConfirmationService implements UserConfirmationService {
     private static final Logger log = LoggerFactory.getLogger(NoOpUserConfirmationService.class);
 
     @Override
-    public boolean requestConfirmation(ToolContract tool, ToolInput input, String message) {
+    public boolean requestConfirmation(ToolContract tool, ToolInput input, String message,
+                                       @Nullable String streamId) {
         log.warn("用户确认服务未实现，自动确认: toolId={}, risk={}",
                 tool.id(), tool.riskLevel());
         return true;

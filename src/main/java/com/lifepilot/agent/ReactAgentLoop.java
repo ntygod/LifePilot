@@ -318,7 +318,7 @@ public class ReactAgentLoop {
                 assembledContext = assembledContext.withMediaContents(request.mediaContents());
             }
             var messages = buildMessages(assembledContext, state);
-            var toolCallbacks = agentToolProvider.getToolCallbacks(state);
+            var toolCallbacks = agentToolProvider.getToolCallbacks(state, streamId);
 
             log.debug("ReAct 迭代开始: traceId={}, iteration={}, stepCount={}, toolCount={}",
                     state.traceId(), iteration, state.stepCount(), toolCallbacks.size());
