@@ -1,11 +1,13 @@
 package com.lifepilot.interaction.web.service;
 
+import com.lifepilot.interaction.web.model.AttachmentInfo;
 import com.lifepilot.interaction.web.model.ChatSession;
 import com.lifepilot.interaction.web.model.MessageInfo;
 import com.lifepilot.interaction.web.model.SessionConfigKeys;
 import com.lifepilot.interaction.web.model.SessionConfigRequest;
 import com.lifepilot.interaction.web.model.SessionDetailInfo;
 import com.lifepilot.interaction.web.model.SessionInfo;
+import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.repository.ChatMessageRepository;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
@@ -28,13 +30,16 @@ public class ChatSessionService {
     private final ChatSessionRepository sessionRepository;
     private final ChatMessageRepository chatMessageRepository;
     private final SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository;
+    private final AttachmentRepository attachmentRepository;
 
     public ChatSessionService(ChatSessionRepository sessionRepository,
                               ChatMessageRepository chatMessageRepository,
-                              SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository) {
+                              SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
+                              AttachmentRepository attachmentRepository) {
         this.sessionRepository = sessionRepository;
         this.chatMessageRepository = chatMessageRepository;
         this.sessionKnowledgeBaseRepository = sessionKnowledgeBaseRepository;
+        this.attachmentRepository = attachmentRepository;
     }
 
     @Transactional
@@ -117,7 +122,28 @@ public class ChatSessionService {
 
     public List<MessageInfo> getSessionMessages(String id) {
         requireSession(id);
-        return chatMessageRepository.findMessageInfosBySessionId(id);
+        var messages = chatMessageRepository.findMessageInfosBySessionId(id);
+        if (messages.isEmpty()) {
+            return messages;
+        }
+        // 批量查询所有消息的附件，避免 N+1
+        var messageIds = messages.stream().map(MessageInfo::id).toList();
+        var attachmentMap = attachmentRepository.findByMessageIds(messageIds);
+        if (attachmentMap.isEmpty()) {
+            return messages;
+        }
+        // 将附件信息填充到 MessageInfo
+        return messages.stream().map(msg -> {
+            var records = attachmentMap.get(msg.id());
+            if (records == null || records.isEmpty()) {
+                return msg;
+            }
+            var attachments = records.stream()
+                    .map(r -> new AttachmentInfo(r.id(), r.fileName(), r.fileSize(), r.mimeType(), r.url()))
+                    .toList();
+            return new MessageInfo(msg.id(), msg.role(), msg.content(), msg.a2uiComponents(),
+                    msg.timestamp(), msg.reasoningSummary(), msg.traceId(), attachments);
+        }).toList();
     }
 
     @Transactional
