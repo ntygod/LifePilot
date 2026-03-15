@@ -21,11 +21,16 @@ import {
   Wrench,
 } from 'lucide-vue-next'
 import ThemeToggle from '@/components/global/ThemeToggle.vue'
+import NotificationBell from '@/components/notification/NotificationBell.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { useNotificationStream } from '@/composables/useNotificationStream'
 import { useChatStore } from '@/stores/chat'
 
 const MotionDiv = motion.div
+
+// 建立通知 SSE 实时连接，组件挂载时自动连接，卸载时自动断开
+useNotificationStream()
 
 interface Props {
   isMobile?: boolean
@@ -246,7 +251,10 @@ const pinnedSessionCount = computed(() => chatStore.sessions.filter(session => s
     <div class="border-b border-sidebar-border/55 px-4 py-4">
       <div class="space-y-4">
         <div class="space-y-2">
-          <div class="surface-label">工作台</div>
+          <div class="flex items-center justify-between">
+            <div class="surface-label">工作台</div>
+            <NotificationBell />
+          </div>
           <div class="space-y-1">
             <div class="text-sm font-semibold text-foreground">知微</div>
             <p class="text-xs leading-5 text-muted-foreground">
