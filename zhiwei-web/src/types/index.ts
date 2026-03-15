@@ -309,6 +309,17 @@ export interface CreateKbRequest {
   embeddingModel?: string
 }
 
+/** 更新知识库请求 */
+export interface UpdateKbRequest {
+  name?: string
+  description?: string
+  embeddingModel?: string
+  rerankerModel?: string | null
+  chunkingStrategy?: string
+  chunkingConfig?: Record<string, unknown>
+  tags?: string[]
+}
+
 /** 知识库文档 */
 export interface KbDocument {
   id: string

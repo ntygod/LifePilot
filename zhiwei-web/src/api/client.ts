@@ -4,6 +4,7 @@ import type {
   ChatSession,
   ChatSessionDetail,
   CreateKbRequest,
+  UpdateKbRequest,
   DocumentChunk,
   ErrorResponse,
   KbDocument,
@@ -542,6 +543,12 @@ export const knowledgeBaseApi = {
   },
   get(id: string): Promise<KnowledgeBase> {
     return request(`/knowledge-bases/${id}`)
+  },
+  update(id: string, req: UpdateKbRequest): Promise<KnowledgeBase> {
+    return request(`/knowledge-bases/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(req)
+    })
   },
   delete(id: string): Promise<void> {
     return request(`/knowledge-bases/${id}`, { method: 'DELETE' })
