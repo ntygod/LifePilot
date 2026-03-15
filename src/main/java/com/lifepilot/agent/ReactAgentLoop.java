@@ -492,17 +492,40 @@ public class ReactAgentLoop {
             var extraction = mediaDataExtractor.extract(toolId, rawOutput);
             observationOutput = extraction.sanitizedOutput();
 
-            // 流式模式下发送 MEDIA 事件
+            // 流式模式下发送 MEDIA 事件（字段名对齐前端 SseMediaEvent 类型定义）
             if (sseManager != null && streamId != null && !extraction.mediaItems().isEmpty()) {
                 for (var mediaItem : extraction.mediaItems()) {
                     var mediaData = new HashMap<String, Object>();
                     mediaData.put("toolId", toolId);
-                    mediaData.put("mediaType", mediaItem.mediaType());
+                    mediaData.put("mimeType", mediaItem.mediaType());
                     mediaData.put("encoding", mediaItem.encoding());
                     mediaData.put("data", mediaItem.data());
-                    mediaData.put("fieldName", mediaItem.fieldName());
+                    mediaData.put("field", mediaItem.fieldName());
                     mediaData.put("metadata", mediaItem.metadata());
                     sseManager.sendEvent(streamId, SseEventType.MEDIA, mediaData);
+                }
+            }
+
+            // 将图片类型的媒体写入 pendingMedia 缓冲区，供下一次迭代 LLM 视觉分析
+            if (!extraction.mediaItems().isEmpty()) {
+                for (var mediaItem : extraction.mediaItems()) {
+                    if (mediaItem.mediaType().startsWith("image/")) {
+                        try {
+                            byte[] decoded = Base64.getDecoder().decode(mediaItem.data());
+                            var mediaContent = new MediaContent(
+                                    UUID.randomUUID().toString(),
+                                    mediaItem.mediaType(),
+                                    decoded,
+                                    toolId + "_" + mediaItem.fieldName(),
+                                    decoded.length,
+                                    Map.of("toolId", toolId, "fieldName", mediaItem.fieldName())
+                            );
+                            state = state.appendPendingMedia(mediaContent);
+                        } catch (IllegalArgumentException e) {
+                            log.warn("Base64 解码失败，跳过媒体数据: toolId={}, field={}",
+                                    toolId, mediaItem.fieldName());
+                        }
+                    }
                 }
             }
         }
