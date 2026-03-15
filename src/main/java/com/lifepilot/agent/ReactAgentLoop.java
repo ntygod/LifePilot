@@ -329,10 +329,17 @@ public class ReactAgentLoop {
                     state.traceId(), iteration, state.stepCount(), toolCallbacks.size());
 
             // 5. 调用 LLM（不自动执行 tool call）
+            // 构造有效请求：将当前迭代的媒体内容传递给 callLlm
+            var effectiveRequest = assembledContext.mediaContents() != null && !assembledContext.mediaContents().isEmpty()
+                    ? new AgentRequest(request.message(), request.sessionId(), request.channel(),
+                        request.systemPrompt(), request.budget(), request.parentTraceId(),
+                        request.depth(), request.preferredProvider(), request.allowedToolIds(),
+                        assembledContext.mediaContents())
+                    : request;
             var iterationStart = Instant.now();
             ChatResponse chatResponse;
             try {
-                chatResponse = callback.callLlm(request, messages, toolCallbacks, traceContext);
+                chatResponse = callback.callLlm(effectiveRequest, messages, toolCallbacks, traceContext);
             } catch (Exception e) {
                 log.error("LLM 调用异常: traceId={}, iteration={}, error={}",
                         state.traceId(), iteration, e.getMessage());
