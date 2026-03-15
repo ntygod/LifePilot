@@ -24,6 +24,7 @@ import RelationPanel from './RelationPanel.vue'
 import ConversationPanel from './ConversationPanel.vue'
 import TemplatePanel from './TemplatePanel.vue'
 import PreferencePanel from './PreferencePanel.vue'
+import ForgettingLogPanel from './ForgettingLogPanel.vue'
 
 const store = useMemoryStore()
 
@@ -212,9 +213,7 @@ function clearSearch() {
               <PreferencePanel />
             </TabsContent>
             <TabsContent value="forgetting-logs">
-              <div class="detail-card p-6 text-center text-sm text-muted-foreground">
-                遗忘日志面板（待实现）
-              </div>
+              <ForgettingLogPanel />
             </TabsContent>
           </Tabs>
         </template>
