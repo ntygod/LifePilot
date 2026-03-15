@@ -22,6 +22,7 @@ import type { MemorySearchResult } from '@/types'
 import EntityPanel from './EntityPanel.vue'
 import RelationPanel from './RelationPanel.vue'
 import ConversationPanel from './ConversationPanel.vue'
+import TemplatePanel from './TemplatePanel.vue'
 
 const store = useMemoryStore()
 
@@ -204,9 +205,7 @@ function clearSearch() {
               <ConversationPanel />
             </TabsContent>
             <TabsContent value="templates">
-              <div class="detail-card p-6 text-center text-sm text-muted-foreground">
-                模板浏览面板（待实现）
-              </div>
+              <TemplatePanel />
             </TabsContent>
             <TabsContent value="preferences">
               <div class="detail-card p-6 text-center text-sm text-muted-foreground">
