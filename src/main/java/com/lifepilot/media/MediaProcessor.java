@@ -1,20 +1,19 @@
 package com.lifepilot.media;
 
+import com.lifepilot.llm.multimodal.MediaContent;
+import com.lifepilot.media.config.MediaProperties;
+import net.coobird.thumbnailator.Thumbnails;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.util.Collections;
 import java.util.List;
-
-import javax.imageio.ImageIO;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import com.lifepilot.llm.multimodal.MediaContent;
-import com.lifepilot.media.config.MediaProperties;
-
-import net.coobird.thumbnailator.Thumbnails;
+import java.util.Optional;
 
 /**
  * 图片预处理器。
@@ -135,7 +134,9 @@ public class MediaProcessor {
      * @return 处理后的 MediaContent 列表
      */
     public List<MediaContent> processAll(List<MediaContent> images) {
-        return images.stream()
+        return Optional.ofNullable(images)
+                .orElse(Collections.emptyList())
+                .stream()
                 .map(this::process)
                 .toList();
     }

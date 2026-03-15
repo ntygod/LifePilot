@@ -241,7 +241,8 @@ public class ToolExecutionPipeline {
     /**
      * 判断结果是否可重试。
      *
-     * <p>超时和临时性错误可重试，参数错误和护栏拦截不可重试。</p>
+     * <p>超时和临时性错误可重试，参数错误和护栏拦截不可重试。
+     * 用户响应超时（交互工具）不可重试 — SSE 断开后重试无意义。</p>
      */
     private boolean isRetryable(ToolResult result, ToolContract tool) {
         if (result.ok()) {
@@ -253,6 +254,10 @@ public class ToolExecutionPipeline {
         }
         String error = result.error();
         if (error == null) {
+            return false;
+        }
+        // 用户响应超时（交互工具）不可重试 — SSE 连接断开后重试无意义
+        if (error.contains("用户响应超时")) {
             return false;
         }
         return error.contains("超时") || error.contains("timeout")

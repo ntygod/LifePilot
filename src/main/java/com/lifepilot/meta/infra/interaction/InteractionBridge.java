@@ -81,7 +81,11 @@ public class InteractionBridge {
 
         try {
             // 通过可用 Channel 推送交互请求
-            pushToChannel(enrichedRequest);
+            boolean pushed = pushToChannel(enrichedRequest);
+            if (!pushed) {
+                // SSE 连接不存在或无可达 Channel，立即返回失败而不是傻等超时
+                return InteractionResponse.timeout(interactionId);
+            }
 
             // 阻塞等待用户响应
             int timeoutSeconds = properties.getInfra().getInteraction().getResponseTimeoutSeconds();
@@ -140,7 +144,7 @@ public class InteractionBridge {
         );
 
         pushToChannel(enrichedRequest);
-        log.debug("通知已推送: interactionId={}, message={}", interactionId, request.message());
+        log.debug("通知已推送: interactionId={}, sessionId={}", interactionId, request.sessionId());
     }
 
     /**
@@ -152,20 +156,34 @@ public class InteractionBridge {
         return pendingRequests.size();
     }
 
-    /** 通过可用 Channel 推送交互请求。 */
-    private void pushToChannel(InteractionRequest request) {
+    /**
+     * 通过可用 Channel 推送交互请求。
+     *
+     * @param request 交互请求
+     * @return true 表示推送成功（Channel 可达），false 表示推送失败（无可达 Channel）
+     */
+    private boolean pushToChannel(InteractionRequest request) {
         // 优先使用 SSE Channel（Web）
         if (sseSessionManager != null) {
+            // 先检查目标 emitter 是否存在，避免推送到不存在的连接后傻等超时
+            if (sseSessionManager.getEmitter(request.sessionId()) == null) {
+                log.warn("SSE 连接不存在，交互请求无法送达: interactionId={}, sessionId={}",
+                        request.interactionId(), request.sessionId());
+                return false;
+            }
             sseSessionManager.sendEvent(request.sessionId(), "interaction", request);
             log.debug("交互请求已通过 SSE 推送: interactionId={}, sessionId={}",
                     request.interactionId(), request.sessionId());
-            return;
+            return true;
         }
 
         // 降级到 CLI Channel
         if (cliInteractionHandler != null) {
             cliInteractionHandler.pushInteraction(request);
             log.debug("交互请求已通过 CLI 推送: interactionId={}", request.interactionId());
+            return true;
         }
+
+        return false;
     }
 }
