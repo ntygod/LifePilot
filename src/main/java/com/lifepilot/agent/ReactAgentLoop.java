@@ -50,6 +50,7 @@ import org.springframework.ai.content.Media;
 import org.springframework.ai.model.tool.DefaultToolCallingChatOptions;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.Resource;
 import org.springframework.lang.Nullable;
 import org.springframework.util.MimeTypeUtils;
 
@@ -692,18 +693,27 @@ public class ReactAgentLoop {
             if (msg instanceof UserMessage um && um.getMedia() != null) {
                 for (var media : um.getMedia()) {
                     try {
-                        // 我们构造 Media 时始终使用 ByteArrayResource
-                        if (media.getData() instanceof ByteArrayResource bar) {
-                            byte[] data = bar.getByteArray();
-                            result.add(new MediaContent(
-                                    UUID.randomUUID().toString(),
-                                    media.getMimeType().toString(),
-                                    data,
-                                    null,
-                                    data.length,
-                                    Map.of()
-                            ));
+                        // 优先 ByteArrayResource 快速路径，兼容 Spring AI 可能的 Resource 包装
+                        var rawData = media.getData();
+                        byte[] data;
+                        if (rawData instanceof ByteArrayResource bar) {
+                            data = bar.getByteArray();
+                        } else if (rawData instanceof Resource res) {
+                            data = res.getInputStream().readAllBytes();
+                        } else if (rawData instanceof byte[] bytes) {
+                            data = bytes;
+                        } else {
+                            log.warn("不支持的 Media 数据类型: {}", rawData.getClass().getName());
+                            continue;
                         }
+                        result.add(new MediaContent(
+                                UUID.randomUUID().toString(),
+                                media.getMimeType().toString(),
+                                data,
+                                null,
+                                data.length,
+                                Map.of()
+                        ));
                     } catch (Exception e) {
                         log.warn("从 UserMessage Media 提取数据失败: {}", e.getMessage());
                     }
