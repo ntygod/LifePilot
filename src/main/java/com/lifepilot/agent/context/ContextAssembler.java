@@ -227,9 +227,10 @@ public class ContextAssembler {
                 log.debug("记忆检索无结果: sessionId={}, goal={}", state.sessionId(), truncate(state.goal(), 50));
             }
 
-            // 4. 动态预算分配（降级容错）
+            // 4. 动态预算分配（降级容错）— 优先使用会话级 Token 窗口
             int conversationTurns = countConversationTurns(slots);
-            var budgetAllocation = safeAllocate(tokenBudgetAllocator, conversationTurns, topScore, !retrievalResults.isEmpty());
+            int sessionMaxTokens = state.budget() != null ? state.budget().maxTokens() : 0;
+            var budgetAllocation = safeAllocate(tokenBudgetAllocator, conversationTurns, topScore, !retrievalResults.isEmpty(), sessionMaxTokens);
 
             // 5. 按预算截断
             var truncatedMemories = truncateByBudget(retrievalResults, budgetAllocation.knowledgeEntityBudget());
@@ -653,12 +654,21 @@ public class ContextAssembler {
 
     /** 安全执行预算分配，异常时使用静态分配降级。 */
     private BudgetAllocation safeAllocate(TokenBudgetAllocator allocator, int conversationTurns, float topScore, boolean hasMemoryData) {
+        return safeAllocate(allocator, conversationTurns, topScore, hasMemoryData, 0);
+    }
+
+    /**
+     * 安全执行预算分配，支持会话级 Token 窗口覆盖。
+     *
+     * @param sessionMaxTokens 会话配置的 maxTokens，≤ 0 时使用全局默认值
+     */
+    private BudgetAllocation safeAllocate(TokenBudgetAllocator allocator, int conversationTurns, float topScore, boolean hasMemoryData, int sessionMaxTokens) {
         try {
-            int windowSize = config.getContext().getMaxContextTokens();
+            int windowSize = sessionMaxTokens > 0 ? sessionMaxTokens : config.getContext().getMaxContextTokens();
             return allocator.allocate(windowSize, conversationTurns, topScore, hasMemoryData);
         } catch (Exception e) {
             log.warn("预算分配降级: error={}", e.getMessage());
-            int total = config.getContext().getMaxContextTokens();
+            int total = sessionMaxTokens > 0 ? sessionMaxTokens : config.getContext().getMaxContextTokens();
             return new BudgetAllocation(
                     (int) (total * 0.02),   // userProfileBudget
                     (int) (total * 0.30),   // currentSessionBudget
