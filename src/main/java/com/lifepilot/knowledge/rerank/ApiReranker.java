@@ -31,11 +31,12 @@ public final class ApiReranker implements Reranker {
     private static final Logger log = LoggerFactory.getLogger(ApiReranker.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    private final KnowledgeBaseProperties.Reranker config;
+    private final RerankerConfigProvider configProvider;
     private final HttpClient httpClient;
 
-    public ApiReranker(KnowledgeBaseProperties.Reranker config) {
-        this.config = config;
+    public ApiReranker(RerankerConfigProvider configProvider) {
+        this.configProvider = configProvider;
+        var config = configProvider.getConfig();
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofMillis(config.apiTimeoutMs()))
                 .build();
@@ -52,11 +53,12 @@ public final class ApiReranker implements Reranker {
     public List<DocumentSearchResult> rerank(String query, List<DocumentSearchResult> candidates,
                                               int topK, @Nullable String modelName) {
         if (candidates.isEmpty()) return candidates;
-        String effectiveModel = resolveModel(modelName);
+        var config = configProvider.getConfig();
+        String effectiveModel = resolveModel(modelName, config);
         try {
             return switch (config.apiProvider()) {
-                case "jina" -> rerankWithJina(query, candidates, topK, effectiveModel);
-                case "cohere" -> rerankWithCohere(query, candidates, topK, effectiveModel);
+                case "jina" -> rerankWithJina(query, candidates, topK, effectiveModel, config);
+                case "cohere" -> rerankWithCohere(query, candidates, topK, effectiveModel, config);
                 default -> {
                     log.warn("未知 Reranker provider: {}, 跳过精排", config.apiProvider());
                     yield candidates.stream().limit(topK).toList();
@@ -73,7 +75,8 @@ public final class ApiReranker implements Reranker {
         if (candidates.isEmpty()) return candidates;
         try {
             var documents = candidates.stream().map(RerankCandidate::content).toList();
-            var apiResults = callApiGeneric(query, documents, topK);
+            var config = configProvider.getConfig();
+            var apiResults = callApiGeneric(query, documents, topK, config);
             return apiResults.stream()
                     .filter(r -> r.index() >= 0 && r.index() < candidates.size())
                     .map(r -> new RerankCandidate(
@@ -93,8 +96,9 @@ public final class ApiReranker implements Reranker {
     /**
      * 通用 API 精排调用 — 接受纯文本文档列表。
      */
-    private List<RerankResult> callApiGeneric(String query, List<String> documents, int topK) throws Exception {
-        String effectiveModel = resolveModel(null);
+    private List<RerankResult> callApiGeneric(String query, List<String> documents, int topK,
+                                                KnowledgeBaseProperties.Reranker config) throws Exception {
+        String effectiveModel = resolveModel(null, config);
         String endpoint = switch (config.apiProvider()) {
             case "jina" -> config.apiEndpoint().isBlank()
                     ? "https://api.jina.ai/v1/rerank" : config.apiEndpoint();
@@ -129,7 +133,7 @@ public final class ApiReranker implements Reranker {
     /**
      * 解析有效模型名：modelName 参数 → config.model() → provider 默认值。
      */
-    private String resolveModel(@Nullable String modelName) {
+    private String resolveModel(@Nullable String modelName, KnowledgeBaseProperties.Reranker config) {
         if (modelName != null && !modelName.isBlank()) return modelName;
         if (!config.model().isBlank()) return config.model();
         return switch (config.apiProvider()) {
@@ -145,7 +149,8 @@ public final class ApiReranker implements Reranker {
     private List<DocumentSearchResult> rerankWithJina(String query,
                                                        List<DocumentSearchResult> candidates,
                                                        int topK,
-                                                       String effectiveModel) throws Exception {
+                                                       String effectiveModel,
+                                                       KnowledgeBaseProperties.Reranker config) throws Exception {
         String endpoint = config.apiEndpoint().isBlank()
                 ? "https://api.jina.ai/v1/rerank" : config.apiEndpoint();
         var documents = candidates.stream().map(DocumentSearchResult::content).toList();
@@ -154,7 +159,7 @@ public final class ApiReranker implements Reranker {
                 "query", query,
                 "documents", documents,
                 "top_n", topK);
-        return callApi(endpoint, requestBody, candidates);
+        return callApi(endpoint, requestBody, candidates, config);
     }
 
     /**
@@ -163,7 +168,8 @@ public final class ApiReranker implements Reranker {
     private List<DocumentSearchResult> rerankWithCohere(String query,
                                                          List<DocumentSearchResult> candidates,
                                                          int topK,
-                                                         String effectiveModel) throws Exception {
+                                                         String effectiveModel,
+                                                         KnowledgeBaseProperties.Reranker config) throws Exception {
         String endpoint = config.apiEndpoint().isBlank()
                 ? "https://api.cohere.com/v2/rerank" : config.apiEndpoint();
         var documents = candidates.stream().map(DocumentSearchResult::content).toList();
@@ -172,14 +178,15 @@ public final class ApiReranker implements Reranker {
                 "query", query,
                 "documents", documents,
                 "top_n", topK);
-        return callApi(endpoint, requestBody, candidates);
+        return callApi(endpoint, requestBody, candidates, config);
     }
 
     /**
      * 通用 API 调用逻辑 — Jina 和 Cohere 响应格式兼容。
      */
     private List<DocumentSearchResult> callApi(String endpoint, Map<String, Object> requestBody,
-                                                List<DocumentSearchResult> candidates) throws Exception {
+                                                List<DocumentSearchResult> candidates,
+                                                KnowledgeBaseProperties.Reranker config) throws Exception {
         String json = MAPPER.writeValueAsString(requestBody);
         var request = HttpRequest.newBuilder()
                 .uri(URI.create(endpoint))

@@ -2,6 +2,7 @@ package com.lifepilot.memory.retrieval;
 
 import com.lifepilot.knowledge.rerank.RerankCandidate;
 import com.lifepilot.knowledge.rerank.Reranker;
+import com.lifepilot.knowledge.rerank.RerankerConfigProvider;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.procedural.IntentMatcher;
 import com.lifepilot.memory.semantic.SemanticMemory;
@@ -53,6 +54,8 @@ public class HybridRetriever {
     private final ExecutorService virtualThreadExecutor;
     @Nullable
     private final Reranker reranker;
+    @Nullable
+    private final RerankerConfigProvider rerankerConfigProvider;
 
     /** 最近一次 retrieve() 中 L4 程序记忆匹配结果（线程安全，每次 retrieve 重置）。 */
     private volatile ReasoningSlot lastProcedureSlot;
@@ -67,7 +70,8 @@ public class HybridRetriever {
                            @Nullable IntentMatcher intentMatcher,
                            MemoryProperties memoryProperties,
                            JdbcTemplate jdbcTemplate,
-                           @Nullable Reranker reranker) {
+                           @Nullable Reranker reranker,
+                           @Nullable RerankerConfigProvider rerankerConfigProvider) {
         this.vectorSearcher = vectorSearcher;
         this.ftsSearcher = ftsSearcher;
         this.graphTraverser = graphTraverser;
@@ -76,6 +80,7 @@ public class HybridRetriever {
         this.memoryProperties = memoryProperties;
         this.jdbcTemplate = jdbcTemplate;
         this.reranker = reranker;
+        this.rerankerConfigProvider = rerankerConfigProvider;
         this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
     }
 
@@ -204,8 +209,18 @@ public class HybridRetriever {
 
         // 6. 按 entity_id 去重（保留 fusedScore 最高），排序，截取 topK
         // 5.5 可选精排（Reranker 可用且记忆精排已启用时）
-        var rerankerConfig = memoryProperties.getReranker();
-        if (reranker != null && rerankerConfig.isEnabled()) {
+        var memRerankerDefaults = memoryProperties.getReranker();
+        boolean memRerankEnabled = rerankerConfigProvider != null
+                ? rerankerConfigProvider.isMemoryRerankEnabled(memRerankerDefaults.isEnabled())
+                : memRerankerDefaults.isEnabled();
+        int memRerankTopK = rerankerConfigProvider != null
+                ? rerankerConfigProvider.getMemoryRerankTopK(memRerankerDefaults.getTopK())
+                : memRerankerDefaults.getTopK();
+        // 同时检查全局 Reranker 是否启用
+        boolean globalRerankEnabled = rerankerConfigProvider != null
+                ? rerankerConfigProvider.getConfig().enabled()
+                : true;
+        if (reranker != null && memRerankEnabled && globalRerankEnabled) {
             try {
                 var candidates = results.stream()
                         .map(r -> new RerankCandidate(
@@ -213,7 +228,7 @@ public class HybridRetriever {
                                 r.name() + " " + (r.description() != null ? r.description() : ""),
                                 r.fusedScore()))
                         .toList();
-                var reranked = reranker.rerankGeneric(query, candidates, rerankerConfig.getTopK());
+                var reranked = reranker.rerankGeneric(query, candidates, memRerankTopK);
                 var resultMap = new HashMap<String, RetrievalResult>();
                 for (var r : results) resultMap.put(r.entityId(), r);
                 results = reranked.stream()
@@ -233,7 +248,7 @@ public class HybridRetriever {
             } catch (Exception e) {
                 log.warn("记忆精排失败，降级使用未精排结果: {}", e.getMessage());
             }
-        } else if (rerankerConfig.isEnabled() && reranker == null) {
+        } else if (memRerankEnabled && reranker == null) {
             log.warn("记忆精排已启用但 Reranker Bean 不存在，跳过精排");
         }
 

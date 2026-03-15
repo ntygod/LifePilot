@@ -13,6 +13,7 @@ import com.lifepilot.knowledge.parser.*;
 import com.lifepilot.knowledge.rerank.ApiReranker;
 import com.lifepilot.knowledge.rerank.LlmReranker;
 import com.lifepilot.knowledge.rerank.Reranker;
+import com.lifepilot.knowledge.rerank.RerankerConfigProvider;
 import com.lifepilot.knowledge.repository.DocumentChunkRepository;
 import com.lifepilot.knowledge.repository.DocumentRepository;
 import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
@@ -20,6 +21,7 @@ import com.lifepilot.knowledge.retrieve.DocumentRetriever;
 import com.lifepilot.knowledge.retrieve.QueryEnhancer;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.memory.semantic.SemanticMemory;
+import com.lifepilot.interaction.web.repository.UserSettingsRepository;
 import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -215,19 +217,29 @@ public class KnowledgeAutoConfiguration {
         return new QueryEnhancer(llmRouter, props.queryEnhancer());
     }
 
-    // ---- Reranker（可选） ----
+    // ---- Reranker 配置提供者 + Reranker（始终创建，运行时检查 enabled） ----
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnProperty(prefix = "lifepilot.knowledge.reranker", name = "enabled",
-            havingValue = "true")
+    public RerankerConfigProvider rerankerConfigProvider(
+            @Nullable UserSettingsRepository userSettingsRepository,
+            KnowledgeBaseProperties props,
+            ObjectMapper objectMapper) {
+        java.util.function.Supplier<String> dbReader = userSettingsRepository != null
+                ? userSettingsRepository::getRerankerConfig
+                : () -> "{}";
+        return new RerankerConfigProvider(dbReader, props.reranker(), objectMapper);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     public Reranker reranker(LlmRouter llmRouter,
-                            KnowledgeBaseProperties props,
+                            RerankerConfigProvider rerankerConfigProvider,
                             PromptRegistry promptRegistry) {
-        var rerankerConfig = props.reranker();
+        var rerankerConfig = rerankerConfigProvider.getConfig();
         return switch (rerankerConfig.type()) {
-            case "api" -> new ApiReranker(rerankerConfig);
-            default -> new LlmReranker(llmRouter, rerankerConfig, promptRegistry);
+            case "api" -> new ApiReranker(rerankerConfigProvider);
+            default -> new LlmReranker(llmRouter, rerankerConfigProvider, promptRegistry);
         };
     }
 
@@ -237,11 +249,12 @@ public class KnowledgeAutoConfiguration {
     @ConditionalOnMissingBean
     public DocumentRetriever documentRetriever(@Nullable VectorIndexer vectorIndexer, FtsIndexer ftsIndexer,
                                                 Optional<Reranker> reranker,
+                                                @Nullable RerankerConfigProvider rerankerConfigProvider,
                                                 @Nullable QueryEnhancer queryEnhancer,
                                                 DocumentChunkRepository chunkRepository,
                                                 KnowledgeBaseRepository kbRepository,
                                                 KnowledgeBaseProperties props) {
-        return new DocumentRetriever(vectorIndexer, ftsIndexer, reranker, queryEnhancer,
+        return new DocumentRetriever(vectorIndexer, ftsIndexer, reranker, rerankerConfigProvider, queryEnhancer,
                 chunkRepository, kbRepository, props.retrieval());
     }
 

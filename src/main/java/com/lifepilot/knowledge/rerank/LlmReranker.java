@@ -31,15 +31,16 @@ public final class LlmReranker implements Reranker {
     private static final String SCENE = "knowledge_rerank";
 
     private final LlmRouter llmRouter;
-    private final KnowledgeBaseProperties.Reranker config;
+    private final RerankerConfigProvider configProvider;
     private final PromptRegistry promptRegistry;
 
     public LlmReranker(LlmRouter llmRouter,
-                       KnowledgeBaseProperties.Reranker config,
+                       RerankerConfigProvider configProvider,
                        PromptRegistry promptRegistry) {
         this.llmRouter = llmRouter;
-        this.config = config;
+        this.configProvider = configProvider;
         this.promptRegistry = promptRegistry;
+        var config = configProvider.getConfig();
         log.info("LlmReranker 初始化: mode={}, listwiseMaxCandidates={}",
                 config.llmMode(), config.listwiseMaxCandidates());
     }
@@ -55,8 +56,9 @@ public final class LlmReranker implements Reranker {
         if (candidates.isEmpty()) {
             return candidates;
         }
+        var config = configProvider.getConfig();
         return switch (config.llmMode()) {
-            case "listwise" -> rerankListwise(query, candidates, topK, modelName);
+            case "listwise" -> rerankListwise(query, candidates, topK, modelName, config);
             default -> rerankPointwise(query, candidates, topK, modelName);
         };
     }
@@ -142,7 +144,8 @@ public final class LlmReranker implements Reranker {
      */
     private List<DocumentSearchResult> rerankListwise(String query,
                                                        List<DocumentSearchResult> candidates,
-                                                       int topK, @Nullable String modelName) {
+                                                       int topK, @Nullable String modelName,
+                                                       KnowledgeBaseProperties.Reranker config) {
         try {
             List<DocumentSearchResult> sorted;
             if (candidates.size() <= config.listwiseMaxCandidates()) {
@@ -220,7 +223,7 @@ public final class LlmReranker implements Reranker {
     private List<DocumentSearchResult> listwiseSlidingWindow(String query,
                                                               List<DocumentSearchResult> candidates,
                                                               @Nullable String modelName) {
-        int windowSize = config.listwiseMaxCandidates();
+        int windowSize = configProvider.getConfig().listwiseMaxCandidates();
         var remaining = new ArrayList<>(candidates);
         var finalized = new ArrayList<DocumentSearchResult>();
 

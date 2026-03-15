@@ -7,6 +7,7 @@ import com.lifepilot.knowledge.model.DocumentSearchResult;
 import com.lifepilot.knowledge.model.KnowledgeBase;
 import com.lifepilot.knowledge.model.ScoreBreakdown;
 import com.lifepilot.knowledge.rerank.Reranker;
+import com.lifepilot.knowledge.rerank.RerankerConfigProvider;
 import com.lifepilot.knowledge.repository.DocumentChunkRepository;
 import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
 import org.slf4j.Logger;
@@ -35,6 +36,8 @@ public class DocumentRetriever {
     private final FtsIndexer ftsIndexer;
     private final Optional<Reranker> reranker;
     @Nullable
+    private final RerankerConfigProvider rerankerConfigProvider;
+    @Nullable
     private final QueryEnhancer queryEnhancer;
     private final DocumentChunkRepository chunkRepository;
     private final KnowledgeBaseRepository kbRepository;
@@ -43,16 +46,18 @@ public class DocumentRetriever {
     /**
      * 构造文档混合检索服务。
      *
-     * @param vectorIndexer   向量索引服务
-     * @param ftsIndexer      FTS5 索引服务
-     * @param reranker        可选 Reranker（精排）
-     * @param queryEnhancer   查询增强器（可选）
-     * @param chunkRepository 分块数据访问层（上下文窗口扩展）
-     * @param kbRepository    知识库数据访问层（per-KB 模型解析）
-     * @param config          检索配置
+     * @param vectorIndexer          向量索引服务
+     * @param ftsIndexer             FTS5 索引服务
+     * @param reranker               可选 Reranker（精排）
+     * @param rerankerConfigProvider Reranker 配置提供者（可选）
+     * @param queryEnhancer          查询增强器（可选）
+     * @param chunkRepository        分块数据访问层（上下文窗口扩展）
+     * @param kbRepository           知识库数据访问层（per-KB 模型解析）
+     * @param config                 检索配置
      */
     public DocumentRetriever(@Nullable VectorIndexer vectorIndexer, FtsIndexer ftsIndexer,
                               Optional<Reranker> reranker,
+                              @Nullable RerankerConfigProvider rerankerConfigProvider,
                               @Nullable QueryEnhancer queryEnhancer,
                               DocumentChunkRepository chunkRepository,
                               KnowledgeBaseRepository kbRepository,
@@ -60,6 +65,7 @@ public class DocumentRetriever {
         this.vectorIndexer = vectorIndexer;
         this.ftsIndexer = ftsIndexer;
         this.reranker = reranker;
+        this.rerankerConfigProvider = rerankerConfigProvider;
         this.queryEnhancer = queryEnhancer;
         this.chunkRepository = chunkRepository;
         this.kbRepository = kbRepository;
@@ -125,8 +131,11 @@ public class DocumentRetriever {
             fused = expandContextWindow(fused);
         }
 
-        // 6. 可选精排
-        if (reranker.isPresent() && !fused.isEmpty()) {
+        // 6. 可选精排（检查运行时 enabled 状态）
+        boolean rerankEnabled = rerankerConfigProvider != null
+                ? rerankerConfigProvider.getConfig().enabled()
+                : true;
+        if (reranker.isPresent() && rerankEnabled && !fused.isEmpty()) {
             try {
                 var reranked = reranker.get().rerank(query, fused, effectiveTopK, rerankerModel);
                 log.debug("精排完成: input={}, output={}", fused.size(), reranked.size());
