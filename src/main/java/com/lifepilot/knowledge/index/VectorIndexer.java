@@ -51,15 +51,53 @@ public class VectorIndexer {
                 config.batchSize(), config.maxRetries(), config.embeddingDimension());
     }
 
-    /** 程序化创建 chunk_embeddings vec0 虚拟表，sqlite-vec 不可用时跳过。 */
+    /**
+     * 程序化创建 chunk_embeddings vec0 虚拟表，sqlite-vec 不可用时跳过。
+     *
+     * <p>如果表已存在但维度与配置不一致，自动删除并重建（数据需重新索引）。
+     */
     private void initVec0Table() {
+        int targetDim = config.embeddingDimension();
         try {
-            jdbcTemplate.execute(
-                    "CREATE VIRTUAL TABLE IF NOT EXISTS chunk_embeddings USING vec0(" +
-                    "chunk_id TEXT PRIMARY KEY, " +
-                    "embedding float[" + config.embeddingDimension() + "]" +
-                    ")");
-            log.info("向量索引: chunk_embeddings vec0 表初始化完成, dimension={}", config.embeddingDimension());
+            // 检测已有表的维度是否匹配：插入零向量探测，失败说明维度不一致
+            boolean needRecreate = false;
+            try {
+                // 先尝试创建（如果表不存在则直接成功）
+                jdbcTemplate.execute(
+                        "CREATE VIRTUAL TABLE IF NOT EXISTS chunk_embeddings USING vec0(" +
+                        "chunk_id TEXT PRIMARY KEY, " +
+                        "embedding float[" + targetDim + "]" +
+                        ")");
+                // 表存在后，用零向量探测维度是否匹配
+                float[] probe = new float[targetDim];
+                String probeVector = vectorToString(probe);
+                jdbcTemplate.update(
+                        "INSERT INTO chunk_embeddings (chunk_id, embedding) VALUES (?, ?)",
+                        "__dim_probe__", probeVector);
+                // 探测成功，维度匹配，清理探测数据
+                jdbcTemplate.update("DELETE FROM chunk_embeddings WHERE chunk_id = ?", "__dim_probe__");
+            } catch (Exception probeEx) {
+                String msg = probeEx.getMessage() != null ? probeEx.getMessage() : "";
+                if (msg.contains("dimension") || msg.contains("Expected")) {
+                    log.warn("向量索引: 检测到维度不匹配，将删除并重建 chunk_embeddings 表 (目标维度={})", targetDim);
+                    needRecreate = true;
+                } else {
+                    // 其他错误（如 sqlite-vec 未加载），直接抛出
+                    throw probeEx;
+                }
+            }
+
+            if (needRecreate) {
+                jdbcTemplate.execute("DROP TABLE IF EXISTS chunk_embeddings");
+                jdbcTemplate.execute(
+                        "CREATE VIRTUAL TABLE chunk_embeddings USING vec0(" +
+                        "chunk_id TEXT PRIMARY KEY, " +
+                        "embedding float[" + targetDim + "]" +
+                        ")");
+                log.info("向量索引: chunk_embeddings 表已重建, dimension={} (已有向量数据需重新索引)", targetDim);
+            } else {
+                log.info("向量索引: chunk_embeddings vec0 表初始化完成, dimension={}", targetDim);
+            }
         } catch (Exception e) {
             log.warn("向量索引: chunk_embeddings vec0 表创建失败，sqlite-vec 可能未加载", e);
         }

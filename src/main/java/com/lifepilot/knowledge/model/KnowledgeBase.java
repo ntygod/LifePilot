@@ -20,7 +20,7 @@ public record KnowledgeBase(
         String id,
         String name,
         String description,
-        String embeddingModel,
+        @Nullable String embeddingModel,
         @Nullable String rerankerModel,
         String chunkingStrategy,
         Map<String, Object> chunkingConfig,
@@ -47,7 +47,7 @@ public record KnowledgeBase(
      * @return 新创建的知识库实例
      */
     public static KnowledgeBase create(String name, String description,
-                                       String embeddingModel,
+                                       @Nullable String embeddingModel,
                                        @Nullable String rerankerModel,
                                        @Nullable String chunkingStrategy,
                                        @Nullable Map<String, Object> chunkingConfig,

@@ -1,7 +1,6 @@
 package com.lifepilot.interaction.web.controller;
 
 import com.lifepilot.agent.proactive.ResponseTracker;
-import com.lifepilot.agent.proactive.config.ProactiveConfigProperties;
 import com.lifepilot.interaction.model.ChannelType;
 import com.lifepilot.interaction.model.GatewayResponse;
 import com.lifepilot.interaction.model.ResponseContent;
@@ -56,8 +55,6 @@ class ChatController_A2uiContract_测试 {
     @Mock
     KnowledgeBaseProperties knowledgeBaseProperties;
     @Mock
-    ProactiveConfigProperties proactiveConfigProperties;
-    @Mock
     ResponseTracker responseTracker;
     @Mock
     WebUserConfirmationService confirmationService;
@@ -71,7 +68,6 @@ class ChatController_A2uiContract_测试 {
                 messageFeedbackRepository,
                 attachmentRepository,
                 knowledgeBaseProperties,
-                proactiveConfigProperties,
                 responseTracker,
                 confirmationService,
                 null

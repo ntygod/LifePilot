@@ -42,6 +42,8 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
+import { llmProviderApi } from '@/api/client'
+import type { LlmProvider } from '@/api/client'
 import type { KnowledgeBase } from '@/types'
 
 const store = useKnowledgeBaseStore()
@@ -51,8 +53,15 @@ const showCreate = ref(false)
 const createForm = ref({
   name: '',
   description: '',
+  embeddingModel: '' as string | undefined,
   tags: [] as string[],
 })
+
+// Provider 列表（用于向量模型下拉选择）
+const providers = ref<LlmProvider[]>([])
+const embeddingProviders = computed(() =>
+  providers.value.filter(p => p.capabilities?.includes('EMBEDDING'))
+)
 
 const editingKb = ref<KnowledgeBase | null>(null)
 const editForm = ref({
@@ -139,6 +148,7 @@ const showDeleteConfirm = computed({
 
 onMounted(() => {
   void store.fetchList()
+  llmProviderApi.listEnabledProviders().then(list => { providers.value = list }).catch(() => {})
 })
 
 function formatDate(dateStr: string) {
@@ -155,10 +165,18 @@ function selectKb(kb: KnowledgeBase) {
 
 async function handleCreate() {
   if (!createForm.value.name.trim()) return
-  const kb = await store.create(createForm.value)
+  const req: any = {
+    name: createForm.value.name,
+    description: createForm.value.description,
+    tags: createForm.value.tags,
+  }
+  if (createForm.value.embeddingModel) {
+    req.embeddingModel = createForm.value.embeddingModel
+  }
+  const kb = await store.create(req)
   if (kb) {
     showCreate.value = false
-    createForm.value = { name: '', description: '', tags: [] }
+    createForm.value = { name: '', description: '', embeddingModel: '', tags: [] }
   }
 }
 
@@ -577,6 +595,25 @@ function clearFilters() {
               placeholder="输入知识库描述"
               class="resize-none"
             />
+          </div>
+
+          <div class="space-y-2">
+            <Label>向量模型</Label>
+            <Select v-model="createForm.embeddingModel">
+              <SelectTrigger class="w-full">
+                <SelectValue placeholder="使用系统默认" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem
+                  v-for="p in embeddingProviders"
+                  :key="p.id"
+                  :value="p.modelName"
+                >
+                  {{ p.displayName || p.modelName }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            <p class="text-xs text-muted-foreground">不选择则使用系统默认的 Embedding 模型</p>
           </div>
 
           <DialogFooter>

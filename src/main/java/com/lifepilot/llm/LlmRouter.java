@@ -598,17 +598,24 @@ public class LlmRouter {
      * @throws LlmUnavailableException 所有 EMBEDDING Provider 均失败
      */
     public float[] embed(String text, @Nullable String modelName) {
-        if (modelName == null || modelName.isBlank()) {
+        if (modelName == null || modelName.isBlank() || "default".equals(modelName)) {
             return embed(text);
         }
-        var byModel = providerRegistry.findByModelName(modelName).stream()
+        var allByModel = providerRegistry.findByModelName(modelName);
+        var byModel = allByModel.stream()
                 .filter(c -> c.hasCapability(ProviderCapability.EMBEDDING))
                 .filter(c -> circuitBreakerManager.isCallPermitted(c.id(), "EMBEDDING"))
                 .toList();
         if (byModel.isEmpty()) {
-            log.warn("指定 embeddingModel 未找到可用 Provider，回退到默认: modelName={}", modelName);
+            if (!allByModel.isEmpty()) {
+                log.warn("指定 embeddingModel 匹配到 Provider 但无 EMBEDDING 能力，回退到默认: modelName={}, 匹配到={}",
+                        modelName, allByModel.stream().map(c -> c.id() + "(capabilities=" + c.capabilities() + ")").toList());
+            } else {
+                log.warn("指定 embeddingModel 未匹配到任何 Provider，回退到默认: modelName={}", modelName);
+            }
             return embed(text);
         }
+        log.debug("Embedding 模型路由命中: modelName={}, provider={}", modelName, byModel.getFirst().id());
         var attemptedProviders = new ArrayList<String>();
         Exception lastException = null;
         for (int i = 0; i < byModel.size(); i++) {

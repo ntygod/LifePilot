@@ -62,7 +62,7 @@ public class KnowledgeBaseManager {
      * @return 创建的知识库
      */
     @Transactional
-    public KnowledgeBase createKnowledgeBase(String name, String description, String embeddingModel,
+    public KnowledgeBase createKnowledgeBase(String name, String description, @Nullable String embeddingModel,
                                              String rerankerModel, String chunkingStrategy,
                                              Map<String, Object> chunkingConfig, List<String> tags) {
         KnowledgeBase kb = KnowledgeBase.create(name, description, embeddingModel,

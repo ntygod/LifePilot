@@ -304,7 +304,7 @@ lifepilot:
     vector-indexer:
       batch-size: 32
       max-retries: 2
-      embedding-dimension: 1536
+      embedding-dimension: 1024
     retrieval:
       default-top-k: 10
       vector-weight: 0.6

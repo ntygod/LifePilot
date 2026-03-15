@@ -12,6 +12,7 @@ import {
   FileText,
   Files,
   Filter,
+  Pencil,
   RefreshCw,
   Search,
   TestTube,
@@ -20,7 +21,8 @@ import {
   Upload,
   XCircle,
 } from 'lucide-vue-next'
-import { knowledgeBaseApi } from '@/api/client'
+import { knowledgeBaseApi, llmProviderApi } from '@/api/client'
+import type { LlmProvider } from '@/api/client'
 import type {
   KbDocument,
   KbStats,
@@ -60,6 +62,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Textarea } from '@/components/ui/textarea'
 import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
 import { useUiStore } from '@/stores/ui'
 
@@ -76,6 +79,7 @@ const kb = ref<{
   tags?: string[]
   embeddingModel?: string
   rerankerModel?: string
+  chunkingStrategy?: string
   updatedAt?: string
 } | null>(null)
 const stats = ref<KbStats | null>(null)
@@ -107,8 +111,27 @@ const selectedDocIds = ref<Set<string>>(new Set())
 const showBatchDeleteConfirm = ref(false)
 const batchDeleting = ref(false)
 
-const rerankerModelInput = ref('')
-const savingRerankerModel = ref(false)
+
+
+// 编辑模式
+const editing = ref(false)
+const savingEdit = ref(false)
+const editForm = ref({
+  name: '',
+  description: '',
+  tags: '',
+  embeddingModel: '',
+  rerankerModel: '',
+  chunkingStrategy: 'smart',
+})
+
+// Provider 列表（用于模型下拉选择）
+const providers = ref<LlmProvider[]>([])
+const embeddingProviders = computed(() =>
+  providers.value.filter(p => p.capabilities?.includes('EMBEDDING'))
+)
+// 所有 provider 都可以做精排（LLM reranker 用 chat 能力）
+const rerankerProviders = computed(() => providers.value)
 
 const acceptTypes = Array.from(SUPPORTED_TYPES)
 
@@ -243,15 +266,16 @@ async function loadData() {
   error.value = null
 
   try {
-    const [kbResponse, statsResponse, documentsResponse] = await Promise.all([
+    const [kbResponse, statsResponse, documentsResponse, providerList] = await Promise.all([
       knowledgeBaseApi.get(kbId.value),
       knowledgeBaseApi.getStats(kbId.value),
       knowledgeBaseApi.listDocuments(kbId.value),
+      llmProviderApi.listEnabledProviders().catch(() => [] as LlmProvider[]),
     ])
     kb.value = kbResponse
-    rerankerModelInput.value = kbResponse.rerankerModel || ''
     stats.value = statsResponse
     documents.value = documentsResponse
+    providers.value = providerList
   } catch (event: any) {
     error.value = event.message ?? '加载失败'
   } finally {
@@ -453,22 +477,54 @@ async function testRetrieval() {
   }
 }
 
-async function saveRerankerModel() {
+function startEditing() {
+  if (!kb.value) return
+  editForm.value = {
+    name: kb.value.name || '',
+    description: kb.value.description || '',
+    tags: (kb.value.tags || []).join(', '),
+    embeddingModel: kb.value.embeddingModel || '',
+    rerankerModel: kb.value.rerankerModel || '__none__',
+    chunkingStrategy: kb.value.chunkingStrategy || 'smart',
+  }
+  editing.value = true
+}
+
+function cancelEditing() {
+  editing.value = false
+}
+
+async function saveEdit() {
   if (!kbId.value) return
-  savingRerankerModel.value = true
+  savingEdit.value = true
   try {
-    const value = rerankerModelInput.value.trim()
+    const tags = editForm.value.tags
+      .split(/[,，]/)
+      .map(t => t.trim())
+      .filter(Boolean)
     const updated = await knowledgeBaseApi.update(kbId.value, {
-      rerankerModel: value || null,
+      name: editForm.value.name || undefined,
+      description: editForm.value.description || undefined,
+      tags,
+      embeddingModel: editForm.value.embeddingModel || undefined,
+      rerankerModel: editForm.value.rerankerModel === '__none__' ? null : (editForm.value.rerankerModel || null),
+      chunkingStrategy: editForm.value.chunkingStrategy || undefined,
     })
-    if (kb.value) {
-      kb.value = { ...kb.value, rerankerModel: updated.rerankerModel }
+    kb.value = {
+      ...kb.value!,
+      name: updated.name,
+      description: updated.description,
+      tags: updated.tags,
+      embeddingModel: updated.embeddingModel,
+      rerankerModel: updated.rerankerModel,
+      chunkingStrategy: updated.chunkingStrategy,
     }
-    uiStore.showToast('success', '精排模型已更新')
+    editing.value = false
+    uiStore.showToast('success', '知识库配置已更新')
   } catch (e: any) {
-    uiStore.showToast('error', e?.message || '保存精排模型失败')
+    uiStore.showToast('error', e?.message || '保存失败')
   } finally {
-    savingRerankerModel.value = false
+    savingEdit.value = false
   }
 }
 
@@ -622,9 +678,102 @@ function clearDocumentFilters() {
               <PageSection
                 eyebrow="库信息"
                 title="基础配置"
-                description="先确认这个库的模型、格式范围和当前处理压力，再进入文档操作。"
+                description="知识库的模型、分块策略和基本信息。"
               >
-                <div class="grid gap-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(280px,0.75fr)]">
+                <template #actions>
+                  <Button v-if="!editing" type="button" variant="outline" size="sm" @click="startEditing">
+                    <Pencil class="size-4" />
+                    编辑
+                  </Button>
+                </template>
+
+                <!-- 编辑模式 -->
+                <div v-if="editing" class="detail-card p-5">
+                  <form class="space-y-5" @submit.prevent="saveEdit">
+                    <div class="grid gap-5 lg:grid-cols-2">
+                      <div class="space-y-2">
+                        <Label class="text-xs text-muted-foreground">知识库名称</Label>
+                        <Input v-model="editForm.name" placeholder="输入知识库名称" />
+                      </div>
+                      <div class="space-y-2">
+                        <Label class="text-xs text-muted-foreground">标签（逗号分隔）</Label>
+                        <Input v-model="editForm.tags" placeholder="标签1, 标签2" />
+                      </div>
+                    </div>
+
+                    <div class="space-y-2">
+                      <Label class="text-xs text-muted-foreground">描述</Label>
+                      <Textarea v-model="editForm.description" :rows="3" class="resize-none" placeholder="知识库用途说明" />
+                    </div>
+
+                    <div class="grid gap-5 lg:grid-cols-3">
+                      <div class="space-y-2">
+                        <Label class="text-xs text-muted-foreground">向量模型</Label>
+                        <Select v-model="editForm.embeddingModel">
+                          <SelectTrigger class="w-full">
+                            <SelectValue placeholder="选择向量模型" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem
+                              v-for="p in embeddingProviders"
+                              :key="p.id"
+                              :value="p.modelName"
+                            >
+                              {{ p.displayName || p.modelName }}
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div class="space-y-2">
+                        <Label class="text-xs text-muted-foreground">精排模型</Label>
+                        <Select v-model="editForm.rerankerModel">
+                          <SelectTrigger class="w-full">
+                            <SelectValue placeholder="使用全局配置" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__">使用全局配置</SelectItem>
+                            <SelectItem
+                              v-for="p in rerankerProviders"
+                              :key="p.id"
+                              :value="p.modelName"
+                            >
+                              {{ p.displayName || p.modelName }}
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div class="space-y-2">
+                        <Label class="text-xs text-muted-foreground">分块策略</Label>
+                        <Select v-model="editForm.chunkingStrategy">
+                          <SelectTrigger class="w-full">
+                            <SelectValue placeholder="选择策略" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="smart">Smart（自动选择）</SelectItem>
+                            <SelectItem value="fixed">Fixed（固定大小）</SelectItem>
+                            <SelectItem value="recursive">Recursive（递归）</SelectItem>
+                            <SelectItem value="heading">Heading（按标题）</SelectItem>
+                            <SelectItem value="semantic">Semantic（语义）</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    <div class="flex items-center justify-end gap-3 border-t border-border/60 pt-4">
+                      <Button type="button" variant="ghost" :disabled="savingEdit" @click="cancelEditing">
+                        取消
+                      </Button>
+                      <Button type="submit" :disabled="savingEdit || !editForm.name.trim()">
+                        {{ savingEdit ? '保存中...' : '保存' }}
+                      </Button>
+                    </div>
+                  </form>
+                </div>
+
+                <!-- 只读模式 -->
+                <div v-else class="grid gap-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(280px,0.75fr)]">
                   <div class="detail-card p-4 sm:p-5">
                     <div class="space-y-4">
                       <div>
@@ -652,16 +801,13 @@ function clearDocumentFilters() {
                     <div class="space-y-4">
                       <div>
                         <div class="surface-label text-[0.68rem]">当前配置</div>
-                        <p class="mt-2 text-sm leading-6 text-muted-foreground">
-                          先确认向量模型、支持格式和更新时间，再回到文档列表处理上传、重试和删除动作。
-                        </p>
                       </div>
 
                       <div class="flex flex-wrap gap-2 text-xs text-muted-foreground">
                         <span class="surface-chip">向量模型：{{ kb.embeddingModel || '未配置' }}</span>
                         <span class="surface-chip">精排模型：{{ kb.rerankerModel || '使用全局配置' }}</span>
+                        <span class="surface-chip">分块策略：{{ kb.chunkingStrategy || 'smart' }}</span>
                         <span class="surface-chip">更新于 {{ kb.updatedAt ? formatDate(kb.updatedAt) : '暂无' }}</span>
-                        <span class="surface-chip">{{ hasDocumentFilters ? '文档筛选已启用' : '文档筛选未启用' }}</span>
                       </div>
 
                       <div class="space-y-2">
@@ -670,27 +816,6 @@ function clearDocumentFilters() {
                           <span v-for="type in acceptedFileTypes" :key="type" class="surface-chip">
                             {{ type }}
                           </span>
-                        </div>
-                      </div>
-
-                      <div class="space-y-2 border-t border-border/60 pt-4">
-                        <div class="surface-label text-[0.68rem]">精排模型</div>
-                        <div class="flex items-center gap-2">
-                          <Input
-                            v-model="rerankerModelInput"
-                            placeholder="留空使用全局配置"
-                            class="h-8 flex-1 text-xs"
-                          />
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            class="h-8 text-xs"
-                            :disabled="savingRerankerModel"
-                            @click="saveRerankerModel"
-                          >
-                            {{ savingRerankerModel ? '保存中...' : '保存' }}
-                          </Button>
                         </div>
                       </div>
                     </div>

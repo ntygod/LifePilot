@@ -125,7 +125,7 @@ public record KnowledgeBaseProperties(
         public VectorIndexer {
             if (batchSize <= 0) batchSize = 32;
             if (maxRetries <= 0) maxRetries = 2;
-            if (embeddingDimension <= 0) embeddingDimension = 1536;
+            if (embeddingDimension <= 0) embeddingDimension = 1024;
         }
     }
 

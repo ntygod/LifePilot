@@ -1,7 +1,6 @@
 package com.lifepilot.interaction.web.controller;
 
 import com.lifepilot.agent.proactive.ResponseTracker;
-import com.lifepilot.agent.proactive.config.ProactiveConfigProperties;
 import com.lifepilot.interaction.web.adapter.WebChannelAdapter;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.repository.MessageFeedbackRepository;
@@ -64,8 +63,6 @@ class WebController_Preservation_保持测试 {
     @Mock
     KnowledgeBaseProperties knowledgeBaseProperties;
     @Mock
-    ProactiveConfigProperties proactiveConfigProperties;
-    @Mock
     ResponseTracker responseTracker;
 
     // ── KnowledgeBaseController 依赖 ─────────────────────────
@@ -77,7 +74,7 @@ class WebController_Preservation_保持测试 {
         var chatController = new ChatController(
                 webChannelAdapter, sseSessionManager, chatSessionService,
                 messageFeedbackRepository, attachmentRepository, knowledgeBaseProperties,
-                proactiveConfigProperties, responseTracker, null, null);
+                responseTracker, null, null);
         var kbController = new KnowledgeBaseController(
                 knowledgeBaseManager, null, null, null);
 

@@ -160,7 +160,7 @@ public class DocumentRetriever {
     private @Nullable String resolveEmbeddingModel(List<String> kbIds) {
         var models = kbIds.stream()
                 .map(id -> kbRepository.findById(id).map(KnowledgeBase::embeddingModel).orElse(null))
-                .filter(m -> m != null && !m.isBlank())
+                .filter(m -> m != null && !m.isBlank() && !"default".equals(m))
                 .distinct()
                 .toList();
         if (models.size() == 1) return models.getFirst();

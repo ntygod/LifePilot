@@ -416,10 +416,12 @@ public class DocumentIngester {
     }
 
     private void doIndex(List<DocumentChunk> chunks, String kbId) {
-        // 从知识库配置读取 embeddingModel
+        // 从知识库配置读取 embeddingModel（null 或 "default" 表示使用系统默认 EMBEDDING Provider）
         String embeddingModel = kbRepository.findById(kbId)
                 .map(kb -> kb.embeddingModel())
+                .filter(m -> m != null && !m.isBlank() && !"default".equals(m))
                 .orElse(null);
+        log.info("文档索引开始: kbId={}, embeddingModel={}, chunkCount={}", kbId, embeddingModel, chunks.size());
 
         // 向量索引（可选）和 FTS5 索引并行执行
         var vectorFuture = CompletableFuture.runAsync(() -> {

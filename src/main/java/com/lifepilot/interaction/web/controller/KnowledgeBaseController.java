@@ -91,7 +91,7 @@ public class KnowledgeBaseController {
         var kb = kbManager.createKnowledgeBase(
                 request.name(),
                 request.description() != null ? request.description() : "",
-                request.embeddingModel() != null ? request.embeddingModel() : "default",
+                request.embeddingModel(),
                 request.rerankerModel(),
                 request.chunkingStrategy(),
                 request.chunkingConfig(),
