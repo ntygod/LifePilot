@@ -38,9 +38,12 @@ import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.*;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.content.Media;
 import org.springframework.ai.model.tool.DefaultToolCallingChatOptions;
 import org.springframework.ai.tool.ToolCallback;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.lang.Nullable;
+import org.springframework.util.MimeTypeUtils;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -187,7 +190,19 @@ public class ReactAgentLoop {
     List<Message> buildMessages(AssembledContext ctx, ReactAgentState state) {
         var messages = new ArrayList<Message>();
         messages.add(new SystemMessage(ctx.systemPrompt()));
-        messages.add(new UserMessage(ctx.userPrompt()));
+
+        // 首轮迭代且有媒体内容时，将 MediaContent 转换为 Spring AI Media 嵌入 UserMessage
+        if (ctx.mediaContents() != null && !ctx.mediaContents().isEmpty() && state.steps().isEmpty()) {
+            var builder = UserMessage.builder().text(ctx.userPrompt());
+            for (var mc : ctx.mediaContents()) {
+                builder.media(new Media(
+                        MimeTypeUtils.parseMimeType(mc.mimeType()),
+                        new ByteArrayResource(mc.data())));
+            }
+            messages.add(builder.build());
+        } else {
+            messages.add(new UserMessage(ctx.userPrompt()));
+        }
 
         // 历史 ReactStep 转换为 Spring AI 消息
         for (var step : state.steps()) {
