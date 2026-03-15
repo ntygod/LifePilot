@@ -95,7 +95,6 @@ public class InfraToolProvider implements BuiltinSkillProvider {
                         "builtin.file.write",
                         "builtin.file.list",
                         "builtin.file.search",
-                        "builtin.interact.confirm",
                         "builtin.interact.choose",
                         "builtin.interact.input",
                         "builtin.interact.notify"
@@ -161,14 +160,12 @@ public class InfraToolProvider implements BuiltinSkillProvider {
         toolRegistry.registerBuiltinTool(buildFileListTool(fileListExecutor));
         toolRegistry.registerBuiltinTool(buildFileSearchTool(fileSearchExecutor));
 
-        // 交互控制工具（4 个）
+        // 交互控制工具（3 个）
         if (interactionBridge != null) {
-            var interactConfirmExecutor = new ConfirmToolExecutor(interactionBridge);
             var interactChooseExecutor = new ChooseToolExecutor(interactionBridge);
             var interactInputExecutor = new InputToolExecutor(interactionBridge);
             var interactNotifyExecutor = new NotifyToolExecutor(interactionBridge);
 
-            toolRegistry.registerBuiltinTool(buildConfirmTool(interactConfirmExecutor));
             toolRegistry.registerBuiltinTool(buildChooseTool(interactChooseExecutor));
             toolRegistry.registerBuiltinTool(buildInputTool(interactInputExecutor));
             toolRegistry.registerBuiltinTool(buildNotifyTool(interactNotifyExecutor));
@@ -177,7 +174,7 @@ public class InfraToolProvider implements BuiltinSkillProvider {
         }
 
         log.info("基础工具注册完成: count={}, categories=[env, web, reason, shell, browser, code, file, interact]",
-                interactionBridge != null ? 21 : 17);
+                interactionBridge != null ? 20 : 17);
     }
 
     // ─────────────────────────────────────────────
@@ -576,31 +573,6 @@ public class InfraToolProvider implements BuiltinSkillProvider {
                 .build();
     }
 
-    // ─────────────────────────────────────────────
-    //  交互控制工具构建
-    // ─────────────────────────────────────────────
-
-    /** 构建确认工具 — 阻塞等待用户 yes/no 响应，LOW 风险。 */
-    private BuiltinTool buildConfirmTool(ConfirmToolExecutor executor) {
-        return BuiltinTool.builder()
-                .id("builtin.interact.confirm")
-                .name("请求用户确认")
-                .description("向用户展示操作摘要并请求确认（yes/no），阻塞等待用户响应")
-                .inputSchema(JsonSchema.of(Map.of(
-                        "type", "object",
-                        "required", List.of("message", "sessionId"),
-                        "properties", Map.of(
-                                "message", Map.of("type", "string",
-                                        "description", "需要用户确认的操作摘要"),
-                                "sessionId", Map.of("type", "string",
-                                        "description", "当前会话 ID")
-                        )
-                )))
-                .riskLevel(RiskLevel.LOW)
-                .tags(INFRA_TAGS)
-                .executor(executor::execute)
-                .build();
-    }
 
     /** 构建选择工具 — 阻塞等待用户从选项列表中选择，LOW 风险。 */
     private BuiltinTool buildChooseTool(ChooseToolExecutor executor) {

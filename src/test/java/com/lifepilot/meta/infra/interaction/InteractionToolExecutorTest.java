@@ -14,7 +14,7 @@ import java.util.concurrent.CompletableFuture;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * 交互控制工具单元测试 — Mock InteractionBridge，验证 4 个交互工具。
+ * 交互控制工具单元测试 — Mock InteractionBridge，验证 3 个交互工具。
  *
  * @author zsg
  * @since 2026-03-08
@@ -110,84 +110,6 @@ class InteractionToolExecutorTest {
         assertThat(cliHandler.lastRequest).isNotNull();
         assertThat(cliHandler.lastRequest.type()).isEqualTo(InteractionType.NOTIFY);
         assertThat(cliHandler.lastRequest.message()).isEqualTo("通知消息");
-    }
-
-    // ─────────────────────────────────────────────
-    //  ConfirmToolExecutor 测试
-    // ─────────────────────────────────────────────
-
-    @Test
-    void confirm_用户确认_返回true() {
-        var cliHandler = new TestCliInteractionHandler();
-        var bridgeWithCli = new InteractionBridge(properties, null, cliHandler);
-        var executor = new ConfirmToolExecutor(bridgeWithCli);
-
-        var futureResult = CompletableFuture.supplyAsync(() -> {
-            ToolInput input = new ToolInput("builtin.interact.confirm",
-                    Map.of("message", "确认删除？", "sessionId", "s1"),
-                    JsonSchema.empty(), null);
-            return executor.execute(input);
-        });
-
-        waitForPending(cliHandler);
-        var capturedRequest = cliHandler.lastRequest;
-        bridgeWithCli.resolve(capturedRequest.interactionId(),
-                new InteractionResponse(capturedRequest.interactionId(), null, true, false));
-
-        ToolResult result = futureResult.join();
-        assertThat(result.ok()).isTrue();
-        assertThat(result.data().get("confirmed")).isEqualTo(true);
-    }
-
-    @Test
-    void confirm_用户拒绝_返回false() {
-        var cliHandler = new TestCliInteractionHandler();
-        var bridgeWithCli = new InteractionBridge(properties, null, cliHandler);
-        var executor = new ConfirmToolExecutor(bridgeWithCli);
-
-        var futureResult = CompletableFuture.supplyAsync(() -> {
-            ToolInput input = new ToolInput("builtin.interact.confirm",
-                    Map.of("message", "确认删除？", "sessionId", "s1"),
-                    JsonSchema.empty(), null);
-            return executor.execute(input);
-        });
-
-        waitForPending(cliHandler);
-        var capturedRequest = cliHandler.lastRequest;
-        bridgeWithCli.resolve(capturedRequest.interactionId(),
-                new InteractionResponse(capturedRequest.interactionId(), null, false, false));
-
-        ToolResult result = futureResult.join();
-        assertThat(result.ok()).isTrue();
-        assertThat(result.data().get("confirmed")).isEqualTo(false);
-    }
-
-    @Test
-    void confirm_超时_返回错误() {
-        var cliHandler = new TestCliInteractionHandler();
-        var shortTimeoutProps = new MetaProperties();
-        shortTimeoutProps.getInfra().getInteraction().setResponseTimeoutSeconds(1);
-        var bridgeWithCli = new InteractionBridge(shortTimeoutProps, null, cliHandler);
-        var executor = new ConfirmToolExecutor(bridgeWithCli);
-
-        ToolInput input = new ToolInput("builtin.interact.confirm",
-                Map.of("message", "确认？", "sessionId", "s1"),
-                JsonSchema.empty(), null);
-        ToolResult result = executor.execute(input);
-
-        assertThat(result.ok()).isFalse();
-        assertThat(result.error()).contains("超时");
-    }
-
-    @Test
-    void confirm_缺少参数_返回错误() {
-        var executor = new ConfirmToolExecutor(bridge);
-        ToolInput input = new ToolInput("builtin.interact.confirm",
-                Map.of(), JsonSchema.empty(), null);
-
-        ToolResult result = executor.execute(input);
-        assertThat(result.ok()).isFalse();
-        assertThat(result.error()).contains("参数错误");
     }
 
     // ─────────────────────────────────────────────

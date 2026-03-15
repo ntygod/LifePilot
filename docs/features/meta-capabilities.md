@@ -33,7 +33,6 @@ Agent 的通用执行基础设施，按功能域分为 8 类：
 | 文件系统 | `builtin.file.write` | 写入文件 |
 | 文件系统 | `builtin.file.list` | 列出目录内容 |
 | 文件系统 | `builtin.file.search` | 搜索文件 |
-| 交互控制 | `builtin.interact.confirm` | 请求用户确认（是/否） |
 | 交互控制 | `builtin.interact.choose` | 请求用户选择（多选项） |
 | 交互控制 | `builtin.interact.input` | 请求用户输入文本 |
 | 交互控制 | `builtin.interact.notify` | 向用户推送通知（非阻塞） |
