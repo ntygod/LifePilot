@@ -3,44 +3,49 @@ package com.lifepilot.llm;
 import java.util.List;
 
 /**
- * LLM task-intent scene constants.
+ * LLM 任务意图场景常量。
+ *
+ * <p>仅保留生产代码中实际使用的场景，未使用的场景已清理。
+ * 工作流 YAML 中可自由使用任意场景字符串，LlmRouter 会按能力路由兜底。
+ *
+ * @author zsg
+ * @since 2026-02-24
  */
 public final class LlmScene {
 
-    public static final String INTENT_UNDERSTANDING = "intent_understanding";
-    public static final String TASK_PLANNING = "task_planning";
+    /** 通用对话 */
     public static final String CHAT = "chat";
-    public static final String CODE_GENERATION = "code_generation";
+    /** 知识实体提取（AUDN） */
     public static final String KNOWLEDGE_EXTRACTION = "knowledge_extraction";
+    /** 记忆压缩 */
     public static final String MEMORY_COMPRESSION = "memory_compression";
-    public static final String DOCUMENT_SUMMARY = "document_summary";
+    /** 向量嵌入 */
     public static final String EMBEDDING = "embedding";
+    /** 主动推理 */
     public static final String PROACTIVE_REASONING = "proactive_reasoning";
-    public static final String AGENT_REASONING = "agent_reasoning";
-    public static final String AGENT_TOOL_CALLING = "agent_tool_calling";
-    public static final String AGENT_GENERATION = "agent_generation";
+    /** Skill 自动生成 */
     public static final String SKILL_GENERATION = "skill_generation";
+    /** 知识精排 */
     public static final String KNOWLEDGE_RERANK = "knowledge_rerank";
+    /** ReAct Agent 循环 */
+    public static final String AGENT_REACT = "agent_react";
 
     private LlmScene() {
     }
 
+    /**
+     * 返回所有已注册场景常量列表。
+     */
     public static List<String> all() {
         return List.of(
-                INTENT_UNDERSTANDING,
-                TASK_PLANNING,
                 CHAT,
-                CODE_GENERATION,
                 KNOWLEDGE_EXTRACTION,
                 MEMORY_COMPRESSION,
-                DOCUMENT_SUMMARY,
                 EMBEDDING,
                 PROACTIVE_REASONING,
-                AGENT_REASONING,
-                AGENT_TOOL_CALLING,
-                AGENT_GENERATION,
                 SKILL_GENERATION,
-                KNOWLEDGE_RERANK
+                KNOWLEDGE_RERANK,
+                AGENT_REACT
         );
     }
 }
