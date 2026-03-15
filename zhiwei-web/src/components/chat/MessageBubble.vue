@@ -174,6 +174,19 @@ const isCollapsible = computed(() =>
               {{ collapsed ? '展开全文' : '收起' }}
             </button>
 
+            <!-- P3 修复：assistant 图片附件内联渲染（在消息文本之后、A2UI 面板之前） -->
+            <div v-if="imageAttachments.length > 0" class="mt-3 grid grid-cols-2 gap-sm">
+              <button
+                v-for="attachment in imageAttachments"
+                :key="attachment.fileId"
+                type="button"
+                class="relative w-full overflow-hidden rounded-lg border border-border/50 transition-shadow hover:shadow-md focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-none"
+                @click="previewImageUrl = attachment.url; showImagePreview = true"
+              >
+                <img :src="attachment.url" :alt="attachment.filename" class="block h-40 w-full object-cover" loading="lazy" />
+              </button>
+            </div>
+
             <div
               v-if="visibleA2uiComponents.length"
               class="mt-3 overflow-hidden rounded-[calc(var(--radius)+4px)] border border-border/70 bg-background/80 text-sm text-foreground shadow-sm"
@@ -215,7 +228,8 @@ const isCollapsible = computed(() =>
             />
           </template>
 
-            <div v-if="imageAttachments.length > 0" class="mt-3 grid grid-cols-2 gap-sm">
+            <!-- 用户消息的图片附件（保持原位置） -->
+            <div v-if="message.role === 'user' && imageAttachments.length > 0" class="mt-3 grid grid-cols-2 gap-sm">
               <button
                 v-for="attachment in imageAttachments"
                 :key="attachment.fileId"
