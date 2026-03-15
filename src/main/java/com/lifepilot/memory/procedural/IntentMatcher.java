@@ -200,7 +200,26 @@ public class IntentMatcher {
                 .replace("}", " ")
                 .replace("[", " ")
                 .replace("]", " ")
-                .replace(":", " ");
+                .replace(":", " ")
+                .replace(",", " ")
+                .replace(";", " ")
+                .replace("!", " ")
+                .replace("?", " ")
+                .replace("+", " ")
+                .replace("-", " ")
+                .replace("~", " ")
+                .replace("@", " ")
+                .replace("#", " ")
+                .replace("$", " ")
+                .replace("%", " ")
+                .replace("&", " ")
+                .replace("=", " ")
+                .replace("<", " ")
+                .replace(">", " ")
+                .replace("/", " ")
+                .replace("\\", " ")
+                .replace("|", " ")
+                .replace("'", " ");
 
         String[] tokens = cleaned.split("\\s+");
         var sb = new StringBuilder();

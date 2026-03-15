@@ -96,7 +96,26 @@ public class FtsSearcher {
                 .replace("}", " ")
                 .replace("[", " ")
                 .replace("]", " ")
-                .replace(":", " ");
+                .replace(":", " ")
+                .replace(",", " ")
+                .replace(";", " ")
+                .replace("!", " ")
+                .replace("?", " ")
+                .replace("+", " ")
+                .replace("-", " ")
+                .replace("~", " ")
+                .replace("@", " ")
+                .replace("#", " ")
+                .replace("$", " ")
+                .replace("%", " ")
+                .replace("&", " ")
+                .replace("=", " ")
+                .replace("<", " ")
+                .replace(">", " ")
+                .replace("/", " ")
+                .replace("\\", " ")
+                .replace("|", " ")
+                .replace("'", " ");
 
         // 移除 FTS5 布尔操作符（作为独立词出现时）
         String[] tokens = cleaned.split("\\s+");
