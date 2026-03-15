@@ -24,6 +24,7 @@ import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.llm.StreamingLlmResponse;
 import com.lifepilot.llm.multimodal.MultimodalRequest;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.memory.retrieval.InjectionRecordRepository;
@@ -965,6 +966,52 @@ public class ReactAgentLoop {
                     "模型正在根据上下文整理最终回答。", null, Map.of());
 
             String scene = config.getLoop().getLlmScene();
+            boolean hasMedia = req.mediaContents() != null && !req.mediaContents().isEmpty();
+
+            // 多模态流式路由：有媒体内容且 MultimodalRouter 可用时走多模态路径
+            if (hasMedia && multimodalRouter != null) {
+                var multimodalRequest = new MultimodalRequest(
+                        scene,
+                        extractUserText(messages),
+                        req.mediaContents(),
+                        null,
+                        req.preferredProvider(),
+                        null
+                );
+                StreamingLlmResponse streamingResponse = multimodalRouter.streamWithInfo(multimodalRequest);
+                this.providerId = streamingResponse.providerId();
+                this.modelId = streamingResponse.modelId();
+                log.debug("流式多模态路由开始: scene={}, provider={}, model={}",
+                        scene, this.providerId, this.modelId);
+
+                // 收集流式内容并逐 token 推送 SSE
+                var contentBuilder = new StringBuilder();
+                streamingResponse.stream()
+                        .doOnNext(token -> {
+                            contentBuilder.append(token);
+                            // 逐 token 推送 SSE TOKEN 事件
+                            sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
+                                    "sessionId", sessionId, "turnId", turnId,
+                                    "content", token, "index", 0));
+                        })
+                        .doOnError(e -> {
+                            log.warn("流式多模态调用异常: scene={}, error={}", scene, e.getMessage());
+                            this.streamingError = e instanceof Exception ex ? ex : new RuntimeException(e);
+                        })
+                        .blockLast();
+
+                String collectedContent = contentBuilder.toString();
+                this.finalContent = collectedContent;
+
+                // 构造 ChatResponse 返回给 coreLoop
+                ChatResponse chatResponse = adaptToChatResponse(
+                        new LlmResponse(collectedContent, 0, 0, this.providerId, this.modelId, 0, false));
+                recordStreamingLlmStep(traceContext, Instant.now(), providerId, modelId,
+                        scene, chatResponse, null);
+                return chatResponse;
+            }
+
+            // 纯文本流式路由：原有 LlmRouter 路径
             String preferredProviderId = request.preferredProvider();
 
             // 提取 system 文本，通过 ContextAssembler 集中增强（流式约束 + A2UI）
