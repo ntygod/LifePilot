@@ -7,6 +7,7 @@ import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
 import com.lifepilot.knowledge.model.DocumentSearchResult;
 import com.lifepilot.knowledge.model.ScoreBreakdown;
 import org.slf4j.Logger;
+import org.springframework.lang.Nullable;
 import org.slf4j.LoggerFactory;
 
 import java.net.URI;
@@ -44,11 +45,18 @@ public final class ApiReranker implements Reranker {
 
     @Override
     public List<DocumentSearchResult> rerank(String query, List<DocumentSearchResult> candidates, int topK) {
+        return rerank(query, candidates, topK, null);
+    }
+
+    @Override
+    public List<DocumentSearchResult> rerank(String query, List<DocumentSearchResult> candidates,
+                                              int topK, @Nullable String modelName) {
         if (candidates.isEmpty()) return candidates;
+        String effectiveModel = resolveModel(modelName);
         try {
             return switch (config.apiProvider()) {
-                case "jina" -> rerankWithJina(query, candidates, topK);
-                case "cohere" -> rerankWithCohere(query, candidates, topK);
+                case "jina" -> rerankWithJina(query, candidates, topK, effectiveModel);
+                case "cohere" -> rerankWithCohere(query, candidates, topK, effectiveModel);
                 default -> {
                     log.warn("未知 Reranker provider: {}, 跳过精排", config.apiProvider());
                     yield candidates.stream().limit(topK).toList();
@@ -61,16 +69,30 @@ public final class ApiReranker implements Reranker {
     }
 
     /**
+     * 解析有效模型名：modelName 参数 → config.model() → provider 默认值。
+     */
+    private String resolveModel(@Nullable String modelName) {
+        if (modelName != null && !modelName.isBlank()) return modelName;
+        if (!config.model().isBlank()) return config.model();
+        return switch (config.apiProvider()) {
+            case "jina" -> "jina-reranker-v2-base-multilingual";
+            case "cohere" -> "rerank-v3.5";
+            default -> "";
+        };
+    }
+
+    /**
      * 调用 Jina Reranker API。
      */
     private List<DocumentSearchResult> rerankWithJina(String query,
                                                        List<DocumentSearchResult> candidates,
-                                                       int topK) throws Exception {
+                                                       int topK,
+                                                       String effectiveModel) throws Exception {
         String endpoint = config.apiEndpoint().isBlank()
                 ? "https://api.jina.ai/v1/rerank" : config.apiEndpoint();
         var documents = candidates.stream().map(DocumentSearchResult::content).toList();
         var requestBody = Map.of(
-                "model", config.model().isBlank() ? "jina-reranker-v2-base-multilingual" : config.model(),
+                "model", effectiveModel,
                 "query", query,
                 "documents", documents,
                 "top_n", topK);
@@ -82,12 +104,13 @@ public final class ApiReranker implements Reranker {
      */
     private List<DocumentSearchResult> rerankWithCohere(String query,
                                                          List<DocumentSearchResult> candidates,
-                                                         int topK) throws Exception {
+                                                         int topK,
+                                                         String effectiveModel) throws Exception {
         String endpoint = config.apiEndpoint().isBlank()
                 ? "https://api.cohere.com/v2/rerank" : config.apiEndpoint();
         var documents = candidates.stream().map(DocumentSearchResult::content).toList();
         var requestBody = Map.of(
-                "model", config.model().isBlank() ? "rerank-v3.5" : config.model(),
+                "model", effectiveModel,
                 "query", query,
                 "documents", documents,
                 "top_n", topK);
