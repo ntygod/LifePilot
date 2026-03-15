@@ -68,6 +68,64 @@ public final class ApiReranker implements Reranker {
         }
     }
 
+    @Override
+    public List<RerankCandidate> rerankGeneric(String query, List<RerankCandidate> candidates, int topK) {
+        if (candidates.isEmpty()) return candidates;
+        try {
+            var documents = candidates.stream().map(RerankCandidate::content).toList();
+            var apiResults = callApiGeneric(query, documents, topK);
+            return apiResults.stream()
+                    .filter(r -> r.index() >= 0 && r.index() < candidates.size())
+                    .map(r -> new RerankCandidate(
+                            candidates.get(r.index()).id(),
+                            candidates.get(r.index()).content(),
+                            r.relevanceScore()))
+                    .toList();
+        } catch (Exception e) {
+            log.warn("ApiReranker rerankGeneric 失败，降级返回原始结果: {}", e.getMessage());
+            return candidates.stream()
+                    .sorted(Comparator.comparingDouble(RerankCandidate::score).reversed())
+                    .limit(topK)
+                    .toList();
+        }
+    }
+
+    /**
+     * 通用 API 精排调用 — 接受纯文本文档列表。
+     */
+    private List<RerankResult> callApiGeneric(String query, List<String> documents, int topK) throws Exception {
+        String effectiveModel = resolveModel(null);
+        String endpoint = switch (config.apiProvider()) {
+            case "jina" -> config.apiEndpoint().isBlank()
+                    ? "https://api.jina.ai/v1/rerank" : config.apiEndpoint();
+            case "cohere" -> config.apiEndpoint().isBlank()
+                    ? "https://api.cohere.com/v2/rerank" : config.apiEndpoint();
+            default -> throw new RuntimeException("未知 Reranker provider: " + config.apiProvider());
+        };
+        var requestBody = Map.of(
+                "model", effectiveModel,
+                "query", query,
+                "documents", documents,
+                "top_n", topK);
+        String json = MAPPER.writeValueAsString(requestBody);
+        var request = HttpRequest.newBuilder()
+                .uri(URI.create(endpoint))
+                .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer " + config.apiKey())
+                .timeout(Duration.ofMillis(config.apiTimeoutMs()))
+                .POST(HttpRequest.BodyPublishers.ofString(json))
+                .build();
+        var response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() != 200) {
+            throw new RuntimeException("Reranker API 错误: HTTP " + response.statusCode());
+        }
+        var apiResponse = MAPPER.readValue(response.body(), RerankResponse.class);
+        if (apiResponse.results() == null || apiResponse.results().isEmpty()) {
+            return List.of();
+        }
+        return apiResponse.results();
+    }
+
     /**
      * 解析有效模型名：modelName 参数 → config.model() → provider 默认值。
      */
