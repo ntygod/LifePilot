@@ -292,6 +292,8 @@ public class ReactAgentLoop {
         int maxIterations = config.getLoop().getMaxIterations();
         int maxConsecutiveFailures = config.getLoop().getMaxConsecutiveFailures();
         int consecutiveFailures = 0;
+        // 缓存首次组装的上下文 — 记忆检索结果和预算分配在迭代间不变
+        AssembledContext cachedContext = null;
 
         for (int iteration = 0; !state.isDone(); iteration++) {
             // 1. 取消信号检查
@@ -322,7 +324,11 @@ public class ReactAgentLoop {
             }
 
             // 4. 组装上下文 + 构建消息 + 获取工具回调
-            var assembledContext = contextAssembler.assemble(state);
+            // 首轮组装完整上下文，后续迭代复用缓存（记忆检索和预算分配不变）
+            if (cachedContext == null) {
+                cachedContext = contextAssembler.assemble(state);
+            }
+            var assembledContext = cachedContext;
             // 首轮迭代注入用户上传的媒体内容到上下文
             if (state.steps().isEmpty() && hasMultimodalContent(request)) {
                 assembledContext = assembledContext.withMediaContents(request.mediaContents());
