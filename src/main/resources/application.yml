@@ -224,6 +224,10 @@ lifepilot:
       time-decay-rate: 0.002
       min-time-decay-factor: 0.5
       min-cross-session-semantic-score: 0.3
+    # 记忆精排配置
+    reranker:
+      enabled: false
+      top-k: 10
     # 反馈闭环配置
     feedback:
       like-boost: 0.1
