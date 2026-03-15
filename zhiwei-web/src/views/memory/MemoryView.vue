@@ -19,6 +19,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { useMemoryStore } from '@/stores/memory'
 import type { MemorySearchResult } from '@/types'
+import EntityPanel from './EntityPanel.vue'
 
 const store = useMemoryStore()
 
@@ -192,9 +193,7 @@ function clearSearch() {
             </TabsList>
 
             <TabsContent value="entities">
-              <div class="detail-card p-6 text-center text-sm text-muted-foreground">
-                实体管理面板（待实现）
-              </div>
+              <EntityPanel />
             </TabsContent>
             <TabsContent value="relations">
               <div class="detail-card p-6 text-center text-sm text-muted-foreground">
