@@ -1,5 +1,6 @@
 package com.lifepilot.meta.convenience;
 
+import com.lifepilot.mcp.registry.McpServerRegistry;
 import com.lifepilot.multiagent.registry.AgentRegistry;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.skill.builtin.BuiltinSkill;
@@ -11,7 +12,10 @@ import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.tool.schema.JsonSchema;
+import com.lifepilot.workflow.model.WorkflowInstance;
+import com.lifepilot.workflow.model.WorkflowState;
 import com.lifepilot.workflow.registry.WorkflowRegistry;
+import com.lifepilot.workflow.repository.WorkflowRepository;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,7 +24,7 @@ import java.util.*;
 import java.util.stream.Stream;
 
 /**
- * 系统自省 Skill 提供者 — 注册 4 个自省工具到 DynamicToolRegistry。
+ * 系统自省 Skill 提供者 — 注册 5 个自省工具到 DynamicToolRegistry。
  *
  * <p>工具列表：
  * <ul>
@@ -28,6 +32,7 @@ import java.util.stream.Stream;
  *   <li>{@code system.explain} — 按 ID 路由到对应注册中心查找详细信息</li>
  *   <li>{@code system.status} — 聚合系统状态（各注册中心计数）</li>
  *   <li>{@code system.suggest} — 关键词匹配 + 语义搜索推荐能力</li>
+ *   <li>{@code system.runtime} — 查询运行时动态信息（工作流实例、MCP 连接状态）</li>
  * </ul>
  *
  * @author zsg
@@ -44,17 +49,23 @@ public class IntrospectionSkillProvider implements BuiltinSkillProvider {
     private final AgentRegistry agentRegistry;
     private final DynamicToolRegistry toolRegistry;
     private final WorkflowRegistry workflowRegistry;
+    @Nullable private final WorkflowRepository workflowRepository;
+    @Nullable private final McpServerRegistry mcpServerRegistry;
 
     public IntrospectionSkillProvider(CapabilityAggregator aggregator,
                                       SkillRegistry skillRegistry,
                                       AgentRegistry agentRegistry,
                                       DynamicToolRegistry toolRegistry,
-                                      WorkflowRegistry workflowRegistry) {
+                                      WorkflowRegistry workflowRegistry,
+                                      @Nullable WorkflowRepository workflowRepository,
+                                      @Nullable McpServerRegistry mcpServerRegistry) {
         this.aggregator = aggregator;
         this.skillRegistry = skillRegistry;
         this.agentRegistry = agentRegistry;
         this.toolRegistry = toolRegistry;
         this.workflowRegistry = workflowRegistry;
+        this.workflowRepository = workflowRepository;
+        this.mcpServerRegistry = mcpServerRegistry;
     }
 
     @Override
@@ -62,15 +73,16 @@ public class IntrospectionSkillProvider implements BuiltinSkillProvider {
         return SkillDefinition.builder()
                 .id("builtin.introspection")
                 .name("系统自省")
-                .description("查询系统能力、获取详细说明、查看系统状态、推荐匹配能力")
-                .version("1.0.0")
+                .description("查询系统能力、获取详细说明、查看系统状态、推荐匹配能力、查看运行时动态信息")
+                .version("1.1.0")
                 .source(new SkillSource.Builtin())
                 .instructions("系统自省工具集，用于查询和了解系统当前的能力、状态和推荐。")
                 .suggestedTools(List.of(
                         "system.list-capabilities",
                         "system.explain",
                         "system.status",
-                        "system.suggest"
+                        "system.suggest",
+                        "system.runtime"
                 ))
                 .metadata(Map.of())
                 .build();
@@ -82,8 +94,9 @@ public class IntrospectionSkillProvider implements BuiltinSkillProvider {
         registry.registerBuiltinTool(buildExplainTool());
         registry.registerBuiltinTool(buildStatusTool());
         registry.registerBuiltinTool(buildSuggestTool());
+        registry.registerBuiltinTool(buildRuntimeTool());
 
-        log.info("系统自省工具注册完成: count=4");
+        log.info("系统自省工具注册完成: count=5");
     }
 
     // ─────────────────────────────────────────────
@@ -397,6 +410,145 @@ public class IntrospectionSkillProvider implements BuiltinSkillProvider {
         }
 
         return ToolResult.success(Map.copyOf(data));
+    }
+
+    // ─────────────────────────────────────────────
+    //  system.runtime
+    // ─────────────────────────────────────────────
+
+    /** 构建运行时信息工具。 */
+    private BuiltinTool buildRuntimeTool() {
+        return BuiltinTool.builder()
+                .id("system.runtime")
+                .name("查看运行时信息")
+                .description("查询系统运行时动态信息，包括正在执行的工作流实例、MCP Server 连接状态等。支持按 scope 过滤查询范围")
+                .inputSchema(JsonSchema.of(Map.of(
+                        "type", "object",
+                        "properties", Map.of(
+                                "scope", Map.of("type", "string",
+                                        "description", "查询范围（workflow/mcp/all），默认 all"),
+                                "workflowId", Map.of("type", "string",
+                                        "description", "按工作流 ID 过滤实例（仅 scope=workflow 时有效）")
+                        )
+                )))
+                .riskLevel(RiskLevel.LOW)
+                .tags(INFRA_TAGS)
+                .executor(this::executeRuntime)
+                .build();
+    }
+
+    /** 执行 system.runtime。 */
+    private ToolResult executeRuntime(ToolInput input) {
+        var scope = input.getOptionalParam("scope", String.class).orElse("all");
+        var data = new LinkedHashMap<String, Object>();
+
+        if ("all".equalsIgnoreCase(scope) || "workflow".equalsIgnoreCase(scope)) {
+            data.put("workflows", collectWorkflowRuntime(input));
+        }
+        if ("all".equalsIgnoreCase(scope) || "mcp".equalsIgnoreCase(scope)) {
+            data.put("mcpServers", collectMcpRuntime());
+        }
+
+        return ToolResult.success(Map.copyOf(data));
+    }
+
+    /** 收集工作流运行时信息。 */
+    private Map<String, Object> collectWorkflowRuntime(ToolInput input) {
+        var result = new LinkedHashMap<String, Object>();
+
+        if (workflowRepository == null) {
+            result.put("available", false);
+            result.put("reason", "WorkflowRepository 未注入");
+            return Map.copyOf(result);
+        }
+
+        var workflowId = input.getOptionalParam("workflowId", String.class).orElse(null);
+
+        // 查询活跃实例（RUNNING / PAUSED / WAITING / CREATED）
+        List<WorkflowInstance> activeInstances;
+        if (workflowId != null && !workflowId.isBlank()) {
+            activeInstances = workflowRepository.findInstancesByWorkflowId(workflowId).stream()
+                    .filter(i -> i.state() == WorkflowState.RUNNING
+                            || i.state() == WorkflowState.PAUSED
+                            || i.state() == WorkflowState.WAITING
+                            || i.state() == WorkflowState.CREATED)
+                    .toList();
+        } else {
+            activeInstances = workflowRepository.findInstancesByState(
+                    WorkflowState.RUNNING, WorkflowState.PAUSED,
+                    WorkflowState.WAITING, WorkflowState.CREATED);
+        }
+
+        result.put("activeCount", activeInstances.size());
+        result.put("instances", activeInstances.stream()
+                .map(this::formatWorkflowInstance)
+                .toList());
+
+        return Map.copyOf(result);
+    }
+
+    /** 格式化单个工作流实例。 */
+    private Map<String, Object> formatWorkflowInstance(WorkflowInstance instance) {
+        var data = new LinkedHashMap<String, Object>();
+        data.put("instanceId", instance.id());
+        data.put("workflowId", instance.workflowId());
+        data.put("state", instance.state().name());
+        data.put("completedSteps", instance.completedStepIds() != null
+                ? instance.completedStepIds().size() : 0);
+
+        // 查找工作流定义名称
+        workflowRegistry.find(instance.workflowId())
+                .ifPresent(def -> data.put("workflowName", def.name()));
+
+        if (instance.startedAt() != null) {
+            data.put("startedAt", instance.startedAt().toString());
+        }
+        if (instance.blockedStepId() != null) {
+            data.put("blockedStepId", instance.blockedStepId());
+            data.put("blockedReason", instance.blockedReason());
+        }
+        if (instance.pendingApprovalStepId() != null) {
+            data.put("pendingApprovalStepId", instance.pendingApprovalStepId());
+        }
+        if (instance.failureReason() != null) {
+            data.put("failureReason", instance.failureReason());
+        }
+        return Map.copyOf(data);
+    }
+
+    /** 收集 MCP Server 运行时信息。 */
+    private Map<String, Object> collectMcpRuntime() {
+        var result = new LinkedHashMap<String, Object>();
+
+        if (mcpServerRegistry == null) {
+            result.put("available", false);
+            result.put("reason", "McpServerRegistry 未注入");
+            return Map.copyOf(result);
+        }
+
+        var servers = mcpServerRegistry.listServers();
+        result.put("serverCount", servers.size());
+        result.put("servers", servers.stream()
+                .map(entry -> {
+                    var data = new LinkedHashMap<String, Object>();
+                    data.put("name", entry.config().name());
+                    data.put("state", entry.state().name());
+                    data.put("available", entry.state().isAvailable());
+                    if (entry.connectedSince() != null) {
+                        data.put("connectedSince", entry.connectedSince().toString());
+                    }
+                    if (entry.lastHealthCheck() != null) {
+                        data.put("lastHealthCheck", entry.lastHealthCheck().toString());
+                    }
+                    if (entry.lastError() != null) {
+                        data.put("lastError", entry.lastError());
+                    }
+                    data.put("reconnectAttempts", entry.reconnectAttempts());
+                    return Map.<String, Object>copyOf(data);
+                })
+                .toList());
+
+        return Map.copyOf(result);
     }
 
     // ─────────────────────────────────────────────

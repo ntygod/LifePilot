@@ -16,6 +16,7 @@ import com.lifepilot.skill.config.SkillConfigProperties;
 import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.workflow.registry.WorkflowRegistry;
+import com.lifepilot.workflow.repository.WorkflowRepository;
 import jakarta.annotation.Nullable;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -89,16 +90,22 @@ public class MetaAutoConfiguration {
     }
 
     /**
-     * 注册系统自省 Skill 提供者 — 注册 4 个自省工具。
+     * 注册系统自省 Skill 提供者 — 注册 5 个自省工具。
+     *
+     * <p>WorkflowRepository 和 McpServerRegistry 为可选依赖，
+     * 用于 system.runtime 工具查询运行时动态信息。</p>
      */
     @Bean
     IntrospectionSkillProvider introspectionSkillProvider(CapabilityAggregator aggregator,
                                                           SkillRegistry skillRegistry,
                                                           AgentRegistry agentRegistry,
                                                           DynamicToolRegistry toolRegistry,
-                                                          WorkflowRegistry workflowRegistry) {
+                                                          WorkflowRegistry workflowRegistry,
+                                                          @Nullable WorkflowRepository workflowRepository,
+                                                          @Nullable McpServerRegistry mcpServerRegistry) {
         return new IntrospectionSkillProvider(aggregator, skillRegistry,
-                agentRegistry, toolRegistry, workflowRegistry);
+                agentRegistry, toolRegistry, workflowRegistry,
+                workflowRepository, mcpServerRegistry);
     }
 
     /**
