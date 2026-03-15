@@ -205,8 +205,8 @@ public class ReactAgentLoop {
         var messages = new ArrayList<Message>();
         messages.add(new SystemMessage(ctx.systemPrompt()));
 
-        // 首轮迭代且有媒体内容时，将 MediaContent 转换为 Spring AI Media 嵌入 UserMessage
-        if (ctx.mediaContents() != null && !ctx.mediaContents().isEmpty() && state.steps().isEmpty()) {
+        // 有媒体内容时（用户上传或工具产生），将 MediaContent 转换为 Spring AI Media 嵌入 UserMessage
+        if (ctx.mediaContents() != null && !ctx.mediaContents().isEmpty()) {
             var builder = UserMessage.builder().text(ctx.userPrompt());
             for (var mc : ctx.mediaContents()) {
                 builder.media(new Media(
@@ -313,9 +313,13 @@ public class ReactAgentLoop {
 
             // 4. 组装上下文 + 构建消息 + 获取工具回调
             var assembledContext = contextAssembler.assemble(state);
-            // 首轮迭代注入媒体内容到上下文
+            // 首轮迭代注入用户上传的媒体内容到上下文
             if (state.steps().isEmpty() && hasMultimodalContent(request)) {
                 assembledContext = assembledContext.withMediaContents(request.mediaContents());
+            }
+            // 非首轮迭代：有 pendingMedia 时注入工具产生的媒体
+            else if (state.pendingMedia() != null && !state.pendingMedia().isEmpty()) {
+                assembledContext = assembledContext.withMediaContents(state.pendingMedia());
             }
             var messages = buildMessages(assembledContext, state);
             var toolCallbacks = agentToolProvider.getToolCallbacks(state, streamId);
@@ -342,6 +346,11 @@ public class ReactAgentLoop {
                 continue;
             }
             var iterationDuration = Duration.between(iterationStart, Instant.now());
+
+            // 清除 pendingMedia 缓冲区（已嵌入到本次 messages 中，避免后续迭代重复嵌入）
+            if (state.pendingMedia() != null && !state.pendingMedia().isEmpty()) {
+                state = state.clearPendingMedia();
+            }
 
             // 6. 解析 LLM 响应
             var assistantMessage = chatResponse.getResult().getOutput();
@@ -672,6 +681,39 @@ public class ReactAgentLoop {
     }
 
     /**
+     * 从消息列表中提取 Media 对象并转换为 MediaContent 列表。
+     *
+     * <p>用于工具产生的 pendingMedia 场景：媒体已嵌入到 UserMessage 的 Media 中，
+     * 需要提取出来构造 MultimodalRequest。</p>
+     */
+    private List<MediaContent> extractMediaContentsFromMessages(List<Message> messages) {
+        var result = new ArrayList<MediaContent>();
+        for (var msg : messages) {
+            if (msg instanceof UserMessage um && um.getMedia() != null) {
+                for (var media : um.getMedia()) {
+                    try {
+                        // 我们构造 Media 时始终使用 ByteArrayResource
+                        if (media.getData() instanceof ByteArrayResource bar) {
+                            byte[] data = bar.getByteArray();
+                            result.add(new MediaContent(
+                                    UUID.randomUUID().toString(),
+                                    media.getMimeType().toString(),
+                                    data,
+                                    null,
+                                    data.length,
+                                    Map.of()
+                            ));
+                        }
+                    } catch (Exception e) {
+                        log.warn("从 UserMessage Media 提取数据失败: {}", e.getMessage());
+                    }
+                }
+            }
+        }
+        return List.copyOf(result);
+    }
+
+    /**
      * 媒体校验与预处理 — 在进入 coreLoop 之前执行。
      *
      * <p>校验通过后对图片执行预处理（压缩、格式转换），返回处理后的媒体内容列表。
@@ -995,14 +1037,24 @@ public class ReactAgentLoop {
                                     List<ToolCallback> toolCallbacks,
                                     @Nullable TraceContext traceContext) {
             String scene = config.getLoop().getLlmScene();
-            boolean hasMedia = req.mediaContents() != null && !req.mediaContents().isEmpty();
 
-            // 多模态路由：有媒体内容且 MultimodalRouter 可用时走多模态路径
-            if (hasMedia && multimodalRouter != null) {
+            // 动态路由：检查 messages 中 UserMessage 是否包含 Media 对象
+            // 覆盖两种场景：用户上传的媒体（首轮）和工具产生的媒体（后续迭代 pendingMedia）
+            boolean messagesHaveMedia = messages.stream()
+                    .filter(m -> m instanceof UserMessage)
+                    .map(m -> (UserMessage) m)
+                    .anyMatch(um -> um.getMedia() != null && !um.getMedia().isEmpty());
+
+            // 多模态路由：messages 中有 Media 且 MultimodalRouter 可用时走多模态路径
+            if (messagesHaveMedia && multimodalRouter != null) {
+                // 从 messages 中提取 MediaContent 列表（优先用 request 的，否则从 assembledContext 传递的）
+                var mediaContents = req.mediaContents() != null && !req.mediaContents().isEmpty()
+                        ? req.mediaContents()
+                        : extractMediaContentsFromMessages(messages);
                 var multimodalRequest = new MultimodalRequest(
                         scene,
                         extractUserText(messages),
-                        req.mediaContents(),
+                        mediaContents,
                         null,
                         req.preferredProvider(),
                         null
@@ -1013,6 +1065,10 @@ public class ReactAgentLoop {
                 log.debug("非流式多模态路由完成: scene={}, provider={}, model={}",
                         scene, this.providerId, this.modelId);
                 return adaptToChatResponse(llmResponse);
+            }
+
+            if (messagesHaveMedia && multimodalRouter == null) {
+                log.warn("消息包含媒体内容但 MultimodalRouter 不可用，回退到纯文本路由");
             }
 
             // 纯文本路由：原有 LlmRouter 路径
@@ -1090,14 +1146,22 @@ public class ReactAgentLoop {
                     "模型正在根据上下文整理最终回答。", null, Map.of());
 
             String scene = config.getLoop().getLlmScene();
-            boolean hasMedia = req.mediaContents() != null && !req.mediaContents().isEmpty();
 
-            // 多模态流式路由：有媒体内容且 MultimodalRouter 可用时走多模态路径
-            if (hasMedia && multimodalRouter != null) {
+            // 动态路由：检查 messages 中 UserMessage 是否包含 Media 对象
+            boolean messagesHaveMedia = messages.stream()
+                    .filter(m -> m instanceof UserMessage)
+                    .map(m -> (UserMessage) m)
+                    .anyMatch(um -> um.getMedia() != null && !um.getMedia().isEmpty());
+
+            // 多模态流式路由：messages 中有 Media 且 MultimodalRouter 可用时走多模态路径
+            if (messagesHaveMedia && multimodalRouter != null) {
+                var mediaContents = req.mediaContents() != null && !req.mediaContents().isEmpty()
+                        ? req.mediaContents()
+                        : extractMediaContentsFromMessages(messages);
                 var multimodalRequest = new MultimodalRequest(
                         scene,
                         extractUserText(messages),
-                        req.mediaContents(),
+                        mediaContents,
                         null,
                         req.preferredProvider(),
                         null
@@ -1136,6 +1200,9 @@ public class ReactAgentLoop {
             }
 
             // 纯文本流式路由：原有 LlmRouter 路径
+            if (messagesHaveMedia && multimodalRouter == null) {
+                log.warn("消息包含媒体内容但 MultimodalRouter 不可用，回退到纯文本路由");
+            }
             String preferredProviderId = request.preferredProvider();
 
             // 提取 system 文本，通过 ContextAssembler 集中增强（流式约束 + A2UI）
