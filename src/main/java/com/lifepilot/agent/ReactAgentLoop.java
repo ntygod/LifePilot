@@ -1365,6 +1365,9 @@ public class ReactAgentLoop {
             Instant callStart = Instant.now();
             String scene2 = config.getLoop().getLlmScene();
 
+            // 初始化 A2UI 增量解析器（流式调用开始前）
+            StreamingA2uiParser a2uiParser = isA2uiEnabled() ? new StreamingA2uiParser() : null;
+
             // 运行时状态：收集流式内容、tool call、最后 chunk、首 token 时间
             var contentBuilder = new StringBuilder();
             var toolCallCollector = new ArrayList<AssistantMessage.ToolCall>();
@@ -1394,10 +1397,8 @@ public class ReactAgentLoop {
                                 firstTokenTime[0] = Instant.now();
                             }
 
-                            // 逐 token 推送 SSE TOKEN 事件（后续任务 3.1 会改为通过 pushTokenToSse 支持 A2UI）
-                            sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
-                                    "sessionId", sessionId, "turnId", turnId,
-                                    "content", text, "index", 0));
+                            // 通过 pushTokenToSse 推送，支持 A2UI 增量解析
+                            pushTokenToSse(text, a2uiParser);
                         }
 
                         // 收集 tool call 元数据（通常在最后 chunk）
@@ -1421,6 +1422,9 @@ public class ReactAgentLoop {
             Instant callEnd = Instant.now();
             String collectedContent = contentBuilder.toString();
             this.finalContent = collectedContent;
+
+            // 流结束后刷出 A2UI 解析器剩余缓冲内容
+            flushA2uiParser(a2uiParser);
 
             // 如果有 tool call，发送 TOOL_CALLING 推理事件
             if (!toolCallCollector.isEmpty()) {
@@ -1561,6 +1565,66 @@ public class ReactAgentLoop {
                 sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
                         "sessionId", sessionId, "turnId", turnId,
                         "content", content, "index", 0));
+            }
+        }
+
+        /**
+         * 将单个流式 token 推送为 SSE 事件，支持 A2UI 增量解析。
+         *
+         * <p>A2UI 启用时，通过 {@link StreamingA2uiParser#feed(String)} 增量解析 token，
+         * 将纯文本段通过 TOKEN 事件推送、A2UI 组件段通过 UI 事件推送。
+         * A2UI 未启用时，直接发送 TOKEN 事件。</p>
+         *
+         * @param token     LLM 流式输出的单个 token
+         * @param a2uiParser A2UI 增量解析器实例（A2UI 未启用时为 null）
+         */
+        private void pushTokenToSse(String token, @Nullable StreamingA2uiParser a2uiParser) {
+            if (a2uiParser != null) {
+                int maxComponents = a2uiProperties != null ? a2uiProperties.maxComponentsPerTree() : 0;
+                var segments = a2uiParser.feed(token);
+                for (var segment : segments) {
+                    switch (segment) {
+                        case StreamingA2uiParser.Segment.TextSegment(var text) -> {
+                            if (!text.isEmpty()) {
+                                sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
+                                        "sessionId", sessionId, "turnId", turnId,
+                                        "content", text, "index", 0));
+                            }
+                        }
+                        case StreamingA2uiParser.Segment.A2uiSegment(var json) -> {
+                            var tree = parseAndValidateA2uiTree(json, maxComponents);
+                            if (tree != null) {
+                                lastCollectedA2uiTree = tree;
+                                sseManager.sendEvent(streamId, SseEventType.UI, Map.of(
+                                        "sessionId", sessionId, "turnId", turnId,
+                                        "components", tree.components()));
+                            }
+                        }
+                    }
+                }
+            } else {
+                // A2UI 未启用 — 直接发送 TOKEN 事件
+                sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
+                        "sessionId", sessionId, "turnId", turnId,
+                        "content", token, "index", 0));
+            }
+        }
+
+        /**
+         * 流结束时刷出 A2UI 解析器剩余缓冲内容。
+         *
+         * @param a2uiParser A2UI 增量解析器实例（A2UI 未启用时为 null）
+         */
+        private void flushA2uiParser(@Nullable StreamingA2uiParser a2uiParser) {
+            if (a2uiParser == null) return;
+            var remaining = a2uiParser.flush();
+            for (var seg : remaining) {
+                if (seg instanceof StreamingA2uiParser.Segment.TextSegment(var text)
+                        && !text.isEmpty()) {
+                    sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
+                            "sessionId", sessionId, "turnId", turnId,
+                            "content", text, "index", 0));
+                }
             }
         }
 
