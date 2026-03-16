@@ -149,6 +149,27 @@ public class InfraToolProvider implements BuiltinSkillProvider {
         toolRegistry.registerBuiltinTool(buildBrowserInputTool(inputExecutor));
         toolRegistry.registerBuiltinTool(buildBrowserScreenshotTool(screenshotExecutor));
 
+        // 浏览器自动化扩展工具（9 个）
+        var scrollExecutor = new BrowserScrollToolExecutor(browserSessionManager, properties);
+        var waitExecutor = new BrowserWaitToolExecutor(browserSessionManager, properties);
+        var hoverExecutor = new BrowserHoverToolExecutor(browserSessionManager);
+        var selectExecutor = new BrowserSelectToolExecutor(browserSessionManager);
+        var keyboardExecutor = new BrowserKeyboardToolExecutor(browserSessionManager);
+        var evaluateExecutor = new BrowserEvaluateToolExecutor(browserSessionManager, properties);
+        var accessibilityExecutor = new BrowserAccessibilityToolExecutor(browserSessionManager, properties);
+        var tabExecutor = new BrowserTabToolExecutor(browserSessionManager);
+        var storageExecutor = new BrowserStorageToolExecutor(browserSessionManager);
+
+        toolRegistry.registerBuiltinTool(buildBrowserScrollTool(scrollExecutor));
+        toolRegistry.registerBuiltinTool(buildBrowserWaitTool(waitExecutor));
+        toolRegistry.registerBuiltinTool(buildBrowserHoverTool(hoverExecutor));
+        toolRegistry.registerBuiltinTool(buildBrowserSelectTool(selectExecutor));
+        toolRegistry.registerBuiltinTool(buildBrowserKeyboardTool(keyboardExecutor));
+        toolRegistry.registerBuiltinTool(buildBrowserEvaluateTool(evaluateExecutor));
+        toolRegistry.registerBuiltinTool(buildBrowserAccessibilityTool(accessibilityExecutor));
+        toolRegistry.registerBuiltinTool(buildBrowserTabTool(tabExecutor));
+        toolRegistry.registerBuiltinTool(buildBrowserStorageTool(storageExecutor));
+
         // 代码执行工具（1 个）
         var codeExecuteExecutor = new CodeExecuteToolExecutor(properties, sandboxBooter);
 
@@ -172,7 +193,7 @@ public class InfraToolProvider implements BuiltinSkillProvider {
         }
 
         log.info("基础工具注册完成: count={}, categories=[env, web, reason, shell, browser, code, file, interact]",
-                interactionBridge != null ? 26 : 23);
+                interactionBridge != null ? 35 : 32);
     }
 
     // ─────────────────────────────────────────────
@@ -436,6 +457,240 @@ public class InfraToolProvider implements BuiltinSkillProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .tags(INFRA_TAGS)
+                .executor(executor::execute)
+                .build();
+    }
+
+    // ─────────────────────────────────────────────
+    //  浏览器自动化扩展工具构建（9 个）
+    // ─────────────────────────────────────────────
+
+    /** 构建浏览器滚动工具 — 方向滚动或元素定位滚动，MEDIUM 风险。 */
+    private BuiltinTool buildBrowserScrollTool(BrowserScrollToolExecutor executor) {
+        return BuiltinTool.builder()
+                .id("builtin.browser.scroll")
+                .name("浏览器滚动")
+                .description("滚动页面或滚动到指定元素。支持方向滚动（up/down）和元素定位滚动")
+                .inputSchema(JsonSchema.of(Map.of(
+                        "type", "object",
+                        "properties", Map.of(
+                                "direction", Map.of("type", "string",
+                                        "description", "滚动方向: up 或 down，默认 down"),
+                                "pixels", Map.of("type", "integer",
+                                        "description", "滚动像素数，默认使用配置值（500）"),
+                                "selector", Map.of("type", "string",
+                                        "description", "CSS 选择器，指定时滚动到该元素可见"),
+                                "sessionId", Map.of("type", "string",
+                                        "description", "浏览器会话 ID，默认 default")
+                        )
+                )))
+                .riskLevel(RiskLevel.MEDIUM)
+                .idempotent(false)
+                .tags(INFRA_TAGS)
+                .executor(executor::execute)
+                .build();
+    }
+
+    /** 构建浏览器等待工具 — 等待元素出现/消失，LOW 风险。 */
+    private BuiltinTool buildBrowserWaitTool(BrowserWaitToolExecutor executor) {
+        return BuiltinTool.builder()
+                .id("builtin.browser.wait")
+                .name("浏览器等待")
+                .description("等待页面中指定元素达到目标状态（visible/hidden/attached）")
+                .inputSchema(JsonSchema.of(Map.of(
+                        "type", "object",
+                        "required", List.of("selector"),
+                        "properties", Map.of(
+                                "selector", Map.of("type", "string",
+                                        "description", "CSS 选择器"),
+                                "state", Map.of("type", "string",
+                                        "description", "目标状态: visible/hidden/attached，默认 visible"),
+                                "timeout", Map.of("type", "integer",
+                                        "description", "超时秒数，默认使用配置值（10s）"),
+                                "sessionId", Map.of("type", "string",
+                                        "description", "浏览器会话 ID，默认 default")
+                        )
+                )))
+                .riskLevel(RiskLevel.LOW)
+                .idempotent(true)
+                .tags(INFRA_TAGS)
+                .executor(executor::execute)
+                .build();
+    }
+
+    /** 构建浏览器悬停工具 — 鼠标悬停到元素，MEDIUM 风险。 */
+    private BuiltinTool buildBrowserHoverTool(BrowserHoverToolExecutor executor) {
+        return BuiltinTool.builder()
+                .id("builtin.browser.hover")
+                .name("浏览器悬停")
+                .description("将鼠标悬停到指定 CSS 选择器的元素上，返回元素信息")
+                .inputSchema(JsonSchema.of(Map.of(
+                        "type", "object",
+                        "required", List.of("selector"),
+                        "properties", Map.of(
+                                "selector", Map.of("type", "string",
+                                        "description", "CSS 选择器，定位要悬停的元素"),
+                                "sessionId", Map.of("type", "string",
+                                        "description", "浏览器会话 ID，默认 default")
+                        )
+                )))
+                .riskLevel(RiskLevel.MEDIUM)
+                .idempotent(false)
+                .tags(INFRA_TAGS)
+                .executor(executor::execute)
+                .build();
+    }
+
+    /** 构建浏览器下拉选择工具 — select 元素选项选择，MEDIUM 风险。 */
+    private BuiltinTool buildBrowserSelectTool(BrowserSelectToolExecutor executor) {
+        return BuiltinTool.builder()
+                .id("builtin.browser.select")
+                .name("浏览器下拉选择")
+                .description("从 select 下拉元素中选择选项，支持按 value 或 label 选择")
+                .inputSchema(JsonSchema.of(Map.of(
+                        "type", "object",
+                        "required", List.of("selector"),
+                        "properties", Map.of(
+                                "selector", Map.of("type", "string",
+                                        "description", "CSS 选择器，定位 select 元素"),
+                                "value", Map.of("type", "string",
+                                        "description", "option value 值"),
+                                "label", Map.of("type", "string",
+                                        "description", "option 可见文本"),
+                                "sessionId", Map.of("type", "string",
+                                        "description", "浏览器会话 ID，默认 default")
+                        )
+                )))
+                .riskLevel(RiskLevel.MEDIUM)
+                .idempotent(false)
+                .tags(INFRA_TAGS)
+                .executor(executor::execute)
+                .build();
+    }
+
+    /** 构建浏览器键盘工具 — 按键或文本输入，MEDIUM 风险。 */
+    private BuiltinTool buildBrowserKeyboardTool(BrowserKeyboardToolExecutor executor) {
+        return BuiltinTool.builder()
+                .id("builtin.browser.keyboard")
+                .name("浏览器键盘")
+                .description("模拟键盘操作，支持单键/组合键按下和逐字符文本输入")
+                .inputSchema(JsonSchema.of(Map.of(
+                        "type", "object",
+                        "properties", Map.of(
+                                "key", Map.of("type", "string",
+                                        "description", "键名或组合键（如 Enter、Control+A）"),
+                                "text", Map.of("type", "string",
+                                        "description", "要逐字符输入的文本"),
+                                "type", Map.of("type", "string",
+                                        "description", "操作类型: key（按键）或 text（文本输入），默认 key"),
+                                "sessionId", Map.of("type", "string",
+                                        "description", "浏览器会话 ID，默认 default")
+                        )
+                )))
+                .riskLevel(RiskLevel.MEDIUM)
+                .idempotent(false)
+                .tags(INFRA_TAGS)
+                .executor(executor::execute)
+                .build();
+    }
+
+    /** 构建浏览器 JS 执行工具 — 执行任意 JavaScript，HIGH 风险。 */
+    private BuiltinTool buildBrowserEvaluateTool(BrowserEvaluateToolExecutor executor) {
+        return BuiltinTool.builder()
+                .id("builtin.browser.evaluate")
+                .name("浏览器 JS 执行")
+                .description("在当前页面上下文中执行 JavaScript 表达式，返回 JSON 序列化结果。HIGH 风险")
+                .inputSchema(JsonSchema.of(Map.of(
+                        "type", "object",
+                        "required", List.of("expression"),
+                        "properties", Map.of(
+                                "expression", Map.of("type", "string",
+                                        "description", "JavaScript 表达式"),
+                                "sessionId", Map.of("type", "string",
+                                        "description", "浏览器会话 ID，默认 default")
+                        )
+                )))
+                .riskLevel(RiskLevel.HIGH)
+                .idempotent(false)
+                .tags(INFRA_TAGS)
+                .executor(executor::execute)
+                .build();
+    }
+
+    /** 构建浏览器无障碍树工具 — 获取页面无障碍树快照，LOW 风险。 */
+    private BuiltinTool buildBrowserAccessibilityTool(BrowserAccessibilityToolExecutor executor) {
+        return BuiltinTool.builder()
+                .id("builtin.browser.accessibility")
+                .name("浏览器无障碍树")
+                .description("获取页面或子树的无障碍树结构快照，用于理解页面语义结构")
+                .inputSchema(JsonSchema.of(Map.of(
+                        "type", "object",
+                        "properties", Map.of(
+                                "rootSelector", Map.of("type", "string",
+                                        "description", "子树根节点 CSS 选择器，不传则返回整页"),
+                                "maxDepth", Map.of("type", "integer",
+                                        "description", "最大深度，默认使用配置值（5）"),
+                                "sessionId", Map.of("type", "string",
+                                        "description", "浏览器会话 ID，默认 default")
+                        )
+                )))
+                .riskLevel(RiskLevel.LOW)
+                .idempotent(true)
+                .tags(INFRA_TAGS)
+                .executor(executor::execute)
+                .build();
+    }
+
+    /** 构建浏览器标签页管理工具 — 多标签页操作，MEDIUM 风险。 */
+    private BuiltinTool buildBrowserTabTool(BrowserTabToolExecutor executor) {
+        return BuiltinTool.builder()
+                .id("builtin.browser.tab")
+                .name("浏览器标签页")
+                .description("管理浏览器标签页，支持打开新标签页、切换、关闭和列出所有标签页")
+                .inputSchema(JsonSchema.of(Map.of(
+                        "type", "object",
+                        "required", List.of("action"),
+                        "properties", Map.of(
+                                "action", Map.of("type", "string",
+                                        "description", "操作类型: open/switch/close/list"),
+                                "url", Map.of("type", "string",
+                                        "description", "open 时的目标 URL"),
+                                "tabId", Map.of("type", "string",
+                                        "description", "switch/close 时的标签页 ID"),
+                                "sessionId", Map.of("type", "string",
+                                        "description", "浏览器会话 ID，默认 default")
+                        )
+                )))
+                .riskLevel(RiskLevel.MEDIUM)
+                .idempotent(false)
+                .tags(INFRA_TAGS)
+                .executor(executor::execute)
+                .build();
+    }
+
+    /** 构建浏览器存储管理工具 — Cookie 和 localStorage 操作，MEDIUM 风险。 */
+    private BuiltinTool buildBrowserStorageTool(BrowserStorageToolExecutor executor) {
+        return BuiltinTool.builder()
+                .id("builtin.browser.storage")
+                .name("浏览器存储")
+                .description("管理浏览器存储，支持 Cookie 和 localStorage 的读取、设置和清除")
+                .inputSchema(JsonSchema.of(Map.of(
+                        "type", "object",
+                        "required", List.of("target", "action"),
+                        "properties", Map.of(
+                                "target", Map.of("type", "string",
+                                        "description", "存储类型: cookie 或 localStorage"),
+                                "action", Map.of("type", "string",
+                                        "description", "操作类型: get/set/clear"),
+                                "name", Map.of("type", "string",
+                                        "description", "cookie name 或 localStorage key"),
+                                "value", Map.of("type", "string",
+                                        "description", "set 时的值")
+                        )
+                )))
+                .riskLevel(RiskLevel.MEDIUM)
+                .idempotent(false)
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
