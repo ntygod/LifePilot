@@ -56,7 +56,7 @@ public class FileToolProvider {
         return BuiltinTool.builder()
                 .id("builtin.file.read")
                 .name("读取文件")
-                .description("读取指定路径的文件内容，支持编码指定。超过最大读取大小时自动截断")
+                .description("读取指定路径的文件内容，支持行范围读取、maxChars 截断和编码指定。返回 totalLines 字段")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("path"),
@@ -64,7 +64,13 @@ public class FileToolProvider {
                                 "path", Map.of("type", "string",
                                         "description", "文件路径"),
                                 "encoding", Map.of("type", "string",
-                                        "description", "文件编码（如 UTF-8、GBK），默认 UTF-8")
+                                        "description", "文件编码（如 UTF-8、GBK），默认 UTF-8"),
+                                "startLine", Map.of("type", "integer",
+                                        "description", "起始行号（1-based），超出范围自动调整，可选"),
+                                "endLine", Map.of("type", "integer",
+                                        "description", "结束行号（1-based），超出范围自动调整，可选"),
+                                "maxChars", Map.of("type", "integer",
+                                        "description", "最大返回字符数，按完整行截断，默认 30000")
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
