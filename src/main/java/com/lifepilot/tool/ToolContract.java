@@ -2,6 +2,7 @@ package com.lifepilot.tool;
 
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.model.ToolBudget;
+import com.lifepilot.tool.model.ToolCategory;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolLayer;
 import com.lifepilot.tool.model.ToolResult;
@@ -49,6 +50,11 @@ public sealed interface ToolContract permits BuiltinTool, SkillTool, McpTool {
 
     /** 工具标签。 */
     List<String> tags();
+
+    /** 工具所属元能力分组，默认 ACTION。 */
+    default ToolCategory category() {
+        return ToolCategory.ACTION;
+    }
 
     /** 是否可导出为 MCP 工具。 */
     default boolean exportable() {
