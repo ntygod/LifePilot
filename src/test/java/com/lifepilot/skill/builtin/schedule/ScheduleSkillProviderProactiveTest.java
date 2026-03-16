@@ -38,7 +38,7 @@ class ScheduleSkillProviderProactiveTest {
     @BeforeEach
     void setUp() {
         lenient().when(promptRegistry.render("skill/schedule")).thenReturn("日程提示词");
-        provider = new ScheduleSkillProvider(scheduleRepository, promptRegistry);
+        provider = new ScheduleSkillProvider(scheduleRepository, promptRegistry, null, null);
     }
 
     // ---- signalSources / candidateProviders 基础 ----
