@@ -1,7 +1,14 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, AlertTriangle, CheckCircle2, XCircle } from 'lucide-vue-next'
+import {
+  ArrowLeft,
+  AlertTriangle,
+  CheckCircle2,
+  XCircle,
+  ChevronDown,
+  ChevronUp,
+} from 'lucide-vue-next'
 import PageContainer from '@/components/layout/PageContainer.vue'
 import PageHeader from '@/components/layout/PageHeader.vue'
 import MetricCard from '@/components/common/MetricCard.vue'
@@ -15,6 +22,9 @@ const router = useRouter()
 const store = useEvalStore()
 
 const evalRunId = computed(() => route.params.evalRunId as string)
+
+/** 当前展开的结果行 evalId */
+const expandedEvalId = ref<string | null>(null)
 
 onMounted(async () => {
   const id = evalRunId.value
@@ -46,6 +56,27 @@ const passRate = computed(() => {
 /** 判断低分 */
 function isLowScore(score: number) {
   return score < 0.6
+}
+
+/** 维度平均分键列表（Task 9.1） */
+const dimensionKeys = computed(() => {
+  const r = store.currentReport
+  if (!r || !r.dimensionAverages) return []
+  return Object.keys(r.dimensionAverages)
+})
+
+/** 维度评分列键列表（Task 9.2 — 从报告维度或首条结果维度取） */
+const dimensionColumnKeys = computed(() => {
+  // 优先从报告维度取，保证列头一致
+  if (dimensionKeys.value.length > 0) return dimensionKeys.value
+  const first = store.currentRunResults[0]
+  if (first && first.dimensionScores) return Object.keys(first.dimensionScores)
+  return []
+})
+
+/** 切换行展开 */
+function toggleExpand(evalId: string) {
+  expandedEvalId.value = expandedEvalId.value === evalId ? null : evalId
 }
 </script>
 
@@ -100,6 +131,23 @@ function isLowScore(score: number) {
         </MetricCard>
       </div>
 
+      <!-- 维度平均分卡片行（Task 9.1） -->
+      <div
+        v-if="dimensionKeys.length > 0"
+        class="grid grid-cols-2 gap-4 lg:grid-cols-4"
+      >
+        <MetricCard
+          v-for="dim in dimensionKeys"
+          :key="dim"
+          :label="dim"
+          :value="pct(store.currentReport.dimensionAverages[dim])"
+        >
+          <template #icon>
+            <span class="text-xs font-semibold">D</span>
+          </template>
+        </MetricCard>
+      </div>
+
       <!-- 退化场景提示 -->
       <div
         v-if="store.currentReport.newRegressions.length > 0"
@@ -114,7 +162,7 @@ function isLowScore(score: number) {
         </ul>
       </div>
 
-      <!-- 场景级结果表格 -->
+      <!-- 场景级结果表格（Task 9.2 增强） -->
       <div class="section-panel overflow-hidden">
         <table class="w-full text-sm">
           <thead>
@@ -122,35 +170,126 @@ function isLowScore(score: number) {
               <th class="px-4 py-3 font-medium">场景 ID</th>
               <th class="px-4 py-3 font-medium text-center">综合评分</th>
               <th class="px-4 py-3 font-medium text-center">LLM Judge</th>
+              <!-- 维度评分列组 -->
+              <th
+                v-for="dim in dimensionColumnKeys"
+                :key="dim"
+                class="px-4 py-3 font-medium text-center"
+              >
+                {{ dim }}
+              </th>
               <th class="px-4 py-3 font-medium text-center">违规数</th>
               <th class="px-4 py-3 font-medium text-center">状态</th>
             </tr>
           </thead>
           <tbody>
-            <tr
-              v-for="result in store.currentRunResults"
-              :key="result.evalId"
-              class="border-b border-border/40"
-              :class="{ 'bg-destructive/5': isLowScore(result.overallScore) }"
-            >
-              <td class="px-4 py-3 font-mono text-xs">{{ result.scenarioId }}</td>
-              <td class="px-4 py-3 text-center font-medium" :class="isLowScore(result.overallScore) ? 'text-destructive' : 'text-foreground'">
-                {{ pct(result.overallScore) }}
-              </td>
-              <td class="px-4 py-3 text-center">
-                {{ result.llmJudgeScore != null ? pct(result.llmJudgeScore) : '—' }}
-              </td>
-              <td class="px-4 py-3 text-center">
-                <Badge v-if="result.violations.length > 0" variant="destructive">
-                  {{ result.violations.length }}
-                </Badge>
-                <span v-else class="text-muted-foreground">0</span>
-              </td>
-              <td class="px-4 py-3 text-center">
-                <XCircle v-if="isLowScore(result.overallScore)" class="mx-auto size-4 text-destructive" />
-                <CheckCircle2 v-else class="mx-auto size-4 text-emerald-600" />
-              </td>
-            </tr>
+            <template v-for="result in store.currentRunResults" :key="result.evalId">
+              <!-- 数据行 -->
+              <tr
+                class="cursor-pointer border-b border-border/40 transition-colors hover:bg-muted/50"
+                :class="{ 'bg-destructive/5': isLowScore(result.overallScore) }"
+                @click="toggleExpand(result.evalId)"
+              >
+                <td class="px-4 py-3 font-mono text-xs">{{ result.scenarioId }}</td>
+                <td
+                  class="px-4 py-3 text-center font-medium"
+                  :class="isLowScore(result.overallScore) ? 'text-destructive' : 'text-foreground'"
+                >
+                  {{ pct(result.overallScore) }}
+                </td>
+                <td class="px-4 py-3 text-center">
+                  {{ result.llmJudgeScore != null ? pct(result.llmJudgeScore) : '—' }}
+                </td>
+                <!-- 维度评分单元格 -->
+                <td
+                  v-for="dim in dimensionColumnKeys"
+                  :key="dim"
+                  class="px-4 py-3 text-center"
+                  :class="result.dimensionScores[dim] != null && isLowScore(result.dimensionScores[dim]) ? 'text-destructive' : ''"
+                >
+                  {{ result.dimensionScores[dim] != null ? pct(result.dimensionScores[dim]) : '—' }}
+                </td>
+                <td class="px-4 py-3 text-center">
+                  <Badge v-if="result.violations.length > 0" variant="destructive">
+                    {{ result.violations.length }}
+                  </Badge>
+                  <span v-else class="text-muted-foreground">0</span>
+                </td>
+                <td class="px-4 py-3 text-center">
+                  <div class="flex items-center justify-center gap-1">
+                    <XCircle v-if="isLowScore(result.overallScore)" class="size-4 text-destructive" />
+                    <CheckCircle2 v-else class="size-4 text-emerald-600" />
+                    <component
+                      :is="expandedEvalId === result.evalId ? ChevronUp : ChevronDown"
+                      class="size-3.5 text-muted-foreground"
+                    />
+                  </div>
+                </td>
+              </tr>
+
+              <!-- 展开详情行 -->
+              <tr v-if="expandedEvalId === result.evalId">
+                <td :colspan="5 + dimensionColumnKeys.length" class="p-0">
+                  <div class="border-t border-border/60 bg-muted/30 px-5 py-4 space-y-4 text-sm">
+                    <!-- 维度评分明细 -->
+                    <div v-if="Object.keys(result.dimensionScores).length > 0">
+                      <span class="text-xs font-medium text-muted-foreground">维度评分明细</span>
+                      <div class="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+                        <div
+                          v-for="(score, dim) in result.dimensionScores"
+                          :key="dim"
+                          class="flex items-center justify-between rounded-md border border-border/40 px-3 py-1.5"
+                        >
+                          <span class="text-xs text-muted-foreground">{{ dim }}</span>
+                          <span
+                            class="text-xs font-medium"
+                            :class="isLowScore(score) ? 'text-destructive' : 'text-foreground'"
+                          >
+                            {{ pct(score) }}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- LLM Judge 理由 -->
+                    <div v-if="result.llmJudgeJustification">
+                      <span class="text-xs font-medium text-muted-foreground">LLM Judge 理由</span>
+                      <p class="mt-1 whitespace-pre-wrap text-foreground">{{ result.llmJudgeJustification }}</p>
+                    </div>
+
+                    <!-- 违规列表 -->
+                    <div v-if="result.violations.length > 0">
+                      <span class="text-xs font-medium text-muted-foreground">违规详情</span>
+                      <ul class="mt-1 space-y-1">
+                        <li
+                          v-for="(v, idx) in result.violations"
+                          :key="idx"
+                          class="flex items-start gap-2 text-destructive"
+                        >
+                          <XCircle class="mt-0.5 size-3.5 shrink-0" />
+                          <span>{{ v }}</span>
+                        </li>
+                      </ul>
+                    </div>
+
+                    <!-- 建议列表 -->
+                    <div v-if="result.suggestions.length > 0">
+                      <span class="text-xs font-medium text-muted-foreground">改进建议</span>
+                      <ul class="mt-1 space-y-1">
+                        <li
+                          v-for="(s, idx) in result.suggestions"
+                          :key="idx"
+                          class="flex items-start gap-2 text-muted-foreground"
+                        >
+                          <CheckCircle2 class="mt-0.5 size-3.5 shrink-0 text-emerald-600" />
+                          <span>{{ s }}</span>
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            </template>
           </tbody>
         </table>
       </div>

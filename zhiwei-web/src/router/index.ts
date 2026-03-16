@@ -196,7 +196,7 @@ const router = createRouter({
     {
       path: '/eval',
       name: 'eval',
-      component: () => import('@/views/EvalView.vue')
+      component: () => import('@/views/eval/EvalView.vue')
     },
     {
       path: '/eval/:evalRunId',
