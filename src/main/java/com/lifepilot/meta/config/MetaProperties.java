@@ -27,9 +27,6 @@ public class MetaProperties {
     /** Skill 发现配置。 */
     private SkillDiscovery skillDiscovery = new SkillDiscovery();
 
-    /** MCP 安装器配置。 */
-    private McpInstaller mcpInstaller = new McpInstaller();
-
     /** 引导 Agent 配置。 */
     private Onboarding onboarding = new Onboarding();
 
@@ -270,25 +267,6 @@ public class MetaProperties {
                 "builtin-skills/find-skills",
                 "builtin-skills/workflow-creator"
         );
-    }
-
-    /**
-     * MCP 安装器配置。
-     *
-     * @author zsg
-     * @since 2026-03-10
-     */
-    @Data
-    public static class McpInstaller {
-
-        /** 功能开关，默认 true。 */
-        private boolean enabled = true;
-
-        /** npx 命令路径，默认 npx。 */
-        private String command = "npx";
-
-        /** mcp-installer 启动参数。 */
-        private List<String> args = List.of("@anaisbetts/mcp-installer");
     }
 
     /**

@@ -32,7 +32,6 @@ class ConfigExternalizationCompletenessTest {
         assertThat(props.getInfra()).isNotNull();
         assertThat(props.getIntrospection()).isNotNull();
         assertThat(props.getSkillDiscovery()).isNotNull();
-        assertThat(props.getMcpInstaller()).isNotNull();
         assertThat(props.getOnboarding()).isNotNull();
     }
 
@@ -146,16 +145,6 @@ class ConfigExternalizationCompletenessTest {
         assertThat(sd.getBuiltinSkillPaths()).contains("builtin-skills/find-skills");
     }
 
-    // ── McpInstaller 默认值 ──────────────────────────────────
-
-    @Test
-    void McpInstaller默认值正确() {
-        var mcp = props.getMcpInstaller();
-        assertThat(mcp.isEnabled()).isTrue();
-        assertThat(mcp.getCommand()).isEqualTo("npx");
-        assertThat(mcp.getArgs()).containsExactly("@anaisbetts/mcp-installer");
-    }
-
     // ── Onboarding 默认值 ────────────────────────────────────
 
     @Test
@@ -172,6 +161,5 @@ class ConfigExternalizationCompletenessTest {
         assertThat(props.getInfra().getShell().getCommandBlacklist()).isNotNull();
         assertThat(props.getInfra().getFile().getAllowedDirectories()).isNotNull();
         assertThat(props.getInfra().getFile().getDeniedDirectories()).isNotNull();
-        assertThat(props.getMcpInstaller().getArgs()).isNotNull();
     }
 }

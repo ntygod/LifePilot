@@ -6,7 +6,7 @@
 
 ## 1. 模块概述
 
-元能力系统（Meta Capabilities）为 Agent 提供通用执行基础设施和系统自省能力。模块分为两大子系统：**基础工具集**（Infra）提供 21 个内置工具覆盖环境感知、Web 信息获取、推理辅助、Shell 执行、浏览器自动化、代码执行、文件系统操作和用户交互控制；**便利层**（Convenience）提供系统自省、Skill 发现和 MCP 安装器自动注册能力。元能力模块是 Agent 执行循环中最底层的工具供给者，所有工具通过 `BuiltinSkillProvider` 机制注册到 `DynamicToolRegistry`。
+元能力系统（Meta Capabilities）为 Agent 提供通用执行基础设施和系统自省能力。模块分为两大子系统：**基础工具集**（Infra）提供 21 个内置工具覆盖环境感知、Web 信息获取、推理辅助、Shell 执行、浏览器自动化、代码执行、文件系统操作和用户交互控制；**便利层**（Convenience）提供系统自省和 Skill 发现能力。内置 MCP 服务器（mcp-installer、desktop-control 等）通过 JSON 配置文件由 `McpServerDiscovery` 统一发现和管理。元能力模块是 Agent 执行循环中最底层的工具供给者，所有工具通过 `BuiltinSkillProvider` 机制注册到 `DynamicToolRegistry`。
 
 ## 2. 架构图
 
@@ -17,7 +17,6 @@ graph TB
             CA["CapabilityAggregator<br/>能力聚合器"]
             ISP["IntrospectionSkillProvider<br/>系统自省 Skill"]
             SDR["SkillDiscoveryRegistrar<br/>find-skills 提取器"]
-            MIR["McpInstallerRegistrar<br/>mcp-installer 注册器"]
         end
 
         subgraph infra["infra — 基础工具集"]
@@ -42,7 +41,6 @@ graph TB
         AR["AgentRegistry"]
         DTR["DynamicToolRegistry"]
         WR["WorkflowRegistry"]
-        MSR["McpServerRegistry"]
         SB["SandboxBooter"]
         SSE["SseSessionManager"]
     end
@@ -53,7 +51,6 @@ graph TB
     CA --> WR
     ISP --> CA
     ISP --> DTR
-    MIR --> MSR
     ITP --> DTR
     ITP --> SB
     ITP --> IB
@@ -111,12 +108,13 @@ graph TB
 - 不覆盖策略：目标文件已存在时跳过，保留用户自定义内容
 - 后续由 `MarkdownSkillLoader` 在 `ApplicationReadyEvent` 时作为 UserDefined Skill 加载
 
-### 3.7 McpInstallerRegistrar — mcp-installer 注册器
+### 3.7 内置 MCP 服务器（JSON 发现机制）
 
-- 职责：启动时检查 npx 可用性，可用时注册 `mcp-installer` MCP Server
-- 注册方式：构建 `McpServerConfig`（STDIO 传输）并通过 `McpServerRegistry.connectServer()` 注册
-- Windows 兼容：通过 `cmd /c npx --version` 检查 npx 可用性
-- 不可用时降级：记录 WARN 日志并跳过注册
+- 职责：通过 `classpath:builtin-mcp/servers.json` 定义内置 MCP 服务器（mcp-installer、desktop-control 等）
+- 启动时由 `McpServerDiscovery.seedBuiltinServers()` 将内置配置合并到用户目录 `~/.zhiwei/mcp/servers.json`
+- 合并策略：仅添加新条目，不覆盖用户已有配置（保留用户自定义修改）
+- `McpServerDiscovery` 扫描用户目录 JSON 作为最高优先级发现路径
+- 发现的 MCP 服务器通过 `McpServerRegistry` → `DynamicToolRegistry` → Agent 链路注册
 
 ## 4. 核心流程
 
@@ -178,7 +176,7 @@ sequenceDiagram
 | 能力聚合缓存 | ConcurrentHashMap + TTL + 事件防抖 | 避免每次自省都遍历四个注册中心，防抖合并短时间内的多次注册事件 |
 | 浏览器自动化 | Playwright + 条件注册 | Playwright 是可选重依赖，通过 @ConditionalOnClass 避免强制引入 |
 | find-skills 提取 | classpath → 用户目录 | 提取后作为 UserDefined Skill 加载，用户可查看和编辑 |
-| mcp-installer | npx 运行时检查 | Node.js 是可选依赖，不可用时优雅降级 |
+| 内置 MCP 服务器 | JSON 配置 + 启动时 seed | 内置 MCP 定义在 classpath JSON 中，启动时合并到用户目录，由 McpServerDiscovery 统一发现 |
 
 ## 6. 集成点
 
@@ -189,7 +187,7 @@ sequenceDiagram
 | skill（SkillRegistry） | meta ← skill | 自省时查询 Skill 列表和语义搜索 |
 | multiagent（AgentRegistry） | meta ← multiagent | 自省时查询 Agent 列表 |
 | workflow（WorkflowRegistry） | meta ← workflow | 自省时查询工作流列表 |
-| mcp（McpServerRegistry） | meta → mcp | 注册 mcp-installer MCP Server |
+| mcp（McpServerRegistry） | meta → mcp | 内置 MCP 服务器通过 JSON 发现机制注册（McpServerDiscovery） |
 | sandbox（SandboxBooter） | meta ← sandbox | 代码执行工具委托沙箱执行 |
 | interaction（SseSessionManager） | meta → interaction | 交互请求通过 SSE 推送到 Web 前端 |
 
@@ -213,6 +211,4 @@ sequenceDiagram
 | `lifepilot.meta.introspection.cache-ttl-seconds` | `60` | 能力聚合缓存 TTL |
 | `lifepilot.meta.introspection.debounce-millis` | `500` | 事件防抖窗口 |
 | `lifepilot.meta.skill-discovery.enabled` | `true` | find-skills 提取开关 |
-| `lifepilot.meta.mcp-installer.enabled` | `true` | mcp-installer 注册开关 |
-| `lifepilot.meta.mcp-installer.command` | `npx` | npx 命令路径 |
 | `lifepilot.meta.onboarding.auto-trigger` | `true` | 引导 Agent 自动触发 |
