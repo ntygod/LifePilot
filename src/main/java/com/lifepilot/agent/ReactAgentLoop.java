@@ -1351,6 +1351,31 @@ public class ReactAgentLoop {
 
             var prompt = new Prompt(enhancedMessages, optionsBuilder.build());
 
+            // 非流式调用（降级路径）
+            return callLlmNonStreaming(chatModelInfo, prompt, traceContext);
+        }
+
+        /**
+         * 非流式 LLM 调用降级方法。
+         *
+         * <p>使用 {@code chatModel.call(prompt)} 执行非流式调用，等待完整响应后：
+         * <ul>
+         *   <li>若 LLM 返回 tool call → 发送 TOOL_CALLING 推理事件，直接返回含 tool call 的 ChatResponse</li>
+         *   <li>若 LLM 返回纯文本 → 通过 {@link #streamContentToSse(String)} 模拟流式推送</li>
+         * </ul>
+         *
+         * <p>当 ChatModel 不支持流式调用时，作为降级路径使用，保持与优化前完全一致的行为。</p>
+         *
+         * @param chatModelInfo ChatModel 信息（含 chatModel、providerId、modelId）
+         * @param prompt        构建好的 Prompt（含增强 system message 和工具定义）
+         * @param traceContext  追踪上下文（可空）
+         * @return LLM 原始响应（可能包含 tool call 请求）
+         */
+        private ChatResponse callLlmNonStreaming(LlmRouter.ChatModelInfo chatModelInfo,
+                                                 Prompt prompt,
+                                                 @Nullable TraceContext traceContext) {
+            String scene = config.getLoop().getLlmScene();
+
             // 非流式调用获取完整响应
             ChatResponse chatResponse = chatModelInfo.chatModel().call(prompt);
             var assistantMsg = chatResponse.getResult().getOutput();
@@ -1362,7 +1387,7 @@ public class ReactAgentLoop {
                             "TOOL_CALLING", "调用工具: " + tc.name(),
                             "正在执行工具 " + tc.name(), tc.name(), Map.of());
                 }
-                // 记录流式 LLM Step
+                // 记录 LLM 调用步骤到 Trace
                 recordStreamingLlmStep(traceContext, Instant.now(), providerId, modelId,
                         scene, chatResponse, null);
                 return chatResponse;
@@ -1377,7 +1402,7 @@ public class ReactAgentLoop {
                 streamContentToSse(content);
             }
 
-            // 记录流式 LLM Step
+            // 记录 LLM 调用步骤到 Trace
             recordStreamingLlmStep(traceContext, Instant.now(), providerId, modelId,
                     scene, chatResponse, null);
 
