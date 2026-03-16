@@ -1,15 +1,18 @@
 package com.lifepilot.meta.config;
 
+import com.lifepilot.datastore.DataStoreManager;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.meta.convenience.CapabilityAggregator;
 import com.lifepilot.meta.convenience.IntrospectionSkillProvider;
 import com.lifepilot.meta.convenience.SkillDiscoveryRegistrar;
 import com.lifepilot.meta.infra.InfraToolProvider;
+import com.lifepilot.meta.infra.storage.StorageToolProvider;
 import com.lifepilot.mcp.registry.McpServerRegistry;
 import com.lifepilot.meta.infra.browser.BrowserSessionManager;
 import com.lifepilot.meta.infra.interaction.CliInteractionHandler;
 import com.lifepilot.meta.infra.interaction.InteractionBridge;
 import com.lifepilot.multiagent.registry.AgentRegistry;
+import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.sandbox.booter.SandboxBooter;
 import com.lifepilot.skill.config.SkillConfigProperties;
 import com.lifepilot.skill.registry.SkillRegistry;
@@ -119,5 +122,16 @@ public class MetaAutoConfiguration {
     SkillDiscoveryRegistrar skillDiscoveryRegistrar(MetaProperties properties,
                                                     SkillConfigProperties skillConfig) {
         return new SkillDiscoveryRegistrar(properties, skillConfig);
+    }
+
+    /**
+     * 注册存储工具提供者 — 注册 7 个数据存储 CRUD 工具。
+     *
+     * <p>依赖 DataStoreManager（来自 datastore 模块）和 PromptRegistry。</p>
+     */
+    @Bean
+    StorageToolProvider storageToolProvider(DataStoreManager dataStoreManager,
+                                           PromptRegistry promptRegistry) {
+        return new StorageToolProvider(dataStoreManager, promptRegistry);
     }
 }
