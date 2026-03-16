@@ -27,10 +27,10 @@ class PromptAutoConfiguration_集成测试 {
     }
 
     @Test
-    void 注册24个模板() {
+    void 注册33个模板() {
         contextRunner.run(context -> {
             var registry = context.getBean(PromptRegistry.class);
-            assertEquals(24, registry.size(), "unexpected template keys: " + registry.keys());
+            assertEquals(33, registry.size(), "unexpected template keys: " + registry.keys());
         });
     }
 
@@ -44,9 +44,14 @@ class PromptAutoConfiguration_集成测试 {
                     "agent/streaming-constraint", "agent/react-system",
                     "agent/react-user-prompt", "agent/react-user-prompt-basic",
                     "skill/todo", "skill/schedule", "skill/habit", "skill/memory", "skill/sync",
-                    "skill/datastore",
+                    "skill/datastore", "skill/gap-analysis",
                     "memory/compression-summary", "memory/compression-keypoints", "memory/entity-compression",
+                    "memory/procedural-extraction",
                     "knowledge/chunk-context", "knowledge/rerank-pointwise", "knowledge/rerank-listwise",
+                    "knowledge/query-rewrite", "knowledge/hyde-generation",
+                    "knowledge/entity-extraction", "knowledge/chunk-context-single",
+                    "eval/judge-full", "eval/judge-simplified",
+                    "semantic/entity-extraction",
                     "proactive/evaluation", "proactive/high-urgency/deadline_reminder",
                     "proactive/high-urgency/schedule_reminder",
                     "generation/skill-generation", "semantic/entity-disambiguation"
