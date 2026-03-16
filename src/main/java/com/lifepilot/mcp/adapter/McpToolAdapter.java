@@ -41,11 +41,12 @@ public class McpToolAdapter {
     /**
      * 批量转换 MCP 工具 Schema 为 ToolContract。
      *
-     * <p>单个工具转换失败不影响其他工具。</p>
+     * <p>单个工具转换失败不影响其他工具。
+     * clientId 使用 serverName，运行时通过 McpServerRegistry 查找 McpClient。</p>
      *
      * @param serverName MCP 服务器名称
      * @param schemas MCP 工具 Schema 列表
-     * @param client MCP 客户端实例（用于工具调用）
+     * @param client MCP 客户端实例（仅用于兼容签名，不再持有引用）
      * @return ToolContract 列表
      */
     public List<ToolContract> toToolContracts(
@@ -56,7 +57,7 @@ public class McpToolAdapter {
 
         for (McpToolSchema schema : schemas) {
             try {
-                ToolContract tool = toToolContract(serverName, schema, client);
+                ToolContract tool = toToolContract(serverName, schema);
                 tools.add(tool);
                 log.debug("MCP 工具转换成功: server={}, tool={}, risk={}",
                         serverName, schema.name(), tool.riskLevel());
@@ -72,15 +73,13 @@ public class McpToolAdapter {
     /**
      * 转换单个 MCP 工具 Schema 为 ToolContract。
      *
-     * @param serverName MCP 服务器名称
+     * @param serverName MCP 服务器名称（同时作为 clientId）
      * @param schema MCP 工具 Schema
-     * @param client MCP 客户端实例
      * @return McpTool 实例
      */
     public ToolContract toToolContract(
             String serverName,
-            McpToolSchema schema,
-            McpClient client) {
+            McpToolSchema schema) {
 
         String toolId = generateToolId(serverName, schema.name());
         RiskLevel riskLevel = inferRiskLevel(schema);
@@ -104,7 +103,7 @@ public class McpToolAdapter {
                 tags,
                 serverName,
                 schema.name(),
-                client
+                serverName
         );
     }
 

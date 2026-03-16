@@ -46,12 +46,18 @@ public class WebSearchToolExecutor {
             String query = input.getParam("query", String.class);
             int maxResults = input.getOptionalParam("maxResults", Integer.class)
                     .orElse(properties.getInfra().getWebSearch().getMaxResults());
+            int offset = input.getOptionalParam("offset", Integer.class)
+                    .map(o -> Math.max(o, 0))
+                    .orElse(0);
+            int limit = input.getOptionalParam("limit", Integer.class)
+                    .filter(l -> l >= 1)
+                    .orElse(maxResults);
 
             var config = properties.getInfra().getWebSearch();
             String provider = config.getProvider().toLowerCase();
 
             return switch (provider) {
-                case "duckduckgo" -> searchDuckDuckGo(query, maxResults);
+                case "duckduckgo" -> searchDuckDuckGo(query, maxResults, offset, limit);
                 case "google" -> searchWithApiKey(provider, query, maxResults, config.getApiKey());
                 case "bing" -> searchWithApiKey(provider, query, maxResults, config.getApiKey());
                 default -> ToolResult.error("不支持的搜索引擎: " + provider + "，支持 google/bing/duckduckgo");
@@ -71,7 +77,7 @@ public class WebSearchToolExecutor {
      * 从 RelatedTopics 中提取搜索结果。</p>
      */
     @SuppressWarnings({"unchecked", "null"})
-    private ToolResult searchDuckDuckGo(String query, int maxResults) {
+    private ToolResult searchDuckDuckGo(String query, int maxResults, int offset, int limit) {
         String encodedQuery = URLEncoder.encode(query, StandardCharsets.UTF_8);
         String url = "https://api.duckduckgo.com/?q=%s&format=json&no_html=1&skip_disambig=1"
                 .formatted(encodedQuery);
@@ -116,11 +122,20 @@ public class WebSearchToolExecutor {
             }
         }
 
+        // 分页切片
+        int totalEstimate = results.size();
+        int fromIndex = Math.min(offset, totalEstimate);
+        int toIndex = Math.min(fromIndex + limit, totalEstimate);
+        var paged = results.subList(fromIndex, toIndex);
+        boolean hasMore = toIndex < totalEstimate;
+
         return ToolResult.success(Map.of(
                 "provider", "duckduckgo",
                 "query", query,
-                "resultCount", results.size(),
-                "results", results
+                "resultCount", paged.size(),
+                "totalEstimate", totalEstimate,
+                "hasMore", hasMore,
+                "results", List.copyOf(paged)
         ));
     }
 

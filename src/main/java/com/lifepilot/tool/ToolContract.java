@@ -55,6 +55,11 @@ public sealed interface ToolContract permits BuiltinTool, SkillTool, McpTool {
         return false;
     }
 
+    /** 是否支持链式调用（工具组合）。默认 false，子类可覆盖。 */
+    default boolean composable() {
+        return false;
+    }
+
     /**
      * 执行工具。
      *

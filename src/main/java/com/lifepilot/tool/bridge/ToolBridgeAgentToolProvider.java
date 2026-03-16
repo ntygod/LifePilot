@@ -181,10 +181,19 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
         }
     }
 
-    /** 格式化输出结果为 JSON 字符串，超过全局上限时截断。 */
+    /**
+     * 格式化输出结果为 JSON 字符串，超过全局上限时截断。
+     *
+     * <p>PARTIAL_SUCCESS 时同时输出 data 和 error，让 LLM 了解部分成功的上下文。</p>
+     */
     private String formatOutput(ToolResult result) {
         String output;
-        if (result.ok()) {
+        if (result.status() == com.lifepilot.tool.model.ToolResultStatus.PARTIAL_SUCCESS) {
+            // 部分成功：同时输出 data 和 error
+            output = "{\"data\":" + toJsonValue(result.data())
+                    + ",\"error\":\"" + escapeJson(result.error())
+                    + "\",\"status\":\"PARTIAL_SUCCESS\"}";
+        } else if (result.ok()) {
             output = toJsonValue(result.data());
         } else {
             output = "{\"error\":\"" + escapeJson(result.error()) + "\"}";

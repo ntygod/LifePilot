@@ -67,6 +67,14 @@ public class FileSearchToolExecutor {
         int maxResults = input.getOptionalParam("maxResults", Number.class)
                 .map(Number::intValue)
                 .orElse(50);
+        int offset = input.getOptionalParam("offset", Number.class)
+                .map(Number::intValue)
+                .map(o -> Math.max(o, 0))
+                .orElse(0);
+        int limit = input.getOptionalParam("limit", Number.class)
+                .map(Number::intValue)
+                .filter(l -> l >= 1)
+                .orElse(maxResults);
         int contextLines = input.getOptionalParam("contextLines", Number.class)
                 .map(Number::intValue)
                 .orElse(0);
@@ -99,6 +107,8 @@ public class FileSearchToolExecutor {
         try {
             List<Map<String, Object>> matches = new ArrayList<>();
             int totalMatches = 0;
+            // 已跳过的匹配数（用于 offset 分页）
+            int skipped = 0;
 
             try (Stream<Path> walk = Files.walk(dirPath)) {
                 var files = walk
@@ -107,10 +117,6 @@ public class FileSearchToolExecutor {
                         .toList();
 
                 for (Path file : files) {
-                    if (totalMatches >= maxResults) {
-                        break;
-                    }
-
                     // 二进制文件预检测：前 512 字节含 NUL 则跳过
                     if (isBinaryFile(file)) {
                         log.debug("跳过二进制文件: path={}", file);
@@ -122,7 +128,13 @@ public class FileSearchToolExecutor {
                         for (int i = 0; i < lines.size(); i++) {
                             if (regex.matcher(lines.get(i)).find()) {
                                 totalMatches++;
-                                if (matches.size() < maxResults) {
+                                // 跳过前 offset 条匹配
+                                if (skipped < offset) {
+                                    skipped++;
+                                    continue;
+                                }
+                                // 收集 limit 条后停止收集（但继续计数 totalMatches）
+                                if (matches.size() < limit) {
                                     var match = new LinkedHashMap<String, Object>();
                                     match.put("file", dirPath.relativize(file).toString());
                                     match.put("line", i + 1);
@@ -150,6 +162,8 @@ public class FileSearchToolExecutor {
             var data = new LinkedHashMap<String, Object>();
             data.put("matches", matches);
             data.put("totalMatches", totalMatches);
+            data.put("totalEstimate", totalMatches);
+            data.put("hasMore", totalMatches > offset + matches.size());
 
             log.debug("文件搜索完成: path={}, pattern={}, totalMatches={}", pathStr, patternStr, totalMatches);
             return ToolResult.success(Map.copyOf(data));
