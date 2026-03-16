@@ -133,7 +133,7 @@ public class FileToolProvider {
         return BuiltinTool.builder()
                 .id("builtin.file.search")
                 .name("搜索文件内容")
-                .description("递归搜索目录下文件内容，支持正则表达式匹配和 glob 文件名过滤")
+                .description("递归搜索目录下文件内容，支持正则表达式、glob 过滤、上下文行和二进制文件自动跳过")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("path", "pattern"),
@@ -145,7 +145,9 @@ public class FileToolProvider {
                                 "filePattern", Map.of("type", "string",
                                         "description", "文件名 glob 过滤模式（如 *.java），可选"),
                                 "maxResults", Map.of("type", "integer",
-                                        "description", "最大返回结果数，默认 50")
+                                        "description", "最大返回结果数，默认 50"),
+                                "contextLines", Map.of("type", "integer",
+                                        "description", "匹配行前后上下文行数，默认 0")
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
