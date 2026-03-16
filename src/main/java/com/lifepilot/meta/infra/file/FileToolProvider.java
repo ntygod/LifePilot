@@ -148,6 +148,10 @@ public class FileToolProvider {
                                         "description", "文件名 glob 过滤模式（如 *.java），可选"),
                                 "maxResults", Map.of("type", "integer",
                                         "description", "最大返回结果数，默认 50"),
+                                "offset", Map.of("type", "integer",
+                                        "description", "分页偏移量，跳过前 offset 条匹配，默认 0"),
+                                "limit", Map.of("type", "integer",
+                                        "description", "分页每页数量，默认等于 maxResults"),
                                 "contextLines", Map.of("type", "integer",
                                         "description", "匹配行前后上下文行数，默认 0")
                         )

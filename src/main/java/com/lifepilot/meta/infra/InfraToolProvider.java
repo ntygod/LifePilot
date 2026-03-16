@@ -238,7 +238,11 @@ public class InfraToolProvider implements BuiltinSkillProvider {
                                 "query", Map.of("type", "string",
                                         "description", "搜索关键词"),
                                 "maxResults", Map.of("type", "integer",
-                                        "description", "最大返回结果数，默认使用配置值")
+                                        "description", "最大返回结果数，默认使用配置值"),
+                                "offset", Map.of("type", "integer",
+                                        "description", "分页偏移量，跳过前 offset 条结果，默认 0"),
+                                "limit", Map.of("type", "integer",
+                                        "description", "分页每页数量，默认等于 maxResults")
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
