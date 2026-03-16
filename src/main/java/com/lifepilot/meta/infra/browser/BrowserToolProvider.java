@@ -3,6 +3,7 @@ package com.lifepilot.meta.infra.browser;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.BuiltinTool;
+import com.lifepilot.tool.model.ToolCategory;
 import com.lifepilot.tool.schema.JsonSchema;
 import jakarta.annotation.Nullable;
 
@@ -71,6 +72,7 @@ public class BrowserToolProvider {
     private BuiltinTool buildBrowserNavigateTool(BrowserNavigateToolExecutor executor) {
         return BuiltinTool.builder()
                 .id("builtin.browser.navigate")
+                .category(ToolCategory.PERCEPTION)
                 .name("浏览器导航")
                 .description("使用浏览器导航到指定 URL，返回页面标题和文本快照。适用于访问 JavaScript 渲染的动态网页")
                 .inputSchema(JsonSchema.of(Map.of(
@@ -94,6 +96,7 @@ public class BrowserToolProvider {
     private BuiltinTool buildBrowserClickTool(BrowserClickToolExecutor executor) {
         return BuiltinTool.builder()
                 .id("builtin.browser.click")
+                .category(ToolCategory.ACTION)
                 .name("浏览器点击")
                 .description("点击页面中指定 CSS 选择器的元素，等待导航或响应完成")
                 .inputSchema(JsonSchema.of(Map.of(
@@ -117,6 +120,7 @@ public class BrowserToolProvider {
     private BuiltinTool buildBrowserInputTool(BrowserInputToolExecutor executor) {
         return BuiltinTool.builder()
                 .id("builtin.browser.input")
+                .category(ToolCategory.ACTION)
                 .name("浏览器输入")
                 .description("在页面表单字段中填入文本内容，使用 CSS 选择器定位输入框")
                 .inputSchema(JsonSchema.of(Map.of(
@@ -142,6 +146,7 @@ public class BrowserToolProvider {
     private BuiltinTool buildBrowserScreenshotTool(BrowserScreenshotToolExecutor executor) {
         return BuiltinTool.builder()
                 .id("builtin.browser.screenshot")
+                .category(ToolCategory.PERCEPTION)
                 .name("浏览器截图")
                 .description("截取当前页面截图，返回 Base64 编码的 PNG 图片。支持全页截图")
                 .inputSchema(JsonSchema.of(Map.of(
@@ -167,6 +172,7 @@ public class BrowserToolProvider {
     private BuiltinTool buildBrowserScrollTool(BrowserScrollToolExecutor executor) {
         return BuiltinTool.builder()
                 .id("builtin.browser.scroll")
+                .category(ToolCategory.ACTION)
                 .name("浏览器滚动")
                 .description("滚动页面或滚动到指定元素。支持方向滚动（up/down）和元素定位滚动")
                 .inputSchema(JsonSchema.of(Map.of(
@@ -193,6 +199,7 @@ public class BrowserToolProvider {
     private BuiltinTool buildBrowserWaitTool(BrowserWaitToolExecutor executor) {
         return BuiltinTool.builder()
                 .id("builtin.browser.wait")
+                .category(ToolCategory.PERCEPTION)
                 .name("浏览器等待")
                 .description("等待页面中指定元素达到目标状态（visible/hidden/attached）")
                 .inputSchema(JsonSchema.of(Map.of(
@@ -220,6 +227,7 @@ public class BrowserToolProvider {
     private BuiltinTool buildBrowserHoverTool(BrowserHoverToolExecutor executor) {
         return BuiltinTool.builder()
                 .id("builtin.browser.hover")
+                .category(ToolCategory.ACTION)
                 .name("浏览器悬停")
                 .description("将鼠标悬停到指定 CSS 选择器的元素上，返回元素信息")
                 .inputSchema(JsonSchema.of(Map.of(
@@ -243,6 +251,7 @@ public class BrowserToolProvider {
     private BuiltinTool buildBrowserSelectTool(BrowserSelectToolExecutor executor) {
         return BuiltinTool.builder()
                 .id("builtin.browser.select")
+                .category(ToolCategory.ACTION)
                 .name("浏览器下拉选择")
                 .description("从 select 下拉元素中选择选项，支持按 value 或 label 选择")
                 .inputSchema(JsonSchema.of(Map.of(
@@ -270,6 +279,7 @@ public class BrowserToolProvider {
     private BuiltinTool buildBrowserKeyboardTool(BrowserKeyboardToolExecutor executor) {
         return BuiltinTool.builder()
                 .id("builtin.browser.keyboard")
+                .category(ToolCategory.ACTION)
                 .name("浏览器键盘")
                 .description("模拟键盘操作，支持单键/组合键按下和逐字符文本输入")
                 .inputSchema(JsonSchema.of(Map.of(
@@ -296,6 +306,7 @@ public class BrowserToolProvider {
     private BuiltinTool buildBrowserEvaluateTool(BrowserEvaluateToolExecutor executor) {
         return BuiltinTool.builder()
                 .id("builtin.browser.evaluate")
+                .category(ToolCategory.ACTION)
                 .name("浏览器 JS 执行")
                 .description("在当前页面上下文中执行 JavaScript 表达式，返回 JSON 序列化结果。HIGH 风险")
                 .inputSchema(JsonSchema.of(Map.of(
@@ -319,6 +330,7 @@ public class BrowserToolProvider {
     private BuiltinTool buildBrowserAccessibilityTool(BrowserAccessibilityToolExecutor executor) {
         return BuiltinTool.builder()
                 .id("builtin.browser.accessibility")
+                .category(ToolCategory.PERCEPTION)
                 .name("浏览器无障碍树")
                 .description("获取页面或子树的无障碍树结构快照，用于理解页面语义结构")
                 .inputSchema(JsonSchema.of(Map.of(
@@ -343,6 +355,7 @@ public class BrowserToolProvider {
     private BuiltinTool buildBrowserTabTool(BrowserTabToolExecutor executor) {
         return BuiltinTool.builder()
                 .id("builtin.browser.tab")
+                .category(ToolCategory.ACTION)
                 .name("浏览器标签页")
                 .description("管理浏览器标签页，支持打开新标签页、切换、关闭和列出所有标签页")
                 .inputSchema(JsonSchema.of(Map.of(
@@ -370,6 +383,7 @@ public class BrowserToolProvider {
     private BuiltinTool buildBrowserStorageTool(BrowserStorageToolExecutor executor) {
         return BuiltinTool.builder()
                 .id("builtin.browser.storage")
+                .category(ToolCategory.ACTION)
                 .name("浏览器存储")
                 .description("管理浏览器存储，支持 Cookie 和 localStorage 的读取、设置和清除")
                 .inputSchema(JsonSchema.of(Map.of(
