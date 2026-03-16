@@ -55,6 +55,31 @@ public class SyncAutoConfiguration {
 
     // ==================== Repository 层 ====================
 
+    // --- 数据 Repository（供 Sync 模块的 ChangeDetector / SyncEngine 使用） ---
+
+    @Bean
+    @ConditionalOnMissingBean
+    public TodoRepository todoRepository(JdbcTemplate jdbcTemplate) {
+        log.info("同步模块: 注册 TodoRepository（供 ChangeDetector/SyncEngine 使用）");
+        return new TodoRepository(jdbcTemplate);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ScheduleRepository scheduleRepository(JdbcTemplate jdbcTemplate) {
+        log.info("同步模块: 注册 ScheduleRepository（供 ChangeDetector/SyncEngine 使用）");
+        return new ScheduleRepository(jdbcTemplate);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public HabitRepository habitRepository(JdbcTemplate jdbcTemplate) {
+        log.info("同步模块: 注册 HabitRepository（供 ChangeDetector/SyncEngine 使用）");
+        return new HabitRepository(jdbcTemplate);
+    }
+
+    // --- Sync 专用 Repository ---
+
     @Bean
     @ConditionalOnMissingBean
     public SyncProfileRepository syncProfileRepository(JdbcTemplate jdbcTemplate) {
@@ -144,7 +169,6 @@ public class SyncAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean({TodoRepository.class, ScheduleRepository.class, HabitRepository.class})
     public ChangeDetector changeDetector(TodoRepository todoRepository,
                                          ScheduleRepository scheduleRepository,
                                          HabitRepository habitRepository,

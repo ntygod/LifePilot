@@ -5,9 +5,7 @@ import com.lifepilot.datastore.engine.AggregationEngine;
 import com.lifepilot.datastore.engine.QueryEngine;
 import com.lifepilot.datastore.repository.CollectionRepository;
 import com.lifepilot.datastore.repository.DocumentRepository;
-import com.lifepilot.datastore.skill.DataStoreSkillProvider;
 import com.lifepilot.datastore.validation.PropertyValidator;
-import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -20,7 +18,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 /**
  * 通用数据存储模块自动配置。
  *
- * <p>注册 DataStore 模块所有核心 Bean：Repository、Engine、Validator、Manager、SkillProvider。
+ * <p>注册 DataStore 模块所有核心 Bean：Repository、Engine、Validator、Manager。
  * 通过 {@code lifepilot.datastore.enabled} 控制总开关，默认启用。</p>
  *
  * @author zsg
@@ -82,11 +80,4 @@ public class DataStoreAutoConfiguration {
                 queryEngine, aggregationEngine, propertyValidator, properties);
     }
 
-    @Bean
-    @ConditionalOnMissingBean
-    public DataStoreSkillProvider dataStoreSkillProvider(DataStoreManager dataStoreManager,
-                                                         PromptRegistry promptRegistry) {
-        log.info("数据存储: 注册 DataStoreSkillProvider");
-        return new DataStoreSkillProvider(dataStoreManager, promptRegistry);
-    }
 }

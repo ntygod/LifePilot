@@ -3,6 +3,7 @@ package com.lifepilot.tool.registry;
 import com.lifepilot.observability.guardrail.GuardrailEngine;
 import com.lifepilot.tool.ToolContract;
 import com.lifepilot.tool.event.ToolRegistryEvent.*;
+import com.lifepilot.tool.model.ToolCategory;
 import com.lifepilot.tool.model.ToolLayer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,6 +38,9 @@ public class DynamicToolRegistry {
 
     /** Skill 工具 ID 集合。 */
     private final ConcurrentHashMap<String, Boolean> skillToolIds = new ConcurrentHashMap<>();
+
+    /** 分组索引：category → 工具 ID 集合。 */
+    private final ConcurrentHashMap<ToolCategory, Set<String>> categoryIndex = new ConcurrentHashMap<>();
 
     private final GuardrailEngine guardrailEngine;
     private final ApplicationEventPublisher eventPublisher;
@@ -123,13 +127,25 @@ public class DynamicToolRegistry {
         if (existingLayer == null) {
             tools.put(id, tool);
             toolLayers.put(id, layer);
+            categoryIndex.computeIfAbsent(tool.category(), k -> ConcurrentHashMap.newKeySet())
+                    .add(id);
             log.debug("工具注册成功: id={}, layer={}, source={}", id, layer, source);
             return true;
         }
 
         if (layer.overrides(existingLayer)) {
+            // 覆盖注册时，先清理旧工具的 category 索引（category 可能不同）
+            ToolContract oldTool = tools.get(id);
+            if (oldTool != null) {
+                Set<String> oldCategorySet = categoryIndex.get(oldTool.category());
+                if (oldCategorySet != null) {
+                    oldCategorySet.remove(id);
+                }
+            }
             tools.put(id, tool);
             toolLayers.put(id, layer);
+            categoryIndex.computeIfAbsent(tool.category(), k -> ConcurrentHashMap.newKeySet())
+                    .add(id);
             eventPublisher.publishEvent(new ToolConflictDetected(
                     id, existingLayer, layer, "高层覆盖低层"));
             log.info("工具覆盖注册: id={}, {} -> {}", id, existingLayer, layer);
@@ -156,6 +172,7 @@ public class DynamicToolRegistry {
         ToolContract removed = tools.remove(toolId);
         if (removed != null) {
             toolLayers.remove(toolId);
+            removeCategoryIndex(removed.category(), toolId);
             guardrailEngine.removeAllowedTools(List.of(toolId));
             invalidateSnapshot();
             eventPublisher.publishEvent(new ToolsUnregistered(
@@ -175,7 +192,10 @@ public class DynamicToolRegistry {
         List<String> toolIds = serverToolIndex.remove(serverName);
         if (toolIds != null && !toolIds.isEmpty()) {
             toolIds.forEach(id -> {
-                tools.remove(id);
+                ToolContract removed = tools.remove(id);
+                if (removed != null) {
+                    removeCategoryIndex(removed.category(), id);
+                }
                 toolLayers.remove(id);
             });
             guardrailEngine.removeAllowedTools(toolIds);
@@ -197,6 +217,7 @@ public class DynamicToolRegistry {
         if (removed != null) {
             toolLayers.remove(toolId);
             skillToolIds.remove(toolId);
+            removeCategoryIndex(removed.category(), toolId);
             guardrailEngine.removeAllowedTools(List.of(toolId));
             invalidateSnapshot();
             eventPublisher.publishEvent(new ToolsUnregistered(
@@ -212,7 +233,10 @@ public class DynamicToolRegistry {
         List<String> toolIds = new ArrayList<>(skillToolIds.keySet());
         if (!toolIds.isEmpty()) {
             toolIds.forEach(id -> {
-                tools.remove(id);
+                ToolContract removed = tools.remove(id);
+                if (removed != null) {
+                    removeCategoryIndex(removed.category(), id);
+                }
                 toolLayers.remove(id);
             });
             skillToolIds.clear();
@@ -284,6 +308,35 @@ public class DynamicToolRegistry {
         toolLayers.values().forEach(layer ->
                 counts.merge(layer, 1, Integer::sum));
         return Map.copyOf(counts);
+    }
+
+    /**
+     * 按分组查询工具 ID 集合。
+     *
+     * @param category 工具元能力分组
+     * @return 不可变的工具 ID 集合
+     */
+    public Set<String> getToolIdsByCategory(ToolCategory category) {
+        return Set.copyOf(categoryIndex.getOrDefault(category, Set.of()));
+    }
+
+    /**
+     * 获取所有分组及其工具数量。
+     *
+     * @return 不可变的分组 → 工具数量映射
+     */
+    public Map<ToolCategory, Integer> getToolCountByCategory() {
+        var counts = new EnumMap<ToolCategory, Integer>(ToolCategory.class);
+        categoryIndex.forEach((cat, ids) -> counts.put(cat, ids.size()));
+        return Map.copyOf(counts);
+    }
+
+    /** 从分组索引中移除工具 ID。 */
+    private void removeCategoryIndex(ToolCategory category, String toolId) {
+        Set<String> ids = categoryIndex.get(category);
+        if (ids != null) {
+            ids.remove(toolId);
+        }
     }
 
     /** 使快照缓存失效。 */

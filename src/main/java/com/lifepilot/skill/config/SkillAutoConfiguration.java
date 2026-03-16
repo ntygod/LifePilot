@@ -9,17 +9,18 @@ import com.lifepilot.skill.audit.SkillAuditRepository;
 import com.lifepilot.skill.bridge.SkillToToolBridge;
 import com.lifepilot.skill.builtin.BuiltinSkillProvider;
 import com.lifepilot.skill.builtin.BuiltinSkillRegistrar;
-import com.lifepilot.skill.builtin.habit.HabitRepository;
 import com.lifepilot.skill.builtin.habit.HabitSkillProvider;
 import com.lifepilot.skill.builtin.memory.MemorySkillProvider;
-import com.lifepilot.skill.builtin.schedule.ScheduleRepository;
 import com.lifepilot.skill.builtin.schedule.ScheduleSkillProvider;
-import com.lifepilot.skill.builtin.todo.TodoRepository;
 import com.lifepilot.skill.builtin.todo.TodoSkillProvider;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.datastore.DataStoreManager;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.skill.generation.SkillGapDetector;
 import com.lifepilot.skill.generation.SkillGenerator;
+import com.lifepilot.skill.generation.SkillTemplateLibrary;
+import com.lifepilot.skill.generation.ToolCapabilityManifest;
 import com.lifepilot.skill.markdown.MarkdownSkillLoader;
 import com.lifepilot.skill.markdown.MarkdownSkillParser;
 import com.lifepilot.skill.markdown.MarkdownSkillSerializer;
@@ -128,56 +129,36 @@ public class SkillAutoConfiguration {
         return new SkillToToolBridge(toolRegistry, skillActivator, capabilityAggregator);
     }
 
-    // --- 持久化组件 ---
-
-    @Bean
-    @ConditionalOnMissingBean
-    public TodoRepository todoRepository(JdbcTemplate jdbcTemplate) {
-        log.info("Skill 系统: 注册 TodoRepository");
-        return new TodoRepository(jdbcTemplate);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public ScheduleRepository scheduleRepository(JdbcTemplate jdbcTemplate) {
-        log.info("Skill 系统: 注册 ScheduleRepository");
-        return new ScheduleRepository(jdbcTemplate);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public HabitRepository habitRepository(JdbcTemplate jdbcTemplate) {
-        log.info("Skill 系统: 注册 HabitRepository");
-        return new HabitRepository(jdbcTemplate);
-    }
-
     // --- 内置 Skill 提供者 ---
 
     @Bean
     @ConditionalOnMissingBean
-    public TodoSkillProvider todoSkillProvider(TodoRepository todoRepository,
+    public TodoSkillProvider todoSkillProvider(DataStoreManager dataStoreManager,
+                                               ObjectMapper objectMapper,
                                                PromptRegistry promptRegistry) {
-        log.info("Skill 系统: 注册 TodoSkillProvider");
-        return new TodoSkillProvider(todoRepository, promptRegistry);
+        log.info("Skill 系统: 注册 TodoSkillProvider（DataStore 存储）");
+        return new TodoSkillProvider(dataStoreManager, objectMapper, promptRegistry);
     }
 
     @Bean
     @ConditionalOnMissingBean
-    public ScheduleSkillProvider scheduleSkillProvider(ScheduleRepository scheduleRepository,
+    public ScheduleSkillProvider scheduleSkillProvider(DataStoreManager dataStoreManager,
+                                                       ObjectMapper objectMapper,
                                                        PromptRegistry promptRegistry,
                                                        @Nullable ScheduledTaskService scheduledTaskService,
                                                        @Nullable SchedulerProperties schedulerProperties) {
-        log.info("Skill 系统: 注册 ScheduleSkillProvider");
-        return new ScheduleSkillProvider(scheduleRepository, promptRegistry,
+        log.info("Skill 系统: 注册 ScheduleSkillProvider（DataStore 存储）");
+        return new ScheduleSkillProvider(dataStoreManager, objectMapper, promptRegistry,
                 scheduledTaskService, schedulerProperties);
     }
 
     @Bean
     @ConditionalOnMissingBean
-    public HabitSkillProvider habitSkillProvider(HabitRepository habitRepository,
+    public HabitSkillProvider habitSkillProvider(DataStoreManager dataStoreManager,
+                                                 ObjectMapper objectMapper,
                                                  PromptRegistry promptRegistry) {
-        log.info("Skill 系统: 注册 HabitSkillProvider");
-        return new HabitSkillProvider(habitRepository, promptRegistry);
+        log.info("Skill 系统: 注册 HabitSkillProvider（DataStore 存储）");
+        return new HabitSkillProvider(dataStoreManager, objectMapper, promptRegistry);
     }
 
     @Bean
@@ -287,15 +268,36 @@ public class SkillAutoConfiguration {
     @ConditionalOnMissingBean
     @ConditionalOnProperty(prefix = "lifepilot.skills.auto-generation",
             name = "enabled", havingValue = "true", matchIfMissing = true)
+    public ToolCapabilityManifest toolCapabilityManifest(DynamicToolRegistry toolRegistry) {
+        log.info("Skill 系统: 注册 ToolCapabilityManifest");
+        return new ToolCapabilityManifest(toolRegistry);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnProperty(prefix = "lifepilot.skills.auto-generation",
+            name = "enabled", havingValue = "true", matchIfMissing = true)
+    public SkillTemplateLibrary skillTemplateLibrary() {
+        log.info("Skill 系统: 注册 SkillTemplateLibrary");
+        return new SkillTemplateLibrary();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnProperty(prefix = "lifepilot.skills.auto-generation",
+            name = "enabled", havingValue = "true", matchIfMissing = true)
     public SkillGenerator skillGenerator(LlmRouter llmRouter,
                                          SkillValidationPipeline pipeline,
                                          MarkdownSkillParser markdownParser,
                                          MarkdownSkillSerializer markdownSerializer,
                                          SkillRegistry registry,
                                          SkillConfigProperties config,
-                                         PromptRegistry promptRegistry) {
-        log.info("Skill 系统: 注册 SkillGenerator");
-        return new SkillGenerator(llmRouter, pipeline, markdownParser, markdownSerializer, registry, config, promptRegistry);
+                                         PromptRegistry promptRegistry,
+                                         ToolCapabilityManifest toolCapabilityManifest,
+                                         SkillTemplateLibrary skillTemplateLibrary) {
+        log.info("Skill 系统: 注册 SkillGenerator（增强模式）");
+        return new SkillGenerator(llmRouter, pipeline, markdownParser, markdownSerializer,
+                registry, config, promptRegistry, toolCapabilityManifest, skillTemplateLibrary);
     }
 
     // ==================== 审计 ====================

@@ -1,10 +1,17 @@
 package com.lifepilot.skill.builtin.schedule;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.proactive.candidate.CandidateProvider;
 import com.lifepilot.agent.proactive.model.InitiativeType;
 import com.lifepilot.agent.proactive.model.ProactiveCandidate;
 import com.lifepilot.agent.proactive.model.Signal;
 import com.lifepilot.agent.proactive.model.SignalBundle;
+import com.lifepilot.datastore.DataStoreManager;
+import com.lifepilot.datastore.adapter.CrudAdapterConfig;
+import com.lifepilot.datastore.adapter.DataStoreCrudAdapter;
+import com.lifepilot.datastore.model.CollectionType;
+import com.lifepilot.datastore.model.PropertyDefinition;
+import com.lifepilot.datastore.model.PropertyType;
 import com.lifepilot.notification.Urgency;
 import com.lifepilot.agent.proactive.signal.SignalSource;
 import com.lifepilot.prompt.PromptRegistry;
@@ -18,6 +25,7 @@ import com.lifepilot.skill.model.SkillDefinition;
 import com.lifepilot.skill.model.SkillSource;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.observability.guardrail.RiskLevel;
+import com.lifepilot.tool.model.ToolCategory;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.tool.schema.JsonSchema;
@@ -39,6 +47,9 @@ import java.util.Map;
  * 提供日程管理 Skill 定义蓝图。实现 {@link ProactiveSkillProvider}，
  * 提供日程提醒信号源和候选提供者。</p>
  *
+ * <p>存储层通过 {@link DataStoreCrudAdapter} 委托给 DataStore，
+ * 数据以 JSON 格式存储在"日程"Collection 中。</p>
+ *
  * @author zsg
  * @since 2026-02-25
  */
@@ -47,17 +58,33 @@ public class ScheduleSkillProvider implements ProactiveSkillProvider {
 
     private static final Logger log = LoggerFactory.getLogger(ScheduleSkillProvider.class);
 
-    private final ScheduleRepository scheduleRepository;
+    private final DataStoreCrudAdapter<ScheduleEntity> scheduleAdapter;
     private final PromptRegistry promptRegistry;
     @Nullable
     private final ScheduledTaskService scheduledTaskService;
     @Nullable
     private final SchedulerProperties schedulerProperties;
 
-    public ScheduleSkillProvider(ScheduleRepository scheduleRepository, PromptRegistry promptRegistry,
+    public ScheduleSkillProvider(DataStoreManager dataStoreManager,
+                                 ObjectMapper objectMapper,
+                                 PromptRegistry promptRegistry,
                                  @Nullable ScheduledTaskService scheduledTaskService,
                                  @Nullable SchedulerProperties schedulerProperties) {
-        this.scheduleRepository = scheduleRepository;
+        this.scheduleAdapter = new DataStoreCrudAdapter<>(dataStoreManager, objectMapper,
+                new CrudAdapterConfig<>(
+                        "schedule",
+                        "日程",
+                        CollectionType.DOCUMENT,
+                        ScheduleEntity.class,
+                        List.of(
+                                new PropertyDefinition("title", PropertyType.TEXT, true, "日程标题"),
+                                new PropertyDefinition("startTime", PropertyType.DATE, true, "开始时间 ISO 8601"),
+                                new PropertyDefinition("endTime", PropertyType.DATE, true, "结束时间 ISO 8601"),
+                                new PropertyDefinition("recurrence", PropertyType.SELECT, false, "重复规则: daily/weekly/monthly"),
+                                new PropertyDefinition("location", PropertyType.TEXT, false, "地点")
+                        ),
+                        "日程管理"
+                ));
         this.promptRegistry = promptRegistry;
         this.scheduledTaskService = scheduledTaskService;
         this.schedulerProperties = schedulerProperties;
@@ -115,6 +142,7 @@ public class ScheduleSkillProvider implements ProactiveSkillProvider {
                 .id("builtin.schedule.create")
                 .name("创建日程")
                 .description("创建新的日程，支持设置标题、开始时间、结束时间、地点和备注")
+                .category(ToolCategory.STORAGE)
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("title", "startTime", "endTime"),
@@ -122,8 +150,9 @@ public class ScheduleSkillProvider implements ProactiveSkillProvider {
                                 "title", Map.of("type", "string", "description", "日程标题"),
                                 "startTime", Map.of("type", "string", "format", "date-time", "description", "开始时间 ISO 8601"),
                                 "endTime", Map.of("type", "string", "format", "date-time", "description", "结束时间 ISO 8601"),
+                                "recurrence", Map.of("type", "string", "description", "重复规则: daily/weekly/monthly"),
                                 "location", Map.of("type", "string", "description", "地点"),
-                                "notes", Map.of("type", "string", "description", "备注")
+                                "description", Map.of("type", "string", "description", "备注")
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
@@ -132,17 +161,17 @@ public class ScheduleSkillProvider implements ProactiveSkillProvider {
                         String title = input.getParam("title", String.class);
                         String startTime = input.getParam("startTime", String.class);
                         String endTime = input.getParam("endTime", String.class);
+                        String recurrence = input.getOptionalParam("recurrence", String.class).orElse(null);
                         String location = input.getOptionalParam("location", String.class).orElse(null);
-                        String notes = input.getOptionalParam("notes", String.class).orElse(null);
+                        String description = input.getOptionalParam("description", String.class).orElse(null);
 
-                        ScheduleItem item = new ScheduleItem(
-                                null, title, startTime, endTime,
-                                location, notes, null, null);
-                        String id = scheduleRepository.create(item);
+                        var entity = new ScheduleEntity(title, startTime, endTime, recurrence, location, description);
+                        ToolResult result = scheduleAdapter.create(entity);
 
                         // 自动创建日程提醒定时任务
-                        if (scheduledTaskService != null && schedulerProperties != null) {
+                        if (result.isSuccess() && scheduledTaskService != null && schedulerProperties != null) {
                             try {
+                                String documentId = (String) result.data().get("documentId");
                                 Instant start = Instant.parse(startTime);
                                 Instant reminderTime = start.minus(
                                         schedulerProperties.getScheduleReminderMinutes(), ChronoUnit.MINUTES);
@@ -155,16 +184,15 @@ public class ScheduleSkillProvider implements ProactiveSkillProvider {
                                             new TaskAction.SendNotification(
                                                     "日程「" + title + "」将于 " + startTime + " 开始",
                                                     Urgency.HIGH),
-                                            Map.of("scheduleId", id));
-                                    log.info("日程提醒定时任务创建成功: scheduleId={}, taskId={}", id, taskId);
+                                            Map.of("scheduleId", documentId));
+                                    log.info("日程提醒定时任务创建成功: scheduleId={}, taskId={}", documentId, taskId);
                                 }
                             } catch (Exception e) {
-                                log.warn("创建日程提醒定时任务失败，不影响日程创建: scheduleId={}, error={}",
-                                        id, e.getMessage());
+                                log.warn("创建日程提醒定时任务失败，不影响日程创建: error={}", e.getMessage());
                             }
                         }
 
-                        return ToolResult.success(Map.of("id", id));
+                        return result;
                     } catch (Exception e) {
                         log.error("创建日程失败: {}", e.getMessage(), e);
                         return ToolResult.error("创建日程失败: " + e.getMessage());
@@ -179,6 +207,7 @@ public class ScheduleSkillProvider implements ProactiveSkillProvider {
                 .id("builtin.schedule.list")
                 .name("查询日程列表")
                 .description("查询所有日程列表，按开始时间升序排列")
+                .category(ToolCategory.STORAGE)
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "properties", Map.of()
@@ -186,9 +215,10 @@ public class ScheduleSkillProvider implements ProactiveSkillProvider {
                 .riskLevel(RiskLevel.LOW)
                 .executor(input -> {
                     try {
-                        List<ScheduleItem> items = scheduleRepository.list();
-                        List<Map<String, Object>> itemMaps = items.stream()
-                                .map(this::scheduleItemToMap)
+                        List<ScheduleEntity> entities = scheduleAdapter.list(
+                                null, "startTime", null, 0, 100);
+                        List<Map<String, Object>> itemMaps = entities.stream()
+                                .map(this::scheduleEntityToMap)
                                 .toList();
                         return ToolResult.success(Map.of("items", itemMaps));
                     } catch (Exception e) {
@@ -205,6 +235,7 @@ public class ScheduleSkillProvider implements ProactiveSkillProvider {
                 .id("builtin.schedule.get")
                 .name("查询日程详情")
                 .description("根据 ID 查询单个日程的详细信息")
+                .category(ToolCategory.STORAGE)
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("id"),
@@ -216,8 +247,8 @@ public class ScheduleSkillProvider implements ProactiveSkillProvider {
                 .executor(input -> {
                     try {
                         String id = input.getParam("id", String.class);
-                        return scheduleRepository.findById(id)
-                                .map(item -> ToolResult.success(scheduleItemToMap(item)))
+                        return scheduleAdapter.findById(id)
+                                .map(entity -> ToolResult.success(scheduleEntityToMap(entity)))
                                 .orElse(ToolResult.error("日程不存在: id=" + id));
                     } catch (Exception e) {
                         log.error("查询日程详情失败: {}", e.getMessage(), e);
@@ -233,6 +264,7 @@ public class ScheduleSkillProvider implements ProactiveSkillProvider {
                 .id("builtin.schedule.update")
                 .name("更新日程")
                 .description("更新日程的标题、开始时间、结束时间、地点或备注")
+                .category(ToolCategory.STORAGE)
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("id"),
@@ -241,33 +273,33 @@ public class ScheduleSkillProvider implements ProactiveSkillProvider {
                                 "title", Map.of("type", "string", "description", "新标题"),
                                 "startTime", Map.of("type", "string", "format", "date-time", "description", "新开始时间 ISO 8601"),
                                 "endTime", Map.of("type", "string", "format", "date-time", "description", "新结束时间 ISO 8601"),
+                                "recurrence", Map.of("type", "string", "description", "新重复规则: daily/weekly/monthly"),
                                 "location", Map.of("type", "string", "description", "新地点"),
-                                "notes", Map.of("type", "string", "description", "新备注")
+                                "description", Map.of("type", "string", "description", "新备注")
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
                 .executor(input -> {
                     try {
                         String id = input.getParam("id", String.class);
-                        var existing = scheduleRepository.findById(id);
+                        var existing = scheduleAdapter.findById(id);
                         if (existing.isEmpty()) {
                             return ToolResult.error("日程不存在: id=" + id);
                         }
-                        ScheduleItem current = existing.get();
+                        ScheduleEntity current = existing.get();
 
                         String title = input.getOptionalParam("title", String.class).orElse(current.title());
                         String startTime = input.getOptionalParam("startTime", String.class).orElse(current.startTime());
                         String endTime = input.getOptionalParam("endTime", String.class).orElse(current.endTime());
+                        String recurrence = input.getOptionalParam("recurrence", String.class).orElse(current.recurrence());
                         String location = input.getOptionalParam("location", String.class).orElse(current.location());
-                        String notes = input.getOptionalParam("notes", String.class).orElse(current.notes());
+                        String description = input.getOptionalParam("description", String.class).orElse(current.description());
 
-                        ScheduleItem updated = new ScheduleItem(
-                                id, title, startTime, endTime,
-                                location, notes, current.createdAt(), current.updatedAt());
-                        boolean success = scheduleRepository.update(id, updated);
+                        var updated = new ScheduleEntity(title, startTime, endTime, recurrence, location, description);
+                        ToolResult result = scheduleAdapter.update(id, updated);
 
                         // 日程开始时间变更时，同步更新关联的定时任务
-                        if (success && scheduledTaskService != null && schedulerProperties != null) {
+                        if (result.isSuccess() && scheduledTaskService != null && schedulerProperties != null) {
                             try {
                                 boolean startTimeChanged = !startTime.equals(current.startTime());
                                 if (startTimeChanged) {
@@ -306,9 +338,7 @@ public class ScheduleSkillProvider implements ProactiveSkillProvider {
                             }
                         }
 
-                        return success
-                                ? ToolResult.success(Map.of("updated", true))
-                                : ToolResult.error("更新日程失败: id=" + id);
+                        return result;
                     } catch (Exception e) {
                         log.error("更新日程失败: {}", e.getMessage(), e);
                         return ToolResult.error("更新日程失败: " + e.getMessage());
@@ -323,6 +353,7 @@ public class ScheduleSkillProvider implements ProactiveSkillProvider {
                 .id("builtin.schedule.delete")
                 .name("删除日程")
                 .description("根据 ID 删除日程")
+                .category(ToolCategory.STORAGE)
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("id"),
@@ -334,10 +365,9 @@ public class ScheduleSkillProvider implements ProactiveSkillProvider {
                 .executor(input -> {
                     try {
                         String id = input.getParam("id", String.class);
-                        boolean success = scheduleRepository.delete(id);
 
                         // 删除日程后，取消关联的定时任务
-                        if (success && scheduledTaskService != null) {
+                        if (scheduledTaskService != null) {
                             try {
                                 var existingTask = scheduledTaskService.findByScheduleId(id);
                                 if (existingTask.isPresent()) {
@@ -351,9 +381,7 @@ public class ScheduleSkillProvider implements ProactiveSkillProvider {
                             }
                         }
 
-                        return success
-                                ? ToolResult.success(Map.of("deleted", true))
-                                : ToolResult.error("日程不存在: id=" + id);
+                        return scheduleAdapter.delete(id);
                     } catch (Exception e) {
                         log.error("删除日程失败: {}", e.getMessage(), e);
                         return ToolResult.error("删除日程失败: " + e.getMessage());
@@ -362,12 +390,13 @@ public class ScheduleSkillProvider implements ProactiveSkillProvider {
                 .build();
     }
 
-    /** 构建冲突检测工具。 */
+    /** 构建冲突检测工具 — 列出所有日程并在内存中过滤时间重叠。 */
     private BuiltinTool buildConflictsTool() {
         return BuiltinTool.builder()
                 .id("builtin.schedule.conflicts")
                 .name("检测日程冲突")
                 .description("查找与指定时间段存在时间重叠的日程")
+                .category(ToolCategory.STORAGE)
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("startTime", "endTime"),
@@ -379,13 +408,17 @@ public class ScheduleSkillProvider implements ProactiveSkillProvider {
                 .riskLevel(RiskLevel.LOW)
                 .executor(input -> {
                     try {
-                        String startTime = input.getParam("startTime", String.class);
-                        String endTime = input.getParam("endTime", String.class);
-                        List<ScheduleItem> conflicts = scheduleRepository.findConflicts(startTime, endTime);
-                        List<Map<String, Object>> itemMaps = conflicts.stream()
-                                .map(this::scheduleItemToMap)
+                        String queryStart = input.getParam("startTime", String.class);
+                        String queryEnd = input.getParam("endTime", String.class);
+
+                        // DataStoreCrudAdapter 无 findConflicts，列出所有日程后内存过滤
+                        List<ScheduleEntity> allSchedules = scheduleAdapter.list(
+                                null, null, null, 0, 1000);
+                        List<Map<String, Object>> conflicts = allSchedules.stream()
+                                .filter(s -> isOverlapping(s.startTime(), s.endTime(), queryStart, queryEnd))
+                                .map(this::scheduleEntityToMap)
                                 .toList();
-                        return ToolResult.success(Map.of("conflicts", itemMaps, "count", itemMaps.size()));
+                        return ToolResult.success(Map.of("conflicts", conflicts, "count", conflicts.size()));
                     } catch (Exception e) {
                         log.error("检测日程冲突失败: {}", e.getMessage(), e);
                         return ToolResult.error("检测日程冲突失败: " + e.getMessage());
@@ -411,12 +444,12 @@ public class ScheduleSkillProvider implements ProactiveSkillProvider {
 
         @Override
         public List<Signal> collect() {
-            List<ScheduleItem> schedules = scheduleRepository.list();
+            List<ScheduleEntity> schedules = scheduleAdapter.list(null, null, null, 0, 1000);
             Instant now = Instant.now();
             Instant horizon = now.plus(Duration.ofMinutes(60));
             List<Signal> signals = new ArrayList<>();
 
-            for (ScheduleItem schedule : schedules) {
+            for (ScheduleEntity schedule : schedules) {
                 if (schedule.startTime() == null) {
                     continue;
                 }
@@ -434,15 +467,14 @@ public class ScheduleSkillProvider implements ProactiveSkillProvider {
                                 .urgency(urgency)
                                 .summary("日程「%s」将于 %s 开始".formatted(schedule.title(), schedule.startTime()))
                                 .sourceId("schedule-signal")
-                                .subjectId(schedule.id())
+                                .subjectId(schedule.title())
                                 .metadata(Map.of(
-                                        "scheduleId", schedule.id(),
                                         "title", schedule.title(),
                                         "startTime", schedule.startTime()))
                                 .build());
                     }
                 } catch (Exception e) {
-                    log.warn("解析日程开始时间失败: scheduleId={}, startTime={}", schedule.id(), schedule.startTime(), e);
+                    log.warn("解析日程开始时间失败: title={}, startTime={}", schedule.title(), schedule.startTime(), e);
                 }
             }
 
@@ -478,17 +510,33 @@ public class ScheduleSkillProvider implements ProactiveSkillProvider {
 
     // ---- 辅助方法 ----
 
-    /** 将 ScheduleItem 转换为 Map 用于 ToolResult。 */
-    private Map<String, Object> scheduleItemToMap(ScheduleItem item) {
+    /**
+     * 判断两个时间段是否重叠。
+     *
+     * <p>重叠条件：schedule.startTime &lt; queryEnd AND schedule.endTime &gt; queryStart。</p>
+     */
+    private boolean isOverlapping(String schedStart, String schedEnd, String queryStart, String queryEnd) {
+        try {
+            Instant ss = Instant.parse(schedStart);
+            Instant se = Instant.parse(schedEnd);
+            Instant qs = Instant.parse(queryStart);
+            Instant qe = Instant.parse(queryEnd);
+            return ss.isBefore(qe) && se.isAfter(qs);
+        } catch (Exception e) {
+            log.warn("解析日程时间失败，跳过冲突检测: schedStart={}, schedEnd={}", schedStart, schedEnd);
+            return false;
+        }
+    }
+
+    /** 将 ScheduleEntity 转换为 Map 用于 ToolResult。 */
+    private Map<String, Object> scheduleEntityToMap(ScheduleEntity entity) {
         var map = new java.util.HashMap<String, Object>();
-        map.put("id", item.id());
-        map.put("title", item.title());
-        map.put("startTime", item.startTime());
-        map.put("endTime", item.endTime());
-        if (item.location() != null) map.put("location", item.location());
-        if (item.notes() != null) map.put("notes", item.notes());
-        map.put("createdAt", item.createdAt());
-        map.put("updatedAt", item.updatedAt());
+        map.put("title", entity.title());
+        map.put("startTime", entity.startTime());
+        map.put("endTime", entity.endTime());
+        if (entity.recurrence() != null) map.put("recurrence", entity.recurrence());
+        if (entity.location() != null) map.put("location", entity.location());
+        if (entity.description() != null) map.put("description", entity.description());
         return Map.copyOf(map);
     }
 }

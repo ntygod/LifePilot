@@ -1,4 +1,4 @@
-package com.lifepilot.datastore.skill;
+package com.lifepilot.meta.infra.storage;
 
 import com.lifepilot.datastore.DataStoreManager;
 import com.lifepilot.datastore.model.AggregateFunction;
@@ -19,6 +19,7 @@ import com.lifepilot.skill.builtin.BuiltinSkillProvider;
 import com.lifepilot.skill.model.SkillDefinition;
 import com.lifepilot.skill.model.SkillSource;
 import com.lifepilot.tool.BuiltinTool;
+import com.lifepilot.tool.model.ToolCategory;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.tool.schema.JsonSchema;
@@ -33,24 +34,23 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 数据存储内置 Skill 提供者。
+ * 存储工具提供者 — 注册 7 个数据存储 CRUD 工具到 DynamicToolRegistry。
  *
- * <p>注册 7 个数据存储 CRUD 工具到 DynamicToolRegistry，
- * 提供数据存储 Skill 定义蓝图。</p>
+ * <p>所有工具归类为 {@link ToolCategory#STORAGE}，提供数据存储 Skill 定义蓝图。</p>
  *
  * @author zsg
  * @since 2026-03-10
  */
 @BuiltinSkill(id = "datastore", order = 5)
-public class DataStoreSkillProvider implements BuiltinSkillProvider {
+public class StorageToolProvider implements BuiltinSkillProvider {
 
-    private static final Logger log = LoggerFactory.getLogger(DataStoreSkillProvider.class);
+    private static final Logger log = LoggerFactory.getLogger(StorageToolProvider.class);
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final DataStoreManager dataStoreManager;
     private final PromptRegistry promptRegistry;
 
-    public DataStoreSkillProvider(DataStoreManager dataStoreManager, PromptRegistry promptRegistry) {
+    public StorageToolProvider(DataStoreManager dataStoreManager, PromptRegistry promptRegistry) {
         this.dataStoreManager = dataStoreManager;
         this.promptRegistry = promptRegistry;
     }
@@ -97,6 +97,7 @@ public class DataStoreSkillProvider implements BuiltinSkillProvider {
                 .id("builtin.datastore.create_collection")
                 .name("创建集合")
                 .description("创建新的数据集合，支持 DOCUMENT（结构化列表）、NOTE（笔记）、METRIC（时序指标）三种类型")
+                .category(ToolCategory.STORAGE)
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("name", "type"),
@@ -141,6 +142,7 @@ public class DataStoreSkillProvider implements BuiltinSkillProvider {
                 .id("builtin.datastore.list_collections")
                 .name("查询集合列表")
                 .description("查询所有数据集合，可按类型过滤")
+                .category(ToolCategory.STORAGE)
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "properties", Map.of(
@@ -173,6 +175,7 @@ public class DataStoreSkillProvider implements BuiltinSkillProvider {
                 .id("builtin.datastore.add_document")
                 .name("添加文档")
                 .description("向指定集合添加 JSON 文档，通过集合名称定位")
+                .category(ToolCategory.STORAGE)
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("collectionName", "data"),
@@ -212,6 +215,7 @@ public class DataStoreSkillProvider implements BuiltinSkillProvider {
                 .id("builtin.datastore.query_documents")
                 .name("查询文档")
                 .description("按条件查询集合中的文档，支持过滤、排序和分页")
+                .category(ToolCategory.STORAGE)
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("collectionName"),
@@ -276,6 +280,7 @@ public class DataStoreSkillProvider implements BuiltinSkillProvider {
                 .id("builtin.datastore.update_document")
                 .name("更新文档")
                 .description("根据文档 ID 更新文档数据")
+                .category(ToolCategory.STORAGE)
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("documentId", "data"),
@@ -307,6 +312,7 @@ public class DataStoreSkillProvider implements BuiltinSkillProvider {
                 .id("builtin.datastore.delete_document")
                 .name("删除文档")
                 .description("根据文档 ID 删除文档")
+                .category(ToolCategory.STORAGE)
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("documentId"),
@@ -336,6 +342,7 @@ public class DataStoreSkillProvider implements BuiltinSkillProvider {
                 .id("builtin.datastore.aggregate")
                 .name("聚合查询")
                 .description("对 METRIC 类型集合执行时序聚合查询，支持 SUM/AVG/MIN/MAX/COUNT 函数和按天/周/月分组")
+                .category(ToolCategory.STORAGE)
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("collectionName", "field", "function"),

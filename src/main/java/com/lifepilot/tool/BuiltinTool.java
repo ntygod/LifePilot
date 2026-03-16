@@ -2,6 +2,7 @@ package com.lifepilot.tool;
 
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.model.ToolBudget;
+import com.lifepilot.tool.model.ToolCategory;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolLayer;
 import com.lifepilot.tool.model.ToolResult;
@@ -25,6 +26,7 @@ import java.util.List;
  * @param budget 执行预算
  * @param tags 工具标签
  * @param exportable 是否可导出为 MCP 工具
+ * @param category 工具所属元能力分组
  * @param executor 实际执行逻辑
  * @author zsg
  * @since 2026-02-24
@@ -40,6 +42,7 @@ public record BuiltinTool(
         ToolBudget budget,
         List<String> tags,
         boolean exportable,
+        ToolCategory category,
         ToolExecutor executor
 ) implements ToolContract {
 
@@ -75,6 +78,7 @@ public record BuiltinTool(
         private ToolBudget budget = ToolBudget.DEFAULT;
         private List<String> tags = List.of();
         private boolean exportable = false;
+        private ToolCategory category = ToolCategory.ACTION;
         private ToolExecutor executor;
 
         public Builder id(String id) { this.id = id; return this; }
@@ -87,11 +91,12 @@ public record BuiltinTool(
         public Builder budget(ToolBudget budget) { this.budget = budget; return this; }
         public Builder tags(List<String> tags) { this.tags = List.copyOf(tags); return this; }
         public Builder exportable(boolean exportable) { this.exportable = exportable; return this; }
+        public Builder category(ToolCategory category) { this.category = category; return this; }
         public Builder executor(ToolExecutor executor) { this.executor = executor; return this; }
 
         public BuiltinTool build() {
             return new BuiltinTool(id, name, description, inputSchema, outputSchema,
-                    riskLevel, idempotent, budget, List.copyOf(tags), exportable, executor);
+                    riskLevel, idempotent, budget, List.copyOf(tags), exportable, category, executor);
         }
     }
 }

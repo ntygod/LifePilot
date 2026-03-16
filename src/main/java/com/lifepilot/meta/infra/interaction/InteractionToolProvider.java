@@ -2,6 +2,7 @@ package com.lifepilot.meta.infra.interaction;
 
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.BuiltinTool;
+import com.lifepilot.tool.model.ToolCategory;
 import com.lifepilot.tool.schema.JsonSchema;
 
 import java.util.List;
@@ -43,6 +44,7 @@ public class InteractionToolProvider {
     private BuiltinTool buildChooseTool(ChooseToolExecutor executor) {
         return BuiltinTool.builder()
                 .id("builtin.interact.choose")
+                .category(ToolCategory.INTERACTION)
                 .name("请求用户选择")
                 .description("向用户展示选项列表并请求选择，阻塞等待用户响应")
                 .inputSchema(JsonSchema.of(Map.of(
@@ -68,6 +70,7 @@ public class InteractionToolProvider {
     private BuiltinTool buildInputTool(InputToolExecutor executor) {
         return BuiltinTool.builder()
                 .id("builtin.interact.input")
+                .category(ToolCategory.INTERACTION)
                 .name("请求用户输入")
                 .description("向用户展示输入提示并请求自由文本输入，阻塞等待用户响应")
                 .inputSchema(JsonSchema.of(Map.of(
@@ -90,6 +93,7 @@ public class InteractionToolProvider {
     private BuiltinTool buildNotifyTool(NotifyToolExecutor executor) {
         return BuiltinTool.builder()
                 .id("builtin.interact.notify")
+                .category(ToolCategory.INTERACTION)
                 .name("推送通知")
                 .description("向用户推送通知消息，非阻塞（不等待用户响应）")
                 .inputSchema(JsonSchema.of(Map.of(

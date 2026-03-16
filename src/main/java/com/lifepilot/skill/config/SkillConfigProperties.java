@@ -139,6 +139,9 @@ public class SkillConfigProperties {
         /** 自生成 Skill 的 maxCostCents 上限，默认 100。 */
         private int maxCostCents = 100;
 
+        /** 验证失败后最大迭代修正次数，默认 2。 */
+        private int maxValidationIterations = 2;
+
         public boolean isEnabled() { return enabled; }
         public void setEnabled(boolean enabled) { this.enabled = enabled; }
 
@@ -147,6 +150,9 @@ public class SkillConfigProperties {
 
         public int getMaxCostCents() { return maxCostCents; }
         public void setMaxCostCents(int maxCostCents) { this.maxCostCents = maxCostCents; }
+
+        public int getMaxValidationIterations() { return maxValidationIterations; }
+        public void setMaxValidationIterations(int maxValidationIterations) { this.maxValidationIterations = maxValidationIterations; }
     }
 
     /**
