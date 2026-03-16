@@ -1419,12 +1419,35 @@ public class ReactAgentLoop {
                 throw e;
             }
 
+            // 检查 streamingError：某些 Reactor 场景下 doOnError 捕获了异常但 blockLast() 未抛出
+            if (this.streamingError != null) {
+                log.warn("流式消费完成但存在未传播的异常，重新抛出: error={}",
+                        this.streamingError.getMessage());
+                throw this.streamingError instanceof RuntimeException re
+                        ? re : new RuntimeException(this.streamingError);
+            }
+
             Instant callEnd = Instant.now();
             String collectedContent = contentBuilder.toString();
             this.finalContent = collectedContent;
 
             // 流结束后刷出 A2UI 解析器剩余缓冲内容
             flushA2uiParser(a2uiParser);
+
+            // 流式响应为空（blockLast() 返回 null 或无有效 chunk）时构造空内容 ChatResponse
+            if (collectedContent.isEmpty() && toolCallCollector.isEmpty()) {
+                log.warn("流式响应为空: scene={}, provider={}, model={}",
+                        scene2, chatModelInfo.providerId(), chatModelInfo.modelId());
+                var emptyMessage = new AssistantMessage("");
+                var generation = new Generation(emptyMessage);
+                ChatResponse emptyResponse = lastChunk[0] != null && lastChunk[0].getMetadata() != null
+                        ? new ChatResponse(List.of(generation), lastChunk[0].getMetadata())
+                        : new ChatResponse(List.of(generation));
+                // 记录 Trace
+                recordStreamingLlmStep(traceContext, callStart, providerId, modelId,
+                        scene2, emptyResponse, null);
+                return emptyResponse;
+            }
 
             // 如果有 tool call，发送 TOOL_CALLING 推理事件
             if (!toolCallCollector.isEmpty()) {
