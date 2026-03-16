@@ -55,6 +55,8 @@ import org.springframework.core.io.Resource;
 import org.springframework.lang.Nullable;
 import org.springframework.util.MimeTypeUtils;
 
+import reactor.core.publisher.Flux;
+
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
@@ -1351,6 +1353,199 @@ public class ReactAgentLoop {
 
             var prompt = new Prompt(enhancedMessages, optionsBuilder.build());
 
+            // 流式能力检查与分支
+            if (!chatModelInfo.supportsStreaming()) {
+                // 降级：Provider 不支持流式，走原有非流式路径
+                log.info("Provider 不支持流式调用，降级为非流式: provider={}, model={}",
+                        chatModelInfo.providerId(), chatModelInfo.modelId());
+                return callLlmNonStreaming(chatModelInfo, prompt, traceContext);
+            }
+
+            // 真正的流式调用路径
+            Instant callStart = Instant.now();
+            String scene2 = config.getLoop().getLlmScene();
+
+            // 初始化 A2UI 增量解析器（流式调用开始前）
+            StreamingA2uiParser a2uiParser = isA2uiEnabled() ? new StreamingA2uiParser() : null;
+
+            // 运行时状态：收集流式内容、tool call、最后 chunk、首 token 时间
+            var contentBuilder = new StringBuilder();
+            var toolCallCollector = new ArrayList<AssistantMessage.ToolCall>();
+            final ChatResponse[] lastChunk = {null};
+            final Instant[] firstTokenTime = {null};
+
+            Flux<ChatResponse> flux = chatModelInfo.chatModel().stream(prompt);
+
+            try {
+                flux.takeWhile(chunk -> !cancellationToken.isCancelled()
+                                && sseManager.getEmitter(streamId) != null)
+                .doOnNext(chunk -> {
+                    try {
+                        // 记录最后一个 chunk（携带 metadata/usage）
+                        lastChunk[0] = chunk;
+
+                        if (chunk.getResult() == null || chunk.getResult().getOutput() == null) {
+                            return;
+                        }
+                        var output = chunk.getResult().getOutput();
+
+                        // 收集文本内容
+                        String text = output.getText();
+                        if (text != null && !text.isEmpty()) {
+                            contentBuilder.append(text);
+
+                            // 记录首 token 到达时间（仅记录一次）
+                            if (firstTokenTime[0] == null) {
+                                firstTokenTime[0] = Instant.now();
+                            }
+
+                            // 通过 pushTokenToSse 推送，支持 A2UI 增量解析
+                            pushTokenToSse(text, a2uiParser);
+                        }
+
+                        // 收集 tool call 元数据（通常在最后 chunk）
+                        if (output.hasToolCalls()) {
+                            toolCallCollector.addAll(output.getToolCalls());
+                        }
+                    } catch (Exception e) {
+                        log.warn("流式 chunk 处理异常，跳过: error={}", e.getMessage());
+                    }
+                }).doOnError(e -> {
+                    log.warn("流式调用异常: scene={}, provider={}, error={}",
+                            scene2, chatModelInfo.providerId(), e.getMessage());
+                    this.streamingError = e instanceof Exception ex ? ex : new RuntimeException(e);
+                }).blockLast();
+            } catch (Exception e) {
+                log.error("流式调用失败: scene={}, provider={}, error={}",
+                        scene2, chatModelInfo.providerId(), e.getMessage());
+                throw e;
+            }
+
+            // 取消信号检查：流式消费被 takeWhile 提前终止时记录日志
+            if (cancellationToken.isCancelled()) {
+                log.debug("流式消费因取消信号停止: streamId={}", streamId);
+            } else if (sseManager.getEmitter(streamId) == null) {
+                log.debug("流式消费因 SSE 连接断开停止: streamId={}", streamId);
+            }
+
+            // 检查 streamingError：某些 Reactor 场景下 doOnError 捕获了异常但 blockLast() 未抛出
+            if (this.streamingError != null) {
+                log.warn("流式消费完成但存在未传播的异常，重新抛出: error={}",
+                        this.streamingError.getMessage());
+                throw this.streamingError instanceof RuntimeException re
+                        ? re : new RuntimeException(this.streamingError);
+            }
+
+            Instant callEnd = Instant.now();
+            String collectedContent = contentBuilder.toString();
+            this.finalContent = collectedContent;
+
+            // 流结束后刷出 A2UI 解析器剩余缓冲内容
+            flushA2uiParser(a2uiParser);
+
+            // 流式响应为空（blockLast() 返回 null 或无有效 chunk）时构造空内容 ChatResponse
+            if (collectedContent.isEmpty() && toolCallCollector.isEmpty()) {
+                log.warn("流式响应为空: scene={}, provider={}, model={}",
+                        scene2, chatModelInfo.providerId(), chatModelInfo.modelId());
+                var emptyMessage = new AssistantMessage("");
+                var generation = new Generation(emptyMessage);
+                ChatResponse emptyResponse = lastChunk[0] != null && lastChunk[0].getMetadata() != null
+                        ? new ChatResponse(List.of(generation), lastChunk[0].getMetadata())
+                        : new ChatResponse(List.of(generation));
+                // 记录 Trace
+                recordStreamingLlmStep(traceContext, callStart, providerId, modelId,
+                        scene2, emptyResponse, null);
+                return emptyResponse;
+            }
+
+            // 如果有 tool call，发送 TOOL_CALLING 推理事件
+            if (!toolCallCollector.isEmpty()) {
+                for (var tc : toolCallCollector) {
+                    sendReasoningEvent(sseManager, streamId, sessionId, turnId,
+                            "TOOL_CALLING", "调用工具: " + tc.name(),
+                            "正在执行工具 " + tc.name(), tc.name(), Map.of());
+                }
+            }
+
+            // 构造 ChatResponse 返回给 coreLoop
+            ChatResponse chatResponse = buildChatResponseFromStream(
+                    collectedContent, toolCallCollector, lastChunk[0]);
+
+            // TTFT 和总耗时日志
+            long ttftMs = firstTokenTime[0] != null
+                    ? Duration.between(callStart, firstTokenTime[0]).toMillis() : -1;
+            long totalMs = Duration.between(callStart, callEnd).toMillis();
+            log.info("流式调用完成: scene={}, provider={}, model={}, ttft={}ms, total={}ms",
+                    scene2, chatModelInfo.providerId(), chatModelInfo.modelId(), ttftMs, totalMs);
+
+            // 记录 Trace
+            recordStreamingLlmStep(traceContext, callStart, providerId, modelId,
+                    scene2, chatResponse, null);
+
+            return chatResponse;
+        }
+
+        /**
+         * 从流式收集的数据构造 ChatResponse。
+         *
+         * <p>流式调用完成后，将收集到的文本内容、tool call 元数据和最后一个 chunk 的元数据
+         * 组装为 {@link ChatResponse} 返回给 coreLoop，保持与 {@link IterationCallback} 接口契约一致。</p>
+         *
+         * <ul>
+         *   <li>有 tool call 时：使用 {@code AssistantMessage.builder()} 构造含 tool call 的消息</li>
+         *   <li>纯文本时：使用 {@code new AssistantMessage(collectedContent)} 构造</li>
+         *   <li>从 lastChunk 提取 token usage 等元数据附加到 ChatResponse</li>
+         * </ul>
+         *
+         * @param collectedContent 流式收集的完整文本内容
+         * @param toolCalls        流式收集的 tool call 列表（可能为空）
+         * @param lastChunk        最后一个流式 chunk（携带 metadata/usage，可空）
+         * @return 构造好的 ChatResponse
+         */
+        private ChatResponse buildChatResponseFromStream(
+                String collectedContent,
+                List<AssistantMessage.ToolCall> toolCalls,
+                @Nullable ChatResponse lastChunk) {
+            AssistantMessage assistantMessage;
+            if (!toolCalls.isEmpty()) {
+                // 有 tool call：构造含 tool call 的 AssistantMessage
+                assistantMessage = AssistantMessage.builder()
+                        .content(collectedContent)
+                        .toolCalls(toolCalls)
+                        .build();
+            } else {
+                // 纯文本
+                assistantMessage = new AssistantMessage(collectedContent);
+            }
+            var generation = new Generation(assistantMessage);
+            // 从 lastChunk 提取 token usage 等元数据
+            if (lastChunk != null && lastChunk.getMetadata() != null) {
+                return new ChatResponse(List.of(generation), lastChunk.getMetadata());
+            }
+            return new ChatResponse(List.of(generation));
+        }
+
+        /**
+         * 非流式 LLM 调用降级方法。
+         *
+         * <p>使用 {@code chatModel.call(prompt)} 执行非流式调用，等待完整响应后：
+         * <ul>
+         *   <li>若 LLM 返回 tool call → 发送 TOOL_CALLING 推理事件，直接返回含 tool call 的 ChatResponse</li>
+         *   <li>若 LLM 返回纯文本 → 通过 {@link #streamContentToSse(String)} 模拟流式推送</li>
+         * </ul>
+         *
+         * <p>当 ChatModel 不支持流式调用时，作为降级路径使用，保持与优化前完全一致的行为。</p>
+         *
+         * @param chatModelInfo ChatModel 信息（含 chatModel、providerId、modelId）
+         * @param prompt        构建好的 Prompt（含增强 system message 和工具定义）
+         * @param traceContext  追踪上下文（可空）
+         * @return LLM 原始响应（可能包含 tool call 请求）
+         */
+        private ChatResponse callLlmNonStreaming(LlmRouter.ChatModelInfo chatModelInfo,
+                                                 Prompt prompt,
+                                                 @Nullable TraceContext traceContext) {
+            String scene = config.getLoop().getLlmScene();
+
             // 非流式调用获取完整响应
             ChatResponse chatResponse = chatModelInfo.chatModel().call(prompt);
             var assistantMsg = chatResponse.getResult().getOutput();
@@ -1362,7 +1557,7 @@ public class ReactAgentLoop {
                             "TOOL_CALLING", "调用工具: " + tc.name(),
                             "正在执行工具 " + tc.name(), tc.name(), Map.of());
                 }
-                // 记录流式 LLM Step
+                // 记录 LLM 调用步骤到 Trace
                 recordStreamingLlmStep(traceContext, Instant.now(), providerId, modelId,
                         scene, chatResponse, null);
                 return chatResponse;
@@ -1377,7 +1572,7 @@ public class ReactAgentLoop {
                 streamContentToSse(content);
             }
 
-            // 记录流式 LLM Step
+            // 记录 LLM 调用步骤到 Trace
             recordStreamingLlmStep(traceContext, Instant.now(), providerId, modelId,
                     scene, chatResponse, null);
 
@@ -1428,6 +1623,66 @@ public class ReactAgentLoop {
                 sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
                         "sessionId", sessionId, "turnId", turnId,
                         "content", content, "index", 0));
+            }
+        }
+
+        /**
+         * 将单个流式 token 推送为 SSE 事件，支持 A2UI 增量解析。
+         *
+         * <p>A2UI 启用时，通过 {@link StreamingA2uiParser#feed(String)} 增量解析 token，
+         * 将纯文本段通过 TOKEN 事件推送、A2UI 组件段通过 UI 事件推送。
+         * A2UI 未启用时，直接发送 TOKEN 事件。</p>
+         *
+         * @param token     LLM 流式输出的单个 token
+         * @param a2uiParser A2UI 增量解析器实例（A2UI 未启用时为 null）
+         */
+        private void pushTokenToSse(String token, @Nullable StreamingA2uiParser a2uiParser) {
+            if (a2uiParser != null) {
+                int maxComponents = a2uiProperties != null ? a2uiProperties.maxComponentsPerTree() : 0;
+                var segments = a2uiParser.feed(token);
+                for (var segment : segments) {
+                    switch (segment) {
+                        case StreamingA2uiParser.Segment.TextSegment(var text) -> {
+                            if (!text.isEmpty()) {
+                                sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
+                                        "sessionId", sessionId, "turnId", turnId,
+                                        "content", text, "index", 0));
+                            }
+                        }
+                        case StreamingA2uiParser.Segment.A2uiSegment(var json) -> {
+                            var tree = parseAndValidateA2uiTree(json, maxComponents);
+                            if (tree != null) {
+                                lastCollectedA2uiTree = tree;
+                                sseManager.sendEvent(streamId, SseEventType.UI, Map.of(
+                                        "sessionId", sessionId, "turnId", turnId,
+                                        "components", tree.components()));
+                            }
+                        }
+                    }
+                }
+            } else {
+                // A2UI 未启用 — 直接发送 TOKEN 事件
+                sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
+                        "sessionId", sessionId, "turnId", turnId,
+                        "content", token, "index", 0));
+            }
+        }
+
+        /**
+         * 流结束时刷出 A2UI 解析器剩余缓冲内容。
+         *
+         * @param a2uiParser A2UI 增量解析器实例（A2UI 未启用时为 null）
+         */
+        private void flushA2uiParser(@Nullable StreamingA2uiParser a2uiParser) {
+            if (a2uiParser == null) return;
+            var remaining = a2uiParser.flush();
+            for (var seg : remaining) {
+                if (seg instanceof StreamingA2uiParser.Segment.TextSegment(var text)
+                        && !text.isEmpty()) {
+                    sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
+                            "sessionId", sessionId, "turnId", turnId,
+                            "content", text, "index", 0));
+                }
             }
         }
 

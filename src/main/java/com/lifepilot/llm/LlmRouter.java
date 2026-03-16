@@ -511,12 +511,14 @@ public class LlmRouter {
     /**
      * ChatModel 附带 Provider 元信息（用于手动 tool calling 场景）。
      *
-     * @param chatModel  ChatModel 实例
-     * @param providerId Provider ID
-     * @param modelId    模型 ID
+     * @param chatModel         ChatModel 实例
+     * @param providerId        Provider ID
+     * @param modelId           模型 ID
+     * @param supportsStreaming 是否支持流式调用
      */
     public record ChatModelInfo(org.springframework.ai.chat.model.ChatModel chatModel,
-                                String providerId, String modelId) {}
+                                String providerId, String modelId,
+                                boolean supportsStreaming) {}
 
     /**
      * 获取最高优先级 Provider 的 ChatModel 及元信息。
@@ -536,7 +538,8 @@ public class LlmRouter {
         for (var config : candidates) {
             var adapter = providerRegistry.getAdapter(config.id());
             if (adapter instanceof com.lifepilot.llm.adapter.SpringAiProviderAdapter springAdapter) {
-                return new ChatModelInfo(springAdapter.chatModel(), config.id(), config.modelName());
+                return new ChatModelInfo(springAdapter.chatModel(), config.id(),
+                        config.modelName(), config.supportsStreaming());
             }
         }
         throw new LlmUnavailableException(
