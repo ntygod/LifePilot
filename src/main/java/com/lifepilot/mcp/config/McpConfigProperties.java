@@ -33,6 +33,9 @@ public class McpConfigProperties {
     /** MCP Server 连接列表。 */
     private List<ServerEntry> servers = new ArrayList<>();
 
+    /** MCP 自动发现配置。 */
+    private Discovery discovery = new Discovery();
+
     /**
      * 将配置条目转换为 McpServerConfig 列表。
      */
@@ -85,5 +88,20 @@ public class McpConfigProperties {
                     .healthCheckInterval(healthCheckInterval)
                     .build();
         }
+    }
+
+    /**
+     * MCP 自动发现配置。
+     *
+     * @author zsg
+     * @since 2026-03-16
+     */
+    @Setter
+    @Getter
+    public static class Discovery {
+        /** 自动发现开关，默认 true。 */
+        private boolean enabled = true;
+        /** 额外发现路径列表。 */
+        private List<String> paths = new ArrayList<>();
     }
 }

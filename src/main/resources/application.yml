@@ -507,6 +507,9 @@ lifepilot:
     server:
       enabled: false
     servers: []
+    discovery:
+      enabled: true
+      paths: []
   notification:
     # ===== 通知模块配置 =====
     enabled: true
