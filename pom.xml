@@ -136,11 +136,49 @@
             <version>0.4.20</version>
         </dependency>
 
-        <!-- JavaCV Platform — 视频帧提取/音轨分离（内嵌 FFmpeg native library） -->
+        <!-- JavaCV — 视频帧提取/音轨分离（仅 FFmpeg，排除 OpenCV/Tesseract 等不需要的 native） -->
         <dependency>
             <groupId>org.bytedeco</groupId>
-            <artifactId>javacv-platform</artifactId>
+            <artifactId>javacv</artifactId>
             <version>1.5.10</version>
+            <exclusions>
+                <exclusion><groupId>org.bytedeco</groupId><artifactId>opencv</artifactId></exclusion>
+                <exclusion><groupId>org.bytedeco</groupId><artifactId>openblas</artifactId></exclusion>
+                <exclusion><groupId>org.bytedeco</groupId><artifactId>flycapture</artifactId></exclusion>
+                <exclusion><groupId>org.bytedeco</groupId><artifactId>libdc1394</artifactId></exclusion>
+                <exclusion><groupId>org.bytedeco</groupId><artifactId>libfreenect</artifactId></exclusion>
+                <exclusion><groupId>org.bytedeco</groupId><artifactId>libfreenect2</artifactId></exclusion>
+                <exclusion><groupId>org.bytedeco</groupId><artifactId>librealsense</artifactId></exclusion>
+                <exclusion><groupId>org.bytedeco</groupId><artifactId>librealsense2</artifactId></exclusion>
+                <exclusion><groupId>org.bytedeco</groupId><artifactId>videoinput</artifactId></exclusion>
+                <exclusion><groupId>org.bytedeco</groupId><artifactId>artoolkitplus</artifactId></exclusion>
+                <exclusion><groupId>org.bytedeco</groupId><artifactId>leptonica</artifactId></exclusion>
+                <exclusion><groupId>org.bytedeco</groupId><artifactId>tesseract</artifactId></exclusion>
+            </exclusions>
+        </dependency>
+        <!-- FFmpeg native — 仅当前平台（通过 Maven profile 自动选择 classifier） -->
+        <dependency>
+            <groupId>org.bytedeco</groupId>
+            <artifactId>ffmpeg</artifactId>
+            <version>6.1.1-1.5.10</version>
+        </dependency>
+        <dependency>
+            <groupId>org.bytedeco</groupId>
+            <artifactId>ffmpeg</artifactId>
+            <version>6.1.1-1.5.10</version>
+            <classifier>${javacpp.platform}</classifier>
+        </dependency>
+        <!-- JavaCPP native — 仅当前平台 -->
+        <dependency>
+            <groupId>org.bytedeco</groupId>
+            <artifactId>javacpp</artifactId>
+            <version>1.5.10</version>
+        </dependency>
+        <dependency>
+            <groupId>org.bytedeco</groupId>
+            <artifactId>javacpp</artifactId>
+            <version>1.5.10</version>
+            <classifier>${javacpp.platform}</classifier>
         </dependency>
 
         <!-- Lombok -->
@@ -204,9 +242,74 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <!-- Playwright driver-bundle (~189MB) 不打入 fat JAR；
+                             运行时如需浏览器自动化，用户自行将 JAR 放入 classpath。
+                             BrowserSessionManager 已有反射检测 + 优雅降级。 -->
+                        <exclude>
+                            <groupId>com.microsoft.playwright</groupId>
+                            <artifactId>driver-bundle</artifactId>
+                        </exclude>
+                        <!-- Lombok 仅编译期使用，运行时不需要 -->
+                        <exclude>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                        </exclude>
+                    </excludes>
+                </configuration>
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!-- 按操作系统自动选择 JavaCPP native 平台 -->
+        <profile>
+            <id>windows-x86_64</id>
+            <activation>
+                <os><family>windows</family><arch>amd64</arch></os>
+            </activation>
+            <properties>
+                <javacpp.platform>windows-x86_64</javacpp.platform>
+            </properties>
+        </profile>
+        <profile>
+            <id>linux-x86_64</id>
+            <activation>
+                <os><family>unix</family><name>Linux</name><arch>amd64</arch></os>
+            </activation>
+            <properties>
+                <javacpp.platform>linux-x86_64</javacpp.platform>
+            </properties>
+        </profile>
+        <profile>
+            <id>linux-arm64</id>
+            <activation>
+                <os><family>unix</family><name>Linux</name><arch>aarch64</arch></os>
+            </activation>
+            <properties>
+                <javacpp.platform>linux-arm64</javacpp.platform>
+            </properties>
+        </profile>
+        <profile>
+            <id>macosx-arm64</id>
+            <activation>
+                <os><family>mac</family><arch>aarch64</arch></os>
+            </activation>
+            <properties>
+                <javacpp.platform>macosx-arm64</javacpp.platform>
+            </properties>
+        </profile>
+        <profile>
+            <id>macosx-x86_64</id>
+            <activation>
+                <os><family>mac</family><arch>x86_64</arch></os>
+            </activation>
+            <properties>
+                <javacpp.platform>macosx-x86_64</javacpp.platform>
+            </properties>
+        </profile>
+    </profiles>
 
     <repositories>
         <repository>
