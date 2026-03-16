@@ -269,10 +269,11 @@ public class SkillAutoConfiguration {
             name = "enabled", havingValue = "true", matchIfMissing = true)
     public SkillGapDetector skillGapDetector(SkillRegistry registry,
                                             LlmRouter llmRouter,
-                                            SkillConfigProperties config) {
+                                            SkillConfigProperties config,
+                                            PromptRegistry promptRegistry) {
         log.info("Skill 系统: 注册 SkillGapDetector, gapThreshold={}",
                 config.getAutoGeneration().getGapThreshold());
-        return new SkillGapDetector(registry, llmRouter, config);
+        return new SkillGapDetector(registry, llmRouter, config, promptRegistry);
     }
 
     @Bean

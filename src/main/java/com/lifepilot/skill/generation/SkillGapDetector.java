@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.llm.LlmRequest;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.LlmScene;
+import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.skill.config.SkillConfigProperties;
 import com.lifepilot.skill.registry.SkillRegistry;
 import org.slf4j.Logger;
@@ -12,6 +13,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -38,14 +40,17 @@ public class SkillGapDetector {
     private final LlmRouter llmRouter;
     private final SkillConfigProperties config;
     private final ObjectMapper objectMapper;
+    private final PromptRegistry promptRegistry;
 
     public SkillGapDetector(SkillRegistry skillRegistry,
                             LlmRouter llmRouter,
-                            SkillConfigProperties config) {
+                            SkillConfigProperties config,
+                            PromptRegistry promptRegistry) {
         this.skillRegistry = skillRegistry;
         this.llmRouter = llmRouter;
         this.config = config;
         this.objectMapper = new ObjectMapper();
+        this.promptRegistry = promptRegistry;
     }
 
     /**
@@ -101,18 +106,8 @@ public class SkillGapDetector {
      * 构建缺口分析 Prompt。
      */
     private String buildGapAnalysisPrompt(String userRequest) {
-        return """
-                分析以下用户请求，判断是否需要创建新的 Skill。
-                用户请求: %s
-                
-                请以 JSON 格式返回分析结果:
-                {
-                  "suggestedId": "建议的 Skill ID (kebab-case)",
-                  "suggestedName": "建议的 Skill 名称",
-                  "suggestedTools": ["建议使用的工具列表"],
-                  "reason": "分析原因"
-                }
-                """.formatted(userRequest);
+        return promptRegistry.render("skill/gap-analysis", Map.of(
+                "userRequest", userRequest));
     }
 
     /**
