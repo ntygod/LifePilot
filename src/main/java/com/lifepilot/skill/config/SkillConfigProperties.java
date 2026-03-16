@@ -214,6 +214,7 @@ public class SkillConfigProperties {
         private SkillToggle todo = new SkillToggle();
         private SkillToggle schedule = new SkillToggle();
         private SkillToggle habit = new SkillToggle();
+        private SkillToggle scheduledTask = new SkillToggle();
 
         public SkillToggle getTodo() { return todo; }
         public void setTodo(SkillToggle todo) { this.todo = todo; }
@@ -223,6 +224,9 @@ public class SkillConfigProperties {
 
         public SkillToggle getHabit() { return habit; }
         public void setHabit(SkillToggle habit) { this.habit = habit; }
+
+        public SkillToggle getScheduledTask() { return scheduledTask; }
+        public void setScheduledTask(SkillToggle scheduledTask) { this.scheduledTask = scheduledTask; }
 
         /**
          * 根据 Skill ID 查询是否启用。Memory Skill 始终启用。
@@ -235,6 +239,7 @@ public class SkillConfigProperties {
                 case "todo" -> todo.isEnabled();
                 case "schedule" -> schedule.isEnabled();
                 case "habit" -> habit.isEnabled();
+                case "scheduled-task" -> scheduledTask.isEnabled();
                 case "memory" -> true;
                 default -> true;
             };

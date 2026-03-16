@@ -249,6 +249,8 @@ lifepilot:
         enabled: true
       habit:
         enabled: true
+      scheduled-task:
+        enabled: true
     auto-generation:
       enabled: true
       gap-threshold: 0.6
@@ -517,6 +519,12 @@ lifepilot:
     passive-drain-interval: 60
     history-page-size: 20
     max-history-page-size: 100
+  scheduler:
+    # ===== 定时任务调度器配置 =====
+    enabled: true
+    core-pool-size: 2
+    recovery-on-startup: true
+    schedule-reminder-minutes: 15
   workflow:
     # 工作流引擎总开关
     enabled: true
