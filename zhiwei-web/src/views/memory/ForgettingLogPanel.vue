@@ -106,12 +106,15 @@ function formatDate(iso: string) {
         <!-- 遗忘策略下拉框 -->
         <div class="w-40">
           <label class="text-xs text-muted-foreground mb-1 block">遗忘策略</label>
-          <Select v-model="filterStrategy">
+          <Select
+            :model-value="filterStrategy || '__all__'"
+            @update:model-value="(v: string) => filterStrategy = v === '__all__' ? '' : v"
+          >
             <SelectTrigger>
               <SelectValue placeholder="全部策略" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">全部策略</SelectItem>
+              <SelectItem value="__all__">全部策略</SelectItem>
               <SelectItem v-for="s in FORGETTING_STRATEGIES" :key="s.value" :value="s.value">
                 {{ s.label }}
               </SelectItem>

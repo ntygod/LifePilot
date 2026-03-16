@@ -504,12 +504,15 @@ onBeforeUnmount(() => {
             <!-- 标签筛选 -->
             <div v-if="availableTags.length > 0" class="mb-4 flex items-center gap-2">
               <span class="text-sm text-muted-foreground">标签筛选:</span>
-              <Select v-model="selectedTag">
+              <Select
+                :model-value="selectedTag || '__all__'"
+                @update:model-value="(v: string) => selectedTag = v === '__all__' ? '' : v"
+              >
                 <SelectTrigger class="w-40">
                   <SelectValue placeholder="全部" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">全部</SelectItem>
+                  <SelectItem value="__all__">全部</SelectItem>
                   <SelectItem v-for="tag in availableTags" :key="tag" :value="tag">
                     {{ tag }}
                   </SelectItem>

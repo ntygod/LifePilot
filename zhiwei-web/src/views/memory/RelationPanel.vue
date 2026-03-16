@@ -118,12 +118,15 @@ function formatDate(iso: string) {
         <!-- 关系类型下拉框 -->
         <div class="w-40">
           <label class="text-xs text-muted-foreground mb-1 block">关系类型</label>
-          <Select v-model="filterRelationType">
+          <Select
+            :model-value="filterRelationType || '__all__'"
+            @update:model-value="(v: string) => filterRelationType = v === '__all__' ? '' : v"
+          >
             <SelectTrigger>
               <SelectValue placeholder="全部类型" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">全部类型</SelectItem>
+              <SelectItem value="__all__">全部类型</SelectItem>
               <SelectItem v-for="t in RELATION_TYPES" :key="t.value" :value="t.value">
                 {{ t.label }}
               </SelectItem>
