@@ -278,16 +278,21 @@ public final class StdioTransport implements McpTransport {
         if (isWindows()) {
             if ("npx".equalsIgnoreCase(cmd) && !args.isEmpty()) {
                 // npx 特殊处理：解析包的 bin 入口，直接用 node.exe 运行
-                String packageName = args.getFirst();
-                var resolved = resolveNpxPackageEntry(packageName);
-                if (resolved != null) {
-                    var command = new ArrayList<>(resolved);
-                    // 跳过第一个参数（包名），追加剩余参数
-                    if (args.size() > 1) {
-                        command.addAll(args.subList(1, args.size()));
+                // 跳过 npx flags（-y, --yes, -p, --package 等）找到真正的包名
+                String packageName = extractNpxPackageName(args);
+                if (packageName != null) {
+                    var resolved = resolveNpxPackageEntry(packageName);
+                    if (resolved != null) {
+                        var command = new ArrayList<>(resolved);
+                        // 追加非 flag、非包名的剩余参数
+                        for (String arg : args) {
+                            if (!arg.startsWith("-") && !arg.equals(packageName)) {
+                                command.add(arg);
+                            }
+                        }
+                        log.info("npx 直接入口模式: {}", command);
+                        return command;
                     }
-                    log.info("npx 直接入口模式: {}", command);
-                    return command;
                 }
                 log.warn("无法解析 npx 包入口，回退到 cmd.exe 模式: package={}", packageName);
             }
@@ -305,6 +310,25 @@ public final class StdioTransport implements McpTransport {
             return command;
         }
     }
+
+    /**
+     * 从 npx 参数列表中提取真正的包名，跳过 flags。
+     *
+     * <p>npx 常见 flags：{@code -y}, {@code --yes}, {@code -p}, {@code --package}。
+     * 第一个不以 {@code -} 开头的参数即为包名。</p>
+     *
+     * @param args npx 参数列表（如 ["-y", "computer-use-mcp"]）
+     * @return 包名，未找到返回 null
+     */
+    private static String extractNpxPackageName(List<String> args) {
+        for (String arg : args) {
+            if (!arg.startsWith("-")) {
+                return arg;
+            }
+        }
+        return null;
+    }
+
 
     /**
      * 解析 npx 包的实际入口文件，返回 [node.exe, entry.js] 命令列表。

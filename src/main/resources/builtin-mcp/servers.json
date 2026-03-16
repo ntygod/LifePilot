@@ -2,13 +2,13 @@
   "mcpServers": {
     "mcp-installer": {
       "command": "npx",
-      "args": ["@anthropic/mcp-installer"],
+      "args": ["-y", "@anaisbetts/mcp-installer"],
       "autoConnect": true,
       "_description": "MCP 服务器安装工具，通过对话安装新的 MCP 服务器"
     },
     "desktop-control": {
       "command": "npx",
-      "args": ["@anthropic/computer-use-mcp-server"],
+      "args": ["-y", "computer-use-mcp"],
       "autoConnect": false,
       "_description": "桌面控制 MCP 服务器，提供屏幕截图、鼠标键盘操作等桌面自动化能力"
     }
