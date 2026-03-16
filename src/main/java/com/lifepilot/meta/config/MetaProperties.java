@@ -168,6 +168,18 @@ public class MetaProperties {
 
             /** 文本快照清洗后最大长度（字符），默认 10000。 */
             private int textSnapshotMaxLength = 10000;
+
+            /** 默认滚动像素数，默认 500。 */
+            private int defaultScrollPixels = 500;
+
+            /** 等待元素超时（秒），默认 10。 */
+            private int waitTimeoutSeconds = 10;
+
+            /** 无障碍树最大深度，默认 5。 */
+            private int accessibilityMaxDepth = 5;
+
+            /** JavaScript 执行超时（秒），默认 10。 */
+            private int jsExecutionTimeoutSeconds = 10;
         }
 
         /**
