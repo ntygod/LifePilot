@@ -1,5 +1,7 @@
 package com.lifepilot.mcp.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 import java.util.List;
 
 /**
@@ -10,6 +12,7 @@ import java.util.List;
  * @author zsg
  * @since 2026-02-24
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record McpToolResult(
         List<McpContent> content,
         boolean isError

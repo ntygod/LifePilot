@@ -1,5 +1,6 @@
 package com.lifepilot.mcp.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.annotation.Nullable;
 
 /**
@@ -12,6 +13,7 @@ import jakarta.annotation.Nullable;
  * @author zsg
  * @since 2026-02-24
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record McpContent(
         String type,
         @Nullable String text,
