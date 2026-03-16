@@ -777,6 +777,24 @@ public class SkillController {
     }
 
     /**
+     * 获取 MCP Server 连接日志。
+     *
+     * @param name 服务器名称
+     * @return 连接日志列表（按时间倒序）
+     */
+    @GetMapping("/mcp/servers/{name}/connection-logs")
+    public ResponseEntity<?> getMcpServerConnectionLogs(@PathVariable String name) {
+        var serverOpt = mcpServerRegistry.getServer(name);
+        if (serverOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    new ErrorResponse(404, "MCP Server 不存在: name=" + name, Instant.now()));
+        }
+
+        var logs = mcpServerRegistry.getConnectionLogs(name);
+        return ResponseEntity.ok(logs);
+    }
+
+    /**
      * 创建 MCP Server。
      *
      * @param request 创建请求（包含 name 和 config）

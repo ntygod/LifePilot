@@ -12,6 +12,7 @@ import org.springframework.lang.Nullable;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Deque;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.*;
@@ -29,7 +30,11 @@ public class McpServerRegistry {
 
     private static final Logger log = LoggerFactory.getLogger(McpServerRegistry.class);
 
+    /** 每个 Server 最多保留的连接日志条数。 */
+    private static final int MAX_LOG_ENTRIES = 50;
+
     private final ConcurrentHashMap<String, McpServerEntry> servers = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Deque<McpConnectionLogEntry>> connectionLogs = new ConcurrentHashMap<>();
 
     private final McpToolAdapter toolAdapter;
     private final DynamicToolRegistry toolRegistry;
@@ -173,6 +178,20 @@ public class McpServerRegistry {
         return Optional.ofNullable(servers.get(serverName));
     }
 
+    /**
+     * 获取指定 Server 的连接日志。
+     *
+     * @param serverName 服务器名称
+     * @return 连接日志列表（按时间倒序），Server 不存在时返回空列表
+     */
+    public List<McpConnectionLogEntry> getConnectionLogs(String serverName) {
+        var logs = connectionLogs.get(serverName);
+        if (logs == null) {
+            return List.of();
+        }
+        return List.copyOf(logs);
+    }
+
     // ─────────────────────────────────────────────
     //  健康检查与自动重连
     // ─────────────────────────────────────────────
@@ -268,15 +287,65 @@ public class McpServerRegistry {
         });
     }
 
-    /** 安全发布状态变化事件，异常不影响主流程。 */
+    /** 安全发布状态变化事件，同时记录连接日志，异常不影响主流程。 */
     private void publishStateChangedEvent(String serverName, McpServerState oldState,
                                           McpServerState newState, @Nullable String error) {
         try {
+            var now = Instant.now();
             eventPublisher.publishEvent(new McpServerStateChangedEvent(
-                    serverName, oldState, newState, Instant.now(), error));
+                    serverName, oldState, newState, now, error));
+            recordConnectionLog(serverName, oldState, newState, now, error);
         } catch (Exception e) {
             log.warn("MCP Server 状态变化事件发布失败: server={}, {}→{}, error={}",
                     serverName, oldState, newState, e.getMessage());
         }
+    }
+
+    /**
+     * 记录连接日志条目（内存环形缓冲，每个 Server 最多 {@value MAX_LOG_ENTRIES} 条）。
+     */
+    private void recordConnectionLog(String serverName, McpServerState oldState,
+                                     McpServerState newState, Instant timestamp,
+                                     @Nullable String error) {
+        String eventType = mapToEventType(newState, error);
+        if (eventType == null) return; // 中间状态不记录
+
+        String description = buildLogDescription(oldState, newState, error);
+        var logEntry = new McpConnectionLogEntry(timestamp, eventType, description);
+
+        var logs = connectionLogs.computeIfAbsent(serverName,
+                k -> new ConcurrentLinkedDeque<>());
+        logs.addFirst(logEntry);
+
+        // 超出上限时移除最旧条目
+        while (logs.size() > MAX_LOG_ENTRIES) {
+            logs.removeLast();
+        }
+    }
+
+    /**
+     * 将状态转换映射为前端期望的事件类型。
+     *
+     * @return 事件类型字符串，中间状态返回 null（不记录）
+     */
+    @Nullable
+    private String mapToEventType(McpServerState newState, @Nullable String error) {
+        if (error != null) return "ERROR";
+        return switch (newState) {
+            case CONNECTED -> "CONNECT";
+            case DISCONNECTED -> "DISCONNECT";
+            case RECONNECTING -> "RECONNECT";
+            // 中间状态（CONNECTING / INITIALIZING / HEALTH_CHECK / DISCONNECTING）不单独记录
+            default -> null;
+        };
+    }
+
+    /** 构建日志描述文本。 */
+    private String buildLogDescription(McpServerState oldState, McpServerState newState,
+                                       @Nullable String error) {
+        if (error != null) {
+            return "状态 %s→%s 失败: %s".formatted(oldState, newState, error);
+        }
+        return "状态变化: %s→%s".formatted(oldState, newState);
     }
 }
