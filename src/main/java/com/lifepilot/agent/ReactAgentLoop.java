@@ -1351,7 +1351,16 @@ public class ReactAgentLoop {
 
             var prompt = new Prompt(enhancedMessages, optionsBuilder.build());
 
-            // 非流式调用（降级路径）
+            // 流式能力检查与分支
+            if (!chatModelInfo.supportsStreaming()) {
+                // 降级：Provider 不支持流式，走原有非流式路径
+                log.info("Provider 不支持流式调用，降级为非流式: provider={}, model={}",
+                        chatModelInfo.providerId(), chatModelInfo.modelId());
+                return callLlmNonStreaming(chatModelInfo, prompt, traceContext);
+            }
+
+            // TODO: 流式路径 — 任务 2.2 实现 chatModel.stream(prompt) 真正流式调用
+            // 暂时仍走非流式降级路径，待后续任务替换为真正的流式实现
             return callLlmNonStreaming(chatModelInfo, prompt, traceContext);
         }
 
