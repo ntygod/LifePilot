@@ -249,6 +249,8 @@ lifepilot:
         enabled: true
       habit:
         enabled: true
+      scheduled-task:
+        enabled: true
     auto-generation:
       enabled: true
       gap-threshold: 0.6
