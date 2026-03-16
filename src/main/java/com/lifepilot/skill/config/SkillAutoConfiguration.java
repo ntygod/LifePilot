@@ -9,12 +9,9 @@ import com.lifepilot.skill.audit.SkillAuditRepository;
 import com.lifepilot.skill.bridge.SkillToToolBridge;
 import com.lifepilot.skill.builtin.BuiltinSkillProvider;
 import com.lifepilot.skill.builtin.BuiltinSkillRegistrar;
-import com.lifepilot.skill.builtin.habit.HabitRepository;
 import com.lifepilot.skill.builtin.habit.HabitSkillProvider;
 import com.lifepilot.skill.builtin.memory.MemorySkillProvider;
-import com.lifepilot.skill.builtin.schedule.ScheduleRepository;
 import com.lifepilot.skill.builtin.schedule.ScheduleSkillProvider;
-import com.lifepilot.skill.builtin.todo.TodoRepository;
 import com.lifepilot.skill.builtin.todo.TodoSkillProvider;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.datastore.DataStoreManager;
@@ -139,29 +136,6 @@ public class SkillAutoConfiguration {
                                                PromptRegistry promptRegistry) {
         log.info("Skill 系统: 注册 TodoSkillProvider（DataStore 存储）");
         return new TodoSkillProvider(dataStoreManager, objectMapper, promptRegistry);
-    }
-
-    // --- 持久化组件（Schedule/Habit 待迁移到 DataStore，TodoRepository 保留供 Sync 模块使用） ---
-
-    @Bean
-    @ConditionalOnMissingBean
-    public TodoRepository todoRepository(JdbcTemplate jdbcTemplate) {
-        log.info("Skill 系统: 注册 TodoRepository（供 Sync 模块使用，待迁移后删除）");
-        return new TodoRepository(jdbcTemplate);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public ScheduleRepository scheduleRepository(JdbcTemplate jdbcTemplate) {
-        log.info("Skill 系统: 注册 ScheduleRepository");
-        return new ScheduleRepository(jdbcTemplate);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public HabitRepository habitRepository(JdbcTemplate jdbcTemplate) {
-        log.info("Skill 系统: 注册 HabitRepository");
-        return new HabitRepository(jdbcTemplate);
     }
 
     @Bean
