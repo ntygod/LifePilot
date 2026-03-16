@@ -92,6 +92,12 @@ public class InfraToolProvider implements BuiltinSkillProvider {
                         "builtin.file.write",
                         "builtin.file.list",
                         "builtin.file.search",
+                        "builtin.file.append",
+                        "builtin.file.delete",
+                        "builtin.file.copy",
+                        "builtin.file.move",
+                        "builtin.file.info",
+                        "builtin.file.patch",
                         "builtin.interact.choose",
                         "builtin.interact.input",
                         "builtin.interact.notify"
@@ -166,7 +172,7 @@ public class InfraToolProvider implements BuiltinSkillProvider {
         }
 
         log.info("基础工具注册完成: count={}, categories=[env, web, reason, shell, browser, code, file, interact]",
-                interactionBridge != null ? 20 : 17);
+                interactionBridge != null ? 26 : 23);
     }
 
     // ─────────────────────────────────────────────
