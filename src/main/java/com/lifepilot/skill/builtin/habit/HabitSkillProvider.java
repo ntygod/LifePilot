@@ -1,10 +1,17 @@
 package com.lifepilot.skill.builtin.habit;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.proactive.candidate.CandidateProvider;
 import com.lifepilot.agent.proactive.model.InitiativeType;
 import com.lifepilot.agent.proactive.model.ProactiveCandidate;
 import com.lifepilot.agent.proactive.model.Signal;
 import com.lifepilot.agent.proactive.model.SignalBundle;
+import com.lifepilot.datastore.DataStoreManager;
+import com.lifepilot.datastore.adapter.CrudAdapterConfig;
+import com.lifepilot.datastore.adapter.DataStoreCrudAdapter;
+import com.lifepilot.datastore.model.CollectionType;
+import com.lifepilot.datastore.model.PropertyDefinition;
+import com.lifepilot.datastore.model.PropertyType;
 import com.lifepilot.notification.Urgency;
 import com.lifepilot.agent.proactive.signal.SignalSource;
 import com.lifepilot.prompt.PromptRegistry;
@@ -14,13 +21,13 @@ import com.lifepilot.skill.model.SkillDefinition;
 import com.lifepilot.skill.model.SkillSource;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.observability.guardrail.RiskLevel;
+import com.lifepilot.tool.model.ToolCategory;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.tool.schema.JsonSchema;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -36,6 +43,9 @@ import java.util.Map;
  * 提供习惯养成 Skill 定义蓝图。实现 {@link ProactiveSkillProvider}，
  * 提供习惯打卡提醒和连续打卡风险信号源及候选提供者。</p>
  *
+ * <p>存储层通过 {@link DataStoreCrudAdapter} 委托给 DataStore，
+ * 数据以 JSON 格式存储在"习惯"Collection 中。</p>
+ *
  * @author zsg
  * @since 2026-02-25
  */
@@ -44,11 +54,26 @@ public class HabitSkillProvider implements ProactiveSkillProvider {
 
     private static final Logger log = LoggerFactory.getLogger(HabitSkillProvider.class);
 
-    private final HabitRepository habitRepository;
+    private final DataStoreCrudAdapter<HabitEntity> habitAdapter;
     private final PromptRegistry promptRegistry;
 
-    public HabitSkillProvider(HabitRepository habitRepository, PromptRegistry promptRegistry) {
-        this.habitRepository = habitRepository;
+    public HabitSkillProvider(DataStoreManager dataStoreManager,
+                              ObjectMapper objectMapper,
+                              PromptRegistry promptRegistry) {
+        this.habitAdapter = new DataStoreCrudAdapter<>(dataStoreManager, objectMapper,
+                new CrudAdapterConfig<>(
+                        "habit",
+                        "习惯",
+                        CollectionType.DOCUMENT,
+                        HabitEntity.class,
+                        List.of(
+                                new PropertyDefinition("name", PropertyType.TEXT, true, "习惯名称"),
+                                new PropertyDefinition("frequency", PropertyType.SELECT, true, "频率: DAILY/WEEKLY"),
+                                new PropertyDefinition("targetCount", PropertyType.NUMBER, true, "目标打卡次数"),
+                                new PropertyDefinition("currentStreak", PropertyType.NUMBER, false, "当前连续打卡天数")
+                        ),
+                        "习惯养成管理"
+                ));
         this.promptRegistry = promptRegistry;
     }
 
@@ -105,27 +130,25 @@ public class HabitSkillProvider implements ProactiveSkillProvider {
         return BuiltinTool.builder()
                 .id("builtin.habit.create")
                 .name("创建习惯")
-                .description("创建新的习惯，支持设置名称、频率和目标打卡时间")
+                .description("创建新的习惯，支持设置名称、频率和目标打卡次数")
+                .category(ToolCategory.STORAGE)
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("name", "frequency"),
                         "properties", Map.of(
                                 "name", Map.of("type", "string", "description", "习惯名称"),
                                 "frequency", Map.of("type", "string", "description", "频率: DAILY/WEEKLY"),
-                                "targetTime", Map.of("type", "string", "format", "time", "description", "目标打卡时间 HH:mm")
+                                "targetCount", Map.of("type", "integer", "description", "目标打卡次数，默认 0")
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
                 .executor(input -> {
                     try {
                         String name = input.getParam("name", String.class);
-                        String frequencyStr = input.getParam("frequency", String.class);
-                        String targetTime = input.getOptionalParam("targetTime", String.class).orElse(null);
-
-                        HabitItem.Frequency frequency = HabitItem.Frequency.valueOf(frequencyStr.toUpperCase());
-                        HabitItem item = new HabitItem(null, name, frequency, targetTime, 0, null, null);
-                        String id = habitRepository.create(item);
-                        return ToolResult.success(Map.of("id", id));
+                        String frequency = input.getParam("frequency", String.class).toUpperCase();
+                        int targetCount = input.getOptionalParam("targetCount", Integer.class).orElse(0);
+                        var entity = new HabitEntity(name, frequency, targetCount, 0, null);
+                        return habitAdapter.create(entity);
                     } catch (Exception e) {
                         log.error("创建习惯失败: {}", e.getMessage(), e);
                         return ToolResult.error("创建习惯失败: " + e.getMessage());
@@ -139,7 +162,8 @@ public class HabitSkillProvider implements ProactiveSkillProvider {
         return BuiltinTool.builder()
                 .id("builtin.habit.list")
                 .name("查询习惯列表")
-                .description("查询所有习惯列表，按创建时间降序排列")
+                .description("查询所有习惯列表")
+                .category(ToolCategory.STORAGE)
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "properties", Map.of()
@@ -147,9 +171,10 @@ public class HabitSkillProvider implements ProactiveSkillProvider {
                 .riskLevel(RiskLevel.LOW)
                 .executor(input -> {
                     try {
-                        List<HabitItem> items = habitRepository.list();
-                        List<Map<String, Object>> itemMaps = items.stream()
-                                .map(this::habitItemToMap)
+                        List<HabitEntity> entities = habitAdapter.list(
+                                null, "name", null, 0, 100);
+                        List<Map<String, Object>> itemMaps = entities.stream()
+                                .map(this::habitEntityToMap)
                                 .toList();
                         return ToolResult.success(Map.of("items", itemMaps));
                     } catch (Exception e) {
@@ -166,6 +191,7 @@ public class HabitSkillProvider implements ProactiveSkillProvider {
                 .id("builtin.habit.get")
                 .name("查询习惯详情")
                 .description("根据 ID 查询单个习惯的详细信息")
+                .category(ToolCategory.STORAGE)
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("id"),
@@ -177,8 +203,8 @@ public class HabitSkillProvider implements ProactiveSkillProvider {
                 .executor(input -> {
                     try {
                         String id = input.getParam("id", String.class);
-                        return habitRepository.findById(id)
-                                .map(item -> ToolResult.success(habitItemToMap(item)))
+                        return habitAdapter.findById(id)
+                                .map(entity -> ToolResult.success(habitEntityToMap(entity)))
                                 .orElse(ToolResult.error("习惯不存在: id=" + id));
                     } catch (Exception e) {
                         log.error("查询习惯详情失败: {}", e.getMessage(), e);
@@ -193,7 +219,8 @@ public class HabitSkillProvider implements ProactiveSkillProvider {
         return BuiltinTool.builder()
                 .id("builtin.habit.update")
                 .name("更新习惯")
-                .description("更新习惯的名称、频率或目标打卡时间")
+                .description("更新习惯的名称、频率或目标打卡次数")
+                .category(ToolCategory.STORAGE)
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("id"),
@@ -201,31 +228,26 @@ public class HabitSkillProvider implements ProactiveSkillProvider {
                                 "id", Map.of("type", "string", "description", "习惯 ID"),
                                 "name", Map.of("type", "string", "description", "新名称"),
                                 "frequency", Map.of("type", "string", "description", "新频率: DAILY/WEEKLY"),
-                                "targetTime", Map.of("type", "string", "format", "time", "description", "新目标打卡时间 HH:mm")
+                                "targetCount", Map.of("type", "integer", "description", "新目标打卡次数")
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
                 .executor(input -> {
                     try {
                         String id = input.getParam("id", String.class);
-                        var existing = habitRepository.findById(id);
+                        var existing = habitAdapter.findById(id);
                         if (existing.isEmpty()) {
                             return ToolResult.error("习惯不存在: id=" + id);
                         }
-                        HabitItem current = existing.get();
-
+                        HabitEntity current = existing.get();
                         String name = input.getOptionalParam("name", String.class).orElse(current.name());
-                        String frequencyStr = input.getOptionalParam("frequency", String.class).orElse(current.frequency().name());
-                        String targetTime = input.getOptionalParam("targetTime", String.class).orElse(current.targetTime());
-
-                        HabitItem.Frequency frequency = HabitItem.Frequency.valueOf(frequencyStr.toUpperCase());
-                        HabitItem updated = new HabitItem(
-                                id, name, frequency, targetTime,
-                                current.currentStreak(), current.createdAt(), current.updatedAt());
-                        boolean success = habitRepository.update(id, updated);
-                        return success
-                                ? ToolResult.success(Map.of("updated", true))
-                                : ToolResult.error("更新习惯失败: id=" + id);
+                        String frequency = input.getOptionalParam("frequency", String.class)
+                                .map(String::toUpperCase).orElse(current.frequency());
+                        int targetCount = input.getOptionalParam("targetCount", Integer.class)
+                                .orElse(current.targetCount());
+                        var updated = new HabitEntity(name, frequency, targetCount,
+                                current.currentStreak(), current.lastCompletedAt());
+                        return habitAdapter.update(id, updated);
                     } catch (Exception e) {
                         log.error("更新习惯失败: {}", e.getMessage(), e);
                         return ToolResult.error("更新习惯失败: " + e.getMessage());
@@ -234,25 +256,36 @@ public class HabitSkillProvider implements ProactiveSkillProvider {
                 .build();
     }
 
-    /** 构建习惯打卡工具。 */
+    /** 构建习惯打卡工具 — findById → 更新 currentStreak+1 和 lastCompletedAt。 */
     private BuiltinTool buildCheckinTool() {
         return BuiltinTool.builder()
                 .id("builtin.habit.checkin")
                 .name("习惯打卡")
-                .description("为指定习惯记录一次打卡，自动更新连续打卡天数")
+                .description("为指定习惯打卡，自动更新连续打卡天数和最后完成时间")
+                .category(ToolCategory.STORAGE)
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
-                        "required", List.of("habitId"),
+                        "required", List.of("id"),
                         "properties", Map.of(
-                                "habitId", Map.of("type", "string", "description", "习惯 ID")
+                                "id", Map.of("type", "string", "description", "习惯 ID")
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
                 .executor(input -> {
                     try {
-                        String habitId = input.getParam("habitId", String.class);
-                        String logId = habitRepository.checkin(habitId);
-                        return ToolResult.success(Map.of("logId", logId));
+                        String id = input.getParam("id", String.class);
+                        var existing = habitAdapter.findById(id);
+                        if (existing.isEmpty()) {
+                            return ToolResult.error("习惯不存在: id=" + id);
+                        }
+                        HabitEntity current = existing.get();
+                        var updated = new HabitEntity(
+                                current.name(),
+                                current.frequency(),
+                                current.targetCount(),
+                                current.currentStreak() + 1,
+                                Instant.now().toString());
+                        return habitAdapter.update(id, updated);
                     } catch (Exception e) {
                         log.error("习惯打卡失败: {}", e.getMessage(), e);
                         return ToolResult.error("习惯打卡失败: " + e.getMessage());
@@ -261,25 +294,32 @@ public class HabitSkillProvider implements ProactiveSkillProvider {
                 .build();
     }
 
-    /** 构建查询连续打卡天数工具。 */
+    /** 构建连续打卡天数查询工具 — findById → 返回 currentStreak。 */
     private BuiltinTool buildStreakTool() {
         return BuiltinTool.builder()
                 .id("builtin.habit.streak")
                 .name("查询连续打卡天数")
                 .description("查询指定习惯的当前连续打卡天数")
+                .category(ToolCategory.STORAGE)
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
-                        "required", List.of("habitId"),
+                        "required", List.of("id"),
                         "properties", Map.of(
-                                "habitId", Map.of("type", "string", "description", "习惯 ID")
+                                "id", Map.of("type", "string", "description", "习惯 ID")
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
                 .executor(input -> {
                     try {
-                        String habitId = input.getParam("habitId", String.class);
-                        int streak = habitRepository.calculateStreak(habitId);
-                        return ToolResult.success(Map.of("habitId", habitId, "streak", streak));
+                        String id = input.getParam("id", String.class);
+                        var existing = habitAdapter.findById(id);
+                        if (existing.isEmpty()) {
+                            return ToolResult.error("习惯不存在: id=" + id);
+                        }
+                        HabitEntity entity = existing.get();
+                        return ToolResult.success(Map.of(
+                                "name", entity.name(),
+                                "currentStreak", entity.currentStreak()));
                     } catch (Exception e) {
                         log.error("查询连续打卡天数失败: {}", e.getMessage(), e);
                         return ToolResult.error("查询连续打卡天数失败: " + e.getMessage());
@@ -288,33 +328,41 @@ public class HabitSkillProvider implements ProactiveSkillProvider {
                 .build();
     }
 
-    /** 构建计算完成率工具。 */
+    /** 构建完成率查询工具 — 简化实现：返回 currentStreak 作为代理指标。 */
     private BuiltinTool buildCompletionRateTool() {
         return BuiltinTool.builder()
                 .id("builtin.habit.completion-rate")
-                .name("计算完成率")
-                .description("计算指定习惯在指定时间范围内的完成率")
+                .name("查询习惯完成率")
+                .description("查询指定习惯的完成率（基于当前连续打卡天数和目标打卡次数）")
+                .category(ToolCategory.STORAGE)
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
-                        "required", List.of("habitId", "from", "to"),
+                        "required", List.of("id"),
                         "properties", Map.of(
-                                "habitId", Map.of("type", "string", "description", "习惯 ID"),
-                                "from", Map.of("type", "string", "description", "起始时间 ISO 8601"),
-                                "to", Map.of("type", "string", "description", "结束时间 ISO 8601")
+                                "id", Map.of("type", "string", "description", "习惯 ID")
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
                 .executor(input -> {
                     try {
-                        String habitId = input.getParam("habitId", String.class);
-                        String from = input.getParam("from", String.class);
-                        String to = input.getParam("to", String.class);
-                        double rate = habitRepository.calculateCompletionRate(
-                                habitId, Instant.parse(from), Instant.parse(to));
-                        return ToolResult.success(Map.of("habitId", habitId, "completionRate", rate));
+                        String id = input.getParam("id", String.class);
+                        var existing = habitAdapter.findById(id);
+                        if (existing.isEmpty()) {
+                            return ToolResult.error("习惯不存在: id=" + id);
+                        }
+                        HabitEntity entity = existing.get();
+                        // 简化实现：用 currentStreak / targetCount 作为完成率代理指标
+                        double rate = entity.targetCount() > 0
+                                ? Math.min(1.0, (double) entity.currentStreak() / entity.targetCount())
+                                : 0.0;
+                        return ToolResult.success(Map.of(
+                                "name", entity.name(),
+                                "currentStreak", entity.currentStreak(),
+                                "targetCount", entity.targetCount(),
+                                "completionRate", rate));
                     } catch (Exception e) {
-                        log.error("计算完成率失败: {}", e.getMessage(), e);
-                        return ToolResult.error("计算完成率失败: " + e.getMessage());
+                        log.error("查询习惯完成率失败: {}", e.getMessage(), e);
+                        return ToolResult.error("查询习惯完成率失败: " + e.getMessage());
                     }
                 })
                 .build();
@@ -323,11 +371,10 @@ public class HabitSkillProvider implements ProactiveSkillProvider {
     // ---- 主动推理内部类 ----
 
     /**
-     * 习惯打卡信号源 — 收集今日尚未打卡的习惯信号和连续打卡风险信号。
+     * 习惯打卡提醒信号源 — 收集当日尚未打卡的 DAILY 习惯信号。
      *
-     * <p>对每个尚未打卡的习惯产生 {@code habit_reminder} 信号，
-     * 紧急度根据目标打卡时间计算：已过目标时间 → HIGH，距目标 2 小时内 → MEDIUM，其余 → LOW。
-     * 若该习惯有连续打卡记录（currentStreak &gt; 0），额外产生 {@code streak_at_risk} 信号。</p>
+     * <p>对于 DAILY 习惯，如果 lastCompletedAt 不是今天，则生成提醒信号。
+     * 根据当前时间判断紧急度：晚上 → HIGH，下午 → MEDIUM，其余 → LOW。</p>
      */
     private class HabitSignalSource implements SignalSource {
 
@@ -338,78 +385,49 @@ public class HabitSkillProvider implements ProactiveSkillProvider {
 
         @Override
         public List<Signal> collect() {
-            List<HabitItem> habits = habitRepository.list();
-            Instant now = Instant.now();
+            List<HabitEntity> habits = habitAdapter.list(null, null, null, 0, 1000);
             LocalDate today = LocalDate.now();
+            LocalTime now = LocalTime.now();
             List<Signal> signals = new ArrayList<>();
 
-            for (HabitItem habit : habits) {
-                try {
-                    // 检查今日是否已打卡：计算今日时间范围内的完成率
-                    Instant dayStart = today.atStartOfDay(ZoneId.systemDefault()).toInstant();
-                    double todayRate = habitRepository.calculateCompletionRate(
-                            habit.id(), dayStart, now);
-                    boolean checkedInToday = todayRate > 0;
-
-                    if (!checkedInToday) {
-                        // 根据目标打卡时间计算紧急度
-                        Urgency urgency = Urgency.LOW;
-                        if (habit.targetTime() != null) {
-                            try {
-                                LocalTime target = LocalTime.parse(habit.targetTime());
-                                LocalTime nowTime = LocalTime.now();
-                                if (nowTime.isAfter(target)) {
-                                    urgency = Urgency.HIGH;
-                                } else {
-                                    Duration remaining = Duration.between(nowTime, target);
-                                    urgency = remaining.toHours() < 2 ? Urgency.MEDIUM : Urgency.LOW;
-                                }
-                            } catch (Exception e) {
-                                // targetTime 解析失败，保持 LOW
-                            }
-                        }
-
-                        // 产生 habit_reminder 信号
-                        signals.add(Signal.builder()
-                                .typeId("habit_reminder")
-                                .urgency(urgency)
-                                .summary("习惯「%s」今日尚未打卡".formatted(habit.name()))
-                                .sourceId("habit-signal")
-                                .subjectId(habit.id())
-                                .metadata(Map.of(
-                                        "habitId", habit.id(),
-                                        "name", habit.name(),
-                                        "frequency", habit.frequency().name()))
-                                .build());
-
-                        // 若有连续打卡记录，额外产生 streak_at_risk 信号
-                        if (habit.currentStreak() > 0) {
-                            signals.add(Signal.builder()
-                                    .typeId("streak_at_risk")
-                                    .urgency(Urgency.HIGH)
-                                    .summary("习惯「%s」连续打卡 %d 天，今日尚未打卡，存在中断风险"
-                                            .formatted(habit.name(), habit.currentStreak()))
-                                    .sourceId("habit-signal")
-                                    .subjectId(habit.id())
-                                    .metadata(Map.of(
-                                            "habitId", habit.id(),
-                                            "name", habit.name(),
-                                            "currentStreak", habit.currentStreak()))
-                                    .build());
-                        }
+            for (HabitEntity habit : habits) {
+                if (!"DAILY".equalsIgnoreCase(habit.frequency())) {
+                    continue;
+                }
+                // 检查今天是否已打卡
+                boolean checkedInToday = false;
+                if (habit.lastCompletedAt() != null) {
+                    try {
+                        LocalDate lastDate = Instant.parse(habit.lastCompletedAt())
+                                .atZone(ZoneId.systemDefault()).toLocalDate();
+                        checkedInToday = lastDate.equals(today);
+                    } catch (Exception e) {
+                        log.warn("解析习惯最后完成时间失败: name={}, lastCompletedAt={}",
+                                habit.name(), habit.lastCompletedAt(), e);
                     }
-                } catch (Exception e) {
-                    log.warn("习惯信号收集失败: habitId={}, name={}", habit.id(), habit.name(), e);
+                }
+                if (!checkedInToday) {
+                    Urgency urgency = now.isAfter(LocalTime.of(20, 0)) ? Urgency.HIGH
+                            : now.isAfter(LocalTime.of(14, 0)) ? Urgency.MEDIUM
+                            : Urgency.LOW;
+                    signals.add(Signal.builder()
+                            .typeId("habit_checkin_reminder")
+                            .urgency(urgency)
+                            .summary("习惯「%s」今日尚未打卡".formatted(habit.name()))
+                            .sourceId("habit-signal")
+                            .subjectId(habit.name())
+                            .metadata(Map.of("name", habit.name(),
+                                    "currentStreak", String.valueOf(habit.currentStreak())))
+                            .build());
                 }
             }
-
             log.debug("习惯信号收集完成: count={}", signals.size());
             return List.copyOf(signals);
         }
     }
 
     /**
-     * 习惯候选提供者 — 将 habit_reminder 和 streak_at_risk 信号映射为 NOTIFICATION 候选。
+     * 习惯候选提供者 — 将 habit_checkin_reminder 信号映射为 NOTIFICATION 候选。
      */
     private class HabitCandidateProvider implements CandidateProvider {
 
@@ -421,10 +439,10 @@ public class HabitSkillProvider implements ProactiveSkillProvider {
         @Override
         public List<ProactiveCandidate> evaluate(SignalBundle signals) {
             return signals.signals().stream()
+                    .filter(s -> "habit_checkin_reminder".equals(s.typeId()))
                     .filter(s -> "habit-signal".equals(s.sourceId()))
-                    .filter(s -> "habit_reminder".equals(s.typeId()) || "streak_at_risk".equals(s.typeId()))
                     .map(s -> new ProactiveCandidate(
-                            s.typeId(),
+                            "habit_checkin_reminder",
                             s.urgency(),
                             s.summary(),
                             s.subjectId(),
@@ -435,18 +453,14 @@ public class HabitSkillProvider implements ProactiveSkillProvider {
 
     // ---- 辅助方法 ----
 
-    /** 将 HabitItem 转换为 Map 用于 ToolResult。 */
-    private Map<String, Object> habitItemToMap(HabitItem item) {
+    /** 将 HabitEntity 转换为 Map 用于 ToolResult。 */
+    private Map<String, Object> habitEntityToMap(HabitEntity entity) {
         var map = new java.util.HashMap<String, Object>();
-        map.put("id", item.id());
-        map.put("name", item.name());
-        map.put("frequency", item.frequency().name());
-        if (item.targetTime() != null) map.put("targetTime", item.targetTime());
-        map.put("currentStreak", item.currentStreak());
-        map.put("createdAt", item.createdAt());
-        map.put("updatedAt", item.updatedAt());
+        map.put("name", entity.name());
+        map.put("frequency", entity.frequency());
+        map.put("targetCount", entity.targetCount());
+        map.put("currentStreak", entity.currentStreak());
+        if (entity.lastCompletedAt() != null) map.put("lastCompletedAt", entity.lastCompletedAt());
         return Map.copyOf(map);
     }
 }
-
-

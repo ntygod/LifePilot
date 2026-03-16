@@ -178,10 +178,11 @@ public class SkillAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public HabitSkillProvider habitSkillProvider(HabitRepository habitRepository,
+    public HabitSkillProvider habitSkillProvider(DataStoreManager dataStoreManager,
+                                                 ObjectMapper objectMapper,
                                                  PromptRegistry promptRegistry) {
-        log.info("Skill 系统: 注册 HabitSkillProvider");
-        return new HabitSkillProvider(habitRepository, promptRegistry);
+        log.info("Skill 系统: 注册 HabitSkillProvider（DataStore 存储）");
+        return new HabitSkillProvider(dataStoreManager, objectMapper, promptRegistry);
     }
 
     @Bean
