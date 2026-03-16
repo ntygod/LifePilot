@@ -55,6 +55,8 @@ import org.springframework.core.io.Resource;
 import org.springframework.lang.Nullable;
 import org.springframework.util.MimeTypeUtils;
 
+import reactor.core.publisher.Flux;
+
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
@@ -1359,9 +1361,106 @@ public class ReactAgentLoop {
                 return callLlmNonStreaming(chatModelInfo, prompt, traceContext);
             }
 
-            // TODO: 流式路径 — 任务 2.2 实现 chatModel.stream(prompt) 真正流式调用
-            // 暂时仍走非流式降级路径，待后续任务替换为真正的流式实现
-            return callLlmNonStreaming(chatModelInfo, prompt, traceContext);
+            // 真正的流式调用路径
+            Instant callStart = Instant.now();
+            String scene2 = config.getLoop().getLlmScene();
+
+            // 运行时状态：收集流式内容、tool call、最后 chunk、首 token 时间
+            var contentBuilder = new StringBuilder();
+            var toolCallCollector = new ArrayList<AssistantMessage.ToolCall>();
+            final ChatResponse[] lastChunk = {null};
+            final Instant[] firstTokenTime = {null};
+
+            Flux<ChatResponse> flux = chatModelInfo.chatModel().stream(prompt);
+
+            try {
+                flux.doOnNext(chunk -> {
+                    try {
+                        // 记录最后一个 chunk（携带 metadata/usage）
+                        lastChunk[0] = chunk;
+
+                        if (chunk.getResult() == null || chunk.getResult().getOutput() == null) {
+                            return;
+                        }
+                        var output = chunk.getResult().getOutput();
+
+                        // 收集文本内容
+                        String text = output.getText();
+                        if (text != null && !text.isEmpty()) {
+                            contentBuilder.append(text);
+
+                            // 记录首 token 到达时间（仅记录一次）
+                            if (firstTokenTime[0] == null) {
+                                firstTokenTime[0] = Instant.now();
+                            }
+
+                            // 逐 token 推送 SSE TOKEN 事件（后续任务 3.1 会改为通过 pushTokenToSse 支持 A2UI）
+                            sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
+                                    "sessionId", sessionId, "turnId", turnId,
+                                    "content", text, "index", 0));
+                        }
+
+                        // 收集 tool call 元数据（通常在最后 chunk）
+                        if (output.hasToolCalls()) {
+                            toolCallCollector.addAll(output.getToolCalls());
+                        }
+                    } catch (Exception e) {
+                        log.warn("流式 chunk 处理异常，跳过: error={}", e.getMessage());
+                    }
+                }).doOnError(e -> {
+                    log.warn("流式调用异常: scene={}, provider={}, error={}",
+                            scene2, chatModelInfo.providerId(), e.getMessage());
+                    this.streamingError = e instanceof Exception ex ? ex : new RuntimeException(e);
+                }).blockLast();
+            } catch (Exception e) {
+                log.error("流式调用失败: scene={}, provider={}, error={}",
+                        scene2, chatModelInfo.providerId(), e.getMessage());
+                throw e;
+            }
+
+            Instant callEnd = Instant.now();
+            String collectedContent = contentBuilder.toString();
+            this.finalContent = collectedContent;
+
+            // 如果有 tool call，发送 TOOL_CALLING 推理事件
+            if (!toolCallCollector.isEmpty()) {
+                for (var tc : toolCallCollector) {
+                    sendReasoningEvent(sseManager, streamId, sessionId, turnId,
+                            "TOOL_CALLING", "调用工具: " + tc.name(),
+                            "正在执行工具 " + tc.name(), tc.name(), Map.of());
+                }
+            }
+
+            // 构造 ChatResponse 返回给 coreLoop（后续任务 4.2 会提取为 buildChatResponseFromStream 方法）
+            AssistantMessage assistantMessage;
+            if (!toolCallCollector.isEmpty()) {
+                assistantMessage = AssistantMessage.builder()
+                        .content(collectedContent)
+                        .toolCalls(toolCallCollector)
+                        .build();
+            } else {
+                assistantMessage = new AssistantMessage(collectedContent);
+            }
+            var generation = new Generation(assistantMessage);
+            ChatResponse chatResponse;
+            if (lastChunk[0] != null && lastChunk[0].getMetadata() != null) {
+                chatResponse = new ChatResponse(List.of(generation), lastChunk[0].getMetadata());
+            } else {
+                chatResponse = new ChatResponse(List.of(generation));
+            }
+
+            // TTFT 和总耗时日志
+            long ttftMs = firstTokenTime[0] != null
+                    ? Duration.between(callStart, firstTokenTime[0]).toMillis() : -1;
+            long totalMs = Duration.between(callStart, callEnd).toMillis();
+            log.info("流式调用完成: scene={}, provider={}, model={}, ttft={}ms, total={}ms",
+                    scene2, chatModelInfo.providerId(), chatModelInfo.modelId(), ttftMs, totalMs);
+
+            // 记录 Trace
+            recordStreamingLlmStep(traceContext, callStart, providerId, modelId,
+                    scene2, chatResponse, null);
+
+            return chatResponse;
         }
 
         /**
