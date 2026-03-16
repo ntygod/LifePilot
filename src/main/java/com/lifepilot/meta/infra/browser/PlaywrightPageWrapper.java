@@ -1,10 +1,12 @@
 package com.lifepilot.meta.infra.browser;
 
 import com.microsoft.playwright.Page;
+import com.microsoft.playwright.options.SelectOption;
 import jakarta.annotation.Nullable;
 
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Playwright Page 包装器 — 封装 Page 操作并跟踪最后访问时间。
@@ -148,6 +150,43 @@ public class PlaywrightPageWrapper {
         page.locator(selector).scrollIntoViewIfNeeded();
         List<Number> pos = (List<Number>) page.evaluate("[window.scrollX, window.scrollY]");
         return new ScrollResult(pos.get(0).doubleValue(), pos.get(1).doubleValue());
+    }
+
+    /**
+     * 悬停到指定元素。
+     *
+     * @param selector CSS 选择器
+     * @return 包含 tagName 和 textContent 的 Map
+     */
+    public Map<String, String> hover(String selector) {
+        touch();
+        ensureOpen();
+        page.hover(selector);
+        String tagName = (String) page.locator(selector).evaluate("el => el.tagName");
+        String textContent = page.locator(selector).textContent();
+        return Map.of("tagName", tagName, "textContent", textContent != null ? textContent : "");
+    }
+
+    /**
+     * 下拉选择。
+     *
+     * @param selector CSS 选择器
+     * @param value    选项值或可见文本
+     * @param byLabel  true 时按可见文本匹配，false 时按 value 匹配
+     * @return 包含 selectedValue 和 selectedLabel 的 Map
+     */
+    public Map<String, String> selectOption(String selector, String value, boolean byLabel) {
+        touch();
+        ensureOpen();
+        List<String> selected;
+        if (byLabel) {
+            selected = page.selectOption(selector, new SelectOption().setLabel(value));
+        } else {
+            selected = page.selectOption(selector, value);
+        }
+        String selectedValue = selected.getFirst();
+        String selectedLabel = page.locator(selector + " option:checked").textContent();
+        return Map.of("selectedValue", selectedValue, "selectedLabel", selectedLabel != null ? selectedLabel : "");
     }
 
     /** 检查 Page 是否已关闭，已关闭时抛出异常。 */
