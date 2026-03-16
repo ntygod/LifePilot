@@ -1,5 +1,7 @@
 package com.lifepilot.meta.infra.browser;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.options.SelectOption;
 import jakarta.annotation.Nullable;
@@ -187,6 +189,48 @@ public class PlaywrightPageWrapper {
         String selectedValue = selected.getFirst();
         String selectedLabel = page.locator(selector + " option:checked").textContent();
         return Map.of("selectedValue", selectedValue, "selectedLabel", selectedLabel != null ? selectedLabel : "");
+    }
+
+    /**
+     * 按键操作，支持单键和组合键。
+     *
+     * @param key 键名，如 "Enter"、"Tab"、"Control+A"
+     */
+    public void pressKey(String key) {
+        touch();
+        ensureOpen();
+        page.keyboard().press(key);
+    }
+
+    /**
+     * 逐字符输入文本。
+     *
+     * @param text 要输入的文本
+     */
+    public void typeText(String text) {
+        touch();
+        ensureOpen();
+        page.keyboard().type(text);
+    }
+
+    /**
+     * 执行 JavaScript 表达式，返回 JSON 序列化结果。
+     *
+     * @param expression JavaScript 表达式
+     * @return JSON 序列化后的结果字符串，null 结果返回 "null"
+     */
+    public String evaluate(String expression) {
+        touch();
+        ensureOpen();
+        Object result = page.evaluate(expression);
+        if (result == null) {
+            return "null";
+        }
+        try {
+            return new ObjectMapper().writeValueAsString(result);
+        } catch (JsonProcessingException e) {
+            return result.toString();
+        }
     }
 
     /** 检查 Page 是否已关闭，已关闭时抛出异常。 */
