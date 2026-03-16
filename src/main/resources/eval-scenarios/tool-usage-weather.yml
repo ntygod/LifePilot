@@ -1,0 +1,23 @@
+id: "tool-usage-weather"
+name: "工具调用 — 天气查询"
+userInput: "今天北京的天气怎么样？"
+expectedToolCalls:
+  - "weather-query"
+expectedOutputPattern: ".*天气.*"
+dimensionWeights:
+  toolSelection: 0.3
+  parameterValidity: 0.25
+  stepEfficiency: 0.15
+  policyCompliance: 0.15
+  tokenEfficiency: 0.15
+timeoutSeconds: 60
+mockToolResponses:
+  weather-query: '{"city":"北京","temperature":"22°C","condition":"晴","humidity":"45%"}'
+initialContext:
+  role: "生活助手"
+  availableTools: "weather-query"
+tags:
+  - "tool-usage"
+llmJudgeCriteria: "应正确调用天气工具并将结果自然地融入回复"
+expectedTokenBudget: 800
+expectedStepCount: 2
