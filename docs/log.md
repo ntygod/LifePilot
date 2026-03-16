@@ -78,7 +78,7 @@
 
 ---
 
-## 六、浏览器自动化能力完善方案
+## 六、浏览器自动化能力完善方案   --已实现
 
 ### 6.1 现状
 
@@ -121,7 +121,7 @@
 
 ---
 
-## 七、桌面控制能力 — MCP 委托方案
+## 七、桌面控制能力 — MCP 委托方案 --已实现
 
 ### 7.1 方案选型
 
@@ -162,7 +162,7 @@
 
 ---
 
-## 八、本地文件操作能力分析
+## 八、本地文件操作能力分析   -已实现
 
 ### 8.1 当前工具清单（4 个）
 
@@ -269,7 +269,7 @@ Windows 文件系统大小写不敏感，但 `Path.startsWith()` 是大小写敏
 
 ---
 
-## 九、文件操作工具性能分析
+## 九、文件操作工具性能分析   --已优化
 
 ### 9.1 执行链路概览
 
@@ -438,3 +438,41 @@ LLM 生成 function call → Spring AI 解析 → ToolBridgeAgentToolProvider.ca
 10. **ToolResultMeta.tokensUsed 实际填充**：当前始终为 0，应在 formatOutput 后估算实际 Token 数
 
 ---
+
+
+看完你的架构，其实知微已经有了自扩展的基础设施——SkillGapDetector + SkillGenerator + SkillFileWatcher 这条链路。但你说的"帮我写代码，自己扩展出写代码的能力"，这比当前的 Skill 自动生成要更深一层。
+
+让我理清一下你的需求和现有能力之间的差距：
+
+你现有的自扩展链路是：
+
+SkillGapDetector 发现能力缺口
+SkillGenerator 用 LLM 生成 SKILL.md（本质是 prompt 指令 + 推荐工具列表）
+用户确认后持久化，热加载生效
+但 Skill 本质上是"指令注入"——它告诉 Agent 怎么用已有工具去完成任务，并不能创造新的工具能力。如果 Agent 没有"写代码"的底层工具（文件读写 + shell 执行 + 代码理解），光靠 Skill 指令是做不到的。
+
+好消息是，你的 meta 模块已经有了这些底层工具：
+
+文件系统操作（read/write/patch/list/search）
+Shell 执行（shell-exec）
+代码执行（code-execute via SandboxBooter）
+Web 搜索（web-search/web-fetch）
+所以"写代码"这个能力，实际上可以通过一个高质量的 Skill 来编排这些已有工具实现。关键问题是：当前的 SkillGenerator 生成的 Skill 质量够不够？
+
+我觉得你真正想要的自扩展架构分三个层次：
+
+层次	能力	现状	缺口
+L1: Skill 编排	用已有工具组合出新能力	SkillGenerator 已实现	生成质量需要提升，缺少 Skill 模板库
+L2: 工具自造	Agent 自己写 Java 代码创建新 ToolContract	不存在	需要动态工具加载机制
+L3: 能力自举	Agent 判断该用 L1 还是 L2，自动选择路径	不存在	需要能力规划器
+你想做到哪个层次？我的建议是：
+
+L1 是最实际的，投入产出比最高。把 SkillGenerator 做强（更好的 prompt 模板、Skill 模板库、多轮迭代验证），就能覆盖大部分"自扩展"场景。
+L2 很酷但风险高——让 Agent 自己写 Java 工具代码并热加载，安全性和稳定性都是大问题。可以考虑用 Groovy/JavaScript 脚本引擎做轻量级工具扩展，降低风险。
+L3 是终极目标，但依赖 L1 和 L2 都成熟之后。
+你想先从哪个方向开始规划 spec？还是说你有更具体的场景想法？
+
+明白了。L1 的思路很清晰——两条扩展路径：
+
+Skill 自动生成：用已有工具（文件操作 + shell + 代码执行等）组合出新能力，通过 SkillGenerator 生成高质量 SKILL.md
+MCP 服务器自动安装：发现能力缺口时，从 MCP 市场/索引搜索并安装合适的 MCP Server，获得全新的工具能力
