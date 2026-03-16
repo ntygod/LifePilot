@@ -3,6 +3,7 @@ package com.lifepilot.tool.config;
 import com.lifepilot.agent.AgentToolProvider;
 import com.lifepilot.interaction.NoOpUserConfirmationService;
 import com.lifepilot.interaction.UserConfirmationService;
+import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.observability.guardrail.GuardrailEngine;
 import com.lifepilot.observability.trace.TraceRecorder;
 import com.lifepilot.tool.BuiltinTool;
@@ -11,6 +12,7 @@ import com.lifepilot.tool.pipeline.IdempotencyManager;
 import com.lifepilot.tool.pipeline.ToolExecutionPipeline;
 import com.lifepilot.tool.registry.BuiltinToolRegistrar;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -89,8 +91,10 @@ public class ToolAutoConfiguration {
     public AgentToolProvider agentToolProvider(
             DynamicToolRegistry toolRegistry,
             ToolExecutionPipeline pipeline,
+            ObjectMapper objectMapper,
+            MetaProperties metaProperties,
             @Nullable TraceRecorder traceRecorder) {
         log.info("工具桥接层初始化: 注册 ToolBridge 实现的 AgentToolProvider, traceRecorder={}", traceRecorder != null ? "已注入" : "未注入");
-        return new ToolBridgeAgentToolProvider(toolRegistry, pipeline, traceRecorder);
+        return new ToolBridgeAgentToolProvider(toolRegistry, pipeline, objectMapper, metaProperties, traceRecorder);
     }
 }

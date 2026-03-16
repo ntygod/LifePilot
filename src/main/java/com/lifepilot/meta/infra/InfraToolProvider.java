@@ -3,10 +3,7 @@ package com.lifepilot.meta.infra;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.meta.infra.browser.*;
 import com.lifepilot.meta.infra.code.CodeExecuteToolExecutor;
-import com.lifepilot.meta.infra.file.FileListToolExecutor;
-import com.lifepilot.meta.infra.file.FileReadToolExecutor;
-import com.lifepilot.meta.infra.file.FileSearchToolExecutor;
-import com.lifepilot.meta.infra.file.FileWriteToolExecutor;
+import com.lifepilot.meta.infra.file.FileToolProvider;
 import com.lifepilot.meta.infra.env.DateTimeToolExecutor;
 import com.lifepilot.meta.infra.env.SystemInfoToolExecutor;
 import com.lifepilot.meta.infra.env.UserProfileToolExecutor;
@@ -95,6 +92,12 @@ public class InfraToolProvider implements BuiltinSkillProvider {
                         "builtin.file.write",
                         "builtin.file.list",
                         "builtin.file.search",
+                        "builtin.file.append",
+                        "builtin.file.delete",
+                        "builtin.file.copy",
+                        "builtin.file.move",
+                        "builtin.file.info",
+                        "builtin.file.patch",
                         "builtin.interact.choose",
                         "builtin.interact.input",
                         "builtin.interact.notify"
@@ -151,16 +154,9 @@ public class InfraToolProvider implements BuiltinSkillProvider {
 
         toolRegistry.registerBuiltinTool(buildCodeExecuteTool(codeExecuteExecutor));
 
-        // 文件系统工具（4 个）
-        var fileReadExecutor = new FileReadToolExecutor(properties);
-        var fileWriteExecutor = new FileWriteToolExecutor(properties);
-        var fileListExecutor = new FileListToolExecutor(properties);
-        var fileSearchExecutor = new FileSearchToolExecutor(properties);
-
-        toolRegistry.registerBuiltinTool(buildFileReadTool(fileReadExecutor));
-        toolRegistry.registerBuiltinTool(buildFileWriteTool(fileWriteExecutor));
-        toolRegistry.registerBuiltinTool(buildFileListTool(fileListExecutor));
-        toolRegistry.registerBuiltinTool(buildFileSearchTool(fileSearchExecutor));
+        // 文件系统工具（委托给 FileToolProvider）
+        var fileToolProvider = new FileToolProvider(properties);
+        fileToolProvider.buildFileTools().forEach(toolRegistry::registerBuiltinTool);
 
         // 交互控制工具（3 个）
         if (interactionBridge != null) {
@@ -176,7 +172,7 @@ public class InfraToolProvider implements BuiltinSkillProvider {
         }
 
         log.info("基础工具注册完成: count={}, categories=[env, web, reason, shell, browser, code, file, interact]",
-                interactionBridge != null ? 20 : 17);
+                interactionBridge != null ? 26 : 23);
     }
 
     // ─────────────────────────────────────────────
@@ -475,106 +471,8 @@ public class InfraToolProvider implements BuiltinSkillProvider {
     }
 
     // ─────────────────────────────────────────────
-    //  文件系统工具构建
+    //  交互控制工具构建
     // ─────────────────────────────────────────────
-
-    /** 构建文件读取工具 — Files.readString() + 编码检测 + 截断，LOW 风险。 */
-    private BuiltinTool buildFileReadTool(FileReadToolExecutor executor) {
-        return BuiltinTool.builder()
-                .id("builtin.file.read")
-                .name("读取文件")
-                .description("读取指定路径的文件内容，支持编码指定。超过最大读取大小时自动截断")
-                .inputSchema(JsonSchema.of(Map.of(
-                        "type", "object",
-                        "required", List.of("path"),
-                        "properties", Map.of(
-                                "path", Map.of("type", "string",
-                                        "description", "文件路径"),
-                                "encoding", Map.of("type", "string",
-                                        "description", "文件编码（如 UTF-8、GBK），默认 UTF-8")
-                        )
-                )))
-                .riskLevel(RiskLevel.LOW)
-                .tags(INFRA_TAGS)
-                .executor(executor::execute)
-                .build();
-    }
-
-    /** 构建文件写入工具 — 原子写入（临时文件 + rename），MEDIUM 风险。 */
-    private BuiltinTool buildFileWriteTool(FileWriteToolExecutor executor) {
-        return BuiltinTool.builder()
-                .id("builtin.file.write")
-                .name("写入文件")
-                .description("原子写入文件内容（先写临时文件再重命名），支持自动创建父目录。MEDIUM 风险")
-                .inputSchema(JsonSchema.of(Map.of(
-                        "type", "object",
-                        "required", List.of("path", "content"),
-                        "properties", Map.of(
-                                "path", Map.of("type", "string",
-                                        "description", "目标文件路径"),
-                                "content", Map.of("type", "string",
-                                        "description", "要写入的文件内容"),
-                                "createDirectories", Map.of("type", "boolean",
-                                        "description", "父目录不存在时是否自动创建，默认 true")
-                        )
-                )))
-                .riskLevel(RiskLevel.MEDIUM)
-                .idempotent(false)
-                .tags(INFRA_TAGS)
-                .executor(executor::execute)
-                .build();
-    }
-
-    /** 构建文件列表工具 — Files.walk() + 深度限制 + glob 过滤，LOW 风险。 */
-    private BuiltinTool buildFileListTool(FileListToolExecutor executor) {
-        return BuiltinTool.builder()
-                .id("builtin.file.list")
-                .name("列出目录")
-                .description("列出指定目录的文件和子目录，支持深度限制和 glob 模式过滤")
-                .inputSchema(JsonSchema.of(Map.of(
-                        "type", "object",
-                        "required", List.of("path"),
-                        "properties", Map.of(
-                                "path", Map.of("type", "string",
-                                        "description", "目录路径"),
-                                "maxDepth", Map.of("type", "integer",
-                                        "description", "最大遍历深度，默认 3"),
-                                "pattern", Map.of("type", "string",
-                                        "description", "glob 过滤模式（如 *.java），可选")
-                        )
-                )))
-                .riskLevel(RiskLevel.LOW)
-                .tags(INFRA_TAGS)
-                .executor(executor::execute)
-                .build();
-    }
-
-    /** 构建文件搜索工具 — 递归搜索文件内容，正则 + glob，LOW 风险。 */
-    private BuiltinTool buildFileSearchTool(FileSearchToolExecutor executor) {
-        return BuiltinTool.builder()
-                .id("builtin.file.search")
-                .name("搜索文件内容")
-                .description("递归搜索目录下文件内容，支持正则表达式匹配和 glob 文件名过滤")
-                .inputSchema(JsonSchema.of(Map.of(
-                        "type", "object",
-                        "required", List.of("path", "pattern"),
-                        "properties", Map.of(
-                                "path", Map.of("type", "string",
-                                        "description", "搜索起始目录路径"),
-                                "pattern", Map.of("type", "string",
-                                        "description", "搜索内容的正则表达式"),
-                                "filePattern", Map.of("type", "string",
-                                        "description", "文件名 glob 过滤模式（如 *.java），可选"),
-                                "maxResults", Map.of("type", "integer",
-                                        "description", "最大返回结果数，默认 50")
-                        )
-                )))
-                .riskLevel(RiskLevel.LOW)
-                .tags(INFRA_TAGS)
-                .executor(executor::execute)
-                .build();
-    }
-
 
     /** 构建选择工具 — 阻塞等待用户从选项列表中选择，LOW 风险。 */
     private BuiltinTool buildChooseTool(ChooseToolExecutor executor) {

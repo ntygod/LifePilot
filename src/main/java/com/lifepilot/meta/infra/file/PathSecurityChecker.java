@@ -4,9 +4,11 @@ import com.lifepilot.meta.config.MetaProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 
 /**
@@ -26,6 +28,9 @@ import java.util.Optional;
 public class PathSecurityChecker {
 
     private static final Logger log = LoggerFactory.getLogger(PathSecurityChecker.class);
+
+    /** Windows 平台标识，用于路径大小写不敏感比较。 */
+    private static final boolean IS_WINDOWS = File.separatorChar == '\\';
 
     private final List<Path> allowedPaths;
     private final List<Path> deniedPaths;
@@ -83,7 +88,7 @@ public class PathSecurityChecker {
     private Optional<String> doCheck(Path normalized) {
         // 黑名单检查
         for (Path denied : deniedPaths) {
-            if (normalized.startsWith(denied)) {
+            if (pathStartsWith(normalized, denied)) {
                 log.warn("路径被黑名单拒绝: path={}, deniedDir={}", normalized, denied);
                 return Optional.of("路径被安全策略拒绝: 位于黑名单目录 [" + denied + "]");
             }
@@ -91,7 +96,7 @@ public class PathSecurityChecker {
 
         // 白名单检查
         if (!allowedPaths.isEmpty()) {
-            boolean allowed = allowedPaths.stream().anyMatch(normalized::startsWith);
+            boolean allowed = allowedPaths.stream().anyMatch(a -> pathStartsWith(normalized, a));
             if (!allowed) {
                 log.warn("路径不在白名单中: path={}", normalized);
                 return Optional.of("路径被安全策略拒绝: 不在允许的目录列表中");
@@ -100,11 +105,26 @@ public class PathSecurityChecker {
         }
 
         // 白名单为空时，默认允许用户 home 下所有目录
-        if (!normalized.startsWith(userHome)) {
+        if (!pathStartsWith(normalized, userHome)) {
             log.warn("路径不在用户 home 目录下: path={}, userHome={}", normalized, userHome);
             return Optional.of("路径被安全策略拒绝: 不在用户 home 目录下 [" + userHome + "]");
         }
 
         return Optional.empty();
+    }
+
+    /**
+     * 路径前缀比较 — Windows 下大小写不敏感，其他平台使用 {@code Path.startsWith()}。
+     *
+     * @param path   待检查路径
+     * @param prefix 前缀路径
+     * @return 是否以 prefix 开头
+     */
+    private boolean pathStartsWith(Path path, Path prefix) {
+        if (IS_WINDOWS) {
+            return path.toString().toLowerCase(Locale.ROOT)
+                    .startsWith(prefix.toString().toLowerCase(Locale.ROOT));
+        }
+        return path.startsWith(prefix);
     }
 }

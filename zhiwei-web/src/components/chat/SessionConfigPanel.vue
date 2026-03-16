@@ -66,7 +66,7 @@ watch(() => props.knowledgeBaseIds, value => {
 
 function emitUpdate() {
   const temperature = Math.min(2, Math.max(0, localTemperature.value))
-  const maxTokens = Math.min(8000, Math.max(100, localMaxTokens.value))
+  const maxTokens = Math.min(1000000, Math.max(100, localMaxTokens.value))
 
   emit('update', {
     preferredProviderId: localPreferredProviderId.value || undefined,
@@ -192,8 +192,8 @@ function toggleKb(id: string, checked: boolean) {
             type="number"
             class="bg-background/80"
             :model-value="localMaxTokens"
-            :min="100"
-            :max="8000"
+            :min="10000"
+            :max="1000000"
             :step="100"
             @update:model-value="onMaxTokensChange"
           />

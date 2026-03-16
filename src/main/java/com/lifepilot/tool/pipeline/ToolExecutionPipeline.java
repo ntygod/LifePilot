@@ -27,7 +27,7 @@ import java.util.concurrent.*;
  * @author zsg
  * @since 2026-02-24
  */
-public class ToolExecutionPipeline {
+public class ToolExecutionPipeline implements java.io.Closeable {
 
     private static final Logger log = LoggerFactory.getLogger(ToolExecutionPipeline.class);
 
@@ -38,6 +38,7 @@ public class ToolExecutionPipeline {
     private final long retryInitialDelayMs;
     private final double retryMultiplier;
     private final long retryMaxDelayMs;
+    private final ExecutorService virtualThreadExecutor;
 
     public ToolExecutionPipeline(
             DynamicToolRegistry toolRegistry,
@@ -54,6 +55,12 @@ public class ToolExecutionPipeline {
         this.retryInitialDelayMs = retryInitialDelayMs;
         this.retryMultiplier = retryMultiplier;
         this.retryMaxDelayMs = retryMaxDelayMs;
+        this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+    }
+
+    @Override
+    public void close() {
+        virtualThreadExecutor.close();
     }
 
     /**
@@ -221,7 +228,7 @@ public class ToolExecutionPipeline {
         try {
             CompletableFuture<ToolResult> future = CompletableFuture.supplyAsync(
                     () -> tool.execute(input),
-                    Executors.newVirtualThreadPerTaskExecutor()
+                    virtualThreadExecutor
             );
             return future.orTimeout(timeout.toMillis(), TimeUnit.MILLISECONDS).join();
         } catch (CompletionException e) {
