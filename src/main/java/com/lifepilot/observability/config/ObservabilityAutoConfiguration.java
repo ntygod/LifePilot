@@ -12,6 +12,7 @@ import com.lifepilot.observability.trace.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -156,5 +157,23 @@ public class ObservabilityAutoConfiguration {
                                                     EvaluationCore evaluationCore) {
         log.info("可观测性: 注册 TrajectoryEvaluator 轨迹评估引擎");
         return new TrajectoryEvaluator(jdbcTemplate, properties, evaluationCore);
+    }
+
+    /**
+     * 将 TrajectoryEvaluator 注册为 TraceRecorder 的 onTraceEnd 监听器，
+     * 使每次追踪结束后自动触发在线评估并持久化结果。
+     */
+    @Bean
+    @ConditionalOnBean({TraceRecorder.class, TrajectoryEvaluator.class})
+    public AutoCloseable trajectoryEvaluatorListener(TraceRecorder traceRecorder,
+                                                      TrajectoryEvaluator evaluator) {
+        log.info("可观测性: 注册 TrajectoryEvaluator 为 TraceEnd 监听器");
+        return traceRecorder.onTraceEnd(trace -> {
+            try {
+                evaluator.evaluateOnline(trace);
+            } catch (Exception e) {
+                log.warn("轨迹在线评估失败: traceId={}, error={}", trace.traceId(), e.getMessage());
+            }
+        });
     }
 }

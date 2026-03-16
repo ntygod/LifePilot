@@ -1254,6 +1254,7 @@ export interface ParsedDetail {
 }
 
 
+
 // ========== 记忆管理类型定义 ==========
 
 /** 记忆统计概览（对应 MemoryStatsDto） */
@@ -1312,7 +1313,7 @@ export interface EntityDetail {
   updatedAt: string
 }
 
-/** 实体创建请求 */
+/** 实体创建请求（对应 EntityCreateRequest） */
 export interface EntityCreateRequest {
   name: string
   type: string
@@ -1321,7 +1322,7 @@ export interface EntityCreateRequest {
   importanceScore?: number
 }
 
-/** 实体更新请求 */
+/** 实体更新请求（对应 EntityUpdateRequest） */
 export interface EntityUpdateRequest {
   description?: string
   properties?: Record<string, unknown>
@@ -1476,7 +1477,7 @@ export interface ForgettingLogListParams {
   strategy?: string
 }
 
-/** 实体类型枚举映射 */
+/** 实体类型枚举映射（用于筛选下拉框） */
 export const ENTITY_TYPES = [
   { value: 'PERSON', label: '人物' },
   { value: 'ORGANIZATION', label: '组织' },

@@ -34,7 +34,7 @@ public class SandboxConfigProperties {
 
     /** 语言运行时路径，默认 python3 / node / bash。 */
     private Map<String, String> runtimePaths = new HashMap<>(Map.of(
-        "python", "python3",
+        "python", "python",
         "javascript", "node",
         "shell", "bash"
     ));

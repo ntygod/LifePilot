@@ -10,7 +10,7 @@ import java.util.Optional;
  */
 public enum Language {
 
-    PYTHON("python3", ".py"),
+    PYTHON("python", ".py"),
     JAVASCRIPT("node", ".js"),
     SHELL("bash", ".sh");
 

@@ -170,12 +170,14 @@ public class ExecutionMiddleware implements GatewayMiddleware {
     }
 
     private AgentRequest toAgentRequest(GatewayMessage message) {
+        // 读取会话级 maxTokens 配置，构建 Budget
+        var budget = resolveSessionBudget(message.sessionId());
         return new AgentRequest(
                 message.contentAsText(),
                 message.sessionId(),
                 message.channelType().value(),
                 null,
-                null,
+                budget,
                 null,
                 0,
                 resolvePreferredProvider(message),
@@ -221,6 +223,31 @@ public class ExecutionMiddleware implements GatewayMiddleware {
     private String extractPreferredProvider(GatewayMessage message) {
         if (message.channelMetadata() instanceof ChannelMetadata.WebMetadata webMetadata) {
             return SessionConfigKeys.normalizeString(webMetadata.preferredProvider());
+        }
+        return null;
+    }
+
+    /**
+     * 从会话配置读取 maxTokens，构建 Budget。无配置时返回 null（使用默认值）。
+     */
+    @Nullable
+    private com.lifepilot.agent.model.Budget resolveSessionBudget(@Nullable String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return null;
+        }
+        try {
+            Map<String, Object> config = chatSessionRepository.getConfig(sessionId);
+            if (config == null || !config.containsKey(SessionConfigKeys.MAX_TOKENS)) {
+                return null;
+            }
+            Object maxTokensObj = config.get(SessionConfigKeys.MAX_TOKENS);
+            if (maxTokensObj instanceof Number num && num.intValue() > 0) {
+                return com.lifepilot.agent.model.Budget.defaultBudget()
+                        .toBuilder().maxTokens(num.intValue()).build();
+            }
+        } catch (Exception e) {
+            log.debug("读取会话 maxTokens 配置失败，使用默认值: sessionId={}, error={}",
+                    sessionId, e.getMessage());
         }
         return null;
     }
