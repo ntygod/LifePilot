@@ -12,6 +12,7 @@ import com.lifepilot.eval.scenario.ScenarioLoader;
 import com.lifepilot.eval.scenario.ScenarioSerializer;
 import com.lifepilot.eval.store.EvalStore;
 import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -70,8 +71,9 @@ public class EvalAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public LlmJudge llmJudge(LlmRouter llmRouter, EvalConfigProperties config) {
-        return new LlmJudge(llmRouter, config);
+    public LlmJudge llmJudge(LlmRouter llmRouter, EvalConfigProperties config,
+                             PromptRegistry promptRegistry) {
+        return new LlmJudge(llmRouter, config, promptRegistry);
     }
 
     // ==================== 持久化与报告 ====================

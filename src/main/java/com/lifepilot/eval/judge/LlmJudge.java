@@ -4,10 +4,12 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.lifepilot.eval.config.EvalConfigProperties;
 import com.lifepilot.llm.LlmRequest;
 import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
 
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -29,10 +31,12 @@ public class LlmJudge {
 
     private final LlmRouter llmRouter;
     private final EvalConfigProperties config;
+    private final PromptRegistry promptRegistry;
 
-    public LlmJudge(LlmRouter llmRouter, EvalConfigProperties config) {
+    public LlmJudge(LlmRouter llmRouter, EvalConfigProperties config, PromptRegistry promptRegistry) {
         this.llmRouter = llmRouter;
         this.config = config;
+        this.promptRegistry = promptRegistry;
         log.info("LlmJudge 初始化完成: scene={}", config.getLlmJudge().getScene());
     }
 
@@ -148,41 +152,20 @@ public class LlmJudge {
      * 构造完整评估 Prompt。
      */
     private String buildPrompt(String actualOutput, String expectedPattern, String criteria) {
-        return """
-                你是一个 AI 输出质量评判专家。请根据以下信息评估 Agent 的输出质量。
-                
-                ## 评估标准
-                %s
-                
-                ## 期望输出模式
-                %s
-                
-                ## Agent 实际输出
-                %s
-                
-                ## 要求
-                请以 JSON 格式返回评估结果，包含以下字段：
-                - "score": 评分，范围 0.0 到 1.0（0.0 表示完全不符合，1.0 表示完全符合）
-                - "justification": 评判理由，简要说明评分依据
-                
-                示例：
-                {"score": 0.85, "justification": "输出包含了关键信息，但缺少部分细节"}
-                """.formatted(criteria, expectedPattern, actualOutput);
+        return promptRegistry.render("eval/judge-full", Map.of(
+                "criteria", criteria,
+                "expectedPattern", expectedPattern,
+                "actualOutput", actualOutput));
     }
 
     /**
      * 构造简化 Prompt（仅要求返回数字评分）。
      */
     private String buildSimplifiedPrompt(String actualOutput, String expectedPattern, String criteria) {
-        return """
-                请评估以下 Agent 输出的质量，只返回一个 0.0 到 1.0 之间的数字评分。
-                
-                评估标准：%s
-                期望模式：%s
-                实际输出：%s
-                
-                请只返回一个数字（如 0.75），不要返回其他内容。
-                """.formatted(criteria, expectedPattern, actualOutput);
+        return promptRegistry.render("eval/judge-simplified", Map.of(
+                "criteria", criteria,
+                "expectedPattern", expectedPattern,
+                "actualOutput", actualOutput));
     }
 
     /**
