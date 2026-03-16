@@ -42,6 +42,9 @@ public class MetaProperties {
     @Data
     public static class Infra {
 
+        /** 全局工具输出最大字符数，默认 30000。 */
+        private int maxToolOutputChars = 30000;
+
         /** Web 搜索配置。 */
         private WebSearch webSearch = new WebSearch();
 
@@ -194,6 +197,12 @@ public class MetaProperties {
 
             /** 最大读取大小（字节），默认 1048576（1MB）。 */
             private int maxReadSize = 1048576;
+
+            /** file-read 默认最大返回字符数，默认 30000。 */
+            private int defaultMaxChars = 30000;
+
+            /** file-list 默认最大返回条目数，默认 200。 */
+            private int defaultMaxEntries = 200;
 
             /** 允许访问的目录白名单，空列表表示用户 home 下所有目录。 */
             private List<String> allowedDirectories = List.of();
