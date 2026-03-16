@@ -113,7 +113,8 @@ public class SkillToolLoader {
                 riskLevel,
                 idempotent,
                 budget,
-                tags != null ? tags : List.of()
+                tags != null ? tags : List.of(),
+                id
         );
     }
 

@@ -255,7 +255,7 @@ public class ToolController {
             @SuppressWarnings("unchecked")
             List<String> tags = (List<String>) request.getOrDefault("tags", List.of());
 
-            // 创建 SkillTool（当前版本不支持直接执行，仅用于注册和显示）
+            // 创建 SkillTool，skillId 默认使用 Tool ID
             SkillTool tool = new SkillTool(
                     id,
                     name,
@@ -265,7 +265,8 @@ public class ToolController {
                     riskLevel,
                     idempotent,
                     budget,
-                    tags != null ? tags : List.of()
+                    tags != null ? tags : List.of(),
+                    id
             );
 
             // 持久化到文件系统
@@ -352,7 +353,8 @@ public class ToolController {
                     riskLevel,
                     idempotent,
                     budget,
-                    tags != null ? tags : List.of()
+                    tags != null ? tags : List.of(),
+                    id
             );
 
             // 更新文件系统
