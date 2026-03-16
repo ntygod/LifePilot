@@ -436,10 +436,11 @@ public class MemoryAutoConfiguration {
             JdbcTemplate jdbcTemplate,
             ProceduralMemory proceduralMemory,
             LlmRouter llmRouter,
-            MemoryProperties properties) {
+            MemoryProperties properties,
+            PromptRegistry promptRegistry) {
         log.info("记忆系统: 注册 EpisodicToProceduralConsolidator");
         return new EpisodicToProceduralConsolidator(jdbcTemplate, proceduralMemory,
-                llmRouter, properties);
+                llmRouter, properties, promptRegistry);
     }
 
     @Bean
