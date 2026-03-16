@@ -145,6 +145,6 @@ class DynamicToolRegistryTest {
         return new McpTool(id, name, "测试 MCP 工具",
                 JsonSchema.empty(), JsonSchema.empty(),
                 RiskLevel.LOW, true, ToolBudget.MCP_DEFAULT,
-                List.of(), "test-server", id, null);
+                List.of(), "test-server", id, "test-server");
     }
 }
