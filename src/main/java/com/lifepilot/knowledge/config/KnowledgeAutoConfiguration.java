@@ -202,8 +202,9 @@ public class KnowledgeAutoConfiguration {
     @ConditionalOnMissingBean
     public KnowledgeExtractionPipeline knowledgeExtractionPipeline(LlmRouter llmRouter,
                                                                     SemanticMemory semanticMemory,
-                                                                    KnowledgeBaseProperties props) {
-        return new KnowledgeExtractionPipeline(llmRouter, semanticMemory, props.extraction());
+                                                                    KnowledgeBaseProperties props,
+                                                                    PromptRegistry promptRegistry) {
+        return new KnowledgeExtractionPipeline(llmRouter, semanticMemory, props.extraction(), promptRegistry);
     }
 
     // ---- 查询增强（可选） ----
@@ -212,11 +213,12 @@ public class KnowledgeAutoConfiguration {
     @ConditionalOnMissingBean
     @ConditionalOnProperty(prefix = "lifepilot.knowledge.query-enhancer", name = "mode",
             matchIfMissing = false)
-    public QueryEnhancer queryEnhancer(LlmRouter llmRouter, KnowledgeBaseProperties props) {
+    public QueryEnhancer queryEnhancer(LlmRouter llmRouter, KnowledgeBaseProperties props,
+                                       PromptRegistry promptRegistry) {
         if ("none".equals(props.queryEnhancer().mode())) {
             return null;
         }
-        return new QueryEnhancer(llmRouter, props.queryEnhancer());
+        return new QueryEnhancer(llmRouter, props.queryEnhancer(), promptRegistry);
     }
 
     // ---- Reranker 配置提供者 + Reranker（始终创建，运行时检查 enabled） ----

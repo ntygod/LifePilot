@@ -3,8 +3,8 @@ package com.lifepilot.skill.generation;
 import com.lifepilot.llm.LlmRequest;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.LlmRouter;
-import com.lifepilot.llm.LlmScene;
 import com.lifepilot.llm.LlmUnavailableException;
+import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.skill.config.SkillConfigProperties;
 import com.lifepilot.skill.model.SkillDefinition;
 import com.lifepilot.skill.registry.SkillRegistry;
@@ -35,13 +35,17 @@ class SkillGapDetectorTest {
     @Mock
     private LlmRouter llmRouter;
 
+    @Mock
+    private PromptRegistry promptRegistry;
+
     private SkillConfigProperties config;
     private SkillGapDetector detector;
 
     @BeforeEach
     void setUp() {
         config = new SkillConfigProperties();
-        detector = new SkillGapDetector(skillRegistry, llmRouter, config);
+        lenient().when(promptRegistry.render(anyString(), anyMap())).thenReturn("mock prompt");
+        detector = new SkillGapDetector(skillRegistry, llmRouter, config, promptRegistry);
     }
 
     // ─────────────────────────────────────────────

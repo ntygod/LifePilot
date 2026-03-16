@@ -4,10 +4,12 @@ import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
 import com.lifepilot.llm.LlmRequest;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.LlmUnavailableException;
+import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.*;
 
@@ -31,16 +33,20 @@ public class QueryEnhancer {
 
     private final LlmRouter llmRouter;
     private final KnowledgeBaseProperties.QueryEnhancer config;
+    private final PromptRegistry promptRegistry;
 
     /**
      * 构造查询增强器。
      *
-     * @param llmRouter LLM 路由器
-     * @param config    查询增强配置
+     * @param llmRouter      LLM 路由器
+     * @param config         查询增强配置
+     * @param promptRegistry 提示词模板注册表
      */
-    public QueryEnhancer(LlmRouter llmRouter, KnowledgeBaseProperties.QueryEnhancer config) {
+    public QueryEnhancer(LlmRouter llmRouter, KnowledgeBaseProperties.QueryEnhancer config,
+                         PromptRegistry promptRegistry) {
         this.llmRouter = llmRouter;
         this.config = config;
+        this.promptRegistry = promptRegistry;
         log.debug("初始化 QueryEnhancer: mode={}, timeoutMs={}, maxRewrites={}",
                 config.mode(), config.timeoutMs(), config.maxRewrites());
     }
@@ -76,13 +82,9 @@ public class QueryEnhancer {
      * 查询改写：调用 LLM 生成改写变体。
      */
     private EnhancedQuery rewriteQuery(String originalQuery) {
-        var prompt = """
-                请将以下用户查询改写为 %d 个不同的搜索查询变体，保持原始语义但使用不同的表达方式。
-                返回 JSON 数组格式：["改写1", "改写2", ...]
-                
-                用户查询：%s
-                
-                请直接输出 JSON 数组，不要包含任何解释。""".formatted(config.maxRewrites(), originalQuery);
+        var prompt = promptRegistry.render("knowledge/query-rewrite", Map.of(
+                "maxRewrites", String.valueOf(config.maxRewrites()),
+                "originalQuery", originalQuery));
 
         String responseText = callWithTimeout(prompt);
         List<String> rewrites = parseJsonArray(responseText);
@@ -102,13 +104,8 @@ public class QueryEnhancer {
      * HyDE：生成假设性文档片段并获取 Embedding。
      */
     private EnhancedQuery hydeQuery(String originalQuery) {
-        var prompt = """
-                请根据以下查询，撰写一段 200-300 字的假设性文档片段，\
-                该片段应该是回答该查询的理想文档内容。
-                
-                查询：%s
-                
-                请直接输出文档片段，不要包含任何前缀或解释。""".formatted(originalQuery);
+        var prompt = promptRegistry.render("knowledge/hyde-generation", Map.of(
+                "originalQuery", originalQuery));
 
         String hypotheticalDoc = callWithTimeout(prompt);
         float[] embedding = llmRouter.embed(hypotheticalDoc);

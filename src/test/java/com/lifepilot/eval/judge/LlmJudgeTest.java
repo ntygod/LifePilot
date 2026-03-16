@@ -5,6 +5,7 @@ import com.lifepilot.llm.LlmRequest;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.LlmUnavailableException;
+import com.lifepilot.prompt.PromptRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -13,7 +14,6 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
-
 /**
  * LlmJudge 降级与重试单元测试。
  *
@@ -26,13 +26,17 @@ class LlmJudgeTest {
 
     private LlmRouter llmRouter;
     private EvalConfigProperties config;
+    private PromptRegistry promptRegistry;
     private LlmJudge judge;
 
     @BeforeEach
     void setUp() {
         llmRouter = mock(LlmRouter.class);
         config = new EvalConfigProperties();
-        judge = new LlmJudge(llmRouter, config);
+        promptRegistry = mock(PromptRegistry.class);
+        // 模板渲染返回简单提示词，不影响 LLM 调用逻辑测试
+        when(promptRegistry.render(anyString(), anyMap())).thenReturn("mock prompt");
+        judge = new LlmJudge(llmRouter, config, promptRegistry);
     }
 
     /** 构建 LlmResponse 辅助方法。 */
@@ -44,28 +48,26 @@ class LlmJudgeTest {
 
     @Test
     void 正常JSON响应_解析成功() {
-        var response = buildResponse("""
-                {"score": 0.85, "justification": "输出质量良好"}
-                """, 50, 30);
-        when(llmRouter.call(any(LlmRequest.class))).thenReturn(response);
+        // callEntity 直接返回结构化结果
+        var judgeResponse = new LlmJudge.JudgeResponse(0.85, "输出质量良好");
+        when(llmRouter.callEntity(any(LlmRequest.class), eq(LlmJudge.JudgeResponse.class)))
+                .thenReturn(judgeResponse);
 
         var result = judge.judge("实际输出", "期望模式", "评估标准");
 
         assertEquals(0.85, result.score(), 0.0001);
         assertEquals("输出质量良好", result.justification());
-        assertEquals(80, result.tokensUsed());
+        assertEquals(0, result.tokensUsed()); // callEntity 不返回 token 使用量
         assertFalse(result.fallback());
-        verify(llmRouter, times(1)).call(any(LlmRequest.class));
+        verify(llmRouter, never()).call(any(LlmRequest.class));
     }
 
     @Test
     void JSON包裹在markdown代码块中_解析成功() {
-        var response = buildResponse("""
-                ```json
-                {"score": 0.9, "justification": "非常好的回答"}
-                ```
-                """, 40, 20);
-        when(llmRouter.call(any(LlmRequest.class))).thenReturn(response);
+        // callEntity 直接返回结构化结果（无需关心 markdown 包裹）
+        var judgeResponse = new LlmJudge.JudgeResponse(0.9, "非常好的回答");
+        when(llmRouter.callEntity(any(LlmRequest.class), eq(LlmJudge.JudgeResponse.class)))
+                .thenReturn(judgeResponse);
 
         var result = judge.judge("实际输出", "期望模式", "评估标准");
 
@@ -75,7 +77,10 @@ class LlmJudgeTest {
     }
 
     @Test
-    void 纯数字响应_通过正则提取评分() {
+    void callEntity返回null_降级到手动解析_纯数字响应() {
+        // callEntity 返回 null，降级到 call() 手动解析
+        when(llmRouter.callEntity(any(LlmRequest.class), eq(LlmJudge.JudgeResponse.class)))
+                .thenReturn(null);
         var response = buildResponse("0.65", 30, 10);
         when(llmRouter.call(any(LlmRequest.class))).thenReturn(response);
 
@@ -89,6 +94,9 @@ class LlmJudgeTest {
 
     @Test
     void LLM调用异常_返回降级结果() {
+        // callEntity 抛异常，降级到 fallbackToManualParse，call() 也抛异常
+        when(llmRouter.callEntity(any(LlmRequest.class), eq(LlmJudge.JudgeResponse.class)))
+                .thenReturn(null);
         when(llmRouter.call(any(LlmRequest.class)))
                 .thenThrow(new LlmUnavailableException("连接超时", "eval-judge", List.of("provider-1")));
 
@@ -98,13 +106,14 @@ class LlmJudgeTest {
         assertTrue(result.justification().contains("LLM 调用失败"));
         assertEquals(0, result.tokensUsed());
         assertTrue(result.fallback());
-        verify(llmRouter, times(1)).call(any(LlmRequest.class));
     }
 
     // --- 重试场景 ---
 
     @Test
-    void 不可解析响应_重试成功() {
+    void callEntity返回null_手动解析失败_重试成功() {
+        when(llmRouter.callEntity(any(LlmRequest.class), eq(LlmJudge.JudgeResponse.class)))
+                .thenReturn(null);
         var gibberishResponse = buildResponse("这是一段无法解析为评分的文本，没有任何数字", 50, 30);
         var retryResponse = buildResponse("0.75", 20, 10);
         when(llmRouter.call(any(LlmRequest.class)))
@@ -120,7 +129,9 @@ class LlmJudgeTest {
     }
 
     @Test
-    void 重试也失败_返回降级结果() {
+    void callEntity返回null_手动解析和重试都失败_返回降级结果() {
+        when(llmRouter.callEntity(any(LlmRequest.class), eq(LlmJudge.JudgeResponse.class)))
+                .thenReturn(null);
         var gibberishResponse1 = buildResponse("完全无法解析的乱码内容，没有数字", 50, 30);
         var gibberishResponse2 = buildResponse("依然无法解析，还是没有数字", 20, 10);
         when(llmRouter.call(any(LlmRequest.class)))
@@ -139,11 +150,10 @@ class LlmJudgeTest {
     // --- 评分裁剪场景 ---
 
     @Test
-    void 评分超过1_裁剪到1() {
-        var response = buildResponse("""
-                {"score": 1.5, "justification": "超出范围"}
-                """, 40, 20);
-        when(llmRouter.call(any(LlmRequest.class))).thenReturn(response);
+    void callEntity评分超过1_裁剪到1() {
+        var judgeResponse = new LlmJudge.JudgeResponse(1.5, "超出范围");
+        when(llmRouter.callEntity(any(LlmRequest.class), eq(LlmJudge.JudgeResponse.class)))
+                .thenReturn(judgeResponse);
 
         var result = judge.judge("实际输出", "期望模式", "评估标准");
 
@@ -152,11 +162,10 @@ class LlmJudgeTest {
     }
 
     @Test
-    void 评分为负数_裁剪到0() {
-        var response = buildResponse("""
-                {"score": -0.3, "justification": "负数评分"}
-                """, 40, 20);
-        when(llmRouter.call(any(LlmRequest.class))).thenReturn(response);
+    void callEntity评分为负数_裁剪到0() {
+        var judgeResponse = new LlmJudge.JudgeResponse(-0.3, "负数评分");
+        when(llmRouter.callEntity(any(LlmRequest.class), eq(LlmJudge.JudgeResponse.class)))
+                .thenReturn(judgeResponse);
 
         var result = judge.judge("实际输出", "期望模式", "评估标准");
 

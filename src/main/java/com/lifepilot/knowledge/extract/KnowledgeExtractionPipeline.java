@@ -10,6 +10,7 @@ import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
 import com.lifepilot.memory.semantic.TemporalRelation;
+import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,6 +34,7 @@ public class KnowledgeExtractionPipeline {
     private final LlmRouter llmRouter;
     private final SemanticMemory semanticMemory;
     private final KnowledgeBaseProperties.Extraction config;
+    private final PromptRegistry promptRegistry;
 
     /**
      * 构造知识提取管线。
@@ -40,13 +42,16 @@ public class KnowledgeExtractionPipeline {
      * @param llmRouter      LLM 路由器
      * @param semanticMemory 语义记忆
      * @param config         提取配置
+     * @param promptRegistry 提示词模板注册表
      */
     public KnowledgeExtractionPipeline(LlmRouter llmRouter,
                                         SemanticMemory semanticMemory,
-                                        KnowledgeBaseProperties.Extraction config) {
+                                        KnowledgeBaseProperties.Extraction config,
+                                        PromptRegistry promptRegistry) {
         this.llmRouter = llmRouter;
         this.semanticMemory = semanticMemory;
         this.config = config;
+        this.promptRegistry = promptRegistry;
         log.info("KnowledgeExtractionPipeline 初始化完成: enabled={}, batchSize={}",
                 config.enabled(), config.batchSize());
     }
@@ -151,19 +156,8 @@ public class KnowledgeExtractionPipeline {
     }
 
     private String buildExtractionPrompt(String content) {
-        return """
-                请从以下文本中提取实体和关系。
-                
-                实体类型包括：PERSON, ORGANIZATION, PLACE, EVENT, PROJECT, TOPIC, PREFERENCE, HABIT, GOAL, SKILL, CUSTOM
-                
-                请以 JSON 格式返回：
-                {
-                  "entities": [{"name": "实体名", "type": "PERSON", "description": "描述"}],
-                  "relations": [{"sourceEntity": "实体A", "targetEntity": "实体B", "relationType": "关系类型", "strength": 0.8}]
-                }
-                
-                文本内容：
-                %s""".formatted(content);
+        return promptRegistry.render("knowledge/entity-extraction", Map.of(
+                "content", content));
     }
 
     private TemporalEntity toTemporalEntity(ExtractionResponse.EntityInfo info) {
