@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.options.SelectOption;
+import com.microsoft.playwright.options.WaitForSelectorState;
 import jakarta.annotation.Nullable;
 
 import java.util.Base64;
@@ -231,6 +232,49 @@ public class PlaywrightPageWrapper {
         } catch (JsonProcessingException e) {
             return result.toString();
         }
+    }
+
+    /**
+     * 获取无障碍树快照（ARIA snapshot）。
+     *
+     * <p>使用 Playwright 1.49+ 的 {@code locator.ariaSnapshot()} API，
+     * 返回 YAML 格式的无障碍树表示。</p>
+     *
+     * @param rootSelector 子树根节点 CSS 选择器，为 null 时返回整页快照
+     * @param maxDepth     最大深度（保留参数，供未来扩展）
+     * @return YAML 格式的无障碍树快照字符串
+     */
+    public String accessibilitySnapshot(@Nullable String rootSelector, int maxDepth) {
+        touch();
+        ensureOpen();
+        try {
+            var locator = rootSelector != null
+                    ? page.locator(rootSelector)
+                    : page.locator("body");
+            return locator.ariaSnapshot();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    /**
+     * 等待指定选择器的元素满足条件。
+     *
+     * @param selector  CSS 选择器
+     * @param state     等待状态："visible"、"hidden"、"attached"
+     * @param timeoutMs 超时时间（毫秒）
+     */
+    public void waitForSelector(String selector, String state, int timeoutMs) {
+        touch();
+        ensureOpen();
+        WaitForSelectorState wsState = switch (state.toLowerCase()) {
+            case "hidden" -> WaitForSelectorState.HIDDEN;
+            case "attached" -> WaitForSelectorState.ATTACHED;
+            default -> WaitForSelectorState.VISIBLE;
+        };
+        page.waitForSelector(selector, new Page.WaitForSelectorOptions()
+                .setState(wsState)
+                .setTimeout(timeoutMs));
     }
 
     /** 检查 Page 是否已关闭，已关闭时抛出异常。 */
