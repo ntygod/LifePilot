@@ -41,6 +41,7 @@ public class FileToolProvider {
         tools.add(buildFileListTool(new FileListToolExecutor(properties)));
         tools.add(buildFileSearchTool(new FileSearchToolExecutor(properties)));
         tools.add(buildFileAppendTool(new FileAppendToolExecutor(properties)));
+        tools.add(buildFileDeleteTool(new FileDeleteToolExecutor(properties)));
 
         return List.copyOf(tools);
     }
@@ -137,6 +138,29 @@ public class FileToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .tags(INFRA_TAGS)
+                .executor(executor::execute)
+                .build();
+    }
+
+    /** 构建文件删除工具。 */
+    private BuiltinTool buildFileDeleteTool(FileDeleteToolExecutor executor) {
+        return BuiltinTool.builder()
+                .id("builtin.file.delete")
+                .name("删除文件")
+                .description("删除文件或目录，支持递归删除非空目录。HIGH 风险，每次执行需用户确认")
+                .inputSchema(JsonSchema.of(Map.of(
+                        "type", "object",
+                        "required", List.of("path"),
+                        "properties", Map.of(
+                                "path", Map.of("type", "string",
+                                        "description", "目标文件或目录路径"),
+                                "recursive", Map.of("type", "boolean",
+                                        "description", "是否递归删除目录内容，默认 false")
+                        )
+                )))
+                .riskLevel(RiskLevel.HIGH)
+                .idempotent(false)
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
