@@ -181,7 +181,7 @@ public class EpisodicToProceduralConsolidator {
     private List<TraceInfo> queryEligibleTraces(Instant windowStart, int minExecutionSteps) {
         return jdbcTemplate.query(
                 """
-                SELECT t.id, t.goal, t.created_at
+                SELECT t.id, t.user_message, t.created_at
                 FROM agent_traces t
                 WHERE t.success = 1
                   AND t.created_at > ?
@@ -190,7 +190,7 @@ public class EpisodicToProceduralConsolidator {
                 """,
                 (rs, rowNum) -> new TraceInfo(
                         rs.getString("id"),
-                        rs.getString("goal"),
+                        rs.getString("user_message"),
                         rs.getString("created_at")),
                 windowStart.toString(), minExecutionSteps);
     }
