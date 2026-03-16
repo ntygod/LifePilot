@@ -315,20 +315,10 @@ public class ChunkContextEnricher {
      * 构建 LLM 提示词。
      */
     private String buildPrompt(DocumentChunk chunk, String documentSummary) {
-        return """
-                请为以下文档分块生成一段简短的上下文描述（不超过 %d 个 Token），\
-                说明该分块在文档中的位置和主题，帮助提升检索准确性。
-                
-                文档摘要：%s
-                
-                分块内容：
-                %s
-                
-                请直接输出上下文描述，不要包含任何前缀或解释。""".formatted(
-                config.maxPrefixTokens(),
-                documentSummary,
-                chunk.content()
-        );
+        return promptRegistry.render("knowledge/chunk-context-single", Map.of(
+                "maxPrefixTokens", String.valueOf(config.maxPrefixTokens()),
+                "documentSummary", documentSummary,
+                "chunkContent", chunk.content()));
     }
 
     /**
