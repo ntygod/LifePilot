@@ -109,7 +109,7 @@ public class FileToolProvider {
         return BuiltinTool.builder()
                 .id("builtin.file.list")
                 .name("列出目录")
-                .description("列出指定目录的文件和子目录，支持深度限制和 glob 模式过滤")
+                .description("列出指定目录的文件和子目录，支持深度限制、glob 过滤、maxEntries 截断和目录优先排序")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("path"),
@@ -119,7 +119,9 @@ public class FileToolProvider {
                                 "maxDepth", Map.of("type", "integer",
                                         "description", "最大遍历深度，默认 3"),
                                 "pattern", Map.of("type", "string",
-                                        "description", "glob 过滤模式（如 *.java），可选")
+                                        "description", "glob 过滤模式（如 *.java），可选"),
+                                "maxEntries", Map.of("type", "integer",
+                                        "description", "最大返回条目数，默认 200")
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
