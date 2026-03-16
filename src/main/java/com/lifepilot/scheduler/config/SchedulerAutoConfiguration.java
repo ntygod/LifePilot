@@ -1,8 +1,10 @@
 package com.lifepilot.scheduler.config;
 
 import com.lifepilot.notification.NotificationService;
+import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.scheduler.ScheduledTaskRepository;
 import com.lifepilot.scheduler.ScheduledTaskService;
+import com.lifepilot.scheduler.ScheduledTaskSkillProvider;
 import com.lifepilot.scheduler.TaskActionExecutor;
 import com.lifepilot.scheduler.TaskScheduler;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
@@ -76,6 +78,14 @@ public class SchedulerAutoConfiguration {
                                                       TaskScheduler taskScheduler) {
         log.info("调度器模块: 注册 ScheduledTaskService");
         return new ScheduledTaskService(scheduledTaskRepository, taskScheduler);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ScheduledTaskSkillProvider scheduledTaskSkillProvider(ScheduledTaskService scheduledTaskService,
+                                                                  PromptRegistry promptRegistry) {
+        log.info("调度器模块: 注册 ScheduledTaskSkillProvider");
+        return new ScheduledTaskSkillProvider(scheduledTaskService, promptRegistry);
     }
 
     /**
