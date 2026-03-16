@@ -5,6 +5,8 @@ import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -13,7 +15,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>核心职责：
  * <ul>
  *   <li>懒初始化 Playwright Browser 实例</li>
- *   <li>会话级 Page 复用（sessionId → Page）</li>
+ *   <li>会话级多标签页管理（sessionId → SessionPages）</li>
  *   <li>空闲超时自动关闭</li>
  *   <li>Playwright 未安装时优雅降级</li>
  * </ul>
@@ -41,8 +43,19 @@ public class BrowserSessionManager {
     @Nullable
     private volatile Object browserInstance;
 
-    /** 会话级 Page 复用：sessionId → PlaywrightPageWrapper。 */
-    private final ConcurrentHashMap<String, PlaywrightPageWrapper> sessions = new ConcurrentHashMap<>();
+    /** 会话级多标签页管理：sessionId → SessionPages。 */
+    private final ConcurrentHashMap<String, SessionPages> sessions = new ConcurrentHashMap<>();
+
+    /** 会话内多标签页容器。 */
+    private static class SessionPages {
+        final ConcurrentHashMap<String, PlaywrightPageWrapper> pages = new ConcurrentHashMap<>();
+        volatile String activeTabId;
+
+        SessionPages(String tabId, PlaywrightPageWrapper page) {
+            this.pages.put(tabId, page);
+            this.activeTabId = tabId;
+        }
+    }
 
     public BrowserSessionManager(MetaProperties properties) {
         this.browserConfig = properties.getInfra().getBrowser();
@@ -90,40 +103,133 @@ public class BrowserSessionManager {
      * 获取或创建指定会话的 Page。
      *
      * <p>首次调用时懒初始化 Playwright 和 Browser 实例。
-     * 同一 sessionId 复用已有 Page，并更新最后访问时间。</p>
+     * 同一 sessionId 复用已有活跃标签页的 Page，并更新最后访问时间。</p>
      *
      * @param sessionId 会话 ID
-     * @return Page 包装器
+     * @return 活跃标签页的 Page 包装器
      * @throws IllegalStateException 如果 Playwright 不可用
      */
     public PlaywrightPageWrapper getOrCreatePage(String sessionId) {
         if (!isAvailable()) {
             throw new IllegalStateException(UNAVAILABLE_MESSAGE);
         }
-        return sessions.compute(sessionId, (id, existing) -> {
-            if (existing != null && !existing.isClosed()) {
-                existing.touch();
-                return existing;
+        var sessionPages = sessions.compute(sessionId, (id, existing) -> {
+            if (existing != null && existing.pages.containsKey(existing.activeTabId)) {
+                var activePage = existing.pages.get(existing.activeTabId);
+                if (!activePage.isClosed()) {
+                    activePage.touch();
+                    return existing;
+                }
             }
-            // 创建新 Page
+            // 创建新会话或替换已关闭的会话
             var browser = ensureBrowser();
             var page = PlaywrightBridge.createPage(browser);
-            log.debug("创建浏览器 Page: sessionId={}", sessionId);
-            return new PlaywrightPageWrapper(page);
+            String tabId = UUID.randomUUID().toString().substring(0, 8);
+            log.debug("创建浏览器 Page: sessionId={}, tabId={}", sessionId, tabId);
+            return new SessionPages(tabId, new PlaywrightPageWrapper(page));
         });
+        return sessionPages.pages.get(sessionPages.activeTabId);
     }
 
     /**
-     * 关闭指定会话的 Page。
+     * 关闭指定会话的所有 Page。
      *
      * @param sessionId 会话 ID
      */
     public void closePage(String sessionId) {
-        var wrapper = sessions.remove(sessionId);
+        var sessionPages = sessions.remove(sessionId);
+        if (sessionPages != null) {
+            sessionPages.pages.values().forEach(PlaywrightPageWrapper::close);
+            log.debug("关闭浏览器会话所有 Page: sessionId={}", sessionId);
+        }
+    }
+
+    /**
+     * 在指定会话中打开新标签页并导航到 URL。
+     *
+     * @param sessionId 会话 ID
+     * @param url 目标 URL
+     * @return 新标签页 ID
+     */
+    public String openNewPage(String sessionId, String url) {
+        if (!isAvailable()) {
+            throw new IllegalStateException(UNAVAILABLE_MESSAGE);
+        }
+        var sp = sessions.get(sessionId);
+        if (sp == null) {
+            // 如果会话不存在，先创建
+            getOrCreatePage(sessionId);
+            sp = sessions.get(sessionId);
+        }
+        var browser = ensureBrowser();
+        var page = PlaywrightBridge.createPage(browser);
+        var wrapper = new PlaywrightPageWrapper(page);
+        wrapper.navigate(url);
+        String tabId = UUID.randomUUID().toString().substring(0, 8);
+        sp.pages.put(tabId, wrapper);
+        sp.activeTabId = tabId;
+        log.debug("打开新标签页: sessionId={}, tabId={}, url={}", sessionId, tabId, url);
+        return tabId;
+    }
+
+    /**
+     * 切换活跃标签页。
+     *
+     * @param sessionId 会话 ID
+     * @param tabId 目标标签页 ID
+     * @throws IllegalArgumentException tabId 不存在时
+     */
+    public void switchPage(String sessionId, String tabId) {
+        var sp = sessions.get(sessionId);
+        if (sp == null || !sp.pages.containsKey(tabId)) {
+            throw new IllegalArgumentException("标签页不存在: sessionId=%s, tabId=%s".formatted(sessionId, tabId));
+        }
+        sp.activeTabId = tabId;
+        sp.pages.get(tabId).touch();
+        log.debug("切换标签页: sessionId={}, tabId={}", sessionId, tabId);
+    }
+
+    /**
+     * 关闭指定标签页。
+     *
+     * @param sessionId 会话 ID
+     * @param tabId 要关闭的标签页 ID
+     * @throws IllegalArgumentException tabId 不存在时
+     */
+    public void closeTab(String sessionId, String tabId) {
+        var sp = sessions.get(sessionId);
+        if (sp == null || !sp.pages.containsKey(tabId)) {
+            throw new IllegalArgumentException("标签页不存在: sessionId=%s, tabId=%s".formatted(sessionId, tabId));
+        }
+        var wrapper = sp.pages.remove(tabId);
         if (wrapper != null) {
             wrapper.close();
-            log.debug("关闭浏览器 Page: sessionId={}", sessionId);
         }
+        // 如果关闭的是活跃标签页，切换到另一个
+        if (tabId.equals(sp.activeTabId) && !sp.pages.isEmpty()) {
+            sp.activeTabId = sp.pages.keys().nextElement();
+        }
+        // 如果所有标签页都关闭了，移除整个会话
+        if (sp.pages.isEmpty()) {
+            sessions.remove(sessionId);
+        }
+        log.debug("关闭标签页: sessionId={}, tabId={}", sessionId, tabId);
+    }
+
+    /**
+     * 列出指定会话的所有标签页信息。
+     *
+     * @param sessionId 会话 ID
+     * @return 标签页信息列表
+     */
+    public List<TabInfo> listPages(String sessionId) {
+        var sp = sessions.get(sessionId);
+        if (sp == null) {
+            return List.of();
+        }
+        return sp.pages.entrySet().stream()
+                .map(e -> new TabInfo(e.getKey(), e.getValue().url(), e.getValue().title()))
+                .toList();
     }
 
     /**
@@ -131,12 +237,14 @@ public class BrowserSessionManager {
      */
     public void close() {
         // 关闭所有 Page
-        sessions.forEach((id, wrapper) -> {
-            try {
-                wrapper.close();
-            } catch (Exception e) {
-                log.warn("关闭浏览器 Page 失败: sessionId={}, error={}", id, e.getMessage());
-            }
+        sessions.forEach((id, sp) -> {
+            sp.pages.values().forEach(wrapper -> {
+                try {
+                    wrapper.close();
+                } catch (Exception e) {
+                    log.warn("关闭浏览器 Page 失败: sessionId={}, error={}", id, e.getMessage());
+                }
+            });
         });
         sessions.clear();
 
@@ -171,10 +279,13 @@ public class BrowserSessionManager {
         long now = System.currentTimeMillis();
 
         sessions.entrySet().removeIf(entry -> {
-            var wrapper = entry.getValue();
-            if (now - wrapper.getLastAccessTime() > idleTimeoutMs) {
-                wrapper.close();
-                log.debug("空闲超时关闭浏览器 Page: sessionId={}", entry.getKey());
+            var sp = entry.getValue();
+            // 检查所有 page 是否都已超时
+            boolean allIdle = sp.pages.values().stream()
+                    .allMatch(w -> now - w.getLastAccessTime() > idleTimeoutMs);
+            if (allIdle) {
+                sp.pages.values().forEach(PlaywrightPageWrapper::close);
+                log.debug("空闲超时关闭浏览器会话: sessionId={}", entry.getKey());
                 return true;
             }
             return false;
