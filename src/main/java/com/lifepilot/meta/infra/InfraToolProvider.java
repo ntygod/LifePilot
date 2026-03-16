@@ -20,6 +20,7 @@ import com.lifepilot.skill.builtin.BuiltinSkill;
 import com.lifepilot.skill.builtin.BuiltinSkillProvider;
 import com.lifepilot.skill.model.*;
 import com.lifepilot.tool.BuiltinTool;
+import com.lifepilot.tool.model.ToolCategory;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.tool.schema.JsonSchema;
 import jakarta.annotation.Nullable;
@@ -176,6 +177,7 @@ public class InfraToolProvider implements BuiltinSkillProvider {
     private BuiltinTool buildDateTimeTool(DateTimeToolExecutor executor) {
         return BuiltinTool.builder()
                 .id("builtin.env.datetime")
+                .category(ToolCategory.PERCEPTION)
                 .name("获取当前日期时间")
                 .description("获取当前日期、时间、星期和时区信息，可选覆盖时区")
                 .inputSchema(JsonSchema.of(Map.of(
@@ -195,6 +197,7 @@ public class InfraToolProvider implements BuiltinSkillProvider {
     private BuiltinTool buildUserProfileTool(UserProfileToolExecutor executor) {
         return BuiltinTool.builder()
                 .id("builtin.env.user-profile")
+                .category(ToolCategory.PERCEPTION)
                 .name("获取用户偏好")
                 .description("获取用户偏好配置，包括时区、缓存 TTL 等信息")
                 .inputSchema(JsonSchema.empty())
@@ -208,6 +211,7 @@ public class InfraToolProvider implements BuiltinSkillProvider {
     private BuiltinTool buildSystemInfoTool(SystemInfoToolExecutor executor) {
         return BuiltinTool.builder()
                 .id("builtin.env.system-info")
+                .category(ToolCategory.PERCEPTION)
                 .name("获取系统信息")
                 .description("获取操作系统、JVM 版本、可用内存和磁盘空间等系统信息")
                 .inputSchema(JsonSchema.empty())
@@ -225,6 +229,7 @@ public class InfraToolProvider implements BuiltinSkillProvider {
     private BuiltinTool buildWebSearchTool(WebSearchToolExecutor executor) {
         return BuiltinTool.builder()
                 .id("builtin.web.search")
+                .category(ToolCategory.PERCEPTION)
                 .name("Web 搜索")
                 .description("通过搜索引擎检索信息，返回标题、摘要和链接列表。支持 DuckDuckGo（免费）/ Google / Bing")
                 .inputSchema(JsonSchema.of(Map.of(
@@ -251,6 +256,7 @@ public class InfraToolProvider implements BuiltinSkillProvider {
     private BuiltinTool buildWebFetchTool(WebFetchToolExecutor executor) {
         return BuiltinTool.builder()
                 .id("builtin.web.fetch")
+                .category(ToolCategory.PERCEPTION)
                 .name("Web 页面抓取")
                 .description("抓取指定 URL 的网页内容，解析 HTML 提取正文文本。支持 CSS 选择器定向提取")
                 .inputSchema(JsonSchema.of(Map.of(
@@ -274,6 +280,7 @@ public class InfraToolProvider implements BuiltinSkillProvider {
     private BuiltinTool buildCalculateTool(CalculateToolExecutor executor) {
         return BuiltinTool.builder()
                 .id("builtin.reason.calculate")
+                .category(ToolCategory.COGNITION)
                 .name("精确计算")
                 .description("使用 BigDecimal 进行精确算术运算。支持四则运算(如 123.45+67.89)、百分比(如 200*15%)、日期差(如 2026-03-08 - 2025-01-01)")
                 .inputSchema(JsonSchema.of(Map.of(
@@ -298,6 +305,7 @@ public class InfraToolProvider implements BuiltinSkillProvider {
     private BuiltinTool buildShellExecTool(ShellExecToolExecutor executor) {
         return BuiltinTool.builder()
                 .id("builtin.shell.exec")
+                .category(ToolCategory.ACTION)
                 .name("执行 Shell 命令")
                 .description("在操作系统 Shell 中执行命令，捕获 stdout/stderr 输出。支持安装软件、运行脚本、管理进程等系统操作。HIGH 风险，每次执行需用户确认")
                 .inputSchema(JsonSchema.of(Map.of(
@@ -327,6 +335,7 @@ public class InfraToolProvider implements BuiltinSkillProvider {
     private BuiltinTool buildCodeExecuteTool(CodeExecuteToolExecutor executor) {
         return BuiltinTool.builder()
                 .id("builtin.code.execute")
+                .category(ToolCategory.ACTION)
                 .name("执行代码")
                 .description("在沙箱环境中执行代码，支持 Python/JavaScript/Shell。HIGH 风险，每次执行需用户确认")
                 .inputSchema(JsonSchema.of(Map.of(
