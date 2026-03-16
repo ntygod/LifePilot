@@ -16,6 +16,8 @@ import com.lifepilot.skill.builtin.schedule.ScheduleRepository;
 import com.lifepilot.skill.builtin.schedule.ScheduleSkillProvider;
 import com.lifepilot.skill.builtin.todo.TodoRepository;
 import com.lifepilot.skill.builtin.todo.TodoSkillProvider;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.datastore.DataStoreManager;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.skill.generation.SkillGapDetector;
@@ -128,12 +130,23 @@ public class SkillAutoConfiguration {
         return new SkillToToolBridge(toolRegistry, skillActivator, capabilityAggregator);
     }
 
-    // --- 持久化组件 ---
+    // --- 内置 Skill 提供者 ---
+
+    @Bean
+    @ConditionalOnMissingBean
+    public TodoSkillProvider todoSkillProvider(DataStoreManager dataStoreManager,
+                                               ObjectMapper objectMapper,
+                                               PromptRegistry promptRegistry) {
+        log.info("Skill 系统: 注册 TodoSkillProvider（DataStore 存储）");
+        return new TodoSkillProvider(dataStoreManager, objectMapper, promptRegistry);
+    }
+
+    // --- 持久化组件（Schedule/Habit 待迁移到 DataStore，TodoRepository 保留供 Sync 模块使用） ---
 
     @Bean
     @ConditionalOnMissingBean
     public TodoRepository todoRepository(JdbcTemplate jdbcTemplate) {
-        log.info("Skill 系统: 注册 TodoRepository");
+        log.info("Skill 系统: 注册 TodoRepository（供 Sync 模块使用，待迁移后删除）");
         return new TodoRepository(jdbcTemplate);
     }
 
@@ -149,16 +162,6 @@ public class SkillAutoConfiguration {
     public HabitRepository habitRepository(JdbcTemplate jdbcTemplate) {
         log.info("Skill 系统: 注册 HabitRepository");
         return new HabitRepository(jdbcTemplate);
-    }
-
-    // --- 内置 Skill 提供者 ---
-
-    @Bean
-    @ConditionalOnMissingBean
-    public TodoSkillProvider todoSkillProvider(TodoRepository todoRepository,
-                                               PromptRegistry promptRegistry) {
-        log.info("Skill 系统: 注册 TodoSkillProvider");
-        return new TodoSkillProvider(todoRepository, promptRegistry);
     }
 
     @Bean
