@@ -3,11 +3,13 @@ package com.lifepilot.meta.infra.browser;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.microsoft.playwright.Page;
+import com.microsoft.playwright.options.Cookie;
 import com.microsoft.playwright.options.SelectOption;
 import com.microsoft.playwright.options.WaitForSelectorState;
 import jakarta.annotation.Nullable;
 
 import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -275,6 +277,92 @@ public class PlaywrightPageWrapper {
         page.waitForSelector(selector, new Page.WaitForSelectorOptions()
                 .setState(wsState)
                 .setTimeout(timeoutMs));
+    }
+
+    /**
+     * 获取当前页面所有 Cookie。
+     *
+     * @return Cookie 列表，每个 Cookie 为包含 name、value、domain、path、expires、httpOnly、secure、sameSite 的 Map
+     */
+    public List<Map<String, Object>> getCookies() {
+        touch();
+        ensureOpen();
+        List<Cookie> cookies = page.context().cookies();
+        return cookies.stream().map(c -> {
+            Map<String, Object> map = new LinkedHashMap<>();
+            map.put("name", c.name);
+            map.put("value", c.value);
+            map.put("domain", c.domain);
+            map.put("path", c.path);
+            map.put("expires", c.expires);
+            map.put("httpOnly", c.httpOnly);
+            map.put("secure", c.secure);
+            map.put("sameSite", c.sameSite != null ? c.sameSite.name() : "");
+            return map;
+        }).toList();
+    }
+
+    /**
+     * 设置 Cookie。
+     *
+     * @param name   Cookie 名称
+     * @param value  Cookie 值
+     * @param domain Cookie 域名，为 null 时不设置
+     * @param path   Cookie 路径，为 null 时不设置
+     */
+    public void setCookie(String name, String value, @Nullable String domain, @Nullable String path) {
+        touch();
+        ensureOpen();
+        var cookie = new Cookie(name, value).setUrl(page.url());
+        if (domain != null) {
+            cookie.setDomain(domain);
+        }
+        if (path != null) {
+            cookie.setPath(path);
+        }
+        page.context().addCookies(List.of(cookie));
+    }
+
+    /**
+     * 清除当前上下文的所有 Cookie。
+     */
+    public void clearCookies() {
+        touch();
+        ensureOpen();
+        page.context().clearCookies();
+    }
+
+    /**
+     * 获取 localStorage 中指定 key 的值。
+     *
+     * @param key localStorage 键名
+     * @return 对应的值，不存在时返回 null
+     */
+    public @Nullable String getLocalStorage(String key) {
+        touch();
+        ensureOpen();
+        return (String) page.evaluate("key => localStorage.getItem(key)", key);
+    }
+
+    /**
+     * 设置 localStorage 中指定 key 的值。
+     *
+     * @param key   localStorage 键名
+     * @param value 要设置的值
+     */
+    public void setLocalStorage(String key, String value) {
+        touch();
+        ensureOpen();
+        page.evaluate("([k, v]) => localStorage.setItem(k, v)", List.of(key, value));
+    }
+
+    /**
+     * 清除 localStorage 中的所有数据。
+     */
+    public void clearLocalStorage() {
+        touch();
+        ensureOpen();
+        page.evaluate("() => localStorage.clear()");
     }
 
     /** 检查 Page 是否已关闭，已关闭时抛出异常。 */
