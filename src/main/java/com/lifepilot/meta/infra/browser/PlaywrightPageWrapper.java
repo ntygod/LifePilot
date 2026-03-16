@@ -4,6 +4,7 @@ import com.microsoft.playwright.Page;
 import jakarta.annotation.Nullable;
 
 import java.util.Base64;
+import java.util.List;
 
 /**
  * Playwright Page 包装器 — 封装 Page 操作并跟踪最后访问时间。
@@ -113,6 +114,47 @@ public class PlaywrightPageWrapper {
      */
     public String url() {
         return page.url();
+    }
+
+    /**
+     * 滚动页面。
+     *
+     * @param direction 滚动方向："up" 向上，"down" 向下
+     * @param pixels    滚动像素数（正数）
+     * @return 滚动后的位置
+     */
+    @SuppressWarnings("unchecked")
+    public ScrollResult scroll(String direction, int pixels) {
+        touch();
+        ensureOpen();
+        int scrollPixels = "up".equalsIgnoreCase(direction) ? -pixels : pixels;
+        List<Number> pos = (List<Number>) page.evaluate(
+                "([px]) => { window.scrollBy(0, px); return [window.scrollX, window.scrollY]; }",
+                List.of(scrollPixels)
+        );
+        return new ScrollResult(pos.get(0).doubleValue(), pos.get(1).doubleValue());
+    }
+
+    /**
+     * 滚动到指定元素可见。
+     *
+     * @param selector CSS 选择器
+     * @return 滚动后的位置
+     */
+    @SuppressWarnings("unchecked")
+    public ScrollResult scrollToElement(String selector) {
+        touch();
+        ensureOpen();
+        page.locator(selector).scrollIntoViewIfNeeded();
+        List<Number> pos = (List<Number>) page.evaluate("[window.scrollX, window.scrollY]");
+        return new ScrollResult(pos.get(0).doubleValue(), pos.get(1).doubleValue());
+    }
+
+    /** 检查 Page 是否已关闭，已关闭时抛出异常。 */
+    private void ensureOpen() {
+        if (closed) {
+            throw new IllegalStateException("Page 已关闭，请重新创建会话");
+        }
     }
 
     /** 关闭 Page。 */
