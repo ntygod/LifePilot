@@ -131,6 +131,20 @@ public class ScheduledTaskRepository {
     }
 
     /**
+     * 查询所有非 CANCELLED 状态的定时任务，按 next_trigger_at 升序排列（NULL 排最后）。
+     *
+     * @return 活跃定时任务列表
+     */
+    public List<ScheduledTask> findAllActive() {
+        return jdbcTemplate.query("""
+                SELECT * FROM scheduled_tasks
+                WHERE status != 'CANCELLED'
+                ORDER BY CASE WHEN next_trigger_at IS NULL THEN 1 ELSE 0 END,
+                         next_trigger_at ASC
+                """, rowMapper);
+    }
+
+    /**
      * 通过 metadata 中的 scheduleId 查找关联的定时任务。
      *
      * <p>使用 LIKE 模式匹配在 metadata_json 文本中搜索 scheduleId。</p>
