@@ -652,7 +652,7 @@ onMounted(() => {
                   </div>
 
                   <div v-if="!selectedDate" class="text-sm text-muted-foreground">
-                    先点选趋势图中的某一天，再看当天的错误明细。
+                    选择日期查看错误明细。
                   </div>
 
                   <div v-else-if="errorDetails.length === 0" class="text-sm text-muted-foreground">

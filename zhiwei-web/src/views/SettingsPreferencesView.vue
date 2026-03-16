@@ -329,7 +329,7 @@ const timeFormatOptions = [
           <section class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/55 p-5">
             <h3 class="text-sm font-semibold text-foreground">当前预览</h3>
             <p class="mt-1 text-sm leading-6 text-muted-foreground">
-              先确认整体阅读效果，再决定是否继续细调。
+              预览界面效果。
             </p>
 
             <div class="mt-4 space-y-4" :style="{ fontSize: previewFontSize }">

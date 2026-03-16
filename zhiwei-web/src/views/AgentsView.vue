@@ -177,22 +177,22 @@ function formatDate(dateStr: string) {
           </div>
 
           <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <MetricCard label="智能体总数" :value="totalAgents" hint="当前目录里可继续维护和调试的智能体数量。">
+            <MetricCard label="智能体总数" :value="totalAgents" hint="可维护的智能体">
               <template #icon>
                 <Bot class="size-5" />
               </template>
             </MetricCard>
-            <MetricCard label="已启用" :value="enabledAgents" hint="当前可直接在工作流或对话里使用的智能体。">
+            <MetricCard label="已启用" :value="enabledAgents" hint="可直接使用">
               <template #icon>
                 <Cpu class="size-5" />
               </template>
             </MetricCard>
-            <MetricCard label="工作流型" :value="workflowAgents" hint="适合多步骤编排和流程化执行的智能体。">
+            <MetricCard label="工作流型" :value="workflowAgents" hint="支持流程编排">
               <template #icon>
                 <Workflow class="size-5" />
               </template>
             </MetricCard>
-            <MetricCard label="知识库连接" :value="linkedKnowledgeBases" hint="所有智能体累计连接的知识库次数。">
+            <MetricCard label="知识库连接" :value="linkedKnowledgeBases" hint="已连接知识库">
               <template #icon>
                 <Database class="size-5" />
               </template>
@@ -206,7 +206,7 @@ function formatDate(dateStr: string) {
               <div class="space-y-1">
                 <div class="surface-label">筛选与排查</div>
                 <p class="text-sm leading-6 text-muted-foreground">
-                  先按名称找目标，再按类型和启用状态缩小范围，能更快定位需要继续调整的智能体。
+                  按名称、类型或状态筛选。
                 </p>
               </div>
 
@@ -402,7 +402,7 @@ function formatDate(dateStr: string) {
               </div>
 
               <div class="mt-5 flex items-center justify-between gap-3 text-sm text-muted-foreground">
-                <span>适合继续调整模型、知识库和启用状态。</span>
+                <span>点击查看详情和配置</span>
                 <span class="inline-flex items-center gap-1 font-medium text-primary transition-colors group-hover:text-primary/80">
                   查看详情
                   <ArrowUpRight class="size-4" />
@@ -419,7 +419,7 @@ function formatDate(dateStr: string) {
         <DialogHeader>
           <DialogTitle>新建智能体</DialogTitle>
           <DialogDescription>
-            先填名称、描述和类型，其他配置可以进详情页继续补。
+            填写名称、描述和类型。
           </DialogDescription>
         </DialogHeader>
 

@@ -102,7 +102,7 @@ onMounted(() => {
         <PageHeader
           eyebrow="MCP 服务器"
           title="外部连接"
-          description="先判断连接健康度和工具覆盖情况，再进入单个服务器继续查看配置、异常和可用工具。"
+          description="管理外部 MCP 服务器连接。"
         >
           <template #actions>
             <Button variant="outline" @click="refreshData">
@@ -178,7 +178,7 @@ onMounted(() => {
                 <div>
                   <div class="surface-label text-[0.68rem]">当前视图</div>
                   <p class="mt-2 text-sm leading-6 text-muted-foreground">
-                    先定位要排查的服务，再进入详情页查看连接、健康检查和暴露出来的工具。
+                    查看服务详情。
                   </p>
                 </div>
 

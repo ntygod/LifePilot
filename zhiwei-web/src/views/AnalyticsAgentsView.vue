@@ -173,7 +173,7 @@ const summaryItems = computed(() => [
     key: 'failure-rate',
     label: '平均失败率',
     value: averageFailureRate.value,
-    note: '先看整体情况，再决定是否深入查看',
+    note: '查看整体情况',
   },
 ])
 const focusItems = computed(() => [
@@ -374,7 +374,7 @@ onMounted(() => {
         <PageSection
           eyebrow="重点对象"
           title="优先关注对象"
-          description="把最可能影响体验的对象先拎出来，再回头看完整表格。"
+          description="查看需要关注的智能体。"
           variant="plain"
         >
           <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
@@ -398,7 +398,7 @@ onMounted(() => {
               <div class="space-y-4 text-sm leading-7 text-muted-foreground">
                 <div>
                   <div class="surface-label mb-2 text-[0.68rem]">查看提示</div>
-                  <p>先确认谁最常用，再看谁更慢、谁更不稳定。</p>
+                  <p>查看使用统计。</p>
                 </div>
                 <div class="soft-divider" />
                 <p>如果当前没有明显问题，可以切换到知识库视角，检查检索命中率和平均耗时。</p>

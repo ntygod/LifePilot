@@ -93,27 +93,27 @@ onMounted(() => {
             <div class="surface-label">工具</div>
             <h1 class="text-3xl font-semibold tracking-tight text-foreground">工具目录</h1>
             <p class="text-sm leading-6 text-muted-foreground">
-              先看工具的来源、风险和启用状态，再决定是进入详情页继续测试，还是调整接入方式。
+              查看和管理所有可用的工具。
             </p>
           </div>
 
           <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <MetricCard label="工具总数" :value="toolStore.tools.length" hint="包含内置工具、YAML 工具和 MCP 工具。">
+            <MetricCard label="工具总数" :value="toolStore.tools.length" hint="全部可用工具">
               <template #icon>
                 <Wrench class="size-5" />
               </template>
             </MetricCard>
-            <MetricCard label="已启用" :value="enabledCount" hint="当前可以直接参与调用的工具数量。">
+            <MetricCard label="已启用" :value="enabledCount" hint="可直接调用">
               <template #icon>
                 <Sparkles class="size-5" />
               </template>
             </MetricCard>
-            <MetricCard label="MCP 来源" :value="mcpCount" hint="由 MCP 服务器暴露出来的外部能力。">
+            <MetricCard label="外部工具" :value="mcpCount" hint="MCP 接入">
               <template #icon>
                 <FileText class="size-5" />
               </template>
             </MetricCard>
-            <MetricCard label="高风险" :value="highRiskCount" hint="建议优先确认执行边界和权限控制。">
+            <MetricCard label="高风险" :value="highRiskCount" hint="需确认权限">
               <template #icon>
                 <AlertTriangle class="size-5" />
               </template>
@@ -127,7 +127,7 @@ onMounted(() => {
               <div class="space-y-1">
                 <div class="surface-label">筛选与检查</div>
                 <p class="text-sm leading-6 text-muted-foreground">
-                  先搜工具名，再按来源和风险级别缩小范围，避免在长列表里来回找。
+                  按来源和风险级别筛选。
                 </p>
               </div>
 
@@ -183,7 +183,7 @@ onMounted(() => {
             <div>
               <h2 class="text-lg font-semibold text-foreground">可用工具</h2>
               <p class="text-sm text-muted-foreground">
-                先在目录里确认来源、风险和可用状态，再进入详情页继续测试和配置。
+                点击卡片查看工具详情。
               </p>
             </div>
             <div class="text-sm text-muted-foreground">{{ filteredTools.length }} 条结果</div>
@@ -312,13 +312,13 @@ onMounted(() => {
                     执行特性
                   </div>
                   <p class="text-sm text-muted-foreground">
-                    {{ tool.idempotent ? '幂等操作，可重复执行' : '可能修改状态，建议先确认输入' }}
+                    {{ tool.idempotent ? '可安全重复执行' : '可能修改数据' }}
                   </p>
                 </div>
               </div>
 
               <div class="flex items-center justify-between gap-3 text-sm">
-                <span class="text-muted-foreground">适合先看配置，再进入详情页试运行。</span>
+                <span class="text-muted-foreground">点击查看详情和配置</span>
                 <span class="inline-flex items-center gap-1 font-medium text-primary transition-colors group-hover:text-primary/80">
                   查看详情
                   <ArrowUpRight class="size-4" />

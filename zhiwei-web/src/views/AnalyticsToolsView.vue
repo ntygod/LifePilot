@@ -322,7 +322,7 @@ onMounted(() => {
                 <div class="space-y-1">
                   <div class="surface-label text-[0.68rem]">建议查看顺序</div>
                   <p class="text-sm leading-7 text-muted-foreground">
-                    先看调用多但成功率低的工具，再看失败是否集中在某几个时间点。
+                    查看工具调用统计。
                   </p>
                 </div>
               </div>

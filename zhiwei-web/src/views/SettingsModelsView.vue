@@ -470,7 +470,7 @@ const deleteConfirmMessage = computed(() => {
             </SettingItem>
           </SettingSection>
 
-          <SettingSection title="场景路由" description="先看场景默认，再看全局默认，最后自动选择可用 Provider。">
+          <SettingSection title="场景路由" description="查看场景路由配置。">
             <div v-if="sceneRoutingItems.length === 0" class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/55 px-4 py-4 text-sm text-muted-foreground">
               当前还没有声明场景的 Provider。先在 Provider 管理里给模型配置适用场景，这里就能分别指定。
             </div>

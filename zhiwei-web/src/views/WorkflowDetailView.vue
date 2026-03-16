@@ -676,7 +676,7 @@ watch(() => route.params.id, async () => {
               <PageSection
                 eyebrow="基础信息"
                 title="工作流信息"
-                description="先看说明和触发方式，再决定要查看步骤定义还是执行记录。"
+                description="查看工作流说明和触发方式。"
               >
                 <div class="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(260px,0.85fr)]">
                   <div class="detail-card p-4 sm:p-5">
@@ -717,7 +717,7 @@ watch(() => route.params.id, async () => {
                       </div>
 
                       <p class="text-sm leading-6 text-muted-foreground">
-                        先看触发器和版本信息，再决定是继续看步骤定义，还是切到执行历史排查某一次运行。
+                        查看触发器和版本信息。
                       </p>
                     </div>
                   </div>

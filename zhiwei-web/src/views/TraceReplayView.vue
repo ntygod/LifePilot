@@ -426,7 +426,7 @@ async function handleRetryServiceCheck() {
           <PageHeader
             eyebrow="运行轨迹"
             title="最近运行记录"
-            description="先找到要查看的运行记录，再进入详情检查步骤、评估和最终输出。"
+            description="查看运行记录和详情。"
           >
             <template #actions>
               <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/55 px-4 py-4 text-sm">

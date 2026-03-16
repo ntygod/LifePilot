@@ -251,7 +251,7 @@ function formatUsageLabel(items: number, singular: string, plural: string) {
           <PageSection
             eyebrow="基础信息"
             title="工具说明"
-            description="先了解用途，再查看参数要求和执行限制。"
+            description="查看工具用途和参数。"
           >
             <div class="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(260px,0.85fr)]">
               <div class="detail-card p-4 sm:p-5">
@@ -302,7 +302,7 @@ function formatUsageLabel(items: number, singular: string, plural: string) {
                   </div>
 
                   <p class="text-sm leading-6 text-muted-foreground">
-                    先判断来源、类型和执行影响，再进入参数、预算和 YAML 定义继续查看细节。
+                    查看来源、类型和执行影响。
                   </p>
                 </div>
               </div>

@@ -437,7 +437,7 @@ onMounted(() => {
                   <div>
                     <div class="surface-label text-[0.68rem]">连接策略</div>
                     <p class="mt-2 text-sm leading-6 text-muted-foreground">
-                      先看自动连接、重连和健康检查，再决定是否需要调整命令、URL 或超时参数。
+                      查看连接配置。
                     </p>
                   </div>
 

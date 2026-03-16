@@ -160,7 +160,7 @@ onMounted(() => {
         <PageHeader
           eyebrow="技能"
           title="技能目录"
-          description="先确认哪些技能正在可用、哪些来自市场或自定义维护，再进入详情页继续调整说明、版本和启用状态。"
+          description="管理技能目录。"
         >
           <template #actions>
             <Button @click="showCreateDialog = true">
@@ -170,22 +170,22 @@ onMounted(() => {
           </template>
 
           <template #meta>
-            <MetricCard label="当前可见" :value="filteredSkills.length" hint="当前筛选条件下能直接继续处理的技能数量。">
+            <MetricCard label="当前可见" :value="filteredSkills.length" hint="筛选结果">
               <template #icon>
                 <Sparkles class="size-5" />
               </template>
             </MetricCard>
-            <MetricCard label="已启用" :value="enabledSkillCount" hint="当前可以直接参与编排和对话的技能。">
+            <MetricCard label="已启用" :value="enabledSkillCount" hint="已启用">
               <template #icon>
                 <Bot class="size-5" />
               </template>
             </MetricCard>
-            <MetricCard label="自定义" :value="customSkillCount" hint="由当前团队维护、可继续编辑的技能。">
+            <MetricCard label="自定义" :value="customSkillCount" hint="自定义维护">
               <template #icon>
                 <PencilLine class="size-5" />
               </template>
             </MetricCard>
-            <MetricCard label="市场来源" :value="marketplaceSkillCount" hint="已经安装并来自市场的复用能力。">
+            <MetricCard label="市场来源" :value="marketplaceSkillCount" hint="来自市场">
               <template #icon>
                 <Store class="size-5" />
               </template>
@@ -215,7 +215,7 @@ onMounted(() => {
                 <div>
                   <div class="surface-label text-[0.68rem]">当前视图</div>
                   <p class="mt-2 text-sm leading-6 text-muted-foreground">
-                    先按来源缩小范围，再进入具体技能继续启停、查看说明或处理版本。
+                    按来源筛选技能。
                   </p>
                 </div>
 

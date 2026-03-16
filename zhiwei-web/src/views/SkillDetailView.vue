@@ -275,7 +275,7 @@ function runTest() {
           <PageHeader
             eyebrow="技能详情"
             :title="skill.name"
-            :description="skill.description || '先看看这个技能负责什么，再了解它依赖哪些工具和设置。'"
+            :description="skill.description || '查看技能详情和依赖工具。'"
           >
             <template #actions>
               <Button
@@ -292,22 +292,22 @@ function runTest() {
             </template>
 
             <template #meta>
-              <MetricCard label="来源" :value="sourceValue" hint="当前技能包的归属方式。">
+              <MetricCard label="来源" :value="sourceValue" hint="技能归属">
                 <template #icon>
                   <Sparkles class="size-5" />
                 </template>
               </MetricCard>
-              <MetricCard label="版本" :value="`v${skill.version}`" hint="当前发布版本号。">
+              <MetricCard label="版本" :value="`v${skill.version}`" hint="版本号">
                 <template #icon>
                   <FileText class="size-5" />
                 </template>
               </MetricCard>
-              <MetricCard label="关联工具" :value="toolCards.length" hint="定义里声明的建议工具数量。">
+              <MetricCard label="关联工具" :value="toolCards.length" hint="依赖工具">
                 <template #icon>
                   <Wrench class="size-5" />
                 </template>
               </MetricCard>
-              <MetricCard label="定义状态" :value="editableMarkdown ? '可编辑' : '只读'" hint="当前 Markdown 定义的编辑权限。">
+              <MetricCard label="定义状态" :value="editableMarkdown ? '可编辑' : '只读'" hint="编辑权限">
                 <template #icon>
                   <Blocks class="size-5" />
                 </template>
@@ -367,7 +367,7 @@ function runTest() {
                       <span class="surface-chip">版本 v{{ skill.version }}</span>
                     </div>
                     <p class="text-sm leading-6 text-muted-foreground">
-                      先判断来源和启用状态，再决定是继续改定义文件，还是回头补齐依赖工具。
+                      查看来源、启用状态和定义文件。
                     </p>
                   </div>
                 </div>
@@ -395,7 +395,7 @@ function runTest() {
             <PageSection
               eyebrow="依赖"
               :title="`工具关系（${toolCards.length}）`"
-              description="先确认需要的工具是否齐全，再决定下一步如何使用。"
+              description="查看技能依赖的工具。"
             >
             <StatePanel
               v-if="toolCards.length === 0"
@@ -468,7 +468,7 @@ function runTest() {
           <PageSection
             eyebrow="验证"
             title="测试方式"
-              description="建议先挂到智能体上，再通过真实对话验证效果。"
+            description="挂载到智能体进行测试。"
           >
             <div class="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.9fr)]">
               <div class="rounded-[calc(var(--radius)+6px)] border border-border/70 bg-background/72 p-4">
@@ -476,7 +476,7 @@ function runTest() {
                 <ul class="space-y-2 text-sm leading-6 text-muted-foreground">
                   <li class="flex items-start gap-2">
                     <span class="mt-2 size-1.5 rounded-full bg-primary/70" />
-                    <span>先把技能挂到对应智能体上，再通过真实对话验证。</span>
+                    <span>将技能挂载到智能体，通过对话测试。</span>
                   </li>
                   <li class="flex items-start gap-2">
                     <span class="mt-2 size-1.5 rounded-full bg-primary/70" />
@@ -491,7 +491,7 @@ function runTest() {
 
               <StatePanel
                 title="请通过智能体验证"
-                description="当前应先把这个技能挂载到智能体上，再通过真实对话流程验证效果。"
+                description="将技能挂载到智能体后，通过对话测试效果。"
                 tone="warning"
               >
                 <template #icon>
