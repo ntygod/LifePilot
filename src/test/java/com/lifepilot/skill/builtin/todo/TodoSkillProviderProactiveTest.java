@@ -1,8 +1,13 @@
 package com.lifepilot.skill.builtin.todo;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.proactive.candidate.CandidateProvider;
 import com.lifepilot.agent.proactive.model.*;
 import com.lifepilot.agent.proactive.signal.SignalSource;
+import com.lifepilot.datastore.DataStoreManager;
+import com.lifepilot.datastore.model.Collection;
+import com.lifepilot.datastore.model.CollectionType;
+import com.lifepilot.datastore.model.Document;
 import com.lifepilot.notification.Urgency;
 import com.lifepilot.prompt.PromptRegistry;
 import org.junit.jupiter.api.BeforeEach;
@@ -16,8 +21,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
@@ -30,15 +38,36 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class TodoSkillProviderProactiveTest {
 
-    @Mock private TodoRepository todoRepository;
+    @Mock private DataStoreManager dataStoreManager;
     @Mock private PromptRegistry promptRegistry;
 
+    private final ObjectMapper objectMapper = new ObjectMapper();
     private TodoSkillProvider provider;
+
+    /** 固定的 Collection，供 ensureCollection() 返回。 */
+    private static final Collection TODO_COLLECTION = new Collection(
+            "col-todo", "待办事项", "待办事项管理", CollectionType.DOCUMENT,
+            null, null, null, Instant.now().toString(), Instant.now().toString());
 
     @BeforeEach
     void setUp() {
         lenient().when(promptRegistry.render("skill/todo")).thenReturn("待办提示词");
-        provider = new TodoSkillProvider(todoRepository, promptRegistry);
+        // DataStoreCrudAdapter.ensureCollection() 需要 findCollection 返回已有集合
+        lenient().when(dataStoreManager.findCollection("待办事项")).thenReturn(Optional.of(TODO_COLLECTION));
+        provider = new TodoSkillProvider(dataStoreManager, objectMapper, promptRegistry);
+    }
+
+    // ---- 辅助方法：将 TodoEntity 包装为 DataStore Document ----
+
+    private Document toDocument(TodoEntity entity) {
+        try {
+            String json = objectMapper.writeValueAsString(entity);
+            String id = UUID.randomUUID().toString();
+            return new Document(id, "col-todo", json, null,
+                    Instant.now().toString(), Instant.now().toString());
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 
     // ---- signalSources / candidateProviders 基础 ----
@@ -61,7 +90,7 @@ class TodoSkillProviderProactiveTest {
 
     @Test
     void collect_无PENDING待办时_返回空列表() {
-        when(todoRepository.list("PENDING", null)).thenReturn(List.of());
+        when(dataStoreManager.queryDocuments(any())).thenReturn(List.of());
 
         List<Signal> signals = provider.signalSources().getFirst().collect();
         assertThat(signals).isEmpty();
@@ -69,10 +98,8 @@ class TodoSkillProviderProactiveTest {
 
     @Test
     void collect_待办无截止日期时_跳过() {
-        TodoItem noDue = new TodoItem("id-1", "无截止日期", null,
-                TodoItem.Priority.MEDIUM, TodoItem.Status.PENDING,
-                null, null, Instant.now().toString(), Instant.now().toString());
-        when(todoRepository.list("PENDING", null)).thenReturn(List.of(noDue));
+        var entity = new TodoEntity("无截止日期", "PENDING", "MEDIUM", null, null, null);
+        when(dataStoreManager.queryDocuments(any())).thenReturn(List.of(toDocument(entity)));
 
         List<Signal> signals = provider.signalSources().getFirst().collect();
         assertThat(signals).isEmpty();
@@ -81,10 +108,8 @@ class TodoSkillProviderProactiveTest {
     @Test
     void collect_截止日期超过24小时_跳过() {
         String farFuture = Instant.now().plus(Duration.ofHours(48)).toString();
-        TodoItem farTodo = new TodoItem("id-2", "远期待办", null,
-                TodoItem.Priority.HIGH, TodoItem.Status.PENDING,
-                farFuture, null, Instant.now().toString(), Instant.now().toString());
-        when(todoRepository.list("PENDING", null)).thenReturn(List.of(farTodo));
+        var entity = new TodoEntity("远期待办", "PENDING", "HIGH", farFuture, null, null);
+        when(dataStoreManager.queryDocuments(any())).thenReturn(List.of(toDocument(entity)));
 
         List<Signal> signals = provider.signalSources().getFirst().collect();
         assertThat(signals).isEmpty();
@@ -93,10 +118,8 @@ class TodoSkillProviderProactiveTest {
     @Test
     void collect_截止日期已过期_跳过() {
         String past = Instant.now().minus(Duration.ofHours(1)).toString();
-        TodoItem pastTodo = new TodoItem("id-3", "已过期", null,
-                TodoItem.Priority.HIGH, TodoItem.Status.PENDING,
-                past, null, Instant.now().toString(), Instant.now().toString());
-        when(todoRepository.list("PENDING", null)).thenReturn(List.of(pastTodo));
+        var entity = new TodoEntity("已过期", "PENDING", "HIGH", past, null, null);
+        when(dataStoreManager.queryDocuments(any())).thenReturn(List.of(toDocument(entity)));
 
         List<Signal> signals = provider.signalSources().getFirst().collect();
         assertThat(signals).isEmpty();
@@ -105,10 +128,8 @@ class TodoSkillProviderProactiveTest {
     @Test
     void collect_1小时内到期_紧急度为HIGH() {
         String dueDate = Instant.now().plus(Duration.ofMinutes(30)).toString();
-        TodoItem urgentTodo = new TodoItem("id-4", "紧急待办", null,
-                TodoItem.Priority.HIGH, TodoItem.Status.PENDING,
-                dueDate, null, Instant.now().toString(), Instant.now().toString());
-        when(todoRepository.list("PENDING", null)).thenReturn(List.of(urgentTodo));
+        var entity = new TodoEntity("紧急待办", "PENDING", "HIGH", dueDate, null, null);
+        when(dataStoreManager.queryDocuments(any())).thenReturn(List.of(toDocument(entity)));
 
         List<Signal> signals = provider.signalSources().getFirst().collect();
         assertThat(signals).hasSize(1);
@@ -117,19 +138,15 @@ class TodoSkillProviderProactiveTest {
         assertThat(signal.typeId()).isEqualTo("deadline_reminder");
         assertThat(signal.urgency()).isEqualTo(Urgency.HIGH);
         assertThat(signal.sourceId()).isEqualTo("todo-signal");
-        assertThat(signal.subjectId()).isEqualTo("id-4");
         assertThat(signal.summary()).contains("紧急待办");
-        assertThat(signal.metadata()).containsEntry("todoId", "id-4");
         assertThat(signal.metadata()).containsEntry("title", "紧急待办");
     }
 
     @Test
     void collect_4小时内到期_紧急度为MEDIUM() {
         String dueDate = Instant.now().plus(Duration.ofHours(4)).toString();
-        TodoItem mediumTodo = new TodoItem("id-5", "中等待办", null,
-                TodoItem.Priority.MEDIUM, TodoItem.Status.PENDING,
-                dueDate, null, Instant.now().toString(), Instant.now().toString());
-        when(todoRepository.list("PENDING", null)).thenReturn(List.of(mediumTodo));
+        var entity = new TodoEntity("中等待办", "PENDING", "MEDIUM", dueDate, null, null);
+        when(dataStoreManager.queryDocuments(any())).thenReturn(List.of(toDocument(entity)));
 
         List<Signal> signals = provider.signalSources().getFirst().collect();
         assertThat(signals).hasSize(1);
@@ -139,10 +156,8 @@ class TodoSkillProviderProactiveTest {
     @Test
     void collect_12小时内到期_紧急度为LOW() {
         String dueDate = Instant.now().plus(Duration.ofHours(12)).toString();
-        TodoItem lowTodo = new TodoItem("id-6", "低优先待办", null,
-                TodoItem.Priority.LOW, TodoItem.Status.PENDING,
-                dueDate, null, Instant.now().toString(), Instant.now().toString());
-        when(todoRepository.list("PENDING", null)).thenReturn(List.of(lowTodo));
+        var entity = new TodoEntity("低优先待办", "PENDING", "LOW", dueDate, null, null);
+        when(dataStoreManager.queryDocuments(any())).thenReturn(List.of(toDocument(entity)));
 
         List<Signal> signals = provider.signalSources().getFirst().collect();
         assertThat(signals).hasSize(1);

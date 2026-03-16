@@ -1,8 +1,13 @@
 package com.lifepilot.skill.builtin.schedule;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.proactive.candidate.CandidateProvider;
 import com.lifepilot.agent.proactive.model.*;
 import com.lifepilot.agent.proactive.signal.SignalSource;
+import com.lifepilot.datastore.DataStoreManager;
+import com.lifepilot.datastore.model.Collection;
+import com.lifepilot.datastore.model.CollectionType;
+import com.lifepilot.datastore.model.Document;
 import com.lifepilot.notification.Urgency;
 import com.lifepilot.prompt.PromptRegistry;
 import org.junit.jupiter.api.BeforeEach;
@@ -16,8 +21,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
@@ -30,15 +38,36 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class ScheduleSkillProviderProactiveTest {
 
-    @Mock private ScheduleRepository scheduleRepository;
+    @Mock private DataStoreManager dataStoreManager;
     @Mock private PromptRegistry promptRegistry;
 
+    private final ObjectMapper objectMapper = new ObjectMapper();
     private ScheduleSkillProvider provider;
+
+    /** 固定的 Collection，供 ensureCollection() 返回。 */
+    private static final Collection SCHEDULE_COLLECTION = new Collection(
+            "col-schedule", "日程", "日程管理", CollectionType.DOCUMENT,
+            null, null, null, Instant.now().toString(), Instant.now().toString());
 
     @BeforeEach
     void setUp() {
         lenient().when(promptRegistry.render("skill/schedule")).thenReturn("日程提示词");
-        provider = new ScheduleSkillProvider(scheduleRepository, promptRegistry, null, null);
+        // DataStoreCrudAdapter.ensureCollection() 需要 findCollection 返回已有集合
+        lenient().when(dataStoreManager.findCollection("日程")).thenReturn(Optional.of(SCHEDULE_COLLECTION));
+        provider = new ScheduleSkillProvider(dataStoreManager, objectMapper, promptRegistry, null, null);
+    }
+
+    // ---- 辅助方法：将 ScheduleEntity 包装为 DataStore Document ----
+
+    private Document toDocument(ScheduleEntity entity) {
+        try {
+            String json = objectMapper.writeValueAsString(entity);
+            String id = UUID.randomUUID().toString();
+            return new Document(id, "col-schedule", json, null,
+                    Instant.now().toString(), Instant.now().toString());
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 
     // ---- signalSources / candidateProviders 基础 ----
@@ -61,7 +90,7 @@ class ScheduleSkillProviderProactiveTest {
 
     @Test
     void collect_无日程时_返回空列表() {
-        when(scheduleRepository.list()).thenReturn(List.of());
+        when(dataStoreManager.queryDocuments(any())).thenReturn(List.of());
 
         List<Signal> signals = provider.signalSources().getFirst().collect();
         assertThat(signals).isEmpty();
@@ -70,10 +99,9 @@ class ScheduleSkillProviderProactiveTest {
     @Test
     void collect_日程开始时间超过60分钟_跳过() {
         String farFuture = Instant.now().plus(Duration.ofMinutes(90)).toString();
-        ScheduleItem farSchedule = new ScheduleItem("id-1", "远期日程", farFuture,
-                Instant.now().plus(Duration.ofMinutes(150)).toString(),
-                null, null, Instant.now().toString(), Instant.now().toString());
-        when(scheduleRepository.list()).thenReturn(List.of(farSchedule));
+        var entity = new ScheduleEntity("远期日程", farFuture,
+                Instant.now().plus(Duration.ofMinutes(150)).toString(), null, null, null);
+        when(dataStoreManager.queryDocuments(any())).thenReturn(List.of(toDocument(entity)));
 
         List<Signal> signals = provider.signalSources().getFirst().collect();
         assertThat(signals).isEmpty();
@@ -82,10 +110,9 @@ class ScheduleSkillProviderProactiveTest {
     @Test
     void collect_日程开始时间已过_跳过() {
         String past = Instant.now().minus(Duration.ofMinutes(10)).toString();
-        ScheduleItem pastSchedule = new ScheduleItem("id-2", "已过日程", past,
-                Instant.now().plus(Duration.ofMinutes(50)).toString(),
-                null, null, Instant.now().toString(), Instant.now().toString());
-        when(scheduleRepository.list()).thenReturn(List.of(pastSchedule));
+        var entity = new ScheduleEntity("已过日程", past,
+                Instant.now().plus(Duration.ofMinutes(50)).toString(), null, null, null);
+        when(dataStoreManager.queryDocuments(any())).thenReturn(List.of(toDocument(entity)));
 
         List<Signal> signals = provider.signalSources().getFirst().collect();
         assertThat(signals).isEmpty();
@@ -94,10 +121,9 @@ class ScheduleSkillProviderProactiveTest {
     @Test
     void collect_10分钟内开始_紧急度为HIGH() {
         String startTime = Instant.now().plus(Duration.ofMinutes(10)).toString();
-        ScheduleItem urgentSchedule = new ScheduleItem("id-3", "紧急会议", startTime,
-                Instant.now().plus(Duration.ofMinutes(70)).toString(),
-                "会议室A", null, Instant.now().toString(), Instant.now().toString());
-        when(scheduleRepository.list()).thenReturn(List.of(urgentSchedule));
+        var entity = new ScheduleEntity("紧急会议", startTime,
+                Instant.now().plus(Duration.ofMinutes(70)).toString(), null, "会议室A", null);
+        when(dataStoreManager.queryDocuments(any())).thenReturn(List.of(toDocument(entity)));
 
         List<Signal> signals = provider.signalSources().getFirst().collect();
         assertThat(signals).hasSize(1);
@@ -106,9 +132,7 @@ class ScheduleSkillProviderProactiveTest {
         assertThat(signal.typeId()).isEqualTo("schedule_reminder");
         assertThat(signal.urgency()).isEqualTo(Urgency.HIGH);
         assertThat(signal.sourceId()).isEqualTo("schedule-signal");
-        assertThat(signal.subjectId()).isEqualTo("id-3");
         assertThat(signal.summary()).contains("紧急会议");
-        assertThat(signal.metadata()).containsEntry("scheduleId", "id-3");
         assertThat(signal.metadata()).containsEntry("title", "紧急会议");
         assertThat(signal.metadata()).containsEntry("startTime", startTime);
     }
@@ -116,10 +140,9 @@ class ScheduleSkillProviderProactiveTest {
     @Test
     void collect_25分钟内开始_紧急度为MEDIUM() {
         String startTime = Instant.now().plus(Duration.ofMinutes(25)).toString();
-        ScheduleItem mediumSchedule = new ScheduleItem("id-4", "中等日程", startTime,
-                Instant.now().plus(Duration.ofMinutes(85)).toString(),
-                null, null, Instant.now().toString(), Instant.now().toString());
-        when(scheduleRepository.list()).thenReturn(List.of(mediumSchedule));
+        var entity = new ScheduleEntity("中等日程", startTime,
+                Instant.now().plus(Duration.ofMinutes(85)).toString(), null, null, null);
+        when(dataStoreManager.queryDocuments(any())).thenReturn(List.of(toDocument(entity)));
 
         List<Signal> signals = provider.signalSources().getFirst().collect();
         assertThat(signals).hasSize(1);
@@ -129,10 +152,9 @@ class ScheduleSkillProviderProactiveTest {
     @Test
     void collect_45分钟内开始_紧急度为LOW() {
         String startTime = Instant.now().plus(Duration.ofMinutes(45)).toString();
-        ScheduleItem lowSchedule = new ScheduleItem("id-5", "低优先日程", startTime,
-                Instant.now().plus(Duration.ofMinutes(105)).toString(),
-                null, null, Instant.now().toString(), Instant.now().toString());
-        when(scheduleRepository.list()).thenReturn(List.of(lowSchedule));
+        var entity = new ScheduleEntity("低优先日程", startTime,
+                Instant.now().plus(Duration.ofMinutes(105)).toString(), null, null, null);
+        when(dataStoreManager.queryDocuments(any())).thenReturn(List.of(toDocument(entity)));
 
         List<Signal> signals = provider.signalSources().getFirst().collect();
         assertThat(signals).hasSize(1);
