@@ -1435,23 +1435,9 @@ public class ReactAgentLoop {
                 }
             }
 
-            // 构造 ChatResponse 返回给 coreLoop（后续任务 4.2 会提取为 buildChatResponseFromStream 方法）
-            AssistantMessage assistantMessage;
-            if (!toolCallCollector.isEmpty()) {
-                assistantMessage = AssistantMessage.builder()
-                        .content(collectedContent)
-                        .toolCalls(toolCallCollector)
-                        .build();
-            } else {
-                assistantMessage = new AssistantMessage(collectedContent);
-            }
-            var generation = new Generation(assistantMessage);
-            ChatResponse chatResponse;
-            if (lastChunk[0] != null && lastChunk[0].getMetadata() != null) {
-                chatResponse = new ChatResponse(List.of(generation), lastChunk[0].getMetadata());
-            } else {
-                chatResponse = new ChatResponse(List.of(generation));
-            }
+            // 构造 ChatResponse 返回给 coreLoop
+            ChatResponse chatResponse = buildChatResponseFromStream(
+                    collectedContent, toolCallCollector, lastChunk[0]);
 
             // TTFT 和总耗时日志
             long ttftMs = firstTokenTime[0] != null
@@ -1465,6 +1451,46 @@ public class ReactAgentLoop {
                     scene2, chatResponse, null);
 
             return chatResponse;
+        }
+
+        /**
+         * 从流式收集的数据构造 ChatResponse。
+         *
+         * <p>流式调用完成后，将收集到的文本内容、tool call 元数据和最后一个 chunk 的元数据
+         * 组装为 {@link ChatResponse} 返回给 coreLoop，保持与 {@link IterationCallback} 接口契约一致。</p>
+         *
+         * <ul>
+         *   <li>有 tool call 时：使用 {@code AssistantMessage.builder()} 构造含 tool call 的消息</li>
+         *   <li>纯文本时：使用 {@code new AssistantMessage(collectedContent)} 构造</li>
+         *   <li>从 lastChunk 提取 token usage 等元数据附加到 ChatResponse</li>
+         * </ul>
+         *
+         * @param collectedContent 流式收集的完整文本内容
+         * @param toolCalls        流式收集的 tool call 列表（可能为空）
+         * @param lastChunk        最后一个流式 chunk（携带 metadata/usage，可空）
+         * @return 构造好的 ChatResponse
+         */
+        private ChatResponse buildChatResponseFromStream(
+                String collectedContent,
+                List<AssistantMessage.ToolCall> toolCalls,
+                @Nullable ChatResponse lastChunk) {
+            AssistantMessage assistantMessage;
+            if (!toolCalls.isEmpty()) {
+                // 有 tool call：构造含 tool call 的 AssistantMessage
+                assistantMessage = AssistantMessage.builder()
+                        .content(collectedContent)
+                        .toolCalls(toolCalls)
+                        .build();
+            } else {
+                // 纯文本
+                assistantMessage = new AssistantMessage(collectedContent);
+            }
+            var generation = new Generation(assistantMessage);
+            // 从 lastChunk 提取 token usage 等元数据
+            if (lastChunk != null && lastChunk.getMetadata() != null) {
+                return new ChatResponse(List.of(generation), lastChunk.getMetadata());
+            }
+            return new ChatResponse(List.of(generation));
         }
 
         /**
