@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import type {
   BenchmarkScenario,
   EvalResultItem,
@@ -17,8 +17,17 @@ export const useEvalStore = defineStore('eval', () => {
   const currentRunResults = ref<EvalResultItem[]>([])
   // 当前运行的报告汇总
   const currentReport = ref<EvalReportSummary | null>(null)
+  // 场景历史结果缓存（scenarioId → 历史结果列表）
+  const scenarioHistory = ref<Record<string, EvalResultItem[]>>({})
   const loading = ref(false)
   const error = ref<string | null>(null)
+
+  /** 从 scenarios 提取去重排序的标签列表 */
+  const allTags = computed(() => {
+    const tagSet = new Set<string>()
+    scenarios.value.forEach(s => s.tags.forEach(t => tagSet.add(t)))
+    return Array.from(tagSet).sort()
+  })
 
   /** 获取场景列表 */
   async function fetchScenarios(tag?: string) {
@@ -73,16 +82,33 @@ export const useEvalStore = defineStore('eval', () => {
     }
   }
 
+  /** 获取场景历史结果并缓存 */
+  async function fetchScenarioHistory(scenarioId: string, limit = 20) {
+    loading.value = true
+    error.value = null
+    try {
+      const results = await evalApi.getResultsByScenario(scenarioId, limit)
+      scenarioHistory.value[scenarioId] = results
+    } catch (e: any) {
+      error.value = e.message ?? '加载场景历史失败'
+    } finally {
+      loading.value = false
+    }
+  }
+
   return {
     scenarios,
     runs,
     currentRunResults,
     currentReport,
+    scenarioHistory,
     loading,
     error,
+    allTags,
     fetchScenarios,
     triggerRun,
     fetchRunResults,
     fetchReport,
+    fetchScenarioHistory,
   }
 })
