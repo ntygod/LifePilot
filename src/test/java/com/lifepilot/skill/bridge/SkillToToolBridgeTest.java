@@ -1,11 +1,11 @@
 package com.lifepilot.skill.bridge;
 
+import com.lifepilot.meta.convenience.CapabilityAggregator;
+import com.lifepilot.meta.convenience.CapabilityInfo;
 import com.lifepilot.observability.guardrail.GuardrailEngine;
 import com.lifepilot.skill.activation.SkillActivationException;
 import com.lifepilot.skill.activation.SkillActivator;
-import com.lifepilot.skill.config.SkillConfigProperties;
 import com.lifepilot.skill.model.SkillActivation;
-import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.ToolContract;
 import com.lifepilot.tool.model.ToolInput;
@@ -16,6 +16,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.lang.NonNull;
+
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.Map;
@@ -34,9 +37,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class SkillToToolBridgeTest {
 
-    private StubSkillRegistry stubRegistry;
     private StubSkillActivator stubActivator;
     private CapturingToolRegistry capturingToolRegistry;
+    private CapabilityAggregator mockCapabilityAggregator;
     private SkillToToolBridge bridge;
 
     /** 注册后捕获的 skills 工具。 */
@@ -44,10 +47,10 @@ class SkillToToolBridgeTest {
 
     @BeforeEach
     void setUp() {
-        stubRegistry = new StubSkillRegistry();
         stubActivator = new StubSkillActivator();
         capturingToolRegistry = new CapturingToolRegistry();
-        bridge = new SkillToToolBridge(capturingToolRegistry, stubRegistry, stubActivator);
+        mockCapabilityAggregator = mock(CapabilityAggregator.class);
+        bridge = new SkillToToolBridge(capturingToolRegistry, stubActivator, mockCapabilityAggregator);
 
         // 注册 skills 工具并捕获
         bridge.registerSkillsTool();
@@ -61,7 +64,10 @@ class SkillToToolBridgeTest {
 
     @Test
     void list_skills_返回所有已注册Skill摘要() {
-        stubRegistry.setSummaries(List.of("todo: 管理待办事项", "schedule: 管理日程安排"));
+        when(mockCapabilityAggregator.filterByType("skill")).thenReturn(List.of(
+                new CapabilityInfo("todo", "待办管理", "管理待办事项", "builtin", "active", "skill"),
+                new CapabilityInfo("schedule", "日程管理", "管理日程安排", "builtin", "active", "skill")
+        ));
 
         ToolResult result = executeAction("list_skills", Map.of());
 
@@ -73,7 +79,7 @@ class SkillToToolBridgeTest {
 
     @Test
     void list_skills_无Skill时返回空列表() {
-        stubRegistry.setSummaries(List.of());
+        when(mockCapabilityAggregator.filterByType("skill")).thenReturn(List.of());
 
         ToolResult result = executeAction("list_skills", Map.of());
 
@@ -164,27 +170,6 @@ class SkillToToolBridgeTest {
             if (tool instanceof BuiltinTool bt) {
                 this.capturedTool = bt;
             }
-        }
-    }
-
-    /**
-     * 简易 SkillRegistry 桩 — 仅实现 listSummaries() 方法。
-     */
-    private static class StubSkillRegistry extends SkillRegistry {
-
-        private List<String> summaries = List.of();
-
-        StubSkillRegistry() {
-            super(null, null, new NoOpEventPublisher(), new SkillConfigProperties());
-        }
-
-        void setSummaries(List<String> summaries) {
-            this.summaries = List.copyOf(summaries);
-        }
-
-        @Override
-        public List<String> listSummaries() {
-            return summaries;
         }
     }
 

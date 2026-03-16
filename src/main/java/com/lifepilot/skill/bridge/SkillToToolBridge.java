@@ -1,9 +1,9 @@
 package com.lifepilot.skill.bridge;
 
+import com.lifepilot.meta.convenience.CapabilityAggregator;
 import com.lifepilot.skill.activation.SkillActivationException;
 import com.lifepilot.skill.activation.SkillActivator;
 import com.lifepilot.skill.model.SkillActivation;
-import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.model.ToolInput;
@@ -32,15 +32,15 @@ public class SkillToToolBridge {
     private static final Logger log = LoggerFactory.getLogger(SkillToToolBridge.class);
 
     private final DynamicToolRegistry toolRegistry;
-    private final SkillRegistry skillRegistry;
     private final SkillActivator skillActivator;
+    private final CapabilityAggregator capabilityAggregator;
 
     public SkillToToolBridge(DynamicToolRegistry toolRegistry,
-                             SkillRegistry skillRegistry,
-                             SkillActivator skillActivator) {
+                             SkillActivator skillActivator,
+                             CapabilityAggregator capabilityAggregator) {
         this.toolRegistry = toolRegistry;
-        this.skillRegistry = skillRegistry;
         this.skillActivator = skillActivator;
+        this.capabilityAggregator = capabilityAggregator;
     }
 
     /**
@@ -78,12 +78,15 @@ public class SkillToToolBridge {
     }
 
     /**
-     * 列出所有已注册 Skill 的 Discovery 摘要。
+     * 列出所有已注册 Skill — 委托 CapabilityAggregator 统一数据来源。
      *
      * @return 包含摘要列表的成功结果
      */
     private ToolResult listSkills() {
-        List<String> summaries = skillRegistry.listSummaries();
+        var capabilities = capabilityAggregator.filterByType("skill");
+        var summaries = capabilities.stream()
+                .map(cap -> cap.id() + ": " + cap.description())
+                .toList();
         return ToolResult.success(Map.of("skills", summaries));
     }
 

@@ -1,5 +1,7 @@
 package com.lifepilot.skill;
 
+import com.lifepilot.meta.convenience.CapabilityAggregator;
+import com.lifepilot.meta.convenience.CapabilityInfo;
 import com.lifepilot.skill.activation.SkillActivator;
 import com.lifepilot.skill.activation.SkillMetricsTracker;
 import com.lifepilot.skill.bridge.SkillToToolBridge;
@@ -22,13 +24,15 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
- * Property 6: SkillToToolBridge list_skills 与 Registry 一致性 属性测试。
+ * Property 6: SkillToToolBridge list_skills 与 CapabilityAggregator 一致性 属性测试。
  *
- * <p>验证：对任意 SkillRegistry 中注册了 N 个 Skill 的状态，
+ * <p>验证：对任意 CapabilityAggregator 返回的 Skill 能力列表，
  * 通过 skills 工具调用 list_skills 操作返回的摘要列表
- * 应与 SkillRegistry.listSummaries() 返回的列表内容一致。</p>
+ * 应与 CapabilityAggregator.filterByType("skill") 返回的数据一致。</p>
  *
  * <p><b>Validates: Requirements AC-4.2</b></p>
  *
@@ -40,12 +44,12 @@ class SkillToToolBridge属性测试 {
     // ── Property 6: list_skills 与 Registry 一致 ──
 
     @Property(tries = 100)
-    @Label("Feature: skill-system-refactor, Property 6: list_skills 与 Registry 一致性")
+    @Label("Feature: skill-system-refactor, Property 6: list_skills 与 CapabilityAggregator 一致性")
     @SuppressWarnings("unchecked")
-    void listSkills返回的摘要与Registry的listSummaries一致(
+    void listSkills返回的摘要与CapabilityAggregator一致(
             @ForAll("skillSets") List<SkillDefinition> skills) {
 
-        // 构建真实 SkillRegistry
+        // 构建真实 SkillRegistry（仅用于 SkillActivator 依赖）
         var config = new SkillConfigProperties();
         var toolRegistry = new StubDynamicToolRegistry();
         var validator = new SkillDefinitionValidator(toolRegistry, config);
@@ -58,13 +62,24 @@ class SkillToToolBridge属性测试 {
             registry.register(skill);
         }
 
+        // 构建期望的 CapabilityInfo 列表（与注册的 Skill 对应）
+        List<CapabilityInfo> expectedCapabilities = skills.stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        SkillDefinition::id, s -> s, (a, b) -> b))
+                .values().stream()
+                .map(s -> new CapabilityInfo(s.id(), s.name(), s.description(), "builtin", "active", "skill"))
+                .toList();
+
+        // Mock CapabilityAggregator
+        var mockCapabilityAggregator = mock(CapabilityAggregator.class);
+        when(mockCapabilityAggregator.filterByType("skill")).thenReturn(expectedCapabilities);
+
         // 构建 SkillToToolBridge
         var metricsTracker = new SkillMetricsTracker();
         var activator = new SkillActivator(registry, metricsTracker, eventPublisher);
-        var bridge = new SkillToToolBridge(toolRegistry, registry, activator);
+        var bridge = new SkillToToolBridge(toolRegistry, activator, mockCapabilityAggregator);
 
-        // 通过反射调用 handleSkillAction（或直接构造 ToolInput 调用）
-        // 使用 bridge 内部的 handleSkillAction 逻辑：构造 list_skills 请求
+        // 构造 list_skills 请求
         ToolInput listInput = new ToolInput(
                 "skills",
                 Map.of("action", "list_skills"),
@@ -83,11 +98,13 @@ class SkillToToolBridge属性测试 {
         assertThat(result.ok()).isTrue();
 
         List<String> toolSummaries = (List<String>) result.data().get("skills");
-        List<String> registrySummaries = registry.listSummaries();
+        List<String> expectedSummaries = expectedCapabilities.stream()
+                .map(cap -> cap.id() + ": " + cap.description())
+                .toList();
 
         assertThat(toolSummaries)
-                .as("list_skills 返回的摘要应与 Registry.listSummaries() 一致")
-                .containsExactlyInAnyOrderElementsOf(registrySummaries);
+                .as("list_skills 返回的摘要应与 CapabilityAggregator 数据一致")
+                .containsExactlyInAnyOrderElementsOf(expectedSummaries);
     }
 
     // ── 生成器 ──

@@ -1,5 +1,7 @@
 package com.lifepilot.skill;
 
+import com.lifepilot.meta.convenience.CapabilityAggregator;
+import com.lifepilot.meta.convenience.CapabilityInfo;
 import com.lifepilot.observability.guardrail.GuardrailEngine;
 import com.lifepilot.skill.activation.SkillActivator;
 import com.lifepilot.skill.activation.SkillMetricsTracker;
@@ -44,6 +46,7 @@ class SkillRefactor_ToolBridge_集成测试 {
     private DynamicToolRegistry toolRegistry;
     private SkillToToolBridge skillToToolBridge;
     private SkillMetricsTracker metricsTracker;
+    private CapabilityAggregator mockCapabilityAggregator;
 
     @BeforeEach
     void setUp() {
@@ -68,8 +71,12 @@ class SkillRefactor_ToolBridge_集成测试 {
         metricsTracker = new SkillMetricsTracker();
         var skillActivator = new SkillActivator(skillRegistry, metricsTracker, eventPublisher);
 
-        // 4. 构建真实 SkillToToolBridge
-        skillToToolBridge = new SkillToToolBridge(toolRegistry, skillRegistry, skillActivator);
+        // 4. Mock CapabilityAggregator
+        mockCapabilityAggregator = mock(CapabilityAggregator.class);
+        when(mockCapabilityAggregator.filterByType("skill")).thenReturn(List.of());
+
+        // 5. 构建真实 SkillToToolBridge
+        skillToToolBridge = new SkillToToolBridge(toolRegistry, skillActivator, mockCapabilityAggregator);
     }
 
     // ─────────────────────────────────────────────
@@ -97,6 +104,12 @@ class SkillRefactor_ToolBridge_集成测试 {
         registerTestSkill("todo", "待办管理", "管理待办事项");
         registerTestSkill("schedule", "日程管理", "管理日程安排");
 
+        // 配置 CapabilityAggregator 返回对应的 CapabilityInfo
+        when(mockCapabilityAggregator.filterByType("skill")).thenReturn(List.of(
+                new CapabilityInfo("todo", "待办管理", "管理待办事项", "builtin", "active", "skill"),
+                new CapabilityInfo("schedule", "日程管理", "管理日程安排", "builtin", "active", "skill")
+        ));
+
         // 注册 skills 工具
         skillToToolBridge.registerSkillsTool();
 
@@ -116,6 +129,8 @@ class SkillRefactor_ToolBridge_集成测试 {
     @Test
     @SuppressWarnings("unchecked")
     void listSkills_无Skill时_返回空列表() {
+        when(mockCapabilityAggregator.filterByType("skill")).thenReturn(List.of());
+
         skillToToolBridge.registerSkillsTool();
 
         ToolInput input = new ToolInput("skills",

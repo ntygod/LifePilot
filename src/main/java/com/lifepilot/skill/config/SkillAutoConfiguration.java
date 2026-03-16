@@ -1,6 +1,7 @@
 package com.lifepilot.skill.config;
 
 import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.meta.convenience.CapabilityAggregator;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.skill.activation.SkillActivator;
 import com.lifepilot.skill.activation.SkillMetricsTracker;
@@ -121,10 +122,10 @@ public class SkillAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public SkillToToolBridge skillToToolBridge(DynamicToolRegistry toolRegistry,
-                                              SkillRegistry skillRegistry,
-                                              SkillActivator skillActivator) {
+                                              SkillActivator skillActivator,
+                                              CapabilityAggregator capabilityAggregator) {
         log.info("Skill 系统: 注册 SkillToToolBridge");
-        return new SkillToToolBridge(toolRegistry, skillRegistry, skillActivator);
+        return new SkillToToolBridge(toolRegistry, skillActivator, capabilityAggregator);
     }
 
     // --- 持久化组件 ---
