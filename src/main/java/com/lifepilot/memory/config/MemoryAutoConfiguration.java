@@ -341,9 +341,10 @@ public class MemoryAutoConfiguration {
     public RealtimeExtractor realtimeExtractor(LlmRouter llmRouter,
                                                SemanticMemory semanticMemory,
                                                ExtractionValidator extractionValidator,
-                                               JdbcTemplate jdbcTemplate) {
+                                               JdbcTemplate jdbcTemplate,
+                                               PromptRegistry promptRegistry) {
         log.info("记忆系统: 注册 RealtimeExtractor（AUDN 实时实体提取）");
-        return new RealtimeExtractor(llmRouter, semanticMemory, properties, extractionValidator, jdbcTemplate);
+        return new RealtimeExtractor(llmRouter, semanticMemory, properties, extractionValidator, jdbcTemplate, promptRegistry);
     }
 
     // --- 混合检索引擎 ---
