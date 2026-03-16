@@ -14,12 +14,16 @@ class PromptRegistryRenderTest {
         var registry = new PromptRegistry();
         registry.register("agent/role-definition",
                 new ClassPathResource("prompts/agent/role-definition.st"));
+        registry.register("agent/context-guide",
+                new ClassPathResource("prompts/agent/context-guide.st"));
         registry.register("agent/understanding",
                 new ClassPathResource("prompts/agent/understanding.st"));
 
         String roleDefinition = registry.render("agent/role-definition");
+        String contextGuide = registry.render("agent/context-guide");
         String rendered = registry.render("agent/understanding", Map.of(
                 "roleDefinition", roleDefinition,
+                "contextGuide", contextGuide,
                 "currentDateTime", "2026-03-11T17:00:00+08:00",
                 "timezone", "Asia/Shanghai",
                 "locale", "zh-CN"));

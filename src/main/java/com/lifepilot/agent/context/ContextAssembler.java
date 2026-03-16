@@ -965,9 +965,11 @@ public class ContextAssembler {
      */
     String buildReactSystemPrompt() {
         String roleDefinition = promptRegistry.render("agent/role-definition");
+        String contextGuide = promptRegistry.render("agent/context-guide");
         var now = ZonedDateTime.now();
         return promptRegistry.render("agent/react-system", Map.of(
                 "roleDefinition", roleDefinition,
+                "contextGuide", contextGuide,
                 "currentDateTime", now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
                 "timezone", ZoneId.systemDefault().getId(),
                 "locale", Locale.getDefault().toLanguageTag()));
