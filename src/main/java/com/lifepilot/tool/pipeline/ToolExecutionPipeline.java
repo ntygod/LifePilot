@@ -7,6 +7,7 @@ import com.lifepilot.tool.ToolContract;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.model.ToolResultMeta;
+import com.lifepilot.tool.model.ToolResultStatus;
 import com.lifepilot.tool.model.ValidationResult;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import jakarta.annotation.Nullable;
@@ -187,10 +188,18 @@ public class ToolExecutionPipeline implements java.io.Closeable {
 
         for (int attempt = 0; attempt <= maxRetries; attempt++) {
             if (attempt > 0) {
+                // RATE_LIMITED 时优先使用 retryAfterMs 作为等待时间
+                long actualDelay = delay;
+                if (lastResult != null && lastResult.status() == ToolResultStatus.RATE_LIMITED) {
+                    Object retryAfterMs = lastResult.data().get("retryAfterMs");
+                    if (retryAfterMs instanceof Number n && n.longValue() > 0) {
+                        actualDelay = n.longValue();
+                    }
+                }
                 log.debug("重试执行: toolId={}, attempt={}/{}, delay={}ms",
-                        tool.id(), attempt, maxRetries, delay);
+                        tool.id(), attempt, maxRetries, actualDelay);
                 try {
-                    Thread.sleep(delay);
+                    Thread.sleep(actualDelay);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     return ToolResult.error("执行被中断",
@@ -248,7 +257,8 @@ public class ToolExecutionPipeline implements java.io.Closeable {
     /**
      * 判断结果是否可重试。
      *
-     * <p>超时和临时性错误可重试，参数错误和护栏拦截不可重试。
+     * <p>RATE_LIMITED 状态始终可重试；超时和临时性错误可重试；
+     * 参数错误和护栏拦截不可重试。
      * 用户响应超时（交互工具）不可重试 — SSE 断开后重试无意义。</p>
      */
     private boolean isRetryable(ToolResult result, ToolContract tool) {
@@ -258,6 +268,10 @@ public class ToolExecutionPipeline implements java.io.Closeable {
         // handoff 工具不可重试
         if (tool.tags().contains("handoff")) {
             return false;
+        }
+        // RATE_LIMITED 始终可重试
+        if (result.status() == ToolResultStatus.RATE_LIMITED) {
+            return true;
         }
         String error = result.error();
         if (error == null) {
