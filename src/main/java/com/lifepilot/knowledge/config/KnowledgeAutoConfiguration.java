@@ -202,8 +202,9 @@ public class KnowledgeAutoConfiguration {
     @ConditionalOnMissingBean
     public KnowledgeExtractionPipeline knowledgeExtractionPipeline(LlmRouter llmRouter,
                                                                     SemanticMemory semanticMemory,
-                                                                    KnowledgeBaseProperties props) {
-        return new KnowledgeExtractionPipeline(llmRouter, semanticMemory, props.extraction());
+                                                                    KnowledgeBaseProperties props,
+                                                                    PromptRegistry promptRegistry) {
+        return new KnowledgeExtractionPipeline(llmRouter, semanticMemory, props.extraction(), promptRegistry);
     }
 
     // ---- 查询增强（可选） ----
