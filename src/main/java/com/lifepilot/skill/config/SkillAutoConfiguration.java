@@ -166,12 +166,13 @@ public class SkillAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public ScheduleSkillProvider scheduleSkillProvider(ScheduleRepository scheduleRepository,
+    public ScheduleSkillProvider scheduleSkillProvider(DataStoreManager dataStoreManager,
+                                                       ObjectMapper objectMapper,
                                                        PromptRegistry promptRegistry,
                                                        @Nullable ScheduledTaskService scheduledTaskService,
                                                        @Nullable SchedulerProperties schedulerProperties) {
-        log.info("Skill 系统: 注册 ScheduleSkillProvider");
-        return new ScheduleSkillProvider(scheduleRepository, promptRegistry,
+        log.info("Skill 系统: 注册 ScheduleSkillProvider（DataStore 存储）");
+        return new ScheduleSkillProvider(dataStoreManager, objectMapper, promptRegistry,
                 scheduledTaskService, schedulerProperties);
     }
 
