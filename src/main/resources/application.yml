@@ -723,6 +723,10 @@ lifepilot:
         tool-timeout-seconds: 30
         install-timeout-seconds: 600
         text-snapshot-max-length: 10000
+        default-scroll-pixels: 500
+        wait-timeout-seconds: 10
+        accessibility-max-depth: 5
+        js-execution-timeout-seconds: 10
       code-execute:
         enabled: true
         default-language: python
