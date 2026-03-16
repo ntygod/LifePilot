@@ -2,6 +2,7 @@ package com.lifepilot.mcp.config;
 
 import com.lifepilot.mcp.adapter.McpToolAdapter;
 import com.lifepilot.mcp.bridge.SkillToMcpBridge;
+import com.lifepilot.mcp.discovery.McpServerDiscovery;
 import com.lifepilot.mcp.registry.McpServerRegistry;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.slf4j.Logger;
@@ -55,16 +56,31 @@ public class McpAutoConfiguration {
     }
 
     /**
+     * MCP 服务器自动发现组件。
+     *
+     * <p>扫描本地配置文件（~/.mcp/servers.json、.mcp.json 等）自动注册 MCP 服务器，
+     * 与显式配置合并后返回完整的服务器列表。</p>
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public McpServerDiscovery mcpServerDiscovery(McpConfigProperties properties) {
+        return new McpServerDiscovery(properties);
+    }
+
+    /**
      * 应用启动完成后初始化所有配置的 MCP Server 连接。
+     *
+     * <p>当 discovery.enabled=true 时，通过 McpServerDiscovery 合并显式配置与自动发现的配置；
+     * 否则仅使用显式配置。</p>
      */
     @EventListener(ApplicationReadyEvent.class)
     public void onApplicationReady(ApplicationReadyEvent event) {
         var registry = event.getApplicationContext().getBean(McpServerRegistry.class);
-        var properties = event.getApplicationContext().getBean(McpConfigProperties.class);
+        var discovery = event.getApplicationContext().getBean(McpServerDiscovery.class);
 
-        var configs = properties.toServerConfigs();
+        var configs = discovery.discover();
         if (!configs.isEmpty()) {
-            log.info("MCP 自动配置: 初始化 {} 个 MCP Server", configs.size());
+            log.info("MCP 自动配置: 初始化 {} 个 MCP Server（含自动发现）", configs.size());
             registry.initializeAll(configs);
         } else {
             log.info("MCP 自动配置: 无 MCP Server 配置");
