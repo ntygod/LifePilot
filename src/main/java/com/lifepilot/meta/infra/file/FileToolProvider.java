@@ -40,6 +40,7 @@ public class FileToolProvider {
         tools.add(buildFileWriteTool(new FileWriteToolExecutor(properties)));
         tools.add(buildFileListTool(new FileListToolExecutor(properties)));
         tools.add(buildFileSearchTool(new FileSearchToolExecutor(properties)));
+        tools.add(buildFileAppendTool(new FileAppendToolExecutor(properties)));
 
         return List.copyOf(tools);
     }
@@ -136,6 +137,29 @@ public class FileToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .tags(INFRA_TAGS)
+                .executor(executor::execute)
+                .build();
+    }
+
+    /** 构建文件追加工具。 */
+    private BuiltinTool buildFileAppendTool(FileAppendToolExecutor executor) {
+        return BuiltinTool.builder()
+                .id("builtin.file.append")
+                .name("追加文件")
+                .description("向文件末尾追加内容，文件不存在时自动创建。MEDIUM 风险")
+                .inputSchema(JsonSchema.of(Map.of(
+                        "type", "object",
+                        "required", List.of("path", "content"),
+                        "properties", Map.of(
+                                "path", Map.of("type", "string",
+                                        "description", "目标文件路径"),
+                                "content", Map.of("type", "string",
+                                        "description", "要追加的内容")
+                        )
+                )))
+                .riskLevel(RiskLevel.MEDIUM)
+                .idempotent(false)
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
