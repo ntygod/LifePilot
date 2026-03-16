@@ -1377,7 +1377,9 @@ public class ReactAgentLoop {
             Flux<ChatResponse> flux = chatModelInfo.chatModel().stream(prompt);
 
             try {
-                flux.doOnNext(chunk -> {
+                flux.takeWhile(chunk -> !cancellationToken.isCancelled()
+                                && sseManager.getEmitter(streamId) != null)
+                .doOnNext(chunk -> {
                     try {
                         // 记录最后一个 chunk（携带 metadata/usage）
                         lastChunk[0] = chunk;
@@ -1417,6 +1419,13 @@ public class ReactAgentLoop {
                 log.error("流式调用失败: scene={}, provider={}, error={}",
                         scene2, chatModelInfo.providerId(), e.getMessage());
                 throw e;
+            }
+
+            // 取消信号检查：流式消费被 takeWhile 提前终止时记录日志
+            if (cancellationToken.isCancelled()) {
+                log.debug("流式消费因取消信号停止: streamId={}", streamId);
+            } else if (sseManager.getEmitter(streamId) == null) {
+                log.debug("流式消费因 SSE 连接断开停止: streamId={}", streamId);
             }
 
             // 检查 streamingError：某些 Reactor 场景下 doOnError 捕获了异常但 blockLast() 未抛出
