@@ -16,23 +16,55 @@ LLM Router 为知微提供统一的大模型调用能力，支持多 Provider �
 
 ### 2.2 场景路由
 
-定义 13 种调用场景（如 `chat`、`agent-reasoning`、`embedding`、`memory_compression` 等），每个 Provider 声明自己支持的场景，路由层自动匹配。不同场景可使用不同模型，例如 embedding 使用专用嵌入模型，对话使用通用大模型。
+定义 8 种调用场景（`LlmScene` 常量）：
+
+- `chat`: 通用对话
+- `agent_react`: ReAct Agent 循环
+- `knowledge_extraction`: 知识实体提取（AUDN）
+- `memory_compression`: 记忆压缩
+- `embedding`: 向量嵌入
+- `proactive_reasoning`: 主动推理
+- `skill_generation`: Skill 自动生成
+- `knowledge_rerank`: 知识精排
+
+每个 Provider 声明自己支持的场景，路由层自动匹配。不同场景可使用不同模型。
 
 ### 2.3 熔断器与故障转移
 
-每个 Provider 的每种能力类型独立维护熔断器状态（Closed → Open → HalfOpen）。当某个 Provider 连续失败达到阈值时自动熔断，请求自动转移到下一个可用 Provider。恢复后自动探测并重新启用。
+每个 Provider 独立维护熔断器状态（Closed → Open → HalfOpen）。当某个 Provider 连续失败达到阈值时自动熔断，请求自动转移到下一个可用 Provider。恢复后自动探测并重新启用。
+
+熔断器位于 `com.lifepilot.llm.circuit` 包。
 
 ### 2.4 指数退避重试
 
-失败后采用指数退避策略重试（初始 500ms，倍数 2.0，上限 5s），最多重试 2 次，避免对故障 Provider 造成额外压力。
+`ExponentialBackoff` 类实现指数退避策略：
+
+- 初始延迟：500ms
+- 退避倍数：2.0
+- 最大延迟：5s
+- 最大重试次数：2 次
+
+避免对故障 Provider 造成额外压力。
 
 ### 2.5 语义缓存
 
-基于 sqlite-vec 向量相似度的语义缓存。对于语义相近的 Prompt，直接返回缓存结果，减少 LLM 调用次数和 Token 消耗。
+基于 sqlite-vec 向量相似度的语义缓存（`com.lifepilot.llm.cache` 包）。对于语义相近的 Prompt，直接返回缓存结果，减少 LLM 调用次数和 Token 消耗。
 
 ### 2.6 多能力声明
 
-Provider 可声明 8 种能力：Chat、Embedding、Structured Output、Function Calling、Streaming、Vision、TTS、STT。路由层根据调用需求自动筛选具备对应能力的 Provider。
+Provider 可声明 9 种能力（`ProviderCapability` 枚举）：
+
+- `CHAT`: 对话能力
+- `EMBEDDING`: 向量嵌入
+- `STRUCTURED_OUTPUT`: 结构化输出
+- `FUNCTION_CALLING`: 函数调用
+- `STREAMING`: 流式输出
+- `VISION`: 视觉理解
+- `TTS`: 文字转语音
+- `STT`: 语音转文字
+- `RERANK`: 重排序
+
+路由层根据调用需求自动筛选具备对应能力的 Provider。
 
 ### 2.7 流式响应
 
