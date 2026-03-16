@@ -127,7 +127,7 @@ class McpToolAdapterTest {
         var schema = new McpToolSchema("read_file", "读取文件",
                 Map.of("type", "object"), null);
 
-        var tool = adapter.toToolContract("fs", schema, mockClient);
+        var tool = adapter.toToolContract("fs", schema);
 
         assertEquals("mcp.fs.read_file", tool.id());
         assertEquals("read_file", tool.name());
@@ -142,7 +142,7 @@ class McpToolAdapterTest {
     void toToolContract_无description时使用默认描述() {
         var schema = new McpToolSchema("my_tool", null, null, null);
 
-        var tool = adapter.toToolContract("server", schema, mockClient);
+        var tool = adapter.toToolContract("server", schema);
 
         assertEquals("MCP 工具: my_tool", tool.description());
     }
@@ -152,7 +152,7 @@ class McpToolAdapterTest {
         var annotations = new McpToolAnnotations(null, null, null, true, null);
         var schema = new McpToolSchema("tool", "描述", null, annotations);
 
-        var tool = adapter.toToolContract("server", schema, mockClient);
+        var tool = adapter.toToolContract("server", schema);
 
         assertTrue(tool.idempotent());
     }
@@ -162,7 +162,7 @@ class McpToolAdapterTest {
         var annotations = new McpToolAnnotations(null, false, true, null, null);
         var schema = new McpToolSchema("delete_all", "删除全部", null, annotations);
 
-        var tool = adapter.toToolContract("server", schema, mockClient);
+        var tool = adapter.toToolContract("server", schema);
 
         assertEquals(RiskLevel.HIGH, tool.riskLevel());
         // HIGH 风险：30 秒超时，1 次重试
@@ -175,7 +175,7 @@ class McpToolAdapterTest {
         var annotations = new McpToolAnnotations(null, false, true, null, true);
         var schema = new McpToolSchema("nuke", "核弹", null, annotations);
 
-        var tool = adapter.toToolContract("server", schema, mockClient);
+        var tool = adapter.toToolContract("server", schema);
 
         assertEquals(RiskLevel.CRITICAL, tool.riskLevel());
         // CRITICAL 风险：15 秒超时，0 次重试
@@ -188,7 +188,7 @@ class McpToolAdapterTest {
         var annotations = new McpToolAnnotations(null, true, null, null, null);
         var schema = new McpToolSchema("list", "列表", null, annotations);
 
-        var tool = adapter.toToolContract("server", schema, mockClient);
+        var tool = adapter.toToolContract("server", schema);
 
         assertTrue(tool.tags().contains("read-only"));
         assertFalse(tool.tags().contains("destructive"));
@@ -199,7 +199,7 @@ class McpToolAdapterTest {
         var annotations = new McpToolAnnotations(null, false, true, null, null);
         var schema = new McpToolSchema("delete", "删除", null, annotations);
 
-        var tool = adapter.toToolContract("server", schema, mockClient);
+        var tool = adapter.toToolContract("server", schema);
 
         assertTrue(tool.tags().contains("destructive"));
         assertFalse(tool.tags().contains("read-only"));
