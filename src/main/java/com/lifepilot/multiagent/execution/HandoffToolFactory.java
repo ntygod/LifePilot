@@ -91,7 +91,8 @@ public class HandoffToolFactory {
                                 callerDepth,
                                 definition.preferredProvider(),
                                 null, // allowedToolIds 由 AgentExecutor 计算
-                                null  // 子 Agent 委托不携带多模态媒体
+                                null, // 子 Agent 委托不携带多模态媒体
+                                null  // temperature
                         );
 
                         var result = agentExecutor.execute(definition, subRequest);

@@ -164,6 +164,14 @@ public class ReactAgentLoop {
         this.attachmentRepository = attachmentRepository;
     }
 
+    /** 测试会话前缀 — 以此开头的 sessionId 不持久化对话历史和记忆。 */
+    private static final String TEST_SESSION_PREFIX = "test:";
+
+    /** 判断是否为测试会话（不持久化对话历史和记忆）。 */
+    private static boolean isTestSession(@Nullable String sessionId) {
+        return sessionId != null && sessionId.startsWith(TEST_SESSION_PREFIX);
+    }
+
     /** 获取当前取消令牌（外部可调用 cancel() 中断循环）。 */
     @Nullable
     public CancellationToken getCancellationToken() {
@@ -351,7 +359,7 @@ public class ReactAgentLoop {
                     ? new AgentRequest(request.message(), request.sessionId(), request.channel(),
                         request.systemPrompt(), request.budget(), request.parentTraceId(),
                         request.depth(), request.preferredProvider(), request.allowedToolIds(),
-                        assembledContext.mediaContents())
+                        assembledContext.mediaContents(), request.temperature())
                     : request;
             var iterationStart = Instant.now();
             ChatResponse chatResponse;
@@ -869,14 +877,17 @@ public class ReactAgentLoop {
                 ? new AgentRequest(request.message(), request.sessionId(), request.channel(),
                         request.systemPrompt(), request.budget(), request.parentTraceId(),
                         request.depth(), request.preferredProvider(), request.allowedToolIds(),
-                        processedMedia)
+                        processedMedia, request.temperature())
                 : request;
 
         try {
             state = initState(effectiveRequest);
             collectedToolMedia.clear();
-            writeUserMessageToL1(state, effectiveRequest.mediaContents());
-            persistUserMessage(state);
+            boolean testSession = isTestSession(effectiveRequest.sessionId());
+            if (!testSession) {
+                writeUserMessageToL1(state, effectiveRequest.mediaContents());
+                persistUserMessage(state);
+            }
             traceContext = startTraceIfEnabled(state, effectiveRequest);
             loopStart = Instant.now();
 
@@ -891,11 +902,14 @@ public class ReactAgentLoop {
                 state = state.toBuilder().reasoningSummary(summary).build();
             }
 
-            writeAssistantMessageToL1(state);
-            String assistantMessageId = persistAssistantMessage(state);
-            persistInjectionRecord(assistantMessageId, state.sessionId());
-            persistToolMediaAttachments(assistantMessageId, state.sessionId());
-            asyncPostProcess(state);
+            String assistantMessageId = null;
+            if (!testSession) {
+                writeAssistantMessageToL1(state);
+                assistantMessageId = persistAssistantMessage(state);
+                persistInjectionRecord(assistantMessageId, state.sessionId());
+                persistToolMediaAttachments(assistantMessageId, state.sessionId());
+                asyncPostProcess(state);
+            }
 
             // 聚合 Token 使用量
             TokenUsage tokenUsage = aggregateTokenUsage(traceContext);
@@ -984,16 +998,19 @@ public class ReactAgentLoop {
                 ? new AgentRequest(request.message(), request.sessionId(), request.channel(),
                         request.systemPrompt(), request.budget(), request.parentTraceId(),
                         request.depth(), request.preferredProvider(), request.allowedToolIds(),
-                        processedMedia)
+                        processedMedia, request.temperature())
                 : request;
 
         try {
             state = initState(effectiveRequest);
             collectedToolMedia.clear();
-            writeUserMessageToL1(state, effectiveRequest.mediaContents());
+            boolean testSession = isTestSession(effectiveRequest.sessionId());
+            if (!testSession) {
+                writeUserMessageToL1(state, effectiveRequest.mediaContents());
+            }
 
-            // 同步写入用户消息到 chat_messages
-            if (conversationHistoryStore != null && state.goal() != null && !state.goal().isBlank()) {
+            // 同步写入用户消息到 chat_messages（测试会话跳过）
+            if (!testSession && conversationHistoryStore != null && state.goal() != null && !state.goal().isBlank()) {
                 try {
                     userMessageId = conversationHistoryStore.appendUserMessage(
                             state.sessionId(), state.goal(), state.traceId());
@@ -1053,44 +1070,47 @@ public class ReactAgentLoop {
                             .build();
                 }
 
-                writeAssistantMessageToL1(state);
+                // 测试会话跳过所有持久化操作
+                if (!testSession) {
+                    writeAssistantMessageToL1(state);
 
-                String a2uiJson = serializeA2uiTree(lastCollectedA2uiTree);
-                if (conversationHistoryStore != null
-                        && ((finalContent != null && !finalContent.isBlank()) || a2uiJson != null)) {
-                    try {
-                        assistantMessageId = conversationHistoryStore.appendAssistantMessage(
-                                state.sessionId(),
-                                finalContent != null ? finalContent : "",
-                                reasoningSummary, state.traceId(), a2uiJson);
-                    } catch (Exception e) {
-                        log.warn("助手消息同步写入失败: sessionId={}, error={}", state.sessionId(), e.getMessage());
-                    }
-                }
-
-                persistInjectionRecord(assistantMessageId, state.sessionId());
-
-                // 持久化工具产生的媒体附件（截图等通过 SSE MEDIA 事件发送的数据）
-                persistToolMediaAttachments(assistantMessageId, state.sessionId());
-
-                // 持久化用户上传的媒体附件到 message_attachments 表
-                if (attachmentRepository != null && assistantMessageId != null
-                        && effectiveRequest.mediaContents() != null && !effectiveRequest.mediaContents().isEmpty()) {
-                    for (var mc : effectiveRequest.mediaContents()) {
+                    String a2uiJson = serializeA2uiTree(lastCollectedA2uiTree);
+                    if (conversationHistoryStore != null
+                            && ((finalContent != null && !finalContent.isBlank()) || a2uiJson != null)) {
                         try {
-                            String fileName = mc.fileName() != null ? mc.fileName()
-                                    : "media-" + UUID.randomUUID().toString().substring(0, 8) + "." + guessExtension(mc.mimeType());
-                            String dataUri = "data:" + mc.mimeType() + ";base64," + java.util.Base64.getEncoder().encodeToString(mc.data());
-                            attachmentRepository.save(assistantMessageId, state.sessionId(),
-                                    fileName, "", mc.sizeBytes(), mc.mimeType(), dataUri);
+                            assistantMessageId = conversationHistoryStore.appendAssistantMessage(
+                                    state.sessionId(),
+                                    finalContent != null ? finalContent : "",
+                                    reasoningSummary, state.traceId(), a2uiJson);
                         } catch (Exception e) {
-                            log.warn("媒体附件持久化失败: sessionId={}, error={}", state.sessionId(), e.getMessage());
+                            log.warn("助手消息同步写入失败: sessionId={}, error={}", state.sessionId(), e.getMessage());
                         }
                     }
-                    log.debug("媒体附件持久化完成: sessionId={}, count={}", state.sessionId(), effectiveRequest.mediaContents().size());
-                }
 
-                asyncPostProcess(state);
+                    persistInjectionRecord(assistantMessageId, state.sessionId());
+
+                    // 持久化工具产生的媒体附件（截图等通过 SSE MEDIA 事件发送的数据）
+                    persistToolMediaAttachments(assistantMessageId, state.sessionId());
+
+                    // 持久化用户上传的媒体附件到 message_attachments 表
+                    if (attachmentRepository != null && assistantMessageId != null
+                            && effectiveRequest.mediaContents() != null && !effectiveRequest.mediaContents().isEmpty()) {
+                        for (var mc : effectiveRequest.mediaContents()) {
+                            try {
+                                String fileName = mc.fileName() != null ? mc.fileName()
+                                        : "media-" + UUID.randomUUID().toString().substring(0, 8) + "." + guessExtension(mc.mimeType());
+                                String dataUri = "data:" + mc.mimeType() + ";base64," + java.util.Base64.getEncoder().encodeToString(mc.data());
+                                attachmentRepository.save(assistantMessageId, state.sessionId(),
+                                        fileName, "", mc.sizeBytes(), mc.mimeType(), dataUri);
+                            } catch (Exception e) {
+                                log.warn("媒体附件持久化失败: sessionId={}, error={}", state.sessionId(), e.getMessage());
+                            }
+                        }
+                        log.debug("媒体附件持久化完成: sessionId={}, count={}", state.sessionId(), effectiveRequest.mediaContents().size());
+                    }
+
+                    asyncPostProcess(state);
+                }
                 finalTokenUsage = aggregateTokenUsage(traceContext);
             }
         } catch (Exception e) {
@@ -1190,6 +1210,11 @@ public class ReactAgentLoop {
             // 构建 ChatOptions：注入工具定义但禁用自动执行
             var optionsBuilder = DefaultToolCallingChatOptions.builder()
                     .internalToolExecutionEnabled(false);
+
+            // 温度透传：从 AgentRequest 传入的 temperature 覆盖默认值
+            if (req.temperature() != null) {
+                optionsBuilder.temperature(req.temperature());
+            }
 
             if (toolCallbacks != null && !toolCallbacks.isEmpty()) {
                 var validCallbacks = toolCallbacks.stream()
@@ -1338,6 +1363,12 @@ public class ReactAgentLoop {
             // 构建带工具定义但禁用自动执行的 ChatOptions
             var optionsBuilder = DefaultToolCallingChatOptions.builder()
                     .internalToolExecutionEnabled(false);
+
+            // 温度透传：从 AgentRequest 传入的 temperature 覆盖默认值
+            if (req.temperature() != null) {
+                optionsBuilder.temperature(req.temperature());
+            }
+
             if (toolCallbacks != null && !toolCallbacks.isEmpty()) {
                 var validCallbacks = toolCallbacks.stream()
                         .filter(Objects::nonNull)
@@ -1704,6 +1735,10 @@ public class ReactAgentLoop {
 
     /** 初始化 ReAct 状态 — 查找已有会话或创建新状态。 */
     private ReactAgentState initState(AgentRequest request) {
+        // 测试会话不恢复历史状态
+        if (isTestSession(request.sessionId())) {
+            return ReactAgentState.init(request);
+        }
         var existingSession = sessionManager.findSession(request.sessionId());
         if (existingSession.isPresent()) {
             var snapshot = existingSession.get();

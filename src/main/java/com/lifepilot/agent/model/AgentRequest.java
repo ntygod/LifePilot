@@ -28,7 +28,8 @@ public record AgentRequest(
         int depth,
         @Nullable String preferredProvider,
         @Nullable List<String> allowedToolIds,
-        @Nullable List<MediaContent> mediaContents
+        @Nullable List<MediaContent> mediaContents,
+        @Nullable Double temperature
 ) {
 
     /**
@@ -39,6 +40,6 @@ public record AgentRequest(
      * @param channel   渠道标识
      */
     public AgentRequest(String message, String sessionId, String channel) {
-        this(message, sessionId, channel, null, null, null, 0, null, null, null);
+        this(message, sessionId, channel, null, null, null, 0, null, null, null, null);
     }
 }

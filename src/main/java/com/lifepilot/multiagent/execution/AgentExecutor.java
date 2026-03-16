@@ -75,7 +75,8 @@ public class AgentExecutor {
                     newDepth,
                     request.preferredProvider(),
                     allowedToolIds,
-                    null // 子 Agent 委托不携带多模态媒体
+                    null, // 子 Agent 委托不携带多模态媒体
+                    request.temperature()
             );
 
             // 4. 执行 ReactAgentLoop

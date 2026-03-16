@@ -182,7 +182,8 @@ public class ExecutionMiddleware implements GatewayMiddleware {
                 0,
                 resolvePreferredProvider(message),
                 null,
-                buildMediaContents(message)
+                buildMediaContents(message),
+                resolveTemperature(message.sessionId())
         );
     }
 
@@ -223,6 +224,31 @@ public class ExecutionMiddleware implements GatewayMiddleware {
     private String extractPreferredProvider(GatewayMessage message) {
         if (message.channelMetadata() instanceof ChannelMetadata.WebMetadata webMetadata) {
             return SessionConfigKeys.normalizeString(webMetadata.preferredProvider());
+        }
+        return null;
+    }
+
+    /**
+     * 从会话配置读取 temperature。无配置时返回 null（使用模型默认值）。
+     */
+    @Nullable
+    private Double resolveTemperature(@Nullable String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return null;
+        }
+        try {
+            Map<String, Object> config = chatSessionRepository.getConfig(sessionId);
+            if (config == null || !config.containsKey(SessionConfigKeys.TEMPERATURE)) {
+                return null;
+            }
+            Object tempObj = config.get(SessionConfigKeys.TEMPERATURE);
+            if (tempObj instanceof Number num) {
+                double val = num.doubleValue();
+                return val >= 0 ? val : null;
+            }
+        } catch (Exception e) {
+            log.debug("读取会话 temperature 配置失败，使用默认值: sessionId={}, error={}",
+                    sessionId, e.getMessage());
         }
         return null;
     }

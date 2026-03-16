@@ -1,5 +1,6 @@
 package com.lifepilot.interaction.web.controller;
 
+import com.lifepilot.agent.CancellationToken;
 import com.lifepilot.agent.ReactAgentLoop;
 import com.lifepilot.agent.context.AssembledContext;
 import com.lifepilot.agent.context.ContextAssembler;
@@ -19,6 +20,8 @@ import com.lifepilot.interaction.web.model.CreateAgentRequest;
 import com.lifepilot.interaction.web.model.ErrorResponse;
 import com.lifepilot.interaction.web.model.TestChatRequest;
 import com.lifepilot.interaction.web.model.UpdateAgentRequest;
+import com.lifepilot.interaction.web.sse.SseEventType;
+import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.knowledge.KnowledgeBaseManager;
 import com.lifepilot.knowledge.model.KnowledgeBase;
 import com.lifepilot.multiagent.model.AgentBudget;
@@ -43,6 +46,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -79,6 +83,7 @@ public class AgentController {
     private final AgentMarkdownSerializer markdownSerializer;
     private final AgentMarkdownLoader markdownLoader;
     private final MultiAgentProperties multiAgentConfig;
+    @Nullable private final SseSessionManager sseSessionManager;
 
     public AgentController(AgentRegistry agentRegistry,
                            @Nullable ReactAgentLoop reactAgentLoop,
@@ -87,7 +92,8 @@ public class AgentController {
                            AgentMarkdownParser markdownParser,
                            AgentMarkdownSerializer markdownSerializer,
                            AgentMarkdownLoader markdownLoader,
-                           MultiAgentProperties multiAgentConfig) {
+                           MultiAgentProperties multiAgentConfig,
+                           @Nullable SseSessionManager sseSessionManager) {
         this.agentRegistry = agentRegistry;
         this.reactAgentLoop = reactAgentLoop;
         this.knowledgeBaseManager = knowledgeBaseManager;
@@ -96,6 +102,7 @@ public class AgentController {
         this.markdownSerializer = markdownSerializer;
         this.markdownLoader = markdownLoader;
         this.multiAgentConfig = multiAgentConfig;
+        this.sseSessionManager = sseSessionManager;
     }
 
     /**
@@ -364,7 +371,8 @@ public class AgentController {
                     0,    // 深度为 0
                     preferredProviderId,
                     agent.allowedTools(),
-                    null // 测试对话暂不携带多模态内容
+                    null, // 测试对话暂不携带多模态内容
+                    null  // temperature
             );
 
             // 4. 执行 Agent 对话
@@ -397,6 +405,102 @@ public class AgentController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
                     new ErrorResponse(500, "Agent 测试对话失败: " + e.getMessage(), Instant.now()));
         }
+    }
+
+    /**
+     * Agent 流式测试对话接口。
+     *
+     * <p>使用指定 Agent 配置进行流式对话测试，不保存会话历史和记忆。
+     * 返回 SseEmitter 推送 TOKEN / DONE / ERROR 事件。</p>
+     *
+     * @param id      Agent ID
+     * @param request 测试消息请求
+     * @return SseEmitter 流式事件
+     */
+    @PostMapping("/{id}/test-chat/stream")
+    public SseEmitter testChatStream(@PathVariable String id,
+                                     @RequestBody TestChatRequest request) {
+        // 前置校验
+        if (reactAgentLoop == null || sseSessionManager == null) {
+            var emitter = new SseEmitter(0L);
+            try {
+                emitter.send(SseEmitter.event()
+                        .name(SseEventType.ERROR)
+                        .data(Map.of("code", 503, "message", "Agent 引擎或 SSE 管理器未启用")));
+                emitter.complete();
+            } catch (Exception e) {
+                emitter.completeWithError(e);
+            }
+            return emitter;
+        }
+
+        if (request.message() == null || request.message().isBlank()) {
+            var emitter = new SseEmitter(0L);
+            try {
+                emitter.send(SseEmitter.event()
+                        .name(SseEventType.ERROR)
+                        .data(Map.of("code", 400, "message", "消息内容不能为空")));
+                emitter.complete();
+            } catch (Exception e) {
+                emitter.completeWithError(e);
+            }
+            return emitter;
+        }
+
+        // 查找 Agent 定义
+        var agentOpt = agentRegistry.find(id);
+        if (agentOpt.isEmpty()) {
+            var emitter = new SseEmitter(0L);
+            try {
+                emitter.send(SseEmitter.event()
+                        .name(SseEventType.ERROR)
+                        .data(Map.of("code", 404, "message", "Agent 不存在: id=" + id)));
+                emitter.complete();
+            } catch (Exception e) {
+                emitter.completeWithError(e);
+            }
+            return emitter;
+        }
+
+        AgentDefinition agent = agentOpt.get();
+        String preferredProviderId = resolvePreferredProviderId(agent);
+
+        // 创建 SSE 流
+        String streamId = UUID.randomUUID().toString();
+        SseEmitter emitter = sseSessionManager.createEmitter(streamId);
+
+        // 构建 AgentRequest（测试会话 ID 以 "test:" 开头，ReactAgentLoop 会跳过持久化）
+        String testSessionId = "test:" + UUID.randomUUID();
+        var agentRequest = new AgentRequest(
+                request.message(),
+                testSessionId,
+                "web-test",
+                agent.systemPrompt(),
+                agent.budget().toAgentBudget(),
+                null, 0,
+                preferredProviderId,
+                agent.allowedTools(),
+                null, // 测试对话暂不携带多模态内容
+                null  // temperature
+        );
+
+        // 注册取消令牌并异步执行
+        var cancellationToken = new CancellationToken();
+        sseSessionManager.registerCancellationToken(streamId, cancellationToken);
+
+        Thread.startVirtualThread(() -> {
+            try {
+                reactAgentLoop.runStreaming(agentRequest, streamId, sseSessionManager, cancellationToken);
+            } catch (Exception e) {
+                log.error("流式测试对话异常: agentId={}, streamId={}, error={}", id, streamId, e.getMessage(), e);
+                sseSessionManager.sendEvent(streamId, SseEventType.ERROR,
+                        Map.of("code", 500, "message", "流式测试对话失败: " + e.getMessage()));
+                sseSessionManager.closeEmitter(streamId);
+            }
+        });
+
+        log.info("Agent 流式测试对话开始: agentId={}, streamId={}", id, streamId);
+        return emitter;
     }
 
     /**
@@ -439,6 +543,7 @@ public class AgentController {
                     null, 0,
                     preferredProviderId,
                     agent.allowedTools(),
+                    null,
                     null
             );
             ReactAgentState state = ReactAgentState.init(agentRequest);
