@@ -462,7 +462,7 @@ function goBack() {
             </TabsList>
 
             <TabsContent value="config" class="space-y-5">
-              <PageSection eyebrow="基本信息" title="名称、描述与标签" description="先看档案信息，再继续改配置。">
+              <PageSection eyebrow="基本信息" title="名称、描述与标签" description="查看和编辑基本信息。">
                 <template #actions>
                   <Button v-if="!editingBasic" variant="outline" @click="editingBasic = true">
                     编辑
@@ -514,7 +514,7 @@ function goBack() {
                       <div>
                         <div class="surface-label text-[0.68rem]">当前档案</div>
                         <p class="mt-2 text-sm leading-6 text-muted-foreground">
-                          这里先确认类型、来源和更新时间，再继续调整模型、知识库与工具。
+                          查看类型、来源和更新时间。
                         </p>
                       </div>
                       <div class="flex flex-wrap gap-2 text-xs text-muted-foreground">

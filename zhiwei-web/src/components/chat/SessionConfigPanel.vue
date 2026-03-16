@@ -123,7 +123,7 @@ function toggleKb(id: string, checked: boolean) {
           决定这个会话优先使用哪个 Provider、回答风格和资料范围
         </div>
         <p class="text-sm leading-6 text-muted-foreground">
-          这里的调整会立即作用在当前会话里，适合在开聊前先把模型偏好、回答长度和知识范围定好。
+          配置会话使用的模型、知识库等。
         </p>
       </div>
 
@@ -162,7 +162,7 @@ function toggleKb(id: string, checked: boolean) {
             </SelectContent>
           </Select>
           <p class="text-xs leading-5 text-muted-foreground">
-            如果不指定，这个会话会先看场景默认，再回退到全局默认和自动路由。
+            未指定时使用场景默认或全局默认。
           </p>
         </section>
 
@@ -198,7 +198,7 @@ function toggleKb(id: string, checked: boolean) {
             @update:model-value="onMaxTokensChange"
           />
           <p class="text-xs leading-5 text-muted-foreground">
-            控制单轮回复上限，适合避免回答过短或展开过多。
+            控制回复的最大长度。
           </p>
         </section>
 

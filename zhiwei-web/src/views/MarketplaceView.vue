@@ -143,7 +143,7 @@ onMounted(() => {
         <PageHeader
           eyebrow="市场"
           title="扩展市场"
-          description="先判断哪些扩展已经装到本地、哪些存在更新，再决定是安装新能力还是继续升级已有扩展。"
+          description="浏览和安装扩展。"
         >
           <template #actions>
             <Button variant="outline" :disabled="refreshing" @click="handleRefresh">

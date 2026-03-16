@@ -442,7 +442,7 @@ onBeforeUnmount(() => {
           <PageHeader
             eyebrow="工作流"
             title="工作流目录"
-            description="先判断哪些流程正在可用、哪些已经停用，再进入详情页继续编辑步骤、触发器和执行记录。"
+            description="管理工作流定义和执行。"
           >
             <template #actions>
               <Button @click="openCreate">
@@ -568,7 +568,7 @@ onBeforeUnmount(() => {
             <StatePanel
               v-else-if="store.list.length === 0"
               title="还没有工作流"
-              description="先创建一个工作流，再补充步骤、触发器和执行设置。"
+              description="创建一个工作流来自动化执行任务。"
             >
               <template #icon>
                 <Workflow class="size-5" />

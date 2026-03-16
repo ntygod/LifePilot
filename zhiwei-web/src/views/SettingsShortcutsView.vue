@@ -67,7 +67,7 @@ function formatShortcutKey(key: string) {
         <div class="surface-label mb-2 text-[0.68rem]">使用说明</div>
         <div class="text-sm font-medium text-foreground">系统预设，暂不支持自定义</div>
         <p class="mt-1 text-sm leading-6 text-muted-foreground">
-          先记住高频操作，再按分类翻查低频组合键。
+          查看快捷键列表。
         </p>
       </div>
     </section>

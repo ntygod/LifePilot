@@ -125,9 +125,9 @@ function isActiveItem(path: string) {
             <section class="detail-card p-5">
               <div class="space-y-1">
                 <div class="surface-label">设置分区</div>
-                <h2 class="section-title text-foreground">先选场景，再继续调整</h2>
+                <h2 class="section-title text-foreground">场景设置</h2>
                 <p class="text-sm leading-6 text-muted-foreground">
-                  左侧只保留导航和当前摘要，右侧专注处理具体设置。
+                  选择一个场景来调整设置。
                 </p>
               </div>
 

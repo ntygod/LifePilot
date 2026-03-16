@@ -158,7 +158,7 @@ function removeTool(tool: string) {
 <template>
   <FormDialogShell
     :title="mode === 'create' ? '新建技能' : mode === 'edit' ? '编辑技能' : '复制技能'"
-    description="先填写基础信息，再按需补充高级配置。"
+    description="填写技能基础信息。"
     content-class="sm:max-w-[720px]"
     body-class="space-y-6"
     @close="emit('close')"

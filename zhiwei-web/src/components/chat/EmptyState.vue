@@ -8,20 +8,20 @@ const emit = defineEmits<{
 const examples = [
   {
     label: '判断方向',
-    title: '先判断这件事值不值得做',
-    description: '适合在项目起步前先看边界、风险和优先级。',
+    title: '评估项目可行性',
+    description: '评估项目边界、风险和优先级。',
     prompt: '帮我快速判断这个项目现在适合做什么、不适合做什么',
   },
   {
     label: '搭知识库',
-    title: '把资料整理成可复用的知识库',
-    description: '先拆出实施步骤、角色分工和上线顺序。',
+    title: '整理知识库',
+    description: '整理实施步骤和分工。',
     prompt: '我想把一批内部文档接成知识库，先帮我列出实施步骤',
   },
   {
     label: '同步进展',
-    title: '把最近讨论整理成可以转发的摘要',
-    description: '适合沉淀阶段结论、待办和对外同步内容。',
+    title: '整理摘要',
+    description: '整理阶段结论和待办事项。',
     prompt: '结合最近几条对话，整理一份能直接发给同事的进展摘要',
   },
 ]
