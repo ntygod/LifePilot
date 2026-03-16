@@ -3,6 +3,7 @@ package com.lifepilot.meta.infra.file;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.BuiltinTool;
+import com.lifepilot.tool.model.ToolCategory;
 import com.lifepilot.tool.schema.JsonSchema;
 
 import java.util.ArrayList;
@@ -55,6 +56,7 @@ public class FileToolProvider {
     private BuiltinTool buildFileReadTool(FileReadToolExecutor executor) {
         return BuiltinTool.builder()
                 .id("builtin.file.read")
+                .category(ToolCategory.PERCEPTION)
                 .name("读取文件")
                 .description("读取指定路径的文件内容，支持行范围读取、maxChars 截断和编码指定。返回 totalLines 字段")
                 .inputSchema(JsonSchema.of(Map.of(
@@ -83,6 +85,7 @@ public class FileToolProvider {
     private BuiltinTool buildFileWriteTool(FileWriteToolExecutor executor) {
         return BuiltinTool.builder()
                 .id("builtin.file.write")
+                .category(ToolCategory.ACTION)
                 .name("写入文件")
                 .description("原子写入文件内容（先写临时文件再重命名），支持自动创建父目录。MEDIUM 风险")
                 .inputSchema(JsonSchema.of(Map.of(
@@ -108,6 +111,7 @@ public class FileToolProvider {
     private BuiltinTool buildFileListTool(FileListToolExecutor executor) {
         return BuiltinTool.builder()
                 .id("builtin.file.list")
+                .category(ToolCategory.PERCEPTION)
                 .name("列出目录")
                 .description("列出指定目录的文件和子目录，支持深度限制、glob 过滤、maxEntries 截断和目录优先排序")
                 .inputSchema(JsonSchema.of(Map.of(
@@ -134,6 +138,7 @@ public class FileToolProvider {
     private BuiltinTool buildFileSearchTool(FileSearchToolExecutor executor) {
         return BuiltinTool.builder()
                 .id("builtin.file.search")
+                .category(ToolCategory.PERCEPTION)
                 .name("搜索文件内容")
                 .description("递归搜索目录下文件内容，支持正则表达式、glob 过滤、上下文行和二进制文件自动跳过")
                 .inputSchema(JsonSchema.of(Map.of(
@@ -182,6 +187,7 @@ public class FileToolProvider {
 
         return BuiltinTool.builder()
                 .id("builtin.file.patch")
+                .category(ToolCategory.ACTION)
                 .name("补丁文件")
                 .description("对文件执行行级 insert/replace/delete 操作，原子写入。MEDIUM 风险")
                 .inputSchema(JsonSchema.of(Map.of(
@@ -206,6 +212,7 @@ public class FileToolProvider {
     private BuiltinTool buildFileInfoTool(FileInfoToolExecutor executor) {
         return BuiltinTool.builder()
                 .id("builtin.file.info")
+                .category(ToolCategory.PERCEPTION)
                 .name("文件信息")
                 .description("查询文件或目录的元数据，包括大小、修改时间、权限和 MIME 类型")
                 .inputSchema(JsonSchema.of(Map.of(
@@ -227,6 +234,7 @@ public class FileToolProvider {
     private BuiltinTool buildFileMoveTool(FileMoveToolExecutor executor) {
         return BuiltinTool.builder()
                 .id("builtin.file.move")
+                .category(ToolCategory.ACTION)
                 .name("移动文件")
                 .description("原子移动文件到目标路径，支持覆盖控制。HIGH 风险，每次执行需用户确认")
                 .inputSchema(JsonSchema.of(Map.of(
@@ -252,6 +260,7 @@ public class FileToolProvider {
     private BuiltinTool buildFileCopyTool(FileCopyToolExecutor executor) {
         return BuiltinTool.builder()
                 .id("builtin.file.copy")
+                .category(ToolCategory.ACTION)
                 .name("复制文件")
                 .description("复制文件到目标路径，支持覆盖控制。MEDIUM 风险")
                 .inputSchema(JsonSchema.of(Map.of(
@@ -277,6 +286,7 @@ public class FileToolProvider {
     private BuiltinTool buildFileDeleteTool(FileDeleteToolExecutor executor) {
         return BuiltinTool.builder()
                 .id("builtin.file.delete")
+                .category(ToolCategory.ACTION)
                 .name("删除文件")
                 .description("删除文件或目录，支持递归删除非空目录。HIGH 风险，每次执行需用户确认")
                 .inputSchema(JsonSchema.of(Map.of(
@@ -300,6 +310,7 @@ public class FileToolProvider {
     private BuiltinTool buildFileAppendTool(FileAppendToolExecutor executor) {
         return BuiltinTool.builder()
                 .id("builtin.file.append")
+                .category(ToolCategory.ACTION)
                 .name("追加文件")
                 .description("向文件末尾追加内容，文件不存在时自动创建。MEDIUM 风险")
                 .inputSchema(JsonSchema.of(Map.of(
