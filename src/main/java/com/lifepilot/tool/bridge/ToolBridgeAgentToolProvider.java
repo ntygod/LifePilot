@@ -190,12 +190,21 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
             output = "{\"error\":\"" + escapeJson(result.error()) + "\"}";
         }
         // 全局字符数上限截断
-        if (output.length() > maxToolOutputChars) {
+        // 注意：包含已知媒体字段（如 screenshot）的输出跳过截断，
+        // 由 MediaDataExtractor 在 ReactAgentLoop 中提取媒体后再处理
+        if (output.length() > maxToolOutputChars && !containsMediaField(result)) {
             int originalLength = output.length();
             output = output.substring(0, maxToolOutputChars)
-                    + "\n...[输出已截断，原始长度: " + originalLength + " 字符，截断到: " + maxToolOutputChars + " 字符]";
+                    + "...[输出已截断，原始长度: " + originalLength + " 字符，截断到: " + maxToolOutputChars + " 字符]";
         }
         return output;
+    }
+
+    /** 检查 ToolResult 是否包含已知媒体字段。 */
+    private boolean containsMediaField(ToolResult result) {
+        if (!result.ok() || result.data() == null) return false;
+        // 与 MediaDataExtractor.KNOWN_MEDIA_FIELDS 保持一致
+        return result.data().containsKey("screenshot");
     }
 
     /** 将对象转换为 JSON 值字符串。 */
