@@ -8,6 +8,7 @@ import {
   Bot,
   Brain,
   ChevronRight,
+  FlaskConical,
   GitBranch,
   MessageSquare,
   Pencil,
@@ -109,6 +110,7 @@ const navSections: Array<{ title: string; items: NavItem[] }> = [
           { label: '用量统计', path: '/analytics/usage', icon: BarChart3 },
           { label: '智能体分析', path: '/analytics/agents', icon: Bot },
           { label: '工具统计', path: '/analytics/tools', icon: Wrench },
+          { label: '评估测试', path: '/eval', icon: FlaskConical },
         ],
       },
     ],
@@ -150,7 +152,7 @@ function syncExpandedGroups() {
     expandedGroups.value.add('workspace')
   }
 
-  if (route.path.startsWith('/analytics')) {
+  if (route.path.startsWith('/analytics') || route.path.startsWith('/eval')) {
     expandedGroups.value.add('analytics')
   }
 
