@@ -191,6 +191,20 @@ const router = createRouter({
     },
 
     /**
+     * Eval / 评估
+     */
+    {
+      path: '/eval',
+      name: 'eval',
+      component: () => import('@/views/EvalView.vue')
+    },
+    {
+      path: '/eval/:evalRunId',
+      name: 'evalRunDetail',
+      component: () => import('@/views/EvalRunDetailView.vue')
+    },
+
+    /**
      * Trace / 轨迹
      * 仍保留现有实现
      */

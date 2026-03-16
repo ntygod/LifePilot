@@ -1491,3 +1491,60 @@ export const ENTITY_TYPES = [
   { value: 'SKILL', label: '技能' },
   { value: 'CUSTOM', label: '自定义' },
 ] as const
+
+// ========== Eval 评估模块类型 ==========
+
+/** Benchmark 场景 */
+export interface BenchmarkScenario {
+  id: string
+  name: string
+  userInput: string
+  expectedToolCalls: string[]
+  expectedOutputPattern?: string | null
+  dimensionWeights: Record<string, number>
+  timeoutSeconds: number
+  mockToolResponses?: Record<string, string> | null
+  initialContext?: Record<string, string> | null
+  tags: string[]
+  llmJudgeCriteria?: string | null
+  expectedTokenBudget: number
+  expectedStepCount: number
+}
+
+/** 评估结果 */
+export interface EvalResultItem {
+  evalId: string
+  traceId: string
+  scenarioId: string
+  dimensionScores: Record<string, number>
+  overallScore: number
+  violations: string[]
+  suggestions: string[]
+  llmJudgeScore?: number | null
+  llmJudgeJustification?: string | null
+  llmJudgeTokensUsed: number
+  evaluatedAt: string
+  gitCommitHash?: string | null
+  gitBranch?: string | null
+  evalRunId: string
+}
+
+/** 评估报告汇总 */
+export interface EvalReportSummary {
+  evalRunId: string
+  totalScenarios: number
+  passCount: number
+  failCount: number
+  averageOverallScore: number
+  dimensionAverages: Record<string, number>
+  degraded: boolean
+  regressedScenarios: string[]
+  newRegressions: string[]
+  evaluatedAt: string
+}
+
+/** 评估运行请求 */
+export interface EvalRunRequest {
+  scenarioIds?: string[] | null
+  tag?: string | null
+}

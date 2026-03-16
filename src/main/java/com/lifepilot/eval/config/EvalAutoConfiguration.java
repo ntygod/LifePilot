@@ -11,6 +11,7 @@ import com.lifepilot.eval.report.EvalReport;
 import com.lifepilot.eval.scenario.ScenarioLoader;
 import com.lifepilot.eval.scenario.ScenarioSerializer;
 import com.lifepilot.eval.store.EvalStore;
+import com.lifepilot.eval.web.EvalController;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
@@ -88,6 +89,18 @@ public class EvalAutoConfiguration {
     @ConditionalOnMissingBean
     public EvalReport evalReport(EvalStore evalStore, EvalConfigProperties config) {
         return new EvalReport(evalStore, config);
+    }
+
+    // ==================== REST 控制器 ====================
+
+    @Bean
+    @ConditionalOnMissingBean
+    public EvalController evalController(ScenarioLoader scenarioLoader,
+                                          EvalEngine evalEngine,
+                                          EvalStore evalStore,
+                                          EvalReport evalReport) {
+        log.info("注册 EvalController Bean");
+        return new EvalController(scenarioLoader, evalEngine, evalStore, evalReport);
     }
 
     // ==================== 评估引擎 ====================
