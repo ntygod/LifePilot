@@ -9,7 +9,6 @@ import com.lifepilot.meta.infra.env.DateTimeToolExecutor;
 import com.lifepilot.meta.infra.env.SystemInfoToolExecutor;
 import com.lifepilot.meta.infra.env.UserProfileToolExecutor;
 import com.lifepilot.meta.infra.reason.CalculateToolExecutor;
-import com.lifepilot.meta.infra.reason.ThinkToolExecutor;
 import com.lifepilot.meta.infra.shell.ShellExecToolExecutor;
 import com.lifepilot.meta.infra.interaction.InteractionBridge;
 import com.lifepilot.meta.infra.interaction.InteractionToolProvider;
@@ -82,7 +81,6 @@ public class InfraToolProvider implements BuiltinSkillProvider {
                         "builtin.env.system-info",
                         "builtin.web.search",
                         "builtin.web.fetch",
-                        "builtin.reason.think",
                         "builtin.reason.calculate",
                         "builtin.shell.exec",
                         "builtin.browser.navigate",
@@ -135,11 +133,9 @@ public class InfraToolProvider implements BuiltinSkillProvider {
         toolRegistry.registerBuiltinTool(buildWebSearchTool(webSearchExecutor));
         toolRegistry.registerBuiltinTool(buildWebFetchTool(webFetchExecutor));
 
-        // 推理辅助工具（2 个）
-        var thinkExecutor = new ThinkToolExecutor();
+        // 推理辅助工具（1 个）
         var calculateExecutor = new CalculateToolExecutor();
 
-        toolRegistry.registerBuiltinTool(buildThinkTool(thinkExecutor));
         toolRegistry.registerBuiltinTool(buildCalculateTool(calculateExecutor));
 
         // Shell 执行工具（1 个）
@@ -169,7 +165,7 @@ public class InfraToolProvider implements BuiltinSkillProvider {
         }
 
         log.info("基础工具注册完成: count={}, categories=[env, web, reason, shell, browser, code, file, interact]",
-                interactionBridge != null ? 35 : 32);
+                interactionBridge != null ? 34 : 31);
     }
 
     // ─────────────────────────────────────────────
@@ -273,29 +269,6 @@ public class InfraToolProvider implements BuiltinSkillProvider {
                 .build();
     }
 
-    // ─────────────────────────────────────────────
-    //  推理辅助工具构建
-    // ─────────────────────────────────────────────
-
-    /** 构建思考工具 — Agent 内部推理草稿板。 */
-    private BuiltinTool buildThinkTool(ThinkToolExecutor executor) {
-        return BuiltinTool.builder()
-                .id("builtin.reason.think")
-                .name("思考")
-                .description("Agent 内部推理草稿板，用于逐步思考复杂问题。内容不输出给用户，仅用于 Agent 的中间推理过程")
-                .inputSchema(JsonSchema.of(Map.of(
-                        "type", "object",
-                        "required", List.of("reasoning"),
-                        "properties", Map.of(
-                                "reasoning", Map.of("type", "string",
-                                        "description", "推理内容，Agent 的思考过程")
-                        )
-                )))
-                .riskLevel(RiskLevel.LOW)
-                .tags(INFRA_TAGS)
-                .executor(executor::execute)
-                .build();
-    }
 
     /** 构建计算工具 — BigDecimal 精确运算。 */
     private BuiltinTool buildCalculateTool(CalculateToolExecutor executor) {

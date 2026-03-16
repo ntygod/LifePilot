@@ -41,13 +41,13 @@ class InfraToolProviderTest {
     }
 
     @Test
-    void registerTools_注册12个工具_含全部已实现类别() {
+    void registerTools_注册11个工具_含全部已实现类别() {
         DynamicToolRegistry registry = mock(DynamicToolRegistry.class);
 
         provider.registerTools(registry);
 
         ArgumentCaptor<BuiltinTool> captor = ArgumentCaptor.forClass(BuiltinTool.class);
-        verify(registry, times(12)).registerBuiltinTool(captor.capture());
+        verify(registry, times(11)).registerBuiltinTool(captor.capture());
 
         var tools = captor.getAllValues();
         assertThat(tools).extracting(BuiltinTool::id)
@@ -57,7 +57,6 @@ class InfraToolProviderTest {
                         "builtin.env.system-info",
                         "builtin.web.search",
                         "builtin.web.fetch",
-                        "builtin.reason.think",
                         "builtin.reason.calculate",
                         "builtin.shell.exec",
                         "builtin.browser.navigate",
