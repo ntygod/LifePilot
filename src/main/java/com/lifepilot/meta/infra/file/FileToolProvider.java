@@ -44,6 +44,7 @@ public class FileToolProvider {
         tools.add(buildFileDeleteTool(new FileDeleteToolExecutor(properties)));
         tools.add(buildFileCopyTool(new FileCopyToolExecutor(properties)));
         tools.add(buildFileMoveTool(new FileMoveToolExecutor(properties)));
+        tools.add(buildFileInfoTool(new FileInfoToolExecutor(properties)));
 
         return List.copyOf(tools);
     }
@@ -140,6 +141,27 @@ public class FileToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .tags(INFRA_TAGS)
+                .executor(executor::execute)
+                .build();
+    }
+
+    /** 构建文件信息工具。 */
+    private BuiltinTool buildFileInfoTool(FileInfoToolExecutor executor) {
+        return BuiltinTool.builder()
+                .id("builtin.file.info")
+                .name("文件信息")
+                .description("查询文件或目录的元数据，包括大小、修改时间、权限和 MIME 类型")
+                .inputSchema(JsonSchema.of(Map.of(
+                        "type", "object",
+                        "required", List.of("path"),
+                        "properties", Map.of(
+                                "path", Map.of("type", "string",
+                                        "description", "文件或目录路径")
+                        )
+                )))
+                .riskLevel(RiskLevel.LOW)
+                .idempotent(true)
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
