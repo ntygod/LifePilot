@@ -42,6 +42,7 @@ public class FileToolProvider {
         tools.add(buildFileSearchTool(new FileSearchToolExecutor(properties)));
         tools.add(buildFileAppendTool(new FileAppendToolExecutor(properties)));
         tools.add(buildFileDeleteTool(new FileDeleteToolExecutor(properties)));
+        tools.add(buildFileCopyTool(new FileCopyToolExecutor(properties)));
 
         return List.copyOf(tools);
     }
@@ -138,6 +139,31 @@ public class FileToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .tags(INFRA_TAGS)
+                .executor(executor::execute)
+                .build();
+    }
+
+    /** 构建文件复制工具。 */
+    private BuiltinTool buildFileCopyTool(FileCopyToolExecutor executor) {
+        return BuiltinTool.builder()
+                .id("builtin.file.copy")
+                .name("复制文件")
+                .description("复制文件到目标路径，支持覆盖控制。MEDIUM 风险")
+                .inputSchema(JsonSchema.of(Map.of(
+                        "type", "object",
+                        "required", List.of("source", "destination"),
+                        "properties", Map.of(
+                                "source", Map.of("type", "string",
+                                        "description", "源文件路径"),
+                                "destination", Map.of("type", "string",
+                                        "description", "目标路径"),
+                                "overwrite", Map.of("type", "boolean",
+                                        "description", "目标已存在时是否覆盖，默认 false")
+                        )
+                )))
+                .riskLevel(RiskLevel.MEDIUM)
+                .idempotent(false)
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
