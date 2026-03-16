@@ -176,7 +176,7 @@ public class TraceController {
                         .name(SseEventType.TRACE_STEP)
                         .data(java.util.Objects.requireNonNull(dto)));
             } catch (Exception sendError) {
-                try { emitter.completeWithError(sendError); } catch (Exception ignore) {}
+                try { emitter.completeWithError(sendError); } catch (Exception e) { log.debug("关闭SSE连接失败", e); }
             }
         });
 
@@ -192,7 +192,7 @@ public class TraceController {
                 ));
                 emitter.complete();
             } catch (Exception sendError) {
-                try { emitter.completeWithError(sendError); } catch (Exception ignore) {}
+                try { emitter.completeWithError(sendError); } catch (Exception e) { log.debug("关闭SSE连接失败", e); }
             }
         });
 
@@ -481,7 +481,7 @@ public class TraceController {
     private void closeQuietly(AutoCloseable... closables) {
         for (AutoCloseable c : closables) {
             if (c == null) continue;
-            try { c.close(); } catch (Exception ignore) {}
+            try { c.close(); } catch (Exception e) { log.debug("关闭资源失败", e); }
         }
     }
 }
