@@ -9,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
@@ -18,10 +19,14 @@ import java.util.*;
  *
  * <p>发现路径（按优先级从高到低）：</p>
  * <ol>
- *   <li>{@code ~/.mcp/servers.json} — 用户全局配置</li>
+ *   <li>{@code ~/.zhiwei/mcp/servers.json} — 知微内置 + 用户自定义（统一管理）</li>
+ *   <li>{@code ~/.mcp/servers.json} — 用户全局 MCP 配置</li>
  *   <li>{@code {project-root}/.mcp.json} — 项目本地配置</li>
  *   <li>自定义路径 — 通过 {@code lifepilot.mcp.discovery.paths} 配置</li>
  * </ol>
+ *
+ * <p>启动时自动将 classpath 内置的 MCP 服务器配置释放到 {@code ~/.zhiwei/mcp/servers.json}，
+ * 仅补充新增的内置服务器，不覆盖用户已有配置。用户可通过 Web UI 管理所有 MCP 服务器。</p>
  *
  * <p>合并策略：显式配置（application.yml）优先，同名 server 显式覆盖发现。</p>
  *
@@ -33,6 +38,9 @@ public class McpServerDiscovery {
     private static final Logger log = LoggerFactory.getLogger(McpServerDiscovery.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
+    /** classpath 内置 MCP 服务器配置路径。 */
+    private static final String BUILTIN_MCP_RESOURCE = "builtin-mcp/servers.json";
+
     private final McpConfigProperties properties;
 
     public McpServerDiscovery(McpConfigProperties properties) {
@@ -40,9 +48,14 @@ public class McpServerDiscovery {
     }
 
     /**
-     * 执行自动发现，返回合并后的 MCP 服务器配置列表。
+     * 释放内置 MCP 服务器配置到用户目录，然后执行自动发现。
      *
-     * <p>显式配置优先于发现配置，同名 server 显式覆盖发现。</p>
+     * <p>流程：</p>
+     * <ol>
+     *   <li>如果 seedBuiltinServers=true，将 classpath 内置配置合并到 ~/.zhiwei/mcp/servers.json</li>
+     *   <li>扫描所有发现路径，收集 MCP 服务器配置</li>
+     *   <li>显式配置优先于发现配置，同名 server 显式覆盖发现</li>
+     * </ol>
      *
      * @return 合并后的配置列表（显式 + 发现去重）
      */
@@ -50,6 +63,11 @@ public class McpServerDiscovery {
         if (!properties.getDiscovery().isEnabled()) {
             log.debug("MCP 自动发现已禁用");
             return properties.toServerConfigs();
+        }
+
+        // 释放内置 MCP 配置到用户目录
+        if (properties.getDiscovery().isSeedBuiltinServers()) {
+            seedBuiltinServers();
         }
 
         // 收集显式配置的 server 名称
@@ -75,7 +93,7 @@ public class McpServerDiscovery {
         }
 
         if (!discoveredConfigs.isEmpty()) {
-            log.info("MCP 自动发现: 发现 {} 个新服务器配置", discoveredConfigs.size());
+            log.info("MCP 自动发现: 发现 {} 个服务器配置", discoveredConfigs.size());
         }
 
         // 合并：显式 + 发现
@@ -85,12 +103,82 @@ public class McpServerDiscovery {
     }
 
     /**
+     * 将 classpath 内置 MCP 服务器配置合并到用户目录。
+     *
+     * <p>仅补充新增的内置服务器，不覆盖用户已有配置。
+     * 用户删除的服务器不会被重新添加（通过 _removed 标记判断，预留扩展）。</p>
+     */
+    @SuppressWarnings("unchecked")
+    void seedBuiltinServers() {
+        var userMcpDir = getUserMcpDir();
+        var userServersFile = userMcpDir.resolve("servers.json");
+
+        try {
+            // 读取 classpath 内置配置
+            Map<String, Object> builtinRoot;
+            try (InputStream is = getClass().getClassLoader().getResourceAsStream(BUILTIN_MCP_RESOURCE)) {
+                if (is == null) {
+                    log.debug("未找到内置 MCP 配置: {}", BUILTIN_MCP_RESOURCE);
+                    return;
+                }
+                builtinRoot = MAPPER.readValue(is, new TypeReference<>() {});
+            }
+
+            var builtinServers = (Map<String, Object>) builtinRoot.getOrDefault("mcpServers", Map.of());
+            if (builtinServers.isEmpty()) {
+                return;
+            }
+
+            // 读取用户已有配置（如果存在）
+            Map<String, Object> userRoot;
+            Map<String, Object> userServers;
+            if (Files.exists(userServersFile)) {
+                var content = Files.readString(userServersFile);
+                userRoot = MAPPER.readValue(content, new TypeReference<>() {});
+                userServers = (Map<String, Object>) userRoot.getOrDefault("mcpServers", new LinkedHashMap<>());
+            } else {
+                userRoot = new LinkedHashMap<>();
+                userServers = new LinkedHashMap<>();
+            }
+
+            // 合并：仅补充用户配置中不存在的内置服务器
+            int added = 0;
+            for (var entry : builtinServers.entrySet()) {
+                if (!userServers.containsKey(entry.getKey())) {
+                    userServers.put(entry.getKey(), entry.getValue());
+                    added++;
+                }
+            }
+
+            if (added > 0) {
+                // 写回用户配置
+                userRoot.put("mcpServers", userServers);
+                Files.createDirectories(userMcpDir);
+                MAPPER.writerWithDefaultPrettyPrinter().writeValue(userServersFile.toFile(), userRoot);
+                log.info("内置 MCP 配置已释放: 新增 {} 个服务器到 {}", added, userServersFile);
+            }
+        } catch (IOException e) {
+            log.warn("释放内置 MCP 配置失败: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * 获取用户 MCP 配置目录路径。
+     */
+    Path getUserMcpDir() {
+        return Path.of(System.getProperty("user.home"), ".zhiwei", "mcp");
+    }
+
+    /**
      * 构建发现路径列表。
      */
     private List<Path> buildDiscoveryPaths() {
         var paths = new ArrayList<Path>();
 
-        // 用户全局配置
+        // 知微内置 + 用户自定义（最高优先级）
+        paths.add(getUserMcpDir().resolve("servers.json"));
+
+        // 用户全局 MCP 配置
         var userHome = System.getProperty("user.home");
         if (userHome != null) {
             paths.add(Path.of(userHome, ".mcp", "servers.json"));
@@ -169,6 +257,11 @@ public class McpServerDiscovery {
                 : Map.<String, String>of();
         var url = (String) def.get("url");
 
+        // 解析 autoConnect（默认 true）
+        var autoConnect = def.containsKey("autoConnect")
+                ? Boolean.parseBoolean(def.get("autoConnect").toString())
+                : true;
+
         // 推断传输类型
         var transportStr = (String) def.get("transport");
         TransportType transport;
@@ -185,8 +278,8 @@ public class McpServerDiscovery {
                 .args(args)
                 .url(url)
                 .env(env)
-                .autoConnect(true)
-                .reconnect(true)
+                .autoConnect(autoConnect)
+                .reconnect(autoConnect)
                 .build();
     }
 }

@@ -3,7 +3,6 @@ package com.lifepilot.meta.config;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.meta.convenience.CapabilityAggregator;
 import com.lifepilot.meta.convenience.IntrospectionSkillProvider;
-import com.lifepilot.meta.convenience.McpInstallerRegistrar;
 import com.lifepilot.meta.convenience.SkillDiscoveryRegistrar;
 import com.lifepilot.meta.infra.InfraToolProvider;
 import com.lifepilot.mcp.registry.McpServerRegistry;
@@ -30,7 +29,7 @@ import org.springframework.web.client.RestClient;
  *
  * <p>注册元能力模块所有核心 Bean：InfraToolProvider、BrowserSessionManager、
  * InteractionBridge、CapabilityAggregator、IntrospectionSkillProvider、
- * SkillDiscoveryRegistrar、McpInstallerRegistrar。</p>
+ * SkillDiscoveryRegistrar。</p>
  *
  * @author zsg
  * @since 2026-03-10
@@ -120,18 +119,5 @@ public class MetaAutoConfiguration {
     SkillDiscoveryRegistrar skillDiscoveryRegistrar(MetaProperties properties,
                                                     SkillConfigProperties skillConfig) {
         return new SkillDiscoveryRegistrar(properties, skillConfig);
-    }
-
-    /**
-     * 注册 mcp-installer 注册器 — 启动时检查 npx 可用性并注册 mcp-installer MCP Server。
-     *
-     * <p>通过 {@code lifepilot.meta.mcp-installer.enabled} 配置控制启用，默认 true。</p>
-     */
-    @Bean
-    @ConditionalOnProperty(name = "lifepilot.meta.mcp-installer.enabled",
-                           havingValue = "true", matchIfMissing = true)
-    McpInstallerRegistrar mcpInstallerRegistrar(McpServerRegistry mcpServerRegistry,
-                                                 MetaProperties properties) {
-        return new McpInstallerRegistrar(mcpServerRegistry, properties);
     }
 }

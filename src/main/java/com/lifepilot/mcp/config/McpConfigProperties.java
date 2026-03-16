@@ -103,5 +103,7 @@ public class McpConfigProperties {
         private boolean enabled = true;
         /** 额外发现路径列表。 */
         private List<String> paths = new ArrayList<>();
+        /** 是否在启动时释放内置 MCP 服务器配置到用户目录，默认 true。 */
+        private boolean seedBuiltinServers = true;
     }
 }

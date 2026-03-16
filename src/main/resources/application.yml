@@ -507,21 +507,10 @@ lifepilot:
     server:
       enabled: false
     servers: []
-    # ===== 桌面控制 MCP 服务器配置模板 =====
-    # 取消注释以下配置以启用桌面控制 MCP 服务器（如 computer-use-demo-server）。
-    # 需要先安装对应的 MCP Server 可执行文件，并将 command 指向实际路径。
-    # servers:
-    #   - name: desktop-control
-    #     transport: STDIO
-    #     command: "npx"
-    #     args: ["@anthropic/computer-use-mcp-server"]
-    #     auto-connect: false
-    #     reconnect: true
-    #     env:
-    #       DISPLAY: ":1"
     discovery:
       enabled: true
       paths: []
+      seed-builtin-servers: true
   notification:
     # ===== 通知模块配置 =====
     enabled: true
@@ -764,11 +753,6 @@ lifepilot:
       builtin-skill-paths:
         - builtin-skills/find-skills
         - builtin-skills/workflow-creator
-    mcp-installer:
-      enabled: true
-      command: npx
-      args:
-        - "@anaisbetts/mcp-installer"
     onboarding:
       auto-trigger: true
       agent-definition: preset-agents/onboarding-guide.md

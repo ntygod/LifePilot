@@ -122,17 +122,6 @@ class MetaPropertiesTest {
     }
 
     @Test
-    void 默认值绑定正确_McpInstaller() {
-        contextRunner.run(context -> {
-            var props = context.getBean(MetaProperties.class);
-            var mcp = props.getMcpInstaller();
-            assertThat(mcp.isEnabled()).isTrue();
-            assertThat(mcp.getCommand()).isEqualTo("npx");
-            assertThat(mcp.getArgs()).containsExactly("@anaisbetts/mcp-installer");
-        });
-    }
-
-    @Test
     void 默认值绑定正确_Onboarding() {
         contextRunner.run(context -> {
             var props = context.getBean(MetaProperties.class);
@@ -152,7 +141,6 @@ class MetaPropertiesTest {
                         "lifepilot.meta.infra.interaction.response-timeout-seconds=300",
                         "lifepilot.meta.introspection.cache-ttl-seconds=120",
                         "lifepilot.meta.skill-discovery.enabled=false",
-                        "lifepilot.meta.mcp-installer.enabled=false",
                         "lifepilot.meta.onboarding.auto-trigger=false"
                 )
                 .run(context -> {
@@ -163,7 +151,6 @@ class MetaPropertiesTest {
                     assertThat(props.getInfra().getInteraction().getResponseTimeoutSeconds()).isEqualTo(300);
                     assertThat(props.getIntrospection().getCacheTtlSeconds()).isEqualTo(120);
                     assertThat(props.getSkillDiscovery().isEnabled()).isFalse();
-                    assertThat(props.getMcpInstaller().isEnabled()).isFalse();
                     assertThat(props.getOnboarding().isAutoTrigger()).isFalse();
                 });
     }
