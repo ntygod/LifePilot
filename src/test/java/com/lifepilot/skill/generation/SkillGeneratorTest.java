@@ -44,6 +44,8 @@ class SkillGeneratorTest {
     private SkillRegistry skillRegistry;
     private SkillConfigProperties config;
     private PromptRegistry promptRegistry;
+    private ToolCapabilityManifest toolCapabilityManifest;
+    private SkillTemplateLibrary templateLibrary;
     private SkillGenerator generator;
 
     @TempDir
@@ -64,9 +66,17 @@ class SkillGeneratorTest {
         when(promptRegistry.render(anyString(), anyMap())).thenReturn("生成 Prompt");
         when(skillRegistry.listSummaries()).thenReturn(List.of());
 
+        toolCapabilityManifest = mock(ToolCapabilityManifest.class);
+        when(toolCapabilityManifest.buildManifest()).thenReturn("## 感知\n- search: 搜索\n");
+
+        templateLibrary = mock(SkillTemplateLibrary.class);
+        when(templateLibrary.findBestTemplate(any(SkillGap.class)))
+                .thenReturn(new SkillTemplate("general", SkillTemplateLibrary.TemplateScene.GENERAL, "模板内容"));
+
         generator = new SkillGenerator(
                 llmRouter, validationPipeline, markdownParser,
-                markdownSerializer, skillRegistry, config, promptRegistry
+                markdownSerializer, skillRegistry, config, promptRegistry,
+                toolCapabilityManifest, templateLibrary
         );
     }
 

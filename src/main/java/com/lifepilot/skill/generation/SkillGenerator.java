@@ -27,9 +27,10 @@ import java.util.UUID;
  *
  * <p>生成流程：
  * <ol>
- *   <li>构建 Prompt：注入安全约束 + 已有 Skill 示例（最多 3 个）</li>
+ *   <li>构建增强 Prompt：注入安全约束 + 工具能力清单 + 模板示例 + 已有 Skill 示例</li>
  *   <li>LLM 生成 SKILL.md 内容（YAML Frontmatter + Markdown Body）</li>
  *   <li>调用 {@link SkillValidationPipeline} 三重验证</li>
+ *   <li>验证失败时构建修正 Prompt 进行迭代修正（最多 maxValidationIterations 次）</li>
  *   <li>验证通过后使用 {@link MarkdownSkillParser} 解析为待确认的 {@link SkillDefinition}</li>
  * </ol></p>
  *
@@ -50,6 +51,8 @@ public class SkillGenerator {
     private final SkillRegistry skillRegistry;
     private final SkillConfigProperties config;
     private final PromptRegistry promptRegistry;
+    private final ToolCapabilityManifest toolCapabilityManifest;
+    private final SkillTemplateLibrary templateLibrary;
     private final Path autoSkillsDirectory;
 
     public SkillGenerator(LlmRouter llmRouter,
@@ -58,7 +61,9 @@ public class SkillGenerator {
                           MarkdownSkillSerializer markdownSerializer,
                           SkillRegistry skillRegistry,
                           SkillConfigProperties config,
-                          PromptRegistry promptRegistry) {
+                          PromptRegistry promptRegistry,
+                          ToolCapabilityManifest toolCapabilityManifest,
+                          SkillTemplateLibrary templateLibrary) {
         this.llmRouter = llmRouter;
         this.validationPipeline = validationPipeline;
         this.markdownParser = markdownParser;
@@ -66,60 +71,76 @@ public class SkillGenerator {
         this.skillRegistry = skillRegistry;
         this.config = config;
         this.promptRegistry = promptRegistry;
+        this.toolCapabilityManifest = toolCapabilityManifest;
+        this.templateLibrary = templateLibrary;
         this.autoSkillsDirectory = Path.of(config.getDirectory(), "auto");
     }
 
     /**
      * 根据缺口描述生成 Skill。
      *
-     * <p>流程：构建 Prompt → LLM 生成 SKILL.md → 提取 Markdown → 三重验证 → 解析为 SkillDefinition。</p>
+     * <p>流程：构建增强 Prompt → LLM 生成 SKILL.md → 提取 Markdown → 三重验证
+     * → 验证失败时迭代修正（最多 maxValidationIterations 次）→ 解析为 SkillDefinition。</p>
      *
      * @param gap 缺口描述
      * @return 生成结果，包含待确认的 SkillDefinition 或失败原因
      */
     public GenerationResult generate(SkillGap gap) {
-        // 1. 构建生成 Prompt
-        String prompt = buildGenerationPrompt(gap);
+        int maxIterations = config.getAutoGeneration().getMaxValidationIterations();
 
-        // 2. 调用 LLM 生成 SKILL.md
-        String rawContent;
+        // 1. 构建工具能力清单（失败时降级为空字符串）
+        String manifest = buildManifestSafely();
+
+        // 2. 选择最匹配的模板
+        SkillTemplate template = templateLibrary.findBestTemplate(gap);
+
+        // 3. 构建增强 Prompt
+        String prompt = buildEnhancedPrompt(gap, manifest, template);
+
+        // 4. 调用 LLM 生成 SKILL.md
+        String markdownContent;
         try {
             var response = llmRouter.call(LlmRequest.of(LlmScene.SKILL_GENERATION, prompt));
-            rawContent = response.content();
+            markdownContent = extractMarkdown(response.content());
         } catch (Exception e) {
             log.error("LLM 调用失败，Skill 生成终止: gap={}, error={}", gap.suggestedId(), e.getMessage());
             return GenerationResult.error(e.getMessage());
         }
 
-        // 3. 提取 Markdown 内容（处理代码块包裹）
-        String markdownContent = extractMarkdown(rawContent);
-
-        // 4. 三重验证
+        // 5. 三重验证 + 迭代修正
         var validationResult = validationPipeline.validate(markdownContent);
+        GenerationResult lastFailedResult = null;
+
+        for (int i = 0; i < maxIterations && !validationResult.passed(); i++) {
+            log.info("Skill 生成验证失败，尝试迭代修正: gap={}, iteration={}/{}, stage={}, errors={}",
+                    gap.suggestedId(), i + 1, maxIterations,
+                    validationResult.failedStage(), validationResult.errors());
+            lastFailedResult = GenerationResult.validationFailed(validationResult);
+
+            // 构建修正 Prompt
+            String fixPrompt = buildFixPrompt(markdownContent, validationResult);
+
+            // 调用 LLM 修正
+            try {
+                var fixResponse = llmRouter.call(LlmRequest.of(LlmScene.SKILL_GENERATION, fixPrompt));
+                markdownContent = extractMarkdown(fixResponse.content());
+                validationResult = validationPipeline.validate(markdownContent);
+            } catch (Exception e) {
+                log.warn("迭代修正 LLM 调用失败，返回上一次验证失败结果: gap={}, iteration={}, error={}",
+                        gap.suggestedId(), i + 1, e.getMessage());
+                return lastFailedResult;
+            }
+        }
+
+        // 验证仍未通过
         if (!validationResult.passed()) {
-            log.warn("自生成 Skill 三重验证失败: gap={}, stage={}, errors={}",
+            log.warn("Skill 生成验证失败（已用尽迭代次数）: gap={}, stage={}, errors={}",
                     gap.suggestedId(), validationResult.failedStage(), validationResult.errors());
             return GenerationResult.validationFailed(validationResult);
         }
 
-        // 5. 使用 MarkdownSkillParser 解析为 SkillDefinition
-        var parseResult = markdownParser.parse(markdownContent);
-        if (!parseResult.success() || parseResult.definition() == null) {
-            log.warn("自生成 Skill SKILL.md 解析为 SkillDefinition 失败: gap={}", gap.suggestedId());
-            return GenerationResult.error("SKILL.md 解析为 SkillDefinition 失败");
-        }
-
-        // 6. 替换 source 为 AutoGenerated
-        var autoSource = new SkillSource.AutoGenerated(
-                UUID.randomUUID().toString(),
-                Instant.now(),
-                gap.triggerRequest(),
-                false
-        );
-        var definition = parseResult.definition().toBuilder().source(autoSource).build();
-
-        log.info("Skill 生成成功: skillId={}, gap={}", definition.id(), gap.suggestedId());
-        return GenerationResult.success(definition, markdownContent);
+        // 6. 解析为 SkillDefinition
+        return parseAndBuild(gap, markdownContent);
     }
 
     /**
@@ -132,7 +153,6 @@ public class SkillGenerator {
      * @return 注册是否成功
      */
     public boolean confirmAndPersist(SkillDefinition definition) {
-        // 1. 确保 auto/{skill-id}/ 目录存在
         Path skillFolder = autoSkillsDirectory.resolve(definition.id());
         try {
             Files.createDirectories(skillFolder);
@@ -141,7 +161,6 @@ public class SkillGenerator {
             return false;
         }
 
-        // 2. 更新 userConfirmed 为 true
         if (!(definition.source() instanceof SkillSource.AutoGenerated autoGen)) {
             log.warn("confirmAndPersist 仅支持 AutoGenerated 来源: skillId={}", definition.id());
             return false;
@@ -156,7 +175,6 @@ public class SkillGenerator {
                 .source(confirmedSource)
                 .build();
 
-        // 3. 序列化为 SKILL.md 并写入文件
         String markdownContent = markdownSerializer.serialize(confirmedDefinition);
         Path targetFile = skillFolder.resolve("SKILL.md");
         try {
@@ -168,7 +186,6 @@ public class SkillGenerator {
             return false;
         }
 
-        // 4. 注册到 SkillRegistry
         boolean registered = skillRegistry.register(confirmedDefinition);
         if (registered) {
             log.info("自生成 Skill 确认并注册成功: skillId={}", definition.id());
@@ -187,8 +204,64 @@ public class SkillGenerator {
         log.info("用户拒绝自生成 Skill: skillId={}", definition.id());
     }
 
+    // ==================== Prompt 构建 ====================
+
     /**
-     * 构建生成 Prompt — 通过外部模板注入安全约束和已有 Skill 示例。
+     * 构建增强生成 Prompt — 注入工具能力清单和模板示例。
+     *
+     * @param gap      缺口描述
+     * @param manifest 工具能力清单文本
+     * @param template 匹配的 Skill 模板
+     * @return 完整的增强生成 Prompt
+     */
+    String buildEnhancedPrompt(SkillGap gap, String manifest, SkillTemplate template) {
+        var validation = config.getValidation();
+
+        var gapDesc = "- 建议 ID: " + gap.suggestedId() + "\n" +
+                "- 建议名称: " + gap.suggestedName() + "\n" +
+                "- 触发请求: " + gap.triggerRequest() + "\n" +
+                "- 建议工具: " + gap.suggestedTools() + "\n" +
+                "- 分析原因: " + gap.reason();
+
+        var summaries = skillRegistry.listSummaries();
+        var existingSkillsText = "";
+        if (!summaries.isEmpty()) {
+            var sb = new StringBuilder();
+            summaries.stream()
+                    .limit(MAX_EXAMPLES)
+                    .forEach(s -> sb.append("- ").append(s).append("\n"));
+            existingSkillsText = sb.toString();
+        }
+
+        return promptRegistry.render("generation/skill-generation-enhanced", Map.of(
+                "maxSteps", String.valueOf(validation.getAutoGeneratedMaxSteps()),
+                "maxTimeout", String.valueOf(validation.getAutoGeneratedMaxTimeout()),
+                "maxTokens", String.valueOf(validation.getAutoGeneratedMaxTokens()),
+                "maxCostCents", String.valueOf(config.getAutoGeneration().getMaxCostCents()),
+                "gapDescription", gapDesc,
+                "existingSkills", existingSkillsText,
+                "toolManifest", manifest,
+                "templateExample", template.markdownContent()
+        ));
+    }
+
+    /**
+     * 构建修正 Prompt — 包含失败内容和验证错误信息。
+     *
+     * @param failedContent    验证失败的 SKILL.md 内容
+     * @param validationResult 验证结果
+     * @return 修正 Prompt
+     */
+    String buildFixPrompt(String failedContent, SkillValidationResult validationResult) {
+        var errorsText = String.join("\n", validationResult.errors());
+        return promptRegistry.render("generation/skill-fix", Map.of(
+                "failedContent", failedContent,
+                "errors", errorsText
+        ));
+    }
+
+    /**
+     * 构建旧版生成 Prompt（保留兼容性）。
      *
      * @param gap 缺口描述
      * @return 完整的生成 Prompt
@@ -196,14 +269,12 @@ public class SkillGenerator {
     String buildGenerationPrompt(SkillGap gap) {
         var validation = config.getValidation();
 
-        // 构建缺口描述
         var gapDesc = "- 建议 ID: " + gap.suggestedId() + "\n" +
                 "- 建议名称: " + gap.suggestedName() + "\n" +
                 "- 触发请求: " + gap.triggerRequest() + "\n" +
                 "- 建议工具: " + gap.suggestedTools() + "\n" +
                 "- 分析原因: " + gap.reason();
 
-        // 构建已有 Skill 示例
         var summaries = skillRegistry.listSummaries();
         var existingSkillsText = "";
         if (!summaries.isEmpty()) {
@@ -224,6 +295,48 @@ public class SkillGenerator {
         ));
     }
 
+    // ==================== 内部辅助方法 ====================
+
+    /**
+     * 安全构建工具能力清单，失败时降级为空字符串。
+     *
+     * @return 工具能力清单文本，构建失败时返回空字符串
+     */
+    private String buildManifestSafely() {
+        try {
+            return toolCapabilityManifest.buildManifest();
+        } catch (Exception e) {
+            log.warn("工具能力清单构建失败，降级为空: error={}", e.getMessage());
+            return "";
+        }
+    }
+
+    /**
+     * 解析 Markdown 内容为 SkillDefinition 并设置 AutoGenerated 来源。
+     *
+     * @param gap             缺口描述
+     * @param markdownContent 验证通过的 SKILL.md 内容
+     * @return 生成结果
+     */
+    private GenerationResult parseAndBuild(SkillGap gap, String markdownContent) {
+        var parseResult = markdownParser.parse(markdownContent);
+        if (!parseResult.success() || parseResult.definition() == null) {
+            log.warn("自生成 Skill SKILL.md 解析为 SkillDefinition 失败: gap={}", gap.suggestedId());
+            return GenerationResult.error("SKILL.md 解析为 SkillDefinition 失败");
+        }
+
+        var autoSource = new SkillSource.AutoGenerated(
+                UUID.randomUUID().toString(),
+                Instant.now(),
+                gap.triggerRequest(),
+                false
+        );
+        var definition = parseResult.definition().toBuilder().source(autoSource).build();
+
+        log.info("Skill 生成成功: skillId={}, gap={}", definition.id(), gap.suggestedId());
+        return GenerationResult.success(definition, markdownContent);
+    }
+
     /**
      * 从 LLM 响应中提取 SKILL.md 内容。
      *
@@ -234,7 +347,6 @@ public class SkillGenerator {
      */
     static String extractMarkdown(String content) {
         String trimmed = content.trim();
-        // 处理 ```markdown ... ```、```yaml ... ``` 或 ``` ... ``` 格式
         if (trimmed.startsWith("```")) {
             int firstNewline = trimmed.indexOf('\n');
             int lastBacktick = trimmed.lastIndexOf("```");

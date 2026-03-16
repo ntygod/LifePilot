@@ -19,6 +19,8 @@ import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.skill.generation.SkillGapDetector;
 import com.lifepilot.skill.generation.SkillGenerator;
+import com.lifepilot.skill.generation.SkillTemplateLibrary;
+import com.lifepilot.skill.generation.ToolCapabilityManifest;
 import com.lifepilot.skill.markdown.MarkdownSkillLoader;
 import com.lifepilot.skill.markdown.MarkdownSkillParser;
 import com.lifepilot.skill.markdown.MarkdownSkillSerializer;
@@ -266,15 +268,36 @@ public class SkillAutoConfiguration {
     @ConditionalOnMissingBean
     @ConditionalOnProperty(prefix = "lifepilot.skills.auto-generation",
             name = "enabled", havingValue = "true", matchIfMissing = true)
+    public ToolCapabilityManifest toolCapabilityManifest(DynamicToolRegistry toolRegistry) {
+        log.info("Skill 系统: 注册 ToolCapabilityManifest");
+        return new ToolCapabilityManifest(toolRegistry);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnProperty(prefix = "lifepilot.skills.auto-generation",
+            name = "enabled", havingValue = "true", matchIfMissing = true)
+    public SkillTemplateLibrary skillTemplateLibrary() {
+        log.info("Skill 系统: 注册 SkillTemplateLibrary");
+        return new SkillTemplateLibrary();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnProperty(prefix = "lifepilot.skills.auto-generation",
+            name = "enabled", havingValue = "true", matchIfMissing = true)
     public SkillGenerator skillGenerator(LlmRouter llmRouter,
                                          SkillValidationPipeline pipeline,
                                          MarkdownSkillParser markdownParser,
                                          MarkdownSkillSerializer markdownSerializer,
                                          SkillRegistry registry,
                                          SkillConfigProperties config,
-                                         PromptRegistry promptRegistry) {
-        log.info("Skill 系统: 注册 SkillGenerator");
-        return new SkillGenerator(llmRouter, pipeline, markdownParser, markdownSerializer, registry, config, promptRegistry);
+                                         PromptRegistry promptRegistry,
+                                         ToolCapabilityManifest toolCapabilityManifest,
+                                         SkillTemplateLibrary skillTemplateLibrary) {
+        log.info("Skill 系统: 注册 SkillGenerator（增强模式）");
+        return new SkillGenerator(llmRouter, pipeline, markdownParser, markdownSerializer,
+                registry, config, promptRegistry, toolCapabilityManifest, skillTemplateLibrary);
     }
 
     // ==================== 审计 ====================
