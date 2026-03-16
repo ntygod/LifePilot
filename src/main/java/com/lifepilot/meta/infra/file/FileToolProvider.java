@@ -6,6 +6,7 @@ import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.schema.JsonSchema;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -45,6 +46,7 @@ public class FileToolProvider {
         tools.add(buildFileCopyTool(new FileCopyToolExecutor(properties)));
         tools.add(buildFileMoveTool(new FileMoveToolExecutor(properties)));
         tools.add(buildFileInfoTool(new FileInfoToolExecutor(properties)));
+        tools.add(buildFilePatchTool(new FilePatchToolExecutor(properties)));
 
         return List.copyOf(tools);
     }
@@ -141,6 +143,46 @@ public class FileToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .tags(INFRA_TAGS)
+                .executor(executor::execute)
+                .build();
+    }
+
+    /** 构建文件补丁工具。 */
+    private BuiltinTool buildFilePatchTool(FilePatchToolExecutor executor) {
+        // operations 数组项的 schema
+        var itemProperties = new LinkedHashMap<String, Object>();
+        itemProperties.put("type", Map.of("type", "string",
+                "description", "操作类型: insert / replace / delete"));
+        itemProperties.put("line", Map.of("type", "integer",
+                "description", "目标行号（1-based）"));
+        itemProperties.put("endLine", Map.of("type", "integer",
+                "description", "结束行号（replace/delete 时可选，默认等于 line）"));
+        itemProperties.put("content", Map.of("type", "string",
+                "description", "插入或替换的内容（insert/replace 时必需）"));
+
+        var itemSchema = new LinkedHashMap<String, Object>();
+        itemSchema.put("type", "object");
+        itemSchema.put("required", List.of("type", "line"));
+        itemSchema.put("properties", itemProperties);
+
+        return BuiltinTool.builder()
+                .id("builtin.file.patch")
+                .name("补丁文件")
+                .description("对文件执行行级 insert/replace/delete 操作，原子写入。MEDIUM 风险")
+                .inputSchema(JsonSchema.of(Map.of(
+                        "type", "object",
+                        "required", List.of("path", "operations"),
+                        "properties", Map.of(
+                                "path", Map.of("type", "string",
+                                        "description", "目标文件路径"),
+                                "operations", Map.of("type", "array",
+                                        "description", "行级操作列表",
+                                        "items", itemSchema)
+                        )
+                )))
+                .riskLevel(RiskLevel.MEDIUM)
+                .idempotent(false)
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
