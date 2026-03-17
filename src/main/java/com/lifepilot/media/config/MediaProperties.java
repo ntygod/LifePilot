@@ -28,8 +28,14 @@ public class MediaProperties {
     /** 视频处理配置。 */
     private Video video = new Video();
 
+    /** 校验配置。 */
+    private Validation validation = new Validation();
+
     /** TTS 语音合成配置。 */
     private Tts tts = new Tts();
+
+    public Validation getValidation() { return validation; }
+    public void setValidation(Validation validation) { this.validation = validation; }
 
     public Image getImage() { return image; }
     public void setImage(Image image) { this.image = image; }
@@ -66,6 +72,9 @@ public class MediaProperties {
         /** 单次请求最大图片数量，默认 5。 */
         private int maxPerRequest = 5;
 
+        /** 并行压缩超时时间（秒），默认 30。 */
+        private int processTimeoutSeconds = 30;
+
         /** 支持的图片格式列表。 */
         private List<String> supportedFormats = List.of("png", "jpeg", "gif", "webp", "bmp");
 
@@ -81,8 +90,26 @@ public class MediaProperties {
         public int getMaxPerRequest() { return maxPerRequest; }
         public void setMaxPerRequest(int maxPerRequest) { this.maxPerRequest = maxPerRequest; }
 
+        public int getProcessTimeoutSeconds() { return processTimeoutSeconds; }
+        public void setProcessTimeoutSeconds(int processTimeoutSeconds) { this.processTimeoutSeconds = processTimeoutSeconds; }
+
         public List<String> getSupportedFormats() { return supportedFormats; }
         public void setSupportedFormats(List<String> supportedFormats) { this.supportedFormats = supportedFormats; }
+    }
+
+    /**
+     * 媒体校验配置。
+     *
+     * @author zsg
+     * @since 2026-03-17
+     */
+    public static class Validation {
+
+        /** 并行校验超时时间（秒），默认 5。 */
+        private int parallelTimeoutSeconds = 5;
+
+        public int getParallelTimeoutSeconds() { return parallelTimeoutSeconds; }
+        public void setParallelTimeoutSeconds(int parallelTimeoutSeconds) { this.parallelTimeoutSeconds = parallelTimeoutSeconds; }
     }
 
     /**

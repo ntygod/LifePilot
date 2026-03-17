@@ -468,11 +468,14 @@ lifepilot:
     enabled: true
     max-components-per-tree: 50
   media:
+    validation:
+      parallel-timeout-seconds: 5
     image:
       max-size-bytes: 10485760
       max-dimension: 2048
       jpeg-quality: 0.85
       max-per-request: 5
+      process-timeout-seconds: 30
       supported-formats: png,jpeg,gif,webp,bmp
     document:
       max-size-bytes: 52428800
