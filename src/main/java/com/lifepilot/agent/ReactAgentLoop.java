@@ -167,9 +167,13 @@ public class ReactAgentLoop {
     /** 测试会话前缀 — 以此开头的 sessionId 不持久化对话历史和记忆。 */
     private static final String TEST_SESSION_PREFIX = "test:";
 
-    /** 判断是否为测试会话（不持久化对话历史和记忆）。 */
+    /** 评估会话前缀 — 以此开头的 sessionId 不持久化对话历史和记忆。 */
+    private static final String EVAL_SESSION_PREFIX = "eval-";
+
+    /** 判断是否为临时会话（测试或评估），不持久化对话历史和记忆。 */
     private static boolean isTestSession(@Nullable String sessionId) {
-        return sessionId != null && sessionId.startsWith(TEST_SESSION_PREFIX);
+        return sessionId != null
+                && (sessionId.startsWith(TEST_SESSION_PREFIX) || sessionId.startsWith(EVAL_SESSION_PREFIX));
     }
 
     /** 获取当前取消令牌（外部可调用 cancel() 中断循环）。 */
