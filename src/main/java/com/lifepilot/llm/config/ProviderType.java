@@ -20,7 +20,9 @@ public enum ProviderType {
     /** 智谱 GLM API */
     GLM("glm"),
     /** OpenAI 兼容 API */
-    OPENAI_COMPATIBLE("openai-compatible");
+    OPENAI_COMPATIBLE("openai-compatible"),
+    /** Anthropic Claude API */
+    ANTHROPIC("anthropic");
 
     private final String configKey;
 
@@ -45,7 +47,7 @@ public enum ProviderType {
     public boolean isOpenAiCompatible() {
         return switch (this) {
             case DEEPSEEK, QWEN, GLM, TEI, OPENAI_COMPATIBLE -> true;
-            case OLLAMA, WENXIN -> false;
+            case OLLAMA, WENXIN, ANTHROPIC -> false;
         };
     }
 }
