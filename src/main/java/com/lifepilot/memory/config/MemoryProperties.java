@@ -99,6 +99,9 @@ public class MemoryProperties {
     /** 记忆精排配置。 */
     private Reranker reranker = new Reranker();
 
+    /** 对话压缩配置。 */
+    private Compression compression = new Compression();
+
     public TokenBudget getTokenBudget() { return tokenBudget; }
     public void setTokenBudget(TokenBudget tokenBudget) { this.tokenBudget = tokenBudget; }
 
@@ -122,6 +125,9 @@ public class MemoryProperties {
 
     public Reranker getReranker() { return reranker; }
     public void setReranker(Reranker reranker) { this.reranker = reranker; }
+
+    public Compression getCompression() { return compression; }
+    public void setCompression(Compression compression) { this.compression = compression; }
 
     /**
      * Token 预算分配配置 — 控制上下文窗口四区域的预算比例和场景切换阈值。
@@ -649,5 +655,32 @@ public static class Retrieval {
 
         public int getTopK() { return topK; }
         public void setTopK(int topK) { this.topK = topK; }
+    }
+
+    /**
+     * 对话压缩配置 — 控制压缩策略、滑动窗口大小和窗口重叠。
+     *
+     * @author zsg
+     * @since 2026-03-15
+     */
+    public static class Compression {
+
+        /** 压缩策略：whole / sliding-window，默认 sliding-window。 */
+        private String strategy = "sliding-window";
+
+        /** 滑动窗口大小（消息数），默认 20。 */
+        private int windowSize = 20;
+
+        /** 窗口重叠消息数，默认 2。 */
+        private int windowOverlap = 2;
+
+        public String getStrategy() { return strategy; }
+        public void setStrategy(String strategy) { this.strategy = strategy; }
+
+        public int getWindowSize() { return windowSize; }
+        public void setWindowSize(int windowSize) { this.windowSize = windowSize; }
+
+        public int getWindowOverlap() { return windowOverlap; }
+        public void setWindowOverlap(int windowOverlap) { this.windowOverlap = windowOverlap; }
     }
 }
