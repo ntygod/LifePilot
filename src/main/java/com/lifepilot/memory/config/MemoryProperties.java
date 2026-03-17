@@ -494,8 +494,8 @@ public class MemoryProperties {
      */
 public static class Retrieval {
 
-        /** RRF 融合分数最低阈值，低于此值的检索结果将被过滤。0.0 表示不过滤。 */
-        private float minFusedScore = 0.035f;
+        /** RRF 融合分数最低阈值，低于此值的检索结果将被过滤。0.0 表示不过滤，默认 0.08。 */
+        private float minFusedScore = 0.08f;
 
         /** 查询精炼后最大长度（字符数），超过则截断。 */
         private int queryMaxLength = 100;
@@ -524,8 +524,23 @@ public static class Retrieval {
         /** 时间衰减因子最小值 — 防止老实体完全被忽略。 */
         private float minTimeDecayFactor = 0.5f;
 
-        /** 跨会话消息语义相似度最低阈值 [0.0, 1.0]，默认 0.3。 */
-        private float minCrossSessionSemanticScore = 0.3f;
+        /** 跨会话消息语义相似度最低阈值 [0.0, 1.0]，默认 0.45。 */
+        private float minCrossSessionSemanticScore = 0.45f;
+
+        /** 查询改写模式：rewrite / hyde / none，默认 none。 */
+        private String queryRewriteMode = "none";
+
+        /** rewrite 模式最大改写变体数，默认 3。 */
+        private int maxRewrites = 3;
+
+        /** 查询改写 LLM 调用超时（毫秒），默认 5000。 */
+        private int rewriteTimeoutMs = 5000;
+
+        /** 向量检索最低相似度阈值 [0.0, 1.0]，默认 0.15。 */
+        private float minVectorSimilarity = 0.15f;
+
+        /** 话题切换检测余弦相似度阈值 [0.0, 1.0]，默认 0.3。 */
+        private float topicSwitchThreshold = 0.3f;
 
         public float getMinFusedScore() { return minFusedScore; }
         public void setMinFusedScore(float minFusedScore) { this.minFusedScore = minFusedScore; }
@@ -559,6 +574,21 @@ public static class Retrieval {
 
         public float getMinCrossSessionSemanticScore() { return minCrossSessionSemanticScore; }
         public void setMinCrossSessionSemanticScore(float minCrossSessionSemanticScore) { this.minCrossSessionSemanticScore = minCrossSessionSemanticScore; }
+
+        public String getQueryRewriteMode() { return queryRewriteMode; }
+        public void setQueryRewriteMode(String queryRewriteMode) { this.queryRewriteMode = queryRewriteMode; }
+
+        public int getMaxRewrites() { return maxRewrites; }
+        public void setMaxRewrites(int maxRewrites) { this.maxRewrites = maxRewrites; }
+
+        public int getRewriteTimeoutMs() { return rewriteTimeoutMs; }
+        public void setRewriteTimeoutMs(int rewriteTimeoutMs) { this.rewriteTimeoutMs = rewriteTimeoutMs; }
+
+        public float getMinVectorSimilarity() { return minVectorSimilarity; }
+        public void setMinVectorSimilarity(float minVectorSimilarity) { this.minVectorSimilarity = minVectorSimilarity; }
+
+        public float getTopicSwitchThreshold() { return topicSwitchThreshold; }
+        public void setTopicSwitchThreshold(float topicSwitchThreshold) { this.topicSwitchThreshold = topicSwitchThreshold; }
     }
 
     /**
