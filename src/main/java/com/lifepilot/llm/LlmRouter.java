@@ -642,6 +642,31 @@ public class LlmRouter {
     }
 
     /**
+     * 批量执行文本嵌入。
+     *
+     * <p>初始实现为逐条调用 {@link #embed(String)} 的封装，
+     * 空列表返回空数组，null/空白元素跳过（对应位置为 null）。
+     *
+     * @param texts 待嵌入文本列表
+     * @return 嵌入向量数组，与输入列表等长，跳过的元素对应位置为 null
+     */
+    public float[][] embedBatch(List<String> texts) {
+        if (texts == null || texts.isEmpty()) {
+            return new float[0][];
+        }
+        float[][] results = new float[texts.size()][];
+        for (int i = 0; i < texts.size(); i++) {
+            String text = texts.get(i);
+            if (text == null || text.isBlank()) {
+                results[i] = null;
+                continue;
+            }
+            results[i] = embed(text);
+        }
+        return results;
+    }
+
+    /**
      * 执行流式文本生成，选择最高优先级可用 Provider，不执行中途故障转移。
      *
      * @param scene  场景名称
