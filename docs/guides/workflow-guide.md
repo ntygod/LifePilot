@@ -1003,157 +1003,138 @@ errorStrategy:
 
 ## 内置工作流模板
 
-知微首次启动时会自动释放 8 个内置工作流模板到 `~/.zhiwei/workflows/` 目录。你可以直接使用、修改或删除它们。删除后重启应用会重新释放。
+知微首次启动时会自动释放 6 个内置工作流模板到 `~/.zhiwei/workflows/` 目录。你可以直接使用、修改或删除它们。删除后重启应用会重新释放。
 
-这些模板覆盖了工作流引擎的所有高级特性：ConditionStep 条件分支、LoopStep 循环处理、ParallelStep 并行执行、ApprovalStep 人工审批、SubWorkflowStep 子工作流、WaitStep 等待、ErrorStrategy 错误策略、DAG dependsOn 依赖编排。
+这些模板覆盖了工作流引擎的核心特性：ConditionStep 条件分支、LoopStep 循环处理、ParallelStep 并行执行、ApprovalStep 人工审批、ErrorStrategy 错误策略、DAG dependsOn 依赖编排。从简单到复杂递进，既可直接使用，也是学习工作流语法的参考。
 
-### 1. 智能内容审核（content-review.yml）
-
-**触发方式：** 事件触发（content.submitted）或手动触发
-
-**功能：** 使用 LLM 分析内容风险等级，高风险内容进入人工审批，低风险自动通过，最终生成审核报告并发送通知。
-
-**步骤流程：**
-```
-ToolStep(预处理) → [LlmStep(风险分析) ∥ ToolStep(关键词扫描)]（DAG 并行）
-  → ConditionStep(风险判定)
-    → then: ApprovalStep(人工审批) → ConditionStep(审批结果)
-    → else: ToolStep(自动通过)
-  → LlmStep(生成报告) → ToolStep(发送通知)
-```
-
-**涉及的步骤类型：** tool、llm、condition（嵌套）、approval
-
-**适合学习：** DAG 依赖编排（dependsOn）、条件分支嵌套、人工审批流程、错误重试策略。
-
-### 2. 批量任务处理（batch-task.yml）
-
-**触发方式：** 每天凌晨 2:00 自动执行，或手动触发
-
-**功能：** 从任务队列中获取待处理任务，循环逐条处理，支持任务分类（通知类/其他）和错误重试，最终生成处理汇总报告。
-
-**步骤流程：**
-```
-ToolStep(获取任务列表) → ConditionStep(检查队列)
-  → LoopStep(逐条处理)
-    → LlmStep(任务分类)
-    → ConditionStep(分类路由)
-      → then: LlmStep(处理通知任务, retry)
-      → else: LlmStep(处理通用任务, skip)
-    → ToolStep(更新状态, skip)
-  → LlmStep(生成报告, skip)
-```
-
-**涉及的步骤类型：** loop（含嵌套 condition）、condition、tool、llm
-
-**适合学习：** 循环步骤 + 嵌套条件分支、循环变量引用（loopVar）、多种错误策略组合（retry + skip）。
-
-### 3. 每日待办提醒（daily-reminder.yml）
+### 1. 每日晨报（daily-briefing.yml）⭐ 入门
 
 **触发方式：** 每天早上 8:00 自动执行
 
-**功能：** 自动检查待办事项，对即将到期的任务发送提醒通知，帮助用户管理日常任务。
+**功能：** 汇总今日待办、日程和习惯提醒，根据是否有紧急事项调整通知级别，一条消息掌握全天计划。
 
 **步骤流程：**
 ```
-SkillStep(获取待办) → LlmStep(筛选紧急待办)
-  → ConditionStep(检查是否有紧急待办)
-    → then: NotifyStep(发送提醒)
-    → else: NoopStep(记录无紧急待办)
+[SkillStep(待办) ∥ SkillStep(日程) ∥ SkillStep(习惯)]（DAG 并行）
+  → LlmStep(生成晨报) + LlmStep(检查紧急事项)
+  → ConditionStep(紧急判定)
+    → then: NotifyStep(紧急晨报, HIGH)
+    → else: NotifyStep(普通晨报, LOW)
 ```
 
-**涉及的步骤类型：** skill、llm、condition、notify、noop
+**涉及的步骤类型：** skill、llm（结构化输出）、condition、notify
 
-**适合学习：** SkillStep 调用、LLM 结构化输出、条件分支、NotifyStep 通知。
+**适合学习：** DAG 并行数据获取、条件分支、通知级别控制。
 
-### 4. 定时知识采集（knowledge-collect.yml）
+### 2. 周报生成（weekly-summary.yml）⭐ 入门
 
-**触发方式：** 每天早上 6:00 自动执行，需要输入采集主题
+**触发方式：** 每周五下午 6:00 自动执行，或手动触发
 
-**功能：** 从网络采集特定主题的最新信息，经过去重和摘要后保存到知识库。
+**功能：** 汇总本周待办、日程、习惯数据，生成周报并保存到记忆系统。
 
 **步骤流程：**
 ```
-LlmStep(解析主题) → LoopStep(循环采集每个主题)
-  → ToolStep(网络搜索) → LlmStep(去重处理)
-  → LlmStep(生成摘要) → SkillStep(保存到知识库)
-→ NotifyStep(通知完成)
-```
-
-**涉及的步骤类型：** loop、tool、llm、skill
-
-**适合学习：** LoopStep 循环处理、循环变量引用、多步骤串联。
-
-### 5. 调研助手（research-assistant.yml）
-
-**触发方式：** 手动触发，需要输入调研主题和深度
-
-**功能：** 多源信息搜索与深度分析，经人工审批后发布调研成果，支持网络搜索、知识库和记忆检索。
-
-**步骤流程：**
-```
-[ToolStep(网络搜索) ∥ ToolStep(知识库搜索) ∥ SkillStep(记忆搜索)]（DAG 并行）
-  → LlmStep(深度分析) → LlmStep(质量检查)
-  → ApprovalStep(审批环节)
-  → SkillStep(发布成果, skip) → NotifyStep(通知完成)
-```
-
-**涉及的步骤类型：** tool、skill、llm、approval、notify
-
-**适合学习：** DAG 多源并行汇聚、审批流程、skip 降级策略。
-
-### 6. 多源数据分析（data-insight.yml）
-
-**触发方式：** 每周一早上 10:00 自动执行，或手动触发
-
-**功能：** 并行从多个数据源（待办、日程、习惯、记忆）获取数据，LLM 综合分析后生成数据洞察报告。
-
-**步骤流程：**
-```
-ParallelStep(多分支)
-  分支1: [SkillStep(待办) ∥ SkillStep(日程) ∥ SkillStep(习惯) ∥ SkillStep(记忆)]
-  分支2: [ToolStep(行业动态, skip)]
-→ LlmStep(综合分析) → LlmStep(格式化报告)
-→ ToolStep(保存报告) → NotifyStep(发送通知)
-```
-
-**涉及的步骤类型：** parallel（分支内含多步骤链）、skill、llm、tool、notify
-
-**适合学习：** 并行分支内的多步骤串联、DAG 多依赖汇聚、skip 错误策略。
-
-### 7. 周报自动生成（weekly-summary.yml）
-
-**触发方式：** 每周五下午 6:00 自动执行
-
-**功能：** 汇总本周的待办完成情况、日程安排和习惯数据，生成周报并保存到知识库。
-
-**步骤流程：**
-```
-[SkillStep(待办统计) ∥ SkillStep(日程统计) ∥ SkillStep(习惯统计)]（并行）
-→ LlmStep(生成周报) → SkillStep(保存到知识库)
-→ NotifyStep(发送周报, skip)
-```
-
-**涉及的步骤类型：** parallel、skill、llm、notify
-
-**适合学习：** 并行数据获取、SkillStep 调用、notify skip 策略。
-
-### 8. 习惯追踪周报（habit-tracker.yml）
-
-**触发方式：** 每周一早上 9:00 自动执行
-
-**功能：** 每周汇总习惯追踪数据，分析习惯坚持情况，生成改进建议并发送通知。
-
-**步骤流程：**
-```
-SkillStep(获取习惯数据) → LlmStep(分析习惯数据)
-→ LlmStep(生成鼓励文案)
-→ NotifyStep(发送习惯周报, skip)
+[SkillStep(待办统计) ∥ SkillStep(日程统计) ∥ SkillStep(习惯统计)]（DAG 并行）
+  → LlmStep(生成周报) → SkillStep(保存到记忆)
+  → NotifyStep(发送周报, skip)
 ```
 
 **涉及的步骤类型：** skill、llm、notify
 
-**适合学习：** 简单的线性流程、LLM 结构化输出、通知发送。
+**适合学习：** DAG 多源并行汇聚、SkillStep 调用、skip 降级策略。
+
+### 3. 定时知识采集（knowledge-collect.yml）⭐ 中级
+
+**触发方式：** 每天早上 7:00 自动执行，或手动触发，需要输入采集主题
+
+**功能：** 按主题循环搜索网络信息，去重摘要后保存到知识库，持续追踪感兴趣的领域。
+
+**步骤流程：**
+```
+LlmStep(解析主题) → LoopStep(逐主题采集)
+  → ToolStep(网络搜索, retry) → LlmStep(去重摘要)
+  → SkillStep(保存到知识库, skip)
+→ NotifyStep(通知完成)
+```
+
+**涉及的步骤类型：** loop、tool、llm、skill、notify
+
+**适合学习：** LoopStep 循环处理、循环变量引用（loopVar）、retry + skip 错误策略组合。
+
+### 4. 调研助手（research-assistant.yml）⭐ 中级
+
+**触发方式：** 手动触发，需要输入调研主题和深度
+
+**功能：** 多源并行搜索（网络 + 记忆），LLM 深度分析并质量评分，经人工审批后发布成果。
+
+**步骤流程：**
+```
+[ToolStep(网络搜索, retry) ∥ SkillStep(记忆搜索, skip)]（DAG 并行）
+  → LlmStep(深度分析) → LlmStep(质量检查, 结构化输出)
+  → ApprovalStep(审批发布)
+  → SkillStep(保存成果, skip) → NotifyStep(通知完成, skip)
+```
+
+**涉及的步骤类型：** tool、skill、llm（结构化输出）、approval、notify
+
+**适合学习：** DAG 多源并行汇聚、人工审批流程、skip 降级策略。
+
+### 5. 内容创作助手（content-creator.yml）⭐ 中级
+
+**触发方式：** 手动触发，需要输入主题、内容类型、写作风格和目标字数
+
+**功能：** 搜索素材和个人笔记，生成大纲，根据大纲复杂度选择分段精写或一次成文策略。
+
+**步骤流程：**
+```
+[ToolStep(搜索素材, skip) ∥ SkillStep(搜索笔记, skip)]（DAG 并行）
+  → LlmStep(生成大纲, 结构化输出) → LlmStep(复杂度判断)
+  → ConditionStep(选择写作策略)
+    → then: LlmStep(分段精写)
+    → else: LlmStep(一次成文)
+  → SkillStep(保存内容, skip) → NotifyStep(通知完成, skip)
+```
+
+**涉及的步骤类型：** tool、skill、llm（结构化输出）、condition、notify
+
+**适合学习：** 多输入参数设计、LLM 结构化输出驱动条件分支、写作策略路由。
+
+### 6. 目标复盘与计划（goal-review-planner.yml）⭐ 进阶
+
+**触发方式：** 每周日晚上 8:00 自动执行，或手动触发，需要输入目标列表
+
+**功能：** 并行获取多源进度数据，逐目标分析偏差，严重偏离时生成调整建议并请求用户审批确认，自动创建下周行动计划。这是最复杂的预置工作流，展示了工作流引擎的全部高级特性。
+
+**步骤流程：**
+```
+ParallelStep(并行获取数据)
+  分支1: [SkillStep(待办) → SkillStep(习惯)]
+  分支2: [SkillStep(日程) → SkillStep(记忆笔记)]
+→ LlmStep(解析目标列表, 结构化输出)
+→ LoopStep(逐目标复盘)
+  → LlmStep(分析偏差, 结构化输出)
+  → ConditionStep(偏差判定)
+    → 偏差 > 阈值:
+      LlmStep(生成调整建议) → ApprovalStep(用户确认)
+      → ConditionStep(审批结果)
+        → 批准: SkillStep(创建调整后待办)
+        → 拒绝: NoopStep(保持原计划)
+    → 偏差 ≤ 阈值:
+      LlmStep(生成鼓励) → SkillStep(创建下周待办)
+→ LlmStep(汇总复盘报告)
+→ SkillStep(保存报告) → NotifyStep(发送通知)
+```
+
+**涉及的步骤类型：** parallel、loop（含嵌套 condition + approval）、condition（多层嵌套）、approval、skill、llm（结构化输出）、notify、noop
+
+**适合学习：** 这是一个综合性的进阶案例，覆盖了：
+- ParallelStep 并行数据获取
+- LoopStep 内嵌套 ConditionStep + ApprovalStep
+- 多层条件分支（偏差判定 → 审批结果判定）
+- 人工审批与自动化的结合
+- 输入参数驱动行为（deviationThreshold 控制审批触发阈值）
+- 多种错误策略（skip 降级）
+- Skill 联动（分析结果自动创建待办）
 
 ### 自定义内置工作流
 
@@ -1489,7 +1470,7 @@ GET /api/workflows/{id}/stats
 
 ```json
 {
-  "workflowId": "daily-reminder",
+  "workflowId": "daily-briefing",
   "totalExecutions": 150,
   "successCount": 142,
   "failedCount": 8,
@@ -1509,7 +1490,7 @@ GET /api/workflows/{id}/step-stats
 
 ```json
 {
-  "workflowId": "daily-reminder",
+  "workflowId": "daily-briefing",
   "stepStats": [
     {
       "stepId": "fetch-todos",

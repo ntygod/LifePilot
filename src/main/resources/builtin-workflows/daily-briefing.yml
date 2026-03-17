@@ -1,0 +1,130 @@
+id: daily-briefing
+name: 每日晨报
+description: 每天早上汇总今日待办、日程安排和习惯提醒，一条消息掌握全天计划
+version: "1.0"
+triggers:
+  - type: cron
+    cron: "0 0 8 * * *"
+inputs:
+  includeHabits:
+    type: string
+    required: false
+    defaultValue: "true"
+    description: 是否包含习惯提醒（true/false）
+metadata:
+  category: 任务管理
+  complexity: beginner
+steps:
+  - id: fetch-todos
+    name: 获取今日待办
+    type: skill
+    skillId: todo
+    params:
+      operation: list
+      filter: pending
+    errorStrategy:
+      type: skip
+      reason: 无待办时跳过
+
+  - id: fetch-schedule
+    name: 获取今日日程
+    type: skill
+    skillId: schedule
+    params:
+      period: today
+    errorStrategy:
+      type: skip
+      reason: 无日程时跳过
+
+  - id: fetch-habits
+    name: 获取今日习惯
+    type: skill
+    skillId: habit
+    params:
+      operation: list
+      filter: today
+    errorStrategy:
+      type: skip
+      reason: 习惯数据获取失败不影响晨报
+
+  - id: generate-briefing
+    name: 生成晨报
+    type: llm
+    scene: agent_reasoning
+    capability: CHAT
+    prompt: |
+      请根据以下数据生成一份简洁的每日晨报，语气轻松友好：
+
+      ## 今日待办
+      ${steps.fetch-todos.output.result}
+
+      ## 今日日程
+      ${steps.fetch-schedule.output.result}
+
+      ## 今日习惯
+      ${steps.fetch-habits.output.result}
+
+      要求：
+      1. 先用一句话概括今天的整体安排
+      2. 按时间线列出关键事项
+      3. 如果有紧急或即将到期的待办，特别标注
+      4. 最后给一句简短的鼓励
+    dependsOn:
+      - fetch-todos
+      - fetch-schedule
+      - fetch-habits
+
+  - id: check-urgent
+    name: 检查紧急事项
+    type: llm
+    scene: agent_reasoning
+    capability: STRUCTURED_OUTPUT
+    outputSchema: |
+      {
+        "type": "object",
+        "properties": {
+          "hasUrgent": { "type": "boolean" },
+          "urgentCount": { "type": "number" }
+        },
+        "required": ["hasUrgent", "urgentCount"]
+      }
+    prompt: |
+      分析以下待办和日程，判断是否有紧急事项（24小时内到期或标记为重要）：
+
+      待办：${steps.fetch-todos.output.result}
+      日程：${steps.fetch-schedule.output.result}
+
+      输出 JSON：{"hasUrgent": true/false, "urgentCount": 数量}
+    dependsOn:
+      - fetch-todos
+      - fetch-schedule
+
+  - id: decide-urgency
+    name: 设置通知级别
+    type: condition
+    condition: "${steps.check-urgent.output.result.hasUrgent} == true"
+    dependsOn:
+      - check-urgent
+      - generate-briefing
+    then:
+      - id: send-urgent
+        name: 发送紧急晨报
+        type: notify
+        targetUserId: owner
+        content: |
+          ⚡ 今日有 ${steps.check-urgent.output.result.urgentCount} 项紧急事项
+
+          ${steps.generate-briefing.output.result}
+        contentType: MARKDOWN
+        urgency: HIGH
+    else:
+      - id: send-normal
+        name: 发送普通晨报
+        type: notify
+        targetUserId: owner
+        content: |
+          ☀️ 早安，今日安排如下
+
+          ${steps.generate-briefing.output.result}
+        contentType: MARKDOWN
+        urgency: LOW

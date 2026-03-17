@@ -1,0 +1,332 @@
+id: goal-review-planner
+name: 目标复盘与计划
+description: 每周自动复盘目标进度，分析偏差并生成调整建议，严重偏离时请求用户确认，自动创建下周行动计划
+version: "1.0"
+triggers:
+  - type: cron
+    cron: "0 0 20 * * 0"
+  - type: manual
+inputs:
+  goals:
+    type: string
+    required: true
+    description: 目标列表（逗号分隔，如"3个月减重10斤,读完《深度学习》,完成副业MVP"）
+  deviationThreshold:
+    type: string
+    required: false
+    defaultValue: "30"
+    description: 偏差预警阈值（百分比，超过此值触发调整建议审批）
+metadata:
+  category: 目标管理
+  complexity: advanced
+steps:
+  # ===== 阶段一：并行获取多源数据 =====
+  - id: fetch-all-data
+    name: 并行获取进度数据
+    type: parallel
+    branches:
+      - - id: todo-progress
+          name: 获取待办完成率
+          type: skill
+          skillId: todo
+          params:
+            operation: stats
+            period: last-7-days
+          errorStrategy:
+            type: skip
+            reason: 待办数据缺失时使用空数据
+        - id: habit-progress
+          name: 获取习惯坚持率
+          type: skill
+          skillId: habit
+          params:
+            operation: report
+            period: last-7-days
+          errorStrategy:
+            type: skip
+            reason: 习惯数据缺失时使用空数据
+      - - id: schedule-progress
+          name: 获取日程执行率
+          type: skill
+          skillId: schedule
+          params:
+            period: last-7-days
+          errorStrategy:
+            type: skip
+            reason: 日程数据缺失时使用空数据
+        - id: goal-notes
+          name: 搜索目标相关笔记
+          type: skill
+          skillId: memory
+          params:
+            operation: search
+            query: "${inputs.goals}"
+            limit: "20"
+          errorStrategy:
+            type: skip
+            reason: 无历史笔记时跳过
+
+  # ===== 阶段二：解析目标列表 =====
+  - id: parse-goals
+    name: 解析目标列表
+    type: llm
+    scene: knowledge_extraction
+    capability: STRUCTURED_OUTPUT
+    outputSchema: |
+      {
+        "type": "object",
+        "properties": {
+          "goals": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string" },
+                "keywords": { "type": "array", "items": { "type": "string" } }
+              },
+              "required": ["name", "keywords"]
+            }
+          }
+        },
+        "required": ["goals"]
+      }
+    prompt: |
+      解析以下目标列表，为每个目标提取关键词（用于匹配待办和习惯数据）：
+
+      ${inputs.goals}
+
+      输出 JSON：{"goals": [{"name": "目标名", "keywords": ["关键词1", "关键词2"]}]}
+    dependsOn:
+      - fetch-all-data
+
+  # ===== 阶段三：逐目标复盘 =====
+  - id: review-each-goal
+    name: 逐目标复盘
+    type: loop
+    items: "${steps.parse-goals.output.result.goals}"
+    loopVar: currentGoal
+    dependsOn:
+      - parse-goals
+    body:
+      # 3.1 分析当前目标的进度偏差
+      - id: analyze-deviation
+        name: 分析进度偏差
+        type: llm
+        scene: agent_reasoning
+        capability: STRUCTURED_OUTPUT
+        outputSchema: |
+          {
+            "type": "object",
+            "properties": {
+              "goalName": { "type": "string" },
+              "completionRate": { "type": "number" },
+              "deviationPercent": { "type": "number" },
+              "status": { "type": "string" },
+              "keyFindings": { "type": "array", "items": { "type": "string" } }
+            },
+            "required": ["goalName", "completionRate", "deviationPercent", "status", "keyFindings"]
+          }
+        prompt: |
+          分析目标"${currentGoal.name}"的本周进度：
+
+          关键词匹配：${currentGoal.keywords}
+
+          ## 待办完成数据
+          ${steps.todo-progress.output.result}
+
+          ## 习惯坚持数据
+          ${steps.habit-progress.output.result}
+
+          ## 日程执行数据
+          ${steps.schedule-progress.output.result}
+
+          ## 历史笔记
+          ${steps.goal-notes.output.result}
+
+          请评估：
+          - completionRate：本周实际完成率（0-100）
+          - deviationPercent：与预期的偏差百分比（正数=落后，负数=超前）
+          - status：on-track / slightly-behind / significantly-behind / ahead
+          - keyFindings：关键发现（2-3条）
+
+          输出 JSON。
+
+      # 3.2 根据偏差程度分支处理
+      - id: check-deviation
+        name: 偏差判定
+        type: condition
+        condition: "${steps.analyze-deviation.output.result.deviationPercent} > ${inputs.deviationThreshold}"
+        dependsOn:
+          - analyze-deviation
+        then:
+          # 严重偏离：生成调整建议 → 用户审批
+          - id: generate-adjustment
+            name: 生成调整建议
+            type: llm
+            scene: agent_reasoning
+            capability: STRUCTURED_OUTPUT
+            outputSchema: |
+              {
+                "type": "object",
+                "properties": {
+                  "adjustmentType": { "type": "string" },
+                  "reason": { "type": "string" },
+                  "newPlan": { "type": "string" },
+                  "weeklyTasks": { "type": "array", "items": { "type": "string" } }
+                },
+                "required": ["adjustmentType", "reason", "newPlan", "weeklyTasks"]
+              }
+            prompt: |
+              目标"${currentGoal.name}"严重偏离预期（偏差 ${steps.analyze-deviation.output.result.deviationPercent}%）。
+
+              当前状态：${steps.analyze-deviation.output.result.status}
+              关键发现：${steps.analyze-deviation.output.result.keyFindings}
+
+              请生成调整建议：
+              - adjustmentType：extend（延期）/ split（拆分子目标）/ intensify（加大投入）/ pivot（调整方向）
+              - reason：调整原因
+              - newPlan：调整后的计划描述
+              - weeklyTasks：下周具体待办列表（3-5条）
+
+              输出 JSON。
+
+          - id: request-approval
+            name: 请求用户确认调整
+            type: approval
+            message: |
+              ⚠️ 目标偏离预警：${currentGoal.name}
+
+              偏差：${steps.analyze-deviation.output.result.deviationPercent}%
+              状态：${steps.analyze-deviation.output.result.status}
+
+              建议调整方式：${steps.generate-adjustment.output.result.adjustmentType}
+              原因：${steps.generate-adjustment.output.result.reason}
+
+              新计划：${steps.generate-adjustment.output.result.newPlan}
+
+              下周待办：
+              ${steps.generate-adjustment.output.result.weeklyTasks}
+            approvers:
+              - owner
+            timeoutSeconds: 43200
+            autoApproveOnTimeout: false
+            dependsOn:
+              - generate-adjustment
+
+          - id: handle-approval-result
+            name: 处理审批结果
+            type: condition
+            condition: "${steps.request-approval.approval.decision} == 'APPROVED'"
+            dependsOn:
+              - request-approval
+            then:
+              - id: create-adjusted-todos
+                name: 创建调整后的待办
+                type: skill
+                skillId: todo
+                params:
+                  operation: batch-create
+                  items: "${steps.generate-adjustment.output.result.weeklyTasks}"
+                  tags: "goal,${currentGoal.name},adjusted"
+                errorStrategy:
+                  type: skip
+                  reason: 待办创建失败不影响复盘报告
+            else:
+              - id: log-rejection
+                name: 记录用户保持原计划
+                type: noop
+
+        else:
+          # 正常或轻微偏离：生成鼓励 + 微调
+          - id: generate-encouragement
+            name: 生成鼓励与微调建议
+            type: llm
+            scene: agent_reasoning
+            capability: STRUCTURED_OUTPUT
+            outputSchema: |
+              {
+                "type": "object",
+                "properties": {
+                  "message": { "type": "string" },
+                  "weeklyTasks": { "type": "array", "items": { "type": "string" } }
+                },
+                "required": ["message", "weeklyTasks"]
+              }
+            prompt: |
+              目标"${currentGoal.name}"进展正常（偏差 ${steps.analyze-deviation.output.result.deviationPercent}%）。
+
+              完成率：${steps.analyze-deviation.output.result.completionRate}%
+              关键发现：${steps.analyze-deviation.output.result.keyFindings}
+
+              请生成：
+              - message：一段鼓励的话（2-3句）
+              - weeklyTasks：下周具体待办列表（2-3条，保持节奏）
+
+              输出 JSON。
+
+          - id: create-normal-todos
+            name: 创建下周待办
+            type: skill
+            skillId: todo
+            params:
+              operation: batch-create
+              items: "${steps.generate-encouragement.output.result.weeklyTasks}"
+              tags: "goal,${currentGoal.name}"
+            dependsOn:
+              - generate-encouragement
+            errorStrategy:
+              type: skip
+              reason: 待办创建失败不影响复盘报告
+
+  # ===== 阶段四：汇总报告 =====
+  - id: synthesize-report
+    name: 汇总复盘报告
+    type: llm
+    scene: document_summary
+    capability: CHAT
+    prompt: |
+      请汇总以下所有目标的复盘结果，生成一份完整的周度目标复盘报告：
+
+      目标列表：${inputs.goals}
+
+      各目标复盘数据（来自循环处理）：
+      ${steps.review-each-goal.output.result}
+
+      报告结构：
+      1. 本周总览（一句话概括整体进展）
+      2. 各目标进度详情
+      3. 本周亮点
+      4. 需要关注的风险
+      5. 下周行动计划总览
+    dependsOn:
+      - review-each-goal
+
+  - id: save-report
+    name: 保存复盘报告
+    type: skill
+    skillId: memory
+    params:
+      operation: save
+      content: "${steps.synthesize-report.output.result}"
+      tags: "goal-review,weekly-review"
+      importance: high
+    dependsOn:
+      - synthesize-report
+    errorStrategy:
+      type: skip
+      reason: 保存失败不影响通知
+
+  - id: send-report
+    name: 发送复盘通知
+    type: notify
+    targetUserId: owner
+    content: |
+      🎯 本周目标复盘报告
+
+      ${steps.synthesize-report.output.result}
+    contentType: MARKDOWN
+    urgency: MEDIUM
+    dependsOn:
+      - save-report
+    errorStrategy:
+      type: skip

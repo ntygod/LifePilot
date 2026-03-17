@@ -234,9 +234,12 @@ errorStrategy:
 
 | 模板 | 场景 | 核心模式 |
 |------|------|---------|
-| daily-reminder | 每日待办提醒 | cron + skill + condition + notify |
-| content-review | 内容审核 | event + condition + approval + llm |
-| batch-task | 批量任务处理 | cron + loop + condition + llm |
+| daily-briefing | 每日晨报 | cron + skill + condition + notify |
+| weekly-summary | 周报生成 | DAG 并行 + skill + llm + notify |
+| knowledge-collect | 定时知识采集 | loop + tool + llm + skill |
+| research-assistant | 调研助手 | parallel(DAG) + approval + 多源搜索 |
+| content-creator | 内容创作助手 | llm 多步骤 + condition + 输入参数 |
+| goal-review-planner | 目标复盘与计划 | parallel + loop + condition + approval |
 
 ## 约束
 
