@@ -55,6 +55,35 @@ class HybridRetriever属性测试 {
     }
 
     // ─────────────────────────────────────────────
+    //  Property P7 — HybridRetriever fusedScore 阈值过滤
+    // ─────────────────────────────────────────────
+
+    /**
+     * <b>Validates: Requirements 6.2</b>
+     *
+     * <p>对任意查询和随机 minFusedScore 阈值，HybridRetriever.retrieve() 返回的
+     * 所有结果的 fusedScore 均 ≥ minFusedScore。</p>
+     */
+    @Property(tries = 100)
+    void 所有返回结果fusedScore不低于阈值(
+            @ForAll("queriesWithRandomThreshold") QueryWithMockResults input) {
+
+        var retriever = buildRetriever(
+                input.vectorResults, input.ftsResults, input.graphResults,
+                input.entities, null, null, input.properties);
+
+        float minFusedScore = input.properties.getRetrieval().getMinFusedScore();
+        var results = retriever.retrieve(input.query, 20, RetrievalWeights.DEFAULT);
+
+        // 验证：所有返回结果的 fusedScore ≥ minFusedScore
+        for (var result : results) {
+            assertTrue(result.fusedScore() >= minFusedScore,
+                    "fusedScore %.6f 低于阈值 %.6f, entityId=%s"
+                            .formatted(result.fusedScore(), minFusedScore, result.entityId()));
+        }
+    }
+
+    // ─────────────────────────────────────────────
     //  数据生成器
     // ─────────────────────────────────────────────
 
@@ -88,6 +117,39 @@ class HybridRetriever属性测试 {
                             var properties = new MemoryProperties();
                             // 设置较低的 minFusedScore 以确保结果不被全部过滤
                             properties.getRetrieval().setMinFusedScore(0.0f);
+                            properties.getRetrieval().setMinVectorSimilarity(0.0f);
+                            return new QueryWithMockResults(
+                                    query, vecResults, ftsResults, graphResults, entities, properties);
+                        });
+            });
+        });
+    }
+
+    /** 生成随机查询 + 随机 minFusedScore 阈值的 Mock 检索结果。 */
+    @Provide
+    Arbitrary<QueryWithMockResults> queriesWithRandomThreshold() {
+        return Arbitraries.integers().between(3, 12).flatMap(entityCount -> {
+            var entityIdsArb = Arbitraries.strings().alpha().ofMinLength(5).ofMaxLength(10)
+                    .list().ofSize(entityCount).map(ids -> ids.stream().distinct().toList());
+
+            return entityIdsArb.flatMap(entityIds -> {
+                if (entityIds.isEmpty()) {
+                    return Arbitraries.just(new QueryWithMockResults(
+                            "test query", List.of(), List.of(), List.of(), Map.of(), new MemoryProperties()));
+                }
+
+                var vectorArb = generateVectorResults(entityIds);
+                var ftsArb = generateRankedItems(entityIds);
+                var graphArb = generateRankedItems(entityIds);
+                var queryArb = Arbitraries.strings().alpha().ofMinLength(3).ofMaxLength(20);
+                // 随机阈值 [0.0, 0.5]
+                var thresholdArb = Arbitraries.floats().between(0.0f, 0.5f);
+
+                return Combinators.combine(queryArb, vectorArb, ftsArb, graphArb, thresholdArb)
+                        .as((query, vecResults, ftsResults, graphResults, threshold) -> {
+                            var entities = buildEntityMap(entityIds);
+                            var properties = new MemoryProperties();
+                            properties.getRetrieval().setMinFusedScore(threshold);
                             properties.getRetrieval().setMinVectorSimilarity(0.0f);
                             return new QueryWithMockResults(
                                     query, vecResults, ftsResults, graphResults, entities, properties);
