@@ -12,6 +12,9 @@ import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.model.ReactStep;
 import com.lifepilot.agent.model.SuspendReason;
 import com.lifepilot.agent.session.SessionManager;
+import com.lifepilot.agent.suspend.model.SuspendedAgent;
+import com.lifepilot.agent.suspend.store.SuspendStore;
+import com.lifepilot.agent.suspend.event.ScheduledWakeupEvent;
 import com.lifepilot.conversation.ConversationHistoryStore;
 import com.lifepilot.conversation.ConversationViewService;
 import com.lifepilot.interaction.model.TokenUsage;
@@ -113,6 +116,17 @@ public class ReactAgentLoop {
     // ===== 可选依赖（附件持久化） =====
     @Nullable private final AttachmentRepository attachmentRepository;
 
+    // ===== 可选依赖（挂起-恢复） =====
+    @Nullable private final SuspendStore suspendStore;
+
+    // ===== 可选依赖（事件发布，用于 ScheduledWakeup 延迟恢复） =====
+    @Nullable private final org.springframework.context.ApplicationEventPublisher eventPublisher;
+
+    // ===== 挂起-恢复定时任务调度器 =====
+    private final java.util.concurrent.ScheduledExecutorService suspendScheduler =
+            java.util.concurrent.Executors.newSingleThreadScheduledExecutor(
+                    Thread.ofVirtual().name("suspend-wakeup-", 0).factory());
+
     // ===== 运行时状态（volatile） =====
     private volatile A2uiComponentTree lastCollectedA2uiTree;
     private final List<String> lastInjectedEntityIds = List.of();
@@ -142,7 +156,9 @@ public class ReactAgentLoop {
             @Nullable SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
             @Nullable KnowledgeBaseRepository knowledgeBaseRepository,
             @Nullable A2uiProperties a2uiProperties,
-            @Nullable AttachmentRepository attachmentRepository) {
+            @Nullable AttachmentRepository attachmentRepository,
+            @Nullable SuspendStore suspendStore,
+            @Nullable org.springframework.context.ApplicationEventPublisher eventPublisher) {
         this.contextAssembler = contextAssembler;
         this.llmRouter = llmRouter;
         this.traceRecorder = traceRecorder;
@@ -164,6 +180,8 @@ public class ReactAgentLoop {
         this.knowledgeBaseRepository = knowledgeBaseRepository;
         this.a2uiProperties = a2uiProperties;
         this.attachmentRepository = attachmentRepository;
+        this.suspendStore = suspendStore;
+        this.eventPublisher = eventPublisher;
     }
 
     /** 测试会话前缀 — 以此开头的 sessionId 不持久化对话历史和记忆。 */
@@ -706,6 +724,36 @@ public class ReactAgentLoop {
      * @param reason 挂起原因
      * @return 格式化后的描述文本
      */
+    /**
+     * 若挂起原因为 ScheduledWakeup，注册延迟任务到时发布 ScheduledWakeupEvent。
+     *
+     * @param state 当前挂起状态
+     */
+    private void scheduleWakeupIfNeeded(ReactAgentState state) {
+        if (state.suspendReason() instanceof SuspendReason.ScheduledWakeup sw && eventPublisher != null) {
+            var delay = Duration.between(Instant.now(), sw.wakeupAt());
+            if (delay.isNegative() || delay.isZero()) {
+                // 唤醒时间已过，立即发布
+                eventPublisher.publishEvent(new ScheduledWakeupEvent(state.traceId(), Instant.now()));
+                log.info("ScheduledWakeup 唤醒时间已过，立即发布恢复事件: traceId={}", state.traceId());
+            } else {
+                String traceId = state.traceId();
+                suspendScheduler.schedule(() -> {
+                    eventPublisher.publishEvent(new ScheduledWakeupEvent(traceId, Instant.now()));
+                    log.info("ScheduledWakeup 延迟任务触发: traceId={}", traceId);
+                }, delay.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
+                log.info("ScheduledWakeup 延迟任务已注册: traceId={}, wakeupAt={}, delayMs={}",
+                        state.traceId(), sw.wakeupAt(), delay.toMillis());
+            }
+        }
+    }
+
+    /**
+     * 将 SuspendReason 格式化为人类可读的描述文本。
+     *
+     * @param reason 挂起原因
+     * @return 格式化后的描述文本
+     */
     private String formatSuspendReason(SuspendReason reason) {
         return switch (reason) {
             case SuspendReason.WorkflowWait w ->
@@ -1025,6 +1073,26 @@ public class ReactAgentLoop {
             state = coreLoop(state, effectiveRequest, traceContext, loopStart, callback, token,
                     null, null);
 
+            // ★ 挂起分支 — coreLoop 退出后检查是否进入挂起态
+            if (state.suspended() && state.suspendReason() != null) {
+                if (suspendStore != null) {
+                    suspendStore.save(SuspendedAgent.from(state));
+                    scheduleWakeupIfNeeded(state);
+                    log.info("Agent 已挂起并持久化: traceId={}, reasonType={}",
+                            state.traceId(), state.suspendReason().getClass().getSimpleName());
+                } else {
+                    log.warn("Agent 请求挂起但 SuspendStore 未注入，无法持久化: traceId={}", state.traceId());
+                }
+                return new AgentResponse(
+                        state.traceId(),
+                        state.sessionId(),
+                        "Agent 已挂起，等待恢复信号。原因: " + formatSuspendReason(state.suspendReason()),
+                        state.budget().tokensUsed(),
+                        state.stepCount(),
+                        "suspended",
+                        null, null, aggregateTokenUsage(traceContext));
+            }
+
             // 构建推理概要
             if (state.terminationReason() == null) {
                 String summary = buildReasoningSummary(state, traceContext);
@@ -1174,6 +1242,29 @@ public class ReactAgentLoop {
                     sseManager, streamId, request.sessionId(), tempTurnId, effectiveRequest);
             state = coreLoop(state, effectiveRequest, traceContext, loopStart, callback, token,
                     sseManager, streamId);
+
+            // ★ 挂起分支 — coreLoop 退出后检查是否进入挂起态
+            if (state.suspended() && state.suspendReason() != null) {
+                if (suspendStore != null) {
+                    var suspendedAgent = SuspendedAgent.from(state).toBuilder()
+                            .streamId(streamId).build();
+                    suspendStore.save(suspendedAgent);
+                    scheduleWakeupIfNeeded(state);
+                    log.info("流式 Agent 已挂起并持久化: traceId={}, reasonType={}, streamId={}",
+                            state.traceId(), state.suspendReason().getClass().getSimpleName(), streamId);
+                } else {
+                    log.warn("Agent 请求挂起但 SuspendStore 未注入，无法持久化: traceId={}", state.traceId());
+                }
+                // 发送 AGENT_SUSPENDED SSE 事件
+                sseManager.sendEvent(streamId, SseEventType.AGENT_SUSPENDED, Map.of(
+                        "traceId", state.traceId(),
+                        "sessionId", state.sessionId(),
+                        "reasonType", state.suspendReason().getClass().getSimpleName(),
+                        "reasonDetail", formatSuspendReason(state.suspendReason()),
+                        "suspendedAt", Instant.now().toString()));
+                sseManager.closeEmitter(streamId);
+                return;
+            }
 
             // 检查流式错误
             if (callback.hasStreamingError()) {
