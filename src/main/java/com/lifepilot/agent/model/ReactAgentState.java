@@ -37,7 +37,9 @@ public record ReactAgentState(
         @Nullable String terminationReason,
         @Nullable String reasoningSummary,
         @Nullable List<String> allowedToolIds,
-        @Nullable List<MediaContent> pendingMedia
+        @Nullable List<MediaContent> pendingMedia,
+        boolean suspended,
+        @Nullable SuspendReason suspendReason
 ) {
 
     /** 紧凑构造器 — 防御性拷贝。 */
@@ -73,6 +75,8 @@ public record ReactAgentState(
                 .terminationReason(null)
                 .allowedToolIds(request.allowedToolIds())
                 .pendingMedia(null)
+                .suspended(false)
+                .suspendReason(null)
                 .build();
     }
 
@@ -101,12 +105,39 @@ public record ReactAgentState(
                 .terminationReason(null)
                 .allowedToolIds(request.allowedToolIds())
                 .pendingMedia(null)
+                .suspended(false)
+                .suspendReason(null)
                 .build();
     }
 
     /** 检查是否已完成。 */
     public boolean isDone() {
         return done;
+    }
+
+    /**
+     * 进入挂起态，返回新实例。
+     *
+     * @param reason 挂起原因
+     * @return suspended=true 且 suspendReason 已设置的新状态实例
+     */
+    public ReactAgentState suspend(SuspendReason reason) {
+        return this.toBuilder()
+                .suspended(true)
+                .suspendReason(reason)
+                .build();
+    }
+
+    /**
+     * 从挂起态恢复，返回新实例。
+     *
+     * @return suspended=false 且 suspendReason=null 的新状态实例
+     */
+    public ReactAgentState resume() {
+        return this.toBuilder()
+                .suspended(false)
+                .suspendReason(null)
+                .build();
     }
 
     /**
