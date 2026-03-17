@@ -67,6 +67,11 @@ lifepilot:
       ignore-threshold: 3
       reduced-multiplier: 3
       max-content-length: 100
+    suspend:
+      # 挂起记录最大保留时长
+      max-age: 24h
+      # 过期清理定时任务间隔
+      cleanup-interval: 1h
     session:
       timeout-minutes: 30
       max-recent-turns: 10

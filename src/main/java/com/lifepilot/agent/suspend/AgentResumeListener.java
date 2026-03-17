@@ -8,7 +8,6 @@ import com.lifepilot.agent.suspend.store.SuspendStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
-import org.springframework.stereotype.Component;
 
 import java.util.List;
 
@@ -20,10 +19,12 @@ import java.util.List;
  * 调用 {@link ReactAgentLoop#resumeFromSuspend(String, ResumePayload)}。
  * 未匹配时 log.warn 并丢弃，不抛异常。</p>
  *
+ * <p>通过 {@link com.lifepilot.agent.suspend.config.SuspendAutoConfiguration} 注册为 Bean，
+ * 不使用 {@code @Component} 以确保依赖顺序正确。</p>
+ *
  * @author zsg
  * @since 2026-03-17
  */
-@Component
 public class AgentResumeListener {
 
     private static final Logger log = LoggerFactory.getLogger(AgentResumeListener.class);
