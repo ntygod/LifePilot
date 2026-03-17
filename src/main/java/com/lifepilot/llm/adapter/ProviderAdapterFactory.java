@@ -112,9 +112,17 @@ public class ProviderAdapterFactory {
                     "Anthropic Provider 必须配置 API Key: id=" + config.id());
         }
 
+        // Anthropic API 的 baseUrl 不应包含 /v1 后缀（AnthropicApi 会自动拼接 /v1/messages）
+        // 用户可能习惯性填写 https://example.com/v1（OpenAI 兼容格式），这里自动修正
+        String baseUrl = config.apiUrl();
+        if (baseUrl.endsWith("/v1") || baseUrl.endsWith("/v1/")) {
+            baseUrl = baseUrl.replaceAll("/v1/?$", "");
+            log.info("Anthropic baseUrl 自动修正: 移除 /v1 后缀, id={}, 修正后={}", config.id(), baseUrl);
+        }
+
         var anthropicApiBuilder = AnthropicApi.builder()
                 .apiKey(apiKey)
-                .baseUrl(config.apiUrl());
+                .baseUrl(baseUrl);
 
         // HTTP 超时配置（复用 OpenAI 兼容适配器的模式）
         if (connectionPoolConfig != null) {
