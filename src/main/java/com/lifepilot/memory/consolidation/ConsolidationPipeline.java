@@ -44,9 +44,16 @@ public class ConsolidationPipeline {
 
     /**
      * 定时执行入口 — 由 Spring {@code @Scheduled} 按 Cron 表达式触发。
+     *
+     * <p>IDLE 模式下跳过 Cron 触发，仅 CRON 和 HYBRID 模式执行。</p>
      */
     @Scheduled(cron = "${lifepilot.memory.consolidation.cron}")
     public void scheduledConsolidate() {
+        String mode = properties.getConsolidation().getTriggerMode();
+        if ("IDLE".equalsIgnoreCase(mode)) {
+            log.debug("巩固管线: IDLE 模式下跳过 Cron 触发");
+            return;
+        }
         log.info("巩固管线: 定时任务触发");
         consolidate();
     }

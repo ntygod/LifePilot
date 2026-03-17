@@ -99,6 +99,9 @@ public class MemoryProperties {
     /** 记忆精排配置。 */
     private Reranker reranker = new Reranker();
 
+    /** 对话压缩配置。 */
+    private Compression compression = new Compression();
+
     public TokenBudget getTokenBudget() { return tokenBudget; }
     public void setTokenBudget(TokenBudget tokenBudget) { this.tokenBudget = tokenBudget; }
 
@@ -122,6 +125,9 @@ public class MemoryProperties {
 
     public Reranker getReranker() { return reranker; }
     public void setReranker(Reranker reranker) { this.reranker = reranker; }
+
+    public Compression getCompression() { return compression; }
+    public void setCompression(Compression compression) { this.compression = compression; }
 
     /**
      * Token 预算分配配置 — 控制上下文窗口四区域的预算比例和场景切换阈值。
@@ -323,6 +329,12 @@ public class MemoryProperties {
         /** 短名称阈值（字符数），纯英文名称长度 ≤ 此值时强制词边界匹配，默认 2。 */
         private int shortNameThreshold = 2;
 
+        /** 空闲触发阈值（分钟），默认 30。 */
+        private int idleThresholdMinutes = 30;
+
+        /** 空闲触发冷却期（分钟），默认 60。 */
+        private int idleCooldownMinutes = 60;
+
         public String getCron() { return cron; }
         public void setCron(String cron) { this.cron = cron; }
 
@@ -364,6 +376,12 @@ public class MemoryProperties {
 
         public int getShortNameThreshold() { return shortNameThreshold; }
         public void setShortNameThreshold(int shortNameThreshold) { this.shortNameThreshold = shortNameThreshold; }
+
+        public int getIdleThresholdMinutes() { return idleThresholdMinutes; }
+        public void setIdleThresholdMinutes(int idleThresholdMinutes) { this.idleThresholdMinutes = idleThresholdMinutes; }
+
+        public int getIdleCooldownMinutes() { return idleCooldownMinutes; }
+        public void setIdleCooldownMinutes(int idleCooldownMinutes) { this.idleCooldownMinutes = idleCooldownMinutes; }
     }
 
     /**
@@ -494,8 +512,8 @@ public class MemoryProperties {
      */
 public static class Retrieval {
 
-        /** RRF 融合分数最低阈值，低于此值的检索结果将被过滤。0.0 表示不过滤。 */
-        private float minFusedScore = 0.035f;
+        /** RRF 融合分数最低阈值，低于此值的检索结果将被过滤。0.0 表示不过滤，默认 0.08。 */
+        private float minFusedScore = 0.08f;
 
         /** 查询精炼后最大长度（字符数），超过则截断。 */
         private int queryMaxLength = 100;
@@ -524,8 +542,23 @@ public static class Retrieval {
         /** 时间衰减因子最小值 — 防止老实体完全被忽略。 */
         private float minTimeDecayFactor = 0.5f;
 
-        /** 跨会话消息语义相似度最低阈值 [0.0, 1.0]，默认 0.3。 */
-        private float minCrossSessionSemanticScore = 0.3f;
+        /** 跨会话消息语义相似度最低阈值 [0.0, 1.0]，默认 0.45。 */
+        private float minCrossSessionSemanticScore = 0.45f;
+
+        /** 查询改写模式：rewrite / hyde / none，默认 none。 */
+        private String queryRewriteMode = "none";
+
+        /** rewrite 模式最大改写变体数，默认 3。 */
+        private int maxRewrites = 3;
+
+        /** 查询改写 LLM 调用超时（毫秒），默认 5000。 */
+        private int rewriteTimeoutMs = 5000;
+
+        /** 向量检索最低相似度阈值 [0.0, 1.0]，默认 0.15。 */
+        private float minVectorSimilarity = 0.15f;
+
+        /** 话题切换检测余弦相似度阈值 [0.0, 1.0]，默认 0.3。 */
+        private float topicSwitchThreshold = 0.3f;
 
         public float getMinFusedScore() { return minFusedScore; }
         public void setMinFusedScore(float minFusedScore) { this.minFusedScore = minFusedScore; }
@@ -559,6 +592,21 @@ public static class Retrieval {
 
         public float getMinCrossSessionSemanticScore() { return minCrossSessionSemanticScore; }
         public void setMinCrossSessionSemanticScore(float minCrossSessionSemanticScore) { this.minCrossSessionSemanticScore = minCrossSessionSemanticScore; }
+
+        public String getQueryRewriteMode() { return queryRewriteMode; }
+        public void setQueryRewriteMode(String queryRewriteMode) { this.queryRewriteMode = queryRewriteMode; }
+
+        public int getMaxRewrites() { return maxRewrites; }
+        public void setMaxRewrites(int maxRewrites) { this.maxRewrites = maxRewrites; }
+
+        public int getRewriteTimeoutMs() { return rewriteTimeoutMs; }
+        public void setRewriteTimeoutMs(int rewriteTimeoutMs) { this.rewriteTimeoutMs = rewriteTimeoutMs; }
+
+        public float getMinVectorSimilarity() { return minVectorSimilarity; }
+        public void setMinVectorSimilarity(float minVectorSimilarity) { this.minVectorSimilarity = minVectorSimilarity; }
+
+        public float getTopicSwitchThreshold() { return topicSwitchThreshold; }
+        public void setTopicSwitchThreshold(float topicSwitchThreshold) { this.topicSwitchThreshold = topicSwitchThreshold; }
     }
 
     /**
@@ -596,8 +644,8 @@ public static class Retrieval {
      */
     public static class Reranker {
 
-        /** 记忆精排开关，默认 false。 */
-        private boolean enabled = false;
+        /** 记忆精排强制关闭开关，默认 true（Reranker 可用时自动启用；设为 false 强制禁用）。 */
+        private boolean enabled = true;
 
         /** 精排返回数量，默认 10。 */
         private int topK = 10;
@@ -607,5 +655,32 @@ public static class Retrieval {
 
         public int getTopK() { return topK; }
         public void setTopK(int topK) { this.topK = topK; }
+    }
+
+    /**
+     * 对话压缩配置 — 控制压缩策略、滑动窗口大小和窗口重叠。
+     *
+     * @author zsg
+     * @since 2026-03-15
+     */
+    public static class Compression {
+
+        /** 压缩策略：whole / sliding-window，默认 sliding-window。 */
+        private String strategy = "sliding-window";
+
+        /** 滑动窗口大小（消息数），默认 20。 */
+        private int windowSize = 20;
+
+        /** 窗口重叠消息数，默认 2。 */
+        private int windowOverlap = 2;
+
+        public String getStrategy() { return strategy; }
+        public void setStrategy(String strategy) { this.strategy = strategy; }
+
+        public int getWindowSize() { return windowSize; }
+        public void setWindowSize(int windowSize) { this.windowSize = windowSize; }
+
+        public int getWindowOverlap() { return windowOverlap; }
+        public void setWindowOverlap(int windowOverlap) { this.windowOverlap = windowOverlap; }
     }
 }

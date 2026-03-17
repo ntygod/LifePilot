@@ -1,5 +1,6 @@
 package com.lifepilot.memory.working;
 
+import com.lifepilot.memory.compression.CompressionService;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.episodic.CompressionLevel;
 import com.lifepilot.memory.episodic.ConversationRecord;
@@ -7,6 +8,7 @@ import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.memory.episodic.MessageRecord;
 import com.lifepilot.memory.trace.MemoryEvent;
 import com.lifepilot.memory.trace.MemoryEventRecorder;
+import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,6 +35,7 @@ public class WorkingMemory {
     private final SlotEvictionPolicy slotEvictionPolicy;
     private final MemoryEventRecorder memoryEventRecorder;
     private final WorkingMemoryWal wal;
+    @Nullable private final CompressionService compressionService;
 
     /** 会话槽位列表。 */
     private final ConcurrentHashMap<String, List<WorkingMemorySlot>> sessions = new ConcurrentHashMap<>();
@@ -44,20 +47,22 @@ public class WorkingMemory {
     private final ConcurrentHashMap<String, Instant> lastActivity = new ConcurrentHashMap<>();
 
     /**
-     * 完整构造函数（含 WAL 持久化支持）。
+     * 完整构造函数（含 WAL 持久化支持和可选压缩服务）。
      */
     public WorkingMemory(MemoryProperties properties,
                          EpisodicMemory episodicMemory,
                          TokenBudgetAllocator tokenBudgetAllocator,
                          SlotEvictionPolicy slotEvictionPolicy,
                          MemoryEventRecorder memoryEventRecorder,
-                         WorkingMemoryWal wal) {
+                         WorkingMemoryWal wal,
+                         @Nullable CompressionService compressionService) {
         this.properties = properties;
         this.episodicMemory = episodicMemory;
         this.tokenBudgetAllocator = tokenBudgetAllocator;
         this.slotEvictionPolicy = slotEvictionPolicy;
         this.memoryEventRecorder = memoryEventRecorder;
         this.wal = wal;
+        this.compressionService = compressionService;
     }
 
     /**
@@ -218,6 +223,20 @@ public class WorkingMemory {
                     // ignore
                 }
             }
+
+            // 自动压缩触发：Token 超阈值时异步调用 CompressionService
+            if (compressionService != null && !messages.isEmpty()) {
+                int totalTokens = messages.stream().mapToInt(MessageRecord::tokenCount).sum();
+                if (compressionService.shouldCompress(totalTokens)) {
+                    try {
+                        compressionService.compressWithSlidingWindow(
+                                conversationId, messages, CompressionLevel.SUMMARY);
+                        log.debug("自动压缩触发: conversationId={}, totalTokens={}", conversationId, totalTokens);
+                    } catch (Exception e) {
+                        log.warn("自动压缩触发失败: conversationId={}, error={}", conversationId, e.getMessage());
+                    }
+                }
+            }
         }
 
         // 清除会话
@@ -255,6 +274,20 @@ public class WorkingMemory {
                 log.warn("批量 flush 会话失败: sessionId={}, error={}", sessionId, e.getMessage());
             }
         }
+    }
+
+    /**
+     * 获取所有会话中最近一次活动时间。
+     *
+     * <p>用于空闲检测：返回所有会话中最晚的 lastActivity 时间戳。
+     * 无活跃会话时返回 {@link Instant#EPOCH}。</p>
+     *
+     * @return 最近一次活动时间
+     */
+    public Instant getLastActivityTime() {
+        return lastActivity.values().stream()
+                .max(Instant::compareTo)
+                .orElse(Instant.EPOCH);
     }
 
     /**

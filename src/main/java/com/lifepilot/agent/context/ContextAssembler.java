@@ -11,6 +11,7 @@ import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.memory.episodic.MessageRecord;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.QueryRefiner;
+import com.lifepilot.memory.retrieval.QueryRewriter;
 import com.lifepilot.memory.retrieval.RetrievalResult;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
@@ -82,9 +83,14 @@ public class ContextAssembler {
     @Nullable private final com.lifepilot.memory.config.MemoryProperties memoryProperties;
     // LLM 路由器：用于跨会话语义过滤的 embedding 计算，可选注入
     @Nullable private final com.lifepilot.llm.LlmRouter llmRouter;
+    // 查询改写器：LLM 语义改写提升检索召回，可选注入
+    @Nullable private final QueryRewriter queryRewriter;
 
     /** 请求级检索缓存 — 同一 traceId + query + topK 组合只执行一次实际检索。 */
     private final ConcurrentHashMap<String, List<RetrievalResult>> retrievalCache = new ConcurrentHashMap<>();
+
+    /** 上一轮查询的 embedding 缓存（用于话题切换检测）。 */
+    private volatile float[] lastQueryEmbedding;
 
     /** 基础版构造器（向后兼容，记忆字段为 null）。 */
     public ContextAssembler(AgentConfigProperties config, PromptRegistry promptRegistry) {
@@ -104,6 +110,7 @@ public class ContextAssembler {
         this.queryRefiner = null;
         this.memoryProperties = null;
         this.llmRouter = null;
+        this.queryRewriter = null;
     }
 
     /** 完整版构造器（注入记忆系统依赖）。 */
@@ -115,10 +122,10 @@ public class ContextAssembler {
                             @Nullable DataRedactor dataRedactor,
                             PromptRegistry promptRegistry) {
         this(config, hybridRetriever, workingMemory, tokenBudgetAllocator, retrievalStrategy, dataRedactor,
-                null, null, null, null, null, null, null, null, null, promptRegistry);
+                null, null, null, null, null, null, null, null, null, null, promptRegistry);
     }
 
-    /** 完整版构造器（注入记忆系统 + 可选知识库检索 + 可选 L2 情景记忆 + 可选 L3 语义记忆 + 可选被动通知队列 + 可选查询精炼器 + 可选 LlmRouter 依赖）。 */
+    /** 完整版构造器（注入记忆系统 + 可选知识库检索 + 可选 L2 情景记忆 + 可选 L3 语义记忆 + 可选被动通知队列 + 可选查询精炼器 + 可选 LlmRouter + 可选 QueryRewriter 依赖）。 */
     public ContextAssembler(AgentConfigProperties config,
                             HybridRetriever hybridRetriever,
                             WorkingMemory workingMemory,
@@ -134,6 +141,7 @@ public class ContextAssembler {
                             @Nullable QueryRefiner queryRefiner,
                             @Nullable com.lifepilot.memory.config.MemoryProperties memoryProperties,
                             @Nullable com.lifepilot.llm.LlmRouter llmRouter,
+                            @Nullable QueryRewriter queryRewriter,
                             PromptRegistry promptRegistry) {
         this.config = config;
         this.hybridRetriever = hybridRetriever;
@@ -151,6 +159,7 @@ public class ContextAssembler {
         this.queryRefiner = queryRefiner;
         this.memoryProperties = memoryProperties;
         this.llmRouter = llmRouter;
+        this.queryRewriter = queryRewriter;
     }
 
     /** 判断是否为完整版模式。 */
@@ -185,6 +194,9 @@ public class ContextAssembler {
             // 1.5 查询精炼：清洗用户输入提升检索召回质量
             String refinedQuery = safeRefineQuery(state.goal());
 
+            // 1.6 话题切换检测：切换时清除缓存，降低跨会话注入权重
+            boolean topicSwitched = detectTopicSwitch(refinedQuery);
+
             // 2. 四路并行检索（Virtual Thread）— 使用精炼后的查询
             List<RetrievalResult> retrievalResults;
             List<String> kbSnippets;
@@ -194,7 +206,7 @@ public class ContextAssembler {
 
             try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
                 var retrievalFuture = CompletableFuture.supplyAsync(
-                        () -> cachedRetrieve(state.traceId(), refinedQuery, strategyConfig), executor);
+                        () -> safeRewriteAndRetrieve(state.traceId(), refinedQuery, strategyConfig), executor);
                 var kbFuture = CompletableFuture.supplyAsync(
                         () -> safeRetrieveKnowledgeBaseSnippets(state.sessionId(), refinedQuery, 5), executor);
                 var slotsFuture = CompletableFuture.supplyAsync(
@@ -211,7 +223,7 @@ public class ContextAssembler {
             } catch (Exception parallelEx) {
                 // Virtual Thread 创建失败时降级为串行执行
                 log.warn("并行检索异常，降级为串行: error={}", parallelEx.getMessage());
-                retrievalResults = cachedRetrieve(state.traceId(), refinedQuery, strategyConfig);
+                retrievalResults = safeRewriteAndRetrieve(state.traceId(), refinedQuery, strategyConfig);
                 kbSnippets = safeRetrieveKnowledgeBaseSnippets(state.sessionId(), refinedQuery, 5);
                 slots = safeGetSessionHistory(workingMemory, state.sessionId(), state.goal());
                 crossSessionFragments = safeSearchCrossSession(episodicMemory, refinedQuery, state.sessionId());
@@ -237,9 +249,14 @@ public class ContextAssembler {
             var truncatedSlots = truncateSlotsByBudget(slots, budgetAllocation.currentSessionBudget());
             // 5.1 跨会话语义过滤 + 格式化并按预算截断
             crossSessionFragments = filterBySemanticSimilarity(crossSessionFragments, refinedQuery);
+            int crossSessionBudget = budgetAllocation.crossSessionBudget();
+            if (topicSwitched) {
+                crossSessionBudget = crossSessionBudget / 2;
+                log.debug("话题切换: 跨会话预算减半, budget={}", crossSessionBudget);
+            }
             var formattedCrossSession = truncateStringsByBudget(
                     formatCrossSessionFragments(crossSessionFragments),
-                    budgetAllocation.crossSessionBudget());
+                    crossSessionBudget);
 
             // 5.2 对最终注入上下文的结果更新 accessCount（截断后而非检索时）
             safeUpdateAccessCounts(truncatedMemories);
@@ -394,6 +411,61 @@ public class ContextAssembler {
         retrievalCache.entrySet().removeIf(entry -> entry.getKey().startsWith(traceId + "|"));
     }
 
+    /**
+     * 安全执行查询改写 + 检索 — 集成 QueryRewriter 到检索流程。
+     *
+     * <p>rewrite 模式：原始查询和改写变体分别传入 HybridRetriever，按 entityId 去重合并（保留最高 fusedScore）。
+     * hyde 模式：将 hydeEmbedding 传入向量检索（当前使用原始查询检索）。
+     * none 模式 / QueryRewriter 为 null：保持现有行为。</p>
+     */
+    private List<RetrievalResult> safeRewriteAndRetrieve(String traceId, String refinedQuery,
+                                                          RetrievalStrategyConfig config) {
+        if (queryRewriter == null) {
+            return cachedRetrieve(traceId, refinedQuery, config);
+        }
+        try {
+            var rewriteResult = queryRewriter.rewrite(refinedQuery);
+
+            // rewrite 模式：多查询检索 + 去重合并
+            if (!rewriteResult.rewrittenQueries().isEmpty()) {
+                // 原始查询检索
+                var allResults = new ArrayList<>(cachedRetrieve(traceId, rewriteResult.primaryQuery(), config));
+
+                // 每个改写变体检索
+                for (var rewrittenQuery : rewriteResult.rewrittenQueries()) {
+                    var variantResults = cachedRetrieve(traceId, rewrittenQuery, config);
+                    allResults.addAll(variantResults);
+                }
+
+                // 按 entityId 去重，保留最高 fusedScore
+                var deduped = new java.util.HashMap<String, RetrievalResult>();
+                for (var result : allResults) {
+                    deduped.merge(result.entityId(), result,
+                            (existing, incoming) -> incoming.fusedScore() > existing.fusedScore() ? incoming : existing);
+                }
+
+                var merged = deduped.values().stream()
+                        .sorted()
+                        .limit(config.topK())
+                        .toList();
+                log.debug("查询改写检索: mode=rewrite, 原始结果={}, 去重后={}", allResults.size(), merged.size());
+                return merged;
+            }
+
+            // hyde 模式：当前使用原始查询检索（hydeEmbedding 可用于后续向量检索优化）
+            if (rewriteResult.hydeEmbedding().isPresent()) {
+                log.debug("查询改写检索: mode=hyde, 使用原始查询检索");
+                return cachedRetrieve(traceId, rewriteResult.primaryQuery(), config);
+            }
+
+            // none 模式：直接使用原始查询
+            return cachedRetrieve(traceId, rewriteResult.primaryQuery(), config);
+        } catch (Exception e) {
+            log.warn("查询改写检索失败，降级为原始查询检索: error={}", e.getMessage());
+            return cachedRetrieve(traceId, refinedQuery, config);
+        }
+    }
+
     /** 安全获取 HybridRetriever 最近一次 L4 意图匹配结果，异常时返回 Optional.empty()。 */
     private Optional<ReasoningSlot> safeGetLastProcedureSlot(HybridRetriever retriever) {
         try {
@@ -476,16 +548,17 @@ public class ContextAssembler {
     }
 
     /**
-     * 对跨会话消息列表执行语义相似度过滤。
+     * 对跨会话消息列表执行语义相似度过滤（批量 embedding）。
      *
-     * <p>使用 LlmRouter.embed() 计算查询与每条消息的余弦相似度，
-     * 过滤掉低于阈值的消息。embedding 服务不可用时降级跳过语义过滤。</p>
+     * <p>使用 LlmRouter.embedBatch() 批量计算所有跨会话消息的 embedding，
+     * 替代逐条调用消除 N+1 问题。embedBatch 异常时降级为逐条 embed() 调用。
+     * embedding 服务不可用时降级跳过语义过滤。</p>
      *
      * @param fragments    跨会话消息列表
      * @param refinedQuery 精炼后的查询文本
      * @return 语义相关的消息列表
      */
-    private List<MessageRecord> filterBySemanticSimilarity(
+    List<MessageRecord> filterBySemanticSimilarity(
             List<MessageRecord> fragments, String refinedQuery) {
         if (fragments == null || fragments.isEmpty()) return List.of();
         if (llmRouter == null) {
@@ -496,27 +569,49 @@ public class ContextAssembler {
                 ? memoryProperties.getRetrieval().getMinCrossSessionSemanticScore() : 0.3f;
         try {
             float[] queryEmbedding = llmRouter.embed(refinedQuery);
-            var filtered = fragments.stream()
-                    .filter(msg -> {
-                        try {
-                            String content = msg.effectiveContent();
-                            if (content == null || content.isBlank()) return false;
-                            float[] msgEmbedding = llmRouter.embed(content);
-                            float similarity = cosineSimilarity(queryEmbedding, msgEmbedding);
-                            return similarity >= threshold;
-                        } catch (Exception e) {
-                            // 单条消息 embedding 失败时保留该消息
-                            return true;
-                        }
-                    })
-                    .toList();
+
+            // 过滤空内容，收集有效消息和内容
+            var contents = new ArrayList<String>();
+            var validFragments = new ArrayList<MessageRecord>();
+            for (var msg : fragments) {
+                String content = msg.effectiveContent();
+                if (content != null && !content.isBlank()) {
+                    contents.add(content);
+                    validFragments.add(msg);
+                }
+            }
+            if (validFragments.isEmpty()) {
+                log.debug("跨会话语义过滤: 所有消息内容为空，跳过");
+                return List.of();
+            }
+
+            // 批量 embedding，异常时降级为逐条调用
+            float[][] embeddings;
+            try {
+                embeddings = llmRouter.embedBatch(contents);
+            } catch (Exception e) {
+                log.warn("批量 embedding 失败，降级为逐条调用: error={}", e.getMessage());
+                return filterBySemanticSimilarityFallback(validFragments, queryEmbedding, threshold);
+            }
+
+            // 按相似度阈值过滤
+            var filtered = new ArrayList<MessageRecord>();
+            for (int i = 0; i < validFragments.size(); i++) {
+                if (embeddings[i] != null) {
+                    float similarity = cosineSimilarity(queryEmbedding, embeddings[i]);
+                    if (similarity >= threshold) {
+                        filtered.add(validFragments.get(i));
+                    }
+                }
+            }
+
             if (filtered.isEmpty()) {
                 log.debug("跨会话语义过滤: 过滤后结果为空，跳过跨会话片段注入");
                 return List.of();
             }
-            log.debug("跨会话语义过滤: 原始={}, 过滤后={}, threshold={}",
-                    fragments.size(), filtered.size(), threshold);
-            return filtered;
+            log.debug("跨会话语义过滤: 原始={}, 有效={}, 过滤后={}, threshold={}",
+                    fragments.size(), validFragments.size(), filtered.size(), threshold);
+            return List.copyOf(filtered);
         } catch (Exception e) {
             log.warn("跨会话语义过滤降级: embedding 服务不可用, error={}", e.getMessage());
             return fragments;
@@ -524,9 +619,30 @@ public class ContextAssembler {
     }
 
     /**
+     * 逐条 embed 降级过滤 — embedBatch 异常时的回退逻辑。
+     */
+    private List<MessageRecord> filterBySemanticSimilarityFallback(
+            List<MessageRecord> validFragments, float[] queryEmbedding, float threshold) {
+        var filtered = new ArrayList<MessageRecord>();
+        for (var msg : validFragments) {
+            try {
+                float[] msgEmbedding = llmRouter.embed(msg.effectiveContent());
+                float similarity = cosineSimilarity(queryEmbedding, msgEmbedding);
+                if (similarity >= threshold) {
+                    filtered.add(msg);
+                }
+            } catch (Exception e) {
+                // 单条消息 embedding 失败时保留该消息
+                filtered.add(msg);
+            }
+        }
+        return List.copyOf(filtered);
+    }
+
+    /**
      * 计算两个向量的余弦相似度。
      */
-    private float cosineSimilarity(float[] a, float[] b) {
+    float cosineSimilarity(float[] a, float[] b) {
         if (a.length != b.length || a.length == 0) return 0.0f;
         float dotProduct = 0.0f, normA = 0.0f, normB = 0.0f;
         for (int i = 0; i < a.length; i++) {
@@ -536,6 +652,49 @@ public class ContextAssembler {
         }
         float denominator = (float) (Math.sqrt(normA) * Math.sqrt(normB));
         return denominator == 0.0f ? 0.0f : dotProduct / denominator;
+    }
+
+    /**
+     * 检测话题是否切换 — 当前查询与上一轮查询的余弦相似度低于阈值时判定为话题切换。
+     *
+     * <p>话题切换时清除 {@code retrievalCache}。LlmRouter 为 null 或 embedding 失败时返回 false（不检测）。</p>
+     *
+     * @param refinedQuery 精炼后的查询文本
+     * @return true 表示话题已切换
+     */
+    boolean detectTopicSwitch(String refinedQuery) {
+        if (llmRouter == null || lastQueryEmbedding == null) {
+            updateLastQueryEmbedding(refinedQuery);
+            return false;
+        }
+        try {
+            float[] currentEmbedding = llmRouter.embed(refinedQuery);
+            float similarity = cosineSimilarity(lastQueryEmbedding, currentEmbedding);
+            lastQueryEmbedding = currentEmbedding;
+            float threshold = memoryProperties != null
+                    ? memoryProperties.getRetrieval().getTopicSwitchThreshold() : 0.3f;
+            if (similarity < threshold) {
+                retrievalCache.clear();
+                log.debug("话题切换检测: similarity={}, threshold={}, 已清除检索缓存", similarity, threshold);
+                return true;
+            }
+            return false;
+        } catch (Exception e) {
+            log.warn("话题切换检测失败: error={}", e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * 更新上一轮查询的 embedding 缓存。
+     */
+    private void updateLastQueryEmbedding(String refinedQuery) {
+        if (llmRouter == null || refinedQuery == null || refinedQuery.isBlank()) return;
+        try {
+            lastQueryEmbedding = llmRouter.embed(refinedQuery);
+        } catch (Exception ignored) {
+            // embedding 失败时静默跳过
+        }
     }
 
     /**

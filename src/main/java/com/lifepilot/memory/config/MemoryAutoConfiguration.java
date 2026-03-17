@@ -11,6 +11,7 @@ import com.lifepilot.memory.consolidation.EpisodicToProceduralConsolidator;
 import com.lifepilot.memory.consolidation.EpisodicToSemanticConsolidator;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.memory.retrieval.QueryRefiner;
+import com.lifepilot.memory.retrieval.QueryRewriter;
 import com.lifepilot.memory.forgetting.EntityExpirationJob;
 import com.lifepilot.memory.forgetting.ForgettingEngine;
 import com.lifepilot.memory.feedback.FeedbackProcessor;
@@ -56,6 +57,8 @@ import org.sqlite.SQLiteDataSource;
 import javax.sql.DataSource;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Objects;
 
 /**
@@ -78,11 +81,17 @@ public class MemoryAutoConfiguration {
 
     private final MemoryProperties properties;
     private final ObjectProvider<WorkingMemory> workingMemoryProvider;
+    private final ObjectProvider<ConsolidationPipeline> consolidationPipelineProvider;
+
+    /** 上一次空闲触发巩固的时间（防抖用）。 */
+    private volatile Instant lastIdleConsolidationTime;
 
     public MemoryAutoConfiguration(MemoryProperties properties,
-                                   ObjectProvider<WorkingMemory> workingMemoryProvider) {
+                                   ObjectProvider<WorkingMemory> workingMemoryProvider,
+                                   ObjectProvider<ConsolidationPipeline> consolidationPipelineProvider) {
         this.properties = properties;
         this.workingMemoryProvider = workingMemoryProvider;
+        this.consolidationPipelineProvider = consolidationPipelineProvider;
     }
 
     // --- L1 工作记忆 ---
@@ -99,6 +108,17 @@ public class MemoryAutoConfiguration {
     public QueryRefiner queryRefiner(MemoryProperties properties) {
         log.info("记忆系统: 注册 QueryRefiner");
         return new QueryRefiner(properties);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(LlmRouter.class)
+    public QueryRewriter queryRewriter(LlmRouter llmRouter,
+                                        MemoryProperties properties,
+                                        PromptRegistry promptRegistry) {
+        log.info("记忆系统: 注册 QueryRewriter, mode={}",
+                properties.getRetrieval().getQueryRewriteMode());
+        return new QueryRewriter(llmRouter, properties, promptRegistry);
     }
 
     @Bean
@@ -130,10 +150,11 @@ public class MemoryAutoConfiguration {
             TokenBudgetAllocator tokenBudgetAllocator,
             SlotEvictionPolicy slotEvictionPolicy,
             MemoryEventRecorder memoryEventRecorder,
-            WorkingMemoryWal workingMemoryWal) {
+            WorkingMemoryWal workingMemoryWal,
+            @Nullable CompressionService compressionService) {
         log.info("记忆系统: 注册 WorkingMemory, Token 预算={}", properties.getWorkingMemoryTokenBudget());
         var wm = new WorkingMemory(properties, episodicMemory, tokenBudgetAllocator,
-                slotEvictionPolicy, memoryEventRecorder, workingMemoryWal);
+                slotEvictionPolicy, memoryEventRecorder, workingMemoryWal, compressionService);
 
         // 启动时恢复：检查 WAL 表残留记录，直接 flush 到 L2
         recoverFromWal(wm, episodicMemory, workingMemoryWal);
@@ -146,9 +167,10 @@ public class MemoryAutoConfiguration {
     @ConditionalOnBean({EpisodicMemory.class})
     public CompressionService compressionService(EpisodicMemory episodicMemory,
                                                  LlmRouter llmRouter,
-                                                 PromptRegistry promptRegistry) {
+                                                 PromptRegistry promptRegistry,
+                                                 MemoryProperties memoryProperties) {
         log.info("记忆系统: 注册 CompressionService");
-        return new CompressionService(llmRouter, episodicMemory, promptRegistry);
+        return new CompressionService(llmRouter, episodicMemory, promptRegistry, memoryProperties);
     }
 
     /**
@@ -167,6 +189,58 @@ public class MemoryAutoConfiguration {
             return;
         }
         workingMemory.cleanupIdleSessions(java.time.Duration.ofMinutes(timeoutMinutes));
+    }
+
+    /**
+     * 空闲检测定时任务 — 每分钟检查一次，IDLE/HYBRID 模式下触发巩固管线。
+     *
+     * <p>CRON 模式下跳过空闲检测。IDLE/HYBRID 模式下检查最近用户交互时间，
+     * 超过 {@code idleThresholdMinutes} 且冷却期已过时触发巩固。</p>
+     */
+    @Scheduled(fixedDelayString = "PT1M")
+    public void checkIdleConsolidation() {
+        String mode = properties.getConsolidation().getTriggerMode();
+        if ("CRON".equalsIgnoreCase(mode)) {
+            return;
+        }
+
+        // 延迟获取 ConsolidationPipeline Bean（可能不存在）
+        ConsolidationPipeline pipeline = consolidationPipelineProvider.getIfAvailable();
+        if (pipeline == null) {
+            return;
+        }
+
+        // 获取最近用户交互时间
+        Instant lastInteraction = getLastInteractionTime();
+        int idleThreshold = properties.getConsolidation().getIdleThresholdMinutes();
+        if (Duration.between(lastInteraction, Instant.now()).toMinutes() < idleThreshold) {
+            return;
+        }
+
+        // 防抖：冷却期内不重复执行
+        int cooldown = properties.getConsolidation().getIdleCooldownMinutes();
+        if (lastIdleConsolidationTime != null
+                && Duration.between(lastIdleConsolidationTime, Instant.now()).toMinutes() < cooldown) {
+            return;
+        }
+
+        log.info("空闲检测: 触发巩固管线, mode={}, 空闲时间≥{}分钟", mode, idleThreshold);
+        pipeline.consolidate();
+        lastIdleConsolidationTime = Instant.now();
+    }
+
+    /**
+     * 获取最近一次用户交互时间。
+     *
+     * <p>通过 WorkingMemory 获取所有会话中最近的活动时间。
+     * WorkingMemory 不可用时返回当前时间（视为非空闲）。</p>
+     */
+    private Instant getLastInteractionTime() {
+        WorkingMemory workingMemory = workingMemoryProvider.getIfAvailable();
+        if (workingMemory == null) {
+            return Instant.now();
+        }
+        return workingMemory.getLastActivityTime();
     }
 
     /**
