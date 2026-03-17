@@ -180,6 +180,8 @@ lifepilot:
     consolidation:
       cron: "0 0 3 * * *"
       trigger-mode: CRON
+      idle-threshold-minutes: 30
+      idle-cooldown-minutes: 60
       lookback-days: 7
       high-frequency-threshold: 3
       importance-boost-step: 0.1
@@ -218,7 +220,7 @@ lifepilot:
       existing-entity-summary-limit: 50
     # 混合检索相关性过滤
     retrieval:
-      min-fused-score: 0.035
+      min-fused-score: 0.08
       query-max-length: 100
       query-min-length: 10
       min-cross-session-bm25-score: 1.0
@@ -228,11 +230,21 @@ lifepilot:
       fallback-user-profile-count: 3
       time-decay-rate: 0.002
       min-time-decay-factor: 0.5
-      min-cross-session-semantic-score: 0.3
+      min-cross-session-semantic-score: 0.45
+      query-rewrite-mode: none
+      max-rewrites: 3
+      rewrite-timeout-ms: 5000
+      min-vector-similarity: 0.15
+      topic-switch-threshold: 0.3
     # 记忆精排配置
     reranker:
-      enabled: false
+      enabled: true
       top-k: 10
+    # 对话压缩配置
+    compression:
+      strategy: sliding-window
+      window-size: 20
+      window-overlap: 2
     # 反馈闭环配置
     feedback:
       like-boost: 0.1
