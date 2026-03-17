@@ -1,12 +1,15 @@
 package com.lifepilot.meta.infra.interaction;
 
 import com.lifepilot.meta.config.MetaProperties;
+import com.lifepilot.notification.NotificationRequest;
+import com.lifepilot.notification.NotificationService;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.schema.JsonSchema;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -204,31 +207,49 @@ class InteractionToolExecutorTest {
     // ─────────────────────────────────────────────
 
     @Test
-    void notify_非阻塞推送_立即返回() {
-        var cliHandler = new TestCliInteractionHandler();
-        var bridgeWithCli = new InteractionBridge(properties, null, cliHandler);
-        var executor = new NotifyToolExecutor(bridgeWithCli);
+    void notify_非阻塞推送_通过NotificationService发送() {
+        var mockService = new TestNotificationService();
+        var executor = new NotifyToolExecutor(mockService);
 
         ToolInput input = new ToolInput("builtin.interact.notify",
-                Map.of("message", "任务已完成", "sessionId", "s1"),
+                Map.of("message", "任务已完成"),
                 JsonSchema.empty(), null);
 
-        // notify 应立即返回，不阻塞
         long start = System.currentTimeMillis();
         ToolResult result = executor.execute(input);
         long elapsed = System.currentTimeMillis() - start;
 
         assertThat(result.ok()).isTrue();
         assertThat(result.data().get("notified")).isEqualTo(true);
+        assertThat(result.data().get("count")).isEqualTo(1);
         // 非阻塞验证：应在 1 秒内完成
         assertThat(elapsed).isLessThan(1000);
+        // 验证 NotificationService 被调用
+        assertThat(mockService.sentRequests).hasSize(1);
+        assertThat(mockService.sentRequests.getFirst().content().toPlainText()).isEqualTo("任务已完成");
+        assertThat(mockService.sentRequests.getFirst().urgency())
+                .isEqualTo(com.lifepilot.notification.Urgency.MEDIUM);
     }
 
     @Test
-    void notify_缺少参数_返回错误() {
-        var cliHandler = new TestCliInteractionHandler();
-        var bridgeWithCli = new InteractionBridge(properties, null, cliHandler);
-        var executor = new NotifyToolExecutor(bridgeWithCli);
+    void notify_指定urgency_正确传递() {
+        var mockService = new TestNotificationService();
+        var executor = new NotifyToolExecutor(mockService);
+
+        ToolInput input = new ToolInput("builtin.interact.notify",
+                Map.of("message", "紧急通知", "urgency", "HIGH"),
+                JsonSchema.empty(), null);
+        ToolResult result = executor.execute(input);
+
+        assertThat(result.ok()).isTrue();
+        assertThat(mockService.sentRequests.getFirst().urgency())
+                .isEqualTo(com.lifepilot.notification.Urgency.HIGH);
+    }
+
+    @Test
+    void notify_缺少message参数_返回错误() {
+        var mockService = new TestNotificationService();
+        var executor = new NotifyToolExecutor(mockService);
 
         ToolInput input = new ToolInput("builtin.interact.notify",
                 Map.of(), JsonSchema.empty(), null);
@@ -263,6 +284,17 @@ class InteractionToolExecutorTest {
         @Override
         public void pushInteraction(InteractionRequest request) {
             this.lastRequest = request;
+        }
+    }
+
+    /** 测试用通知服务 — 记录所有发送的通知请求。 */
+    private static class TestNotificationService implements NotificationService {
+        final List<NotificationRequest> sentRequests = new ArrayList<>();
+
+        @Override
+        public List<String> send(NotificationRequest request) {
+            sentRequests.add(request);
+            return List.of("test-notification-id");
         }
     }
 

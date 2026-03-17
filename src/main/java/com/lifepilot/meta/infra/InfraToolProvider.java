@@ -14,6 +14,7 @@ import com.lifepilot.meta.infra.interaction.InteractionBridge;
 import com.lifepilot.meta.infra.interaction.InteractionToolProvider;
 import com.lifepilot.meta.infra.web.WebFetchToolExecutor;
 import com.lifepilot.meta.infra.web.WebSearchToolExecutor;
+import com.lifepilot.notification.NotificationService;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.sandbox.booter.SandboxBooter;
 import com.lifepilot.skill.builtin.BuiltinSkill;
@@ -54,17 +55,21 @@ public class InfraToolProvider implements BuiltinSkillProvider {
     private final InteractionBridge interactionBridge;
     @Nullable
     private final BrowserSessionManager browserSessionManager;
+    @Nullable
+    private final NotificationService notificationService;
 
     public InfraToolProvider(MetaProperties properties,
                              RestClient.Builder restClientBuilder,
                              @Nullable SandboxBooter sandboxBooter,
                              @Nullable InteractionBridge interactionBridge,
-                             @Nullable BrowserSessionManager browserSessionManager) {
+                             @Nullable BrowserSessionManager browserSessionManager,
+                             @Nullable NotificationService notificationService) {
         this.properties = properties;
         this.restClientBuilder = restClientBuilder;
         this.sandboxBooter = sandboxBooter;
         this.interactionBridge = interactionBridge;
         this.browserSessionManager = browserSessionManager;
+        this.notificationService = notificationService;
     }
 
     @Override
@@ -158,15 +163,15 @@ public class InfraToolProvider implements BuiltinSkillProvider {
         fileToolProvider.buildFileTools().forEach(toolRegistry::registerBuiltinTool);
 
         // 交互控制工具（3 个，委托给 InteractionToolProvider）
-        if (interactionBridge != null) {
-            var interactionToolProvider = new InteractionToolProvider(interactionBridge);
+        if (interactionBridge != null && notificationService != null) {
+            var interactionToolProvider = new InteractionToolProvider(interactionBridge, notificationService);
             interactionToolProvider.buildInteractionTools().forEach(toolRegistry::registerBuiltinTool);
         } else {
-            log.warn("InteractionBridge 不可用，跳过交互控制工具注册");
+            log.warn("InteractionBridge 或 NotificationService 不可用，跳过交互控制工具注册");
         }
 
         log.info("基础工具注册完成: count={}, categories=[env, web, reason, shell, browser, code, file, interact]",
-                interactionBridge != null ? 34 : 31);
+                (interactionBridge != null && notificationService != null) ? 34 : 31);
     }
 
     // ─────────────────────────────────────────────

@@ -1,5 +1,6 @@
 package com.lifepilot.meta.infra.interaction;
 
+import com.lifepilot.notification.NotificationService;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.model.ToolCategory;
@@ -22,9 +23,12 @@ public class InteractionToolProvider {
     private static final List<String> INFRA_TAGS = List.of("infrastructure");
 
     private final InteractionBridge interactionBridge;
+    private final NotificationService notificationService;
 
-    public InteractionToolProvider(InteractionBridge interactionBridge) {
+    public InteractionToolProvider(InteractionBridge interactionBridge,
+                                   NotificationService notificationService) {
         this.interactionBridge = interactionBridge;
+        this.notificationService = notificationService;
     }
 
     /**
@@ -36,7 +40,7 @@ public class InteractionToolProvider {
         return List.of(
                 buildChooseTool(new ChooseToolExecutor(interactionBridge)),
                 buildInputTool(new InputToolExecutor(interactionBridge)),
-                buildNotifyTool(new NotifyToolExecutor(interactionBridge))
+                buildNotifyTool(new NotifyToolExecutor(notificationService))
         );
     }
 
@@ -89,21 +93,22 @@ public class InteractionToolProvider {
                 .build();
     }
 
-    /** 构建通知工具 — 非阻塞推送通知消息，LOW 风险。 */
+    /** 构建通知工具 — 非阻塞推送通知消息，LOW 风险。通过 NotificationService 统一路由。 */
     private BuiltinTool buildNotifyTool(NotifyToolExecutor executor) {
         return BuiltinTool.builder()
                 .id("builtin.interact.notify")
                 .category(ToolCategory.INTERACTION)
                 .name("推送通知")
-                .description("向用户推送通知消息，非阻塞（不等待用户响应）")
+                .description("向用户推送通知消息，非阻塞（不等待用户响应）。支持设置紧急程度，通过统一通知服务路由到所有已注册渠道")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
-                        "required", List.of("message", "sessionId"),
+                        "required", List.of("message"),
                         "properties", Map.of(
                                 "message", Map.of("type", "string",
                                         "description", "通知消息内容"),
-                                "sessionId", Map.of("type", "string",
-                                        "description", "当前会话 ID")
+                                "urgency", Map.of("type", "string",
+                                        "enum", List.of("HIGH", "MEDIUM", "LOW"),
+                                        "description", "紧急程度：HIGH（立即推送）、MEDIUM（默认，正常推送）、LOW（入队稍后处理）")
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)

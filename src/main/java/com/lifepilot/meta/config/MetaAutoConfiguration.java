@@ -12,6 +12,7 @@ import com.lifepilot.meta.infra.browser.BrowserSessionManager;
 import com.lifepilot.meta.infra.interaction.CliInteractionHandler;
 import com.lifepilot.meta.infra.interaction.InteractionBridge;
 import com.lifepilot.multiagent.registry.AgentRegistry;
+import com.lifepilot.notification.NotificationService;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.sandbox.booter.SandboxBooter;
 import com.lifepilot.skill.config.SkillConfigProperties;
@@ -58,15 +59,17 @@ public class MetaAutoConfiguration {
      *
      * <p>SandboxBooter 为可选依赖，仅在沙箱模块可用时注入。
      * InteractionBridge 注入交互桥接器。
-     * BrowserSessionManager 为可选依赖，仅在 Playwright 可用时注入。</p>
+     * BrowserSessionManager 为可选依赖，仅在 Playwright 可用时注入。
+     * NotificationService 注入统一通知服务，供 notify 工具使用。</p>
      */
     @Bean
     InfraToolProvider infraToolProvider(MetaProperties properties,
                                         RestClient.Builder restClientBuilder,
                                         @Nullable SandboxBooter sandboxBooter,
                                         @Nullable InteractionBridge interactionBridge,
-                                        @Nullable BrowserSessionManager browserSessionManager) {
-        return new InfraToolProvider(properties, restClientBuilder, sandboxBooter, interactionBridge, browserSessionManager);
+                                        @Nullable BrowserSessionManager browserSessionManager,
+                                        @Nullable NotificationService notificationService) {
+        return new InfraToolProvider(properties, restClientBuilder, sandboxBooter, interactionBridge, browserSessionManager, notificationService);
     }
 
     /**
