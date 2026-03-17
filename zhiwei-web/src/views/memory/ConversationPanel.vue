@@ -264,7 +264,7 @@ function roleLabel(role: string) {
 
     <!-- 详情 Sheet -->
     <Sheet v-model:open="detailOpen">
-      <SheetContent class="w-full sm:max-w-xl overflow-y-auto">
+      <SheetContent class="overflow-y-auto p-6" style="width: 100%; max-width: 36rem;">
         <SheetHeader>
           <SheetTitle>{{ detailConversation?.goal || '对话详情' }}</SheetTitle>
           <SheetDescription>

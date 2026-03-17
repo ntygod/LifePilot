@@ -1152,7 +1152,7 @@ function clearDocumentFilters() {
     </PageContainer>
 
     <Sheet :open="showLogs && !!selectedDoc" @update:open="(value: boolean) => { if (!value) { showLogs = false; selectedDoc = null } }">
-      <SheetContent side="right" class="w-full overflow-y-auto sm:max-w-[700px]">
+      <SheetContent side="right" class="overflow-y-auto p-6" style="width: 100%; max-width: 700px;">
         <SheetHeader>
           <SheetTitle>处理日志</SheetTitle>
           <SheetDescription>{{ selectedDoc?.fileName }}</SheetDescription>

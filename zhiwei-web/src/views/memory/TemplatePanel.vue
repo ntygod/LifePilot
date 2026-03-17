@@ -298,7 +298,7 @@ function formatPercent(rate: number) {
 
     <!-- 详情 Sheet -->
     <Sheet v-model:open="detailOpen">
-      <SheetContent class="w-full sm:max-w-xl overflow-y-auto">
+      <SheetContent class="overflow-y-auto p-6" style="width: 100%; max-width: 36rem;">
         <SheetHeader>
           <SheetTitle>{{ detailTemplate?.name || '模板详情' }}</SheetTitle>
           <SheetDescription>

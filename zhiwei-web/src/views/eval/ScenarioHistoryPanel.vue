@@ -67,7 +67,7 @@ function truncateId(id: string): string {
 
 <template>
   <Sheet :open="open" @update:open="emit('update:open', $event)">
-    <SheetContent class="w-full sm:max-w-xl overflow-y-auto">
+    <SheetContent class="overflow-y-auto p-6" style="width: 100%; max-width: 36rem;">
       <SheetHeader>
         <SheetTitle>{{ scenarioName }} — 历史趋势</SheetTitle>
         <SheetDescription>场景 {{ scenarioId }} 的历史评估结果与评分趋势</SheetDescription>
