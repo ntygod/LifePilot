@@ -1,5 +1,6 @@
 package com.lifepilot.agent;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.context.AssembledContext;
@@ -9,6 +10,7 @@ import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.agent.model.AgentResponse;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.model.ReactStep;
+import com.lifepilot.agent.model.SuspendReason;
 import com.lifepilot.agent.session.SessionManager;
 import com.lifepilot.conversation.ConversationHistoryStore;
 import com.lifepilot.conversation.ConversationViewService;
@@ -538,6 +540,20 @@ public class ReactAgentLoop {
         }
         var toolCallDuration = Duration.between(toolCallStart, Instant.now());
 
+        // ★ 挂起信号检测 — 工具执行成功后解析返回 JSON 中的 _suspend 标记
+        if (success && rawOutput != null) {
+            var suspendReason = parseSuspendReasonFromOutput(rawOutput);
+            if (suspendReason != null) {
+                log.info("工具请求挂起: toolId={}, reason={}", toolId, suspendReason);
+                state = state.suspend(suspendReason);
+                state = state.appendStep(new ReactStep.Observation(
+                        toolId, true, "工具请求挂起: " + suspendReason, 0));
+                recordToolCallStep(traceContext, state.stepCount() - 1, toolCallStart,
+                        toolId, inputJson, rawOutput, true);
+                return state;
+            }
+        }
+
         // 媒体数据提取
         String observationOutput = rawOutput;
         if (success && mediaDataExtractor != null) {
@@ -601,6 +617,64 @@ public class ReactAgentLoop {
     }
 
     // ===== 辅助方法 =====
+
+    /**
+     * 从工具返回的 JSON 字符串中解析挂起原因。
+     *
+     * <p>工具通过在返回 JSON 中包含 {@code "_suspend": true} 和
+     * {@code "_suspendReason": {...}} 字段来请求 Agent 挂起。
+     * {@code _suspendReason} 的 {@code "type"} 字段对应 SuspendReason 子类型名。</p>
+     *
+     * @param output 工具返回的原始 JSON 字符串
+     * @return 解析出的 SuspendReason，若不包含挂起标记则返回 null
+     */
+    @Nullable
+    private SuspendReason parseSuspendReasonFromOutput(String output) {
+        if (output == null || output.isBlank()) return null;
+        try {
+            JsonNode root = objectMapper.readTree(output);
+            if (!root.isObject()) return null;
+            JsonNode suspendNode = root.get("_suspend");
+            if (suspendNode == null || !suspendNode.asBoolean(false)) return null;
+
+            JsonNode reasonNode = root.get("_suspendReason");
+            if (reasonNode == null || !reasonNode.isObject()) {
+                log.warn("工具返回 _suspend=true 但缺少 _suspendReason 对象");
+                return null;
+            }
+
+            String type = reasonNode.has("type") ? reasonNode.get("type").asText() : "";
+            return switch (type) {
+                case "WorkflowWait" -> new SuspendReason.WorkflowWait(
+                        reasonNode.path("executionId").asText(""),
+                        reasonNode.path("workflowId").asText(""),
+                        reasonNode.path("workflowName").asText(""));
+                case "UserConfirmation" -> new SuspendReason.UserConfirmation(
+                        reasonNode.path("toolId").asText(""),
+                        reasonNode.path("inputJson").asText(""),
+                        reasonNode.path("riskLevel").asText(""),
+                        reasonNode.path("confirmationId").asText(""));
+                case "RemoteDelegation" -> new SuspendReason.RemoteDelegation(
+                        reasonNode.path("remoteTaskId").asText(""),
+                        reasonNode.path("remoteAgentUrl").asText(""),
+                        reasonNode.path("delegatedGoal").asText(""));
+                case "ScheduledWakeup" -> new SuspendReason.ScheduledWakeup(
+                        Instant.parse(reasonNode.path("wakeupAt").asText(Instant.now().toString())),
+                        reasonNode.path("reason").asText(""));
+                case "ExternalDataWait" -> new SuspendReason.ExternalDataWait(
+                        reasonNode.path("dataSourceId").asText(""),
+                        reasonNode.path("description").asText(""));
+                default -> {
+                    log.warn("未知的 SuspendReason 类型: type={}", type);
+                    yield null;
+                }
+            };
+        } catch (Exception e) {
+            // 非 JSON 格式或解析失败 — 不是挂起信号，正常返回 null
+            log.debug("工具输出非挂起信号 JSON: error={}", e.getMessage());
+            return null;
+        }
+    }
 
     /** 从 ChatResponse 估算 Token 消耗。 */
     private int estimateTokens(ChatResponse chatResponse) {
