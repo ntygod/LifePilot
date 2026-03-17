@@ -277,6 +277,20 @@ public class WorkingMemory {
     }
 
     /**
+     * 获取所有会话中最近一次活动时间。
+     *
+     * <p>用于空闲检测：返回所有会话中最晚的 lastActivity 时间戳。
+     * 无活跃会话时返回 {@link Instant#EPOCH}。</p>
+     *
+     * @return 最近一次活动时间
+     */
+    public Instant getLastActivityTime() {
+        return lastActivity.values().stream()
+                .max(Instant::compareTo)
+                .orElse(Instant.EPOCH);
+    }
+
+    /**
      * 清理空闲会话：超过给定空闲阈值后，自动 flush 到 L2 并从 L1 中移除。
      *
      * <p>由定时任务调用，避免工作记忆无限增长。</p>

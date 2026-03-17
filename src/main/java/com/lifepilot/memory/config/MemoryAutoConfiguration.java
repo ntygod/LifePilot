@@ -57,6 +57,8 @@ import org.sqlite.SQLiteDataSource;
 import javax.sql.DataSource;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Objects;
 
 /**
@@ -79,11 +81,17 @@ public class MemoryAutoConfiguration {
 
     private final MemoryProperties properties;
     private final ObjectProvider<WorkingMemory> workingMemoryProvider;
+    private final ObjectProvider<ConsolidationPipeline> consolidationPipelineProvider;
+
+    /** 上一次空闲触发巩固的时间（防抖用）。 */
+    private volatile Instant lastIdleConsolidationTime;
 
     public MemoryAutoConfiguration(MemoryProperties properties,
-                                   ObjectProvider<WorkingMemory> workingMemoryProvider) {
+                                   ObjectProvider<WorkingMemory> workingMemoryProvider,
+                                   ObjectProvider<ConsolidationPipeline> consolidationPipelineProvider) {
         this.properties = properties;
         this.workingMemoryProvider = workingMemoryProvider;
+        this.consolidationPipelineProvider = consolidationPipelineProvider;
     }
 
     // --- L1 工作记忆 ---
@@ -181,6 +189,58 @@ public class MemoryAutoConfiguration {
             return;
         }
         workingMemory.cleanupIdleSessions(java.time.Duration.ofMinutes(timeoutMinutes));
+    }
+
+    /**
+     * 空闲检测定时任务 — 每分钟检查一次，IDLE/HYBRID 模式下触发巩固管线。
+     *
+     * <p>CRON 模式下跳过空闲检测。IDLE/HYBRID 模式下检查最近用户交互时间，
+     * 超过 {@code idleThresholdMinutes} 且冷却期已过时触发巩固。</p>
+     */
+    @Scheduled(fixedDelayString = "PT1M")
+    public void checkIdleConsolidation() {
+        String mode = properties.getConsolidation().getTriggerMode();
+        if ("CRON".equalsIgnoreCase(mode)) {
+            return;
+        }
+
+        // 延迟获取 ConsolidationPipeline Bean（可能不存在）
+        ConsolidationPipeline pipeline = consolidationPipelineProvider.getIfAvailable();
+        if (pipeline == null) {
+            return;
+        }
+
+        // 获取最近用户交互时间
+        Instant lastInteraction = getLastInteractionTime();
+        int idleThreshold = properties.getConsolidation().getIdleThresholdMinutes();
+        if (Duration.between(lastInteraction, Instant.now()).toMinutes() < idleThreshold) {
+            return;
+        }
+
+        // 防抖：冷却期内不重复执行
+        int cooldown = properties.getConsolidation().getIdleCooldownMinutes();
+        if (lastIdleConsolidationTime != null
+                && Duration.between(lastIdleConsolidationTime, Instant.now()).toMinutes() < cooldown) {
+            return;
+        }
+
+        log.info("空闲检测: 触发巩固管线, mode={}, 空闲时间≥{}分钟", mode, idleThreshold);
+        pipeline.consolidate();
+        lastIdleConsolidationTime = Instant.now();
+    }
+
+    /**
+     * 获取最近一次用户交互时间。
+     *
+     * <p>通过 WorkingMemory 获取所有会话中最近的活动时间。
+     * WorkingMemory 不可用时返回当前时间（视为非空闲）。</p>
+     */
+    private Instant getLastInteractionTime() {
+        WorkingMemory workingMemory = workingMemoryProvider.getIfAvailable();
+        if (workingMemory == null) {
+            return Instant.now();
+        }
+        return workingMemory.getLastActivityTime();
     }
 
     /**
