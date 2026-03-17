@@ -142,10 +142,11 @@ public class MemoryAutoConfiguration {
             TokenBudgetAllocator tokenBudgetAllocator,
             SlotEvictionPolicy slotEvictionPolicy,
             MemoryEventRecorder memoryEventRecorder,
-            WorkingMemoryWal workingMemoryWal) {
+            WorkingMemoryWal workingMemoryWal,
+            @Nullable CompressionService compressionService) {
         log.info("记忆系统: 注册 WorkingMemory, Token 预算={}", properties.getWorkingMemoryTokenBudget());
         var wm = new WorkingMemory(properties, episodicMemory, tokenBudgetAllocator,
-                slotEvictionPolicy, memoryEventRecorder, workingMemoryWal);
+                slotEvictionPolicy, memoryEventRecorder, workingMemoryWal, compressionService);
 
         // 启动时恢复：检查 WAL 表残留记录，直接 flush 到 L2
         recoverFromWal(wm, episodicMemory, workingMemoryWal);
