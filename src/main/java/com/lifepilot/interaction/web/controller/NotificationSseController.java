@@ -1,6 +1,5 @@
 package com.lifepilot.interaction.web.controller;
 
-import com.lifepilot.interaction.web.config.WebProperties;
 import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.notification.NotificationRepository;
@@ -34,14 +33,11 @@ public class NotificationSseController {
 
     private final SseSessionManager sseSessionManager;
     private final NotificationRepository notificationRepository;
-    private final WebProperties webProperties;
 
     public NotificationSseController(SseSessionManager sseSessionManager,
-                                     NotificationRepository notificationRepository,
-                                     WebProperties webProperties) {
+                                     NotificationRepository notificationRepository) {
         this.sseSessionManager = sseSessionManager;
         this.notificationRepository = notificationRepository;
-        this.webProperties = webProperties;
     }
 
     /**
@@ -56,9 +52,9 @@ public class NotificationSseController {
     @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter notificationStream(@RequestParam String userId) {
         String streamId = "notification-" + UUID.randomUUID();
-        long timeout = webProperties.sse().timeout();
 
-        var emitter = sseSessionManager.createNotificationEmitter(streamId, timeout);
+        // 通知 SSE 使用无限超时（0），依靠心跳保活，避免周期性超时重连
+        var emitter = sseSessionManager.createNotificationEmitter(streamId, 0L);
         log.info("通知 SSE 连接已建立: streamId={}, userId={}", streamId, userId);
 
         // 推送初始未读数快照
