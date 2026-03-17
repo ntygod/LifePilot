@@ -584,7 +584,7 @@ public class ReactAgentLoop {
         var toolCallDuration = Duration.between(toolCallStart, Instant.now());
 
         // ★ 挂起信号检测 — 工具执行成功后解析返回 JSON 中的 _suspend 标记
-        if (success && rawOutput != null) {
+        if (success) {
             var suspendReason = parseSuspendReasonFromOutput(rawOutput);
             if (suspendReason != null) {
                 log.info("工具请求挂起: toolId={}, reason={}", toolId, suspendReason);
@@ -719,12 +719,6 @@ public class ReactAgentLoop {
         }
     }
 
-    /**
-     * 将 SuspendReason 格式化为人类可读的描述文本。
-     *
-     * @param reason 挂起原因
-     * @return 格式化后的描述文本
-     */
     /**
      * 若挂起原因为 ScheduledWakeup，注册延迟任务到时发布 ScheduledWakeupEvent。
      *
@@ -1118,15 +1112,14 @@ public class ReactAgentLoop {
                         // 优先 ByteArrayResource 快速路径，兼容 Spring AI 可能的 Resource 包装
                         var rawData = media.getData();
                         byte[] data;
-                        if (rawData instanceof ByteArrayResource bar) {
-                            data = bar.getByteArray();
-                        } else if (rawData instanceof Resource res) {
-                            data = res.getInputStream().readAllBytes();
-                        } else if (rawData instanceof byte[] bytes) {
-                            data = bytes;
-                        } else {
-                            log.warn("不支持的 Media 数据类型: {}", rawData.getClass().getName());
-                            continue;
+                        switch (rawData) {
+                            case ByteArrayResource bar -> data = bar.getByteArray();
+                            case Resource res -> data = res.getInputStream().readAllBytes();
+                            case byte[] bytes -> data = bytes;
+                            default -> {
+                                log.warn("不支持的 Media 数据类型: {}", rawData.getClass().getName());
+                                continue;
+                            }
                         }
                         result.add(new MediaContent(
                                 UUID.randomUUID().toString(),
@@ -1157,12 +1150,14 @@ public class ReactAgentLoop {
      */
     private List<MediaContent> validateAndPreprocessMedia(List<MediaContent> mediaContents) {
         // 校验所有媒体内容
+        assert mediaValidator != null;
         mediaValidator.validateAll(mediaContents);
 
         // 提取图片类型执行预处理
         List<MediaContent> images = mediaContents.stream()
                 .filter(mc -> mc.mimeType().startsWith("image/"))
                 .toList();
+        assert mediaProcessor != null;
         List<MediaContent> processedImages = mediaProcessor.processAll(images);
 
         // 合并非图片媒体（视频等由 MultimodalRouter 内部处理）
@@ -1329,8 +1324,7 @@ public class ReactAgentLoop {
         String userMessageId = null;
         String assistantMessageId = null;
 
-        var token = cancellationToken;
-        this.cancellationToken = token;
+        this.cancellationToken = cancellationToken;
 
         // 媒体校验与预处理 — 在进入 coreLoop 之前执行
         List<MediaContent> processedMedia = null;
@@ -1400,7 +1394,7 @@ public class ReactAgentLoop {
             // 核心循环 — 流式回调
             var callback = new StreamingCallback(
                     sseManager, streamId, request.sessionId(), tempTurnId, effectiveRequest);
-            state = coreLoop(state, effectiveRequest, traceContext, loopStart, callback, token,
+            state = coreLoop(state, effectiveRequest, traceContext, loopStart, callback, cancellationToken,
                     sseManager, streamId);
 
             // ★ 挂起分支 — coreLoop 退出后检查是否进入挂起态
@@ -1667,7 +1661,7 @@ public class ReactAgentLoop {
             boolean messagesHaveMedia = messages.stream()
                     .filter(m -> m instanceof UserMessage)
                     .map(m -> (UserMessage) m)
-                    .anyMatch(um -> um.getMedia() != null && !um.getMedia().isEmpty());
+                    .anyMatch(um -> !um.getMedia().isEmpty());
 
             // 多模态流式路由：messages 中有 Media 且 MultimodalRouter 可用时走多模态路径
             if (messagesHaveMedia && multimodalRouter != null) {
@@ -1753,7 +1747,7 @@ public class ReactAgentLoop {
             }
 
             // 纯文本流式路由：原有 LlmRouter 路径
-            if (messagesHaveMedia && multimodalRouter == null) {
+            if (messagesHaveMedia) {
                 log.warn("消息包含媒体内容但 MultimodalRouter 不可用，回退到纯文本路由");
             }
             String preferredProviderId = request.preferredProvider();
@@ -1838,9 +1832,6 @@ public class ReactAgentLoop {
                         // 记录最后一个 chunk（携带 metadata/usage）
                         lastChunk[0] = chunk;
 
-                        if (chunk.getResult() == null || chunk.getResult().getOutput() == null) {
-                            return;
-                        }
                         var output = chunk.getResult().getOutput();
 
                         // 收集文本内容
@@ -1903,7 +1894,7 @@ public class ReactAgentLoop {
                         scene2, chatModelInfo.providerId(), chatModelInfo.modelId());
                 var emptyMessage = new AssistantMessage("");
                 var generation = new Generation(emptyMessage);
-                ChatResponse emptyResponse = lastChunk[0] != null && lastChunk[0].getMetadata() != null
+                ChatResponse emptyResponse = lastChunk[0] != null
                         ? new ChatResponse(List.of(generation), lastChunk[0].getMetadata())
                         : new ChatResponse(List.of(generation));
                 // 记录 Trace
@@ -1973,7 +1964,7 @@ public class ReactAgentLoop {
             }
             var generation = new Generation(assistantMessage);
             // 从 lastChunk 提取 token usage 等元数据
-            if (lastChunk != null && lastChunk.getMetadata() != null) {
+            if (lastChunk != null) {
                 return new ChatResponse(List.of(generation), lastChunk.getMetadata());
             }
             return new ChatResponse(List.of(generation));
@@ -2435,7 +2426,7 @@ public class ReactAgentLoop {
             finishReason = "error: " + error.getMessage();
         } else if (chatResponse != null) {
             var resultMetadata = chatResponse.getResult().getMetadata();
-            finishReason = resultMetadata != null ? resultMetadata.getFinishReason() : null;
+            finishReason = resultMetadata.getFinishReason();
         } else {
             finishReason = null;
         }

@@ -1,25 +1,25 @@
 package com.lifepilot.interaction.web.controller;
 
+import com.lifepilot.agent.proactive.ResponseTracker;
 import com.lifepilot.interaction.model.GatewayResponse;
 import com.lifepilot.interaction.model.ResponseContent;
 import com.lifepilot.interaction.web.adapter.WebChannelAdapter;
 import com.lifepilot.interaction.web.model.*;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.repository.MessageFeedbackRepository;
+import com.lifepilot.interaction.web.service.WebUserConfirmationService;
 import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
-import com.lifepilot.interaction.web.service.WebUserConfirmationService;
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
-import com.lifepilot.agent.proactive.ResponseTracker;
+import com.lifepilot.memory.feedback.FeedbackProcessor;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
+import org.springframework.lang.Nullable;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
-
-import com.lifepilot.memory.feedback.FeedbackProcessor;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -74,11 +74,11 @@ public class ChatController {
     private final MessageFeedbackRepository feedbackRepository;
     private final AttachmentRepository attachmentRepository;
     private final KnowledgeBaseProperties knowledgeBaseProperties;
-    @org.springframework.lang.Nullable
+    @Nullable
     private final ResponseTracker responseTracker;
-    @org.springframework.lang.Nullable
+    @Nullable
     private final WebUserConfirmationService confirmationService;
-    @org.springframework.lang.Nullable
+    @Nullable
     private final FeedbackProcessor feedbackProcessor;
 
     public ChatController(WebChannelAdapter adapter, SseSessionManager sseManager,
@@ -86,9 +86,9 @@ public class ChatController {
                           MessageFeedbackRepository feedbackRepository,
                           AttachmentRepository attachmentRepository,
                           KnowledgeBaseProperties knowledgeBaseProperties,
-                          @org.springframework.lang.Nullable ResponseTracker responseTracker,
-                          @org.springframework.lang.Nullable WebUserConfirmationService confirmationService,
-                          @org.springframework.lang.Nullable FeedbackProcessor feedbackProcessor) {
+                          @Nullable ResponseTracker responseTracker,
+                          @Nullable WebUserConfirmationService confirmationService,
+                          @Nullable FeedbackProcessor feedbackProcessor) {
         this.adapter = adapter;
         this.sseManager = sseManager;
         this.sessionService = sessionService;

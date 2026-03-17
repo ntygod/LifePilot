@@ -1,12 +1,5 @@
 package com.lifepilot.interaction.gateway;
 
-import java.time.Duration;
-import java.time.Instant;
-import java.util.List;
-import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
-
 import com.lifepilot.agent.proactive.ResponseTracker;
 import com.lifepilot.interaction.channel.ChannelAdapter;
 import com.lifepilot.interaction.middleware.MiddlewarePipeline;
@@ -15,7 +8,15 @@ import com.lifepilot.interaction.model.GatewayMessage;
 import com.lifepilot.interaction.model.GatewayResponse;
 import com.lifepilot.interaction.model.MessageContent;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.lang.Nullable;
+
+import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 默认消息网关实现，管理通道注册表和生命周期，将消息推入中间件管道处理。
@@ -53,7 +54,7 @@ public class DefaultMessageGateway implements MessageGateway {
         }
 
         // 将 messageId 注入 MDC，使整条中间件链路的日志可关联
-        org.slf4j.MDC.put("messageId", message.messageId());
+        MDC.put("messageId", message.messageId());
         log.debug("处理入站消息: messageId={}, channel={}", message.messageId(), message.channelType());
         // 反馈闭环：对文本消息通知 ResponseTracker
         notifyResponseTracker(message);
