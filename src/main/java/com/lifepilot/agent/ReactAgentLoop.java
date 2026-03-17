@@ -1688,15 +1688,26 @@ public class ReactAgentLoop {
                 log.debug("流式多模态路由开始: scene={}, provider={}, model={}",
                         scene, this.providerId, this.modelId);
 
-                // 收集流式内容并逐 token 推送 SSE
+                // 初始化 A2UI 增量解析器
+                StreamingA2uiParser a2uiParser = isA2uiEnabled() ? new StreamingA2uiParser() : null;
+
+                // 运行时状态：收集流式内容、首 token 时间
+                Instant callStart = Instant.now();
                 var contentBuilder = new StringBuilder();
+                final Instant[] firstTokenTime = {null};
+
                 streamingResponse.stream()
+                        // 取消信号 + SSE 连接断开检测
+                        .takeWhile(token -> !cancellationToken.isCancelled()
+                                && sseManager.getEmitter(streamId) != null)
                         .doOnNext(token -> {
                             contentBuilder.append(token);
-                            // 逐 token 推送 SSE TOKEN 事件
-                            sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
-                                    "sessionId", sessionId, "turnId", turnId,
-                                    "content", token, "index", 0));
+                            // TTFT 记录（仅记录一次）
+                            if (firstTokenTime[0] == null) {
+                                firstTokenTime[0] = Instant.now();
+                            }
+                            // A2UI 增量解析（复用已有方法）
+                            pushTokenToSse(token, a2uiParser);
                         })
                         .doOnError(e -> {
                             log.warn("流式多模态调用异常: scene={}, error={}", scene, e.getMessage());
@@ -1704,13 +1715,39 @@ public class ReactAgentLoop {
                         })
                         .blockLast();
 
+                // 取消/断开日志
+                if (cancellationToken.isCancelled()) {
+                    log.debug("多模态流式消费因取消信号停止: streamId={}", streamId);
+                } else if (sseManager.getEmitter(streamId) == null) {
+                    log.debug("多模态流式消费因 SSE 连接断开停止: streamId={}", streamId);
+                }
+
+                // 异常传播
+                if (this.streamingError != null) {
+                    log.warn("多模态流式消费完成但存在未传播的异常，重新抛出: error={}",
+                            this.streamingError.getMessage());
+                    throw this.streamingError instanceof RuntimeException re
+                            ? re : new RuntimeException(this.streamingError);
+                }
+
+                // 刷出 A2UI 剩余缓冲
+                flushA2uiParser(a2uiParser);
+
                 String collectedContent = contentBuilder.toString();
                 this.finalContent = collectedContent;
+
+                // TTFT + 总耗时日志
+                Instant callEnd = Instant.now();
+                long ttftMs = firstTokenTime[0] != null
+                        ? Duration.between(callStart, firstTokenTime[0]).toMillis() : -1;
+                long totalMs = Duration.between(callStart, callEnd).toMillis();
+                log.info("多模态流式调用完成: scene={}, provider={}, model={}, ttft={}ms, total={}ms",
+                        scene, this.providerId, this.modelId, ttftMs, totalMs);
 
                 // 构造 ChatResponse 返回给 coreLoop
                 ChatResponse chatResponse = adaptToChatResponse(
                         new LlmResponse(collectedContent, 0, 0, this.providerId, this.modelId, 0, false));
-                recordStreamingLlmStep(traceContext, Instant.now(), providerId, modelId,
+                recordStreamingLlmStep(traceContext, callStart, providerId, modelId,
                         scene, chatResponse, null);
                 return chatResponse;
             }
