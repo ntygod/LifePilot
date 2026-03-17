@@ -323,6 +323,12 @@ public class MemoryProperties {
         /** 短名称阈值（字符数），纯英文名称长度 ≤ 此值时强制词边界匹配，默认 2。 */
         private int shortNameThreshold = 2;
 
+        /** 空闲触发阈值（分钟），默认 30。 */
+        private int idleThresholdMinutes = 30;
+
+        /** 空闲触发冷却期（分钟），默认 60。 */
+        private int idleCooldownMinutes = 60;
+
         public String getCron() { return cron; }
         public void setCron(String cron) { this.cron = cron; }
 
@@ -364,6 +370,12 @@ public class MemoryProperties {
 
         public int getShortNameThreshold() { return shortNameThreshold; }
         public void setShortNameThreshold(int shortNameThreshold) { this.shortNameThreshold = shortNameThreshold; }
+
+        public int getIdleThresholdMinutes() { return idleThresholdMinutes; }
+        public void setIdleThresholdMinutes(int idleThresholdMinutes) { this.idleThresholdMinutes = idleThresholdMinutes; }
+
+        public int getIdleCooldownMinutes() { return idleCooldownMinutes; }
+        public void setIdleCooldownMinutes(int idleCooldownMinutes) { this.idleCooldownMinutes = idleCooldownMinutes; }
     }
 
     /**
