@@ -13,6 +13,7 @@ import com.lifepilot.agent.model.ReactStep;
 import com.lifepilot.agent.model.SuspendReason;
 import com.lifepilot.agent.session.SessionManager;
 import com.lifepilot.agent.suspend.model.SuspendedAgent;
+import com.lifepilot.agent.suspend.model.ResumePayload;
 import com.lifepilot.agent.suspend.store.SuspendStore;
 import com.lifepilot.agent.suspend.event.ScheduledWakeupEvent;
 import com.lifepilot.conversation.ConversationHistoryStore;
@@ -767,6 +768,165 @@ public class ReactAgentLoop {
             case SuspendReason.ExternalDataWait e ->
                     "等待外部数据就绪 [%s] %s".formatted(e.dataSourceId(), e.description());
         };
+    }
+
+    // ===== 挂起-恢复：通用恢复入口 =====
+
+    /**
+     * 校验 ResumePayload 与 SuspendReason 的配对正确性。
+     *
+     * <p>使用 pattern matching switch 穷举 5 对类型匹配，
+     * 不匹配时抛出 IllegalArgumentException。</p>
+     *
+     * @param reason  挂起原因
+     * @param payload 恢复载荷
+     * @throws IllegalArgumentException 类型不匹配时抛出
+     */
+    private void validateResumePayload(SuspendReason reason, ResumePayload payload) {
+        boolean valid = switch (reason) {
+            case SuspendReason.WorkflowWait _ -> payload instanceof ResumePayload.WorkflowResult;
+            case SuspendReason.UserConfirmation _ -> payload instanceof ResumePayload.UserDecision;
+            case SuspendReason.RemoteDelegation _ -> payload instanceof ResumePayload.RemoteResult;
+            case SuspendReason.ScheduledWakeup _ -> payload instanceof ResumePayload.WakeupSignal;
+            case SuspendReason.ExternalDataWait _ -> payload instanceof ResumePayload.DataReady;
+        };
+        if (!valid) {
+            throw new IllegalArgumentException(
+                    "恢复载荷类型不匹配: reason=%s, payload=%s".formatted(
+                            reason.getClass().getSimpleName(), payload.getClass().getSimpleName()));
+        }
+    }
+
+    /**
+     * 将 ResumePayload 转换为人类可读的 Observation 文本。
+     *
+     * @param payload 恢复载荷
+     * @return 格式化后的恢复描述文本
+     */
+    private String formatResumeObservation(ResumePayload payload) {
+        return switch (payload) {
+            case ResumePayload.WorkflowResult r ->
+                    "工作流已完成: executionId=%s, status=%s, output=%s".formatted(
+                            r.executionId(), r.status(), r.outputJson());
+            case ResumePayload.UserDecision d ->
+                    "用户确认结果: confirmationId=%s, approved=%s, reason=%s".formatted(
+                            d.confirmationId(), d.approved(), d.reason());
+            case ResumePayload.RemoteResult r ->
+                    "远程 Agent 返回: remoteTaskId=%s, result=%s".formatted(
+                            r.remoteTaskId(), r.resultJson());
+            case ResumePayload.WakeupSignal s ->
+                    "定时唤醒触发: actualWakeupAt=%s".formatted(s.actualWakeupAt());
+            case ResumePayload.DataReady d ->
+                    "外部数据就绪: dataSourceId=%s, data=%s".formatted(
+                            d.dataSourceId(), d.dataLocationOrContent());
+        };
+    }
+
+    /**
+     * 通用恢复入口 — 从挂起状态恢复 Agent 执行。
+     *
+     * <p>流程：
+     * <ol>
+     *   <li>从 SuspendStore 加载挂起状态（不存在则抛异常）</li>
+     *   <li>校验 payload 类型匹配</li>
+     *   <li>重建 ReactAgentState：resume() + appendStep(Resume) + appendStep(Observation)</li>
+     *   <li>删除持久化记录</li>
+     *   <li>在新 Virtual Thread 上重新进入 coreLoop</li>
+     * </ol>
+     *
+     * @param traceId 挂起时的 traceId
+     * @param payload 恢复载荷
+     * @throws IllegalStateException    未找到挂起状态时抛出
+     * @throws IllegalArgumentException 载荷类型不匹配时抛出
+     */
+    public void resumeFromSuspend(String traceId, ResumePayload payload) {
+        if (suspendStore == null) {
+            throw new IllegalStateException("SuspendStore 未注入，无法恢复挂起的 Agent");
+        }
+
+        // 1. 加载挂起状态
+        SuspendedAgent suspended = suspendStore.load(traceId)
+                .orElseThrow(() -> new IllegalStateException("未找到挂起的 Agent: " + traceId));
+
+        // 2. 校验 payload 类型匹配
+        validateResumePayload(suspended.suspendReason(), payload);
+
+        // 3. 重建状态
+        ReactAgentState state = suspended.toAgentState().resume();
+        state = state.appendStep(new ReactStep.Resume(payload, Instant.now(),
+                Duration.between(suspended.suspendedAt(), Instant.now())));
+        String resumeToolId = "resume:" + suspended.suspendReason().getClass().getSimpleName();
+        state = state.appendStep(new ReactStep.Observation(
+                resumeToolId, true, formatResumeObservation(payload), 0));
+
+        // 4. 删除持久化记录
+        suspendStore.delete(traceId);
+
+        log.info("Agent 恢复执行: traceId={}, reasonType={}, payloadType={}",
+                traceId, suspended.suspendReason().getClass().getSimpleName(),
+                payload.getClass().getSimpleName());
+
+        // 5. Virtual Thread 重新进入 coreLoop
+        final ReactAgentState resumedState = state;
+        final SuspendedAgent suspendedSnapshot = suspended;
+        Thread.startVirtualThread(() -> {
+            if (suspendedSnapshot.streamId() != null) {
+                runStreamingResume(resumedState, suspendedSnapshot);
+            } else {
+                runResume(resumedState, suspendedSnapshot);
+            }
+        });
+    }
+
+    /**
+     * 非流式恢复路径 — 重新进入 coreLoop 完成剩余推理。
+     *
+     * @param state     恢复后的 Agent 状态
+     * @param suspended 挂起快照（用于获取原始请求上下文）
+     */
+    private void runResume(ReactAgentState state, SuspendedAgent suspended) {
+        var token = new CancellationToken();
+        this.cancellationToken = token;
+        var loopStart = Instant.now();
+
+        try {
+            // 构建最小 AgentRequest 用于 coreLoop
+            var request = new AgentRequest(
+                    state.goal(), state.sessionId(), state.channel(),
+                    null, state.budget(), state.parentTraceId(),
+                    state.depth(), null, state.allowedToolIds(), null, null);
+
+            var callback = new NonStreamingCallback(request);
+            state = coreLoop(state, request, null, loopStart, callback, token, null, null);
+
+            // 恢复后正常完成处理
+            boolean testSession = isTestSession(state.sessionId());
+            if (!testSession) {
+                writeAssistantMessageToL1(state);
+                persistAssistantMessage(state);
+                asyncPostProcess(state);
+            }
+
+            log.info("Agent 恢复后执行完成: traceId={}, stepCount={}", state.traceId(), state.stepCount());
+        } catch (Exception e) {
+            log.error("Agent 恢复后执行异常: traceId={}, error={}", state.traceId(), e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 流式恢复路径 — 重新建立 SSE 连接，发送 AGENT_RESUMED 事件，进入 coreLoop。
+     *
+     * @param state     恢复后的 Agent 状态
+     * @param suspended 挂起快照（用于获取 streamId 等上下文）
+     */
+    private void runStreamingResume(ReactAgentState state, SuspendedAgent suspended) {
+        // 流式恢复需要 SseSessionManager，但恢复时原 SSE 连接已关闭
+        // 此处记录日志，实际流式恢复需要前端重新建立 SSE 连接
+        log.info("Agent 流式恢复: traceId={}, 原 streamId={}（需前端重新建立 SSE 连接）",
+                state.traceId(), suspended.streamId());
+
+        // 降级为非流式恢复
+        runResume(state, suspended);
     }
 
     /** 从 ChatResponse 估算 Token 消耗。 */
