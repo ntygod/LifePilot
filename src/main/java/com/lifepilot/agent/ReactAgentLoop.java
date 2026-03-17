@@ -270,10 +270,18 @@ public class ReactAgentLoop {
                         messages.add(new AssistantMessage(a.content()));
                 case ReactStep.Suspend s ->
                         messages.add(new AssistantMessage(
-                                "Agent 已挂起，原因: " + s.reason()));
-                case ReactStep.Resume r ->
-                        messages.add(new AssistantMessage(
-                                "Agent 已恢复，载荷: " + r.payload()));
+                                "Agent 已挂起，等待恢复信号。挂起原因: " + formatSuspendReason(s.reason())));
+                case ReactStep.Resume r -> {
+                    // 恢复步骤转换为 ToolResponseMessage，使 LLM 能看到恢复载荷作为工具结果
+                    var resumeToolId = "resume:" + r.payload().getClass().getSimpleName();
+                    var toolResponse = ToolResponseMessage.builder()
+                            .responses(List.of(new ToolResponseMessage.ToolResponse(
+                                    resumeToolId, resumeToolId,
+                                    "Agent 已从挂起态恢复，挂起时长: " + r.suspendDuration()
+                                            + "，恢复载荷: " + r.payload())))
+                            .build();
+                    messages.add(toolResponse);
+                }
             }
         }
         return messages;
@@ -690,6 +698,27 @@ public class ReactAgentLoop {
             log.debug("工具输出非挂起信号 JSON: error={}", e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * 将 SuspendReason 格式化为人类可读的描述文本。
+     *
+     * @param reason 挂起原因
+     * @return 格式化后的描述文本
+     */
+    private String formatSuspendReason(SuspendReason reason) {
+        return switch (reason) {
+            case SuspendReason.WorkflowWait w ->
+                    "等待工作流完成 [%s] %s".formatted(w.executionId(), w.workflowName());
+            case SuspendReason.UserConfirmation u ->
+                    "等待用户确认工具执行 [%s] 风险等级: %s".formatted(u.toolId(), u.riskLevel());
+            case SuspendReason.RemoteDelegation r ->
+                    "等待远程 Agent 返回 [%s] 目标: %s".formatted(r.remoteTaskId(), r.delegatedGoal());
+            case SuspendReason.ScheduledWakeup s ->
+                    "定时唤醒 [%s] 原因: %s".formatted(s.wakeupAt(), s.reason());
+            case SuspendReason.ExternalDataWait e ->
+                    "等待外部数据就绪 [%s] %s".formatted(e.dataSourceId(), e.description());
+        };
     }
 
     /** 从 ChatResponse 估算 Token 消耗。 */
