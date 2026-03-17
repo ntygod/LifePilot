@@ -39,7 +39,7 @@ class CodeExecuteToolExecutorTest {
         properties = new MetaProperties();
         // SandboxBooter 是 sealed interface，mock 其 permits 的 ProcessBooter
         sandboxBooter = mock(ProcessBooter.class);
-        executor = new CodeExecuteToolExecutor(properties, sandboxBooter);
+        executor = new CodeExecuteToolExecutor(properties, sandboxBooter, null, null);
     }
 
     // ─────────────────────────────────────────────
@@ -48,7 +48,7 @@ class CodeExecuteToolExecutorTest {
 
     @Test
     void sandboxBooter为null时返回错误() {
-        var nullExecutor = new CodeExecuteToolExecutor(properties, null);
+        var nullExecutor = new CodeExecuteToolExecutor(properties, null, null, null);
         ToolInput input = buildInput(Map.of("code", "print('hello')"));
 
         ToolResult result = nullExecutor.execute(input);
@@ -165,7 +165,7 @@ class CodeExecuteToolExecutorTest {
     @Test
     void 默认语言从配置读取() {
         properties.getInfra().getCodeExecute().setDefaultLanguage("javascript");
-        executor = new CodeExecuteToolExecutor(properties, sandboxBooter);
+        executor = new CodeExecuteToolExecutor(properties, sandboxBooter, null, null);
 
         when(sandboxBooter.available()).thenReturn(true);
         when(sandboxBooter.execute(any(ExecutionRequest.class)))
@@ -236,8 +236,9 @@ class CodeExecuteToolExecutorTest {
 
         ToolResult result = executor.execute(input);
 
-        // 非零退出码仍然是成功的 ToolResult（数据中包含 exitCode 和 stderr）
-        assertThat(result.ok()).isTrue();
+        // 非零退出码视为执行失败，但 data 中仍包含 exitCode 和 stderr
+        assertThat(result.ok()).isFalse();
+        assertThat(result.error()).contains("代码执行失败");
         assertThat((int) result.data().get("exitCode")).isEqualTo(1);
         assertThat((String) result.data().get("stderr")).contains("SyntaxError");
         assertThat((String) result.data().get("state")).isEqualTo("FAILED");

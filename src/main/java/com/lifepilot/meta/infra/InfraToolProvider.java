@@ -17,6 +17,8 @@ import com.lifepilot.meta.infra.web.WebSearchToolExecutor;
 import com.lifepilot.notification.NotificationService;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.sandbox.booter.SandboxBooter;
+import com.lifepilot.sandbox.repository.SandboxRepository;
+import com.lifepilot.sandbox.validator.CodeValidator;
 import com.lifepilot.skill.builtin.BuiltinSkill;
 import com.lifepilot.skill.builtin.BuiltinSkillProvider;
 import com.lifepilot.skill.model.*;
@@ -52,6 +54,10 @@ public class InfraToolProvider implements BuiltinSkillProvider {
     @Nullable
     private final SandboxBooter sandboxBooter;
     @Nullable
+    private final CodeValidator codeValidator;
+    @Nullable
+    private final SandboxRepository sandboxRepository;
+    @Nullable
     private final InteractionBridge interactionBridge;
     @Nullable
     private final BrowserSessionManager browserSessionManager;
@@ -61,12 +67,16 @@ public class InfraToolProvider implements BuiltinSkillProvider {
     public InfraToolProvider(MetaProperties properties,
                              RestClient.Builder restClientBuilder,
                              @Nullable SandboxBooter sandboxBooter,
+                             @Nullable CodeValidator codeValidator,
+                             @Nullable SandboxRepository sandboxRepository,
                              @Nullable InteractionBridge interactionBridge,
                              @Nullable BrowserSessionManager browserSessionManager,
                              @Nullable NotificationService notificationService) {
         this.properties = properties;
         this.restClientBuilder = restClientBuilder;
         this.sandboxBooter = sandboxBooter;
+        this.codeValidator = codeValidator;
+        this.sandboxRepository = sandboxRepository;
         this.interactionBridge = interactionBridge;
         this.browserSessionManager = browserSessionManager;
         this.notificationService = notificationService;
@@ -154,7 +164,7 @@ public class InfraToolProvider implements BuiltinSkillProvider {
         browserToolProvider.buildBrowserTools().forEach(toolRegistry::registerBuiltinTool);
 
         // 代码执行工具（1 个）
-        var codeExecuteExecutor = new CodeExecuteToolExecutor(properties, sandboxBooter);
+        var codeExecuteExecutor = new CodeExecuteToolExecutor(properties, sandboxBooter, codeValidator, sandboxRepository);
 
         toolRegistry.registerBuiltinTool(buildCodeExecuteTool(codeExecuteExecutor));
 

@@ -15,16 +15,14 @@ import com.lifepilot.sandbox.booter.ProcessBooter;
 import com.lifepilot.sandbox.booter.SandboxBooter;
 import com.lifepilot.sandbox.repository.SandboxRepository;
 import com.lifepilot.sandbox.session.SandboxSessionManager;
-import com.lifepilot.sandbox.tool.CodeExecuteTool;
 import com.lifepilot.sandbox.validator.CodeValidator;
-import com.lifepilot.tool.registry.DynamicToolRegistry;
 
 /**
  * 沙箱模块 Spring AutoConfiguration。
  *
  * <p>通过 {@code lifepilot.sandbox.enabled=true}（默认）激活，
  * 注册沙箱模块全部 Bean：SandboxBooter、CodeValidator、SandboxSessionManager、
- * SandboxRepository、CodeExecuteTool。</p>
+ * SandboxRepository。</p>
  *
  * <p>根据 {@code lifepilot.sandbox.booter} 配置选择 ProcessBooter 或 DockerBooter。
  * Docker 模式下检查可用性，不可用则启动失败。</p>
@@ -113,30 +111,4 @@ public class SandboxAutoConfiguration {
         return new SandboxRepository(jdbcTemplate);
     }
 
-    /**
-     * 注册 CodeExecuteTool Bean 并将其作为 BuiltinTool 注册到 DynamicToolRegistry。
-     *
-     * <p>依赖 DynamicToolRegistry，仅在工具注册中心可用时注册。
-     * 初始化时调用 {@code toolRegistry.registerBuiltinTool(tool.buildTool())}。</p>
-     *
-     * @param validator      代码预检器
-     * @param sessionManager 会话管理器
-     * @param repository     审计持久化仓储
-     * @param config         沙箱配置
-     * @param toolRegistry   动态工具注册中心
-     * @return CodeExecuteTool 实例
-     */
-    @Bean
-    @ConditionalOnMissingBean
-    @ConditionalOnBean(DynamicToolRegistry.class)
-    CodeExecuteTool codeExecuteTool(CodeValidator validator,
-                                    SandboxSessionManager sessionManager,
-                                    SandboxRepository repository,
-                                    SandboxConfigProperties config,
-                                    DynamicToolRegistry toolRegistry) {
-        var tool = new CodeExecuteTool(validator, sessionManager, repository, config);
-        toolRegistry.registerBuiltinTool(tool.buildTool());
-        log.info("CodeExecuteTool 注册完成: toolId=code.execute, riskLevel=CRITICAL");
-        return tool;
-    }
 }
