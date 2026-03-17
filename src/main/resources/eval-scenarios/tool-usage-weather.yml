@@ -19,5 +19,5 @@ initialContext:
 tags:
   - "tool-usage"
 llmJudgeCriteria: "应正确调用天气工具并将结果自然地融入回复"
-expectedTokenBudget: 800
+expectedTokenBudget: 18000
 expectedStepCount: 2

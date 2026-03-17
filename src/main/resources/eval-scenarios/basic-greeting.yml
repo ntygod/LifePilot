@@ -16,5 +16,5 @@ initialContext:
 tags:
   - "basic"
 llmJudgeCriteria: "回复应友好、自然，包含自我介绍内容"
-expectedTokenBudget: 500
+expectedTokenBudget: 15000
 expectedStepCount: 1

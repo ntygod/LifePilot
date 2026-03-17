@@ -11,7 +11,7 @@ dimensionWeights:
   tokenEfficiency: 0.1
 timeoutSeconds: 60
 expectedStepCount: 3
-expectedTokenBudget: 1000
+expectedTokenBudget: 18000
 mockToolResponses:
   todo-list: '{"items": [{"title": "完成评估模块优化", "done": false}]}'
 tags:

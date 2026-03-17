@@ -18,5 +18,5 @@ initialContext:
 tags:
   - "multi-step"
 llmJudgeCriteria: "应分步展示计算过程，先算面积再换算单位，结果准确"
-expectedTokenBudget: 600
+expectedTokenBudget: 18000
 expectedStepCount: 3

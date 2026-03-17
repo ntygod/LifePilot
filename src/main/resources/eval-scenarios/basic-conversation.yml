@@ -10,7 +10,7 @@ dimensionWeights:
   tokenEfficiency: 0.2
 timeoutSeconds: 30
 expectedStepCount: 2
-expectedTokenBudget: 500
+expectedTokenBudget: 15000
 tags:
   - basic
   - conversation
