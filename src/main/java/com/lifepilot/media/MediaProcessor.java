@@ -14,6 +14,11 @@ import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * 图片预处理器。
@@ -129,15 +134,37 @@ public class MediaProcessor {
 
     /**
      * 批量处理图片列表。
+     * <p>
+     * 使用 Virtual Thread 并行压缩，保持输出列表顺序与输入一致。
+     * 并行失败时回退串行处理。
      *
      * @param images 待处理的图片 MediaContent 列表
      * @return 处理后的 MediaContent 列表
      */
     public List<MediaContent> processAll(List<MediaContent> images) {
-        return Optional.ofNullable(images)
-                .orElse(Collections.emptyList())
-                .stream()
-                .map(this::process)
-                .toList();
+        List<MediaContent> list = Optional.ofNullable(images)
+                .orElse(Collections.emptyList());
+        if (list.isEmpty()) return List.of();
+
+        int timeout = properties.getImage().getProcessTimeoutSeconds();
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            var futures = list.stream()
+                    .map(image -> CompletableFuture.supplyAsync(() -> process(image), executor))
+                    .toList();
+
+            CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new))
+                    .get(timeout, TimeUnit.SECONDS);
+
+            return futures.stream()
+                    .map(CompletableFuture::join)
+                    .toList();
+        } catch (ExecutionException | TimeoutException e) {
+            log.warn("并行图片压缩异常，回退串行处理: error={}", e.getMessage());
+            return list.stream().map(this::process).toList();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("并行图片压缩被中断，回退串行处理");
+            return list.stream().map(this::process).toList();
+        }
     }
 }
