@@ -13,8 +13,8 @@ MCP 模块让知微能够连接外部 MCP 服务器获取工具能力，同时�
 ### 2.1 三种传输方式
 
 - **STDIO**：通过子进程 stdin/stdout 通信，适合本地 MCP 服务器
-- **Streamable HTTP**：通过 HTTP POST 通信，适合远程 MCP 服务器
-- **SSE Legacy**：通过 Server-Sent Events 通信，兼容旧版 MCP 服务器
+- **STREAMABLE_HTTP**：通过 HTTP POST 通信，推荐的远程传输（MCP 规范 2025-03-26+）
+- **SSE_LEGACY**：通过 Server-Sent Events 通信，兼容旧版 MCP 服务器
 
 ### 2.2 自动工具发现与注册
 

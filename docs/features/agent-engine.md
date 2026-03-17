@@ -6,54 +6,140 @@
 
 ## 1. 功能概述
 
-Agent 引擎是知微的智能推理核心，接收用户自然语言输入，经过意图理解、任务规划、工具执行、反思评估等阶段，最终生成结构化响应。支持非流式和 SSE 流式两种输出模式，内置预算控制防止资源过度消耗。
+Agent 引擎是知微的智能推理核心，接收用户自然语言输入，经过 ReAct 循环（Thought → Action → Observation）完成推理和执行，最终生成响应。支持非流式和 SSE 流式两种输出模式，内置预算控制防止资源过度消耗。
 
-## 2. 核心特性
+## 2. 核心架构
 
-### 2.1 六阶段生命周期
+### 2.1 ReAct 循环实现
 
-Agent 执行遵循 Understanding → Planning → Executing → Reflecting → Responding → Terminated 六个阶段，每个阶段有明确的职责和合法转换路径。阶段转换由 StateReducer 纯函数驱动，确保状态机行为可预测。
+```java
+// ReactAgentLoop 核心循环
+public class ReactAgentLoop {
+    // 每次迭代：
+    // 1. 调用 LLM（禁用自动 tool calling）获取原始响应
+    // 2. 检查响应是否包含 tool call 请求
+    // 3. 若有 tool call → 记录 ToolCall 步骤 → 手动执行工具 → 记录 Observation 步骤 → 继续循环
+    // 4. 若无 tool call（纯文本）→ 记录 Answer 步骤 → 循环结束
+}
+```
 
-### 2.2 不可变状态机
+通过 `ChatModel.call(Prompt)` + `internalToolExecutionEnabled=false` 实现手动 tool calling 控制，确保每个工具调用都被显式记录到 ReAct 步骤和 Trace 中。
 
-所有状态通过不可变 record（AgentState）表示，每次状态转换生成新实例。这种设计天然支持轨迹回放、并发安全和调试追溯。
+### 2.2 状态管理
 
-### 2.3 九种动作类型
+- `ReactAgentState`: 当前执行状态（idle/running/streaming/completed/error）
+- `ReactStep`: 步骤记录（llm_call/tool_call/answer/error）
+- `Budget`: 预算控制（token数量/时间/步骤数）
 
-LLM 输出和系统事件被解析为 9 种动作类型（sealed interface）：意图理解、计划生成、工具结果、反思完成、响应生成、预算耗尽、护栏阻断、错误恢复、子 Agent 结果。编译器强制穷举处理所有动作类型。
+### 2.3 核心依赖
 
-### 2.4 三维预算控制
+| 组件 | 职责 |
+|------|------|
+| `ContextAssembler` | 动态组装 LLM 上下文（系统Prompt/记忆检索/对话历史/知识库） |
+| `LlmRouter` | 多模型路由、熔断器、故障转移 |
+| `TraceRecorder` | 执行轨迹记录 |
+| `SessionManager` | 会话管理 |
+| `AgentToolProvider` | 工具提供（内置工具/Skill/MCP） |
 
-支持 Token 数量、执行时间、步骤数三个维度的预算限制。预算耗尽时自动生成降级响应，汇总已完成的步骤结果返回给用户。
+### 2.4 可选依赖（@Nullable）
 
-### 2.5 SSE 流式输出
+| 组件 | 职责 |
+|------|------|
+| `MultimodalRouter` | 多模态流式请求 |
+| `MediaDataExtractor` | 媒体数据提取 |
+| `MediaValidator` | 媒体验证 |
 
-支持 Server-Sent Events 流式响应，LLM 生成的 Token 实时推送到前端。流式模式下支持推理过程事件、工具调用事件、UI 组件事件等多种事件类型。
+## 3. 核心特性
 
-### 2.6 上下文智能组装
+### 3.1 预算控制
 
-ContextAssembler 根据当前阶段动态组装 LLM 上下文，包括系统 Prompt、记忆检索结果、对话历史、知识库内容。支持 Token 预算动态分配和对话压缩。
+- Token 数量限制
+- 执行时间限制
+- 步骤数限制
 
-### 2.7 子 Agent 委托
+预算耗尽时自动生成降级响应（DegradedResponseBuilder），汇总已完成的步骤结果。
 
-通过 SubAgentResult 动作类型支持多 Agent 协作场景，子 Agent 拥有独立预算和上下文，执行结果回传到父 Agent 状态。
+### 3.2 SSE 流式输出
 
-## 3. 使用场景
+支持 Server-Sent Events 流式响应，多种事件类型：
 
-用户通过 CLI 或 Web UI 发送消息，Agent 引擎自动理解意图、规划执行步骤、调用所需工具（如查询待办、设置提醒、搜索知识库），并在反思阶段评估结果质量。如果结果不满意，Agent 会自动调整计划重新执行。整个过程对用户透明，用户只需等待最终响应。
+- `TRACE_STEP`: 步骤事件
+- `TRACE_END`: 结束事件
+- `A2UI_COMPONENT`: UI 组件事件
+- `REASONING`: 推理过程事件
 
-## 4. 配置项
+### 3.3 A2UI 组件
+
+支持 Generative UI，LLM 返回的结构化数据可直接渲染为 UI 组件：
+
+```java
+// A2uiComponentTree: 组件树结构
+// StreamingA2uiParser: 流式解析
+// A2uiComponentCatalog: 组件目录
+```
+
+### 3.4 上下文智能组装
+
+`ContextAssembler` 根据当前阶段动态组装 LLM 上下文：
+
+- 系统 Prompt（通过 PromptRegistry）
+- 记忆检索结果（WorkingMemory/L2/L3）
+- 对话历史（ConversationHistoryStore）
+- 知识库内容（KnowledgeBaseRepository）
+
+支持 Token 预算动态分配和对话压缩。
+
+### 3.5 媒体处理
+
+支持多模态输入（图片/音频），通过 MediaProcessor 验证和提取内容。
+
+## 4. 核心类说明
+
+| 类 | 职责 |
+|---|------|
+| `ReactAgentLoop` | ReAct 循环执行器 |
+| `AgentRequest` | 请求模型（消息/会话ID/附件/配置） |
+| `AgentResponse` | 响应模型（内容/流式/工具调用/Token使用） |
+| `ContextAssembler` | 上下文组装器 |
+| `SessionManager` | 会话管理器 |
+| `DegradedResponseBuilder` | 降级响应构建器 |
+
+## 5. 配置项
+
+```yaml
+lifepilot:
+  agent:
+    max-iterations: 10
+    budget:
+      max-tokens: 4000
+      max-duration: 60s
+      max-steps: 20
+    context:
+      mode: full  # basic / full
+```
 
 | 配置键 | 默认值 | 说明 |
 |--------|--------|------|
-| `lifepilot.agent.max-iterations` | — | 单次循环最大迭代次数 |
-| `lifepilot.agent.budget.max-tokens` | — | Token 预算上限 |
-| `lifepilot.agent.budget.max-duration` | — | 时间预算上限 |
-| `lifepilot.agent.budget.max-steps` | — | 步数预算上限 |
-| `lifepilot.agent.context.mode` | — | 上下文组装模式（basic / full） |
+| `lifepilot.agent.max-iterations` | 10 | 单次循环最大迭代次数 |
+| `lifepilot.agent.budget.max-tokens` | 4000 | Token 预算上限 |
+| `lifepilot.agent.budget.max-duration` | 60s | 时间预算上限 |
+| `lifepilot.agent.budget.max-steps` | 20 | 步数预算上限 |
+| `lifepilot.agent.context.mode` | full | 上下文组装模式 |
 
-## 5. 限制与未来方向
+## 6. 使用场景
 
-- 当前 ActionParser 依赖 LLM 输出格式的稳定性，格式偏差可能导致解析失败（内置重试机制）
-- 反思阶段的评估质量依赖 LLM 能力，简单模型可能无法有效反思
-- 未来计划：优化首字响应时间（TTFT），引入更细粒度的执行策略
+用户通过 CLI 或 Web UI 发送消息，Agent 引擎：
+
+1. 接收用户消息
+2. 组装上下文（记忆/知识库/对话历史）
+3. 进入 ReAct 循环：
+   - 调用 LLM 获取响应
+   - 若有工具调用，执行工具并记录结果
+   - 重复直到完成
+4. 返回响应（流式或非流式）
+
+## 7. 限制与未来方向
+
+- 当前依赖 LLM 输出格式稳定性，格式偏差可能导致解析失败
+- 反思阶段评估质量依赖 LLM 能力
+- 未来：优化首字响应时间（TTFT）、引入更细粒度执行策略

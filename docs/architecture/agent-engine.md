@@ -6,46 +6,40 @@
 
 ## 1. 模块概述
 
-Agent 引擎是知微的核心推理控制中枢，负责接收用户请求、驱动 LLM 推理、编排工具调用、管理执行预算，并生成最终响应。采用不可变状态机架构（AgentState + StateReducer），所有状态转换通过纯函数完成，确保可追溯和可测试。
+Agent 引擎是知微的核心推理控制中枢，负责接收用户请求、驱动 LLM 推理、编排工具调用、管理执行预算，并生成最终响应。采用 ReAct 循环架构（Thought → Action → Observation），手动控制 tool calling，确保每个工具调用都被显式记录到 ReAct 步骤和 Trace 中。
 
 ## 2. 架构图
 
 ```mermaid
 graph TB
     subgraph "Agent 引擎"
-        LOOP["AgentLoop<br/>控制循环"]
-        SR["StateReducer<br/>纯函数状态转换"]
+        LOOP["ReactAgentLoop<br/>ReAct 循环"]
         CTX["ContextAssembler<br/>上下文组装"]
-        AP["ActionParser<br/>LLM 输出解析"]
-        TP["AgentToolProvider<br/>工具回调提供"]
+        TOOL["AgentToolProvider<br/>工具回调提供"]
     end
 
     subgraph "状态模型"
-        STATE["AgentState（record）<br/>不可变状态快照"]
-        PHASE["AgentPhase（enum）<br/>6 阶段生命周期"]
-        ACTION["Action（sealed interface）<br/>9 种动作类型"]
+        STATE["ReactAgentState（record）<br/>当前执行状态"]
+        STEP["ReactStep（record）<br/>步骤记录"]
         BUDGET["Budget（record）<br/>Token/时间/步数预算"]
     end
 
     subgraph "外部依赖"
         LLM["LlmRouter"]
-        TOOL["工具系统"]
+        TOOL_SYS["工具系统"]
         MEM["记忆系统"]
         OBS["可观测性"]
         PROACTIVE["主动推理"]
     end
 
-    LOOP --> SR
+    LOOP --> STATE
+    LOOP --> STEP
+    LOOP --> BUDGET
     LOOP --> CTX
-    LOOP --> AP
-    LOOP --> TP
-    SR --> STATE
-    STATE --> PHASE
-    SR --> ACTION
-    STATE --> BUDGET
-    LOOP --> LLM
     LOOP --> TOOL
     CTX --> MEM
+    LOOP --> LLM
+    LOOP --> TOOL_SYS
     LOOP --> OBS
     LOOP --> PROACTIVE
 ```

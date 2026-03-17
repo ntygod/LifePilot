@@ -6,7 +6,7 @@
 
 ## 1. 模块概述
 
-元能力系统（Meta Capabilities）为 Agent 提供通用执行基础设施和系统自省能力。模块分为两大子系统：**基础工具集**（Infra）提供 21 个内置工具覆盖环境感知、Web 信息获取、推理辅助、Shell 执行、浏览器自动化、代码执行、文件系统操作和用户交互控制；**便利层**（Convenience）提供系统自省和 Skill 发现能力。内置 MCP 服务器（mcp-installer、desktop-control 等）通过 JSON 配置文件由 `McpServerDiscovery` 统一发现和管理。元能力模块是 Agent 执行循环中最底层的工具供给者，所有工具通过 `BuiltinSkillProvider` 机制注册到 `DynamicToolRegistry`。
+元能力系统（Meta Capabilities）为 Agent 提供通用执行基础设施和系统自省能力。模块分为两大子系统：**基础工具集**（Infra）提供 30+ 个内置工具覆盖环境感知、Web 信息获取、推理辅助、Shell 执行、浏览器自动化、代码执行、文件系统操作和用户交互控制；**便利层**（Convenience）提供系统自省和 Skill 发现能力。内置 MCP 服务器（mcp-installer、desktop-control 等）通过 JSON 配置文件由 `McpServerDiscovery` 统一发现和管理。元能力模块是 Agent 执行循环中最底层的工具供给者，所有工具通过 `BuiltinSkillProvider` 机制注册到 `DynamicToolRegistry`。
 
 ## 2. 架构图
 
@@ -21,7 +21,7 @@ graph TB
 
         subgraph infra["infra — 基础工具集"]
             ITP["InfraToolProvider<br/>基础工具提供者"]
-            subgraph tools["21 个内置工具"]
+            subgraph tools["30+ 个内置工具"]
                 ENV["环境感知<br/>datetime / user-profile / system-info"]
                 WEB["Web 信息<br/>web-search / web-fetch"]
                 REASON["推理辅助<br/>think / calculate"]
@@ -65,9 +65,9 @@ graph TB
 
 ### 3.1 InfraToolProvider — 基础工具提供者
 
-- 职责：实现 `BuiltinSkillProvider` 接口，注册 21 个内置工具到 `DynamicToolRegistry`
+- 职责：实现 `BuiltinSkillProvider` 接口，注册 30+ 个内置工具到 `DynamicToolRegistry`
 - Skill ID：`builtin.infrastructure`
-- 工具按功能域分为 8 类：环境感知（3）、Web 信息（2）、推理辅助（2）、Shell 执行（1）、浏览器自动化（4）、代码执行（1）、文件系统（4）、交互控制（4）
+- 工具按功能域分为 5 类：环境感知（datetime/user-profile/system-info）、Web 信息（web-search/web-fetch）、推理辅助（calculate）、Shell 执行（shell-exec）、文件系统（file-read/file-write/file-list/file-search/file-copy/file-move/file-delete/file-append/file-patch/file-info）、交互控制（confirm/choose/input/notify）、浏览器自动化（navigate/click/input/screenshot/scroll/hover/keyboard/select/wait/tab/storage/accessibility）、代码执行（code-execute）
 - 可选依赖：`SandboxBooter`（代码执行）、`InteractionBridge`（交互控制）、`BrowserSessionManager`（浏览器自动化，需 Playwright）
 
 ### 3.2 InteractionBridge — 交互桥接器
