@@ -209,10 +209,16 @@ public class HybridRetriever {
 
         // 6. 按 entity_id 去重（保留 fusedScore 最高），排序，截取 topK
         // 5.5 可选精排（Reranker 可用且记忆精排已启用时）
+        // enabled 语义变更为"强制关闭开关"：enabled=false → 强制禁用；enabled=true 或未配置 → Reranker 可用时自动启用
         var memRerankerDefaults = memoryProperties.getReranker();
-        boolean memRerankEnabled = rerankerConfigProvider != null
-                ? rerankerConfigProvider.isMemoryRerankEnabled(memRerankerDefaults.isEnabled())
-                : memRerankerDefaults.isEnabled();
+        boolean memRerankEnabled;
+        if (!memRerankerDefaults.isEnabled()) {
+            memRerankEnabled = false; // 强制关闭
+        } else {
+            memRerankEnabled = rerankerConfigProvider != null
+                    ? rerankerConfigProvider.isMemoryRerankEnabled(true)
+                    : true; // 默认启用（Reranker Bean 存在时生效）
+        }
         int memRerankTopK = rerankerConfigProvider != null
                 ? rerankerConfigProvider.getMemoryRerankTopK(memRerankerDefaults.getTopK())
                 : memRerankerDefaults.getTopK();
