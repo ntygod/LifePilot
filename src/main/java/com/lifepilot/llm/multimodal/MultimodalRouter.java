@@ -20,8 +20,13 @@ import org.springframework.lang.Nullable;
 import reactor.core.publisher.Flux;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
@@ -45,6 +50,33 @@ public class MultimodalRouter {
     private final @Nullable VideoProcessor videoProcessor;
     private final LlmRouter llmRouter;
     private final ExponentialBackoff backoff;
+
+    /** LRU 缓存容量上限。 */
+    private static final int CACHE_MAX_SIZE = 50;
+    /** 缓存条目 TTL（秒）。 */
+    private static final long CACHE_TTL_SECONDS = 600;
+
+    /**
+     * 预处理缓存条目。
+     *
+     * @param processedImages 已处理的图片列表
+     * @param createdAt       缓存创建时间
+     */
+    record CacheEntry(List<MediaContent> processedImages, Instant createdAt) {
+        boolean isExpired() {
+            return Instant.now().isAfter(createdAt.plusSeconds(CACHE_TTL_SECONDS));
+        }
+    }
+
+    /** 基于 MediaContent id 的 LRU 预处理缓存。 */
+    private final Map<String, CacheEntry> preprocessCache = Collections.synchronizedMap(
+            new LinkedHashMap<>(64, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, CacheEntry> eldest) {
+                    return size() > CACHE_MAX_SIZE || eldest.getValue().isExpired();
+                }
+            }
+    );
 
     public MultimodalRouter(ProviderRegistry providerRegistry,
                             CircuitBreakerManager circuitBreakerManager,
@@ -83,12 +115,7 @@ public class MultimodalRouter {
             return llmRouter.call(llmRequest);
         }
 
-        mediaValidator.validateAll(mediaList);
-
-        List<MediaContent> images = mediaList.stream()
-                .filter(mc -> mc.mimeType().startsWith("image/"))
-                .toList();
-        List<MediaContent> processedImages = mediaProcessor.processAll(images);
+        List<MediaContent> processedImages = getProcessedImages(mediaList);
 
         var candidates = resolveVisionCandidates(request);
         if (candidates.isEmpty()) {
@@ -153,11 +180,8 @@ public class MultimodalRouter {
             return llmRouter.streamWithInfo(request.scene(), text, request.preferredProviderId());
         }
 
-        mediaValidator.validateAll(mediaList);
-        List<MediaContent> images = mediaList.stream()
-                .filter(mc -> mc.mimeType().startsWith("image/"))
-                .toList();
-        List<MediaContent> processedImages = mediaProcessor.processAll(images);
+        // 使用缓存获取预处理后的图片
+        List<MediaContent> processedImages = getProcessedImages(mediaList);
 
         var candidates = resolveVisionCandidates(request);
         if (candidates.isEmpty()) {
@@ -245,5 +269,44 @@ public class MultimodalRouter {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
+    }
+
+    /**
+     * 基于媒体内容 id 列表构建缓存键。
+     *
+     * @param mediaList 媒体内容列表
+     * @return 缓存键字符串
+     */
+    private String buildCacheKey(List<MediaContent> mediaList) {
+        return mediaList.stream()
+                .map(MediaContent::id)
+                .collect(Collectors.joining("|"));
+    }
+
+    /**
+     * 获取预处理后的图片列表（优先从缓存读取）。
+     * <p>
+     * 缓存命中且未过期时跳过校验和压缩，直接返回缓存结果。
+     * 缓存未命中时执行校验 + 压缩，并将结果存入缓存。
+     *
+     * @param mediaList 原始媒体内容列表
+     * @return 预处理后的图片列表
+     */
+    private List<MediaContent> getProcessedImages(List<MediaContent> mediaList) {
+        String cacheKey = buildCacheKey(mediaList);
+        CacheEntry cached = preprocessCache.get(cacheKey);
+        if (cached != null && !cached.isExpired()) {
+            log.debug("命中预处理缓存: cacheKey={}", cacheKey);
+            return cached.processedImages();
+        }
+
+        // 缓存未命中，执行校验 + 压缩
+        mediaValidator.validateAll(mediaList);
+        List<MediaContent> images = mediaList.stream()
+                .filter(mc -> mc.mimeType().startsWith("image/"))
+                .toList();
+        List<MediaContent> processedImages = mediaProcessor.processAll(images);
+        preprocessCache.put(cacheKey, new CacheEntry(processedImages, Instant.now()));
+        return processedImages;
     }
 }
