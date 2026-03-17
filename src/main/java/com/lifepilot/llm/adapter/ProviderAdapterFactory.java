@@ -6,6 +6,9 @@ import com.lifepilot.llm.config.ProviderConfig;
 import com.lifepilot.llm.config.ProviderType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.ai.anthropic.AnthropicChatModel;
+import org.springframework.ai.anthropic.AnthropicChatOptions;
+import org.springframework.ai.anthropic.api.AnthropicApi;
 import org.springframework.ai.chat.client.advisor.api.CallAdvisor;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.embedding.EmbeddingModel;
@@ -67,6 +70,9 @@ public class ProviderAdapterFactory {
         if (providerType == ProviderType.WENXIN) {
             throw new UnsupportedOperationException("WENXIN 适配器尚未实现");
         }
+        if (providerType == ProviderType.ANTHROPIC) {
+            return createAnthropicAdapter(config);
+        }
         return createOpenAiCompatibleAdapter(config);
     }
 
@@ -97,6 +103,53 @@ public class ProviderAdapterFactory {
 
         log.info("创建 Ollama 适配器: id={}, model={}", config.id(), config.modelName());
         return new SpringAiProviderAdapter(config, chatModel, embeddingModel, defaultAdvisors);
+    }
+
+    private SpringAiProviderAdapter createAnthropicAdapter(ProviderConfig config) {
+        String apiKey = config.apiKey();
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Anthropic Provider 必须配置 API Key: id=" + config.id());
+        }
+
+        // Anthropic API 的 baseUrl 不应包含 /v1 后缀（AnthropicApi 会自动拼接 /v1/messages）
+        // 用户可能习惯性填写 https://example.com/v1（OpenAI 兼容格式），这里自动修正
+        String baseUrl = config.apiUrl();
+        if (baseUrl.endsWith("/v1") || baseUrl.endsWith("/v1/")) {
+            baseUrl = baseUrl.replaceAll("/v1/?$", "");
+            log.info("Anthropic baseUrl 自动修正: 移除 /v1 后缀, id={}, 修正后={}", config.id(), baseUrl);
+        }
+
+        var anthropicApiBuilder = AnthropicApi.builder()
+                .apiKey(apiKey)
+                .baseUrl(baseUrl);
+
+        // HTTP 超时配置（复用 OpenAI 兼容适配器的模式）
+        if (connectionPoolConfig != null) {
+            int httpTimeoutSeconds = Math.max(config.timeoutSeconds(), MIN_HTTP_TIMEOUT_SECONDS);
+            var httpClient = HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(httpTimeoutSeconds))
+                    .build();
+            var requestFactory = new JdkClientHttpRequestFactory(httpClient);
+            requestFactory.setReadTimeout(Duration.ofSeconds(httpTimeoutSeconds));
+            var restClientBuilder = RestClient.builder().requestFactory(requestFactory);
+            anthropicApiBuilder.restClientBuilder(restClientBuilder);
+        }
+
+        var anthropicApi = anthropicApiBuilder.build();
+
+        var chatOptions = AnthropicChatOptions.builder()
+                .model(config.modelName())
+                .build();
+
+        ChatModel chatModel = AnthropicChatModel.builder()
+                .anthropicApi(anthropicApi)
+                .defaultOptions(chatOptions)
+                .build();
+
+        // Anthropic 不提供 Embedding API，embeddingModel 始终为 null
+        log.info("创建 Anthropic 原生适配器: id={}, model={}", config.id(), config.modelName());
+        return new SpringAiProviderAdapter(config, chatModel, null, defaultAdvisors);
     }
 
     private SpringAiProviderAdapter createOpenAiCompatibleAdapter(ProviderConfig config) {

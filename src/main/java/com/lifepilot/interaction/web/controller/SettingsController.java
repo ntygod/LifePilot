@@ -491,6 +491,7 @@ public class SettingsController {
             case WENXIN -> "文心一言";
             case GLM -> "智谱 GLM";
             case OPENAI_COMPATIBLE -> "OpenAI 兼容";
+            case ANTHROPIC -> "Anthropic Claude";
         };
     }
 }

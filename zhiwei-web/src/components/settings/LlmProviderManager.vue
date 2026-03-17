@@ -57,6 +57,7 @@ const providerTypes = [
   { value: 'WENXIN', label: 'Wenxin' },
   { value: 'TEI', label: 'TEI（本地推理）' },
   { value: 'OPENAI_COMPATIBLE', label: 'OpenAI 兼容' },
+  { value: 'ANTHROPIC', label: 'Anthropic Claude' },
 ]
 
 const capabilityOptions = [

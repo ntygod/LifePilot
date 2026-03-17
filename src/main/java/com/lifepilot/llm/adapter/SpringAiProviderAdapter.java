@@ -130,6 +130,8 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
         return builder.build();
     }
 
+    private static final Duration HEALTH_CHECK_TIMEOUT = Duration.ofSeconds(15);
+
     @Override
     public boolean healthCheck() {
         try {
@@ -142,8 +144,9 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
                 float[] embedding = embeddingModel.embed("ping");
                 return embedding.length > 0;
             }
-            // CHAT 及其他类型通过 chatModel 验证连通性
-            ChatResponse response = chatModel.call(new Prompt("ping"));
+            // CHAT 及其他类型通过 chatModel 验证连通性（带超时保护，避免无限等待）
+            ChatResponse response = executeWithTimeout(
+                    () -> chatModel.call(new Prompt("ping")), HEALTH_CHECK_TIMEOUT);
             if (response == null || response.getResult() == null || response.getResult().getOutput() == null) {
                 return false;
             }
