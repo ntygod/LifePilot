@@ -73,9 +73,11 @@ public class SuspendAutoConfiguration {
      */
     @EventListener
     public void onContextRefreshed(ContextRefreshedEvent event) {
-        var suspendStore = event.getApplicationContext().getBean(SuspendStore.class);
-        var properties = event.getApplicationContext().getBean(SuspendProperties.class);
-        var eventPublisher = event.getApplicationContext().getBean(ApplicationEventPublisher.class);
+        var context = event.getApplicationContext();
+        var suspendStore = context.getBean(SuspendStore.class);
+        var properties = context.getBean(SuspendProperties.class);
+        // ApplicationContext 本身实现了 ApplicationEventPublisher，直接使用即可
+        ApplicationEventPublisher eventPublisher = context;
 
         // 启动过期清理定时任务
         long intervalMs = properties.getCleanupInterval().toMillis();
