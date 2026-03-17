@@ -190,6 +190,7 @@ interface ContextMenuState {
   toId?: string
 }
 const contextMenu = ref<ContextMenuState | null>(null)
+const contextMenuRef = ref<HTMLElement | null>(null)
 
 // ── 连接拖拽状态 ──
 /** 正在拖拽连线的源步骤 ID */
@@ -447,6 +448,10 @@ function onKeyDown(e: KeyboardEvent) {
 
 /** 画布 mousedown → 左键在空白区域开始平移，中键任意位置平移 */
 function onCanvasMouseDown(e: MouseEvent) {
+  // 任何鼠标按下都关闭上下文菜单（除非点击在菜单内部）
+  if (contextMenu.value && contextMenuRef.value && !contextMenuRef.value.contains(e.target as Node)) {
+    closeContextMenu()
+  }
   // 中键拖动（任意位置）
   if (e.button === 1) {
     e.preventDefault()
@@ -513,25 +518,34 @@ function closeContextMenu() {
   contextMenu.value = null
 }
 
+/** document 级别的 mousedown 监听：点击菜单外部时关闭菜单 */
+function onDocumentMouseDown(e: MouseEvent) {
+  if (!contextMenu.value) return
+  // 如果点击在菜单内部，不关闭（让按钮的 @mousedown 处理）
+  if (contextMenuRef.value && contextMenuRef.value.contains(e.target as Node)) return
+  // 如果点击在画布容器内部，由 onCanvasMouseDown 处理
+  if (containerRef.value && containerRef.value.contains(e.target as Node)) return
+  // 点击在画布外部（其他面板等），关闭菜单
+  closeContextMenu()
+}
+
 function ctxDeleteStep() {
   if (contextMenu.value?.stepId) emit('delete-step', contextMenu.value.stepId)
-  closeContextMenu()
+  contextMenu.value = null
 }
 
 function ctxDisconnectAll() {
   if (contextMenu.value?.canvasId) emit('disconnect', contextMenu.value.canvasId, '')
-  closeContextMenu()
+  contextMenu.value = null
 }
 
 function ctxDisconnectLine() {
-  if (contextMenu.value?.fromId && contextMenu.value?.toId) {
-    emit('disconnect', contextMenu.value.fromId, contextMenu.value.toId)
+  const from = contextMenu.value?.fromId
+  const to = contextMenu.value?.toId
+  if (from && to) {
+    emit('disconnect', from, to)
   }
-  closeContextMenu()
-}
-
-function onContainerClick() {
-  closeContextMenu()
+  contextMenu.value = null
 }
 
 // ── 悬停高亮 ──
@@ -612,19 +626,18 @@ watch(
 )
 
 onMounted(() => {
-  document.addEventListener('click', onDocumentClickForMenu)
+  // 点击画布外部时关闭上下文菜单
+  document.addEventListener('mousedown', onDocumentMouseDown)
 })
 
 onUnmounted(() => {
+  document.removeEventListener('mousedown', onDocumentMouseDown)
   cancelConnection()
   if (draggingNodeId.value) onNodeDragEnd()
   if (isPanning.value) onPanEnd()
-  document.removeEventListener('click', onDocumentClickForMenu)
 })
 
-function onDocumentClickForMenu() {
-  closeContextMenu()
-}
+
 </script>
 
 <template>
@@ -636,7 +649,6 @@ function onDocumentClickForMenu() {
     @dragover="onDragOver"
     @drop="onDrop"
     @keydown="onKeyDown"
-    @click="onContainerClick"
     @mousedown="onCanvasMouseDown"
   >
     <!-- 空画布引导提示 -->
@@ -828,43 +840,42 @@ function onDocumentClickForMenu() {
       </div>
     </template>
 
-    <!-- 右键上下文菜单 -->
-    <Teleport to="body">
-      <div
-        v-if="contextMenu"
-        class="fixed z-50 min-w-[140px] rounded-md border bg-popover py-1 shadow-lg"
-        :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
-        @click.stop
-      >
-        <template v-if="contextMenu.type === 'step'">
-          <button
-            type="button"
-            class="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-popover-foreground hover:bg-accent"
-            @click="ctxDeleteStep"
-          >
-            <Trash2 class="h-3.5 w-3.5" />
-            删除步骤
-          </button>
-          <button
-            type="button"
-            class="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-popover-foreground hover:bg-accent"
-            @click="ctxDisconnectAll"
-          >
-            <Unlink class="h-3.5 w-3.5" />
-            删除所有连线
-          </button>
-        </template>
-        <template v-if="contextMenu.type === 'line'">
-          <button
-            type="button"
-            class="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-popover-foreground hover:bg-accent"
-            @click="ctxDisconnectLine"
-          >
-            <Unlink class="h-3.5 w-3.5" />
-            删除连线
-          </button>
-        </template>
-      </div>
-    </Teleport>
+    <!-- 右键上下文菜单（不使用 Teleport，直接渲染在组件内） -->
+    <div
+      v-if="contextMenu"
+      ref="contextMenuRef"
+      class="min-w-[140px] rounded-md border bg-popover py-1 shadow-lg"
+      style="position: fixed; z-index: 9999;"
+      :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
+    >
+      <template v-if="contextMenu.type === 'step'">
+        <button
+          type="button"
+          class="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-popover-foreground hover:bg-accent"
+          @mousedown.prevent.stop="ctxDeleteStep"
+        >
+          <Trash2 class="h-3.5 w-3.5" />
+          删除步骤
+        </button>
+        <button
+          type="button"
+          class="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-popover-foreground hover:bg-accent"
+          @mousedown.prevent.stop="ctxDisconnectAll"
+        >
+          <Unlink class="h-3.5 w-3.5" />
+          删除所有连线
+        </button>
+      </template>
+      <template v-if="contextMenu.type === 'line'">
+        <button
+          type="button"
+          class="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-popover-foreground hover:bg-accent"
+          @mousedown.prevent.stop="ctxDisconnectLine"
+        >
+          <Unlink class="h-3.5 w-3.5" />
+          删除连线
+        </button>
+      </template>
+    </div>
   </div>
 </template>
