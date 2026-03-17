@@ -266,6 +266,12 @@ public class ReactAgentLoop {
                 }
                 case ReactStep.Answer a ->
                         messages.add(new AssistantMessage(a.content()));
+                case ReactStep.Suspend s ->
+                        messages.add(new AssistantMessage(
+                                "Agent 已挂起，原因: " + s.reason()));
+                case ReactStep.Resume r ->
+                        messages.add(new AssistantMessage(
+                                "Agent 已恢复，载荷: " + r.payload()));
             }
         }
         return messages;
