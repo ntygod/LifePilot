@@ -158,9 +158,10 @@ public class MemoryAutoConfiguration {
     @ConditionalOnBean({EpisodicMemory.class})
     public CompressionService compressionService(EpisodicMemory episodicMemory,
                                                  LlmRouter llmRouter,
-                                                 PromptRegistry promptRegistry) {
+                                                 PromptRegistry promptRegistry,
+                                                 MemoryProperties memoryProperties) {
         log.info("记忆系统: 注册 CompressionService");
-        return new CompressionService(llmRouter, episodicMemory, promptRegistry);
+        return new CompressionService(llmRouter, episodicMemory, promptRegistry, memoryProperties);
     }
 
     /**

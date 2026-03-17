@@ -3,6 +3,7 @@ package com.lifepilot.memory.compression;
 import com.lifepilot.llm.LlmRequest;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.LlmScene;
+import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.episodic.CompressionLevel;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.memory.episodic.MessageRecord;
@@ -33,13 +34,26 @@ public class CompressionService {
     private final LlmRouter llmRouter;
     private final EpisodicMemory episodicMemory;
     private final PromptRegistry promptRegistry;
+    private final MemoryProperties properties;
 
     public CompressionService(LlmRouter llmRouter,
                               EpisodicMemory episodicMemory,
-                              PromptRegistry promptRegistry) {
+                              PromptRegistry promptRegistry,
+                              MemoryProperties properties) {
         this.llmRouter = llmRouter;
         this.episodicMemory = episodicMemory;
         this.promptRegistry = promptRegistry;
+        this.properties = properties;
+    }
+
+    /**
+     * 判断是否需要压缩。
+     *
+     * @param tokenCount 消息总 Token 数
+     * @return 是否超过压缩阈值
+     */
+    public boolean shouldCompress(int tokenCount) {
+        return tokenCount > properties.getCompressionThresholdTokens();
     }
 
     /**
