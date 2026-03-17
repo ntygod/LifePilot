@@ -114,8 +114,9 @@ public class HybridRetriever {
         long startTime = System.currentTimeMillis();
 
         // 1. 并行执行三路检索 + 可选 L4 意图匹配
+        float minVecSim = memoryProperties.getRetrieval().getMinVectorSimilarity();
         var vectorFuture = CompletableFuture.supplyAsync(
-                () -> vectorSearcher.searchEntities(query, topK, 0.0f), virtualThreadExecutor);
+                () -> vectorSearcher.searchEntities(query, topK, minVecSim), virtualThreadExecutor);
         var ftsFuture = CompletableFuture.supplyAsync(
                 () -> ftsSearcher.search(query, topK), virtualThreadExecutor);
         var graphFuture = CompletableFuture.supplyAsync(
