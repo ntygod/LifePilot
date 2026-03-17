@@ -111,10 +111,10 @@ function openRunDialog() {
             <RunHistoryPanel />
           </TabsContent>
         </Tabs>
-
-        <!-- RunDialog 运行评估对话框 -->
-        <RunDialog v-model:open="runDialogOpen" />
       </div>
     </PageContainer>
+
+    <!-- RunDialog 放在 PageContainer 外层，与其他页面的 Dialog 保持一致 -->
+    <RunDialog v-model:open="runDialogOpen" />
   </div>
 </template>
