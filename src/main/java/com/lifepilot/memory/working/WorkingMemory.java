@@ -223,6 +223,20 @@ public class WorkingMemory {
                     // ignore
                 }
             }
+
+            // 自动压缩触发：Token 超阈值时异步调用 CompressionService
+            if (compressionService != null && !messages.isEmpty()) {
+                int totalTokens = messages.stream().mapToInt(MessageRecord::tokenCount).sum();
+                if (compressionService.shouldCompress(totalTokens)) {
+                    try {
+                        compressionService.compressWithSlidingWindow(
+                                conversationId, messages, CompressionLevel.SUMMARY);
+                        log.debug("自动压缩触发: conversationId={}, totalTokens={}", conversationId, totalTokens);
+                    } catch (Exception e) {
+                        log.warn("自动压缩触发失败: conversationId={}, error={}", conversationId, e.getMessage());
+                    }
+                }
+            }
         }
 
         // 清除会话
