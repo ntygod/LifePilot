@@ -74,6 +74,12 @@
             <artifactId>spring-ai-openai</artifactId>
         </dependency>
 
+        <!-- Anthropic Claude 原生模型支持 -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-anthropic</artifactId>
+        </dependency>
+
         <!-- SQLite -->
         <dependency>
             <groupId>org.xerial</groupId>
