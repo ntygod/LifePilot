@@ -11,6 +11,7 @@ import com.lifepilot.memory.consolidation.EpisodicToProceduralConsolidator;
 import com.lifepilot.memory.consolidation.EpisodicToSemanticConsolidator;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.memory.retrieval.QueryRefiner;
+import com.lifepilot.memory.retrieval.QueryRewriter;
 import com.lifepilot.memory.forgetting.EntityExpirationJob;
 import com.lifepilot.memory.forgetting.ForgettingEngine;
 import com.lifepilot.memory.feedback.FeedbackProcessor;
@@ -99,6 +100,17 @@ public class MemoryAutoConfiguration {
     public QueryRefiner queryRefiner(MemoryProperties properties) {
         log.info("记忆系统: 注册 QueryRefiner");
         return new QueryRefiner(properties);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(LlmRouter.class)
+    public QueryRewriter queryRewriter(LlmRouter llmRouter,
+                                        MemoryProperties properties,
+                                        PromptRegistry promptRegistry) {
+        log.info("记忆系统: 注册 QueryRewriter, mode={}",
+                properties.getRetrieval().getQueryRewriteMode());
+        return new QueryRewriter(llmRouter, properties, promptRegistry);
     }
 
     @Bean
