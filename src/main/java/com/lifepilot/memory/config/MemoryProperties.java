@@ -644,8 +644,8 @@ public static class Retrieval {
      */
     public static class Reranker {
 
-        /** 记忆精排开关，默认 false。 */
-        private boolean enabled = false;
+        /** 记忆精排强制关闭开关，默认 true（Reranker 可用时自动启用；设为 false 强制禁用）。 */
+        private boolean enabled = true;
 
         /** 精排返回数量，默认 10。 */
         private int topK = 10;
