@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { FileAudio2, FileText, FileVideo, Image, Paperclip, X } from 'lucide-vue-next'
 import { chatApi } from '@/api/client'
+import { useChatStore } from '@/stores/chat'
 import { Textarea } from '@/components/ui/textarea'
 import type { ChatAttachment } from '@/types'
 
@@ -17,6 +18,7 @@ const emit = defineEmits<{
   }]
 }>()
 
+const chatStore = useChatStore()
 const input = ref('')
 const maxLength = 4000
 const inputLength = computed(() => input.value.length)
@@ -67,7 +69,7 @@ async function submit() {
 
     try {
       const uploaded = await Promise.all(
-        attachments.value.map(file => chatApi.uploadAttachment(file, undefined)),
+        attachments.value.map(file => chatApi.uploadAttachment(file, chatStore.activeSessionId ?? undefined)),
       )
       attachmentIds = uploaded.map(item => item.fileId)
       uploadedAttachments = uploaded

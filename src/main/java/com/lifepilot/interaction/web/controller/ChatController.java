@@ -547,13 +547,16 @@ public class ChatController {
                     new ErrorResponse(400, "文件大小超过限制（最大 " + (maxFileSize / 1024 / 1024) + "MB）", Instant.now()));
         }
 
-        // 如果提供了 sessionId，验证会话存在
-        if (sessionId != null && !sessionId.isBlank()) {
-            if (!attachmentRepository.sessionExists(sessionId)) {
-                log.warn("附件上传失败: 会话不存在: sessionId={}", sessionId);
-                return ResponseEntity.badRequest().body(
-                        new ErrorResponse(400, "会话不存在", Instant.now()));
-            }
+        // 验证 sessionId 必须提供且会话存在（session_id 有外键约束，不能为空）
+        if (sessionId == null || sessionId.isBlank()) {
+            log.warn("附件上传失败: 未提供 sessionId");
+            return ResponseEntity.badRequest().body(
+                    new ErrorResponse(400, "sessionId 不能为空", Instant.now()));
+        }
+        if (!attachmentRepository.sessionExists(sessionId)) {
+            log.warn("附件上传失败: 会话不存在: sessionId={}", sessionId);
+            return ResponseEntity.badRequest().body(
+                    new ErrorResponse(400, "会话不存在", Instant.now()));
         }
 
         try {
@@ -577,19 +580,18 @@ public class ChatController {
                 mimeType = detectMimeType(originalName);
             }
 
-            // 生成文件访问 URL（相对路径）
-            String url = "/api/attachments/" + fileId;
-
-            // 保存附件信息到数据库（messageId 为 null，因为上传时可能还没有消息）
+            // 生成文件访问 URL（使用数据库附件 ID，与 AttachmentController 查询一致）
             String attachmentId = attachmentRepository.save(
                     null,  // messageId
-                    sessionId != null ? sessionId : "",  // sessionId（如果没有提供则使用空字符串）
+                    sessionId,
                     originalName,
                     filePath.toString(),
                     file.getSize(),
                     mimeType,
-                    url
+                    null  // url 稍后设置
             );
+
+            String url = "/api/attachments/" + attachmentId;
 
             log.info("附件上传成功: fileId={}, fileName={}, size={}", attachmentId, originalName, file.getSize());
 
