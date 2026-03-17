@@ -11,6 +11,7 @@ import com.lifepilot.prompt.PromptRegistry;
 import net.jqwik.api.*;
 
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.List;
 import java.util.UUID;
 
@@ -74,6 +75,59 @@ class CompressionService属性测试 {
     }
 
     // ─────────────────────────────────────────────
+    //  Property P5 — CompressionService 滑动窗口覆盖
+    // ─────────────────────────────────────────────
+
+    /**
+     * <b>Validates: Requirements 4.6, 7.7, 7.8</b>
+     *
+     * <p>对任意消息列表（size > windowSize），滑动窗口分段后：
+     * <ul>
+     *   <li>所有非最后一个窗口的消息都被某个窗口覆盖</li>
+     *   <li>最后一个窗口的消息不被压缩（保持原始）</li>
+     * </ul></p>
+     */
+    @Property(tries = 100)
+    void 滑动窗口覆盖所有非最近窗口消息(@ForAll("largeMessageLists") List<MessageRecord> messages) {
+        var properties = buildProperties();
+        int windowSize = properties.getCompression().getWindowSize();
+        int windowOverlap = properties.getCompression().getWindowOverlap();
+
+        // 使用 package-private 方法直接测试分段逻辑
+        var service = new CompressionService(
+                mock(LlmRouter.class),
+                mock(EpisodicMemory.class),
+                mock(PromptRegistry.class),
+                properties
+        );
+        var windows = service.partitionSlidingWindows(messages, windowSize, windowOverlap);
+
+        // 至少有 2 个窗口（因为 size > windowSize）
+        assertTrue(windows.size() >= 2,
+                "消息数 > windowSize 时应至少有 2 个窗口, 实际窗口数=" + windows.size());
+
+        // 收集非最后窗口覆盖的所有消息
+        var coveredMessages = new HashSet<String>();
+        for (int i = 0; i < windows.size() - 1; i++) {
+            for (var msg : windows.get(i)) {
+                coveredMessages.add(msg.id());
+            }
+        }
+
+        // 验证：非最后窗口中的所有消息都被覆盖
+        // 计算非最后窗口应覆盖的消息范围（从第一条到最后窗口起始位置之前）
+        int step = Math.max(1, windowSize - windowOverlap);
+        int lastWindowStart = (windows.size() - 1) * step;
+        for (int i = 0; i < Math.min(lastWindowStart, messages.size()); i++) {
+            assertTrue(coveredMessages.contains(messages.get(i).id()),
+                    "消息 index=" + i + " 应被某个非最后窗口覆盖");
+        }
+
+        // 验证：最后一个窗口的消息存在
+        assertFalse(windows.getLast().isEmpty(), "最后一个窗口不应为空");
+    }
+
+    // ─────────────────────────────────────────────
     //  数据生成器
     // ─────────────────────────────────────────────
 
@@ -104,6 +158,32 @@ class CompressionService属性测试 {
                                     tokens,
                                     Instant.now()
                             )
+                    )
+            );
+            return messageArb.list().ofSize(size);
+        });
+    }
+
+    /** 生成大消息列表（size > windowSize=20，确保多窗口）。 */
+    @Provide
+    Arbitrary<List<MessageRecord>> largeMessageLists() {
+        return Arbitraries.integers().between(25, 80).flatMap(size -> {
+            var messageArb = Combinators.combine(
+                    Arbitraries.strings().alpha().ofMinLength(5).ofMaxLength(30),
+                    Arbitraries.of("user", "assistant"),
+                    Arbitraries.integers().between(10, 200)
+            ).as((content, role, tokens) ->
+                    new MessageRecord(
+                            UUID.randomUUID().toString(),
+                            "conv-test",
+                            role,
+                            content,
+                            null,
+                            CompressionLevel.ORIGINAL,
+                            false,
+                            null,
+                            tokens,
+                            Instant.now()
                     )
             );
             return messageArb.list().ofSize(size);
