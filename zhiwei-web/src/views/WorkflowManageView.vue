@@ -20,6 +20,7 @@ import DryRunDialog from '@/components/workflow/DryRunDialog.vue'
 import ExecutionDetail from '@/components/workflow/ExecutionDetail.vue'
 import StepDetailCard from '@/components/workflow/StepDetailCard.vue'
 import StepTypeSchemaPanel from '@/components/workflow/StepTypeSchemaPanel.vue'
+import { countFlattenedSteps } from '@/composables/useNestedSteps'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -170,7 +171,7 @@ const triggerTypeCount = computed(() => {
   const triggerTypes = new Set(store.list.flatMap(item => item.triggerTypes ?? []))
   return triggerTypes.size
 })
-const stepCount = computed(() => store.current?.steps?.length ?? 0)
+const stepCount = computed(() => store.current?.steps ? countFlattenedSteps(store.current.steps) : 0)
 const currentTriggerTypes = computed(() => store.current?.triggerTypes ?? [])
 const currentSteps = computed(() => store.current?.steps ?? [])
 const currentInputs = computed<Record<string, WorkflowInputParam>>(() => store.current?.inputs ?? {})
@@ -801,7 +802,7 @@ onBeforeUnmount(() => {
 
               <PageSection
                 eyebrow="步骤"
-                :title="`工作流步骤（${currentSteps.length}）`"
+                :title="`工作流步骤（${stepCount}）`"
                 description="逐步查看工作流里的每个节点和配置。"
               >
                 <StatePanel
@@ -867,7 +868,7 @@ onBeforeUnmount(() => {
                             </Badge>
                           </div>
                           <div class="text-sm text-muted-foreground">
-                            步骤 {{ execution.completedStepIds?.length ?? 0 }} / {{ currentSteps.length }}
+                            步骤 {{ execution.completedStepIds?.length ?? 0 }} / {{ stepCount }}
                           </div>
                         </div>
                       </div>

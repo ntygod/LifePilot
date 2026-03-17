@@ -102,26 +102,34 @@ export function flattenNestedSteps(steps: StepModel[]): CanvasNode[] {
       canvasNodes.push(node)
 
       // 遞迴處理嵌套的步驟
-      const config = step.config as any
+      // 兼容两种数据来源：
+      //   1. 编辑器 StepModel：嵌套步骤在 step.config 下（如 config.body, config.thenSteps）
+      //   2. 后端 API 原始 JSON：嵌套步骤直接在 step 上（如 step.body, step.thenSteps）
+      const raw = step as any
+      const config = raw.config as any
 
-      if (step.type === 'condition' && config) {
-        if (config.thenSteps && Array.isArray(config.thenSteps)) {
-          processStepList(config.thenSteps, 'then', canvasId, true)
+      if (step.type === 'condition') {
+        const thenSteps = config?.thenSteps ?? raw.thenSteps
+        const elseSteps = config?.elseSteps ?? raw.elseSteps
+        if (thenSteps && Array.isArray(thenSteps)) {
+          processStepList(thenSteps, 'then', canvasId, true)
         }
-        if (config.elseSteps && Array.isArray(config.elseSteps)) {
-          processStepList(config.elseSteps, 'else', canvasId, true)
+        if (elseSteps && Array.isArray(elseSteps)) {
+          processStepList(elseSteps, 'else', canvasId, true)
         }
       }
 
-      if (step.type === 'loop' && config) {
-        if (config.body && Array.isArray(config.body)) {
-          processStepList(config.body, 'loop', canvasId, true)
+      if (step.type === 'loop') {
+        const body = config?.body ?? raw.body
+        if (body && Array.isArray(body)) {
+          processStepList(body, 'loop', canvasId, true)
         }
       }
 
-      if (step.type === 'parallel' && config) {
-        if (config.branches && Array.isArray(config.branches)) {
-          config.branches.forEach((branchSteps: StepModel[], branchIndex: number) => {
+      if (step.type === 'parallel') {
+        const branches = config?.branches ?? raw.branches
+        if (branches && Array.isArray(branches)) {
+          branches.forEach((branchSteps: StepModel[], branchIndex: number) => {
             const branchType = `branch-${branchIndex}` as BranchType
             processStepList(branchSteps, branchType, canvasId, true)
           })
@@ -167,4 +175,50 @@ export function getConditionExits(canvasNodes: CanvasNode[]): Map<string, Condit
   }
 
   return exitsMap
+}
+
+
+/**
+ * 扩展 completedStepIds：当父步骤（loop/condition/parallel）已完成时，
+ * 自动将其所有子步骤也视为已完成。
+ *
+ * 解决后端 completedStepIds 只包含顶层步骤 ID，
+ * 导致执行视图中嵌套步骤永远显示为 waiting 的问题。
+ */
+export function expandCompletedStepIds(
+  canvasNodes: CanvasNode[],
+  completedStepIds: string[],
+): Set<string> {
+  const completed = new Set(completedStepIds)
+
+  // 收集所有已完成的父节点的 canvasId
+  const completedCanvasIds = new Set<string>()
+  for (const node of canvasNodes) {
+    if (completed.has(node.stepId)) {
+      completedCanvasIds.add(node.canvasId)
+    }
+  }
+
+  // 遍历所有节点，如果父节点已完成，则子节点也标记为已完成
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const node of canvasNodes) {
+      if (completedCanvasIds.has(node.canvasId)) continue
+      if (node.parentStepId && completedCanvasIds.has(node.parentStepId)) {
+        completedCanvasIds.add(node.canvasId)
+        completed.add(node.stepId)
+        changed = true
+      }
+    }
+  }
+
+  return completed
+}
+
+/**
+ * 计算扁平化后的步骤总数（包含嵌套步骤）。
+ */
+export function countFlattenedSteps(steps: unknown[]): number {
+  return flattenNestedSteps(steps as StepModel[]).length
 }

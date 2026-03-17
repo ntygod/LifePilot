@@ -37,6 +37,7 @@ import { useUiStore } from '@/stores/ui'
 import { useWorkflowStore } from '@/stores/workflow'
 import type { WorkflowInputParam } from '@/types'
 import type { WorkflowStats, StepStats } from '@/types'
+import { countFlattenedSteps } from '@/composables/useNestedSteps'
 
 const YamlEditor = defineAsyncComponent(() => import('@/components/editor/YamlEditor.vue'))
 
@@ -115,7 +116,7 @@ const stepLogStateLabel: Record<string, string> = {
   SKIPPED: '跳过',
 }
 
-const stepCount = computed(() => workflow.value?.steps?.length ?? 0)
+const stepCount = computed(() => workflow.value?.steps ? countFlattenedSteps(workflow.value.steps) : 0)
 const triggerCount = computed(() => workflow.value?.triggerTypes?.length ?? 0)
 const approvalStepCount = computed(() => (
   workflow.value?.steps?.filter(step => (step as any).type === 'ApprovalStep' || (step as any).message).length ?? 0

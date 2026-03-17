@@ -19,7 +19,7 @@ import {
   Repeat,
   GitFork,
 } from 'lucide-vue-next'
-import { flattenNestedSteps, type CanvasNode } from '@/composables/useNestedSteps'
+import { flattenNestedSteps, expandCompletedStepIds, type CanvasNode } from '@/composables/useNestedSteps'
 import { useDagLayout } from '@/composables/useDagLayout'
 import type { StepModel } from '@/composables/useWorkflowModel'
 
@@ -49,7 +49,7 @@ const nodeMap = computed(() => {
   return map
 })
 
-const completedSet = computed(() => new Set(props.completedStepIds))
+const completedSet = computed(() => expandCompletedStepIds(canvasNodes.value, props.completedStepIds))
 
 /**
  * 计算步骤状态。

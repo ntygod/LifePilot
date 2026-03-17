@@ -11,6 +11,8 @@ import StepDagView from '@/components/workflow/StepDagView.vue'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
+import { countFlattenedSteps, flattenNestedSteps, expandCompletedStepIds } from '@/composables/useNestedSteps'
+import type { StepModel } from '@/composables/useWorkflowModel'
 
 const props = defineProps<{
   execution: WorkflowExecution
@@ -25,7 +27,23 @@ const executionContext = ref<Record<string, unknown> | null>(null)
 const contextLoading = ref(false)
 
 const currentState = computed(() => getStateConfig(props.execution.state))
-const progressText = computed(() => `${props.execution.completedStepIds?.length ?? 0} / ${props.totalSteps}`)
+
+// 扁平化步骤总数（包含嵌套步骤）
+const flattenedTotal = computed(() =>
+  props.steps ? countFlattenedSteps(props.steps) : props.totalSteps
+)
+
+// 扩展 completedStepIds：父步骤完成时，子步骤也视为完成
+const expandedCompletedCount = computed(() => {
+  if (!props.steps || !props.execution.completedStepIds?.length) {
+    return props.execution.completedStepIds?.length ?? 0
+  }
+  const nodes = flattenNestedSteps(props.steps as StepModel[])
+  const expanded = expandCompletedStepIds(nodes, props.execution.completedStepIds)
+  return expanded.size
+})
+
+const progressText = computed(() => `${expandedCompletedCount.value} / ${flattenedTotal.value}`)
 const timeline = computed(() => store.getEventTimeline(props.execution.id))
 const timelineLoading = computed(() => (
   activeTab.value === 'timeline' && !store.hasEventTimeline(props.execution.id)
