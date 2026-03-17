@@ -21,7 +21,10 @@ public enum ToolResultStatus {
     PARTIAL_SUCCESS,
 
     /** 限流 — 建议等待 retryAfterMs 后重试。 */
-    RATE_LIMITED;
+    RATE_LIMITED,
+
+    /** 工具请求 Agent 挂起 — 等待外部事件后恢复。 */
+    SUSPENDED;
 
     /**
      * 是否成功（仅 {@code SUCCESS} 返回 {@code true}）。
@@ -34,9 +37,16 @@ public enum ToolResultStatus {
      * 是否为终态（不可重试）。
      *
      * <p>{@code SUCCESS} 和 {@code ERROR} 为终态；
-     * {@code PARTIAL_SUCCESS} 和 {@code RATE_LIMITED} 为非终态。</p>
+     * {@code PARTIAL_SUCCESS}、{@code RATE_LIMITED} 和 {@code SUSPENDED} 为非终态。</p>
      */
     public boolean isTerminal() {
         return this == SUCCESS || this == ERROR;
+    }
+
+    /**
+     * 是否需要挂起 Agent 循环。
+     */
+    public boolean isSuspend() {
+        return this == SUSPENDED;
     }
 }
