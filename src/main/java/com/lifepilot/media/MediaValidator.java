@@ -2,6 +2,11 @@ package com.lifepilot.media;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import com.lifepilot.llm.multimodal.MediaContent;
 import com.lifepilot.media.config.MediaProperties;
@@ -57,13 +62,13 @@ public class MediaValidator {
     /**
      * 批量校验媒体内容列表。
      * <p>
-     * 先检查图片数量限制，然后逐项调用 {@link #validate(MediaContent)}。
+     * 先检查图片数量限制（全局前置条件），然后使用 Virtual Thread 并行校验各条目。
      *
      * @param mediaList 待校验的媒体内容列表
      * @throws MediaValidationException 校验失败时抛出
      */
     public void validateAll(List<MediaContent> mediaList) {
-        // 检查图片数量限制
+        // 前置检查：图片数量限制（不可并行，全局条件）
         long imageCount = mediaList.stream()
                 .filter(mc -> mediaType.isImage(mc.mimeType()))
                 .count();
@@ -73,9 +78,23 @@ public class MediaValidator {
                     "单次请求图片数量超过限制: %d/%d".formatted(imageCount, maxPerRequest));
         }
 
-        // 逐项校验
-        for (MediaContent media : mediaList) {
-            validate(media);
+        // 并行校验：Virtual Thread + CompletableFuture
+        int timeout = properties.getValidation().getParallelTimeoutSeconds();
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            var futures = mediaList.stream()
+                    .map(media -> CompletableFuture.runAsync(() -> validate(media), executor))
+                    .toArray(CompletableFuture[]::new);
+
+            CompletableFuture.allOf(futures).get(timeout, TimeUnit.SECONDS);
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof MediaValidationException mve) throw mve;
+            throw new MediaValidationException("媒体校验失败: " + cause.getMessage());
+        } catch (TimeoutException e) {
+            throw new MediaValidationException("媒体校验超时（%d 秒）".formatted(timeout));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new MediaValidationException("媒体校验被中断");
         }
     }
 
