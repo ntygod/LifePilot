@@ -459,7 +459,7 @@ public class SkillController {
                 try (var walk = Files.walk(skillFolder)) {
                     walk.sorted(java.util.Comparator.reverseOrder())
                             .forEach(path -> {
-                                try { Files.deleteIfExists(path); } catch (IOException ignored) {}
+                                try { Files.deleteIfExists(path); } catch (IOException e) { log.debug("删除文件失败: {}", path, e); }
                             });
                 }
             }
