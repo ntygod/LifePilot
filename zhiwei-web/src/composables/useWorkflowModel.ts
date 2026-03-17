@@ -43,7 +43,6 @@ export interface LlmStepConfig {
   promptTemplate: string
   outputSchema?: string
   modelName?: string
-  preferredProviderId?: string
   media: LlmMediaConfig[]
 }
 
@@ -191,7 +190,6 @@ function createDefaultConfig(type: StepType): StepConfig {
         promptTemplate: '',
         outputSchema: undefined,
         modelName: undefined,
-        preferredProviderId: undefined,
         media: [],
       }
     case 'condition':
@@ -308,6 +306,7 @@ export function useWorkflowModel(): {
   removeStep: (stepId: string) => void
   updateStep: (stepId: string, updates: Partial<StepModel>) => void
   selectStep: (stepId: string | null) => void
+  findStep: (stepId: string) => StepModel | null
   addDependency: (fromStepId: string, toStepId: string) => boolean
   removeDependency: (fromStepId: string, toStepId: string) => void
   removeAllDependencies: (stepId: string) => void
@@ -335,9 +334,17 @@ export function useWorkflowModel(): {
     return step
   }
 
-  /** 删除步骤，同时清理所有引用该步骤的 dependsOn */
+  /** 删除步骤，同时清理所有引用该步骤的 dependsOn。支持删除嵌套步骤。 */
   function removeStep(stepId: string): void {
-    model.value.steps = model.value.steps.filter(s => s.id !== stepId)
+    // 先尝试从顶层删除
+    const topIdx = model.value.steps.findIndex(s => s.id === stepId)
+    if (topIdx >= 0) {
+      model.value.steps.splice(topIdx, 1)
+    } else {
+      // 从嵌套结构中递归删除
+      removeNestedStep(model.value.steps, stepId)
+    }
+    // 清理所有引用该步骤的 dependsOn（顶层）
     for (const step of model.value.steps) {
       step.dependsOn = step.dependsOn.filter(id => id !== stepId)
     }
@@ -347,9 +354,65 @@ export function useWorkflowModel(): {
     model.value.validationErrors.delete(stepId)
   }
 
-  /** 更新步骤字段 */
+  /** 递归从嵌套步骤中删除指定 ID 的步骤 */
+  function removeNestedStep(steps: StepModel[], targetId: string): boolean {
+    for (const step of steps) {
+      const config = step.config as any
+      if (step.type === 'condition' && config) {
+        if (removeFromList(config.thenSteps, targetId)) return true
+        if (removeFromList(config.elseSteps, targetId)) return true
+      }
+      if (step.type === 'loop' && config) {
+        if (removeFromList(config.body, targetId)) return true
+      }
+      if (step.type === 'parallel' && config?.branches) {
+        for (const branch of config.branches) {
+          if (removeFromList(branch, targetId)) return true
+        }
+      }
+    }
+    return false
+  }
+
+  /** 从步骤列表中删除指定 ID 的步骤，返回是否找到 */
+  function removeFromList(list: StepModel[] | undefined, targetId: string): boolean {
+    if (!list) return false
+    const idx = list.findIndex((s: StepModel) => s.id === targetId)
+    if (idx >= 0) {
+      list.splice(idx, 1)
+      return true
+    }
+    // 递归搜索更深层
+    return removeNestedStep(list, targetId)
+  }
+
+  /** 递归查找步骤（支持嵌套在条件/循环/并行分支中的步骤） */
+  function findStepRecursive(steps: StepModel[], stepId: string): StepModel | null {
+    for (const step of steps) {
+      if (step.id === stepId) return step
+      const config = step.config as any
+      if (step.type === 'condition' && config) {
+        const found = findStepRecursive(config.thenSteps ?? [], stepId)
+          ?? findStepRecursive(config.elseSteps ?? [], stepId)
+        if (found) return found
+      }
+      if (step.type === 'loop' && config?.body) {
+        const found = findStepRecursive(config.body, stepId)
+        if (found) return found
+      }
+      if (step.type === 'parallel' && config?.branches) {
+        for (const branch of config.branches) {
+          const found = findStepRecursive(branch, stepId)
+          if (found) return found
+        }
+      }
+    }
+    return null
+  }
+
+  /** 更新步骤字段（支持嵌套步骤） */
   function updateStep(stepId: string, updates: Partial<StepModel>): void {
-    const step = model.value.steps.find(s => s.id === stepId)
+    const step = findStepRecursive(model.value.steps, stepId)
     if (step) {
       Object.assign(step, updates)
     }
@@ -440,6 +503,7 @@ export function useWorkflowModel(): {
     removeStep,
     updateStep,
     selectStep,
+    findStep: (stepId: string) => findStepRecursive(model.value.steps, stepId),
     addDependency,
     removeDependency,
     removeAllDependencies,

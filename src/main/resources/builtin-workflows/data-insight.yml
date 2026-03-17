@@ -105,7 +105,7 @@ steps:
     type: tool
     toolId: builtin.datastore.add_document
     params:
-      collection: data-insights
+      collectionName: data-insights
       data: '{"title": "${inputs.analysisType} 数据洞察", "content": "${steps.format-report.output.result}", "type": "${inputs.analysisType}"}'
     dependsOn:
       - format-report

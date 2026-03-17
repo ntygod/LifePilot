@@ -94,7 +94,6 @@ function serializeStep(step: StepModel): Record<string, unknown> {
       obj.prompt = c.promptTemplate
       if (c.outputSchema) obj.outputSchema = c.outputSchema
       if (c.modelName) obj.modelName = c.modelName
-      if (c.preferredProviderId) obj.preferredProviderId = c.preferredProviderId
       if (c.media.length > 0) {
         obj.media = c.media.map(item => {
           const media: Record<string, unknown> = { source: item.source }
@@ -247,7 +246,6 @@ function deserializeConfig(type: StepType, obj: Record<string, unknown>): StepCo
         promptTemplate: String(obj.prompt ?? ''),
         outputSchema: obj.outputSchema != null ? String(obj.outputSchema) : undefined,
         modelName: obj.modelName != null ? String(obj.modelName) : undefined,
-        preferredProviderId: obj.preferredProviderId != null ? String(obj.preferredProviderId) : undefined,
         media: Array.isArray(obj.media)
           ? obj.media
             .filter((item): item is Record<string, unknown> => item != null && typeof item === 'object')

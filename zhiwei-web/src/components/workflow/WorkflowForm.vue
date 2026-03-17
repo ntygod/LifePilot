@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea'
 import VisualEditor from '@/components/workflow/editor/VisualEditor.vue'
 import { useWorkflowStore } from '@/stores/workflow'
 import { useUiStore } from '@/stores/ui'
+import { Maximize2, Minimize2 } from 'lucide-vue-next'
 
 const props = defineProps<{
   workflow?: WorkflowDetail | null
@@ -31,6 +32,7 @@ const loading = ref(false)
 const errors = ref<Record<string, string>>({})
 const validationResult = ref<ValidationResponse | null>(null)
 const validating = ref(false)
+const isFullscreen = ref(false)
 
 type EditorTab = 'visual' | 'yaml'
 const editorTab = ref<EditorTab>(props.mode === 'create' ? 'visual' : 'yaml')
@@ -169,11 +171,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown))
   <FormDialogShell
     :title="mode === 'create' ? '新建工作流' : mode === 'edit' ? '编辑工作流' : '复制工作流'"
     description="可通过可视化方式或 YAML 方式编辑工作流。"
-    content-class="sm:max-w-[min(1400px,calc(100vw-2rem))]"
+    :content-class="isFullscreen ? 'sm:max-w-none w-screen h-screen !rounded-none' : 'sm:max-w-[min(1400px,calc(100vw-2rem))]'"
     body-class="!overflow-hidden !px-0 !py-0"
     @close="emit('close')"
   >
-    <form id="workflow-form" class="flex h-[85vh] flex-col" @submit.prevent="handleSubmit">
+    <form id="workflow-form" :class="isFullscreen ? 'flex h-screen flex-col' : 'flex h-[85vh] flex-col'" @submit.prevent="handleSubmit">
       <div class="flex items-center gap-2 border-b border-border/70 px-6 py-4">
         <Button
           type="button"
@@ -191,8 +193,20 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown))
         >
           YAML 高级编辑
         </Button>
-        <div class="ml-auto text-xs text-muted-foreground">
-          快捷键：Ctrl/Cmd + Enter 保存
+        <div class="ml-auto flex items-center gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            title="切换全屏"
+            @click="isFullscreen = !isFullscreen"
+          >
+            <Minimize2 v-if="isFullscreen" class="h-4 w-4" />
+            <Maximize2 v-else class="h-4 w-4" />
+          </Button>
+          <span class="text-xs text-muted-foreground">
+            快捷键：Ctrl/Cmd + Enter 保存
+          </span>
         </div>
       </div>
 

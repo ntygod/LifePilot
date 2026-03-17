@@ -29,6 +29,7 @@ const {
   removeStep,
   updateStep,
   selectStep,
+  findStep,
   addDependency,
   removeDependency,
   removeAllDependencies,
@@ -37,10 +38,10 @@ const {
 
 const { serialize, deserialize } = useYamlSync()
 
-// 当前选中的步骤（计算属性）
+// 当前选中的步骤（支持嵌套步骤查找）
 const selectedStep = computed<StepModel | null>(() => {
   if (!model.value.selectedStepId) return null
-  return model.value.steps.find(s => s.id === model.value.selectedStepId) ?? null
+  return findStep(model.value.selectedStepId)
 })
 
 // ========== YAML 双向同步 ==========
@@ -122,7 +123,7 @@ function onUpdateStep(updates: Partial<StepModel>) {
 </script>
 
 <template>
-  <div class="flex h-full flex-col">
+  <div class="flex h-full min-h-0 flex-col">
     <!-- 元数据面板 -->
     <MetadataPanel
       :id="model.id"
@@ -140,7 +141,7 @@ function onUpdateStep(updates: Partial<StepModel>) {
     />
 
     <!-- 三栏编辑区域 -->
-    <div class="flex flex-1 overflow-hidden">
+    <div class="flex min-h-0 flex-1 overflow-hidden">
       <!-- 左侧：步骤面板 -->
       <StepPalette />
 

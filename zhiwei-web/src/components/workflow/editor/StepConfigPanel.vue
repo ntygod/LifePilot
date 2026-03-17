@@ -52,7 +52,7 @@ function updateField(field: keyof StepModel, value: unknown) {
 </script>
 
 <template>
-  <div class="flex h-full w-[320px] shrink-0 flex-col border-l bg-background">
+  <div class="flex h-full min-h-0 w-[320px] shrink-0 flex-col border-l bg-background">
     <!-- 未选中步骤时的占位提示 -->
     <div
       v-if="!step"
@@ -75,7 +75,7 @@ function updateField(field: keyof StepModel, value: unknown) {
 
       <Separator />
 
-      <ScrollArea class="flex-1">
+      <ScrollArea class="min-h-0 flex-1">
         <div class="space-y-4 p-4">
           <!-- 通用字段：步骤 ID -->
           <div class="space-y-1.5">

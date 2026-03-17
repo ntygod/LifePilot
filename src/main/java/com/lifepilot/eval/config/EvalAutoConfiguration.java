@@ -20,9 +20,21 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.event.EventListener;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.jdbc.core.JdbcTemplate;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.util.HashSet;
+import java.util.Set;
 
 
 /**
@@ -118,5 +130,91 @@ public class EvalAutoConfiguration {
                                   EvalConfigProperties config) {
         return new EvalEngine(scenarioLoader, reactAgentLoop, traceQuery,
                 evaluationCore, llmJudge, evalStore, evalReport, toolRegistry, config);
+    }
+
+    // ==================== 内置场景同步 ====================
+
+    /**
+     * 应用启动完成后，将 classpath:eval-scenarios/ 下的内置场景 YAML 同步到用户目录。
+     * 本地已存在同名文件时跳过，不覆盖用户自定义修改。
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    public void syncBuiltinScenarios(ApplicationReadyEvent event) {
+        var config = event.getApplicationContext().getBean(EvalConfigProperties.class);
+        Path scenarioDir = resolveScenarioDir(config.getScenarioDirectory());
+        int synced = 0;
+        int skipped = 0;
+
+        try {
+            if (!Files.exists(scenarioDir)) {
+                Files.createDirectories(scenarioDir);
+            }
+
+            Set<String> localFiles = listLocalYamlStems(scenarioDir);
+
+            var resolver = new PathMatchingResourcePatternResolver();
+            Resource[] resources = resolver.getResources("classpath:eval-scenarios/*.yml");
+
+            for (Resource resource : resources) {
+                String filename = resource.getFilename();
+                if (filename == null) {
+                    continue;
+                }
+                String stem = fileStem(filename);
+
+                if (localFiles.contains(stem)) {
+                    skipped++;
+                    log.debug("内置场景检测到本地同名文件，跳过: file={}", filename);
+                    continue;
+                }
+
+                try {
+                    String yaml = resource.getContentAsString(StandardCharsets.UTF_8);
+                    Path target = scenarioDir.resolve(filename);
+                    Files.writeString(target, yaml, StandardOpenOption.CREATE_NEW);
+                    synced++;
+                    log.info("内置场景已同步到用户目录: file={}", filename);
+                } catch (IOException e) {
+                    log.warn("同步内置场景失败: file={}, error={}", filename, e.getMessage());
+                }
+            }
+
+            log.info("内置场景同步完成: synced={}, skipped={}", synced, skipped);
+        } catch (IOException e) {
+            log.warn("内置场景同步异常: error={}", e.getMessage());
+        }
+    }
+
+    /** 解析场景目录路径，支持 ~ 前缀替换为用户主目录。 */
+    private static Path resolveScenarioDir(String dir) {
+        if (dir.startsWith("~")) {
+            return Path.of(System.getProperty("user.home") + dir.substring(1));
+        }
+        return Path.of(dir);
+    }
+
+    /** 列出本地场景目录中已有的 YAML 文件名（不含扩展名）。 */
+    private Set<String> listLocalYamlStems(Path dir) {
+        if (!Files.isDirectory(dir)) {
+            return Set.of();
+        }
+        var stems = new HashSet<String>();
+        try (var files = Files.list(dir)) {
+            files.filter(Files::isRegularFile)
+                    .map(p -> p.getFileName().toString())
+                    .filter(name -> name.endsWith(".yml") || name.endsWith(".yaml"))
+                    .map(this::fileStem)
+                    .forEach(stems::add);
+        } catch (IOException e) {
+            log.warn("读取场景目录失败: dir={}, error={}", dir, e.getMessage());
+            return Set.of();
+        }
+        return Set.copyOf(stems);
+    }
+
+    /** 提取文件名主干（去掉扩展名）。 */
+    private String fileStem(String fileName) {
+        int dotIndex = fileName.lastIndexOf('.');
+        return dotIndex > 0 ? fileName.substring(0, dotIndex) : fileName;
     }
 }

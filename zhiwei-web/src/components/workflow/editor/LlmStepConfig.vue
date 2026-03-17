@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed, onMounted, ref } from 'vue'
 import type { LlmStepConfig } from '@/composables/useWorkflowModel'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -6,6 +7,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Plus, Trash2 } from 'lucide-vue-next'
+import { settingsApi, type LlmProvider } from '@/api/client'
 
 const props = defineProps<{
   modelValue: LlmStepConfig
@@ -26,11 +28,40 @@ const capabilityOptions: LlmStepConfig['capability'][] = [
   'STT',
 ]
 
+// 从后端加载可用的 Provider 列表，提取 scene 和 model 选项
+const providers = ref<LlmProvider[]>([])
+
+onMounted(async () => {
+  try {
+    providers.value = await settingsApi.getProviders()
+  } catch (e) {
+    console.warn('加载 Provider 列表失败，下拉框将为空:', e)
+  }
+})
+
+/** 去重后的 scene 选项 */
+const sceneOptions = computed<string[]>(() => {
+  const scenes = new Set<string>()
+  for (const p of providers.value) {
+    if (p.scenes) p.scenes.forEach(s => scenes.add(s))
+  }
+  return [...scenes].sort()
+})
+
+/** 去重后的 model 选项 */
+const modelOptions = computed<string[]>(() => {
+  const models = new Set<string>()
+  for (const p of providers.value) {
+    if (p.modelName) models.add(p.modelName)
+  }
+  return [...models].sort()
+})
+
 function updateField<K extends keyof LlmStepConfig>(field: K, value: LlmStepConfig[K]) {
   emit('update:modelValue', { ...props.modelValue, [field]: value })
 }
 
-function updateOptionalField(field: 'outputSchema' | 'modelName' | 'preferredProviderId', value: string | number) {
+function updateOptionalField(field: 'outputSchema' | 'modelName', value: string | number) {
   const nextValue = String(value).trim()
   updateField(field, (nextValue.length > 0 ? nextValue : undefined) as LlmStepConfig[typeof field])
 }
@@ -72,12 +103,16 @@ function removeMedia(index: number) {
     <div class="grid gap-3 md:grid-cols-2">
       <div class="space-y-1.5">
         <Label class="text-xs">任务意图 Scene</Label>
-        <Input
-          :model-value="modelValue.scene"
-          placeholder="例如：chat / agent_react / knowledge_extraction"
-          class="h-8 text-sm"
-          @update:model-value="updateRequiredField('scene', $event)"
-        />
+        <Select :model-value="modelValue.scene || undefined" @update:model-value="(v: any) => { if (v) updateRequiredField('scene', v) }">
+          <SelectTrigger class="h-8 text-sm">
+            <SelectValue placeholder="选择任务意图" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem v-for="scene in sceneOptions" :key="scene" :value="scene">
+              {{ scene }}
+            </SelectItem>
+          </SelectContent>
+        </Select>
         <p class="text-[11px] text-muted-foreground">这里描述节点要完成的任务，不再使用 `workflow` 这类容器名。</p>
       </div>
 
@@ -96,26 +131,18 @@ function removeMedia(index: number) {
       </div>
     </div>
 
-    <div class="grid gap-3 md:grid-cols-2">
-      <div class="space-y-1.5">
-        <Label class="text-xs">指定模型（可选）</Label>
-        <Input
-          :model-value="modelValue.modelName ?? ''"
-          placeholder="例如：qwen3.5-flash"
-          class="h-8 text-sm"
-          @update:model-value="updateOptionalField('modelName', $event)"
-        />
-      </div>
-
-      <div class="space-y-1.5">
-        <Label class="text-xs">优先 Provider（可选）</Label>
-        <Input
-          :model-value="modelValue.preferredProviderId ?? ''"
-          placeholder="例如：aliyun-primary"
-          class="h-8 text-sm"
-          @update:model-value="updateOptionalField('preferredProviderId', $event)"
-        />
-      </div>
+    <div class="space-y-1.5">
+      <Label class="text-xs">指定模型（可选）</Label>
+      <Select :model-value="modelValue.modelName || undefined" @update:model-value="(v: any) => { if (v) updateOptionalField('modelName', v) }">
+        <SelectTrigger class="h-8 text-sm">
+          <SelectValue placeholder="选择模型" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem v-for="model in modelOptions" :key="model" :value="model">
+            {{ model }}
+          </SelectItem>
+        </SelectContent>
+      </Select>
     </div>
 
     <div class="space-y-1.5">

@@ -58,77 +58,36 @@ export function useDagLayout(): {
 
   /**
    * Kahn 拓扑排序分层算法（用于扁平化的 CanvasNode[]）。
-   * 
-   * 與 computeLayers 不同，這裡需要處理：
-   * 1. 使用 canvasId 而非 stepId
-   * 2. 分支內的節點從屬於同一個"虛擬層"
-   * 3. 同一分支內的節點按順序排列
-   * 
+   *
+   * 使用標準 Kahn 算法，不再按分支類型拆分層。
+   * 分支內的順序由 flattenNestedSteps 中的串聯依賴保證。
+   *
    * @param canvasNodes 扁平的畫布節點列表
    * @returns 分層結果，每層為 canvasId 數組
    */
   function computeCanvasLayers(canvasNodes: CanvasNode[]): string[][] {
-    // 構建入度表和鄰接表
+    // 構建 canvasId 集合，用於過濾無效依賴
+    const validIds = new Set(canvasNodes.map(n => n.canvasId))
+
+    // 構建入度表和鄰接表（只計算有效依賴）
     const inDegree = new Map<string, number>()
     const adj = new Map<string, string[]>()
 
     for (const node of canvasNodes) {
-      inDegree.set(node.canvasId, node.dependsOn.length)
-      for (const dep of node.dependsOn) {
+      const validDeps = node.dependsOn.filter(dep => validIds.has(dep))
+      inDegree.set(node.canvasId, validDeps.length)
+      for (const dep of validDeps) {
         if (!adj.has(dep)) adj.set(dep, [])
         adj.get(dep)!.push(node.canvasId)
       }
     }
 
-    // 構建分支分組映射
-    const branchNodes = new Map<string, string[]>() // parentId -> [child canvasIds]
-    for (const node of canvasNodes) {
-      if (node.parentStepId) {
-        if (!branchNodes.has(node.parentStepId)) {
-          branchNodes.set(node.parentStepId, [])
-        }
-        branchNodes.get(node.parentStepId)!.push(node.canvasId)
-      }
-    }
-
     const layers: string[][] = []
-    // 初始隊列：入度為0的節點
-    let queue = canvasNodes.filter(n => n.dependsOn.length === 0).map(n => n.canvasId)
+    let queue = canvasNodes.filter(n => (inDegree.get(n.canvasId) ?? 0) === 0).map(n => n.canvasId)
 
     while (queue.length > 0) {
-      // 對當前層的節點進行分組：根節點 vs 分支節點
-      const rootNodes: string[] = []
-      const branchGroups: Map<string, string[]> = new Map()
+      layers.push([...queue])
 
-      for (const id of queue) {
-        const node = canvasNodes.find(n => n.canvasId === id)
-        if (!node) continue
-
-        if (node.branch === 'root') {
-          rootNodes.push(id)
-        } else {
-          // 分支節點，按父節點分組
-          const parentId = node.parentStepId!
-          if (!branchGroups.has(parentId)) {
-            branchGroups.set(parentId, [])
-          }
-          branchGroups.get(parentId)!.push(id)
-        }
-      }
-
-      // 首先添加根節點
-      if (rootNodes.length > 0) {
-        layers.push(rootNodes)
-      }
-
-      // 然後添加每個分支組（作為同一層）
-      for (const [, group] of branchGroups) {
-        if (group.length > 0) {
-          layers.push(group)
-        }
-      }
-
-      // 計算下一層
       const nextQueue: string[] = []
       for (const id of queue) {
         for (const next of (adj.get(id) ?? [])) {

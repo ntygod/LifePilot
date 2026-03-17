@@ -29,6 +29,12 @@ const emit = defineEmits<{
 const { computeCanvasLayers } = useDagLayout()
 const containerRef = ref<HTMLElement | null>(null)
 
+// ── 画布平移状态 ──
+const isPanning = ref(false)
+const panStart = ref({ x: 0, y: 0 })
+const panOffset = ref({ x: 0, y: 0 })
+const panOffsetStart = ref({ x: 0, y: 0 })
+
 // ── 扁平化的画布節點計算 ──
 const canvasNodes = computed<CanvasNode[]>(() => flattenNestedSteps(props.steps))
 const conditionExits = computed<Map<string, ConditionExits>>(() => getConditionExits(canvasNodes.value))
@@ -179,6 +185,7 @@ interface ContextMenuState {
   y: number
   type: 'step' | 'line'
   stepId?: string
+  canvasId?: string
   fromId?: string
   toId?: string
 }
@@ -271,20 +278,20 @@ function onNodeMouseDown(e: MouseEvent, stepId: string) {
   draggingNodeId.value = stepId
   const containerRect = containerRef.value.getBoundingClientRect()
   dragOffset.value = {
-    x: e.clientX - containerRect.left + containerRef.value.scrollLeft - pos.x,
-    y: e.clientY - containerRect.top + containerRef.value.scrollTop - pos.y,
+    x: e.clientX - containerRect.left + containerRef.value.scrollLeft - panOffset.value.x - pos.x,
+    y: e.clientY - containerRect.top + containerRef.value.scrollTop - panOffset.value.y - pos.y,
   }
 
   document.addEventListener('mousemove', onNodeDragMove)
   document.addEventListener('mouseup', onNodeDragEnd)
 }
 
-/** 节点拖拽中 → 更新位置 */
+/** 节点拖拽中 → 更新位置（考虑平移偏移） */
 function onNodeDragMove(e: MouseEvent) {
   if (!draggingNodeId.value || !containerRef.value) return
   const containerRect = containerRef.value.getBoundingClientRect()
-  const newX = e.clientX - containerRect.left + containerRef.value.scrollLeft - dragOffset.value.x
-  const newY = e.clientY - containerRect.top + containerRef.value.scrollTop - dragOffset.value.y
+  const newX = e.clientX - containerRect.left + containerRef.value.scrollLeft - panOffset.value.x - dragOffset.value.x
+  const newY = e.clientY - containerRect.top + containerRef.value.scrollTop - panOffset.value.y - dragOffset.value.y
   setPos(draggingNodeId.value, {
     x: Math.max(0, newX),
     y: Math.max(0, newY),
@@ -375,13 +382,13 @@ function onConnectMouseUp(e: MouseEvent) {
   cancelConnection()
 }
 
-/** 更新鼠标位置（相对于画布内容区域） */
+/** 更新鼠标位置（相对于画布内容区域，考虑平移偏移） */
 function updateMousePos(e: MouseEvent) {
   if (!containerRef.value) return
   const rect = containerRef.value.getBoundingClientRect()
   mousePos.value = {
-    x: e.clientX - rect.left + containerRef.value.scrollLeft,
-    y: e.clientY - rect.top + containerRef.value.scrollTop,
+    x: e.clientX - rect.left + containerRef.value.scrollLeft - panOffset.value.x,
+    y: e.clientY - rect.top + containerRef.value.scrollTop - panOffset.value.y,
   }
 }
 
@@ -407,8 +414,8 @@ function onDrop(e: DragEvent) {
     // 在 drop 位置放置新节点
     if (containerRef.value) {
       const rect = containerRef.value.getBoundingClientRect()
-      const dropX = e.clientX - rect.left + containerRef.value.scrollLeft - NODE_WIDTH / 2
-      const dropY = e.clientY - rect.top + containerRef.value.scrollTop - NODE_HEIGHT / 2
+      const dropX = e.clientX - rect.left + containerRef.value.scrollLeft - panOffset.value.x - NODE_WIDTH / 2
+      const dropY = e.clientY - rect.top + containerRef.value.scrollTop - panOffset.value.y - NODE_HEIGHT / 2
       // 先 emit 添加步骤，然后在 watch 中为新步骤设置 drop 位置
       pendingDropPos.value = { x: Math.max(0, dropX), y: Math.max(0, dropY) }
     }
@@ -436,12 +443,64 @@ function onKeyDown(e: KeyboardEvent) {
   }
 }
 
+// ── 画布平移交互 ──
+
+/** 画布 mousedown → 左键在空白区域开始平移，中键任意位置平移 */
+function onCanvasMouseDown(e: MouseEvent) {
+  // 中键拖动（任意位置）
+  if (e.button === 1) {
+    e.preventDefault()
+    startPanning(e)
+    return
+  }
+  // 左键：只在空白画布区域触发拖动（不在节点、锚点上）
+  if (e.button === 0) {
+    const target = e.target as HTMLElement
+    // 如果点击的是节点、锚点、按钮等交互元素，不启动平移
+    if (target.closest('[data-step-id]') || target.closest('[data-anchor-input]') || target.closest('[data-anchor-output]') || target.closest('button')) {
+      return
+    }
+    e.preventDefault()
+    startPanning(e)
+  }
+}
+
+function startPanning(e: MouseEvent) {
+  isPanning.value = true
+  panStart.value = { x: e.clientX, y: e.clientY }
+  panOffsetStart.value = { ...panOffset.value }
+  document.addEventListener('mousemove', onPanMove)
+  document.addEventListener('mouseup', onPanEnd)
+}
+
+function onPanMove(e: MouseEvent) {
+  if (!isPanning.value) return
+  const dx = e.clientX - panStart.value.x
+  const dy = e.clientY - panStart.value.y
+  panOffset.value = {
+    x: panOffsetStart.value.x + dx,
+    y: panOffsetStart.value.y + dy,
+  }
+}
+
+function onPanEnd() {
+  isPanning.value = false
+  document.removeEventListener('mousemove', onPanMove)
+  document.removeEventListener('mouseup', onPanEnd)
+}
+
 // ── 右键上下文菜单 ──
 
 function onNodeContextMenu(e: MouseEvent, stepId: string) {
   e.preventDefault()
   e.stopPropagation()
-  contextMenu.value = { x: e.clientX, y: e.clientY, type: 'step', stepId }
+  // stepId 这里实际是 canvasId，需要查找对应的原始 stepId
+  const node = canvasNodes.value.find(n => n.canvasId === stepId)
+  contextMenu.value = {
+    x: e.clientX, y: e.clientY, type: 'step',
+    stepId: node?.stepId ?? stepId,
+    canvasId: stepId,
+  }
 }
 
 function onLineContextMenu(e: MouseEvent, fromId: string, toId: string) {
@@ -460,7 +519,7 @@ function ctxDeleteStep() {
 }
 
 function ctxDisconnectAll() {
-  if (contextMenu.value?.stepId) emit('disconnect', contextMenu.value.stepId, '')
+  if (contextMenu.value?.canvasId) emit('disconnect', contextMenu.value.canvasId, '')
   closeContextMenu()
 }
 
@@ -559,6 +618,7 @@ onMounted(() => {
 onUnmounted(() => {
   cancelConnection()
   if (draggingNodeId.value) onNodeDragEnd()
+  if (isPanning.value) onPanEnd()
   document.removeEventListener('click', onDocumentClickForMenu)
 })
 
@@ -570,12 +630,14 @@ function onDocumentClickForMenu() {
 <template>
   <div
     ref="containerRef"
-    class="relative flex-1 overflow-auto bg-muted/30 outline-none"
+    class="relative flex-1 overflow-auto bg-muted/30 outline-none cursor-grab"
+    :class="{ '!cursor-grabbing': isPanning }"
     tabindex="0"
     @dragover="onDragOver"
     @drop="onDrop"
     @keydown="onKeyDown"
     @click="onContainerClick"
+    @mousedown="onCanvasMouseDown"
   >
     <!-- 空画布引导提示 -->
     <div
@@ -590,6 +652,15 @@ function onDocumentClickForMenu() {
 
     <!-- 有步骤时：SVG 连线层 + 绝对定位节点 -->
     <template v-else>
+      <!-- 可滚动内容区域（确保 SVG 和节点层都在同一个可滚动容器内） -->
+      <div
+        class="relative"
+        :style="{
+          minWidth: canvasSize.width + 'px',
+          minHeight: canvasSize.height + 'px',
+          transform: `translate(${panOffset.x}px, ${panOffset.y}px)`,
+        }"
+      >
       <!-- SVG 连线层 -->
       <svg
         class="absolute inset-0"
@@ -753,6 +824,7 @@ function onDocumentClickForMenu() {
             @mousedown.stop="onAnchorMouseDown($event, node.canvasId)"
           />
         </div>
+      </div>
       </div>
     </template>
 

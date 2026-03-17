@@ -34,101 +34,107 @@ export interface CanvasNode {
 
 /**
  * 將嵌套的 steps 轉為扁平的畫布節點列表。
- * 
+ *
  * 處理以下類型的嵌套：
  * - condition: thenSteps, elseSteps
  * - loop: body
  * - parallel: branches[]
- * 
- * @param steps 頂層步驟列表（來自工作流的 steps 字段）
- * @returns 扁平的畫布節點數組
+ *
+ * 分支內的步驟按順序串聯：第一步依賴父節點，後續步驟依賴前一步。
+ * 這確保了分支內的步驟在畫布上按正確的垂直順序排列。
  */
 export function flattenNestedSteps(steps: StepModel[]): CanvasNode[] {
   const canvasNodes: CanvasNode[] = []
-  
-  // 遞迴處理嵌套步驟
-  function processStep(step: StepModel, branch: BranchType, parentId: string | null, parentDependsOn: string[]) {
-    // 為當前步驟生成畫布 ID
-    const canvasId = branch === 'root' ? step.id : `${parentId}-${branch}-${step.id}`
-    
-    // 計算當前步驟的依賴
-    // 分支內的第一步默認依賴於父條件節點
-    const currentDependsOn: string[] = []
-    
-    if (branch !== 'root') {
-      // 分支內的步驟默認依賴父節點
-      if (parentId) {
-        currentDependsOn.push(parentId)
-      }
-    }
-    
-    // 加上原始的外部依賴（指向其他頂層步驟）
-    for (const depId of step.dependsOn) {
-      // 需要找到depId對應的畫布ID（如果是頂層步驟，畫布ID就是step.id）
-      const depStep = steps.find(s => s.id === depId)
-      if (depStep) {
-        // 外部依賴仍然指向頂層節點
-        currentDependsOn.push(depId)
-      }
-    }
-    
-    const node: CanvasNode = {
-      canvasId,
-      stepId: step.id,
-      name: step.name,
-      type: step.type,
-      branch,
-      parentStepId: parentId,
-      dependsOn: currentDependsOn,
-      rawStep: step,
-    }
-    
-    canvasNodes.push(node)
-    
-    // 遞迴處理嵌套的步驟
-    const config = step.config as any
-    
-    // 條件分支
-    if (step.type === 'condition' && config) {
-      if (config.thenSteps && Array.isArray(config.thenSteps)) {
-        for (const thenStep of config.thenSteps) {
-          processStep(thenStep, 'then', canvasId, [canvasId])
+  // 頂層步驟 ID 集合，用於判斷外部依賴
+  const topLevelIds = new Set(steps.map(s => s.id))
+
+  /**
+   * 遞迴處理步驟列表。
+   * @param stepList 步驟列表（可能是頂層、分支內、循環體內）
+   * @param branch 分支歸屬
+   * @param parentCanvasId 父節點的畫布 ID
+   * @param isSequential 是否按順序串聯（分支/循環體內為 true）
+   */
+  function processStepList(
+    stepList: StepModel[],
+    branch: BranchType,
+    parentCanvasId: string | null,
+    isSequential: boolean,
+  ) {
+    let prevCanvasId: string | null = null
+
+    for (const step of stepList) {
+      const canvasId = branch === 'root' ? step.id : `${parentCanvasId}-${branch}-${step.id}`
+
+      // 計算依賴
+      const currentDependsOn: string[] = []
+
+      if (isSequential) {
+        if (prevCanvasId) {
+          // 非第一步：依賴前一步（串聯）
+          currentDependsOn.push(prevCanvasId)
+        } else if (parentCanvasId) {
+          // 第一步：依賴父節點
+          currentDependsOn.push(parentCanvasId)
         }
       }
-      if (config.elseSteps && Array.isArray(config.elseSteps)) {
-        for (const elseStep of config.elseSteps) {
-          processStep(elseStep, 'else', canvasId, [canvasId])
-        }
-      }
-    }
-    
-    // 循環步驟
-    if (step.type === 'loop' && config) {
-      if (config.body && Array.isArray(config.body)) {
-        for (const loopStep of config.body) {
-          processStep(loopStep, 'loop', canvasId, [canvasId])
-        }
-      }
-    }
-    
-    // 並行步驟
-    if (step.type === 'parallel' && config) {
-      if (config.branches && Array.isArray(config.branches)) {
-        config.branches.forEach((branchSteps: StepModel[], branchIndex: number) => {
-          const branchType = `branch-${branchIndex}` as BranchType
-          for (const branchStep of branchSteps) {
-            processStep(branchStep, branchType, canvasId, [canvasId])
+
+      // 頂層步驟保留原始的外部依賴
+      if (branch === 'root') {
+        for (const depId of step.dependsOn) {
+          if (topLevelIds.has(depId) && !currentDependsOn.includes(depId)) {
+            currentDependsOn.push(depId)
           }
-        })
+        }
       }
+
+      const node: CanvasNode = {
+        canvasId,
+        stepId: step.id,
+        name: step.name,
+        type: step.type,
+        branch,
+        parentStepId: parentCanvasId,
+        dependsOn: currentDependsOn,
+        rawStep: step,
+      }
+
+      canvasNodes.push(node)
+
+      // 遞迴處理嵌套的步驟
+      const config = step.config as any
+
+      if (step.type === 'condition' && config) {
+        if (config.thenSteps && Array.isArray(config.thenSteps)) {
+          processStepList(config.thenSteps, 'then', canvasId, true)
+        }
+        if (config.elseSteps && Array.isArray(config.elseSteps)) {
+          processStepList(config.elseSteps, 'else', canvasId, true)
+        }
+      }
+
+      if (step.type === 'loop' && config) {
+        if (config.body && Array.isArray(config.body)) {
+          processStepList(config.body, 'loop', canvasId, true)
+        }
+      }
+
+      if (step.type === 'parallel' && config) {
+        if (config.branches && Array.isArray(config.branches)) {
+          config.branches.forEach((branchSteps: StepModel[], branchIndex: number) => {
+            const branchType = `branch-${branchIndex}` as BranchType
+            processStepList(branchSteps, branchType, canvasId, true)
+          })
+        }
+      }
+
+      prevCanvasId = canvasId
     }
   }
-  
-  // 處理所有頂層步驟
-  for (const step of steps) {
-    processStep(step, 'root', null, [])
-  }
-  
+
+  // 頂層步驟不串聯（由 dependsOn 控制）
+  processStepList(steps, 'root', null, false)
+
   return canvasNodes
 }
 
@@ -145,20 +151,20 @@ export interface ConditionExits {
  */
 export function getConditionExits(canvasNodes: CanvasNode[]): Map<string, ConditionExits> {
   const exitsMap = new Map<string, ConditionExits>()
-  
+
   for (const node of canvasNodes) {
     if (node.type === 'condition') {
       // 查找 then 分支的第一個節點
       const thenNode = canvasNodes.find(n => n.parentStepId === node.canvasId && n.branch === 'then')
       // 查找 else 分支的第一個節點
       const elseNode = canvasNodes.find(n => n.parentStepId === node.canvasId && n.branch === 'else')
-      
+
       exitsMap.set(node.canvasId, {
         then: thenNode?.canvasId ?? null,
         else: elseNode?.canvasId ?? null,
       })
     }
   }
-  
+
   return exitsMap
 }

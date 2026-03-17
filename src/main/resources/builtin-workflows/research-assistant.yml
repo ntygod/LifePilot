@@ -34,8 +34,8 @@ steps:
     type: tool
     toolId: builtin.datastore.query_documents
     params:
-      collection: knowledge-base
-      filter: "{\"tags\": {\"$contains\": \"${inputs.topic}\"}}"
+      collectionName: knowledge-base
+      filters: "[{\"field\":\"tags\",\"op\":\"CONTAINS\",\"value\":\"${inputs.topic}\"}]"
       limit: "5"
     errorStrategy:
       type: skip

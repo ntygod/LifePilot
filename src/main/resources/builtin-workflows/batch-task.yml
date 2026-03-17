@@ -26,8 +26,8 @@ steps:
     type: tool
     toolId: builtin.datastore.query_documents
     params:
-      collection: "${inputs.queueName}"
-      filter: '{"status": "pending"}'
+      collectionName: "${inputs.queueName}"
+      filters: "[{\"field\":\"status\",\"op\":\"EQ\",\"value\":\"pending\"}]"
       limit: "${inputs.maxItems}"
     errorStrategy:
       type: skip
@@ -114,7 +114,6 @@ steps:
             type: tool
             toolId: builtin.datastore.update_document
             params:
-              collection: "${inputs.queueName}"
               documentId: "${task.id}"
               data: '{"status": "completed", "processedAt": "${now}"}'
             errorStrategy:
