@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { Loader2, Play } from 'lucide-vue-next'
 import {
   Dialog,
-  DialogScrollContent,
+  DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
@@ -90,7 +90,7 @@ async function handleConfirm() {
 
 <template>
   <Dialog v-model:open="open">
-    <DialogScrollContent class="sm:max-w-lg">
+    <DialogContent class="sm:max-w-[32rem]">
       <DialogHeader>
         <DialogTitle>运行评估</DialogTitle>
         <DialogDescription>选择运行模式并确认开始评估</DialogDescription>
@@ -172,6 +172,6 @@ async function handleConfirm() {
           {{ running ? '运行中...' : '开始运行' }}
         </Button>
       </DialogFooter>
-    </DialogScrollContent>
+    </DialogContent>
   </Dialog>
 </template>
