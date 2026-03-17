@@ -12,10 +12,7 @@ import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -93,7 +90,7 @@ public class WorkingMemory {
                         null,
                         "L1_APPEND",
                         "Append slot to working memory: " + slot.getClass().getSimpleName(),
-                        java.util.Map.of(
+                        Map.of(
                                 "tokenCount", slot.tokenCount(),
                                 "importance", slot.importance()
                         )
