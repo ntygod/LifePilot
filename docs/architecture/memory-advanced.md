@@ -2,7 +2,7 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.memory`（进阶子系统：procedural / consolidation / forgetting）
-> **最后更新**：2026-03
+> **最后更新**：2026-03-18
 
 ## 1. 模块概述
 
@@ -30,8 +30,10 @@ graph TB
         CP["ConsolidationPipeline<br/>(@Scheduled)"]
         E2S["EpisodicToSemantic<br/>Consolidator"]
         E2P["EpisodicToProcedural<br/>Consolidator"]
+        EM_M["ExperienceMerger"]
         CS["ConsolidationStats"]
         CP --> E2S
+        CP --> EM_M
         CP --> E2P
         E2S --> CS
         E2P --> CS
@@ -108,8 +110,9 @@ graph TB
 
 ### 3.5 ConsolidationPipeline（巩固管线编排）
 
-- 职责：编排语义巩固和程序巩固的执行顺序
-- 顺序执行：语义巩固 → 程序巩固，故障隔离（try-catch 独立包裹）
+- 职责：编排语义巩固、经验合并和程序巩固的执行顺序
+- 顺序执行：语义巩固 → 偏好同步 → 经验合并（ExperienceMerger）→ 经验提升 → 程序巩固，故障隔离（try-catch 独立包裹）
+- 经验合并阶段：通过 ExperienceMerger 将语义相似的 EXPERIENCE 实体合并为泛化的元经验
 - 通过 `@Scheduled` Cron 表达式定时触发
 - 支持手动调用 `consolidate()` 方法（为 Idle-Driven 触发模式预留）
 - 返回 `ConsolidationStats` 统计信息（分析对话数、提升实体数、创建模板数）
@@ -141,6 +144,7 @@ sequenceDiagram
     participant SCH as Spring Scheduler
     participant CP as ConsolidationPipeline
     participant E2S as EpisodicToSemantic
+    participant EM_M as ExperienceMerger
     participant E2P as EpisodicToProcedural
     participant EM as EpisodicMemory
     participant SM as SemanticMemory
@@ -152,12 +156,18 @@ sequenceDiagram
     E2S->>SM: 提取实体 + 提升重要度
     E2S-->>CP: ConsolidationStats(语义)
 
+    CP->>EM_M: merge()
+    EM_M->>SM: 加载 EXPERIENCE 实体
+    EM_M->>EM_M: 向量相似度检测 + LLM 合并
+    EM_M->>SM: 写入元经验 + 归档原始
+    EM_M-->>CP: MergeStats
+
     CP->>E2P: consolidate()
     E2P->>EM: 读取对话轨迹
     E2P->>PM: 聚类生成模板 + 提取偏好
     E2P-->>CP: ConsolidationStats(程序)
 
-    Note over CP: 单个巩固器异常不阻塞另一个
+    Note over CP: 每个阶段异常不阻塞后续阶段
 ```
 
 ### 4.2 MaRS 遗忘流程
