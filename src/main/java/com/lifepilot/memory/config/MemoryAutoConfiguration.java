@@ -23,7 +23,6 @@ import com.lifepilot.interaction.web.repository.MessageFeedbackRepository;
 import com.lifepilot.memory.retrieval.InjectionRecordRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.prompt.PromptRegistry;
-import com.lifepilot.eval.store.EvalStore;
 import com.lifepilot.memory.procedural.IntentMatcher;
 import com.lifepilot.memory.procedural.ProceduralMemory;
 import com.lifepilot.memory.retrieval.FtsSearcher;
@@ -46,7 +45,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -646,11 +644,10 @@ public class MemoryAutoConfiguration {
             LlmRouter llmRouter,
             PromptRegistry promptRegistry,
             MemoryProperties properties,
-            TrajectoryQualityAssessor qualityAssessor,
-            @Autowired(required = false) EvalStore evalStore) {
+            TrajectoryQualityAssessor qualityAssessor) {
         log.info("记忆系统: 注册 ExperienceSummarizer");
         return new ExperienceSummarizer(semanticMemory, vectorSearcher, llmRouter,
-                promptRegistry, properties, qualityAssessor, evalStore);
+                promptRegistry, properties, qualityAssessor);
     }
 
     // --- 经验学习增强 ---

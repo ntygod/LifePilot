@@ -155,16 +155,20 @@ public class ConsolidationPipeline {
     }
 
     /**
-     * 将高频经验（importanceScore ≥ 0.8 且 accessCount ≥ 3）提升为 L4 ProcedureTemplate。
+     * 将高频经验（importanceScore 和 accessCount 达到配置阈值）提升为 L4 ProcedureTemplate。
      *
      * @return 提升的经验数量
      */
     private int promoteHighFrequencyExperiences() {
+        var consolidationConfig = properties.getConsolidation();
+        float minImportance = consolidationConfig.getExperiencePromoteMinImportance();
+        int minAccessCount = consolidationConfig.getExperiencePromoteMinAccessCount();
+
         var experiences = semanticMemory.findCurrentByType(EntityType.EXPERIENCE);
         int promoted = 0;
 
         for (var exp : experiences) {
-            if (exp.importanceScore() >= 0.8f && exp.accessCount() >= 3) {
+            if (exp.importanceScore() >= minImportance && exp.accessCount() >= minAccessCount) {
                 // 检查是否已存在同名模板（避免重复提升）
                 var existing = proceduralMemory.findById(exp.id());
                 if (existing.isPresent()) continue;

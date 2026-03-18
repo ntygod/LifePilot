@@ -9,9 +9,12 @@ import org.springframework.transaction.annotation.Transactional;
 import jakarta.annotation.Nullable;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * L2 情景记忆服务 — 管理对话记录的持久化存储与检索。
@@ -113,11 +116,7 @@ public class EpisodicMemory {
                         Instant.parse(rs.getString("updated_at"))),
                 limit);
 
-        // 填充每个对话的消息列表
-        return conversations.stream()
-                .map(c -> new ConversationRecord(c.id(), c.sessionId(), c.goal(), c.summary(),
-                        loadMessages(c.id()), c.createdAt(), c.updatedAt()))
-                .toList();
+        return assembleWithMessages(conversations);
     }
 
     /**
@@ -146,10 +145,7 @@ public class EpisodicMemory {
                         Instant.parse(rs.getString("updated_at"))),
                 since);
 
-        return conversations.stream()
-                .map(c -> new ConversationRecord(c.id(), c.sessionId(), c.goal(), c.summary(),
-                        loadMessages(c.id()), c.createdAt(), c.updatedAt()))
-                .toList();
+        return assembleWithMessages(conversations);
     }
 
     /**
@@ -292,10 +288,7 @@ public class EpisodicMemory {
                         Instant.parse(rs.getString("updated_at"))),
                 "%" + intentType + "%", limit);
 
-        return conversations.stream()
-                .map(c -> new ConversationRecord(c.id(), c.sessionId(), c.goal(), c.summary(),
-                        loadMessages(c.id()), c.createdAt(), c.updatedAt()))
-                .toList();
+        return assembleWithMessages(conversations);
     }
 
     /**
@@ -377,6 +370,62 @@ public class EpisodicMemory {
         }
         log.info("情景记忆压缩: conversationId={}, level={}, count={}",
                 conversationId, targetLevel, compressedTexts.size());
+    }
+
+    /**
+     * 批量加载 messages 并组装到 conversations，消除 N+1 查询。
+     *
+     * <p>用 IN 子句一次查询所有 messages，按 conversation_id 分组后组装。
+     * SQLite 默认参数上限 999，超过时分批查询。</p>
+     */
+    private List<ConversationRecord> assembleWithMessages(List<ConversationRecord> conversations) {
+        if (conversations.isEmpty()) {
+            return List.of();
+        }
+        List<String> ids = conversations.stream().map(ConversationRecord::id).toList();
+        Map<String, List<MessageRecord>> messagesByConvId = batchLoadMessages(ids);
+        return conversations.stream()
+                .map(c -> new ConversationRecord(c.id(), c.sessionId(), c.goal(), c.summary(),
+                        messagesByConvId.getOrDefault(c.id(), List.of()), c.createdAt(), c.updatedAt()))
+                .toList();
+    }
+
+    /**
+     * 批量加载指定对话 ID 列表的所有消息，按 conversation_id 分组返回。
+     *
+     * <p>SQLite 默认参数上限 999，超过时自动分批查询。</p>
+     */
+    private Map<String, List<MessageRecord>> batchLoadMessages(List<String> conversationIds) {
+        if (conversationIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, List<MessageRecord>> result = new HashMap<>();
+        int batchSize = 500; // 留余量，SQLite 上限 999
+        for (int i = 0; i < conversationIds.size(); i += batchSize) {
+            List<String> batch = conversationIds.subList(i, Math.min(i + batchSize, conversationIds.size()));
+            String placeholders = batch.stream().map(_ -> "?").collect(Collectors.joining(","));
+            String sql = "SELECT id, conversation_id, role, content, compressed_content, compression_level, " +
+                    "is_pinned, tool_call_json, token_count, created_at " +
+                    "FROM messages WHERE conversation_id IN (" + placeholders + ") ORDER BY created_at";
+            Object[] params = batch.toArray();
+            List<MessageRecord> messages = jdbcTemplate.query(sql,
+                    (rs, rowNum) -> new MessageRecord(
+                            rs.getString("id"),
+                            rs.getString("conversation_id"),
+                            rs.getString("role"),
+                            rs.getString("content"),
+                            rs.getString("compressed_content"),
+                            CompressionLevel.fromLevel(rs.getInt("compression_level")),
+                            rs.getInt("is_pinned") == 1,
+                            rs.getString("tool_call_json"),
+                            rs.getInt("token_count"),
+                            Instant.parse(rs.getString("created_at"))),
+                    params);
+            for (var msg : messages) {
+                result.computeIfAbsent(msg.conversationId(), _ -> new ArrayList<>()).add(msg);
+            }
+        }
+        return result;
     }
 
     /**

@@ -353,6 +353,12 @@ public class MemoryProperties {
         /** 空闲触发冷却期（分钟），默认 60。 */
         private int idleCooldownMinutes = 60;
 
+        /** 经验提升最低重要度阈值 [0.0, 1.0]，默认 0.8。 */
+        private float experiencePromoteMinImportance = 0.8f;
+
+        /** 经验提升最低访问次数，默认 3。 */
+        private int experiencePromoteMinAccessCount = 3;
+
         public String getCron() { return cron; }
         public void setCron(String cron) { this.cron = cron; }
 
@@ -400,6 +406,12 @@ public class MemoryProperties {
 
         public int getIdleCooldownMinutes() { return idleCooldownMinutes; }
         public void setIdleCooldownMinutes(int idleCooldownMinutes) { this.idleCooldownMinutes = idleCooldownMinutes; }
+
+        public float getExperiencePromoteMinImportance() { return experiencePromoteMinImportance; }
+        public void setExperiencePromoteMinImportance(float experiencePromoteMinImportance) { this.experiencePromoteMinImportance = experiencePromoteMinImportance; }
+
+        public int getExperiencePromoteMinAccessCount() { return experiencePromoteMinAccessCount; }
+        public void setExperiencePromoteMinAccessCount(int experiencePromoteMinAccessCount) { this.experiencePromoteMinAccessCount = experiencePromoteMinAccessCount; }
     }
 
     /**

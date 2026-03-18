@@ -74,8 +74,16 @@ public class VectorSearcher {
      * @return 检索结果列表
      */
     public List<VectorSearchResult> searchEntities(String queryText, int topK, float threshold) {
+        // 缓存 embed 结果，避免异常降级时重复调用 LLM
+        float[] queryVector;
         try {
-            float[] queryVector = llmRouter.embed(queryText);
+            queryVector = llmRouter.embed(queryText);
+        } catch (Exception e) {
+            log.warn("向量检索: embed 调用失败, error={}", e.getMessage());
+            return List.of();
+        }
+
+        try {
             if (vecExtensionLoaded) {
                 return searchWithVec(queryVector, topK, threshold);
             }
@@ -83,7 +91,6 @@ public class VectorSearcher {
         } catch (Exception e) {
             log.warn("向量检索: 检索异常，降级为 JVM 暴力搜索, error={}", e.getMessage());
             try {
-                float[] queryVector = llmRouter.embed(queryText);
                 return searchWithJvmFallback(queryVector, topK, threshold);
             } catch (Exception fallbackEx) {
                 log.warn("向量检索: JVM 暴力搜索也失败, error={}", fallbackEx.getMessage());

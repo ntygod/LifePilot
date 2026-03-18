@@ -122,9 +122,10 @@ public class HybridRetriever {
         var graphFuture = CompletableFuture.supplyAsync(
                 () -> graphTraverser.traverse(query, topK), virtualThreadExecutor);
 
-        // L4: 并行执行 IntentMatcher（不参与 RRF 融合）
+        // L4: 并行执行 IntentMatcher（不参与 RRF 融合，与三路检索一起等待）
+        CompletableFuture<Void> intentFuture = null;
         if (intentMatcher != null) {
-            CompletableFuture.runAsync(() -> {
+            intentFuture = CompletableFuture.runAsync(() -> {
                 try {
                     var matchOpt = intentMatcher.match(query);
                     matchOpt.ifPresent(match -> {
@@ -139,7 +140,14 @@ public class HybridRetriever {
                 } catch (Exception e) {
                     log.warn("混合检索: L4 意图匹配失败, error={}", e.getMessage());
                 }
-            }, virtualThreadExecutor).join(); // join 确保 L4 结果在 retrieve 返回前可用
+            }, virtualThreadExecutor);
+        }
+
+        // 等待所有并行任务完成（三路检索 + 可选 L4 意图匹配）
+        if (intentFuture != null) {
+            CompletableFuture.allOf(vectorFuture, ftsFuture, graphFuture, intentFuture).join();
+        } else {
+            CompletableFuture.allOf(vectorFuture, ftsFuture, graphFuture).join();
         }
 
         // 收集结果，任一路失败时使用空列表

@@ -220,6 +220,8 @@ public class RealtimeExtractor {
     /** 执行 ADD 操作：创建新实体。 */
     private void executeAdd(AudnDecision decision, String sessionId) {
         var now = Instant.now();
+        float confidence = safeFloat(decision.extractionConfidence(), 0.5f);
+        float importance = safeFloat(decision.importanceScore(), 0.5f);
         // source_conversation_id 传 null：实时提取在每轮对话后立即执行，
         // 此时 conversations 记录尚未创建（L1→L2 flush 在会话结束时才触发），
         // 传 sessionId 会违反 FK 约束。该列允许 NULL。
@@ -230,8 +232,8 @@ public class RealtimeExtractor {
                 decision.description(),
                 decision.properties() != null ? decision.properties() : Map.of(),
                 1, true, now, null, null,
-                decision.extractionConfidence() != null ? decision.extractionConfidence() : 0.5f,
-                decision.importanceScore() != null ? decision.importanceScore() : 0.5f,
+                confidence,
+                importance,
                 0, null, now, now);
         semanticMemory.upsertWithConflictDetection(entity, null);
         log.debug("AUDN ADD: name={}, type={}", decision.entityName(), decision.entityType());
@@ -254,8 +256,8 @@ public class RealtimeExtractor {
             mergedProps.putAll(decision.properties());
         }
         // 使用 LLM 输出的 scores：confidence 取新值，importance 取较大值
-        float newConfidence = decision.extractionConfidence() != null ? decision.extractionConfidence() : 0.5f;
-        float newImportance = decision.importanceScore() != null ? decision.importanceScore() : 0.5f;
+        float newConfidence = safeFloat(decision.extractionConfidence(), 0.5f);
+        float newImportance = safeFloat(decision.importanceScore(), 0.5f);
 
         var updated = new TemporalEntity(
                 null, decision.entityType(), decision.entityName(),
@@ -293,14 +295,19 @@ public class RealtimeExtractor {
                 decision.operation().name(),
                 decision.entityName(),
                 decision.entityType().name(),
-                decision.extractionConfidence(),
-                decision.importanceScore(),
+                safeFloat(decision.extractionConfidence(), 0.0f),
+                safeFloat(decision.importanceScore(), 0.0f),
                 success ? 1 : 0,
                 errorMessage,
                 Instant.now().toString());
         } catch (Exception e) {
             log.warn("提取事件日志写入失败: sessionId={}, error={}", sessionId, e.getMessage());
         }
+    }
+
+    /** @Nullable Float 安全拆箱，null 时返回默认值。 */
+    private static float safeFloat(@Nullable Float value, float defaultValue) {
+        return value != null ? value : defaultValue;
     }
 
     /**

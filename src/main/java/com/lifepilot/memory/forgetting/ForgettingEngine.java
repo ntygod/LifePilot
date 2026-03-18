@@ -38,6 +38,8 @@ public class ForgettingEngine {
     private final JdbcTemplate jdbcTemplate;
     private final MemoryProperties properties;
     private final PromptRegistry promptRegistry;
+    private final HybridPolicy hybridPolicy;
+    private final ForgettingPriority priorityCalculator;
 
     public ForgettingEngine(SemanticMemory semanticMemory,
                             @Nullable LlmRouter llmRouter,
@@ -49,6 +51,15 @@ public class ForgettingEngine {
         this.jdbcTemplate = jdbcTemplate;
         this.properties = properties;
         this.promptRegistry = promptRegistry;
+
+        // 预创建策略实例，forget() 中复用
+        var forgettingConfig = properties.getForgetting();
+        var fifo = new FifoPolicy(forgettingConfig);
+        var lru = new LruPolicy(forgettingConfig);
+        var decay = new PriorityDecayPolicy(forgettingConfig);
+        var reflection = new ReflectionSummaryPolicy(llmRouter, forgettingConfig);
+        this.hybridPolicy = new HybridPolicy(fifo, lru, decay, reflection);
+        this.priorityCalculator = new ForgettingPriority(forgettingConfig);
     }
 
     /**
@@ -93,28 +104,21 @@ public class ForgettingEngine {
             return 0;
         }
 
-        // 3. 创建策略实例，执行 HybridPolicy 四阶段遗忘
-        var fifo = new FifoPolicy(config);
-        var lru = new LruPolicy(config);
-        var decay = new PriorityDecayPolicy(config);
-        var reflection = new ReflectionSummaryPolicy(llmRouter, config);
-        var hybrid = new HybridPolicy(fifo, lru, decay, reflection);
-
-        var selected = hybrid.selectForForgetting(candidates, config.getMaxForgetPerRun());
+        // 3. 使用预创建的策略实例执行 HybridPolicy 四阶段遗忘
+        var selected = hybridPolicy.selectForForgetting(candidates, config.getMaxForgetPerRun());
         if (selected.isEmpty()) {
             log.debug("遗忘引擎: HybridPolicy 未选中任何实体");
             return 0;
         }
 
         // 4. 对每个选中实体执行遗忘动作
-        var priorityCalculator = new ForgettingPriority(config);
         int forgottenCount = 0;
 
         for (var entity : selected) {
             try {
                 var result = executeForgetAction(entity, config);
                 var priority = priorityCalculator.calculate(entity);
-                logForgetting(entity, hybrid.name(), result.action(), priority, result.compressionSummary());
+                logForgetting(entity, hybridPolicy.name(), result.action(), priority, result.compressionSummary());
                 forgottenCount++;
             } catch (Exception e) {
                 log.warn("遗忘引擎: 实体遗忘失败, id={}, name={}, error={}",

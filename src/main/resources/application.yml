@@ -201,6 +201,8 @@ lifepilot:
       dedup-similarity-threshold: 0.90
       max-dedup-per-run: 50
       short-name-threshold: 2
+      experience-promote-min-importance: 0.8
+      experience-promote-min-access-count: 3
     # 遗忘引擎
     forgetting:
       cron: "0 0 4 * * SUN"

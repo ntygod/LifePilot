@@ -27,6 +27,7 @@ import java.util.stream.Collectors;
 public class SemanticMemory {
 
     private static final Logger log = LoggerFactory.getLogger(SemanticMemory.class);
+    private static final com.fasterxml.jackson.databind.ObjectMapper MAPPER = new com.fasterxml.jackson.databind.ObjectMapper();
 
     private final JdbcTemplate jdbcTemplate;
     private final ConflictDetector conflictDetector;
@@ -333,8 +334,7 @@ public class SemanticMemory {
         String propsJson = null;
         if (!entity.properties().isEmpty()) {
             try {
-                propsJson = new com.fasterxml.jackson.databind.ObjectMapper()
-                        .writeValueAsString(entity.properties());
+                propsJson = MAPPER.writeValueAsString(entity.properties());
             } catch (Exception e) {
                 log.warn("语义记忆: properties 序列化失败, id={}", entity.id());
             }
@@ -368,8 +368,7 @@ public class SemanticMemory {
         Map<String, Object> properties = Map.of();
         if (propsJson != null && !propsJson.isBlank()) {
             try {
-                properties = new com.fasterxml.jackson.databind.ObjectMapper()
-                        .readValue(propsJson, Map.class);
+                properties = MAPPER.readValue(propsJson, Map.class);
             } catch (Exception e) {
                 log.warn("语义记忆: properties_json 解析失败, id={}", rs.getString("id"));
             }

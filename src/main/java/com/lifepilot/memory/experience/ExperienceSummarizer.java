@@ -4,7 +4,6 @@ import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.model.ReactStep;
 import com.lifepilot.eval.model.EvalResult;
 import com.lifepilot.eval.scenario.BenchmarkScenario;
-import com.lifepilot.eval.store.EvalStore;
 import com.lifepilot.llm.LlmRequest;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.memory.config.MemoryProperties;
@@ -40,22 +39,19 @@ public class ExperienceSummarizer {
     private final PromptRegistry promptRegistry;
     private final MemoryProperties.Experience config;
     private final TrajectoryQualityAssessor qualityAssessor;
-    @Nullable private final EvalStore evalStore;
 
     public ExperienceSummarizer(SemanticMemory semanticMemory,
                                 VectorSearcher vectorSearcher,
                                 LlmRouter llmRouter,
                                 PromptRegistry promptRegistry,
                                 MemoryProperties properties,
-                                TrajectoryQualityAssessor qualityAssessor,
-                                @Nullable EvalStore evalStore) {
+                                TrajectoryQualityAssessor qualityAssessor) {
         this.semanticMemory = semanticMemory;
         this.vectorSearcher = vectorSearcher;
         this.llmRouter = llmRouter;
         this.promptRegistry = promptRegistry;
         this.config = properties.getExperience();
         this.qualityAssessor = qualityAssessor;
-        this.evalStore = evalStore;
     }
 
     /**

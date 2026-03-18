@@ -114,7 +114,7 @@ public class CompressionService {
                         Map.of("conversation", formatMessages(window)));
                 var response = llmRouter.call(LlmRequest.of(LlmScene.MEMORY_COMPRESSION, prompt));
                 String compressed = response.content();
-                int compressedTokens = compressed.length() / 2; // 粗略估算
+                int compressedTokens = TokenEstimator.estimate(compressed);
 
                 Map<String, String> compressedTexts = new HashMap<>();
                 for (var msg : window) {
