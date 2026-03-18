@@ -276,6 +276,63 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
         return config;
     }
 
+    @Override
+    public LlmResponse callWithAudio(String prompt, List<MediaContent> audioContents, Duration timeout) {
+        if (!config.hasCapability(ProviderCapability.NATIVE_AUDIO)) {
+            throw new UnsupportedOperationException("Provider 不支持 NATIVE_AUDIO 能力: " + config.id());
+        }
+
+        List<Media> mediaList = audioContents.stream()
+                .map(mc -> new Media(MimeTypeUtils.parseMimeType(mc.mimeType()), new ByteArrayResource(mc.data())))
+                .toList();
+
+        var builder = UserMessage.builder().text(prompt);
+        for (Media media : mediaList) {
+            builder.media(media);
+        }
+        UserMessage userMessage = builder.build();
+
+        long start = System.currentTimeMillis();
+        ChatResponse response = executeWithTimeout(() -> chatModel.call(new Prompt(userMessage)), timeout);
+        long latencyMs = System.currentTimeMillis() - start;
+
+        var usage = response.getMetadata().getUsage();
+        int inputTokens = usage.getPromptTokens() != null ? usage.getPromptTokens() : 0;
+        int outputTokens = usage.getCompletionTokens() != null ? usage.getCompletionTokens() : 0;
+        String content = response.getResult().getOutput().getText();
+
+        return new LlmResponse(
+                content,
+                inputTokens,
+                outputTokens,
+                config.id(),
+                config.modelName(),
+                latencyMs,
+                false
+        );
+    }
+
+    @Override
+    public Flux<String> streamWithAudio(String prompt, List<MediaContent> audioContents) {
+        if (!config.hasCapability(ProviderCapability.NATIVE_AUDIO)) {
+            throw new UnsupportedOperationException("Provider 不支持 NATIVE_AUDIO 能力: " + config.id());
+        }
+
+        List<Media> mediaList = audioContents.stream()
+                .map(mc -> new Media(MimeTypeUtils.parseMimeType(mc.mimeType()), new ByteArrayResource(mc.data())))
+                .toList();
+
+        var builder = UserMessage.builder().text(prompt);
+        for (Media media : mediaList) {
+            builder.media(media);
+        }
+        UserMessage userMessage = builder.build();
+
+        return chatModel.stream(new Prompt(userMessage))
+                .mapNotNull(response -> response.getResult().getOutput().getText())
+                .filter(text -> text != null && !text.isEmpty());
+    }
+
     public ChatModel chatModel() {
         return chatModel;
     }

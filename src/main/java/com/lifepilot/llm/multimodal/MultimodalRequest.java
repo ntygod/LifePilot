@@ -57,4 +57,13 @@ public record MultimodalRequest(
     public boolean hasVideos() {
         return mediaList.stream().anyMatch(mc -> mc.mimeType().startsWith("video/"));
     }
+
+    /**
+     * 判断请求中是否包含音频附件。
+     *
+     * @return 包含音频时返回 true
+     */
+    public boolean hasAudio() {
+        return mediaList.stream().anyMatch(mc -> mc.mimeType().startsWith("audio/"));
+    }
 }

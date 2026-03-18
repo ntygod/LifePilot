@@ -103,4 +103,25 @@ public sealed interface ProviderAdapter permits SpringAiProviderAdapter {
      * @throws UnsupportedOperationException 若 Provider 不支持 NATIVE_VIDEO 能力
      */
     LlmResponse callWithVideo(String text, String videoUri, Duration timeout);
+
+    /**
+     * 执行原生音频调用（携带音频二进制数据）。
+     *
+     * @param prompt        文本提示词
+     * @param audioContents 音频内容列表
+     * @param timeout       超时时间
+     * @return 统一响应
+     * @throws UnsupportedOperationException 若 Provider 不支持 NATIVE_AUDIO 能力
+     */
+    LlmResponse callWithAudio(String prompt, List<MediaContent> audioContents, Duration timeout);
+
+    /**
+     * 执行原生音频流式调用（携带音频二进制数据）。
+     *
+     * @param prompt        文本提示词
+     * @param audioContents 音频内容列表
+     * @return 流式文本响应
+     * @throws UnsupportedOperationException 若 Provider 不支持 NATIVE_AUDIO 能力
+     */
+    Flux<String> streamWithAudio(String prompt, List<MediaContent> audioContents);
 }

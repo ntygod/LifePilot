@@ -510,6 +510,8 @@ lifepilot:
       speed: 1.0
       output-format: mp3
       max-text-length: 4096
+    native-audio:
+      enabled: true
     native-video:
       enabled: false
       upload-timeout-seconds: 300
