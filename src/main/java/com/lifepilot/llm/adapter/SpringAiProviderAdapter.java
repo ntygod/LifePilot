@@ -234,8 +234,12 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
         UserMessage userMessage = builder.build();
 
         return chatModel.stream(new Prompt(userMessage))
-                .mapNotNull(response -> response.getResult().getOutput().getText())
-                .filter(text -> text != null && !text.isEmpty());
+                .mapNotNull(response -> {
+                    var result = response.getResult();
+                    if (result == null || result.getOutput() == null) return null;
+                    return result.getOutput().getText();
+                })
+                .filter(text -> !text.isEmpty());
     }
 
     @Override
@@ -329,8 +333,12 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
         UserMessage userMessage = builder.build();
 
         return chatModel.stream(new Prompt(userMessage))
-                .mapNotNull(response -> response.getResult().getOutput().getText())
-                .filter(text -> text != null && !text.isEmpty());
+                .mapNotNull(response -> {
+                    var result = response.getResult();
+                    if (result == null || result.getOutput() == null) return null;
+                    return result.getOutput().getText();
+                })
+                .filter(text -> !text.isEmpty());
     }
 
     public ChatModel chatModel() {
