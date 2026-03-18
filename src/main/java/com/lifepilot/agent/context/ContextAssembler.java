@@ -191,6 +191,13 @@ public class ContextAssembler {
                 return buildMinimalContext(state);
             }
 
+            // 1.1 媒体占位符检测：音频/视频消息的 goal 是占位字符，跳过无效向量检索
+            if (isMediaPlaceholderQuery(state.goal())) {
+                log.debug("检测到媒体占位符查询，跳过向量检索: sessionId={}, goal={}",
+                        state.sessionId(), state.goal());
+                return assembleForMediaPlaceholder(state);
+            }
+
             // 1.5 查询精炼：清洗用户输入提升检索召回质量
             String refinedQuery = safeRefineQuery(state.goal());
 
@@ -341,6 +348,61 @@ public class ContextAssembler {
         String userPrompt = buildUserPrompt(state);
         return new AssembledContext(systemPrompt, userPrompt, List.of(), tokenBudget,
                 0, 0.0f, 0, true, List.of(), null);
+    }
+
+    /**
+     * 检测 goal 是否为媒体占位符查询。
+     *
+     * <p>当用户发送语音/视频消息且启用原生音频路由时，前端发送的 content 是占位字符
+     * （如 {@code [语音消息]}、{@code [视频消息]}），或者用户仅上传附件未输入文字时 goal 为空。
+     * 这些占位符对向量检索毫无意义，应跳过整个检索管线。</p>
+     *
+     * @param goal 用户输入（可能为 null）
+     * @return 如果是媒体占位符则返回 true
+     */
+    boolean isMediaPlaceholderQuery(@Nullable String goal) {
+        if (goal == null || goal.isBlank()) {
+            return true;
+        }
+        String trimmed = goal.trim();
+        // 匹配方括号包裹的短占位符，如 [语音消息]、[视频消息]、[图片]
+        if (trimmed.startsWith("[") && trimmed.endsWith("]") && trimmed.length() <= 20) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 媒体占位符专用组装 — 仅获取会话历史 + 系统提示 + 用户提示，跳过所有向量检索。
+     *
+     * <p>保留 L1 会话上下文和被动通知，让 LLM 能结合对话历史理解音频/视频内容，
+     * 但不执行查询精炼、话题切换检测、记忆检索、知识库检索、跨会话检索、用户画像查询等。</p>
+     */
+    private AssembledContext assembleForMediaPlaceholder(ReactAgentState state) {
+        // 仅获取 L1 会话历史
+        var slots = safeGetSessionHistory(workingMemory, state.sessionId(), state.goal());
+
+        // 动态预算分配（无检索结果）
+        int conversationTurns = countConversationTurns(slots);
+        int sessionMaxTokens = state.budget() != null ? state.budget().maxTokens() : 0;
+        var budgetAllocation = safeAllocate(tokenBudgetAllocator, conversationTurns,
+                0.0f, false, sessionMaxTokens);
+
+        var truncatedSlots = truncateSlotsByBudget(slots, budgetAllocation.currentSessionBudget());
+        int workingMemoryTokens = truncatedSlots.stream()
+                .mapToInt(WorkingMemorySlot::tokenCount).sum();
+
+        String systemPrompt = buildReactSystemPrompt();
+        var tokenBudget = buildTokenBudgetDefault(budgetAllocation,
+                List.of(), truncatedSlots, systemPrompt);
+
+        // 构建 userPrompt：无记忆/知识库/跨会话/用户画像，仅保留会话历史和被动通知
+        String userPrompt = buildEnhancedUserPrompt(state, List.of(), List.of(),
+                List.of(), truncatedSlots, null);
+
+        return new AssembledContext(
+                systemPrompt, userPrompt, List.of(), tokenBudget,
+                0, 0.0f, workingMemoryTokens, false, List.of(), null);
     }
 
     // --- 降级容错方法 ---
