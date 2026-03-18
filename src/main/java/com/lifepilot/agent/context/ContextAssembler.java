@@ -151,8 +151,12 @@ public class ContextAssembler {
             var tokenBudget = buildTokenBudgetDefault(budgetAllocation, truncatedSlots, systemPrompt);
 
             // 7. 构建 User Prompt（memories/kbSnippets/crossSession 传空列表）
+            // 7a. 检索经验
+            var experiences = safeRetrieveExperiences(state.goal());
+            String experienceSection = formatExperienceSection(experiences);
+
             String userPrompt = buildEnhancedUserPrompt(state, List.of(), List.of(),
-                    List.of(), truncatedSlots, userProfile);
+                    List.of(), truncatedSlots, userProfile, experienceSection);
 
             var context = new AssembledContext(
                     systemPrompt, userPrompt, List.of(),
@@ -237,7 +241,7 @@ public class ContextAssembler {
         var tokenBudget = buildTokenBudgetDefault(budgetAllocation, truncatedSlots, systemPrompt);
 
         String userPrompt = buildEnhancedUserPrompt(state, List.of(), List.of(),
-                List.of(), truncatedSlots, null);
+                List.of(), truncatedSlots, null, null);
 
         return new AssembledContext(
                 systemPrompt, userPrompt, List.of(), tokenBudget,
@@ -592,7 +596,8 @@ public class ContextAssembler {
                                    List<String> knowledgeBaseSnippets,
                                    List<String> crossSessionFragments,
                                    List<WorkingMemorySlot> slots,
-                                   @Nullable String userProfile) {
+                                   @Nullable String userProfile,
+                                   @Nullable String experienceSection) {
         var now = ZonedDateTime.now();
         var vars = new java.util.HashMap<String, Object>();
         vars.put("currentDateTime", now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
@@ -610,6 +615,7 @@ public class ContextAssembler {
         vars.put("crossSessionSection", formatListSection("跨会话参考", crossSessionFragments));
         vars.put("toolResultsSection", formatToolResultsSection(slots));
         vars.put("reasoningContextSection", formatReasoningContextSection(slots));
+        vars.put("experienceSection", experienceSection != null ? experienceSection : "");
 
         return promptRegistry.render("agent/react-user-prompt", vars);
     }
@@ -706,6 +712,87 @@ public class ContextAssembler {
     }
 
     // --- 可观测性日志 ---
+
+    // --- 经验检索与注入 ---
+
+    /**
+     * 安全检索 EXPERIENCE 类型实体，异常时返回空列表。
+     *
+     * @param query 查询文本（当前未使用，预留语义检索扩展）
+     * @return 按 importanceScore 降序排列的经验实体列表
+     */
+    List<TemporalEntity> safeRetrieveExperiences(@Nullable String query) {
+        if (semanticMemory == null || memoryProperties == null) return List.of();
+        try {
+            var config = memoryProperties.getExperience();
+            if (!config.isEnabled()) return List.of();
+
+            var experiences = semanticMemory.findCurrentByType(
+                    com.lifepilot.memory.semantic.EntityType.EXPERIENCE);
+            if (experiences.isEmpty()) return List.of();
+
+            // 按 importanceScore 降序排序，eval 标签匹配的经验优先
+            String evalPrefix = config.getEvalTagPrefix();
+            return experiences.stream()
+                    .sorted((a, b) -> {
+                        // eval 标签匹配度加权
+                        int aEvalBoost = hasMatchingEvalTag(a, query, evalPrefix) ? 1 : 0;
+                        int bEvalBoost = hasMatchingEvalTag(b, query, evalPrefix) ? 1 : 0;
+                        if (aEvalBoost != bEvalBoost) return bEvalBoost - aEvalBoost;
+                        return Float.compare(b.importanceScore(), a.importanceScore());
+                    })
+                    .limit(config.getMaxInjectionCount())
+                    .toList();
+        } catch (Exception e) {
+            log.debug("经验检索失败，跳过注入: error={}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    /**
+     * 检查经验实体的 applicableConditions 中是否有与查询匹配的 eval 标签。
+     */
+    private boolean hasMatchingEvalTag(com.lifepilot.memory.semantic.TemporalEntity entity,
+                                       @Nullable String query, String evalPrefix) {
+        if (query == null || query.isBlank()) return false;
+        var props = entity.properties();
+        if (props == null) return false;
+        var conditions = props.get("applicableConditions");
+        if (!(conditions instanceof List<?> list)) return false;
+        String lowerQuery = query.toLowerCase();
+        for (var item : list) {
+            if (item instanceof String tag && tag.startsWith(evalPrefix)) {
+                String tagValue = tag.substring(evalPrefix.length()).toLowerCase();
+                if (lowerQuery.contains(tagValue)) return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 格式化经验实体为提示词区段。
+     *
+     * @param experiences 经验实体列表
+     * @return 格式化后的经验区段文本，无经验时返回空字符串
+     */
+    String formatExperienceSection(List<TemporalEntity> experiences) {
+        if (experiences == null || experiences.isEmpty()) return "";
+        if (memoryProperties == null) return "";
+
+        int tokenBudget = memoryProperties.getExperience().getInjectionTokenBudget();
+        var sb = new StringBuilder("\n相关经验:\n");
+        int usedTokens = 0;
+
+        for (var exp : experiences) {
+            String entry = "- " + exp.name() + ": " + exp.description() + "\n";
+            int entryTokens = estimateTokens(entry);
+            if (usedTokens + entryTokens > tokenBudget) break;
+            sb.append(entry);
+            usedTokens += entryTokens;
+        }
+
+        return sb.length() > "相关经验:\n".length() + 1 ? sb.toString() : "";
+    }
 
     /** 记录组装指标。 */
     private void logAssemblyMetrics(ReactAgentState state, AssembledContext context, Instant startTime) {

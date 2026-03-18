@@ -129,6 +129,9 @@ public class ReactAgentLoop {
     @Nullable private final ProceduralMemory proceduralMemory;
     @Nullable private final IntentMatcher intentMatcher;
 
+    // ===== 可选依赖（经验总结） =====
+    @Nullable private final com.lifepilot.memory.experience.ExperienceSummarizer experienceSummarizer;
+
     // ===== 挂起-恢复定时任务调度器 =====
     private final java.util.concurrent.ScheduledExecutorService suspendScheduler =
             java.util.concurrent.Executors.newSingleThreadScheduledExecutor(
@@ -167,7 +170,8 @@ public class ReactAgentLoop {
             @Nullable SuspendStore suspendStore,
             @Nullable org.springframework.context.ApplicationEventPublisher eventPublisher,
             @Nullable ProceduralMemory proceduralMemory,
-            @Nullable IntentMatcher intentMatcher) {
+            @Nullable IntentMatcher intentMatcher,
+            @Nullable com.lifepilot.memory.experience.ExperienceSummarizer experienceSummarizer) {
         this.contextAssembler = contextAssembler;
         this.llmRouter = llmRouter;
         this.traceRecorder = traceRecorder;
@@ -193,6 +197,7 @@ public class ReactAgentLoop {
         this.eventPublisher = eventPublisher;
         this.proceduralMemory = proceduralMemory;
         this.intentMatcher = intentMatcher;
+        this.experienceSummarizer = experienceSummarizer;
     }
 
     /** 测试会话前缀 — 以此开头的 sessionId 不持久化对话历史和记忆。 */
@@ -2361,6 +2366,15 @@ public class ReactAgentLoop {
                 }
             } catch (Exception e) {
                 log.warn("AUDN 实时实体提取失败: sessionId={}, error={}",
+                        finalState.sessionId(), e.getMessage());
+            }
+            // 经验提炼
+            try {
+                if (experienceSummarizer != null) {
+                    experienceSummarizer.summarize(finalState);
+                }
+            } catch (Exception e) {
+                log.warn("经验提炼失败: sessionId={}, error={}",
                         finalState.sessionId(), e.getMessage());
             }
         });

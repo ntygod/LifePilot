@@ -19,6 +19,7 @@ public enum EntityType {
     HABIT,
     GOAL,
     SKILL,
+    EXPERIENCE,
     CUSTOM;
 
     /** 返回中文标签，用于 textRepresentation() 自然语言生成。 */
@@ -34,6 +35,7 @@ public enum EntityType {
             case HABIT -> "习惯";
             case GOAL -> "目标";
             case SKILL -> "技能";
+            case EXPERIENCE -> "经验";
             case CUSTOM -> "自定义";
         };
     }

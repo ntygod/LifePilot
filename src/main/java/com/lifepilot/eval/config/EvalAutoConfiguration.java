@@ -13,10 +13,12 @@ import com.lifepilot.eval.scenario.ScenarioSerializer;
 import com.lifepilot.eval.store.EvalStore;
 import com.lifepilot.eval.web.EvalController;
 import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.memory.experience.ExperienceSummarizer;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -127,9 +129,11 @@ public class EvalAutoConfiguration {
                                   EvalStore evalStore,
                                   EvalReport evalReport,
                                   DynamicToolRegistry toolRegistry,
-                                  EvalConfigProperties config) {
+                                  EvalConfigProperties config,
+                                  @Autowired(required = false) ExperienceSummarizer experienceSummarizer) {
         return new EvalEngine(scenarioLoader, reactAgentLoop, traceQuery,
-                evaluationCore, llmJudge, evalStore, evalReport, toolRegistry, config);
+                evaluationCore, llmJudge, evalStore, evalReport, toolRegistry, config,
+                experienceSummarizer);
     }
 
     // ==================== 内置场景同步 ====================

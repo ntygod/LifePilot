@@ -108,6 +108,9 @@ public class MemoryProperties {
     /** L2 情景记忆自动清理配置。 */
     private EpisodicCleanup episodicCleanup = new EpisodicCleanup();
 
+    /** 经验总结配置。 */
+    private Experience experience = new Experience();
+
     public TokenBudget getTokenBudget() { return tokenBudget; }
     public void setTokenBudget(TokenBudget tokenBudget) { this.tokenBudget = tokenBudget; }
 
@@ -140,6 +143,9 @@ public class MemoryProperties {
 
     public EpisodicCleanup getEpisodicCleanup() { return episodicCleanup; }
     public void setEpisodicCleanup(EpisodicCleanup episodicCleanup) { this.episodicCleanup = episodicCleanup; }
+
+    public Experience getExperience() { return experience; }
+    public void setExperience(Experience experience) { this.experience = experience; }
 
     /**
      * Token 预算分配配置 — 控制上下文窗口四区域的预算比例和场景切换阈值。
@@ -737,5 +743,74 @@ public static class Retrieval {
 
         public int getMaxCleanupPerRun() { return maxCleanupPerRun; }
         public void setMaxCleanupPerRun(int maxCleanupPerRun) { this.maxCleanupPerRun = maxCleanupPerRun; }
+    }
+
+    /**
+     * 经验总结配置 — 控制 Agent 经验提炼、存储、检索注入和 Eval 集成的参数。
+     *
+     * @author zsg
+     * @since 2026-03-18
+     */
+    public static class Experience {
+        /** 经验总结总开关，默认 true。 */
+        private boolean enabled = true;
+        /** LLM 输入截断上限（Token），默认 4000。 */
+        private int maxInputTokens = 4000;
+        /** 去重语义相似度阈值 [0.0, 1.0]，默认 0.90。 */
+        private float dedupSimilarityThreshold = 0.90f;
+        /** 上下文注入经验数量上限，默认 3。 */
+        private int maxInjectionCount = 3;
+        /** 经验注入 Token 预算上限，默认 500。 */
+        private int injectionTokenBudget = 500;
+        /** 经验最大保留天数，默认 90。 */
+        private int maxRetentionDays = 90;
+        /** LLM 调用超时（秒），默认 30。 */
+        private int llmTimeoutSeconds = 30;
+        /** 工具调用有效率门控阈值 [0.0, 1.0]，默认 0.3。 */
+        private float minToolSuccessRatio = 0.3f;
+        /** Eval 集成开关，默认 true。 */
+        private boolean evalIntegrationEnabled = true;
+        /** 经验效果提升阈值，默认 0.05。 */
+        private float evalImprovementThreshold = 0.05f;
+        /** Eval 标签前缀，默认 "eval:"。 */
+        private String evalTagPrefix = "eval:";
+        /** Eval 高分时 toolSuccessRatio 宽松系数，默认 0.5。 */
+        private float evalQualityRelaxFactor = 0.5f;
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+
+        public int getMaxInputTokens() { return maxInputTokens; }
+        public void setMaxInputTokens(int maxInputTokens) { this.maxInputTokens = maxInputTokens; }
+
+        public float getDedupSimilarityThreshold() { return dedupSimilarityThreshold; }
+        public void setDedupSimilarityThreshold(float dedupSimilarityThreshold) { this.dedupSimilarityThreshold = dedupSimilarityThreshold; }
+
+        public int getMaxInjectionCount() { return maxInjectionCount; }
+        public void setMaxInjectionCount(int maxInjectionCount) { this.maxInjectionCount = maxInjectionCount; }
+
+        public int getInjectionTokenBudget() { return injectionTokenBudget; }
+        public void setInjectionTokenBudget(int injectionTokenBudget) { this.injectionTokenBudget = injectionTokenBudget; }
+
+        public int getMaxRetentionDays() { return maxRetentionDays; }
+        public void setMaxRetentionDays(int maxRetentionDays) { this.maxRetentionDays = maxRetentionDays; }
+
+        public int getLlmTimeoutSeconds() { return llmTimeoutSeconds; }
+        public void setLlmTimeoutSeconds(int llmTimeoutSeconds) { this.llmTimeoutSeconds = llmTimeoutSeconds; }
+
+        public float getMinToolSuccessRatio() { return minToolSuccessRatio; }
+        public void setMinToolSuccessRatio(float minToolSuccessRatio) { this.minToolSuccessRatio = minToolSuccessRatio; }
+
+        public boolean isEvalIntegrationEnabled() { return evalIntegrationEnabled; }
+        public void setEvalIntegrationEnabled(boolean evalIntegrationEnabled) { this.evalIntegrationEnabled = evalIntegrationEnabled; }
+
+        public float getEvalImprovementThreshold() { return evalImprovementThreshold; }
+        public void setEvalImprovementThreshold(float evalImprovementThreshold) { this.evalImprovementThreshold = evalImprovementThreshold; }
+
+        public String getEvalTagPrefix() { return evalTagPrefix; }
+        public void setEvalTagPrefix(String evalTagPrefix) { this.evalTagPrefix = evalTagPrefix; }
+
+        public float getEvalQualityRelaxFactor() { return evalQualityRelaxFactor; }
+        public void setEvalQualityRelaxFactor(float evalQualityRelaxFactor) { this.evalQualityRelaxFactor = evalQualityRelaxFactor; }
     }
 }

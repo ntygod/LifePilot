@@ -10,6 +10,7 @@ import com.lifepilot.observability.trace.TraceNotFoundException;
 import com.lifepilot.observability.trace.TraceQuery;
 import com.lifepilot.observability.trace.TraceStep;
 import com.lifepilot.eval.config.EvalConfigProperties;
+import com.lifepilot.memory.experience.ExperienceSummarizer;
 import com.lifepilot.eval.judge.JudgeResult;
 import com.lifepilot.eval.judge.LlmJudge;
 import com.lifepilot.eval.model.EvalResult;
@@ -21,6 +22,7 @@ import com.lifepilot.eval.store.EvalStore;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
+import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -60,6 +62,8 @@ public class EvalEngine {
     private final EvalReport evalReport;
     private final DynamicToolRegistry toolRegistry;
     private final EvalConfigProperties config;
+    @Nullable
+    private final ExperienceSummarizer experienceSummarizer;
 
     public EvalEngine(ScenarioLoader scenarioLoader,
                       ReactAgentLoop reactAgentLoop,
@@ -69,7 +73,8 @@ public class EvalEngine {
                       EvalStore evalStore,
                       EvalReport evalReport,
                       DynamicToolRegistry toolRegistry,
-                      EvalConfigProperties config) {
+                      EvalConfigProperties config,
+                      @Nullable ExperienceSummarizer experienceSummarizer) {
         this.scenarioLoader = scenarioLoader;
         this.reactAgentLoop = reactAgentLoop;
         this.traceQuery = traceQuery;
@@ -79,6 +84,7 @@ public class EvalEngine {
         this.evalReport = evalReport;
         this.toolRegistry = toolRegistry;
         this.config = config;
+        this.experienceSummarizer = experienceSummarizer;
         log.info("EvalEngine 初始化完成");
     }
 
@@ -220,6 +226,16 @@ public class EvalEngine {
         ReportSummary summary = evalReport.generateSummary(results, evalRunId);
         log.info("批量评估完成: evalRunId={}, 总场景={}, 通过={}, 失败={}",
                 evalRunId, summary.totalScenarios(), summary.passCount(), summary.failCount());
+
+        // 触发经验提炼
+        if (experienceSummarizer != null) {
+            try {
+                experienceSummarizer.summarizeFromEval(results, scenarios);
+            } catch (Exception e) {
+                log.warn("批量评估后经验提炼失败: evalRunId={}, error={}",
+                        evalRunId, e.getMessage());
+            }
+        }
 
         return summary;
     }

@@ -1,10 +1,19 @@
 package com.lifepilot.memory.consolidation;
 
 import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.procedural.ProceduralMemory;
+import com.lifepilot.memory.procedural.ProcedureTemplate;
+import com.lifepilot.memory.procedural.TemplateStep;
+import com.lifepilot.memory.semantic.EntityType;
+import com.lifepilot.memory.semantic.SemanticMemory;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 
 /**
  * 巩固管线编排服务 — 顺序执行语义巩固和程序巩固，故障隔离。
@@ -26,6 +35,10 @@ public class ConsolidationPipeline {
     private final MemoryProperties properties;
     @Nullable
     private final PreferenceConsolidator preferenceConsolidator;
+    @Nullable
+    private final SemanticMemory semanticMemory;
+    @Nullable
+    private final ProceduralMemory proceduralMemory;
 
     /**
      * 构造巩固管线。
@@ -34,15 +47,21 @@ public class ConsolidationPipeline {
      * @param proceduralConsolidator 情景→程序巩固器
      * @param properties             记忆配置
      * @param preferenceConsolidator L3→L4 偏好同步器（可选）
+     * @param semanticMemory         L3 语义记忆（可选，用于经验提升）
+     * @param proceduralMemory       L4 程序记忆（可选，用于经验提升）
      */
     public ConsolidationPipeline(EpisodicToSemanticConsolidator semanticConsolidator,
                                   EpisodicToProceduralConsolidator proceduralConsolidator,
                                   MemoryProperties properties,
-                                  @Nullable PreferenceConsolidator preferenceConsolidator) {
+                                  @Nullable PreferenceConsolidator preferenceConsolidator,
+                                  @Nullable SemanticMemory semanticMemory,
+                                  @Nullable ProceduralMemory proceduralMemory) {
         this.semanticConsolidator = semanticConsolidator;
         this.proceduralConsolidator = proceduralConsolidator;
         this.properties = properties;
         this.preferenceConsolidator = preferenceConsolidator;
+        this.semanticMemory = semanticMemory;
+        this.proceduralMemory = proceduralMemory;
         log.info("ConsolidationPipeline 初始化完成, cron={}, triggerMode={}",
                 this.properties.getConsolidation().getCron(),
                 this.properties.getConsolidation().getTriggerMode());
@@ -103,6 +122,60 @@ public class ConsolidationPipeline {
             }
         }
 
+        // 4. 高频经验提升为 L4 ProcedureTemplate
+        if (semanticMemory != null && proceduralMemory != null) {
+            try {
+                int promoted = promoteHighFrequencyExperiences();
+                if (promoted > 0) {
+                    log.info("巩固管线: 经验提升完成, promoted={}", promoted);
+                }
+            } catch (Exception e) {
+                log.warn("巩固管线: 经验提升失败, error={}", e.getMessage(), e);
+            }
+        }
+
         log.info("巩固管线: 执行完成");
+    }
+
+    /**
+     * 将高频经验（importanceScore ≥ 0.8 且 accessCount ≥ 3）提升为 L4 ProcedureTemplate。
+     *
+     * @return 提升的经验数量
+     */
+    private int promoteHighFrequencyExperiences() {
+        var experiences = semanticMemory.findCurrentByType(EntityType.EXPERIENCE);
+        int promoted = 0;
+
+        for (var exp : experiences) {
+            if (exp.importanceScore() >= 0.8f && exp.accessCount() >= 3) {
+                // 检查是否已存在同名模板（避免重复提升）
+                var existing = proceduralMemory.findById(exp.id());
+                if (existing.isPresent()) continue;
+
+                var now = Instant.now();
+                var template = new ProcedureTemplate(
+                        exp.id(),
+                        exp.name(),
+                        exp.description(),
+                        exp.name(),
+                        List.of(new TemplateStep(1, "experience", "apply",
+                                Map.of("scenario", exp.name()), exp.description(), false)),
+                        Map.of(),
+                        1.0f,
+                        0,
+                        null,
+                        List.of(exp.sourceConversationId()),
+                        now,
+                        now
+                );
+                proceduralMemory.save(template);
+
+                // 归档已提升的经验
+                semanticMemory.archive(exp);
+                promoted++;
+                log.debug("巩固管线: 经验提升为模板, entityId={}, name={}", exp.id(), exp.name());
+            }
+        }
+        return promoted;
     }
 }

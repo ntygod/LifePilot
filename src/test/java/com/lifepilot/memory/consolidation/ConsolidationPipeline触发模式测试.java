@@ -40,7 +40,7 @@ class ConsolidationPipeline触发模式测试 {
         when(proceduralConsolidator.consolidate()).thenReturn(
                 new ConsolidationStats("PROCEDURAL", 0, 0, 0, 0, 0, 0, 0L));
 
-        pipeline = new ConsolidationPipeline(semanticConsolidator, proceduralConsolidator, properties, null);
+        pipeline = new ConsolidationPipeline(semanticConsolidator, proceduralConsolidator, properties, null, null, null);
 
         pipelineProvider = mock(ObjectProvider.class);
         when(pipelineProvider.getIfAvailable()).thenReturn(pipeline);
@@ -57,7 +57,7 @@ class ConsolidationPipeline触发模式测试 {
     @Test
     void IDLE模式_Cron触发被跳过() {
         properties.getConsolidation().setTriggerMode("IDLE");
-        var cp = new ConsolidationPipeline(semanticConsolidator, proceduralConsolidator, properties, null);
+        var cp = new ConsolidationPipeline(semanticConsolidator, proceduralConsolidator, properties, null, null, null);
 
         cp.scheduledConsolidate();
 
@@ -73,7 +73,7 @@ class ConsolidationPipeline触发模式测试 {
     @Test
     void HYBRID模式_Cron触发正常执行() {
         properties.getConsolidation().setTriggerMode("HYBRID");
-        var cp = new ConsolidationPipeline(semanticConsolidator, proceduralConsolidator, properties, null);
+        var cp = new ConsolidationPipeline(semanticConsolidator, proceduralConsolidator, properties, null, null, null);
 
         cp.scheduledConsolidate();
 
@@ -106,7 +106,7 @@ class ConsolidationPipeline触发模式测试 {
     @Test
     void CRON模式_Cron触发正常执行() {
         properties.getConsolidation().setTriggerMode("CRON");
-        var cp = new ConsolidationPipeline(semanticConsolidator, proceduralConsolidator, properties, null);
+        var cp = new ConsolidationPipeline(semanticConsolidator, proceduralConsolidator, properties, null, null, null);
 
         cp.scheduledConsolidate();
 
