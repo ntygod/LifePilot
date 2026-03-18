@@ -7,6 +7,8 @@ import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
 import com.lifepilot.memory.working.*;
+import com.lifepilot.memory.procedural.PreferenceRule;
+import com.lifepilot.memory.procedural.ProceduralMemory;
 import com.lifepilot.observability.redactor.DataRedactor;
 import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
@@ -23,6 +25,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 上下文组装器 — Agentic 模式，检索由 Tool 接管，仅保留 L1 会话 + 用户画像 + 通知 + 系统提示词。
@@ -57,6 +60,8 @@ public class ContextAssembler {
     @Nullable private final PassiveNotificationQueue passiveNotificationQueue;
     // 记忆配置：用户画像查询等参数，可选注入
     @Nullable private final com.lifepilot.memory.config.MemoryProperties memoryProperties;
+    // L4 程序记忆：偏好规则查询，可选注入
+    @Nullable private final ProceduralMemory proceduralMemory;
 
     /** 基础版构造器（记忆字段为 null）。 */
     public ContextAssembler(AgentConfigProperties config, PromptRegistry promptRegistry) {
@@ -68,6 +73,7 @@ public class ContextAssembler {
         this.semanticMemory = null;
         this.passiveNotificationQueue = null;
         this.memoryProperties = null;
+        this.proceduralMemory = null;
     }
 
     /** 完整版构造器（注入记忆系统依赖）。 */
@@ -78,6 +84,7 @@ public class ContextAssembler {
                             @Nullable SemanticMemory semanticMemory,
                             @Nullable PassiveNotificationQueue passiveNotificationQueue,
                             @Nullable com.lifepilot.memory.config.MemoryProperties memoryProperties,
+                            @Nullable ProceduralMemory proceduralMemory,
                             PromptRegistry promptRegistry) {
         this.config = config;
         this.workingMemory = workingMemory;
@@ -87,6 +94,7 @@ public class ContextAssembler {
         this.semanticMemory = semanticMemory;
         this.passiveNotificationQueue = passiveNotificationQueue;
         this.memoryProperties = memoryProperties;
+        this.proceduralMemory = proceduralMemory;
     }
 
     /** 判断是否为完整版模式。 */
@@ -171,14 +179,6 @@ public class ContextAssembler {
         String systemPrompt = safeReactSystemPrompt();
         String userPrompt = buildUserPrompt(state);
         return new AssembledContext(systemPrompt, userPrompt, List.of(), tokenBudget,
-                0, 0.0f, 0, false, List.of(), null);
-    }
-
-    /** 返回最小化上下文。 */
-    private AssembledContext buildMinimalContext(ReactAgentState state) {
-        int totalTokens = config.getContext().getMaxContextTokens();
-        var tokenBudget = TokenBudget.allocateDefault(totalTokens);
-        return new AssembledContext("", "", List.of(), tokenBudget,
                 0, 0.0f, 0, false, List.of(), null);
     }
 
@@ -356,7 +356,43 @@ public class ContextAssembler {
             }
 
             if (selected.isEmpty()) return "";
-            return formatUserProfile(selected);
+
+            // L4 高置信度偏好规则查询 + 去重
+            List<PreferenceRule> l4Rules = List.of();
+            if (proceduralMemory != null) {
+                try {
+                    l4Rules = proceduralMemory.getPreferences("user-preference").stream()
+                            .filter(PreferenceRule::isHighConfidence)
+                            .toList();
+                } catch (Exception ex) {
+                    log.warn("L4 偏好规则查询失败，降级仅使用 L3 实体: error={}", ex.getMessage());
+                }
+            }
+
+            // L4 优先去重 — 移除与 L4 规则同名的 L3 PREFERENCE 实体
+            if (!l4Rules.isEmpty()) {
+                var l4Keys = l4Rules.stream()
+                        .map(PreferenceRule::key)
+                        .collect(Collectors.toSet());
+                selected = selected.stream()
+                        .filter(e -> !(e.type() == EntityType.PREFERENCE && l4Keys.contains(e.name())))
+                        .toList();
+            }
+
+            // 格式化 L3 实体
+            var profileText = formatUserProfile(selected);
+
+            // 追加 L4 偏好规则
+            if (!l4Rules.isEmpty()) {
+                var sb = new StringBuilder(profileText);
+                for (var rule : l4Rules) {
+                    sb.append("- [偏好规则] ").append(rule.key()).append(": ").append(rule.value())
+                            .append("（置信度: ").append(String.format("%.2f", rule.confidence())).append("）\n");
+                }
+                return sb.toString();
+            }
+
+            return profileText;
         } catch (Exception e) {
             log.warn("用户画像查询失败，降级跳过: error={}", e.getMessage());
             return "";
@@ -381,11 +417,6 @@ public class ContextAssembler {
             sb.append("\n");
         }
         return sb.toString();
-    }
-
-    /** 安全执行预算分配，异常时使用静态分配降级。 */
-    private BudgetAllocation safeAllocate(TokenBudgetAllocator allocator, int conversationTurns, float topScore, boolean hasMemoryData) {
-        return safeAllocate(allocator, conversationTurns, topScore, hasMemoryData, 0);
     }
 
     /**
@@ -571,9 +602,9 @@ public class ContextAssembler {
         vars.put("tokensRemaining", String.valueOf(state.budget().tokensRemaining()));
         vars.put("stepCount", String.valueOf(state.stepCount()));
 
-        vars.put("userProfileSection", formatUserProfileSection(userProfile));
+        vars.put("userProfileSection", safeRedact(formatUserProfileSection(userProfile)));
         vars.put("passiveNotificationsSection", formatPassiveNotificationsSection());
-        vars.put("conversationHistorySection", formatConversationHistorySection(slots));
+        vars.put("conversationHistorySection", safeRedact(formatConversationHistorySection(slots)));
         vars.put("memoriesSection", formatListSection("相关记忆", memories));
         vars.put("knowledgeBaseSection", formatListSection("知识库片段", knowledgeBaseSnippets));
         vars.put("crossSessionSection", formatListSection("跨会话参考", crossSessionFragments));
@@ -689,6 +720,19 @@ public class ContextAssembler {
     }
 
     // --- 工具方法 ---
+
+    /**
+     * 安全脱敏 — dataRedactor 为 null 时跳过，异常时降级使用原始文本。
+     */
+    private String safeRedact(String text) {
+        if (dataRedactor == null || text == null || text.isEmpty()) return text;
+        try {
+            return dataRedactor.redact(text);
+        } catch (Exception e) {
+            log.warn("DataRedactor 脱敏失败，降级使用原始文本: error={}", e.getMessage());
+            return text;
+        }
+    }
 
     /** 截断文本到指定长度。 */
     private String truncate(String text, int maxLength) {

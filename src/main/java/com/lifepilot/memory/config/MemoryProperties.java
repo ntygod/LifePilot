@@ -105,6 +105,9 @@ public class MemoryProperties {
     /** Agentic Tool 配置 — 控制记忆 tool 的默认检索参数。 */
     private AgenticTool agenticTool = new AgenticTool();
 
+    /** L2 情景记忆自动清理配置。 */
+    private EpisodicCleanup episodicCleanup = new EpisodicCleanup();
+
     public TokenBudget getTokenBudget() { return tokenBudget; }
     public void setTokenBudget(TokenBudget tokenBudget) { this.tokenBudget = tokenBudget; }
 
@@ -134,6 +137,9 @@ public class MemoryProperties {
 
     public AgenticTool getAgenticTool() { return agenticTool; }
     public void setAgenticTool(AgenticTool agenticTool) { this.agenticTool = agenticTool; }
+
+    public EpisodicCleanup getEpisodicCleanup() { return episodicCleanup; }
+    public void setEpisodicCleanup(EpisodicCleanup episodicCleanup) { this.episodicCleanup = episodicCleanup; }
 
     /**
      * Token 预算分配配置 — 控制上下文窗口四区域的预算比例和场景切换阈值。
@@ -707,5 +713,29 @@ public static class Retrieval {
 
         public int getDocsDefaultTopK() { return docsDefaultTopK; }
         public void setDocsDefaultTopK(int docsDefaultTopK) { this.docsDefaultTopK = docsDefaultTopK; }
+    }
+
+    /**
+     * L2 情景记忆自动清理配置 — 控制过期对话记录的定时清理策略。
+     *
+     * @author zsg
+     * @since 2026-03-18
+     */
+    public static class EpisodicCleanup {
+        /** 清理 Cron 表达式，默认每日凌晨 5:00。 */
+        private String cron = "0 0 5 * * *";
+        /** 保留天数，默认 90。 */
+        private int retentionDays = 90;
+        /** 单次最大清理数量，默认 500。 */
+        private int maxCleanupPerRun = 500;
+
+        public String getCron() { return cron; }
+        public void setCron(String cron) { this.cron = cron; }
+
+        public int getRetentionDays() { return retentionDays; }
+        public void setRetentionDays(int retentionDays) { this.retentionDays = retentionDays; }
+
+        public int getMaxCleanupPerRun() { return maxCleanupPerRun; }
+        public void setMaxCleanupPerRun(int maxCleanupPerRun) { this.maxCleanupPerRun = maxCleanupPerRun; }
     }
 }
