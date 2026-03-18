@@ -54,10 +54,11 @@ public record ReactAgentState(
     /**
      * 从 AgentRequest 初始化新状态。
      *
-     * @param request Agent 请求
+     * @param request       Agent 请求
+     * @param defaultBudget 请求未指定预算时的默认预算
      * @return 初始状态
      */
-    public static ReactAgentState init(AgentRequest request) {
+    public static ReactAgentState init(AgentRequest request, Budget defaultBudget) {
         return ReactAgentState.builder()
                 .traceId(UUID.randomUUID().toString())
                 .sessionId(request.sessionId())
@@ -67,7 +68,7 @@ public record ReactAgentState(
                 .stepCount(0)
                 .shortTermMemory(List.of())
                 .mentionedEntities(List.of())
-                .budget(request.budget() != null ? request.budget() : Budget.defaultBudget())
+                .budget(request.budget() != null ? request.budget() : defaultBudget)
                 .parentTraceId(request.parentTraceId())
                 .depth(request.depth())
                 .done(false)
@@ -83,11 +84,12 @@ public record ReactAgentState(
     /**
      * 从已有会话快照恢复状态。
      *
-     * @param session 会话快照
-     * @param request 当前请求
+     * @param session       会话快照
+     * @param request       当前请求
+     * @param defaultBudget 请求未指定预算时的默认预算
      * @return 恢复后的状态
      */
-    public static ReactAgentState fromSession(SessionSnapshot session, AgentRequest request) {
+    public static ReactAgentState fromSession(SessionSnapshot session, AgentRequest request, Budget defaultBudget) {
         return ReactAgentState.builder()
                 .traceId(UUID.randomUUID().toString())
                 .sessionId(session.sessionId())
@@ -97,7 +99,7 @@ public record ReactAgentState(
                 .stepCount(0)
                 .shortTermMemory(List.of())
                 .mentionedEntities(session.mentionedEntities())
-                .budget(request.budget() != null ? request.budget() : Budget.defaultBudget())
+                .budget(request.budget() != null ? request.budget() : defaultBudget)
                 .parentTraceId(request.parentTraceId())
                 .depth(request.depth())
                 .done(false)

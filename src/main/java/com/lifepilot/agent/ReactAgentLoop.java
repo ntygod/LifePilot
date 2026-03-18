@@ -8,6 +8,7 @@ import com.lifepilot.agent.context.ContextAssembler;
 import com.lifepilot.agent.media.MediaDataExtractor;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.agent.model.AgentResponse;
+import com.lifepilot.agent.model.Budget;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.model.ReactStep;
 import com.lifepilot.agent.model.SuspendReason;
@@ -1218,7 +1219,7 @@ public class ReactAgentLoop {
      * 异步后处理 → 构建 AgentResponse。</p>
      */
     public AgentResponse run(AgentRequest request) {
-        ReactAgentState state = ReactAgentState.init(request);
+        ReactAgentState state = ReactAgentState.init(request, Budget.fromConfig(config.getBudget()));
         TraceContext traceContext = null;
         Instant loopStart = Instant.now();
         Exception error = null;
@@ -1351,7 +1352,7 @@ public class ReactAgentLoop {
     public void runStreaming(AgentRequest request, String streamId,
                              SseSessionManager sseManager,
                              CancellationToken cancellationToken) {
-        ReactAgentState state = ReactAgentState.init(request);
+        ReactAgentState state = ReactAgentState.init(request, Budget.fromConfig(config.getBudget()));
         TraceContext traceContext = null;
         Instant loopStart = Instant.now();
         Exception error = null;
@@ -2181,18 +2182,19 @@ public class ReactAgentLoop {
 
     /** 初始化 ReAct 状态 — 查找已有会话或创建新状态。 */
     private ReactAgentState initState(AgentRequest request) {
+        var defaultBudget = Budget.fromConfig(config.getBudget());
         // 测试会话不恢复历史状态
         if (isTestSession(request.sessionId())) {
-            return ReactAgentState.init(request);
+            return ReactAgentState.init(request, defaultBudget);
         }
         var existingSession = sessionManager.findSession(request.sessionId());
         if (existingSession.isPresent()) {
             var snapshot = existingSession.get();
-            var state = ReactAgentState.fromSession(snapshot, request);
+            var state = ReactAgentState.fromSession(snapshot, request, defaultBudget);
             hydrateWorkingMemoryFromConversationView(snapshot.sessionId());
             return state;
         }
-        return ReactAgentState.init(request);
+        return ReactAgentState.init(request, defaultBudget);
     }
 
     /** 启动 Trace（如果 TraceRecorder 可用）。 */

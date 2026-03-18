@@ -268,7 +268,8 @@ public class ExecutionMiddleware implements GatewayMiddleware {
             }
             Object maxTokensObj = config.get(SessionConfigKeys.MAX_TOKENS);
             if (maxTokensObj instanceof Number num && num.intValue() > 0) {
-                return com.lifepilot.agent.model.Budget.defaultBudget()
+                return com.lifepilot.agent.model.Budget.fromConfig(
+                        new com.lifepilot.agent.config.AgentConfigProperties.BudgetConfig())
                         .toBuilder().maxTokens(num.intValue()).build();
             }
         } catch (Exception e) {

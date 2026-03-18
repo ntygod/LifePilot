@@ -30,6 +30,7 @@ public record AgentBudget(int maxTokens, int maxSteps, int timeoutSeconds) {
                 .tokensUsed(0)
                 .tokensReserved(0)
                 .maxSteps(maxSteps)
+                .stepsUsed(0)
                 .maxDuration(Duration.ofSeconds(timeoutSeconds))
                 .elapsed(Duration.ZERO)
                 .build();

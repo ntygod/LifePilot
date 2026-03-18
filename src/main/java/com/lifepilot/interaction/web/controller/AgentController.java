@@ -546,7 +546,7 @@ public class AgentController {
                     null,
                     null
             );
-            ReactAgentState state = ReactAgentState.init(agentRequest);
+            ReactAgentState state = ReactAgentState.init(agentRequest, agent.budget().toAgentBudget());
 
             // 3. 调用 ContextAssembler 组装上下文
             AssembledContext assembled = contextAssembler.assemble(state);
