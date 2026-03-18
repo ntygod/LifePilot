@@ -131,8 +131,11 @@ public class RealtimeExtractor {
     private List<AudnDecision> callLlmForAudnDecisions(String conversationText) {
         String prompt = buildAudnPrompt(conversationText);
         try {
+            // 使用 Virtual Thread 执行器避免阻塞 ForkJoinPool.commonPool()
+            var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
             var result = CompletableFuture.supplyAsync(() ->
-                            llmRouter.callEntity(LlmRequest.of("knowledge_extraction", prompt), AudnDecisionList.class))
+                            llmRouter.callEntity(LlmRequest.of("knowledge_extraction", prompt), AudnDecisionList.class),
+                            executor)
                     .orTimeout(extractionTimeoutSeconds, TimeUnit.SECONDS)
                     .join();
             return result != null ? result.decisions() : List.of();

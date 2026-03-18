@@ -4,6 +4,7 @@ import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.model.ReactStep;
 import com.lifepilot.llm.LlmRequest;
 import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.llm.LlmScene;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.semantic.EntityType;
@@ -94,7 +95,7 @@ public class SubtaskReflector {
             ExperienceRecord record;
             try {
                 record = llmRouter.callEntity(
-                        LlmRequest.of("subtask-reflection", prompt),
+                        LlmRequest.of(LlmScene.CHAT, prompt),
                         ExperienceRecord.class);
             } catch (Exception e) {
                 log.warn("子任务反思: LLM 调用失败, error={}", e.getMessage());

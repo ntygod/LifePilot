@@ -160,9 +160,11 @@ public class VectorSearcher {
         try {
             float[] vector = llmRouter.embed(text);
             byte[] vectorBytes = floatArrayToBytes(vector);
-            // vec0 表使用 INSERT OR REPLACE
+            // vec0 虚拟表不支持 INSERT OR REPLACE，需先 DELETE 再 INSERT
             vectorJdbcTemplate.update(
-                    "INSERT OR REPLACE INTO entity_embeddings(entity_id, embedding) VALUES(?, ?)",
+                    "DELETE FROM entity_embeddings WHERE entity_id = ?", entityId);
+            vectorJdbcTemplate.update(
+                    "INSERT INTO entity_embeddings(entity_id, embedding) VALUES(?, ?)",
                     entityId, vectorBytes);
             log.debug("向量检索: 更新实体向量, entityId={}", entityId);
         } catch (Exception e) {

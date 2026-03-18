@@ -6,6 +6,7 @@ import com.lifepilot.eval.model.EvalResult;
 import com.lifepilot.eval.scenario.BenchmarkScenario;
 import com.lifepilot.llm.LlmRequest;
 import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.llm.LlmScene;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.semantic.EntityType;
@@ -210,7 +211,7 @@ public class ExperienceSummarizer {
                     "taskSuccess", String.valueOf(report.taskSuccess())
             );
             String prompt = promptRegistry.render(PROMPT_KEY, vars);
-            var request = LlmRequest.of("experience-extraction", prompt);
+            var request = LlmRequest.of(LlmScene.CHAT, prompt);
             var record = llmRouter.callEntity(request, ExperienceRecord.class);
 
             // 校验返回结果
