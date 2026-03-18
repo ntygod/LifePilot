@@ -558,9 +558,9 @@ public class ContextAssembler {
         vars.put("tokensRemaining", String.valueOf(state.budget().tokensRemaining()));
         vars.put("stepCount", String.valueOf(state.stepCount()));
 
-        vars.put("userProfileSection", formatUserProfileSection(userProfile));
+        vars.put("userProfileSection", safeRedact(formatUserProfileSection(userProfile)));
         vars.put("passiveNotificationsSection", formatPassiveNotificationsSection());
-        vars.put("conversationHistorySection", formatConversationHistorySection(slots));
+        vars.put("conversationHistorySection", safeRedact(formatConversationHistorySection(slots)));
         vars.put("memoriesSection", formatListSection("相关记忆", memories));
         vars.put("knowledgeBaseSection", formatListSection("知识库片段", knowledgeBaseSnippets));
         vars.put("crossSessionSection", formatListSection("跨会话参考", crossSessionFragments));
@@ -676,6 +676,19 @@ public class ContextAssembler {
     }
 
     // --- 工具方法 ---
+
+    /**
+     * 安全脱敏 — dataRedactor 为 null 时跳过，异常时降级使用原始文本。
+     */
+    private String safeRedact(String text) {
+        if (dataRedactor == null || text == null || text.isEmpty()) return text;
+        try {
+            return dataRedactor.redact(text);
+        } catch (Exception e) {
+            log.warn("DataRedactor 脱敏失败，降级使用原始文本: error={}", e.getMessage());
+            return text;
+        }
+    }
 
     /** 截断文本到指定长度。 */
     private String truncate(String text, int maxLength) {
