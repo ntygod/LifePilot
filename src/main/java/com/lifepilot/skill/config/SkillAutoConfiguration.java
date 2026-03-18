@@ -129,9 +129,13 @@ public class SkillAutoConfiguration {
     @ConditionalOnMissingBean
     public SkillToToolBridge skillToToolBridge(DynamicToolRegistry toolRegistry,
                                               SkillActivator skillActivator,
-                                              CapabilityAggregator capabilityAggregator) {
-        log.info("Skill 系统: 注册 SkillToToolBridge");
-        return new SkillToToolBridge(toolRegistry, skillActivator, capabilityAggregator);
+                                              CapabilityAggregator capabilityAggregator,
+                                              @Nullable SkillGapDetector gapDetector,
+                                              @Nullable SkillGenerator skillGenerator) {
+        log.info("Skill 系统: 注册 SkillToToolBridge, 自扩展={}",
+                gapDetector != null && skillGenerator != null ? "已启用" : "未启用");
+        return new SkillToToolBridge(toolRegistry, skillActivator, capabilityAggregator,
+                gapDetector, skillGenerator);
     }
 
     // --- 内置 Skill 提供者 ---
