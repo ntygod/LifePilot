@@ -120,7 +120,7 @@ class MemoryRetrieval_SpringContext_集成测试 {
         // 6. ConsolidationPipeline（依赖两个巩固器）
         var semanticConsolidator = mock(EpisodicToSemanticConsolidator.class);
         var proceduralConsolidator = mock(EpisodicToProceduralConsolidator.class);
-        var pipeline = new ConsolidationPipeline(semanticConsolidator, proceduralConsolidator, properties);
+        var pipeline = new ConsolidationPipeline(semanticConsolidator, proceduralConsolidator, properties, null);
         assertNotNull(pipeline);
     }
 

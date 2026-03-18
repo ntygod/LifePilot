@@ -1,6 +1,7 @@
 package com.lifepilot.memory.consolidation;
 
 import com.lifepilot.memory.config.MemoryProperties;
+import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -23,6 +24,8 @@ public class ConsolidationPipeline {
     private final EpisodicToSemanticConsolidator semanticConsolidator;
     private final EpisodicToProceduralConsolidator proceduralConsolidator;
     private final MemoryProperties properties;
+    @Nullable
+    private final PreferenceConsolidator preferenceConsolidator;
 
     /**
      * 构造巩固管线。
@@ -30,13 +33,16 @@ public class ConsolidationPipeline {
      * @param semanticConsolidator   情景→语义巩固器
      * @param proceduralConsolidator 情景→程序巩固器
      * @param properties             记忆配置
+     * @param preferenceConsolidator L3→L4 偏好同步器（可选）
      */
     public ConsolidationPipeline(EpisodicToSemanticConsolidator semanticConsolidator,
                                   EpisodicToProceduralConsolidator proceduralConsolidator,
-                                  MemoryProperties properties) {
+                                  MemoryProperties properties,
+                                  @Nullable PreferenceConsolidator preferenceConsolidator) {
         this.semanticConsolidator = semanticConsolidator;
         this.proceduralConsolidator = proceduralConsolidator;
         this.properties = properties;
+        this.preferenceConsolidator = preferenceConsolidator;
         log.info("ConsolidationPipeline 初始化完成, cron={}, triggerMode={}",
                 this.properties.getConsolidation().getCron(),
                 this.properties.getConsolidation().getTriggerMode());
@@ -84,6 +90,17 @@ public class ConsolidationPipeline {
                     proceduralStats.conversationsAnalyzed(), proceduralStats.templatesCreated());
         } catch (Exception e) {
             log.warn("巩固管线: 程序巩固失败, error={}", e.getMessage(), e);
+        }
+
+        // 3. 偏好同步（L3 PREFERENCE → L4 PreferenceRule）
+        if (preferenceConsolidator != null) {
+            try {
+                var prefStats = preferenceConsolidator.consolidate();
+                log.info("巩固管线: 偏好同步完成, created={}, reinforced={}, deleted={}",
+                        prefStats.created(), prefStats.reinforced(), prefStats.deleted());
+            } catch (Exception e) {
+                log.warn("巩固管线: 偏好同步失败, error={}", e.getMessage(), e);
+            }
         }
 
         log.info("巩固管线: 执行完成");
