@@ -30,6 +30,13 @@ management:
 
 lifepilot:
   config-version: 1
+  thread-pool:
+    # ===== 线程池统一治理配置 =====
+    shutdown-timeout-seconds: 10
+    shared:
+      cleanup-core-pool-size: 1
+      debounce-core-pool-size: 1
+      heartbeat-core-pool-size: 1
   prompt:
     base-path: "classpath:prompts/"
   agent:
