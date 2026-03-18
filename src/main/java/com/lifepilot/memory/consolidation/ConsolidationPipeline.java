@@ -39,6 +39,8 @@ public class ConsolidationPipeline {
     private final SemanticMemory semanticMemory;
     @Nullable
     private final ProceduralMemory proceduralMemory;
+    @Nullable
+    private final ExperienceMerger experienceMerger;
 
     /**
      * 构造巩固管线。
@@ -49,22 +51,26 @@ public class ConsolidationPipeline {
      * @param preferenceConsolidator L3→L4 偏好同步器（可选）
      * @param semanticMemory         L3 语义记忆（可选，用于经验提升）
      * @param proceduralMemory       L4 程序记忆（可选，用于经验提升）
+     * @param experienceMerger       经验合并器（可选，用于相似经验合并为元经验）
      */
     public ConsolidationPipeline(EpisodicToSemanticConsolidator semanticConsolidator,
                                   EpisodicToProceduralConsolidator proceduralConsolidator,
                                   MemoryProperties properties,
                                   @Nullable PreferenceConsolidator preferenceConsolidator,
                                   @Nullable SemanticMemory semanticMemory,
-                                  @Nullable ProceduralMemory proceduralMemory) {
+                                  @Nullable ProceduralMemory proceduralMemory,
+                                  @Nullable ExperienceMerger experienceMerger) {
         this.semanticConsolidator = semanticConsolidator;
         this.proceduralConsolidator = proceduralConsolidator;
         this.properties = properties;
         this.preferenceConsolidator = preferenceConsolidator;
         this.semanticMemory = semanticMemory;
         this.proceduralMemory = proceduralMemory;
-        log.info("ConsolidationPipeline 初始化完成, cron={}, triggerMode={}",
+        this.experienceMerger = experienceMerger;
+        log.info("ConsolidationPipeline 初始化完成, cron={}, triggerMode={}, 经验合并={}",
                 this.properties.getConsolidation().getCron(),
-                this.properties.getConsolidation().getTriggerMode());
+                this.properties.getConsolidation().getTriggerMode(),
+                this.experienceMerger != null ? "启用" : "禁用");
     }
 
     /**
@@ -119,6 +125,17 @@ public class ConsolidationPipeline {
                         prefStats.created(), prefStats.reinforced(), prefStats.deleted());
             } catch (Exception e) {
                 log.warn("巩固管线: 偏好同步失败, error={}", e.getMessage(), e);
+            }
+        }
+
+        // 3.5 经验合并（相似经验 → 元经验）
+        if (experienceMerger != null) {
+            try {
+                var mergeStats = experienceMerger.merge();
+                log.info("巩固管线: 经验合并完成, candidates={}, merged={}, skipped={}",
+                        mergeStats.candidatesFound(), mergeStats.merged(), mergeStats.skipped());
+            } catch (Exception e) {
+                log.warn("巩固管线: 经验合并失败, error={}", e.getMessage(), e);
             }
         }
 

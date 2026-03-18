@@ -542,12 +542,15 @@ public class MemoryAutoConfiguration {
             MemoryProperties properties,
             @Nullable PreferenceConsolidator preferenceConsolidator,
             @Nullable SemanticMemory semanticMemory,
-            @Nullable com.lifepilot.memory.procedural.ProceduralMemory proceduralMemory) {
-        log.info("记忆系统: 注册 ConsolidationPipeline, 偏好同步={}, 经验提升={}",
+            @Nullable com.lifepilot.memory.procedural.ProceduralMemory proceduralMemory,
+            @Nullable com.lifepilot.memory.consolidation.ExperienceMerger experienceMerger) {
+        log.info("记忆系统: 注册 ConsolidationPipeline, 偏好同步={}, 经验提升={}, 经验合并={}",
                 preferenceConsolidator != null ? "启用" : "禁用",
-                semanticMemory != null && proceduralMemory != null ? "启用" : "禁用");
+                semanticMemory != null && proceduralMemory != null ? "启用" : "禁用",
+                experienceMerger != null ? "启用" : "禁用");
         return new ConsolidationPipeline(semanticConsolidator, proceduralConsolidator,
-                properties, preferenceConsolidator, semanticMemory, proceduralMemory);
+                properties, preferenceConsolidator, semanticMemory, proceduralMemory,
+                experienceMerger);
     }
 
     // --- 实体去重 ---

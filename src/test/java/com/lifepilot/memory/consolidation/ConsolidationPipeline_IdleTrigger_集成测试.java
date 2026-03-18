@@ -51,7 +51,7 @@ class ConsolidationPipeline_IdleTrigger_集成测试 {
         when(proceduralConsolidator.consolidate()).thenReturn(
                 new ConsolidationStats("PROCEDURAL", 0, 0, 0, 0, 0, 0, 0L));
 
-        pipeline = new ConsolidationPipeline(semanticConsolidator, proceduralConsolidator, properties, null, null, null);
+        pipeline = new ConsolidationPipeline(semanticConsolidator, proceduralConsolidator, properties, null, null, null, null);
 
         pipelineProvider = mock(ObjectProvider.class);
         when(pipelineProvider.getIfAvailable()).thenReturn(pipeline);
