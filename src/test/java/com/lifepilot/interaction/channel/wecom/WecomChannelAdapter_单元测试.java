@@ -13,6 +13,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.lifepilot.config.threadpool.SharedScheduler;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
@@ -46,7 +48,7 @@ class WecomChannelAdapter_单元测试 {
         verifier = new WecomSignatureVerifier(TOKEN);
         converter = new WecomMessageConverter();
         properties = buildProperties();
-        adapter = new WecomChannelAdapter(gateway, properties, crypto, verifier, apiClient, converter);
+        adapter = new WecomChannelAdapter(gateway, properties, crypto, verifier, apiClient, converter, mock(SharedScheduler.class));
     }
 
     // ── channelType ──────────────────────────────────────────

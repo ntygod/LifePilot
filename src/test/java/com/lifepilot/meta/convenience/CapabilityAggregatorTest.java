@@ -1,5 +1,6 @@
 package com.lifepilot.meta.convenience;
 
+import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.multiagent.model.AgentBudget;
 import com.lifepilot.multiagent.model.AgentDefinition;
@@ -51,8 +52,12 @@ class CapabilityAggregatorTest {
         // 设置较短的 TTL 便于测试过期
         properties.getIntrospection().setCacheTtlSeconds(1);
 
+        var sharedScheduler = mock(SharedScheduler.class);
+        when(sharedScheduler.debounce()).thenReturn(
+                java.util.concurrent.Executors.newScheduledThreadPool(1));
+
         aggregator = new CapabilityAggregator(
-                skillRegistry, agentRegistry, toolRegistry, workflowRegistry, properties);
+                skillRegistry, agentRegistry, toolRegistry, workflowRegistry, properties, sharedScheduler);
 
         // 默认返回空列表
         when(skillRegistry.listAll()).thenReturn(List.of());

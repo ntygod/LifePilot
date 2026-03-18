@@ -1,5 +1,6 @@
 package com.lifepilot.meta.convenience;
 
+import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.mcp.registry.McpServerRegistry;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.multiagent.model.AgentBudget;
@@ -57,8 +58,12 @@ class IntrospectionSkillProviderTest {
         when(workflowRegistry.listAll()).thenReturn(List.of());
         when(toolRegistry.getToolCountByLayer()).thenReturn(Map.of());
 
+        var sharedScheduler = mock(SharedScheduler.class);
+        when(sharedScheduler.debounce()).thenReturn(
+                java.util.concurrent.Executors.newScheduledThreadPool(1));
+
         aggregator = new CapabilityAggregator(
-                skillRegistry, agentRegistry, toolRegistry, workflowRegistry, properties);
+                skillRegistry, agentRegistry, toolRegistry, workflowRegistry, properties, sharedScheduler);
 
         provider = new IntrospectionSkillProvider(
                 aggregator, skillRegistry, agentRegistry, toolRegistry, workflowRegistry, workflowRepository, mcpServerRegistry);

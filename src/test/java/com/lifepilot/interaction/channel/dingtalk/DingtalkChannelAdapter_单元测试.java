@@ -13,6 +13,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.lifepilot.config.threadpool.SharedScheduler;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
@@ -42,7 +44,7 @@ class DingtalkChannelAdapter_单元测试 {
         verifier = new DingtalkSignatureVerifier();
         converter = new DingtalkMessageConverter();
         properties = buildProperties();
-        adapter = new DingtalkChannelAdapter(gateway, properties, verifier, apiClient, converter);
+        adapter = new DingtalkChannelAdapter(gateway, properties, verifier, apiClient, converter, mock(SharedScheduler.class));
     }
 
     // ── channelType ──────────────────────────────────────────

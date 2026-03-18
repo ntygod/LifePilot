@@ -14,6 +14,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.lifepilot.config.threadpool.SharedScheduler;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
@@ -45,7 +47,7 @@ class FeishuChannelAdapter_单元测试 {
         crypto = new FeishuCrypto(ENCRYPT_KEY);
         converter = new FeishuMessageConverter();
         var properties = buildProperties();
-        adapter = new FeishuChannelAdapter(gateway, properties, crypto, apiClient, converter);
+        adapter = new FeishuChannelAdapter(gateway, properties, crypto, apiClient, converter, mock(SharedScheduler.class));
     }
 
     // ── channelType ──────────────────────────────────────────

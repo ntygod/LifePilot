@@ -1,5 +1,6 @@
 package com.lifepilot.notification;
 
+import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.notification.config.NotificationProperties;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,6 +30,7 @@ class NotificationSchedulerTest {
 
     @Mock private PassiveNotificationQueue passiveNotificationQueue;
     @Mock private SseSessionManager sseSessionManager;
+    @Mock private SharedScheduler sharedScheduler;
 
     private NotificationProperties properties;
 
@@ -36,6 +38,8 @@ class NotificationSchedulerTest {
     void setUp() {
         properties = new NotificationProperties();
         properties.setPassiveDrainInterval(60);
+        when(sharedScheduler.cleanup()).thenReturn(
+                java.util.concurrent.Executors.newScheduledThreadPool(1));
     }
 
     private PassiveQueueEntry testEntry(String id) {
@@ -51,7 +55,7 @@ class NotificationSchedulerTest {
             var entries = List.of(testEntry("e-1"), testEntry("e-2"));
             when(passiveNotificationQueue.drainAll()).thenReturn(entries);
 
-            var scheduler = new NotificationScheduler(passiveNotificationQueue, sseSessionManager, properties);
+            var scheduler = new NotificationScheduler(passiveNotificationQueue, sseSessionManager, properties, sharedScheduler);
             scheduler.drain();
 
             verify(passiveNotificationQueue).drainAll();
@@ -62,7 +66,7 @@ class NotificationSchedulerTest {
         void drain_空队列不广播() {
             when(passiveNotificationQueue.drainAll()).thenReturn(List.of());
 
-            var scheduler = new NotificationScheduler(passiveNotificationQueue, sseSessionManager, properties);
+            var scheduler = new NotificationScheduler(passiveNotificationQueue, sseSessionManager, properties, sharedScheduler);
             scheduler.drain();
 
             verify(passiveNotificationQueue).drainAll();
@@ -73,7 +77,7 @@ class NotificationSchedulerTest {
         void drain_异常不崩溃() {
             when(passiveNotificationQueue.drainAll()).thenThrow(new RuntimeException("模拟异常"));
 
-            var scheduler = new NotificationScheduler(passiveNotificationQueue, sseSessionManager, properties);
+            var scheduler = new NotificationScheduler(passiveNotificationQueue, sseSessionManager, properties, sharedScheduler);
 
             assertDoesNotThrow(scheduler::drain);
         }
@@ -83,7 +87,7 @@ class NotificationSchedulerTest {
             var entries = List.of(testEntry("e-1"));
             when(passiveNotificationQueue.drainAll()).thenReturn(entries);
 
-            var scheduler = new NotificationScheduler(passiveNotificationQueue, null, properties);
+            var scheduler = new NotificationScheduler(passiveNotificationQueue, null, properties, sharedScheduler);
             scheduler.drain();
 
             verify(passiveNotificationQueue).drainAll();

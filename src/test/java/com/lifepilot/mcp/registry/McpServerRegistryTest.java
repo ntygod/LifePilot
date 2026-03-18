@@ -19,6 +19,8 @@ import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
+import com.lifepilot.config.threadpool.SharedScheduler;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -64,7 +66,7 @@ class McpServerRegistryTest {
                 .build();
 
         // 子类覆盖 createClient() 返回 Mock
-        registry = new McpServerRegistry(mockToolAdapter, mockToolRegistry, mockEventPublisher) {
+        registry = new McpServerRegistry(mockToolAdapter, mockToolRegistry, mockEventPublisher, mock(SharedScheduler.class)) {
             @Override
             McpClient createClient(McpServerConfig cfg) {
                 return mockClient;

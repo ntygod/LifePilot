@@ -1,5 +1,6 @@
 package com.lifepilot.meta.convenience;
 
+import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.multiagent.registry.AgentRegistry;
 import com.lifepilot.skill.registry.SkillRegistry;
@@ -39,9 +40,14 @@ class CacheFlapping_BugCondition_探索测试 {
         // 准备：创建默认 MetaProperties
         var properties = new MetaProperties();
 
+        // 准备：Mock SharedScheduler，debounce() 返回真实调度器
+        var sharedScheduler = mock(SharedScheduler.class);
+        when(sharedScheduler.debounce()).thenReturn(
+                java.util.concurrent.Executors.newScheduledThreadPool(1));
+
         // 创建 CapabilityAggregator 并用 spy 包装以计数 invalidateCache() 调用
         var aggregator = spy(new CapabilityAggregator(
-                skillRegistry, agentRegistry, toolRegistry, workflowRegistry, properties));
+                skillRegistry, agentRegistry, toolRegistry, workflowRegistry, properties, sharedScheduler));
 
         // 构造一个 ToolRegistryEvent
         var event = new ToolRegistryEvent.ToolsRegistered(

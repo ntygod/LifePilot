@@ -1,5 +1,6 @@
 package com.lifepilot.meta.convenience;
 
+import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.multiagent.model.AgentBudget;
 import com.lifepilot.multiagent.model.AgentDefinition;
@@ -41,6 +42,7 @@ class CacheFlapping_Preservation_保持测试 {
     private DynamicToolRegistry toolRegistry;
     private WorkflowRegistry workflowRegistry;
     private MetaProperties properties;
+    private SharedScheduler sharedScheduler;
 
     @BeforeEach
     void setUp() {
@@ -49,13 +51,16 @@ class CacheFlapping_Preservation_保持测试 {
         toolRegistry = mock(DynamicToolRegistry.class);
         workflowRegistry = mock(WorkflowRegistry.class);
         properties = new MetaProperties();
+        sharedScheduler = mock(SharedScheduler.class);
+        when(sharedScheduler.debounce()).thenReturn(
+                java.util.concurrent.Executors.newScheduledThreadPool(1));
     }
 
     @Test
     void 单个ToolRegistryEvent_invalidateCache被调用1次() throws InterruptedException {
         // 创建 spy 以计数 invalidateCache() 调用
         var aggregator = spy(new CapabilityAggregator(
-                skillRegistry, agentRegistry, toolRegistry, workflowRegistry, properties));
+                skillRegistry, agentRegistry, toolRegistry, workflowRegistry, properties, sharedScheduler));
 
         // 构造单个 ToolRegistryEvent
         var event = new ToolRegistryEvent.ToolsRegistered(
@@ -74,7 +79,7 @@ class CacheFlapping_Preservation_保持测试 {
     @Test
     void 单个SkillRegistryEvent_invalidateCache被调用1次() throws InterruptedException {
         var aggregator = spy(new CapabilityAggregator(
-                skillRegistry, agentRegistry, toolRegistry, workflowRegistry, properties));
+                skillRegistry, agentRegistry, toolRegistry, workflowRegistry, properties, sharedScheduler));
 
         // 构造单个 SkillRegistryEvent（使用 SkillRegistered）
         var skillDef = new SkillDefinition(
@@ -96,7 +101,7 @@ class CacheFlapping_Preservation_保持测试 {
     @Test
     void 单个AgentRegistryEvent_invalidateCache被调用1次() throws InterruptedException {
         var aggregator = spy(new CapabilityAggregator(
-                skillRegistry, agentRegistry, toolRegistry, workflowRegistry, properties));
+                skillRegistry, agentRegistry, toolRegistry, workflowRegistry, properties, sharedScheduler));
 
         // 构造单个 AgentRegistryEvent（使用 AgentRegistered）
         var agentDef = new AgentDefinition(
