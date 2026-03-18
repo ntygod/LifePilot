@@ -188,7 +188,7 @@ public class ContextAssembler {
             var strategyConfig = retrievalStrategy.getDefaultStrategy();
 
             if (strategyConfig.skip()) {
-                return buildMinimalContext(state);
+                return assembleBasic(state);
             }
 
             // 1.1 媒体占位符检测：音频/视频消息的 goal 是占位字符，跳过无效向量检索
@@ -329,14 +329,6 @@ public class ContextAssembler {
         String systemPrompt = safeReactSystemPrompt();
         String userPrompt = buildUserPrompt(state);
         return new AssembledContext(systemPrompt, userPrompt, List.of(), tokenBudget,
-                0, 0.0f, 0, false, List.of(), null);
-    }
-
-    /** 返回最小化上下文。 */
-    private AssembledContext buildMinimalContext(ReactAgentState state) {
-        int totalTokens = config.getContext().getMaxContextTokens();
-        var tokenBudget = TokenBudget.allocateDefault(totalTokens);
-        return new AssembledContext("", "", List.of(), tokenBudget,
                 0, 0.0f, 0, false, List.of(), null);
     }
 
@@ -871,11 +863,6 @@ public class ContextAssembler {
         return fragments.stream()
                 .map(msg -> "[%s] %s".formatted(msg.role(), msg.effectiveContent()))
                 .toList();
-    }
-
-    /** 安全执行预算分配，异常时使用静态分配降级。 */
-    private BudgetAllocation safeAllocate(TokenBudgetAllocator allocator, int conversationTurns, float topScore, boolean hasMemoryData) {
-        return safeAllocate(allocator, conversationTurns, topScore, hasMemoryData, 0);
     }
 
     /**
