@@ -33,8 +33,8 @@ import java.util.*;
 /**
  * 记忆管理内置 Skill 提供者。
  *
- * <p>注册 7 个记忆管理工具到 DynamicToolRegistry：
- * search / recall / search-docs / create / update / delete / tag。</p>
+ * <p>注册 8 个记忆管理工具到 DynamicToolRegistry：
+ * search / recall / search-docs / create / update / delete / tag / query-at-time。</p>
  *
  * @author zsg
  * @since 2026-02-25
@@ -75,7 +75,8 @@ public class MemorySkillProvider implements BuiltinSkillProvider {
                 "builtin.memory.create",
                 "builtin.memory.update",
                 "builtin.memory.delete",
-                "builtin.memory.tag"
+                "builtin.memory.tag",
+                "builtin.memory.query-at-time"
         ));
         if (episodicMemory != null) {
             tools.add("builtin.memory.recall");
@@ -111,6 +112,8 @@ public class MemorySkillProvider implements BuiltinSkillProvider {
             toolRegistry.registerBuiltinTool(buildSearchDocsTool());
             count++;
         }
+        toolRegistry.registerBuiltinTool(buildQueryAtTimeTool());
+        count++;
         log.info("记忆 Skill 工具注册完成: count={}", count);
     }
 
@@ -423,6 +426,67 @@ public class MemorySkillProvider implements BuiltinSkillProvider {
                     } catch (Exception e) {
                         log.error("添加记忆标签失败: {}", e.getMessage(), e);
                         return ToolResult.error("添加记忆标签失败: " + e.getMessage());
+                    }
+                })
+                .build();
+    }
+
+    /** 构建时间点查询工具 — 查询指定时间点有效的记忆实体。 */
+    private BuiltinTool buildQueryAtTimeTool() {
+        return BuiltinTool.builder()
+                .id("builtin.memory.query-at-time")
+                .name("时间点查询")
+                .description("查询指定时间点有效的记忆实体。" +
+                        "当用户问'那时候我的偏好是什么'、'某个时间点的状态'时使用。" +
+                        "返回在该时间点处于有效状态的所有实体。")
+                .inputSchema(JsonSchema.of(Map.of(
+                        "type", "object",
+                        "required", List.of("timestamp"),
+                        "properties", Map.of(
+                                "timestamp", Map.of("type", "string", "description", "ISO 8601 格式时间戳，如 2026-01-15T10:30:00Z"),
+                                "entityType", Map.of("type", "string", "description", "可选，过滤实体类型（如 PREFERENCE, HABIT, GOAL）")
+                        )
+                )))
+                .riskLevel(RiskLevel.LOW)
+                .executor(input -> {
+                    try {
+                        String timestampStr = input.getParam("timestamp", String.class);
+                        Instant instant;
+                        try {
+                            instant = Instant.parse(timestampStr);
+                        } catch (Exception e) {
+                            return ToolResult.error("无效的时间格式，请使用 ISO 8601 格式（如 2026-01-15T10:30:00Z）");
+                        }
+                        List<TemporalEntity> entities = semanticMemory.queryAtTime(instant);
+                        // 可选按 entityType 过滤
+                        var typeFilter = input.getOptionalParam("entityType", String.class);
+                        if (typeFilter.isPresent()) {
+                            try {
+                                EntityType filterType = EntityType.valueOf(typeFilter.get().toUpperCase());
+                                entities = entities.stream()
+                                        .filter(e -> e.type() == filterType)
+                                        .toList();
+                            } catch (IllegalArgumentException e) {
+                                return ToolResult.error("无效的实体类型: " + typeFilter.get());
+                            }
+                        }
+                        List<Map<String, Object>> items = entities.stream()
+                                .map(e -> {
+                                    var map = new HashMap<String, Object>();
+                                    map.put("id", e.id());
+                                    map.put("name", e.name());
+                                    map.put("type", e.type().name());
+                                    if (e.description() != null) map.put("description", e.description());
+                                    map.put("validFrom", e.validFrom().toString());
+                                    if (e.validTo() != null) map.put("validTo", e.validTo().toString());
+                                    return Map.copyOf(map);
+                                })
+                                .toList();
+                        return ToolResult.success(Map.of("results", items, "count", items.size(),
+                                "queryTime", timestampStr));
+                    } catch (Exception e) {
+                        log.error("时间点查询失败: {}", e.getMessage(), e);
+                        return ToolResult.error("时间点查询失败: " + e.getMessage());
                     }
                 })
                 .build();
