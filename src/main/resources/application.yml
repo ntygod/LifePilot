@@ -273,6 +273,33 @@ lifepilot:
       eval-improvement-threshold: 0.05
       eval-tag-prefix: "eval:"
       eval-quality-relax-factor: 0.5
+      # 效果反馈配置
+      effectiveness:
+        success-ratio-threshold: 0.5
+        positive-boost: 0.05
+        negative-decay: 0.03
+        eviction-threshold: 0.1
+      # 对比学习配置
+      contrastive:
+        enabled: true
+        similarity-threshold: 0.80
+        initial-importance: 0.7
+        llm-timeout-seconds: 30
+      # 执行上下文隔离配置
+      isolation:
+        cross-context-retrieval: false
+      # 经验合并配置
+      merge:
+        enabled: true
+        similarity-threshold: 0.85
+        max-merges-per-run: 10
+        llm-timeout-seconds: 30
+      # 子任务反思配置
+      subtask:
+        enabled: true
+        min-tool-sequence: 3
+        initial-importance: 0.4
+        max-input-tokens: 2000
   skills:
     # ===== Skill 系统配置 =====
     # 支持 Java 原生 Skill、Markdown 声明式 Skill、MCP 外部工具
