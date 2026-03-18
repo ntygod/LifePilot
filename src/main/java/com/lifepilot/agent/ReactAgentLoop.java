@@ -139,9 +139,7 @@ public class ReactAgentLoop {
     @Nullable private final com.lifepilot.memory.experience.SubtaskReflector subtaskReflector;
 
     // ===== 挂起-恢复定时任务调度器 =====
-    private final java.util.concurrent.ScheduledExecutorService suspendScheduler =
-            java.util.concurrent.Executors.newSingleThreadScheduledExecutor(
-                    Thread.ofVirtual().name("suspend-wakeup-", 0).factory());
+    private final java.util.concurrent.ScheduledExecutorService suspendScheduler;
 
     // ===== 运行时状态（volatile） =====
     private volatile A2uiComponentTree lastCollectedA2uiTree;
@@ -180,7 +178,8 @@ public class ReactAgentLoop {
             @Nullable com.lifepilot.memory.experience.ExperienceSummarizer experienceSummarizer,
             @Nullable com.lifepilot.memory.experience.EffectivenessTracker effectivenessTracker,
             @Nullable com.lifepilot.memory.experience.ContrastiveLearner contrastiveLearner,
-            @Nullable com.lifepilot.memory.experience.SubtaskReflector subtaskReflector) {
+            @Nullable com.lifepilot.memory.experience.SubtaskReflector subtaskReflector,
+            com.lifepilot.config.threadpool.SharedScheduler sharedScheduler) {
         this.contextAssembler = contextAssembler;
         this.llmRouter = llmRouter;
         this.traceRecorder = traceRecorder;
@@ -210,6 +209,7 @@ public class ReactAgentLoop {
         this.effectivenessTracker = effectivenessTracker;
         this.contrastiveLearner = contrastiveLearner;
         this.subtaskReflector = subtaskReflector;
+        this.suspendScheduler = sharedScheduler.cleanup();
     }
 
     /** 测试会话前缀 — 以此开头的 sessionId 不持久化对话历史和记忆。 */

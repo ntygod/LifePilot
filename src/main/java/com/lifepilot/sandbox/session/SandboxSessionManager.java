@@ -7,13 +7,13 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.sandbox.booter.DockerBooter;
 import com.lifepilot.sandbox.booter.ProcessBooter;
 import com.lifepilot.sandbox.booter.SandboxBooter;
@@ -43,15 +43,13 @@ public class SandboxSessionManager {
      *
      * @param config         沙箱配置
      * @param booterTemplate 沙箱启动器模板，用于确定新会话的 booter 类型
+     * @param sharedScheduler 共享调度器
      */
-    public SandboxSessionManager(SandboxConfigProperties config, SandboxBooter booterTemplate) {
+    public SandboxSessionManager(SandboxConfigProperties config, SandboxBooter booterTemplate,
+                                 SharedScheduler sharedScheduler) {
         this.config = config;
         this.booterTemplate = booterTemplate;
-        this.scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread t = new Thread(r, "sandbox-session-cleanup");
-            t.setDaemon(true);
-            return t;
-        });
+        this.scheduler = sharedScheduler.cleanup();
 
         int intervalSeconds = config.getSession().getCleanupIntervalSeconds();
         scheduler.scheduleAtFixedRate(this::cleanupExpired, intervalSeconds, intervalSeconds, TimeUnit.SECONDS);
@@ -174,17 +172,6 @@ public class SandboxSessionManager {
             if (removed != null) {
                 destroyEntry(entry.getKey(), removed);
             }
-        }
-
-        scheduler.shutdown();
-        try {
-            if (!scheduler.awaitTermination(10, TimeUnit.SECONDS)) {
-                scheduler.shutdownNow();
-                log.warn("定时清理调度器未能在 10 秒内关闭，已强制终止");
-            }
-        } catch (InterruptedException e) {
-            scheduler.shutdownNow();
-            Thread.currentThread().interrupt();
         }
 
         log.info("所有会话已关闭");

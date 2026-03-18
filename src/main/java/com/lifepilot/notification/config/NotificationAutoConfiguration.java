@@ -1,5 +1,6 @@
 package com.lifepilot.notification.config;
 
+import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.interaction.channel.ChannelAdapter;
 import com.lifepilot.interaction.channel.converter.MessageConverter;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
@@ -70,8 +71,9 @@ public class NotificationAutoConfiguration {
     @ConditionalOnMissingBean
     public NotificationScheduler notificationScheduler(PassiveNotificationQueue passiveNotificationQueue,
                                                         @Nullable SseSessionManager sseSessionManager,
-                                                        NotificationProperties properties) {
+                                                        NotificationProperties properties,
+                                                        SharedScheduler sharedScheduler) {
         log.info("通知模块: 注册 NotificationScheduler");
-        return new NotificationScheduler(passiveNotificationQueue, sseSessionManager, properties);
+        return new NotificationScheduler(passiveNotificationQueue, sseSessionManager, properties, sharedScheduler);
     }
 }

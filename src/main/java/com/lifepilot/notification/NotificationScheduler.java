@@ -1,14 +1,13 @@
 package com.lifepilot.notification;
 
+import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.notification.config.NotificationProperties;
 import jakarta.annotation.PostConstruct;
-import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
 
-import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
@@ -34,12 +33,12 @@ public class NotificationScheduler {
 
     public NotificationScheduler(PassiveNotificationQueue passiveNotificationQueue,
                                  @Nullable SseSessionManager sseSessionManager,
-                                 NotificationProperties properties) {
+                                 NotificationProperties properties,
+                                 SharedScheduler sharedScheduler) {
         this.passiveNotificationQueue = passiveNotificationQueue;
         this.sseSessionManager = sseSessionManager;
         this.properties = properties;
-        this.scheduler = Executors.newSingleThreadScheduledExecutor(
-                Thread.ofVirtual().name("notification-drain-", 0).factory());
+        this.scheduler = sharedScheduler.cleanup();
     }
 
     /**
@@ -78,20 +77,5 @@ public class NotificationScheduler {
         }
     }
 
-    /**
-     * 停止调度器。
-     */
-    @PreDestroy
-    public void stop() {
-        scheduler.shutdown();
-        try {
-            if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) {
-                scheduler.shutdownNow();
-            }
-        } catch (InterruptedException e) {
-            scheduler.shutdownNow();
-            Thread.currentThread().interrupt();
-        }
-        log.info("通知调度器已停止");
-    }
+
 }

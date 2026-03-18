@@ -8,6 +8,7 @@ import com.lifepilot.agent.suspend.event.ScheduledWakeupEvent;
 import com.lifepilot.agent.suspend.model.SuspendedAgent;
 import com.lifepilot.agent.suspend.store.SqliteSuspendStore;
 import com.lifepilot.agent.suspend.store.SuspendStore;
+import com.lifepilot.config.threadpool.SharedScheduler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -23,8 +24,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -42,10 +41,11 @@ public class SuspendAutoConfiguration {
 
     private static final Logger log = LoggerFactory.getLogger(SuspendAutoConfiguration.class);
 
-    /** 清理和唤醒共用的调度器，Virtual Thread 工厂。 */
-    private final ScheduledExecutorService scheduler =
-            Executors.newSingleThreadScheduledExecutor(
-                    Thread.ofVirtual().name("suspend-cleanup-", 0).factory());
+    private final SharedScheduler sharedScheduler;
+
+    public SuspendAutoConfiguration(SharedScheduler sharedScheduler) {
+        this.sharedScheduler = sharedScheduler;
+    }
 
     @Bean
     @ConditionalOnMissingBean
@@ -82,7 +82,7 @@ public class SuspendAutoConfiguration {
         // 启动过期清理定时任务
         long intervalMs = properties.getCleanupInterval().toMillis();
         Duration maxAge = properties.getMaxAge();
-        scheduler.scheduleAtFixedRate(() -> {
+        sharedScheduler.cleanup().scheduleAtFixedRate(() -> {
             try {
                 int deleted = suspendStore.cleanExpired(maxAge);
                 if (deleted > 0) {
@@ -116,7 +116,7 @@ public class SuspendAutoConfiguration {
                     eventPublisher.publishEvent(new ScheduledWakeupEvent(traceId, Instant.now()));
                     log.info("ScheduledWakeup 唤醒时间已过，立即发布恢复事件: traceId={}", traceId);
                 } else {
-                    scheduler.schedule(() -> {
+                    sharedScheduler.cleanup().schedule(() -> {
                         eventPublisher.publishEvent(new ScheduledWakeupEvent(traceId, Instant.now()));
                         log.info("ScheduledWakeup 延迟任务触发（启动恢复）: traceId={}", traceId);
                     }, delay.toMillis(), TimeUnit.MILLISECONDS);
