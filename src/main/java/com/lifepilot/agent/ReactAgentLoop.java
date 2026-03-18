@@ -885,7 +885,7 @@ public class ReactAgentLoop {
         validateResumePayload(suspended.suspendReason(), payload);
 
         // 3. 重建状态
-        ReactAgentState state = suspended.toAgentState().resume();
+        ReactAgentState state = suspended.toAgentState(objectMapper).resume();
         state = state.appendStep(new ReactStep.Resume(payload, Instant.now(),
                 Duration.between(suspended.suspendedAt(), Instant.now())));
         String resumeToolId = "resume:" + suspended.suspendReason().getClass().getSimpleName();
@@ -1270,7 +1270,7 @@ public class ReactAgentLoop {
             // ★ 挂起分支 — coreLoop 退出后检查是否进入挂起态
             if (state.suspended() && state.suspendReason() != null) {
                 if (suspendStore != null) {
-                    suspendStore.save(SuspendedAgent.from(state));
+                    suspendStore.save(SuspendedAgent.from(state, objectMapper));
                     scheduleWakeupIfNeeded(state);
                     log.info("Agent 已挂起并持久化: traceId={}, reasonType={}",
                             state.traceId(), state.suspendReason().getClass().getSimpleName());
@@ -1439,7 +1439,7 @@ public class ReactAgentLoop {
             // ★ 挂起分支 — coreLoop 退出后检查是否进入挂起态
             if (state.suspended() && state.suspendReason() != null) {
                 if (suspendStore != null) {
-                    var suspendedAgent = SuspendedAgent.from(state).toBuilder()
+                    var suspendedAgent = SuspendedAgent.from(state, objectMapper).toBuilder()
                             .streamId(streamId).build();
                     suspendStore.save(suspendedAgent);
                     scheduleWakeupIfNeeded(state);

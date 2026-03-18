@@ -1,5 +1,6 @@
 package com.lifepilot.agent.suspend.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.ReactAgentLoop;
 import com.lifepilot.agent.model.SuspendReason;
 import com.lifepilot.agent.suspend.AgentResumeListener;
@@ -49,9 +50,9 @@ public class SuspendAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public SuspendStore suspendStore(JdbcTemplate jdbcTemplate) {
+    public SuspendStore suspendStore(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
         log.info("挂起-恢复: 注册 SqliteSuspendStore");
-        return new SqliteSuspendStore(jdbcTemplate);
+        return new SqliteSuspendStore(jdbcTemplate, objectMapper);
     }
 
     @Bean
