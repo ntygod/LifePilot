@@ -92,7 +92,7 @@ public class ExperienceSummarizer {
         }
 
         // 6. 存储写入
-        persistExperience(record, state.sessionId(), report.taskSuccess());
+        persistExperience(record, state.sessionId(), report.taskSuccess(), state);
         log.info("经验提炼: 完成, sessionId={}, scenario={}", state.sessionId(), record.scenario());
     }
 
@@ -138,7 +138,7 @@ public class ExperienceSummarizer {
 
                 if (record.scenario() == null || record.scenario().isBlank()) continue;
 
-                persistExperience(record, evalResult.traceId(), success);
+                persistExperience(record, evalResult.traceId(), success, null);
                 log.info("经验提炼(Eval): 完成, scenarioId={}, score={}",
                         evalResult.scenarioId(), evalResult.overallScore());
             } catch (Exception e) {
@@ -227,7 +227,8 @@ public class ExperienceSummarizer {
     }
 
     /** 持久化经验到 L3 语义记忆。 */
-    private void persistExperience(ExperienceRecord record, String sourceId, boolean success) {
+    private void persistExperience(ExperienceRecord record, String sourceId, boolean success,
+                                   @Nullable ReactAgentState state) {
         try {
             String experienceText = record.scenario() + ": " + record.strategy();
 
@@ -258,6 +259,21 @@ public class ExperienceSummarizer {
                     ? record.applicableConditions() : List.of());
             props.put("toolsUsed", record.toolsUsed() != null ? record.toolsUsed() : List.of());
             props.put("success", record.success());
+
+            // 执行上下文标记
+            if (state != null) {
+                ExecutionContext ctx = ExecutionContext.infer(state);
+                props.put("executionContext", ctx.name());
+                if (ctx == ExecutionContext.EVAL && state.sessionId() != null) {
+                    props.put("evalRunId", state.sessionId());
+                }
+            }
+
+            // 初始化效果追踪字段默认值
+            props.put("effectivenessScore", 0.0f);
+            props.put("injectionCount", 0);
+            props.put("positiveOutcomes", 0);
+            props.put("negativeOutcomes", 0);
 
             var entity = new TemporalEntity(
                     UUID.randomUUID().toString(),
