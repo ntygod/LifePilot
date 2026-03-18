@@ -26,6 +26,7 @@ import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.media.audio.AudioTranscriber;
 import com.lifepilot.media.audio.AudioTranscriptionException;
+import com.lifepilot.media.config.MediaProperties;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -58,16 +59,19 @@ public class WebChannelAdapter extends AbstractChannelAdapter {
     private final AttachmentRepository attachmentRepository;
     @Nullable private final SseSessionManager sseSessionManager;
     @Nullable private final AudioTranscriber audioTranscriber;
+    private final MediaProperties mediaProperties;
 
     public WebChannelAdapter(MessageGateway gateway,
                              GatewayProperties properties,
                              AttachmentRepository attachmentRepository,
                              @Nullable SseSessionManager sseSessionManager,
-                             @Nullable AudioTranscriber audioTranscriber) {
+                             @Nullable AudioTranscriber audioTranscriber,
+                             MediaProperties mediaProperties) {
         super(gateway, properties);
         this.attachmentRepository = attachmentRepository;
         this.sseSessionManager = sseSessionManager;
         this.audioTranscriber = audioTranscriber;
+        this.mediaProperties = mediaProperties;
     }
 
     @Override
@@ -259,7 +263,21 @@ public class WebChannelAdapter extends AbstractChannelAdapter {
     private String transcribeAudioAttachments(List<GatewayMessage.Attachment> attachments,
                                                String originalContent,
                                                String sessionId) {
-        if (audioTranscriber == null || attachments.isEmpty()) {
+        if (attachments.isEmpty()) {
+            return originalContent;
+        }
+
+        // 原生音频路由启用时，跳过 STT 转录，音频将直接发送给支持 NATIVE_AUDIO 的 Provider
+        if (mediaProperties.getNativeAudio().isEnabled()) {
+            boolean hasAudio = attachments.stream()
+                    .anyMatch(att -> att.mimeType() != null && att.mimeType().startsWith("audio/"));
+            if (hasAudio) {
+                log.info("原生音频路由已启用，跳过 STT 转录: sessionId={}", sessionId);
+                return originalContent;
+            }
+        }
+
+        if (audioTranscriber == null) {
             return originalContent;
         }
 

@@ -100,9 +100,10 @@ public class MultimodalRouter {
         this.mediaProperties = mediaProperties;
         this.llmRouter = llmRouter;
         this.backoff = ExponentialBackoff.defaults();
-        log.info("MultimodalRouter 初始化完成, 视频处理={}, 原生视频={}",
+        log.info("MultimodalRouter 初始化完成, 视频处理={}, 原生视频={}, 原生音频={}",
                 videoProcessor != null ? "已启用" : "未启用",
-                geminiFileApiClient != null ? "已启用" : "未启用");
+                geminiFileApiClient != null ? "已启用" : "未启用",
+                mediaProperties.getNativeAudio().isEnabled() ? "已启用" : "未启用");
     }
 
     public LlmResponse call(MultimodalRequest request) {
@@ -110,6 +111,12 @@ public class MultimodalRouter {
     }
 
     public LlmResponse call(MultimodalRequest request, @Nullable Duration timeoutOverride) {
+        // 原生音频路由：检测音频附件 → 路由到 NATIVE_AUDIO provider
+        var audioResult = tryNativeAudioCall(request, timeoutOverride);
+        if (audioResult != null) {
+            return audioResult;
+        }
+
         var preprocessed = preprocessVideo(request);
         String text = preprocessed.text();
         List<MediaContent> mediaList = preprocessed.mediaList();
@@ -178,6 +185,12 @@ public class MultimodalRouter {
     }
 
     public StreamingLlmResponse streamWithInfo(MultimodalRequest request) {
+        // 原生音频路由：检测音频附件 → 流式路由到 NATIVE_AUDIO provider
+        var audioStreamResult = tryNativeAudioStream(request);
+        if (audioStreamResult != null) {
+            return audioStreamResult;
+        }
+
         var preprocessed = preprocessVideo(request);
         String text = preprocessed.text();
         List<MediaContent> mediaList = preprocessed.mediaList();
@@ -296,6 +309,79 @@ public class MultimodalRouter {
                 request.outputSchema(),
                 request.preferredProviderId(),
                 request.modelName()
+        );
+    }
+
+    /**
+     * 尝试原生音频同步调用。
+     *
+     * <p>条件：native-audio 已启用 + 请求包含音频附件 + 存在 NATIVE_AUDIO Provider。
+     * 成功时返回 LlmResponse，不满足条件或调用失败时返回 null（回退到 STT 转录流程）。</p>
+     *
+     * @param request         多模态请求
+     * @param timeoutOverride 超时覆盖
+     * @return LlmResponse 或 null
+     */
+    @Nullable
+    private LlmResponse tryNativeAudioCall(MultimodalRequest request, @Nullable Duration timeoutOverride) {
+        if (!mediaProperties.getNativeAudio().isEnabled() || !request.hasAudio()) {
+            return null;
+        }
+        var nativeProviders = providerRegistry.findByCapability(ProviderCapability.NATIVE_AUDIO);
+        if (nativeProviders.isEmpty()) {
+            return null;
+        }
+
+        List<MediaContent> audioContents = request.mediaList().stream()
+                .filter(mc -> mc.mimeType().startsWith("audio/"))
+                .toList();
+
+        for (var config : nativeProviders) {
+            try {
+                log.info("音频路由策略: 原生音频, audioCount={}, provider={}", audioContents.size(), config.id());
+                var adapter = providerRegistry.getAdapter(config.id());
+                var timeout = effectiveTimeout(config, timeoutOverride);
+                var response = adapter.callWithAudio(request.text(), audioContents, timeout);
+                log.info("原生音频调用成功: provider={}, latency={}ms", config.id(), response.latencyMs());
+                return response;
+            } catch (Exception e) {
+                log.warn("原生音频调用失败: provider={}, error={}", config.id(), e.getMessage());
+            }
+        }
+        log.warn("所有 NATIVE_AUDIO Provider 调用失败，回退到默认流程");
+        return null;
+    }
+
+    /**
+     * 尝试原生音频流式调用。
+     *
+     * <p>条件同 {@link #tryNativeAudioCall}。成功时返回 StreamingLlmResponse，
+     * 不满足条件时返回 null。</p>
+     *
+     * @param request 多模态请求
+     * @return StreamingLlmResponse 或 null
+     */
+    @Nullable
+    private StreamingLlmResponse tryNativeAudioStream(MultimodalRequest request) {
+        if (!mediaProperties.getNativeAudio().isEnabled() || !request.hasAudio()) {
+            return null;
+        }
+        var nativeProviders = providerRegistry.findByCapability(ProviderCapability.NATIVE_AUDIO);
+        if (nativeProviders.isEmpty()) {
+            return null;
+        }
+
+        List<MediaContent> audioContents = request.mediaList().stream()
+                .filter(mc -> mc.mimeType().startsWith("audio/"))
+                .toList();
+
+        var config = nativeProviders.getFirst();
+        var adapter = providerRegistry.getAdapter(config.id());
+        log.info("音频流式路由: 原生音频, audioCount={}, provider={}", audioContents.size(), config.id());
+        return new StreamingLlmResponse(
+                adapter.streamWithAudio(request.text(), audioContents),
+                config.id(),
+                config.modelName()
         );
     }
 

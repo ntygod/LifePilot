@@ -26,6 +26,8 @@ public enum ProviderCapability {
     /** 重排序能力 */
     RERANK,
     /** 原生视频理解能力（如 Gemini File API） */
-    NATIVE_VIDEO
+    NATIVE_VIDEO,
+    /** 原生音频理解能力（如 Qwen3-Omni） */
+    NATIVE_AUDIO
 }
 

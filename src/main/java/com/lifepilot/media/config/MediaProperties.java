@@ -37,6 +37,9 @@ public class MediaProperties {
     /** 原生视频处理配置。 */
     private NativeVideo nativeVideo = new NativeVideo();
 
+    /** 原生音频处理配置。 */
+    private NativeAudio nativeAudio = new NativeAudio();
+
     public Validation getValidation() { return validation; }
     public void setValidation(Validation validation) { this.validation = validation; }
 
@@ -57,6 +60,9 @@ public class MediaProperties {
 
     public NativeVideo getNativeVideo() { return nativeVideo; }
     public void setNativeVideo(NativeVideo nativeVideo) { this.nativeVideo = nativeVideo; }
+
+    public NativeAudio getNativeAudio() { return nativeAudio; }
+    public void setNativeAudio(NativeAudio nativeAudio) { this.nativeAudio = nativeAudio; }
 
     /**
      * 图片处理配置。
@@ -307,5 +313,23 @@ public class MediaProperties {
 
         public String getGeminiApiBaseUrl() { return geminiApiBaseUrl; }
         public void setGeminiApiBaseUrl(String geminiApiBaseUrl) { this.geminiApiBaseUrl = geminiApiBaseUrl; }
+    }
+
+    /**
+     * 原生音频处理配置。
+     *
+     * <p>配置原生音频路由参数。启用后，音频附件将直接发送给支持 NATIVE_AUDIO 能力的 Provider，
+     * 跳过 STT 转录步骤。</p>
+     *
+     * @author zsg
+     * @since 2026-03-18
+     */
+    public static class NativeAudio {
+
+        /** 是否启用原生音频路由，默认 true。 */
+        private boolean enabled = true;
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
     }
 }
