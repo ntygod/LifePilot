@@ -123,8 +123,8 @@ public class KnowledgeExtractionPipeline {
             for (var entityInfo : response.entities()) {
                 try {
                     var entity = toTemporalEntity(entityInfo);
-                    semanticMemory.upsertWithConflictDetection(entity, documentId);
-                    entityNameToId.put(entityInfo.name(), entity.id());
+                    var persisted = semanticMemory.upsertWithConflictDetection(entity, documentId);
+                    entityNameToId.put(entityInfo.name(), persisted.id());
                     entityCount++;
                 } catch (Exception e) {
                     log.warn("实体写入失败: name={}, error={}", entityInfo.name(), e.getMessage());
