@@ -112,6 +112,31 @@ public class AgentAutoConfiguration {
     }
 
     /**
+     * AgentPersistenceHandler bean — 聚合所有持久化操作。
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public com.lifepilot.agent.persistence.AgentPersistenceHandler agentPersistenceHandler(
+            AgentConfigProperties config,
+            SessionManager sessionManager,
+            @Autowired(required = false) WorkingMemory workingMemory,
+            @Autowired(required = false) ConversationHistoryStore conversationHistoryStore,
+            @Autowired(required = false) ConversationViewService conversationViewService,
+            @Autowired(required = false) RealtimeExtractor realtimeExtractor,
+            @Autowired(required = false) InjectionRecordRepository injectionRecordRepository,
+            @Autowired(required = false) com.lifepilot.interaction.web.repository.AttachmentRepository attachmentRepository,
+            @Autowired(required = false) com.lifepilot.memory.experience.ExperienceSummarizer experienceSummarizer,
+            @Autowired(required = false) com.lifepilot.memory.experience.EffectivenessTracker effectivenessTracker,
+            @Autowired(required = false) com.lifepilot.memory.experience.ContrastiveLearner contrastiveLearner,
+            @Autowired(required = false) com.lifepilot.memory.experience.SubtaskReflector subtaskReflector) {
+        return new com.lifepilot.agent.persistence.AgentPersistenceHandler(
+                config, sessionManager, workingMemory, conversationHistoryStore,
+                conversationViewService, realtimeExtractor, injectionRecordRepository,
+                attachmentRepository, experienceSummarizer, effectivenessTracker,
+                contrastiveLearner, subtaskReflector);
+    }
+
+    /**
      * ReactAgentLoop bean — ReAct 架构核心循环。
      *
      * <p>通过 {@code @Autowired(required = false)} 注入可选依赖，
@@ -127,6 +152,7 @@ public class AgentAutoConfiguration {
                                AgentToolProvider agentToolProvider,
                                AgentConfigProperties config,
                                PromptRegistry promptRegistry,
+                               com.lifepilot.agent.persistence.AgentPersistenceHandler persistenceHandler,
                                @Autowired(required = false) MultimodalRouter multimodalRouter,
                                @Autowired(required = false) MediaDataExtractor mediaDataExtractor,
                                @Autowired(required = false) MediaValidator mediaValidator,
@@ -161,6 +187,7 @@ public class AgentAutoConfiguration {
                 effectivenessTracker != null ? "已启用" : "未启用");
         return new ReactAgentLoop(contextAssembler, llmRouter, traceRecorder, objectMapper,
                 sessionManager, agentToolProvider, config, promptRegistry,
+                persistenceHandler,
                 multimodalRouter, mediaDataExtractor, mediaValidator, mediaProcessor,
                 workingMemory, conversationHistoryStore,
                 conversationViewService, realtimeExtractor, injectionRecordRepository,

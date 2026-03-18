@@ -40,7 +40,6 @@ import com.lifepilot.media.MediaValidationException;
 import com.lifepilot.media.MediaValidator;
 import com.lifepilot.memory.retrieval.InjectionRecordRepository;
 import com.lifepilot.memory.semantic.RealtimeExtractor;
-import com.lifepilot.memory.semantic.TemporalEntity;
 import com.lifepilot.memory.procedural.IntentMatcher;
 import com.lifepilot.memory.procedural.ProceduralMemory;
 import com.lifepilot.memory.working.WorkingMemory;
@@ -99,6 +98,7 @@ public class ReactAgentLoop implements CallbackHelper {
     private final AgentToolProvider agentToolProvider;
     private final AgentConfigProperties config;
     private final PromptRegistry promptRegistry;
+    private final com.lifepilot.agent.persistence.AgentPersistenceHandler persistenceHandler;
 
     // ===== 可选依赖（@Nullable） =====
     @Nullable private final MultimodalRouter multimodalRouter; // 预留：多模态流式请求
@@ -140,7 +140,6 @@ public class ReactAgentLoop implements CallbackHelper {
 
     // ===== 运行时状态（volatile） =====
     private volatile A2uiComponentTree lastCollectedA2uiTree;
-    private final List<String> lastInjectedEntityIds = List.of();
     private volatile CancellationToken cancellationToken;
 
     /** 收集本轮工具执行中通过 SSE MEDIA 事件发送的媒体数据，用于流式完成后持久化到附件表。 */
@@ -155,6 +154,7 @@ public class ReactAgentLoop implements CallbackHelper {
             AgentToolProvider agentToolProvider,
             AgentConfigProperties config,
             PromptRegistry promptRegistry,
+            com.lifepilot.agent.persistence.AgentPersistenceHandler persistenceHandler,
             @Nullable MultimodalRouter multimodalRouter,
             @Nullable MediaDataExtractor mediaDataExtractor,
             @Nullable MediaValidator mediaValidator,
@@ -185,6 +185,7 @@ public class ReactAgentLoop implements CallbackHelper {
         this.agentToolProvider = agentToolProvider;
         this.config = config;
         this.promptRegistry = promptRegistry;
+        this.persistenceHandler = persistenceHandler;
         this.multimodalRouter = multimodalRouter;
         this.mediaDataExtractor = mediaDataExtractor;
         this.mediaValidator = mediaValidator;
@@ -903,9 +904,9 @@ public class ReactAgentLoop implements CallbackHelper {
             // 恢复后正常完成处理
             boolean testSession = isTestSession(state.sessionId());
             if (!testSession) {
-                writeAssistantMessageToL1(state);
-                persistAssistantMessage(state);
-                asyncPostProcess(state);
+                persistenceHandler.writeAssistantMessageToL1(state);
+                persistenceHandler.persistAssistantMessage(state);
+                persistenceHandler.asyncPostProcess(state);
             }
 
             log.info("Agent 恢复后执行完成: traceId={}, stepCount={}", state.traceId(), state.stepCount());
@@ -1227,8 +1228,8 @@ public class ReactAgentLoop implements CallbackHelper {
             collectedToolMedia.clear();
             boolean testSession = isTestSession(effectiveRequest.sessionId());
             if (!testSession) {
-                writeUserMessageToL1(state, effectiveRequest.mediaContents());
-                persistUserMessage(state);
+                persistenceHandler.writeUserMessageToL1(state, effectiveRequest.mediaContents());
+                persistenceHandler.persistUserMessage(state);
             }
             traceContext = startTraceIfEnabled(state, effectiveRequest);
             loopStart = Instant.now();
@@ -1267,11 +1268,13 @@ public class ReactAgentLoop implements CallbackHelper {
 
             String assistantMessageId = null;
             if (!testSession) {
-                writeAssistantMessageToL1(state);
-                assistantMessageId = persistAssistantMessage(state);
-                persistInjectionRecord(assistantMessageId, state.sessionId());
-                persistToolMediaAttachments(assistantMessageId, state.sessionId());
-                asyncPostProcess(state);
+                persistenceHandler.writeAssistantMessageToL1(state);
+                assistantMessageId = persistenceHandler.persistAssistantMessage(state);
+                persistenceHandler.persistInjectionRecord(assistantMessageId, state.sessionId(), null);
+                persistenceHandler.persistToolMediaAttachments(assistantMessageId, state.sessionId(),
+                        List.copyOf(collectedToolMedia));
+                collectedToolMedia.clear();
+                persistenceHandler.asyncPostProcess(state);
             }
 
             // 聚合 Token 使用量
@@ -1368,17 +1371,12 @@ public class ReactAgentLoop implements CallbackHelper {
             collectedToolMedia.clear();
             boolean testSession = isTestSession(effectiveRequest.sessionId());
             if (!testSession) {
-                writeUserMessageToL1(state, effectiveRequest.mediaContents());
+                persistenceHandler.writeUserMessageToL1(state, effectiveRequest.mediaContents());
             }
 
             // 同步写入用户消息到 chat_messages（测试会话跳过）
-            if (!testSession && conversationHistoryStore != null && state.goal() != null && !state.goal().isBlank()) {
-                try {
-                    userMessageId = conversationHistoryStore.appendUserMessage(
-                            state.sessionId(), state.goal(), state.traceId());
-                } catch (Exception e) {
-                    log.warn("用户消息同步写入失败: sessionId={}, error={}", state.sessionId(), e.getMessage());
-                }
+            if (!testSession) {
+                userMessageId = persistenceHandler.persistUserMessageReturningId(state);
             }
 
             // TRACE_START 事件
@@ -1458,44 +1456,24 @@ public class ReactAgentLoop implements CallbackHelper {
 
                 // 测试会话跳过所有持久化操作
                 if (!testSession) {
-                    writeAssistantMessageToL1(state);
+                    persistenceHandler.writeAssistantMessageToL1(state);
 
                     String a2uiJson = serializeA2uiTree(lastCollectedA2uiTree);
-                    if (conversationHistoryStore != null
-                            && ((finalContent != null && !finalContent.isBlank()) || a2uiJson != null)) {
-                        try {
-                            assistantMessageId = conversationHistoryStore.appendAssistantMessage(
-                                    state.sessionId(),
-                                    finalContent != null ? finalContent : "",
-                                    reasoningSummary, state.traceId(), a2uiJson);
-                        } catch (Exception e) {
-                            log.warn("助手消息同步写入失败: sessionId={}, error={}", state.sessionId(), e.getMessage());
-                        }
-                    }
+                    assistantMessageId = persistenceHandler.persistAssistantMessageWithA2ui(
+                            state, finalContent, reasoningSummary, a2uiJson);
 
-                    persistInjectionRecord(assistantMessageId, state.sessionId());
+                    persistenceHandler.persistInjectionRecord(assistantMessageId, state.sessionId(), null);
 
                     // 持久化工具产生的媒体附件（截图等通过 SSE MEDIA 事件发送的数据）
-                    persistToolMediaAttachments(assistantMessageId, state.sessionId());
+                    persistenceHandler.persistToolMediaAttachments(assistantMessageId, state.sessionId(),
+                            List.copyOf(collectedToolMedia));
+                    collectedToolMedia.clear();
 
                     // 持久化用户上传的媒体附件到 message_attachments 表
-                    if (attachmentRepository != null && assistantMessageId != null
-                            && effectiveRequest.mediaContents() != null && !effectiveRequest.mediaContents().isEmpty()) {
-                        for (var mc : effectiveRequest.mediaContents()) {
-                            try {
-                                String fileName = mc.fileName() != null ? mc.fileName()
-                                        : "media-" + UUID.randomUUID().toString().substring(0, 8) + "." + guessExtension(mc.mimeType());
-                                String dataUri = "data:" + mc.mimeType() + ";base64," + java.util.Base64.getEncoder().encodeToString(mc.data());
-                                attachmentRepository.save(assistantMessageId, state.sessionId(),
-                                        fileName, "", mc.sizeBytes(), mc.mimeType(), dataUri);
-                            } catch (Exception e) {
-                                log.warn("媒体附件持久化失败: sessionId={}, error={}", state.sessionId(), e.getMessage());
-                            }
-                        }
-                        log.debug("媒体附件持久化完成: sessionId={}, count={}", state.sessionId(), effectiveRequest.mediaContents().size());
-                    }
+                    persistenceHandler.persistUserMediaAttachments(assistantMessageId,
+                            state.sessionId(), effectiveRequest.mediaContents());
 
-                    asyncPostProcess(state);
+                    persistenceHandler.asyncPostProcess(state);
                 }
                 finalTokenUsage = aggregateTokenUsage(traceContext);
             }
@@ -1543,7 +1521,7 @@ public class ReactAgentLoop implements CallbackHelper {
         if (existingSession.isPresent()) {
             var snapshot = existingSession.get();
             var state = ReactAgentState.fromSession(snapshot, request, defaultBudget);
-            hydrateWorkingMemoryFromConversationView(snapshot.sessionId());
+            persistenceHandler.hydrateWorkingMemoryFromConversationView(snapshot.sessionId());
             return state;
         }
         return ReactAgentState.init(request, defaultBudget);
@@ -1557,222 +1535,6 @@ public class ReactAgentLoop implements CallbackHelper {
     }
 
     // ===== L1 工作记忆读写 =====
-
-    /**
-     * 将用户消息写入 L1 工作记忆。
-     *
-     * <p>当请求包含媒体内容时，在消息末尾附加元信息标注（MIME 类型 + 文件名），
-     * 不存储原始二进制数据到 WorkingMemory。</p>
-     *
-     * @param state           当前 Agent 状态
-     * @param mediaContents   请求关联的媒体内容列表（可空）
-     */
-    private void writeUserMessageToL1(ReactAgentState state,
-                                      @Nullable List<MediaContent> mediaContents) {
-        if (workingMemory == null || state.goal() == null || state.goal().isBlank()) return;
-        try {
-            String content = state.goal();
-
-            // 附加媒体元信息标注（不含二进制数据）
-            if (mediaContents != null && !mediaContents.isEmpty()) {
-                String annotation = mediaContents.stream()
-                        .map(mc -> mc.mimeType() + ": " + (mc.fileName() != null ? mc.fileName() : "unnamed"))
-                        .collect(Collectors.joining(", "));
-                content = content + "\n[附件: " + annotation + "]";
-            }
-
-            int tokens = estimateTextTokens(content);
-            var slot = com.lifepilot.memory.working.ConversationSlot.userMessage(content, tokens);
-            workingMemory.append(state.sessionId(), slot);
-        } catch (Exception e) {
-            log.warn("用户消息写入 L1 失败: sessionId={}, error={}",
-                    state.sessionId(), e.getMessage());
-        }
-    }
-
-    /** 将 AI 响应写入 L1 工作记忆。 */
-    private void writeAssistantMessageToL1(ReactAgentState state) {
-        if (workingMemory == null) return;
-        String response = state.finalOutput();
-        if (response == null || response.isBlank()) return;
-        try {
-            int tokens = estimateTextTokens(response);
-            var slot = com.lifepilot.memory.working.ConversationSlot.assistantMessage(
-                    response, tokens);
-            workingMemory.append(state.sessionId(), slot);
-        } catch (Exception e) {
-            log.warn("AI 响应写入 L1 失败: sessionId={}, error={}",
-                    state.sessionId(), e.getMessage());
-        }
-    }
-
-    /** 当 L1 为空时，从 ConversationViewService 回灌对话历史。 */
-    private void hydrateWorkingMemoryFromConversationView(String sessionId) {
-        if (workingMemory == null || conversationViewService == null
-                || sessionId == null || sessionId.isBlank()) return;
-        try {
-            var existingSlots = workingMemory.getContext(sessionId);
-            if (existingSlots != null && !existingSlots.isEmpty()) return;
-            var turns = conversationViewService.getRecentTurns(
-                    sessionId, config.getSession().getMaxRecentTurns());
-            for (var turn : turns) {
-                if (turn.content() != null && !turn.content().isBlank()) {
-                    if ("user".equalsIgnoreCase(turn.role())) {
-                        workingMemory.append(sessionId,
-                                com.lifepilot.memory.working.ConversationSlot.userMessage(
-                                        turn.content(), estimateTextTokens(turn.content())));
-                    } else if ("assistant".equalsIgnoreCase(turn.role())) {
-                        workingMemory.append(sessionId,
-                                com.lifepilot.memory.working.ConversationSlot.assistantMessage(
-                                        turn.content(), estimateTextTokens(turn.content())));
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.warn("L1 对话历史回灌失败: sessionId={}, error={}", sessionId, e.getMessage());
-        }
-    }
-
-    // ===== 对话历史持久化 =====
-
-    /** 同步写入用户消息到 chat_messages。 */
-    private void persistUserMessage(ReactAgentState state) {
-        if (conversationHistoryStore == null
-                || state.goal() == null || state.goal().isBlank()) return;
-        try {
-            conversationHistoryStore.appendUserMessage(
-                    state.sessionId(), state.goal(), state.traceId());
-        } catch (Exception e) {
-            log.warn("用户消息同步写入失败: sessionId={}, error={}",
-                    state.sessionId(), e.getMessage());
-        }
-    }
-
-    /** 同步写入助手消息到 chat_messages。 */
-    @Nullable
-    private String persistAssistantMessage(ReactAgentState state) {
-        if (conversationHistoryStore == null) return null;
-        String output = state.finalOutput();
-        if (output == null || output.isBlank()) return null;
-        try {
-            return conversationHistoryStore.appendAssistantMessage(
-                    state.sessionId(), output, state.reasoningSummary(),
-                    state.traceId(), null);
-        } catch (Exception e) {
-            log.warn("助手消息同步写入失败: sessionId={}, error={}",
-                    state.sessionId(), e.getMessage());
-            return null;
-        }
-    }
-
-    /** 持久化注入记录。 */
-    private void persistInjectionRecord(@Nullable String messageId,
-                                        @Nullable String sessionId) {
-        var entityIds = lastInjectedEntityIds;
-        if (injectionRecordRepository == null || entityIds.isEmpty()
-                || messageId == null || messageId.isBlank()) return;
-        try {
-            injectionRecordRepository.save(messageId, sessionId, entityIds);
-            log.debug("注入记录已持久化: messageId={}, entityCount={}", messageId, entityIds.size());
-        } catch (Exception e) {
-            log.warn("注入记录持久化失败: messageId={}, error={}", messageId, e.getMessage());
-        }
-    }
-
-    /**
-     * 持久化工具产生的媒体附件到 message_attachments 表。
-     *
-     * <p>将本轮 ReAct 循环中通过 SSE MEDIA 事件发送的媒体数据（截图等）
-     * 写入附件表，确保页面刷新后仍能加载。</p>
-     *
-     * @param assistantMessageId 助手消息 ID
-     * @param sessionId          会话 ID
-     */
-    private void persistToolMediaAttachments(@Nullable String assistantMessageId,
-                                             @Nullable String sessionId) {
-        if (attachmentRepository == null || assistantMessageId == null
-                || collectedToolMedia.isEmpty()) {
-            return;
-        }
-        for (var mediaItem : collectedToolMedia) {
-            try {
-                String ext = guessExtension(mediaItem.mediaType());
-                String fileName = mediaItem.fieldName() + "." + ext;
-                String dataUri = "data:" + mediaItem.mediaType() + ";base64," + mediaItem.data();
-                long sizeBytes = Math.round(mediaItem.data().length() * 0.75);
-                attachmentRepository.save(assistantMessageId, sessionId,
-                        fileName, "", sizeBytes, mediaItem.mediaType(), dataUri);
-            } catch (Exception e) {
-                log.warn("工具媒体附件持久化失败: field={}, error={}",
-                        mediaItem.fieldName(), e.getMessage());
-            }
-        }
-        log.debug("工具媒体附件持久化完成: sessionId={}, count={}",
-                sessionId, collectedToolMedia.size());
-        collectedToolMedia.clear();
-    }
-
-    // ===== 异步后处理 =====
-
-    /** 异步后处理 — 会话快照持久化 + AUDN 实体提取。 */
-    private void asyncPostProcess(ReactAgentState finalState) {
-        Thread.startVirtualThread(() -> {
-            try {
-                sessionManager.saveSession(finalState);
-            } catch (Exception e) {
-                log.warn("会话快照持久化失败: sessionId={}, error={}",
-                        finalState.sessionId(), e.getMessage());
-            }
-            try {
-                if (realtimeExtractor != null && finalState.finalOutput() != null) {
-                    realtimeExtractor.extractAsync(
-                            finalState.sessionId(),
-                            finalState.goal(),
-                            finalState.finalOutput());
-                }
-            } catch (Exception e) {
-                log.warn("AUDN 实时实体提取失败: sessionId={}, error={}",
-                        finalState.sessionId(), e.getMessage());
-            }
-            // 经验提炼
-            TemporalEntity newExperience = null;
-            try {
-                if (experienceSummarizer != null) {
-                    newExperience = experienceSummarizer.summarize(finalState);
-                }
-            } catch (Exception e) {
-                log.warn("经验提炼失败: sessionId={}, error={}",
-                        finalState.sessionId(), e.getMessage());
-            }
-            // 效果评估
-            try {
-                if (effectivenessTracker != null) {
-                    effectivenessTracker.evaluate(finalState, finalState.traceId());
-                }
-            } catch (Exception e) {
-                log.warn("效果评估失败: sessionId={}, error={}",
-                        finalState.sessionId(), e.getMessage());
-            }
-            // 对比学习
-            try {
-                if (contrastiveLearner != null && newExperience != null) {
-                    contrastiveLearner.learn(newExperience);
-                }
-            } catch (Exception e) {
-                log.warn("对比学习失败: sessionId={}, error={}",
-                        finalState.sessionId(), e.getMessage());
-            }
-            // 子任务反思
-            try {
-                if (subtaskReflector != null) {
-                    subtaskReflector.reflect(finalState);
-                }
-            } catch (Exception e) {
-                log.warn("子任务反思失败: sessionId={}, error={}",
-                        finalState.sessionId(), e.getMessage());
-            }
-        });
-    }
 
     // ===== 推理概要 =====
 
@@ -2133,40 +1895,5 @@ public class ReactAgentLoop implements CallbackHelper {
                 -------- MESSAGES --------
                 {}========= END PROMPT ==========""",
                 scene, toolNames, messages.size(), sb);
-    }
-
-    // ===== 流式错误持久化 =====
-
-    /** 根据 MIME 类型猜测文件扩展名。 */
-    private static String guessExtension(String mimeType) {
-        if (mimeType == null) return "bin";
-        return switch (mimeType) {
-            case "image/png" -> "png";
-            case "image/jpeg", "image/jpg" -> "jpg";
-            case "image/gif" -> "gif";
-            case "image/webp" -> "webp";
-            case "image/svg+xml" -> "svg";
-            case "application/pdf" -> "pdf";
-            default -> "bin";
-        };
-    }
-
-    /** 持久化流式系统错误消息到对话历史和 L1。 */
-    private void persistStreamingSystemError(@Nullable String sessionId,
-                                             @Nullable String traceId,
-                                             @Nullable Exception e) {
-        try {
-            if (sessionId == null || sessionId.isBlank()) return;
-            String detail = e != null ? e.getMessage() : "unknown";
-            String content = "系统提示：模型服务暂时不可用，请稍后重试。\n（错误信息）" + detail;
-            if (conversationHistoryStore != null) {
-                conversationHistoryStore.appendSystemMessage(sessionId, content, traceId);
-            }
-            if (workingMemory != null) {
-                int tokens = estimateTextTokens(content);
-                workingMemory.append(sessionId,
-                        com.lifepilot.memory.working.ConversationSlot.systemMessage(content, tokens));
-            }
-        } catch (Exception ignore) { /* 不影响主流程 */ }
     }
 }
