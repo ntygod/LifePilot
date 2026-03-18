@@ -2,6 +2,7 @@ package com.lifepilot.multiagent.config;
 
 import com.lifepilot.agent.ReactAgentLoop;
 import com.lifepilot.agent.config.AgentAutoConfiguration;
+import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.multiagent.bridge.AgentToToolBridge;
 import com.lifepilot.multiagent.discovery.ToolDiscoveryService;
 import com.lifepilot.multiagent.execution.AgentExecutor;
@@ -95,10 +96,11 @@ public class MultiAgentAutoConfiguration {
     @ConditionalOnMissingBean
     public AgentMarkdownLoader agentMarkdownLoader(AgentRegistry agentRegistry,
                                                     AgentMarkdownParser parser,
-                                                    MultiAgentProperties config) {
+                                                    MultiAgentProperties config,
+                                                    SharedScheduler sharedScheduler) {
         log.info("多 Agent 协作: 注册 AgentMarkdownLoader, path={}",
                 config.getAgentDefinitionsPath());
-        return new AgentMarkdownLoader(agentRegistry, parser, config);
+        return new AgentMarkdownLoader(agentRegistry, parser, config, sharedScheduler);
     }
 
     @Bean

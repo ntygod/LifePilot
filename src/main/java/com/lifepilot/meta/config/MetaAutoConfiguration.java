@@ -1,5 +1,6 @@
 package com.lifepilot.meta.config;
 
+import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.datastore.DataStoreManager;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.meta.convenience.CapabilityAggregator;
@@ -93,9 +94,10 @@ public class MetaAutoConfiguration {
                                                AgentRegistry agentRegistry,
                                                DynamicToolRegistry toolRegistry,
                                                WorkflowRegistry workflowRegistry,
-                                               MetaProperties properties) {
+                                               MetaProperties properties,
+                                               SharedScheduler sharedScheduler) {
         return new CapabilityAggregator(skillRegistry, agentRegistry,
-                toolRegistry, workflowRegistry, properties);
+                toolRegistry, workflowRegistry, properties, sharedScheduler);
     }
 
     /**

@@ -1,16 +1,15 @@
 package com.lifepilot.skill.markdown;
 
+import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.skill.config.SkillConfigProperties;
 import com.lifepilot.skill.model.SkillDefinition;
 import com.lifepilot.skill.registry.SkillRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.DisposableBean;
 
 import java.io.IOException;
 import java.nio.file.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -31,7 +30,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * @author zsg
  * @since 2026-03-07
  */
-public class SkillFileWatcher implements DisposableBean {
+public class SkillFileWatcher {
 
     private static final Logger log = LoggerFactory.getLogger(SkillFileWatcher.class);
 
@@ -56,15 +55,12 @@ public class SkillFileWatcher implements DisposableBean {
 
     public SkillFileWatcher(MarkdownSkillLoader markdownSkillLoader,
                             SkillRegistry skillRegistry,
-                            SkillConfigProperties config) {
+                            SkillConfigProperties config,
+                            SharedScheduler sharedScheduler) {
         this.markdownSkillLoader = markdownSkillLoader;
         this.skillRegistry = skillRegistry;
         this.config = config;
-        this.debounceExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread t = new Thread(r, "skill-debounce");
-            t.setDaemon(true);
-            return t;
-        });
+        this.debounceExecutor = sharedScheduler.debounce();
     }
 
     /**
@@ -99,10 +95,8 @@ public class SkillFileWatcher implements DisposableBean {
         Thread.ofVirtual().name("skill-file-watcher").start(() -> watchLoop(skillsDir));
     }
 
-    @Override
     public void destroy() {
         running = false;
-        debounceExecutor.shutdown();
         // 关闭 WatchService，使 watchKey.take() 抛出 ClosedWatchServiceException 退出循环
         if (watchService != null) {
             try {

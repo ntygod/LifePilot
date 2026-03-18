@@ -1,5 +1,6 @@
 package com.lifepilot.multiagent.loader;
 
+import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.multiagent.config.MultiAgentProperties;
 import com.lifepilot.multiagent.model.AgentDefinition;
 import com.lifepilot.multiagent.model.AgentSource;
@@ -16,8 +17,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
@@ -37,18 +36,19 @@ public class AgentMarkdownLoader {
     private final AgentRegistry agentRegistry;
     private final AgentMarkdownParser parser;
     private final MultiAgentProperties config;
+    private final SharedScheduler sharedScheduler;
 
     /** 已加载文件的 lastModified 缓存，用于热加载变更检测。 */
     private final Map<Path, Instant> loadedFiles = new ConcurrentHashMap<>();
 
-    private ScheduledExecutorService scheduler;
-
     public AgentMarkdownLoader(AgentRegistry agentRegistry,
                                AgentMarkdownParser parser,
-                               MultiAgentProperties config) {
+                               MultiAgentProperties config,
+                               SharedScheduler sharedScheduler) {
         this.agentRegistry = agentRegistry;
         this.parser = parser;
         this.config = config;
+        this.sharedScheduler = sharedScheduler;
     }
 
     /**
@@ -105,36 +105,14 @@ public class AgentMarkdownLoader {
      * 启动热加载定时扫描。
      */
     public void startHotReload() {
-        if (scheduler != null) {
-            log.warn("热加载已在运行中，跳过重复启动");
-            return;
-        }
-
         int interval = config.getHotReload().getScanIntervalSeconds();
         Path directory = resolveAgentPath();
 
-        scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread t = new Thread(r, "agent-hot-reload");
-            t.setDaemon(true);
-            return t;
-        });
-
-        scheduler.scheduleWithFixedDelay(
+        sharedScheduler.debounce().scheduleWithFixedDelay(
                 () -> performScan(directory),
                 interval, interval, TimeUnit.SECONDS);
 
         log.info("Agent 热加载已启动: directory={}, intervalSeconds={}", directory, interval);
-    }
-
-    /**
-     * 停止热加载。
-     */
-    public void stopHotReload() {
-        if (scheduler != null) {
-            scheduler.shutdown();
-            scheduler = null;
-            log.info("Agent 热加载已停止");
-        }
     }
 
     /** 执行一次热加载扫描。 */
