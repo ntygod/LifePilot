@@ -12,6 +12,8 @@ import com.lifepilot.memory.consolidation.EpisodicToSemanticConsolidator;
 import com.lifepilot.memory.consolidation.PreferenceConsolidator;
 import com.lifepilot.memory.episodic.EpisodicCleanupJob;
 import com.lifepilot.memory.episodic.EpisodicMemory;
+import com.lifepilot.memory.experience.ExperienceSummarizer;
+import com.lifepilot.memory.experience.TrajectoryQualityAssessor;
 import com.lifepilot.memory.retrieval.QueryRefiner;
 import com.lifepilot.memory.retrieval.QueryRewriter;
 import com.lifepilot.memory.forgetting.EntityExpirationJob;
@@ -21,6 +23,7 @@ import com.lifepilot.interaction.web.repository.MessageFeedbackRepository;
 import com.lifepilot.memory.retrieval.InjectionRecordRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.prompt.PromptRegistry;
+import com.lifepilot.eval.store.EvalStore;
 import com.lifepilot.memory.procedural.IntentMatcher;
 import com.lifepilot.memory.procedural.ProceduralMemory;
 import com.lifepilot.memory.retrieval.FtsSearcher;
@@ -43,6 +46,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -619,6 +623,31 @@ public class MemoryAutoConfiguration {
                 properties.getEpisodicCleanup().getCron(),
                 properties.getEpisodicCleanup().getRetentionDays());
         return new EpisodicCleanupJob(episodicMemory, jdbcTemplate, properties);
+    }
+
+    // --- 经验总结 ---
+
+    @Bean
+    @ConditionalOnMissingBean
+    public TrajectoryQualityAssessor trajectoryQualityAssessor(MemoryProperties properties) {
+        log.info("记忆系统: 注册 TrajectoryQualityAssessor");
+        return new TrajectoryQualityAssessor(properties);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(SemanticMemory.class)
+    public ExperienceSummarizer experienceSummarizer(
+            SemanticMemory semanticMemory,
+            VectorSearcher vectorSearcher,
+            LlmRouter llmRouter,
+            PromptRegistry promptRegistry,
+            MemoryProperties properties,
+            TrajectoryQualityAssessor qualityAssessor,
+            @Autowired(required = false) EvalStore evalStore) {
+        log.info("记忆系统: 注册 ExperienceSummarizer");
+        return new ExperienceSummarizer(semanticMemory, vectorSearcher, llmRouter,
+                promptRegistry, properties, qualityAssessor, evalStore);
     }
 
     // --- 工具方法 ---
