@@ -74,7 +74,7 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
             log.debug("生成 ToolCallback: count={}", tools.size());
         }
         return tools.stream()
-                .map(t -> toToolCallback(t, streamId))
+                .map(t -> toToolCallback(t, streamId, state))
                 .toList();
     }
 
@@ -85,7 +85,12 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
      * @param streamId SSE 流标识（用于精确推送确认请求，可选）
      * @return Spring AI ToolCallback
      */
-    private ToolCallback toToolCallback(ToolContract tool, @Nullable String streamId) {
+    private ToolCallback toToolCallback(ToolContract tool, @Nullable String streamId, ReactAgentState state) {
+        // 构建请求级上下文，传递 sessionId 给 tool executor
+        Map<String, Object> context = state.sessionId() != null
+                ? Map.of("sessionId", state.sessionId())
+                : Map.of();
+
         ToolDefinition definition = DefaultToolDefinition.builder()
                 .name(tool.id())
                 .description(tool.description())
@@ -105,7 +110,7 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
                 Map<String, Object> params = parseInput(toolInput);
                 String traceId = UUID.randomUUID().toString();
                 Instant start = Instant.now();
-                ToolResult result = pipeline.execute(tool.id(), params, traceId, null, streamId);
+                ToolResult result = pipeline.execute(tool.id(), params, traceId, null, streamId, context);
                 String output = formatOutput(result);
 
                 // Token 消耗估算（字符数 / 3）并填充到 meta
