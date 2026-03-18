@@ -236,11 +236,29 @@ flowchart TD
     Episodic --> Pipeline[ConsolidationPipeline<br/>定时 / Idle 触发]
     
     Pipeline --> Semantic[EpisodicToSemanticConsolidator<br/>实体去重 + 关系抽取 + 重要性提升]
+    Pipeline --> PrefSync[PreferenceConsolidator<br/>L3 PREFERENCE → L4 PreferenceRule]
+    Pipeline --> ExpMerge[ExperienceMerger<br/>相似经验合并为元经验]
+    Pipeline --> ExpPromote[经验提升<br/>高频经验 → ProcedureTemplate<br/>importance≥0.8 且 access≥3]
     Pipeline --> Procedural[EpisodicToProceduralConsolidator<br/>模式提取 → ProcedureTemplate]
     
     Semantic --> TE[TemporalEntity<br/>语义记忆]
     Semantic --> TR[TemporalRelation<br/>实体关系]
-    Procedural --> PT[ProcedureTemplate<br/>程序记忆]
+    ExpMerge --> TE
+    ExpPromote --> PT[ProcedureTemplate<br/>程序记忆]
+    PrefSync --> PR_T[PreferenceRule<br/>用户偏好]
+    Procedural --> PT
+    
+    subgraph "经验学习（asyncPostProcess）"
+        ES_F[ExperienceSummarizer<br/>经验提炼]
+        ET_F[EffectivenessTracker<br/>效果评估]
+        CL_F[ContrastiveLearner<br/>对比学习]
+        SR_F[SubtaskReflector<br/>子任务反思]
+    end
+    
+    ES_F --> TE
+    ET_F --> TE
+    CL_F --> TE
+    SR_F --> TE
     
     TE --> Forgetting[ForgettingStrategy<br/>时间衰减 + 过期归档]
     TR --> Forgetting
@@ -459,12 +477,27 @@ graph TB
         PR[PreferenceRule<br/>用户偏好规则]
     end
 
+    subgraph "经验学习子系统"
+        ES[ExperienceSummarizer<br/>经验提炼]
+        ET_T[EffectivenessTracker<br/>效果反馈闭环]
+        CL_T[ContrastiveLearner<br/>对比学习]
+        SR_T[SubtaskReflector<br/>子任务反思]
+        EM_T[ExperienceMerger<br/>经验合并]
+    end
+
     WM -->|会话结束写入| CR
     CR -->|ConsolidationPipeline| TE
     CR -->|ConsolidationPipeline| PT
     RE --> TE
     RE --> TR
     Dedup --> TE
+
+    ES -->|asyncPostProcess| TE
+    ET_T -->|importanceScore 调整| TE
+    CL_T -->|对比洞察写入| TE
+    SR_T -->|子任务经验写入| TE
+    EM_T -->|元经验合并| TE
+    TE -->|高频经验提升<br/>importance≥0.8 且 access≥3| PT
 
     WM -.->|检索| WM
     CR -.->|检索| CR
@@ -501,24 +534,45 @@ sequenceDiagram
     participant Cron as @Scheduled Cron
     participant Pipeline as ConsolidationPipeline
     participant Semantic as EpisodicToSemanticConsolidator
+    participant PrefCon as PreferenceConsolidator
+    participant ExpMerger as ExperienceMerger
+    participant SM as SemanticMemory
+    participant PM as ProceduralMemory
     participant Procedural as EpisodicToProceduralConsolidator
     participant LLM as LlmRouter
 
     Cron->>Pipeline: scheduledConsolidate()
     
-    Pipeline->>Semantic: consolidate()
+    Pipeline->>Semantic: 1. consolidate()（语义巩固）
     Semantic->>LLM: 实体抽取 + 关系推断
     LLM-->>Semantic: 结构化输出
     Semantic->>Semantic: EntityDeduplicator 去重
     Semantic->>Semantic: importanceScore 提升
     Semantic-->>Pipeline: stats(conversationsAnalyzed, entitiesBoosted)
 
-    Pipeline->>Procedural: consolidate()
+    Pipeline->>Procedural: 2. consolidate()（程序巩固）
     Procedural->>LLM: 模式提取
     LLM-->>Procedural: ProcedureTemplate
     Procedural-->>Pipeline: stats(conversationsAnalyzed, templatesCreated)
 
-    Note over Pipeline: 单个巩固器异常不阻塞另一个（try-catch 隔离）
+    Pipeline->>PrefCon: 3. consolidate()（偏好同步 L3→L4）
+    PrefCon->>SM: 加载 PREFERENCE 实体
+    PrefCon->>PM: 同步 PreferenceRule
+    PrefCon-->>Pipeline: stats(created, reinforced, deleted)
+
+    Pipeline->>ExpMerger: 3.5 merge()（经验合并）
+    ExpMerger->>SM: 加载 EXPERIENCE 实体
+    ExpMerger->>LLM: 相似经验 LLM 合并
+    ExpMerger->>SM: 写入元经验 + 归档原始
+    ExpMerger-->>Pipeline: MergeStats(candidates, merged, skipped)
+
+    Pipeline->>Pipeline: 4. promoteHighFrequencyExperiences()（经验提升 L3→L4）
+    Pipeline->>SM: findCurrentByType(EXPERIENCE)
+    Pipeline->>Pipeline: 过滤 importanceScore≥0.8 且 accessCount≥3
+    Pipeline->>PM: save(ProcedureTemplate)
+    Pipeline->>SM: archive(已提升经验)
+
+    Note over Pipeline: 每个阶段异常不阻塞后续阶段（try-catch 隔离）
 ```
 
 ---

@@ -111,8 +111,9 @@ graph TB
 ### 3.5 ConsolidationPipeline（巩固管线编排）
 
 - 职责：编排语义巩固、经验合并和程序巩固的执行顺序
-- 顺序执行：语义巩固 → 偏好同步 → 经验合并（ExperienceMerger）→ 经验提升 → 程序巩固，故障隔离（try-catch 独立包裹）
+- 顺序执行：语义巩固 → 程序巩固 → 偏好同步（PreferenceConsolidator）→ 经验合并（ExperienceMerger）→ 经验提升（promoteHighFrequencyExperiences，L3→L4），故障隔离（try-catch 独立包裹）
 - 经验合并阶段：通过 ExperienceMerger 将语义相似的 EXPERIENCE 实体合并为泛化的元经验
+- 经验提升阶段（L3→L4）：扫描 EXPERIENCE 实体，将 importanceScore ≥ 0.8 且 accessCount ≥ 3 的高频经验提升为 ProcedureTemplate，提升后原始经验归档
 - 通过 `@Scheduled` Cron 表达式定时触发
 - 支持手动调用 `consolidate()` 方法（为 Idle-Driven 触发模式预留）
 - 返回 `ConsolidationStats` 统计信息（分析对话数、提升实体数、创建模板数）
@@ -144,30 +145,43 @@ sequenceDiagram
     participant SCH as Spring Scheduler
     participant CP as ConsolidationPipeline
     participant E2S as EpisodicToSemantic
-    participant EM_M as ExperienceMerger
     participant E2P as EpisodicToProcedural
+    participant PrefCon as PreferenceConsolidator
+    participant EM_M as ExperienceMerger
     participant EM as EpisodicMemory
     participant SM as SemanticMemory
     participant PM as ProceduralMemory
 
     SCH->>CP: scheduledConsolidate()
-    CP->>E2S: consolidate()
+
+    CP->>E2S: 1. consolidate()（语义巩固）
     E2S->>EM: getRecent(lookbackDays)
     E2S->>SM: 提取实体 + 提升重要度
     E2S-->>CP: ConsolidationStats(语义)
 
-    CP->>EM_M: merge()
+    CP->>E2P: 2. consolidate()（程序巩固）
+    E2P->>EM: 读取对话轨迹
+    E2P->>PM: 聚类生成模板 + 提取偏好
+    E2P-->>CP: ConsolidationStats(程序)
+
+    CP->>PrefCon: 3. consolidate()（偏好同步 L3→L4）
+    PrefCon->>SM: 加载 PREFERENCE 实体
+    PrefCon->>PM: 同步 PreferenceRule
+    PrefCon-->>CP: stats(created, reinforced, deleted)
+
+    CP->>EM_M: 3.5 merge()（经验合并）
     EM_M->>SM: 加载 EXPERIENCE 实体
     EM_M->>EM_M: 向量相似度检测 + LLM 合并
     EM_M->>SM: 写入元经验 + 归档原始
     EM_M-->>CP: MergeStats
 
-    CP->>E2P: consolidate()
-    E2P->>EM: 读取对话轨迹
-    E2P->>PM: 聚类生成模板 + 提取偏好
-    E2P-->>CP: ConsolidationStats(程序)
+    CP->>CP: 4. promoteHighFrequencyExperiences()（经验提升 L3→L4）
+    CP->>SM: findCurrentByType(EXPERIENCE)
+    CP->>CP: 过滤 importanceScore≥0.8 且 accessCount≥3
+    CP->>PM: save(ProcedureTemplate)
+    CP->>SM: archive(已提升经验)
 
-    Note over CP: 每个阶段异常不阻塞后续阶段
+    Note over CP: 每个阶段异常不阻塞后续阶段（try-catch 隔离）
 ```
 
 ### 4.2 MaRS 遗忘流程

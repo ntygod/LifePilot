@@ -186,7 +186,8 @@ graph TB
 ### 3.11 ConsolidationPipeline（巩固管线）
 
 - 职责：定时将 L2 情景记忆巩固到 L3 语义记忆和 L4 程序记忆
-- 顺序执行：`EpisodicToSemanticConsolidator`（情景→语义）→ 偏好同步 → `ExperienceMerger`（经验合并）→ 经验提升 → `EpisodicToProceduralConsolidator`（情景→程序）
+- 顺序执行：`EpisodicToSemanticConsolidator`（情景→语义）→ `EpisodicToProceduralConsolidator`（情景→程序）→ `PreferenceConsolidator`（偏好同步 L3→L4）→ `ExperienceMerger`（经验合并）→ `promoteHighFrequencyExperiences`（经验提升 L3→L4）
+- 经验提升（L3→L4）：扫描所有 EXPERIENCE 类型实体，将 importanceScore ≥ 0.8 且 accessCount ≥ 3 的高频经验提升为 L4 ProcedureTemplate，提升后原始经验归档
 - 故障隔离：每个阶段异常不阻塞后续阶段
 - 通过 `@Scheduled` Cron 表达式定时触发，也支持手动调用（为 Idle-Driven 模式预留）
 

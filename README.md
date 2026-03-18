@@ -30,7 +30,9 @@ ZhiWei 是一个本地运行的个人 AI Agent 助手。它不只是被动执行
 - L1 工作记忆（会话级临时存储）+ L2 情景记忆（对话记录 + 注入记录）
 - L3 语义记忆（TemporalEntity 实体 + TemporalRelation 关系 + 重要性评分 + 访问计数）
 - L4 程序记忆（ProcedureTemplate 技能模式 + PreferenceRule 用户偏好）
-- 记忆巩固管线（ConsolidationPipeline：情景→语义 / 情景→程序，定时 + Idle 触发）
+- 记忆巩固管线（ConsolidationPipeline：语义巩固 → 偏好同步 → 经验合并 → 经验提升 → 程序巩固，定时 + Idle 触发）
+- 经验学习子系统：ExperienceSummarizer 经验提炼 + EffectivenessTracker 效果反馈闭环 + ContrastiveLearner 对比学习 + SubtaskReflector 子任务反思 + ExperienceMerger 经验合并 + search-experience 主动检索
+- L3→L4 经验提升：高频经验（importanceScore ≥ 0.8 且 accessCount ≥ 3）自动提升为 ProcedureTemplate
 - 混合检索（向量 + FTS5 + 时序）+ fusedScore 融合排序 + 预算感知截断
 - 时间衰减遗忘 + 过期归档 + accessCount 动态调整
 
@@ -259,7 +261,7 @@ zhiwei/
 │   ├── marketplace/     # 插件市场
 │   ├── mcp/             # MCP 协议（McpServerRegistry / McpServerDiscovery）
 │   ├── media/           # 多模态处理（图片 / 音频 / 视频）
-│   ├── memory/          # 四层记忆系统（Working / Episodic / Semantic / Procedural）
+│   ├── memory/          # 四层记忆系统（Working / Episodic / Semantic / Procedural / 经验学习）
 │   ├── meta/            # 元能力（文件工具 / 浏览器工具 / 基础设施工具 / 交互工具）
 │   ├── multiagent/      # 多 Agent 协作（Handoff / SubAgent）
 │   ├── notification/    # 统一通知系统（Urgency 路由 / 多渠道广播）
