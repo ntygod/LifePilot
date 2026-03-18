@@ -2,6 +2,7 @@ package com.lifepilot.agent;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.agent.callback.CallbackHelper;
 import com.lifepilot.agent.callback.IterationCallback;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.context.AssembledContext;
@@ -90,7 +91,7 @@ import java.util.stream.Collectors;
  * @author zsg
  * @since 2026-03-14
  */
-public class ReactAgentLoop {
+public class ReactAgentLoop implements CallbackHelper {
 
     private static final Logger log = LoggerFactory.getLogger(ReactAgentLoop.class);
     private static final String DEFAULT_MODEL_ID = "ZhiWei";
@@ -901,7 +902,8 @@ public class ReactAgentLoop {
                     null, state.budget(), state.parentTraceId(),
                     state.depth(), null, state.allowedToolIds(), null, null);
 
-            var callback = new NonStreamingCallback(request);
+            var callback = new com.lifepilot.agent.callback.NonStreamingCallback(
+                    config, llmRouter, multimodalRouter, request, this);
             state = coreLoop(state, request, null, loopStart, callback, token, null, null);
 
             // 恢复后正常完成处理
@@ -1028,7 +1030,8 @@ public class ReactAgentLoop {
      * @param llmResponse 多模态路由返回的 LLM 响应
      * @return 适配后的 ChatResponse
      */
-    private ChatResponse adaptToChatResponse(LlmResponse llmResponse) {
+    @Override
+    public ChatResponse adaptToChatResponse(LlmResponse llmResponse) {
         var assistantMessage = new AssistantMessage(llmResponse.content());
         var generation = new Generation(assistantMessage);
         return new ChatResponse(List.of(generation));
@@ -1061,7 +1064,8 @@ public class ReactAgentLoop {
      * @param messages Spring AI 消息列表
      * @return 包含完整对话上下文的文本
      */
-    private String buildConversationContextText(List<Message> messages) {
+    @Override
+    public String buildConversationContextText(List<Message> messages) {
         // 如果没有工具调用历史，直接返回用户文本即可
         boolean hasToolHistory = messages.stream().anyMatch(m -> m instanceof ToolResponseMessage);
         if (!hasToolHistory) {
@@ -1114,7 +1118,8 @@ public class ReactAgentLoop {
      * <p>用于工具产生的 pendingMedia 场景：媒体已嵌入到 UserMessage 的 Media 中，
      * 需要提取出来构造 MultimodalRequest。</p>
      */
-    private List<MediaContent> extractMediaContentsFromMessages(List<Message> messages) {
+    @Override
+    public List<MediaContent> extractMediaContentsFromMessages(List<Message> messages) {
         var result = new ArrayList<MediaContent>();
         for (var msg : messages) {
             if (msg instanceof UserMessage um) {
@@ -1235,7 +1240,8 @@ public class ReactAgentLoop {
             loopStart = Instant.now();
 
             // 核心循环 — 非流式回调
-            var callback = new NonStreamingCallback(effectiveRequest);
+            var callback = new com.lifepilot.agent.callback.NonStreamingCallback(
+                    config, llmRouter, multimodalRouter, effectiveRequest, this);
             state = coreLoop(state, effectiveRequest, traceContext, loopStart, callback, token,
                     null, null);
 
@@ -1527,96 +1533,6 @@ public class ReactAgentLoop {
                 sseManager.closeEmitter(streamId);
             }
         }
-    }
-
-    // ===== 非流式 LLM 回调 =====
-
-    /**
-     * 非流式迭代回调 — run() 使用。
-     *
-     * <p>通过 {@code ChatModel.call(Prompt)} 直接调用 LLM，
-     * 设置 {@code internalToolExecutionEnabled=false} 禁用自动 tool calling，
-     * 返回原始 ChatResponse 供 coreLoop 解析 tool call 并手动执行。</p>
-     */
-    private class NonStreamingCallback implements IterationCallback {
-        private final AgentRequest request;
-        private String providerId = DEFAULT_MODEL_ID;
-        private String modelId = DEFAULT_MODEL_ID;
-
-        NonStreamingCallback(AgentRequest request) {
-            this.request = request;
-        }
-
-        @Override
-        public ChatResponse callLlm(AgentRequest req,
-                                    List<Message> messages,
-                                    List<ToolCallback> toolCallbacks,
-                                    @Nullable TraceContext traceContext) {
-            String scene = config.getLoop().getLlmScene();
-
-            // 动态路由：检查 messages 中 UserMessage 是否包含 Media 对象
-            // 覆盖两种场景：用户上传的媒体（首轮）和工具产生的媒体（后续迭代 pendingMedia）
-            boolean messagesHaveMedia = messages.stream()
-                    .filter(m -> m instanceof UserMessage)
-                    .map(m -> (UserMessage) m)
-                    .anyMatch(um -> !um.getMedia().isEmpty());
-
-            // 多模态路由：messages 中有 Media 且 MultimodalRouter 可用时走多模态路径
-            if (messagesHaveMedia && multimodalRouter != null) {
-                // 从 messages 中提取 MediaContent 列表（优先用 request 的，否则从 assembledContext 传递的）
-                var mediaContents = req.mediaContents() != null && !req.mediaContents().isEmpty()
-                        ? req.mediaContents()
-                        : extractMediaContentsFromMessages(messages);
-                var multimodalRequest = new MultimodalRequest(
-                        scene,
-                        buildConversationContextText(messages),
-                        mediaContents,
-                        null,
-                        req.preferredProvider(),
-                        null
-                );
-                LlmResponse llmResponse = multimodalRouter.call(multimodalRequest);
-                this.providerId = llmResponse.providerId();
-                this.modelId = llmResponse.modelName();
-                log.debug("非流式多模态路由完成: scene={}, provider={}, model={}",
-                        scene, this.providerId, this.modelId);
-                return adaptToChatResponse(llmResponse);
-            }
-
-            if (messagesHaveMedia) {
-                log.warn("消息包含媒体内容但 MultimodalRouter 不可用，回退到纯文本路由");
-            }
-
-            // 纯文本路由：原有 LlmRouter 路径
-            var chatModelInfo = llmRouter.getChatModelWithInfo(scene, request.preferredProvider());
-            this.providerId = chatModelInfo.providerId();
-            this.modelId = chatModelInfo.modelId();
-
-            // 构建 ChatOptions：注入工具定义但禁用自动执行
-            var optionsBuilder = DefaultToolCallingChatOptions.builder()
-                    .internalToolExecutionEnabled(false);
-
-            // 温度透传：从 AgentRequest 传入的 temperature 覆盖默认值
-            if (req.temperature() != null) {
-                optionsBuilder.temperature(req.temperature());
-            }
-
-            if (toolCallbacks != null && !toolCallbacks.isEmpty()) {
-                var validCallbacks = toolCallbacks.stream()
-                        .filter(Objects::nonNull)
-                        .toList();
-                if (!validCallbacks.isEmpty()) {
-                    optionsBuilder.toolCallbacks(validCallbacks);
-                }
-            }
-
-            // 构建 Prompt 并调用 ChatModel
-            var prompt = new Prompt(messages, optionsBuilder.build());
-            return chatModelInfo.chatModel().call(prompt);
-        }
-
-        @Override public String getProviderId() { return providerId; }
-        @Override public String getModelId() { return modelId; }
     }
 
     // ===== 流式 LLM 回调 =====
@@ -2449,7 +2365,8 @@ public class ReactAgentLoop {
      * <p>从 ChatResponse 元数据提取真实 Token 用量和完成原因，
      * 与 {@link #recordLlmStep} 保持一致的数据提取逻辑。</p>
      */
-    private void recordStreamingLlmStep(@Nullable TraceContext traceContext,
+    @Override
+    public void recordStreamingLlmStep(@Nullable TraceContext traceContext,
                                         Instant startTime, String providerId,
                                         String modelId, String scene,
                                         ChatResponse chatResponse,
@@ -2496,7 +2413,8 @@ public class ReactAgentLoop {
     // ===== SSE 推理事件 =====
 
     /** 发送 REASONING SSE 事件。 */
-    private void sendReasoningEvent(SseSessionManager sseManager, String streamId,
+    @Override
+    public void sendReasoningEvent(SseSessionManager sseManager, String streamId,
                                     String sessionId, String turnId,
                                     String type, String title, String description,
                                     @Nullable String toolName, Map<String, Object> extra) {
@@ -2645,8 +2563,21 @@ public class ReactAgentLoop {
     // ===== A2UI 辅助方法 =====
 
     /** 判断 A2UI 功能是否启用。 */
-    private boolean isA2uiEnabled() {
+    @Override
+    public boolean isA2uiEnabled() {
         return a2uiProperties != null && a2uiProperties.enabled();
+    }
+
+    /** 获取 A2UI 最大组件数。 */
+    @Override
+    public int getA2uiMaxComponents() {
+        return a2uiProperties != null ? a2uiProperties.maxComponentsPerTree() : 0;
+    }
+
+    /** 增强系统提示词（流式约束 + A2UI）。 */
+    @Override
+    public String enhanceSystemPromptForStreaming(String systemText, @Nullable String a2uiPrompt) {
+        return contextAssembler.enhanceSystemPromptForStreaming(systemText, a2uiPrompt);
     }
 
     /** 从非流式响应中提取 A2UI 内容。 */
@@ -2670,8 +2601,9 @@ public class ReactAgentLoop {
     }
 
     /** 解析并校验 A2UI JSON 为组件树。 */
+    @Override
     @Nullable
-    private A2uiComponentTree parseAndValidateA2uiTree(String json, int maxComponents) {
+    public A2uiComponentTree parseAndValidateA2uiTree(String json, int maxComponents) {
         try {
             var tree = A2uiPayloadSupport.normalizeTree(
                     objectMapper.readValue(json, A2uiComponentTree.class));
@@ -2696,7 +2628,8 @@ public class ReactAgentLoop {
      * <p>记录最终发送的所有 Message（包括 SystemMessage、UserMessage、
      * 历史 AssistantMessage/ToolResponseMessage），确保日志与实际请求一致。</p>
      */
-    private void logLlmPromptIfEnabled(String scene, List<Message> messages,
+    @Override
+    public void logLlmPromptIfEnabled(String scene, List<Message> messages,
                                        @Nullable List<ToolCallback> toolCallbacks) {
         if (config == null || config.getDebug() == null || !config.getDebug().isLogLlmPrompts()) {
             return;
