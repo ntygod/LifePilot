@@ -22,7 +22,10 @@ import com.lifepilot.interaction.web.model.ChatRequest;
 import com.lifepilot.interaction.web.model.NotificationSseEvent;
 import com.lifepilot.interaction.web.model.SignalRequest;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
+import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
+import com.lifepilot.media.audio.AudioTranscriber;
+import com.lifepilot.media.audio.AudioTranscriptionException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,14 +57,17 @@ public class WebChannelAdapter extends AbstractChannelAdapter {
 
     private final AttachmentRepository attachmentRepository;
     @Nullable private final SseSessionManager sseSessionManager;
+    @Nullable private final AudioTranscriber audioTranscriber;
 
     public WebChannelAdapter(MessageGateway gateway,
                              GatewayProperties properties,
                              AttachmentRepository attachmentRepository,
-                             @Nullable SseSessionManager sseSessionManager) {
+                             @Nullable SseSessionManager sseSessionManager,
+                             @Nullable AudioTranscriber audioTranscriber) {
         super(gateway, properties);
         this.attachmentRepository = attachmentRepository;
         this.sseSessionManager = sseSessionManager;
+        this.audioTranscriber = audioTranscriber;
     }
 
     @Override
@@ -169,11 +175,16 @@ public class WebChannelAdapter extends AbstractChannelAdapter {
     private GatewayMessage buildChatGatewayMessage(ChatRequest request,
                                                     HttpServletRequest httpRequest,
                                                     boolean acceptsSse) {
-        var content = new MessageContent.TextMessage(request.content());
         var sessionId = request.sessionId() != null ? request.sessionId() : UUID.randomUUID().toString();
 
         // Phase 2：根据 attachmentIds 加载消息附件（二进制 + MIME）
         List<GatewayMessage.Attachment> attachments = loadAttachments(request, sessionId);
+
+        // Phase 3：音频附件自动转录
+        String messageContent = request.content();
+        messageContent = transcribeAudioAttachments(attachments, messageContent, sessionId);
+
+        var content = new MessageContent.TextMessage(messageContent);
 
         return GatewayMessage.builder()
                 .channelType(ChannelType.WEB)
@@ -232,6 +243,72 @@ public class WebChannelAdapter extends AbstractChannelAdapter {
                 acceptsSse,
                 preferredProvider
         );
+    }
+
+    /**
+     * 检测音频附件并自动转录为文本。
+     *
+     * <p>当附件 MIME 类型以 {@code audio/} 开头且 {@link AudioTranscriber} 可用时，
+     * 调用转录器将音频转为文本，替换或补充原始消息内容，并通过 SSE 推送转录结果。</p>
+     *
+     * @param attachments    附件列表
+     * @param originalContent 原始消息内容
+     * @param sessionId      会话 ID（用于 SSE 推送）
+     * @return 转录后的消息内容（如无音频附件则返回原始内容）
+     */
+    private String transcribeAudioAttachments(List<GatewayMessage.Attachment> attachments,
+                                               String originalContent,
+                                               String sessionId) {
+        if (audioTranscriber == null || attachments.isEmpty()) {
+            return originalContent;
+        }
+
+        for (var attachment : attachments) {
+            if (attachment.mimeType() == null || !attachment.mimeType().startsWith("audio/")) {
+                continue;
+            }
+
+            try {
+                log.debug("检测到音频附件，开始转录: fileName={}, mimeType={}", attachment.fileName(), attachment.mimeType());
+                String transcribedText = audioTranscriber.transcribe(attachment.data(), attachment.mimeType());
+                log.info("音频转录成功: fileName={}, 转录文本长度={}", attachment.fileName(), transcribedText.length());
+
+                // 通过 SSE 推送转录结果
+                pushTranscriptionEvent(sessionId, transcribedText);
+
+                // 将转录文本作为消息内容（替换占位符或补充原始内容）
+                if (originalContent == null || originalContent.isBlank() || "[语音消息]".equals(originalContent)) {
+                    return transcribedText;
+                }
+                return originalContent + "\n\n[语音转录] " + transcribedText;
+            } catch (AudioTranscriptionException e) {
+                log.warn("音频转录失败: fileName={}, error={}", attachment.fileName(), e.getMessage());
+            }
+        }
+
+        return originalContent;
+    }
+
+    /**
+     * 通过 SSE 广播语音转录结果事件到所有通知连接。
+     *
+     * <p>转录发生在消息构建阶段（尚无 streamId），因此使用通知广播机制推送。
+     * 前端通过 notification SSE 连接接收 transcription 事件。</p>
+     *
+     * @param sessionId       会话 ID
+     * @param transcribedText 转录文本
+     */
+    private void pushTranscriptionEvent(String sessionId, String transcribedText) {
+        if (sseSessionManager == null) {
+            return;
+        }
+        try {
+            var eventData = Map.of("text", transcribedText, "sessionId", sessionId);
+            sseSessionManager.broadcastByPrefix("notification-", SseEventType.TRANSCRIPTION, eventData);
+            log.debug("SSE 转录事件广播成功: sessionId={}", sessionId);
+        } catch (Exception e) {
+            log.warn("SSE 转录事件广播失败: sessionId={}, error={}", sessionId, e.getMessage());
+        }
     }
 
     /**

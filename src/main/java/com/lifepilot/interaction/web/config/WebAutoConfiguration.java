@@ -8,9 +8,11 @@ import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.service.WebUserConfirmationService;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.observability.config.ObservabilityProperties;
+import com.lifepilot.media.audio.AudioTranscriber;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.lang.Nullable;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -47,10 +49,11 @@ public class WebAutoConfiguration {
     public WebChannelAdapter webChannelAdapter(MessageGateway gateway,
                                                 GatewayProperties gatewayProperties,
                                                 AttachmentRepository attachmentRepository,
-                                                SseSessionManager sseSessionManager) {
+                                                SseSessionManager sseSessionManager,
+                                                @Nullable AudioTranscriber audioTranscriber) {
         log.info("注册 WebChannelAdapter");
         return new WebChannelAdapter(gateway, gatewayProperties, attachmentRepository,
-                sseSessionManager);
+                sseSessionManager, audioTranscriber);
     }
 
     @Bean
