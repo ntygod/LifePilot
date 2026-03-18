@@ -14,5 +14,13 @@ public record ExperienceRecord(
         List<String> lessons,
         List<String> applicableConditions,
         List<String> toolsUsed,
-        boolean success
+        boolean success,
+        /** 累计效果评分。 */
+        float effectivenessScore,
+        /** 被注入到上下文的总次数。 */
+        int injectionCount,
+        /** 注入后任务成功次数。 */
+        int positiveOutcomes,
+        /** 注入后任务失败次数。 */
+        int negativeOutcomes
 ) {}

@@ -40,6 +40,7 @@ import com.lifepilot.media.MediaValidationException;
 import com.lifepilot.media.MediaValidator;
 import com.lifepilot.memory.retrieval.InjectionRecordRepository;
 import com.lifepilot.memory.semantic.RealtimeExtractor;
+import com.lifepilot.memory.semantic.TemporalEntity;
 import com.lifepilot.memory.procedural.IntentMatcher;
 import com.lifepilot.memory.procedural.ProceduralMemory;
 import com.lifepilot.memory.working.WorkingMemory;
@@ -132,6 +133,11 @@ public class ReactAgentLoop {
     // ===== 可选依赖（经验总结） =====
     @Nullable private final com.lifepilot.memory.experience.ExperienceSummarizer experienceSummarizer;
 
+    // ===== 可选依赖（经验学习增强） =====
+    @Nullable private final com.lifepilot.memory.experience.EffectivenessTracker effectivenessTracker;
+    @Nullable private final com.lifepilot.memory.experience.ContrastiveLearner contrastiveLearner;
+    @Nullable private final com.lifepilot.memory.experience.SubtaskReflector subtaskReflector;
+
     // ===== 挂起-恢复定时任务调度器 =====
     private final java.util.concurrent.ScheduledExecutorService suspendScheduler =
             java.util.concurrent.Executors.newSingleThreadScheduledExecutor(
@@ -171,7 +177,10 @@ public class ReactAgentLoop {
             @Nullable org.springframework.context.ApplicationEventPublisher eventPublisher,
             @Nullable ProceduralMemory proceduralMemory,
             @Nullable IntentMatcher intentMatcher,
-            @Nullable com.lifepilot.memory.experience.ExperienceSummarizer experienceSummarizer) {
+            @Nullable com.lifepilot.memory.experience.ExperienceSummarizer experienceSummarizer,
+            @Nullable com.lifepilot.memory.experience.EffectivenessTracker effectivenessTracker,
+            @Nullable com.lifepilot.memory.experience.ContrastiveLearner contrastiveLearner,
+            @Nullable com.lifepilot.memory.experience.SubtaskReflector subtaskReflector) {
         this.contextAssembler = contextAssembler;
         this.llmRouter = llmRouter;
         this.traceRecorder = traceRecorder;
@@ -198,6 +207,9 @@ public class ReactAgentLoop {
         this.proceduralMemory = proceduralMemory;
         this.intentMatcher = intentMatcher;
         this.experienceSummarizer = experienceSummarizer;
+        this.effectivenessTracker = effectivenessTracker;
+        this.contrastiveLearner = contrastiveLearner;
+        this.subtaskReflector = subtaskReflector;
     }
 
     /** 测试会话前缀 — 以此开头的 sessionId 不持久化对话历史和记忆。 */
@@ -2369,12 +2381,40 @@ public class ReactAgentLoop {
                         finalState.sessionId(), e.getMessage());
             }
             // 经验提炼
+            TemporalEntity newExperience = null;
             try {
                 if (experienceSummarizer != null) {
-                    experienceSummarizer.summarize(finalState);
+                    newExperience = experienceSummarizer.summarize(finalState);
                 }
             } catch (Exception e) {
                 log.warn("经验提炼失败: sessionId={}, error={}",
+                        finalState.sessionId(), e.getMessage());
+            }
+            // 效果评估
+            try {
+                if (effectivenessTracker != null) {
+                    effectivenessTracker.evaluate(finalState, finalState.traceId());
+                }
+            } catch (Exception e) {
+                log.warn("效果评估失败: sessionId={}, error={}",
+                        finalState.sessionId(), e.getMessage());
+            }
+            // 对比学习
+            try {
+                if (contrastiveLearner != null && newExperience != null) {
+                    contrastiveLearner.learn(newExperience);
+                }
+            } catch (Exception e) {
+                log.warn("对比学习失败: sessionId={}, error={}",
+                        finalState.sessionId(), e.getMessage());
+            }
+            // 子任务反思
+            try {
+                if (subtaskReflector != null) {
+                    subtaskReflector.reflect(finalState);
+                }
+            } catch (Exception e) {
+                log.warn("子任务反思失败: sessionId={}, error={}",
                         finalState.sessionId(), e.getMessage());
             }
         });

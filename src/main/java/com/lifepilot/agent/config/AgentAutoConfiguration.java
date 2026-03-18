@@ -68,14 +68,15 @@ public class AgentAutoConfiguration {
                                              @Autowired(required = false) SemanticMemory semanticMemory,
                                              @Autowired(required = false) PassiveNotificationQueue passiveNotificationQueue,
                                              @Autowired(required = false) com.lifepilot.memory.config.MemoryProperties memoryProperties,
-                                             @Autowired(required = false) com.lifepilot.memory.procedural.ProceduralMemory proceduralMemory) {
+                                             @Autowired(required = false) com.lifepilot.memory.procedural.ProceduralMemory proceduralMemory,
+                                             @Autowired(required = false) com.lifepilot.memory.experience.EffectivenessTracker effectivenessTracker) {
         if (workingMemory != null && tokenBudgetAllocator != null) {
             log.info("Agent 引擎: 注册完整版 ContextAssembler（Agentic 模式，L3 语义记忆{}，L4 程序记忆{}）",
                     semanticMemory != null ? "已启用" : "未启用",
                     proceduralMemory != null ? "已启用" : "未启用");
             return new ContextAssembler(config, workingMemory, tokenBudgetAllocator,
                     dataRedactor, semanticMemory, passiveNotificationQueue, memoryProperties,
-                    proceduralMemory, promptRegistry);
+                    proceduralMemory, promptRegistry, effectivenessTracker);
         }
         log.warn("Agent 引擎: 注册基础版 ContextAssembler（WorkingMemory 或 TokenBudgetAllocator 不可用）");
         return new ContextAssembler(config, promptRegistry);
@@ -137,8 +138,11 @@ public class AgentAutoConfiguration {
                                @Autowired(required = false) org.springframework.context.ApplicationEventPublisher eventPublisher,
                                @Autowired(required = false) com.lifepilot.memory.procedural.ProceduralMemory proceduralMemory,
                                @Autowired(required = false) com.lifepilot.memory.procedural.IntentMatcher intentMatcher,
-                               @Autowired(required = false) com.lifepilot.memory.experience.ExperienceSummarizer experienceSummarizer) {
-        log.info("Agent 引擎初始化完成（ReAct 架构，追踪{}，记忆系统{}，实时提取{}，多模态{}，A2UI{}，挂起-恢复{}，L4反馈{}，经验总结{}）",
+                               @Autowired(required = false) com.lifepilot.memory.experience.ExperienceSummarizer experienceSummarizer,
+                               @Autowired(required = false) com.lifepilot.memory.experience.EffectivenessTracker effectivenessTracker,
+                               @Autowired(required = false) com.lifepilot.memory.experience.ContrastiveLearner contrastiveLearner,
+                               @Autowired(required = false) com.lifepilot.memory.experience.SubtaskReflector subtaskReflector) {
+        log.info("Agent 引擎初始化完成（ReAct 架构，追踪{}，记忆系统{}，实时提取{}，多模态{}，A2UI{}，挂起-恢复{}，L4反馈{}，经验总结{}，经验增强{}）",
                 traceRecorder != null ? "已启用" : "未启用",
                 workingMemory != null ? "已启用" : "未启用",
                 realtimeExtractor != null ? "已启用" : "未启用",
@@ -146,7 +150,8 @@ public class AgentAutoConfiguration {
                 a2uiProperties != null && a2uiProperties.enabled() ? "已启用" : "未启用",
                 suspendStore != null ? "已启用" : "未启用",
                 proceduralMemory != null && intentMatcher != null ? "已启用" : "未启用",
-                experienceSummarizer != null ? "已启用" : "未启用");
+                experienceSummarizer != null ? "已启用" : "未启用",
+                effectivenessTracker != null ? "已启用" : "未启用");
         return new ReactAgentLoop(contextAssembler, llmRouter, traceRecorder, objectMapper,
                 sessionManager, agentToolProvider, config, promptRegistry,
                 multimodalRouter, mediaDataExtractor, mediaValidator, mediaProcessor,
@@ -154,6 +159,7 @@ public class AgentAutoConfiguration {
                 conversationViewService, realtimeExtractor, injectionRecordRepository,
                 sessionKnowledgeBaseRepository, knowledgeBaseRepository, a2uiProperties,
                 attachmentRepository, suspendStore, eventPublisher,
-                proceduralMemory, intentMatcher, experienceSummarizer);
+                proceduralMemory, intentMatcher, experienceSummarizer,
+                effectivenessTracker, contrastiveLearner, subtaskReflector);
     }
 }

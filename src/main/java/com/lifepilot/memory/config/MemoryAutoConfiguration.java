@@ -542,12 +542,15 @@ public class MemoryAutoConfiguration {
             MemoryProperties properties,
             @Nullable PreferenceConsolidator preferenceConsolidator,
             @Nullable SemanticMemory semanticMemory,
-            @Nullable com.lifepilot.memory.procedural.ProceduralMemory proceduralMemory) {
-        log.info("记忆系统: 注册 ConsolidationPipeline, 偏好同步={}, 经验提升={}",
+            @Nullable com.lifepilot.memory.procedural.ProceduralMemory proceduralMemory,
+            @Nullable com.lifepilot.memory.consolidation.ExperienceMerger experienceMerger) {
+        log.info("记忆系统: 注册 ConsolidationPipeline, 偏好同步={}, 经验提升={}, 经验合并={}",
                 preferenceConsolidator != null ? "启用" : "禁用",
-                semanticMemory != null && proceduralMemory != null ? "启用" : "禁用");
+                semanticMemory != null && proceduralMemory != null ? "启用" : "禁用",
+                experienceMerger != null ? "启用" : "禁用");
         return new ConsolidationPipeline(semanticConsolidator, proceduralConsolidator,
-                properties, preferenceConsolidator, semanticMemory, proceduralMemory);
+                properties, preferenceConsolidator, semanticMemory, proceduralMemory,
+                experienceMerger);
     }
 
     // --- 实体去重 ---
@@ -648,6 +651,62 @@ public class MemoryAutoConfiguration {
         log.info("记忆系统: 注册 ExperienceSummarizer");
         return new ExperienceSummarizer(semanticMemory, vectorSearcher, llmRouter,
                 promptRegistry, properties, qualityAssessor, evalStore);
+    }
+
+    // --- 经验学习增强 ---
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(SemanticMemory.class)
+    public com.lifepilot.memory.experience.EffectivenessTracker effectivenessTracker(
+            SemanticMemory semanticMemory,
+            InjectionRecordRepository injectionRecordRepository,
+            MemoryProperties properties) {
+        log.info("记忆系统: 注册 EffectivenessTracker");
+        return new com.lifepilot.memory.experience.EffectivenessTracker(
+                semanticMemory, injectionRecordRepository, properties);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean({SemanticMemory.class, VectorSearcher.class})
+    public com.lifepilot.memory.experience.ContrastiveLearner contrastiveLearner(
+            SemanticMemory semanticMemory,
+            VectorSearcher vectorSearcher,
+            LlmRouter llmRouter,
+            PromptRegistry promptRegistry,
+            MemoryProperties properties) {
+        log.info("记忆系统: 注册 ContrastiveLearner");
+        return new com.lifepilot.memory.experience.ContrastiveLearner(
+                semanticMemory, vectorSearcher, llmRouter, promptRegistry, properties);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean({SemanticMemory.class, VectorSearcher.class})
+    public com.lifepilot.memory.experience.SubtaskReflector subtaskReflector(
+            SemanticMemory semanticMemory,
+            VectorSearcher vectorSearcher,
+            LlmRouter llmRouter,
+            PromptRegistry promptRegistry,
+            MemoryProperties properties) {
+        log.info("记忆系统: 注册 SubtaskReflector");
+        return new com.lifepilot.memory.experience.SubtaskReflector(
+                semanticMemory, vectorSearcher, llmRouter, promptRegistry, properties);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean({SemanticMemory.class, VectorSearcher.class})
+    public com.lifepilot.memory.consolidation.ExperienceMerger experienceMerger(
+            SemanticMemory semanticMemory,
+            VectorSearcher vectorSearcher,
+            LlmRouter llmRouter,
+            PromptRegistry promptRegistry,
+            MemoryProperties properties) {
+        log.info("记忆系统: 注册 ExperienceMerger");
+        return new com.lifepilot.memory.consolidation.ExperienceMerger(
+                semanticMemory, vectorSearcher, llmRouter, promptRegistry, properties);
     }
 
     // --- 工具方法 ---

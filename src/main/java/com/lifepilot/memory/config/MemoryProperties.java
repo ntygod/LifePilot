@@ -751,6 +751,12 @@ public static class Retrieval {
      * @author zsg
      * @since 2026-03-18
      */
+    /**
+     * 经验总结配置 — 控制经验提炼、效果反馈、对比学习、上下文隔离、经验合并和子任务反思。
+     *
+     * @author zsg
+     * @since 2026-03-18
+     */
     public static class Experience {
         /** 经验总结总开关，默认 true。 */
         private boolean enabled = true;
@@ -776,6 +782,17 @@ public static class Retrieval {
         private String evalTagPrefix = "eval:";
         /** Eval 高分时 toolSuccessRatio 宽松系数，默认 0.5。 */
         private float evalQualityRelaxFactor = 0.5f;
+
+        /** 效果反馈配置。 */
+        private Effectiveness effectiveness = new Effectiveness();
+        /** 对比学习配置。 */
+        private Contrastive contrastive = new Contrastive();
+        /** 执行上下文隔离配置。 */
+        private Isolation isolation = new Isolation();
+        /** 经验合并配置。 */
+        private Merge merge = new Merge();
+        /** 子任务反思配置。 */
+        private Subtask subtask = new Subtask();
 
         public boolean isEnabled() { return enabled; }
         public void setEnabled(boolean enabled) { this.enabled = enabled; }
@@ -812,5 +829,150 @@ public static class Retrieval {
 
         public float getEvalQualityRelaxFactor() { return evalQualityRelaxFactor; }
         public void setEvalQualityRelaxFactor(float evalQualityRelaxFactor) { this.evalQualityRelaxFactor = evalQualityRelaxFactor; }
+
+        public Effectiveness getEffectiveness() { return effectiveness; }
+        public void setEffectiveness(Effectiveness effectiveness) { this.effectiveness = effectiveness; }
+
+        public Contrastive getContrastive() { return contrastive; }
+        public void setContrastive(Contrastive contrastive) { this.contrastive = contrastive; }
+
+        public Isolation getIsolation() { return isolation; }
+        public void setIsolation(Isolation isolation) { this.isolation = isolation; }
+
+        public Merge getMerge() { return merge; }
+        public void setMerge(Merge merge) { this.merge = merge; }
+
+        public Subtask getSubtask() { return subtask; }
+        public void setSubtask(Subtask subtask) { this.subtask = subtask; }
+
+        /**
+         * 效果反馈配置 — 控制经验注入后的有效性评估和 importanceScore 动态调整。
+         *
+         * @author zsg
+         * @since 2026-03-18
+         */
+        public static class Effectiveness {
+            /** 效果判定的工具调用有效率阈值，默认 0.5。 */
+            private float successRatioThreshold = 0.5f;
+            /** 有效经验 importanceScore 提升步长，默认 0.05。 */
+            private float positiveBoost = 0.05f;
+            /** 无效经验 importanceScore 衰减步长，默认 0.03。 */
+            private float negativeDecay = 0.03f;
+            /** 淘汰阈值，importanceScore 低于此值时归档，默认 0.1。 */
+            private float evictionThreshold = 0.1f;
+
+            public float getSuccessRatioThreshold() { return successRatioThreshold; }
+            public void setSuccessRatioThreshold(float successRatioThreshold) { this.successRatioThreshold = successRatioThreshold; }
+
+            public float getPositiveBoost() { return positiveBoost; }
+            public void setPositiveBoost(float positiveBoost) { this.positiveBoost = positiveBoost; }
+
+            public float getNegativeDecay() { return negativeDecay; }
+            public void setNegativeDecay(float negativeDecay) { this.negativeDecay = negativeDecay; }
+
+            public float getEvictionThreshold() { return evictionThreshold; }
+            public void setEvictionThreshold(float evictionThreshold) { this.evictionThreshold = evictionThreshold; }
+        }
+
+        /**
+         * 对比学习配置 — 控制成功/失败轨迹对比分析的触发条件和参数。
+         *
+         * @author zsg
+         * @since 2026-03-18
+         */
+        public static class Contrastive {
+            /** 开关，默认 true。 */
+            private boolean enabled = true;
+            /** 轨迹对匹配相似度阈值，默认 0.80。 */
+            private float similarityThreshold = 0.80f;
+            /** 对比经验初始 importanceScore，默认 0.7。 */
+            private float initialImportance = 0.7f;
+            /** LLM 调用超时（秒），默认 30。 */
+            private int llmTimeoutSeconds = 30;
+
+            public boolean isEnabled() { return enabled; }
+            public void setEnabled(boolean enabled) { this.enabled = enabled; }
+
+            public float getSimilarityThreshold() { return similarityThreshold; }
+            public void setSimilarityThreshold(float similarityThreshold) { this.similarityThreshold = similarityThreshold; }
+
+            public float getInitialImportance() { return initialImportance; }
+            public void setInitialImportance(float initialImportance) { this.initialImportance = initialImportance; }
+
+            public int getLlmTimeoutSeconds() { return llmTimeoutSeconds; }
+            public void setLlmTimeoutSeconds(int llmTimeoutSeconds) { this.llmTimeoutSeconds = llmTimeoutSeconds; }
+        }
+
+        /**
+         * 执行上下文隔离配置 — 控制不同执行环境的经验是否可跨上下文检索。
+         *
+         * @author zsg
+         * @since 2026-03-18
+         */
+        public static class Isolation {
+            /** 是否允许跨上下文检索，默认 false。 */
+            private boolean crossContextRetrieval = false;
+
+            public boolean isCrossContextRetrieval() { return crossContextRetrieval; }
+            public void setCrossContextRetrieval(boolean crossContextRetrieval) { this.crossContextRetrieval = crossContextRetrieval; }
+        }
+
+        /**
+         * 经验合并配置 — 控制相似经验的自动合并策略和限流参数。
+         *
+         * @author zsg
+         * @since 2026-03-18
+         */
+        public static class Merge {
+            /** 开关，默认 true。 */
+            private boolean enabled = true;
+            /** 合并相似度阈值，默认 0.85。 */
+            private float similarityThreshold = 0.85f;
+            /** 每次巩固最大合并数，默认 10。 */
+            private int maxMergesPerRun = 10;
+            /** LLM 调用超时（秒），默认 30。 */
+            private int llmTimeoutSeconds = 30;
+
+            public boolean isEnabled() { return enabled; }
+            public void setEnabled(boolean enabled) { this.enabled = enabled; }
+
+            public float getSimilarityThreshold() { return similarityThreshold; }
+            public void setSimilarityThreshold(float similarityThreshold) { this.similarityThreshold = similarityThreshold; }
+
+            public int getMaxMergesPerRun() { return maxMergesPerRun; }
+            public void setMaxMergesPerRun(int maxMergesPerRun) { this.maxMergesPerRun = maxMergesPerRun; }
+
+            public int getLlmTimeoutSeconds() { return llmTimeoutSeconds; }
+            public void setLlmTimeoutSeconds(int llmTimeoutSeconds) { this.llmTimeoutSeconds = llmTimeoutSeconds; }
+        }
+
+        /**
+         * 子任务反思配置 — 控制从工具调用序列中提取细粒度经验的触发条件和参数。
+         *
+         * @author zsg
+         * @since 2026-03-18
+         */
+        public static class Subtask {
+            /** 开关，默认 true。 */
+            private boolean enabled = true;
+            /** 触发反思的最小连续工具调用数，默认 3。 */
+            private int minToolSequence = 3;
+            /** 子任务经验初始 importanceScore，默认 0.4。 */
+            private float initialImportance = 0.4f;
+            /** LLM 输入截断上限（Token），默认 2000。 */
+            private int maxInputTokens = 2000;
+
+            public boolean isEnabled() { return enabled; }
+            public void setEnabled(boolean enabled) { this.enabled = enabled; }
+
+            public int getMinToolSequence() { return minToolSequence; }
+            public void setMinToolSequence(int minToolSequence) { this.minToolSequence = minToolSequence; }
+
+            public float getInitialImportance() { return initialImportance; }
+            public void setInitialImportance(float initialImportance) { this.initialImportance = initialImportance; }
+
+            public int getMaxInputTokens() { return maxInputTokens; }
+            public void setMaxInputTokens(int maxInputTokens) { this.maxInputTokens = maxInputTokens; }
+        }
     }
 }
