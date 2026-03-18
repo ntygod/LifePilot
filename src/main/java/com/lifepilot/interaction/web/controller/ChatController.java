@@ -11,10 +11,13 @@ import com.lifepilot.interaction.web.service.WebUserConfirmationService;
 import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
+import com.lifepilot.media.audio.SpeechSynthesizer;
+import com.lifepilot.media.config.MediaProperties;
 import com.lifepilot.memory.feedback.FeedbackProcessor;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.lang.Nullable;
 import org.springframework.web.bind.annotation.*;
@@ -80,6 +83,9 @@ public class ChatController {
     private final WebUserConfirmationService confirmationService;
     @Nullable
     private final FeedbackProcessor feedbackProcessor;
+    @Nullable
+    private final SpeechSynthesizer speechSynthesizer;
+    private final MediaProperties mediaProperties;
 
     public ChatController(WebChannelAdapter adapter, SseSessionManager sseManager,
                           com.lifepilot.interaction.web.service.ChatSessionService sessionService,
@@ -88,7 +94,9 @@ public class ChatController {
                           KnowledgeBaseProperties knowledgeBaseProperties,
                           @Nullable ResponseTracker responseTracker,
                           @Nullable WebUserConfirmationService confirmationService,
-                          @Nullable FeedbackProcessor feedbackProcessor) {
+                          @Nullable FeedbackProcessor feedbackProcessor,
+                          @Nullable SpeechSynthesizer speechSynthesizer,
+                          MediaProperties mediaProperties) {
         this.adapter = adapter;
         this.sseManager = sseManager;
         this.sessionService = sessionService;
@@ -98,6 +106,8 @@ public class ChatController {
         this.responseTracker = responseTracker;
         this.confirmationService = confirmationService;
         this.feedbackProcessor = feedbackProcessor;
+        this.speechSynthesizer = speechSynthesizer;
+        this.mediaProperties = mediaProperties;
     }
 
     /**
@@ -706,6 +716,59 @@ public class ChatController {
     }
 
     // ── 内部辅助方法 ──────────────────────────────────────────
+
+    /**
+     * TTS 语音合成端点。
+     *
+     * <p>将指定消息的文本内容通过 {@link SpeechSynthesizer} 合成为音频，
+     * 返回 {@code audio/mpeg} 格式的二进制流。支持通过查询参数覆盖默认语音风格和语速。</p>
+     *
+     * @param messageId 消息 ID
+     * @param voice     语音风格（可选，覆盖默认配置）
+     * @param speed     语速倍率（可选，覆盖默认配置）
+     * @return 音频二进制流
+     */
+    @PostMapping("/messages/{messageId}/tts")
+    public ResponseEntity<?> synthesizeSpeech(
+            @PathVariable String messageId,
+            @RequestParam(required = false) String voice,
+            @RequestParam(required = false) Double speed) {
+
+        // 检查 TTS 是否启用
+        if (!mediaProperties.getTts().isEnabled()) {
+            log.debug("TTS 端点已禁用: tts.enabled=false");
+            return ResponseEntity.status(503).body(
+                    new ErrorResponse(503, "语音合成服务已禁用", Instant.now()));
+        }
+
+        // 检查 SpeechSynthesizer 是否注入
+        if (speechSynthesizer == null) {
+            log.debug("TTS 端点不可用: SpeechSynthesizer 未注入");
+            return ResponseEntity.status(503).body(
+                    new ErrorResponse(503, "语音合成服务不可用，未配置 TTS Provider", Instant.now()));
+        }
+
+        // 获取消息文本
+        String content = feedbackRepository.getMessageContentById(messageId);
+        if (content == null || content.isBlank()) {
+            log.warn("TTS 合成失败: 消息不存在或内容为空: messageId={}", messageId);
+            return ResponseEntity.notFound().build();
+        }
+
+        try {
+            byte[] audioData = speechSynthesizer.synthesize(content);
+            log.info("TTS 合成成功: messageId={}, audioSize={}", messageId, audioData.length);
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_TYPE, "audio/mpeg")
+                    .body(audioData);
+        } catch (Exception e) {
+            log.error("TTS 合成失败: messageId={}", messageId, e);
+            return ResponseEntity.internalServerError().body(
+                    new ErrorResponse(500, "语音合成失败: " + e.getMessage(), Instant.now()));
+        }
+    }
+
+    // ── 内部辅助方法（续）──────────────────────────────────────
 
     /**
      * 安全通知 ResponseTracker 用户交互，异常不影响消息处理主流程。
