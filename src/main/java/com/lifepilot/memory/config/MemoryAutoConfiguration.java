@@ -525,7 +525,7 @@ public class MemoryAutoConfiguration {
             EpisodicToProceduralConsolidator proceduralConsolidator,
             MemoryProperties properties) {
         log.info("记忆系统: 注册 ConsolidationPipeline");
-        return new ConsolidationPipeline(semanticConsolidator, proceduralConsolidator, properties);
+        return new ConsolidationPipeline(semanticConsolidator, proceduralConsolidator, properties, null);
     }
 
     // --- 实体去重 ---
