@@ -92,4 +92,15 @@ public sealed interface ProviderAdapter permits SpringAiProviderAdapter {
      * @throws UnsupportedOperationException 若 Provider 不支持 VISION 能力
      */
     Flux<String> streamWithMedia(String prompt, List<MediaContent> mediaContents);
+
+    /**
+     * 执行原生视频调用（通过 Gemini File API URI 引用视频）。
+     *
+     * @param text     文本提示词
+     * @param videoUri Gemini File API 返回的视频 URI（files/{fileId} 格式）
+     * @param timeout  超时时间
+     * @return 统一响应
+     * @throws UnsupportedOperationException 若 Provider 不支持 NATIVE_VIDEO 能力
+     */
+    LlmResponse callWithVideo(String text, String videoUri, Duration timeout);
 }
