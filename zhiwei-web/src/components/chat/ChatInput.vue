@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { FileAudio2, FileText, FileVideo, Image, Paperclip, X } from 'lucide-vue-next'
+import { computed, ref, watch } from 'vue'
+import { FileAudio2, FileText, FileVideo, Image, Mic, Paperclip, Square, X } from 'lucide-vue-next'
 import { chatApi } from '@/api/client'
 import { useChatStore } from '@/stores/chat'
 import { Textarea } from '@/components/ui/textarea'
+import { useVoice } from '@/composables/useVoice'
+import AudioWaveform from '@/components/chat/AudioWaveform.vue'
 import type { ChatAttachment } from '@/types'
 
 const props = defineProps<{
@@ -29,6 +31,15 @@ const isUploading = ref(false)
 const uploadError = ref<string | null>(null)
 
 const showTemplates = ref(false)
+const voiceSending = ref(false)
+const voiceError = ref<string | null>(null)
+
+// 语音录音
+const {
+  isRecording, recordingDuration, audioBlob, isSupported: voiceSupported, analyserNode,
+  startRecording, stopRecording,
+} = useVoice()
+
 const promptTemplates = [
   { name: '整理要点', content: '请帮我整理以下内容的重点、结论和待办：\n\n' },
   { name: '翻译成英文', content: '请将以下内容翻译成英文，保留原意和结构：\n\n' },
@@ -136,6 +147,37 @@ function getFileIcon(file: File) {
   if (type.startsWith('video/')) return FileVideo
   return FileText
 }
+
+/** 格式化录音时长为 mm:ss */
+function formatDuration(seconds: number) {
+  const m = Math.floor(seconds / 60).toString().padStart(2, '0')
+  const s = (seconds % 60).toString().padStart(2, '0')
+  return `${m}:${s}`
+}
+
+// 录音完成后自动上传并发送
+watch(audioBlob, async (blob) => {
+  if (!blob) return
+  voiceSending.value = true
+  voiceError.value = null
+
+  try {
+    const file = new File([blob], `voice-${Date.now()}.webm`, { type: blob.type })
+    const sessionId = chatStore.activeSessionId ?? undefined
+    const uploaded = await chatApi.uploadAttachment(file, sessionId)
+
+    emit('send', {
+      content: '[语音消息]',
+      attachmentIds: [uploaded.fileId],
+      attachments: [uploaded],
+    })
+  } catch (error) {
+    console.error('语音消息上传失败:', error)
+    voiceError.value = error instanceof Error ? error.message : '语音消息上传失败，请重试'
+  } finally {
+    voiceSending.value = false
+  }
+})
 
 defineExpose({
   input,
@@ -250,7 +292,36 @@ defineExpose({
             <div class="flex items-center gap-3 self-end sm:self-auto">
               <span class="text-xs text-muted-foreground">{{ inputLength }} / {{ maxLength }}</span>
 
-              <button
+              <!-- 录音中：波形 + 时长 + 停止按钮 -->
+              <template v-if="isRecording">
+                <AudioWaveform :analyser-node="analyserNode" :is-active="isRecording" />
+                <span class="text-xs font-mono text-destructive">{{ formatDuration(recordingDuration) }}</span>
+                <button
+                  type="button"
+                  class="flex h-11 w-11 items-center justify-center rounded-full border border-destructive bg-destructive text-destructive-foreground shadow-sm transition-all hover:-translate-y-0.5"
+                  @click="stopRecording"
+                >
+                  <Square class="size-4" />
+                </button>
+              </template>
+
+              <template v-else>
+                <!-- 麦克风按钮 -->
+                <button
+                  v-if="voiceSupported"
+                  type="button"
+                  :disabled="disabled || isUploading || voiceSending"
+                  class="flex h-11 w-11 items-center justify-center rounded-full border transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  :class="disabled || isUploading || voiceSending
+                    ? 'border-border bg-muted text-muted-foreground'
+                    : 'border-border bg-card text-foreground hover:-translate-y-0.5 hover:border-primary/40 hover:text-primary'"
+                  @click="startRecording"
+                >
+                  <Mic class="size-4" />
+                </button>
+
+                <!-- 发送按钮 -->
+                <button
                 type="button"
                 :disabled="sendDisabled"
                 class="flex h-11 w-11 items-center justify-center rounded-full border transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
@@ -274,7 +345,8 @@ defineExpose({
                   <path d="m22 2-7 20-4-9-9-4Z" />
                   <path d="M22 2 11 13" />
                 </svg>
-              </button>
+                </button>
+              </template>
             </div>
           </div>
         </div>
@@ -287,9 +359,17 @@ defineExpose({
         {{ uploadError }}
       </div>
 
+      <div
+        v-if="voiceError"
+        class="rounded-[calc(var(--radius)+4px)] border border-destructive/20 bg-destructive/6 px-3 py-2 text-xs text-destructive"
+      >
+        {{ voiceError }}
+      </div>
+
       <div class="flex flex-wrap items-center justify-between gap-2 px-1 text-[11px] text-muted-foreground">
         <p>{{ footerHint }}</p>
         <span v-if="isUploading" class="surface-chip surface-chip-strong">正在上传附件</span>
+        <span v-if="voiceSending" class="surface-chip surface-chip-strong">正在发送语音消息</span>
       </div>
     </div>
   </div>
