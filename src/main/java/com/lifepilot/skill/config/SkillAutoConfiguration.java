@@ -1,6 +1,10 @@
 package com.lifepilot.skill.config;
 
+import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
+import com.lifepilot.knowledge.retrieve.DocumentRetriever;
 import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.meta.convenience.CapabilityAggregator;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.skill.activation.SkillActivator;
@@ -164,11 +168,17 @@ public class SkillAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     @ConditionalOnBean({HybridRetriever.class, SemanticMemory.class})
-    public MemorySkillProvider memorySkillProvider(HybridRetriever hybridRetriever,
-                                                   SemanticMemory semanticMemory,
-                                                   PromptRegistry promptRegistry) {
+    public MemorySkillProvider memorySkillProvider(
+            HybridRetriever hybridRetriever,
+            SemanticMemory semanticMemory,
+            PromptRegistry promptRegistry,
+            @Autowired(required = false) EpisodicMemory episodicMemory,
+            @Autowired(required = false) DocumentRetriever documentRetriever,
+            @Autowired(required = false) SessionKnowledgeBaseRepository sessionKbRepo,
+            @Autowired(required = false) MemoryProperties memoryProperties) {
         log.info("Skill 系统: 注册 MemorySkillProvider（记忆系统已就绪）");
-        return new MemorySkillProvider(hybridRetriever, semanticMemory, promptRegistry);
+        return new MemorySkillProvider(hybridRetriever, semanticMemory, promptRegistry,
+                episodicMemory, documentRetriever, sessionKbRepo, memoryProperties);
     }
 
     // --- 注册器 ---
