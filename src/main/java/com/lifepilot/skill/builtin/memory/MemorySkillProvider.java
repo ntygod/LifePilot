@@ -33,8 +33,8 @@ import java.util.*;
 /**
  * 记忆管理内置 Skill 提供者。
  *
- * <p>注册 8 个记忆管理工具到 DynamicToolRegistry：
- * search / recall / search-docs / create / update / delete / tag / query-at-time。</p>
+ * <p>注册 9 个记忆管理工具到 DynamicToolRegistry：
+ * search / recall / search-docs / create / update / delete / tag / query-at-time / search-experience。</p>
  *
  * @author zsg
  * @since 2026-02-25
@@ -84,6 +84,7 @@ public class MemorySkillProvider implements BuiltinSkillProvider {
         if (documentRetriever != null && sessionKbRepo != null) {
             tools.add("builtin.memory.search-docs");
         }
+        tools.add("builtin.memory.search-experience");
         return SkillDefinition.builder()
                 .id("memory")
                 .name("记忆管理")
@@ -113,6 +114,8 @@ public class MemorySkillProvider implements BuiltinSkillProvider {
             count++;
         }
         toolRegistry.registerBuiltinTool(buildQueryAtTimeTool());
+        count++;
+        toolRegistry.registerBuiltinTool(buildSearchExperienceTool());
         count++;
         log.info("记忆 Skill 工具注册完成: count={}", count);
     }
@@ -487,6 +490,87 @@ public class MemorySkillProvider implements BuiltinSkillProvider {
                     } catch (Exception e) {
                         log.error("时间点查询失败: {}", e.getMessage(), e);
                         return ToolResult.error("时间点查询失败: " + e.getMessage());
+                    }
+                })
+                .build();
+    }
+
+    /** 构建经验检索工具。 */
+    private BuiltinTool buildSearchExperienceTool() {
+        return BuiltinTool.builder()
+                .id("builtin.memory.search-experience")
+                .name("搜索经验")
+                .description("搜索历史执行经验。当遇到以下场景时使用：" +
+                        "1) 之前处理过的类似任务；" +
+                        "2) 工具调用连续失败需要参考成功经验；" +
+                        "3) 需要了解特定工具的最佳使用方式。")
+                .inputSchema(JsonSchema.of(Map.of(
+                        "type", "object",
+                        "required", List.of("query"),
+                        "properties", Map.of(
+                                "query", Map.of("type", "string",
+                                        "description", "搜索关键词或场景描述"),
+                                "topK", Map.of("type", "integer",
+                                        "description", "返回数量，默认 3"),
+                                "successOnly", Map.of("type", "boolean",
+                                        "description", "是否仅返回成功经验，默认 false")
+                        )
+                )))
+                .riskLevel(RiskLevel.LOW)
+                .executor(input -> {
+                    try {
+                        String query = input.getParam("query", String.class);
+                        int topK = input.getOptionalParam("topK", Integer.class).orElse(3);
+                        boolean successOnly = input.getOptionalParam("successOnly", Boolean.class).orElse(false);
+
+                        if (query.isBlank()) {
+                            return ToolResult.error("query 参数不能为空");
+                        }
+
+                        // 检索 EXPERIENCE 类型实体
+                        var experiences = semanticMemory.findCurrentByType(EntityType.EXPERIENCE);
+
+                        // executionContext 隔离过滤 — 默认仅返回 MAIN_AGENT 或 null
+                        boolean crossContext = memoryProperties != null
+                                && memoryProperties.getExperience().getIsolation().isCrossContextRetrieval();
+                        if (!crossContext) {
+                            experiences = experiences.stream()
+                                    .filter(e -> {
+                                        var ctx = e.properties().get("executionContext");
+                                        return ctx == null || "MAIN_AGENT".equals(ctx.toString());
+                                    })
+                                    .toList();
+                        }
+
+                        // successOnly 过滤
+                        if (successOnly) {
+                            experiences = experiences.stream()
+                                    .filter(e -> Boolean.TRUE.equals(e.properties().get("success")))
+                                    .toList();
+                        }
+
+                        // 按 importanceScore 降序排列，取 topK
+                        var results = experiences.stream()
+                                .sorted(Comparator.comparingDouble(
+                                        TemporalEntity::importanceScore).reversed())
+                                .limit(topK)
+                                .map(e -> {
+                                    var m = new LinkedHashMap<String, Object>();
+                                    m.put("entityId", e.id());
+                                    m.put("scenario", e.name());
+                                    m.put("strategy", e.description() != null ? e.description() : "");
+                                    m.put("lessons", e.properties().getOrDefault("lessons", List.of()));
+                                    m.put("toolsUsed", e.properties().getOrDefault("toolsUsed", List.of()));
+                                    m.put("success", e.properties().getOrDefault("success", false));
+                                    m.put("importanceScore", e.importanceScore());
+                                    return Map.<String, Object>copyOf(m);
+                                })
+                                .toList();
+
+                        return ToolResult.success(Map.of("results", results, "count", results.size()));
+                    } catch (Exception e) {
+                        log.error("经验检索工具执行失败: error={}", e.getMessage(), e);
+                        return ToolResult.error("经验检索失败: " + e.getMessage());
                     }
                 })
                 .build();
