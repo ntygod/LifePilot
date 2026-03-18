@@ -16,14 +16,22 @@
 - AI 回复中的建议和解释内容
 
 ## 已有实体列表
-以下是系统中已存在的实体，如果新信息与已有实体相同或语义相近，请使用 UPDATE 而非 ADD：
+以下是系统中已存在的实体（格式：名称 [类型] — 描述）。
+如果新信息与已有实体相同或语义相近，请使用 UPDATE 而非 ADD，避免重复创建：
 {existingSummary}
 
 ## 操作类型
-- ADD: 全新的、已有实体列表中不存在的实体信息
-- UPDATE: 已有实体的信息更新或补充
-- DELETE: 用户明确表示不再有效的信息
-- NOOP: 无需操作
+- ADD: 全新的、已有实体列表中不存在的实体信息。必须提供 entityName、entityType、description
+- UPDATE: 已有实体的信息更新或补充。只需提供变化的字段（description 或 properties），未提及的字段保持不变
+- DELETE: 用户明确表示不再有效的信息（如"我不再学 Rust 了"）
+- NOOP: 对话中无值得记忆的实体信息，返回空列表即可
+
+## properties 字段说明
+properties 是可选的键值对，用于存储实体的结构化属性。例如：
+- PERSON: {"relationship": "同事", "company": "某公司"}
+- SKILL: {"level": "熟练", "years": 3}
+- PREFERENCE: {"category": "编辑器", "value": "VS Code"}
+仅在信息明确时填写，不要猜测。
 
 ## 评分标准
 为每条决策输出 extractionConfidence 和 importanceScore（均为 0.0-1.0）：
