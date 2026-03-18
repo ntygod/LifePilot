@@ -666,6 +666,17 @@ public class ReactAgentLoop {
         log.debug("工具执行完成: toolId={}, success={}, latencyMs={}",
                 toolId, success, toolCallDuration.toMillis());
 
+        // L4 反馈闭环：工具执行成功后记录操作模板执行结果
+        if (success && proceduralMemory != null && intentMatcher != null) {
+            try {
+                var match = intentMatcher.match(toolId + " " + inputJson);
+                match.ifPresent(m -> proceduralMemory.recordExecution(
+                        m.template().templateId(), true));
+            } catch (Exception e) {
+                log.warn("L4 执行结果记录失败: toolId={}, error={}", toolId, e.getMessage());
+            }
+        }
+
         return state;
     }
 
