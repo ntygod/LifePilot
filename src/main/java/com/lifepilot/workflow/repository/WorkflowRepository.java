@@ -360,6 +360,7 @@ public class WorkflowRepository {
                        started_at,
                        completed_at,
                        duration_ms,
+                       retry_count,
                        created_at
                 FROM workflow_step_logs
                 WHERE instance_id = ?

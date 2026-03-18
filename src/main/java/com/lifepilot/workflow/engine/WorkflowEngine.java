@@ -776,6 +776,9 @@ public class WorkflowEngine {
                         : new WorkflowStepException(step.id(), e.getMessage(), e);
             }
             log.warn("步骤执行失败，Skip 跳过: stepId={}, reason={}", step.id(), skip.reason());
+            // 为被跳过的步骤写入默认空输出，避免后续步骤引用 ${steps.xxx.output.result} 时抛异常
+            instance.context().set("steps." + step.id() + ".output",
+                    Map.of("result", "", "skipped", true));
             insertStepLog(instance.id(), step.id(), stepType, StepState.SKIPPED,
                     1, null, null, "Skip: " + skip.reason() + " | " + e.getMessage(),
                     Instant.now());
