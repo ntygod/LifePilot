@@ -174,14 +174,6 @@ public class ContextAssembler {
                 0, 0.0f, 0, false, List.of(), null);
     }
 
-    /** 返回最小化上下文。 */
-    private AssembledContext buildMinimalContext(ReactAgentState state) {
-        int totalTokens = config.getContext().getMaxContextTokens();
-        var tokenBudget = TokenBudget.allocateDefault(totalTokens);
-        return new AssembledContext("", "", List.of(), tokenBudget,
-                0, 0.0f, 0, false, List.of(), null);
-    }
-
     /** 异常兜底降级上下文。 */
     private AssembledContext buildFallbackContext(ReactAgentState state) {
         int totalTokens = config.getContext().getMaxContextTokens();
@@ -381,11 +373,6 @@ public class ContextAssembler {
             sb.append("\n");
         }
         return sb.toString();
-    }
-
-    /** 安全执行预算分配，异常时使用静态分配降级。 */
-    private BudgetAllocation safeAllocate(TokenBudgetAllocator allocator, int conversationTurns, float topScore, boolean hasMemoryData) {
-        return safeAllocate(allocator, conversationTurns, topScore, hasMemoryData, 0);
     }
 
     /**
