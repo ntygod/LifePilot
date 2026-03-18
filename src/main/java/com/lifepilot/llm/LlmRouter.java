@@ -757,7 +757,7 @@ public class LlmRouter {
             fallback = prioritizePreferredProvider(
                     fallback, preferredProviderId, requiredCapability, scene, true);
             if (!fallback.isEmpty()) {
-                log.info("场景 '{}' 无匹配 Provider，回退到能力路由: capability={}, 候选数={}",
+                log.debug("场景 '{}' 无匹配 Provider，回退到能力路由: capability={}, 候选数={}",
                         scene, requiredCapability, fallback.size());
                 return fallback;
             }
