@@ -10,6 +10,7 @@ import com.lifepilot.llm.circuit.CircuitBreakerManager;
 import com.lifepilot.llm.registry.ProviderRegistry;
 import com.lifepilot.media.MediaProcessor;
 import com.lifepilot.media.MediaValidator;
+import com.lifepilot.media.config.MediaProperties;
 import com.lifepilot.media.video.VideoProcessor;
 import com.lifepilot.notification.NotificationService;
 import com.lifepilot.skill.activation.SkillActivator;
@@ -75,6 +76,8 @@ class StepExecutorTest {
                 mock(MediaProcessor.class),
                 mock(MediaValidator.class),
                 mock(VideoProcessor.class),
+                null,
+                new MediaProperties(),
                 llmRouter
         ) {
             @Override

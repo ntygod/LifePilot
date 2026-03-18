@@ -10,6 +10,7 @@ import com.lifepilot.llm.config.ProviderConfig;
 import com.lifepilot.llm.registry.ProviderRegistry;
 import com.lifepilot.media.MediaProcessor;
 import com.lifepilot.media.MediaValidator;
+import com.lifepilot.media.config.MediaProperties;
 import com.lifepilot.media.video.VideoProcessResult;
 import com.lifepilot.media.video.VideoProcessor;
 import org.junit.jupiter.api.BeforeEach;
@@ -68,6 +69,8 @@ class MultimodalRouterTest {
                 mediaProcessor,
                 mediaValidator,
                 videoProcessor,
+                null,
+                new MediaProperties(),
                 llmRouter
         );
     }

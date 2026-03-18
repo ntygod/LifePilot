@@ -16,6 +16,7 @@ import com.lifepilot.knowledge.parser.DocumentParser;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.circuit.CircuitBreakerManager;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
+import com.lifepilot.llm.multimodal.gemini.GeminiFileApiClient;
 import com.lifepilot.llm.registry.ProviderRegistry;
 import com.lifepilot.media.DocumentExtractor;
 import com.lifepilot.media.MediaProcessor;
@@ -120,10 +121,13 @@ public class MediaAutoConfiguration {
             MediaProcessor mediaProcessor,
             MediaValidator mediaValidator,
             @Nullable VideoProcessor videoProcessor,
+            @Nullable GeminiFileApiClient geminiFileApiClient,
+            MediaProperties mediaProperties,
             LlmRouter llmRouter) {
         return new MultimodalRouter(
                 providerRegistry, circuitBreakerManager,
                 mediaProcessor, mediaValidator,
-                videoProcessor, llmRouter);
+                videoProcessor, geminiFileApiClient,
+                mediaProperties, llmRouter);
     }
 }
