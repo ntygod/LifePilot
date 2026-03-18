@@ -523,32 +523,19 @@ function closeInspectorPanels() {
     <!-- 底部固定：错误/流式状态 + 输入框 -->
     <div class="shrink-0 border-t border-border/60 bg-background px-4 pb-3 pt-2 sm:px-6">
       <div class="mx-auto max-w-[1460px]">
-        <div v-if="showGlobalErrorPanel || isStreaming" class="mb-2 space-y-2">
-          <StatePanel
-            v-if="showGlobalErrorPanel"
-            title="本轮对话出现错误"
-            :description="error ?? undefined"
-            tone="danger"
-          >
-            <template #actions>
-              <Button type="button" variant="outline" size="sm" @click="error = null">
-                关闭
-              </Button>
-            </template>
-          </StatePanel>
-          <StatePanel
-            v-if="isStreaming"
-            title="正在生成回答"
-            :description="reasoningStatusText || '生成中'"
-          >
-            <template #actions>
-              <Button type="button" variant="destructive" size="sm" @click="abort">
-                <Square class="size-4" />
-                停止
-              </Button>
-            </template>
-          </StatePanel>
-        </div>
+        <StatePanel
+          v-if="showGlobalErrorPanel"
+          class="mb-2"
+          title="本轮对话出现错误"
+          :description="error ?? undefined"
+          tone="danger"
+        >
+          <template #actions>
+            <Button type="button" variant="outline" size="sm" @click="error = null">
+              关闭
+            </Button>
+          </template>
+        </StatePanel>
         <ChatInput :disabled="isStreaming" @send="handleSend" />
       </div>
     </div>
