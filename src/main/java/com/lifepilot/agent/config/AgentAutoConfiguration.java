@@ -88,8 +88,16 @@ public class AgentAutoConfiguration {
     public SessionManager sessionManager(JdbcTemplate jdbcTemplate,
                                           ObjectMapper objectMapper,
                                           AgentConfigProperties config,
-                                          @Autowired(required = false) com.lifepilot.memory.working.WorkingMemory workingMemory) {
-        return new SessionManager(jdbcTemplate, objectMapper, config, workingMemory);
+                                          @Autowired(required = false) com.lifepilot.memory.working.WorkingMemory workingMemory,
+                                          SharedScheduler sharedScheduler) {
+        var manager = new SessionManager(jdbcTemplate, objectMapper, config, workingMemory);
+        // 通过 SharedScheduler 注册定时清理任务，替代 @Scheduled
+        long intervalMs = config.getSession().getCleanupIntervalMs();
+        sharedScheduler.cleanup().scheduleAtFixedRate(
+                manager::cleanupExpiredSessions,
+                intervalMs, intervalMs, java.util.concurrent.TimeUnit.MILLISECONDS);
+        log.info("会话过期清理任务已注册: interval={}ms", intervalMs);
+        return manager;
     }
 
     @Bean
