@@ -1,7 +1,7 @@
 package com.lifepilot.interaction.web.controller;
 
 import com.lifepilot.agent.CancellationToken;
-import com.lifepilot.agent.ReactAgentLoop;
+import com.lifepilot.agent.orchestration.AgentOrchestrator;
 import com.lifepilot.agent.context.AssembledContext;
 import com.lifepilot.agent.context.ContextAssembler;
 import com.lifepilot.agent.context.TokenBudget;
@@ -76,7 +76,7 @@ public class AgentController {
     private static final Logger log = LoggerFactory.getLogger(AgentController.class);
 
     private final AgentRegistry agentRegistry;
-    private final ReactAgentLoop reactAgentLoop;
+    @Nullable private final AgentOrchestrator agentOrchestrator;
     private final KnowledgeBaseManager knowledgeBaseManager;
     private final ContextAssembler contextAssembler;
     private final AgentMarkdownParser markdownParser;
@@ -86,7 +86,7 @@ public class AgentController {
     @Nullable private final SseSessionManager sseSessionManager;
 
     public AgentController(AgentRegistry agentRegistry,
-                           @Nullable ReactAgentLoop reactAgentLoop,
+                           @Nullable AgentOrchestrator agentOrchestrator,
                            KnowledgeBaseManager knowledgeBaseManager,
                            ContextAssembler contextAssembler,
                            AgentMarkdownParser markdownParser,
@@ -95,7 +95,7 @@ public class AgentController {
                            MultiAgentProperties multiAgentConfig,
                            @Nullable SseSessionManager sseSessionManager) {
         this.agentRegistry = agentRegistry;
-        this.reactAgentLoop = reactAgentLoop;
+        this.agentOrchestrator = agentOrchestrator;
         this.knowledgeBaseManager = knowledgeBaseManager;
         this.contextAssembler = contextAssembler;
         this.markdownParser = markdownParser;
@@ -335,7 +335,7 @@ public class AgentController {
     @PostMapping("/{id}/test-chat")
     public ResponseEntity<?> testChat(@PathVariable String id,
                                        @RequestBody TestChatRequest request) {
-        if (reactAgentLoop == null) {
+        if (agentOrchestrator == null) {
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(
                     new ErrorResponse(503, "Agent 引擎未启用（LLM 不可用）", Instant.now()));
         }
@@ -376,7 +376,7 @@ public class AgentController {
             );
 
             // 4. 执行 Agent 对话
-            AgentResponse agentResponse = reactAgentLoop.run(agentRequest);
+            AgentResponse agentResponse = agentOrchestrator.run(agentRequest);
 
             // 5. 构建 ChatResponse
             String messageId = UUID.randomUUID().toString();
@@ -421,7 +421,7 @@ public class AgentController {
     public SseEmitter testChatStream(@PathVariable String id,
                                      @RequestBody TestChatRequest request) {
         // 前置校验
-        if (reactAgentLoop == null || sseSessionManager == null) {
+        if (agentOrchestrator == null || sseSessionManager == null) {
             var emitter = new SseEmitter(0L);
             try {
                 emitter.send(SseEmitter.event()
@@ -469,7 +469,7 @@ public class AgentController {
         String streamId = UUID.randomUUID().toString();
         SseEmitter emitter = sseSessionManager.createEmitter(streamId);
 
-        // 构建 AgentRequest（测试会话 ID 以 "test:" 开头，ReactAgentLoop 会跳过持久化）
+        // 构建 AgentRequest（测试会话 ID 以 "test:" 开头，AgentOrchestrator 会跳过持久化）
         String testSessionId = "test:" + UUID.randomUUID();
         var agentRequest = new AgentRequest(
                 request.message(),
@@ -490,7 +490,7 @@ public class AgentController {
 
         Thread.startVirtualThread(() -> {
             try {
-                reactAgentLoop.runStreaming(agentRequest, streamId, sseSessionManager, cancellationToken);
+                agentOrchestrator.runStreaming(agentRequest, streamId, sseSessionManager, cancellationToken);
             } catch (Exception e) {
                 log.error("流式测试对话异常: agentId={}, streamId={}, error={}", id, streamId, e.getMessage(), e);
                 sseSessionManager.sendEvent(streamId, SseEventType.ERROR,

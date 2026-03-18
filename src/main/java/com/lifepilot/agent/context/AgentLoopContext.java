@@ -2,6 +2,7 @@ package com.lifepilot.agent.context;
 
 import com.lifepilot.agent.media.MediaDataExtractor;
 import com.lifepilot.interaction.web.model.A2uiComponentTree;
+import com.lifepilot.interaction.web.sse.SseSessionManager;
 import org.springframework.lang.Nullable;
 
 import java.util.ArrayList;
@@ -21,6 +22,30 @@ public class AgentLoopContext {
     private final List<MediaDataExtractor.MediaItem> collectedToolMedia = new ArrayList<>();
     private final List<String> injectedEntityIds = new ArrayList<>();
     private volatile @Nullable A2uiComponentTree lastCollectedA2uiTree;
+
+    // 流式模式下的 SSE 上下文（非流式模式为 null）
+    @Nullable private final SseSessionManager sseManager;
+    @Nullable private final String streamId;
+
+    /** 非流式模式构造。 */
+    public AgentLoopContext() {
+        this.sseManager = null;
+        this.streamId = null;
+    }
+
+    /** 流式模式构造。 */
+    public AgentLoopContext(@Nullable SseSessionManager sseManager, @Nullable String streamId) {
+        this.sseManager = sseManager;
+        this.streamId = streamId;
+    }
+
+    /** 获取 SSE 会话管理器（非流式模式返回 null）。 */
+    @Nullable
+    public SseSessionManager getSseManager() { return sseManager; }
+
+    /** 获取 SSE 流 ID（非流式模式返回 null）。 */
+    @Nullable
+    public String getStreamId() { return streamId; }
 
     /** 收集工具产生的媒体数据。 */
     public void addToolMedia(MediaDataExtractor.MediaItem item) {
