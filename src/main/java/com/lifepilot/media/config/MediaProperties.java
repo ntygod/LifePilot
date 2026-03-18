@@ -34,6 +34,9 @@ public class MediaProperties {
     /** TTS 语音合成配置。 */
     private Tts tts = new Tts();
 
+    /** 原生视频处理配置。 */
+    private NativeVideo nativeVideo = new NativeVideo();
+
     public Validation getValidation() { return validation; }
     public void setValidation(Validation validation) { this.validation = validation; }
 
@@ -51,6 +54,9 @@ public class MediaProperties {
 
     public Tts getTts() { return tts; }
     public void setTts(Tts tts) { this.tts = tts; }
+
+    public NativeVideo getNativeVideo() { return nativeVideo; }
+    public void setNativeVideo(NativeVideo nativeVideo) { this.nativeVideo = nativeVideo; }
 
     /**
      * 图片处理配置。
@@ -156,6 +162,9 @@ public class MediaProperties {
         /** Whisper 模型名称（tiny/base/small/medium/large），默认 base。 */
         private String whisperModel = "base";
 
+        /** 前端录音最大时长（秒），默认 120。 */
+        private int maxRecordingSeconds = 120;
+
         public long getMaxSizeBytes() { return maxSizeBytes; }
         public void setMaxSizeBytes(long maxSizeBytes) { this.maxSizeBytes = maxSizeBytes; }
 
@@ -170,6 +179,9 @@ public class MediaProperties {
 
         public String getWhisperModel() { return whisperModel; }
         public void setWhisperModel(String whisperModel) { this.whisperModel = whisperModel; }
+
+        public int getMaxRecordingSeconds() { return maxRecordingSeconds; }
+        public void setMaxRecordingSeconds(int maxRecordingSeconds) { this.maxRecordingSeconds = maxRecordingSeconds; }
     }
 
     /**
@@ -213,6 +225,9 @@ public class MediaProperties {
      */
     public static class Tts {
 
+        /** 是否启用 TTS 端点，默认 true。 */
+        private boolean enabled = true;
+
         /** 语音风格，默认 alloy。 */
         private String voice = "alloy";
 
@@ -236,5 +251,61 @@ public class MediaProperties {
 
         public int getMaxTextLength() { return maxTextLength; }
         public void setMaxTextLength(int maxTextLength) { this.maxTextLength = maxTextLength; }
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+    }
+
+    /**
+     * 原生视频处理配置。
+     *
+     * <p>配置 Gemini File API 集成参数，包括文件上传超时、状态轮询策略和 API 凭证。</p>
+     *
+     * @author zsg
+     * @since 2026-03-18
+     */
+    public static class NativeVideo {
+
+        /** 是否启用原生视频路由，默认 false。 */
+        private boolean enabled = false;
+
+        /** 文件上传超时（秒），默认 300。 */
+        private int uploadTimeoutSeconds = 300;
+
+        /** 状态轮询超时（秒），默认 120。 */
+        private int pollTimeoutSeconds = 120;
+
+        /** 轮询间隔（毫秒），默认 2000。 */
+        private int pollIntervalMs = 2000;
+
+        /** 最大文件大小（字节），默认 2GB。 */
+        private long maxFileSizeBytes = 2_147_483_648L;
+
+        /** Gemini API Key。 */
+        private String geminiApiKey = "";
+
+        /** Gemini API 基础 URL。 */
+        private String geminiApiBaseUrl = "https://generativelanguage.googleapis.com";
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+
+        public int getUploadTimeoutSeconds() { return uploadTimeoutSeconds; }
+        public void setUploadTimeoutSeconds(int uploadTimeoutSeconds) { this.uploadTimeoutSeconds = uploadTimeoutSeconds; }
+
+        public int getPollTimeoutSeconds() { return pollTimeoutSeconds; }
+        public void setPollTimeoutSeconds(int pollTimeoutSeconds) { this.pollTimeoutSeconds = pollTimeoutSeconds; }
+
+        public int getPollIntervalMs() { return pollIntervalMs; }
+        public void setPollIntervalMs(int pollIntervalMs) { this.pollIntervalMs = pollIntervalMs; }
+
+        public long getMaxFileSizeBytes() { return maxFileSizeBytes; }
+        public void setMaxFileSizeBytes(long maxFileSizeBytes) { this.maxFileSizeBytes = maxFileSizeBytes; }
+
+        public String getGeminiApiKey() { return geminiApiKey; }
+        public void setGeminiApiKey(String geminiApiKey) { this.geminiApiKey = geminiApiKey; }
+
+        public String getGeminiApiBaseUrl() { return geminiApiBaseUrl; }
+        public void setGeminiApiBaseUrl(String geminiApiBaseUrl) { this.geminiApiBaseUrl = geminiApiBaseUrl; }
     }
 }
