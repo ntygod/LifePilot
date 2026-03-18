@@ -3,6 +3,7 @@ package com.lifepilot.agent.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.AgentToolProvider;
 import com.lifepilot.agent.context.ContextAssembler;
+import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.memory.retrieval.HybridRetriever;
@@ -15,6 +16,8 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcTemplate;
+
+import java.util.concurrent.ScheduledExecutorService;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -86,6 +89,15 @@ class AgentAutoConfigurationTest {
         PromptRegistry promptRegistry() { return mock(PromptRegistry.class); }
         @Bean(name = "agentTestAgentToolProvider")
         AgentToolProvider agentToolProvider() { return mock(AgentToolProvider.class); }
+        @Bean(name = "agentTestSharedScheduler")
+        SharedScheduler sharedScheduler() {
+            var scheduler = mock(SharedScheduler.class);
+            var mockExecutor = mock(ScheduledExecutorService.class);
+            org.mockito.Mockito.when(scheduler.cleanup()).thenReturn(mockExecutor);
+            org.mockito.Mockito.when(scheduler.debounce()).thenReturn(mockExecutor);
+            org.mockito.Mockito.when(scheduler.heartbeat()).thenReturn(mockExecutor);
+            return scheduler;
+        }
     }
 
     /** 模拟记忆系统 Bean 可用的配置。 */
@@ -101,7 +113,8 @@ class AgentAutoConfigurationTest {
     static class CustomContextAssemblerConfig {
         @Bean
         ContextAssembler customContextAssembler(AgentConfigProperties config, PromptRegistry promptRegistry) {
-            return new ContextAssembler(config, promptRegistry);
+            return new ContextAssembler(config, promptRegistry,
+                    null, null, null, null, null, null, null, null);
         }
     }
 }

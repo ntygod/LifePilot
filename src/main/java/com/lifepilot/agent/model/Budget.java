@@ -1,5 +1,6 @@
 package com.lifepilot.agent.model;
 
+import com.lifepilot.agent.config.AgentConfigProperties;
 import lombok.Builder;
 
 import java.time.Duration;
@@ -18,16 +19,19 @@ public record Budget(
         int tokensUsed,
         int tokensReserved,
         int maxSteps,
+        int stepsUsed,
         Duration maxDuration,
         Duration elapsed
 ) {
 
-    /** 默认预算：32000 Token、20 步、120 秒。 */
-    public static Budget defaultBudget() {
+    /** 从配置构建默认预算。 */
+    public static Budget fromConfig(AgentConfigProperties.BudgetConfig budgetConfig) {
         return Budget.builder()
-                .maxTokens(32000).tokensUsed(0).tokensReserved(0)
-                .maxSteps(20)
-                .maxDuration(Duration.ofSeconds(120))
+                .maxTokens(budgetConfig.getDefaultMaxTokens())
+                .tokensUsed(0).tokensReserved(0)
+                .maxSteps(budgetConfig.getDefaultMaxSteps())
+                .stepsUsed(0)
+                .maxDuration(Duration.ofSeconds(budgetConfig.getDefaultMaxDurationSeconds()))
                 .elapsed(Duration.ZERO)
                 .build();
     }
@@ -35,6 +39,7 @@ public record Budget(
     /** 任一维度超限返回 true。 */
     public boolean exceeded() {
         return tokensUsed >= maxTokens
+                || stepsUsed >= maxSteps
                 || elapsed.compareTo(maxDuration) >= 0;
     }
 
@@ -42,6 +47,9 @@ public record Budget(
     public String exceedReason() {
         if (tokensUsed >= maxTokens) {
             return "Token 预算耗尽: " + tokensUsed + "/" + maxTokens;
+        }
+        if (stepsUsed >= maxSteps) {
+            return "步骤预算耗尽: " + stepsUsed + "/" + maxSteps;
         }
         if (elapsed.compareTo(maxDuration) >= 0) {
             return "时间预算耗尽: " + elapsed + "/" + maxDuration;
@@ -59,6 +67,11 @@ public record Budget(
         return this.toBuilder().tokensUsed(this.tokensUsed + tokens).build();
     }
 
+    /** 递增步骤计数，返回新实例。 */
+    public Budget incrementStep() {
+        return this.toBuilder().stepsUsed(this.stepsUsed + 1).build();
+    }
+
     /** 更新已用时间，返回新实例。 */
     public Budget withElapsed(Duration elapsed) {
         return this.toBuilder().elapsed(elapsed).build();
@@ -71,7 +84,7 @@ public record Budget(
         Duration subDuration = maxDuration.multipliedBy((long) (ratio * 100)).dividedBy(100);
         return Budget.builder()
                 .maxTokens(subTokens).tokensUsed(0).tokensReserved(0)
-                .maxSteps(subSteps)
+                .maxSteps(subSteps).stepsUsed(0)
                 .maxDuration(subDuration)
                 .elapsed(Duration.ZERO)
                 .build();

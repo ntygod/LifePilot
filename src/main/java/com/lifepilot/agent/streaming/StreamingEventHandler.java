@@ -1,0 +1,209 @@
+package com.lifepilot.agent.streaming;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.interaction.model.TokenUsage;
+import com.lifepilot.interaction.web.a2ui.A2uiPayloadSupport;
+import com.lifepilot.interaction.web.config.A2uiProperties;
+import com.lifepilot.interaction.web.model.A2uiComponentTree;
+import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
+import com.lifepilot.interaction.web.sse.SseEventType;
+import com.lifepilot.interaction.web.sse.SseSessionManager;
+import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
+import com.lifepilot.agent.model.AgentRequest;
+import com.lifepilot.agent.model.ReactAgentState;
+import com.lifepilot.observability.trace.ToolCallStep;
+import com.lifepilot.observability.trace.TraceContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.lang.Nullable;
+
+import java.time.Instant;
+import java.util.*;
+
+/**
+ * 流式事件处理器 — SSE 推送与 A2UI 解析。
+ *
+ * <p>从 ReactAgentLoop 提取的 SSE 事件构建与发送逻辑，
+ * 包括 REASONING / ERROR / DONE 事件推送和 A2UI 组件解析。</p>
+ *
+ * @author zsg
+ * @since 2026-03-19
+ */
+public class StreamingEventHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(StreamingEventHandler.class);
+
+    private final ObjectMapper objectMapper;
+    @Nullable private final A2uiProperties a2uiProperties;
+    @Nullable private final SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository;
+    @Nullable private final KnowledgeBaseRepository knowledgeBaseRepository;
+
+    public StreamingEventHandler(
+            ObjectMapper objectMapper,
+            @Nullable A2uiProperties a2uiProperties,
+            @Nullable SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
+            @Nullable KnowledgeBaseRepository knowledgeBaseRepository) {
+        this.objectMapper = objectMapper;
+        this.a2uiProperties = a2uiProperties;
+        this.sessionKnowledgeBaseRepository = sessionKnowledgeBaseRepository;
+        this.knowledgeBaseRepository = knowledgeBaseRepository;
+    }
+
+    // ===== SSE 事件发送 =====
+
+    /** 发送 SSE ERROR 事件并关闭连接。 */
+    public void sendStreamError(SseSessionManager sseManager, String streamId,
+                                int code, String message, @Nullable String traceId) {
+        var errorData = new HashMap<String, Object>();
+        errorData.put("code", code);
+        errorData.put("message", message);
+        if (traceId != null) {
+            errorData.put("traceId", traceId);
+        }
+        sseManager.sendEvent(streamId, SseEventType.ERROR, errorData);
+        sseManager.closeEmitter(streamId);
+    }
+
+    // ===== DONE 事件构建 =====
+
+    /**
+     * 构建 DONE 事件 payload。
+     *
+     * @param request 原始请求
+     * @param state 最终状态
+     * @param tempTurnId 临时 turnId
+     * @param finalTokenUsage Token 使用量
+     * @param traceContext 追踪上下文
+     * @param reasoningSummary 推理概要
+     * @param finalContent 最终内容
+     * @param assistantMessageId 助手消息 ID
+     * @param lastCollectedA2uiTree 最后收集的 A2UI 组件树
+     * @return DONE 事件 payload
+     */
+    public Map<String, Object> buildDoneEventPayload(AgentRequest request,
+                                                     ReactAgentState state,
+                                                     String tempTurnId,
+                                                     @Nullable TokenUsage finalTokenUsage,
+                                                     @Nullable TraceContext traceContext,
+                                                     @Nullable String reasoningSummary,
+                                                     @Nullable String finalContent,
+                                                     @Nullable String assistantMessageId,
+                                                     @Nullable A2uiComponentTree lastCollectedA2uiTree) {
+        var doneData = new HashMap<String, Object>();
+        doneData.put("messageId", assistantMessageId != null ? assistantMessageId : tempTurnId);
+        doneData.put("sessionId", request.sessionId());
+        doneData.put("turnId", tempTurnId);
+
+        if (finalTokenUsage != null) {
+            var tokenUsageMap = new HashMap<String, Object>();
+            tokenUsageMap.put("promptTokens", finalTokenUsage.promptTokens());
+            tokenUsageMap.put("completionTokens", finalTokenUsage.completionTokens());
+            tokenUsageMap.put("totalTokens", finalTokenUsage.totalTokens());
+            tokenUsageMap.put("modelId", finalTokenUsage.modelId());
+            doneData.put("tokenUsage", tokenUsageMap);
+        }
+
+        // 工具调用摘要
+        if (traceContext != null && !traceContext.steps().isEmpty()) {
+            var toolSummaries = new ArrayList<Map<String, Object>>();
+            for (var step : traceContext.steps()) {
+                if (step instanceof ToolCallStep toolStep) {
+                    var toolSummary = new HashMap<String, Object>();
+                    toolSummary.put("toolId", toolStep.toolId());
+                    toolSummary.put("action", toolStep.toolAction());
+                    toolSummary.put("success", toolStep.success());
+                    toolSummary.put("latencyMs", toolStep.duration().toMillis());
+                    toolSummaries.add(toolSummary);
+                }
+            }
+            if (!toolSummaries.isEmpty()) {
+                doneData.put("toolsSummary", toolSummaries);
+            }
+        }
+
+        // 知识库来源
+        var sources = buildKnowledgeSources(request.sessionId());
+        if (!sources.isEmpty()) {
+            doneData.put("sources", sources);
+        }
+
+        doneData.put("timestamp", Instant.now().toEpochMilli());
+        if (state.traceId() != null) {
+            doneData.put("traceId", state.traceId());
+        }
+        if (reasoningSummary != null) {
+            doneData.put("reasoningSummary", reasoningSummary);
+        }
+        if (lastCollectedA2uiTree != null && !lastCollectedA2uiTree.components().isEmpty()) {
+            doneData.put("a2uiComponents", lastCollectedA2uiTree.components());
+        }
+
+        var contents = new ArrayList<Map<String, Object>>();
+        if (finalContent != null && !finalContent.isBlank()) {
+            var textContent = new HashMap<String, Object>();
+            textContent.put("type", "TEXT");
+            textContent.put("text", finalContent);
+            contents.add(textContent);
+        }
+        doneData.put("contents", contents);
+        return doneData;
+    }
+
+    // ===== 知识库来源 =====
+
+    /** 构建知识库来源摘要。 */
+    List<Map<String, Object>> buildKnowledgeSources(@Nullable String sessionId) {
+        if (sessionId == null || sessionId.isBlank() || sessionKnowledgeBaseRepository == null) {
+            return List.of();
+        }
+        try {
+            var kbIds = sessionKnowledgeBaseRepository.findKnowledgeBaseIdsBySessionId(sessionId);
+            if (kbIds == null || kbIds.isEmpty()) return List.of();
+            var result = new ArrayList<Map<String, Object>>();
+            for (String kbId : kbIds) {
+                if (kbId == null || kbId.isBlank()) continue;
+                String name = kbId;
+                if (knowledgeBaseRepository != null) {
+                    try {
+                        var kbOpt = knowledgeBaseRepository.findById(kbId);
+                        if (kbOpt.isPresent() && kbOpt.get().name() != null
+                                && !kbOpt.get().name().isBlank()) {
+                            name = kbOpt.get().name();
+                        }
+                    } catch (Exception ignore) { /* 回退为 ID */ }
+                }
+                var source = new HashMap<String, Object>();
+                source.put("type", "knowledgeBase");
+                source.put("id", kbId);
+                source.put("name", name);
+                result.add(source);
+            }
+            return Collections.unmodifiableList(result);
+        } catch (Exception e) {
+            log.debug("构建知识库来源摘要失败: sessionId={}, error={}", sessionId, e.getMessage());
+            return List.of();
+        }
+    }
+
+    // ===== A2UI 辅助方法 =====
+
+    /** 从响应内容中提取 A2UI 组件。 */
+    public A2uiPayloadSupport.ParsedA2uiContent extractA2uiContent(@Nullable String content) {
+        if (a2uiProperties == null || !a2uiProperties.enabled()) {
+            return new A2uiPayloadSupport.ParsedA2uiContent(content != null ? content : "", null);
+        }
+        return A2uiPayloadSupport.extractContent(content, objectMapper, a2uiProperties.maxComponentsPerTree());
+    }
+
+    /** 序列化 A2UI 组件树为 JSON。 */
+    @Nullable
+    public String serializeA2uiTree(@Nullable A2uiComponentTree tree) {
+        if (tree == null || tree.components().isEmpty()) return null;
+        try {
+            return objectMapper.writeValueAsString(tree);
+        } catch (Exception e) {
+            log.warn("A2UI 组件树序列化失败: error={}", e.getMessage());
+            return null;
+        }
+    }
+}

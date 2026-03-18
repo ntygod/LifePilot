@@ -1,7 +1,7 @@
 package com.lifepilot.eval.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lifepilot.agent.ReactAgentLoop;
+import com.lifepilot.agent.orchestration.AgentOrchestrator;
 import com.lifepilot.observability.evaluation.EvaluationCore;
 import com.lifepilot.observability.trace.TraceQuery;
 import com.lifepilot.eval.engine.EvalEngine;
@@ -122,7 +122,7 @@ public class EvalAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public EvalEngine evalEngine(ScenarioLoader scenarioLoader,
-                                  ReactAgentLoop reactAgentLoop,
+                                  AgentOrchestrator agentOrchestrator,
                                   TraceQuery traceQuery,
                                   EvaluationCore evaluationCore,
                                   LlmJudge llmJudge,
@@ -131,7 +131,7 @@ public class EvalAutoConfiguration {
                                   DynamicToolRegistry toolRegistry,
                                   EvalConfigProperties config,
                                   @Autowired(required = false) ExperienceSummarizer experienceSummarizer) {
-        return new EvalEngine(scenarioLoader, reactAgentLoop, traceQuery,
+        return new EvalEngine(scenarioLoader, agentOrchestrator, traceQuery,
                 evaluationCore, llmJudge, evalStore, evalReport, toolRegistry, config,
                 experienceSummarizer);
     }

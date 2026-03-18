@@ -1,6 +1,6 @@
 package com.lifepilot.agent.suspend;
 
-import com.lifepilot.agent.ReactAgentLoop;
+import com.lifepilot.agent.orchestration.AgentOrchestrator;
 import com.lifepilot.agent.suspend.event.*;
 import com.lifepilot.agent.suspend.model.ResumePayload;
 import com.lifepilot.agent.suspend.model.SuspendedAgent;
@@ -16,7 +16,7 @@ import java.util.List;
  *
  * <p>每个 {@code @EventListener} 方法对应一种恢复事件类型，
  * 查询 SuspendStore 匹配挂起记录，构建对应的 ResumePayload，
- * 调用 {@link ReactAgentLoop#resumeFromSuspend(String, ResumePayload)}。
+ * 调用 {@link AgentOrchestrator#resumeFromSuspend(String, ResumePayload)}。
  * 未匹配时 log.warn 并丢弃，不抛异常。</p>
  *
  * <p>通过 {@link com.lifepilot.agent.suspend.config.SuspendAutoConfiguration} 注册为 Bean，
@@ -29,11 +29,11 @@ public class AgentResumeListener {
 
     private static final Logger log = LoggerFactory.getLogger(AgentResumeListener.class);
 
-    private final ReactAgentLoop agentLoop;
+    private final AgentOrchestrator agentOrchestrator;
     private final SuspendStore suspendStore;
 
-    public AgentResumeListener(ReactAgentLoop agentLoop, SuspendStore suspendStore) {
-        this.agentLoop = agentLoop;
+    public AgentResumeListener(AgentOrchestrator agentOrchestrator, SuspendStore suspendStore) {
+        this.agentOrchestrator = agentOrchestrator;
         this.suspendStore = suspendStore;
     }
 
@@ -48,7 +48,7 @@ public class AgentResumeListener {
         if (matched.isPresent()) {
             var payload = new ResumePayload.WorkflowResult(
                     event.executionId(), event.status(), event.outputJson());
-            agentLoop.resumeFromSuspend(matched.get().traceId(), payload);
+            agentOrchestrator.resumeFromSuspend(matched.get().traceId(), payload);
         } else {
             log.warn("工作流完成事件未匹配到挂起的 Agent: executionId={}", event.executionId());
         }
@@ -65,7 +65,7 @@ public class AgentResumeListener {
         if (matched.isPresent()) {
             var payload = new ResumePayload.UserDecision(
                     event.confirmationId(), event.approved(), event.reason());
-            agentLoop.resumeFromSuspend(matched.get().traceId(), payload);
+            agentOrchestrator.resumeFromSuspend(matched.get().traceId(), payload);
         } else {
             log.warn("用户确认事件未匹配到挂起的 Agent: confirmationId={}", event.confirmationId());
         }
@@ -81,7 +81,7 @@ public class AgentResumeListener {
                 .findFirst();
         if (matched.isPresent()) {
             var payload = new ResumePayload.RemoteResult(event.remoteTaskId(), event.resultJson());
-            agentLoop.resumeFromSuspend(matched.get().traceId(), payload);
+            agentOrchestrator.resumeFromSuspend(matched.get().traceId(), payload);
         } else {
             log.warn("A2A 任务完成事件未匹配到挂起的 Agent: remoteTaskId={}", event.remoteTaskId());
         }
@@ -93,7 +93,7 @@ public class AgentResumeListener {
         var suspended = suspendStore.load(event.traceId());
         if (suspended.isPresent()) {
             var payload = new ResumePayload.WakeupSignal(event.actualWakeupAt());
-            agentLoop.resumeFromSuspend(event.traceId(), payload);
+            agentOrchestrator.resumeFromSuspend(event.traceId(), payload);
         } else {
             log.warn("定时唤醒事件未匹配到挂起的 Agent: traceId={}", event.traceId());
         }
@@ -110,7 +110,7 @@ public class AgentResumeListener {
         if (matched.isPresent()) {
             var payload = new ResumePayload.DataReady(
                     event.dataSourceId(), event.dataLocationOrContent());
-            agentLoop.resumeFromSuspend(matched.get().traceId(), payload);
+            agentOrchestrator.resumeFromSuspend(matched.get().traceId(), payload);
         } else {
             log.warn("外部数据就绪事件未匹配到挂起的 Agent: dataSourceId={}", event.dataSourceId());
         }

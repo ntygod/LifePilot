@@ -9,7 +9,6 @@ import com.lifepilot.memory.working.WorkingMemory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.scheduling.annotation.Scheduled;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -180,9 +179,10 @@ public class SessionManager {
     }
 
     /**
-     * 定时清理过期会话。
+     * 清理过期会话。
+     *
+     * <p>由 SharedScheduler 定时调度，不再使用 @Scheduled 注解。</p>
      */
-    @Scheduled(fixedDelayString = "${lifepilot.agent.session.cleanup-interval-ms:300000}")
     public void cleanupExpiredSessions() {
         try {
             int timeoutMinutes = config.getSession().getTimeoutMinutes();

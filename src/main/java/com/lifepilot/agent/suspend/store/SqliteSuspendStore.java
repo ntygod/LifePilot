@@ -2,7 +2,6 @@ package com.lifepilot.agent.suspend.store;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.lifepilot.agent.model.SuspendReason;
 import com.lifepilot.agent.suspend.model.SuspendedAgent;
 import org.slf4j.Logger;
@@ -37,11 +36,8 @@ public class SqliteSuspendStore implements SuspendStore {
     private static final Logger log = LoggerFactory.getLogger(SqliteSuspendStore.class);
 
     private final JdbcTemplate jdbcTemplate;
+    private final ObjectMapper objectMapper;
     private final RowMapper<SuspendedAgent> rowMapper;
-
-    /** 共享 ObjectMapper，注册 JavaTimeModule 以支持 Instant 序列化。 */
-    private static final ObjectMapper MAPPER = new ObjectMapper()
-            .registerModule(new JavaTimeModule());
 
     /** SuspendReason 子类型名 → Class 映射，用于反序列化。 */
     private static final Map<String, Class<? extends SuspendReason>> REASON_TYPE_MAP = Map.of(
@@ -52,8 +48,9 @@ public class SqliteSuspendStore implements SuspendStore {
             "ExternalDataWait", SuspendReason.ExternalDataWait.class
     );
 
-    public SqliteSuspendStore(JdbcTemplate jdbcTemplate) {
+    public SqliteSuspendStore(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
         this.jdbcTemplate = jdbcTemplate;
+        this.objectMapper = objectMapper;
         this.rowMapper = this::mapRow;
     }
 
@@ -139,7 +136,7 @@ public class SqliteSuspendStore implements SuspendStore {
     /** 序列化 SuspendReason 为 JSON 字符串。 */
     private String serializeReason(SuspendReason reason) {
         try {
-            return MAPPER.writeValueAsString(reason);
+            return objectMapper.writeValueAsString(reason);
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("序列化 SuspendReason 失败: " + reason.getClass().getSimpleName(), e);
         }
@@ -152,7 +149,7 @@ public class SqliteSuspendStore implements SuspendStore {
             throw new IllegalStateException("未知的 SuspendReason 类型: " + reasonType);
         }
         try {
-            return MAPPER.readValue(reasonJson, clazz);
+            return objectMapper.readValue(reasonJson, clazz);
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("反序列化 SuspendReason 失败: type=" + reasonType, e);
         }

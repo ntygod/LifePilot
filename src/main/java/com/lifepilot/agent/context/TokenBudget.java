@@ -1,7 +1,5 @@
 package com.lifepilot.agent.context;
 
-import com.lifepilot.memory.retrieval.RetrievalWeights;
-
 /**
  * Token 预算分配与消耗记录。
  *
