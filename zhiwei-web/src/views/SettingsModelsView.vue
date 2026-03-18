@@ -311,6 +311,8 @@ function formatCapabilities(capabilities: string[] | undefined) {
     TTS: '文本转语音',
     STT: '语音转文本',
     RERANK: '重排序',
+    NATIVE_AUDIO: '原生音频',
+    NATIVE_VIDEO: '原生视频',
   }
 
   return capabilities.map(capability => capabilityNames[capability] || capability).join('、')

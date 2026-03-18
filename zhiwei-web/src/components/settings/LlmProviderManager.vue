@@ -70,6 +70,8 @@ const capabilityOptions = [
   { value: 'TTS', label: '文本转语音' },
   { value: 'STT', label: '语音转文本' },
   { value: 'RERANK', label: '重排序' },
+  { value: 'NATIVE_AUDIO', label: '原生音频' },
+  { value: 'NATIVE_VIDEO', label: '原生视频' },
 ]
 
 const sceneOptions = [
