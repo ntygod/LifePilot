@@ -65,36 +65,27 @@ public class ContextAssembler {
     // 效果追踪器：记录经验注入事件，可选注入
     @Nullable private final com.lifepilot.memory.experience.EffectivenessTracker effectivenessTracker;
 
-    /** 基础版构造器（记忆字段为 null）。 */
-    public ContextAssembler(AgentConfigProperties config, PromptRegistry promptRegistry) {
-        this.config = config;
-        this.promptRegistry = promptRegistry;
-        this.workingMemory = null;
-        this.tokenBudgetAllocator = null;
-        this.dataRedactor = null;
-        this.semanticMemory = null;
-        this.passiveNotificationQueue = null;
-        this.memoryProperties = null;
-        this.proceduralMemory = null;
-        this.effectivenessTracker = null;
-    }
-
-    /** 完整版构造器（注入记忆系统依赖）。 */
+    /**
+     * 统一构造器 — 可选依赖标注 @Nullable。
+     *
+     * <p>当 workingMemory 和 tokenBudgetAllocator 均非 null 时为完整版模式，
+     * 否则为基础版模式（记忆相关功能降级跳过）。</p>
+     */
     public ContextAssembler(AgentConfigProperties config,
-                            WorkingMemory workingMemory,
-                            TokenBudgetAllocator tokenBudgetAllocator,
+                            PromptRegistry promptRegistry,
+                            @Nullable WorkingMemory workingMemory,
+                            @Nullable TokenBudgetAllocator tokenBudgetAllocator,
                             @Nullable DataRedactor dataRedactor,
                             @Nullable SemanticMemory semanticMemory,
                             @Nullable PassiveNotificationQueue passiveNotificationQueue,
                             @Nullable com.lifepilot.memory.config.MemoryProperties memoryProperties,
                             @Nullable ProceduralMemory proceduralMemory,
-                            PromptRegistry promptRegistry,
                             @Nullable com.lifepilot.memory.experience.EffectivenessTracker effectivenessTracker) {
         this.config = config;
+        this.promptRegistry = promptRegistry;
         this.workingMemory = workingMemory;
         this.tokenBudgetAllocator = tokenBudgetAllocator;
         this.dataRedactor = dataRedactor;
-        this.promptRegistry = promptRegistry;
         this.semanticMemory = semanticMemory;
         this.passiveNotificationQueue = passiveNotificationQueue;
         this.memoryProperties = memoryProperties;

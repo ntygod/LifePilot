@@ -71,16 +71,13 @@ public class AgentAutoConfiguration {
                                              @Autowired(required = false) com.lifepilot.memory.config.MemoryProperties memoryProperties,
                                              @Autowired(required = false) com.lifepilot.memory.procedural.ProceduralMemory proceduralMemory,
                                              @Autowired(required = false) com.lifepilot.memory.experience.EffectivenessTracker effectivenessTracker) {
-        if (workingMemory != null && tokenBudgetAllocator != null) {
-            log.info("Agent 引擎: 注册完整版 ContextAssembler（Agentic 模式，L3 语义记忆{}，L4 程序记忆{}）",
-                    semanticMemory != null ? "已启用" : "未启用",
-                    proceduralMemory != null ? "已启用" : "未启用");
-            return new ContextAssembler(config, workingMemory, tokenBudgetAllocator,
-                    dataRedactor, semanticMemory, passiveNotificationQueue, memoryProperties,
-                    proceduralMemory, promptRegistry, effectivenessTracker);
-        }
-        log.warn("Agent 引擎: 注册基础版 ContextAssembler（WorkingMemory 或 TokenBudgetAllocator 不可用）");
-        return new ContextAssembler(config, promptRegistry);
+        log.info("Agent 引擎: 注册 ContextAssembler（WorkingMemory {}，L3 语义记忆{}，L4 程序记忆{}）",
+                workingMemory != null && tokenBudgetAllocator != null ? "完整模式" : "基础模式",
+                semanticMemory != null ? "已启用" : "未启用",
+                proceduralMemory != null ? "已启用" : "未启用");
+        return new ContextAssembler(config, promptRegistry, workingMemory, tokenBudgetAllocator,
+                dataRedactor, semanticMemory, passiveNotificationQueue, memoryProperties,
+                proceduralMemory, effectivenessTracker);
     }
 
     @Bean
