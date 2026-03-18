@@ -731,15 +731,42 @@ public class ContextAssembler {
                     com.lifepilot.memory.semantic.EntityType.EXPERIENCE);
             if (experiences.isEmpty()) return List.of();
 
-            // 按 importanceScore 降序排序，截取 maxInjectionCount 条
+            // 按 importanceScore 降序排序，eval 标签匹配的经验优先
+            String evalPrefix = config.getEvalTagPrefix();
             return experiences.stream()
-                    .sorted((a, b) -> Float.compare(b.importanceScore(), a.importanceScore()))
+                    .sorted((a, b) -> {
+                        // eval 标签匹配度加权
+                        int aEvalBoost = hasMatchingEvalTag(a, query, evalPrefix) ? 1 : 0;
+                        int bEvalBoost = hasMatchingEvalTag(b, query, evalPrefix) ? 1 : 0;
+                        if (aEvalBoost != bEvalBoost) return bEvalBoost - aEvalBoost;
+                        return Float.compare(b.importanceScore(), a.importanceScore());
+                    })
                     .limit(config.getMaxInjectionCount())
                     .toList();
         } catch (Exception e) {
             log.debug("经验检索失败，跳过注入: error={}", e.getMessage());
             return List.of();
         }
+    }
+
+    /**
+     * 检查经验实体的 applicableConditions 中是否有与查询匹配的 eval 标签。
+     */
+    private boolean hasMatchingEvalTag(com.lifepilot.memory.semantic.TemporalEntity entity,
+                                       @Nullable String query, String evalPrefix) {
+        if (query == null || query.isBlank()) return false;
+        var props = entity.properties();
+        if (props == null) return false;
+        var conditions = props.get("applicableConditions");
+        if (!(conditions instanceof List<?> list)) return false;
+        String lowerQuery = query.toLowerCase();
+        for (var item : list) {
+            if (item instanceof String tag && tag.startsWith(evalPrefix)) {
+                String tagValue = tag.substring(evalPrefix.length()).toLowerCase();
+                if (lowerQuery.contains(tagValue)) return true;
+            }
+        }
+        return false;
     }
 
     /**

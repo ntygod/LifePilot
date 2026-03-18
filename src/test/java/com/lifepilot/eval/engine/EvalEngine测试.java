@@ -67,7 +67,7 @@ class EvalEngine测试 {
         evalEngine = new EvalEngine(
                 scenarioLoader, reactAgentLoop, traceQuery,
                 evaluationCore, llmJudge, evalStore,
-                evalReport, toolRegistry, config
+                evalReport, toolRegistry, config, null
         );
     }
 
