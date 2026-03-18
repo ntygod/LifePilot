@@ -115,6 +115,13 @@ public class MediaAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnProperty(prefix = "lifepilot.media.native-video", name = "enabled", havingValue = "true")
+    public GeminiFileApiClient geminiFileApiClient(MediaProperties properties) {
+        return new GeminiFileApiClient(properties.getNativeVideo());
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     public MultimodalRouter multimodalRouter(
             ProviderRegistry providerRegistry,
             CircuitBreakerManager circuitBreakerManager,
