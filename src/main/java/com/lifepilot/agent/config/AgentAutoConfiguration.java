@@ -137,6 +137,20 @@ public class AgentAutoConfiguration {
     }
 
     /**
+     * StreamingEventHandler bean — SSE 事件推送与 A2UI 解析。
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public com.lifepilot.agent.streaming.StreamingEventHandler streamingEventHandler(
+            ObjectMapper objectMapper,
+            @Autowired(required = false) A2uiProperties a2uiProperties,
+            @Autowired(required = false) SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
+            @Autowired(required = false) KnowledgeBaseRepository knowledgeBaseRepository) {
+        return new com.lifepilot.agent.streaming.StreamingEventHandler(
+                objectMapper, a2uiProperties, sessionKnowledgeBaseRepository, knowledgeBaseRepository);
+    }
+
+    /**
      * ReactAgentLoop bean — ReAct 架构核心循环。
      *
      * <p>通过 {@code @Autowired(required = false)} 注入可选依赖，
@@ -153,6 +167,7 @@ public class AgentAutoConfiguration {
                                AgentConfigProperties config,
                                PromptRegistry promptRegistry,
                                com.lifepilot.agent.persistence.AgentPersistenceHandler persistenceHandler,
+                               com.lifepilot.agent.streaming.StreamingEventHandler streamingEventHandler,
                                @Autowired(required = false) MultimodalRouter multimodalRouter,
                                @Autowired(required = false) MediaDataExtractor mediaDataExtractor,
                                @Autowired(required = false) MediaValidator mediaValidator,
@@ -187,7 +202,7 @@ public class AgentAutoConfiguration {
                 effectivenessTracker != null ? "已启用" : "未启用");
         return new ReactAgentLoop(contextAssembler, llmRouter, traceRecorder, objectMapper,
                 sessionManager, agentToolProvider, config, promptRegistry,
-                persistenceHandler,
+                persistenceHandler, streamingEventHandler,
                 multimodalRouter, mediaDataExtractor, mediaValidator, mediaProcessor,
                 workingMemory, conversationHistoryStore,
                 conversationViewService, realtimeExtractor, injectionRecordRepository,

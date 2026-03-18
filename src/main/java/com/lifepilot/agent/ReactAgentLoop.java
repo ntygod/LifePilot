@@ -99,6 +99,7 @@ public class ReactAgentLoop implements CallbackHelper {
     private final AgentConfigProperties config;
     private final PromptRegistry promptRegistry;
     private final com.lifepilot.agent.persistence.AgentPersistenceHandler persistenceHandler;
+    private final com.lifepilot.agent.streaming.StreamingEventHandler streamingEventHandler;
 
     // ===== 可选依赖（@Nullable） =====
     @Nullable private final MultimodalRouter multimodalRouter; // 预留：多模态流式请求
@@ -155,6 +156,7 @@ public class ReactAgentLoop implements CallbackHelper {
             AgentConfigProperties config,
             PromptRegistry promptRegistry,
             com.lifepilot.agent.persistence.AgentPersistenceHandler persistenceHandler,
+            com.lifepilot.agent.streaming.StreamingEventHandler streamingEventHandler,
             @Nullable MultimodalRouter multimodalRouter,
             @Nullable MediaDataExtractor mediaDataExtractor,
             @Nullable MediaValidator mediaValidator,
@@ -186,6 +188,7 @@ public class ReactAgentLoop implements CallbackHelper {
         this.config = config;
         this.promptRegistry = promptRegistry;
         this.persistenceHandler = persistenceHandler;
+        this.streamingEventHandler = streamingEventHandler;
         this.multimodalRouter = multimodalRouter;
         this.mediaDataExtractor = mediaDataExtractor;
         this.mediaValidator = mediaValidator;
@@ -1351,7 +1354,7 @@ public class ReactAgentLoop implements CallbackHelper {
                     processedMedia = validateAndPreprocessMedia(request.mediaContents());
                 } catch (MediaValidationException e) {
                     log.warn("媒体校验失败: sessionId={}, error={}", request.sessionId(), e.getMessage());
-                    sendStreamError(sseManager, streamId, 400,
+                    streamingEventHandler.sendStreamError(sseManager, streamId, 400,
                             "媒体校验失败: " + e.getMessage(), state.traceId());
                     return;
                 }
@@ -1439,7 +1442,7 @@ public class ReactAgentLoop implements CallbackHelper {
                 finalContent = state.finalOutput() != null
                         ? state.finalOutput()
                         : (callbackContent != null ? callbackContent : finalContent);
-                var extractedFinalContent = extractA2uiContent(finalContent);
+                var extractedFinalContent = streamingEventHandler.extractA2uiContent(finalContent);
                 A2uiComponentTree finalA2uiTree = extractedFinalContent.tree();
                 finalContent = extractedFinalContent.visibleText();
                 if (finalA2uiTree != null) {
@@ -1458,7 +1461,7 @@ public class ReactAgentLoop implements CallbackHelper {
                 if (!testSession) {
                     persistenceHandler.writeAssistantMessageToL1(state);
 
-                    String a2uiJson = serializeA2uiTree(lastCollectedA2uiTree);
+                    String a2uiJson = streamingEventHandler.serializeA2uiTree(lastCollectedA2uiTree);
                     assistantMessageId = persistenceHandler.persistAssistantMessageWithA2ui(
                             state, finalContent, reasoningSummary, a2uiJson);
 
@@ -1492,15 +1495,16 @@ public class ReactAgentLoop implements CallbackHelper {
             }
 
             if (error != null) {
-                sendStreamError(sseManager, streamId, 500,
+                streamingEventHandler.sendStreamError(sseManager, streamId, 500,
                         "处理失败: " + error.getMessage(), state.traceId());
             } else {
                 sendReasoningEvent(sseManager, streamId, request.sessionId(), tempTurnId,
                         "ANSWER_FINALIZED", "回答已生成", "本轮推理与回答已完成。",
                         null, Map.of());
-                var doneData = buildDoneEventPayload(
+                var doneData = streamingEventHandler.buildDoneEventPayload(
                         request, state, tempTurnId, finalTokenUsage,
-                        traceContext, reasoningSummary, finalContent, assistantMessageId);
+                        traceContext, reasoningSummary, finalContent, assistantMessageId,
+                        lastCollectedA2uiTree);
                 sseManager.sendEvent(streamId, SseEventType.DONE, doneData);
                 lastCollectedA2uiTree = null;
                 sseManager.closeEmitter(streamId);
@@ -1665,127 +1669,6 @@ public class ReactAgentLoop implements CallbackHelper {
         }
     }
 
-    /** 发送 SSE ERROR 事件并关闭连接。 */
-    private void sendStreamError(SseSessionManager sseManager, String streamId,
-                                 int code, String message, @Nullable String traceId) {
-        var errorData = new HashMap<String, Object>();
-        errorData.put("code", code);
-        errorData.put("message", message);
-        if (traceId != null) {
-            errorData.put("traceId", traceId);
-        }
-        sseManager.sendEvent(streamId, SseEventType.ERROR, errorData);
-        sseManager.closeEmitter(streamId);
-    }
-
-    // ===== DONE 事件构建 =====
-
-    /** 构建 DONE 事件 payload。 */
-    private Map<String, Object> buildDoneEventPayload(AgentRequest request,
-                                                      ReactAgentState state,
-                                                      String tempTurnId,
-                                                      @Nullable TokenUsage finalTokenUsage,
-                                                      @Nullable TraceContext traceContext,
-                                                      @Nullable String reasoningSummary,
-                                                      @Nullable String finalContent,
-                                                      @Nullable String assistantMessageId) {
-        var doneData = new HashMap<String, Object>();
-        doneData.put("messageId", assistantMessageId != null ? assistantMessageId : tempTurnId);
-        doneData.put("sessionId", request.sessionId());
-        doneData.put("turnId", tempTurnId);
-
-        if (finalTokenUsage != null) {
-            var tokenUsageMap = new HashMap<String, Object>();
-            tokenUsageMap.put("promptTokens", finalTokenUsage.promptTokens());
-            tokenUsageMap.put("completionTokens", finalTokenUsage.completionTokens());
-            tokenUsageMap.put("totalTokens", finalTokenUsage.totalTokens());
-            tokenUsageMap.put("modelId", finalTokenUsage.modelId());
-            doneData.put("tokenUsage", tokenUsageMap);
-        }
-
-        // 工具调用摘要
-        if (traceContext != null && !traceContext.steps().isEmpty()) {
-            var toolSummaries = new ArrayList<Map<String, Object>>();
-            for (var step : traceContext.steps()) {
-                if (step instanceof ToolCallStep toolStep) {
-                    var toolSummary = new HashMap<String, Object>();
-                    toolSummary.put("toolId", toolStep.toolId());
-                    toolSummary.put("action", toolStep.toolAction());
-                    toolSummary.put("success", toolStep.success());
-                    toolSummary.put("latencyMs", toolStep.duration().toMillis());
-                    toolSummaries.add(toolSummary);
-                }
-            }
-            if (!toolSummaries.isEmpty()) {
-                doneData.put("toolsSummary", toolSummaries);
-            }
-        }
-
-        // 知识库来源
-        var sources = buildKnowledgeSources(request.sessionId());
-        if (!sources.isEmpty()) {
-            doneData.put("sources", sources);
-        }
-
-        doneData.put("timestamp", Instant.now().toEpochMilli());
-        if (state.traceId() != null) {
-            doneData.put("traceId", state.traceId());
-        }
-        if (reasoningSummary != null) {
-            doneData.put("reasoningSummary", reasoningSummary);
-        }
-        var cachedA2uiTree = lastCollectedA2uiTree;
-        if (cachedA2uiTree != null && !cachedA2uiTree.components().isEmpty()) {
-            doneData.put("a2uiComponents", cachedA2uiTree.components());
-        }
-
-        var contents = new ArrayList<Map<String, Object>>();
-        if (finalContent != null && !finalContent.isBlank()) {
-            var textContent = new HashMap<String, Object>();
-            textContent.put("type", "TEXT");
-            textContent.put("text", finalContent);
-            contents.add(textContent);
-        }
-        doneData.put("contents", contents);
-        return doneData;
-    }
-
-    // ===== 知识库来源 =====
-
-    /** 构建知识库来源摘要。 */
-    private List<Map<String, Object>> buildKnowledgeSources(@Nullable String sessionId) {
-        if (sessionId == null || sessionId.isBlank() || sessionKnowledgeBaseRepository == null) {
-            return List.of();
-        }
-        try {
-            var kbIds = sessionKnowledgeBaseRepository.findKnowledgeBaseIdsBySessionId(sessionId);
-            if (kbIds == null || kbIds.isEmpty()) return List.of();
-            var result = new ArrayList<Map<String, Object>>();
-            for (String kbId : kbIds) {
-                if (kbId == null || kbId.isBlank()) continue;
-                String name = kbId;
-                if (knowledgeBaseRepository != null) {
-                    try {
-                        var kbOpt = knowledgeBaseRepository.findById(kbId);
-                        if (kbOpt.isPresent() && kbOpt.get().name() != null
-                                && !kbOpt.get().name().isBlank()) {
-                            name = kbOpt.get().name();
-                        }
-                    } catch (Exception ignore) { /* 回退为 ID */ }
-                }
-                var source = new HashMap<String, Object>();
-                source.put("type", "knowledgeBase");
-                source.put("id", kbId);
-                source.put("name", name);
-                result.add(source);
-            }
-            return Collections.unmodifiableList(result);
-        } catch (Exception e) {
-            log.debug("构建知识库来源摘要失败: sessionId={}, error={}", sessionId, e.getMessage());
-            return List.of();
-        }
-    }
-
     // ===== A2UI 辅助方法 =====
 
     /** 判断 A2UI 功能是否启用。 */
@@ -1804,26 +1687,6 @@ public class ReactAgentLoop implements CallbackHelper {
     @Override
     public String enhanceSystemPromptForStreaming(String systemText, @Nullable String a2uiPrompt) {
         return contextAssembler.enhanceSystemPromptForStreaming(systemText, a2uiPrompt);
-    }
-
-    /** 从非流式响应中提取 A2UI 内容。 */
-    private A2uiPayloadSupport.ParsedA2uiContent extractA2uiContent(@Nullable String content) {
-        if (!isA2uiEnabled()) {
-            return new A2uiPayloadSupport.ParsedA2uiContent(content != null ? content : "", null);
-        }
-        return A2uiPayloadSupport.extractContent(content, objectMapper, a2uiProperties.maxComponentsPerTree());
-    }
-
-    /** 序列化 A2UI 组件树为 JSON。 */
-    @Nullable
-    private String serializeA2uiTree(@Nullable A2uiComponentTree tree) {
-        if (tree == null || tree.components().isEmpty()) return null;
-        try {
-            return objectMapper.writeValueAsString(tree);
-        } catch (Exception e) {
-            log.warn("A2UI 组件树序列化失败: error={}", e.getMessage());
-            return null;
-        }
     }
 
     /** 解析并校验 A2UI JSON 为组件树。 */
