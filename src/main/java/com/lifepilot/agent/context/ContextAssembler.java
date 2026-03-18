@@ -152,15 +152,19 @@ public class ContextAssembler {
             String experienceSection = formatExperienceSection(experiences);
 
             // 7b. 记录经验注入（新增）
+            List<String> injectedIds = List.of();
             if (effectivenessTracker != null && !experiences.isEmpty()) {
                 try {
-                    var injectedIds = experiences.stream()
+                    injectedIds = experiences.stream()
                             .map(com.lifepilot.memory.semantic.TemporalEntity::id).toList();
                     // traceId 从 state 获取
                     effectivenessTracker.recordInjection(state.traceId(), injectedIds);
                 } catch (Exception e) {
                     log.warn("经验注入追踪失败: error={}", e.getMessage());
                 }
+            } else if (!experiences.isEmpty()) {
+                injectedIds = experiences.stream()
+                        .map(com.lifepilot.memory.semantic.TemporalEntity::id).toList();
             }
 
             String userPrompt = buildEnhancedUserPrompt(state, List.of(), List.of(),
@@ -170,7 +174,7 @@ public class ContextAssembler {
                     systemPrompt, userPrompt, List.of(),
                     tokenBudget, 0, 0.0f,
                     workingMemoryTokens, degraded,
-                    List.of(), null);
+                    injectedIds, null);
 
             logAssemblyMetrics(state, context, startTime);
             return context;

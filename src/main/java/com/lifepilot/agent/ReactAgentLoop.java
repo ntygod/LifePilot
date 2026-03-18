@@ -4,51 +4,32 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.callback.CallbackHelper;
 import com.lifepilot.agent.callback.IterationCallback;
-import com.lifepilot.agent.callback.StreamingCallback;
 import com.lifepilot.agent.config.AgentConfigProperties;
+import com.lifepilot.agent.context.AgentLoopContext;
 import com.lifepilot.agent.context.AssembledContext;
 import com.lifepilot.agent.context.ContextAssembler;
 import com.lifepilot.agent.media.MediaDataExtractor;
 import com.lifepilot.agent.model.AgentRequest;
-import com.lifepilot.agent.model.AgentResponse;
-import com.lifepilot.agent.model.Budget;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.model.ReactStep;
 import com.lifepilot.agent.model.SuspendReason;
-import com.lifepilot.agent.session.SessionManager;
-import com.lifepilot.agent.suspend.model.SuspendedAgent;
 import com.lifepilot.agent.suspend.model.ResumePayload;
-import com.lifepilot.agent.suspend.store.SuspendStore;
 import com.lifepilot.agent.suspend.event.ScheduledWakeupEvent;
-import com.lifepilot.conversation.ConversationHistoryStore;
-import com.lifepilot.conversation.ConversationViewService;
-import com.lifepilot.interaction.model.TokenUsage;
 import com.lifepilot.interaction.web.a2ui.A2uiPayloadSupport;
 import com.lifepilot.interaction.web.config.A2uiProperties;
 import com.lifepilot.interaction.web.model.A2uiComponentTree;
-import com.lifepilot.interaction.web.repository.AttachmentRepository;
-import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
-import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
 import com.lifepilot.llm.LlmResponse;
-import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.multimodal.MediaContent;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
-import com.lifepilot.media.MediaProcessor;
-import com.lifepilot.media.MediaValidationException;
-import com.lifepilot.media.MediaValidator;
-import com.lifepilot.memory.retrieval.InjectionRecordRepository;
-import com.lifepilot.memory.semantic.RealtimeExtractor;
 import com.lifepilot.memory.procedural.IntentMatcher;
 import com.lifepilot.memory.procedural.ProceduralMemory;
-import com.lifepilot.memory.working.WorkingMemory;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.observability.trace.LlmCallStep;
 import com.lifepilot.observability.trace.ToolCallStep;
 import com.lifepilot.observability.trace.TraceContext;
 import com.lifepilot.observability.trace.TraceRecorder;
-import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.*;
@@ -60,7 +41,6 @@ import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
 import org.springframework.lang.Nullable;
 import org.springframework.util.MimeTypeUtils;
-
 
 import java.time.Duration;
 import java.time.Instant;
@@ -89,146 +69,51 @@ public class ReactAgentLoop implements CallbackHelper {
     private static final Logger log = LoggerFactory.getLogger(ReactAgentLoop.class);
     private static final String DEFAULT_MODEL_ID = "ZhiWei";
 
-    // ===== 核心依赖（必需） =====
+    // ===== 核心依赖 =====
     private final ContextAssembler contextAssembler;
-    private final LlmRouter llmRouter;
-    private final TraceRecorder traceRecorder;
-    private final ObjectMapper objectMapper;
-    private final SessionManager sessionManager;
     private final AgentToolProvider agentToolProvider;
     private final AgentConfigProperties config;
-    private final PromptRegistry promptRegistry;
-    private final com.lifepilot.agent.persistence.AgentPersistenceHandler persistenceHandler;
-    private final com.lifepilot.agent.streaming.StreamingEventHandler streamingEventHandler;
-
-    // ===== 可选依赖（@Nullable） =====
-    @Nullable private final MultimodalRouter multimodalRouter; // 预留：多模态流式请求
-    @Nullable private final MediaDataExtractor mediaDataExtractor;
-    @Nullable private final MediaValidator mediaValidator;
-    @Nullable private final MediaProcessor mediaProcessor;
-    @Nullable private final WorkingMemory workingMemory;
-    @Nullable private final ConversationHistoryStore conversationHistoryStore;
-    @Nullable private final ConversationViewService conversationViewService;
-    @Nullable private final RealtimeExtractor realtimeExtractor;
-    @Nullable private final InjectionRecordRepository injectionRecordRepository;
-    @Nullable private final SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository;
-    @Nullable private final KnowledgeBaseRepository knowledgeBaseRepository;
+    private final ObjectMapper objectMapper;
+    @Nullable private final TraceRecorder traceRecorder;
     @Nullable private final A2uiProperties a2uiProperties;
 
-    // ===== 可选依赖（附件持久化） =====
-    @Nullable private final AttachmentRepository attachmentRepository;
+    // ===== 可选依赖（多模态） =====
+    @Nullable private final MultimodalRouter multimodalRouter;
+    @Nullable private final MediaDataExtractor mediaDataExtractor;
 
     // ===== 可选依赖（挂起-恢复） =====
-    @Nullable private final SuspendStore suspendStore;
-
-    // ===== 可选依赖（事件发布，用于 ScheduledWakeup 延迟恢复） =====
     @Nullable private final org.springframework.context.ApplicationEventPublisher eventPublisher;
+    private final java.util.concurrent.ScheduledExecutorService suspendScheduler;
 
     // ===== 可选依赖（L4 反馈闭环） =====
     @Nullable private final ProceduralMemory proceduralMemory;
     @Nullable private final IntentMatcher intentMatcher;
 
-    // ===== 可选依赖（经验总结） =====
-    @Nullable private final com.lifepilot.memory.experience.ExperienceSummarizer experienceSummarizer;
-
-    // ===== 可选依赖（经验学习增强） =====
-    @Nullable private final com.lifepilot.memory.experience.EffectivenessTracker effectivenessTracker;
-    @Nullable private final com.lifepilot.memory.experience.ContrastiveLearner contrastiveLearner;
-    @Nullable private final com.lifepilot.memory.experience.SubtaskReflector subtaskReflector;
-
-    // ===== 挂起-恢复定时任务调度器 =====
-    private final java.util.concurrent.ScheduledExecutorService suspendScheduler;
-
-    // ===== 运行时状态（volatile） =====
-    private volatile A2uiComponentTree lastCollectedA2uiTree;
-    private volatile CancellationToken cancellationToken;
-
-    /** 收集本轮工具执行中通过 SSE MEDIA 事件发送的媒体数据，用于流式完成后持久化到附件表。 */
-    private final List<MediaDataExtractor.MediaItem> collectedToolMedia = new ArrayList<>();
-
     public ReactAgentLoop(
             ContextAssembler contextAssembler,
-            LlmRouter llmRouter,
-            TraceRecorder traceRecorder,
-            ObjectMapper objectMapper,
-            SessionManager sessionManager,
             AgentToolProvider agentToolProvider,
             AgentConfigProperties config,
-            PromptRegistry promptRegistry,
-            com.lifepilot.agent.persistence.AgentPersistenceHandler persistenceHandler,
-            com.lifepilot.agent.streaming.StreamingEventHandler streamingEventHandler,
+            ObjectMapper objectMapper,
+            @Nullable TraceRecorder traceRecorder,
+            @Nullable A2uiProperties a2uiProperties,
             @Nullable MultimodalRouter multimodalRouter,
             @Nullable MediaDataExtractor mediaDataExtractor,
-            @Nullable MediaValidator mediaValidator,
-            @Nullable MediaProcessor mediaProcessor,
-            @Nullable WorkingMemory workingMemory,
-            @Nullable ConversationHistoryStore conversationHistoryStore,
-            @Nullable ConversationViewService conversationViewService,
-            @Nullable RealtimeExtractor realtimeExtractor,
-            @Nullable InjectionRecordRepository injectionRecordRepository,
-            @Nullable SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
-            @Nullable KnowledgeBaseRepository knowledgeBaseRepository,
-            @Nullable A2uiProperties a2uiProperties,
-            @Nullable AttachmentRepository attachmentRepository,
-            @Nullable SuspendStore suspendStore,
             @Nullable org.springframework.context.ApplicationEventPublisher eventPublisher,
             @Nullable ProceduralMemory proceduralMemory,
             @Nullable IntentMatcher intentMatcher,
-            @Nullable com.lifepilot.memory.experience.ExperienceSummarizer experienceSummarizer,
-            @Nullable com.lifepilot.memory.experience.EffectivenessTracker effectivenessTracker,
-            @Nullable com.lifepilot.memory.experience.ContrastiveLearner contrastiveLearner,
-            @Nullable com.lifepilot.memory.experience.SubtaskReflector subtaskReflector,
             com.lifepilot.config.threadpool.SharedScheduler sharedScheduler) {
         this.contextAssembler = contextAssembler;
-        this.llmRouter = llmRouter;
-        this.traceRecorder = traceRecorder;
-        this.objectMapper = objectMapper;
-        this.sessionManager = sessionManager;
         this.agentToolProvider = agentToolProvider;
         this.config = config;
-        this.promptRegistry = promptRegistry;
-        this.persistenceHandler = persistenceHandler;
-        this.streamingEventHandler = streamingEventHandler;
+        this.objectMapper = objectMapper;
+        this.traceRecorder = traceRecorder;
+        this.a2uiProperties = a2uiProperties;
         this.multimodalRouter = multimodalRouter;
         this.mediaDataExtractor = mediaDataExtractor;
-        this.mediaValidator = mediaValidator;
-        this.mediaProcessor = mediaProcessor;
-        this.workingMemory = workingMemory;
-        this.conversationHistoryStore = conversationHistoryStore;
-        this.conversationViewService = conversationViewService;
-        this.realtimeExtractor = realtimeExtractor;
-        this.injectionRecordRepository = injectionRecordRepository;
-        this.sessionKnowledgeBaseRepository = sessionKnowledgeBaseRepository;
-        this.knowledgeBaseRepository = knowledgeBaseRepository;
-        this.a2uiProperties = a2uiProperties;
-        this.attachmentRepository = attachmentRepository;
-        this.suspendStore = suspendStore;
         this.eventPublisher = eventPublisher;
         this.proceduralMemory = proceduralMemory;
         this.intentMatcher = intentMatcher;
-        this.experienceSummarizer = experienceSummarizer;
-        this.effectivenessTracker = effectivenessTracker;
-        this.contrastiveLearner = contrastiveLearner;
-        this.subtaskReflector = subtaskReflector;
         this.suspendScheduler = sharedScheduler.cleanup();
-    }
-
-    /** 测试会话前缀 — 以此开头的 sessionId 不持久化对话历史和记忆。 */
-    private static final String TEST_SESSION_PREFIX = "test:";
-
-    /** 评估会话前缀 — 以此开头的 sessionId 不持久化对话历史和记忆。 */
-    private static final String EVAL_SESSION_PREFIX = "eval-";
-
-    /** 判断是否为临时会话（测试或评估），不持久化对话历史和记忆。 */
-    private static boolean isTestSession(@Nullable String sessionId) {
-        return sessionId != null
-                && (sessionId.startsWith(TEST_SESSION_PREFIX) || sessionId.startsWith(EVAL_SESSION_PREFIX));
-    }
-
-    /** 获取当前取消令牌（外部可调用 cancel() 中断循环）。 */
-    @Nullable
-    public CancellationToken getCancellationToken() {
-        return cancellationToken;
     }
 
     /** 获取多模态路由器（预留：多模态流式请求）。 */
@@ -327,15 +212,14 @@ public class ReactAgentLoop implements CallbackHelper {
      *   <li>连续失败达到 maxConsecutiveFailures → 强制终止</li>
      * </ol>
      */
-    ReactAgentState coreLoop(
+    public ReactAgentState coreLoop(
             ReactAgentState state,
             AgentRequest request,
             @Nullable TraceContext traceContext,
             Instant loopStart,
             IterationCallback callback,
             CancellationToken cancellationToken,
-            @Nullable SseSessionManager sseManager,
-            @Nullable String streamId) {
+            AgentLoopContext loopContext) {
 
         int maxIterations = config.getLoop().getMaxIterations();
         int maxConsecutiveFailures = config.getLoop().getMaxConsecutiveFailures();
@@ -375,6 +259,10 @@ public class ReactAgentLoop implements CallbackHelper {
             // 首轮组装完整上下文，后续迭代复用缓存（记忆检索和预算分配不变）
             if (cachedContext == null) {
                 cachedContext = contextAssembler.assemble(state);
+                // 传播经验注入 ID 到请求作用域上下文
+                if (!cachedContext.injectedEntityIds().isEmpty()) {
+                    loopContext.addInjectedEntityIds(cachedContext.injectedEntityIds());
+                }
             }
             var assembledContext = cachedContext;
             // 首轮迭代注入用户上传的媒体内容到上下文
@@ -386,7 +274,7 @@ public class ReactAgentLoop implements CallbackHelper {
                 assembledContext = assembledContext.withMediaContents(state.pendingMedia());
             }
             var messages = buildMessages(assembledContext, state);
-            var toolCallbacks = agentToolProvider.getToolCallbacks(state, streamId);
+            var toolCallbacks = agentToolProvider.getToolCallbacks(state, loopContext.getStreamId());
 
             log.debug("ReAct 迭代开始: traceId={}, iteration={}, stepCount={}, toolCount={}",
                     state.traceId(), iteration, state.stepCount(), toolCallbacks.size());
@@ -447,7 +335,7 @@ public class ReactAgentLoop implements CallbackHelper {
                 // 逐个执行 tool call
                 for (var tc : toolCalls) {
                     state = executeToolCall(state, tc, toolCallbacks, traceContext,
-                            cancellationToken, sseManager, streamId);
+                            cancellationToken, loopContext);
 
                     // ★ 通用挂起检测 — 仅检查 suspended 布尔标志，不引用具体工具名或 SuspendReason 子类型
                     if (state.suspended()) {
@@ -537,8 +425,7 @@ public class ReactAgentLoop implements CallbackHelper {
             List<ToolCallback> toolCallbacks,
             @Nullable TraceContext traceContext,
             CancellationToken cancellationToken,
-            @Nullable SseSessionManager sseManager,
-            @Nullable String streamId) {
+            AgentLoopContext loopContext) {
 
         // 取消信号检查 — 避免在已取消的情况下继续执行工具
         if (cancellationToken.isCancelled()) {
@@ -603,7 +490,7 @@ public class ReactAgentLoop implements CallbackHelper {
             observationOutput = extraction.sanitizedOutput();
 
             // 流式模式下发送 MEDIA 事件（字段名对齐前端 SseMediaEvent 类型定义）
-            if (sseManager != null && streamId != null && !extraction.mediaItems().isEmpty()) {
+            if (loopContext.getSseManager() != null && loopContext.getStreamId() != null && !extraction.mediaItems().isEmpty()) {
                 for (var mediaItem : extraction.mediaItems()) {
                     var mediaData = new HashMap<String, Object>();
                     mediaData.put("toolId", toolId);
@@ -612,14 +499,14 @@ public class ReactAgentLoop implements CallbackHelper {
                     mediaData.put("data", mediaItem.data());
                     mediaData.put("field", mediaItem.fieldName());
                     mediaData.put("metadata", mediaItem.metadata());
-                    sseManager.sendEvent(streamId, SseEventType.MEDIA, mediaData);
+                    loopContext.getSseManager().sendEvent(loopContext.getStreamId(), SseEventType.MEDIA, mediaData);
                 }
             }
 
             // 将图片类型的媒体写入 pendingMedia 缓冲区，供下一次迭代 LLM 视觉分析
             if (!extraction.mediaItems().isEmpty()) {
-                // 收集到实例级列表，用于流式完成后持久化到附件表
-                collectedToolMedia.addAll(extraction.mediaItems());
+                // 收集到请求作用域上下文，用于流式完成后持久化到附件表
+                loopContext.addAllToolMedia(extraction.mediaItems());
 
                 for (var mediaItem : extraction.mediaItems()) {
                     if (mediaItem.mediaType().startsWith("image/")) {
@@ -734,7 +621,7 @@ public class ReactAgentLoop implements CallbackHelper {
      *
      * @param state 当前挂起状态
      */
-    private void scheduleWakeupIfNeeded(ReactAgentState state) {
+    public void scheduleWakeupIfNeeded(ReactAgentState state) {
         if (state.suspendReason() instanceof SuspendReason.ScheduledWakeup sw && eventPublisher != null) {
             var delay = Duration.between(Instant.now(), sw.wakeupAt());
             if (delay.isNegative() || delay.isZero()) {
@@ -759,7 +646,7 @@ public class ReactAgentLoop implements CallbackHelper {
      * @param reason 挂起原因
      * @return 格式化后的描述文本
      */
-    private String formatSuspendReason(SuspendReason reason) {
+    public String formatSuspendReason(SuspendReason reason) {
         return switch (reason) {
             case SuspendReason.WorkflowWait w ->
                     "等待工作流完成 [%s] %s".formatted(w.executionId(), w.workflowName());
@@ -786,7 +673,7 @@ public class ReactAgentLoop implements CallbackHelper {
      * @param payload 恢复载荷
      * @throws IllegalArgumentException 类型不匹配时抛出
      */
-    private void validateResumePayload(SuspendReason reason, ResumePayload payload) {
+    public void validateResumePayload(SuspendReason reason, ResumePayload payload) {
         boolean valid = switch (reason) {
             case SuspendReason.WorkflowWait _ -> payload instanceof ResumePayload.WorkflowResult;
             case SuspendReason.UserConfirmation _ -> payload instanceof ResumePayload.UserDecision;
@@ -807,7 +694,7 @@ public class ReactAgentLoop implements CallbackHelper {
      * @param payload 恢复载荷
      * @return 格式化后的恢复描述文本
      */
-    private String formatResumeObservation(ResumePayload payload) {
+    public String formatResumeObservation(ResumePayload payload) {
         return switch (payload) {
             case ResumePayload.WorkflowResult r ->
                     "工作流已完成: executionId=%s, status=%s, output=%s".formatted(
@@ -824,114 +711,6 @@ public class ReactAgentLoop implements CallbackHelper {
                     "外部数据就绪: dataSourceId=%s, data=%s".formatted(
                             d.dataSourceId(), d.dataLocationOrContent());
         };
-    }
-
-    /**
-     * 通用恢复入口 — 从挂起状态恢复 Agent 执行。
-     *
-     * <p>流程：
-     * <ol>
-     *   <li>从 SuspendStore 加载挂起状态（不存在则抛异常）</li>
-     *   <li>校验 payload 类型匹配</li>
-     *   <li>重建 ReactAgentState：resume() + appendStep(Resume) + appendStep(Observation)</li>
-     *   <li>删除持久化记录</li>
-     *   <li>在新 Virtual Thread 上重新进入 coreLoop</li>
-     * </ol>
-     *
-     * @param traceId 挂起时的 traceId
-     * @param payload 恢复载荷
-     * @throws IllegalStateException    未找到挂起状态时抛出
-     * @throws IllegalArgumentException 载荷类型不匹配时抛出
-     */
-    public void resumeFromSuspend(String traceId, ResumePayload payload) {
-        if (suspendStore == null) {
-            throw new IllegalStateException("SuspendStore 未注入，无法恢复挂起的 Agent");
-        }
-
-        // 1. 加载挂起状态
-        SuspendedAgent suspended = suspendStore.load(traceId)
-                .orElseThrow(() -> new IllegalStateException("未找到挂起的 Agent: " + traceId));
-
-        // 2. 校验 payload 类型匹配
-        validateResumePayload(suspended.suspendReason(), payload);
-
-        // 3. 重建状态
-        ReactAgentState state = suspended.toAgentState(objectMapper).resume();
-        state = state.appendStep(new ReactStep.Resume(payload, Instant.now(),
-                Duration.between(suspended.suspendedAt(), Instant.now())));
-        String resumeToolId = "resume:" + suspended.suspendReason().getClass().getSimpleName();
-        state = state.appendStep(new ReactStep.Observation(
-                resumeToolId, true, formatResumeObservation(payload), 0));
-
-        // 4. 删除持久化记录
-        suspendStore.delete(traceId);
-
-        log.info("Agent 恢复执行: traceId={}, reasonType={}, payloadType={}",
-                traceId, suspended.suspendReason().getClass().getSimpleName(),
-                payload.getClass().getSimpleName());
-
-        // 5. Virtual Thread 重新进入 coreLoop
-        final ReactAgentState resumedState = state;
-        final SuspendedAgent suspendedSnapshot = suspended;
-        Thread.startVirtualThread(() -> {
-            if (suspendedSnapshot.streamId() != null) {
-                runStreamingResume(resumedState, suspendedSnapshot);
-            } else {
-                runResume(resumedState, suspendedSnapshot);
-            }
-        });
-    }
-
-    /**
-     * 非流式恢复路径 — 重新进入 coreLoop 完成剩余推理。
-     *
-     * @param state     恢复后的 Agent 状态
-     * @param suspended 挂起快照（用于获取原始请求上下文）
-     */
-    private void runResume(ReactAgentState state, SuspendedAgent suspended) {
-        var token = new CancellationToken();
-        this.cancellationToken = token;
-        var loopStart = Instant.now();
-
-        try {
-            // 构建最小 AgentRequest 用于 coreLoop
-            var request = new AgentRequest(
-                    state.goal(), state.sessionId(), state.channel(),
-                    null, state.budget(), state.parentTraceId(),
-                    state.depth(), null, state.allowedToolIds(), null, null);
-
-            var callback = new com.lifepilot.agent.callback.NonStreamingCallback(
-                    config, llmRouter, multimodalRouter, request, this);
-            state = coreLoop(state, request, null, loopStart, callback, token, null, null);
-
-            // 恢复后正常完成处理
-            boolean testSession = isTestSession(state.sessionId());
-            if (!testSession) {
-                persistenceHandler.writeAssistantMessageToL1(state);
-                persistenceHandler.persistAssistantMessage(state);
-                persistenceHandler.asyncPostProcess(state);
-            }
-
-            log.info("Agent 恢复后执行完成: traceId={}, stepCount={}", state.traceId(), state.stepCount());
-        } catch (Exception e) {
-            log.error("Agent 恢复后执行异常: traceId={}, error={}", state.traceId(), e.getMessage(), e);
-        }
-    }
-
-    /**
-     * 流式恢复路径 — 重新建立 SSE 连接，发送 AGENT_RESUMED 事件，进入 coreLoop。
-     *
-     * @param state     恢复后的 Agent 状态
-     * @param suspended 挂起快照（用于获取 streamId 等上下文）
-     */
-    private void runStreamingResume(ReactAgentState state, SuspendedAgent suspended) {
-        // 流式恢复需要 SseSessionManager，但恢复时原 SSE 连接已关闭
-        // 此处记录日志，实际流式恢复需要前端重新建立 SSE 连接
-        log.info("Agent 流式恢复: traceId={}, 原 streamId={}（需前端重新建立 SSE 连接）",
-                state.traceId(), suspended.streamId());
-
-        // 降级为非流式恢复
-        runResume(state, suspended);
     }
 
     /** 从 ChatResponse 估算 Token 消耗。 */
@@ -1019,6 +798,50 @@ public class ReactAgentLoop implements CallbackHelper {
         return Math.max(1, (int) (cjkChars + otherChars / 4));
     }
 
+    /** 判断请求是否包含多模态内容。 */
+    private boolean hasMultimodalContent(AgentRequest request) {
+        return request.mediaContents() != null && !request.mediaContents().isEmpty();
+    }
+
+    /**
+     * 从消息列表中提取 MediaContent。
+     *
+     * <p>遍历 UserMessage 中的 Media 对象，转换为 MediaContent 列表。
+     * 用于多模态路由回退场景（工具产生的媒体嵌入到 messages 中后需要重新提取）。</p>
+     */
+    @Override
+    public List<MediaContent> extractMediaContentsFromMessages(List<Message> messages) {
+        var result = new ArrayList<MediaContent>();
+        for (var msg : messages) {
+            if (msg instanceof UserMessage um) {
+                for (var media : um.getMedia()) {
+                    try {
+                        Object rawData = media.getData();
+                        byte[] data;
+                        if (rawData instanceof Resource resource) {
+                            data = resource.getContentAsByteArray();
+                        } else if (rawData instanceof byte[] bytes) {
+                            data = bytes;
+                        } else {
+                            log.warn("不支持的媒体数据类型: type={}", rawData.getClass().getSimpleName());
+                            continue;
+                        }
+                        result.add(new MediaContent(
+                                UUID.randomUUID().toString(),
+                                media.getMimeType().toString(),
+                                data,
+                                "extracted",
+                                data.length,
+                                Map.of()));
+                    } catch (Exception e) {
+                        log.warn("从消息中提取媒体数据失败: error={}", e.getMessage());
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
     /**
      * 将 LlmResponse 适配为 Spring AI ChatResponse。
      *
@@ -1101,490 +924,6 @@ public class ReactAgentLoop implements CallbackHelper {
             }
         }
         return sb.toString().strip();
-    }
-
-    // ===== 多模态辅助方法 =====
-
-    /** 判断请求是否包含多模态内容。 */
-    private boolean hasMultimodalContent(AgentRequest request) {
-        return request.mediaContents() != null && !request.mediaContents().isEmpty();
-    }
-
-    /**
-     * 从消息列表中提取 Media 对象并转换为 MediaContent 列表。
-     *
-     * <p>用于工具产生的 pendingMedia 场景：媒体已嵌入到 UserMessage 的 Media 中，
-     * 需要提取出来构造 MultimodalRequest。</p>
-     */
-    @Override
-    public List<MediaContent> extractMediaContentsFromMessages(List<Message> messages) {
-        var result = new ArrayList<MediaContent>();
-        for (var msg : messages) {
-            if (msg instanceof UserMessage um) {
-                for (var media : um.getMedia()) {
-                    try {
-                        // 优先 ByteArrayResource 快速路径，兼容 Spring AI 可能的 Resource 包装
-                        var rawData = media.getData();
-                        byte[] data;
-                        switch (rawData) {
-                            case ByteArrayResource bar -> data = bar.getByteArray();
-                            case Resource res -> data = res.getInputStream().readAllBytes();
-                            case byte[] bytes -> data = bytes;
-                            default -> {
-                                log.warn("不支持的 Media 数据类型: {}", rawData.getClass().getName());
-                                continue;
-                            }
-                        }
-                        result.add(new MediaContent(
-                                UUID.randomUUID().toString(),
-                                media.getMimeType().toString(),
-                                data,
-                                null,
-                                data.length,
-                                Map.of()
-                        ));
-                    } catch (Exception e) {
-                        log.warn("从 UserMessage Media 提取数据失败: {}", e.getMessage());
-                    }
-                }
-            }
-        }
-        return List.copyOf(result);
-    }
-
-    /**
-     * 媒体校验与预处理 — 在进入 coreLoop 之前执行。
-     *
-     * <p>校验通过后对图片执行预处理（压缩、格式转换），返回处理后的媒体内容列表。
-     * 校验失败时抛出 {@link MediaValidationException}，由调用方捕获并返回错误响应。</p>
-     *
-     * @param mediaContents 原始媒体内容列表
-     * @return 预处理后的媒体内容列表
-     * @throws MediaValidationException 校验失败时抛出
-     */
-    private List<MediaContent> validateAndPreprocessMedia(List<MediaContent> mediaContents) {
-        // 校验所有媒体内容
-        assert mediaValidator != null;
-        mediaValidator.validateAll(mediaContents);
-
-        // 提取图片类型执行预处理
-        List<MediaContent> images = mediaContents.stream()
-                .filter(mc -> mc.mimeType().startsWith("image/"))
-                .toList();
-        assert mediaProcessor != null;
-        List<MediaContent> processedImages = mediaProcessor.processAll(images);
-
-        // 合并非图片媒体（视频等由 MultimodalRouter 内部处理）
-        List<MediaContent> nonImages = mediaContents.stream()
-                .filter(mc -> !mc.mimeType().startsWith("image/"))
-                .toList();
-        var result = new ArrayList<MediaContent>(processedImages.size() + nonImages.size());
-        result.addAll(processedImages);
-        result.addAll(nonImages);
-        return List.copyOf(result);
-    }
-
-    // ===== 同步执行入口 =====
-
-    /**
-     * 同步执行 ReAct 循环。
-     *
-     * <p>完整流程：初始化状态 → L1 写入用户消息 → 持久化用户消息 →
-     * 启动 Trace → coreLoop → L1 写入助手响应 → 持久化助手消息 →
-     * 异步后处理 → 构建 AgentResponse。</p>
-     */
-    public AgentResponse run(AgentRequest request) {
-        ReactAgentState state = ReactAgentState.init(request, Budget.fromConfig(config.getBudget()));
-        TraceContext traceContext = null;
-        Instant loopStart = Instant.now();
-        Exception error = null;
-
-        var token = new CancellationToken();
-        this.cancellationToken = token;
-
-        // 媒体校验与预处理 — 在进入 coreLoop 之前执行
-        List<MediaContent> processedMedia = null;
-        if (hasMultimodalContent(request)) {
-            if (multimodalRouter == null) {
-                log.warn("请求包含媒体内容但 MultimodalRouter 未注入，降级为纯文本: sessionId={}",
-                        request.sessionId());
-            } else if (mediaValidator != null && mediaProcessor != null) {
-                try {
-                    processedMedia = validateAndPreprocessMedia(request.mediaContents());
-                } catch (MediaValidationException e) {
-                    log.warn("媒体校验失败: sessionId={}, error={}", request.sessionId(), e.getMessage());
-                    return AgentResponse.error(state, e);
-                }
-            }
-        }
-
-        // 如果有预处理后的媒体，替换请求中的 mediaContents
-        final AgentRequest effectiveRequest = processedMedia != null
-                ? new AgentRequest(request.message(), request.sessionId(), request.channel(),
-                        request.systemPrompt(), request.budget(), request.parentTraceId(),
-                        request.depth(), request.preferredProvider(), request.allowedToolIds(),
-                        processedMedia, request.temperature())
-                : request;
-
-        try {
-            state = initState(effectiveRequest);
-            collectedToolMedia.clear();
-            boolean testSession = isTestSession(effectiveRequest.sessionId());
-            if (!testSession) {
-                persistenceHandler.writeUserMessageToL1(state, effectiveRequest.mediaContents());
-                persistenceHandler.persistUserMessage(state);
-            }
-            traceContext = startTraceIfEnabled(state, effectiveRequest);
-            loopStart = Instant.now();
-
-            // 核心循环 — 非流式回调
-            var callback = new com.lifepilot.agent.callback.NonStreamingCallback(
-                    config, llmRouter, multimodalRouter, effectiveRequest, this);
-            state = coreLoop(state, effectiveRequest, traceContext, loopStart, callback, token,
-                    null, null);
-
-            // ★ 挂起分支 — coreLoop 退出后检查是否进入挂起态
-            if (state.suspended() && state.suspendReason() != null) {
-                if (suspendStore != null) {
-                    suspendStore.save(SuspendedAgent.from(state, objectMapper));
-                    scheduleWakeupIfNeeded(state);
-                    log.info("Agent 已挂起并持久化: traceId={}, reasonType={}",
-                            state.traceId(), state.suspendReason().getClass().getSimpleName());
-                } else {
-                    log.warn("Agent 请求挂起但 SuspendStore 未注入，无法持久化: traceId={}", state.traceId());
-                }
-                return new AgentResponse(
-                        state.traceId(),
-                        state.sessionId(),
-                        "Agent 已挂起，等待恢复信号。原因: " + formatSuspendReason(state.suspendReason()),
-                        state.budget().tokensUsed(),
-                        state.stepCount(),
-                        "suspended",
-                        null, null, aggregateTokenUsage(traceContext));
-            }
-
-            // 构建推理概要
-            if (state.terminationReason() == null) {
-                String summary = buildReasoningSummary(state, traceContext);
-                state = state.toBuilder().reasoningSummary(summary).build();
-            }
-
-            String assistantMessageId = null;
-            if (!testSession) {
-                persistenceHandler.writeAssistantMessageToL1(state);
-                assistantMessageId = persistenceHandler.persistAssistantMessage(state);
-                persistenceHandler.persistInjectionRecord(assistantMessageId, state.sessionId(), null);
-                persistenceHandler.persistToolMediaAttachments(assistantMessageId, state.sessionId(),
-                        List.copyOf(collectedToolMedia));
-                collectedToolMedia.clear();
-                persistenceHandler.asyncPostProcess(state);
-            }
-
-            // 聚合 Token 使用量
-            TokenUsage tokenUsage = aggregateTokenUsage(traceContext);
-
-            // 提取 A2UI 组件
-            var cachedTree = lastCollectedA2uiTree;
-            var a2uiComponents = cachedTree != null
-                    ? cachedTree.components() : null;
-
-            return new AgentResponse(
-                    state.traceId(),
-                    state.sessionId(),
-                    state.finalOutput() != null ? state.finalOutput() : "",
-                    state.budget().tokensUsed(),
-                    state.stepCount(),
-                    state.terminationReason(),
-                    assistantMessageId,
-                    a2uiComponents,
-                    tokenUsage
-            );
-
-        } catch (Exception e) {
-            log.error("ReAct 循环异常终止: error={}", e.getMessage(), e);
-            error = e;
-            return AgentResponse.error(state, e);
-        } finally {
-            if (traceRecorder != null && traceContext != null) {
-                String finalOutput = state.finalOutput();
-                boolean success = error == null && state.terminationReason() == null;
-                String errorMessage = error != null ? error.getMessage() : null;
-                String terminationReason = error != null
-                        ? error.getClass().getSimpleName()
-                        : state.terminationReason();
-                traceRecorder.endTrace(traceContext, finalOutput, success,
-                        errorMessage, terminationReason);
-            }
-        }
-    }
-
-    // ===== SSE 流式执行入口 =====
-
-    /**
-     * SSE 流式执行 ReAct 循环。
-     *
-     * <p>完整流程与 run() 一致，但通过 SSE 推送 TOKEN / REASONING / MEDIA / DONE 事件。
-     * 流式模式下同样支持 tool calling — LLM 返回 tool call 时暂停流式输出，
-     * 执行工具后将结果回传 LLM 继续生成。</p>
-     */
-    public void runStreaming(AgentRequest request, String streamId,
-                             SseSessionManager sseManager,
-                             CancellationToken cancellationToken) {
-        ReactAgentState state = ReactAgentState.init(request, Budget.fromConfig(config.getBudget()));
-        TraceContext traceContext = null;
-        Instant loopStart = Instant.now();
-        Exception error = null;
-        String finalContent = "";
-        TokenUsage finalTokenUsage = null;
-        String reasoningSummary = null;
-        String tempTurnId = UUID.randomUUID().toString();
-        String userMessageId = null;
-        String assistantMessageId = null;
-
-        this.cancellationToken = cancellationToken;
-
-        // 媒体校验与预处理 — 在进入 coreLoop 之前执行
-        List<MediaContent> processedMedia = null;
-        if (hasMultimodalContent(request)) {
-            if (multimodalRouter == null) {
-                log.warn("请求包含媒体内容但 MultimodalRouter 未注入，降级为纯文本: sessionId={}",
-                        request.sessionId());
-            } else if (mediaValidator != null && mediaProcessor != null) {
-                try {
-                    processedMedia = validateAndPreprocessMedia(request.mediaContents());
-                } catch (MediaValidationException e) {
-                    log.warn("媒体校验失败: sessionId={}, error={}", request.sessionId(), e.getMessage());
-                    streamingEventHandler.sendStreamError(sseManager, streamId, 400,
-                            "媒体校验失败: " + e.getMessage(), state.traceId());
-                    return;
-                }
-            }
-        }
-
-        // 如果有预处理后的媒体，替换请求中的 mediaContents
-        final AgentRequest effectiveRequest = processedMedia != null
-                ? new AgentRequest(request.message(), request.sessionId(), request.channel(),
-                        request.systemPrompt(), request.budget(), request.parentTraceId(),
-                        request.depth(), request.preferredProvider(), request.allowedToolIds(),
-                        processedMedia, request.temperature())
-                : request;
-
-        try {
-            state = initState(effectiveRequest);
-            collectedToolMedia.clear();
-            boolean testSession = isTestSession(effectiveRequest.sessionId());
-            if (!testSession) {
-                persistenceHandler.writeUserMessageToL1(state, effectiveRequest.mediaContents());
-            }
-
-            // 同步写入用户消息到 chat_messages（测试会话跳过）
-            if (!testSession) {
-                userMessageId = persistenceHandler.persistUserMessageReturningId(state);
-            }
-
-            // TRACE_START 事件
-            if (state.traceId() != null) {
-                var traceStartData = new HashMap<String, Object>();
-                traceStartData.put("sessionId", request.sessionId());
-                traceStartData.put("turnId", tempTurnId);
-                traceStartData.put("traceId", state.traceId());
-                traceStartData.put("timestamp", Instant.now().toEpochMilli());
-                if (userMessageId != null) {
-                    traceStartData.put("userMessageId", userMessageId);
-                }
-                sseManager.sendEvent(streamId, SseEventType.TRACE_START, traceStartData);
-            }
-
-            sendReasoningEvent(sseManager, streamId, request.sessionId(), tempTurnId,
-                    "AGENT_START", "开始处理请求",
-                    "Agent 已接收到用户请求，正在准备上下文与预算。",
-                    null, Map.of());
-
-            traceContext = startTraceIfEnabled(state, effectiveRequest);
-            loopStart = Instant.now();
-
-            // 核心循环 — 流式回调
-            var callback = new StreamingCallback(config, llmRouter, multimodalRouter, this,
-                    cancellationToken, null, sseManager, streamId,
-                    request.sessionId(), tempTurnId, effectiveRequest);
-            state = coreLoop(state, effectiveRequest, traceContext, loopStart, callback, cancellationToken,
-                    sseManager, streamId);
-
-            // ★ 挂起分支 — coreLoop 退出后检查是否进入挂起态
-            if (state.suspended() && state.suspendReason() != null) {
-                if (suspendStore != null) {
-                    var suspendedAgent = SuspendedAgent.from(state, objectMapper).toBuilder()
-                            .streamId(streamId).build();
-                    suspendStore.save(suspendedAgent);
-                    scheduleWakeupIfNeeded(state);
-                    log.info("流式 Agent 已挂起并持久化: traceId={}, reasonType={}, streamId={}",
-                            state.traceId(), state.suspendReason().getClass().getSimpleName(), streamId);
-                } else {
-                    log.warn("Agent 请求挂起但 SuspendStore 未注入，无法持久化: traceId={}", state.traceId());
-                }
-                // 发送 AGENT_SUSPENDED SSE 事件
-                sseManager.sendEvent(streamId, SseEventType.AGENT_SUSPENDED, Map.of(
-                        "traceId", state.traceId(),
-                        "sessionId", state.sessionId(),
-                        "reasonType", state.suspendReason().getClass().getSimpleName(),
-                        "reasonDetail", formatSuspendReason(state.suspendReason()),
-                        "suspendedAt", Instant.now().toString()));
-                sseManager.closeEmitter(streamId);
-                return;
-            }
-
-            // 检查流式错误
-            if (callback.hasStreamingError()) {
-                error = callback.getStreamingError();
-            } else {
-                // 归一化最终输出
-                String callbackContent = callback.getFinalContent();
-                finalContent = state.finalOutput() != null
-                        ? state.finalOutput()
-                        : (callbackContent != null ? callbackContent : finalContent);
-                var extractedFinalContent = streamingEventHandler.extractA2uiContent(finalContent);
-                A2uiComponentTree finalA2uiTree = extractedFinalContent.tree();
-                finalContent = extractedFinalContent.visibleText();
-                if (finalA2uiTree != null) {
-                    lastCollectedA2uiTree = finalA2uiTree;
-                }
-
-                if (state.terminationReason() == null) {
-                    reasoningSummary = buildReasoningSummary(state, traceContext);
-                    state = state.toBuilder()
-                            .finalOutput(finalContent)
-                            .reasoningSummary(reasoningSummary)
-                            .build();
-                }
-
-                // 测试会话跳过所有持久化操作
-                if (!testSession) {
-                    persistenceHandler.writeAssistantMessageToL1(state);
-
-                    String a2uiJson = streamingEventHandler.serializeA2uiTree(lastCollectedA2uiTree);
-                    assistantMessageId = persistenceHandler.persistAssistantMessageWithA2ui(
-                            state, finalContent, reasoningSummary, a2uiJson);
-
-                    persistenceHandler.persistInjectionRecord(assistantMessageId, state.sessionId(), null);
-
-                    // 持久化工具产生的媒体附件（截图等通过 SSE MEDIA 事件发送的数据）
-                    persistenceHandler.persistToolMediaAttachments(assistantMessageId, state.sessionId(),
-                            List.copyOf(collectedToolMedia));
-                    collectedToolMedia.clear();
-
-                    // 持久化用户上传的媒体附件到 message_attachments 表
-                    persistenceHandler.persistUserMediaAttachments(assistantMessageId,
-                            state.sessionId(), effectiveRequest.mediaContents());
-
-                    persistenceHandler.asyncPostProcess(state);
-                }
-                finalTokenUsage = aggregateTokenUsage(traceContext);
-            }
-        } catch (Exception e) {
-            log.error("流式 Agent 循环异常终止: error={}", e.getMessage(), e);
-            error = e;
-        } finally {
-            if (traceRecorder != null && traceContext != null) {
-                String finalOutput = state.finalOutput();
-                boolean success = error == null && state.terminationReason() == null;
-                String errorMessage = error != null ? error.getMessage() : null;
-                String terminationReason = error != null
-                        ? error.getClass().getSimpleName()
-                        : state.terminationReason();
-                traceRecorder.endTrace(traceContext, finalOutput, success, errorMessage, terminationReason);
-            }
-
-            if (error != null) {
-                streamingEventHandler.sendStreamError(sseManager, streamId, 500,
-                        "处理失败: " + error.getMessage(), state.traceId());
-            } else {
-                sendReasoningEvent(sseManager, streamId, request.sessionId(), tempTurnId,
-                        "ANSWER_FINALIZED", "回答已生成", "本轮推理与回答已完成。",
-                        null, Map.of());
-                var doneData = streamingEventHandler.buildDoneEventPayload(
-                        request, state, tempTurnId, finalTokenUsage,
-                        traceContext, reasoningSummary, finalContent, assistantMessageId,
-                        lastCollectedA2uiTree);
-                sseManager.sendEvent(streamId, SseEventType.DONE, doneData);
-                lastCollectedA2uiTree = null;
-                sseManager.closeEmitter(streamId);
-            }
-        }
-    }
-
-    // ===== 状态初始化 =====
-
-    /** 初始化 ReAct 状态 — 查找已有会话或创建新状态。 */
-    private ReactAgentState initState(AgentRequest request) {
-        var defaultBudget = Budget.fromConfig(config.getBudget());
-        // 测试会话不恢复历史状态
-        if (isTestSession(request.sessionId())) {
-            return ReactAgentState.init(request, defaultBudget);
-        }
-        var existingSession = sessionManager.findSession(request.sessionId());
-        if (existingSession.isPresent()) {
-            var snapshot = existingSession.get();
-            var state = ReactAgentState.fromSession(snapshot, request, defaultBudget);
-            persistenceHandler.hydrateWorkingMemoryFromConversationView(snapshot.sessionId());
-            return state;
-        }
-        return ReactAgentState.init(request, defaultBudget);
-    }
-
-    /** 启动 Trace（如果 TraceRecorder 可用）。 */
-    @Nullable
-    private TraceContext startTraceIfEnabled(ReactAgentState state, AgentRequest request) {
-        if (traceRecorder == null) return null;
-        return traceRecorder.startTrace(state.traceId(), state.sessionId(), request.message());
-    }
-
-    // ===== L1 工作记忆读写 =====
-
-    // ===== 推理概要 =====
-
-    /** 构建推理概要字符串（从 TraceContext 提取真实模型信息）。 */
-    private String buildReasoningSummary(ReactAgentState state,
-                                         @Nullable TraceContext traceContext) {
-        int steps = state.stepCount();
-        int tokens = state.budget() != null ? state.budget().tokensUsed() : 0;
-        String modelId = DEFAULT_MODEL_ID;
-
-        // 从 TraceContext 提取最后一次 LLM 调用的模型 ID
-        if (traceContext != null) {
-            var traceSteps = traceContext.steps();
-            for (int i = traceSteps.size() - 1; i >= 0; i--) {
-                if (traceSteps.get(i) instanceof LlmCallStep llmStep) {
-                    modelId = llmStep.modelId();
-                    tokens = traceContext.totalInputTokens() + traceContext.totalOutputTokens();
-                    break;
-                }
-            }
-        }
-
-        return "本轮推理已完成，使用模型 %s，经历 %d 个推理步骤，累计约 %d 个 Token。"
-                .formatted(modelId, steps, tokens);
-    }
-
-    // ===== Token 聚合 =====
-
-    /** 从 TraceContext 聚合 Token 使用量。 */
-    private TokenUsage aggregateTokenUsage(@Nullable TraceContext traceContext) {
-        String modelId = DEFAULT_MODEL_ID;
-        int promptTokens = 0;
-        int completionTokens = 0;
-        if (traceContext != null) {
-            promptTokens = traceContext.totalInputTokens();
-            completionTokens = traceContext.totalOutputTokens();
-            var steps = traceContext.steps();
-            for (int i = steps.size() - 1; i >= 0; i--) {
-                if (steps.get(i) instanceof LlmCallStep llmStep) {
-                    modelId = llmStep.modelId();
-                    break;
-                }
-            }
-        }
-        return new TokenUsage(promptTokens, completionTokens,
-                promptTokens + completionTokens, modelId);
     }
 
     // ===== 流式 LLM Trace 记录 =====
