@@ -1256,9 +1256,23 @@ public class ContextAssembler {
         vars.put("stepCount", String.valueOf(state.stepCount()));
 
         // 各区域预格式化为文本块，空区域传空字符串（模板中直接拼接，空字符串不产生多余内容）
-        vars.put("userProfileSection", formatUserProfileSection(userProfile));
+        String profileSection = formatUserProfileSection(userProfile);
+        String historySection = formatConversationHistorySection(slots);
+        if (dataRedactor != null) {
+            try {
+                profileSection = dataRedactor.redact(profileSection);
+            } catch (Exception e) {
+                log.warn("用户画像脱敏失败，降级使用原始文本: error={}", e.getMessage());
+            }
+            try {
+                historySection = dataRedactor.redact(historySection);
+            } catch (Exception e) {
+                log.warn("对话历史脱敏失败，降级使用原始文本: error={}", e.getMessage());
+            }
+        }
+        vars.put("userProfileSection", profileSection);
         vars.put("passiveNotificationsSection", formatPassiveNotificationsSection());
-        vars.put("conversationHistorySection", formatConversationHistorySection(slots));
+        vars.put("conversationHistorySection", historySection);
         vars.put("memoriesSection", formatListSection("相关记忆", memories));
         vars.put("knowledgeBaseSection", formatListSection("知识库片段", knowledgeBaseSnippets));
         vars.put("crossSessionSection", formatListSection("跨会话参考", crossSessionFragments));
