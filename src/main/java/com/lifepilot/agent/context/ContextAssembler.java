@@ -7,6 +7,8 @@ import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
 import com.lifepilot.memory.working.*;
+import com.lifepilot.memory.procedural.PreferenceRule;
+import com.lifepilot.memory.procedural.ProceduralMemory;
 import com.lifepilot.observability.redactor.DataRedactor;
 import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
@@ -23,6 +25,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 上下文组装器 — Agentic 模式，检索由 Tool 接管，仅保留 L1 会话 + 用户画像 + 通知 + 系统提示词。
@@ -57,6 +60,8 @@ public class ContextAssembler {
     @Nullable private final PassiveNotificationQueue passiveNotificationQueue;
     // 记忆配置：用户画像查询等参数，可选注入
     @Nullable private final com.lifepilot.memory.config.MemoryProperties memoryProperties;
+    // L4 程序记忆：偏好规则查询，可选注入
+    @Nullable private final ProceduralMemory proceduralMemory;
 
     /** 基础版构造器（记忆字段为 null）。 */
     public ContextAssembler(AgentConfigProperties config, PromptRegistry promptRegistry) {
@@ -68,6 +73,7 @@ public class ContextAssembler {
         this.semanticMemory = null;
         this.passiveNotificationQueue = null;
         this.memoryProperties = null;
+        this.proceduralMemory = null;
     }
 
     /** 完整版构造器（注入记忆系统依赖）。 */
@@ -78,6 +84,7 @@ public class ContextAssembler {
                             @Nullable SemanticMemory semanticMemory,
                             @Nullable PassiveNotificationQueue passiveNotificationQueue,
                             @Nullable com.lifepilot.memory.config.MemoryProperties memoryProperties,
+                            @Nullable ProceduralMemory proceduralMemory,
                             PromptRegistry promptRegistry) {
         this.config = config;
         this.workingMemory = workingMemory;
@@ -87,6 +94,7 @@ public class ContextAssembler {
         this.semanticMemory = semanticMemory;
         this.passiveNotificationQueue = passiveNotificationQueue;
         this.memoryProperties = memoryProperties;
+        this.proceduralMemory = proceduralMemory;
     }
 
     /** 判断是否为完整版模式。 */
@@ -348,7 +356,43 @@ public class ContextAssembler {
             }
 
             if (selected.isEmpty()) return "";
-            return formatUserProfile(selected);
+
+            // L4 高置信度偏好规则查询 + 去重
+            List<PreferenceRule> l4Rules = List.of();
+            if (proceduralMemory != null) {
+                try {
+                    l4Rules = proceduralMemory.getPreferences("user-preference").stream()
+                            .filter(PreferenceRule::isHighConfidence)
+                            .toList();
+                } catch (Exception ex) {
+                    log.warn("L4 偏好规则查询失败，降级仅使用 L3 实体: error={}", ex.getMessage());
+                }
+            }
+
+            // L4 优先去重 — 移除与 L4 规则同名的 L3 PREFERENCE 实体
+            if (!l4Rules.isEmpty()) {
+                var l4Keys = l4Rules.stream()
+                        .map(PreferenceRule::key)
+                        .collect(Collectors.toSet());
+                selected = selected.stream()
+                        .filter(e -> !(e.type() == EntityType.PREFERENCE && l4Keys.contains(e.name())))
+                        .toList();
+            }
+
+            // 格式化 L3 实体
+            var profileText = formatUserProfile(selected);
+
+            // 追加 L4 偏好规则
+            if (!l4Rules.isEmpty()) {
+                var sb = new StringBuilder(profileText);
+                for (var rule : l4Rules) {
+                    sb.append("- [偏好规则] ").append(rule.key()).append(": ").append(rule.value())
+                            .append("（置信度: ").append(String.format("%.2f", rule.confidence())).append("）\n");
+                }
+                return sb.toString();
+            }
+
+            return profileText;
         } catch (Exception e) {
             log.warn("用户画像查询失败，降级跳过: error={}", e.getMessage());
             return "";
