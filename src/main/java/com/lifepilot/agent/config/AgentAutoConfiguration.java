@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.ReactAgentLoop;
 import com.lifepilot.agent.AgentToolProvider;
 import com.lifepilot.agent.context.ContextAssembler;
-import com.lifepilot.agent.context.DefaultMemoryRetrievalStrategy;
 import com.lifepilot.agent.media.MediaDataExtractor;
 import com.lifepilot.agent.suspend.store.SuspendStore;
 import com.lifepilot.notification.PassiveNotificationQueue;
@@ -14,15 +13,12 @@ import com.lifepilot.conversation.ConversationViewService;
 import com.lifepilot.conversation.DefaultConversationViewService;
 import com.lifepilot.interaction.web.config.A2uiProperties;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
-import com.lifepilot.knowledge.repository.DocumentRepository;
 import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
-import com.lifepilot.knowledge.retrieve.DocumentRetriever;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.media.MediaProcessor;
 import com.lifepilot.media.MediaValidator;
 import com.lifepilot.memory.episodic.EpisodicMemory;
-import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.InjectionRecordRepository;
 import com.lifepilot.memory.semantic.RealtimeExtractor;
 import com.lifepilot.memory.semantic.SemanticMemory;
@@ -66,32 +62,19 @@ public class AgentAutoConfiguration {
     @ConditionalOnMissingBean(ContextAssembler.class)
     public ContextAssembler contextAssembler(AgentConfigProperties config,
                                              PromptRegistry promptRegistry,
-                                             @Autowired(required = false) HybridRetriever hybridRetriever,
                                              @Autowired(required = false) WorkingMemory workingMemory,
                                              @Autowired(required = false) TokenBudgetAllocator tokenBudgetAllocator,
                                              @Autowired(required = false) DataRedactor dataRedactor,
-                                             @Autowired(required = false) DocumentRetriever documentRetriever,
-                                             @Autowired(required = false) SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
-                                             @Autowired(required = false) DocumentRepository documentRepository,
-                                             @Autowired(required = false) EpisodicMemory episodicMemory,
                                              @Autowired(required = false) SemanticMemory semanticMemory,
                                              @Autowired(required = false) PassiveNotificationQueue passiveNotificationQueue,
-                                             @Autowired(required = false) com.lifepilot.memory.retrieval.QueryRefiner queryRefiner,
-                                             @Autowired(required = false) com.lifepilot.memory.config.MemoryProperties memoryProperties,
-                                             @Autowired(required = false) LlmRouter llmRouter,
-                                             @Autowired(required = false) com.lifepilot.memory.retrieval.QueryRewriter queryRewriter) {
-        if (hybridRetriever != null && workingMemory != null && tokenBudgetAllocator != null) {
-            log.info("Agent 引擎: 注册完整版 ContextAssembler（记忆系统已就绪，L2 情景记忆{}，L3 语义记忆{}，QueryRewriter{}）",
-                    episodicMemory != null ? "已启用" : "未启用",
-                    semanticMemory != null ? "已启用" : "未启用",
-                    queryRewriter != null ? "已启用" : "未启用");
-            var strategy = new DefaultMemoryRetrievalStrategy();
-            return new ContextAssembler(config, hybridRetriever,
-                    workingMemory, tokenBudgetAllocator, strategy, dataRedactor,
-                    documentRetriever, sessionKnowledgeBaseRepository, documentRepository,
-                    episodicMemory, semanticMemory, passiveNotificationQueue, queryRefiner, memoryProperties, llmRouter, queryRewriter, promptRegistry);
+                                             @Autowired(required = false) com.lifepilot.memory.config.MemoryProperties memoryProperties) {
+        if (workingMemory != null && tokenBudgetAllocator != null) {
+            log.info("Agent 引擎: 注册完整版 ContextAssembler（Agentic 模式，L3 语义记忆{}）",
+                    semanticMemory != null ? "已启用" : "未启用");
+            return new ContextAssembler(config, workingMemory, tokenBudgetAllocator,
+                    dataRedactor, semanticMemory, passiveNotificationQueue, memoryProperties, promptRegistry);
         }
-        log.warn("Agent 引擎: 注册基础版 ContextAssembler（记忆系统部分或全部不可用，记忆检索功能已降级）");
+        log.warn("Agent 引擎: 注册基础版 ContextAssembler（WorkingMemory 或 TokenBudgetAllocator 不可用）");
         return new ContextAssembler(config, promptRegistry);
     }
 
