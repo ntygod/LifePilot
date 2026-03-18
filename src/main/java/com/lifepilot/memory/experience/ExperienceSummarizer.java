@@ -129,7 +129,11 @@ public class ExperienceSummarizer {
                         evalResult.suggestions(),
                         appendEvalTags(List.of(), scenario.tags()),
                         List.of(),
-                        success
+                        success,
+                        0.0f,
+                        0,
+                        0,
+                        0
                 );
 
                 if (record.scenario() == null || record.scenario().isBlank()) continue;
