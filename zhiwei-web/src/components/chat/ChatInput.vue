@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { FileAudio2, FileText, FileVideo, Image, Mic, Paperclip, Square, X } from 'lucide-vue-next'
+import { ArrowUp, FileAudio2, FileText, FileVideo, Image, Mic, Paperclip, Square, X } from 'lucide-vue-next'
 import { chatApi } from '@/api/client'
 import { useChatStore } from '@/stores/chat'
 import { Textarea } from '@/components/ui/textarea'
@@ -49,16 +49,6 @@ const promptTemplates = [
 ] as const
 
 const sendDisabled = computed(() => props.disabled || !input.value.trim() || isUploading.value)
-const attachmentSummary = computed(() => {
-  if (attachments.value.length === 0) return '可附加图片、音频、视频或文档'
-  return `已选 ${attachments.value.length} 个附件`
-})
-const footerHint = computed(() => {
-  if (isUploading.value) return '正在上传附件，完成后会自动继续发送。'
-  if (props.disabled) return '当前回复还在生成，稍候即可继续输入。'
-  if (attachments.value.length > 0) return 'Enter 发送时会连同附件一起上传。'
-  return '按 Enter 发送，Shift + Enter 换行。'
-})
 
 function handleKeydown(event: KeyboardEvent) {
   if (event.key === 'Enter' && !event.shiftKey) {
@@ -187,7 +177,7 @@ defineExpose({
 </script>
 
 <template>
-  <div class="bg-transparent px-4 py-4 sm:px-5">
+  <div class="bg-transparent px-4 py-3 sm:px-5">
     <div class="mx-auto max-w-4xl space-y-3">
       <div v-if="attachments.length > 0" class="flex flex-wrap gap-2">
         <div
@@ -209,167 +199,158 @@ defineExpose({
       </div>
 
       <div
-        class="overflow-hidden rounded-[calc(var(--radius)+8px)] border border-border/70 bg-card/80 shadow-[0_24px_40px_-28px_hsl(var(--shadow-color)/0.42)] transition-all duration-200"
-        :class="sendDisabled ? '' : 'hover:border-primary/24 focus-within:border-primary/24 focus-within:shadow-[0_28px_46px_-30px_hsl(var(--shadow-color)/0.5)]'"
+        class="overflow-hidden rounded-2xl border border-border/50 bg-card/60 shadow-[0_2px_12px_-4px_hsl(var(--shadow-color)/0.18)] backdrop-blur-sm transition-all duration-200"
+        :class="sendDisabled ? '' : 'focus-within:border-primary/30 focus-within:shadow-[0_4px_20px_-6px_hsl(var(--shadow-color)/0.28)]'"
       >
-        <div class="px-3 pt-3">
+        <!-- 输入区 -->
+        <div class="relative px-4 pt-3 pb-1">
           <Textarea
             v-model="input"
             :disabled="disabled"
             :maxlength="maxLength"
             placeholder="输入问题，或粘贴资料继续往下处理…"
             rows="1"
-            class="min-h-[64px] max-h-[220px] resize-none border-0 bg-transparent px-1 text-base shadow-none focus-visible:ring-0"
+            class="min-h-[88px] max-h-[200px] resize-none border-0 bg-transparent px-0 text-[15px] leading-relaxed shadow-none placeholder:text-muted-foreground/50 focus-visible:ring-0"
             @keydown="handleKeydown"
             @click="showTemplates = false"
           />
+          <!-- 字数统计：输入区右下角 -->
+          <span
+            v-if="inputLength > 0"
+            class="absolute right-4 bottom-2 text-[11px] tabular-nums text-muted-foreground/50"
+          >
+            {{ inputLength }} / {{ maxLength }}
+          </span>
         </div>
 
-        <div class="border-t border-border/60 bg-background/38 px-3 py-3">
-          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div class="flex flex-wrap items-center gap-2">
-              <div class="relative">
-                <button
-                  type="button"
-                  class="filter-pill text-sm"
-                  :disabled="disabled"
-                  @click="showTemplates = !showTemplates"
-                >
-                  <FileText class="size-4" />
-                  模板
-                </button>
-
-                <Transition
-                  enter-active-class="transition-all duration-200 ease-out"
-                  enter-from-class="translate-y-2 scale-95 opacity-0"
-                  enter-to-class="translate-y-0 scale-100 opacity-100"
-                  leave-active-class="transition-all duration-150 ease-in"
-                  leave-from-class="translate-y-0 scale-100 opacity-100"
-                  leave-to-class="translate-y-2 scale-95 opacity-0"
-                >
-                  <div
-                    v-if="showTemplates"
-                    class="absolute bottom-full left-0 z-10 mb-2 w-52 rounded-[calc(var(--radius)+4px)] border border-border/70 bg-card/96 p-2 shadow-[0_20px_36px_-28px_hsl(var(--shadow-color)/0.45)]"
-                  >
-                    <div class="mb-2 px-2 text-[11px] font-medium tracking-[0.08em] text-muted-foreground">
-                      常用模板
-                    </div>
-                    <button
-                      v-for="template in promptTemplates"
-                      :key="template.name"
-                      type="button"
-                      class="flex w-full items-center rounded-lg px-2 py-2 text-left text-sm text-foreground transition-colors hover:bg-accent/75"
-                      @click="insertTemplate(template)"
-                    >
-                      {{ template.name }}
-                    </button>
-                  </div>
-                </Transition>
-              </div>
-
+        <!-- 工具栏 -->
+        <div class="flex items-center justify-between gap-2 px-3 pb-3 pt-1">
+          <div class="flex items-center gap-1.5">
+            <!-- 模板 -->
+            <div class="relative">
               <button
                 type="button"
-                class="filter-pill text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                class="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground disabled:opacity-40"
                 :disabled="disabled"
-                @click="handleFileSelect"
+                @click="showTemplates = !showTemplates"
               >
-                <Paperclip class="size-4" />
-                附件
+                <FileText class="size-3.5" />
+                模板
               </button>
 
-              <span class="surface-chip">{{ attachmentSummary }}</span>
-
-              <input
-                ref="fileInput"
-                type="file"
-                multiple
-                accept="image/*,audio/*,video/*,.pdf,.txt,.md,.csv,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
-                class="hidden"
-                @change="handleFileChange"
-              />
+              <Transition
+                enter-active-class="transition-all duration-200 ease-out"
+                enter-from-class="translate-y-2 scale-95 opacity-0"
+                enter-to-class="translate-y-0 scale-100 opacity-100"
+                leave-active-class="transition-all duration-150 ease-in"
+                leave-from-class="translate-y-0 scale-100 opacity-100"
+                leave-to-class="translate-y-2 scale-95 opacity-0"
+              >
+                <div
+                  v-if="showTemplates"
+                  class="absolute bottom-full left-0 z-10 mb-2 w-48 rounded-xl border border-border/60 bg-card p-1.5 shadow-lg"
+                >
+                  <div class="mb-1 px-2 pt-1 text-[10px] font-medium tracking-wider text-muted-foreground/70">
+                    常用模板
+                  </div>
+                  <button
+                    v-for="template in promptTemplates"
+                    :key="template.name"
+                    type="button"
+                    class="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-accent/60"
+                    @click="insertTemplate(template)"
+                  >
+                    {{ template.name }}
+                  </button>
+                </div>
+              </Transition>
             </div>
 
-            <div class="flex items-center gap-3 self-end sm:self-auto">
-              <span class="text-xs text-muted-foreground">{{ inputLength }} / {{ maxLength }}</span>
+            <!-- 附件 -->
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground disabled:opacity-40"
+              :disabled="disabled"
+              @click="handleFileSelect"
+            >
+              <Paperclip class="size-3.5" />
+              附件
+              <span v-if="attachments.length > 0" class="ml-0.5 rounded-full bg-primary/15 px-1.5 text-[10px] font-medium text-primary">
+                {{ attachments.length }}
+              </span>
+            </button>
 
-              <!-- 录音中：波形 + 时长 + 停止按钮 -->
-              <template v-if="isRecording">
-                <AudioWaveform :analyser-node="analyserNode" :is-active="isRecording" />
-                <span class="text-xs font-mono text-destructive">{{ formatDuration(recordingDuration) }}</span>
-                <button
-                  type="button"
-                  class="flex h-11 w-11 items-center justify-center rounded-full border border-destructive bg-destructive text-destructive-foreground shadow-sm transition-all hover:-translate-y-0.5"
-                  @click="stopRecording"
-                >
-                  <Square class="size-4" />
-                </button>
-              </template>
+            <input
+              ref="fileInput"
+              type="file"
+              multiple
+              accept="image/*,audio/*,video/*,.pdf,.txt,.md,.csv,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
+              class="hidden"
+              @change="handleFileChange"
+            />
+          </div>
 
-              <template v-else>
-                <!-- 麦克风按钮 -->
-                <button
-                  v-if="voiceSupported"
-                  type="button"
-                  :disabled="disabled || isUploading || voiceSending"
-                  class="flex h-11 w-11 items-center justify-center rounded-full border transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  :class="disabled || isUploading || voiceSending
-                    ? 'border-border bg-muted text-muted-foreground'
-                    : 'border-border bg-card text-foreground hover:-translate-y-0.5 hover:border-primary/40 hover:text-primary'"
-                  @click="startRecording"
-                >
-                  <Mic class="size-4" />
-                </button>
+          <div class="flex items-center gap-2">
+            <!-- 录音中：波形 + 时长 + 停止按钮 -->
+            <template v-if="isRecording">
+              <AudioWaveform :analyser-node="analyserNode" :is-active="isRecording" />
+              <span class="text-xs font-mono text-destructive">{{ formatDuration(recordingDuration) }}</span>
+              <button
+                type="button"
+                class="flex size-9 items-center justify-center rounded-full bg-destructive text-destructive-foreground shadow-sm transition-all hover:-translate-y-0.5 active:scale-95"
+                @click="stopRecording"
+              >
+                <Square class="size-3.5" />
+              </button>
+            </template>
 
-                <!-- 发送按钮 -->
-                <button
+            <template v-else>
+              <!-- 麦克风按钮 -->
+              <button
+                v-if="voiceSupported"
+                type="button"
+                :disabled="disabled || isUploading || voiceSending"
+                class="flex size-8 items-center justify-center rounded-full text-muted-foreground/60 transition-all duration-150 hover:bg-accent/50 hover:text-foreground active:scale-95 disabled:cursor-not-allowed disabled:opacity-30"
+                @click="startRecording"
+              >
+                <Mic class="size-4" />
+              </button>
+
+              <!-- 发送按钮 -->
+              <button
                 type="button"
                 :disabled="sendDisabled"
-                class="flex h-11 w-11 items-center justify-center rounded-full border transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                class="flex size-8 items-center justify-center rounded-lg transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-30"
                 :class="sendDisabled
-                  ? 'border-border bg-muted text-muted-foreground'
-                  : 'border-primary bg-primary text-primary-foreground shadow-[0_16px_28px_-18px_hsl(var(--shadow-color)/0.45)] hover:-translate-y-0.5 hover:bg-primary/92'"
+                  ? 'bg-muted/60 text-muted-foreground/40'
+                  : 'bg-primary text-primary-foreground shadow-sm hover:brightness-110 active:scale-95'"
                 @click="submit"
               >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  class="-translate-y-0.5 translate-x-0.5 -rotate-45"
-                >
-                  <path d="m22 2-7 20-4-9-9-4Z" />
-                  <path d="M22 2 11 13" />
-                </svg>
-                </button>
-              </template>
-            </div>
+                <ArrowUp class="size-4" :stroke-width="2.5" />
+              </button>
+            </template>
           </div>
         </div>
       </div>
 
+      <!-- 错误提示 -->
       <div
         v-if="uploadError"
-        class="rounded-[calc(var(--radius)+4px)] border border-destructive/20 bg-destructive/6 px-3 py-2 text-xs text-destructive"
+        class="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive"
       >
         {{ uploadError }}
       </div>
-
       <div
         v-if="voiceError"
-        class="rounded-[calc(var(--radius)+4px)] border border-destructive/20 bg-destructive/6 px-3 py-2 text-xs text-destructive"
+        class="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive"
       >
         {{ voiceError }}
       </div>
 
-      <div class="flex flex-wrap items-center justify-between gap-2 px-1 text-[11px] text-muted-foreground">
-        <p>{{ footerHint }}</p>
-        <span v-if="isUploading" class="surface-chip surface-chip-strong">正在上传附件</span>
-        <span v-if="voiceSending" class="surface-chip surface-chip-strong">正在发送语音消息</span>
+      <!-- 状态提示：仅在上传/语音发送时显示 -->
+      <div v-if="isUploading || voiceSending" class="px-1 text-[11px] text-muted-foreground/60">
+        <span v-if="isUploading">正在上传附件…</span>
+        <span v-if="voiceSending">正在发送语音…</span>
       </div>
     </div>
   </div>

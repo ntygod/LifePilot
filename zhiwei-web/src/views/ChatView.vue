@@ -3,20 +3,15 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import {
   LibraryBig,
-  MessageSquareText,
-  Puzzle,
   Search,
   Settings2,
   SlidersHorizontal,
-  Sparkles,
   Square,
 } from 'lucide-vue-next'
 import { chatApi, llmProviderApi } from '@/api/client'
 import type { LlmProvider } from '@/api/client'
 import type { ChatAttachment, Message, SessionConfig } from '@/types'
-import MetricCard from '@/components/common/MetricCard.vue'
 import StatePanel from '@/components/common/StatePanel.vue'
-import PageContainer from '@/components/layout/PageContainer.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import ChatInput from '@/components/chat/ChatInput.vue'
@@ -83,9 +78,6 @@ const chatProviders = computed(() =>
     ),
   ),
 )
-
-const hasKnowledgeBases = computed(() => kbStore.list.length > 0)
-const hasSkills = computed(() => skillStore.skills.length > 0)
 
 const currentSession = computed(() => {
   if (!chatStore.activeSessionId) return null
@@ -169,46 +161,7 @@ const lastTraceTarget = computed(() => (
 ))
 
 const headerTitle = computed(() => currentSession.value?.title?.trim() || '新对话')
-const headerDescription = computed(() => {
-  if (chatStore.messages.length > 0) {
-    return `本次对话共有 ${chatStore.messages.length} 条消息，继续追问时会沿用已有上下文和最近设置。`
-  }
-  return '从一个问题、片段或待办开始，发送后会自动保留上下文。'
-})
-
 const contextLabel = computed(() => lastModelId.value || '默认模型')
-const skillLabel = computed(() => hasSkills.value ? `${skillStore.skills.length} 个可用` : '未启用')
-const knowledgeLabel = computed(() => hasKnowledgeBases.value ? `${kbStore.list.length} 个知识库` : '未挂载')
-const streamingLabel = computed(() => {
-  if (isStreaming.value) return reasoningStatusText.value || '正在生成回答'
-  return '待命'
-})
-const conversationStatusValue = computed(() => isStreaming.value ? '处理中' : '可继续')
-const conversationStatusHint = computed(() => (
-  isStreaming.value
-    ? (reasoningStatusText.value || '系统正在整理上下文并生成回答。')
-    : '上下文已经保留在当前会话里，可以继续追问。'
-))
-const messageSummaryHint = computed(() => (
-  chatStore.messages.length > 0
-    ? '当前会话已有内容沉淀，适合继续往前推进。'
-    : '从一句需求、一段资料或一个待办开始就可以。'
-))
-const resourceSummaryHint = computed(() => {
-  if (!hasSkills.value && !hasKnowledgeBases.value) return '还没挂载技能或知识库，先聊天也完全没问题。'
-  return '需要时可以在会话配置里切换技能和知识库。'
-})
-const traceSummaryValue = computed(() => lastAssistantMessage.value?.traceId ? '已记录轨迹' : '等待新消息')
-const traceSummaryHint = computed(() => (
-  lastToolsSummary.value.length > 0
-    ? `最近一轮调用工具 ${lastToolsSummary.value.length} 次，命中知识库 ${lastKbSources.value.length} 次。`
-    : '发送消息后，这里会展示最近一轮执行情况。'
-))
-const messageSearchHint = computed(() => (
-  hasMessageSearch.value
-    ? `当前关键词命中 ${matchedMessageCount.value} 条消息，方便快速回看上下文。`
-    : '可以按关键词回看当前会话里的结论、资料和历史提问。'
-))
 
 onMounted(async () => {
   const sessionId = route.params.sessionId as string | undefined
@@ -388,229 +341,189 @@ async function handleUpdateSessionTitle(title: string) {
   }
 }
 
+function togglePanel(panel: 'config' | 'sidebar' | 'debug') {
+  if (panel === 'config') {
+    showConfigPanel.value = !showConfigPanel.value
+    showSessionSidebar.value = false
+    showDebugDrawer.value = false
+  } else if (panel === 'sidebar') {
+    showSessionSidebar.value = !showSessionSidebar.value
+    showConfigPanel.value = false
+    showDebugDrawer.value = false
+  } else {
+    showDebugDrawer.value = !showDebugDrawer.value
+    showConfigPanel.value = false
+    showSessionSidebar.value = false
+  }
+}
+
 function closeInspectorPanels() {
   showSessionSidebar.value = false
   showDebugDrawer.value = false
+  showConfigPanel.value = false
 }
 </script>
 
 <template>
-  <div class="h-full overflow-hidden">
-    <PageContainer size="wide" class="flex h-full min-h-0 flex-col py-4 sm:py-6">
-      <div class="mx-auto flex h-full w-full max-w-[1460px] min-h-0 flex-col gap-4">
-        <header class="space-y-4 border-b border-border/70 pb-4">
-          <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-            <div class="max-w-4xl min-w-0 space-y-2">
-              <div class="surface-label">对话</div>
-              <h1 class="truncate text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-                {{ headerTitle }}
-              </h1>
-              <p class="text-sm leading-6 text-muted-foreground">
-                {{ headerDescription }}
-              </p>
-            </div>
-
-            <div class="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                :class="showConfigPanel && 'status-btn-active'"
-                @click="showConfigPanel = !showConfigPanel"
-              >
-                <Settings2 class="size-4" />
-                {{ showConfigPanel ? '收起配置' : '会话配置' }}
-              </Button>
-              <Button
-                v-if="chatStore.activeSessionId"
-                type="button"
-                variant="outline"
-                :class="showSessionSidebar && 'status-btn-active'"
-                @click="showSessionSidebar = !showSessionSidebar"
-              >
-                <LibraryBig class="size-4" />
-                {{ showSessionSidebar ? '收起信息' : '会话信息' }}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                :class="showDebugDrawer && 'status-btn-active'"
-                @click="showDebugDrawer = !showDebugDrawer"
-              >
-                <SlidersHorizontal class="size-4" />
-                {{ showDebugDrawer ? '收起调试' : '轨迹与调试' }}
-              </Button>
-              <Button v-if="isStreaming" type="button" variant="destructive" @click="abort">
-                <Square class="size-4" />
-                停止生成
-              </Button>
+  <div class="flex h-full flex-col overflow-hidden">
+    <!-- 头部：标题 + 操作按钮 + 搜索栏 -->
+    <header class="shrink-0 border-b border-border/60 bg-background px-4 py-3 sm:px-6">
+      <div class="mx-auto max-w-[1460px]">
+        <div class="flex items-center justify-between gap-4">
+          <div class="min-w-0">
+            <h1 class="truncate text-lg font-semibold text-foreground">{{ headerTitle }}</h1>
+            <div class="mt-0.5 flex items-center gap-2 text-sm text-muted-foreground">
+              <span>{{ chatStore.messages.length }} 条消息</span>
+              <span class="text-border">·</span>
+              <span>{{ contextLabel }}</span>
+              <span v-if="isStreaming" class="text-primary">{{ reasoningStatusText || '生成中' }}</span>
             </div>
           </div>
-
-          <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <MetricCard label="当前状态" :value="conversationStatusValue" :hint="conversationStatusHint">
-              <template #icon>
-                <Sparkles class="size-5" />
-              </template>
-              <span class="surface-chip" :class="isStreaming && 'surface-chip-strong'">
-                {{ streamingLabel }}
-              </span>
-            </MetricCard>
-
-            <MetricCard label="消息" :value="chatStore.messages.length" :hint="messageSummaryHint">
-              <template #icon>
-                <MessageSquareText class="size-5" />
-              </template>
-            </MetricCard>
-
-            <MetricCard label="模型与资源" :value="contextLabel" :hint="resourceSummaryHint">
-              <template #icon>
-                <Puzzle class="size-5" />
-              </template>
-              <div class="flex flex-wrap gap-2">
-                <span class="surface-chip">技能 {{ skillLabel }}</span>
-                <span class="surface-chip">知识库 {{ knowledgeLabel }}</span>
-              </div>
-            </MetricCard>
-
-            <MetricCard label="最近执行" :value="traceSummaryValue" :hint="traceSummaryHint">
-              <template #icon>
-                <LibraryBig class="size-5" />
-              </template>
-              <RouterLink
-                :to="lastTraceTarget"
-                class="inline-flex items-center gap-1 text-sm font-medium text-primary transition-colors hover:text-primary/80"
-              >
-                查看轨迹
-              </RouterLink>
-            </MetricCard>
-          </div>
-        </header>
-
-        <div class="flex min-h-0 flex-1 gap-4">
-          <section class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[calc(var(--radius)+2px)] border border-border/70 bg-card/92">
-            <div class="border-b border-border/70 px-4 py-4 sm:px-5">
-              <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <div class="relative w-full max-w-[24rem]">
-                  <Search class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    v-model="searchQuery"
-                    type="search"
-                    placeholder="搜索当前会话内容"
-                    class="pl-9"
-                  />
-                </div>
-
-                <div class="flex flex-wrap items-center gap-2">
-                  <RouterLink
-                    :to="lastTraceTarget"
-                    class="inline-flex h-9 items-center justify-center rounded-lg border border-border/70 bg-background/80 px-4 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent/75 hover:text-foreground"
-                  >
-                    查看轨迹
-                  </RouterLink>
-                  <Button
-                    v-if="chatStore.activeSessionId && chatStore.messages.length > 0"
-                    type="button"
-                    variant="ghost"
-                    @click="handleClearSession"
-                  >
-                    清空当前会话
-                  </Button>
-                </div>
-              </div>
-
-              <div class="mt-3 flex flex-wrap gap-2 text-xs">
-                <span class="filter-pill">工具调用 {{ lastToolsSummary.length }} 次</span>
-                <span class="filter-pill">知识库命中 {{ lastKbSources.length }} 次</span>
-                <span class="filter-pill">最近模型 {{ contextLabel }}</span>
-                <span v-if="hasMessageSearch" class="surface-chip surface-chip-strong">搜索命中 {{ matchedMessageCount }} 条</span>
-              </div>
-
-              <div class="mt-3 flex flex-col gap-2 rounded-[calc(var(--radius)+2px)] border border-dashed border-border/60 bg-background/50 px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
-                <p class="text-sm text-muted-foreground">
-                  {{ messageSearchHint }}
-                </p>
-                <button
-                  v-if="hasMessageSearch"
-                  type="button"
-                  class="inline-flex items-center gap-1 text-sm font-medium text-primary transition-colors hover:text-primary/80"
-                  @click="searchQuery = ''"
-                >
-                  清空搜索
-                </button>
-              </div>
-
-              <div v-if="showConfigPanel" class="mt-4">
-                <SessionConfigPanel
-                  :preferred-provider-id="activeSessionConfig.preferredProviderId"
-                  :temperature="activeSessionConfig.temperature"
-                  :max-tokens="activeSessionConfig.maxTokens"
-                  :knowledge-base-ids="activeSessionConfig.knowledgeBaseIds"
-                  :providers="chatProviders"
-                  :knowledge-bases="kbStore.list"
-                  @close="showConfigPanel = false"
-                  @update="handleConfigUpdate"
-                />
-              </div>
-            </div>
-
-            <div
-              ref="scrollContainer"
-              class="min-h-0 flex-1 overflow-y-auto bg-grid-soft scrollbar-thin scrollbar-track-transparent scrollbar-thumb-border"
+          <div class="flex items-center gap-2">
+            <Button
+              type="button" variant="outline" size="sm"
+              :class="showConfigPanel && 'status-btn-active'"
+              @click="togglePanel('config')"
             >
-              <div v-if="chatStore.messages.length === 0 && !isStreaming" class="flex h-full items-center justify-center p-6">
-                <EmptyState @send="handleEmptyStateSend" />
-              </div>
-
-              <div v-else class="mx-auto w-full max-w-4xl p-4 pb-16 sm:p-6 xl:p-8">
-                <MessageList
-                  :messages="chatStore.messages"
-                  :is-streaming="isStreaming"
-                  :streaming-content="chatStore.streamingContent"
-                  :streaming-reasoning-events="reasoningEvents"
-                  :streaming-a2ui-components="streamingA2uiComponents"
-                  :query="searchQuery"
-                  @retry="handleRetry"
-                  @like="handleLike"
-                  @dislike="handleDislike"
-                  @fork="handleFork"
-                  @regenerate="handleRegenerate"
-                  @copy="handleCopy"
-                />
-              </div>
-            </div>
-          </section>
-
-          <div
-            v-if="showSessionSidebar || showDebugDrawer"
-            class="fixed inset-0 z-40 bg-background/62 p-3 backdrop-blur-sm xl:static xl:z-auto xl:w-[320px] xl:bg-transparent xl:p-0 xl:backdrop-blur-0"
-            @click.self="closeInspectorPanels"
-          >
-            <div class="ml-auto flex h-full w-full max-w-[320px] flex-col gap-4 overflow-y-auto xl:h-auto xl:max-w-none xl:overflow-visible">
-              <SessionSidebar
-                v-if="showSessionSidebar && chatStore.activeSessionId"
-                :session="currentSession"
-                :knowledge-bases="kbStore.list"
-                :message-count="chatStore.messages.length"
-                @close="showSessionSidebar = false"
-                @update-title="handleUpdateSessionTitle"
-              />
-
-              <DebugDrawer
-                v-if="showDebugDrawer"
-                :token-usage="lastTokenUsage"
-                :model-id="lastModelId"
-                :prompt="lastPrompt"
-                :reasoning-events="reasoningEvents"
-                :tools-summary="lastToolsSummary"
-                :kb-sources="lastKbSources"
-                :trace-id="lastAssistantMessage?.traceId"
-                @close="showDebugDrawer = false"
-              />
-            </div>
+              <Settings2 class="size-4" />
+              配置
+            </Button>
+            <Button
+              v-if="chatStore.activeSessionId"
+              type="button" variant="outline" size="sm"
+              :class="showSessionSidebar && 'status-btn-active'"
+              @click="togglePanel('sidebar')"
+            >
+              <LibraryBig class="size-4" />
+              信息
+            </Button>
+            <Button
+              type="button" variant="outline" size="sm"
+              :class="showDebugDrawer && 'status-btn-active'"
+              @click="togglePanel('debug')"
+            >
+              <SlidersHorizontal class="size-4" />
+              调试
+            </Button>
+            <Button v-if="isStreaming" type="button" variant="destructive" size="sm" @click="abort">
+              <Square class="size-4" />
+              停止
+            </Button>
           </div>
         </div>
+        <!-- 搜索工具栏：搜索框 + pills + 操作合并为一行 -->
+        <div class="mt-2 flex items-center gap-2 border-t border-border/30 pt-2">
+          <div class="relative w-48 shrink-0">
+            <Search class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              v-model="searchQuery"
+              type="search"
+              placeholder="搜索消息…"
+              class="h-7 pl-8 text-xs focus-visible:ring-1"
+            />
+          </div>
+          <span class="surface-chip px-2 py-0.5 text-xs">工具 {{ lastToolsSummary.length }}</span>
+          <span class="surface-chip px-2 py-0.5 text-xs">知识库 {{ lastKbSources.length }}</span>
+          <span v-if="hasMessageSearch" class="surface-chip surface-chip-strong px-2 py-0.5 text-xs">命中 {{ matchedMessageCount }}</span>
+          <div class="ml-auto flex items-center gap-1.5">
+            <RouterLink
+              :to="lastTraceTarget"
+              class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+            >
+              轨迹
+            </RouterLink>
+            <Button
+              v-if="chatStore.activeSessionId && chatStore.messages.length > 0"
+              type="button" variant="ghost" size="sm" class="h-7 text-xs"
+              @click="handleClearSession"
+            >
+              清空
+            </Button>
+          </div>
+        </div>
+      </div>
+    </header>
 
-        <div v-if="showGlobalErrorPanel || isStreaming" class="space-y-3">
+    <!-- 中间：消息滚动区 -->
+    <div class="relative min-h-0 flex-1 overflow-hidden">
+      <div
+        ref="scrollContainer"
+        class="h-full overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-border"
+      >
+        <div v-if="chatStore.messages.length === 0 && !isStreaming" class="flex h-full items-center justify-center p-6">
+          <EmptyState @send="handleEmptyStateSend" />
+        </div>
+        <div v-else class="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 xl:px-8">
+          <MessageList
+            :messages="chatStore.messages"
+            :is-streaming="isStreaming"
+            :streaming-content="chatStore.streamingContent"
+            :streaming-reasoning-events="reasoningEvents"
+            :streaming-a2ui-components="streamingA2uiComponents"
+            :query="searchQuery"
+            @retry="handleRetry"
+            @like="handleLike"
+            @dislike="handleDislike"
+            @fork="handleFork"
+            @regenerate="handleRegenerate"
+            @copy="handleCopy"
+          />
+        </div>
+      </div>
+
+      <!-- 侧边栏浮层（覆盖在消息区右侧，不挤占布局） -->
+      <Transition
+        enter-active-class="transition-all duration-250 ease-out"
+        enter-from-class="opacity-0 translate-x-4"
+        enter-to-class="opacity-100 translate-x-0"
+        leave-active-class="transition-all duration-200 ease-in"
+        leave-from-class="opacity-100 translate-x-0"
+        leave-to-class="opacity-0 translate-x-4"
+      >
+        <div
+          v-if="showSessionSidebar || showDebugDrawer || showConfigPanel"
+          class="absolute inset-y-0 right-0 z-30 w-[320px] border-l border-border/60 bg-background/95 shadow-lg backdrop-blur-sm"
+        >
+          <div class="flex h-full flex-col gap-4 overflow-y-auto p-3">
+            <SessionConfigPanel
+              v-if="showConfigPanel"
+              :preferred-provider-id="activeSessionConfig.preferredProviderId"
+              :temperature="activeSessionConfig.temperature"
+              :max-tokens="activeSessionConfig.maxTokens"
+              :knowledge-base-ids="activeSessionConfig.knowledgeBaseIds"
+              :providers="chatProviders"
+              :knowledge-bases="kbStore.list"
+              @close="showConfigPanel = false"
+              @update="handleConfigUpdate"
+            />
+            <SessionSidebar
+              v-if="showSessionSidebar && chatStore.activeSessionId"
+              :session="currentSession"
+              :knowledge-bases="kbStore.list"
+              :message-count="chatStore.messages.length"
+              @close="showSessionSidebar = false"
+              @update-title="handleUpdateSessionTitle"
+            />
+            <DebugDrawer
+              v-if="showDebugDrawer"
+              :token-usage="lastTokenUsage"
+              :model-id="lastModelId"
+              :prompt="lastPrompt"
+              :reasoning-events="reasoningEvents"
+              :tools-summary="lastToolsSummary"
+              :kb-sources="lastKbSources"
+              :trace-id="lastAssistantMessage?.traceId"
+              @close="showDebugDrawer = false"
+            />
+          </div>
+        </div>
+      </Transition>
+    </div>
+
+    <!-- 底部固定：错误/流式状态 + 输入框 -->
+    <div class="shrink-0 border-t border-border/60 bg-background px-4 pb-3 pt-2 sm:px-6">
+      <div class="mx-auto max-w-[1460px]">
+        <div v-if="showGlobalErrorPanel || isStreaming" class="mb-2 space-y-2">
           <StatePanel
             v-if="showGlobalErrorPanel"
             title="本轮对话出现错误"
@@ -618,42 +531,32 @@ function closeInspectorPanels() {
             tone="danger"
           >
             <template #actions>
-              <Button type="button" variant="outline" @click="error = null">
+              <Button type="button" variant="outline" size="sm" @click="error = null">
                 关闭
               </Button>
-              <RouterLink
-                :to="{ name: 'traces' }"
-                class="inline-flex h-9 items-center justify-center rounded-lg border border-border/70 bg-background/80 px-4 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent/75 hover:text-foreground"
-              >
-                查看执行轨迹
-              </RouterLink>
             </template>
           </StatePanel>
-
           <StatePanel
             v-if="isStreaming"
             title="正在生成回答"
-            :description="reasoningStatusText || '系统正在整理上下文、推理步骤和最终回答。'"
+            :description="reasoningStatusText || '生成中'"
           >
             <template #actions>
-              <Button type="button" variant="destructive" @click="abort">
+              <Button type="button" variant="destructive" size="sm" @click="abort">
                 <Square class="size-4" />
-                停止生成
+                停止
               </Button>
             </template>
           </StatePanel>
         </div>
-
-        <div class="overflow-hidden rounded-[calc(var(--radius)+2px)] border border-border/70 bg-card/92">
-          <ChatInput :disabled="isStreaming" @send="handleSend" />
-        </div>
-
-        <!-- 工具确认对话框 -->
-        <ToolConfirmationDialog
-          :request="pendingToolConfirmation"
-          @resolved="pendingToolConfirmation = null"
-        />
+        <ChatInput :disabled="isStreaming" @send="handleSend" />
       </div>
-    </PageContainer>
+    </div>
+
+    <!-- 工具确认对话框 -->
+    <ToolConfirmationDialog
+      :request="pendingToolConfirmation"
+      @resolved="pendingToolConfirmation = null"
+    />
   </div>
 </template>

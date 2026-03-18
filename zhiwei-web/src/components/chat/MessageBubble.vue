@@ -348,7 +348,7 @@ const isCollapsible = computed(() =>
 
 <style scoped>
 .assistant-bubble {
-  border-left: 2px solid transparent;
-  border-image: linear-gradient(to bottom, hsl(var(--primary) / 0.3), transparent) 1;
+  border-left: 1.5px solid transparent;
+  border-image: linear-gradient(to bottom, hsl(var(--primary) / 0.22), transparent 70%) 1;
 }
 </style>

@@ -277,7 +277,8 @@ html[data-ui-density="compact"] {
   .app-shell {
     position: relative;
     display: flex;
-    min-height: 100vh;
+    height: 100vh;
+    max-height: 100vh;
     overflow: hidden;
     background: transparent;
   }
@@ -658,10 +659,14 @@ html[data-ui-density="compact"] {
   }
 
   .filter-pill:hover {
-    transform: none;
-    border-color: hsl(from var(--border) h s l / 0.56);
-    background: hsl(from var(--card) h s l / 0.72);
-    color: var(--muted-foreground);
+    border-color: hsl(from var(--primary) h s l / 0.32);
+    background: hsl(from var(--accent) h s l / 0.72);
+    color: var(--foreground);
+  }
+
+  .filter-pill:active {
+    transform: scale(0.96);
+    background: hsl(from var(--accent) h s l / 0.9);
   }
 
   .surface-chip {

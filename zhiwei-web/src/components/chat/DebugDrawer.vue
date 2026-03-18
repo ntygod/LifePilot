@@ -53,7 +53,6 @@ function toggle(key: keyof typeof sections.value) {
 <template>
   <InspectorRail
     title="对话详情"
-    description="查看本轮对话使用的模型、token和知识库命中情况。"
     @close="emit('close')"
   >
     <template #eyebrow>
@@ -61,32 +60,6 @@ function toggle(key: keyof typeof sections.value) {
     </template>
 
     <div class="space-y-4 text-sm">
-      <section class="grid gap-3">
-        <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/58 px-4 py-3">
-          <div class="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
-            <Cpu class="size-4 text-primary" />
-            模型与token
-          </div>
-          <p class="text-sm text-muted-foreground">{{ modelSummary }}</p>
-          <p class="mt-1 text-xs text-muted-foreground">{{ tokenSummary }}</p>
-        </div>
-
-        <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/58 px-4 py-3">
-          <div class="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
-            <Hammer class="size-4 text-primary" />
-            工具调用
-          </div>
-          <p class="text-sm text-muted-foreground">{{ toolSummary }}</p>
-        </div>
-
-        <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/58 px-4 py-3">
-          <div class="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
-            <Database class="size-4 text-primary" />
-            知识来源
-          </div>
-          <p class="text-sm text-muted-foreground">{{ knowledgeSummary }}</p>
-        </div>
-      </section>
 
       <section data-token-usage class="detail-card p-4">
         <button
@@ -241,9 +214,11 @@ function toggle(key: keyof typeof sections.value) {
     <template #footer>
       <RouterLink
         :to="traceId ? { name: 'traces', query: { id: traceId } } : { name: 'traces' }"
-        class="text-sm font-medium text-primary transition-colors hover:text-primary/80"
+        class="flex w-full items-center justify-center gap-2 rounded-lg border border-primary/20 bg-primary/8 px-4 py-2.5 text-sm font-medium text-primary transition-all hover:bg-primary/15 active:scale-[0.98]"
       >
-        {{ traceId ? '前往轨迹详情' : '前往轨迹列表' }}
+        <Route class="size-4" />
+        {{ traceId ? '查看轨迹详情' : '浏览轨迹列表' }}
+        <ChevronRight class="size-4" />
       </RouterLink>
     </template>
   </InspectorRail>

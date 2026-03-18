@@ -68,7 +68,7 @@ function closeSidebar() {
     <Sidebar :is-mobile="isMobile" :is-open="sidebarOpen" @close="closeSidebar" />
 
     <div class="app-main-surface">
-      <main class="relative flex-1 overflow-hidden">
+      <main class="relative min-h-0 flex-1 overflow-hidden">
         <router-view v-slot="{ Component }">
           <Transition name="page-slide" mode="out-in">
             <component :is="Component" />
