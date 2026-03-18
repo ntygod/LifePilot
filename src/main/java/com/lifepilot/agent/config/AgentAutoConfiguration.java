@@ -134,20 +134,24 @@ public class AgentAutoConfiguration {
                                @Autowired(required = false) A2uiProperties a2uiProperties,
                                @Autowired(required = false) com.lifepilot.interaction.web.repository.AttachmentRepository attachmentRepository,
                                @Autowired(required = false) SuspendStore suspendStore,
-                               @Autowired(required = false) org.springframework.context.ApplicationEventPublisher eventPublisher) {
-        log.info("Agent 引擎初始化完成（ReAct 架构，追踪{}，记忆系统{}，实时提取{}，多模态{}，A2UI{}，挂起-恢复{}）",
+                               @Autowired(required = false) org.springframework.context.ApplicationEventPublisher eventPublisher,
+                               @Autowired(required = false) com.lifepilot.memory.procedural.ProceduralMemory proceduralMemory,
+                               @Autowired(required = false) com.lifepilot.memory.procedural.IntentMatcher intentMatcher) {
+        log.info("Agent 引擎初始化完成（ReAct 架构，追踪{}，记忆系统{}，实时提取{}，多模态{}，A2UI{}，挂起-恢复{}，L4反馈{}）",
                 traceRecorder != null ? "已启用" : "未启用",
                 workingMemory != null ? "已启用" : "未启用",
                 realtimeExtractor != null ? "已启用" : "未启用",
                 multimodalRouter != null ? "已启用" : "未启用（纯文本模式）",
                 a2uiProperties != null && a2uiProperties.enabled() ? "已启用" : "未启用",
-                suspendStore != null ? "已启用" : "未启用");
+                suspendStore != null ? "已启用" : "未启用",
+                proceduralMemory != null && intentMatcher != null ? "已启用" : "未启用");
         return new ReactAgentLoop(contextAssembler, llmRouter, traceRecorder, objectMapper,
                 sessionManager, agentToolProvider, config, promptRegistry,
                 multimodalRouter, mediaDataExtractor, mediaValidator, mediaProcessor,
                 workingMemory, conversationHistoryStore,
                 conversationViewService, realtimeExtractor, injectionRecordRepository,
                 sessionKnowledgeBaseRepository, knowledgeBaseRepository, a2uiProperties,
-                attachmentRepository, suspendStore, eventPublisher);
+                attachmentRepository, suspendStore, eventPublisher,
+                proceduralMemory, intentMatcher);
     }
 }
