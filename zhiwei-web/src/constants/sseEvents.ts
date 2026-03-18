@@ -35,6 +35,8 @@ export const SSE_EVENT_TYPES = {
   WORKFLOW_STEP_LOG_CREATED: 'workflow-step-log-created',
 
   TOOL_CONFIRMATION_REQUEST: 'tool-confirmation-request',
+
+  TRANSCRIPTION: 'transcription',
 } as const
 
 export type SseEventType = typeof SSE_EVENT_TYPES[keyof typeof SSE_EVENT_TYPES]
