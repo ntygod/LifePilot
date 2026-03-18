@@ -62,6 +62,8 @@ public class ContextAssembler {
     @Nullable private final com.lifepilot.memory.config.MemoryProperties memoryProperties;
     // L4 程序记忆：偏好规则查询，可选注入
     @Nullable private final ProceduralMemory proceduralMemory;
+    // 效果追踪器：记录经验注入事件，可选注入
+    @Nullable private final com.lifepilot.memory.experience.EffectivenessTracker effectivenessTracker;
 
     /** 基础版构造器（记忆字段为 null）。 */
     public ContextAssembler(AgentConfigProperties config, PromptRegistry promptRegistry) {
@@ -74,6 +76,7 @@ public class ContextAssembler {
         this.passiveNotificationQueue = null;
         this.memoryProperties = null;
         this.proceduralMemory = null;
+        this.effectivenessTracker = null;
     }
 
     /** 完整版构造器（注入记忆系统依赖）。 */
@@ -85,7 +88,8 @@ public class ContextAssembler {
                             @Nullable PassiveNotificationQueue passiveNotificationQueue,
                             @Nullable com.lifepilot.memory.config.MemoryProperties memoryProperties,
                             @Nullable ProceduralMemory proceduralMemory,
-                            PromptRegistry promptRegistry) {
+                            PromptRegistry promptRegistry,
+                            @Nullable com.lifepilot.memory.experience.EffectivenessTracker effectivenessTracker) {
         this.config = config;
         this.workingMemory = workingMemory;
         this.tokenBudgetAllocator = tokenBudgetAllocator;
@@ -95,6 +99,7 @@ public class ContextAssembler {
         this.passiveNotificationQueue = passiveNotificationQueue;
         this.memoryProperties = memoryProperties;
         this.proceduralMemory = proceduralMemory;
+        this.effectivenessTracker = effectivenessTracker;
     }
 
     /** 判断是否为完整版模式。 */
@@ -154,6 +159,18 @@ public class ContextAssembler {
             // 7a. 检索经验
             var experiences = safeRetrieveExperiences(state.goal());
             String experienceSection = formatExperienceSection(experiences);
+
+            // 7b. 记录经验注入（新增）
+            if (effectivenessTracker != null && !experiences.isEmpty()) {
+                try {
+                    var injectedIds = experiences.stream()
+                            .map(com.lifepilot.memory.semantic.TemporalEntity::id).toList();
+                    // traceId 从 state 获取
+                    effectivenessTracker.recordInjection(state.traceId(), injectedIds);
+                } catch (Exception e) {
+                    log.warn("经验注入追踪失败: error={}", e.getMessage());
+                }
+            }
 
             String userPrompt = buildEnhancedUserPrompt(state, List.of(), List.of(),
                     List.of(), truncatedSlots, userProfile, experienceSection);
@@ -730,6 +747,21 @@ public class ContextAssembler {
             var experiences = semanticMemory.findCurrentByType(
                     com.lifepilot.memory.semantic.EntityType.EXPERIENCE);
             if (experiences.isEmpty()) return List.of();
+
+            // executionContext 过滤
+            if (memoryProperties != null) {
+                var isolationConfig = memoryProperties.getExperience().getIsolation();
+                if (!isolationConfig.isCrossContextRetrieval()) {
+                    experiences = experiences.stream()
+                            .filter(e -> {
+                                var ctx = e.properties().get("executionContext");
+                                // null 视为 MAIN_AGENT（向后兼容）
+                                return ctx == null
+                                        || "MAIN_AGENT".equals(ctx.toString());
+                            })
+                            .toList();
+                }
+            }
 
             // 按 importanceScore 降序排序，eval 标签匹配的经验优先
             String evalPrefix = config.getEvalTagPrefix();
