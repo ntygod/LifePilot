@@ -13,7 +13,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * UserProfileToolExecutor 单元测试。
+ * UserProfileToolExecutor 单元测试�?
  *
  * @author zsg
  * @since 2026-03-08
@@ -31,7 +31,7 @@ class UserProfileToolExecutorTest {
 
     @Test
     void execute_返回用户偏好信息() {
-        ToolInput input = new ToolInput("builtin.env.user-profile", Map.of(), JsonSchema.empty(), null);
+        ToolInput input = new ToolInput("builtin.env.user-profile", Map.of(), JsonSchema.empty(), null, null);
 
         ToolResult result = executor.execute(input);
 
@@ -40,9 +40,9 @@ class UserProfileToolExecutorTest {
     }
 
     @Test
-    void execute_时区为空时使用系统时区() {
+    void execute_时区为空时使用系统时�?) {
         properties.getInfra().getUserProfile().setTimezone("");
-        ToolInput input = new ToolInput("builtin.env.user-profile", Map.of(), JsonSchema.empty(), null);
+        ToolInput input = new ToolInput("builtin.env.user-profile", Map.of(), JsonSchema.empty(), null, null);
 
         ToolResult result = executor.execute(input);
 
@@ -51,9 +51,9 @@ class UserProfileToolExecutorTest {
     }
 
     @Test
-    void execute_返回配置的时区() {
+    void execute_返回配置的时�?) {
         properties.getInfra().getUserProfile().setTimezone("Europe/London");
-        ToolInput input = new ToolInput("builtin.env.user-profile", Map.of(), JsonSchema.empty(), null);
+        ToolInput input = new ToolInput("builtin.env.user-profile", Map.of(), JsonSchema.empty(), null, null);
 
         ToolResult result = executor.execute(input);
 
@@ -64,7 +64,7 @@ class UserProfileToolExecutorTest {
     @Test
     void execute_返回正确的cacheTtl() {
         properties.getInfra().getUserProfile().setCacheTtlSeconds(600);
-        ToolInput input = new ToolInput("builtin.env.user-profile", Map.of(), JsonSchema.empty(), null);
+        ToolInput input = new ToolInput("builtin.env.user-profile", Map.of(), JsonSchema.empty(), null, null);
 
         ToolResult result = executor.execute(input);
 

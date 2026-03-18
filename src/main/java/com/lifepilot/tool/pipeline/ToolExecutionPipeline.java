@@ -105,7 +105,7 @@ public class ToolExecutionPipeline implements java.io.Closeable {
         }
 
         // 2. 参数校验
-        ToolInput input = new ToolInput(toolId, parameters, tool.inputSchema(), idempotencyKey);
+        ToolInput input = new ToolInput(toolId, parameters, tool.inputSchema(), idempotencyKey, null);
         ValidationResult validation = input.validate();
         if (!validation.isValid()) {
             String errorMsg = ((ValidationResult.Failed) validation).formatForLlm();

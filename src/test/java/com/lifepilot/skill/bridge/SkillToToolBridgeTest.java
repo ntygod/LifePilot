@@ -27,10 +27,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * {@link SkillToToolBridge} 单元测试。
- *
- * <p>覆盖场景：list_skills 返回摘要、activate_skill 激活成功、
- * activate_skill 激活失败（SkillActivationException）、未知 action 返回错误、缺少 skill_id 返回错误。</p>
+ * {@link SkillToToolBridge} 单元测试�? *
+ * <p>覆盖场景：list_skills 返回摘要、activate_skill 激活成功�? * activate_skill 激活失败（SkillActivationException）、未�?action 返回错误、缺�?skill_id 返回错误�?/p>
  *
  * @author zsg
  * @since 2026-03-07
@@ -42,7 +40,7 @@ class SkillToToolBridgeTest {
     private CapabilityAggregator mockCapabilityAggregator;
     private SkillToToolBridge bridge;
 
-    /** 注册后捕获的 skills 工具。 */
+    /** 注册后捕获的 skills 工具�?*/
     private BuiltinTool skillsTool;
 
     @BeforeEach
@@ -52,8 +50,7 @@ class SkillToToolBridgeTest {
         mockCapabilityAggregator = mock(CapabilityAggregator.class);
         bridge = new SkillToToolBridge(capturingToolRegistry, stubActivator, mockCapabilityAggregator);
 
-        // 注册 skills 工具并捕获
-        bridge.registerSkillsTool();
+        // 注册 skills 工具并捕�?        bridge.registerSkillsTool();
         skillsTool = capturingToolRegistry.capturedTool;
         assertThat(skillsTool).isNotNull();
         assertThat(skillsTool.id()).isEqualTo("skills");
@@ -89,33 +86,33 @@ class SkillToToolBridgeTest {
         assertThat(skills).isEmpty();
     }
 
-    // ── activate_skill 激活成功 ──
+    // ── activate_skill 激活成�?──
 
     @Test
     void activate_skill_激活成功返回指令和建议工具() {
         stubActivator.setActivation(new SkillActivation(
-                "writing", "你是一个写作助手。", List.of("search", "web_browse")));
+                "writing", "你是一个写作助手�?, List.of("search", "web_browse")));
 
         ToolResult result = executeAction("activate_skill", Map.of("skill_id", "writing"));
 
         assertThat(result.ok()).isTrue();
         assertThat(result.data().get("skill_id")).isEqualTo("writing");
-        assertThat(result.data().get("instructions")).isEqualTo("你是一个写作助手。");
+        assertThat(result.data().get("instructions")).isEqualTo("你是一个写作助手�?);
         @SuppressWarnings("unchecked")
         List<String> tools = (List<String>) result.data().get("suggested_tools");
         assertThat(tools).containsExactly("search", "web_browse");
     }
 
-    // ── activate_skill 激活失败 ──
+    // ── activate_skill 激活失�?──
 
     @Test
-    void activate_skill_Skill不存在返回错误() {
-        stubActivator.setException(new SkillActivationException("Skill 不存在: unknown"));
+    void activate_skill_Skill不存在返回错�?) {
+        stubActivator.setException(new SkillActivationException("Skill 不存�? unknown"));
 
         ToolResult result = executeAction("activate_skill", Map.of("skill_id", "unknown"));
 
         assertThat(result.ok()).isFalse();
-        assertThat(result.error()).contains("Skill 不存在或无法激活");
+        assertThat(result.error()).contains("Skill 不存在或无法激�?);
         assertThat(result.error()).contains("unknown");
     }
 
@@ -143,20 +140,18 @@ class SkillToToolBridgeTest {
     // ── 辅助方法 ──
 
     /**
-     * 构造 ToolInput 并通过捕获的 skills 工具执行。
-     */
+     * 构�?ToolInput 并通过捕获�?skills 工具执行�?     */
     private ToolResult executeAction(String action, Map<String, Object> extraParams) {
         var params = new java.util.HashMap<>(extraParams);
         params.put("action", action);
-        ToolInput input = new ToolInput("skills", params, JsonSchema.empty(), null);
+        ToolInput input = new ToolInput("skills", params, JsonSchema.empty(), null, null);
         return skillsTool.execute(input);
     }
 
-    // ── Stub / Capture 内部类 ──
+    // ── Stub / Capture 内部�?──
 
     /**
-     * 捕获注册工具的 DynamicToolRegistry — 仅记录 registerBuiltinTool 调用。
-     */
+     * 捕获注册工具�?DynamicToolRegistry �?仅记�?registerBuiltinTool 调用�?     */
     private static class CapturingToolRegistry extends DynamicToolRegistry {
 
         BuiltinTool capturedTool;
@@ -174,8 +169,7 @@ class SkillToToolBridgeTest {
     }
 
     /**
-     * 简易 SkillActivator 桩 — 可配置返回激活结果或抛出异常。
-     */
+     * 简�?SkillActivator �?�?可配置返回激活结果或抛出异常�?     */
     private static class StubSkillActivator extends SkillActivator {
 
         private SkillActivation activation;
@@ -205,8 +199,7 @@ class SkillToToolBridgeTest {
     }
 
     /**
-     * 空操作 GuardrailEngine — 满足 DynamicToolRegistry 构造依赖。
-     */
+     * 空操�?GuardrailEngine �?满足 DynamicToolRegistry 构造依赖�?     */
     private static class NoOpGuardrailEngine extends GuardrailEngine {
 
         NoOpGuardrailEngine() {
@@ -215,23 +208,19 @@ class SkillToToolBridgeTest {
 
         @Override
         public void addAllowedTools(List<String> toolIds) {
-            // 空操作
-        }
+            // 空操�?        }
 
         @Override
         public void removeAllowedTools(List<String> toolIds) {
-            // 空操作
-        }
+            // 空操�?        }
     }
 
     /**
-     * 空操作事件发布器。
-     */
+     * 空操作事件发布器�?     */
     private static class NoOpEventPublisher implements ApplicationEventPublisher {
 
         @Override
         public void publishEvent(@NonNull Object event) {
-            // 空操作
-        }
+            // 空操�?        }
     }
 }

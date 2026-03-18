@@ -19,7 +19,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * 文件系统工具单元测试 — 含路径安全拒绝、原子写入、大文件截断场景。
+ * 文件系统工具单元测试 �?含路径安全拒绝、原子写入、大文件截断场景�?
  *
  * @author zsg
  * @since 2026-03-08
@@ -34,7 +34,7 @@ class FileToolExecutorTest {
     @BeforeEach
     void setUp() {
         properties = new MetaProperties();
-        // 将 tempDir 加入白名单，使测试路径可访问
+        // �?tempDir 加入白名单，使测试路径可访问
         properties.getInfra().getFile().setAllowedDirectories(
                 List.of(tempDir.toAbsolutePath().toString()));
     }
@@ -54,7 +54,7 @@ class FileToolExecutorTest {
         }
 
         @Test
-        void check_白名单外路径被拒绝() {
+        void check_白名单外路径被拒�?) {
             var checker = new PathSecurityChecker(properties.getInfra().getFile());
             var result = checker.check(Path.of("/some/other/path"));
             assertThat(result).isPresent();
@@ -63,7 +63,7 @@ class FileToolExecutorTest {
 
         @Test
         void check_黑名单路径被拒绝() {
-            // 配置白名单为空（默认用户 home），黑名单包含 tempDir
+            // 配置白名单为空（默认用户 home），黑名单包�?tempDir
             properties.getInfra().getFile().setAllowedDirectories(List.of());
             properties.getInfra().getFile().setDeniedDirectories(
                     List.of(tempDir.toAbsolutePath().toString()));
@@ -71,11 +71,11 @@ class FileToolExecutorTest {
 
             var result = checker.check(tempDir.resolve("test.txt"));
             assertThat(result).isPresent();
-            assertThat(result.get()).contains("黑名单");
+            assertThat(result.get()).contains("黑名�?);
         }
 
         @Test
-        void checkForWrite_不存在文件路径通过安全检查() {
+        void checkForWrite_不存在文件路径通过安全检�?) {
             var checker = new PathSecurityChecker(properties.getInfra().getFile());
             var result = checker.checkForWrite(tempDir.resolve("new-file.txt"));
             assertThat(result).isEmpty();
@@ -108,7 +108,7 @@ class FileToolExecutorTest {
         }
 
         @Test
-        void execute_读取普通文件成功() throws IOException {
+        void execute_读取普通文件成�?) throws IOException {
             Path file = tempDir.resolve("hello.txt");
             Files.writeString(file, "Hello, World!");
 
@@ -122,7 +122,7 @@ class FileToolExecutorTest {
 
         @Test
         void execute_大文件被截断() throws IOException {
-            // 设置极小的 maxReadSize
+            // 设置极小�?maxReadSize
             properties.getInfra().getFile().setMaxReadSize(10);
             executor = new FileReadToolExecutor(properties);
 
@@ -134,16 +134,16 @@ class FileToolExecutorTest {
             assertThat(result.ok()).isTrue();
             assertThat((boolean) result.data().get("truncated")).isTrue();
             String content = (String) result.data().get("content");
-            assertThat(content).contains("文件已截断");
+            assertThat(content).contains("文件已截�?);
         }
 
         @Test
-        void execute_文件不存在返回错误() {
+        void execute_文件不存在返回错�?) {
             ToolResult result = executor.execute(buildInput(Map.of(
                     "path", tempDir.resolve("nonexistent.txt").toString())));
 
             assertThat(result.ok()).isFalse();
-            assertThat(result.error()).contains("文件不存在");
+            assertThat(result.error()).contains("文件不存�?);
         }
 
         @Test
@@ -167,7 +167,7 @@ class FileToolExecutorTest {
             ToolResult result = executor.execute(buildInput(Map.of("path", tempDir.toString())));
 
             assertThat(result.ok()).isFalse();
-            assertThat(result.error()).contains("不是普通文件");
+            assertThat(result.error()).contains("不是普通文�?);
         }
     }
 
@@ -211,7 +211,7 @@ class FileToolExecutorTest {
         }
 
         @Test
-        void execute_自动创建父目录() {
+        void execute_自动创建父目�?) {
             Path file = tempDir.resolve("sub/dir/file.txt");
 
             ToolResult result = executor.execute(buildInput(Map.of(
@@ -304,12 +304,12 @@ class FileToolExecutorTest {
         }
 
         @Test
-        void execute_目录不存在返回错误() {
+        void execute_目录不存在返回错�?) {
             ToolResult result = executor.execute(buildInput(Map.of(
                     "path", tempDir.resolve("nonexistent").toString())));
 
             assertThat(result.ok()).isFalse();
-            assertThat(result.error()).contains("目录不存在");
+            assertThat(result.error()).contains("目录不存�?);
         }
 
         @Test
@@ -370,7 +370,7 @@ class FileToolExecutorTest {
         @Test
         @SuppressWarnings("unchecked")
         void execute_maxResults限制() throws IOException {
-            // 创建包含多行匹配的文件
+            // 创建包含多行匹配的文�?
             StringBuilder sb = new StringBuilder();
             for (int i = 0; i < 10; i++) {
                 sb.append("match line ").append(i).append("\n");
@@ -413,6 +413,6 @@ class FileToolExecutorTest {
     // ─────────────────────────────────────────────
 
     private ToolInput buildInput(Map<String, Object> params) {
-        return new ToolInput("builtin.file.test", params, JsonSchema.empty(), null);
+        return new ToolInput("builtin.file.test", params, JsonSchema.empty(), null, null);
     }
 }

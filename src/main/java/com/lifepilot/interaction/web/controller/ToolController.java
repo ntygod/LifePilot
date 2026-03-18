@@ -155,7 +155,7 @@ public class ToolController {
                         // 构建 ToolInput
                         @SuppressWarnings("unchecked")
                         Map<String, Object> arguments = (Map<String, Object>) request.getOrDefault("arguments", Map.of());
-                        ToolInput input = new ToolInput(tool.id(), arguments, tool.inputSchema(), null);
+                        ToolInput input = new ToolInput(tool.id(), arguments, tool.inputSchema(), null, null);
 
                         // 执行工具
                         ToolResult result = tool.execute(input);
