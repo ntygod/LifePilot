@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Bot, FileText } from 'lucide-vue-next'
+import { Bot, FileText, Mic } from 'lucide-vue-next'
 import type { A2uiComponent, Message, ReasoningEvent } from '@/types'
 import A2uiRenderer from '@/components/a2ui/A2uiRenderer.vue'
 import {
@@ -48,7 +48,11 @@ const imageAttachments = computed(() =>
 )
 
 const fileAttachments = computed(() =>
-  props.message.attachments?.filter(attachment => !attachment.isImage) ?? [],
+  props.message.attachments?.filter(attachment => !attachment.isImage && !attachment.type?.startsWith('audio/')) ?? [],
+)
+
+const audioAttachments = computed(() =>
+  props.message.attachments?.filter(attachment => attachment.type?.startsWith('audio/')) ?? [],
 )
 
 const kbSources = computed(() =>
@@ -241,6 +245,19 @@ const isCollapsible = computed(() =>
               </button>
             </div>
 
+            <!-- 音频附件内联播放器 -->
+            <div v-if="audioAttachments.length > 0" class="mt-3 flex flex-col gap-sm">
+              <div
+                v-for="attachment in audioAttachments"
+                :key="attachment.fileId"
+                class="list-card flex items-center gap-2 px-3 py-2 text-xs text-foreground"
+              >
+                <Mic class="size-3.5 shrink-0 text-muted-foreground" />
+                <span class="shrink-0 text-muted-foreground">语音</span>
+                <audio :src="attachment.url" controls class="h-8 w-full min-w-0" />
+              </div>
+            </div>
+
             <div v-if="fileAttachments.length > 0" class="mt-3 flex flex-col gap-sm">
               <div
                 v-for="attachment in fileAttachments"
@@ -262,7 +279,6 @@ const isCollapsible = computed(() =>
               >
                 当前浏览器不支持视频播放
               </video>
-              <audio v-else-if="attachment.type?.startsWith('audio/')" :src="attachment.url" controls class="mt-1 w-full" />
               <a
                 v-else
                 :href="attachment.url"
