@@ -102,6 +102,9 @@ public class MemoryProperties {
     /** 对话压缩配置。 */
     private Compression compression = new Compression();
 
+    /** Agentic Tool 配置 — 控制记忆 tool 的默认检索参数。 */
+    private AgenticTool agenticTool = new AgenticTool();
+
     public TokenBudget getTokenBudget() { return tokenBudget; }
     public void setTokenBudget(TokenBudget tokenBudget) { this.tokenBudget = tokenBudget; }
 
@@ -128,6 +131,9 @@ public class MemoryProperties {
 
     public Compression getCompression() { return compression; }
     public void setCompression(Compression compression) { this.compression = compression; }
+
+    public AgenticTool getAgenticTool() { return agenticTool; }
+    public void setAgenticTool(AgenticTool agenticTool) { this.agenticTool = agenticTool; }
 
     /**
      * Token 预算分配配置 — 控制上下文窗口四区域的预算比例和场景切换阈值。
@@ -682,5 +688,24 @@ public static class Retrieval {
 
         public int getWindowOverlap() { return windowOverlap; }
         public void setWindowOverlap(int windowOverlap) { this.windowOverlap = windowOverlap; }
+    }
+
+    /**
+     * Agentic Tool 配置 — 控制记忆 tool 的默认检索参数。
+     *
+     * @author zsg
+     * @since 2026-03-18
+     */
+    public static class AgenticTool {
+        /** 知识实体 / 跨会话检索默认返回数量。 */
+        private int defaultTopK = 10;
+        /** 知识库文档检索默认返回数量。 */
+        private int docsDefaultTopK = 5;
+
+        public int getDefaultTopK() { return defaultTopK; }
+        public void setDefaultTopK(int defaultTopK) { this.defaultTopK = defaultTopK; }
+
+        public int getDocsDefaultTopK() { return docsDefaultTopK; }
+        public void setDocsDefaultTopK(int docsDefaultTopK) { this.docsDefaultTopK = docsDefaultTopK; }
     }
 }

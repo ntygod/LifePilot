@@ -75,7 +75,23 @@ public class ToolExecutionPipeline implements java.io.Closeable {
      */
     public ToolResult execute(String toolId, Map<String, Object> parameters,
                               String traceId, @Nullable String idempotencyKey) {
-        return execute(toolId, parameters, traceId, idempotencyKey, null);
+        return execute(toolId, parameters, traceId, idempotencyKey, null, null);
+    }
+
+    /**
+     * 执行工具调用（无 context）— 便捷重载。
+     *
+     * @param toolId 工具 ID
+     * @param parameters 调用参数
+     * @param traceId 轨迹 ID（用于日志关联）
+     * @param idempotencyKey 幂等键（可选）
+     * @param streamId SSE 流标识（可选）
+     * @return 结构化执行结果
+     */
+    public ToolResult execute(String toolId, Map<String, Object> parameters,
+                              String traceId, @Nullable String idempotencyKey,
+                              @Nullable String streamId) {
+        return execute(toolId, parameters, traceId, idempotencyKey, streamId, null);
     }
 
     /**
@@ -88,11 +104,13 @@ public class ToolExecutionPipeline implements java.io.Closeable {
      * @param traceId 轨迹 ID（用于日志关联）
      * @param idempotencyKey 幂等键（可选）
      * @param streamId SSE 流标识（用于精确推送确认请求，可选）
+     * @param context 请求级上下文（传递 sessionId 等非 LLM 参数，可选）
      * @return 结构化执行结果
      */
     public ToolResult execute(String toolId, Map<String, Object> parameters,
                               String traceId, @Nullable String idempotencyKey,
-                              @Nullable String streamId) {
+                              @Nullable String streamId,
+                              @Nullable Map<String, Object> context) {
         Instant start = Instant.now();
         log.debug("管线开始: toolId={}, traceId={}, params={}", toolId, traceId, parameters);
 
@@ -105,7 +123,7 @@ public class ToolExecutionPipeline implements java.io.Closeable {
         }
 
         // 2. 参数校验
-        ToolInput input = new ToolInput(toolId, parameters, tool.inputSchema(), idempotencyKey);
+        ToolInput input = new ToolInput(toolId, parameters, tool.inputSchema(), idempotencyKey, context);
         ValidationResult validation = input.validate();
         if (!validation.isValid()) {
             String errorMsg = ((ValidationResult.Failed) validation).formatForLlm();

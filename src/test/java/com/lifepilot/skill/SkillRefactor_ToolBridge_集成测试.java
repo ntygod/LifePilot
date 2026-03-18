@@ -31,11 +31,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * Skill 系统重构 — SkillToToolBridge 跨模块集成测试。
- *
- * <p>验证 skills 工具注册到 DynamicToolRegistry、list_skills 和 activate_skill 端到端流程。
- * 使用真实 SkillRegistry + SkillActivator + SkillToToolBridge + DynamicToolRegistry，
- * Mock 外部依赖（LlmRouter、GuardrailEngine）。</p>
+ * Skill 系统重构 �?SkillToToolBridge 跨模块集成测试�? *
+ * <p>验证 skills 工具注册�?DynamicToolRegistry、list_skills �?activate_skill 端到端流程�? * 使用真实 SkillRegistry + SkillActivator + SkillToToolBridge + DynamicToolRegistry�? * Mock 外部依赖（LlmRouter、GuardrailEngine）�?/p>
  *
  * @author zsg
  * @since 2026-03-08
@@ -94,17 +91,16 @@ class SkillRefactor_ToolBridge_集成测试 {
     }
 
     // ─────────────────────────────────────────────
-    //  list_skills 端到端
-    // ─────────────────────────────────────────────
+    //  list_skills 端到�?    // ─────────────────────────────────────────────
 
     @Test
     @SuppressWarnings("unchecked")
-    void listSkills_返回已注册Skill的摘要() {
+    void listSkills_返回已注册Skill的摘�?) {
         // 注册测试 Skill
         registerTestSkill("todo", "待办管理", "管理待办事项");
         registerTestSkill("schedule", "日程管理", "管理日程安排");
 
-        // 配置 CapabilityAggregator 返回对应的 CapabilityInfo
+        // 配置 CapabilityAggregator 返回对应�?CapabilityInfo
         when(mockCapabilityAggregator.filterByType("skill")).thenReturn(List.of(
                 new CapabilityInfo("todo", "待办管理", "管理待办事项", "builtin", "active", "skill"),
                 new CapabilityInfo("schedule", "日程管理", "管理日程安排", "builtin", "active", "skill")
@@ -116,7 +112,7 @@ class SkillRefactor_ToolBridge_集成测试 {
         // 调用 list_skills
         ToolInput input = new ToolInput("skills",
                 Map.of("action", "list_skills"),
-                JsonSchema.empty(), null);
+                JsonSchema.empty(), null, null);
         ToolResult result = toolRegistry.resolve("skills").get().execute(input);
 
         assertThat(result.ok()).isTrue();
@@ -128,14 +124,14 @@ class SkillRefactor_ToolBridge_集成测试 {
 
     @Test
     @SuppressWarnings("unchecked")
-    void listSkills_无Skill时_返回空列表() {
+    void listSkills_无Skill时_返回空列�?) {
         when(mockCapabilityAggregator.filterByType("skill")).thenReturn(List.of());
 
         skillToToolBridge.registerSkillsTool();
 
         ToolInput input = new ToolInput("skills",
                 Map.of("action", "list_skills"),
-                JsonSchema.empty(), null);
+                JsonSchema.empty(), null, null);
         ToolResult result = toolRegistry.resolve("skills").get().execute(input);
 
         assertThat(result.ok()).isTrue();
@@ -144,26 +140,25 @@ class SkillRefactor_ToolBridge_集成测试 {
     }
 
     // ─────────────────────────────────────────────
-    //  activate_skill 端到端
-    // ─────────────────────────────────────────────
+    //  activate_skill 端到�?    // ─────────────────────────────────────────────
 
     @Test
     @SuppressWarnings("unchecked")
     void activateSkill_激活成功_返回instructions和suggestedTools() {
         registerTestSkill("todo", "待办管理", "管理待办事项",
-                "你是待办管理助手，帮助用户管理待办事项。",
+                "你是待办管理助手，帮助用户管理待办事项�?,
                 List.of("builtin.todo.create", "builtin.todo.list"));
 
         skillToToolBridge.registerSkillsTool();
 
         ToolInput input = new ToolInput("skills",
                 Map.of("action", "activate_skill", "skill_id", "todo"),
-                JsonSchema.empty(), null);
+                JsonSchema.empty(), null, null);
         ToolResult result = toolRegistry.resolve("skills").get().execute(input);
 
         assertThat(result.ok()).isTrue();
         assertThat(result.data().get("skill_id")).isEqualTo("todo");
-        assertThat(result.data().get("instructions")).isEqualTo("你是待办管理助手，帮助用户管理待办事项。");
+        assertThat(result.data().get("instructions")).isEqualTo("你是待办管理助手，帮助用户管理待办事项�?);
         List<String> suggestedTools = (List<String>) result.data().get("suggested_tools");
         assertThat(suggestedTools).containsExactly("builtin.todo.create", "builtin.todo.list");
     }
@@ -174,7 +169,7 @@ class SkillRefactor_ToolBridge_集成测试 {
 
         ToolInput input = new ToolInput("skills",
                 Map.of("action", "activate_skill", "skill_id", "nonexistent"),
-                JsonSchema.empty(), null);
+                JsonSchema.empty(), null, null);
         ToolResult result = toolRegistry.resolve("skills").get().execute(input);
 
         assertThat(result.ok()).isFalse();
@@ -182,14 +177,14 @@ class SkillRefactor_ToolBridge_集成测试 {
     }
 
     @Test
-    void activateSkill_激活后_MetricsTracker记录激活次数() {
+    void activateSkill_激活后_MetricsTracker记录激活次�?) {
         registerTestSkill("todo", "待办管理", "管理待办事项");
 
         skillToToolBridge.registerSkillsTool();
 
         ToolInput input = new ToolInput("skills",
                 Map.of("action", "activate_skill", "skill_id", "todo"),
-                JsonSchema.empty(), null);
+                JsonSchema.empty(), null, null);
         toolRegistry.resolve("skills").get().execute(input);
         toolRegistry.resolve("skills").get().execute(input);
 

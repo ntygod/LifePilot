@@ -250,6 +250,10 @@ lifepilot:
       like-boost: 0.1
       dislike-penalty: 0.05
       expiration-cron: "0 0 * * * *"
+    # Agentic Tool 配置
+    agentic-tool:
+      default-top-k: 10
+      docs-default-top-k: 5
   skills:
     # ===== Skill 系统配置 =====
     # 支持 Java 原生 Skill、Markdown 声明式 Skill、MCP 外部工具

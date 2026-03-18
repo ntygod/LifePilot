@@ -11,7 +11,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * SystemInfoToolExecutor 单元测试。
+ * SystemInfoToolExecutor 单元测试�?
  *
  * @author zsg
  * @since 2026-03-08
@@ -27,7 +27,7 @@ class SystemInfoToolExecutorTest {
 
     @Test
     void execute_返回系统信息() {
-        ToolInput input = new ToolInput("builtin.env.system-info", Map.of(), JsonSchema.empty(), null);
+        ToolInput input = new ToolInput("builtin.env.system-info", Map.of(), JsonSchema.empty(), null, null);
 
         ToolResult result = executor.execute(input);
 
@@ -42,8 +42,8 @@ class SystemInfoToolExecutorTest {
     }
 
     @Test
-    void execute_OS信息与System属性一致() {
-        ToolInput input = new ToolInput("builtin.env.system-info", Map.of(), JsonSchema.empty(), null);
+    void execute_OS信息与System属性一�?) {
+        ToolInput input = new ToolInput("builtin.env.system-info", Map.of(), JsonSchema.empty(), null, null);
 
         ToolResult result = executor.execute(input);
 
@@ -53,8 +53,8 @@ class SystemInfoToolExecutorTest {
     }
 
     @Test
-    void execute_内存值为非负数() {
-        ToolInput input = new ToolInput("builtin.env.system-info", Map.of(), JsonSchema.empty(), null);
+    void execute_内存值为非负�?) {
+        ToolInput input = new ToolInput("builtin.env.system-info", Map.of(), JsonSchema.empty(), null, null);
 
         ToolResult result = executor.execute(input);
 
@@ -66,7 +66,7 @@ class SystemInfoToolExecutorTest {
 
     @Test
     void execute_处理器数量大于零() {
-        ToolInput input = new ToolInput("builtin.env.system-info", Map.of(), JsonSchema.empty(), null);
+        ToolInput input = new ToolInput("builtin.env.system-info", Map.of(), JsonSchema.empty(), null, null);
 
         ToolResult result = executor.execute(input);
 

@@ -122,14 +122,26 @@ public class ConflictDetector {
         return results.isEmpty() ? Optional.empty() : Optional.of(results.getFirst());
     }
 
-    /** LLM 消歧义：判断两个实体是否为同一实体。 */
+    /** LLM 消歧义：判断两个实体是否为同一实体，解析 JSON 响应 {"isSame": bool, "confidence": float}。 */
     private boolean llmDisambiguate(TemporalEntity newEntity, TemporalEntity candidate) {
         var prompt = promptRegistry.render("semantic/entity-disambiguation", Map.of(
                 "entityA", newEntity.textRepresentation(),
                 "entityB", candidate.textRepresentation()
         ));
         var response = llmRouter.call(LlmRequest.of("knowledge_extraction", prompt));
-        return response.content().trim().toLowerCase().contains("true");
+        var content = response.content().trim();
+        try {
+            var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            var node = mapper.readTree(content);
+            boolean isSame = node.path("isSame").asBoolean(false);
+            double confidence = node.path("confidence").asDouble(0.0);
+            log.debug("冲突检测: LLM 消歧义结果, isSame={}, confidence={}", isSame, confidence);
+            return isSame && confidence >= 0.6;
+        } catch (Exception e) {
+            // JSON 解析失败时降级为旧逻辑
+            log.debug("冲突检测: LLM 消歧义 JSON 解析失败，降级为文本匹配, content={}", content);
+            return content.toLowerCase().contains("true");
+        }
     }
 
     /** ResultSet 行映射为 TemporalEntity。 */

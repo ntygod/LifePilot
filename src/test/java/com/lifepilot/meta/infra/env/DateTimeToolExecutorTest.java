@@ -15,7 +15,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * DateTimeToolExecutor 单元测试。
+ * DateTimeToolExecutor 单元测试�?
  *
  * @author zsg
  * @since 2026-03-08
@@ -33,7 +33,7 @@ class DateTimeToolExecutorTest {
 
     @Test
     void execute_返回当前日期时间信息() {
-        ToolInput input = new ToolInput("builtin.env.datetime", Map.of(), JsonSchema.empty(), null);
+        ToolInput input = new ToolInput("builtin.env.datetime", Map.of(), JsonSchema.empty(), null, null);
 
         ToolResult result = executor.execute(input);
 
@@ -47,7 +47,7 @@ class DateTimeToolExecutorTest {
     @Test
     void execute_使用系统时区_当配置为空时() {
         properties.getInfra().getUserProfile().setTimezone("");
-        ToolInput input = new ToolInput("builtin.env.datetime", Map.of(), JsonSchema.empty(), null);
+        ToolInput input = new ToolInput("builtin.env.datetime", Map.of(), JsonSchema.empty(), null, null);
 
         ToolResult result = executor.execute(input);
 
@@ -58,7 +58,7 @@ class DateTimeToolExecutorTest {
     @Test
     void execute_使用配置时区() {
         properties.getInfra().getUserProfile().setTimezone("Asia/Shanghai");
-        ToolInput input = new ToolInput("builtin.env.datetime", Map.of(), JsonSchema.empty(), null);
+        ToolInput input = new ToolInput("builtin.env.datetime", Map.of(), JsonSchema.empty(), null, null);
 
         ToolResult result = executor.execute(input);
 
@@ -70,7 +70,7 @@ class DateTimeToolExecutorTest {
     void execute_输入参数timezone覆盖配置() {
         properties.getInfra().getUserProfile().setTimezone("Asia/Shanghai");
         ToolInput input = new ToolInput("builtin.env.datetime",
-                Map.of("timezone", "America/New_York"), JsonSchema.empty(), null);
+                Map.of("timezone", "America/New_York"), JsonSchema.empty(), null, null);
 
         ToolResult result = executor.execute(input);
 
@@ -79,8 +79,8 @@ class DateTimeToolExecutorTest {
     }
 
     @Test
-    void execute_日期与当前日期一致() {
-        ToolInput input = new ToolInput("builtin.env.datetime", Map.of(), JsonSchema.empty(), null);
+    void execute_日期与当前日期一�?) {
+        ToolInput input = new ToolInput("builtin.env.datetime", Map.of(), JsonSchema.empty(), null, null);
 
         ToolResult result = executor.execute(input);
 
@@ -93,7 +93,7 @@ class DateTimeToolExecutorTest {
     @Test
     void execute_无效时区返回错误() {
         ToolInput input = new ToolInput("builtin.env.datetime",
-                Map.of("timezone", "Invalid/Zone"), JsonSchema.empty(), null);
+                Map.of("timezone", "Invalid/Zone"), JsonSchema.empty(), null, null);
 
         ToolResult result = executor.execute(input);
 

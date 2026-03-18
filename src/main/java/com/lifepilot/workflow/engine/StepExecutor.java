@@ -176,7 +176,7 @@ public class StepExecutor {
                 toObjectMap(step.params()), context);
 
         // 3. 构建 ToolInput 并执行
-        var toolInput = new ToolInput(step.toolId(), resolvedParams, JsonSchema.empty(), null);
+        var toolInput = new ToolInput(step.toolId(), resolvedParams, JsonSchema.empty(), null, null);
         ToolResult toolResult = tool.execute(toolInput);
 
         // 4. 转换为输出 Map

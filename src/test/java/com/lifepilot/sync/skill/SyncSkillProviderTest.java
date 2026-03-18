@@ -32,7 +32,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 /**
- * SyncSkillProvider 单元测试。
+ * SyncSkillProvider 单元测试�?
  *
  * @author zsg
  * @since 2026-02-26
@@ -57,7 +57,7 @@ class SyncSkillProviderTest {
     @BeforeEach
     void setUp() {
         properties = new SyncProperties();
-        when(promptRegistry.render("skill/sync")).thenReturn("同步系统提示词");
+        when(promptRegistry.render("skill/sync")).thenReturn("同步系统提示�?);
         provider = new SyncSkillProvider(
                 syncEngine, syncScheduler, profileRepository, stateRepository,
                 conflictRepository, recordRepository, credentialStore,
@@ -83,7 +83,7 @@ class SyncSkillProviderTest {
     // ---- registerTools() 测试 ----
 
     @Test
-    void registerTools_注册4个工具() {
+    void registerTools_注册4个工�?) {
         provider.registerTools(toolRegistry);
 
         ArgumentCaptor<BuiltinTool> captor = ArgumentCaptor.forClass(BuiltinTool.class);
@@ -120,20 +120,20 @@ class SyncSkillProviderTest {
     }
 
     @Test
-    void syncTrigger_配置不存在返回错误() {
+    void syncTrigger_配置不存在返回错�?) {
         when(profileRepository.findById("nonexistent")).thenReturn(Optional.empty());
 
         ToolResult toolResult = executeTool("builtin.sync.trigger",
                 Map.of("profileId", "nonexistent"));
 
         assertFalse(toolResult.ok());
-        assertTrue(toolResult.error().contains("同步配置不存在"));
+        assertTrue(toolResult.error().contains("同步配置不存�?));
     }
 
     // ---- sync-status 测试 ----
 
     @Test
-    void syncStatus_查询单个配置状态() {
+    void syncStatus_查询单个配置状�?) {
         SyncProfile profile = buildTestProfile("p1");
         SyncState state = new SyncState("s1", "p1", "token-1",
                 "2026-02-26T10:00:00Z", SyncStatus.SUCCESS, null,
@@ -154,7 +154,7 @@ class SyncSkillProviderTest {
     }
 
     @Test
-    void syncStatus_查询所有启用配置状态() {
+    void syncStatus_查询所有启用配置状�?) {
         SyncProfile p1 = buildTestProfile("p1");
         SyncProfile p2 = buildTestProfile("p2");
 
@@ -168,14 +168,14 @@ class SyncSkillProviderTest {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> statuses = toolResult.getData("statuses");
         assertEquals(2, statuses.size());
-        // 未同步过的 profile 应显示 NEVER_SYNCED
+        // 未同步过�?profile 应显�?NEVER_SYNCED
         assertEquals("NEVER_SYNCED", statuses.getFirst().get("lastSyncStatus"));
     }
 
     // ---- sync-config list 测试 ----
 
     @Test
-    void syncConfig_list_返回所有配置() {
+    void syncConfig_list_返回所有配�?) {
         SyncProfile p1 = buildTestProfile("p1");
         when(profileRepository.findAll()).thenReturn(List.of(p1));
 
@@ -192,7 +192,7 @@ class SyncSkillProviderTest {
     // ---- sync-config create 测试 ----
 
     @Test
-    void syncConfig_create_创建新配置() {
+    void syncConfig_create_创建新配�?) {
         ToolResult toolResult = executeTool("builtin.sync.config", Map.of(
                 "action", "create",
                 "name", "我的 CalDAV",
@@ -203,7 +203,7 @@ class SyncSkillProviderTest {
         assertTrue(toolResult.ok());
         assertNotNull(toolResult.getData("id"));
 
-        // 验证 profileRepository.create 被调用
+        // 验证 profileRepository.create 被调�?
         ArgumentCaptor<SyncProfile> captor = ArgumentCaptor.forClass(SyncProfile.class);
         verify(profileRepository).create(captor.capture());
         SyncProfile created = captor.getValue();
@@ -211,14 +211,14 @@ class SyncSkillProviderTest {
         assertEquals("caldav", created.connectorType());
         assertEquals(SyncDirection.BIDIRECTIONAL, created.syncDirection());
 
-        // 验证 syncScheduler.refreshSchedule 被调用
+        // 验证 syncScheduler.refreshSchedule 被调�?
         verify(syncScheduler).refreshSchedule(created.id());
     }
 
     // ---- sync-config delete 测试 ----
 
     @Test
-    void syncConfig_delete_删除配置及关联数据() {
+    void syncConfig_delete_删除配置及关联数�?) {
         SyncProfile profile = buildTestProfile("p1");
         when(profileRepository.findById("p1")).thenReturn(Optional.of(profile));
 
@@ -235,7 +235,7 @@ class SyncSkillProviderTest {
     }
 
     @Test
-    void syncConfig_delete_配置不存在返回错误() {
+    void syncConfig_delete_配置不存在返回错�?) {
         when(profileRepository.findById("nonexistent")).thenReturn(Optional.empty());
 
         ToolResult toolResult = executeTool("builtin.sync.config", Map.of(
@@ -244,7 +244,7 @@ class SyncSkillProviderTest {
         ));
 
         assertFalse(toolResult.ok());
-        assertTrue(toolResult.error().contains("同步配置不存在"));
+        assertTrue(toolResult.error().contains("同步配置不存�?));
     }
 
     // ---- sync-config test 测试 ----
@@ -286,7 +286,7 @@ class SyncSkillProviderTest {
     // ---- sync-conflicts list 测试 ----
 
     @Test
-    void syncConflicts_list_返回未解决冲突() {
+    void syncConflicts_list_返回未解决冲�?) {
         SyncConflict conflict = new SyncConflict(
                 "c1", "p1", "TodoItem", "local-1",
                 "{\"title\":\"本地版本\"}", "{\"title\":\"远程版本\"}",
@@ -323,7 +323,7 @@ class SyncSkillProviderTest {
 
     // ---- 辅助方法 ----
 
-    /** 构建测试用 SyncProfile。 */
+    /** 构建测试�?SyncProfile�?*/
     private SyncProfile buildTestProfile(String id) {
         String now = Instant.now().toString();
         return SyncProfile.builder()
@@ -342,10 +342,10 @@ class SyncSkillProviderTest {
     }
 
     /**
-     * 通过 registerTools 注册工具后，按 ID 查找并执行。
+     * 通过 registerTools 注册工具后，�?ID 查找并执行�?
      */
     private ToolResult executeTool(String toolId, Map<String, Object> params) {
-        // 捕获注册的工具
+        // 捕获注册的工�?
         ArgumentCaptor<BuiltinTool> captor = ArgumentCaptor.forClass(BuiltinTool.class);
         DynamicToolRegistry registry = mock(DynamicToolRegistry.class);
         provider.registerTools(registry);
@@ -354,9 +354,9 @@ class SyncSkillProviderTest {
         BuiltinTool tool = captor.getAllValues().stream()
                 .filter(t -> t.id().equals(toolId))
                 .findFirst()
-                .orElseThrow(() -> new AssertionError("工具未找到: " + toolId));
+                .orElseThrow(() -> new AssertionError("工具未找�? " + toolId));
 
-        ToolInput input = new ToolInput(toolId, params, JsonSchema.empty(), null);
+        ToolInput input = new ToolInput(toolId, params, JsonSchema.empty(), null, null);
         return tool.execute(input);
     }
 }

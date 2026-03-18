@@ -170,7 +170,11 @@ public class RealtimeExtractor {
             var sb = new StringBuilder();
             for (var entity : sorted) {
                 sb.append("- ").append(entity.name())
-                  .append(" (").append(entity.type().name()).append(")\n");
+                  .append(" [").append(entity.type().name()).append("]");
+                if (entity.description() != null && !entity.description().isBlank()) {
+                    sb.append(" — ").append(entity.description());
+                }
+                sb.append("\n");
             }
             return sb.toString();
         } catch (Exception e) {

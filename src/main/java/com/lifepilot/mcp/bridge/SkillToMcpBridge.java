@@ -82,7 +82,7 @@ public class SkillToMcpBridge {
 
         try {
             // 构建 ToolInput 并校验
-            ToolInput input = new ToolInput(tool.id(), arguments, tool.inputSchema(), null);
+            ToolInput input = new ToolInput(tool.id(), arguments, tool.inputSchema(), null, null);
             var validation = input.validate();
 
             if (!validation.isValid()) {

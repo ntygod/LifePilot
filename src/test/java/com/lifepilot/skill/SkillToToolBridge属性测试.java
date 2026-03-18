@@ -84,6 +84,7 @@ class SkillToToolBridge属性测试 {
                 "skills",
                 Map.of("action", "list_skills"),
                 JsonSchema.empty(),
+                null,
                 null
         );
 

@@ -16,7 +16,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 /**
- * WebSearchToolExecutor 单元测试。
+ * WebSearchToolExecutor 单元测试�?
  *
  * @author zsg
  * @since 2026-03-08
@@ -52,7 +52,7 @@ class WebSearchToolExecutorTest {
 
     @Test
     void duckduckgo搜索_返回结果列表() {
-        // 配置 DuckDuckGo 提供商（默认）
+        // 配置 DuckDuckGo 提供商（默认�?
         properties.getInfra().getWebSearch().setProvider("duckduckgo");
 
         // Mock DuckDuckGo API 响应
@@ -68,7 +68,7 @@ class WebSearchToolExecutorTest {
         when(responseSpec.body(Map.class)).thenReturn(ddgResponse);
 
         ToolInput input = new ToolInput("builtin.web.search",
-                Map.of("query", "Java programming"), JsonSchema.empty(), null);
+                Map.of("query", "Java programming"), JsonSchema.empty(), null, null);
 
         ToolResult result = executor.execute(input);
 
@@ -84,16 +84,16 @@ class WebSearchToolExecutorTest {
     }
 
     @Test
-    void duckduckgo搜索_空响应返回错误() {
+    void duckduckgo搜索_空响应返回错�?) {
         when(responseSpec.body(Map.class)).thenReturn(null);
 
         ToolInput input = new ToolInput("builtin.web.search",
-                Map.of("query", "test"), JsonSchema.empty(), null);
+                Map.of("query", "test"), JsonSchema.empty(), null, null);
 
         ToolResult result = executor.execute(input);
 
         assertThat(result.ok()).isFalse();
-        assertThat(result.error()).contains("空响应");
+        assertThat(result.error()).contains("空响�?);
     }
 
     @Test
@@ -102,7 +102,7 @@ class WebSearchToolExecutorTest {
         properties.getInfra().getWebSearch().setApiKey("");
 
         ToolInput input = new ToolInput("builtin.web.search",
-                Map.of("query", "test"), JsonSchema.empty(), null);
+                Map.of("query", "test"), JsonSchema.empty(), null, null);
 
         ToolResult result = executor.execute(input);
 
@@ -116,7 +116,7 @@ class WebSearchToolExecutorTest {
         properties.getInfra().getWebSearch().setApiKey("");
 
         ToolInput input = new ToolInput("builtin.web.search",
-                Map.of("query", "test"), JsonSchema.empty(), null);
+                Map.of("query", "test"), JsonSchema.empty(), null, null);
 
         ToolResult result = executor.execute(input);
 
@@ -129,7 +129,7 @@ class WebSearchToolExecutorTest {
         properties.getInfra().getWebSearch().setProvider("yahoo");
 
         ToolInput input = new ToolInput("builtin.web.search",
-                Map.of("query", "test"), JsonSchema.empty(), null);
+                Map.of("query", "test"), JsonSchema.empty(), null, null);
 
         ToolResult result = executor.execute(input);
 
@@ -158,7 +158,7 @@ class WebSearchToolExecutorTest {
         when(responseSpec.body(Map.class)).thenReturn(ddgResponse);
 
         ToolInput input = new ToolInput("builtin.web.search",
-                Map.of("query", "test", "maxResults", 2), JsonSchema.empty(), null);
+                Map.of("query", "test", "maxResults", 2), JsonSchema.empty(), null, null);
 
         ToolResult result = executor.execute(input);
 
@@ -171,7 +171,7 @@ class WebSearchToolExecutorTest {
     @Test
     void 缺少query参数_返回错误() {
         ToolInput input = new ToolInput("builtin.web.search",
-                Map.of(), JsonSchema.empty(), null);
+                Map.of(), JsonSchema.empty(), null, null);
 
         ToolResult result = executor.execute(input);
 

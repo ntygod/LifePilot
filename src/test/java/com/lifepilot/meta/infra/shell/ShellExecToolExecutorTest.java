@@ -14,7 +14,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * ShellExecToolExecutor 单元测试。
+ * ShellExecToolExecutor 单元测试�?
  *
  * @author zsg
  * @since 2026-03-08
@@ -31,7 +31,7 @@ class ShellExecToolExecutorTest {
     }
 
     // ─────────────────────────────────────────────
-    //  黑名单拒绝测试
+    //  黑名单拒绝测�?
     // ─────────────────────────────────────────────
 
     @Test
@@ -179,30 +179,30 @@ class ShellExecToolExecutorTest {
     }
 
     @Test
-    void truncateOutput_超长输出被截断() {
+    void truncateOutput_超长输出被截�?) {
         String output = "a".repeat(200);
         String result = executor.truncateOutput(output, 50);
 
         assertThat(result).startsWith("a".repeat(50));
-        assertThat(result).contains("输出已截断");
+        assertThat(result).contains("输出已截�?);
         assertThat(result).contains("200 字符");
     }
 
     @Test
     @EnabledOnOs({OS.LINUX, OS.MAC})
     void execute_输出超过maxOutputLength被截断_Unix() {
-        // 设置极小的 maxOutputLength
+        // 设置极小�?maxOutputLength
         properties.getInfra().getShell().setMaxOutputLength(10);
         executor = new ShellExecToolExecutor(properties);
 
-        // 生成超过 10 字符的输出
+        // 生成超过 10 字符的输�?
         ToolInput input = buildInput(Map.of("command", "echo abcdefghijklmnopqrstuvwxyz"));
 
         ToolResult result = executor.execute(input);
 
         assertThat(result.ok()).isTrue();
         String stdout = (String) result.data().get("stdout");
-        assertThat(stdout).contains("输出已截断");
+        assertThat(stdout).contains("输出已截�?);
     }
 
     // ─────────────────────────────────────────────
@@ -233,11 +233,11 @@ class ShellExecToolExecutorTest {
         ToolResult result = executor.execute(input);
 
         assertThat(result.ok()).isFalse();
-        assertThat(result.error()).contains("工作目录不存在");
+        assertThat(result.error()).contains("工作目录不存�?);
     }
 
     // ─────────────────────────────────────────────
-    //  黑名单检查方法直接测试
+    //  黑名单检查方法直接测�?
     // ─────────────────────────────────────────────
 
     @Test
@@ -248,7 +248,7 @@ class ShellExecToolExecutorTest {
     }
 
     @Test
-    void checkBlacklist_危险命令被拒绝() {
+    void checkBlacklist_危险命令被拒�?) {
         ToolResult result = executor.checkBlacklist("rm -rf /");
 
         assertThat(result).isNotNull();
@@ -256,7 +256,7 @@ class ShellExecToolExecutorTest {
     }
 
     @Test
-    void checkBlacklist_mkfs命令被拒绝() {
+    void checkBlacklist_mkfs命令被拒�?) {
         ToolResult result = executor.checkBlacklist("mkfs.ext4 /dev/sda1");
 
         assertThat(result).isNotNull();
@@ -268,6 +268,6 @@ class ShellExecToolExecutorTest {
     // ─────────────────────────────────────────────
 
     private ToolInput buildInput(Map<String, Object> params) {
-        return new ToolInput("builtin.shell.exec", params, JsonSchema.empty(), null);
+        return new ToolInput("builtin.shell.exec", params, JsonSchema.empty(), null, null);
     }
 }

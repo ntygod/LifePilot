@@ -98,7 +98,7 @@ public class TaskActionExecutor {
     private void handleExecuteTool(ScheduledTask task, TaskAction.ExecuteTool et) {
         ToolContract tool = toolRegistry.resolve(et.toolId())
                 .orElseThrow(() -> new IllegalStateException("工具不存在: " + et.toolId()));
-        var input = new ToolInput(et.toolId(), et.params(), tool.inputSchema(), null);
+        var input = new ToolInput(et.toolId(), et.params(), tool.inputSchema(), null, null);
         ToolResult result = tool.execute(input);
         if (!result.ok()) {
             log.warn("定时任务工具执行返回错误: taskId={}, toolId={}, error={}",
