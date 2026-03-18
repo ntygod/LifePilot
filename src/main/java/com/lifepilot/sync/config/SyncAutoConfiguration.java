@@ -1,5 +1,6 @@
 package com.lifepilot.sync.config;
 
+import com.lifepilot.config.threadpool.ThreadPoolRegistry;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.skill.builtin.habit.HabitRepository;
 import com.lifepilot.skill.builtin.schedule.ScheduleRepository;
@@ -213,9 +214,10 @@ public class SyncAutoConfiguration {
     @ConditionalOnBean(SyncEngine.class)
     public SyncScheduler syncScheduler(SyncEngine syncEngine,
                                         SyncProfileRepository syncProfileRepository,
-                                        SyncProperties properties) {
+                                        SyncProperties properties,
+                                        ThreadPoolRegistry threadPoolRegistry) {
         log.info("同步模块: 注册 SyncScheduler");
-        return new SyncScheduler(syncEngine, syncProfileRepository, properties);
+        return new SyncScheduler(syncEngine, syncProfileRepository, properties, threadPoolRegistry);
     }
 
     // ==================== Agent 集成 ====================

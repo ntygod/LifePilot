@@ -1,5 +1,6 @@
 package com.lifepilot.scheduler;
 
+import com.lifepilot.config.threadpool.ThreadPoolRegistry;
 import com.lifepilot.scheduler.config.SchedulerProperties;
 import com.lifepilot.scheduler.model.ScheduledTask;
 import com.lifepilot.scheduler.model.TaskAction;
@@ -43,14 +44,16 @@ public class TaskScheduler {
 
     public TaskScheduler(TaskActionExecutor actionExecutor,
                          ScheduledTaskRepository repository,
-                         SchedulerProperties properties) {
+                         SchedulerProperties properties,
+                         ThreadPoolRegistry threadPoolRegistry) {
         this.actionExecutor = actionExecutor;
         this.repository = repository;
         this.properties = properties;
         this.executor = Executors.newScheduledThreadPool(
                 properties.getCorePoolSize(),
-                Thread.ofVirtual().factory()
+                Thread.ofVirtual().name("task-scheduler-", 0).factory()
         );
+        threadPoolRegistry.register("task-scheduler", executor);
         log.info("TaskScheduler 初始化完成: corePoolSize={}", properties.getCorePoolSize());
     }
 
@@ -150,28 +153,6 @@ public class TaskScheduler {
             }
         }
         log.info("任务恢复完成: 恢复数量={}, 总 PENDING 数量={}", count, pendingTasks.size());
-    }
-
-    /**
-     * 优雅关闭调度器。
-     *
-     * <p>先调用 {@code shutdown()} 停止接受新任务，
-     * 等待最多 10 秒让正在执行的任务完成，超时则强制关闭。</p>
-     */
-    public void shutdown() {
-        log.info("TaskScheduler 开始关闭...");
-        executor.shutdown();
-        try {
-            if (!executor.awaitTermination(10, TimeUnit.SECONDS)) {
-                log.warn("TaskScheduler 等待超时，强制关闭");
-                executor.shutdownNow();
-            }
-        } catch (InterruptedException e) {
-            log.warn("TaskScheduler 关闭被中断，强制关闭");
-            executor.shutdownNow();
-            Thread.currentThread().interrupt();
-        }
-        log.info("TaskScheduler 已关闭");
     }
 
     /**

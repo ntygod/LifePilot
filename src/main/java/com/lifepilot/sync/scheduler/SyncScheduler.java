@@ -1,5 +1,6 @@
 package com.lifepilot.sync.scheduler;
 
+import com.lifepilot.config.threadpool.ThreadPoolRegistry;
 import com.lifepilot.sync.config.SyncProperties;
 import com.lifepilot.sync.engine.SyncEngine;
 import com.lifepilot.sync.model.SyncProfile;
@@ -69,11 +70,14 @@ public class SyncScheduler {
 
     public SyncScheduler(SyncEngine syncEngine,
                          SyncProfileRepository profileRepository,
-                         SyncProperties properties) {
+                         SyncProperties properties,
+                         ThreadPoolRegistry threadPoolRegistry) {
         this.syncEngine = syncEngine;
         this.profileRepository = profileRepository;
         this.properties = properties;
-        this.scheduler = Executors.newScheduledThreadPool(1, Thread.ofVirtual().factory());
+        this.scheduler = Executors.newScheduledThreadPool(1,
+                Thread.ofVirtual().name("sync-scheduler-", 0).factory());
+        threadPoolRegistry.register("sync-scheduler", scheduler);
     }
 
     /**
@@ -170,22 +174,6 @@ public class SyncScheduler {
                 log.info("Profile 已禁用，不重新调度: profileId={}", profileId);
             }
         });
-    }
-
-    /**
-     * 关闭调度器，释放资源。
-     */
-    public void shutdown() {
-        scheduler.shutdown();
-        try {
-            if (!scheduler.awaitTermination(10, TimeUnit.SECONDS)) {
-                scheduler.shutdownNow();
-            }
-        } catch (InterruptedException e) {
-            scheduler.shutdownNow();
-            Thread.currentThread().interrupt();
-        }
-        log.info("同步调度器已关闭");
     }
 
     // ---- 内部方法 ----
