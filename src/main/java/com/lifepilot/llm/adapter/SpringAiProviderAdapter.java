@@ -238,6 +238,40 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
                 .filter(text -> text != null && !text.isEmpty());
     }
 
+    @Override
+    public LlmResponse callWithVideo(String text, String videoUri, Duration timeout) {
+        if (!config.hasCapability(ProviderCapability.NATIVE_VIDEO)) {
+            throw new UnsupportedOperationException("Provider 不支持 NATIVE_VIDEO 能力: " + config.id());
+        }
+
+        long start = System.currentTimeMillis();
+        ChatResponse response = executeWithTimeout(() -> {
+            // 构造包含视频 URI 引用的 UserMessage
+            var media = Media.builder()
+                    .mimeType(MimeTypeUtils.parseMimeType("video/*"))
+                    .data(java.net.URI.create(videoUri).toURL())
+                    .build();
+            var userMessage = UserMessage.builder().text(text).media(media).build();
+            return chatModel.call(new Prompt(userMessage));
+        }, timeout);
+        long latencyMs = System.currentTimeMillis() - start;
+
+        var usage = response.getMetadata().getUsage();
+        int inputTokens = usage.getPromptTokens() != null ? usage.getPromptTokens() : 0;
+        int outputTokens = usage.getCompletionTokens() != null ? usage.getCompletionTokens() : 0;
+        String content = response.getResult().getOutput().getText();
+
+        return new LlmResponse(
+                content,
+                inputTokens,
+                outputTokens,
+                config.id(),
+                config.modelName(),
+                latencyMs,
+                false
+        );
+    }
+
     public ProviderConfig config() {
         return config;
     }

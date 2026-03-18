@@ -99,6 +99,9 @@ public final class SseEventType {
     /** 媒体数据事件（图片/音频等大体积二进制数据） */
     public static final String MEDIA = "media";
 
+    /** 语音转录结果事件 */
+    public static final String TRANSCRIPTION = "transcription";
+
     // 护栏模块事件类型
     /** 工具确认请求事件 */
     public static final String TOOL_CONFIRMATION_REQUEST = "tool-confirmation-request";

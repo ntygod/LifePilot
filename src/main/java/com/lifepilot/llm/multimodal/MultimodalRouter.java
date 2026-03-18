@@ -9,9 +9,12 @@ import com.lifepilot.llm.StreamingLlmResponse;
 import com.lifepilot.llm.circuit.CircuitBreakerManager;
 import com.lifepilot.llm.config.ProviderCapability;
 import com.lifepilot.llm.config.ProviderConfig;
+import com.lifepilot.llm.multimodal.gemini.GeminiFileApiClient;
+import com.lifepilot.llm.multimodal.gemini.GeminiFileUploadResult;
 import com.lifepilot.llm.registry.ProviderRegistry;
 import com.lifepilot.media.MediaProcessor;
 import com.lifepilot.media.MediaValidator;
+import com.lifepilot.media.config.MediaProperties;
 import com.lifepilot.media.video.VideoProcessResult;
 import com.lifepilot.media.video.VideoProcessor;
 import org.slf4j.Logger;
@@ -48,6 +51,8 @@ public class MultimodalRouter {
     private final MediaProcessor mediaProcessor;
     private final MediaValidator mediaValidator;
     private final @Nullable VideoProcessor videoProcessor;
+    private final @Nullable GeminiFileApiClient geminiFileApiClient;
+    private final MediaProperties mediaProperties;
     private final LlmRouter llmRouter;
     private final ExponentialBackoff backoff;
 
@@ -83,15 +88,21 @@ public class MultimodalRouter {
                             MediaProcessor mediaProcessor,
                             MediaValidator mediaValidator,
                             @Nullable VideoProcessor videoProcessor,
+                            @Nullable GeminiFileApiClient geminiFileApiClient,
+                            MediaProperties mediaProperties,
                             LlmRouter llmRouter) {
         this.providerRegistry = providerRegistry;
         this.circuitBreakerManager = circuitBreakerManager;
         this.mediaProcessor = mediaProcessor;
         this.mediaValidator = mediaValidator;
         this.videoProcessor = videoProcessor;
+        this.geminiFileApiClient = geminiFileApiClient;
+        this.mediaProperties = mediaProperties;
         this.llmRouter = llmRouter;
         this.backoff = ExponentialBackoff.defaults();
-        log.info("MultimodalRouter 初始化完成, 视频处理={}", videoProcessor != null ? "已启用" : "未启用");
+        log.info("MultimodalRouter 初始化完成, 视频处理={}, 原生视频={}",
+                videoProcessor != null ? "已启用" : "未启用",
+                geminiFileApiClient != null ? "已启用" : "未启用");
     }
 
     public LlmResponse call(MultimodalRequest request) {
@@ -203,8 +214,7 @@ public class MultimodalRouter {
     }
 
     private MultimodalRequest preprocessVideo(MultimodalRequest request) {
-        VideoProcessor processor = this.videoProcessor;
-        if (!request.hasVideos() || processor == null) {
+        if (!request.hasVideos()) {
             return request;
         }
 
@@ -216,7 +226,52 @@ public class MultimodalRouter {
             return request;
         }
 
-        log.debug("开始视频预处理: fileName={}, size={}B",
+        // 尝试原生视频路由：enabled + GeminiFileApiClient 可用 + 存在 NATIVE_VIDEO Provider
+        if (mediaProperties.getNativeVideo().isEnabled() && geminiFileApiClient != null) {
+            var nativeProviders = providerRegistry.findByCapability(ProviderCapability.NATIVE_VIDEO);
+            if (!nativeProviders.isEmpty()) {
+                try {
+                    log.info("视频路由策略: 原生视频, fileName={}, size={}B",
+                            videoContent.fileName(), videoContent.sizeBytes());
+                    GeminiFileUploadResult uploadResult = geminiFileApiClient.upload(
+                            videoContent.data(), videoContent.mimeType(), videoContent.fileName());
+                    geminiFileApiClient.awaitActive(uploadResult.fileUri());
+
+                    var config = nativeProviders.getFirst();
+                    var adapter = providerRegistry.getAdapter(config.id());
+                    var timeout = Duration.ofSeconds(config.timeoutSeconds());
+                    LlmResponse videoResponse = adapter.callWithVideo(
+                            request.text(), uploadResult.fileUri(), timeout);
+
+                    log.info("原生视频调用成功: provider={}, latency={}ms",
+                            config.id(), videoResponse.latencyMs());
+
+                    // 返回空媒体列表的请求，call() 方法会检测无图片后委托 LlmRouter，
+                    // 但此处已获得结果，需要直接返回。通过移除视频内容使后续流程跳过多模态调用。
+                    List<MediaContent> nonVideoItems = request.mediaList().stream()
+                            .filter(mc -> !mc.mimeType().startsWith("video/"))
+                            .toList();
+                    return new MultimodalRequest(
+                            request.scene(),
+                            request.text(),
+                            nonVideoItems,
+                            request.outputSchema(),
+                            request.preferredProviderId(),
+                            request.modelName()
+                    );
+                } catch (Exception e) {
+                    log.warn("原生视频路由失败，回退到关键帧分治: error={}", e.getMessage());
+                }
+            }
+        }
+
+        // 回退到关键帧分治策略
+        VideoProcessor processor = this.videoProcessor;
+        if (processor == null) {
+            return request;
+        }
+
+        log.info("视频路由策略: 关键帧分治, fileName={}, size={}B",
                 videoContent.fileName(), videoContent.sizeBytes());
         VideoProcessResult result = processor.process(videoContent.data(), videoContent.mimeType());
 

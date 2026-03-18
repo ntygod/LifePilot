@@ -14,6 +14,7 @@ import com.lifepilot.interaction.web.service.ChatSessionService;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.interaction.web.service.WebUserConfirmationService;
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
+import com.lifepilot.media.config.MediaProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -61,6 +62,7 @@ class ChatController_A2uiContract_测试 {
 
     @BeforeEach
     void setUp() {
+        var mediaProperties = new MediaProperties();
         var controller = new ChatController(
                 webChannelAdapter,
                 sseSessionManager,
@@ -70,7 +72,9 @@ class ChatController_A2uiContract_测试 {
                 knowledgeBaseProperties,
                 responseTracker,
                 confirmationService,
-                null
+                null,
+                null,
+                mediaProperties
         );
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }

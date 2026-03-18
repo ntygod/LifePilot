@@ -24,6 +24,8 @@ public enum ProviderCapability {
     /** 语音转文字能力 */
     STT,
     /** 重排序能力 */
-    RERANK
+    RERANK,
+    /** 原生视频理解能力（如 Gemini File API） */
+    NATIVE_VIDEO
 }
 

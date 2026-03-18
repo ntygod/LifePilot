@@ -498,16 +498,26 @@ lifepilot:
       supported-formats: wav,mp3,ogg,m4a,flac,webm
       whisper-cli-path: auto
       whisper-model: base
+      max-recording-seconds: 120
     video:
       max-size-bytes: 524288000
       max-duration-seconds: 1800
       max-key-frames: 120
       supported-formats: mp4,avi,mov,mkv,webm,flv
     tts:
+      enabled: true
       voice: alloy
       speed: 1.0
       output-format: mp3
       max-text-length: 4096
+    native-video:
+      enabled: false
+      upload-timeout-seconds: 300
+      poll-timeout-seconds: 120
+      poll-interval-ms: 2000
+      max-file-size-bytes: 2147483648
+      gemini-api-key: "${GEMINI_API_KEY:}"
+      gemini-api-base-url: "https://generativelanguage.googleapis.com"
   marketplace:
     enabled: true
     index-sources:

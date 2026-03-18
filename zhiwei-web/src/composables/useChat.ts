@@ -377,6 +377,15 @@ export function useChat() {
           pendingToolConfirmation.value = payload
           break
         }
+        case SSE_EVENT_TYPES.TRANSCRIPTION: {
+          // 语音转录结果：更新对应用户消息内容为转录文本
+          const payload: { text: string; messageId?: string } = JSON.parse(data)
+          const targetId = payload.messageId ?? currentUserMessageId
+          if (targetId && payload.text) {
+            chatStore.updateMessage(targetId, { content: payload.text })
+          }
+          break
+        }
         default:
           // 未知事件类型，记录警告但不影响流程
           console.warn('未知的 SSE 事件类型:', eventType)

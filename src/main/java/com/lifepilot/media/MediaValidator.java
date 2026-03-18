@@ -184,14 +184,17 @@ public class MediaValidator {
      * @return 短格式名称
      */
     private static String mimeToFormat(String mimeType) {
-        String mapped = MIME_TO_FORMAT.get(mimeType);
+        // 去除 MIME 参数（如 audio/webm;codecs=opus → audio/webm）
+        String baseMime = mimeType.contains(";") ? mimeType.substring(0, mimeType.indexOf(';')).trim() : mimeType;
+
+        String mapped = MIME_TO_FORMAT.get(baseMime);
         if (mapped != null) {
             return mapped;
         }
-        int slashIndex = mimeType.indexOf('/');
-        if (slashIndex >= 0 && slashIndex < mimeType.length() - 1) {
-            return mimeType.substring(slashIndex + 1);
+        int slashIndex = baseMime.indexOf('/');
+        if (slashIndex >= 0 && slashIndex < baseMime.length() - 1) {
+            return baseMime.substring(slashIndex + 1);
         }
-        return mimeType;
+        return baseMime;
     }
 }

@@ -80,6 +80,23 @@ public class MessageFeedbackRepository {
     }
 
     /**
+     * 根据消息 ID 获取消息内容。
+     *
+     * @param messageId 消息 ID
+     * @return 消息内容，如果消息不存在返回 null
+     */
+    public String getMessageContentById(String messageId) {
+        try {
+            return jdbcTemplate.queryForObject(
+                    "SELECT content FROM chat_messages WHERE id = ?",
+                    String.class, messageId);
+        } catch (Exception e) {
+            log.warn("获取消息内容失败: messageId={}, error={}", messageId, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
      * 按消息 ID 查询所有反馈记录。
      *
      * @param messageId 消息 ID
