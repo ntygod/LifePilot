@@ -62,24 +62,26 @@ public class ExperienceSummarizer {
      * 从 ReactAgentState 提炼经验（主入口）。
      *
      * @param state Agent 最终状态
+     * @return 新写入的经验实体，若未写入则返回 null
      */
-    public void summarize(ReactAgentState state) {
+    @Nullable
+    public TemporalEntity summarize(ReactAgentState state) {
         // 1. 配置开关检查
         if (!config.isEnabled()) {
             log.debug("经验提炼: 功能已关闭");
-            return;
+            return null;
         }
 
         // 2. 触发条件检查
         if (!meetsTriggerConditions(state)) {
-            return;
+            return null;
         }
 
         // 3. 质量评估
         var report = qualityAssessor.assess(state);
         if (!report.qualityPassed()) {
             log.debug("经验提炼: 质量未通过, sessionId={}", state.sessionId());
-            return;
+            return null;
         }
 
         // 4. 截断轨迹
@@ -88,12 +90,15 @@ public class ExperienceSummarizer {
         // 5. LLM 提炼
         var record = extractExperience(state, trajectoryText, report);
         if (record == null) {
-            return;
+            return null;
         }
 
         // 6. 存储写入
-        persistExperience(record, state.sessionId(), report.taskSuccess(), state);
-        log.info("经验提炼: 完成, sessionId={}, scenario={}", state.sessionId(), record.scenario());
+        var entity = persistExperience(record, state.sessionId(), report.taskSuccess(), state);
+        if (entity != null) {
+            log.info("经验提炼: 完成, sessionId={}, scenario={}", state.sessionId(), record.scenario());
+        }
+        return entity;
     }
 
     /**
@@ -226,9 +231,10 @@ public class ExperienceSummarizer {
         }
     }
 
-    /** 持久化经验到 L3 语义记忆。 */
-    private void persistExperience(ExperienceRecord record, String sourceId, boolean success,
-                                   @Nullable ReactAgentState state) {
+    /** 持久化经验到 L3 语义记忆。去重命中或异常时返回 null。 */
+    @Nullable
+    private TemporalEntity persistExperience(ExperienceRecord record, String sourceId, boolean success,
+                                              @Nullable ReactAgentState state) {
         try {
             String experienceText = record.scenario() + ": " + record.strategy();
 
@@ -244,7 +250,7 @@ public class ExperienceSummarizer {
                     log.debug("经验提炼: 去重命中，提升已有经验分数, entityId={}, newScore={}",
                             existingId, boosted);
                 });
-                return;
+                return null;
             }
 
             // 构建 TemporalEntity
@@ -300,9 +306,11 @@ public class ExperienceSummarizer {
             vectorSearcher.upsertEntityVector(entity.id(), experienceText);
 
             log.debug("经验提炼: 新经验已写入, entityId={}, name={}", entity.id(), name);
+            return entity;
         } catch (Exception e) {
             log.warn("经验提炼: 存储写入失败, scenario={}, error={}",
                     record.scenario(), e.getMessage());
+            return null;
         }
     }
 
