@@ -415,8 +415,6 @@ public class ReactAgentLoop implements CallbackHelper {
      * @param toolCallbacks     可用工具回调列表
      * @param traceContext      追踪上下文
      * @param cancellationToken 取消信号
-     * @param sseManager        SSE 管理器（流式模式下非 null，用于发送 MEDIA 事件）
-     * @param streamId          SSE 流 ID（流式模式下非 null）
      * @return 更新后的状态
      */
     private ReactAgentState executeToolCall(
