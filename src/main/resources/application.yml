@@ -259,6 +259,20 @@ lifepilot:
       cron: "0 0 5 * * *"
       retention-days: 90
       max-cleanup-per-run: 500
+    # 经验总结配置
+    experience:
+      enabled: true
+      max-input-tokens: 4000
+      dedup-similarity-threshold: 0.90
+      max-injection-count: 3
+      injection-token-budget: 500
+      max-retention-days: 90
+      llm-timeout-seconds: 30
+      min-tool-success-ratio: 0.3
+      eval-integration-enabled: true
+      eval-improvement-threshold: 0.05
+      eval-tag-prefix: "eval:"
+      eval-quality-relax-factor: 0.5
   skills:
     # ===== Skill 系统配置 =====
     # 支持 Java 原生 Skill、Markdown 声明式 Skill、MCP 外部工具
