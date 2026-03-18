@@ -102,6 +102,9 @@ public class MemoryProperties {
     /** 对话压缩配置。 */
     private Compression compression = new Compression();
 
+    /** L2 情景记忆自动清理配置。 */
+    private EpisodicCleanup episodicCleanup = new EpisodicCleanup();
+
     public TokenBudget getTokenBudget() { return tokenBudget; }
     public void setTokenBudget(TokenBudget tokenBudget) { this.tokenBudget = tokenBudget; }
 
@@ -128,6 +131,9 @@ public class MemoryProperties {
 
     public Compression getCompression() { return compression; }
     public void setCompression(Compression compression) { this.compression = compression; }
+
+    public EpisodicCleanup getEpisodicCleanup() { return episodicCleanup; }
+    public void setEpisodicCleanup(EpisodicCleanup episodicCleanup) { this.episodicCleanup = episodicCleanup; }
 
     /**
      * Token 预算分配配置 — 控制上下文窗口四区域的预算比例和场景切换阈值。
@@ -682,5 +688,32 @@ public static class Retrieval {
 
         public int getWindowOverlap() { return windowOverlap; }
         public void setWindowOverlap(int windowOverlap) { this.windowOverlap = windowOverlap; }
+    }
+
+    /**
+     * L2 情景记忆自动清理配置 — 控制过期对话记录的定时清理策略。
+     *
+     * @author zsg
+     * @since 2026-03-18
+     */
+    public static class EpisodicCleanup {
+
+        /** 清理 Cron 表达式，默认每日凌晨 5:00。 */
+        private String cron = "0 0 5 * * *";
+
+        /** 保留天数，默认 90。 */
+        private int retentionDays = 90;
+
+        /** 单次最大清理数量，默认 500。 */
+        private int maxCleanupPerRun = 500;
+
+        public String getCron() { return cron; }
+        public void setCron(String cron) { this.cron = cron; }
+
+        public int getRetentionDays() { return retentionDays; }
+        public void setRetentionDays(int retentionDays) { this.retentionDays = retentionDays; }
+
+        public int getMaxCleanupPerRun() { return maxCleanupPerRun; }
+        public void setMaxCleanupPerRun(int maxCleanupPerRun) { this.maxCleanupPerRun = maxCleanupPerRun; }
     }
 }

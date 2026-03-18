@@ -13,6 +13,8 @@ import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.QueryRefiner;
 import com.lifepilot.memory.retrieval.QueryRewriter;
 import com.lifepilot.memory.retrieval.RetrievalResult;
+import com.lifepilot.memory.procedural.PreferenceRule;
+import com.lifepilot.memory.procedural.ProceduralMemory;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
@@ -37,6 +39,7 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
 
 /**
  * 完整版上下文组装器 — 集成记忆检索、会话上下文、动态预算分配。
@@ -81,6 +84,8 @@ public class ContextAssembler {
     @Nullable private final QueryRefiner queryRefiner;
     // 记忆配置：用户画像查询等参数，可选注入
     @Nullable private final com.lifepilot.memory.config.MemoryProperties memoryProperties;
+    // L4 程序记忆：偏好规则查询，可选注入
+    @Nullable private final ProceduralMemory proceduralMemory;
     // LLM 路由器：用于跨会话语义过滤的 embedding 计算，可选注入
     @Nullable private final com.lifepilot.llm.LlmRouter llmRouter;
     // 查询改写器：LLM 语义改写提升检索召回，可选注入
@@ -109,6 +114,7 @@ public class ContextAssembler {
         this.passiveNotificationQueue = null;
         this.queryRefiner = null;
         this.memoryProperties = null;
+        this.proceduralMemory = null;
         this.llmRouter = null;
         this.queryRewriter = null;
     }
@@ -122,10 +128,10 @@ public class ContextAssembler {
                             @Nullable DataRedactor dataRedactor,
                             PromptRegistry promptRegistry) {
         this(config, hybridRetriever, workingMemory, tokenBudgetAllocator, retrievalStrategy, dataRedactor,
-                null, null, null, null, null, null, null, null, null, null, promptRegistry);
+                null, null, null, null, null, null, null, null, null, null, null, promptRegistry);
     }
 
-    /** 完整版构造器（注入记忆系统 + 可选知识库检索 + 可选 L2 情景记忆 + 可选 L3 语义记忆 + 可选被动通知队列 + 可选查询精炼器 + 可选 LlmRouter + 可选 QueryRewriter 依赖）。 */
+    /** 完整版构造器（注入记忆系统 + 可选知识库检索 + 可选 L2 情景记忆 + 可选 L3 语义记忆 + 可选被动通知队列 + 可选查询精炼器 + 可选 L4 程序记忆 + 可选 LlmRouter + 可选 QueryRewriter 依赖）。 */
     public ContextAssembler(AgentConfigProperties config,
                             HybridRetriever hybridRetriever,
                             WorkingMemory workingMemory,
@@ -140,6 +146,7 @@ public class ContextAssembler {
                             @Nullable PassiveNotificationQueue passiveNotificationQueue,
                             @Nullable QueryRefiner queryRefiner,
                             @Nullable com.lifepilot.memory.config.MemoryProperties memoryProperties,
+                            @Nullable ProceduralMemory proceduralMemory,
                             @Nullable com.lifepilot.llm.LlmRouter llmRouter,
                             @Nullable QueryRewriter queryRewriter,
                             PromptRegistry promptRegistry) {
@@ -158,6 +165,7 @@ public class ContextAssembler {
         this.passiveNotificationQueue = passiveNotificationQueue;
         this.queryRefiner = queryRefiner;
         this.memoryProperties = memoryProperties;
+        this.proceduralMemory = proceduralMemory;
         this.llmRouter = llmRouter;
         this.queryRewriter = queryRewriter;
     }
@@ -188,7 +196,7 @@ public class ContextAssembler {
             var strategyConfig = retrievalStrategy.getDefaultStrategy();
 
             if (strategyConfig.skip()) {
-                return buildMinimalContext(state);
+                return assembleBasic(state);
             }
 
             // 1.1 媒体占位符检测：音频/视频消息的 goal 是占位字符，跳过无效向量检索
@@ -329,14 +337,6 @@ public class ContextAssembler {
         String systemPrompt = safeReactSystemPrompt();
         String userPrompt = buildUserPrompt(state);
         return new AssembledContext(systemPrompt, userPrompt, List.of(), tokenBudget,
-                0, 0.0f, 0, false, List.of(), null);
-    }
-
-    /** 返回最小化上下文。 */
-    private AssembledContext buildMinimalContext(ReactAgentState state) {
-        int totalTokens = config.getContext().getMaxContextTokens();
-        var tokenBudget = TokenBudget.allocateDefault(totalTokens);
-        return new AssembledContext("", "", List.of(), tokenBudget,
                 0, 0.0f, 0, false, List.of(), null);
     }
 
@@ -831,7 +831,43 @@ public class ContextAssembler {
             }
 
             if (selected.isEmpty()) return "";
-            return formatUserProfile(selected);
+            // L3 格式化
+            String l3Profile = formatUserProfile(selected);
+
+            // L4 偏好规则查询：高置信度规则优先去重同名 L3 PREFERENCE 实体
+            if (proceduralMemory != null) {
+                try {
+                    var preferenceRules = proceduralMemory.getPreferences("user-preference").stream()
+                            .filter(PreferenceRule::isHighConfidence)
+                            .toList();
+
+                    if (!preferenceRules.isEmpty()) {
+                        // 去重：L4 规则优先，从 selected 中移除与 L4 规则同名的 L3 PREFERENCE 实体
+                        var l4Keys = preferenceRules.stream()
+                                .map(PreferenceRule::key)
+                                .collect(Collectors.toSet());
+                        var deduped = selected.stream()
+                                .filter(e -> !(e.type() == EntityType.PREFERENCE && l4Keys.contains(e.name())))
+                                .toList();
+
+                        // 重新格式化去重后的 L3 实体
+                        l3Profile = formatUserProfile(deduped);
+
+                        // 格式化 L4 规则并追加
+                        var l4Sb = new StringBuilder();
+                        for (var rule : preferenceRules) {
+                            l4Sb.append("- [偏好规则] ").append(rule.key()).append(": ")
+                                    .append(rule.value()).append("（置信度: ")
+                                    .append(rule.confidence()).append("）\n");
+                        }
+                        l3Profile = l3Profile + l4Sb;
+                    }
+                } catch (Exception l4Ex) {
+                    log.warn("L4 偏好规则查询失败，降级为仅使用 L3 实体: error={}", l4Ex.getMessage());
+                }
+            }
+
+            return l3Profile;
         } catch (Exception e) {
             log.warn("用户画像查询失败，降级跳过: error={}", e.getMessage());
             return "";
@@ -871,11 +907,6 @@ public class ContextAssembler {
         return fragments.stream()
                 .map(msg -> "[%s] %s".formatted(msg.role(), msg.effectiveContent()))
                 .toList();
-    }
-
-    /** 安全执行预算分配，异常时使用静态分配降级。 */
-    private BudgetAllocation safeAllocate(TokenBudgetAllocator allocator, int conversationTurns, float topScore, boolean hasMemoryData) {
-        return safeAllocate(allocator, conversationTurns, topScore, hasMemoryData, 0);
     }
 
     /**
@@ -1269,9 +1300,23 @@ public class ContextAssembler {
         vars.put("stepCount", String.valueOf(state.stepCount()));
 
         // 各区域预格式化为文本块，空区域传空字符串（模板中直接拼接，空字符串不产生多余内容）
-        vars.put("userProfileSection", formatUserProfileSection(userProfile));
+        String profileSection = formatUserProfileSection(userProfile);
+        String historySection = formatConversationHistorySection(slots);
+        if (dataRedactor != null) {
+            try {
+                profileSection = dataRedactor.redact(profileSection);
+            } catch (Exception e) {
+                log.warn("用户画像脱敏失败，降级使用原始文本: error={}", e.getMessage());
+            }
+            try {
+                historySection = dataRedactor.redact(historySection);
+            } catch (Exception e) {
+                log.warn("对话历史脱敏失败，降级使用原始文本: error={}", e.getMessage());
+            }
+        }
+        vars.put("userProfileSection", profileSection);
         vars.put("passiveNotificationsSection", formatPassiveNotificationsSection());
-        vars.put("conversationHistorySection", formatConversationHistorySection(slots));
+        vars.put("conversationHistorySection", historySection);
         vars.put("memoriesSection", formatListSection("相关记忆", memories));
         vars.put("knowledgeBaseSection", formatListSection("知识库片段", knowledgeBaseSnippets));
         vars.put("crossSessionSection", formatListSection("跨会话参考", crossSessionFragments));

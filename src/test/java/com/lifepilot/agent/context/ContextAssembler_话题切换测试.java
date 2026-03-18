@@ -123,7 +123,7 @@ class ContextAssembler_话题切换测试 {
         return new ContextAssembler(config, hybridRetriever, workingMemory,
                 tokenBudgetAllocator, strategy, null,
                 null, null, null, null, null, null, null,
-                memoryProperties, llmRouter, null, promptRegistry);
+                memoryProperties, null, llmRouter, null, promptRegistry);
     }
 
     private MemoryProperties buildProperties(float topicSwitchThreshold) {
