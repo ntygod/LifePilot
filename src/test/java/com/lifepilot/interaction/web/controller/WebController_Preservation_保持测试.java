@@ -8,6 +8,7 @@ import com.lifepilot.interaction.web.service.ChatSessionService;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.knowledge.KnowledgeBaseManager;
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
+import com.lifepilot.media.config.MediaProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -71,10 +72,11 @@ class WebController_Preservation_保持测试 {
 
     @BeforeEach
     void setUp() {
+        var mediaProperties = new MediaProperties();
         var chatController = new ChatController(
                 webChannelAdapter, sseSessionManager, chatSessionService,
                 messageFeedbackRepository, attachmentRepository, knowledgeBaseProperties,
-                responseTracker, null, null);
+                responseTracker, null, null, null, mediaProperties);
         var kbController = new KnowledgeBaseController(
                 knowledgeBaseManager, null, null, null);
 
