@@ -10,6 +10,7 @@ import com.lifepilot.memory.consolidation.EntityDeduplicator;
 import com.lifepilot.memory.consolidation.EpisodicToProceduralConsolidator;
 import com.lifepilot.memory.consolidation.EpisodicToSemanticConsolidator;
 import com.lifepilot.memory.consolidation.PreferenceConsolidator;
+import com.lifepilot.memory.episodic.EpisodicCleanupJob;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.memory.retrieval.QueryRefiner;
 import com.lifepilot.memory.retrieval.QueryRewriter;
@@ -540,6 +541,21 @@ public class MemoryAutoConfiguration {
                 preferenceConsolidator != null ? "启用" : "禁用");
         return new ConsolidationPipeline(semanticConsolidator, proceduralConsolidator,
                 properties, preferenceConsolidator);
+    }
+
+    // --- L2 情景记忆定时清理 ---
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(EpisodicMemory.class)
+    public EpisodicCleanupJob episodicCleanupJob(
+            EpisodicMemory episodicMemory,
+            JdbcTemplate jdbcTemplate,
+            MemoryProperties properties) {
+        log.info("记忆系统: 注册 EpisodicCleanupJob, cron={}, retentionDays={}",
+                properties.getEpisodicCleanup().getCron(),
+                properties.getEpisodicCleanup().getRetentionDays());
+        return new EpisodicCleanupJob(episodicMemory, jdbcTemplate, properties);
     }
 
     // --- 实体去重 ---
