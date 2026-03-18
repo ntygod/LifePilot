@@ -58,8 +58,6 @@ import org.springframework.ai.model.tool.DefaultToolCallingChatOptions;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
-import com.lifepilot.memory.procedural.ProceduralMemory;
-import com.lifepilot.memory.procedural.IntentMatcher;
 import org.springframework.lang.Nullable;
 import org.springframework.util.MimeTypeUtils;
 
@@ -125,10 +123,6 @@ public class ReactAgentLoop {
     // ===== 可选依赖（事件发布，用于 ScheduledWakeup 延迟恢复） =====
     @Nullable private final org.springframework.context.ApplicationEventPublisher eventPublisher;
 
-    // ===== 可选依赖（L4 反馈闭环） =====
-    @Nullable private final ProceduralMemory proceduralMemory;
-    @Nullable private final IntentMatcher intentMatcher;
-
     // ===== 挂起-恢复定时任务调度器 =====
     private final java.util.concurrent.ScheduledExecutorService suspendScheduler =
             java.util.concurrent.Executors.newSingleThreadScheduledExecutor(
@@ -165,9 +159,7 @@ public class ReactAgentLoop {
             @Nullable A2uiProperties a2uiProperties,
             @Nullable AttachmentRepository attachmentRepository,
             @Nullable SuspendStore suspendStore,
-            @Nullable org.springframework.context.ApplicationEventPublisher eventPublisher,
-            @Nullable ProceduralMemory proceduralMemory,
-            @Nullable IntentMatcher intentMatcher) {
+            @Nullable org.springframework.context.ApplicationEventPublisher eventPublisher) {
         this.contextAssembler = contextAssembler;
         this.llmRouter = llmRouter;
         this.traceRecorder = traceRecorder;
@@ -191,8 +183,6 @@ public class ReactAgentLoop {
         this.attachmentRepository = attachmentRepository;
         this.suspendStore = suspendStore;
         this.eventPublisher = eventPublisher;
-        this.proceduralMemory = proceduralMemory;
-        this.intentMatcher = intentMatcher;
     }
 
     /** 测试会话前缀 — 以此开头的 sessionId 不持久化对话历史和记忆。 */
@@ -665,17 +655,6 @@ public class ReactAgentLoop {
 
         log.debug("工具执行完成: toolId={}, success={}, latencyMs={}",
                 toolId, success, toolCallDuration.toMillis());
-
-        // L4 反馈闭环：工具执行成功后记录操作模板执行结果
-        if (success && proceduralMemory != null && intentMatcher != null) {
-            try {
-                var match = intentMatcher.match(toolId + " " + inputJson);
-                match.ifPresent(m -> proceduralMemory.recordExecution(
-                        m.template().templateId(), true));
-            } catch (Exception e) {
-                log.warn("L4 执行结果记录失败: toolId={}, error={}", toolId, e.getMessage());
-            }
-        }
 
         return state;
     }

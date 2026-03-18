@@ -22,14 +22,13 @@ import org.slf4j.LoggerFactory;
 import com.lifepilot.prompt.PromptRegistry;
 
 import java.time.Instant;
-import java.time.format.DateTimeParseException;
 import java.util.*;
 
 /**
  * 记忆管理内置 Skill 提供者。
  *
- * <p>注册 6 个记忆管理工具到 DynamicToolRegistry，
- * 提供记忆搜索、创建、标签、时间线、关联查询和时间点记忆查询能力。</p>
+ * <p>注册 5 个记忆管理工具到 DynamicToolRegistry，
+ * 提供记忆搜索、创建、标签、时间线和关联查询能力。</p>
  *
  * @author zsg
  * @since 2026-02-25
@@ -65,8 +64,7 @@ public class MemorySkillProvider implements BuiltinSkillProvider {
                         "builtin.memory.create",
                         "builtin.memory.tag",
                         "builtin.memory.timeline",
-                        "builtin.memory.relate",
-                        "builtin.memory.query-at-time"
+                        "builtin.memory.relate"
                 ))
                 .metadata(Map.of())
                 .build();
@@ -79,8 +77,7 @@ public class MemorySkillProvider implements BuiltinSkillProvider {
         toolRegistry.registerBuiltinTool(buildTagTool());
         toolRegistry.registerBuiltinTool(buildTimelineTool());
         toolRegistry.registerBuiltinTool(buildRelateTool());
-        toolRegistry.registerBuiltinTool(buildQueryAtTimeTool());
-        log.info("记忆 Skill 工具注册完成: count=6");
+        log.info("记忆 Skill 工具注册完成: count=5");
     }
 
     // ---- 工具构建方法 ----
@@ -271,53 +268,6 @@ public class MemorySkillProvider implements BuiltinSkillProvider {
                     } catch (Exception e) {
                         log.error("关联查询失败: {}", e.getMessage(), e);
                         return ToolResult.error("关联查询失败: " + e.getMessage());
-                    }
-                })
-                .build();
-    }
-
-    /** 构建时间点记忆查询工具。 */
-    private BuiltinTool buildQueryAtTimeTool() {
-        return BuiltinTool.builder()
-                .id("builtin.memory.query-at-time")
-                .name("时间点记忆查询")
-                .description("查询指定时间点有效的记忆实体，支持按实体类型过滤")
-                .inputSchema(JsonSchema.of(Map.of(
-                        "type", "object",
-                        "required", List.of("timestamp"),
-                        "properties", Map.of(
-                                "timestamp", Map.of("type", "string", "description", "ISO 8601 格式时间戳"),
-                                "entityType", Map.of("type", "string", "description", "过滤实体类型")
-                        )
-                )))
-                .riskLevel(RiskLevel.LOW)
-                .executor(input -> {
-                    try {
-                        String timestamp = input.getParam("timestamp", String.class);
-                        Instant instant = Instant.parse(timestamp);
-                        List<TemporalEntity> entities = semanticMemory.queryAtTime(instant);
-
-                        // 可选按 entityType 过滤
-                        String entityTypeStr = input.getOptionalParam("entityType", String.class).orElse(null);
-                        if (entityTypeStr != null) {
-                            EntityType filterType = EntityType.valueOf(entityTypeStr.toUpperCase());
-                            entities = entities.stream()
-                                    .filter(e -> e.type() == filterType)
-                                    .toList();
-                        }
-
-                        List<Map<String, Object>> items = entities.stream()
-                                .map(this::entityToMap)
-                                .toList();
-                        return ToolResult.success(Map.of(
-                                "entities", items,
-                                "count", items.size(),
-                                "timestamp", timestamp));
-                    } catch (DateTimeParseException e) {
-                        return ToolResult.error("无效的时间戳格式");
-                    } catch (Exception e) {
-                        log.error("时间点记忆查询失败: {}", e.getMessage(), e);
-                        return ToolResult.error("时间点记忆查询失败: " + e.getMessage());
                     }
                 })
                 .build();

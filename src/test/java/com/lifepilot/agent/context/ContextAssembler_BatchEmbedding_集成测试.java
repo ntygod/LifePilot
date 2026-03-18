@@ -158,7 +158,7 @@ class ContextAssembler_BatchEmbedding_集成测试 {
         return new ContextAssembler(config, hybridRetriever, workingMemory,
                 tokenBudgetAllocator, strategy, null,
                 null, null, null, null, null, null, null,
-                memoryProperties, null, llmRouter, null, promptRegistry);
+                memoryProperties, llmRouter, null, promptRegistry);
     }
 
     private MemoryProperties buildProperties(float minCrossSessionSemanticScore) {

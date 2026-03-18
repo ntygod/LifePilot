@@ -22,8 +22,6 @@ import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.media.MediaProcessor;
 import com.lifepilot.media.MediaValidator;
 import com.lifepilot.memory.episodic.EpisodicMemory;
-import com.lifepilot.memory.procedural.ProceduralMemory;
-import com.lifepilot.memory.procedural.IntentMatcher;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.InjectionRecordRepository;
 import com.lifepilot.memory.semantic.RealtimeExtractor;
@@ -80,20 +78,18 @@ public class AgentAutoConfiguration {
                                              @Autowired(required = false) PassiveNotificationQueue passiveNotificationQueue,
                                              @Autowired(required = false) com.lifepilot.memory.retrieval.QueryRefiner queryRefiner,
                                              @Autowired(required = false) com.lifepilot.memory.config.MemoryProperties memoryProperties,
-                                             @Autowired(required = false) com.lifepilot.memory.procedural.ProceduralMemory proceduralMemory,
                                              @Autowired(required = false) LlmRouter llmRouter,
                                              @Autowired(required = false) com.lifepilot.memory.retrieval.QueryRewriter queryRewriter) {
         if (hybridRetriever != null && workingMemory != null && tokenBudgetAllocator != null) {
-            log.info("Agent 引擎: 注册完整版 ContextAssembler（记忆系统已就绪，L2 情景记忆{}，L3 语义记忆{}，L4 程序记忆{}，QueryRewriter{}）",
+            log.info("Agent 引擎: 注册完整版 ContextAssembler（记忆系统已就绪，L2 情景记忆{}，L3 语义记忆{}，QueryRewriter{}）",
                     episodicMemory != null ? "已启用" : "未启用",
                     semanticMemory != null ? "已启用" : "未启用",
-                    proceduralMemory != null ? "已启用" : "未启用",
                     queryRewriter != null ? "已启用" : "未启用");
             var strategy = new DefaultMemoryRetrievalStrategy();
             return new ContextAssembler(config, hybridRetriever,
                     workingMemory, tokenBudgetAllocator, strategy, dataRedactor,
                     documentRetriever, sessionKnowledgeBaseRepository, documentRepository,
-                    episodicMemory, semanticMemory, passiveNotificationQueue, queryRefiner, memoryProperties, proceduralMemory, llmRouter, queryRewriter, promptRegistry);
+                    episodicMemory, semanticMemory, passiveNotificationQueue, queryRefiner, memoryProperties, llmRouter, queryRewriter, promptRegistry);
         }
         log.warn("Agent 引擎: 注册基础版 ContextAssembler（记忆系统部分或全部不可用，记忆检索功能已降级）");
         return new ContextAssembler(config, promptRegistry);
@@ -152,24 +148,20 @@ public class AgentAutoConfiguration {
                                @Autowired(required = false) A2uiProperties a2uiProperties,
                                @Autowired(required = false) com.lifepilot.interaction.web.repository.AttachmentRepository attachmentRepository,
                                @Autowired(required = false) SuspendStore suspendStore,
-                               @Autowired(required = false) org.springframework.context.ApplicationEventPublisher eventPublisher,
-                               @Autowired(required = false) ProceduralMemory proceduralMemory,
-                               @Autowired(required = false) IntentMatcher intentMatcher) {
-        log.info("Agent 引擎初始化完成（ReAct 架构，追踪{}，记忆系统{}，实时提取{}，多模态{}，A2UI{}，挂起-恢复{}，L4反馈闭环{}）",
+                               @Autowired(required = false) org.springframework.context.ApplicationEventPublisher eventPublisher) {
+        log.info("Agent 引擎初始化完成（ReAct 架构，追踪{}，记忆系统{}，实时提取{}，多模态{}，A2UI{}，挂起-恢复{}）",
                 traceRecorder != null ? "已启用" : "未启用",
                 workingMemory != null ? "已启用" : "未启用",
                 realtimeExtractor != null ? "已启用" : "未启用",
                 multimodalRouter != null ? "已启用" : "未启用（纯文本模式）",
                 a2uiProperties != null && a2uiProperties.enabled() ? "已启用" : "未启用",
-                suspendStore != null ? "已启用" : "未启用",
-                proceduralMemory != null && intentMatcher != null ? "已启用" : "未启用");
+                suspendStore != null ? "已启用" : "未启用");
         return new ReactAgentLoop(contextAssembler, llmRouter, traceRecorder, objectMapper,
                 sessionManager, agentToolProvider, config, promptRegistry,
                 multimodalRouter, mediaDataExtractor, mediaValidator, mediaProcessor,
                 workingMemory, conversationHistoryStore,
                 conversationViewService, realtimeExtractor, injectionRecordRepository,
                 sessionKnowledgeBaseRepository, knowledgeBaseRepository, a2uiProperties,
-                attachmentRepository, suspendStore, eventPublisher,
-                proceduralMemory, intentMatcher);
+                attachmentRepository, suspendStore, eventPublisher);
     }
 }

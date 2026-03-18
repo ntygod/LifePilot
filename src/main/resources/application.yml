@@ -250,11 +250,6 @@ lifepilot:
       like-boost: 0.1
       dislike-penalty: 0.05
       expiration-cron: "0 0 * * * *"
-    # L2 情景记忆自动清理
-    episodic-cleanup:
-      cron: "0 0 5 * * *"
-      retention-days: 90
-      max-cleanup-per-run: 500
   skills:
     # ===== Skill 系统配置 =====
     # 支持 Java 原生 Skill、Markdown 声明式 Skill、MCP 外部工具
