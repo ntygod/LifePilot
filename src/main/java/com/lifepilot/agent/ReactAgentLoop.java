@@ -2,6 +2,7 @@ package com.lifepilot.agent;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.agent.callback.IterationCallback;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.context.AssembledContext;
 import com.lifepilot.agent.context.ContextAssembler;
@@ -235,35 +236,6 @@ public class ReactAgentLoop {
     @Nullable
     public MultimodalRouter getMultimodalRouter() {
         return multimodalRouter;
-    }
-
-    /**
-     * 迭代回调 — 抽象 LLM 调用方式（同步 / 流式）。
-     *
-     * <p>返回原始 ChatResponse（不自动执行 tool call），
-     * 由 coreLoop 负责解析 tool call 并手动执行。</p>
-     */
-    @FunctionalInterface
-    interface IterationCallback {
-        /**
-         * 调用 LLM 并返回原始响应（不自动执行 tool call）。
-         *
-         * @param request       原始请求
-         * @param messages      Spring AI 消息列表
-         * @param toolCallbacks 工具回调列表（用于构建 tool definition，不自动执行）
-         * @param traceContext  追踪上下文
-         * @return LLM 原始响应（可能包含 tool call 请求）
-         */
-        ChatResponse callLlm(AgentRequest request,
-                             List<Message> messages,
-                             List<ToolCallback> toolCallbacks,
-                             @Nullable TraceContext traceContext);
-
-        /** 获取本次调用的 Provider ID（用于 Trace 记录）。 */
-        default String getProviderId() { return DEFAULT_MODEL_ID; }
-
-        /** 获取本次调用的 Model ID（用于 Trace 记录）。 */
-        default String getModelId() { return DEFAULT_MODEL_ID; }
     }
 
     /**
