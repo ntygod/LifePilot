@@ -17,7 +17,7 @@ import java.util.concurrent.CompletableFuture;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * 交互控制工具单元测试 �?Mock InteractionBridge，验�?3 个交互工具�?
+ * 交互控制工具单元测试 — Mock InteractionBridge，验证 3 个交互工具。
  *
  * @author zsg
  * @since 2026-03-08
@@ -32,7 +32,7 @@ class InteractionToolExecutorTest {
         properties = new MetaProperties();
         // 设置较短超时便于测试
         properties.getInfra().getInteraction().setResponseTimeoutSeconds(2);
-        // 使用 null channel �?测试中通过 resolve() 手动完成
+        // 使用 null channel — 测试中通过 resolve() 手动完成
         bridge = new InteractionBridge(properties, null, null);
     }
 
@@ -42,7 +42,7 @@ class InteractionToolExecutorTest {
 
     @Test
     void bridge_无可用通道时_返回超时响应() {
-        var request = new InteractionRequest(null, InteractionType.CONFIRM, "session-1", "确认�?, null);
+        var request = new InteractionRequest(null, InteractionType.CONFIRM, "session-1", "确认吗", null);
         var response = bridge.request(request);
 
         assertThat(response.timedOut()).isTrue();
@@ -50,13 +50,13 @@ class InteractionToolExecutorTest {
 
     @Test
     void bridge_resolve完成Future() {
-        // 使用�?CLI handler �?bridge
+        // 使用真实 CLI handler 的 bridge
         var cliHandler = new TestCliInteractionHandler();
         var bridgeWithCli = new InteractionBridge(properties, null, cliHandler);
 
         // 异步发起请求
         var futureResponse = CompletableFuture.supplyAsync(() -> {
-            var request = new InteractionRequest(null, InteractionType.CONFIRM, "session-1", "确认�?, null);
+            var request = new InteractionRequest(null, InteractionType.CONFIRM, "session-1", "确认吗", null);
             return bridgeWithCli.request(request);
         });
 
@@ -96,14 +96,14 @@ class InteractionToolExecutorTest {
     }
 
     @Test
-    void bridge_notify非阻塞_无通道时不抛异�?) {
+    void bridge_notify非阻塞_无通道时不抛异常() {
         var request = new InteractionRequest(null, InteractionType.NOTIFY, "session-1", "通知消息", null);
         bridge.notify(request);
         // 不抛异常即通过
     }
 
     @Test
-    void bridge_notify通过CLI推�?) {
+    void bridge_notify通过CLI推送() {
         var cliHandler = new TestCliInteractionHandler();
         var bridgeWithCli = new InteractionBridge(properties, null, cliHandler);
 
@@ -120,7 +120,7 @@ class InteractionToolExecutorTest {
     // ─────────────────────────────────────────────
 
     @Test
-    void choose_用户选择_返回选中�?) {
+    void choose_用户选择_返回选中项() {
         var cliHandler = new TestCliInteractionHandler();
         var bridgeWithCli = new InteractionBridge(properties, null, cliHandler);
         var executor = new ChooseToolExecutor(bridgeWithCli);
@@ -163,14 +163,14 @@ class InteractionToolExecutorTest {
     // ─────────────────────────────────────────────
 
     @Test
-    void input_用户输入_返回输入�?) {
+    void input_用户输入_返回输入值() {
         var cliHandler = new TestCliInteractionHandler();
         var bridgeWithCli = new InteractionBridge(properties, null, cliHandler);
         var executor = new InputToolExecutor(bridgeWithCli);
 
         var futureResult = CompletableFuture.supplyAsync(() -> {
             ToolInput input = new ToolInput("builtin.interact.input",
-                    Map.of("message", "请输入姓�?, "sessionId", "s1"),
+                    Map.of("message", "请输入姓名", "sessionId", "s1"),
                     JsonSchema.empty(), null, null);
             return executor.execute(input);
         });
@@ -207,12 +207,12 @@ class InteractionToolExecutorTest {
     // ─────────────────────────────────────────────
 
     @Test
-    void notify_非阻塞推送_通过NotificationService发�?) {
+    void notify_非阻塞推送_通过NotificationService发送() {
         var mockService = new TestNotificationService();
         var executor = new NotifyToolExecutor(mockService);
 
         ToolInput input = new ToolInput("builtin.interact.notify",
-                Map.of("message", "任务已完�?),
+                Map.of("message", "任务已完成"),
                 JsonSchema.empty(), null, null);
 
         long start = System.currentTimeMillis();
@@ -224,15 +224,15 @@ class InteractionToolExecutorTest {
         assertThat(result.data().get("count")).isEqualTo(1);
         // 非阻塞验证：应在 1 秒内完成
         assertThat(elapsed).isLessThan(1000);
-        // 验证 NotificationService 被调�?
+        // 验证 NotificationService 被调用
         assertThat(mockService.sentRequests).hasSize(1);
-        assertThat(mockService.sentRequests.getFirst().content().toPlainText()).isEqualTo("任务已完�?);
+        assertThat(mockService.sentRequests.getFirst().content().toPlainText()).isEqualTo("任务已完成");
         assertThat(mockService.sentRequests.getFirst().urgency())
                 .isEqualTo(com.lifepilot.notification.Urgency.MEDIUM);
     }
 
     @Test
-    void notify_指定urgency_正确传�?) {
+    void notify_指定urgency_正确传递() {
         var mockService = new TestNotificationService();
         var executor = new NotifyToolExecutor(mockService);
 
@@ -277,7 +277,7 @@ class InteractionToolExecutorTest {
     //  辅助类和方法
     // ─────────────────────────────────────────────
 
-    /** 测试�?CLI 交互处理�?�?捕获最后一次推送的请求�?*/
+    /** 测试用 CLI 交互处理器 — 捕获最后一次推送的请求。 */
     private static class TestCliInteractionHandler implements CliInteractionHandler {
         volatile InteractionRequest lastRequest;
 
@@ -287,7 +287,7 @@ class InteractionToolExecutorTest {
         }
     }
 
-    /** 测试用通知服务 �?记录所有发送的通知请求�?*/
+    /** 测试用通知服务 — 记录所有发送的通知请求。 */
     private static class TestNotificationService implements NotificationService {
         final List<NotificationRequest> sentRequests = new ArrayList<>();
 
@@ -298,7 +298,7 @@ class InteractionToolExecutorTest {
         }
     }
 
-    /** 等待 CLI handler 收到请求（最�?2 秒）�?*/
+    /** 等待 CLI handler 收到请求（最多 2 秒）。 */
     private void waitForPending(TestCliInteractionHandler handler) {
         long deadline = System.currentTimeMillis() + 2000;
         while (handler.lastRequest == null && System.currentTimeMillis() < deadline) {

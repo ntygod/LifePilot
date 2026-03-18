@@ -27,7 +27,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
 /**
- * IntrospectionSkillProvider 单元测试�? *
+ * IntrospectionSkillProvider 单元测试。
+ *
  * @author zsg
  * @since 2026-03-08
  */
@@ -78,7 +79,7 @@ class IntrospectionSkillProviderTest {
     }
 
     @Test
-    void registerTools_注册4个工�?) {
+    void registerTools_注册4个工具() {
         DynamicToolRegistry registry = mock(DynamicToolRegistry.class);
 
         provider.registerTools(registry);
@@ -130,7 +131,7 @@ class IntrospectionSkillProviderTest {
     }
 
     @Test
-    void listCapabilities_按类型过滤_只返回匹配类�?) {
+    void listCapabilities_按类型过滤_只返回匹配类型() {
         var skill = createSkill("test.skill");
         when(skillRegistry.listAll()).thenReturn(List.of(skill));
         aggregator.invalidateCache();
@@ -228,7 +229,7 @@ class IntrospectionSkillProviderTest {
     // ─────────────────────────────────────────────
 
     @Test
-    void status_返回各注册中心计�?) {
+    void status_返回各注册中心计数() {
         var skill = createSkill("test.skill");
         when(skillRegistry.listAll()).thenReturn(List.of(skill));
         aggregator.invalidateCache();
@@ -278,21 +279,22 @@ class IntrospectionSkillProviderTest {
     }
 
     @Test
-    void suggest_语义搜索异常_降级为仅关键词匹�?) {
+    void suggest_语义搜索异常_降级为仅关键词匹配() {
         when(skillRegistry.search(anyString())).thenThrow(new RuntimeException("搜索异常"));
         aggregator.invalidateCache();
 
         var result = executeToolByProvider("system.suggest",
                 Map.of("query", "test"));
 
-        // 不应抛异常，应正常返�?        assertThat(result.ok()).isTrue();
+        // 不应抛异常，应正常返回
+        assertThat(result.ok()).isTrue();
     }
 
     // ─────────────────────────────────────────────
     //  辅助方法
     // ─────────────────────────────────────────────
 
-    /** 通过 provider 注册工具后，�?ID 查找并执行�?*/
+    /** 通过 provider 注册工具后，按 ID 查找并执行。 */
     private ToolResult executeToolByProvider(String toolId, Map<String, Object> params) {
         DynamicToolRegistry registry = mock(DynamicToolRegistry.class);
         ArgumentCaptor<BuiltinTool> captor = ArgumentCaptor.forClass(BuiltinTool.class);
@@ -303,13 +305,13 @@ class IntrospectionSkillProviderTest {
         var tool = captor.getAllValues().stream()
                 .filter(t -> t.id().equals(toolId))
                 .findFirst()
-                .orElseThrow(() -> new AssertionError("未找到工�? " + toolId));
+                .orElseThrow(() -> new AssertionError("未找到工具 " + toolId));
 
         var input = new ToolInput(toolId, params, tool.inputSchema(), null, null);
         return tool.execute(input);
     }
 
-    /** 创建测试�?SkillDefinition�?*/
+    /** 创建测试用 SkillDefinition。 */
     private SkillDefinition createSkill(String id) {
         return SkillDefinition.builder()
                 .id(id)

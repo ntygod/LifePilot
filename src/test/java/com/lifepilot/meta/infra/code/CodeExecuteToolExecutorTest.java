@@ -20,10 +20,10 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 /**
- * CodeExecuteToolExecutor 单元测试�?
+ * CodeExecuteToolExecutor 单元测试。
  *
- * <p>SandboxBooter �?sealed interface，无法直�?mock�?
- * 因此 mock �?permits 的具体实现类 ProcessBooter�?/p>
+ * <p>SandboxBooter 是 sealed interface，无法直接 mock。
+ * 因此 mock 其 permits 的具体实现类 ProcessBooter。</p>
  *
  * @author zsg
  * @since 2026-03-08
@@ -37,17 +37,17 @@ class CodeExecuteToolExecutorTest {
     @BeforeEach
     void setUp() {
         properties = new MetaProperties();
-        // SandboxBooter �?sealed interface，mock �?permits �?ProcessBooter
+        // SandboxBooter 是 sealed interface，mock 其 permits 的 ProcessBooter
         sandboxBooter = mock(ProcessBooter.class);
         executor = new CodeExecuteToolExecutor(properties, sandboxBooter, null, null);
     }
 
     // ─────────────────────────────────────────────
-    //  沙箱不可用场�?
+    //  沙箱不可用场景
     // ─────────────────────────────────────────────
 
     @Test
-    void sandboxBooter为null时返回错�?) {
+    void sandboxBooter为null时返回错误() {
         var nullExecutor = new CodeExecuteToolExecutor(properties, null, null, null);
         ToolInput input = buildInput(Map.of("code", "print('hello')"));
 
@@ -89,7 +89,7 @@ class CodeExecuteToolExecutorTest {
         assertThat((long) result.data().get("durationMs")).isEqualTo(150);
         assertThat((String) result.data().get("state")).isEqualTo("COMPLETED");
 
-        // 验证传递给 SandboxBooter 的请求参�?
+        // 验证传递给 SandboxBooter 的请求参数
         var captor = org.mockito.ArgumentCaptor.forClass(ExecutionRequest.class);
         verify(sandboxBooter).execute(captor.capture());
         ExecutionRequest captured = captor.getValue();
@@ -139,7 +139,7 @@ class CodeExecuteToolExecutorTest {
     }
 
     @Test
-    void 自定义超时时�?) {
+    void 自定义超时时间() {
         when(sandboxBooter.available()).thenReturn(true);
         when(sandboxBooter.execute(any(ExecutionRequest.class)))
                 .thenReturn(new ExecutionResult("", "", 0, 10, ExecutionState.COMPLETED));
@@ -163,7 +163,7 @@ class CodeExecuteToolExecutorTest {
     // ─────────────────────────────────────────────
 
     @Test
-    void 默认语言从配置读�?) {
+    void 默认语言从配置读取() {
         properties.getInfra().getCodeExecute().setDefaultLanguage("javascript");
         executor = new CodeExecuteToolExecutor(properties, sandboxBooter, null, null);
 
@@ -171,7 +171,7 @@ class CodeExecuteToolExecutorTest {
         when(sandboxBooter.execute(any(ExecutionRequest.class)))
                 .thenReturn(new ExecutionResult("", "", 0, 10, ExecutionState.COMPLETED));
 
-        // 不指�?language，应使用配置的默认�?javascript
+        // 不指定 language，应使用配置的默认值 javascript
         ToolInput input = buildInput(Map.of("code", "console.log('test')"));
 
         executor.execute(input);
@@ -236,7 +236,7 @@ class CodeExecuteToolExecutorTest {
 
         ToolResult result = executor.execute(input);
 
-        // 非零退出码视为执行失败，但 data 中仍包含 exitCode �?stderr
+        // 非零退出码视为执行失败，但 data 中仍包含 exitCode 和 stderr
         assertThat(result.ok()).isFalse();
         assertThat(result.error()).contains("代码执行失败");
         assertThat((int) result.data().get("exitCode")).isEqualTo(1);

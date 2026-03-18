@@ -11,7 +11,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * CalculateToolExecutor 单元测试�?
+ * CalculateToolExecutor 单元测试。
  *
  * @author zsg
  * @since 2026-03-08
@@ -59,7 +59,7 @@ class CalculateToolExecutorTest {
         ToolResult result = calculate("100 / 3");
 
         assertThat(result.ok()).isTrue();
-        // BigDecimal 精确除法�?6 位精�?
+        // BigDecimal 精确除法，6 位精度
         assertThat(result.data().get("result").toString()).startsWith("33.333");
     }
 
@@ -72,20 +72,20 @@ class CalculateToolExecutorTest {
     }
 
     // ─────────────────────────────────────────────
-    //  百分�?
+    //  百分比
     // ─────────────────────────────────────────────
 
     @Test
-    void execute_百分比_数值在�?) {
+    void execute_百分比_数值在前() {
         ToolResult result = calculate("200 * 15%");
 
         assertThat(result.ok()).isTrue();
         assertThat(result.data().get("result")).isEqualTo("30");
-        assertThat(result.data().get("type")).isEqualTo("百分�?);
+        assertThat(result.data().get("type")).isEqualTo("百分比");
     }
 
     @Test
-    void execute_百分比_百分号在�?) {
+    void execute_百分比_百分号在前() {
         ToolResult result = calculate("15% * 200");
 
         assertThat(result.ok()).isTrue();
@@ -93,17 +93,17 @@ class CalculateToolExecutorTest {
     }
 
     // ─────────────────────────────────────────────
-    //  日期�?
+    //  日期差
     // ─────────────────────────────────────────────
 
     @Test
-    void execute_日期差计�?) {
+    void execute_日期差计算() {
         ToolResult result = calculate("2026-03-08 - 2025-01-01");
 
         assertThat(result.ok()).isTrue();
         assertThat(result.data().get("result")).isEqualTo("431");
-        assertThat(result.data().get("unit")).isEqualTo("�?);
-        assertThat(result.data().get("type")).isEqualTo("日期�?);
+        assertThat(result.data().get("unit")).isEqualTo("天");
+        assertThat(result.data().get("type")).isEqualTo("日期差");
     }
 
     @Test
@@ -115,7 +115,7 @@ class CalculateToolExecutorTest {
     }
 
     @Test
-    void execute_日期差_同一�?) {
+    void execute_日期差_同一天() {
         ToolResult result = calculate("2026-03-08 - 2026-03-08");
 
         assertThat(result.ok()).isTrue();
@@ -127,8 +127,8 @@ class CalculateToolExecutorTest {
     // ─────────────────────────────────────────────
 
     @Test
-    void execute_BigDecimal精度_浮点数加�?) {
-        // 经典浮点精度问题�?.1 + 0.2 != 0.3 in double
+    void execute_BigDecimal精度_浮点数加法() {
+        // 经典浮点精度问题：0.1 + 0.2 != 0.3 in double
         ToolResult result = calculate("0.1 + 0.2");
 
         assertThat(result.ok()).isTrue();
@@ -144,7 +144,7 @@ class CalculateToolExecutorTest {
         ToolResult result = calculate("hello world");
 
         assertThat(result.ok()).isFalse();
-        assertThat(result.error()).contains("无法解析表达�?);
+        assertThat(result.error()).contains("无法解析表达式");
     }
 
     @Test

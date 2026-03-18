@@ -12,7 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
 /**
- * 浏览器工�?Executor 单元测试 �?使用 Mock BrowserSessionManager�? *
+ * 浏览器工具 Executor 单元测试 — 使用 Mock BrowserSessionManager。 *
  * @author zsg
  * @since 2026-03-08
  */
@@ -26,7 +26,7 @@ class BrowserToolExecutorTest {
     class 优雅降级 {
 
         @Test
-        void navigate_sessionManager为null时返回降级提�?) {
+        void navigate_sessionManager为null时返回降级提示() {
             var executor = new BrowserNavigateToolExecutor(null, null);
             ToolResult result = executor.execute(buildInput(Map.of("url", "https://example.com")));
 
@@ -35,7 +35,7 @@ class BrowserToolExecutorTest {
         }
 
         @Test
-        void click_sessionManager为null时返回降级提�?) {
+        void click_sessionManager为null时返回降级提示() {
             var executor = new BrowserClickToolExecutor(null);
             ToolResult result = executor.execute(buildInput(Map.of("selector", "#btn")));
 
@@ -44,7 +44,7 @@ class BrowserToolExecutorTest {
         }
 
         @Test
-        void input_sessionManager为null时返回降级提�?) {
+        void input_sessionManager为null时返回降级提示() {
             var executor = new BrowserInputToolExecutor(null);
             ToolResult result = executor.execute(buildInput(Map.of("selector", "#name", "value", "test")));
 
@@ -53,7 +53,7 @@ class BrowserToolExecutorTest {
         }
 
         @Test
-        void screenshot_sessionManager为null时返回降级提�?) {
+        void screenshot_sessionManager为null时返回降级提示() {
             var executor = new BrowserScreenshotToolExecutor(null);
             ToolResult result = executor.execute(buildInput(Map.of()));
 

@@ -19,7 +19,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * GuardrailEngine 单元测试 �?验证 Infrastructure 审计豁免逻辑�?
+ * GuardrailEngine 单元测试，验证 Infrastructure 审计豁免逻辑。
  *
  * @author zsg
  * @since 2026-03-08
@@ -53,7 +53,7 @@ class GuardrailEngineTest {
                 .build();
     }
 
-    private BuiltinTool 创建普通工�?String id, RiskLevel riskLevel) {
+    private BuiltinTool 创建普通工具(String id, RiskLevel riskLevel) {
         return BuiltinTool.builder()
                 .id(id)
                 .name(id)
@@ -65,7 +65,7 @@ class GuardrailEngineTest {
                 .build();
     }
 
-    private ToolInput 创建空输�?String toolId) {
+    private ToolInput 创建空输入(String toolId) {
         return new ToolInput(toolId, Map.of(), JsonSchema.empty(), null, null);
     }
 
@@ -78,11 +78,11 @@ class GuardrailEngineTest {
 
     @Test
     void LOW风险infrastructure工具_跳过策略评估_返回Passed() {
-        // 注册一个会�?LOW 风险工具返回 Passed 的策略（但不应被执行到）
+        // 注册一个会对 LOW 风险工具返回 Passed 的策略（但不应被执行到）
         注册ToolRiskPolicy(RiskLevel.HIGH, Map.of());
 
         var tool = 创建Infrastructure工具("builtin.env.datetime", RiskLevel.LOW);
-        var result = engine.checkToolCall(tool, 创建空输�?tool.id()));
+        var result = engine.checkToolCall(tool, 创建空输入(tool.id()));
 
         assertThat(result).isInstanceOf(GuardrailResult.Passed.class);
         var passed = (GuardrailResult.Passed) result;
@@ -91,11 +91,11 @@ class GuardrailEngineTest {
 
     @Test
     void HIGH风险infrastructure工具_仍走策略评估_触发NeedsConfirmation() {
-        // 注册 ToolRiskPolicy，defaultRiskLevel = HIGH �?触发 NeedsConfirmation
+        // 注册 ToolRiskPolicy，defaultRiskLevel = HIGH 会触发 NeedsConfirmation
         注册ToolRiskPolicy(RiskLevel.HIGH, Map.of());
 
         var tool = 创建Infrastructure工具("builtin.shell.exec", RiskLevel.HIGH);
-        var result = engine.checkToolCall(tool, 创建空输�?tool.id()));
+        var result = engine.checkToolCall(tool, 创建空输入(tool.id()));
 
         assertThat(result).isInstanceOf(GuardrailResult.NeedsConfirmation.class);
         var confirmation = (GuardrailResult.NeedsConfirmation) result;
@@ -105,27 +105,27 @@ class GuardrailEngineTest {
 
     @Test
     void MEDIUM风险infrastructure工具_仍走策略评估() {
-        // MEDIUM 风险 �?AUTO_WITH_AUDIT �?Passed（但经过了策略评估）
+        // MEDIUM 风险即 AUTO_WITH_AUDIT 即 Passed（但经过了策略评估）
         注册ToolRiskPolicy(RiskLevel.MEDIUM, Map.of());
 
         var tool = 创建Infrastructure工具("builtin.browser.navigate", RiskLevel.MEDIUM);
-        var result = engine.checkToolCall(tool, 创建空输�?tool.id()));
+        var result = engine.checkToolCall(tool, 创建空输入(tool.id()));
 
         assertThat(result).isInstanceOf(GuardrailResult.Passed.class);
         var passed = (GuardrailResult.Passed) result;
-        // 策略评估通过后返�?"all_policies" 或策�?ID，不�?"infrastructure-low-risk"
+        // 策略评估通过后返回 "all_policies" 或策略 ID，不是 "infrastructure-low-risk"
         assertThat(passed.policyId()).isNotEqualTo("infrastructure-low-risk");
     }
 
     @Test
     void 非infrastructure的LOW风险工具_仍走正常策略评估() {
-        // 注册 ToolRiskPolicy，defaultRiskLevel = HIGH �?触发 NeedsConfirmation
+        // 注册 ToolRiskPolicy，defaultRiskLevel = HIGH 会触发 NeedsConfirmation
         注册ToolRiskPolicy(RiskLevel.HIGH, Map.of());
 
-        var tool = 创建普通工�?"custom.tool.read", RiskLevel.LOW);
-        var result = engine.checkToolCall(tool, 创建空输�?tool.id()));
+        var tool = 创建普通工具("custom.tool.read", RiskLevel.LOW);
+        var result = engine.checkToolCall(tool, 创建空输入(tool.id()));
 
-        // �?infrastructure 工具不享受豁免，走策略评�?�?HIGH �?NeedsConfirmation
+        // 非 infrastructure 工具不享受豁免，走策略评估，HIGH 即 NeedsConfirmation
         assertThat(result).isInstanceOf(GuardrailResult.NeedsConfirmation.class);
     }
 
@@ -134,11 +134,11 @@ class GuardrailEngineTest {
         engine.addAllowedTools(List.of("builtin.env.datetime"));
 
         var tool = 创建Infrastructure工具("builtin.env.datetime", RiskLevel.LOW);
-        var result = engine.checkToolCall(tool, 创建空输�?tool.id()));
+        var result = engine.checkToolCall(tool, 创建空输入(tool.id()));
 
         assertThat(result).isInstanceOf(GuardrailResult.Passed.class);
         var passed = (GuardrailResult.Passed) result;
-        // 白名单返�?"whitelist"，不�?"infrastructure-low-risk"
+        // 白名单返回 "whitelist"，不是 "infrastructure-low-risk"
         assertThat(passed.policyId()).isEqualTo("whitelist");
     }
 }

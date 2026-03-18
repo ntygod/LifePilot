@@ -16,7 +16,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 /**
- * WebSearchToolExecutor 单元测试�?
+ * WebSearchToolExecutor 单元测试。
  *
  * @author zsg
  * @since 2026-03-08
@@ -52,7 +52,7 @@ class WebSearchToolExecutorTest {
 
     @Test
     void duckduckgo搜索_返回结果列表() {
-        // 配置 DuckDuckGo 提供商（默认�?
+        // 配置 DuckDuckGo 提供商（默认�?
         properties.getInfra().getWebSearch().setProvider("duckduckgo");
 
         // Mock DuckDuckGo API 响应
@@ -84,7 +84,7 @@ class WebSearchToolExecutorTest {
     }
 
     @Test
-    void duckduckgo搜索_空响应返回错�?) {
+    void duckduckgo搜索_空响应返回错误() {
         when(responseSpec.body(Map.class)).thenReturn(null);
 
         ToolInput input = new ToolInput("builtin.web.search",
@@ -93,7 +93,7 @@ class WebSearchToolExecutorTest {
         ToolResult result = executor.execute(input);
 
         assertThat(result.ok()).isFalse();
-        assertThat(result.error()).contains("空响�?);
+        assertThat(result.error()).contains("空响应");
     }
 
     @Test

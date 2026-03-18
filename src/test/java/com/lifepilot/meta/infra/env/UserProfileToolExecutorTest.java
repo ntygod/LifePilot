@@ -13,7 +13,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * UserProfileToolExecutor 单元测试�?
+ * UserProfileToolExecutor 单元测试。
  *
  * @author zsg
  * @since 2026-03-08
@@ -40,7 +40,7 @@ class UserProfileToolExecutorTest {
     }
 
     @Test
-    void execute_时区为空时使用系统时�?) {
+    void execute_时区为空时使用系统时区() {
         properties.getInfra().getUserProfile().setTimezone("");
         ToolInput input = new ToolInput("builtin.env.user-profile", Map.of(), JsonSchema.empty(), null, null);
 
@@ -51,7 +51,7 @@ class UserProfileToolExecutorTest {
     }
 
     @Test
-    void execute_返回配置的时�?) {
+    void execute_返回配置的时区() {
         properties.getInfra().getUserProfile().setTimezone("Europe/London");
         ToolInput input = new ToolInput("builtin.env.user-profile", Map.of(), JsonSchema.empty(), null, null);
 

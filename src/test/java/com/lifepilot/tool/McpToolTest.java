@@ -24,8 +24,9 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.when;
 
 /**
- * McpTool 单元测试�? *
- * <p>使用 Mock McpServerRegistry + McpClient 验证 execute() 各路径�?/p>
+ * McpTool 单元测试。
+ *
+ * <p>使用 Mock McpServerRegistry + McpClient 验证 execute() 各路径。</p>
  *
  * @author zsg
  * @since 2026-02-24
@@ -82,8 +83,8 @@ class McpToolTest {
         when(mockRegistry.getClient("test")).thenReturn(Optional.of(mockClient));
         var mcpResult = new McpToolResult(
                 List.of(
-                        new McpContent("text", "第一�?, null, null),
-                        new McpContent("text", "第二�?, null, null)
+                        new McpContent("text", "第一段", null, null),
+                        new McpContent("text", "第二段", null, null)
                 ),
                 false
         );
@@ -101,7 +102,7 @@ class McpToolTest {
     void execute_失败路径_isError为true_返回ToolResult_error() {
         when(mockRegistry.getClient("test")).thenReturn(Optional.of(mockClient));
         var mcpResult = new McpToolResult(
-                List.of(new McpContent("text", "文件不存�?, null, null)),
+                List.of(new McpContent("text", "文件不存在", null, null)),
                 true
         );
         when(mockClient.callTool(eq("read_file"), anyMap()))
@@ -111,7 +112,7 @@ class McpToolTest {
         var result = tool.execute(createInput(Map.of("path", "/nonexistent")));
 
         assertFalse(result.ok());
-        assertEquals("文件不存�?, result.error());
+        assertEquals("文件不存在", result.error());
         assertEquals("MCP", result.meta().executorType());
     }
 

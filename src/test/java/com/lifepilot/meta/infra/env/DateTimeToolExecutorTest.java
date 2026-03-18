@@ -15,7 +15,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * DateTimeToolExecutor 单元测试�?
+ * DateTimeToolExecutor 单元测试。
  *
  * @author zsg
  * @since 2026-03-08
@@ -79,7 +79,7 @@ class DateTimeToolExecutorTest {
     }
 
     @Test
-    void execute_日期与当前日期一�?) {
+    void execute_日期与当前日期一致() {
         ToolInput input = new ToolInput("builtin.env.datetime", Map.of(), JsonSchema.empty(), null, null);
 
         ToolResult result = executor.execute(input);

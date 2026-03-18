@@ -20,11 +20,11 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * 风险等级审批一致性测�?�?对应 Property 3: 风险等级与审批模式一致�?
+ * 风险等级审批一致性测试。对应 Property 3: 风险等级与审批模式一致性。
  *
- * <p>验证 shell.exec �?code.execute �?riskLevel == HIGH 时，
- * GuardrailEngine �?HIGH 风险工具返回 NeedsConfirmation�?
- * 验证 LOW 风险 infrastructure 工具跳过策略评估�?/p>
+ * <p>验证 shell.exec 和 code.execute 在 riskLevel == HIGH 时，
+ * GuardrailEngine 对 HIGH 风险工具返回 NeedsConfirmation。
+ * 验证 LOW 风险 infrastructure 工具跳过策略评估。</p>
  *
  * <p><b>Validates: Requirements 5.5, 7.4, 15.4</b></p>
  *
@@ -46,9 +46,9 @@ class RiskLevelApprovalConsistencyTest {
         engine = new GuardrailEngine(jdbcTemplate, propagator, properties);
 
         // 注册 ToolRiskPolicy：通过 GuardrailEngine.registerPolicy() 公开方法
-        // ToolRiskPolicy �?package-private，但 registerPolicy 接受 GuardrailPolicy
-        // 使用反射构�?ToolRiskPolicy，或直接�?guardrail 包内构�?
-        // 由于 ToolRiskPolicy 不可从外部包访问，改�?GuardrailEngine 的白名单 + 策略机制验证
+        // ToolRiskPolicy 是 package-private，但 registerPolicy 接受 GuardrailPolicy
+        // 使用反射构造 ToolRiskPolicy，或直接在 guardrail 包内构造
+        // 由于 ToolRiskPolicy 不可从外部包访问，改用 GuardrailEngine 的白名单 + 策略机制验证
     }
 
     // ─── 辅助方法 ───
@@ -65,7 +65,7 @@ class RiskLevelApprovalConsistencyTest {
                 .build();
     }
 
-    private ToolInput 创建空输�?String toolId) {
+    private ToolInput 创建空输入(String toolId) {
         return new ToolInput(toolId, Map.of(), JsonSchema.empty(), null, null);
     }
 
@@ -73,11 +73,11 @@ class RiskLevelApprovalConsistencyTest {
 
     @Test
     void shellExec_HIGH风险_触发NeedsConfirmation() {
-        // 通过反射创建 ToolRiskPolicy 并注�?
+        // 通过反射创建 ToolRiskPolicy 并注册
         注册ToolRiskPolicy();
 
         var tool = 创建Infrastructure工具("builtin.shell.exec", RiskLevel.HIGH);
-        var result = engine.checkToolCall(tool, 创建空输�?tool.id()));
+        var result = engine.checkToolCall(tool, 创建空输入(tool.id()));
 
         assertThat(result).isInstanceOf(GuardrailResult.NeedsConfirmation.class);
         var confirmation = (GuardrailResult.NeedsConfirmation) result;
@@ -89,7 +89,7 @@ class RiskLevelApprovalConsistencyTest {
         注册ToolRiskPolicy();
 
         var tool = 创建Infrastructure工具("builtin.code.execute", RiskLevel.HIGH);
-        var result = engine.checkToolCall(tool, 创建空输�?tool.id()));
+        var result = engine.checkToolCall(tool, 创建空输入(tool.id()));
 
         assertThat(result).isInstanceOf(GuardrailResult.NeedsConfirmation.class);
         var confirmation = (GuardrailResult.NeedsConfirmation) result;
@@ -103,7 +103,7 @@ class RiskLevelApprovalConsistencyTest {
         注册ToolRiskPolicy();
 
         var tool = 创建Infrastructure工具("builtin.env.datetime", RiskLevel.LOW);
-        var result = engine.checkToolCall(tool, 创建空输�?tool.id()));
+        var result = engine.checkToolCall(tool, 创建空输入(tool.id()));
 
         assertThat(result).isInstanceOf(GuardrailResult.Passed.class);
         var passed = (GuardrailResult.Passed) result;
@@ -115,23 +115,23 @@ class RiskLevelApprovalConsistencyTest {
         注册ToolRiskPolicy();
 
         var tool = 创建Infrastructure工具("builtin.env.user-profile", RiskLevel.LOW);
-        var result = engine.checkToolCall(tool, 创建空输�?tool.id()));
+        var result = engine.checkToolCall(tool, 创建空输入(tool.id()));
 
         assertThat(result).isInstanceOf(GuardrailResult.Passed.class);
         assertThat(((GuardrailResult.Passed) result).policyId())
                 .isEqualTo("infrastructure-low-risk");
     }
 
-    // ─── MEDIUM 风险 infrastructure 工具走完整策略评�?───
+    // ─── MEDIUM 风险 infrastructure 工具走完整策略评估 ───
 
     @Test
-    void MEDIUM风险infrastructure工具_走完整策略评估_不跳�?) {
+    void MEDIUM风险infrastructure工具_走完整策略评估_不跳过() {
         注册ToolRiskPolicy();
 
         var tool = 创建Infrastructure工具("builtin.browser.navigate", RiskLevel.MEDIUM);
-        var result = engine.checkToolCall(tool, 创建空输�?tool.id()));
+        var result = engine.checkToolCall(tool, 创建空输入(tool.id()));
 
-        // MEDIUM 风险走策略评�?�?ToolRiskPolicy defaultRiskLevel=LOW �?AUTO �?Passed
+        // MEDIUM 风险走策略评估，ToolRiskPolicy defaultRiskLevel=LOW 则 AUTO 即 Passed
         // 关键断言：policyId 不是 "infrastructure-low-risk"（说明没有跳过策略评估）
         assertThat(result).isInstanceOf(GuardrailResult.Passed.class);
         var passed = (GuardrailResult.Passed) result;
@@ -142,13 +142,13 @@ class RiskLevelApprovalConsistencyTest {
 
     private void 注册ToolRiskPolicy() {
         try {
-            // ToolRiskPolicy �?package-private record，通过反射构�?
+            // ToolRiskPolicy 是 package-private record，通过反射构造
             var clazz = Class.forName("com.lifepilot.observability.guardrail.ToolRiskPolicy");
             var constructor = clazz.getDeclaredConstructors()[0];
             constructor.setAccessible(true);
 
             // ToolRiskPolicy(policyId, enabled, priority, toolRiskMapping, defaultRiskLevel)
-            // shell.exec �?code.execute 映射�?HIGH，默�?LOW
+            // shell.exec 和 code.execute 映射为 HIGH，默认 LOW
             var policy = constructor.newInstance(
                     "tool-risk-policy",
                     true,
