@@ -1,5 +1,6 @@
 package com.lifepilot.interaction.web.config;
 
+import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.interaction.config.GatewayProperties;
 import com.lifepilot.interaction.gateway.MessageGateway;
 import com.lifepilot.interaction.web.adapter.WebChannelAdapter;
@@ -52,16 +53,17 @@ public class WebAutoConfiguration {
                                                 AttachmentRepository attachmentRepository,
                                                 SseSessionManager sseSessionManager,
                                                 @Nullable AudioTranscriber audioTranscriber,
-                                                MediaProperties mediaProperties) {
+                                                MediaProperties mediaProperties,
+                                                SharedScheduler sharedScheduler) {
         log.info("注册 WebChannelAdapter");
         return new WebChannelAdapter(gateway, gatewayProperties, attachmentRepository,
-                sseSessionManager, audioTranscriber, mediaProperties);
+                sseSessionManager, audioTranscriber, mediaProperties, sharedScheduler);
     }
 
     @Bean
-    public SseSessionManager sseSessionManager(WebProperties properties) {
+    public SseSessionManager sseSessionManager(WebProperties properties, SharedScheduler sharedScheduler) {
         log.info("注册 SseSessionManager");
-        return new SseSessionManager(properties);
+        return new SseSessionManager(properties, sharedScheduler);
     }
 
     @Bean

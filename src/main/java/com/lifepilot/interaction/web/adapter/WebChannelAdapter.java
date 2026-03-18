@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import com.lifepilot.notification.Urgency;
+import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.interaction.channel.AbstractChannelAdapter;
 import com.lifepilot.interaction.config.GatewayProperties;
 import com.lifepilot.interaction.gateway.MessageGateway;
@@ -66,8 +67,9 @@ public class WebChannelAdapter extends AbstractChannelAdapter {
                              AttachmentRepository attachmentRepository,
                              @Nullable SseSessionManager sseSessionManager,
                              @Nullable AudioTranscriber audioTranscriber,
-                             MediaProperties mediaProperties) {
-        super(gateway, properties);
+                             MediaProperties mediaProperties,
+                             SharedScheduler sharedScheduler) {
+        super(gateway, properties, sharedScheduler);
         this.attachmentRepository = attachmentRepository;
         this.sseSessionManager = sseSessionManager;
         this.audioTranscriber = audioTranscriber;

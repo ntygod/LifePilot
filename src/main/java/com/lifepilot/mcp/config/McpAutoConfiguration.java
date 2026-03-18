@@ -1,5 +1,6 @@
 package com.lifepilot.mcp.config;
 
+import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.mcp.adapter.McpToolAdapter;
 import com.lifepilot.mcp.bridge.SkillToMcpBridge;
 import com.lifepilot.mcp.discovery.McpServerDiscovery;
@@ -45,8 +46,9 @@ public class McpAutoConfiguration {
     public McpServerRegistry mcpServerRegistry(
             McpToolAdapter mcpToolAdapter,
             DynamicToolRegistry dynamicToolRegistry,
-            ApplicationEventPublisher eventPublisher) {
-        return new McpServerRegistry(mcpToolAdapter, dynamicToolRegistry, eventPublisher);
+            ApplicationEventPublisher eventPublisher,
+            SharedScheduler sharedScheduler) {
+        return new McpServerRegistry(mcpToolAdapter, dynamicToolRegistry, eventPublisher, sharedScheduler);
     }
 
     @Bean

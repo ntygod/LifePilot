@@ -2,6 +2,7 @@ package com.lifepilot.interaction.config;
 
 import java.util.List;
 
+import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.interaction.channel.AbstractChannelAdapter;
 import com.lifepilot.interaction.channel.FailedMessageRetryScheduler;
 import com.lifepilot.interaction.channel.dingtalk.DingtalkApiClient;
@@ -83,9 +84,10 @@ public class ChannelAdapterAutoConfiguration {
     @ConditionalOnBean(WecomCrypto.class)
     public WecomChannelAdapter wecomChannelAdapter(@Lazy MessageGateway gateway, GatewayProperties properties,
                                                    WecomCrypto crypto, WecomSignatureVerifier verifier,
-                                                   WecomApiClient apiClient, WecomMessageConverter converter) {
+                                                   WecomApiClient apiClient, WecomMessageConverter converter,
+                                                   SharedScheduler sharedScheduler) {
         log.info("注册 WecomChannelAdapter");
-        return new WecomChannelAdapter(gateway, properties, crypto, verifier, apiClient, converter);
+        return new WecomChannelAdapter(gateway, properties, crypto, verifier, apiClient, converter, sharedScheduler);
     }
 
     @Bean
@@ -119,9 +121,10 @@ public class ChannelAdapterAutoConfiguration {
     public DingtalkChannelAdapter dingtalkChannelAdapter(@Lazy MessageGateway gateway, GatewayProperties properties,
                                                          DingtalkSignatureVerifier verifier,
                                                          DingtalkApiClient apiClient,
-                                                         DingtalkMessageConverter converter) {
+                                                         DingtalkMessageConverter converter,
+                                                         SharedScheduler sharedScheduler) {
         log.info("注册 DingtalkChannelAdapter");
-        return new DingtalkChannelAdapter(gateway, properties, verifier, apiClient, converter);
+        return new DingtalkChannelAdapter(gateway, properties, verifier, apiClient, converter, sharedScheduler);
     }
 
     @Bean
@@ -160,9 +163,10 @@ public class ChannelAdapterAutoConfiguration {
     @ConditionalOnBean(FeishuCrypto.class)
     public FeishuChannelAdapter feishuChannelAdapter(@Lazy MessageGateway gateway, GatewayProperties properties,
                                                      FeishuCrypto crypto, FeishuApiClient apiClient,
-                                                     FeishuMessageConverter converter) {
+                                                     FeishuMessageConverter converter,
+                                                     SharedScheduler sharedScheduler) {
         log.info("注册 FeishuChannelAdapter");
-        return new FeishuChannelAdapter(gateway, properties, crypto, apiClient, converter);
+        return new FeishuChannelAdapter(gateway, properties, crypto, apiClient, converter, sharedScheduler);
     }
 
     @Bean
