@@ -1,7 +1,7 @@
 package com.lifepilot.a2a.server;
 
 import com.lifepilot.a2a.model.*;
-import com.lifepilot.agent.ReactAgentLoop;
+import com.lifepilot.agent.orchestration.AgentOrchestrator;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.agent.model.AgentResponse;
 import com.lifepilot.multiagent.execution.AgentExecutor;
@@ -29,16 +29,16 @@ public class A2aAgentExecutor {
 
     private final AgentRegistry agentRegistry;
     private final AgentExecutor agentExecutor;
-    private final ReactAgentLoop reactAgentLoop;
+    private final AgentOrchestrator agentOrchestrator;
     private final A2aTaskStore taskStore;
 
     public A2aAgentExecutor(AgentRegistry agentRegistry,
                             AgentExecutor agentExecutor,
-                            ReactAgentLoop reactAgentLoop,
+                            AgentOrchestrator agentOrchestrator,
                             A2aTaskStore taskStore) {
         this.agentRegistry = agentRegistry;
         this.agentExecutor = agentExecutor;
-        this.reactAgentLoop = reactAgentLoop;
+        this.agentOrchestrator = agentOrchestrator;
         this.taskStore = taskStore;
     }
 
@@ -85,9 +85,9 @@ public class A2aAgentExecutor {
                 var subResult = agentExecutor.execute(definition.get(), subRequest);
                 result = subResult.output();
                 } else {
-                    // 路由到主 ReactAgentLoop（A2A 目前不携带多模态媒体）
+                    // 路由到主 AgentOrchestrator（A2A 目前不携带多模态媒体）
                     var request = new AgentRequest(textContent, taskId, "a2a");
-                AgentResponse response = reactAgentLoop.run(request);
+                AgentResponse response = agentOrchestrator.run(request);
                 result = response.content();
             }
 
@@ -148,7 +148,7 @@ public class A2aAgentExecutor {
                     result = subResult.output();
                 } else {
                     var request = new AgentRequest(textContent, taskId, "a2a");
-                    AgentResponse response = reactAgentLoop.run(request);
+                    AgentResponse response = agentOrchestrator.run(request);
                     result = response.content();
                 }
 

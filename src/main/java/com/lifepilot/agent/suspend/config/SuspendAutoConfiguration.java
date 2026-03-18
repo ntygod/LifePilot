@@ -1,7 +1,7 @@
 package com.lifepilot.agent.suspend.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lifepilot.agent.ReactAgentLoop;
+import com.lifepilot.agent.orchestration.AgentOrchestrator;
 import com.lifepilot.agent.model.SuspendReason;
 import com.lifepilot.agent.suspend.AgentResumeListener;
 import com.lifepilot.agent.suspend.SuspendProperties;
@@ -57,10 +57,10 @@ public class SuspendAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean({ReactAgentLoop.class, SuspendStore.class})
-    public AgentResumeListener agentResumeListener(ReactAgentLoop agentLoop, SuspendStore suspendStore) {
+    @ConditionalOnBean({AgentOrchestrator.class, SuspendStore.class})
+    public AgentResumeListener agentResumeListener(AgentOrchestrator agentOrchestrator, SuspendStore suspendStore) {
         log.info("挂起-恢复: 注册 AgentResumeListener");
-        return new AgentResumeListener(agentLoop, suspendStore);
+        return new AgentResumeListener(agentOrchestrator, suspendStore);
     }
 
     /**

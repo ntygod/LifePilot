@@ -1,6 +1,6 @@
 package com.lifepilot.multiagent.config;
 
-import com.lifepilot.agent.ReactAgentLoop;
+import com.lifepilot.agent.orchestration.AgentOrchestrator;
 import com.lifepilot.agent.config.AgentAutoConfiguration;
 import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.multiagent.bridge.AgentToToolBridge;
@@ -63,12 +63,12 @@ public class MultiAgentAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public AgentExecutor agentExecutor(ReactAgentLoop reactAgentLoop,
+    public AgentExecutor agentExecutor(AgentOrchestrator agentOrchestrator,
                                        DynamicToolRegistry toolRegistry,
                                        MultiAgentProperties config) {
         log.info("多 Agent 协作: 注册 AgentExecutor, maxDelegationDepth={}",
                 config.getMaxDelegationDepth());
-        return new AgentExecutor(reactAgentLoop, toolRegistry, config);
+        return new AgentExecutor(agentOrchestrator, toolRegistry, config);
     }
 
     @Bean

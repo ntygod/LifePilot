@@ -1,6 +1,6 @@
 package com.lifepilot.eval.engine;
 
-import com.lifepilot.agent.ReactAgentLoop;
+import com.lifepilot.agent.orchestration.AgentOrchestrator;
 import com.lifepilot.agent.model.AgentResponse;
 import com.lifepilot.eval.config.EvalConfigProperties;
 import com.lifepilot.eval.judge.LlmJudge;
@@ -41,7 +41,7 @@ import static org.mockito.Mockito.*;
 class EvalEngine测试 {
 
     @Mock private ScenarioLoader scenarioLoader;
-    @Mock private ReactAgentLoop reactAgentLoop;
+    @Mock private AgentOrchestrator agentOrchestrator;
     @Mock private TraceQuery traceQuery;
     @Mock private EvaluationCore evaluationCore;
     @Mock private LlmJudge llmJudge;
@@ -65,7 +65,7 @@ class EvalEngine测试 {
         config.setLlmJudge(llmJudgeConfig);
 
         evalEngine = new EvalEngine(
-                scenarioLoader, reactAgentLoop, traceQuery,
+                scenarioLoader, agentOrchestrator, traceQuery,
                 evaluationCore, llmJudge, evalStore,
                 evalReport, toolRegistry, config, null
         );
@@ -76,7 +76,7 @@ class EvalEngine测试 {
         var scenario = buildScenario("s1", 30);
         var agentResponse = new AgentResponse("trace-1", "session-1", "回答内容", 100, 3, null);
 
-        when(reactAgentLoop.run(any())).thenReturn(agentResponse);
+        when(agentOrchestrator.run(any())).thenReturn(agentResponse);
         when(traceQuery.getSteps("trace-1")).thenReturn(List.of());
         when(evaluationCore.evaluate(anyList(), any(EvaluationConfig.class), eq("trace-1")))
                 .thenReturn(new EvaluationResult(
@@ -103,7 +103,7 @@ class EvalEngine测试 {
     void evaluateScenario_Agent异常返回零分结果() {
         var scenario = buildScenario("s-err", 30);
 
-        when(reactAgentLoop.run(any())).thenThrow(new RuntimeException("LLM 不可用"));
+        when(agentOrchestrator.run(any())).thenThrow(new RuntimeException("LLM 不可用"));
 
         EvalResult result = evalEngine.evaluateScenario(scenario, "run-err");
 
@@ -120,7 +120,7 @@ class EvalEngine测试 {
         // traceId 为空
         var agentResponse = new AgentResponse("", "session-1", "回答", 50, 1, null);
 
-        when(reactAgentLoop.run(any())).thenReturn(agentResponse);
+        when(agentOrchestrator.run(any())).thenReturn(agentResponse);
 
         EvalResult result = evalEngine.evaluateScenario(scenario, "run-no-trace");
 
@@ -134,7 +134,7 @@ class EvalEngine测试 {
         var s2 = buildScenario("batch-2", 30);
 
         // 两个场景都正常执行
-        when(reactAgentLoop.run(any()))
+        when(agentOrchestrator.run(any()))
                 .thenReturn(new AgentResponse("t1", "sess", "内容1", 80, 2, null))
                 .thenReturn(new AgentResponse("t2", "sess", "内容2", 90, 3, null));
         when(traceQuery.getSteps(anyString())).thenReturn(List.of());

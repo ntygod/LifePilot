@@ -1,6 +1,6 @@
 package com.lifepilot.eval.engine;
 
-import com.lifepilot.agent.ReactAgentLoop;
+import com.lifepilot.agent.orchestration.AgentOrchestrator;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.agent.model.AgentResponse;
 import com.lifepilot.observability.evaluation.EvaluationConfig;
@@ -54,7 +54,7 @@ public class EvalEngine {
     private static final Logger log = LoggerFactory.getLogger(EvalEngine.class);
 
     private final ScenarioLoader scenarioLoader;
-    private final ReactAgentLoop reactAgentLoop;
+    private final AgentOrchestrator agentOrchestrator;
     private final TraceQuery traceQuery;
     private final EvaluationCore evaluationCore;
     private final LlmJudge llmJudge;
@@ -66,7 +66,7 @@ public class EvalEngine {
     private final ExperienceSummarizer experienceSummarizer;
 
     public EvalEngine(ScenarioLoader scenarioLoader,
-                      ReactAgentLoop reactAgentLoop,
+                      AgentOrchestrator agentOrchestrator,
                       TraceQuery traceQuery,
                       EvaluationCore evaluationCore,
                       LlmJudge llmJudge,
@@ -76,7 +76,7 @@ public class EvalEngine {
                       EvalConfigProperties config,
                       @Nullable ExperienceSummarizer experienceSummarizer) {
         this.scenarioLoader = scenarioLoader;
-        this.reactAgentLoop = reactAgentLoop;
+        this.agentOrchestrator = agentOrchestrator;
         this.traceQuery = traceQuery;
         this.evaluationCore = evaluationCore;
         this.llmJudge = llmJudge;
@@ -119,7 +119,7 @@ public class EvalEngine {
             AgentResponse response;
             try {
                 response = CompletableFuture.supplyAsync(
-                        () -> reactAgentLoop.run(request),
+                        () -> agentOrchestrator.run(request),
                         Executors.newVirtualThreadPerTaskExecutor()
                 ).orTimeout(timeout, TimeUnit.SECONDS).join();
             } catch (java.util.concurrent.CompletionException ce) {

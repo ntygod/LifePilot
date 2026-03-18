@@ -1,6 +1,6 @@
 package com.lifepilot.scheduler;
 
-import com.lifepilot.agent.ReactAgentLoop;
+import com.lifepilot.agent.orchestration.AgentOrchestrator;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.interaction.model.ResponseContent;
 import com.lifepilot.notification.NotificationRequest;
@@ -81,14 +81,14 @@ public class TaskActionExecutor {
      * 处理调用 Agent 对话动作。
      */
     private void handleInvokeAgent(ScheduledTask task, TaskAction.InvokeAgent ia) {
-        var agentLoop = applicationContext.getBean(ReactAgentLoop.class);
+        var orchestrator = applicationContext.getBean(AgentOrchestrator.class);
         var request = new AgentRequest(
                 ia.message(),
                 "scheduler:" + task.id(),
                 "scheduler",
                 null, null, null, 0, null, null, null, null
         );
-        agentLoop.run(request);
+        orchestrator.run(request);
         log.info("定时任务 Agent 调用完成: taskId={}, taskName={}", task.id(), task.name());
     }
 

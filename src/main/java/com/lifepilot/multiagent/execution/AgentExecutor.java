@@ -1,6 +1,6 @@
 package com.lifepilot.multiagent.execution;
 
-import com.lifepilot.agent.ReactAgentLoop;
+import com.lifepilot.agent.orchestration.AgentOrchestrator;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.agent.model.AgentResponse;
 import com.lifepilot.multiagent.config.MultiAgentProperties;
@@ -17,7 +17,7 @@ import java.util.List;
  * Agent 执行器 — 隔离执行子 Agent 任务。
  *
  * <p>执行流程：检查委托深度 → 构建 allowedToolIds → 构造 AgentRequest
- * → 调用 ReactAgentLoop.run() → 转换为 SubAgentResult。
+ * → 调用 AgentOrchestrator.run() → 转换为 SubAgentResult。
  * 所有异常均被捕获，返回 success=false 的 SubAgentResult。</p>
  *
  * @author zsg
@@ -27,14 +27,14 @@ public class AgentExecutor {
 
     private static final Logger log = LoggerFactory.getLogger(AgentExecutor.class);
 
-    private final ReactAgentLoop reactAgentLoop;
+    private final AgentOrchestrator agentOrchestrator;
     private final DynamicToolRegistry toolRegistry;
     private final MultiAgentProperties config;
 
-    public AgentExecutor(ReactAgentLoop reactAgentLoop,
+    public AgentExecutor(AgentOrchestrator agentOrchestrator,
                          DynamicToolRegistry toolRegistry,
                          MultiAgentProperties config) {
-        this.reactAgentLoop = reactAgentLoop;
+        this.agentOrchestrator = agentOrchestrator;
         this.toolRegistry = toolRegistry;
         this.config = config;
     }
@@ -79,11 +79,11 @@ public class AgentExecutor {
                     request.temperature()
             );
 
-            // 4. 执行 ReactAgentLoop
+            // 4. 执行 AgentOrchestrator
             log.info("Agent 委托执行开始: agentId={}, depth={}, messageLen={}",
                     agentId, newDepth, request.message().length());
 
-            AgentResponse response = reactAgentLoop.run(subRequest);
+            AgentResponse response = agentOrchestrator.run(subRequest);
 
             log.info("Agent 委托执行完成: agentId={}, tokensUsed={}, steps={}",
                     agentId, response.tokensUsed(), response.stepCount());
