@@ -1,5 +1,6 @@
 package com.lifepilot.meta.convenience;
 
+import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.multiagent.model.AgentDefinition;
 import com.lifepilot.multiagent.model.AgentRegistryEvent;
@@ -21,7 +22,6 @@ import org.springframework.context.event.EventListener;
 import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -73,15 +73,15 @@ public class CapabilityAggregator {
                                 AgentRegistry agentRegistry,
                                 DynamicToolRegistry toolRegistry,
                                 WorkflowRegistry workflowRegistry,
-                                MetaProperties properties) {
+                                MetaProperties properties,
+                                SharedScheduler sharedScheduler) {
         this.skillRegistry = skillRegistry;
         this.agentRegistry = agentRegistry;
         this.toolRegistry = toolRegistry;
         this.workflowRegistry = workflowRegistry;
         this.cacheTtlSeconds = properties.getIntrospection().getCacheTtlSeconds();
         this.debounceMillis = properties.getIntrospection().getDebounceMillis();
-        this.debounceExecutor = Executors.newSingleThreadScheduledExecutor(
-                Thread.ofVirtual().name("capability-debounce").factory());
+        this.debounceExecutor = sharedScheduler.debounce();
     }
 
     /**
@@ -164,12 +164,6 @@ public class CapabilityAggregator {
         }
         this.pendingInvalidation = debounceExecutor.schedule(
                 this::invalidateCache, debounceMillis, TimeUnit.MILLISECONDS);
-    }
-
-    /** 关闭防抖调度器。 */
-    @jakarta.annotation.PreDestroy
-    public void shutdown() {
-        debounceExecutor.shutdownNow();
     }
 
     // ─────────────────────────────────────────────

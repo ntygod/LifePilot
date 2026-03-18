@@ -5,6 +5,7 @@ import com.lifepilot.knowledge.retrieve.DocumentRetriever;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.episodic.EpisodicMemory;
+import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.meta.convenience.CapabilityAggregator;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.skill.activation.SkillActivator;
@@ -222,9 +223,10 @@ public class SkillAutoConfiguration {
     @ConditionalOnMissingBean
     public SkillFileWatcher skillFileWatcher(MarkdownSkillLoader loader,
                                             SkillRegistry registry,
-                                            SkillConfigProperties config) {
+                                            SkillConfigProperties config,
+                                            SharedScheduler sharedScheduler) {
         log.info("Skill 系统: 注册 SkillFileWatcher");
-        return new SkillFileWatcher(loader, registry, config);
+        return new SkillFileWatcher(loader, registry, config, sharedScheduler);
     }
 
     // ==================== 安全验证管线 ====================

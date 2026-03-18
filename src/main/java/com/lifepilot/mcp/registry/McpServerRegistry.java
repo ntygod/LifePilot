@@ -1,5 +1,6 @@
 package com.lifepilot.mcp.registry;
 
+import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.mcp.McpClient;
 import com.lifepilot.mcp.adapter.McpToolAdapter;
 import com.lifepilot.mcp.config.McpServerConfig;
@@ -15,7 +16,10 @@ import java.time.Instant;
 import java.util.Deque;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.TimeUnit;
 
 /**
  * MCP Server 注册中心 — 管理所有 MCP Server 连接的完整生命周期。
@@ -39,16 +43,17 @@ public class McpServerRegistry {
     private final McpToolAdapter toolAdapter;
     private final DynamicToolRegistry toolRegistry;
     private final ApplicationEventPublisher eventPublisher;
-    private final ScheduledExecutorService scheduler;
+    private final SharedScheduler sharedScheduler;
 
     public McpServerRegistry(
             McpToolAdapter toolAdapter,
             DynamicToolRegistry toolRegistry,
-            ApplicationEventPublisher eventPublisher) {
+            ApplicationEventPublisher eventPublisher,
+            SharedScheduler sharedScheduler) {
         this.toolAdapter = toolAdapter;
         this.toolRegistry = toolRegistry;
         this.eventPublisher = eventPublisher;
-        this.scheduler = Executors.newScheduledThreadPool(1, Thread.ofVirtual().factory());
+        this.sharedScheduler = sharedScheduler;
     }
 
     /**
@@ -125,7 +130,7 @@ public class McpServerRegistry {
                     scheduleReconnect(name, config);
                 }
             }
-        }, Executors.newVirtualThreadPerTaskExecutor());
+        }, command -> Thread.ofVirtual().name("mcp-connect-" + name).start(command));
     }
 
     /**
@@ -198,7 +203,7 @@ public class McpServerRegistry {
 
     /** 定期健康检查（使用 tools/list 作为 ping）。 */
     void scheduleHealthCheck(String serverName, Duration interval) {
-        scheduler.scheduleAtFixedRate(() -> {
+        sharedScheduler.heartbeat().scheduleAtFixedRate(() -> {
             var entry = servers.get(serverName);
             if (entry == null || !entry.state().isAvailable()) return;
 
@@ -251,7 +256,7 @@ public class McpServerRegistry {
         log.info("MCP Server 重连调度: name={}, attempt={}, delay={}ms",
                 serverName, attempts + 1, delayMs);
 
-        scheduler.schedule(() -> connectServer(config), delayMs, TimeUnit.MILLISECONDS);
+        sharedScheduler.heartbeat().schedule(() -> connectServer(config), delayMs, TimeUnit.MILLISECONDS);
     }
 
     // ─────────────────────────────────────────────

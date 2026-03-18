@@ -1,12 +1,11 @@
 package com.lifepilot.interaction.channel;
 
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
+import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.interaction.config.GatewayProperties;
 import com.lifepilot.interaction.gateway.MessageGateway;
 import com.lifepilot.interaction.model.GatewayMessage;
@@ -33,19 +32,20 @@ public abstract class AbstractChannelAdapter implements ChannelAdapter {
     protected final GatewayProperties properties;
 
     private final AtomicInteger reconnectAttempts = new AtomicInteger(0);
-    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(
-            Thread.ofVirtual().name("channel-reconnect-", 0).factory()
-    );
+    private final SharedScheduler sharedScheduler;
 
     /**
      * 构造通道适配器基类。
      *
-     * @param gateway    消息网关
-     * @param properties 网关配置
+     * @param gateway         消息网关
+     * @param properties      网关配置
+     * @param sharedScheduler 共享调度器
      */
-    protected AbstractChannelAdapter(MessageGateway gateway, GatewayProperties properties) {
+    protected AbstractChannelAdapter(MessageGateway gateway, GatewayProperties properties,
+                                     SharedScheduler sharedScheduler) {
         this.gateway = gateway;
         this.properties = properties;
+        this.sharedScheduler = sharedScheduler;
     }
 
     // ── 模板方法：子类实现 ──────────────────────────────────────
@@ -97,7 +97,6 @@ public abstract class AbstractChannelAdapter implements ChannelAdapter {
         try {
             log.info("通道停止中: channel={}", channelType());
             doStop();
-            scheduler.shutdownNow();
             state.set(ChannelState.STOPPED);
             log.info("通道已停止: channel={}", channelType());
         } catch (Exception e) {
@@ -168,7 +167,7 @@ public abstract class AbstractChannelAdapter implements ChannelAdapter {
         long delay = calculateDelay(attempt, reconnect);
         log.info("通道将在 {}ms 后重连: channel={}, attempt={}/{}",
                 delay, channelType(), attempt, reconnect.maxAttempts());
-        scheduler.schedule(this::start, delay, TimeUnit.MILLISECONDS);
+        sharedScheduler.heartbeat().schedule(this::start, delay, TimeUnit.MILLISECONDS);
     }
 
     /**

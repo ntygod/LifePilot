@@ -1,6 +1,7 @@
 package com.lifepilot.interaction.web.sse;
 
 import com.lifepilot.agent.CancellationToken;
+import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.interaction.web.config.WebProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -10,8 +11,6 @@ import java.io.IOException;
 import java.time.Instant;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -30,13 +29,11 @@ public class SseSessionManager {
     private final ConcurrentHashMap<String, SseEmitter> emitters = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, CancellationToken> cancellationTokens = new ConcurrentHashMap<>();
     private final WebProperties properties;
-    private final ScheduledExecutorService heartbeatScheduler;
+    private final SharedScheduler sharedScheduler;
 
-    public SseSessionManager(WebProperties properties) {
+    public SseSessionManager(WebProperties properties, SharedScheduler sharedScheduler) {
         this.properties = properties;
-        this.heartbeatScheduler = Executors.newScheduledThreadPool(
-                1, Thread.ofVirtual().name("sse-heartbeat-", 0).factory()
-        );
+        this.sharedScheduler = sharedScheduler;
     }
 
     /**
@@ -227,7 +224,7 @@ public class SseSessionManager {
      */
     public void startHeartbeat() {
         long interval = properties.sse().heartbeatInterval();
-        heartbeatScheduler.scheduleAtFixedRate(() -> {
+        sharedScheduler.heartbeat().scheduleAtFixedRate(() -> {
             emitters.forEach((streamId, emitter) -> {
                 try {
                     var event = SseEmitter.event()
@@ -259,19 +256,9 @@ public class SseSessionManager {
     }
 
     /**
-     * 停止所有心跳并关闭所有 SseEmitter。
+     * 关闭所有 SseEmitter 并清理资源。
      */
     public void shutdown() {
-        heartbeatScheduler.shutdown();
-        try {
-            if (!heartbeatScheduler.awaitTermination(5, TimeUnit.SECONDS)) {
-                heartbeatScheduler.shutdownNow();
-            }
-        } catch (InterruptedException e) {
-            heartbeatScheduler.shutdownNow();
-            Thread.currentThread().interrupt();
-        }
-
         int count = emitters.size();
         emitters.forEach((streamId, emitter) -> {
             try {

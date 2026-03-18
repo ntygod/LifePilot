@@ -6,6 +6,7 @@ import java.util.Map;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.interaction.channel.AbstractChannelAdapter;
 import com.lifepilot.interaction.config.GatewayProperties;
 import com.lifepilot.interaction.gateway.MessageGateway;
@@ -42,8 +43,9 @@ public class DingtalkChannelAdapter extends AbstractChannelAdapter {
 
     public DingtalkChannelAdapter(MessageGateway gateway, GatewayProperties properties,
                                   DingtalkSignatureVerifier signatureVerifier,
-                                  DingtalkApiClient apiClient, DingtalkMessageConverter converter) {
-        super(gateway, properties);
+                                  DingtalkApiClient apiClient, DingtalkMessageConverter converter,
+                                  SharedScheduler sharedScheduler) {
+        super(gateway, properties, sharedScheduler);
         this.signatureVerifier = signatureVerifier;
         this.apiClient = apiClient;
         this.converter = converter;

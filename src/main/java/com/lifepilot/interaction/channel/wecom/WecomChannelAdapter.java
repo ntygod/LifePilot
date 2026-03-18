@@ -7,6 +7,7 @@ import java.util.Map;
 
 import javax.xml.parsers.DocumentBuilderFactory;
 
+import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.interaction.channel.AbstractChannelAdapter;
 import com.lifepilot.interaction.config.GatewayProperties;
 import com.lifepilot.interaction.gateway.MessageGateway;
@@ -41,8 +42,9 @@ public class WecomChannelAdapter extends AbstractChannelAdapter {
 
     public WecomChannelAdapter(MessageGateway gateway, GatewayProperties properties,
                                WecomCrypto crypto, WecomSignatureVerifier signatureVerifier,
-                               WecomApiClient apiClient, WecomMessageConverter converter) {
-        super(gateway, properties);
+                               WecomApiClient apiClient, WecomMessageConverter converter,
+                               SharedScheduler sharedScheduler) {
+        super(gateway, properties, sharedScheduler);
         this.crypto = crypto;
         this.signatureVerifier = signatureVerifier;
         this.apiClient = apiClient;

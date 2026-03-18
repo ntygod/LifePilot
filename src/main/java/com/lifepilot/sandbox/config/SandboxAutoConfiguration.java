@@ -10,6 +10,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.sandbox.booter.DockerBooter;
 import com.lifepilot.sandbox.booter.ProcessBooter;
 import com.lifepilot.sandbox.booter.SandboxBooter;
@@ -91,8 +92,9 @@ public class SandboxAutoConfiguration {
      */
     @Bean
     @ConditionalOnMissingBean
-    SandboxSessionManager sandboxSessionManager(SandboxConfigProperties config, SandboxBooter booter) {
-        return new SandboxSessionManager(config, booter);
+    SandboxSessionManager sandboxSessionManager(SandboxConfigProperties config, SandboxBooter booter,
+                                                SharedScheduler sharedScheduler) {
+        return new SandboxSessionManager(config, booter, sharedScheduler);
     }
 
     /**

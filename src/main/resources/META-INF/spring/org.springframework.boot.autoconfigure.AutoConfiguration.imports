@@ -1,3 +1,4 @@
+com.lifepilot.config.threadpool.ThreadPoolAutoConfiguration
 com.lifepilot.prompt.config.PromptAutoConfiguration
 com.lifepilot.llm.config.LlmAutoConfiguration
 com.lifepilot.memory.config.MemoryAutoConfiguration

@@ -5,6 +5,7 @@ import com.lifepilot.a2a.client.RemoteAgentRegistry;
 import com.lifepilot.a2a.client.RemoteAgentToolFactory;
 import com.lifepilot.a2a.server.*;
 import com.lifepilot.agent.ReactAgentLoop;
+import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.multiagent.config.MultiAgentAutoConfiguration;
 import com.lifepilot.multiagent.execution.AgentExecutor;
 import com.lifepilot.multiagent.registry.AgentRegistry;
@@ -18,8 +19,6 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.event.EventListener;
 
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -38,6 +37,12 @@ import java.util.concurrent.TimeUnit;
 public class A2aAutoConfiguration {
 
     private static final Logger log = LoggerFactory.getLogger(A2aAutoConfiguration.class);
+
+    private final SharedScheduler sharedScheduler;
+
+    public A2aAutoConfiguration(SharedScheduler sharedScheduler) {
+        this.sharedScheduler = sharedScheduler;
+    }
 
     // ── Server Bean（lifepilot.a2a.server.enabled=true）──
 
@@ -161,10 +166,7 @@ public class A2aAutoConfiguration {
         if (properties.getServer().isEnabled() && ctx.containsBean("a2aTaskStore")) {
             var taskStore = ctx.getBean(A2aTaskStore.class);
             int ttlMinutes = properties.getTask().getTtlMinutes();
-            ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(
-                    Thread.ofVirtual().name("a2a-task-cleanup-", 0).factory()
-            );
-            scheduler.scheduleAtFixedRate(() -> {
+            sharedScheduler.cleanup().scheduleAtFixedRate(() -> {
                 int cleaned = taskStore.cleanupExpired();
                 if (cleaned > 0) {
                     log.info("A2A Task TTL 清理完成: 清理 {} 个过期 Task", cleaned);

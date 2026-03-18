@@ -1,5 +1,6 @@
 package com.lifepilot.scheduler.config;
 
+import com.lifepilot.config.threadpool.ThreadPoolRegistry;
 import com.lifepilot.notification.NotificationService;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.scheduler.ScheduledTaskRepository;
@@ -63,13 +64,14 @@ public class SchedulerAutoConfiguration {
         return new TaskActionExecutor(notificationService, dynamicToolRegistry, appContext);
     }
 
-    @Bean(destroyMethod = "shutdown")
+    @Bean
     @ConditionalOnMissingBean
     public TaskScheduler taskScheduler(TaskActionExecutor taskActionExecutor,
                                        ScheduledTaskRepository scheduledTaskRepository,
-                                       SchedulerProperties schedulerProperties) {
+                                       SchedulerProperties schedulerProperties,
+                                       ThreadPoolRegistry threadPoolRegistry) {
         log.info("调度器模块: 注册 TaskScheduler");
-        return new TaskScheduler(taskActionExecutor, scheduledTaskRepository, schedulerProperties);
+        return new TaskScheduler(taskActionExecutor, scheduledTaskRepository, schedulerProperties, threadPoolRegistry);
     }
 
     @Bean

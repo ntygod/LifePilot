@@ -6,6 +6,7 @@ import com.lifepilot.agent.AgentToolProvider;
 import com.lifepilot.agent.context.ContextAssembler;
 import com.lifepilot.agent.media.MediaDataExtractor;
 import com.lifepilot.agent.suspend.store.SuspendStore;
+import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.notification.PassiveNotificationQueue;
 import com.lifepilot.agent.session.SessionManager;
 import com.lifepilot.conversation.ConversationHistoryStore;
@@ -141,7 +142,8 @@ public class AgentAutoConfiguration {
                                @Autowired(required = false) com.lifepilot.memory.experience.ExperienceSummarizer experienceSummarizer,
                                @Autowired(required = false) com.lifepilot.memory.experience.EffectivenessTracker effectivenessTracker,
                                @Autowired(required = false) com.lifepilot.memory.experience.ContrastiveLearner contrastiveLearner,
-                               @Autowired(required = false) com.lifepilot.memory.experience.SubtaskReflector subtaskReflector) {
+                               @Autowired(required = false) com.lifepilot.memory.experience.SubtaskReflector subtaskReflector,
+                               SharedScheduler sharedScheduler) {
         log.info("Agent 引擎初始化完成（ReAct 架构，追踪{}，记忆系统{}，实时提取{}，多模态{}，A2UI{}，挂起-恢复{}，L4反馈{}，经验总结{}，经验增强{}）",
                 traceRecorder != null ? "已启用" : "未启用",
                 workingMemory != null ? "已启用" : "未启用",
@@ -160,6 +162,7 @@ public class AgentAutoConfiguration {
                 sessionKnowledgeBaseRepository, knowledgeBaseRepository, a2uiProperties,
                 attachmentRepository, suspendStore, eventPublisher,
                 proceduralMemory, intentMatcher, experienceSummarizer,
-                effectivenessTracker, contrastiveLearner, subtaskReflector);
+                effectivenessTracker, contrastiveLearner, subtaskReflector,
+                sharedScheduler);
     }
 }
