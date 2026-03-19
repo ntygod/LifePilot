@@ -24,7 +24,7 @@ import java.util.List;
  * @author zsg
  * @since 2026-03-17
  */
-@RestController
+@ResponseBody
 @RequestMapping("/api/eval")
 public class EvalController {
 

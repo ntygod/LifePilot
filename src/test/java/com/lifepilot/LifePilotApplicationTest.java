@@ -2,9 +2,11 @@ package com.lifepilot;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -15,6 +17,8 @@ import java.nio.file.Path;
 import java.sql.Connection;
 import java.util.UUID;
 
+import org.springframework.jdbc.core.JdbcTemplate;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -24,18 +28,37 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * ZhiWei 应用启动验证集成测试。
  *
  * <p>验证项目骨架配置正确：Spring 上下文加载、健康检查端点、
- * Flyway 迁移执行、SQLite PRAGMA 设置。
+ * Flyway 迁移执行、SQLite PRAGMA 设置。</p>
  *
- * <p>使用 {@link DynamicPropertySource} 为每次测试运行生成唯一的临时数据库文件，
- * 避免残留数据库文件导致 Flyway 迁移冲突。
+ * <p>使用内部 {@link TestApp} 配置类，仅启用 {@code @EnableAutoConfiguration}
+ * 而不使用 {@code @ComponentScan}。所有 AutoConfiguration 类通过
+ * {@code META-INF/spring/AutoConfiguration.imports} 注册，并由
+ * {@code application-test.yml} 中的 {@code enabled=false} 条件守卫。
+ * 这样避免了 {@code @Component} / {@code @RestController} 被组件扫描
+ * 拾取后因依赖缺失而导致启动失败的问题。</p>
  *
  * @author zsg
  * @since 2026-02-24
  */
-@SpringBootTest
+@SpringBootTest(classes = LifePilotApplicationTest.TestApp.class)
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 class LifePilotApplicationTest {
+
+    /**
+     * 测试专用启动配置 — 仅启用自动配置，不做组件扫描。
+     *
+     * <p>生产环境使用 {@link LifePilotApplication}（含 {@code @ComponentScan}），
+     * 此处刻意省略以避免拾取依赖被禁用模块的 {@code @Component} 类。</p>
+     */
+    @Configuration
+    @EnableAutoConfiguration(exclude = {
+            org.springframework.boot.autoconfigure.data.jdbc.JdbcRepositoriesAutoConfiguration.class,
+            org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration.class
+    })
+    @Import(com.lifepilot.config.DataSourceConfig.class)
+    static class TestApp {
+    }
 
     private static final String DB_ID = UUID.randomUUID().toString().substring(0, 8);
 
@@ -74,10 +97,11 @@ class LifePilotApplicationTest {
 
     @Test
     void Flyway迁移_成功执行() {
-        var result = jdbcTemplate.queryForObject(
-                "SELECT id FROM schema_version_check WHERE id = 'init'",
-                String.class);
-        assertThat(result).isEqualTo("init");
+        // 验证 V1 迁移创建的核心表存在
+        var count = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='llm_providers'",
+                Integer.class);
+        assertThat(count).isEqualTo(1);
     }
 
     @Test

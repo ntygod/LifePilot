@@ -28,6 +28,9 @@ lifepilot:
     enabled: false
   gateway:
     enabled: false
+    channels:
+      web:
+        enabled: false
   workflow:
     enabled: false
   sandbox:
@@ -37,6 +40,14 @@ lifepilot:
   memory:
     enabled: false
     vector-db-url: "jdbc:sqlite:${java.io.tmpdir}/lifepilot-vec-test.db"
+  marketplace:
+    enabled: false
+  notification:
+    enabled: false
+  datastore:
+    enabled: false
+  meta:
+    enabled: false
   observability:
     trace:
       enabled: true

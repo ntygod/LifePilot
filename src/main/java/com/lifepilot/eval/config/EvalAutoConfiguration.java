@@ -20,6 +20,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -54,6 +55,7 @@ import java.util.Set;
 @AutoConfiguration
 @EnableConfigurationProperties(EvalConfigProperties.class)
 @ConditionalOnProperty(prefix = "lifepilot.eval", name = "enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnBean(AgentOrchestrator.class)
 public class EvalAutoConfiguration {
 
     private static final Logger log = LoggerFactory.getLogger(EvalAutoConfiguration.class);

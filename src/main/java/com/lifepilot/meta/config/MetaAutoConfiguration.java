@@ -61,6 +61,7 @@ import org.springframework.web.client.RestClient;
  * @since 2026-03-10
  */
 @AutoConfiguration
+@ConditionalOnProperty(name = "lifepilot.meta.enabled", havingValue = "true", matchIfMissing = true)
 @EnableConfigurationProperties(MetaProperties.class)
 public class MetaAutoConfiguration {
 
