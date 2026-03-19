@@ -74,8 +74,8 @@ function getStepBrief(step: ReactStepDto): string {
       if (text.length <= 40) return text || '正在思考…'
       return text.substring(0, 40) + '…'
     }
-    case 'TOOL_CALL': return `调用 ${step.toolId}`
-    case 'OBSERVATION': return `${step.success ? '✓' : '✗'} ${step.toolId} 返回`
+    case 'TOOL_CALL': return `调用 ${step.toolName ?? step.toolId}`
+    case 'OBSERVATION': return `${step.success ? '✓' : '✗'} ${step.toolName ?? step.toolId} 返回`
     case 'ANSWER': return '生成回答'
     case 'SUSPEND': return '等待确认…'
     case 'RESUME': return '已恢复执行'
@@ -126,8 +126,8 @@ function getStepTitle(step: ReactStepDto): string {
       if (step.content && step.content.length <= 30) return step.content
       return '推理思考'
     }
-    case 'TOOL_CALL': return `调用工具: ${step.toolId}`
-    case 'OBSERVATION': return `${step.success ? '工具返回' : '工具失败'}: ${step.toolId}`
+    case 'TOOL_CALL': return `调用工具: ${step.toolName ?? step.toolId}`
+    case 'OBSERVATION': return `${step.success ? '工具返回' : '工具失败'}: ${step.toolName ?? step.toolId}`
     case 'ANSWER': return '生成回答'
     case 'SUSPEND': return 'Agent 挂起'
     case 'RESUME': return 'Agent 恢复'
@@ -168,7 +168,7 @@ function hasExpandableContent(step: ReactStepDto): boolean {
 
 // 工具配对组的标题
 function getToolPairTitle(tc: ToolCallStep, obs: ObservationStep): string {
-  return `${tc.toolId} — ${obs.success ? '成功' : '失败'}`
+  return `${tc.toolName ?? tc.toolId} — ${obs.success ? '成功' : '失败'}`
 }
 
 // 工具配对组的内联输出预览

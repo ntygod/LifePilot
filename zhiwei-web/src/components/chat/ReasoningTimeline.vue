@@ -243,12 +243,12 @@ function formatRelativeTime(event: ReasoningEvent): string | null {
                   <span class="text-[11px] font-medium text-foreground/90 leading-5">
                     {{ event.title }}
                   </span>
-                  <!-- 工具名标签 -->
+                  <!-- 工具技术标识（调试用） -->
                   <span
-                    v-if="event.toolName"
+                    v-if="event.extra?.toolId"
                     class="inline-flex items-center px-1.5 py-0.5 rounded bg-muted text-[10px] text-muted-foreground font-mono"
                   >
-                    {{ event.toolName }}
+                    {{ event.extra.toolId }}
                   </span>
                   <!-- 相对时间 -->
                   <span

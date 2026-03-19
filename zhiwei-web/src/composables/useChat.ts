@@ -45,6 +45,8 @@ export function useChat() {
   const streamingMedia = ref<SseMediaEvent[]>([])
   // 当前待处理的工具确认请求
   const pendingToolConfirmation = ref<ToolConfirmationRequest | null>(null)
+  // 当前轮工具确认的解决结果（用户批准/拒绝/超时后记录，DONE 时写入 assistant 消息）
+  const pendingToolConfirmationResolution = ref<'approved' | 'rejected' | 'expired' | null>(null)
   let abortController: AbortController | null = null
   // 当前这轮请求对应的用户消息 ID，用于在错误 / 完成时回写状态
   let currentUserMessageId: string | null = null
@@ -104,6 +106,8 @@ export function useChat() {
     reasoningStatusText.value = null
     streamingReactSteps.value = []
     streamingMedia.value = []
+    pendingToolConfirmation.value = null
+    pendingToolConfirmationResolution.value = null
     a2uiStore.clearComponents()
     abortController = new AbortController()
 
@@ -333,6 +337,9 @@ export function useChat() {
             reactSteps: event.reactSteps?.length
               ? event.reactSteps
               : (streamingReactSteps.value.length > 0 ? [...streamingReactSteps.value] : undefined),
+            // 如果本轮有工具确认请求，将确认数据挂载到 assistant 消息上
+            toolConfirmation: pendingToolConfirmation.value ?? undefined,
+            toolConfirmationResolution: pendingToolConfirmationResolution.value ?? undefined,
           })
           // 记录本轮统计信息（若后端未返回则保持上一次或使用 usage 字段兜底）
           if (event.tokenUsage) {
@@ -385,7 +392,7 @@ export function useChat() {
           // 心跳事件，忽略
           break
         case SSE_EVENT_TYPES.TOOL_CONFIRMATION_REQUEST: {
-          // 工具确认请求：弹出确认对话框
+          // 工具确认请求：保存到 pendingToolConfirmation，由 MessageBubble 在流式气泡内渲染
           const payload: ToolConfirmationRequest = JSON.parse(data)
           pendingToolConfirmation.value = payload
           break
@@ -427,9 +434,9 @@ export function useChat() {
       case 'THOUGHT':
         return { type: 'THOUGHT', index, content: ev.description ?? ev.title }
       case 'TOOL_CALL':
-        return { type: 'TOOL_CALL', index, toolId: ev.toolName ?? 'unknown', inputSummary: ev.description ?? '', latencyMs: 0 }
+        return { type: 'TOOL_CALL', index, toolId: (ev.extra?.toolId as string) ?? ev.toolName ?? 'unknown', toolName: ev.toolName ?? undefined, inputSummary: ev.description ?? '', latencyMs: 0 }
       case 'OBSERVATION':
-        return { type: 'OBSERVATION', index, toolId: ev.toolName ?? 'unknown', success: !ev.title.includes('失败'), outputSummary: ev.description ?? '', tokensUsed: 0 }
+        return { type: 'OBSERVATION', index, toolId: (ev.extra?.toolId as string) ?? ev.toolName ?? 'unknown', toolName: ev.toolName ?? undefined, success: !ev.title.includes('失败'), outputSummary: ev.description ?? '', tokensUsed: 0 }
       case 'ANSWER':
         return { type: 'ANSWER', index, content: ev.description ?? ev.title }
       case 'SUSPEND':
@@ -472,6 +479,11 @@ export function useChat() {
     a2uiStore.clearComponents()
   }
 
+  /** 解决工具确认（用户批准/拒绝/超时），记录结果供 DONE 事件写入 assistant 消息 */
+  function resolveToolConfirmation(resolution: 'approved' | 'rejected' | 'expired') {
+    pendingToolConfirmationResolution.value = resolution
+  }
+
   return {
     sendMessage,
     isStreaming,
@@ -488,7 +500,9 @@ export function useChat() {
     // 当前轮流式媒体数据（截图等），供组件实时预览
     streamingMedia,
     streamingA2uiComponents: a2uiStore.components,
-    // 当前待处理的工具确认请求
+    // 当前待处理的工具确认请求（流式阶段由 MessageBubble 内嵌渲染）
     pendingToolConfirmation,
+    pendingToolConfirmationResolution,
+    resolveToolConfirmation,
   }
 }

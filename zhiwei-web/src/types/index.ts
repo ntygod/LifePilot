@@ -44,7 +44,7 @@ export interface ChatAttachment {
 /** 消息 */
 export interface Message {
   id: string
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'tool-confirmation'
   content: string
   a2uiComponents?: A2uiComponent[]
   timestamp: number
@@ -80,6 +80,10 @@ export interface Message {
   collapsed?: boolean
   /** 用户反馈状态（前端本地状态，不持久化到后端） */
   feedbackStatus?: 'liked' | 'disliked' | null
+  /** 工具确认请求数据（仅 role === 'tool-confirmation' 时有值） */
+  toolConfirmation?: ToolConfirmationRequest
+  /** 工具确认解决结果（仅 role === 'tool-confirmation' 时有值） */
+  toolConfirmationResolution?: 'approved' | 'rejected' | 'expired'
 }
 
 /** A2UI 组件节点（邻接表） */
@@ -195,6 +199,8 @@ export interface ThoughtStep extends ReactStepBase {
 export interface ToolCallStep extends ReactStepBase {
   type: 'TOOL_CALL'
   toolId: string
+  /** 工具显示名称（用户可读，如 "创建待办"），为空时回退到 toolId */
+  toolName?: string
   inputSummary: string
   latencyMs: number
 }
@@ -203,6 +209,8 @@ export interface ToolCallStep extends ReactStepBase {
 export interface ObservationStep extends ReactStepBase {
   type: 'OBSERVATION'
   toolId: string
+  /** 工具显示名称（用户可读），为空时回退到 toolId */
+  toolName?: string
   success: boolean
   outputSummary: string
   tokensUsed: number
