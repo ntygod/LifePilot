@@ -25,4 +25,18 @@ public interface AgentToolProvider {
      * @return 工具回调列表（Spring AI ToolCallback）
      */
     List<ToolCallback> getToolCallbacks(ReactAgentState state, @Nullable String streamId);
+
+    /**
+     * 根据工具 ID 解析用户可读的显示名称。
+     *
+     * <p>用于前端展示场景（推理时间线、工具确认卡片等），
+     * 将技术 ID（如 {@code builtin.todo.create}）转换为中文名称（如 "创建待办"）。</p>
+     *
+     * @param toolId 工具技术标识
+     * @return 工具显示名称，未找到时返回 null（前端回退到 toolId）
+     */
+    @Nullable
+    default String resolveToolDisplayName(String toolId) {
+        return null;
+    }
 }

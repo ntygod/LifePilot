@@ -51,6 +51,14 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
     }
 
     @Override
+    @Nullable
+    public String resolveToolDisplayName(String toolId) {
+        return toolRegistry.resolve(toolId)
+                .map(ToolContract::name)
+                .orElse(null);
+    }
+
+    @Override
     public List<ToolCallback> getToolCallbacks(ReactAgentState state, @Nullable String streamId) {
         List<ToolContract> tools = toolRegistry.getToolSnapshot();
         var allowedToolIds = state.allowedToolIds();

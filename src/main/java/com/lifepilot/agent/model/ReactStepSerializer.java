@@ -55,18 +55,22 @@ public final class ReactStepSerializer {
                     "index", index,
                     "content", truncate(content, THOUGHT_MAX_LENGTH)
             );
-            case ReactStep.ToolCall(var toolId, var inputJson, var latencyMs) -> Map.of(
-                    "type", "TOOL_CALL",
-                    "index", index,
-                    "toolId", toolId,
-                    "inputSummary", truncate(inputJson, INPUT_MAX_LENGTH),
-                    "latencyMs", latencyMs
-            );
-            case ReactStep.Observation(var toolId, var success, var output, var tokensUsed) -> {
+            case ReactStep.ToolCall(var toolId, var toolName, var inputJson, var latencyMs) -> {
+                var map = new LinkedHashMap<String, Object>();
+                map.put("type", "TOOL_CALL");
+                map.put("index", index);
+                map.put("toolId", toolId);
+                if (toolName != null) map.put("toolName", toolName);
+                map.put("inputSummary", truncate(inputJson, INPUT_MAX_LENGTH));
+                map.put("latencyMs", latencyMs);
+                yield Map.copyOf(map);
+            }
+            case ReactStep.Observation(var toolId, var toolName, var success, var output, var tokensUsed) -> {
                 var map = new LinkedHashMap<String, Object>();
                 map.put("type", "OBSERVATION");
                 map.put("index", index);
                 map.put("toolId", toolId);
+                if (toolName != null) map.put("toolName", toolName);
                 map.put("success", success);
                 map.put("outputSummary", truncate(output, OUTPUT_MAX_LENGTH));
                 map.put("tokensUsed", tokensUsed);

@@ -309,7 +309,7 @@ public class ReactAgentLoop implements CallbackHelper {
                     break;
                 }
                 state = state.appendStep(new ReactStep.Observation(
-                        "llm", false, "LLM 调用失败: " + e.getMessage(), 0));
+                        "llm", null, false, "LLM 调用失败: " + e.getMessage(), 0));
                 pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
                 continue;
             }
@@ -447,10 +447,12 @@ public class ReactAgentLoop implements CallbackHelper {
 
         String toolId = tc.name();
         String inputJson = tc.arguments();
+        // 解析工具显示名称
+        String toolDisplayName = agentToolProvider.resolveToolDisplayName(toolId);
 
         // 记录 ToolCall 步骤
         var toolCallStart = Instant.now();
-        state = state.appendStep(new ReactStep.ToolCall(toolId, inputJson, 0));
+        state = state.appendStep(new ReactStep.ToolCall(toolId, toolDisplayName, inputJson, 0));
         pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
 
         // 查找匹配的 ToolCallback
@@ -463,7 +465,7 @@ public class ReactAgentLoop implements CallbackHelper {
         if (matchedCallback == null) {
             log.warn("未找到工具回调: toolId={}", toolId);
             state = state.appendStep(new ReactStep.Observation(
-                    toolId, false, "工具未注册: " + toolId, 0));
+                    toolId, toolDisplayName, false, "工具未注册: " + toolId, 0));
             pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
             recordToolCallStep(traceContext, state.stepCount() - 1, toolCallStart,
                     toolId, inputJson, "工具未注册: " + toolId, false);
@@ -490,7 +492,7 @@ public class ReactAgentLoop implements CallbackHelper {
                 log.info("工具请求挂起: toolId={}, reason={}", toolId, suspendReason);
                 state = state.suspend(suspendReason);
                 state = state.appendStep(new ReactStep.Observation(
-                        toolId, true, "工具请求挂起: " + suspendReason, 0));
+                        toolId, toolDisplayName, true, "工具请求挂起: " + suspendReason, 0));
                 pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
                 recordToolCallStep(traceContext, state.stepCount() - 1, toolCallStart,
                         toolId, inputJson, rawOutput, true);
@@ -548,7 +550,7 @@ public class ReactAgentLoop implements CallbackHelper {
         // 记录 Observation 步骤
         int obsTokens = estimateTextTokens(observationOutput != null ? observationOutput : "");
         state = state.appendStep(new ReactStep.Observation(
-                toolId, success, observationOutput != null ? observationOutput : "", obsTokens));
+                toolId, toolDisplayName, success, observationOutput != null ? observationOutput : "", obsTokens));
         pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
 
         // L4 反馈闭环 — 工具执行成功后记录操作模板执行结果
@@ -1050,16 +1052,25 @@ public class ReactAgentLoop implements CallbackHelper {
                     content.length() > 100 ? content.substring(0, 100) + "..." : content,
                     null
             };
-            case ReactStep.ToolCall(var toolId, var inputJson, var latencyMs) -> new String[]{
-                    "TOOL_CALL", "调用工具: " + toolId,
-                    "正在执行工具 " + toolId,
-                    toolId
-            };
-            case ReactStep.Observation(var toolId, var success, var output, var tokensUsed) -> new String[]{
-                    "OBSERVATION", (success ? "工具返回: " : "工具失败: ") + toolId,
+            case ReactStep.ToolCall(var toolId, var toolName, var inputJson, var latencyMs) -> {
+                // 用户可读的显示名称，优先 toolName，回退到 toolId
+                String display = toolName != null ? toolName : toolId;
+                yield new String[]{
+                    "TOOL_CALL", "调用工具: " + display,
+                    "正在执行工具 " + display,
+                    display,  // SSE toolName 字段传显示名称
+                    toolId    // SSE toolId 字段传技术标识
+                };
+            }
+            case ReactStep.Observation(var toolId, var toolName, var success, var output, var tokensUsed) -> {
+                String display = toolName != null ? toolName : toolId;
+                yield new String[]{
+                    "OBSERVATION", (success ? "工具返回: " : "工具失败: ") + display,
                     output.length() > 100 ? output.substring(0, 100) + "..." : output,
+                    display,
                     toolId
-            };
+                };
+            }
             case ReactStep.Answer(var content) -> new String[]{
                     "ANSWER", "生成回答",
                     content.length() > 100 ? content.substring(0, 100) + "..." : content,
@@ -1079,6 +1090,10 @@ public class ReactAgentLoop implements CallbackHelper {
 
         var extra = new HashMap<String, Object>();
         extra.put("stepIndex", stepIndex);
+        // info[4] 存在时为 toolId（技术标识），传入 extra 供前端调试使用
+        if (info.length > 4 && info[4] != null) {
+            extra.put("toolId", info[4]);
+        }
         sendReasoningEvent(sseManager, streamId, state.sessionId(), turnId,
                 info[0], info[1], info[2], info[3], extra);
     }

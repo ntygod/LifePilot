@@ -347,7 +347,7 @@ public class AgentOrchestrator {
                 Duration.between(suspended.suspendedAt(), Instant.now())));
         String resumeToolId = "resume:" + suspended.suspendReason().getClass().getSimpleName();
         state = state.appendStep(new ReactStep.Observation(
-                resumeToolId, true, agentLoop.formatResumeObservation(payload), 0));
+                resumeToolId, null, true, agentLoop.formatResumeObservation(payload), 0));
         suspendStore.delete(traceId);
 
         log.info("Agent 恢复执行: traceId={}, reasonType={}, payloadType={}",

@@ -9,6 +9,7 @@ import com.lifepilot.interaction.web.model.ToolAnalyticsResponse;
 import com.lifepilot.interaction.web.model.UsageStats;
 import com.lifepilot.knowledge.KnowledgeBaseManager;
 import com.lifepilot.knowledge.model.KnowledgeBase;
+import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
@@ -42,16 +43,19 @@ public class AnalyticsController {
     private final JdbcTemplate jdbcTemplate;
     private final KnowledgeBaseManager knowledgeBaseManager;
     private final ObjectMapper objectMapper;
+    private final DynamicToolRegistry toolRegistry;
 
     // Token 成本估算：约 $2 / 1M tokens = $0.000002 per token
     private static final double COST_PER_TOKEN = 0.000002;
 
     public AnalyticsController(JdbcTemplate jdbcTemplate,
                                 KnowledgeBaseManager knowledgeBaseManager,
-                                ObjectMapper objectMapper) {
+                                ObjectMapper objectMapper,
+                                DynamicToolRegistry toolRegistry) {
         this.jdbcTemplate = jdbcTemplate;
         this.knowledgeBaseManager = knowledgeBaseManager;
         this.objectMapper = objectMapper;
+        this.toolRegistry = toolRegistry;
     }
 
     /**
@@ -407,9 +411,13 @@ public class AnalyticsController {
                 .map(entry -> {
                     String toolId = entry.getKey();
                     ToolAggregation agg = entry.getValue();
+                    // 解析工具显示名称，未找到时回退到 toolId
+                    String displayName = toolRegistry.resolve(toolId)
+                            .map(t -> t.name())
+                            .orElse(toolId);
                     return new ToolAnalyticsResponse.ToolStatItem(
                             toolId,
-                            toolId,
+                            displayName,
                             agg.callCount,
                             agg.successCount,
                             agg.callCount - agg.successCount,

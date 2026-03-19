@@ -35,12 +35,14 @@ public sealed interface ReactStep permits
     /**
      * 工具调用记录（由 Spring AI function calling 触发）。
      *
-     * @param toolId    工具标识
+     * @param toolId    工具标识（技术 ID，如 builtin.todo.create）
+     * @param toolName  工具显示名称（用户可读，如 "创建待办"），为 null 时前端回退到 toolId
      * @param inputJson 工具输入 JSON
      * @param latencyMs 调用耗时（毫秒）
      */
     record ToolCall(
             String toolId,
+            @org.springframework.lang.Nullable String toolName,
             String inputJson,
             long latencyMs
     ) implements ReactStep {}
@@ -48,13 +50,15 @@ public sealed interface ReactStep permits
     /**
      * 工具调用结果观察。
      *
-     * @param toolId     工具标识
+     * @param toolId     工具标识（技术 ID）
+     * @param toolName   工具显示名称（用户可读），为 null 时前端回退到 toolId
      * @param success    是否成功
      * @param output     工具输出内容
      * @param tokensUsed 本次调用消耗的 Token 数
      */
     record Observation(
             String toolId,
+            @org.springframework.lang.Nullable String toolName,
             boolean success,
             String output,
             int tokensUsed
