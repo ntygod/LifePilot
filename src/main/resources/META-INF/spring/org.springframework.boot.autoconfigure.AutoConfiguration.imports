@@ -25,4 +25,3 @@ com.lifepilot.marketplace.config.MarketplaceAutoConfiguration
 com.lifepilot.meta.config.MetaAutoConfiguration
 com.lifepilot.datastore.config.DataStoreAutoConfiguration
 com.lifepilot.notification.config.NotificationAutoConfiguration
-com.lifepilot.scheduler.config.SchedulerAutoConfiguration
