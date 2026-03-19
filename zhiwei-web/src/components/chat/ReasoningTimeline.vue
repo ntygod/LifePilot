@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import type { ReasoningEvent } from '@/types'
 import {
-  Brain, Search, Wrench, Lightbulb, ListChecks, PenLine, CheckCircle2,
+  Brain, Wrench, Lightbulb, PenLine, CheckCircle2,
   AlertCircle, ChevronDown, ChevronRight, Loader2, Clock
 } from 'lucide-vue-next'
 
@@ -36,7 +36,7 @@ const durationSeconds = computed(() => {
 // 统计信息
 const stepCount = computed(() => eventList.value.length)
 const toolCallCount = computed(() =>
-  eventList.value.filter(e => e.type === 'TOOL_CALL_START').length
+  eventList.value.filter(e => e.type === 'TOOL_CALL').length
 )
 
 // 触发器文案
@@ -56,15 +56,13 @@ const triggerLabel = computed(() => {
 function getEventIcon(type: string) {
   switch (type) {
     case 'AGENT_START': return Brain
-    case 'CONTEXT_LOADING': return Search
-    case 'MEMORY_RETRIEVAL': return Search
-    case 'TOOL_CALL_START': return Wrench
-    case 'TOOL_CALL_END': return CheckCircle2
-    case 'THINKING_STEP': return Lightbulb
-    case 'PLAN_UPDATED': return ListChecks
-    case 'ANSWER_DRAFTING': return PenLine
+    case 'THOUGHT': return Lightbulb
+    case 'TOOL_CALL': return Wrench
+    case 'OBSERVATION': return CheckCircle2
+    case 'ANSWER': return PenLine
+    case 'SUSPEND': return AlertCircle
+    case 'RESUME': return Brain
     case 'ANSWER_FINALIZED': return CheckCircle2
-    case 'ERROR': return AlertCircle
     default: return Brain
   }
 }
@@ -73,15 +71,13 @@ function getEventIcon(type: string) {
 function getEventColor(type: string) {
   switch (type) {
     case 'AGENT_START': return 'text-blue-500'
-    case 'CONTEXT_LOADING': return 'text-violet-500'
-    case 'MEMORY_RETRIEVAL': return 'text-violet-500'
-    case 'TOOL_CALL_START': return 'text-amber-500'
-    case 'TOOL_CALL_END': return 'text-emerald-500'
-    case 'THINKING_STEP': return 'text-yellow-500'
-    case 'PLAN_UPDATED': return 'text-cyan-500'
-    case 'ANSWER_DRAFTING': return 'text-primary'
+    case 'THOUGHT': return 'text-violet-500'
+    case 'TOOL_CALL': return 'text-amber-500'
+    case 'OBSERVATION': return 'text-blue-500'
+    case 'ANSWER': return 'text-primary'
+    case 'SUSPEND': return 'text-orange-500'
+    case 'RESUME': return 'text-cyan-500'
     case 'ANSWER_FINALIZED': return 'text-emerald-500'
-    case 'ERROR': return 'text-destructive'
     default: return 'text-muted-foreground'
   }
 }
@@ -89,7 +85,6 @@ function getEventColor(type: string) {
 // 时间线连线颜色
 function getLineColor(type: string) {
   switch (type) {
-    case 'ERROR': return 'bg-destructive/30'
     case 'ANSWER_FINALIZED': return 'bg-emerald-500/30'
     default: return 'bg-border'
   }

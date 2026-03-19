@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { Bot, FileText, Mic } from 'lucide-vue-next'
-import type { A2uiComponent, Message, ReasoningEvent } from '@/types'
+import type { A2uiComponent, Message, ReasoningEvent, ReactStepDto } from '@/types'
 import A2uiRenderer from '@/components/a2ui/A2uiRenderer.vue'
 import {
   Dialog,
@@ -13,6 +13,7 @@ import MessageActions from './MessageActions.vue'
 import MessageError from './MessageError.vue'
 import MessageFeedback from './MessageFeedback.vue'
 import ReasoningTimeline from './ReasoningTimeline.vue'
+import ReactStepTimeline from './ReactStepTimeline.vue'
 import StreamingText from './StreamingText.vue'
 import ToolCallCard from './ToolCallCard.vue'
 
@@ -21,6 +22,7 @@ const props = defineProps<{
   streaming?: boolean
   streamingContent?: string
   streamingReasoningEvents?: ReasoningEvent[]
+  streamingReactSteps?: ReactStepDto[]
   isLastAssistant?: boolean
   streamingA2uiComponents?: A2uiComponent[]
 }>()
@@ -104,6 +106,14 @@ const displayContent = computed(() => {
 const isCollapsible = computed(() =>
   props.message.role === 'assistant' && !props.streaming && shouldCollapse(props.message.content),
 )
+
+// 当前展示的 ReactStep 列表：流式时用 streamingReactSteps，否则用 message.reactSteps
+const activeReactSteps = computed<ReactStepDto[]>(() => {
+  if (props.streaming && props.streamingReactSteps?.length) {
+    return props.streamingReactSteps
+  }
+  return props.message.reactSteps ?? []
+})
 </script>
 
 <template>
@@ -208,7 +218,7 @@ const isCollapsible = computed(() =>
               </div>
             </div>
 
-            <div v-if="message.toolsSummary?.length" class="mt-3 space-y-1.5">
+            <div v-if="message.toolsSummary?.length && !activeReactSteps.length" class="mt-3 space-y-1.5">
               <ToolCallCard
                 v-for="tool in message.toolsSummary"
                 :key="tool.toolId"
@@ -224,8 +234,17 @@ const isCollapsible = computed(() =>
               />
             </div>
 
+            <!-- ReactStep 时间线（优先展示） -->
+            <ReactStepTimeline
+              v-if="activeReactSteps.length > 0"
+              :steps="activeReactSteps"
+              :streaming="streaming"
+              :summary="message.reasoningSummary"
+            />
+
+            <!-- 旧版 ReasoningTimeline 兜底（无 reactSteps 时回退） -->
             <ReasoningTimeline
-              v-if="message.reasoningSummary || message.reasoningEvents?.length || (streaming && streamingReasoningEvents?.length)"
+              v-else-if="message.reasoningSummary || message.reasoningEvents?.length || (streaming && streamingReasoningEvents?.length)"
               :summary="message.reasoningSummary"
               :events="streaming ? streamingReasoningEvents : message.reasoningEvents"
               :streaming="streaming"
