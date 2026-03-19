@@ -7,6 +7,7 @@ import com.lifepilot.observability.guardrail.GuardrailAdvisor;
 import com.lifepilot.observability.guardrail.GuardrailEngine;
 import com.lifepilot.observability.guardrail.GuardrailPolicy;
 import com.lifepilot.observability.guardrail.RiskLevel;
+import com.lifepilot.tool.config.ToolConfigProperties;
 import com.lifepilot.observability.redactor.DataRedactor;
 import com.lifepilot.observability.trace.*;
 import org.slf4j.Logger;
@@ -106,9 +107,10 @@ public class ObservabilityAutoConfiguration {
             havingValue = "true", matchIfMissing = true)
     public GuardrailEngine guardrailEngine(JdbcTemplate jdbcTemplate,
                                             TraceContextPropagator propagator,
-                                            ObservabilityProperties properties) {
+                                            ObservabilityProperties properties,
+                                            ToolConfigProperties toolConfigProperties) {
         log.info("可观测性: 注册 GuardrailEngine 护栏引擎");
-        return new GuardrailEngine(jdbcTemplate, propagator, properties);
+        return new GuardrailEngine(jdbcTemplate, propagator, properties, toolConfigProperties);
     }
 
     @Bean

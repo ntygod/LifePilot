@@ -134,6 +134,9 @@ lifepilot:
       keep-alive-seconds: 300
   tool:
     enabled: true
+    trusted-workspace:
+      paths: []
+      downgrade-level: MEDIUM
     pipeline:
       default-timeout-seconds: 30
       default-max-retries: 2
