@@ -6,7 +6,10 @@
 
 ## 1. 模块概述
 
-工具系统是知微 Agent 与外部世界交互的桥梁，定义了统一的工具契约（ToolContract），支持三种工具来源（内置工具、Skill 声明式工具、MCP 外部工具），并通过执行管道提供护栏检查、幂等控制、超时重试等保障。
+工具系统是知微 Agent 与外部世界交互的桥梁，定义了统一的工具契约（ToolContract），支持两种工具来源（Java 原生内置工具、MCP 外部工具），并通过执行管道提供护栏检查、幂等控制、超时重试等保障。
+
+> **重要变更**：原三层架构中的 `SkillTool`（SKILL_DECLARATIVE 层）已在渐进式披露重构中移除。
+> Skill 不再注册为独立工具，而是通过 `load_skill` / `generate_skill` 两个 BuiltinTool 按需加载。
 
 ## 2. 架构图
 
@@ -24,7 +27,6 @@ graph TB
 
     subgraph "工具契约（sealed interface）"
         BUILTIN["BuiltinTool<br/>Java 内置工具"]
-        YAML["SkillTool<br/>Skill 声明式工具"]
         MCP_TOOL["McpTool<br/>MCP 外部工具"]
     end
 
@@ -45,7 +47,6 @@ graph TB
     AGENT --> BRIDGE --> REG
     BUILTIN_REG --> REG
     REG --> BUILTIN
-    REG --> YAML
     REG --> MCP_TOOL
     BRIDGE --> PIPE
     PIPE --> IDEM
@@ -62,15 +63,15 @@ graph TB
 ### 3.1 ToolContract（sealed interface）
 
 - 职责：工具生态的核心抽象，所有工具必须实现此接口
-- 三个 permits：`BuiltinTool`（Java 内置）、`SkillTool`（Skill 声明式）、`McpTool`（MCP 外部）
+- 两个 permits：`BuiltinTool`（Java 内置）、`McpTool`（MCP 外部）
 - 关键属性：`id()`、`riskLevel()`、`idempotent()`、`budget()`、`layer()`、`inputSchema()`、`outputSchema()`
 - 关键方法：`execute(ToolInput)` → `ToolResult`
 
 ### 3.2 DynamicToolRegistry
 
-- 职责：运行时工具注册表，支持三种来源的工具动态注册和查询
-- 关键接口：`registerBuiltinTool()`、`registerSkillTools()`、`registerMcpTools()`
-- 工具层次优先级：BuiltinTool > SkillTool > McpTool，同 ID 高优先级覆盖低优先级
+- 职责：运行时工具注册表，支持两种来源的工具动态注册和查询
+- 关键接口：`registerBuiltinTool()`、`registerMcpTools()`
+- 工具层次优先级：BuiltinTool > McpTool，同 ID 高优先级覆盖低优先级
 
 ### 3.3 ToolExecutionPipeline
 
@@ -116,8 +117,8 @@ sequenceDiagram
 
 | 决策 | 选择 | 理由 |
 |------|------|------|
-| 工具抽象 | sealed interface ToolContract | 编译期穷举三种工具类型，新增类型时编译器强制处理 |
-| 层次优先级 | BuiltinTool > SkillTool > McpTool | 内置工具最可靠，Skill 工具次之，MCP 外部工具优先级最低 |
+| 工具抽象 | sealed interface ToolContract | 编译期穷举两种工具类型，新增类型时编译器强制处理 |
+| 层次优先级 | BuiltinTool > McpTool | 内置工具最可靠，MCP 外部工具优先级较低 |
 | 执行管道 | Pipeline 模式 | 护栏、幂等、超时、重试等横切关注点解耦，可独立配置 |
 | 输入验证 | JsonSchema + ToolInput.validate() | 工具执行前自动校验参数，防止无效调用 |
 
@@ -125,7 +126,7 @@ sequenceDiagram
 
 - **Agent 引擎**（`agent`）：通过 ToolBridgeAgentToolProvider 提供工具回调
 - **MCP 协议**（`mcp`）：McpTool 桥接 MCP 服务器提供的外部工具
-- **Skill 系统**（`skill`）：Skill 激活时注册 Skill 工具到 DynamicToolRegistry
+- **Skill 系统**（`skill`）：通过 `load_skill` / `generate_skill` BuiltinTool 实现渐进式 Skill 发现与激活
 - **护栏系统**（`guardrail` / `observability`）：执行管道中集成风险等级检查
 - **可观测性**（`observability`）：工具执行轨迹记录
 

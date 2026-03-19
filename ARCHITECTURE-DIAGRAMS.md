@@ -52,7 +52,7 @@ graph TB
 
     subgraph "能力层 (Capability)"
         SkillSystem[Skill 系统<br/>注册 / 验证 / 激活 / 生成]
-        ToolEco[工具生态<br/>BuiltinTool / SkillTool / McpTool]
+        ToolEco[工具生态<br/>BuiltinTool / McpTool]
         MemorySystem[记忆系统<br/>Working / Episodic / Semantic / Procedural]
         KnowledgeBase[知识库<br/>文档解析 / 分块 / 检索 / Rerank]
     end
@@ -342,14 +342,14 @@ graph LR
 
     subgraph "Skill 执行"
         Activator[SkillActivator<br/>激活 + 深度限制]
-        Bridge[SkillToToolBridge<br/>list_skills / activate_skill]
+        Disclosure[SkillDisclosureTool<br/>load_skill]
+        GenTool[SkillGenerationTool<br/>generate_skill]
         Generator[SkillGenerator<br/>LLM 自动生成]
     end
 
     subgraph "工具层"
         DynRegistry[DynamicToolRegistry]
-        SkillTool[SkillTool<br/>Layer 2]
-        BuiltinTool[BuiltinTool<br/>Layer 3]
+        BuiltinTool[BuiltinTool<br/>Layer 2]
     end
 
     BuiltinRegistrar --> SkillRegistry
@@ -359,12 +359,11 @@ graph LR
     Security --> Sandbox
 
     Activator --> SkillRegistry
-    Bridge --> Activator
-    Bridge --> DynRegistry
+    Disclosure --> Activator
+    Disclosure --> DynRegistry
+    GenTool --> Generator
     Generator --> SkillRegistry
 
-    SkillRegistry --> SkillTool
-    SkillTool --> DynRegistry
     BuiltinTool --> DynRegistry
 ```
 
@@ -588,36 +587,31 @@ graph TB
         TC[ToolContract<br/>id / name / description / riskLevel<br/>inputSchema / outputSchema / budget]
     end
 
-    subgraph "Layer 3: Java Native（优先级最高）"
+    subgraph "Layer 2: Java Native（优先级最高）"
         BT[BuiltinTool<br/>进程内调用，零序列化开销]
         FileTool[FileToolProvider<br/>文件操作]
         BrowserTool[BrowserToolProvider<br/>浏览器自动化]
         InfraTool[InfraToolProvider<br/>基础设施工具]
         InterTool[InteractionToolProvider<br/>人机交互]
+        DisclosureTool[SkillDisclosureTool<br/>load_skill]
+        GenTool[SkillGenerationTool<br/>generate_skill]
     end
 
-    subgraph "Layer 2: Skill Declarative（优先级中等）"
-        ST[SkillTool<br/>委托 SkillActivator 激活]
-        TodoSkill[TodoSkillProvider]
-        ScheduleSkill[ScheduleSkillProvider]
-        HabitSkill[HabitSkillProvider]
-        ScheduledTask[ScheduledTaskSkillProvider]
-    end
-
-    subgraph "Layer 1: MCP External（优先级最低）"
+    subgraph "Layer 1: MCP External（优先级较低）"
         MT[McpTool<br/>MCP 协议远程调用]
         McpReg[McpServerRegistry<br/>服务器发现 + 客户端管理]
         McpDisc[McpServerDiscovery<br/>自动发现]
     end
 
     TC --> BT
-    TC --> ST
     TC --> MT
 
     BT --> FileTool
     BT --> BrowserTool
     BT --> InfraTool
     BT --> InterTool
+    BT --> DisclosureTool
+    BT --> GenTool
 
     ST --> TodoSkill
     ST --> ScheduleSkill

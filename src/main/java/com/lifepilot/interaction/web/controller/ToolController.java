@@ -3,15 +3,14 @@ package com.lifepilot.interaction.web.controller;
 import com.lifepilot.interaction.web.model.ErrorResponse;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.skill.registry.SkillRegistry;
+import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.ToolContract;
-import com.lifepilot.tool.SkillTool;
 import com.lifepilot.tool.model.ToolBudget;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolLayer;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.tool.schema.JsonSchema;
-import com.lifepilot.tool.yaml.SkillToolPersistenceService;
 import com.lifepilot.workflow.model.WorkflowDefinition;
 import com.lifepilot.workflow.model.WorkflowStep;
 import com.lifepilot.workflow.registry.WorkflowRegistry;
@@ -19,7 +18,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.lang.Nullable;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -55,22 +53,19 @@ public class ToolController {
     private final DynamicToolRegistry toolRegistry;
     private final SkillRegistry skillRegistry;
     private final WorkflowRegistry workflowRegistry;
-    private final SkillToolPersistenceService persistenceService;
 
     public ToolController(DynamicToolRegistry toolRegistry,
                           SkillRegistry skillRegistry,
-                          WorkflowRegistry workflowRegistry,
-                          @Nullable SkillToolPersistenceService persistenceService) {
+                          WorkflowRegistry workflowRegistry) {
         this.toolRegistry = toolRegistry;
         this.skillRegistry = skillRegistry;
         this.workflowRegistry = workflowRegistry;
-        this.persistenceService = persistenceService;
     }
 
     /**
      * 获取 Tool 列表（支持筛选）。
      *
-     * @param source 来源筛选（builtin, mcp, yaml）
+     * @param source 来源筛选（builtin, mcp）
      * @param status 状态筛选（enabled, disabled）- 当前版本暂不支持，返回所有 Tool
      * @param name 名称筛选（模糊匹配）
      * @return Tool 列表
@@ -84,10 +79,8 @@ public class ToolController {
 
         List<ToolContract> allTools = toolRegistry.getAllTools();
 
-        // 应用筛选条件
         var filtered = allTools.stream()
                 .filter(tool -> {
-                    // 来源筛选
                     if (source != null && !source.isBlank()) {
                         ToolLayer layer = tool.layer();
                         String toolSource = getSourceString(layer);
@@ -95,8 +88,6 @@ public class ToolController {
                             return false;
                         }
                     }
-
-                    // 名称筛选（模糊匹配）
                     if (name != null && !name.isBlank()) {
                         String toolName = tool.name() != null ? tool.name().toLowerCase() : "";
                         String toolId = tool.id() != null ? tool.id().toLowerCase() : "";
@@ -105,7 +96,6 @@ public class ToolController {
                             return false;
                         }
                     }
-
                     return true;
                 })
                 .map(this::toToolSummary)
@@ -127,9 +117,7 @@ public class ToolController {
         return toolRegistry.resolve(id)
                 .<ResponseEntity<?>>map(tool -> {
                     Map<String, Object> detail = toToolDetail(tool);
-                    // 查询使用情况
-                    Map<String, Object> usage = queryToolUsage(id);
-                    detail.put("usage", usage);
+                    detail.put("usage", queryToolUsage(id));
                     return ResponseEntity.ok(detail);
                 })
                 .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND)
@@ -152,15 +140,11 @@ public class ToolController {
         return toolRegistry.resolve(id)
                 .<ResponseEntity<?>>map(tool -> {
                     try {
-                        // 构建 ToolInput
                         @SuppressWarnings("unchecked")
                         Map<String, Object> arguments = (Map<String, Object>) request.getOrDefault("arguments", Map.of());
                         ToolInput input = new ToolInput(tool.id(), arguments, tool.inputSchema(), null, null);
-
-                        // 执行工具
                         ToolResult result = tool.execute(input);
 
-                        // 构建响应
                         Map<String, Object> response = new HashMap<>();
                         response.put("success", result.ok());
                         response.put("output", result.data());
@@ -170,7 +154,6 @@ public class ToolController {
                                 "toolId", result.meta().toolId(),
                                 "action", result.meta().action()
                         ));
-
                         return ResponseEntity.ok(response);
                     } catch (Exception e) {
                         log.error("测试 Tool 失败: id={}", id, e);
@@ -197,12 +180,11 @@ public class ToolController {
                     .body(new ErrorResponse(404, "Tool 不存在: id=" + id, Instant.now()));
         }
 
-        Map<String, Object> usage = queryToolUsage(id);
-        return ResponseEntity.ok(usage);
+        return ResponseEntity.ok(queryToolUsage(id));
     }
 
     /**
-     * 创建 Tool。
+     * 创建 Tool（运行时注册 BuiltinTool，不持久化）。
      *
      * @param request 创建请求（包含 Tool 配置）
      * @return 201 创建成功，400 参数错误
@@ -211,36 +193,30 @@ public class ToolController {
     public ResponseEntity<?> createTool(@RequestBody Map<String, Object> request) {
         log.debug("创建 Tool: request={}", request);
         try {
-            // 参数验证
             String id = getString(request, "id");
-            String name = getString(request, "name");
+            String toolName = getString(request, "name");
             String description = getStringOrDefault(request, "description", "");
-            
+
             if (id == null || id.isBlank()) {
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                         .body(new ErrorResponse(400, "Tool ID 不能为空", Instant.now()));
             }
-            if (name == null || name.isBlank()) {
+            if (toolName == null || toolName.isBlank()) {
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                         .body(new ErrorResponse(400, "Tool 名称不能为空", Instant.now()));
             }
-
-            // 检查 ID 是否已存在
             if (toolRegistry.resolve(id).isPresent()) {
                 return ResponseEntity.status(HttpStatus.CONFLICT)
                         .body(new ErrorResponse(409, "Tool ID 已存在: " + id, Instant.now()));
             }
 
-            // 解析 Schema
             @SuppressWarnings("unchecked")
             Map<String, Object> inputSchemaMap = (Map<String, Object>) request.getOrDefault("inputSchema", Map.of());
             @SuppressWarnings("unchecked")
             Map<String, Object> outputSchemaMap = (Map<String, Object>) request.getOrDefault("outputSchema", Map.of("type", "object"));
-            
             JsonSchema inputSchema = JsonSchema.of(inputSchemaMap);
             JsonSchema outputSchema = JsonSchema.of(outputSchemaMap);
 
-            // 解析预算
             @SuppressWarnings("unchecked")
             Map<String, Object> budgetMap = (Map<String, Object>) request.getOrDefault("budget", Map.of());
             long timeoutSeconds = getLongOrDefault(budgetMap, "timeoutSeconds", 30L);
@@ -248,44 +224,29 @@ public class ToolController {
             int maxCostCents = getIntOrDefault(budgetMap, "maxCostCents", Integer.MAX_VALUE);
             ToolBudget budget = ToolBudget.of(Duration.ofSeconds(timeoutSeconds), maxRetries, maxCostCents);
 
-            // 解析其他字段
             String riskLevelStr = getStringOrDefault(request, "riskLevel", "MEDIUM");
             RiskLevel riskLevel = parseRiskLevel(riskLevelStr);
             boolean idempotent = getBooleanOrDefault(request, "idempotent", false);
             @SuppressWarnings("unchecked")
             List<String> tags = (List<String>) request.getOrDefault("tags", List.of());
 
-            // 创建 SkillTool，skillId 默认使用 Tool ID
-            SkillTool tool = new SkillTool(
-                    id,
-                    name,
-                    description,
-                    inputSchema,
-                    outputSchema,
-                    riskLevel,
-                    idempotent,
-                    budget,
-                    tags != null ? tags : List.of(),
-                    id
-            );
+            BuiltinTool tool = BuiltinTool.builder()
+                    .id(id)
+                    .name(toolName)
+                    .description(description)
+                    .inputSchema(inputSchema)
+                    .outputSchema(outputSchema)
+                    .riskLevel(riskLevel)
+                    .idempotent(idempotent)
+                    .budget(budget)
+                    .tags(tags != null ? tags : List.of())
+                    .executor(input -> ToolResult.success(Map.of("message", "用户自定义工具，暂无执行逻辑")))
+                    .build();
 
-            // 持久化到文件系统
-            if (persistenceService == null) {
-                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-                        .body(new ErrorResponse(503, "Tool 持久化服务未启用", Instant.now()));
-            }
-            boolean saved = persistenceService.save(tool);
-            if (!saved) {
-                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                        .body(new ErrorResponse(500, "Tool 持久化失败", Instant.now()));
-            }
+            toolRegistry.registerBuiltinTool(tool);
 
-            // 注册到 DynamicToolRegistry
-            toolRegistry.registerSkillTools(List.of(tool));
-
-            log.info("Tool 创建成功: id={}, name={}", id, name);
-            Map<String, Object> detail = toToolDetail(tool);
-            return ResponseEntity.status(HttpStatus.CREATED).body(detail);
+            log.info("Tool 创建成功: id={}, name={}", id, toolName);
+            return ResponseEntity.status(HttpStatus.CREATED).body(toToolDetail(tool));
         } catch (Exception e) {
             log.error("创建 Tool 失败", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
@@ -294,7 +255,7 @@ public class ToolController {
     }
 
     /**
-     * 更新 Tool。
+     * 更新 Tool（仅支持更新用户创建的 BuiltinTool）。
      *
      * @param id Tool ID
      * @param request 更新请求
@@ -304,30 +265,27 @@ public class ToolController {
     public ResponseEntity<?> updateTool(@PathVariable String id,
                                          @RequestBody Map<String, Object> request) {
         log.debug("更新 Tool: id={}, request={}", id, request);
-        
-        // 检查 Tool 是否存在
+
         ToolContract existingTool = toolRegistry.resolve(id).orElse(null);
         if (existingTool == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(new ErrorResponse(404, "Tool 不存在: id=" + id, Instant.now()));
         }
 
-        // 检查是否为 Skill Tool（只有 Skill Tool 可以更新）
-        if (existingTool.layer() != ToolLayer.SKILL_DECLARATIVE) {
+        // MCP 工具不可更新
+        if (existingTool.layer() == ToolLayer.MCP_EXTERNAL) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(new ErrorResponse(400, "只能更新用户创建的 Tool（Skill 类型）", Instant.now()));
+                    .body(new ErrorResponse(400, "MCP 工具不支持更新", Instant.now()));
         }
 
         try {
-            // 创建更新后的 Tool（使用请求中的字段，缺失的字段使用现有值）
-            String name = getStringOrDefault(request, "name", existingTool.name());
+            String toolName = getStringOrDefault(request, "name", existingTool.name());
             String description = getStringOrDefault(request, "description", existingTool.description());
-            
+
             @SuppressWarnings("unchecked")
             Map<String, Object> inputSchemaMap = (Map<String, Object>) request.getOrDefault("inputSchema", existingTool.inputSchema().toMap());
             @SuppressWarnings("unchecked")
             Map<String, Object> outputSchemaMap = (Map<String, Object>) request.getOrDefault("outputSchema", existingTool.outputSchema().toMap());
-            
             JsonSchema inputSchema = JsonSchema.of(inputSchemaMap);
             JsonSchema outputSchema = JsonSchema.of(outputSchemaMap);
 
@@ -344,37 +302,26 @@ public class ToolController {
             @SuppressWarnings("unchecked")
             List<String> tags = (List<String>) request.getOrDefault("tags", existingTool.tags());
 
-            SkillTool updatedTool = new SkillTool(
-                    id,
-                    name,
-                    description,
-                    inputSchema,
-                    outputSchema,
-                    riskLevel,
-                    idempotent,
-                    budget,
-                    tags != null ? tags : List.of(),
-                    id
-            );
+            // 注销旧工具，注册新工具
+            toolRegistry.unregisterBuiltinTool(id);
 
-            // 更新文件系统
-            if (persistenceService == null) {
-                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-                        .body(new ErrorResponse(503, "Tool 持久化服务未启用", Instant.now()));
-            }
-            boolean updated = persistenceService.update(updatedTool);
-            if (!updated) {
-                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                        .body(new ErrorResponse(500, "Tool 持久化更新失败", Instant.now()));
-            }
+            BuiltinTool updatedTool = BuiltinTool.builder()
+                    .id(id)
+                    .name(toolName)
+                    .description(description)
+                    .inputSchema(inputSchema)
+                    .outputSchema(outputSchema)
+                    .riskLevel(riskLevel)
+                    .idempotent(idempotent)
+                    .budget(budget)
+                    .tags(tags != null ? tags : List.of())
+                    .executor(input -> ToolResult.success(Map.of("message", "用户自定义工具，暂无执行逻辑")))
+                    .build();
 
-            // 注销旧 Tool，注册新 Tool
-            toolRegistry.unregisterSkillTool(id);
-            toolRegistry.registerSkillTools(List.of(updatedTool));
+            toolRegistry.registerBuiltinTool(updatedTool);
 
             log.info("Tool 更新成功: id={}", id);
-            Map<String, Object> detail = toToolDetail(updatedTool);
-            return ResponseEntity.ok(detail);
+            return ResponseEntity.ok(toToolDetail(updatedTool));
         } catch (Exception e) {
             log.error("更新 Tool 失败: id={}", id, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
@@ -391,14 +338,14 @@ public class ToolController {
     @DeleteMapping("/tools/{id}")
     public ResponseEntity<?> deleteTool(@PathVariable String id) {
         log.debug("删除 Tool: id={}", id);
-        
+
         ToolContract tool = toolRegistry.resolve(id).orElse(null);
         if (tool == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(new ErrorResponse(404, "Tool 不存在: id=" + id, Instant.now()));
         }
 
-        // 检查是否为 MCP Tool（MCP Tool 不能删除）
+        // MCP 工具不能删除，只能隐藏
         if (tool.layer() == ToolLayer.MCP_EXTERNAL) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(new ErrorResponse(400, "MCP Tool 不能删除，只能隐藏", Instant.now()));
@@ -408,40 +355,22 @@ public class ToolController {
         Map<String, Object> usage = queryToolUsage(id);
         int skillCount = (Integer) usage.get("skillCount");
         int workflowCount = (Integer) usage.get("workflowCount");
-        
+
         if (skillCount > 0 || workflowCount > 0) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(new ErrorResponse(400, 
-                            String.format("Tool 被 %d 个 Skill 和 %d 个 Workflow 使用，无法删除", 
-                                    skillCount, workflowCount), 
+                    .body(new ErrorResponse(400,
+                            String.format("Tool 被 %d 个 Skill 和 %d 个 Workflow 使用，无法删除",
+                                    skillCount, workflowCount),
                             Instant.now()));
         }
 
-        // 删除 Tool
-        if (tool.layer() == ToolLayer.SKILL_DECLARATIVE) {
-            // 从文件系统删除
-            if (persistenceService == null) {
-                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-                        .body(new ErrorResponse(503, "Tool 持久化服务未启用", Instant.now()));
-            }
-            boolean deleted = persistenceService.delete(id);
-            if (!deleted) {
-                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                        .body(new ErrorResponse(500, "Tool 文件删除失败", Instant.now()));
-            }
-            
-            // 从注册中心注销
-            toolRegistry.unregisterSkillTool(id);
-        } else if (tool.layer() == ToolLayer.JAVA_NATIVE) {
-            toolRegistry.unregisterBuiltinTool(id);
-        }
-
+        toolRegistry.unregisterBuiltinTool(id);
         log.info("Tool 删除成功: id={}", id);
         return ResponseEntity.ok(Map.of("message", "Tool 删除成功"));
     }
 
     /**
-     * 启用 Tool。
+     * 启用 Tool（预留接口）。
      *
      * @param id Tool ID
      * @return 200 启用成功，404 不存在
@@ -449,8 +378,7 @@ public class ToolController {
     @PostMapping("/tools/{id}/enable")
     public ResponseEntity<?> enableTool(@PathVariable String id) {
         log.debug("启用 Tool: id={}", id);
-        
-        // 当前版本 Tool 默认都是启用的，此 API 为预留接口
+
         if (!toolRegistry.resolve(id).isPresent()) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(new ErrorResponse(404, "Tool 不存在: id=" + id, Instant.now()));
@@ -461,7 +389,7 @@ public class ToolController {
     }
 
     /**
-     * 禁用 Tool。
+     * 禁用 Tool（预留接口）。
      *
      * @param id Tool ID
      * @return 200 禁用成功，404 不存在
@@ -469,8 +397,7 @@ public class ToolController {
     @PostMapping("/tools/{id}/disable")
     public ResponseEntity<?> disableTool(@PathVariable String id) {
         log.debug("禁用 Tool: id={}", id);
-        
-        // 当前版本 Tool 默认都是启用的，此 API 为预留接口
+
         if (!toolRegistry.resolve(id).isPresent()) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(new ErrorResponse(404, "Tool 不存在: id=" + id, Instant.now()));
@@ -493,7 +420,6 @@ public class ToolController {
         summary.put("idempotent", tool.idempotent());
         summary.put("tags", tool.tags());
 
-        // 如果是 MCP Tool，添加 serverName
         if (tool instanceof com.lifepilot.tool.McpTool mcpTool) {
             summary.put("serverName", mcpTool.serverName());
         }
@@ -517,7 +443,6 @@ public class ToolController {
     private String getSourceString(ToolLayer layer) {
         return switch (layer) {
             case JAVA_NATIVE -> "builtin";
-            case SKILL_DECLARATIVE -> "skill";
             case MCP_EXTERNAL -> "mcp";
         };
     }
@@ -525,7 +450,6 @@ public class ToolController {
     private Map<String, Object> queryToolUsage(String toolId) {
         Map<String, Object> usage = new HashMap<>();
 
-        // 查询被哪些 Skill 使用
         List<Map<String, String>> usedBySkills = skillRegistry.listAll().stream()
                 .filter(skill -> skill.suggestedTools() != null && skill.suggestedTools().contains(toolId))
                 .map(skill -> Map.of(
@@ -534,7 +458,6 @@ public class ToolController {
                 ))
                 .collect(Collectors.toList());
 
-        // 查询被哪些 Workflow 使用
         List<Map<String, String>> usedByWorkflows = new ArrayList<>();
         for (WorkflowDefinition workflow : workflowRegistry.listAll()) {
             if (workflow.steps() != null) {
@@ -561,7 +484,7 @@ public class ToolController {
                 return true;
             }
             if (step instanceof WorkflowStep.ConditionStep conditionStep) {
-                if (containsTool(conditionStep.thenSteps(), toolId) || 
+                if (containsTool(conditionStep.thenSteps(), toolId) ||
                     containsTool(conditionStep.elseSteps(), toolId)) {
                     return true;
                 }
@@ -595,9 +518,7 @@ public class ToolController {
     private long getLongOrDefault(Map<String, Object> map, String key, long defaultValue) {
         Object value = map.get(key);
         if (value == null) return defaultValue;
-        if (value instanceof Number) {
-            return ((Number) value).longValue();
-        }
+        if (value instanceof Number n) return n.longValue();
         try {
             return Long.parseLong(value.toString());
         } catch (NumberFormatException e) {
@@ -608,9 +529,7 @@ public class ToolController {
     private int getIntOrDefault(Map<String, Object> map, String key, int defaultValue) {
         Object value = map.get(key);
         if (value == null) return defaultValue;
-        if (value instanceof Number) {
-            return ((Number) value).intValue();
-        }
+        if (value instanceof Number n) return n.intValue();
         try {
             return Integer.parseInt(value.toString());
         } catch (NumberFormatException e) {
@@ -621,9 +540,7 @@ public class ToolController {
     private boolean getBooleanOrDefault(Map<String, Object> map, String key, boolean defaultValue) {
         Object value = map.get(key);
         if (value == null) return defaultValue;
-        if (value instanceof Boolean) {
-            return (Boolean) value;
-        }
+        if (value instanceof Boolean b) return b;
         return Boolean.parseBoolean(value.toString());
     }
 

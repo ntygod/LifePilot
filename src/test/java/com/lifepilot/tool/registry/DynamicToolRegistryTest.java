@@ -6,7 +6,6 @@ import com.lifepilot.tool.McpTool;
 import com.lifepilot.tool.ToolContract;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.model.ToolBudget;
-import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolLayer;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.schema.JsonSchema;
@@ -108,7 +107,6 @@ class DynamicToolRegistryTest {
         var counts = registry.getToolCountByLayer();
         assertEquals(1, counts.getOrDefault(ToolLayer.JAVA_NATIVE, 0));
         assertEquals(1, counts.getOrDefault(ToolLayer.MCP_EXTERNAL, 0));
-        assertEquals(0, counts.getOrDefault(ToolLayer.SKILL_DECLARATIVE, 0));
     }
 
     @Test

@@ -13,7 +13,7 @@
 
 | 扩展途径 | 当前存储能力 | 缺口 |
 |---------|------------|------|
-| YAML Skill | `SkillTool.execute()` 抛出 `UnsupportedOperationException`，无数据存储 | 完全缺失 |
+| YAML Skill | Skill 通过 `load_skill` BuiltinTool 按需激活，无数据存储 | 完全缺失 |
 | 自定义 Agent | `AgentExecutor` 运行 `AgentLoop.run()`，无持久化状态 | 完全缺失 |
 | Workflow | `WorkflowContext` 为内存 HashMap，仅持久化执行状态 | 领域数据缺失 |
 | 外部同步 | `SyncEngine` 硬编码 3 种内置实体类型映射 | 无法同步扩展数据 |

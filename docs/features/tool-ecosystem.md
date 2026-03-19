@@ -6,16 +6,17 @@
 
 ## 1. 功能概述
 
-工具系统为 Agent 提供与外部世界交互的能力，支持三种工具来源：Java 内置工具、Skill 声明式工具和 MCP 外部工具。统一的工具契约确保所有工具具有一致的输入输出规范、风险等级声明和执行保障。
+工具系统为 Agent 提供与外部世界交互的能力，支持两种工具来源：Java 内置工具（BuiltinTool）和 MCP 外部工具（McpTool）。统一的工具契约确保所有工具具有一致的输入输出规范、风险等级声明和执行保障。
+
+> **重要变更**：原三层架构中的 `SkillTool`（SKILL_DECLARATIVE 层）已移除。Skill 通过 `load_skill` / `generate_skill` 两个 BuiltinTool 实现渐进式发现与按需激活。
 
 ## 2. 核心架构
 
-### 2.1 三种工具来源
+### 2.1 两种工具来源
 
 | 工具类型 | 包路径 | 特点 |
 |----------|--------|------|
 | `BuiltinTool` | `com.lifepilot.tool.BuiltinTool` | Java 代码实现，性能最优，可靠性最高 |
-| `SkillTool` | `com.lifepilot.tool.SkillTool` | Skill 声明式工具，支持热加载，适合快速扩展 |
 | `McpTool` | `com.lifepilot.tool.McpTool` | MCP 协议桥接，接入第三方工具生态 |
 
 ### 2.2 统一工具契约
@@ -63,7 +64,7 @@ LLM 通过工具描述和 Schema 理解工具用途。
 
 当不同来源的工具 ID 冲突时，按优先级覆盖：
 
-`BuiltinTool > SkillTool > McpTool`
+`BuiltinTool > McpTool`
 
 确保内置工具行为不被外部工具意外替换。
 
@@ -72,8 +73,7 @@ LLM 通过工具描述和 Schema 理解工具用途。
 | 类 | 职责 |
 |---|------|
 | `ToolContract` | 工具契约 sealed interface |
-| `BuiltinTool` | 内置工具抽象 |
-| `SkillTool` | Skill 声明式工具 |
+| `BuiltinTool` | 内置工具（Java 原生） |
 | `McpTool` | MCP 外部工具 |
 | `ToolExecutor` | 工具执行器 |
 | `ToolExecutionPipeline` | 执行管道 |
@@ -102,6 +102,6 @@ lifepilot:
 
 ## 5. 限制与未来方向
 
-- Skill 工具的执行逻辑目前依赖 LLM 解释，复杂逻辑建议使用 BuiltinTool
 - 工具执行结果的结构化程度依赖各工具实现质量
+- Skill 通过 `load_skill` / `generate_skill` 两个 BuiltinTool 实现渐进式发现与按需激活，不再作为独立工具类型
 - 未来计划：工具执行结果的自动摘要、工具推荐排序优化
