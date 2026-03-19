@@ -134,11 +134,47 @@ ZhiWei 是一个本地运行的个人 AI Agent 助手。它不只是被动执行
 
 ## 📸 界面预览
 
-<!-- TODO: 添加实际截图 -->
+### 对话交互
 
-![img.png](img.png)
-![img_1.png](img_1.png)
-![img_2.png](img_2.png)
+SSE 流式对话，支持 A2UI 自适应渲染（表格、卡片等富媒体形式）：
+
+![对话 — A2UI 表格渲染](docs/images/chat-a2ui-table.png)
+
+![对话 — 多轮交互](docs/images/chat-conversation.png)
+
+### 记忆系统
+
+四层认知记忆 + 自我学习，越用越懂你：
+
+![记忆 — 自我学习](docs/images/memory-self-learning.png)
+
+![记忆 — 管理面板](docs/images/memory-management.png)
+
+### Agent 自主能力
+
+Agent 运行时自动检测能力缺口，按需创建工作流和 Skill：
+
+![Agent — 自动创建工作流](docs/images/agent-create-workflow.png)
+
+![Agent — 自动创建 Skill](docs/images/agent-create-skill.png)
+
+### 工作流引擎
+
+YAML 声明式工作流，支持 cron / event / manual 触发：
+
+![工作流管理](docs/images/workflow.png)
+
+### 可观测性
+
+每个决策步骤可追溯、可回放：
+
+![轨迹回放](docs/images/trace-replay.png)
+
+### MCP 协议
+
+MCP 服务器发现与管理，一键接入外部工具生态：
+
+![MCP 服务器管理](docs/images/mcp-servers.png)
 
 ## 🚀 快速开始
 
