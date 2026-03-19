@@ -136,9 +136,7 @@ public class SkillAutoConfiguration {
     @ConditionalOnMissingBean
     @ConditionalOnProperty(prefix = "lifepilot.skills.auto-generation",
             name = "enabled", havingValue = "true", matchIfMissing = true)
-    @ConditionalOnBean({SkillGapDetector.class, SkillGenerator.class})
     public SkillGenerationTool skillGenerationTool(DynamicToolRegistry toolRegistry,
-                                                   SkillGapDetector gapDetector,
                                                    SkillGenerator skillGenerator) {
         log.info("Skill 系统: 注册 SkillGenerationTool（HIGH 风险）");
         return new SkillGenerationTool(toolRegistry, skillGenerator);
