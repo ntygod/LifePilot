@@ -87,7 +87,7 @@ graph TB
 
 ### 3.1 SkillDefinition（数据模型）
 
-Skill 定义的不可变 record，包含 `id`、`name`、`description`、`version`、`source`（SkillSource）、`instructions`（注入 Agent 上下文的指令）、`suggestedTools`（建议工具列表）、`metadata`。紧凑构造器执行非空校验和防御性拷贝（`List.copyOf` / `Map.copyOf`）。提供 `toDiscoverySummary()` 返回 `"id: description"` 格式的摘要。
+Skill 定义的不可变 record，包含 `id`、`name`、`description`、`version`、`source`（SkillSource）、`instructions`（注入 Agent 上下文的指令）、`suggestedTools`（建议工具列表）、`metadata`。紧凑构造器执行非空校验和防御性拷贝（`List.copyOf` / `Map.copyOf`）。提供 `toDiscoverySummary()` 返回 `"id (name): description"` 格式的摘要。
 
 ### 3.2 SkillSource（来源类型）
 
