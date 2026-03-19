@@ -7,7 +7,7 @@ import com.lifepilot.observability.guardrail.GuardrailEngine;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.skill.activation.SkillActivator;
 import com.lifepilot.skill.activation.SkillMetricsTracker;
-import com.lifepilot.skill.bridge.SkillToToolBridge;
+import com.lifepilot.skill.disclosure.SkillDisclosureTool;
 import com.lifepilot.skill.config.SkillAutoConfiguration;
 import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.tool.config.ToolAutoConfiguration;
@@ -132,9 +132,9 @@ class SkillRefactor_AutoConfiguration_集成测试 {
     }
 
     @Test
-    void 新Bean_SkillToToolBridge_存在且类型正确() {
-        assertThat(ctx.containsBean("skillToToolBridge")).isTrue();
-        assertThat(ctx.getBean("skillToToolBridge")).isInstanceOf(SkillToToolBridge.class);
+    void 新Bean_SkillDisclosureTool_存在且类型正确() {
+        assertThat(ctx.containsBean("skillDisclosureTool")).isTrue();
+        assertThat(ctx.getBean("skillDisclosureTool")).isInstanceOf(SkillDisclosureTool.class);
     }
 
     @Test
