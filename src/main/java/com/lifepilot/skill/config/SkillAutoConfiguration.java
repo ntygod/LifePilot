@@ -128,14 +128,9 @@ public class SkillAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public SkillDisclosureTool skillDisclosureTool(DynamicToolRegistry toolRegistry,
-                                                   SkillActivator skillActivator,
-                                                   SkillMetricsTracker metricsTracker,
-                                                   @Nullable SkillGapDetector gapDetector,
-                                                   @Nullable SkillGenerator skillGenerator) {
-        log.info("Skill 系统: 注册 SkillDisclosureTool, 自扩展={}",
-                gapDetector != null && skillGenerator != null ? "已启用" : "未启用");
-        return new SkillDisclosureTool(toolRegistry, skillActivator, metricsTracker,
-                gapDetector, skillGenerator);
+                                                   SkillActivator skillActivator) {
+        log.info("Skill 系统: 注册 SkillDisclosureTool");
+        return new SkillDisclosureTool(toolRegistry, skillActivator);
     }
 
     @Bean
@@ -147,7 +142,7 @@ public class SkillAutoConfiguration {
                                                    SkillGapDetector gapDetector,
                                                    SkillGenerator skillGenerator) {
         log.info("Skill 系统: 注册 SkillGenerationTool（HIGH 风险）");
-        return new SkillGenerationTool(toolRegistry, gapDetector, skillGenerator);
+        return new SkillGenerationTool(toolRegistry, skillGenerator);
     }
 
     // --- 内置 Skill 提供者 ---

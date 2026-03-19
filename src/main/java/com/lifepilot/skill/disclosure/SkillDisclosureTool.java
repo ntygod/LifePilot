@@ -2,9 +2,6 @@ package com.lifepilot.skill.disclosure;
 
 import com.lifepilot.skill.activation.SkillActivationException;
 import com.lifepilot.skill.activation.SkillActivator;
-import com.lifepilot.skill.activation.SkillMetricsTracker;
-import com.lifepilot.skill.generation.SkillGapDetector;
-import com.lifepilot.skill.generation.SkillGenerator;
 import com.lifepilot.skill.model.SkillActivation;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.observability.guardrail.RiskLevel;
@@ -15,7 +12,6 @@ import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.tool.schema.JsonSchema;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.lang.Nullable;
 
 import java.util.List;
 import java.util.Map;
@@ -25,7 +21,8 @@ import java.util.Map;
  *
  * <p>L2 按需加载：LLM 根据 system prompt 中的 L1 清单，
  * 调用 load_skill 获取指定 Skill 的完整操作指南和建议工具。
- * Skill 不存在时触发被动自扩展（若自扩展管线可用）。</p>
+ * Skill 不存在时返回提示信息，引导 LLM 调用 generate_skill（HIGH 风险）
+ * 走护栏确认流程，确保所有自扩展都经过用户确认。</p>
  *
  * @author zsg
  * @since 2026-03-19
@@ -36,20 +33,11 @@ public class SkillDisclosureTool {
 
     private final DynamicToolRegistry toolRegistry;
     private final SkillActivator skillActivator;
-    private final SkillMetricsTracker metricsTracker;
-    @Nullable private final SkillGapDetector gapDetector;
-    @Nullable private final SkillGenerator skillGenerator;
 
     public SkillDisclosureTool(DynamicToolRegistry toolRegistry,
-                               SkillActivator skillActivator,
-                               SkillMetricsTracker metricsTracker,
-                               @Nullable SkillGapDetector gapDetector,
-                               @Nullable SkillGenerator skillGenerator) {
+                               SkillActivator skillActivator) {
         this.toolRegistry = toolRegistry;
         this.skillActivator = skillActivator;
-        this.metricsTracker = metricsTracker;
-        this.gapDetector = gapDetector;
-        this.skillGenerator = skillGenerator;
     }
 
     /**
@@ -107,41 +95,17 @@ public class SkillDisclosureTool {
     }
 
     /**
-     * 被动自扩展触发 — Skill 不存在时自动检测缺口并生成。
+     * Skill 不存在时返回提示 — 引导 LLM 调用 generate_skill 走护栏确认。
+     *
+     * <p>不再在 load_skill（LOW 风险）内部直接触发自扩展，
+     * 所有 Skill 生成统一走 generate_skill（HIGH 风险）→ 护栏确认 → 用户知情。</p>
      *
      * @param skillId 未找到的 Skill ID
-     * @return 生成结果或错误信息
+     * @return 包含引导提示的错误结果
      */
     private ToolResult handleSkillNotFound(String skillId) {
-        if (gapDetector == null || skillGenerator == null) {
-            return ToolResult.error("Skill 不存在: " + skillId);
-        }
-
-        log.info("Skill 不存在，触发被动自扩展: skillId={}", skillId);
-        var gapOpt = gapDetector.detectGap(skillId);
-        if (gapOpt.isEmpty()) {
-            return ToolResult.error("Skill 不存在且未检测到能力缺口: " + skillId);
-        }
-
-        var gap = gapOpt.get();
-        var result = skillGenerator.generate(gap);
-        if (!result.success() || result.definition() == null) {
-            String reason = result.errorMessage() != null ? result.errorMessage() : "生成失败";
-            return ToolResult.error("Skill 自动生成失败: " + reason);
-        }
-
-        boolean persisted = skillGenerator.confirmAndPersist(result.definition());
-        if (!persisted) {
-            return ToolResult.error("Skill 生成成功但注册失败: " + skillId);
-        }
-
-        var def = result.definition();
-        return ToolResult.success(Map.of(
-                "skill_id", def.id(),
-                "name", def.name(),
-                "description", def.description(),
-                "status", "auto_generated",
-                "message", "已自动生成并注册新 Skill，请重新调用 load_skill 获取完整指南"
-        ));
+        log.info("Skill 不存在: skillId={}", skillId);
+        return ToolResult.error("Skill 不存在: " + skillId
+                + "。如果需要此能力，请调用 generate_skill 工具描述需求，系统将生成并注册新 Skill");
     }
 }

@@ -1,7 +1,6 @@
 package com.lifepilot.skill.disclosure;
 
 import com.lifepilot.skill.generation.SkillGap;
-import com.lifepilot.skill.generation.SkillGapDetector;
 import com.lifepilot.skill.generation.SkillGenerator;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.observability.guardrail.RiskLevel;
@@ -30,14 +29,11 @@ public class SkillGenerationTool {
     private static final Logger log = LoggerFactory.getLogger(SkillGenerationTool.class);
 
     private final DynamicToolRegistry toolRegistry;
-    private final SkillGapDetector gapDetector;
     private final SkillGenerator skillGenerator;
 
     public SkillGenerationTool(DynamicToolRegistry toolRegistry,
-                               SkillGapDetector gapDetector,
                                SkillGenerator skillGenerator) {
         this.toolRegistry = toolRegistry;
-        this.gapDetector = gapDetector;
         this.skillGenerator = skillGenerator;
     }
 
@@ -85,8 +81,7 @@ public class SkillGenerationTool {
      * 处理 generate_skill 工具调用 — 主动生成新 Skill。
      *
      * <p>此工具风险等级为 HIGH，护栏系统会在执行前自动向用户发起确认。
-     * 用户确认后才会进入此方法，生成成功即持久化注册。</p>
-     */
+     * 用户确认后才会进入此方法，生成成功即持久化注册。</p>     */
     @SuppressWarnings("unchecked")
     private ToolResult handleGenerateSkill(ToolInput input) {
         String description = input.getParam("description", String.class);
@@ -115,7 +110,7 @@ public class SkillGenerationTool {
         }
 
         var definition = result.definition();
-        boolean persisted = skillGenerator.confirmAndPersist(definition);
+        boolean persisted = skillGenerator.persistAndRegister(definition);
         if (!persisted) {
             log.warn("Skill 持久化失败: skillId={}", definition.id());
             return ToolResult.error("Skill 生成成功但持久化失败: " + definition.id());

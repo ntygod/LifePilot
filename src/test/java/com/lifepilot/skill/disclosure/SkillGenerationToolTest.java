@@ -1,6 +1,5 @@
 package com.lifepilot.skill.disclosure;
 
-import com.lifepilot.skill.generation.SkillGapDetector;
 import com.lifepilot.skill.generation.SkillGenerator;
 import com.lifepilot.skill.model.SkillDefinition;
 import com.lifepilot.skill.model.SkillSource;
@@ -31,13 +30,11 @@ import static org.mockito.Mockito.*;
 class SkillGenerationToolTest {
 
     private DynamicToolRegistry toolRegistry;
-    private SkillGapDetector gapDetector;
     private SkillGenerator skillGenerator;
 
     @BeforeEach
     void setUp() {
         toolRegistry = mock(DynamicToolRegistry.class);
-        gapDetector = mock(SkillGapDetector.class);
         skillGenerator = mock(SkillGenerator.class);
     }
 
@@ -47,7 +44,7 @@ class SkillGenerationToolTest {
 
     @Test
     void registerTools_注册generate_skill为HIGH风险() {
-        var tool = new SkillGenerationTool(toolRegistry, gapDetector, skillGenerator);
+        var tool = new SkillGenerationTool(toolRegistry, skillGenerator);
         tool.registerTools();
 
         var captor = ArgumentCaptor.forClass(BuiltinTool.class);
@@ -71,7 +68,7 @@ class SkillGenerationToolTest {
                 .metadata(Map.of()).build();
         when(skillGenerator.generate(any()))
                 .thenReturn(SkillGenerator.GenerationResult.success(definition, "# 测试"));
-        when(skillGenerator.confirmAndPersist(any())).thenReturn(true);
+        when(skillGenerator.persistAndRegister(any())).thenReturn(true);
 
         ToolResult result = invokeGenerateSkill("帮我创建一个测试技能", null);
 
@@ -104,7 +101,7 @@ class SkillGenerationToolTest {
                 .metadata(Map.of()).build();
         when(skillGenerator.generate(any()))
                 .thenReturn(SkillGenerator.GenerationResult.success(definition, "# 失败"));
-        when(skillGenerator.confirmAndPersist(any())).thenReturn(false);
+        when(skillGenerator.persistAndRegister(any())).thenReturn(false);
 
         ToolResult result = invokeGenerateSkill("帮我创建技能", null);
 
@@ -117,7 +114,7 @@ class SkillGenerationToolTest {
     // ─────────────────────────────────────────────
 
     private ToolResult invokeGenerateSkill(String description, String suggestedName) {
-        var tool = new SkillGenerationTool(toolRegistry, gapDetector, skillGenerator);
+        var tool = new SkillGenerationTool(toolRegistry, skillGenerator);
         tool.registerTools();
 
         var captor = ArgumentCaptor.forClass(BuiltinTool.class);
