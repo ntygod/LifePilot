@@ -54,13 +54,33 @@ const stepGroups = computed<StepGroup[]>(() => {
   return groups
 })
 
-// 触发器文案
+// 触发器主文案：流式时实时显示当前步骤，完成后显示统计
 const triggerLabel = computed(() => {
-  if (props.streaming) return '正在思考…'
   const count = props.steps.length
-  if (count === 0) return '推理概要'
-  return `经历 ${count} 个推理步骤`
+  if (count === 0) return props.streaming ? '正在思考…' : '推理概要'
+  // 取最新步骤的简短描述
+  const last = props.steps[count - 1]
+  const desc = getStepBrief(last)
+  if (props.streaming) return desc
+  // 完成后也显示最后一步摘要，让用户不展开就能看到结论
+  return `${count} 步 · ${desc}`
 })
+
+// 步骤简短描述（用于触发器区域，控制在 40 字符内）
+function getStepBrief(step: ReactStepDto): string {
+  switch (step.type) {
+    case 'THOUGHT': {
+      const text = step.content ?? ''
+      if (text.length <= 40) return text || '正在思考…'
+      return text.substring(0, 40) + '…'
+    }
+    case 'TOOL_CALL': return `调用 ${step.toolId}`
+    case 'OBSERVATION': return `${step.success ? '✓' : '✗'} ${step.toolId} 返回`
+    case 'ANSWER': return '生成回答'
+    case 'SUSPEND': return '等待确认…'
+    case 'RESUME': return '已恢复执行'
+  }
+}
 
 // 步骤展开/折叠状态（按 index 追踪）
 const expandedSteps = ref<Set<number>>(new Set())
@@ -175,12 +195,15 @@ function getToolPairPreview(obs: ObservationStep): string | null {
              focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1"
       @click="expanded = !expanded"
     >
-      <div class="flex items-center gap-2 min-w-0">
+      <div class="flex items-center gap-2 min-w-0 flex-1">
         <div class="relative shrink-0">
-          <Brain
+          <component
+            :is="hasSteps ? getStepIcon(steps[steps.length - 1].type) : Brain"
             :size="14"
             class="transition-colors duration-300"
-            :class="streaming ? 'text-primary' : 'text-muted-foreground'"
+            :class="streaming
+              ? 'text-primary'
+              : hasSteps ? getStepColor(steps[steps.length - 1].type) : 'text-muted-foreground'"
           />
           <span
             v-if="streaming"
@@ -193,16 +216,14 @@ function getToolPairPreview(obs: ObservationStep): string | null {
         >
           {{ triggerLabel }}
         </span>
-        <!-- 统计标签 -->
-        <div v-if="!streaming && hasSteps" class="hidden sm:flex items-center gap-1.5">
-          <span
-            v-if="toolCallCount > 0"
-            class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px]"
-          >
-            <Wrench :size="10" />
-            {{ toolCallCount }} 次工具调用
-          </span>
-        </div>
+        <!-- 工具调用统计标签 -->
+        <span
+          v-if="!streaming && toolCallCount > 0"
+          class="hidden sm:inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px] shrink-0"
+        >
+          <Wrench :size="10" />
+          {{ toolCallCount }}
+        </span>
       </div>
       <div class="flex items-center gap-1.5 shrink-0">
         <Loader2 v-if="streaming" :size="12" class="text-primary animate-spin" />
