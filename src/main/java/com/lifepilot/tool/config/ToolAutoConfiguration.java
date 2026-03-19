@@ -1,11 +1,9 @@
 package com.lifepilot.tool.config;
 
 import com.lifepilot.agent.AgentToolProvider;
-import com.lifepilot.interaction.NoOpUserConfirmationService;
 import com.lifepilot.interaction.UserConfirmationService;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.observability.guardrail.GuardrailEngine;
-import com.lifepilot.observability.trace.TraceRecorder;
 import com.lifepilot.mcp.registry.McpServerRegistry;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.McpTool;
@@ -44,12 +42,6 @@ import java.util.List;
 public class ToolAutoConfiguration {
 
     private static final Logger log = LoggerFactory.getLogger(ToolAutoConfiguration.class);
-
-    @Bean
-    @ConditionalOnMissingBean
-    public UserConfirmationService userConfirmationService() {
-        return new NoOpUserConfirmationService();
-    }
 
     @Bean
     @ConditionalOnMissingBean
@@ -95,10 +87,9 @@ public class ToolAutoConfiguration {
             DynamicToolRegistry toolRegistry,
             ToolExecutionPipeline pipeline,
             ObjectMapper objectMapper,
-            MetaProperties metaProperties,
-            @Nullable TraceRecorder traceRecorder) {
-        log.info("工具桥接层初始化: 注册 ToolBridge 实现的 AgentToolProvider, traceRecorder={}", traceRecorder != null ? "已注入" : "未注入");
-        return new ToolBridgeAgentToolProvider(toolRegistry, pipeline, objectMapper, metaProperties, traceRecorder);
+            MetaProperties metaProperties) {
+        log.info("工具桥接层初始化: 注册 ToolBridge 实现的 AgentToolProvider");
+        return new ToolBridgeAgentToolProvider(toolRegistry, pipeline, objectMapper, metaProperties);
     }
 
     /**
