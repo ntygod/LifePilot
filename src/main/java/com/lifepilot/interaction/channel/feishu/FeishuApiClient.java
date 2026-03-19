@@ -42,78 +42,82 @@ public class FeishuApiClient {
     /**
      * 发送文本消息。
      *
-     * @param chatId 目标会话 ID（chat_id 或 open_id）
-     * @param text   文本内容
+     * @param receiveId     目标 ID（chat_id 或 open_id）
+     * @param receiveIdType ID 类型（"chat_id" 或 "open_id"）
+     * @param text          文本内容
      */
-    public void sendText(String chatId, String text) {
+    public void sendText(String receiveId, String receiveIdType, String text) {
         var token = getTenantAccessToken();
         Map<String, Object> body = Map.of(
-                "receive_id", chatId,
+                "receive_id", receiveId,
                 "msg_type", "text",
                 "content", "{\"text\":\"%s\"}".formatted(escapeJson(text))
         );
-        doSend(token, chatId, body);
+        doSend(token, receiveId, receiveIdType, body);
     }
 
     /**
      * 发送富文本（post）消息。
      *
-     * @param chatId   目标会话 ID
-     * @param richText 富文本 JSON 内容
+     * @param receiveId     目标 ID
+     * @param receiveIdType ID 类型
+     * @param richText      富文本 JSON 内容
      */
-    public void sendPost(String chatId, String richText) {
+    public void sendPost(String receiveId, String receiveIdType, String richText) {
         var token = getTenantAccessToken();
         Map<String, Object> body = Map.of(
-                "receive_id", chatId,
+                "receive_id", receiveId,
                 "msg_type", "post",
                 "content", richText
         );
-        doSend(token, chatId, body);
+        doSend(token, receiveId, receiveIdType, body);
     }
 
     /**
      * 发送交互式消息卡片。
      *
-     * @param chatId   目标会话 ID
-     * @param cardJson 卡片 JSON 内容
+     * @param receiveId     目标 ID
+     * @param receiveIdType ID 类型
+     * @param cardJson      卡片 JSON 内容
      */
-    public void sendInteractiveCard(String chatId, String cardJson) {
+    public void sendInteractiveCard(String receiveId, String receiveIdType, String cardJson) {
         var token = getTenantAccessToken();
         Map<String, Object> body = Map.of(
-                "receive_id", chatId,
+                "receive_id", receiveId,
                 "msg_type", "interactive",
                 "content", cardJson
         );
-        doSend(token, chatId, body);
+        doSend(token, receiveId, receiveIdType, body);
     }
 
     /**
      * 发送图片消息。
      *
-     * @param chatId   目标会话 ID
-     * @param imageKey 飞书图片 key
+     * @param receiveId     目标 ID
+     * @param receiveIdType ID 类型
+     * @param imageKey      飞书图片 key
      */
-    public void sendImage(String chatId, String imageKey) {
+    public void sendImage(String receiveId, String receiveIdType, String imageKey) {
         var token = getTenantAccessToken();
         Map<String, Object> body = Map.of(
-                "receive_id", chatId,
+                "receive_id", receiveId,
                 "msg_type", "image",
                 "content", "{\"image_key\":\"%s\"}".formatted(escapeJson(imageKey))
         );
-        doSend(token, chatId, body);
+        doSend(token, receiveId, receiveIdType, body);
     }
 
-    private void doSend(String token, String receiveId, Map<String, Object> body) {
+    private void doSend(String token, String receiveId, String receiveIdType, Map<String, Object> body) {
         try {
             restClient.post()
-                    .uri(BASE_URL + "/im/v1/messages?receive_id_type=chat_id")
+                    .uri(BASE_URL + "/im/v1/messages?receive_id_type=" + receiveIdType)
                     .header("Authorization", "Bearer " + token)
                     .body(body)
                     .retrieve()
                     .toBodilessEntity();
-            log.debug("飞书消息发送成功: receiveId={}", receiveId);
+            log.debug("飞书消息发送成功: receiveId={}, receiveIdType={}", receiveId, receiveIdType);
         } catch (Exception e) {
-            log.error("飞书消息发送失败: receiveId={}", receiveId, e);
+            log.error("飞书消息发送失败: receiveId={}, receiveIdType={}", receiveId, receiveIdType, e);
             throw new RuntimeException("飞书消息发送失败", e);
         }
     }

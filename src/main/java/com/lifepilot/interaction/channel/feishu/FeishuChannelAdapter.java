@@ -73,6 +73,11 @@ public class FeishuChannelAdapter extends AbstractChannelAdapter {
         var header = getMapField(event, "header");
         var eventBody = getMapField(event, "event");
 
+        if (header == null || eventBody == null) {
+            log.warn("飞书事件结构异常: header={}, event={}, 顶层键={}",
+                    header != null, eventBody != null, event.keySet());
+        }
+
         String eventId = header != null ? getStringField(header, "event_id", "") : "";
         String eventType = header != null ? getStringField(header, "event_type", "") : "";
         String tenantKey = header != null ? getStringField(header, "tenant_key", "") : "";
@@ -89,6 +94,9 @@ public class FeishuChannelAdapter extends AbstractChannelAdapter {
             var senderIdMap = getMapField(sender, "sender_id");
             senderId = senderIdMap != null ? getStringField(senderIdMap, "open_id", "") : "";
         }
+
+        log.debug("飞书事件解析: eventId={}, eventType={}, messageId={}, chatId={}, chatType={}, senderId={}",
+                eventId, eventType, messageId, chatId, chatType, senderId);
 
         // 解析消息文本
         String text = extractMessageText(message);
@@ -182,21 +190,83 @@ public class FeishuChannelAdapter extends AbstractChannelAdapter {
 
     @Override
     protected void doSendResponse(String userId, GatewayResponse response) {
-        // 飞书通过 chat_id 发送消息，从 metadata 中提取
-        String chatId = extractChatId(response);
-        String target = chatId != null ? chatId : userId;
+        // 从 metadata 中提取飞书特定的发送目标信息
+        String chatId = response.metadata().containsKey("feishuChatId")
+                ? response.metadata().get("feishuChatId").toString() : null;
+        String openId = response.metadata().containsKey("feishuOpenId")
+                ? response.metadata().get("feishuOpenId").toString() : null;
+
+        // 优先使用 chat_id（群聊），其次 open_id（私聊），最后 fallback 到 userId
+        String receiveId;
+        String receiveIdType;
+        if (chatId != null && !chatId.isBlank()) {
+            receiveId = chatId;
+            receiveIdType = "chat_id";
+        } else if (openId != null && !openId.isBlank()) {
+            receiveId = openId;
+            receiveIdType = "open_id";
+        } else {
+            receiveId = userId;
+            receiveIdType = "open_id";
+        }
+
+        log.debug("飞书消息发送: receiveId={}, receiveIdType={}, chatId={}, openId={}, userId={}",
+                receiveId, receiveIdType, chatId, openId, userId);
+
         ResponseContent content = response.content();
         String text = converter.convert(content);
 
         if (converter.shouldUseInteractiveCard(content)) {
-            apiClient.sendInteractiveCard(target, text);
+            apiClient.sendInteractiveCard(receiveId, receiveIdType, text);
         } else if (converter.shouldUseImage(content)) {
-            apiClient.sendImage(target, text);
+            apiClient.sendImage(receiveId, receiveIdType, text);
         } else if (converter.shouldUsePost(content)) {
-            apiClient.sendPost(target, text);
+            apiClient.sendPost(receiveId, receiveIdType, text);
         } else {
-            apiClient.sendText(target, text);
+            apiClient.sendText(receiveId, receiveIdType, text);
         }
+    }
+
+    /**
+     * 重写异步提交，将飞书 ChannelMetadata 中的 chatId 和 open_id 注入到 response metadata。
+     *
+     * <p>基类的 {@code doSendResponse} 只接收 userId 和 response，无法访问原始 message 的 channelMetadata。
+     * 通过在 response metadata 中注入飞书特定字段，让 {@code doSendResponse} 能正确选择 receive_id_type。
+     */
+    @Override
+    protected void submitAsync(GatewayMessage message) {
+        Thread.ofVirtual()
+                .name("channel-async-" + channelType().value())
+                .start(() -> {
+                    try {
+                        var response = gateway.process(message);
+                        // 将飞书 chatId 和 open_id 注入到 response metadata
+                        var enrichedResponse = enrichResponseWithFeishuMetadata(message, response);
+                        sendResponse(message.userId(), enrichedResponse);
+                    } catch (Exception e) {
+                        log.error("异步处理消息失败: channel={}, userId={}",
+                                channelType(), message.userId(), e);
+                    }
+                });
+    }
+
+    /**
+     * 将原始消息中的飞书 chatId 和 open_id 注入到 response metadata。
+     */
+    private GatewayResponse enrichResponseWithFeishuMetadata(GatewayMessage message, GatewayResponse response) {
+        if (!(message.channelMetadata() instanceof ChannelMetadata.FeishuMetadata feishuMeta)) {
+            return response;
+        }
+        var enrichedMetadata = new java.util.LinkedHashMap<>(response.metadata());
+        var chatId = feishuMeta.chatId();
+        if (chatId != null && !chatId.isBlank()) {
+            enrichedMetadata.put("feishuChatId", chatId);
+        }
+        // open_id 存储在 message.userId() 中（normalize 时从 sender.sender_id.open_id 提取）
+        if (message.userId() != null && !message.userId().isBlank()) {
+            enrichedMetadata.put("feishuOpenId", message.userId());
+        }
+        return response.toBuilder().metadata(enrichedMetadata).build();
     }
 
     // ── 事件去重 ──────────────────────────────────────────────
@@ -253,14 +323,6 @@ public class FeishuChannelAdapter extends AbstractChannelAdapter {
             }
         }
         return "";
-    }
-
-    @Nullable
-    private static String extractChatId(GatewayResponse response) {
-        if (response.metadata().containsKey("chatId")) {
-            return response.metadata().get("chatId").toString();
-        }
-        return null;
     }
 
     @SuppressWarnings("unchecked")
