@@ -1,5 +1,5 @@
 ---
-id: builtin.cron-scheduler
+id: cron-scheduler
 name: "定时任务调度"
 description: "创建、管理和执行 Cron 定时任务，支持精确时间调度和自动执行"
 version: "1.0.0"

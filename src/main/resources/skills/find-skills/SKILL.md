@@ -1,5 +1,5 @@
-﻿---
-id: builtin.find-skills
+---
+id: find-skills
 name: "Skill 发现与安装"
 description: "搜索和安装开源 Skill 扩展包，通过 npx @anthropic-ai/skills 命令行工具从 skills.sh 索引、LobeHub Marketplace 和 GitHub 搜索 Skill 并安装到本地"
 version: "1.0.0"
