@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { Bot, FileText, Mic } from 'lucide-vue-next'
-import type { A2uiComponent, Message, ReasoningEvent, ReactStepDto } from '@/types'
+import type { A2uiComponent, Message, ReasoningEvent, ReactStepDto, ToolConfirmationRequest } from '@/types'
 import A2uiRenderer from '@/components/a2ui/A2uiRenderer.vue'
 import {
   Dialog,
@@ -16,6 +16,7 @@ import ReasoningTimeline from './ReasoningTimeline.vue'
 import ReactStepTimeline from './ReactStepTimeline.vue'
 import StreamingText from './StreamingText.vue'
 import ToolCallCard from './ToolCallCard.vue'
+import ToolConfirmationBubble from './ToolConfirmationBubble.vue'
 
 const props = defineProps<{
   message: Message
@@ -25,6 +26,10 @@ const props = defineProps<{
   streamingReactSteps?: ReactStepDto[]
   isLastAssistant?: boolean
   streamingA2uiComponents?: A2uiComponent[]
+  /** 流式阶段的工具确认请求（从 useChat.pendingToolConfirmation 传入） */
+  streamingToolConfirmation?: ToolConfirmationRequest
+  /** 流式阶段的工具确认解决结果 */
+  streamingToolConfirmationResolution?: 'approved' | 'rejected' | 'expired'
 }>()
 
 const emit = defineEmits<{
@@ -34,6 +39,7 @@ const emit = defineEmits<{
   (e: 'fork', message: Message): void
   (e: 'regenerate', message: Message): void
   (e: 'copy', content: string): void
+  (e: 'tool-confirm-resolve', resolution: 'approved' | 'rejected' | 'expired'): void
 }>()
 
 const collapsed = ref(props.message.collapsed ?? shouldCollapse(props.message.content))
@@ -122,6 +128,9 @@ const activeReasoningEvents = computed<ReasoningEvent[]>(() => {
   }
   return props.message.reasoningEvents ?? []
 })
+
+// 是否为工具确认消息（嵌入在 assistant 气泡内部）
+const isToolConfirmation = computed(() => !!props.message.toolConfirmation)
 </script>
 
 <template>
@@ -182,6 +191,33 @@ const activeReasoningEvents = computed<ReasoningEvent[]>(() => {
           />
 
           <template v-else>
+            <!-- 工具确认卡片（嵌入在 assistant 气泡内部，与文本内容共存） -->
+            <div
+              v-if="isToolConfirmation"
+              class="mb-2"
+            >
+              <ToolConfirmationBubble
+                :request="message.toolConfirmation!"
+                :resolved="!!message.toolConfirmationResolution"
+                :resolution="message.toolConfirmationResolution"
+                @resolve="(r: 'approved' | 'rejected' | 'expired') => emit('tool-confirm-resolve', r)"
+              />
+            </div>
+
+            <!-- 流式工具确认卡片（流式阶段通过 prop 传入） -->
+            <div
+              v-else-if="streamingToolConfirmation"
+              class="mb-2"
+            >
+              <ToolConfirmationBubble
+                :request="streamingToolConfirmation"
+                :resolved="!!streamingToolConfirmationResolution"
+                :resolution="streamingToolConfirmationResolution"
+                @resolve="(r: 'approved' | 'rejected' | 'expired') => emit('tool-confirm-resolve', r)"
+              />
+            </div>
+
+            <!-- 普通 assistant 文本内容 -->
             <StreamingText
               :content="displayContent"
               :streaming="streaming"

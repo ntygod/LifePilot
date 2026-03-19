@@ -20,7 +20,6 @@ import EmptyState from '@/components/chat/EmptyState.vue'
 import MessageList from '@/components/chat/MessageList.vue'
 import SessionConfigPanel from '@/components/chat/SessionConfigPanel.vue'
 import SessionSidebar from '@/components/chat/SessionSidebar.vue'
-import ToolConfirmationDialog from '@/components/chat/ToolConfirmationDialog.vue'
 import { useChat } from '@/composables/useChat'
 import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
 import { useChatStore } from '@/stores/chat'
@@ -47,6 +46,8 @@ const {
   streamingReactSteps,
   streamingA2uiComponents,
   pendingToolConfirmation,
+  pendingToolConfirmationResolution,
+  resolveToolConfirmation,
 } = useChat()
 
 const scrollContainer = ref<HTMLElement | null>(null)
@@ -462,6 +463,8 @@ function closeInspectorPanels() {
             :streaming-reasoning-events="reasoningEvents"
             :streaming-react-steps="streamingReactSteps"
             :streaming-a2ui-components="streamingA2uiComponents"
+            :streaming-tool-confirmation="pendingToolConfirmation"
+            :streaming-tool-confirmation-resolution="pendingToolConfirmationResolution"
             :query="searchQuery"
             @retry="handleRetry"
             @like="handleLike"
@@ -469,6 +472,7 @@ function closeInspectorPanels() {
             @fork="handleFork"
             @regenerate="handleRegenerate"
             @copy="handleCopy"
+            @tool-confirm-resolve="resolveToolConfirmation"
           />
         </div>
       </div>
@@ -542,10 +546,5 @@ function closeInspectorPanels() {
       </div>
     </div>
 
-    <!-- 工具确认对话框 -->
-    <ToolConfirmationDialog
-      :request="pendingToolConfirmation"
-      @resolved="pendingToolConfirmation = null"
-    />
   </div>
 </template>
