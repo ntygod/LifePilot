@@ -258,6 +258,10 @@ public class ReactAgentLoop implements CallbackHelper {
             // 4. 组装上下文 + 构建消息 + 获取工具回调
             // 首轮组装完整上下文，后续迭代复用缓存（记忆检索和预算分配不变）
             if (cachedContext == null) {
+                // 首轮迭代：推送上下文组装 Thought 步骤
+                state = state.appendStep(new ReactStep.Thought("正在检索相关记忆和知识…"));
+                pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
+
                 cachedContext = contextAssembler.assemble(state);
                 // 传播经验注入 ID 到请求作用域上下文
                 if (!cachedContext.injectedEntityIds().isEmpty()) {
@@ -280,6 +284,10 @@ public class ReactAgentLoop implements CallbackHelper {
                     state.traceId(), iteration, state.stepCount(), toolCallbacks.size());
 
             // 5. 调用 LLM（不自动执行 tool call）
+            // 推送思考中 Thought 步骤
+            state = state.appendStep(new ReactStep.Thought("正在思考回答…"));
+            pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
+
             // 构造有效请求：将当前迭代的媒体内容传递给 callLlm
             var effectiveRequest = assembledContext.mediaContents() != null && !assembledContext.mediaContents().isEmpty()
                     ? new AgentRequest(request.message(), request.sessionId(), request.channel(),
