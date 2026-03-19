@@ -122,12 +122,12 @@ steps:                   # 步骤列表（必填，至少一个步骤）
 调用知微已注册的 Skill（内置 Skill 或 YAML 自定义 Skill）。
 
 ```yaml
-- id: fetch-todos
-  name: 获取今日待办
+- id: search-memory
+  name: 搜索相关记忆
   type: skill
-  skillId: todo.list       # Skill 标识（必填）
+  skillId: memory.search   # Skill 标识（必填）
   params:                  # 参数（可选）
-    filter: "today"
+    query: "今日计划"
 ```
 
 | 字段 | 必填 | 说明 |
@@ -135,20 +135,20 @@ steps:                   # 步骤列表（必填，至少一个步骤）
 | skillId | ✅ | 已注册的 Skill ID |
 | params | ❌ | 传递给 Skill 的参数，键值对格式 |
 
-**实际案例** — 内置「晨间简报」工作流中获取今日待办和日程：
+**实际案例** — 内置「晨间简报」工作流中搜索记忆和获取任务：
 
 ```yaml
 steps:
-  - id: fetch-todos
-    name: 获取今日待办
+  - id: search-memory
+    name: 搜索今日相关记忆
     type: skill
-    skillId: todo.list
+    skillId: memory.search
     params:
-      filter: "today"
-  - id: fetch-schedule
-    name: 获取今日日程
+      query: "今日计划"
+  - id: list-tasks
+    name: 获取自主任务列表
     type: skill
-    skillId: schedule.today
+    skillId: builtin.task.list
     params: {}
 ```
 
@@ -321,27 +321,27 @@ steps:
 
 注意 `branches` 的格式：外层列表的每个元素是一个分支，每个分支本身是一个步骤列表（所以有两层 `-`）。
 
-**实际案例** — 内置「周报生成」工作流中并行获取待办和习惯数据：
+**实际案例** — 内置「周报生成」工作流中并行获取记忆和任务数据：
 
 ```yaml
 - id: gather-data
   name: 并行获取本周数据
   type: parallel
   branches:
-    - - id: fetch-weekly-todos
-        name: 获取本周待办
+    - - id: search-weekly-memory
+        name: 搜索本周记忆
         type: skill
-        skillId: todo.list
+        skillId: memory.search
         params:
-          filter: "this-week"
-    - - id: fetch-weekly-habits
-        name: 获取本周习惯数据
+          query: "本周总结"
+    - - id: fetch-weekly-tasks
+        name: 获取本周任务执行记录
         type: skill
-        skillId: habit.weekly-stats
+        skillId: builtin.task.list
         params: {}
 ```
 
-两个分支同时执行，比顺序执行快一倍。后续步骤可以通过 `${steps.fetch-weekly-todos.output.result}` 和 `${steps.fetch-weekly-habits.output.result}` 分别引用各分支的输出。
+两个分支同时执行，比顺序执行快一倍。后续步骤可以通过 `${steps.search-weekly-memory.output.result}` 和 `${steps.fetch-weekly-tasks.output.result}` 分别引用各分支的输出。
 
 ### 循环步骤（loop）
 
@@ -517,7 +517,7 @@ steps:
 - `NORMAL`：普通优先级，正常通知
 - `HIGH`：高优先级，强制提醒用户
 
-**实际案例 — 内置「每日待办提醒」工作流中的通知：**
+**实际案例 — 内置「每日任务提醒」工作流中的通知：**
 
 ```yaml
 - id: send-reminder
@@ -525,9 +525,9 @@ steps:
   type: notify
   targetUserId: "${inputs.userId}"
   content: |
-    ## 待办提醒
+    ## 任务提醒
 
-    您有 **${steps.filter.output.count}** 项待办即将到期：
+    您有 **${steps.filter.output.count}** 项任务即将执行：
 
     ${steps.format.output.result}
   contentType: MARKDOWN
@@ -1011,11 +1011,11 @@ errorStrategy:
 
 **触发方式：** 每天早上 8:00 自动执行
 
-**功能：** 汇总今日待办、日程和习惯提醒，根据是否有紧急事项调整通知级别，一条消息掌握全天计划。
+**功能：** 汇总今日记忆和任务提醒，根据是否有紧急事项调整通知级别，一条消息掌握全天计划。
 
 **步骤流程：**
 ```
-[SkillStep(待办) ∥ SkillStep(日程) ∥ SkillStep(习惯)]（DAG 并行）
+[SkillStep(记忆搜索) ∥ SkillStep(任务列表)]（DAG 并行）
   → LlmStep(生成晨报) + LlmStep(检查紧急事项)
   → ConditionStep(紧急判定)
     → then: NotifyStep(紧急晨报, HIGH)
@@ -1030,11 +1030,11 @@ errorStrategy:
 
 **触发方式：** 每周五下午 6:00 自动执行，或手动触发
 
-**功能：** 汇总本周待办、日程、习惯数据，生成周报并保存到记忆系统。
+**功能：** 汇总本周记忆和任务数据，生成周报并保存到记忆系统。
 
 **步骤流程：**
 ```
-[SkillStep(待办统计) ∥ SkillStep(日程统计) ∥ SkillStep(习惯统计)]（DAG 并行）
+[SkillStep(记忆检索) ∥ SkillStep(任务统计)]（DAG 并行）
   → LlmStep(生成周报) → SkillStep(保存到记忆)
   → NotifyStep(发送周报, skip)
 ```
@@ -1108,8 +1108,8 @@ LlmStep(解析主题) → LoopStep(逐主题采集)
 **步骤流程：**
 ```
 ParallelStep(并行获取数据)
-  分支1: [SkillStep(待办) → SkillStep(习惯)]
-  分支2: [SkillStep(日程) → SkillStep(记忆笔记)]
+  分支1: [SkillStep(任务列表) → SkillStep(记忆检索)]
+  分支2: [SkillStep(知识库搜索) → SkillStep(记忆笔记)]
 → LlmStep(解析目标列表, 结构化输出)
 → LoopStep(逐目标复盘)
   → LlmStep(分析偏差, 结构化输出)
@@ -1117,10 +1117,10 @@ ParallelStep(并行获取数据)
     → 偏差 > 阈值:
       LlmStep(生成调整建议) → ApprovalStep(用户确认)
       → ConditionStep(审批结果)
-        → 批准: SkillStep(创建调整后待办)
+        → 批准: SkillStep(创建调整后任务)
         → 拒绝: NoopStep(保持原计划)
     → 偏差 ≤ 阈值:
-      LlmStep(生成鼓励) → SkillStep(创建下周待办)
+      LlmStep(生成鼓励) → SkillStep(创建下周任务)
 → LlmStep(汇总复盘报告)
 → SkillStep(保存报告) → NotifyStep(发送通知)
 ```
@@ -1134,7 +1134,7 @@ ParallelStep(并行获取数据)
 - 人工审批与自动化的结合
 - 输入参数驱动行为（deviationThreshold 控制审批触发阈值）
 - 多种错误策略（skip 降级）
-- Skill 联动（分析结果自动创建待办）
+- Skill 联动（分析结果自动创建任务）
 
 ### 自定义内置工作流
 
@@ -1493,8 +1493,8 @@ GET /api/workflows/{id}/step-stats
   "workflowId": "daily-briefing",
   "stepStats": [
     {
-      "stepId": "fetch-todos",
-      "stepName": "获取待办",
+      "stepId": "search-memory",
+      "stepName": "搜索记忆",
       "executionCount": 150,
       "successCount": 150,
       "avgDurationMs": 120,

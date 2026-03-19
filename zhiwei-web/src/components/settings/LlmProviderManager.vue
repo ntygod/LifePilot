@@ -80,7 +80,6 @@ const sceneOptions = [
   { value: 'knowledge_extraction', label: '知识提取' },
   { value: 'knowledge_rerank', label: '知识库精排' },
   { value: 'memory_compression', label: '记忆压缩' },
-  { value: 'proactive_reasoning', label: '主动推理' },
   { value: 'skill_generation', label: '技能生成' },
   { value: 'embedding', label: '向量化' },
 ]

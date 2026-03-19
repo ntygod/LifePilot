@@ -23,7 +23,7 @@ LLM Router 为知微提供统一的大模型调用能力，支持多 Provider �
 - `knowledge_extraction`: 知识实体提取（AUDN）
 - `memory_compression`: 记忆压缩
 - `embedding`: 向量嵌入
-- `proactive_reasoning`: 主动推理
+- `proactive_reasoning`: ~~已删除（主动推理模块已废弃）~~
 - `skill_generation`: Skill 自动生成
 - `knowledge_rerank`: 知识精排
 

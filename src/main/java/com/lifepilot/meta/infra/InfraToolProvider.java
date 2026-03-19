@@ -19,6 +19,10 @@ import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.workflow.engine.WorkflowCommandService;
 import com.lifepilot.workflow.registry.WorkflowRegistry;
 import com.lifepilot.workflow.tool.WorkflowToolProvider;
+import com.lifepilot.agent.config.AgentConfigProperties;
+import com.lifepilot.agent.task.CronScheduler;
+import com.lifepilot.agent.task.CronTaskRepository;
+import com.lifepilot.meta.infra.task.TaskToolProvider;
 import com.lifepilot.sandbox.booter.SandboxBooter;
 import com.lifepilot.sandbox.repository.SandboxRepository;
 import com.lifepilot.sandbox.validator.CodeValidator;
@@ -70,6 +74,12 @@ public class InfraToolProvider implements BuiltinSkillProvider {
     private final WorkflowRegistry workflowRegistry;
     @Nullable
     private final WorkflowCommandService workflowCommandService;
+    @Nullable
+    private final CronTaskRepository cronTaskRepository;
+    @Nullable
+    private final CronScheduler cronScheduler;
+    @Nullable
+    private final AgentConfigProperties agentConfigProperties;
 
     public InfraToolProvider(MetaProperties properties,
                              RestClient.Builder restClientBuilder,
@@ -80,7 +90,10 @@ public class InfraToolProvider implements BuiltinSkillProvider {
                              @Nullable BrowserSessionManager browserSessionManager,
                              @Nullable NotificationService notificationService,
                              @Nullable WorkflowRegistry workflowRegistry,
-                             @Nullable WorkflowCommandService workflowCommandService) {
+                             @Nullable WorkflowCommandService workflowCommandService,
+                             @Nullable CronTaskRepository cronTaskRepository,
+                             @Nullable CronScheduler cronScheduler,
+                             @Nullable AgentConfigProperties agentConfigProperties) {
         this.properties = properties;
         this.restClientBuilder = restClientBuilder;
         this.sandboxBooter = sandboxBooter;
@@ -91,6 +104,9 @@ public class InfraToolProvider implements BuiltinSkillProvider {
         this.notificationService = notificationService;
         this.workflowRegistry = workflowRegistry;
         this.workflowCommandService = workflowCommandService;
+        this.cronTaskRepository = cronTaskRepository;
+        this.cronScheduler = cronScheduler;
+        this.agentConfigProperties = agentConfigProperties;
     }
 
     @Override
@@ -140,7 +156,13 @@ public class InfraToolProvider implements BuiltinSkillProvider {
                         "builtin.workflow.list",
                         "builtin.workflow.start",
                         "builtin.workflow.status",
-                        "builtin.workflow.cancel"
+                        "builtin.workflow.cancel",
+                        "builtin.cron.create",
+                        "builtin.cron.list",
+                        "builtin.cron.update",
+                        "builtin.cron.remove",
+                        "builtin.heartbeat.read",
+                        "builtin.heartbeat.write"
                 ))
                 .metadata(Map.of())
                 .build();
@@ -204,10 +226,21 @@ public class InfraToolProvider implements BuiltinSkillProvider {
             log.warn("WorkflowRegistry 或 WorkflowCommandService 不可用，跳过工作流管理工具注册");
         }
 
+        // 自主任务工具（6 个，委托给 TaskToolProvider）
+        if (cronTaskRepository != null && cronScheduler != null && agentConfigProperties != null) {
+            var taskToolProvider = new TaskToolProvider(cronTaskRepository, cronScheduler, agentConfigProperties);
+            taskToolProvider.buildCronTools().forEach(toolRegistry::registerBuiltinTool);
+            taskToolProvider.buildHeartbeatTools().forEach(toolRegistry::registerBuiltinTool);
+            log.info("自主任务工具注册完成: count=6, categories=[cron, heartbeat]");
+        } else {
+            log.warn("CronTaskRepository 或 CronScheduler 不可用，跳过自主任务工具注册");
+        }
+
         int totalTools = 28; // 基础工具
         if (interactionBridge != null && notificationService != null) totalTools += 3;
         if (workflowRegistry != null && workflowCommandService != null) totalTools += 4;
-        log.info("基础工具注册完成: count={}, categories=[env, web, reason, shell, browser, code, file, interact, workflow]",
+        if (cronTaskRepository != null && cronScheduler != null && agentConfigProperties != null) totalTools += 6;
+        log.info("基础工具注册完成: count={}, categories=[env, web, reason, shell, browser, code, file, interact, workflow, task]",
                 totalTools);
     }
 

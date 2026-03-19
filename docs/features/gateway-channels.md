@@ -71,7 +71,7 @@
 
 ### 3.5 快速路径命令
 
-以 `/` 开头的命令消息（如 `/todo list`）被 RouterMiddleware 识别后走快速路径，直接路由到对应 Skill，跳过 LLM 推理。延迟 < 100ms，不消耗 Token。
+以 `/` 开头的命令消息被 RouterMiddleware 识别后走快速路径，直接路由到对应 Skill，跳过 LLM 推理。延迟 < 100ms，不消耗 Token。
 
 ## 4. 配置项
 

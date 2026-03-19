@@ -30,7 +30,7 @@
 
 | # | 问题 | 优先级 | 建议 |
 |---|------|--------|------|
-| C-07 | `AgentAutoConfiguration` 使用 `@Autowired(required = false)` 注入可选依赖（记忆系统、主动推理等），降级路径是否经过充分测试？ | 🟡 中 | 编写集成测试验证：(1) 全量 Bean 注入场景 (2) 最小化 Bean 注入场景（仅 LLM + Agent 核心） |
+| C-07 | `AgentAutoConfiguration` 使用 `@Autowired(required = false)` 注入可选依赖（记忆系统等），降级路径是否经过充分测试？ | 🟡 中 | 编写集成测试验证：(1) 全量 Bean 注入场景 (2) 最小化 Bean 注入场景（仅 LLM + Agent 核心） |
 | C-08 | `ContextAssembler` 有完整版和基础版两种模式，切换逻辑是否可靠？ | 🟡 中 | 验证当记忆系统不可用时，ContextAssembler 是否正确降级到基础版 |
 | C-09 | `GatewayAutoConfiguration` 管理 Channel 适配器生命周期，异常 Channel 是否会影响其他 Channel？ | 🟡 中 | 验证单个 Channel 适配器启动失败时，其他 Channel 和核心对话功能不受影响 |
 | C-10 | `SkillAutoConfiguration` 注册 25+ Bean，Skill 加载失败是否有隔离？ | 🟡 中 | 验证单个 Skill 注册失败不会阻塞整个 Skill 系统初始化 |
@@ -53,15 +53,15 @@
 | 场景 | 支撑模块 | 覆盖状态 | 备注 |
 |------|---------|---------|------|
 | 日常对话 | Agent + LLM + Memory | ✅ 完整 | 多轮对话 + 上下文记忆 + 流式响应 |
-| 待办管理 | Builtin Skill (Todo) | ✅ 完整 | CRUD + 提醒 + 优先级 |
-| 日程管理 | Builtin Skill (Schedule) | ✅ 完整 | 日程 CRUD + 冲突检测 |
-| 习惯追踪 | Builtin Skill (Habit) | ✅ 完整 | 打卡 + 统计 + 连续天数 |
+| 待办管理 | ~~Builtin Skill (Todo)~~ | ❌ 已废弃（模块已删除，替换为自主任务执行） | — |
+| 日程管理 | ~~Builtin Skill (Schedule)~~ | ❌ 已废弃（模块已删除，替换为自主任务执行） | — |
+| 习惯追踪 | ~~Builtin Skill (Habit)~~ | ❌ 已废弃（模块已删除，替换为自主任务执行） | — |
 | 知识管理 | Knowledge + Memory L3 | ✅ 完整 | 文档上传 + 分块 + 混合检索 |
 | 数据记录 | DataStore | ✅ 完整 | Schema-Free JSON + 全文搜索 + 时序聚合 |
 | 代码执行 | Sandbox | ✅ 完整 | Process/Docker 双模式 |
 | 工作流自动化 | Workflow | ✅ 完整 | YAML 定义 + 多种触发器 + 崩溃恢复 |
 | 外部数据同步 | Sync | ✅ 完整 | CalDAV/Todoist/滴答清单/Obsidian |
-| 主动提醒 | ProactiveReasoner | ✅ 完整 | 两阶段推理 + 智能降频 |
+| 主动提醒 | ~~ProactiveReasoner~~ | ❌ 已废弃（模块已删除，替换为自主任务执行） | — |
 | 多模态理解 | Media + LLM | ✅ 完整 | 图片/文档/音频 |
 | 外部工具扩展 | MCP | ✅ 完整 | MCP Client/Server + 工具桥接 |
 | 多 Agent 协作 | MultiAgent + A2A | ✅ 完整 | HandoffTool + 预设专家 Agent |
@@ -74,9 +74,9 @@
 | P-02 | 缺少「同步管理」入口 — 用户无法通过 Web UI 配置和管理外部数据源同步 | 🟡 中 | 后端需新增 SyncController（同步配置 CRUD + 手动触发 + 状态查看），前端需新增同步管理页面 |
 | P-03 | 缺少「数据存储管理」入口 — DataStore 仅通过 Agent 工具访问，用户无法直接浏览/管理数据 | 🟢 低 | 后端需新增 DataStoreController，前端需新增数据浏览页面。但 DataStore 设计初衷是 Agent 工具，直接管理入口优先级较低 |
 | P-04 | 缺少「沙箱管理」入口 — 用户无法查看沙箱状态、会话、执行历史 | 🟢 低 | 可在设置页面增加沙箱配置区域，或在轨迹回放中展示沙箱执行详情 |
-| P-05 | 缺少「主动推理设置」入口 — 用户无法调整主动推理的频率、规则、开关 | 🟡 中 | 可在设置页面增加主动推理配置区域（启用/禁用、降频策略、信号类型开关） |
+| P-05 | ~~缺少「主动推理设置」入口~~ | ❌ 已废弃 | 主动推理模块已删除，替换为自主任务执行 |
 | P-06 | Eval 模块存在多个已知问题（详见 todolist.md #2） | 🔴 高 | 按 todolist.md 中 GPT 分析的优先级修复：真实轨迹接入 → evalRunId 语义修复 → 场景字段落地 → 评估核心去重 → 内置样例 |
-| P-07 | 内置 Skill 场景覆盖 — 当前 5 个内置 Skill（Todo/Schedule/Habit/Memory/DataStore）是否足够？ | 🟢 低 | 个人助手核心场景已覆盖。更多场景（如财务记账、健康追踪、阅读笔记）可通过 YAML Skill 自扩展或 MCP 外部工具补充，无需内置 |
+| P-07 | 内置 Skill 场景覆盖 — 待办/日程/习惯 Skill 已删除，替换为自主任务执行 | ❌ 已废弃 | — |
 | P-08 | 预设 Agent 是否合适 — 当前预设写作/分析/调研三个专家 Agent | 🟢 低 | 三个预设 Agent 覆盖了最常见的委托场景，用户可通过 Web UI 自定义更多 Agent |
 | P-09 | 缺少「系统设置管理」— 22 个模块的配置项繁杂，用户不会手动编辑 application.yml | 🟡 中 | 后端新增 SystemSettingsController（配置分组读写 API），前端在设置页面增加可视化配置面板。配置持久化到 SQLite `system_settings` 表，优先级高于 application.yml 默认值，支持运行时热更新 |
 
@@ -105,7 +105,7 @@
 | D-04 | 知识库文档删除后，向量索引和 FTS5 索引是否同步清理？ | 🟡 中 | 需要验证文档删除的级联清理逻辑，确保无孤立向量/索引数据 |
 | D-05 | DataStore 集合删除后，关联的 FTS5 索引和属性定义是否同步清理？ | 🟡 中 | 需要验证级联删除逻辑 |
 | D-06 | 对话历史无自动清理策略 — 长期使用后对话数据可能膨胀 | 🟢 低 | 考虑增加对话历史归档/清理策略（如保留最近 N 天，或按存储大小限制） |
-| D-07 | SQLite 并发写入限制 — 单用户场景下问题不大，但工作流引擎 + 主动推理 + 同步引擎可能同时写入 | 🟢 低 | WAL 模式 + busy_timeout=5000ms 已缓解，但需要在高负载场景下验证 |
+| D-07 | SQLite 并发写入限制 — 单用户场景下问题不大，但工作流引擎 + 自主任务 + 同步引擎可能同时写入 | 🟢 低 | WAL 模式 + busy_timeout=5000ms 已缓解，但需要在高负载场景下验证 |
 
 ---
 
@@ -135,7 +135,7 @@
 |---|---------|------------|--------|------|
 | F-01 | 记忆浏览/管理页面 | Memory（L2 情景记忆、L3 语义记忆、知识图谱可视化） | 🟡 中 | 新增 MemoryView — 展示记忆时间线、知识图谱关系图、支持搜索和手动删除 |
 | F-02 | 同步管理页面 | Sync（CalDAV/Todoist/滴答清单/Obsidian） | 🟡 中 | 新增 SyncManageView — 连接器配置、同步状态、手动触发、冲突历史 |
-| F-03 | 主动推理设置区域 | ProactiveReasoner | 🟡 中 | 在 SettingsPreferencesView 中增加主动推理配置区域（开关、降频策略、信号类型） |
+| F-03 | ~~主动推理设置区域~~ | ~~ProactiveReasoner~~ | ❌ 已废弃 | 主动推理模块已删除，替换为自主任务执行 |
 | F-04 | 数据存储浏览页面 | DataStore | 🟢 低 | 新增 DataStoreView — 集合列表、文档浏览、搜索。优先级低因为 DataStore 主要面向 Agent 工具使用 |
 | F-05 | 沙箱状态/历史页面 | Sandbox | 🟢 低 | 可在轨迹回放中展示沙箱执行详情，或在设置中增加沙箱配置 |
 | F-06 | Eval 评估结果页面 | Eval | 🟢 低 | Eval 主要是开发者工具（JUnit 集成），Web UI 入口优先级低。但如果要做「AI 质量看板」，可以考虑 |
@@ -181,7 +181,7 @@
 |------|------|------|-----------|
 | 6 | 新增记忆管理 API + 前端页面 | P-01, F-01, D-03 | 3-5 天 |
 | 7 | 新增同步管理 API + 前端页面 | P-02, F-02 | 2-3 天 |
-| 8 | 主动推理设置入口（设置页面扩展） | P-05, F-03 | 1-2 天 |
+| 8 | ~~主动推理设置入口~~ | ~~P-05, F-03~~ | ❌ 已废弃 |
 | 9 | A2A 模块测试补全 | C-03 | 1-2 天 |
 | 10 | Conversation 模块测试补全 | C-04 | 1 天 |
 | 11 | 跨模块集成测试（降级路径验证） | C-07~C-10 | 2-3 天 |

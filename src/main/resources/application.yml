@@ -61,19 +61,6 @@ lifepilot:
       output-reserved-tokens: 4000
       success-step-max-length: 200
       failed-step-max-length: 80
-    proactive:
-      enabled: true
-      interval-ms: 1800000
-      quiet-hours-start: 22
-      quiet-hours-end: 8
-      daily-summary-hour: 21
-      weekly-review-day: 7
-      weekly-review-hour: 10
-      notification-sse-timeout-ms: 1800000
-      response-window-minutes: 30
-      ignore-threshold: 3
-      reduced-multiplier: 3
-      max-content-length: 100
     suspend:
       # 挂起记录最大保留时长
       max-age: 24h
@@ -83,6 +70,16 @@ lifepilot:
       timeout-minutes: 30
       max-recent-turns: 10
       cleanup-interval-ms: 300000
+    task:
+      # ===== 自主任务配置（Cron + Heartbeat 双轨） =====
+      enabled: true
+      heartbeat-enabled: true
+      heartbeat-interval-seconds: 1800
+      heartbeat-file: "~/.zhiwei/HEARTBEAT.md"
+      execution-timeout-seconds: 300
+      # active-hours-start: "08:00"
+      # active-hours-end: "22:00"
+      max-logs-per-task: 50
     multi-agent:
       enabled: true
       max-delegation-depth: 2
@@ -318,16 +315,7 @@ lifepilot:
     directory: "${user.home}/.zhiwei/skills"
     hot-reload-debounce-ms: 500
     skill-filename: SKILL.md
-    builtin:
-      todo:
-        enabled: true
-      schedule:
-        enabled: true
-      habit:
-        enabled: true
-    todo:
-      due-notification-enabled: true
-      due-check-interval-seconds: 600
+    builtin: {}
     auto-generation:
       enabled: true
       gap-threshold: 0.6
@@ -474,9 +462,6 @@ lifepilot:
           timeout-minutes: 30
     router:
       fast-path-commands:
-        - todo
-        - schedule
-        - habit
         - llm
         - mcp
         - skill
@@ -707,8 +692,8 @@ lifepilot:
       # 镜像前缀
       image-prefix: "zhiwei/sandbox-"
   sync:
-    # 同步模块总开关
-    enabled: true
+    # 同步模块总开关（暂时禁用：builtin todo/schedule/habit 包已删除，sync 模块待重构）
+    enabled: false
     # 默认 Cron 表达式（每 15 分钟）
     default-cron: "0 */15 * * * *"
     # 默认冲突解决策略

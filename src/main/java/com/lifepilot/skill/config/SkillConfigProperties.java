@@ -53,35 +53,8 @@ public class SkillConfigProperties {
     /** 内置 Skill 配置。 */
     private Builtin builtin = new Builtin();
 
-    /** 待办 Skill 扩展配置。 */
-    private Todo todo = new Todo();
-
     public Builtin getBuiltin() { return builtin; }
     public void setBuiltin(Builtin builtin) { this.builtin = builtin; }
-
-    public Todo getTodo() { return todo; }
-    public void setTodo(Todo todo) { this.todo = todo; }
-
-    /**
-     * 待办 Skill 扩展配置（到期通知等）。
-     *
-     * @author zsg
-     * @since 2026-03-19
-     */
-    public static class Todo {
-
-        /** 到期通知开关，默认 true。 */
-        private boolean dueNotificationEnabled = true;
-
-        /** 到期检查间隔（秒），默认 600（10 分钟）。 */
-        private int dueCheckIntervalSeconds = 600;
-
-        public boolean isDueNotificationEnabled() { return dueNotificationEnabled; }
-        public void setDueNotificationEnabled(boolean dueNotificationEnabled) { this.dueNotificationEnabled = dueNotificationEnabled; }
-
-        public int getDueCheckIntervalSeconds() { return dueCheckIntervalSeconds; }
-        public void setDueCheckIntervalSeconds(int dueCheckIntervalSeconds) { this.dueCheckIntervalSeconds = dueCheckIntervalSeconds; }
-    }
 
     /**
      * Skill 定义校验限制配置。
@@ -244,48 +217,18 @@ public class SkillConfigProperties {
      */
     public static class Builtin {
 
-        private SkillToggle todo = new SkillToggle();
-        private SkillToggle schedule = new SkillToggle();
-        private SkillToggle habit = new SkillToggle();
-
-        public SkillToggle getTodo() { return todo; }
-        public void setTodo(SkillToggle todo) { this.todo = todo; }
-
-        public SkillToggle getSchedule() { return schedule; }
-        public void setSchedule(SkillToggle schedule) { this.schedule = schedule; }
-
-        public SkillToggle getHabit() { return habit; }
-        public void setHabit(SkillToggle habit) { this.habit = habit; }
-
         /**
-         * 根据 Skill ID 查询是否启用。Memory Skill 始终启用。
+         * 根据 Skill ID 查询是否启用。Memory Skill 始终启用，未知 Skill 默认启用。
          *
          * @param skillId Skill 标识
          * @return 是否启用
          */
         public boolean isEnabled(String skillId) {
             return switch (skillId) {
-                case "todo" -> todo.isEnabled();
-                case "schedule" -> schedule.isEnabled();
-                case "habit" -> habit.isEnabled();
                 case "memory" -> true;
                 default -> true;
             };
         }
 
-        /**
-         * 单个 Skill 的启用/禁用开关。
-         *
-         * @author zsg
-         * @since 2026-03-10
-         */
-        public static class SkillToggle {
-
-            /** 是否启用，默认 true。 */
-            private boolean enabled = true;
-
-            public boolean isEnabled() { return enabled; }
-            public void setEnabled(boolean enabled) { this.enabled = enabled; }
-        }
     }
 }

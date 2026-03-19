@@ -21,8 +21,6 @@ public final class LlmScene {
     public static final String MEMORY_COMPRESSION = "memory_compression";
     /** 向量嵌入 */
     public static final String EMBEDDING = "embedding";
-    /** 主动推理 */
-    public static final String PROACTIVE_REASONING = "proactive_reasoning";
     /** Skill 自动生成 */
     public static final String SKILL_GENERATION = "skill_generation";
     /** 知识精排 */
@@ -42,7 +40,6 @@ public final class LlmScene {
                 KNOWLEDGE_EXTRACTION,
                 MEMORY_COMPRESSION,
                 EMBEDDING,
-                PROACTIVE_REASONING,
                 SKILL_GENERATION,
                 KNOWLEDGE_RERANK,
                 AGENT_REACT

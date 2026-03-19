@@ -20,6 +20,7 @@ public class AgentConfigProperties {
     private ContextConfig context = new ContextConfig();
     private SessionConfig session = new SessionConfig();
     private DebugConfig debug = new DebugConfig();
+    private TaskConfig task = new TaskConfig();
 
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
@@ -33,6 +34,8 @@ public class AgentConfigProperties {
     public void setSession(SessionConfig session) { this.session = session; }
     public DebugConfig getDebug() { return debug; }
     public void setDebug(DebugConfig debug) { this.debug = debug; }
+    public TaskConfig getTask() { return task; }
+    public void setTask(TaskConfig task) { this.task = task; }
 
     /** ReAct 循环配置（替代原 LoopConfig）。 */
     public static class LoopConfig {
@@ -113,5 +116,42 @@ public class AgentConfigProperties {
 
         public boolean isLogLlmPrompts() { return logLlmPrompts; }
         public void setLogLlmPrompts(boolean logLlmPrompts) { this.logLlmPrompts = logLlmPrompts; }
+    }
+
+    /** 自主任务配置（Cron + Heartbeat 双轨）。 */
+    public static class TaskConfig {
+        /** 任务系统总开关。 */
+        private boolean enabled = true;
+        /** Heartbeat 单独开关。 */
+        private boolean heartbeatEnabled = true;
+        /** 心跳间隔（秒）。 */
+        private int heartbeatIntervalSeconds = 1800;
+        /** 心跳 checklist 文件路径。 */
+        private String heartbeatFile = "~/.zhiwei/HEARTBEAT.md";
+        /** 单次执行超时（秒）。 */
+        private int executionTimeoutSeconds = 300;
+        /** 活跃时段开始（HH:mm，null 表示全天）。 */
+        private String activeHoursStart;
+        /** 活跃时段结束（HH:mm）。 */
+        private String activeHoursEnd;
+        /** 每个 cron 任务保留的最大执行日志数。 */
+        private int maxLogsPerTask = 50;
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        public boolean isHeartbeatEnabled() { return heartbeatEnabled; }
+        public void setHeartbeatEnabled(boolean heartbeatEnabled) { this.heartbeatEnabled = heartbeatEnabled; }
+        public int getHeartbeatIntervalSeconds() { return heartbeatIntervalSeconds; }
+        public void setHeartbeatIntervalSeconds(int heartbeatIntervalSeconds) { this.heartbeatIntervalSeconds = heartbeatIntervalSeconds; }
+        public String getHeartbeatFile() { return heartbeatFile; }
+        public void setHeartbeatFile(String heartbeatFile) { this.heartbeatFile = heartbeatFile; }
+        public int getExecutionTimeoutSeconds() { return executionTimeoutSeconds; }
+        public void setExecutionTimeoutSeconds(int executionTimeoutSeconds) { this.executionTimeoutSeconds = executionTimeoutSeconds; }
+        public String getActiveHoursStart() { return activeHoursStart; }
+        public void setActiveHoursStart(String activeHoursStart) { this.activeHoursStart = activeHoursStart; }
+        public String getActiveHoursEnd() { return activeHoursEnd; }
+        public void setActiveHoursEnd(String activeHoursEnd) { this.activeHoursEnd = activeHoursEnd; }
+        public int getMaxLogsPerTask() { return maxLogsPerTask; }
+        public void setMaxLogsPerTask(int maxLogsPerTask) { this.maxLogsPerTask = maxLogsPerTask; }
     }
 }

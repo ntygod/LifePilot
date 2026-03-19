@@ -44,9 +44,9 @@ const urgencyConfig: Record<NotificationUrgency, { label: string; variant: 'dest
 
 /** 通知类型图标映射 */
 const typeIconMap: Record<string, Component> = {
-  proactive: Lightbulb,
   workflow: GitBranch,
   system: Settings,
+  task: Lightbulb,
 }
 
 /** 获取通知类型图标，未知 typeId 回退到 Bell */
