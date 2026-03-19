@@ -17,6 +17,7 @@ import com.lifepilot.meta.infra.interaction.CliInteractionHandler;
 import com.lifepilot.meta.infra.interaction.InteractionBridge;
 import com.lifepilot.multiagent.registry.AgentRegistry;
 import com.lifepilot.notification.NotificationService;
+import com.lifepilot.notification.config.NotificationProperties;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.sandbox.booter.SandboxBooter;
 import com.lifepilot.sandbox.repository.SandboxRepository;
@@ -82,8 +83,9 @@ public class MetaAutoConfiguration {
                                         @Nullable WorkflowCommandService workflowCommandService,
                                         @Nullable CronTaskRepository cronTaskRepository,
                                         @Nullable CronScheduler cronScheduler,
-                                        @Nullable AgentConfigProperties agentConfigProperties) {
-        return new InfraToolProvider(properties, restClientBuilder, sandboxBooter, codeValidator, sandboxRepository, interactionBridge, browserSessionManager, notificationService, workflowRegistry, workflowCommandService, cronTaskRepository, cronScheduler, agentConfigProperties);
+                                        @Nullable AgentConfigProperties agentConfigProperties,
+                                        @Nullable NotificationProperties notificationProperties) {
+        return new InfraToolProvider(properties, restClientBuilder, sandboxBooter, codeValidator, sandboxRepository, interactionBridge, browserSessionManager, notificationService, workflowRegistry, workflowCommandService, cronTaskRepository, cronScheduler, agentConfigProperties, notificationProperties);
     }
 
     /**

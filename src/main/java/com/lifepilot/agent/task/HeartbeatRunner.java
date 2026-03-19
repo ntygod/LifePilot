@@ -7,6 +7,7 @@ import com.lifepilot.interaction.model.ResponseContent;
 import com.lifepilot.notification.NotificationRequest;
 import com.lifepilot.notification.NotificationService;
 import com.lifepilot.notification.Urgency;
+import com.lifepilot.notification.config.NotificationProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,15 +36,18 @@ public class HeartbeatRunner {
     private final AgentOrchestrator agentOrchestrator;
     private final NotificationService notificationService;
     private final AgentConfigProperties config;
+    private final NotificationProperties notificationProperties;
 
     public HeartbeatRunner(ScheduledExecutorService scheduler,
                            AgentOrchestrator agentOrchestrator,
                            NotificationService notificationService,
-                           AgentConfigProperties config) {
+                           AgentConfigProperties config,
+                           NotificationProperties notificationProperties) {
         this.scheduler = scheduler;
         this.agentOrchestrator = agentOrchestrator;
         this.notificationService = notificationService;
         this.config = config;
+        this.notificationProperties = notificationProperties;
     }
 
     /**
@@ -93,7 +97,7 @@ public class HeartbeatRunner {
             if (!ok && response.content() != null && !response.content().isBlank()
                     && response.terminationReason() == null) {
                 notificationService.send(new NotificationRequest(
-                        "default",
+                        notificationProperties.getDefaultUserId(),
                         new ResponseContent.TextContent("【心跳巡检】\n" + response.content()),
                         Urgency.LOW, null, "heartbeat", Map.of()
                 ));

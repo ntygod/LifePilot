@@ -15,6 +15,7 @@ import com.lifepilot.meta.infra.interaction.InteractionToolProvider;
 import com.lifepilot.meta.infra.web.WebFetchToolExecutor;
 import com.lifepilot.meta.infra.web.WebSearchToolExecutor;
 import com.lifepilot.notification.NotificationService;
+import com.lifepilot.notification.config.NotificationProperties;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.workflow.engine.WorkflowCommandService;
 import com.lifepilot.workflow.registry.WorkflowRegistry;
@@ -80,6 +81,8 @@ public class InfraToolProvider implements BuiltinSkillProvider {
     private final CronScheduler cronScheduler;
     @Nullable
     private final AgentConfigProperties agentConfigProperties;
+    @Nullable
+    private final NotificationProperties notificationProperties;
 
     public InfraToolProvider(MetaProperties properties,
                              RestClient.Builder restClientBuilder,
@@ -93,7 +96,8 @@ public class InfraToolProvider implements BuiltinSkillProvider {
                              @Nullable WorkflowCommandService workflowCommandService,
                              @Nullable CronTaskRepository cronTaskRepository,
                              @Nullable CronScheduler cronScheduler,
-                             @Nullable AgentConfigProperties agentConfigProperties) {
+                             @Nullable AgentConfigProperties agentConfigProperties,
+                             @Nullable NotificationProperties notificationProperties) {
         this.properties = properties;
         this.restClientBuilder = restClientBuilder;
         this.sandboxBooter = sandboxBooter;
@@ -107,6 +111,7 @@ public class InfraToolProvider implements BuiltinSkillProvider {
         this.cronTaskRepository = cronTaskRepository;
         this.cronScheduler = cronScheduler;
         this.agentConfigProperties = agentConfigProperties;
+        this.notificationProperties = notificationProperties;
     }
 
     @Override
@@ -211,7 +216,7 @@ public class InfraToolProvider implements BuiltinSkillProvider {
 
         // 交互控制工具（3 个，委托给 InteractionToolProvider）
         if (interactionBridge != null && notificationService != null) {
-            var interactionToolProvider = new InteractionToolProvider(interactionBridge, notificationService);
+            var interactionToolProvider = new InteractionToolProvider(interactionBridge, notificationService, notificationProperties);
             interactionToolProvider.buildInteractionTools().forEach(toolRegistry::registerBuiltinTool);
         } else {
             log.warn("InteractionBridge 或 NotificationService 不可用，跳过交互控制工具注册");

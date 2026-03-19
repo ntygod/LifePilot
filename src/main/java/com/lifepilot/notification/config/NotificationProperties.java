@@ -25,6 +25,9 @@ public class NotificationProperties {
     /** 通知历史最大分页大小。 */
     private int maxHistoryPageSize = 100;
 
+    /** 默认目标用户 ID，所有内部通知（cron、heartbeat、agent.notify）统一使用此值。 */
+    private String defaultUserId = "default";
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -55,5 +58,13 @@ public class NotificationProperties {
 
     public void setMaxHistoryPageSize(int maxHistoryPageSize) {
         this.maxHistoryPageSize = maxHistoryPageSize;
+    }
+
+    public String getDefaultUserId() {
+        return defaultUserId;
+    }
+
+    public void setDefaultUserId(String defaultUserId) {
+        this.defaultUserId = defaultUserId;
     }
 }
