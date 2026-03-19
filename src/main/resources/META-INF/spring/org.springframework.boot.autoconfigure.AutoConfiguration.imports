@@ -8,7 +8,6 @@ com.lifepilot.agent.suspend.config.SuspendAutoConfiguration
 com.lifepilot.mcp.config.McpAutoConfiguration
 com.lifepilot.knowledge.config.KnowledgeAutoConfiguration
 com.lifepilot.skill.config.SkillAutoConfiguration
-com.lifepilot.agent.proactive.config.ProactiveAutoConfiguration
 com.lifepilot.interaction.config.GatewayAutoConfiguration
 com.lifepilot.interaction.config.GatewayMiddlewareAutoConfiguration
 com.lifepilot.interaction.config.ChannelAdapterAutoConfiguration

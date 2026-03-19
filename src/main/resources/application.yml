@@ -61,19 +61,6 @@ lifepilot:
       output-reserved-tokens: 4000
       success-step-max-length: 200
       failed-step-max-length: 80
-    proactive:
-      enabled: true
-      interval-ms: 1800000
-      quiet-hours-start: 22
-      quiet-hours-end: 8
-      daily-summary-hour: 21
-      weekly-review-day: 7
-      weekly-review-hour: 10
-      notification-sse-timeout-ms: 1800000
-      response-window-minutes: 30
-      ignore-threshold: 3
-      reduced-multiplier: 3
-      max-content-length: 100
     suspend:
       # 挂起记录最大保留时长
       max-age: 24h
