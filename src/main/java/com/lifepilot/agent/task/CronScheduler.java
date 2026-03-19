@@ -145,7 +145,7 @@ public class CronScheduler {
             if (!silent && response.content() != null && !response.content().isBlank()
                     && response.terminationReason() == null) {
                 notificationService.send(new NotificationRequest(
-                        "system",
+                        "default",
                         new ResponseContent.TextContent("【%s】\n%s".formatted(task.name(), response.content())),
                         Urgency.LOW, null, "cron_task",
                         Map.of("taskId", task.id(), "taskName", task.name())

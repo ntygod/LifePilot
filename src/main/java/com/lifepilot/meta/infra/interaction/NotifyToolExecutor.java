@@ -43,7 +43,7 @@ public class NotifyToolExecutor {
             Urgency urgency = parseUrgency(input);
 
             var request = new NotificationRequest(
-                    "system",
+                    "default",
                     new ResponseContent.TextContent(message),
                     urgency,
                     null,

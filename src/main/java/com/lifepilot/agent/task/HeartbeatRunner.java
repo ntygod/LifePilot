@@ -93,7 +93,7 @@ public class HeartbeatRunner {
             if (!ok && response.content() != null && !response.content().isBlank()
                     && response.terminationReason() == null) {
                 notificationService.send(new NotificationRequest(
-                        "system",
+                        "default",
                         new ResponseContent.TextContent("【心跳巡检】\n" + response.content()),
                         Urgency.LOW, null, "heartbeat", Map.of()
                 ));
