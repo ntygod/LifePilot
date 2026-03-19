@@ -504,7 +504,7 @@ lifepilot:
         app-secret: ${DINGTALK_APP_SECRET:}
         robot-code: ${DINGTALK_ROBOT_CODE:}
       feishu:
-        enabled: ${FEISHU_ENABLED:false}
+        enabled: ${FEISHU_ENABLED:true}
         app-id: ${FEISHU_APP_ID:}
         app-secret: ${FEISHU_APP_SECRET:}
         verification-token: ${FEISHU_VERIFICATION_TOKEN:}
