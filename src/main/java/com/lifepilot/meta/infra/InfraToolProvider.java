@@ -10,6 +10,7 @@ import com.lifepilot.meta.infra.env.SystemInfoToolExecutor;
 import com.lifepilot.meta.infra.env.UserProfileToolExecutor;
 import com.lifepilot.meta.infra.reason.CalculateToolExecutor;
 import com.lifepilot.meta.infra.shell.BackgroundProcessManager;
+import com.lifepilot.meta.infra.shell.ProcessToolProvider;
 import com.lifepilot.meta.infra.shell.ShellExecToolExecutor;
 import com.lifepilot.meta.infra.interaction.InteractionBridge;
 import com.lifepilot.meta.infra.interaction.InteractionToolProvider;
@@ -187,11 +188,21 @@ public class InfraToolProvider {
             log.warn("CronTaskRepository 或 CronScheduler 不可用，跳过自主任务工具注册");
         }
 
+        // 后台进程管理工具（4 个，委托给 ProcessToolProvider）
+        if (backgroundProcessManager != null) {
+            var processToolProvider = new ProcessToolProvider(backgroundProcessManager);
+            processToolProvider.buildProcessTools().forEach(toolRegistry::registerBuiltinTool);
+            log.info("后台进程管理工具注册完成: count=4");
+        } else {
+            log.warn("BackgroundProcessManager 不可用，跳过后台进程管理工具注册");
+        }
+
         int totalTools = 28; // 基础工具
         if (interactionBridge != null && notificationService != null) totalTools += 3;
         if (workflowRegistry != null && workflowCommandService != null) totalTools += 4;
         if (cronTaskRepository != null && cronScheduler != null && agentConfigProperties != null) totalTools += 6;
-        log.info("基础工具注册完成: count={}, categories=[env, web, reason, shell, browser, code, file, interact, workflow, task]",
+        if (backgroundProcessManager != null) totalTools += 4;
+        log.info("基础工具注册完成: count={}, categories=[env, web, reason, shell, browser, code, file, interact, workflow, task, process]",
                 totalTools);
     }
 
