@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
 
+import java.util.AbstractMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -108,6 +109,39 @@ public class DataStoreCrudAdapter<T> {
         );
         return dataStoreManager.queryDocuments(request).stream()
                 .map(doc -> deserialize(doc.dataJson()))
+                .flatMap(Optional::stream)
+                .toList();
+    }
+
+    /**
+     * 按条件查询实体列表，同时返回文档 ID。
+     *
+     * <p>返回 {@code Map.Entry<documentId, entity>} 列表，
+     * 反序列化失败的文档会被跳过并记录 WARN 日志。</p>
+     *
+     * @param filters       过滤条件列表（可选）
+     * @param sortField     排序字段（可选）
+     * @param sortDirection 排序方向（可选）
+     * @param offset        分页偏移
+     * @param limit         每页数量
+     * @return documentId → entity 的 Entry 列表
+     */
+    public List<Map.Entry<String, T>> listWithId(@Nullable List<QueryFilter> filters,
+                                                  @Nullable String sortField,
+                                                  @Nullable SortDirection sortDirection,
+                                                  int offset, int limit) {
+        String collectionId = ensureCollection();
+        var request = new QueryRequest(
+                collectionId,
+                filters != null ? filters : List.of(),
+                sortField,
+                sortDirection,
+                offset,
+                limit
+        );
+        return dataStoreManager.queryDocuments(request).stream()
+                .map(doc -> deserialize(doc.dataJson())
+                        .map(entity -> (Map.Entry<String, T>) new AbstractMap.SimpleImmutableEntry<>(doc.id(), entity)))
                 .flatMap(Optional::stream)
                 .toList();
     }
