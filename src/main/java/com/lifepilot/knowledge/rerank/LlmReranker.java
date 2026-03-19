@@ -66,8 +66,14 @@ public final class LlmReranker implements Reranker {
     @Override
     public List<RerankCandidate> rerankGeneric(String query, List<RerankCandidate> candidates, int topK) {
         if (candidates.isEmpty()) return candidates;
+        var config = configProvider.getConfig();
+        String modelName = config.model() != null && !config.model().isBlank() ? config.model() : null;
         try {
-            var scored = scoreCandidatesGeneric(query, candidates);
+            // 尊重 llmMode 配置：listwise 时转换为 DocumentSearchResult 复用 listwise 逻辑
+            if ("listwise".equals(config.llmMode())) {
+                return rerankGenericListwise(query, candidates, topK, modelName, config);
+            }
+            var scored = scoreCandidatesGeneric(query, candidates, modelName);
             return scored.stream()
                     .sorted(Comparator.<Map.Entry<RerankCandidate, Double>>comparingDouble(Map.Entry::getValue).reversed())
                     .limit(topK)
@@ -83,16 +89,35 @@ public final class LlmReranker implements Reranker {
     }
 
     /**
+     * Listwise 模式的通用精排 — 将 RerankCandidate 转换为 DocumentSearchResult 复用 listwise 逻辑。
+     */
+    private List<RerankCandidate> rerankGenericListwise(String query, List<RerankCandidate> candidates,
+                                                         int topK, @Nullable String modelName,
+                                                         KnowledgeBaseProperties.Reranker config) {
+        // 转换为 DocumentSearchResult 以复用 listwiseSinglePass
+        var docCandidates = candidates.stream()
+                .map(c -> new DocumentSearchResult(
+                        c.id(), c.id(), null, c.content(), Optional.empty(), List.of(),
+                        c.score(), "generic", Map.of(), Optional.empty(), Optional.empty()))
+                .toList();
+        List<DocumentSearchResult> reranked = rerankListwise(query, docCandidates, topK, modelName, config);
+        return reranked.stream()
+                .map(d -> new RerankCandidate(d.chunkId(), d.content(), d.score()))
+                .toList();
+    }
+
+    /**
      * 对通用候选列表进行 Pointwise 评分 — 复用 LLM 评分逻辑。
      */
     private List<Map.Entry<RerankCandidate, Double>> scoreCandidatesGeneric(String query,
-                                                                             List<RerankCandidate> candidates) {
+                                                                             List<RerankCandidate> candidates,
+                                                                             @Nullable String modelName) {
         var scored = new ArrayList<Map.Entry<RerankCandidate, Double>>();
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             var futures = new ArrayList<CompletableFuture<Map.Entry<RerankCandidate, Double>>>();
             for (var candidate : candidates) {
                 futures.add(CompletableFuture.supplyAsync(() -> {
-                    double score = scoreCandidateGeneric(query, candidate);
+                    double score = scoreCandidateGeneric(query, candidate, modelName);
                     return Map.entry(candidate, score);
                 }, executor));
             }
@@ -111,13 +136,14 @@ public final class LlmReranker implements Reranker {
     /**
      * 评估单个通用候选项的相关性分数。
      */
-    private double scoreCandidateGeneric(String query, RerankCandidate candidate) {
+    private double scoreCandidateGeneric(String query, RerankCandidate candidate,
+                                          @Nullable String modelName) {
         var prompt = promptRegistry.render("knowledge/rerank-pointwise", Map.of(
                 "query", query,
                 "document", truncateContent(candidate.content(), 500)));
         try {
             ScoreResponse response = llmRouter.callEntity(
-                    LlmRequest.builder(SCENE, prompt).build(), ScoreResponse.class);
+                    LlmRequest.builder(SCENE, prompt).modelName(modelName).build(), ScoreResponse.class);
             if (response != null && response.score() != null) {
                 return Math.max(0.0, Math.min(1.0, response.score()));
             }
@@ -128,7 +154,8 @@ public final class LlmReranker implements Reranker {
         }
         // 降级到手动解析
         try {
-            var response = llmRouter.call(LlmRequest.builder(SCENE, prompt).build());
+            var response = llmRouter.call(
+                    LlmRequest.builder(SCENE, prompt).modelName(modelName).build());
             return Double.parseDouble(response.content().trim());
         } catch (LlmUnavailableException e) {
             throw e;
