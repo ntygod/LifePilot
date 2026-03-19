@@ -134,6 +134,13 @@ public class SkillFileWatcher {
             // 注册所有已存在的 Skill 子目录监听（SKILL.md 的 CREATE/MODIFY）
             registerExistingSubdirectories(skillsDir);
 
+            // 注册 auto/ 子目录监听（自生成 Skill 热加载）
+            Path autoDir = skillsDir.resolve("auto");
+            if (Files.exists(autoDir) && Files.isDirectory(autoDir)) {
+                registerWatch(autoDir);
+                registerExistingSubdirectories(autoDir);
+            }
+
             log.info("Skill 文件夹监听已启动: path={}", skillsDir);
 
             while (running) {
@@ -213,6 +220,12 @@ public class SkillFileWatcher {
         if (kind == StandardWatchEventKinds.ENTRY_CREATE) {
             // 新子目录创建 — 延迟检查（文件可能还在写入中）
             if (Files.isDirectory(fullPath)) {
+                // auto/ 目录创建时，注册其内部监听
+                if (fullPath.getFileName().toString().equals("auto")) {
+                    registerWatch(fullPath);
+                    registerExistingSubdirectories(fullPath);
+                    return;
+                }
                 handleNewSubdirectory(fullPath);
             }
         } else if (kind == StandardWatchEventKinds.ENTRY_DELETE) {
