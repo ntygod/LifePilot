@@ -38,6 +38,9 @@ public interface IterationCallback {
                          List<ToolCallback> toolCallbacks,
                          @Nullable TraceContext traceContext);
 
+    /** 回调是否已在 callLlm 内部记录 LLM Trace 步骤（流式回调返回 true，避免 coreLoop 重复记录）。 */
+    default boolean recordsLlmStep() { return false; }
+
     /** 获取本次调用的 Provider ID（用于 Trace 记录）。 */
     default String getProviderId() { return DEFAULT_MODEL_ID; }
 

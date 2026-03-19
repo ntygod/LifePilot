@@ -326,9 +326,11 @@ public class ReactAgentLoop implements CallbackHelper {
             String providerId = callback.getProviderId();
             String modelId = callback.getModelId();
 
-            // 记录 LLM 调用到 Trace（从 ChatResponse 提取真实 Token 用量和完成原因）
-            recordLlmStep(traceContext, state.stepCount(), iterationStart,
-                    iterationDuration, chatResponse, providerId, modelId);
+            // 记录 LLM 调用到 Trace — 流式回调已在内部记录，跳过避免重复
+            if (!callback.recordsLlmStep()) {
+                recordLlmStep(traceContext, state.stepCount(), iterationStart,
+                        iterationDuration, chatResponse, providerId, modelId);
+            }
 
             // 7. 判断是否有 tool call 请求
             if (assistantMessage.hasToolCalls()) {
