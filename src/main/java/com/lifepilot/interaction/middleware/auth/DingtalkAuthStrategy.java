@@ -1,6 +1,7 @@
 package com.lifepilot.interaction.middleware.auth;
 
 import com.lifepilot.interaction.channel.dingtalk.DingtalkSignatureVerifier;
+import com.lifepilot.interaction.config.ChannelConfigProvider;
 import com.lifepilot.interaction.config.GatewayProperties;
 import com.lifepilot.interaction.model.ChannelMetadata;
 import com.lifepilot.interaction.model.ChannelType;
@@ -20,10 +21,13 @@ public final class DingtalkAuthStrategy implements AuthStrategy {
 
     private final DingtalkSignatureVerifier signatureVerifier;
     private final GatewayProperties properties;
+    private final ChannelConfigProvider configProvider;
 
-    public DingtalkAuthStrategy(DingtalkSignatureVerifier signatureVerifier, GatewayProperties properties) {
+    public DingtalkAuthStrategy(DingtalkSignatureVerifier signatureVerifier, GatewayProperties properties,
+                                ChannelConfigProvider configProvider) {
         this.signatureVerifier = signatureVerifier;
         this.properties = properties;
+        this.configProvider = configProvider;
     }
 
     @Override
@@ -40,8 +44,8 @@ public final class DingtalkAuthStrategy implements AuthStrategy {
             return AuthResult.failure("时间戳过期");
         }
 
-        // HmacSHA256 签名验证
-        var appSecret = properties.channels().dingtalk().appSecret();
+        // HmacSHA256 签名验证（从 DB + yml 合并配置读取凭证）
+        var appSecret = configProvider.getDingtalkConfig().appSecret();
         boolean valid = signatureVerifier.verify(meta.sign(), meta.timestamp(), appSecret);
         if (!valid) {
             log.warn("钉钉签名验证失败: sign={}", maskSensitive(meta.sign()));

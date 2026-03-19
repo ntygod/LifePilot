@@ -4,7 +4,7 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.concurrent.locks.ReentrantLock;
 
-import com.lifepilot.interaction.config.GatewayProperties;
+import com.lifepilot.interaction.config.ChannelConfigProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.client.RestClient;
@@ -13,7 +13,7 @@ import org.springframework.web.client.RestClient;
  * 企业微信 API 客户端，负责 access_token 管理和消息主动推送。
  *
  * <p>access_token 缓存在内存中，过期前自动刷新。
- * 使用 Spring {@link RestClient} 发起 HTTP 请求。
+ * 凭证通过 {@link ChannelConfigProvider} 动态读取，支持运行时通过 Web UI 更新。
  *
  * @author zsg
  * @since 2026-02-26
@@ -24,17 +24,15 @@ public class WecomApiClient {
     private static final String BASE_URL = "https://qyapi.weixin.qq.com/cgi-bin";
     private static final long TOKEN_REFRESH_MARGIN_SECONDS = 300;
 
-    private final String corpId;
-    private final String secret;
+    private final ChannelConfigProvider configProvider;
     private final RestClient restClient;
     private final ReentrantLock tokenLock = new ReentrantLock();
 
     private volatile String accessToken;
     private volatile Instant tokenExpireAt = Instant.EPOCH;
 
-    public WecomApiClient(GatewayProperties.ChannelsProperties.WecomChannelProperties config, RestClient restClient) {
-        this.corpId = config.corpId();
-        this.secret = config.secret();
+    public WecomApiClient(ChannelConfigProvider configProvider, RestClient restClient) {
+        this.configProvider = configProvider;
         this.restClient = restClient;
     }
 
@@ -46,10 +44,11 @@ public class WecomApiClient {
      */
     public void sendText(String userId, String text) {
         var token = getAccessToken();
+        var config = configProvider.getWecomConfig();
         var body = Map.of(
                 "touser", userId,
                 "msgtype", "text",
-                "agentid", corpId,
+                "agentid", config.corpId(),
                 "text", Map.of("content", text)
         );
         doSend(token, body);
@@ -63,10 +62,11 @@ public class WecomApiClient {
      */
     public void sendMarkdown(String userId, String markdown) {
         var token = getAccessToken();
+        var config = configProvider.getWecomConfig();
         var body = Map.of(
                 "touser", userId,
                 "msgtype", "markdown",
-                "agentid", corpId,
+                "agentid", config.corpId(),
                 "markdown", Map.of("content", markdown)
         );
         doSend(token, body);
@@ -84,10 +84,11 @@ public class WecomApiClient {
     public void sendNews(String userId, String title, String description,
                          String url, String picurl) {
         var token = getAccessToken();
+        var config = configProvider.getWecomConfig();
         var body = Map.of(
                 "touser", userId,
                 "msgtype", "news",
-                "agentid", corpId,
+                "agentid", config.corpId(),
                 "news", Map.of("articles", java.util.List.of(
                         Map.of("title", title,
                                "description", description,
@@ -137,8 +138,15 @@ public class WecomApiClient {
     @SuppressWarnings("unchecked")
     private void refreshToken() {
         try {
+            // 动态读取凭证，支持运行时通过 Web UI 更新
+            var config = configProvider.getWecomConfig();
+            var currentCorpId = config.corpId();
+            var currentSecret = config.secret();
+            if (currentCorpId == null || currentCorpId.isBlank() || currentSecret == null || currentSecret.isBlank()) {
+                throw new RuntimeException("企微 corpId 或 secret 未配置");
+            }
             var response = restClient.get()
-                    .uri(BASE_URL + "/gettoken?corpid={corpId}&corpsecret={secret}", corpId, secret)
+                    .uri(BASE_URL + "/gettoken?corpid={corpId}&corpsecret={secret}", currentCorpId, currentSecret)
                     .retrieve()
                     .body(Map.class);
             if (response == null || response.get("access_token") == null) {

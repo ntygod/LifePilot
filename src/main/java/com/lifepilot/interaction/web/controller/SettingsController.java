@@ -448,18 +448,24 @@ public class SettingsController {
             if (entry.getValue() instanceof Map<?, ?> newChannelMap) {
                 Map<String, Object> newChannel = new HashMap<>((Map<String, Object>) newChannelMap);
                 Object existingObj = existing.get(channelKey);
-                if (existingObj instanceof Map<?, ?> existingChannel) {
-                    // 如果新值是 mask 值，保留原值
-                    for (String sensitiveField : SENSITIVE_CHANNEL_FIELDS) {
-                        Object newVal = newChannel.get(sensitiveField);
-                        if (newVal instanceof String s && isApiKeyMasked(s)) {
+
+                // 清理掩码值：无论 existing 是否存在，都不允许 ****... 值写入数据库
+                for (String sensitiveField : SENSITIVE_CHANNEL_FIELDS) {
+                    Object newVal = newChannel.get(sensitiveField);
+                    if (newVal instanceof String s && isApiKeyMasked(s)) {
+                        // 尝试从 existing 恢复原值
+                        if (existingObj instanceof Map<?, ?> existingChannel) {
                             Object originalVal = ((Map<String, Object>) existingChannel).get(sensitiveField);
-                            if (originalVal != null) {
+                            if (originalVal instanceof String orig && !isApiKeyMasked(orig)) {
                                 newChannel.put(sensitiveField, originalVal);
+                                continue;
                             }
                         }
+                        // existing 中也没有有效值，移除该字段（避免掩码值入库）
+                        newChannel.remove(sensitiveField);
                     }
                 }
+
                 existing.put(channelKey, newChannel);
             }
         }

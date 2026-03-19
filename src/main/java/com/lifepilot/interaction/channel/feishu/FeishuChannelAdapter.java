@@ -1,6 +1,8 @@
 package com.lifepilot.interaction.channel.feishu;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -9,6 +11,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.interaction.channel.AbstractChannelAdapter;
+import com.lifepilot.interaction.config.ChannelConfigProvider;
 import com.lifepilot.interaction.config.GatewayProperties;
 import com.lifepilot.interaction.gateway.MessageGateway;
 import com.lifepilot.interaction.model.ChannelMetadata;
@@ -38,8 +41,7 @@ public class FeishuChannelAdapter extends AbstractChannelAdapter {
     private final FeishuCrypto crypto;
     private final FeishuApiClient apiClient;
     private final FeishuMessageConverter converter;
-    private final String appId;
-    private final String verificationToken;
+    private final ChannelConfigProvider configProvider;
     private final int eventCacheMaxSize;
 
     /** 事件去重缓存：eventId → 处理时间戳 */
@@ -48,15 +50,14 @@ public class FeishuChannelAdapter extends AbstractChannelAdapter {
     public FeishuChannelAdapter(MessageGateway gateway, GatewayProperties properties,
                                 FeishuCrypto crypto, FeishuApiClient apiClient,
                                 FeishuMessageConverter converter,
-                                SharedScheduler sharedScheduler) {
+                                SharedScheduler sharedScheduler,
+                                ChannelConfigProvider configProvider) {
         super(gateway, properties, sharedScheduler);
         this.crypto = crypto;
         this.apiClient = apiClient;
         this.converter = converter;
-        var feishuConfig = properties.channels().feishu();
-        this.appId = feishuConfig.appId();
-        this.verificationToken = feishuConfig.verificationToken();
-        this.eventCacheMaxSize = feishuConfig.eventCacheMaxSize();
+        this.configProvider = configProvider;
+        this.eventCacheMaxSize = properties.channels().feishu().eventCacheMaxSize();
     }
 
     @Override
@@ -106,6 +107,8 @@ public class FeishuChannelAdapter extends AbstractChannelAdapter {
                 ? MessageContent.CommandMessage.parse(cleanText)
                 : new MessageContent.TextMessage(cleanText.isBlank() ? "[空消息]" : cleanText);
 
+        var currentConfig = configProvider.getFeishuConfig();
+        String currentAppId = currentConfig.appId();
         return GatewayMessage.builder()
                 .messageId(messageId.isEmpty() ? null : messageId)
                 .channelType(ChannelType.FEISHU)
@@ -113,7 +116,7 @@ public class FeishuChannelAdapter extends AbstractChannelAdapter {
                 .sessionId("feishu:" + chatId + ":" + senderId)
                 .content(messageContent)
                 .channelMetadata(new ChannelMetadata.FeishuMetadata(
-                        appId != null ? appId : "", tenantKey, messageId,
+                        currentAppId != null ? currentAppId : "", tenantKey, messageId,
                         chatId.isEmpty() ? null : chatId, chatType, eventId, eventType))
                 .timestamp(Instant.now())
                 .attachments(List.of())
@@ -134,9 +137,27 @@ public class FeishuChannelAdapter extends AbstractChannelAdapter {
      * @param jsonBody JSON 事件体
      * @return 飞书响应 JSON Map
      */
-    public Map<String, Object> handleEvent(String jsonBody) {
+    public Map<String, Object> handleEvent(byte[] rawBody) {
         try {
-            Map<String, Object> body = MAPPER.readValue(jsonBody, new TypeReference<>() {});
+            Map<String, Object> body;
+
+            // 先尝试作为 UTF-8 JSON 解析
+            String jsonBody = new String(rawBody, StandardCharsets.UTF_8);
+            try {
+                body = MAPPER.readValue(jsonBody, new TypeReference<>() {});
+            } catch (Exception parseEx) {
+                // JSON 解析失败 — 尝试作为加密数据解密
+                var currentCrypto = currentCrypto();
+                try {
+                    String base64 = Base64.getEncoder().encodeToString(rawBody);
+                    String decrypted = currentCrypto.decrypt(base64);
+                    body = MAPPER.readValue(decrypted, new TypeReference<>() {});
+                } catch (Exception decryptEx) {
+                    log.warn("飞书事件处理失败: JSON 解析和解密均失败, bodyLength={}, jsonError={}, decryptError={}",
+                            rawBody.length, parseEx.getMessage(), decryptEx.getMessage());
+                    return Map.of("code", 0);
+                }
+            }
 
             // Challenge 验证
             if (body.containsKey("challenge")) {
@@ -145,11 +166,17 @@ public class FeishuChannelAdapter extends AbstractChannelAdapter {
                 return Map.of("challenge", challenge);
             }
 
-            // 加密事件解密
+            // 加密事件解密 — JSON 包裹的 {"encrypt": "..."} 格式
             if (body.containsKey("encrypt")) {
                 String encrypted = body.get("encrypt").toString();
-                String decrypted = crypto.decrypt(encrypted);
-                body = MAPPER.readValue(decrypted, new TypeReference<>() {});
+                var currentCrypto = currentCrypto();
+                try {
+                    String decrypted = currentCrypto.decrypt(encrypted);
+                    body = MAPPER.readValue(decrypted, new TypeReference<>() {});
+                } catch (Exception decryptEx) {
+                    log.warn("飞书加密事件解密失败: encryptedLength={}, error={}", encrypted.length(), decryptEx.getMessage());
+                    return Map.of("code", 0);
+                }
 
                 // 解密后可能是 Challenge
                 if (body.containsKey("challenge")) {
@@ -267,6 +294,28 @@ public class FeishuChannelAdapter extends AbstractChannelAdapter {
             enrichedMetadata.put("feishuOpenId", message.userId());
         }
         return response.toBuilder().metadata(enrichedMetadata).build();
+    }
+
+    // ── 运行时配置 ──────────────────────────────────────────
+
+    /**
+     * 获取使用当前 encryptKey 的 FeishuCrypto 实例（支持热加载）。
+     *
+     * <p>每次调用从 {@link ChannelConfigProvider} 读取最新 encryptKey，
+     * 如果与启动时注入的 crypto 一致则复用，否则创建新实例。
+     */
+    private FeishuCrypto currentCrypto() {
+        var config = configProvider.getFeishuConfig();
+        String encryptKey = config.encryptKey();
+        if (encryptKey != null && !encryptKey.isBlank()) {
+            // 检查是否为 mask 值（前端返回的 ****... 被误存入数据库）
+            if (encryptKey.startsWith("****")) {
+                return crypto;
+            }
+            return new FeishuCrypto(encryptKey);
+        }
+        // fallback 到启动时注入的 crypto
+        return crypto;
     }
 
     // ── 事件去重 ──────────────────────────────────────────────

@@ -69,7 +69,7 @@ public class ChannelAdapterAutoConfiguration {
 
     @Bean
     public WecomApiClient wecomApiClient(ChannelConfigProvider configProvider) {
-        return new WecomApiClient(configProvider.getWecomConfig(), RestClient.create());
+        return new WecomApiClient(configProvider, RestClient.create());
     }
 
     @Bean
@@ -87,8 +87,9 @@ public class ChannelAdapterAutoConfiguration {
     }
 
     @Bean
-    public WecomAuthStrategy wecomAuthStrategy(WecomSignatureVerifier verifier, GatewayProperties properties) {
-        return new WecomAuthStrategy(verifier, properties);
+    public WecomAuthStrategy wecomAuthStrategy(WecomSignatureVerifier verifier, GatewayProperties properties,
+                                               ChannelConfigProvider configProvider) {
+        return new WecomAuthStrategy(verifier, properties, configProvider);
     }
 
     // ── 钉钉通道 ──────────────────────────────────────────────
@@ -100,7 +101,7 @@ public class ChannelAdapterAutoConfiguration {
 
     @Bean
     public DingtalkApiClient dingtalkApiClient(ChannelConfigProvider configProvider) {
-        return new DingtalkApiClient(configProvider.getDingtalkConfig(), RestClient.create());
+        return new DingtalkApiClient(configProvider, RestClient.create());
     }
 
     @Bean
@@ -120,8 +121,9 @@ public class ChannelAdapterAutoConfiguration {
 
     @Bean
     public DingtalkAuthStrategy dingtalkAuthStrategy(DingtalkSignatureVerifier verifier,
-                                                     GatewayProperties properties) {
-        return new DingtalkAuthStrategy(verifier, properties);
+                                                     GatewayProperties properties,
+                                                     ChannelConfigProvider configProvider) {
+        return new DingtalkAuthStrategy(verifier, properties, configProvider);
     }
 
     // ── 飞书通道 ──────────────────────────────────────────────
@@ -138,7 +140,7 @@ public class ChannelAdapterAutoConfiguration {
 
     @Bean
     public FeishuApiClient feishuApiClient(ChannelConfigProvider configProvider) {
-        return new FeishuApiClient(configProvider.getFeishuConfig(), RestClient.create());
+        return new FeishuApiClient(configProvider, RestClient.create());
     }
 
     @Bean
@@ -150,14 +152,15 @@ public class ChannelAdapterAutoConfiguration {
     public FeishuChannelAdapter feishuChannelAdapter(@Lazy MessageGateway gateway, GatewayProperties properties,
                                                      FeishuCrypto crypto, FeishuApiClient apiClient,
                                                      FeishuMessageConverter converter,
-                                                     SharedScheduler sharedScheduler) {
+                                                     SharedScheduler sharedScheduler,
+                                                     ChannelConfigProvider configProvider) {
         log.info("注册 FeishuChannelAdapter");
-        return new FeishuChannelAdapter(gateway, properties, crypto, apiClient, converter, sharedScheduler);
+        return new FeishuChannelAdapter(gateway, properties, crypto, apiClient, converter, sharedScheduler, configProvider);
     }
 
     @Bean
-    public FeishuAuthStrategy feishuAuthStrategy(GatewayProperties properties) {
-        return new FeishuAuthStrategy(properties);
+    public FeishuAuthStrategy feishuAuthStrategy(ChannelConfigProvider configProvider) {
+        return new FeishuAuthStrategy(configProvider);
     }
 
     // ── 重试调度器 ──────────────────────────────────────────

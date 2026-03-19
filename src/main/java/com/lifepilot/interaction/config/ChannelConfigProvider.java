@@ -49,9 +49,9 @@ public class ChannelConfigProvider {
         return new GatewayProperties.ChannelsProperties.FeishuChannelProperties(
                 getBool(dbConfig, "enabled", ymlConfig.enabled()),
                 getStr(dbConfig, "appId", ymlConfig.appId()),
-                getStr(dbConfig, "appSecret", ymlConfig.appSecret()),
-                getStr(dbConfig, "verificationToken", ymlConfig.verificationToken()),
-                getStr(dbConfig, "encryptKey", ymlConfig.encryptKey()),
+                getStrSensitive(dbConfig, "appSecret", ymlConfig.appSecret()),
+                getStrSensitive(dbConfig, "verificationToken", ymlConfig.verificationToken()),
+                getStrSensitive(dbConfig, "encryptKey", ymlConfig.encryptKey()),
                 getInt(dbConfig, "eventCacheMaxSize", ymlConfig.eventCacheMaxSize())
         );
     }
@@ -69,9 +69,9 @@ public class ChannelConfigProvider {
                 getBool(dbConfig, "enabled", ymlConfig.enabled()),
                 getStr(dbConfig, "corpId", ymlConfig.corpId()),
                 getStr(dbConfig, "agentId", ymlConfig.agentId()),
-                getStr(dbConfig, "secret", ymlConfig.secret()),
-                getStr(dbConfig, "token", ymlConfig.token()),
-                getStr(dbConfig, "encodingAesKey", ymlConfig.encodingAesKey())
+                getStrSensitive(dbConfig, "secret", ymlConfig.secret()),
+                getStrSensitive(dbConfig, "token", ymlConfig.token()),
+                getStrSensitive(dbConfig, "encodingAesKey", ymlConfig.encodingAesKey())
         );
     }
 
@@ -87,7 +87,7 @@ public class ChannelConfigProvider {
         return new GatewayProperties.ChannelsProperties.DingtalkChannelProperties(
                 getBool(dbConfig, "enabled", ymlConfig.enabled()),
                 getStr(dbConfig, "appKey", ymlConfig.appKey()),
-                getStr(dbConfig, "appSecret", ymlConfig.appSecret()),
+                getStrSensitive(dbConfig, "appSecret", ymlConfig.appSecret()),
                 getStr(dbConfig, "robotCode", ymlConfig.robotCode())
         );
     }
@@ -125,6 +125,24 @@ public class ChannelConfigProvider {
     private static String getStr(Map<String, Object> map, String key, @Nullable String defaultVal) {
         Object v = map.get(key);
         if (v instanceof String s && !s.isBlank()) return s;
+        return defaultVal;
+    }
+
+    /**
+     * 读取敏感字段值，如果是掩码值（****开头）则 fallback 到 yml 默认值。
+     *
+     * <p>防止前端返回的掩码值被误用为真实凭证。
+     */
+    @Nullable
+    private String getStrSensitive(Map<String, Object> map, String key, @Nullable String defaultVal) {
+        Object v = map.get(key);
+        if (v instanceof String s && !s.isBlank()) {
+            if (s.startsWith("****")) {
+                log.debug("数据库中渠道配置字段 {} 为掩码值，fallback 到 yml 默认值", key);
+                return defaultVal;
+            }
+            return s;
+        }
         return defaultVal;
     }
 

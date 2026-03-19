@@ -108,15 +108,17 @@ public class WebhookController {
 
     /**
      * 飞书事件接收（POST）。
+     *
+     * <p>接收原始字节以避免 CharacterEncodingFilter 在加密场景下损坏二进制数据。
      */
     @PostMapping("/feishu")
-    public Map<String, Object> feishuEvent(@RequestBody String jsonBody) {
+    public Map<String, Object> feishuEvent(@RequestBody byte[] rawBody) {
         if (!configProvider.getFeishuConfig().enabled()) {
             log.debug("飞书通道未启用，忽略事件请求");
             return Map.of("code", 0);
         }
         try {
-            return feishuAdapter.handleEvent(jsonBody);
+            return feishuAdapter.handleEvent(rawBody);
         } catch (Exception e) {
             log.error("飞书事件处理异常", e);
             return Map.of("code", 0);

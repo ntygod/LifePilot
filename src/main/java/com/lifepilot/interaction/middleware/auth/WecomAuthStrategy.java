@@ -1,6 +1,7 @@
 package com.lifepilot.interaction.middleware.auth;
 
 import com.lifepilot.interaction.channel.wecom.WecomSignatureVerifier;
+import com.lifepilot.interaction.config.ChannelConfigProvider;
 import com.lifepilot.interaction.config.GatewayProperties;
 import com.lifepilot.interaction.model.ChannelMetadata;
 import com.lifepilot.interaction.model.ChannelType;
@@ -20,10 +21,13 @@ public final class WecomAuthStrategy implements AuthStrategy {
 
     private final WecomSignatureVerifier signatureVerifier;
     private final GatewayProperties properties;
+    private final ChannelConfigProvider configProvider;
 
-    public WecomAuthStrategy(WecomSignatureVerifier signatureVerifier, GatewayProperties properties) {
+    public WecomAuthStrategy(WecomSignatureVerifier signatureVerifier, GatewayProperties properties,
+                             ChannelConfigProvider configProvider) {
         this.signatureVerifier = signatureVerifier;
         this.properties = properties;
+        this.configProvider = configProvider;
     }
 
     @Override

@@ -1,8 +1,10 @@
 package com.lifepilot.interaction.channel.feishu;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.interaction.config.ChannelConfigProvider;
 import com.lifepilot.interaction.config.GatewayProperties;
 import com.lifepilot.interaction.gateway.MessageGateway;
 import com.lifepilot.interaction.model.ChannelType;
@@ -33,6 +35,7 @@ class FeishuChannelAdapter_单元测试 {
 
     @Mock private MessageGateway gateway;
     @Mock private FeishuApiClient apiClient;
+    @Mock private ChannelConfigProvider configProvider;
 
     private FeishuCrypto crypto;
     private FeishuMessageConverter converter;
@@ -47,7 +50,13 @@ class FeishuChannelAdapter_单元测试 {
         crypto = new FeishuCrypto(ENCRYPT_KEY);
         converter = new FeishuMessageConverter();
         var properties = buildProperties();
-        adapter = new FeishuChannelAdapter(gateway, properties, crypto, apiClient, converter, mock(SharedScheduler.class));
+
+        // 配置 configProvider 返回飞书配置
+        var feishuConfig = properties.channels().feishu();
+        lenient().when(configProvider.getFeishuConfig()).thenReturn(feishuConfig);
+
+        adapter = new FeishuChannelAdapter(gateway, properties, crypto, apiClient, converter,
+                mock(SharedScheduler.class), configProvider);
     }
 
     // ── channelType ──────────────────────────────────────────
@@ -67,7 +76,7 @@ class FeishuChannelAdapter_单元测试 {
                 "type", "url_verification"
         ));
 
-        var result = adapter.handleEvent(json);
+        var result = adapter.handleEvent(json.getBytes(StandardCharsets.UTF_8));
         assertThat(result).containsEntry("challenge", "test-challenge-value");
         verify(gateway, never()).process(any());
     }
@@ -83,7 +92,7 @@ class FeishuChannelAdapter_单元测试 {
         String encrypted = crypto.encrypt(challengeJson);
         String json = MAPPER.writeValueAsString(Map.of("encrypt", encrypted));
 
-        var result = adapter.handleEvent(json);
+        var result = adapter.handleEvent(json.getBytes(StandardCharsets.UTF_8));
         assertThat(result).containsEntry("challenge", "encrypted-challenge");
         verify(gateway, never()).process(any());
     }
@@ -97,7 +106,7 @@ class FeishuChannelAdapter_单元测试 {
         when(gateway.process(any())).thenReturn(
                 GatewayResponse.success(ChannelType.FEISHU, new ResponseContent.TextContent("回复")));
 
-        var result = adapter.handleEvent(json);
+        var result = adapter.handleEvent(json.getBytes(StandardCharsets.UTF_8));
         assertThat(result).containsEntry("code", 0);
 
         // 等待异步线程
@@ -114,7 +123,7 @@ class FeishuChannelAdapter_单元测试 {
         when(gateway.process(any())).thenReturn(
                 GatewayResponse.success(ChannelType.FEISHU, new ResponseContent.TextContent("回复")));
 
-        var result = adapter.handleEvent(json);
+        var result = adapter.handleEvent(json.getBytes(StandardCharsets.UTF_8));
         assertThat(result).containsEntry("code", 0);
 
         Thread.sleep(500);
@@ -131,11 +140,11 @@ class FeishuChannelAdapter_单元测试 {
                 GatewayResponse.success(ChannelType.FEISHU, new ResponseContent.TextContent("ok")));
 
         // 第一次处理
-        adapter.handleEvent(json);
+        adapter.handleEvent(json.getBytes(StandardCharsets.UTF_8));
         Thread.sleep(300);
 
         // 第二次相同 eventId
-        adapter.handleEvent(json);
+        adapter.handleEvent(json.getBytes(StandardCharsets.UTF_8));
         Thread.sleep(300);
 
         // Gateway 只应被调用一次
@@ -192,7 +201,7 @@ class FeishuChannelAdapter_单元测试 {
 
     @Test
     void handleEvent_非法JSON_返回code0() {
-        var result = adapter.handleEvent("not-valid-json");
+        var result = adapter.handleEvent("not-valid-json".getBytes(StandardCharsets.UTF_8));
         assertThat(result).containsEntry("code", 0);
         verify(gateway, never()).process(any());
     }

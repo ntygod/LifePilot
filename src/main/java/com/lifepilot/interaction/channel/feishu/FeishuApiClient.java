@@ -4,7 +4,7 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.concurrent.locks.ReentrantLock;
 
-import com.lifepilot.interaction.config.GatewayProperties;
+import com.lifepilot.interaction.config.ChannelConfigProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.client.RestClient;
@@ -13,7 +13,7 @@ import org.springframework.web.client.RestClient;
  * 飞书 API 客户端，负责 tenant_access_token 管理和消息主动推送。
  *
  * <p>使用飞书开放平台 API，tenant_access_token 缓存在内存中，过期前自动刷新。
- * 使用 Spring {@link RestClient} 发起 HTTP 请求。
+ * 凭证通过 {@link ChannelConfigProvider} 动态读取，支持运行时通过 Web UI 更新。
  *
  * @author zsg
  * @since 2026-02-26
@@ -24,18 +24,15 @@ public class FeishuApiClient {
     private static final String BASE_URL = "https://open.feishu.cn/open-apis";
     private static final long TOKEN_REFRESH_MARGIN_SECONDS = 300;
 
-    private final String appId;
-    private final String appSecret;
+    private final ChannelConfigProvider configProvider;
     private final RestClient restClient;
     private final ReentrantLock tokenLock = new ReentrantLock();
 
     private volatile String tenantAccessToken;
     private volatile Instant tokenExpireAt = Instant.EPOCH;
 
-    public FeishuApiClient(GatewayProperties.ChannelsProperties.FeishuChannelProperties config,
-                           RestClient restClient) {
-        this.appId = config.appId();
-        this.appSecret = config.appSecret();
+    public FeishuApiClient(ChannelConfigProvider configProvider, RestClient restClient) {
+        this.configProvider = configProvider;
         this.restClient = restClient;
     }
 
@@ -147,7 +144,14 @@ public class FeishuApiClient {
     @SuppressWarnings("unchecked")
     private void refreshToken() {
         try {
-            var body = Map.of("app_id", appId, "app_secret", appSecret);
+            // 动态读取凭证，支持运行时通过 Web UI 更新
+            var config = configProvider.getFeishuConfig();
+            var currentAppId = config.appId();
+            var currentAppSecret = config.appSecret();
+            if (currentAppId == null || currentAppId.isBlank() || currentAppSecret == null || currentAppSecret.isBlank()) {
+                throw new RuntimeException("飞书 appId 或 appSecret 未配置");
+            }
+            var body = Map.of("app_id", currentAppId, "app_secret", currentAppSecret);
             var response = restClient.post()
                     .uri(BASE_URL + "/auth/v3/tenant_access_token/internal")
                     .body(body)
