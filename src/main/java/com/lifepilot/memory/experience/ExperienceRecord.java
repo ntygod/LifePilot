@@ -15,6 +15,8 @@ public record ExperienceRecord(
         List<String> applicableConditions,
         List<String> toolsUsed,
         boolean success,
+        /** 失败归因：strategy（策略问题）或 system（系统问题），成功时为 null。 */
+        @org.springframework.lang.Nullable String failureAttribution,
         /** 累计效果评分。 */
         float effectivenessScore,
         /** 被注入到上下文的总次数。 */

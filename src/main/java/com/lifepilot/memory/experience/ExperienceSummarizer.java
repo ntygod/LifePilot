@@ -90,6 +90,13 @@ public class ExperienceSummarizer {
             return null;
         }
 
+        // 5.5 系统归因过滤：系统 bug 导致的失败不写入经验，避免错误经验污染
+        if ("system".equals(record.failureAttribution())) {
+            log.info("经验提炼: 跳过系统归因经验, sessionId={}, scenario={}",
+                    state.sessionId(), record.scenario());
+            return null;
+        }
+
         // 6. 存储写入
         var entity = persistExperience(record, state.sessionId(), report.taskSuccess(), state);
         if (entity != null) {
@@ -132,6 +139,7 @@ public class ExperienceSummarizer {
                         appendEvalTags(List.of(), scenario.tags()),
                         List.of(),
                         success,
+                        null,
                         0.0f,
                         0,
                         0,
