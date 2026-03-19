@@ -13,11 +13,6 @@ import com.lifepilot.datastore.model.QueryRequest;
 import com.lifepilot.datastore.model.SortDirection;
 import com.lifepilot.datastore.model.TimeGranularity;
 import com.lifepilot.observability.guardrail.RiskLevel;
-import com.lifepilot.prompt.PromptRegistry;
-import com.lifepilot.skill.builtin.BuiltinSkill;
-import com.lifepilot.skill.builtin.BuiltinSkillProvider;
-import com.lifepilot.skill.model.SkillDefinition;
-import com.lifepilot.skill.model.SkillSource;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.model.ToolCategory;
 import com.lifepilot.tool.model.ToolResult;
@@ -41,43 +36,22 @@ import java.util.Map;
  * @author zsg
  * @since 2026-03-10
  */
-@BuiltinSkill(id = "datastore", order = 5)
-public class StorageToolProvider implements BuiltinSkillProvider {
+public class StorageToolProvider {
 
     private static final Logger log = LoggerFactory.getLogger(StorageToolProvider.class);
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final DataStoreManager dataStoreManager;
-    private final PromptRegistry promptRegistry;
 
-    public StorageToolProvider(DataStoreManager dataStoreManager, PromptRegistry promptRegistry) {
+    public StorageToolProvider(DataStoreManager dataStoreManager) {
         this.dataStoreManager = dataStoreManager;
-        this.promptRegistry = promptRegistry;
     }
 
-    @Override
-    public SkillDefinition provide() {
-        return SkillDefinition.builder()
-                .id("datastore")
-                .name("数据存储")
-                .description("通用数据存储管理，支持集合创建、文档 CRUD、动态查询、全文搜索和时序聚合")
-                .version("1.0.0")
-                .source(new SkillSource.Builtin())
-                .instructions(promptRegistry.render("skill/datastore"))
-                .suggestedTools(List.of(
-                        "builtin.datastore.create_collection",
-                        "builtin.datastore.list_collections",
-                        "builtin.datastore.add_document",
-                        "builtin.datastore.query_documents",
-                        "builtin.datastore.update_document",
-                        "builtin.datastore.delete_document",
-                        "builtin.datastore.aggregate"
-                ))
-                .metadata(Map.of())
-                .build();
-    }
-
-    @Override
+    /**
+     * 注册数据存储工具到 DynamicToolRegistry。
+     *
+     * @param toolRegistry 动态工具注册中心
+     */
     public void registerTools(DynamicToolRegistry toolRegistry) {
         toolRegistry.registerBuiltinTool(buildCreateCollectionTool());
         toolRegistry.registerBuiltinTool(buildListCollectionsTool());

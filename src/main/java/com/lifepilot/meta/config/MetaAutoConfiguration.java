@@ -24,7 +24,6 @@ import com.lifepilot.meta.infra.interaction.CliInteractionHandler;
 import com.lifepilot.meta.infra.interaction.InteractionBridge;
 import com.lifepilot.multiagent.registry.AgentRegistry;
 import com.lifepilot.notification.NotificationService;
-import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.sandbox.booter.SandboxBooter;
 import com.lifepilot.sandbox.repository.SandboxRepository;
 import com.lifepilot.sandbox.validator.CodeValidator;
@@ -153,12 +152,11 @@ public class MetaAutoConfiguration {
     /**
      * 注册存储工具提供者 — 注册 7 个数据存储 CRUD 工具。
      *
-     * <p>依赖 DataStoreManager（来自 datastore 模块）和 PromptRegistry。</p>
+     * <p>依赖 DataStoreManager（来自 datastore 模块）。</p>
      */
     @Bean
-    StorageToolProvider storageToolProvider(DataStoreManager dataStoreManager,
-                                           PromptRegistry promptRegistry) {
-        return new StorageToolProvider(dataStoreManager, promptRegistry);
+    StorageToolProvider storageToolProvider(DataStoreManager dataStoreManager) {
+        return new StorageToolProvider(dataStoreManager);
     }
 
     /**
