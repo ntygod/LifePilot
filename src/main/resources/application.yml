@@ -305,16 +305,7 @@ lifepilot:
     directory: "${user.home}/.zhiwei/skills"
     hot-reload-debounce-ms: 500
     skill-filename: SKILL.md
-    builtin:
-      todo:
-        enabled: true
-      schedule:
-        enabled: true
-      habit:
-        enabled: true
-    todo:
-      due-notification-enabled: true
-      due-check-interval-seconds: 600
+    builtin: {}
     auto-generation:
       enabled: true
       gap-threshold: 0.6
@@ -461,9 +452,6 @@ lifepilot:
           timeout-minutes: 30
     router:
       fast-path-commands:
-        - todo
-        - schedule
-        - habit
         - llm
         - mcp
         - skill
