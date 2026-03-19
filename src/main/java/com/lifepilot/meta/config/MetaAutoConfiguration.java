@@ -13,7 +13,7 @@ import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.meta.convenience.CapabilityAggregator;
-import com.lifepilot.meta.convenience.IntrospectionSkillProvider;
+import com.lifepilot.meta.convenience.IntrospectionToolProvider;
 import com.lifepilot.meta.convenience.SkillDiscoveryRegistrar;
 import com.lifepilot.meta.infra.InfraToolProvider;
 import com.lifepilot.meta.infra.memory.MemoryToolProvider;
@@ -47,7 +47,7 @@ import org.springframework.web.client.RestClient;
  * 元能力系统 Spring Boot 自动配置。
  *
  * <p>注册元能力模块所有核心 Bean：InfraToolProvider、BrowserSessionManager、
- * InteractionBridge、CapabilityAggregator、IntrospectionSkillProvider、
+ * InteractionBridge、CapabilityAggregator、IntrospectionToolProvider、
  * SkillDiscoveryRegistrar。</p>
  *
  * @author zsg
@@ -118,20 +118,20 @@ public class MetaAutoConfiguration {
     }
 
     /**
-     * 注册系统自省 Skill 提供者 — 注册 5 个自省工具。
+     * 注册系统自省工具提供者 — 注册 5 个自省工具。
      *
      * <p>WorkflowRepository 和 McpServerRegistry 为可选依赖，
      * 用于 system.runtime 工具查询运行时动态信息。</p>
      */
     @Bean
-    IntrospectionSkillProvider introspectionSkillProvider(CapabilityAggregator aggregator,
+    IntrospectionToolProvider introspectionToolProvider(CapabilityAggregator aggregator,
                                                           SkillRegistry skillRegistry,
                                                           AgentRegistry agentRegistry,
                                                           DynamicToolRegistry toolRegistry,
                                                           WorkflowRegistry workflowRegistry,
                                                           @Nullable WorkflowRepository workflowRepository,
                                                           @Nullable McpServerRegistry mcpServerRegistry) {
-        return new IntrospectionSkillProvider(aggregator, skillRegistry,
+        return new IntrospectionToolProvider(aggregator, skillRegistry,
                 agentRegistry, toolRegistry, workflowRegistry,
                 workflowRepository, mcpServerRegistry);
     }
