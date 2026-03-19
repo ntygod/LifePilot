@@ -764,12 +764,17 @@ public class ReactAgentLoop implements CallbackHelper {
                 outputTokens = (int) usage.getCompletionTokens();
             }
 
-            // 兜底估算：当 Provider 未返回 usage 时，基于响应文本估算 outputTokens
-            if (inputTokens == 0 && outputTokens == 0) {
-                String responseText = chatResponse.getResult().getOutput().getText();
-                if (responseText != null && !responseText.isEmpty()) {
-                    outputTokens = estimateTextTokens(responseText);
-                }
+            // 兜底估算：当 Provider 未返回 usage 时，基于响应文本估算
+            String responseText = chatResponse.getResult().getOutput().getText();
+            // outputTokens 兜底：基于响应文本估算
+            if (outputTokens == 0 && responseText != null && !responseText.isEmpty()) {
+                outputTokens = estimateTextTokens(responseText);
+            }
+            // inputTokens 兜底：Provider 未返回 promptTokens 时按经验比例估算
+            if (inputTokens == 0 && outputTokens > 0) {
+                inputTokens = outputTokens * 4;
+                log.debug("Token 兜底估算: inputTokens={} (基于 outputTokens={} × 4)",
+                        inputTokens, outputTokens);
             }
 
             // 从 Generation 元数据提取完成原因
@@ -976,11 +981,19 @@ public class ReactAgentLoop implements CallbackHelper {
                 outputTokens = error != null ? 0 : (int) usage.getCompletionTokens();
             }
 
-            // 兜底估算：当 Provider 未返回 usage 时，基于响应文本估算 outputTokens
-            if (inputTokens == 0 && outputTokens == 0 && error == null) {
+            // 兜底估算：当 Provider 未返回 usage 时，基于响应文本估算
+            if (error == null) {
                 String responseText = chatResponse.getResult().getOutput().getText();
-                if (responseText != null && !responseText.isEmpty()) {
+                // outputTokens 兜底：基于响应文本估算
+                if (outputTokens == 0 && responseText != null && !responseText.isEmpty()) {
                     outputTokens = estimateTextTokens(responseText);
+                }
+                // inputTokens 兜底：流式调用中 Provider 经常不返回 promptTokens，
+                // 基于 outputTokens 按经验比例估算（输入通常是输出的 3-5 倍）
+                if (inputTokens == 0 && outputTokens > 0) {
+                    inputTokens = outputTokens * 4;
+                    log.debug("Token 兜底估算: inputTokens={} (基于 outputTokens={} × 4)",
+                            inputTokens, outputTokens);
                 }
             }
         }

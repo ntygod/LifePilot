@@ -19,6 +19,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.*;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
+import org.springframework.ai.chat.metadata.ChatResponseMetadata;
+import org.springframework.ai.chat.metadata.DefaultUsage;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.model.tool.DefaultToolCallingChatOptions;
 import org.springframework.ai.tool.ToolCallback;
@@ -239,6 +241,9 @@ public class StreamingCallback implements IterationCallback {
         var toolCallCollector = new ArrayList<AssistantMessage.ToolCall>();
         final ChatResponse[] lastChunk = {null};
         final Instant[] firstTokenTime = {null};
+        // 累加流式 chunk 中的 Token 用量（部分 Provider 仅在最后一个 chunk 返回完整 usage）
+        final long[] accumulatedPromptTokens = {0};
+        final long[] accumulatedCompletionTokens = {0};
 
         Flux<ChatResponse> flux = chatModelInfo.chatModel().stream(prompt);
 
@@ -249,6 +254,15 @@ public class StreamingCallback implements IterationCallback {
                 try {
                     lastChunk[0] = chunk;
                     var output = chunk.getResult().getOutput();
+
+                    // 累加每个 chunk 的 usage（取最大值，兼容增量和累计两种模式）
+                    var chunkUsage = chunk.getMetadata().getUsage();
+                    if (chunkUsage != null) {
+                        accumulatedPromptTokens[0] = Math.max(accumulatedPromptTokens[0],
+                                chunkUsage.getPromptTokens());
+                        accumulatedCompletionTokens[0] = Math.max(accumulatedCompletionTokens[0],
+                                chunkUsage.getCompletionTokens());
+                    }
 
                     String text = output.getText();
                     if (text != null && !text.isEmpty()) {
@@ -311,13 +325,16 @@ public class StreamingCallback implements IterationCallback {
         // tool call 事件已由 pushReactStepEvent 自动推送
 
         ChatResponse chatResponse = buildChatResponseFromStream(
-                collectedContent, toolCallCollector, lastChunk[0]);
+                collectedContent, toolCallCollector, lastChunk[0],
+                accumulatedPromptTokens[0], accumulatedCompletionTokens[0]);
 
         long ttftMs = firstTokenTime[0] != null
                 ? Duration.between(callStart, firstTokenTime[0]).toMillis() : -1;
         long totalMs = Duration.between(callStart, callEnd).toMillis();
-        log.info("流式调用完成: scene={}, provider={}, model={}, ttft={}ms, total={}ms",
-                scene2, chatModelInfo.providerId(), chatModelInfo.modelId(), ttftMs, totalMs);
+        log.info("流式调用完成: scene={}, provider={}, model={}, ttft={}ms, total={}ms, " +
+                        "promptTokens={}, completionTokens={}",
+                scene2, chatModelInfo.providerId(), chatModelInfo.modelId(), ttftMs, totalMs,
+                accumulatedPromptTokens[0], accumulatedCompletionTokens[0]);
 
         helper.recordStreamingLlmStep(traceContext, callStart, providerId, modelId,
                 scene2, chatResponse, null);
@@ -328,15 +345,22 @@ public class StreamingCallback implements IterationCallback {
     /**
      * 从流式收集的数据构造 ChatResponse。
      *
-     * @param collectedContent 流式收集的完整文本内容
-     * @param toolCalls        流式收集的 tool call 列表（可能为空）
-     * @param lastChunk        最后一个流式 chunk（携带 metadata/usage，可空）
+     * <p>优先使用流式遍历中累加的 Token 用量（更准确），
+     * 当累加值为 0 时回退到 lastChunk 的 metadata。</p>
+     *
+     * @param collectedContent          流式收集的完整文本内容
+     * @param toolCalls                 流式收集的 tool call 列表（可能为空）
+     * @param lastChunk                 最后一个流式 chunk（携带 metadata/usage，可空）
+     * @param accumulatedPromptTokens   累加的 prompt token 数
+     * @param accumulatedCompletionTokens 累加的 completion token 数
      * @return 构造好的 ChatResponse
      */
     private ChatResponse buildChatResponseFromStream(
             String collectedContent,
             List<AssistantMessage.ToolCall> toolCalls,
-            @Nullable ChatResponse lastChunk) {
+            @Nullable ChatResponse lastChunk,
+            long accumulatedPromptTokens,
+            long accumulatedCompletionTokens) {
         AssistantMessage assistantMessage;
         if (!toolCalls.isEmpty()) {
             assistantMessage = AssistantMessage.builder()
@@ -347,8 +371,31 @@ public class StreamingCallback implements IterationCallback {
             assistantMessage = new AssistantMessage(collectedContent);
         }
         var generation = new Generation(assistantMessage);
+
+        // 合并 lastChunk metadata 与累加 usage，取较大值
         if (lastChunk != null) {
-            return new ChatResponse(List.of(generation), lastChunk.getMetadata());
+            var baseMeta = lastChunk.getMetadata();
+            var baseUsage = baseMeta.getUsage();
+            long finalPrompt = accumulatedPromptTokens;
+            long finalCompletion = accumulatedCompletionTokens;
+            if (baseUsage != null) {
+                finalPrompt = Math.max(finalPrompt, baseUsage.getPromptTokens());
+                finalCompletion = Math.max(finalCompletion, baseUsage.getCompletionTokens());
+            }
+            // 如果累加 usage 比 lastChunk 更完整，构建新的带 usage 的 metadata
+            if (finalPrompt > 0 || finalCompletion > 0) {
+                var usage = new DefaultUsage((int) finalPrompt, (int) finalCompletion);
+                return new ChatResponse(List.of(generation),
+                        ChatResponseMetadata.builder().usage(usage).build());
+            }
+            return new ChatResponse(List.of(generation), baseMeta);
+        }
+        // 无 lastChunk 但有累加 usage 时
+        if (accumulatedPromptTokens > 0 || accumulatedCompletionTokens > 0) {
+            var usage = new DefaultUsage(
+                    (int) accumulatedPromptTokens, (int) accumulatedCompletionTokens);
+            return new ChatResponse(List.of(generation),
+                    ChatResponseMetadata.builder().usage(usage).build());
         }
         return new ChatResponse(List.of(generation));
     }
