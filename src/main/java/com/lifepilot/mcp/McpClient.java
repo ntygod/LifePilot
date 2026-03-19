@@ -63,6 +63,7 @@ public class McpClient {
     /**
      * 根据配置创建对应的传输实例。
      */
+    @SuppressWarnings("deprecation") // SseTransport 保留用于兼容旧版 MCP Server
     private static McpTransport createTransport(McpServerConfig config) {
         return switch (config.transport()) {
             case STDIO -> new StdioTransport(config);
