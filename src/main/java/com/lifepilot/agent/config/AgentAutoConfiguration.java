@@ -70,14 +70,16 @@ public class AgentAutoConfiguration {
                                              @Autowired(required = false) PassiveNotificationQueue passiveNotificationQueue,
                                              @Autowired(required = false) com.lifepilot.memory.config.MemoryProperties memoryProperties,
                                              @Autowired(required = false) com.lifepilot.memory.procedural.ProceduralMemory proceduralMemory,
-                                             @Autowired(required = false) com.lifepilot.memory.experience.EffectivenessTracker effectivenessTracker) {
-        log.info("Agent 引擎: 注册 ContextAssembler（WorkingMemory {}，L3 语义记忆{}，L4 程序记忆{}）",
+                                             @Autowired(required = false) com.lifepilot.memory.experience.EffectivenessTracker effectivenessTracker,
+                                             @Autowired(required = false) com.lifepilot.skill.registry.SkillRegistry skillRegistry) {
+        log.info("Agent 引擎: 注册 ContextAssembler（WorkingMemory {}，L3 语义记忆{}，L4 程序记忆{}，Skill 清单{}）",
                 workingMemory != null && tokenBudgetAllocator != null ? "完整模式" : "基础模式",
                 semanticMemory != null ? "已启用" : "未启用",
-                proceduralMemory != null ? "已启用" : "未启用");
+                proceduralMemory != null ? "已启用" : "未启用",
+                skillRegistry != null ? "已启用" : "未启用");
         return new ContextAssembler(config, promptRegistry, workingMemory, tokenBudgetAllocator,
                 dataRedactor, semanticMemory, passiveNotificationQueue, memoryProperties,
-                proceduralMemory, effectivenessTracker);
+                proceduralMemory, effectivenessTracker, skillRegistry);
     }
 
     @Bean

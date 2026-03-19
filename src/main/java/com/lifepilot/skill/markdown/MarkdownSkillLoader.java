@@ -88,6 +88,7 @@ public class MarkdownSkillLoader {
         try (Stream<Path> entries = Files.list(skillsDirectory)) {
             var skillFolders = entries
                     .filter(Files::isDirectory)
+                    .filter(dir -> !dir.getFileName().toString().equals("auto"))
                     .filter(dir -> Files.exists(dir.resolve(skillFilename)))
                     .toList();
 
@@ -104,7 +105,41 @@ public class MarkdownSkillLoader {
             log.warn("扫描 Skill 目录失败: path={}, error={}", skillsDirectory, e.getMessage());
         }
 
+        // 扫描 auto/ 子目录（自生成 Skill）
+        Path autoDir = skillsDirectory.resolve("auto");
+        if (Files.exists(autoDir) && Files.isDirectory(autoDir)) {
+            count += loadSubdirectorySkills(autoDir, "自生成");
+        }
+
         log.info("Skill 加载完成: 成功={}, 目录={}", count, skillsDirectory);
+        return count;
+    }
+
+    /**
+     * 扫描指定父目录下的所有 Skill 子文件夹并加载注册。
+     *
+     * @param parentDir 父目录路径
+     * @param label     日志标签（如 "自生成"）
+     * @return 成功加载的 Skill 数量
+     */
+    private int loadSubdirectorySkills(Path parentDir, String label) {
+        int count = 0;
+        try (Stream<Path> entries = Files.list(parentDir)) {
+            var skillFolders = entries
+                    .filter(Files::isDirectory)
+                    .filter(dir -> Files.exists(dir.resolve(config.getSkillFilename())))
+                    .toList();
+            for (Path folder : skillFolders) {
+                Optional<SkillDefinition> result = loadFolder(folder);
+                if (result.isPresent()) {
+                    if (skillRegistry.register(result.get())) count++;
+                    else log.warn("{} Skill 注册失败: folder={}", label, folder);
+                }
+            }
+        } catch (IOException e) {
+            log.warn("扫描{} Skill 目录失败: path={}, error={}", label, parentDir, e.getMessage());
+        }
+        log.info("{} Skill 加载完成: 成功={}, 目录={}", label, count, parentDir);
         return count;
     }
 

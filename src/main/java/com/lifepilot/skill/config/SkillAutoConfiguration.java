@@ -6,12 +6,12 @@ import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.config.threadpool.SharedScheduler;
-import com.lifepilot.meta.convenience.CapabilityAggregator;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.skill.activation.SkillActivator;
 import com.lifepilot.skill.activation.SkillMetricsTracker;
 import com.lifepilot.skill.audit.SkillAuditRepository;
-import com.lifepilot.skill.bridge.SkillToToolBridge;
+import com.lifepilot.skill.disclosure.SkillDisclosureTool;
+import com.lifepilot.skill.disclosure.SkillGenerationTool;
 import com.lifepilot.skill.builtin.BuiltinSkillProvider;
 import com.lifepilot.skill.builtin.BuiltinSkillRegistrar;
 import com.lifepilot.skill.builtin.habit.HabitSkillProvider;
@@ -127,15 +127,27 @@ public class SkillAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public SkillToToolBridge skillToToolBridge(DynamicToolRegistry toolRegistry,
-                                              SkillActivator skillActivator,
-                                              CapabilityAggregator capabilityAggregator,
-                                              @Nullable SkillGapDetector gapDetector,
-                                              @Nullable SkillGenerator skillGenerator) {
-        log.info("Skill 系统: 注册 SkillToToolBridge, 自扩展={}",
+    public SkillDisclosureTool skillDisclosureTool(DynamicToolRegistry toolRegistry,
+                                                   SkillActivator skillActivator,
+                                                   SkillMetricsTracker metricsTracker,
+                                                   @Nullable SkillGapDetector gapDetector,
+                                                   @Nullable SkillGenerator skillGenerator) {
+        log.info("Skill 系统: 注册 SkillDisclosureTool, 自扩展={}",
                 gapDetector != null && skillGenerator != null ? "已启用" : "未启用");
-        return new SkillToToolBridge(toolRegistry, skillActivator, capabilityAggregator,
+        return new SkillDisclosureTool(toolRegistry, skillActivator, metricsTracker,
                 gapDetector, skillGenerator);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnProperty(prefix = "lifepilot.skills.auto-generation",
+            name = "enabled", havingValue = "true", matchIfMissing = true)
+    @ConditionalOnBean({SkillGapDetector.class, SkillGenerator.class})
+    public SkillGenerationTool skillGenerationTool(DynamicToolRegistry toolRegistry,
+                                                   SkillGapDetector gapDetector,
+                                                   SkillGenerator skillGenerator) {
+        log.info("Skill 系统: 注册 SkillGenerationTool（HIGH 风险）");
+        return new SkillGenerationTool(toolRegistry, gapDetector, skillGenerator);
     }
 
     // --- 内置 Skill 提供者 ---
@@ -328,11 +340,10 @@ public class SkillAutoConfiguration {
     // ==================== 启动后初始化 ====================
 
     /**
-     * 应用启动完成后触发 Markdown Skill 初始加载、文件监听启动和统一 skills 工具注册。
+     * 应用启动完成后触发 Markdown Skill 初始加载、文件监听启动和 L2 工具注册。
      *
      * <p>{@link SkillFileWatcher#start()} 内部会调用 {@link MarkdownSkillLoader#loadAll()} 完成初始加载，
-     * 然后启动 WatchService 监听文件变更。之后调用 {@link SkillToToolBridge#registerSkillsTool()}
-     * 注册统一的 skills 工具到 DynamicToolRegistry。</p>
+     * 然后启动 WatchService 监听文件变更。之后注册 load_skill 和 generate_skill 工具。</p>
      *
      * <p>使用 {@code @Order(Ordered.LOWEST_PRECEDENCE)} 确保在
      * {@link BuiltinSkillRegistrar#registerAll()} 之后执行，
@@ -353,10 +364,14 @@ public class SkillAutoConfiguration {
             log.info("ApplicationReady: SkillFileWatcher 已启动（含初始加载）");
         }
 
-        // 注册统一 skills 工具
-        if (ctx.containsBean("skillToToolBridge")) {
-            ctx.getBean(SkillToToolBridge.class).registerSkillsTool();
-            log.info("ApplicationReady: 统一 skills 工具已注册");
+        // 注册 L2 渐进式披露工具
+        if (ctx.containsBean("skillDisclosureTool")) {
+            ctx.getBean(SkillDisclosureTool.class).registerTools();
+            log.info("ApplicationReady: load_skill 工具已注册");
+        }
+        if (ctx.containsBean("skillGenerationTool")) {
+            ctx.getBean(SkillGenerationTool.class).registerTools();
+            log.info("ApplicationReady: generate_skill 工具已注册");
         }
     }
 }

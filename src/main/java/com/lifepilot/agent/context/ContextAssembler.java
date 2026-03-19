@@ -11,6 +11,7 @@ import com.lifepilot.memory.procedural.PreferenceRule;
 import com.lifepilot.memory.procedural.ProceduralMemory;
 import com.lifepilot.observability.redactor.DataRedactor;
 import com.lifepilot.prompt.PromptRegistry;
+import com.lifepilot.skill.registry.SkillRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
@@ -64,6 +65,8 @@ public class ContextAssembler {
     @Nullable private final ProceduralMemory proceduralMemory;
     // 效果追踪器：记录经验注入事件，可选注入
     @Nullable private final com.lifepilot.memory.experience.EffectivenessTracker effectivenessTracker;
+    // Skill 注册中心：L1 元数据清单注入，可选注入
+    @Nullable private final SkillRegistry skillRegistry;
 
     /**
      * 统一构造器 — 可选依赖标注 @Nullable。
@@ -80,7 +83,8 @@ public class ContextAssembler {
                             @Nullable PassiveNotificationQueue passiveNotificationQueue,
                             @Nullable com.lifepilot.memory.config.MemoryProperties memoryProperties,
                             @Nullable ProceduralMemory proceduralMemory,
-                            @Nullable com.lifepilot.memory.experience.EffectivenessTracker effectivenessTracker) {
+                            @Nullable com.lifepilot.memory.experience.EffectivenessTracker effectivenessTracker,
+                            @Nullable SkillRegistry skillRegistry) {
         this.config = config;
         this.promptRegistry = promptRegistry;
         this.workingMemory = workingMemory;
@@ -91,6 +95,7 @@ public class ContextAssembler {
         this.memoryProperties = memoryProperties;
         this.proceduralMemory = proceduralMemory;
         this.effectivenessTracker = effectivenessTracker;
+        this.skillRegistry = skillRegistry;
     }
 
     /** 判断是否为完整版模式。 */
@@ -538,12 +543,43 @@ public class ContextAssembler {
         String roleDefinition = promptRegistry.render("agent/role-definition");
         String contextGuide = promptRegistry.render("agent/context-guide");
         var now = ZonedDateTime.now();
-        return promptRegistry.render("agent/react-system", Map.of(
+        String systemPrompt = promptRegistry.render("agent/react-system", Map.of(
                 "roleDefinition", roleDefinition,
                 "contextGuide", contextGuide,
                 "currentDateTime", now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
                 "timezone", ZoneId.systemDefault().getId(),
                 "locale", Locale.getDefault().toLanguageTag()));
+
+        // 追加 L1 Skill 元数据清单
+        String skillCatalog = buildSkillCatalog();
+        if (!skillCatalog.isBlank()) {
+            systemPrompt = systemPrompt + "\n" + skillCatalog;
+        }
+        return systemPrompt;
+    }
+
+    /**
+     * 构建 L1 Skill 元数据清单 — 从 SkillRegistry 实时读取所有已注册 Skill。
+     *
+     * <p>SkillRegistry 为 null 或无已注册 Skill 时返回空字符串，不渲染清单区段。</p>
+     *
+     * @return Skill 清单文本，无 Skill 时返回空字符串
+     */
+    private String buildSkillCatalog() {
+        if (skillRegistry == null) return "";
+        var skills = skillRegistry.listAll();
+        if (skills.isEmpty()) return "";
+
+        var entries = skills.stream()
+                .map(s -> "- " + s.id() + ": " + s.name() + " — " + s.description())
+                .collect(Collectors.joining("\n"));
+
+        try {
+            return promptRegistry.render("agent/skill-catalog", Map.of("skillEntries", entries));
+        } catch (Exception e) {
+            log.warn("Skill 清单模板渲染失败，降级跳过: error={}", e.getMessage());
+            return "";
+        }
     }
 
     /**
