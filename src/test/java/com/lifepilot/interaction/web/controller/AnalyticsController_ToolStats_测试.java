@@ -36,13 +36,16 @@ class AnalyticsController_ToolStats_测试 {
     @Mock
     private KnowledgeBaseManager knowledgeBaseManager;
 
+    @Mock
+    private com.lifepilot.tool.registry.DynamicToolRegistry toolRegistry;
+
     private MockMvc mockMvc;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @BeforeEach
     void setUp() {
-        var controller = new AnalyticsController(jdbcTemplate, knowledgeBaseManager, objectMapper);
+        var controller = new AnalyticsController(jdbcTemplate, knowledgeBaseManager, objectMapper, toolRegistry);
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
