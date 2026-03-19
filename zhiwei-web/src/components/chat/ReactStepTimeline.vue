@@ -98,10 +98,14 @@ function getStepColor(type: string) {
   }
 }
 
-// 步骤标题
+// 步骤标题（Thought 类型显示内容摘要而非固定文案）
 function getStepTitle(step: ReactStepDto): string {
   switch (step.type) {
-    case 'THOUGHT': return '推理思考'
+    case 'THOUGHT': {
+      // 短内容直接作为标题，长内容用固定标题 + 内联预览
+      if (step.content && step.content.length <= 30) return step.content
+      return '推理思考'
+    }
     case 'TOOL_CALL': return `调用工具: ${step.toolId}`
     case 'OBSERVATION': return `${step.success ? '工具返回' : '工具失败'}: ${step.toolId}`
     case 'ANSWER': return '生成回答'
@@ -110,7 +114,7 @@ function getStepTitle(step: ReactStepDto): string {
   }
 }
 
-// 步骤可展开内容
+// 步骤完整内容（点击展开时显示）
 function getStepContent(step: ReactStepDto): string | null {
   switch (step.type) {
     case 'THOUGHT': return step.content
@@ -122,9 +126,38 @@ function getStepContent(step: ReactStepDto): string | null {
   }
 }
 
+// 步骤内联预览（始终可见的一行摘要，截断到 80 字符）
+function getStepPreview(step: ReactStepDto): string | null {
+  // Thought 短内容已作为标题显示，不重复
+  if (step.type === 'THOUGHT' && step.content && step.content.length <= 30) return null
+  const content = getStepContent(step)
+  if (!content) return null
+  const firstLine = content.split('\n')[0]
+  if (firstLine.length > 80) return firstLine.substring(0, 80) + '…'
+  return firstLine
+}
+
+// 内容是否超出预览长度（决定是否显示展开按钮）
+function hasExpandableContent(step: ReactStepDto): boolean {
+  // Thought 短内容已作为标题，无需展开
+  if (step.type === 'THOUGHT' && step.content && step.content.length <= 30) return false
+  const content = getStepContent(step)
+  if (!content) return false
+  return content.length > 80 || content.includes('\n')
+}
+
 // 工具配对组的标题
 function getToolPairTitle(tc: ToolCallStep, obs: ObservationStep): string {
   return `${tc.toolId} — ${obs.success ? '成功' : '失败'}`
+}
+
+// 工具配对组的内联输出预览
+function getToolPairPreview(obs: ObservationStep): string | null {
+  const output = obs.outputSummary
+  if (!output) return null
+  const firstLine = output.split('\n')[0]
+  if (firstLine.length > 80) return firstLine.substring(0, 80) + '…'
+  return firstLine
 }
 </script>
 
@@ -204,25 +237,34 @@ function getToolPairTitle(tc: ToolCallStep, obs: ObservationStep): string {
                   <div v-if="gi < stepGroups.length - 1" class="w-px flex-1 min-h-[16px] bg-border" />
                 </div>
                 <div class="flex-1 min-w-0 pb-2.5" :class="gi === stepGroups.length - 1 ? 'pb-0' : ''">
-                  <button
-                    type="button"
-                    class="flex items-center gap-1.5 text-[11px] font-medium text-foreground/90 leading-5 hover:text-primary transition-colors"
-                    @click="toggleStep((group.steps[0] as ToolCallStep).index)"
-                  >
-                    <component
-                      :is="(group.steps[1] as ObservationStep).success ? CheckCircle2 : XCircle"
-                      :size="10"
-                      :class="(group.steps[1] as ObservationStep).success ? 'text-emerald-500' : 'text-destructive'"
-                    />
-                    {{ getToolPairTitle(group.steps[0] as ToolCallStep, group.steps[1] as ObservationStep) }}
+                  <div class="flex items-center gap-1.5 flex-wrap">
+                    <button
+                      type="button"
+                      class="flex items-center gap-1.5 text-[11px] font-medium text-foreground/90 leading-5 hover:text-primary transition-colors"
+                      @click="toggleStep((group.steps[0] as ToolCallStep).index)"
+                    >
+                      <component
+                        :is="(group.steps[1] as ObservationStep).success ? CheckCircle2 : XCircle"
+                        :size="10"
+                        :class="(group.steps[1] as ObservationStep).success ? 'text-emerald-500' : 'text-destructive'"
+                      />
+                      {{ getToolPairTitle(group.steps[0] as ToolCallStep, group.steps[1] as ObservationStep) }}
+                    </button>
                     <span
                       v-if="(group.steps[0] as ToolCallStep).latencyMs > 0"
                       class="text-[10px] text-muted-foreground/60"
                     >
                       {{ (group.steps[0] as ToolCallStep).latencyMs }}ms
                     </span>
-                  </button>
-                  <!-- 展开：输入 + 输出 -->
+                  </div>
+                  <!-- 内联输出预览（始终可见） -->
+                  <p
+                    v-if="getToolPairPreview(group.steps[1] as ObservationStep)"
+                    class="text-[10px] text-muted-foreground/80 leading-relaxed mt-0.5 truncate"
+                  >
+                    {{ getToolPairPreview(group.steps[1] as ObservationStep) }}
+                  </p>
+                  <!-- 展开：完整输入 + 输出 -->
                   <div
                     v-if="expandedSteps.has((group.steps[0] as ToolCallStep).index)"
                     class="mt-1 space-y-1 text-[10px] text-muted-foreground/80 leading-relaxed"
@@ -255,17 +297,27 @@ function getToolPairTitle(tc: ToolCallStep, obs: ObservationStep): string {
                   <div v-if="gi < stepGroups.length - 1" class="w-px flex-1 min-h-[16px] bg-border" />
                 </div>
                 <div class="flex-1 min-w-0 pb-2.5" :class="gi === stepGroups.length - 1 ? 'pb-0' : ''">
-                  <button
-                    v-if="getStepContent(group.steps[0])"
-                    type="button"
-                    class="text-[11px] font-medium text-foreground/90 leading-5 hover:text-primary transition-colors"
-                    @click="toggleStep(group.steps[0].index)"
+                  <div class="flex items-center gap-1.5 flex-wrap">
+                    <button
+                      v-if="hasExpandableContent(group.steps[0])"
+                      type="button"
+                      class="text-[11px] font-medium text-foreground/90 leading-5 hover:text-primary transition-colors"
+                      @click="toggleStep(group.steps[0].index)"
+                    >
+                      {{ getStepTitle(group.steps[0]) }}
+                    </button>
+                    <span v-else class="text-[11px] font-medium text-foreground/90 leading-5">
+                      {{ getStepTitle(group.steps[0]) }}
+                    </span>
+                  </div>
+                  <!-- 内联预览（始终可见） -->
+                  <p
+                    v-if="getStepPreview(group.steps[0]) && !expandedSteps.has(group.steps[0].index)"
+                    class="text-[10px] text-muted-foreground/80 leading-relaxed mt-0.5 truncate"
                   >
-                    {{ getStepTitle(group.steps[0]) }}
-                  </button>
-                  <span v-else class="text-[11px] font-medium text-foreground/90 leading-5">
-                    {{ getStepTitle(group.steps[0]) }}
-                  </span>
+                    {{ getStepPreview(group.steps[0]) }}
+                  </p>
+                  <!-- 展开后显示完整内容 -->
                   <p
                     v-if="expandedSteps.has(group.steps[0].index) && getStepContent(group.steps[0])"
                     class="text-[10px] text-muted-foreground/80 leading-relaxed mt-0.5 whitespace-pre-wrap"
