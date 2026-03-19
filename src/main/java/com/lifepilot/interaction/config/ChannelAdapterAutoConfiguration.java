@@ -53,8 +53,8 @@ public class ChannelAdapterAutoConfiguration {
 
     @Bean
     @ConditionalOnProperty(name = "lifepilot.gateway.channels.wecom.enabled", havingValue = "true")
-    public WecomCrypto wecomCrypto(GatewayProperties properties) {
-        var config = properties.channels().wecom();
+    public WecomCrypto wecomCrypto(ChannelConfigProvider configProvider) {
+        var config = configProvider.getWecomConfig();
         if (config.encodingAesKey() == null || config.encodingAesKey().isBlank()) {
             log.error("企微通道已启用但 encodingAesKey 未配置，跳过注册");
             return null;
@@ -64,14 +64,14 @@ public class ChannelAdapterAutoConfiguration {
 
     @Bean
     @ConditionalOnProperty(name = "lifepilot.gateway.channels.wecom.enabled", havingValue = "true")
-    public WecomSignatureVerifier wecomSignatureVerifier(GatewayProperties properties) {
-        return new WecomSignatureVerifier(properties.channels().wecom().token());
+    public WecomSignatureVerifier wecomSignatureVerifier(ChannelConfigProvider configProvider) {
+        return new WecomSignatureVerifier(configProvider.getWecomConfig().token());
     }
 
     @Bean
     @ConditionalOnProperty(name = "lifepilot.gateway.channels.wecom.enabled", havingValue = "true")
-    public WecomApiClient wecomApiClient(GatewayProperties properties) {
-        return new WecomApiClient(properties.channels().wecom(), RestClient.create());
+    public WecomApiClient wecomApiClient(ChannelConfigProvider configProvider) {
+        return new WecomApiClient(configProvider.getWecomConfig(), RestClient.create());
     }
 
     @Bean
@@ -106,8 +106,8 @@ public class ChannelAdapterAutoConfiguration {
 
     @Bean
     @ConditionalOnProperty(name = "lifepilot.gateway.channels.dingtalk.enabled", havingValue = "true")
-    public DingtalkApiClient dingtalkApiClient(GatewayProperties properties) {
-        return new DingtalkApiClient(properties.channels().dingtalk(), RestClient.create());
+    public DingtalkApiClient dingtalkApiClient(ChannelConfigProvider configProvider) {
+        return new DingtalkApiClient(configProvider.getDingtalkConfig(), RestClient.create());
     }
 
     @Bean
@@ -138,8 +138,8 @@ public class ChannelAdapterAutoConfiguration {
 
     @Bean
     @ConditionalOnProperty(name = "lifepilot.gateway.channels.feishu.enabled", havingValue = "true")
-    public FeishuCrypto feishuCrypto(GatewayProperties properties) {
-        var config = properties.channels().feishu();
+    public FeishuCrypto feishuCrypto(ChannelConfigProvider configProvider) {
+        var config = configProvider.getFeishuConfig();
         if (config.encryptKey() == null || config.encryptKey().isBlank()) {
             log.error("飞书通道已启用但 encryptKey 未配置，跳过注册");
             return null;
@@ -149,8 +149,8 @@ public class ChannelAdapterAutoConfiguration {
 
     @Bean
     @ConditionalOnProperty(name = "lifepilot.gateway.channels.feishu.enabled", havingValue = "true")
-    public FeishuApiClient feishuApiClient(GatewayProperties properties) {
-        return new FeishuApiClient(properties.channels().feishu(), RestClient.create());
+    public FeishuApiClient feishuApiClient(ChannelConfigProvider configProvider) {
+        return new FeishuApiClient(configProvider.getFeishuConfig(), RestClient.create());
     }
 
     @Bean

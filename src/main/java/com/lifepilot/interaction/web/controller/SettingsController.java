@@ -406,6 +406,115 @@ public class SettingsController {
         return getKnowledgeSettings();
     }
 
+    // ── 渠道配置 ──────────────────────────────────────────────
+
+    /** 敏感字段名列表（需要 mask 处理）。 */
+    private static final java.util.Set<String> SENSITIVE_CHANNEL_FIELDS = java.util.Set.of(
+            "appSecret", "secret", "verificationToken", "encryptKey",
+            "encodingAesKey", "token"
+    );
+
+    /**
+     * 获取渠道配置（敏感字段已 mask）。
+     *
+     * @return 渠道配置 Map
+     */
+    @GetMapping("/channels")
+    public ResponseEntity<Map<String, Object>> getChannelConfig() {
+        String json = settingsRepository.getChannelConfig();
+        Map<String, Object> config = deserializeJsonConfig(json);
+        // mask 每个渠道内的敏感字段
+        maskChannelSecrets(config);
+        return ResponseEntity.ok(config);
+    }
+
+    /**
+     * 更新渠道配置（支持部分更新，自动保留被 mask 的敏感字段原值）。
+     *
+     * @param request 渠道配置 Map
+     * @return 更新后的渠道配置（敏感字段已 mask）
+     */
+    @SuppressWarnings("unchecked")
+    @PutMapping("/channels")
+    public ResponseEntity<Map<String, Object>> updateChannelConfig(
+            @RequestBody Map<String, Object> request) {
+        // 读取现有配置
+        String existingJson = settingsRepository.getChannelConfig();
+        Map<String, Object> existing = deserializeJsonConfig(existingJson);
+
+        // 合并：对每个渠道，保留被 mask 的敏感字段原值
+        for (var entry : request.entrySet()) {
+            String channelKey = entry.getKey();
+            if (entry.getValue() instanceof Map<?, ?> newChannelMap) {
+                Map<String, Object> newChannel = new HashMap<>((Map<String, Object>) newChannelMap);
+                Object existingObj = existing.get(channelKey);
+                if (existingObj instanceof Map<?, ?> existingChannel) {
+                    // 如果新值是 mask 值，保留原值
+                    for (String sensitiveField : SENSITIVE_CHANNEL_FIELDS) {
+                        Object newVal = newChannel.get(sensitiveField);
+                        if (newVal instanceof String s && isApiKeyMasked(s)) {
+                            Object originalVal = ((Map<String, Object>) existingChannel).get(sensitiveField);
+                            if (originalVal != null) {
+                                newChannel.put(sensitiveField, originalVal);
+                            }
+                        }
+                    }
+                }
+                existing.put(channelKey, newChannel);
+            }
+        }
+
+        // 序列化并保存
+        try {
+            String json = objectMapper.writeValueAsString(existing);
+            settingsRepository.saveChannelConfig(json);
+        } catch (Exception e) {
+            log.error("渠道配置序列化失败", e);
+            return ResponseEntity.internalServerError().build();
+        }
+
+        // 返回 mask 后的配置
+        maskChannelSecrets(existing);
+        log.info("渠道配置已更新: channels={}", existing.keySet());
+        return ResponseEntity.ok(existing);
+    }
+
+    /**
+     * 对渠道配置中的敏感字段进行 mask 处理。
+     */
+    @SuppressWarnings("unchecked")
+    private void maskChannelSecrets(Map<String, Object> config) {
+        for (var entry : config.entrySet()) {
+            if (entry.getValue() instanceof Map<?, ?> channelMap) {
+                Map<String, Object> channel = (Map<String, Object>) channelMap;
+                for (String field : SENSITIVE_CHANNEL_FIELDS) {
+                    Object val = channel.get(field);
+                    if (val instanceof String s && !s.isBlank()) {
+                        channel.put(field, maskApiKey(s));
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 反序列化 JSON 配置为可变 Map。
+     */
+    private Map<String, Object> deserializeJsonConfig(String json) {
+        if (json == null || json.isBlank() || "{}".equals(json)) {
+            return new HashMap<>();
+        }
+        try {
+            Map<String, Object> result = objectMapper.readValue(json, new TypeReference<>() {});
+            return result != null ? new HashMap<>(result) : new HashMap<>();
+        } catch (Exception e) {
+            log.warn("JSON 配置反序列化失败: error={}", e.getMessage());
+            return new HashMap<>();
+        }
+    }
+
+    // ── 工具方法 ──────────────────────────────────────────────
+
     /**
      * 对 apiKey 进行掩码处理，仅保留末尾 4 位。
      *

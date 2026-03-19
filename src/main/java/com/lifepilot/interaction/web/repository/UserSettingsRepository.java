@@ -206,6 +206,37 @@ public class UserSettingsRepository {
         log.debug("知识库配置已保存: json={}", json);
     }
 
+    /**
+     * 读取渠道配置 JSON。
+     *
+     * @return channel_config_json 列的值，不存在或为空时返回 "{}"
+     */
+    public String getChannelConfig() {
+        var results = jdbcTemplate.query(
+                "SELECT channel_config_json FROM user_settings WHERE id = ?",
+                (rs, rowNum) -> rs.getString("channel_config_json"),
+                DEFAULT_SETTINGS_ID);
+        String json = results.stream().findFirst().orElse(null);
+        if (json == null || json.isBlank()) {
+            return "{}";
+        }
+        return json;
+    }
+
+    /**
+     * 保存渠道配置 JSON。
+     *
+     * @param json 渠道配置 JSON 字符串
+     */
+    public void saveChannelConfig(String json) {
+        getSettings();
+        String now = Instant.now().toString();
+        jdbcTemplate.update(
+                "UPDATE user_settings SET channel_config_json = ?, updated_at = ? WHERE id = ?",
+                json, now, DEFAULT_SETTINGS_ID);
+        log.debug("渠道配置已保存");
+    }
+
     private java.util.Map<String, String> deserializeSceneProviders(String json) {
         if (json == null || json.isBlank()) {
             return java.util.Map.of();

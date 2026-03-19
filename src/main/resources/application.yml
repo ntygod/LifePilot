@@ -492,23 +492,23 @@ lifepilot:
       web:
         enabled: true
       wecom:
-        enabled: false
-        corp-id:
-        agent-id:
-        secret:
-        token:
-        encoding-aes-key:
+        enabled: ${WECOM_ENABLED:false}
+        corp-id: ${WECOM_CORP_ID:}
+        agent-id: ${WECOM_AGENT_ID:}
+        secret: ${WECOM_SECRET:}
+        token: ${WECOM_TOKEN:}
+        encoding-aes-key: ${WECOM_ENCODING_AES_KEY:}
       dingtalk:
-        enabled: false
-        app-key:
-        app-secret:
-        robot-code:
+        enabled: ${DINGTALK_ENABLED:false}
+        app-key: ${DINGTALK_APP_KEY:}
+        app-secret: ${DINGTALK_APP_SECRET:}
+        robot-code: ${DINGTALK_ROBOT_CODE:}
       feishu:
-        enabled: false
-        app-id:
-        app-secret:
-        verification-token:
-        encrypt-key:
+        enabled: ${FEISHU_ENABLED:false}
+        app-id: ${FEISHU_APP_ID:}
+        app-secret: ${FEISHU_APP_SECRET:}
+        verification-token: ${FEISHU_VERIFICATION_TOKEN:}
+        encrypt-key: ${FEISHU_ENCRYPT_KEY:}
         event-cache-max-size: 10000
     reconnect:
       max-attempts: 10
