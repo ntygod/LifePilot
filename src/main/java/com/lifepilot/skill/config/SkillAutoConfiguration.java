@@ -14,14 +14,8 @@ import com.lifepilot.skill.disclosure.SkillDisclosureTool;
 import com.lifepilot.skill.disclosure.SkillGenerationTool;
 import com.lifepilot.skill.builtin.BuiltinSkillProvider;
 import com.lifepilot.skill.builtin.BuiltinSkillRegistrar;
-import com.lifepilot.skill.builtin.habit.HabitSkillProvider;
 import com.lifepilot.skill.builtin.memory.MemorySkillProvider;
-import com.lifepilot.skill.builtin.schedule.ScheduleSkillProvider;
-import com.lifepilot.skill.builtin.todo.TodoDueNotifier;
-import com.lifepilot.skill.builtin.todo.TodoSkillProvider;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lifepilot.notification.NotificationService;
-import com.lifepilot.datastore.DataStoreManager;
+
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.skill.generation.SkillGapDetector;
@@ -143,45 +137,8 @@ public class SkillAutoConfiguration {
     }
 
     // --- 内置 Skill 提供者 ---
-
-    @Bean
-    @ConditionalOnMissingBean
-    public TodoSkillProvider todoSkillProvider(DataStoreManager dataStoreManager,
-                                               ObjectMapper objectMapper,
-                                               PromptRegistry promptRegistry) {
-        log.info("Skill 系统: 注册 TodoSkillProvider（DataStore 存储）");
-        return new TodoSkillProvider(dataStoreManager, objectMapper, promptRegistry);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public ScheduleSkillProvider scheduleSkillProvider(DataStoreManager dataStoreManager,
-                                                       ObjectMapper objectMapper,
-                                                       PromptRegistry promptRegistry) {
-        log.info("Skill 系统: 注册 ScheduleSkillProvider（DataStore 存储）");
-        return new ScheduleSkillProvider(dataStoreManager, objectMapper, promptRegistry);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public HabitSkillProvider habitSkillProvider(DataStoreManager dataStoreManager,
-                                                 ObjectMapper objectMapper,
-                                                 PromptRegistry promptRegistry) {
-        log.info("Skill 系统: 注册 HabitSkillProvider（DataStore 存储）");
-        return new HabitSkillProvider(dataStoreManager, objectMapper, promptRegistry);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    @ConditionalOnProperty(prefix = "lifepilot.skills.todo",
-            name = "due-notification-enabled", havingValue = "true", matchIfMissing = true)
-    @ConditionalOnBean(NotificationService.class)
-    public TodoDueNotifier todoDueNotifier(DataStoreManager dataStoreManager,
-                                           ObjectMapper objectMapper,
-                                           NotificationService notificationService) {
-        log.info("Skill 系统: 注册 TodoDueNotifier（到期通知）");
-        return new TodoDueNotifier(dataStoreManager, objectMapper, notificationService);
-    }
+    // 注：TodoSkillProvider / ScheduleSkillProvider / HabitSkillProvider / TodoDueNotifier
+    // 已随 scheduler-to-workflow-migration 迁移至 DataStore，原 builtin 包已删除
 
     @Bean
     @ConditionalOnMissingBean
@@ -375,19 +332,6 @@ public class SkillAutoConfiguration {
             log.info("ApplicationReady: generate_skill 工具已注册");
         }
 
-        // 启动待办到期通知定时扫描（共享调度器由 Spring 管理生命周期，此处不关闭）
-        if (ctx.containsBean("todoDueNotifier") && ctx.containsBean("sharedScheduler")) {
-            var notifier = ctx.getBean(TodoDueNotifier.class);
-            var sharedScheduler = ctx.getBean(SharedScheduler.class);
-            var config = ctx.getBean(SkillConfigProperties.class);
-            int interval = config.getTodo().getDueCheckIntervalSeconds();
-            var cleanupExecutor = sharedScheduler.cleanup();
-            cleanupExecutor.scheduleAtFixedRate(
-                    notifier::scan,
-                    interval,
-                    interval,
-                    java.util.concurrent.TimeUnit.SECONDS);
-            log.info("ApplicationReady: TodoDueNotifier 定时扫描已启动, interval={}s", interval);
-        }
+        // 注：TodoDueNotifier 已随 builtin todo/schedule/habit 包删除
     }
 }

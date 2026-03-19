@@ -692,8 +692,8 @@ lifepilot:
       # 镜像前缀
       image-prefix: "zhiwei/sandbox-"
   sync:
-    # 同步模块总开关
-    enabled: true
+    # 同步模块总开关（暂时禁用：builtin todo/schedule/habit 包已删除，sync 模块待重构）
+    enabled: false
     # 默认 Cron 表达式（每 15 分钟）
     default-cron: "0 */15 * * * *"
     # 默认冲突解决策略
