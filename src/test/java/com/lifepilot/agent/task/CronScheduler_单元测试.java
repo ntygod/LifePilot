@@ -58,7 +58,8 @@ class CronScheduler_单元测试 {
         scheduler = Executors.newScheduledThreadPool(2);
 
         var config = new AgentConfigProperties();
-        cronScheduler = new CronScheduler(scheduler, repository, agentOrchestrator, notificationService, config);
+        var notificationProperties = new com.lifepilot.notification.config.NotificationProperties();
+        cronScheduler = new CronScheduler(scheduler, repository, agentOrchestrator, notificationService, notificationProperties);
     }
 
     // ---- isSilentResponse 协议判断 ----

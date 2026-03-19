@@ -32,12 +32,8 @@ class InfraToolProviderTest {
 
     @Test
     void provide_返回正确的SkillDefinition() {
-        var definition = provider.provide();
-
-        assertThat(definition.id()).isEqualTo("builtin.infrastructure");
-        assertThat(definition.name()).isEqualTo("基础工具集");
-        assertThat(definition.description()).isNotBlank();
-        assertThat(definition.version()).isEqualTo("1.0.0");
+        // provide() 方法已在 skill-architecture-simplify 中移除
+        // InfraToolProvider 不再实现 BuiltinSkillProvider 接口
     }
 
     @Test

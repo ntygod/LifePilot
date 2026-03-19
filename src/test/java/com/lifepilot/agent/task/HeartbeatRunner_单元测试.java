@@ -53,7 +53,8 @@ class HeartbeatRunner_单元测试 {
     void isWithinActiveHours_未配置_全天活跃() {
         config.getTask().setActiveHoursStart(null);
         config.getTask().setActiveHoursEnd(null);
-        heartbeatRunner = new HeartbeatRunner(scheduler, agentOrchestrator, notificationService, config);
+        var notificationProperties = new com.lifepilot.notification.config.NotificationProperties();
+        heartbeatRunner = new HeartbeatRunner(scheduler, agentOrchestrator, notificationService, config, notificationProperties);
 
         assertThat(heartbeatRunner.isWithinActiveHours()).isTrue();
     }
@@ -63,7 +64,8 @@ class HeartbeatRunner_单元测试 {
     @Test
     void readHeartbeatFile_文件不存在_返回null() {
         config.getTask().setHeartbeatFile(tempDir.resolve("not-exist.md").toString());
-        heartbeatRunner = new HeartbeatRunner(scheduler, agentOrchestrator, notificationService, config);
+        var notificationProperties = new com.lifepilot.notification.config.NotificationProperties();
+        heartbeatRunner = new HeartbeatRunner(scheduler, agentOrchestrator, notificationService, config, notificationProperties);
 
         assertThat(heartbeatRunner.readHeartbeatFile()).isNull();
     }
@@ -73,7 +75,8 @@ class HeartbeatRunner_单元测试 {
         Path file = tempDir.resolve("HEARTBEAT.md");
         Files.writeString(file, "# Checklist\n- 检查邮箱");
         config.getTask().setHeartbeatFile(file.toString());
-        heartbeatRunner = new HeartbeatRunner(scheduler, agentOrchestrator, notificationService, config);
+        var notificationProperties = new com.lifepilot.notification.config.NotificationProperties();
+        heartbeatRunner = new HeartbeatRunner(scheduler, agentOrchestrator, notificationService, config, notificationProperties);
 
         String content = heartbeatRunner.readHeartbeatFile();
         assertThat(content).contains("检查邮箱");
@@ -82,7 +85,8 @@ class HeartbeatRunner_单元测试 {
     @Test
     void readHeartbeatFile_路径为空_返回null() {
         config.getTask().setHeartbeatFile("");
-        heartbeatRunner = new HeartbeatRunner(scheduler, agentOrchestrator, notificationService, config);
+        var notificationProperties = new com.lifepilot.notification.config.NotificationProperties();
+        heartbeatRunner = new HeartbeatRunner(scheduler, agentOrchestrator, notificationService, config, notificationProperties);
 
         assertThat(heartbeatRunner.readHeartbeatFile()).isNull();
     }
@@ -92,7 +96,8 @@ class HeartbeatRunner_单元测试 {
     @Test
     void beat_文件为空_跳过不调用Agent() {
         config.getTask().setHeartbeatFile(tempDir.resolve("empty.md").toString());
-        heartbeatRunner = new HeartbeatRunner(scheduler, agentOrchestrator, notificationService, config);
+        var notificationProperties = new com.lifepilot.notification.config.NotificationProperties();
+        heartbeatRunner = new HeartbeatRunner(scheduler, agentOrchestrator, notificationService, config, notificationProperties);
 
         heartbeatRunner.beat();
 
@@ -104,7 +109,8 @@ class HeartbeatRunner_单元测试 {
         Path file = tempDir.resolve("HEARTBEAT.md");
         Files.writeString(file, "- 检查邮箱\n- 看日历");
         config.getTask().setHeartbeatFile(file.toString());
-        heartbeatRunner = new HeartbeatRunner(scheduler, agentOrchestrator, notificationService, config);
+        heartbeatRunner = new HeartbeatRunner(scheduler, agentOrchestrator, notificationService, config,
+                new com.lifepilot.notification.config.NotificationProperties());
 
         when(agentOrchestrator.run(any(AgentRequest.class)))
                 .thenReturn(new AgentResponse("trace", "heartbeat:main", "有新邮件需要处理", 80, 2, null));
@@ -121,7 +127,8 @@ class HeartbeatRunner_单元测试 {
         Path file = tempDir.resolve("HEARTBEAT.md");
         Files.writeString(file, "- 检查状态");
         config.getTask().setHeartbeatFile(file.toString());
-        heartbeatRunner = new HeartbeatRunner(scheduler, agentOrchestrator, notificationService, config);
+        heartbeatRunner = new HeartbeatRunner(scheduler, agentOrchestrator, notificationService, config,
+                new com.lifepilot.notification.config.NotificationProperties());
 
         when(agentOrchestrator.run(any(AgentRequest.class)))
                 .thenReturn(new AgentResponse("trace", "heartbeat:main", "HEARTBEAT_OK", 30, 1, null));
@@ -137,7 +144,8 @@ class HeartbeatRunner_单元测试 {
         Path file = tempDir.resolve("HEARTBEAT.md");
         Files.writeString(file, "- 检查");
         config.getTask().setHeartbeatFile(file.toString());
-        heartbeatRunner = new HeartbeatRunner(scheduler, agentOrchestrator, notificationService, config);
+        heartbeatRunner = new HeartbeatRunner(scheduler, agentOrchestrator, notificationService, config,
+                new com.lifepilot.notification.config.NotificationProperties());
 
         when(agentOrchestrator.run(any(AgentRequest.class)))
                 .thenThrow(new RuntimeException("LLM 不可用"));

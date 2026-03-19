@@ -33,6 +33,7 @@ class TaskAutoConfiguration_集成测试 {
         var agentOrchestrator = mock(AgentOrchestrator.class);
         var notificationService = mock(NotificationService.class);
         var config = new AgentConfigProperties();
+        var notificationProperties = new com.lifepilot.notification.config.NotificationProperties();
         var sharedScheduler = mock(SharedScheduler.class);
         var scheduler = Executors.newScheduledThreadPool(1);
         org.mockito.Mockito.when(sharedScheduler.heartbeat()).thenReturn(scheduler);
@@ -45,12 +46,12 @@ class TaskAutoConfiguration_集成测试 {
 
         // 验证 CronScheduler Bean
         CronScheduler cronScheduler = autoConfig.cronScheduler(
-                sharedScheduler, repository, agentOrchestrator, notificationService, config);
+                sharedScheduler, repository, agentOrchestrator, notificationService, notificationProperties);
         assertThat(cronScheduler).isNotNull();
 
         // 验证 HeartbeatRunner Bean
         HeartbeatRunner heartbeatRunner = autoConfig.heartbeatRunner(
-                sharedScheduler, agentOrchestrator, notificationService, config);
+                sharedScheduler, agentOrchestrator, notificationService, config, notificationProperties);
         assertThat(heartbeatRunner).isNotNull();
 
         scheduler.shutdownNow();

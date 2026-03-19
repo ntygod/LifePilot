@@ -209,7 +209,7 @@ class InteractionToolExecutorTest {
     @Test
     void notify_非阻塞推送_通过NotificationService发送() {
         var mockService = new TestNotificationService();
-        var executor = new NotifyToolExecutor(mockService);
+        var executor = new NotifyToolExecutor(mockService, new com.lifepilot.notification.config.NotificationProperties());
 
         ToolInput input = new ToolInput("builtin.interact.notify",
                 Map.of("message", "任务已完成"),
@@ -234,7 +234,7 @@ class InteractionToolExecutorTest {
     @Test
     void notify_指定urgency_正确传递() {
         var mockService = new TestNotificationService();
-        var executor = new NotifyToolExecutor(mockService);
+        var executor = new NotifyToolExecutor(mockService, new com.lifepilot.notification.config.NotificationProperties());
 
         ToolInput input = new ToolInput("builtin.interact.notify",
                 Map.of("message", "紧急通知", "urgency", "HIGH"),
@@ -249,7 +249,7 @@ class InteractionToolExecutorTest {
     @Test
     void notify_缺少message参数_返回错误() {
         var mockService = new TestNotificationService();
-        var executor = new NotifyToolExecutor(mockService);
+        var executor = new NotifyToolExecutor(mockService, new com.lifepilot.notification.config.NotificationProperties());
 
         ToolInput input = new ToolInput("builtin.interact.notify",
                 Map.of(), JsonSchema.empty(), null, null);
