@@ -60,4 +60,26 @@ public record ChatSession(
     public static ChatSession create() {
         return create(null);
     }
+
+    /**
+     * 使用指定 ID 创建会话（非 Web 渠道使用，sessionId 格式如 feishu:chatId:openId）。
+     *
+     * @param id    指定的会话 ID
+     * @param title 会话标题
+     * @return 新创建的会话实例
+     */
+    public static ChatSession createWithId(String id, String title) {
+        Instant now = Instant.now();
+        return new ChatSession(
+                id,
+                title != null && !title.isBlank() ? title : "新对话",
+                null,
+                0,
+                false,
+                false,
+                null,
+                now,
+                now
+        );
+    }
 }
