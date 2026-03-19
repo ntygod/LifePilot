@@ -114,6 +114,14 @@ const activeReactSteps = computed<ReactStepDto[]>(() => {
   }
   return props.message.reactSteps ?? []
 })
+
+// 当前展示的 ReasoningEvent 列表：流式时用 streamingReasoningEvents，否则用 message.reasoningEvents
+const activeReasoningEvents = computed<ReasoningEvent[]>(() => {
+  if (props.streaming && props.streamingReasoningEvents?.length) {
+    return props.streamingReasoningEvents
+  }
+  return props.message.reasoningEvents ?? []
+})
 </script>
 
 <template>
@@ -234,20 +242,20 @@ const activeReactSteps = computed<ReactStepDto[]>(() => {
               />
             </div>
 
-            <!-- ReactStep 时间线（优先展示） -->
+            <!-- 推理时间线（优先使用 ReasoningEvents，数据更完整） -->
+            <ReasoningTimeline
+              v-if="activeReasoningEvents.length > 0"
+              :summary="message.reasoningSummary"
+              :events="activeReasoningEvents"
+              :streaming="streaming"
+            />
+
+            <!-- ReactStep 时间线兜底（无 reasoningEvents 时回退到 reactSteps） -->
             <ReactStepTimeline
-              v-if="activeReactSteps.length > 0"
+              v-else-if="activeReactSteps.length > 0"
               :steps="activeReactSteps"
               :streaming="streaming"
               :summary="message.reasoningSummary"
-            />
-
-            <!-- 旧版 ReasoningTimeline 兜底（无 reactSteps 时回退） -->
-            <ReasoningTimeline
-              v-else-if="message.reasoningSummary || message.reasoningEvents?.length || (streaming && streamingReasoningEvents?.length)"
-              :summary="message.reasoningSummary"
-              :events="streaming ? streamingReasoningEvents : message.reasoningEvents"
-              :streaming="streaming"
             />
           </template>
 
