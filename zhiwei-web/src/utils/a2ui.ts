@@ -11,7 +11,7 @@ interface BackendAttachment {
 
 type BackendMessageLike = {
   id: string
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'tool-confirmation'
   content: string
   a2uiComponents?: unknown
   timestamp: string | number
@@ -75,6 +75,39 @@ export function mapBackendMessage(message: BackendMessageLike): Message {
         isImage: att.mimeType.startsWith('image/'),
       }))
     : undefined
+
+  // 工具确认消息：content 是 JSON，需要解析还原 toolConfirmation 和 resolution
+  if (message.role === 'tool-confirmation') {
+    try {
+      const parsed = JSON.parse(message.content) as {
+        requestId: string
+        toolId: string
+        toolName: string
+        riskLevel: string
+        message: string
+        resolution: string
+      }
+      return {
+        id: message.id,
+        role: 'tool-confirmation',
+        content: parsed.message || '该工具需要您的确认才能执行。',
+        timestamp: parseMessageTimestamp(message.timestamp),
+        toolConfirmation: {
+          requestId: parsed.requestId,
+          toolId: parsed.toolId,
+          toolName: parsed.toolName,
+          riskLevel: parsed.riskLevel as 'HIGH' | 'CRITICAL',
+          approvalMode: '',
+          message: parsed.message,
+          timestamp: typeof message.timestamp === 'string' ? message.timestamp : new Date(message.timestamp).toISOString(),
+        },
+        toolConfirmationResolution: parsed.resolution as 'approved' | 'rejected' | 'expired',
+      }
+    } catch {
+      // JSON 解析失败，回退为普通消息
+    }
+  }
+
   return {
     id: message.id,
     role: message.role,

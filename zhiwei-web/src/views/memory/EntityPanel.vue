@@ -245,6 +245,8 @@ function openEdit(entity: EntityDetail) {
     importanceScore: entity.importanceScore,
   }
   editPropsText.value = JSON.stringify(entity.properties || {}, null, 2)
+  // 先关闭详情面板，避免与编辑弹窗重叠
+  detailOpen.value = false
   editOpen.value = true
 }
 
@@ -255,8 +257,9 @@ async function handleEdit() {
     editForm.value.properties = props
     const updated = await memoryApi.updateEntity(editEntityId.value, editForm.value)
     editOpen.value = false
-    // 刷新详情
+    // 刷新详情并重新打开详情面板
     detailEntity.value = updated
+    detailOpen.value = true
     loadEntities()
   } catch (e: any) {
     console.error('编辑实体失败:', e)
@@ -266,10 +269,20 @@ async function handleEdit() {
   }
 }
 
+// 编辑弹窗关闭时（取消），重新打开详情面板
+function handleEditClose(open: boolean) {
+  editOpen.value = open
+  if (!open && detailEntity.value) {
+    detailOpen.value = true
+  }
+}
+
 // ── 归档实体 ──
 function openArchive(id: string, name: string) {
   archiveEntityId.value = id
   archiveEntityName.value = name
+  // 先关闭详情面板，避免与确认弹窗重叠
+  detailOpen.value = false
   archiveOpen.value = true
 }
 
@@ -278,13 +291,22 @@ async function handleArchive() {
   try {
     await memoryApi.deleteEntity(archiveEntityId.value)
     archiveOpen.value = false
-    detailOpen.value = false
+    // 归档成功，不重新打开详情面板
+    detailEntity.value = null
     loadEntities()
   } catch (e: any) {
     console.error('归档实体失败:', e)
     alert(e?.message || '归档实体失败')
   } finally {
     archiving.value = false
+  }
+}
+
+// 归档弹窗关闭时（取消），重新打开详情面板
+function handleArchiveClose(open: boolean) {
+  archiveOpen.value = open
+  if (!open && !archiving.value && detailEntity.value) {
+    detailOpen.value = true
   }
 }
 
@@ -601,21 +623,21 @@ function formatDate(iso: string) {
       </SheetContent>
     </Sheet>
 
-    <!-- 新建实体对话框 -->
-    <Dialog v-model:open="createOpen">
-      <DialogContent class="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>新建实体</DialogTitle>
-          <DialogDescription>手动创建一个知识实体。</DialogDescription>
-        </DialogHeader>
-        <form class="space-y-4" @submit.prevent="handleCreate">
+    <!-- 新建实体 Sheet -->
+    <Sheet v-model:open="createOpen">
+      <SheetContent class="overflow-y-auto p-6" style="width: 100%; max-width: 36rem;">
+        <SheetHeader>
+          <SheetTitle>新建实体</SheetTitle>
+          <SheetDescription>手动创建一个知识实体。</SheetDescription>
+        </SheetHeader>
+        <form class="mt-6 space-y-5" @submit.prevent="handleCreate">
           <div>
-            <label class="text-sm font-medium">名称</label>
-            <Input v-model="createForm.name" placeholder="实体名称" class="mt-1" required />
+            <label class="text-sm font-medium block mb-1.5">名称</label>
+            <Input v-model="createForm.name" placeholder="实体名称" required />
           </div>
           <div>
-            <label class="text-sm font-medium">类型</label>
-            <Select v-model="createForm.type" class="mt-1">
+            <label class="text-sm font-medium block mb-1.5">类型</label>
+            <Select v-model="createForm.type">
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
@@ -627,85 +649,93 @@ function formatDate(iso: string) {
             </Select>
           </div>
           <div>
-            <label class="text-sm font-medium">描述</label>
-            <Input v-model="createForm.description" placeholder="可选描述" class="mt-1" />
+            <label class="text-sm font-medium block mb-1.5">描述</label>
+            <textarea
+              v-model="createForm.description"
+              class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-y"
+              rows="2"
+              placeholder="可选描述"
+            />
           </div>
           <div>
-            <label class="text-sm font-medium">属性 (JSON)</label>
+            <label class="text-sm font-medium block mb-1.5">属性 (JSON)</label>
             <textarea
               v-model="createPropsText"
-              class="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              rows="3"
+              class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-y"
+              rows="4"
               placeholder='{}'
             />
           </div>
-
           <div>
-            <label class="text-sm font-medium">重要性分数</label>
+            <label class="text-sm font-medium block mb-1.5">重要性分数</label>
             <Input
               v-model.number="createForm.importanceScore"
               type="number"
               :min="0"
               :max="1"
               :step="0.05"
-              class="mt-1 w-28"
+              class="w-32"
             />
           </div>
-          <DialogFooter>
+          <div class="flex gap-2 pt-2">
             <Button type="button" variant="outline" @click="createOpen = false">取消</Button>
             <Button type="submit" :disabled="creating || !createForm.name">
               {{ creating ? '创建中...' : '创建' }}
             </Button>
-          </DialogFooter>
+          </div>
         </form>
-      </DialogContent>
-    </Dialog>
+      </SheetContent>
+    </Sheet>
 
-    <!-- 编辑实体对话框 -->
-    <Dialog v-model:open="editOpen">
-      <DialogContent class="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>编辑实体</DialogTitle>
-          <DialogDescription>修改实体的描述、属性和重要性分数。</DialogDescription>
-        </DialogHeader>
-        <form class="space-y-4" @submit.prevent="handleEdit">
+    <!-- 编辑实体 Sheet -->
+    <Sheet :open="editOpen" @update:open="handleEditClose">
+      <SheetContent class="overflow-y-auto p-6" style="width: 100%; max-width: 36rem;">
+        <SheetHeader>
+          <SheetTitle>编辑实体</SheetTitle>
+          <SheetDescription>修改实体的描述、属性和重要性分数。</SheetDescription>
+        </SheetHeader>
+        <form class="mt-6 space-y-5" @submit.prevent="handleEdit">
           <div>
-            <label class="text-sm font-medium">描述</label>
-            <Input v-model="editForm.description" placeholder="描述" class="mt-1" />
+            <label class="text-sm font-medium block mb-1.5">描述</label>
+            <textarea
+              v-model="editForm.description"
+              class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-y"
+              rows="3"
+              placeholder="实体描述"
+            />
           </div>
           <div>
-            <label class="text-sm font-medium">属性 (JSON)</label>
+            <label class="text-sm font-medium block mb-1.5">属性 (JSON)</label>
             <textarea
               v-model="editPropsText"
-              class="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              rows="4"
+              class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-y"
+              rows="8"
               placeholder='{}'
             />
           </div>
-
           <div>
-            <label class="text-sm font-medium">重要性分数</label>
+            <label class="text-sm font-medium block mb-1.5">重要性分数</label>
             <Input
               v-model.number="editForm.importanceScore"
               type="number"
               :min="0"
               :max="1"
               :step="0.05"
-              class="mt-1 w-28"
+              class="w-32"
             />
           </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" @click="editOpen = false">取消</Button>
+          <div class="flex gap-2 pt-2">
+            <Button type="button" variant="outline" @click="handleEditClose(false)">取消</Button>
             <Button type="submit" :disabled="editing">
               {{ editing ? '保存中...' : '保存' }}
             </Button>
-          </DialogFooter>
+          </div>
         </form>
-      </DialogContent>
-    </Dialog>
+      </SheetContent>
+    </Sheet>
 
     <!-- 归档确认对话框 -->
-    <Dialog v-model:open="archiveOpen">
+    <Dialog :open="archiveOpen" @update:open="handleArchiveClose">
       <DialogContent class="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>确认归档</DialogTitle>
