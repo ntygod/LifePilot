@@ -194,16 +194,17 @@ public class AgentPersistenceHandler {
         }
     }
 
-    /** 同步写入助手消息到 chat_messages。 */
+    /** 同步写入助手消息到 chat_messages（含 ReactSteps JSON）。 */
     @Nullable
-    public String persistAssistantMessage(ReactAgentState state) {
+    public String persistAssistantMessage(ReactAgentState state,
+                                          @Nullable String reactStepsJson) {
         if (conversationHistoryStore == null) return null;
         String output = state.finalOutput();
         if (output == null || output.isBlank()) return null;
         try {
             return conversationHistoryStore.appendAssistantMessage(
                     state.sessionId(), output, state.reasoningSummary(),
-                    state.traceId(), null);
+                    state.traceId(), null, reactStepsJson);
         } catch (Exception e) {
             log.warn("助手消息同步写入失败: sessionId={}, error={}",
                     state.sessionId(), e.getMessage());
@@ -212,28 +213,30 @@ public class AgentPersistenceHandler {
     }
 
     /**
-     * 同步写入助手消息到 chat_messages（含 A2UI JSON）。
+     * 同步写入助手消息到 chat_messages（含 A2UI JSON 和 ReactSteps JSON）。
      *
-     * <p>流式模式使用此方法，需要额外传入 A2UI JSON 和最终内容。</p>
+     * <p>流式模式使用此方法，需要额外传入 A2UI JSON、ReactSteps JSON 和最终内容。</p>
      *
      * @param state             当前 Agent 状态
      * @param finalContent      最终文本内容
      * @param reasoningSummary  推理概要
      * @param a2uiJson          A2UI 组件树 JSON（可空）
+     * @param reactStepsJson    ReAct 步骤序列 JSON（可空）
      * @return 助手消息 ID，写入失败时返回 null
      */
     @Nullable
     public String persistAssistantMessageWithA2ui(ReactAgentState state,
                                                    @Nullable String finalContent,
                                                    @Nullable String reasoningSummary,
-                                                   @Nullable String a2uiJson) {
+                                                   @Nullable String a2uiJson,
+                                                   @Nullable String reactStepsJson) {
         if (conversationHistoryStore == null) return null;
         if ((finalContent == null || finalContent.isBlank()) && a2uiJson == null) return null;
         try {
             return conversationHistoryStore.appendAssistantMessage(
                     state.sessionId(),
                     finalContent != null ? finalContent : "",
-                    reasoningSummary, state.traceId(), a2uiJson);
+                    reasoningSummary, state.traceId(), a2uiJson, reactStepsJson);
         } catch (Exception e) {
             log.warn("助手消息同步写入失败: sessionId={}, error={}",
                     state.sessionId(), e.getMessage());

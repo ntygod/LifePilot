@@ -11,6 +11,7 @@ import type {
   A2uiComponent,
   TokenUsage,
   ReasoningEvent,
+  ReactStepDto,
   ChatAttachment,
   ToolConfirmationRequest,
 } from '@/types'
@@ -38,6 +39,8 @@ export function useChat() {
   // 当前轮推理事件流与状态文案
   const reasoningEvents = ref<ReasoningEvent[]>([])
   const reasoningStatusText = ref<string | null>(null)
+  // 当前轮流式 ReAct 步骤（从 REASONING 事件实时构建）
+  const streamingReactSteps = ref<ReactStepDto[]>([])
   // 当前轮流式媒体数据（截图等），DONE 事件时合并到消息附件
   const streamingMedia = ref<SseMediaEvent[]>([])
   // 当前待处理的工具确认请求
@@ -99,6 +102,7 @@ export function useChat() {
     lastTokenUsage.value = null
     reasoningEvents.value = []
     reasoningStatusText.value = null
+    streamingReactSteps.value = []
     streamingMedia.value = []
     a2uiStore.clearComponents()
     abortController = new AbortController()
@@ -234,6 +238,12 @@ export function useChat() {
           const ev = payload.event
           reasoningEvents.value.push(ev)
           reasoningStatusText.value = mapReasoningStatus(ev)
+          // 从 REASONING 事件字段构建流式 ReactStepDto（DONE 事件会提供完整版本）
+          const stepIndex = ev.extra?.stepIndex ?? streamingReactSteps.value.length
+          const reactStep = buildReactStepFromEvent(ev, stepIndex)
+          if (reactStep) {
+            streamingReactSteps.value.push(reactStep)
+          }
           break
         }
         case SSE_EVENT_TYPES.TOKEN: {
@@ -320,6 +330,9 @@ export function useChat() {
             modelId: event.tokenUsage?.modelId,
             sources: event.sources,
             toolsSummary: event.toolsSummary,
+            reactSteps: event.reactSteps?.length
+              ? event.reactSteps
+              : (streamingReactSteps.value.length > 0 ? [...streamingReactSteps.value] : undefined),
           })
           // 记录本轮统计信息（若后端未返回则保持上一次或使用 usage 字段兜底）
           if (event.tokenUsage) {
@@ -408,29 +421,45 @@ export function useChat() {
     }
   }
 
+  /** 从 REASONING 事件构建流式 ReactStepDto（轻量版，DONE 事件会覆盖为完整版） */
+  function buildReactStepFromEvent(ev: ReasoningEvent, index: number): ReactStepDto | null {
+    switch (ev.type) {
+      case 'THOUGHT':
+        return { type: 'THOUGHT', index, content: ev.description ?? ev.title }
+      case 'TOOL_CALL':
+        return { type: 'TOOL_CALL', index, toolId: ev.toolName ?? 'unknown', inputSummary: ev.description ?? '', latencyMs: 0 }
+      case 'OBSERVATION':
+        return { type: 'OBSERVATION', index, toolId: ev.toolName ?? 'unknown', success: !ev.title.includes('失败'), outputSummary: ev.description ?? '', tokensUsed: 0 }
+      case 'ANSWER':
+        return { type: 'ANSWER', index, content: ev.description ?? ev.title }
+      case 'SUSPEND':
+        return { type: 'SUSPEND', index, reason: ev.description ?? ev.title, suspendedAt: ev.createdAt }
+      case 'RESUME':
+        return { type: 'RESUME', index, resumedAt: ev.createdAt, suspendDurationMs: 0 }
+      default:
+        return null // AGENT_START / ANSWER_FINALIZED 不是 ReactStep 类型
+    }
+  }
+
   /** 将 ReasoningEvent 映射为顶部状态条文案 */
   function mapReasoningStatus(ev: ReasoningEvent): string {
     switch (ev.type) {
       case 'AGENT_START':
         return '正在准备上下文与预算…'
-      case 'CONTEXT_LOADING':
-        return '正在分析问题与上下文…'
-      case 'MEMORY_RETRIEVAL':
-        return '正在检索相关记忆…'
-      case 'TOOL_CALL_START':
+      case 'THOUGHT':
+        return '正在思考…'
+      case 'TOOL_CALL':
         return ev.toolName ? `正在调用工具：${ev.toolName}…` : '正在调用外部工具…'
-      case 'TOOL_CALL_END':
+      case 'OBSERVATION':
         return ev.toolName ? `工具 ${ev.toolName} 调用完成` : '工具调用已完成'
-      case 'THINKING_STEP':
-        return '正在思考解决方案…'
-      case 'PLAN_UPDATED':
-        return '已更新执行计划…'
-      case 'ANSWER_DRAFTING':
+      case 'ANSWER':
         return '正在整理最终答案…'
+      case 'SUSPEND':
+        return '等待用户确认…'
+      case 'RESUME':
+        return '已恢复执行…'
       case 'ANSWER_FINALIZED':
         return '本轮回答已完成'
-      case 'ERROR':
-        return '推理过程中发生错误'
       default:
         return '正在处理中…'
     }
@@ -454,6 +483,8 @@ export function useChat() {
     lastTokenUsage,
     reasoningEvents,
     reasoningStatusText,
+    // 当前轮流式 ReAct 步骤，供 ReactStepTimeline 实时渲染
+    streamingReactSteps,
     // 当前轮流式媒体数据（截图等），供组件实时预览
     streamingMedia,
     streamingA2uiComponents: a2uiStore.components,

@@ -162,7 +162,8 @@ public class AgentOrchestrator {
             String assistantMessageId = null;
             if (!testSession) {
                 persistenceHandler.writeAssistantMessageToL1(state);
-                assistantMessageId = persistenceHandler.persistAssistantMessage(state);
+                String reactStepsJson = serializeReactStepsJson(state.steps());
+                assistantMessageId = persistenceHandler.persistAssistantMessage(state, reactStepsJson);
                 persistenceHandler.persistInjectionRecord(assistantMessageId, state.sessionId(),
                         loopContext);
                 persistenceHandler.persistToolMediaAttachments(assistantMessageId, state.sessionId(),
@@ -211,7 +212,7 @@ public class AgentOrchestrator {
         String tempTurnId = UUID.randomUUID().toString();
         String userMessageId = null;
         String assistantMessageId = null;
-        var loopContext = new AgentLoopContext(sseManager, streamId);
+        var loopContext = new AgentLoopContext(sseManager, streamId, tempTurnId);
 
         // 媒体校验与预处理
         final AgentRequest effectiveRequest = preprocessMedia(request, state, sseManager, streamId);
@@ -288,8 +289,9 @@ public class AgentOrchestrator {
                     persistenceHandler.writeAssistantMessageToL1(state);
                     String a2uiJson = streamingEventHandler.serializeA2uiTree(
                             loopContext.getLastCollectedA2uiTree());
+                    String reactStepsJson = serializeReactStepsJson(state.steps());
                     assistantMessageId = persistenceHandler.persistAssistantMessageWithA2ui(
-                            state, finalContent, reasoningSummary, a2uiJson);
+                            state, finalContent, reasoningSummary, a2uiJson, reactStepsJson);
                     persistenceHandler.persistInjectionRecord(assistantMessageId, state.sessionId(),
                             loopContext);
                     persistenceHandler.persistToolMediaAttachments(assistantMessageId, state.sessionId(),
@@ -316,7 +318,7 @@ public class AgentOrchestrator {
                         null, Map.of());
                 var doneData = streamingEventHandler.buildDoneEventPayload(
                         request, state, tempTurnId, finalTokenUsage,
-                        traceContext, reasoningSummary, finalContent, assistantMessageId,
+                        state.steps(), reasoningSummary, finalContent, assistantMessageId,
                         loopContext.getLastCollectedA2uiTree());
                 sseManager.sendEvent(streamId, SseEventType.DONE, doneData);
                 sseManager.closeEmitter(streamId);
@@ -375,7 +377,8 @@ public class AgentOrchestrator {
             boolean testSession = isTestSession(state.sessionId());
             if (!testSession) {
                 persistenceHandler.writeAssistantMessageToL1(state);
-                persistenceHandler.persistAssistantMessage(state);
+                String reactStepsJson = serializeReactStepsJson(state.steps());
+                persistenceHandler.persistAssistantMessage(state, reactStepsJson);
                 persistenceHandler.asyncPostProcess(state);
             }
             log.info("Agent 恢复后执行完成: traceId={}, stepCount={}", state.traceId(), state.stepCount());
@@ -541,6 +544,13 @@ public class AgentOrchestrator {
         }
         return "本轮推理已完成，使用模型 %s，经历 %d 个推理步骤，累计约 %d 个 Token。"
                 .formatted(modelId, steps, tokens);
+    }
+
+    /** 将 ReactStep 列表序列化为 JSON 字符串。 */
+    @Nullable
+    private String serializeReactStepsJson(@Nullable List<ReactStep> steps) {
+        if (steps == null || steps.isEmpty()) return null;
+        return ReactStepSerializer.serializeToJson(steps, objectMapper);
     }
 
     /** 从 TraceContext 聚合 Token 使用量。 */

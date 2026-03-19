@@ -72,6 +72,7 @@ class MessagePersistence_Preservation_保持测试 {
                     reasoning_summary TEXT,
                     trace_id         TEXT,
                     a2ui_components_json TEXT,
+                    react_steps_json TEXT,
                     created_at       TEXT NOT NULL,
                     FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
                 )
@@ -198,7 +199,8 @@ class MessagePersistence_Preservation_保持测试 {
                 "这是当前面板",
                 "已生成结构化面板",
                 "trace-a2ui-1",
-                a2uiJson
+                a2uiJson,
+                null
         );
 
         List<MessageInfo> messages = messageRepository.findMessageInfosBySessionId(sessionId);

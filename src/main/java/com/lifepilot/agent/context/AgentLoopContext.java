@@ -26,17 +26,30 @@ public class AgentLoopContext {
     // 流式模式下的 SSE 上下文（非流式模式为 null）
     @Nullable private final SseSessionManager sseManager;
     @Nullable private final String streamId;
+    @Nullable private final String turnId;
 
     /** 非流式模式构造。 */
     public AgentLoopContext() {
         this.sseManager = null;
         this.streamId = null;
+        this.turnId = null;
     }
 
     /** 流式模式构造。 */
-    public AgentLoopContext(@Nullable SseSessionManager sseManager, @Nullable String streamId) {
+    public AgentLoopContext(@Nullable SseSessionManager sseManager,
+                            @Nullable String streamId) {
         this.sseManager = sseManager;
         this.streamId = streamId;
+        this.turnId = null;
+    }
+
+    /** 流式模式构造（含 turnId）。 */
+    public AgentLoopContext(@Nullable SseSessionManager sseManager,
+                            @Nullable String streamId,
+                            @Nullable String turnId) {
+        this.sseManager = sseManager;
+        this.streamId = streamId;
+        this.turnId = turnId;
     }
 
     /** 获取 SSE 会话管理器（非流式模式返回 null）。 */
@@ -46,6 +59,10 @@ public class AgentLoopContext {
     /** 获取 SSE 流 ID（非流式模式返回 null）。 */
     @Nullable
     public String getStreamId() { return streamId; }
+
+    /** 获取 SSE turnId（非流式模式返回 null）。 */
+    @Nullable
+    public String getTurnId() { return turnId; }
 
     /** 收集工具产生的媒体数据。 */
     public void addToolMedia(MediaDataExtractor.MediaItem item) {

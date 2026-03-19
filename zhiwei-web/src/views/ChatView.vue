@@ -44,6 +44,7 @@ const {
   lastPrompt,
   reasoningStatusText,
   reasoningEvents,
+  streamingReactSteps,
   streamingA2uiComponents,
   pendingToolConfirmation,
 } = useChat()
@@ -459,6 +460,7 @@ function closeInspectorPanels() {
             :is-streaming="isStreaming"
             :streaming-content="chatStore.streamingContent"
             :streaming-reasoning-events="reasoningEvents"
+            :streaming-react-steps="streamingReactSteps"
             :streaming-a2ui-components="streamingA2uiComponents"
             :query="searchQuery"
             @retry="handleRetry"

@@ -1,4 +1,4 @@
-import type { A2uiComponent, ChatAttachment, Message } from '@/types'
+import type { A2uiComponent, ChatAttachment, Message, ReactStepDto } from '@/types'
 
 /** 后端附件数据结构（对应 AttachmentInfo record） */
 interface BackendAttachment {
@@ -18,6 +18,7 @@ type BackendMessageLike = {
   reasoningSummary?: string | null
   traceId?: string | null
   attachments?: BackendAttachment[] | null
+  reactSteps?: ReactStepDto[] | null
 }
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
@@ -83,5 +84,6 @@ export function mapBackendMessage(message: BackendMessageLike): Message {
     reasoningSummary: message.reasoningSummary ?? undefined,
     traceId: message.traceId ?? undefined,
     attachments,
+    reactSteps: message.reactSteps?.length ? message.reactSteps : undefined,
   }
 }

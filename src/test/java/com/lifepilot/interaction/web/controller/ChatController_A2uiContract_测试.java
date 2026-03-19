@@ -204,6 +204,7 @@ class ChatController_A2uiContract_测试 {
                         Instant.parse("2026-03-11T08:00:00Z"),
                         "已生成结构化面板",
                         "trace-1",
+                        null,
                         null
                 )
         ));

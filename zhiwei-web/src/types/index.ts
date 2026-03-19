@@ -74,6 +74,8 @@ export interface Message {
   sources?: SourceSummary[]
   /** 可选：本轮执行涉及到的工具调用摘要列表 */
   toolsSummary?: ToolCallSummary[]
+  /** 可选：本轮 ReAct 步骤序列（替代 toolsSummary，结构化展示推理过程） */
+  reactSteps?: ReactStepDto[]
   /** 消息是否已折叠（长消息场景，前端本地状态） */
   collapsed?: boolean
   /** 用户反馈状态（前端本地状态，不持久化到后端） */
@@ -150,18 +152,16 @@ export interface SseTokenEvent {
   index: number
 }
 
-/** 推理过程事件类型 */
+/** 推理过程事件类型 — 与后端 pushReactStepEvent 对齐 */
 export type ReasoningEventType =
   | 'AGENT_START'
-  | 'CONTEXT_LOADING'
-  | 'MEMORY_RETRIEVAL'
-  | 'TOOL_CALL_START'
-  | 'TOOL_CALL_END'
-  | 'THINKING_STEP'
-  | 'PLAN_UPDATED'
-  | 'ANSWER_DRAFTING'
+  | 'THOUGHT'
+  | 'TOOL_CALL'
+  | 'OBSERVATION'
+  | 'ANSWER'
+  | 'SUSPEND'
+  | 'RESUME'
   | 'ANSWER_FINALIZED'
-  | 'ERROR'
 
 /** 推理过程事件（Reasoning Timeline） */
 export interface ReasoningEvent {
@@ -173,6 +173,63 @@ export interface ReasoningEvent {
   createdAt: string
   extra?: Record<string, any>
 }
+
+// ===== ReactStep 类型定义 — 与后端 ReactStepSerializer 对齐 =====
+
+/** ReactStep 步骤类型 */
+export type ReactStepType = 'THOUGHT' | 'TOOL_CALL' | 'OBSERVATION' | 'ANSWER' | 'SUSPEND' | 'RESUME'
+
+/** ReactStep 基础字段 */
+interface ReactStepBase {
+  type: ReactStepType
+  index: number
+}
+
+/** 推理思考步骤 */
+export interface ThoughtStep extends ReactStepBase {
+  type: 'THOUGHT'
+  content: string
+}
+
+/** 工具调用步骤 */
+export interface ToolCallStep extends ReactStepBase {
+  type: 'TOOL_CALL'
+  toolId: string
+  inputSummary: string
+  latencyMs: number
+}
+
+/** 工具观察步骤 */
+export interface ObservationStep extends ReactStepBase {
+  type: 'OBSERVATION'
+  toolId: string
+  success: boolean
+  outputSummary: string
+  tokensUsed: number
+}
+
+/** 最终回答步骤 */
+export interface AnswerStep extends ReactStepBase {
+  type: 'ANSWER'
+  content: string
+}
+
+/** 挂起步骤 */
+export interface SuspendStep extends ReactStepBase {
+  type: 'SUSPEND'
+  reason: string
+  suspendedAt: string
+}
+
+/** 恢复步骤 */
+export interface ResumeStep extends ReactStepBase {
+  type: 'RESUME'
+  resumedAt: string
+  suspendDurationMs: number
+}
+
+/** ReactStep 联合类型 */
+export type ReactStepDto = ThoughtStep | ToolCallStep | ObservationStep | AnswerStep | SuspendStep | ResumeStep
 
 /** SSE 完成事件 */
 export interface SseDoneEvent {
@@ -209,6 +266,8 @@ export interface SseDoneEvent {
   sources?: SourceSummary[]
   /** 可选：本轮工具调用摘要列表（来自 Trace ToolCallStep 聚合） */
   toolsSummary?: ToolCallSummary[]
+  /** 可选：本轮 ReAct 步骤序列（结构化推理过程） */
+  reactSteps?: ReactStepDto[]
 }
 
 /** SSE 错误事件 */
