@@ -54,7 +54,7 @@ class ScheduleSkillProviderProactiveTest {
         lenient().when(promptRegistry.render("skill/schedule")).thenReturn("日程提示词");
         // DataStoreCrudAdapter.ensureCollection() 需要 findCollection 返回已有集合
         lenient().when(dataStoreManager.findCollection("日程")).thenReturn(Optional.of(SCHEDULE_COLLECTION));
-        provider = new ScheduleSkillProvider(dataStoreManager, objectMapper, promptRegistry, null, null);
+        provider = new ScheduleSkillProvider(dataStoreManager, objectMapper, promptRegistry);
     }
 
     // ---- 辅助方法：将 ScheduleEntity 包装为 DataStore Document ----
