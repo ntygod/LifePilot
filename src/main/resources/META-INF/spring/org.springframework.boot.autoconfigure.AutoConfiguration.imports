@@ -4,6 +4,7 @@ com.lifepilot.llm.config.LlmAutoConfiguration
 com.lifepilot.memory.config.MemoryAutoConfiguration
 com.lifepilot.tool.config.ToolAutoConfiguration
 com.lifepilot.agent.config.AgentAutoConfiguration
+com.lifepilot.agent.task.config.TaskAutoConfiguration
 com.lifepilot.agent.suspend.config.SuspendAutoConfiguration
 com.lifepilot.mcp.config.McpAutoConfiguration
 com.lifepilot.knowledge.config.KnowledgeAutoConfiguration
