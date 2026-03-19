@@ -70,7 +70,7 @@ public class TodoSkillProvider implements ProactiveSkillProvider {
                                 new PropertyDefinition("title", PropertyType.TEXT, true, "待办标题"),
                                 new PropertyDefinition("status", PropertyType.SELECT, true, "状态: PENDING/IN_PROGRESS/COMPLETED"),
                                 new PropertyDefinition("priority", PropertyType.SELECT, false, "优先级: HIGH/MEDIUM/LOW"),
-                                new PropertyDefinition("dueDate", PropertyType.DATE, false, "截止日期")
+                                new PropertyDefinition("dueDate", PropertyType.DATETIME, false, "截止日期时间")
                         ),
                         "待办事项管理"
                 ));
@@ -137,7 +137,7 @@ public class TodoSkillProvider implements ProactiveSkillProvider {
                                 "title", Map.of("type", "string", "description", "待办标题"),
                                 "description", Map.of("type", "string", "description", "待办描述"),
                                 "priority", Map.of("type", "string", "description", "优先级: HIGH/MEDIUM/LOW"),
-                                "dueDate", Map.of("type", "string", "format", "date-time", "description", "截止日期 ISO 8601"),
+                                "dueDate", Map.of("type", "string", "format", "date-time", "description", "截止日期时间，ISO 8601 格式，如 2026-03-20T22:00:00Z"),
                                 "tags", Map.of("type", "string", "description", "标签，逗号分隔")
                         )
                 )))
@@ -192,10 +192,10 @@ public class TodoSkillProvider implements ProactiveSkillProvider {
                             filters.add(new QueryFilter("priority", FilterOp.EQ, priority));
                         }
 
-                        List<TodoEntity> entities = todoAdapter.list(
+                        List<Map.Entry<String, TodoEntity>> entries = todoAdapter.listWithId(
                                 filters.isEmpty() ? null : filters, null, null, 0, 100);
-                        List<Map<String, Object>> itemMaps = entities.stream()
-                                .map(this::todoEntityToMap)
+                        List<Map<String, Object>> itemMaps = entries.stream()
+                                .map(entry -> todoEntityToMap(entry.getKey(), entry.getValue()))
                                 .toList();
                         return ToolResult.success(Map.of("items", itemMaps));
                     } catch (Exception e) {
@@ -225,7 +225,7 @@ public class TodoSkillProvider implements ProactiveSkillProvider {
                     try {
                         String id = input.getParam("id", String.class);
                         return todoAdapter.findById(id)
-                                .map(entity -> ToolResult.success(todoEntityToMap(entity)))
+                                .map(entity -> ToolResult.success(todoEntityToMap(id, entity)))
                                 .orElse(ToolResult.error("待办不存在: id=" + id));
                     } catch (Exception e) {
                         log.error("查询待办详情失败: {}", e.getMessage(), e);
@@ -251,7 +251,7 @@ public class TodoSkillProvider implements ProactiveSkillProvider {
                                 "description", Map.of("type", "string", "description", "新描述"),
                                 "priority", Map.of("type", "string", "description", "新优先级: HIGH/MEDIUM/LOW"),
                                 "status", Map.of("type", "string", "description", "新状态: PENDING/IN_PROGRESS/COMPLETED"),
-                                "dueDate", Map.of("type", "string", "format", "date-time", "description", "新截止日期 ISO 8601"),
+                                "dueDate", Map.of("type", "string", "format", "date-time", "description", "新截止日期时间，ISO 8601 格式，如 2026-03-20T22:00:00Z"),
                                 "tags", Map.of("type", "string", "description", "新标签，逗号分隔")
                         )
                 )))
@@ -433,9 +433,10 @@ public class TodoSkillProvider implements ProactiveSkillProvider {
 
     // ---- 辅助方法 ----
 
-    /** 将 TodoEntity 转换为 Map 用于 ToolResult。 */
-    private Map<String, Object> todoEntityToMap(TodoEntity entity) {
+    /** 将 TodoEntity 转换为 Map 用于 ToolResult，包含文档 ID。 */
+    private Map<String, Object> todoEntityToMap(String documentId, TodoEntity entity) {
         var map = new java.util.HashMap<String, Object>();
+        map.put("id", documentId);
         map.put("title", entity.title());
         map.put("status", entity.status());
         map.put("priority", entity.priority());
