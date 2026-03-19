@@ -176,6 +176,12 @@ public class ShellExecToolExecutor {
         log.debug("Shell 命令执行完成: command={}, exitCode={}, stdoutLen={}, stderrLen={}",
                 command, exitCode, stdout.length(), stderr.length());
 
+        // exitCode != 0 时返回错误结果，让 LLM 感知命令执行失败
+        if (exitCode != 0) {
+            return ToolResult.error("命令执行失败 (exitCode=" + exitCode + "): "
+                    + (!stderr.isBlank() ? stderr : stdout));
+        }
+
         return ToolResult.success(Map.copyOf(data));
     }
 }
