@@ -111,9 +111,11 @@ public class GuardrailEngine {
      * @return 检查结果
      */
     public GuardrailResult checkToolCall(ToolContract tool, ToolInput input) {
-        // 白名单内的工具直接通过
-        if (allowedTools.contains(tool.id())) {
-            return new GuardrailResult.Passed("whitelist");
+        // 白名单检查：不在白名单内的工具直接拦截（访问控制）
+        if (!allowedTools.contains(tool.id())) {
+            return new GuardrailResult.Blocked("access-control",
+                    "工具 %s 不在白名单中，禁止调用".formatted(tool.id()),
+                    null);
         }
 
         // infrastructure 低风险工具跳过策略评估和审计日志
