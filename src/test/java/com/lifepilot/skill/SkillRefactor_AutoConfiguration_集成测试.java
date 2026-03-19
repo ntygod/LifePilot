@@ -1,5 +1,8 @@
 package com.lifepilot.skill;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.config.threadpool.SharedScheduler;
+import com.lifepilot.datastore.DataStoreManager;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.semantic.SemanticMemory;
@@ -10,7 +13,7 @@ import com.lifepilot.skill.activation.SkillMetricsTracker;
 import com.lifepilot.skill.disclosure.SkillDisclosureTool;
 import com.lifepilot.skill.config.SkillAutoConfiguration;
 import com.lifepilot.skill.registry.SkillRegistry;
-import com.lifepilot.tool.config.ToolAutoConfiguration;
+import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,6 +21,7 @@ import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
 import org.springframework.boot.autoconfigure.jdbc.JdbcTemplateAutoConfiguration;
 import org.springframework.context.ApplicationContext;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.lang.NonNull;
@@ -28,6 +32,7 @@ import org.springframework.test.context.ContextConfiguration;
 
 import java.nio.file.Path;
 import java.util.UUID;
+import java.util.concurrent.Executors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -36,7 +41,7 @@ import static org.mockito.Mockito.mock;
  * Skill 系统重构 — AutoConfiguration 集成测试。
  *
  * <p>验证 SkillAutoConfiguration 加载成功、新 Bean 注入正确、旧 Bean 不存在。
- * 使用 {@code @ContextConfiguration} 精确加载 Skill 和 Tool AutoConfiguration，
+ * 仅导入 SkillAutoConfiguration，手动提供 DynamicToolRegistry，
  * Mock 外部依赖（LlmRouter、HybridRetriever 等），避免全量应用上下文加载。</p>
  *
  * @author zsg
@@ -66,16 +71,21 @@ class SkillRefactor_AutoConfiguration_集成测试 {
     }
 
     /**
-     * 测试配置 — 仅导入 Skill 和 Tool AutoConfiguration，Mock 外部依赖。
+     * 测试配置 — 仅导入 SkillAutoConfiguration，手动提供 DynamicToolRegistry。
      */
     @Configuration
     @ImportAutoConfiguration({
             DataSourceAutoConfiguration.class,
             JdbcTemplateAutoConfiguration.class,
-            ToolAutoConfiguration.class,
             SkillAutoConfiguration.class
     })
     static class TestConfig {
+
+        @Bean
+        DynamicToolRegistry dynamicToolRegistry(GuardrailEngine guardrailEngine,
+                                                ApplicationEventPublisher eventPublisher) {
+            return new DynamicToolRegistry(guardrailEngine, eventPublisher);
+        }
 
         @Bean
         LlmRouter llmRouter() {
@@ -100,6 +110,28 @@ class SkillRefactor_AutoConfiguration_集成测试 {
         @Bean
         PromptRegistry promptRegistry() {
             return mock(PromptRegistry.class);
+        }
+
+        @Bean
+        DataStoreManager dataStoreManager() {
+            return mock(DataStoreManager.class);
+        }
+
+        @Bean
+        ObjectMapper objectMapper() {
+            return new ObjectMapper();
+        }
+
+        @Bean
+        SharedScheduler sharedScheduler() {
+            return mock(SharedScheduler.class, invocation -> {
+                if (invocation.getMethod().getName().equals("debounce")
+                        || invocation.getMethod().getName().equals("cleanup")
+                        || invocation.getMethod().getName().equals("heartbeat")) {
+                    return Executors.newSingleThreadScheduledExecutor();
+                }
+                return null;
+            });
         }
     }
 

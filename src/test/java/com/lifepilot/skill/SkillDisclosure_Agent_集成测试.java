@@ -1,6 +1,8 @@
 package com.lifepilot.skill;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.config.threadpool.SharedScheduler;
+import com.lifepilot.datastore.DataStoreManager;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.semantic.SemanticMemory;
@@ -9,7 +11,6 @@ import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.skill.config.SkillAutoConfiguration;
 import com.lifepilot.skill.disclosure.SkillDisclosureTool;
 import com.lifepilot.skill.registry.SkillRegistry;
-import com.lifepilot.tool.config.ToolAutoConfiguration;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -18,6 +19,7 @@ import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
 import org.springframework.boot.autoconfigure.jdbc.JdbcTemplateAutoConfiguration;
 import org.springframework.context.ApplicationContext;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.lang.NonNull;
@@ -37,7 +39,8 @@ import static org.mockito.Mockito.mock;
  * Skill 渐进式披露 — Agent 集成测试。
  *
  * <p>验证 Spring Context 加载成功、新工具注册到 DynamicToolRegistry、
- * 旧 skills 工具不存在。</p>
+ * 旧 skills 工具不存在。仅导入 SkillAutoConfiguration，
+ * 手动提供 DynamicToolRegistry 避免 ToolAutoConfiguration 的深层依赖。</p>
  *
  * @author zsg
  * @since 2026-03-19
@@ -55,20 +58,30 @@ class SkillDisclosure_Agent_集成测试 {
                 () -> "jdbc:sqlite:" + Path.of(tmpDir, "skill-disclosure-it-" + DB_ID + ".db")
                         .toString().replace("\\", "/"));
         registry.add("lifepilot.skills.enabled", () -> "true");
-        registry.add("lifepilot.tool.enabled", () -> "true");
         registry.add("lifepilot.skills.directory",
                 () -> Path.of(tmpDir, "skill-disclosure-it-skills-" + DB_ID)
                         .toString().replace("\\", "/"));
     }
 
+    /**
+     * 测试配置 — 仅导入 SkillAutoConfiguration，手动提供 DynamicToolRegistry。
+     *
+     * <p>避免导入 ToolAutoConfiguration 带来的 MetaProperties 等深层依赖，
+     * 聚焦验证 Skill 模块的 Bean 注册和工具注册逻辑。</p>
+     */
     @Configuration
     @ImportAutoConfiguration({
             DataSourceAutoConfiguration.class,
             JdbcTemplateAutoConfiguration.class,
-            ToolAutoConfiguration.class,
             SkillAutoConfiguration.class
     })
     static class TestConfig {
+
+        @Bean
+        DynamicToolRegistry dynamicToolRegistry(GuardrailEngine guardrailEngine,
+                                                ApplicationEventPublisher eventPublisher) {
+            return new DynamicToolRegistry(guardrailEngine, eventPublisher);
+        }
 
         @Bean
         LlmRouter llmRouter() {
@@ -96,8 +109,17 @@ class SkillDisclosure_Agent_集成测试 {
         }
 
         @Bean
+        DataStoreManager dataStoreManager() {
+            return mock(DataStoreManager.class);
+        }
+
+        @Bean
+        ObjectMapper objectMapper() {
+            return new ObjectMapper();
+        }
+
+        @Bean
         SharedScheduler sharedScheduler() {
-            // 简化版 SharedScheduler — 测试环境不需要真实的线程池注册
             return mock(SharedScheduler.class, invocation -> {
                 if (invocation.getMethod().getName().equals("debounce")
                         || invocation.getMethod().getName().equals("cleanup")
@@ -151,7 +173,11 @@ class SkillDisclosure_Agent_集成测试 {
     // ─────────────────────────────────────────────
 
     @Test
-    void DynamicToolRegistry_包含load_skill工具() {
+    void DynamicToolRegistry_registerTools后包含load_skill工具() {
+        // @ContextConfiguration 不触发 ApplicationReadyEvent，手动调用 registerTools
+        var disclosureTool = ctx.getBean(SkillDisclosureTool.class);
+        disclosureTool.registerTools();
+
         var registry = ctx.getBean(DynamicToolRegistry.class);
         assertThat(registry.resolve("load_skill")).isPresent();
     }
