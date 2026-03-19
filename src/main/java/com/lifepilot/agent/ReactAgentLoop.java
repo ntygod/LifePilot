@@ -302,6 +302,7 @@ public class ReactAgentLoop implements CallbackHelper {
                 }
                 state = state.appendStep(new ReactStep.Observation(
                         "llm", false, "LLM 调用失败: " + e.getMessage(), 0));
+                pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
                 continue;
             }
             var iterationDuration = Duration.between(iterationStart, Instant.now());
@@ -330,6 +331,7 @@ public class ReactAgentLoop implements CallbackHelper {
                 String thoughtText = assistantMessage.getText();
                 if (thoughtText != null && !thoughtText.isBlank()) {
                     state = state.appendStep(new ReactStep.Thought(thoughtText));
+                    pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
                 }
 
                 // 逐个执行 tool call
@@ -342,6 +344,7 @@ public class ReactAgentLoop implements CallbackHelper {
                         log.info("Agent 进入挂起态: traceId={}, reason={}", state.traceId(), state.suspendReason());
                         state = state.appendStep(new ReactStep.Suspend(
                                 state.suspendReason(), Instant.now(), state.stepCount()));
+                        pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
                         // 冻结 Budget elapsed 到当前时间点
                         state = state.toBuilder()
                                 .budget(state.budget().withElapsed(Duration.between(loopStart, Instant.now())))
@@ -366,6 +369,7 @@ public class ReactAgentLoop implements CallbackHelper {
                 String content = assistantMessage.getText();
                 if (content != null && !content.isBlank()) {
                     state = state.appendStep(new ReactStep.Answer(content));
+                    pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
                     state = state.toBuilder()
                             .done(true)
                             .finalOutput(content)
@@ -437,6 +441,7 @@ public class ReactAgentLoop implements CallbackHelper {
         // 记录 ToolCall 步骤
         var toolCallStart = Instant.now();
         state = state.appendStep(new ReactStep.ToolCall(toolId, inputJson, 0));
+        pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
 
         // 查找匹配的 ToolCallback
         ToolCallback matchedCallback = toolCallbacks.stream()
@@ -449,6 +454,7 @@ public class ReactAgentLoop implements CallbackHelper {
             log.warn("未找到工具回调: toolId={}", toolId);
             state = state.appendStep(new ReactStep.Observation(
                     toolId, false, "工具未注册: " + toolId, 0));
+            pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
             recordToolCallStep(traceContext, state.stepCount() - 1, toolCallStart,
                     toolId, inputJson, "工具未注册: " + toolId, false);
             return state;
@@ -475,6 +481,7 @@ public class ReactAgentLoop implements CallbackHelper {
                 state = state.suspend(suspendReason);
                 state = state.appendStep(new ReactStep.Observation(
                         toolId, true, "工具请求挂起: " + suspendReason, 0));
+                pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
                 recordToolCallStep(traceContext, state.stepCount() - 1, toolCallStart,
                         toolId, inputJson, rawOutput, true);
                 return state;
@@ -532,6 +539,7 @@ public class ReactAgentLoop implements CallbackHelper {
         int obsTokens = estimateTextTokens(observationOutput != null ? observationOutput : "");
         state = state.appendStep(new ReactStep.Observation(
                 toolId, success, observationOutput != null ? observationOutput : "", obsTokens));
+        pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
 
         // L4 反馈闭环 — 工具执行成功后记录操作模板执行结果
         if (success && proceduralMemory != null && intentMatcher != null) {
@@ -978,6 +986,63 @@ public class ReactAgentLoop implements CallbackHelper {
     }
 
     // ===== SSE 推理事件 =====
+
+    /**
+     * 将 ReactStep 转换为 REASONING SSE 事件并推送。
+     *
+     * <p>仅在流式模式下生效（loopContext 包含 SSE 上下文时）。
+     * 使用 switch 表达式穷举 6 种步骤类型，生成对应的事件标题和描述。</p>
+     *
+     * @param step        刚追加的 ReactStep
+     * @param stepIndex   步骤索引
+     * @param state       当前 Agent 状态
+     * @param loopContext 循环上下文（含 SSE 管理器和流 ID）
+     */
+    void pushReactStepEvent(ReactStep step, int stepIndex,
+                            ReactAgentState state, AgentLoopContext loopContext) {
+        var sseManager = loopContext.getSseManager();
+        var streamId = loopContext.getStreamId();
+        var turnId = loopContext.getTurnId();
+        if (sseManager == null || streamId == null || turnId == null) return;
+
+        var info = switch (step) {
+            case ReactStep.Thought(var content) -> new String[]{
+                    "THOUGHT", "推理思考",
+                    content.length() > 100 ? content.substring(0, 100) + "..." : content,
+                    null
+            };
+            case ReactStep.ToolCall(var toolId, var inputJson, var latencyMs) -> new String[]{
+                    "TOOL_CALL", "调用工具: " + toolId,
+                    "正在执行工具 " + toolId,
+                    toolId
+            };
+            case ReactStep.Observation(var toolId, var success, var output, var tokensUsed) -> new String[]{
+                    "OBSERVATION", (success ? "工具返回: " : "工具失败: ") + toolId,
+                    output.length() > 100 ? output.substring(0, 100) + "..." : output,
+                    toolId
+            };
+            case ReactStep.Answer(var content) -> new String[]{
+                    "ANSWER", "生成回答",
+                    content.length() > 100 ? content.substring(0, 100) + "..." : content,
+                    null
+            };
+            case ReactStep.Suspend(var reason, var suspendedAt, var idx) -> new String[]{
+                    "SUSPEND", "Agent 挂起",
+                    formatSuspendReason(reason),
+                    null
+            };
+            case ReactStep.Resume(var payload, var resumedAt, var duration) -> new String[]{
+                    "RESUME", "Agent 恢复",
+                    "挂起时长: " + duration.toMillis() + "ms",
+                    null
+            };
+        };
+
+        var extra = new HashMap<String, Object>();
+        extra.put("stepIndex", stepIndex);
+        sendReasoningEvent(sseManager, streamId, state.sessionId(), turnId,
+                info[0], info[1], info[2], info[3], extra);
+    }
 
     /** 发送 REASONING SSE 事件。 */
     @Override

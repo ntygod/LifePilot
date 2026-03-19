@@ -212,7 +212,7 @@ public class AgentOrchestrator {
         String tempTurnId = UUID.randomUUID().toString();
         String userMessageId = null;
         String assistantMessageId = null;
-        var loopContext = new AgentLoopContext(sseManager, streamId);
+        var loopContext = new AgentLoopContext(sseManager, streamId, tempTurnId);
 
         // 媒体校验与预处理
         final AgentRequest effectiveRequest = preprocessMedia(request, state, sseManager, streamId);

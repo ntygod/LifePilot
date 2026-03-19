@@ -90,17 +90,6 @@ public class StreamingCallback implements IterationCallback {
                                 List<Message> messages,
                                 List<ToolCallback> toolCallbacks,
                                 @Nullable TraceContext traceContext) {
-        // 推理事件
-        helper.sendReasoningEvent(sseManager, streamId, sessionId, turnId,
-                "CONTEXT_LOADING", "分析问题与上下文",
-                "正在梳理本轮问题、会话历史与可用记忆。", null, Map.of());
-        helper.sendReasoningEvent(sseManager, streamId, sessionId, turnId,
-                "MEMORY_RETRIEVAL", "检索相关记忆",
-                "已基于最近对话与知识收集相关记忆，用于本轮推理。", null, Map.of());
-        helper.sendReasoningEvent(sseManager, streamId, sessionId, turnId,
-                "ANSWER_DRAFTING", "正在生成回答",
-                "模型正在根据上下文整理最终回答。", null, Map.of());
-
         String scene = config.getLoop().getLlmScene();
 
         // 动态路由：检查 messages 中 UserMessage 是否包含 Media 对象
@@ -319,14 +308,7 @@ public class StreamingCallback implements IterationCallback {
             return emptyResponse;
         }
 
-        // 如果有 tool call，发送 TOOL_CALLING 推理事件
-        if (!toolCallCollector.isEmpty()) {
-            for (var tc : toolCallCollector) {
-                helper.sendReasoningEvent(sseManager, streamId, sessionId, turnId,
-                        "TOOL_CALLING", "调用工具: " + tc.name(),
-                        "正在执行工具 " + tc.name(), tc.name(), Map.of());
-            }
-        }
+        // tool call 事件已由 pushReactStepEvent 自动推送
 
         ChatResponse chatResponse = buildChatResponseFromStream(
                 collectedContent, toolCallCollector, lastChunk[0]);
@@ -385,11 +367,7 @@ public class StreamingCallback implements IterationCallback {
         var assistantMsg = chatResponse.getResult().getOutput();
 
         if (assistantMsg.hasToolCalls()) {
-            for (var tc : assistantMsg.getToolCalls()) {
-                helper.sendReasoningEvent(sseManager, streamId, sessionId, turnId,
-                        "TOOL_CALLING", "调用工具: " + tc.name(),
-                        "正在执行工具 " + tc.name(), tc.name(), Map.of());
-            }
+            // tool call 事件已由 pushReactStepEvent 自动推送
             helper.recordStreamingLlmStep(traceContext, Instant.now(), providerId, modelId,
                     scene, chatResponse, null);
             return chatResponse;
