@@ -800,6 +800,10 @@ lifepilot:
           - "C:\\Windows"
       interaction:
         response-timeout-seconds: 120
+      process:
+        max-concurrent: 5
+        max-output-buffer-size: 100000
+        idle-timeout-minutes: 30
     introspection:
       cache-ttl-seconds: 60
       debounce-millis: 500

@@ -66,6 +66,9 @@ public class MetaProperties {
         /** 交互控制配置。 */
         private Interaction interaction = new Interaction();
 
+        /** 后台进程管理配置。 */
+        private Process process = new Process();
+
         /**
          * Web 搜索配置。
          *
@@ -231,6 +234,25 @@ public class MetaProperties {
 
             /** 用户响应超时（秒），默认 120。 */
             private int responseTimeoutSeconds = 120;
+        }
+
+        /**
+         * 后台进程管理配置。
+         *
+         * @author zsg
+         * @since 2026-03-20
+         */
+        @Data
+        public static class Process {
+
+            /** 最大并发后台进程数，默认 5。 */
+            private int maxConcurrent = 5;
+
+            /** 输出环形缓冲区最大大小（字符），默认 100000。 */
+            private int maxOutputBufferSize = 100000;
+
+            /** 空闲超时（分钟），超时后自动清理进程，默认 30。 */
+            private int idleTimeoutMinutes = 30;
         }
     }
 
