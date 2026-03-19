@@ -354,7 +354,7 @@ public class SkillAutoConfiguration {
      * @param event 应用就绪事件
      */
     @EventListener(ApplicationReadyEvent.class)
-    @Order(Ordered.LOWEST_PRECEDENCE)
+    @Order(Ordered.LOWEST_PRECEDENCE - 1)
     public void onApplicationReady(ApplicationReadyEvent event) {
         var ctx = event.getApplicationContext();
 
@@ -375,13 +375,14 @@ public class SkillAutoConfiguration {
             log.info("ApplicationReady: generate_skill 工具已注册");
         }
 
-        // 启动待办到期通知定时扫描
+        // 启动待办到期通知定时扫描（共享调度器由 Spring 管理生命周期，此处不关闭）
         if (ctx.containsBean("todoDueNotifier") && ctx.containsBean("sharedScheduler")) {
             var notifier = ctx.getBean(TodoDueNotifier.class);
-            var scheduler = ctx.getBean(SharedScheduler.class);
+            var sharedScheduler = ctx.getBean(SharedScheduler.class);
             var config = ctx.getBean(SkillConfigProperties.class);
             int interval = config.getTodo().getDueCheckIntervalSeconds();
-            scheduler.cleanup().scheduleAtFixedRate(
+            var cleanupExecutor = sharedScheduler.cleanup();
+            cleanupExecutor.scheduleAtFixedRate(
                     notifier::scan,
                     interval,
                     interval,

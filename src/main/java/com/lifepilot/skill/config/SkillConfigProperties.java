@@ -73,8 +73,8 @@ public class SkillConfigProperties {
         /** 到期通知开关，默认 true。 */
         private boolean dueNotificationEnabled = true;
 
-        /** 到期检查间隔（秒），默认 60。 */
-        private int dueCheckIntervalSeconds = 60;
+        /** 到期检查间隔（秒），默认 600（10 分钟）。 */
+        private int dueCheckIntervalSeconds = 600;
 
         public boolean isDueNotificationEnabled() { return dueNotificationEnabled; }
         public void setDueNotificationEnabled(boolean dueNotificationEnabled) { this.dueNotificationEnabled = dueNotificationEnabled; }
