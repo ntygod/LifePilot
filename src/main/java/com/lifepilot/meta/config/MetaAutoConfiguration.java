@@ -1,5 +1,8 @@
 package com.lifepilot.meta.config;
 
+import com.lifepilot.agent.config.AgentConfigProperties;
+import com.lifepilot.agent.task.CronScheduler;
+import com.lifepilot.agent.task.CronTaskRepository;
 import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.datastore.DataStoreManager;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
@@ -76,8 +79,11 @@ public class MetaAutoConfiguration {
                                         @Nullable BrowserSessionManager browserSessionManager,
                                         @Nullable NotificationService notificationService,
                                         @Nullable WorkflowRegistry workflowRegistry,
-                                        @Nullable WorkflowCommandService workflowCommandService) {
-        return new InfraToolProvider(properties, restClientBuilder, sandboxBooter, codeValidator, sandboxRepository, interactionBridge, browserSessionManager, notificationService, workflowRegistry, workflowCommandService);
+                                        @Nullable WorkflowCommandService workflowCommandService,
+                                        @Nullable CronTaskRepository cronTaskRepository,
+                                        @Nullable CronScheduler cronScheduler,
+                                        @Nullable AgentConfigProperties agentConfigProperties) {
+        return new InfraToolProvider(properties, restClientBuilder, sandboxBooter, codeValidator, sandboxRepository, interactionBridge, browserSessionManager, notificationService, workflowRegistry, workflowCommandService, cronTaskRepository, cronScheduler, agentConfigProperties);
     }
 
     /**
