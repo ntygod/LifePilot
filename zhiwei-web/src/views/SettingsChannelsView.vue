@@ -109,7 +109,7 @@ async function handleSave() {
       <!-- 飞书 -->
       <SettingSection title="飞书" icon="🐦" description="飞书机器人事件订阅凭证，用于接收和回复飞书消息。">
         <SettingItem label="启用飞书通道" description="开启后将注册飞书 Webhook 端点，接收和回复飞书消息。">
-          <Switch :checked="feishu.enabled" @update:checked="feishu.enabled = $event" />
+          <Switch v-model="feishu.enabled" />
         </SettingItem>
         <SettingItem label="App ID" description="飞书开放平台应用的 App ID。">
           <Input v-model="feishu.appId" placeholder="cli_xxxxxxxxxx" class="w-64" />
@@ -128,7 +128,7 @@ async function handleSave() {
       <!-- 企业微信 -->
       <SettingSection title="企业微信" icon="💬" description="企业微信自建应用凭证，用于接收和回复企微消息。">
         <SettingItem label="启用企微通道" description="开启后将注册企微 Webhook 端点，接收和回复企微消息。">
-          <Switch :checked="wecom.enabled" @update:checked="wecom.enabled = $event" />
+          <Switch v-model="wecom.enabled" />
         </SettingItem>
         <SettingItem label="Corp ID" description="企业 ID。">
           <Input v-model="wecom.corpId" placeholder="wxxxxxxxxxxxxxxxxx" class="w-64" />
@@ -150,7 +150,7 @@ async function handleSave() {
       <!-- 钉钉 -->
       <SettingSection title="钉钉" icon="🔔" description="钉钉企业内部机器人凭证，用于接收和回复钉钉消息。">
         <SettingItem label="启用钉钉通道" description="开启后将注册钉钉 Webhook 端点，接收和回复钉钉消息。">
-          <Switch :checked="dingtalk.enabled" @update:checked="dingtalk.enabled = $event" />
+          <Switch v-model="dingtalk.enabled" />
         </SettingItem>
         <SettingItem label="App Key" description="钉钉应用的 AppKey。">
           <Input v-model="dingtalk.appKey" placeholder="dingxxxxxxxxxx" class="w-64" />
