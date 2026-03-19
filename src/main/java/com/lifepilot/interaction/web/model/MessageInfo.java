@@ -14,6 +14,7 @@ import org.springframework.lang.Nullable;
  * @param a2ui             A2UI 组件树（可为 null）
  * @param timestamp        消息时间戳
  * @param reasoningSummary 本条消息对应一轮对话的推理概要（可为 null，仅 assistant 消息返回）
+ * @param reactSteps       ReAct 步骤序列（可为 null，仅 assistant 消息返回）
  * @author zsg
  * @since 2026-02-27
  */
@@ -25,5 +26,6 @@ public record MessageInfo(
         Instant timestamp,
         @Nullable String reasoningSummary,
         @Nullable String traceId,
-        @Nullable List<AttachmentInfo> attachments
+        @Nullable List<AttachmentInfo> attachments,
+        @Nullable List<java.util.Map<String, Object>> reactSteps
 ) {}

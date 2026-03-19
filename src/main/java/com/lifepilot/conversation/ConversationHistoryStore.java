@@ -37,6 +37,7 @@ public interface ConversationHistoryStore {
      * @param reasoningSummary     本轮推理概要（可选）
      * @param traceId              关联 traceId（可选）
      * @param a2uiComponentsJson   A2UI 组件树 JSON（可选）
+     * @param reactStepsJson       ReAct 步骤序列 JSON（可选）
      * @return 后端生成的 assistantMessageId
      * @since 2026-03-06
      */
@@ -44,7 +45,8 @@ public interface ConversationHistoryStore {
                                   String assistantMessage,
                                   @Nullable String reasoningSummary,
                                   @Nullable String traceId,
-                                  @Nullable String a2uiComponentsJson);
+                                  @Nullable String a2uiComponentsJson,
+                                  @Nullable String reactStepsJson);
 
     /**
      * 追加一轮对话（user + assistant）到历史存储。
@@ -67,7 +69,7 @@ public interface ConversationHistoryStore {
             appendUserMessage(sessionId, userMessage, traceId);
         }
         if (assistantMessage != null && !assistantMessage.isBlank()) {
-            appendAssistantMessage(sessionId, assistantMessage, reasoningSummary, traceId, null);
+            appendAssistantMessage(sessionId, assistantMessage, reasoningSummary, traceId, null, null);
         }
     }
 

@@ -203,7 +203,7 @@ public class AgentPersistenceHandler {
         try {
             return conversationHistoryStore.appendAssistantMessage(
                     state.sessionId(), output, state.reasoningSummary(),
-                    state.traceId(), null);
+                    state.traceId(), null, null);
         } catch (Exception e) {
             log.warn("助手消息同步写入失败: sessionId={}, error={}",
                     state.sessionId(), e.getMessage());
@@ -233,7 +233,7 @@ public class AgentPersistenceHandler {
             return conversationHistoryStore.appendAssistantMessage(
                     state.sessionId(),
                     finalContent != null ? finalContent : "",
-                    reasoningSummary, state.traceId(), a2uiJson);
+                    reasoningSummary, state.traceId(), a2uiJson, null);
         } catch (Exception e) {
             log.warn("助手消息同步写入失败: sessionId={}, error={}",
                     state.sessionId(), e.getMessage());
