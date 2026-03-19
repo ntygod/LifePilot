@@ -425,7 +425,7 @@ public class ContextAssembler {
      */
     String formatUserProfile(List<TemporalEntity> entities) {
         if (entities.isEmpty()) return "";
-        var sb = new StringBuilder("\n\n用户画像:\n");
+        var sb = new StringBuilder();
         for (var entity : entities) {
             sb.append("- [").append(entity.type().label()).append("] ").append(entity.name());
             if (entity.description() != null && !entity.description().isBlank()) {
