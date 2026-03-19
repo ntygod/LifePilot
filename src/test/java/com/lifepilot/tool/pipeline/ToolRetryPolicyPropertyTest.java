@@ -1,6 +1,6 @@
 package com.lifepilot.tool.pipeline;
 
-import com.lifepilot.interaction.NoOpUserConfirmationService;
+import com.lifepilot.interaction.UserConfirmationService;
 import com.lifepilot.observability.guardrail.GuardrailEngine;
 import com.lifepilot.observability.guardrail.GuardrailResult;
 import com.lifepilot.tool.BuiltinTool;
@@ -265,7 +265,7 @@ class ToolRetryPolicyPropertyTest {
         var pipeline = new ToolExecutionPipeline(
                 registry, guardrailEngine,
                 new IdempotencyManager(),
-                new NoOpUserConfirmationService(),
+                (UserConfirmationService) (tool, input, message, streamId) -> true,
                 10, 2.0, 50);  // 短延迟加速测试
         return new PipelineInfra(registry, pipeline);
     }

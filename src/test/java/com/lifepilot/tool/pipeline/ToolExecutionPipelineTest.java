@@ -2,7 +2,6 @@ package com.lifepilot.tool.pipeline;
 
 import com.lifepilot.observability.guardrail.GuardrailEngine;
 import com.lifepilot.observability.guardrail.GuardrailResult;
-import com.lifepilot.interaction.NoOpUserConfirmationService;
 import com.lifepilot.interaction.UserConfirmationService;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.observability.guardrail.RiskLevel;
@@ -44,7 +43,7 @@ class ToolExecutionPipelineTest {
         ApplicationEventPublisher publisher = mock(ApplicationEventPublisher.class);
         registry = new DynamicToolRegistry(guardrailEngine, publisher);
         idempotencyManager = new IdempotencyManager();
-        UserConfirmationService confirmationService = new NoOpUserConfirmationService();
+        UserConfirmationService confirmationService = (tool, input, message, streamId) -> true;
         pipeline = new ToolExecutionPipeline(
                 registry, guardrailEngine, idempotencyManager, confirmationService,
                 100, 2.0, 1000);
