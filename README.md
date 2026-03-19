@@ -51,7 +51,7 @@ ZhiWei 是一个本地运行的个人 AI Agent 助手。它不只是被动执行
 - 支持 DeepSeek / OpenAI / Anthropic Claude / 通义千问 / Ollama（本地）等多家服务商
 
 ### 🎯 Skill 技能系统
-- 三层工具架构（ToolContract sealed interface）：BuiltinTool（Java Native）→ SkillTool（Declarative）→ McpTool（External）
+- 两层工具架构（ToolContract sealed interface）：BuiltinTool（Java Native）→ McpTool（External）
 - 7 大元能力维度（ToolCategory）：感知 / 行动 / 认知 / 存储 / 交互 / 自省 / 扩展
 - Skill 验证三阶段管线：FormatValidator → SecurityValidator → SandboxValidator
 - Skill 自扩展：SkillGenerator 运行时自动检测能力缺口，生成 YAML Skill
