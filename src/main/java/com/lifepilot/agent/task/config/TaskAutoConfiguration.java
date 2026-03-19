@@ -8,6 +8,7 @@ import com.lifepilot.agent.task.CronTaskRepository;
 import com.lifepilot.agent.task.HeartbeatRunner;
 import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.notification.NotificationService;
+import com.lifepilot.notification.config.NotificationProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -48,13 +49,13 @@ public class TaskAutoConfiguration {
                                        CronTaskRepository cronTaskRepository,
                                        AgentOrchestrator agentOrchestrator,
                                        NotificationService notificationService,
-                                       AgentConfigProperties config) {
+                                       NotificationProperties notificationProperties) {
         return new CronScheduler(
                 sharedScheduler.heartbeat(),
                 cronTaskRepository,
                 agentOrchestrator,
                 notificationService,
-                config
+                notificationProperties
         );
     }
 
@@ -65,12 +66,14 @@ public class TaskAutoConfiguration {
     public HeartbeatRunner heartbeatRunner(SharedScheduler sharedScheduler,
                                            AgentOrchestrator agentOrchestrator,
                                            NotificationService notificationService,
-                                           AgentConfigProperties config) {
+                                           AgentConfigProperties config,
+                                           NotificationProperties notificationProperties) {
         return new HeartbeatRunner(
                 sharedScheduler.heartbeat(),
                 agentOrchestrator,
                 notificationService,
-                config
+                config,
+                notificationProperties
         );
     }
 

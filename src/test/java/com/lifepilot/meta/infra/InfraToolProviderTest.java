@@ -27,7 +27,7 @@ class InfraToolProviderTest {
         properties = new MetaProperties();
         var restClientBuilder = mock(RestClient.Builder.class);
         when(restClientBuilder.build()).thenReturn(mock(RestClient.class));
-        provider = new InfraToolProvider(properties, restClientBuilder, null, null, null, null, null, null, null, null, null, null, null);
+        provider = new InfraToolProvider(properties, restClientBuilder, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     @Test

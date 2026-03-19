@@ -1,6 +1,5 @@
 package com.lifepilot.agent.task;
 
-import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.agent.model.AgentResponse;
 import com.lifepilot.agent.orchestration.AgentOrchestrator;
@@ -8,6 +7,7 @@ import com.lifepilot.interaction.model.ResponseContent;
 import com.lifepilot.notification.NotificationRequest;
 import com.lifepilot.notification.NotificationService;
 import com.lifepilot.notification.Urgency;
+import com.lifepilot.notification.config.NotificationProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
@@ -41,18 +41,18 @@ public class CronScheduler {
     private final CronTaskRepository repository;
     private final AgentOrchestrator agentOrchestrator;
     private final NotificationService notificationService;
-    private final AgentConfigProperties config;
+    private final NotificationProperties notificationProperties;
 
     public CronScheduler(ScheduledExecutorService scheduler,
                          CronTaskRepository repository,
                          AgentOrchestrator agentOrchestrator,
                          NotificationService notificationService,
-                         AgentConfigProperties config) {
+                         NotificationProperties notificationProperties) {
         this.scheduler = scheduler;
         this.repository = repository;
         this.agentOrchestrator = agentOrchestrator;
         this.notificationService = notificationService;
-        this.config = config;
+        this.notificationProperties = notificationProperties;
     }
 
     /**
@@ -145,7 +145,7 @@ public class CronScheduler {
             if (!silent && response.content() != null && !response.content().isBlank()
                     && response.terminationReason() == null) {
                 notificationService.send(new NotificationRequest(
-                        "system",
+                        notificationProperties.getDefaultUserId(),
                         new ResponseContent.TextContent("【%s】\n%s".formatted(task.name(), response.content())),
                         Urgency.LOW, null, "cron_task",
                         Map.of("taskId", task.id(), "taskName", task.name())

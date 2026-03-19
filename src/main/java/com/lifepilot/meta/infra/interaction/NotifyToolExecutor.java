@@ -4,6 +4,7 @@ import com.lifepilot.interaction.model.ResponseContent;
 import com.lifepilot.notification.NotificationRequest;
 import com.lifepilot.notification.NotificationService;
 import com.lifepilot.notification.Urgency;
+import com.lifepilot.notification.config.NotificationProperties;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
 import org.slf4j.Logger;
@@ -26,9 +27,12 @@ public class NotifyToolExecutor {
     private static final Logger log = LoggerFactory.getLogger(NotifyToolExecutor.class);
 
     private final NotificationService notificationService;
+    private final NotificationProperties notificationProperties;
 
-    public NotifyToolExecutor(NotificationService notificationService) {
+    public NotifyToolExecutor(NotificationService notificationService,
+                              NotificationProperties notificationProperties) {
         this.notificationService = notificationService;
+        this.notificationProperties = notificationProperties;
     }
 
     /**
@@ -43,7 +47,7 @@ public class NotifyToolExecutor {
             Urgency urgency = parseUrgency(input);
 
             var request = new NotificationRequest(
-                    "system",
+                    notificationProperties.getDefaultUserId(),
                     new ResponseContent.TextContent(message),
                     urgency,
                     null,

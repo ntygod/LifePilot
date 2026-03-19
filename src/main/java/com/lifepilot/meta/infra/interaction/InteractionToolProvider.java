@@ -1,6 +1,7 @@
 package com.lifepilot.meta.infra.interaction;
 
 import com.lifepilot.notification.NotificationService;
+import com.lifepilot.notification.config.NotificationProperties;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.model.ToolCategory;
@@ -24,11 +25,14 @@ public class InteractionToolProvider {
 
     private final InteractionBridge interactionBridge;
     private final NotificationService notificationService;
+    private final NotificationProperties notificationProperties;
 
     public InteractionToolProvider(InteractionBridge interactionBridge,
-                                   NotificationService notificationService) {
+                                   NotificationService notificationService,
+                                   NotificationProperties notificationProperties) {
         this.interactionBridge = interactionBridge;
         this.notificationService = notificationService;
+        this.notificationProperties = notificationProperties;
     }
 
     /**
@@ -40,7 +44,7 @@ public class InteractionToolProvider {
         return List.of(
                 buildChooseTool(new ChooseToolExecutor(interactionBridge)),
                 buildInputTool(new InputToolExecutor(interactionBridge)),
-                buildNotifyTool(new NotifyToolExecutor(notificationService))
+                buildNotifyTool(new NotifyToolExecutor(notificationService, notificationProperties))
         );
     }
 

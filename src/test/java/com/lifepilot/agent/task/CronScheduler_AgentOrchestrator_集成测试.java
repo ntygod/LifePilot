@@ -1,10 +1,10 @@
 package com.lifepilot.agent.task;
 
-import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.agent.model.AgentResponse;
 import com.lifepilot.agent.orchestration.AgentOrchestrator;
 import com.lifepilot.notification.NotificationService;
+import com.lifepilot.notification.config.NotificationProperties;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -57,10 +57,10 @@ class CronScheduler_AgentOrchestrator_集成测试 {
         agentOrchestrator = mock(AgentOrchestrator.class);
         notificationService = mock(NotificationService.class);
         scheduler = Executors.newScheduledThreadPool(2);
-        var config = new AgentConfigProperties();
+        var notificationProperties = new NotificationProperties();
 
         cronScheduler = new CronScheduler(scheduler, repository, agentOrchestrator,
-                notificationService, config);
+                notificationService, notificationProperties);
     }
 
     @AfterEach
