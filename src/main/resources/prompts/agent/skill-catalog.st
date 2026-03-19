@@ -9,4 +9,5 @@
 3. 一次对话中可加载多个 Skill 协同完成复杂任务
 4. 如果没有匹配的 Skill 但用户需求明确且可复用，可调用 generate_skill 描述需求，系统将生成并注册新 Skill
 5. 不要对简单的一次性问题使用 generate_skill，仅当需求具有可复用价值时才生成
+6. 场景匹配优先级：精确匹配（用户明确提到 Skill 名称或 ID）→ 模糊匹配（用户需求与 Skill 描述高度相关）→ 无匹配时直接执行（简单任务）或 generate_skill（复杂可复用任务）
 </skill_catalog>

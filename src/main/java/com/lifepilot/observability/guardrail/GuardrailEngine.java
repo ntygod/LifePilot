@@ -4,15 +4,18 @@ import com.lifepilot.observability.config.ObservabilityProperties;
 import com.lifepilot.observability.trace.GuardrailStep;
 import com.lifepilot.observability.trace.TraceContextPropagator;
 import com.lifepilot.tool.ToolContract;
+import com.lifepilot.tool.config.ToolConfigProperties;
 import com.lifepilot.tool.model.ToolInput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -41,8 +44,13 @@ public class GuardrailEngine {
     private final JdbcTemplate jdbcTemplate;
     private final TraceContextPropagator propagator;
     private final ObservabilityProperties properties;
+    private final ToolConfigProperties toolConfigProperties;
     private final ConcurrentHashMap<String, GuardrailPolicy> policies = new ConcurrentHashMap<>();
     private final Set<String> allowedTools = ConcurrentHashMap.newKeySet();
+
+    // 信任工作区降级白名单工具
+    private static final Set<String> TRUSTED_WORKSPACE_TOOLS = Set.of(
+            "builtin.shell.exec", "builtin.code.execute");
 
     // 速率限制计数器（简化实现：分钟级滑动窗口）
     private final AtomicInteger minuteCallCount = new AtomicInteger(0);
@@ -50,10 +58,12 @@ public class GuardrailEngine {
 
     public GuardrailEngine(JdbcTemplate jdbcTemplate,
                            TraceContextPropagator propagator,
-                           ObservabilityProperties properties) {
+                           ObservabilityProperties properties,
+                           ToolConfigProperties toolConfigProperties) {
         this.jdbcTemplate = jdbcTemplate;
         this.propagator = propagator;
         this.properties = properties;
+        this.toolConfigProperties = toolConfigProperties;
     }
 
     // ─── 策略管理 ───
@@ -192,7 +202,7 @@ public class GuardrailEngine {
      */
     private GuardrailResult evaluateToolPolicy(GuardrailPolicy policy, ToolContract tool, ToolInput input) {
         return switch (policy) {
-            case ToolRiskPolicy trp -> evaluateToolRisk(trp, tool);
+            case ToolRiskPolicy trp -> evaluateToolRisk(trp, tool, input);
             case BudgetLimitPolicy blp -> evaluateBudgetLimit(blp);
             case ContentSafetyPolicy csp -> evaluateContentSafety(csp, input.parameters().toString());
             case RateLimitPolicy rlp -> evaluateRateLimit(rlp);
@@ -204,9 +214,9 @@ public class GuardrailEngine {
      * 评估工具风险策略。
      *
      * <p>优先使用策略中的显式映射，其次使用工具自身声明的风险等级，
-     * 最后才降级到策略默认等级。</p>
+     * 最后才降级到策略默认等级。确定基础风险后，检查信任工作区降级。</p>
      */
-    private GuardrailResult evaluateToolRisk(ToolRiskPolicy policy, ToolContract tool) {
+    private GuardrailResult evaluateToolRisk(ToolRiskPolicy policy, ToolContract tool, ToolInput input) {
         // 优先级：策略显式映射 > 工具自身声明 > 策略默认
         RiskLevel riskLevel;
         if (policy.toolRiskMapping().containsKey(tool.id())) {
@@ -216,6 +226,10 @@ public class GuardrailEngine {
         } else {
             riskLevel = policy.defaultRiskLevel();
         }
+
+        // 信任工作区降级
+        riskLevel = applyTrustedWorkspaceDowngrade(tool.id(), riskLevel, input);
+
         ApprovalMode mode = riskLevel.toApprovalMode();
 
         return switch (mode) {
@@ -230,6 +244,93 @@ public class GuardrailEngine {
                     "工具 %s 风险等级为 %s，需要用户确认并二次验证".formatted(tool.id(), riskLevel),
                     mode);
         };
+    }
+
+    /**
+     * 信任工作区降级 — 在信任目录下降低 shell/code 执行的风险等级。
+     *
+     * <p>仅对 {@link #TRUSTED_WORKSPACE_TOOLS} 白名单中的工具生效。
+     * 从 ToolInput 参数中提取执行路径（workingDirectory 或 cwd），
+     * 检查是否为信任路径的子目录。</p>
+     */
+    private RiskLevel applyTrustedWorkspaceDowngrade(String toolId, RiskLevel originalLevel, ToolInput input) {
+        var trustedWorkspace = toolConfigProperties.getTrustedWorkspace();
+        if (trustedWorkspace.getPaths().isEmpty()) {
+            return originalLevel;
+        }
+        if (!TRUSTED_WORKSPACE_TOOLS.contains(toolId)) {
+            return originalLevel;
+        }
+
+        // 从参数中提取执行路径
+        String execPath = extractWorkingDirectory(input);
+        if (execPath == null) {
+            return originalLevel;
+        }
+
+        // 检查是否在信任目录下
+        Path normalizedExecPath = Path.of(execPath).toAbsolutePath().normalize();
+        boolean trusted = trustedWorkspace.getPaths().stream()
+                .map(p -> Path.of(p).toAbsolutePath().normalize())
+                .anyMatch(normalizedExecPath::startsWith);
+
+        if (!trusted) {
+            return originalLevel;
+        }
+
+        RiskLevel downgraded;
+        try {
+            downgraded = RiskLevel.valueOf(trustedWorkspace.getDowngradeLevel());
+        } catch (IllegalArgumentException e) {
+            log.warn("信任工作区降级等级配置无效: level={}", trustedWorkspace.getDowngradeLevel());
+            return originalLevel;
+        }
+
+        if (downgraded.ordinal() < originalLevel.ordinal()) {
+            log.info("信任工作区降级: tool={}, 原等级={}, 降级为={}, path={}",
+                    toolId, originalLevel, downgraded, execPath);
+            writeDowngradeAuditLog(toolId, originalLevel, downgraded, execPath);
+            return downgraded;
+        }
+
+        return originalLevel;
+    }
+
+    /**
+     * 从 ToolInput 参数中提取工作目录路径。
+     */
+    private String extractWorkingDirectory(ToolInput input) {
+        if (input == null || input.parameters() == null) {
+            return null;
+        }
+        var params = input.parameters();
+        if (params instanceof Map<?, ?> map) {
+            // 优先 workingDirectory，其次 cwd
+            Object wd = map.get("workingDirectory");
+            if (wd instanceof String s && !s.isBlank()) return s;
+            Object cwd = map.get("cwd");
+            if (cwd instanceof String s && !s.isBlank()) return s;
+        }
+        return null;
+    }
+
+    /**
+     * 记录信任工作区降级审计日志。
+     */
+    private void writeDowngradeAuditLog(String toolId, RiskLevel original, RiskLevel downgraded, String path) {
+        try {
+            String traceId = propagator.current().map(ctx -> ctx.traceId()).orElse(null);
+            jdbcTemplate.update("""
+                    INSERT INTO guardrail_logs (trace_id, tool_id, policy_id, result_type,
+                        reason, risk_level, approval_mode, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    traceId, toolId, "trusted-workspace-downgrade", "DOWNGRADED",
+                    "信任工作区降级: %s → %s, path=%s".formatted(original, downgraded, path),
+                    original.name(), downgraded.toApprovalMode().name(), Instant.now().toString());
+        } catch (Exception e) {
+            log.warn("降级审计日志写入失败: toolId={}, error={}", toolId, e.getMessage());
+        }
     }
 
     /**

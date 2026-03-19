@@ -4,6 +4,7 @@ import com.lifepilot.observability.config.ObservabilityProperties;
 import com.lifepilot.observability.guardrail.*;
 import com.lifepilot.observability.trace.TraceContextPropagator;
 import com.lifepilot.tool.BuiltinTool;
+import com.lifepilot.tool.config.ToolConfigProperties;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.schema.JsonSchema;
@@ -43,7 +44,7 @@ class RiskLevelApprovalConsistencyTest {
     void setUp() {
         var propagator = new TraceContextPropagator(false);
         var properties = new ObservabilityProperties();
-        engine = new GuardrailEngine(jdbcTemplate, propagator, properties);
+        engine = new GuardrailEngine(jdbcTemplate, propagator, properties, new ToolConfigProperties());
 
         // 注册 ToolRiskPolicy：通过 GuardrailEngine.registerPolicy() 公开方法
         // ToolRiskPolicy 是 package-private，但 registerPolicy 接受 GuardrailPolicy
