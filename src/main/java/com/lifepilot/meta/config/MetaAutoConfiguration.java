@@ -34,12 +34,18 @@ import com.lifepilot.workflow.engine.WorkflowCommandService;
 import com.lifepilot.workflow.registry.WorkflowRegistry;
 import com.lifepilot.workflow.repository.WorkflowRepository;
 import jakarta.annotation.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.event.EventListener;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.web.client.RestClient;
 
 /**
@@ -55,6 +61,8 @@ import org.springframework.web.client.RestClient;
 @AutoConfiguration
 @EnableConfigurationProperties(MetaProperties.class)
 public class MetaAutoConfiguration {
+
+    private static final Logger log = LoggerFactory.getLogger(MetaAutoConfiguration.class);
 
     /**
      * 注册交互桥接器 — 管理 Agent 与用户之间的交互请求/响应生命周期。
@@ -175,5 +183,32 @@ public class MetaAutoConfiguration {
                                           @Nullable MemoryProperties memoryProperties) {
         return new MemoryToolProvider(hybridRetriever, semanticMemory,
                 episodicMemory, documentRetriever, sessionKbRepo, memoryProperties);
+    }
+
+    // ==================== 启动后工具注册 ====================
+
+    /**
+     * 应用启动完成后注册元能力模块所有工具到 DynamicToolRegistry。
+     *
+     * <p>使用 {@code @Order(Ordered.HIGHEST_PRECEDENCE)} 确保在
+     * SkillAutoConfiguration 的 Markdown Skill 加载之前完成工具注册，
+     * 保证用户 Skill 的 suggestedTools 校验能通过。</p>
+     *
+     * @param event 应用就绪事件
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    @Order(Ordered.HIGHEST_PRECEDENCE)
+    public void registerTools(ApplicationReadyEvent event) {
+        var ctx = event.getApplicationContext();
+        var toolRegistry = ctx.getBean(DynamicToolRegistry.class);
+
+        ctx.getBean(InfraToolProvider.class).registerTools(toolRegistry);
+        ctx.getBean(IntrospectionToolProvider.class).registerTools(toolRegistry);
+        ctx.getBean(StorageToolProvider.class).registerTools(toolRegistry);
+        if (ctx.containsBean("memoryToolProvider")) {
+            ctx.getBean(MemoryToolProvider.class).registerTools(toolRegistry);
+        }
+
+        log.info("元能力模块工具注册完成");
     }
 }
