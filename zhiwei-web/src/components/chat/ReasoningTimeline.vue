@@ -39,18 +39,42 @@ const toolCallCount = computed(() =>
   eventList.value.filter(e => e.type === 'TOOL_CALL').length
 )
 
-// 触发器文案
+// 触发器主文案：流式时实时显示当前事件，完成后显示耗时 + 最后事件摘要
 const triggerLabel = computed(() => {
-  if (props.streaming) return '正在思考…'
+  const list = eventList.value
+  const count = list.length
+  if (count === 0) return props.streaming ? '正在思考…' : '推理概要'
+  // 取最新事件的简短描述
+  const last = list[count - 1]
+  const brief = getEventBrief(last)
+  if (props.streaming) return brief
+  // 完成后：耗时 + 最后事件摘要
   if (durationSeconds.value !== null) {
     const sec = durationSeconds.value
-    if (sec < 1) return `思考了不到 1 秒`
-    if (sec < 60) return `思考了 ${Math.round(sec)} 秒`
-    return `思考了 ${Math.floor(sec / 60)} 分 ${Math.round(sec % 60)} 秒`
+    const timeStr = sec < 1 ? '<1s' : sec < 60 ? `${Math.round(sec)}s` : `${Math.floor(sec / 60)}m${Math.round(sec % 60)}s`
+    return `${count} 步 · ${timeStr} · ${brief}`
   }
-  if (stepCount.value > 0) return `经历 ${stepCount.value} 个推理步骤`
-  return '推理概要'
+  return `${count} 步 · ${brief}`
 })
+
+// 事件简短描述（用于触发器区域，控制在 40 字符内）
+function getEventBrief(ev: ReasoningEvent): string {
+  switch (ev.type) {
+    case 'AGENT_START': return '准备上下文与预算…'
+    case 'THOUGHT': {
+      const text = ev.description ?? ev.title ?? ''
+      if (text.length <= 40) return text || '正在思考…'
+      return text.substring(0, 40) + '…'
+    }
+    case 'TOOL_CALL': return ev.toolName ? `调用 ${ev.toolName}` : '调用工具…'
+    case 'OBSERVATION': return ev.toolName ? `${ev.toolName} 返回` : '工具返回'
+    case 'ANSWER': return '生成回答'
+    case 'SUSPEND': return '等待确认…'
+    case 'RESUME': return '已恢复执行'
+    case 'ANSWER_FINALIZED': return '回答已完成'
+    default: return ev.title ?? '处理中…'
+  }
+}
 
 // 事件图标映射
 function getEventIcon(type: string) {
@@ -117,13 +141,16 @@ function formatRelativeTime(event: ReasoningEvent): string | null {
              focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1"
       @click="expanded = !expanded"
     >
-      <div class="flex items-center gap-2 min-w-0">
-        <!-- 脑图标 + 流式脉冲动画 -->
+      <div class="flex items-center gap-2 min-w-0 flex-1">
+        <!-- 动态图标：跟随最新事件类型 -->
         <div class="relative shrink-0">
-          <Brain
+          <component
+            :is="hasEvents ? getEventIcon(eventList[eventList.length - 1].type) : Brain"
             :size="14"
             class="transition-colors duration-300"
-            :class="streaming ? 'text-primary' : 'text-muted-foreground'"
+            :class="streaming
+              ? 'text-primary'
+              : hasEvents ? getEventColor(eventList[eventList.length - 1].type) : 'text-muted-foreground'"
           />
           <span
             v-if="streaming"
@@ -138,16 +165,14 @@ function formatRelativeTime(event: ReasoningEvent): string | null {
           {{ triggerLabel }}
         </span>
 
-        <!-- 统计标签 -->
-        <div v-if="!streaming && hasEvents" class="hidden sm:flex items-center gap-1.5">
-          <span
-            v-if="toolCallCount > 0"
-            class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px]"
-          >
-            <Wrench :size="10" />
-            {{ toolCallCount }} 次工具调用
-          </span>
-        </div>
+        <!-- 工具调用统计标签 -->
+        <span
+          v-if="!streaming && toolCallCount > 0"
+          class="hidden sm:inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px] shrink-0"
+        >
+          <Wrench :size="10" />
+          {{ toolCallCount }}
+        </span>
       </div>
 
       <div class="flex items-center gap-1.5 shrink-0">
