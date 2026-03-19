@@ -541,6 +541,7 @@ public class StreamingCallback implements IterationCallback {
     @Nullable public Exception getStreamingError() { return streamingError; }
     @Nullable public String getFinalContent() { return finalContent; }
 
+    @Override public boolean recordsLlmStep() { return true; }
     @Override public String getProviderId() { return providerId; }
     @Override public String getModelId() { return modelId; }
 }

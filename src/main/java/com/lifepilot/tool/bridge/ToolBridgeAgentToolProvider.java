@@ -14,14 +14,9 @@ import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.definition.DefaultToolDefinition;
 import org.springframework.ai.tool.definition.ToolDefinition;
 
-import com.lifepilot.observability.guardrail.RiskLevel;
-import com.lifepilot.observability.trace.ToolCallStep;
-import com.lifepilot.observability.trace.TraceRecorder;
 import org.springframework.lang.NonNull;
 import org.springframework.lang.Nullable;
 
-import java.time.Duration;
-import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -43,20 +38,16 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
     private final ToolExecutionPipeline pipeline;
     private final ObjectMapper objectMapper;
     private final int maxToolOutputChars;
-    @Nullable
-    private final TraceRecorder traceRecorder;
 
     public ToolBridgeAgentToolProvider(
             DynamicToolRegistry toolRegistry,
             ToolExecutionPipeline pipeline,
             ObjectMapper objectMapper,
-            MetaProperties metaProperties,
-            @Nullable TraceRecorder traceRecorder) {
+            MetaProperties metaProperties) {
         this.toolRegistry = toolRegistry;
         this.pipeline = pipeline;
         this.objectMapper = objectMapper;
         this.maxToolOutputChars = metaProperties.getInfra().getMaxToolOutputChars();
-        this.traceRecorder = traceRecorder;
     }
 
     @Override
@@ -109,45 +100,9 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
             public String call(@NonNull String toolInput) {
                 Map<String, Object> params = parseInput(toolInput);
                 String traceId = UUID.randomUUID().toString();
-                Instant start = Instant.now();
                 ToolResult result = pipeline.execute(tool.id(), params, traceId, null, streamId, context);
                 String output = formatOutput(result);
 
-                // Token 消耗估算（字符数 / 3）并填充到 meta
-                int estimatedTokens = output.length() / 3;
-                ToolResult finalResult = result.toBuilder()
-                        .meta(result.meta().toBuilder().tokensUsed(estimatedTokens).build())
-                        .build();
-
-                // 记录 ToolCallStep 到当前 TraceContext（Spring AI function calling 路径）
-                if (traceRecorder != null) {
-                    traceRecorder.currentContext().ifPresent(ctx -> {
-                        try {
-                            Duration duration = Duration.between(start, Instant.now());
-                            String outputJson = output;
-                            if (outputJson != null && outputJson.length() > 2000) {
-                                outputJson = outputJson.substring(0, 2000) + "...[truncated]";
-                            }
-                            var step = new ToolCallStep(
-                                    ctx.steps().size(),
-                                    start,
-                                    duration,
-                                    tool.id(),
-                                    tool.id(),
-                                    toolInput,
-                                    outputJson,
-                                    finalResult.ok(),
-                                    finalResult.ok() ? null : finalResult.error(),
-                                    RiskLevel.LOW
-                            );
-                            traceRecorder.recordStep(ctx, step);
-                            log.debug("Function calling 工具调用已记录到 Trace: toolId={}, success={}, duration={}ms",
-                                      tool.id(), finalResult.ok(), duration.toMillis());
-                        } catch (Exception e) {
-                            log.warn("Function calling 工具调用 Trace 记录失败: toolId={}, error={}", tool.id(), e.getMessage());
-                        }
-                    });
-                }
                 return output;
             }
         };
