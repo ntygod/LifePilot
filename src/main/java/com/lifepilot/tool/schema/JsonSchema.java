@@ -107,7 +107,8 @@ public class JsonSchema {
         try {
             return switch (format) {
                 case "date-time" -> {
-                    java.time.OffsetDateTime.parse(value);
+                    // 使用 ISO_DATE_TIME 解析，兼容带/不带时区偏移的格式
+                    java.time.format.DateTimeFormatter.ISO_DATE_TIME.parse(value);
                     yield true;
                 }
                 case "date" -> {
