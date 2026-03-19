@@ -36,11 +36,11 @@ public record SkillDefinition(
     }
 
     /**
-     * 返回仅包含 id 和 description 的摘要字符串，用于渐进式发现。
+     * 返回包含 id、name 和 description 的摘要字符串，用于渐进式发现。
      *
-     * @return 格式为 "id: description" 的摘要
+     * @return 格式为 "id (name): description" 的摘要
      */
     public String toDiscoverySummary() {
-        return id + ": " + description;
+        return id + " (" + name + "): " + description;
     }
 }
