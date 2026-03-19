@@ -5,9 +5,9 @@ import java.util.Map;
 import com.lifepilot.interaction.channel.dingtalk.DingtalkChannelAdapter;
 import com.lifepilot.interaction.channel.feishu.FeishuChannelAdapter;
 import com.lifepilot.interaction.channel.wecom.WecomChannelAdapter;
+import com.lifepilot.interaction.config.ChannelConfigProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.lang.Nullable;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -19,7 +19,9 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * 统一 Webhook 端点控制器，按通道类型分发请求到对应适配器。
  *
- * <p>所有端点内部 try-catch，异常时返回平台要求的成功响应，避免平台重试风暴。
+ * <p>运行时通过 {@link ChannelConfigProvider} 检查通道启用状态，
+ * 支持热加载（Web UI 切换开关后立即生效，无需重启）。
+ * 所有端点内部 try-catch，异常时返回平台要求的成功响应，避免平台重试风暴。
  *
  * @author zsg
  * @since 2026-02-26
@@ -30,16 +32,19 @@ public class WebhookController {
 
     private static final Logger log = LoggerFactory.getLogger(WebhookController.class);
 
-    @Nullable private final WecomChannelAdapter wecomAdapter;
-    @Nullable private final DingtalkChannelAdapter dingtalkAdapter;
-    @Nullable private final FeishuChannelAdapter feishuAdapter;
+    private final WecomChannelAdapter wecomAdapter;
+    private final DingtalkChannelAdapter dingtalkAdapter;
+    private final FeishuChannelAdapter feishuAdapter;
+    private final ChannelConfigProvider configProvider;
 
-    public WebhookController(@Nullable WecomChannelAdapter wecomAdapter,
-                             @Nullable DingtalkChannelAdapter dingtalkAdapter,
-                             @Nullable FeishuChannelAdapter feishuAdapter) {
+    public WebhookController(WecomChannelAdapter wecomAdapter,
+                             DingtalkChannelAdapter dingtalkAdapter,
+                             FeishuChannelAdapter feishuAdapter,
+                             ChannelConfigProvider configProvider) {
         this.wecomAdapter = wecomAdapter;
         this.dingtalkAdapter = dingtalkAdapter;
         this.feishuAdapter = feishuAdapter;
+        this.configProvider = configProvider;
     }
 
     // ── 企业微信 ──────────────────────────────────────────────
@@ -49,8 +54,8 @@ public class WebhookController {
      */
     @GetMapping("/wecom")
     public String wecomVerify(@RequestParam Map<String, String> params) {
-        if (wecomAdapter == null) {
-            log.warn("企微通道未启用，收到 URL 验证请求");
+        if (!configProvider.getWecomConfig().enabled()) {
+            log.debug("企微通道未启用，忽略 URL 验证请求");
             return "success";
         }
         try {
@@ -67,8 +72,8 @@ public class WebhookController {
     @PostMapping("/wecom")
     public String wecomMessage(@RequestParam Map<String, String> params,
                                @RequestBody String xmlBody) {
-        if (wecomAdapter == null) {
-            log.warn("企微通道未启用，收到消息请求");
+        if (!configProvider.getWecomConfig().enabled()) {
+            log.debug("企微通道未启用，忽略消息请求");
             return "success";
         }
         try {
@@ -87,8 +92,8 @@ public class WebhookController {
     @PostMapping("/dingtalk")
     public Map<String, Object> dingtalkMessage(@RequestHeader Map<String, String> headers,
                                                @RequestBody String jsonBody) {
-        if (dingtalkAdapter == null) {
-            log.warn("钉钉通道未启用，收到消息请求");
+        if (!configProvider.getDingtalkConfig().enabled()) {
+            log.debug("钉钉通道未启用，忽略消息请求");
             return Map.of();
         }
         try {
@@ -106,8 +111,8 @@ public class WebhookController {
      */
     @PostMapping("/feishu")
     public Map<String, Object> feishuEvent(@RequestBody String jsonBody) {
-        if (feishuAdapter == null) {
-            log.warn("飞书通道未启用，收到事件请求");
+        if (!configProvider.getFeishuConfig().enabled()) {
+            log.debug("飞书通道未启用，忽略事件请求");
             return Map.of("code", 0);
         }
         try {

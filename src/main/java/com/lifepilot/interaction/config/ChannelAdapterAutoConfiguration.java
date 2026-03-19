@@ -25,7 +25,6 @@ import com.lifepilot.interaction.middleware.auth.WecomAuthStrategy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Lazy;
@@ -34,10 +33,11 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.web.client.RestClient;
 
 /**
- * 通道适配器自动配置，根据配置条件注册企微/钉钉/飞书通道 Bean。
+ * 通道适配器自动配置 — 始终注册所有通道 Bean，运行时通过 {@link ChannelConfigProvider} 检查启用状态。
  *
- * <p>在 {@link GatewayMiddlewareAutoConfiguration} 之后加载，确保中间件和 Gateway 已注册。
- * 每个通道的启用由 {@code lifepilot.gateway.channels.xxx.enabled} 控制。
+ * <p>所有通道的 Crypto / ApiClient / Adapter / AuthStrategy Bean 无条件注册，
+ * 凭证未配置时使用占位符值。Webhook 入口在 {@code WebhookController} 中通过
+ * {@link ChannelConfigProvider} 实时检查 enabled 状态，实现热加载（无需重启）。</p>
  *
  * @author zsg
  * @since 2026-02-26
@@ -52,7 +52,6 @@ public class ChannelAdapterAutoConfiguration {
     // ── 企业微信通道 ──────────────────────────────────────────
 
     @Bean
-    @ConditionalOnProperty(name = "lifepilot.gateway.channels.wecom.enabled", havingValue = "true")
     public WecomCrypto wecomCrypto(ChannelConfigProvider configProvider) {
         var config = configProvider.getWecomConfig();
         return new WecomCrypto(
@@ -64,25 +63,21 @@ public class ChannelAdapterAutoConfiguration {
     }
 
     @Bean
-    @ConditionalOnProperty(name = "lifepilot.gateway.channels.wecom.enabled", havingValue = "true")
     public WecomSignatureVerifier wecomSignatureVerifier(ChannelConfigProvider configProvider) {
         return new WecomSignatureVerifier(configProvider.getWecomConfig().token());
     }
 
     @Bean
-    @ConditionalOnProperty(name = "lifepilot.gateway.channels.wecom.enabled", havingValue = "true")
     public WecomApiClient wecomApiClient(ChannelConfigProvider configProvider) {
         return new WecomApiClient(configProvider.getWecomConfig(), RestClient.create());
     }
 
     @Bean
-    @ConditionalOnProperty(name = "lifepilot.gateway.channels.wecom.enabled", havingValue = "true")
     public WecomMessageConverter wecomMessageConverter() {
         return new WecomMessageConverter();
     }
 
     @Bean
-    @ConditionalOnProperty(name = "lifepilot.gateway.channels.wecom.enabled", havingValue = "true")
     public WecomChannelAdapter wecomChannelAdapter(@Lazy MessageGateway gateway, GatewayProperties properties,
                                                    WecomCrypto crypto, WecomSignatureVerifier verifier,
                                                    WecomApiClient apiClient, WecomMessageConverter converter,
@@ -92,7 +87,6 @@ public class ChannelAdapterAutoConfiguration {
     }
 
     @Bean
-    @ConditionalOnProperty(name = "lifepilot.gateway.channels.wecom.enabled", havingValue = "true")
     public WecomAuthStrategy wecomAuthStrategy(WecomSignatureVerifier verifier, GatewayProperties properties) {
         return new WecomAuthStrategy(verifier, properties);
     }
@@ -100,25 +94,21 @@ public class ChannelAdapterAutoConfiguration {
     // ── 钉钉通道 ──────────────────────────────────────────────
 
     @Bean
-    @ConditionalOnProperty(name = "lifepilot.gateway.channels.dingtalk.enabled", havingValue = "true")
     public DingtalkSignatureVerifier dingtalkSignatureVerifier() {
         return new DingtalkSignatureVerifier();
     }
 
     @Bean
-    @ConditionalOnProperty(name = "lifepilot.gateway.channels.dingtalk.enabled", havingValue = "true")
     public DingtalkApiClient dingtalkApiClient(ChannelConfigProvider configProvider) {
         return new DingtalkApiClient(configProvider.getDingtalkConfig(), RestClient.create());
     }
 
     @Bean
-    @ConditionalOnProperty(name = "lifepilot.gateway.channels.dingtalk.enabled", havingValue = "true")
     public DingtalkMessageConverter dingtalkMessageConverter() {
         return new DingtalkMessageConverter();
     }
 
     @Bean
-    @ConditionalOnProperty(name = "lifepilot.gateway.channels.dingtalk.enabled", havingValue = "true")
     public DingtalkChannelAdapter dingtalkChannelAdapter(@Lazy MessageGateway gateway, GatewayProperties properties,
                                                          DingtalkSignatureVerifier verifier,
                                                          DingtalkApiClient apiClient,
@@ -129,7 +119,6 @@ public class ChannelAdapterAutoConfiguration {
     }
 
     @Bean
-    @ConditionalOnProperty(name = "lifepilot.gateway.channels.dingtalk.enabled", havingValue = "true")
     public DingtalkAuthStrategy dingtalkAuthStrategy(DingtalkSignatureVerifier verifier,
                                                      GatewayProperties properties) {
         return new DingtalkAuthStrategy(verifier, properties);
@@ -138,7 +127,6 @@ public class ChannelAdapterAutoConfiguration {
     // ── 飞书通道 ──────────────────────────────────────────────
 
     @Bean
-    @ConditionalOnProperty(name = "lifepilot.gateway.channels.feishu.enabled", havingValue = "true")
     public FeishuCrypto feishuCrypto(ChannelConfigProvider configProvider) {
         var config = configProvider.getFeishuConfig();
         return new FeishuCrypto(
@@ -149,19 +137,16 @@ public class ChannelAdapterAutoConfiguration {
     }
 
     @Bean
-    @ConditionalOnProperty(name = "lifepilot.gateway.channels.feishu.enabled", havingValue = "true")
     public FeishuApiClient feishuApiClient(ChannelConfigProvider configProvider) {
         return new FeishuApiClient(configProvider.getFeishuConfig(), RestClient.create());
     }
 
     @Bean
-    @ConditionalOnProperty(name = "lifepilot.gateway.channels.feishu.enabled", havingValue = "true")
     public FeishuMessageConverter feishuMessageConverter() {
         return new FeishuMessageConverter();
     }
 
     @Bean
-    @ConditionalOnProperty(name = "lifepilot.gateway.channels.feishu.enabled", havingValue = "true")
     public FeishuChannelAdapter feishuChannelAdapter(@Lazy MessageGateway gateway, GatewayProperties properties,
                                                      FeishuCrypto crypto, FeishuApiClient apiClient,
                                                      FeishuMessageConverter converter,
@@ -171,15 +156,13 @@ public class ChannelAdapterAutoConfiguration {
     }
 
     @Bean
-    @ConditionalOnProperty(name = "lifepilot.gateway.channels.feishu.enabled", havingValue = "true")
     public FeishuAuthStrategy feishuAuthStrategy(GatewayProperties properties) {
         return new FeishuAuthStrategy(properties);
     }
 
-    // ── WebhookController 由 @RestController 组件扫描注册，重试调度器 ──
+    // ── 重试调度器 ──────────────────────────────────────────
 
     @Bean
-    @ConditionalOnBean(AbstractChannelAdapter.class)
     public FailedMessageRetryScheduler failedMessageRetryScheduler(
             List<AbstractChannelAdapter> adapters, JdbcTemplate jdbcTemplate,
             GatewayProperties properties) {

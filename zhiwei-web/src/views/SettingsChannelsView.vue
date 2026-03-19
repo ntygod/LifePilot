@@ -100,9 +100,9 @@ async function handleSave() {
     <form v-else class="space-y-8" @submit.prevent="handleSave">
 
       <!-- 提示信息 -->
-      <div class="detail-card border-amber-500/30 bg-amber-500/5 px-5 py-4">
+      <div class="detail-card border-emerald-500/30 bg-emerald-500/5 px-5 py-4">
         <p class="text-sm leading-6 text-muted-foreground">
-          渠道配置保存在数据库中，优先于 application.yml。开关和凭证修改后需重启服务生效。
+          渠道开关和凭证保存后即时生效，无需重启服务。
         </p>
       </div>
 
@@ -170,7 +170,7 @@ async function handleSave() {
             <div class="space-y-1">
               <div class="text-sm font-medium text-foreground">保存渠道配置</div>
               <p class="text-sm leading-6 text-muted-foreground">
-                凭证保存后，需重启服务才能生效。
+                保存后立即生效，无需重启。
               </p>
             </div>
             <div class="flex flex-wrap items-center gap-3">
