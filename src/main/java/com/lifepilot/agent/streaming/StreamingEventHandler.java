@@ -11,8 +11,8 @@ import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.agent.model.ReactAgentState;
-import com.lifepilot.observability.trace.ToolCallStep;
-import com.lifepilot.observability.trace.TraceContext;
+import com.lifepilot.agent.model.ReactStep;
+import com.lifepilot.agent.model.ReactStepSerializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
@@ -73,7 +73,7 @@ public class StreamingEventHandler {
      * @param state 最终状态
      * @param tempTurnId 临时 turnId
      * @param finalTokenUsage Token 使用量
-     * @param traceContext 追踪上下文
+     * @param steps ReAct 步骤序列
      * @param reasoningSummary 推理概要
      * @param finalContent 最终内容
      * @param assistantMessageId 助手消息 ID
@@ -84,7 +84,7 @@ public class StreamingEventHandler {
                                                      ReactAgentState state,
                                                      String tempTurnId,
                                                      @Nullable TokenUsage finalTokenUsage,
-                                                     @Nullable TraceContext traceContext,
+                                                     @Nullable List<ReactStep> steps,
                                                      @Nullable String reasoningSummary,
                                                      @Nullable String finalContent,
                                                      @Nullable String assistantMessageId,
@@ -103,22 +103,10 @@ public class StreamingEventHandler {
             doneData.put("tokenUsage", tokenUsageMap);
         }
 
-        // 工具调用摘要
-        if (traceContext != null && !traceContext.steps().isEmpty()) {
-            var toolSummaries = new ArrayList<Map<String, Object>>();
-            for (var step : traceContext.steps()) {
-                if (step instanceof ToolCallStep toolStep) {
-                    var toolSummary = new HashMap<String, Object>();
-                    toolSummary.put("toolId", toolStep.toolId());
-                    toolSummary.put("action", toolStep.toolAction());
-                    toolSummary.put("success", toolStep.success());
-                    toolSummary.put("latencyMs", toolStep.duration().toMillis());
-                    toolSummaries.add(toolSummary);
-                }
-            }
-            if (!toolSummaries.isEmpty()) {
-                doneData.put("toolsSummary", toolSummaries);
-            }
+        // ReactStep 序列化
+        var reactSteps = ReactStepSerializer.serialize(steps != null ? steps : List.of());
+        if (!reactSteps.isEmpty()) {
+            doneData.put("reactSteps", reactSteps);
         }
 
         // 知识库来源

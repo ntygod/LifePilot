@@ -1,5 +1,8 @@
 package com.lifepilot.agent.model;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -100,5 +103,23 @@ public final class ReactStepSerializer {
         if (text == null) return "";
         if (text.length() <= maxLength) return text;
         return text.substring(0, maxLength) + "...";
+    }
+
+    /**
+     * 将 ReactStep 列表序列化为 JSON 字符串（用于数据库持久化）。
+     *
+     * @param steps        ReAct 步骤序列
+     * @param objectMapper Jackson ObjectMapper
+     * @return JSON 字符串，步骤为空时返回 null
+     */
+    @org.springframework.lang.Nullable
+    public static String serializeToJson(List<ReactStep> steps, ObjectMapper objectMapper) {
+        var maps = serialize(steps);
+        if (maps.isEmpty()) return null;
+        try {
+            return objectMapper.writeValueAsString(maps);
+        } catch (JsonProcessingException e) {
+            return null;
+        }
     }
 }
