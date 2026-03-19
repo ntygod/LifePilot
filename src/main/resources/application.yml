@@ -325,6 +325,9 @@ lifepilot:
         enabled: true
       habit:
         enabled: true
+    todo:
+      due-notification-enabled: true
+      due-check-interval-seconds: 60
     auto-generation:
       enabled: true
       gap-threshold: 0.6
