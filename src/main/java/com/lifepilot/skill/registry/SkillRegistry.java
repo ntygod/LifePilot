@@ -46,13 +46,12 @@ public class SkillRegistry {
     }
 
     /**
-     * 注册 Skill，校验失败或覆盖 BUILTIN 时拒绝。
+     * 注册 Skill，校验失败时拒绝，同 ID 已存在时允许覆盖更新。
      *
      * <p>注册逻辑：
      * <ol>
      *   <li>通过 {@link SkillDefinitionValidator} 校验，失败则拒绝</li>
-     *   <li>若已存在同 ID 的 BUILTIN 来源 Skill，拒绝覆盖</li>
-     *   <li>若已存在同 ID 的非 BUILTIN 来源 Skill，允许更新并发布 SkillUpdated 事件</li>
+     *   <li>若已存在同 ID 的 Skill，允许更新并发布 SkillUpdated 事件</li>
      *   <li>新注册发布 SkillRegistered 事件</li>
      *   <li>同时在 {@link SkillSearchIndex} 中建立索引</li>
      * </ol>
@@ -68,15 +67,9 @@ public class SkillRegistry {
             return false;
         }
 
-        // 2. 检查是否已存在
+        // 2. 检查是否已存在 — 允许覆盖更新
         SkillDefinition existing = skills.get(definition.id());
         if (existing != null) {
-            // BUILTIN 来源不允许被覆盖
-            if (existing.source() instanceof SkillSource.Builtin) {
-                log.warn("Skill 注册被拒绝，不允许覆盖 BUILTIN 来源: skillId={}", definition.id());
-                return false;
-            }
-            // 非 BUILTIN 来源允许更新
             skills.put(definition.id(), definition);
             searchIndex.index(definition);
             eventPublisher.publishEvent(new SkillRegistryEvent.SkillUpdated(existing, definition));
