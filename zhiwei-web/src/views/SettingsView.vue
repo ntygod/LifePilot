@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Cpu, Database, Keyboard, Palette, Sparkles } from 'lucide-vue-next'
+import { Cpu, Database, Keyboard, Palette, Radio, Sparkles } from 'lucide-vue-next'
 import MetricCard from '@/components/common/MetricCard.vue'
 import PageContainer from '@/components/layout/PageContainer.vue'
 import PageHeader from '@/components/layout/PageHeader.vue'
@@ -16,6 +16,7 @@ import SettingsPreferencesView from '@/views/SettingsPreferencesView.vue'
 import SettingsRerankerView from '@/views/SettingsRerankerView.vue'
 import SettingsKnowledgeView from '@/views/SettingsKnowledgeView.vue'
 import SettingsShortcutsView from '@/views/SettingsShortcutsView.vue'
+import SettingsChannelsView from '@/views/SettingsChannelsView.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -28,6 +29,7 @@ const viewMap: Record<string, Component> = {
   '/settings/shortcuts': SettingsShortcutsView,
   '/settings/reranker': SettingsRerankerView,
   '/settings/knowledge': SettingsKnowledgeView,
+  '/settings/channels': SettingsChannelsView,
 }
 
 const navigationItems = [
@@ -60,6 +62,12 @@ const navigationItems = [
     label: '知识库',
     description: '分块策略、检索参数和向量索引全局配置。',
     icon: Database,
+  },
+  {
+    path: '/settings/channels',
+    label: '消息渠道',
+    description: '飞书、企微、钉钉渠道凭证配置。',
+    icon: Radio,
   },
 ] as const
 
