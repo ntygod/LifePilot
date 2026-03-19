@@ -43,7 +43,7 @@ class PromptAutoConfiguration_集成测试 {
                     "agent/context-guide",
                     "agent/streaming-constraint", "agent/react-system",
                     "agent/react-user-prompt", "agent/react-user-prompt-basic",
-                    "skill/todo", "skill/schedule", "skill/habit", "skill/memory", "skill/sync",
+                    "skill/todo", "skill/schedule", "skill/habit", "skill/memory",
                     "skill/datastore", "skill/gap-analysis",
                     "memory/compression-summary", "memory/compression-keypoints", "memory/entity-compression",
                     "memory/procedural-extraction",

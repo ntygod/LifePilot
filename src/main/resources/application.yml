@@ -692,32 +692,6 @@ lifepilot:
       network-enabled: false
       # 镜像前缀
       image-prefix: "zhiwei/sandbox-"
-  sync:
-    # 同步模块总开关（暂时禁用：builtin todo/schedule/habit 包已删除，sync 模块待重构）
-    enabled: false
-    # 默认 Cron 表达式（每 15 分钟）
-    default-cron: "0 */15 * * * *"
-    # 默认冲突解决策略
-    default-conflict-policy: LAST_WRITE_WINS
-    # 连接器请求超时（秒）
-    timeout: 30
-    # 最大重试次数
-    max-retries: 2
-    # 凭证加密密钥来源
-    credential-key-source: system-key
-    # Obsidian Vault 目录路径
-    obsidian-vault-path: ""
-    # 事件触发同步最小间隔（秒）
-    event-sync-min-interval: 60
-    # 连接器配置
-    connectors:
-      caldav:
-        enabled: false
-        base-url: ""
-        auth-type: basic
-      todoist:
-        enabled: false
-        base-url: "https://api.todoist.com"
       dida:
         enabled: false
         base-url: "https://api.dida365.com"
@@ -838,7 +812,6 @@ lifepilot:
         - skills/infrastructure
         - skills/introspection
         - skills/datastore
-        - skills/sync
     onboarding:
       auto-trigger: true
       agent-definition: preset-agents/onboarding-guide.md

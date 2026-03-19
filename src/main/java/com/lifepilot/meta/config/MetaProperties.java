@@ -269,8 +269,7 @@ public class MetaProperties {
                 "skills/memory",
                 "skills/infrastructure",
                 "skills/introspection",
-                "skills/datastore",
-                "skills/sync"
+                "skills/datastore"
         );
     }
 

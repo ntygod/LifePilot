@@ -24,8 +24,6 @@ lifepilot:
       skills: "/data/skills"
       agents: "/data/agents"
       workflows: "/data/workflows"
-  sync:
-    obsidian-vault-path: "/data/obsidian"
 
 logging:
   pattern:
