@@ -291,7 +291,24 @@ public class MetaProperties {
                 "skills/memory",
                 "skills/infrastructure",
                 "skills/introspection",
-                "skills/datastore"
+                "skills/datastore",
+                "skills/sync",
+                "skills/code-assistant",
+                "skills/research-assistant",
+                "skills/content-creator",
+                "skills/data-analyst",
+                "skills/browser-automation",
+                "skills/daily-manager",
+                "skills/file-organizer",
+                "skills/shell-commander",
+                "skills/summarizer",
+                "skills/github-workflow",
+                "skills/translator",
+                "skills/api-debugger",
+                "skills/doc-processor",
+                "skills/project-scaffolder",
+                "skills/teaching-assistant",
+                "skills/desktop-automation"
         );
     }
 
