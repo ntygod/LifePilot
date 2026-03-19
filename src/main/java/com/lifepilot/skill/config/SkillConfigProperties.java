@@ -53,8 +53,35 @@ public class SkillConfigProperties {
     /** 内置 Skill 配置。 */
     private Builtin builtin = new Builtin();
 
+    /** 待办 Skill 扩展配置。 */
+    private Todo todo = new Todo();
+
     public Builtin getBuiltin() { return builtin; }
     public void setBuiltin(Builtin builtin) { this.builtin = builtin; }
+
+    public Todo getTodo() { return todo; }
+    public void setTodo(Todo todo) { this.todo = todo; }
+
+    /**
+     * 待办 Skill 扩展配置（到期通知等）。
+     *
+     * @author zsg
+     * @since 2026-03-19
+     */
+    public static class Todo {
+
+        /** 到期通知开关，默认 true。 */
+        private boolean dueNotificationEnabled = true;
+
+        /** 到期检查间隔（秒），默认 60。 */
+        private int dueCheckIntervalSeconds = 60;
+
+        public boolean isDueNotificationEnabled() { return dueNotificationEnabled; }
+        public void setDueNotificationEnabled(boolean dueNotificationEnabled) { this.dueNotificationEnabled = dueNotificationEnabled; }
+
+        public int getDueCheckIntervalSeconds() { return dueCheckIntervalSeconds; }
+        public void setDueCheckIntervalSeconds(int dueCheckIntervalSeconds) { this.dueCheckIntervalSeconds = dueCheckIntervalSeconds; }
+    }
 
     /**
      * Skill 定义校验限制配置。
@@ -220,7 +247,6 @@ public class SkillConfigProperties {
         private SkillToggle todo = new SkillToggle();
         private SkillToggle schedule = new SkillToggle();
         private SkillToggle habit = new SkillToggle();
-        private SkillToggle scheduledTask = new SkillToggle();
 
         public SkillToggle getTodo() { return todo; }
         public void setTodo(SkillToggle todo) { this.todo = todo; }
@@ -230,9 +256,6 @@ public class SkillConfigProperties {
 
         public SkillToggle getHabit() { return habit; }
         public void setHabit(SkillToggle habit) { this.habit = habit; }
-
-        public SkillToggle getScheduledTask() { return scheduledTask; }
-        public void setScheduledTask(SkillToggle scheduledTask) { this.scheduledTask = scheduledTask; }
 
         /**
          * 根据 Skill ID 查询是否启用。Memory Skill 始终启用。
@@ -245,7 +268,6 @@ public class SkillConfigProperties {
                 case "todo" -> todo.isEnabled();
                 case "schedule" -> schedule.isEnabled();
                 case "habit" -> habit.isEnabled();
-                case "scheduled-task" -> scheduledTask.isEnabled();
                 case "memory" -> true;
                 default -> true;
             };

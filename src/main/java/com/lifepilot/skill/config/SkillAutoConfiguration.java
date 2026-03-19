@@ -17,8 +17,10 @@ import com.lifepilot.skill.builtin.BuiltinSkillRegistrar;
 import com.lifepilot.skill.builtin.habit.HabitSkillProvider;
 import com.lifepilot.skill.builtin.memory.MemorySkillProvider;
 import com.lifepilot.skill.builtin.schedule.ScheduleSkillProvider;
+import com.lifepilot.skill.builtin.todo.TodoDueNotifier;
 import com.lifepilot.skill.builtin.todo.TodoSkillProvider;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.notification.NotificationService;
 import com.lifepilot.datastore.DataStoreManager;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.semantic.SemanticMemory;
@@ -37,11 +39,8 @@ import com.lifepilot.skill.validation.FormatValidator;
 import com.lifepilot.skill.validation.SandboxValidator;
 import com.lifepilot.skill.validation.SecurityValidator;
 import com.lifepilot.skill.validation.SkillValidationPipeline;
-import com.lifepilot.scheduler.ScheduledTaskService;
-import com.lifepilot.scheduler.config.SchedulerProperties;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.slf4j.Logger;
-import org.springframework.lang.Nullable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -160,12 +159,9 @@ public class SkillAutoConfiguration {
     @ConditionalOnMissingBean
     public ScheduleSkillProvider scheduleSkillProvider(DataStoreManager dataStoreManager,
                                                        ObjectMapper objectMapper,
-                                                       PromptRegistry promptRegistry,
-                                                       @Nullable ScheduledTaskService scheduledTaskService,
-                                                       @Nullable SchedulerProperties schedulerProperties) {
+                                                       PromptRegistry promptRegistry) {
         log.info("Skill 系统: 注册 ScheduleSkillProvider（DataStore 存储）");
-        return new ScheduleSkillProvider(dataStoreManager, objectMapper, promptRegistry,
-                scheduledTaskService, schedulerProperties);
+        return new ScheduleSkillProvider(dataStoreManager, objectMapper, promptRegistry);
     }
 
     @Bean
@@ -175,6 +171,18 @@ public class SkillAutoConfiguration {
                                                  PromptRegistry promptRegistry) {
         log.info("Skill 系统: 注册 HabitSkillProvider（DataStore 存储）");
         return new HabitSkillProvider(dataStoreManager, objectMapper, promptRegistry);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnProperty(prefix = "lifepilot.skills.todo",
+            name = "due-notification-enabled", havingValue = "true", matchIfMissing = true)
+    @ConditionalOnBean(NotificationService.class)
+    public TodoDueNotifier todoDueNotifier(DataStoreManager dataStoreManager,
+                                           ObjectMapper objectMapper,
+                                           NotificationService notificationService) {
+        log.info("Skill 系统: 注册 TodoDueNotifier（到期通知）");
+        return new TodoDueNotifier(dataStoreManager, objectMapper, notificationService);
     }
 
     @Bean
@@ -367,6 +375,20 @@ public class SkillAutoConfiguration {
         if (ctx.containsBean("skillGenerationTool")) {
             ctx.getBean(SkillGenerationTool.class).registerTools();
             log.info("ApplicationReady: generate_skill 工具已注册");
+        }
+
+        // 启动待办到期通知定时扫描
+        if (ctx.containsBean("todoDueNotifier") && ctx.containsBean("sharedScheduler")) {
+            var notifier = ctx.getBean(TodoDueNotifier.class);
+            var scheduler = ctx.getBean(SharedScheduler.class);
+            var config = ctx.getBean(SkillConfigProperties.class);
+            int interval = config.getTodo().getDueCheckIntervalSeconds();
+            scheduler.cleanup().scheduleAtFixedRate(
+                    notifier::scan,
+                    interval,
+                    interval,
+                    java.util.concurrent.TimeUnit.SECONDS);
+            log.info("ApplicationReady: TodoDueNotifier 定时扫描已启动, interval={}s", interval);
         }
     }
 }

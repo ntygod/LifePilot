@@ -21,6 +21,7 @@ import com.lifepilot.sandbox.validator.CodeValidator;
 import com.lifepilot.skill.config.SkillConfigProperties;
 import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
+import com.lifepilot.workflow.engine.WorkflowCommandService;
 import com.lifepilot.workflow.registry.WorkflowRegistry;
 import com.lifepilot.workflow.repository.WorkflowRepository;
 import jakarta.annotation.Nullable;
@@ -73,8 +74,10 @@ public class MetaAutoConfiguration {
                                         @Nullable SandboxRepository sandboxRepository,
                                         @Nullable InteractionBridge interactionBridge,
                                         @Nullable BrowserSessionManager browserSessionManager,
-                                        @Nullable NotificationService notificationService) {
-        return new InfraToolProvider(properties, restClientBuilder, sandboxBooter, codeValidator, sandboxRepository, interactionBridge, browserSessionManager, notificationService);
+                                        @Nullable NotificationService notificationService,
+                                        @Nullable WorkflowRegistry workflowRegistry,
+                                        @Nullable WorkflowCommandService workflowCommandService) {
+        return new InfraToolProvider(properties, restClientBuilder, sandboxBooter, codeValidator, sandboxRepository, interactionBridge, browserSessionManager, notificationService, workflowRegistry, workflowCommandService);
     }
 
     /**

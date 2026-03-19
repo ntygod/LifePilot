@@ -128,7 +128,7 @@ public class TodoSkillProvider implements ProactiveSkillProvider {
         return BuiltinTool.builder()
                 .id("builtin.todo.create")
                 .name("创建待办")
-                .description("创建新的待办事项，支持设置标题、描述、优先级和截止日期")
+                .description("创建待办事项或简单提醒（设置 dueDate 可到期自动通知）。多步骤自动化任务请使用工作流")
                 .category(ToolCategory.STORAGE)
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
