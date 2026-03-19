@@ -37,11 +37,8 @@ import com.lifepilot.skill.validation.FormatValidator;
 import com.lifepilot.skill.validation.SandboxValidator;
 import com.lifepilot.skill.validation.SecurityValidator;
 import com.lifepilot.skill.validation.SkillValidationPipeline;
-import com.lifepilot.scheduler.ScheduledTaskService;
-import com.lifepilot.scheduler.config.SchedulerProperties;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.slf4j.Logger;
-import org.springframework.lang.Nullable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -160,12 +157,9 @@ public class SkillAutoConfiguration {
     @ConditionalOnMissingBean
     public ScheduleSkillProvider scheduleSkillProvider(DataStoreManager dataStoreManager,
                                                        ObjectMapper objectMapper,
-                                                       PromptRegistry promptRegistry,
-                                                       @Nullable ScheduledTaskService scheduledTaskService,
-                                                       @Nullable SchedulerProperties schedulerProperties) {
+                                                       PromptRegistry promptRegistry) {
         log.info("Skill 系统: 注册 ScheduleSkillProvider（DataStore 存储）");
-        return new ScheduleSkillProvider(dataStoreManager, objectMapper, promptRegistry,
-                scheduledTaskService, schedulerProperties);
+        return new ScheduleSkillProvider(dataStoreManager, objectMapper, promptRegistry);
     }
 
     @Bean

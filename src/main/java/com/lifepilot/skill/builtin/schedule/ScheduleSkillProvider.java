@@ -15,10 +15,6 @@ import com.lifepilot.datastore.model.PropertyType;
 import com.lifepilot.notification.Urgency;
 import com.lifepilot.agent.proactive.signal.SignalSource;
 import com.lifepilot.prompt.PromptRegistry;
-import com.lifepilot.scheduler.ScheduledTaskService;
-import com.lifepilot.scheduler.config.SchedulerProperties;
-import com.lifepilot.scheduler.model.TaskAction;
-import com.lifepilot.scheduler.model.TriggerType;
 import com.lifepilot.skill.builtin.BuiltinSkill;
 import com.lifepilot.skill.builtin.ProactiveSkillProvider;
 import com.lifepilot.skill.model.SkillDefinition;
@@ -31,11 +27,9 @@ import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.tool.schema.JsonSchema;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.lang.Nullable;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -60,16 +54,10 @@ public class ScheduleSkillProvider implements ProactiveSkillProvider {
 
     private final DataStoreCrudAdapter<ScheduleEntity> scheduleAdapter;
     private final PromptRegistry promptRegistry;
-    @Nullable
-    private final ScheduledTaskService scheduledTaskService;
-    @Nullable
-    private final SchedulerProperties schedulerProperties;
 
     public ScheduleSkillProvider(DataStoreManager dataStoreManager,
                                  ObjectMapper objectMapper,
-                                 PromptRegistry promptRegistry,
-                                 @Nullable ScheduledTaskService scheduledTaskService,
-                                 @Nullable SchedulerProperties schedulerProperties) {
+                                 PromptRegistry promptRegistry) {
         this.scheduleAdapter = new DataStoreCrudAdapter<>(dataStoreManager, objectMapper,
                 new CrudAdapterConfig<>(
                         "schedule",
@@ -86,8 +74,6 @@ public class ScheduleSkillProvider implements ProactiveSkillProvider {
                         "日程管理"
                 ));
         this.promptRegistry = promptRegistry;
-        this.scheduledTaskService = scheduledTaskService;
-        this.schedulerProperties = schedulerProperties;
     }
 
     @Override
@@ -166,33 +152,7 @@ public class ScheduleSkillProvider implements ProactiveSkillProvider {
                         String description = input.getOptionalParam("description", String.class).orElse(null);
 
                         var entity = new ScheduleEntity(title, startTime, endTime, recurrence, location, description);
-                        ToolResult result = scheduleAdapter.create(entity);
-
-                        // 自动创建日程提醒定时任务
-                        if (result.isSuccess() && scheduledTaskService != null && schedulerProperties != null) {
-                            try {
-                                String documentId = (String) result.data().get("documentId");
-                                Instant start = Instant.parse(startTime);
-                                Instant reminderTime = start.minus(
-                                        schedulerProperties.getScheduleReminderMinutes(), ChronoUnit.MINUTES);
-                                if (reminderTime.isAfter(Instant.now())) {
-                                    String taskId = scheduledTaskService.create(
-                                            "日程提醒: " + title,
-                                            TriggerType.ONCE,
-                                            reminderTime.toString(),
-                                            null,
-                                            new TaskAction.SendNotification(
-                                                    "日程「" + title + "」将于 " + startTime + " 开始",
-                                                    Urgency.HIGH),
-                                            Map.of("scheduleId", documentId));
-                                    log.info("日程提醒定时任务创建成功: scheduleId={}, taskId={}", documentId, taskId);
-                                }
-                            } catch (Exception e) {
-                                log.warn("创建日程提醒定时任务失败，不影响日程创建: error={}", e.getMessage());
-                            }
-                        }
-
-                        return result;
+                        return scheduleAdapter.create(entity);
                     } catch (Exception e) {
                         log.error("创建日程失败: {}", e.getMessage(), e);
                         return ToolResult.error("创建日程失败: " + e.getMessage());
@@ -296,49 +256,7 @@ public class ScheduleSkillProvider implements ProactiveSkillProvider {
                         String description = input.getOptionalParam("description", String.class).orElse(current.description());
 
                         var updated = new ScheduleEntity(title, startTime, endTime, recurrence, location, description);
-                        ToolResult result = scheduleAdapter.update(id, updated);
-
-                        // 日程开始时间变更时，同步更新关联的定时任务
-                        if (result.isSuccess() && scheduledTaskService != null && schedulerProperties != null) {
-                            try {
-                                boolean startTimeChanged = !startTime.equals(current.startTime());
-                                if (startTimeChanged) {
-                                    Instant newStart = Instant.parse(startTime);
-                                    Instant newReminderTime = newStart.minus(
-                                            schedulerProperties.getScheduleReminderMinutes(), ChronoUnit.MINUTES);
-                                    var existingTask = scheduledTaskService.findByScheduleId(id);
-                                    if (existingTask.isPresent()) {
-                                        if (newReminderTime.isAfter(Instant.now())) {
-                                            scheduledTaskService.update(
-                                                    existingTask.get().id(),
-                                                    newReminderTime.toString(),
-                                                    null, null, null);
-                                            log.info("日程提醒定时任务已更新: scheduleId={}, taskId={}",
-                                                    id, existingTask.get().id());
-                                        }
-                                    } else {
-                                        // 无关联任务，创建新的提醒
-                                        if (newReminderTime.isAfter(Instant.now())) {
-                                            String taskId = scheduledTaskService.create(
-                                                    "日程提醒: " + title,
-                                                    TriggerType.ONCE,
-                                                    newReminderTime.toString(),
-                                                    null,
-                                                    new TaskAction.SendNotification(
-                                                            "日程「" + title + "」将于 " + startTime + " 开始",
-                                                            Urgency.HIGH),
-                                                    Map.of("scheduleId", id));
-                                            log.info("日程提醒定时任务创建成功: scheduleId={}, taskId={}", id, taskId);
-                                        }
-                                    }
-                                }
-                            } catch (Exception e) {
-                                log.warn("更新日程提醒定时任务失败，不影响日程更新: scheduleId={}, error={}",
-                                        id, e.getMessage());
-                            }
-                        }
-
-                        return result;
+                        return scheduleAdapter.update(id, updated);
                     } catch (Exception e) {
                         log.error("更新日程失败: {}", e.getMessage(), e);
                         return ToolResult.error("更新日程失败: " + e.getMessage());
@@ -365,22 +283,6 @@ public class ScheduleSkillProvider implements ProactiveSkillProvider {
                 .executor(input -> {
                     try {
                         String id = input.getParam("id", String.class);
-
-                        // 删除日程后，取消关联的定时任务
-                        if (scheduledTaskService != null) {
-                            try {
-                                var existingTask = scheduledTaskService.findByScheduleId(id);
-                                if (existingTask.isPresent()) {
-                                    scheduledTaskService.cancel(existingTask.get().id());
-                                    log.info("日程提醒定时任务已取消: scheduleId={}, taskId={}",
-                                            id, existingTask.get().id());
-                                }
-                            } catch (Exception e) {
-                                log.warn("取消日程提醒定时任务失败，不影响日程删除: scheduleId={}, error={}",
-                                        id, e.getMessage());
-                            }
-                        }
-
                         return scheduleAdapter.delete(id);
                     } catch (Exception e) {
                         log.error("删除日程失败: {}", e.getMessage(), e);
