@@ -5,11 +5,18 @@ import com.lifepilot.agent.task.CronScheduler;
 import com.lifepilot.agent.task.CronTaskRepository;
 import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.datastore.DataStoreManager;
+import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
+import com.lifepilot.knowledge.retrieve.DocumentRetriever;
+import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.episodic.EpisodicMemory;
+import com.lifepilot.memory.retrieval.HybridRetriever;
+import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.meta.convenience.CapabilityAggregator;
 import com.lifepilot.meta.convenience.IntrospectionSkillProvider;
 import com.lifepilot.meta.convenience.SkillDiscoveryRegistrar;
 import com.lifepilot.meta.infra.InfraToolProvider;
+import com.lifepilot.meta.infra.memory.MemoryToolProvider;
 import com.lifepilot.meta.infra.storage.StorageToolProvider;
 import com.lifepilot.mcp.registry.McpServerRegistry;
 import com.lifepilot.meta.infra.browser.BrowserSessionManager;
@@ -29,6 +36,7 @@ import com.lifepilot.workflow.registry.WorkflowRegistry;
 import com.lifepilot.workflow.repository.WorkflowRepository;
 import jakarta.annotation.Nullable;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -151,5 +159,23 @@ public class MetaAutoConfiguration {
     StorageToolProvider storageToolProvider(DataStoreManager dataStoreManager,
                                            PromptRegistry promptRegistry) {
         return new StorageToolProvider(dataStoreManager, promptRegistry);
+    }
+
+    /**
+     * 注册记忆管理工具提供者 — 注册 9 个记忆管理工具。
+     *
+     * <p>仅在 HybridRetriever 和 SemanticMemory Bean 可用时注册。
+     * EpisodicMemory、DocumentRetriever、SessionKnowledgeBaseRepository、MemoryProperties 为可选依赖。</p>
+     */
+    @Bean
+    @ConditionalOnBean({HybridRetriever.class, SemanticMemory.class})
+    MemoryToolProvider memoryToolProvider(HybridRetriever hybridRetriever,
+                                          SemanticMemory semanticMemory,
+                                          @Nullable EpisodicMemory episodicMemory,
+                                          @Nullable DocumentRetriever documentRetriever,
+                                          @Nullable SessionKnowledgeBaseRepository sessionKbRepo,
+                                          @Nullable MemoryProperties memoryProperties) {
+        return new MemoryToolProvider(hybridRetriever, semanticMemory,
+                episodicMemory, documentRetriever, sessionKbRepo, memoryProperties);
     }
 }
