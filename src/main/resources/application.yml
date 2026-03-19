@@ -70,6 +70,16 @@ lifepilot:
       timeout-minutes: 30
       max-recent-turns: 10
       cleanup-interval-ms: 300000
+    task:
+      # ===== 自主任务配置（Cron + Heartbeat 双轨） =====
+      enabled: true
+      heartbeat-enabled: true
+      heartbeat-interval-seconds: 1800
+      heartbeat-file: "~/.zhiwei/HEARTBEAT.md"
+      execution-timeout-seconds: 300
+      # active-hours-start: "08:00"
+      # active-hours-end: "22:00"
+      max-logs-per-task: 50
     multi-agent:
       enabled: true
       max-delegation-depth: 2
