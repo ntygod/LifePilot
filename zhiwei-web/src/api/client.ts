@@ -437,6 +437,19 @@ export const settingsApi = {
       method: 'PUT',
       body: JSON.stringify(settings)
     })
+  },
+
+  /** 获取渠道配置（敏感字段已 mask） */
+  getChannelConfig(): Promise<ChannelConfig> {
+    return request('/settings/channels')
+  },
+
+  /** 更新渠道配置 */
+  updateChannelConfig(config: ChannelConfig): Promise<ChannelConfig> {
+    return request('/settings/channels', {
+      method: 'PUT',
+      body: JSON.stringify(config)
+    })
   }
 }
 
@@ -490,6 +503,20 @@ export interface KnowledgeSettings {
     embeddingDimension: number
     batchSize: number
   }
+}
+
+/** 单个渠道配置 */
+export interface SingleChannelConfig {
+  enabled?: boolean
+  [key: string]: unknown
+}
+
+/** 渠道配置（按渠道名分组） */
+export interface ChannelConfig {
+  feishu?: SingleChannelConfig
+  wecom?: SingleChannelConfig
+  dingtalk?: SingleChannelConfig
+  [key: string]: SingleChannelConfig | undefined
 }
 
 /** LLM Provider 管理 API */

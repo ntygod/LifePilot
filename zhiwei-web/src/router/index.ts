@@ -189,6 +189,11 @@ const router = createRouter({
       name: 'settingsKnowledge',
       component: () => import('@/views/SettingsView.vue')
     },
+    {
+      path: '/settings/channels',
+      name: 'settingsChannels',
+      component: () => import('@/views/SettingsView.vue')
+    },
 
     /**
      * Eval / 评估
