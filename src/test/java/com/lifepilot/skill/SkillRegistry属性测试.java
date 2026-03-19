@@ -117,7 +117,7 @@ class SkillRegistry属性测试 {
     /** Stub GuardrailEngine — 空操作。 */
     private static class StubGuardrailEngine extends com.lifepilot.observability.guardrail.GuardrailEngine {
         StubGuardrailEngine() {
-            super(null, null, null);
+            super(null, null, null, null);
         }
 
         @Override

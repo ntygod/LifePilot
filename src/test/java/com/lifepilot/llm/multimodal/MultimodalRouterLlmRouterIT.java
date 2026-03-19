@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import reactor.core.publisher.Flux;
 
 import java.util.List;
@@ -57,10 +57,10 @@ class MultimodalRouterLlmRouterIT {
     @Autowired
     private MediaProperties mediaProperties;
 
-    @MockBean
+    @MockitoBean
     private LlmRouter llmRouter;
 
-    @MockBean
+    @MockitoBean
     private VideoProcessor videoProcessor;
 
     @Test
