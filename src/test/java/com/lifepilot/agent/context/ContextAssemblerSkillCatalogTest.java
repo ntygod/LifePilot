@@ -41,7 +41,7 @@ class ContextAssemblerSkillCatalogTest {
         var skill = SkillDefinition.builder()
                 .id("todo").name("待办管理").description("管理待办事项")
                 .version("1.0").instructions("指令").suggestedTools(List.of())
-                .source(new SkillSource.Builtin()).metadata(Map.of()).build();
+                .source(new SkillSource.UserDefined("/test", null)).metadata(Map.of()).build();
         when(skillRegistry.listAll()).thenReturn(List.of(skill));
 
         var assembler = new ContextAssembler(config, promptRegistry,
@@ -106,7 +106,7 @@ class ContextAssemblerSkillCatalogTest {
         var skill = SkillDefinition.builder()
                 .id("test").name("测试").description("测试")
                 .version("1.0").instructions("指令").suggestedTools(List.of())
-                .source(new SkillSource.Builtin()).metadata(Map.of()).build();
+                .source(new SkillSource.UserDefined("/test", null)).metadata(Map.of()).build();
         when(skillRegistry.listAll()).thenReturn(List.of(skill));
         when(promptRegistry.render(eq("agent/skill-catalog"), anyMap()))
                 .thenThrow(new RuntimeException("模板不存在"));

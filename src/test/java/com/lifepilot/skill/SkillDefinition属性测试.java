@@ -80,8 +80,8 @@ class SkillDefinition属性测试 {
                 .ofMinSize(0).ofMaxSize(3);
 
         var sourceArb = Arbitraries.of(
-                (SkillSource) new SkillSource.Builtin(),
-                new SkillSource.UserDefined("/tmp/test", null)
+                (SkillSource) new SkillSource.UserDefined("/tmp/test", null),
+                new SkillSource.UserDefined("/tmp/test2", null)
         );
 
         return Combinators.combine(idArb, nameArb, descArb, instructionsArb, toolsArb, metadataArb, sourceArb)

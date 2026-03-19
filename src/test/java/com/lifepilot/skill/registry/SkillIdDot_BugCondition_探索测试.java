@@ -60,7 +60,7 @@ class SkillIdDot_BugCondition_探索测试 {
                 .name("测试 Skill")
                 .description("测试描述")
                 .version("1.0.0")
-                .source(new SkillSource.Builtin())
+                .source(new SkillSource.UserDefined("/test", null))
                 .instructions("测试指令内容")
                 .suggestedTools(List.of())
                 .metadata(Map.of())

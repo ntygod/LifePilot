@@ -49,7 +49,7 @@ class SkillDefinitionValidatorTest {
                 .name("待办管理")
                 .description("管理待办事项")
                 .version("1.0.0")
-                .source(new SkillSource.Builtin())
+                .source(new SkillSource.UserDefined("/test", null))
                 .instructions("你是待办管理助手，帮助用户管理日常待办事项。")
                 .suggestedTools(List.of("builtin.todo.create"))
                 .metadata(Map.of())

@@ -309,7 +309,7 @@ class IntrospectionToolProviderTest {
                 .name("Skill " + id)
                 .description("描述 " + id)
                 .version("1.0.0")
-                .source(new SkillSource.Builtin())
+                .source(new SkillSource.UserDefined("/test", null))
                 .instructions("测试")
                 .suggestedTools(List.of())
                 .metadata(Map.of())

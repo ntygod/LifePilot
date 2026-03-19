@@ -113,7 +113,7 @@ class SkillGeneratorTest {
                 .name("写作助手")
                 .description("辅助用户进行各类写作")
                 .version("1.0.0")
-                .source(new SkillSource.Builtin())
+                .source(new SkillSource.UserDefined("/test", null))
                 .instructions("你是一个专业的写作助手，帮助用户进行各类写作任务。")
                 .suggestedTools(List.of("search"))
                 .metadata(Map.of())
