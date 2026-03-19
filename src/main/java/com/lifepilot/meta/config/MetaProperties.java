@@ -262,10 +262,15 @@ public class MetaProperties {
         /** 功能开关，默认 true。 */
         private boolean enabled = true;
 
-        /** 内置 Skill 资源路径列表，默认包含 find-skills 和 workflow-creator。 */
-        private List<String> builtinSkillPaths = List.of(
-                "builtin-skills/find-skills",
-                "builtin-skills/workflow-creator"
+        /** 种子 Skill 资源路径列表，启动时提取到用户目录。 */
+        private List<String> skillPaths = List.of(
+                "skills/find-skills",
+                "skills/workflow-creator",
+                "skills/memory",
+                "skills/infrastructure",
+                "skills/introspection",
+                "skills/datastore",
+                "skills/sync"
         );
     }
 

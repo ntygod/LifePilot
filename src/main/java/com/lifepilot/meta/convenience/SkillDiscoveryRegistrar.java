@@ -11,12 +11,11 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
 
 /**
- * 内置 Skill 提取器 — 启动时将 SKILL.md 从 classpath 提取到用户 Skill 目录。
+ * 种子 Skill 提取器 — 启动时将 SKILL.md 从 classpath 提取到用户 Skill 目录。
  *
- * <p>从 classpath 读取内置 SKILL.md（如 find-skills、workflow-creator），
+ * <p>从 classpath 读取种子 SKILL.md（如 find-skills、workflow-creator），
  * 提取到用户 Skill 目录（{@code ~/.zhiwei/skills/{skill-id}/SKILL.md}）。
  * 后续由 {@link com.lifepilot.skill.markdown.MarkdownSkillLoader} 作为 UserDefined Skill 加载，
  * 用户可在文件系统中查看和编辑。</p>
@@ -44,37 +43,37 @@ public class SkillDiscoveryRegistrar implements InitializingBean {
 
     @Override
     public void afterPropertiesSet() {
-        extractBuiltinSkillsToUserDirectory();
+        extractSeedSkillsToUserDirectory();
     }
 
     /**
-     * 将所有内置 SKILL.md 从 classpath 提取到用户 Skill 目录。
+     * 将所有种子 SKILL.md 从 classpath 提取到用户 Skill 目录。
      *
-     * <p>遍历配置的 builtinSkillPaths，提取每个到对应目录。
+     * <p>遍历配置的 skillPaths，提取每个到对应目录。
      * 如果目标文件已存在，跳过提取以保留用户自定义内容。</p>
      */
-    void extractBuiltinSkillsToUserDirectory() {
+    void extractSeedSkillsToUserDirectory() {
         var skillDiscovery = properties.getSkillDiscovery();
         if (!skillDiscovery.isEnabled()) {
             log.debug("Skill 发现功能已禁用，跳过提取");
             return;
         }
 
-        var builtinPaths = skillDiscovery.getBuiltinSkillPaths();
-        if (builtinPaths == null || builtinPaths.isEmpty()) {
-            log.debug("未配置内置 Skill 路径");
+        var seedPaths = skillDiscovery.getSkillPaths();
+        if (seedPaths == null || seedPaths.isEmpty()) {
+            log.debug("未配置种子 Skill 路径");
             return;
         }
 
-        for (var path : builtinPaths) {
+        for (var path : seedPaths) {
             extractSingleSkill(path);
         }
     }
 
     /**
-     * 提取单个内置 Skill 到用户目录。
+     * 提取单个种子 Skill 到用户目录。
      *
-     * @param resourcePath classpath 下的资源路径，如 builtin-skills/find-skills
+     * @param resourcePath classpath 下的资源路径，如 skills/find-skills
      */
     private void extractSingleSkill(String resourcePath) {
         var skillId = extractSkillId(resourcePath);
@@ -89,12 +88,12 @@ public class SkillDiscoveryRegistrar implements InitializingBean {
         try {
             var resource = new ClassPathResource(fullResourcePath);
             if (!resource.exists()) {
-                log.warn("内置 Skill SKILL.md 未找到: path={}", fullResourcePath);
+                log.warn("种子 Skill SKILL.md 未找到: path={}", fullResourcePath);
                 return;
             }
             content = resource.getContentAsString(StandardCharsets.UTF_8);
         } catch (IOException e) {
-            log.warn("内置 Skill SKILL.md 读取失败: path={}, error={}", fullResourcePath, e.getMessage());
+            log.warn("种子 Skill SKILL.md 读取失败: path={}, error={}", fullResourcePath, e.getMessage());
             return;
         }
 
@@ -104,7 +103,7 @@ public class SkillDiscoveryRegistrar implements InitializingBean {
 
         // 3. 如果目标文件已存在，跳过（不覆盖用户自定义内容）
         if (Files.exists(targetFile)) {
-            log.debug("内置 Skill SKILL.md 已存在于用户目录，跳过提取: skillId={}, path={}", skillId, targetFile);
+            log.debug("种子 Skill SKILL.md 已存在于用户目录，跳过提取: skillId={}, path={}", skillId, targetFile);
             return;
         }
 
@@ -112,18 +111,21 @@ public class SkillDiscoveryRegistrar implements InitializingBean {
         try {
             Files.createDirectories(targetFolder);
             Files.writeString(targetFile, content, StandardCharsets.UTF_8);
-            log.info("内置 Skill SKILL.md 已提取到用户目录: skillId={}, path={}", skillId, targetFile);
+            log.info("种子 Skill SKILL.md 已提取到用户目录: skillId={}, path={}", skillId, targetFile);
         } catch (IOException e) {
-            log.warn("内置 Skill SKILL.md 提取失败: skillId={}, path={}, error={}", skillId, targetFile, e.getMessage());
+            log.warn("种子 Skill SKILL.md 提取失败: skillId={}, path={}, error={}", skillId, targetFile, e.getMessage());
         }
     }
 
     /**
      * 从资源路径提取 Skill ID。
      *
-     * <p>例如：
-     * - builtin-skills/find-skills → builtin.find-skills
-     * - builtin-skills/workflow-creator → builtin.workflow-creator
+     * <p>直接返回文件夹名作为 Skill ID，不加任何前缀。例如：
+     * <ul>
+     *   <li>skills/find-skills → find-skills</li>
+     *   <li>skills/workflow-creator → workflow-creator</li>
+     *   <li>skills/memory → memory</li>
+     * </ul>
      *
      * @param resourcePath 资源路径
      * @return Skill ID 或 null（提取失败时）
@@ -133,13 +135,12 @@ public class SkillDiscoveryRegistrar implements InitializingBean {
             return null;
         }
 
-        // 去掉前缀 builtin-skills/ 或类似的
+        // 直接返回文件夹名作为 Skill ID
         String suffix = resourcePath;
         if (resourcePath.contains("/")) {
             suffix = resourcePath.substring(resourcePath.lastIndexOf('/') + 1);
         }
 
-        // 转换为 Skill ID 格式（用点号分隔）
-        return "builtin." + suffix;
+        return suffix;
     }
 }
