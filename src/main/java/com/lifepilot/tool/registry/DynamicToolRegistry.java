@@ -17,7 +17,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 /**
  * 动态工具注册中心。
  *
- * <p>统一管理来自三个层次的工具，对 AgentLoop 完全透明。
+ * <p>统一管理两层工具（Java 原生 + MCP 外部），对 AgentLoop 完全透明。
  * 线程安全，支持运行时动态注册/注销。</p>
  *
  * @author zsg
@@ -35,9 +35,6 @@ public class DynamicToolRegistry {
 
     /** MCP Server 工具索引：serverName → 工具 ID 列表。 */
     private final ConcurrentHashMap<String, List<String>> serverToolIndex = new ConcurrentHashMap<>();
-
-    /** Skill 工具 ID 集合。 */
-    private final ConcurrentHashMap<String, Boolean> skillToolIds = new ConcurrentHashMap<>();
 
     /** 分组索引：category → 工具 ID 集合。 */
     private final ConcurrentHashMap<ToolCategory, Set<String>> categoryIndex = new ConcurrentHashMap<>();
@@ -61,7 +58,7 @@ public class DynamicToolRegistry {
     // ─────────────────────────────────────────────
 
     /**
-     * 注册 Java 原生工具（Layer 3，最高优先级）。
+     * 注册 Java 原生工具（最高优先级）。
      *
      * @param tool Java 原生工具
      */
@@ -75,29 +72,7 @@ public class DynamicToolRegistry {
     }
 
     /**
-     * 批量注册 Skill 声明式工具（Layer 2）。
-     *
-     * @param skillTools Skill 工具列表
-     */
-    public void registerSkillTools(List<ToolContract> skillTools) {
-        List<String> registeredIds = new ArrayList<>();
-        for (ToolContract tool : skillTools) {
-            if (registerWithPriority(tool, ToolLayer.SKILL_DECLARATIVE, "skill")) {
-                skillToolIds.put(tool.id(), Boolean.TRUE);
-                registeredIds.add(tool.id());
-            }
-        }
-        if (!registeredIds.isEmpty()) {
-            guardrailEngine.addAllowedTools(registeredIds);
-            invalidateSnapshot();
-            eventPublisher.publishEvent(new ToolsRegistered(
-                    List.copyOf(registeredIds), ToolLayer.SKILL_DECLARATIVE, "skill"));
-            log.info("Skill 工具注册完成: count={}", registeredIds.size());
-        }
-    }
-
-    /**
-     * 批量注册 MCP 外部工具（Layer 1，最低优先级）。
+     * 批量注册 MCP 外部工具（最低优先级）。
      *
      * @param serverName MCP 服务器名称
      * @param mcpTools MCP 工具列表
@@ -203,48 +178,6 @@ public class DynamicToolRegistry {
             eventPublisher.publishEvent(new ToolsUnregistered(
                     List.copyOf(toolIds), serverName));
             log.info("MCP 工具注销完成: server={}, count={}", serverName, toolIds.size());
-        }
-    }
-
-    /**
-     * 注销指定 ID 的 Skill 工具。
-     *
-     * @param toolId 工具 ID
-     * @return 是否成功注销
-     */
-    public boolean unregisterSkillTool(String toolId) {
-        ToolContract removed = tools.remove(toolId);
-        if (removed != null) {
-            toolLayers.remove(toolId);
-            skillToolIds.remove(toolId);
-            removeCategoryIndex(removed.category(), toolId);
-            guardrailEngine.removeAllowedTools(List.of(toolId));
-            invalidateSnapshot();
-            eventPublisher.publishEvent(new ToolsUnregistered(
-                    List.of(toolId), "skill"));
-            log.info("Skill 工具注销完成: id={}", toolId);
-            return true;
-        }
-        return false;
-    }
-
-    /** 注销所有 Skill 工具（热加载前调用）。 */
-    public void unregisterSkillTools() {
-        List<String> toolIds = new ArrayList<>(skillToolIds.keySet());
-        if (!toolIds.isEmpty()) {
-            toolIds.forEach(id -> {
-                ToolContract removed = tools.remove(id);
-                if (removed != null) {
-                    removeCategoryIndex(removed.category(), id);
-                }
-                toolLayers.remove(id);
-            });
-            skillToolIds.clear();
-            guardrailEngine.removeAllowedTools(toolIds);
-            invalidateSnapshot();
-            eventPublisher.publishEvent(new ToolsUnregistered(
-                    List.copyOf(toolIds), "skill-reload"));
-            log.info("Skill 工具注销完成: count={}", toolIds.size());
         }
     }
 

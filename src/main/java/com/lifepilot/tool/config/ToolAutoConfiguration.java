@@ -7,10 +7,8 @@ import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.observability.guardrail.GuardrailEngine;
 import com.lifepilot.observability.trace.TraceRecorder;
 import com.lifepilot.mcp.registry.McpServerRegistry;
-import com.lifepilot.skill.activation.SkillActivator;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.McpTool;
-import com.lifepilot.tool.SkillTool;
 import com.lifepilot.tool.bridge.ToolBridgeAgentToolProvider;
 import com.lifepilot.tool.pipeline.IdempotencyManager;
 import com.lifepilot.tool.pipeline.ToolExecutionPipeline;
@@ -101,23 +99,6 @@ public class ToolAutoConfiguration {
             @Nullable TraceRecorder traceRecorder) {
         log.info("工具桥接层初始化: 注册 ToolBridge 实现的 AgentToolProvider, traceRecorder={}", traceRecorder != null ? "已注入" : "未注入");
         return new ToolBridgeAgentToolProvider(toolRegistry, pipeline, objectMapper, metaProperties, traceRecorder);
-    }
-
-    /**
-     * 初始化 SkillTool 的静态 SkillActivator 引用。
-     *
-     * <p>SkillActivator 为可选依赖，Skill 模块未启用时跳过注入。</p>
-     */
-    @Bean
-    public InitializingBean skillToolActivatorInitializer(@Nullable SkillActivator skillActivator) {
-        return () -> {
-            if (skillActivator != null) {
-                SkillTool.setSkillActivator(skillActivator);
-                log.info("SkillTool 静态 SkillActivator 引用已初始化");
-            } else {
-                log.info("SkillActivator 不可用，SkillTool.execute() 将返回错误");
-            }
-        };
     }
 
     /**
