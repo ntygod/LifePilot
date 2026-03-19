@@ -16,6 +16,9 @@ import com.lifepilot.meta.infra.web.WebFetchToolExecutor;
 import com.lifepilot.meta.infra.web.WebSearchToolExecutor;
 import com.lifepilot.notification.NotificationService;
 import com.lifepilot.observability.guardrail.RiskLevel;
+import com.lifepilot.workflow.engine.WorkflowCommandService;
+import com.lifepilot.workflow.registry.WorkflowRegistry;
+import com.lifepilot.workflow.tool.WorkflowToolProvider;
 import com.lifepilot.sandbox.booter.SandboxBooter;
 import com.lifepilot.sandbox.repository.SandboxRepository;
 import com.lifepilot.sandbox.validator.CodeValidator;
@@ -63,6 +66,10 @@ public class InfraToolProvider implements BuiltinSkillProvider {
     private final BrowserSessionManager browserSessionManager;
     @Nullable
     private final NotificationService notificationService;
+    @Nullable
+    private final WorkflowRegistry workflowRegistry;
+    @Nullable
+    private final WorkflowCommandService workflowCommandService;
 
     public InfraToolProvider(MetaProperties properties,
                              RestClient.Builder restClientBuilder,
@@ -71,7 +78,9 @@ public class InfraToolProvider implements BuiltinSkillProvider {
                              @Nullable SandboxRepository sandboxRepository,
                              @Nullable InteractionBridge interactionBridge,
                              @Nullable BrowserSessionManager browserSessionManager,
-                             @Nullable NotificationService notificationService) {
+                             @Nullable NotificationService notificationService,
+                             @Nullable WorkflowRegistry workflowRegistry,
+                             @Nullable WorkflowCommandService workflowCommandService) {
         this.properties = properties;
         this.restClientBuilder = restClientBuilder;
         this.sandboxBooter = sandboxBooter;
@@ -80,6 +89,8 @@ public class InfraToolProvider implements BuiltinSkillProvider {
         this.interactionBridge = interactionBridge;
         this.browserSessionManager = browserSessionManager;
         this.notificationService = notificationService;
+        this.workflowRegistry = workflowRegistry;
+        this.workflowCommandService = workflowCommandService;
     }
 
     @Override
@@ -125,7 +136,11 @@ public class InfraToolProvider implements BuiltinSkillProvider {
                         "builtin.file.patch",
                         "builtin.interact.choose",
                         "builtin.interact.input",
-                        "builtin.interact.notify"
+                        "builtin.interact.notify",
+                        "builtin.workflow.list",
+                        "builtin.workflow.start",
+                        "builtin.workflow.status",
+                        "builtin.workflow.cancel"
                 ))
                 .metadata(Map.of())
                 .build();
@@ -180,8 +195,20 @@ public class InfraToolProvider implements BuiltinSkillProvider {
             log.warn("InteractionBridge 或 NotificationService 不可用，跳过交互控制工具注册");
         }
 
-        log.info("基础工具注册完成: count={}, categories=[env, web, reason, shell, browser, code, file, interact]",
-                (interactionBridge != null && notificationService != null) ? 34 : 31);
+        // 工作流管理工具（4 个，委托给 WorkflowToolProvider）
+        if (workflowRegistry != null && workflowCommandService != null) {
+            var workflowToolProvider = new WorkflowToolProvider(workflowRegistry, workflowCommandService);
+            workflowToolProvider.buildWorkflowTools().forEach(toolRegistry::registerBuiltinTool);
+            log.info("工作流管理工具注册完成: count=4");
+        } else {
+            log.warn("WorkflowRegistry 或 WorkflowCommandService 不可用，跳过工作流管理工具注册");
+        }
+
+        int totalTools = 28; // 基础工具
+        if (interactionBridge != null && notificationService != null) totalTools += 3;
+        if (workflowRegistry != null && workflowCommandService != null) totalTools += 4;
+        log.info("基础工具注册完成: count={}, categories=[env, web, reason, shell, browser, code, file, interact, workflow]",
+                totalTools);
     }
 
     // ─────────────────────────────────────────────
