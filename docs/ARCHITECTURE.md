@@ -5,11 +5,11 @@
 
 ## 1. 项目概述
 
-知微（ZhiWei，取"见微知著"之意）是一个 AI 驱动的个人生活助手，采用 Agent 架构实现自然语言交互、任务管理、知识管理、主动推理等能力。系统以单 JAR 部署为核心设计约束，面向个人用户提供本地优先、隐私友好的智能助手体验。
+知微（ZhiWei，取"见微知著"之意）是一个 AI 驱动的个人生活助手，采用 Agent 架构实现自然语言交互、任务管理、知识管理、自主任务执行等能力。系统以单 JAR 部署为核心设计约束，面向个人用户提供本地优先、隐私友好的智能助手体验。
 
 核心差异化：
 - **多层记忆系统**：L1 工作记忆 → L2 情景记忆 → L3 语义记忆 + 时序知识图谱 → L4 程序记忆，模拟人类认知记忆层次
-- **主动推理**：不仅被动响应，还能基于上下文信号主动提供建议和提醒
+- **自主任务执行**：支持 cron 定时和条件触发的自主任务，基于 TASKS.md 文件管理
 - **Skill 自扩展**：Agent 可检测能力缺口并自动生成新 Skill（YAML 声明式）
 - **单 JAR 部署**：后端 + SQLite + sqlite-vec 打包为单个可执行 JAR，零外部依赖
 
@@ -44,7 +44,7 @@ graph TB
 
     subgraph "引擎层"
         AGENT["Agent 引擎<br/>AgentLoop + StateReducer"]
-        PROACTIVE["主动推理引擎<br/>ProactiveReasoner"]
+        TASK["自主任务<br/>HeartbeatScheduler"]
         MULTI["多 Agent 协作<br/>HandoffTool"]
         CTX["ContextAssembler<br/>上下文组装"]
     end
@@ -88,7 +88,7 @@ graph TB
     CHANNEL --> GW
     GW --> MW --> AGENT
     AGENT --> CTX
-    AGENT --> PROACTIVE
+    AGENT --> TASK
     AGENT --> MULTI
     AGENT --> SKILL
     AGENT --> TOOL
@@ -120,7 +120,7 @@ graph TB
 | 模块包 | 职责 | 详细文档 |
 |--------|------|---------|
 | `llm` | 多模型路由、熔断器、故障转移、流式响应 | [架构](architecture/llm-router.md) · [特性](features/llm-router.md) |
-| `agent` | Agent 控制循环、状态机、上下文组装、主动推理 | [架构](architecture/agent-engine.md) · [特性](features/agent-engine.md) |
+| `agent` | Agent 控制循环、状态机、上下文组装、自主任务执行 | [架构](architecture/agent-engine.md) · [特性](features/agent-engine.md) |
 | `tool` | 工具契约、动态注册、执行管道、YAML 工具 | [架构](architecture/tool-ecosystem.md) · [特性](features/tool-ecosystem.md) |
 | `guardrail` | 安全护栏策略定义（包级标记，实际逻辑在 tool/observability 中） | [架构](architecture/guardrail.md) · [特性](features/guardrail.md) |
 | `mcp` | Model Context Protocol 客户端、工具桥接、传输层 | [架构](architecture/mcp-support.md) · [特性](features/mcp-support.md) |
@@ -226,8 +226,8 @@ graph TB
 | 主题 | 文档 |
 |------|------|
 | 记忆进阶（巩固/遗忘/混合检索） | [架构](architecture/memory-advanced.md) · [特性](features/memory-advanced.md) |
-| 内置 Skill（Todo/Schedule/Habit/Memory） | [架构](architecture/builtin-skills.md) · [特性](features/builtin-skills.md) |
-| 主动推理引擎 | [架构](architecture/proactive-reasoning.md) · [特性](features/proactive-reasoning.md) |
+| 内置 Skill（Memory / Task） | [架构](architecture/builtin-skills.md) · [特性](features/builtin-skills.md) |
+| 自主任务执行 | — |
 | 通知系统 | [架构](architecture/notification.md) · [特性](features/notification.md) |
 | 部署与运维 | [架构](architecture/deployment.md) · [特性](features/deployment.md) |
 | 性能优化 | [架构](architecture/performance-optimization.md) · [特性](features/performance-optimization.md) |

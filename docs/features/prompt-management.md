@@ -24,7 +24,7 @@
 - `agent/` — Agent 各执行阶段的系统提示词
 - `memory/` — 对话压缩和实体压缩提示词
 - `knowledge/` — 重排序和分块上下文增强提示词
-- `proactive/` — 主动推理评估提示词
+- `proactive/` — ~~已删除（主动推理模块已废弃）~~
 - `semantic/` — 实体消歧义提示词
 - `skill/` — 内置 Skill 的 instructions 提示词
 - `generation/` — Skill 自动生成提示词

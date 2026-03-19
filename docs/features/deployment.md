@@ -12,7 +12,7 @@
 
 - `java -jar lifepilot.jar` 启动即为完整后端服务
 - 不再支持 `--mode=cli` / `--mode=tray` 等启动参数
-- 主动推理通知走 IM Channel（企微/钉钉/飞书）或未来 Web Push
+- 自主任务通知走 IM Channel（企微/钉钉/飞书）或未来 Web Push
 - 如需桌面客户端体验，远期可用 Tauri WebView 包装本地 Web UI
 
 ## 2. 部署方式

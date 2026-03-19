@@ -8,7 +8,7 @@
 知微是一个 AI 驱动的个人生活助手，通过自然语言交互帮助用户管理日常事务。与通用 AI 助手不同，知微专注于：
 
 - **长期记忆**：多层记忆系统让助手真正"记住"用户的偏好、习惯和历史
-- **主动服务**：不仅被动响应，还能基于上下文主动提供建议和提醒
+- **自主任务**：支持 cron 定时和条件触发的自主任务执行，基于 TASKS.md 文件管理
 - **本地优先**：单 JAR 部署 + SQLite 存储，数据完全在用户本地，隐私友好
 - **可扩展**：YAML 声明式 Skill 系统 + MCP 协议，能力可按需扩展
 
@@ -17,7 +17,7 @@
 | 能力 | 知微 | ChatGPT | 通义千问 | Notion AI |
 |------|------|---------|---------|-----------|
 | 多层记忆系统 | ✅ L1~L4 四层 | ❌ 仅会话内 | ❌ 仅会话内 | ❌ |
-| 主动推理 | ✅ 信号驱动 | ❌ | ❌ | ❌ |
+| 自主任务执行 | ✅ cron/条件触发 | ❌ | ❌ | ❌ |
 | 本地部署 | ✅ 单 JAR | ❌ 云端 | ❌ 云端 | ❌ 云端 |
 | 工具扩展 | ✅ MCP + YAML Skill | ✅ 插件 | ✅ 插件 | ❌ |
 | 多 Agent 协作 | ✅ HandoffTool | ❌ | ❌ | ❌ |
@@ -51,13 +51,13 @@
 | 特性 | 说明 | 详细文档 |
 |------|------|---------|
 | Skill 系统 | YAML 声明式 Skill 定义、热加载、SubAgent 激活模式 | [特性](features/skill-system.md) |
-| 内置 Skill | Todo / Schedule / Habit / Memory 四个核心生活管理 Skill | [特性](features/builtin-skills.md) |
+| 内置 Skill | Memory / Task 等核心 Skill | [特性](features/builtin-skills.md) |
 | Skill 自扩展 | Gap 检测 + YAML 自动生成 + 三重验证，Agent 自主扩展能力 | [特性](features/skill-development.md) |
-| CLI 交互 | JLine 3 交互式对话，快捷命令（todo/schedule/habit/llm/mcp/skill） | [特性](features/gateway-channels.md) |
+| CLI 交互 | JLine 3 交互式对话，快捷命令（llm/mcp/skill） | [特性](features/gateway-channels.md) |
 | 消息网关 | 统一消息入口，6 层中间件管道（Auth→RateLimit→Security→Router→Execution→Audit） | [特性](features/gateway-channels.md) |
 | Channel 适配器 | 企业微信 / 钉钉 / 飞书 / Webhook 四个渠道适配 | [特性](features/gateway-channels.md) |
 | 对话管理 | 对话历史存储、会话视图查询 | [特性](features/conversation.md) |
-| 主动推理 | 两阶段推理引擎、智能降频、信号采集，主动提供建议 | [特性](features/proactive-reasoning.md) |
+| 自主任务执行 | cron 定时 + 条件触发，TASKS.md 文件管理，静默执行 + 通知 | — |
 | 通知系统 | 统一通知服务、Urgency 路由、多渠道广播、富媒体支持、被动队列持久化 | [特性](features/notification.md) |
 
 ### 3.4 高级能力

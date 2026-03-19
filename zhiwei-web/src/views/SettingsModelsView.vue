@@ -45,7 +45,6 @@ const SCENE_LABELS: Record<string, string> = {
   knowledge_extraction: '知识提取',
   knowledge_rerank: '知识精排',
   memory_compression: '记忆压缩',
-  proactive_reasoning: '主动推理',
   skill_generation: '技能生成',
   embedding: '向量化',
 }
@@ -56,7 +55,6 @@ const SCENE_DESCRIPTIONS: Record<string, string> = {
   knowledge_extraction: '适合抽取结构化信息和关键信息。',
   knowledge_rerank: '知识检索后的精排与重排序。',
   memory_compression: '适合总结历史上下文，压缩记忆。',
-  proactive_reasoning: '适合复杂推理和主动建议场景。',
   skill_generation: '自动生成技能或提示模板的场景。',
   embedding: '文本向量化嵌入。',
 }
@@ -67,7 +65,6 @@ const SCENE_ORDER = [
   'knowledge_extraction',
   'knowledge_rerank',
   'memory_compression',
-  'proactive_reasoning',
   'skill_generation',
   'embedding',
 ] as const
@@ -340,7 +337,6 @@ function formatScenes(scenes: string[] | undefined) {
     knowledge_extraction: '知识提取',
     knowledge_rerank: '知识精排',
     memory_compression: '记忆压缩',
-    proactive_reasoning: '主动推理',
     skill_generation: '技能生成',
     embedding: '向量嵌入',
   }

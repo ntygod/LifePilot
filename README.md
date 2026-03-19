@@ -7,7 +7,7 @@
 [![Spring AI](https://img.shields.io/badge/Spring%20AI-1.1.2-blue.svg)](https://spring.io/projects/spring-ai)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-ZhiWei 是一个本地运行的个人 AI Agent 助手。它不只是被动执行用户命令，而是具备主动智能能力——观察用户的行为模式，主动提供建议和帮助。所有数据存储在本地，隐私完全由你掌控。
+ZhiWei 是一个本地运行的个人 AI Agent 助手。它不只是被动执行用户命令，而是具备自主任务执行能力——支持 cron 定时和条件触发的自主任务。所有数据存储在本地，隐私完全由你掌控。
 
 ## 目录
 
@@ -55,7 +55,7 @@ ZhiWei 是一个本地运行的个人 AI Agent 助手。它不只是被动执行
 - 7 大元能力维度（ToolCategory）：感知 / 行动 / 认知 / 存储 / 交互 / 自省 / 扩展
 - Skill 验证三阶段管线：FormatValidator → SecurityValidator → SandboxValidator
 - Skill 自扩展：SkillGenerator 运行时自动检测能力缺口，生成 YAML Skill
-- 内置 Skill：待办管理 / 日程管理 / 习惯追踪 / 定时任务 / 通用数据存储
+- 内置 Skill：通用数据存储 / 定时任务 / 记忆管理
 - DynamicToolRegistry 运行时工具注册表，支持热加载
 
 ### 📚 知识库管理
@@ -79,7 +79,7 @@ ZhiWei 是一个本地运行的个人 AI Agent 助手。它不只是被动执行
 - 工作流状态持久化 + 崩溃恢复
 
 ### 🔔 统一通知系统
-- NotificationService 统一接口，主动推理 / 工作流 / 各模块统一调用
+- NotificationService 统一接口，工作流 / 各模块统一调用
 - Urgency 路由：HIGH/MEDIUM 实时多渠道广播，LOW 入队被动队列定时推送
 - 富媒体支持：文本 / Markdown / 交互式卡片 / 图片，各渠道自动适配
 - 被动队列 SQLite 持久化，重启不丢失
@@ -432,7 +432,7 @@ npm run build
 
 ### ZhiWei 是什么？
 
-ZhiWei（知微）是一个本地运行的 AI Agent 助手，具备主动智能能力，可以帮助你管理待办、日程、习惯，提供知识检索和自动化工作流能力。
+ZhiWei（知微）是一个本地运行的 AI Agent 助手，具备自主任务执行能力，可以帮助你管理知识、提供自动化工作流能力。
 
 ### 需要付费吗？
 
