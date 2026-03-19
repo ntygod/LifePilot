@@ -764,6 +764,14 @@ public class ReactAgentLoop implements CallbackHelper {
                 outputTokens = (int) usage.getCompletionTokens();
             }
 
+            // 兜底估算：当 Provider 未返回 usage 时，基于响应文本估算 outputTokens
+            if (inputTokens == 0 && outputTokens == 0) {
+                String responseText = chatResponse.getResult().getOutput().getText();
+                if (responseText != null && !responseText.isEmpty()) {
+                    outputTokens = estimateTextTokens(responseText);
+                }
+            }
+
             // 从 Generation 元数据提取完成原因
             var resultMetadata = chatResponse.getResult().getMetadata();
             String finishReason = resultMetadata.getFinishReason();
@@ -966,6 +974,14 @@ public class ReactAgentLoop implements CallbackHelper {
             if (usage != null) {
                 inputTokens = (int) usage.getPromptTokens();
                 outputTokens = error != null ? 0 : (int) usage.getCompletionTokens();
+            }
+
+            // 兜底估算：当 Provider 未返回 usage 时，基于响应文本估算 outputTokens
+            if (inputTokens == 0 && outputTokens == 0 && error == null) {
+                String responseText = chatResponse.getResult().getOutput().getText();
+                if (responseText != null && !responseText.isEmpty()) {
+                    outputTokens = estimateTextTokens(responseText);
+                }
             }
         }
 
