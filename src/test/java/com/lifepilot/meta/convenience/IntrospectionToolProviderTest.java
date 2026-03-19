@@ -28,19 +28,19 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
 /**
- * IntrospectionSkillProvider 单元测试。
+ * IntrospectionToolProvider 单元测试。
  *
  * @author zsg
  * @since 2026-03-08
  */
-class IntrospectionSkillProviderTest {
+class IntrospectionToolProviderTest {
 
     private CapabilityAggregator aggregator;
     private SkillRegistry skillRegistry;
     private AgentRegistry agentRegistry;
     private DynamicToolRegistry toolRegistry;
     private WorkflowRegistry workflowRegistry;
-    private IntrospectionSkillProvider provider;
+    private IntrospectionToolProvider provider;
     private WorkflowRepository workflowRepository;
     private McpServerRegistry mcpServerRegistry;
 
@@ -65,22 +65,8 @@ class IntrospectionSkillProviderTest {
         aggregator = new CapabilityAggregator(
                 skillRegistry, agentRegistry, toolRegistry, workflowRegistry, properties, sharedScheduler);
 
-        provider = new IntrospectionSkillProvider(
+        provider = new IntrospectionToolProvider(
                 aggregator, skillRegistry, agentRegistry, toolRegistry, workflowRegistry, workflowRepository, mcpServerRegistry);
-    }
-
-    @Test
-    void provide_返回正确的SkillDefinition() {
-        var definition = provider.provide();
-
-        assertThat(definition.id()).isEqualTo("builtin.introspection");
-        assertThat(definition.name()).isEqualTo("系统自省");
-        assertThat(definition.suggestedTools()).containsExactlyInAnyOrder(
-                "system.list-capabilities",
-                "system.explain",
-                "system.status",
-                "system.suggest"
-        );
     }
 
     @Test
@@ -323,7 +309,7 @@ class IntrospectionSkillProviderTest {
                 .name("Skill " + id)
                 .description("描述 " + id)
                 .version("1.0.0")
-                .source(new SkillSource.Builtin())
+                .source(new SkillSource.UserDefined("/test", null))
                 .instructions("测试")
                 .suggestedTools(List.of())
                 .metadata(Map.of())

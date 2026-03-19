@@ -1,10 +1,6 @@
 package com.lifepilot.skill.config;
 
-import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
-import com.lifepilot.knowledge.retrieve.DocumentRetriever;
 import com.lifepilot.llm.LlmRouter;
-import com.lifepilot.memory.config.MemoryProperties;
-import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.skill.activation.SkillActivator;
@@ -12,12 +8,6 @@ import com.lifepilot.skill.activation.SkillMetricsTracker;
 import com.lifepilot.skill.audit.SkillAuditRepository;
 import com.lifepilot.skill.disclosure.SkillDisclosureTool;
 import com.lifepilot.skill.disclosure.SkillGenerationTool;
-import com.lifepilot.skill.builtin.BuiltinSkillProvider;
-import com.lifepilot.skill.builtin.BuiltinSkillRegistrar;
-import com.lifepilot.skill.builtin.memory.MemorySkillProvider;
-
-import com.lifepilot.memory.retrieval.HybridRetriever;
-import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.skill.generation.SkillGapDetector;
 import com.lifepilot.skill.generation.SkillGenerator;
 import com.lifepilot.skill.generation.SkillTemplateLibrary;
@@ -38,7 +28,6 @@ import org.slf4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -50,14 +39,12 @@ import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-import java.util.List;
-
 /**
  * Skill 系统 Spring Boot 自动配置。
  *
  * <p>通过 {@code lifepilot.skills.enabled=true}（默认）激活，
  * 注册 Skill 框架核心组件、Markdown 解析与热加载、安全验证管线、
- * Skill 自扩展、审计追溯和内置 Skill 提供者。
+ * Skill 自扩展和审计追溯。
  * 每个 Bean 使用 {@link ConditionalOnMissingBean} 允许用户覆盖。</p>
  *
  * @author zsg
@@ -134,38 +121,6 @@ public class SkillAutoConfiguration {
                                                    SkillGenerator skillGenerator) {
         log.info("Skill 系统: 注册 SkillGenerationTool（HIGH 风险）");
         return new SkillGenerationTool(toolRegistry, skillGenerator);
-    }
-
-    // --- 内置 Skill 提供者 ---
-    // 注：TodoSkillProvider / ScheduleSkillProvider / HabitSkillProvider / TodoDueNotifier
-    // 已随 scheduler-to-workflow-migration 迁移至 DataStore，原 builtin 包已删除
-
-    @Bean
-    @ConditionalOnMissingBean
-    @ConditionalOnBean({HybridRetriever.class, SemanticMemory.class})
-    public MemorySkillProvider memorySkillProvider(
-            HybridRetriever hybridRetriever,
-            SemanticMemory semanticMemory,
-            PromptRegistry promptRegistry,
-            @Autowired(required = false) EpisodicMemory episodicMemory,
-            @Autowired(required = false) DocumentRetriever documentRetriever,
-            @Autowired(required = false) SessionKnowledgeBaseRepository sessionKbRepo,
-            @Autowired(required = false) MemoryProperties memoryProperties) {
-        log.info("Skill 系统: 注册 MemorySkillProvider（记忆系统已就绪）");
-        return new MemorySkillProvider(hybridRetriever, semanticMemory, promptRegistry,
-                episodicMemory, documentRetriever, sessionKbRepo, memoryProperties);
-    }
-
-    // --- 注册器 ---
-
-    @Bean
-    @ConditionalOnMissingBean
-    public BuiltinSkillRegistrar builtinSkillRegistrar(List<BuiltinSkillProvider> providers,
-                                                       SkillRegistry skillRegistry,
-                                                       DynamicToolRegistry toolRegistry,
-                                                       SkillConfigProperties skillConfigProperties) {
-        log.info("Skill 系统: 注册 BuiltinSkillRegistrar, providers={}", providers.size());
-        return new BuiltinSkillRegistrar(providers, skillRegistry, toolRegistry, skillConfigProperties);
     }
 
     // ==================== Markdown 解析与热加载 ====================
@@ -303,10 +258,9 @@ public class SkillAutoConfiguration {
      * <p>{@link SkillFileWatcher#start()} 内部会调用 {@link MarkdownSkillLoader#loadAll()} 完成初始加载，
      * 然后启动 WatchService 监听文件变更。之后注册 load_skill 和 generate_skill 工具。</p>
      *
-     * <p>使用 {@code @Order(Ordered.LOWEST_PRECEDENCE)} 确保在
-     * {@link BuiltinSkillRegistrar#registerAll()} 之后执行，
-     * 保证 Builtin 工具（如 {@code builtin.shell.exec}）已注册到 DynamicToolRegistry，
-     * 用户 Skill 的 suggestedTools 校验才能通过。</p>
+     * <p>使用 {@code @Order(Ordered.LOWEST_PRECEDENCE - 1)} 确保在各 AutoConfiguration
+     * 的 registerTools()（HIGHEST_PRECEDENCE）之后执行，
+     * 保证工具已注册到 DynamicToolRegistry，用户 Skill 的 suggestedTools 校验才能通过。</p>
      *
      * @param event 应用就绪事件
      */
@@ -331,7 +285,5 @@ public class SkillAutoConfiguration {
             ctx.getBean(SkillGenerationTool.class).registerTools();
             log.info("ApplicationReady: generate_skill 工具已注册");
         }
-
-        // 注：TodoDueNotifier 已随 builtin todo/schedule/habit 包删除
     }
 }

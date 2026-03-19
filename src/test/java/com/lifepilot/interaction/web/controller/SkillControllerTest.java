@@ -72,7 +72,7 @@ class SkillControllerTest {
                 .name(name)
                 .description(name + " 描述")
                 .version("1.0.0")
-                .source(new SkillSource.Builtin())
+                .source(new SkillSource.UserDefined("/test", null))
                 .instructions("测试指令内容")
                 .suggestedTools(suggestedTools)
                 .metadata(Map.of())

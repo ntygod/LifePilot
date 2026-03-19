@@ -27,9 +27,6 @@ import com.lifepilot.meta.infra.task.TaskToolProvider;
 import com.lifepilot.sandbox.booter.SandboxBooter;
 import com.lifepilot.sandbox.repository.SandboxRepository;
 import com.lifepilot.sandbox.validator.CodeValidator;
-import com.lifepilot.skill.builtin.BuiltinSkill;
-import com.lifepilot.skill.builtin.BuiltinSkillProvider;
-import com.lifepilot.skill.model.*;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.model.ToolCategory;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
@@ -51,8 +48,7 @@ import java.util.Map;
  * @author zsg
  * @since 2026-03-08
  */
-@BuiltinSkill(id = "builtin.infrastructure", order = 1)
-public class InfraToolProvider implements BuiltinSkillProvider {
+public class InfraToolProvider {
 
     private static final Logger log = LoggerFactory.getLogger(InfraToolProvider.class);
     private static final List<String> INFRA_TAGS = List.of("infrastructure");
@@ -114,66 +110,11 @@ public class InfraToolProvider implements BuiltinSkillProvider {
         this.notificationProperties = notificationProperties;
     }
 
-    @Override
-    public SkillDefinition provide() {
-        return SkillDefinition.builder()
-                .id("builtin.infrastructure")
-                .name("基础工具集")
-                .description("Agent 通用执行能力工具集，包含环境感知、信息获取、推理辅助、Shell 执行、浏览器自动化、代码执行、文件系统和交互控制")
-                .version("1.0.0")
-                .source(new SkillSource.Builtin())
-                .instructions("基础工具集提供 Agent 的通用执行能力，无需额外激活即可使用。")
-                .suggestedTools(List.of(
-                        "builtin.env.datetime",
-                        "builtin.env.user-profile",
-                        "builtin.env.system-info",
-                        "builtin.web.search",
-                        "builtin.web.fetch",
-                        "builtin.reason.calculate",
-                        "builtin.shell.exec",
-                        "builtin.browser.navigate",
-                        "builtin.browser.click",
-                        "builtin.browser.input",
-                        "builtin.browser.screenshot",
-                        "builtin.browser.scroll",
-                        "builtin.browser.wait",
-                        "builtin.browser.hover",
-                        "builtin.browser.select",
-                        "builtin.browser.keyboard",
-                        "builtin.browser.evaluate",
-                        "builtin.browser.accessibility",
-                        "builtin.browser.tab",
-                        "builtin.browser.storage",
-                        "builtin.code.execute",
-                        "builtin.file.read",
-                        "builtin.file.write",
-                        "builtin.file.list",
-                        "builtin.file.search",
-                        "builtin.file.append",
-                        "builtin.file.delete",
-                        "builtin.file.copy",
-                        "builtin.file.move",
-                        "builtin.file.info",
-                        "builtin.file.patch",
-                        "builtin.interact.choose",
-                        "builtin.interact.input",
-                        "builtin.interact.notify",
-                        "builtin.workflow.list",
-                        "builtin.workflow.start",
-                        "builtin.workflow.status",
-                        "builtin.workflow.cancel",
-                        "builtin.cron.create",
-                        "builtin.cron.list",
-                        "builtin.cron.update",
-                        "builtin.cron.remove",
-                        "builtin.heartbeat.read",
-                        "builtin.heartbeat.write"
-                ))
-                .metadata(Map.of())
-                .build();
-    }
-
-    @Override
+    /**
+     * 注册基础工具到 DynamicToolRegistry。
+     *
+     * @param toolRegistry 动态工具注册中心
+     */
     public void registerTools(DynamicToolRegistry toolRegistry) {
         // 环境感知工具（3 个）
         var dateTimeExecutor = new DateTimeToolExecutor(properties);

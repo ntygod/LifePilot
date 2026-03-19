@@ -1,5 +1,5 @@
 ---
-id: builtin.heartbeat-checklist
+id: heartbeat-checklist
 name: "心跳巡检 Checklist"
 description: "管理心跳巡检的 HEARTBEAT.md checklist 文件，定期由 Agent 自动检查执行"
 version: "1.0.0"

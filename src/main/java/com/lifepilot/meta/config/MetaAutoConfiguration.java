@@ -5,11 +5,18 @@ import com.lifepilot.agent.task.CronScheduler;
 import com.lifepilot.agent.task.CronTaskRepository;
 import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.datastore.DataStoreManager;
+import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
+import com.lifepilot.knowledge.retrieve.DocumentRetriever;
+import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.episodic.EpisodicMemory;
+import com.lifepilot.memory.retrieval.HybridRetriever;
+import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.meta.convenience.CapabilityAggregator;
-import com.lifepilot.meta.convenience.IntrospectionSkillProvider;
+import com.lifepilot.meta.convenience.IntrospectionToolProvider;
 import com.lifepilot.meta.convenience.SkillDiscoveryRegistrar;
 import com.lifepilot.meta.infra.InfraToolProvider;
+import com.lifepilot.meta.infra.memory.MemoryToolProvider;
 import com.lifepilot.meta.infra.storage.StorageToolProvider;
 import com.lifepilot.mcp.registry.McpServerRegistry;
 import com.lifepilot.meta.infra.browser.BrowserSessionManager;
@@ -18,7 +25,6 @@ import com.lifepilot.meta.infra.interaction.InteractionBridge;
 import com.lifepilot.multiagent.registry.AgentRegistry;
 import com.lifepilot.notification.NotificationService;
 import com.lifepilot.notification.config.NotificationProperties;
-import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.sandbox.booter.SandboxBooter;
 import com.lifepilot.sandbox.repository.SandboxRepository;
 import com.lifepilot.sandbox.validator.CodeValidator;
@@ -29,18 +35,25 @@ import com.lifepilot.workflow.engine.WorkflowCommandService;
 import com.lifepilot.workflow.registry.WorkflowRegistry;
 import com.lifepilot.workflow.repository.WorkflowRepository;
 import jakarta.annotation.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.event.EventListener;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.web.client.RestClient;
 
 /**
  * 元能力系统 Spring Boot 自动配置。
  *
  * <p>注册元能力模块所有核心 Bean：InfraToolProvider、BrowserSessionManager、
- * InteractionBridge、CapabilityAggregator、IntrospectionSkillProvider、
+ * InteractionBridge、CapabilityAggregator、IntrospectionToolProvider、
  * SkillDiscoveryRegistrar。</p>
  *
  * @author zsg
@@ -49,6 +62,8 @@ import org.springframework.web.client.RestClient;
 @AutoConfiguration
 @EnableConfigurationProperties(MetaProperties.class)
 public class MetaAutoConfiguration {
+
+    private static final Logger log = LoggerFactory.getLogger(MetaAutoConfiguration.class);
 
     /**
      * 注册交互桥接器 — 管理 Agent 与用户之间的交互请求/响应生命周期。
@@ -112,20 +127,20 @@ public class MetaAutoConfiguration {
     }
 
     /**
-     * 注册系统自省 Skill 提供者 — 注册 5 个自省工具。
+     * 注册系统自省工具提供者 — 注册 5 个自省工具。
      *
      * <p>WorkflowRepository 和 McpServerRegistry 为可选依赖，
      * 用于 system.runtime 工具查询运行时动态信息。</p>
      */
     @Bean
-    IntrospectionSkillProvider introspectionSkillProvider(CapabilityAggregator aggregator,
+    IntrospectionToolProvider introspectionToolProvider(CapabilityAggregator aggregator,
                                                           SkillRegistry skillRegistry,
                                                           AgentRegistry agentRegistry,
                                                           DynamicToolRegistry toolRegistry,
                                                           WorkflowRegistry workflowRegistry,
                                                           @Nullable WorkflowRepository workflowRepository,
                                                           @Nullable McpServerRegistry mcpServerRegistry) {
-        return new IntrospectionSkillProvider(aggregator, skillRegistry,
+        return new IntrospectionToolProvider(aggregator, skillRegistry,
                 agentRegistry, toolRegistry, workflowRegistry,
                 workflowRepository, mcpServerRegistry);
     }
@@ -147,11 +162,55 @@ public class MetaAutoConfiguration {
     /**
      * 注册存储工具提供者 — 注册 7 个数据存储 CRUD 工具。
      *
-     * <p>依赖 DataStoreManager（来自 datastore 模块）和 PromptRegistry。</p>
+     * <p>依赖 DataStoreManager（来自 datastore 模块）。</p>
      */
     @Bean
-    StorageToolProvider storageToolProvider(DataStoreManager dataStoreManager,
-                                           PromptRegistry promptRegistry) {
-        return new StorageToolProvider(dataStoreManager, promptRegistry);
+    StorageToolProvider storageToolProvider(DataStoreManager dataStoreManager) {
+        return new StorageToolProvider(dataStoreManager);
+    }
+
+    /**
+     * 注册记忆管理工具提供者 — 注册 9 个记忆管理工具。
+     *
+     * <p>仅在 HybridRetriever 和 SemanticMemory Bean 可用时注册。
+     * EpisodicMemory、DocumentRetriever、SessionKnowledgeBaseRepository、MemoryProperties 为可选依赖。</p>
+     */
+    @Bean
+    @ConditionalOnBean({HybridRetriever.class, SemanticMemory.class})
+    MemoryToolProvider memoryToolProvider(HybridRetriever hybridRetriever,
+                                          SemanticMemory semanticMemory,
+                                          @Nullable EpisodicMemory episodicMemory,
+                                          @Nullable DocumentRetriever documentRetriever,
+                                          @Nullable SessionKnowledgeBaseRepository sessionKbRepo,
+                                          @Nullable MemoryProperties memoryProperties) {
+        return new MemoryToolProvider(hybridRetriever, semanticMemory,
+                episodicMemory, documentRetriever, sessionKbRepo, memoryProperties);
+    }
+
+    // ==================== 启动后工具注册 ====================
+
+    /**
+     * 应用启动完成后注册元能力模块所有工具到 DynamicToolRegistry。
+     *
+     * <p>使用 {@code @Order(Ordered.HIGHEST_PRECEDENCE)} 确保在
+     * SkillAutoConfiguration 的 Markdown Skill 加载之前完成工具注册，
+     * 保证用户 Skill 的 suggestedTools 校验能通过。</p>
+     *
+     * @param event 应用就绪事件
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    @Order(Ordered.HIGHEST_PRECEDENCE)
+    public void registerTools(ApplicationReadyEvent event) {
+        var ctx = event.getApplicationContext();
+        var toolRegistry = ctx.getBean(DynamicToolRegistry.class);
+
+        ctx.getBean(InfraToolProvider.class).registerTools(toolRegistry);
+        ctx.getBean(IntrospectionToolProvider.class).registerTools(toolRegistry);
+        ctx.getBean(StorageToolProvider.class).registerTools(toolRegistry);
+        if (ctx.containsBean("memoryToolProvider")) {
+            ctx.getBean(MemoryToolProvider.class).registerTools(toolRegistry);
+        }
+
+        log.info("元能力模块工具注册完成");
     }
 }

@@ -52,7 +52,7 @@ class SkillRegistryTest {
                 .name("测试技能-" + id)
                 .description("测试描述-" + id)
                 .version("1.0.0")
-                .source(new SkillSource.Builtin())
+                .source(new SkillSource.UserDefined("/test", null))
                 .instructions("你是测试助手")
                 .suggestedTools(List.of("tool-a"))
                 .metadata(Map.of())

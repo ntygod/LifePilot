@@ -3,9 +3,6 @@ package com.lifepilot.meta.convenience;
 import com.lifepilot.mcp.registry.McpServerRegistry;
 import com.lifepilot.multiagent.registry.AgentRegistry;
 import com.lifepilot.observability.guardrail.RiskLevel;
-import com.lifepilot.skill.builtin.BuiltinSkill;
-import com.lifepilot.skill.builtin.BuiltinSkillProvider;
-import com.lifepilot.skill.model.*;
 import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.model.ToolInput;
@@ -38,10 +35,9 @@ import java.util.stream.Stream;
  * @author zsg
  * @since 2026-03-08
  */
-@BuiltinSkill(id = "builtin.introspection", order = 2)
-public class IntrospectionSkillProvider implements BuiltinSkillProvider {
+public class IntrospectionToolProvider {
 
-    private static final Logger log = LoggerFactory.getLogger(IntrospectionSkillProvider.class);
+    private static final Logger log = LoggerFactory.getLogger(IntrospectionToolProvider.class);
     private static final List<String> INFRA_TAGS = List.of("infrastructure");
 
     private final CapabilityAggregator aggregator;
@@ -52,7 +48,7 @@ public class IntrospectionSkillProvider implements BuiltinSkillProvider {
     @Nullable private final WorkflowRepository workflowRepository;
     @Nullable private final McpServerRegistry mcpServerRegistry;
 
-    public IntrospectionSkillProvider(CapabilityAggregator aggregator,
+    public IntrospectionToolProvider(CapabilityAggregator aggregator,
                                       SkillRegistry skillRegistry,
                                       AgentRegistry agentRegistry,
                                       DynamicToolRegistry toolRegistry,
@@ -68,27 +64,11 @@ public class IntrospectionSkillProvider implements BuiltinSkillProvider {
         this.mcpServerRegistry = mcpServerRegistry;
     }
 
-    @Override
-    public SkillDefinition provide() {
-        return SkillDefinition.builder()
-                .id("builtin.introspection")
-                .name("系统自省")
-                .description("查询系统能力、获取详细说明、查看系统状态、推荐匹配能力、查看运行时动态信息")
-                .version("1.1.0")
-                .source(new SkillSource.Builtin())
-                .instructions("系统自省工具集，用于查询和了解系统当前的能力、状态和推荐。")
-                .suggestedTools(List.of(
-                        "system.list-capabilities",
-                        "system.explain",
-                        "system.status",
-                        "system.suggest",
-                        "system.runtime"
-                ))
-                .metadata(Map.of())
-                .build();
-    }
-
-    @Override
+    /**
+     * 注册自省工具到 DynamicToolRegistry。
+     *
+     * @param registry 动态工具注册中心
+     */
     public void registerTools(DynamicToolRegistry registry) {
         registry.registerBuiltinTool(buildListCapabilitiesTool());
         registry.registerBuiltinTool(buildExplainTool());

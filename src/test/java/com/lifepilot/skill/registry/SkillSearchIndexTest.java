@@ -193,7 +193,7 @@ class SkillSearchIndexTest {
                 .name(name)
                 .description(description)
                 .version("1.0.0")
-                .source(new SkillSource.Builtin())
+                .source(new SkillSource.UserDefined("/test", null))
                 .instructions("测试 Prompt")
                 .suggestedTools(List.of("tool-1"))
                 .metadata(Map.of())

@@ -1,5 +1,5 @@
 ---
-id: builtin.workflow-creator
+id: workflow-creator
 name: "工作流创建助手"
 description: "通过对话引导用户创建工作流 YAML 定义，生成后自动保存到 ~/.zhiwei/workflows/ 目录"
 version: "1.1.0"
@@ -57,6 +57,7 @@ EOF
 ```
 
 如果校验返回错误，修正后再保存。
+
 
 ## YAML 基本结构
 

@@ -1,4 +1,4 @@
-package com.lifepilot.skill.builtin.memory;
+package com.lifepilot.meta.infra.memory;
 
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.knowledge.model.DocumentSearchResult;
@@ -14,11 +14,6 @@ import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
 import com.lifepilot.memory.semantic.TemporalRelation;
 import com.lifepilot.observability.guardrail.RiskLevel;
-import com.lifepilot.prompt.PromptRegistry;
-import com.lifepilot.skill.builtin.BuiltinSkill;
-import com.lifepilot.skill.builtin.BuiltinSkillProvider;
-import com.lifepilot.skill.model.SkillDefinition;
-import com.lifepilot.skill.model.SkillSource;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
@@ -31,73 +26,44 @@ import java.time.Instant;
 import java.util.*;
 
 /**
- * 记忆管理内置 Skill 提供者。
+ * 记忆管理工具提供者。
  *
  * <p>注册 9 个记忆管理工具到 DynamicToolRegistry：
  * search / recall / search-docs / create / update / delete / tag / query-at-time / search-experience。</p>
  *
  * @author zsg
- * @since 2026-02-25
+ * @since 2026-03-20
  */
-@BuiltinSkill(id = "memory", order = 40)
-public class MemorySkillProvider implements BuiltinSkillProvider {
+public class MemoryToolProvider {
 
-    private static final Logger log = LoggerFactory.getLogger(MemorySkillProvider.class);
+    private static final Logger log = LoggerFactory.getLogger(MemoryToolProvider.class);
 
     private final HybridRetriever hybridRetriever;
     private final SemanticMemory semanticMemory;
-    private final PromptRegistry promptRegistry;
     @Nullable private final EpisodicMemory episodicMemory;
     @Nullable private final DocumentRetriever documentRetriever;
     @Nullable private final SessionKnowledgeBaseRepository sessionKbRepo;
     @Nullable private final MemoryProperties memoryProperties;
 
-    public MemorySkillProvider(HybridRetriever hybridRetriever,
-                               SemanticMemory semanticMemory,
-                               PromptRegistry promptRegistry,
-                               @Nullable EpisodicMemory episodicMemory,
-                               @Nullable DocumentRetriever documentRetriever,
-                               @Nullable SessionKnowledgeBaseRepository sessionKbRepo,
-                               @Nullable MemoryProperties memoryProperties) {
+    public MemoryToolProvider(HybridRetriever hybridRetriever,
+                              SemanticMemory semanticMemory,
+                              @Nullable EpisodicMemory episodicMemory,
+                              @Nullable DocumentRetriever documentRetriever,
+                              @Nullable SessionKnowledgeBaseRepository sessionKbRepo,
+                              @Nullable MemoryProperties memoryProperties) {
         this.hybridRetriever = hybridRetriever;
         this.semanticMemory = semanticMemory;
-        this.promptRegistry = promptRegistry;
         this.episodicMemory = episodicMemory;
         this.documentRetriever = documentRetriever;
         this.sessionKbRepo = sessionKbRepo;
         this.memoryProperties = memoryProperties;
     }
 
-    @Override
-    public SkillDefinition provide() {
-        var tools = new ArrayList<>(List.of(
-                "builtin.memory.search",
-                "builtin.memory.create",
-                "builtin.memory.update",
-                "builtin.memory.delete",
-                "builtin.memory.tag",
-                "builtin.memory.query-at-time"
-        ));
-        if (episodicMemory != null) {
-            tools.add("builtin.memory.recall");
-        }
-        if (documentRetriever != null && sessionKbRepo != null) {
-            tools.add("builtin.memory.search-docs");
-        }
-        tools.add("builtin.memory.search-experience");
-        return SkillDefinition.builder()
-                .id("memory")
-                .name("记忆管理")
-                .description("管理长期记忆，支持搜索、回忆、知识库检索、创建、更新、删除和标签")
-                .version("2.0.0")
-                .source(new SkillSource.Builtin())
-                .instructions(promptRegistry.render("skill/memory"))
-                .suggestedTools(List.copyOf(tools))
-                .metadata(Map.of())
-                .build();
-    }
-
-    @Override
+    /**
+     * 注册记忆管理工具到 DynamicToolRegistry。
+     *
+     * @param toolRegistry 动态工具注册中心
+     */
     public void registerTools(DynamicToolRegistry toolRegistry) {
         toolRegistry.registerBuiltinTool(buildSearchTool());
         toolRegistry.registerBuiltinTool(buildCreateTool());
@@ -146,7 +112,6 @@ public class MemorySkillProvider implements BuiltinSkillProvider {
                         String query = input.getParam("query", String.class);
                         int topK = input.getOptionalParam("topK", Integer.class).orElse(defaultTopK);
                         List<RetrievalResult> results = hybridRetriever.retrieve(query, topK, RetrievalWeights.DEFAULT);
-                        // 更新 accessCount
                         if (!results.isEmpty()) {
                             hybridRetriever.updateAccessCounts(results);
                         }
@@ -321,7 +286,6 @@ public class MemorySkillProvider implements BuiltinSkillProvider {
                             return ToolResult.error("实体不存在: " + entityId);
                         }
                         var entity = existing.get();
-                        // 合并新字段
                         String newDesc = input.getOptionalParam("description", String.class)
                                 .orElse(entity.description());
                         EntityType newType = input.getOptionalParam("entityType", String.class)
@@ -461,7 +425,6 @@ public class MemorySkillProvider implements BuiltinSkillProvider {
                             return ToolResult.error("无效的时间格式，请使用 ISO 8601 格式（如 2026-01-15T10:30:00Z）");
                         }
                         List<TemporalEntity> entities = semanticMemory.queryAtTime(instant);
-                        // 可选按 entityType 过滤
                         var typeFilter = input.getOptionalParam("entityType", String.class);
                         if (typeFilter.isPresent()) {
                             try {
@@ -527,10 +490,8 @@ public class MemorySkillProvider implements BuiltinSkillProvider {
                             return ToolResult.error("query 参数不能为空");
                         }
 
-                        // 检索 EXPERIENCE 类型实体
                         var experiences = semanticMemory.findCurrentByType(EntityType.EXPERIENCE);
 
-                        // executionContext 隔离过滤 — 默认仅返回 MAIN_AGENT 或 null
                         boolean crossContext = memoryProperties != null
                                 && memoryProperties.getExperience().getIsolation().isCrossContextRetrieval();
                         if (!crossContext) {
@@ -542,14 +503,12 @@ public class MemorySkillProvider implements BuiltinSkillProvider {
                                     .toList();
                         }
 
-                        // successOnly 过滤
                         if (successOnly) {
                             experiences = experiences.stream()
                                     .filter(e -> Boolean.TRUE.equals(e.properties().get("success")))
                                     .toList();
                         }
 
-                        // 按 importanceScore 降序排列，取 topK
                         var results = experiences.stream()
                                 .sorted(Comparator.comparingDouble(
                                         TemporalEntity::importanceScore).reversed())
