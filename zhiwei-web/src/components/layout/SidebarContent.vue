@@ -120,12 +120,13 @@ const navSections: Array<{ title: string; items: NavItem[] }> = [
     items: [
       {
         id: 'settings',
-        label: '偏好与模型',
+        label: '系统设置',
         icon: Settings,
         children: [
-          { label: '偏好设置', path: '/settings', icon: Settings },
-          { label: '模型服务', path: '/settings/models', icon: Bot },
-          { label: '快捷键', path: '/settings/shortcuts', icon: Settings },
+          { label: '通用', path: '/settings/general', icon: Settings },
+          { label: '模型与推理', path: '/settings/models', icon: Bot },
+          { label: '知识与检索', path: '/settings/knowledge', icon: BookOpen },
+          { label: '集成渠道', path: '/settings/channels', icon: MessageSquare },
         ],
       },
     ],

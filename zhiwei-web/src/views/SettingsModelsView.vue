@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { CheckCircle2, ChevronDown, Cpu, Loader2, RefreshCw, Trash2, XCircle } from 'lucide-vue-next'
 import { llmProviderApi, settingsApi } from '@/api/client'
-import type { LlmProvider } from '@/api/client'
+import type { LlmProvider, RerankerSettingsRequest } from '@/api/client'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import StatePanel from '@/components/common/StatePanel.vue'
 import LlmProviderManager from '@/components/settings/LlmProviderManager.vue'
@@ -10,7 +10,9 @@ import SettingItem from '@/components/settings/SettingItem.vue'
 import SettingSection from '@/components/settings/SettingSection.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Switch } from '@/components/ui/switch'
 import {
   Select,
   SelectContent,
@@ -159,6 +161,7 @@ onMounted(async () => {
   await loadSettings()
   syncRoutingSettings()
   await loadProviders()
+  await loadRerankerSettings()
 })
 
 async function loadProviders() {
@@ -396,6 +399,86 @@ const deleteConfirmMessage = computed(() => {
   const name = provider?.displayName || provider?.id || deletingProviderId.value
   return `确定删除提供商“${name}”吗？此操作不可恢复。`
 })
+
+// ── 精排设置 ──
+const rerankerLoading = ref(true)
+const rerankerLoadError = ref<string | null>(null)
+const rerankerSaving = ref(false)
+const rerankerSaveError = ref<string | null>(null)
+const rerankerSaveSuccess = ref(false)
+const rerankerExpanded = ref(false)
+
+const rerankerForm = ref<RerankerSettingsRequest>({
+  enabled: false,
+  type: 'llm',
+  model: '',
+  topK: 10,
+  llmMode: 'pointwise',
+  apiProvider: 'jina',
+  apiKey: '',
+  apiEndpoint: '',
+  apiTimeoutMs: 30000,
+  memoryRerankEnabled: false,
+  memoryRerankTopK: 10,
+})
+
+const isRerankerLlmType = computed(() => rerankerForm.value.type === 'llm')
+const isRerankerApiType = computed(() => rerankerForm.value.type === 'api')
+
+async function loadRerankerSettings() {
+  rerankerLoading.value = true
+  rerankerLoadError.value = null
+  try {
+    const data = await settingsApi.getRerankerSettings()
+    rerankerForm.value = {
+      enabled: data.enabled,
+      type: data.type || 'llm',
+      model: data.model || '',
+      topK: data.topK || 10,
+      llmMode: data.llmMode || 'pointwise',
+      apiProvider: data.apiProvider || 'jina',
+      apiKey: data.apiKey || '',
+      apiEndpoint: data.apiEndpoint || '',
+      apiTimeoutMs: data.apiTimeoutMs || 30000,
+      memoryRerankEnabled: data.memoryRerankEnabled,
+      memoryRerankTopK: data.memoryRerankTopK || 10,
+    }
+  } catch (e) {
+    console.error('加载精排配置失败:', e)
+    rerankerLoadError.value = '暂时无法读取精排配置，请稍后重试。'
+  } finally {
+    rerankerLoading.value = false
+  }
+}
+
+async function handleRerankerSave() {
+  rerankerSaving.value = true
+  rerankerSaveError.value = null
+  rerankerSaveSuccess.value = false
+  try {
+    const data = await settingsApi.updateRerankerSettings(rerankerForm.value)
+    rerankerForm.value = {
+      enabled: data.enabled,
+      type: data.type || 'llm',
+      model: data.model || '',
+      topK: data.topK || 10,
+      llmMode: data.llmMode || 'pointwise',
+      apiProvider: data.apiProvider || 'jina',
+      apiKey: data.apiKey || '',
+      apiEndpoint: data.apiEndpoint || '',
+      apiTimeoutMs: data.apiTimeoutMs || 30000,
+      memoryRerankEnabled: data.memoryRerankEnabled,
+      memoryRerankTopK: data.memoryRerankTopK || 10,
+    }
+    rerankerSaveSuccess.value = true
+    window.setTimeout(() => { rerankerSaveSuccess.value = false }, 2200)
+  } catch (e: any) {
+    console.error('保存精排配置失败:', e)
+    rerankerSaveError.value = e?.message || '保存失败，请稍后重试。'
+  } finally {
+    rerankerSaving.value = false
+  }
+}
 </script>
 
 <template>
@@ -716,6 +799,132 @@ const deleteConfirmMessage = computed(() => {
             </div>
           </section>
         </aside>
+      </div>
+
+      <!-- 精排设置（可折叠） -->
+      <div v-if="!rerankerLoading" class="mt-8">
+        <section class="detail-card overflow-hidden">
+          <button
+            type="button"
+            class="flex w-full items-center justify-between gap-4 px-5 py-4 text-left"
+            @click="rerankerExpanded = !rerankerExpanded"
+          >
+            <div class="flex items-center gap-3">
+              <div class="flex size-9 shrink-0 items-center justify-center rounded-2xl border border-border/70 bg-background/80 text-muted-foreground">
+                <span class="text-base">🔀</span>
+              </div>
+              <div>
+                <div class="text-sm font-semibold text-foreground">精排设置</div>
+                <p class="text-sm text-muted-foreground">
+                  {{ rerankerForm.enabled ? `已启用 · ${rerankerForm.type === 'llm' ? 'LLM' : 'API'} 模式` : '未启用' }}
+                </p>
+              </div>
+            </div>
+            <ChevronDown
+              class="size-4 shrink-0 text-muted-foreground transition-transform"
+              :class="rerankerExpanded ? 'rotate-180' : ''"
+            />
+          </button>
+
+          <Transition
+            enter-active-class="transition-all duration-300 ease-out"
+            enter-from-class="opacity-0 max-h-0 overflow-hidden"
+            enter-to-class="opacity-100 max-h-[3000px]"
+            leave-active-class="transition-all duration-200 ease-in"
+            leave-from-class="opacity-100 max-h-[3000px]"
+            leave-to-class="opacity-0 max-h-0 overflow-hidden"
+          >
+            <div v-if="rerankerExpanded" class="border-t border-border/70">
+              <div v-if="rerankerLoadError" class="px-5 py-6 text-center">
+                <p class="text-sm text-muted-foreground">{{ rerankerLoadError }}</p>
+                <Button variant="outline" class="mt-4" @click="loadRerankerSettings">重试</Button>
+              </div>
+
+              <form v-else class="space-y-6 px-5 py-5" @submit.prevent="handleRerankerSave">
+                <SettingSection title="全局精排" description="控制检索结果的二次排序策略，提升相关性。">
+                  <SettingItem label="启用精排" description="开启后，检索结果将经过精排模型二次排序。">
+                    <Switch v-model="rerankerForm.enabled" />
+                  </SettingItem>
+                  <SettingItem label="精排类型" description="选择使用 LLM 或外部 API 进行精排。">
+                    <Select v-model="rerankerForm.type">
+                      <SelectTrigger class="w-40"><SelectValue placeholder="选择类型" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="llm">LLM</SelectItem>
+                        <SelectItem value="api">API</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </SettingItem>
+                  <SettingItem label="精排模型" description="选择用于精排的模型。">
+                    <template v-if="isRerankerLlmType">
+                      <Select v-model="rerankerForm.model">
+                        <SelectTrigger class="w-56"><SelectValue placeholder="选择模型" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem v-for="p in providers" :key="p.id" :value="p.modelName">
+                            {{ p.displayName || p.modelName }}
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </template>
+                    <Input v-else v-model="rerankerForm.model" placeholder="如 rerank-v3" class="w-56" />
+                  </SettingItem>
+                  <SettingItem label="返回数量" description="精排后保留的最大结果数。">
+                    <Input v-model.number="rerankerForm.topK" type="number" :min="1" :max="100" class="w-28" />
+                  </SettingItem>
+                </SettingSection>
+
+                <SettingSection v-if="isRerankerLlmType" title="LLM 精排配置" description="使用 LLM 对候选结果逐条或批量评分。">
+                  <SettingItem label="评分模式" description="Pointwise 逐条评分精度高，Listwise 批量评分速度快。">
+                    <Select v-model="rerankerForm.llmMode">
+                      <SelectTrigger class="w-40"><SelectValue placeholder="选择模式" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="pointwise">Pointwise</SelectItem>
+                        <SelectItem value="listwise">Listwise</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </SettingItem>
+                </SettingSection>
+
+                <SettingSection v-if="isRerankerApiType" title="API 精排配置" description="使用 Jina 或 Cohere 等外部精排 API。">
+                  <SettingItem label="API 提供商" description="选择精排 API 服务商。">
+                    <Select v-model="rerankerForm.apiProvider">
+                      <SelectTrigger class="w-40"><SelectValue placeholder="选择提供商" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="jina">Jina</SelectItem>
+                        <SelectItem value="cohere">Cohere</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </SettingItem>
+                  <SettingItem label="API Key" description="精排 API 的访问密钥。">
+                    <Input v-model="rerankerForm.apiKey" type="password" placeholder="输入 API Key" class="w-56" />
+                  </SettingItem>
+                  <SettingItem label="API 端点" description="自定义 API 地址，留空使用默认端点。">
+                    <Input v-model="rerankerForm.apiEndpoint" placeholder="https://api.example.com/rerank" class="w-72" />
+                  </SettingItem>
+                  <SettingItem label="超时时间 (ms)" description="API 请求超时时间，单位毫秒。">
+                    <Input v-model.number="rerankerForm.apiTimeoutMs" type="number" :min="1000" :max="120000" class="w-28" />
+                  </SettingItem>
+                </SettingSection>
+
+                <SettingSection title="记忆精排" description="控制记忆检索结果是否经过精排。">
+                  <SettingItem label="启用记忆精排" description="开启后，记忆检索的融合结果将经过 Reranker 二次排序。">
+                    <Switch v-model="rerankerForm.memoryRerankEnabled" />
+                  </SettingItem>
+                  <SettingItem label="记忆精排 TopK" description="记忆精排后保留的最大结果数。">
+                    <Input v-model.number="rerankerForm.memoryRerankTopK" type="number" :min="1" :max="100" class="w-28" />
+                  </SettingItem>
+                </SettingSection>
+
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+                  <span v-if="rerankerSaveSuccess" class="text-sm text-emerald-600 dark:text-emerald-400">已保存</span>
+                  <span v-if="rerankerSaveError" class="text-sm text-destructive">{{ rerankerSaveError }}</span>
+                  <Button type="submit" :disabled="rerankerSaving">
+                    {{ rerankerSaving ? '保存中...' : '保存精排设置' }}
+                  </Button>
+                </div>
+              </form>
+            </div>
+          </Transition>
+        </section>
       </div>
     </template>
 

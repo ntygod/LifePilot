@@ -18,7 +18,7 @@ export interface ShortcutDefinition {
 
 /**
  * 已注册的全局快捷键定义列表。
- * 供 useKeyboardShortcuts composable 和 SettingsShortcutsView 共用。
+ * 供 useKeyboardShortcuts composable 和 SettingsGeneralView 共用。
  */
 export const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
   {

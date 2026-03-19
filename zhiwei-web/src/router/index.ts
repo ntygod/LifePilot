@@ -165,23 +165,13 @@ const router = createRouter({
       component: () => import('@/views/SettingsView.vue')
     },
     {
-      path: '/settings/preferences',
-      name: 'settingsPreferences',
+      path: '/settings/general',
+      name: 'settingsGeneral',
       component: () => import('@/views/SettingsView.vue')
     },
     {
       path: '/settings/models',
       name: 'settingsModels',
-      component: () => import('@/views/SettingsView.vue')
-    },
-    {
-      path: '/settings/shortcuts',
-      name: 'settingsShortcuts',
-      component: () => import('@/views/SettingsView.vue')
-    },
-    {
-      path: '/settings/reranker',
-      name: 'settingsReranker',
       component: () => import('@/views/SettingsView.vue')
     },
     {
@@ -193,6 +183,19 @@ const router = createRouter({
       path: '/settings/channels',
       name: 'settingsChannels',
       component: () => import('@/views/SettingsView.vue')
+    },
+    // 兼容旧路径，重定向到新分区
+    {
+      path: '/settings/preferences',
+      redirect: '/settings/general'
+    },
+    {
+      path: '/settings/shortcuts',
+      redirect: '/settings/general'
+    },
+    {
+      path: '/settings/reranker',
+      redirect: '/settings/models'
     },
 
     /**

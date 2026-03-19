@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Cpu, Database, Keyboard, Palette, Radio, Sparkles } from 'lucide-vue-next'
+import { Cpu, Database, Palette, Radio } from 'lucide-vue-next'
 import MetricCard from '@/components/common/MetricCard.vue'
 import PageContainer from '@/components/layout/PageContainer.vue'
 import PageHeader from '@/components/layout/PageHeader.vue'
@@ -12,10 +12,8 @@ import {
   getThemeDisplayLabel,
 } from '@/lib/settingsDisplay'
 import SettingsModelsView from '@/views/SettingsModelsView.vue'
-import SettingsPreferencesView from '@/views/SettingsPreferencesView.vue'
-import SettingsRerankerView from '@/views/SettingsRerankerView.vue'
+import SettingsGeneralView from '@/views/SettingsGeneralView.vue'
 import SettingsKnowledgeView from '@/views/SettingsKnowledgeView.vue'
-import SettingsShortcutsView from '@/views/SettingsShortcutsView.vue'
 import SettingsChannelsView from '@/views/SettingsChannelsView.vue'
 
 const route = useRoute()
@@ -23,56 +21,48 @@ const router = useRouter()
 const settingsStore = useSettingsStore()
 
 const viewMap: Record<string, Component> = {
-  '/settings': SettingsPreferencesView,
-  '/settings/preferences': SettingsPreferencesView,
+  '/settings': SettingsGeneralView,
+  '/settings/general': SettingsGeneralView,
   '/settings/models': SettingsModelsView,
-  '/settings/shortcuts': SettingsShortcutsView,
-  '/settings/reranker': SettingsRerankerView,
   '/settings/knowledge': SettingsKnowledgeView,
   '/settings/channels': SettingsChannelsView,
 }
 
 const navigationItems = [
   {
-    path: '/settings/preferences',
-    label: '偏好设置',
-    description: '主题、语言、字号和阅读习惯。',
+    path: '/settings/general',
+    label: '通用',
+    description: '主题、语言、字号、阅读习惯和快捷键。',
     icon: Palette,
   },
   {
     path: '/settings/models',
-    label: '模型服务',
-    description: '默认模型、健康检查和提供商管理。',
+    label: '模型与推理',
+    description: '默认模型、场景路由、健康检查和精排配置。',
     icon: Cpu,
   },
   {
-    path: '/settings/shortcuts',
-    label: '快捷键',
-    description: '查阅现有键盘操作和组合键。',
-    icon: Keyboard,
-  },
-  {
-    path: '/settings/reranker',
-    label: '精排设置',
-    description: '全局精排模型、API 配置和记忆精排开关。',
-    icon: Sparkles,
-  },
-  {
     path: '/settings/knowledge',
-    label: '知识库',
+    label: '知识与检索',
     description: '分块策略、检索参数和向量索引全局配置。',
     icon: Database,
   },
   {
     path: '/settings/channels',
-    label: '消息渠道',
+    label: '集成渠道',
     description: '飞书、企微、钉钉渠道凭证配置。',
     icon: Radio,
   },
 ] as const
 
-const activeView = computed(() => viewMap[route.path] ?? SettingsPreferencesView)
-const currentPath = computed(() => (route.path === '/settings' ? '/settings/preferences' : route.path))
+const activeView = computed(() => viewMap[route.path] ?? SettingsGeneralView)
+const currentPath = computed(() => {
+  // 兼容旧路径
+  if (route.path === '/settings' || route.path === '/settings/preferences') return '/settings/general'
+  if (route.path === '/settings/reranker') return '/settings/models'
+  if (route.path === '/settings/shortcuts') return '/settings/general'
+  return route.path
+})
 const currentNavigationItem = computed(() => (
   navigationItems.find(item => item.path === currentPath.value) ?? navigationItems[0]
 ))
