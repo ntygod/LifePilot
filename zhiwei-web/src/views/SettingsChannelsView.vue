@@ -102,14 +102,15 @@ async function handleSave() {
       <!-- 提示信息 -->
       <div class="detail-card border-amber-500/30 bg-amber-500/5 px-5 py-4">
         <p class="text-sm leading-6 text-muted-foreground">
-          渠道凭证保存在数据库中，优先于 application.yml 配置。
-          启用渠道仍需在 yml 或环境变量中设置 <code class="rounded bg-muted px-1.5 py-0.5 text-xs">enabled: true</code>，
-          重启后生效。
+          渠道配置保存在数据库中，优先于 application.yml。开关和凭证修改后需重启服务生效。
         </p>
       </div>
 
       <!-- 飞书 -->
       <SettingSection title="飞书" icon="🐦" description="飞书机器人事件订阅凭证，用于接收和回复飞书消息。">
+        <SettingItem label="启用飞书通道" description="开启后将注册飞书 Webhook 端点，接收和回复飞书消息。">
+          <Switch :checked="feishu.enabled" @update:checked="feishu.enabled = $event" />
+        </SettingItem>
         <SettingItem label="App ID" description="飞书开放平台应用的 App ID。">
           <Input v-model="feishu.appId" placeholder="cli_xxxxxxxxxx" class="w-64" />
         </SettingItem>
@@ -126,6 +127,9 @@ async function handleSave() {
 
       <!-- 企业微信 -->
       <SettingSection title="企业微信" icon="💬" description="企业微信自建应用凭证，用于接收和回复企微消息。">
+        <SettingItem label="启用企微通道" description="开启后将注册企微 Webhook 端点，接收和回复企微消息。">
+          <Switch :checked="wecom.enabled" @update:checked="wecom.enabled = $event" />
+        </SettingItem>
         <SettingItem label="Corp ID" description="企业 ID。">
           <Input v-model="wecom.corpId" placeholder="wxxxxxxxxxxxxxxxxx" class="w-64" />
         </SettingItem>
@@ -145,6 +149,9 @@ async function handleSave() {
 
       <!-- 钉钉 -->
       <SettingSection title="钉钉" icon="🔔" description="钉钉企业内部机器人凭证，用于接收和回复钉钉消息。">
+        <SettingItem label="启用钉钉通道" description="开启后将注册钉钉 Webhook 端点，接收和回复钉钉消息。">
+          <Switch :checked="dingtalk.enabled" @update:checked="dingtalk.enabled = $event" />
+        </SettingItem>
         <SettingItem label="App Key" description="钉钉应用的 AppKey。">
           <Input v-model="dingtalk.appKey" placeholder="dingxxxxxxxxxx" class="w-64" />
         </SettingItem>
