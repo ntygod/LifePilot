@@ -3,6 +3,7 @@ package com.lifepilot.meta.infra.shell;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
+import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -26,6 +27,9 @@ import java.util.regex.Pattern;
  *   <li>输出截断 — stdout/stderr 超过 maxOutputLength 时截断</li>
  * </ul>
  *
+ * <p>支持 {@code background=true} 参数，委托 {@link BackgroundProcessManager}
+ * 启动后台进程并立即返回 sessionId。</p>
+ *
  * @author zsg
  * @since 2026-03-08
  */
@@ -35,9 +39,13 @@ public class ShellExecToolExecutor {
 
     private final MetaProperties.Infra.Shell shellConfig;
     private final List<Pattern> compiledBlacklist;
+    @Nullable
+    private final BackgroundProcessManager backgroundProcessManager;
 
-    public ShellExecToolExecutor(MetaProperties properties) {
+    public ShellExecToolExecutor(MetaProperties properties,
+                                  @Nullable BackgroundProcessManager backgroundProcessManager) {
         this.shellConfig = properties.getInfra().getShell();
+        this.backgroundProcessManager = backgroundProcessManager;
         // 构造时编译正则模式，避免每次执行重复编译
         this.compiledBlacklist = shellConfig.getCommandBlacklist().stream()
                 .map(Pattern::compile)
@@ -78,7 +86,13 @@ public class ShellExecToolExecutor {
             return ToolResult.error("工作目录不存在: " + workingDirectory);
         }
 
-        // 执行命令
+        // 后台执行模式
+        boolean background = input.getOptionalParam("background", Boolean.class).orElse(false);
+        if (background) {
+            return executeBackground(command, workDir);
+        }
+
+        // 同步执行命令
         try {
             return executeCommand(command, workDir, timeoutSeconds);
         } catch (IOException e) {
@@ -119,6 +133,24 @@ public class ShellExecToolExecutor {
         }
         int originalLength = output.length();
         return output.substring(0, maxLength) + "...[输出已截断，原始长度: " + originalLength + " 字符]";
+    }
+
+    private ToolResult executeBackground(String command, Path workDir) {
+        if (backgroundProcessManager == null) {
+            return ToolResult.error("后台进程管理器不可用");
+        }
+        try {
+            String sessionId = backgroundProcessManager.startProcess(command, workDir);
+            return ToolResult.success(Map.of(
+                    "sessionId", sessionId,
+                    "message", "后台进程已启动，使用 process.output 读取输出，process.kill 终止进程"
+            ));
+        } catch (IllegalStateException e) {
+            return ToolResult.error(e.getMessage());
+        } catch (IOException e) {
+            log.error("后台进程启动失败: command={}, error={}", command, e.getMessage(), e);
+            return ToolResult.error("后台进程启动失败: " + e.getMessage());
+        }
     }
 
     private ToolResult executeCommand(String command, Path workDir, int timeoutSeconds)

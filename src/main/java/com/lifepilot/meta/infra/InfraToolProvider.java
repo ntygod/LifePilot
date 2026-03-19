@@ -9,6 +9,7 @@ import com.lifepilot.meta.infra.env.DateTimeToolExecutor;
 import com.lifepilot.meta.infra.env.SystemInfoToolExecutor;
 import com.lifepilot.meta.infra.env.UserProfileToolExecutor;
 import com.lifepilot.meta.infra.reason.CalculateToolExecutor;
+import com.lifepilot.meta.infra.shell.BackgroundProcessManager;
 import com.lifepilot.meta.infra.shell.ShellExecToolExecutor;
 import com.lifepilot.meta.infra.interaction.InteractionBridge;
 import com.lifepilot.meta.infra.interaction.InteractionToolProvider;
@@ -79,6 +80,8 @@ public class InfraToolProvider {
     private final AgentConfigProperties agentConfigProperties;
     @Nullable
     private final NotificationProperties notificationProperties;
+    @Nullable
+    private final BackgroundProcessManager backgroundProcessManager;
 
     public InfraToolProvider(MetaProperties properties,
                              RestClient.Builder restClientBuilder,
@@ -93,7 +96,8 @@ public class InfraToolProvider {
                              @Nullable CronTaskRepository cronTaskRepository,
                              @Nullable CronScheduler cronScheduler,
                              @Nullable AgentConfigProperties agentConfigProperties,
-                             @Nullable NotificationProperties notificationProperties) {
+                             @Nullable NotificationProperties notificationProperties,
+                             @Nullable BackgroundProcessManager backgroundProcessManager) {
         this.properties = properties;
         this.restClientBuilder = restClientBuilder;
         this.sandboxBooter = sandboxBooter;
@@ -108,6 +112,7 @@ public class InfraToolProvider {
         this.cronScheduler = cronScheduler;
         this.agentConfigProperties = agentConfigProperties;
         this.notificationProperties = notificationProperties;
+        this.backgroundProcessManager = backgroundProcessManager;
     }
 
     /**
@@ -138,7 +143,7 @@ public class InfraToolProvider {
         toolRegistry.registerBuiltinTool(buildCalculateTool(calculateExecutor));
 
         // Shell 执行工具（1 个）
-        var shellExecExecutor = new ShellExecToolExecutor(properties);
+        var shellExecExecutor = new ShellExecToolExecutor(properties, backgroundProcessManager);
 
         toolRegistry.registerBuiltinTool(buildShellExecTool(shellExecExecutor));
 
@@ -338,7 +343,9 @@ public class InfraToolProvider {
                                 "workingDirectory", Map.of("type", "string",
                                         "description", "工作目录路径，默认用户 home 目录"),
                                 "timeoutSeconds", Map.of("type", "integer",
-                                        "description", "命令超时时间（秒），默认使用配置值（30s）")
+                                        "description", "命令超时时间（秒），默认使用配置值（30s）"),
+                                "background", Map.of("type", "boolean",
+                                        "description", "是否后台执行。true 时立即返回 sessionId，通过 process.* 工具管理进程")
                         )
                 )))
                 .riskLevel(RiskLevel.HIGH)

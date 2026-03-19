@@ -22,6 +22,7 @@ import com.lifepilot.mcp.registry.McpServerRegistry;
 import com.lifepilot.meta.infra.browser.BrowserSessionManager;
 import com.lifepilot.meta.infra.interaction.CliInteractionHandler;
 import com.lifepilot.meta.infra.interaction.InteractionBridge;
+import com.lifepilot.meta.infra.shell.BackgroundProcessManager;
 import com.lifepilot.multiagent.registry.AgentRegistry;
 import com.lifepilot.notification.NotificationService;
 import com.lifepilot.notification.config.NotificationProperties;
@@ -78,6 +79,14 @@ public class MetaAutoConfiguration {
     }
 
     /**
+     * 注册后台进程管理器 — 管理通过 shell.exec(background=true) 启动的长时间运行进程。
+     */
+    @Bean
+    BackgroundProcessManager backgroundProcessManager(MetaProperties properties) {
+        return new BackgroundProcessManager(properties.getInfra().getProcess());
+    }
+
+    /**
      * 注册基础工具提供者。
      *
      * <p>SandboxBooter、CodeValidator、SandboxRepository 为可选依赖，仅在沙箱模块可用时注入。
@@ -99,8 +108,9 @@ public class MetaAutoConfiguration {
                                         @Nullable CronTaskRepository cronTaskRepository,
                                         @Nullable CronScheduler cronScheduler,
                                         @Nullable AgentConfigProperties agentConfigProperties,
-                                        @Nullable NotificationProperties notificationProperties) {
-        return new InfraToolProvider(properties, restClientBuilder, sandboxBooter, codeValidator, sandboxRepository, interactionBridge, browserSessionManager, notificationService, workflowRegistry, workflowCommandService, cronTaskRepository, cronScheduler, agentConfigProperties, notificationProperties);
+                                        @Nullable NotificationProperties notificationProperties,
+                                        @Nullable BackgroundProcessManager backgroundProcessManager) {
+        return new InfraToolProvider(properties, restClientBuilder, sandboxBooter, codeValidator, sandboxRepository, interactionBridge, browserSessionManager, notificationService, workflowRegistry, workflowCommandService, cronTaskRepository, cronScheduler, agentConfigProperties, notificationProperties, backgroundProcessManager);
     }
 
     /**

@@ -27,7 +27,7 @@ class ShellExecToolExecutorTest {
     @BeforeEach
     void setUp() {
         properties = new MetaProperties();
-        executor = new ShellExecToolExecutor(properties);
+        executor = new ShellExecToolExecutor(properties, null);
     }
 
     // ─────────────────────────────────────────────
@@ -193,7 +193,7 @@ class ShellExecToolExecutorTest {
     void execute_输出超过maxOutputLength被截断_Unix() {
         // 设置极小的 maxOutputLength
         properties.getInfra().getShell().setMaxOutputLength(10);
-        executor = new ShellExecToolExecutor(properties);
+        executor = new ShellExecToolExecutor(properties, null);
 
         // 生成超过 10 字符的输出
         ToolInput input = buildInput(Map.of("command", "echo abcdefghijklmnopqrstuvwxyz"));
