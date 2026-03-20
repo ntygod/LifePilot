@@ -49,6 +49,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -78,7 +79,7 @@ public class MemoryAutoConfiguration {
     private volatile Instant lastIdleConsolidationTime;
 
     public MemoryAutoConfiguration(MemoryProperties properties,
-                                   JdbcTemplate jdbcTemplate,
+                                   @Lazy JdbcTemplate jdbcTemplate,
                                    ObjectProvider<ConsolidationPipeline> consolidationPipelineProvider) {
         this.properties = properties;
         this.jdbcTemplate = jdbcTemplate;
