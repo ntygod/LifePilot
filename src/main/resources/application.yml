@@ -762,6 +762,8 @@ lifepilot:
         provider: duckduckgo
         api-key: ${SEARCH_API_KEY:}
         max-results: 5
+        connect-timeout-seconds: 10
+        read-timeout-seconds: 30
       web-fetch:
         max-content-length: 50000
         timeout-seconds: 10

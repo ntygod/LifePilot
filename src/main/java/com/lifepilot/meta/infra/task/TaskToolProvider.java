@@ -7,6 +7,7 @@ import com.lifepilot.agent.task.CronTaskRepository;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.model.ToolCategory;
+import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.schema.JsonSchema;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -302,21 +303,21 @@ public class TaskToolProvider {
                     try {
                         Path path = resolveHeartbeatPath();
                         if (!Files.exists(path)) {
-                            return com.lifepilot.tool.model.ToolResult.success(Map.of(
+                            return ToolResult.success(Map.of(
                                     "exists", false,
                                     "content", "",
                                     "path", path.toString()
                             ));
                         }
                         String content = Files.readString(path);
-                        return com.lifepilot.tool.model.ToolResult.success(Map.of(
+                        return ToolResult.success(Map.of(
                                 "exists", true,
                                 "content", content,
                                 "path", path.toString()
                         ));
                     } catch (IOException e) {
                         log.error("读取 HEARTBEAT.md 失败: {}", e.getMessage(), e);
-                        return com.lifepilot.tool.model.ToolResult.error("读取 HEARTBEAT.md 失败: " + e.getMessage());
+                        return ToolResult.error("读取 HEARTBEAT.md 失败: " + e.getMessage());
                     }
                 })
                 .build();
@@ -349,13 +350,13 @@ public class TaskToolProvider {
                         Files.writeString(path, content);
 
                         log.info("HEARTBEAT.md 写入成功: path={}", path);
-                        return com.lifepilot.tool.model.ToolResult.success(Map.of(
+                        return ToolResult.success(Map.of(
                                 "written", true,
                                 "path", path.toString()
                         ));
                     } catch (IOException e) {
                         log.error("写入 HEARTBEAT.md 失败: {}", e.getMessage(), e);
-                        return com.lifepilot.tool.model.ToolResult.error("写入 HEARTBEAT.md 失败: " + e.getMessage());
+                        return ToolResult.error("写入 HEARTBEAT.md 失败: " + e.getMessage());
                     }
                 })
                 .build();
