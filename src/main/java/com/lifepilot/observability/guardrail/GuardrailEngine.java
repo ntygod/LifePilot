@@ -304,13 +304,11 @@ public class GuardrailEngine {
             return null;
         }
         var params = input.parameters();
-        if (params instanceof Map<?, ?> map) {
-            // 优先 workingDirectory，其次 cwd
-            Object wd = map.get("workingDirectory");
-            if (wd instanceof String s && !s.isBlank()) return s;
-            Object cwd = map.get("cwd");
-            if (cwd instanceof String s && !s.isBlank()) return s;
-        }
+        // 优先 workingDirectory，其次 cwd
+        Object wd = ((Map<?, ?>) params).get("workingDirectory");
+        if (wd instanceof String s && !s.isBlank()) return s;
+        Object cwd = ((Map<?, ?>) params).get("cwd");
+        if (cwd instanceof String s && !s.isBlank()) return s;
         return null;
     }
 

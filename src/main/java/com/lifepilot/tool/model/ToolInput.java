@@ -56,7 +56,7 @@ public record ToolInput(
     @SuppressWarnings("unchecked")
     public <T> Optional<T> getOptionalParam(String name, Class<T> type) {
         Object value = parameters.get(name);
-        if (value == null || !type.isInstance(value)) {
+        if (!type.isInstance(value)) {
             return Optional.empty();
         }
         return Optional.of((T) value);
@@ -67,7 +67,7 @@ public record ToolInput(
     public <T> Optional<T> getContextValue(String key, Class<T> type) {
         if (context == null) return Optional.empty();
         Object value = context.get(key);
-        if (value == null || !type.isInstance(value)) return Optional.empty();
+        if (!type.isInstance(value)) return Optional.empty();
         return Optional.of((T) value);
     }
 }

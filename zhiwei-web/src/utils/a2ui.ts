@@ -87,20 +87,25 @@ export function mapBackendMessage(message: BackendMessageLike): Message {
         message: string
         resolution: string
       }
+      const toolConfirmation = {
+        requestId: parsed.requestId,
+        toolId: parsed.toolId,
+        toolName: parsed.toolName,
+        riskLevel: parsed.riskLevel as 'HIGH' | 'CRITICAL',
+        approvalMode: '',
+        message: parsed.message,
+        timestamp: typeof message.timestamp === 'string' ? message.timestamp : new Date(message.timestamp).toISOString(),
+      }
       return {
         id: message.id,
         role: 'tool-confirmation',
         content: parsed.message || '该工具需要您的确认才能执行。',
         timestamp: parseMessageTimestamp(message.timestamp),
-        toolConfirmation: {
-          requestId: parsed.requestId,
-          toolId: parsed.toolId,
-          toolName: parsed.toolName,
-          riskLevel: parsed.riskLevel as 'HIGH' | 'CRITICAL',
-          approvalMode: '',
-          message: parsed.message,
-          timestamp: typeof message.timestamp === 'string' ? message.timestamp : new Date(message.timestamp).toISOString(),
-        },
+        // 新格式：多个确认
+        toolConfirmations: { [parsed.requestId]: toolConfirmation },
+        toolConfirmationResolutions: parsed.resolution ? { [parsed.requestId]: parsed.resolution as 'approved' | 'rejected' | 'expired' } : undefined,
+        // 兼容旧格式
+        toolConfirmation,
         toolConfirmationResolution: parsed.resolution as 'approved' | 'rejected' | 'expired',
       }
     } catch {

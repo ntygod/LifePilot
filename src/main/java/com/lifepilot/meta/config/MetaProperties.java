@@ -86,6 +86,12 @@ public class MetaProperties {
 
             /** 最大返回结果数，默认 5。 */
             private int maxResults = 5;
+
+            /** HTTP 连接超时（秒），默认 10。 */
+            private int connectTimeoutSeconds = 10;
+
+            /** HTTP 读取超时（秒），默认 30。 */
+            private int readTimeoutSeconds = 30;
         }
 
         /**

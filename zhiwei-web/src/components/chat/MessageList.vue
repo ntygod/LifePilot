@@ -17,10 +17,10 @@ const props = defineProps<{
   streamingReactSteps?: ReactStepDto[]
   /** 流式阶段中的 A2UI 组件树（可选） */
   streamingA2uiComponents?: A2uiComponent[]
-  /** 流式阶段的工具确认请求（从 useChat 传入） */
-  streamingToolConfirmation?: ToolConfirmationRequest | null
-  /** 流式阶段的工具确认解决结果 */
-  streamingToolConfirmationResolution?: 'approved' | 'rejected' | 'expired' | null
+  /** 流式阶段的工具确认请求队列 */
+  streamingToolConfirmations?: Record<string, ToolConfirmationRequest>
+  /** 流式阶段的工具确认解决结果映射 */
+  streamingToolConfirmationResolutions?: Record<string, 'approved' | 'rejected' | 'expired'>
   /** 文本搜索关键字（可选），用于高亮匹配内容 */
   query?: string
 }>()
@@ -32,7 +32,7 @@ const emit = defineEmits<{
   (e: 'fork', message: Message): void
   (e: 'regenerate', message: Message): void
   (e: 'copy', content: string): void
-  (e: 'tool-confirm-resolve', resolution: 'approved' | 'rejected' | 'expired'): void
+  (e: 'tool-confirm-resolve', requestId: string, resolution: 'approved' | 'rejected' | 'expired'): void
 }>()
 
 const chatStore = useChatStore()
@@ -93,12 +93,6 @@ function highlight(text: string): string {
   const reg = new RegExp(escaped, 'gi')
   return text.replace(reg, match => `<mark class="bg-yellow-200/70 dark:bg-yellow-500/40">${match}</mark>`)
 }
-
-/** 工具确认气泡解决回调：更新消息状态并通知父组件 */
-function handleToolConfirmationResolve(msg: Message, resolution: 'approved' | 'rejected' | 'expired') {
-  chatStore.updateMessage(msg.id, { toolConfirmationResolution: resolution })
-  emit('tool-confirm-resolve', resolution)
-}
 </script>
 
 <template>
@@ -130,8 +124,8 @@ function handleToolConfirmationResolve(msg: Message, resolution: 'approved' | 'r
           :streaming-reasoning-events="(isStreaming && index === mergedMessages.length - 1 && msg.role === 'assistant') ? streamingReasoningEvents : undefined"
           :streaming-react-steps="(isStreaming && index === mergedMessages.length - 1 && msg.role === 'assistant') ? streamingReactSteps : undefined"
           :streaming-a2ui-components="(isStreaming && index === mergedMessages.length - 1 && msg.role === 'assistant') ? streamingA2uiComponents : undefined"
-          :streaming-tool-confirmation="(isStreaming && index === mergedMessages.length - 1 && msg.role === 'assistant') ? streamingToolConfirmation ?? undefined : undefined"
-          :streaming-tool-confirmation-resolution="(isStreaming && index === mergedMessages.length - 1 && msg.role === 'assistant') ? streamingToolConfirmationResolution ?? undefined : undefined"
+          :streaming-tool-confirmations="(isStreaming && index === mergedMessages.length - 1 && msg.role === 'assistant') ? streamingToolConfirmations : undefined"
+          :streaming-tool-confirmation-resolutions="(isStreaming && index === mergedMessages.length - 1 && msg.role === 'assistant') ? streamingToolConfirmationResolutions : undefined"
           :is-last-assistant="msg.id === lastAssistantId"
           @retry="(m: Message) => emit('retry', m)"
           @like="(m: Message) => emit('like', m)"
@@ -139,7 +133,7 @@ function handleToolConfirmationResolve(msg: Message, resolution: 'approved' | 'r
           @fork="(m: Message) => emit('fork', m)"
           @regenerate="(m: Message) => emit('regenerate', m)"
           @copy="(c: string) => emit('copy', c)"
-          @tool-confirm-resolve="(r: 'approved' | 'rejected' | 'expired') => handleToolConfirmationResolve(msg, r)"
+          @tool-confirm-resolve="(requestId: string, r: 'approved' | 'rejected' | 'expired') => emit('tool-confirm-resolve', requestId, r)"
         />
       </MotionDiv>
     </template>
@@ -158,9 +152,9 @@ function handleToolConfirmationResolve(msg: Message, resolution: 'approved' | 'r
         :streaming-reasoning-events="streamingReasoningEvents"
         :streaming-react-steps="streamingReactSteps"
         :streaming-a2ui-components="streamingA2uiComponents"
-        :streaming-tool-confirmation="streamingToolConfirmation ?? undefined"
-        :streaming-tool-confirmation-resolution="streamingToolConfirmationResolution ?? undefined"
-        @tool-confirm-resolve="(r: 'approved' | 'rejected' | 'expired') => emit('tool-confirm-resolve', r)"
+        :streaming-tool-confirmations="streamingToolConfirmations"
+        :streaming-tool-confirmation-resolutions="streamingToolConfirmationResolutions"
+        @tool-confirm-resolve="(requestId: string, r: 'approved' | 'rejected' | 'expired') => emit('tool-confirm-resolve', requestId, r)"
       />
     </MotionDiv>
   </div>
