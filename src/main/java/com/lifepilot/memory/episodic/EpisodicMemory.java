@@ -18,9 +18,9 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Episodic memory now reads from the session layer (`chat_sessions/chat_messages`).
- * Legacy write/compress helpers against `conversations/messages` remain only so old
- * non-main-path code can still compile while the new read path is already in place.
+ * 情景记忆的主读路径已经切换到会话层（`chat_sessions/chat_messages`）。
+ *
+ * <p>当前职责主要是提供对话检索、片段回忆和会话级读取能力。</p>
  */
 public class EpisodicMemory {
 
@@ -65,7 +65,7 @@ public class EpisodicMemory {
         }
 
         notifyWriteCallback();
-        log.debug("episodic memory saved legacy conversation record: id={}, messages={}",
+        log.debug("情景记忆已写入旧版对话记录: id={}, messages={}",
                 record.id(), record.messageCount());
     }
 
@@ -210,7 +210,7 @@ public class EpisodicMemory {
                     .limit(limit)
                     .toList();
         } catch (Exception e) {
-            log.warn("snippet recall failed: query={}, excludeSessionId={}, error={}",
+            log.warn("对话片段回忆失败: query={}, excludeSessionId={}, error={}",
                     query, excludeSessionId, e.getMessage());
             return List.of();
         }
@@ -271,7 +271,7 @@ public class EpisodicMemory {
     public boolean delete(String conversationId) {
         int rows = jdbcTemplate.update("DELETE FROM chat_sessions WHERE id = ?", conversationId);
         if (rows > 0) {
-            log.info("deleted chat session from episodic read model: sessionId={}", conversationId);
+            log.info("已从情景记忆读模型删除会话: sessionId={}", conversationId);
         }
         return rows > 0;
     }
@@ -294,7 +294,7 @@ public class EpisodicMemory {
                     conversationId,
                     targetLevel.level());
         }
-        log.info("compressed legacy conversation messages: conversationId={}, level={}, count={}",
+        log.info("已压缩旧版对话消息: conversationId={}, level={}, count={}",
                 conversationId, targetLevel, compressedTexts.size());
     }
 
@@ -305,7 +305,7 @@ public class EpisodicMemory {
         try {
             writeCallback.run();
         } catch (Exception e) {
-            log.warn("episodic memory write callback failed: error={}", e.getMessage());
+            log.warn("情景记忆写回调执行失败: error={}", e.getMessage());
         }
     }
 

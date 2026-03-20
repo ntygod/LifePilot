@@ -85,12 +85,12 @@ public class MemoryAutoConfiguration {
         this.consolidationPipelineProvider = consolidationPipelineProvider;
     }
 
-    // Workspace / L1
+    // L1 临时工作区
 
     @Bean
     @ConditionalOnMissingBean
     public QueryRefiner queryRefiner(MemoryProperties properties) {
-        log.info("memory: registering QueryRefiner");
+        log.info("记忆模块: 注册 QueryRefiner");
         return new QueryRefiner(properties);
     }
 
@@ -100,7 +100,7 @@ public class MemoryAutoConfiguration {
     public QueryRewriter queryRewriter(LlmRouter llmRouter,
                                        MemoryProperties properties,
                                        PromptRegistry promptRegistry) {
-        log.info("memory: registering QueryRewriter, mode={}",
+        log.info("记忆模块: 注册 QueryRewriter, mode={}",
                 properties.getRetrieval().getQueryRewriteMode());
         return new QueryRewriter(llmRouter, properties, promptRegistry);
     }
@@ -112,7 +112,7 @@ public class MemoryAutoConfiguration {
     public SessionWorkspaceService sessionWorkspaceService(JdbcTemplate jdbcTemplate,
                                                            ObjectMapper objectMapper,
                                                            WorkspaceProperties workspaceProperties) {
-        log.info("memory: registering SessionWorkspaceService");
+        log.info("记忆模块: 注册 SessionWorkspaceService");
         return new SessionWorkspaceService(jdbcTemplate, objectMapper, workspaceProperties);
     }
 
@@ -120,16 +120,16 @@ public class MemoryAutoConfiguration {
     @ConditionalOnMissingBean
     @ConditionalOnBean(SessionWorkspaceService.class)
     public WorkspaceCleanupJob workspaceCleanupJob(SessionWorkspaceService workspaceService) {
-        log.info("memory: registering WorkspaceCleanupJob");
+        log.info("记忆模块: 注册 WorkspaceCleanupJob");
         return new WorkspaceCleanupJob(workspaceService);
     }
 
-    // L2
+    // L2 对话回忆与检索
 
     @Bean
     @ConditionalOnMissingBean
     public EpisodicMemory episodicMemory(JdbcTemplate jdbcTemplate, MemoryProperties properties) {
-        log.info("memory: registering EpisodicMemory");
+        log.info("记忆模块: 注册 EpisodicMemory");
         return new EpisodicMemory(jdbcTemplate, properties);
     }
 
@@ -140,7 +140,7 @@ public class MemoryAutoConfiguration {
                                                  LlmRouter llmRouter,
                                                  PromptRegistry promptRegistry,
                                                  MemoryProperties memoryProperties) {
-        log.info("memory: registering CompressionService");
+        log.info("记忆模块: 注册 CompressionService");
         return new CompressionService(llmRouter, episodicMemory, promptRegistry, memoryProperties);
     }
 
@@ -168,7 +168,7 @@ public class MemoryAutoConfiguration {
             return;
         }
 
-        log.info("memory: idle consolidation triggered, mode={}, idleThresholdMinutes={}",
+        log.info("记忆模块: 空闲巩固已触发, mode={}, idleThresholdMinutes={}",
                 mode, idleThreshold);
         pipeline.consolidate();
         lastIdleConsolidationTime = Instant.now();
@@ -184,12 +184,12 @@ public class MemoryAutoConfiguration {
             }
             return Instant.parse(lastInteraction);
         } catch (Exception e) {
-            log.debug("memory: failed to query last interaction time, fallback to now: {}", e.getMessage());
+            log.debug("记忆模块: 查询最近交互时间失败，回退到当前时间: {}", e.getMessage());
             return Instant.now();
         }
     }
 
-    // Vector database
+    // 向量数据库
 
     @Bean
     @ConditionalOnMissingBean
@@ -209,7 +209,7 @@ public class MemoryAutoConfiguration {
                     Files.createDirectories(parentDir);
                 }
             } catch (Exception e) {
-                log.warn("memory: failed to create vector database directory, url={}", url, e);
+                log.warn("记忆模块: 创建向量数据库目录失败, url={}", url, e);
             }
         }
         var config = new SQLiteConfig();
@@ -219,7 +219,7 @@ public class MemoryAutoConfiguration {
         config.enableLoadExtension(true);
         var dataSource = new SQLiteDataSource(config);
         dataSource.setUrl(url);
-        log.info("memory: vector database ready, url={}", url);
+        log.info("记忆模块: 向量数据库已就绪, url={}", url);
         return new SqliteVecDataSource(dataSource, sqliteVecInitializer, "vector");
     }
 
@@ -229,21 +229,21 @@ public class MemoryAutoConfiguration {
         return new JdbcTemplate(Objects.requireNonNull(vectorDataSource, "vectorDataSource"));
     }
 
-    // Events
+    // 事件与审计
 
     @Bean
     @ConditionalOnMissingBean
     public MemoryEventRecorder memoryEventRecorder(JdbcTemplate jdbcTemplate) {
-        log.info("memory: registering MemoryEventRecorder");
+        log.info("记忆模块: 注册 MemoryEventRecorder");
         return new MemoryEventRecorder(jdbcTemplate);
     }
 
-    // L3
+    // L3 语义记忆
 
     @Bean
     @ConditionalOnMissingBean
     public VersionMerger versionMerger() {
-        log.info("memory: registering VersionMerger");
+        log.info("记忆模块: 注册 VersionMerger");
         return new VersionMerger();
     }
 
@@ -254,7 +254,7 @@ public class MemoryAutoConfiguration {
             LlmRouter llmRouter,
             MemoryProperties properties) {
         boolean vecLoaded = isVecExtensionLoaded(vectorJdbcTemplate);
-        log.info("memory: registering VectorSearcher, vecExtensionLoaded={}, dimensions={}",
+        log.info("记忆模块: 注册 VectorSearcher, vecExtensionLoaded={}, dimensions={}",
                 vecLoaded, properties.getEmbeddingDimensions());
         return new VectorSearcher(vectorJdbcTemplate, llmRouter,
                 vecLoaded, properties.getEmbeddingDimensions());
@@ -269,7 +269,7 @@ public class MemoryAutoConfiguration {
             @Nullable LlmRouter llmRouter,
             MemoryProperties properties,
             PromptRegistry promptRegistry) {
-        log.info("memory: registering ConflictDetector, semanticMatchThreshold={}",
+        log.info("记忆模块: 注册 ConflictDetector, semanticMatchThreshold={}",
                 properties.getSemanticMatchThreshold());
         return new ConflictDetector(jdbcTemplate, vectorSearcher, llmRouter,
                 properties.getSemanticMatchThreshold(), promptRegistry);
@@ -283,14 +283,14 @@ public class MemoryAutoConfiguration {
             ConflictDetector conflictDetector,
             VersionMerger versionMerger,
             VectorSearcher vectorSearcher) {
-        log.info("memory: registering SemanticMemory");
+        log.info("记忆模块: 注册 SemanticMemory");
         return new SemanticMemory(jdbcTemplate, conflictDetector, versionMerger, vectorSearcher);
     }
 
     @Bean
     @ConditionalOnMissingBean
     public ExtractionValidator extractionValidator(MemoryProperties properties) {
-        log.info("memory: registering ExtractionValidator");
+        log.info("记忆模块: 注册 ExtractionValidator");
         return new ExtractionValidator(properties);
     }
 
@@ -302,23 +302,23 @@ public class MemoryAutoConfiguration {
                                                ExtractionValidator extractionValidator,
                                                JdbcTemplate jdbcTemplate,
                                                PromptRegistry promptRegistry) {
-        log.info("memory: registering RealtimeExtractor");
+        log.info("记忆模块: 注册 RealtimeExtractor");
         return new RealtimeExtractor(llmRouter, semanticMemory, properties, extractionValidator, jdbcTemplate, promptRegistry);
     }
 
-    // Retrieval
+    // 检索
 
     @Bean
     @ConditionalOnMissingBean
     public FtsSearcher ftsSearcher(JdbcTemplate jdbcTemplate) {
-        log.info("memory: registering FtsSearcher");
+        log.info("记忆模块: 注册 FtsSearcher");
         return new FtsSearcher(jdbcTemplate);
     }
 
     @Bean
     @ConditionalOnMissingBean
     public GraphTraverser graphTraverser(JdbcTemplate jdbcTemplate) {
-        log.info("memory: registering GraphTraverser");
+        log.info("记忆模块: 注册 GraphTraverser");
         return new GraphTraverser(jdbcTemplate);
     }
 
@@ -335,7 +335,7 @@ public class MemoryAutoConfiguration {
             @Nullable Reranker reranker,
             @Nullable RerankerConfigProvider rerankerConfigProvider,
             JdbcTemplate jdbcTemplate) {
-        log.info("memory: registering HybridRetriever, intentMatcher={}, reranker={}",
+        log.info("记忆模块: 注册 HybridRetriever, intentMatcher={}, reranker={}",
                 intentMatcher != null ? "enabled" : "disabled",
                 reranker != null ? "enabled" : "disabled");
         var retriever = new HybridRetriever(vectorSearcher, ftsSearcher, graphTraverser,
@@ -345,7 +345,7 @@ public class MemoryAutoConfiguration {
         return retriever;
     }
 
-    // L4
+    // L4 程序记忆
 
     @Bean
     @ConditionalOnMissingBean
@@ -354,7 +354,7 @@ public class MemoryAutoConfiguration {
             JdbcTemplate jdbcTemplate,
             VectorSearcher vectorSearcher,
             MemoryProperties properties) {
-        log.info("memory: registering ProceduralMemory");
+        log.info("记忆模块: 注册 ProceduralMemory");
         return new ProceduralMemory(jdbcTemplate, vectorSearcher, properties);
     }
 
@@ -367,11 +367,11 @@ public class MemoryAutoConfiguration {
             JdbcTemplate jdbcTemplate,
             LlmRouter llmRouter,
             MemoryProperties properties) {
-        log.info("memory: registering IntentMatcher");
+        log.info("记忆模块: 注册 IntentMatcher");
         return new IntentMatcher(proceduralMemory, vectorSearcher, jdbcTemplate, llmRouter, properties);
     }
 
-    // Consolidation
+    // 巩固
 
     @Bean
     @ConditionalOnMissingBean
@@ -382,7 +382,7 @@ public class MemoryAutoConfiguration {
             ObjectProvider<KnowledgeExtractionPipeline> extractionPipelineProvider,
             JdbcTemplate jdbcTemplate,
             MemoryProperties properties) {
-        log.info("memory: registering EpisodicToSemanticConsolidator");
+        log.info("记忆模块: 注册 EpisodicToSemanticConsolidator");
         return new EpisodicToSemanticConsolidator(episodicMemory, semanticMemory,
                 extractionPipelineProvider, jdbcTemplate, properties);
     }
@@ -396,7 +396,7 @@ public class MemoryAutoConfiguration {
             LlmRouter llmRouter,
             MemoryProperties properties,
             PromptRegistry promptRegistry) {
-        log.info("memory: registering EpisodicToProceduralConsolidator");
+        log.info("记忆模块: 注册 EpisodicToProceduralConsolidator");
         return new EpisodicToProceduralConsolidator(jdbcTemplate, proceduralMemory,
                 llmRouter, properties, promptRegistry);
     }
@@ -407,7 +407,7 @@ public class MemoryAutoConfiguration {
     public PreferenceConsolidator preferenceConsolidator(
             SemanticMemory semanticMemory,
             ProceduralMemory proceduralMemory) {
-        log.info("memory: registering PreferenceConsolidator");
+        log.info("记忆模块: 注册 PreferenceConsolidator");
         return new PreferenceConsolidator(semanticMemory, proceduralMemory);
     }
 
@@ -422,7 +422,7 @@ public class MemoryAutoConfiguration {
             @Nullable SemanticMemory semanticMemory,
             @Nullable ProceduralMemory proceduralMemory,
             @Nullable com.lifepilot.memory.consolidation.ExperienceMerger experienceMerger) {
-        log.info("memory: registering ConsolidationPipeline, preferenceSync={}, experienceLift={}, experienceMerge={}",
+        log.info("记忆模块: 注册 ConsolidationPipeline, preferenceSync={}, experienceLift={}, experienceMerge={}",
                 preferenceConsolidator != null ? "enabled" : "disabled",
                 semanticMemory != null && proceduralMemory != null ? "enabled" : "disabled",
                 experienceMerger != null ? "enabled" : "disabled");
@@ -431,7 +431,7 @@ public class MemoryAutoConfiguration {
                 experienceMerger);
     }
 
-    // Forgetting / feedback / cleanup
+    // 遗忘 / 反馈 / 清理
 
     @Bean
     @ConditionalOnMissingBean
@@ -441,7 +441,7 @@ public class MemoryAutoConfiguration {
             VectorSearcher vectorSearcher,
             JdbcTemplate jdbcTemplate,
             MemoryProperties properties) {
-        log.info("memory: registering EntityDeduplicator");
+        log.info("记忆模块: 注册 EntityDeduplicator");
         return new EntityDeduplicator(semanticMemory, vectorSearcher, jdbcTemplate, properties);
     }
 
@@ -454,7 +454,7 @@ public class MemoryAutoConfiguration {
             JdbcTemplate jdbcTemplate,
             MemoryProperties properties,
             PromptRegistry promptRegistry) {
-        log.info("memory: registering ForgettingEngine, llmAvailable={}",
+        log.info("记忆模块: 注册 ForgettingEngine, llmAvailable={}",
                 llmRouter != null ? "yes" : "no");
         return new ForgettingEngine(semanticMemory, llmRouter, jdbcTemplate, properties, promptRegistry);
     }
@@ -463,7 +463,7 @@ public class MemoryAutoConfiguration {
     @ConditionalOnMissingBean
     public InjectionRecordRepository injectionRecordRepository(JdbcTemplate jdbcTemplate,
                                                                ObjectMapper objectMapper) {
-        log.info("memory: registering InjectionRecordRepository");
+        log.info("记忆模块: 注册 InjectionRecordRepository");
         return new InjectionRecordRepository(jdbcTemplate, objectMapper);
     }
 
@@ -475,7 +475,7 @@ public class MemoryAutoConfiguration {
             SemanticMemory semanticMemory,
             MessageFeedbackRepository feedbackRepository,
             MemoryProperties properties) {
-        log.info("memory: registering FeedbackProcessor");
+        log.info("记忆模块: 注册 FeedbackProcessor");
         return new FeedbackProcessor(injectionRecordRepository, semanticMemory,
                 feedbackRepository, properties);
     }
@@ -483,7 +483,7 @@ public class MemoryAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public EntityExpirationJob entityExpirationJob(JdbcTemplate jdbcTemplate) {
-        log.info("memory: registering EntityExpirationJob");
+        log.info("记忆模块: 注册 EntityExpirationJob");
         return new EntityExpirationJob(jdbcTemplate);
     }
 
@@ -494,18 +494,18 @@ public class MemoryAutoConfiguration {
             EpisodicMemory episodicMemory,
             JdbcTemplate jdbcTemplate,
             MemoryProperties properties) {
-        log.info("memory: registering EpisodicCleanupJob, cron={}, retentionDays={}",
+        log.info("记忆模块: 注册 EpisodicCleanupJob, cron={}, retentionDays={}",
                 properties.getEpisodicCleanup().getCron(),
                 properties.getEpisodicCleanup().getRetentionDays());
         return new EpisodicCleanupJob(episodicMemory, jdbcTemplate, properties);
     }
 
-    // Experience
+    // 经验学习
 
     @Bean
     @ConditionalOnMissingBean
     public TrajectoryQualityAssessor trajectoryQualityAssessor(MemoryProperties properties) {
-        log.info("memory: registering TrajectoryQualityAssessor");
+        log.info("记忆模块: 注册 TrajectoryQualityAssessor");
         return new TrajectoryQualityAssessor(properties);
     }
 
@@ -519,7 +519,7 @@ public class MemoryAutoConfiguration {
             PromptRegistry promptRegistry,
             MemoryProperties properties,
             TrajectoryQualityAssessor qualityAssessor) {
-        log.info("memory: registering ExperienceSummarizer");
+        log.info("记忆模块: 注册 ExperienceSummarizer");
         return new ExperienceSummarizer(semanticMemory, vectorSearcher, llmRouter,
                 promptRegistry, properties, qualityAssessor);
     }
@@ -531,7 +531,7 @@ public class MemoryAutoConfiguration {
             SemanticMemory semanticMemory,
             InjectionRecordRepository injectionRecordRepository,
             MemoryProperties properties) {
-        log.info("memory: registering EffectivenessTracker");
+        log.info("记忆模块: 注册 EffectivenessTracker");
         return new com.lifepilot.memory.experience.EffectivenessTracker(
                 semanticMemory, injectionRecordRepository, properties);
     }
@@ -545,7 +545,7 @@ public class MemoryAutoConfiguration {
             LlmRouter llmRouter,
             PromptRegistry promptRegistry,
             MemoryProperties properties) {
-        log.info("memory: registering ContrastiveLearner");
+        log.info("记忆模块: 注册 ContrastiveLearner");
         return new com.lifepilot.memory.experience.ContrastiveLearner(
                 semanticMemory, vectorSearcher, llmRouter, promptRegistry, properties);
     }
@@ -559,7 +559,7 @@ public class MemoryAutoConfiguration {
             LlmRouter llmRouter,
             PromptRegistry promptRegistry,
             MemoryProperties properties) {
-        log.info("memory: registering SubtaskReflector");
+        log.info("记忆模块: 注册 SubtaskReflector");
         return new com.lifepilot.memory.experience.SubtaskReflector(
                 semanticMemory, vectorSearcher, llmRouter, promptRegistry, properties);
     }
@@ -573,7 +573,7 @@ public class MemoryAutoConfiguration {
             LlmRouter llmRouter,
             PromptRegistry promptRegistry,
             MemoryProperties properties) {
-        log.info("memory: registering ExperienceMerger");
+        log.info("记忆模块: 注册 ExperienceMerger");
         return new com.lifepilot.memory.consolidation.ExperienceMerger(
                 semanticMemory, vectorSearcher, llmRouter, promptRegistry, properties);
     }
@@ -583,7 +583,7 @@ public class MemoryAutoConfiguration {
             vectorJdbcTemplate.queryForObject("SELECT vec_version()", String.class);
             return true;
         } catch (Exception e) {
-            log.info("memory: sqlite-vec extension not loaded, falling back to JVM vector search");
+            log.info("记忆模块: 未加载 sqlite-vec 扩展，回退到 JVM 向量检索");
             return false;
         }
     }

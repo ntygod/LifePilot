@@ -551,7 +551,7 @@ public class MemoryToolProvider {
         return Map.copyOf(map);
     }
 
-    /** 将 MessageRecord 转换为 Map。 */
+    /** 将 ConversationSnippetRecord 转换为 Map。 */
     private Map<String, Object> conversationSnippetToMap(ConversationSnippetRecord snippet) {
         var map = new HashMap<String, Object>();
         map.put("sessionId", snippet.sessionId());

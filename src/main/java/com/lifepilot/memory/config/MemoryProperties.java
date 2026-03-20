@@ -7,7 +7,8 @@ import java.util.Set;
 /**
  * 记忆系统配置属性。
  *
- * <p>绑定 {@code lifepilot.memory} 配置前缀。使用 JavaBean 风格以兼容 Spring Boot 配置绑定。</p>
+ * <p>绑定 {@code lifepilot.memory} 配置前缀。使用 JavaBean 风格以兼容 Spring Boot 配置绑定。
+ * 部分字段为旧版 WorkingMemory 架构保留，当前主链路以会话层 + L1 临时工作区为准。</p>
  *
  * @author zsg
  * @since 2026-02-25
@@ -18,10 +19,10 @@ public class MemoryProperties {
     /** 记忆系统总开关，默认 true。 */
     private boolean enabled = true;
 
-    /** L1 工作记忆 Token 预算上限，默认 8000。 */
+    /** 历史保留字段：旧版 WorkingMemory 总预算，当前主链路未直接使用，默认 8000。 */
     private int workingMemoryTokenBudget = 8000;
 
-    /** 会话空闲超时（分钟），超时后自动 flush，默认 30。 */
+    /** 历史保留字段：旧版空闲会话超时，当前主链路不再依赖 flush，默认 30。 */
     private int idleSessionTimeoutMinutes = 30;
 
     /** 触发压缩的 Token 阈值，默认 4000。 */
@@ -75,7 +76,7 @@ public class MemoryProperties {
     public String getVectorDbUrl() { return vectorDbUrl; }
     public void setVectorDbUrl(String vectorDbUrl) { this.vectorDbUrl = vectorDbUrl; }
 
-    /** Token 预算分配配置。 */
+    /** 历史预算配置，当前主链路仅保留兼容字段。 */
     private TokenBudget tokenBudget = new TokenBudget();
 
     /** L4 程序记忆配置。 */
@@ -148,7 +149,10 @@ public class MemoryProperties {
     public void setExperience(Experience experience) { this.experience = experience; }
 
     /**
-     * Token 预算分配配置 — 控制上下文窗口四区域的预算比例和场景切换阈值。
+     * 历史 Token 预算配置。
+     *
+     * <p>当前主链路已经改为“最近完整轮次 + 工作区 + 画像/经验”的固定组装方式，
+     * 这里的字段主要作为兼容配置保留。</p>
      *
      * @author zsg
      * @since 2026-02-25

@@ -1,4 +1,4 @@
-褰撳墠鏃堕棿: {currentDateTime}, 鏃跺尯: {timezone}, 鍖哄煙: {locale}
+当前时间: {currentDateTime}, 时区: {timezone}, 区域: {locale}
 {userProfileSection}
 {passiveNotificationsSection}
 {conversationHistorySection}
@@ -9,6 +9,6 @@
 {crossSessionSection}
 {toolResultsSection}
 {reasoningContextSection}
-鐢ㄦ埛璇锋眰: {userGoal}
+用户请求: {userGoal}
 
-棰勭畻鍓╀綑: Token={tokensRemaining}, 宸茬敤姝ラ={stepCount}
+预算剩余: Token={tokensRemaining}, 已用步骤={stepCount}

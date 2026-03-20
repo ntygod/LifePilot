@@ -36,7 +36,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * Assembles prompt context from conversation history, workspace items and long-term memory.
+ * 从会话历史、临时工作区和长期记忆中组装提示词上下文。
  */
 public class ContextAssembler {
 
@@ -134,7 +134,7 @@ public class ContextAssembler {
             logAssemblyMetrics(state, context, startTime);
             return context;
         } catch (Exception e) {
-            log.warn("Context assembly failed, falling back to minimal prompt. sessionId={}, error={}",
+            log.warn("上下文组装失败，回退到最小提示词: sessionId={}, error={}",
                     state.sessionId(), e.getMessage());
             return buildFallbackContext(state);
         }
@@ -203,7 +203,7 @@ public class ContextAssembler {
                     .limit(experience.getMaxInjectionCount())
                     .toList();
         } catch (Exception e) {
-            log.debug("Experience retrieval skipped: error={}", e.getMessage());
+            log.debug("经验检索已跳过: error={}", e.getMessage());
             return List.of();
         }
     }
@@ -214,7 +214,7 @@ public class ContextAssembler {
         }
 
         int tokenBudget = memoryProperties.getExperience().getInjectionTokenBudget();
-        StringBuilder sb = new StringBuilder("\nRelevant experience:\n");
+        StringBuilder sb = new StringBuilder("\n相关经验:\n");
         int usedTokens = 0;
 
         for (TemporalEntity experience : experiences) {
@@ -315,7 +315,7 @@ public class ContextAssembler {
                     .sorted(Comparator.comparing(ConversationTurnView::createdAt))
                     .toList();
         } catch (Exception e) {
-            log.warn("Failed to load recent turns: sessionId={}, error={}", sessionId, e.getMessage());
+            log.warn("加载最近完整轮次失败: sessionId={}, error={}", sessionId, e.getMessage());
             return List.of();
         }
     }
@@ -335,7 +335,7 @@ public class ContextAssembler {
                     .limit(Math.max(0, maxItems))
                     .toList();
         } catch (Exception e) {
-            log.warn("Failed to load workspace items: sessionId={}, error={}", sessionId, e.getMessage());
+            log.warn("加载工作区条目失败: sessionId={}, error={}", sessionId, e.getMessage());
             return List.of();
         }
     }
@@ -390,7 +390,7 @@ public class ContextAssembler {
                             .filter(PreferenceRule::isHighConfidence)
                             .toList();
                 } catch (Exception e) {
-                    log.warn("Failed to load procedural preferences: error={}", e.getMessage());
+                    log.warn("加载 L4 偏好规则失败: error={}", e.getMessage());
                 }
             }
 
@@ -410,7 +410,7 @@ public class ContextAssembler {
 
             StringBuilder sb = new StringBuilder();
             if (!selected.isEmpty()) {
-                sb.append("L3 profile:\n");
+                sb.append("L3 用户画像:\n");
                 for (TemporalEntity entity : selected) {
                     sb.append("- [")
                             .append(entity.type().label())
@@ -424,7 +424,7 @@ public class ContextAssembler {
             }
 
             if (!highConfidencePreferences.isEmpty()) {
-                sb.append("L4 preferences:\n");
+                sb.append("L4 偏好规则:\n");
                 for (PreferenceRule rule : highConfidencePreferences) {
                     sb.append("- ")
                             .append(rule.key())
@@ -437,7 +437,7 @@ public class ContextAssembler {
             }
             return sb.toString().trim();
         } catch (Exception e) {
-            log.warn("Failed to load user profile: error={}", e.getMessage());
+            log.warn("加载用户画像失败: error={}", e.getMessage());
             return "";
         }
     }
@@ -451,7 +451,7 @@ public class ContextAssembler {
             try {
                 effectivenessTracker.recordInjection(state.traceId(), ids);
             } catch (Exception e) {
-                log.warn("Failed to record injected experiences: error={}", e.getMessage());
+                log.warn("记录经验注入失败: error={}", e.getMessage());
             }
         }
         return ids;
@@ -516,7 +516,7 @@ public class ContextAssembler {
         if (userProfile == null || userProfile.isBlank()) {
             return "";
         }
-        return "\nUser profile:\n" + userProfile;
+        return "\n用户画像:\n" + userProfile;
     }
 
     private String formatPassiveNotificationsSection() {
@@ -524,7 +524,7 @@ public class ContextAssembler {
         if (notifications.isEmpty()) {
             return "";
         }
-        StringBuilder sb = new StringBuilder("\nPending notifications:\n");
+        StringBuilder sb = new StringBuilder("\n待处理通知:\n");
         for (String line : notifications) {
             sb.append("- ").append(line).append('\n');
         }
@@ -535,7 +535,7 @@ public class ContextAssembler {
         if (turns == null || turns.isEmpty()) {
             return "";
         }
-        StringBuilder sb = new StringBuilder("\nRecent conversation:\n");
+        StringBuilder sb = new StringBuilder("\n最近对话:\n");
         for (ConversationTurnView turn : turns.stream()
                 .sorted(Comparator.comparing(ConversationTurnView::createdAt))
                 .toList()) {
@@ -552,7 +552,7 @@ public class ContextAssembler {
         if (workspaceItems == null || workspaceItems.isEmpty()) {
             return "";
         }
-        StringBuilder sb = new StringBuilder("\nActive workspace:\n");
+        StringBuilder sb = new StringBuilder("\n活跃工作区:\n");
         for (WorkspaceItem item : workspaceItems) {
             sb.append("- [")
                     .append(item.kind().name())
@@ -577,7 +577,7 @@ public class ContextAssembler {
                             entry.contentJson()))
                     .toList();
         } catch (Exception e) {
-            log.warn("Failed to drain passive notifications: error={}", e.getMessage());
+            log.warn("读取被动通知失败: error={}", e.getMessage());
             return List.of();
         }
     }
@@ -609,7 +609,7 @@ public class ContextAssembler {
         try {
             return promptRegistry.render("agent/skill-catalog", Map.of("skillEntries", skillEntries));
         } catch (Exception e) {
-            log.warn("Failed to render skill catalog: error={}", e.getMessage());
+            log.warn("渲染技能目录失败: error={}", e.getMessage());
             return "";
         }
     }
@@ -619,7 +619,7 @@ public class ContextAssembler {
             String guide = promptRegistry.render("memory/agentic-tool-guide");
             return guide != null ? guide : "";
         } catch (Exception e) {
-            log.warn("Failed to render tool guide: error={}", e.getMessage());
+            log.warn("渲染记忆工具使用指引失败: error={}", e.getMessage());
             return "";
         }
     }
@@ -628,15 +628,15 @@ public class ContextAssembler {
         try {
             return buildReactSystemPrompt();
         } catch (Exception e) {
-            log.error("Failed to render system prompt, using fallback prompt: error={}", e.getMessage());
+            log.error("渲染系统提示词失败，使用降级提示词: error={}", e.getMessage());
             ZonedDateTime now = ZonedDateTime.now();
-            String timeContext = "Current time: " + now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
-                    + ", timezone: " + ZoneId.systemDefault().getId()
-                    + ", locale: " + Locale.getDefault().toLanguageTag();
+            String timeContext = "当前时间: " + now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+                    + ", 时区: " + ZoneId.systemDefault().getId()
+                    + ", 区域: " + Locale.getDefault().toLanguageTag();
             return """
-                    You are ZhiWei, a reliable and careful AI assistant.
+                    你是知微，一个可靠、谨慎的 AI 助手。
                     %s
-                    Please help the user based on the current request.
+                    请基于当前请求帮助用户。
                     """.formatted(timeContext);
         }
     }
@@ -645,10 +645,10 @@ public class ContextAssembler {
                                     AssembledContext context,
                                     Instant startTime) {
         long durationMs = Duration.between(startTime, Instant.now()).toMillis();
-        log.info("Context assembled: sessionId={}, totalTokensConsumed={}, assemblyDurationMs={}",
+        log.info("上下文组装完成: sessionId={}, totalTokensConsumed={}, assemblyDurationMs={}",
                 state.sessionId(), context.totalTokens(), durationMs);
         if (context.degraded()) {
-            log.warn("Context assembly degraded: sessionId={}", state.sessionId());
+            log.warn("上下文组装已降级: sessionId={}", state.sessionId());
         }
     }
 
@@ -659,7 +659,7 @@ public class ContextAssembler {
         try {
             return dataRedactor.redact(text);
         } catch (Exception e) {
-            log.warn("Data redaction failed, using raw text: error={}", e.getMessage());
+            log.warn("数据脱敏失败，改为使用原文: error={}", e.getMessage());
             return text;
         }
     }
