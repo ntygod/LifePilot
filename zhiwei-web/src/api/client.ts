@@ -439,6 +439,19 @@ export const settingsApi = {
     })
   },
 
+  /** 获取联网搜索配置 */
+  getSearchSettings(): Promise<SearchSettings> {
+    return request('/settings/search')
+  },
+
+  /** 更新联网搜索配置 */
+  updateSearchSettings(settings: SearchSettingsRequest): Promise<SearchSettings> {
+    return request('/settings/search', {
+      method: 'PUT',
+      body: JSON.stringify(settings)
+    })
+  },
+
   /** 获取渠道配置（敏感字段已 mask） */
   getChannelConfig(): Promise<ChannelConfig> {
     return request('/settings/channels')
@@ -503,6 +516,30 @@ export interface KnowledgeSettings {
     embeddingDimension: number
     batchSize: number
   }
+}
+
+/** 联网搜索配置响应 */
+export interface SearchSettings {
+  provider: string
+  apiKey: string
+  maxResults: number
+  searchDepth: string
+  topic: string
+  includeAnswer: boolean
+  connectTimeoutSeconds: number
+  readTimeoutSeconds: number
+}
+
+/** 联网搜索配置请求 */
+export interface SearchSettingsRequest {
+  provider?: string
+  apiKey?: string
+  maxResults?: number
+  searchDepth?: string
+  topic?: string
+  includeAnswer?: boolean
+  connectTimeoutSeconds?: number
+  readTimeoutSeconds?: number
 }
 
 /** 单个渠道配置 */

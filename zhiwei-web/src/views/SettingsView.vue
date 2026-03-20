@@ -44,7 +44,7 @@ const navigationItems = [
   {
     path: '/settings/knowledge',
     label: '知识与检索',
-    description: '分块策略、检索参数和向量索引全局配置。',
+    description: '分块策略、检索参数、向量索引和 Tavily 联网搜索配置。',
     icon: Database,
   },
   {
