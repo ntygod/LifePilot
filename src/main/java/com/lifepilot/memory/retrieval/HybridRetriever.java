@@ -7,7 +7,6 @@ import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.procedural.IntentMatcher;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
-import com.lifepilot.memory.working.ReasoningSlot;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -58,8 +57,6 @@ public class HybridRetriever {
     private final RerankerConfigProvider rerankerConfigProvider;
 
     /** 最近一次 retrieve() 中 L4 程序记忆匹配结果（线程安全，每次 retrieve 重置）。 */
-    private volatile ReasoningSlot lastProcedureSlot;
-
     /** 空数据短路标记 — 三路检索全部返回空时设为 true，记忆写入后重置。volatile 保证可见性。 */
     private volatile boolean knownEmpty = false;
 
@@ -103,7 +100,6 @@ public class HybridRetriever {
      */
     public List<RetrievalResult> retrieve(String query, int topK, RetrievalWeights weights) {
         // 重置 L4 匹配结果
-        this.lastProcedureSlot = null;
 
         // 空数据短路：已知三路检索全部为空时直接返回
         if (knownEmpty) {
@@ -133,7 +129,6 @@ public class HybridRetriever {
                         var context = "操作模板建议: %s (匹配度=%.2f, 成功率=%.2f, 步骤数=%d)"
                                 .formatted(template.name(), match.score(),
                                         template.successRate(), template.steps().size());
-                        this.lastProcedureSlot = ReasoningSlot.retrievalContext(context, context.length() / 4);
                         log.debug("混合检索: L4 意图匹配命中, template={}, score={}",
                                 template.name(), match.score());
                     });
@@ -324,10 +319,6 @@ public class HybridRetriever {
      *
      * @return L4 程序记忆匹配的 ReasoningSlot
      */
-    public Optional<ReasoningSlot> getLastProcedureSlot() {
-        return Optional.ofNullable(lastProcedureSlot);
-    }
-
     /**
      * 重置空数据标记，供记忆写入后调用。
      */
