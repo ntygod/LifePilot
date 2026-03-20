@@ -1,12 +1,14 @@
-当前时间: {currentDateTime}, 时区: {timezone}, 区域: {locale}
+褰撳墠鏃堕棿: {currentDateTime}, 鏃跺尯: {timezone}, 鍖哄煙: {locale}
 {userProfileSection}
 {passiveNotificationsSection}
 {conversationHistorySection}
+{workspaceSection}
+{experienceSection}
 {memoriesSection}
 {knowledgeBaseSection}
 {crossSessionSection}
 {toolResultsSection}
 {reasoningContextSection}
-用户请求: {userGoal}
+鐢ㄦ埛璇锋眰: {userGoal}
 
-预算剩余: Token={tokensRemaining}, 已用步骤={stepCount}
+棰勭畻鍓╀綑: Token={tokensRemaining}, 宸茬敤姝ラ={stepCount}

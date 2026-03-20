@@ -61,7 +61,7 @@ class ContextAssembler经验注入属性测试 {
 
         var assembler = new ContextAssembler(
                 config, promptRegistry,
-                null, null, null,
+                null, null, null, null,
                 semanticMemory, null,
                 memoryProperties, null,
                 effectivenessTracker, null);

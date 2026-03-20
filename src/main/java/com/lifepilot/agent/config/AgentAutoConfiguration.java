@@ -1,40 +1,39 @@
 package com.lifepilot.agent.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lifepilot.agent.ReactAgentLoop;
 import com.lifepilot.agent.AgentToolProvider;
+import com.lifepilot.agent.ReactAgentLoop;
 import com.lifepilot.agent.context.ContextAssembler;
 import com.lifepilot.agent.media.MediaDataExtractor;
+import com.lifepilot.agent.session.SessionManager;
 import com.lifepilot.agent.suspend.store.SuspendStore;
 import com.lifepilot.config.threadpool.SharedScheduler;
-import com.lifepilot.notification.PassiveNotificationQueue;
-import com.lifepilot.agent.session.SessionManager;
 import com.lifepilot.conversation.ConversationHistoryStore;
 import com.lifepilot.conversation.ConversationViewService;
 import com.lifepilot.conversation.DefaultConversationViewService;
 import com.lifepilot.interaction.web.config.A2uiProperties;
+import com.lifepilot.interaction.web.repository.ChatMessageRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
 import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.llm.config.LlmAutoConfiguration;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.media.MediaProcessor;
 import com.lifepilot.media.MediaValidator;
-import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.memory.retrieval.InjectionRecordRepository;
 import com.lifepilot.memory.semantic.RealtimeExtractor;
 import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.working.TokenBudgetAllocator;
-import com.lifepilot.memory.working.WorkingMemory;
+import com.lifepilot.memory.workspace.SessionWorkspaceService;
+import com.lifepilot.memory.workspace.WorkspaceProperties;
+import com.lifepilot.notification.PassiveNotificationQueue;
 import com.lifepilot.observability.redactor.DataRedactor;
 import com.lifepilot.observability.trace.TraceRecorder;
 import com.lifepilot.prompt.PromptRegistry;
-import com.lifepilot.llm.config.LlmAutoConfiguration;
 import com.lifepilot.tool.config.ToolAutoConfiguration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -42,14 +41,10 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
- * Agent 引擎 Spring Boot 自动配置。
- *
- * <p>通过 {@code lifepilot.agent.enabled=true}（默认）激活，
- * 注册所有 Agent 核心 Bean，每个 Bean 使用
- * {@link ConditionalOnMissingBean} 允许用户覆盖。</p>
+ * Agent 自动配置。
  *
  * @author zsg
- * @since 2026-07-20
+ * @since 2026-03-20
  */
 @AutoConfiguration(after = {ToolAutoConfiguration.class, LlmAutoConfiguration.class})
 @EnableConfigurationProperties(AgentConfigProperties.class)
@@ -61,36 +56,46 @@ public class AgentAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean(ContextAssembler.class)
-    public ContextAssembler contextAssembler(AgentConfigProperties config,
-                                             PromptRegistry promptRegistry,
-                                             @Autowired(required = false) WorkingMemory workingMemory,
-                                             @Autowired(required = false) TokenBudgetAllocator tokenBudgetAllocator,
-                                             @Autowired(required = false) DataRedactor dataRedactor,
-                                             @Autowired(required = false) SemanticMemory semanticMemory,
-                                             @Autowired(required = false) PassiveNotificationQueue passiveNotificationQueue,
-                                             @Autowired(required = false) com.lifepilot.memory.config.MemoryProperties memoryProperties,
-                                             @Autowired(required = false) com.lifepilot.memory.procedural.ProceduralMemory proceduralMemory,
-                                             @Autowired(required = false) com.lifepilot.memory.experience.EffectivenessTracker effectivenessTracker,
-                                             @Autowired(required = false) com.lifepilot.skill.registry.SkillRegistry skillRegistry) {
-        log.info("Agent 引擎: 注册 ContextAssembler（WorkingMemory {}，L3 语义记忆{}，L4 程序记忆{}，Skill 清单{}）",
-                workingMemory != null && tokenBudgetAllocator != null ? "完整模式" : "基础模式",
-                semanticMemory != null ? "已启用" : "未启用",
-                proceduralMemory != null ? "已启用" : "未启用",
-                skillRegistry != null ? "已启用" : "未启用");
-        return new ContextAssembler(config, promptRegistry, workingMemory, tokenBudgetAllocator,
-                dataRedactor, semanticMemory, passiveNotificationQueue, memoryProperties,
-                proceduralMemory, effectivenessTracker, skillRegistry);
+    public ContextAssembler contextAssembler(
+            AgentConfigProperties config,
+            PromptRegistry promptRegistry,
+            @Autowired(required = false) ConversationViewService conversationViewService,
+            @Autowired(required = false) SessionWorkspaceService workspaceService,
+            @Autowired(required = false) WorkspaceProperties workspaceProperties,
+            @Autowired(required = false) DataRedactor dataRedactor,
+            @Autowired(required = false) SemanticMemory semanticMemory,
+            @Autowired(required = false) PassiveNotificationQueue passiveNotificationQueue,
+            @Autowired(required = false) com.lifepilot.memory.config.MemoryProperties memoryProperties,
+            @Autowired(required = false) com.lifepilot.memory.procedural.ProceduralMemory proceduralMemory,
+            @Autowired(required = false) com.lifepilot.memory.experience.EffectivenessTracker effectivenessTracker,
+            @Autowired(required = false) com.lifepilot.skill.registry.SkillRegistry skillRegistry) {
+        log.info("Agent 引擎: 注册 ContextAssembler（history={}，workspace={}，L3={}，L4={}）",
+                conversationViewService != null ? "enabled" : "disabled",
+                workspaceService != null ? "enabled" : "disabled",
+                semanticMemory != null ? "enabled" : "disabled",
+                proceduralMemory != null ? "enabled" : "disabled");
+        return new ContextAssembler(
+                config,
+                promptRegistry,
+                conversationViewService,
+                workspaceService,
+                workspaceProperties,
+                dataRedactor,
+                semanticMemory,
+                passiveNotificationQueue,
+                memoryProperties,
+                proceduralMemory,
+                effectivenessTracker,
+                skillRegistry);
     }
 
     @Bean
     @ConditionalOnMissingBean
     public SessionManager sessionManager(JdbcTemplate jdbcTemplate,
-                                          ObjectMapper objectMapper,
-                                          AgentConfigProperties config,
-                                          @Autowired(required = false) com.lifepilot.memory.working.WorkingMemory workingMemory,
-                                          SharedScheduler sharedScheduler) {
-        var manager = new SessionManager(jdbcTemplate, objectMapper, config, workingMemory);
-        // 通过 SharedScheduler 注册定时清理任务，替代 @Scheduled
+                                         ObjectMapper objectMapper,
+                                         AgentConfigProperties config,
+                                         SharedScheduler sharedScheduler) {
+        var manager = new SessionManager(jdbcTemplate, objectMapper, config);
         long intervalMs = config.getSession().getCleanupIntervalMs();
         sharedScheduler.cleanup().scheduleAtFixedRate(
                 manager::cleanupExpiredSessions,
@@ -101,10 +106,9 @@ public class AgentAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean(EpisodicMemory.class)
     public ConversationViewService conversationViewService(SessionManager sessionManager,
-                                                           EpisodicMemory episodicMemory) {
-        return new DefaultConversationViewService(sessionManager, episodicMemory);
+                                                           ChatMessageRepository chatMessageRepository) {
+        return new DefaultConversationViewService(sessionManager, chatMessageRepository);
     }
 
     @Bean
@@ -113,17 +117,13 @@ public class AgentAutoConfiguration {
         return new MediaDataExtractor(objectMapper);
     }
 
-    /**
-     * AgentPersistenceHandler bean — 聚合所有持久化操作。
-     */
     @Bean
     @ConditionalOnMissingBean
     public com.lifepilot.agent.persistence.AgentPersistenceHandler agentPersistenceHandler(
             AgentConfigProperties config,
             SessionManager sessionManager,
-            @Autowired(required = false) WorkingMemory workingMemory,
+            @Autowired(required = false) SessionWorkspaceService workspaceService,
             @Autowired(required = false) ConversationHistoryStore conversationHistoryStore,
-            @Autowired(required = false) ConversationViewService conversationViewService,
             @Autowired(required = false) RealtimeExtractor realtimeExtractor,
             @Autowired(required = false) InjectionRecordRepository injectionRecordRepository,
             @Autowired(required = false) com.lifepilot.interaction.web.repository.AttachmentRepository attachmentRepository,
@@ -132,15 +132,19 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) com.lifepilot.memory.experience.ContrastiveLearner contrastiveLearner,
             @Autowired(required = false) com.lifepilot.memory.experience.SubtaskReflector subtaskReflector) {
         return new com.lifepilot.agent.persistence.AgentPersistenceHandler(
-                config, sessionManager, workingMemory, conversationHistoryStore,
-                conversationViewService, realtimeExtractor, injectionRecordRepository,
-                attachmentRepository, experienceSummarizer, effectivenessTracker,
-                contrastiveLearner, subtaskReflector);
+                config,
+                sessionManager,
+                workspaceService,
+                conversationHistoryStore,
+                realtimeExtractor,
+                injectionRecordRepository,
+                attachmentRepository,
+                experienceSummarizer,
+                effectivenessTracker,
+                contrastiveLearner,
+                subtaskReflector);
     }
 
-    /**
-     * StreamingEventHandler bean — SSE 事件推送与 A2UI 解析。
-     */
     @Bean
     @ConditionalOnMissingBean
     public com.lifepilot.agent.streaming.StreamingEventHandler streamingEventHandler(
@@ -152,44 +156,36 @@ public class AgentAutoConfiguration {
                 objectMapper, a2uiProperties, sessionKnowledgeBaseRepository, knowledgeBaseRepository);
     }
 
-    /**
-     * ReactAgentLoop bean — ReAct 架构核心循环。
-     *
-     * <p>精简后仅保留核心循环所需依赖，编排逻辑由 AgentOrchestrator 负责。</p>
-     */
     @Bean
     @ConditionalOnMissingBean
-    public ReactAgentLoop reactAgentLoop(ContextAssembler contextAssembler,
-                               AgentToolProvider agentToolProvider,
-                               AgentConfigProperties config,
-                               ObjectMapper objectMapper,
-                               @Autowired(required = false) TraceRecorder traceRecorder,
-                               @Autowired(required = false) A2uiProperties a2uiProperties,
-                               @Autowired(required = false) MultimodalRouter multimodalRouter,
-                               @Autowired(required = false) MediaDataExtractor mediaDataExtractor,
-                               @Autowired(required = false) org.springframework.context.ApplicationEventPublisher eventPublisher,
-                               @Autowired(required = false) com.lifepilot.memory.procedural.ProceduralMemory proceduralMemory,
-                               @Autowired(required = false) com.lifepilot.memory.procedural.IntentMatcher intentMatcher,
-                               SharedScheduler sharedScheduler) {
-        log.info("Agent 引擎: 注册 ReactAgentLoop（追踪{}，多模态{}，A2UI{}，L4反馈{}）",
-                traceRecorder != null ? "已启用" : "未启用",
-                multimodalRouter != null ? "已启用" : "未启用（纯文本模式）",
-                a2uiProperties != null && a2uiProperties.enabled() ? "已启用" : "未启用",
-                proceduralMemory != null && intentMatcher != null ? "已启用" : "未启用");
-        return new ReactAgentLoop(contextAssembler, agentToolProvider, config, objectMapper,
-                traceRecorder, a2uiProperties,
-                multimodalRouter, mediaDataExtractor,
-                eventPublisher, proceduralMemory, intentMatcher,
+    public ReactAgentLoop reactAgentLoop(
+            ContextAssembler contextAssembler,
+            AgentToolProvider agentToolProvider,
+            AgentConfigProperties config,
+            ObjectMapper objectMapper,
+            @Autowired(required = false) TraceRecorder traceRecorder,
+            @Autowired(required = false) A2uiProperties a2uiProperties,
+            @Autowired(required = false) MultimodalRouter multimodalRouter,
+            @Autowired(required = false) MediaDataExtractor mediaDataExtractor,
+            @Autowired(required = false) org.springframework.context.ApplicationEventPublisher eventPublisher,
+            @Autowired(required = false) com.lifepilot.memory.procedural.ProceduralMemory proceduralMemory,
+            @Autowired(required = false) com.lifepilot.memory.procedural.IntentMatcher intentMatcher,
+            SharedScheduler sharedScheduler) {
+        return new ReactAgentLoop(
+                contextAssembler,
+                agentToolProvider,
+                config,
+                objectMapper,
+                traceRecorder,
+                a2uiProperties,
+                multimodalRouter,
+                mediaDataExtractor,
+                eventPublisher,
+                proceduralMemory,
+                intentMatcher,
                 sharedScheduler);
     }
 
-    /**
-     * AgentOrchestrator bean — Agent 执行编排器。
-     *
-     * <p>拥有 run/runStreaming/resumeFromSuspend 入口，
-     * 负责请求预处理、状态初始化、持久化、挂起处理等编排步骤，
-     * 将核心 ReAct 循环委托给 ReactAgentLoop。</p>
-     */
     @Bean
     @ConditionalOnMissingBean
     public com.lifepilot.agent.orchestration.AgentOrchestrator agentOrchestrator(
@@ -207,12 +203,20 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) SuspendStore suspendStore,
             @Autowired(required = false) org.springframework.context.ApplicationEventPublisher eventPublisher,
             SharedScheduler sharedScheduler) {
-        log.info("Agent 引擎: 注册 AgentOrchestrator（挂起-恢复{}）",
-                suspendStore != null ? "已启用" : "未启用");
         return new com.lifepilot.agent.orchestration.AgentOrchestrator(
-                reactAgentLoop, persistenceHandler, streamingEventHandler,
-                config, objectMapper, sessionManager, llmRouter, traceRecorder,
-                multimodalRouter, mediaValidator, mediaProcessor,
-                suspendStore, eventPublisher, sharedScheduler);
+                reactAgentLoop,
+                persistenceHandler,
+                streamingEventHandler,
+                config,
+                objectMapper,
+                sessionManager,
+                llmRouter,
+                traceRecorder,
+                multimodalRouter,
+                mediaValidator,
+                mediaProcessor,
+                suspendStore,
+                eventPublisher,
+                sharedScheduler);
     }
 }

@@ -2,13 +2,19 @@ package com.lifepilot.agent.context;
 
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.model.ReactAgentState;
-import com.lifepilot.notification.PassiveNotificationQueue;
+import com.lifepilot.conversation.ConversationTurnView;
+import com.lifepilot.conversation.ConversationViewService;
+import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.experience.EffectivenessTracker;
+import com.lifepilot.memory.procedural.PreferenceRule;
+import com.lifepilot.memory.procedural.ProceduralMemory;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
-import com.lifepilot.memory.working.*;
-import com.lifepilot.memory.procedural.PreferenceRule;
-import com.lifepilot.memory.procedural.ProceduralMemory;
+import com.lifepilot.memory.workspace.SessionWorkspaceService;
+import com.lifepilot.memory.workspace.WorkspaceItem;
+import com.lifepilot.memory.workspace.WorkspaceProperties;
+import com.lifepilot.notification.PassiveNotificationQueue;
 import com.lifepilot.observability.redactor.DataRedactor;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.skill.registry.SkillRegistry;
@@ -26,69 +32,49 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * 上下文组装器 — Agentic 模式，检索由 Tool 接管，仅保留 L1 会话 + 用户画像 + 通知 + 系统提示词。
- *
- * <p>组装流程：
- * <ol>
- *   <li>从 WorkingMemory 获取 L1 会话历史</li>
- *   <li>查询用户画像（PREFERENCE/HABIT/GOAL）</li>
- *   <li>drain 被动通知队列</li>
- *   <li>通过 TokenBudgetAllocator 动态分配预算</li>
- *   <li>构建 System Prompt + Tool 使用指引</li>
- *   <li>构建结构化 User Prompt</li>
- * </ol></p>
- *
- * <p>降级策略：任何记忆组件异常时优雅降级为空结果，保证 assemble() 不抛出异常。</p>
- *
- * @author zsg
- * @since 2026-07-20
+ * Assembles prompt context from conversation history, workspace items and long-term memory.
  */
 public class ContextAssembler {
 
     private static final Logger log = LoggerFactory.getLogger(ContextAssembler.class);
 
+    private static final int DEFAULT_RECENT_TURN_LIMIT = 6;
+    private static final int DEFAULT_WORKSPACE_PROMPT_LIMIT = 3;
+
     private final AgentConfigProperties config;
-    @Nullable private final WorkingMemory workingMemory;
-    @Nullable private final TokenBudgetAllocator tokenBudgetAllocator;
-    @Nullable private final DataRedactor dataRedactor;
     private final PromptRegistry promptRegistry;
-    // L3 语义记忆：用户画像查询，可选注入
+    @Nullable private final ConversationViewService conversationViewService;
+    @Nullable private final SessionWorkspaceService workspaceService;
+    @Nullable private final WorkspaceProperties workspaceProperties;
+    @Nullable private final DataRedactor dataRedactor;
     @Nullable private final SemanticMemory semanticMemory;
-    // 被动通知队列：首次对话时 drain 并注入上下文，可选注入
     @Nullable private final PassiveNotificationQueue passiveNotificationQueue;
-    // 记忆配置：用户画像查询等参数，可选注入
-    @Nullable private final com.lifepilot.memory.config.MemoryProperties memoryProperties;
-    // L4 程序记忆：偏好规则查询，可选注入
+    @Nullable private final MemoryProperties memoryProperties;
     @Nullable private final ProceduralMemory proceduralMemory;
-    // 效果追踪器：记录经验注入事件，可选注入
-    @Nullable private final com.lifepilot.memory.experience.EffectivenessTracker effectivenessTracker;
-    // Skill 注册中心：L1 元数据清单注入，可选注入
+    @Nullable private final EffectivenessTracker effectivenessTracker;
     @Nullable private final SkillRegistry skillRegistry;
 
-    /**
-     * 统一构造器 — 可选依赖标注 @Nullable。
-     *
-     * <p>当 workingMemory 和 tokenBudgetAllocator 均非 null 时为完整版模式，
-     * 否则为基础版模式（记忆相关功能降级跳过）。</p>
-     */
     public ContextAssembler(AgentConfigProperties config,
                             PromptRegistry promptRegistry,
-                            @Nullable WorkingMemory workingMemory,
-                            @Nullable TokenBudgetAllocator tokenBudgetAllocator,
+                            @Nullable ConversationViewService conversationViewService,
+                            @Nullable SessionWorkspaceService workspaceService,
+                            @Nullable WorkspaceProperties workspaceProperties,
                             @Nullable DataRedactor dataRedactor,
                             @Nullable SemanticMemory semanticMemory,
                             @Nullable PassiveNotificationQueue passiveNotificationQueue,
-                            @Nullable com.lifepilot.memory.config.MemoryProperties memoryProperties,
+                            @Nullable MemoryProperties memoryProperties,
                             @Nullable ProceduralMemory proceduralMemory,
-                            @Nullable com.lifepilot.memory.experience.EffectivenessTracker effectivenessTracker,
+                            @Nullable EffectivenessTracker effectivenessTracker,
                             @Nullable SkillRegistry skillRegistry) {
         this.config = config;
         this.promptRegistry = promptRegistry;
-        this.workingMemory = workingMemory;
-        this.tokenBudgetAllocator = tokenBudgetAllocator;
+        this.conversationViewService = conversationViewService;
+        this.workspaceService = workspaceService;
+        this.workspaceProperties = workspaceProperties;
         this.dataRedactor = dataRedactor;
         this.semanticMemory = semanticMemory;
         this.passiveNotificationQueue = passiveNotificationQueue;
@@ -98,459 +84,165 @@ public class ContextAssembler {
         this.skillRegistry = skillRegistry;
     }
 
-    /** 判断是否为完整版模式。 */
-    private boolean isFullMode() {
-        return workingMemory != null && tokenBudgetAllocator != null;
-    }
-
-    /**
-     * 根据当前状态组装上下文 — 主入口。
-     *
-     * @param state 当前 Agent 状态
-     * @return AssembledContext
-     */
     public AssembledContext assemble(ReactAgentState state) {
-        if (!isFullMode()) {
-            return assembleBasic(state);
-        }
-
-        var startTime = Instant.now();
-        boolean degraded = false;
-
+        Instant startTime = Instant.now();
         try {
-            // 媒体占位符检测：音频/视频消息的 goal 是占位字符，跳过无效处理
-            if (isMediaPlaceholderQuery(state.goal())) {
-                log.debug("检测到媒体占位符查询，跳过向量检索: sessionId={}, goal={}",
-                        state.sessionId(), state.goal());
-                return assembleForMediaPlaceholder(state);
-            }
+            boolean mediaPlaceholder = isMediaPlaceholderQuery(state.goal());
+            List<ConversationTurnView> recentTurns = safeGetRecentTurns(state.sessionId());
+            List<WorkspaceItem> workspaceItems = safeGetWorkspaceItems(state.sessionId());
+            String userProfile = mediaPlaceholder ? "" : safeGetUserProfile(state.goal());
+            List<TemporalEntity> experiences = mediaPlaceholder ? List.of() : safeRetrieveExperiences(state.goal());
+            List<String> injectedIds = recordExperienceInjection(state, experiences);
+            String experienceSection = formatExperienceSection(experiences);
 
-            // 1. 获取 L1 会话历史
-            var slots = safeGetSessionHistory(workingMemory, state.sessionId(), state.goal());
-
-            // 2. 查询用户画像
-            String userProfile = safeGetUserProfile(semanticMemory, state.goal());
-
-            // 3. 动态预算分配
-            int conversationTurns = countConversationTurns(slots);
-            int sessionMaxTokens = state.budget() != null ? state.budget().maxTokens() : 0;
-            var budgetAllocation = safeAllocate(tokenBudgetAllocator, conversationTurns, 0.0f, false, sessionMaxTokens);
-
-            // 4. 按预算截断会话历史
-            var truncatedSlots = truncateSlotsByBudget(slots, budgetAllocation.currentSessionBudget());
-            int workingMemoryTokens = truncatedSlots.stream()
-                    .mapToInt(WorkingMemorySlot::tokenCount).sum();
-
-            // 5. 构建 System Prompt + Tool 使用指引
-            String systemPrompt = buildReactSystemPrompt();
+            String systemPrompt = safeReactSystemPrompt();
             String toolGuide = safeRenderToolGuide();
             if (!toolGuide.isBlank()) {
                 systemPrompt = systemPrompt + "\n" + toolGuide;
             }
 
-            // 6. 构建 TokenBudget
-            var tokenBudget = buildTokenBudgetDefault(budgetAllocation, truncatedSlots, systemPrompt);
+            String userPrompt = buildEnhancedUserPrompt(
+                    state,
+                    recentTurns,
+                    workspaceItems,
+                    userProfile,
+                    experienceSection
+            );
 
-            // 7. 构建 User Prompt（memories/kbSnippets/crossSession 传空列表）
-            // 7a. 检索经验
-            var experiences = safeRetrieveExperiences(state.goal());
-            String experienceSection = formatExperienceSection(experiences);
+            TokenBudget tokenBudget = buildTokenBudget(
+                    systemPrompt,
+                    recentTurns,
+                    workspaceItems,
+                    userProfile,
+                    experienceSection
+            );
 
-            // 7b. 记录经验注入（新增）
-            List<String> injectedIds = List.of();
-            if (effectivenessTracker != null && !experiences.isEmpty()) {
-                try {
-                    injectedIds = experiences.stream()
-                            .map(com.lifepilot.memory.semantic.TemporalEntity::id).toList();
-                    // traceId 从 state 获取
-                    effectivenessTracker.recordInjection(state.traceId(), injectedIds);
-                } catch (Exception e) {
-                    log.warn("经验注入追踪失败: error={}", e.getMessage());
-                }
-            } else if (!experiences.isEmpty()) {
-                injectedIds = experiences.stream()
-                        .map(com.lifepilot.memory.semantic.TemporalEntity::id).toList();
-            }
-
-            String userPrompt = buildEnhancedUserPrompt(state, List.of(), List.of(),
-                    List.of(), truncatedSlots, userProfile, experienceSection);
-
-            var context = new AssembledContext(
-                    systemPrompt, userPrompt, List.of(),
-                    tokenBudget, 0, 0.0f,
-                    workingMemoryTokens, degraded,
-                    injectedIds, null);
+            int workspaceTokens = estimateTokens(formatWorkspaceSection(workspaceItems));
+            AssembledContext context = new AssembledContext(
+                    systemPrompt,
+                    userPrompt,
+                    List.of(),
+                    tokenBudget,
+                    0,
+                    0.0f,
+                    workspaceTokens,
+                    false,
+                    injectedIds,
+                    null
+            );
 
             logAssemblyMetrics(state, context, startTime);
             return context;
-
         } catch (Exception e) {
-            log.warn("上下文组装异常，降级为基础版: sessionId={}, error={}",
+            log.warn("Context assembly failed, falling back to minimal prompt. sessionId={}, error={}",
                     state.sessionId(), e.getMessage());
             return buildFallbackContext(state);
         }
     }
 
-    // --- 基础版逻辑 ---
-
-    /** 基础版组装（无记忆检索）。 */
-    private AssembledContext assembleBasic(ReactAgentState state) {
-        int totalTokens = config.getContext().getMaxContextTokens();
-        var tokenBudget = TokenBudget.allocateDefault(totalTokens);
-        String systemPrompt = safeReactSystemPrompt();
-        String userPrompt = buildUserPrompt(state);
-        return new AssembledContext(systemPrompt, userPrompt, List.of(), tokenBudget,
-                0, 0.0f, 0, false, List.of(), null);
-    }
-
-    /** 异常兜底降级上下文。 */
     private AssembledContext buildFallbackContext(ReactAgentState state) {
-        int totalTokens = config.getContext().getMaxContextTokens();
-        var tokenBudget = TokenBudget.allocateDefault(totalTokens);
         String systemPrompt = safeReactSystemPrompt();
         String userPrompt = buildUserPrompt(state);
-        return new AssembledContext(systemPrompt, userPrompt, List.of(), tokenBudget,
-                0, 0.0f, 0, true, List.of(), null);
+        TokenBudget budget = buildTokenBudget(systemPrompt, List.of(), List.of(), "", "");
+        return new AssembledContext(
+                systemPrompt,
+                userPrompt,
+                List.of(),
+                budget,
+                0,
+                0.0f,
+                0,
+                true,
+                List.of(),
+                null
+        );
     }
 
-    /**
-     * 检测 goal 是否为媒体占位符查询。
-     *
-     * <p>当用户发送语音/视频消息且启用原生音频路由时，前端发送的 content 是占位字符
-     * （如 {@code [语音消息]}、{@code [视频消息]}），或者用户仅上传附件未输入文字时 goal 为空。
-     * 这些占位符对向量检索毫无意义，应跳过整个检索管线。</p>
-     *
-     * @param goal 用户输入（可能为 null）
-     * @return 如果是媒体占位符则返回 true
-     */
     boolean isMediaPlaceholderQuery(@Nullable String goal) {
         if (goal == null || goal.isBlank()) {
             return true;
         }
         String trimmed = goal.trim();
-        // 匹配方括号包裹的短占位符，如 [语音消息]、[视频消息]、[图片]
-        if (trimmed.startsWith("[") && trimmed.endsWith("]") && trimmed.length() <= 20) {
-            return true;
-        }
-        return false;
+        return trimmed.startsWith("[") && trimmed.endsWith("]") && trimmed.length() <= 20;
     }
 
-    /**
-     * 媒体占位符专用组装 — 仅获取会话历史 + 系统提示 + 用户提示，跳过所有向量检索。
-     */
-    private AssembledContext assembleForMediaPlaceholder(ReactAgentState state) {
-        var slots = safeGetSessionHistory(workingMemory, state.sessionId(), state.goal());
-
-        int conversationTurns = countConversationTurns(slots);
-        int sessionMaxTokens = state.budget() != null ? state.budget().maxTokens() : 0;
-        var budgetAllocation = safeAllocate(tokenBudgetAllocator, conversationTurns,
-                0.0f, false, sessionMaxTokens);
-
-        var truncatedSlots = truncateSlotsByBudget(slots, budgetAllocation.currentSessionBudget());
-        int workingMemoryTokens = truncatedSlots.stream()
-                .mapToInt(WorkingMemorySlot::tokenCount).sum();
-
-        String systemPrompt = buildReactSystemPrompt();
-        String toolGuide = safeRenderToolGuide();
-        if (!toolGuide.isBlank()) {
-            systemPrompt = systemPrompt + "\n" + toolGuide;
-        }
-        var tokenBudget = buildTokenBudgetDefault(budgetAllocation, truncatedSlots, systemPrompt);
-
-        String userPrompt = buildEnhancedUserPrompt(state, List.of(), List.of(),
-                List.of(), truncatedSlots, null, null);
-
-        return new AssembledContext(
-                systemPrompt, userPrompt, List.of(), tokenBudget,
-                0, 0.0f, workingMemoryTokens, false, List.of(), null);
-    }
-
-    // --- 降级容错方法 ---
-
-    /**
-     * 从 L1 读取当前会话对话历史，排除当前轮用户消息（避免与 state.goal() 重复）。
-     *
-     * <p>因为 AgentLoop 在 assembleContext() 之前已将用户消息写入 L1，
-     * 而 state.goal() 会作为用户请求区域单独注入到提示词中，
-     * 所以需要排除 L1 中最后一条与 currentGoal 内容相同的 USER 消息。</p>
-     */
-    private List<WorkingMemorySlot> safeGetSessionHistory(
-            @Nullable WorkingMemory memory, String sessionId, String currentGoal) {
-        if (memory == null) return List.of();
-        try {
-            var allSlots = memory.getContext(sessionId);
-            if (allSlots == null || allSlots.isEmpty()) return List.of();
-            return filterOutCurrentUserMessage(allSlots, currentGoal);
-        } catch (Exception e) {
-            log.warn("L1 对话历史读取失败: sessionId={}, error={}", sessionId, e.getMessage());
+    List<TemporalEntity> safeRetrieveExperiences(@Nullable String query) {
+        if (semanticMemory == null || memoryProperties == null) {
             return List.of();
         }
-    }
-
-    /**
-     * 从槽位列表中排除最后一条与 currentGoal 内容相同的 USER 类型消息。
-     *
-     * <p>仅匹配 {@link ConversationSlot} 类型且 role 为 "user" 的槽位，
-     * 从后往前查找第一条匹配项并移除。</p>
-     */
-    List<WorkingMemorySlot> filterOutCurrentUserMessage(
-            List<WorkingMemorySlot> slots, String currentGoal) {
-        if (currentGoal == null || currentGoal.isBlank() || slots.isEmpty()) {
-            return slots;
-        }
-        var result = new ArrayList<>(slots);
-        for (int i = result.size() - 1; i >= 0; i--) {
-            if (result.get(i) instanceof ConversationSlot cs
-                    && "user".equalsIgnoreCase(cs.role())
-                    && currentGoal.equals(cs.content())) {
-                result.remove(i);
-                break;
-            }
-        }
-        return List.copyOf(result);
-    }
-
-    /**
-     * 安全 drain 被动通知队列，异常时返回空列表。
-     */
-    private List<String> safeDrainPassiveNotifications() {
-        if (passiveNotificationQueue == null) return List.of();
         try {
-            var notifications = passiveNotificationQueue.drainAll();
-            if (notifications.isEmpty()) return List.of();
-            return notifications.stream()
-                    .map(n -> "[%s] %s (%s)".formatted(n.typeId(), n.contentJson(), n.enqueuedAt()))
-                    .toList();
-        } catch (Exception e) {
-            log.warn("被动通知队列 drain 失败，降级跳过: error={}", e.getMessage());
-            return List.of();
-        }
-    }
-
-    /**
-     * 安全查询用户画像实体，异常时返回空字符串。
-     *
-     * <p>从 L3 语义记忆中查询 PREFERENCE/HABIT/GOAL 三种类型的当前实体，
-     * 对候选实体做关键词匹配过滤，无匹配时按 importanceScore 降序兜底，
-     * 总数上限 maxUserProfileEntities。</p>
-     *
-     * @param semanticMemory 语义记忆（可空）
-     * @param refinedQuery   查询文本，用于关键词匹配
-     * @return 格式化的用户画像文本，无数据时返回空字符串
-     */
-    private String safeGetUserProfile(@Nullable SemanticMemory semanticMemory, String refinedQuery) {
-        if (semanticMemory == null) return "";
-        try {
-            var candidates = new ArrayList<TemporalEntity>();
-            for (var type : List.of(EntityType.PREFERENCE, EntityType.HABIT, EntityType.GOAL)) {
-                candidates.addAll(semanticMemory.findCurrentByType(type));
+            MemoryProperties.Experience experience = memoryProperties.getExperience();
+            if (!experience.isEnabled()) {
+                return List.of();
             }
-            if (candidates.isEmpty()) return "";
 
-            int maxEntities = memoryProperties != null
-                    ? memoryProperties.getRetrieval().getMaxUserProfileEntities() : 10;
-            int fallbackCount = memoryProperties != null
-                    ? memoryProperties.getRetrieval().getFallbackUserProfileCount() : 3;
+            List<TemporalEntity> experiences = semanticMemory.findCurrentByType(EntityType.EXPERIENCE);
+            if (experiences.isEmpty()) {
+                return List.of();
+            }
 
-            List<TemporalEntity> matched = List.of();
-            if (refinedQuery != null && !refinedQuery.isBlank()) {
-                var keywords = List.of(refinedQuery.split("\\s+"));
-                matched = candidates.stream()
-                        .filter(e -> {
-                            String text = e.textRepresentation().toLowerCase();
-                            return keywords.stream().anyMatch(kw -> text.contains(kw.toLowerCase()));
+            if (!experience.getIsolation().isCrossContextRetrieval()) {
+                experiences = experiences.stream()
+                        .filter(entity -> {
+                            Object executionContext = entity.properties().get("executionContext");
+                            return executionContext == null || "MAIN_AGENT".equals(executionContext.toString());
                         })
                         .toList();
             }
 
-            List<TemporalEntity> selected;
-            if (!matched.isEmpty()) {
-                selected = matched.stream()
-                        .sorted(Comparator.comparingDouble(TemporalEntity::importanceScore).reversed())
-                        .limit(maxEntities)
-                        .toList();
-            } else {
-                selected = candidates.stream()
-                        .sorted(Comparator.comparingDouble(TemporalEntity::importanceScore).reversed())
-                        .limit(fallbackCount)
-                        .toList();
-            }
-
-            if (selected.isEmpty()) return "";
-
-            // L4 高置信度偏好规则查询 + 去重
-            List<PreferenceRule> l4Rules = List.of();
-            if (proceduralMemory != null) {
-                try {
-                    l4Rules = proceduralMemory.getPreferences("user-preference").stream()
-                            .filter(PreferenceRule::isHighConfidence)
-                            .toList();
-                } catch (Exception ex) {
-                    log.warn("L4 偏好规则查询失败，降级仅使用 L3 实体: error={}", ex.getMessage());
-                }
-            }
-
-            // L4 优先去重 — 移除与 L4 规则同名的 L3 PREFERENCE 实体
-            if (!l4Rules.isEmpty()) {
-                var l4Keys = l4Rules.stream()
-                        .map(PreferenceRule::key)
-                        .collect(Collectors.toSet());
-                selected = selected.stream()
-                        .filter(e -> !(e.type() == EntityType.PREFERENCE && l4Keys.contains(e.name())))
-                        .toList();
-            }
-
-            // 格式化 L3 实体
-            var profileText = formatUserProfile(selected);
-
-            // 追加 L4 偏好规则
-            if (!l4Rules.isEmpty()) {
-                var sb = new StringBuilder(profileText);
-                for (var rule : l4Rules) {
-                    sb.append("- [偏好规则] ").append(rule.key()).append(": ").append(rule.value())
-                            .append("（置信度: ").append(String.format("%.2f", rule.confidence())).append("）\n");
-                }
-                return sb.toString();
-            }
-
-            return profileText;
+            String evalPrefix = experience.getEvalTagPrefix();
+            return experiences.stream()
+                    .sorted((left, right) -> {
+                        int leftBoost = hasMatchingEvalTag(left, query, evalPrefix) ? 1 : 0;
+                        int rightBoost = hasMatchingEvalTag(right, query, evalPrefix) ? 1 : 0;
+                        if (leftBoost != rightBoost) {
+                            return rightBoost - leftBoost;
+                        }
+                        return Float.compare(right.importanceScore(), left.importanceScore());
+                    })
+                    .limit(experience.getMaxInjectionCount())
+                    .toList();
         } catch (Exception e) {
-            log.warn("用户画像查询失败，降级跳过: error={}", e.getMessage());
-            return "";
+            log.debug("Experience retrieval skipped: error={}", e.getMessage());
+            return List.of();
         }
     }
 
-    /**
-     * 格式化用户画像实体为结构化文本。
-     */
-    String formatUserProfile(List<TemporalEntity> entities) {
-        if (entities.isEmpty()) return "";
-        var sb = new StringBuilder();
-        for (var entity : entities) {
-            sb.append("- [").append(entity.type().label()).append("] ").append(entity.name());
-            if (entity.description() != null && !entity.description().isBlank()) {
-                sb.append(": ").append(entity.description());
-            }
-            if (!entity.properties().isEmpty()) {
-                entity.properties().forEach((k, v) ->
-                        sb.append("\n  ").append(k).append(": ").append(v));
-            }
-            sb.append("\n");
+    String formatExperienceSection(List<TemporalEntity> experiences) {
+        if (experiences == null || experiences.isEmpty() || memoryProperties == null) {
+            return "";
         }
+
+        int tokenBudget = memoryProperties.getExperience().getInjectionTokenBudget();
+        StringBuilder sb = new StringBuilder("\nRelevant experience:\n");
+        int usedTokens = 0;
+
+        for (TemporalEntity experience : experiences) {
+            String entry = "- " + experience.name() + ": "
+                    + (experience.description() != null ? experience.description() : "") + "\n";
+            int entryTokens = estimateTokens(entry);
+            if (usedTokens + entryTokens > tokenBudget) {
+                break;
+            }
+            sb.append(entry);
+            usedTokens += entryTokens;
+        }
+
         return sb.toString();
     }
 
-    /**
-     * 安全执行预算分配，支持会话级 Token 窗口覆盖。
-     *
-     * @param sessionMaxTokens 会话配置的 maxTokens，≤ 0 时使用全局默认值
-     */
-    private BudgetAllocation safeAllocate(TokenBudgetAllocator allocator, int conversationTurns, float topScore, boolean hasMemoryData, int sessionMaxTokens) {
-        try {
-            int windowSize = sessionMaxTokens > 0 ? sessionMaxTokens : config.getContext().getMaxContextTokens();
-            return allocator.allocate(windowSize, conversationTurns, topScore, hasMemoryData);
-        } catch (Exception e) {
-            log.warn("预算分配降级: error={}", e.getMessage());
-            int total = sessionMaxTokens > 0 ? sessionMaxTokens : config.getContext().getMaxContextTokens();
-            return new BudgetAllocation(
-                    (int) (total * 0.02),   // userProfileBudget
-                    (int) (total * 0.30),   // currentSessionBudget
-                    (int) (total * 0.05),   // crossSessionBudget
-                    (int) (total * 0.15),   // knowledgeEntityBudget
-                    (int) (total * 0.02),   // proceduralBudget
-                    (int) (total * 0.03),   // knowledgeBaseBudget
-                    (int) (total * 0.10),   // systemPromptBudget
-                    (int) (total * 0.15),   // userMessageBudget
-                    total);
-        }
-    }
-
-    // --- 截断方法 ---
-
-    /** 按重要度降序截断会话槽位到 Token 预算内。 */
-    List<WorkingMemorySlot> truncateSlotsByBudget(List<WorkingMemorySlot> slots, int tokenBudget) {
-        if (slots.isEmpty()) return List.of();
-
-        var sorted = new ArrayList<>(slots);
-        sorted.sort(Comparator.comparingDouble(WorkingMemorySlot::importance).reversed());
-
-        var kept = new ArrayList<WorkingMemorySlot>();
-        int usedTokens = 0;
-        for (var slot : sorted) {
-            if (usedTokens + slot.tokenCount() > tokenBudget && !kept.isEmpty()) {
-                break;
-            }
-            kept.add(slot);
-            usedTokens += slot.tokenCount();
-        }
-        return List.copyOf(kept);
-    }
-
-    /** 统计 ConversationSlot 数量作为对话轮次。 */
-    int countConversationTurns(List<WorkingMemorySlot> slots) {
-        return (int) slots.stream()
-                .filter(s -> s instanceof ConversationSlot)
-                .count();
-    }
-
-    /** 估算文本 Token 数（区分中英文：中文 1 Token/字符，其他 4 字符/Token）。 */
-    int estimateTokens(String text) {
-        if (text == null || text.isEmpty()) return 0;
-        long cjkChars = text.chars()
-                .filter(c -> Character.UnicodeScript.of(c) == Character.UnicodeScript.HAN)
-                .count();
-        long otherChars = text.length() - cjkChars;
-        return Math.max(1, (int) (cjkChars + otherChars / 4));
-    }
-
-    // --- TokenBudget 构建 ---
-
-    /** 构建 TokenBudget（简化版：仅 systemPrompt + currentSession + userProfile + userMessage）。 */
-    private TokenBudget buildTokenBudgetDefault(BudgetAllocation allocation,
-                                                List<WorkingMemorySlot> slots,
-                                                String systemPrompt) {
-        int totalTokens = config.getContext().getMaxContextTokens();
-        var staticBudget = TokenBudget.allocateDefault(totalTokens);
-
-        int systemPromptUsed = estimateTokens(systemPrompt);
-        int historyUsed = slots.stream().mapToInt(WorkingMemorySlot::tokenCount).sum();
-
-        return new TokenBudget(
-                allocation.systemPromptBudget(),
-                allocation.currentSessionBudget(),
-                allocation.knowledgeEntityBudget(),
-                staticBudget.toolSchemaBudget(),
-                staticBudget.toolResultBudget(),
-                staticBudget.reservedBuffer(),
-                systemPromptUsed,
-                historyUsed,
-                0, // memoryUsed — 检索由 Tool 接管，不再预填充
-                0, 0
-        );
-    }
-
-    // --- Prompt 构建 ---
-
-    /**
-     * 构建 ReAct 架构专用 System Prompt。
-     *
-     * <p>使用 {@code agent/react-system} 模板，包含角色定义、ReAct 循环行为指令、
-     * 工具使用规范、上下文利用指南、回复风格和真实性约束。</p>
-     *
-     * @return System Prompt 文本
-     */
     String buildReactSystemPrompt() {
         String roleDefinition = promptRegistry.render("agent/role-definition");
         String contextGuide = promptRegistry.render("agent/context-guide");
-        var now = ZonedDateTime.now();
+        ZonedDateTime now = ZonedDateTime.now();
         String systemPrompt = promptRegistry.render("agent/react-system", Map.of(
                 "roleDefinition", roleDefinition,
                 "contextGuide", contextGuide,
                 "currentDateTime", now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
                 "timezone", ZoneId.systemDefault().getId(),
-                "locale", Locale.getDefault().toLanguageTag()));
+                "locale", Locale.getDefault().toLanguageTag()
+        ));
 
-        // 追加 L1 Skill 元数据清单
         String skillCatalog = buildSkillCatalog();
         if (!skillCatalog.isBlank()) {
             systemPrompt = systemPrompt + "\n" + skillCatalog;
@@ -558,56 +250,10 @@ public class ContextAssembler {
         return systemPrompt;
     }
 
-    /**
-     * 构建 L1 Skill 元数据清单 — 从 SkillRegistry 实时读取所有已注册 Skill。
-     *
-     * <p>SkillRegistry 为 null 或无已注册 Skill 时返回空字符串，不渲染清单区段。</p>
-     *
-     * @return Skill 清单文本，无 Skill 时返回空字符串
-     */
-    private String buildSkillCatalog() {
-        if (skillRegistry == null) return "";
-        var skills = skillRegistry.listAll();
-        if (skills.isEmpty()) return "";
-
-        var entries = skills.stream()
-                .map(s -> "- " + s.id() + ": " + s.name() + " — " + s.description())
-                .collect(Collectors.joining("\n"));
-
-        try {
-            return promptRegistry.render("agent/skill-catalog", Map.of("skillEntries", entries));
-        } catch (Exception e) {
-            log.warn("Skill 清单模板渲染失败，降级跳过: error={}", e.getMessage());
-            return "";
-        }
-    }
-
-    /**
-     * 安全渲染 memory/agentic-tool-guide 模板，异常时返回空字符串。
-     *
-     * @return Tool 使用指引文本
-     */
-    private String safeRenderToolGuide() {
-        try {
-            String guide = promptRegistry.render("memory/agentic-tool-guide");
-            return guide != null ? guide : "";
-        } catch (Exception e) {
-            log.warn("Tool 使用指引模板渲染失败，降级跳过: error={}", e.getMessage());
-            return "";
-        }
-    }
-
-    /**
-     * 增强系统提示词 — 追加流式约束和可选的 A2UI 提示词。
-     *
-     * @param baseSystemPrompt 基础系统提示词
-     * @param a2uiPrompt       A2UI 组件目录提示词（可空，未启用时传 null）
-     * @return 增强后的系统提示词
-     */
     public String enhanceSystemPromptForStreaming(String baseSystemPrompt,
                                                   @Nullable String a2uiPrompt) {
         String streamingConstraint = promptRegistry.render("agent/streaming-constraint");
-        var sb = new StringBuilder(baseSystemPrompt != null ? baseSystemPrompt : "");
+        StringBuilder sb = new StringBuilder(baseSystemPrompt != null ? baseSystemPrompt : "");
         if (streamingConstraint != null && !streamingConstraint.isBlank()) {
             sb.append("\n").append(streamingConstraint);
         }
@@ -617,37 +263,25 @@ public class ContextAssembler {
         return sb.toString();
     }
 
-    private String safeReactSystemPrompt() {
-        try {
-            return buildReactSystemPrompt();
-        } catch (Exception e) {
-            log.error("系统提示词渲染失败，使用紧急兜底提示词: error={}", e.getMessage());
-            var now = ZonedDateTime.now();
-            String timeContext = "当前时间：" + now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
-                    + "，时区：" + ZoneId.systemDefault().getId()
-                    + "，区域：" + Locale.getDefault().toLanguageTag();
-            return """
-                    你是知微（ZhiWei），一个可靠、友好、谨慎的 AI 助手。
-                    %s
-                    请根据用户请求提供帮助。
-                    """.formatted(timeContext);
-        }
+    String buildUserPrompt(ReactAgentState state) {
+        ZonedDateTime now = ZonedDateTime.now();
+        return promptRegistry.render("agent/react-user-prompt-basic", Map.of(
+                "currentDateTime", now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
+                "timezone", ZoneId.systemDefault().getId(),
+                "locale", Locale.getDefault().toLanguageTag(),
+                "userGoal", state.goal() != null ? state.goal() : "",
+                "tokensRemaining", String.valueOf(state.budget().tokensRemaining()),
+                "stepCount", String.valueOf(state.stepCount())
+        ));
     }
 
-    /**
-     * 构建增强版 User Prompt（结构化内容区域）。
-     *
-     * <p>使用 {@code agent/react-user-prompt} 模板渲染，各区域数据预格式化后作为模板变量传入。</p>
-     */
     String buildEnhancedUserPrompt(ReactAgentState state,
-                                   List<String> memories,
-                                   List<String> knowledgeBaseSnippets,
-                                   List<String> crossSessionFragments,
-                                   List<WorkingMemorySlot> slots,
+                                   List<ConversationTurnView> recentTurns,
+                                   List<WorkspaceItem> workspaceItems,
                                    @Nullable String userProfile,
                                    @Nullable String experienceSection) {
-        var now = ZonedDateTime.now();
-        var vars = new java.util.HashMap<String, Object>();
+        ZonedDateTime now = ZonedDateTime.now();
+        Map<String, Object> vars = new java.util.HashMap<>();
         vars.put("currentDateTime", now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
         vars.put("timezone", ZoneId.systemDefault().getId());
         vars.put("locale", Locale.getDefault().toLanguageTag());
@@ -657,238 +291,376 @@ public class ContextAssembler {
 
         vars.put("userProfileSection", safeRedact(formatUserProfileSection(userProfile)));
         vars.put("passiveNotificationsSection", formatPassiveNotificationsSection());
-        vars.put("conversationHistorySection", safeRedact(formatConversationHistorySection(slots)));
-        vars.put("memoriesSection", formatListSection("相关记忆", memories));
-        vars.put("knowledgeBaseSection", formatListSection("知识库片段", knowledgeBaseSnippets));
-        vars.put("crossSessionSection", formatListSection("跨会话参考", crossSessionFragments));
-        vars.put("toolResultsSection", formatToolResultsSection(slots));
-        vars.put("reasoningContextSection", formatReasoningContextSection(slots));
+        vars.put("conversationHistorySection", safeRedact(formatConversationHistorySection(recentTurns)));
+        vars.put("workspaceSection", safeRedact(formatWorkspaceSection(workspaceItems)));
+        vars.put("memoriesSection", "");
+        vars.put("knowledgeBaseSection", "");
+        vars.put("crossSessionSection", "");
+        vars.put("toolResultsSection", "");
+        vars.put("reasoningContextSection", "");
         vars.put("experienceSection", experienceSection != null ? experienceSection : "");
 
         return promptRegistry.render("agent/react-user-prompt", vars);
     }
 
-    /**
-     * 构建基础版 User Prompt（无记忆检索）。
-     *
-     * @param state 当前 ReAct Agent 状态
-     * @return User Prompt 文本
-     */
-    String buildUserPrompt(ReactAgentState state) {
-        var now = ZonedDateTime.now();
-        return promptRegistry.render("agent/react-user-prompt-basic", Map.of(
-                "currentDateTime", now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
-                "timezone", ZoneId.systemDefault().getId(),
-                "locale", Locale.getDefault().toLanguageTag(),
-                "userGoal", state.goal() != null ? state.goal() : "",
-                "tokensRemaining", String.valueOf(state.budget().tokensRemaining()),
-                "stepCount", String.valueOf(state.stepCount())));
-    }
-
-    // --- 模板区域格式化辅助方法 ---
-
-    /** 格式化用户画像区域。 */
-    private String formatUserProfileSection(@Nullable String userProfile) {
-        if (userProfile == null || userProfile.isBlank()) return "";
-        return "\n用户画像:\n" + userProfile;
-    }
-
-    /** 格式化被动通知区域。 */
-    private String formatPassiveNotificationsSection() {
-        var notifications = safeDrainPassiveNotifications();
-        if (notifications.isEmpty()) return "";
-        var sb = new StringBuilder("\n待处理提醒:\n");
-        for (var line : notifications) {
-            sb.append("  - ").append(line).append("\n");
+    private List<ConversationTurnView> safeGetRecentTurns(String sessionId) {
+        if (conversationViewService == null || sessionId == null || sessionId.isBlank()) {
+            return List.of();
         }
-        return sb.toString();
-    }
-
-    /** 格式化对话历史区域（按 createdAt 时序）。 */
-    private String formatConversationHistorySection(List<WorkingMemorySlot> slots) {
-        var conversationSlots = slots.stream()
-                .filter(s -> s instanceof ConversationSlot)
-                .map(s -> (ConversationSlot) s)
-                .sorted(Comparator.comparing(ConversationSlot::createdAt))
-                .toList();
-        if (conversationSlots.isEmpty()) return "";
-        var sb = new StringBuilder("\n对话历史:\n");
-        for (var cs : conversationSlots) {
-            sb.append("  [").append(cs.role()).append("] ").append(cs.content()).append("\n");
-        }
-        return sb.toString();
-    }
-
-    /** 格式化通用列表区域（相关记忆 / 知识库片段 / 跨会话参考）。 */
-    private String formatListSection(String title, @Nullable List<String> items) {
-        if (items == null || items.isEmpty()) return "";
-        var sb = new StringBuilder("\n").append(title).append(":\n");
-        for (var item : items) {
-            sb.append("  - ").append(item).append("\n");
-        }
-        return sb.toString();
-    }
-
-    /** 格式化工具结果区域。 */
-    private String formatToolResultsSection(List<WorkingMemorySlot> slots) {
-        var toolSlots = slots.stream()
-                .filter(s -> s instanceof ToolResultSlot)
-                .map(s -> (ToolResultSlot) s)
-                .toList();
-        if (toolSlots.isEmpty()) return "";
-        var sb = new StringBuilder("\n工具结果:\n");
-        for (var ts : toolSlots) {
-            sb.append("  ").append(ts.toolId()).append(".").append(ts.toolAction())
-                    .append(" → ").append(truncate(ts.result(), 200)).append("\n");
-        }
-        return sb.toString();
-    }
-
-    /** 格式化推理上下文区域（排除检索来源的 ReasoningSlot）。 */
-    private String formatReasoningContextSection(List<WorkingMemorySlot> slots) {
-        var reasoningSlots = slots.stream()
-                .filter(s -> s instanceof ReasoningSlot)
-                .map(s -> (ReasoningSlot) s)
-                .filter(rs -> !"hybrid-retrieval".equals(rs.source()))
-                .toList();
-        if (reasoningSlots.isEmpty()) return "";
-        var sb = new StringBuilder("\n推理上下文:\n");
-        for (var rs : reasoningSlots) {
-            sb.append("  [").append(rs.source()).append("] ").append(rs.thought()).append("\n");
-        }
-        return sb.toString();
-    }
-
-    // --- 可观测性日志 ---
-
-    // --- 经验检索与注入 ---
-
-    /**
-     * 安全检索 EXPERIENCE 类型实体，异常时返回空列表。
-     *
-     * @param query 查询文本（当前未使用，预留语义检索扩展）
-     * @return 按 importanceScore 降序排列的经验实体列表
-     */
-    List<TemporalEntity> safeRetrieveExperiences(@Nullable String query) {
-        if (semanticMemory == null || memoryProperties == null) return List.of();
         try {
-            var config = memoryProperties.getExperience();
-            if (!config.isEnabled()) return List.of();
-
-            var experiences = semanticMemory.findCurrentByType(
-                    com.lifepilot.memory.semantic.EntityType.EXPERIENCE);
-            if (experiences.isEmpty()) return List.of();
-
-            // executionContext 过滤
-            if (memoryProperties != null) {
-                var isolationConfig = memoryProperties.getExperience().getIsolation();
-                if (!isolationConfig.isCrossContextRetrieval()) {
-                    experiences = experiences.stream()
-                            .filter(e -> {
-                                var ctx = e.properties().get("executionContext");
-                                // null 视为 MAIN_AGENT（向后兼容）
-                                return ctx == null
-                                        || "MAIN_AGENT".equals(ctx.toString());
-                            })
-                            .toList();
-                }
-            }
-
-            // 按 importanceScore 降序排序，eval 标签匹配的经验优先
-            String evalPrefix = config.getEvalTagPrefix();
-            return experiences.stream()
-                    .sorted((a, b) -> {
-                        // eval 标签匹配度加权
-                        int aEvalBoost = hasMatchingEvalTag(a, query, evalPrefix) ? 1 : 0;
-                        int bEvalBoost = hasMatchingEvalTag(b, query, evalPrefix) ? 1 : 0;
-                        if (aEvalBoost != bEvalBoost) return bEvalBoost - aEvalBoost;
-                        return Float.compare(b.importanceScore(), a.importanceScore());
-                    })
-                    .limit(config.getMaxInjectionCount())
+            int turnLimit = config.getSession().getMaxRecentTurns() > 0
+                    ? config.getSession().getMaxRecentTurns()
+                    : DEFAULT_RECENT_TURN_LIMIT;
+            return conversationViewService.getRecentTurns(sessionId, turnLimit).stream()
+                    .sorted(Comparator.comparing(ConversationTurnView::createdAt))
                     .toList();
         } catch (Exception e) {
-            log.debug("经验检索失败，跳过注入: error={}", e.getMessage());
+            log.warn("Failed to load recent turns: sessionId={}, error={}", sessionId, e.getMessage());
             return List.of();
         }
     }
 
-    /**
-     * 检查经验实体的 applicableConditions 中是否有与查询匹配的 eval 标签。
-     */
-    private boolean hasMatchingEvalTag(com.lifepilot.memory.semantic.TemporalEntity entity,
-                                       @Nullable String query, String evalPrefix) {
-        if (query == null || query.isBlank()) return false;
-        var props = entity.properties();
-        if (props == null) return false;
-        var conditions = props.get("applicableConditions");
-        if (!(conditions instanceof List<?> list)) return false;
-        String lowerQuery = query.toLowerCase();
-        for (var item : list) {
+    private List<WorkspaceItem> safeGetWorkspaceItems(String sessionId) {
+        if (workspaceService == null || sessionId == null || sessionId.isBlank()) {
+            return List.of();
+        }
+        if (workspaceProperties != null && !workspaceProperties.isEnabled()) {
+            return List.of();
+        }
+        try {
+            int maxItems = workspaceProperties != null
+                    ? workspaceProperties.getPromptMaxItems()
+                    : DEFAULT_WORKSPACE_PROMPT_LIMIT;
+            return workspaceService.listActive(sessionId).stream()
+                    .limit(Math.max(0, maxItems))
+                    .toList();
+        } catch (Exception e) {
+            log.warn("Failed to load workspace items: sessionId={}, error={}", sessionId, e.getMessage());
+            return List.of();
+        }
+    }
+
+    private String safeGetUserProfile(@Nullable String refinedQuery) {
+        if (semanticMemory == null) {
+            return "";
+        }
+        try {
+            List<TemporalEntity> candidates = new ArrayList<>();
+            for (EntityType type : List.of(EntityType.PREFERENCE, EntityType.HABIT, EntityType.GOAL)) {
+                candidates.addAll(semanticMemory.findCurrentByType(type));
+            }
+            if (candidates.isEmpty()) {
+                return "";
+            }
+
+            int maxEntities = memoryProperties != null
+                    ? memoryProperties.getRetrieval().getMaxUserProfileEntities()
+                    : 10;
+            int fallbackCount = memoryProperties != null
+                    ? memoryProperties.getRetrieval().getFallbackUserProfileCount()
+                    : 3;
+
+            List<TemporalEntity> matched = List.of();
+            if (refinedQuery != null && !refinedQuery.isBlank()) {
+                List<String> keywords = List.of(refinedQuery.split("\\s+"));
+                matched = candidates.stream()
+                        .filter(entity -> {
+                            String text = entity.textRepresentation().toLowerCase(Locale.ROOT);
+                            return keywords.stream()
+                                    .map(keyword -> keyword.toLowerCase(Locale.ROOT))
+                                    .anyMatch(text::contains);
+                        })
+                        .toList();
+            }
+
+            List<TemporalEntity> selected = !matched.isEmpty()
+                    ? matched.stream()
+                            .sorted(Comparator.comparingDouble(TemporalEntity::importanceScore).reversed())
+                            .limit(maxEntities)
+                            .toList()
+                    : candidates.stream()
+                            .sorted(Comparator.comparingDouble(TemporalEntity::importanceScore).reversed())
+                            .limit(fallbackCount)
+                            .toList();
+
+            List<PreferenceRule> highConfidencePreferences = List.of();
+            if (proceduralMemory != null) {
+                try {
+                    highConfidencePreferences = proceduralMemory.getPreferences("user-preference").stream()
+                            .filter(PreferenceRule::isHighConfidence)
+                            .toList();
+                } catch (Exception e) {
+                    log.warn("Failed to load procedural preferences: error={}", e.getMessage());
+                }
+            }
+
+            if (!highConfidencePreferences.isEmpty()) {
+                Set<String> l4Keys = highConfidencePreferences.stream()
+                        .map(PreferenceRule::key)
+                        .collect(Collectors.toSet());
+                selected = selected.stream()
+                        .filter(entity -> !(entity.type() == EntityType.PREFERENCE
+                                && l4Keys.contains(entity.name())))
+                        .toList();
+            }
+
+            if (selected.isEmpty() && highConfidencePreferences.isEmpty()) {
+                return "";
+            }
+
+            StringBuilder sb = new StringBuilder();
+            if (!selected.isEmpty()) {
+                sb.append("L3 profile:\n");
+                for (TemporalEntity entity : selected) {
+                    sb.append("- [")
+                            .append(entity.type().label())
+                            .append("] ")
+                            .append(entity.name());
+                    if (entity.description() != null && !entity.description().isBlank()) {
+                        sb.append(": ").append(entity.description());
+                    }
+                    sb.append('\n');
+                }
+            }
+
+            if (!highConfidencePreferences.isEmpty()) {
+                sb.append("L4 preferences:\n");
+                for (PreferenceRule rule : highConfidencePreferences) {
+                    sb.append("- ")
+                            .append(rule.key())
+                            .append(" = ")
+                            .append(rule.value())
+                            .append(" (confidence=")
+                            .append(rule.confidence())
+                            .append(")\n");
+                }
+            }
+            return sb.toString().trim();
+        } catch (Exception e) {
+            log.warn("Failed to load user profile: error={}", e.getMessage());
+            return "";
+        }
+    }
+
+    private List<String> recordExperienceInjection(ReactAgentState state, List<TemporalEntity> experiences) {
+        if (experiences == null || experiences.isEmpty()) {
+            return List.of();
+        }
+        List<String> ids = experiences.stream().map(TemporalEntity::id).toList();
+        if (effectivenessTracker != null) {
+            try {
+                effectivenessTracker.recordInjection(state.traceId(), ids);
+            } catch (Exception e) {
+                log.warn("Failed to record injected experiences: error={}", e.getMessage());
+            }
+        }
+        return ids;
+    }
+
+    private boolean hasMatchingEvalTag(TemporalEntity entity,
+                                       @Nullable String query,
+                                       String evalPrefix) {
+        if (query == null || query.isBlank()) {
+            return false;
+        }
+        Object conditions = entity.properties().get("applicableConditions");
+        if (!(conditions instanceof List<?> items)) {
+            return false;
+        }
+        String lowerQuery = query.toLowerCase(Locale.ROOT);
+        for (Object item : items) {
             if (item instanceof String tag && tag.startsWith(evalPrefix)) {
-                String tagValue = tag.substring(evalPrefix.length()).toLowerCase();
-                if (lowerQuery.contains(tagValue)) return true;
+                String tagValue = tag.substring(evalPrefix.length()).toLowerCase(Locale.ROOT);
+                if (lowerQuery.contains(tagValue)) {
+                    return true;
+                }
             }
         }
         return false;
     }
 
-    /**
-     * 格式化经验实体为提示词区段。
-     *
-     * @param experiences 经验实体列表
-     * @return 格式化后的经验区段文本，无经验时返回空字符串
-     */
-    String formatExperienceSection(List<TemporalEntity> experiences) {
-        if (experiences == null || experiences.isEmpty()) return "";
-        if (memoryProperties == null) return "";
+    private TokenBudget buildTokenBudget(String systemPrompt,
+                                         List<ConversationTurnView> recentTurns,
+                                         List<WorkspaceItem> workspaceItems,
+                                         @Nullable String userProfile,
+                                         @Nullable String experienceSection) {
+        int totalTokens = config.getContext().getMaxContextTokens();
+        TokenBudget base = TokenBudget.allocateDefault(totalTokens);
+        String conversationSection = formatConversationHistorySection(recentTurns);
+        String workspaceSection = formatWorkspaceSection(workspaceItems);
+        String profileSection = formatUserProfileSection(userProfile);
+        String notificationSection = formatPassiveNotificationsSection();
+        int systemPromptUsed = estimateTokens(systemPrompt);
+        int historyUsed = estimateTokens(conversationSection);
+        int memoryUsed = estimateTokens(workspaceSection)
+                + estimateTokens(profileSection)
+                + estimateTokens(notificationSection)
+                + estimateTokens(experienceSection);
 
-        int tokenBudget = memoryProperties.getExperience().getInjectionTokenBudget();
-        var sb = new StringBuilder("\n相关经验:\n");
-        int usedTokens = 0;
-
-        for (var exp : experiences) {
-            String entry = "- " + exp.name() + ": " + exp.description() + "\n";
-            int entryTokens = estimateTokens(entry);
-            if (usedTokens + entryTokens > tokenBudget) break;
-            sb.append(entry);
-            usedTokens += entryTokens;
-        }
-
-        return sb.length() > "相关经验:\n".length() + 1 ? sb.toString() : "";
+        return new TokenBudget(
+                base.systemPromptBudget(),
+                base.historyBudget(),
+                base.memoryBudget(),
+                base.toolSchemaBudget(),
+                base.toolResultBudget(),
+                base.reservedBuffer(),
+                systemPromptUsed,
+                historyUsed,
+                memoryUsed,
+                0,
+                0
+        );
     }
 
-    /** 记录组装指标。 */
-    private void logAssemblyMetrics(ReactAgentState state, AssembledContext context, Instant startTime) {
+    private String formatUserProfileSection(@Nullable String userProfile) {
+        if (userProfile == null || userProfile.isBlank()) {
+            return "";
+        }
+        return "\nUser profile:\n" + userProfile;
+    }
+
+    private String formatPassiveNotificationsSection() {
+        List<String> notifications = safeDrainPassiveNotifications();
+        if (notifications.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder("\nPending notifications:\n");
+        for (String line : notifications) {
+            sb.append("- ").append(line).append('\n');
+        }
+        return sb.toString();
+    }
+
+    private String formatConversationHistorySection(List<ConversationTurnView> turns) {
+        if (turns == null || turns.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder("\nRecent conversation:\n");
+        for (ConversationTurnView turn : turns.stream()
+                .sorted(Comparator.comparing(ConversationTurnView::createdAt))
+                .toList()) {
+            sb.append("[")
+                    .append(turn.role())
+                    .append("] ")
+                    .append(turn.content())
+                    .append('\n');
+        }
+        return sb.toString();
+    }
+
+    private String formatWorkspaceSection(List<WorkspaceItem> workspaceItems) {
+        if (workspaceItems == null || workspaceItems.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder("\nActive workspace:\n");
+        for (WorkspaceItem item : workspaceItems) {
+            sb.append("- [")
+                    .append(item.kind().name())
+                    .append("] ")
+                    .append(item.title());
+            if (item.summary() != null && !item.summary().isBlank()) {
+                sb.append(": ").append(item.summary());
+            }
+            sb.append('\n');
+        }
+        return sb.toString();
+    }
+
+    private List<String> safeDrainPassiveNotifications() {
+        if (passiveNotificationQueue == null) {
+            return List.of();
+        }
+        try {
+            return passiveNotificationQueue.drainAll().stream()
+                    .map(entry -> "[%s] %s".formatted(
+                            entry.typeId() != null ? entry.typeId() : "notification",
+                            entry.contentJson()))
+                    .toList();
+        } catch (Exception e) {
+            log.warn("Failed to drain passive notifications: error={}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    int estimateTokens(@Nullable String text) {
+        if (text == null || text.isEmpty()) {
+            return 0;
+        }
+        long cjkChars = text.chars()
+                .filter(ch -> Character.UnicodeScript.of(ch) == Character.UnicodeScript.HAN)
+                .count();
+        long otherChars = text.length() - cjkChars;
+        return Math.max(1, (int) (cjkChars + otherChars / 4));
+    }
+
+    private String buildSkillCatalog() {
+        if (skillRegistry == null) {
+            return "";
+        }
+        List<?> skills = skillRegistry.listAll();
+        if (skills.isEmpty()) {
+            return "";
+        }
+
+        String skillEntries = skillRegistry.listAll().stream()
+                .map(skill -> "- " + skill.id() + ": " + skill.name() + " - " + skill.description())
+                .collect(Collectors.joining("\n"));
+
+        try {
+            return promptRegistry.render("agent/skill-catalog", Map.of("skillEntries", skillEntries));
+        } catch (Exception e) {
+            log.warn("Failed to render skill catalog: error={}", e.getMessage());
+            return "";
+        }
+    }
+
+    private String safeRenderToolGuide() {
+        try {
+            String guide = promptRegistry.render("memory/agentic-tool-guide");
+            return guide != null ? guide : "";
+        } catch (Exception e) {
+            log.warn("Failed to render tool guide: error={}", e.getMessage());
+            return "";
+        }
+    }
+
+    private String safeReactSystemPrompt() {
+        try {
+            return buildReactSystemPrompt();
+        } catch (Exception e) {
+            log.error("Failed to render system prompt, using fallback prompt: error={}", e.getMessage());
+            ZonedDateTime now = ZonedDateTime.now();
+            String timeContext = "Current time: " + now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+                    + ", timezone: " + ZoneId.systemDefault().getId()
+                    + ", locale: " + Locale.getDefault().toLanguageTag();
+            return """
+                    You are ZhiWei, a reliable and careful AI assistant.
+                    %s
+                    Please help the user based on the current request.
+                    """.formatted(timeContext);
+        }
+    }
+
+    private void logAssemblyMetrics(ReactAgentState state,
+                                    AssembledContext context,
+                                    Instant startTime) {
         long durationMs = Duration.between(startTime, Instant.now()).toMillis();
-
-        log.info("上下文组装完成: sessionId={}, totalTokensConsumed={}, assemblyDurationMs={}",
+        log.info("Context assembled: sessionId={}, totalTokensConsumed={}, assemblyDurationMs={}",
                 state.sessionId(), context.totalTokens(), durationMs);
-
         if (context.degraded()) {
-            log.warn("上下文组装降级: sessionId={}", state.sessionId());
+            log.warn("Context assembly degraded: sessionId={}", state.sessionId());
         }
     }
 
-    // --- 工具方法 ---
-
-    /**
-     * 安全脱敏 — dataRedactor 为 null 时跳过，异常时降级使用原始文本。
-     */
     private String safeRedact(String text) {
-        if (dataRedactor == null || text == null || text.isEmpty()) return text;
+        if (dataRedactor == null || text == null || text.isEmpty()) {
+            return text;
+        }
         try {
             return dataRedactor.redact(text);
         } catch (Exception e) {
-            log.warn("DataRedactor 脱敏失败，降级使用原始文本: error={}", e.getMessage());
+            log.warn("Data redaction failed, using raw text: error={}", e.getMessage());
             return text;
         }
-    }
-
-    /** 截断文本到指定长度。 */
-    private String truncate(String text, int maxLength) {
-        if (text == null) {
-            return "";
-        }
-        return text.length() <= maxLength ? text : text.substring(0, maxLength) + "...";
     }
 }

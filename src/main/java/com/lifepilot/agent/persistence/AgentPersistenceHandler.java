@@ -4,48 +4,48 @@ import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.context.AgentLoopContext;
 import com.lifepilot.agent.media.MediaDataExtractor;
 import com.lifepilot.agent.model.ReactAgentState;
+import com.lifepilot.agent.model.SuspendReason;
 import com.lifepilot.agent.session.SessionManager;
 import com.lifepilot.conversation.ConversationHistoryStore;
-import com.lifepilot.conversation.ConversationViewService;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.llm.multimodal.MediaContent;
-import com.lifepilot.memory.retrieval.InjectionRecordRepository;
-import com.lifepilot.memory.semantic.RealtimeExtractor;
-import com.lifepilot.memory.working.ConversationSlot;
-import com.lifepilot.memory.working.WorkingMemory;
-import com.lifepilot.memory.experience.EffectivenessTracker;
 import com.lifepilot.memory.experience.ContrastiveLearner;
+import com.lifepilot.memory.experience.EffectivenessTracker;
 import com.lifepilot.memory.experience.ExperienceSummarizer;
 import com.lifepilot.memory.experience.SubtaskReflector;
+import com.lifepilot.memory.retrieval.InjectionRecordRepository;
+import com.lifepilot.memory.semantic.RealtimeExtractor;
 import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.memory.workspace.PendingDecisionItem;
+import com.lifepilot.memory.workspace.SessionWorkspaceService;
+import com.lifepilot.memory.workspace.TaskStateItem;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
 
+import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * Agent 持久化处理器 — 聚合 L1 工作记忆读写、对话历史持久化、附件持久化、异步后处理。
+ * Agent 持久化处理器。
  *
- * <p>从 ReactAgentLoop 提取的所有持久化相关方法，集中管理数据写入逻辑，
- * 降低 ReactAgentLoop 的职责复杂度。</p>
+ * <p>聚合会话持久化、附件落库、工作区写入和异步后处理。</p>
  *
  * @author zsg
- * @since 2026-03-19
+ * @since 2026-03-20
  */
 public class AgentPersistenceHandler {
 
     private static final Logger log = LoggerFactory.getLogger(AgentPersistenceHandler.class);
 
-    // ===== 核心依赖 =====
     private final AgentConfigProperties config;
     private final SessionManager sessionManager;
 
-    // ===== 可选依赖（@Nullable） =====
-    @Nullable private final WorkingMemory workingMemory;
+    @Nullable private final SessionWorkspaceService workspaceService;
     @Nullable private final ConversationHistoryStore conversationHistoryStore;
-    @Nullable private final ConversationViewService conversationViewService;
     @Nullable private final RealtimeExtractor realtimeExtractor;
     @Nullable private final InjectionRecordRepository injectionRecordRepository;
     @Nullable private final AttachmentRepository attachmentRepository;
@@ -57,9 +57,8 @@ public class AgentPersistenceHandler {
     public AgentPersistenceHandler(
             AgentConfigProperties config,
             SessionManager sessionManager,
-            @Nullable WorkingMemory workingMemory,
+            @Nullable SessionWorkspaceService workspaceService,
             @Nullable ConversationHistoryStore conversationHistoryStore,
-            @Nullable ConversationViewService conversationViewService,
             @Nullable RealtimeExtractor realtimeExtractor,
             @Nullable InjectionRecordRepository injectionRecordRepository,
             @Nullable AttachmentRepository attachmentRepository,
@@ -69,9 +68,8 @@ public class AgentPersistenceHandler {
             @Nullable SubtaskReflector subtaskReflector) {
         this.config = config;
         this.sessionManager = sessionManager;
-        this.workingMemory = workingMemory;
+        this.workspaceService = workspaceService;
         this.conversationHistoryStore = conversationHistoryStore;
-        this.conversationViewService = conversationViewService;
         this.realtimeExtractor = realtimeExtractor;
         this.injectionRecordRepository = injectionRecordRepository;
         this.attachmentRepository = attachmentRepository;
@@ -81,88 +79,54 @@ public class AgentPersistenceHandler {
         this.subtaskReflector = subtaskReflector;
     }
 
-    // ===== L1 工作记忆读写 =====
-
-    /**
-     * 将用户消息写入 L1 工作记忆。
-     *
-     * <p>当请求包含媒体内容时，在消息末尾附加元信息标注（MIME 类型 + 文件名），
-     * 不存储原始二进制数据到 WorkingMemory。</p>
-     *
-     * @param state         当前 Agent 状态
-     * @param mediaContents 请求关联的媒体内容列表（可空）
-     */
-    public void writeUserMessageToL1(ReactAgentState state,
-                                     @Nullable List<MediaContent> mediaContents) {
-        if (workingMemory == null || state.goal() == null || state.goal().isBlank()) return;
-        try {
-            String content = state.goal();
-
-            // 附加媒体元信息标注（不含二进制数据）
-            if (mediaContents != null && !mediaContents.isEmpty()) {
-                String annotation = mediaContents.stream()
-                        .map(mc -> mc.mimeType() + ": " + (mc.fileName() != null ? mc.fileName() : "unnamed"))
-                        .collect(Collectors.joining(", "));
-                content = content + "\n[附件: " + annotation + "]";
-            }
-
-            int tokens = estimateTextTokens(content);
-            var slot = ConversationSlot.userMessage(content, tokens);
-            workingMemory.append(state.sessionId(), slot);
-        } catch (Exception e) {
-            log.warn("用户消息写入 L1 失败: sessionId={}, error={}",
-                    state.sessionId(), e.getMessage());
+    public void saveWorkspaceForSuspend(ReactAgentState state) {
+        if (workspaceService == null || state.suspendReason() == null) {
+            return;
         }
-    }
-
-    /** 将 AI 响应写入 L1 工作记忆。 */
-    public void writeAssistantMessageToL1(ReactAgentState state) {
-        if (workingMemory == null) return;
-        String response = state.finalOutput();
-        if (response == null || response.isBlank()) return;
         try {
-            int tokens = estimateTextTokens(response);
-            var slot = ConversationSlot.assistantMessage(response, tokens);
-            workingMemory.append(state.sessionId(), slot);
-        } catch (Exception e) {
-            log.warn("AI 响应写入 L1 失败: sessionId={}, error={}",
-                    state.sessionId(), e.getMessage());
-        }
-    }
-
-    /** 当 L1 为空时，从 ConversationViewService 回灌对话历史。 */
-    public void hydrateWorkingMemoryFromConversationView(String sessionId) {
-        if (workingMemory == null || conversationViewService == null
-                || sessionId == null || sessionId.isBlank()) return;
-        try {
-            var existingSlots = workingMemory.getContext(sessionId);
-            if (existingSlots != null && !existingSlots.isEmpty()) return;
-            var turns = conversationViewService.getRecentTurns(
-                    sessionId, config.getSession().getMaxRecentTurns());
-            for (var turn : turns) {
-                if (turn.content() != null && !turn.content().isBlank()) {
-                    if ("user".equalsIgnoreCase(turn.role())) {
-                        workingMemory.append(sessionId,
-                                ConversationSlot.userMessage(
-                                        turn.content(), estimateTextTokens(turn.content())));
-                    } else if ("assistant".equalsIgnoreCase(turn.role())) {
-                        workingMemory.append(sessionId,
-                                ConversationSlot.assistantMessage(
-                                        turn.content(), estimateTextTokens(turn.content())));
-                    }
-                }
+            switch (state.suspendReason()) {
+                case SuspendReason.UserConfirmation confirmation ->
+                        workspaceService.savePendingDecision(state.sessionId(), new PendingDecisionItem(
+                                "等待用户确认",
+                                "等待用户确认执行高风险工具 " + confirmation.toolId(),
+                                buildSuspendPayload(state.suspendReason()),
+                                100,
+                                state.traceId(),
+                                state.traceId(),
+                                null));
+                default ->
+                        workspaceService.saveTaskState(state.sessionId(), new TaskStateItem(
+                                "任务已挂起",
+                                formatSuspendSummary(state.suspendReason()),
+                                buildSuspendPayload(state.suspendReason()),
+                                60,
+                                state.traceId(),
+                                state.traceId(),
+                                null));
             }
         } catch (Exception e) {
-            log.warn("L1 对话历史回灌失败: sessionId={}, error={}", sessionId, e.getMessage());
+            log.warn("挂起工作区写入失败: sessionId={}, error={}", state.sessionId(), e.getMessage());
         }
     }
 
-    // ===== 对话历史持久化 =====
+    public void resolveWorkspaceForTrace(String sessionId, @Nullable String traceId) {
+        if (workspaceService == null || traceId == null || traceId.isBlank()) {
+            return;
+        }
+        try {
+            workspaceService.resolveByTaskId(sessionId, traceId);
+            workspaceService.resolveBySourceTraceId(sessionId, traceId);
+        } catch (Exception e) {
+            log.warn("工作区状态关闭失败: sessionId={}, traceId={}, error={}",
+                    sessionId, traceId, e.getMessage());
+        }
+    }
 
-    /** 同步写入用户消息到 chat_messages。 */
     public void persistUserMessage(ReactAgentState state) {
         if (conversationHistoryStore == null
-                || state.goal() == null || state.goal().isBlank()) return;
+                || state.goal() == null || state.goal().isBlank()) {
+            return;
+        }
         try {
             conversationHistoryStore.appendUserMessage(
                     state.sessionId(), state.goal(), state.traceId());
@@ -172,18 +136,12 @@ public class AgentPersistenceHandler {
         }
     }
 
-    /**
-     * 同步写入用户消息到 chat_messages，返回 messageId。
-     *
-     * <p>流式模式使用此方法，需要返回 userMessageId 用于 TRACE_START 事件。</p>
-     *
-     * @param state 当前 Agent 状态
-     * @return 用户消息 ID，写入失败时返回 null
-     */
     @Nullable
     public String persistUserMessageReturningId(ReactAgentState state) {
         if (conversationHistoryStore == null
-                || state.goal() == null || state.goal().isBlank()) return null;
+                || state.goal() == null || state.goal().isBlank()) {
+            return null;
+        }
         try {
             return conversationHistoryStore.appendUserMessage(
                     state.sessionId(), state.goal(), state.traceId());
@@ -194,13 +152,16 @@ public class AgentPersistenceHandler {
         }
     }
 
-    /** 同步写入助手消息到 chat_messages（含 ReactSteps JSON）。 */
     @Nullable
     public String persistAssistantMessage(ReactAgentState state,
                                           @Nullable String reactStepsJson) {
-        if (conversationHistoryStore == null) return null;
+        if (conversationHistoryStore == null) {
+            return null;
+        }
         String output = state.finalOutput();
-        if (output == null || output.isBlank()) return null;
+        if (output == null || output.isBlank()) {
+            return null;
+        }
         try {
             return conversationHistoryStore.appendAssistantMessage(
                     state.sessionId(), output, state.reasoningSummary(),
@@ -212,31 +173,26 @@ public class AgentPersistenceHandler {
         }
     }
 
-    /**
-     * 同步写入助手消息到 chat_messages（含 A2UI JSON 和 ReactSteps JSON）。
-     *
-     * <p>流式模式使用此方法，需要额外传入 A2UI JSON、ReactSteps JSON 和最终内容。</p>
-     *
-     * @param state             当前 Agent 状态
-     * @param finalContent      最终文本内容
-     * @param reasoningSummary  推理概要
-     * @param a2uiJson          A2UI 组件树 JSON（可空）
-     * @param reactStepsJson    ReAct 步骤序列 JSON（可空）
-     * @return 助手消息 ID，写入失败时返回 null
-     */
     @Nullable
     public String persistAssistantMessageWithA2ui(ReactAgentState state,
-                                                   @Nullable String finalContent,
-                                                   @Nullable String reasoningSummary,
-                                                   @Nullable String a2uiJson,
-                                                   @Nullable String reactStepsJson) {
-        if (conversationHistoryStore == null) return null;
-        if ((finalContent == null || finalContent.isBlank()) && a2uiJson == null) return null;
+                                                  @Nullable String finalContent,
+                                                  @Nullable String reasoningSummary,
+                                                  @Nullable String a2uiJson,
+                                                  @Nullable String reactStepsJson) {
+        if (conversationHistoryStore == null) {
+            return null;
+        }
+        if ((finalContent == null || finalContent.isBlank()) && a2uiJson == null) {
+            return null;
+        }
         try {
             return conversationHistoryStore.appendAssistantMessage(
                     state.sessionId(),
                     finalContent != null ? finalContent : "",
-                    reasoningSummary, state.traceId(), a2uiJson, reactStepsJson);
+                    reasoningSummary,
+                    state.traceId(),
+                    a2uiJson,
+                    reactStepsJson);
         } catch (Exception e) {
             log.warn("助手消息同步写入失败: sessionId={}, error={}",
                     state.sessionId(), e.getMessage());
@@ -244,20 +200,16 @@ public class AgentPersistenceHandler {
         }
     }
 
-    /**
-     * 持久化注入记录。
-     *
-     * @param messageId 助手消息 ID
-     * @param sessionId 会话 ID
-     * @param loopContext 循环上下文（从中读取 injectedEntityIds）
-     */
     public void persistInjectionRecord(@Nullable String messageId,
                                        @Nullable String sessionId,
                                        @Nullable AgentLoopContext loopContext) {
         List<String> entityIds = loopContext != null
-                ? loopContext.getInjectedEntityIds() : List.of();
+                ? loopContext.getInjectedEntityIds()
+                : List.of();
         if (injectionRecordRepository == null || entityIds.isEmpty()
-                || messageId == null || messageId.isBlank()) return;
+                || messageId == null || messageId.isBlank()) {
+            return;
+        }
         try {
             injectionRecordRepository.save(messageId, sessionId, entityIds);
             log.debug("注入记录已持久化: messageId={}, entityCount={}", messageId, entityIds.size());
@@ -266,21 +218,10 @@ public class AgentPersistenceHandler {
         }
     }
 
-    /**
-     * 持久化工具产生的媒体附件到 message_attachments 表。
-     *
-     * <p>将本轮 ReAct 循环中通过 SSE MEDIA 事件发送的媒体数据（截图等）
-     * 写入附件表，确保页面刷新后仍能加载。</p>
-     *
-     * @param assistantMessageId 助手消息 ID
-     * @param sessionId          会话 ID
-     * @param toolMediaItems     工具产生的媒体数据列表
-     */
     public void persistToolMediaAttachments(@Nullable String assistantMessageId,
                                             @Nullable String sessionId,
                                             List<MediaDataExtractor.MediaItem> toolMediaItems) {
-        if (attachmentRepository == null || assistantMessageId == null
-                || toolMediaItems.isEmpty()) {
+        if (attachmentRepository == null || assistantMessageId == null || toolMediaItems.isEmpty()) {
             return;
         }
         for (var mediaItem : toolMediaItems) {
@@ -296,17 +237,8 @@ public class AgentPersistenceHandler {
                         mediaItem.fieldName(), e.getMessage());
             }
         }
-        log.debug("工具媒体附件持久化完成: sessionId={}, count={}",
-                sessionId, toolMediaItems.size());
     }
 
-    /**
-     * 持久化用户上传的媒体附件到 message_attachments 表。
-     *
-     * @param assistantMessageId 助手消息 ID
-     * @param sessionId          会话 ID
-     * @param mediaContents      用户上传的媒体内容列表
-     */
     public void persistUserMediaAttachments(@Nullable String assistantMessageId,
                                             @Nullable String sessionId,
                                             @Nullable List<MediaContent> mediaContents) {
@@ -318,22 +250,18 @@ public class AgentPersistenceHandler {
             try {
                 String fileName = mc.fileName() != null ? mc.fileName()
                         : "media-" + java.util.UUID.randomUUID().toString().substring(0, 8)
-                          + "." + guessExtension(mc.mimeType());
+                        + "." + guessExtension(mc.mimeType());
                 String dataUri = "data:" + mc.mimeType() + ";base64,"
                         + java.util.Base64.getEncoder().encodeToString(mc.data());
                 attachmentRepository.save(assistantMessageId, sessionId,
                         fileName, "", mc.sizeBytes(), mc.mimeType(), dataUri);
             } catch (Exception e) {
-                log.warn("媒体附件持久化失败: sessionId={}, error={}",
+                log.warn("用户媒体附件持久化失败: sessionId={}, error={}",
                         sessionId, e.getMessage());
             }
         }
-        log.debug("媒体附件持久化完成: sessionId={}, count={}", sessionId, mediaContents.size());
     }
 
-    // ===== 异步后处理 =====
-
-    /** 异步后处理 — 会话快照持久化 + AUDN 实体提取 + 经验提炼 + 效果评估。 */
     public void asyncPostProcess(ReactAgentState finalState) {
         Thread.startVirtualThread(() -> {
             try {
@@ -350,10 +278,10 @@ public class AgentPersistenceHandler {
                             finalState.finalOutput());
                 }
             } catch (Exception e) {
-                log.warn("AUDN 实时实体提取失败: sessionId={}, error={}",
+                log.warn("实时实体提取失败: sessionId={}, error={}",
                         finalState.sessionId(), e.getMessage());
             }
-            // 经验提炼
+
             TemporalEntity newExperience = null;
             try {
                 if (experienceSummarizer != null) {
@@ -363,7 +291,7 @@ public class AgentPersistenceHandler {
                 log.warn("经验提炼失败: sessionId={}, error={}",
                         finalState.sessionId(), e.getMessage());
             }
-            // 效果评估
+
             try {
                 if (effectivenessTracker != null) {
                     effectivenessTracker.evaluate(finalState, finalState.traceId());
@@ -372,7 +300,7 @@ public class AgentPersistenceHandler {
                 log.warn("效果评估失败: sessionId={}, error={}",
                         finalState.sessionId(), e.getMessage());
             }
-            // 对比学习
+
             try {
                 if (contrastiveLearner != null && newExperience != null) {
                     contrastiveLearner.learn(newExperience);
@@ -381,7 +309,7 @@ public class AgentPersistenceHandler {
                 log.warn("对比学习失败: sessionId={}, error={}",
                         finalState.sessionId(), e.getMessage());
             }
-            // 子任务反思
+
             try {
                 if (subtaskReflector != null) {
                     subtaskReflector.reflect(finalState);
@@ -393,30 +321,27 @@ public class AgentPersistenceHandler {
         });
     }
 
-    /** 持久化流式系统错误消息到对话历史和 L1。 */
     public void persistStreamingSystemError(@Nullable String sessionId,
                                             @Nullable String traceId,
                                             @Nullable Exception e) {
         try {
-            if (sessionId == null || sessionId.isBlank()) return;
+            if (sessionId == null || sessionId.isBlank()) {
+                return;
+            }
             String detail = e != null ? e.getMessage() : "unknown";
             String content = "系统提示：模型服务暂时不可用，请稍后重试。\n（错误信息）" + detail;
             if (conversationHistoryStore != null) {
                 conversationHistoryStore.appendSystemMessage(sessionId, content, traceId);
             }
-            if (workingMemory != null) {
-                int tokens = estimateTextTokens(content);
-                workingMemory.append(sessionId,
-                        ConversationSlot.systemMessage(content, tokens));
-            }
-        } catch (Exception ignore) { /* 不影响主流程 */ }
+        } catch (Exception ignore) {
+            // 不影响主流程
+        }
     }
 
-    // ===== 工具方法 =====
-
-    /** 估算文本 Token 数（CJK 字符按 1:1，其他按 4:1）。 */
     static int estimateTextTokens(String text) {
-        if (text == null || text.isEmpty()) return 0;
+        if (text == null || text.isEmpty()) {
+            return 0;
+        }
         long cjkChars = text.chars()
                 .filter(c -> Character.UnicodeScript.of(c) == Character.UnicodeScript.HAN)
                 .count();
@@ -424,9 +349,10 @@ public class AgentPersistenceHandler {
         return Math.max(1, (int) (cjkChars + otherChars / 4));
     }
 
-    /** 根据 MIME 类型猜测文件扩展名。 */
     static String guessExtension(@Nullable String mimeType) {
-        if (mimeType == null) return "bin";
+        if (mimeType == null) {
+            return "bin";
+        }
         return switch (mimeType) {
             case "image/png" -> "png";
             case "image/jpeg", "image/jpg" -> "jpg";
@@ -435,6 +361,57 @@ public class AgentPersistenceHandler {
             case "image/svg+xml" -> "svg";
             case "application/pdf" -> "pdf";
             default -> "bin";
+        };
+    }
+
+    private Map<String, Object> buildSuspendPayload(SuspendReason reason) {
+        var payload = new LinkedHashMap<String, Object>();
+        switch (reason) {
+            case SuspendReason.WorkflowWait workflowWait -> {
+                payload.put("type", "WORKFLOW_WAIT");
+                payload.put("executionId", workflowWait.executionId());
+                payload.put("workflowId", workflowWait.workflowId());
+                payload.put("workflowName", workflowWait.workflowName());
+            }
+            case SuspendReason.UserConfirmation confirmation -> {
+                payload.put("type", "USER_CONFIRMATION");
+                payload.put("toolId", confirmation.toolId());
+                payload.put("inputJson", confirmation.inputJson());
+                payload.put("riskLevel", confirmation.riskLevel());
+                payload.put("confirmationId", confirmation.confirmationId());
+            }
+            case SuspendReason.RemoteDelegation remoteDelegation -> {
+                payload.put("type", "REMOTE_DELEGATION");
+                payload.put("remoteTaskId", remoteDelegation.remoteTaskId());
+                payload.put("remoteAgentUrl", remoteDelegation.remoteAgentUrl());
+                payload.put("delegatedGoal", remoteDelegation.delegatedGoal());
+            }
+            case SuspendReason.ScheduledWakeup scheduledWakeup -> {
+                payload.put("type", "SCHEDULED_WAKEUP");
+                payload.put("wakeupAt", scheduledWakeup.wakeupAt().toString());
+                payload.put("reason", scheduledWakeup.reason());
+            }
+            case SuspendReason.ExternalDataWait externalDataWait -> {
+                payload.put("type", "EXTERNAL_DATA_WAIT");
+                payload.put("dataSourceId", externalDataWait.dataSourceId());
+                payload.put("description", externalDataWait.description());
+            }
+        }
+        return Map.copyOf(payload);
+    }
+
+    private String formatSuspendSummary(SuspendReason reason) {
+        return switch (reason) {
+            case SuspendReason.WorkflowWait workflowWait ->
+                    "等待工作流 " + workflowWait.workflowName() + " 完成";
+            case SuspendReason.UserConfirmation confirmation ->
+                    "等待用户确认高风险工具 " + confirmation.toolId();
+            case SuspendReason.RemoteDelegation remoteDelegation ->
+                    "等待远端代理返回任务结果: " + remoteDelegation.delegatedGoal();
+            case SuspendReason.ScheduledWakeup scheduledWakeup ->
+                    "等待定时唤醒: " + scheduledWakeup.reason();
+            case SuspendReason.ExternalDataWait externalDataWait ->
+                    "等待外部数据就绪: " + externalDataWait.description();
         };
     }
 }

@@ -136,7 +136,6 @@ public class AgentOrchestrator {
             state = initState(effectiveRequest);
             boolean testSession = isTestSession(effectiveRequest.sessionId());
             if (!testSession) {
-                persistenceHandler.writeUserMessageToL1(state, effectiveRequest.mediaContents());
                 persistenceHandler.persistUserMessage(state);
             }
             traceContext = startTraceIfEnabled(state, effectiveRequest);
@@ -161,7 +160,6 @@ public class AgentOrchestrator {
 
             String assistantMessageId = null;
             if (!testSession) {
-                persistenceHandler.writeAssistantMessageToL1(state);
                 String reactStepsJson = serializeReactStepsJson(state.steps());
                 assistantMessageId = persistenceHandler.persistAssistantMessage(state, reactStepsJson);
                 persistenceHandler.persistInjectionRecord(assistantMessageId, state.sessionId(),
@@ -169,6 +167,7 @@ public class AgentOrchestrator {
                 persistenceHandler.persistToolMediaAttachments(assistantMessageId, state.sessionId(),
                         loopContext.getCollectedToolMedia());
                 loopContext.clearToolMedia();
+                persistenceHandler.resolveWorkspaceForTrace(state.sessionId(), state.traceId());
                 persistenceHandler.asyncPostProcess(state);
             }
 
@@ -222,7 +221,6 @@ public class AgentOrchestrator {
             state = initState(effectiveRequest);
             boolean testSession = isTestSession(effectiveRequest.sessionId());
             if (!testSession) {
-                persistenceHandler.writeUserMessageToL1(state, effectiveRequest.mediaContents());
                 userMessageId = persistenceHandler.persistUserMessageReturningId(state);
             }
 
@@ -286,7 +284,6 @@ public class AgentOrchestrator {
 
                 // 持久化
                 if (!testSession) {
-                    persistenceHandler.writeAssistantMessageToL1(state);
                     String a2uiJson = streamingEventHandler.serializeA2uiTree(
                             loopContext.getLastCollectedA2uiTree());
                     String reactStepsJson = serializeReactStepsJson(state.steps());
@@ -299,6 +296,7 @@ public class AgentOrchestrator {
                     loopContext.clearToolMedia();
                     persistenceHandler.persistUserMediaAttachments(assistantMessageId,
                             state.sessionId(), effectiveRequest.mediaContents());
+                    persistenceHandler.resolveWorkspaceForTrace(state.sessionId(), state.traceId());
                     persistenceHandler.asyncPostProcess(state);
                 }
                 finalTokenUsage = aggregateTokenUsage(traceContext);
@@ -376,9 +374,9 @@ public class AgentOrchestrator {
 
             boolean testSession = isTestSession(state.sessionId());
             if (!testSession) {
-                persistenceHandler.writeAssistantMessageToL1(state);
                 String reactStepsJson = serializeReactStepsJson(state.steps());
                 persistenceHandler.persistAssistantMessage(state, reactStepsJson);
+                persistenceHandler.resolveWorkspaceForTrace(state.sessionId(), state.traceId());
                 persistenceHandler.asyncPostProcess(state);
             }
             log.info("Agent 恢复后执行完成: traceId={}, stepCount={}", state.traceId(), state.stepCount());
@@ -456,9 +454,7 @@ public class AgentOrchestrator {
         var existingSession = sessionManager.findSession(request.sessionId());
         if (existingSession.isPresent()) {
             var snapshot = existingSession.get();
-            var state = ReactAgentState.fromSession(snapshot, request, defaultBudget);
-            persistenceHandler.hydrateWorkingMemoryFromConversationView(snapshot.sessionId());
-            return state;
+            return ReactAgentState.fromSession(snapshot, request, defaultBudget);
         }
         return ReactAgentState.init(request, defaultBudget);
     }
@@ -487,6 +483,7 @@ public class AgentOrchestrator {
     /** 同步模式挂起处理。 */
     private AgentResponse handleSuspendSync(ReactAgentState state,
                                             @Nullable TraceContext traceContext) {
+        persistenceHandler.saveWorkspaceForSuspend(state);
         if (suspendStore != null) {
             suspendStore.save(SuspendedAgent.from(state, objectMapper));
             agentLoop.scheduleWakeupIfNeeded(state);
@@ -505,6 +502,7 @@ public class AgentOrchestrator {
     /** 流式模式挂起处理。 */
     private void handleSuspendStreaming(ReactAgentState state, String streamId,
                                         SseSessionManager sseManager) {
+        persistenceHandler.saveWorkspaceForSuspend(state);
         if (suspendStore != null) {
             var suspendedAgent = SuspendedAgent.from(state, objectMapper).toBuilder()
                     .streamId(streamId).build();

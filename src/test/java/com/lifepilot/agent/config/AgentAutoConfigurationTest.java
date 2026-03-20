@@ -4,11 +4,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.AgentToolProvider;
 import com.lifepilot.agent.context.ContextAssembler;
 import com.lifepilot.config.threadpool.SharedScheduler;
+import com.lifepilot.interaction.web.repository.ChatMessageRepository;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.memory.retrieval.HybridRetriever;
-import com.lifepilot.memory.working.TokenBudgetAllocator;
-import com.lifepilot.memory.working.WorkingMemory;
 import com.lifepilot.prompt.PromptRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -87,6 +86,8 @@ class AgentAutoConfigurationTest {
         MultimodalRouter multimodalRouter() { return mock(MultimodalRouter.class); }
         @Bean(name = "agentTestPromptRegistry")
         PromptRegistry promptRegistry() { return mock(PromptRegistry.class); }
+        @Bean(name = "agentTestChatMessageRepository")
+        ChatMessageRepository chatMessageRepository() { return mock(ChatMessageRepository.class); }
         @Bean(name = "agentTestAgentToolProvider")
         AgentToolProvider agentToolProvider() { return mock(AgentToolProvider.class); }
         @Bean(name = "agentTestSharedScheduler")
@@ -104,8 +105,6 @@ class AgentAutoConfigurationTest {
     @Configuration
     static class MemoryBeansConfig {
         @Bean HybridRetriever hybridRetriever() { return mock(HybridRetriever.class); }
-        @Bean WorkingMemory workingMemory() { return mock(WorkingMemory.class); }
-        @Bean TokenBudgetAllocator tokenBudgetAllocator() { return mock(TokenBudgetAllocator.class); }
     }
 
     /** 用户自定义 ContextAssembler Bean。 */
@@ -114,7 +113,7 @@ class AgentAutoConfigurationTest {
         @Bean
         ContextAssembler customContextAssembler(AgentConfigProperties config, PromptRegistry promptRegistry) {
             return new ContextAssembler(config, promptRegistry,
-                    null, null, null, null, null, null, null, null, null);
+                    null, null, null, null, null, null, null, null, null, null);
         }
     }
 }

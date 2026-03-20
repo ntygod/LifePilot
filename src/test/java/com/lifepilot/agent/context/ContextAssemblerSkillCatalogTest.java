@@ -45,7 +45,7 @@ class ContextAssemblerSkillCatalogTest {
         when(skillRegistry.listAll()).thenReturn(List.of(skill));
 
         var assembler = new ContextAssembler(config, promptRegistry,
-                null, null, null, null, null, null, null, null, skillRegistry);
+                null, null, null, null, null, null, null, null, null, skillRegistry);
 
         String result = assembler.buildReactSystemPrompt();
 
@@ -67,7 +67,7 @@ class ContextAssemblerSkillCatalogTest {
         when(skillRegistry.listAll()).thenReturn(List.of());
 
         var assembler = new ContextAssembler(config, promptRegistry,
-                null, null, null, null, null, null, null, null, skillRegistry);
+                null, null, null, null, null, null, null, null, null, skillRegistry);
 
         String result = assembler.buildReactSystemPrompt();
 
@@ -85,7 +85,7 @@ class ContextAssemblerSkillCatalogTest {
         when(promptRegistry.render(eq("agent/react-system"), anyMap())).thenReturn("系统提示词");
 
         var assembler = new ContextAssembler(config, promptRegistry,
-                null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null, null);
 
         String result = assembler.buildReactSystemPrompt();
 
@@ -112,7 +112,7 @@ class ContextAssemblerSkillCatalogTest {
                 .thenThrow(new RuntimeException("模板不存在"));
 
         var assembler = new ContextAssembler(config, promptRegistry,
-                null, null, null, null, null, null, null, null, skillRegistry);
+                null, null, null, null, null, null, null, null, null, skillRegistry);
 
         String result = assembler.buildReactSystemPrompt();
 
