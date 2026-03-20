@@ -80,14 +80,15 @@ public class ReactAgentLoop {
 
 ### 3.4 上下文智能组装
 
-`ContextAssembler` 根据当前阶段动态组装 LLM 上下文：
+`ContextAssembler` 当前采用更明确的分层组装方式：
 
-- 系统 Prompt（通过 PromptRegistry）
-- 记忆检索结果（WorkingMemory/L2/L3）
-- 对话历史（ConversationHistoryStore）
-- 知识库内容（KnowledgeBaseRepository）
+- 系统 Prompt（通过 `PromptRegistry`）
+- 当前 session 最近完整轮次（通过 `ConversationViewService` 读取）
+- L1 临时工作区摘要（通过 `SessionWorkspaceService` 读取）
+- L3 用户画像与经验实体
+- 其他段落按需预留
 
-支持 Token 预算动态分配和对话压缩。
+跨会话原始对话不会自动注入主 Prompt；如需回忆别的会话，Agent 应显式调用 `builtin.memory.recall`。
 
 ### 3.5 媒体处理
 
@@ -131,7 +132,7 @@ lifepilot:
 用户通过 CLI 或 Web UI 发送消息，Agent 引擎：
 
 1. 接收用户消息
-2. 组装上下文（记忆/知识库/对话历史）
+2. 组装上下文（最近完整轮次/工作区/画像/经验）
 3. 进入 ReAct 循环：
    - 调用 LLM 获取响应
    - 若有工具调用，执行工具并记录结果

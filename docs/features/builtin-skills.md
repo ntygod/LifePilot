@@ -1,73 +1,90 @@
 # 内置 Skill 插件 — 特性说明
 
 > **文档性质**：特性说明文档
-> **模块归属**：`com.lifepilot.skill.builtin`
-> **最后更新**：2026-03
+> **模块归属**：预置 Skill / 元能力工具
+> **最后更新**：2026-03-20
+
+> **说明**：本文只覆盖与记忆模块直接相关的预置能力。
 
 ## 1. 功能概述
 
-知微预装核心内置 Skill，覆盖记忆管理和自主任务执行场景。Agent 通过 `skills` 工具发现和激活这些 Skill，获取专业指令和工具列表后精准完成任务。内置 Skill 的工具直接操作本地数据，执行确定性强、响应快速。
+当前预置的记忆能力由两部分组成：
 
-> **变更说明**：原有的 Todo、Schedule、Habit 三个内置 Skill 已废弃并删除，其功能由自主任务执行模块（`com.lifepilot.agent.task`）替代。自主任务执行基于 TASKS.md 文件管理，支持 cron 定时和条件触发。
+- 资源内置的 Memory Skill 说明文件
+- `MemoryToolProvider` 注册的 `builtin.memory.*` 工具
+
+Memory Skill 告诉 Agent 什么时候该查记忆、查对话、查知识库，底层工具负责真正执行检索、创建和更新。
 
 ## 2. 核心特性
 
-### 2.1 记忆管理（Memory Skill）
+### 2.1 记忆实体搜索
 
-管理长期记忆，支持混合检索、实体创建、关系标签、时间线查询和关联查询。
+`builtin.memory.search` 用于搜索长期记忆实体，如人物、地点、事件、偏好、习惯、目标和经验。
 
-| 工具 | 说明 | 关键参数 |
-|------|------|---------|
-| `builtin.memory.search` | 搜索记忆 | query（混合检索：向量+FTS5+图遍历） |
-| `builtin.memory.create` | 创建记忆 | name、entityType（11 种类型） |
-| `builtin.memory.tag` | 添加标签 | sourceEntityId、targetEntityId、relationType |
-| `builtin.memory.timeline` | 时间线查询 | timePoint（默认当前时间） |
-| `builtin.memory.relate` | 关联查询 | entityId、maxDepth（默认 2 跳） |
+### 2.2 跨会话对话回忆
 
-Memory Skill 是唯一直接操作记忆系统的内置 Skill，条件装配依赖 HybridRetriever 和 SemanticMemory 可用。
+`builtin.memory.recall` 用于搜索别的 session 里的历史对话片段。
 
-### 2.2 自主任务执行（Task Skill）
+- 返回的是 snippet，而不是零散单条消息
+- 会自动排除当前 session
+- 适用于“我之前说过什么”“上次聊到哪儿了”这类问题
 
-管理自主执行的定时和条件任务，基于 `~/.zhiwei/TASKS.md` 文件。
+### 2.3 知识库文档搜索
 
-| 工具 | 说明 | 关键参数 |
-|------|------|---------|
-| `builtin.task.create` | 创建任务 | name、trigger（cron/conditional）、schedule/condition、instruction |
-| `builtin.task.list` | 查询任务列表 | — |
-| `builtin.task.update` | 更新任务 | taskId + 任意可更新字段 |
-| `builtin.task.remove` | 删除任务 | taskId |
+`builtin.memory.search-docs` 用于搜索当前会话绑定的知识库文档，适合“文档里怎么说”的场景。
 
-任务支持两种触发方式：cron 定时触发（精确到秒级）和 conditional 条件触发（周期性检查条件是否满足）。任务执行采用 TASK_SILENT 协议静默运行，仅在需要时通过通知系统告知用户。
+### 2.4 语义记忆管理
 
-## 3. 使用场景
+以下工具用于管理长期记忆实体和关系：
 
-**场景一：记忆关联查询**
+- `builtin.memory.create`
+- `builtin.memory.update`
+- `builtin.memory.delete`
+- `builtin.memory.tag`
+- `builtin.memory.query-at-time`
 
-用户说"张总上次提到了什么"，Agent 调用 `builtin.memory.search` 搜索相关记忆，再调用 `builtin.memory.relate` 查找关联实体，提供完整的上下文信息。
+### 2.5 历史经验复用
 
-**场景二：创建定时任务**
+`builtin.memory.search-experience` 用于主动搜索历史执行经验，适用于：
 
-用户说"每天早上 8 点帮我查看天气并总结"，Agent 调用 `builtin.task.create` 创建 cron 任务，HeartbeatScheduler 自动注册精确定时器，到时间后静默执行并通知用户。
+- 遇到类似任务时想复用过去策略
+- 工具连续失败时参考成功经验
+- 想了解某类工具的最佳使用方式
 
-**场景三：条件触发任务**
+## 3. 工具清单
 
-用户说"当 GitHub 仓库有新 issue 时通知我"，Agent 创建 conditional 任务，HeartbeatScheduler 周期性检查条件，满足时自动执行。
+| 工具 | 说明 |
+|------|------|
+| `builtin.memory.search` | 搜索长期记忆实体 |
+| `builtin.memory.recall` | 回忆跨会话历史对话片段 |
+| `builtin.memory.search-docs` | 搜索知识库文档 |
+| `builtin.memory.create` | 创建记忆实体 |
+| `builtin.memory.update` | 更新记忆实体 |
+| `builtin.memory.delete` | 归档记忆实体 |
+| `builtin.memory.tag` | 添加实体关系 |
+| `builtin.memory.query-at-time` | 查询时间点有效实体 |
+| `builtin.memory.search-experience` | 搜索历史执行经验 |
 
-## 4. 配置项
+## 4. 使用场景
 
-| 配置键 | 默认值 | 说明 |
-|--------|--------|------|
-| `lifepilot.skills.enabled` | `true` | 控制所有内置 Skill 的注册 |
-| `lifepilot.agent.task.enabled` | `true` | 自主任务执行总开关 |
+### 4.1 回忆别的会话
 
-MemorySkillProvider 始终注册，但依赖记忆系统 Bean 的可用性（`@ConditionalOnBean`）。
+用户问“我上次提到过旅行计划吗”，Agent 应调用 `builtin.memory.recall`，而不是在主 Prompt 里自动混入跨会话历史。
 
-## 5. 限制与未来方向
+### 4.2 查用户长期偏好
 
-**当前限制**：
-- 内置 Skill 之间无直接协作机制，跨 Skill 协作依赖 Agent 层面的工具调用编排
-- 自主任务的条件评估依赖 LLM，LLM 不可用时条件任务暂停
+用户问“你还记得我喜欢什么样的工作节奏吗”，Agent 可以通过 `builtin.memory.search` 查长期偏好实体。
 
-**未来方向**：
-- 更多内置 Skill：笔记管理、财务记账等
-- 任务执行结果的智能摘要和趋势分析
+### 4.3 查文档资料
+
+用户问“部署文档里关于回滚怎么写的”，Agent 应调用 `builtin.memory.search-docs`。
+
+### 4.4 复用执行经验
+
+当某个任务与过去做过的任务相似时，Agent 可以主动调用 `builtin.memory.search-experience` 查历史策略。
+
+## 5. 当前限制
+
+- Memory Skill 只负责给出使用说明，真正能力边界由底层工具实现决定
+- `search-docs` 依赖会话绑定知识库，没有绑定时会返回空结果
+- `recall` 只检索跨 session 片段，不负责当前 session 连续性

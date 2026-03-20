@@ -60,8 +60,9 @@ graph TB
 
 ### 3.3 ContextAssembler
 
-- 职责：组装 LLM 调用上下文，包括系统 Prompt、记忆检索、对话历史、知识库内容
-- 支持基础模式和完整模式（含记忆检索槽位填充、对话压缩、Token 预算动态分配）
+- 职责：组装 LLM 调用上下文，包括系统 Prompt、当前 session 最近完整轮次、L1 临时工作区、L3 用户画像与经验
+- 当前主路径不再依赖旧的 `WorkingMemory` 对话缓存，也不再自动注入跨 session 原始对话
+- 跨会话历史检索通过记忆工具显式触发，而不是直接混入主 Prompt
 
 ### 3.4 AgentState / AgentPhase / Action
 
@@ -128,7 +129,7 @@ sequenceDiagram
 
 - **LLM Router**（`llm`）：通过 `LlmRouter.call()` / `stream()` 驱动推理
 - **工具系统**（`tool`）：通过 `AgentToolProvider` 获取工具回调，执行计划步骤
-- **记忆系统**（`memory`）：通过 `ContextAssembler` 检索记忆填充上下文
+- **记忆系统**（`memory`）：通过 `ContextAssembler` 读取最近完整轮次、工作区、画像和经验
 - **可观测性**（`observability`）：TraceRecorder 记录每步执行轨迹
 - **主动推理**（`agent.proactive`）：ProactiveReasoner 在循环后异步触发
 - **多 Agent**（`multiagent`）：SubAgentResult 动作支持子 Agent 委托结果回传
@@ -139,4 +140,4 @@ sequenceDiagram
 |--------|--------|------|
 | `lifepilot.agent.max-iterations` | — | 单次循环最大迭代次数 |
 | `lifepilot.agent.budget.*` | — | 预算配置（Token 上限、时间上限、步数上限） |
-| `lifepilot.agent.context.*` | — | 上下文组装配置（Token 预算分配比例） |
+| `lifepilot.agent.context.*` | — | 上下文组装配置（最近轮次与 Prompt 组装策略） |

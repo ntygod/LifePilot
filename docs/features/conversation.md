@@ -2,63 +2,56 @@
 
 > **文档性质**：特性说明文档
 > **模块归属**：`com.lifepilot.conversation`
-> **最后更新**：2026-03
+> **最后更新**：2026-03-20
 
 ## 1. 功能概述
 
-对话系统模块为知微（ZhiWei）提供统一的对话历史视图能力。它聚合来自 Agent 会话快照（L0）和情景记忆（L2）的数据，为 Web UI 对话页面、评估组件等提供只读的对话历史查询接口，同时通过 `ConversationHistoryStore` 抽象对话消息的持久化写入。
+对话系统现在承担两件很明确的事：
+
+- 把原始消息可靠地写进会话层
+- 给上层提供统一的最近轮次和完整时间线读取能力
+
+它不再负责“从 L2 补回当前会话历史”，也不再参与旧版 L1/L2 对话缓存逻辑。
 
 ## 2. 核心特性
 
-### 2.1 统一对话视图
+### 2.1 当前会话最近轮次读取
 
-通过 `ConversationViewService` 提供与底层存储解耦的对话历史读取入口。无论数据存储在 L0 会话快照还是 L2 情景记忆中，消费方都通过同一接口获取标准化的 `ConversationTurnView`。
+- `ContextAssembler` 通过 `ConversationViewService.getRecentTurns()` 获取最近完整轮次
+- 返回结果已经按完整 turn 裁剪，适合直接拼进 Prompt
 
-### 2.2 双数据源智能聚合
+### 2.2 完整时间线展示
 
-查询完整对话时间线时，优先从 L2 情景记忆读取归档数据（包含完整历史）；若该会话尚未归档到 L2，则自动退化为 L0 会话快照中的最近 N 轮消息，保证始终有数据可返回。
+- Web UI 通过 `getFullTimeline()` 读取会话完整消息流
+- 返回值按时间正序排列，适合直接渲染聊天记录
 
-### 2.3 对话历史写入抽象
+### 2.3 对话真源单一化
 
-`ConversationHistoryStore` 接口将对话消息的写入与记忆系统物理解耦。Web UI 通过此接口保存用户消息和助手回复，支持关联 traceId 用于轨迹追踪，支持推理摘要（reasoningSummary）记录。
+- 原始消息统一保存在 `chat_messages`
+- 这让“当前聊了什么”这个问题只需要看会话层，不需要再和 L1/L2 对齐
 
-### 2.4 轮次视图模型
+### 2.4 与记忆分层解耦
 
-每条对话消息抽象为 `ConversationTurnView` record，包含角色（USER/ASSISTANT）、内容、时间戳和可选的推理摘要。视图模型与底层存储结构完全解耦，既可从会话快照映射，也可从情景记忆记录映射。
+- 当前会话连续性来自 conversation 模块
+- 跨会话 recall 来自 memory 模块
+- 两者职责分开后，调用链和问题定位都更简单
 
 ## 3. 使用场景
 
-### 3.1 Web UI 对话历史展示
+### 3.1 Agent 组装上下文
 
-用户打开对话页面时，前端通过 REST API 调用 `ConversationViewService.getFullTimeline()` 获取完整对话历史，按时间正序渲染消息气泡。新消息通过 `ConversationHistoryStore` 实时写入。
+`ContextAssembler` 每轮调用前读取最近完整轮次，把当前 session 的真实上下文拼进 Prompt。
 
-### 3.2 评估组件轨迹回放
+### 3.2 Web UI 展示历史
 
-Agentic Evals 评估框架通过 `ConversationViewService` 读取指定会话的对话历史，结合 TraceRecorder 的执行轨迹进行多维度评估（工具选择正确性、步骤效率等）。
+前端打开某个会话时，通过 `getFullTimeline()` 直接渲染完整聊天历史。
 
-### 3.3 记忆系统上下文组装
+### 3.3 评估与回放
 
-ContextAssembler 在组装 Agent 上下文时，通过 `ConversationViewService.getRecentTurns()` 获取最近对话消息，填充对话历史槽位。
+评估组件可以复用统一的视图接口读取消息时间线，避免直接绑定数据库表结构。
 
-## 4. 配置项
+## 4. 当前限制
 
-本模块无独立配置项。相关配置由上游模块管理：
-
-| 相关配置 | 所属模块 | 说明 |
-|---------|---------|------|
-| `lifepilot.agent.session.*` | Agent 会话管理 | 会话快照容量、过期策略 |
-| `lifepilot.memory.episodic.*` | 记忆系统 | 情景记忆归档策略 |
-
-## 5. 限制与未来方向
-
-### 当前限制
-
-- 视图层为只读聚合，不支持对话消息的编辑或删除
-- `getFullTimeline()` 在 L2 无数据时退化为 L0 最近 N 轮，可能不完整
-- `ConversationHistoryStore.appendSystemMessage()` 默认 no-op，需实现类覆盖
-
-### 未来方向
-
-- 支持对话消息的搜索和过滤
-- 支持对话导出（Markdown / JSON 格式）
-- 推理过程可视化（展示 Agent 的工具调用、记忆检索等中间步骤）
+- 模块只负责当前会话的读取与展示，不负责跨会话召回
+- 对话编辑、删除等高级操作仍不在该模块职责内
+- 最近轮次是否完整，取决于消息角色和轮次分组规则是否正常

@@ -1,96 +1,101 @@
 # 内置 Skill 插件 — 架构设计
 
 > **文档性质**：架构设计文档
-> **模块归属**：`com.lifepilot.skill.builtin`
-> **最后更新**：2026-03
+> **模块归属**：预置 Skill / 元能力工具
+> **最后更新**：2026-03-20
+
+> **说明**：本文只覆盖与记忆模块直接相关的预置能力，不展开其他 Skill 子系统实现。
 
 ## 1. 模块概述
 
-内置 Skill 插件是知微预装的核心能力单元。每个内置 Skill 通过 `BuiltinSkillProvider` 接口提供 Skill 定义蓝图和工具注册，由 `BuiltinSkillRegistrar` 在应用启动时按 order 顺序统一注册。
+当前记忆相关的预置能力分成两层：
 
-> **变更说明**：原有的 Todo、Schedule、Habit 三个内置 Skill 及 `ProactiveSkillProvider` 接口已废弃并删除，其功能由自主任务执行模块（`com.lifepilot.agent.task`）替代。
+- **预置 Skill 定义**：`src/main/resources/skills/memory/SKILL.md`
+- **底层记忆工具注册**：`com.lifepilot.meta.infra.memory.MemoryToolProvider`
 
-当前内置 Skill：
-- **MemorySkillProvider**（order=40）：记忆管理，5 个工具
-- **TaskToolProvider**（order=50）：自主任务执行，4 个工具（位于 `com.lifepilot.agent.task`）
+也就是说，Memory Skill 的“指令和建议工具列表”由资源文件提供，而真正可执行的 `builtin.memory.*` 工具由 `MemoryToolProvider` 注册到 `DynamicToolRegistry`。
 
 ## 2. 架构图
 
 ```mermaid
 graph TB
-    subgraph "注册机制"
-        BSR["BuiltinSkillRegistrar<br/>ApplicationReadyEvent 触发<br/>按 order 升序注册"]
-        BSA["@BuiltinSkill 注解<br/>id + order"]
-        SCP["SkillConfigProperties<br/>builtin 配置"]
+    subgraph "预置 Skill 定义"
+        MSD["memory/SKILL.md<br/>instructions + suggestedTools"]
+        SR["SkillRegistry"]
+        MSD --> SR
     end
 
-    subgraph "内置 Skill Provider"
-        MSP["MemorySkillProvider<br/>order=40 / 5 工具<br/>条件装配: HybridRetriever + SemanticMemory"]
-        TTP["TaskToolProvider<br/>order=50 / 4 工具<br/>自主任务执行"]
+    subgraph "元能力工具注册"
+        MAC["MetaAutoConfiguration"]
+        MTP["MemoryToolProvider"]
+        DTR["DynamicToolRegistry"]
+        MAC --> MTP
+        MTP --> DTR
     end
 
-    subgraph "数据层"
-        HRet["HybridRetriever<br/>记忆混合检索"]
-        SM["SemanticMemory<br/>时序知识图谱"]
-        TFM["TaskFileManager<br/>TASKS.md 文件"]
+    subgraph "记忆依赖"
+        HR["HybridRetriever"]
+        SM["SemanticMemory"]
+        EM["EpisodicMemory"]
+        DR["DocumentRetriever"]
+        SKB["SessionKnowledgeBaseRepository"]
     end
 
-    subgraph "注册目标"
-        SKR["SkillRegistry<br/>蓝图注册"]
-        DTR["DynamicToolRegistry<br/>builtin.* 工具"]
-    end
-
-    BSR --> SCP
-    BSR --> MSP & TTP
-    MSP --> HRet & SM
-    TTP --> TFM
-    MSP & TTP -->|"provide()"| SKR
-    MSP & TTP -->|"registerTools()"| DTR
+    MTP --> HR
+    MTP --> SM
+    MTP -.可选.-> EM
+    MTP -.可选.-> DR
+    MTP -.可选.-> SKB
 ```
 
 ## 3. 核心组件
 
-### 3.1 BuiltinSkillProvider 接口
+### 3.1 `memory/SKILL.md`
 
-定义内置 Skill 的两个职责：`provide()` 返回 `SkillDefinition` 蓝图（包含 instructions 和 suggestedTools），`registerTools()` 将具体的 `BuiltinTool` 注册到 `DynamicToolRegistry`。
+- 提供记忆相关的提示词说明和建议工具列表
+- 当前列出的关键工具包括：
+  - `builtin.memory.search`
+  - `builtin.memory.recall`
+  - `builtin.memory.search-docs`
+  - `builtin.memory.create`
+  - `builtin.memory.update`
+  - `builtin.memory.delete`
+  - `builtin.memory.tag`
+  - `builtin.memory.query-at-time`
+  - `builtin.memory.search-experience`
 
-### 3.2 @BuiltinSkill 注解
+### 3.2 MemoryToolProvider
 
-标注在 Provider 实现类上，声明 `id`（Skill 唯一标识）和 `order`（注册顺序，值越小越先注册）。
+- 位于 `com.lifepilot.meta.infra.memory`
+- 当前负责注册 9 个记忆工具
+- 工具职责分层如下：
+  - `search`：搜索 L3/L4 实体
+  - `recall`：跨 session 回忆对话片段
+  - `search-docs`：搜索知识库文档
+  - `create / update / delete / tag`：管理语义记忆实体和关系
+  - `query-at-time`：查询指定时间点有效的实体
+  - `search-experience`：搜索历史执行经验
 
-### 3.3 BuiltinSkillRegistrar
+### 3.3 MetaAutoConfiguration
 
-监听 `ApplicationReadyEvent`，使用 `@Order(HIGHEST_PRECEDENCE)` 确保在 SkillFileWatcher 之前执行。收集所有 `BuiltinSkillProvider` Bean，按 order 升序排列，注册前检查配置开关。Memory Skill 始终注册，不受配置开关控制。单个注册失败记录 ERROR 日志，不中断启动。
-
-### 3.4 MemorySkillProvider（记忆管理，order=40）
-
-注册 5 个工具：`builtin.memory.{search, create, tag, timeline, relate}`。条件装配（`@ConditionalOnBean`），依赖 `HybridRetriever` 和 `SemanticMemory`。
-
-### 3.5 TaskToolProvider（自主任务执行，order=50）
-
-注册 4 个工具：`builtin.task.{create, list, update, remove}`。基于 `TaskFileManager` 操作 `~/.zhiwei/TASKS.md` 文件，create 触发一次心跳扫描，update/remove 自动取消/重新注册定时器。
+- 在 `HybridRetriever` 和 `SemanticMemory` 可用时注册 `MemoryToolProvider`
+- `EpisodicMemory`、`DocumentRetriever`、`SessionKnowledgeBaseRepository` 为可选依赖
+- 应用启动完成后，把记忆工具注册到 `DynamicToolRegistry`
 
 ## 4. 设计决策
 
 | 决策 | 选择 | 理由 |
 |------|------|------|
-| Provider 模式 | 蓝图与工具分离 | provide() 返回 Skill 定义，registerTools() 注册工具，职责清晰 |
-| 注册顺序 | @BuiltinSkill(order) | 确保依赖记忆系统的 Skill 后注册 |
-| Memory 条件装配 | @ConditionalOnBean | 记忆系统未就绪时 MemorySkillProvider 不注册 |
-| Builtin 不可覆盖 | SkillRegistry 拒绝覆盖 Builtin 来源 | 防止用户或自生成 Skill 意外替换核心内置功能 |
+| Skill 与工具分层 | 指令在 `SKILL.md`，执行能力在 `MemoryToolProvider` | 让提示词和实现解耦 |
+| recall 返回形式 | snippet 而不是单条 message | 更适合模型直接使用 |
+| docs 检索入口 | `search-docs` 单独拆出 | 区分会话回忆、知识实体检索和文档检索 |
+| 工具注册位置 | Meta 模块统一注册 | 便于与其他内置元能力工具共用启动流程 |
 
 ## 5. 集成点
 
 | 集成模块 | 方向 | 说明 |
 |---------|------|------|
-| Skill 系统 | Builtin → Skill | 通过 SkillRegistry 注册蓝图，通过 DynamicToolRegistry 注册工具 |
-| 记忆系统 | Memory Skill → Memory | MemorySkillProvider 依赖 HybridRetriever 和 SemanticMemory |
-| Agent 任务 | Task Skill → Agent | TaskToolProvider 依赖 TaskFileManager 和 HeartbeatScheduler |
-| Prompt 管理 | Builtin → Prompt | 每个 Provider 通过 PromptRegistry 加载 Skill 指令模板 |
-
-## 6. 配置参考
-
-| 配置键 | 默认值 | 说明 |
-|--------|--------|------|
-| `lifepilot.skills.enabled` | `true` | Skill 系统总开关 |
-| `lifepilot.agent.task.enabled` | `true` | 自主任务执行总开关 |
+| Skill 系统 | Skill → Tool | `memory/SKILL.md` 暴露记忆相关建议工具 |
+| 元能力模块 | Meta → Tool | `MemoryToolProvider` 注册 `builtin.memory.*` |
+| 记忆系统 | Tool → Memory | 工具调用 `HybridRetriever`、`SemanticMemory`、`EpisodicMemory` |
+| 知识库 | Tool → Knowledge | `search-docs` 走知识库检索链路 |
