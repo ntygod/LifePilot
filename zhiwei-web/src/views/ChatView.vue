@@ -45,8 +45,8 @@ const {
   reasoningEvents,
   streamingReactSteps,
   streamingA2uiComponents,
-  pendingToolConfirmation,
-  pendingToolConfirmationResolution,
+  pendingToolConfirmations,
+  pendingToolConfirmationResolutions,
   resolveToolConfirmation,
 } = useChat()
 
@@ -463,8 +463,8 @@ function closeInspectorPanels() {
             :streaming-reasoning-events="reasoningEvents"
             :streaming-react-steps="streamingReactSteps"
             :streaming-a2ui-components="streamingA2uiComponents"
-            :streaming-tool-confirmation="pendingToolConfirmation"
-            :streaming-tool-confirmation-resolution="pendingToolConfirmationResolution"
+            :streaming-tool-confirmations="pendingToolConfirmations"
+            :streaming-tool-confirmation-resolutions="pendingToolConfirmationResolutions"
             :query="searchQuery"
             @retry="handleRetry"
             @like="handleLike"

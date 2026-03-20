@@ -80,9 +80,13 @@ export interface Message {
   collapsed?: boolean
   /** 用户反馈状态（前端本地状态，不持久化到后端） */
   feedbackStatus?: 'liked' | 'disliked' | null
-  /** 工具确认请求数据（仅 role === 'tool-confirmation' 时有值） */
+  /** 工具确认请求数据（支持多个并发确认） */
+  toolConfirmations?: Record<string, ToolConfirmationRequest>
+  /** 工具确认解决结果映射 */
+  toolConfirmationResolutions?: Record<string, 'approved' | 'rejected' | 'expired'>
+  /** @deprecated 使用 toolConfirmations 替代 */
   toolConfirmation?: ToolConfirmationRequest
-  /** 工具确认解决结果（仅 role === 'tool-confirmation' 时有值） */
+  /** @deprecated 使用 toolConfirmationResolutions 替代 */
   toolConfirmationResolution?: 'approved' | 'rejected' | 'expired'
 }
 
