@@ -1,9 +1,11 @@
 package com.lifepilot.meta.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.task.CronScheduler;
 import com.lifepilot.agent.task.CronTaskRepository;
 import com.lifepilot.config.threadpool.SharedScheduler;
+import com.lifepilot.interaction.web.repository.UserSettingsRepository;
 import com.lifepilot.datastore.DataStoreManager;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
@@ -23,6 +25,7 @@ import com.lifepilot.meta.infra.browser.BrowserSessionManager;
 import com.lifepilot.meta.infra.interaction.CliInteractionHandler;
 import com.lifepilot.meta.infra.interaction.InteractionBridge;
 import com.lifepilot.meta.infra.shell.BackgroundProcessManager;
+import com.lifepilot.meta.infra.web.WebSearchConfigProvider;
 import com.lifepilot.multiagent.registry.AgentRegistry;
 import com.lifepilot.notification.NotificationService;
 import com.lifepilot.notification.config.NotificationProperties;
@@ -48,7 +51,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
-import org.springframework.web.client.RestClient;
 
 /**
  * 元能力系统 Spring Boot 自动配置。
@@ -88,6 +90,19 @@ public class MetaAutoConfiguration {
     }
 
     /**
+     * 注册联网搜索配置提供者。
+     */
+    @Bean
+    WebSearchConfigProvider webSearchConfigProvider(@Nullable UserSettingsRepository userSettingsRepository,
+                                                    MetaProperties properties,
+                                                    ObjectMapper objectMapper) {
+        java.util.function.Supplier<String> dbReader = userSettingsRepository != null
+                ? userSettingsRepository::getSearchConfig
+                : () -> "{}";
+        return new WebSearchConfigProvider(dbReader, properties.getInfra().getWebSearch(), objectMapper);
+    }
+
+    /**
      * 注册基础工具提供者。
      *
      * <p>SandboxBooter、CodeValidator、SandboxRepository 为可选依赖，仅在沙箱模块可用时注入。
@@ -97,7 +112,7 @@ public class MetaAutoConfiguration {
      */
     @Bean
     InfraToolProvider infraToolProvider(MetaProperties properties,
-                                        RestClient.Builder restClientBuilder,
+                                        WebSearchConfigProvider webSearchConfigProvider,
                                         @Nullable SandboxBooter sandboxBooter,
                                         @Nullable CodeValidator codeValidator,
                                         @Nullable SandboxRepository sandboxRepository,
@@ -111,7 +126,7 @@ public class MetaAutoConfiguration {
                                         @Nullable AgentConfigProperties agentConfigProperties,
                                         @Nullable NotificationProperties notificationProperties,
                                         @Nullable BackgroundProcessManager backgroundProcessManager) {
-        return new InfraToolProvider(properties, restClientBuilder, sandboxBooter, codeValidator, sandboxRepository, interactionBridge, browserSessionManager, notificationService, workflowRegistry, workflowCommandService, cronTaskRepository, cronScheduler, agentConfigProperties, notificationProperties, backgroundProcessManager);
+        return new InfraToolProvider(properties, webSearchConfigProvider, sandboxBooter, codeValidator, sandboxRepository, interactionBridge, browserSessionManager, notificationService, workflowRegistry, workflowCommandService, cronTaskRepository, cronScheduler, agentConfigProperties, notificationProperties, backgroundProcessManager);
     }
 
     /**

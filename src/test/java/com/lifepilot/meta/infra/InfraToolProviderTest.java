@@ -1,12 +1,13 @@
 package com.lifepilot.meta.infra;
 
 import com.lifepilot.meta.config.MetaProperties;
+import com.lifepilot.meta.infra.web.WebSearchConfig;
+import com.lifepilot.meta.infra.web.WebSearchConfigProvider;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.web.client.RestClient;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
@@ -25,9 +26,18 @@ class InfraToolProviderTest {
     @BeforeEach
     void setUp() {
         properties = new MetaProperties();
-        var restClientBuilder = mock(RestClient.Builder.class);
-        when(restClientBuilder.build()).thenReturn(mock(RestClient.class));
-        provider = new InfraToolProvider(properties, restClientBuilder, null, null, null, null, null, null, null, null, null, null, null, null, null);
+        WebSearchConfigProvider webSearchConfigProvider = mock(WebSearchConfigProvider.class);
+        when(webSearchConfigProvider.getConfig()).thenReturn(new WebSearchConfig(
+                "tavily",
+                "",
+                5,
+                10,
+                30,
+                "basic",
+                "general",
+                true
+        ));
+        provider = new InfraToolProvider(properties, webSearchConfigProvider, null, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     @Test

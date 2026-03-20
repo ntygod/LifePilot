@@ -195,8 +195,11 @@ sequenceDiagram
 
 | 配置键 | 默认值 | 说明 |
 |--------|--------|------|
-| `lifepilot.meta.infra.web-search.provider` | `duckduckgo` | 搜索引擎（google / bing / duckduckgo） |
+| `lifepilot.meta.infra.web-search.provider` | `tavily` | 搜索引擎提供商（当前固定为 Tavily） |
 | `lifepilot.meta.infra.web-search.max-results` | `5` | 搜索最大返回数 |
+| `lifepilot.meta.infra.web-search.search-depth` | `basic` | Tavily 搜索深度（basic / advanced） |
+| `lifepilot.meta.infra.web-search.topic` | `general` | Tavily 搜索主题（general / news / finance） |
+| `lifepilot.meta.infra.web-search.include-answer` | `true` | 是否附带 Tavily answer 摘要 |
 | `lifepilot.meta.infra.web-fetch.max-content-length` | `50000` | Web 抓取最大字符数 |
 | `lifepilot.meta.infra.web-fetch.timeout-seconds` | `10` | HTTP 请求超时 |
 | `lifepilot.meta.infra.shell.timeout-seconds` | `30` | Shell 命令执行超时 |

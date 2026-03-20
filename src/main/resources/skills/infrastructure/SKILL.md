@@ -65,10 +65,10 @@ suggested-tools:
 
 | 工具 | 用途 |
 |------|------|
-| `builtin.web.search` | 通过搜索引擎检索信息 |
+| `builtin.web.search` | 通过 Tavily 联网检索信息 |
 | `builtin.web.fetch` | 抓取指定 URL 的网页内容 |
 
-- 先用 `search` 找到相关链接，再用 `fetch` 获取详细内容
+- 先用 `search` 通过 Tavily 找到相关链接，再用 `fetch` 获取详细内容
 - `fetch` 支持 CSS 选择器定向提取页面特定区域
 - 搜索结果支持分页（`offset` + `limit`）
 

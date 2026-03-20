@@ -4,6 +4,8 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.interaction.web.model.RerankerSettingsRequest;
 import com.lifepilot.interaction.web.model.RerankerSettingsResponse;
+import com.lifepilot.interaction.web.model.SearchSettingsRequest;
+import com.lifepilot.interaction.web.model.SearchSettingsResponse;
 import com.lifepilot.interaction.web.model.UserSettings;
 import com.lifepilot.interaction.web.repository.UserSettingsRepository;
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
@@ -11,6 +13,7 @@ import com.lifepilot.llm.config.ProviderCapability;
 import com.lifepilot.llm.config.ProviderConfig;
 import com.lifepilot.llm.registry.ProviderRegistry;
 import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.meta.config.MetaProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -53,6 +56,9 @@ public class SettingsController {
     /** 记忆配置（用于读取记忆精排默认值） */
     private final MemoryProperties memoryProperties;
 
+    /** 元能力配置（用于读取联网搜索默认值） */
+    private final MetaProperties metaProperties;
+
     /**
      * 创建 SettingsController。
      *
@@ -66,12 +72,14 @@ public class SettingsController {
                               @Autowired(required = false) ProviderRegistry providerRegistry,
                               ObjectMapper objectMapper,
                               @Autowired(required = false) @Nullable KnowledgeBaseProperties knowledgeBaseProperties,
-                              @Autowired(required = false) @Nullable MemoryProperties memoryProperties) {
+                              @Autowired(required = false) @Nullable MemoryProperties memoryProperties,
+                              @Autowired(required = false) @Nullable MetaProperties metaProperties) {
         this.settingsRepository = settingsRepository;
         this.providerRegistry = providerRegistry;
         this.objectMapper = objectMapper;
         this.knowledgeBaseProperties = knowledgeBaseProperties;
         this.memoryProperties = memoryProperties;
+        this.metaProperties = metaProperties;
     }
 
     /**
@@ -406,6 +414,99 @@ public class SettingsController {
         return getKnowledgeSettings();
     }
 
+    // ==================== 联网搜索配置端点 ====================
+
+    /**
+     * 获取联网搜索配置。
+     *
+     * <p>优先从数据库读取持久化配置，若为空则回退到 application.yml 默认值。
+     * apiKey 返回掩码值。</p>
+     */
+    @GetMapping("/search")
+    public ResponseEntity<SearchSettingsResponse> getSearchSettings() {
+        log.debug("获取联网搜索配置");
+
+        String json = settingsRepository.getSearchConfig();
+        Map<String, Object> config = deserializeJsonConfig(json);
+        var defaults = metaProperties != null
+                ? metaProperties.getInfra().getWebSearch()
+                : new MetaProperties.Infra.WebSearch();
+
+        String provider = normalizeSearchProvider(getConfigValue(config, "provider", String.class, defaults.getProvider()));
+        String apiKey = getConfigValue(config, "apiKey", String.class, defaults.getApiKey());
+        int maxResults = clamp(getConfigValue(config, "maxResults", Integer.class, defaults.getMaxResults()), 1, 20);
+        String searchDepth = normalizeSearchDepth(
+                getConfigValue(config, "searchDepth", String.class, defaults.getSearchDepth()));
+        String topic = normalizeSearchTopic(getConfigValue(config, "topic", String.class, defaults.getTopic()));
+        boolean includeAnswer = getConfigValue(config, "includeAnswer", Boolean.class, defaults.isIncludeAnswer());
+        int connectTimeoutSeconds = Math.max(1, getConfigValue(config, "connectTimeoutSeconds",
+                Integer.class, defaults.getConnectTimeoutSeconds()));
+        int readTimeoutSeconds = Math.max(1, getConfigValue(config, "readTimeoutSeconds",
+                Integer.class, defaults.getReadTimeoutSeconds()));
+
+        return ResponseEntity.ok(new SearchSettingsResponse(
+                provider,
+                maskApiKey(apiKey),
+                maxResults,
+                searchDepth,
+                topic,
+                includeAnswer,
+                connectTimeoutSeconds,
+                readTimeoutSeconds
+        ));
+    }
+
+    /**
+     * 更新联网搜索配置。
+     *
+     * <p>当前仅支持 Tavily。apiKey 传入掩码值时保留原值。</p>
+     */
+    @PutMapping("/search")
+    public ResponseEntity<SearchSettingsResponse> updateSearchSettings(@RequestBody SearchSettingsRequest request) {
+        log.info("更新联网搜索配置: provider={}, topic={}, searchDepth={}",
+                request.provider(), request.topic(), request.searchDepth());
+
+        String existingJson = settingsRepository.getSearchConfig();
+        Map<String, Object> config = deserializeJsonConfig(existingJson);
+
+        if (request.provider() != null) {
+            config.put("provider", normalizeSearchProvider(request.provider()));
+        } else if (!config.containsKey("provider")) {
+            config.put("provider", "tavily");
+        }
+        if (request.maxResults() != null) {
+            config.put("maxResults", clamp(request.maxResults(), 1, 20));
+        }
+        if (request.searchDepth() != null) {
+            config.put("searchDepth", normalizeSearchDepth(request.searchDepth()));
+        }
+        if (request.topic() != null) {
+            config.put("topic", normalizeSearchTopic(request.topic()));
+        }
+        if (request.includeAnswer() != null) {
+            config.put("includeAnswer", request.includeAnswer());
+        }
+        if (request.connectTimeoutSeconds() != null) {
+            config.put("connectTimeoutSeconds", Math.max(1, request.connectTimeoutSeconds()));
+        }
+        if (request.readTimeoutSeconds() != null) {
+            config.put("readTimeoutSeconds", Math.max(1, request.readTimeoutSeconds()));
+        }
+        if (request.apiKey() != null && !isApiKeyMasked(request.apiKey())) {
+            config.put("apiKey", request.apiKey().trim());
+        }
+
+        try {
+            String updatedJson = objectMapper.writeValueAsString(config);
+            settingsRepository.saveSearchConfig(updatedJson);
+        } catch (Exception e) {
+            log.error("联网搜索配置序列化失败: error={}", e.getMessage());
+            return ResponseEntity.internalServerError().build();
+        }
+
+        return getSearchSettings();
+    }
+
     // ── 渠道配置 ──────────────────────────────────────────────
 
     /** 敏感字段名列表（需要 mask 处理）。 */
@@ -547,6 +648,27 @@ public class SettingsController {
         return apiKey != null && apiKey.startsWith("****");
     }
 
+    private String normalizeSearchProvider(@Nullable String provider) {
+        return "tavily";
+    }
+
+    private String normalizeSearchDepth(@Nullable String searchDepth) {
+        if ("advanced".equalsIgnoreCase(searchDepth)) {
+            return "advanced";
+        }
+        return "basic";
+    }
+
+    private String normalizeSearchTopic(@Nullable String topic) {
+        if ("news".equalsIgnoreCase(topic)) {
+            return "news";
+        }
+        if ("finance".equalsIgnoreCase(topic)) {
+            return "finance";
+        }
+        return "general";
+    }
+
     /**
      * 反序列化 Reranker 配置 JSON 为 Map。
      *
@@ -585,10 +707,17 @@ public class SettingsController {
         if (type == Integer.class && value instanceof Number number) {
             return (T) Integer.valueOf(number.intValue());
         }
+        if (type == Boolean.class && value instanceof String s) {
+            return (T) Boolean.valueOf(Boolean.parseBoolean(s));
+        }
         if (type.isInstance(value)) {
             return type.cast(value);
         }
         return defaultValue;
+    }
+
+    private int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(value, max));
     }
 
     /**

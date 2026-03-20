@@ -759,9 +759,12 @@ lifepilot:
     infra:
       max-tool-output-chars: 30000
       web-search:
-        provider: duckduckgo
-        api-key: ${SEARCH_API_KEY:}
+        provider: tavily
+        api-key: ${TAVILY_API_KEY:}
         max-results: 5
+        search-depth: basic
+        topic: general
+        include-answer: true
         connect-timeout-seconds: 10
         read-timeout-seconds: 30
       web-fetch:

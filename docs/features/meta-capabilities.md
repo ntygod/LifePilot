@@ -19,7 +19,7 @@ Agent 的通用执行基础设施，按功能域分为 8 类：
 | 环境感知 | `builtin.env.datetime` | 获取当前日期时间 |
 | 环境感知 | `builtin.env.user-profile` | 获取用户画像信息 |
 | 环境感知 | `builtin.env.system-info` | 获取系统环境信息 |
-| Web 信息 | `builtin.web.search` | Web 搜索（支持 DuckDuckGo / Google / Bing） |
+| Web 信息 | `builtin.web.search` | Web 搜索（统一使用 Tavily） |
 | Web 信息 | `builtin.web.fetch` | 抓取网页内容 |
 | 推理辅助 | `builtin.reason.think` | 结构化思考（scratchpad） |
 | 推理辅助 | `builtin.reason.calculate` | 数学计算 |
@@ -66,8 +66,11 @@ Agent 在执行任务时，自动使用基础工具完成各类操作：搜索 W
 
 | 配置键 | 默认值 | 说明 |
 |--------|--------|------|
-| `lifepilot.meta.infra.web-search.provider` | `duckduckgo` | 搜索引擎提供商 |
+| `lifepilot.meta.infra.web-search.provider` | `tavily` | 搜索引擎提供商（当前固定为 Tavily） |
 | `lifepilot.meta.infra.web-search.max-results` | `5` | 搜索最大返回数 |
+| `lifepilot.meta.infra.web-search.search-depth` | `basic` | Tavily 搜索深度 |
+| `lifepilot.meta.infra.web-search.topic` | `general` | Tavily 搜索主题 |
+| `lifepilot.meta.infra.web-search.include-answer` | `true` | 是否附带 Tavily answer 摘要 |
 | `lifepilot.meta.infra.web-fetch.timeout-seconds` | `10` | Web 抓取超时 |
 | `lifepilot.meta.infra.shell.timeout-seconds` | `30` | Shell 命令超时 |
 | `lifepilot.meta.infra.browser.enabled` | `true` | 浏览器功能开关 |
@@ -82,7 +85,7 @@ Agent 在执行任务时，自动使用基础工具完成各类操作：搜索 W
 ## 5. 限制与未来方向
 
 - 浏览器自动化依赖 Playwright，需要额外安装浏览器二进制文件
-- Web 搜索目前仅支持 DuckDuckGo / Google / Bing 三个引擎
+- Web 搜索当前统一通过 Tavily 执行，前端“知识与检索”页面可直接修改 API Key 与默认参数
 - 交互桥接仅支持 SSE 和 CLI 两种 Channel，未来可扩展 WebSocket
 - 自省工具的语义搜索依赖 SkillRegistry 的向量索引，未索引的能力仅支持关键词匹配
 - 未来可增加更多基础工具（如邮件发送、日历操作等）

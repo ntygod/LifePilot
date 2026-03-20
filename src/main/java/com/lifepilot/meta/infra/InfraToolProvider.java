@@ -15,6 +15,7 @@ import com.lifepilot.meta.infra.shell.ShellExecToolExecutor;
 import com.lifepilot.meta.infra.interaction.InteractionBridge;
 import com.lifepilot.meta.infra.interaction.InteractionToolProvider;
 import com.lifepilot.meta.infra.web.WebFetchToolExecutor;
+import com.lifepilot.meta.infra.web.WebSearchConfigProvider;
 import com.lifepilot.meta.infra.web.WebSearchToolExecutor;
 import com.lifepilot.notification.NotificationService;
 import com.lifepilot.notification.config.NotificationProperties;
@@ -36,7 +37,6 @@ import com.lifepilot.tool.schema.JsonSchema;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.web.client.RestClient;
 
 import java.util.List;
 import java.util.Map;
@@ -56,7 +56,7 @@ public class InfraToolProvider {
     private static final List<String> INFRA_TAGS = List.of("infrastructure");
 
     private final MetaProperties properties;
-    private final RestClient.Builder restClientBuilder;
+    private final WebSearchConfigProvider webSearchConfigProvider;
     @Nullable
     private final SandboxBooter sandboxBooter;
     @Nullable
@@ -85,7 +85,7 @@ public class InfraToolProvider {
     private final BackgroundProcessManager backgroundProcessManager;
 
     public InfraToolProvider(MetaProperties properties,
-                             RestClient.Builder restClientBuilder,
+                             WebSearchConfigProvider webSearchConfigProvider,
                              @Nullable SandboxBooter sandboxBooter,
                              @Nullable CodeValidator codeValidator,
                              @Nullable SandboxRepository sandboxRepository,
@@ -100,7 +100,7 @@ public class InfraToolProvider {
                              @Nullable NotificationProperties notificationProperties,
                              @Nullable BackgroundProcessManager backgroundProcessManager) {
         this.properties = properties;
-        this.restClientBuilder = restClientBuilder;
+        this.webSearchConfigProvider = webSearchConfigProvider;
         this.sandboxBooter = sandboxBooter;
         this.codeValidator = codeValidator;
         this.sandboxRepository = sandboxRepository;
@@ -132,7 +132,7 @@ public class InfraToolProvider {
         toolRegistry.registerBuiltinTool(buildSystemInfoTool(systemInfoExecutor));
 
         // 信息获取工具（2 个）
-        var webSearchExecutor = new WebSearchToolExecutor(properties, restClientBuilder);
+        var webSearchExecutor = new WebSearchToolExecutor(webSearchConfigProvider);
         var webFetchExecutor = new WebFetchToolExecutor(properties);
 
         toolRegistry.registerBuiltinTool(buildWebSearchTool(webSearchExecutor));
@@ -268,7 +268,7 @@ public class InfraToolProvider {
                 .id("builtin.web.search")
                 .category(ToolCategory.PERCEPTION)
                 .name("Web 搜索")
-                .description("通过搜索引擎检索信息，返回标题、摘要和链接列表。支持 DuckDuckGo（免费）/ Google / Bing")
+                .description("通过 Tavily 联网检索信息，返回标题、摘要和链接列表，可附带 AI 生成的答案摘要")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("query"),

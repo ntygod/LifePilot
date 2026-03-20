@@ -53,9 +53,12 @@ class ConfigExternalizationCompletenessTest {
     @Test
     void WebSearch默认值正确() {
         var ws = props.getInfra().getWebSearch();
-        assertThat(ws.getProvider()).isEqualTo("duckduckgo");
+        assertThat(ws.getProvider()).isEqualTo("tavily");
         assertThat(ws.getApiKey()).isEqualTo("");
         assertThat(ws.getMaxResults()).isEqualTo(5);
+        assertThat(ws.getSearchDepth()).isEqualTo("basic");
+        assertThat(ws.getTopic()).isEqualTo("general");
+        assertThat(ws.isIncludeAnswer()).isTrue();
     }
 
     // ── WebFetch 默认值 ──────────────────────────────────────

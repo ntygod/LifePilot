@@ -1,8 +1,10 @@
 package com.lifepilot.meta.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.annotation.Configuration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -17,16 +19,25 @@ import static org.assertj.core.api.Assertions.assertThat;
 class MetaPropertiesTest {
 
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
-            .withConfiguration(AutoConfigurations.of(MetaAutoConfiguration.class));
+            .withUserConfiguration(TestConfig.class)
+            .withBean(ObjectMapper.class, ObjectMapper::new);
+
+    @Configuration(proxyBeanMethods = false)
+    @EnableConfigurationProperties(MetaProperties.class)
+    static class TestConfig {
+    }
 
     @Test
     void 默认值绑定正确_Infra_WebSearch() {
         contextRunner.run(context -> {
             var props = context.getBean(MetaProperties.class);
             var ws = props.getInfra().getWebSearch();
-            assertThat(ws.getProvider()).isEqualTo("duckduckgo");
+            assertThat(ws.getProvider()).isEqualTo("tavily");
             assertThat(ws.getApiKey()).isEmpty();
             assertThat(ws.getMaxResults()).isEqualTo(5);
+            assertThat(ws.getSearchDepth()).isEqualTo("basic");
+            assertThat(ws.getTopic()).isEqualTo("general");
+            assertThat(ws.isIncludeAnswer()).isTrue();
         });
     }
 
@@ -135,8 +146,11 @@ class MetaPropertiesTest {
     void 自定义配置覆盖默认值() {
         contextRunner
                 .withPropertyValues(
-                        "lifepilot.meta.infra.web-search.provider=google",
+                        "lifepilot.meta.infra.web-search.provider=tavily",
                         "lifepilot.meta.infra.web-search.max-results=10",
+                        "lifepilot.meta.infra.web-search.search-depth=advanced",
+                        "lifepilot.meta.infra.web-search.topic=news",
+                        "lifepilot.meta.infra.web-search.include-answer=false",
                         "lifepilot.meta.infra.shell.timeout-seconds=60",
                         "lifepilot.meta.infra.interaction.response-timeout-seconds=300",
                         "lifepilot.meta.introspection.cache-ttl-seconds=120",
@@ -145,8 +159,11 @@ class MetaPropertiesTest {
                 )
                 .run(context -> {
                     var props = context.getBean(MetaProperties.class);
-                    assertThat(props.getInfra().getWebSearch().getProvider()).isEqualTo("google");
+                    assertThat(props.getInfra().getWebSearch().getProvider()).isEqualTo("tavily");
                     assertThat(props.getInfra().getWebSearch().getMaxResults()).isEqualTo(10);
+                    assertThat(props.getInfra().getWebSearch().getSearchDepth()).isEqualTo("advanced");
+                    assertThat(props.getInfra().getWebSearch().getTopic()).isEqualTo("news");
+                    assertThat(props.getInfra().getWebSearch().isIncludeAnswer()).isFalse();
                     assertThat(props.getInfra().getShell().getTimeoutSeconds()).isEqualTo(60);
                     assertThat(props.getInfra().getInteraction().getResponseTimeoutSeconds()).isEqualTo(300);
                     assertThat(props.getIntrospection().getCacheTtlSeconds()).isEqualTo(120);

@@ -237,6 +237,37 @@ public class UserSettingsRepository {
         log.debug("渠道配置已保存");
     }
 
+    /**
+     * 读取联网搜索配置 JSON。
+     *
+     * @return search_config_json 列的值，不存在或为空时返回 "{}"
+     */
+    public String getSearchConfig() {
+        var results = jdbcTemplate.query(
+                "SELECT search_config_json FROM user_settings WHERE id = ?",
+                (rs, rowNum) -> rs.getString("search_config_json"),
+                DEFAULT_SETTINGS_ID);
+        String json = results.stream().findFirst().orElse(null);
+        if (json == null || json.isBlank()) {
+            return "{}";
+        }
+        return json;
+    }
+
+    /**
+     * 保存联网搜索配置 JSON。
+     *
+     * @param json 联网搜索配置 JSON 字符串
+     */
+    public void saveSearchConfig(String json) {
+        getSettings();
+        String now = Instant.now().toString();
+        jdbcTemplate.update(
+                "UPDATE user_settings SET search_config_json = ?, updated_at = ? WHERE id = ?",
+                json, now, DEFAULT_SETTINGS_ID);
+        log.debug("联网搜索配置已保存");
+    }
+
     private java.util.Map<String, String> deserializeSceneProviders(String json) {
         if (json == null || json.isBlank()) {
             return java.util.Map.of();

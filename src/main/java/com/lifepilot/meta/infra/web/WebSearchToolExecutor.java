@@ -1,24 +1,24 @@
 package com.lifepilot.meta.infra.web;
 
-import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 
 /**
- * Web 搜索工具执行器 — 通过搜索引擎 API 检索信息。
+ * Web 搜索工具执行器。
  *
- * <p>支持 google / bing / duckduckgo 三种搜索引擎，通过配置切换。
- * DuckDuckGo 使用免费 Instant Answer API（无需 API Key），
- * Google / Bing 需要配置 API Key。</p>
+ * <p>当前统一通过 Tavily Search API 执行联网搜索。
  *
  * @author zsg
  * @since 2026-03-08
@@ -26,42 +26,49 @@ import java.util.Map;
 public class WebSearchToolExecutor {
 
     private static final Logger log = LoggerFactory.getLogger(WebSearchToolExecutor.class);
+    private static final String TAVILY_SEARCH_URL = "https://api.tavily.com/search";
 
-    private final MetaProperties properties;
-    private final RestClient restClient;
+    private final WebSearchConfigProvider configProvider;
+    private final Function<WebSearchConfig, RestClient> restClientFactory;
 
-    public WebSearchToolExecutor(MetaProperties properties, RestClient.Builder restClientBuilder) {
-        this.properties = properties;
-        this.restClient = restClientBuilder.build();
+    public WebSearchToolExecutor(WebSearchConfigProvider configProvider) {
+        this(configProvider, WebSearchToolExecutor::createRestClient);
+    }
+
+    WebSearchToolExecutor(WebSearchConfigProvider configProvider,
+                          Function<WebSearchConfig, RestClient> restClientFactory) {
+        this.configProvider = configProvider;
+        this.restClientFactory = restClientFactory;
     }
 
     /**
      * 执行 Web 搜索。
      *
-     * @param input 工具输入，必需参数 query，可选参数 maxResults
-     * @return 包含搜索结果列表的结构化结果
+     * @param input 工具输入，必须包含 query，可选 maxResults / offset / limit
+     * @return 结构化搜索结果
      */
     public ToolResult execute(ToolInput input) {
         try {
             String query = input.getParam("query", String.class);
+            if (query == null || query.isBlank()) {
+                return ToolResult.error("参数错误: query 不能为空");
+            }
+
+            var config = configProvider.getConfig();
+            int configuredMaxResults = config.maxResults();
             int maxResults = input.getOptionalParam("maxResults", Integer.class)
-                    .orElse(properties.getInfra().getWebSearch().getMaxResults());
+                    .map(value -> clamp(value, 1, 20))
+                    .orElse(configuredMaxResults);
             int offset = input.getOptionalParam("offset", Integer.class)
-                    .map(o -> Math.max(o, 0))
+                    .map(value -> Math.max(value, 0))
                     .orElse(0);
             int limit = input.getOptionalParam("limit", Integer.class)
-                    .filter(l -> l >= 1)
+                    .filter(value -> value >= 1)
+                    .map(value -> clamp(value, 1, 20))
                     .orElse(maxResults);
+            int requestSize = clamp(Math.max(maxResults, offset + limit), 1, 20);
 
-            var config = properties.getInfra().getWebSearch();
-            String provider = config.getProvider().toLowerCase();
-
-            return switch (provider) {
-                case "duckduckgo" -> searchDuckDuckGo(query, maxResults, offset, limit);
-                case "google" -> searchWithApiKey(provider, query, maxResults, config.getApiKey());
-                case "bing" -> searchWithApiKey(provider, query, maxResults, config.getApiKey());
-                default -> ToolResult.error("不支持的搜索引擎: " + provider + "，支持 google/bing/duckduckgo");
-            };
+            return searchTavily(query.trim(), config, requestSize, offset, limit);
         } catch (IllegalArgumentException e) {
             return ToolResult.error("参数错误: " + e.getMessage());
         } catch (Exception e) {
@@ -70,95 +77,128 @@ public class WebSearchToolExecutor {
         }
     }
 
-    /**
-     * DuckDuckGo 搜索 — 使用免费 Instant Answer API，无需 API Key。
-     *
-     * <p>调用 {@code https://api.duckduckgo.com/?q={query}&format=json} 获取即时答案，
-     * 从 RelatedTopics 中提取搜索结果。</p>
-     */
-    @SuppressWarnings({"unchecked", "null"})
-    private ToolResult searchDuckDuckGo(String query, int maxResults, int offset, int limit) {
-        String encodedQuery = URLEncoder.encode(query, StandardCharsets.UTF_8);
-        String url = "https://api.duckduckgo.com/?q=%s&format=json&no_html=1&skip_disambig=1"
-                .formatted(encodedQuery);
+    @SuppressWarnings("unchecked")
+    private ToolResult searchTavily(String query,
+                                    WebSearchConfig config,
+                                    int requestSize,
+                                    int offset,
+                                    int limit) {
+        if (config.apiKey() == null || config.apiKey().isBlank()) {
+            return ToolResult.error("Tavily 搜索需要配置 API Key，请在设置页“知识与检索”中填写");
+        }
 
-        var response = restClient.get()
-                .uri(url)
+        Map<String, Object> requestBody = new LinkedHashMap<>();
+        requestBody.put("query", query);
+        requestBody.put("search_depth", config.searchDepth());
+        requestBody.put("topic", config.topic());
+        requestBody.put("max_results", requestSize);
+        requestBody.put("include_answer", config.includeAnswer());
+        requestBody.put("include_images", false);
+        requestBody.put("include_raw_content", false);
+
+        var response = restClientFactory.apply(config).post()
+                .uri(TAVILY_SEARCH_URL)
+                .contentType(MediaType.APPLICATION_JSON)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + config.apiKey())
+                .body(requestBody)
                 .retrieve()
                 .body(Map.class);
 
         if (response == null) {
-            return ToolResult.error("DuckDuckGo API 返回空响应");
+            return ToolResult.error("Tavily API 返回空响应");
         }
 
-        var results = new ArrayList<Map<String, String>>();
-
-        // 提取 Abstract（摘要）
-        String abstractText = (String) response.get("AbstractText");
-        String abstractUrl = (String) response.get("AbstractURL");
-        String heading = (String) response.get("Heading");
-        if (abstractText != null && !abstractText.isBlank()) {
-            results.add(Map.of(
-                    "title", heading != null ? heading : query,
-                    "snippet", abstractText,
-                    "url", abstractUrl != null ? abstractUrl : ""
-            ));
-        }
-
-        // 提取 RelatedTopics
-        var relatedTopics = (List<Object>) response.getOrDefault("RelatedTopics", List.of());
-        for (Object topic : relatedTopics) {
-            if (results.size() >= maxResults) break;
-            if (topic instanceof Map<?, ?> topicMap) {
-                String text = (String) topicMap.get("Text");
-                String firstUrl = (String) topicMap.get("FirstURL");
-                if (text != null && !text.isBlank() && firstUrl != null) {
-                    results.add(Map.of(
-                            "title", extractTitle(text),
-                            "snippet", text,
-                            "url", firstUrl
-                    ));
+        List<Map<String, Object>> normalizedResults = new ArrayList<>();
+        Object rawResults = response.get("results");
+        if (rawResults instanceof List<?> results) {
+            for (Object item : results) {
+                if (!(item instanceof Map<?, ?> resultMap)) {
+                    continue;
                 }
+                String title = readString(resultMap, "title");
+                String snippet = firstNonBlank(
+                        readString(resultMap, "content"),
+                        readString(resultMap, "raw_content"),
+                        readString(resultMap, "description")
+                );
+                String url = readString(resultMap, "url");
+
+                var normalized = new LinkedHashMap<String, Object>();
+                normalized.put("title", title);
+                normalized.put("snippet", snippet);
+                normalized.put("url", url);
+
+                Double score = readDouble(resultMap.get("score"));
+                if (score != null) {
+                    normalized.put("score", score);
+                }
+
+                String publishedDate = readString(resultMap, "published_date");
+                if (!publishedDate.isBlank()) {
+                    normalized.put("publishedDate", publishedDate);
+                }
+
+                normalizedResults.add(normalized);
             }
         }
 
-        // 分页切片
-        int totalEstimate = results.size();
+        int totalEstimate = normalizedResults.size();
         int fromIndex = Math.min(offset, totalEstimate);
         int toIndex = Math.min(fromIndex + limit, totalEstimate);
-        var paged = results.subList(fromIndex, toIndex);
-        boolean hasMore = toIndex < totalEstimate;
+        List<Map<String, Object>> pagedResults = List.copyOf(normalizedResults.subList(fromIndex, toIndex));
 
-        return ToolResult.success(Map.of(
-                "provider", "duckduckgo",
-                "query", query,
-                "resultCount", paged.size(),
-                "totalEstimate", totalEstimate,
-                "hasMore", hasMore,
-                "results", List.copyOf(paged)
-        ));
-    }
+        var payload = new LinkedHashMap<String, Object>();
+        payload.put("provider", config.provider());
+        payload.put("query", query);
+        payload.put("topic", config.topic());
+        payload.put("searchDepth", config.searchDepth());
+        payload.put("resultCount", pagedResults.size());
+        payload.put("totalEstimate", totalEstimate);
+        payload.put("hasMore", toIndex < totalEstimate);
 
-    /** Google / Bing 搜索 — 需要 API Key。 */
-    private ToolResult searchWithApiKey(String provider, String query, int maxResults, String apiKey) {
-        if (apiKey == null || apiKey.isBlank()) {
-            return ToolResult.error(
-                    "%s 搜索需要配置 API Key，请在 lifepilot.meta.infra.web-search.api-key 中设置"
-                            .formatted(provider));
+        String answer = readString(response, "answer");
+        if (!answer.isBlank()) {
+            payload.put("answer", answer);
         }
 
-        // Google / Bing API 调用预留，当前返回提示信息
-        return ToolResult.error(
-                "%s 搜索引擎 API 集成尚未实现，请使用 duckduckgo（无需 API Key）"
-                        .formatted(provider));
+        payload.put("results", pagedResults);
+        return ToolResult.success(payload);
     }
 
-    /** 从 DuckDuckGo RelatedTopics 文本中提取标题（取第一句或前 50 字符）。 */
-    private String extractTitle(String text) {
-        int dashIndex = text.indexOf(" - ");
-        if (dashIndex > 0 && dashIndex < 80) {
-            return text.substring(0, dashIndex);
+    private static RestClient createRestClient(WebSearchConfig config) {
+        var requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(config.connectTimeoutSeconds() * 1000);
+        requestFactory.setReadTimeout(config.readTimeoutSeconds() * 1000);
+        return RestClient.builder()
+                .requestFactory(requestFactory)
+                .build();
+    }
+
+    private static int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(value, max));
+    }
+
+    private static String readString(Map<?, ?> map, String key) {
+        Object value = map.get(key);
+        if (value instanceof String text) {
+            return text;
         }
-        return text.length() > 50 ? text.substring(0, 50) + "..." : text;
+        return "";
+    }
+
+    private static Double readDouble(Object value) {
+        if (value instanceof Number number) {
+            return number.doubleValue();
+        }
+        return null;
+    }
+
+    private static String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return "";
     }
 }

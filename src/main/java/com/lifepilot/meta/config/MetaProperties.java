@@ -78,14 +78,23 @@ public class MetaProperties {
         @Data
         public static class WebSearch {
 
-            /** 搜索引擎提供商（google / bing / duckduckgo），默认 duckduckgo。 */
-            private String provider = "duckduckgo";
+            /** 搜索引擎提供商，当前固定为 tavily。 */
+            private String provider = "tavily";
 
             /** 搜索引擎 API Key，默认空。 */
             private String apiKey = "";
 
             /** 最大返回结果数，默认 5。 */
             private int maxResults = 5;
+
+            /** 搜索深度（basic / advanced），默认 basic。 */
+            private String searchDepth = "basic";
+
+            /** 搜索主题（general / news / finance），默认 general。 */
+            private String topic = "general";
+
+            /** 是否返回 Tavily answer 摘要，默认 true。 */
+            private boolean includeAnswer = true;
 
             /** HTTP 连接超时（秒），默认 10。 */
             private int connectTimeoutSeconds = 10;
