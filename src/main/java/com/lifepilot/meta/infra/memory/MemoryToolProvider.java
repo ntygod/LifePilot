@@ -4,6 +4,7 @@ import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.knowledge.model.DocumentSearchResult;
 import com.lifepilot.knowledge.retrieve.DocumentRetriever;
 import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.episodic.ConversationSnippetRecord;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.memory.episodic.MessageRecord;
 import com.lifepilot.memory.retrieval.HybridRetriever;
@@ -154,9 +155,10 @@ public class MemoryToolProvider {
                         if (sessionId == null) {
                             return ToolResult.error("无法获取当前会话 ID");
                         }
-                        List<MessageRecord> messages = episodicMemory.searchExcludingSession(query, sessionId, topK);
-                        List<Map<String, Object>> items = messages.stream()
-                                .map(this::messageRecordToMap)
+                        List<ConversationSnippetRecord> snippets =
+                                episodicMemory.searchSnippetsExcludingSession(query, sessionId, topK);
+                        List<Map<String, Object>> items = snippets.stream()
+                                .map(this::conversationSnippetToMap)
                                 .toList();
                         return ToolResult.success(Map.of("results", items, "count", items.size()));
                     } catch (Exception e) {
@@ -550,6 +552,26 @@ public class MemoryToolProvider {
     }
 
     /** 将 MessageRecord 转换为 Map。 */
+    private Map<String, Object> conversationSnippetToMap(ConversationSnippetRecord snippet) {
+        var map = new HashMap<String, Object>();
+        map.put("sessionId", snippet.sessionId());
+        if (snippet.sessionTitle() != null) {
+            map.put("sessionTitle", snippet.sessionTitle());
+        }
+        if (snippet.sessionSummary() != null) {
+            map.put("sessionSummary", snippet.sessionSummary());
+        }
+        map.put("matchedMessageId", snippet.matchedMessageId());
+        map.put("rank", snippet.hitRank());
+        map.put("startedAt", snippet.startedAt().toString());
+        map.put("endedAt", snippet.endedAt().toString());
+        map.put("messages", snippet.messages().stream().map(this::messageRecordToMap).toList());
+        map.put("snippet", snippet.messages().stream()
+                .map(message -> message.role() + ": " + message.effectiveContent())
+                .toList());
+        return Map.copyOf(map);
+    }
+
     private Map<String, Object> messageRecordToMap(MessageRecord msg) {
         var map = new HashMap<String, Object>();
         map.put("role", msg.role());

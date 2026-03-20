@@ -1,37 +1,37 @@
 package com.lifepilot.memory.episodic;
 
 import com.lifepilot.memory.config.MemoryProperties;
+import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
-import jakarta.annotation.Nullable;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.stream.Collectors;
 
 /**
- * L2 情景记忆服务 — 管理对话记录的持久化存储与检索。
- *
- * <p>使用 JdbcTemplate 执行所有数据库操作，支持 FTS5 全文搜索。</p>
- *
- * @author zsg
- * @since 2026-02-25
+ * Episodic memory now reads from the session layer (`chat_sessions/chat_messages`).
+ * Legacy write/compress helpers against `conversations/messages` remain only so old
+ * non-main-path code can still compile while the new read path is already in place.
  */
 public class EpisodicMemory {
 
     private static final Logger log = LoggerFactory.getLogger(EpisodicMemory.class);
+    private static final int DEFAULT_SEARCH_LIMIT = 200;
+    private static final int RECALL_CONTEXT_TURNS = 1;
+    private static final int RECALL_CANDIDATE_MULTIPLIER = 6;
 
     private final JdbcTemplate jdbcTemplate;
     private final MemoryProperties properties;
 
-    /** 记忆写入回调 — 通知检索引擎数据已变更（重置 knownEmpty 短路标记）。 */
     @Nullable
     private Runnable writeCallback;
 
@@ -40,32 +40,14 @@ public class EpisodicMemory {
         this.properties = properties;
     }
 
-    /**
-     * 设置记忆写入回调，用于在对话记录写入后通知检索引擎重置空数据标记。
-     *
-     * @param writeCallback 写入回调
-     */
     public void setWriteCallback(@Nullable Runnable writeCallback) {
         this.writeCallback = writeCallback;
     }
 
-    /**
-     * 转义 FTS5 查询字符串，防止特殊字符（冒号、引号等）被解析为 FTS5 语法。
-     *
-     * <p>转义策略：用双引号包裹整个查询，内部双引号转义为两个双引号。</p>
-     *
-     * @param query 原始查询字符串
-     * @return 转义后的 FTS5 安全查询字符串
-     */
     static String escapeFts5Query(String query) {
         return "\"" + query.replace("\"", "\"\"") + "\"";
     }
 
-    /**
-     * 保存对话记录（事务内写入 conversations + messages）。
-     *
-     * @param record 对话记录
-     */
     @Transactional
     public void save(ConversationRecord record) {
         jdbcTemplate.update(
@@ -82,274 +64,218 @@ public class EpisodicMemory {
                     msg.createdAt().toString());
         }
 
-        // 通知检索引擎数据已变更，重置 knownEmpty 短路标记
-        if (writeCallback != null) {
-            try {
-                writeCallback.run();
-            } catch (Exception e) {
-                log.warn("情景记忆: writeCallback 执行失败, error={}", e.getMessage());
-            }
-        }
-        log.debug("保存对话记录: id={}, 消息数={}", record.id(), record.messageCount());
+        notifyWriteCallback();
+        log.debug("episodic memory saved legacy conversation record: id={}, messages={}",
+                record.id(), record.messageCount());
     }
 
-    /**
-     * 获取最近的对话记录（按 created_at 降序）。
-     *
-     * @param limit 最大返回数量
-     * @return 对话记录列表
-     */
     public List<ConversationRecord> getRecent(int limit) {
         if (limit <= 0) {
             return List.of();
         }
-        var conversations = jdbcTemplate.query(
-                "SELECT id, session_id, goal, summary, created_at, updated_at " +
-                        "FROM conversations ORDER BY created_at DESC LIMIT ?",
-                (rs, rowNum) -> new ConversationRecord(
+        List<SessionRow> sessions = jdbcTemplate.query(
+                """
+                SELECT id, title, summary, created_at, updated_at
+                FROM chat_sessions
+                ORDER BY COALESCE(last_message_at, updated_at, created_at) DESC
+                LIMIT ?
+                """,
+                (rs, rowNum) -> new SessionRow(
                         rs.getString("id"),
-                        rs.getString("session_id"),
-                        rs.getString("goal"),
+                        rs.getString("title"),
                         rs.getString("summary"),
-                        List.of(),
                         Instant.parse(rs.getString("created_at")),
                         Instant.parse(rs.getString("updated_at"))),
                 limit);
-
-        return assembleWithMessages(conversations);
+        return sessions.stream().map(this::toConversationRecord).toList();
     }
 
-    /**
-     * 按时间窗口获取最近的对话记录（按 created_at 降序）。
-     *
-     * <p>用于巩固管线和分析“最近 N 天/小时”的对话片段。</p>
-     *
-     * @param duration 回溯时间窗口（如 Duration.ofDays(7)）
-     * @return 对话记录列表
-     */
     public List<ConversationRecord> getRecent(Duration duration) {
         if (duration == null || duration.isNegative() || duration.isZero()) {
             return List.of();
         }
         String since = Instant.now().minus(duration).toString();
-        var conversations = jdbcTemplate.query(
-                "SELECT id, session_id, goal, summary, created_at, updated_at " +
-                        "FROM conversations WHERE created_at >= ? ORDER BY created_at DESC",
-                (rs, rowNum) -> new ConversationRecord(
+        List<SessionRow> sessions = jdbcTemplate.query(
+                """
+                SELECT id, title, summary, created_at, updated_at
+                FROM chat_sessions
+                WHERE COALESCE(last_message_at, created_at) >= ?
+                ORDER BY COALESCE(last_message_at, updated_at, created_at) DESC
+                """,
+                (rs, rowNum) -> new SessionRow(
                         rs.getString("id"),
-                        rs.getString("session_id"),
-                        rs.getString("goal"),
+                        rs.getString("title"),
                         rs.getString("summary"),
-                        List.of(),
                         Instant.parse(rs.getString("created_at")),
                         Instant.parse(rs.getString("updated_at"))),
                 since);
-
-        return assembleWithMessages(conversations);
+        return sessions.stream().map(this::toConversationRecord).toList();
     }
 
-    /**
-     * FTS5 全文搜索对话记录。
-     *
-     * @param query 搜索关键词
-     * @return 匹配的对话记录列表（按 BM25 排序）
-     */
     public List<ConversationRecord> search(String query) {
-        try {
-            // 通过 FTS5 搜索消息，获取关联的对话 ID
-            var conversationIds = jdbcTemplate.queryForList(
-                    "SELECT DISTINCT m.conversation_id FROM messages m JOIN messages_fts fts ON m.rowid = fts.rowid WHERE messages_fts MATCH ? ORDER BY bm25(messages_fts)",
-                    String.class, escapeFts5Query(query));
-
-            if (conversationIds.isEmpty()) {
-                return List.of();
-            }
-
-            return conversationIds.stream()
-                    .map(this::getById)
-                    .filter(Optional::isPresent)
-                    .map(Optional::get)
-                    .toList();
-        } catch (Exception e) {
-            log.warn("FTS5 搜索失败: query={}, 错误={}", query, e.getMessage());
+        if (query == null || query.isBlank()) {
             return List.of();
         }
+        List<String> sessionIds = searchSessionIds(query, null, DEFAULT_SEARCH_LIMIT);
+        return sessionIds.stream()
+                .map(this::getById)
+                .flatMap(Optional::stream)
+                .toList();
     }
 
-    /**
-     * 根据对话 ID 获取完整对话记录。
-     *
-     * @param conversationId 对话 ID
-     * @return 对话记录，不存在时返回 Optional.empty()
-     */
     public Optional<ConversationRecord> getById(String conversationId) {
-        var conversations = jdbcTemplate.query(
-                "SELECT id, session_id, goal, summary, created_at, updated_at FROM conversations WHERE id = ?",
-                (rs, rowNum) -> new ConversationRecord(
+        if (conversationId == null || conversationId.isBlank()) {
+            return Optional.empty();
+        }
+        List<SessionRow> sessions = jdbcTemplate.query(
+                """
+                SELECT id, title, summary, created_at, updated_at
+                FROM chat_sessions
+                WHERE id = ?
+                """,
+                (rs, rowNum) -> new SessionRow(
                         rs.getString("id"),
-                        rs.getString("session_id"),
-                        rs.getString("goal"),
+                        rs.getString("title"),
                         rs.getString("summary"),
-                        loadMessages(conversationId),
                         Instant.parse(rs.getString("created_at")),
                         Instant.parse(rs.getString("updated_at"))),
                 conversationId);
-
-        return conversations.isEmpty() ? Optional.empty() : Optional.of(conversations.getFirst());
+        return sessions.stream().findFirst().map(this::toConversationRecord);
     }
 
-    /**
-     * 根据会话 ID 获取所有消息记录。
-     *
-     * @param sessionId 会话 ID
-     * @return 消息记录列表
-     */
     public List<MessageRecord> getMessagesBySessionId(String sessionId) {
         if (sessionId == null || sessionId.isBlank()) {
             return List.of();
         }
-        var conversationIds = jdbcTemplate.queryForList(
-                "SELECT id FROM conversations WHERE session_id = ? ORDER BY created_at",
-                String.class, sessionId);
-        return conversationIds.stream()
-                .flatMap(cid -> loadMessages(cid).stream())
-                .toList();
+        return loadChatMessages(sessionId);
     }
 
-    /**
-     * 语义检索其他会话中的相关消息，排除指定 sessionId。
-     *
-     * <p>基于 FTS5 全文检索，JOIN conversations 表过滤 session_id，
-     * 按 BM25 相关度排序返回最相关的消息记录。</p>
-     *
-     * @param query            查询文本
-     * @param excludeSessionId 排除的会话 ID
-     * @param limit            最大返回数
-     * @return 相关消息列表，异常时返回空列表
-     */
-    public List<MessageRecord> searchExcludingSession(String query, String excludeSessionId, int limit) {
-        if (query == null || query.isBlank() || limit <= 0) {
+    public List<ConversationSnippetRecord> searchSnippetsExcludingSession(String query,
+                                                                         String excludeSessionId,
+                                                                         int limit) {
+        if (query == null || query.isBlank() || excludeSessionId == null || excludeSessionId.isBlank() || limit <= 0) {
             return List.of();
         }
         try {
-            float minBm25 = properties.getRetrieval().getMinCrossSessionBm25Score();
-            return jdbcTemplate.query(
-                    "SELECT m.id, m.conversation_id, m.role, m.content, m.compressed_content, " +
-                            "m.compression_level, m.is_pinned, m.tool_call_json, m.token_count, m.created_at " +
-                            "FROM messages m " +
-                            "JOIN messages_fts fts ON m.rowid = fts.rowid " +
-                            "JOIN conversations c ON m.conversation_id = c.id " +
-                            "WHERE messages_fts MATCH ? AND c.session_id != ? " +
-                            "AND -bm25(messages_fts) > ? " +
-                            "ORDER BY bm25(messages_fts) " +
-                            "LIMIT ?",
-                    (rs, rowNum) -> new MessageRecord(
-                            rs.getString("id"),
-                            rs.getString("conversation_id"),
-                            rs.getString("role"),
-                            rs.getString("content"),
-                            rs.getString("compressed_content"),
-                            CompressionLevel.fromLevel(rs.getInt("compression_level")),
-                            rs.getInt("is_pinned") == 1,
-                            rs.getString("tool_call_json"),
-                            rs.getInt("token_count"),
+            int candidateLimit = Math.max(limit * RECALL_CANDIDATE_MULTIPLIER, limit);
+            List<RecallHitRow> hits = jdbcTemplate.query(
+                    """
+                    SELECT m.id AS message_id,
+                           m.session_id AS session_id,
+                           COALESCE(s.title, '') AS session_title,
+                           COALESCE(s.summary, '') AS session_summary,
+                           m.created_at AS created_at
+                    FROM chat_messages_fts
+                    JOIN chat_messages m ON m.rowid = chat_messages_fts.rowid
+                    LEFT JOIN chat_sessions s ON s.id = m.session_id
+                    WHERE chat_messages_fts MATCH ?
+                      AND m.session_id <> ?
+                    ORDER BY bm25(chat_messages_fts), m.created_at DESC
+                    LIMIT ?
+                    """,
+                    (rs, rowNum) -> new RecallHitRow(
+                            rs.getString("message_id"),
+                            rs.getString("session_id"),
+                            normalizeBlank(rs.getString("session_title")),
+                            normalizeBlank(rs.getString("session_summary")),
                             Instant.parse(rs.getString("created_at"))),
-                    escapeFts5Query(query), excludeSessionId, minBm25, limit);
+                    escapeFts5Query(query),
+                    excludeSessionId,
+                    candidateLimit);
+
+            if (hits.isEmpty()) {
+                return List.of();
+            }
+
+            Map<String, List<TimelineMessage>> timelineCache = new HashMap<>();
+            Map<String, ConversationSnippetRecord> snippets = new HashMap<>();
+            int rank = 0;
+            for (RecallHitRow hit : hits) {
+                rank++;
+                List<TimelineMessage> timeline = timelineCache.computeIfAbsent(
+                        hit.sessionId(), this::loadTimelineMessages);
+                ConversationSnippetRecord snippet = buildSnippet(hit, rank, timeline);
+                if (snippet == null) {
+                    continue;
+                }
+                ConversationSnippetRecord existing = snippets.get(snippet.id());
+                if (existing == null || snippet.hitRank() < existing.hitRank()) {
+                    snippets.put(snippet.id(), snippet);
+                }
+            }
+
+            return snippets.values().stream()
+                    .sorted(Comparator.comparingInt(ConversationSnippetRecord::hitRank)
+                            .thenComparing(ConversationSnippetRecord::endedAt, Comparator.reverseOrder()))
+                    .limit(limit)
+                    .toList();
         } catch (Exception e) {
-            log.warn("跨会话排除检索失败: query={}, excludeSessionId={}, error={}",
+            log.warn("snippet recall failed: query={}, excludeSessionId={}, error={}",
                     query, excludeSessionId, e.getMessage());
             return List.of();
         }
     }
 
-    /**
-     * 按意图（goal 模糊匹配）获取最近的对话记录。
-     *
-     * <p>例如 intentType="待办" 用于检索与待办事项相关的历史对话。</p>
-     *
-     * @param intentType 意图关键词
-     * @param limit      最大返回数量
-     * @return 匹配的对话记录列表
-     */
     public List<ConversationRecord> getByIntent(String intentType, int limit) {
         if (intentType == null || intentType.isBlank() || limit <= 0) {
             return List.of();
         }
-        var conversations = jdbcTemplate.query(
-                "SELECT id, session_id, goal, summary, created_at, updated_at " +
-                        "FROM conversations WHERE goal LIKE ? ORDER BY created_at DESC LIMIT ?",
-                (rs, rowNum) -> new ConversationRecord(
+        String pattern = "%" + intentType + "%";
+        List<SessionRow> sessions = jdbcTemplate.query(
+                """
+                SELECT id, title, summary, created_at, updated_at
+                FROM chat_sessions
+                WHERE title LIKE ? OR summary LIKE ?
+                ORDER BY COALESCE(last_message_at, updated_at, created_at) DESC
+                LIMIT ?
+                """,
+                (rs, rowNum) -> new SessionRow(
                         rs.getString("id"),
-                        rs.getString("session_id"),
-                        rs.getString("goal"),
+                        rs.getString("title"),
                         rs.getString("summary"),
-                        List.of(),
                         Instant.parse(rs.getString("created_at")),
                         Instant.parse(rs.getString("updated_at"))),
-                "%" + intentType + "%", limit);
-
-        return assembleWithMessages(conversations);
+                pattern, pattern, limit);
+        return sessions.stream().map(this::toConversationRecord).toList();
     }
 
-    /**
-     * 统计对话记录总数。
-     *
-     * @return 对话总数
-     */
     public long countConversations() {
-        var count = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM conversations", Long.class);
+        Long count = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM chat_sessions", Long.class);
         return count != null ? count : 0L;
     }
 
-    /**
-     * 分页查询对话列表（不加载消息，仅返回摘要信息）。
-     *
-     * @param page 页码（从 0 开始）
-     * @param size 每页大小
-     * @return 对话记录列表（messages 为空列表）
-     */
     public List<ConversationRecord> listConversations(int page, int size) {
-        int offset = page * size;
-        return jdbcTemplate.query(
-                "SELECT id, session_id, goal, summary, created_at, updated_at " +
-                        "FROM conversations ORDER BY created_at DESC LIMIT ? OFFSET ?",
-                (rs, rowNum) -> new ConversationRecord(
+        if (size <= 0) {
+            return List.of();
+        }
+        int safePage = Math.max(0, page);
+        int offset = safePage * size;
+        List<SessionRow> sessions = jdbcTemplate.query(
+                """
+                SELECT id, title, summary, created_at, updated_at
+                FROM chat_sessions
+                ORDER BY COALESCE(last_message_at, updated_at, created_at) DESC
+                LIMIT ? OFFSET ?
+                """,
+                (rs, rowNum) -> new SessionRow(
                         rs.getString("id"),
-                        rs.getString("session_id"),
-                        rs.getString("goal"),
+                        rs.getString("title"),
                         rs.getString("summary"),
-                        List.of(),
                         Instant.parse(rs.getString("created_at")),
                         Instant.parse(rs.getString("updated_at"))),
                 size, offset);
+        return sessions.stream().map(this::toConversationRecord).toList();
     }
 
-    /**
-     * 删除指定对话记录及其所有消息。
-     *
-     * @param conversationId 对话 ID
-     * @return 是否删除成功（对话存在则返回 true）
-     */
     @Transactional
     public boolean delete(String conversationId) {
-        jdbcTemplate.update("DELETE FROM messages WHERE conversation_id = ?", conversationId);
-        int rows = jdbcTemplate.update("DELETE FROM conversations WHERE id = ?", conversationId);
+        int rows = jdbcTemplate.update("DELETE FROM chat_sessions WHERE id = ?", conversationId);
         if (rows > 0) {
-            log.info("情景记忆: 删除对话, id={}", conversationId);
+            log.info("deleted chat session from episodic read model: sessionId={}", conversationId);
         }
         return rows > 0;
     }
 
-    /**
-     * 对指定对话执行渐进式压缩。
-     *
-     * <p>仅更新未 pinned 且当前压缩层级低于目标层级的消息。</p>
-     *
-     * @param conversationId 对话 ID
-     * @param targetLevel    目标压缩层级
-     * @param compressedTexts 消息 ID → 压缩后内容映射
-     */
     @Transactional
     public void compress(String conversationId,
                          CompressionLevel targetLevel,
@@ -368,84 +294,243 @@ public class EpisodicMemory {
                     conversationId,
                     targetLevel.level());
         }
-        log.info("情景记忆压缩: conversationId={}, level={}, count={}",
+        log.info("compressed legacy conversation messages: conversationId={}, level={}, count={}",
                 conversationId, targetLevel, compressedTexts.size());
     }
 
-    /**
-     * 批量加载 messages 并组装到 conversations，消除 N+1 查询。
-     *
-     * <p>用 IN 子句一次查询所有 messages，按 conversation_id 分组后组装。
-     * SQLite 默认参数上限 999，超过时分批查询。</p>
-     */
-    private List<ConversationRecord> assembleWithMessages(List<ConversationRecord> conversations) {
-        if (conversations.isEmpty()) {
-            return List.of();
+    private void notifyWriteCallback() {
+        if (writeCallback == null) {
+            return;
         }
-        List<String> ids = conversations.stream().map(ConversationRecord::id).toList();
-        Map<String, List<MessageRecord>> messagesByConvId = batchLoadMessages(ids);
-        return conversations.stream()
-                .map(c -> new ConversationRecord(c.id(), c.sessionId(), c.goal(), c.summary(),
-                        messagesByConvId.getOrDefault(c.id(), List.of()), c.createdAt(), c.updatedAt()))
-                .toList();
+        try {
+            writeCallback.run();
+        } catch (Exception e) {
+            log.warn("episodic memory write callback failed: error={}", e.getMessage());
+        }
     }
 
-    /**
-     * 批量加载指定对话 ID 列表的所有消息，按 conversation_id 分组返回。
-     *
-     * <p>SQLite 默认参数上限 999，超过时自动分批查询。</p>
-     */
-    private Map<String, List<MessageRecord>> batchLoadMessages(List<String> conversationIds) {
-        if (conversationIds.isEmpty()) {
-            return Map.of();
-        }
-        Map<String, List<MessageRecord>> result = new HashMap<>();
-        int batchSize = 500; // 留余量，SQLite 上限 999
-        for (int i = 0; i < conversationIds.size(); i += batchSize) {
-            List<String> batch = conversationIds.subList(i, Math.min(i + batchSize, conversationIds.size()));
-            String placeholders = batch.stream().map(_ -> "?").collect(Collectors.joining(","));
-            String sql = "SELECT id, conversation_id, role, content, compressed_content, compression_level, " +
-                    "is_pinned, tool_call_json, token_count, created_at " +
-                    "FROM messages WHERE conversation_id IN (" + placeholders + ") ORDER BY created_at";
-            Object[] params = batch.toArray();
-            List<MessageRecord> messages = jdbcTemplate.query(sql,
-                    (rs, rowNum) -> new MessageRecord(
-                            rs.getString("id"),
-                            rs.getString("conversation_id"),
-                            rs.getString("role"),
-                            rs.getString("content"),
-                            rs.getString("compressed_content"),
-                            CompressionLevel.fromLevel(rs.getInt("compression_level")),
-                            rs.getInt("is_pinned") == 1,
-                            rs.getString("tool_call_json"),
-                            rs.getInt("token_count"),
-                            Instant.parse(rs.getString("created_at"))),
-                    params);
-            for (var msg : messages) {
-                result.computeIfAbsent(msg.conversationId(), _ -> new ArrayList<>()).add(msg);
-            }
-        }
-        return result;
+    private ConversationRecord toConversationRecord(SessionRow row) {
+        List<MessageRecord> messages = loadChatMessages(row.id());
+        return new ConversationRecord(
+                row.id(),
+                row.id(),
+                row.title() != null ? row.title() : row.id(),
+                row.summary(),
+                messages,
+                row.createdAt(),
+                row.updatedAt());
     }
 
-    /**
-     * 加载指定对话的所有消息。
-     */
-    private List<MessageRecord> loadMessages(String conversationId) {
+    private List<MessageRecord> loadChatMessages(String sessionId) {
         return jdbcTemplate.query(
-                "SELECT id, conversation_id, role, content, compressed_content, compression_level, is_pinned, tool_call_json, token_count, created_at " +
-                        "FROM messages WHERE conversation_id = ? ORDER BY created_at",
+                """
+                SELECT id, session_id, role, content, created_at
+                FROM chat_messages
+                WHERE session_id = ?
+                ORDER BY created_at
+                """,
                 (rs, rowNum) -> new MessageRecord(
                         rs.getString("id"),
-                        rs.getString("conversation_id"),
+                        rs.getString("session_id"),
                         rs.getString("role"),
                         rs.getString("content"),
-                        rs.getString("compressed_content"),
-                        CompressionLevel.fromLevel(rs.getInt("compression_level")),
-                        rs.getInt("is_pinned") == 1,
-                        rs.getString("tool_call_json"),
-                        rs.getInt("token_count"),
+                        null,
+                        CompressionLevel.ORIGINAL,
+                        false,
+                        null,
+                        estimateTokenCount(rs.getString("content")),
                         Instant.parse(rs.getString("created_at"))),
-                conversationId);
+                sessionId);
+    }
+
+    private List<TimelineMessage> loadTimelineMessages(String sessionId) {
+        return jdbcTemplate.query(
+                """
+                SELECT id, session_id, role, content, created_at
+                FROM chat_messages
+                WHERE session_id = ?
+                ORDER BY created_at
+                """,
+                (rs, rowNum) -> new TimelineMessage(
+                        rs.getString("id"),
+                        rs.getString("session_id"),
+                        rs.getString("role"),
+                        rs.getString("content"),
+                        Instant.parse(rs.getString("created_at"))),
+                sessionId);
+    }
+
+    private List<String> searchSessionIds(String query,
+                                          @Nullable String excludeSessionId,
+                                          int limit) {
+        int candidateLimit = limit > 0 ? Math.max(limit * RECALL_CANDIDATE_MULTIPLIER, limit) : DEFAULT_SEARCH_LIMIT;
+        List<String> hitSessionIds = excludeSessionId == null
+                ? jdbcTemplate.query(
+                """
+                SELECT m.session_id
+                FROM chat_messages_fts
+                JOIN chat_messages m ON m.rowid = chat_messages_fts.rowid
+                WHERE chat_messages_fts MATCH ?
+                ORDER BY bm25(chat_messages_fts), m.created_at DESC
+                LIMIT ?
+                """,
+                (rs, rowNum) -> rs.getString("session_id"),
+                escapeFts5Query(query),
+                candidateLimit)
+                : jdbcTemplate.query(
+                """
+                SELECT m.session_id
+                FROM chat_messages_fts
+                JOIN chat_messages m ON m.rowid = chat_messages_fts.rowid
+                WHERE chat_messages_fts MATCH ?
+                  AND m.session_id <> ?
+                ORDER BY bm25(chat_messages_fts), m.created_at DESC
+                LIMIT ?
+                """,
+                (rs, rowNum) -> rs.getString("session_id"),
+                escapeFts5Query(query),
+                excludeSessionId,
+                candidateLimit);
+
+        if (hitSessionIds.isEmpty()) {
+            return List.of();
+        }
+
+        LinkedHashSet<String> ordered = new LinkedHashSet<>(hitSessionIds);
+        List<String> sessionIds = new ArrayList<>(ordered);
+        if (limit > 0 && sessionIds.size() > limit) {
+            return List.copyOf(sessionIds.subList(0, limit));
+        }
+        return List.copyOf(sessionIds);
+    }
+
+    @Nullable
+    private ConversationSnippetRecord buildSnippet(RecallHitRow hit,
+                                                   int hitRank,
+                                                   List<TimelineMessage> timeline) {
+        if (timeline.isEmpty()) {
+            return null;
+        }
+        List<List<TimelineMessage>> turns = groupTurnsForRecall(timeline);
+        if (turns.isEmpty()) {
+            return null;
+        }
+
+        int matchedTurnIndex = -1;
+        for (int i = 0; i < turns.size(); i++) {
+            if (turns.get(i).stream().anyMatch(message -> message.id().equals(hit.messageId()))) {
+                matchedTurnIndex = i;
+                break;
+            }
+        }
+        if (matchedTurnIndex < 0) {
+            return null;
+        }
+
+        int startTurn = Math.max(0, matchedTurnIndex - RECALL_CONTEXT_TURNS);
+        int endTurn = Math.min(turns.size() - 1, matchedTurnIndex + RECALL_CONTEXT_TURNS);
+        List<MessageRecord> snippetMessages = new ArrayList<>();
+        for (int i = startTurn; i <= endTurn; i++) {
+            for (TimelineMessage message : turns.get(i)) {
+                snippetMessages.add(toMessageRecord(message));
+            }
+        }
+        if (snippetMessages.isEmpty()) {
+            return null;
+        }
+
+        return new ConversationSnippetRecord(
+                hit.sessionId() + ":" + startTurn + ":" + endTurn,
+                hit.sessionId(),
+                hit.sessionTitle(),
+                hit.sessionSummary(),
+                hit.messageId(),
+                hitRank,
+                snippetMessages.get(0).createdAt(),
+                snippetMessages.get(snippetMessages.size() - 1).createdAt(),
+                snippetMessages);
+    }
+
+    private List<List<TimelineMessage>> groupTurnsForRecall(List<TimelineMessage> rows) {
+        var turns = new ArrayList<List<TimelineMessage>>();
+        var current = new ArrayList<TimelineMessage>();
+
+        for (TimelineMessage row : rows) {
+            if (isUserRole(row.role())) {
+                if (!current.isEmpty()) {
+                    turns.add(List.copyOf(current));
+                }
+                current = new ArrayList<>();
+                current.add(row);
+                continue;
+            }
+
+            if (current.isEmpty()) {
+                current = new ArrayList<>();
+            }
+            current.add(row);
+        }
+
+        if (!current.isEmpty()) {
+            turns.add(List.copyOf(current));
+        }
+        return List.copyOf(turns);
+    }
+
+    private MessageRecord toMessageRecord(TimelineMessage message) {
+        return new MessageRecord(
+                message.id(),
+                message.sessionId(),
+                message.role(),
+                message.content(),
+                null,
+                CompressionLevel.ORIGINAL,
+                false,
+                null,
+                estimateTokenCount(message.content()),
+                message.createdAt());
+    }
+
+    private boolean isUserRole(@Nullable String role) {
+        return role != null && "user".equalsIgnoreCase(role.trim());
+    }
+
+    private int estimateTokenCount(@Nullable String content) {
+        if (content == null || content.isBlank()) {
+            return 0;
+        }
+        return Math.max(1, content.length() / 4);
+    }
+
+    @Nullable
+    private String normalizeBlank(@Nullable String value) {
+        return value == null || value.isBlank() ? null : value;
+    }
+
+    private record SessionRow(
+            String id,
+            @Nullable String title,
+            @Nullable String summary,
+            Instant createdAt,
+            Instant updatedAt
+    ) {
+    }
+
+    private record TimelineMessage(
+            String id,
+            String sessionId,
+            String role,
+            String content,
+            Instant createdAt
+    ) {
+    }
+
+    private record RecallHitRow(
+            String messageId,
+            String sessionId,
+            @Nullable String sessionTitle,
+            @Nullable String sessionSummary,
+            Instant createdAt
+    ) {
     }
 }
