@@ -11,6 +11,7 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -30,6 +31,24 @@ import java.util.concurrent.atomic.AtomicReference;
 public class BackgroundProcessManager {
 
     private static final Logger log = LoggerFactory.getLogger(BackgroundProcessManager.class);
+    private static final String WINDOWS_COMMAND_ENV = "LIFEPILOT_SHELL_COMMAND";
+    private static final String WINDOWS_POWERSHELL_ENCODED_COMMAND = Base64.getEncoder()
+            .encodeToString("""
+                    [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
+                    $OutputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+                    $ErrorActionPreference = 'Stop'
+                    $command = $env:LIFEPILOT_SHELL_COMMAND
+                    try {
+                        Invoke-Expression $command
+                        if ($null -ne $LASTEXITCODE) {
+                            exit $LASTEXITCODE
+                        }
+                        exit 0
+                    } catch {
+                        [Console]::Error.WriteLine($_.Exception.Message)
+                        exit 1
+                    }
+                    """.getBytes(StandardCharsets.UTF_16LE));
 
     private final ConcurrentHashMap<String, ManagedProcess> processes = new ConcurrentHashMap<>();
     private final MetaProperties.Infra.Process processConfig;
@@ -71,7 +90,17 @@ public class BackgroundProcessManager {
         ProcessBuilder pb;
         String osName = System.getProperty("os.name").toLowerCase();
         if (osName.contains("win")) {
-            pb = new ProcessBuilder("cmd", "/c", command);
+            pb = new ProcessBuilder(
+                    "powershell",
+                    "-NoLogo",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-EncodedCommand",
+                    WINDOWS_POWERSHELL_ENCODED_COMMAND
+            );
+            pb.environment().put(WINDOWS_COMMAND_ENV, command);
         } else {
             pb = new ProcessBuilder("sh", "-c", command);
         }

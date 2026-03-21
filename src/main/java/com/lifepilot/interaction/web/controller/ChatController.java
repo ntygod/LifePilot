@@ -106,22 +106,26 @@ public class ChatController {
         this.mediaProperties = mediaProperties;
     }
 
+    private boolean hasContentOrAttachments(ChatRequest request) {
+        return request.hasMessagePayload();
+    }
+
     /**
      * 非流式发送消息。
      *
      * <p>将消息提交到 MessageGateway 中间件管道，同步等待响应后返回完整结果。
      *
-     * @param request     聊天请求（content 不可为空）
+     * @param request     聊天请求（消息内容和附件至少一项存在）
      * @param httpRequest HTTP 请求
      * @return 包含 messageId、content、a2ui、tokenUsage 的响应
      */
     @PostMapping("/messages")
     public ResponseEntity<?> sendMessage(@RequestBody ChatRequest request,
                                          HttpServletRequest httpRequest) {
-        if (request.content() == null || request.content().isBlank()) {
-            log.warn("非流式消息请求内容为空");
+        if (!hasContentOrAttachments(request)) {
+            log.warn("非流式消息请求内容为空，且没有附件");
             return ResponseEntity.badRequest().body(
-                    new ErrorResponse(400, "消息内容不能为空", Instant.now()));
+                    new ErrorResponse(400, "消息内容和附件不能同时为空", Instant.now()));
         }
 
         log.debug("收到非流式消息请求: sessionId={}", request.sessionId());
@@ -141,20 +145,20 @@ public class ChatController {
      * 则通过 {@link SseSessionManager} 创建 SseEmitter 返回给客户端；
      * 否则创建临时 SseEmitter 发送 done 事件后立即完成。
      *
-     * @param request     聊天请求（content 不可为空）
+     * @param request     聊天请求（消息内容和附件至少一项存在）
      * @param httpRequest HTTP 请求
      * @return SseEmitter 用于流式推送事件
      */
     @PostMapping("/messages/stream")
     public SseEmitter sendMessageStream(@RequestBody ChatRequest request,
                                          HttpServletRequest httpRequest) {
-        if (request.content() == null || request.content().isBlank()) {
-            log.warn("流式消息请求内容为空");
+        if (!hasContentOrAttachments(request)) {
+            log.warn("流式消息请求内容为空，且没有附件");
             var emitter = new SseEmitter(0L);
             try {
                 var errorEvent = SseEmitter.event()
                         .name(SseEventType.ERROR)
-                        .data(Map.of("code", 400, "message", "消息内容不能为空"));
+                        .data(Map.of("code", 400, "message", "消息内容和附件不能同时为空"));
                 emitter.send(errorEvent);
                 emitter.complete();
             } catch (Exception e) {

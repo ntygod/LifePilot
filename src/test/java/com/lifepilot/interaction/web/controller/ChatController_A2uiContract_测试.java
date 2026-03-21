@@ -30,6 +30,8 @@ import java.util.List;
 import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -122,6 +124,50 @@ class ChatController_A2uiContract_测试 {
                 .andExpect(jsonPath("$.traceId").value("trace-1"))
                 .andExpect(jsonPath("$.a2uiComponents[0].type").value("Card"))
                 .andExpect(jsonPath("$.a2uiComponents[1].signal.name").value("panel.refresh"));
+    }
+
+    @Test
+    void 非流式消息接口_允许空文本加附件发送() throws Exception {
+        when(webChannelAdapter.processMessage(any(), any())).thenReturn(
+                GatewayResponse.builder()
+                        .responseId("assistant-attachment")
+                        .channelType(ChannelType.WEB)
+                        .content(new ResponseContent.TextContent("已收到附件"))
+                        .latency(Duration.ofMillis(5))
+                        .statusCode(200)
+                        .build()
+        );
+
+        mockMvc.perform(post("/api/chat/messages")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "content": "   ",
+                                  "sessionId": "session-1",
+                                  "attachmentIds": ["file-1"]
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.messageId").value("assistant-attachment"))
+                .andExpect(jsonPath("$.content").value("已收到附件"));
+    }
+
+    @Test
+    void 非流式消息接口_文本和附件都为空时返回400() throws Exception {
+        mockMvc.perform(post("/api/chat/messages")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "content": "   ",
+                                  "sessionId": "session-1",
+                                  "attachmentIds": []
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.message").value("消息内容和附件不能同时为空"));
+
+        verify(webChannelAdapter, never()).processMessage(any(), any());
     }
 
     @Test

@@ -71,6 +71,15 @@ class BackgroundProcessManagerTest {
 
     @Test
     @EnabledOnOs(OS.WINDOWS)
+    void 读取进程输出_中文不乱码() throws Exception {
+        String sessionId = manager.startProcess("Write-Output '中文输出'", Path.of(System.getProperty("user.home")));
+        Thread.sleep(500);
+        String output = manager.readOutput(sessionId);
+        assertThat(output).contains("中文输出");
+    }
+
+    @Test
+    @EnabledOnOs(OS.WINDOWS)
     void kill终止进程() throws Exception {
         // 启动一个长时间运行的进程
         String sessionId = manager.startProcess("cmd /c ping -n 100 127.0.0.1", Path.of(System.getProperty("user.home")));

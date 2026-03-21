@@ -131,4 +131,48 @@ describe('useChat A2UI integration', () => {
     expect(assistant?.content).toBe('面板已生成')
     expect(assistant?.a2uiComponents?.[0]?.id).toBe('card-stream')
   })
+
+  it('allows attachment-only sends when attachmentIds exist', async () => {
+    vi.mocked(chatApi.sendMessageStream).mockResolvedValue(
+      createSseStream([
+        {
+          type: SSE_EVENT_TYPES.DONE,
+          payload: {
+            messageId: 'assistant-attachment',
+            sessionId: 'session-1',
+            content: '已处理附件',
+            timestamp: 1_741_683_300_000,
+          },
+        },
+      ]),
+    )
+
+    const chatStore = useChatStore()
+    chatStore.activeSessionId = 'session-1'
+    await flushUi()
+
+    const { sendMessage } = useChat()
+    await sendMessage('', ['file-1'])
+
+    expect(vi.mocked(chatApi.sendMessageStream)).toHaveBeenCalledWith(
+      '',
+      'session-1',
+      ['file-1'],
+      undefined,
+      expect.any(AbortSignal),
+    )
+    expect(chatStore.messages.find(message => message.id === 'assistant-attachment')?.content).toBe('已处理附件')
+  })
+
+  it('skips sending when both content and attachmentIds are empty', async () => {
+    const chatStore = useChatStore()
+    chatStore.activeSessionId = 'session-1'
+    await flushUi()
+
+    const { sendMessage } = useChat()
+    await sendMessage('   ')
+
+    expect(vi.mocked(chatApi.sendMessageStream)).not.toHaveBeenCalled()
+    expect(chatStore.messages).toHaveLength(0)
+  })
 })

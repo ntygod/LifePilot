@@ -65,7 +65,9 @@ export function useChat() {
     },
     resumePolicy?: ResumePolicy
   ) {
-    if (!content.trim()) return
+    const hasContent = content.trim().length > 0
+    const hasAttachments = (attachmentIds?.length ?? 0) > 0
+    if (!hasContent && !hasAttachments) return
 
     // 会话已在打开新对话时预创建，此处 activeSessionId 必定非空
     if (!chatStore.activeSessionId) {

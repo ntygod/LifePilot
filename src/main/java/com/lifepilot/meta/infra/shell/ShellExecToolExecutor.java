@@ -8,8 +8,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -36,6 +38,24 @@ import java.util.regex.Pattern;
 public class ShellExecToolExecutor {
 
     private static final Logger log = LoggerFactory.getLogger(ShellExecToolExecutor.class);
+    private static final String WINDOWS_COMMAND_ENV = "LIFEPILOT_SHELL_COMMAND";
+    private static final String WINDOWS_POWERSHELL_ENCODED_COMMAND = Base64.getEncoder()
+            .encodeToString("""
+                    [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
+                    $OutputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+                    $ErrorActionPreference = 'Stop'
+                    $command = $env:LIFEPILOT_SHELL_COMMAND
+                    try {
+                        Invoke-Expression $command
+                        if ($null -ne $LASTEXITCODE) {
+                            exit $LASTEXITCODE
+                        }
+                        exit 0
+                    } catch {
+                        [Console]::Error.WriteLine($_.Exception.Message)
+                        exit 1
+                    }
+                    """.getBytes(StandardCharsets.UTF_16LE));
 
     private final MetaProperties.Infra.Shell shellConfig;
     private final List<Pattern> compiledBlacklist;
@@ -160,7 +180,17 @@ public class ShellExecToolExecutor {
         ProcessBuilder pb;
         String osName = System.getProperty("os.name").toLowerCase();
         if (osName.contains("win")) {
-            pb = new ProcessBuilder("cmd", "/c", command);
+            pb = new ProcessBuilder(
+                    "powershell",
+                    "-NoLogo",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-EncodedCommand",
+                    WINDOWS_POWERSHELL_ENCODED_COMMAND
+            );
+            pb.environment().put(WINDOWS_COMMAND_ENV, command);
         } else {
             pb = new ProcessBuilder("sh", "-c", command);
         }
@@ -173,11 +203,11 @@ public class ShellExecToolExecutor {
 
         // 在独立线程中读取 stdout/stderr，避免 readAllBytes() 阻塞导致 waitFor 无法超时
         var stdoutFuture = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
-            try { return new String(process.getInputStream().readAllBytes()); }
+            try { return new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8); }
             catch (IOException e) { return ""; }
         });
         var stderrFuture = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
-            try { return new String(process.getErrorStream().readAllBytes()); }
+            try { return new String(process.getErrorStream().readAllBytes(), StandardCharsets.UTF_8); }
             catch (IOException e) { return ""; }
         });
 

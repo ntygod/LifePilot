@@ -29,6 +29,8 @@ const attachments = ref<File[]>([])
 const fileInput = ref<HTMLInputElement | null>(null)
 const isUploading = ref(false)
 const uploadError = ref<string | null>(null)
+const dragDepth = ref(0)
+const dragActive = computed(() => dragDepth.value > 0)
 
 const showTemplates = ref(false)
 const voiceSending = ref(false)
@@ -48,7 +50,7 @@ const promptTemplates = [
   { name: '解释概念', content: '请解释以下概念，并补充一个贴近实际的例子：\n\n' },
 ] as const
 
-const sendDisabled = computed(() => props.disabled || !input.value.trim() || isUploading.value)
+const sendDisabled = computed(() => props.disabled || isUploading.value || (!input.value.trim() && attachments.value.length === 0))
 
 function handleKeydown(event: KeyboardEvent) {
   if (event.key === 'Enter' && !event.shiftKey) {
@@ -57,9 +59,44 @@ function handleKeydown(event: KeyboardEvent) {
   }
 }
 
+function normalizeAttachmentFile(file: File): File {
+  if (file.name && file.name.trim()) {
+    return file
+  }
+
+  const mimeType = file.type || 'application/octet-stream'
+  const suffix = mimeType.startsWith('image/')
+    ? mimeType.split('/')[1] || 'png'
+    : 'bin'
+  return new File([file], `clipboard-${Date.now()}.${suffix}`, {
+    type: mimeType,
+    lastModified: Date.now(),
+  })
+}
+
+function addAttachments(files: File[]) {
+  for (const file of files) {
+    const normalized = normalizeAttachmentFile(file)
+    const duplicated = attachments.value.some(item => item.name === normalized.name && item.size === normalized.size)
+    if (!duplicated) {
+      attachments.value.push(normalized)
+    }
+  }
+}
+
+function handlePaste(event: ClipboardEvent) {
+  const files = Array.from(event.clipboardData?.files ?? [])
+  if (files.length === 0) {
+    return
+  }
+
+  event.preventDefault()
+  addAttachments(files)
+}
+
 async function submit() {
   const content = input.value.trim()
-  if (!content || sendDisabled.value) return
+  if ((!content && attachments.value.length === 0) || sendDisabled.value) return
 
   let attachmentIds: string[] | undefined
   let uploadedAttachments: ChatAttachment[] | undefined
@@ -104,14 +141,31 @@ function handleFileChange(event: Event) {
   const files = target.files
   if (!files) return
 
-  for (const file of Array.from(files)) {
-    const duplicated = attachments.value.some(item => item.name === file.name && item.size === file.size)
-    if (!duplicated) {
-      attachments.value.push(file)
-    }
-  }
+  addAttachments(Array.from(files))
 
   target.value = ''
+}
+
+function handleDragEnter(event: DragEvent) {
+  if (event.dataTransfer?.types.includes('Files')) {
+    dragDepth.value += 1
+  }
+}
+
+function handleDragLeave(event: DragEvent) {
+  if (!event.dataTransfer?.types.includes('Files')) {
+    return
+  }
+
+  dragDepth.value = Math.max(0, dragDepth.value - 1)
+}
+
+function handleDrop(event: DragEvent) {
+  dragDepth.value = 0
+  const files = Array.from(event.dataTransfer?.files ?? [])
+  if (files.length > 0) {
+    addAttachments(files)
+  }
 }
 
 function removeAttachment(index: number) {
@@ -200,7 +254,14 @@ defineExpose({
 
       <div
         class="overflow-hidden rounded-2xl border border-border/50 bg-card/60 shadow-[0_2px_12px_-4px_hsl(var(--shadow-color)/0.18)] backdrop-blur-sm transition-all duration-200"
-        :class="sendDisabled ? '' : 'focus-within:border-primary/30 focus-within:shadow-[0_4px_20px_-6px_hsl(var(--shadow-color)/0.28)]'"
+        :class="[
+          sendDisabled ? '' : 'focus-within:border-primary/30 focus-within:shadow-[0_4px_20px_-6px_hsl(var(--shadow-color)/0.28)]',
+          dragActive ? 'border-primary/60 bg-primary/5 shadow-[0_8px_24px_-8px_hsl(var(--primary)/0.25)]' : '',
+        ]"
+        @dragenter="handleDragEnter"
+        @dragover.prevent
+        @dragleave="handleDragLeave"
+        @drop.prevent="handleDrop"
       >
         <!-- 输入区 -->
         <div class="relative px-4 pt-3 pb-1">
@@ -213,6 +274,7 @@ defineExpose({
             class="min-h-[88px] max-h-[200px] resize-none border-0 bg-transparent px-0 text-[15px] leading-relaxed shadow-none placeholder:text-muted-foreground/50 focus-visible:ring-0"
             @keydown="handleKeydown"
             @click="showTemplates = false"
+            @paste="handlePaste"
           />
           <!-- 字数统计：输入区右下角 -->
           <span

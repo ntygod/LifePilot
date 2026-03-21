@@ -113,6 +113,18 @@ class ShellExecToolExecutorTest {
     }
 
     @Test
+    @EnabledOnOs(OS.WINDOWS)
+    void execute_成功读取中文输出_Windows() {
+        ToolInput input = buildInput(Map.of("command", "Write-Output '中文输出'"));
+
+        ToolResult result = executor.execute(input);
+
+        assertThat(result.ok()).isTrue();
+        assertThat((String) result.data().get("stdout")).contains("中文输出");
+        assertThat((int) result.data().get("exitCode")).isZero();
+    }
+
+    @Test
     @EnabledOnOs({OS.LINUX, OS.MAC})
     void execute_捕获stderr_Unix() {
         ToolInput input = buildInput(Map.of("command", "echo error_msg >&2"));
@@ -126,7 +138,7 @@ class ShellExecToolExecutorTest {
     @Test
     @EnabledOnOs(OS.WINDOWS)
     void execute_捕获stderr_Windows() {
-        ToolInput input = buildInput(Map.of("command", "echo error_msg 1>&2"));
+        ToolInput input = buildInput(Map.of("command", "[Console]::Error.WriteLine('error_msg')"));
 
         ToolResult result = executor.execute(input);
 
@@ -156,7 +168,7 @@ class ShellExecToolExecutorTest {
     @EnabledOnOs(OS.WINDOWS)
     void execute_超时命令被终止_Windows() {
         ToolInput input = buildInput(Map.of(
-                "command", "ping -n 60 127.0.0.1",
+                "command", "Start-Sleep -Seconds 60",
                 "timeoutSeconds", 1
         ));
 
