@@ -19,6 +19,8 @@ type BackendMessageLike = {
   traceId?: string | null
   attachments?: BackendAttachment[] | null
   reactSteps?: ReactStepDto[] | null
+  completionMode?: Message['completionMode'] | null
+  resumedFromTraceId?: string | null
 }
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
@@ -123,5 +125,7 @@ export function mapBackendMessage(message: BackendMessageLike): Message {
     traceId: message.traceId ?? undefined,
     attachments,
     reactSteps: message.reactSteps?.length ? message.reactSteps : undefined,
+    completionMode: message.completionMode ?? undefined,
+    resumedFromTraceId: message.resumedFromTraceId ?? undefined,
   }
 }

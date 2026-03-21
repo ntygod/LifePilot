@@ -107,7 +107,7 @@ class CronScheduler_AgentOrchestrator_集成测试 {
 
         // Mock AgentOrchestrator 返回正常响应
         var response = new AgentResponse("trace-1", "session-1", "今日AI新闻摘要...",
-                150, 3, null, null, null, null);
+                150, 3, null, null, null, null, null, null);
         when(agentOrchestrator.run(any(AgentRequest.class))).thenReturn(response);
 
         // 直接调用 executeTask
@@ -128,7 +128,7 @@ class CronScheduler_AgentOrchestrator_集成测试 {
         repository.save(task);
 
         var response = new AgentResponse("trace-2", "session-2", "TASK_SILENT",
-                50, 1, null, null, null, null);
+                50, 1, null, null, null, null, null, null);
         when(agentOrchestrator.run(any(AgentRequest.class))).thenReturn(response);
 
         cronScheduler.executeTask(task);

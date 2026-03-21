@@ -165,7 +165,8 @@ public class AgentPersistenceHandler {
         try {
             return conversationHistoryStore.appendAssistantMessage(
                     state.sessionId(), output, state.reasoningSummary(),
-                    state.traceId(), null, reactStepsJson);
+                    state.traceId(), null, reactStepsJson,
+                    state.completionMode(), state.resumedFromTraceId());
         } catch (Exception e) {
             log.warn("助手消息同步写入失败: sessionId={}, error={}",
                     state.sessionId(), e.getMessage());
@@ -192,7 +193,9 @@ public class AgentPersistenceHandler {
                     reasoningSummary,
                     state.traceId(),
                     a2uiJson,
-                    reactStepsJson);
+                    reactStepsJson,
+                    state.completionMode(),
+                    state.resumedFromTraceId());
         } catch (Exception e) {
             log.warn("助手消息同步写入失败: sessionId={}, error={}",
                     state.sessionId(), e.getMessage());
@@ -239,10 +242,10 @@ public class AgentPersistenceHandler {
         }
     }
 
-    public void persistUserMediaAttachments(@Nullable String assistantMessageId,
+    public void persistUserMediaAttachments(@Nullable String userMessageId,
                                             @Nullable String sessionId,
                                             @Nullable List<MediaContent> mediaContents) {
-        if (attachmentRepository == null || assistantMessageId == null
+        if (attachmentRepository == null || userMessageId == null
                 || mediaContents == null || mediaContents.isEmpty()) {
             return;
         }
@@ -253,7 +256,7 @@ public class AgentPersistenceHandler {
                         + "." + guessExtension(mc.mimeType());
                 String dataUri = "data:" + mc.mimeType() + ";base64,"
                         + java.util.Base64.getEncoder().encodeToString(mc.data());
-                attachmentRepository.save(assistantMessageId, sessionId,
+                attachmentRepository.save(userMessageId, sessionId,
                         fileName, "", mc.sizeBytes(), mc.mimeType(), dataUri);
             } catch (Exception e) {
                 log.warn("用户媒体附件持久化失败: sessionId={}, error={}",

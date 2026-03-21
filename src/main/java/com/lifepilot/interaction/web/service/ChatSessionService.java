@@ -143,7 +143,8 @@ public class ChatSessionService {
                     .map(r -> new AttachmentInfo(r.id(), r.fileName(), r.fileSize(), r.mimeType(), r.url()))
                     .toList();
             return new MessageInfo(msg.id(), msg.role(), msg.content(), msg.a2uiComponents(),
-                    msg.timestamp(), msg.reasoningSummary(), msg.traceId(), attachments, msg.reactSteps());
+                    msg.timestamp(), msg.reasoningSummary(), msg.traceId(), attachments, msg.reactSteps(),
+                    msg.completionMode(), msg.resumedFromTraceId());
         }).toList();
     }
 
@@ -244,7 +245,9 @@ public class ChatSessionService {
                     originalMsg.traceId(),
                     originalMsg.createdAt(),
                     originalMsg.a2uiComponentsJson(),
-                    null
+                    originalMsg.reactStepsJson(),
+                    originalMsg.completionMode(),
+                    originalMsg.resumedFromTraceId()
             );
         }
 

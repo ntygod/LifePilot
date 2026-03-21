@@ -31,12 +31,14 @@ public record ReactAgentState(
         List<String> mentionedEntities,
         Budget budget,
         @Nullable String parentTraceId,
+        @Nullable String resumedFromTraceId,
         int depth,
         @Nullable String preferredProvider,
         boolean done,
         @Nullable String finalOutput,
         @Nullable String terminationReason,
         @Nullable String reasoningSummary,
+        CompletionMode completionMode,
         @Nullable List<String> allowedToolIds,
         @Nullable List<MediaContent> pendingMedia,
         boolean suspended,
@@ -71,11 +73,13 @@ public record ReactAgentState(
                 .mentionedEntities(List.of())
                 .budget(request.budget() != null ? request.budget() : defaultBudget)
                 .parentTraceId(request.parentTraceId())
+                .resumedFromTraceId(null)
                 .depth(request.depth())
                 .preferredProvider(request.preferredProvider())
                 .done(false)
                 .finalOutput(null)
                 .terminationReason(null)
+                .completionMode(CompletionMode.NORMAL)
                 .allowedToolIds(request.allowedToolIds())
                 .pendingMedia(null)
                 .suspended(false)
@@ -103,11 +107,13 @@ public record ReactAgentState(
                 .mentionedEntities(session.mentionedEntities())
                 .budget(request.budget() != null ? request.budget() : defaultBudget)
                 .parentTraceId(request.parentTraceId())
+                .resumedFromTraceId(null)
                 .depth(request.depth())
                 .preferredProvider(request.preferredProvider())
                 .done(false)
                 .finalOutput(null)
                 .terminationReason(null)
+                .completionMode(CompletionMode.NORMAL)
                 .allowedToolIds(request.allowedToolIds())
                 .pendingMedia(null)
                 .suspended(false)

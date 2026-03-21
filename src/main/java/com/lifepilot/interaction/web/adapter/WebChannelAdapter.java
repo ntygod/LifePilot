@@ -198,7 +198,8 @@ public class WebChannelAdapter extends AbstractChannelAdapter {
                 .sessionId(sessionId)
                 .content(content)
                 .attachments(attachments)
-                .channelMetadata(buildWebMetadata(httpRequest, acceptsSse, request.preferredProvider()))
+                .channelMetadata(buildWebMetadata(httpRequest, acceptsSse,
+                        request.preferredProvider(), request.resumePolicy()))
                 .timestamp(Instant.now())
                 .build();
     }
@@ -222,7 +223,7 @@ public class WebChannelAdapter extends AbstractChannelAdapter {
                 .userId(DEFAULT_WEB_USER)
                 .sessionId(request.sessionId())
                 .content(content)
-                .channelMetadata(buildWebMetadata(httpRequest, false, null))
+                .channelMetadata(buildWebMetadata(httpRequest, false, null, null))
                 .timestamp(Instant.now())
                 .build();
     }
@@ -237,9 +238,11 @@ public class WebChannelAdapter extends AbstractChannelAdapter {
      */
     private ChannelMetadata.WebMetadata buildWebMetadata(HttpServletRequest httpRequest,
                                                           boolean acceptsSse,
-                                                          String preferredProvider) {
+                                                          String preferredProvider,
+                                                          @Nullable com.lifepilot.agent.model.ResumePolicy resumePolicy) {
         if (httpRequest == null) {
-            return new ChannelMetadata.WebMetadata("unknown", "unknown", null, acceptsSse, preferredProvider);
+            return new ChannelMetadata.WebMetadata(
+                    "unknown", "unknown", null, acceptsSse, preferredProvider, resumePolicy);
         }
         var userAgent = httpRequest.getHeader("User-Agent");
         return new ChannelMetadata.WebMetadata(
@@ -247,7 +250,8 @@ public class WebChannelAdapter extends AbstractChannelAdapter {
                 httpRequest.getRemoteAddr(),
                 null,
                 acceptsSse,
-                preferredProvider
+                preferredProvider,
+                resumePolicy
         );
     }
 

@@ -14,6 +14,7 @@ import type {
   ReactStepDto,
   ChatAttachment,
   ToolConfirmationRequest,
+  ResumePolicy,
 } from '@/types'
 
 /**
@@ -61,7 +62,8 @@ export function useChat() {
       temperature?: number
       maxTokens?: number
       knowledgeBaseIds?: string[]
-    }
+    },
+    resumePolicy?: ResumePolicy
   ) {
     if (!content.trim()) return
 
@@ -119,6 +121,7 @@ export function useChat() {
         content,
         chatStore.activeSessionId ?? undefined,
         attachmentIds,
+        resumePolicy,
         abortController.signal
       )
       await parseSseStream(stream)
@@ -329,6 +332,8 @@ export function useChat() {
               : (a2uiStore.components.length > 0 ? [...a2uiStore.components] : undefined),
             timestamp,
             traceId: event.traceId,
+            completionMode: event.completionMode,
+            resumedFromTraceId: event.resumedFromTraceId,
             attachments: extraAttachments.length > 0 ? extraAttachments : undefined,
             tokenUsage: event.tokenUsage,
             modelId: event.tokenUsage?.modelId,

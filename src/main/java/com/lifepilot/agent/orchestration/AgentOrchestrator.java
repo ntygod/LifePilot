@@ -2,7 +2,11 @@ package com.lifepilot.agent.orchestration;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.CancellationToken;
+import com.lifepilot.agent.DegradedResponseBuilder;
 import com.lifepilot.agent.ReactAgentLoop;
+import com.lifepilot.agent.checkpoint.AgentCheckpoint;
+import com.lifepilot.agent.checkpoint.AgentCheckpointFingerprinter;
+import com.lifepilot.agent.checkpoint.AgentCheckpointStore;
 import com.lifepilot.agent.callback.StreamingCallback;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.context.AgentLoopContext;
@@ -66,6 +70,7 @@ public class AgentOrchestrator {
     @Nullable private final MultimodalRouter multimodalRouter;
     @Nullable private final MediaValidator mediaValidator;
     @Nullable private final MediaProcessor mediaProcessor;
+    @Nullable private final AgentCheckpointStore checkpointStore;
     @Nullable private final SuspendStore suspendStore;
     @Nullable private final org.springframework.context.ApplicationEventPublisher eventPublisher;
     private final java.util.concurrent.ScheduledExecutorService suspendScheduler;
@@ -82,6 +87,7 @@ public class AgentOrchestrator {
             @Nullable MultimodalRouter multimodalRouter,
             @Nullable MediaValidator mediaValidator,
             @Nullable MediaProcessor mediaProcessor,
+            @Nullable AgentCheckpointStore checkpointStore,
             @Nullable SuspendStore suspendStore,
             @Nullable org.springframework.context.ApplicationEventPublisher eventPublisher,
             com.lifepilot.config.threadpool.SharedScheduler sharedScheduler) {
@@ -96,6 +102,7 @@ public class AgentOrchestrator {
         this.multimodalRouter = multimodalRouter;
         this.mediaValidator = mediaValidator;
         this.mediaProcessor = mediaProcessor;
+        this.checkpointStore = checkpointStore;
         this.suspendStore = suspendStore;
         this.eventPublisher = eventPublisher;
         this.suspendScheduler = sharedScheduler.cleanup();
@@ -122,6 +129,7 @@ public class AgentOrchestrator {
         Instant loopStart = Instant.now();
         Exception error = null;
         var loopContext = new AgentLoopContext();
+        String userMessageId = null;
 
         var token = new CancellationToken();
 
@@ -133,10 +141,12 @@ public class AgentOrchestrator {
         }
 
         try {
-            state = initState(effectiveRequest);
+            state = initStateWithResumePolicy(effectiveRequest);
             boolean testSession = isTestSession(effectiveRequest.sessionId());
             if (!testSession) {
-                persistenceHandler.persistUserMessage(state);
+                userMessageId = persistenceHandler.persistUserMessageReturningId(state);
+                persistenceHandler.persistUserMediaAttachments(
+                        userMessageId, state.sessionId(), effectiveRequest.mediaContents());
             }
             traceContext = startTraceIfEnabled(state, effectiveRequest);
             loopStart = Instant.now();
@@ -149,6 +159,7 @@ public class AgentOrchestrator {
 
             // 挂起分支
             if (state.suspended() && state.suspendReason() != null) {
+                clearCheckpoint(effectiveRequest);
                 return handleSuspendSync(state, traceContext);
             }
 
@@ -156,6 +167,9 @@ public class AgentOrchestrator {
             if (state.terminationReason() == null) {
                 String summary = buildReasoningSummary(state, traceContext);
                 state = state.toBuilder().reasoningSummary(summary).build();
+                clearCheckpoint(effectiveRequest);
+            } else {
+                saveCheckpoint(state, effectiveRequest);
             }
 
             String assistantMessageId = null;
@@ -180,10 +194,34 @@ public class AgentOrchestrator {
                     state.finalOutput() != null ? state.finalOutput() : "",
                     state.budget().tokensUsed(), state.stepCount(),
                     state.terminationReason(), assistantMessageId,
-                    a2uiComponents, tokenUsage);
+                    a2uiComponents, tokenUsage,
+                    state.completionMode(), state.resumedFromTraceId());
 
         } catch (Exception e) {
             log.error("ReAct 循环异常终止: error={}", e.getMessage(), e);
+            if (shouldDegradeUnexpectedException(state)) {
+                state = degradeForException(state, e);
+                saveCheckpoint(state, effectiveRequest);
+                boolean testSession = isTestSession(effectiveRequest.sessionId());
+                String assistantMessageId = null;
+                if (!testSession) {
+                    String reactStepsJson = serializeReactStepsJson(state.steps());
+                    assistantMessageId = persistenceHandler.persistAssistantMessage(state, reactStepsJson);
+                    persistenceHandler.persistInjectionRecord(assistantMessageId, state.sessionId(), loopContext);
+                    persistenceHandler.persistToolMediaAttachments(assistantMessageId, state.sessionId(),
+                            loopContext.getCollectedToolMedia());
+                    loopContext.clearToolMedia();
+                    persistenceHandler.resolveWorkspaceForTrace(state.sessionId(), state.traceId());
+                    persistenceHandler.asyncPostProcess(state);
+                }
+                return new AgentResponse(
+                        state.traceId(), state.sessionId(),
+                        state.finalOutput() != null ? state.finalOutput() : "",
+                        state.budget().tokensUsed(), state.stepCount(),
+                        state.terminationReason(), assistantMessageId,
+                        null, aggregateTokenUsage(traceContext),
+                        state.completionMode(), state.resumedFromTraceId());
+            }
             error = e;
             return AgentResponse.error(state, e);
         } finally {
@@ -211,6 +249,7 @@ public class AgentOrchestrator {
         String tempTurnId = UUID.randomUUID().toString();
         String userMessageId = null;
         String assistantMessageId = null;
+        boolean testSession = false;
         var loopContext = new AgentLoopContext(sseManager, streamId, tempTurnId);
 
         // 媒体校验与预处理
@@ -218,10 +257,12 @@ public class AgentOrchestrator {
         if (effectiveRequest == null) return; // 媒体校验失败，已发送 SSE 错误
 
         try {
-            state = initState(effectiveRequest);
-            boolean testSession = isTestSession(effectiveRequest.sessionId());
+            state = initStateWithResumePolicy(effectiveRequest);
+            testSession = isTestSession(effectiveRequest.sessionId());
             if (!testSession) {
                 userMessageId = persistenceHandler.persistUserMessageReturningId(state);
+                persistenceHandler.persistUserMediaAttachments(
+                        userMessageId, state.sessionId(), effectiveRequest.mediaContents());
             }
 
             // TRACE_START 事件
@@ -254,14 +295,24 @@ public class AgentOrchestrator {
 
             // 挂起分支
             if (state.suspended() && state.suspendReason() != null) {
+                clearCheckpoint(effectiveRequest);
                 handleSuspendStreaming(state, streamId, sseManager);
                 return;
             }
 
             // 检查流式错误
             if (callback.hasStreamingError()) {
-                error = callback.getStreamingError();
-            } else {
+                Exception streamingFailure = callback.getStreamingError();
+                if (shouldDegradeUnexpectedException(state)) {
+                    state = degradeForException(state, streamingFailure);
+                    finalContent = state.finalOutput() != null ? state.finalOutput() : "";
+                    saveCheckpoint(state, effectiveRequest);
+                } else {
+                    error = streamingFailure;
+                }
+            }
+
+            if (error == null) {
                 // 归一化最终输出
                 String callbackContent = callback.getFinalContent();
                 finalContent = state.finalOutput() != null
@@ -280,6 +331,12 @@ public class AgentOrchestrator {
                             .finalOutput(finalContent)
                             .reasoningSummary(reasoningSummary)
                             .build();
+                    clearCheckpoint(effectiveRequest);
+                } else {
+                    state = state.toBuilder()
+                            .finalOutput(finalContent)
+                            .build();
+                    saveCheckpoint(state, effectiveRequest);
                 }
 
                 // 持久化
@@ -294,8 +351,6 @@ public class AgentOrchestrator {
                     persistenceHandler.persistToolMediaAttachments(assistantMessageId, state.sessionId(),
                             loopContext.getCollectedToolMedia());
                     loopContext.clearToolMedia();
-                    persistenceHandler.persistUserMediaAttachments(assistantMessageId,
-                            state.sessionId(), effectiveRequest.mediaContents());
                     persistenceHandler.resolveWorkspaceForTrace(state.sessionId(), state.traceId());
                     persistenceHandler.asyncPostProcess(state);
                 }
@@ -303,7 +358,28 @@ public class AgentOrchestrator {
             }
         } catch (Exception e) {
             log.error("流式 Agent 循环异常终止: error={}", e.getMessage(), e);
-            error = e;
+            if (shouldDegradeUnexpectedException(state)) {
+                state = degradeForException(state, e);
+                finalContent = state.finalOutput() != null ? state.finalOutput() : "";
+                saveCheckpoint(state, effectiveRequest);
+                if (!testSession) {
+                    String a2uiJson = streamingEventHandler.serializeA2uiTree(
+                            loopContext.getLastCollectedA2uiTree());
+                    String reactStepsJson = serializeReactStepsJson(state.steps());
+                    assistantMessageId = persistenceHandler.persistAssistantMessageWithA2ui(
+                            state, finalContent, reasoningSummary, a2uiJson, reactStepsJson);
+                    persistenceHandler.persistInjectionRecord(assistantMessageId, state.sessionId(),
+                            loopContext);
+                    persistenceHandler.persistToolMediaAttachments(assistantMessageId, state.sessionId(),
+                            loopContext.getCollectedToolMedia());
+                    loopContext.clearToolMedia();
+                    persistenceHandler.resolveWorkspaceForTrace(state.sessionId(), state.traceId());
+                    persistenceHandler.asyncPostProcess(state);
+                }
+                finalTokenUsage = aggregateTokenUsage(traceContext);
+            } else {
+                error = e;
+            }
         } finally {
             endTraceIfEnabled(traceContext, state, error);
 
@@ -412,7 +488,7 @@ public class AgentOrchestrator {
             return new AgentRequest(request.message(), request.sessionId(), request.channel(),
                     request.systemPrompt(), request.budget(), request.parentTraceId(),
                     request.depth(), request.preferredProvider(), request.allowedToolIds(),
-                    processedMedia, request.temperature());
+                    processedMedia, request.temperature(), request.resumePolicy());
         } catch (MediaValidationException e) {
             log.warn("媒体校验失败: sessionId={}, error={}", request.sessionId(), e.getMessage());
             if (sseManager != null && streamId != null) {
@@ -451,6 +527,13 @@ public class AgentOrchestrator {
         if (isTestSession(request.sessionId())) {
             return ReactAgentState.init(request, defaultBudget);
         }
+        var checkpoint = claimCheckpoint(request);
+        if (checkpoint.isPresent()) {
+            var restoredState = checkpoint.get().restore(objectMapper, request);
+            log.info("同任务检查点恢复成功: sessionId={}, fromTraceId={}, toTraceId={}",
+                    restoredState.sessionId(), checkpoint.get().sourceTraceId(), restoredState.traceId());
+            return restoredState;
+        }
         var existingSession = sessionManager.findSession(request.sessionId());
         if (existingSession.isPresent()) {
             var snapshot = existingSession.get();
@@ -460,6 +543,22 @@ public class AgentOrchestrator {
     }
 
     /** 启动 Trace（如果 TraceRecorder 可用）。 */
+    private ReactAgentState initStateWithResumePolicy(AgentRequest request) {
+        if (request.resumePolicy() == ResumePolicy.FRESH) {
+            clearCheckpoint(request);
+            var defaultBudget = Budget.fromConfig(config.getBudget());
+            if (isTestSession(request.sessionId())) {
+                return ReactAgentState.init(request, defaultBudget);
+            }
+            var existingSession = sessionManager.findSession(request.sessionId());
+            if (existingSession.isPresent()) {
+                return ReactAgentState.fromSession(existingSession.get(), request, defaultBudget);
+            }
+            return ReactAgentState.init(request, defaultBudget);
+        }
+        return initState(request);
+    }
+
     @Nullable
     private TraceContext startTraceIfEnabled(ReactAgentState state, AgentRequest request) {
         if (traceRecorder == null) return null;
@@ -481,6 +580,68 @@ public class AgentOrchestrator {
     // ===== 挂起处理 =====
 
     /** 同步模式挂起处理。 */
+    private Optional<AgentCheckpoint> claimCheckpoint(AgentRequest request) {
+        if (!checkpointEnabled()) {
+            return Optional.empty();
+        }
+        try {
+            return checkpointStore.claim(request.sessionId(), request.channel(), fingerprintOf(request));
+        } catch (Exception e) {
+            log.warn("璁ら Agent 妫€鏌ョ偣澶辫触: sessionId={}, error={}", request.sessionId(), e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    private void saveCheckpoint(ReactAgentState state, AgentRequest request) {
+        if (!checkpointEnabled() || !shouldPersistCheckpoint(state)) {
+            return;
+        }
+        try {
+            checkpointStore.save(AgentCheckpoint.from(state, fingerprintOf(request), objectMapper));
+        } catch (Exception e) {
+            log.warn("淇濆瓨 Agent 妫€鏌ョ偣澶辫触: sessionId={}, traceId={}, error={}",
+                    state.sessionId(), state.traceId(), e.getMessage());
+        }
+    }
+
+    private void clearCheckpoint(AgentRequest request) {
+        if (!checkpointEnabled()) {
+            return;
+        }
+        try {
+            checkpointStore.delete(request.sessionId(), request.channel(), fingerprintOf(request));
+        } catch (Exception e) {
+            log.warn("娓呯悊 Agent 妫€鏌ョ偣澶辫触: sessionId={}, error={}", request.sessionId(), e.getMessage());
+        }
+    }
+
+    private boolean shouldDegradeUnexpectedException(ReactAgentState state) {
+        return state.stepCount() > 0 || !state.steps().isEmpty();
+    }
+
+    private ReactAgentState degradeForException(ReactAgentState state, Exception e) {
+        String reason = "鎰忓寮傚父缁堟: " + e.getClass().getSimpleName();
+        if (e.getMessage() != null && !e.getMessage().isBlank()) {
+            reason += " - " + e.getMessage();
+        }
+        return DegradedResponseBuilder.terminateWithReason(state, reason);
+    }
+
+    private boolean shouldPersistCheckpoint(ReactAgentState state) {
+        return state.completionMode() == CompletionMode.DEGRADED
+                && state.terminationReason() != null
+                && !state.terminationReason().isBlank()
+                && state.stepCount() > 0;
+    }
+
+    private boolean checkpointEnabled() {
+        return config.getCheckpoint().isEnabled() && checkpointStore != null;
+    }
+
+    private String fingerprintOf(AgentRequest request) {
+        return AgentCheckpointFingerprinter.fingerprint(request);
+    }
+
     private AgentResponse handleSuspendSync(ReactAgentState state,
                                             @Nullable TraceContext traceContext) {
         persistenceHandler.saveWorkspaceForSuspend(state);
@@ -496,7 +657,8 @@ public class AgentOrchestrator {
                 state.traceId(), state.sessionId(),
                 "Agent 已挂起，等待恢复信号。原因: " + agentLoop.formatSuspendReason(state.suspendReason()),
                 state.budget().tokensUsed(), state.stepCount(),
-                "suspended", null, null, aggregateTokenUsage(traceContext));
+                "suspended", null, null, aggregateTokenUsage(traceContext),
+                CompletionMode.SUSPENDED, state.resumedFromTraceId());
     }
 
     /** 流式模式挂起处理。 */

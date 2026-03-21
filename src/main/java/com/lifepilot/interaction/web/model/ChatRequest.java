@@ -1,5 +1,6 @@
 package com.lifepilot.interaction.web.model;
 
+import com.lifepilot.agent.model.ResumePolicy;
 import org.springframework.lang.Nullable;
 
 import java.util.List;
@@ -18,5 +19,13 @@ public record ChatRequest(
         String content,
         @Nullable String sessionId,
         @Nullable List<String> attachmentIds,
-        @Nullable String preferredProvider
-) {}
+        @Nullable String preferredProvider,
+        @Nullable ResumePolicy resumePolicy
+) {
+    public ChatRequest(String content,
+                       @Nullable String sessionId,
+                       @Nullable List<String> attachmentIds,
+                       @Nullable String preferredProvider) {
+        this(content, sessionId, attachmentIds, preferredProvider, null);
+    }
+}

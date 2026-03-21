@@ -27,7 +27,7 @@ const emit = defineEmits<{
           @click="emit('retry', message)"
         >
           <RotateCcw :size="12" />
-          <span>重试</span>
+          <span>重试发送</span>
         </button>
         <RouterLink
           v-if="message.traceId"

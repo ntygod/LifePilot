@@ -1,5 +1,6 @@
 package com.lifepilot.conversation;
 
+import com.lifepilot.agent.model.CompletionMode;
 import org.springframework.lang.Nullable;
 
 /**
@@ -46,7 +47,9 @@ public interface ConversationHistoryStore {
                                   @Nullable String reasoningSummary,
                                   @Nullable String traceId,
                                   @Nullable String a2uiComponentsJson,
-                                  @Nullable String reactStepsJson);
+                                  @Nullable String reactStepsJson,
+                                  @Nullable CompletionMode completionMode,
+                                  @Nullable String resumedFromTraceId);
 
     /**
      * 追加一轮对话（user + assistant）到历史存储。
@@ -69,7 +72,8 @@ public interface ConversationHistoryStore {
             appendUserMessage(sessionId, userMessage, traceId);
         }
         if (assistantMessage != null && !assistantMessage.isBlank()) {
-            appendAssistantMessage(sessionId, assistantMessage, reasoningSummary, traceId, null, null);
+            appendAssistantMessage(sessionId, assistantMessage, reasoningSummary, traceId,
+                    null, null, CompletionMode.NORMAL, null);
         }
     }
 

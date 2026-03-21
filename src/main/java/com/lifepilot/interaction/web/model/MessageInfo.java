@@ -1,20 +1,26 @@
 package com.lifepilot.interaction.web.model;
 
+import com.lifepilot.agent.model.CompletionMode;
+import org.springframework.lang.Nullable;
+
 import java.time.Instant;
 import java.util.List;
-
-import org.springframework.lang.Nullable;
+import java.util.Map;
 
 /**
  * 消息摘要信息。
  *
- * @param id               消息 ID
- * @param role             角色（user / assistant）
- * @param content          文本内容
- * @param a2ui             A2UI 组件树（可为 null）
- * @param timestamp        消息时间戳
- * @param reasoningSummary 本条消息对应一轮对话的推理概要（可为 null，仅 assistant 消息返回）
- * @param reactSteps       ReAct 步骤序列（可为 null，仅 assistant 消息返回）
+ * @param id 消息 ID
+ * @param role 角色（user / assistant / tool-confirmation）
+ * @param content 文本内容
+ * @param a2uiComponents A2UI 组件树
+ * @param timestamp 消息时间戳
+ * @param reasoningSummary 推理摘要
+ * @param traceId 关联 traceId
+ * @param attachments 附件信息
+ * @param reactSteps ReAct 步骤序列
+ * @param completionMode 完成模式
+ * @param resumedFromTraceId 恢复来源 traceId
  * @author zsg
  * @since 2026-02-27
  */
@@ -27,5 +33,7 @@ public record MessageInfo(
         @Nullable String reasoningSummary,
         @Nullable String traceId,
         @Nullable List<AttachmentInfo> attachments,
-        @Nullable List<java.util.Map<String, Object>> reactSteps
+        @Nullable List<Map<String, Object>> reactSteps,
+        @Nullable CompletionMode completionMode,
+        @Nullable String resumedFromTraceId
 ) {}

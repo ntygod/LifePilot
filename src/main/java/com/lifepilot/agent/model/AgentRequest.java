@@ -29,8 +29,28 @@ public record AgentRequest(
         @Nullable String preferredProvider,
         @Nullable List<String> allowedToolIds,
         @Nullable List<MediaContent> mediaContents,
-        @Nullable Double temperature
+        @Nullable Double temperature,
+        ResumePolicy resumePolicy
 ) {
+
+    public AgentRequest {
+        resumePolicy = resumePolicy != null ? resumePolicy : ResumePolicy.AUTO;
+    }
+
+    public AgentRequest(String message,
+                        String sessionId,
+                        String channel,
+                        @Nullable String systemPrompt,
+                        @Nullable Budget budget,
+                        @Nullable String parentTraceId,
+                        int depth,
+                        @Nullable String preferredProvider,
+                        @Nullable List<String> allowedToolIds,
+                        @Nullable List<MediaContent> mediaContents,
+                        @Nullable Double temperature) {
+        this(message, sessionId, channel, systemPrompt, budget, parentTraceId, depth,
+                preferredProvider, allowedToolIds, mediaContents, temperature, ResumePolicy.AUTO);
+    }
 
     /**
      * 普通请求便捷构造器。
@@ -40,6 +60,6 @@ public record AgentRequest(
      * @param channel   渠道标识
      */
     public AgentRequest(String message, String sessionId, String channel) {
-        this(message, sessionId, channel, null, null, null, 0, null, null, null, null);
+        this(message, sessionId, channel, null, null, null, 0, null, null, null, null, ResumePolicy.AUTO);
     }
 }

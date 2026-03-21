@@ -41,6 +41,10 @@ export interface ChatAttachment {
   isImage: boolean
 }
 
+export type CompletionMode = 'NORMAL' | 'DEGRADED' | 'SUSPENDED'
+
+export type ResumePolicy = 'AUTO' | 'FRESH'
+
 /** 消息 */
 export interface Message {
   id: string
@@ -61,6 +65,10 @@ export interface Message {
   errorMessage?: string
   /** 后端执行轨迹 ID（如存在），用于跳转到 Trace 详情 */
   traceId?: string
+  /** 本轮完成态 */
+  completionMode?: CompletionMode
+  /** 断点恢复来源 traceId */
+  resumedFromTraceId?: string
   /** 高亮后的 HTML 内容（用于搜索高亮） */
   highlightedContent?: string
   /** 附件列表（图片/文件等），用于前端展示缩略图与下载入口 */
@@ -261,6 +269,8 @@ export interface SseDoneEvent {
   /** 可选：本轮执行对应的 Trace Id（如后端有返回） */
   traceId?: string
   /** 可选：会话 ID（后端返回，用于前端同步） */
+  completionMode?: CompletionMode
+  resumedFromTraceId?: string
   sessionId?: string
   /** 可选：消息完成时间戳（毫秒，后端返回） */
   timestamp?: number
@@ -319,6 +329,8 @@ export interface ChatResponse {
   tokenUsage?: TokenUsage
   traceId?: string
   /** 本轮对话中使用到的知识库 / 文档来源等（由后端返回，前端只做轻量展示） */
+  completionMode?: CompletionMode
+  resumedFromTraceId?: string
   sources?: SourceSummary[]
 }
 

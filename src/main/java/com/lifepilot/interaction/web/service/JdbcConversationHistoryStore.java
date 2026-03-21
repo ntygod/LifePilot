@@ -1,5 +1,6 @@
 package com.lifepilot.interaction.web.service;
 
+import com.lifepilot.agent.model.CompletionMode;
 import com.lifepilot.conversation.ConversationHistoryStore;
 import com.lifepilot.interaction.web.model.ChatSession;
 import com.lifepilot.interaction.web.repository.ChatMessageRepository;
@@ -49,7 +50,8 @@ public class JdbcConversationHistoryStore implements ConversationHistoryStore {
                                     @Nullable String traceId) {
         ensureSessionExists(sessionId);
         Instant ts = Instant.now();
-        String messageId = messageRepository.insert(sessionId, "user", userMessage, null, traceId, ts, null, null);
+        String messageId = messageRepository.insert(sessionId, "user", userMessage, null, traceId, ts,
+                null, null, null, null);
         sessionRepository.appendMessageMeta(sessionId, ts, truncatePreview(userMessage));
         log.debug("用户消息已同步写入: sessionId={}, messageId={}", sessionId, messageId);
         return messageId;
@@ -69,11 +71,14 @@ public class JdbcConversationHistoryStore implements ConversationHistoryStore {
                                          @Nullable String reasoningSummary,
                                          @Nullable String traceId,
                                          @Nullable String a2uiComponentsJson,
-                                         @Nullable String reactStepsJson) {
+                                         @Nullable String reactStepsJson,
+                                         @Nullable CompletionMode completionMode,
+                                         @Nullable String resumedFromTraceId) {
         ensureSessionExists(sessionId);
         Instant ts = Instant.now();
         String messageId = messageRepository.insert(sessionId, "assistant", assistantMessage,
-                reasoningSummary, traceId, ts, a2uiComponentsJson, reactStepsJson);
+                reasoningSummary, traceId, ts, a2uiComponentsJson, reactStepsJson,
+                completionMode, resumedFromTraceId);
         sessionRepository.appendMessageMeta(sessionId, ts, truncatePreview(assistantMessage));
         log.debug("助手消息已同步写入: sessionId={}, messageId={}", sessionId, messageId);
         return messageId;
@@ -99,7 +104,8 @@ public class JdbcConversationHistoryStore implements ConversationHistoryStore {
             appendUserMessage(sessionId, userMessage, traceId);
         }
         if (assistantMessage != null && !assistantMessage.isBlank()) {
-            appendAssistantMessage(sessionId, assistantMessage, reasoningSummary, traceId, null, null);
+            appendAssistantMessage(sessionId, assistantMessage, reasoningSummary, traceId,
+                    null, null, CompletionMode.NORMAL, null);
         }
 
         log.debug("对话历史已追加: sessionId={}, hasUser={}, hasAssistant={}",
@@ -122,7 +128,8 @@ public class JdbcConversationHistoryStore implements ConversationHistoryStore {
 
         ensureSessionExists(sessionId);
         Instant ts = Instant.now();
-        messageRepository.insert(sessionId, "system", systemMessage, null, traceId, ts, null, null);
+        messageRepository.insert(sessionId, "system", systemMessage, null, traceId, ts,
+                null, null, null, null);
         sessionRepository.appendMessageMeta(sessionId, ts, truncatePreview(systemMessage));
 
         log.debug("系统消息已追加: sessionId={}, traceIdPresent={}",

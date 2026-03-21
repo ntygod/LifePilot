@@ -38,6 +38,8 @@ const emit = defineEmits<{
   (e: 'dislike', message: Message, feedback?: string): void
   (e: 'fork', message: Message): void
   (e: 'regenerate', message: Message): void
+  (e: 'resume', message: Message): void
+  (e: 'restart', message: Message): void
   (e: 'copy', content: string): void
   (e: 'tool-confirm-resolve', requestId: string, resolution: 'approved' | 'rejected' | 'expired'): void
 }>()
@@ -359,6 +361,8 @@ const pendingConfirmations = computed(() => {
             @copy="(content: string) => emit('copy', content)"
             @fork="(target: Message) => emit('fork', target)"
             @regenerate="(target: Message) => emit('regenerate', target)"
+            @resume="(target: Message) => emit('resume', target)"
+            @restart="(target: Message) => emit('restart', target)"
           />
           <MessageFeedback
             :message="message"

@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { RouterLink } from 'vue-router'
-import { Copy, GitBranch, Loader2, RefreshCw, Square, Volume2 } from 'lucide-vue-next'
+import { Copy, GitBranch, Loader2, Play, RefreshCw, Square, Volume2 } from 'lucide-vue-next'
 import type { Message } from '@/types'
 import { copyToClipboard } from '@/utils/clipboard'
 import { useVoice } from '@/composables/useVoice'
 
-defineProps<{
+const props = defineProps<{
   message: Message
   isLastAssistant: boolean
 }>()
@@ -15,10 +15,13 @@ const emit = defineEmits<{
   (e: 'copy', content: string): void
   (e: 'fork', message: Message): void
   (e: 'regenerate', message: Message): void
+  (e: 'resume', message: Message): void
+  (e: 'restart', message: Message): void
 }>()
 
 const copyLabel = ref('复制')
 const ttsError = ref<string | null>(null)
+const isDegraded = computed(() => props.message.completionMode === 'DEGRADED')
 
 const { playTts, stopTts, isPlaying, playbackProgress, isLoadingTts } = useVoice()
 
@@ -84,8 +87,27 @@ async function handleTts(messageId: string) {
       <span>分叉</span>
     </button>
 
+    <template v-if="isLastAssistant && isDegraded">
+      <button
+        type="button"
+        class="surface-chip surface-chip-strong transition-colors hover:opacity-90"
+        @click="emit('resume', message)"
+      >
+        <Play class="size-3.5" />
+        <span>缁х画鎵ц</span>
+      </button>
+      <button
+        type="button"
+        class="surface-chip transition-colors hover:border-border/70 hover:bg-background/80 hover:text-foreground"
+        @click="emit('restart', message)"
+      >
+        <RefreshCw class="size-3.5" />
+        <span>閲嶆柊寮€濮?</span>
+      </button>
+    </template>
+
     <button
-      v-if="isLastAssistant"
+      v-else-if="isLastAssistant"
       type="button"
       class="surface-chip transition-colors hover:border-border/70 hover:bg-background/80 hover:text-foreground"
       @click="emit('regenerate', message)"

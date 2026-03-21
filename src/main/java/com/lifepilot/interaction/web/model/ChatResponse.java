@@ -1,5 +1,6 @@
 package com.lifepilot.interaction.web.model;
 
+import com.lifepilot.agent.model.CompletionMode;
 import com.lifepilot.interaction.model.TokenUsage;
 import org.springframework.lang.Nullable;
 
@@ -16,6 +17,15 @@ public record ChatResponse(
         String content,
         @Nullable List<A2uiComponent> a2uiComponents,
         @Nullable TokenUsage tokenUsage,
-        @Nullable String traceId
+        @Nullable String traceId,
+        CompletionMode completionMode,
+        @Nullable String resumedFromTraceId
 ) {
+    public ChatResponse(String messageId,
+                        String content,
+                        @Nullable List<A2uiComponent> a2uiComponents,
+                        @Nullable TokenUsage tokenUsage,
+                        @Nullable String traceId) {
+        this(messageId, content, a2uiComponents, tokenUsage, traceId, CompletionMode.NORMAL, null);
+    }
 }

@@ -1,5 +1,6 @@
 package com.lifepilot.interaction.web.controller;
 
+import com.lifepilot.agent.model.CompletionMode;
 import com.lifepilot.interaction.model.GatewayResponse;
 import com.lifepilot.interaction.model.ResponseContent;
 import com.lifepilot.interaction.web.adapter.WebChannelAdapter;
@@ -125,6 +126,10 @@ public class ChatController {
 
         log.debug("收到非流式消息请求: sessionId={}", request.sessionId());
         var response = adapter.processMessage(request, httpRequest);
+        if (!response.isSuccess()) {
+            return ResponseEntity.status(response.statusCode()).body(
+                    new ErrorResponse(response.statusCode(), response.errorMessage(), Instant.now()));
+        }
         var chatResponse = toChatResponse(response);
         return ResponseEntity.ok(chatResponse);
     }
@@ -202,6 +207,10 @@ public class ChatController {
                 }
                 if (chatResponse.traceId() != null) {
                     doneDataBuilder.put("traceId", chatResponse.traceId());
+                }
+                doneDataBuilder.put("completionMode", chatResponse.completionMode().name());
+                if (chatResponse.resumedFromTraceId() != null) {
+                    doneDataBuilder.put("resumedFromTraceId", chatResponse.resumedFromTraceId());
                 }
                 if (chatResponse.a2uiComponents() != null && !chatResponse.a2uiComponents().isEmpty()) {
                     doneDataBuilder.put("a2uiComponents", chatResponse.a2uiComponents());
@@ -499,6 +508,10 @@ public class ChatController {
 
         log.debug("收到 A2UI 信号: name={}, sessionId={}", request.name(), request.sessionId());
         var response = adapter.processSignal(request, httpRequest);
+        if (!response.isSuccess()) {
+            return ResponseEntity.status(response.statusCode()).body(
+                    new ErrorResponse(response.statusCode(), response.errorMessage(), Instant.now()));
+        }
         return ResponseEntity.ok(toChatResponse(response));
     }
 
@@ -843,12 +856,34 @@ public class ChatController {
         String traceId = response.metadata() != null
                 ? (String) response.metadata().get("traceId")
                 : null;
+        CompletionMode completionMode = response.metadata() != null
+                ? parseCompletionMode(response.metadata().get("completionMode"))
+                : CompletionMode.NORMAL;
+        String resumedFromTraceId = response.metadata() != null
+                ? (String) response.metadata().get("resumedFromTraceId")
+                : null;
         return new ChatResponse(
                 response.responseId(),
                 text,
                 a2uiComponents,
                 response.tokenUsage(),
-                traceId
+                traceId,
+                completionMode,
+                resumedFromTraceId
         );
+    }
+
+    private CompletionMode parseCompletionMode(@Nullable Object rawValue) {
+        if (rawValue instanceof CompletionMode completionMode) {
+            return completionMode;
+        }
+        if (rawValue instanceof String rawText) {
+            try {
+                return CompletionMode.valueOf(rawText);
+            } catch (IllegalArgumentException ignored) {
+                return CompletionMode.NORMAL;
+            }
+        }
+        return CompletionMode.NORMAL;
     }
 }

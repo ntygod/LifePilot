@@ -4,6 +4,8 @@ import com.lifepilot.agent.orchestration.AgentOrchestrator;
 import com.lifepilot.agent.CancellationToken;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.agent.model.AgentResponse;
+import com.lifepilot.agent.model.CompletionMode;
+import com.lifepilot.agent.model.ResumePolicy;
 import com.lifepilot.interaction.config.GatewayProperties;
 import com.lifepilot.interaction.middleware.GatewayMiddleware;
 import com.lifepilot.interaction.middleware.MiddlewareChain;
@@ -84,8 +86,21 @@ public class ExecutionMiddleware implements GatewayMiddleware {
             if (agentResponse.traceId() != null && !agentResponse.traceId().isBlank()) {
                 metadata.put("traceId", agentResponse.traceId());
             }
+            metadata.put("completionMode", agentResponse.completionMode().name());
+            if (agentResponse.resumedFromTraceId() != null && !agentResponse.resumedFromTraceId().isBlank()) {
+                metadata.put("resumedFromTraceId", agentResponse.resumedFromTraceId());
+            }
             if (agentResponse.a2uiComponents() != null && !agentResponse.a2uiComponents().isEmpty()) {
                 metadata.put("a2uiComponents", agentResponse.a2uiComponents());
+            }
+
+            if (agentResponse.completionMode() == CompletionMode.NORMAL
+                    && agentResponse.terminationReason() != null
+                    && !agentResponse.terminationReason().isBlank()) {
+                return GatewayResponse.error(message.channelType(), agentResponse.content(), 500)
+                        .toBuilder()
+                        .metadata(metadata)
+                        .build();
             }
 
             return GatewayResponse.success(message.channelType(), new ResponseContent.TextContent(agentResponse.content()))
@@ -183,7 +198,8 @@ public class ExecutionMiddleware implements GatewayMiddleware {
                 resolvePreferredProvider(message),
                 null,
                 buildMediaContents(message),
-                resolveTemperature(message.sessionId())
+                resolveTemperature(message.sessionId()),
+                resolveResumePolicy(message)
         );
     }
 
@@ -226,6 +242,14 @@ public class ExecutionMiddleware implements GatewayMiddleware {
             return SessionConfigKeys.normalizeString(webMetadata.preferredProvider());
         }
         return null;
+    }
+
+    private ResumePolicy resolveResumePolicy(GatewayMessage message) {
+        if (message.channelMetadata() instanceof ChannelMetadata.WebMetadata webMetadata
+                && webMetadata.resumePolicy() != null) {
+            return webMetadata.resumePolicy();
+        }
+        return ResumePolicy.AUTO;
     }
 
     /**

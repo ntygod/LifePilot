@@ -21,7 +21,9 @@ public record AgentResponse(
         @Nullable String terminationReason,
         @Nullable String messageId,
         @Nullable List<A2uiComponent> a2uiComponents,
-        @Nullable TokenUsage tokenUsage
+        @Nullable TokenUsage tokenUsage,
+        CompletionMode completionMode,
+        @Nullable String resumedFromTraceId
 ) {
     public AgentResponse(String traceId,
                          String sessionId,
@@ -29,7 +31,8 @@ public record AgentResponse(
                          int tokensUsed,
                          int stepCount,
                          @Nullable String terminationReason) {
-        this(traceId, sessionId, content, tokensUsed, stepCount, terminationReason, null, null, null);
+        this(traceId, sessionId, content, tokensUsed, stepCount, terminationReason,
+                null, null, null, CompletionMode.NORMAL, null);
     }
 
     /** 从 ReactAgentState 构建错误响应。 */
@@ -43,7 +46,9 @@ public record AgentResponse(
                 "异常终止: " + exception.getClass().getSimpleName(),
                 null,
                 null,
-                null
+                null,
+                CompletionMode.NORMAL,
+                state.resumedFromTraceId()
         );
     }
 }

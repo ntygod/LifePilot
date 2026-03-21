@@ -1,6 +1,7 @@
 import type {
   ChatAttachment,
   ChatResponse,
+  ResumePolicy,
   ChatSession,
   ChatSessionDetail,
   CreateKbRequest,
@@ -14,6 +15,7 @@ import type {
   McpServerConfig,
   McpTool,
   Message,
+  ReactStepDto,
   PageResult,
   ProcessingLog,
   SkillDetail,
@@ -166,11 +168,12 @@ export const chatApi = {
   sendMessage(
     content: string,
     sessionId?: string,
-    attachmentIds?: string[]
+    attachmentIds?: string[],
+    resumePolicy?: ResumePolicy
   ): Promise<ChatResponse> {
     return request('/chat/messages', {
       method: 'POST',
-      body: JSON.stringify({ content, sessionId, attachmentIds })
+      body: JSON.stringify({ content, sessionId, attachmentIds, resumePolicy })
     })
   },
 
@@ -182,12 +185,13 @@ export const chatApi = {
     content: string,
     sessionId?: string,
     attachmentIds?: string[],
+    resumePolicy?: ResumePolicy,
     signal?: AbortSignal
   ): Promise<ReadableStream<Uint8Array>> {
     const res = await fetch(`${BASE}/chat/messages/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content, sessionId, attachmentIds }),
+      body: JSON.stringify({ content, sessionId, attachmentIds, resumePolicy }),
       signal
     })
     if (!res.ok || !res.body) {
@@ -213,13 +217,16 @@ export const chatApi = {
   async getSessionMessages(sessionId: string): Promise<Message[]> {
     const messages = await request<Array<{
       id: string
-      role: 'user' | 'assistant'
+      role: 'user' | 'assistant' | 'tool-confirmation'
       content: string
       a2uiComponents?: unknown
       timestamp: string | number
       reasoningSummary?: string | null
       traceId?: string | null
       attachments?: Array<{ id: string; fileName: string; fileSize: number; mimeType: string; url?: string | null }> | null
+      reactSteps?: ReactStepDto[] | null
+      completionMode?: 'NORMAL' | 'DEGRADED' | 'SUSPENDED' | null
+      resumedFromTraceId?: string | null
     }>>(`/chat/sessions/${sessionId}/messages`)
     return messages.map(mapBackendMessage)
   },

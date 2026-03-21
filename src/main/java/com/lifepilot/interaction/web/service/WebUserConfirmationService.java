@@ -162,7 +162,7 @@ public class WebUserConfirmationService implements UserConfirmationService {
                     contentJson,
                     null, null,
                     meta.createdAt(),
-                    null, null);
+                    null, null, null, null);
             log.info("工具确认已持久化: requestId={}, sessionId={}, resolution={}",
                     requestId, meta.sessionId(), resolution);
         } catch (Exception e) {

@@ -31,6 +31,8 @@ const emit = defineEmits<{
   (e: 'dislike', message: Message, feedback?: string): void
   (e: 'fork', message: Message): void
   (e: 'regenerate', message: Message): void
+  (e: 'resume', message: Message): void
+  (e: 'restart', message: Message): void
   (e: 'copy', content: string): void
   (e: 'tool-confirm-resolve', requestId: string, resolution: 'approved' | 'rejected' | 'expired'): void
 }>()
@@ -132,6 +134,8 @@ function highlight(text: string): string {
           @dislike="(m: Message, f?: string) => emit('dislike', m, f)"
           @fork="(m: Message) => emit('fork', m)"
           @regenerate="(m: Message) => emit('regenerate', m)"
+          @resume="(m: Message) => emit('resume', m)"
+          @restart="(m: Message) => emit('restart', m)"
           @copy="(c: string) => emit('copy', c)"
           @tool-confirm-resolve="(requestId: string, r: 'approved' | 'rejected' | 'expired') => emit('tool-confirm-resolve', requestId, r)"
         />

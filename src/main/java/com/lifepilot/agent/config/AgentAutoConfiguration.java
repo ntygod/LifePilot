@@ -3,6 +3,8 @@ package com.lifepilot.agent.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.AgentToolProvider;
 import com.lifepilot.agent.ReactAgentLoop;
+import com.lifepilot.agent.checkpoint.AgentCheckpointStore;
+import com.lifepilot.agent.checkpoint.SqliteAgentCheckpointStore;
 import com.lifepilot.agent.context.ContextAssembler;
 import com.lifepilot.agent.media.MediaDataExtractor;
 import com.lifepilot.agent.session.SessionManager;
@@ -39,6 +41,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.JdbcTemplate;
+
+import java.util.concurrent.TimeUnit;
 
 /**
  * Agent 自动配置。
@@ -104,6 +108,23 @@ public class AgentAutoConfiguration {
                 intervalMs, intervalMs, java.util.concurrent.TimeUnit.MILLISECONDS);
         log.info("会话过期清理任务已注册: interval={}ms", intervalMs);
         return manager;
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(AgentCheckpointStore.class)
+    @ConditionalOnProperty(prefix = "lifepilot.agent.checkpoint", name = "enabled",
+            havingValue = "true", matchIfMissing = true)
+    public AgentCheckpointStore agentCheckpointStore(JdbcTemplate jdbcTemplate,
+                                                     AgentConfigProperties config,
+                                                     SharedScheduler sharedScheduler) {
+        var store = new SqliteAgentCheckpointStore(jdbcTemplate);
+        long intervalMs = config.getCheckpoint().getCleanupIntervalMs();
+        sharedScheduler.cleanup().scheduleAtFixedRate(
+                () -> store.cleanExpired(config.getCheckpoint().getMaxAge()),
+                intervalMs, intervalMs, TimeUnit.MILLISECONDS);
+        log.info("Agent 检查点清理任务已注册: interval={}ms, maxAge={}",
+                intervalMs, config.getCheckpoint().getMaxAge());
+        return store;
     }
 
     @Bean
@@ -202,6 +223,7 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) MultimodalRouter multimodalRouter,
             @Autowired(required = false) MediaValidator mediaValidator,
             @Autowired(required = false) MediaProcessor mediaProcessor,
+            @Autowired(required = false) AgentCheckpointStore checkpointStore,
             @Autowired(required = false) SuspendStore suspendStore,
             @Autowired(required = false) org.springframework.context.ApplicationEventPublisher eventPublisher,
             SharedScheduler sharedScheduler) {
@@ -217,6 +239,7 @@ public class AgentAutoConfiguration {
                 multimodalRouter,
                 mediaValidator,
                 mediaProcessor,
+                checkpointStore,
                 suspendStore,
                 eventPublisher,
                 sharedScheduler);

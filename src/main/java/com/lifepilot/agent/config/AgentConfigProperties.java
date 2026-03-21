@@ -2,6 +2,8 @@ package com.lifepilot.agent.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+import java.time.Duration;
+
 /**
  * Agent 引擎配置属性。
  *
@@ -19,6 +21,7 @@ public class AgentConfigProperties {
     private BudgetConfig budget = new BudgetConfig();
     private ContextConfig context = new ContextConfig();
     private SessionConfig session = new SessionConfig();
+    private CheckpointConfig checkpoint = new CheckpointConfig();
     private DebugConfig debug = new DebugConfig();
     private TaskConfig task = new TaskConfig();
 
@@ -32,6 +35,8 @@ public class AgentConfigProperties {
     public void setContext(ContextConfig context) { this.context = context; }
     public SessionConfig getSession() { return session; }
     public void setSession(SessionConfig session) { this.session = session; }
+    public CheckpointConfig getCheckpoint() { return checkpoint; }
+    public void setCheckpoint(CheckpointConfig checkpoint) { this.checkpoint = checkpoint; }
     public DebugConfig getDebug() { return debug; }
     public void setDebug(DebugConfig debug) { this.debug = debug; }
     public TaskConfig getTask() { return task; }
@@ -130,6 +135,20 @@ public class AgentConfigProperties {
         public void setTimeoutMinutes(int timeoutMinutes) { this.timeoutMinutes = timeoutMinutes; }
         public int getMaxRecentTurns() { return maxRecentTurns; }
         public void setMaxRecentTurns(int maxRecentTurns) { this.maxRecentTurns = maxRecentTurns; }
+        public long getCleanupIntervalMs() { return cleanupIntervalMs; }
+        public void setCleanupIntervalMs(long cleanupIntervalMs) { this.cleanupIntervalMs = cleanupIntervalMs; }
+    }
+
+    /** 检查点配置。 */
+    public static class CheckpointConfig {
+        private boolean enabled = true;
+        private Duration maxAge = Duration.ofDays(7);
+        private long cleanupIntervalMs = Duration.ofHours(1).toMillis();
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        public Duration getMaxAge() { return maxAge; }
+        public void setMaxAge(Duration maxAge) { this.maxAge = maxAge; }
         public long getCleanupIntervalMs() { return cleanupIntervalMs; }
         public void setCleanupIntervalMs(long cleanupIntervalMs) { this.cleanupIntervalMs = cleanupIntervalMs; }
     }

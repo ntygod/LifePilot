@@ -200,6 +200,8 @@ class MessagePersistence_Preservation_保持测试 {
                 "已生成结构化面板",
                 "trace-a2ui-1",
                 a2uiJson,
+                null,
+                null,
                 null
         );
 

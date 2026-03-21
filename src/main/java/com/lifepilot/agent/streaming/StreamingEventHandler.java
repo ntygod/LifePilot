@@ -119,6 +119,10 @@ public class StreamingEventHandler {
         if (state.traceId() != null) {
             doneData.put("traceId", state.traceId());
         }
+        doneData.put("completionMode", state.completionMode().name());
+        if (state.resumedFromTraceId() != null && !state.resumedFromTraceId().isBlank()) {
+            doneData.put("resumedFromTraceId", state.resumedFromTraceId());
+        }
         if (reasoningSummary != null) {
             doneData.put("reasoningSummary", reasoningSummary);
         }

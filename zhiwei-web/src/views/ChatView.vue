@@ -10,7 +10,7 @@ import {
 } from 'lucide-vue-next'
 import { chatApi, llmProviderApi } from '@/api/client'
 import type { LlmProvider } from '@/api/client'
-import type { ChatAttachment, Message, SessionConfig } from '@/types'
+import type { ChatAttachment, Message, ResumePolicy, SessionConfig } from '@/types'
 import StatePanel from '@/components/common/StatePanel.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -242,6 +242,34 @@ function handleEmptyStateSend(content: string) {
   void handleSend({ content })
 }
 
+function getAttachmentIds(message: Message): string[] | undefined {
+  const attachmentIds = message.attachments?.map(attachment => attachment.fileId).filter(Boolean)
+  return attachmentIds && attachmentIds.length > 0 ? attachmentIds : undefined
+}
+
+function findUserMessageForAssistant(assistantMessage: Message): Message | null {
+  const sorted = [...chatStore.messages].sort((left, right) => left.timestamp - right.timestamp)
+  const assistantIndex = sorted.findIndex(message => message.id === assistantMessage.id)
+  if (assistantIndex < 0) return null
+
+  for (let index = assistantIndex - 1; index >= 0; index -= 1) {
+    if (sorted[index].role === 'user') {
+      return sorted[index]
+    }
+  }
+  return null
+}
+
+async function resendUserMessage(message: Message, resumePolicy?: ResumePolicy) {
+  await sendMessage(
+    message.content,
+    getAttachmentIds(message),
+    message.attachments,
+    undefined,
+    resumePolicy,
+  )
+}
+
 async function handleRetry(message: Message) {
   if (message.status === 'error') {
     const index = chatStore.messages.findIndex(item => item.id === message.id)
@@ -255,21 +283,11 @@ async function handleRetry(message: Message) {
       }
     }
   }
-  await sendMessage(message.content)
+  await resendUserMessage(message)
 }
 
 async function handleRegenerate(assistantMessage: Message) {
-  const sorted = [...chatStore.messages].sort((left, right) => left.timestamp - right.timestamp)
-  const assistantIndex = sorted.findIndex(message => message.id === assistantMessage.id)
-  if (assistantIndex < 0) return
-
-  let userMessage: Message | null = null
-  for (let index = assistantIndex - 1; index >= 0; index -= 1) {
-    if (sorted[index].role === 'user') {
-      userMessage = sorted[index]
-      break
-    }
-  }
+  const userMessage = findUserMessageForAssistant(assistantMessage)
   if (!userMessage) return
 
   const removeIndex = chatStore.messages.findIndex(message => message.id === assistantMessage.id)
@@ -277,7 +295,19 @@ async function handleRegenerate(assistantMessage: Message) {
     chatStore.messages.splice(removeIndex, 1)
   }
 
-  await sendMessage(userMessage.content)
+  await resendUserMessage(userMessage, 'FRESH')
+}
+
+async function handleResume(assistantMessage: Message) {
+  const userMessage = findUserMessageForAssistant(assistantMessage)
+  if (!userMessage) return
+  await resendUserMessage(userMessage, 'AUTO')
+}
+
+async function handleRestart(assistantMessage: Message) {
+  const userMessage = findUserMessageForAssistant(assistantMessage)
+  if (!userMessage) return
+  await resendUserMessage(userMessage, 'FRESH')
 }
 
 async function handleFork(message: Message) {
@@ -471,6 +501,8 @@ function closeInspectorPanels() {
             @dislike="handleDislike"
             @fork="handleFork"
             @regenerate="handleRegenerate"
+            @resume="handleResume"
+            @restart="handleRestart"
             @copy="handleCopy"
             @tool-confirm-resolve="resolveToolConfirmation"
           />

@@ -201,6 +201,8 @@ class ChatController_A2uiContract_测试 {
                         "已生成结构化面板",
                         "trace-1",
                         null,
+                        null,
+                        null,
                         null
                 )
         ));

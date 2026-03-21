@@ -66,6 +66,11 @@ lifepilot:
       max-age: 24h
       # 过期清理定时任务间隔
       cleanup-interval: 1h
+    checkpoint:
+      # 失败检查点最大保留时长
+      max-age: 7d
+      # 检查点清理定时任务间隔
+      cleanup-interval-ms: 3600000
     session:
       timeout-minutes: 30
       max-recent-turns: 10

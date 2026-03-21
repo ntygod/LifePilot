@@ -115,7 +115,7 @@ class MessagePersistence_BugCondition_探索测试 {
         // 1. 同步调用 appendUserMessage() 写入用户消息
         String userMessageId = historyStore.appendUserMessage(sessionId, userMessage, traceId);
         // 2. 同步调用 appendAssistantMessage() 写入助手消息，获取 messageId
-        String assistantMessageId = historyStore.appendAssistantMessage(sessionId, assistantMessage, null, traceId, null, null);
+        String assistantMessageId = historyStore.appendAssistantMessage(sessionId, assistantMessage, null, traceId, null, null, null, null);
 
         // 验证：返回的 messageId 在 chat_messages 中能找到
         assertTrue(messageRepository.messageExists(assistantMessageId),
@@ -156,7 +156,7 @@ class MessagePersistence_BugCondition_探索测试 {
         assertEquals(1, countAfterUser, "appendUserMessage() 返回后，chat_messages 中应有 1 条用户消息");
 
         // 同步写入助手消息
-        historyStore.appendAssistantMessage(sessionId, assistantMessage, null, traceId, null, null);
+        historyStore.appendAssistantMessage(sessionId, assistantMessage, null, traceId, null, null, null, null);
 
         // 立即检查：两条消息都已持久化
         Integer countAfterAssistant = jdbcTemplate.queryForObject(
@@ -189,7 +189,7 @@ class MessagePersistence_BugCondition_探索测试 {
 
         // 模拟修复后的 AgentLoop 流程
         historyStore.appendUserMessage(sessionId, userMessage, traceId);
-        String assistantMessageId = historyStore.appendAssistantMessage(sessionId, assistantMessage, null, traceId, null, null);
+        String assistantMessageId = historyStore.appendAssistantMessage(sessionId, assistantMessage, null, traceId, null, null, null, null);
 
         // 模拟反馈提交：用 done 事件中的 messageId 查询 sessionId
         String foundSessionId = messageRepository.findSessionIdByMessageId(assistantMessageId);
