@@ -231,9 +231,11 @@ public class StorageToolProvider {
 
                         int offset = input.getOptionalParam("offset", Number.class).map(Number::intValue).orElse(0);
                         int limit = input.getOptionalParam("limit", Number.class).map(Number::intValue).orElse(20);
+                        String startTime = input.getOptionalParam("startTime", String.class).orElse(null);
+                        String endTime = input.getOptionalParam("endTime", String.class).orElse(null);
 
                         QueryRequest request = new QueryRequest(
-                                collection.id(), filters, sortField, sortDirection, offset, limit);
+                                collection.id(), filters, sortField, sortDirection, offset, limit, startTime, endTime);
                         List<Document> docs = dataStoreManager.queryDocuments(request);
 
                         List<Map<String, Object>> items = docs.stream()

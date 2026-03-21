@@ -48,8 +48,8 @@ lifepilot:
       log-llm-prompts: true
     loop:
       # ReAct 循环配置
-      max-iterations: 25
-      max-consecutive-failures: 3
+      max-iterations: 45
+      max-consecutive-failures: 35
       llm-scene: agent_react
     budget:
       default-max-tokens: 32000

@@ -25,6 +25,17 @@ public record QueryRequest(
         @Nullable String sortField,
         @Nullable SortDirection sortDirection,
         int offset,
-        int limit
+        int limit,
+        @Nullable String startTime,
+        @Nullable String endTime
 ) {
+
+    public QueryRequest(String collectionId,
+                        List<QueryFilter> filters,
+                        @Nullable String sortField,
+                        @Nullable SortDirection sortDirection,
+                        int offset,
+                        int limit) {
+        this(collectionId, filters, sortField, sortDirection, offset, limit, null, null);
+    }
 }

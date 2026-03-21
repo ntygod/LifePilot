@@ -4,6 +4,8 @@ import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.conversation.ConversationTurnView;
 import com.lifepilot.conversation.ConversationViewService;
+import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.llm.config.ProviderCapability;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.experience.EffectivenessTracker;
 import com.lifepilot.memory.procedural.PreferenceRule;
@@ -33,6 +35,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -44,7 +47,13 @@ public class ContextAssembler {
 
     private static final int DEFAULT_RECENT_TURN_LIMIT = 6;
     private static final int DEFAULT_WORKSPACE_PROMPT_LIMIT = 3;
-
+    private static final Pattern TIME_HINT_PATTERN = Pattern.compile(
+            "\u4eca\u5929|\u6628\u65e5|\u6628\u5929|\u6700\u8fd1\\s*\\d+|\u8fc7\u53bb\\s*\\d+|\u8fd1\\s*\\d+|\u5f53\u5929|\u672c\u5468|\u4e0a\u5468|\u672c\u6708|\u4e0a\u6708|\u5c0f\u65f6|\u5206\u949f|\u5929|\u5468|\u6708|\u5e74|\\d{4}-\\d{2}-\\d{2}|\\d{1,2}:\\d{2}");
+    private static final Pattern RECENT_DURATION_PATTERN = Pattern.compile("(?:\u6700\u8fd1|\u8fc7\u53bb|\u8fd1)\\s*(\\d+)\\s*(\u5c0f\u65f6|\u5929|\u5468)");
+    private static final Pattern EXPLICIT_RANGE_PATTERN = Pattern.compile(
+            "(\\d{4}-\\d{2}-\\d{2}(?:[ T]\\d{2}:\\d{2}(?::\\d{2})?)?)\\s*(?:\u5230|\u81f3|~|-)\\s*(\\d{4}-\\d{2}-\\d{2}(?:[ T]\\d{2}:\\d{2}(?::\\d{2})?)?)");
+    private static final Pattern LOWER_BOUND_PATTERN = Pattern.compile(
+            "(\\d{4}-\\d{2}-\\d{2}(?:[ T]\\d{2}:\\d{2}(?::\\d{2})?)?)\\s*(?:\u4e4b\u540e|\u4ee5\u540e)");
     private final AgentConfigProperties config;
     private final PromptRegistry promptRegistry;
     @Nullable private final ConversationViewService conversationViewService;
@@ -57,6 +66,7 @@ public class ContextAssembler {
     @Nullable private final ProceduralMemory proceduralMemory;
     @Nullable private final EffectivenessTracker effectivenessTracker;
     @Nullable private final SkillRegistry skillRegistry;
+    @Nullable private final LlmRouter llmRouter;
 
     public ContextAssembler(AgentConfigProperties config,
                             PromptRegistry promptRegistry,
@@ -70,6 +80,24 @@ public class ContextAssembler {
                             @Nullable ProceduralMemory proceduralMemory,
                             @Nullable EffectivenessTracker effectivenessTracker,
                             @Nullable SkillRegistry skillRegistry) {
+        this(config, promptRegistry, conversationViewService, workspaceService, workspaceProperties,
+                dataRedactor, semanticMemory, passiveNotificationQueue, memoryProperties,
+                proceduralMemory, effectivenessTracker, skillRegistry, null);
+    }
+
+    public ContextAssembler(AgentConfigProperties config,
+                            PromptRegistry promptRegistry,
+                            @Nullable ConversationViewService conversationViewService,
+                            @Nullable SessionWorkspaceService workspaceService,
+                            @Nullable WorkspaceProperties workspaceProperties,
+                            @Nullable DataRedactor dataRedactor,
+                            @Nullable SemanticMemory semanticMemory,
+                            @Nullable PassiveNotificationQueue passiveNotificationQueue,
+                            @Nullable MemoryProperties memoryProperties,
+                            @Nullable ProceduralMemory proceduralMemory,
+                            @Nullable EffectivenessTracker effectivenessTracker,
+                            @Nullable SkillRegistry skillRegistry,
+                            @Nullable LlmRouter llmRouter) {
         this.config = config;
         this.promptRegistry = promptRegistry;
         this.conversationViewService = conversationViewService;
@@ -82,6 +110,7 @@ public class ContextAssembler {
         this.proceduralMemory = proceduralMemory;
         this.effectivenessTracker = effectivenessTracker;
         this.skillRegistry = skillRegistry;
+        this.llmRouter = llmRouter;
     }
 
     public AssembledContext assemble(ReactAgentState state) {
@@ -95,7 +124,7 @@ public class ContextAssembler {
             List<String> injectedIds = recordExperienceInjection(state, experiences);
             String experienceSection = formatExperienceSection(experiences);
 
-            String systemPrompt = safeReactSystemPrompt();
+            String systemPrompt = safeReactSystemPrompt(state);
             String toolGuide = safeRenderToolGuide();
             if (!toolGuide.isBlank()) {
                 systemPrompt = systemPrompt + "\n" + toolGuide;
@@ -110,6 +139,7 @@ public class ContextAssembler {
             );
 
             TokenBudget tokenBudget = buildTokenBudget(
+                    state,
                     systemPrompt,
                     recentTurns,
                     workspaceItems,
@@ -143,7 +173,7 @@ public class ContextAssembler {
     private AssembledContext buildFallbackContext(ReactAgentState state) {
         String systemPrompt = safeReactSystemPrompt();
         String userPrompt = buildUserPrompt(state);
-        TokenBudget budget = buildTokenBudget(systemPrompt, List.of(), List.of(), "", "");
+        TokenBudget budget = buildTokenBudget(state, systemPrompt, List.of(), List.of(), "", "");
         return new AssembledContext(
                 systemPrompt,
                 userPrompt,
@@ -232,16 +262,33 @@ public class ContextAssembler {
     }
 
     String buildReactSystemPrompt() {
+        return buildReactSystemPrompt(null);
+    }
+
+    String buildReactSystemPrompt(@Nullable ReactAgentState state) {
         String roleDefinition = promptRegistry.render("agent/role-definition");
-        String contextGuide = promptRegistry.render("agent/context-guide");
         ZonedDateTime now = ZonedDateTime.now();
-        String systemPrompt = promptRegistry.render("agent/react-system", Map.of(
-                "roleDefinition", roleDefinition,
-                "contextGuide", contextGuide,
-                "currentDateTime", now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
-                "timezone", ZoneId.systemDefault().getId(),
-                "locale", Locale.getDefault().toLanguageTag()
-        ));
+        String taskMode = resolveTaskMode(state);
+        String systemPrompt;
+        if (isTaskMode(state)) {
+            systemPrompt = promptRegistry.render("agent/react-system-task", Map.of(
+                    "roleDefinition", roleDefinition,
+                    "taskMode", taskMode,
+                    "modeSpecificRules", buildModeSpecificRules(taskMode),
+                    "currentDateTime", now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
+                    "timezone", ZoneId.systemDefault().getId(),
+                    "locale", Locale.getDefault().toLanguageTag()
+            ));
+        } else {
+            String contextGuide = promptRegistry.render("agent/context-guide");
+            systemPrompt = promptRegistry.render("agent/react-system", Map.of(
+                    "roleDefinition", roleDefinition,
+                    "contextGuide", contextGuide,
+                    "currentDateTime", now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
+                    "timezone", ZoneId.systemDefault().getId(),
+                    "locale", Locale.getDefault().toLanguageTag()
+            ));
+        }
 
         String skillCatalog = buildSkillCatalog();
         if (!skillCatalog.isBlank()) {
@@ -271,7 +318,8 @@ public class ContextAssembler {
                 "locale", Locale.getDefault().toLanguageTag(),
                 "userGoal", state.goal() != null ? state.goal() : "",
                 "tokensRemaining", String.valueOf(state.budget().tokensRemaining()),
-                "stepCount", String.valueOf(state.stepCount())
+                "stepCount", String.valueOf(state.stepCount()),
+                "timeConstraintSection", buildTimeConstraintSection(state.goal(), now)
         ));
     }
 
@@ -299,10 +347,49 @@ public class ContextAssembler {
         vars.put("toolResultsSection", "");
         vars.put("reasoningContextSection", "");
         vars.put("experienceSection", experienceSection != null ? experienceSection : "");
+        vars.put("timeConstraintSection", buildTimeConstraintSection(state.goal(), now));
 
         return promptRegistry.render("agent/react-user-prompt", vars);
     }
 
+    private String resolveTaskMode(@Nullable ReactAgentState state) {
+        if (state == null || state.channel() == null || state.channel().isBlank()) {
+            return "interactive";
+        }
+        String channel = state.channel().toLowerCase(Locale.ROOT);
+        if (channel.startsWith("cron")) {
+            return "cron";
+        }
+        if (channel.startsWith("heartbeat")) {
+            return "heartbeat";
+        }
+        return "interactive";
+    }
+
+    private boolean isTaskMode(@Nullable ReactAgentState state) {
+        String mode = resolveTaskMode(state);
+        return "cron".equals(mode) || "heartbeat".equals(mode);
+    }
+
+    private String buildModeSpecificRules(String taskMode) {
+        return switch (taskMode) {
+            case "cron" -> """
+                    - 这是明确的 cron 调度任务，按计划执行，不要改写成普通对话
+                    - 除非缺少执行前提，否则不要反问、不要重复任务描述
+                    - 没有新的有效结果时返回 TASK_SILENT
+                    """.trim();
+            case "heartbeat" -> """
+                    - 这是 heartbeat 巡检任务，优先按 checklist 检查状态和新增异常
+                    - 不要擅自把巡检任务改成新的 cron 调度
+                    - 一切正常时返回 HEARTBEAT_OK
+                    """.trim();
+            default -> """
+                    - 明确时间点或周期任务时，使用 cron
+                    - 模糊持续关注类请求时，优先使用 heartbeat/checklist
+                    - 一次性分析或执行任务时，直接执行，不创建长期任务
+                    """.trim();
+        };
+    }
     private List<ConversationTurnView> safeGetRecentTurns(String sessionId) {
         if (conversationViewService == null || sessionId == null || sessionId.isBlank()) {
             return List.of();
@@ -479,13 +566,14 @@ public class ContextAssembler {
         return false;
     }
 
-    private TokenBudget buildTokenBudget(String systemPrompt,
+    private TokenBudget buildTokenBudget(ReactAgentState state,
+                                         String systemPrompt,
                                          List<ConversationTurnView> recentTurns,
                                          List<WorkspaceItem> workspaceItems,
                                          @Nullable String userProfile,
                                          @Nullable String experienceSection) {
-        int totalTokens = config.getContext().getMaxContextTokens();
-        TokenBudget base = TokenBudget.allocateDefault(totalTokens);
+        int totalTokens = resolveContextBudgetTokens(state);
+        TokenBudget base = TokenBudget.allocateDefault(totalTokens, config.getContext().getTokenAllocation());
         String conversationSection = formatConversationHistorySection(recentTurns);
         String workspaceSection = formatWorkspaceSection(workspaceItems);
         String profileSection = formatUserProfileSection(userProfile);
@@ -510,6 +598,31 @@ public class ContextAssembler {
                 0,
                 0
         );
+    }
+
+    private int resolveContextBudgetTokens(@Nullable ReactAgentState state) {
+        int contextWindow = resolveContextWindow(state);
+        int reserved = Math.max(0, config.getContext().getOutputReservedTokens());
+        return Math.max(1024, contextWindow - reserved);
+    }
+
+    private int resolveContextWindow(@Nullable ReactAgentState state) {
+        int fallback = Math.max(1024, config.getContext().getMaxContextTokens());
+        if (llmRouter == null) {
+            return fallback;
+        }
+        try {
+            var candidates = llmRouter.getAvailableCandidates(
+                    config.getLoop().getLlmScene(),
+                    ProviderCapability.CHAT,
+                    state != null ? state.preferredProvider() : null);
+            if (!candidates.isEmpty() && candidates.getFirst().maxContextWindow() > 0) {
+                return candidates.getFirst().maxContextWindow();
+            }
+        } catch (Exception e) {
+            log.debug("读取 Provider 上下文窗口失败，回退默认配置: error={}", e.getMessage());
+        }
+        return fallback;
     }
 
     private String formatUserProfileSection(@Nullable String userProfile) {
@@ -566,6 +679,62 @@ public class ContextAssembler {
         return sb.toString();
     }
 
+    private String buildTimeConstraintSection(@Nullable String goal, ZonedDateTime now) {
+        if (goal == null || goal.isBlank() || !TIME_HINT_PATTERN.matcher(goal).find()) {
+            return "";
+        }
+        List<String> hints = new ArrayList<>();
+        ZoneId zoneId = now.getZone();
+        if (goal.contains("今天") || goal.contains("当天")) {
+            hints.add("- 今天/当天范围: "
+                    + now.toLocalDate().atStartOfDay(zoneId).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+                    + " ~ " + now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
+        }
+        if (goal.contains("昨天") || goal.contains("昨日")) {
+            ZonedDateTime start = now.minusDays(1).toLocalDate().atStartOfDay(zoneId);
+            ZonedDateTime end = now.toLocalDate().atStartOfDay(zoneId);
+            hints.add("- 昨天范围: "
+                    + start.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+                    + " ~ " + end.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
+        }
+        var recentMatcher = RECENT_DURATION_PATTERN.matcher(goal);
+        if (recentMatcher.find()) {
+            int amount = Integer.parseInt(recentMatcher.group(1));
+            String unit = recentMatcher.group(2);
+            ZonedDateTime start = switch (unit) {
+                case "小时" -> now.minusHours(amount);
+                case "周" -> now.minusWeeks(amount);
+                default -> now.minusDays(amount);
+            };
+            hints.add("- 近期范围参考: " + start.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+                    + " ~ " + now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
+        }
+        var rangeMatcher = EXPLICIT_RANGE_PATTERN.matcher(goal);
+        if (rangeMatcher.find()) {
+            hints.add("- 显式时间范围: " + rangeMatcher.group(1) + " ~ " + rangeMatcher.group(2));
+        }
+        var lowerBoundMatcher = LOWER_BOUND_PATTERN.matcher(goal);
+        if (lowerBoundMatcher.find()) {
+            hints.add("- 时间下界: " + lowerBoundMatcher.group(1));
+        }
+        StringBuilder sb = new StringBuilder("""
+                <time_constraints>
+                - 用户给出时间范围时，先换算成绝对时间区间
+                - 支持时间过滤的工具必须显式传入 startTime/endTime（即 `startTime` / `endTime`）
+                - 工具不支持时间过滤时，先获取结果，再过滤时间范围外的数据
+                - 最终回答优先引用绝对时间，避免相对时间歧义
+                """);
+        if (!hints.isEmpty()) {
+            sb.append("""
+                    - 识别到的时间线索:
+                    """);
+            for (String hint : hints) {
+                sb.append(hint).append('\n');
+            }
+        }
+        sb.append("</time_constraints>");
+        return sb.toString();
+    }
     private List<String> safeDrainPassiveNotifications() {
         if (passiveNotificationQueue == null) {
             return List.of();
@@ -625,8 +794,12 @@ public class ContextAssembler {
     }
 
     private String safeReactSystemPrompt() {
+        return safeReactSystemPrompt(null);
+    }
+
+    private String safeReactSystemPrompt(@Nullable ReactAgentState state) {
         try {
-            return buildReactSystemPrompt();
+            return buildReactSystemPrompt(state);
         } catch (Exception e) {
             log.error("渲染系统提示词失败，使用降级提示词: error={}", e.getMessage());
             ZonedDateTime now = ZonedDateTime.now();

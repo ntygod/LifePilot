@@ -1,5 +1,7 @@
 package com.lifepilot.agent.context;
 
+import com.lifepilot.agent.config.AgentConfigProperties;
+
 /**
  * Token 预算分配与消耗记录。
  *
@@ -32,15 +34,44 @@ public record TokenBudget(
      * @return 分配后的 TokenBudget
      */
     public static TokenBudget allocateDefault(int totalTokens) {
-        int system = totalTokens * 15 / 100;
-        int history = totalTokens * 30 / 100;
-        int memory = totalTokens * 35 / 100;
-        int toolSchema = totalTokens * 10 / 100;
-        int toolResult = 0;
-        int reserved = totalTokens - system - history - memory - toolSchema - toolResult;
+        return allocateDefault(totalTokens, new AgentConfigProperties.ContextConfig.TokenAllocation());
+    }
+
+    /**
+     * 按配置比例分配上下文 Token 预算。
+     */
+    public static TokenBudget allocateDefault(int totalTokens,
+                                              AgentConfigProperties.ContextConfig.TokenAllocation allocation) {
+        AgentConfigProperties.ContextConfig.TokenAllocation safeAllocation =
+                allocation != null ? allocation : new AgentConfigProperties.ContextConfig.TokenAllocation();
+        int[] weights = new int[]{
+                Math.max(0, safeAllocation.getSystemPromptPercent()),
+                Math.max(0, safeAllocation.getHistoryPercent()),
+                Math.max(0, safeAllocation.getMemoryPercent()),
+                Math.max(0, safeAllocation.getToolSchemaPercent()),
+                Math.max(0, safeAllocation.getToolResultPercent()),
+                Math.max(0, safeAllocation.getReservedBufferPercent())
+        };
+        int totalWeight = 0;
+        for (int weight : weights) {
+            totalWeight += weight;
+        }
+        if (totalWeight <= 0) {
+            weights = new int[]{15, 30, 35, 10, 0, 10};
+            totalWeight = 100;
+        }
+
+        int[] budgets = new int[weights.length];
+        int remaining = Math.max(0, totalTokens);
+        for (int i = 0; i < weights.length; i++) {
+            budgets[i] = i == weights.length - 1
+                    ? remaining
+                    : Math.max(0, totalTokens * weights[i] / totalWeight);
+            remaining -= budgets[i];
+        }
 
         return new TokenBudget(
-                system, history, memory, toolSchema, toolResult, reserved,
+                budgets[0], budgets[1], budgets[2], budgets[3], budgets[4], budgets[5],
                 0, 0, 0, 0, 0
         );
     }

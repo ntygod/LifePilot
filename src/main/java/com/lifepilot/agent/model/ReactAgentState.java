@@ -32,6 +32,7 @@ public record ReactAgentState(
         Budget budget,
         @Nullable String parentTraceId,
         int depth,
+        @Nullable String preferredProvider,
         boolean done,
         @Nullable String finalOutput,
         @Nullable String terminationReason,
@@ -71,6 +72,7 @@ public record ReactAgentState(
                 .budget(request.budget() != null ? request.budget() : defaultBudget)
                 .parentTraceId(request.parentTraceId())
                 .depth(request.depth())
+                .preferredProvider(request.preferredProvider())
                 .done(false)
                 .finalOutput(null)
                 .terminationReason(null)
@@ -102,6 +104,7 @@ public record ReactAgentState(
                 .budget(request.budget() != null ? request.budget() : defaultBudget)
                 .parentTraceId(request.parentTraceId())
                 .depth(request.depth())
+                .preferredProvider(request.preferredProvider())
                 .done(false)
                 .finalOutput(null)
                 .terminationReason(null)

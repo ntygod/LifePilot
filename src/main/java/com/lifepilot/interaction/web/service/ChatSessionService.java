@@ -65,12 +65,12 @@ public class ChatSessionService {
     }
 
     public Optional<ChatSession> getSession(String id) {
-        return sessionRepository.findById(id);
+        return isWebSessionId(id) ? sessionRepository.findById(id) : Optional.empty();
     }
 
     @Transactional
     public ChatSession updateTitle(String id, String title) {
-        ChatSession session = requireSession(id);
+        ChatSession session = requireWebSession(id);
         sessionRepository.updateTitle(id, title);
         log.info("更新会话标题: id={}, title={}", id, title);
         return sessionRepository.findById(id).orElse(session);
@@ -78,7 +78,7 @@ public class ChatSessionService {
 
     @Transactional
     public ChatSession updatePinned(String id, boolean isPinned) {
-        ChatSession session = requireSession(id);
+        ChatSession session = requireWebSession(id);
         sessionRepository.updatePinned(id, isPinned);
         log.info("更新会话置顶状态: id={}, pinned={}", id, isPinned);
         return sessionRepository.findById(id).orElse(session);
@@ -86,7 +86,7 @@ public class ChatSessionService {
 
     @Transactional
     public SessionInfo updateSession(String id, String title, Boolean pinned, Boolean archived) {
-        ChatSession session = requireSession(id);
+        ChatSession session = requireWebSession(id);
 
         if (title == null && pinned == null && archived == null) {
             log.debug("跳过空会话更新: id={}", id);
@@ -103,13 +103,14 @@ public class ChatSessionService {
 
     @Transactional
     public void deleteSession(String id) {
+        requireWebSession(id);
         sessionRepository.deleteById(id);
         log.info("删除会话: id={}", id);
     }
 
     @Transactional
     public void clearSessionMessages(String id) {
-        requireSession(id);
+        requireWebSession(id);
         chatMessageRepository.deleteBySessionId(id);
         sessionRepository.clearMessages(id);
         log.info("清空会话消息: id={}", id);
@@ -121,7 +122,7 @@ public class ChatSessionService {
     }
 
     public List<MessageInfo> getSessionMessages(String id) {
-        requireSession(id);
+        requireWebSession(id);
         var messages = chatMessageRepository.findMessageInfosBySessionId(id);
         if (messages.isEmpty()) {
             return messages;
@@ -184,7 +185,7 @@ public class ChatSessionService {
     }
 
     public SessionDetailInfo getSessionDetail(String id) {
-        ChatSession session = requireSession(id);
+        ChatSession session = requireWebSession(id);
         List<String> knowledgeBaseIds = sessionKnowledgeBaseRepository.findKnowledgeBaseIdsBySessionId(id);
         Map<String, Object> sessionConfig = sessionRepository.getConfig(id);
 
@@ -264,7 +265,7 @@ public class ChatSessionService {
 
     @Transactional
     public void updateSessionConfig(String id, SessionConfigRequest request) {
-        requireSession(id);
+        requireWebSession(id);
 
         Map<String, Object> config = new HashMap<>();
         config.put(SessionConfigKeys.PREFERRED_PROVIDER, SessionConfigKeys.normalizeString(request.preferredProviderId()));
@@ -280,6 +281,17 @@ public class ChatSessionService {
             log.info("更新会话知识库关联: sessionId={}, knowledgeBaseIds={}",
                     id, request.knowledgeBaseIds());
         }
+    }
+
+    private ChatSession requireWebSession(String id) {
+        if (!isWebSessionId(id)) {
+            throw new IllegalArgumentException("仅支持访问 Web 会话: id=" + id);
+        }
+        return requireSession(id);
+    }
+
+    private boolean isWebSessionId(String id) {
+        return id != null && !id.isBlank() && !id.contains(":");
     }
 
     private ChatSession requireSession(String id) {

@@ -1,0 +1,24 @@
+﻿# Repository Guidelines
+
+## Project Structure & Module Organization
+This repository contains a Spring Boot backend and a Vue frontend. Backend code lives in `src/main/java/com/lifepilot`, split by domains such as `agent`, `interaction`, `memory`, `workflow`, `mcp`, and `knowledge`. Runtime config, Flyway SQL, built-in workflows, prompts, and skills are under `src/main/resources`. Backend tests live in `src/test/java` and `src/test/resources`.
+
+The frontend lives in `zhiwei-web/`. Put route pages in `src/views`, reusable UI in `src/components`, Pinia stores in `src/stores`, composables in `src/composables`, and API clients in `src/api`. Docs live in `docs/`.
+
+## Build, Test, and Development Commands
+Backend: `mvn spring-boot:run` starts the backend, `mvn compile` verifies cross-module compilation, `mvn test` runs JUnit/jqwik tests, and `mvn clean package -DskipTests` builds `target/zhiwei.jar`.
+
+Frontend: `cd zhiwei-web && npm install`, then `npm run dev` for Vite, `npm run build` for production assets, `npm run test:run` for Vitest, and `npm run lint` for ESLint. `docker compose up -d` starts the integrated stack from `.env`.
+
+## Coding Style & Naming Conventions
+Java uses 4-space indentation, lowercase packages, and PascalCase types. Prefer Java 22 features used here: `record`, `sealed interface`, pattern matching, and virtual threads where appropriate. Business-tunable values belong in `@ConfigurationProperties` and `application.yml`, not hardcoded constants.
+
+Follow the project's language convention: comments, Javadoc, log messages, exception messages, test names, and commit summaries should be in Chinese; identifiers, config keys, REST paths, and Skill IDs stay in English. Class-level Javadoc should include `@author zsg` and `@since yyyy-MM-dd`. Vue/TypeScript uses 2-space indentation, PascalCase component filenames, and `useX.ts` composables.
+
+## Testing Guidelines
+Backend tests use JUnit 5, Spring Boot Test, and jqwik. Mock LLM, MCP, and network dependencies in unit tests; use Spring + SQLite for integration tests. Frontend tests use Vitest with `jsdom` and Vue Test Utils; keep specs as `*.spec.ts` beside the component or store they cover. Add regression tests for API, migration, or config changes.
+
+## Commit & Pull Request Guidelines
+Work from `develop` using `feature/{name}` or `bugfix/{name}` branches. Commit format is `<type>(<scope>): 中文描述`, with common types such as `feat`, `fix`, `refactor`, `test`, `docs`, and `chore`. Keep each commit focused; avoid vague messages like `update` or `wip`.
+
+PRs should summarize the user-visible change, list verification steps, link the related issue or spec, and include screenshots for `zhiwei-web` UI changes. Call out schema, migration, or config changes explicitly, and never commit `.env`, API keys, or SQLite artifacts. For deeper project rules, see `.kiro/steering/`.

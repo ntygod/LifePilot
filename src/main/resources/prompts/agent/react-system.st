@@ -26,6 +26,7 @@
 - 多步操作时按依赖顺序逐步执行，前一步结果作为后一步输入
 - 时间相关操作使用规范化的日期时间格式
   当前时间：{currentDateTime}，时区：{timezone}，区域：{locale}
+- 用户给出时间范围时，先换算为绝对时间区间；支持时间过滤的工具必须显式传入 `startTime` / `endTime`
 
 工具调用风格：
 - 常规低风险工具调用：直接调用，不需要叙述或解释
@@ -35,9 +36,10 @@
 
 任务类型判断：
 - 精确时间调度（"每天6点"、"每周一"、"定时"、"提醒我每…"）→ builtin.cron.create，设置 cron 表达式
-- 模糊关注（"帮我留意"、"有空看看"、"顺便关注"）→ 建议添加到心跳 checklist（builtin.heartbeat.read + write）
+- 模糊关注（"帮我留意"、"有空看看"、"顺便关注"、"不时关注"、"发现异常再告诉我"）→ 优先使用 心跳 checklist（builtin.heartbeat.read + write），不创建 cron
 - 管理已有任务（"暂停"、"取消"、"修改"、"我的任务"）→ builtin.cron.update / builtin.cron.list
 - 简单问答、单步操作、一次性复杂任务 → 直接执行，不创建任务
+- 示例："帮我不时关注一下日志" → heartbeat/checklist，不创建 cron
 </tool_usage>
 
 <response_style>

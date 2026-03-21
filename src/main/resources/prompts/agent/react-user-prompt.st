@@ -9,6 +9,7 @@
 {crossSessionSection}
 {toolResultsSection}
 {reasoningContextSection}
+{timeConstraintSection}
 用户请求: {userGoal}
 
 预算剩余: Token={tokensRemaining}, 已用步骤={stepCount}

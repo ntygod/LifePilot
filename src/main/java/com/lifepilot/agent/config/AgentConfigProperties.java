@@ -80,6 +80,8 @@ public class AgentConfigProperties {
         private int successStepMaxLength = 200;
         /** 失败步骤输出截断长度。 */
         private int failedStepMaxLength = 80;
+        /** Token 分配比例。 */
+        private TokenAllocation tokenAllocation = new TokenAllocation();
 
         public int getMaxContextTokens() { return maxContextTokens; }
         public void setMaxContextTokens(int maxContextTokens) { this.maxContextTokens = maxContextTokens; }
@@ -89,6 +91,33 @@ public class AgentConfigProperties {
         public void setSuccessStepMaxLength(int successStepMaxLength) { this.successStepMaxLength = successStepMaxLength; }
         public int getFailedStepMaxLength() { return failedStepMaxLength; }
         public void setFailedStepMaxLength(int failedStepMaxLength) { this.failedStepMaxLength = failedStepMaxLength; }
+        public TokenAllocation getTokenAllocation() { return tokenAllocation; }
+        public void setTokenAllocation(TokenAllocation tokenAllocation) {
+            this.tokenAllocation = tokenAllocation != null ? tokenAllocation : new TokenAllocation();
+        }
+
+        /** Token 分配比例。 */
+        public static class TokenAllocation {
+            private int systemPromptPercent = 15;
+            private int historyPercent = 30;
+            private int memoryPercent = 35;
+            private int toolSchemaPercent = 10;
+            private int toolResultPercent = 0;
+            private int reservedBufferPercent = 10;
+
+            public int getSystemPromptPercent() { return systemPromptPercent; }
+            public void setSystemPromptPercent(int systemPromptPercent) { this.systemPromptPercent = systemPromptPercent; }
+            public int getHistoryPercent() { return historyPercent; }
+            public void setHistoryPercent(int historyPercent) { this.historyPercent = historyPercent; }
+            public int getMemoryPercent() { return memoryPercent; }
+            public void setMemoryPercent(int memoryPercent) { this.memoryPercent = memoryPercent; }
+            public int getToolSchemaPercent() { return toolSchemaPercent; }
+            public void setToolSchemaPercent(int toolSchemaPercent) { this.toolSchemaPercent = toolSchemaPercent; }
+            public int getToolResultPercent() { return toolResultPercent; }
+            public void setToolResultPercent(int toolResultPercent) { this.toolResultPercent = toolResultPercent; }
+            public int getReservedBufferPercent() { return reservedBufferPercent; }
+            public void setReservedBufferPercent(int reservedBufferPercent) { this.reservedBufferPercent = reservedBufferPercent; }
+        }
     }
 
     /** 会话配置。 */

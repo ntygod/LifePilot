@@ -21,6 +21,8 @@ import com.lifepilot.datastore.model.SqlWithParams;
  */
 public class QueryEngine {
 
+    private static final String TIME_FIELD_EXPR = "COALESCE(recorded_at, created_at)";
+
     private final DataStoreProperties properties;
 
     public QueryEngine(DataStoreProperties properties) {

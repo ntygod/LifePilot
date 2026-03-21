@@ -68,7 +68,8 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) com.lifepilot.memory.config.MemoryProperties memoryProperties,
             @Autowired(required = false) com.lifepilot.memory.procedural.ProceduralMemory proceduralMemory,
             @Autowired(required = false) com.lifepilot.memory.experience.EffectivenessTracker effectivenessTracker,
-            @Autowired(required = false) com.lifepilot.skill.registry.SkillRegistry skillRegistry) {
+            @Autowired(required = false) com.lifepilot.skill.registry.SkillRegistry skillRegistry,
+            @Autowired(required = false) LlmRouter llmRouter) {
         log.info("Agent 引擎: 注册 ContextAssembler（history={}，workspace={}，L3={}，L4={}）",
                 conversationViewService != null ? "enabled" : "disabled",
                 workspaceService != null ? "enabled" : "disabled",
@@ -86,7 +87,8 @@ public class AgentAutoConfiguration {
                 memoryProperties,
                 proceduralMemory,
                 effectivenessTracker,
-                skillRegistry);
+                skillRegistry,
+                llmRouter);
     }
 
     @Bean

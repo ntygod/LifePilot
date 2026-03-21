@@ -111,7 +111,8 @@ public class ChatSessionRepository {
      */
     public List<ChatSession> findAll() {
         return jdbcTemplate.query(
-                "SELECT * FROM chat_sessions ORDER BY is_pinned DESC, last_message_at DESC NULLS LAST, updated_at DESC",
+                "SELECT * FROM chat_sessions WHERE instr(id, ':') = 0 "
+                        + "ORDER BY is_pinned DESC, last_message_at DESC NULLS LAST, updated_at DESC",
                 this::mapRow);
     }
 
@@ -129,7 +130,7 @@ public class ChatSessionRepository {
     @SuppressWarnings("null")
     public List<ChatSession> findByConditions(String q, Boolean pinned, Boolean archived,
                                                String timeRange, String sortBy, String order) {
-        StringBuilder sql = new StringBuilder("SELECT * FROM chat_sessions WHERE 1=1");
+        StringBuilder sql = new StringBuilder("SELECT * FROM chat_sessions WHERE instr(id, ':') = 0");
         List<Object> params = new java.util.ArrayList<>();
 
         // 关键词搜索

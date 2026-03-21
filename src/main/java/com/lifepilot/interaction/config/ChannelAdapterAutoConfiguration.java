@@ -22,8 +22,10 @@ import com.lifepilot.interaction.gateway.MessageGateway;
 import com.lifepilot.interaction.middleware.auth.DingtalkAuthStrategy;
 import com.lifepilot.interaction.middleware.auth.FeishuAuthStrategy;
 import com.lifepilot.interaction.middleware.auth.WecomAuthStrategy;
+import com.lifepilot.interaction.web.service.WebUserConfirmationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -153,9 +155,10 @@ public class ChannelAdapterAutoConfiguration {
                                                      FeishuCrypto crypto, FeishuApiClient apiClient,
                                                      FeishuMessageConverter converter,
                                                      SharedScheduler sharedScheduler,
-                                                     ChannelConfigProvider configProvider) {
+                                                     ChannelConfigProvider configProvider,
+                                                     @Autowired(required = false) @Lazy WebUserConfirmationService confirmationService) {
         log.info("注册 FeishuChannelAdapter");
-        return new FeishuChannelAdapter(gateway, properties, crypto, apiClient, converter, sharedScheduler, configProvider);
+        return new FeishuChannelAdapter(gateway, properties, crypto, apiClient, converter, sharedScheduler, configProvider, confirmationService);
     }
 
     @Bean

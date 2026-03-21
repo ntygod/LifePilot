@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -20,6 +21,7 @@ import com.lifepilot.interaction.model.GatewayMessage;
 import com.lifepilot.interaction.model.GatewayResponse;
 import com.lifepilot.interaction.model.MessageContent;
 import com.lifepilot.interaction.model.ResponseContent;
+import com.lifepilot.interaction.web.service.WebUserConfirmationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
@@ -43,6 +45,7 @@ public class FeishuChannelAdapter extends AbstractChannelAdapter {
     private final FeishuMessageConverter converter;
     private final ChannelConfigProvider configProvider;
     private final int eventCacheMaxSize;
+    @Nullable private final WebUserConfirmationService confirmationService;
 
     /** 事件去重缓存：eventId → 处理时间戳 */
     private final ConcurrentHashMap<String, Long> eventCache = new ConcurrentHashMap<>();
@@ -52,12 +55,22 @@ public class FeishuChannelAdapter extends AbstractChannelAdapter {
                                 FeishuMessageConverter converter,
                                 SharedScheduler sharedScheduler,
                                 ChannelConfigProvider configProvider) {
+        this(gateway, properties, crypto, apiClient, converter, sharedScheduler, configProvider, null);
+    }
+
+    public FeishuChannelAdapter(MessageGateway gateway, GatewayProperties properties,
+                                FeishuCrypto crypto, FeishuApiClient apiClient,
+                                FeishuMessageConverter converter,
+                                SharedScheduler sharedScheduler,
+                                ChannelConfigProvider configProvider,
+                                @Nullable WebUserConfirmationService confirmationService) {
         super(gateway, properties, sharedScheduler);
         this.crypto = crypto;
         this.apiClient = apiClient;
         this.converter = converter;
         this.configProvider = configProvider;
         this.eventCacheMaxSize = properties.channels().feishu().eventCacheMaxSize();
+        this.confirmationService = confirmationService;
     }
 
     @Override
@@ -280,6 +293,42 @@ public class FeishuChannelAdapter extends AbstractChannelAdapter {
     /**
      * 将原始消息中的飞书 chatId 和 open_id 注入到 response metadata。
      */
+    private boolean isCardActionEvent(Map<String, Object> body) {
+        var header = getMapField(body, "header");
+        return header != null && "card.action.trigger".equals(getStringField(header, "event_type", ""));
+    }
+
+    private void handleCardAction(Map<String, Object> body) {
+        if (confirmationService == null) {
+            log.warn("飞书确认回调未注入 WebUserConfirmationService，已跳过");
+            return;
+        }
+        var event = getMapField(body, "event");
+        var action = getMapField(event, "action");
+        var value = getMapField(action, "value");
+        String requestId = firstNonBlank(
+                getStringField(value, "requestId", ""),
+                getStringField(value, "request_id", ""),
+                getStringField(event, "requestId", ""),
+                getStringField(event, "request_id", ""));
+        Boolean confirmed = firstNonNull(
+                parseConfirmationFlag(value != null ? value.get("confirmed") : null),
+                parseConfirmationFlag(value != null ? value.get("approve") : null),
+                parseConfirmationFlag(value != null ? value.get("action") : null),
+                parseConfirmationFlag(action != null ? action.get("tag") : null),
+                parseConfirmationFlag(action != null ? action.get("name") : null));
+        if (requestId.isBlank() || confirmed == null) {
+            log.warn("飞书确认回调缺少必要参数: requestId={}, confirmed={}", requestId, confirmed);
+            return;
+        }
+        boolean resolved = confirmationService.resolveConfirmation(requestId, confirmed);
+        if (resolved) {
+            log.info("飞书确认回调处理完成: requestId={}, confirmed={}", requestId, confirmed);
+        } else {
+            log.info("飞书确认回调未命中待确认请求: requestId={}, confirmed={}", requestId, confirmed);
+        }
+    }
+
     private GatewayResponse enrichResponseWithFeishuMetadata(GatewayMessage message, GatewayResponse response) {
         if (!(message.channelMetadata() instanceof ChannelMetadata.FeishuMetadata feishuMeta)) {
             return response;
@@ -358,6 +407,41 @@ public class FeishuChannelAdapter extends AbstractChannelAdapter {
     /**
      * 从飞书消息 JSON 中提取文本内容。
      */
+    private static String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return "";
+    }
+
+    @SafeVarargs
+    private static <T> T firstNonNull(T... values) {
+        for (T value : values) {
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    @Nullable
+    private static Boolean parseConfirmationFlag(@Nullable Object rawValue) {
+        if (rawValue instanceof Boolean boolValue) {
+            return boolValue;
+        }
+        if (rawValue == null) {
+            return null;
+        }
+        String normalized = rawValue.toString().trim().toLowerCase(Locale.ROOT);
+        return switch (normalized) {
+            case "true", "confirm", "confirmed", "approve", "approved", "yes", "ok", "submit" -> true;
+            case "false", "cancel", "reject", "rejected", "deny", "denied", "no" -> false;
+            default -> null;
+        };
+    }
+
     private static String extractMessageText(@Nullable Map<String, Object> message) {
         if (message == null) return "";
         var content = message.get("content");
@@ -382,7 +466,10 @@ public class FeishuChannelAdapter extends AbstractChannelAdapter {
         return value instanceof Map<?, ?> m ? (Map<String, Object>) m : null;
     }
 
-    private static String getStringField(Map<String, Object> map, String key, String defaultValue) {
+    private static String getStringField(@Nullable Map<String, Object> map, String key, String defaultValue) {
+        if (map == null) {
+            return defaultValue;
+        }
         var value = map.get(key);
         return value != null ? value.toString() : defaultValue;
     }
