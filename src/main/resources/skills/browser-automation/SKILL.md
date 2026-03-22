@@ -33,6 +33,13 @@ triggers:
 - Web 应用功能测试
 - 页面无障碍性检查
 
+
+## When NOT to Use
+
+- API 接口测试（用 api-debugger）
+- 简单网页内容抓取（用 web.fetch）
+- 桌面应用自动化（用 desktop-automation）
+
 ## 核心工作流
 
 ### 1. 导航到目标页面

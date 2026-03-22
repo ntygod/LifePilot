@@ -26,6 +26,13 @@ triggers:
 - 已安装 `gh` CLI（`gh --version`）
 - 已认证（`gh auth status`）
 
+
+## When NOT to Use
+
+- Gitee 操作（用 gitee Skill）
+- 本地 Git 操作（直接用 shell.exec）
+- 代码编写（用 code-assistant）
+
 ## 硬规则
 
 - 禁止使用 `--paginate`

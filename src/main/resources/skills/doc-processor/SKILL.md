@@ -28,6 +28,13 @@ triggers:
 - 文档元数据提取和修改
 - 批量文档处理
 
+
+## When NOT to Use
+
+- 纯文本/Markdown 处理（用 file.read/write）
+- 在线文档操作（用语雀/WPS Skill）
+- 内容创作（用 content-creator）
+
 ## 外部工具依赖
 
 | 工具 | 用途 | 安装 |

@@ -33,6 +33,13 @@ triggers:
 - 提醒和跟进事项管理
 - 跨 Skill 协作（如调研 + 写作 + 发送）
 
+
+## When NOT to Use
+
+- 定时任务管理（用 cron-scheduler）
+- 心跳巡检配置（用 heartbeat-checklist）
+- 单一领域的深度任务（用对应专业 Skill）
+
 ## 工作模式
 
 ### 任务规划模式

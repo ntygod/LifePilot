@@ -29,6 +29,13 @@ triggers:
 - 术语表管理和一致性检查
 - 国际化（i18n）资源文件处理
 
+
+## When NOT to Use
+
+- 内容创作（用 content-creator）
+- 摘要提炼（用 summarizer）
+- 代码注释翻译（用 code-assistant）
+
 ## 翻译工作流
 
 ### 1. 确认翻译需求

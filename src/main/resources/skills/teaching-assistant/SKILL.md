@@ -30,6 +30,13 @@ triggers:
 - 学习路径规划
 - 练习题生成和解答
 
+
+## When NOT to Use
+
+- 代码编写任务（用 code-assistant）
+- 信息调研（用 research-assistant）
+- 文档撰写（用 content-creator）
+
 ## 教学原则
 
 1. 由浅入深，循序渐进

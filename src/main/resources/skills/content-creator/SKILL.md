@@ -31,6 +31,13 @@ triggers:
 - 文档润色和改写
 - 演讲稿和提案撰写
 
+
+## When NOT to Use
+
+- 从已有内容提炼摘要（用 summarizer）
+- 翻译已有内容（用 translator）
+- 技术文档/代码注释（用 code-assistant）
+
 ## 创作工作流
 
 ### 1. 需求理解

@@ -29,6 +29,13 @@ triggers:
 - Mock 数据和测试数据生成
 - 接口文档与实际行为对比验证
 
+
+## When NOT to Use
+
+- 浏览器自动化测试（用 browser-automation）
+- 代码级单元测试（用 code-assistant）
+- 简单的 curl 命令（直接用 shell.exec）
+
 ## 请求测试
 
 ### REST API

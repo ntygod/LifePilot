@@ -29,6 +29,13 @@ builtin.env.system-info()
 → 确认操作系统为 Windows
 ```
 
+
+## When NOT to Use
+
+- 网页自动化（用 browser-automation）
+- 命令行操作（用 shell.exec）
+- Linux/macOS 桌面（当前仅支持 Windows）
+
 ## 适用场景
 
 - Windows 应用 UI 自动化操作

@@ -28,6 +28,13 @@ triggers:
 - 开发环境配置（.gitignore、CI/CD、linter）
 - 项目模板生成
 
+
+## When NOT to Use
+
+- 已有项目的代码修改（用 code-assistant）
+- 文档项目（用 content-creator）
+- 简单脚本文件（直接用 file.write）
+
 ## 工作流
 
 ### 1. 确认项目需求

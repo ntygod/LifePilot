@@ -25,6 +25,13 @@ triggers:
 - 持续监控："关注特斯拉股价"、"留意 GitHub PR"
 - 日常巡检："每天检查邮箱"、"看看有没有新消息"
 
+
+## When NOT to Use
+
+- 精确定时任务（用 cron-scheduler）
+- 一次性提醒（用 cron-scheduler 的单次模式）
+- 复杂工作流编排（用 workflow-creator）
+
 ## 工具说明
 
 ### 读取 Checklist

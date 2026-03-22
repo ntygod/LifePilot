@@ -56,6 +56,13 @@ npx -y @anthropic-ai/skills find <关键词>
 npx -y @anthropic-ai/skills add <skill-name> --directory ~/.zhiwei/skills/
 ```
 
+
+## When NOT to Use
+
+- 已知 Skill 的使用（直接加载对应 Skill）
+- 系统内置工具查询（用 introspection）
+- 代码库搜索（用 file.grep）
+
 ## 搜索源
 
 1. **腾讯 SkillHub** — 中文 Skill 市场（优先）

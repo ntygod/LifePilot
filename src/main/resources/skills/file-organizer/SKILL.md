@@ -29,6 +29,13 @@ triggers:
 - 重复文件检测和清理
 - 磁盘空间分析
 
+
+## When NOT to Use
+
+- 单个文件读写（用 file.read/write）
+- 代码文件重构（用 code-assistant）
+- 文档格式转换（用 doc-processor）
+
 ## 工作流
 
 ### 1. 了解当前状态

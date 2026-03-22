@@ -30,6 +30,13 @@ triggers:
 - 图表生成和数据可视化
 - 数据质量检查
 
+
+## When NOT to Use
+
+- 数据库 SQL 查询（用 database-query）
+- 日志文件分析（用 log-analyzer）
+- 简单计算（用 reason.calculate 工具）
+
 ## 分析工作流
 
 ### 1. 数据加载

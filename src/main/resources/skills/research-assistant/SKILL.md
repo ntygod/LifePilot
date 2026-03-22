@@ -29,6 +29,13 @@ triggers:
 - 事实核查和信息验证
 - 趋势分析和行业动态
 
+
+## When NOT to Use
+
+- 已知答案的简单问题（直接回答）
+- 代码调研（用 code-assistant）
+- 数据分析（用 data-analyst）
+
 ## 调研工作流
 
 ### 1. 明确调研目标

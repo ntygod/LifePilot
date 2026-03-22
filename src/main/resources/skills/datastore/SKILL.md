@@ -30,6 +30,13 @@ triggers:
 - 用户需要对时序数据进行聚合统计
 - 用户需要管理笔记、列表或指标数据
 
+
+## When NOT to Use
+
+- 文件系统存储（用 file.write）
+- 记忆/知识图谱（用 memory Skill）
+- 外部数据库操作（用 database-query）
+
 ## 集合类型说明
 
 | 类型 | 用途 | 示例 |

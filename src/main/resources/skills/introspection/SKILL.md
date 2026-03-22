@@ -28,6 +28,11 @@ triggers:
 - 用户描述需求，需要推荐匹配的能力
 - 用户想了解正在执行的工作流或 MCP Server 连接状态
 
+
+## When NOT to Use
+
+- 不应作为 Skill 主动加载，系统自省能力已内置
+
 ## 工具使用最佳实践
 
 ### 能力列表（system.list-capabilities）

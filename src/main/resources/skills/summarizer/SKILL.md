@@ -29,6 +29,13 @@ triggers:
 - 多文档对比摘要
 - 长文精简
 
+
+## When NOT to Use
+
+- 从零创作内容（用 content-creator）
+- 翻译（用 translator）
+- 数据统计报告（用 data-analyst）
+
 ## 触发短语
 
 - "这个链接讲了什么？"
