@@ -4,6 +4,7 @@ import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.sandbox.booter.SandboxBooter;
 import com.lifepilot.sandbox.model.*;
 import com.lifepilot.sandbox.repository.SandboxRepository;
+import com.lifepilot.sandbox.session.SandboxSessionManager;
 import com.lifepilot.sandbox.validator.CodeValidator;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
@@ -21,12 +22,13 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * 代码执行工具 — 桥接 {@link SandboxBooter} 在沙箱中执行代码。
+ * 代码执行工具 — 通过 {@link SandboxSessionManager} 获取会话级沙箱实例执行代码。
  *
  * <p>支持 Python / JavaScript / Shell 三种语言，默认语言从
  * {@link MetaProperties.Infra.CodeExecute#getDefaultLanguage()} 读取。
- * 集成 {@link CodeValidator} 预检和 {@link SandboxRepository} 审计持久化。
- * {@code SandboxBooter} 不可用时返回错误。RiskLevel HIGH。</p>
+ * 集成 {@link CodeValidator} 预检和 {@link SandboxRepository} 审计持久化。</p>
+ *
+ * <p>执行流程：参数提取 → 会话沙箱获取 → 预检（如有 CodeValidator）→ 执行 → 审计持久化 → 返回结果。</p>
  *
  * @author zsg
  * @since 2026-03-08
@@ -38,18 +40,18 @@ public class CodeExecuteToolExecutor {
 
     private final MetaProperties.Infra.CodeExecute codeConfig;
     @Nullable
-    private final SandboxBooter sandboxBooter;
+    private final SandboxSessionManager sessionManager;
     @Nullable
     private final CodeValidator validator;
     @Nullable
     private final SandboxRepository repository;
 
     public CodeExecuteToolExecutor(MetaProperties properties,
-                                   @Nullable SandboxBooter sandboxBooter,
+                                   @Nullable SandboxSessionManager sessionManager,
                                    @Nullable CodeValidator validator,
                                    @Nullable SandboxRepository repository) {
         this.codeConfig = properties.getInfra().getCodeExecute();
-        this.sandboxBooter = sandboxBooter;
+        this.sessionManager = sessionManager;
         this.validator = validator;
         this.repository = repository;
     }
@@ -57,14 +59,15 @@ public class CodeExecuteToolExecutor {
     /**
      * 执行代码。
      *
-     * <p>执行流程：沙箱可用性检查 → 参数提取 → 预检（如有 CodeValidator）→ 执行 → 审计持久化 → 返回结果。</p>
+     * <p>执行流程：参数提取 → 会话沙箱获取 → 预检（如有 CodeValidator）→ 执行 → 审计持久化 → 返回结果。</p>
      *
-     * @param input 工具输入，必需参数 code，可选 language 和 timeoutSeconds
+     * @param input     工具输入，必需参数 code，可选 language 和 timeoutSeconds
+     * @param sessionId 会话 ID，用于获取会话级沙箱实例和审计关联
      * @return 包含 stdout、stderr、exitCode 的结构化结果
      */
-    public ToolResult execute(ToolInput input) {
-        // 检查沙箱可用性
-        if (sandboxBooter == null || !sandboxBooter.available()) {
+    public ToolResult execute(ToolInput input, String sessionId) {
+        // 检查 SessionManager 可用性
+        if (sessionManager == null) {
             return ToolResult.error("沙箱运行时不可用，请检查沙箱配置");
         }
 
@@ -93,7 +96,7 @@ public class CodeExecuteToolExecutor {
             ValidationResult validation = validator.validate(language, code);
             if (!validation.passed()) {
                 String violationMsg = formatViolations(validation.violations());
-                persistRecord(null, language, codeHash, code.length(),
+                persistRecord(sessionId, language, codeHash, code.length(),
                         "unknown", false, validation.violations().size(),
                         null, null, null, null, "REJECTED", violationMsg);
                 return ToolResult.error("代码预检未通过: " + violationMsg);
@@ -105,16 +108,25 @@ public class CodeExecuteToolExecutor {
                 .map(Number::intValue)
                 .orElse(DEFAULT_TIMEOUT_SECONDS);
 
+        // 获取会话级沙箱实例
+        SandboxBooter booter;
+        try {
+            booter = sessionManager.getOrCreate(sessionId);
+        } catch (IllegalStateException e) {
+            log.warn("获取沙箱实例失败: sessionId={}, error={}", sessionId, e.getMessage());
+            return ToolResult.error("沙箱实例获取失败: " + e.getMessage());
+        }
+
         // 构建执行请求并执行
         var request = new ExecutionRequest(
                 language,
                 code,
                 timeoutSeconds,
-                sandboxBooter.workingDirectory()
+                booter.workingDirectory()
         );
 
         try {
-            var result = sandboxBooter.execute(request);
+            var result = booter.execute(request);
 
             var data = new LinkedHashMap<String, Object>();
             data.put("exitCode", result.exitCode());
@@ -124,15 +136,15 @@ public class CodeExecuteToolExecutor {
             data.put("state", result.state().name());
 
             // 审计持久化
-            persistRecord(null, language, codeHash, code.length(),
-                    sandboxBooter.type(), true, 0,
+            persistRecord(sessionId, language, codeHash, code.length(),
+                    booter.type(), true, 0,
                     result.exitCode(),
                     result.stdout().getBytes(StandardCharsets.UTF_8).length,
                     result.stderr().getBytes(StandardCharsets.UTF_8).length,
                     result.durationMs(), result.state().name(), null);
 
-            log.debug("代码执行完成: language={}, exitCode={}, durationMs={}",
-                    languageStr, result.exitCode(), result.durationMs());
+            log.debug("代码执行完成: sessionId={}, language={}, exitCode={}, durationMs={}",
+                    sessionId, languageStr, result.exitCode(), result.durationMs());
 
             // exitCode 非零视为执行失败
             if (result.exitCode() != 0) {
@@ -141,12 +153,22 @@ public class CodeExecuteToolExecutor {
             }
             return ToolResult.success(Map.copyOf(data));
         } catch (Exception e) {
-            log.error("代码执行失败: language={}, error={}", languageStr, e.getMessage(), e);
-            persistRecord(null, language, codeHash, code.length(),
+            log.error("代码执行失败: sessionId={}, language={}, error={}", sessionId, languageStr, e.getMessage(), e);
+            persistRecord(sessionId, language, codeHash, code.length(),
                     "unknown", true, 0,
                     null, null, null, null, "FAILED", e.getMessage());
             return ToolResult.error("代码执行失败: " + e.getMessage());
         }
+    }
+
+    /**
+     * 兼容无 sessionId 的调用（向后兼容）。
+     *
+     * @param input 工具输入
+     * @return 执行结果
+     */
+    public ToolResult execute(ToolInput input) {
+        return execute(input, "default");
     }
 
     // ==================== 内部辅助方法 ====================
@@ -173,7 +195,7 @@ public class CodeExecuteToolExecutor {
                     stdoutLength, stderrLength, durationMs,
                     state, errorMessage, now, now);
             repository.insert(record);
-            log.debug("审计记录已持久化: id={}, state={}", record.id(), state);
+            log.debug("审计记录已持久化: id={}, sessionId={}, state={}", record.id(), sessionId, state);
         } catch (Exception e) {
             log.error("审计记录写入失败（降级跳过）: state={}, error={}", state, e.getMessage());
         }

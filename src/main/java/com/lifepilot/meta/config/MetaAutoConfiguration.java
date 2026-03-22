@@ -29,8 +29,8 @@ import com.lifepilot.meta.infra.web.WebSearchConfigProvider;
 import com.lifepilot.multiagent.registry.AgentRegistry;
 import com.lifepilot.notification.NotificationService;
 import com.lifepilot.notification.config.NotificationProperties;
-import com.lifepilot.sandbox.booter.SandboxBooter;
 import com.lifepilot.sandbox.repository.SandboxRepository;
+import com.lifepilot.sandbox.session.SandboxSessionManager;
 import com.lifepilot.sandbox.validator.CodeValidator;
 import com.lifepilot.skill.config.SkillConfigProperties;
 import com.lifepilot.skill.registry.SkillRegistry;
@@ -105,7 +105,7 @@ public class MetaAutoConfiguration {
     /**
      * 注册基础工具提供者。
      *
-     * <p>SandboxBooter、CodeValidator、SandboxRepository 为可选依赖，仅在沙箱模块可用时注入。
+     * <p>SandboxSessionManager、CodeValidator、SandboxRepository 为可选依赖，仅在沙箱模块可用时注入。
      * InteractionBridge 注入交互桥接器。
      * BrowserSessionManager 为可选依赖，仅在 Playwright 可用时注入。
      * NotificationService 注入统一通知服务，供 notify 工具使用。</p>
@@ -113,7 +113,7 @@ public class MetaAutoConfiguration {
     @Bean
     InfraToolProvider infraToolProvider(MetaProperties properties,
                                         WebSearchConfigProvider webSearchConfigProvider,
-                                        @Nullable SandboxBooter sandboxBooter,
+                                        @Nullable SandboxSessionManager sandboxSessionManager,
                                         @Nullable CodeValidator codeValidator,
                                         @Nullable SandboxRepository sandboxRepository,
                                         @Nullable InteractionBridge interactionBridge,
@@ -126,7 +126,7 @@ public class MetaAutoConfiguration {
                                         @Nullable AgentConfigProperties agentConfigProperties,
                                         @Nullable NotificationProperties notificationProperties,
                                         @Nullable BackgroundProcessManager backgroundProcessManager) {
-        return new InfraToolProvider(properties, webSearchConfigProvider, sandboxBooter, codeValidator, sandboxRepository, interactionBridge, browserSessionManager, notificationService, workflowRegistry, workflowCommandService, cronTaskRepository, cronScheduler, agentConfigProperties, notificationProperties, backgroundProcessManager);
+        return new InfraToolProvider(properties, webSearchConfigProvider, sandboxSessionManager, codeValidator, sandboxRepository, interactionBridge, browserSessionManager, notificationService, workflowRegistry, workflowCommandService, cronTaskRepository, cronScheduler, agentConfigProperties, notificationProperties, backgroundProcessManager);
     }
 
     /**

@@ -694,8 +694,6 @@ lifepilot:
       memory-limit-mb: 256
       # CPU 限制（核数）
       cpu-limit: 1.0
-      # 磁盘限制（MB）
-      disk-limit-mb: 512
       # 是否启用网络
       network-enabled: false
       # 镜像前缀

@@ -137,9 +137,6 @@ public class SandboxConfigProperties {
         /** CPU 限制（核数），默认 1.0。 */
         private double cpuLimit = 1.0;
 
-        /** 磁盘限制（MB），默认 512。 */
-        private int diskLimitMb = 512;
-
         /** 是否启用网络，默认 false。 */
         private boolean networkEnabled = false;
 
@@ -151,9 +148,6 @@ public class SandboxConfigProperties {
 
         public double getCpuLimit() { return cpuLimit; }
         public void setCpuLimit(double cpuLimit) { this.cpuLimit = cpuLimit; }
-
-        public int getDiskLimitMb() { return diskLimitMb; }
-        public void setDiskLimitMb(int diskLimitMb) { this.diskLimitMb = diskLimitMb; }
 
         public boolean isNetworkEnabled() { return networkEnabled; }
         public void setNetworkEnabled(boolean networkEnabled) { this.networkEnabled = networkEnabled; }

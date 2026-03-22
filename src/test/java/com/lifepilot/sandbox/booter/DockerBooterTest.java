@@ -66,6 +66,8 @@ class DockerBooterTest {
         assertThat(command).contains("--user", "1000:1000");
         assertThat(command).contains("--memory", "256m");
         assertThat(command).contains("--cpus", "1.0");
+        assertThat(command).contains("--pids-limit", "64");
+        assertThat(command).contains("--tmpfs", "/tmp:rw,noexec,size=64m");
         // 镜像名
         assertThat(command).contains("zhiwei/sandbox-python");
         // 运行时命令和脚本路径

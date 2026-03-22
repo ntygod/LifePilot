@@ -7,23 +7,25 @@ import com.lifepilot.sandbox.model.ExecutionRequest;
 import com.lifepilot.sandbox.model.ExecutionResult;
 import com.lifepilot.sandbox.model.ExecutionState;
 import com.lifepilot.sandbox.model.Language;
+import com.lifepilot.sandbox.session.SandboxSessionManager;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.schema.JsonSchema;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.nio.file.Path;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 /**
  * CodeExecuteToolExecutor 单元测试。
  *
- * <p>SandboxBooter 是 sealed interface，无法直接 mock。
- * 因此 mock 其 permits 的具体实现类 ProcessBooter。</p>
+ * <p>mock SandboxSessionManager，其 getOrCreate 返回 mock 的 ProcessBooter。</p>
  *
  * @author zsg
  * @since 2026-03-08
@@ -31,15 +33,19 @@ import static org.mockito.Mockito.*;
 class CodeExecuteToolExecutorTest {
 
     private CodeExecuteToolExecutor executor;
+    private SandboxSessionManager sessionManager;
     private SandboxBooter sandboxBooter;
     private MetaProperties properties;
 
     @BeforeEach
     void setUp() {
         properties = new MetaProperties();
+        sessionManager = mock(SandboxSessionManager.class);
         // SandboxBooter 是 sealed interface，mock 其 permits 的 ProcessBooter
         sandboxBooter = mock(ProcessBooter.class);
-        executor = new CodeExecuteToolExecutor(properties, sandboxBooter, null, null);
+        when(sessionManager.getOrCreate(anyString())).thenReturn(sandboxBooter);
+        when(sandboxBooter.workingDirectory()).thenReturn(Path.of(System.getProperty("java.io.tmpdir")));
+        executor = new CodeExecuteToolExecutor(properties, sessionManager, null, null);
     }
 
     // ─────────────────────────────────────────────
@@ -47,7 +53,7 @@ class CodeExecuteToolExecutorTest {
     // ─────────────────────────────────────────────
 
     @Test
-    void sandboxBooter为null时返回错误() {
+    void sessionManager为null时返回错误() {
         var nullExecutor = new CodeExecuteToolExecutor(properties, null, null, null);
         ToolInput input = buildInput(Map.of("code", "print('hello')"));
 
@@ -58,14 +64,15 @@ class CodeExecuteToolExecutorTest {
     }
 
     @Test
-    void sandboxBooter不可用时返回错误() {
-        when(sandboxBooter.available()).thenReturn(false);
+    void sessionManager获取实例失败时返回错误() {
+        when(sessionManager.getOrCreate(anyString()))
+                .thenThrow(new IllegalStateException("活跃会话数已达上限: max=5"));
         ToolInput input = buildInput(Map.of("code", "print('hello')"));
 
         ToolResult result = executor.execute(input);
 
         assertThat(result.ok()).isFalse();
-        assertThat(result.error()).contains("沙箱运行时不可用");
+        assertThat(result.error()).contains("沙箱实例获取失败");
     }
 
     // ─────────────────────────────────────────────
@@ -74,13 +81,12 @@ class CodeExecuteToolExecutorTest {
 
     @Test
     void 成功执行Python代码() {
-        when(sandboxBooter.available()).thenReturn(true);
         when(sandboxBooter.execute(any(ExecutionRequest.class)))
                 .thenReturn(new ExecutionResult("hello\n", "", 0, 150, ExecutionState.COMPLETED));
 
         ToolInput input = buildInput(Map.of("code", "print('hello')"));
 
-        ToolResult result = executor.execute(input);
+        ToolResult result = executor.execute(input, "test-session");
 
         assertThat(result.ok()).isTrue();
         assertThat((int) result.data().get("exitCode")).isZero();
@@ -96,11 +102,26 @@ class CodeExecuteToolExecutorTest {
         assertThat(captured.language()).isEqualTo(Language.PYTHON);
         assertThat(captured.code()).isEqualTo("print('hello')");
         assertThat(captured.timeoutSeconds()).isEqualTo(30);
+
+        // 验证 sessionManager 使用了正确的 sessionId
+        verify(sessionManager).getOrCreate("test-session");
+    }
+
+    @Test
+    void 无sessionId时使用默认值() {
+        when(sandboxBooter.execute(any(ExecutionRequest.class)))
+                .thenReturn(new ExecutionResult("hello\n", "", 0, 150, ExecutionState.COMPLETED));
+
+        ToolInput input = buildInput(Map.of("code", "print('hello')"));
+
+        ToolResult result = executor.execute(input);
+
+        assertThat(result.ok()).isTrue();
+        verify(sessionManager).getOrCreate("default");
     }
 
     @Test
     void 指定JavaScript语言执行() {
-        when(sandboxBooter.available()).thenReturn(true);
         when(sandboxBooter.execute(any(ExecutionRequest.class)))
                 .thenReturn(new ExecutionResult("42\n", "", 0, 80, ExecutionState.COMPLETED));
 
@@ -120,7 +141,6 @@ class CodeExecuteToolExecutorTest {
 
     @Test
     void 指定Shell语言执行() {
-        when(sandboxBooter.available()).thenReturn(true);
         when(sandboxBooter.execute(any(ExecutionRequest.class)))
                 .thenReturn(new ExecutionResult("hello\n", "", 0, 50, ExecutionState.COMPLETED));
 
@@ -140,7 +160,6 @@ class CodeExecuteToolExecutorTest {
 
     @Test
     void 自定义超时时间() {
-        when(sandboxBooter.available()).thenReturn(true);
         when(sandboxBooter.execute(any(ExecutionRequest.class)))
                 .thenReturn(new ExecutionResult("", "", 0, 10, ExecutionState.COMPLETED));
 
@@ -165,9 +184,8 @@ class CodeExecuteToolExecutorTest {
     @Test
     void 默认语言从配置读取() {
         properties.getInfra().getCodeExecute().setDefaultLanguage("javascript");
-        executor = new CodeExecuteToolExecutor(properties, sandboxBooter, null, null);
+        executor = new CodeExecuteToolExecutor(properties, sessionManager, null, null);
 
-        when(sandboxBooter.available()).thenReturn(true);
         when(sandboxBooter.execute(any(ExecutionRequest.class)))
                 .thenReturn(new ExecutionResult("", "", 0, 10, ExecutionState.COMPLETED));
 
@@ -187,7 +205,6 @@ class CodeExecuteToolExecutorTest {
 
     @Test
     void 缺少code参数返回错误() {
-        when(sandboxBooter.available()).thenReturn(true);
         ToolInput input = buildInput(Map.of());
 
         ToolResult result = executor.execute(input);
@@ -198,7 +215,6 @@ class CodeExecuteToolExecutorTest {
 
     @Test
     void 不支持的语言返回错误() {
-        when(sandboxBooter.available()).thenReturn(true);
         ToolInput input = buildInput(Map.of(
                 "code", "puts 'hello'",
                 "language", "ruby"
@@ -213,7 +229,6 @@ class CodeExecuteToolExecutorTest {
 
     @Test
     void sandboxBooter执行抛异常时返回错误() {
-        when(sandboxBooter.available()).thenReturn(true);
         when(sandboxBooter.execute(any(ExecutionRequest.class)))
                 .thenThrow(new RuntimeException("沙箱进程崩溃"));
 
@@ -228,7 +243,6 @@ class CodeExecuteToolExecutorTest {
 
     @Test
     void 执行返回非零退出码() {
-        when(sandboxBooter.available()).thenReturn(true);
         when(sandboxBooter.execute(any(ExecutionRequest.class)))
                 .thenReturn(new ExecutionResult("", "SyntaxError: invalid syntax\n", 1, 20, ExecutionState.FAILED));
 

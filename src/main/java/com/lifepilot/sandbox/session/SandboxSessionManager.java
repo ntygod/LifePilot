@@ -5,10 +5,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Comparator;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,12 +18,14 @@ import com.lifepilot.sandbox.booter.DockerBooter;
 import com.lifepilot.sandbox.booter.ProcessBooter;
 import com.lifepilot.sandbox.booter.SandboxBooter;
 import com.lifepilot.sandbox.config.SandboxConfigProperties;
+import com.lifepilot.sandbox.util.SandboxUtils;
 
 /**
  * 会话级沙箱实例管理器。
  *
  * <p>维护会话 ID 到沙箱实例的映射，支持 TTL 自动续期和过期清理。
  * 使用 {@link ConcurrentHashMap} 保证线程安全，
+ * {@link AtomicInteger} 精确追踪活跃会话数，
  * {@link ScheduledExecutorService} 定时扫描过期会话。</p>
  *
  * @author zsg
@@ -36,6 +38,7 @@ public class SandboxSessionManager {
     private final SandboxConfigProperties config;
     private final SandboxBooter booterTemplate;
     private final ConcurrentHashMap<String, SandboxEntry> sessions = new ConcurrentHashMap<>();
+    private final AtomicInteger activeCount = new AtomicInteger(0);
     private final ScheduledExecutorService scheduler;
 
     /**
@@ -65,6 +68,8 @@ public class SandboxSessionManager {
      * <p>如果会话已存在，更新 lastAccessTime（TTL 续期）并返回已有 booter。
      * 如果会话不存在，检查最大活跃会话数限制后创建新的 booter 实例。</p>
      *
+     * <p>使用 {@link AtomicInteger} 精确追踪活跃数，避免 ConcurrentHashMap.size() 的并发不精确问题。</p>
+     *
      * @param sessionId 会话 ID
      * @return 沙箱启动器实例
      * @throws IllegalStateException 活跃会话数达到上限
@@ -80,33 +85,33 @@ public class SandboxSessionManager {
 
         // 会话不存在，需要创建新会话
         int maxActive = config.getSession().getMaxActiveSessions();
-        // 使用 compute 保证原子性
-        SandboxEntry[] created = new SandboxEntry[1];
-        sessions.compute(sessionId, (id, entry) -> {
-            // 双重检查：可能在等待锁期间被其他线程创建
-            if (entry != null) {
-                created[0] = new SandboxEntry(entry.booter(), Instant.now(), entry.workingDirectory());
-                return created[0];
-            }
 
-            // 检查最大会话数限制
-            if (sessions.size() >= maxActive) {
+        // 先用 AtomicInteger 做精确的上限检查
+        int current = activeCount.get();
+        if (current >= maxActive) {
+            throw new IllegalStateException(
+                    "活跃会话数已达上限: current=%d, max=%d".formatted(current, maxActive));
+        }
+
+        // 使用 computeIfAbsent 保证同一 sessionId 只创建一次
+        SandboxEntry created = sessions.computeIfAbsent(sessionId, id -> {
+            // 再次检查并原子递增（防止并发超限）
+            if (activeCount.incrementAndGet() > maxActive) {
+                activeCount.decrementAndGet();
                 throw new IllegalStateException(
-                        "活跃会话数已达上限: current=%d, max=%d".formatted(sessions.size(), maxActive));
+                        "活跃会话数已达上限: max=%d".formatted(maxActive));
             }
 
-            // 创建新的 booter 实例
             SandboxBooter newBooter = createBooter();
             Path workingDirectory = createWorkingDirectory();
             newBooter.boot(workingDirectory).join();
 
-            created[0] = new SandboxEntry(newBooter, Instant.now(), workingDirectory);
             log.info("创建新会话: sessionId={}, booterType={}, workingDirectory={}",
-                    sessionId, newBooter.type(), workingDirectory);
-            return created[0];
+                    id, newBooter.type(), workingDirectory);
+            return new SandboxEntry(newBooter, Instant.now(), workingDirectory);
         });
 
-        return created[0].booter();
+        return created.booter();
     }
 
     /**
@@ -122,6 +127,7 @@ public class SandboxSessionManager {
             log.debug("会话不存在，跳过销毁: sessionId={}", sessionId);
             return;
         }
+        activeCount.decrementAndGet();
         destroyEntry(sessionId, entry);
     }
 
@@ -139,6 +145,7 @@ public class SandboxSessionManager {
             if (entry.getValue().lastAccessTime().isBefore(threshold)) {
                 SandboxEntry removed = sessions.remove(entry.getKey());
                 if (removed != null) {
+                    activeCount.decrementAndGet();
                     destroyEntry(entry.getKey(), removed);
                     cleaned++;
                 }
@@ -146,7 +153,7 @@ public class SandboxSessionManager {
         }
 
         if (cleaned > 0) {
-            log.info("过期会话清理完成: cleaned={}, remaining={}", cleaned, sessions.size());
+            log.info("过期会话清理完成: cleaned={}, remaining={}", cleaned, activeCount.get());
         }
     }
 
@@ -156,20 +163,21 @@ public class SandboxSessionManager {
      * @return 活跃会话数
      */
     public int activeCount() {
-        return sessions.size();
+        return activeCount.get();
     }
 
     /**
      * 关闭所有会话（应用关闭时调用）。
      *
-     * <p>销毁所有活跃会话并关闭定时清理调度器。</p>
+     * <p>销毁所有活跃会话。</p>
      */
     public void shutdownAll() {
-        log.info("开始关闭所有会话: activeCount={}", sessions.size());
+        log.info("开始关闭所有会话: activeCount={}", activeCount.get());
 
         for (var entry : sessions.entrySet()) {
             SandboxEntry removed = sessions.remove(entry.getKey());
             if (removed != null) {
+                activeCount.decrementAndGet();
                 destroyEntry(entry.getKey(), removed);
             }
         }
@@ -210,31 +218,12 @@ public class SandboxSessionManager {
         }
 
         try {
-            deleteDirectoryRecursively(entry.workingDirectory());
+            SandboxUtils.deleteDirectoryRecursively(entry.workingDirectory());
         } catch (IOException e) {
             log.warn("删除工作目录失败: sessionId={}, path={}, error={}",
                     sessionId, entry.workingDirectory(), e.getMessage());
         }
 
         log.info("会话已销毁: sessionId={}", sessionId);
-    }
-
-    /**
-     * 递归删除目录及其内容。
-     */
-    private static void deleteDirectoryRecursively(Path directory) throws IOException {
-        if (directory == null || !Files.exists(directory)) {
-            return;
-        }
-        try (var stream = Files.walk(directory)) {
-            stream.sorted(Comparator.reverseOrder())
-                    .forEach(path -> {
-                        try {
-                            Files.deleteIfExists(path);
-                        } catch (IOException e) {
-                            log.warn("删除文件失败: path={}, error={}", path, e.getMessage());
-                        }
-                    });
-        }
     }
 }

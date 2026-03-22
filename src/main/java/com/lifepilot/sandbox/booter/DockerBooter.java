@@ -6,7 +6,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -20,7 +19,7 @@ import com.lifepilot.sandbox.config.SandboxConfigProperties;
 import com.lifepilot.sandbox.model.ExecutionRequest;
 import com.lifepilot.sandbox.model.ExecutionResult;
 import com.lifepilot.sandbox.model.ExecutionState;
-import com.lifepilot.sandbox.model.SandboxState;
+import com.lifepilot.sandbox.util.SandboxUtils;
 
 /**
  * 基于 Docker 容器的强隔离沙箱。
@@ -35,6 +34,8 @@ import com.lifepilot.sandbox.model.SandboxState;
  *   <li>{@code --read-only} — 只读根文件系统</li>
  *   <li>{@code --user 1000:1000} — 非 root 用户运行</li>
  *   <li>{@code --memory / --cpus} — 资源限制</li>
+ *   <li>{@code --pids-limit 64} — 进程数限制（防 fork bomb）</li>
+ *   <li>{@code --tmpfs /tmp:rw,noexec,size=64m} — 可写临时目录</li>
  *   <li>{@code -v workDir:/workspace:rw} — 仅工作目录可写</li>
  * </ul>
  *
@@ -47,7 +48,6 @@ public final class DockerBooter implements SandboxBooter {
 
     private final SandboxConfigProperties config;
     private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
-    private volatile SandboxState state = SandboxState.SHUTDOWN;
     private volatile Path workingDirectory;
 
     public DockerBooter(SandboxConfigProperties config) {
@@ -61,7 +61,6 @@ public final class DockerBooter implements SandboxBooter {
             return CompletableFuture.failedFuture(
                     new IllegalStateException("Docker Engine 不可用，请确认 Docker 已安装并正在运行"));
         }
-        this.state = SandboxState.READY;
         log.info("DockerBooter 启动完成: workingDirectory={}", workingDirectory);
         return CompletableFuture.completedFuture(null);
     }
@@ -93,7 +92,6 @@ public final class DockerBooter implements SandboxBooter {
 
     @Override
     public ExecutionResult execute(ExecutionRequest request) {
-        state = SandboxState.RUNNING;
         long startTime = System.currentTimeMillis();
         Path scriptFile = null;
         String containerName = "lifepilot-sandbox-" + UUID.randomUUID();
@@ -121,9 +119,9 @@ public final class DockerBooter implements SandboxBooter {
 
             // 5. Virtual Thread 异步读取 stdout / stderr
             CompletableFuture<byte[]> stdoutFuture = CompletableFuture.supplyAsync(
-                    () -> readStream(process.getInputStream()), virtualThreadExecutor);
+                    () -> SandboxUtils.readStream(process.getInputStream()), virtualThreadExecutor);
             CompletableFuture<byte[]> stderrFuture = CompletableFuture.supplyAsync(
-                    () -> readStream(process.getErrorStream()), virtualThreadExecutor);
+                    () -> SandboxUtils.readStream(process.getErrorStream()), virtualThreadExecutor);
 
             // 6. 等待完成或超时
             boolean finished = process.waitFor(request.timeoutSeconds(), TimeUnit.SECONDS);
@@ -142,8 +140,9 @@ public final class DockerBooter implements SandboxBooter {
             byte[] stderrBytes = stderrFuture.getNow(new byte[0]);
 
             long durationMs = System.currentTimeMillis() - startTime;
-            String stdout = truncateOutput(stdoutBytes);
-            String stderr = truncateOutput(stderrBytes);
+            int maxBytes = config.getMaxOutputBytes();
+            String stdout = SandboxUtils.truncateOutput(stdoutBytes, maxBytes);
+            String stderr = SandboxUtils.truncateOutput(stderrBytes, maxBytes);
 
             if (!finished) {
                 return new ExecutionResult(stdout, stderr, -1, durationMs, ExecutionState.TIMEOUT);
@@ -164,7 +163,6 @@ public final class DockerBooter implements SandboxBooter {
             log.error("Docker 执行被中断: container={}, message={}", containerName, e.getMessage());
             return new ExecutionResult("", e.getMessage(), -1, durationMs, ExecutionState.FAILED);
         } finally {
-            state = SandboxState.READY;
             // 清理脚本文件
             if (scriptFile != null) {
                 try {
@@ -179,11 +177,10 @@ public final class DockerBooter implements SandboxBooter {
 
     @Override
     public void shutdown() {
-        state = SandboxState.SHUTDOWN;
         virtualThreadExecutor.close();
         if (workingDirectory != null) {
             try {
-                deleteDirectoryRecursively(workingDirectory);
+                SandboxUtils.deleteDirectoryRecursively(workingDirectory);
                 log.info("DockerBooter 已关闭，工作目录已清理: path={}", workingDirectory);
             } catch (IOException e) {
                 log.warn("清理工作目录失败: path={}, error={}", workingDirectory, e.getMessage());
@@ -242,6 +239,14 @@ public final class DockerBooter implements SandboxBooter {
         command.add("--cpus");
         command.add(String.valueOf(dockerConfig.getCpuLimit()));
 
+        // 进程数限制（防 fork bomb）
+        command.add("--pids-limit");
+        command.add("64");
+
+        // 可写临时目录（--read-only 下运行时需要 /tmp）
+        command.add("--tmpfs");
+        command.add("/tmp:rw,noexec,size=64m");
+
         // 挂载工作目录
         command.add("-v");
         command.add(request.workingDirectory().toAbsolutePath() + ":/workspace:rw");
@@ -285,51 +290,6 @@ public final class DockerBooter implements SandboxBooter {
                 Thread.currentThread().interrupt();
             }
             log.warn("终止容器失败: container={}, error={}", containerName, e.getMessage());
-        }
-    }
-
-    /**
-     * 读取输入流的全部内容为字节数组。
-     */
-    private static byte[] readStream(InputStream inputStream) {
-        try (inputStream) {
-            return inputStream.readAllBytes();
-        } catch (IOException e) {
-            log.warn("读取进程输出流失败: error={}", e.getMessage());
-            return new byte[0];
-        }
-    }
-
-    /**
-     * 截断输出到配置的最大字节数。
-     */
-    private String truncateOutput(byte[] bytes) {
-        if (bytes == null || bytes.length == 0) {
-            return "";
-        }
-        int maxBytes = config.getMaxOutputBytes();
-        if (bytes.length <= maxBytes) {
-            return new String(bytes, StandardCharsets.UTF_8);
-        }
-        return new String(bytes, 0, maxBytes, StandardCharsets.UTF_8);
-    }
-
-    /**
-     * 递归删除目录及其内容。
-     */
-    private static void deleteDirectoryRecursively(Path directory) throws IOException {
-        if (!Files.exists(directory)) {
-            return;
-        }
-        try (var stream = Files.walk(directory)) {
-            stream.sorted(Comparator.reverseOrder())
-                    .forEach(path -> {
-                        try {
-                            Files.deleteIfExists(path);
-                        } catch (IOException e) {
-                            log.warn("删除文件失败: path={}, error={}", path, e.getMessage());
-                        }
-                    });
         }
     }
 }

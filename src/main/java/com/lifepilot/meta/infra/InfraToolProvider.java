@@ -27,8 +27,8 @@ import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.task.CronScheduler;
 import com.lifepilot.agent.task.CronTaskRepository;
 import com.lifepilot.meta.infra.task.TaskToolProvider;
-import com.lifepilot.sandbox.booter.SandboxBooter;
 import com.lifepilot.sandbox.repository.SandboxRepository;
+import com.lifepilot.sandbox.session.SandboxSessionManager;
 import com.lifepilot.sandbox.validator.CodeValidator;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.model.ToolCategory;
@@ -58,7 +58,7 @@ public class InfraToolProvider {
     private final MetaProperties properties;
     private final WebSearchConfigProvider webSearchConfigProvider;
     @Nullable
-    private final SandboxBooter sandboxBooter;
+    private final SandboxSessionManager sandboxSessionManager;
     @Nullable
     private final CodeValidator codeValidator;
     @Nullable
@@ -86,7 +86,7 @@ public class InfraToolProvider {
 
     public InfraToolProvider(MetaProperties properties,
                              WebSearchConfigProvider webSearchConfigProvider,
-                             @Nullable SandboxBooter sandboxBooter,
+                             @Nullable SandboxSessionManager sandboxSessionManager,
                              @Nullable CodeValidator codeValidator,
                              @Nullable SandboxRepository sandboxRepository,
                              @Nullable InteractionBridge interactionBridge,
@@ -101,7 +101,7 @@ public class InfraToolProvider {
                              @Nullable BackgroundProcessManager backgroundProcessManager) {
         this.properties = properties;
         this.webSearchConfigProvider = webSearchConfigProvider;
-        this.sandboxBooter = sandboxBooter;
+        this.sandboxSessionManager = sandboxSessionManager;
         this.codeValidator = codeValidator;
         this.sandboxRepository = sandboxRepository;
         this.interactionBridge = interactionBridge;
@@ -153,7 +153,7 @@ public class InfraToolProvider {
         browserToolProvider.buildBrowserTools().forEach(toolRegistry::registerBuiltinTool);
 
         // 代码执行工具（1 个）
-        var codeExecuteExecutor = new CodeExecuteToolExecutor(properties, sandboxBooter, codeValidator, sandboxRepository);
+        var codeExecuteExecutor = new CodeExecuteToolExecutor(properties, sandboxSessionManager, codeValidator, sandboxRepository);
 
         toolRegistry.registerBuiltinTool(buildCodeExecuteTool(codeExecuteExecutor));
 
