@@ -15,7 +15,9 @@ import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
 
 /**
@@ -176,6 +178,43 @@ public class ShellExecToolExecutor {
     private ToolResult executeCommand(String command, Path workDir, int timeoutSeconds)
             throws IOException, InterruptedException {
 
+        int maxRetries = shellConfig.getTransientRetries();
+        IOException lastException = null;
+
+        for (int attempt = 0; attempt <= maxRetries; attempt++) {
+            try {
+                return doExecuteCommand(command, workDir, timeoutSeconds);
+            } catch (IOException e) {
+                lastException = e;
+                if (attempt < maxRetries && isTransientFailure(e)) {
+                    log.warn("Shell 命令瞬时故障，准备重试: command={}, attempt={}, error={}",
+                            command, attempt + 1, e.getMessage());
+                    Thread.sleep(500L * (attempt + 1)); // 简单退避
+                } else {
+                    throw e;
+                }
+            }
+        }
+        throw lastException; // 不可达，但编译器需要
+    }
+
+    /**
+     * 判断是否为可重试的瞬时故障。
+     * <p>仅对进程启动失败等瞬时问题重试，命令本身执行失败（exitCode!=0）不重试。</p>
+     */
+    private boolean isTransientFailure(IOException e) {
+        String msg = e.getMessage();
+        if (msg == null) return false;
+        // 进程启动失败、资源不足等瞬时问题
+        return msg.contains("Cannot run program")
+                || msg.contains("Too many open files")
+                || msg.contains("Resource temporarily unavailable")
+                || msg.contains("No such file or directory"); // shell 可执行文件临时不可用
+    }
+
+    private ToolResult doExecuteCommand(String command, Path workDir, int timeoutSeconds)
+            throws IOException, InterruptedException {
+
         // 根据操作系统选择 Shell
         ProcessBuilder pb;
         String osName = System.getProperty("os.name").toLowerCase();
@@ -201,12 +240,17 @@ public class ShellExecToolExecutor {
 
         Process process = pb.start();
 
-        // 在独立线程中读取 stdout/stderr，避免 readAllBytes() 阻塞导致 waitFor 无法超时
-        var stdoutFuture = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+        // 计算输出读取超时：配置值 > 0 时使用配置值，否则自动计算为 timeoutSeconds + 5
+        int outputReadTimeout = shellConfig.getOutputReadTimeoutSeconds() > 0
+                ? shellConfig.getOutputReadTimeoutSeconds()
+                : timeoutSeconds + 5;
+
+        // 在独立线程中读取 stdout/stderr，带超时保护防止永久阻塞
+        var stdoutFuture = CompletableFuture.supplyAsync(() -> {
             try { return new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8); }
             catch (IOException e) { return ""; }
         });
-        var stderrFuture = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+        var stderrFuture = CompletableFuture.supplyAsync(() -> {
             try { return new String(process.getErrorStream().readAllBytes(), StandardCharsets.UTF_8); }
             catch (IOException e) { return ""; }
         });
@@ -215,14 +259,28 @@ public class ShellExecToolExecutor {
         boolean completed = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
         if (!completed) {
             process.destroyForcibly();
-            process.waitFor(2, TimeUnit.SECONDS); // 等待强制终止完成
+            process.waitFor(2, TimeUnit.SECONDS);
+            // 强制终止后也要带超时地收集已有输出
+            String partialStdout = getOutputSafe(stdoutFuture, 3);
+            String partialStderr = getOutputSafe(stderrFuture, 3);
             log.warn("Shell 命令超时被终止: command={}, timeout={}s", command, timeoutSeconds);
-            return ToolResult.error("命令执行超时（" + timeoutSeconds + " 秒），已强制终止");
+            var msg = "命令执行超时（" + timeoutSeconds + " 秒），已强制终止";
+            if (!partialStdout.isBlank() || !partialStderr.isBlank()) {
+                msg += "\n--- 超时前的部分输出 ---\n"
+                        + truncateOutput(partialStdout + partialStderr, shellConfig.getMaxOutputLength() / 2);
+            }
+            return ToolResult.error(msg);
         }
 
-        // 进程已完成，获取输出
-        String stdout = stdoutFuture.join();
-        String stderr = stderrFuture.join();
+        // 进程已完成，等待 yieldMs 让输出流充分刷新
+        int yieldMs = shellConfig.getYieldMs();
+        if (yieldMs > 0) {
+            Thread.sleep(yieldMs);
+        }
+
+        // 带超时保护地获取输出
+        String stdout = getOutputSafe(stdoutFuture, outputReadTimeout);
+        String stderr = getOutputSafe(stderrFuture, outputReadTimeout);
         int exitCode = process.exitValue();
 
         // 截断输出
@@ -245,5 +303,26 @@ public class ShellExecToolExecutor {
         }
 
         return ToolResult.success(Map.copyOf(data));
+    }
+
+    /**
+     * 带超时保护地获取 CompletableFuture 的输出结果。
+     * <p>防止进程被 destroyForcibly() 后输出流未关闭导致永久阻塞。</p>
+     *
+     * @param future 输出读取 Future
+     * @param timeoutSeconds 超时秒数
+     * @return 输出内容，超时时返回空字符串
+     */
+    private String getOutputSafe(CompletableFuture<String> future, int timeoutSeconds) {
+        try {
+            return future.get(timeoutSeconds, TimeUnit.SECONDS);
+        } catch (TimeoutException e) {
+            log.warn("输出读取超时（{}秒），可能存在流未关闭问题", timeoutSeconds);
+            future.cancel(true);
+            return "[输出读取超时]";
+        } catch (Exception e) {
+            log.debug("输出读取异常: {}", e.getMessage());
+            return "";
+        }
     }
 }

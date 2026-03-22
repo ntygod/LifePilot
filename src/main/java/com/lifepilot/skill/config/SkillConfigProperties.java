@@ -53,8 +53,14 @@ public class SkillConfigProperties {
     /** 内置 Skill 配置。 */
     private Builtin builtin = new Builtin();
 
+    /** SkillHub 远程市场配置。 */
+    private SkillHub skillHub = new SkillHub();
+
     public Builtin getBuiltin() { return builtin; }
     public void setBuiltin(Builtin builtin) { this.builtin = builtin; }
+
+    public SkillHub getSkillHub() { return skillHub; }
+    public void setSkillHub(SkillHub skillHub) { this.skillHub = skillHub; }
 
     /**
      * Skill 定义校验限制配置。
@@ -230,5 +236,41 @@ public class SkillConfigProperties {
             };
         }
 
+    }
+
+    /**
+     * SkillHub 远程市场配置。
+     *
+     * <p>对接腾讯 SkillHub，作为 OpenClaw ClawHub 的中文替代方案。
+     * Agent 在本地 Skill 不满足需求时，可从 SkillHub 搜索并安装中文 Skill。</p>
+     *
+     * @author zsg
+     * @since 2026-03-22
+     */
+    public static class SkillHub {
+
+        /** SkillHub 功能开关，默认 true。 */
+        private boolean enabled = true;
+
+        /** SkillHub API 基础 URL。 */
+        private String baseUrl = "https://skillhub.cloud.tencent.com";
+
+        /** 搜索结果最大返回数量，默认 10。 */
+        private int maxSearchResults = 10;
+
+        /** 自动安装开关 — 搜索到匹配 Skill 后是否自动安装，默认 false（需用户确认）。 */
+        private boolean autoInstall = false;
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+
+        public String getBaseUrl() { return baseUrl; }
+        public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }
+
+        public int getMaxSearchResults() { return maxSearchResults; }
+        public void setMaxSearchResults(int maxSearchResults) { this.maxSearchResults = maxSearchResults; }
+
+        public boolean isAutoInstall() { return autoInstall; }
+        public void setAutoInstall(boolean autoInstall) { this.autoInstall = autoInstall; }
     }
 }

@@ -144,17 +144,41 @@ public class MetaProperties {
         @Data
         public static class Shell {
 
-            /** 命令黑名单正则模式列表。 */
+            /**
+             * 命令黑名单正则模式列表。
+             * <p>使用单词边界匹配避免误杀包含关键词的合法命令。</p>
+             */
             private List<String> commandBlacklist = List.of(
-                    "rm\\s+-rf\\s+/", "format\\s+[a-zA-Z]:",
-                    "shutdown", "reboot", "mkfs", "dd\\s+if="
+                    "rm\\s+-rf\\s+/(?!\\S)",       // rm -rf / 但不匹配 rm -rf /tmp/xxx
+                    "\\bformat\\s+[a-zA-Z]:",       // format C: 等磁盘格式化
+                    "(?:^|[;&|])\\s*shutdown\\b",   // shutdown 命令（排除子串匹配）
+                    "(?:^|[;&|])\\s*reboot\\b",     // reboot 命令
+                    "\\bmkfs\\b",                   // mkfs / mkfs.ext4 等文件系统格式化
+                    "\\bdd\\s+if=",                 // dd 磁盘写入
+                    ":\\(\\)\\{\\s*:|:&\\s*\\};:",   // fork bomb
+                    "\\bchmod\\s+-R\\s+777\\s+/"    // 递归 777 根目录
             );
 
-            /** 命令执行超时（秒），默认 30。 */
-            private int timeoutSeconds = 30;
+            /** 命令执行超时（秒），默认 120。 */
+            private int timeoutSeconds = 120;
 
             /** 输出最大长度（字符），默认 50000。 */
             private int maxOutputLength = 50000;
+
+            /**
+             * yieldMs — 同步模式下进程结束后等待输出刷新的毫秒数，默认 200。
+             * <p>参考 OpenClaw exec 工具的 yieldMs 机制，解决进程退出后输出流延迟刷新的问题。</p>
+             */
+            private int yieldMs = 200;
+
+            /**
+             * 输出读取超时（秒），默认为 timeoutSeconds + 5。
+             * <p>防止进程被 destroyForcibly() 后输出流未关闭导致 readAllBytes() 永久阻塞。</p>
+             */
+            private int outputReadTimeoutSeconds = 0; // 0 表示自动计算为 timeoutSeconds + 5
+
+            /** 瞬时故障最大重试次数，默认 1。仅对进程启动失败等瞬时故障重试。 */
+            private int transientRetries = 1;
         }
 
         /**

@@ -61,9 +61,10 @@ public class AgentConfigProperties {
 
     /** 预算配置。 */
     public static class BudgetConfig {
-        private int defaultMaxTokens = 32000;
-        private int defaultMaxSteps = 20;
-        private int defaultMaxDurationSeconds = 120;
+        /** 对话总 Token 预算（整个对话允许消耗的总 Token）。 */
+        private int defaultMaxTokens = 131072;
+        private int defaultMaxSteps = 30;
+        private int defaultMaxDurationSeconds = 300;
         private double subAgentBudgetRatio = 0.3;
 
         public int getDefaultMaxTokens() { return defaultMaxTokens; }
@@ -77,10 +78,13 @@ public class AgentConfigProperties {
     }
 
     /** 上下文配置。 */
-/** 上下文配置。 */
     public static class ContextConfig {
-        private int maxContextTokens = 32000;
-        private int outputReservedTokens = 4000;
+        /**
+         * 单次 LLM 调用的最大上下文 Token 数。
+         * <p>实际使用时取 min(此值, 模型的 maxContextWindow)。</p>
+         */
+        private int maxContextTokens = 131072;
+        private int outputReservedTokens = 8192;
         /** 成功步骤输出截断长度。 */
         private int successStepMaxLength = 200;
         /** 失败步骤输出截断长度。 */

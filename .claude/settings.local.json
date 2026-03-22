@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(*)",
+      "Read(*)",
+      "Write(*)",
+      "Edit(*)",
+      "Glob(*)",
+      "Grep(*)",
+      "WebFetch(*)",
+      "WebSearch(*)",
+      "WebFetch(domain:buildwithcham.medium.com)",
+      "WebFetch(domain:learndevrel.com)",
+      "WebFetch(domain:www.moely.ai)",
+      "WebFetch(domain:iamulya.one)",
+      "WebFetch(domain:avasdream.com)"
+    ]
+  }
+}

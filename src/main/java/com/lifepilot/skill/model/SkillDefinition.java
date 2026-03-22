@@ -23,6 +23,8 @@ public record SkillDefinition(
         SkillSource source,
         String instructions,
         List<String> suggestedTools,
+        /** 触发关键词/场景列表 — 用于系统提示词中的 Skill 匹配。 */
+        List<String> triggers,
         Map<String, String> metadata
 ) {
 
@@ -32,15 +34,23 @@ public record SkillDefinition(
         if (name == null || name.isBlank()) throw new IllegalArgumentException("Skill 名称不能为空");
         if (instructions == null || instructions.isBlank()) throw new IllegalArgumentException("Skill 指令不能为空");
         suggestedTools = List.copyOf(suggestedTools);
+        triggers = triggers != null ? List.copyOf(triggers) : List.of();
         metadata = Map.copyOf(metadata);
     }
 
     /**
-     * 返回包含 id、name 和 description 的摘要字符串，用于渐进式发现。
+     * 返回 XML 格式的摘要字符串，用于系统提示词中的 Skill 发现。
      *
-     * @return 格式为 "id (name): description" 的摘要
+     * @return 包含 id、name、description、triggers 的 XML 摘要
      */
     public String toDiscoverySummary() {
-        return id + " (" + name + "): " + description;
+        var sb = new StringBuilder();
+        sb.append("<skill id=\"").append(id).append("\" name=\"").append(name).append("\">\n");
+        sb.append("  <description>").append(description != null ? description : "").append("</description>\n");
+        if (!triggers.isEmpty()) {
+            sb.append("  <triggers>").append(String.join(", ", triggers)).append("</triggers>\n");
+        }
+        sb.append("</skill>");
+        return sb.toString();
     }
 }

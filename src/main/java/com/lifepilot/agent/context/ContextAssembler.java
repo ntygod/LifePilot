@@ -113,6 +113,23 @@ public class ContextAssembler {
         this.llmRouter = llmRouter;
     }
 
+    /**
+     * 当前模型的上下文窗口大小（运行时由 ReactAgentLoop 设置）。
+     * <p>0 表示未设置，使用配置值。</p>
+     */
+    private volatile int modelContextWindow = 0;
+
+    /**
+     * 设置当前模型的上下文窗口大小。
+     * <p>由 ReactAgentLoop 在路由到具体模型后调用，
+     * 使 TokenBudget 分配基于 min(配置值, 模型窗口)。</p>
+     *
+     * @param windowSize 模型上下文窗口（Token 数）
+     */
+    public void setModelContextWindow(int windowSize) {
+        this.modelContextWindow = windowSize;
+    }
+
     public AssembledContext assemble(ReactAgentState state) {
         Instant startTime = Instant.now();
         try {
@@ -772,7 +789,7 @@ public class ContextAssembler {
         }
 
         String skillEntries = skillRegistry.listAll().stream()
-                .map(skill -> "- " + skill.id() + ": " + skill.name() + " - " + skill.description())
+                .map(skill -> skill.toDiscoverySummary())
                 .collect(Collectors.joining("\n"));
 
         try {

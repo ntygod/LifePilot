@@ -90,11 +90,19 @@ public record Budget(
                 .build();
     }
 
-    /** 归还 SubAgent 未使用的 Token。 */
+    /**
+     * 归还 SubAgent 未使用的 Token。
+     * <p>SubAgent 分配时从父预算预留了 Token（tokensReserved），
+     * 归还时将未使用部分释放回可用池。</p>
+     */
     public Budget returnFromSubAgent(Budget subBudget) {
-        int unused = subBudget.tokensRemaining();
+        int allocated = subBudget.maxTokens;
+        int used = subBudget.tokensUsed;
+        int unused = allocated - used;
+        // 从预留中释放已分配的额度，未使用部分回到可用池
         return this.toBuilder()
-                .tokensReserved(Math.max(0, this.tokensReserved - unused))
+                .tokensReserved(Math.max(0, this.tokensReserved - allocated))
+                .tokensUsed(this.tokensUsed + used)
                 .build();
     }
 
@@ -107,5 +115,43 @@ public record Budget(
     public double timeUtilization() {
         return maxDuration.isZero() ? 0.0
                 : (double) elapsed.toMillis() / maxDuration.toMillis();
+    }
+
+    /**
+     * 渐进式降级等级 — 根据 Token 使用率返回当前降级阶段。
+     *
+     * <ul>
+     *   <li>{@code NORMAL} — 使用率 &lt; 80%，正常运行</li>
+     *   <li>{@code COMPRESS_HISTORY} — 使用率 80%~90%，应压缩对话历史</li>
+     *   <li>{@code TRIM_TOOLS} — 使用率 90%~95%，应裁剪工具 Schema 到最小集</li>
+     *   <li>{@code SKIP_MEMORY} — 使用率 95%~100%，应停止注入记忆</li>
+     *   <li>{@code TERMINATE} — 使用率 ≥ 100%，终止并生成摘要</li>
+     * </ul>
+     *
+     * @return 当前降级等级
+     */
+    public DegradationLevel degradationLevel() {
+        double utilization = tokenUtilization();
+        if (utilization >= 1.0) return DegradationLevel.TERMINATE;
+        if (utilization >= 0.95) return DegradationLevel.SKIP_MEMORY;
+        if (utilization >= 0.90) return DegradationLevel.TRIM_TOOLS;
+        if (utilization >= 0.80) return DegradationLevel.COMPRESS_HISTORY;
+        return DegradationLevel.NORMAL;
+    }
+
+    /**
+     * 预算渐进式降级等级。
+     */
+    public enum DegradationLevel {
+        /** 正常运行，无需降级。 */
+        NORMAL,
+        /** 压缩对话历史。 */
+        COMPRESS_HISTORY,
+        /** 裁剪工具 Schema 到最小集。 */
+        TRIM_TOOLS,
+        /** 停止注入记忆。 */
+        SKIP_MEMORY,
+        /** 终止并生成摘要。 */
+        TERMINATE
     }
 }

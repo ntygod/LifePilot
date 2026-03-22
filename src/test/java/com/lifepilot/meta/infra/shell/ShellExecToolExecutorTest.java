@@ -275,6 +275,58 @@ class ShellExecToolExecutorTest {
         assertThat(result.ok()).isFalse();
     }
 
+    @Test
+    void checkBlacklist_forkBomb被拒绝() {
+        ToolResult result = executor.checkBlacklist(":(){ :|:& };:");
+
+        assertThat(result).isNotNull();
+        assertThat(result.ok()).isFalse();
+    }
+
+    @Test
+    void checkBlacklist_chmod777根目录被拒绝() {
+        ToolResult result = executor.checkBlacklist("chmod -R 777 /");
+
+        assertThat(result).isNotNull();
+        assertThat(result.ok()).isFalse();
+    }
+
+    // ─────────────────────────────────────────────
+    //  黑名单精确匹配 — 不误杀合法命令
+    // ─────────────────────────────────────────────
+
+    @Test
+    void checkBlacklist_rmRf子目录不被拒绝() {
+        // rm -rf /tmp/build 是合法操作，不应被拒绝
+        ToolResult result = executor.checkBlacklist("rm -rf /tmp/build");
+
+        assertThat(result).isNull();
+    }
+
+    @Test
+    void checkBlacklist_包含shutdown子串的命令不被拒绝() {
+        // 包含 shutdown 子串但不是 shutdown 命令本身
+        ToolResult result = executor.checkBlacklist("cat /var/log/shutdown.log");
+
+        assertThat(result).isNull();
+    }
+
+    @Test
+    void checkBlacklist_管道中的shutdown被拒绝() {
+        ToolResult result = executor.checkBlacklist("echo done | shutdown -h now");
+
+        assertThat(result).isNotNull();
+        assertThat(result.ok()).isFalse();
+    }
+
+    @Test
+    void checkBlacklist_分号后的reboot被拒绝() {
+        ToolResult result = executor.checkBlacklist("echo done; reboot");
+
+        assertThat(result).isNotNull();
+        assertThat(result.ok()).isFalse();
+    }
+
     // ─────────────────────────────────────────────
     //  辅助方法
     // ─────────────────────────────────────────────

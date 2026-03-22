@@ -50,7 +50,12 @@ public class GuardrailEngine {
 
     // 信任工作区降级白名单工具
     private static final Set<String> TRUSTED_WORKSPACE_TOOLS = Set.of(
-            "builtin.shell.exec", "builtin.code.execute");
+            "builtin.shell.exec", "builtin.code.execute",
+            "builtin.file.read", "builtin.file.write", "builtin.file.list",
+            "builtin.file.manage");
+
+    // 自主模式通道 — 这些通道下 MEDIUM 及以下风险自动通过
+    private static final Set<String> AUTONOMOUS_CHANNELS = Set.of("cron", "heartbeat");
 
     // 速率限制计数器（简化实现：分钟级滑动窗口）
     private final AtomicInteger minuteCallCount = new AtomicInteger(0);
@@ -214,7 +219,7 @@ public class GuardrailEngine {
      * 评估工具风险策略。
      *
      * <p>优先使用策略中的显式映射，其次使用工具自身声明的风险等级，
-     * 最后才降级到策略默认等级。确定基础风险后，检查信任工作区降级。</p>
+     * 最后才降级到策略默认等级。确定基础风险后，依次检查信任工作区降级和自主模式降级。</p>
      */
     private GuardrailResult evaluateToolRisk(ToolRiskPolicy policy, ToolContract tool, ToolInput input) {
         // 优先级：策略显式映射 > 工具自身声明 > 策略默认
@@ -230,6 +235,9 @@ public class GuardrailEngine {
         // 信任工作区降级
         riskLevel = applyTrustedWorkspaceDowngrade(tool.id(), riskLevel, input);
 
+        // 自主模式降级：cron/heartbeat 通道下 MEDIUM 及以下自动通过，HIGH 降为 MEDIUM
+        riskLevel = applyAutonomousChannelDowngrade(riskLevel, input);
+
         ApprovalMode mode = riskLevel.toApprovalMode();
 
         return switch (mode) {
@@ -244,6 +252,28 @@ public class GuardrailEngine {
                     "工具 %s 风险等级为 %s，需要用户确认并二次验证".formatted(tool.id(), riskLevel),
                     mode);
         };
+    }
+
+    /**
+     * 自主模式降级 — 在 cron/heartbeat 通道下降低风险等级。
+     *
+     * <p>定时任务和心跳巡检执行时无人确认，因此：
+     * <ul>
+     *   <li>MEDIUM 及以下 → 保持不变（自动通过）</li>
+     *   <li>HIGH → 降为 MEDIUM（自动通过 + 审计日志）</li>
+     *   <li>CRITICAL → 保持 CRITICAL（仍然阻止，记录到审计日志事后审查）</li>
+     * </ul>
+     */
+    private RiskLevel applyAutonomousChannelDowngrade(RiskLevel riskLevel, ToolInput input) {
+        String channel = input.getContextValue("channel", String.class).orElse(null);
+        if (channel == null || !AUTONOMOUS_CHANNELS.contains(channel)) {
+            return riskLevel;
+        }
+        if (riskLevel == RiskLevel.HIGH) {
+            log.info("自主模式降级: channel={}, 原等级=HIGH, 降级为=MEDIUM", channel);
+            return RiskLevel.MEDIUM;
+        }
+        return riskLevel;
     }
 
     /**
