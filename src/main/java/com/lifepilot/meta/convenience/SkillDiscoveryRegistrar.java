@@ -92,33 +92,9 @@ public class SkillDiscoveryRegistrar implements InitializingBean {
         Path targetFolder = Path.of(skillConfig.getDirectory(), skillId);
         Path targetFile = targetFolder.resolve(SKILL_MD_FILENAME);
 
-        // 从 classpath 读取源内容
-        String classpathContent = null;
-        var fullResourcePath = resourcePath + "/" + SKILL_MD_FILENAME;
-        try {
-            var resource = new ClassPathResource(fullResourcePath);
-            if (resource.exists()) {
-                classpathContent = resource.getContentAsString(StandardCharsets.UTF_8);
-            }
-        } catch (IOException e) {
-            log.warn("种子 Skill SKILL.md 读取失败: path={}, error={}", fullResourcePath, e.getMessage());
-        }
-
-        // 如果目标文件已存在，比较内容决定是否需要更新
+        // 如果目标文件已存在，跳过（不覆盖用户自定义内容）
         if (Files.exists(targetFile)) {
-            try {
-                String existingContent = Files.readString(targetFile, StandardCharsets.UTF_8);
-                // 提取版本号比较，或者直接比较内容哈希
-                if (classpathContent != null && !classpathContent.equals(existingContent)
-                        && isNewerVersion(classpathContent, existingContent)) {
-                    Files.writeString(targetFile, classpathContent, StandardCharsets.UTF_8);
-                    log.info("种子 Skill SKILL.md 已更新: skillId={}", skillId);
-                } else {
-                    log.debug("种子 Skill SKILL.md 无需更新: skillId={}", skillId);
-                }
-            } catch (IOException e) {
-                log.debug("种子 Skill 版本比较失败，跳过: skillId={}, error={}", skillId, e.getMessage());
-            }
+            log.debug("种子 Skill SKILL.md 已存在于用户目录，跳过提取: skillId={}", skillId);
             return;
         }
 
@@ -127,12 +103,18 @@ public class SkillDiscoveryRegistrar implements InitializingBean {
 
         // SkillHub 获取失败，回退到 classpath 本地版本
         if (content == null) {
-            content = classpathContent;
-        }
-
-        if (content == null) {
-            log.warn("种子 Skill 内容获取失败（SkillHub 和 classpath 均不可用）: skillId={}", skillId);
-            return;
+            var fullResourcePath = resourcePath + "/" + SKILL_MD_FILENAME;
+            try {
+                var resource = new ClassPathResource(fullResourcePath);
+                if (!resource.exists()) {
+                    log.warn("种子 Skill SKILL.md 未找到: path={}", fullResourcePath);
+                    return;
+                }
+                content = resource.getContentAsString(StandardCharsets.UTF_8);
+            } catch (IOException e) {
+                log.warn("种子 Skill SKILL.md 读取失败: path={}, error={}", fullResourcePath, e.getMessage());
+                return;
+            }
         }
 
         // 创建目录并写入文件
@@ -164,36 +146,6 @@ public class SkillDiscoveryRegistrar implements InitializingBean {
             }
         } catch (Exception e) {
             log.debug("SkillHub 获取 Skill 失败，将回退到本地版本: skillId={}, error={}", skillId, e.getMessage());
-        }
-        return null;
-    }
-
-    /**
-     * 比较 classpath 版本是否比用户目录版本更新。
-     * <p>通过 YAML frontmatter 中的 version 字段比较。
-     * 如果无法提取版本号，则通过内容长度差异判断（内容变化视为更新）。</p>
-     */
-    private boolean isNewerVersion(String classpathContent, String existingContent) {
-        String cpVersion = extractVersion(classpathContent);
-        String exVersion = extractVersion(existingContent);
-        if (cpVersion != null && exVersion != null) {
-            return !cpVersion.equals(exVersion);
-        }
-        // 无法比较版本号时，内容不同即视为需要更新
-        return true;
-    }
-
-    /**
-     * 从 SKILL.md 内容中提取 version 字段。
-     */
-    @Nullable
-    private String extractVersion(String content) {
-        if (content == null) return null;
-        for (String line : content.split("\n")) {
-            String trimmed = line.trim();
-            if (trimmed.startsWith("version:")) {
-                return trimmed.substring("version:".length()).trim().replace("\"", "");
-            }
         }
         return null;
     }
