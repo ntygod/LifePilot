@@ -1,23 +1,23 @@
 package com.lifepilot.skill.hub;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
-import java.util.List;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.util.concurrent.TimeUnit;
 
 /**
- * 腾讯 SkillHub 客户端 — 对接外部 Skill 市场，支持搜索和下载 Skill。
+ * 腾讯 SkillHub CLI 客户端 — 通过 skillhub 命令行工具搜索和安装 Skill。
  *
- * <p>当本地 Skill 不满足需求时，Agent 可通过此客户端从 SkillHub 搜索并安装中文 Skill。
- * 作为 OpenClaw ClawHub 的中文替代方案。</p>
+ * <p>SkillHub 提供 CLI 工具而非 REST API：
+ * <ul>
+ *   <li>{@code skillhub search <关键词>} — 搜索 Skill</li>
+ *   <li>{@code skillhub install <名称>} — 安装 Skill 到当前 workspace</li>
+ * </ul>
+ *
+ * <p>安装方式：{@code curl -fsSL https://skillhub-1388575217.cos.ap-guangzhou.myqcloud.com/install/install.sh | bash -s -- --cli-only}</p>
  *
  * @author zsg
  * @since 2026-03-22
@@ -26,140 +26,97 @@ public class SkillHubClient {
 
     private static final Logger log = LoggerFactory.getLogger(SkillHubClient.class);
 
-    private final String baseUrl;
-    private final HttpClient httpClient;
-    private final ObjectMapper objectMapper;
+    private static final int DEFAULT_TIMEOUT_SECONDS = 30;
 
-    public SkillHubClient(String baseUrl, ObjectMapper objectMapper) {
-        this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
-        this.objectMapper = objectMapper;
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
-                .followRedirects(HttpClient.Redirect.NORMAL)
-                .build();
+    private final Path skillsDirectory;
+
+    public SkillHubClient(String skillsDirectory) {
+        this.skillsDirectory = Path.of(skillsDirectory);
     }
 
     /**
      * 搜索 SkillHub 中的 Skill。
      *
      * @param query 搜索关键词
-     * @param limit 最大返回数量
-     * @return 搜索结果列表
+     * @return 搜索结果文本，失败返回 null
      */
-    public List<SkillHubEntry> search(String query, int limit) {
-        try {
-            String url = baseUrl + "/api/skills/search?q=" + encodeQuery(query) + "&limit=" + limit;
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(url))
-                    .header("Accept", "application/json")
-                    .header("User-Agent", "ZhiWei-Agent/1.0")
-                    .timeout(Duration.ofSeconds(15))
-                    .GET()
-                    .build();
-
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-
-            if (response.statusCode() != 200) {
-                log.warn("SkillHub 搜索失败: statusCode={}, body={}", response.statusCode(), response.body());
-                return List.of();
-            }
-
-            SearchResponse searchResponse = objectMapper.readValue(response.body(), SearchResponse.class);
-            return searchResponse.items != null ? searchResponse.items : List.of();
-
-        } catch (IOException | InterruptedException e) {
-            log.warn("SkillHub 搜索异常: query={}, error={}", query, e.getMessage());
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
-            return List.of();
-        }
+    public String search(String query) {
+        return executeCommand("skillhub", "search", query);
     }
 
     /**
-     * 获取 Skill 的完整定义内容（SKILL.md）。
+     * 安装 Skill 到用户 Skill 目录。
      *
-     * @param skillId SkillHub 中的 Skill ID
-     * @return Skill 内容（Markdown 格式），获取失败返回 null
+     * @param skillName Skill 名称
+     * @return 安装输出文本，失败返回 null
      */
-    public String fetchSkillContent(String skillId) {
-        try {
-            String url = baseUrl + "/api/skills/" + skillId + "/content";
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(url))
-                    .header("Accept", "text/markdown")
-                    .header("User-Agent", "ZhiWei-Agent/1.0")
-                    .timeout(Duration.ofSeconds(15))
-                    .GET()
-                    .build();
-
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-
-            if (response.statusCode() != 200) {
-                log.warn("SkillHub 获取内容失败: skillId={}, statusCode={}", skillId, response.statusCode());
-                return null;
-            }
-
-            return response.body();
-
-        } catch (IOException | InterruptedException e) {
-            log.warn("SkillHub 获取内容异常: skillId={}, error={}", skillId, e.getMessage());
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
-            return null;
-        }
+    public String install(String skillName) {
+        return executeCommand("skillhub", "install", skillName);
     }
 
     /**
-     * 检查 SkillHub 服务是否可用。
+     * 检查 skillhub CLI 是否已安装。
      *
-     * @return 可用返回 true
+     * @return 已安装返回 true
      */
     public boolean isAvailable() {
         try {
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(baseUrl + "/api/health"))
-                    .timeout(Duration.ofSeconds(5))
-                    .GET()
-                    .build();
-
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            return response.statusCode() == 200;
-
+            var pb = new ProcessBuilder("skillhub", "--version");
+            pb.redirectErrorStream(true);
+            Process process = pb.start();
+            boolean finished = process.waitFor(5, TimeUnit.SECONDS);
+            if (!finished) {
+                process.destroyForcibly();
+                return false;
+            }
+            return process.exitValue() == 0;
         } catch (Exception e) {
             return false;
         }
     }
 
-    private String encodeQuery(String query) {
-        return java.net.URLEncoder.encode(query, java.nio.charset.StandardCharsets.UTF_8);
+    /**
+     * 获取 SkillHub CLI 安装命令。
+     *
+     * @param cliOnly 是否只安装 CLI（不安装默认 Skill）
+     * @return 安装命令字符串
+     */
+    public static String getInstallCommand(boolean cliOnly) {
+        String base = "curl -fsSL https://skillhub-1388575217.cos.ap-guangzhou.myqcloud.com/install/install.sh | bash";
+        return cliOnly ? base + " -s -- --cli-only" : base;
     }
 
-    // ─── 响应模型 ───
+    private String executeCommand(String... command) {
+        try {
+            var pb = new ProcessBuilder(command);
+            pb.directory(skillsDirectory.toFile());
+            pb.redirectErrorStream(true);
 
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    record SearchResponse(List<SkillHubEntry> items, int total) {}
+            Process process = pb.start();
+            boolean finished = process.waitFor(DEFAULT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
-    /**
-     * SkillHub 搜索结果条目。
-     *
-     * @param id Skill 唯一标识
-     * @param name 显示名称
-     * @param description 描述
-     * @param version 版本号
-     * @param author 作者
-     * @param downloads 下载次数
-     * @param tags 标签列表
-     */
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public record SkillHubEntry(
-            String id,
-            String name,
-            String description,
-            String version,
-            String author,
-            int downloads,
-            List<String> tags
-    ) {}
+            if (!finished) {
+                process.destroyForcibly();
+                log.warn("SkillHub CLI 命令超时: command={}", String.join(" ", command));
+                return null;
+            }
+
+            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+
+            if (process.exitValue() != 0) {
+                log.warn("SkillHub CLI 命令失败: command={}, exitCode={}, output={}",
+                        String.join(" ", command), process.exitValue(), output);
+                return null;
+            }
+
+            return output;
+
+        } catch (IOException e) {
+            log.debug("SkillHub CLI 不可用: command={}, error={}", String.join(" ", command), e.getMessage());
+            return null;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
+        }
+    }
 }

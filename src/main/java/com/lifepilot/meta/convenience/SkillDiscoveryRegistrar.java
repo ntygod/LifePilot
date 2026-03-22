@@ -138,14 +138,23 @@ public class SkillDiscoveryRegistrar implements InitializingBean {
         if (skillHubClient == null || !skillConfig.getSkillHub().isEnabled()) {
             return null;
         }
+        if (!skillHubClient.isAvailable()) {
+            log.debug("SkillHub CLI 未安装，跳过: skillId={}", skillId);
+            return null;
+        }
         try {
-            String content = skillHubClient.fetchSkillContent(skillId);
-            if (content != null && !content.isBlank()) {
-                log.info("从 SkillHub 获取到中文 Skill: skillId={}", skillId);
-                return content;
+            // 通过 skillhub install 安装到用户 Skill 目录
+            String output = skillHubClient.install(skillId);
+            if (output != null) {
+                // 安装成功后检查文件是否存在
+                Path targetFile = Path.of(skillConfig.getDirectory(), skillId, SKILL_MD_FILENAME);
+                if (Files.exists(targetFile)) {
+                    log.info("从 SkillHub CLI 安装 Skill 成功: skillId={}", skillId);
+                    return Files.readString(targetFile, StandardCharsets.UTF_8);
+                }
             }
         } catch (Exception e) {
-            log.debug("SkillHub 获取 Skill 失败，将回退到本地版本: skillId={}, error={}", skillId, e.getMessage());
+            log.debug("SkillHub CLI 安装 Skill 失败，将回退到本地版本: skillId={}, error={}", skillId, e.getMessage());
         }
         return null;
     }

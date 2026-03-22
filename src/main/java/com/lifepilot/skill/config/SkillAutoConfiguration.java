@@ -258,11 +258,9 @@ public class SkillAutoConfiguration {
     @ConditionalOnMissingBean
     @ConditionalOnProperty(prefix = "lifepilot.skills.skill-hub", name = "enabled",
             havingValue = "true", matchIfMissing = true)
-    public SkillHubClient skillHubClient(SkillConfigProperties skillConfig,
-                                          ObjectMapper objectMapper) {
-        String baseUrl = skillConfig.getSkillHub().getBaseUrl();
-        log.info("Skill 系统: 注册 SkillHubClient, baseUrl={}", baseUrl);
-        return new SkillHubClient(baseUrl, objectMapper);
+    public SkillHubClient skillHubClient(SkillConfigProperties skillConfig) {
+        log.info("Skill 系统: 注册 SkillHubClient (CLI 模式)");
+        return new SkillHubClient(skillConfig.getDirectory());
     }
 
     // ==================== 启动后初始化 ====================
