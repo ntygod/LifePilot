@@ -182,9 +182,8 @@ public class MetaAutoConfiguration {
     @ConditionalOnProperty(name = "lifepilot.meta.skill-discovery.enabled",
                            havingValue = "true", matchIfMissing = true)
     SkillDiscoveryRegistrar skillDiscoveryRegistrar(MetaProperties properties,
-                                                    SkillConfigProperties skillConfig,
-                                                    @Autowired(required = false) com.lifepilot.skill.hub.SkillHubClient skillHubClient) {
-        return new SkillDiscoveryRegistrar(properties, skillConfig, skillHubClient);
+                                                    SkillConfigProperties skillConfig) {
+        return new SkillDiscoveryRegistrar(properties, skillConfig);
     }
 
     /**
