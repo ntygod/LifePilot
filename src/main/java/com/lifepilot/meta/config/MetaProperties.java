@@ -328,6 +328,8 @@ public class MetaProperties {
                 "skills/find-skills",
                 "skills/workflow-creator",
                 "skills/memory",
+                "skills/infrastructure",
+                "skills/introspection",
                 "skills/datastore",
                 "skills/sync",
                 "skills/code-assistant",
