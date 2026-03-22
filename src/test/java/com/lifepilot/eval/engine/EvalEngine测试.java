@@ -1,8 +1,10 @@
 package com.lifepilot.eval.engine;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.orchestration.AgentOrchestrator;
 import com.lifepilot.agent.model.AgentResponse;
 import com.lifepilot.eval.config.EvalConfigProperties;
+import com.lifepilot.eval.evaluator.DiagnosticEnricher;
 import com.lifepilot.eval.judge.LlmJudge;
 import com.lifepilot.eval.model.EvalResult;
 import com.lifepilot.eval.report.EvalReport;
@@ -24,6 +26,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
@@ -59,15 +62,21 @@ class EvalEngine测试 {
         config.setDegradationThreshold(0.1);
         var execution = new EvalConfigProperties.Execution();
         execution.setDefaultTimeoutSeconds(2);
+        execution.setParallelism(1);
         config.setExecution(execution);
         var llmJudgeConfig = new EvalConfigProperties.LlmJudge();
         llmJudgeConfig.setFallbackScore(0.5);
         config.setLlmJudge(llmJudgeConfig);
 
+        var executor = Executors.newVirtualThreadPerTaskExecutor();
+        var diagnosticEnricher = new DiagnosticEnricher();
+        var objectMapper = new ObjectMapper();
+
         evalEngine = new EvalEngine(
                 scenarioLoader, agentOrchestrator, traceQuery,
                 evaluationCore, llmJudge, evalStore,
-                evalReport, toolRegistry, config, null
+                evalReport, toolRegistry, config,
+                executor, diagnosticEnricher, objectMapper, null
         );
     }
 
@@ -94,7 +103,10 @@ class EvalEngine测试 {
         assertThat(result.traceId()).isEqualTo("trace-1");
         assertThat(result.overallScore()).isEqualTo(0.84);
         assertThat(result.violations()).isEmpty();
-        assertThat(result.suggestions()).containsExactly("建议优化步骤");
+        // suggestions 现在包含原始建议 + 诊断建议
+        assertThat(result.suggestions()).contains("建议优化步骤");
+        // 诊断报告应非空
+        assertThat(result.diagnosticJson()).isNotNull();
         // 验证异步持久化被调用
         verify(evalStore).persistAsync(any(EvalResult.class));
     }

@@ -17,12 +17,16 @@ import java.util.Objects;
  * @param expectedOutputPattern 期望最终输出的正则模式
  * @param dimensionWeights      评估维度权重（5 维，和为 1.0）
  * @param timeoutSeconds        超时时间（秒）
- * @param mockToolResponses     Mock 工具响应（toolId → 响应 JSON）
+ * @param mockToolResponses     Mock 工具响应（toolId → 响应 JSON），向后兼容
+ * @param mockTools             智能 Mock 工具定义（优先于 mockToolResponses）
  * @param initialContext        初始上下文设置
  * @param tags                  标签（用于过滤）
  * @param llmJudgeCriteria      LLM 评判标准（可选）
  * @param expectedTokenBudget   期望 Token 预算上限
  * @param expectedStepCount     期望步骤数
+ * @param category              场景类别（ambiguous-intent、multi-tool、error-recovery 等）
+ * @param difficulty            难度（easy、medium、hard）
+ * @param description           场景描述
  * @author zsg
  * @since 2026-08-01
  */
@@ -36,11 +40,15 @@ public record BenchmarkScenario(
         Map<String, Double> dimensionWeights,
         int timeoutSeconds,
         @Nullable Map<String, String> mockToolResponses,
+        @Nullable List<MockToolSpec> mockTools,
         @Nullable Map<String, String> initialContext,
         List<String> tags,
         @Nullable String llmJudgeCriteria,
         int expectedTokenBudget,
-        int expectedStepCount
+        int expectedStepCount,
+        @Nullable String category,
+        @Nullable String difficulty,
+        @Nullable String description
 ) {
     public BenchmarkScenario {
         Objects.requireNonNull(id, "场景 ID 不能为空");
@@ -50,6 +58,7 @@ public record BenchmarkScenario(
         dimensionWeights = dimensionWeights != null ? Map.copyOf(dimensionWeights) : Map.of();
         tags = tags != null ? List.copyOf(tags) : List.of();
         mockToolResponses = mockToolResponses != null ? Map.copyOf(mockToolResponses) : null;
+        mockTools = mockTools != null ? List.copyOf(mockTools) : null;
         initialContext = initialContext != null ? Map.copyOf(initialContext) : null;
     }
 }

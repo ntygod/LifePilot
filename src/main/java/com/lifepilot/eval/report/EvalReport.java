@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.lifepilot.eval.config.EvalConfigProperties;
 import com.lifepilot.eval.model.EvalResult;
+import com.lifepilot.eval.report.ComparisonReport.ScenarioComparison;
 import com.lifepilot.eval.store.EvalStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -79,7 +80,7 @@ public class EvalReport {
         List<Double> previousScores = new ArrayList<>();
 
         for (EvalResult current : results) {
-            List<EvalResult> previousResults = evalStore.findByScenarioId(current.scenarioId(), 1);
+            List<EvalResult> previousResults = evalStore.findByScenarioId(current.scenarioId(), 5);
             // 过滤掉当前运行的结果，取上一次运行的结果
             Optional<EvalResult> previousResult = previousResults.stream()
                     .filter(r -> !r.evalRunId().equals(evalRunId))
@@ -184,6 +185,64 @@ public class EvalReport {
             log.error("导出报告 JSON 失败: runId={}", summary.evalRunId(), e);
             throw new RuntimeException("导出报告 JSON 失败", e);
         }
+    }
+
+    /**
+     * A/B 对比两次评估运行。
+     *
+     * <p>按 scenarioId 匹配两次运行的结果，计算每个场景的分差和状态。</p>
+     *
+     * @param currentRunId  当前运行 ID
+     * @param baselineRunId 基线运行 ID
+     * @return 对比报告
+     */
+    public ComparisonReport compareRuns(String currentRunId, String baselineRunId) {
+        List<EvalResult> currentResults = evalStore.findByRunId(currentRunId);
+        List<EvalResult> baselineResults = evalStore.findByRunId(baselineRunId);
+
+        // 按 scenarioId 索引基线结果
+        Map<String, EvalResult> baselineMap = baselineResults.stream()
+                .collect(Collectors.toMap(EvalResult::scenarioId, r -> r, (a, b) -> a));
+
+        double degradationThreshold = config.getDegradationThreshold();
+        List<ScenarioComparison> comparisons = new ArrayList<>();
+
+        for (EvalResult current : currentResults) {
+            EvalResult baseline = baselineMap.get(current.scenarioId());
+            if (baseline != null) {
+                double delta = current.overallScore() - baseline.overallScore();
+                String status;
+                if (delta > degradationThreshold) {
+                    status = "improved";
+                } else if (delta < -degradationThreshold) {
+                    status = "degraded";
+                } else {
+                    status = "unchanged";
+                }
+                comparisons.add(new ScenarioComparison(
+                        current.scenarioId(), current.overallScore(),
+                        baseline.overallScore(), delta, status));
+            } else {
+                // 基线中无此场景，标记为新增
+                comparisons.add(new ScenarioComparison(
+                        current.scenarioId(), current.overallScore(),
+                        0.0, current.overallScore(), "new"));
+            }
+        }
+
+        double currentAvg = currentResults.stream()
+                .mapToDouble(EvalResult::overallScore).average().orElse(0.0);
+        double baselineAvg = baselineResults.stream()
+                .mapToDouble(EvalResult::overallScore).average().orElse(0.0);
+
+        log.info("A/B 对比完成: current={}, baseline={}, currentAvg={}, baselineAvg={}, delta={}",
+                currentRunId, baselineRunId,
+                String.format("%.3f", currentAvg), String.format("%.3f", baselineAvg),
+                String.format("%.3f", currentAvg - baselineAvg));
+
+        return new ComparisonReport(currentRunId, baselineRunId,
+                currentAvg, baselineAvg, currentAvg - baselineAvg,
+                comparisons, null, null);
     }
 
     /**

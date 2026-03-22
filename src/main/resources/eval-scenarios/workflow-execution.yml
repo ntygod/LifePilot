@@ -1,0 +1,40 @@
+id: "workflow-execution"
+name: "工作流执行 — 触发并监控自动化流程"
+description: "测试 Agent 正确触发工作流并向用户反馈执行状态的能力"
+category: "workflow"
+difficulty: "hard"
+userInput: "帮我执行每日数据巡检工作流，检查完成后把结果汇总发给我"
+expectedToolCalls:
+  - "workflow-trigger"
+  - "workflow-status"
+dimensionWeights:
+  toolSelection: 0.3
+  parameterValidity: 0.25
+  stepEfficiency: 0.2
+  policyCompliance: 0.1
+  tokenEfficiency: 0.15
+timeoutSeconds: 60
+mockTools:
+  - toolId: "workflow-trigger"
+    behaviors:
+      - parameterPattern: "巡检"
+        response: '{"workflowId":"wf-daily-001","status":"running","startedAt":"2026-03-22T09:00:00Z"}'
+        simulateError: false
+        delayMs: 200
+    defaultResponse: '{"error":"未找到匹配的工作流"}'
+  - toolId: "workflow-status"
+    behaviors:
+      - parameterPattern: "wf-daily-001"
+        response: '{"workflowId":"wf-daily-001","status":"completed","results":{"dbCheck":"正常","apiCheck":"2个接口超时","diskUsage":"78%"},"completedAt":"2026-03-22T09:05:00Z"}'
+        simulateError: false
+        delayMs: 100
+    defaultResponse: '{"error":"工作流不存在"}'
+initialContext:
+  role: "运维助手"
+  availableTools: "workflow-trigger, workflow-status"
+tags:
+  - "workflow"
+  - "automation"
+llmJudgeCriteria: "Agent 应先触发巡检工作流，然后查询执行状态，最后将结果（数据库检查、API检查、磁盘使用率）整理为用户可读的汇总报告。工具调用顺序正确，汇总应包含所有检查项的结果"
+expectedTokenBudget: 25000
+expectedStepCount: 4

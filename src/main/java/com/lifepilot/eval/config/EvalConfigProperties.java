@@ -60,6 +60,9 @@ public class EvalConfigProperties {
         /** 最大重试次数，默认 1。 */
         private int maxRetries = 1;
 
+        /** 多次采样取平均的采样次数，默认 1（不采样）。 */
+        private int sampleCount = 1;
+
     }
 
     /**
@@ -89,6 +92,9 @@ public class EvalConfigProperties {
 
         /** 默认超时时间（秒），默认 60。 */
         private int defaultTimeoutSeconds = 60;
+
+        /** 批量评估并行度，默认 4。设为 1 则串行执行。 */
+        private int parallelism = 4;
 
     }
 }

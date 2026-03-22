@@ -2,10 +2,12 @@ package com.lifepilot.eval.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.orchestration.AgentOrchestrator;
+import com.lifepilot.config.threadpool.VirtualThreadExecutorFactory;
 import com.lifepilot.observability.evaluation.EvaluationCore;
 import com.lifepilot.observability.trace.TraceQuery;
 import com.lifepilot.eval.engine.EvalEngine;
-import com.lifepilot.eval.evaluator.TrajectoryEvaluator;
+import com.lifepilot.eval.evaluator.DiagnosticEnricher;
+import com.lifepilot.eval.feedback.FeedbackStore;
 import com.lifepilot.eval.judge.LlmJudge;
 import com.lifepilot.eval.report.EvalReport;
 import com.lifepilot.eval.scenario.ScenarioLoader;
@@ -38,6 +40,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
 
 
 /**
@@ -75,15 +78,6 @@ public class EvalAutoConfiguration {
         return new ScenarioSerializer();
     }
 
-    // ==================== 轨迹评估器 ====================
-
-    @Bean
-    @ConditionalOnMissingBean
-    public TrajectoryEvaluator evalTrajectoryEvaluator(EvaluationCore evaluationCore) {
-        log.info("注册 TrajectoryEvaluator Bean（委托 EvaluationCore）");
-        return new TrajectoryEvaluator(evaluationCore);
-    }
-
     // ==================== LLM 评判器 ====================
 
     @Bean
@@ -107,6 +101,12 @@ public class EvalAutoConfiguration {
         return new EvalReport(evalStore, config);
     }
 
+    @Bean
+    @ConditionalOnMissingBean
+    public FeedbackStore feedbackStore(JdbcTemplate jdbcTemplate) {
+        return new FeedbackStore(jdbcTemplate);
+    }
+
     // ==================== REST 控制器 ====================
 
     @Bean
@@ -114,12 +114,26 @@ public class EvalAutoConfiguration {
     public EvalController evalController(ScenarioLoader scenarioLoader,
                                           EvalEngine evalEngine,
                                           EvalStore evalStore,
-                                          EvalReport evalReport) {
+                                          EvalReport evalReport,
+                                          FeedbackStore feedbackStore) {
         log.info("注册 EvalController Bean");
-        return new EvalController(scenarioLoader, evalEngine, evalStore, evalReport);
+        return new EvalController(scenarioLoader, evalEngine, evalStore, evalReport, feedbackStore);
     }
 
     // ==================== 评估引擎 ====================
+
+    @Bean
+    @ConditionalOnMissingBean
+    public DiagnosticEnricher diagnosticEnricher() {
+        return new DiagnosticEnricher();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(name = "evalExecutor")
+    public ExecutorService evalExecutor(VirtualThreadExecutorFactory executorFactory) {
+        log.info("注册 eval 专用 ExecutorService Bean");
+        return executorFactory.create("eval-engine");
+    }
 
     @Bean
     @ConditionalOnMissingBean
@@ -132,10 +146,13 @@ public class EvalAutoConfiguration {
                                   EvalReport evalReport,
                                   DynamicToolRegistry toolRegistry,
                                   EvalConfigProperties config,
+                                  ExecutorService evalExecutor,
+                                  DiagnosticEnricher diagnosticEnricher,
+                                  ObjectMapper objectMapper,
                                   @Autowired(required = false) ExperienceSummarizer experienceSummarizer) {
         return new EvalEngine(scenarioLoader, agentOrchestrator, traceQuery,
                 evaluationCore, llmJudge, evalStore, evalReport, toolRegistry, config,
-                experienceSummarizer);
+                evalExecutor, diagnosticEnricher, objectMapper, experienceSummarizer);
     }
 
     // ==================== 内置场景同步 ====================

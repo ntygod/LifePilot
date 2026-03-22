@@ -104,8 +104,8 @@ class EvalReportTest {
         var prevS1 = buildResultWithRunId("s1", 0.9, "prev-run");
         var prevS2 = buildResultWithRunId("s2", 0.8, "prev-run");
 
-        when(evalStore.findByScenarioId("s1", 1)).thenReturn(List.of(prevS1));
-        when(evalStore.findByScenarioId("s2", 1)).thenReturn(List.of(prevS2));
+        when(evalStore.findByScenarioId("s1", 5)).thenReturn(List.of(prevS1));
+        when(evalStore.findByScenarioId("s2", 5)).thenReturn(List.of(prevS2));
 
         var summary = evalReport.generateSummary(currentResults, "run-2");
 
@@ -119,7 +119,7 @@ class EvalReportTest {
         );
 
         var prevS1 = buildResultWithRunId("s1", 0.9, "prev-run");
-        when(evalStore.findByScenarioId("s1", 1)).thenReturn(List.of(prevS1));
+        when(evalStore.findByScenarioId("s1", 5)).thenReturn(List.of(prevS1));
 
         var summary = evalReport.generateSummary(currentResults, "run-2");
 
@@ -139,8 +139,8 @@ class EvalReportTest {
         // s2 上次也通过
         var prevS2 = buildResultWithRunId("s2", 0.85, "prev-run");
 
-        when(evalStore.findByScenarioId("s1", 1)).thenReturn(List.of(prevS1));
-        when(evalStore.findByScenarioId("s2", 1)).thenReturn(List.of(prevS2));
+        when(evalStore.findByScenarioId("s1", 5)).thenReturn(List.of(prevS1));
+        when(evalStore.findByScenarioId("s2", 5)).thenReturn(List.of(prevS2));
 
         var summary = evalReport.generateSummary(currentResults, "run-2");
 
@@ -155,7 +155,7 @@ class EvalReportTest {
 
         // s1 上次也失败 (0.3 < 0.7) → 不算新增退化
         var prevS1 = buildResultWithRunId("s1", 0.3, "prev-run");
-        when(evalStore.findByScenarioId("s1", 1)).thenReturn(List.of(prevS1));
+        when(evalStore.findByScenarioId("s1", 5)).thenReturn(List.of(prevS1));
 
         var summary = evalReport.generateSummary(currentResults, "run-2");
 

@@ -1587,11 +1587,30 @@ export interface BenchmarkScenario {
   dimensionWeights: Record<string, number>
   timeoutSeconds: number
   mockToolResponses?: Record<string, string> | null
+  mockTools?: MockToolSpec[] | null
   initialContext?: Record<string, string> | null
   tags: string[]
   llmJudgeCriteria?: string | null
   expectedTokenBudget: number
   expectedStepCount: number
+  category?: string | null
+  difficulty?: string | null
+  description?: string | null
+}
+
+/** 智能 Mock 工具定义 */
+export interface MockToolSpec {
+  toolId: string
+  behaviors: MockBehavior[]
+  defaultResponse: string
+}
+
+/** Mock 行为定义 */
+export interface MockBehavior {
+  parameterPattern?: string | null
+  response: string
+  simulateError: boolean
+  delayMs: number
 }
 
 /** 评估结果 */
@@ -1610,6 +1629,33 @@ export interface EvalResultItem {
   gitCommitHash?: string | null
   gitBranch?: string | null
   evalRunId: string
+  diagnosticJson?: string | null
+  runMetadataJson?: string | null
+}
+
+/** 诊断报告 */
+export interface DiagnosticReport {
+  dimensionDiagnostics: DimensionDiagnostic[]
+  actionableSuggestions: string[]
+  overallAssessment: string
+}
+
+/** 维度诊断 */
+export interface DimensionDiagnostic {
+  dimension: string
+  label: string
+  score: number
+  diagnosis: string
+  fixes: string[]
+}
+
+/** 运行元数据 */
+export interface RunMetadata {
+  modelId?: string | null
+  promptVersion?: string | null
+  configSnapshot?: string | null
+  baselineRunId?: string | null
+  labels: Record<string, string>
 }
 
 /** 评估报告汇总 */
@@ -1624,10 +1670,48 @@ export interface EvalReportSummary {
   regressedScenarios: string[]
   newRegressions: string[]
   evaluatedAt: string
+  metadata?: RunMetadata | null
+}
+
+/** A/B 对比报告 */
+export interface ComparisonReport {
+  currentRunId: string
+  baselineRunId: string
+  currentAvg: number
+  baselineAvg: number
+  delta: number
+  scenarios: ScenarioComparison[]
+  currentMetadata?: RunMetadata | null
+  baselineMetadata?: RunMetadata | null
+}
+
+/** 场景级对比 */
+export interface ScenarioComparison {
+  scenarioId: string
+  currentScore: number
+  baselineScore: number
+  delta: number
+  status: 'improved' | 'degraded' | 'unchanged' | 'new'
+}
+
+/** 评估反馈 */
+export interface EvalFeedback {
+  feedbackId: string
+  evalId: string
+  scenarioId: string
+  feedbackType: 'AGREE' | 'DISAGREE' | 'GOLDEN_ANSWER'
+  comment?: string | null
+  goldenAnswer?: string | null
+  createdBy?: string | null
+  createdAt: string
 }
 
 /** 评估运行请求 */
 export interface EvalRunRequest {
   scenarioIds?: string[] | null
   tag?: string | null
+  baselineRunId?: string | null
+  labels?: Record<string, string> | null
+  smokeTestOnly?: boolean | null
+  offlineReeval?: boolean | null
 }

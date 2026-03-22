@@ -43,7 +43,9 @@ class EvalStore_SQLite_集成测试 {
                 git_branch              TEXT,
                 eval_run_id             TEXT NOT NULL,
                 evaluated_at            TEXT NOT NULL,
-                created_at              TEXT NOT NULL
+                created_at              TEXT NOT NULL,
+                diagnostic_json         TEXT,
+                run_metadata_json       TEXT
             )
             """;
 

@@ -4,16 +4,19 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.eval.model.EvalResult;
+import com.lifepilot.eval.model.RunMetadata;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
+import org.springframework.lang.Nullable;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * 评估结果持久化存储。
@@ -36,8 +39,8 @@ public class EvalStore {
                 eval_id, trace_id, scenario_id, dimension_scores_json, overall_score,
                 violations_json, suggestions_json, llm_judge_score, llm_judge_justification,
                 llm_judge_tokens_used, git_commit_hash, git_branch, eval_run_id,
-                evaluated_at, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                evaluated_at, created_at, diagnostic_json, run_metadata_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
 
     private static final String FIND_BY_SCENARIO_SQL = """
@@ -53,6 +56,26 @@ public class EvalStore {
             ORDER BY evaluated_at DESC
             """;
 
+    private static final String INSERT_RUN_SQL = """
+            INSERT INTO eval_runs (eval_run_id, metadata_json, is_baseline, created_at)
+            VALUES (?, ?, 0, ?)
+            """;
+
+    private static final String MARK_BASELINE_SQL = """
+            UPDATE eval_runs SET is_baseline = 1 WHERE eval_run_id = ?
+            """;
+
+    private static final String CLEAR_BASELINE_SQL = """
+            UPDATE eval_runs SET is_baseline = 0 WHERE is_baseline = 1
+            """;
+
+    private static final String FIND_LATEST_BASELINE_SQL = """
+            SELECT eval_run_id FROM eval_runs
+            WHERE is_baseline = 1
+            ORDER BY created_at DESC
+            LIMIT 1
+            """;
+
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
 
@@ -63,11 +86,6 @@ public class EvalStore {
 
     /**
      * 异步持久化评估结果（Virtual Thread）。
-     *
-     * <p>在 Virtual Thread 中执行 {@link #persist(EvalResult)}，
-     * 异常在线程内捕获并记录 ERROR 日志，不阻断调用方。</p>
-     *
-     * @param result 评估结果
      */
     public void persistAsync(EvalResult result) {
         Thread.ofVirtual().name("eval-persist-" + result.evalId()).start(() -> {
@@ -81,10 +99,6 @@ public class EvalStore {
 
     /**
      * 同步持久化评估结果。
-     *
-     * <p>写入失败时记录 ERROR 日志，不抛出异常，不阻断评估流程。</p>
-     *
-     * @param result 评估结果
      */
     public void persist(EvalResult result) {
         try {
@@ -109,7 +123,9 @@ public class EvalStore {
                     result.gitBranch(),
                     result.evalRunId(),
                     evaluatedAt,
-                    createdAt
+                    createdAt,
+                    result.diagnosticJson(),
+                    result.runMetadataJson()
             );
             log.debug("评估结果已持久化: evalId={}, scenarioId={}", result.evalId(), result.scenarioId());
         } catch (Exception e) {
@@ -119,10 +135,6 @@ public class EvalStore {
 
     /**
      * 按场景 ID 查询历史评估结果，按评估时间降序排列。
-     *
-     * @param scenarioId 场景 ID
-     * @param limit      最大返回条数
-     * @return 评估结果列表，查询失败或无结果时返回空列表
      */
     public List<EvalResult> findByScenarioId(String scenarioId, int limit) {
         try {
@@ -135,9 +147,6 @@ public class EvalStore {
 
     /**
      * 查询指定运行的所有评估结果，按评估时间降序排列。
-     *
-     * @param evalRunId 评估运行 ID
-     * @return 评估结果列表，查询失败或无结果时返回空列表
      */
     public List<EvalResult> findByRunId(String evalRunId) {
         try {
@@ -145,6 +154,47 @@ public class EvalStore {
         } catch (Exception e) {
             log.error("查询评估结果失败: evalRunId={}", evalRunId, e);
             return List.of();
+        }
+    }
+
+    // ==================== eval_runs 表操作 ====================
+
+    /**
+     * 保存评估运行记录。
+     */
+    public void saveRun(String evalRunId, @Nullable RunMetadata metadata) {
+        try {
+            String metadataJson = metadata != null ? objectMapper.writeValueAsString(metadata) : null;
+            jdbcTemplate.update(INSERT_RUN_SQL, evalRunId, metadataJson, Instant.now().toString());
+            log.debug("评估运行记录已保存: evalRunId={}", evalRunId);
+        } catch (Exception e) {
+            log.error("保存评估运行记录失败: evalRunId={}", evalRunId, e);
+        }
+    }
+
+    /**
+     * 标记指定运行为基线（先清除旧基线）。
+     */
+    public void markAsBaseline(String evalRunId) {
+        try {
+            jdbcTemplate.update(CLEAR_BASELINE_SQL);
+            jdbcTemplate.update(MARK_BASELINE_SQL, evalRunId);
+            log.info("已标记基线运行: evalRunId={}", evalRunId);
+        } catch (Exception e) {
+            log.error("标记基线运行失败: evalRunId={}", evalRunId, e);
+        }
+    }
+
+    /**
+     * 查找最新的基线运行 ID。
+     */
+    public Optional<String> findLatestBaselineRunId() {
+        try {
+            List<String> ids = jdbcTemplate.queryForList(FIND_LATEST_BASELINE_SQL, String.class);
+            return ids.isEmpty() ? Optional.empty() : Optional.of(ids.getFirst());
+        } catch (Exception e) {
+            log.error("查找基线运行失败", e);
+            return Optional.empty();
         }
     }
 
@@ -163,7 +213,6 @@ public class EvalStore {
                 List<String> suggestions = objectMapper.readValue(
                         rs.getString("suggestions_json"), STRING_LIST_TYPE);
 
-                // llm_judge_score 可能为 NULL
                 Double llmJudgeScore = rs.getObject("llm_judge_score") != null
                         ? rs.getDouble("llm_judge_score") : null;
 
@@ -182,6 +231,8 @@ public class EvalStore {
                         .gitCommitHash(rs.getString("git_commit_hash"))
                         .gitBranch(rs.getString("git_branch"))
                         .evalRunId(rs.getString("eval_run_id"))
+                        .diagnosticJson(rs.getString("diagnostic_json"))
+                        .runMetadataJson(rs.getString("run_metadata_json"))
                         .build();
             } catch (JsonProcessingException e) {
                 throw new SQLException("反序列化评估结果 JSON 字段失败: rowNum=" + rowNum, e);

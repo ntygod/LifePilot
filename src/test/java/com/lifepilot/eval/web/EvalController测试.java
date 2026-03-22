@@ -1,6 +1,7 @@
 package com.lifepilot.eval.web;
 
 import com.lifepilot.eval.engine.EvalEngine;
+import com.lifepilot.eval.feedback.FeedbackStore;
 import com.lifepilot.eval.model.EvalResult;
 import com.lifepilot.eval.report.EvalReport;
 import com.lifepilot.eval.report.ReportSummary;
@@ -37,12 +38,13 @@ class EvalController测试 {
     @Mock private EvalEngine evalEngine;
     @Mock private EvalStore evalStore;
     @Mock private EvalReport evalReport;
+    @Mock private FeedbackStore feedbackStore;
 
     private EvalController controller;
 
     @BeforeEach
     void setUp() {
-        controller = new EvalController(scenarioLoader, evalEngine, evalStore, evalReport);
+        controller = new EvalController(scenarioLoader, evalEngine, evalStore, evalReport, feedbackStore);
     }
 
     @Test
@@ -54,7 +56,7 @@ class EvalController测试 {
         var result = controller.listScenarios(null);
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(result.getBody()).hasSize(2);
+        assertThat(result.getBody().data()).hasSize(2);
     }
 
     @Test
@@ -64,8 +66,8 @@ class EvalController测试 {
 
         var result = controller.listScenarios("basic");
 
-        assertThat(result.getBody()).hasSize(1);
-        assertThat(result.getBody().getFirst().id()).isEqualTo("s1");
+        assertThat(result.getBody().data()).hasSize(1);
+        assertThat(result.getBody().data().getFirst().id()).isEqualTo("s1");
     }
 
     @Test
@@ -76,7 +78,7 @@ class EvalController测试 {
         var result = controller.getScenario("s1");
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(result.getBody().id()).isEqualTo("s1");
+        assertThat(result.getBody().data().id()).isEqualTo("s1");
     }
 
     @Test
@@ -87,11 +89,11 @@ class EvalController测试 {
         var summary = buildSummary("run-1");
         when(evalEngine.evaluateBatch(anyList())).thenReturn(summary);
 
-        var request = new EvalRunRequest(null, null);
+        var request = new EvalRunRequest(null, null, null, null, null, null);
         var result = controller.triggerRun(request);
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(result.getBody().evalRunId()).isEqualTo("run-1");
+        assertThat(result.getBody().data().evalRunId()).isEqualTo("run-1");
     }
 
     @Test
@@ -102,7 +104,7 @@ class EvalController测试 {
         var summary = buildSummary("run-2");
         when(evalEngine.evaluateBatch(argThat(list -> list.size() == 1))).thenReturn(summary);
 
-        var request = new EvalRunRequest(List.of("s1"), null);
+        var request = new EvalRunRequest(List.of("s1"), null, null, null, null, null);
         var result = controller.triggerRun(request);
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
@@ -117,7 +119,7 @@ class EvalController测试 {
         var summary = buildSummary("run-3");
         when(evalEngine.evaluateBatch(anyList())).thenReturn(summary);
 
-        var request = new EvalRunRequest(null, "basic");
+        var request = new EvalRunRequest(null, "basic", null, null, null, null);
         var result = controller.triggerRun(request);
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
@@ -132,7 +134,7 @@ class EvalController测试 {
         var result = controller.getRunResults("run-1");
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(result.getBody()).hasSize(1);
+        assertThat(result.getBody().data()).hasSize(1);
     }
 
     @Test
@@ -146,7 +148,7 @@ class EvalController测试 {
         var result = controller.getRunReport("run-1");
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(result.getBody().evalRunId()).isEqualTo("run-1");
+        assertThat(result.getBody().data().evalRunId()).isEqualTo("run-1");
     }
 
     @Test
@@ -157,7 +159,7 @@ class EvalController测试 {
         var result = controller.getResultsByScenario("s1", 5);
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(result.getBody()).hasSize(1);
+        assertThat(result.getBody().data()).hasSize(1);
     }
 
     // ── 辅助方法 ──

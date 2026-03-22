@@ -49,7 +49,7 @@ class LlmJudgeTest {
     @Test
     void 正常JSON响应_解析成功() {
         // callEntity 直接返回结构化结果
-        var judgeResponse = new LlmJudge.JudgeResponse(0.85, "输出质量良好");
+        var judgeResponse = new LlmJudge.JudgeResponse(0.85, "输出质量良好", null, null);
         when(llmRouter.callEntity(any(LlmRequest.class), eq(LlmJudge.JudgeResponse.class)))
                 .thenReturn(judgeResponse);
 
@@ -65,7 +65,7 @@ class LlmJudgeTest {
     @Test
     void JSON包裹在markdown代码块中_解析成功() {
         // callEntity 直接返回结构化结果（无需关心 markdown 包裹）
-        var judgeResponse = new LlmJudge.JudgeResponse(0.9, "非常好的回答");
+        var judgeResponse = new LlmJudge.JudgeResponse(0.9, "非常好的回答", null, null);
         when(llmRouter.callEntity(any(LlmRequest.class), eq(LlmJudge.JudgeResponse.class)))
                 .thenReturn(judgeResponse);
 
@@ -151,7 +151,7 @@ class LlmJudgeTest {
 
     @Test
     void callEntity评分超过1_裁剪到1() {
-        var judgeResponse = new LlmJudge.JudgeResponse(1.5, "超出范围");
+        var judgeResponse = new LlmJudge.JudgeResponse(1.5, "超出范围", null, null);
         when(llmRouter.callEntity(any(LlmRequest.class), eq(LlmJudge.JudgeResponse.class)))
                 .thenReturn(judgeResponse);
 
@@ -163,7 +163,7 @@ class LlmJudgeTest {
 
     @Test
     void callEntity评分为负数_裁剪到0() {
-        var judgeResponse = new LlmJudge.JudgeResponse(-0.3, "负数评分");
+        var judgeResponse = new LlmJudge.JudgeResponse(-0.3, "负数评分", null, null);
         when(llmRouter.callEntity(any(LlmRequest.class), eq(LlmJudge.JudgeResponse.class)))
                 .thenReturn(judgeResponse);
 

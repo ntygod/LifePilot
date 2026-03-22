@@ -3,11 +3,20 @@ import type {
   EvalResultItem,
   EvalReportSummary,
   EvalRunRequest,
+  ComparisonReport,
+  EvalFeedback,
 } from '@/types'
 
 const BASE = '/api'
 
-/** 统一 HTTP 请求封装（复用 client.ts 同款逻辑） */
+/** ApiResponse 包装结构 */
+interface ApiResponse<T> {
+  code: number
+  message: string
+  data: T
+}
+
+/** 统一 HTTP 请求封装，自动解包 ApiResponse */
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${url}`, {
     headers: { 'Content-Type': 'application/json' },
@@ -25,7 +34,12 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   if (res.status === 204) return undefined as T
   const text = await res.text()
   if (!text || text.trim() === '') return undefined as T
-  return JSON.parse(text) as T
+  const json = JSON.parse(text)
+  // 自动解包 ApiResponse 结构
+  if (json && typeof json === 'object' && 'code' in json && 'data' in json) {
+    return (json as ApiResponse<T>).data
+  }
+  return json as T
 }
 
 /** 评估模块 API */
@@ -39,6 +53,11 @@ export const evalApi = {
   /** 获取单个场景 */
   getScenario(id: string): Promise<BenchmarkScenario> {
     return request(`/eval/scenarios/${id}`)
+  },
+
+  /** 获取指定场景的标注答案 */
+  getGoldenAnswers(scenarioId: string): Promise<EvalFeedback[]> {
+    return request(`/eval/scenarios/${scenarioId}/golden-answers`)
   },
 
   /** 触发评估运行 */
@@ -59,8 +78,35 @@ export const evalApi = {
     return request(`/eval/runs/${evalRunId}/report`)
   },
 
+  /** A/B 对比两次运行 */
+  compareRuns(currentRunId: string, baselineRunId: string): Promise<ComparisonReport> {
+    return request(`/eval/runs/${currentRunId}/compare/${baselineRunId}`)
+  },
+
+  /** 标记运行为基线 */
+  markAsBaseline(evalRunId: string): Promise<void> {
+    return request(`/eval/runs/${evalRunId}/baseline`, { method: 'POST' })
+  },
+
   /** 按场景查询历史结果 */
   getResultsByScenario(scenarioId: string, limit = 10): Promise<EvalResultItem[]> {
     return request(`/eval/results?scenarioId=${encodeURIComponent(scenarioId)}&limit=${limit}`)
+  },
+
+  /** 提交评估结果反馈 */
+  submitFeedback(evalId: string, scenarioId: string, req: {
+    feedbackType: string
+    comment?: string
+    goldenAnswer?: string
+  }): Promise<EvalFeedback> {
+    return request(`/eval/results/${evalId}/feedback?scenarioId=${encodeURIComponent(scenarioId)}`, {
+      method: 'POST',
+      body: JSON.stringify(req),
+    })
+  },
+
+  /** 查询评估结果的反馈 */
+  getFeedback(evalId: string): Promise<EvalFeedback[]> {
+    return request(`/eval/results/${evalId}/feedback`)
   },
 }

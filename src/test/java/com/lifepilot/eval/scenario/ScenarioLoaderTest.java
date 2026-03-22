@@ -96,12 +96,14 @@ class ScenarioLoaderTest {
     }
 
     @Test
-    void loadAll_目录不存在_抛出ScenarioLoadException() {
-        config.setScenarioDirectory(tempDir.resolve("nonexistent").toString());
+    void loadAll_目录不存在_自动创建并返回空列表() {
+        var nonexistentDir = tempDir.resolve("nonexistent");
+        config.setScenarioDirectory(nonexistentDir.toString());
         loader = new ScenarioLoader(config);
 
-        var ex = assertThrows(ScenarioLoadException.class, loader::loadAll);
-        assertTrue(ex.getMessage().contains("场景目录不存在"));
+        var scenarios = loader.loadAll();
+        assertTrue(scenarios.isEmpty());
+        assertTrue(Files.exists(nonexistentDir));
     }
 
     @Test

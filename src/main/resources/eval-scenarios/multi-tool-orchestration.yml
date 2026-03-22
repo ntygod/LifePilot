@@ -1,0 +1,40 @@
+id: "multi-tool-orchestration"
+name: "多工具编排 — 知识检索后发送通知"
+description: "测试 Agent 按正确顺序编排多个工具：先检索知识库，再格式化结果，最后发送通知"
+category: "multi-tool"
+difficulty: "hard"
+userInput: "帮我查一下最近的项目进展，整理成摘要后通过飞书发给团队"
+expectedToolCalls:
+  - "knowledge-search"
+  - "feishu-send"
+dimensionWeights:
+  toolSelection: 0.35
+  parameterValidity: 0.2
+  stepEfficiency: 0.2
+  policyCompliance: 0.1
+  tokenEfficiency: 0.15
+timeoutSeconds: 60
+mockTools:
+  - toolId: "knowledge-search"
+    behaviors:
+      - parameterPattern: "项目.*进展"
+        response: '{"results":[{"title":"Q1项目进展报告","content":"前端重构完成80%，后端API已全部上线，性能优化提升30%"}]}'
+        simulateError: false
+        delayMs: 0
+    defaultResponse: '{"results":[]}'
+  - toolId: "feishu-send"
+    behaviors:
+      - parameterPattern: ".*"
+        response: '{"success":true,"messageId":"msg-001"}'
+        simulateError: false
+        delayMs: 0
+    defaultResponse: '{"success":false,"error":"参数缺失"}'
+initialContext:
+  role: "项目助手"
+  availableTools: "knowledge-search, feishu-send"
+tags:
+  - "multi-tool"
+  - "smoke"
+llmJudgeCriteria: "Agent 应先调用 knowledge-search 检索项目进展，再将结果整理为摘要，最后通过 feishu-send 发送。工具调用顺序正确，摘要内容应包含检索到的关键信息"
+expectedTokenBudget: 25000
+expectedStepCount: 4

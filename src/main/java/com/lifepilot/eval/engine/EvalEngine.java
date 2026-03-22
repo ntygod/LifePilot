@@ -10,6 +10,8 @@ import com.lifepilot.observability.trace.TraceNotFoundException;
 import com.lifepilot.observability.trace.TraceQuery;
 import com.lifepilot.observability.trace.TraceStep;
 import com.lifepilot.eval.config.EvalConfigProperties;
+import com.lifepilot.eval.evaluator.DiagnosticEnricher;
+import com.lifepilot.eval.model.DiagnosticReport;
 import com.lifepilot.memory.experience.ExperienceSummarizer;
 import com.lifepilot.eval.judge.JudgeResult;
 import com.lifepilot.eval.judge.LlmJudge;
@@ -17,22 +19,27 @@ import com.lifepilot.eval.model.EvalResult;
 import com.lifepilot.eval.report.EvalReport;
 import com.lifepilot.eval.report.ReportSummary;
 import com.lifepilot.eval.scenario.BenchmarkScenario;
+import com.lifepilot.eval.scenario.MockToolSpec;
 import com.lifepilot.eval.scenario.ScenarioLoader;
 import com.lifepilot.eval.store.EvalStore;
 import com.lifepilot.tool.BuiltinTool;
+import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -41,7 +48,7 @@ import java.util.concurrent.TimeUnit;
  * <p>核心职责：</p>
  * <ul>
  *   <li>执行单个场景评估：Agent 执行 → TraceQuery 获取真实轨迹 → EvaluationCore 评估 → 可选 LLM Judge → 异步持久化</li>
- *   <li>执行批量场景评估：遍历场景列表 → 逐个评估 → 生成汇总报告</li>
+ *   <li>执行批量场景评估：并行评估场景列表 → 生成汇总报告</li>
  * </ul>
  *
  * <p>Agent 执行超时或异常时，该场景评分为 0.0，记录到 violations，继续下一个场景。</p>
@@ -62,8 +69,16 @@ public class EvalEngine {
     private final EvalReport evalReport;
     private final DynamicToolRegistry toolRegistry;
     private final EvalConfigProperties config;
+    private final ExecutorService evalExecutor;
+    private final DiagnosticEnricher diagnosticEnricher;
+    private final ObjectMapper objectMapper;
     @Nullable
     private final ExperienceSummarizer experienceSummarizer;
+
+    /** 缓存 Git 信息，整个 bean 生命周期只解析一次。 */
+    private volatile GitInfo cachedGitInfo;
+
+    private record GitInfo(@Nullable String commitHash, @Nullable String branch) {}
 
     public EvalEngine(ScenarioLoader scenarioLoader,
                       AgentOrchestrator agentOrchestrator,
@@ -74,6 +89,9 @@ public class EvalEngine {
                       EvalReport evalReport,
                       DynamicToolRegistry toolRegistry,
                       EvalConfigProperties config,
+                      ExecutorService evalExecutor,
+                      DiagnosticEnricher diagnosticEnricher,
+                      ObjectMapper objectMapper,
                       @Nullable ExperienceSummarizer experienceSummarizer) {
         this.scenarioLoader = scenarioLoader;
         this.agentOrchestrator = agentOrchestrator;
@@ -84,6 +102,9 @@ public class EvalEngine {
         this.evalReport = evalReport;
         this.toolRegistry = toolRegistry;
         this.config = config;
+        this.evalExecutor = evalExecutor;
+        this.diagnosticEnricher = diagnosticEnricher;
+        this.objectMapper = objectMapper;
         this.experienceSummarizer = experienceSummarizer;
         log.info("EvalEngine 初始化完成");
     }
@@ -112,79 +133,116 @@ public class EvalEngine {
                 var request = new AgentRequest(scenario.userInput(), "eval-" + scenario.id(), "eval",
                         systemPrompt, null, null, 0, null, null, null, null);
 
-            int timeout = scenario.timeoutSeconds() > 0
-                    ? scenario.timeoutSeconds()
-                    : config.getExecution().getDefaultTimeoutSeconds();
+                int timeout = scenario.timeoutSeconds() > 0
+                        ? scenario.timeoutSeconds()
+                        : config.getExecution().getDefaultTimeoutSeconds();
 
-            AgentResponse response;
-            try {
-                response = CompletableFuture.supplyAsync(
-                        () -> agentOrchestrator.run(request),
-                        Executors.newVirtualThreadPerTaskExecutor()
-                ).orTimeout(timeout, TimeUnit.SECONDS).join();
-            } catch (java.util.concurrent.CompletionException ce) {
-                if (ce.getCause() instanceof java.util.concurrent.TimeoutException) {
-                    log.warn("Agent 执行超时: scenarioId={}, timeout={}s", scenario.id(), timeout);
-                    return buildFailedResult(scenario, evalRunId,
-                            "Agent 执行超时: 超过 %d 秒限制".formatted(timeout));
+                AgentResponse response;
+                try {
+                    response = CompletableFuture.supplyAsync(
+                            () -> agentOrchestrator.run(request),
+                            evalExecutor
+                    ).orTimeout(timeout, TimeUnit.SECONDS).join();
+                } catch (java.util.concurrent.CompletionException ce) {
+                    if (ce.getCause() instanceof java.util.concurrent.TimeoutException) {
+                        log.warn("Agent 执行超时: scenarioId={}, timeout={}s", scenario.id(), timeout);
+                        return buildFailedResult(scenario, evalRunId,
+                                "Agent 执行超时: 超过 %d 秒限制".formatted(timeout));
+                    }
+                    throw ce.getCause() instanceof Exception ex ? ex : ce;
                 }
-                throw ce.getCause() instanceof Exception ex ? ex : ce;
-            }
 
-            // 2. 通过 TraceQuery 获取真实轨迹步骤
-            String traceId = response.traceId();
-            List<TraceStep> steps;
-            if (traceId == null || traceId.isBlank()) {
-                log.warn("AgentResponse traceId 为空，评分降级: scenarioId={}", scenario.id());
-                return buildFailedResult(scenario, evalRunId, "traceId 为空，无法获取轨迹步骤");
-            }
+                // 2. 通过 TraceQuery 获取真实轨迹步骤
+                String traceId = response.traceId();
+                List<TraceStep> steps;
+                if (traceId == null || traceId.isBlank()) {
+                    log.warn("AgentResponse traceId 为空，评分降级: scenarioId={}", scenario.id());
+                    return buildFailedResult(scenario, evalRunId, "traceId 为空，无法获取轨迹步骤");
+                }
 
-            try {
-                steps = traceQuery.getSteps(traceId);
-            } catch (TraceNotFoundException e) {
-                log.warn("TraceQuery 获取步骤失败: scenarioId={}, traceId={}, error={}",
-                        scenario.id(), traceId, e.getMessage());
-                return buildFailedResult(scenario, evalRunId, "轨迹步骤获取失败: " + e.getMessage());
-            }
+                try {
+                    steps = traceQuery.getSteps(traceId);
+                } catch (TraceNotFoundException e) {
+                    log.warn("TraceQuery 获取步骤失败: scenarioId={}, traceId={}, error={}",
+                            scenario.id(), traceId, e.getMessage());
+                    return buildFailedResult(scenario, evalRunId, "轨迹步骤获取失败: " + e.getMessage());
+                }
 
-            // 3. EvaluationCore 五维评估
-            EvaluationConfig evalConfig = buildEvaluationConfig(scenario);
-            EvaluationResult coreResult = evaluationCore.evaluate(steps, evalConfig, traceId);
+                // 3. EvaluationCore 五维评估
+                EvaluationConfig evalConfig = buildEvaluationConfig(scenario);
+                EvaluationResult coreResult = evaluationCore.evaluate(steps, evalConfig, traceId);
 
-            // 4. 构建 EvalResult
-            EvalResult evalResult = EvalResult.builder()
-                    .evalId(UUID.randomUUID().toString())
-                    .traceId(traceId)
-                    .scenarioId(scenario.id())
-                    .dimensionScores(Map.of(
-                            "toolSelection", coreResult.toolSelectionScore(),
-                            "parameterValidity", coreResult.parameterValidityScore(),
-                            "stepEfficiency", coreResult.stepEfficiencyScore(),
-                            "policyCompliance", coreResult.policyComplianceScore(),
-                            "tokenEfficiency", coreResult.tokenEfficiencyScore()
-                    ))
-                    .overallScore(coreResult.overallScore())
-                    .violations(coreResult.violations())
-                    .suggestions(coreResult.suggestions())
-                    .llmJudgeScore(null)
-                    .llmJudgeJustification(null)
-                    .llmJudgeTokensUsed(0)
-                    .evaluatedAt(Instant.now())
-                    .gitCommitHash(resolveGitCommitHash())
-                    .gitBranch(resolveGitBranch())
-                    .evalRunId(evalRunId)
-                    .build();
+                // 4. 构建 EvalResult
+                var gitInfo = getGitInfo();
+                EvalResult evalResult = EvalResult.builder()
+                        .evalId(UUID.randomUUID().toString())
+                        .traceId(traceId)
+                        .scenarioId(scenario.id())
+                        .dimensionScores(Map.of(
+                                "toolSelection", coreResult.toolSelectionScore(),
+                                "parameterValidity", coreResult.parameterValidityScore(),
+                                "stepEfficiency", coreResult.stepEfficiencyScore(),
+                                "policyCompliance", coreResult.policyComplianceScore(),
+                                "tokenEfficiency", coreResult.tokenEfficiencyScore()
+                        ))
+                        .overallScore(coreResult.overallScore())
+                        .violations(coreResult.violations())
+                        .suggestions(coreResult.suggestions())
+                        .llmJudgeScore(null)
+                        .llmJudgeJustification(null)
+                        .llmJudgeTokensUsed(0)
+                        .evaluatedAt(Instant.now())
+                        .gitCommitHash(gitInfo.commitHash())
+                        .gitBranch(gitInfo.branch())
+                        .evalRunId(evalRunId)
+                        .build();
 
-            // 5. 可选 LLM Judge 语义评估
-            evalResult = applyLlmJudge(evalResult, response, scenario);
+                // 5. 可选 LLM Judge 语义评估
+                JudgeResult judgeResult = null;
+                String criteria = scenario.llmJudgeCriteria();
+                if (criteria != null && !criteria.isBlank()) {
+                    try {
+                        String expectedPattern = scenario.expectedOutputPattern() != null
+                                ? scenario.expectedOutputPattern() : "";
+                        judgeResult = llmJudge.judge(response.content(), expectedPattern, criteria);
+                        evalResult = evalResult.toBuilder()
+                                .llmJudgeScore(judgeResult.score())
+                                .llmJudgeJustification(judgeResult.justification())
+                                .llmJudgeTokensUsed(judgeResult.tokensUsed())
+                                .build();
+                    } catch (Exception e) {
+                        log.warn("LLM Judge 执行失败: scenarioId={}, error={}", scenario.id(), e.getMessage());
+                        double fallbackScore = config.getLlmJudge().getFallbackScore();
+                        evalResult = evalResult.toBuilder()
+                                .llmJudgeScore(fallbackScore)
+                                .llmJudgeJustification("LLM Judge 执行失败: " + e.getMessage())
+                                .llmJudgeTokensUsed(0)
+                                .build();
+                    }
+                }
 
-            // 6. 异步持久化
-            evalStore.persistAsync(evalResult);
+                // 6. 生成诊断报告
+                try {
+                    DiagnosticReport diagnostic = diagnosticEnricher.enrich(coreResult, judgeResult, scenario);
+                    String diagnosticJson = objectMapper.writeValueAsString(diagnostic);
+                    // 合并诊断建议到 suggestions
+                    var enrichedSuggestions = new ArrayList<>(evalResult.suggestions());
+                    enrichedSuggestions.addAll(diagnostic.actionableSuggestions());
+                    evalResult = evalResult.toBuilder()
+                            .diagnosticJson(diagnosticJson)
+                            .suggestions(enrichedSuggestions)
+                            .build();
+                } catch (Exception e) {
+                    log.warn("诊断报告生成失败: scenarioId={}, error={}", scenario.id(), e.getMessage());
+                }
 
-            long elapsed = java.time.Duration.between(startTime, Instant.now()).toMillis();
-            log.info("场景评估完成: scenarioId={}, evalRunId={}, overallScore={}, 耗时={}ms",
-                    scenario.id(), evalRunId, evalResult.overallScore(), elapsed);
-            return evalResult;
+                // 7. 异步持久化
+                evalStore.persistAsync(evalResult);
+
+                long elapsed = Duration.between(startTime, Instant.now()).toMillis();
+                log.info("场景评估完成: scenarioId={}, evalRunId={}, overallScore={}, 耗时={}ms",
+                        scenario.id(), evalRunId, evalResult.overallScore(), elapsed);
+                return evalResult;
 
             } finally {
                 // 注销 Mock 工具
@@ -198,9 +256,24 @@ public class EvalEngine {
     }
 
     /**
+     * 安全执行单个场景评估（异常不外抛）。
+     */
+    private EvalResult evaluateScenarioSafe(BenchmarkScenario scenario, String evalRunId) {
+        try {
+            return evaluateScenario(scenario, evalRunId);
+        } catch (Exception e) {
+            log.error("批量评估中场景异常: scenarioId={}, evalRunId={}, error={}",
+                    scenario.id(), evalRunId, e.getMessage(), e);
+            return buildFailedResult(scenario, evalRunId,
+                    "批量评估异常: " + e.getClass().getSimpleName() + " - " + e.getMessage());
+        }
+    }
+
+    /**
      * 执行批量场景评估。
      *
      * <p>evalRunId 在循环前生成，作为参数传入 evaluateScenario，确保批次内所有结果共享同一 ID。
+     * 当并行度 > 1 时使用 Semaphore 控制并发，Mock 工具 ID 加命名空间前缀避免冲突。
      * 单个场景失败不影响其他场景的评估。</p>
      *
      * @param scenarios 场景列表
@@ -210,17 +283,30 @@ public class EvalEngine {
         String evalRunId = UUID.randomUUID().toString();
         log.info("开始批量评估: evalRunId={}, 场景数={}", evalRunId, scenarios.size());
 
-        List<EvalResult> results = new ArrayList<>();
-        for (BenchmarkScenario scenario : scenarios) {
-            try {
-                EvalResult result = evaluateScenario(scenario, evalRunId);
-                results.add(result);
-            } catch (Exception e) {
-                log.error("批量评估中场景异常: scenarioId={}, evalRunId={}, error={}",
-                        scenario.id(), evalRunId, e.getMessage(), e);
-                results.add(buildFailedResult(scenario, evalRunId,
-                        "批量评估异常: " + e.getClass().getSimpleName() + " - " + e.getMessage()));
-            }
+        int parallelism = config.getExecution().getParallelism();
+        List<EvalResult> results;
+
+        if (parallelism <= 1 || scenarios.size() <= 1) {
+            // 串行执行
+            results = scenarios.stream()
+                    .map(s -> evaluateScenarioSafe(s, evalRunId))
+                    .toList();
+        } else {
+            // 并行执行，用 Semaphore 控制并发度
+            var semaphore = new Semaphore(parallelism);
+            var futures = scenarios.stream()
+                    .map(s -> CompletableFuture.supplyAsync(() -> {
+                        semaphore.acquireUninterruptibly();
+                        try {
+                            return evaluateScenarioSafe(s, evalRunId);
+                        } finally {
+                            semaphore.release();
+                        }
+                    }, evalExecutor))
+                    .toList();
+            results = futures.stream()
+                    .map(CompletableFuture::join)
+                    .toList();
         }
 
         ReportSummary summary = evalReport.generateSummary(results, evalRunId);
@@ -238,6 +324,16 @@ public class EvalEngine {
         }
 
         return summary;
+    }
+
+    /**
+     * 获取缓存的 Git 信息（懒加载，整个 bean 生命周期只解析一次）。
+     */
+    private GitInfo getGitInfo() {
+        if (cachedGitInfo == null) {
+            cachedGitInfo = new GitInfo(resolveGitCommitHash(), resolveGitBranch());
+        }
+        return cachedGitInfo;
     }
 
     /**
@@ -259,34 +355,62 @@ public class EvalEngine {
     /**
      * 注册 Mock 工具到 DynamicToolRegistry。
      *
-     * <p>当场景定义了 mockToolResponses 时，为每个 toolId 构建临时 BuiltinTool 并注册。
-     * 注册失败时记录 WARN 日志，跳过该工具继续执行。</p>
+     * <p>优先使用 {@code mockTools}（智能 Mock），回退到 {@code mockToolResponses}（静态 Mock）。
+     * Mock 工具 ID 加命名空间前缀 {@code eval-mock-{scenarioId}-{toolId}} 避免并行冲突。</p>
      *
      * @param scenario 场景定义
      * @return 已注册的 Mock 工具 ID 列表（用于后续注销）
      */
     private List<String> registerMockTools(BenchmarkScenario scenario) {
+        List<String> registeredIds = new ArrayList<>();
+
+        // 优先使用智能 Mock（MockToolSpec）
+        var mockTools = scenario.mockTools();
+        if (mockTools != null && !mockTools.isEmpty()) {
+            for (MockToolSpec spec : mockTools) {
+                String namespacedId = "eval-mock-" + scenario.id() + "-" + spec.toolId();
+                try {
+                    var mockTool = BuiltinTool.builder()
+                            .id(namespacedId)
+                            .name("mock-" + spec.toolId())
+                            .description("Mock 工具: " + spec.toolId())
+                            .executor(input -> executeMockBehavior(spec, input))
+                            .build();
+                    toolRegistry.registerBuiltinTool(mockTool);
+                    registeredIds.add(namespacedId);
+                    log.debug("智能 Mock 工具注册成功: toolId={}", namespacedId);
+                } catch (Exception e) {
+                    log.warn("智能 Mock 工具注册失败: toolId={}, error={}", namespacedId, e.getMessage());
+                }
+            }
+            if (!registeredIds.isEmpty()) {
+                log.info("智能 Mock 工具注册完成: scenarioId={}, count={}", scenario.id(), registeredIds.size());
+            }
+            return registeredIds;
+        }
+
+        // 回退到静态 Mock（mockToolResponses）
         var mockResponses = scenario.mockToolResponses();
         if (mockResponses == null || mockResponses.isEmpty()) {
             return List.of();
         }
 
-        List<String> registeredIds = new ArrayList<>();
         for (var entry : mockResponses.entrySet()) {
             String toolId = entry.getKey();
             String responseJson = entry.getValue();
+            String namespacedId = "eval-mock-" + scenario.id() + "-" + toolId;
             try {
                 var mockTool = BuiltinTool.builder()
-                        .id(toolId)
+                        .id(namespacedId)
                         .name("mock-" + toolId)
                         .description("Mock 工具: " + toolId)
                         .executor(input -> ToolResult.success(Map.of("response", responseJson)))
                         .build();
                 toolRegistry.registerBuiltinTool(mockTool);
-                registeredIds.add(toolId);
-                log.debug("Mock 工具注册成功: toolId={}", toolId);
+                registeredIds.add(namespacedId);
+                log.debug("静态 Mock 工具注册成功: toolId={}", namespacedId);
             } catch (Exception e) {
-                log.warn("Mock 工具注册失败，跳过: toolId={}, error={}", toolId, e.getMessage());
+                log.warn("Mock 工具注册失败，跳过: toolId={}, error={}", namespacedId, e.getMessage());
             }
         }
 
@@ -294,6 +418,43 @@ public class EvalEngine {
             log.info("Mock 工具注册完成: scenarioId={}, count={}", scenario.id(), registeredIds.size());
         }
         return registeredIds;
+    }
+
+    /**
+     * 执行智能 Mock 行为匹配。
+     *
+     * <p>按 behaviors 顺序匹配参数，首个命中生效。无匹配时返回 defaultResponse。</p>
+     */
+    private ToolResult executeMockBehavior(MockToolSpec spec, ToolInput input) {
+        String inputStr = input.parameters().toString();
+
+        for (var behavior : spec.behaviors()) {
+            // 参数匹配
+            if (behavior.parameterPattern() != null) {
+                if (!inputStr.matches(".*" + behavior.parameterPattern() + ".*")) {
+                    continue;
+                }
+            }
+
+            // 模拟延迟
+            if (behavior.delayMs() > 0) {
+                try {
+                    Thread.sleep(behavior.delayMs());
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+
+            // 模拟错误
+            if (behavior.simulateError()) {
+                return ToolResult.error("Mock 模拟错误: " + behavior.response());
+            }
+
+            return ToolResult.success(Map.of("response", behavior.response()));
+        }
+
+        // 无匹配，返回默认响应
+        return ToolResult.success(Map.of("response", spec.defaultResponse()));
     }
 
     /**
@@ -332,43 +493,6 @@ public class EvalEngine {
     }
 
     /**
-     * 如果场景定义了 LLM Judge 标准，执行 LLM 语义评估并合并到结果中。
-     *
-     * @param evalResult 当前评估结果
-     * @param response   Agent 响应
-     * @param scenario   场景定义
-     * @return 合并 LLM Judge 结果后的评估结果
-     */
-    private EvalResult applyLlmJudge(EvalResult evalResult, AgentResponse response,
-                                      BenchmarkScenario scenario) {
-        String criteria = scenario.llmJudgeCriteria();
-        if (criteria == null || criteria.isBlank()) {
-            return evalResult;
-        }
-
-        try {
-            String expectedPattern = scenario.expectedOutputPattern() != null
-                    ? scenario.expectedOutputPattern() : "";
-            JudgeResult judgeResult = llmJudge.judge(
-                    response.content(), expectedPattern, criteria);
-
-            return evalResult.toBuilder()
-                    .llmJudgeScore(judgeResult.score())
-                    .llmJudgeJustification(judgeResult.justification())
-                    .llmJudgeTokensUsed(judgeResult.tokensUsed())
-                    .build();
-        } catch (Exception e) {
-            log.warn("LLM Judge 执行失败: scenarioId={}, error={}", scenario.id(), e.getMessage());
-            double fallbackScore = config.getLlmJudge().getFallbackScore();
-            return evalResult.toBuilder()
-                    .llmJudgeScore(fallbackScore)
-                    .llmJudgeJustification("LLM Judge 执行失败: " + e.getMessage())
-                    .llmJudgeTokensUsed(0)
-                    .build();
-        }
-    }
-
-    /**
      * 构建失败场景的评估结果（评分 0.0，错误信息记录到 violations）。
      *
      * @param scenario  场景定义
@@ -377,6 +501,7 @@ public class EvalEngine {
      * @return 失败评估结果
      */
     private EvalResult buildFailedResult(BenchmarkScenario scenario, String evalRunId, String reason) {
+        var gitInfo = getGitInfo();
         EvalResult failedResult = EvalResult.builder()
                 .evalId(UUID.randomUUID().toString())
                 .traceId("")
@@ -389,8 +514,8 @@ public class EvalEngine {
                 .llmJudgeJustification(null)
                 .llmJudgeTokensUsed(0)
                 .evaluatedAt(Instant.now())
-                .gitCommitHash(resolveGitCommitHash())
-                .gitBranch(resolveGitBranch())
+                .gitCommitHash(gitInfo.commitHash())
+                .gitBranch(gitInfo.branch())
                 .evalRunId(evalRunId)
                 .build();
 

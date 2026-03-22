@@ -20,7 +20,7 @@ import com.lifepilot.eval.config.EvalConfigProperties;
  *
  * <p>使用 Jackson YAML ObjectMapper 将配置目录下的 {@code *.yml} / {@code *.yaml}
  * 文件解析为 {@link BenchmarkScenario} 实例。支持按 ID 加载、按标签过滤、
- * 维度权重和校验及场景 ID 唯一性校验。</p>
+ * 维度权重和校验及场景 ID 唯一性校验。内置 TTL 缓存避免重复磁盘 IO。</p>
  *
  * @author zsg
  * @since 2026-08-01
@@ -32,8 +32,15 @@ public class ScenarioLoader {
     /** 维度权重和校验容差。 */
     private static final double WEIGHT_SUM_TOLERANCE = 0.001;
 
+    /** 缓存 TTL（毫秒），默认 60 秒。 */
+    private static final long CACHE_TTL_MS = 60_000;
+
     private final ObjectMapper yamlMapper;
     private final EvalConfigProperties config;
+
+    /** 场景缓存。 */
+    private volatile List<BenchmarkScenario> cachedScenarios;
+    private volatile long cacheTimestamp;
 
     public ScenarioLoader(EvalConfigProperties config) {
         this.config = config;
@@ -42,12 +49,16 @@ public class ScenarioLoader {
     }
 
     /**
-     * 从配置目录加载所有场景。
+     * 从配置目录加载所有场景（带 TTL 缓存）。
      *
      * @return 场景列表
      * @throws ScenarioLoadException 目录不存在或加载失败
      */
     public List<BenchmarkScenario> loadAll() {
+        if (cachedScenarios != null && System.currentTimeMillis() - cacheTimestamp < CACHE_TTL_MS) {
+            return cachedScenarios;
+        }
+
         var directory = Path.of(config.getScenarioDirectory());
         if (!Files.exists(directory)) {
             try {
@@ -78,7 +89,11 @@ public class ScenarioLoader {
         if (scenarios.isEmpty()) {
             log.warn("场景目录为空，无可用场景: path={}", directory);
         }
-        return List.copyOf(scenarios);
+
+        var result = List.copyOf(scenarios);
+        cachedScenarios = result;
+        cacheTimestamp = System.currentTimeMillis();
+        return result;
     }
 
     /**
@@ -108,6 +123,14 @@ public class ScenarioLoader {
         return all.stream()
                 .filter(s -> s.tags().stream().anyMatch(tagSet::contains))
                 .toList();
+    }
+
+    /**
+     * 手动失效缓存（场景文件变更后调用）。
+     */
+    public void invalidateCache() {
+        cachedScenarios = null;
+        log.debug("场景缓存已失效");
     }
 
     /**

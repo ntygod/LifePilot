@@ -5,6 +5,8 @@ import type {
   EvalResultItem,
   EvalReportSummary,
   EvalRunRequest,
+  ComparisonReport,
+  EvalFeedback,
 } from '@/types'
 import { evalApi } from '@/api/eval'
 
@@ -19,6 +21,10 @@ export const useEvalStore = defineStore('eval', () => {
   const currentReport = ref<EvalReportSummary | null>(null)
   // 场景历史结果缓存（scenarioId → 历史结果列表）
   const scenarioHistory = ref<Record<string, EvalResultItem[]>>({})
+  // A/B 对比报告
+  const comparisonReport = ref<ComparisonReport | null>(null)
+  // 反馈缓存（evalId → 反馈列表）
+  const feedbackMap = ref<Record<string, EvalFeedback[]>>({})
   const loading = ref(false)
   const error = ref<string | null>(null)
 
@@ -96,12 +102,68 @@ export const useEvalStore = defineStore('eval', () => {
     }
   }
 
+  /** A/B 对比两次运行 */
+  async function fetchComparison(currentRunId: string, baselineRunId: string) {
+    loading.value = true
+    error.value = null
+    try {
+      comparisonReport.value = await evalApi.compareRuns(currentRunId, baselineRunId)
+    } catch (e: any) {
+      error.value = e.message ?? '加载对比报告失败'
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /** 标记运行为基线 */
+  async function markBaseline(evalRunId: string) {
+    error.value = null
+    try {
+      await evalApi.markAsBaseline(evalRunId)
+    } catch (e: any) {
+      error.value = e.message ?? '标记基线失败'
+    }
+  }
+
+  /** 提交反馈 */
+  async function submitFeedback(evalId: string, scenarioId: string, req: {
+    feedbackType: string
+    comment?: string
+    goldenAnswer?: string
+  }) {
+    error.value = null
+    try {
+      const feedback = await evalApi.submitFeedback(evalId, scenarioId, req)
+      // 更新缓存
+      if (!feedbackMap.value[evalId]) {
+        feedbackMap.value[evalId] = []
+      }
+      feedbackMap.value[evalId].unshift(feedback)
+      return feedback
+    } catch (e: any) {
+      error.value = e.message ?? '提交反馈失败'
+      return null
+    }
+  }
+
+  /** 获取反馈列表 */
+  async function fetchFeedback(evalId: string) {
+    error.value = null
+    try {
+      feedbackMap.value[evalId] = await evalApi.getFeedback(evalId)
+    } catch (e: any) {
+      error.value = e.message ?? '加载反馈失败'
+    }
+  }
+
   return {
     scenarios,
     runs,
     currentRunResults,
     currentReport,
     scenarioHistory,
+    comparisonReport,
+    feedbackMap,
     loading,
     error,
     allTags,
@@ -110,5 +172,9 @@ export const useEvalStore = defineStore('eval', () => {
     fetchRunResults,
     fetchReport,
     fetchScenarioHistory,
+    fetchComparison,
+    markBaseline,
+    submitFeedback,
+    fetchFeedback,
   }
 })

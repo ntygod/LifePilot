@@ -1,6 +1,8 @@
 package com.lifepilot.eval.report;
 
+import com.lifepilot.eval.model.RunMetadata;
 import lombok.Builder;
+import org.springframework.lang.Nullable;
 
 import java.time.Instant;
 import java.util.List;
@@ -20,6 +22,7 @@ import java.util.Map;
  * @param newRegressions      新增退化场景列表
  * @param evaluatedAt         评估时间
  * @param experienceInjected  是否注入了经验上下文
+ * @param metadata            运行元数据
  * @author zsg
  * @since 2026-08-01
  */
@@ -35,7 +38,8 @@ public record ReportSummary(
         List<String> regressedScenarios,
         List<String> newRegressions,
         Instant evaluatedAt,
-        boolean experienceInjected
+        boolean experienceInjected,
+        @Nullable RunMetadata metadata
 ) {
     public ReportSummary {
         dimensionAverages = dimensionAverages != null ? Map.copyOf(dimensionAverages) : Map.of();

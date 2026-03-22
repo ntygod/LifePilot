@@ -1,0 +1,22 @@
+id: "ambiguous-intent"
+name: "模糊意图 — 用户请求不明确"
+description: "测试 Agent 在用户意图模糊时的澄清能力，应主动追问而非盲目执行"
+category: "ambiguous-intent"
+difficulty: "medium"
+userInput: "帮我处理一下那个问题"
+expectedToolCalls: []
+expectedOutputPattern: ".*(?:哪个|什么|具体|请问|能否).*"
+dimensionWeights:
+  toolSelection: 0.1
+  parameterValidity: 0.1
+  stepEfficiency: 0.3
+  policyCompliance: 0.2
+  tokenEfficiency: 0.3
+timeoutSeconds: 30
+tags:
+  - "ambiguous-intent"
+  - "smoke"
+  - "basic"
+llmJudgeCriteria: "Agent 不应盲目执行，应主动向用户澄清'哪个问题'。回复应包含追问或请求更多信息的表达，而非直接给出答案"
+expectedTokenBudget: 10000
+expectedStepCount: 1

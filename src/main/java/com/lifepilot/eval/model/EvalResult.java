@@ -24,6 +24,8 @@ import java.util.Map;
  * @param gitCommitHash         Git commit hash
  * @param gitBranch             Git 分支名
  * @param evalRunId             评估运行 ID
+ * @param diagnosticJson        诊断报告 JSON（可选）
+ * @param runMetadataJson       运行元数据 JSON（可选）
  * @author zsg
  * @since 2026-08-01
  */
@@ -42,7 +44,9 @@ public record EvalResult(
         Instant evaluatedAt,
         @Nullable String gitCommitHash,
         @Nullable String gitBranch,
-        String evalRunId
+        String evalRunId,
+        @Nullable String diagnosticJson,
+        @Nullable String runMetadataJson
 ) {
     public EvalResult {
         dimensionScores = dimensionScores != null ? Map.copyOf(dimensionScores) : Map.of();
