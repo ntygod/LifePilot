@@ -42,12 +42,15 @@ public class FileToolProvider {
         tools.add(buildFileWriteTool(new FileWriteToolExecutor(properties)));
         tools.add(buildFileListTool(new FileListToolExecutor(properties)));
         tools.add(buildFileSearchTool(new FileSearchToolExecutor(properties)));
-        tools.add(buildFileAppendTool(new FileAppendToolExecutor(properties)));
         tools.add(buildFileDeleteTool(new FileDeleteToolExecutor(properties)));
         tools.add(buildFileCopyTool(new FileCopyToolExecutor(properties)));
         tools.add(buildFileMoveTool(new FileMoveToolExecutor(properties)));
         tools.add(buildFileInfoTool(new FileInfoToolExecutor(properties)));
         tools.add(buildFilePatchTool(new FilePatchToolExecutor(properties)));
+        // file.grep 是 file.search 的别名，对标 OpenClaw grep 工具
+        tools.add(buildFileGrepTool(new FileSearchToolExecutor(properties)));
+        // file.find 按条件查找文件（glob/大小/时间），对标 OpenClaw find 工具
+        tools.add(buildFileFindTool(new FileListToolExecutor(properties)));
 
         return List.copyOf(tools);
     }
@@ -81,13 +84,13 @@ public class FileToolProvider {
                 .build();
     }
 
-    /** 构建文件写入工具。 */
+    /** 构建文件写入工具（支持 write/append 两种模式）。 */
     private BuiltinTool buildFileWriteTool(FileWriteToolExecutor executor) {
         return BuiltinTool.builder()
                 .id("builtin.file.write")
                 .category(ToolCategory.ACTION)
                 .name("写入文件")
-                .description("原子写入文件内容（先写临时文件再重命名），支持自动创建父目录。MEDIUM 风险")
+                .description("写入文件内容。mode=write（默认）原子覆写，mode=append 追加到末尾。支持自动创建父目录")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("path", "content"),
@@ -96,6 +99,8 @@ public class FileToolProvider {
                                         "description", "目标文件路径"),
                                 "content", Map.of("type", "string",
                                         "description", "要写入的文件内容"),
+                                "mode", Map.of("type", "string",
+                                        "description", "写入模式：write（覆写，默认）或 append（追加到末尾）"),
                                 "createDirectories", Map.of("type", "boolean",
                                         "description", "父目录不存在时是否自动创建，默认 true")
                         )
@@ -306,25 +311,57 @@ public class FileToolProvider {
                 .build();
     }
 
-    /** 构建文件追加工具。 */
-    private BuiltinTool buildFileAppendTool(FileAppendToolExecutor executor) {
+    /** 构建文件内容搜索工具（grep 别名，对标 OpenClaw grep）。 */
+    private BuiltinTool buildFileGrepTool(FileSearchToolExecutor executor) {
         return BuiltinTool.builder()
-                .id("builtin.file.append")
-                .category(ToolCategory.ACTION)
-                .name("追加文件")
-                .description("向文件末尾追加内容，文件不存在时自动创建。MEDIUM 风险")
+                .id("builtin.file.grep")
+                .category(ToolCategory.PERCEPTION)
+                .name("搜索文件内容（grep）")
+                .description("递归搜索目录下文件内容，支持正则表达式。等同于 file.search，对标 Unix grep")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
-                        "required", List.of("path", "content"),
+                        "required", List.of("path", "pattern"),
                         "properties", Map.of(
                                 "path", Map.of("type", "string",
-                                        "description", "目标文件路径"),
-                                "content", Map.of("type", "string",
-                                        "description", "要追加的内容")
+                                        "description", "搜索起始目录路径"),
+                                "pattern", Map.of("type", "string",
+                                        "description", "搜索内容的正则表达式"),
+                                "filePattern", Map.of("type", "string",
+                                        "description", "文件名 glob 过滤模式（如 *.java），可选"),
+                                "maxResults", Map.of("type", "integer",
+                                        "description", "最大返回结果数，默认 50"),
+                                "contextLines", Map.of("type", "integer",
+                                        "description", "匹配行前后上下文行数，默认 0")
                         )
                 )))
-                .riskLevel(RiskLevel.MEDIUM)
-                .idempotent(false)
+                .riskLevel(RiskLevel.LOW)
+                .tags(INFRA_TAGS)
+                .executor(executor::execute)
+                .build();
+    }
+
+    /** 构建文件查找工具（对标 OpenClaw find）。 */
+    private BuiltinTool buildFileFindTool(FileListToolExecutor executor) {
+        return BuiltinTool.builder()
+                .id("builtin.file.find")
+                .category(ToolCategory.PERCEPTION)
+                .name("查找文件（find）")
+                .description("按名称 glob 模式递归查找文件，对标 Unix find。比 file.list 更适合按条件搜索文件")
+                .inputSchema(JsonSchema.of(Map.of(
+                        "type", "object",
+                        "required", List.of("path", "pattern"),
+                        "properties", Map.of(
+                                "path", Map.of("type", "string",
+                                        "description", "搜索起始目录路径"),
+                                "pattern", Map.of("type", "string",
+                                        "description", "文件名 glob 模式（如 *.java、**/*.md）"),
+                                "maxDepth", Map.of("type", "integer",
+                                        "description", "最大遍历深度，默认 10"),
+                                "maxEntries", Map.of("type", "integer",
+                                        "description", "最大返回条目数，默认 200")
+                        )
+                )))
+                .riskLevel(RiskLevel.LOW)
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();

@@ -328,8 +328,6 @@ public class MetaProperties {
                 "skills/find-skills",
                 "skills/workflow-creator",
                 "skills/memory",
-                "skills/infrastructure",
-                "skills/introspection",
                 "skills/datastore",
                 "skills/sync",
                 "skills/code-assistant",
@@ -339,7 +337,6 @@ public class MetaProperties {
                 "skills/browser-automation",
                 "skills/daily-manager",
                 "skills/file-organizer",
-                "skills/shell-commander",
                 "skills/summarizer",
                 "skills/github-workflow",
                 "skills/translator",
@@ -347,7 +344,19 @@ public class MetaProperties {
                 "skills/doc-processor",
                 "skills/project-scaffolder",
                 "skills/teaching-assistant",
-                "skills/desktop-automation"
+                "skills/desktop-automation",
+                "skills/heartbeat-checklist",
+                "skills/cron-scheduler",
+                "skills/session-logs",
+                "skills/healthcheck",
+                "skills/email-manager",
+                "skills/database-query",
+                "skills/log-analyzer",
+                "skills/feishu",
+                "skills/dingtalk",
+                "skills/gitee",
+                "skills/yuque",
+                "skills/wps-office"
         );
     }
 

@@ -63,6 +63,8 @@ public class FileWriteToolExecutor {
         boolean createDirectories = input.getOptionalParam("createDirectories", Boolean.class)
                 .orElse(true);
 
+        String mode = input.getOptionalParam("mode", String.class).orElse("write");
+
         Path filePath = Path.of(pathStr);
 
         // 路径安全检查（写入场景，文件可能不存在）
@@ -81,24 +83,34 @@ public class FileWriteToolExecutor {
                 }
             }
 
-            // 原子写入：先写临时文件，再 move
             byte[] bytes = content.getBytes(StandardCharsets.UTF_8);
-            Path tempFile = Files.createTempFile(parentDir, ".lifepilot-write-", ".tmp");
-            try {
-                Files.write(tempFile, bytes);
-                Files.move(tempFile, filePath.toAbsolutePath().normalize(),
-                        StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-            } catch (IOException e) {
-                // 清理临时文件
-                Files.deleteIfExists(tempFile);
-                throw e;
+            Path normalizedPath = filePath.toAbsolutePath().normalize();
+
+            if ("append".equalsIgnoreCase(mode)) {
+                // 追加模式
+                Files.write(normalizedPath, bytes,
+                        java.nio.file.StandardOpenOption.CREATE,
+                        java.nio.file.StandardOpenOption.APPEND);
+                log.debug("文件追加成功: path={}, bytesWritten={}", pathStr, bytes.length);
+            } else {
+                // 原子写入：先写临时文件，再 move
+                Path tempFile = Files.createTempFile(parentDir, ".lifepilot-write-", ".tmp");
+                try {
+                    Files.write(tempFile, bytes);
+                    Files.move(tempFile, normalizedPath,
+                            StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+                } catch (IOException e) {
+                    Files.deleteIfExists(tempFile);
+                    throw e;
+                }
+                log.debug("文件写入成功: path={}, bytesWritten={}", pathStr, bytes.length);
             }
 
             var data = new LinkedHashMap<String, Object>();
-            data.put("path", filePath.toAbsolutePath().normalize().toString());
+            data.put("path", normalizedPath.toString());
             data.put("bytesWritten", bytes.length);
+            data.put("mode", mode);
 
-            log.debug("文件写入成功: path={}, bytesWritten={}", pathStr, bytes.length);
             return ToolResult.success(Map.copyOf(data));
 
         } catch (IOException e) {
