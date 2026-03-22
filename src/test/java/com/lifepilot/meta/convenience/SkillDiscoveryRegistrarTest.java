@@ -38,7 +38,7 @@ class SkillDiscoveryRegistrarTest {
     @Test
     void extractSeedSkillsToUserDirectory_首次启动提取SKILL_MD到用户目录() {
         properties.getSkillDiscovery().setSkillPaths(List.of("skills/find-skills"));
-        var registrar = new SkillDiscoveryRegistrar(properties, skillConfig);
+        var registrar = new SkillDiscoveryRegistrar(properties, skillConfig, null);
 
         registrar.extractSeedSkillsToUserDirectory();
 
@@ -57,7 +57,7 @@ class SkillDiscoveryRegistrarTest {
                 "skills/find-skills",
                 "skills/workflow-creator"
         ));
-        var registrar = new SkillDiscoveryRegistrar(properties, skillConfig);
+        var registrar = new SkillDiscoveryRegistrar(properties, skillConfig, null);
 
         registrar.extractSeedSkillsToUserDirectory();
 
@@ -81,7 +81,7 @@ class SkillDiscoveryRegistrarTest {
         Files.writeString(targetFile, "用户自定义内容", StandardCharsets.UTF_8);
 
         properties.getSkillDiscovery().setSkillPaths(List.of("skills/find-skills"));
-        var registrar = new SkillDiscoveryRegistrar(properties, skillConfig);
+        var registrar = new SkillDiscoveryRegistrar(properties, skillConfig, null);
         registrar.extractSeedSkillsToUserDirectory();
 
         // 验证文件内容未被覆盖
@@ -94,7 +94,7 @@ class SkillDiscoveryRegistrarTest {
         properties.getSkillDiscovery().setEnabled(false);
         properties.getSkillDiscovery().setSkillPaths(List.of("skills/find-skills"));
 
-        var registrar = new SkillDiscoveryRegistrar(properties, skillConfig);
+        var registrar = new SkillDiscoveryRegistrar(properties, skillConfig, null);
         registrar.extractSeedSkillsToUserDirectory();
 
         Path targetFile = tempDir.resolve("find-skills/SKILL.md");
@@ -105,7 +105,7 @@ class SkillDiscoveryRegistrarTest {
     void extractSeedSkillsToUserDirectory_资源路径不存在时跳过提取() {
         properties.getSkillDiscovery().setSkillPaths(List.of("nonexistent/path"));
 
-        var registrar = new SkillDiscoveryRegistrar(properties, skillConfig);
+        var registrar = new SkillDiscoveryRegistrar(properties, skillConfig, null);
         registrar.extractSeedSkillsToUserDirectory();
 
         Path targetFile = tempDir.resolve("path/SKILL.md");
@@ -115,7 +115,7 @@ class SkillDiscoveryRegistrarTest {
     @Test
     void afterPropertiesSet_触发提取() {
         properties.getSkillDiscovery().setSkillPaths(List.of("skills/find-skills"));
-        var registrar = new SkillDiscoveryRegistrar(properties, skillConfig);
+        var registrar = new SkillDiscoveryRegistrar(properties, skillConfig, null);
 
         registrar.afterPropertiesSet();
 
