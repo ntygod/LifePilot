@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { ArrowLeft, ChevronDown, ChevronRight, Copy, Download, Edit2, Info, PauseCircle, Play, Plus, Sparkles, Trash2, Upload, Workflow } from 'lucide-vue-next'
+import { ArrowLeft, ChevronDown, ChevronRight, Copy, Download, Edit2, GitBranch, Info, PauseCircle, Play, Plus, Trash2, Upload, Workflow } from 'lucide-vue-next'
 import { useWorkflowExecutionStream } from '@/composables/useWorkflowExecutionStream'
 import { workflowApi } from '@/api/client'
 import { useWorkflowStore } from '@/stores/workflow'
@@ -474,7 +474,7 @@ onBeforeUnmount(() => {
               </MetricCard>
               <MetricCard label="触发器类型" :value="triggerTypeCount" hint="目录里当前正在使用的触发方式种类。">
                 <template #icon>
-                  <Sparkles class="size-5" />
+                  <GitBranch class="size-5" />
                 </template>
               </MetricCard>
             </template>
@@ -720,7 +720,7 @@ onBeforeUnmount(() => {
               </MetricCard>
               <MetricCard label="触发器" :value="currentTriggerTypes.length" hint="这条流程现在可接收的触发方式。">
                 <template #icon>
-                  <Sparkles class="size-5" />
+                  <GitBranch class="size-5" />
                 </template>
                 <div v-if="currentTriggerTypes.length > 0" class="flex flex-wrap gap-2">
                   <span
@@ -811,7 +811,7 @@ onBeforeUnmount(() => {
                   description="当前工作流详情中还没有可执行步骤。"
                 >
                   <template #icon>
-                    <Sparkles class="size-5" />
+                    <GitBranch class="size-5" />
                   </template>
                 </StatePanel>
 

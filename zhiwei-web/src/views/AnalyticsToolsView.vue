@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { Activity, AlertTriangle, Sparkles, Wrench } from 'lucide-vue-next'
+import { Activity, AlertTriangle, BarChart3, Wrench } from 'lucide-vue-next'
 import VChart from 'vue-echarts'
 import { analyticsApi } from '@/api/client'
 import type { ToolCallStats, ToolDailyTrend } from '@/types'

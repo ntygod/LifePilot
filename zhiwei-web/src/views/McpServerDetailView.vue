@@ -9,7 +9,7 @@ import {
   RefreshCw,
   Server,
   Settings2,
-  Sparkles,
+  Plug,
 } from 'lucide-vue-next'
 import { mcpApi } from '@/api/client'
 import { useSkillStore } from '@/stores/skill'
@@ -308,7 +308,7 @@ onMounted(() => {
               </MetricCard>
               <MetricCard label="可用工具" :value="server.toolCount" hint="当前这台服务器已经暴露出来的工具数量。">
                 <template #icon>
-                  <Sparkles class="size-5" />
+                  <Plug class="size-5" />
                 </template>
               </MetricCard>
               <MetricCard label="传输方式" :value="String(config.transport ?? server.config?.transport ?? 'stdio')" hint="当前正在使用的连接方式。">
@@ -463,7 +463,7 @@ onMounted(() => {
               description="请先连接服务器，或检查配置是否正确。"
             >
               <template #icon>
-                <Sparkles class="size-5" />
+                <Plug class="size-5" />
               </template>
             </StatePanel>
 

@@ -459,15 +459,15 @@ export function useChat() {
   function mapReasoningStatus(ev: ReasoningEvent): string {
     switch (ev.type) {
       case 'AGENT_START':
-        return '正在准备上下文与预算…'
+        return '加载上下文…'
       case 'THOUGHT':
-        return '正在思考…'
+        return '推理中…'
       case 'TOOL_CALL':
         return ev.toolName ? `正在调用工具：${ev.toolName}…` : '正在调用外部工具…'
       case 'OBSERVATION':
         return ev.toolName ? `工具 ${ev.toolName} 调用完成` : '工具调用已完成'
       case 'ANSWER':
-        return '正在整理最终答案…'
+        return '生成回复…'
       case 'SUSPEND':
         return '等待用户确认…'
       case 'RESUME':
@@ -475,7 +475,7 @@ export function useChat() {
       case 'ANSWER_FINALIZED':
         return '本轮回答已完成'
       default:
-        return '正在处理中…'
+        return '处理中…'
     }
   }
 

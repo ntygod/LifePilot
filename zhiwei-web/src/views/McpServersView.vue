@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Cable, RefreshCw, Server, ServerOff, Sparkles } from 'lucide-vue-next'
+import { Cable, Plug, RefreshCw, Server, ServerOff } from 'lucide-vue-next'
 import { useSkillStore } from '@/stores/skill'
 import { useMcpStatusStream } from '@/composables/useMcpStatusStream'
 import MetricCard from '@/components/common/MetricCard.vue'
@@ -133,7 +133,7 @@ onMounted(() => {
             </MetricCard>
             <MetricCard label="可用工具数" :value="totalToolCount" hint="所有 MCP 服务器上报的工具总量。">
               <template #icon>
-                <Sparkles class="size-5" />
+                <Plug class="size-5" />
               </template>
             </MetricCard>
           </template>

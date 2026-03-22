@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { AlertCircle, BookOpen, Bot, Clock3, Sparkles } from 'lucide-vue-next'
+import { AlertCircle, BarChart3, BookOpen, Bot, Clock3 } from 'lucide-vue-next'
 import { analyticsApi } from '@/api/client'
 import type { AgentStats, KnowledgeBaseStats } from '@/types'
 import FilterChips from '@/components/common/FilterChips.vue'
@@ -351,7 +351,7 @@ onMounted(() => {
           description="正在拉取智能体调用和知识库检索数据。"
         >
           <template #icon>
-            <Sparkles class="size-5" />
+            <BarChart3 class="size-5" />
           </template>
         </StatePanel>
 

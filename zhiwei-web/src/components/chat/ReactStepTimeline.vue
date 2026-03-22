@@ -2,9 +2,9 @@
 import { computed, ref } from 'vue'
 import type { ReactStepDto, ToolCallStep, ObservationStep } from '@/types'
 import {
-  Brain, Wrench, Eye, PenLine, Pause, Play,
+  Lightbulb, Wrench, Eye, PenLine, Pause, Play,
   ChevronDown, ChevronRight, Loader2, Clock,
-  CheckCircle2, XCircle
+  CheckCircle2, XCircle, CircleDot
 } from 'lucide-vue-next'
 
 const props = defineProps<{
@@ -57,7 +57,7 @@ const stepGroups = computed<StepGroup[]>(() => {
 // 触发器主文案：流式时实时显示当前步骤，完成后显示统计
 const triggerLabel = computed(() => {
   const count = props.steps.length
-  if (count === 0) return props.streaming ? '正在思考…' : '推理概要'
+  if (count === 0) return props.streaming ? '推理中…' : '推理概要'
   // 取最新步骤的简短描述
   const last = props.steps[count - 1]
   const desc = getStepBrief(last)
@@ -71,7 +71,7 @@ function getStepBrief(step: ReactStepDto): string {
   switch (step.type) {
     case 'THOUGHT': {
       const text = step.content ?? ''
-      if (text.length <= 40) return text || '正在思考…'
+      if (text.length <= 40) return text || '推理中…'
       return text.substring(0, 40) + '…'
     }
     case 'TOOL_CALL': return `调用 ${step.toolName ?? step.toolId}`
@@ -95,13 +95,13 @@ function toggleStep(index: number) {
 // 步骤图标映射
 function getStepIcon(type: string) {
   switch (type) {
-    case 'THOUGHT': return Brain
+    case 'THOUGHT': return Lightbulb
     case 'TOOL_CALL': return Wrench
     case 'OBSERVATION': return Eye
     case 'ANSWER': return PenLine
     case 'SUSPEND': return Pause
     case 'RESUME': return Play
-    default: return Brain
+    default: return CircleDot
   }
 }
 
@@ -185,7 +185,7 @@ function getToolPairPreview(obs: ObservationStep): string | null {
   <div
     v-if="summary || hasSteps"
     class="mt-2 rounded-lg border border-border/60 bg-gradient-to-b from-muted/30 to-background/80 text-xs overflow-hidden transition-all duration-300"
-    :class="streaming ? 'border-primary/40 shadow-[0_0_8px_-2px_hsl(var(--primary)/0.15)]' : ''"
+    :class="streaming ? 'border-primary/40' : ''"
   >
     <!-- 触发器按钮 -->
     <button
@@ -198,16 +198,12 @@ function getToolPairPreview(obs: ObservationStep): string | null {
       <div class="flex items-center gap-2 min-w-0 flex-1">
         <div class="relative shrink-0">
           <component
-            :is="hasSteps ? getStepIcon(steps[steps.length - 1].type) : Brain"
+            :is="hasSteps ? getStepIcon(steps[steps.length - 1].type) : CircleDot"
             :size="14"
             class="transition-colors duration-300"
             :class="streaming
               ? 'text-primary'
               : hasSteps ? getStepColor(steps[steps.length - 1].type) : 'text-muted-foreground'"
-          />
-          <span
-            v-if="streaming"
-            class="absolute inset-0 rounded-full bg-primary/20 animate-ping"
           />
         </div>
         <span
@@ -307,7 +303,6 @@ function getToolPairPreview(obs: ObservationStep): string | null {
                 <div class="flex flex-col items-center shrink-0 w-5">
                   <div
                     class="w-5 h-5 rounded-full flex items-center justify-center bg-background border border-border group-hover/step:border-primary/50"
-                    :class="streaming && gi === stepGroups.length - 1 ? 'animate-pulse' : ''"
                   >
                     <component
                       :is="getStepIcon(group.steps[0].type)"

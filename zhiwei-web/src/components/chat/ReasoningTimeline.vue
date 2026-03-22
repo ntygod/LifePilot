@@ -2,8 +2,9 @@
 import { computed, ref } from 'vue'
 import type { ReasoningEvent } from '@/types'
 import {
-  Brain, Wrench, Lightbulb, PenLine, CheckCircle2,
-  AlertCircle, ChevronDown, ChevronRight, Loader2, Clock
+  Play, Wrench, Lightbulb, PenLine, CheckCircle2,
+  AlertCircle, ChevronDown, ChevronRight, Loader2, Clock,
+  RotateCcw, CircleDot
 } from 'lucide-vue-next'
 
 const props = defineProps<{
@@ -43,7 +44,7 @@ const toolCallCount = computed(() =>
 const triggerLabel = computed(() => {
   const list = eventList.value
   const count = list.length
-  if (count === 0) return props.streaming ? '正在思考…' : '推理概要'
+  if (count === 0) return props.streaming ? '推理中…' : '推理概要'
   // 取最新事件的简短描述
   const last = list[count - 1]
   const brief = getEventBrief(last)
@@ -63,7 +64,7 @@ function getEventBrief(ev: ReasoningEvent): string {
     case 'AGENT_START': return '准备上下文与预算…'
     case 'THOUGHT': {
       const text = ev.description ?? ev.title ?? ''
-      if (text.length <= 40) return text || '正在思考…'
+      if (text.length <= 40) return text || '推理中…'
       return text.substring(0, 40) + '…'
     }
     case 'TOOL_CALL': return ev.toolName ? `调用 ${ev.toolName}` : '调用工具…'
@@ -79,15 +80,15 @@ function getEventBrief(ev: ReasoningEvent): string {
 // 事件图标映射
 function getEventIcon(type: string) {
   switch (type) {
-    case 'AGENT_START': return Brain
+    case 'AGENT_START': return Play
     case 'THOUGHT': return Lightbulb
     case 'TOOL_CALL': return Wrench
     case 'OBSERVATION': return CheckCircle2
     case 'ANSWER': return PenLine
     case 'SUSPEND': return AlertCircle
-    case 'RESUME': return Brain
+    case 'RESUME': return RotateCcw
     case 'ANSWER_FINALIZED': return CheckCircle2
-    default: return Brain
+    default: return CircleDot
   }
 }
 
@@ -131,7 +132,7 @@ function formatRelativeTime(event: ReasoningEvent): string | null {
   <div
     v-if="summary || hasEvents"
     class="mt-2 rounded-lg border border-border/60 bg-gradient-to-b from-muted/30 to-background/80 text-xs overflow-hidden transition-all duration-300"
-    :class="streaming ? 'border-primary/40 shadow-[0_0_8px_-2px_hsl(var(--primary)/0.15)]' : ''"
+    :class="streaming ? 'border-primary/40' : ''"
   >
     <!-- 触发器按钮 -->
     <button
@@ -145,16 +146,12 @@ function formatRelativeTime(event: ReasoningEvent): string | null {
         <!-- 动态图标：跟随最新事件类型 -->
         <div class="relative shrink-0">
           <component
-            :is="hasEvents ? getEventIcon(eventList[eventList.length - 1].type) : Brain"
+            :is="hasEvents ? getEventIcon(eventList[eventList.length - 1].type) : CircleDot"
             :size="14"
             class="transition-colors duration-300"
             :class="streaming
               ? 'text-primary'
               : hasEvents ? getEventColor(eventList[eventList.length - 1].type) : 'text-muted-foreground'"
-          />
-          <span
-            v-if="streaming"
-            class="absolute inset-0 rounded-full bg-primary/20 animate-ping"
           />
         </div>
 

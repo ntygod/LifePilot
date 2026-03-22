@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Bot, PencilLine, Sparkles, Store } from 'lucide-vue-next'
+import { Bot, PencilLine, Puzzle, Store } from 'lucide-vue-next'
 import { useSkillStore } from '@/stores/skill'
 import { useUiStore } from '@/stores/ui'
 import type { SkillSummary } from '@/types'
@@ -172,7 +172,7 @@ onMounted(() => {
           <template #meta>
             <MetricCard label="当前可见" :value="filteredSkills.length" hint="筛选结果">
               <template #icon>
-                <Sparkles class="size-5" />
+                <Puzzle class="size-5" />
               </template>
             </MetricCard>
             <MetricCard label="已启用" :value="enabledSkillCount" hint="已启用">
@@ -266,7 +266,7 @@ onMounted(() => {
             tone="danger"
           >
             <template #icon>
-              <Sparkles class="size-5" />
+              <Puzzle class="size-5" />
             </template>
           </StatePanel>
 
@@ -276,7 +276,7 @@ onMounted(() => {
             description="可以先创建第一个自定义技能，或从市场安装可复用能力。"
           >
             <template #icon>
-              <Sparkles class="size-5" />
+              <Puzzle class="size-5" />
             </template>
             <template #actions>
               <Button @click="showCreateDialog = true">

@@ -6,7 +6,7 @@ import {
   Blocks,
   Bot,
   FileText,
-  Sparkles,
+  Puzzle,
   TestTube2,
   Wrench,
 } from 'lucide-vue-next'
@@ -259,7 +259,7 @@ function runTest() {
           tone="danger"
         >
           <template #icon>
-            <Sparkles class="size-5" />
+            <Puzzle class="size-5" />
           </template>
           <template #actions>
             <Button type="button" variant="outline" @click="router.push('/skills')">
@@ -294,7 +294,7 @@ function runTest() {
             <template #meta>
               <MetricCard label="来源" :value="sourceValue" hint="技能归属">
                 <template #icon>
-                  <Sparkles class="size-5" />
+                  <Puzzle class="size-5" />
                 </template>
               </MetricCard>
               <MetricCard label="版本" :value="`v${skill.version}`" hint="版本号">

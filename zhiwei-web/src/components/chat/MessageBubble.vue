@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Bot, FileText, Mic } from 'lucide-vue-next'
+import { FileText, Mic } from 'lucide-vue-next'
 import type { A2uiComponent, Message, ReasoningEvent, ReactStepDto, ToolConfirmationRequest } from '@/types'
 import A2uiRenderer from '@/components/a2ui/A2uiRenderer.vue'
 import {
@@ -150,7 +150,7 @@ const pendingConfirmations = computed(() => {
       class="mt-xs flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"
       aria-label="知微回复"
     >
-      <Bot :size="14" />
+      <span class="text-xs font-semibold">微</span>
     </div>
 
     <div
@@ -187,7 +187,7 @@ const pendingConfirmations = computed(() => {
       >
         <div
           v-if="streaming && message.role === 'assistant'"
-          class="pointer-events-none absolute inset-0 rounded-2xl rounded-tl-sm border-2 border-primary/60 animate-pulse"
+          class="pointer-events-none absolute inset-0 rounded-2xl rounded-tl-sm border-2 border-primary/60"
         />
 
         <div class="relative z-[1]">

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { AlertTriangle, ArrowUpRight, FileText, Sparkles, Wrench } from 'lucide-vue-next'
+import { AlertTriangle, ArrowUpRight, FileText, Settings, Wrench } from 'lucide-vue-next'
 import { useToolStore } from '@/stores/tool'
 import MetricCard from '@/components/common/MetricCard.vue'
 import SearchBar from '@/components/common/SearchBar.vue'
@@ -105,7 +105,7 @@ onMounted(() => {
             </MetricCard>
             <MetricCard label="已启用" :value="enabledCount" hint="可直接调用">
               <template #icon>
-                <Sparkles class="size-5" />
+                <Settings class="size-5" />
               </template>
             </MetricCard>
             <MetricCard label="外部工具" :value="mcpCount" hint="MCP 接入">

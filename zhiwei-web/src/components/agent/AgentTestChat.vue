@@ -377,11 +377,7 @@ function formatTime(ts: number): string {
           <Bot :size="12" />
         </div>
         <div class="rounded-2xl rounded-tl-sm bg-card border border-border px-4 py-3">
-          <div class="flex items-center gap-1.5">
-            <span class="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-bounce" style="animation-delay: 0ms" />
-            <span class="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-bounce" style="animation-delay: 150ms" />
-            <span class="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-bounce" style="animation-delay: 300ms" />
-          </div>
+          <Loader2 :size="14" class="animate-spin text-muted-foreground/60" />
         </div>
       </div>
     </div>

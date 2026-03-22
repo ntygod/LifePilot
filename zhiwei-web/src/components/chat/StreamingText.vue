@@ -79,5 +79,5 @@ const html = computed(() => {
 
 <template>
   <div ref="proseRef" class="prose prose-sm max-w-none dark:prose-invert" v-html="html" />
-  <span v-if="streaming" class="inline-block w-2 h-4 bg-foreground/60 animate-pulse ml-0.5" />
+  <span v-if="streaming" class="inline-block w-0.5 h-4 bg-foreground/40 ml-0.5" />
 </template>
