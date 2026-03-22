@@ -14,7 +14,7 @@ suggested-tools:
   - builtin.browser.navigate
   - builtin.browser.screenshot
   - builtin.browser.click
-  - builtin.browser.type
+  - builtin.browser.input
   - builtin.browser.scroll
   - builtin.browser.evaluate
   - builtin.browser.close
@@ -23,8 +23,8 @@ suggested-tools:
   - builtin.file.write
   - builtin.file.list
   - builtin.file.search
-  - builtin.interact.ask
-  - builtin.interact.confirm
+  - builtin.interact.input
+  - builtin.interact.choose
   - builtin.interact.notify
   - builtin.workflow.list
   - builtin.workflow.start
@@ -108,7 +108,7 @@ triggers:
 | `builtin.browser.navigate` | 导航到指定 URL |
 | `builtin.browser.screenshot` | 截取当前页面截图 |
 | `builtin.browser.click` | 点击页面元素 |
-| `builtin.browser.type` | 在输入框中输入文本 |
+| `builtin.browser.input` | 在输入框中输入文本 |
 | `builtin.browser.scroll` | 滚动页面 |
 | `builtin.browser.evaluate` | 执行 JavaScript 代码 |
 | `builtin.browser.close` | 关闭浏览器会话 |
@@ -143,8 +143,8 @@ triggers:
 
 | 工具 | 用途 |
 |------|------|
-| `builtin.interact.ask` | 向用户提问并等待回答 |
-| `builtin.interact.confirm` | 请求用户确认（是/否） |
+| `builtin.interact.input` | 向用户提问并等待回答 |
+| `builtin.interact.choose` | 请求用户确认（是/否） |
 | `builtin.interact.notify` | 向用户发送通知 |
 
 - 执行高风险操作前，用 `confirm` 获取用户确认

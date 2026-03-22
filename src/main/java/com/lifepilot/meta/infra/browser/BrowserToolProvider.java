@@ -60,6 +60,7 @@ public class BrowserToolProvider {
         tools.add(buildBrowserAccessibilityTool(new BrowserAccessibilityToolExecutor(browserSessionManager, properties)));
         tools.add(buildBrowserTabTool(new BrowserTabToolExecutor(browserSessionManager)));
         tools.add(buildBrowserStorageTool(new BrowserStorageToolExecutor(browserSessionManager)));
+        tools.add(buildBrowserCloseTool());
 
         return List.copyOf(tools);
     }
@@ -404,6 +405,36 @@ public class BrowserToolProvider {
                 .idempotent(false)
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
+                .build();
+    }
+
+    /** 构建浏览器关闭工具。 */
+    private BuiltinTool buildBrowserCloseTool() {
+        return BuiltinTool.builder()
+                .id("builtin.browser.close")
+                .category(ToolCategory.ACTION)
+                .name("关闭浏览器")
+                .description("关闭当前浏览器会话，释放资源")
+                .inputSchema(JsonSchema.of(Map.of(
+                        "type", "object",
+                        "properties", Map.of(
+                                "sessionId", Map.of("type", "string",
+                                        "description", "浏览器会话 ID，不传则关闭默认会话")
+                        )
+                )))
+                .riskLevel(RiskLevel.LOW)
+                .tags(INFRA_TAGS)
+                .executor(input -> {
+                    try {
+                        String sessionId = input.getOptionalParam("sessionId", String.class)
+                                .orElse("default");
+                        browserSessionManager.closePage(sessionId);
+                        return com.lifepilot.tool.model.ToolResult.success(Map.of(
+                                "message", "浏览器会话已关闭: " + sessionId));
+                    } catch (Exception e) {
+                        return com.lifepilot.tool.model.ToolResult.error("关闭浏览器失败: " + e.getMessage());
+                    }
+                })
                 .build();
     }
 }

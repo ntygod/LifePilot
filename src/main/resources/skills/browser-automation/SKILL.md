@@ -7,7 +7,7 @@ suggested-tools:
   - builtin.browser.navigate
   - builtin.browser.screenshot
   - builtin.browser.click
-  - builtin.browser.type
+  - builtin.browser.input
   - builtin.browser.scroll
   - builtin.browser.evaluate
   - builtin.browser.close
@@ -71,7 +71,7 @@ builtin.browser.accessibility()
 builtin.browser.click(selector="#submit-btn")
 
 # 输入文本
-builtin.browser.type(selector="#search-input", text="搜索内容")
+builtin.browser.input(selector="#search-input", text="搜索内容")
 
 # 滚动页面
 builtin.browser.scroll(direction="down", pixels=500)

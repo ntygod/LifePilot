@@ -6,7 +6,7 @@ version: "1.0.0"
 suggested-tools:
   - builtin.memory.search
   - builtin.memory.create
-  - builtin.interact.ask
+  - builtin.interact.input
   - builtin.interact.notify
   - builtin.env.datetime
   - builtin.web.search
@@ -54,7 +54,7 @@ builtin.memory.search(query="今日待办")
 2. 与用户确认任务列表
 
 ```
-builtin.interact.ask(question="今天需要完成哪些任务？")
+builtin.interact.input(question="今天需要完成哪些任务？")
 ```
 
 3. 任务分解和排序

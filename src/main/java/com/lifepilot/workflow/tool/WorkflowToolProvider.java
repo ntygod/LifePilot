@@ -49,7 +49,8 @@ public class WorkflowToolProvider {
                 buildListTool(),
                 buildStartTool(),
                 buildStatusTool(),
-                buildCancelTool()
+                buildCancelTool(),
+                buildResumeTool()
         );
     }
 
@@ -167,6 +168,36 @@ public class WorkflowToolProvider {
                     } catch (Exception e) {
                         log.error("取消工作流失败: {}", e.getMessage(), e);
                         return ToolResult.error("取消工作流失败: " + e.getMessage());
+                    }
+                })
+                .build();
+    }
+
+    /** 构建恢复暂停工作流实例工具。 */
+    private BuiltinTool buildResumeTool() {
+        return BuiltinTool.builder()
+                .id("builtin.workflow.resume")
+                .name("恢复工作流")
+                .description("恢复暂停中的工作流实例（如等待审批、等待外部数据的工作流）")
+                .category(ToolCategory.ACTION)
+                .inputSchema(JsonSchema.of(Map.of(
+                        "type", "object",
+                        "required", List.of("instanceId"),
+                        "properties", Map.of(
+                                "instanceId", Map.of("type", "string", "description", "工作流实例 ID")
+                        )
+                )))
+                .riskLevel(RiskLevel.MEDIUM)
+                .executor(input -> {
+                    try {
+                        String instanceId = input.getParam("instanceId", String.class);
+                        commandService.resume(instanceId);
+                        return ToolResult.success(Map.of("instanceId", instanceId, "status", "RESUMED"));
+                    } catch (IllegalArgumentException | IllegalStateException e) {
+                        return ToolResult.error(e.getMessage());
+                    } catch (Exception e) {
+                        log.error("恢复工作流失败: {}", e.getMessage(), e);
+                        return ToolResult.error("恢复工作流失败: " + e.getMessage());
                     }
                 })
                 .build();
