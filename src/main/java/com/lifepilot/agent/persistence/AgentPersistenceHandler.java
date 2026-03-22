@@ -53,8 +53,6 @@ public class AgentPersistenceHandler {
     @Nullable private final EffectivenessTracker effectivenessTracker;
     @Nullable private final ContrastiveLearner contrastiveLearner;
     @Nullable private final SubtaskReflector subtaskReflector;
-    @Nullable private final com.lifepilot.memory.compression.CompressionService compressionService;
-    @Nullable private final com.lifepilot.memory.episodic.EpisodicMemory episodicMemory;
 
     public AgentPersistenceHandler(
             AgentConfigProperties config,
@@ -67,9 +65,7 @@ public class AgentPersistenceHandler {
             @Nullable ExperienceSummarizer experienceSummarizer,
             @Nullable EffectivenessTracker effectivenessTracker,
             @Nullable ContrastiveLearner contrastiveLearner,
-            @Nullable SubtaskReflector subtaskReflector,
-            @Nullable com.lifepilot.memory.compression.CompressionService compressionService,
-            @Nullable com.lifepilot.memory.episodic.EpisodicMemory episodicMemory) {
+            @Nullable SubtaskReflector subtaskReflector) {
         this.config = config;
         this.sessionManager = sessionManager;
         this.workspaceService = workspaceService;
@@ -81,8 +77,6 @@ public class AgentPersistenceHandler {
         this.effectivenessTracker = effectivenessTracker;
         this.contrastiveLearner = contrastiveLearner;
         this.subtaskReflector = subtaskReflector;
-        this.compressionService = compressionService;
-        this.episodicMemory = episodicMemory;
     }
 
     public void saveWorkspaceForSuspend(ReactAgentState state) {
@@ -325,22 +319,6 @@ public class AgentPersistenceHandler {
                 }
             } catch (Exception e) {
                 log.warn("子任务反思失败: sessionId={}, error={}",
-                        finalState.sessionId(), e.getMessage());
-            }
-
-            // 对话历史异步压缩 — 生成摘要版本，加速后续加载
-            try {
-                if (compressionService != null && episodicMemory != null) {
-                    var messages = episodicMemory.getMessagesBySessionId(finalState.sessionId());
-                    if (!messages.isEmpty()) {
-                        compressionService.compressAsync(
-                                finalState.sessionId(),
-                                messages,
-                                com.lifepilot.memory.episodic.CompressionLevel.SUMMARY);
-                    }
-                }
-            } catch (Exception e) {
-                log.warn("对话历史压缩失败: sessionId={}, error={}",
                         finalState.sessionId(), e.getMessage());
             }
         });

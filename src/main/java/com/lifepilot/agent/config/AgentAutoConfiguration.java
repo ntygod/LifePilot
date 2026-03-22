@@ -153,9 +153,7 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) com.lifepilot.memory.experience.ExperienceSummarizer experienceSummarizer,
             @Autowired(required = false) com.lifepilot.memory.experience.EffectivenessTracker effectivenessTracker,
             @Autowired(required = false) com.lifepilot.memory.experience.ContrastiveLearner contrastiveLearner,
-            @Autowired(required = false) com.lifepilot.memory.experience.SubtaskReflector subtaskReflector,
-            @Autowired(required = false) com.lifepilot.memory.compression.CompressionService compressionService,
-            @Autowired(required = false) com.lifepilot.memory.episodic.EpisodicMemory episodicMemory) {
+            @Autowired(required = false) com.lifepilot.memory.experience.SubtaskReflector subtaskReflector) {
         return new com.lifepilot.agent.persistence.AgentPersistenceHandler(
                 config,
                 sessionManager,
@@ -167,9 +165,7 @@ public class AgentAutoConfiguration {
                 experienceSummarizer,
                 effectivenessTracker,
                 contrastiveLearner,
-                subtaskReflector,
-                compressionService,
-                episodicMemory);
+                subtaskReflector);
     }
 
     @Bean
