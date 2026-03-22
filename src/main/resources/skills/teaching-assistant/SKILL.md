@@ -10,6 +10,12 @@ suggested-tools:
   - builtin.file.read
   - builtin.memory.search-docs
   - builtin.memory.create
+triggers:
+  - "教学"
+  - "学习"
+  - "解释概念"
+  - "教程"
+  - "辅导"
 ---
 
 # 教学辅助指南

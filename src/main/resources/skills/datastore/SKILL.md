@@ -11,6 +11,12 @@ suggested-tools:
   - builtin.datastore.update_document
   - builtin.datastore.delete_document
   - builtin.datastore.aggregate
+triggers:
+  - "数据存储"
+  - "记录数据"
+  - "查询数据"
+  - "数据集合"
+  - "JSON存储"
 ---
 
 # 数据存储指南

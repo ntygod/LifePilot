@@ -31,6 +31,11 @@ suggested-tools:
   - builtin.workflow.status
   - builtin.workflow.cancel
   - builtin.workflow.resume
+triggers:
+  - "系统信息"
+  - "环境变量"
+  - "系统状态"
+  - "基础设施"
 ---
 
 # 基础工具集指南

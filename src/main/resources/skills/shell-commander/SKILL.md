@@ -12,6 +12,12 @@ suggested-tools:
   - builtin.file.read
   - builtin.file.write
   - builtin.env.system-info
+triggers:
+  - "命令行"
+  - "终端"
+  - "Shell"
+  - "执行命令"
+  - "脚本"
 ---
 
 # 命令行操作指南

@@ -12,6 +12,13 @@ suggested-tools:
   - builtin.browser.evaluate
   - builtin.browser.close
   - builtin.file.write
+triggers:
+  - "浏览器"
+  - "网页操作"
+  - "自动化"
+  - "截图"
+  - "爬取"
+  - "点击网页"
 ---
 
 # 浏览器自动化指南

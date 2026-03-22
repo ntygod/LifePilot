@@ -12,6 +12,13 @@ suggested-tools:
   - builtin.web.search
   - builtin.file.read
   - builtin.file.write
+triggers:
+  - "日程"
+  - "待办"
+  - "日常管理"
+  - "提醒"
+  - "安排"
+  - "计划"
 ---
 
 # 日常管理指南

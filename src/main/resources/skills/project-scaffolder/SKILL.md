@@ -8,6 +8,12 @@ suggested-tools:
   - builtin.file.write
   - builtin.file.list
   - builtin.file.read
+triggers:
+  - "项目脚手架"
+  - "创建项目"
+  - "初始化项目"
+  - "项目模板"
+  - "新建工程"
 ---
 
 # 项目脚手架指南

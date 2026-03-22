@@ -8,6 +8,13 @@ suggested-tools:
   - builtin.cron.list
   - builtin.cron.update
   - builtin.cron.remove
+triggers:
+  - "定时任务"
+  - "每天"
+  - "每周"
+  - "定时"
+  - "cron"
+  - "调度"
 ---
 
 # 定时任务调度指南

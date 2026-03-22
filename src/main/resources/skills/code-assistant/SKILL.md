@@ -12,6 +12,13 @@ suggested-tools:
   - builtin.file.read
   - builtin.file.write
   - builtin.file.list
+triggers:
+  - "写代码"
+  - "编程"
+  - "开发功能"
+  - "重构"
+  - "PR审查"
+  - "代码生成"
 ---
 
 # 编码代理指南

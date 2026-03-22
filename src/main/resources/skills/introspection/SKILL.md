@@ -9,6 +9,11 @@ suggested-tools:
   - system.status
   - system.suggest
   - system.runtime
+triggers:
+  - "自省"
+  - "能力查询"
+  - "系统能力"
+  - "我能做什么"
 ---
 
 # 系统自省指南

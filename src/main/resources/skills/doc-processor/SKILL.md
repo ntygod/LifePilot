@@ -8,6 +8,12 @@ suggested-tools:
   - builtin.file.read
   - builtin.file.write
   - builtin.code.execute
+triggers:
+  - "文档处理"
+  - "PDF"
+  - "Word"
+  - "文档转换"
+  - "提取文本"
 ---
 
 # 文档处理指南

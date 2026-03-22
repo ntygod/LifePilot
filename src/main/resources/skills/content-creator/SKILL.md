@@ -10,6 +10,13 @@ suggested-tools:
   - builtin.file.write
   - builtin.memory.search-docs
   - builtin.memory.search
+triggers:
+  - "写文章"
+  - "写文案"
+  - "创作内容"
+  - "博客"
+  - "文档撰写"
+  - "营销文案"
 ---
 
 # 内容创作指南

@@ -9,6 +9,12 @@ suggested-tools:
   - builtin.file.write
   - builtin.file.search
   - builtin.shell.exec
+triggers:
+  - "文件整理"
+  - "文件管理"
+  - "文件分类"
+  - "批量重命名"
+  - "清理文件"
 ---
 
 # 文件管理指南

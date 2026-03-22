@@ -8,6 +8,13 @@ suggested-tools:
   - builtin.web.fetch
   - builtin.file.read
   - builtin.file.write
+triggers:
+  - "GitHub"
+  - "Git"
+  - "提交代码"
+  - "PR"
+  - "Issue"
+  - "仓库"
 ---
 
 # GitHub 协作指南

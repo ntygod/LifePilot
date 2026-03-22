@@ -9,6 +9,13 @@ suggested-tools:
   - builtin.file.write
   - builtin.file.list
   - builtin.shell.exec
+triggers:
+  - "数据分析"
+  - "统计"
+  - "图表"
+  - "报表"
+  - "数据可视化"
+  - "Excel"
 ---
 
 # 数据分析指南

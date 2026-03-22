@@ -1,5 +1,6 @@
 package com.lifepilot.skill.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.prompt.PromptRegistry;
@@ -8,6 +9,7 @@ import com.lifepilot.skill.activation.SkillMetricsTracker;
 import com.lifepilot.skill.audit.SkillAuditRepository;
 import com.lifepilot.skill.disclosure.SkillDisclosureTool;
 import com.lifepilot.skill.disclosure.SkillGenerationTool;
+import com.lifepilot.skill.hub.SkillHubClient;
 import com.lifepilot.skill.generation.SkillGapDetector;
 import com.lifepilot.skill.generation.SkillGenerator;
 import com.lifepilot.skill.generation.SkillTemplateLibrary;
@@ -248,6 +250,19 @@ public class SkillAutoConfiguration {
     public SkillAuditRepository skillAuditRepository(JdbcTemplate jdbcTemplate) {
         log.info("Skill 系统: 注册 SkillAuditRepository");
         return new SkillAuditRepository(jdbcTemplate);
+    }
+
+    // ==================== SkillHub ====================
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnProperty(prefix = "lifepilot.skills.skill-hub", name = "enabled",
+            havingValue = "true", matchIfMissing = true)
+    public SkillHubClient skillHubClient(SkillConfigProperties skillConfig,
+                                          ObjectMapper objectMapper) {
+        String baseUrl = skillConfig.getSkillHub().getBaseUrl();
+        log.info("Skill 系统: 注册 SkillHubClient, baseUrl={}", baseUrl);
+        return new SkillHubClient(baseUrl, objectMapper);
     }
 
     // ==================== 启动后初始化 ====================

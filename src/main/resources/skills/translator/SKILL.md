@@ -9,6 +9,12 @@ suggested-tools:
   - builtin.web.search
   - builtin.memory.search-docs
   - builtin.memory.search
+triggers:
+  - "翻译"
+  - "中译英"
+  - "英译中"
+  - "多语言"
+  - "本地化"
 ---
 
 # 翻译助手指南

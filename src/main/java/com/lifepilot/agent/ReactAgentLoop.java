@@ -243,15 +243,32 @@ public class ReactAgentLoop implements CallbackHelper {
                 break;
             }
 
-            // 3. 更新 Budget 已用时长 + 检查超限
+            // 3. 更新 Budget 已用时长 + 渐进式降级 + 超限检查
             state = state.toBuilder()
                     .budget(state.budget().withElapsed(Duration.between(loopStart, Instant.now())))
                     .build();
+
+            // 渐进式降级：根据 Token 使用率逐步裁剪上下文
+            var degradation = state.budget().degradationLevel();
+            switch (degradation) {
+                case COMPRESS_HISTORY, TRIM_TOOLS, SKIP_MEMORY -> {
+                    // 清空缓存上下文，下一轮 assemble 时 ContextAssembler 会基于剩余预算自动裁剪
+                    if (cachedContext != null) {
+                        log.info("预算渐进式降级: traceId={}, level={}, tokenUtilization={}%",
+                                state.traceId(), degradation,
+                                (int) (state.budget().tokenUtilization() * 100));
+                        cachedContext = null;
+                    }
+                }
+                case TERMINATE -> {
+                    log.warn("ReAct 循环预算超限: traceId={}, reason={}",
+                            state.traceId(), state.budget().exceedReason());
+                    state = DegradedResponseBuilder.terminateWithReason(
+                            state, state.budget().exceedReason());
+                }
+                default -> {}
+            }
             if (state.budget().exceeded()) {
-                log.warn("ReAct 循环预算超限: traceId={}, reason={}",
-                        state.traceId(), state.budget().exceedReason());
-                state = DegradedResponseBuilder.terminateWithReason(
-                        state, state.budget().exceedReason());
                 break;
             }
 

@@ -8,6 +8,13 @@ suggested-tools:
   - builtin.code.execute
   - builtin.file.read
   - builtin.file.write
+triggers:
+  - "API调试"
+  - "接口测试"
+  - "HTTP请求"
+  - "REST"
+  - "调试接口"
+  - "Postman"
 ---
 
 # API 调试指南

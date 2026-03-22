@@ -6,6 +6,13 @@ version: "1.0.0"
 suggested-tools:
   - builtin.heartbeat.read
   - builtin.heartbeat.write
+triggers:
+  - "心跳"
+  - "巡检"
+  - "定期检查"
+  - "监控"
+  - "留意"
+  - "关注"
 ---
 
 # 心跳巡检 Checklist 管理指南

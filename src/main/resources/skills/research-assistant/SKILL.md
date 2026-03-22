@@ -9,6 +9,12 @@ suggested-tools:
   - builtin.memory.search-docs
   - builtin.memory.search
   - builtin.file.write
+triggers:
+  - "调研"
+  - "研究"
+  - "搜索资料"
+  - "信息收集"
+  - "深度搜索"
 ---
 
 # 信息调研指南

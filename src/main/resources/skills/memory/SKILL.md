@@ -13,6 +13,13 @@ suggested-tools:
   - builtin.memory.tag
   - builtin.memory.query-at-time
   - builtin.memory.search-experience
+triggers:
+  - "记忆"
+  - "记住"
+  - "回忆"
+  - "之前说过"
+  - "上次"
+  - "历史记录"
 ---
 
 # 记忆管理指南

@@ -9,6 +9,11 @@ suggested-tools:
   - builtin.file.read
   - builtin.file.write
   - builtin.env.system-info
+triggers:
+  - "桌面自动化"
+  - "鼠标操作"
+  - "键盘操作"
+  - "桌面应用"
 ---
 
 # 桌面自动化指南

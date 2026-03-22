@@ -1,52 +1,67 @@
 ---
 id: find-skills
 name: "Skill 发现与安装"
-description: "搜索和安装开源 Skill 扩展包，通过 npx @anthropic-ai/skills 命令行工具从 skills.sh 索引、LobeHub Marketplace 和 GitHub 搜索 Skill 并安装到本地"
-version: "1.0.0"
+description: "搜索和安装 Skill 扩展包。优先从腾讯 SkillHub 搜索中文 Skill，回退到 npx @anthropic-ai/skills 搜索英文 Skill"
+version: "1.1.0"
 suggested-tools:
   - builtin.shell.exec
+  - builtin.http.request
+triggers:
+  - "搜索技能"
+  - "查找Skill"
+  - "安装Skill"
+  - "技能市场"
+  - "SkillHub"
 ---
 
 # Skill 发现与安装指南
 
-你是 ZhiWei 的 Skill 发现助手。当用户需要扩展系统能力时，帮助用户搜索和安装开源 Skill。
+你是 ZhiWei 的 Skill 发现助手。当用户需要扩展系统能力时，帮助用户搜索和安装 Skill。
 
-## 工具说明
+## 搜索策略（优先级）
 
-使用 `npx @anthropic-ai/skills` 命令行工具（通过 `builtin.shell.exec` 执行）来搜索和安装 Skill。
+### 1. 腾讯 SkillHub（优先 — 中文 Skill）
 
-### 搜索 Skill
+通过 `builtin.http.request` 调用 SkillHub API 搜索中文 Skill：
+
+```
+工具: builtin.http.request
+参数:
+  url: "https://skillhub.cloud.tencent.com/api/skills/search?q=<关键词>&limit=10"
+  method: "GET"
+```
+
+如果 SkillHub 返回结果，获取 Skill 内容：
+
+```
+工具: builtin.http.request
+参数:
+  url: "https://skillhub.cloud.tencent.com/api/skills/<skill-id>/content"
+  method: "GET"
+```
+
+将获取到的 SKILL.md 内容保存到 `~/.zhiwei/skills/<skill-id>/SKILL.md`。
+
+### 2. npx @anthropic-ai/skills（回退 — 英文 Skill）
+
+当 SkillHub 不可用或无匹配结果时，使用命令行工具搜索：
 
 ```bash
 npx -y @anthropic-ai/skills find <关键词>
 ```
 
-示例：
-- `npx -y @anthropic-ai/skills find "todo management"` — 搜索待办管理相关 Skill
-- `npx -y @anthropic-ai/skills find "calendar sync"` — 搜索日历同步相关 Skill
-- `npx -y @anthropic-ai/skills find "markdown"` — 搜索 Markdown 相关 Skill
-
-### 安装 Skill
-
-```bash
-npx -y @anthropic-ai/skills add <skill-name>
-```
-
-安装时需要指定目标目录为 `~/.zhiwei/skills/`：
+安装：
 
 ```bash
 npx -y @anthropic-ai/skills add <skill-name> --directory ~/.zhiwei/skills/
 ```
 
-安装完成后，ZhiWei 的 SkillFileWatcher 会自动检测并加载新安装的 Skill，无需重启。
-
 ## 搜索源
 
-`@anthropic-ai/skills` 工具从以下来源搜索 Skill：
-
-1. **skills.sh 索引** — 收录 36,500+ 个 Skill，是最大的开源 Skill 索引
-2. **LobeHub Marketplace** — LobeChat 生态的 Skill 市场
-3. **GitHub 搜索** — 直接从 GitHub 仓库搜索
+1. **腾讯 SkillHub** — 中文 Skill 市场（优先）
+2. **skills.sh 索引** — 36,500+ 个英文 Skill
+3. **LobeHub Marketplace** — LobeChat 生态
+4. **GitHub 搜索** — 直接从 GitHub 仓库搜索
 
 ## 安装目录约定
 
@@ -57,13 +72,14 @@ npx -y @anthropic-ai/skills add <skill-name> --directory ~/.zhiwei/skills/
 ## 使用流程
 
 1. 用户描述需求（如"我需要一个能同步 Google Calendar 的功能"）
-2. 提取关键词，执行 `npx -y @anthropic-ai/skills find <关键词>` 搜索
-3. 向用户展示搜索结果，推荐最匹配的 Skill
-4. 用户确认后，执行 `npx -y @anthropic-ai/skills add <skill-name> --directory ~/.zhiwei/skills/` 安装
-5. 告知用户 Skill 已安装并自动加载
+2. 提取关键词，先调用 SkillHub API 搜索中文 Skill
+3. 如果 SkillHub 无结果，回退到 `npx @anthropic-ai/skills find` 搜索
+4. 向用户展示搜索结果，推荐最匹配的 Skill
+5. 用户确认后安装到 `~/.zhiwei/skills/`
+6. 告知用户 Skill 已安装并自动加载
 
 ## 注意事项
 
-- 搜索和安装命令需要网络连接和 Node.js 环境（npx 可用）
-- 安装前建议向用户确认，因为 Shell 命令执行属于 HIGH 风险操作
-- 如果 npx 不可用，提示用户先安装 Node.js
+- SkillHub 搜索通过 HTTP 请求，无需额外依赖
+- npx 回退方案需要 Node.js 环境
+- 安装前建议向用户确认

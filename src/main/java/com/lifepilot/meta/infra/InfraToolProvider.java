@@ -14,6 +14,7 @@ import com.lifepilot.meta.infra.shell.ProcessToolProvider;
 import com.lifepilot.meta.infra.shell.ShellExecToolExecutor;
 import com.lifepilot.meta.infra.interaction.InteractionBridge;
 import com.lifepilot.meta.infra.interaction.InteractionToolProvider;
+import com.lifepilot.meta.infra.web.HttpRequestToolExecutor;
 import com.lifepilot.meta.infra.web.WebFetchToolExecutor;
 import com.lifepilot.meta.infra.web.WebSearchConfigProvider;
 import com.lifepilot.meta.infra.web.WebSearchToolExecutor;
@@ -137,6 +138,10 @@ public class InfraToolProvider {
 
         toolRegistry.registerBuiltinTool(buildWebSearchTool(webSearchExecutor));
         toolRegistry.registerBuiltinTool(buildWebFetchTool(webFetchExecutor));
+
+        // HTTP 请求工具（1 个）
+        var httpRequestExecutor = new HttpRequestToolExecutor();
+        toolRegistry.registerBuiltinTool(buildHttpRequestTool(httpRequestExecutor));
 
         // 推理辅助工具（1 个）
         var calculateExecutor = new CalculateToolExecutor();
@@ -361,6 +366,39 @@ public class InfraToolProvider {
                 )))
                 .riskLevel(RiskLevel.HIGH)
                 .idempotent(false)
+                .tags(INFRA_TAGS)
+                .executor(executor::execute)
+                .build();
+    }
+
+    // ─────────────────────────────────────────────
+    //  HTTP 请求工具构建
+    // ─────────────────────────────────────────────
+
+    /** 构建 HTTP 请求工具 — 支持 GET/POST/PUT/DELETE/PATCH，MEDIUM 风险。 */
+    private BuiltinTool buildHttpRequestTool(HttpRequestToolExecutor executor) {
+        return BuiltinTool.builder()
+                .id("builtin.http.request")
+                .category(ToolCategory.ACTION)
+                .name("HTTP 请求")
+                .description("发送 HTTP 请求到外部 API，支持 GET/POST/PUT/DELETE/PATCH 方法。禁止访问内网地址")
+                .inputSchema(JsonSchema.of(Map.of(
+                        "type", "object",
+                        "required", List.of("url"),
+                        "properties", Map.of(
+                                "url", Map.of("type", "string",
+                                        "description", "请求 URL"),
+                                "method", Map.of("type", "string",
+                                        "description", "HTTP 方法（GET/POST/PUT/DELETE/PATCH），默认 GET"),
+                                "headers", Map.of("type", "object",
+                                        "description", "请求头 Map"),
+                                "body", Map.of("type", "string",
+                                        "description", "请求体（POST/PUT/PATCH 时使用）"),
+                                "timeoutSeconds", Map.of("type", "integer",
+                                        "description", "请求超时时间（秒），默认 30")
+                        )
+                )))
+                .riskLevel(RiskLevel.MEDIUM)
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();

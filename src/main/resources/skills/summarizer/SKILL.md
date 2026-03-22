@@ -9,6 +9,12 @@ suggested-tools:
   - builtin.file.read
   - builtin.file.write
   - builtin.memory.search-docs
+triggers:
+  - "总结"
+  - "摘要"
+  - "概括"
+  - "归纳"
+  - "提炼要点"
 ---
 
 # 内容摘要指南
