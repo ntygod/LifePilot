@@ -1,9 +1,9 @@
 package com.lifepilot.mcp.discovery;
 
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.mcp.config.McpConfigProperties;
 import com.lifepilot.mcp.config.McpServerConfig;
+import com.lifepilot.mcp.protocol.McpJsonSupport;
 import com.lifepilot.mcp.transport.TransportType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,7 +36,6 @@ import java.util.*;
 public class McpServerDiscovery {
 
     private static final Logger log = LoggerFactory.getLogger(McpServerDiscovery.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     /** classpath 内置 MCP 服务器配置路径。 */
     private static final String BUILTIN_MCP_RESOURCE = "builtin-mcp/servers.json";
@@ -121,7 +120,7 @@ public class McpServerDiscovery {
                     log.debug("未找到内置 MCP 配置: {}", BUILTIN_MCP_RESOURCE);
                     return;
                 }
-                builtinRoot = MAPPER.readValue(is, new TypeReference<>() {});
+                builtinRoot = McpJsonSupport.MAPPER.readValue(is, new TypeReference<>() {});
             }
 
             var builtinServers = (Map<String, Object>) builtinRoot.getOrDefault("mcpServers", Map.of());
@@ -134,7 +133,7 @@ public class McpServerDiscovery {
             Map<String, Object> userServers;
             if (Files.exists(userServersFile)) {
                 var content = Files.readString(userServersFile);
-                userRoot = MAPPER.readValue(content, new TypeReference<>() {});
+                userRoot = McpJsonSupport.MAPPER.readValue(content, new TypeReference<>() {});
                 userServers = (Map<String, Object>) userRoot.getOrDefault("mcpServers", new LinkedHashMap<>());
             } else {
                 userRoot = new LinkedHashMap<>();
@@ -154,7 +153,7 @@ public class McpServerDiscovery {
                 // 写回用户配置
                 userRoot.put("mcpServers", userServers);
                 Files.createDirectories(userMcpDir);
-                MAPPER.writerWithDefaultPrettyPrinter().writeValue(userServersFile.toFile(), userRoot);
+                McpJsonSupport.MAPPER.writerWithDefaultPrettyPrinter().writeValue(userServersFile.toFile(), userRoot);
                 log.info("内置 MCP 配置已释放: 新增 {} 个服务器到 {}", added, userServersFile);
             }
         } catch (IOException e) {
@@ -212,7 +211,7 @@ public class McpServerDiscovery {
 
         try {
             var content = Files.readString(path);
-            var root = MAPPER.readValue(content,
+            var root = McpJsonSupport.MAPPER.readValue(content,
                     new TypeReference<Map<String, Object>>() {});
 
             var mcpServers = (Map<String, Object>) root.get("mcpServers");

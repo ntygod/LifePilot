@@ -1,7 +1,6 @@
 package com.lifepilot.tool;
 
-import com.lifepilot.mcp.McpClient;
-import com.lifepilot.mcp.registry.McpServerRegistry;
+import com.lifepilot.mcp.adapter.McpToolExecutor;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.model.*;
 import com.lifepilot.tool.schema.JsonSchema;
@@ -9,16 +8,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
-import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * MCP 外部工具（Layer 1）— 通过 clientId 延迟查找 McpClient。
+ * MCP 外部工具（Layer 1）— 通过 McpToolExecutor 执行工具调用。
  *
  * <p>通过 MCP 协议与外部 MCP Server 通信。
- * 执行时通过 {@link McpServerRegistry#getClient(String)} 查找
- * McpClient，避免持有可变引用导致序列化和值语义问题。</p>
+ * 执行时委托给 {@link McpToolExecutor}，由其通过 McpServerRegistry
+ * 查找 McpClient 并完成调用。</p>
  *
  * @param id 工具唯一标识（格式：mcp.{serverName}.{toolName}）
  * @param name 工具显示名称
@@ -52,17 +49,17 @@ public record McpTool(
 
     private static final Logger log = LoggerFactory.getLogger(McpTool.class);
 
-    /** 全局 McpServerRegistry 引用，启动时由 ToolAutoConfiguration 注入。 */
-    private static final AtomicReference<McpServerRegistry> REGISTRY_REF = new AtomicReference<>();
+    /** 全局 McpToolExecutor 引用，启动时由 McpAutoConfiguration 注入。 */
+    private static final AtomicReference<McpToolExecutor> EXECUTOR_REF = new AtomicReference<>();
 
     /**
-     * 设置全局 McpServerRegistry 引用。
+     * 设置全局 McpToolExecutor 引用。
      *
-     * @param registry McpServerRegistry 实例
+     * @param executor McpToolExecutor 实例
      */
-    public static void setMcpServerRegistry(McpServerRegistry registry) {
-        REGISTRY_REF.set(registry);
-        log.info("McpServerRegistry 已注入 McpTool");
+    public static void setMcpToolExecutor(McpToolExecutor executor) {
+        EXECUTOR_REF.set(executor);
+        log.info("McpToolExecutor 已注入 McpTool");
     }
 
     @Override
@@ -72,64 +69,11 @@ public record McpTool(
 
     @Override
     public ToolResult execute(ToolInput input) {
-        McpServerRegistry registry = REGISTRY_REF.get();
-        if (registry == null) {
-            log.error("McpServerRegistry 未初始化, clientId={}", clientId);
-            return ToolResult.error("McpServerRegistry 未初始化");
+        McpToolExecutor executor = EXECUTOR_REF.get();
+        if (executor == null) {
+            log.error("McpToolExecutor 未初始化, clientId={}", clientId);
+            return ToolResult.error("McpToolExecutor 未初始化");
         }
-
-        // 通过 clientId 查找 McpClient
-        Optional<McpClient> clientOpt = registry.getClient(clientId);
-        if (clientOpt.isEmpty()) {
-            log.warn("MCP 客户端不存在或已断开: clientId={}", clientId);
-            return ToolResult.error("MCP 客户端不存在或已断开: " + clientId);
-        }
-
-        McpClient client = clientOpt.get();
-        try {
-            var mcpResult = client.callTool(mcpToolName, input.parameters()).join();
-
-            var meta = ToolResultMeta.builder()
-                    .toolId(id)
-                    .action("callTool")
-                    .duration(java.time.Duration.ZERO)
-                    .tokensUsed(0)
-                    .cacheHit(false)
-                    .retryCount(0)
-                    .executorType("MCP")
-                    .mcpServerName(serverName)
-                    .timestamp(java.time.Instant.now())
-                    .build();
-
-            if (mcpResult.isError()) {
-                String errorMsg = mcpResult.content().stream()
-                        .filter(c -> "text".equals(c.type()))
-                        .map(content -> Optional.ofNullable(content.text()).orElse(""))
-                        .findFirst()
-                        .orElse("MCP 工具调用失败");
-                return ToolResult.error(errorMsg, meta);
-            }
-
-            String text = mcpResult.content().stream()
-                    .filter(c -> "text".equals(c.type()))
-                    .map(content -> Optional.ofNullable(content.text()).orElse(""))
-                    .reduce("", (a, b) -> a + b);
-
-            return ToolResult.success(Map.of("result", text), meta);
-
-        } catch (Exception e) {
-            var meta = ToolResultMeta.builder()
-                    .toolId(id)
-                    .action("callTool")
-                    .duration(java.time.Duration.ZERO)
-                    .tokensUsed(0)
-                    .cacheHit(false)
-                    .retryCount(0)
-                    .executorType("MCP")
-                    .mcpServerName(serverName)
-                    .timestamp(java.time.Instant.now())
-                    .build();
-            return ToolResult.error("MCP 工具调用异常: " + e.getMessage(), meta);
-        }
+        return executor.execute(this, input);
     }
 }

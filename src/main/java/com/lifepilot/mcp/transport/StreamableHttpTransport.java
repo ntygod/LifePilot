@@ -1,11 +1,11 @@
 package com.lifepilot.mcp.transport;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.mcp.config.McpServerConfig;
 import com.lifepilot.mcp.exception.McpToolCallException;
 import com.lifepilot.mcp.exception.McpTransportException;
 import com.lifepilot.mcp.protocol.JsonRpcMessage;
+import com.lifepilot.mcp.protocol.McpJsonSupport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,7 +31,9 @@ import java.util.concurrent.atomic.AtomicLong;
 public final class StreamableHttpTransport implements McpTransport {
 
     private static final Logger log = LoggerFactory.getLogger(StreamableHttpTransport.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    /** 共享的 Virtual Thread Executor，避免每次调用创建新实例。 */
+    private static final ExecutorService VIRTUAL_EXECUTOR = Executors.newVirtualThreadPerTaskExecutor();
 
     private final McpServerConfig config;
     private final AtomicBoolean connected = new AtomicBoolean(false);
@@ -51,13 +53,13 @@ public final class StreamableHttpTransport implements McpTransport {
             this.baseUrl = config.url();
             this.httpClient = HttpClient.newBuilder()
                     .connectTimeout(Duration.ofSeconds(10))
-                    .executor(Executors.newVirtualThreadPerTaskExecutor())
+                    .executor(VIRTUAL_EXECUTOR)
                     .build();
 
             connected.set(true);
             log.info("Streamable HTTP 传输就绪: server={}, url={}",
                     config.name(), baseUrl);
-        }, Executors.newVirtualThreadPerTaskExecutor());
+        }, VIRTUAL_EXECUTOR);
     }
 
     @Override
@@ -72,7 +74,7 @@ public final class StreamableHttpTransport implements McpTransport {
 
         return CompletableFuture.supplyAsync(() -> {
             try {
-                String json = MAPPER.writeValueAsString(message);
+                String json = McpJsonSupport.MAPPER.writeValueAsString(message);
 
                 var requestBuilder = HttpRequest.newBuilder()
                         .uri(URI.create(baseUrl + "/mcp"))
@@ -102,7 +104,17 @@ public final class StreamableHttpTransport implements McpTransport {
                                     .formatted(response.statusCode(), config.name()));
                 }
 
-                JsonNode responseNode = MAPPER.readTree(response.body());
+                // 根据 Content-Type 分支处理 JSON 和 SSE 响应
+                String contentType = response.headers()
+                        .firstValue("Content-Type").orElse("application/json");
+                String body = response.body();
+
+                JsonNode responseNode;
+                if (contentType.contains("text/event-stream")) {
+                    responseNode = parseSseResponse(body);
+                } else {
+                    responseNode = McpJsonSupport.MAPPER.readTree(body);
+                }
 
                 if (responseNode.has("error")) {
                     String errorMsg = responseNode.get("error").get("message").asText();
@@ -120,7 +132,7 @@ public final class StreamableHttpTransport implements McpTransport {
                 throw new CompletionException(
                         new McpTransportException("HTTP 请求异常: " + method, e));
             }
-        }, Executors.newVirtualThreadPerTaskExecutor());
+        }, VIRTUAL_EXECUTOR);
     }
 
     @Override
@@ -130,21 +142,24 @@ public final class StreamableHttpTransport implements McpTransport {
         CompletableFuture.runAsync(() -> {
             try {
                 var message = JsonRpcMessage.notification(method, params);
-                String json = MAPPER.writeValueAsString(message);
+                String json = McpJsonSupport.MAPPER.writeValueAsString(message);
 
-                var request = HttpRequest.newBuilder()
+                var requestBuilder = HttpRequest.newBuilder()
                         .uri(URI.create(baseUrl + "/mcp"))
                         .header("Content-Type", "application/json")
-                        .POST(HttpRequest.BodyPublishers.ofString(json))
-                        .build();
+                        .POST(HttpRequest.BodyPublishers.ofString(json));
 
-                httpClient.send(request, HttpResponse.BodyHandlers.discarding());
+                if (sessionId != null) {
+                    requestBuilder.header("Mcp-Session-Id", sessionId);
+                }
+
+                httpClient.send(requestBuilder.build(), HttpResponse.BodyHandlers.discarding());
 
             } catch (Exception e) {
                 log.warn("通知发送失败: method={}, server={}, error={}",
                         method, config.name(), e.getMessage());
             }
-        }, Executors.newVirtualThreadPerTaskExecutor());
+        }, VIRTUAL_EXECUTOR);
     }
 
     @Override
@@ -163,5 +178,31 @@ public final class StreamableHttpTransport implements McpTransport {
     @Override
     public TransportType transportType() {
         return TransportType.STREAMABLE_HTTP;
+    }
+
+    /**
+     * 解析 SSE 格式的响应体，提取最后一个 JSON-RPC 消息。
+     *
+     * <p>SSE 格式为 {@code event: message\ndata: {json}\n\n}，
+     * 取最后一个 data 行作为最终响应（MCP 规范中 SSE 流的最后一条消息为最终结果）。</p>
+     *
+     * @param body SSE 响应体
+     * @return 解析后的 JSON-RPC 响应节点
+     */
+    private JsonNode parseSseResponse(String body) throws Exception {
+        JsonNode lastMessage = null;
+        for (String line : body.split("\n")) {
+            String trimmed = line.trim();
+            if (trimmed.startsWith("data:")) {
+                String data = trimmed.substring(5).trim();
+                if (!data.isEmpty() && !data.equals("[DONE]")) {
+                    lastMessage = McpJsonSupport.MAPPER.readTree(data);
+                }
+            }
+        }
+        if (lastMessage == null) {
+            throw new McpTransportException("SSE 响应中未找到有效的 JSON-RPC 消息: server=" + config.name());
+        }
+        return lastMessage;
     }
 }

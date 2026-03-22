@@ -595,6 +595,7 @@ lifepilot:
     enabled: true
     server:
       enabled: false
+      api-key: ${ZHIWEI_MCP_API_KEY:}
     servers: []
     discovery:
       enabled: true

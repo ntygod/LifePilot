@@ -201,7 +201,7 @@ public class McpServerRegistry {
     //  健康检查与自动重连
     // ─────────────────────────────────────────────
 
-    /** 定期健康检查（使用 tools/list 作为 ping）。 */
+    /** 定期健康检查（使用轻量级 ping 代替 tools/list）。 */
     void scheduleHealthCheck(String serverName, Duration interval) {
         sharedScheduler.heartbeat().scheduleAtFixedRate(() -> {
             var entry = servers.get(serverName);
@@ -211,7 +211,7 @@ public class McpServerRegistry {
 
             try {
                 if (entry.client() != null) {
-                    entry.client().listTools().join();
+                    entry.client().ping().join();
                 }
                 updateEntry(serverName, e -> e.toBuilder()
                         .state(McpServerState.CONNECTED)
@@ -308,6 +308,9 @@ public class McpServerRegistry {
 
     /**
      * 记录连接日志条目（内存环形缓冲，每个 Server 最多 {@value MAX_LOG_ENTRIES} 条）。
+     *
+     * <p>使用 synchronized 保证 addFirst + 裁剪的原子性，
+     * 避免 ConcurrentLinkedDeque.size() 的 O(n) 遍历和竞态问题。</p>
      */
     private void recordConnectionLog(String serverName, McpServerState oldState,
                                      McpServerState newState, Instant timestamp,
@@ -320,11 +323,12 @@ public class McpServerRegistry {
 
         var logs = connectionLogs.computeIfAbsent(serverName,
                 k -> new ConcurrentLinkedDeque<>());
-        logs.addFirst(logEntry);
 
-        // 超出上限时移除最旧条目
-        while (logs.size() > MAX_LOG_ENTRIES) {
-            logs.removeLast();
+        synchronized (logs) {
+            logs.addFirst(logEntry);
+            while (logs.size() > MAX_LOG_ENTRIES) {
+                logs.removeLast();
+            }
         }
     }
 

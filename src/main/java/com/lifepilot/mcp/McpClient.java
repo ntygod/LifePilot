@@ -1,17 +1,19 @@
 package com.lifepilot.mcp;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.mcp.config.McpServerConfig;
 import com.lifepilot.mcp.model.McpServerCapabilities;
 import com.lifepilot.mcp.model.McpServerInfo;
 import com.lifepilot.mcp.model.McpToolResult;
 import com.lifepilot.mcp.model.McpToolSchema;
+import com.lifepilot.mcp.protocol.McpJsonSupport;
 import com.lifepilot.mcp.transport.*;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -28,7 +30,6 @@ import java.util.concurrent.CompletableFuture;
 public class McpClient {
 
     private static final Logger log = LoggerFactory.getLogger(McpClient.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     /** MCP 协议版本。 */
     private static final String PROTOCOL_VERSION = "2025-06-18";
@@ -117,19 +118,49 @@ public class McpClient {
     }
 
     /**
-     * 获取 MCP Server 提供的工具列表。
+     * 获取 MCP Server 提供的工具列表（支持 cursor 分页）。
+     *
+     * <p>自动处理分页：如果响应中包含 nextCursor，则继续请求下一页，
+     * 直到所有工具都获取完毕。</p>
      *
      * @return 工具 Schema 列表
      */
     public CompletableFuture<List<McpToolSchema>> listTools() {
         log.debug("请求工具列表: server={}", config.name());
 
-        return transport.sendRequest("tools/list", Map.of())
-                .thenApply(result -> {
-                    var tools = parseToolSchemas(result);
+        return listToolsAllPages(null, new ArrayList<>())
+                .thenApply(tools -> {
                     log.info("工具列表获取成功: server={}, count={}",
                             config.name(), tools.size());
-                    return tools;
+                    return List.copyOf(tools);
+                });
+    }
+
+    /**
+     * 递归获取所有分页的工具列表。
+     *
+     * @param cursor 分页游标，首次请求为 null
+     * @param accumulated 已累积的工具列表
+     * @return 所有工具的完整列表
+     */
+    private CompletableFuture<List<McpToolSchema>> listToolsAllPages(
+            String cursor, List<McpToolSchema> accumulated) {
+
+        var params = cursor != null
+                ? Map.<String, Object>of("cursor", cursor)
+                : Map.<String, Object>of();
+
+        return transport.sendRequest("tools/list", params)
+                .thenCompose(result -> {
+                    var tools = parseToolSchemas(result);
+                    accumulated.addAll(tools);
+
+                    // 检查是否有下一页
+                    JsonNode nextCursor = result.get("nextCursor");
+                    if (nextCursor != null && !nextCursor.isNull() && !nextCursor.asText().isEmpty()) {
+                        return listToolsAllPages(nextCursor.asText(), accumulated);
+                    }
+                    return CompletableFuture.completedFuture(accumulated);
                 });
     }
 
@@ -166,6 +197,17 @@ public class McpClient {
     public CompletableFuture<Void> shutdown() {
         log.info("MCP 客户端关闭: server={}", config.name());
         return transport.disconnect();
+    }
+
+    /**
+     * 发送 ping 请求用于健康检查（轻量级，不传输工具列表数据）。
+     *
+     * @return ping 完成的 Future
+     */
+    public CompletableFuture<Void> ping() {
+        log.debug("MCP ping: server={}", config.name());
+        return transport.sendRequest("ping", Map.of())
+                .thenAccept(result -> log.debug("MCP ping 成功: server={}", config.name()));
     }
 
     /** 获取服务器名称。 */
@@ -234,7 +276,7 @@ public class McpClient {
             if (toolsNode == null || !toolsNode.isArray()) {
                 return List.of();
             }
-            return MAPPER.readerForListOf(McpToolSchema.class).readValue(toolsNode);
+            return McpJsonSupport.MAPPER.readerForListOf(McpToolSchema.class).readValue(toolsNode);
         } catch (Exception e) {
             log.warn("工具 Schema 解析失败: server={}, error={}",
                     config.name(), e.getMessage());
@@ -244,7 +286,7 @@ public class McpClient {
 
     private McpToolResult parseToolResult(JsonNode result) {
         try {
-            return MAPPER.treeToValue(result, McpToolResult.class);
+            return McpJsonSupport.MAPPER.treeToValue(result, McpToolResult.class);
         } catch (Exception e) {
             return new McpToolResult(List.of(), true);
         }

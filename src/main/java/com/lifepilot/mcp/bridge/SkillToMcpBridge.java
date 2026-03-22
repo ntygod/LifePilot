@@ -1,10 +1,10 @@
 package com.lifepilot.mcp.bridge;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.mcp.model.McpContent;
 import com.lifepilot.mcp.model.McpToolAnnotations;
 import com.lifepilot.mcp.model.McpToolResult;
 import com.lifepilot.mcp.model.McpToolSchema;
+import com.lifepilot.mcp.protocol.McpJsonSupport;
 import com.lifepilot.tool.ToolContract;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.model.ToolInput;
@@ -32,7 +32,6 @@ import java.util.Map;
 public class SkillToMcpBridge {
 
     private static final Logger log = LoggerFactory.getLogger(SkillToMcpBridge.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final DynamicToolRegistry toolRegistry;
 
@@ -154,7 +153,7 @@ public class SkillToMcpBridge {
     /** 序列化数据为字符串。 */
     private String serializeData(Map<String, Object> data) {
         try {
-            return MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(data);
+            return McpJsonSupport.MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(data);
         } catch (Exception e) {
             return data.toString();
         }

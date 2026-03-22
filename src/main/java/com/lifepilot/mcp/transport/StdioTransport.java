@@ -1,15 +1,16 @@
 package com.lifepilot.mcp.transport;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.mcp.config.McpServerConfig;
 import com.lifepilot.mcp.exception.McpToolCallException;
 import com.lifepilot.mcp.exception.McpTransportException;
 import com.lifepilot.mcp.protocol.JsonRpcMessage;
+import com.lifepilot.mcp.protocol.McpJsonSupport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -29,7 +30,9 @@ import java.util.concurrent.atomic.AtomicLong;
 public final class StdioTransport implements McpTransport {
 
     private static final Logger log = LoggerFactory.getLogger(StdioTransport.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    /** 共享的 Virtual Thread Executor，避免每次调用创建新实例。 */
+    private static final ExecutorService VIRTUAL_EXECUTOR = Executors.newVirtualThreadPerTaskExecutor();
 
     private final McpServerConfig config;
     private final AtomicBoolean connected = new AtomicBoolean(false);
@@ -84,7 +87,7 @@ public final class StdioTransport implements McpTransport {
                 throw new McpTransportException(
                         "MCP Server 子进程启动失败: " + config.name(), e);
             }
-        }, Executors.newVirtualThreadPerTaskExecutor());
+        }, VIRTUAL_EXECUTOR);
     }
 
     @Override
@@ -100,7 +103,7 @@ public final class StdioTransport implements McpTransport {
 
         try {
             var message = JsonRpcMessage.request(id, method, params);
-            String json = MAPPER.writeValueAsString(message);
+            String json = McpJsonSupport.MAPPER.writeValueAsString(message);
 
             synchronized (stdin) {
                 stdin.write(json);
@@ -117,7 +120,10 @@ public final class StdioTransport implements McpTransport {
                     new McpTransportException("请求发送失败: " + method, e));
         }
 
-        return future;
+        // 添加超时保护，防止子进程不响应导致 future 永远挂起
+        Duration timeout = config.timeout() != null ? config.timeout() : Duration.ofSeconds(60);
+        return future.orTimeout(timeout.toSeconds(), TimeUnit.SECONDS)
+                .whenComplete((r, ex) -> pendingRequests.remove(id));
     }
 
     @Override
@@ -129,7 +135,7 @@ public final class StdioTransport implements McpTransport {
 
         try {
             var message = JsonRpcMessage.notification(method, params);
-            String json = MAPPER.writeValueAsString(message);
+            String json = McpJsonSupport.MAPPER.writeValueAsString(message);
 
             synchronized (stdin) {
                 stdin.write(json);
@@ -181,7 +187,7 @@ public final class StdioTransport implements McpTransport {
             }
 
             log.info("MCP Server 连接已断开: name={}", config.name());
-        }, Executors.newVirtualThreadPerTaskExecutor());
+        }, VIRTUAL_EXECUTOR);
     }
 
     @Override
@@ -200,7 +206,7 @@ public final class StdioTransport implements McpTransport {
             String line;
             while (connected.get() && (line = stdout.readLine()) != null) {
                 try {
-                    JsonNode node = MAPPER.readTree(line);
+                    JsonNode node = McpJsonSupport.MAPPER.readTree(line);
 
                     if (node.has("id") && node.has("result")) {
                         // JSON-RPC 响应
@@ -382,14 +388,13 @@ public final class StdioTransport implements McpTransport {
     /**
      * 确保 npx 包已安装到缓存（同步等待，最多 60 秒）。
      *
-     * <p>使用 {@code npx --yes --package=<pkg> -- echo ok} 触发安装但不运行包的 bin 入口，
-     * 避免 MCP Server 类型的包启动后阻塞等待 stdin。</p>
+     * <p>使用 ProcessBuilder 列表形式传参，避免 shell 拼接导致的命令注入风险。</p>
      */
     private static void ensureNpxPackageInstalled(String packageName) {
         try {
             var proc = new ProcessBuilder(
-                    "cmd.exe", "/d", "/s", "/c",
-                    "\"npx --yes --package=" + packageName + " -- echo ok\"")
+                    "cmd.exe", "/d", "/c",
+                    "npx", "--yes", "--package=" + packageName, "--", "echo", "ok")
                     .redirectErrorStream(true)
                     .start();
             // 消费输出防止阻塞
@@ -427,7 +432,7 @@ public final class StdioTransport implements McpTransport {
             if (!pkgJsonFile.exists()) continue;
 
             try {
-                var pkgJson = MAPPER.readTree(pkgJsonFile);
+                var pkgJson = McpJsonSupport.MAPPER.readTree(pkgJsonFile);
                 var binNode = pkgJson.get("bin");
                 if (binNode == null) continue;
 

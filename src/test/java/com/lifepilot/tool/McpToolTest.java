@@ -1,6 +1,7 @@
 package com.lifepilot.tool;
 
 import com.lifepilot.mcp.McpClient;
+import com.lifepilot.mcp.adapter.McpToolExecutor;
 import com.lifepilot.mcp.model.McpContent;
 import com.lifepilot.mcp.model.McpToolResult;
 import com.lifepilot.mcp.registry.McpServerRegistry;
@@ -26,7 +27,7 @@ import static org.mockito.Mockito.when;
 /**
  * McpTool 单元测试。
  *
- * <p>使用 Mock McpServerRegistry + McpClient 验证 execute() 各路径。</p>
+ * <p>使用 Mock McpServerRegistry + McpClient，通过 McpToolExecutor 验证 execute() 各路径。</p>
  *
  * @author zsg
  * @since 2026-02-24
@@ -42,7 +43,7 @@ class McpToolTest {
 
     @BeforeEach
     void setUp() {
-        McpTool.setMcpServerRegistry(mockRegistry);
+        McpTool.setMcpToolExecutor(new McpToolExecutor(mockRegistry));
     }
 
     private McpTool createTool() {

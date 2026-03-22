@@ -51,7 +51,8 @@ public class McpConfigProperties {
     public static class ServerProperties {
         /** 是否启用 MCP Server 模式（反向桥接），默认 false。 */
         private boolean enabled = false;
-
+        /** API Key 认证密钥，为空时不启用认证。 */
+        private String apiKey;
     }
 
     /** 单个 MCP Server 配置条目。 */

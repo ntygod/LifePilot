@@ -4,7 +4,7 @@ import com.lifepilot.agent.AgentToolProvider;
 import com.lifepilot.interaction.UserConfirmationService;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.observability.guardrail.GuardrailEngine;
-import com.lifepilot.mcp.registry.McpServerRegistry;
+import com.lifepilot.mcp.adapter.McpToolExecutor;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.McpTool;
 import com.lifepilot.tool.bridge.ToolBridgeAgentToolProvider;
@@ -93,18 +93,18 @@ public class ToolAutoConfiguration {
     }
 
     /**
-     * 初始化 McpTool 的静态 McpServerRegistry 引用。
+     * 初始化 McpTool 的 McpToolExecutor 引用。
      *
-     * <p>McpServerRegistry 为可选依赖，MCP 模块未启用时跳过注入。</p>
+     * <p>McpToolExecutor 为可选依赖，MCP 模块未启用时跳过注入。</p>
      */
     @Bean
-    public InitializingBean mcpToolRegistryInitializer(@Nullable McpServerRegistry mcpServerRegistry) {
+    public InitializingBean mcpToolExecutorInitializer(@Nullable McpToolExecutor mcpToolExecutor) {
         return () -> {
-            if (mcpServerRegistry != null) {
-                McpTool.setMcpServerRegistry(mcpServerRegistry);
-                log.info("McpTool 静态 McpServerRegistry 引用已初始化");
+            if (mcpToolExecutor != null) {
+                McpTool.setMcpToolExecutor(mcpToolExecutor);
+                log.info("McpToolExecutor 已注入 McpTool");
             } else {
-                log.info("McpServerRegistry 不可用，McpTool.execute() 将返回错误");
+                log.info("McpToolExecutor 不可用，McpTool.execute() 将返回错误");
             }
         };
     }

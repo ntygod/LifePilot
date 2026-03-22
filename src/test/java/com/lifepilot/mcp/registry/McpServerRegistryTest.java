@@ -18,6 +18,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ScheduledExecutorService;
 
 import com.lifepilot.config.threadpool.SharedScheduler;
 
@@ -66,7 +67,11 @@ class McpServerRegistryTest {
                 .build();
 
         // 子类覆盖 createClient() 返回 Mock
-        registry = new McpServerRegistry(mockToolAdapter, mockToolRegistry, mockEventPublisher, mock(SharedScheduler.class)) {
+        var mockScheduler = mock(SharedScheduler.class);
+        var mockScheduledExecutor = mock(ScheduledExecutorService.class);
+        lenient().when(mockScheduler.heartbeat()).thenReturn(mockScheduledExecutor);
+
+        registry = new McpServerRegistry(mockToolAdapter, mockToolRegistry, mockEventPublisher, mockScheduler) {
             @Override
             McpClient createClient(McpServerConfig cfg) {
                 return mockClient;
@@ -251,10 +256,6 @@ class McpServerRegistryTest {
                 .build();
 
         registry.initializeAll(List.of(reconnectConfig));
-
-        // 模拟连接始终失败
-        when(mockClient.initialize()).thenReturn(
-                CompletableFuture.failedFuture(new RuntimeException("连接失败")));
 
         // 手动触发重连，模拟已尝试 2 次（达到上限）
         registry.scheduleReconnect("test-server", reconnectConfig);
