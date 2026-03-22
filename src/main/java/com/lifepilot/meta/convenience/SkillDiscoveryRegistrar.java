@@ -2,10 +2,12 @@ package com.lifepilot.meta.convenience;
 
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.skill.config.SkillConfigProperties;
+import com.lifepilot.skill.hub.SkillHubClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.lang.Nullable;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -34,11 +36,15 @@ public class SkillDiscoveryRegistrar implements InitializingBean {
 
     private final MetaProperties properties;
     private final SkillConfigProperties skillConfig;
+    @Nullable
+    private final SkillHubClient skillHubClient;
 
     public SkillDiscoveryRegistrar(MetaProperties properties,
-                                   SkillConfigProperties skillConfig) {
+                                   SkillConfigProperties skillConfig,
+                                   @Nullable SkillHubClient skillHubClient) {
         this.properties = properties;
         this.skillConfig = skillConfig;
+        this.skillHubClient = skillHubClient;
     }
 
     @Override
@@ -82,32 +88,36 @@ public class SkillDiscoveryRegistrar implements InitializingBean {
             return;
         }
 
-        // 1. 从 classpath 读取 SKILL.md
-        String content;
-        var fullResourcePath = resourcePath + "/" + SKILL_MD_FILENAME;
-        try {
-            var resource = new ClassPathResource(fullResourcePath);
-            if (!resource.exists()) {
-                log.warn("种子 Skill SKILL.md 未找到: path={}", fullResourcePath);
-                return;
-            }
-            content = resource.getContentAsString(StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            log.warn("种子 Skill SKILL.md 读取失败: path={}, error={}", fullResourcePath, e.getMessage());
-            return;
-        }
-
-        // 2. 确定目标路径
+        // 确定目标路径
         Path targetFolder = Path.of(skillConfig.getDirectory(), skillId);
         Path targetFile = targetFolder.resolve(SKILL_MD_FILENAME);
 
-        // 3. 如果目标文件已存在，跳过（不覆盖用户自定义内容）
+        // 如果目标文件已存在，跳过（不覆盖用户自定义内容）
         if (Files.exists(targetFile)) {
-            log.debug("种子 Skill SKILL.md 已存在于用户目录，跳过提取: skillId={}, path={}", skillId, targetFile);
+            log.debug("种子 Skill SKILL.md 已存在于用户目录，跳过提取: skillId={}", skillId);
             return;
         }
 
-        // 4. 创建目录并写入文件
+        // 优先从腾讯 SkillHub 获取中文版 Skill
+        String content = tryFetchFromSkillHub(skillId);
+
+        // SkillHub 获取失败，回退到 classpath 本地版本
+        if (content == null) {
+            var fullResourcePath = resourcePath + "/" + SKILL_MD_FILENAME;
+            try {
+                var resource = new ClassPathResource(fullResourcePath);
+                if (!resource.exists()) {
+                    log.warn("种子 Skill SKILL.md 未找到: path={}", fullResourcePath);
+                    return;
+                }
+                content = resource.getContentAsString(StandardCharsets.UTF_8);
+            } catch (IOException e) {
+                log.warn("种子 Skill SKILL.md 读取失败: path={}, error={}", fullResourcePath, e.getMessage());
+                return;
+            }
+        }
+
+        // 创建目录并写入文件
         try {
             Files.createDirectories(targetFolder);
             Files.writeString(targetFile, content, StandardCharsets.UTF_8);
@@ -115,6 +125,29 @@ public class SkillDiscoveryRegistrar implements InitializingBean {
         } catch (IOException e) {
             log.warn("种子 Skill SKILL.md 提取失败: skillId={}, path={}, error={}", skillId, targetFile, e.getMessage());
         }
+    }
+
+    /**
+     * 尝试从腾讯 SkillHub 获取中文版 Skill 内容。
+     *
+     * @param skillId Skill ID
+     * @return Skill 内容（Markdown），获取失败返回 null
+     */
+    @Nullable
+    private String tryFetchFromSkillHub(String skillId) {
+        if (skillHubClient == null || !skillConfig.getSkillHub().isEnabled()) {
+            return null;
+        }
+        try {
+            String content = skillHubClient.fetchSkillContent(skillId);
+            if (content != null && !content.isBlank()) {
+                log.info("从 SkillHub 获取到中文 Skill: skillId={}", skillId);
+                return content;
+            }
+        } catch (Exception e) {
+            log.debug("SkillHub 获取 Skill 失败，将回退到本地版本: skillId={}, error={}", skillId, e.getMessage());
+        }
+        return null;
     }
 
     /**

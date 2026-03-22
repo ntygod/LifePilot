@@ -41,6 +41,7 @@ import com.lifepilot.workflow.repository.WorkflowRepository;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -181,8 +182,9 @@ public class MetaAutoConfiguration {
     @ConditionalOnProperty(name = "lifepilot.meta.skill-discovery.enabled",
                            havingValue = "true", matchIfMissing = true)
     SkillDiscoveryRegistrar skillDiscoveryRegistrar(MetaProperties properties,
-                                                    SkillConfigProperties skillConfig) {
-        return new SkillDiscoveryRegistrar(properties, skillConfig);
+                                                    SkillConfigProperties skillConfig,
+                                                    @Autowired(required = false) com.lifepilot.skill.hub.SkillHubClient skillHubClient) {
+        return new SkillDiscoveryRegistrar(properties, skillConfig, skillHubClient);
     }
 
     /**
