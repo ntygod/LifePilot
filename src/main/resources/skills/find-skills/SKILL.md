@@ -1,7 +1,7 @@
 ---
 id: find-skills
 name: "Skill 发现与安装"
-description: "搜索和安装 Skill 扩展包。优先使用 SkillHub CLI（中文加速），回退到 npx @anthropic-ai/skills"
+description: "搜索和安装 Skill 扩展包。优先使用 SkillHub CLI（中文加速），回退到 npx skills"
 version: "1.2.0"
 suggested-tools:
   - builtin.shell.exec
@@ -51,18 +51,18 @@ skillhub search <关键词>
 skillhub install <skill-name>
 ```
 
-### 2. npx @anthropic-ai/skills（回退 — 英文 Skill）
+### 2. npx skills（回退 — 英文 Skill）
 
 当 SkillHub CLI 不可用或无匹配结果时：
 
 搜索：
 ```bash
-npx -y @anthropic-ai/skills find <关键词>
+npx -y skills find <关键词>
 ```
 
 安装：
 ```bash
-npx -y @anthropic-ai/skills add <skill-name> --directory ~/.zhiwei/skills/
+npx -y skills add <skill-name> --directory ~/.zhiwei/skills/
 ```
 
 ## 搜索源
@@ -82,7 +82,7 @@ npx -y @anthropic-ai/skills add <skill-name> --directory ~/.zhiwei/skills/
 
 1. 用户描述需求（如"我需要一个能同步日历的功能"）
 2. 提取关键词，先用 `skillhub search` 搜索
-3. 如果 SkillHub 无结果，回退到 `npx @anthropic-ai/skills find`
+3. 如果 SkillHub 无结果，回退到 `npx skills find`
 4. 向用户展示搜索结果，推荐最匹配的 Skill
 5. 用户确认后安装到 `~/.zhiwei/skills/`
 6. 告知用户 Skill 已安装并自动加载

@@ -837,7 +837,6 @@ lifepilot:
         - skills/infrastructure
         - skills/introspection
         - skills/datastore
-        - skills/sync
         - skills/code-assistant
         - skills/research-assistant
         - skills/content-creator
@@ -845,7 +844,6 @@ lifepilot:
         - skills/browser-automation
         - skills/daily-manager
         - skills/file-organizer
-        - skills/shell-commander
         - skills/summarizer
         - skills/github-workflow
         - skills/translator
