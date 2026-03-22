@@ -100,15 +100,7 @@ public class SkillHubClient {
                 return null;
             }
 
-            // 校验响应是否为 Markdown 而非 HTML 页面
-            String body = response.body();
-            String contentType = response.headers().firstValue("Content-Type").orElse("");
-            if (contentType.contains("text/html") || (body != null && body.trim().startsWith("<!DOCTYPE"))) {
-                log.warn("SkillHub 返回 HTML 而非 Markdown，API 端点可能不正确: skillId={}", skillId);
-                return null;
-            }
-
-            return body;
+            return response.body();
 
         } catch (IOException | InterruptedException e) {
             log.warn("SkillHub 获取内容异常: skillId={}, error={}", skillId, e.getMessage());
