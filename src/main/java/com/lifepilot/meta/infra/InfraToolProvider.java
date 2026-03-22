@@ -349,7 +349,7 @@ public class InfraToolProvider {
                 .id("builtin.shell.exec")
                 .category(ToolCategory.ACTION)
                 .name("执行 Shell 命令")
-                .description("在操作系统 Shell 中执行命令，捕获 stdout/stderr 输出。支持安装软件、运行脚本、管理进程等系统操作。HIGH 风险，每次执行需用户确认")
+                .description("在操作系统 Shell 中执行命令，捕获 stdout/stderr 输出。支持同步执行、后台执行和 yieldMs 自动后台化三种模式")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("command"),
@@ -359,9 +359,13 @@ public class InfraToolProvider {
                                 "workingDirectory", Map.of("type", "string",
                                         "description", "工作目录路径，默认用户 home 目录"),
                                 "timeoutSeconds", Map.of("type", "integer",
-                                        "description", "命令超时时间（秒），默认使用配置值（30s）"),
+                                        "description", "命令超时时间（秒），默认 120"),
                                 "background", Map.of("type", "boolean",
-                                        "description", "是否后台执行。true 时立即返回 sessionId，通过 process.* 工具管理进程")
+                                        "description", "立即后台执行，返回 sessionId，通过 process.* 工具管理进程"),
+                                "yieldMs", Map.of("type", "integer",
+                                        "description", "同步等待毫秒数，超时后自动转后台（0=立即后台，默认不启用）。适合不确定耗时的命令"),
+                                "pty", Map.of("type", "boolean",
+                                        "description", "分配伪终端（PTY），用于交互式 CLI（如 npm init、vim）。Unix 下通过 script 命令实现")
                         )
                 )))
                 .riskLevel(RiskLevel.HIGH)

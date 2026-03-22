@@ -96,6 +96,8 @@ public class ShellExecToolExecutor {
                 .map(Number::intValue)
                 .orElse(shellConfig.getTimeoutSeconds());
 
+        boolean pty = input.getOptionalParam("pty", Boolean.class).orElse(false);
+
         // 黑名单检查
         var rejection = checkBlacklist(command);
         if (rejection != null) {
@@ -108,15 +110,23 @@ public class ShellExecToolExecutor {
             return ToolResult.error("工作目录不存在: " + workingDirectory);
         }
 
-        // 后台执行模式
+        // 后台执行模式（background=true 立即后台化）
         boolean background = input.getOptionalParam("background", Boolean.class).orElse(false);
         if (background) {
-            return executeBackground(command, workDir);
+            return executeBackground(command, workDir, pty);
         }
 
-        // 同步执行命令
+        // yieldMs 模式：同步等待 yieldMs 毫秒，如果进程未结束则自动转后台
+        int yieldMs = input.getOptionalParam("yieldMs", Number.class)
+                .map(Number::intValue)
+                .orElse(-1); // -1 表示不使用 yieldMs，走纯同步模式
+        if (yieldMs >= 0) {
+            return executeWithYield(command, workDir, yieldMs, pty);
+        }
+
+        // 纯同步执行命令
         try {
-            return executeCommand(command, workDir, timeoutSeconds);
+            return executeCommand(command, workDir, timeoutSeconds, pty);
         } catch (IOException e) {
             log.error("Shell 命令执行失败: command={}, error={}", command, e.getMessage(), e);
             return ToolResult.error("命令执行失败: " + e.getMessage());
@@ -157,7 +167,7 @@ public class ShellExecToolExecutor {
         return output.substring(0, maxLength) + "...[输出已截断，原始长度: " + originalLength + " 字符]";
     }
 
-    private ToolResult executeBackground(String command, Path workDir) {
+    private ToolResult executeBackground(String command, Path workDir, boolean pty) {
         if (backgroundProcessManager == null) {
             return ToolResult.error("后台进程管理器不可用");
         }
@@ -175,7 +185,75 @@ public class ShellExecToolExecutor {
         }
     }
 
-    private ToolResult executeCommand(String command, Path workDir, int timeoutSeconds)
+    /**
+     * yieldMs 模式 — 同步等待指定毫秒数，如果进程未结束则自动转后台。
+     *
+     * <p>参考 OpenClaw exec 工具的 yieldMs 机制：
+     * <ul>
+     *   <li>yieldMs=0 等同于 background=true（立即后台化）</li>
+     *   <li>yieldMs=N 先同步等待 N 毫秒，进程在此期间完成则返回同步结果</li>
+     *   <li>N 毫秒后进程仍在运行，则将其转为后台进程并返回 sessionId</li>
+     * </ul></p>
+     */
+    private ToolResult executeWithYield(String command, Path workDir, int yieldMs, boolean pty) {
+        if (backgroundProcessManager == null) {
+            return ToolResult.error("后台进程管理器不可用（yieldMs 模式需要 BackgroundProcessManager）");
+        }
+
+        // yieldMs=0 等同于 background=true
+        if (yieldMs == 0) {
+            return executeBackground(command, workDir, pty);
+        }
+
+        try {
+            // 先启动为后台进程
+            String sessionId = backgroundProcessManager.startProcess(command, workDir);
+
+            // 等待 yieldMs 毫秒看进程是否完成
+            Thread.sleep(Math.min(yieldMs, 120_000)); // 上限 120 秒
+
+            // 检查进程是否已完成
+            var processes = backgroundProcessManager.listProcesses();
+            var processInfo = processes.stream()
+                    .filter(p -> p.sessionId().equals(sessionId))
+                    .findFirst()
+                    .orElse(null);
+
+            if (processInfo != null && processInfo.state() != ProcessState.RUNNING) {
+                // 进程已完成，收集输出并返回同步结果
+                String output = backgroundProcessManager.readOutput(sessionId);
+                var data = new LinkedHashMap<String, Object>();
+                data.put("exitCode", processInfo.state() == ProcessState.COMPLETED ? 0 : 1);
+                data.put("stdout", truncateOutput(output, shellConfig.getMaxOutputLength()));
+                data.put("stderr", "");
+
+                log.debug("yieldMs 模式: 进程在等待期间完成, sessionId={}, state={}", sessionId, processInfo.state());
+
+                if (processInfo.state() == ProcessState.FAILED) {
+                    return ToolResult.error("命令执行失败: " + output);
+                }
+                return ToolResult.success(Map.copyOf(data));
+            }
+
+            // 进程仍在运行，返回后台 sessionId
+            log.info("yieldMs 模式: 进程在 {}ms 后仍在运行，自动转后台, sessionId={}, command={}",
+                    yieldMs, sessionId, command);
+            return ToolResult.success(Map.of(
+                    "sessionId", sessionId,
+                    "backgrounded", true,
+                    "message", "命令在 " + yieldMs + "ms 内未完成，已自动转为后台执行。使用 process.output 读取输出"
+            ));
+
+        } catch (IOException e) {
+            log.error("yieldMs 模式启动失败: command={}, error={}", command, e.getMessage(), e);
+            return ToolResult.error("命令启动失败: " + e.getMessage());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return ToolResult.error("命令执行被中断");
+        }
+    }
+
+    private ToolResult executeCommand(String command, Path workDir, int timeoutSeconds, boolean pty)
             throws IOException, InterruptedException {
 
         int maxRetries = shellConfig.getTransientRetries();
@@ -183,7 +261,7 @@ public class ShellExecToolExecutor {
 
         for (int attempt = 0; attempt <= maxRetries; attempt++) {
             try {
-                return doExecuteCommand(command, workDir, timeoutSeconds);
+                return doExecuteCommand(command, workDir, timeoutSeconds, pty);
             } catch (IOException e) {
                 lastException = e;
                 if (attempt < maxRetries && isTransientFailure(e)) {
@@ -212,13 +290,17 @@ public class ShellExecToolExecutor {
                 || msg.contains("No such file or directory"); // shell 可执行文件临时不可用
     }
 
-    private ToolResult doExecuteCommand(String command, Path workDir, int timeoutSeconds)
+    private ToolResult doExecuteCommand(String command, Path workDir, int timeoutSeconds, boolean pty)
             throws IOException, InterruptedException {
 
         // 根据操作系统选择 Shell
         ProcessBuilder pb;
         String osName = System.getProperty("os.name").toLowerCase();
         if (osName.contains("win")) {
+            if (pty) {
+                // Windows 下 PTY 通过 conpty 或 winpty 实现，当前降级为普通模式并警告
+                log.warn("Windows 平台暂不支持 PTY 模式，降级为普通执行: command={}", command);
+            }
             pb = new ProcessBuilder(
                     "powershell",
                     "-NoLogo",
@@ -231,7 +313,12 @@ public class ShellExecToolExecutor {
             );
             pb.environment().put(WINDOWS_COMMAND_ENV, command);
         } else {
-            pb = new ProcessBuilder("sh", "-c", command);
+            if (pty) {
+                // Unix 下通过 script 命令分配伪终端
+                pb = new ProcessBuilder("script", "-qec", command, "/dev/null");
+            } else {
+                pb = new ProcessBuilder("sh", "-c", command);
+            }
         }
         pb.directory(workDir.toFile());
         pb.redirectErrorStream(false);
@@ -272,11 +359,8 @@ public class ShellExecToolExecutor {
             return ToolResult.error(msg);
         }
 
-        // 进程已完成，等待 yieldMs 让输出流充分刷新
-        int yieldMs = shellConfig.getYieldMs();
-        if (yieldMs > 0) {
-            Thread.sleep(yieldMs);
-        }
+        // 进程已完成，短暂等待让输出流充分刷新
+        Thread.sleep(100);
 
         // 带超时保护地获取输出
         String stdout = getOutputSafe(stdoutFuture, outputReadTimeout);
