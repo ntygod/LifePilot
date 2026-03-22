@@ -143,9 +143,13 @@ sealed interface，穷举四种来源，每种来源携带不同元数据：
 
 ### 3.10 BuiltinSkillRegistrar + BuiltinSkillProvider + ProactiveSkillProvider（内置 Skill）
 
+> 📋 **规划中**：BuiltinSkillRegistrar、BuiltinSkillProvider、ProactiveSkillProvider 尚未实现，以下为设计规划。
+
 `BuiltinSkillRegistrar` 在 `ApplicationReadyEvent` 时收集所有 `BuiltinSkillProvider` Bean，按 `@BuiltinSkill` 注解的 `order` 升序排列，依次注册工具和 Skill 定义。注入 `SkillConfigProperties`，注册前检查 `builtin.isEnabled(skillId)` 配置开关，禁用时跳过该 Skill 的全部注册。单个注册失败不中断启动流程。
 
 若 Provider 实现了 `ProactiveSkillProvider` 接口（extends `BuiltinSkillProvider`），额外收集其 `signalSources()` 和 `candidateProviders()` 到内部列表，暴露 `getRegisteredSignalSources()` 和 `getRegisteredCandidateProviders()` 方法供 `ProactiveAutoConfiguration` 使用。
+
+> 📋 **规划中**：以下四个内置 Skill 提供者尚未实现。
 
 四个内置 Skill 提供者：`TodoSkillProvider`、`ScheduleSkillProvider`、`HabitSkillProvider`（均实现 `ProactiveSkillProvider`）、`MemorySkillProvider`（条件装配，依赖 HybridRetriever 和 SemanticMemory，不参与主动推理）。Memory Skill 始终注册，不受配置开关控制。
 

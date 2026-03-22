@@ -1,7 +1,7 @@
 # 安全护栏 — 架构设计
 
 > **文档性质**：架构设计文档
-> **模块归属**：`com.lifepilot.guardrail` + `com.lifepilot.observability.guardrail`
+> **模块归属**：`com.lifepilot.observability.guardrail`（所有护栏类均位于此包，`com.lifepilot.guardrail` 独立包已不存在）
 > **最后更新**：2026-03
 
 ## 1. 模块概述

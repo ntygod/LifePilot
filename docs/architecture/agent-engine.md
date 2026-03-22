@@ -54,6 +54,8 @@ graph TB
 
 ### 3.2 StateReducer
 
+> ⚠️ **已废弃**：StateReducer 已在 ReAct 重构中移除，当前使用 ReactAgentState 不可变状态管理，状态转换逻辑内联到 ReactAgentLoop 中。
+
 - 职责：纯函数状态转换器，接收当前状态和动作，返回新状态
 - 关键接口：`reduce(AgentState, Action)` → `AgentState`
 - 处理 9 种动作类型的状态转换，包含阶段转换合法性校验
@@ -64,9 +66,12 @@ graph TB
 - 当前主路径不再依赖旧的 `WorkingMemory` 对话缓存，也不再自动注入跨 session 原始对话
 - 跨会话历史检索通过记忆工具显式触发，而不是直接混入主 Prompt
 
-### 3.4 AgentState / AgentPhase / Action
+### 3.4 ReactAgentState / AgentPhase / Action
 
-- `AgentState`：不可变状态快照（record），包含阶段、预算、步骤记录、响应等
+- `ReactAgentState`：不可变状态快照（record），包含预算、步骤记录、响应等
+
+> ⚠️ **已废弃**：以下 AgentPhase 和 Action 描述的是旧架构，当前 ReactAgentState 已移除 phase 字段，不再使用六阶段状态机和 9 种动作类型。
+
 - `AgentPhase`：6 阶段生命周期枚举（Understanding → Planning → Executing → Reflecting → Responding → Terminated）
 - `Action`：9 种动作类型的 sealed interface（IntentUnderstood / PlanGenerated / ToolResult / ReflectionComplete / ResponseGenerated / BudgetExhausted / Blocked / ErrorRecovery / SubAgentResult）
 
@@ -76,6 +81,8 @@ graph TB
 - 预算耗尽时触发 `BudgetExhausted` 动作，生成降级响应
 
 ## 4. 核心流程
+
+> ⚠️ **已废弃**：以下序列图描述的是旧的六阶段状态机架构，其中 ActionParser 和 StateReducer 已不再存在。当前实现为 ReAct 循环（Thought → Action → Observation），由 ReactAgentLoop 直接驱动状态转换。
 
 ```mermaid
 sequenceDiagram
@@ -119,7 +126,7 @@ sequenceDiagram
 
 | 决策 | 选择 | 理由 |
 |------|------|------|
-| 状态管理 | 不可变 record + 纯函数 StateReducer | 每次转换生成新实例，天然支持轨迹回放和并发安全 |
+| 状态管理 | 不可变 record（ReactAgentState） | 每次转换生成新实例，天然支持轨迹回放和并发安全（注：旧 StateReducer 纯函数模式已废弃，状态转换内联到 ReactAgentLoop） |
 | 动作类型 | sealed interface + record | 编译期穷举检查，新增动作类型时编译器强制处理所有分支 |
 | 阶段转换 | 枚举 + canTransitionTo 白名单 | 防止非法状态转换，状态机行为可预测 |
 | 预算控制 | 三维预算（Token/时间/步数） | 防止 Agent 无限循环或过度消耗资源 |
@@ -131,7 +138,7 @@ sequenceDiagram
 - **工具系统**（`tool`）：通过 `AgentToolProvider` 获取工具回调，执行计划步骤
 - **记忆系统**（`memory`）：通过 `ContextAssembler` 读取最近完整轮次、工作区、画像和经验
 - **可观测性**（`observability`）：TraceRecorder 记录每步执行轨迹
-- **主动推理**（`agent.proactive`）：ProactiveReasoner 在循环后异步触发
+- **主动推理**（`agent.proactive`）：ProactiveReasoner 在循环后异步触发（📋 规划中，尚未实现）
 - **多 Agent**（`multiagent`）：SubAgentResult 动作支持子 Agent 委托结果回传
 
 ## 7. 配置参考

@@ -6,7 +6,7 @@
 
 ## 1. 模块概述
 
-通知系统是知微的统一通知基础设施，从主动推理模块（`agent.proactive`）解耦为独立的 `com.lifepilot.notification` 包。任意模块（主动推理、工作流引擎、未来扩展）均可通过 `NotificationService` 接口发送通知，无需依赖特定业务模块。
+通知系统是知微的统一通知基础设施，从主动推理模块（`agent.proactive`，📋 规划中）解耦为独立的 `com.lifepilot.notification` 包。任意模块（主动推理、工作流引擎、未来扩展）均可通过 `NotificationService` 接口发送通知，无需依赖特定业务模块。
 
 核心能力：
 - **统一接口**：`NotificationService.send(NotificationRequest)` 提供标准化通知发送入口
@@ -22,7 +22,7 @@
 ```mermaid
 graph TB
     subgraph "通知消费方"
-        PR["ProactiveReasoner<br/>主动推理"]
+        PR["ProactiveReasoner<br/>主动推理（规划中）"]
         WF["StepExecutor<br/>工作流 NotifyStep"]
         FUTURE["未来模块<br/>（同步事件等）"]
     end
@@ -263,7 +263,7 @@ UNIQUE 约束：`(user_id, type_id)`
 
 | 方向 | 模块 | 交互方式 |
 |------|------|---------|
-| 被依赖 | 主动推理（`agent.proactive`） | `ProactiveReasoner` 注入 `NotificationService` 发送通知 |
+| 被依赖 | 主动推理（`agent.proactive`，📋 规划中） | `ProactiveReasoner` 注入 `NotificationService` 发送通知 |
 | 被依赖 | 工作流引擎（`workflow`） | `StepExecutor` 通过 `NotificationService` 执行 `NotifyStep` |
 | 依赖 | 渠道适配器（`interaction.channel`） | 遍历 `ChannelAdapter` 广播通知 |
 | 依赖 | 消息转换器（`interaction.channel.converter`） | `MessageConverter` 将 `ResponseContent` 转换为渠道格式 |

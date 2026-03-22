@@ -15,7 +15,7 @@ graph TB
     subgraph "MCP 客户端"
         CLIENT["McpClient<br/>单服务器通信封装"]
         ADAPTER["McpToolAdapter<br/>MCP 工具 → ToolContract"]
-        REG_BRIDGE["McpRegistryBridge<br/>自动注册到 DynamicToolRegistry"]
+        REG_BRIDGE["McpRegistryBridge<br/>自动注册到 DynamicToolRegistry<br/>（已废弃或未实现）"]
     end
 
     subgraph "MCP 服务端"

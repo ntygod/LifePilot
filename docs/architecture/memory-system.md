@@ -239,7 +239,7 @@ sequenceDiagram
 |---------|------|------|
 | Agent 引擎（`com.lifepilot.agent`） | Agent → Memory | `ContextAssembler` 读取最近轮次、工作区、用户画像和经验 |
 | 对话系统（`com.lifepilot.conversation`） | Memory → Conversation | L0 对话真源来自 `ConversationHistoryStore` 与 `ConversationViewService` |
-| 元能力工具（`com.lifepilot.meta`） | Tool → Memory | `MemoryToolProvider` 暴露 recall/search/create/update 等工具 |
+| 元能力工具（`com.lifepilot.meta.infra.memory`） | Tool → Memory | `MemoryToolProvider`（完整路径：`com.lifepilot.meta.infra.memory.MemoryToolProvider`）暴露 recall/search/create/update 等工具 |
 | 知识库（`com.lifepilot.knowledge`） | Memory → Knowledge | `search-docs` 工具通过知识库检索补充外部文档片段 |
 
 ## 7. 配置参考
