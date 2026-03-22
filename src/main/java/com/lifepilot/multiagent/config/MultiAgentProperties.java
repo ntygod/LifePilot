@@ -29,6 +29,9 @@ public class MultiAgentProperties {
     /** 预算默认值配置。 */
     private BudgetDefaults budget = new BudgetDefaults();
 
+    /** 并行 Worker 配置。 */
+    private ParallelWorker parallelWorker = new ParallelWorker();
+
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
 
@@ -46,6 +49,9 @@ public class MultiAgentProperties {
 
     public BudgetDefaults getBudget() { return budget; }
     public void setBudget(BudgetDefaults budget) { this.budget = budget; }
+
+    public ParallelWorker getParallelWorker() { return parallelWorker; }
+    public void setParallelWorker(ParallelWorker parallelWorker) { this.parallelWorker = parallelWorker; }
 
     /**
      * 热加载配置。
@@ -77,5 +83,26 @@ public class MultiAgentProperties {
 
         public int getDefaultTimeoutSeconds() { return defaultTimeoutSeconds; }
         public void setDefaultTimeoutSeconds(int defaultTimeoutSeconds) { this.defaultTimeoutSeconds = defaultTimeoutSeconds; }
+    }
+
+    /**
+     * 并行 Worker 配置。
+     */
+    public static class ParallelWorker {
+        /** 最大并行 Worker 数量。 */
+        private int maxParallelWorkers = 5;
+        /** Worker 预算占比（剩余预算中分配给 Worker 池的比例）。 */
+        private double workerBudgetRatio = 0.7;
+        /** Worker System Prompt 覆盖（null 时使用默认通用 Worker 提示词）。 */
+        private String workerSystemPrompt;
+
+        public int getMaxParallelWorkers() { return maxParallelWorkers; }
+        public void setMaxParallelWorkers(int maxParallelWorkers) { this.maxParallelWorkers = maxParallelWorkers; }
+
+        public double getWorkerBudgetRatio() { return workerBudgetRatio; }
+        public void setWorkerBudgetRatio(double workerBudgetRatio) { this.workerBudgetRatio = workerBudgetRatio; }
+
+        public String getWorkerSystemPrompt() { return workerSystemPrompt; }
+        public void setWorkerSystemPrompt(String workerSystemPrompt) { this.workerSystemPrompt = workerSystemPrompt; }
     }
 }

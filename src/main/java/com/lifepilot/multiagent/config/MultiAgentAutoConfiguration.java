@@ -7,6 +7,7 @@ import com.lifepilot.multiagent.bridge.AgentToToolBridge;
 import com.lifepilot.multiagent.discovery.ToolDiscoveryService;
 import com.lifepilot.multiagent.execution.AgentExecutor;
 import com.lifepilot.multiagent.execution.HandoffToolFactory;
+import com.lifepilot.multiagent.execution.SpawnWorkersToolFactory;
 import com.lifepilot.multiagent.loader.AgentMarkdownLoader;
 import com.lifepilot.multiagent.loader.AgentMarkdownParser;
 import com.lifepilot.multiagent.loader.AgentMarkdownSerializer;
@@ -118,6 +119,24 @@ public class MultiAgentAutoConfiguration {
     public ToolDiscoveryService toolDiscoveryService(DynamicToolRegistry toolRegistry) {
         log.info("多 Agent 协作: 注册 ToolDiscoveryService");
         return new ToolDiscoveryService(toolRegistry);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public SpawnWorkersToolFactory spawnWorkersToolFactory(AgentOrchestrator agentOrchestrator,
+                                                           DynamicToolRegistry toolRegistry,
+                                                           MultiAgentProperties config) {
+        log.info("多 Agent 协作: 注册 SpawnWorkersToolFactory, maxWorkers={}, budgetRatio={}",
+                config.getParallelWorker().getMaxParallelWorkers(),
+                config.getParallelWorker().getWorkerBudgetRatio());
+        return new SpawnWorkersToolFactory(agentOrchestrator, toolRegistry, config);
+    }
+
+    @Bean("spawnWorkersTool")
+    @ConditionalOnMissingBean(name = "spawnWorkersTool")
+    public com.lifepilot.tool.BuiltinTool spawnWorkersTool(SpawnWorkersToolFactory factory) {
+        log.info("多 Agent 协作: 注册 spawn_workers 工具");
+        return factory.createSpawnWorkersTool();
     }
 
     // ==================== 启动后初始化 ====================

@@ -6,6 +6,7 @@ import {
   AlertCircle, ChevronDown, ChevronRight, Loader2, Clock,
   RotateCcw, CircleDot
 } from 'lucide-vue-next'
+import WorkerResultCard from './WorkerResultCard.vue'
 
 const props = defineProps<{
   /** 推理概要文本（后端返回的单行摘要） */
@@ -255,8 +256,13 @@ function formatRelativeTime(event: ReasoningEvent): string | null {
                     {{ formatRelativeTime(event) }}
                   </span>
                 </div>
+                <!-- spawn_workers 专用卡片 -->
+                <WorkerResultCard
+                  v-if="event.type === 'OBSERVATION' && event.extra?.toolId === 'spawn_workers' && event.description"
+                  :output="event.description"
+                />
                 <p
-                  v-if="event.description"
+                  v-else-if="event.description"
                   class="text-[10px] text-muted-foreground/80 leading-relaxed mt-0.5"
                 >
                   {{ event.description }}

@@ -6,6 +6,7 @@ import {
   ChevronDown, ChevronRight, Loader2, Clock,
   CheckCircle2, XCircle, CircleDot
 } from 'lucide-vue-next'
+import WorkerResultCard from './WorkerResultCard.vue'
 
 const props = defineProps<{
   /** ReAct 步骤序列 */
@@ -172,7 +173,16 @@ function getToolPairTitle(tc: ToolCallStep, obs: ObservationStep): string {
 }
 
 // 工具配对组的内联输出预览
-function getToolPairPreview(obs: ObservationStep): string | null {
+function getToolPairPreview(tc: ToolCallStep, obs: ObservationStep): string | null {
+  // spawn_workers 专用预览
+  if (tc.toolId === 'spawn_workers') {
+    try {
+      const data = JSON.parse(obs.outputSummary)
+      if (data.workers) {
+        return `${data.workers.length} 个 Worker · ${data.successCount ?? 0} 成功 · ${data.failureCount ?? 0} 失败`
+      }
+    } catch { /* 解析失败回退默认逻辑 */ }
+  }
   const output = obs.outputSummary
   if (!output) return null
   const firstLine = output.split('\n')[0]
@@ -276,24 +286,32 @@ function getToolPairPreview(obs: ObservationStep): string | null {
                   </div>
                   <!-- 内联输出预览（始终可见） -->
                   <p
-                    v-if="getToolPairPreview(group.steps[1] as ObservationStep)"
+                    v-if="getToolPairPreview(group.steps[0] as ToolCallStep, group.steps[1] as ObservationStep)"
                     class="text-[10px] text-muted-foreground/80 leading-relaxed mt-0.5 truncate"
                   >
-                    {{ getToolPairPreview(group.steps[1] as ObservationStep) }}
+                    {{ getToolPairPreview(group.steps[0] as ToolCallStep, group.steps[1] as ObservationStep) }}
                   </p>
                   <!-- 展开：完整输入 + 输出 -->
                   <div
                     v-if="expandedSteps.has((group.steps[0] as ToolCallStep).index)"
                     class="mt-1 space-y-1 text-[10px] text-muted-foreground/80 leading-relaxed"
                   >
-                    <p v-if="(group.steps[0] as ToolCallStep).inputSummary">
-                      <span class="text-muted-foreground font-medium">输入：</span>
-                      {{ (group.steps[0] as ToolCallStep).inputSummary }}
-                    </p>
-                    <p v-if="(group.steps[1] as ObservationStep).outputSummary">
-                      <span class="text-muted-foreground font-medium">输出：</span>
-                      {{ (group.steps[1] as ObservationStep).outputSummary }}
-                    </p>
+                    <!-- spawn_workers 专用卡片 -->
+                    <WorkerResultCard
+                      v-if="(group.steps[0] as ToolCallStep).toolId === 'spawn_workers'"
+                      :output="(group.steps[1] as ObservationStep).outputSummary"
+                    />
+                    <!-- 其他工具保持原样 -->
+                    <template v-else>
+                      <p v-if="(group.steps[0] as ToolCallStep).inputSummary">
+                        <span class="text-muted-foreground font-medium">输入：</span>
+                        {{ (group.steps[0] as ToolCallStep).inputSummary }}
+                      </p>
+                      <p v-if="(group.steps[1] as ObservationStep).outputSummary">
+                        <span class="text-muted-foreground font-medium">输出：</span>
+                        {{ (group.steps[1] as ObservationStep).outputSummary }}
+                      </p>
+                    </template>
                   </div>
                 </div>
               </div>

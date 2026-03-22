@@ -97,6 +97,9 @@ lifepilot:
         default-max-tokens: 16000
         default-max-steps: 15
         default-timeout-seconds: 180
+      parallel-worker:
+        max-parallel-workers: 5
+        worker-budget-ratio: 0.7
   a2a:
     enabled: true
     server:
