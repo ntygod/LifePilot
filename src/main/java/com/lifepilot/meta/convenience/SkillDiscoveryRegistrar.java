@@ -141,6 +141,11 @@ public class SkillDiscoveryRegistrar implements InitializingBean {
         try {
             String content = skillHubClient.fetchSkillContent(skillId);
             if (content != null && !content.isBlank()) {
+                // 校验返回内容是否为有效的 SKILL.md（必须包含 YAML frontmatter）
+                if (!content.trim().startsWith("---")) {
+                    log.warn("SkillHub 返回内容不是有效的 SKILL.md（缺少 YAML frontmatter），跳过: skillId={}", skillId);
+                    return null;
+                }
                 log.info("从 SkillHub 获取到中文 Skill: skillId={}", skillId);
                 return content;
             }
