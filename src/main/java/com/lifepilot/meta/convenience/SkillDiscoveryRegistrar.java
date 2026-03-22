@@ -5,7 +5,8 @@ import com.lifepilot.skill.config.SkillConfigProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.InitializingBean;
-import org.springframework.core.io.ClassPathResource;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -13,14 +14,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
- * 种子 Skill 提取器 — 启动时将 SKILL.md 从 classpath 提取到用户 Skill 目录。
+ * 种子 Skill 提取器 — 启动时将 classpath 下 skills/ 目录的所有 SKILL.md 提取到用户目录。
  *
- * <p>从 classpath 读取种子 SKILL.md（如 find-skills、workflow-creator），
+ * <p>自动扫描 classpath 下 {@code skills/&#42;/SKILL.md}，
  * 提取到用户 Skill 目录（{@code ~/.zhiwei/skills/{skill-id}/SKILL.md}）。
- * 后续由 {@link com.lifepilot.skill.markdown.MarkdownSkillLoader} 作为 UserDefined Skill 加载，
- * 用户可在文件系统中查看和编辑。</p>
- *
- * <p>如果用户目录中已存在该文件，跳过提取（不覆盖用户自定义内容）。</p>
+ * 如果用户目录中已存在该文件，跳过提取（不覆盖用户自定义内容）。</p>
  *
  * @author zsg
  * @since 2026-03-08
@@ -29,8 +27,8 @@ public class SkillDiscoveryRegistrar implements InitializingBean {
 
     private static final Logger log = LoggerFactory.getLogger(SkillDiscoveryRegistrar.class);
 
-    /** SKILL.md 文件名。 */
     private static final String SKILL_MD_FILENAME = "SKILL.md";
+    private static final String SKILLS_RESOURCE_PATTERN = "classpath:skills/*/SKILL.md";
 
     private final MetaProperties properties;
     private final SkillConfigProperties skillConfig;
@@ -43,104 +41,67 @@ public class SkillDiscoveryRegistrar implements InitializingBean {
 
     @Override
     public void afterPropertiesSet() {
-        extractSeedSkillsToUserDirectory();
-    }
-
-    /**
-     * 将所有种子 SKILL.md 从 classpath 提取到用户 Skill 目录。
-     *
-     * <p>遍历配置的 skillPaths，提取每个到对应目录。
-     * 如果目标文件已存在，跳过提取以保留用户自定义内容。</p>
-     */
-    void extractSeedSkillsToUserDirectory() {
-        var skillDiscovery = properties.getSkillDiscovery();
-        if (!skillDiscovery.isEnabled()) {
+        if (!properties.getSkillDiscovery().isEnabled()) {
             log.debug("Skill 发现功能已禁用，跳过提取");
             return;
         }
-
-        var seedPaths = skillDiscovery.getSkillPaths();
-        if (seedPaths == null || seedPaths.isEmpty()) {
-            log.debug("未配置种子 Skill 路径");
-            return;
-        }
-
-        for (var path : seedPaths) {
-            extractSingleSkill(path);
-        }
+        extractAllSkillsFromClasspath();
     }
 
     /**
-     * 提取单个种子 Skill 到用户目录。
-     *
-     * @param resourcePath classpath 下的资源路径，如 skills/find-skills
+     * 扫描 classpath 下 skills/ 目录的所有 SKILL.md，逐个提取到用户目录。
      */
-    private void extractSingleSkill(String resourcePath) {
-        var skillId = extractSkillId(resourcePath);
-        if (skillId == null) {
-            log.warn("无法从路径提取 Skill ID: path={}", resourcePath);
-            return;
-        }
-
-        // 确定目标路径
-        Path targetFolder = Path.of(skillConfig.getDirectory(), skillId);
-        Path targetFile = targetFolder.resolve(SKILL_MD_FILENAME);
-
-        // 如果目标文件已存在，跳过（不覆盖用户自定义内容）
-        if (Files.exists(targetFile)) {
-            log.debug("种子 Skill SKILL.md 已存在于用户目录，跳过提取: skillId={}", skillId);
-            return;
-        }
-
-        // 从 classpath 读取 SKILL.md
-        String content;
-        var fullResourcePath = resourcePath + "/" + SKILL_MD_FILENAME;
+    void extractAllSkillsFromClasspath() {
+        var resolver = new PathMatchingResourcePatternResolver();
+        Resource[] resources;
         try {
-            var resource = new ClassPathResource(fullResourcePath);
-            if (!resource.exists()) {
-                log.warn("种子 Skill SKILL.md 未找到: path={}", fullResourcePath);
-                return;
+            resources = resolver.getResources(SKILLS_RESOURCE_PATTERN);
+        } catch (IOException e) {
+            log.warn("扫描 classpath skills 目录失败: error={}", e.getMessage());
+            return;
+        }
+
+        int count = 0;
+        for (Resource resource : resources) {
+            try {
+                String skillId = extractSkillId(resource);
+                if (skillId == null) continue;
+
+                Path targetFolder = Path.of(skillConfig.getDirectory(), skillId);
+                Path targetFile = targetFolder.resolve(SKILL_MD_FILENAME);
+
+                // 已存在则跳过，不覆盖用户自定义内容
+                if (Files.exists(targetFile)) {
+                    log.debug("种子 Skill 已存在，跳过: skillId={}", skillId);
+                    continue;
+                }
+
+                String content = resource.getContentAsString(StandardCharsets.UTF_8);
+                Files.createDirectories(targetFolder);
+                Files.writeString(targetFile, content, StandardCharsets.UTF_8);
+                log.info("种子 Skill SKILL.md 已提取到用户目录: skillId={}, path={}", skillId, targetFile);
+                count++;
+            } catch (IOException e) {
+                log.warn("种子 Skill 提取失败: resource={}, error={}", resource.getFilename(), e.getMessage());
             }
-            content = resource.getContentAsString(StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            log.warn("种子 Skill SKILL.md 读取失败: path={}, error={}", fullResourcePath, e.getMessage());
-            return;
         }
-
-        // 创建目录并写入文件
-        try {
-            Files.createDirectories(targetFolder);
-            Files.writeString(targetFile, content, StandardCharsets.UTF_8);
-            log.info("种子 Skill SKILL.md 已提取到用户目录: skillId={}, path={}", skillId, targetFile);
-        } catch (IOException e) {
-            log.warn("种子 Skill SKILL.md 提取失败: skillId={}, path={}, error={}", skillId, targetFile, e.getMessage());
-        }
+        log.info("种子 Skill 提取完成: 新增={}, 总扫描={}", count, resources.length);
     }
 
     /**
-     * 从资源路径提取 Skill ID。
-     *
-     * <p>直接返回文件夹名作为 Skill ID，不加任何前缀。例如：
-     * <ul>
-     *   <li>skills/find-skills → find-skills</li>
-     *   <li>skills/workflow-creator → workflow-creator</li>
-     *   <li>skills/memory → memory</li>
-     * </ul>
-     *
-     * @param resourcePath 资源路径
-     * @return Skill ID 或 null（提取失败时）
+     * 从 Resource 路径中提取 Skill ID（父目录名）。
      */
-    private String extractSkillId(String resourcePath) {
-        if (resourcePath == null || resourcePath.isEmpty()) {
-            return null;
+    private String extractSkillId(Resource resource) {
+        try {
+            // resource URL 格式: ...skills/skill-id/SKILL.md
+            String url = resource.getURL().toString();
+            String[] parts = url.split("/");
+            if (parts.length >= 2) {
+                return parts[parts.length - 2]; // SKILL.md 的父目录名
+            }
+        } catch (IOException e) {
+            log.debug("无法解析 Skill ID: resource={}", resource.getFilename());
         }
-
-        // 直接返回文件夹名作为 Skill ID
-        String suffix = resourcePath;
-        if (resourcePath.contains("/")) {
-            suffix = resourcePath.substring(resourcePath.lastIndexOf('/') + 1);
-        }
-
-        return suffix;
+        return null;
     }
 }

@@ -322,44 +322,6 @@ public class MetaProperties {
 
         /** 功能开关，默认 true。 */
         private boolean enabled = true;
-
-        /** 种子 Skill 资源路径列表，启动时提取到用户目录。 */
-        private List<String> skillPaths = List.of(
-                "skills/find-skills",
-                "skills/workflow-creator",
-                "skills/memory",
-                "skills/infrastructure",
-                "skills/introspection",
-                "skills/datastore",
-                "skills/sync",
-                "skills/code-assistant",
-                "skills/research-assistant",
-                "skills/content-creator",
-                "skills/data-analyst",
-                "skills/browser-automation",
-                "skills/daily-manager",
-                "skills/file-organizer",
-                "skills/summarizer",
-                "skills/github-workflow",
-                "skills/translator",
-                "skills/api-debugger",
-                "skills/doc-processor",
-                "skills/project-scaffolder",
-                "skills/teaching-assistant",
-                "skills/desktop-automation",
-                "skills/heartbeat-checklist",
-                "skills/cron-scheduler",
-                "skills/session-logs",
-                "skills/healthcheck",
-                "skills/email-manager",
-                "skills/database-query",
-                "skills/log-analyzer",
-                "skills/feishu",
-                "skills/dingtalk",
-                "skills/gitee",
-                "skills/yuque",
-                "skills/wps-office"
-        );
     }
 
     /**
