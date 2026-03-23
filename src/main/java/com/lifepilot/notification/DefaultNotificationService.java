@@ -12,10 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -63,7 +60,7 @@ public class DefaultNotificationService implements NotificationService {
         // 查询用户通知设置
         var setting = request.typeId() != null
                 ? notificationRepository.findSettingByUserIdAndTypeId(request.targetUserId(), request.typeId())
-                : java.util.Optional.<NotificationSettingRecord>empty();
+                : Optional.<NotificationSettingRecord>empty();
 
         // 检查是否启用该类型通知
         if (setting.isPresent() && !setting.get().enabled()) {

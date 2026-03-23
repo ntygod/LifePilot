@@ -94,8 +94,7 @@ public class HeartbeatRunner {
             // HEARTBEAT_OK 协议
             boolean ok = CronScheduler.isSilentResponse(response.content(), "HEARTBEAT_OK");
 
-            if (!ok && response.content() != null && !response.content().isBlank()
-                    && response.terminationReason() == null) {
+            if (!ok && !response.content().isBlank() && response.terminationReason() == null) {
                 notificationService.send(new NotificationRequest(
                         notificationProperties.getDefaultUserId(),
                         new ResponseContent.TextContent("【心跳巡检】\n" + response.content()),

@@ -53,7 +53,7 @@ lifepilot:
       llm-scene: agent_react
     budget:
       default-max-tokens: 131072
-      default-max-steps: 30
+      default-max-steps: 60
       default-max-duration-seconds: 300
       sub-agent-budget-ratio: 0.3
     context:
@@ -814,7 +814,7 @@ lifepilot:
         max-read-size: 1048576
         default-max-chars: 30000
         default-max-entries: 200
-        allowed-directories: []
+        allowed-directories: ["D:"]
         denied-directories:
           - "/etc"
           - "/var"
