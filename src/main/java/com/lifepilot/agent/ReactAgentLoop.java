@@ -243,32 +243,13 @@ public class ReactAgentLoop implements CallbackHelper {
                 break;
             }
 
-            // 3. 更新 Budget 已用时长 + 渐进式降级 + 超限检查
-            state = state.toBuilder()
-                    .budget(state.budget().withElapsed(Duration.between(loopStart, Instant.now())))
-                    .build();
-
-            // 渐进式降级：根据 Token 使用率逐步裁剪上下文
-            var degradation = state.budget().degradationLevel();
-            switch (degradation) {
-                case COMPRESS_HISTORY, TRIM_TOOLS, SKIP_MEMORY -> {
-                    // 清空缓存上下文，下一轮 assemble 时 ContextAssembler 会基于剩余预算自动裁剪
-                    if (cachedContext != null) {
-                        log.info("预算渐进式降级: traceId={}, level={}, tokenUtilization={}%",
-                                state.traceId(), degradation,
-                                (int) (state.budget().tokenUtilization() * 100));
-                        cachedContext = null;
-                    }
-                }
-                case TERMINATE -> {
-                    log.warn("ReAct 循环预算超限: traceId={}, reason={}",
-                            state.traceId(), state.budget().exceedReason());
-                    state = DegradedResponseBuilder.terminateWithReason(
-                            state, state.budget().exceedReason());
-                }
-                default -> {}
+            // 3. 预算检查：每轮开始前先刷新 elapsed，并在任一维度超限时统一降级终止
+            var startBudgetCheck = checkBudgetAndInvalidateCacheIfNeeded(state, loopStart, cachedContext != null);
+            state = startBudgetCheck.state();
+            if (startBudgetCheck.invalidateCachedContext()) {
+                cachedContext = null;
             }
-            if (state.budget().exceeded()) {
+            if (state.isDone()) {
                 break;
             }
 
@@ -419,13 +400,62 @@ public class ReactAgentLoop implements CallbackHelper {
                 }
             }
 
-            // 8. 更新 Budget 已用时长
-            state = state.toBuilder()
-                    .budget(state.budget().withElapsed(Duration.between(loopStart, Instant.now())))
-                    .build();
+            // 8. 迭代完成后更新步数，并在进入下一轮前再次执行预算检查
+            state = refreshBudgetElapsed(advanceBudgetStep(state), loopStart);
+            if (!state.isDone()) {
+                var endBudgetCheck = checkBudgetAndInvalidateCacheIfNeeded(state, loopStart, cachedContext != null);
+                state = endBudgetCheck.state();
+                if (endBudgetCheck.invalidateCachedContext()) {
+                    cachedContext = null;
+                }
+                if (state.isDone()) {
+                    break;
+                }
+            }
         }
 
         return state;
+    }
+
+    private BudgetCheckResult checkBudgetAndInvalidateCacheIfNeeded(
+            ReactAgentState state, Instant loopStart, boolean hasCachedContext) {
+        state = refreshBudgetElapsed(state, loopStart);
+
+        boolean invalidateCachedContext = false;
+        var degradation = state.budget().degradationLevel();
+        if ((degradation == com.lifepilot.agent.model.Budget.DegradationLevel.COMPRESS_HISTORY
+                || degradation == com.lifepilot.agent.model.Budget.DegradationLevel.TRIM_TOOLS
+                || degradation == com.lifepilot.agent.model.Budget.DegradationLevel.SKIP_MEMORY)
+                && hasCachedContext) {
+            log.info("预算渐进式降级: traceId={}, level={}, tokenUtilization={}%",
+                    state.traceId(), degradation, (int) (state.budget().tokenUtilization() * 100));
+            invalidateCachedContext = true;
+        }
+
+        if (state.budget().exceeded()) {
+            log.warn("ReAct 循环预算超限: traceId={}, reason={}",
+                    state.traceId(), state.budget().exceedReason());
+            state = DegradedResponseBuilder.terminateWithReason(state, state.budget().exceedReason());
+        }
+        return new BudgetCheckResult(state, invalidateCachedContext);
+    }
+
+    private ReactAgentState advanceBudgetStep(ReactAgentState state) {
+        return state.toBuilder()
+                .budget(state.budget().incrementStep())
+                .build();
+    }
+
+    private ReactAgentState refreshBudgetElapsed(ReactAgentState state, Instant loopStart) {
+        return state.toBuilder()
+                .budget(state.budget().withElapsed(Duration.between(loopStart, Instant.now())))
+                .build();
+    }
+
+    private record BudgetCheckResult(
+            ReactAgentState state,
+            boolean invalidateCachedContext
+    ) {
     }
 
     /**

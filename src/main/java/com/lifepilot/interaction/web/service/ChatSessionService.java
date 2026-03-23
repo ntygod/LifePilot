@@ -198,8 +198,10 @@ public class ChatSessionService {
                 session.isPinned(),
                 session.archived(),
                 SessionConfigKeys.resolvePreferredProviderId(sessionConfig),
-                getDoubleConfig(sessionConfig, SessionConfigKeys.TEMPERATURE),
-                getIntegerConfig(sessionConfig, SessionConfigKeys.MAX_TOKENS),
+                SessionConfigKeys.getDouble(sessionConfig, SessionConfigKeys.TEMPERATURE),
+                SessionConfigKeys.getInteger(sessionConfig, SessionConfigKeys.MAX_TOKENS),
+                SessionConfigKeys.getInteger(sessionConfig, SessionConfigKeys.MAX_STEPS),
+                SessionConfigKeys.getInteger(sessionConfig, SessionConfigKeys.MAX_DURATION_SECONDS),
                 knowledgeBaseIds,
                 session.messageCount(),
                 0L,
@@ -275,6 +277,8 @@ public class ChatSessionService {
         config.put(SessionConfigKeys.LEGACY_MODEL_ID, null);
         config.put(SessionConfigKeys.TEMPERATURE, request.temperature());
         config.put(SessionConfigKeys.MAX_TOKENS, request.maxTokens());
+        config.put(SessionConfigKeys.MAX_STEPS, request.maxSteps());
+        config.put(SessionConfigKeys.MAX_DURATION_SECONDS, request.maxDurationSeconds());
 
         sessionRepository.updateConfig(id, config);
         log.info("更新会话配置: sessionId={}, config={}", id, config);
@@ -300,38 +304,6 @@ public class ChatSessionService {
     private ChatSession requireSession(String id) {
         return sessionRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("会话不存在: id=" + id));
-    }
-
-    @Nullable
-    private Double getDoubleConfig(Map<String, Object> config, String key) {
-        Object value = config.get(key);
-        if (value instanceof Number numberValue) {
-            return numberValue.doubleValue();
-        }
-        if (value instanceof String stringValue && !stringValue.isBlank()) {
-            try {
-                return Double.parseDouble(stringValue);
-            } catch (NumberFormatException ignored) {
-                return null;
-            }
-        }
-        return null;
-    }
-
-    @Nullable
-    private Integer getIntegerConfig(Map<String, Object> config, String key) {
-        Object value = config.get(key);
-        if (value instanceof Number numberValue) {
-            return numberValue.intValue();
-        }
-        if (value instanceof String stringValue && !stringValue.isBlank()) {
-            try {
-                return Integer.parseInt(stringValue);
-            } catch (NumberFormatException ignored) {
-                return null;
-            }
-        }
-        return null;
     }
 
     private String preview(String content) {

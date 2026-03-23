@@ -7,6 +7,7 @@ import com.lifepilot.agent.orchestration.AgentOrchestrator;
 import com.lifepilot.multiagent.config.MultiAgentProperties;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.BuiltinTool;
+import com.lifepilot.tool.model.ToolContextKeys;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.model.ToolResultStatus;
@@ -139,7 +140,7 @@ class SpawnWorkersToolFactoryTest {
     void 委托深度超限_拒绝执行() {
         config.setMaxDelegationDepth(1);
 
-        // _callerDepth = 1，workerDepth = 2 > maxDelegationDepth(1)
+        // callerDepth = 1，workerDepth = 2 > maxDelegationDepth(1)
         ToolInput input = buildInputWithDepth(
                 List.of(Map.of("task", "任务A")),
                 1
@@ -150,6 +151,40 @@ class SpawnWorkersToolFactoryTest {
         assertEquals(ToolResultStatus.ERROR, result.status());
         assertTrue(result.error().contains("委托深度超限"));
         verify(agentOrchestrator, never()).run(any());
+    }
+
+    @Test
+    void Worker预算从父预算剩余额度派生_并受任务覆盖裁剪() {
+        config.getParallelWorker().setWorkerBudgetRatio(0.5);
+        when(toolRegistry.getToolSnapshot()).thenReturn(List.of());
+        when(agentOrchestrator.run(any(AgentRequest.class)))
+                .thenReturn(new AgentResponse("trace-1", "session", "结果", 100, 3, null));
+
+        Budget callerBudget = Budget.builder()
+                .maxTokens(1000).tokensUsed(200).tokensReserved(100)
+                .maxSteps(20).stepsUsed(5)
+                .maxDuration(Duration.ofSeconds(100))
+                .elapsed(Duration.ofSeconds(30))
+                .build();
+
+        ToolInput input = buildInput(
+                List.of(Map.of(
+                        "task", "任务A",
+                        "budget", Map.of(
+                                "max_tokens", 9999,
+                                "max_steps", 99,
+                                "timeout_seconds", 99
+                        )
+                )),
+                Map.of(ToolContextKeys.CALLER_BUDGET, callerBudget)
+        );
+
+        spawnWorkersTool.execute(input);
+
+        verify(agentOrchestrator).run(argThat(request -> request.budget() != null
+                && request.budget().maxTokens() == 350
+                && request.budget().maxSteps() == 7
+                && request.budget().maxDuration().equals(Duration.ofSeconds(35))));
     }
 
     @Test
@@ -207,22 +242,20 @@ class SpawnWorkersToolFactoryTest {
     // ==================== 辅助方法 ====================
 
     private ToolInput buildInput(List<Map<String, Object>> tasks) {
+        return buildInput(tasks, null);
+    }
+
+    private ToolInput buildInput(List<Map<String, Object>> tasks, Map<String, Object> context) {
         return new ToolInput(
                 SpawnWorkersToolFactory.TOOL_ID,
                 Map.of("tasks", tasks),
                 JsonSchema.of(Map.of()),
                 null,
-                null
+                context
         );
     }
 
     private ToolInput buildInputWithDepth(List<Map<String, Object>> tasks, int depth) {
-        return new ToolInput(
-                SpawnWorkersToolFactory.TOOL_ID,
-                Map.of("tasks", tasks, "_callerDepth", depth),
-                JsonSchema.of(Map.of()),
-                null,
-                null
-        );
+        return buildInput(tasks, Map.of(ToolContextKeys.CALLER_DEPTH, depth));
     }
 }

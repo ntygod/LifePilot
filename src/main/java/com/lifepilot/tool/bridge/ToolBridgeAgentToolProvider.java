@@ -4,6 +4,7 @@ import com.lifepilot.agent.AgentToolProvider;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.tool.ToolContract;
+import com.lifepilot.tool.model.ToolContextKeys;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.pipeline.ToolExecutionPipeline;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
@@ -17,6 +18,7 @@ import org.springframework.ai.tool.definition.ToolDefinition;
 import org.springframework.lang.NonNull;
 import org.springframework.lang.Nullable;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -85,10 +87,14 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
      * @return Spring AI ToolCallback
      */
     private ToolCallback toToolCallback(ToolContract tool, @Nullable String streamId, ReactAgentState state) {
-        // 构建请求级上下文，传递 sessionId 给 tool executor
-        Map<String, Object> context = state.sessionId() != null
-                ? Map.of("sessionId", state.sessionId())
-                : Map.of();
+        // 构建请求级上下文，传递会话、预算和委托链元数据给工具执行器
+        Map<String, Object> context = new LinkedHashMap<>();
+        if (state.sessionId() != null) {
+            context.put(ToolContextKeys.SESSION_ID, state.sessionId());
+        }
+        context.put(ToolContextKeys.CALLER_TRACE_ID, state.traceId());
+        context.put(ToolContextKeys.CALLER_DEPTH, state.depth());
+        context.put(ToolContextKeys.CALLER_BUDGET, state.budget());
 
         ToolDefinition definition = DefaultToolDefinition.builder()
                 .name(tool.id())
@@ -108,7 +114,7 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
             public String call(@NonNull String toolInput) {
                 Map<String, Object> params = parseInput(toolInput);
                 String traceId = UUID.randomUUID().toString();
-                ToolResult result = pipeline.execute(tool.id(), params, traceId, null, streamId, context);
+                ToolResult result = pipeline.execute(tool.id(), params, traceId, null, streamId, Map.copyOf(context));
                 String output = formatOutput(result);
 
                 return output;

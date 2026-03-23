@@ -637,7 +637,7 @@ public class ChatController {
     /**
      * 更新会话配置。
      *
-     * <p>支持更新模型ID、温度参数、最大Tokens和关联的知识库列表。</p>
+     * <p>支持更新模型、温度、三维预算和关联的知识库列表。</p>
      *
      * @param id      会话 ID
      * @param request 配置更新请求
@@ -647,8 +647,9 @@ public class ChatController {
     public ResponseEntity<?> updateSessionConfig(
             @PathVariable String id,
             @RequestBody SessionConfigRequest request) {
-        log.debug("更新会话配置: sessionId={}, preferredProviderId={}, temperature={}, maxTokens={}, knowledgeBaseIds={}",
-                id, request.preferredProviderId(), request.temperature(), request.maxTokens(), request.knowledgeBaseIds());
+        log.debug("更新会话配置: sessionId={}, preferredProviderId={}, temperature={}, maxTokens={}, maxSteps={}, maxDurationSeconds={}, knowledgeBaseIds={}",
+                id, request.preferredProviderId(), request.temperature(), request.maxTokens(),
+                request.maxSteps(), request.maxDurationSeconds(), request.knowledgeBaseIds());
         
         try {
             sessionService.updateSessionConfig(id, request);

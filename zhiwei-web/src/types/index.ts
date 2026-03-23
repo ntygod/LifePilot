@@ -21,6 +21,8 @@ export interface ChatSessionDetail extends ChatSession {
   preferredProviderId?: string
   temperature?: number
   maxTokens?: number
+  maxSteps?: number
+  maxDurationSeconds?: number
   messageCount: number
   totalTokens: number
 }
@@ -362,11 +364,13 @@ export interface ErrorResponse {
   timestamp: string
 }
 
-/** 会话配置（模型/温度/最大 Token/知识库选择） */
+/** 会话配置（模型/温度/三维预算/知识库选择） */
 export interface SessionConfig {
   preferredProviderId?: string
   temperature?: number
   maxTokens?: number
+  maxSteps?: number
+  maxDurationSeconds?: number
   knowledgeBaseIds?: string[]
 }
 

@@ -56,9 +56,15 @@ const showDebugDrawer = ref(false)
 const showSessionSidebar = ref(false)
 const showConfigPanel = ref(false)
 const providers = ref<LlmProvider[]>([])
+const DEFAULT_SESSION_TEMPERATURE = 0.7
+const DEFAULT_SESSION_MAX_TOKENS = 131072
+const DEFAULT_SESSION_MAX_STEPS = 60
+const DEFAULT_SESSION_MAX_DURATION_SECONDS = 300
 const activeSessionConfig = ref<SessionConfig>({
-  temperature: 0.7,
-  maxTokens: 2000,
+  temperature: DEFAULT_SESSION_TEMPERATURE,
+  maxTokens: DEFAULT_SESSION_MAX_TOKENS,
+  maxSteps: DEFAULT_SESSION_MAX_STEPS,
+  maxDurationSeconds: DEFAULT_SESSION_MAX_DURATION_SECONDS,
   knowledgeBaseIds: [],
 })
 
@@ -88,8 +94,10 @@ const currentSession = computed(() => {
 
 function resetActiveSessionConfig() {
   activeSessionConfig.value = {
-    temperature: 0.7,
-    maxTokens: 2000,
+    temperature: DEFAULT_SESSION_TEMPERATURE,
+    maxTokens: DEFAULT_SESSION_MAX_TOKENS,
+    maxSteps: DEFAULT_SESSION_MAX_STEPS,
+    maxDurationSeconds: DEFAULT_SESSION_MAX_DURATION_SECONDS,
     knowledgeBaseIds: [],
   }
 }
@@ -106,8 +114,10 @@ async function loadActiveSessionConfig(sessionId: string | null) {
 
     activeSessionConfig.value = {
       preferredProviderId: detail.preferredProviderId ?? undefined,
-      temperature: detail.temperature ?? 0.7,
-      maxTokens: detail.maxTokens ?? 2000,
+      temperature: detail.temperature ?? DEFAULT_SESSION_TEMPERATURE,
+      maxTokens: detail.maxTokens ?? DEFAULT_SESSION_MAX_TOKENS,
+      maxSteps: detail.maxSteps ?? DEFAULT_SESSION_MAX_STEPS,
+      maxDurationSeconds: detail.maxDurationSeconds ?? DEFAULT_SESSION_MAX_DURATION_SECONDS,
       knowledgeBaseIds: detail.knowledgeBaseIds ?? [],
     }
   } catch (event) {
@@ -228,12 +238,7 @@ async function handleSend(payload: {
   content: string
   attachmentIds?: string[]
   attachments?: ChatAttachment[]
-  sessionConfig?: {
-    preferredProviderId?: string
-    temperature?: number
-    maxTokens?: number
-    knowledgeBaseIds?: string[]
-  }
+  sessionConfig?: SessionConfig
 }) {
   await sendMessage(payload.content, payload.attachmentIds, payload.attachments, payload.sessionConfig)
 }
@@ -355,6 +360,8 @@ async function handleConfigUpdate(config: SessionConfig) {
       preferredProviderId: config.preferredProviderId,
       temperature: config.temperature ?? activeSessionConfig.value.temperature,
       maxTokens: config.maxTokens ?? activeSessionConfig.value.maxTokens,
+      maxSteps: config.maxSteps ?? activeSessionConfig.value.maxSteps,
+      maxDurationSeconds: config.maxDurationSeconds ?? activeSessionConfig.value.maxDurationSeconds,
       knowledgeBaseIds: config.knowledgeBaseIds ?? [],
     }
     uiStore.showToast('success', '配置已更新')
@@ -528,6 +535,8 @@ function closeInspectorPanels() {
               :preferred-provider-id="activeSessionConfig.preferredProviderId"
               :temperature="activeSessionConfig.temperature"
               :max-tokens="activeSessionConfig.maxTokens"
+              :max-steps="activeSessionConfig.maxSteps"
+              :max-duration-seconds="activeSessionConfig.maxDurationSeconds"
               :knowledge-base-ids="activeSessionConfig.knowledgeBaseIds"
               :providers="chatProviders"
               :knowledge-bases="kbStore.list"

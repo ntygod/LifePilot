@@ -46,6 +46,20 @@ public sealed interface GuardrailPolicy
                                            RiskLevel defaultRiskLevel) {
         return new ToolRiskPolicy(policyId, enabled, priority, toolRiskMapping, defaultRiskLevel);
     }
+
+    /**
+     * 创建预算限制策略实例。
+     *
+     * @param policyId        策略 ID
+     * @param enabled         是否启用
+     * @param priority        优先级
+     * @param dailyTokenLimit 每日 Token 上限
+     * @return 预算限制策略
+     */
+    static GuardrailPolicy budgetLimitPolicy(String policyId, boolean enabled, int priority,
+                                             int dailyTokenLimit) {
+        return new BudgetLimitPolicy(policyId, enabled, priority, dailyTokenLimit);
+    }
 }
 
 /**

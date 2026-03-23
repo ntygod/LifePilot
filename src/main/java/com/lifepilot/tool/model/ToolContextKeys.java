@@ -1,0 +1,18 @@
+package com.lifepilot.tool.model;
+
+/**
+ * 工具执行上下文字段常量。
+ *
+ * @author zsg
+ * @since 2026-03-23
+ */
+public final class ToolContextKeys {
+
+    public static final String SESSION_ID = "sessionId";
+    public static final String CALLER_TRACE_ID = "callerTraceId";
+    public static final String CALLER_DEPTH = "callerDepth";
+    public static final String CALLER_BUDGET = "callerBudget";
+
+    private ToolContextKeys() {
+    }
+}

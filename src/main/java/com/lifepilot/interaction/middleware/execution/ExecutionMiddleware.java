@@ -2,8 +2,10 @@ package com.lifepilot.interaction.middleware.execution;
 
 import com.lifepilot.agent.orchestration.AgentOrchestrator;
 import com.lifepilot.agent.CancellationToken;
+import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.agent.model.AgentResponse;
+import com.lifepilot.agent.model.Budget;
 import com.lifepilot.agent.model.CompletionMode;
 import com.lifepilot.agent.model.ResumePolicy;
 import com.lifepilot.interaction.config.GatewayProperties;
@@ -39,16 +41,19 @@ public class ExecutionMiddleware implements GatewayMiddleware {
     private static final String DEFAULT_MODEL_ID = "agent";
 
     private final AgentOrchestrator agentOrchestrator;
+    private final AgentConfigProperties agentConfigProperties;
     private final GatewayProperties properties;
     private final ChatSessionRepository chatSessionRepository;
     @Nullable
     private final SseSessionManager sseSessionManager;
 
     public ExecutionMiddleware(AgentOrchestrator agentOrchestrator,
+                               AgentConfigProperties agentConfigProperties,
                                GatewayProperties properties,
                                ChatSessionRepository chatSessionRepository,
                                @Nullable SseSessionManager sseSessionManager) {
         this.agentOrchestrator = agentOrchestrator;
+        this.agentConfigProperties = agentConfigProperties;
         this.properties = properties;
         this.chatSessionRepository = chatSessionRepository;
         this.sseSessionManager = sseSessionManager;
@@ -185,20 +190,19 @@ public class ExecutionMiddleware implements GatewayMiddleware {
     }
 
     private AgentRequest toAgentRequest(GatewayMessage message) {
-        // 读取会话级 maxTokens 配置，构建 Budget
-        var budget = resolveSessionBudget(message.sessionId());
+        Map<String, Object> sessionConfig = getSessionConfig(message.sessionId());
         return new AgentRequest(
                 message.contentAsText(),
                 message.sessionId(),
                 message.channelType().value(),
                 null,
-                budget,
+                resolveSessionBudget(sessionConfig),
                 null,
                 0,
-                resolvePreferredProvider(message),
+                resolvePreferredProvider(message, sessionConfig),
                 null,
                 buildMediaContents(message),
-                resolveTemperature(message.sessionId()),
+                resolveTemperature(sessionConfig),
                 resolveResumePolicy(message)
         );
     }
@@ -222,18 +226,12 @@ public class ExecutionMiddleware implements GatewayMiddleware {
     }
 
     @Nullable
-    private String resolvePreferredProvider(GatewayMessage message) {
+    private String resolvePreferredProvider(GatewayMessage message, Map<String, Object> sessionConfig) {
         String requestPreferredProvider = extractPreferredProvider(message);
         if (requestPreferredProvider != null) {
             return requestPreferredProvider;
         }
-
-        if (message.sessionId() == null || message.sessionId().isBlank()) {
-            return null;
-        }
-
-        Map<String, Object> config = chatSessionRepository.getConfig(message.sessionId());
-        return SessionConfigKeys.resolvePreferredProviderId(config);
+        return SessionConfigKeys.resolvePreferredProviderId(sessionConfig);
     }
 
     @Nullable
@@ -256,51 +254,52 @@ public class ExecutionMiddleware implements GatewayMiddleware {
      * 从会话配置读取 temperature。无配置时返回 null（使用模型默认值）。
      */
     @Nullable
-    private Double resolveTemperature(@Nullable String sessionId) {
-        if (sessionId == null || sessionId.isBlank()) {
-            return null;
-        }
-        try {
-            Map<String, Object> config = chatSessionRepository.getConfig(sessionId);
-            if (config == null || !config.containsKey(SessionConfigKeys.TEMPERATURE)) {
-                return null;
-            }
-            Object tempObj = config.get(SessionConfigKeys.TEMPERATURE);
-            if (tempObj instanceof Number num) {
-                double val = num.doubleValue();
-                return val >= 0 ? val : null;
-            }
-        } catch (Exception e) {
-            log.debug("读取会话 temperature 配置失败，使用默认值: sessionId={}, error={}",
-                    sessionId, e.getMessage());
-        }
-        return null;
+    private Double resolveTemperature(Map<String, Object> sessionConfig) {
+        Double temperature = SessionConfigKeys.getDouble(sessionConfig, SessionConfigKeys.TEMPERATURE);
+        return temperature != null && temperature >= 0 ? temperature : null;
     }
 
     /**
-     * 从会话配置读取 maxTokens，构建 Budget。无配置时返回 null（使用默认值）。
+     * 从会话配置读取三维预算覆盖。
      */
     @Nullable
-    private com.lifepilot.agent.model.Budget resolveSessionBudget(@Nullable String sessionId) {
-        if (sessionId == null || sessionId.isBlank()) {
+    private Budget resolveSessionBudget(Map<String, Object> sessionConfig) {
+        Integer maxTokens = positiveInteger(sessionConfig, SessionConfigKeys.MAX_TOKENS);
+        Integer maxSteps = positiveInteger(sessionConfig, SessionConfigKeys.MAX_STEPS);
+        Integer maxDurationSeconds = positiveInteger(sessionConfig, SessionConfigKeys.MAX_DURATION_SECONDS);
+        if (maxTokens == null && maxSteps == null && maxDurationSeconds == null) {
             return null;
         }
-        try {
-            Map<String, Object> config = chatSessionRepository.getConfig(sessionId);
-            if (config == null || !config.containsKey(SessionConfigKeys.MAX_TOKENS)) {
-                return null;
-            }
-            Object maxTokensObj = config.get(SessionConfigKeys.MAX_TOKENS);
-            if (maxTokensObj instanceof Number num && num.intValue() > 0) {
-                return com.lifepilot.agent.model.Budget.fromConfig(
-                        new com.lifepilot.agent.config.AgentConfigProperties.BudgetConfig())
-                        .toBuilder().maxTokens(num.intValue()).build();
-            }
-        } catch (Exception e) {
-            log.debug("读取会话 maxTokens 配置失败，使用默认值: sessionId={}, error={}",
-                    sessionId, e.getMessage());
+
+        var builder = Budget.fromConfig(agentConfigProperties.getBudget()).toBuilder();
+        if (maxTokens != null) {
+            builder.maxTokens(maxTokens);
         }
-        return null;
+        if (maxSteps != null) {
+            builder.maxSteps(maxSteps);
+        }
+        if (maxDurationSeconds != null) {
+            builder.maxDuration(java.time.Duration.ofSeconds(maxDurationSeconds));
+        }
+        return builder.build();
+    }
+
+    private Map<String, Object> getSessionConfig(@Nullable String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return Map.of();
+        }
+        try {
+            return chatSessionRepository.getConfig(sessionId);
+        } catch (Exception e) {
+            log.debug("读取会话配置失败，使用默认值: sessionId={}, error={}", sessionId, e.getMessage());
+            return Map.of();
+        }
+    }
+
+    @Nullable
+    private Integer positiveInteger(Map<String, Object> sessionConfig, String key) {
+        Integer value = SessionConfigKeys.getInteger(sessionConfig, key);
+        return value != null && value > 0 ? value : null;
     }
 
     @Override

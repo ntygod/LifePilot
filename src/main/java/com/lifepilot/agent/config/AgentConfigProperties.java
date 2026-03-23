@@ -54,7 +54,6 @@ public class AgentConfigProperties {
         private int defaultMaxTokens = 131072;
         private int defaultMaxSteps = 30;
         private int defaultMaxDurationSeconds = 300;
-        private double subAgentBudgetRatio = 0.3;
 
     }
 

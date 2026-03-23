@@ -3,8 +3,10 @@ package com.lifepilot.observability.config;
 import com.lifepilot.observability.evaluation.TrajectoryEvaluator;
 import com.lifepilot.observability.guardrail.GuardrailAdvisor;
 import com.lifepilot.observability.guardrail.GuardrailEngine;
+import com.lifepilot.observability.guardrail.GuardrailPolicy;
 import com.lifepilot.observability.redactor.DataRedactor;
 import com.lifepilot.observability.trace.*;
+import com.lifepilot.tool.config.ToolConfigProperties;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
@@ -28,6 +30,7 @@ class ObservabilityAutoConfiguration_集成测试 {
                     DataSourceAutoConfiguration.class,
                     JdbcTemplateAutoConfiguration.class,
                     ObservabilityAutoConfiguration.class))
+            .withBean(ToolConfigProperties.class, ToolConfigProperties::new)
             .withPropertyValues(
                     "spring.datasource.url=jdbc:sqlite::memory:",
                     "spring.datasource.driver-class-name=org.sqlite.JDBC");
@@ -44,6 +47,7 @@ class ObservabilityAutoConfiguration_集成测试 {
             assertThat(context).hasSingleBean(GuardrailEngine.class);
             assertThat(context).hasSingleBean(GuardrailAdvisor.class);
             assertThat(context).hasSingleBean(TrajectoryEvaluator.class);
+            assertThat(context.getBeansOfType(GuardrailPolicy.class)).hasSize(2);
         });
     }
 

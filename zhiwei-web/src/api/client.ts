@@ -245,7 +245,7 @@ export const chatApi = {
   },
 
   /**
-   * 更新会话配置（模型/温度/最大Tokens/关联知识库）。
+   * 更新会话配置（模型/温度/三维预算/关联知识库）。
    *
    * 注意：知识库关联会影响后端在生成回答前的检索上下文注入（若已启用）。
    */
@@ -255,6 +255,8 @@ export const chatApi = {
       preferredProviderId?: string
       temperature?: number
       maxTokens?: number
+      maxSteps?: number
+      maxDurationSeconds?: number
       knowledgeBaseIds?: string[]
     }
   ): Promise<void> {

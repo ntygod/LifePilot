@@ -61,6 +61,8 @@ export function useChat() {
       preferredProviderId?: string
       temperature?: number
       maxTokens?: number
+      maxSteps?: number
+      maxDurationSeconds?: number
       knowledgeBaseIds?: string[]
     },
     resumePolicy?: ResumePolicy

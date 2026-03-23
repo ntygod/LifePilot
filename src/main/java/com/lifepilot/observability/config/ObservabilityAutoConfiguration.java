@@ -20,6 +20,9 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -141,6 +144,31 @@ public class ObservabilityAutoConfiguration {
         return policy;
     }
 
+    @Bean
+    @ConditionalOnProperty(prefix = "lifepilot.observability.guardrail", name = "enabled",
+            havingValue = "true", matchIfMissing = true)
+    public GuardrailPolicy defaultBudgetLimitPolicy(GuardrailEngine guardrailEngine,
+                                                    ObservabilityProperties properties) {
+        int dailyTokenLimit = properties.getGuardrail().getBudgetLimit().getDailyTokenLimit();
+        var policy = GuardrailPolicy.budgetLimitPolicy("default-budget-limit", true, 20, dailyTokenLimit);
+        guardrailEngine.registerPolicy(policy);
+        log.info("可观测性: 注册默认 BudgetLimitPolicy: dailyTokenLimit={}", dailyTokenLimit);
+        return policy;
+    }
+
+    /**
+     * 将每日 Token 聚合器注册为 TraceRecorder 的 onTraceEnd 监听器，
+     * 在每次追踪结束后累计当天 Token 消耗。
+     */
+    @Bean
+    @ConditionalOnBean(TraceRecorder.class)
+    @ConditionalOnProperty(prefix = "lifepilot.observability.guardrail", name = "enabled",
+            havingValue = "true", matchIfMissing = true)
+    public AutoCloseable dailyTokenUsageListener(TraceRecorder traceRecorder, JdbcTemplate jdbcTemplate) {
+        log.info("可观测性: 注册 DailyTokenUsage 为 TraceEnd 监听器");
+        return traceRecorder.onTraceEnd(trace -> persistDailyTokenUsage(jdbcTemplate, trace));
+    }
+
     // ─── 评估组件 ───
 
     @Bean
@@ -177,5 +205,38 @@ public class ObservabilityAutoConfiguration {
                 log.warn("轨迹在线评估失败: traceId={}, error={}", trace.traceId(), e.getMessage());
             }
         });
+    }
+
+    private static void persistDailyTokenUsage(JdbcTemplate jdbcTemplate, TraceRecord trace) {
+        int totalTokens = trace.totalTokens();
+        if (totalTokens <= 0) {
+            return;
+        }
+
+        String usageDate = resolveUsageDate(trace).toString();
+        String now = Instant.now().toString();
+        jdbcTemplate.update("""
+                INSERT INTO daily_token_usage (
+                    usage_date, input_tokens, output_tokens, total_tokens, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(usage_date) DO UPDATE SET
+                    input_tokens = daily_token_usage.input_tokens + excluded.input_tokens,
+                    output_tokens = daily_token_usage.output_tokens + excluded.output_tokens,
+                    total_tokens = daily_token_usage.total_tokens + excluded.total_tokens,
+                    updated_at = excluded.updated_at
+                """,
+                usageDate,
+                trace.inputTokens(),
+                trace.outputTokens(),
+                totalTokens,
+                now,
+                now
+        );
+    }
+
+    private static LocalDate resolveUsageDate(TraceRecord trace) {
+        var endTime = trace.endTime() != null ? trace.endTime() : trace.startTime();
+        return LocalDate.ofInstant(endTime, ZoneId.systemDefault());
     }
 }

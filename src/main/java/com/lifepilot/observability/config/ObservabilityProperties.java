@@ -118,15 +118,6 @@ public class ObservabilityProperties {
         @Getter
         public static class BudgetLimit {
 
-            /** 单次请求最大 Token 数，默认 10000。 */
-            private int maxTokensPerRequest = 10000;
-
-            /** 单次请求最大步骤数，默认 20。 */
-            private int maxStepsPerRequest = 20;
-
-            /** 单次请求最大时长（秒），默认 120。 */
-            private int maxDurationSeconds = 120;
-
             /** 每日 Token 上限，默认 1000000。 */
             private int dailyTokenLimit = 1000000;
 

@@ -13,6 +13,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -365,18 +367,38 @@ public class GuardrailEngine {
      * 评估预算限制策略。
      */
     private GuardrailResult evaluateBudgetLimit(BudgetLimitPolicy policy) {
-        // 从当前 TraceContext 获取已消耗 Token
-        var ctx = propagator.current().orElse(null);
-        if (ctx != null) {
-            int consumed = ctx.totalInputTokens() + ctx.totalOutputTokens();
-            if (consumed >= policy.dailyTokenLimit()) {
-                return new GuardrailResult.Blocked(
-                        policy.policyId(),
-                        "每日 Token 上限已达到: consumed=%d, limit=%d".formatted(consumed, policy.dailyTokenLimit()),
-                        RiskLevel.HIGH);
-            }
+        int consumed = queryDailyTokenUsage(resolveUsageDate()) + currentTraceTokenDelta();
+        if (consumed >= policy.dailyTokenLimit()) {
+            return new GuardrailResult.Blocked(
+                    policy.policyId(),
+                    "每日 Token 上限已达到: consumed=%d, limit=%d".formatted(consumed, policy.dailyTokenLimit()),
+                    RiskLevel.HIGH);
         }
         return new GuardrailResult.Passed(policy.policyId());
+    }
+
+    private int currentTraceTokenDelta() {
+        return propagator.current()
+                .map(ctx -> ctx.totalInputTokens() + ctx.totalOutputTokens())
+                .orElse(0);
+    }
+
+    private LocalDate resolveUsageDate() {
+        return LocalDate.ofInstant(Instant.now(), ZoneId.systemDefault());
+    }
+
+    private int queryDailyTokenUsage(LocalDate usageDate) {
+        try {
+            Integer total = jdbcTemplate.queryForObject(
+                    "SELECT total_tokens FROM daily_token_usage WHERE usage_date = ?",
+                    Integer.class,
+                    usageDate.toString()
+            );
+            return total != null ? total : 0;
+        } catch (Exception e) {
+            log.warn("读取每日 Token 聚合失败，按 0 处理: usageDate={}, error={}", usageDate, e.getMessage());
+            return 0;
+        }
     }
 
     /**

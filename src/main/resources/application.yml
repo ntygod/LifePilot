@@ -55,7 +55,6 @@ lifepilot:
       default-max-tokens: 131072
       default-max-steps: 60
       default-max-duration-seconds: 300
-      sub-agent-budget-ratio: 0.3
     context:
       max-context-tokens: 131072
       output-reserved-tokens: 8192
@@ -722,9 +721,6 @@ lifepilot:
         blocked-patterns: []
         sensitive-topics: []
       budget-limit:
-        max-tokens-per-request: 10000
-        max-steps-per-request: 20
-        max-duration-seconds: 120
         daily-token-limit: 1000000
       rate-limit:
         max-calls-per-minute: 60
