@@ -317,7 +317,6 @@ Content-Type: application/json
 | `trace-start` | Trace 开始事件 | `{"traceId": "..."}` |
 | `trace-step` | Trace 步骤事件 | `{"traceId": "...", "step": {...}}` |
 | `trace-end` | Trace 结束事件 | `{"traceId": "..."}` |
-| `agent-delegated` | Agent 委托事件（handoff 工具调用前发送） | `{"agentId": "...", "targetAgentId": "..."}` |
 
 #### 其他事件类型
 

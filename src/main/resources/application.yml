@@ -88,7 +88,6 @@ lifepilot:
       enabled: true
       max-delegation-depth: 2
       agent-definitions-path: "${user.home}/.zhiwei/agents/"
-      register-handoff-tools: true
       hot-reload:
         enabled: true
         scan-interval-seconds: 5

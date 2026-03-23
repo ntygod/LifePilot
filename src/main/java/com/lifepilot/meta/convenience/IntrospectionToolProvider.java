@@ -242,7 +242,6 @@ public class IntrospectionToolProvider {
             data.put("description", agent.description());
             data.put("type", "agent");
             data.put("allowedTools", agent.allowedTools());
-            data.put("canDelegate", agent.canDelegate());
             return ToolResult.success(Map.copyOf(data));
         }).orElse(null);
     }

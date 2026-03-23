@@ -644,7 +644,6 @@ public class AgentController {
                 .description(description != null ? description : "")
                 .systemPrompt(resolveSystemPrompt(agentName, description, request.systemPrompt()))
                 .allowedTools(request.toolIds() != null ? request.toolIds() : List.of())
-                .canDelegate(false) // 自定义 Agent 默认不允许委托
                 .budget(AgentBudget.DEFAULT)
                 .preferredProvider(normalizeOptionalText(request.preferredProviderId()))
                 .source(new AgentSource.MarkdownDefined(null, now))
@@ -713,7 +712,6 @@ public class AgentController {
                 .description(nextDescription)
                 .systemPrompt(nextSystemPrompt)
                 .allowedTools(request.toolIds() != null ? request.toolIds() : existing.allowedTools())
-                .canDelegate(existing.canDelegate())
                 .budget(existing.budget())
                 .preferredProvider(preferredProviderId)
                 .source(existing.source())

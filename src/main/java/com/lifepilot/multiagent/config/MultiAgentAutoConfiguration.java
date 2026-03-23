@@ -3,10 +3,8 @@ package com.lifepilot.multiagent.config;
 import com.lifepilot.agent.orchestration.AgentOrchestrator;
 import com.lifepilot.agent.config.AgentAutoConfiguration;
 import com.lifepilot.config.threadpool.SharedScheduler;
-import com.lifepilot.multiagent.bridge.AgentToToolBridge;
 import com.lifepilot.multiagent.discovery.ToolDiscoveryService;
 import com.lifepilot.multiagent.execution.AgentExecutor;
-import com.lifepilot.multiagent.execution.HandoffToolFactory;
 import com.lifepilot.multiagent.execution.SpawnWorkersToolFactory;
 import com.lifepilot.multiagent.loader.AgentMarkdownLoader;
 import com.lifepilot.multiagent.loader.AgentMarkdownParser;
@@ -38,8 +36,8 @@ import java.util.Optional;
  * 多 Agent 协作 Spring Boot 自动配置。
  *
  * <p>通过 {@code lifepilot.agent.multi-agent.enabled=true}（默认）激活，
- * 注册 AgentRegistry、AgentExecutor、HandoffToolFactory、AgentMarkdownParser、
- * AgentMarkdownLoader、AgentToToolBridge、ToolDiscoveryService 等核心 Bean。</p>
+ * 注册 AgentRegistry、AgentExecutor、AgentMarkdownParser、
+ * AgentMarkdownLoader、ToolDiscoveryService 和 spawn_workers 等核心 Bean。</p>
  *
  * <p>应用启动后自动加载预设 Agent（classpath preset-agents/）和用户自定义 Agent，
  * 并根据配置启动热加载。</p>
@@ -74,13 +72,6 @@ public class MultiAgentAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public HandoffToolFactory handoffToolFactory(AgentExecutor agentExecutor) {
-        log.info("多 Agent 协作: 注册 HandoffToolFactory");
-        return new HandoffToolFactory(agentExecutor);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
     public AgentMarkdownParser agentMarkdownParser(MultiAgentProperties config) {
         log.info("多 Agent 协作: 注册 AgentMarkdownParser");
         return new AgentMarkdownParser(config);
@@ -102,16 +93,6 @@ public class MultiAgentAutoConfiguration {
         log.info("多 Agent 协作: 注册 AgentMarkdownLoader, path={}",
                 config.getAgentDefinitionsPath());
         return new AgentMarkdownLoader(agentRegistry, parser, config, sharedScheduler);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public AgentToToolBridge agentToToolBridge(DynamicToolRegistry toolRegistry,
-                                               HandoffToolFactory handoffToolFactory,
-                                               MultiAgentProperties config) {
-        log.info("多 Agent 协作: 注册 AgentToToolBridge, registerHandoffTools={}",
-                config.isRegisterHandoffTools());
-        return new AgentToToolBridge(toolRegistry, handoffToolFactory, config);
     }
 
     @Bean

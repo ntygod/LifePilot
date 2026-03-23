@@ -61,7 +61,7 @@ public class AgentExecutor {
         }
 
         try {
-            // 2. 构建 allowedToolIds（canDelegate=false 时排除 handoff_to_* 工具 + 父作用域交集）
+            // 2. 构建 allowedToolIds（Agent 白名单 + 父作用域交集）
             List<String> allowedToolIds = buildAllowedToolIds(definition, request.allowedToolIds());
 
             // 3. 构造子 Agent 请求（覆盖 depth + allowedToolIds）
@@ -113,8 +113,6 @@ public class AgentExecutor {
      * <p>排除规则（按优先级）：
      * <ol>
      *   <li>不存在于 DynamicToolRegistry 的工具 ID — 记录 WARN 日志并跳过</li>
-     *   <li>指向自身的 handoff 工具（防止自递归）— 独立于 canDelegate 标志</li>
-     *   <li>canDelegate=false 时排除所有 handoff_to_* 工具</li>
      * </ol>
      *
      * <p>交集约束：当父 Agent 的 allowedToolIds 非空时，子 Agent 的有效工具集
@@ -127,22 +125,12 @@ public class AgentExecutor {
      */
     private List<String> buildAllowedToolIds(AgentDefinition definition,
                                              List<String> parentAllowedIds) {
-        String selfHandoffId = HandoffToolFactory.TOOL_ID_PREFIX + definition.id();
         var result = new ArrayList<String>();
         for (String toolId : definition.allowedTools()) {
             // 跳过不存在的工具
             if (toolRegistry.resolve(toolId).isEmpty()) {
                 log.warn("Agent 工具白名单中的工具不存在: agentId={}, toolId={}",
                         definition.id(), toolId);
-                continue;
-            }
-            // 排除指向自身的 handoff 工具（防止自递归，独立于 canDelegate 标志）
-            if (toolId.equals(selfHandoffId)) {
-                log.debug("排除自递归 handoff 工具: agentId={}, toolId={}", definition.id(), toolId);
-                continue;
-            }
-            // canDelegate=false 时排除所有 handoff_to_* 工具
-            if (!definition.canDelegate() && toolId.startsWith(HandoffToolFactory.TOOL_ID_PREFIX)) {
                 continue;
             }
             result.add(toolId);

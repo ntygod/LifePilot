@@ -20,19 +20,19 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * 工具重试策略属性测试 — 验证 handoff 工具不可重试 + 普通工具重试保持。
+ * 工具重试策略属性测试。
  *
  * <p>由于 {@code isRetryable()} 是 private 方法，通过 {@code ToolExecutionPipeline.execute()}
  * 间接测试：注册一个计数工具，始终返回错误，验证调用次数。</p>
  *
- * <p><b>Validates: Property 4, 5, Requirements 2.5, 2.6, 3.3</b></p>
+ * <p><b>Validates: Property 5, Requirements 3.3</b></p>
  *
  * @author zsg
  * @since 2026-03-05
  */
 class ToolRetryPolicyPropertyTest {
 
-    /** 普通工具标签候选池（不含 "handoff"）。 */
+    /** 普通工具标签候选池。 */
     private static final List<String> NORMAL_TAG_POOL = List.of(
             "builtin", "data", "query", "multi-agent", "schedule",
             "habit", "memory", "search", "mcp", "yaml"
@@ -47,95 +47,17 @@ class ToolRetryPolicyPropertyTest {
     );
 
     // ─────────────────────────────────────────────
-    //  Property 4 — handoff 工具不可重试
-    // ─────────────────────────────────────────────
-
-    /**
-     * <b>Validates: Requirements 2.5, 2.6</b>
-     *
-     * <p>对任意 tags 包含 "handoff" 的 ToolContract，当工具执行返回可重试错误时，
-     * ToolExecutionPipeline 不应对其进行重试 — 工具仅被调用 1 次。</p>
-     */
-    @Property(tries = 50)
-    void handoff工具不可重试_任意tags含handoff时仅执行一次(
-            @ForAll("handoffTagSets") List<String> tags,
-            @ForAll("retryableErrors") String errorMessage) {
-
-        // 构建 pipeline 基础设施
-        var infra = buildPipelineInfra();
-
-        // 注册 handoff 工具（tags 包含 "handoff"），始终返回错误
-        var callCount = new AtomicInteger(0);
-        String toolId = "handoff_to_test_agent";
-        var tool = BuiltinTool.builder()
-                .id(toolId)
-                .name("test-handoff")
-                .description("测试 handoff 工具")
-                .tags(tags)
-                .idempotent(false)
-                .budget(ToolBudget.of(Duration.ofSeconds(5), 2, Integer.MAX_VALUE))
-                .executor(input -> {
-                    callCount.incrementAndGet();
-                    return ToolResult.error(errorMessage);
-                })
-                .build();
-        infra.registry.registerBuiltinTool(tool);
-
-        // 执行
-        infra.pipeline.execute(toolId, Map.of("task", "测试任务"), "trace-pbt", null);
-
-        // 断言：handoff 工具仅执行 1 次（不重试）
-        assertEquals(1, callCount.get(),
-                "handoff 工具（tags=" + tags + "）应仅执行 1 次，但实际执行了 "
-                        + callCount.get() + " 次（错误消息: " + errorMessage + "）");
-    }
-
-    /**
-     * <b>Validates: Requirements 2.5</b>
-     *
-     * <p>对任意 tags 包含 "handoff" 的 ToolContract，即使工具执行返回超时错误，
-     * isRetryable 也应返回 false — 通过验证工具仅被调用 1 次来间接确认。</p>
-     */
-    @Property(tries = 30)
-    void handoff工具超时不重试_即使错误消息包含超时关键字(
-            @ForAll("handoffTagSets") List<String> tags) {
-
-        var infra = buildPipelineInfra();
-
-        var callCount = new AtomicInteger(0);
-        String toolId = "handoff_to_timeout_agent";
-        var tool = BuiltinTool.builder()
-                .id(toolId)
-                .name("test-handoff-timeout")
-                .description("测试 handoff 超时工具")
-                .tags(tags)
-                .idempotent(false)
-                .budget(ToolBudget.of(Duration.ofSeconds(5), 2, Integer.MAX_VALUE))
-                .executor(input -> {
-                    callCount.incrementAndGet();
-                    return ToolResult.error("执行超时: 30秒");
-                })
-                .build();
-        infra.registry.registerBuiltinTool(tool);
-
-        infra.pipeline.execute(toolId, Map.of("task", "超时测试"), "trace-pbt", null);
-
-        assertEquals(1, callCount.get(),
-                "handoff 工具超时后不应重试，但实际执行了 " + callCount.get() + " 次");
-    }
-
-    // ─────────────────────────────────────────────
     //  Property 5 — 普通工具重试保持
     // ─────────────────────────────────────────────
 
     /**
      * <b>Validates: Requirements 3.3</b>
      *
-     * <p>对任意 tags 不含 "handoff" 的 ToolContract，当工具执行返回可重试错误时，
+     * <p>对任意普通 ToolContract，当工具执行返回可重试错误时，
      * ToolExecutionPipeline 应按策略重试 — 工具被调用 1 + maxRetries 次。</p>
      */
     @Property(tries = 50)
-    void 普通工具重试保持_任意tags不含handoff时按策略重试(
+    void 普通工具重试保持_任意普通tags时按策略重试(
             @ForAll("normalTagSets") List<String> tags,
             @ForAll("retryableErrors") String errorMessage) {
 
@@ -170,7 +92,7 @@ class ToolRetryPolicyPropertyTest {
     /**
      * <b>Validates: Requirements 3.3</b>
      *
-     * <p>对任意 tags 不含 "handoff" 的 ToolContract，当工具执行返回不可重试错误时，
+     * <p>对任意普通 ToolContract，当工具执行返回不可重试错误时，
      * ToolExecutionPipeline 不应重试 — 工具仅被调用 1 次。</p>
      */
     @Property(tries = 30)
@@ -207,20 +129,7 @@ class ToolRetryPolicyPropertyTest {
     //  数据生成器
     // ─────────────────────────────────────────────
 
-    /** 生成包含 "handoff" 的随机 tags 集合（1~5 个标签，必含 "handoff"）。 */
-    @Provide
-    Arbitrary<List<String>> handoffTagSets() {
-        return Arbitraries.of(NORMAL_TAG_POOL)
-                .list().ofMinSize(0).ofMaxSize(4)
-                .uniqueElements()
-                .map(otherTags -> {
-                    var tags = new ArrayList<>(otherTags);
-                    tags.add("handoff");
-                    return List.copyOf(tags);
-                });
-    }
-
-    /** 生成不含 "handoff" 的随机 tags 集合（0~5 个标签）。 */
+    /** 生成普通工具随机 tags 集合（0~5 个标签）。 */
     @Provide
     Arbitrary<List<String>> normalTagSets() {
         return Arbitraries.of(NORMAL_TAG_POOL)

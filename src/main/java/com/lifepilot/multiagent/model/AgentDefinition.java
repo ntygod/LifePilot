@@ -22,7 +22,6 @@ public record AgentDefinition(
         String description,
         String systemPrompt,
         List<String> allowedTools,
-        boolean canDelegate,
         AgentBudget budget,
         @Nullable String preferredProvider,
         AgentSource source,

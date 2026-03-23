@@ -70,13 +70,13 @@ class IntrospectionToolProviderTest {
     }
 
     @Test
-    void registerTools_注册4个工具() {
+    void registerTools_注册5个工具() {
         DynamicToolRegistry registry = mock(DynamicToolRegistry.class);
 
         provider.registerTools(registry);
 
         ArgumentCaptor<BuiltinTool> captor = ArgumentCaptor.forClass(BuiltinTool.class);
-        verify(registry, times(4)).registerBuiltinTool(captor.capture());
+        verify(registry, times(5)).registerBuiltinTool(captor.capture());
 
         var tools = captor.getAllValues();
         assertThat(tools).extracting(BuiltinTool::id)
@@ -84,7 +84,8 @@ class IntrospectionToolProviderTest {
                         "system.list-capabilities",
                         "system.explain",
                         "system.status",
-                        "system.suggest"
+                        "system.suggest",
+                        "system.runtime"
                 );
     }
 
@@ -187,7 +188,6 @@ class IntrospectionToolProviderTest {
                 .description("测试描述")
                 .systemPrompt("测试")
                 .allowedTools(List.of())
-                .canDelegate(false)
                 .budget(AgentBudget.DEFAULT)
                 .source(new AgentSource.Builtin())
                 .metadata(Map.of())

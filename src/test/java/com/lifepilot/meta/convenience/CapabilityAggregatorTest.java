@@ -100,7 +100,6 @@ class CapabilityAggregatorTest {
                 .description("测试描述")
                 .systemPrompt("测试")
                 .allowedTools(List.of())
-                .canDelegate(false)
                 .budget(AgentBudget.DEFAULT)
                 .source(new AgentSource.Builtin())
                 .metadata(Map.of())
@@ -172,13 +171,14 @@ class CapabilityAggregatorTest {
     }
 
     @Test
-    void onSkillRegistryEvent_触发缓存失效() {
+    void onSkillRegistryEvent_触发缓存失效() throws InterruptedException {
         // 先聚合一次填充缓存
         aggregator.aggregate();
         verify(skillRegistry, times(1)).listAll();
 
         // 触发事件
         aggregator.onSkillRegistryEvent(new SkillRegistryEvent.SkillUnregistered("some.skill"));
+        Thread.sleep(600);
 
         // 再次聚合应重新调用
         aggregator.aggregate();
@@ -186,24 +186,26 @@ class CapabilityAggregatorTest {
     }
 
     @Test
-    void onToolRegistryEvent_触发缓存失效() {
+    void onToolRegistryEvent_触发缓存失效() throws InterruptedException {
         aggregator.aggregate();
         // doAggregate 调用 getToolSnapshot() 两次（工具列表 + MCP Server 推断）
         verify(toolRegistry, times(2)).getToolSnapshot();
 
         aggregator.onToolRegistryEvent(new ToolRegistryEvent.ToolsRegistered(
                 List.of("new.tool"), ToolLayer.JAVA_NATIVE, "test"));
+        Thread.sleep(600);
 
         aggregator.aggregate();
         verify(toolRegistry, times(4)).getToolSnapshot();
     }
 
     @Test
-    void onAgentRegistryEvent_触发缓存失效() {
+    void onAgentRegistryEvent_触发缓存失效() throws InterruptedException {
         aggregator.aggregate();
         verify(agentRegistry, times(1)).listAll();
 
         aggregator.onAgentRegistryEvent(new AgentRegistryEvent.AgentUnregistered("some.agent"));
+        Thread.sleep(600);
 
         aggregator.aggregate();
         verify(agentRegistry, times(2)).listAll();

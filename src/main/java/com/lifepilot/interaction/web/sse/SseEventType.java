@@ -50,9 +50,6 @@ public final class SseEventType {
     /** Trace 结束事件 */
     public static final String TRACE_END = "trace-end";
     
-    /** Agent 委托事件（handoff 工具调用前发送） */
-    public static final String AGENT_DELEGATED = "agent-delegated";
-
     // A2A 模块事件类型
     /** 任务状态更新事件 */
     public static final String TASK_STATUS_UPDATE = "task-status-update";

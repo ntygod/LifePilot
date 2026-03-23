@@ -106,7 +106,7 @@ class CacheFlapping_Preservation_保持测试 {
         // 构造单个 AgentRegistryEvent（使用 AgentRegistered）
         var agentDef = new AgentDefinition(
                 "test-agent", "测试Agent", "测试用Agent描述",
-                "你是一个测试Agent", List.of(), false,
+                "你是一个测试Agent", List.of(),
                 AgentBudget.DEFAULT, null,
                 new AgentSource.Builtin(), Map.of());
         var event = new AgentRegistryEvent.AgentRegistered(agentDef);
