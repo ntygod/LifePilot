@@ -32,7 +32,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -43,13 +42,6 @@ public class ContextAssembler {
     private static final Logger log = LoggerFactory.getLogger(ContextAssembler.class);
 
     private static final int DEFAULT_WORKSPACE_PROMPT_LIMIT = 3;
-    private static final Pattern TIME_HINT_PATTERN = Pattern.compile(
-            "\u4eca\u5929|\u6628\u65e5|\u6628\u5929|\u6700\u8fd1\\s*\\d+|\u8fc7\u53bb\\s*\\d+|\u8fd1\\s*\\d+|\u5f53\u5929|\u672c\u5468|\u4e0a\u5468|\u672c\u6708|\u4e0a\u6708|\u5c0f\u65f6|\u5206\u949f|\u5929|\u5468|\u6708|\u5e74|\\d{4}-\\d{2}-\\d{2}|\\d{1,2}:\\d{2}");
-    private static final Pattern RECENT_DURATION_PATTERN = Pattern.compile("(?:\u6700\u8fd1|\u8fc7\u53bb|\u8fd1)\\s*(\\d+)\\s*(\u5c0f\u65f6|\u5929|\u5468)");
-    private static final Pattern EXPLICIT_RANGE_PATTERN = Pattern.compile(
-            "(\\d{4}-\\d{2}-\\d{2}(?:[ T]\\d{2}:\\d{2}(?::\\d{2})?)?)\\s*(?:\u5230|\u81f3|~|-)\\s*(\\d{4}-\\d{2}-\\d{2}(?:[ T]\\d{2}:\\d{2}(?::\\d{2})?)?)");
-    private static final Pattern LOWER_BOUND_PATTERN = Pattern.compile(
-            "(\\d{4}-\\d{2}-\\d{2}(?:[ T]\\d{2}:\\d{2}(?::\\d{2})?)?)\\s*(?:\u4e4b\u540e|\u4ee5\u540e)");
     private final AgentConfigProperties config;
     private final PromptRegistry promptRegistry;
     @Nullable private final DataRedactor dataRedactor;
@@ -341,63 +333,24 @@ public class ContextAssembler {
     String buildAugmentedSystemPrompt(ReactAgentState state) {
         String baseSystemPrompt = safeReactSystemPrompt(state);
         String toolGuide = safeRenderToolGuide();
-        String runtimeSection = buildRuntimeContextSection(state);
         return joinNonBlankSections(
                 baseSystemPrompt,
-                toolGuide,
-                runtimeSection
+                toolGuide
         );
     }
 
     String buildUserPrompt(ReactAgentState state) {
+        ZonedDateTime now = ZonedDateTime.now();
         return promptRegistry.render("agent/react-user-prompt", Map.of(
+                "currentDateTime", now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
+                "timezone", now.getZone().getId(),
+                "osName", System.getProperty("os.name", "unknown"),
+                "osVersion", System.getProperty("os.version", "unknown"),
+                "channel", state.channel() != null ? state.channel() : "unknown",
                 "userGoal", state.goal() != null ? state.goal() : ""
         ));
     }
 
-    private String buildRuntimeContextSection(ReactAgentState state) {
-        ZonedDateTime now = ZonedDateTime.now();
-        String timeConstraintSection = buildTimeConstraintSection(state.goal(), now);
-        StringBuilder sb = new StringBuilder("""
-                <runtime_context>
-                以下是本轮运行时约束，不是新的用户消息：
-                """);
-        sb.append("\n- 当前会话: ").append(state.sessionId());
-        sb.append("\n- 当前通道: ").append(state.channel() != null ? state.channel() : "unknown");
-        sb.append("\n- Token 预算剩余: ").append(state.budget().tokensRemaining());
-        sb.append("\n- 步骤预算剩余: ").append(state.budget().stepsRemaining());
-        sb.append("\n- 时间预算剩余(秒): ").append(state.budget().durationRemaining().toSeconds());
-        sb.append("\n- 当前已执行步骤数: ").append(state.stepCount());
-        sb.append("\n</runtime_context>");
-        return sb.toString();
-    }
-
-    private String buildInjectedContextSection(@Nullable String profileSection,
-                                               @Nullable String notificationSection,
-                                               @Nullable String workspaceSection,
-                                               @Nullable String artifactSection,
-                                               @Nullable String experienceSection) {
-        String combinedSections = joinNonBlankSections(
-                profileSection,
-                notificationSection,
-                workspaceSection,
-                artifactSection,
-                experienceSection
-        );
-        if (combinedSections.isBlank()) {
-            return "";
-        }
-        return """
-                <injected_context>
-                以下内容由系统在当前调用前注入，用于辅助回答当前请求：
-                - 它们不是新的用户消息
-                - 仅在与当前请求相关时引用
-                - 若与最新 transcript、工具结果或当前用户请求冲突，以后者为准
-                </injected_context>
-                """.strip()
-                + "\n"
-                + combinedSections;
-    }
 
     List<Message> buildContextMessages(@Nullable String profileSection,
                                        @Nullable String notificationSection,
@@ -405,30 +358,25 @@ public class ContextAssembler {
                                        @Nullable String artifactSection,
                                        @Nullable String experienceSection) {
         List<Message> messages = new ArrayList<>();
-        addContextMessage(messages, "user_profile_context", profileSection);
-        addContextMessage(messages, "notification_context", notificationSection);
-        addContextMessage(messages, "workspace_context", workspaceSection);
-        addContextMessage(messages, "artifact_context", artifactSection);
-        addContextMessage(messages, "experience_context", experienceSection);
+        addTaggedContextMessage(messages, "user_profile_context", profileSection);
+        addTaggedContextMessage(messages, "notification_context", notificationSection);
+        addTaggedContextMessage(messages, "workspace_context", workspaceSection);
+        addTaggedContextMessage(messages, "artifact_context", artifactSection);
+        addTaggedContextMessage(messages, "experience_context", experienceSection);
         return List.copyOf(messages);
     }
 
-    private void addContextMessage(List<Message> messages,
-                                   String contextType,
-                                   @Nullable String sectionContent) {
+    private void addTaggedContextMessage(List<Message> messages,
+                                         String contextType,
+                                         @Nullable String sectionContent) {
         if (sectionContent == null || sectionContent.isBlank()) {
             return;
         }
         messages.add(new AssistantMessage("""
-                <synthetic_context type="%s">
-                以下内容由系统在当前调用前准备，用于辅助回答当前请求：
-                - 这不是新的用户消息
-                - 仅在与当前请求相关时引用
-                - 若与 transcript、工具结果或当前用户请求冲突，以后者为准
-
+                <%s>
                 %s
-                </synthetic_context>
-                """.formatted(contextType, sectionContent.strip()).strip()));
+                </%s>
+                """.formatted(contextType, sectionContent.strip(), contextType).strip()));
     }
 
     private String joinNonBlankSections(String... sections) {
@@ -468,7 +416,7 @@ public class ContextAssembler {
         return switch (taskMode) {
             case "cron" -> """
                     - 这是明确的 cron 调度任务，按计划执行，不要改写成普通对话
-                    - 除非缺少执行前提，否则不要反问、不要重复任务描述
+                    - 除非缺少执行前提，否则不要反问，不要重复任务描述
                     - 没有新的有效结果时返回 TASK_SILENT
                     """.trim();
             case "heartbeat" -> """
@@ -749,63 +697,6 @@ public class ContextAssembler {
             }
             sb.append('\n');
         }
-        return sb.toString();
-    }
-
-    private String buildTimeConstraintSection(@Nullable String goal, ZonedDateTime now) {
-        if (goal == null || goal.isBlank() || !TIME_HINT_PATTERN.matcher(goal).find()) {
-            return "";
-        }
-        List<String> hints = new ArrayList<>();
-        ZoneId zoneId = now.getZone();
-        if (goal.contains("今天") || goal.contains("当天")) {
-            hints.add("- 今天/当天范围: "
-                    + now.toLocalDate().atStartOfDay(zoneId).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
-                    + " ~ " + now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
-        }
-        if (goal.contains("昨天") || goal.contains("昨日")) {
-            ZonedDateTime start = now.minusDays(1).toLocalDate().atStartOfDay(zoneId);
-            ZonedDateTime end = now.toLocalDate().atStartOfDay(zoneId);
-            hints.add("- 昨天范围: "
-                    + start.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
-                    + " ~ " + end.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
-        }
-        var recentMatcher = RECENT_DURATION_PATTERN.matcher(goal);
-        if (recentMatcher.find()) {
-            int amount = Integer.parseInt(recentMatcher.group(1));
-            String unit = recentMatcher.group(2);
-            ZonedDateTime start = switch (unit) {
-                case "小时" -> now.minusHours(amount);
-                case "周" -> now.minusWeeks(amount);
-                default -> now.minusDays(amount);
-            };
-            hints.add("- 近期范围参考: " + start.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
-                    + " ~ " + now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
-        }
-        var rangeMatcher = EXPLICIT_RANGE_PATTERN.matcher(goal);
-        if (rangeMatcher.find()) {
-            hints.add("- 显式时间范围: " + rangeMatcher.group(1) + " ~ " + rangeMatcher.group(2));
-        }
-        var lowerBoundMatcher = LOWER_BOUND_PATTERN.matcher(goal);
-        if (lowerBoundMatcher.find()) {
-            hints.add("- 时间下界: " + lowerBoundMatcher.group(1));
-        }
-        StringBuilder sb = new StringBuilder("""
-                <time_constraints>
-                - 用户给出时间范围时，先换算成绝对时间区间
-                - 支持时间过滤的工具必须显式传入 startTime/endTime（即 `startTime` / `endTime`）
-                - 工具不支持时间过滤时，先获取结果，再过滤时间范围外的数据
-                - 最终回答优先引用绝对时间，避免相对时间歧义
-                """);
-        if (!hints.isEmpty()) {
-            sb.append("""
-                    - 识别到的时间线索:
-                    """);
-            for (String hint : hints) {
-                sb.append(hint).append('\n');
-            }
-        }
-        sb.append("</time_constraints>");
         return sb.toString();
     }
 

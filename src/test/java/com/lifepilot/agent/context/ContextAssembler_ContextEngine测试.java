@@ -16,6 +16,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -35,7 +36,7 @@ import static org.mockito.Mockito.when;
 class ContextAssembler_ContextEngine测试 {
 
     @Test
-    void assemble_会形成system_context_history_user四段结构() {
+    void assemble_会形成带运行时上下文和当前请求边界的消息结构() {
         var config = buildConfig();
         var promptRegistry = mock(PromptRegistry.class);
         var contextEngine = mock(ContextEngine.class);
@@ -47,12 +48,31 @@ class ContextAssembler_ContextEngine测试 {
         when(promptRegistry.render(eq("agent/react-user-prompt"), anyMap())).thenAnswer(invocation -> {
             @SuppressWarnings("unchecked")
             Map<String, Object> vars = invocation.getArgument(1, Map.class);
-            return vars.get("userGoal").toString();
+            return List.of(
+                            """
+                            <runtime_context>
+                            - 当前时间: %s
+                            - 当前时区: %s
+                            - 当前操作系统: %s %s
+                            - 当前通道: %s
+                            </runtime_context>
+                            """.formatted(
+                                    vars.get("currentDateTime"),
+                                    vars.get("timezone"),
+                                    vars.get("osName"),
+                                    vars.get("osVersion"),
+                                    vars.get("channel")
+                            ).trim(),
+                            "<current_request>\n" + vars.get("userGoal") + "\n</current_request>"
+                    ).stream()
+                    .filter(section -> !section.isBlank())
+                    .collect(Collectors.joining("\n\n"));
         });
 
         when(contextEngine.load(any(ReactAgentState.class), anyInt())).thenReturn(new ContextEngine.ContextSnapshot(
                 List.of(
-                        new AssistantMessage("历史压缩摘要:\n之前已确认需求范围与约束。"),
+                        new AssistantMessage("<history_summary>\n之前已确认需求范围与约束。\n</history_summary>"),
+                        new AssistantMessage("<history_transcript>\n以下消息为历史 transcript，按时间顺序排列。\n</history_transcript>"),
                         new UserMessage("上一轮用户消息"),
                         AssistantMessage.builder()
                                 .content("")
@@ -70,7 +90,7 @@ class ContextAssembler_ContextEngine测试 {
                                         "命中 3 条结果"
                                 )))
                                 .build(),
-                        new AssistantMessage("上一轮助手回复")
+                        new AssistantMessage("上一轮助手回答")
                 ),
                 List.of(new WorkspaceItem(
                         "workspace-1",
@@ -112,24 +132,33 @@ class ContextAssembler_ContextEngine测试 {
 
         AssembledContext context = assembler.assemble(buildState());
 
-        assertThat(context.userPrompt()).isEqualTo("请整理一下方案");
+        assertThat(context.userPrompt())
+                .contains("<runtime_context>")
+                .contains("当前时间")
+                .contains("当前时区")
+                .contains("当前操作系统")
+                .contains("<current_request>")
+                .contains("请整理一下方案");
         assertThat(context.systemPrompt())
                 .contains("system prompt")
-                .contains("<runtime_context>")
+                .doesNotContain("<runtime_context>")
                 .doesNotContain("上一轮用户消息")
                 .doesNotContain("tool.search")
                 .doesNotContain("草稿卡片")
                 .doesNotContain("方案摘要");
         assertThat(context.contextMessages()).hasSize(2);
         assertThat(context.contextMessages().getFirst().getText())
-                .contains("synthetic_context")
+                .contains("<workspace_context>")
                 .contains("草稿卡片");
         assertThat(context.contextMessages().getLast().getText())
+                .contains("<artifact_context>")
                 .contains("方案摘要");
-        assertThat(context.historyMessages()).hasSize(5);
-        assertThat(context.historyMessages().get(1)).isInstanceOf(UserMessage.class);
-        assertThat(context.historyMessages().get(2)).isInstanceOf(AssistantMessage.class);
-        assertThat(context.historyMessages().get(3)).isInstanceOf(ToolResponseMessage.class);
+        assertThat(context.historyMessages()).hasSize(6);
+        assertThat(context.historyMessages().get(0).getText()).contains("<history_summary>");
+        assertThat(context.historyMessages().get(1).getText()).contains("<history_transcript>");
+        assertThat(context.historyMessages().get(2)).isInstanceOf(UserMessage.class);
+        assertThat(context.historyMessages().get(3)).isInstanceOf(AssistantMessage.class);
+        assertThat(context.historyMessages().get(4)).isInstanceOf(ToolResponseMessage.class);
         assertThat(context.tokenBudget().historyUsed()).isEqualTo(42);
         assertThat(context.tokenBudget().toolResultUsed()).isEqualTo(15);
         assertThat(context.tokenBudget().memoryUsed()).isPositive();

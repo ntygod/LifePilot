@@ -153,14 +153,28 @@ class ContextAssemblerSkillCatalogTest {
     }
 
     @Test
-    void buildUserPrompt_onlyKeepsCurrentUserRequest() {
+    void buildUserPrompt_putsRuntimeContextAndCurrentRequestIntoUserPrompt() {
         var config = buildConfig();
         var promptRegistry = mock(PromptRegistry.class);
 
         when(promptRegistry.render(eq("agent/react-user-prompt"), anyMap())).thenAnswer(invocation -> {
             @SuppressWarnings("unchecked")
             Map<String, Object> vars = invocation.getArgument(1, Map.class);
-            return vars.get("userGoal").toString();
+            return ("""
+                    <runtime_context>
+                    - 当前时间: %s
+                    - 当前时区: %s
+                    - 当前操作系统: %s %s
+                    - 当前通道: %s
+                    </runtime_context>
+                    """.formatted(
+                    vars.get("currentDateTime"),
+                    vars.get("timezone"),
+                    vars.get("osName"),
+                    vars.get("osVersion"),
+                    vars.get("channel")
+            ).trim() + "\n\n"
+                    + "<current_request>\n" + vars.get("userGoal") + "\n</current_request>").trim();
         });
 
         var assembler = new ContextAssembler(config, promptRegistry,
@@ -168,11 +182,17 @@ class ContextAssemblerSkillCatalogTest {
 
         String result = assembler.buildUserPrompt(buildState("web", "analyze logs after 2026-03-21 00:00"));
 
-        assertThat(result).isEqualTo("analyze logs after 2026-03-21 00:00");
+        assertThat(result)
+                .contains("<runtime_context>")
+                .contains("<current_request>")
+                .contains("当前时间")
+                .contains("当前时区")
+                .contains("当前操作系统")
+                .contains("analyze logs after 2026-03-21 00:00");
     }
 
     @Test
-    void buildAugmentedSystemPrompt_putsTimeConstraintIntoSystemPrompt() {
+    void buildAugmentedSystemPrompt_keepsRuntimeContextOutOfSystemPrompt() {
         var config = buildConfig();
         var promptRegistry = mock(PromptRegistry.class);
 
@@ -189,14 +209,12 @@ class ContextAssemblerSkillCatalogTest {
         );
 
         assertThat(result).contains("system prompt");
-        assertThat(result).contains("<runtime_context>");
-        assertThat(result).contains("<time_constraints>");
-        assertThat(result).contains("startTime/endTime");
-        assertThat(result).contains("2026-03-21 00:00");
+        assertThat(result).doesNotContain("<runtime_context>");
+        assertThat(result).doesNotContain("<time_constraints>");
     }
 
     @Test
-    void buildContextMessages_putsInjectedContextIntoSyntheticMessages() {
+    void buildContextMessages_putsInjectedContextIntoXmlMessages() {
         var assembler = new ContextAssembler(buildConfig(), mock(PromptRegistry.class),
                 null, null, null, null, null, null, null);
 
@@ -209,10 +227,13 @@ class ContextAssemblerSkillCatalogTest {
         );
 
         assertThat(messages).hasSize(4);
-        assertThat(messages.getFirst().getText()).contains("synthetic_context");
+        assertThat(messages.getFirst().getText()).contains("<user_profile_context>");
         assertThat(messages.getFirst().getText()).contains("用户画像");
+        assertThat(messages.get(1).getText()).contains("<workspace_context>");
         assertThat(messages.get(1).getText()).contains("工作区");
+        assertThat(messages.get(2).getText()).contains("<artifact_context>");
         assertThat(messages.get(2).getText()).contains("产物摘要");
+        assertThat(messages.getLast().getText()).contains("<experience_context>");
         assertThat(messages.getLast().getText()).contains("经验片段");
     }
 
