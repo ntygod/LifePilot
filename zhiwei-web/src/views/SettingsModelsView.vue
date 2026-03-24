@@ -1,13 +1,20 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
-import { CheckCircle2, ChevronDown, Cpu, Loader2, RefreshCw, Trash2, XCircle } from 'lucide-vue-next'
-import { llmProviderApi, settingsApi } from '@/api/client'
-import type { LlmProvider, RerankerSettingsRequest } from '@/api/client'
-import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
-import StatePanel from '@/components/common/StatePanel.vue'
-import LlmProviderManager from '@/components/settings/LlmProviderManager.vue'
+import { computed, onMounted, ref } from 'vue'
+import type { AcceptableValue } from 'reka-ui'
+import { Cpu, Database, GitCompareArrows, RefreshCw } from 'lucide-vue-next'
+import {
+  modelRoutingApi,
+  modelServiceApi,
+  type EmbeddingRoutingSettings,
+  type GenerationRoutingSettings,
+  type ModelService,
+  type RerankRoutingSettings,
+} from '@/api/client'
+import ModelServiceManager from '@/components/settings/ModelServiceManager.vue'
 import SettingItem from '@/components/settings/SettingItem.vue'
 import SettingSection from '@/components/settings/SettingSection.vue'
+import StatePanel from '@/components/common/StatePanel.vue'
+import { useUiStore } from '@/stores/ui'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -20,920 +27,570 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { useSettings } from '@/composables/useSettings'
-import { useUiStore } from '@/stores/ui'
-import type { UserSettings } from '@/types'
 
-const { settings, loading, error, loadSettings, saveSettings } = useSettings()
+type SelectValue = AcceptableValue | undefined
+
 const uiStore = useUiStore()
 
-const providers = ref<LlmProvider[]>([])
-const loadingProviders = ref(false)
-const providerLoadError = ref<string | null>(null)
-const defaultProvider = ref('')
-const sceneProviders = ref<Record<string, string>>({})
-const showProviderManager = ref(false)
-const expandedProviders = ref<Set<string>>(new Set())
-const showDeleteConfirm = ref(false)
-const deletingProviderId = ref<string | null>(null)
-const healthStatus = ref<Record<string, boolean>>({})
-const checkingHealth = ref<Set<string>>(new Set())
+const services = ref<ModelService[]>([])
+const loading = ref(true)
+const showManager = ref(false)
 
-const SCENE_LABELS: Record<string, string> = {
-  chat: '通用对话',
-  agent_react: 'Agent 推理',
-  knowledge_extraction: '知识提取',
-  knowledge_rerank: '知识精排',
-  memory_compression: '记忆压缩',
-  skill_generation: '技能生成',
-  embedding: '向量化',
-}
-
-const SCENE_DESCRIPTIONS: Record<string, string> = {
-  chat: '适合普通对话、问答和泛化聊天。',
-  agent_react: 'Agent ReAct 循环中的推理、工具调用与最终生成。',
-  knowledge_extraction: '适合抽取结构化信息和关键信息。',
-  knowledge_rerank: '知识检索后的精排与重排序。',
-  memory_compression: '适合总结历史上下文，压缩记忆。',
-  skill_generation: '自动生成技能或提示模板的场景。',
-  embedding: '文本向量化嵌入。',
-}
-
-const SCENE_ORDER = [
-  'chat',
-  'agent_react',
-  'knowledge_extraction',
-  'knowledge_rerank',
-  'memory_compression',
-  'skill_generation',
-  'embedding',
-] as const
-
-const healthyCount = computed(() => providers.value.filter(provider => getProviderHealth(provider.id) === 'healthy').length)
-const checkedCount = computed(() => providers.value.filter(provider => getProviderHealth(provider.id) !== 'unknown').length)
-const defaultProviderLabel = computed(() => {
-  const provider = providers.value.find(item => item.id === defaultProvider.value)
-  return provider?.displayName || provider?.id || defaultProvider.value || '未设置'
+const generationSettings = ref<GenerationRoutingSettings>({
+  defaultServiceId: undefined,
+  sceneServiceBindings: {},
 })
-const VALID_SCENES: Set<string> = new Set(SCENE_ORDER)
 
-const availableScenes = computed(() => {
-  const seen = new Set<string>()
-  for (const provider of providers.value) {
-    for (const scene of provider.scenes ?? []) {
-      if (scene && VALID_SCENES.has(scene)) seen.add(scene)
-    }
-  }
-
-  return [...seen].sort((left, right) => {
-    const leftIndex = SCENE_ORDER.indexOf(left as typeof SCENE_ORDER[number])
-    const rightIndex = SCENE_ORDER.indexOf(right as typeof SCENE_ORDER[number])
-
-    if (leftIndex === -1 && rightIndex === -1) return left.localeCompare(right)
-    if (leftIndex === -1) return 1
-    if (rightIndex === -1) return -1
-    return leftIndex - rightIndex
-  })
+const embeddingSettings = ref<EmbeddingRoutingSettings>({
+  defaultServiceId: undefined,
+  knowledgeBaseServiceId: undefined,
+  memoryServiceId: undefined,
 })
-const sceneRoutingItems = computed(() =>
-  availableScenes.value.map(scene => ({
-    scene,
-    label: SCENE_LABELS[scene] || scene,
-    description: SCENE_DESCRIPTIONS[scene] || '为这个场景单独指定优先 Provider，未指定时会继续走全局默认和自动路由。',
-    providers: providers.value.filter(provider => (provider.scenes ?? []).includes(scene)),
-    selectedProviderId: sceneProviders.value[scene] ?? '',
-  })),
+
+const rerankSettings = ref<RerankRoutingSettings>({
+  enabled: false,
+  mode: 'DISABLED',
+  nativeServiceId: undefined,
+  llmServiceId: undefined,
+  knowledgeTopK: 5,
+  memoryEnabled: false,
+  memoryTopK: 10,
+})
+
+const generationSceneOptions = [
+  { value: 'chat', label: '通用对话' },
+  { value: 'agent_react', label: 'Agent 推理' },
+  { value: 'knowledge_extraction', label: '知识提取' },
+  { value: 'memory_compression', label: '记忆压缩' },
+  { value: 'skill_generation', label: '技能生成' },
+]
+
+const rerankModeOptions = [
+  { value: 'DISABLED', label: '关闭' },
+  { value: 'NATIVE', label: '原生精排' },
+  { value: 'LLM_POINTWISE', label: 'LLM 逐条评分' },
+  { value: 'LLM_LISTWISE', label: 'LLM 批量排序' },
+]
+
+const generationServices = computed(() =>
+  services.value.filter(service => service.kind === 'GENERATION'),
 )
-const currentStatusItems = computed(() => [
-  { label: '提供商总数', value: String(providers.value.length) },
-  { label: '已检查', value: String(checkedCount.value) },
-  { label: '健康', value: String(healthyCount.value) },
-  { label: '默认提供商', value: defaultProviderLabel.value },
-  { label: '场景映射', value: String(Object.keys(sceneProviders.value).length) },
+
+const embeddingServices = computed(() =>
+  services.value.filter(service => service.kind === 'EMBEDDING'),
+)
+
+const rerankServices = computed(() =>
+  services.value.filter(service => service.kind === 'RERANK'),
+)
+
+const rerankLlmServices = computed(() =>
+  generationServices.value.filter(service =>
+    !service.capabilities
+    || service.capabilities.length === 0
+    || service.capabilities.includes('CHAT')
+    || service.capabilities.includes('STRUCTURED_OUTPUT'),
+  ),
+)
+
+const summaryItems = computed(() => [
+  { label: '模型服务', value: String(services.value.length) },
+  { label: '生成服务', value: String(generationServices.value.length) },
+  { label: '向量服务', value: String(embeddingServices.value.length) },
+  { label: '精排服务', value: String(rerankServices.value.length) },
 ])
 
-function normalizeDefaultProvider(providerId: string) {
-  if (!providerId || providers.value.length === 0) return providerId
-  return providers.value.some(provider => provider.id === providerId) ? providerId : ''
+const rerankModeLabel = computed(() => (
+  rerankModeOptions.find(option => option.value === rerankSettings.value.mode)?.label ?? rerankSettings.value.mode
+))
+
+function normalizeSelectValue(value: SelectValue): string {
+  if (typeof value === 'string') return value
+  if (typeof value === 'number') return String(value)
+  return ''
 }
 
-function normalizeSceneProviders(value: Record<string, string> | undefined) {
-  const entries = Object.entries(value ?? {}).filter(([, providerId]) => Boolean(providerId))
-  if (providers.value.length === 0) {
-    return Object.fromEntries(entries)
+function valueOrUndefined(value: SelectValue, sentinel = '__none__'): string | undefined {
+  const normalized = normalizeSelectValue(value)
+  if (!normalized || normalized === sentinel) {
+    return undefined
   }
-
-  return Object.fromEntries(
-    entries.filter(([scene, providerId]) => {
-      const provider = providers.value.find(item => item.id === providerId)
-      return provider != null && ((provider.scenes ?? []).length === 0 || (provider.scenes ?? []).includes(scene))
-    }),
-  )
+  return normalized
 }
 
-function syncRoutingSettings() {
-  defaultProvider.value = normalizeDefaultProvider(settings.value.llmProvider || '')
-  sceneProviders.value = normalizeSceneProviders(settings.value.sceneProviders)
+function serviceLabel(serviceId?: string) {
+  if (!serviceId) return '自动选择'
+  const service = services.value.find(item => item.id === serviceId)
+  return service?.displayName || service?.modelName || serviceId
 }
 
-function buildSettingsPayload(
-  overrides: Partial<Pick<UserSettings, 'llmProvider' | 'sceneProviders'>>,
-): UserSettings {
-  return {
-    ...settings.value,
-    llmProvider: overrides.llmProvider ?? defaultProvider.value,
-    sceneProviders: overrides.sceneProviders ?? sceneProviders.value,
-  }
-}
-
-watch(settings, () => {
-  syncRoutingSettings()
-})
-
-watch(providers, () => {
-  syncRoutingSettings()
-})
-
-onMounted(async () => {
-  await loadSettings()
-  syncRoutingSettings()
-  await loadProviders()
-  await loadRerankerSettings()
-})
-
-async function loadProviders() {
-  loadingProviders.value = true
-  providerLoadError.value = null
+async function loadData() {
+  loading.value = true
   try {
-    providers.value = await llmProviderApi.listEnabledProviders()
-  } catch (event) {
-    console.error('Failed to load provider list:', event)
-    try {
-      providers.value = await settingsApi.getProviders()
-    } catch (fallbackError) {
-      console.error('Fallback provider load also failed:', fallbackError)
-      providerLoadError.value = '暂时无法读取模型服务，请稍后重试。'
-      providers.value = []
-    }
-  } finally {
-    loadingProviders.value = false
-  }
-}
-
-async function checkProviderHealth(providerId: string) {
-  if (checkingHealth.value.has(providerId)) return
-
-  checkingHealth.value.add(providerId)
-  try {
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error('健康检查超时。')), 10000)
-    })
-
-    const result = await Promise.race([
-      llmProviderApi.getProviderHealth(providerId),
-      timeoutPromise,
+    const [allServices, generation, embedding, rerank] = await Promise.all([
+      modelServiceApi.listServices(),
+      modelRoutingApi.getGenerationSettings(),
+      modelRoutingApi.getEmbeddingSettings(),
+      modelRoutingApi.getRerankSettings(),
     ])
-
-    healthStatus.value[providerId] = result.healthy
-    const index = providers.value.findIndex(provider => provider.id === providerId)
-    if (index !== -1) {
-      providers.value[index] = {
-        ...providers.value[index],
-        healthy: result.healthy,
-      }
-    }
-  } catch (event) {
-    console.error(`Failed to check provider health for ${providerId}:`, event)
-    healthStatus.value[providerId] = false
-    const index = providers.value.findIndex(provider => provider.id === providerId)
-    if (index !== -1) {
-      providers.value[index] = {
-        ...providers.value[index],
-        healthy: false,
-      }
-    }
+    services.value = allServices
+    generationSettings.value = generation
+    embeddingSettings.value = embedding
+    rerankSettings.value = rerank
+  } catch (error) {
+    console.error('加载模型与路由设置失败:', error)
+    uiStore.showToast('error', '加载模型与路由设置失败')
   } finally {
-    checkingHealth.value.delete(providerId)
+    loading.value = false
   }
 }
 
-function getProviderHealth(providerId: string): 'healthy' | 'unhealthy' | 'checking' | 'unknown' {
-  if (checkingHealth.value.has(providerId)) return 'checking'
-  const healthy = healthStatus.value[providerId]
-  if (healthy === undefined) return 'unknown'
-  return healthy ? 'healthy' : 'unhealthy'
-}
-
-function getHealthBadgeVariant(status: string): 'default' | 'secondary' | 'destructive' | 'outline' {
-  switch (status) {
-    case 'healthy':
-      return 'default'
-    case 'unhealthy':
-      return 'destructive'
-    default:
-      return 'secondary'
+async function saveGenerationSettings() {
+  try {
+    generationSettings.value = await modelRoutingApi.updateGenerationSettings({
+      defaultServiceId: generationSettings.value.defaultServiceId,
+      sceneServiceBindings: generationSettings.value.sceneServiceBindings,
+    })
+    uiStore.showToast('success', '生成路由已保存')
+  } catch (error) {
+    console.error('保存生成路由失败:', error)
+    uiStore.showToast('error', '保存生成路由失败')
+    await loadData()
   }
 }
 
-function getHealthBadgeText(status: string) {
-  switch (status) {
-    case 'healthy':
-      return '健康'
-    case 'unhealthy':
-      return '异常'
-    case 'checking':
-      return '检查中...'
-    default:
-      return '未检查'
+async function saveEmbeddingSettings() {
+  try {
+    embeddingSettings.value = await modelRoutingApi.updateEmbeddingSettings({
+      defaultServiceId: embeddingSettings.value.defaultServiceId,
+      knowledgeBaseServiceId: embeddingSettings.value.knowledgeBaseServiceId,
+      memoryServiceId: embeddingSettings.value.memoryServiceId,
+    })
+    uiStore.showToast('success', '向量路由已保存')
+  } catch (error) {
+    console.error('保存向量路由失败:', error)
+    uiStore.showToast('error', '保存向量路由失败')
+    await loadData()
   }
 }
 
-async function handleProviderManagerClose() {
-  showProviderManager.value = false
-  await loadProviders()
+async function saveRerankSettings() {
+  try {
+    rerankSettings.value = await modelRoutingApi.updateRerankSettings({
+      enabled: rerankSettings.value.enabled,
+      mode: rerankSettings.value.mode,
+      nativeServiceId: rerankSettings.value.nativeServiceId,
+      llmServiceId: rerankSettings.value.llmServiceId,
+      knowledgeTopK: rerankSettings.value.knowledgeTopK,
+      memoryEnabled: rerankSettings.value.memoryEnabled,
+      memoryTopK: rerankSettings.value.memoryTopK,
+    })
+    uiStore.showToast('success', '精排路由已保存')
+  } catch (error) {
+    console.error('保存精排路由失败:', error)
+    uiStore.showToast('error', '保存精排路由失败')
+    await loadData()
+  }
 }
 
-function toggleProviderExpanded(providerId: string) {
-  if (expandedProviders.value.has(providerId)) {
-    expandedProviders.value.delete(providerId)
+function updateGenerationDefault(value: SelectValue) {
+  generationSettings.value = {
+    ...generationSettings.value,
+    defaultServiceId: valueOrUndefined(value),
+  }
+}
+
+function updateGenerationScene(scene: string, value: SelectValue) {
+  const normalized = normalizeSelectValue(value)
+  const bindings = { ...generationSettings.value.sceneServiceBindings }
+  if (!normalized || normalized === '__inherit__') {
+    delete bindings[scene]
   } else {
-    expandedProviders.value.add(providerId)
+    bindings[scene] = normalized
+  }
+  generationSettings.value = {
+    ...generationSettings.value,
+    sceneServiceBindings: bindings,
   }
 }
 
-async function handleDefaultProviderChange(value: unknown) {
-  const nextValue = String(value ?? '')
-  const normalizedValue = nextValue === '__auto__' ? '' : nextValue
-  defaultProvider.value = normalizedValue
-
-  try {
-    await saveSettings(buildSettingsPayload({ llmProvider: normalizedValue }))
-    uiStore.showToast('success', '默认提供商已更新。')
-  } catch (event) {
-    console.error('Failed to save default provider:', event)
-    syncRoutingSettings()
-    uiStore.showToast('error', '保存默认提供商失败。')
+function updateEmbeddingField(field: keyof EmbeddingRoutingSettings, value: SelectValue) {
+  embeddingSettings.value = {
+    ...embeddingSettings.value,
+    [field]: valueOrUndefined(value),
   }
 }
 
-async function handleSceneProviderChange(scene: string, value: unknown) {
-  const nextValue = String(value ?? '')
-  const nextSceneProviders = { ...sceneProviders.value }
-
-  if (!nextValue || nextValue === '__inherit__') {
-    delete nextSceneProviders[scene]
-  } else {
-    nextSceneProviders[scene] = nextValue
-  }
-
-  sceneProviders.value = nextSceneProviders
-
-  try {
-    await saveSettings(buildSettingsPayload({ sceneProviders: nextSceneProviders }))
-    uiStore.showToast('success', '场景路由已更新')
-  } catch (event) {
-    console.error(`Failed to save scene provider for ${scene}:`, event)
-    syncRoutingSettings()
-    uiStore.showToast('error', '保存场景路由失败')
+function updateRerankMode(value: SelectValue) {
+  const mode = normalizeSelectValue(value) || 'DISABLED'
+  rerankSettings.value = {
+    ...rerankSettings.value,
+    mode,
+    nativeServiceId: mode === 'NATIVE' ? rerankSettings.value.nativeServiceId : undefined,
+    llmServiceId: mode === 'LLM_POINTWISE' || mode === 'LLM_LISTWISE'
+      ? rerankSettings.value.llmServiceId
+      : undefined,
   }
 }
 
-function formatCapabilities(capabilities: string[] | undefined) {
-  if (!capabilities || capabilities.length === 0) return '无'
-
-  const capabilityNames: Record<string, string> = {
-    CHAT: '对话',
-    EMBEDDING: '向量嵌入',
-    STRUCTURED_OUTPUT: '结构化输出',
-    FUNCTION_CALLING: '函数调用',
-    STREAMING: '流式输出',
-    VISION: '视觉',
-    TTS: '文本转语音',
-    STT: '语音转文本',
-    RERANK: '重排序',
-    NATIVE_AUDIO: '原生音频',
-    NATIVE_VIDEO: '原生视频',
-  }
-
-  return capabilities.map(capability => capabilityNames[capability] || capability).join('、')
-}
-
-function formatCost(inputCost: number, outputCost: number) {
-  if (inputCost === 0 && outputCost === 0) {
-    return '免费'
-  }
-
-  const input = inputCost > 0 ? `$${(inputCost / 10000).toFixed(2)} / 每 100 万输入token` : ''
-  const output = outputCost > 0 ? `$${(outputCost / 10000).toFixed(2)} / 每 100 万输出token` : ''
-  return [input, output].filter(Boolean).join(' | ') || '免费'
-}
-
-function formatScenes(scenes: string[] | undefined) {
-  if (!scenes || scenes.length === 0) return '无'
-
-  const sceneNames: Record<string, string> = {
-    chat: '对话',
-    agent_react: 'Agent 推理',
-    knowledge_extraction: '知识提取',
-    knowledge_rerank: '知识精排',
-    memory_compression: '记忆压缩',
-    skill_generation: '技能生成',
-    embedding: '向量嵌入',
-  }
-
-  return scenes.map(scene => sceneNames[scene] || scene).join('、')
-}
-
-function confirmDelete(provider: LlmProvider) {
-  deletingProviderId.value = provider.id
-  showDeleteConfirm.value = true
-}
-
-async function handleDelete() {
-  if (!deletingProviderId.value) return
-
-  loadingProviders.value = true
-  try {
-    const deletedProviderId = deletingProviderId.value
-    await llmProviderApi.deleteProvider(deletedProviderId)
-    await loadProviders()
-
-    const nextDefaultProvider = normalizeDefaultProvider(
-      deletedProviderId === defaultProvider.value ? '' : defaultProvider.value,
-    )
-    const nextSceneProviders = normalizeSceneProviders(
-      Object.fromEntries(
-        Object.entries(sceneProviders.value).filter(([, providerId]) => providerId !== deletedProviderId),
-      ),
-    )
-
-    if (nextDefaultProvider !== defaultProvider.value
-      || Object.keys(nextSceneProviders).length !== Object.keys(sceneProviders.value).length) {
-      defaultProvider.value = nextDefaultProvider
-      sceneProviders.value = nextSceneProviders
-      await saveSettings(buildSettingsPayload({
-        llmProvider: nextDefaultProvider,
-        sceneProviders: nextSceneProviders,
-      }))
-    }
-
-    showDeleteConfirm.value = false
-    deletingProviderId.value = null
-    uiStore.showToast('success', '提供商已删除。')
-  } catch (event: any) {
-    console.error('Failed to delete provider:', event)
-    syncRoutingSettings()
-    uiStore.showToast('error', event?.message || '删除提供商失败。')
-  } finally {
-    loadingProviders.value = false
+function updateRerankNativeService(value: SelectValue) {
+  rerankSettings.value = {
+    ...rerankSettings.value,
+    nativeServiceId: valueOrUndefined(value),
   }
 }
 
-const deleteConfirmMessage = computed(() => {
-  if (!deletingProviderId.value) return ''
-  const provider = providers.value.find(item => item.id === deletingProviderId.value)
-  const name = provider?.displayName || provider?.id || deletingProviderId.value
-  return `确定删除提供商“${name}”吗？此操作不可恢复。`
+function updateRerankLlmService(value: SelectValue) {
+  rerankSettings.value = {
+    ...rerankSettings.value,
+    llmServiceId: valueOrUndefined(value),
+  }
+}
+
+function updateRerankSwitch(key: 'enabled' | 'memoryEnabled', value: boolean | 'indeterminate') {
+  rerankSettings.value = {
+    ...rerankSettings.value,
+    [key]: value === true,
+  }
+}
+
+function updateRerankNumber(key: 'knowledgeTopK' | 'memoryTopK', value: string | number) {
+  const parsed = Number(value)
+  rerankSettings.value = {
+    ...rerankSettings.value,
+    [key]: Number.isFinite(parsed) ? Math.max(1, Math.round(parsed)) : rerankSettings.value[key],
+  }
+}
+
+async function handleManagerClose() {
+  showManager.value = false
+  await loadData()
+}
+
+onMounted(() => {
+  void loadData()
 })
-
-// ── 精排设置 ──
-const rerankerLoading = ref(true)
-const rerankerLoadError = ref<string | null>(null)
-const rerankerSaving = ref(false)
-const rerankerSaveError = ref<string | null>(null)
-const rerankerSaveSuccess = ref(false)
-const rerankerExpanded = ref(false)
-
-const rerankerForm = ref<RerankerSettingsRequest>({
-  enabled: false,
-  type: 'llm',
-  model: '',
-  topK: 10,
-  llmMode: 'pointwise',
-  apiProvider: 'jina',
-  apiKey: '',
-  apiEndpoint: '',
-  apiTimeoutMs: 30000,
-  memoryRerankEnabled: false,
-  memoryRerankTopK: 10,
-})
-
-const isRerankerLlmType = computed(() => rerankerForm.value.type === 'llm')
-const isRerankerApiType = computed(() => rerankerForm.value.type === 'api')
-
-async function loadRerankerSettings() {
-  rerankerLoading.value = true
-  rerankerLoadError.value = null
-  try {
-    const data = await settingsApi.getRerankerSettings()
-    rerankerForm.value = {
-      enabled: data.enabled,
-      type: data.type || 'llm',
-      model: data.model || '',
-      topK: data.topK || 10,
-      llmMode: data.llmMode || 'pointwise',
-      apiProvider: data.apiProvider || 'jina',
-      apiKey: data.apiKey || '',
-      apiEndpoint: data.apiEndpoint || '',
-      apiTimeoutMs: data.apiTimeoutMs || 30000,
-      memoryRerankEnabled: data.memoryRerankEnabled,
-      memoryRerankTopK: data.memoryRerankTopK || 10,
-    }
-  } catch (e) {
-    console.error('加载精排配置失败:', e)
-    rerankerLoadError.value = '暂时无法读取精排配置，请稍后重试。'
-  } finally {
-    rerankerLoading.value = false
-  }
-}
-
-async function handleRerankerSave() {
-  rerankerSaving.value = true
-  rerankerSaveError.value = null
-  rerankerSaveSuccess.value = false
-  try {
-    const data = await settingsApi.updateRerankerSettings(rerankerForm.value)
-    rerankerForm.value = {
-      enabled: data.enabled,
-      type: data.type || 'llm',
-      model: data.model || '',
-      topK: data.topK || 10,
-      llmMode: data.llmMode || 'pointwise',
-      apiProvider: data.apiProvider || 'jina',
-      apiKey: data.apiKey || '',
-      apiEndpoint: data.apiEndpoint || '',
-      apiTimeoutMs: data.apiTimeoutMs || 30000,
-      memoryRerankEnabled: data.memoryRerankEnabled,
-      memoryRerankTopK: data.memoryRerankTopK || 10,
-    }
-    rerankerSaveSuccess.value = true
-    window.setTimeout(() => { rerankerSaveSuccess.value = false }, 2200)
-  } catch (e: any) {
-    console.error('保存精排配置失败:', e)
-    rerankerSaveError.value = e?.message || '保存失败，请稍后重试。'
-  } finally {
-    rerankerSaving.value = false
-  }
-}
 </script>
 
 <template>
-  <div class="space-y-8">
-    <template v-if="loading || loadingProviders">
-      <div class="space-y-8">
-        <Skeleton class="h-10 w-40 rounded-xl" />
-        <div class="grid gap-8 xl:grid-cols-[minmax(0,1fr)_280px]">
-          <div class="space-y-8">
-            <Skeleton class="h-[180px] w-full rounded-xl" />
-            <Skeleton class="h-[520px] w-full rounded-xl" />
-          </div>
-          <Skeleton class="h-[220px] w-full rounded-xl" />
+  <div class="space-y-6">
+    <StatePanel
+      title="模型与路由"
+      description="生成、向量和精排已拆成三条独立配置链路。这里保存的是运行时真正生效的模型服务选择。"
+    >
+      <template #icon>
+        <Cpu class="size-5" />
+      </template>
+      <template #actions>
+        <Button variant="outline" class="gap-2" @click="loadData">
+          <RefreshCw class="size-4" />
+          刷新
+        </Button>
+        <Button @click="showManager = true">
+          管理模型服务
+        </Button>
+      </template>
+
+      <div class="grid gap-3 md:grid-cols-4">
+        <div
+          v-for="item in summaryItems"
+          :key="item.label"
+          class="rounded-[calc(var(--radius)+6px)] border border-border/70 bg-background/70 px-4 py-4"
+        >
+          <div class="text-xs uppercase tracking-[0.16em] text-muted-foreground">{{ item.label }}</div>
+          <div class="mt-2 text-2xl font-semibold text-foreground">{{ item.value }}</div>
         </div>
       </div>
-    </template>
+    </StatePanel>
+
+    <div v-if="loading" class="space-y-6">
+      <Skeleton class="h-56 w-full rounded-[calc(var(--radius)+8px)]" />
+      <Skeleton class="h-56 w-full rounded-[calc(var(--radius)+8px)]" />
+      <Skeleton class="h-56 w-full rounded-[calc(var(--radius)+8px)]" />
+    </div>
 
     <template v-else>
-      <section class="grid gap-4 border-b border-border/60 pb-5 xl:grid-cols-[minmax(0,1fr)_280px] xl:items-start">
-        <div class="space-y-2">
-          <h2 class="text-xl font-semibold text-foreground">模型服务</h2>
-          <p class="max-w-3xl text-sm leading-6 text-muted-foreground">
-            设置默认模型提供商，查看可用状态并管理现有提供商。
-          </p>
-        </div>
+      <section class="detail-card p-5">
+        <SettingSection
+          title="生成路由"
+          description="管理对话、Agent 推理和结构化输出场景使用的生成服务。"
+        >
+          <template #header-actions>
+            <Badge variant="outline">{{ serviceLabel(generationSettings.defaultServiceId) }}</Badge>
+            <Button size="sm" @click="saveGenerationSettings">保存生成路由</Button>
+          </template>
 
-        <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/55 px-4 py-4">
-          <div class="surface-label mb-2 text-[0.68rem]">当前状态</div>
-          <div class="text-sm font-medium text-foreground">{{ defaultProviderLabel }}</div>
-          <p class="mt-1 text-sm leading-6 text-muted-foreground">
-            已配置 {{ providers.length }} 个提供商，其中 {{ healthyCount }} 个健康。
-          </p>
-        </div>
+          <SettingItem
+            label="默认生成服务"
+            description="未命中场景绑定时使用的全局默认生成服务。"
+          >
+            <Select
+              :model-value="generationSettings.defaultServiceId || '__none__'"
+              @update:model-value="updateGenerationDefault"
+            >
+              <SelectTrigger class="w-[260px]">
+                <SelectValue placeholder="选择默认生成服务" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">自动选择</SelectItem>
+                <SelectItem v-for="service in generationServices" :key="service.id" :value="service.id">
+                  {{ service.displayName || service.modelName || service.id }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingItem>
+
+          <SettingItem
+            v-for="scene in generationSceneOptions"
+            :key="scene.value"
+            :label="scene.label"
+            description="为该场景单独绑定生成服务。未设置时回落到默认生成服务。"
+          >
+            <Select
+              :model-value="generationSettings.sceneServiceBindings[scene.value] || '__inherit__'"
+              @update:model-value="value => updateGenerationScene(scene.value, value)"
+            >
+              <SelectTrigger class="w-[260px]">
+                <SelectValue placeholder="继承默认生成服务" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__inherit__">继承默认生成服务</SelectItem>
+                <SelectItem v-for="service in generationServices" :key="service.id" :value="service.id">
+                  {{ service.displayName || service.modelName || service.id }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingItem>
+        </SettingSection>
       </section>
 
-      <div
-        v-if="error || providerLoadError"
-        class="flex flex-col gap-3 rounded-2xl border border-amber-300/70 bg-amber-50/60 px-4 py-4 text-sm text-amber-950 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-100 sm:flex-row sm:items-center sm:justify-between"
-      >
-        <div class="leading-6">
-          {{ providerLoadError || '暂时无法读取设置服务，先显示当前设置。' }}
-        </div>
-        <div class="flex items-center gap-2">
-          <Button type="button" variant="outline" @click="loadSettings">
-            重试设置
-          </Button>
-          <Button type="button" variant="outline" @click="loadProviders">
-            重试列表
-          </Button>
-        </div>
-      </div>
+      <section class="detail-card p-5">
+        <SettingSection
+          title="向量路由"
+          description="单独控制知识库和记忆检索使用的向量服务。"
+        >
+          <template #header-actions>
+            <Button size="sm" @click="saveEmbeddingSettings">保存向量路由</Button>
+          </template>
 
-      <div class="grid gap-8 xl:grid-cols-[minmax(0,1fr)_280px]">
-        <div class="space-y-8">
-          <SettingSection title="默认提供商" description="未单独指定模型时，会优先使用这里的服务。">
-            <SettingItem label="默认模型提供商" description="用于需要默认模型的场景。" required>
-              <Select
-                :model-value="defaultProvider || '__auto__'"
-                :disabled="loadingProviders"
-                @update:model-value="handleDefaultProviderChange"
-              >
-                <SelectTrigger class="w-56">
-                  <SelectValue placeholder="选择默认提供商" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__auto__">
-                    自动路由
-                  </SelectItem>
-                  <SelectItem v-for="provider in providers" :key="provider.id" :value="provider.id">
-                    {{ provider.displayName || provider.id }}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </SettingItem>
-          </SettingSection>
-
-          <SettingSection title="场景路由" description="查看场景路由配置。">
-            <div v-if="sceneRoutingItems.length === 0" class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/55 px-4 py-4 text-sm text-muted-foreground">
-              当前还没有声明场景的 Provider。先在 Provider 管理里给模型配置适用场景，这里就能分别指定。
-            </div>
-
-            <div v-else class="grid gap-4 lg:grid-cols-2">
-              <article
-                v-for="item in sceneRoutingItems"
-                :key="item.scene"
-                class="rounded-[calc(var(--radius)+6px)] border border-border/70 bg-background/65 p-4"
-              >
-                <div class="space-y-1">
-                  <div class="text-sm font-medium text-foreground">{{ item.label }}</div>
-                  <p class="text-sm leading-6 text-muted-foreground">{{ item.description }}</p>
-                </div>
-
-                <div class="mt-4">
-                  <Select
-                    :model-value="item.selectedProviderId || '__inherit__'"
-                    :disabled="loadingProviders || item.providers.length === 0"
-                    @update:model-value="value => handleSceneProviderChange(item.scene, value)"
-                  >
-                    <SelectTrigger class="w-full">
-                      <SelectValue placeholder="跟随全局默认 / 自动路由" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__inherit__">
-                        跟随全局默认 / 自动路由
-                      </SelectItem>
-                      <SelectItem
-                        v-for="provider in item.providers"
-                        :key="provider.id"
-                        :value="provider.id"
-                      >
-                        {{ provider.displayName || provider.id }}
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <p class="mt-3 text-xs leading-5 text-muted-foreground">
-                  {{
-                    item.providers.length > 0
-                      ? `可选 Provider: ${item.providers.map(provider => provider.displayName || provider.id).join(' / ')}`
-                      : '暂无兼容 Provider'
-                  }}
-                </p>
-              </article>
-            </div>
-          </SettingSection>
-
-          <SettingSection title="提供商列表" description="展开后可查看配置摘要、健康状态和支持能力。">
-            <template #header-actions>
-              <Button @click="showProviderManager = true">
-                配置提供商
-              </Button>
-            </template>
-
-            <StatePanel
-              v-if="providers.length === 0"
-              title="暂无已配置提供商"
-              :description="providerLoadError || '打开提供商管理器，至少添加或启用一个模型提供商。'"
+          <SettingItem
+            label="默认向量服务"
+            description="未指定用途时使用的默认向量服务。"
+          >
+            <Select
+              :model-value="embeddingSettings.defaultServiceId || '__none__'"
+              @update:model-value="value => updateEmbeddingField('defaultServiceId', value)"
             >
-              <template #icon>
-                <Cpu class="size-5" />
-              </template>
-              <template #actions>
-                <Button @click="showProviderManager = true">
-                  打开提供商管理器
-                </Button>
-              </template>
-            </StatePanel>
+              <SelectTrigger class="w-[260px]">
+                <SelectValue placeholder="选择默认向量服务" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">自动选择</SelectItem>
+                <SelectItem v-for="service in embeddingServices" :key="service.id" :value="service.id">
+                  {{ service.displayName || service.modelName || service.id }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingItem>
 
-            <div v-else class="space-y-4 py-1">
-              <article
-                v-for="provider in providers"
-                :key="provider.id"
-                class="list-card overflow-hidden"
-              >
-                <button
-                  type="button"
-                  class="flex w-full items-center justify-between gap-4 px-4 py-4 text-left"
-                  @click="toggleProviderExpanded(provider.id)"
-                >
-                  <div class="flex min-w-0 items-start gap-3">
-                    <Cpu class="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-
-                    <div class="min-w-0 space-y-1">
-                      <div class="flex flex-wrap items-center gap-2">
-                        <div class="text-sm font-medium text-foreground">
-                          {{ provider.displayName || provider.id }}
-                        </div>
-                        <Badge v-if="provider.id === defaultProvider" variant="secondary">默认</Badge>
-                        <Badge
-                          v-if="getProviderHealth(provider.id) !== 'unknown'"
-                          :variant="getHealthBadgeVariant(getProviderHealth(provider.id))"
-                        >
-                          <Loader2
-                            v-if="getProviderHealth(provider.id) === 'checking'"
-                            class="size-3.5 animate-spin"
-                          />
-                          <CheckCircle2 v-else-if="getProviderHealth(provider.id) === 'healthy'" class="size-3.5" />
-                          <XCircle v-else-if="getProviderHealth(provider.id) === 'unhealthy'" class="size-3.5" />
-                          {{ getHealthBadgeText(getProviderHealth(provider.id)) }}
-                        </Badge>
-                      </div>
-
-                      <p v-if="provider.description" class="text-sm leading-6 text-muted-foreground">
-                        {{ provider.description }}
-                      </p>
-                    </div>
-                  </div>
-
-                  <ChevronDown
-                    class="size-4 shrink-0 text-muted-foreground transition-transform"
-                    :class="expandedProviders.has(provider.id) ? 'rotate-180' : ''"
-                  />
-                </button>
-
-                <Transition
-                  enter-active-class="transition-all duration-300 ease-out"
-                  enter-from-class="opacity-0 max-h-0 overflow-hidden"
-                  enter-to-class="opacity-100 max-h-[720px]"
-                  leave-active-class="transition-all duration-200 ease-in"
-                  leave-from-class="opacity-100 max-h-[720px]"
-                  leave-to-class="opacity-0 max-h-0 overflow-hidden"
-                >
-                  <div
-                    v-if="expandedProviders.has(provider.id)"
-                    class="border-t border-border/70 px-4 py-4"
-                  >
-                    <div class="mb-4 flex flex-wrap items-center gap-3">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        :disabled="checkingHealth.has(provider.id)"
-                        @click="checkProviderHealth(provider.id)"
-                      >
-                        <Loader2 v-if="getProviderHealth(provider.id) === 'checking'" class="size-3.5 animate-spin" />
-                        <RefreshCw v-else class="size-3.5" />
-                        {{ getProviderHealth(provider.id) === 'checking' ? '检查中...' : '检查健康状态' }}
-                      </Button>
-
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        :disabled="loadingProviders"
-                        @click="confirmDelete(provider)"
-                      >
-                        <Trash2 class="size-3.5" />
-                        删除提供商
-                      </Button>
-                    </div>
-
-                    <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
-                      <div class="detail-card p-4">
-                        <div class="grid gap-3 md:grid-cols-2">
-                          <div class="space-y-1">
-                            <div class="text-xs text-muted-foreground">类型</div>
-                            <p class="text-sm leading-6 text-foreground">{{ provider.type }}</p>
-                          </div>
-                          <div class="space-y-1">
-                            <div class="text-xs text-muted-foreground">模型</div>
-                            <p class="text-sm leading-6 text-foreground">{{ provider.modelName }}</p>
-                          </div>
-                          <div class="space-y-1">
-                            <div class="text-xs text-muted-foreground">优先级</div>
-                            <p class="text-sm leading-6 text-foreground">{{ provider.priority ?? '未设置' }}</p>
-                          </div>
-                          <div class="space-y-1">
-                            <div class="text-xs text-muted-foreground">API 地址</div>
-                            <p class="break-all font-mono text-xs leading-6 text-muted-foreground">
-                              {{ provider.apiUrl || '未设置' }}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div class="my-4 soft-divider" />
-
-                        <div class="space-y-3">
-                          <div class="space-y-1">
-                            <div class="text-xs text-muted-foreground">能力</div>
-                            <p class="text-sm leading-6 text-muted-foreground">
-                              {{ formatCapabilities(provider.capabilities) }}
-                            </p>
-                          </div>
-
-                          <div v-if="provider.scenes?.length" class="space-y-1">
-                            <div class="text-xs text-muted-foreground">支持场景</div>
-                            <p class="text-sm leading-6 text-muted-foreground">{{ formatScenes(provider.scenes) }}</p>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/55 px-4 py-4">
-                        <div class="surface-label mb-3 text-[0.68rem]">摘要</div>
-                        <div class="space-y-3 text-sm">
-                          <div class="space-y-1">
-                            <div class="text-xs text-muted-foreground">默认状态</div>
-                            <div class="font-medium text-foreground">
-                              {{ provider.id === defaultProvider ? '当前默认' : '备用提供商' }}
-                            </div>
-                          </div>
-                          <div class="space-y-1">
-                            <div class="text-xs text-muted-foreground">成本</div>
-                            <div class="text-sm leading-6 text-muted-foreground">
-                              {{ formatCost(provider.costPerInputToken ?? 0, provider.costPerOutputToken ?? 0) }}
-                            </div>
-                          </div>
-                          <div class="space-y-1">
-                            <div class="text-xs text-muted-foreground">上下文窗口</div>
-                            <div class="text-sm leading-6 text-foreground">
-                              {{ provider.maxContextWindow ? `${provider.maxContextWindow.toLocaleString()} token` : '未设置' }}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </Transition>
-              </article>
-            </div>
-          </SettingSection>
-        </div>
-
-        <aside class="xl:sticky xl:top-6 xl:self-start">
-          <section class="rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/55 p-5">
-            <h3 class="text-sm font-semibold text-foreground">当前状态</h3>
-            <p class="mt-1 text-sm leading-6 text-muted-foreground">
-              快速查看提供商数量、默认项和检查结果。
-            </p>
-
-            <div class="mt-4 space-y-3">
-              <div
-                v-for="item in currentStatusItems"
-                :key="item.label"
-                class="flex items-center justify-between gap-3 border-b border-border/50 pb-3 last:border-b-0 last:pb-0"
-              >
-                <span class="text-sm text-muted-foreground">{{ item.label }}</span>
-                <span class="text-sm font-medium text-foreground">{{ item.value }}</span>
-              </div>
-            </div>
-          </section>
-        </aside>
-      </div>
-
-      <!-- 精排设置（可折叠） -->
-      <div v-if="!rerankerLoading" class="mt-8">
-        <section class="detail-card overflow-hidden">
-          <button
-            type="button"
-            class="flex w-full items-center justify-between gap-4 px-5 py-4 text-left"
-            @click="rerankerExpanded = !rerankerExpanded"
+          <SettingItem
+            label="知识库向量服务"
+            description="知识库构建和检索优先使用的向量服务。"
           >
-            <div class="flex items-center gap-3">
-              <div class="flex size-9 shrink-0 items-center justify-center rounded-2xl border border-border/70 bg-background/80 text-muted-foreground">
-                <span class="text-base">🔀</span>
-              </div>
-              <div>
-                <div class="text-sm font-semibold text-foreground">精排设置</div>
-                <p class="text-sm text-muted-foreground">
-                  {{ rerankerForm.enabled ? `已启用 · ${rerankerForm.type === 'llm' ? 'LLM' : 'API'} 模式` : '未启用' }}
-                </p>
-              </div>
-            </div>
-            <ChevronDown
-              class="size-4 shrink-0 text-muted-foreground transition-transform"
-              :class="rerankerExpanded ? 'rotate-180' : ''"
+            <Select
+              :model-value="embeddingSettings.knowledgeBaseServiceId || '__none__'"
+              @update:model-value="value => updateEmbeddingField('knowledgeBaseServiceId', value)"
+            >
+              <SelectTrigger class="w-[260px]">
+                <SelectValue placeholder="选择知识库向量服务" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">继承默认向量服务</SelectItem>
+                <SelectItem v-for="service in embeddingServices" :key="service.id" :value="service.id">
+                  {{ service.displayName || service.modelName || service.id }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingItem>
+
+          <SettingItem
+            label="记忆向量服务"
+            description="记忆索引、召回和语义检索优先使用的向量服务。"
+          >
+            <Select
+              :model-value="embeddingSettings.memoryServiceId || '__none__'"
+              @update:model-value="value => updateEmbeddingField('memoryServiceId', value)"
+            >
+              <SelectTrigger class="w-[260px]">
+                <SelectValue placeholder="选择记忆向量服务" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">继承默认向量服务</SelectItem>
+                <SelectItem v-for="service in embeddingServices" :key="service.id" :value="service.id">
+                  {{ service.displayName || service.modelName || service.id }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingItem>
+        </SettingSection>
+      </section>
+
+      <section class="detail-card p-5">
+        <SettingSection
+          title="精排路由"
+          description="精排模式与模型服务分离配置，支持原生精排和 LLM 精排两条执行链。"
+        >
+          <template #header-actions>
+            <Badge variant="outline">{{ rerankModeLabel }}</Badge>
+            <Button size="sm" @click="saveRerankSettings">保存精排路由</Button>
+          </template>
+
+          <SettingItem
+            label="启用精排"
+            description="关闭后知识库和记忆检索都不会执行二次精排。"
+          >
+            <Switch
+              :model-value="rerankSettings.enabled"
+              @update:model-value="value => updateRerankSwitch('enabled', value)"
             />
-          </button>
+          </SettingItem>
 
-          <Transition
-            enter-active-class="transition-all duration-300 ease-out"
-            enter-from-class="opacity-0 max-h-0 overflow-hidden"
-            enter-to-class="opacity-100 max-h-[3000px]"
-            leave-active-class="transition-all duration-200 ease-in"
-            leave-from-class="opacity-100 max-h-[3000px]"
-            leave-to-class="opacity-0 max-h-0 overflow-hidden"
+          <SettingItem
+            label="执行模式"
+            description="原生精排使用 RERANK 服务；LLM 模式使用生成服务进行评分或排序。"
           >
-            <div v-if="rerankerExpanded" class="border-t border-border/70">
-              <div v-if="rerankerLoadError" class="px-5 py-6 text-center">
-                <p class="text-sm text-muted-foreground">{{ rerankerLoadError }}</p>
-                <Button variant="outline" class="mt-4" @click="loadRerankerSettings">重试</Button>
-              </div>
+            <Select :model-value="rerankSettings.mode" @update:model-value="updateRerankMode">
+              <SelectTrigger class="w-[260px]">
+                <SelectValue placeholder="选择精排模式" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="option in rerankModeOptions" :key="option.value" :value="option.value">
+                  {{ option.label }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingItem>
 
-              <form v-else class="space-y-6 px-5 py-5" @submit.prevent="handleRerankerSave">
-                <SettingSection title="全局精排" description="控制检索结果的二次排序策略，提升相关性。">
-                  <SettingItem label="启用精排" description="开启后，检索结果将经过精排模型二次排序。">
-                    <Switch v-model="rerankerForm.enabled" />
-                  </SettingItem>
-                  <SettingItem label="精排类型" description="选择使用 LLM 或外部 API 进行精排。">
-                    <Select v-model="rerankerForm.type">
-                      <SelectTrigger class="w-40"><SelectValue placeholder="选择类型" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="llm">LLM</SelectItem>
-                        <SelectItem value="api">API</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </SettingItem>
-                  <SettingItem label="精排模型" description="选择用于精排的模型。">
-                    <template v-if="isRerankerLlmType">
-                      <Select v-model="rerankerForm.model">
-                        <SelectTrigger class="w-56"><SelectValue placeholder="选择模型" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem v-for="p in providers" :key="p.id" :value="p.modelName">
-                            {{ p.displayName || p.modelName }}
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </template>
-                    <Input v-else v-model="rerankerForm.model" placeholder="如 rerank-v3" class="w-56" />
-                  </SettingItem>
-                  <SettingItem label="返回数量" description="精排后保留的最大结果数。">
-                    <Input v-model.number="rerankerForm.topK" type="number" :min="1" :max="100" class="w-28" />
-                  </SettingItem>
-                </SettingSection>
+          <SettingItem
+            v-if="rerankSettings.mode === 'NATIVE'"
+            label="原生精排服务"
+            description="只显示声明为 RERANK 的服务。"
+          >
+            <Select
+              :model-value="rerankSettings.nativeServiceId || '__none__'"
+              @update:model-value="updateRerankNativeService"
+            >
+              <SelectTrigger class="w-[260px]">
+                <SelectValue placeholder="选择原生精排服务" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">未设置</SelectItem>
+                <SelectItem v-for="service in rerankServices" :key="service.id" :value="service.id">
+                  {{ service.displayName || service.modelName || service.id }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingItem>
 
-                <SettingSection v-if="isRerankerLlmType" title="LLM 精排配置" description="使用 LLM 对候选结果逐条或批量评分。">
-                  <SettingItem label="评分模式" description="Pointwise 逐条评分精度高，Listwise 批量评分速度快。">
-                    <Select v-model="rerankerForm.llmMode">
-                      <SelectTrigger class="w-40"><SelectValue placeholder="选择模式" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="pointwise">Pointwise</SelectItem>
-                        <SelectItem value="listwise">Listwise</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </SettingItem>
-                </SettingSection>
+          <SettingItem
+            v-if="rerankSettings.mode === 'LLM_POINTWISE' || rerankSettings.mode === 'LLM_LISTWISE'"
+            label="LLM 精排服务"
+            description="用于 pointwise 或 listwise 的生成服务。"
+          >
+            <Select
+              :model-value="rerankSettings.llmServiceId || '__none__'"
+              @update:model-value="updateRerankLlmService"
+            >
+              <SelectTrigger class="w-[260px]">
+                <SelectValue placeholder="选择 LLM 精排服务" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">未设置</SelectItem>
+                <SelectItem v-for="service in rerankLlmServices" :key="service.id" :value="service.id">
+                  {{ service.displayName || service.modelName || service.id }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingItem>
 
-                <SettingSection v-if="isRerankerApiType" title="API 精排配置" description="使用 Jina 或 Cohere 等外部精排 API。">
-                  <SettingItem label="API 提供商" description="选择精排 API 服务商。">
-                    <Select v-model="rerankerForm.apiProvider">
-                      <SelectTrigger class="w-40"><SelectValue placeholder="选择提供商" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="jina">Jina</SelectItem>
-                        <SelectItem value="cohere">Cohere</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </SettingItem>
-                  <SettingItem label="API Key" description="精排 API 的访问密钥。">
-                    <Input v-model="rerankerForm.apiKey" type="password" placeholder="输入 API Key" class="w-56" />
-                  </SettingItem>
-                  <SettingItem label="API 端点" description="自定义 API 地址，留空使用默认端点。">
-                    <Input v-model="rerankerForm.apiEndpoint" placeholder="https://api.example.com/rerank" class="w-72" />
-                  </SettingItem>
-                  <SettingItem label="超时时间 (ms)" description="API 请求超时时间，单位毫秒。">
-                    <Input v-model.number="rerankerForm.apiTimeoutMs" type="number" :min="1000" :max="120000" class="w-28" />
-                  </SettingItem>
-                </SettingSection>
+          <SettingItem
+            label="知识库 TopK"
+            description="知识库精排后保留的最大结果数。"
+          >
+            <Input
+              class="w-[120px]"
+              type="number"
+              :min="1"
+              :model-value="rerankSettings.knowledgeTopK"
+              @update:model-value="value => updateRerankNumber('knowledgeTopK', value)"
+            />
+          </SettingItem>
 
-                <SettingSection title="记忆精排" description="控制记忆检索结果是否经过精排。">
-                  <SettingItem label="启用记忆精排" description="开启后，记忆检索的融合结果将经过 Reranker 二次排序。">
-                    <Switch v-model="rerankerForm.memoryRerankEnabled" />
-                  </SettingItem>
-                  <SettingItem label="记忆精排 TopK" description="记忆精排后保留的最大结果数。">
-                    <Input v-model.number="rerankerForm.memoryRerankTopK" type="number" :min="1" :max="100" class="w-28" />
-                  </SettingItem>
-                </SettingSection>
+          <SettingItem
+            label="记忆精排"
+            description="控制记忆召回是否执行二次精排。"
+          >
+            <Switch
+              :model-value="rerankSettings.memoryEnabled"
+              @update:model-value="value => updateRerankSwitch('memoryEnabled', value)"
+            />
+          </SettingItem>
 
-                <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
-                  <span v-if="rerankerSaveSuccess" class="text-sm text-emerald-600 dark:text-emerald-400">已保存</span>
-                  <span v-if="rerankerSaveError" class="text-sm text-destructive">{{ rerankerSaveError }}</span>
-                  <Button type="submit" :disabled="rerankerSaving">
-                    {{ rerankerSaving ? '保存中...' : '保存精排设置' }}
-                  </Button>
-                </div>
-              </form>
+          <SettingItem
+            label="记忆 TopK"
+            description="记忆精排后保留的最大结果数。"
+          >
+            <Input
+              class="w-[120px]"
+              type="number"
+              :min="1"
+              :model-value="rerankSettings.memoryTopK"
+              @update:model-value="value => updateRerankNumber('memoryTopK', value)"
+            />
+          </SettingItem>
+        </SettingSection>
+      </section>
+
+      <StatePanel
+        title="当前生效摘要"
+        description="这里展示的是新路由表中的当前绑定结果，不再依赖用户设置里的旧 Provider 字段。"
+      >
+        <template #icon>
+          <GitCompareArrows class="size-5" />
+        </template>
+
+        <div class="grid gap-3 md:grid-cols-3">
+          <div class="rounded-[calc(var(--radius)+6px)] border border-border/70 bg-background/70 px-4 py-4">
+            <div class="mb-2 flex items-center gap-2 text-sm font-medium text-foreground">
+              <Cpu class="size-4" />
+              生成路由
             </div>
-          </Transition>
-        </section>
-      </div>
+            <p class="text-sm text-muted-foreground">
+              默认：{{ serviceLabel(generationSettings.defaultServiceId) }}
+            </p>
+          </div>
+          <div class="rounded-[calc(var(--radius)+6px)] border border-border/70 bg-background/70 px-4 py-4">
+            <div class="mb-2 flex items-center gap-2 text-sm font-medium text-foreground">
+              <Database class="size-4" />
+              向量路由
+            </div>
+            <p class="text-sm text-muted-foreground">
+              知识库：{{ serviceLabel(embeddingSettings.knowledgeBaseServiceId || embeddingSettings.defaultServiceId) }}
+            </p>
+          </div>
+          <div class="rounded-[calc(var(--radius)+6px)] border border-border/70 bg-background/70 px-4 py-4">
+            <div class="mb-2 flex items-center gap-2 text-sm font-medium text-foreground">
+              <GitCompareArrows class="size-4" />
+              精排路由
+            </div>
+            <p class="text-sm text-muted-foreground">
+              {{ rerankSettings.enabled ? rerankModeLabel : '已关闭' }}
+            </p>
+          </div>
+        </div>
+      </StatePanel>
     </template>
 
-    <LlmProviderManager v-if="showProviderManager" @close="handleProviderManagerClose" />
-
-    <ConfirmDialog
-      v-model:show="showDeleteConfirm"
-      title="删除提供商"
-      :message="deleteConfirmMessage"
-      confirm-label="删除"
-      cancel-label="取消"
-      confirm-variant="destructive"
-      @confirm="handleDelete"
-    />
+    <ModelServiceManager v-if="showManager" @close="handleManagerClose" />
   </div>
 </template>

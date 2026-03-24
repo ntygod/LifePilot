@@ -11,10 +11,10 @@ import {
   getFontSizeDisplayLabel,
   getThemeDisplayLabel,
 } from '@/lib/settingsDisplay'
-import SettingsModelsView from '@/views/SettingsModelsView.vue'
+import SettingsChannelsView from '@/views/SettingsChannelsView.vue'
 import SettingsGeneralView from '@/views/SettingsGeneralView.vue'
 import SettingsKnowledgeView from '@/views/SettingsKnowledgeView.vue'
-import SettingsChannelsView from '@/views/SettingsChannelsView.vue'
+import SettingsModelsView from '@/views/SettingsModelsView.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -37,20 +37,20 @@ const navigationItems = [
   },
   {
     path: '/settings/models',
-    label: '模型与推理',
-    description: '默认模型、场景路由、健康检查和重排配置。',
+    label: '模型与路由',
+    description: '模型服务、生成路由、向量路由和精排路由的独立配置。',
     icon: Cpu,
   },
   {
     path: '/settings/knowledge',
     label: '知识与检索',
-    description: '分块策略、检索参数、向量索引和联网搜索配置。',
+    description: '分块策略、检索参数、向量索引和联网搜索设置。',
     icon: Database,
   },
   {
     path: '/settings/channels',
     label: '集成渠道',
-    description: '飞书、企微、钉钉等渠道的凭证与开关配置。',
+    description: '飞书、企微、钉钉等渠道的凭据与开关配置。',
     icon: Radio,
   },
 ] as const
@@ -74,7 +74,7 @@ const quickSummary = computed(() => [
   {
     label: '密度',
     value: densityDisplayValue.value,
-    hint: '导航和内容区域的空间松紧程度。',
+    hint: '导航与内容区块的空间紧凑程度。',
   },
   {
     label: '字号',
@@ -82,9 +82,9 @@ const quickSummary = computed(() => [
     hint: '全局阅读节奏与基础字级设置。',
   },
   {
-    label: '默认模型',
-    value: settingsStore.llmProvider || '未设置',
-    hint: '未单独指定时优先使用的模型提供商。',
+    label: '模型路由',
+    value: '独立配置',
+    hint: '生成、向量和精排服务已经迁移到模型与路由页单独管理。',
   },
 ])
 

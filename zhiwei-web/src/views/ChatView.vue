@@ -8,8 +8,8 @@ import {
   SlidersHorizontal,
   Square,
 } from 'lucide-vue-next'
-import { chatApi, llmProviderApi } from '@/api/client'
-import type { LlmProvider } from '@/api/client'
+import { chatApi, modelServiceApi } from '@/api/client'
+import type { ModelService } from '@/api/client'
 import type { ChatAttachment, Message, ResumePolicy, SessionConfig } from '@/types'
 import StatePanel from '@/components/common/StatePanel.vue'
 import { Button } from '@/components/ui/button'
@@ -56,7 +56,7 @@ const searchQuery = ref('')
 const showDebugDrawer = ref(false)
 const showSessionSidebar = ref(false)
 const showConfigPanel = ref(false)
-const providers = ref<LlmProvider[]>([])
+const providers = ref<ModelService[]>([])
 
 const DEFAULT_SESSION_TEMPERATURE = 0.7
 const DEFAULT_SESSION_MAX_TOKENS = 131072
@@ -208,7 +208,7 @@ onMounted(async () => {
   void skillStore.fetchSkills()
 
   try {
-    providers.value = await llmProviderApi.listEnabledProviders()
+    providers.value = await modelServiceApi.listEnabledServices('GENERATION')
   } catch {
     // Provider 列表加载失败不阻塞页面。
   }

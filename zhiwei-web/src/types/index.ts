@@ -1,4 +1,4 @@
-// ZhiWei 閸撳秶顏猾璇茬€风€规矮绠?
+﻿// ZhiWei 閸撳秶顏猾璇茬€风€规矮绠?
 /** 娴兼俺鐦介幗妯款洣 */
 export interface ChatSession {
   id: string
@@ -137,8 +137,6 @@ export interface TokenUsage {
 export interface UserSettings {
   theme: 'light' | 'dark' | 'system'
   language: string
-  llmProvider: string
-  sceneProviders?: Record<string, string>
   layoutDensity?: 'compact' | 'standard'
   fontSize?: 'small' | 'medium' | 'large'
   timeFormat?: '12h' | '24h'
@@ -991,27 +989,6 @@ export interface ToolStats {
   avgLatency: number
 }
 
-/** LLM Provider 鐠囷附鍎?*/
-export interface LlmProviderDetail {
-  id: string
-  type: string
-  modelName: string
-  displayName?: string
-  capabilities?: string[]
-  priority?: number
-  costPerInputToken?: number
-  costPerOutputToken?: number
-  scenes?: string[]
-  maxContextWindow?: number
-  supportsStreaming?: boolean
-  enabled?: boolean
-  healthy?: boolean
-  apiUrl?: string
-  timeoutSeconds?: number
-  isPreset?: boolean
-  description?: string
-  embeddingDimension?: number
-}
 
 /** Provider 閼宠棄濮忕猾璇茬€?*/
 export type ProviderCapability = 'STREAMING' | 'FUNCTION_CALLING' | 'EMBEDDING' | 'VISION' | 'AUDIO' | 'RERANK'

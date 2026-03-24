@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   ChatAttachment,
   ChatResponse,
   ResumePolicy,
@@ -363,16 +363,10 @@ export const chatApi = {
   }
 }
 
-import type {
-  LlmProviderDetail
-} from '@/types'
-
-// 瀵煎嚭 LlmProviderDetail 绫诲瀷锛堝悜鍚庡吋瀹癸級
-export type { LlmProviderDetail }
-
-/** LLM Provider 淇℃伅锛堝吋瀹规棫鎺ュ彛锛?*/
-export interface LlmProvider {
+/** 模型服务定义。 */
+export interface ModelService {
   id: string
+  kind: string
   type: string
   modelName: string
   displayName?: string
@@ -392,6 +386,50 @@ export interface LlmProvider {
   embeddingDimension?: number
 }
 
+export type ModelServiceDetail = ModelService
+
+export interface GenerationRoutingSettings {
+  defaultServiceId?: string
+  sceneServiceBindings: Record<string, string>
+}
+
+export interface GenerationRoutingSettingsRequest {
+  defaultServiceId?: string
+  sceneServiceBindings?: Record<string, string>
+}
+
+export interface EmbeddingRoutingSettings {
+  defaultServiceId?: string
+  knowledgeBaseServiceId?: string
+  memoryServiceId?: string
+}
+
+export interface EmbeddingRoutingSettingsRequest {
+  defaultServiceId?: string
+  knowledgeBaseServiceId?: string
+  memoryServiceId?: string
+}
+
+export interface RerankRoutingSettings {
+  enabled: boolean
+  mode: string
+  nativeServiceId?: string
+  llmServiceId?: string
+  knowledgeTopK: number
+  memoryEnabled: boolean
+  memoryTopK: number
+}
+
+export interface RerankRoutingSettingsRequest {
+  enabled?: boolean
+  mode?: string
+  nativeServiceId?: string
+  llmServiceId?: string
+  knowledgeTopK?: number
+  memoryEnabled?: boolean
+  memoryTopK?: number
+}
+
 /** 璁剧疆鐩稿叧 API */
 export const settingsApi = {
   /** 鑾峰彇鐢ㄦ埛璁剧疆 */
@@ -406,35 +444,6 @@ export const settingsApi = {
       body: JSON.stringify(settings)
     })
   },
-
-  /** 鑾峰彇鍙敤鐨?LLM Provider 鍒楄〃锛堝寘鍚缁嗕俊鎭級 */
-  getProviders(): Promise<LlmProvider[]> {
-    return request('/settings/providers')
-  },
-
-  /** 鑾峰彇鎸囧畾 Provider 鐨勮缁嗕俊鎭?*/
-  getProviderDetail(providerId: string): Promise<LlmProviderDetail> {
-    return request(`/settings/providers/${providerId}`)
-  },
-
-  /** 鑾峰彇鎵€鏈?Provider 鐨勫仴搴风姸鎬?*/
-  getProviderHealth(): Promise<Record<string, boolean>> {
-    return request('/settings/providers/health')
-  },
-
-  /** 鑾峰彇鍏ㄥ眬 Reranker 閰嶇疆 */
-  getRerankerSettings(): Promise<RerankerSettings> {
-    return request('/settings/reranker')
-  },
-
-  /** 鏇存柊鍏ㄥ眬 Reranker 閰嶇疆 */
-  updateRerankerSettings(settings: RerankerSettingsRequest): Promise<RerankerSettings> {
-    return request('/settings/reranker', {
-      method: 'PUT',
-      body: JSON.stringify(settings)
-    })
-  },
-
   /** 鑾峰彇鐭ヨ瘑搴撳叏灞€閰嶇疆 */
   getKnowledgeSettings(): Promise<KnowledgeSettings> {
     return request('/settings/knowledge')
@@ -476,35 +485,7 @@ export const settingsApi = {
 }
 
 /** Reranker 閰嶇疆鍝嶅簲 */
-export interface RerankerSettings {
-  enabled: boolean
-  type: string
-  model: string
-  topK: number
-  llmMode: string
-  apiProvider: string
-  apiKey: string
-  apiEndpoint: string
-  apiTimeoutMs: number
-  memoryRerankEnabled: boolean
-  memoryRerankTopK: number
-}
-
 /** Reranker 閰嶇疆璇锋眰 */
-export interface RerankerSettingsRequest {
-  enabled?: boolean
-  type?: string
-  model?: string
-  topK?: number
-  llmMode?: string
-  apiProvider?: string
-  apiKey?: string
-  apiEndpoint?: string
-  apiTimeoutMs?: number
-  memoryRerankEnabled?: boolean
-  memoryRerankTopK?: number
-}
-
 /** 鐭ヨ瘑搴撳叏灞€閰嶇疆鍝嶅簲 */
 export interface KnowledgeSettings {
   enabled: boolean
@@ -565,60 +546,88 @@ export interface ChannelConfig {
   [key: string]: SingleChannelConfig | undefined
 }
 
-/** LLM Provider 绠＄悊 API */
-export const llmProviderApi = {
-  /** 鑾峰彇鎵€鏈?Provider锛堝寘鎷凡绂佺敤锛?*/
-  listProviders(): Promise<LlmProvider[]> {
-    return request('/llm-providers')
+export const modelRoutingApi = {
+  getGenerationSettings(): Promise<GenerationRoutingSettings> {
+    return request('/model-routing/generation')
   },
 
-  /** 鑾峰彇鎵€鏈夊凡鍚敤鐨?Provider */
-  listEnabledProviders(): Promise<LlmProvider[]> {
-    return request('/llm-providers/enabled')
+  updateGenerationSettings(settings: GenerationRoutingSettingsRequest): Promise<GenerationRoutingSettings> {
+    return request('/model-routing/generation', {
+      method: 'PUT',
+      body: JSON.stringify(settings)
+    })
   },
 
-  /** 鑾峰彇鎵€鏈夐璁剧疆鐨?Provider */
-  listPresets(): Promise<LlmProvider[]> {
-    return request('/llm-providers/presets')
+  getEmbeddingSettings(): Promise<EmbeddingRoutingSettings> {
+    return request('/model-routing/embedding')
   },
 
-  /** 鏍规嵁 ID 鑾峰彇 Provider */
-  getProvider(id: string): Promise<LlmProvider> {
-    return request(`/llm-providers/${id}`)
+  updateEmbeddingSettings(settings: EmbeddingRoutingSettingsRequest): Promise<EmbeddingRoutingSettings> {
+    return request('/model-routing/embedding', {
+      method: 'PUT',
+      body: JSON.stringify(settings)
+    })
   },
 
-  /** 鍒涘缓鎴栨洿鏂?Provider */
-  saveProvider(provider: CreateProviderRequest): Promise<LlmProvider> {
-    return request('/llm-providers', {
+  getRerankSettings(): Promise<RerankRoutingSettings> {
+    return request('/model-routing/rerank')
+  },
+
+  updateRerankSettings(settings: RerankRoutingSettingsRequest): Promise<RerankRoutingSettings> {
+    return request('/model-routing/rerank', {
+      method: 'PUT',
+      body: JSON.stringify(settings)
+    })
+  }
+}
+
+/** 模型服务管理 API */
+export const modelServiceApi = {
+  /** 获取所有模型服务（包含已禁用项）。 */
+  listServices(kind?: string): Promise<ModelService[]> {
+    const query = kind ? `?kind=${encodeURIComponent(kind)}` : ''
+    return request(`/model-services${query}`)
+  },
+
+  /** 获取所有已启用的模型服务。 */
+  listEnabledServices(kind?: string): Promise<ModelService[]> {
+    const query = kind ? `?kind=${encodeURIComponent(kind)}` : ''
+    return request(`/model-services/enabled${query}`)
+  },
+
+  /** 根据 ID 获取模型服务详情。 */
+  getService(id: string): Promise<ModelServiceDetail> {
+    return request(`/model-services/${id}`)
+  },
+
+  /** 创建模型服务。 */
+  createService(provider: CreateModelServiceRequest): Promise<ModelService> {
+    return request('/model-services', {
       method: 'POST',
       body: JSON.stringify(provider)
     })
   },
 
-  /** 鏇存柊 Provider锛堥儴鍒嗘洿鏂帮級 */
-  updateProvider(id: string, provider: UpdateProviderRequest): Promise<LlmProvider> {
-    return request(`/llm-providers/${id}`, {
+  /** 更新模型服务。 */
+  updateService(id: string, provider: UpdateModelServiceRequest): Promise<ModelService> {
+    return request(`/model-services/${id}`, {
       method: 'PUT',
       body: JSON.stringify(provider)
     })
   },
 
-  /** 鍒犻櫎 Provider锛堜粎鍒犻櫎闈為璁剧疆鐨勶級 */
-  deleteProvider(id: string): Promise<void> {
-    return request(`/llm-providers/${id}`, {
+  /** 删除模型服务。 */
+  deleteService(id: string): Promise<void> {
+    return request(`/model-services/${id}`, {
       method: 'DELETE'
     })
-  },
-
-  /** 鑾峰彇 Provider 鍋ュ悍鐘舵€?*/
-  getProviderHealth(id: string): Promise<{ healthy: boolean }> {
-    return request(`/llm-providers/${id}/health`)
   }
 }
 
-/** 鍒涘缓 Provider 璇锋眰 */
-export interface CreateProviderRequest {
+/** 创建模型服务请求。 */
+export interface CreateModelServiceRequest {
   id: string
+  kind: string
   type: string
   apiUrl: string
   apiKey?: string
@@ -637,8 +646,9 @@ export interface CreateProviderRequest {
   description?: string
 }
 
-/** 鏇存柊 Provider 璇锋眰锛堟墍鏈夊瓧娈靛彲閫夛級 */
-export interface UpdateProviderRequest {
+/** 更新模型服务请求。 */
+export interface UpdateModelServiceRequest {
+  kind?: string
   type?: string
   apiUrl?: string
   apiKey?: string

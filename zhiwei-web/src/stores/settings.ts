@@ -1,13 +1,11 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { UserSettings } from '@/types'
-import { settingsApi, llmProviderApi, type LlmProvider } from '@/api/client'
+import { modelServiceApi, settingsApi, type ModelService } from '@/api/client'
 
 export const useSettingsStore = defineStore('settings', () => {
   const theme = ref<'light' | 'dark' | 'system'>('system')
   const language = ref('zh-CN')
-  const llmProvider = ref('')
-  const sceneProviders = ref<Record<string, string>>({})
   const layoutDensity = ref<'compact' | 'standard'>('standard')
   const fontSize = ref<'small' | 'medium' | 'large'>('medium')
   const timeFormat = ref<'12h' | '24h'>('24h')
@@ -19,35 +17,29 @@ export const useSettingsStore = defineStore('settings', () => {
   const enableFunctionCall = ref(true)
   const enableKnowledgeBase = ref(true)
   const enableToolCall = ref(true)
-  const providers = ref<LlmProvider[]>([])
+  const providers = ref<ModelService[]>([])
 
-  /** 从后端加载设置 */
   async function load() {
-    const s = await settingsApi.getSettings()
-    theme.value = s.theme
-    language.value = s.language
-    llmProvider.value = s.llmProvider
-    sceneProviders.value = s.sceneProviders ?? {}
-    layoutDensity.value = s.layoutDensity ?? 'standard'
-    fontSize.value = s.fontSize ?? 'medium'
-    timeFormat.value = s.timeFormat ?? '24h'
-    showTokenUsage.value = s.showTokenUsage ?? true
-    autoExpandCodeBlocks.value = s.autoExpandCodeBlocks ?? false
-    collapseLongReplies.value = s.collapseLongReplies ?? true
-    collapseThreshold.value = s.collapseThreshold ?? 1000
-    enableStreaming.value = s.enableStreaming ?? true
-    enableFunctionCall.value = s.enableFunctionCall ?? true
-    enableKnowledgeBase.value = s.enableKnowledgeBase ?? true
-    enableToolCall.value = s.enableToolCall ?? true
+    const settings = await settingsApi.getSettings()
+    theme.value = settings.theme
+    language.value = settings.language
+    layoutDensity.value = settings.layoutDensity ?? 'standard'
+    fontSize.value = settings.fontSize ?? 'medium'
+    timeFormat.value = settings.timeFormat ?? '24h'
+    showTokenUsage.value = settings.showTokenUsage ?? true
+    autoExpandCodeBlocks.value = settings.autoExpandCodeBlocks ?? false
+    collapseLongReplies.value = settings.collapseLongReplies ?? true
+    collapseThreshold.value = settings.collapseThreshold ?? 1000
+    enableStreaming.value = settings.enableStreaming ?? true
+    enableFunctionCall.value = settings.enableFunctionCall ?? true
+    enableKnowledgeBase.value = settings.enableKnowledgeBase ?? true
+    enableToolCall.value = settings.enableToolCall ?? true
   }
 
-  /** 保存设置到后端 */
   async function save() {
     const settings: UserSettings = {
       theme: theme.value,
       language: language.value,
-      llmProvider: llmProvider.value,
-      sceneProviders: sceneProviders.value,
       layoutDensity: layoutDensity.value,
       fontSize: fontSize.value,
       timeFormat: timeFormat.value,
@@ -58,13 +50,11 @@ export const useSettingsStore = defineStore('settings', () => {
       enableStreaming: enableStreaming.value,
       enableFunctionCall: enableFunctionCall.value,
       enableKnowledgeBase: enableKnowledgeBase.value,
-      enableToolCall: enableToolCall.value
+      enableToolCall: enableToolCall.value,
     }
     const saved = await settingsApi.updateSettings(settings)
     theme.value = saved.theme
     language.value = saved.language
-    llmProvider.value = saved.llmProvider
-    sceneProviders.value = saved.sceneProviders ?? {}
     layoutDensity.value = saved.layoutDensity ?? 'standard'
     fontSize.value = saved.fontSize ?? 'medium'
     timeFormat.value = saved.timeFormat ?? '24h'
@@ -78,20 +68,31 @@ export const useSettingsStore = defineStore('settings', () => {
     enableToolCall.value = saved.enableToolCall ?? true
   }
 
-  /** 获取 Provider 列表 */
   async function fetchProviders() {
     try {
-      providers.value = await settingsApi.getProviders()
-    } catch (e: any) {
-      console.error('加载 Provider 列表失败:', e)
+      providers.value = await modelServiceApi.listEnabledServices('GENERATION')
+    } catch (error) {
+      console.error('加载生成模型服务失败:', error)
     }
   }
 
-  return { 
-    theme, language, llmProvider, sceneProviders,
-    layoutDensity, fontSize, timeFormat, showTokenUsage, autoExpandCodeBlocks, collapseLongReplies, collapseThreshold,
-    enableStreaming, enableFunctionCall, enableKnowledgeBase, enableToolCall,
+  return {
+    theme,
+    language,
+    layoutDensity,
+    fontSize,
+    timeFormat,
+    showTokenUsage,
+    autoExpandCodeBlocks,
+    collapseLongReplies,
+    collapseThreshold,
+    enableStreaming,
+    enableFunctionCall,
+    enableKnowledgeBase,
+    enableToolCall,
     providers,
-    load, save, fetchProviders
+    load,
+    save,
+    fetchProviders,
   }
 })
