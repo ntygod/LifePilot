@@ -2,7 +2,7 @@
 import { ref, watch } from 'vue'
 import { X } from 'lucide-vue-next'
 import type { SessionConfig, KnowledgeBase } from '@/types'
-import type { LlmProvider } from '@/api/client'
+import type { ModelService } from '@/api/client'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
@@ -17,7 +17,7 @@ const props = defineProps<{
   maxSteps?: number
   maxDurationSeconds?: number
   knowledgeBaseIds?: string[]
-  providers: LlmProvider[]
+  providers: ModelService[]
   knowledgeBases: KnowledgeBase[]
 }>()
 

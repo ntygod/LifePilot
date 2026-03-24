@@ -76,7 +76,7 @@ public class StreamingEventHandler {
      * @param steps ReAct 步骤序列
      * @param reasoningSummary 推理概要
      * @param finalContent 最终内容
-     * @param assistantMessageId 助手消息 ID
+     * @param assistantEntryId 助手 transcript 条目 ID
      * @param lastCollectedA2uiTree 最后收集的 A2UI 组件树
      * @return DONE 事件 payload
      */
@@ -87,10 +87,10 @@ public class StreamingEventHandler {
                                                      @Nullable List<ReactStep> steps,
                                                      @Nullable String reasoningSummary,
                                                      @Nullable String finalContent,
-                                                     @Nullable String assistantMessageId,
+                                                     @Nullable String assistantEntryId,
                                                      @Nullable A2uiComponentTree lastCollectedA2uiTree) {
         var doneData = new HashMap<String, Object>();
-        doneData.put("messageId", assistantMessageId != null ? assistantMessageId : tempTurnId);
+        doneData.put("entryId", assistantEntryId != null ? assistantEntryId : tempTurnId);
         doneData.put("sessionId", request.sessionId());
         doneData.put("turnId", tempTurnId);
 

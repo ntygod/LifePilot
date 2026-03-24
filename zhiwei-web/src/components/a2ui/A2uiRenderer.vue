@@ -7,7 +7,7 @@ import { normalizeA2uiComponents } from '@/utils/a2ui'
 const props = defineProps<{
   components: A2uiComponent[]
   rootIds?: string[]
-  messageId?: string
+  entryId?: string
   traceId?: string
   streaming?: boolean
   visitedIds?: string[]
@@ -78,7 +78,7 @@ function nextVisitedIds(component: A2uiComponent) {
       :signal="comp.signal"
       :type="comp.type"
       :component-id="comp.id"
-      :message-id="props.messageId"
+      :entry-id="props.entryId"
       :trace-id="props.traceId"
       :streaming="props.streaming"
     >
@@ -86,7 +86,7 @@ function nextVisitedIds(component: A2uiComponent) {
         v-if="getChildren(comp).length"
         :components="normalizedComponents"
         :root-ids="comp.children"
-        :message-id="props.messageId"
+        :entry-id="props.entryId"
         :trace-id="props.traceId"
         :streaming="props.streaming"
         :visited-ids="nextVisitedIds(comp)"

@@ -2,7 +2,6 @@
 import { computed } from 'vue'
 import type { A2uiComponent, Message, ReasoningEvent, ReactStepDto, ToolConfirmationRequest } from '@/types'
 import MessageBubble from './MessageBubble.vue'
-import { useChatStore } from '@/stores/chat'
 import { motion } from 'motion-v'
 
 const MotionDiv = motion.div
@@ -11,17 +10,17 @@ const props = defineProps<{
   messages: Message[]
   isStreaming?: boolean
   streamingContent?: string
-  /** 流式推理中的实时推理事件（可选） */
+  /** 流式推理中的实时推理事件。 */
   streamingReasoningEvents?: ReasoningEvent[]
-  /** 流式推理中的实时 ReAct 步骤（可选） */
+  /** 流式推理中的实时 ReAct 步骤。 */
   streamingReactSteps?: ReactStepDto[]
-  /** 流式阶段中的 A2UI 组件树（可选） */
+  /** 流式阶段中的 A2UI 组件树。 */
   streamingA2uiComponents?: A2uiComponent[]
-  /** 流式阶段的工具确认请求队列 */
+  /** 流式阶段中的工具确认请求。 */
   streamingToolConfirmations?: Record<string, ToolConfirmationRequest>
-  /** 流式阶段的工具确认解决结果映射 */
+  /** 流式阶段中的工具确认结果。 */
   streamingToolConfirmationResolutions?: Record<string, 'approved' | 'rejected' | 'expired'>
-  /** 文本搜索关键字（可选），用于高亮匹配内容 */
+  /** 文本搜索关键字，用于高亮匹配内容。 */
   query?: string
 }>()
 
@@ -37,39 +36,42 @@ const emit = defineEmits<{
   (e: 'tool-confirm-resolve', requestId: string, resolution: 'approved' | 'rejected' | 'expired'): void
 }>()
 
-const chatStore = useChatStore()
-
 /**
- * 合并后的消息列表：将 tool-confirmation 消息合并到前一条 assistant 消息中，
- * 使确认卡片内嵌在同一个 assistant 气泡内部。
+ * 合并后的消息列表。
+ * `tool-confirmation` 条目会并入上一条 assistant 消息，避免单独渲染成独立气泡。
  */
 const mergedMessages = computed(() => {
   const sorted = [...props.messages].sort((a, b) => a.timestamp - b.timestamp)
   const result: Message[] = []
 
   for (const msg of sorted) {
-    if (msg.role === 'tool-confirmation' && msg.toolConfirmation) {
-      // 找到前一条 assistant 消息，将确认数据合并进去
+    if (msg.role === 'tool-confirmation' && msg.toolConfirmations) {
       for (let i = result.length - 1; i >= 0; i--) {
         if (result[i].role === 'assistant') {
           result[i] = {
             ...result[i],
-            toolConfirmation: msg.toolConfirmation,
-            toolConfirmationResolution: msg.toolConfirmationResolution,
+            toolConfirmations: {
+              ...(result[i].toolConfirmations ?? {}),
+              ...msg.toolConfirmations,
+            },
+            toolConfirmationResolutions: {
+              ...(result[i].toolConfirmationResolutions ?? {}),
+              ...(msg.toolConfirmationResolutions ?? {}),
+            },
           }
           break
         }
       }
-      // tool-confirmation 消息本身不再作为独立消息渲染
       continue
     }
+
     result.push({ ...msg })
   }
 
   return result
 })
 
-// 最后一条 assistant 消息的 ID，用于控制"重新生成"按钮仅在最后一条 AI 消息上显示
+/** 最后一条 assistant 消息的 ID，用于控制“重新生成”按钮只显示在最后一条回复上。 */
 const lastAssistantId = computed(() => {
   for (let i = mergedMessages.value.length - 1; i >= 0; i--) {
     if (mergedMessages.value[i].role === 'assistant') return mergedMessages.value[i].id
@@ -77,7 +79,7 @@ const lastAssistantId = computed(() => {
   return null
 })
 
-// 简单的日期标签：今天 / 昨天 / 更早
+/** 简单日期标签：今天 / 昨天 / 更早。 */
 function getDateLabel(timestamp: number): string {
   const date = new Date(timestamp)
   const today = new Date()
@@ -100,12 +102,11 @@ function highlight(text: string): string {
 <template>
   <div class="flex flex-col">
     <template v-for="(msg, index) in mergedMessages" :key="msg.id">
-      <!-- 日期分组标签 -->
       <div
         v-if="index === 0 || getDateLabel(msg.timestamp) !== getDateLabel(mergedMessages[index - 1]?.timestamp)"
         class="my-4 flex items-center justify-center text-xs text-muted-foreground"
       >
-        <span class="px-3 py-1 rounded-full bg-muted/70 text-xs font-medium">
+        <span class="rounded-full bg-muted/70 px-3 py-1 text-xs font-medium">
           {{ getDateLabel(msg.timestamp) }}
         </span>
       </div>
@@ -142,7 +143,6 @@ function highlight(text: string): string {
       </MotionDiv>
     </template>
 
-    <!-- 流式进行中但尚未有 assistant 消息时，显示占位 -->
     <MotionDiv
       v-if="isStreaming && (mergedMessages.length === 0 || mergedMessages[mergedMessages.length - 1]?.role === 'user')"
       :initial="{ y: 16, opacity: 0 }"

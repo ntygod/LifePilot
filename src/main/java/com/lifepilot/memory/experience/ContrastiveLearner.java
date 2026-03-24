@@ -1,12 +1,12 @@
 package com.lifepilot.memory.experience;
 
-import com.lifepilot.llm.LlmRequest;
-import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,18 +29,18 @@ public class ContrastiveLearner {
 
     private final SemanticMemory semanticMemory;
     private final VectorSearcher vectorSearcher;
-    private final LlmRouter llmRouter;
+    private final GenerationRouter generationRouter;
     private final PromptRegistry promptRegistry;
     private final MemoryProperties.Experience.Contrastive config;
 
     public ContrastiveLearner(SemanticMemory semanticMemory,
                                VectorSearcher vectorSearcher,
-                               LlmRouter llmRouter,
+                               GenerationRouter generationRouter,
                                PromptRegistry promptRegistry,
                                MemoryProperties memoryProperties) {
         this.semanticMemory = semanticMemory;
         this.vectorSearcher = vectorSearcher;
-        this.llmRouter = llmRouter;
+        this.generationRouter = generationRouter;
         this.promptRegistry = promptRegistry;
         this.config = memoryProperties.getExperience().getContrastive();
     }
@@ -128,8 +128,13 @@ public class ContrastiveLearner {
                     "failureTools", String.valueOf(failureExp.properties().getOrDefault("toolsUsed", List.of()))
             );
             String prompt = promptRegistry.render(PROMPT_KEY, vars);
-            var request = LlmRequest.of("contrastive-learning", prompt);
-            return llmRouter.callEntity(request, ContrastiveInsight.class);
+            return generationRouter.callEntity(
+                    "contrastive-learning",
+                    prompt,
+                    ContrastiveInsight.class,
+                    null,
+                    null,
+                    null);
         } catch (Exception e) {
             log.warn("对比学习: LLM 调用失败, error={}", e.getMessage());
             return null;

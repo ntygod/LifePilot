@@ -4,12 +4,11 @@ import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.model.ReactStep;
 import com.lifepilot.eval.model.EvalResult;
 import com.lifepilot.eval.scenario.BenchmarkScenario;
-import com.lifepilot.llm.LlmRequest;
-import com.lifepilot.llm.LlmRouter;
-import com.lifepilot.llm.LlmScene;
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.semantic.EntityType;
+import com.lifepilot.llm.LlmScene;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
 import com.lifepilot.prompt.PromptRegistry;
@@ -36,20 +35,20 @@ public class ExperienceSummarizer {
 
     private final SemanticMemory semanticMemory;
     private final VectorSearcher vectorSearcher;
-    private final LlmRouter llmRouter;
+    private final GenerationRouter generationRouter;
     private final PromptRegistry promptRegistry;
     private final MemoryProperties.Experience config;
     private final TrajectoryQualityAssessor qualityAssessor;
 
     public ExperienceSummarizer(SemanticMemory semanticMemory,
                                 VectorSearcher vectorSearcher,
-                                LlmRouter llmRouter,
+                                GenerationRouter generationRouter,
                                 PromptRegistry promptRegistry,
                                 MemoryProperties properties,
                                 TrajectoryQualityAssessor qualityAssessor) {
         this.semanticMemory = semanticMemory;
         this.vectorSearcher = vectorSearcher;
-        this.llmRouter = llmRouter;
+        this.generationRouter = generationRouter;
         this.promptRegistry = promptRegistry;
         this.config = properties.getExperience();
         this.qualityAssessor = qualityAssessor;
@@ -219,8 +218,13 @@ public class ExperienceSummarizer {
                     "taskSuccess", String.valueOf(report.taskSuccess())
             );
             String prompt = promptRegistry.render(PROMPT_KEY, vars);
-            var request = LlmRequest.of(LlmScene.CHAT, prompt);
-            var record = llmRouter.callEntity(request, ExperienceRecord.class);
+            var record = generationRouter.callEntity(
+                    LlmScene.CHAT,
+                    prompt,
+                    ExperienceRecord.class,
+                    null,
+                    null,
+                    null);
 
             // 校验返回结果
             if (record == null || record.scenario() == null || record.scenario().isBlank()

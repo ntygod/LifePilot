@@ -1,7 +1,7 @@
 package com.lifepilot.workflow.engine;
 
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.model.ResponseContent;
-import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.notification.NotificationRequest;
 import com.lifepilot.notification.NotificationService;
@@ -42,7 +42,7 @@ class StepExecutor_NotifyStep_测试 {
     @Mock private SkillRegistry skillRegistry;
     @Mock private SkillActivator skillActivator;
     @Mock private DynamicToolRegistry toolRegistry;
-    @Mock private LlmRouter llmRouter;
+    @Mock private GenerationRouter generationRouter;
     @Mock private MultimodalRouter multimodalRouter;
     @Mock private NotificationService notificationService;
 
@@ -56,7 +56,7 @@ class StepExecutor_NotifyStep_测试 {
         expressionEngine = new ExpressionEngine();
         stepExecutor = new StepExecutor(
                 skillRegistry, skillActivator, toolRegistry,
-                llmRouter, multimodalRouter, config, notificationService);
+                generationRouter, multimodalRouter, config, notificationService);
     }
 
     // ── 表达式解析 ────────────────────────────────────────

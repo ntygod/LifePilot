@@ -20,8 +20,10 @@ class EpisodicMemorySessionReadModelTest {
         var dataSource = new SingleConnectionDataSource("jdbc:sqlite::memory:", true);
         jdbcTemplate = new JdbcTemplate(dataSource);
         jdbcTemplate.execute("""
-                CREATE TABLE chat_sessions (
-                    id TEXT PRIMARY KEY,
+                CREATE TABLE session_store (
+                    session_id TEXT PRIMARY KEY,
+                    channel TEXT NOT NULL DEFAULT 'web',
+                    chat_type TEXT NOT NULL DEFAULT 'chat',
                     title TEXT,
                     summary TEXT,
                     message_count INTEGER NOT NULL DEFAULT 0,
@@ -29,51 +31,129 @@ class EpisodicMemorySessionReadModelTest {
                     archived INTEGER NOT NULL DEFAULT 0,
                     last_message_at TEXT,
                     created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
+                    updated_at TEXT NOT NULL,
+                    last_activity_at TEXT NOT NULL,
+                    provider_override TEXT,
+                    model_override TEXT,
+                    thinking_level TEXT,
+                    reasoning_level TEXT,
+                    config_json TEXT NOT NULL DEFAULT '{}',
+                    context_tokens_estimate INTEGER NOT NULL DEFAULT 0,
+                    input_tokens INTEGER NOT NULL DEFAULT 0,
+                    output_tokens INTEGER NOT NULL DEFAULT 0,
+                    total_tokens INTEGER NOT NULL DEFAULT 0,
+                    compaction_count INTEGER NOT NULL DEFAULT 0,
+                    memory_flush_at TEXT,
+                    active_branch_id TEXT NOT NULL DEFAULT 'main'
                 )
                 """);
         jdbcTemplate.execute("""
-                CREATE TABLE chat_messages (
+                CREATE TABLE session_transcript_entries (
                     id TEXT PRIMARY KEY,
                     session_id TEXT NOT NULL,
-                    role TEXT NOT NULL,
-                    content TEXT NOT NULL,
+                    parent_id TEXT,
+                    branch_id TEXT NOT NULL DEFAULT 'main',
+                    entry_type TEXT NOT NULL,
+                    role TEXT,
+                    turn_id TEXT,
+                    trace_id TEXT,
+                    visible_to_model INTEGER NOT NULL DEFAULT 1,
+                    visible_to_user INTEGER NOT NULL DEFAULT 1,
+                    payload_json TEXT NOT NULL,
+                    token_estimate INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL,
-                    FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
+                    FOREIGN KEY (session_id) REFERENCES session_store(session_id) ON DELETE CASCADE
                 )
                 """);
         jdbcTemplate.execute("""
-                CREATE VIRTUAL TABLE chat_messages_fts USING fts5(
+                CREATE TABLE session_transcript_compressions (
+                    entry_id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    compression_level INTEGER NOT NULL DEFAULT 0,
+                    compressed_content TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY (entry_id) REFERENCES session_transcript_entries(id) ON DELETE CASCADE,
+                    FOREIGN KEY (session_id) REFERENCES session_store(session_id) ON DELETE CASCADE
+                )
+                """);
+        jdbcTemplate.execute("""
+                CREATE VIRTUAL TABLE session_transcript_entries_fts USING fts5(
+                    entry_id UNINDEXED,
+                    session_id UNINDEXED,
+                    role UNINDEXED,
                     content,
-                    content='chat_messages',
-                    content_rowid='rowid',
                     tokenize='unicode61 remove_diacritics 2'
                 )
                 """);
         jdbcTemplate.execute("""
-                CREATE TRIGGER trg_chat_messages_fts_ai
-                AFTER INSERT ON chat_messages
+                CREATE TRIGGER trg_session_transcript_entries_fts_ai
+                AFTER INSERT ON session_transcript_entries
                 BEGIN
-                    INSERT INTO chat_messages_fts(rowid, content)
-                    VALUES (new.rowid, new.content);
+                    INSERT INTO session_transcript_entries_fts(rowid, entry_id, session_id, role, content)
+                    SELECT new.rowid,
+                           new.id,
+                           new.session_id,
+                           COALESCE(new.role, ''),
+                           json_extract(new.payload_json, '$.content')
+                    WHERE new.entry_type IN ('user_message', 'assistant_message')
+                      AND new.visible_to_user = 1
+                      AND trim(COALESCE(json_extract(new.payload_json, '$.content'), '')) <> '';
                 END
                 """);
         jdbcTemplate.execute("""
-                CREATE TRIGGER trg_chat_messages_fts_ad
-                AFTER DELETE ON chat_messages
+                CREATE TRIGGER trg_session_transcript_entries_fts_ad
+                AFTER DELETE ON session_transcript_entries
                 BEGIN
-                    INSERT INTO chat_messages_fts(chat_messages_fts, rowid, content)
-                    VALUES ('delete', old.rowid, old.content);
+                    INSERT INTO session_transcript_entries_fts(
+                        session_transcript_entries_fts,
+                        rowid,
+                        entry_id,
+                        session_id,
+                        role,
+                        content
+                    )
+                    SELECT 'delete',
+                           old.rowid,
+                           old.id,
+                           old.session_id,
+                           COALESCE(old.role, ''),
+                           json_extract(old.payload_json, '$.content')
+                    WHERE old.entry_type IN ('user_message', 'assistant_message')
+                      AND old.visible_to_user = 1
+                      AND trim(COALESCE(json_extract(old.payload_json, '$.content'), '')) <> '';
                 END
                 """);
         jdbcTemplate.execute("""
-                CREATE TRIGGER trg_chat_messages_fts_au
-                AFTER UPDATE ON chat_messages
+                CREATE TRIGGER trg_session_transcript_entries_fts_au
+                AFTER UPDATE ON session_transcript_entries
                 BEGIN
-                    INSERT INTO chat_messages_fts(chat_messages_fts, rowid, content)
-                    VALUES ('delete', old.rowid, old.content);
-                    INSERT INTO chat_messages_fts(rowid, content)
-                    VALUES (new.rowid, new.content);
+                    INSERT INTO session_transcript_entries_fts(
+                        session_transcript_entries_fts,
+                        rowid,
+                        entry_id,
+                        session_id,
+                        role,
+                        content
+                    )
+                    SELECT 'delete',
+                           old.rowid,
+                           old.id,
+                           old.session_id,
+                           COALESCE(old.role, ''),
+                           json_extract(old.payload_json, '$.content')
+                    WHERE old.entry_type IN ('user_message', 'assistant_message')
+                      AND old.visible_to_user = 1
+                      AND trim(COALESCE(json_extract(old.payload_json, '$.content'), '')) <> '';
+
+                    INSERT INTO session_transcript_entries_fts(rowid, entry_id, session_id, role, content)
+                    SELECT new.rowid,
+                           new.id,
+                           new.session_id,
+                           COALESCE(new.role, ''),
+                           json_extract(new.payload_json, '$.content')
+                    WHERE new.entry_type IN ('user_message', 'assistant_message')
+                      AND new.visible_to_user = 1
+                      AND trim(COALESCE(json_extract(new.payload_json, '$.content'), '')) <> '';
                 END
                 """);
 
@@ -108,7 +188,7 @@ class EpisodicMemorySessionReadModelTest {
     }
 
     @Test
-    void sessionReadModelUsesChatSessionsAndChatMessagesAsSourceOfTruth() {
+    void sessionReadModelUsesSessionStoreAndTranscriptAsSourceOfTruth() {
         insertSession("s1", "tea preferences", "tea notes", Instant.parse("2026-03-19T09:00:00Z"));
         insertTurn("s1", "m1", "user", "My favorite is oolong tea.", Instant.parse("2026-03-19T09:00:01Z"));
         insertTurn("s1", "m2", "assistant", "I will remember that.", Instant.parse("2026-03-19T09:00:02Z"));
@@ -128,29 +208,54 @@ class EpisodicMemorySessionReadModelTest {
         assertThat(listed).extracting(ConversationRecord::id).contains("s1", "s2");
     }
 
+    @Test
+    void compress_会写入Transcript压缩投影并影响读取结果() {
+        insertSession("s1", "tea preferences", "tea notes", Instant.parse("2026-03-19T09:00:00Z"));
+        insertTurn("s1", "m1", "user", "My favorite is oolong tea.", Instant.parse("2026-03-19T09:00:01Z"));
+        insertTurn("s1", "m2", "assistant", "I will remember that.", Instant.parse("2026-03-19T09:00:02Z"));
+
+        episodicMemory.compress("s1", CompressionLevel.SUMMARY, java.util.Map.of(
+                "m1", "用户偏好：乌龙茶",
+                "m2", "助手确认已记住偏好"
+        ));
+
+        var conversation = episodicMemory.getById("s1").orElseThrow();
+
+        assertThat(conversation.messages()).extracting(MessageRecord::effectiveContent)
+                .containsExactly("用户偏好：乌龙茶", "助手确认已记住偏好");
+        assertThat(conversation.messages()).extracting(MessageRecord::compressionLevel)
+                .containsOnly(CompressionLevel.SUMMARY);
+    }
+
     private void insertSession(String id, String title, String summary, Instant createdAt) {
         jdbcTemplate.update("""
-                        INSERT INTO chat_sessions (
-                            id, title, summary, message_count, is_pinned, archived,
-                            last_message_at, created_at, updated_at
-                        ) VALUES (?, ?, ?, 0, 0, 0, ?, ?, ?)
+                        INSERT INTO session_store (
+                            session_id, title, summary, message_count, is_pinned, archived,
+                            last_message_at, created_at, updated_at, last_activity_at
+                        ) VALUES (?, ?, ?, 0, 0, 0, ?, ?, ?, ?)
                         """,
-                id, title, summary, createdAt.toString(), createdAt.toString(), createdAt.toString());
+                id, title, summary,
+                createdAt.toString(), createdAt.toString(), createdAt.toString(), createdAt.toString());
     }
 
     private void insertTurn(String sessionId, String messageId, String role, String content, Instant createdAt) {
+        String payloadJson = "{\"content\":\"" + content.replace("\\", "\\\\").replace("\"", "\\\"") + "\"}";
         jdbcTemplate.update("""
-                        INSERT INTO chat_messages (id, session_id, role, content, created_at)
-                        VALUES (?, ?, ?, ?, ?)
+                        INSERT INTO session_transcript_entries (
+                            id, session_id, branch_id, entry_type, role, visible_to_model,
+                            visible_to_user, payload_json, token_estimate, created_at
+                        ) VALUES (?, ?, 'main', ?, ?, 1, 1, ?, 0, ?)
                         """,
-                messageId, sessionId, role, content, createdAt.toString());
+                messageId, sessionId, "user".equals(role) ? "user_message" : "assistant_message",
+                role, payloadJson, createdAt.toString());
         jdbcTemplate.update("""
-                        UPDATE chat_sessions
+                        UPDATE session_store
                         SET message_count = message_count + 1,
                             last_message_at = ?,
-                            updated_at = ?
-                        WHERE id = ?
+                            updated_at = ?,
+                            last_activity_at = ?
+                        WHERE session_id = ?
                         """,
-                createdAt.toString(), createdAt.toString(), sessionId);
+                createdAt.toString(), createdAt.toString(), createdAt.toString(), sessionId);
     }
 }

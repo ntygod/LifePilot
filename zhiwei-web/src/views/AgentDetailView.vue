@@ -313,7 +313,7 @@ async function sendTestMessage() {
   try {
     const response = await agentApi.testChat(agent.value.id, content)
     testMessages.value.push({
-      id: response.messageId,
+      id: response.entryId,
       role: 'assistant',
       content: response.content,
       timestamp: Date.now(),

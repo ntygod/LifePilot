@@ -41,9 +41,7 @@ class SettingsControllerSearchSettingsTest {
         MetaProperties metaProperties = new MetaProperties();
         var controller = new SettingsController(
                 settingsRepository,
-                null,
                 new ObjectMapper(),
-                null,
                 null,
                 metaProperties
         );

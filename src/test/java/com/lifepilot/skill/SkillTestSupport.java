@@ -3,7 +3,8 @@ package com.lifepilot.skill;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.datastore.DataStoreManager;
-import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.embedding.router.EmbeddingRouter;
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.observability.guardrail.GuardrailEngine;
@@ -45,8 +46,13 @@ public class SkillTestSupport {
     }
 
     @Bean
-    LlmRouter llmRouter() {
-        return mock(LlmRouter.class);
+    GenerationRouter generationRouter() {
+        return mock(GenerationRouter.class);
+    }
+
+    @Bean
+    EmbeddingRouter embeddingRouter() {
+        return mock(EmbeddingRouter.class);
     }
 
     @Bean

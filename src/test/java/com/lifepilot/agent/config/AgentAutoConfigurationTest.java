@@ -4,9 +4,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.AgentToolProvider;
 import com.lifepilot.agent.context.ContextAssembler;
 import com.lifepilot.config.threadpool.SharedScheduler;
-import com.lifepilot.interaction.web.repository.ChatMessageRepository;
-import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.conversation.transcript.SessionStoreRepository;
+import com.lifepilot.conversation.transcript.SessionTranscriptRepository;
+import com.lifepilot.conversation.transcript.TranscriptStore;
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
+import com.lifepilot.memory.document.MemoryDocumentRepository;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.prompt.PromptRegistry;
 import org.junit.jupiter.api.Test;
@@ -70,26 +73,43 @@ class AgentAutoConfigurationTest {
     /**
      * 基础设施 Mock Bean 配置。
      *
-     * <p>提供 AgentAutoConfiguration 中其他 Bean 方法所需的依赖
-     * （JdbcTemplate、ObjectMapper、LlmRouter），避免上下文启动失败。
-     * AgentConfigProperties 由 @EnableConfigurationProperties 自动注册，无需手动创建。</p>
+     * <p>提供 AgentAutoConfiguration 其余 Bean 方法所需依赖
+     * （JdbcTemplate、ObjectMapper、GenerationRouter），避免上下文启动失败。
+     * AgentConfigProperties 由 {@code @EnableConfigurationProperties} 自动注册，
+     * 无需手动创建。</p>
      */
     @org.springframework.boot.test.context.TestConfiguration
     static class InfraBeansConfig {
         @Bean(name = "agentTestJdbcTemplate")
         JdbcTemplate jdbcTemplate() { return mock(JdbcTemplate.class); }
+
         @Bean(name = "agentTestObjectMapper")
         ObjectMapper objectMapper() { return new ObjectMapper(); }
-        @Bean(name = "agentTestLlmRouter")
-        LlmRouter llmRouter() { return mock(LlmRouter.class); }
+
+        @Bean(name = "agentTestGenerationRouter")
+        GenerationRouter generationRouter() { return mock(GenerationRouter.class); }
+
         @Bean(name = "agentTestMultimodalRouter")
         MultimodalRouter multimodalRouter() { return mock(MultimodalRouter.class); }
+
         @Bean(name = "agentTestPromptRegistry")
         PromptRegistry promptRegistry() { return mock(PromptRegistry.class); }
-        @Bean(name = "agentTestChatMessageRepository")
-        ChatMessageRepository chatMessageRepository() { return mock(ChatMessageRepository.class); }
+
+        @Bean(name = "agentTestSessionStoreRepository")
+        SessionStoreRepository sessionStoreRepository() { return mock(SessionStoreRepository.class); }
+
+        @Bean(name = "agentTestSessionTranscriptRepository")
+        SessionTranscriptRepository sessionTranscriptRepository() { return mock(SessionTranscriptRepository.class); }
+
+        @Bean(name = "agentTestTranscriptStore")
+        TranscriptStore transcriptStore() { return mock(TranscriptStore.class); }
+
+        @Bean(name = "agentTestMemoryDocumentRepository")
+        MemoryDocumentRepository memoryDocumentRepository() { return mock(MemoryDocumentRepository.class); }
+
         @Bean(name = "agentTestAgentToolProvider")
         AgentToolProvider agentToolProvider() { return mock(AgentToolProvider.class); }
+
         @Bean(name = "agentTestSharedScheduler")
         SharedScheduler sharedScheduler() {
             var scheduler = mock(SharedScheduler.class);
@@ -101,19 +121,26 @@ class AgentAutoConfigurationTest {
         }
     }
 
-    /** 模拟记忆系统 Bean 可用的配置。 */
+    /**
+     * 模拟记忆系统 Bean 可用的配置。
+     */
     @Configuration
     static class MemoryBeansConfig {
-        @Bean HybridRetriever hybridRetriever() { return mock(HybridRetriever.class); }
+        @Bean
+        HybridRetriever hybridRetriever() {
+            return mock(HybridRetriever.class);
+        }
     }
 
-    /** 用户自定义 ContextAssembler Bean。 */
+    /**
+     * 用户自定义 ContextAssembler Bean。
+     */
     @Configuration
     static class CustomContextAssemblerConfig {
         @Bean
         ContextAssembler customContextAssembler(AgentConfigProperties config, PromptRegistry promptRegistry) {
             return new ContextAssembler(config, promptRegistry,
-                    null, null, null, null, null, null, null, null, null, null);
+                    null, null, null, null, null, null, null);
         }
     }
 }

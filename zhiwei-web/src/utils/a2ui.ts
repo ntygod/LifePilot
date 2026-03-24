@@ -1,6 +1,6 @@
 import type { A2uiComponent, ChatAttachment, Message, ReactStepDto } from '@/types'
 
-/** 后端附件数据结构（对应 AttachmentInfo record） */
+/** 后端附件数据结构，对应 AttachmentInfo record。 */
 interface BackendAttachment {
   id: string
   fileName: string
@@ -78,7 +78,7 @@ export function mapBackendMessage(message: BackendMessageLike): Message {
       }))
     : undefined
 
-  // 工具确认消息：content 是 JSON，需要解析还原 toolConfirmation 和 resolution
+  // 工具确认消息的 content 是 JSON，需要解析成前端可消费的确认结构。
   if (message.role === 'tool-confirmation') {
     try {
       const parsed = JSON.parse(message.content) as {
@@ -96,22 +96,22 @@ export function mapBackendMessage(message: BackendMessageLike): Message {
         riskLevel: parsed.riskLevel as 'HIGH' | 'CRITICAL',
         approvalMode: '',
         message: parsed.message,
-        timestamp: typeof message.timestamp === 'string' ? message.timestamp : new Date(message.timestamp).toISOString(),
+        timestamp: typeof message.timestamp === 'string'
+          ? message.timestamp
+          : new Date(message.timestamp).toISOString(),
       }
       return {
         id: message.id,
         role: 'tool-confirmation',
-        content: parsed.message || '该工具需要您的确认才能执行。',
+        content: parsed.message || '该工具需要你的确认后才能执行。',
         timestamp: parseMessageTimestamp(message.timestamp),
-        // 新格式：多个确认
         toolConfirmations: { [parsed.requestId]: toolConfirmation },
-        toolConfirmationResolutions: parsed.resolution ? { [parsed.requestId]: parsed.resolution as 'approved' | 'rejected' | 'expired' } : undefined,
-        // 兼容旧格式
-        toolConfirmation,
-        toolConfirmationResolution: parsed.resolution as 'approved' | 'rejected' | 'expired',
+        toolConfirmationResolutions: parsed.resolution
+          ? { [parsed.requestId]: parsed.resolution as 'approved' | 'rejected' | 'expired' }
+          : undefined,
       }
     } catch {
-      // JSON 解析失败，回退为普通消息
+      // JSON 解析失败时，回退为普通消息展示。
     }
   }
 

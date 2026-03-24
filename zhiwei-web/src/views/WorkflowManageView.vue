@@ -507,7 +507,7 @@ onBeforeUnmount(() => {
               <span class="text-sm text-muted-foreground">标签筛选:</span>
               <Select
                 :model-value="selectedTag || '__all__'"
-                @update:model-value="(v: string) => selectedTag = v === '__all__' ? '' : v"
+                @update:model-value="(value) => selectedTag = String(value ?? '') === '__all__' ? '' : String(value ?? '')"
               >
                 <SelectTrigger class="w-40">
                   <SelectValue placeholder="全部" />

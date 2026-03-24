@@ -51,11 +51,10 @@ public class EpisodicCleanupJob {
         try {
             expiredIds = jdbcTemplate.queryForList(
                     """
-                    SELECT c.id FROM conversations c
-                    WHERE c.created_at < ?
-                    AND c.id NOT IN (
-                        SELECT DISTINCT conversation_id FROM messages WHERE is_pinned = 1
-                    )
+                    SELECT session_id
+                    FROM session_store
+                    WHERE COALESCE(last_activity_at, last_message_at, created_at) < ?
+                      AND is_pinned = 0
                     LIMIT ?
                     """,
                     String.class, cutoff.toString(), maxPerRun);

@@ -119,7 +119,7 @@ class ChatController_A2uiContract_测试 {
                                 }
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.messageId").value("assistant-1"))
+                .andExpect(jsonPath("$.entryId").value("assistant-1"))
                 .andExpect(jsonPath("$.content").value("这是当前面板"))
                 .andExpect(jsonPath("$.traceId").value("trace-1"))
                 .andExpect(jsonPath("$.a2uiComponents[0].type").value("Card"))
@@ -148,7 +148,7 @@ class ChatController_A2uiContract_测试 {
                                 }
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.messageId").value("assistant-attachment"))
+                .andExpect(jsonPath("$.entryId").value("assistant-attachment"))
                 .andExpect(jsonPath("$.content").value("已收到附件"));
     }
 
@@ -213,7 +213,7 @@ class ChatController_A2uiContract_测试 {
                                 }
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.messageId").value("assistant-2"))
+                .andExpect(jsonPath("$.entryId").value("assistant-2"))
                 .andExpect(jsonPath("$.content").value("好的，已刷新面板"))
                 .andExpect(jsonPath("$.traceId").value("trace-2"))
                 .andExpect(jsonPath("$.a2uiComponents[0].id").value("card-1"))

@@ -204,8 +204,7 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
         for (int j = i + 1; j < text.length(); j++) {
             char next = text.charAt(j);
             if (next == ' ' || next == '\t' || next == '\r' || next == '\n') continue;
-            return next == ',' || next == ':' || next == ']' || next == '}'
-                    || next == '"';
+            return next == ',' || next == ':' || next == ']' || next == '}';
         }
         // 到达末尾，认为是终止符
         return true;

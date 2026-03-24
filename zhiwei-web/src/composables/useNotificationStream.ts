@@ -1,15 +1,14 @@
 import { onMounted, onUnmounted, ref } from 'vue'
 import { useNotificationStore } from '@/stores/notification'
+import { useChatStore } from '@/stores/chat'
 import { SSE_EVENT_TYPES } from '@/constants/sseEvents'
-import type { NotificationItem } from '@/types'
+import type { NotificationItem, SseTranscriptionEvent } from '@/types'
 
 /**
  * 通知 SSE 实时订阅 composable。
  *
- * 建立 EventSource 连接到 /api/notifications/stream，
- * 监听 notification 事件，自动更新 notificationStore。
- * 支持初始未读数快照事件和实时通知推送。
- * 组件卸载时自动关闭连接。
+ * 建立 EventSource 连接到 `/api/notifications/stream`，
+ * 监听通知与语音转录事件，并同步更新本地 store。
  */
 export function useNotificationStream() {
   const connected = ref(false)
@@ -23,19 +22,42 @@ export function useNotificationStream() {
     if (eventSource) return
 
     eventSource = new EventSource('/api/notifications/stream?userId=default')
-    const store = useNotificationStore()
+    const notificationStore = useNotificationStore()
+    const chatStore = useChatStore()
 
-    eventSource.addEventListener(SSE_EVENT_TYPES.NOTIFICATION, (e: MessageEvent) => {
+    eventSource.addEventListener(SSE_EVENT_TYPES.NOTIFICATION, (event: MessageEvent) => {
       try {
-        const data = JSON.parse(e.data)
+        const data = JSON.parse(event.data)
 
         if (data.type === 'unread-count-snapshot') {
-          store.setUnreadCount(data.unreadCount)
+          notificationStore.setUnreadCount(data.unreadCount)
         } else {
-          store.addNotification(data as NotificationItem)
+          notificationStore.addNotification(data as NotificationItem)
         }
-      } catch (err) {
-        console.error('通知事件解析失败:', err)
+      } catch (error) {
+        console.error('通知事件解析失败:', error)
+      }
+    })
+
+    eventSource.addEventListener(SSE_EVENT_TYPES.TRANSCRIPTION, (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data) as SseTranscriptionEvent
+        if (!data.sessionId || data.sessionId !== chatStore.activeSessionId) {
+          return
+        }
+
+        const targetId = data.entryId
+          ?? [...chatStore.messages]
+            .reverse()
+            .find(message => message.role === 'user' && message.status === 'pending')
+            ?.id
+        if (!targetId || !data.text) {
+          return
+        }
+
+        chatStore.updateMessage(targetId, { content: data.text })
+      } catch (error) {
+        console.error('转录事件解析失败:', error)
       }
     })
 
@@ -46,7 +68,6 @@ export function useNotificationStream() {
 
     eventSource.onerror = () => {
       connected.value = false
-      // 清理旧连接，允许重连
       eventSource?.close()
       eventSource = null
 
@@ -68,7 +89,7 @@ export function useNotificationStream() {
       eventSource = null
       connected.value = false
     }
-    reconnectAttempts = MAX_RECONNECT_ATTEMPTS // 阻止自动重连
+    reconnectAttempts = MAX_RECONNECT_ATTEMPTS
   }
 
   onMounted(() => connect())

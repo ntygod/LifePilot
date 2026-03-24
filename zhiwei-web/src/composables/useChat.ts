@@ -232,15 +232,15 @@ export function useChat() {
     try {
       switch (eventType) {
         case SSE_EVENT_TYPES.TRACE_START: {
-          const payload: { sessionId?: string; turnId?: string; traceId?: string; timestamp?: number; userMessageId?: string } = JSON.parse(data)
+          const payload: { sessionId?: string; turnId?: string; traceId?: string; timestamp?: number; userEntryId?: string } = JSON.parse(data)
           if (payload.traceId && currentUserMessageId) {
             chatStore.updateMessage(currentUserMessageId, { traceId: payload.traceId })
             a2uiStore.setCurrentTraceId(payload.traceId)
           }
-          // 用后端返回的 userMessageId 替换前端临时 ID，确保前后端 ID 一致
-          if (payload.userMessageId && currentUserMessageId) {
-            chatStore.replaceMessageId(currentUserMessageId, payload.userMessageId)
-            currentUserMessageId = payload.userMessageId
+          // 用后端返回的 userEntryId 替换前端临时 ID，确保前后端 ID 一致
+          if (payload.userEntryId && currentUserMessageId) {
+            chatStore.replaceMessageId(currentUserMessageId, payload.userEntryId)
+            currentUserMessageId = payload.userEntryId
           }
           break
         }
@@ -274,8 +274,8 @@ export function useChat() {
         }
         case SSE_EVENT_TYPES.DONE: {
           const event: SseDoneEvent = JSON.parse(data)
-          // 后端同步写入后返回 messageId，不再需要前端兜底生成
-          const messageId = event.messageId
+          // 后端同步写入后返回 entryId，不再需要前端兜底生成
+          const entryId = event.entryId
           // 同步会话ID：如果后端返回了 sessionId，更新 activeSessionId
           if (event.sessionId && event.sessionId !== chatStore.activeSessionId) {
             chatStore.activeSessionId = event.sessionId
@@ -324,7 +324,7 @@ export function useChat() {
           }
           // 将完整消息存入消息列表
           chatStore.addMessage({
-            id: messageId,
+            id: entryId,
             role: 'assistant',
             content: finalContent,
             reasoningSummary: event.reasoningSummary,
@@ -404,15 +404,6 @@ export function useChat() {
           // 工具确认请求：保存到 pendingToolConfirmations Map，支持多个并发确认
           const payload: ToolConfirmationRequest = JSON.parse(data)
           pendingToolConfirmations.value.set(payload.requestId, payload)
-          break
-        }
-        case SSE_EVENT_TYPES.TRANSCRIPTION: {
-          // 语音转录结果：更新对应用户消息内容为转录文本
-          const payload: { text: string; messageId?: string } = JSON.parse(data)
-          const targetId = payload.messageId ?? currentUserMessageId
-          if (targetId && payload.text) {
-            chatStore.updateMessage(targetId, { content: payload.text })
-          }
           break
         }
         default:

@@ -128,9 +128,9 @@ function toggle(key: keyof typeof sections.value) {
               <div class="flex items-center gap-2 text-sm font-medium text-foreground">
                 <span
                   class="inline-flex h-2 w-2 rounded-full"
-                  :class="event.type === 'ERROR'
+                  :class="event.type === 'SUSPEND'
                     ? 'bg-destructive'
-                    : event.type.startsWith('TOOL_CALL')
+                    : event.type === 'TOOL_CALL'
                       ? 'bg-primary'
                       : 'bg-muted-foreground/60'"
                 />

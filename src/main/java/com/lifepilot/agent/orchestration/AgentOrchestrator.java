@@ -12,16 +12,15 @@ import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.context.AgentLoopContext;
 import com.lifepilot.agent.model.*;
 import com.lifepilot.agent.persistence.AgentPersistenceHandler;
-import com.lifepilot.agent.session.SessionManager;
 import com.lifepilot.agent.streaming.StreamingEventHandler;
 import com.lifepilot.agent.suspend.model.ResumePayload;
 import com.lifepilot.agent.suspend.model.SuspendedAgent;
 import com.lifepilot.agent.suspend.store.SuspendStore;
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.model.TokenUsage;
 import com.lifepilot.interaction.web.model.A2uiComponentTree;
 import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
-import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.multimodal.MediaContent;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.media.MediaProcessor;
@@ -64,8 +63,7 @@ public class AgentOrchestrator {
     private final StreamingEventHandler streamingEventHandler;
     private final AgentConfigProperties config;
     private final ObjectMapper objectMapper;
-    private final SessionManager sessionManager;
-    private final LlmRouter llmRouter;
+    private final GenerationRouter generationRouter;
     @Nullable private final TraceRecorder traceRecorder;
     @Nullable private final MultimodalRouter multimodalRouter;
     @Nullable private final MediaValidator mediaValidator;
@@ -81,8 +79,7 @@ public class AgentOrchestrator {
             StreamingEventHandler streamingEventHandler,
             AgentConfigProperties config,
             ObjectMapper objectMapper,
-            SessionManager sessionManager,
-            LlmRouter llmRouter,
+            GenerationRouter generationRouter,
             @Nullable TraceRecorder traceRecorder,
             @Nullable MultimodalRouter multimodalRouter,
             @Nullable MediaValidator mediaValidator,
@@ -96,8 +93,7 @@ public class AgentOrchestrator {
         this.streamingEventHandler = streamingEventHandler;
         this.config = config;
         this.objectMapper = objectMapper;
-        this.sessionManager = sessionManager;
-        this.llmRouter = llmRouter;
+        this.generationRouter = generationRouter;
         this.traceRecorder = traceRecorder;
         this.multimodalRouter = multimodalRouter;
         this.mediaValidator = mediaValidator;
@@ -129,7 +125,7 @@ public class AgentOrchestrator {
         Instant loopStart = Instant.now();
         Exception error = null;
         var loopContext = new AgentLoopContext();
-        String userMessageId = null;
+        String userEntryId = null;
 
         var token = new CancellationToken();
 
@@ -144,16 +140,16 @@ public class AgentOrchestrator {
             state = initStateWithResumePolicy(effectiveRequest);
             boolean testSession = isTestSession(effectiveRequest.sessionId());
             if (!testSession) {
-                userMessageId = persistenceHandler.persistUserMessageReturningId(state);
+                userEntryId = persistenceHandler.persistUserMessageReturningId(state);
                 persistenceHandler.persistUserMediaAttachments(
-                        userMessageId, state.sessionId(), effectiveRequest.mediaContents());
+                        userEntryId, state.sessionId(), effectiveRequest.mediaContents());
             }
             traceContext = startTraceIfEnabled(state, effectiveRequest);
             loopStart = Instant.now();
 
             // 核心循环 — 非流式回调
             var callback = new com.lifepilot.agent.callback.NonStreamingCallback(
-                    config, llmRouter, multimodalRouter, effectiveRequest, agentLoop);
+                    config, generationRouter, multimodalRouter, effectiveRequest, agentLoop);
             state = agentLoop.coreLoop(state, effectiveRequest, traceContext, loopStart,
                     callback, token, loopContext);
 
@@ -172,13 +168,13 @@ public class AgentOrchestrator {
                 saveCheckpoint(state, effectiveRequest);
             }
 
-            String assistantMessageId = null;
+            String assistantEntryId = null;
             if (!testSession) {
                 String reactStepsJson = serializeReactStepsJson(state.steps());
-                assistantMessageId = persistenceHandler.persistAssistantMessage(state, reactStepsJson);
-                persistenceHandler.persistInjectionRecord(assistantMessageId, state.sessionId(),
-                        loopContext);
-                persistenceHandler.persistToolMediaAttachments(assistantMessageId, state.sessionId(),
+                assistantEntryId = persistenceHandler.persistAssistantMessage(state, reactStepsJson);
+                persistenceHandler.persistInjectionRecord(assistantEntryId, state.sessionId(),
+                        state.traceId(), loopContext);
+                persistenceHandler.persistToolMediaAttachments(assistantEntryId, state.sessionId(),
                         loopContext.getCollectedToolMedia());
                 loopContext.clearToolMedia();
                 persistenceHandler.resolveWorkspaceForTrace(state.sessionId(), state.traceId());
@@ -193,7 +189,7 @@ public class AgentOrchestrator {
                     state.traceId(), state.sessionId(),
                     state.finalOutput() != null ? state.finalOutput() : "",
                     state.budget().tokensUsed(), state.stepCount(),
-                    state.terminationReason(), assistantMessageId,
+                    state.terminationReason(), assistantEntryId,
                     a2uiComponents, tokenUsage,
                     state.completionMode(), state.resumedFromTraceId());
 
@@ -203,12 +199,13 @@ public class AgentOrchestrator {
                 state = degradeForException(state, e);
                 saveCheckpoint(state, effectiveRequest);
                 boolean testSession = isTestSession(effectiveRequest.sessionId());
-                String assistantMessageId = null;
+                String assistantEntryId = null;
                 if (!testSession) {
                     String reactStepsJson = serializeReactStepsJson(state.steps());
-                    assistantMessageId = persistenceHandler.persistAssistantMessage(state, reactStepsJson);
-                    persistenceHandler.persistInjectionRecord(assistantMessageId, state.sessionId(), loopContext);
-                    persistenceHandler.persistToolMediaAttachments(assistantMessageId, state.sessionId(),
+                    assistantEntryId = persistenceHandler.persistAssistantMessage(state, reactStepsJson);
+                    persistenceHandler.persistInjectionRecord(assistantEntryId, state.sessionId(),
+                            state.traceId(), loopContext);
+                    persistenceHandler.persistToolMediaAttachments(assistantEntryId, state.sessionId(),
                             loopContext.getCollectedToolMedia());
                     loopContext.clearToolMedia();
                     persistenceHandler.resolveWorkspaceForTrace(state.sessionId(), state.traceId());
@@ -218,7 +215,7 @@ public class AgentOrchestrator {
                         state.traceId(), state.sessionId(),
                         state.finalOutput() != null ? state.finalOutput() : "",
                         state.budget().tokensUsed(), state.stepCount(),
-                        state.terminationReason(), assistantMessageId,
+                        state.terminationReason(), assistantEntryId,
                         null, aggregateTokenUsage(traceContext),
                         state.completionMode(), state.resumedFromTraceId());
             }
@@ -247,8 +244,8 @@ public class AgentOrchestrator {
         TokenUsage finalTokenUsage = null;
         String reasoningSummary = null;
         String tempTurnId = UUID.randomUUID().toString();
-        String userMessageId = null;
-        String assistantMessageId = null;
+        String userEntryId = null;
+        String assistantEntryId = null;
         boolean testSession = false;
         var loopContext = new AgentLoopContext(sseManager, streamId, tempTurnId);
 
@@ -260,9 +257,9 @@ public class AgentOrchestrator {
             state = initStateWithResumePolicy(effectiveRequest);
             testSession = isTestSession(effectiveRequest.sessionId());
             if (!testSession) {
-                userMessageId = persistenceHandler.persistUserMessageReturningId(state);
+                userEntryId = persistenceHandler.persistUserMessageReturningId(state);
                 persistenceHandler.persistUserMediaAttachments(
-                        userMessageId, state.sessionId(), effectiveRequest.mediaContents());
+                        userEntryId, state.sessionId(), effectiveRequest.mediaContents());
             }
 
             // TRACE_START 事件
@@ -272,8 +269,8 @@ public class AgentOrchestrator {
                 traceStartData.put("turnId", tempTurnId);
                 traceStartData.put("traceId", state.traceId());
                 traceStartData.put("timestamp", Instant.now().toEpochMilli());
-                if (userMessageId != null) {
-                    traceStartData.put("userMessageId", userMessageId);
+                if (userEntryId != null) {
+                    traceStartData.put("userEntryId", userEntryId);
                 }
                 sseManager.sendEvent(streamId, SseEventType.TRACE_START, traceStartData);
             }
@@ -287,7 +284,7 @@ public class AgentOrchestrator {
             loopStart = Instant.now();
 
             // 核心循环 — 流式回调
-            var callback = new StreamingCallback(config, llmRouter, multimodalRouter, agentLoop,
+            var callback = new StreamingCallback(config, generationRouter, multimodalRouter, agentLoop,
                     cancellationToken, null, sseManager, streamId,
                     request.sessionId(), tempTurnId, effectiveRequest);
             state = agentLoop.coreLoop(state, effectiveRequest, traceContext, loopStart,
@@ -344,11 +341,11 @@ public class AgentOrchestrator {
                     String a2uiJson = streamingEventHandler.serializeA2uiTree(
                             loopContext.getLastCollectedA2uiTree());
                     String reactStepsJson = serializeReactStepsJson(state.steps());
-                    assistantMessageId = persistenceHandler.persistAssistantMessageWithA2ui(
+                    assistantEntryId = persistenceHandler.persistAssistantMessageWithA2ui(
                             state, finalContent, reasoningSummary, a2uiJson, reactStepsJson);
-                    persistenceHandler.persistInjectionRecord(assistantMessageId, state.sessionId(),
-                            loopContext);
-                    persistenceHandler.persistToolMediaAttachments(assistantMessageId, state.sessionId(),
+                    persistenceHandler.persistInjectionRecord(assistantEntryId, state.sessionId(),
+                            state.traceId(), loopContext);
+                    persistenceHandler.persistToolMediaAttachments(assistantEntryId, state.sessionId(),
                             loopContext.getCollectedToolMedia());
                     loopContext.clearToolMedia();
                     persistenceHandler.resolveWorkspaceForTrace(state.sessionId(), state.traceId());
@@ -366,11 +363,11 @@ public class AgentOrchestrator {
                     String a2uiJson = streamingEventHandler.serializeA2uiTree(
                             loopContext.getLastCollectedA2uiTree());
                     String reactStepsJson = serializeReactStepsJson(state.steps());
-                    assistantMessageId = persistenceHandler.persistAssistantMessageWithA2ui(
+                    assistantEntryId = persistenceHandler.persistAssistantMessageWithA2ui(
                             state, finalContent, reasoningSummary, a2uiJson, reactStepsJson);
-                    persistenceHandler.persistInjectionRecord(assistantMessageId, state.sessionId(),
-                            loopContext);
-                    persistenceHandler.persistToolMediaAttachments(assistantMessageId, state.sessionId(),
+                    persistenceHandler.persistInjectionRecord(assistantEntryId, state.sessionId(),
+                            state.traceId(), loopContext);
+                    persistenceHandler.persistToolMediaAttachments(assistantEntryId, state.sessionId(),
                             loopContext.getCollectedToolMedia());
                     loopContext.clearToolMedia();
                     persistenceHandler.resolveWorkspaceForTrace(state.sessionId(), state.traceId());
@@ -392,7 +389,7 @@ public class AgentOrchestrator {
                         null, Map.of());
                 var doneData = streamingEventHandler.buildDoneEventPayload(
                         request, state, tempTurnId, finalTokenUsage,
-                        state.steps(), reasoningSummary, finalContent, assistantMessageId,
+                        state.steps(), reasoningSummary, finalContent, assistantEntryId,
                         loopContext.getLastCollectedA2uiTree());
                 sseManager.sendEvent(streamId, SseEventType.DONE, doneData);
                 sseManager.closeEmitter(streamId);
@@ -445,7 +442,7 @@ public class AgentOrchestrator {
                     null, state.budget(), state.parentTraceId(),
                     state.depth(), null, state.allowedToolIds(), null, null);
             var callback = new com.lifepilot.agent.callback.NonStreamingCallback(
-                    config, llmRouter, multimodalRouter, request, agentLoop);
+                    config, generationRouter, multimodalRouter, request, agentLoop);
             state = agentLoop.coreLoop(state, request, null, loopStart, callback, token, loopContext);
 
             boolean testSession = isTestSession(state.sessionId());
@@ -534,11 +531,6 @@ public class AgentOrchestrator {
                     restoredState.sessionId(), checkpoint.get().sourceTraceId(), restoredState.traceId());
             return restoredState;
         }
-        var existingSession = sessionManager.findSession(request.sessionId());
-        if (existingSession.isPresent()) {
-            var snapshot = existingSession.get();
-            return ReactAgentState.fromSession(snapshot, request, defaultBudget);
-        }
         return ReactAgentState.init(request, defaultBudget);
     }
 
@@ -549,10 +541,6 @@ public class AgentOrchestrator {
             var defaultBudget = Budget.fromConfig(config.getBudget());
             if (isTestSession(request.sessionId())) {
                 return ReactAgentState.init(request, defaultBudget);
-            }
-            var existingSession = sessionManager.findSession(request.sessionId());
-            if (existingSession.isPresent()) {
-                return ReactAgentState.fromSession(existingSession.get(), request, defaultBudget);
             }
             return ReactAgentState.init(request, defaultBudget);
         }
@@ -579,7 +567,7 @@ public class AgentOrchestrator {
 
     // ===== 挂起处理 =====
 
-    /** 同步模式挂起处理。 */
+    /** 同步模式下认领检查点。 */
     private Optional<AgentCheckpoint> claimCheckpoint(AgentRequest request) {
         if (!checkpointEnabled()) {
             return Optional.empty();
@@ -587,7 +575,7 @@ public class AgentOrchestrator {
         try {
             return checkpointStore.claim(request.sessionId(), request.channel(), fingerprintOf(request));
         } catch (Exception e) {
-            log.warn("璁ら Agent 妫€鏌ョ偣澶辫触: sessionId={}, error={}", request.sessionId(), e.getMessage());
+            log.warn("认领 Agent 检查点失败: sessionId={}, error={}", request.sessionId(), e.getMessage());
             return Optional.empty();
         }
     }
@@ -599,7 +587,7 @@ public class AgentOrchestrator {
         try {
             checkpointStore.save(AgentCheckpoint.from(state, fingerprintOf(request), objectMapper));
         } catch (Exception e) {
-            log.warn("淇濆瓨 Agent 妫€鏌ョ偣澶辫触: sessionId={}, traceId={}, error={}",
+            log.warn("保存 Agent 检查点失败: sessionId={}, traceId={}, error={}",
                     state.sessionId(), state.traceId(), e.getMessage());
         }
     }
@@ -611,7 +599,7 @@ public class AgentOrchestrator {
         try {
             checkpointStore.delete(request.sessionId(), request.channel(), fingerprintOf(request));
         } catch (Exception e) {
-            log.warn("娓呯悊 Agent 妫€鏌ョ偣澶辫触: sessionId={}, error={}", request.sessionId(), e.getMessage());
+            log.warn("清理 Agent 检查点失败: sessionId={}, error={}", request.sessionId(), e.getMessage());
         }
     }
 
@@ -620,7 +608,7 @@ public class AgentOrchestrator {
     }
 
     private ReactAgentState degradeForException(ReactAgentState state, Exception e) {
-        String reason = "鎰忓寮傚父缁堟: " + e.getClass().getSimpleName();
+        String reason = "发生未预期异常: " + e.getClass().getSimpleName();
         if (e.getMessage() != null && !e.getMessage().isBlank()) {
             reason += " - " + e.getMessage();
         }

@@ -1,7 +1,5 @@
 package com.lifepilot.conversation;
 
-import com.lifepilot.interaction.web.repository.ChatMessageRepository.ChatMessageRow;
-
 import java.util.ArrayList;
 import java.util.List;
 
@@ -19,9 +17,9 @@ public final class ConversationTurnGrouper {
     private ConversationTurnGrouper() {
     }
 
-    public static List<List<ChatMessageRow>> groupCompleteTurns(List<ChatMessageRow> rows) {
-        var turns = new ArrayList<List<ChatMessageRow>>();
-        var current = new ArrayList<ChatMessageRow>();
+    public static List<List<ConversationTurnView>> groupCompleteTurns(List<ConversationTurnView> rows) {
+        var turns = new ArrayList<List<ConversationTurnView>>();
+        var current = new ArrayList<ConversationTurnView>();
         boolean hasReply = false;
 
         for (var row : rows) {
@@ -51,7 +49,7 @@ public final class ConversationTurnGrouper {
         return List.copyOf(turns);
     }
 
-    public static List<ChatMessageRow> flattenRecentCompleteTurns(List<ChatMessageRow> rows, int turnLimit) {
+    public static List<ConversationTurnView> flattenRecentCompleteTurns(List<ConversationTurnView> rows, int turnLimit) {
         if (rows.isEmpty() || turnLimit <= 0) {
             return List.of();
         }
@@ -61,7 +59,7 @@ public final class ConversationTurnGrouper {
         }
         int fromIndex = Math.max(0, turns.size() - turnLimit);
         var selected = turns.subList(fromIndex, turns.size());
-        var flattened = new ArrayList<ChatMessageRow>();
+        var flattened = new ArrayList<ConversationTurnView>();
         for (var turn : selected) {
             flattened.addAll(turn);
         }

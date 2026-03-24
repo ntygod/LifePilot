@@ -11,7 +11,7 @@ const props = defineProps<{
   value?: string
   signal?: A2uiSignal
   componentId?: string
-  messageId?: string
+  entryId?: string
   traceId?: string
   streaming?: boolean
 }>()
@@ -26,7 +26,7 @@ watch(() => props.value, value => {
 
 const signalContext = computed(() => ({
   componentId: props.componentId,
-  messageId: props.messageId,
+  entryId: props.entryId,
   traceId: props.traceId,
   signalName: props.signal?.name,
 }))

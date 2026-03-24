@@ -12,7 +12,7 @@ const props = withDefaults(defineProps<{
   disabled?: boolean
   signal?: A2uiSignal
   componentId?: string
-  messageId?: string
+  entryId?: string
   traceId?: string
   streaming?: boolean
 }>(), {
@@ -24,7 +24,7 @@ const chatStore = useChatStore()
 
 const signalContext = computed(() => ({
   componentId: props.componentId,
-  messageId: props.messageId,
+  entryId: props.entryId,
   traceId: props.traceId,
   signalName: props.signal?.name,
 }))

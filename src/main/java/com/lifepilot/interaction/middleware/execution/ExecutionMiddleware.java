@@ -110,7 +110,7 @@ public class ExecutionMiddleware implements GatewayMiddleware {
 
             return GatewayResponse.success(message.channelType(), new ResponseContent.TextContent(agentResponse.content()))
                     .toBuilder()
-                    .responseId(agentResponse.messageId())
+                    .responseId(agentResponse.assistantEntryId())
                     .tokenUsage(tokenUsage)
                     .metadata(metadata)
                     .build();

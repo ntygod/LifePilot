@@ -1,18 +1,17 @@
-// ZhiWei 前端类型定义
-
-/** 会话摘要 */
+﻿// ZhiWei 閸撳秶顏猾璇茬€风€规矮绠?
+/** 娴兼俺鐦介幗妯款洣 */
 export interface ChatSession {
   id: string
   title: string
   createdAt: string   // ISO 8601
   updatedAt: string
-  /** 是否置顶 */
+  /** 閺勵垰鎯佺純顕€銆?*/
   pinned?: boolean
-  /** 是否归档 */
+  /** 閺勵垰鎯佽ぐ鎺撱€?*/
   archived?: boolean
-  /** 最近一条消息摘要（截断显示） */
+  /** 閺堚偓鏉╂垳绔撮弶鈩冪Х閹垱鎲崇憰渚婄礄閹搭亝鏌囬弰鍓с仛閿?*/
   lastMessagePreview?: string
-  /** 会话类型标记（可选） */
+  /** 娴兼俺鐦界猾璇茬€烽弽鍥唶閿涘牆褰查柅澶涚礆 */
   type?: string
 }
 
@@ -27,19 +26,19 @@ export interface ChatSessionDetail extends ChatSession {
   totalTokens: number
 }
 
-/** 聊天消息附件（前端展示用） */
+/** 閼卞﹤銇夊☉鍫熶紖闂勫嫪娆㈤敍鍫濆缁旑垰鐫嶇粈铏规暏閿?*/
 export interface ChatAttachment {
-  /** 后端返回的文件 ID（用于后续多模态路由与检索） */
+  /** 閸氬海顏潻鏂挎礀閻ㄥ嫭鏋冩禒?ID閿涘牏鏁ゆ禍搴℃倵缂侇厼顦垮Ο鈩冣偓浣界熅閻㈠彉绗屽Λ鈧槐顫礆 */
   fileId: string
-  /** 可访问的文件 URL（通常为后端提供的相对路径，经网关 / CDN 代理） */
+  /** 閸欘垵顔栭梻顔炬畱閺傚洣娆?URL閿涘牓鈧艾鐖舵稉鍝勬倵缁旑垱褰佹笟娑氭畱閻╃顕捄顖氱窞閿涘瞼绮＄純鎴濆彠 / CDN 娴狅絿鎮婇敍?*/
   url: string
-  /** 原始文件名 */
+  /** 閸樼喎顫愰弬鍥︽閸?*/
   filename: string
-  /** 文件大小（字节） */
+  /** 閺傚洣娆㈡径褍鐨敍鍫濈摟閼哄偊绱?*/
   size: number
-  /** MIME 类型 */
+  /** MIME 缁鐎?*/
   type: string
-  /** 是否为图片类型，便于前端按图片样式渲染缩略图 */
+  /** 閺勵垰鎯佹稉鍝勬禈閻楀洨琚崹瀣剁礉娓氬じ绨崜宥囶伂閹稿娴橀悧鍥ㄧ壉瀵繑瑕嗛弻鎾剁級閻ｃ儱娴?*/
   isImage: boolean
 }
 
@@ -47,7 +46,7 @@ export type CompletionMode = 'NORMAL' | 'DEGRADED' | 'SUSPENDED'
 
 export type ResumePolicy = 'AUTO' | 'FRESH'
 
-/** 消息 */
+/** 濞戝牊浼?*/
 export interface Message {
   id: string
   role: 'user' | 'assistant' | 'tool-confirmation'
@@ -55,52 +54,46 @@ export interface Message {
   a2uiComponents?: A2uiComponent[]
   timestamp: number
   /**
-   * 本条消息对应的一轮推理概要摘要。
-   * 由后端在 SSE DONE 事件中通过 reasoningSummary 字段返回。
-   */
+   * 閺堫剚娼☉鍫熶紖鐎电懓绨查惃鍕鏉烆喗甯归悶鍡橆洤鐟曚焦鎲崇憰浣碘偓?   * 閻㈠崬鎮楃粩顖氭躬 SSE DONE 娴滃娆㈡稉顓⑩偓姘崇箖 reasoningSummary 鐎涙顔屾潻鏂挎礀閵?   */
   reasoningSummary?: string
-  /** 本条消息对应的推理事件时间线（由前端在 SSE 流结束时从 useChat 快照保存） */
+  /** 閺堫剚娼☉鍫熶紖鐎电懓绨查惃鍕腹閻炲棔绨ㄦ禒鑸垫闂傚鍤庨敍鍫㈡暠閸撳秶顏崷?SSE 濞翠胶绮ㄩ弶鐔告娴?useChat 韫囶偆鍙庢穱婵嗙摠閿?*/
   reasoningEvents?: ReasoningEvent[]
-  /** 前端侧的发送 / 处理状态标记，用于展示"发送中 / 失败 / 可重试" */
+  /** 閸撳秶顏笟褏娈戦崣鎴︹偓?/ 婢跺嫮鎮婇悩鑸碘偓浣圭垼鐠佸府绱濋悽銊ょ艾鐏炴洜銇?閸欐垿鈧椒鑵?/ 婢惰精瑙?/ 閸欘垶鍣哥拠? */
   status?: 'pending' | 'success' | 'error'
-  /** 与本条消息相关的错误说明（仅在 status === 'error' 时展示） */
+  /** 娑撳孩婀伴弶鈩冪Х閹垳娴夐崗宕囨畱闁挎瑨顕ょ拠瀛樻閿涘牅绮庨崷?status === 'error' 閺冭泛鐫嶇粈鐚寸礆 */
   errorMessage?: string
-  /** 后端执行轨迹 ID（如存在），用于跳转到 Trace 详情 */
+  /** 閸氬海顏幍褑顢戞潪銊ㄦ姉 ID閿涘牆顩х€涙ê婀敍澶涚礉閻劋绨捄瀹犳祮閸?Trace 鐠囷附鍎?*/
   traceId?: string
-  /** 本轮完成态 */
+  /** 閺堫剝鐤嗙€瑰本鍨氶幀?*/
   completionMode?: CompletionMode
-  /** 断点恢复来源 traceId */
+  /** 閺傤厾鍋ｉ幁銏狀槻閺夈儲绨?traceId */
   resumedFromTraceId?: string
-  /** 高亮后的 HTML 内容（用于搜索高亮） */
+  /** 妤傛ü瀵掗崥搴ｆ畱 HTML 閸愬懎顔愰敍鍫㈡暏娴滃孩鎮崇槐銏ょ彯娴滎噯绱?*/
   highlightedContent?: string
-  /** 附件列表（图片/文件等），用于前端展示缩略图与下载入口 */
+  /** 闂勫嫪娆㈤崚妤勩€冮敍鍫濇禈閻?閺傚洣娆㈢粵澶涚礆閿涘瞼鏁ゆ禍搴″缁旑垰鐫嶇粈铏圭級閻ｃ儱娴樻稉搴濈瑓鏉炶棄鍙嗛崣?*/
   attachments?: ChatAttachment[]
-  /** 可选：本条消息对应的 Token 使用统计（如后端在 DONE 事件中返回） */
+  /** 閸欘垶鈧绱伴張顒佹蒋濞戝牊浼呯€电懓绨查惃?Token 娴ｈ法鏁ょ紒鐔活吀閿涘牆顩ч崥搴ｎ伂閸?DONE 娴滃娆㈡稉顓＄箲閸ョ儑绱?*/
   tokenUsage?: TokenUsage
   modelId?: string
-  /** 可选：本条消息对应的模型 ID（如可用），用于消息级调试展示 */
+  /** 閸欘垶鈧绱伴張顒佹蒋濞戝牊浼呯€电懓绨查惃鍕侀崹?ID閿涘牆顩ч崣顖滄暏閿涘绱濋悽銊ょ艾濞戝牊浼呯痪褑鐨熺拠鏇炵潔缁€?*/
   preferredProviderId?: string
-  /** 可选：本轮执行涉及到的知识库 / 文档等来源摘要 */
+  /** 閸欘垶鈧绱伴張顒冪枂閹笛嗩攽濞戝寮烽崚鎵畱閻儴鐦戞惔?/ 閺傚洦銆傜粵澶嬫降濠ф劖鎲崇憰?*/
   sources?: SourceSummary[]
-  /** 可选：本轮执行涉及到的工具调用摘要列表 */
+  /** 閸欘垶鈧绱伴張顒冪枂閹笛嗩攽濞戝寮烽崚鎵畱瀹搞儱鍙跨拫鍐暏閹芥顩﹂崚妤勩€?*/
   toolsSummary?: ToolCallSummary[]
-  /** 可选：本轮 ReAct 步骤序列（替代 toolsSummary，结构化展示推理过程） */
+  /** 閸欘垶鈧绱伴張顒冪枂 ReAct 濮濄儵顎冩惔蹇撳灙閿涘牊娴涙禒?toolsSummary閿涘瞼绮ㄩ弸鍕鐏炴洜銇氶幒銊ф倞鏉╁洨鈻奸敍?*/
   reactSteps?: ReactStepDto[]
-  /** 消息是否已折叠（长消息场景，前端本地状态） */
+  /** 濞戝牊浼呴弰顖氭儊瀹稿弶濮岄崣鐙呯礄闂€鎸庣Х閹垰婧€閺咁垽绱濋崜宥囶伂閺堫剙婀撮悩鑸碘偓渚婄礆 */
   collapsed?: boolean
-  /** 用户反馈状态（前端本地状态，不持久化到后端） */
+  /** 閻劍鍩涢崣宥夘洯閻樿埖鈧緤绱欓崜宥囶伂閺堫剙婀撮悩鑸碘偓渚婄礉娑撳秵瀵旀稊鍛閸掓澘鎮楃粩顖ょ礆 */
   feedbackStatus?: 'liked' | 'disliked' | null
-  /** 工具确认请求数据（支持多个并发确认） */
+  /** 瀹搞儱鍙跨涵顔款吇鐠囬攱鐪伴弫鐗堝祦閿涘牊鏁幐浣割樋娑擃亜鑻熼崣鎴犫€樼拋銈忕礆 */
   toolConfirmations?: Record<string, ToolConfirmationRequest>
-  /** 工具确认解决结果映射 */
+  /** 瀹搞儱鍙跨涵顔款吇鐟欙絽鍠呯紒鎾寸亯閺勭姴鐨?*/
   toolConfirmationResolutions?: Record<string, 'approved' | 'rejected' | 'expired'>
-  /** @deprecated 使用 toolConfirmations 替代 */
-  toolConfirmation?: ToolConfirmationRequest
-  /** @deprecated 使用 toolConfirmationResolutions 替代 */
-  toolConfirmationResolution?: 'approved' | 'rejected' | 'expired'
 }
 
-/** A2UI 组件节点（邻接表） */
+/** A2UI 缂佸嫪娆㈤懞鍌滃仯閿涘牓鍋﹂幒銉ㄣ€冮敍?*/
 export interface A2uiComponent {
   id: string
   type: string
@@ -109,43 +102,41 @@ export interface A2uiComponent {
   signal?: A2uiSignal
 }
 
-/** A2UI 信号 */
+/** A2UI 娣団€冲娇 */
 export interface A2uiSignal {
   name: string
   payload: Record<string, unknown>
 }
 
-/** A2UI 信号上下文（前端本地与回传时附带） */
+/** A2UI 娣団€冲娇娑撳﹣绗呴弬鍥风礄閸撳秶顏張顒€婀存稉搴℃礀娴肩姵妞傞梽鍕敨閿?*/
 export interface A2uiSignalContext {
   componentId?: string
-  messageId?: string
+  entryId?: string
   traceId?: string
   signalName?: string
 }
 
-/** A2UI 交互运行时状态 */
+/** A2UI 娴溿倓绨版潻鎰攽閺冨墎濮搁幀?*/
 export interface A2uiSignalRuntime {
   status: 'idle' | 'sending' | 'success' | 'error'
   error?: string | null
   updatedAt: number
 }
 
-/** Token 消耗统计 */
+/** Token 濞戝牐鈧绮虹拋?*/
 export interface TokenUsage {
   promptTokens: number
   completionTokens: number
   totalTokens: number
   modelId: string
-  /** 可选：底层 Provider 标识（用于调试与计费对账） */
+  /** 閸欘垶鈧绱版惔鏇炵湴 Provider 閺嶅洩鐦戦敍鍫㈡暏娴滃氦鐨熺拠鏇氱瑢鐠伮ゅ瀭鐎电澶勯敍?*/
   providerId?: string
 }
 
-/** 用户设置 */
+/** 閻劍鍩涚拋鍓х枂 */
 export interface UserSettings {
   theme: 'light' | 'dark' | 'system'
   language: string
-  llmProvider: string
-  sceneProviders?: Record<string, string>
   layoutDensity?: 'compact' | 'standard'
   fontSize?: 'small' | 'medium' | 'large'
   timeFormat?: '12h' | '24h'
@@ -164,13 +155,13 @@ export interface UserSettings {
   maxRetentionDays?: number
 }
 
-/** SSE token 事件 */
+/** SSE token 娴滃娆?*/
 export interface SseTokenEvent {
   content: string
   index: number
 }
 
-/** 推理过程事件类型 — 与后端 pushReactStepEvent 对齐 */
+/** 閹恒劎鎮婃潻鍥┾柤娴滃娆㈢猾璇茬€?閳?娑撳骸鎮楃粩?pushReactStepEvent 鐎靛綊缍?*/
 export type ReasoningEventType =
   | 'AGENT_START'
   | 'THOUGHT'
@@ -181,7 +172,7 @@ export type ReasoningEventType =
   | 'RESUME'
   | 'ANSWER_FINALIZED'
 
-/** 推理过程事件（Reasoning Timeline） */
+/** 閹恒劎鎮婃潻鍥┾柤娴滃娆㈤敍鍦asoning Timeline閿?*/
 export interface ReasoningEvent {
   id: string
   type: ReasoningEventType
@@ -192,93 +183,93 @@ export interface ReasoningEvent {
   extra?: Record<string, any>
 }
 
-// ===== ReactStep 类型定义 — 与后端 ReactStepSerializer 对齐 =====
+// ===== ReactStep 缁鐎风€规矮绠?閳?娑撳骸鎮楃粩?ReactStepSerializer 鐎靛綊缍?=====
 
-/** ReactStep 步骤类型 */
+/** ReactStep 濮濄儵顎冪猾璇茬€?*/
 export type ReactStepType = 'THOUGHT' | 'TOOL_CALL' | 'OBSERVATION' | 'ANSWER' | 'SUSPEND' | 'RESUME'
 
-/** ReactStep 基础字段 */
+/** ReactStep 閸╄櫣顢呯€涙顔?*/
 interface ReactStepBase {
   type: ReactStepType
   index: number
 }
 
-/** 推理思考步骤 */
+/** 閹恒劎鎮婇幀婵娾偓鍐╊劄妤?*/
 export interface ThoughtStep extends ReactStepBase {
   type: 'THOUGHT'
   content: string
 }
 
-/** 工具调用步骤 */
+/** 瀹搞儱鍙跨拫鍐暏濮濄儵顎?*/
 export interface ToolCallStep extends ReactStepBase {
   type: 'TOOL_CALL'
   toolId: string
-  /** 工具显示名称（用户可读，如 "创建待办"），为空时回退到 toolId */
+  /** 瀹搞儱鍙块弰鍓с仛閸氬秶袨閿涘牏鏁ら幋宄板讲鐠囦紮绱濇俊?"閸掓稑缂撳鍛"閿涘绱濇稉铏光敄閺冭泛娲栭柅鈧崚?toolId */
   toolName?: string
   inputSummary: string
   latencyMs: number
 }
 
-/** 工具观察步骤 */
+/** 瀹搞儱鍙跨憴鍌氱檪濮濄儵顎?*/
 export interface ObservationStep extends ReactStepBase {
   type: 'OBSERVATION'
   toolId: string
-  /** 工具显示名称（用户可读），为空时回退到 toolId */
+  /** 瀹搞儱鍙块弰鍓с仛閸氬秶袨閿涘牏鏁ら幋宄板讲鐠囦紮绱氶敍灞艰礋缁岀儤妞傞崶鐐衡偓鈧崚?toolId */
   toolName?: string
   success: boolean
   outputSummary: string
   tokensUsed: number
 }
 
-/** 最终回答步骤 */
+/** 閺堚偓缂佸牆娲栫粵鏃€顒炴?*/
 export interface AnswerStep extends ReactStepBase {
   type: 'ANSWER'
   content: string
 }
 
-/** 挂起步骤 */
+/** 閹稿倽鎹ｅ銉╊€?*/
 export interface SuspendStep extends ReactStepBase {
   type: 'SUSPEND'
   reason: string
   suspendedAt: string
 }
 
-/** 恢复步骤 */
+/** 閹垹顦插銉╊€?*/
 export interface ResumeStep extends ReactStepBase {
   type: 'RESUME'
   resumedAt: string
   suspendDurationMs: number
 }
 
-/** ReactStep 联合类型 */
+/** ReactStep 閼辨柨鎮庣猾璇茬€?*/
 export type ReactStepDto = ThoughtStep | ToolCallStep | ObservationStep | AnswerStep | SuspendStep | ResumeStep
 
-/** SSE 完成事件 */
+/** SSE 鐎瑰本鍨氭禍瀣╂ */
 export interface SseDoneEvent {
-  messageId: string
-  /** 可选：完整消息内容（非流式响应时由后端直接返回） */
+  entryId: string
+  /** 閸欘垶鈧绱扮€瑰本鏆ｅ☉鍫熶紖閸愬懎顔愰敍鍫ユ姜濞翠礁绱￠崫宥呯安閺冨墎鏁遍崥搴ｎ伂閻╁瓨甯存潻鏂挎礀閿?*/
   content?: string
-  /** 可选：本轮回答附带的 A2UI 组件树快照 */
+  /** 閸欘垶鈧绱伴張顒冪枂閸ョ偟鐡熼梽鍕敨閻?A2UI 缂佸嫪娆㈤弽鎴濇彥閻?*/
   a2uiComponents?: A2uiComponent[]
-  /** 可选：Token 使用统计 */
+  /** 閸欘垶鈧绱癟oken 娴ｈ法鏁ょ紒鐔活吀 */
   tokenUsage?: TokenUsage
-  /** 可选：聚合后的 Token 使用概要（input/output/total），与后端 doneData.usage 对齐 */
+  /** 閸欘垶鈧绱伴懕姘値閸氬海娈?Token 娴ｈ法鏁ゅ鍌濐洣閿涘潟nput/output/total閿涘绱濇稉搴℃倵缁?doneData.usage 鐎靛綊缍?*/
   usage?: {
     inputTokens: number
     outputTokens: number
     totalTokens: number
   }
-  /** 可选：本轮执行对应的 Trace Id（如后端有返回） */
+  /** 閸欘垶鈧绱伴張顒冪枂閹笛嗩攽鐎电懓绨查惃?Trace Id閿涘牆顩ч崥搴ｎ伂閺堝绻戦崶鐑囩礆 */
   traceId?: string
-  /** 可选：会话 ID（后端返回，用于前端同步） */
+  /** 閸欘垶鈧绱版导姘崇樈 ID閿涘牆鎮楃粩顖濈箲閸ョ儑绱濋悽銊ょ艾閸撳秶顏崥灞绢劄閿?*/
   completionMode?: CompletionMode
   resumedFromTraceId?: string
   sessionId?: string
-  /** 可选：消息完成时间戳（毫秒，后端返回） */
+  /** 閸欘垶鈧绱板☉鍫熶紖鐎瑰本鍨氶弮鍫曟？閹寸绱欏В顐ゎ潡閿涘苯鎮楃粩顖濈箲閸ョ儑绱?*/
   timestamp?: number
-  /** 可选：本轮推理概要（已检索记忆/工具调用等） */
+  /** 閸欘垶鈧绱伴張顒冪枂閹恒劎鎮婂鍌濐洣閿涘牆鍑″Λ鈧槐銏ｎ唶韫?瀹搞儱鍙跨拫鍐暏缁涘绱?*/
   reasoningSummary?: string
-  /** 可选：按多模态结构返回的完整内容列表（兼容未来拓展） */
+  /** 閸欘垶鈧绱伴幐澶婎樋濡剝鈧胶绮ㄩ弸鍕箲閸ョ偟娈戠€瑰本鏆ｉ崘鍛啇閸掓銆冮敍鍫濆悑鐎硅婀弶銉﹀珖鐏炴洩绱?*/
   contents?: Array<{
     type: 'TEXT' | 'IMAGE' | 'AUDIO' | 'VIDEO' | 'FILE'
     text?: string
@@ -286,23 +277,23 @@ export interface SseDoneEvent {
     mimeType?: string
     metadata?: Record<string, any>
   }>
-  /** 可选：知识库 / 文档 / 工具等来源摘要（用于轻量 UI 展示） */
+  /** 閸欘垶鈧绱伴惌銉ㄧ槕鎼?/ 閺傚洦銆?/ 瀹搞儱鍙跨粵澶嬫降濠ф劖鎲崇憰渚婄礄閻劋绨潪濠氬櫤 UI 鐏炴洜銇氶敍?*/
   sources?: SourceSummary[]
-  /** 可选：本轮工具调用摘要列表（来自 Trace ToolCallStep 聚合） */
+  /** 閸欘垶鈧绱伴張顒冪枂瀹搞儱鍙跨拫鍐暏閹芥顩﹂崚妤勩€冮敍鍫熸降閼?Trace ToolCallStep 閼辨艾鎮庨敍?*/
   toolsSummary?: ToolCallSummary[]
-  /** 可选：本轮 ReAct 步骤序列（结构化推理过程） */
+  /** 閸欘垶鈧绱伴張顒冪枂 ReAct 濮濄儵顎冩惔蹇撳灙閿涘牏绮ㄩ弸鍕閹恒劎鎮婃潻鍥┾柤閿?*/
   reactSteps?: ReactStepDto[]
 }
 
-/** SSE 错误事件 */
+/** SSE 闁挎瑨顕ゆ禍瀣╂ */
 export interface SseErrorEvent {
   code: number
   message: string
-  /** 可选：错误对应的 Trace Id，便于前端跳转调试 */
+  /** 閸欘垶鈧绱伴柨娆掝嚖鐎电懓绨查惃?Trace Id閿涘奔绌舵禍搴″缁旑垵鐑︽潪顒冪殶鐠?*/
   traceId?: string
 }
 
-/** 工具确认请求（SSE 事件 payload） */
+/** 瀹搞儱鍙跨涵顔款吇鐠囬攱鐪伴敍鍦玈E 娴滃娆?payload閿?*/
 export interface ToolConfirmationRequest {
   requestId: string
   toolId: string
@@ -313,30 +304,36 @@ export interface ToolConfirmationRequest {
   timestamp: string
 }
 
-/** SSE 媒体数据事件（截图等二进制数据通过独立事件传输，避免被截断） */
+/** SSE 婵帊缍嬮弫鐗堝祦娴滃娆㈤敍鍫熷焻閸ュ墽鐡戞禍宀冪箻閸掕埖鏆熼幑顕€鈧俺绻冮悪顒傜彌娴滃娆㈡导鐘虹翻閿涘矂浼╅崗宥堫潶閹搭亝鏌囬敍?*/
 export interface SseMediaEvent {
-  /** 媒体字段名（如 screenshot） */
+  /** 婵帊缍嬬€涙顔岄崥宥忕礄婵?screenshot閿?*/
   field: string
-  /** MIME 类型（如 image/png） */
+  /** MIME 缁鐎烽敍鍫濐洤 image/png閿?*/
   mimeType: string
-  /** Base64 编码的媒体数据 */
+  /** Base64 缂傛牜鐖滈惃鍕崯娴ｆ挻鏆熼幑?*/
   data: string
 }
 
-/** 非流式聊天响应 */
+/** 闂堢偞绁﹀蹇氫喊婢垛晛鎼锋惔?*/
+export interface SseTranscriptionEvent {
+  sessionId: string
+  text: string
+  entryId?: string
+}
+
 export interface ChatResponse {
-  messageId: string
+  entryId: string
   content: string
   a2uiComponents?: A2uiComponent[]
   tokenUsage?: TokenUsage
   traceId?: string
-  /** 本轮对话中使用到的知识库 / 文档来源等（由后端返回，前端只做轻量展示） */
+  /** 閺堫剝鐤嗙€电鐦芥稉顓濆▏閻劌鍩岄惃鍕叀鐠囧棗绨?/ 閺傚洦銆傞弶銉︾爱缁涘绱欓悽鍗炴倵缁旑垵绻戦崶鐑囩礉閸撳秶顏崣顏勪粵鏉炲鍣虹仦鏇犮仛閿?*/
   completionMode?: CompletionMode
   resumedFromTraceId?: string
   sources?: SourceSummary[]
 }
 
-/** 执行来源摘要（知识库 / 文档 / 工具 / 工作流） */
+/** 閹笛嗩攽閺夈儲绨幗妯款洣閿涘牏鐓＄拠鍡楃氨 / 閺傚洦銆?/ 瀹搞儱鍙?/ 瀹搞儰缍斿ù渚婄礆 */
 export interface SourceSummary {
   type: 'knowledgeBase' | 'document' | 'tool' | 'workflow'
   id: string
@@ -344,27 +341,27 @@ export interface SourceSummary {
   extra?: Record<string, unknown>
 }
 
-/** 工具调用摘要（用于单轮执行概要与调试视图） */
+/** 瀹搞儱鍙跨拫鍐暏閹芥顩﹂敍鍫㈡暏娴滃骸宕熸潪顔藉⒔鐞涘本顩х憰浣风瑢鐠嬪啳鐦憴鍡楁禈閿?*/
 export interface ToolCallSummary {
   toolId: string
   action?: string
   success: boolean
   latencyMs: number
   hasMoreSteps?: boolean
-  /** 工具调用的输入参数摘要（截断展示，由后端 done 事件返回） */
+  /** 瀹搞儱鍙跨拫鍐暏閻ㄥ嫯绶崗銉ュ棘閺佺増鎲崇憰渚婄礄閹搭亝鏌囩仦鏇犮仛閿涘瞼鏁遍崥搴ｎ伂 done 娴滃娆㈡潻鏂挎礀閿?*/
   inputSummary?: string
-  /** 工具调用的输出结果摘要（截断展示，由后端 done 事件返回） */
+  /** 瀹搞儱鍙跨拫鍐暏閻ㄥ嫯绶崙铏圭波閺嬫粍鎲崇憰渚婄礄閹搭亝鏌囩仦鏇犮仛閿涘瞼鏁遍崥搴ｎ伂 done 娴滃娆㈡潻鏂挎礀閿?*/
   outputSummary?: string
 }
 
-/** 统一错误响应 */
+/** 缂佺喍绔撮柨娆掝嚖閸濆秴绨?*/
 export interface ErrorResponse {
   code: number
   message: string
   timestamp: string
 }
 
-/** 会话配置（模型/温度/三维预算/知识库选择） */
+/** 娴兼俺鐦介柊宥囩枂閿涘牊膩閸?濞撯晛瀹?娑撳娣０鍕暬/閻儴鐦戞惔鎾烩偓澶嬪閿?*/
 export interface SessionConfig {
   preferredProviderId?: string
   temperature?: number
@@ -374,9 +371,9 @@ export interface SessionConfig {
   knowledgeBaseIds?: string[]
 }
 
-// ========== 模块 19: Web UI 功能页面类型 ==========
+// ========== 濡€虫健 19: Web UI 閸旂喕鍏樻い鐢告桨缁鐎?==========
 
-/** 知识库 */
+/** 閻儴鐦戞惔?*/
 export interface KnowledgeBase {
   id: string
   name: string
@@ -391,14 +388,14 @@ export interface KnowledgeBase {
   updatedAt: string
 }
 
-/** 创建知识库请求 */
+/** 閸掓稑缂撻惌銉ㄧ槕鎼存捁顕Ч?*/
 export interface CreateKbRequest {
   name: string
   description: string
   embeddingModel?: string
 }
 
-/** 更新知识库请求 */
+/** 閺囧瓨鏌婇惌銉ㄧ槕鎼存捁顕Ч?*/
 export interface UpdateKbRequest {
   name?: string
   description?: string
@@ -409,7 +406,7 @@ export interface UpdateKbRequest {
   tags?: string[]
 }
 
-/** 知识库文档 */
+/** 閻儴鐦戞惔鎾存瀮濡?*/
 export interface KbDocument {
   id: string
   knowledgeBaseId: string
@@ -423,7 +420,7 @@ export interface KbDocument {
   updatedAt: string
 }
 
-/** 文档分块 */
+/** 閺傚洦銆傞崚鍡楁健 */
 export interface DocumentChunk {
   id: string
   documentId: string
@@ -441,7 +438,7 @@ export interface DocumentChunk {
   createdAt: string
 }
 
-/** 知识库统计信息 */
+/** 閻儴鐦戞惔鎾剁埠鐠佲€蹭繆閹?*/
 export interface KbStats {
   documentCount: number
   totalChunks: number
@@ -451,7 +448,7 @@ export interface KbStats {
   errorDocuments: number
 }
 
-/** 处理日志 */
+/** 婢跺嫮鎮婇弮銉ョ箶 */
 export interface ProcessingLog {
   id: string
   documentId: string
@@ -461,7 +458,7 @@ export interface ProcessingLog {
   error?: string
 }
 
-/** 测试检索结果 */
+/** 濞村鐦Λ鈧槐銏㈢波閺?*/
 export interface TestRetrievalResult {
   query: string
   chunks: Array<{
@@ -475,7 +472,7 @@ export interface TestRetrievalResult {
   answer?: string
 }
 
-/** Skill 摘要 */
+/** Skill 閹芥顩?*/
 export interface SkillSummary {
   id: string
   name: string
@@ -485,7 +482,7 @@ export interface SkillSummary {
   metadata?: Record<string, string>
 }
 
-/** Skill 详情 */
+/** Skill 鐠囷附鍎?*/
 export interface SkillDetail extends SkillSummary {
   instructions: string
   suggestedTools: string[]
@@ -509,7 +506,7 @@ export interface McpServer {
   config?: McpServerConfig
 }
 
-/** MCP Server 配置 */
+/** MCP Server 闁板秶鐤?*/
 export interface McpServerConfig {
   transport: 'STDIO' | 'STREAMABLE_HTTP' | 'SSE_LEGACY' | 'stdio' | 'sse'
   command?: string
@@ -527,16 +524,16 @@ export interface McpServerConfig {
   healthCheckInterval?: number
 }
 
-/** MCP 工具 */
+/** MCP 瀹搞儱鍙?*/
 export interface McpTool {
   id: string
   name: string
   description: string
-  /** 输入参数 JSON Schema（可选，后端 ToolContract 序列化返回） */
+  /** 鏉堟挸鍙嗛崣鍌涙殶 JSON Schema閿涘牆褰查柅澶涚礉閸氬海顏?ToolContract 鎼村繐鍨崠鏍箲閸ョ儑绱?*/
   inputSchema?: Record<string, any>
 }
 
-/** 轨迹列表项 */
+/** 鏉炪劏鎶楅崚妤勩€冩い?*/
 export interface TraceItem {
   id: string
   sessionId: string
@@ -548,7 +545,7 @@ export interface TraceItem {
   createdAt: string
 }
 
-/** 轨迹详情 */
+/** 鏉炪劏鎶楃拠锔藉剰 */
 export interface TraceDetail extends TraceItem {
   finalOutput?: string
   errorMessage?: string
@@ -556,7 +553,7 @@ export interface TraceDetail extends TraceItem {
   modelId?: string
 }
 
-/** 轨迹步骤 */
+/** 鏉炪劏鎶楀銉╊€?*/
 export interface TraceStep {
   id: string
   stepIndex: number
@@ -575,7 +572,7 @@ export interface TraceStep {
   createdAt: string
 }
 
-/** 分页结果 */
+/** 閸掑棝銆夌紒鎾寸亯 */
 export interface PageResult<T> {
   items: T[]
   page: number
@@ -583,7 +580,7 @@ export interface PageResult<T> {
   total: number
 }
 
-/** 工作流列表项 */
+/** 瀹搞儰缍斿ù浣稿灙鐞涖劑銆?*/
 export interface WorkflowItem {
   id: string
   name: string
@@ -594,7 +591,7 @@ export interface WorkflowItem {
   tags?: string[]
 }
 
-/** 工作流输入参数定义（对齐后端 WorkflowInputParam record） */
+/** 瀹搞儰缍斿ù浣界翻閸忋儱寮弫鏉跨暰娑斿绱欑€靛綊缍堥崥搴ｎ伂 WorkflowInputParam record閿?*/
 export interface WorkflowInputParam {
   name: string
   type: 'string' | 'number' | 'boolean' | 'list' | 'map'
@@ -603,7 +600,7 @@ export interface WorkflowInputParam {
   description?: string
 }
 
-/** 工作流详情 */
+/** 瀹搞儰缍斿ù浣筋嚊閹?*/
 export interface WorkflowDetail extends WorkflowItem {
   triggers: unknown[]
   inputs: Record<string, WorkflowInputParam>
@@ -612,7 +609,7 @@ export interface WorkflowDetail extends WorkflowItem {
   yaml?: string
 }
 
-/** 工作流执行记录 */
+/** 瀹搞儰缍斿ù浣瑰⒔鐞涘矁顔囪ぐ?*/
 export interface WorkflowExecution {
   id: string
   workflowId: string
@@ -630,7 +627,7 @@ export interface WorkflowExecutionsSnapshot {
   executions: WorkflowExecution[]
 }
 
-/** 工作流审计事件类型 */
+/** 瀹搞儰缍斿ù浣割吀鐠佲€茬皑娴犲墎琚崹?*/
 export type WorkflowEventType =
   | 'INSTANCE_CREATED'
   | 'INSTANCE_STATE_CHANGED'
@@ -641,7 +638,7 @@ export type WorkflowEventType =
   | 'APPROVAL_REQUESTED'
   | 'APPROVAL_DECIDED'
 
-/** 工作流审计事件 */
+/** 瀹搞儰缍斿ù浣割吀鐠佲€茬皑娴?*/
 export interface WorkflowEvent {
   id: string
   instanceId: string
@@ -656,14 +653,14 @@ export interface WorkflowTimelineSnapshot {
   events: WorkflowEvent[]
 }
 
-/** 审批请求 */
+/** 鐎光剝澹掔拠閿嬬湴 */
 export interface ApprovalRequest {
   decision: 'APPROVED' | 'REJECTED'
   decidedBy: string
   reason?: string
 }
 
-/** 工作流步骤执行日志 */
+/** 瀹搞儰缍斿ù浣诡劄妤犮倖澧界悰灞炬）韫?*/
 export interface StepLog {
   id: string
   instanceId: string
@@ -685,9 +682,9 @@ export interface WorkflowStepLogsSnapshot {
   stepLogs: StepLog[]
 }
 
-// ========== 工作流成熟化需求类型定义 ==========
+// ========== 瀹搞儰缍斿ù浣瑰灇閻旂喎瀵查棁鈧Ч鍌滆閸ㄥ鐣炬稊?==========
 
-/** 工作流执行统计 */
+/** 瀹搞儰缍斿ù浣瑰⒔鐞涘瞼绮虹拋?*/
 export interface WorkflowStats {
   workflowId: string
   totalExecutions: number
@@ -697,14 +694,14 @@ export interface WorkflowStats {
   recentTrend: DailyTrend[]
 }
 
-/** 每日执行趋势 */
+/** 濮ｅ繑妫╅幍褑顢戠搾瀣◢ */
 export interface DailyTrend {
   date: string
   count: number
   successCount: number
 }
 
-/** 步骤执行统计 */
+/** 濮濄儵顎冮幍褑顢戠紒鐔活吀 */
 export interface StepStats {
   stepId: string
   stepType: string
@@ -715,7 +712,7 @@ export interface StepStats {
   totalRetries: number
 }
 
-/** 步骤输出详情 */
+/** 濮濄儵顎冩潏鎾冲毉鐠囷附鍎?*/
 export interface StepOutput {
   stepId: string
   output: unknown
@@ -725,14 +722,14 @@ export interface StepOutput {
   state: string
 }
 
-/** DAG 数据 */
+/** DAG 閺佺増宓?*/
 export interface DagData {
   nodes: DagNode[]
   edges: DagEdge[]
   levels: string[][]
 }
 
-/** DAG 节点 */
+/** DAG 閼哄倻鍋?*/
 export interface DagNode {
   id: string
   name: string
@@ -740,20 +737,20 @@ export interface DagNode {
   dependsOn: string[]
 }
 
-/** DAG 边 */
+/** DAG 鏉?*/
 export interface DagEdge {
   from: string
   to: string
 }
 
-/** 试运行结果 */
+/** 鐠囨洝绻嶇悰宀€绮ㄩ弸?*/
 export interface DryRunResult {
   steps: DryRunStepTrace[]
   dagOrder: string[]
   warnings: string[]
 }
 
-/** 试运行步骤轨迹 */
+/** 鐠囨洝绻嶇悰灞绢劄妤犮倛寤烘潻?*/
 export interface DryRunStepTrace {
   stepId: string
   stepName: string
@@ -764,7 +761,7 @@ export interface DryRunStepTrace {
   loopIterations?: number
 }
 
-/** YAML 校验响应 */
+/** YAML 閺嶏繝鐛欓崫宥呯安 */
 export interface ValidationResponse {
   valid: boolean
   errors: string[]
@@ -773,7 +770,7 @@ export interface ValidationResponse {
   dagError?: string
 }
 
-/** 步骤类型 Schema */
+/** 濮濄儵顎冪猾璇茬€?Schema */
 export interface StepTypeSchema {
   stepType: string
   label: string
@@ -781,7 +778,7 @@ export interface StepTypeSchema {
   params: ParamSchema[]
 }
 
-/** 参数 Schema */
+/** 閸欏倹鏆?Schema */
 export interface ParamSchema {
   name: string
   type: string
@@ -796,13 +793,13 @@ export interface ParamSchema {
   validationMessage?: string
 }
 
-/** 选项项 */
+/** 闁銆嶆い?*/
 export interface OptionItem {
   value: string
   label: string
 }
 
-/** Agent 列表项 */
+/** Agent 閸掓銆冩い?*/
 export type AgentType = 'default' | 'custom' | 'workflow' | 'marketplace'
 
 export interface AgentLlmConfig {
@@ -832,11 +829,11 @@ export interface AgentSummary {
   createdAt: string
   tags?: string[]
   avatar?: string
-  /** Agent 来源类型（MarkdownDefined / Builtin 等） */
+  /** Agent 閺夈儲绨猾璇茬€烽敍鍦rkdownDefined / Builtin 缁涘绱?*/
   source?: string
 }
 
-/** Agent 详情 */
+/** Agent 鐠囷附鍎?*/
 export interface AgentDetail extends AgentSummary {
   systemPrompt: string
   llmConfig: AgentLlmConfig
@@ -873,7 +870,7 @@ export interface UpdateAgentRequest {
   metadata?: Record<string, unknown>
 }
 
-/** Tool 摘要 */
+/** Tool 閹芥顩?*/
 export interface ToolSummary {
   id: string
   name: string
@@ -886,7 +883,7 @@ export interface ToolSummary {
   idempotent?: boolean
 }
 
-/** Tool 详情 */
+/** Tool 鐠囷附鍎?*/
 export interface ToolDetail extends ToolSummary {
   inputSchema?: Record<string, any>
   outputSchema?: Record<string, any>
@@ -901,14 +898,13 @@ export interface ToolDetail extends ToolSummary {
   metadata?: Record<string, unknown>
 }
 
-/** Tool 测试请求 */
+/** Tool 濞村鐦拠閿嬬湴 */
 export interface ToolTestRequest {
   toolId: string
   input?: Record<string, any>
-  arguments?: Record<string, any> // 兼容旧字段名
 }
 
-/** Tool 测试响应 */
+/** Tool 濞村鐦崫宥呯安 */
 export interface ToolTestResponse {
   success: boolean
   output?: any
@@ -921,7 +917,7 @@ export interface ToolTestResponse {
   }
 }
 
-/** Analytics 用量统计 */
+/** Analytics 閻劑鍣虹紒鐔活吀 */
 export interface UsageStats {
   totalRequests: number
   totalTokens: number
@@ -943,30 +939,28 @@ export interface UsageStats {
 }
 
 /**
- * Token 消耗统计（Trace 维度）
- *
- * 对指定时间范围内的 Trace 进行聚合统计，用于 Trace 页面 Token 分析。
- */
+ * Token 濞戝牐鈧绮虹拋鈽呯礄Trace 缂佹潙瀹抽敍? *
+ * 鐎佃瀵氱€规碍妞傞梻纾嬪瘱閸ユ潙鍞撮惃?Trace 鏉╂稖顢戦懕姘値缂佺喕顓搁敍宀€鏁ゆ禍?Trace 妞ょ敻娼?Token 閸掑棙鐎介妴? */
 export interface TokenConsumptionStats {
-  /** 统计时间范围内的 Trace 数量 */
+  /** 缂佺喕顓搁弮鍫曟？閼煎啫娲块崘鍛畱 Trace 閺佷即鍣?*/
   traceCount: number
-  /** 所有 Trace 的总 Token 数 */
+  /** 閹碘偓閺?Trace 閻ㄥ嫭鈧?Token 閺?*/
   totalTokens: number
-  /** 所有 Trace 的总输入 Token 数 */
+  /** 閹碘偓閺?Trace 閻ㄥ嫭鈧槒绶崗?Token 閺?*/
   totalInputTokens: number
-  /** 所有 Trace 的总输出 Token 数 */
+  /** 閹碘偓閺?Trace 閻ㄥ嫭鈧槒绶崙?Token 閺?*/
   totalOutputTokens: number
-  /** 每条 Trace 平均 Token 数 */
+  /** 濮ｅ繑娼?Trace 楠炲啿娼?Token 閺?*/
   avgTokensPerTrace: number
-  /** 单条 Trace 的最大 Token 数 */
+  /** 閸楁洘娼?Trace 閻ㄥ嫭娓舵径?Token 閺?*/
   maxTokens: number
-  /** 成功的 Trace 数量 */
+  /** 閹存劕濮涢惃?Trace 閺佷即鍣?*/
   successCount: number
-  /** 平均耗时（毫秒） */
+  /** 楠炲啿娼庨懓妤佹閿涘牊顕犵粔鎺炵礆 */
   avgDurationMs: number
 }
 
-/** Analytics Agent 统计 */
+/** Analytics Agent 缂佺喕顓?*/
 export interface AgentStats {
   agentId: string
   agentName: string
@@ -976,7 +970,7 @@ export interface AgentStats {
   totalTokens: number
 }
 
-/** Analytics 知识库统计 */
+/** Analytics 閻儴鐦戞惔鎾剁埠鐠?*/
 export interface KnowledgeBaseStats {
   kbId: string
   kbName: string
@@ -985,7 +979,7 @@ export interface KnowledgeBaseStats {
   avgRetrievalTime?: number
 }
 
-/** Analytics 工具统计 */
+/** Analytics 瀹搞儱鍙跨紒鐔活吀 */
 export interface ToolStats {
   toolId: string
   toolName: string
@@ -995,134 +989,109 @@ export interface ToolStats {
   avgLatency: number
 }
 
-/** LLM Provider 详情 */
-export interface LlmProviderDetail {
-  id: string
-  type: string
-  modelName: string
-  displayName?: string
-  capabilities?: string[]
-  priority?: number
-  costPerInputToken?: number
-  costPerOutputToken?: number
-  scenes?: string[]
-  maxContextWindow?: number
-  supportsStreaming?: boolean
-  enabled?: boolean
-  healthy?: boolean
-  apiUrl?: string
-  timeoutSeconds?: number
-  isPreset?: boolean
-  description?: string
-  embeddingDimension?: number
-}
 
-/** Provider 能力类型 */
+/** Provider 閼宠棄濮忕猾璇茬€?*/
 export type ProviderCapability = 'STREAMING' | 'FUNCTION_CALLING' | 'EMBEDDING' | 'VISION' | 'AUDIO' | 'RERANK'
 
-// ========== 模块 20: Observability 统计与评估 ==========
+// ========== 濡€虫健 20: Observability 缂佺喕顓告稉搴ょ槑娴?==========
 
 /**
- * 轨迹概览统计数据
+ * 鏉炪劏鎶楀鍌濐潔缂佺喕顓搁弫鐗堝祦
  *
- * 用于 Trace 列表页顶部的统计卡片区域，展示整体运行情况。
- */
+ * 閻劋绨?Trace 閸掓銆冩い鐢搞€婇柈銊ф畱缂佺喕顓搁崡锛勫閸栧搫鐓欓敍灞界潔缁€鐑樻殻娴ｆ捁绻嶇悰灞惧剰閸愮偣鈧? */
 export interface OverviewStats {
-  /** 轨迹总数 */
+  /** 鏉炪劏鎶楅幀缁樻殶 */
   totalTraces: number
-  /** 成功轨迹数量 */
+  /** 閹存劕濮涙潪銊ㄦ姉閺佷即鍣?*/
   successCount: number
-  /** 失败轨迹数量 */
+  /** 婢惰精瑙︽潪銊ㄦ姉閺佷即鍣?*/
   failureCount: number
-  /** 成功率（0-1 小数） */
+  /** 閹存劕濮涢悳鍥风礄0-1 鐏忓繑鏆熼敍?*/
   successRate: number
-  /** 平均步骤数 */
+  /** 楠炲啿娼庡銉╊€冮弫?*/
   avgSteps: number
-  /** 平均耗时（毫秒） */
+  /** 楠炲啿娼庨懓妤佹閿涘牊顕犵粔鎺炵礆 */
   avgDurationMs: number
-  /** 总 Token 消耗 */
+  /** 閹?Token 濞戝牐鈧?*/
   totalTokens: number
-  /** 平均每条轨迹 Token 消耗 */
+  /** 楠炲啿娼庡В蹇旀蒋鏉炪劏鎶?Token 濞戝牐鈧?*/
   avgTokens: number
 }
 
 /**
- * 工具调用使用统计
+ * 瀹搞儱鍙跨拫鍐暏娴ｈ法鏁ょ紒鐔活吀
  *
- * 用于工具统计列表，展示各工具的调用与成功情况。
- */
+ * 閻劋绨銉ュ徔缂佺喕顓搁崚妤勩€冮敍灞界潔缁€鍝勬倗瀹搞儱鍙块惃鍕殶閻劋绗岄幋鎰閹懎鍠岄妴? */
 export interface ToolUsageStats {
-  /** 工具唯一标识 */
+  /** 瀹搞儱鍙块崬顖欑閺嶅洩鐦?*/
   toolId: string
-  /** 总调用次数 */
+  /** 閹槒鐨熼悽銊︻偧閺?*/
   callCount: number
-  /** 成功调用次数 */
+  /** 閹存劕濮涚拫鍐暏濞嗏剝鏆?*/
   successCount: number
-  /** 失败调用次数 */
+  /** 婢惰精瑙︾拫鍐暏濞嗏剝鏆?*/
   failureCount: number
-  /** 成功率（0-1 小数） */
+  /** 閹存劕濮涢悳鍥风礄0-1 鐏忓繑鏆熼敍?*/
   successRate: number
-  /** 平均调用耗时（毫秒） */
+  /** 楠炲啿娼庣拫鍐暏閼版妞傞敍鍫燁嚑缁夋帪绱?*/
   avgDurationMs: number
 }
 
 /**
- * 轨迹离线评估结果
+ * 鏉炪劏鎶楃粋鑽ゅ殠鐠囧嫪鍙婄紒鎾寸亯
  *
- * 对单条 Trace 的多维度质量评估，用于详情页展示。
- */
+ * 鐎电懓宕熼弶?Trace 閻ㄥ嫬顦跨紒鏉戝鐠愩劑鍣虹拠鍕強閿涘瞼鏁ゆ禍搴ゎ嚊閹懘銆夌仦鏇犮仛閵? */
 export interface EvaluationResult {
-  /** 被评估的轨迹 ID */
+  /** 鐞氼偉鐦庢导鎵畱鏉炪劏鎶?ID */
   traceId: string
-  /** 评估时间（ISO 8601） */
+  /** 鐠囧嫪鍙婇弮鍫曟？閿涘湜SO 8601閿?*/
   evaluatedAt: string
-  /** 工具选择合理性评分（0-1） */
+  /** 瀹搞儱鍙块柅澶嬪閸氬牏鎮婇幀褑鐦庨崚鍡礄0-1閿?*/
   toolSelectionScore: number
-  /** 参数合法性与幂等性评分（0-1） */
+  /** 閸欏倹鏆熼崥鍫熺《閹傜瑢楠炲倻鐡戦幀褑鐦庨崚鍡礄0-1閿?*/
   parameterValidityScore: number
-  /** 步骤数量与结构效率评分（0-1） */
+  /** 濮濄儵顎冮弫浼村櫤娑撳海绮ㄩ弸鍕櫏閻滃洩鐦庨崚鍡礄0-1閿?*/
   stepEfficiencyScore: number
-  /** 策略与护栏合规性评分（0-1） */
+  /** 缁涙牜鏆愭稉搴㈠Б閺嶅繐鎮庣憴鍕偓褑鐦庨崚鍡礄0-1閿?*/
   policyComplianceScore: number
-  /** Token 使用效率评分（0-1） */
+  /** Token 娴ｈ法鏁ら弫鍫㈠芳鐠囧嫬鍨庨敍?-1閿?*/
   tokenEfficiencyScore: number
-  /** 综合评分（0-1） */
+  /** 缂佺厧鎮庣拠鍕瀻閿?-1閿?*/
   overallScore: number
-  /** 实际执行步骤数 */
+  /** 鐎圭偤妾幍褑顢戝銉╊€冮弫?*/
   actualSteps: number
-  /** 实际消耗 Token 数 */
+  /** 鐎圭偤妾☉鍫ｂ偓?Token 閺?*/
   actualTokens: number
-  /** 违规说明列表（如存在问题） */
+  /** 鏉╂繆顫夌拠瀛樻閸掓銆冮敍鍫濐洤鐎涙ê婀梻顕€顣介敍?*/
   violations: string[]
-  /** 优化建议列表 */
+  /** 娴兼ê瀵插楦款唴閸掓銆?*/
   suggestions: string[]
 }
 
-// ========== 知识库拖拽上传：前端本地类型 ==========
+// ========== 閻儴鐦戞惔鎾村珛閹锋垝绗傛导鐙呯窗閸撳秶顏張顒€婀寸猾璇茬€?==========
 
 /**
- * 上传文件条目（UploadProgress 组件使用，纯前端状态）
- */
+ * 娑撳﹣绱堕弬鍥︽閺夛紕娲伴敍鍦瞤loadProgress 缂佸嫪娆㈡担璺ㄦ暏閿涘瞼鍑介崜宥囶伂閻樿埖鈧緤绱? */
 export interface UploadFileItem {
-  /** 前端生成的唯一 ID（用于列表 key） */
+  /** 閸撳秶顏悽鐔稿灇閻ㄥ嫬鏁稉鈧?ID閿涘牏鏁ゆ禍搴″灙鐞?key閿?*/
   id: string
-  /** 原始 File 对象引用（用于重试） */
+  /** 閸樼喎顫?File 鐎电钖勫鏇犳暏閿涘牏鏁ゆ禍搴ㄥ櫢鐠囨洩绱?*/
   file: File
-  /** 文件名 */
+  /** 閺傚洣娆㈤崥?*/
   fileName: string
-  /** 上传状态 */
+  /** 娑撳﹣绱堕悩鑸碘偓?*/
   status: 'waiting' | 'uploading' | 'success' | 'error'
-  /** 错误信息（仅 status === 'error' 时有值） */
+  /** 闁挎瑨顕ゆ穱鈩冧紖閿涘牅绮?status === 'error' 閺冭埖婀侀崐纭风礆 */
   errorMessage?: string
 }
 
 
-// ========== 模块 25: 扩展市场类型 ==========
+// ========== 濡€虫健 25: 閹碘晛鐫嶇敮鍌氭簚缁鐎?==========
 
-/** 扩展类型枚举（对齐后端 ExtensionType） */
+/** 閹碘晛鐫嶇猾璇茬€烽弸姘閿涘牆顕鎰倵缁?ExtensionType閿?*/
 export type ExtensionType = 'SKILL' | 'AGENT' | 'WORKFLOW'
 
-/** 扩展包元数据（对齐后端 ExtensionPackage record） */
+/** 閹碘晛鐫嶉崠鍛帗閺佺増宓侀敍鍫濐嚠姒绘劕鎮楃粩?ExtensionPackage record閿?*/
 export interface ExtensionPackage {
   id: string
   name: string
@@ -1139,29 +1108,29 @@ export interface ExtensionPackage {
   updatedAt: string
   downloads: number
   verified: boolean
-  /** 已安装的版本（未安装时为 undefined） */
+  /** 瀹告彃鐣ㄧ憗鍛畱閻楀牊婀伴敍鍫熸弓鐎瑰顥婇弮鏈佃礋 undefined閿?*/
   installedVersion?: string
-  /** 是否已安装 */
+  /** 閺勵垰鎯佸鎻掔暔鐟?*/
   installed: boolean
 }
 
-/** 向后兼容别名 */
+/** 閸氭垵鎮楅崗鐓庮啇閸掝偄鎮?*/
 export type SkillPackage = ExtensionPackage
 
-/** 安全发现条目 */
+/** 鐎瑰鍙忛崣鎴犲箛閺夛紕娲?*/
 export interface SecurityFinding {
   level: 'LOW' | 'MEDIUM' | 'HIGH'
   category: string
   description: string
 }
 
-/** 安全扫描报告 */
+/** 鐎瑰鍙忛幍顐ｅ伎閹躲儱鎲?*/
 export interface SecurityReport {
   findings: SecurityFinding[]
   overallRisk: 'LOW' | 'MEDIUM' | 'HIGH'
 }
 
-/** 安装结果（对齐后端 InstallResult record） */
+/** 鐎瑰顥婄紒鎾寸亯閿涘牆顕鎰倵缁?InstallResult record閿?*/
 export interface InstallResult {
   success: boolean
   extensionId?: string
@@ -1172,7 +1141,7 @@ export interface InstallResult {
   requiresConfirmation: boolean
 }
 
-/** 后端分页结果（对齐 MarketplaceService.PagedResult） */
+/** 閸氬海顏崚鍡涖€夌紒鎾寸亯閿涘牆顕?MarketplaceService.PagedResult閿?*/
 export interface PagedResult<T> {
   content: T[]
   page: number
@@ -1182,15 +1151,15 @@ export interface PagedResult<T> {
 }
 
 
-// ========== Web UI 深度调试与配置：新增类型 ==========
+// ========== Web UI 濞ｅ崬瀹崇拫鍐槸娑撳酣鍘ょ純顕嗙窗閺傛澘顤冪猾璇茬€?==========
 
-/** 上下文组装预览响应 */
+/** 娑撳﹣绗呴弬鍥╃矋鐟佸懘顣╃憴鍫濇惙鎼?*/
 export interface ContextPreviewResponse {
   segments: {
     systemPrompt: { content: string; tokens: number }
-    conversationHistory: { content: string; tokens: number }
-    memoryRetrieval: { content: string; tokens: number }
-    toolResults: { content: string; tokens: number }
+    contextMessages: { content: string; tokens: number }
+    historyMessages: { content: string; tokens: number }
+    currentUserPrompt: { content: string; tokens: number }
   }
   tokenBudget: TokenBudgetData
   totalTokens: number
@@ -1198,7 +1167,7 @@ export interface ContextPreviewResponse {
   degraded: boolean
 }
 
-/** Token 预算数据（对齐后端 TokenBudget record） */
+/** Token 妫板嫮鐣婚弫鐗堝祦閿涘牆顕鎰倵缁?TokenBudget record閿?*/
 export interface TokenBudgetData {
   systemPromptBudget: number
   historyBudget: number
@@ -1213,7 +1182,7 @@ export interface TokenBudgetData {
   toolResultUsed: number
 }
 
-/** 依赖图节点 */
+/** 娓氭繆绂嗛崶鎹愬Ν閻?*/
 export interface DependencyNode {
   id: string
   name: string
@@ -1221,20 +1190,20 @@ export interface DependencyNode {
   enabled: boolean
 }
 
-/** 依赖图边 */
+/** 娓氭繆绂嗛崶鎹愮珶 */
 export interface DependencyEdge {
   source: string
   target: string
   relation: string
 }
 
-/** 依赖图响应 */
+/** 娓氭繆绂嗛崶鎯ф惙鎼?*/
 export interface DependencyGraphResponse {
   nodes: DependencyNode[]
   edges: DependencyEdge[]
 }
 
-/** Tool 调用统计项 */
+/** Tool 鐠嬪啰鏁ょ紒鐔活吀妞?*/
 export interface ToolCallStats {
   toolId: string
   toolName: string
@@ -1244,7 +1213,7 @@ export interface ToolCallStats {
   avgLatencyMs: number
 }
 
-/** Tool 调用每日趋势 */
+/** Tool 鐠嬪啰鏁ゅВ蹇旀）鐡掑濞?*/
 export interface ToolDailyTrend {
   date: string
   callCount: number
@@ -1252,13 +1221,13 @@ export interface ToolDailyTrend {
   failureCount: number
 }
 
-/** Tool 统计 API 响应 */
+/** Tool 缂佺喕顓?API 閸濆秴绨?*/
 export interface ToolAnalyticsResponse {
   toolStats: ToolCallStats[]
   dailyTrend: ToolDailyTrend[]
 }
 
-/** 错误趋势每日数据 */
+/** 闁挎瑨顕ょ搾瀣◢濮ｅ繑妫╅弫鐗堝祦 */
 export interface ErrorTrendDaily {
   date: string
   agentErrors: number
@@ -1266,14 +1235,14 @@ export interface ErrorTrendDaily {
   totalErrors: number
 }
 
-/** MCP 连接日志条目 */
+/** MCP 鏉╃偞甯撮弮銉ョ箶閺夛紕娲?*/
 export interface McpConnectionLog {
   timestamp: string
   eventType: 'CONNECT' | 'DISCONNECT' | 'ERROR' | 'RECONNECT'
   description: string
 }
 
-/** Tool 测试历史记录 */
+/** Tool 濞村鐦崢鍡楀蕉鐠佹澘缍?*/
 export interface ToolTestHistoryItem {
   id: string
   timestamp: number
@@ -1282,9 +1251,9 @@ export interface ToolTestHistoryItem {
 }
 
 
-// ========== MCP Server 状态 SSE 推送类型 ==========
+// ========== MCP Server 閻樿埖鈧?SSE 閹恒劑鈧胶琚崹?==========
 
-/** MCP Server 状态快照（SSE mcp-status-snapshot 事件数据） */
+/** MCP Server 閻樿埖鈧礁鎻╅悡褝绱橲SE mcp-status-snapshot 娴滃娆㈤弫鐗堝祦閿?*/
 export interface McpStatusSnapshot {
   servers: Array<{
     serverName: string
@@ -1294,7 +1263,7 @@ export interface McpStatusSnapshot {
   }>
 }
 
-/** MCP Server 状态变化（SSE mcp-status-change 事件数据） */
+/** MCP Server 閻樿埖鈧礁褰夐崠鏍电礄SSE mcp-status-change 娴滃娆㈤弫鐗堝祦閿?*/
 export interface McpStatusChange {
   serverName: string
   oldState: McpServer['state']
@@ -1303,15 +1272,15 @@ export interface McpStatusChange {
   error?: string
 }
 
-// ========== 通知中心类型定义 ==========
+// ========== 闁氨鐓℃稉顓炵妇缁鐎风€规矮绠?==========
 
-/** 通知紧急程度 */
+/** 闁氨鐓＄槐褎鈧儳鈻兼惔?*/
 export type NotificationUrgency = 'HIGH' | 'MEDIUM' | 'LOW'
 
-/** 通知已读状态 */
+/** 闁氨鐓″鑼额嚢閻樿埖鈧?*/
 export type NotificationReadStatus = 'UNREAD' | 'READ'
 
-/** 通知条目（对齐后端 NotificationDto） */
+/** 闁氨鐓￠弶锛勬窗閿涘牆顕鎰倵缁?NotificationDto閿?*/
 export interface NotificationItem {
   id: string
   userId: string
@@ -1325,26 +1294,26 @@ export interface NotificationItem {
   sentAt: string  // ISO 8601
 }
 
-/** 详情解析结果 */
+/** 鐠囷附鍎忕憴锝嗙€界紒鎾寸亯 */
 export interface ParsedDetail {
   type: 'TEXT' | 'MARKDOWN' | 'CARD' | 'UNKNOWN'
-  /** TEXT: 完整文本; MARKDOWN: 原始 markdown; CARD: 无 */
+  /** TEXT: 鐎瑰本鏆ｉ弬鍥ㄦ拱; MARKDOWN: 閸樼喎顫?markdown; CARD: 閺?*/
   text?: string
-  /** MARKDOWN: 渲染后的 HTML */
+  /** MARKDOWN: 濞撳弶鐓嬮崥搴ｆ畱 HTML */
   html?: string
-  /** CARD: 标题 */
+  /** CARD: 閺嶅洭顣?*/
   title?: string
-  /** CARD: 正文 */
+  /** CARD: 濮濓絾鏋?*/
   body?: string
-  /** CARD: 操作按钮列表 */
+  /** CARD: 閹垮秳缍旈幐澶愭尦閸掓銆?*/
   actions?: Array<{ label: string; url?: string }>
 }
 
 
 
-// ========== 记忆管理类型定义 ==========
+// ========== 鐠佹澘绻傜粻锛勬倞缁鐎风€规矮绠?==========
 
-/** 记忆统计概览（对应 MemoryStatsDto） */
+/** 鐠佹澘绻傜紒鐔活吀濮掑倽顫嶉敍鍫濐嚠鎼?MemoryStatsDto閿?*/
 export interface MemoryStats {
   conversationCount: number
   entityCount: number
@@ -1356,7 +1325,7 @@ export interface MemoryStats {
   lastForgettingTime: string | null
 }
 
-/** 统一搜索结果（对应 MemorySearchResultDto） */
+/** 缂佺喍绔撮幖婊呭偍缂佹挻鐏夐敍鍫濐嚠鎼?MemorySearchResultDto閿?*/
 export interface MemorySearchResult {
   entityId: string
   entityType: string
@@ -1365,7 +1334,7 @@ export interface MemorySearchResult {
   relevanceScore: number
 }
 
-/** 实体列表项（对应 EntitySummaryDto） */
+/** 鐎圭偘缍嬮崚妤勩€冩い鐧哥礄鐎电懓绨?EntitySummaryDto閿?*/
 export interface EntitySummary {
   id: string
   type: string
@@ -1379,7 +1348,7 @@ export interface EntitySummary {
   updatedAt: string
 }
 
-/** 实体详情（对应 EntityDetailDto） */
+/** 鐎圭偘缍嬬拠锔藉剰閿涘牆顕惔?EntityDetailDto閿?*/
 export interface EntityDetail {
   id: string
   type: string
@@ -1400,7 +1369,7 @@ export interface EntityDetail {
   updatedAt: string
 }
 
-/** 实体创建请求（对应 EntityCreateRequest） */
+/** 鐎圭偘缍嬮崚娑樼紦鐠囬攱鐪伴敍鍫濐嚠鎼?EntityCreateRequest閿?*/
 export interface EntityCreateRequest {
   name: string
   type: string
@@ -1409,14 +1378,14 @@ export interface EntityCreateRequest {
   importanceScore?: number
 }
 
-/** 实体更新请求（对应 EntityUpdateRequest） */
+/** 鐎圭偘缍嬮弴瀛樻煀鐠囬攱鐪伴敍鍫濐嚠鎼?EntityUpdateRequest閿?*/
 export interface EntityUpdateRequest {
   description?: string
   properties?: Record<string, unknown>
   importanceScore?: number
 }
 
-/** 实体列表查询参数 */
+/** 鐎圭偘缍嬮崚妤勩€冮弻銉嚄閸欏倹鏆?*/
 export interface EntityListParams {
   page?: number
   size?: number
@@ -1428,7 +1397,7 @@ export interface EntityListParams {
   order?: string
 }
 
-/** 关系列表项（对应 RelationDto） */
+/** 閸忓磭閮撮崚妤勩€冩い鐧哥礄鐎电懓绨?RelationDto閿?*/
 export interface RelationItem {
   id: string
   sourceEntityId: string
@@ -1444,7 +1413,7 @@ export interface RelationItem {
   createdAt: string
 }
 
-/** 关系列表查询参数 */
+/** 閸忓磭閮撮崚妤勩€冮弻銉嚄閸欏倹鏆?*/
 export interface RelationListParams {
   page?: number
   size?: number
@@ -1452,7 +1421,7 @@ export interface RelationListParams {
   relationType?: string
 }
 
-/** 对话列表项（对应 ConversationSummaryDto） */
+/** 鐎电鐦介崚妤勩€冩い鐧哥礄鐎电懓绨?ConversationSummaryDto閿?*/
 export interface ConversationSummary {
   id: string
   sessionId: string
@@ -1462,7 +1431,7 @@ export interface ConversationSummary {
   createdAt: string
 }
 
-/** 对话详情（对应 ConversationRecord） */
+/** 鐎电鐦界拠锔藉剰閿涘牆顕惔?ConversationRecord閿?*/
 export interface ConversationDetail {
   id: string
   sessionId: string
@@ -1473,7 +1442,7 @@ export interface ConversationDetail {
   updatedAt: string
 }
 
-/** 消息记录（对应 MessageRecord） */
+/** 濞戝牊浼呯拋鏉跨秿閿涘牆顕惔?MessageRecord閿?*/
 export interface MessageRecord {
   id: string
   conversationId: string
@@ -1487,7 +1456,7 @@ export interface MessageRecord {
   createdAt: string
 }
 
-/** 对话列表查询参数 */
+/** 鐎电鐦介崚妤勩€冮弻銉嚄閸欏倹鏆?*/
 export interface ConversationListParams {
   page?: number
   size?: number
@@ -1496,7 +1465,7 @@ export interface ConversationListParams {
   timeTo?: string
 }
 
-/** 操作模板（对应 ProcedureTemplate） */
+/** 閹垮秳缍斿Ο鈩冩緲閿涘牆顕惔?ProcedureTemplate閿?*/
 export interface ProcedureTemplate {
   templateId: string
   name: string
@@ -1512,7 +1481,7 @@ export interface ProcedureTemplate {
   updatedAt: string
 }
 
-/** 模板步骤 */
+/** 濡剝婢樺銉╊€?*/
 export interface TemplateStep {
   stepIndex: number
   action: string
@@ -1521,7 +1490,7 @@ export interface TemplateStep {
   expectedOutcome: string | null
 }
 
-/** 偏好规则（对应 PreferenceRule） */
+/** 閸嬪繐銈界憴鍕灟閿涘牆顕惔?PreferenceRule閿?*/
 export interface PreferenceRule {
   ruleId: string
   category: string
@@ -1534,7 +1503,7 @@ export interface PreferenceRule {
   updatedAt: string
 }
 
-/** 模板列表查询参数 */
+/** 濡剝婢橀崚妤勩€冮弻銉嚄閸欏倹鏆?*/
 export interface TemplateListParams {
   page?: number
   size?: number
@@ -1543,7 +1512,7 @@ export interface TemplateListParams {
   order?: string
 }
 
-/** 遗忘日志（对应 ForgettingLogDto） */
+/** 闁绻曢弮銉ョ箶閿涘牆顕惔?ForgettingLogDto閿?*/
 export interface ForgettingLog {
   id: string
   entityId: string
@@ -1555,7 +1524,7 @@ export interface ForgettingLog {
   createdAt: string
 }
 
-/** 遗忘日志查询参数 */
+/** 闁绻曢弮銉ョ箶閺屻儴顕楅崣鍌涙殶 */
 export interface ForgettingLogListParams {
   page?: number
   size?: number
@@ -1564,14 +1533,14 @@ export interface ForgettingLogListParams {
   strategy?: string
 }
 
-/** 实体类型枚举映射（用于筛选下拉框） */
+/** 鐎圭偘缍嬬猾璇茬€烽弸姘閺勭姴鐨犻敍鍫㈡暏娴滃海鐡柅澶夌瑓閹峰顢嬮敍?*/
 export const ENTITY_TYPES = [
   { value: 'PERSON', label: '人物' },
   { value: 'ORGANIZATION', label: '组织' },
   { value: 'PLACE', label: '地点' },
   { value: 'EVENT', label: '事件' },
   { value: 'PROJECT', label: '项目' },
-  { value: 'TOPIC', label: '话题' },
+  { value: 'TOPIC', label: '主题' },
   { value: 'PREFERENCE', label: '偏好' },
   { value: 'HABIT', label: '习惯' },
   { value: 'GOAL', label: '目标' },
@@ -1579,9 +1548,9 @@ export const ENTITY_TYPES = [
   { value: 'CUSTOM', label: '自定义' },
 ] as const
 
-// ========== Eval 评估模块类型 ==========
+// ========== Eval 鐠囧嫪鍙婂Ο鈥虫健缁鐎?==========
 
-/** Benchmark 场景 */
+/** Benchmark 閸︾儤娅?*/
 export interface BenchmarkScenario {
   id: string
   name: string
@@ -1602,14 +1571,14 @@ export interface BenchmarkScenario {
   description?: string | null
 }
 
-/** 智能 Mock 工具定义 */
+/** 閺呴缚鍏?Mock 瀹搞儱鍙跨€规矮绠?*/
 export interface MockToolSpec {
   toolId: string
   behaviors: MockBehavior[]
   defaultResponse: string
 }
 
-/** Mock 行为定义 */
+/** Mock 鐞涘奔璐熺€规矮绠?*/
 export interface MockBehavior {
   parameterPattern?: string | null
   response: string
@@ -1617,7 +1586,7 @@ export interface MockBehavior {
   delayMs: number
 }
 
-/** 评估结果 */
+/** 鐠囧嫪鍙婄紒鎾寸亯 */
 export interface EvalResultItem {
   evalId: string
   traceId: string
@@ -1637,14 +1606,14 @@ export interface EvalResultItem {
   runMetadataJson?: string | null
 }
 
-/** 诊断报告 */
+/** 鐠囧﹥鏌囬幎銉ユ啞 */
 export interface DiagnosticReport {
   dimensionDiagnostics: DimensionDiagnostic[]
   actionableSuggestions: string[]
   overallAssessment: string
 }
 
-/** 维度诊断 */
+/** 缂佹潙瀹崇拠濠冩焽 */
 export interface DimensionDiagnostic {
   dimension: string
   label: string
@@ -1653,7 +1622,7 @@ export interface DimensionDiagnostic {
   fixes: string[]
 }
 
-/** 运行元数据 */
+/** 鏉╂劘顢戦崗鍐╂殶閹?*/
 export interface RunMetadata {
   modelId?: string | null
   promptVersion?: string | null
@@ -1662,7 +1631,7 @@ export interface RunMetadata {
   labels: Record<string, string>
 }
 
-/** 评估报告汇总 */
+/** 鐠囧嫪鍙婇幎銉ユ啞濮瑰洦鈧?*/
 export interface EvalReportSummary {
   evalRunId: string
   totalScenarios: number
@@ -1677,7 +1646,7 @@ export interface EvalReportSummary {
   metadata?: RunMetadata | null
 }
 
-/** A/B 对比报告 */
+/** A/B 鐎佃鐦幎銉ユ啞 */
 export interface ComparisonReport {
   currentRunId: string
   baselineRunId: string
@@ -1689,7 +1658,7 @@ export interface ComparisonReport {
   baselineMetadata?: RunMetadata | null
 }
 
-/** 场景级对比 */
+/** 閸︾儤娅欑痪褍顕В?*/
 export interface ScenarioComparison {
   scenarioId: string
   currentScore: number
@@ -1698,7 +1667,7 @@ export interface ScenarioComparison {
   status: 'improved' | 'degraded' | 'unchanged' | 'new'
 }
 
-/** 评估反馈 */
+/** 鐠囧嫪鍙婇崣宥夘洯 */
 export interface EvalFeedback {
   feedbackId: string
   evalId: string
@@ -1710,7 +1679,7 @@ export interface EvalFeedback {
   createdAt: string
 }
 
-/** 评估运行请求 */
+/** 鐠囧嫪鍙婃潻鎰攽鐠囬攱鐪?*/
 export interface EvalRunRequest {
   scenarioIds?: string[] | null
   tag?: string | null

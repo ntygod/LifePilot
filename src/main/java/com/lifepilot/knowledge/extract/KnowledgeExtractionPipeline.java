@@ -3,8 +3,7 @@ package com.lifepilot.knowledge.extract;
 import com.lifepilot.knowledge.chunking.DocumentChunk;
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
 import com.lifepilot.knowledge.model.ExtractionResult;
-import com.lifepilot.llm.LlmRequest;
-import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmUnavailableException;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
@@ -31,7 +30,7 @@ public class KnowledgeExtractionPipeline {
     private static final Logger log = LoggerFactory.getLogger(KnowledgeExtractionPipeline.class);
     private static final String SCENE = "knowledge_extraction";
 
-    private final LlmRouter llmRouter;
+    private final GenerationRouter generationRouter;
     private final SemanticMemory semanticMemory;
     private final KnowledgeBaseProperties.Extraction config;
     private final PromptRegistry promptRegistry;
@@ -44,11 +43,11 @@ public class KnowledgeExtractionPipeline {
      * @param config         提取配置
      * @param promptRegistry 提示词模板注册表
      */
-    public KnowledgeExtractionPipeline(LlmRouter llmRouter,
+    public KnowledgeExtractionPipeline(GenerationRouter generationRouter,
                                         SemanticMemory semanticMemory,
                                         KnowledgeBaseProperties.Extraction config,
                                         PromptRegistry promptRegistry) {
-        this.llmRouter = llmRouter;
+        this.generationRouter = generationRouter;
         this.semanticMemory = semanticMemory;
         this.config = config;
         this.promptRegistry = promptRegistry;
@@ -112,7 +111,13 @@ public class KnowledgeExtractionPipeline {
         var prompt = buildExtractionPrompt(contentBuilder.toString());
 
         // 使用结构化输出提取
-        var response = llmRouter.callEntity(LlmRequest.of(SCENE, prompt), ExtractionResponse.class);
+        var response = generationRouter.callEntity(
+                SCENE,
+                prompt,
+                ExtractionResponse.class,
+                null,
+                null,
+                null);
 
         int entityCount = 0;
         int relationCount = 0;

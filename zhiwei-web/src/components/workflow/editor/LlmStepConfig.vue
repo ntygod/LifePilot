@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Plus, Trash2 } from 'lucide-vue-next'
-import { settingsApi, type LlmProvider } from '@/api/client'
+import { modelServiceApi, type ModelService } from '@/api/client'
 
 const props = defineProps<{
   modelValue: LlmStepConfig
@@ -29,11 +29,11 @@ const capabilityOptions: LlmStepConfig['capability'][] = [
 ]
 
 // 从后端加载可用的 Provider 列表，提取 scene 和 model 选项
-const providers = ref<LlmProvider[]>([])
+const providers = ref<ModelService[]>([])
 
 onMounted(async () => {
   try {
-    providers.value = await settingsApi.getProviders()
+    providers.value = await modelServiceApi.listEnabledServices('GENERATION')
   } catch (e) {
     console.warn('加载 Provider 列表失败，下拉框将为空:', e)
   }

@@ -1,12 +1,16 @@
 package com.lifepilot;
 
+import com.lifepilot.config.DataSourceConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
+import org.springframework.boot.autoconfigure.data.jdbc.JdbcRepositoriesAutoConfiguration;
+import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -16,8 +20,6 @@ import javax.sql.DataSource;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.util.UUID;
-
-import org.springframework.jdbc.core.JdbcTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -53,10 +55,10 @@ class LifePilotApplicationTest {
      */
     @Configuration
     @EnableAutoConfiguration(exclude = {
-            org.springframework.boot.autoconfigure.data.jdbc.JdbcRepositoriesAutoConfiguration.class,
-            org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration.class
+            JdbcRepositoriesAutoConfiguration.class,
+            DataSourceAutoConfiguration.class
     })
-    @Import(com.lifepilot.config.DataSourceConfig.class)
+    @Import(DataSourceConfig.class)
     static class TestApp {
     }
 
@@ -99,9 +101,18 @@ class LifePilotApplicationTest {
     void Flyway迁移_成功执行() {
         // 验证 V1 迁移创建的核心表存在
         var count = jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='llm_providers'",
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN ('model_services', 'generation_settings', 'embedding_settings', 'rerank_settings')",
                 Integer.class);
-        assertThat(count).isEqualTo(1);
+        assertThat(count).isEqualTo(4);
+
+        var modelServiceCount = jdbcTemplate.queryForObject("SELECT count(*) FROM model_services", Integer.class);
+        var generationSettingsCount = jdbcTemplate.queryForObject("SELECT count(*) FROM generation_settings", Integer.class);
+        var embeddingSettingsCount = jdbcTemplate.queryForObject("SELECT count(*) FROM embedding_settings", Integer.class);
+        var rerankSettingsCount = jdbcTemplate.queryForObject("SELECT count(*) FROM rerank_settings", Integer.class);
+        assertThat(modelServiceCount).isGreaterThanOrEqualTo(10);
+        assertThat(generationSettingsCount).isEqualTo(1);
+        assertThat(embeddingSettingsCount).isEqualTo(1);
+        assertThat(rerankSettingsCount).isEqualTo(1);
     }
 
     @Test

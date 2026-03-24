@@ -1,6 +1,6 @@
 package com.lifepilot.workflow.config;
 
-import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.notification.NotificationService;
 import com.lifepilot.observability.trace.TraceRecorder;
@@ -131,11 +131,11 @@ public class WorkflowAutoConfiguration {
     public StepExecutor workflowStepExecutor(SkillRegistry skillRegistry,
                                              SkillActivator skillActivator,
                                              DynamicToolRegistry toolRegistry,
-                                             LlmRouter llmRouter,
+                                             GenerationRouter generationRouter,
                                              MultimodalRouter multimodalRouter,
                                              WorkflowConfigProperties config,
                                              NotificationService notificationService) {
-        return new StepExecutor(skillRegistry, skillActivator, toolRegistry, llmRouter, multimodalRouter, config, notificationService);
+        return new StepExecutor(skillRegistry, skillActivator, toolRegistry, generationRouter, multimodalRouter, config, notificationService);
     }
 
     @Bean

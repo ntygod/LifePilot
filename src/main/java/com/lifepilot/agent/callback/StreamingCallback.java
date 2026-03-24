@@ -4,12 +4,12 @@ import com.lifepilot.agent.CancellationToken;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.context.AgentLoopContext;
 import com.lifepilot.agent.model.AgentRequest;
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.web.a2ui.A2uiComponentCatalog;
 import com.lifepilot.interaction.web.a2ui.StreamingA2uiParser;
 import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.llm.LlmResponse;
-import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.StreamingLlmResponse;
 import com.lifepilot.llm.multimodal.MultimodalRequest;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
@@ -46,7 +46,7 @@ public class StreamingCallback implements IterationCallback {
     private static final Logger log = LoggerFactory.getLogger(StreamingCallback.class);
 
     private final AgentConfigProperties config;
-    private final LlmRouter llmRouter;
+    private final GenerationRouter generationRouter;
     @Nullable private final MultimodalRouter multimodalRouter;
     private final CallbackHelper helper;
     private final CancellationToken cancellationToken;
@@ -64,7 +64,7 @@ public class StreamingCallback implements IterationCallback {
     @Nullable private String finalContent;
 
     public StreamingCallback(AgentConfigProperties config,
-                             LlmRouter llmRouter,
+                             GenerationRouter generationRouter,
                              @Nullable MultimodalRouter multimodalRouter,
                              CallbackHelper helper,
                              CancellationToken cancellationToken,
@@ -75,7 +75,7 @@ public class StreamingCallback implements IterationCallback {
                              String turnId,
                              AgentRequest request) {
         this.config = config;
-        this.llmRouter = llmRouter;
+        this.generationRouter = generationRouter;
         this.multimodalRouter = multimodalRouter;
         this.helper = helper;
         this.cancellationToken = cancellationToken;
@@ -190,9 +190,9 @@ public class StreamingCallback implements IterationCallback {
         String streamingSystemPrompt = helper.enhanceSystemPromptForStreaming(systemText, a2uiPrompt);
 
         // 先尝试用 ChatModel 做一次非流式调用检测 tool call
-        var chatModelInfo = llmRouter.getChatModelWithInfo(scene, preferredProviderId);
-        this.providerId = chatModelInfo.providerId();
-        this.modelId = chatModelInfo.modelId();
+        var chatModelInfo = generationRouter.getChatModelWithInfo(scene, preferredProviderId, null);
+        this.providerId = chatModelInfo.serviceId();
+        this.modelId = chatModelInfo.modelName();
 
         // 构建带工具定义但禁用自动执行的 ChatOptions
         var optionsBuilder = DefaultToolCallingChatOptions.builder()
@@ -227,7 +227,7 @@ public class StreamingCallback implements IterationCallback {
         // 流式能力检查与分支
         if (!chatModelInfo.supportsStreaming()) {
             log.info("Provider 不支持流式调用，降级为非流式: provider={}, model={}",
-                    chatModelInfo.providerId(), chatModelInfo.modelId());
+                    chatModelInfo.serviceId(), chatModelInfo.modelName());
             return callLlmNonStreaming(chatModelInfo, prompt, traceContext);
         }
 
@@ -281,12 +281,12 @@ public class StreamingCallback implements IterationCallback {
                 }
             }).doOnError(e -> {
                 log.warn("流式调用异常: scene={}, provider={}, error={}",
-                        scene2, chatModelInfo.providerId(), e.getMessage());
+                        scene2, chatModelInfo.serviceId(), e.getMessage());
                 this.streamingError = e instanceof Exception ex ? ex : new RuntimeException(e);
             }).blockLast();
         } catch (Exception e) {
             log.error("流式调用失败: scene={}, provider={}, error={}",
-                    scene2, chatModelInfo.providerId(), e.getMessage());
+                    scene2, chatModelInfo.serviceId(), e.getMessage());
             throw e;
         }
 
@@ -311,7 +311,7 @@ public class StreamingCallback implements IterationCallback {
         // 流式响应为空时构造空内容 ChatResponse
         if (collectedContent.isEmpty() && toolCallCollector.isEmpty()) {
             log.warn("流式响应为空: scene={}, provider={}, model={}",
-                    scene2, chatModelInfo.providerId(), chatModelInfo.modelId());
+                    scene2, chatModelInfo.serviceId(), chatModelInfo.modelName());
             var emptyMessage = new AssistantMessage("");
             var generation = new Generation(emptyMessage);
             ChatResponse emptyResponse = lastChunk[0] != null
@@ -333,7 +333,7 @@ public class StreamingCallback implements IterationCallback {
         long totalMs = Duration.between(callStart, callEnd).toMillis();
         log.info("流式调用完成: scene={}, provider={}, model={}, ttft={}ms, total={}ms, " +
                         "promptTokens={}, completionTokens={}",
-                scene2, chatModelInfo.providerId(), chatModelInfo.modelId(), ttftMs, totalMs,
+                scene2, chatModelInfo.serviceId(), chatModelInfo.modelName(), ttftMs, totalMs,
                 accumulatedPromptTokens[0], accumulatedCompletionTokens[0]);
 
         helper.recordStreamingLlmStep(traceContext, callStart, providerId, modelId,
@@ -405,7 +405,7 @@ public class StreamingCallback implements IterationCallback {
      *
      * <p>当 ChatModel 不支持流式调用时，作为降级路径使用。</p>
      */
-    private ChatResponse callLlmNonStreaming(LlmRouter.ChatModelInfo chatModelInfo,
+    private ChatResponse callLlmNonStreaming(GenerationRouter.ChatModelInfo chatModelInfo,
                                              Prompt prompt,
                                              @Nullable TraceContext traceContext) {
         String scene = config.getLoop().getLlmScene();

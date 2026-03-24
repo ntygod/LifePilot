@@ -1,6 +1,6 @@
 package com.lifepilot.memory.forgetting;
 
-import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.semantic.TemporalEntity;
 import jakarta.annotation.Nullable;
@@ -17,7 +17,7 @@ import java.util.List;
  * 按 importanceScore 升序排列（最低重要度优先），限制返回数量不超过预算。
  * 实际的 LLM 摘要生成由 {@code ForgettingEngine} 执行，本策略仅负责候选选择。</p>
  *
- * <p>LLM 不可用时（{@code llmRouter} 为 null），直接返回空列表跳过本阶段。</p>
+ * <p>LLM 不可用时（{@code generationRouter} 为 null），直接返回空列表跳过本阶段。</p>
  *
  * @author zsg
  * @since 2026-03-01
@@ -27,11 +27,11 @@ public final class ReflectionSummaryPolicy implements ForgettingPolicy {
     private static final Logger log = LoggerFactory.getLogger(ReflectionSummaryPolicy.class);
 
     @Nullable
-    private final LlmRouter llmRouter;
+    private final GenerationRouter generationRouter;
     private final MemoryProperties.Forgetting config;
 
-    public ReflectionSummaryPolicy(@Nullable LlmRouter llmRouter, MemoryProperties.Forgetting config) {
-        this.llmRouter = llmRouter;
+    public ReflectionSummaryPolicy(@Nullable GenerationRouter generationRouter, MemoryProperties.Forgetting config) {
+        this.generationRouter = generationRouter;
         this.config = config;
     }
 
@@ -42,7 +42,7 @@ public final class ReflectionSummaryPolicy implements ForgettingPolicy {
         }
 
         // LLM 不可用时跳过 Reflection-Summary 阶段
-        if (llmRouter == null) {
+        if (generationRouter == null) {
             log.warn("LLM 不可用，跳过 Reflection-Summary 遗忘策略");
             return List.of();
         }

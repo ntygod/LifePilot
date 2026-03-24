@@ -13,7 +13,7 @@ import java.util.List;
  * @since 2026-02-26
  */
 public record ChatResponse(
-        String messageId,
+        String entryId,
         String content,
         @Nullable List<A2uiComponent> a2uiComponents,
         @Nullable TokenUsage tokenUsage,
@@ -21,11 +21,11 @@ public record ChatResponse(
         CompletionMode completionMode,
         @Nullable String resumedFromTraceId
 ) {
-    public ChatResponse(String messageId,
+    public ChatResponse(String entryId,
                         String content,
                         @Nullable List<A2uiComponent> a2uiComponents,
                         @Nullable TokenUsage tokenUsage,
                         @Nullable String traceId) {
-        this(messageId, content, a2uiComponents, tokenUsage, traceId, CompletionMode.NORMAL, null);
+        this(entryId, content, a2uiComponents, tokenUsage, traceId, CompletionMode.NORMAL, null);
     }
 }

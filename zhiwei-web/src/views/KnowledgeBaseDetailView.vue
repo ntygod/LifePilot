@@ -21,8 +21,8 @@ import {
   Upload,
   XCircle,
 } from 'lucide-vue-next'
-import { knowledgeBaseApi, llmProviderApi } from '@/api/client'
-import type { LlmProvider } from '@/api/client'
+import { knowledgeBaseApi, modelServiceApi } from '@/api/client'
+import type { ModelService } from '@/api/client'
 import type {
   KbDocument,
   KbStats,
@@ -126,7 +126,7 @@ const editForm = ref({
 })
 
 // Provider 列表（用于模型下拉选择）
-const providers = ref<LlmProvider[]>([])
+const providers = ref<ModelService[]>([])
 const embeddingProviders = computed(() =>
   providers.value.filter(p => p.capabilities?.includes('EMBEDDING'))
 )
@@ -270,7 +270,7 @@ async function loadData() {
       knowledgeBaseApi.get(kbId.value),
       knowledgeBaseApi.getStats(kbId.value),
       knowledgeBaseApi.listDocuments(kbId.value),
-      llmProviderApi.listEnabledProviders().catch(() => [] as LlmProvider[]),
+      modelServiceApi.listEnabledServices().catch(() => [] as ModelService[]),
     ])
     kb.value = kbResponse
     stats.value = statsResponse

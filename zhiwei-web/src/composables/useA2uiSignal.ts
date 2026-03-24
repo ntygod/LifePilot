@@ -35,7 +35,7 @@ export function useA2uiSignal() {
     const metadata = Object.fromEntries(
       Object.entries({
         componentId: context?.componentId,
-        messageId: context?.messageId,
+        entryId: context?.entryId,
         traceId: context?.traceId,
         emittedAt: Date.now(),
       }).filter(([, value]) => value !== undefined && value !== null),
@@ -58,7 +58,7 @@ export function useA2uiSignal() {
   ) {
     const signalContext: A2uiSignalContext = {
       componentId: context?.componentId,
-      messageId: context?.messageId,
+      entryId: context?.entryId,
       traceId: context?.traceId,
       signalName: context?.signalName ?? signal.name,
     }
@@ -82,9 +82,9 @@ export function useA2uiSignal() {
         a2uiStore.setCurrentTraceId(response.traceId ?? signalContext.traceId ?? null)
       }
 
-      if (hasAssistantText(response) || (!signalContext.messageId && components?.length)) {
+      if (hasAssistantText(response) || (!signalContext.entryId && components?.length)) {
         chatStore.upsertMessage({
-          id: response.messageId,
+          id: response.entryId,
           role: 'assistant',
           content: response.content ?? '',
           a2uiComponents: components ?? undefined,
@@ -93,8 +93,8 @@ export function useA2uiSignal() {
           tokenUsage: response.tokenUsage,
           modelId: response.tokenUsage?.modelId,
         })
-      } else if (components && signalContext.messageId) {
-        chatStore.updateMessage(signalContext.messageId, {
+      } else if (components && signalContext.entryId) {
+        chatStore.updateMessage(signalContext.entryId, {
           a2uiComponents: components,
         })
       }

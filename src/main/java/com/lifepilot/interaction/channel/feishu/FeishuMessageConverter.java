@@ -76,11 +76,6 @@ public class FeishuMessageConverter implements MessageConverter {
      *
      * <p>格式：{@code {"zh_cn":{"title":"...","content":[[{"tag":"text","text":"..."}]]}}}
      */
-    static String buildPostJson(String title, String text) {
-        return "{\"zh_cn\":{\"title\":\"%s\",\"content\":[[{\"tag\":\"text\",\"text\":\"%s\"}]]}}"
-                .formatted(escapeJson(title), escapeJson(text));
-    }
-
     /**
      * 构建飞书交互式消息卡片 JSON。
      */

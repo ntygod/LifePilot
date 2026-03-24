@@ -40,7 +40,7 @@ describe('useChat DONE contents 解析（Property 13）', () => {
       fc.property(contentsArb, (contents) => {
         // 构造一个 DONE 事件 payload
         const event: SseDoneEvent = {
-          messageId: 'mid',
+          entryId: 'mid',
           content: 'fallback-content',
           sessionId: 'sid',
           traceId: 'tid',

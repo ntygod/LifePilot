@@ -1,10 +1,12 @@
 package com.lifepilot.memory.retrieval;
 
-import com.lifepilot.llm.LlmRequest;
+import com.lifepilot.embedding.router.EmbeddingRouter;
+import com.lifepilot.embedding.router.EmbeddingUseCase;
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
-import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.LlmUnavailableException;
 import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,13 +25,15 @@ import static org.mockito.Mockito.*;
  */
 class QueryRewriter测试 {
 
-    private LlmRouter llmRouter;
+    private GenerationRouter generationRouter;
+    private EmbeddingRouter embeddingRouter;
     private PromptRegistry promptRegistry;
     private MemoryProperties properties;
 
     @BeforeEach
     void setUp() {
-        llmRouter = mock(LlmRouter.class);
+        generationRouter = mock(GenerationRouter.class);
+        embeddingRouter = mock(EmbeddingRouter.class);
         promptRegistry = mock(PromptRegistry.class);
         properties = new MemoryProperties();
         when(promptRegistry.render(anyString(), anyMap())).thenReturn("mock prompt");
@@ -43,9 +47,10 @@ class QueryRewriter测试 {
         var llmResponse = new LlmResponse(
                 "[\"改写查询1\", \"改写查询2\", \"改写查询3\"]",
                 10, 20, "provider-1", "model-1", 100, false);
-        when(llmRouter.call(any(LlmRequest.class))).thenReturn(llmResponse);
+        when(generationRouter.call(anyString(), anyString(), isNull(), isNull(), isNull(),
+                eq(GenerationCapability.CHAT), any())).thenReturn(llmResponse);
 
-        var rewriter = new QueryRewriter(llmRouter, properties, promptRegistry);
+        var rewriter = new QueryRewriter(generationRouter, embeddingRouter, properties, promptRegistry);
         var result = rewriter.rewrite("原始查询");
 
         assertEquals("原始查询", result.primaryQuery());
@@ -63,12 +68,14 @@ class QueryRewriter测试 {
         var llmResponse = new LlmResponse(
                 "这是一段假设性文档内容，描述了用户查询的理想回答。",
                 10, 30, "provider-1", "model-1", 150, false);
-        when(llmRouter.call(any(LlmRequest.class))).thenReturn(llmResponse);
+        when(generationRouter.call(anyString(), anyString(), isNull(), isNull(), isNull(),
+                eq(GenerationCapability.CHAT), any())).thenReturn(llmResponse);
 
         float[] mockEmbedding = new float[]{0.1f, 0.2f, 0.3f};
-        when(llmRouter.embed(anyString())).thenReturn(mockEmbedding);
+        when(embeddingRouter.embed(anyString(), eq(EmbeddingUseCase.MEMORY), isNull(), isNull()))
+                .thenReturn(mockEmbedding);
 
-        var rewriter = new QueryRewriter(llmRouter, properties, promptRegistry);
+        var rewriter = new QueryRewriter(generationRouter, embeddingRouter, properties, promptRegistry);
         var result = rewriter.rewrite("原始查询");
 
         assertEquals("原始查询", result.primaryQuery());
@@ -81,44 +88,38 @@ class QueryRewriter测试 {
     void none模式直通返回原始查询() {
         properties.getRetrieval().setQueryRewriteMode("none");
 
-        var rewriter = new QueryRewriter(llmRouter, properties, promptRegistry);
+        var rewriter = new QueryRewriter(generationRouter, embeddingRouter, properties, promptRegistry);
         var result = rewriter.rewrite("原始查询");
 
         assertEquals("原始查询", result.primaryQuery());
         assertTrue(result.rewrittenQueries().isEmpty());
         assertTrue(result.hydeEmbedding().isEmpty());
-        // none 模式不应调用 LLM
-        verify(llmRouter, never()).call(any(LlmRequest.class));
+        verifyNoInteractions(generationRouter, embeddingRouter);
     }
 
     @Test
-    void LLM超时降级() {
+    void 生成调用失败时降级() {
         properties.getRetrieval().setQueryRewriteMode("rewrite");
-        properties.getRetrieval().setRewriteTimeoutMs(1); // 极短超时
+        when(generationRouter.call(anyString(), anyString(), isNull(), isNull(), isNull(),
+                eq(GenerationCapability.CHAT), any()))
+                .thenThrow(new RuntimeException("生成失败"));
 
-        // 模拟 LLM 调用耗时超过超时时间
-        when(llmRouter.call(any(LlmRequest.class))).thenAnswer(invocation -> {
-            Thread.sleep(100); // 模拟耗时
-            return new LlmResponse("[\"改写\"]", 10, 20, "p", "m", 100, false);
-        });
-
-        var rewriter = new QueryRewriter(llmRouter, properties, promptRegistry);
+        var rewriter = new QueryRewriter(generationRouter, embeddingRouter, properties, promptRegistry);
         var result = rewriter.rewrite("原始查询");
 
-        // 超时应降级
         assertEquals("原始查询", result.primaryQuery());
         assertTrue(result.rewrittenQueries().isEmpty());
         assertTrue(result.hydeEmbedding().isEmpty());
     }
 
     @Test
-    void LLM不可用降级() {
+    void 生成服务不可用时降级() {
         properties.getRetrieval().setQueryRewriteMode("rewrite");
+        when(generationRouter.call(anyString(), anyString(), isNull(), isNull(), isNull(),
+                eq(GenerationCapability.CHAT), any()))
+                .thenThrow(new LlmUnavailableException("生成服务不可用", "memory_query_rewrite", List.of()));
 
-        when(llmRouter.call(any(LlmRequest.class)))
-                .thenThrow(new LlmUnavailableException("LLM 不可用", "test", List.of()));
-
-        var rewriter = new QueryRewriter(llmRouter, properties, promptRegistry);
+        var rewriter = new QueryRewriter(generationRouter, embeddingRouter, properties, promptRegistry);
         var result = rewriter.rewrite("原始查询");
 
         assertEquals("原始查询", result.primaryQuery());

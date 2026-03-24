@@ -76,9 +76,34 @@ public class AgentConfigProperties {
         private int failedStepMaxLength = 80;
         /** Token 分配比例。 */
         private TokenAllocation tokenAllocation = new TokenAllocation();
+        private SliceConfig slice = new SliceConfig();
+        private PruningConfig pruning = new PruningConfig();
+        private CompactionConfig compaction = new CompactionConfig();
+        private MessageBuildConfig messageBuild = new MessageBuildConfig();
+        private ReportConfig report = new ReportConfig();
 
         public void setTokenAllocation(TokenAllocation tokenAllocation) {
             this.tokenAllocation = tokenAllocation != null ? tokenAllocation : new TokenAllocation();
+        }
+
+        public void setSlice(SliceConfig slice) {
+            this.slice = slice != null ? slice : new SliceConfig();
+        }
+
+        public void setPruning(PruningConfig pruning) {
+            this.pruning = pruning != null ? pruning : new PruningConfig();
+        }
+
+        public void setCompaction(CompactionConfig compaction) {
+            this.compaction = compaction != null ? compaction : new CompactionConfig();
+        }
+
+        public void setMessageBuild(MessageBuildConfig messageBuild) {
+            this.messageBuild = messageBuild != null ? messageBuild : new MessageBuildConfig();
+        }
+
+        public void setReport(ReportConfig report) {
+            this.report = report != null ? report : new ReportConfig();
         }
 
         /** Token 分配比例。 */
@@ -87,10 +112,53 @@ public class AgentConfigProperties {
         public static class TokenAllocation {
             private int systemPromptPercent = 15;
             private int historyPercent = 30;
-            private int memoryPercent = 35;
+            private int memoryPercent = 25;
             private int toolSchemaPercent = 10;
-            private int toolResultPercent = 0;
+            private int toolResultPercent = 10;
             private int reservedBufferPercent = 10;
+
+        }
+
+        @Setter
+        @Getter
+        public static class SliceConfig {
+            private int recentTurnLimit = 6;
+            private int recentArtifactLimit = 3;
+        }
+
+        @Setter
+        @Getter
+        public static class PruningConfig {
+            private boolean enabled = true;
+            private String toolResultMode = "recent_only";
+            private int recentToolResultLimit = 4;
+            private int toolResultPreviewChars = 240;
+        }
+
+        @Setter
+        @Getter
+        public static class CompactionConfig {
+            private boolean enabled = true;
+            private int triggerThresholdPercent = 75;
+            private int keepRecentTurns = 2;
+            private int minTurnCount = 6;
+            private int maxSourceEntries = 80;
+            private int summaryMaxChars = 500;
+        }
+
+        @Setter
+        @Getter
+        public static class MessageBuildConfig {
+            private boolean hygieneEnabled = true;
+            private boolean dropEmptyAssistantMessages = true;
+            private boolean dropOrphanToolResponses = true;
+            private boolean keepOnlyFirstSystemMessage = true;
+        }
+
+        @Setter
+        @Getter
+        public static class ReportConfig {
+            private boolean contextReportEnabled = true;
 
         }
     }

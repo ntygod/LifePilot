@@ -12,8 +12,8 @@ import org.springframework.ai.audio.transcription.TranscriptionModel;
 import org.springframework.ai.audio.tts.TextToSpeechModel;
 import org.springframework.lang.Nullable;
 
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.knowledge.parser.DocumentParser;
-import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.circuit.CircuitBreakerManager;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.llm.multimodal.gemini.GeminiFileApiClient;
@@ -130,11 +130,11 @@ public class MediaAutoConfiguration {
             @Nullable VideoProcessor videoProcessor,
             @Nullable GeminiFileApiClient geminiFileApiClient,
             MediaProperties mediaProperties,
-            LlmRouter llmRouter) {
+            GenerationRouter generationRouter) {
         return new MultimodalRouter(
                 providerRegistry, circuitBreakerManager,
                 mediaProcessor, mediaValidator,
                 videoProcessor, geminiFileApiClient,
-                mediaProperties, llmRouter);
+                mediaProperties, generationRouter);
     }
 }

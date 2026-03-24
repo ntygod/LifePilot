@@ -3,12 +3,12 @@ package com.lifepilot.conversation;
 import java.time.Instant;
 
 /**
- * 会话轮次视图模型（逻辑视图），统一抽象单条对话消息。
+ * 会话轮次视图模型。
  *
- * <p>
- * 与底层存储的物理结构解耦，既可以由 {@code agent_sessions.recent_turns_json}
- * 反序列化生成，也可以由 L2 {@code EpisodicMemory} 的消息记录映射生成。
- * </p>
+ * <p>当前统一由 {@code session_transcript_entries} 的读模型映射生成。</p>
+ *
+ * @author zsg
+ * @since 2026-03-20
  */
 public record ConversationTurnView(
         String sessionId,
@@ -16,15 +16,11 @@ public record ConversationTurnView(
         String content,
         Instant createdAt,
         /**
-         * 本轮相关的推理摘要（如有）。
+         * 当前条目关联的推理摘要。
          *
-         * <p>
-         * 对于来自 {@code SessionSnapshot.recentTurns} 的助手消息，
-         * 该字段通常来自 {@code ConversationTurn.reasoningSummary()}。
-         * 对于来自 L2 消息记录的视图，该字段通常为 {@code null}。
-         * </p>
+         * <p>通常来自 transcript 中助手消息 payload 的
+         * {@code reasoningSummary} 字段。</p>
          */
         String reasoningSummary
 ) {
 }
-

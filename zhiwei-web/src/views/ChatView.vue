@@ -8,8 +8,8 @@ import {
   SlidersHorizontal,
   Square,
 } from 'lucide-vue-next'
-import { chatApi, llmProviderApi } from '@/api/client'
-import type { LlmProvider } from '@/api/client'
+import { chatApi, modelServiceApi } from '@/api/client'
+import type { ModelService } from '@/api/client'
 import type { ChatAttachment, Message, ResumePolicy, SessionConfig } from '@/types'
 import StatePanel from '@/components/common/StatePanel.vue'
 import { Button } from '@/components/ui/button'
@@ -33,6 +33,7 @@ const chatStore = useChatStore()
 const kbStore = useKnowledgeBaseStore()
 const skillStore = useSkillStore()
 const uiStore = useUiStore()
+
 const {
   sendMessage,
   isStreaming,
@@ -55,11 +56,13 @@ const searchQuery = ref('')
 const showDebugDrawer = ref(false)
 const showSessionSidebar = ref(false)
 const showConfigPanel = ref(false)
-const providers = ref<LlmProvider[]>([])
+const providers = ref<ModelService[]>([])
+
 const DEFAULT_SESSION_TEMPERATURE = 0.7
 const DEFAULT_SESSION_MAX_TOKENS = 131072
 const DEFAULT_SESSION_MAX_STEPS = 60
 const DEFAULT_SESSION_MAX_DURATION_SECONDS = 300
+
 const activeSessionConfig = ref<SessionConfig>({
   temperature: DEFAULT_SESSION_TEMPERATURE,
   maxTokens: DEFAULT_SESSION_MAX_TOKENS,
@@ -88,7 +91,9 @@ const chatProviders = computed(() =>
 )
 
 const currentSession = computed(() => {
-  if (!chatStore.activeSessionId) return null
+  if (!chatStore.activeSessionId) {
+    return null
+  }
   return chatStore.sessions.find(session => session.id === chatStore.activeSessionId) || null
 })
 
@@ -110,7 +115,9 @@ async function loadActiveSessionConfig(sessionId: string | null) {
 
   try {
     const detail = await chatApi.getSession(sessionId)
-    if (chatStore.activeSessionId !== sessionId) return
+    if (chatStore.activeSessionId !== sessionId) {
+      return
+    }
 
     activeSessionConfig.value = {
       preferredProviderId: detail.preferredProviderId ?? undefined,
@@ -129,23 +136,30 @@ async function loadActiveSessionConfig(sessionId: string | null) {
 }
 
 const hasMessageSearch = computed(() => searchQuery.value.trim().length > 0)
+
 const matchedMessageCount = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
-  if (!query) return chatStore.messages.length
+  if (!query) {
+    return chatStore.messages.length
+  }
 
   return chatStore.messages.filter(message => message.content.toLowerCase().includes(query)).length
 })
 
 const lastAssistantMessage = computed(() => {
   for (let index = chatStore.messages.length - 1; index >= 0; index -= 1) {
-    if (chatStore.messages[index].role === 'assistant') return chatStore.messages[index]
+    if (chatStore.messages[index].role === 'assistant') {
+      return chatStore.messages[index]
+    }
   }
   return null
 })
 
 const latestTraceMessage = computed(() => {
   for (let index = chatStore.messages.length - 1; index >= 0; index -= 1) {
-    if (chatStore.messages[index].traceId) return chatStore.messages[index]
+    if (chatStore.messages[index].traceId) {
+      return chatStore.messages[index]
+    }
   }
   return null
 })
@@ -153,7 +167,9 @@ const latestTraceMessage = computed(() => {
 const latestUserErrorMessage = computed(() => {
   for (let index = chatStore.messages.length - 1; index >= 0; index -= 1) {
     const message = chatStore.messages[index]
-    if (message.role === 'user' && message.status === 'error') return message
+    if (message.role === 'user' && message.status === 'error') {
+      return message
+    }
   }
   return null
 })
@@ -166,6 +182,7 @@ const showGlobalErrorPanel = computed(() => (
 const lastToolsSummary = computed(() => lastAssistantMessage.value?.toolsSummary ?? [])
 const lastSources = computed(() => lastAssistantMessage.value?.sources ?? [])
 const lastKbSources = computed(() => lastSources.value.filter(source => source.type === 'knowledgeBase'))
+
 const lastTraceTarget = computed(() => (
   latestTraceMessage.value?.traceId
     ? { name: 'traces', query: { id: latestTraceMessage.value.traceId } }
@@ -189,16 +206,17 @@ onMounted(async () => {
 
   void kbStore.fetchList()
   void skillStore.fetchSkills()
+
   try {
-    providers.value = await llmProviderApi.listEnabledProviders()
+    providers.value = await modelServiceApi.listEnabledServices('GENERATION')
   } catch {
-    // Provider 列表拉取失败不阻塞页面。
+    // Provider 列表加载失败不阻塞页面。
   }
 })
 
 watch(
   () => route.params.sessionId as string | undefined,
-  async (sessionId) => {
+  async sessionId => {
     if (!sessionId) {
       chatStore.activeSessionId = null
       try {
@@ -255,7 +273,9 @@ function getAttachmentIds(message: Message): string[] | undefined {
 function findUserMessageForAssistant(assistantMessage: Message): Message | null {
   const sorted = [...chatStore.messages].sort((left, right) => left.timestamp - right.timestamp)
   const assistantIndex = sorted.findIndex(message => message.id === assistantMessage.id)
-  if (assistantIndex < 0) return null
+  if (assistantIndex < 0) {
+    return null
+  }
 
   for (let index = assistantIndex - 1; index >= 0; index -= 1) {
     if (sorted[index].role === 'user') {
@@ -293,7 +313,9 @@ async function handleRetry(message: Message) {
 
 async function handleRegenerate(assistantMessage: Message) {
   const userMessage = findUserMessageForAssistant(assistantMessage)
-  if (!userMessage) return
+  if (!userMessage) {
+    return
+  }
 
   const removeIndex = chatStore.messages.findIndex(message => message.id === assistantMessage.id)
   if (removeIndex !== -1) {
@@ -305,18 +327,24 @@ async function handleRegenerate(assistantMessage: Message) {
 
 async function handleResume(assistantMessage: Message) {
   const userMessage = findUserMessageForAssistant(assistantMessage)
-  if (!userMessage) return
+  if (!userMessage) {
+    return
+  }
   await resendUserMessage(userMessage, 'AUTO')
 }
 
 async function handleRestart(assistantMessage: Message) {
   const userMessage = findUserMessageForAssistant(assistantMessage)
-  if (!userMessage) return
+  if (!userMessage) {
+    return
+  }
   await resendUserMessage(userMessage, 'FRESH')
 }
 
 async function handleFork(message: Message) {
-  if (!chatStore.activeSessionId) return
+  if (!chatStore.activeSessionId) {
+    return
+  }
   try {
     const newSession = await chatApi.forkSession(chatStore.activeSessionId, message.id)
     uiStore.showToast('success', '会话分叉成功')
@@ -353,7 +381,10 @@ async function handleClearSession() {
 }
 
 async function handleConfigUpdate(config: SessionConfig) {
-  if (!chatStore.activeSessionId) return
+  if (!chatStore.activeSessionId) {
+    return
+  }
+
   try {
     await chatApi.updateSessionConfig(chatStore.activeSessionId, config)
     activeSessionConfig.value = {
@@ -371,7 +402,10 @@ async function handleConfigUpdate(config: SessionConfig) {
 }
 
 async function handleUpdateSessionTitle(title: string) {
-  if (!chatStore.activeSessionId || !title.trim()) return
+  if (!chatStore.activeSessionId || !title.trim()) {
+    return
+  }
+
   try {
     await chatApi.updateSession(chatStore.activeSessionId, { title: title.trim() })
     await chatStore.loadSessions()
@@ -405,7 +439,6 @@ function closeInspectorPanels() {
 
 <template>
   <div class="flex h-full flex-col overflow-hidden">
-    <!-- 头部：标题 + 操作按钮 + 搜索栏 -->
     <header class="shrink-0 border-b border-border/60 bg-background px-4 py-3 sm:px-6">
       <div class="mx-auto max-w-[1460px]">
         <div class="flex items-center justify-between gap-4">
@@ -420,7 +453,9 @@ function closeInspectorPanels() {
           </div>
           <div class="flex items-center gap-2">
             <Button
-              type="button" variant="outline" size="sm"
+              type="button"
+              variant="outline"
+              size="sm"
               :class="showConfigPanel && 'status-btn-active'"
               @click="togglePanel('config')"
             >
@@ -429,7 +464,9 @@ function closeInspectorPanels() {
             </Button>
             <Button
               v-if="chatStore.activeSessionId"
-              type="button" variant="outline" size="sm"
+              type="button"
+              variant="outline"
+              size="sm"
               :class="showSessionSidebar && 'status-btn-active'"
               @click="togglePanel('sidebar')"
             >
@@ -437,7 +474,9 @@ function closeInspectorPanels() {
               信息
             </Button>
             <Button
-              type="button" variant="outline" size="sm"
+              type="button"
+              variant="outline"
+              size="sm"
               :class="showDebugDrawer && 'status-btn-active'"
               @click="togglePanel('debug')"
             >
@@ -450,14 +489,14 @@ function closeInspectorPanels() {
             </Button>
           </div>
         </div>
-        <!-- 搜索工具栏：搜索框 + pills + 操作合并为一行 -->
+
         <div class="mt-2 flex items-center gap-2 border-t border-border/30 pt-2">
           <div class="relative w-48 shrink-0">
             <Search class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               v-model="searchQuery"
               type="search"
-              placeholder="搜索消息…"
+              placeholder="搜索消息..."
               class="h-7 pl-8 text-xs focus-visible:ring-1"
             />
           </div>
@@ -473,7 +512,10 @@ function closeInspectorPanels() {
             </RouterLink>
             <Button
               v-if="chatStore.activeSessionId && chatStore.messages.length > 0"
-              type="button" variant="ghost" size="sm" class="h-7 text-xs"
+              type="button"
+              variant="ghost"
+              size="sm"
+              class="h-7 text-xs"
               @click="handleClearSession"
             >
               清空
@@ -483,7 +525,6 @@ function closeInspectorPanels() {
       </div>
     </header>
 
-    <!-- 中间：消息滚动区 -->
     <div class="relative min-h-0 flex-1 overflow-hidden">
       <div
         ref="scrollContainer"
@@ -516,7 +557,6 @@ function closeInspectorPanels() {
         </div>
       </div>
 
-      <!-- 侧边栏浮层（覆盖在消息区右侧，不挤占布局） -->
       <Transition
         enter-active-class="transition-all duration-250 ease-out"
         enter-from-class="opacity-0 translate-x-4"
@@ -567,7 +607,6 @@ function closeInspectorPanels() {
       </Transition>
     </div>
 
-    <!-- 底部固定：错误/流式状态 + 输入框 -->
     <div class="shrink-0 border-t border-border/60 bg-background px-4 pb-3 pt-2 sm:px-6">
       <div class="mx-auto max-w-[1460px]">
         <StatePanel
@@ -586,6 +625,5 @@ function closeInspectorPanels() {
         <ChatInput :disabled="isStreaming" @send="handleSend" />
       </div>
     </div>
-
   </div>
 </template>

@@ -3,36 +3,36 @@ package com.lifepilot.llm;
 import java.util.List;
 
 /**
- * LLM 任务意图场景常量。
+ * 模型场景常量。
  *
- * <p>仅保留生产代码中实际使用的场景，未使用的场景已清理。
- * 工作流 YAML 中可自由使用任意场景字符串，LlmRouter 会按能力路由兜底。
+ * <p>工作流 YAML 和各模块可直接使用场景字符串，
+ * 由 GenerationRouter / EmbeddingRouter / RerankRouter 按能力路由。</p>
  *
  * @author zsg
  * @since 2026-02-24
  */
 public final class LlmScene {
 
-    /** 通用对话 */
+    /** 通用对话。 */
     public static final String CHAT = "chat";
-    /** 知识实体提取（AUDN） */
+    /** 知识实体提取。 */
     public static final String KNOWLEDGE_EXTRACTION = "knowledge_extraction";
-    /** 记忆压缩 */
+    /** 记忆压缩。 */
     public static final String MEMORY_COMPRESSION = "memory_compression";
-    /** 向量嵌入 */
+    /** 向量化。 */
     public static final String EMBEDDING = "embedding";
-    /** Skill 自动生成 */
+    /** Skill 自动生成。 */
     public static final String SKILL_GENERATION = "skill_generation";
-    /** 知识精排 */
+    /** 知识精排。 */
     public static final String KNOWLEDGE_RERANK = "knowledge_rerank";
-    /** ReAct Agent 循环 */
+    /** ReAct Agent 循环。 */
     public static final String AGENT_REACT = "agent_react";
 
     private LlmScene() {
     }
 
     /**
-     * 返回所有已注册场景常量列表。
+     * 返回全部已注册场景常量。
      */
     public static List<String> all() {
         return List.of(
