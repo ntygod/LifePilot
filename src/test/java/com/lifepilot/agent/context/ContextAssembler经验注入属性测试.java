@@ -61,10 +61,8 @@ class ContextAssembler经验注入属性测试 {
 
         var assembler = new ContextAssembler(
                 config, promptRegistry,
-                null, null, null, null,
-                semanticMemory, null,
-                memoryProperties, null,
-                effectivenessTracker, null);
+                null, semanticMemory, null, memoryProperties,
+                null, effectivenessTracker, null);
 
         // 调用 safeRetrieveExperiences 获取实际检索结果
         var retrieved = assembler.safeRetrieveExperiences("测试查询");

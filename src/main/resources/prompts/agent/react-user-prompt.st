@@ -1,8 +1,10 @@
 当前时间: {currentDateTime}, 时区: {timezone}, 区域: {locale}
 {userProfileSection}
 {passiveNotificationsSection}
+{compactionSection}
 {conversationHistorySection}
 {workspaceSection}
+{artifactSection}
 {experienceSection}
 {memoriesSection}
 {knowledgeBaseSection}

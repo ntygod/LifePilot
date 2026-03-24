@@ -42,7 +42,7 @@ class ContextAssemblerSkillCatalogTest {
         when(skillRegistry.listAll()).thenReturn(List.of(skill));
 
         var assembler = new ContextAssembler(config, promptRegistry,
-                null, null, null, null, null, null, null, null, null, skillRegistry);
+                null, null, null, null, null, null, skillRegistry);
 
         String result = assembler.buildReactSystemPrompt();
 
@@ -63,7 +63,7 @@ class ContextAssemblerSkillCatalogTest {
         when(skillRegistry.listAll()).thenReturn(List.of());
 
         var assembler = new ContextAssembler(config, promptRegistry,
-                null, null, null, null, null, null, null, null, null, skillRegistry);
+                null, null, null, null, null, null, skillRegistry);
 
         String result = assembler.buildReactSystemPrompt();
 
@@ -81,7 +81,7 @@ class ContextAssemblerSkillCatalogTest {
         when(promptRegistry.render(eq("agent/react-system"), anyMap())).thenReturn("system prompt");
 
         var assembler = new ContextAssembler(config, promptRegistry,
-                null, null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null);
 
         String result = assembler.buildReactSystemPrompt();
 
@@ -108,7 +108,7 @@ class ContextAssemblerSkillCatalogTest {
                 .thenThrow(new RuntimeException("missing template"));
 
         var assembler = new ContextAssembler(config, promptRegistry,
-                null, null, null, null, null, null, null, null, null, skillRegistry);
+                null, null, null, null, null, null, skillRegistry);
 
         String result = assembler.buildReactSystemPrompt();
 
@@ -125,7 +125,7 @@ class ContextAssemblerSkillCatalogTest {
         when(promptRegistry.render(eq("agent/react-system-task"), anyMap())).thenReturn("task mode prompt");
 
         var assembler = new ContextAssembler(config, promptRegistry,
-                null, null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null);
 
         String result = assembler.buildReactSystemPrompt(buildState("cron:daily", "check logs at 8 every day"));
 
@@ -146,7 +146,7 @@ class ContextAssemblerSkillCatalogTest {
         });
 
         var assembler = new ContextAssembler(config, promptRegistry,
-                null, null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null);
 
         String result = assembler.buildUserPrompt(buildState("web", "analyze logs after 2026-03-21 00:00"));
 

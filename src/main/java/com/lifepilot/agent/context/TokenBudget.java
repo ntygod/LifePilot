@@ -57,7 +57,7 @@ public record TokenBudget(
             totalWeight += weight;
         }
         if (totalWeight <= 0) {
-            weights = new int[]{15, 30, 35, 10, 0, 10};
+            weights = new int[]{15, 30, 25, 10, 10, 10};
             totalWeight = 100;
         }
 

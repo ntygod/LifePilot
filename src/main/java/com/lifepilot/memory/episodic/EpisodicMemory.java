@@ -18,7 +18,7 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * 情景记忆的主读路径已经切换到会话层（`chat_sessions/chat_messages`）。
+ * 情景记忆的主读路径已经切换到会话层（`session_store/session_transcript_entries`）。
  *
  * <p>当前职责主要是提供对话检索、片段回忆和会话级读取能力。</p>
  */
@@ -50,23 +50,60 @@ public class EpisodicMemory {
 
     @Transactional
     public void save(ConversationRecord record) {
-        jdbcTemplate.update(
-                "INSERT INTO conversations (id, session_id, goal, summary, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-                record.id(), record.sessionId(), record.goal(), record.summary(),
-                record.createdAt().toString(), record.updatedAt().toString());
+        if (record == null) {
+            return;
+        }
+        String sessionId = normalizeBlank(record.sessionId()) != null ? record.sessionId() : record.id();
+        Instant lastMessageAt = record.messages().isEmpty()
+                ? record.updatedAt()
+                : record.messages().getLast().createdAt();
+        jdbcTemplate.update("""
+                        INSERT INTO session_store (
+                            session_id, channel, chat_type, title, summary, message_count,
+                            is_pinned, archived, last_message_at, created_at, updated_at, last_activity_at, active_branch_id
+                        ) VALUES (?, 'memory-import', 'chat', ?, ?, ?, 0, 0, ?, ?, ?, ?, 'main')
+                        ON CONFLICT(session_id) DO UPDATE SET
+                            title = excluded.title,
+                            summary = excluded.summary,
+                            message_count = excluded.message_count,
+                            last_message_at = excluded.last_message_at,
+                            updated_at = excluded.updated_at,
+                            last_activity_at = excluded.last_activity_at
+                        """,
+                sessionId,
+                normalizeBlank(record.goal()) != null ? record.goal() : sessionId,
+                record.summary(),
+                record.messages().size(),
+                lastMessageAt != null ? lastMessageAt.toString() : null,
+                record.createdAt().toString(),
+                record.updatedAt().toString(),
+                lastMessageAt != null ? lastMessageAt.toString() : record.updatedAt().toString());
+        jdbcTemplate.update("DELETE FROM session_transcript_entries WHERE session_id = ?", sessionId);
 
         for (var msg : record.messages()) {
-            jdbcTemplate.update(
-                    "INSERT INTO messages (id, conversation_id, role, content, compressed_content, compression_level, is_pinned, tool_call_json, token_count, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    msg.id(), msg.conversationId(), msg.role(), msg.content(),
-                    msg.compressedContent(), msg.compressionLevel().level(),
-                    msg.isPinned() ? 1 : 0, msg.toolCallJson(), msg.tokenCount(),
+            String payloadJson = "{\"content\":\"" + escapeJson(msg.content()) + "\"}";
+            jdbcTemplate.update("""
+                            INSERT INTO session_transcript_entries (
+                                id, session_id, branch_id, entry_type, role, turn_id, trace_id,
+                                visible_to_model, visible_to_user, payload_json, token_estimate, created_at
+                            ) VALUES (?, ?, 'main', 'message', ?, NULL, NULL, 1, 1, ?, ?, ?)
+                            """,
+                    msg.id(),
+                    sessionId,
+                    msg.role(),
+                    payloadJson,
+                    Math.max(0, msg.tokenCount()),
                     msg.createdAt().toString());
+            if (msg.compressedContent() != null && !msg.compressedContent().isBlank()
+                    && msg.compressionLevel() != CompressionLevel.ORIGINAL) {
+                upsertCompressionProjection(sessionId, msg.id(), msg.compressionLevel(), msg.compressedContent(),
+                        record.updatedAt());
+            }
         }
 
         notifyWriteCallback();
-        log.debug("情景记忆已写入旧版对话记录: id={}, messages={}",
-                record.id(), record.messageCount());
+        log.debug("情景记忆已写入 transcript 读模型: sessionId={}, messages={}",
+                sessionId, record.messageCount());
     }
 
     public List<ConversationRecord> getRecent(int limit) {
@@ -75,9 +112,9 @@ public class EpisodicMemory {
         }
         List<SessionRow> sessions = jdbcTemplate.query(
                 """
-                SELECT id, title, summary, created_at, updated_at
-                FROM chat_sessions
-                ORDER BY COALESCE(last_message_at, updated_at, created_at) DESC
+                SELECT session_id AS id, title, summary, created_at, updated_at
+                FROM session_store
+                ORDER BY COALESCE(last_activity_at, last_message_at, updated_at, created_at) DESC
                 LIMIT ?
                 """,
                 (rs, rowNum) -> new SessionRow(
@@ -97,10 +134,10 @@ public class EpisodicMemory {
         String since = Instant.now().minus(duration).toString();
         List<SessionRow> sessions = jdbcTemplate.query(
                 """
-                SELECT id, title, summary, created_at, updated_at
-                FROM chat_sessions
-                WHERE COALESCE(last_message_at, created_at) >= ?
-                ORDER BY COALESCE(last_message_at, updated_at, created_at) DESC
+                SELECT session_id AS id, title, summary, created_at, updated_at
+                FROM session_store
+                WHERE COALESCE(last_activity_at, last_message_at, created_at) >= ?
+                ORDER BY COALESCE(last_activity_at, last_message_at, updated_at, created_at) DESC
                 """,
                 (rs, rowNum) -> new SessionRow(
                         rs.getString("id"),
@@ -129,9 +166,9 @@ public class EpisodicMemory {
         }
         List<SessionRow> sessions = jdbcTemplate.query(
                 """
-                SELECT id, title, summary, created_at, updated_at
-                FROM chat_sessions
-                WHERE id = ?
+                SELECT session_id AS id, title, summary, created_at, updated_at
+                FROM session_store
+                WHERE session_id = ?
                 """,
                 (rs, rowNum) -> new SessionRow(
                         rs.getString("id"),
@@ -147,7 +184,7 @@ public class EpisodicMemory {
         if (sessionId == null || sessionId.isBlank()) {
             return List.of();
         }
-        return loadChatMessages(sessionId);
+        return loadTranscriptMessages(sessionId);
     }
 
     public List<ConversationSnippetRecord> searchSnippetsExcludingSession(String query,
@@ -160,21 +197,21 @@ public class EpisodicMemory {
             int candidateLimit = Math.max(limit * RECALL_CANDIDATE_MULTIPLIER, limit);
             List<RecallHitRow> hits = jdbcTemplate.query(
                     """
-                    SELECT m.id AS message_id,
-                           m.session_id AS session_id,
+                    SELECT e.id AS entry_id,
+                           e.session_id AS session_id,
                            COALESCE(s.title, '') AS session_title,
                            COALESCE(s.summary, '') AS session_summary,
-                           m.created_at AS created_at
-                    FROM chat_messages_fts
-                    JOIN chat_messages m ON m.rowid = chat_messages_fts.rowid
-                    LEFT JOIN chat_sessions s ON s.id = m.session_id
-                    WHERE chat_messages_fts MATCH ?
-                      AND m.session_id <> ?
-                    ORDER BY bm25(chat_messages_fts), m.created_at DESC
+                           e.created_at AS created_at
+                    FROM session_transcript_entries_fts
+                    JOIN session_transcript_entries e ON e.rowid = session_transcript_entries_fts.rowid
+                    LEFT JOIN session_store s ON s.session_id = e.session_id
+                    WHERE session_transcript_entries_fts MATCH ?
+                      AND e.session_id <> ?
+                    ORDER BY bm25(session_transcript_entries_fts), e.created_at DESC
                     LIMIT ?
                     """,
                     (rs, rowNum) -> new RecallHitRow(
-                            rs.getString("message_id"),
+                            rs.getString("entry_id"),
                             rs.getString("session_id"),
                             normalizeBlank(rs.getString("session_title")),
                             normalizeBlank(rs.getString("session_summary")),
@@ -223,10 +260,10 @@ public class EpisodicMemory {
         String pattern = "%" + intentType + "%";
         List<SessionRow> sessions = jdbcTemplate.query(
                 """
-                SELECT id, title, summary, created_at, updated_at
-                FROM chat_sessions
+                SELECT session_id AS id, title, summary, created_at, updated_at
+                FROM session_store
                 WHERE title LIKE ? OR summary LIKE ?
-                ORDER BY COALESCE(last_message_at, updated_at, created_at) DESC
+                ORDER BY COALESCE(last_activity_at, last_message_at, updated_at, created_at) DESC
                 LIMIT ?
                 """,
                 (rs, rowNum) -> new SessionRow(
@@ -240,7 +277,7 @@ public class EpisodicMemory {
     }
 
     public long countConversations() {
-        Long count = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM chat_sessions", Long.class);
+        Long count = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM session_store", Long.class);
         return count != null ? count : 0L;
     }
 
@@ -252,9 +289,9 @@ public class EpisodicMemory {
         int offset = safePage * size;
         List<SessionRow> sessions = jdbcTemplate.query(
                 """
-                SELECT id, title, summary, created_at, updated_at
-                FROM chat_sessions
-                ORDER BY COALESCE(last_message_at, updated_at, created_at) DESC
+                SELECT session_id AS id, title, summary, created_at, updated_at
+                FROM session_store
+                ORDER BY COALESCE(last_activity_at, last_message_at, updated_at, created_at) DESC
                 LIMIT ? OFFSET ?
                 """,
                 (rs, rowNum) -> new SessionRow(
@@ -269,9 +306,9 @@ public class EpisodicMemory {
 
     @Transactional
     public boolean delete(String conversationId) {
-        int rows = jdbcTemplate.update("DELETE FROM chat_sessions WHERE id = ?", conversationId);
+        int rows = jdbcTemplate.update("DELETE FROM session_store WHERE session_id = ?", conversationId);
         if (rows > 0) {
-            log.info("已从情景记忆读模型删除会话: sessionId={}", conversationId);
+            log.info("已从 transcript 会话读模型删除会话: sessionId={}", conversationId);
         }
         return rows > 0;
     }
@@ -283,19 +320,25 @@ public class EpisodicMemory {
         if (compressedTexts == null || compressedTexts.isEmpty()) {
             return;
         }
+        int updated = 0;
+        Instant now = Instant.now();
         for (var entry : compressedTexts.entrySet()) {
-            jdbcTemplate.update(
-                    "UPDATE messages " +
-                            "SET compressed_content = ?, compression_level = ? " +
-                            "WHERE id = ? AND conversation_id = ? AND is_pinned = 0 AND compression_level < ?",
-                    entry.getValue(),
-                    targetLevel.level(),
-                    entry.getKey(),
+            String compressedContent = entry.getValue();
+            if (compressedContent == null || compressedContent.isBlank()) {
+                continue;
+            }
+            updated += upsertCompressionProjection(
                     conversationId,
-                    targetLevel.level());
+                    entry.getKey(),
+                    targetLevel,
+                    compressedContent,
+                    now);
         }
-        log.info("已压缩旧版对话消息: conversationId={}, level={}, count={}",
-                conversationId, targetLevel, compressedTexts.size());
+        if (updated > 0) {
+            notifyWriteCallback();
+        }
+        log.info("已写入 transcript 压缩投影: conversationId={}, level={}, count={}",
+                conversationId, targetLevel, updated);
     }
 
     private void notifyWriteCallback() {
@@ -310,7 +353,7 @@ public class EpisodicMemory {
     }
 
     private ConversationRecord toConversationRecord(SessionRow row) {
-        List<MessageRecord> messages = loadChatMessages(row.id());
+        List<MessageRecord> messages = loadTranscriptMessages(row.id());
         return new ConversationRecord(
                 row.id(),
                 row.id(),
@@ -321,21 +364,31 @@ public class EpisodicMemory {
                 row.updatedAt());
     }
 
-    private List<MessageRecord> loadChatMessages(String sessionId) {
+    private List<MessageRecord> loadTranscriptMessages(String sessionId) {
         return jdbcTemplate.query(
                 """
-                SELECT id, session_id, role, content, created_at
-                FROM chat_messages
-                WHERE session_id = ?
-                ORDER BY created_at
+                SELECT e.id,
+                       e.session_id,
+                       e.role,
+                       json_extract(e.payload_json, '$.content') AS content,
+                       c.compressed_content AS compressed_content,
+                       COALESCE(c.compression_level, 0) AS compression_level,
+                       e.created_at
+                FROM session_transcript_entries e
+                LEFT JOIN session_transcript_compressions c ON c.entry_id = e.id
+                WHERE e.session_id = ?
+                  AND e.entry_type = 'message'
+                  AND e.visible_to_user = 1
+                  AND trim(COALESCE(json_extract(e.payload_json, '$.content'), '')) <> ''
+                ORDER BY e.created_at, e.rowid
                 """,
                 (rs, rowNum) -> new MessageRecord(
                         rs.getString("id"),
                         rs.getString("session_id"),
                         rs.getString("role"),
                         rs.getString("content"),
-                        null,
-                        CompressionLevel.ORIGINAL,
+                        normalizeBlank(rs.getString("compressed_content")),
+                        CompressionLevel.fromLevel(rs.getInt("compression_level")),
                         false,
                         null,
                         estimateTokenCount(rs.getString("content")),
@@ -343,13 +396,54 @@ public class EpisodicMemory {
                 sessionId);
     }
 
+    private int upsertCompressionProjection(String sessionId,
+                                            String entryId,
+                                            CompressionLevel targetLevel,
+                                            String compressedContent,
+                                            Instant updatedAt) {
+        return jdbcTemplate.update("""
+                        INSERT INTO session_transcript_compressions (
+                            entry_id, session_id, compression_level, compressed_content, updated_at
+                        )
+                        SELECT id, session_id, ?, ?, ?
+                        FROM session_transcript_entries
+                        WHERE id = ?
+                          AND session_id = ?
+                          AND entry_type = 'message'
+                          AND visible_to_user = 1
+                        ON CONFLICT(entry_id) DO UPDATE SET
+                            session_id = excluded.session_id,
+                            compression_level = excluded.compression_level,
+                            compressed_content = excluded.compressed_content,
+                            updated_at = excluded.updated_at
+                        WHERE session_transcript_compressions.compression_level <= excluded.compression_level
+                        """,
+                targetLevel.level(),
+                compressedContent,
+                updatedAt.toString(),
+                entryId,
+                sessionId
+        );
+    }
+
+    private String escapeJson(String value) {
+        return value.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
     private List<TimelineMessage> loadTimelineMessages(String sessionId) {
         return jdbcTemplate.query(
                 """
-                SELECT id, session_id, role, content, created_at
-                FROM chat_messages
+                SELECT id,
+                       session_id,
+                       role,
+                       json_extract(payload_json, '$.content') AS content,
+                       created_at
+                FROM session_transcript_entries
                 WHERE session_id = ?
-                ORDER BY created_at
+                  AND entry_type = 'message'
+                  AND visible_to_user = 1
+                  AND trim(COALESCE(json_extract(payload_json, '$.content'), '')) <> ''
+                ORDER BY created_at, rowid
                 """,
                 (rs, rowNum) -> new TimelineMessage(
                         rs.getString("id"),
@@ -367,11 +461,11 @@ public class EpisodicMemory {
         List<String> hitSessionIds = excludeSessionId == null
                 ? jdbcTemplate.query(
                 """
-                SELECT m.session_id
-                FROM chat_messages_fts
-                JOIN chat_messages m ON m.rowid = chat_messages_fts.rowid
-                WHERE chat_messages_fts MATCH ?
-                ORDER BY bm25(chat_messages_fts), m.created_at DESC
+                SELECT e.session_id
+                FROM session_transcript_entries_fts
+                JOIN session_transcript_entries e ON e.rowid = session_transcript_entries_fts.rowid
+                WHERE session_transcript_entries_fts MATCH ?
+                ORDER BY bm25(session_transcript_entries_fts), e.created_at DESC
                 LIMIT ?
                 """,
                 (rs, rowNum) -> rs.getString("session_id"),
@@ -379,12 +473,12 @@ public class EpisodicMemory {
                 candidateLimit)
                 : jdbcTemplate.query(
                 """
-                SELECT m.session_id
-                FROM chat_messages_fts
-                JOIN chat_messages m ON m.rowid = chat_messages_fts.rowid
-                WHERE chat_messages_fts MATCH ?
-                  AND m.session_id <> ?
-                ORDER BY bm25(chat_messages_fts), m.created_at DESC
+                SELECT e.session_id
+                FROM session_transcript_entries_fts
+                JOIN session_transcript_entries e ON e.rowid = session_transcript_entries_fts.rowid
+                WHERE session_transcript_entries_fts MATCH ?
+                  AND e.session_id <> ?
+                ORDER BY bm25(session_transcript_entries_fts), e.created_at DESC
                 LIMIT ?
                 """,
                 (rs, rowNum) -> rs.getString("session_id"),
@@ -418,7 +512,7 @@ public class EpisodicMemory {
 
         int matchedTurnIndex = -1;
         for (int i = 0; i < turns.size(); i++) {
-            if (turns.get(i).stream().anyMatch(message -> message.id().equals(hit.messageId()))) {
+            if (turns.get(i).stream().anyMatch(message -> message.id().equals(hit.entryId()))) {
                 matchedTurnIndex = i;
                 break;
             }
@@ -444,7 +538,7 @@ public class EpisodicMemory {
                 hit.sessionId(),
                 hit.sessionTitle(),
                 hit.sessionSummary(),
-                hit.messageId(),
+                hit.entryId(),
                 hitRank,
                 snippetMessages.get(0).createdAt(),
                 snippetMessages.get(snippetMessages.size() - 1).createdAt(),
@@ -526,7 +620,7 @@ public class EpisodicMemory {
     }
 
     private record RecallHitRow(
-            String messageId,
+            String entryId,
             String sessionId,
             @Nullable String sessionTitle,
             @Nullable String sessionSummary,

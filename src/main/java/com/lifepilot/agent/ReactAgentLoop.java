@@ -8,6 +8,7 @@ import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.context.AgentLoopContext;
 import com.lifepilot.agent.context.AssembledContext;
 import com.lifepilot.agent.context.ContextAssembler;
+import com.lifepilot.agent.context.ProviderMessageBuilder;
 import com.lifepilot.agent.media.MediaDataExtractor;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.agent.model.ReactAgentState;
@@ -15,6 +16,7 @@ import com.lifepilot.agent.model.ReactStep;
 import com.lifepilot.agent.model.SuspendReason;
 import com.lifepilot.agent.suspend.model.ResumePayload;
 import com.lifepilot.agent.suspend.event.ScheduledWakeupEvent;
+import com.lifepilot.conversation.transcript.TranscriptStore;
 import com.lifepilot.interaction.web.a2ui.A2uiPayloadSupport;
 import com.lifepilot.interaction.web.config.A2uiProperties;
 import com.lifepilot.interaction.web.model.A2uiComponentTree;
@@ -71,11 +73,13 @@ public class ReactAgentLoop implements CallbackHelper {
 
     // ===== 核心依赖 =====
     private final ContextAssembler contextAssembler;
+    private final ProviderMessageBuilder providerMessageBuilder;
     private final AgentToolProvider agentToolProvider;
     private final AgentConfigProperties config;
     private final ObjectMapper objectMapper;
     @Nullable private final TraceRecorder traceRecorder;
     @Nullable private final A2uiProperties a2uiProperties;
+    @Nullable private final TranscriptStore transcriptStore;
 
     // ===== 可选依赖（多模态） =====
     @Nullable private final MultimodalRouter multimodalRouter;
@@ -91,11 +95,13 @@ public class ReactAgentLoop implements CallbackHelper {
 
     public ReactAgentLoop(
             ContextAssembler contextAssembler,
+            ProviderMessageBuilder providerMessageBuilder,
             AgentToolProvider agentToolProvider,
             AgentConfigProperties config,
             ObjectMapper objectMapper,
             @Nullable TraceRecorder traceRecorder,
             @Nullable A2uiProperties a2uiProperties,
+            @Nullable TranscriptStore transcriptStore,
             @Nullable MultimodalRouter multimodalRouter,
             @Nullable MediaDataExtractor mediaDataExtractor,
             @Nullable org.springframework.context.ApplicationEventPublisher eventPublisher,
@@ -103,11 +109,13 @@ public class ReactAgentLoop implements CallbackHelper {
             @Nullable IntentMatcher intentMatcher,
             com.lifepilot.config.threadpool.SharedScheduler sharedScheduler) {
         this.contextAssembler = contextAssembler;
+        this.providerMessageBuilder = providerMessageBuilder;
         this.agentToolProvider = agentToolProvider;
         this.config = config;
         this.objectMapper = objectMapper;
         this.traceRecorder = traceRecorder;
         this.a2uiProperties = a2uiProperties;
+        this.transcriptStore = transcriptStore;
         this.multimodalRouter = multimodalRouter;
         this.mediaDataExtractor = mediaDataExtractor;
         this.eventPublisher = eventPublisher;
@@ -188,6 +196,10 @@ public class ReactAgentLoop implements CallbackHelper {
             }
         }
         return messages;
+    }
+
+    ProviderMessageBuilder.BuildResult buildProviderMessages(AssembledContext ctx, ReactAgentState state) {
+        return providerMessageBuilder.build(ctx, state);
     }
 
     // ===== 核心 ReAct 循环 =====
@@ -275,7 +287,18 @@ public class ReactAgentLoop implements CallbackHelper {
             else if (state.pendingMedia() != null && !state.pendingMedia().isEmpty()) {
                 assembledContext = assembledContext.withMediaContents(state.pendingMedia());
             }
-            var messages = buildMessages(assembledContext, state);
+            var messageBuildResult = buildProviderMessages(assembledContext, state);
+            var messages = messageBuildResult.messages();
+            if (messageBuildResult.hygieneReport().hasRepairs()) {
+                log.debug("provider 消息卫生化已生效: traceId={}, originalCount={}, cleanedCount={}, " +
+                                "droppedEmptyAssistant={}, droppedOrphanToolResponses={}, droppedAdditionalSystems={}",
+                        state.traceId(),
+                        messageBuildResult.hygieneReport().originalCount(),
+                        messageBuildResult.hygieneReport().cleanedCount(),
+                        messageBuildResult.hygieneReport().droppedEmptyAssistantMessages(),
+                        messageBuildResult.hygieneReport().droppedOrphanToolResponses(),
+                        messageBuildResult.hygieneReport().droppedAdditionalSystemMessages());
+            }
             var toolCallbacks = agentToolProvider.getToolCallbacks(state, loopContext.getStreamId());
 
             log.debug("ReAct 迭代开始: traceId={}, iteration={}, stepCount={}, toolCount={}",
@@ -501,6 +524,7 @@ public class ReactAgentLoop implements CallbackHelper {
         var toolCallStart = Instant.now();
         state = state.appendStep(new ReactStep.ToolCall(toolId, toolDisplayName, inputJson, 0));
         pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
+        persistTranscriptToolCall(state, tc, toolId, toolDisplayName, inputJson, toolCallStart);
 
         // 查找匹配的 ToolCallback
         ToolCallback matchedCallback = toolCallbacks.stream()
@@ -514,6 +538,8 @@ public class ReactAgentLoop implements CallbackHelper {
             state = state.appendStep(new ReactStep.Observation(
                     toolId, toolDisplayName, false, "工具未注册: " + toolId, 0));
             pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
+            persistTranscriptToolResult(state, tc, toolId, false,
+                    "工具未注册: " + toolId, null, toolCallStart);
             recordToolCallStep(traceContext, state.stepCount() - 1, toolCallStart,
                     toolId, inputJson, "工具未注册: " + toolId, false);
             return state;
@@ -541,6 +567,7 @@ public class ReactAgentLoop implements CallbackHelper {
                 state = state.appendStep(new ReactStep.Observation(
                         toolId, toolDisplayName, true, "工具请求挂起: " + suspendReason, 0));
                 pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
+                persistTranscriptToolResult(state, tc, toolId, true, rawOutput, null, toolCallStart);
                 recordToolCallStep(traceContext, state.stepCount() - 1, toolCallStart,
                         toolId, inputJson, rawOutput, true);
                 return state;
@@ -599,6 +626,7 @@ public class ReactAgentLoop implements CallbackHelper {
         state = state.appendStep(new ReactStep.Observation(
                 toolId, toolDisplayName, success, observationOutput != null ? observationOutput : "", obsTokens));
         pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
+        persistTranscriptToolResult(state, tc, toolId, success, rawOutput, null, toolCallStart);
 
         // L4 反馈闭环 — 工具执行成功后记录操作模板执行结果
         if (success && proceduralMemory != null && intentMatcher != null) {
@@ -619,6 +647,62 @@ public class ReactAgentLoop implements CallbackHelper {
                 toolId, success, toolCallDuration.toMillis());
 
         return state;
+    }
+
+    private void persistTranscriptToolCall(ReactAgentState state,
+                                           AssistantMessage.ToolCall toolCall,
+                                           String toolId,
+                                           @Nullable String toolDisplayName,
+                                           String inputJson,
+                                           Instant createdAt) {
+        if (transcriptStore == null) {
+            return;
+        }
+        try {
+            transcriptStore.appendToolCall(
+                    state.sessionId(),
+                    state.traceId(),
+                    state.traceId(),
+                    toolId,
+                    toolCall.id(),
+                    toolDisplayName,
+                    inputJson,
+                    createdAt
+            );
+        } catch (Exception e) {
+            log.warn("写入 transcript tool_call 失败: sessionId={}, toolId={}, error={}",
+                    state.sessionId(), toolId, e.getMessage());
+        }
+    }
+
+    private void persistTranscriptToolResult(ReactAgentState state,
+                                             AssistantMessage.ToolCall toolCall,
+                                             String toolId,
+                                             boolean success,
+                                             @Nullable String outputJson,
+                                             @Nullable String artifactId,
+                                             Instant createdAt) {
+        if (transcriptStore == null) {
+            return;
+        }
+        try {
+            transcriptStore.appendToolResult(
+                    state.sessionId(),
+                    state.traceId(),
+                    state.traceId(),
+                    toolId,
+                    toolCall.id(),
+                    success,
+                    outputJson != null ? outputJson : "",
+                    artifactId,
+                    true,
+                    false,
+                    createdAt
+            );
+        } catch (Exception e) {
+            log.warn("写入 transcript tool_result 失败: sessionId={}, toolId={}, error={}",
+                    state.sessionId(), toolId, e.getMessage());
+        }
     }
 
     // ===== 辅助方法 =====
@@ -965,6 +1049,10 @@ public class ReactAgentLoop implements CallbackHelper {
      */
     @Override
     public String buildConversationContextText(List<Message> messages) {
+        if (providerMessageBuilder != null) {
+            return providerMessageBuilder.serializeForMultimodal(messages);
+        }
+
         // 如果没有工具调用历史，直接返回用户文本即可
         boolean hasToolHistory = messages.stream().anyMatch(m -> m instanceof ToolResponseMessage);
         if (!hasToolHistory) {

@@ -379,7 +379,7 @@ public class AgentController {
             AgentResponse agentResponse = agentOrchestrator.run(agentRequest);
 
             // 5. 构建 ChatResponse
-            String messageId = UUID.randomUUID().toString();
+            String entryId = UUID.randomUUID().toString();
             TokenUsage tokenUsage = agentResponse.tokenUsage() != null ? agentResponse.tokenUsage() : new TokenUsage(
                     0, // promptTokens（AgentResponse 中没有详细分解）
                     0, // completionTokens
@@ -388,15 +388,15 @@ public class AgentController {
             );
 
             ChatResponse chatResponse = new ChatResponse(
-                    messageId,
+                    entryId,
                     agentResponse.content(),
                     null, // a2ui（测试对话暂不支持）
                     tokenUsage,
                     agentResponse.traceId()
             );
 
-            log.info("Agent 测试对话完成: agentId={}, messageId={}, tokensUsed={}, steps={}",
-                    id, messageId, agentResponse.tokensUsed(), agentResponse.stepCount());
+            log.info("Agent 测试对话完成: agentId={}, entryId={}, tokensUsed={}, steps={}",
+                    id, entryId, agentResponse.tokensUsed(), agentResponse.stepCount());
 
             return ResponseEntity.ok(chatResponse);
 

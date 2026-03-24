@@ -4,9 +4,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.AgentToolProvider;
 import com.lifepilot.agent.context.ContextAssembler;
 import com.lifepilot.config.threadpool.SharedScheduler;
-import com.lifepilot.interaction.web.repository.ChatMessageRepository;
+import com.lifepilot.conversation.transcript.SessionStoreRepository;
+import com.lifepilot.conversation.transcript.SessionTranscriptRepository;
+import com.lifepilot.conversation.transcript.TranscriptStore;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
+import com.lifepilot.memory.document.MemoryDocumentRepository;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.prompt.PromptRegistry;
 import org.junit.jupiter.api.Test;
@@ -86,8 +89,14 @@ class AgentAutoConfigurationTest {
         MultimodalRouter multimodalRouter() { return mock(MultimodalRouter.class); }
         @Bean(name = "agentTestPromptRegistry")
         PromptRegistry promptRegistry() { return mock(PromptRegistry.class); }
-        @Bean(name = "agentTestChatMessageRepository")
-        ChatMessageRepository chatMessageRepository() { return mock(ChatMessageRepository.class); }
+        @Bean(name = "agentTestSessionStoreRepository")
+        SessionStoreRepository sessionStoreRepository() { return mock(SessionStoreRepository.class); }
+        @Bean(name = "agentTestSessionTranscriptRepository")
+        SessionTranscriptRepository sessionTranscriptRepository() { return mock(SessionTranscriptRepository.class); }
+        @Bean(name = "agentTestTranscriptStore")
+        TranscriptStore transcriptStore() { return mock(TranscriptStore.class); }
+        @Bean(name = "agentTestMemoryDocumentRepository")
+        MemoryDocumentRepository memoryDocumentRepository() { return mock(MemoryDocumentRepository.class); }
         @Bean(name = "agentTestAgentToolProvider")
         AgentToolProvider agentToolProvider() { return mock(AgentToolProvider.class); }
         @Bean(name = "agentTestSharedScheduler")
@@ -113,7 +122,7 @@ class AgentAutoConfigurationTest {
         @Bean
         ContextAssembler customContextAssembler(AgentConfigProperties config, PromptRegistry promptRegistry) {
             return new ContextAssembler(config, promptRegistry,
-                    null, null, null, null, null, null, null, null, null, null);
+                    null, null, null, null, null, null, null);
         }
     }
 }

@@ -2,8 +2,8 @@ package com.lifepilot.interaction.web.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.interaction.UserConfirmationService;
+import com.lifepilot.conversation.transcript.TranscriptStore;
 import com.lifepilot.interaction.web.model.ConfirmationRequest;
-import com.lifepilot.interaction.web.repository.ChatMessageRepository;
 import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.tool.ToolContract;
@@ -27,7 +27,7 @@ import java.util.concurrent.TimeoutException;
  * HIGH/CRITICAL 风险工具执行前由 {@link com.lifepilot.tool.pipeline.ToolExecutionPipeline}
  * 调用此服务请求用户确认。</p>
  *
- * <p>确认结果会持久化到 chat_messages 表（role = tool-confirmation），
+ * <p>确认结果会持久化到 transcript（role = tool-confirmation），
  * 刷新页面后仍可在对话流中看到历史确认记录。</p>
  *
  * @author zsg
@@ -38,7 +38,7 @@ public class WebUserConfirmationService implements UserConfirmationService {
     private static final Logger log = LoggerFactory.getLogger(WebUserConfirmationService.class);
 
     private final SseSessionManager sseSessionManager;
-    private final ChatMessageRepository chatMessageRepository;
+    private final TranscriptStore transcriptStore;
     private final ObjectMapper objectMapper;
     private final long confirmationTimeoutSeconds;
     private final ConcurrentHashMap<String, CompletableFuture<Boolean>> pendingConfirmations
@@ -58,11 +58,11 @@ public class WebUserConfirmationService implements UserConfirmationService {
     ) {}
 
     public WebUserConfirmationService(SseSessionManager sseSessionManager,
-                                       ChatMessageRepository chatMessageRepository,
+                                       TranscriptStore transcriptStore,
                                        ObjectMapper objectMapper,
                                        long confirmationTimeoutSeconds) {
         this.sseSessionManager = sseSessionManager;
-        this.chatMessageRepository = chatMessageRepository;
+        this.transcriptStore = transcriptStore;
         this.objectMapper = objectMapper;
         this.confirmationTimeoutSeconds = confirmationTimeoutSeconds;
     }
@@ -137,7 +137,7 @@ public class WebUserConfirmationService implements UserConfirmationService {
     }
 
     /**
-     * 将确认结果持久化到 chat_messages 表。
+     * 将确认结果持久化到 transcript。
      *
      * <p>content 字段存储 JSON 格式的确认详情，前端加载历史消息时解析还原。</p>
      */
@@ -156,13 +156,15 @@ public class WebUserConfirmationService implements UserConfirmationService {
                     "message", meta.message() != null ? meta.message() : "",
                     "resolution", resolution
             ));
-            chatMessageRepository.insert(
+            transcriptStore.appendCustomMessage(
                     meta.sessionId(),
                     "tool-confirmation",
                     contentJson,
-                    null, null,
-                    meta.createdAt(),
-                    null, null, null, null);
+                    null,
+                    false,
+                    true,
+                    meta.createdAt()
+            );
             log.info("工具确认已持久化: requestId={}, sessionId={}, resolution={}",
                     requestId, meta.sessionId(), resolution);
         } catch (Exception e) {

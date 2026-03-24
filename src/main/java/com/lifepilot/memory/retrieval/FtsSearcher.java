@@ -10,8 +10,8 @@ import java.util.List;
 /**
  * FTS5 全文搜索器 — 基于 SQLite FTS5 + BM25 的消息和实体关键词检索。
  *
- * <p>通过 messages_fts 全文索引检索匹配消息，再通过 source_conversation_id
- * 关联到 temporal_entities，返回相关实体的排名列表。</p>
+ * <p>通过 session_transcript_entries_fts 全文索引检索匹配 transcript 消息，
+ * 再通过 source_conversation_id 关联到 temporal_entities，返回相关实体的排名列表。</p>
  *
  * @author zsg
  * @since 2026-02-25
@@ -44,18 +44,25 @@ public class FtsSearcher {
             }
             return jdbcTemplate.query(
                     """
+                    WITH matched_sessions AS (
+                        SELECT e.session_id AS session_id,
+                               MAX(-session_transcript_entries_fts.rank) AS score
+                        FROM session_transcript_entries_fts
+                        JOIN session_transcript_entries e ON session_transcript_entries_fts.rowid = e.rowid
+                        WHERE session_transcript_entries_fts MATCH ?
+                          AND e.entry_type = 'message'
+                          AND e.visible_to_user = 1
+                        GROUP BY e.session_id
+                    )
                     SELECT te.id, te.type, te.name, te.description,
-                           -bm25(messages_fts) AS score,
+                           matched_sessions.score AS score,
                            te.last_accessed_at, te.importance_score, te.valid_to,
                            te.updated_at
-                    FROM messages_fts
-                    JOIN messages m ON messages_fts.rowid = m.rowid
-                    JOIN temporal_entities te ON te.source_conversation_id = m.conversation_id
-                    WHERE messages_fts MATCH ?
-                      AND te.is_current = 1
+                    FROM matched_sessions
+                    JOIN temporal_entities te ON te.source_conversation_id = matched_sessions.session_id
+                    WHERE te.is_current = 1
                       AND (te.valid_to IS NULL OR te.valid_to > datetime('now'))
-                    GROUP BY te.id
-                    ORDER BY score DESC
+                    ORDER BY matched_sessions.score DESC, te.importance_score DESC, te.updated_at DESC
                     LIMIT ?
                     """,
                     (rs, rowNum) -> {

@@ -3,7 +3,6 @@ package com.lifepilot.agent.context;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.conversation.ConversationTurnView;
-import com.lifepilot.conversation.ConversationViewService;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.config.ProviderCapability;
 import com.lifepilot.memory.config.MemoryProperties;
@@ -13,9 +12,7 @@ import com.lifepilot.memory.procedural.ProceduralMemory;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
-import com.lifepilot.memory.workspace.SessionWorkspaceService;
 import com.lifepilot.memory.workspace.WorkspaceItem;
-import com.lifepilot.memory.workspace.WorkspaceProperties;
 import com.lifepilot.notification.PassiveNotificationQueue;
 import com.lifepilot.observability.redactor.DataRedactor;
 import com.lifepilot.prompt.PromptRegistry;
@@ -39,7 +36,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
- * 从会话历史、临时工作区和长期记忆中组装提示词上下文。
+ * 从 transcript、工作区与长期记忆中组装提示词上下文。
  */
 public class ContextAssembler {
 
@@ -56,9 +53,6 @@ public class ContextAssembler {
             "(\\d{4}-\\d{2}-\\d{2}(?:[ T]\\d{2}:\\d{2}(?::\\d{2})?)?)\\s*(?:\u4e4b\u540e|\u4ee5\u540e)");
     private final AgentConfigProperties config;
     private final PromptRegistry promptRegistry;
-    @Nullable private final ConversationViewService conversationViewService;
-    @Nullable private final SessionWorkspaceService workspaceService;
-    @Nullable private final WorkspaceProperties workspaceProperties;
     @Nullable private final DataRedactor dataRedactor;
     @Nullable private final SemanticMemory semanticMemory;
     @Nullable private final PassiveNotificationQueue passiveNotificationQueue;
@@ -67,12 +61,10 @@ public class ContextAssembler {
     @Nullable private final EffectivenessTracker effectivenessTracker;
     @Nullable private final SkillRegistry skillRegistry;
     @Nullable private final LlmRouter llmRouter;
+    @Nullable private final ContextEngine contextEngine;
 
     public ContextAssembler(AgentConfigProperties config,
                             PromptRegistry promptRegistry,
-                            @Nullable ConversationViewService conversationViewService,
-                            @Nullable SessionWorkspaceService workspaceService,
-                            @Nullable WorkspaceProperties workspaceProperties,
                             @Nullable DataRedactor dataRedactor,
                             @Nullable SemanticMemory semanticMemory,
                             @Nullable PassiveNotificationQueue passiveNotificationQueue,
@@ -80,16 +72,13 @@ public class ContextAssembler {
                             @Nullable ProceduralMemory proceduralMemory,
                             @Nullable EffectivenessTracker effectivenessTracker,
                             @Nullable SkillRegistry skillRegistry) {
-        this(config, promptRegistry, conversationViewService, workspaceService, workspaceProperties,
+        this(config, promptRegistry,
                 dataRedactor, semanticMemory, passiveNotificationQueue, memoryProperties,
-                proceduralMemory, effectivenessTracker, skillRegistry, null);
+                proceduralMemory, effectivenessTracker, skillRegistry, null, null);
     }
 
     public ContextAssembler(AgentConfigProperties config,
                             PromptRegistry promptRegistry,
-                            @Nullable ConversationViewService conversationViewService,
-                            @Nullable SessionWorkspaceService workspaceService,
-                            @Nullable WorkspaceProperties workspaceProperties,
                             @Nullable DataRedactor dataRedactor,
                             @Nullable SemanticMemory semanticMemory,
                             @Nullable PassiveNotificationQueue passiveNotificationQueue,
@@ -98,11 +87,24 @@ public class ContextAssembler {
                             @Nullable EffectivenessTracker effectivenessTracker,
                             @Nullable SkillRegistry skillRegistry,
                             @Nullable LlmRouter llmRouter) {
+        this(config, promptRegistry,
+                dataRedactor, semanticMemory, passiveNotificationQueue, memoryProperties,
+                proceduralMemory, effectivenessTracker, skillRegistry, llmRouter, null);
+    }
+
+    public ContextAssembler(AgentConfigProperties config,
+                            PromptRegistry promptRegistry,
+                            @Nullable DataRedactor dataRedactor,
+                            @Nullable SemanticMemory semanticMemory,
+                            @Nullable PassiveNotificationQueue passiveNotificationQueue,
+                            @Nullable MemoryProperties memoryProperties,
+                            @Nullable ProceduralMemory proceduralMemory,
+                            @Nullable EffectivenessTracker effectivenessTracker,
+                            @Nullable SkillRegistry skillRegistry,
+                            @Nullable LlmRouter llmRouter,
+                            @Nullable ContextEngine contextEngine) {
         this.config = config;
         this.promptRegistry = promptRegistry;
-        this.conversationViewService = conversationViewService;
-        this.workspaceService = workspaceService;
-        this.workspaceProperties = workspaceProperties;
         this.dataRedactor = dataRedactor;
         this.semanticMemory = semanticMemory;
         this.passiveNotificationQueue = passiveNotificationQueue;
@@ -111,18 +113,15 @@ public class ContextAssembler {
         this.effectivenessTracker = effectivenessTracker;
         this.skillRegistry = skillRegistry;
         this.llmRouter = llmRouter;
+        this.contextEngine = contextEngine;
     }
-
     /**
-     * 当前模型的上下文窗口大小（运行时由 ReactAgentLoop 设置）。
-     * <p>0 表示未设置，使用配置值。</p>
+     * 运行时传入的模型上下文窗口，0 表示使用配置值和 Provider 默认值。
      */
     private volatile int modelContextWindow = 0;
 
     /**
-     * 设置当前模型的上下文窗口大小。
-     * <p>由 ReactAgentLoop 在路由到具体模型后调用，
-     * 使 TokenBudget 分配基于 min(配置值, 模型窗口)。</p>
+     * 设置运行时传入的模型上下文窗口。
      *
      * @param windowSize 模型上下文窗口（Token 数）
      */
@@ -134,12 +133,18 @@ public class ContextAssembler {
         Instant startTime = Instant.now();
         try {
             boolean mediaPlaceholder = isMediaPlaceholderQuery(state.goal());
-            List<ConversationTurnView> recentTurns = safeGetRecentTurns(state.sessionId());
-            List<WorkspaceItem> workspaceItems = safeGetWorkspaceItems(state.sessionId());
+            int contextWindow = resolveContextWindow(state);
+            int totalContextTokens = Math.max(
+                    1024,
+                    contextWindow - Math.max(0, config.getContext().getOutputReservedTokens()));
+            ContextEngine.ContextSnapshot contextSnapshot = safeLoadContextSnapshot(state, totalContextTokens);
+            List<ConversationTurnView> recentTurns = contextSnapshot.recentTurns();
+            List<WorkspaceItem> workspaceItems = contextSnapshot.workspaceItems();
             String userProfile = mediaPlaceholder ? "" : safeGetUserProfile(state.goal());
             List<TemporalEntity> experiences = mediaPlaceholder ? List.of() : safeRetrieveExperiences(state.goal());
             List<String> injectedIds = recordExperienceInjection(state, experiences);
             String experienceSection = formatExperienceSection(experiences);
+            String notificationSection = formatPassiveNotificationsSection();
 
             String systemPrompt = safeReactSystemPrompt(state);
             String toolGuide = safeRenderToolGuide();
@@ -151,17 +156,25 @@ public class ContextAssembler {
                     state,
                     recentTurns,
                     workspaceItems,
+                    contextSnapshot.compactionSection(),
+                    contextSnapshot.artifactSection(),
+                    notificationSection,
                     userProfile,
-                    experienceSection
+                    experienceSection,
+                    contextSnapshot.toolResultsSection()
             );
 
             TokenBudget tokenBudget = buildTokenBudget(
-                    state,
+                    totalContextTokens,
                     systemPrompt,
                     recentTurns,
                     workspaceItems,
+                    contextSnapshot.compactionSection(),
+                    contextSnapshot.artifactSection(),
+                    notificationSection,
                     userProfile,
-                    experienceSection
+                    experienceSection,
+                    contextSnapshot.toolResultsSection()
             );
 
             int workspaceTokens = estimateTokens(formatWorkspaceSection(workspaceItems));
@@ -178,6 +191,7 @@ public class ContextAssembler {
                     null
             );
 
+            recordContextReport(state, contextSnapshot, context, contextWindow);
             logAssemblyMetrics(state, context, startTime);
             return context;
         } catch (Exception e) {
@@ -188,9 +202,19 @@ public class ContextAssembler {
     }
 
     private AssembledContext buildFallbackContext(ReactAgentState state) {
-        String systemPrompt = safeReactSystemPrompt();
+        String systemPrompt = safeReactSystemPrompt(state);
         String userPrompt = buildUserPrompt(state);
-        TokenBudget budget = buildTokenBudget(state, systemPrompt, List.of(), List.of(), "", "");
+        TokenBudget budget = buildTokenBudget(
+                resolveContextBudgetTokens(state),
+                systemPrompt,
+                List.of(),
+                List.of(),
+                "",
+                "",
+                "",
+                "",
+                "",
+                "");
         return new AssembledContext(
                 systemPrompt,
                 userPrompt,
@@ -343,8 +367,12 @@ public class ContextAssembler {
     String buildEnhancedUserPrompt(ReactAgentState state,
                                    List<ConversationTurnView> recentTurns,
                                    List<WorkspaceItem> workspaceItems,
+                                   @Nullable String compactionSection,
+                                   @Nullable String artifactSection,
+                                   @Nullable String notificationSection,
                                    @Nullable String userProfile,
-                                   @Nullable String experienceSection) {
+                                   @Nullable String experienceSection,
+                                   @Nullable String toolResultsSection) {
         ZonedDateTime now = ZonedDateTime.now();
         Map<String, Object> vars = new java.util.HashMap<>();
         vars.put("currentDateTime", now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
@@ -355,15 +383,17 @@ public class ContextAssembler {
         vars.put("stepCount", String.valueOf(state.stepCount()));
 
         vars.put("userProfileSection", safeRedact(formatUserProfileSection(userProfile)));
-        vars.put("passiveNotificationsSection", formatPassiveNotificationsSection());
+        vars.put("passiveNotificationsSection", safeRedact(notificationSection != null ? notificationSection : ""));
+        vars.put("compactionSection", safeRedact(compactionSection != null ? compactionSection : ""));
         vars.put("conversationHistorySection", safeRedact(formatConversationHistorySection(recentTurns)));
         vars.put("workspaceSection", safeRedact(formatWorkspaceSection(workspaceItems)));
+        vars.put("artifactSection", safeRedact(artifactSection != null ? artifactSection : ""));
         vars.put("memoriesSection", "");
         vars.put("knowledgeBaseSection", "");
         vars.put("crossSessionSection", "");
-        vars.put("toolResultsSection", "");
+        vars.put("toolResultsSection", safeRedact(toolResultsSection != null ? toolResultsSection : ""));
         vars.put("reasoningContextSection", "");
-        vars.put("experienceSection", experienceSection != null ? experienceSection : "");
+        vars.put("experienceSection", safeRedact(experienceSection != null ? experienceSection : ""));
         vars.put("timeConstraintSection", buildTimeConstraintSection(state.goal(), now));
 
         return promptRegistry.render("agent/react-user-prompt", vars);
@@ -407,41 +437,34 @@ public class ContextAssembler {
                     """.trim();
         };
     }
-    private List<ConversationTurnView> safeGetRecentTurns(String sessionId) {
-        if (conversationViewService == null || sessionId == null || sessionId.isBlank()) {
-            return List.of();
+
+    private ContextEngine.ContextSnapshot safeLoadContextSnapshot(ReactAgentState state, int totalContextTokens) {
+        if (contextEngine == null) {
+            throw new IllegalStateException("ContextEngine 未注入");
         }
         try {
-            int turnLimit = config.getSession().getMaxRecentTurns() > 0
-                    ? config.getSession().getMaxRecentTurns()
-                    : DEFAULT_RECENT_TURN_LIMIT;
-            return conversationViewService.getRecentTurns(sessionId, turnLimit).stream()
-                    .sorted(Comparator.comparing(ConversationTurnView::createdAt))
-                    .toList();
+            return contextEngine.load(state, totalContextTokens);
         } catch (Exception e) {
-            log.warn("加载最近完整轮次失败: sessionId={}, error={}", sessionId, e.getMessage());
-            return List.of();
+            log.warn("ContextEngine 加载失败: sessionId={}, error={}",
+                    state.sessionId(), e.getMessage());
+            throw e;
         }
     }
 
-    private List<WorkspaceItem> safeGetWorkspaceItems(String sessionId) {
-        if (workspaceService == null || sessionId == null || sessionId.isBlank()) {
-            return List.of();
+    private void recordContextReport(ReactAgentState state,
+                                     ContextEngine.ContextSnapshot snapshot,
+                                     AssembledContext context,
+                                     int contextWindow) {
+        if (contextEngine == null) {
+            return;
         }
-        if (workspaceProperties != null && !workspaceProperties.isEnabled()) {
-            return List.of();
-        }
-        try {
-            int maxItems = workspaceProperties != null
-                    ? workspaceProperties.getPromptMaxItems()
-                    : DEFAULT_WORKSPACE_PROMPT_LIMIT;
-            return workspaceService.listActive(sessionId).stream()
-                    .limit(Math.max(0, maxItems))
-                    .toList();
-        } catch (Exception e) {
-            log.warn("加载工作区条目失败: sessionId={}, error={}", sessionId, e.getMessage());
-            return List.of();
-        }
+        contextEngine.recordReport(
+                state,
+                snapshot,
+                context,
+                contextWindow,
+                Math.max(0, config.getContext().getOutputReservedTokens())
+        );
     }
 
     private String safeGetUserProfile(@Nullable String refinedQuery) {
@@ -583,24 +606,34 @@ public class ContextAssembler {
         return false;
     }
 
-    private TokenBudget buildTokenBudget(ReactAgentState state,
+    private TokenBudget buildTokenBudget(int totalTokens,
                                          String systemPrompt,
                                          List<ConversationTurnView> recentTurns,
                                          List<WorkspaceItem> workspaceItems,
+                                         @Nullable String compactionSection,
+                                         @Nullable String artifactSection,
+                                         @Nullable String notificationSection,
                                          @Nullable String userProfile,
-                                         @Nullable String experienceSection) {
-        int totalTokens = resolveContextBudgetTokens(state);
+                                         @Nullable String experienceSection,
+                                         @Nullable String toolResultsSection) {
         TokenBudget base = TokenBudget.allocateDefault(totalTokens, config.getContext().getTokenAllocation());
         String conversationSection = formatConversationHistorySection(recentTurns);
         String workspaceSection = formatWorkspaceSection(workspaceItems);
         String profileSection = formatUserProfileSection(userProfile);
-        String notificationSection = formatPassiveNotificationsSection();
+        String compactedHistorySection = compactionSection != null ? compactionSection : "";
+        String passiveNotificationSection = notificationSection != null ? notificationSection : "";
+        String artifacts = artifactSection != null ? artifactSection : "";
+        String experiences = experienceSection != null ? experienceSection : "";
+        String toolResults = toolResultsSection != null ? toolResultsSection : "";
+
         int systemPromptUsed = estimateTokens(systemPrompt);
-        int historyUsed = estimateTokens(conversationSection);
+        int historyUsed = estimateTokens(conversationSection) + estimateTokens(compactedHistorySection);
         int memoryUsed = estimateTokens(workspaceSection)
                 + estimateTokens(profileSection)
-                + estimateTokens(notificationSection)
-                + estimateTokens(experienceSection);
+                + estimateTokens(passiveNotificationSection)
+                + estimateTokens(artifacts)
+                + estimateTokens(experiences);
+        int toolResultUsed = estimateTokens(toolResults);
 
         return new TokenBudget(
                 base.systemPromptBudget(),
@@ -613,7 +646,7 @@ public class ContextAssembler {
                 historyUsed,
                 memoryUsed,
                 0,
-                0
+                toolResultUsed
         );
     }
 
@@ -624,22 +657,25 @@ public class ContextAssembler {
     }
 
     private int resolveContextWindow(@Nullable ReactAgentState state) {
-        int fallback = Math.max(1024, config.getContext().getMaxContextTokens());
-        if (llmRouter == null) {
-            return fallback;
-        }
-        try {
-            var candidates = llmRouter.getAvailableCandidates(
-                    config.getLoop().getLlmScene(),
-                    ProviderCapability.CHAT,
-                    state != null ? state.preferredProvider() : null);
-            if (!candidates.isEmpty() && candidates.getFirst().maxContextWindow() > 0) {
-                return candidates.getFirst().maxContextWindow();
+        int configuredWindow = Math.max(1024, config.getContext().getMaxContextTokens());
+        int resolvedWindow = configuredWindow;
+        if (llmRouter != null) {
+            try {
+                var candidates = llmRouter.getAvailableCandidates(
+                        config.getLoop().getLlmScene(),
+                        ProviderCapability.CHAT,
+                        state != null ? state.preferredProvider() : null);
+                if (!candidates.isEmpty() && candidates.getFirst().maxContextWindow() > 0) {
+                    resolvedWindow = Math.min(configuredWindow, candidates.getFirst().maxContextWindow());
+                }
+            } catch (Exception e) {
+                log.debug("读取 Provider 上下文窗口失败，回退默认配置: error={}", e.getMessage());
             }
-        } catch (Exception e) {
-            log.debug("读取 Provider 上下文窗口失败，回退默认配置: error={}", e.getMessage());
         }
-        return fallback;
+        if (modelContextWindow > 0) {
+            resolvedWindow = Math.min(resolvedWindow, modelContextWindow);
+        }
+        return resolvedWindow;
     }
 
     private String formatUserProfileSection(@Nullable String userProfile) {
@@ -752,6 +788,7 @@ public class ContextAssembler {
         sb.append("</time_constraints>");
         return sb.toString();
     }
+
     private List<String> safeDrainPassiveNotifications() {
         if (passiveNotificationQueue == null) {
             return List.of();
@@ -783,7 +820,7 @@ public class ContextAssembler {
         if (skillRegistry == null) {
             return "";
         }
-        List<?> skills = skillRegistry.listAll();
+        var skills = skillRegistry.listAll();
         if (skills.isEmpty()) {
             return "";
         }

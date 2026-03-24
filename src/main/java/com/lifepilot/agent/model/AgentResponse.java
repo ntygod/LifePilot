@@ -19,7 +19,7 @@ public record AgentResponse(
         int tokensUsed,
         int stepCount,
         @Nullable String terminationReason,
-        @Nullable String messageId,
+        @Nullable String assistantEntryId,
         @Nullable List<A2uiComponent> a2uiComponents,
         @Nullable TokenUsage tokenUsage,
         CompletionMode completionMode,

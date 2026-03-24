@@ -14,6 +14,8 @@ import com.lifepilot.memory.consolidation.EpisodicToSemanticConsolidator;
 import com.lifepilot.memory.consolidation.PreferenceConsolidator;
 import com.lifepilot.memory.episodic.EpisodicCleanupJob;
 import com.lifepilot.memory.episodic.EpisodicMemory;
+import com.lifepilot.memory.event.MemoryEventBus;
+import com.lifepilot.memory.event.SpringMemoryEventBus;
 import com.lifepilot.memory.experience.ExperienceSummarizer;
 import com.lifepilot.memory.experience.TrajectoryQualityAssessor;
 import com.lifepilot.memory.feedback.FeedbackProcessor;
@@ -48,6 +50,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -87,6 +90,13 @@ public class MemoryAutoConfiguration {
     }
 
     // L1 临时工作区
+
+    @Bean
+    @ConditionalOnMissingBean
+    public MemoryEventBus memoryEventBus(ApplicationEventPublisher eventPublisher) {
+        log.info("记忆模块: 注册 MemoryEventBus");
+        return new SpringMemoryEventBus(eventPublisher);
+    }
 
     @Bean
     @ConditionalOnMissingBean
@@ -178,7 +188,7 @@ public class MemoryAutoConfiguration {
     private Instant getLastInteractionTime() {
         try {
             String lastInteraction = jdbcTemplate.queryForObject(
-                    "SELECT MAX(created_at) FROM chat_messages",
+                    "SELECT MAX(COALESCE(last_activity_at, last_message_at, updated_at, created_at)) FROM session_store",
                     String.class);
             if (lastInteraction == null || lastInteraction.isBlank()) {
                 return Instant.now();
