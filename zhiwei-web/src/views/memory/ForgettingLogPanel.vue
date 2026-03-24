@@ -108,7 +108,7 @@ function formatDate(iso: string) {
           <label class="text-xs text-muted-foreground mb-1 block">遗忘策略</label>
           <Select
             :model-value="filterStrategy || '__all__'"
-            @update:model-value="(v: string) => filterStrategy = v === '__all__' ? '' : v"
+            @update:model-value="(value) => filterStrategy = String(value ?? '') === '__all__' ? '' : String(value ?? '')"
           >
             <SelectTrigger>
               <SelectValue placeholder="全部策略" />

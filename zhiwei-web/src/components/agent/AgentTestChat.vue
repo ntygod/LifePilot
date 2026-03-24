@@ -54,11 +54,11 @@ function scrollToBottom() {
 watch([messages, streamingContent], scrollToBottom, { deep: true })
 
 // ─── 工具调用折叠切换 ───
-function toggleTools(messageId: string) {
-  if (expandedTools.value.has(messageId)) {
-    expandedTools.value.delete(messageId)
+function toggleTools(entryId: string) {
+  if (expandedTools.value.has(entryId)) {
+    expandedTools.value.delete(entryId)
   } else {
-    expandedTools.value.add(messageId)
+    expandedTools.value.add(entryId)
   }
 }
 
@@ -183,7 +183,7 @@ function handleSseEvent(eventType: string, data: string) {
         const event: SseDoneEvent = JSON.parse(data)
         const finalContent = event.content ?? streamingContent.value
         const msg: TestMessage = {
-          id: event.messageId ?? crypto.randomUUID(),
+          id: event.entryId ?? crypto.randomUUID(),
           role: 'assistant',
           content: finalContent,
           timestamp: event.timestamp ?? Date.now(),

@@ -16,6 +16,7 @@ import type {
   SubWorkflowStepConfig,
   WaitStepConfig,
   ApprovalStepConfig,
+  NotifyStepConfig,
 } from './useWorkflowModel'
 
 // ========== 类型定义 ==========

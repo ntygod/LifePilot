@@ -137,7 +137,7 @@ async function handleSubmit() {
 
   // 有警告但不阻止保存
   if (result && result.warnings.length > 0) {
-    uiStore.showToast('warning', `存在 ${result.warnings.length} 个警告，请留意`)
+    uiStore.showToast('info', `存在 ${result.warnings.length} 个警告，请留意`)
   }
 
   loading.value = true

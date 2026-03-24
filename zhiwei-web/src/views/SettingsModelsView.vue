@@ -75,7 +75,7 @@ const defaultProviderLabel = computed(() => {
   const provider = providers.value.find(item => item.id === defaultProvider.value)
   return provider?.displayName || provider?.id || defaultProvider.value || '未设置'
 })
-const VALID_SCENES = new Set(SCENE_ORDER)
+const VALID_SCENES: Set<string> = new Set(SCENE_ORDER)
 
 const availableScenes = computed(() => {
   const seen = new Set<string>()

@@ -26,9 +26,7 @@ const props = defineProps<{
   streamingReactSteps?: ReactStepDto[]
   isLastAssistant?: boolean
   streamingA2uiComponents?: A2uiComponent[]
-  /** 流式阶段的工具确认请求队列（从 useChat.pendingToolConfirmations 传入） */
   streamingToolConfirmations?: Record<string, ToolConfirmationRequest>
-  /** 流式阶段的工具确认解决结果映射 */
   streamingToolConfirmationResolutions?: Record<string, 'approved' | 'rejected' | 'expired'>
 }>()
 
@@ -115,7 +113,6 @@ const isCollapsible = computed(() =>
   props.message.role === 'assistant' && !props.streaming && shouldCollapse(props.message.content),
 )
 
-// 当前展示的 ReactStep 列表：流式时用 streamingReactSteps，否则用 message.reactSteps
 const activeReactSteps = computed<ReactStepDto[]>(() => {
   if (props.streaming && props.streamingReactSteps?.length) {
     return props.streamingReactSteps
@@ -123,7 +120,6 @@ const activeReactSteps = computed<ReactStepDto[]>(() => {
   return props.message.reactSteps ?? []
 })
 
-// 当前展示的 ReasoningEvent 列表：流式时用 streamingReasoningEvents，否则用 message.reasoningEvents
 const activeReasoningEvents = computed<ReasoningEvent[]>(() => {
   if (props.streaming && props.streamingReasoningEvents?.length) {
     return props.streamingReasoningEvents
@@ -131,13 +127,17 @@ const activeReasoningEvents = computed<ReasoningEvent[]>(() => {
   return props.message.reasoningEvents ?? []
 })
 
-// 流式阶段待确认队列
-const pendingConfirmations = computed(() => {
-  if (props.streaming && props.streamingToolConfirmations) {
-    return Object.entries(props.streamingToolConfirmations)
-  }
-  return []
-})
+const activeToolConfirmations = computed<Record<string, ToolConfirmationRequest>>(() => ({
+  ...(props.message.toolConfirmations ?? {}),
+  ...(props.streamingToolConfirmations ?? {}),
+}))
+
+const activeToolConfirmationResolutions = computed<Record<string, 'approved' | 'rejected' | 'expired'>>(() => ({
+  ...(props.message.toolConfirmationResolutions ?? {}),
+  ...(props.streamingToolConfirmationResolutions ?? {}),
+}))
+
+const pendingConfirmations = computed(() => Object.entries(activeToolConfirmations.value))
 </script>
 
 <template>
@@ -150,7 +150,7 @@ const pendingConfirmations = computed(() => {
       class="mt-xs flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"
       aria-label="知微回复"
     >
-      <span class="text-xs font-semibold">微</span>
+      <span class="text-xs font-semibold">知微</span>
     </div>
 
     <div
@@ -198,7 +198,6 @@ const pendingConfirmations = computed(() => {
           />
 
           <template v-else>
-            <!-- 工具确认卡片队列（支持多个并发确认） -->
             <div
               v-if="pendingConfirmations.length > 0"
               class="mb-2 flex flex-col gap-2"
@@ -207,13 +206,12 @@ const pendingConfirmations = computed(() => {
                 v-for="[requestId, request] in pendingConfirmations"
                 :key="requestId"
                 :request="request"
-                :resolved="!!streamingToolConfirmationResolutions?.[requestId]"
-                :resolution="streamingToolConfirmationResolutions?.[requestId]"
-                @resolve="(r: 'approved' | 'rejected' | 'expired') => emit('tool-confirm-resolve', requestId, r)"
+                :resolved="!!activeToolConfirmationResolutions[requestId]"
+                :resolution="activeToolConfirmationResolutions[requestId]"
+                @resolve="(resolution: 'approved' | 'rejected' | 'expired') => emit('tool-confirm-resolve', requestId, resolution)"
               />
             </div>
 
-            <!-- 普通 assistant 文本内容 -->
             <StreamingText
               :content="displayContent"
               :streaming="streaming"
@@ -228,7 +226,6 @@ const pendingConfirmations = computed(() => {
               {{ collapsed ? '展开全文' : '收起' }}
             </button>
 
-            <!-- P3 修复：assistant 图片附件内联渲染（在消息文本之后、A2UI 面板之前） -->
             <div v-if="imageAttachments.length > 0" class="mt-3 grid grid-cols-2 gap-sm">
               <button
                 v-for="attachment in imageAttachments"
@@ -274,7 +271,6 @@ const pendingConfirmations = computed(() => {
               />
             </div>
 
-            <!-- 推理时间线（优先使用 ReasoningEvents，数据更完整） -->
             <ReasoningTimeline
               v-if="activeReasoningEvents.length > 0"
               :summary="message.reasoningSummary"
@@ -282,7 +278,6 @@ const pendingConfirmations = computed(() => {
               :streaming="streaming"
             />
 
-            <!-- ReactStep 时间线兜底（无 reasoningEvents 时回退到 reactSteps） -->
             <ReactStepTimeline
               v-else-if="activeReactSteps.length > 0"
               :steps="activeReactSteps"
@@ -291,38 +286,36 @@ const pendingConfirmations = computed(() => {
             />
           </template>
 
-            <!-- 用户消息的图片附件（保持原位置） -->
-            <div v-if="message.role === 'user' && imageAttachments.length > 0" class="mt-3 grid grid-cols-2 gap-sm">
-              <button
-                v-for="attachment in imageAttachments"
-                :key="attachment.fileId"
-                type="button"
-                class="list-card relative w-full overflow-hidden rounded-lg focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-none"
-                @click="previewImageUrl = attachment.url; showImagePreview = true"
-              >
-                <img :src="attachment.url" :alt="attachment.filename" class="block h-32 w-full object-cover" loading="lazy" />
-              </button>
-            </div>
+          <div v-if="message.role === 'user' && imageAttachments.length > 0" class="mt-3 grid grid-cols-2 gap-sm">
+            <button
+              v-for="attachment in imageAttachments"
+              :key="attachment.fileId"
+              type="button"
+              class="list-card relative w-full overflow-hidden rounded-lg focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-none"
+              @click="previewImageUrl = attachment.url; showImagePreview = true"
+            >
+              <img :src="attachment.url" :alt="attachment.filename" class="block h-32 w-full object-cover" loading="lazy" />
+            </button>
+          </div>
 
-            <!-- 音频附件内联播放器 -->
-            <div v-if="audioAttachments.length > 0" class="mt-3 flex flex-col gap-sm">
-              <div
-                v-for="attachment in audioAttachments"
-                :key="attachment.fileId"
-                class="list-card flex items-center gap-2 px-3 py-2 text-xs text-foreground"
-              >
-                <Mic class="size-3.5 shrink-0 text-muted-foreground" />
-                <span class="shrink-0 text-muted-foreground">语音</span>
-                <audio :src="attachment.url" controls class="h-8 w-full min-w-0" />
-              </div>
+          <div v-if="audioAttachments.length > 0" class="mt-3 flex flex-col gap-sm">
+            <div
+              v-for="attachment in audioAttachments"
+              :key="attachment.fileId"
+              class="list-card flex items-center gap-2 px-3 py-2 text-xs text-foreground"
+            >
+              <Mic class="size-3.5 shrink-0 text-muted-foreground" />
+              <span class="shrink-0 text-muted-foreground">语音</span>
+              <audio :src="attachment.url" controls class="h-8 w-full min-w-0" />
             </div>
+          </div>
 
-            <div v-if="fileAttachments.length > 0" class="mt-3 flex flex-col gap-sm">
-              <div
-                v-for="attachment in fileAttachments"
-                :key="attachment.fileId"
-                class="list-card flex flex-col gap-2 px-3 py-3 text-xs text-foreground"
-              >
+          <div v-if="fileAttachments.length > 0" class="mt-3 flex flex-col gap-sm">
+            <div
+              v-for="attachment in fileAttachments"
+              :key="attachment.fileId"
+              class="list-card flex flex-col gap-2 px-3 py-3 text-xs text-foreground"
+            >
               <div class="flex items-center justify-between gap-2">
                 <span class="truncate">{{ attachment.filename }}</span>
                 <span class="shrink-0 text-[11px] text-muted-foreground">

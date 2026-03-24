@@ -34,10 +34,10 @@ async function handleCopy(content: string) {
   emit('copy', content)
 }
 
-async function handleTts(messageId: string) {
+async function handleTts(entryId: string) {
   ttsError.value = null
   try {
-    await playTts(messageId)
+    await playTts(entryId)
   } catch (e) {
     ttsError.value = '语音合成服务不可用'
     window.setTimeout(() => { ttsError.value = null }, 3000)

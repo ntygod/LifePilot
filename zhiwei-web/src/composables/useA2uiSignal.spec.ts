@@ -76,7 +76,7 @@ describe('useA2uiSignal', () => {
 
   it('writes assistant replies back into the chat list', async () => {
     vi.mocked(chatApi.sendSignal).mockResolvedValue({
-      messageId: 'assistant-2',
+      entryId: 'assistant-2',
       content: '好的，已更新面板',
       a2uiComponents: [createComponent('card-2', 'Card')],
       traceId: 'trace-2',
@@ -89,7 +89,7 @@ describe('useA2uiSignal', () => {
     await emitSignal(
       { name: 'panel.refresh', payload: { section: 'todos' } },
       'session-1',
-      { componentId: 'btn-1', messageId: 'assistant-1', traceId: 'trace-1' },
+      { componentId: 'btn-1', entryId: 'assistant-1', traceId: 'trace-1' },
     )
 
     expect(chatStore.messages).toHaveLength(1)
@@ -103,7 +103,7 @@ describe('useA2uiSignal', () => {
     expect(a2uiStore.currentTraceId).toBe('trace-2')
     expect(getSignalState({
       componentId: 'btn-1',
-      messageId: 'assistant-1',
+      entryId: 'assistant-1',
       signalName: 'panel.refresh',
     })?.status).toBe('success')
 
@@ -111,14 +111,14 @@ describe('useA2uiSignal', () => {
 
     expect(getSignalState({
       componentId: 'btn-1',
-      messageId: 'assistant-1',
+      entryId: 'assistant-1',
       signalName: 'panel.refresh',
     })).toBeUndefined()
   })
 
   it('updates the originating message when a signal response only returns components', async () => {
     vi.mocked(chatApi.sendSignal).mockResolvedValue({
-      messageId: 'assistant-2',
+      entryId: 'assistant-2',
       content: '',
       a2uiComponents: [createComponent('updated-card', 'Card')],
       traceId: 'trace-2',
@@ -139,7 +139,7 @@ describe('useA2uiSignal', () => {
     await emitSignal(
       { name: 'panel.replace', payload: { section: 'todos' } },
       'session-1',
-      { componentId: 'btn-1', messageId: 'assistant-1', traceId: 'trace-1' },
+      { componentId: 'btn-1', entryId: 'assistant-1', traceId: 'trace-1' },
     )
 
     expect(chatStore.messages).toHaveLength(1)

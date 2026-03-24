@@ -206,10 +206,11 @@ async function loadRelated() {
   }
 }
 
-function handleDetailTabChange(tab: string) {
-  detailTab.value = tab
-  if (tab === 'history') loadHistory()
-  if (tab === 'related') loadRelated()
+function handleDetailTabChange(tab: string | number) {
+  const nextTab = String(tab)
+  detailTab.value = nextTab
+  if (nextTab === 'history') loadHistory()
+  if (nextTab === 'related') loadRelated()
 }
 
 // ── 新建实体 ──
@@ -344,7 +345,7 @@ function formatDate(iso: string) {
           <label class="text-xs text-muted-foreground mb-1 block">实体类型</label>
           <Select
             :model-value="filterType || '__all__'"
-            @update:model-value="(v: string) => filterType = v === '__all__' ? '' : v"
+            @update:model-value="(value) => filterType = String(value ?? '') === '__all__' ? '' : String(value ?? '')"
           >
             <SelectTrigger>
               <SelectValue placeholder="全部类型" />

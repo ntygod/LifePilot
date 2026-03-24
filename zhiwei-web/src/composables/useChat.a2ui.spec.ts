@@ -63,7 +63,7 @@ describe('useChat A2UI integration', () => {
         {
           type: SSE_EVENT_TYPES.DONE,
           payload: {
-            messageId: 'assistant-1',
+            entryId: 'assistant-1',
             sessionId: 'session-1',
             content: '这是最终面板',
             a2uiComponents: finalComponents,
@@ -109,7 +109,7 @@ describe('useChat A2UI integration', () => {
         {
           type: SSE_EVENT_TYPES.DONE,
           payload: {
-            messageId: 'assistant-2',
+            entryId: 'assistant-2',
             sessionId: 'session-1',
             content: '面板已生成',
             traceId: 'trace-2',
@@ -138,7 +138,7 @@ describe('useChat A2UI integration', () => {
         {
           type: SSE_EVENT_TYPES.DONE,
           payload: {
-            messageId: 'assistant-attachment',
+            entryId: 'assistant-attachment',
             sessionId: 'session-1',
             content: '已处理附件',
             timestamp: 1_741_683_300_000,

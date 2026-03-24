@@ -120,7 +120,7 @@ function formatDate(iso: string) {
           <label class="text-xs text-muted-foreground mb-1 block">关系类型</label>
           <Select
             :model-value="filterRelationType || '__all__'"
-            @update:model-value="(v: string) => filterRelationType = v === '__all__' ? '' : v"
+            @update:model-value="(value) => filterRelationType = String(value ?? '') === '__all__' ? '' : String(value ?? '')"
           >
             <SelectTrigger>
               <SelectValue placeholder="全部类型" />

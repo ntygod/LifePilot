@@ -146,19 +146,19 @@ export function useVoice(maxRecordingSeconds = 120) {
   /**
    * 播放指定消息的 TTS 音频。首次请求后缓存 AudioBuffer。
    */
-  async function playTts(messageId: string): Promise<void> {
+  async function playTts(entryId: string): Promise<void> {
     if (isPlaying.value) stopTts()
 
     isLoadingTts.value = true
     try {
-      let buffer = ttsCache.get(messageId)
+      let buffer = ttsCache.get(entryId)
       if (!buffer) {
-        const resp = await fetch(`/api/chat/messages/${messageId}/tts`, { method: 'POST' })
+        const resp = await fetch(`/api/chat/entries/${entryId}/tts`, { method: 'POST' })
         if (!resp.ok) throw new Error(`TTS 请求失败: ${resp.status}`)
         const arrayBuffer = await resp.arrayBuffer()
         if (!ttsAudioContext) ttsAudioContext = new AudioContext()
         buffer = await ttsAudioContext.decodeAudioData(arrayBuffer)
-        ttsCache.set(messageId, buffer)
+        ttsCache.set(entryId, buffer)
       }
 
       if (!ttsAudioContext) ttsAudioContext = new AudioContext()

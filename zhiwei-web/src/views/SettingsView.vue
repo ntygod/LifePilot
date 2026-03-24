@@ -32,37 +32,33 @@ const navigationItems = [
   {
     path: '/settings/general',
     label: '通用',
-    description: '主题、语言、字号、阅读习惯和快捷键。',
+    description: '主题、语言、字号、阅读偏好和基础交互设置。',
     icon: Palette,
   },
   {
     path: '/settings/models',
     label: '模型与推理',
-    description: '默认模型、场景路由、健康检查和精排配置。',
+    description: '默认模型、场景路由、健康检查和重排配置。',
     icon: Cpu,
   },
   {
     path: '/settings/knowledge',
     label: '知识与检索',
-    description: '分块策略、检索参数、向量索引和 Tavily 联网搜索配置。',
+    description: '分块策略、检索参数、向量索引和联网搜索配置。',
     icon: Database,
   },
   {
     path: '/settings/channels',
     label: '集成渠道',
-    description: '飞书、企微、钉钉渠道凭证配置。',
+    description: '飞书、企微、钉钉等渠道的凭证与开关配置。',
     icon: Radio,
   },
 ] as const
 
 const activeView = computed(() => viewMap[route.path] ?? SettingsGeneralView)
-const currentPath = computed(() => {
-  // 兼容旧路径
-  if (route.path === '/settings' || route.path === '/settings/preferences') return '/settings/general'
-  if (route.path === '/settings/reranker') return '/settings/models'
-  if (route.path === '/settings/shortcuts') return '/settings/general'
-  return route.path
-})
+const currentPath = computed(() => (
+  navigationItems.some(item => item.path === route.path) ? route.path : '/settings/general'
+))
 const currentNavigationItem = computed(() => (
   navigationItems.find(item => item.path === currentPath.value) ?? navigationItems[0]
 ))
@@ -73,22 +69,22 @@ const quickSummary = computed(() => [
   {
     label: '主题',
     value: themeDisplayValue.value,
-    hint: '当前界面的外观与色彩方案。',
+    hint: '当前界面的外观风格与色彩方案。',
   },
   {
     label: '密度',
     value: densityDisplayValue.value,
-    hint: '导航与内容区的空间松紧。',
+    hint: '导航和内容区域的空间松紧程度。',
   },
   {
     label: '字号',
     value: fontSizeDisplayValue.value,
-    hint: '全局阅读节奏与基础字级。',
+    hint: '全局阅读节奏与基础字级设置。',
   },
   {
     label: '默认模型',
     value: settingsStore.llmProvider || '未设置',
-    hint: '没有单独指定时优先使用的提供商。',
+    hint: '未单独指定时优先使用的模型提供商。',
   },
 ])
 
@@ -104,7 +100,7 @@ function isActiveItem(path: string) {
         <PageHeader
           eyebrow="设置"
           title="偏好设置"
-          description="把常用设置收在一起，优先处理界面、模型和快捷键。"
+          description="把常用设置收在一起，优先处理界面、模型与知识能力。"
         >
           <template #meta>
             <MetricCard
@@ -123,9 +119,9 @@ function isActiveItem(path: string) {
             <section class="detail-card p-5">
               <div class="space-y-1">
                 <div class="surface-label">设置分区</div>
-                <h2 class="section-title text-foreground">场景设置</h2>
+                <h2 class="section-title text-foreground">场景导航</h2>
                 <p class="text-sm leading-6 text-muted-foreground">
-                  选择一个场景来调整设置。
+                  选择一个分区来调整对应设置。
                 </p>
               </div>
 
