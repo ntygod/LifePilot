@@ -23,7 +23,6 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -307,6 +306,11 @@ public class ContextEngine {
 
         List<SessionTranscriptRepository.SessionTranscriptEntryRow> historyRows =
                 selectHistoryRows(rows, selectedToolResultEntryIds, totalContextTokens);
+        if (compactionMessage != null || !historyRows.isEmpty()) {
+            Message historyMarker = buildHistoryMarkerMessage();
+            messages.add(historyMarker);
+            historyTokens += estimateMessageTokens(historyMarker);
+        }
         for (SessionTranscriptRepository.SessionTranscriptEntryRow row : historyRows) {
             TranscriptEntryType entryType = TranscriptEntryType.fromValue(row.entryType());
             if (entryType == TranscriptEntryType.TOOL_RESULT
@@ -442,7 +446,20 @@ public class ContextEngine {
         if (boundary == null || boundary.summary() == null || boundary.summary().isBlank()) {
             return null;
         }
-        return new AssistantMessage("历史压缩摘要:\n" + boundary.summary().trim());
+        return new AssistantMessage("""
+                <history_summary>
+                历史压缩摘要:
+                %s
+                </history_summary>
+                """.formatted(boundary.summary().trim()).strip());
+    }
+
+    private Message buildHistoryMarkerMessage() {
+        return new AssistantMessage("""
+                <history_transcript>
+                以下消息为历史 transcript，按时间顺序排列。
+                </history_transcript>
+                """.strip());
     }
 
     @Nullable

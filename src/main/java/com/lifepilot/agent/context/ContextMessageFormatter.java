@@ -19,8 +19,8 @@ import java.util.regex.Pattern;
  */
 public final class ContextMessageFormatter {
 
-    private static final Pattern SYNTHETIC_CONTEXT_PATTERN = Pattern.compile(
-            "^<synthetic_context\\s+type=\"([^\"]+)\">\\s*(.*?)\\s*</synthetic_context>$",
+    private static final Pattern TAGGED_BLOCK_PATTERN = Pattern.compile(
+            "^<([a-z][a-z0-9_]*)>\\s*(.*?)\\s*</\\1>$",
             Pattern.DOTALL
     );
 
@@ -45,6 +45,15 @@ public final class ContextMessageFormatter {
         StringBuilder buffer = new StringBuilder();
         for (int i = 0; i < messages.size(); i++) {
             Message message = messages.get(i);
+            if (message instanceof AssistantMessage assistantMessage) {
+                TaggedBlock taggedBlock = parseTaggedBlock(assistantMessage.getText());
+                if (taggedBlock != null) {
+                    buffer.append("  [").append(i).append("] ")
+                            .append(taggedBlock.rawText())
+                            .append('\n');
+                    continue;
+                }
+            }
             buffer.append("  [").append(i).append("] ")
                     .append(debugHeader(message))
                     .append(": ")
@@ -72,13 +81,9 @@ public final class ContextMessageFormatter {
     }
 
     private static void appendAssistantPreview(StringBuilder buffer, AssistantMessage assistantMessage) {
-        SyntheticContext syntheticContext = parseSyntheticContext(assistantMessage.getText());
-        if (syntheticContext != null) {
-            buffer.append("[context:")
-                    .append(syntheticContext.type())
-                    .append("] ")
-                    .append(syntheticContext.content())
-                    .append('\n');
+        TaggedBlock taggedBlock = parseTaggedBlock(assistantMessage.getText());
+        if (taggedBlock != null) {
+            buffer.append(taggedBlock.rawText()).append('\n');
             return;
         }
 
@@ -99,13 +104,7 @@ public final class ContextMessageFormatter {
         return switch (message) {
             case SystemMessage ignored -> "SystemMessage";
             case UserMessage ignored -> "UserMessage";
-            case AssistantMessage assistantMessage -> {
-                SyntheticContext syntheticContext = parseSyntheticContext(assistantMessage.getText());
-                if (syntheticContext != null) {
-                    yield "ContextMessage[" + syntheticContext.type() + "]";
-                }
-                yield "AssistantMessage";
-            }
+            case AssistantMessage ignored -> "AssistantMessage";
             case ToolResponseMessage ignored -> "ToolResultMessage";
             default -> message.getClass().getSimpleName();
         };
@@ -116,13 +115,10 @@ public final class ContextMessageFormatter {
             case SystemMessage systemMessage -> safeText(systemMessage.getText());
             case UserMessage userMessage -> safeText(userMessage.getText());
             case AssistantMessage assistantMessage -> {
-                SyntheticContext syntheticContext = parseSyntheticContext(assistantMessage.getText());
-                if (syntheticContext != null) {
-                    yield syntheticContext.content();
-                }
                 String text = safeText(assistantMessage.getText());
                 if (assistantMessage.hasToolCalls()) {
-                    yield text + (text.isBlank() ? "" : " ") + "[tool_calls=" + assistantMessage.getToolCalls().size() + "]";
+                    yield text + (text.isBlank() ? "" : " ")
+                            + "[tool_calls=" + assistantMessage.getToolCalls().size() + "]";
                 }
                 yield text;
             }
@@ -135,17 +131,18 @@ public final class ContextMessageFormatter {
     }
 
     @Nullable
-    public static SyntheticContext parseSyntheticContext(@Nullable String text) {
+    public static TaggedBlock parseTaggedBlock(@Nullable String text) {
         if (text == null || text.isBlank()) {
             return null;
         }
-        Matcher matcher = SYNTHETIC_CONTEXT_PATTERN.matcher(text.strip());
+        Matcher matcher = TAGGED_BLOCK_PATTERN.matcher(text.strip());
         if (!matcher.matches()) {
             return null;
         }
-        return new SyntheticContext(
+        return new TaggedBlock(
                 matcher.group(1),
-                matcher.group(2).strip()
+                matcher.group(2).strip(),
+                text.strip()
         );
     }
 
@@ -153,6 +150,6 @@ public final class ContextMessageFormatter {
         return text == null ? "" : text;
     }
 
-    public record SyntheticContext(String type, String content) {
+    public record TaggedBlock(String tagName, String content, String rawText) {
     }
 }

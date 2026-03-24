@@ -90,10 +90,10 @@ public class ProviderMessageBuilder {
     }
 
     private void appendAssistantSection(StringBuilder buffer, AssistantMessage assistantMessage) {
-        ContextMessageFormatter.SyntheticContext syntheticContext =
-                ContextMessageFormatter.parseSyntheticContext(assistantMessage.getText());
-        if (syntheticContext != null) {
-            appendSection(buffer, "context:" + syntheticContext.type(), syntheticContext.content());
+        ContextMessageFormatter.TaggedBlock taggedBlock =
+                ContextMessageFormatter.parseTaggedBlock(assistantMessage.getText());
+        if (taggedBlock != null) {
+            buffer.append(taggedBlock.rawText()).append("\n\n");
             return;
         }
 

@@ -252,7 +252,7 @@ class ContextEngine_集成测试 {
                 .contains("结果二")
                 .doesNotContain("结果一");
         assertThat(snapshot.debugPayload())
-                .containsEntry("historyMessageCount", 9)
+                .containsEntry("historyMessageCount", 10)
                 .containsEntry("toolResultCount", 2)
                 .containsEntry("toolResultTotalCount", 2)
                 .containsEntry("artifactCount", 2)

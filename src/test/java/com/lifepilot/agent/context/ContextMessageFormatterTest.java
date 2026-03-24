@@ -18,10 +18,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ContextMessageFormatterTest {
 
     @Test
-    void serializeForDebug_会把syntheticContext显示为独立上下文消息() {
+    void serializeForDebug_注入上下文显示为原始Xml而不是ContextMessage前缀() {
         String debug = ContextMessageFormatter.serializeForDebug(List.of(
-                new AssistantMessage("<synthetic_context type=\"user_profile_context\">profile</synthetic_context>"),
-                new UserMessage("hello"),
+                new AssistantMessage("<user_profile_context>profile</user_profile_context>"),
+                new UserMessage("<current_request>hello</current_request>"),
                 ToolResponseMessage.builder()
                         .responses(List.of(new ToolResponseMessage.ToolResponse(
                                 "builtin.memory.create",
@@ -32,8 +32,10 @@ class ContextMessageFormatterTest {
         ));
 
         assertThat(debug)
-                .contains("ContextMessage[user_profile_context]")
+                .contains("[0] <user_profile_context>profile</user_profile_context>")
+                .contains("UserMessage: <current_request>hello</current_request>")
                 .contains("ToolResultMessage: builtin.memory.create: {\"summary\":\"ok\"}")
-                .doesNotContain("AssistantMessage: <synthetic_context");
+                .doesNotContain("ContextMessage[")
+                .doesNotContain("AssistantMessage: <user_profile_context>");
     }
 }

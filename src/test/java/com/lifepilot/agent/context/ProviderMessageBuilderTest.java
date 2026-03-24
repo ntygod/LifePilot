@@ -29,9 +29,12 @@ class ProviderMessageBuilderTest {
         );
         var context = new AssembledContext(
                 "system prompt",
-                List.of(new AssistantMessage("<synthetic_context type=\"workspace_context\">workspace</synthetic_context>")),
-                List.of(new UserMessage("上一轮历史")),
-                "user prompt",
+                List.of(new AssistantMessage("<workspace_context>workspace</workspace_context>")),
+                List.of(
+                        new AssistantMessage("<history_transcript>以下消息为历史 transcript，按时间顺序排列。</history_transcript>"),
+                        new UserMessage("上一轮历史消息")
+                ),
+                "<runtime_context>\n- 当前时间: 2026-03-24T10:00:00+08:00\n</runtime_context>\n\n<current_request>\nuser prompt\n</current_request>",
                 List.of(),
                 TokenBudget.allocateDefault(4096),
                 0,
@@ -79,17 +82,18 @@ class ProviderMessageBuilderTest {
 
         var result = builder.build(context, state);
 
-        assertThat(result.messages()).hasSize(7);
+        assertThat(result.messages()).hasSize(8);
         assertThat(result.messages().get(1)).isInstanceOf(AssistantMessage.class);
-        assertThat(result.messages().get(2)).isInstanceOf(UserMessage.class);
-        assertThat(result.messages().get(4)).isInstanceOf(AssistantMessage.class);
-        assertThat(result.messages().get(5)).isInstanceOf(ToolResponseMessage.class);
+        assertThat(result.messages().get(2)).isInstanceOf(AssistantMessage.class);
+        assertThat(result.messages().get(3)).isInstanceOf(UserMessage.class);
+        assertThat(result.messages().get(5)).isInstanceOf(AssistantMessage.class);
+        assertThat(result.messages().get(6)).isInstanceOf(ToolResponseMessage.class);
         assertThat(result.messages().getLast()).isInstanceOf(AssistantMessage.class);
         assertThat(result.hygieneReport().droppedEmptyAssistantMessages()).isEqualTo(1);
     }
 
     @Test
-    void serializeForMultimodal_会输出结构化上下文文本() {
+    void serializeForMultimodal_会输出带Xml边界的上下文与当前请求() {
         var builder = new ProviderMessageBuilder(
                 new TranscriptHygieneEngine(new AgentConfigProperties())
         );
@@ -102,8 +106,9 @@ class ProviderMessageBuilderTest {
 
         String serialized = builder.serializeForMultimodal(List.of(
                 new org.springframework.ai.chat.messages.SystemMessage("system"),
-                new AssistantMessage("<synthetic_context type=\"user_profile_context\">profile</synthetic_context>"),
-                new UserMessage("user"),
+                new AssistantMessage("<user_profile_context>profile</user_profile_context>"),
+                new AssistantMessage("<history_transcript>以下消息为历史 transcript，按时间顺序排列。</history_transcript>"),
+                new UserMessage("<runtime_context>\n- 当前时间: 2026-03-24T10:00:00+08:00\n</runtime_context>\n\n<current_request>\nuser\n</current_request>"),
                 AssistantMessage.builder().content("thinking").toolCalls(List.of(toolCall)).build(),
                 ToolResponseMessage.builder()
                         .responses(List.of(new ToolResponseMessage.ToolResponse(
@@ -113,8 +118,9 @@ class ProviderMessageBuilderTest {
 
         assertThat(serialized)
                 .contains("[system]")
-                .contains("[context:user_profile_context]")
-                .contains("[user]")
+                .contains("<user_profile_context>profile</user_profile_context>")
+                .contains("<history_transcript>以下消息为历史 transcript，按时间顺序排列。</history_transcript>")
+                .contains("<current_request>")
                 .contains("[tool_call:tool.search]")
                 .contains("[assistant]")
                 .contains("[tool_result:tool.search]");
