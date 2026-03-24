@@ -1,6 +1,7 @@
 package com.lifepilot.llm.cache;
 
-import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.embedding.router.EmbeddingRouter;
+import com.lifepilot.embedding.router.EmbeddingUseCase;
 import com.lifepilot.llm.config.LlmConfigProperties.CacheConfigEntry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,7 +32,7 @@ public class SemanticCache {
     private static final String DEFAULT_RESPONSE_FORMAT_KEY = "text";
 
     private final CacheConfigEntry config;
-    private final LlmRouter llmRouter;
+    private final EmbeddingRouter embeddingRouter;
     private final JdbcTemplate jdbcTemplate;
 
     /** vec0 表是否已成功初始化（volatile 支持延迟初始化）。 */
@@ -52,9 +53,9 @@ public class SemanticCache {
      * @param llmRouter   LLM 路由器（用于 embed）
      * @param jdbcTemplate JDBC 模板
      */
-    public SemanticCache(CacheConfigEntry config, LlmRouter llmRouter, JdbcTemplate jdbcTemplate) {
+    public SemanticCache(CacheConfigEntry config, EmbeddingRouter embeddingRouter, JdbcTemplate jdbcTemplate) {
         this.config = config;
-        this.llmRouter = llmRouter;
+        this.embeddingRouter = embeddingRouter;
         this.jdbcTemplate = jdbcTemplate;
         // 延迟初始化：构造阶段 EMBEDDING Provider 可能尚未注册，
         // 由 ensureVecInitialized() 在首次 lookup/putAsync 时完成初始化
@@ -66,7 +67,7 @@ public class SemanticCache {
     private boolean initVec0Table() {
         try {
             // 探测 Embedding 维度
-            float[] probe = llmRouter.embed("probe");
+            float[] probe = embeddingRouter.embed("probe", EmbeddingUseCase.DEFAULT, null, null);
             int dimensions = probe.length;
             jdbcTemplate.execute(
                     "CREATE VIRTUAL TABLE IF NOT EXISTS semantic_cache_vec USING vec0(" +
@@ -130,7 +131,7 @@ public class SemanticCache {
 
         try {
             // 1. 计算 Embedding
-            float[] queryVec = llmRouter.embed(prompt);
+            float[] queryVec = embeddingRouter.embed(prompt, EmbeddingUseCase.DEFAULT, null, null);
             byte[] vectorBytes = floatArrayToBytes(queryVec);
 
             // 2. KNN 搜索 top-5 候选
@@ -224,7 +225,7 @@ public class SemanticCache {
 
         Thread.ofVirtual().start(() -> {
             try {
-                float[] embedding = llmRouter.embed(prompt);
+                float[] embedding = embeddingRouter.embed(prompt, EmbeddingUseCase.DEFAULT, null, null);
                 byte[] vectorBytes = floatArrayToBytes(embedding);
                 String id = UUID.randomUUID().toString();
                 String now = DateTimeFormatter.ISO_INSTANT.format(Instant.now());

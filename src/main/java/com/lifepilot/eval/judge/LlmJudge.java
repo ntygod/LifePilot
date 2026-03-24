@@ -2,8 +2,8 @@ package com.lifepilot.eval.judge;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.lifepilot.eval.config.EvalConfigProperties;
-import com.lifepilot.llm.LlmRequest;
-import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.generation.router.GenerationRouter;
+import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,12 +32,12 @@ public class LlmJudge {
     /** 匹配 0.0 ~ 1.0 范围内的小数（含整数 0 和 1）。 */
     private static final Pattern SCORE_PATTERN = Pattern.compile("(\\d+\\.?\\d*)");
 
-    private final LlmRouter llmRouter;
+    private final GenerationRouter generationRouter;
     private final EvalConfigProperties config;
     private final PromptRegistry promptRegistry;
 
-    public LlmJudge(LlmRouter llmRouter, EvalConfigProperties config, PromptRegistry promptRegistry) {
-        this.llmRouter = llmRouter;
+    public LlmJudge(GenerationRouter generationRouter, EvalConfigProperties config, PromptRegistry promptRegistry) {
+        this.generationRouter = generationRouter;
         this.config = config;
         this.promptRegistry = promptRegistry;
         log.info("LlmJudge 初始化完成: scene={}", config.getLlmJudge().getScene());
@@ -82,7 +82,13 @@ public class LlmJudge {
 
             // 第一级：callEntity 结构化解析
             try {
-                JudgeResponse response = llmRouter.callEntity(LlmRequest.of(scene, prompt), JudgeResponse.class);
+                JudgeResponse response = generationRouter.callEntity(
+                        scene,
+                        prompt,
+                        JudgeResponse.class,
+                        null,
+                        null,
+                        null);
 
                 if (response != null && response.overallScore() != null) {
                     var score = clampScore(response.overallScore());
@@ -120,7 +126,14 @@ public class LlmJudge {
 
         try {
             var prompt = buildPrompt(actualOutput, expectedPattern, criteria);
-            var response = llmRouter.call(LlmRequest.of(scene, prompt));
+            var response = generationRouter.call(
+                    scene,
+                    prompt,
+                    null,
+                    null,
+                    null,
+                    GenerationCapability.CHAT,
+                    null);
             var tokensUsed = response.totalTokens();
 
             var parsed = parseResponse(response.content());
@@ -152,7 +165,14 @@ public class LlmJudge {
 
         try {
             var simplifiedPrompt = buildSimplifiedPrompt(actualOutput, expectedPattern, criteria);
-            var response = llmRouter.call(LlmRequest.of(scene, simplifiedPrompt));
+            var response = generationRouter.call(
+                    scene,
+                    simplifiedPrompt,
+                    null,
+                    null,
+                    null,
+                    GenerationCapability.CHAT,
+                    null);
             var totalTokens = previousTokens + response.totalTokens();
 
             var score = parseScoreFromText(response.content());

@@ -1,7 +1,6 @@
 package com.lifepilot.memory.consolidation;
 
-import com.lifepilot.llm.LlmRequest;
-import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.experience.ExperienceRecord;
 import com.lifepilot.memory.retrieval.VectorSearcher;
@@ -32,18 +31,18 @@ public class ExperienceMerger {
 
     private final SemanticMemory semanticMemory;
     private final VectorSearcher vectorSearcher;
-    private final LlmRouter llmRouter;
+    private final GenerationRouter generationRouter;
     private final PromptRegistry promptRegistry;
     private final MemoryProperties.Experience.Merge config;
 
     public ExperienceMerger(SemanticMemory semanticMemory,
                             VectorSearcher vectorSearcher,
-                            LlmRouter llmRouter,
+                            GenerationRouter generationRouter,
                             PromptRegistry promptRegistry,
                             MemoryProperties memoryProperties) {
         this.semanticMemory = semanticMemory;
         this.vectorSearcher = vectorSearcher;
-        this.llmRouter = llmRouter;
+        this.generationRouter = generationRouter;
         this.promptRegistry = promptRegistry;
         this.config = memoryProperties.getExperience().getMerge();
     }
@@ -167,8 +166,13 @@ public class ExperienceMerger {
                     "experienceB_tools", String.valueOf(entityB.properties().getOrDefault("toolsUsed", List.of()))
             );
             String prompt = promptRegistry.render(PROMPT_KEY, vars);
-            var request = LlmRequest.of("experience-merge", prompt);
-            return llmRouter.callEntity(request, ExperienceRecord.class);
+            return generationRouter.callEntity(
+                    "experience-merge",
+                    prompt,
+                    ExperienceRecord.class,
+                    null,
+                    null,
+                    null);
         } catch (Exception e) {
             log.warn("经验合并: LLM 调用失败, entityA={}, entityB={}, error={}",
                     entityA.id(), entityB.id(), e.getMessage());

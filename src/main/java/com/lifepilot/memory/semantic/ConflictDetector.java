@@ -1,8 +1,8 @@
 package com.lifepilot.memory.semantic;
 
-import com.lifepilot.llm.LlmRequest;
-import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.memory.retrieval.VectorSearcher;
+import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
@@ -29,7 +29,7 @@ public class ConflictDetector {
     private final JdbcTemplate jdbcTemplate;
     private final VectorSearcher vectorSearcher;
     @Nullable
-    private final LlmRouter llmRouter;
+    private final GenerationRouter generationRouter;
     private final float semanticMatchThreshold;
     private final PromptRegistry promptRegistry;
 
@@ -44,12 +44,12 @@ public class ConflictDetector {
      */
     public ConflictDetector(JdbcTemplate jdbcTemplate,
                             VectorSearcher vectorSearcher,
-                            @Nullable LlmRouter llmRouter,
+                            @Nullable GenerationRouter generationRouter,
                             float semanticMatchThreshold,
                             PromptRegistry promptRegistry) {
         this.jdbcTemplate = jdbcTemplate;
         this.vectorSearcher = vectorSearcher;
-        this.llmRouter = llmRouter;
+        this.generationRouter = generationRouter;
         this.semanticMatchThreshold = semanticMatchThreshold;
         this.promptRegistry = promptRegistry;
     }
@@ -77,7 +77,7 @@ public class ConflictDetector {
                 var candidate = findEntityById(topResult.entityId());
                 if (candidate.isPresent()) {
                     // 第三级：LLM 消歧义
-                    if (llmRouter != null) {
+                    if (generationRouter != null) {
                         try {
                             boolean isSame = llmDisambiguate(newEntity, candidate.get());
                             if (isSame) {
@@ -128,7 +128,14 @@ public class ConflictDetector {
                 "entityA", newEntity.textRepresentation(),
                 "entityB", candidate.textRepresentation()
         ));
-        var response = llmRouter.call(LlmRequest.of("knowledge_extraction", prompt));
+        var response = generationRouter.call(
+                "knowledge_extraction",
+                prompt,
+                null,
+                null,
+                null,
+                GenerationCapability.CHAT,
+                null);
         var content = response.content().trim();
         try {
             var mapper = new com.fasterxml.jackson.databind.ObjectMapper();

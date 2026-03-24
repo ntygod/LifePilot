@@ -1,8 +1,8 @@
 package com.lifepilot.memory.forgetting;
 
-import com.lifepilot.llm.LlmRequest;
-import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.LlmScene;
+import com.lifepilot.generation.router.GenerationRouter;
+import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
@@ -34,7 +34,7 @@ public class ForgettingEngine {
 
     private final SemanticMemory semanticMemory;
     @Nullable
-    private final LlmRouter llmRouter;
+    private final GenerationRouter generationRouter;
     private final JdbcTemplate jdbcTemplate;
     private final MemoryProperties properties;
     private final PromptRegistry promptRegistry;
@@ -42,12 +42,12 @@ public class ForgettingEngine {
     private final ForgettingPriority priorityCalculator;
 
     public ForgettingEngine(SemanticMemory semanticMemory,
-                            @Nullable LlmRouter llmRouter,
+                            @Nullable GenerationRouter generationRouter,
                             JdbcTemplate jdbcTemplate,
                             MemoryProperties properties,
                             PromptRegistry promptRegistry) {
         this.semanticMemory = semanticMemory;
-        this.llmRouter = llmRouter;
+        this.generationRouter = generationRouter;
         this.jdbcTemplate = jdbcTemplate;
         this.properties = properties;
         this.promptRegistry = promptRegistry;
@@ -57,7 +57,7 @@ public class ForgettingEngine {
         var fifo = new FifoPolicy(forgettingConfig);
         var lru = new LruPolicy(forgettingConfig);
         var decay = new PriorityDecayPolicy(forgettingConfig);
-        var reflection = new ReflectionSummaryPolicy(llmRouter, forgettingConfig);
+        var reflection = new ReflectionSummaryPolicy(generationRouter, forgettingConfig);
         this.hybridPolicy = new HybridPolicy(fifo, lru, decay, reflection);
         this.priorityCalculator = new ForgettingPriority(forgettingConfig);
     }
@@ -175,10 +175,17 @@ public class ForgettingEngine {
         // 中等重要度实体 + LLM 可用 → 尝试压缩
         if (entity.importanceScore() >= minImportance
                 && entity.importanceScore() < maxImportance
-                && llmRouter != null) {
+                && generationRouter != null) {
             try {
                 var prompt = buildCompressionPrompt(entity);
-                var response = llmRouter.call(LlmRequest.of(LlmScene.MEMORY_COMPRESSION, prompt));
+                var response = generationRouter.call(
+                        LlmScene.MEMORY_COMPRESSION,
+                        prompt,
+                        null,
+                        null,
+                        null,
+                        GenerationCapability.CHAT,
+                        null);
                 var summary = response.content();
                 log.debug("遗忘引擎: 实体压缩成功, id={}, name={}, 摘要长度={}",
                         entity.id(), entity.name(), summary.length());

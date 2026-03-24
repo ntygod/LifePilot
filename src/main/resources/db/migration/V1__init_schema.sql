@@ -1,4 +1,4 @@
--- ============================================================
+﻿-- ============================================================
 -- V1: 初始化脚本
 -- 仅保留 transcript-first 时代的最终结构，不再保留历史迁移链。
 -- ============================================================
@@ -369,27 +369,60 @@ CREATE TABLE knowledge_bases (
     updated_at           TEXT NOT NULL
 );
 
-CREATE TABLE llm_providers (
-    id                      TEXT PRIMARY KEY,
-    type                    TEXT NOT NULL,
-    api_url                 TEXT NOT NULL,
-    api_key                 TEXT,
-    model_name              TEXT NOT NULL,
-    timeout_seconds         INTEGER NOT NULL DEFAULT 30,
-    priority                INTEGER NOT NULL DEFAULT 0,
-    scenes                  TEXT NOT NULL DEFAULT '[]',
-    capabilities            TEXT NOT NULL DEFAULT '["CHAT"]',
-    enabled                 INTEGER NOT NULL DEFAULT 1,
-    cost_per_input_token    INTEGER NOT NULL DEFAULT 0,
-    cost_per_output_token   INTEGER NOT NULL DEFAULT 0,
-    max_context_window      INTEGER NOT NULL DEFAULT 4096,
-    embedding_dimension     INTEGER,
-    supports_streaming      INTEGER NOT NULL DEFAULT 0,
-    is_preset               INTEGER NOT NULL DEFAULT 0,
-    display_name            TEXT,
-    description             TEXT,
-    created_at              TEXT NOT NULL,
-    updated_at              TEXT NOT NULL
+CREATE TABLE model_services (
+    id                            TEXT PRIMARY KEY,
+    kind                          TEXT NOT NULL CHECK (kind IN ('GENERATION', 'EMBEDDING', 'RERANK')),
+    provider_type                 TEXT NOT NULL,
+    api_url                       TEXT NOT NULL,
+    api_key                       TEXT,
+    model_name                    TEXT NOT NULL,
+    timeout_seconds               INTEGER NOT NULL DEFAULT 30,
+    priority                      INTEGER NOT NULL DEFAULT 0,
+    enabled                       INTEGER NOT NULL DEFAULT 1,
+    supported_scenes_json         TEXT NOT NULL DEFAULT '[]',
+    generation_capabilities_json  TEXT NOT NULL DEFAULT '[]',
+    metadata_json                 TEXT NOT NULL DEFAULT '{}',
+    display_name                  TEXT,
+    description                   TEXT,
+    created_at                    TEXT NOT NULL,
+    updated_at                    TEXT NOT NULL
+);
+
+CREATE TABLE generation_settings (
+    id                           TEXT PRIMARY KEY,
+    default_service_id           TEXT,
+    scene_service_bindings_json  TEXT NOT NULL DEFAULT '{}',
+    created_at                   TEXT NOT NULL,
+    updated_at                   TEXT NOT NULL,
+    FOREIGN KEY (default_service_id) REFERENCES model_services(id) ON DELETE SET NULL
+);
+
+CREATE TABLE embedding_settings (
+    id                          TEXT PRIMARY KEY,
+    default_service_id          TEXT,
+    knowledge_base_service_id   TEXT,
+    memory_service_id           TEXT,
+    created_at                  TEXT NOT NULL,
+    updated_at                  TEXT NOT NULL,
+    FOREIGN KEY (default_service_id) REFERENCES model_services(id) ON DELETE SET NULL,
+    FOREIGN KEY (knowledge_base_service_id) REFERENCES model_services(id) ON DELETE SET NULL,
+    FOREIGN KEY (memory_service_id) REFERENCES model_services(id) ON DELETE SET NULL
+);
+
+CREATE TABLE rerank_settings (
+    id                  TEXT PRIMARY KEY,
+    enabled             INTEGER NOT NULL DEFAULT 0,
+    mode                TEXT NOT NULL DEFAULT 'DISABLED'
+                            CHECK (mode IN ('DISABLED', 'NATIVE', 'LLM_POINTWISE', 'LLM_LISTWISE')),
+    native_service_id   TEXT,
+    llm_service_id      TEXT,
+    knowledge_top_k     INTEGER NOT NULL DEFAULT 5,
+    memory_enabled      INTEGER NOT NULL DEFAULT 1,
+    memory_top_k        INTEGER NOT NULL DEFAULT 10,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL,
+    FOREIGN KEY (native_service_id) REFERENCES model_services(id) ON DELETE SET NULL,
+    FOREIGN KEY (llm_service_id) REFERENCES model_services(id) ON DELETE SET NULL
 );
 
 CREATE TABLE marketplace_index_cache (
@@ -896,13 +929,10 @@ CREATE TABLE user_settings (
     id                      TEXT PRIMARY KEY,
     theme                   TEXT NOT NULL DEFAULT 'system',
     language                TEXT NOT NULL DEFAULT 'zh-CN',
-    llm_provider            TEXT NOT NULL DEFAULT 'ollama-qwen2.5',
     enable_streaming        INTEGER NOT NULL DEFAULT 1,
     enable_function_call    INTEGER NOT NULL DEFAULT 1,
     enable_knowledge_base   INTEGER NOT NULL DEFAULT 1,
     enable_tool_call        INTEGER NOT NULL DEFAULT 1,
-    scene_providers         TEXT NOT NULL DEFAULT '{}',
-    reranker_config_json    TEXT DEFAULT '{}',
     knowledge_config_json   TEXT DEFAULT '{}',
     created_at              TEXT NOT NULL,
     updated_at              TEXT NOT NULL
@@ -1095,11 +1125,10 @@ CREATE INDEX idx_knowledge_bases_name ON knowledge_bases(name);
 
 CREATE INDEX idx_knowledge_bases_tags ON knowledge_bases(tags);
 
-CREATE INDEX idx_llm_providers_enabled ON llm_providers(enabled);
+CREATE INDEX idx_model_services_kind_enabled
+    ON model_services(kind, enabled, priority);
 
-CREATE INDEX idx_llm_providers_preset ON llm_providers(is_preset);
-
-CREATE INDEX idx_llm_providers_type ON llm_providers(type);
+CREATE INDEX idx_model_services_model_name ON model_services(model_name);
 
 CREATE INDEX idx_memory_document_chunks_document_id
     ON memory_document_chunks(document_id);
@@ -1416,64 +1445,93 @@ FOR EACH ROW BEGIN
     UPDATE user_behavior SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE user_id = NEW.user_id;
 END;
 
--- 预置 LLM Provider
+-- 预置模型服务
 
-INSERT INTO llm_providers (
-    id, type, api_url, api_key, model_name, timeout_seconds, priority,
-    scenes, capabilities, enabled, cost_per_input_token, cost_per_output_token,
-    max_context_window, embedding_dimension, supports_streaming, is_preset,
+INSERT INTO model_services (
+    id, kind, provider_type, api_url, api_key, model_name, timeout_seconds, priority, enabled,
+    supported_scenes_json, generation_capabilities_json, metadata_json,
     display_name, description, created_at, updated_at
 ) VALUES
-('ollama-qwen2.5', 'OLLAMA', 'http://localhost:11434', NULL, 'qwen3:8b', 120, 0,
+('ollama-qwen2.5', 'GENERATION', 'OLLAMA', 'http://localhost:11434', NULL, 'qwen3:8b', 120, 0, 0,
  '["intent_understanding","task_planning","knowledge_extraction","chat","memory_compression","proactive_reasoning","code_generation","agent_reasoning","agent_tool_calling","agent_generation","knowledge_rerank","document_summary","skill_generation"]',
- '["CHAT","STRUCTURED_OUTPUT","FUNCTION_CALLING","STREAMING"]', 0, 0, 0, 131072, NULL, 1, 1,
- 'Ollama Qwen3 8B', '本地 Ollama Qwen3 8B 模型，无需单独配置 API Key', datetime('now'), datetime('now')),
-('ollama-nomic-embed', 'OLLAMA', 'http://localhost:11434', NULL, 'nomic-embed-text:v1.5', 30, 0,
- '["embedding"]', '["EMBEDDING"]', 0, 0, 0, 8192, 1024, 0, 1,
- 'Ollama Nomic Embed', '本地 Ollama Nomic Embed 向量模型', datetime('now'), datetime('now')),
-('tei-embedding', 'TEI', 'http://localhost:8080/v1', NULL, 'bge-base-en-v1.5', 30, 0,
- '["embedding"]', '["EMBEDDING"]', 0, 0, 0, 8192, 1024, 0, 1,
- 'TEI Embedding (本地)', '本地部署的 Text Embeddings Inference 服务', datetime('now'), datetime('now')),
-('deepseek-chat', 'DEEPSEEK', 'https://api.deepseek.com', NULL, 'deepseek-v3', 60, 1,
+ '["CHAT","STRUCTURED_OUTPUT","FUNCTION_CALLING","STREAMING"]',
+ '{"maxContextWindow":131072,"costPerInputToken":0,"costPerOutputToken":0}',
+ 'Ollama Qwen3 8B', '本地 Ollama Qwen3 8B 生成服务', datetime('now'), datetime('now')),
+('deepseek-chat', 'GENERATION', 'DEEPSEEK', 'https://api.deepseek.com', NULL, 'deepseek-v3', 60, 1, 0,
  '["intent_understanding","task_planning","knowledge_extraction","chat","code_generation","agent_reasoning","agent_tool_calling","agent_generation","knowledge_rerank","document_summary","skill_generation","memory_compression"]',
- '["CHAT","STRUCTURED_OUTPUT","FUNCTION_CALLING","STREAMING","VISION"]', 0, 2, 8, 131072, NULL, 1, 1,
- 'DeepSeek V3', 'DeepSeek V3，支持 128K 上下文窗口，需要配置 API Key', datetime('now'), datetime('now')),
-('deepseek-r1', 'DEEPSEEK', 'https://api.deepseek.com', NULL, 'deepseek-reasoner', 120, 1,
+ '["CHAT","STRUCTURED_OUTPUT","FUNCTION_CALLING","STREAMING","VISION"]',
+ '{"maxContextWindow":131072,"costPerInputToken":2,"costPerOutputToken":8}',
+ 'DeepSeek V3', 'DeepSeek V3 生成服务', datetime('now'), datetime('now')),
+('deepseek-r1', 'GENERATION', 'DEEPSEEK', 'https://api.deepseek.com', NULL, 'deepseek-reasoner', 120, 1, 0,
  '["task_planning","code_generation","agent_reasoning"]',
- '["CHAT","STRUCTURED_OUTPUT","STREAMING"]', 0, 4, 16, 131072, NULL, 1, 1,
- 'DeepSeek R1', 'DeepSeek R1，偏推理与复杂分析场景，需要配置 API Key', datetime('now'), datetime('now')),
-('glm-4', 'GLM', 'https://open.bigmodel.cn/api/paas/v4', NULL, 'glm-4-plus', 60, 1,
+ '["CHAT","STRUCTURED_OUTPUT","STREAMING"]',
+ '{"maxContextWindow":131072,"costPerInputToken":4,"costPerOutputToken":16}',
+ 'DeepSeek R1', 'DeepSeek R1 推理生成服务', datetime('now'), datetime('now')),
+('glm-4', 'GENERATION', 'GLM', 'https://open.bigmodel.cn/api/paas/v4', NULL, 'glm-4-plus', 60, 1, 0,
  '["intent_understanding","task_planning","knowledge_extraction","chat","code_generation","agent_reasoning","agent_tool_calling","agent_generation","knowledge_rerank","document_summary","skill_generation","memory_compression"]',
- '["CHAT","STRUCTURED_OUTPUT","FUNCTION_CALLING","STREAMING","VISION"]', 0, 50, 50, 131072, NULL, 1, 1,
- '智谱 GLM-4-Plus', '智谱 AI GLM-4-Plus，支持 128K 上下文窗口，需要配置 API Key', datetime('now'), datetime('now')),
-('qwen-plus', 'QWEN', 'https://dashscope.aliyuncs.com/compatible-mode', NULL, 'qwen3-plus', 60, 1,
+ '["CHAT","STRUCTURED_OUTPUT","FUNCTION_CALLING","STREAMING","VISION"]',
+ '{"maxContextWindow":131072,"costPerInputToken":50,"costPerOutputToken":50}',
+ '智谱 GLM-4-Plus', '智谱 GLM-4-Plus 生成服务', datetime('now'), datetime('now')),
+('qwen-plus', 'GENERATION', 'QWEN', 'https://dashscope.aliyuncs.com/compatible-mode', NULL, 'qwen3-plus', 60, 1, 0,
  '["intent_understanding","task_planning","knowledge_extraction","chat","code_generation","agent_reasoning","agent_tool_calling","agent_generation","knowledge_rerank","document_summary","skill_generation","memory_compression"]',
- '["CHAT","STRUCTURED_OUTPUT","FUNCTION_CALLING","STREAMING","VISION"]', 0, 8, 8, 131072, NULL, 1, 1,
- '通义千问 3 Plus', '阿里云通义千问 3 Plus，支持 128K 上下文窗口，需要配置 API Key', datetime('now'), datetime('now')),
-('wenxin-ernie', 'WENXIN', 'https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat', NULL, 'ernie-4.5-turbo-128k', 60, 1,
+ '["CHAT","STRUCTURED_OUTPUT","FUNCTION_CALLING","STREAMING","VISION"]',
+ '{"maxContextWindow":131072,"costPerInputToken":8,"costPerOutputToken":8}',
+ '通义千问 3 Plus', '通义千问 3 Plus 生成服务', datetime('now'), datetime('now')),
+('wenxin-ernie', 'GENERATION', 'WENXIN', 'https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat', NULL, 'ernie-4.5-turbo-128k', 60, 1, 0,
  '["intent_understanding","task_planning","knowledge_extraction","chat","agent_reasoning","agent_tool_calling","agent_generation","knowledge_rerank","document_summary","skill_generation","memory_compression"]',
- '["CHAT","STRUCTURED_OUTPUT","FUNCTION_CALLING","STREAMING","VISION"]', 0, 4, 8, 131072, NULL, 1, 1,
- '文心一言 4.5 Turbo', '百度文心一言 4.5 Turbo，支持 128K 上下文窗口，需要配置 API Key', datetime('now'), datetime('now')),
-('anthropic-claude', 'OPENAI_COMPATIBLE', 'https://api.anthropic.com/v1', NULL, 'claude-sonnet-4-6', 60, 2,
+ '["CHAT","STRUCTURED_OUTPUT","FUNCTION_CALLING","STREAMING","VISION"]',
+ '{"maxContextWindow":131072,"costPerInputToken":4,"costPerOutputToken":8}',
+ '文心一言 4.5 Turbo', '文心一言 4.5 Turbo 生成服务', datetime('now'), datetime('now')),
+('anthropic-claude', 'GENERATION', 'OPENAI_COMPATIBLE', 'https://api.anthropic.com/v1', NULL, 'claude-sonnet-4-6', 60, 2, 0,
  '["intent_understanding","task_planning","knowledge_extraction","chat","code_generation","agent_reasoning","agent_tool_calling","agent_generation","knowledge_rerank","document_summary","skill_generation","memory_compression"]',
- '["CHAT","STRUCTURED_OUTPUT","FUNCTION_CALLING","STREAMING","VISION"]', 0, 300, 1500, 204800, NULL, 1, 1,
- 'Anthropic Claude Sonnet 4.6', 'Anthropic Claude Sonnet 4.6，支持 200K 上下文窗口，需要配置 API Key', datetime('now'), datetime('now')),
-('openai-gpt-4', 'OPENAI_COMPATIBLE', 'https://api.openai.com/v1', NULL, 'gpt-4.1', 60, 2,
+ '["CHAT","STRUCTURED_OUTPUT","FUNCTION_CALLING","STREAMING","VISION"]',
+ '{"maxContextWindow":204800,"costPerInputToken":300,"costPerOutputToken":1500}',
+ 'Anthropic Claude Sonnet 4.6', 'Claude Sonnet 4.6 生成服务', datetime('now'), datetime('now')),
+('openai-gpt-4', 'GENERATION', 'OPENAI_COMPATIBLE', 'https://api.openai.com/v1', NULL, 'gpt-4.1', 60, 2, 0,
  '["intent_understanding","task_planning","knowledge_extraction","chat","code_generation","agent_reasoning","agent_tool_calling","agent_generation","knowledge_rerank","document_summary","skill_generation","memory_compression"]',
- '["CHAT","STRUCTURED_OUTPUT","FUNCTION_CALLING","STREAMING","VISION"]', 0, 200, 800, 1048576, NULL, 1, 1,
- 'OpenAI GPT-4.1', 'OpenAI GPT-4.1，支持 1M 上下文窗口，需要配置 API Key', datetime('now'), datetime('now')),
-('openai-gpt-4o-mini', 'OPENAI_COMPATIBLE', 'https://api.openai.com/v1', NULL, 'gpt-4o-mini', 30, 2,
+ '["CHAT","STRUCTURED_OUTPUT","FUNCTION_CALLING","STREAMING","VISION"]',
+ '{"maxContextWindow":1048576,"costPerInputToken":200,"costPerOutputToken":800}',
+ 'OpenAI GPT-4.1', 'OpenAI GPT-4.1 生成服务', datetime('now'), datetime('now')),
+('openai-gpt-4o-mini', 'GENERATION', 'OPENAI_COMPATIBLE', 'https://api.openai.com/v1', NULL, 'gpt-4o-mini', 30, 2, 0,
  '["chat","knowledge_extraction","memory_compression","knowledge_rerank","document_summary"]',
- '["CHAT","STRUCTURED_OUTPUT","FUNCTION_CALLING","STREAMING","VISION"]', 0, 15, 60, 131072, NULL, 1, 1,
- 'OpenAI GPT-4o Mini', 'OpenAI GPT-4o Mini，支持 128K 上下文窗口，需要配置 API Key', datetime('now'), datetime('now'));
+ '["CHAT","STRUCTURED_OUTPUT","FUNCTION_CALLING","STREAMING","VISION"]',
+ '{"maxContextWindow":131072,"costPerInputToken":15,"costPerOutputToken":60}',
+ 'OpenAI GPT-4o Mini', 'OpenAI GPT-4o Mini 生成服务', datetime('now'), datetime('now')),
+('ollama-nomic-embed', 'EMBEDDING', 'OLLAMA', 'http://localhost:11434', NULL, 'nomic-embed-text:v1.5', 30, 0, 0,
+ '[]', '[]',
+ '{"embeddingDimension":1024,"maxContextWindow":8192}',
+ 'Ollama Nomic Embed', '本地 Ollama Nomic Embed 向量服务', datetime('now'), datetime('now')),
+('tei-embedding', 'EMBEDDING', 'TEI', 'http://localhost:8080/v1', NULL, 'bge-base-en-v1.5', 30, 0, 0,
+ '[]', '[]',
+ '{"embeddingDimension":1024,"maxContextWindow":8192}',
+ 'TEI Embedding', '本地 TEI 向量服务', datetime('now'), datetime('now'));
+
+INSERT INTO generation_settings (
+    id, default_service_id, scene_service_bindings_json, created_at, updated_at
+) VALUES (
+    'default', 'ollama-qwen2.5', '{}', datetime('now'), datetime('now')
+);
+
+INSERT INTO embedding_settings (
+    id, default_service_id, knowledge_base_service_id, memory_service_id, created_at, updated_at
+) VALUES (
+    'default', 'ollama-nomic-embed', 'ollama-nomic-embed', 'ollama-nomic-embed',
+    datetime('now'), datetime('now')
+);
+
+INSERT INTO rerank_settings (
+    id, enabled, mode, native_service_id, llm_service_id, knowledge_top_k, memory_enabled, memory_top_k, created_at, updated_at
+) VALUES (
+    'default', 0, 'DISABLED', NULL, 'ollama-qwen2.5', 5, 1, 10, datetime('now'), datetime('now')
+);
 
 INSERT INTO user_settings (
-    id, theme, language, llm_provider,
+    id, theme, language,
     enable_streaming, enable_function_call, enable_knowledge_base, enable_tool_call,
-    scene_providers, reranker_config_json, knowledge_config_json,
+    knowledge_config_json,
     created_at, updated_at, channel_config_json, search_config_json
 ) VALUES (
-    'default', 'system', 'zh-CN', 'ollama-qwen2.5',
-    1, 1, 1, 1, '{}', '{}', '{}',
+    'default', 'system', 'zh-CN',
+    1, 1, 1, 1, '{}',
     datetime('now'), datetime('now'), '{}', '{}'
 );

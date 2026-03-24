@@ -1,7 +1,7 @@
 /**
- * LLM 路由与管理：多模型场景路由、熔断器、Provider 适配。
+ * LLM 运行时支持：响应对象、异常、场景常量、多模态协议、熔断与 Provider 注册。
  *
- * <p>通过 LlmRouter 实现场景感知的模型选择和优先级故障转移，
- * 支持 Ollama 本地模型和多家云端 Provider。
+ * <p>模型选择分别由 GenerationRouter、EmbeddingRouter、RerankRouter 负责，
+ * 本包保留通用运行时模型与基础设施。</p>
  */
 package com.lifepilot.llm;

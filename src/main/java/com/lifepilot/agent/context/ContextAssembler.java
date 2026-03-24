@@ -2,8 +2,7 @@ package com.lifepilot.agent.context;
 
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.model.ReactAgentState;
-import com.lifepilot.llm.LlmRouter;
-import com.lifepilot.llm.config.ProviderCapability;
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.experience.EffectivenessTracker;
 import com.lifepilot.memory.procedural.PreferenceRule;
@@ -60,7 +59,7 @@ public class ContextAssembler {
     @Nullable private final ProceduralMemory proceduralMemory;
     @Nullable private final EffectivenessTracker effectivenessTracker;
     @Nullable private final SkillRegistry skillRegistry;
-    @Nullable private final LlmRouter llmRouter;
+    @Nullable private final GenerationRouter generationRouter;
     @Nullable private final ContextEngine contextEngine;
 
     public ContextAssembler(AgentConfigProperties config,
@@ -86,10 +85,10 @@ public class ContextAssembler {
                             @Nullable ProceduralMemory proceduralMemory,
                             @Nullable EffectivenessTracker effectivenessTracker,
                             @Nullable SkillRegistry skillRegistry,
-                            @Nullable LlmRouter llmRouter) {
+                            @Nullable GenerationRouter generationRouter) {
         this(config, promptRegistry,
                 dataRedactor, semanticMemory, passiveNotificationQueue, memoryProperties,
-                proceduralMemory, effectivenessTracker, skillRegistry, llmRouter, null);
+                proceduralMemory, effectivenessTracker, skillRegistry, generationRouter, null);
     }
 
     public ContextAssembler(AgentConfigProperties config,
@@ -101,7 +100,7 @@ public class ContextAssembler {
                             @Nullable ProceduralMemory proceduralMemory,
                             @Nullable EffectivenessTracker effectivenessTracker,
                             @Nullable SkillRegistry skillRegistry,
-                            @Nullable LlmRouter llmRouter,
+                            @Nullable GenerationRouter generationRouter,
                             @Nullable ContextEngine contextEngine) {
         this.config = config;
         this.promptRegistry = promptRegistry;
@@ -112,7 +111,7 @@ public class ContextAssembler {
         this.proceduralMemory = proceduralMemory;
         this.effectivenessTracker = effectivenessTracker;
         this.skillRegistry = skillRegistry;
-        this.llmRouter = llmRouter;
+        this.generationRouter = generationRouter;
         this.contextEngine = contextEngine;
     }
     /**
@@ -370,9 +369,6 @@ public class ContextAssembler {
         sb.append("\n- 时间预算剩余(秒): ").append(state.budget().durationRemaining().toSeconds());
         sb.append("\n- 当前已执行步骤数: ").append(state.stepCount());
         sb.append("\n</runtime_context>");
-        if (timeConstraintSection != null && !timeConstraintSection.isBlank()) {
-            sb.append("\n").append(timeConstraintSection);
-        }
         return sb.toString();
     }
 
@@ -700,14 +696,14 @@ public class ContextAssembler {
     private int resolveContextWindow(@Nullable ReactAgentState state) {
         int configuredWindow = Math.max(1024, config.getContext().getMaxContextTokens());
         int resolvedWindow = configuredWindow;
-        if (llmRouter != null) {
+        if (generationRouter != null) {
             try {
-                var candidates = llmRouter.getAvailableCandidates(
+                int providerWindow = generationRouter.resolveMaxContextWindow(
                         config.getLoop().getLlmScene(),
-                        ProviderCapability.CHAT,
-                        state != null ? state.preferredProvider() : null);
-                if (!candidates.isEmpty() && candidates.getFirst().maxContextWindow() > 0) {
-                    resolvedWindow = Math.min(configuredWindow, candidates.getFirst().maxContextWindow());
+                        state != null ? state.preferredProvider() : null,
+                        null);
+                if (providerWindow > 0) {
+                    resolvedWindow = Math.min(configuredWindow, providerWindow);
                 }
             } catch (Exception e) {
                 log.debug("读取 Provider 上下文窗口失败，回退默认配置: error={}", e.getMessage());

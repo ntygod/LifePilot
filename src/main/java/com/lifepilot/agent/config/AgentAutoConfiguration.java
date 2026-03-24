@@ -20,10 +20,10 @@ import com.lifepilot.conversation.artifact.SessionArtifactRepository;
 import com.lifepilot.conversation.transcript.SessionStoreRepository;
 import com.lifepilot.conversation.transcript.SessionTranscriptRepository;
 import com.lifepilot.conversation.transcript.TranscriptStore;
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.web.config.A2uiProperties;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
-import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.config.LlmAutoConfiguration;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.media.MediaProcessor;
@@ -102,7 +102,7 @@ public class AgentAutoConfiguration {
             SessionStoreRepository sessionStoreRepository,
             TranscriptCompactionBoundaryResolver transcriptCompactionBoundaryResolver,
             PromptRegistry promptRegistry,
-            LlmRouter llmRouter,
+            GenerationRouter generationRouter,
             ObjectMapper objectMapper,
             @Autowired(required = false) PreCompactionMemoryFlushEngine preCompactionMemoryFlushEngine) {
         return new CompactionEngine(
@@ -111,7 +111,7 @@ public class AgentAutoConfiguration {
                 sessionStoreRepository,
                 transcriptCompactionBoundaryResolver,
                 promptRegistry,
-                llmRouter,
+                generationRouter,
                 objectMapper,
                 preCompactionMemoryFlushEngine
         );
@@ -167,7 +167,7 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) com.lifepilot.memory.procedural.ProceduralMemory proceduralMemory,
             @Autowired(required = false) com.lifepilot.memory.experience.EffectivenessTracker effectivenessTracker,
             @Autowired(required = false) com.lifepilot.skill.registry.SkillRegistry skillRegistry,
-            @Autowired(required = false) LlmRouter llmRouter,
+            @Autowired(required = false) GenerationRouter generationRouter,
             @Autowired(required = false) ContextEngine contextEngine) {
         log.info("Agent \u5f15\u64ce: \u6ce8\u518c ContextAssembler\uff0ccontextEngine={}\uff0cL3={}\uff0cL4={}",
                 contextEngine != null ? "enabled" : "disabled",
@@ -183,7 +183,7 @@ public class AgentAutoConfiguration {
                 proceduralMemory,
                 effectivenessTracker,
                 skillRegistry,
-                llmRouter,
+                generationRouter,
                 contextEngine);
     }
 
@@ -291,7 +291,7 @@ public class AgentAutoConfiguration {
             com.lifepilot.agent.streaming.StreamingEventHandler streamingEventHandler,
             AgentConfigProperties config,
             ObjectMapper objectMapper,
-            LlmRouter llmRouter,
+            GenerationRouter generationRouter,
             @Autowired(required = false) TraceRecorder traceRecorder,
             @Autowired(required = false) MultimodalRouter multimodalRouter,
             @Autowired(required = false) MediaValidator mediaValidator,
@@ -306,7 +306,7 @@ public class AgentAutoConfiguration {
                 streamingEventHandler,
                 config,
                 objectMapper,
-                llmRouter,
+                generationRouter,
                 traceRecorder,
                 multimodalRouter,
                 mediaValidator,

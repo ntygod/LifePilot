@@ -16,11 +16,11 @@ import com.lifepilot.agent.streaming.StreamingEventHandler;
 import com.lifepilot.agent.suspend.model.ResumePayload;
 import com.lifepilot.agent.suspend.model.SuspendedAgent;
 import com.lifepilot.agent.suspend.store.SuspendStore;
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.model.TokenUsage;
 import com.lifepilot.interaction.web.model.A2uiComponentTree;
 import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
-import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.multimodal.MediaContent;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.media.MediaProcessor;
@@ -63,7 +63,7 @@ public class AgentOrchestrator {
     private final StreamingEventHandler streamingEventHandler;
     private final AgentConfigProperties config;
     private final ObjectMapper objectMapper;
-    private final LlmRouter llmRouter;
+    private final GenerationRouter generationRouter;
     @Nullable private final TraceRecorder traceRecorder;
     @Nullable private final MultimodalRouter multimodalRouter;
     @Nullable private final MediaValidator mediaValidator;
@@ -79,7 +79,7 @@ public class AgentOrchestrator {
             StreamingEventHandler streamingEventHandler,
             AgentConfigProperties config,
             ObjectMapper objectMapper,
-            LlmRouter llmRouter,
+            GenerationRouter generationRouter,
             @Nullable TraceRecorder traceRecorder,
             @Nullable MultimodalRouter multimodalRouter,
             @Nullable MediaValidator mediaValidator,
@@ -93,7 +93,7 @@ public class AgentOrchestrator {
         this.streamingEventHandler = streamingEventHandler;
         this.config = config;
         this.objectMapper = objectMapper;
-        this.llmRouter = llmRouter;
+        this.generationRouter = generationRouter;
         this.traceRecorder = traceRecorder;
         this.multimodalRouter = multimodalRouter;
         this.mediaValidator = mediaValidator;
@@ -149,7 +149,7 @@ public class AgentOrchestrator {
 
             // 核心循环 — 非流式回调
             var callback = new com.lifepilot.agent.callback.NonStreamingCallback(
-                    config, llmRouter, multimodalRouter, effectiveRequest, agentLoop);
+                    config, generationRouter, multimodalRouter, effectiveRequest, agentLoop);
             state = agentLoop.coreLoop(state, effectiveRequest, traceContext, loopStart,
                     callback, token, loopContext);
 
@@ -284,7 +284,7 @@ public class AgentOrchestrator {
             loopStart = Instant.now();
 
             // 核心循环 — 流式回调
-            var callback = new StreamingCallback(config, llmRouter, multimodalRouter, agentLoop,
+            var callback = new StreamingCallback(config, generationRouter, multimodalRouter, agentLoop,
                     cancellationToken, null, sseManager, streamId,
                     request.sessionId(), tempTurnId, effectiveRequest);
             state = agentLoop.coreLoop(state, effectiveRequest, traceContext, loopStart,
@@ -442,7 +442,7 @@ public class AgentOrchestrator {
                     null, state.budget(), state.parentTraceId(),
                     state.depth(), null, state.allowedToolIds(), null, null);
             var callback = new com.lifepilot.agent.callback.NonStreamingCallback(
-                    config, llmRouter, multimodalRouter, request, agentLoop);
+                    config, generationRouter, multimodalRouter, request, agentLoop);
             state = agentLoop.coreLoop(state, request, null, loopStart, callback, token, loopContext);
 
             boolean testSession = isTestSession(state.sessionId());

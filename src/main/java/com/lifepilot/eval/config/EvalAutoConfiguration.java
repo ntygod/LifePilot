@@ -14,7 +14,7 @@ import com.lifepilot.eval.scenario.ScenarioLoader;
 import com.lifepilot.eval.scenario.ScenarioSerializer;
 import com.lifepilot.eval.store.EvalStore;
 import com.lifepilot.eval.web.EvalController;
-import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.memory.experience.ExperienceSummarizer;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
@@ -49,7 +49,7 @@ import java.util.concurrent.ExecutorService;
  * <p>通过 {@code lifepilot.eval.enabled=true}（默认开启，matchIfMissing=true）激活，
  * 注册评估框架全部 Bean。</p>
  *
- * <p>依赖已有模块：DynamicToolRegistry、LlmRouter、JdbcTemplate、
+ * <p>依赖已有模块：DynamicToolRegistry、GenerationRouter、JdbcTemplate、
  * ObjectMapper、AgentLoop、TraceQuery、EvaluationCore。</p>
  *
  * @author zsg
@@ -82,9 +82,9 @@ public class EvalAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public LlmJudge llmJudge(LlmRouter llmRouter, EvalConfigProperties config,
+    public LlmJudge llmJudge(GenerationRouter generationRouter, EvalConfigProperties config,
                              PromptRegistry promptRegistry) {
-        return new LlmJudge(llmRouter, config, promptRegistry);
+        return new LlmJudge(generationRouter, config, promptRegistry);
     }
 
     // ==================== 持久化与报告 ====================

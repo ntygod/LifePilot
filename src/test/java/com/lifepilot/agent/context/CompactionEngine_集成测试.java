@@ -6,9 +6,8 @@ import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.conversation.transcript.SessionStoreRepository;
 import com.lifepilot.conversation.transcript.SessionTranscriptRepository;
 import com.lifepilot.conversation.transcript.TranscriptEntryType;
-import com.lifepilot.llm.LlmRequest;
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
-import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.memory.document.MemoryDocumentRepository;
 import com.lifepilot.prompt.PromptRegistry;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,7 +21,9 @@ import java.time.Instant;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -172,8 +173,8 @@ class CompactionEngine_集成测试 {
                     return "压缩提示:\n" + vars.get("conversation");
                 });
 
-        var llmRouter = mock(LlmRouter.class);
-        when(llmRouter.call(org.mockito.ArgumentMatchers.any(LlmRequest.class)))
+        var generationRouter = mock(GenerationRouter.class);
+        when(generationRouter.call(anyString(), anyString(), any(), any(), any(), any(), any()))
                 .thenReturn(new LlmResponse(
                         "这是压缩摘要，保留关键决策、约束和工具结果。",
                         120,
@@ -190,7 +191,7 @@ class CompactionEngine_集成测试 {
                 sessionStoreRepository,
                 new TranscriptCompactionBoundaryResolver(objectMapper),
                 promptRegistry,
-                llmRouter,
+                generationRouter,
                 objectMapper,
                 new PreCompactionMemoryFlushEngine(
                         memoryDocumentRepository,
@@ -229,9 +230,9 @@ class CompactionEngine_集成测试 {
                 .contains("tool.search");
         assertThat(memoryDocumentRepository.findChunks(documentId)).isNotEmpty();
 
-        ArgumentCaptor<LlmRequest> requestCaptor = ArgumentCaptor.forClass(LlmRequest.class);
-        verify(llmRouter).call(requestCaptor.capture());
-        assertThat(requestCaptor.getValue().prompt())
+        ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(generationRouter).call(anyString(), promptCaptor.capture(), any(), any(), any(), any(), any());
+        assertThat(promptCaptor.getValue())
                 .contains("[新增待压缩内容]")
                 .contains("第一轮问题")
                 .contains("第二轮回答")

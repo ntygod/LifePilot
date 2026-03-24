@@ -119,9 +119,9 @@ lifepilot:
       max-history-length: 50
   llm:
     # ===== LLM 路由配置 =====
-    # Provider 配置已迁移到数据库（llm_providers 表），通过 Web UI 设置页面管理
-    # 首次启动后请访问 Web UI 配置至少一个 LLM 服务商（如 DeepSeek、OpenAI、Ollama 等）
-    # 如果未配置任何 Provider，系统仍可启动，但对话功能不可用
+    # 生成与向量服务都从 model_services 表加载，通过 Web UI 的“模型与路由”页面统一管理
+    # 首次启动后请至少配置一个生成服务；如需知识检索或精排，再分别补充向量与精排服务
+    # 如果未配置任何生成服务，系统仍可启动，但对话与推理功能不可用
     enabled: true
     circuit-breaker:
       failure-threshold: 3

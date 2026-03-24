@@ -7,10 +7,10 @@ import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.conversation.transcript.SessionStoreRepository;
 import com.lifepilot.conversation.transcript.SessionTranscriptRepository;
 import com.lifepilot.conversation.transcript.TranscriptEntryType;
-import com.lifepilot.llm.LlmRequest;
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
-import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.LlmScene;
+import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,7 +47,7 @@ public class CompactionEngine {
     private final SessionStoreRepository sessionStoreRepository;
     private final TranscriptCompactionBoundaryResolver boundaryResolver;
     private final PromptRegistry promptRegistry;
-    private final LlmRouter llmRouter;
+    private final GenerationRouter generationRouter;
     private final ObjectMapper objectMapper;
     @Nullable
     private final PreCompactionMemoryFlushEngine memoryFlushEngine;
@@ -57,10 +57,10 @@ public class CompactionEngine {
                             SessionStoreRepository sessionStoreRepository,
                             TranscriptCompactionBoundaryResolver boundaryResolver,
                             PromptRegistry promptRegistry,
-                            LlmRouter llmRouter,
+                            GenerationRouter generationRouter,
                             ObjectMapper objectMapper) {
         this(config, transcriptRepository, sessionStoreRepository, boundaryResolver,
-                promptRegistry, llmRouter, objectMapper, null);
+                promptRegistry, generationRouter, objectMapper, null);
     }
 
     public CompactionEngine(AgentConfigProperties config,
@@ -68,7 +68,7 @@ public class CompactionEngine {
                             SessionStoreRepository sessionStoreRepository,
                             TranscriptCompactionBoundaryResolver boundaryResolver,
                             PromptRegistry promptRegistry,
-                            LlmRouter llmRouter,
+                            GenerationRouter generationRouter,
                             ObjectMapper objectMapper,
                             @Nullable PreCompactionMemoryFlushEngine memoryFlushEngine) {
         this.config = Objects.requireNonNull(config);
@@ -76,7 +76,7 @@ public class CompactionEngine {
         this.sessionStoreRepository = Objects.requireNonNull(sessionStoreRepository);
         this.boundaryResolver = Objects.requireNonNull(boundaryResolver);
         this.promptRegistry = Objects.requireNonNull(promptRegistry);
-        this.llmRouter = Objects.requireNonNull(llmRouter);
+        this.generationRouter = Objects.requireNonNull(generationRouter);
         this.objectMapper = Objects.requireNonNull(objectMapper);
         this.memoryFlushEngine = memoryFlushEngine;
     }
@@ -140,7 +140,14 @@ public class CompactionEngine {
             String prompt = promptRegistry.render("memory/compression-summary", Map.of(
                     "conversation", promptInput
             ));
-            LlmResponse response = llmRouter.call(LlmRequest.of(LlmScene.MEMORY_COMPRESSION, prompt));
+            LlmResponse response = generationRouter.call(
+                    LlmScene.MEMORY_COMPRESSION,
+                    prompt,
+                    null,
+                    null,
+                    null,
+                    GenerationCapability.CHAT,
+                    null);
             String summary = normalizeSummary(response.content());
             if (summary.isBlank()) {
                 return false;

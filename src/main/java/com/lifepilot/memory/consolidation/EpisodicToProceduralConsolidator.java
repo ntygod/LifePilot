@@ -1,9 +1,10 @@
 package com.lifepilot.memory.consolidation;
 
-import com.lifepilot.llm.LlmRequest;
-import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.llm.LlmUnavailableException;
+import com.lifepilot.embedding.router.EmbeddingRouter;
+import com.lifepilot.embedding.router.EmbeddingUseCase;
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.procedural.ProcedureTemplate;
 import com.lifepilot.memory.procedural.ProceduralMemory;
@@ -25,8 +26,8 @@ import java.util.stream.Collectors;
  * <ol>
  *   <li>从 agent_traces + agent_trace_steps 查询增量窗口内的成功执行轨迹</li>
  *   <li>过滤工具调用步数 ≥ minExecutionSteps 的轨迹</li>
- *   <li>LlmRouter.embed() 向量化工具调用序列，余弦相似度贪心聚类</li>
- *   <li>聚类大小 ≥ minClusterSize → LlmRouter.callEntity() 提炼操作模板</li>
+ *   <li>通过 EmbeddingRouter 向量化工具调用序列，使用余弦相似度进行贪心聚类</li>
+ *   <li>聚类大小 ≥ minClusterSize 后，通过 GenerationRouter 提炼操作模板</li>
  *   <li>与已有模板去重（triggerIntent 向量相似度 ≥ 0.9 视为同一模板）</li>
  *   <li>每次最多提炼 maxTemplatesPerRun 个新模板</li>
  *   <li>记录巩固日志到 memory_consolidation_log</li>
@@ -46,7 +47,8 @@ public class EpisodicToProceduralConsolidator {
 
     private final JdbcTemplate jdbcTemplate;
     private final ProceduralMemory proceduralMemory;
-    private final LlmRouter llmRouter;
+    private final GenerationRouter generationRouter;
+    private final EmbeddingRouter embeddingRouter;
     private final MemoryProperties properties;
     private final PromptRegistry promptRegistry;
 
@@ -55,18 +57,20 @@ public class EpisodicToProceduralConsolidator {
      *
      * @param jdbcTemplate     JDBC 模板
      * @param proceduralMemory L4 程序记忆服务
-     * @param llmRouter        LLM 路由器
+     * @param generationRouter 生成路由器
      * @param properties       记忆配置
      * @param promptRegistry   提示词注册表
      */
     public EpisodicToProceduralConsolidator(JdbcTemplate jdbcTemplate,
                                             ProceduralMemory proceduralMemory,
-                                            LlmRouter llmRouter,
+                                            GenerationRouter generationRouter,
+                                            EmbeddingRouter embeddingRouter,
                                             MemoryProperties properties,
                                             PromptRegistry promptRegistry) {
         this.jdbcTemplate = jdbcTemplate;
         this.proceduralMemory = proceduralMemory;
-        this.llmRouter = llmRouter;
+        this.generationRouter = generationRouter;
+        this.embeddingRouter = embeddingRouter;
         this.properties = properties;
         this.promptRegistry = promptRegistry;
         log.info("EpisodicToProceduralConsolidator 初始化完成");
@@ -232,7 +236,7 @@ public class EpisodicToProceduralConsolidator {
             LinkedHashMap<TraceInfo, String> traceSequences) {
         var embeddings = new LinkedHashMap<TraceInfo, float[]>();
         for (var entry : traceSequences.entrySet()) {
-            float[] vector = llmRouter.embed(entry.getValue());
+            float[] vector = embeddingRouter.embed(entry.getValue(), EmbeddingUseCase.MEMORY, null, null);
             embeddings.put(entry.getKey(), vector);
         }
         return embeddings;
@@ -291,8 +295,13 @@ public class EpisodicToProceduralConsolidator {
         String prompt = promptRegistry.render("memory/procedural-extraction",
                 Map.of("combinedSequences", combinedSequences));
 
-        var extraction = llmRouter.callEntity(
-                LlmRequest.of(LlmScene.KNOWLEDGE_EXTRACTION, prompt), TemplateExtraction.class);
+        var extraction = generationRouter.callEntity(
+                LlmScene.KNOWLEDGE_EXTRACTION,
+                prompt,
+                TemplateExtraction.class,
+                null,
+                null,
+                null);
 
         if (extraction == null || extraction.name() == null || extraction.name().isBlank()) {
             log.warn("程序巩固: LLM 返回空模板, clusterSize={}", cluster.size());
@@ -343,7 +352,7 @@ public class EpisodicToProceduralConsolidator {
     }
 
     /**
-     * 去重检查：通过 LlmRouter.embed() 计算 triggerIntent 向量，
+     * 去重检查：通过 EmbeddingRouter 计算 triggerIntent 向量，
      * 与已有模板的 triggerIntent 向量比较相似度。
      *
      * @param triggerIntent 新模板的触发意图文本
@@ -354,7 +363,7 @@ public class EpisodicToProceduralConsolidator {
             return false;
         }
         try {
-            float[] newVector = llmRouter.embed(triggerIntent);
+            float[] newVector = embeddingRouter.embed(triggerIntent, EmbeddingUseCase.MEMORY, null, null);
 
             // 查询所有已有模板的 triggerIntent
             var existingTemplates = jdbcTemplate.query(
@@ -363,7 +372,7 @@ public class EpisodicToProceduralConsolidator {
 
             for (var existing : existingTemplates) {
                 try {
-                    float[] existingVector = llmRouter.embed(existing[1]);
+                    float[] existingVector = embeddingRouter.embed(existing[1], EmbeddingUseCase.MEMORY, null, null);
                     float similarity = cosineSimilarity(newVector, existingVector);
                     if (similarity >= DEDUP_SIMILARITY_THRESHOLD) {
                         log.debug("程序巩固: 去重命中, existingId={}, similarity={}", existing[0], similarity);

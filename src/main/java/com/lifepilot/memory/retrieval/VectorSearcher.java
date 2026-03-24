@@ -1,6 +1,7 @@
 package com.lifepilot.memory.retrieval;
 
-import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.embedding.router.EmbeddingRouter;
+import com.lifepilot.embedding.router.EmbeddingUseCase;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -22,7 +23,7 @@ public class VectorSearcher {
     private static final Logger log = LoggerFactory.getLogger(VectorSearcher.class);
 
     private final JdbcTemplate vectorJdbcTemplate;
-    private final LlmRouter llmRouter;
+    private final EmbeddingRouter embeddingRouter;
     private final boolean vecExtensionLoaded;
     private final int embeddingDimensions;
 
@@ -30,16 +31,16 @@ public class VectorSearcher {
      * 构造 VectorSearcher。
      *
      * @param vectorJdbcTemplate 向量数据库 JdbcTemplate
-     * @param llmRouter          LLM 路由器（用于 embed）
+     * @param embeddingRouter    向量路由器
      * @param vecExtensionLoaded sqlite-vec 扩展是否已加载
      * @param embeddingDimensions 向量维度
      */
     public VectorSearcher(JdbcTemplate vectorJdbcTemplate,
-                          LlmRouter llmRouter,
+                          EmbeddingRouter embeddingRouter,
                           boolean vecExtensionLoaded,
                           int embeddingDimensions) {
         this.vectorJdbcTemplate = vectorJdbcTemplate;
-        this.llmRouter = llmRouter;
+        this.embeddingRouter = embeddingRouter;
         this.vecExtensionLoaded = vecExtensionLoaded;
         this.embeddingDimensions = embeddingDimensions;
 
@@ -77,7 +78,7 @@ public class VectorSearcher {
         // 缓存 embed 结果，避免异常降级时重复调用 LLM
         float[] queryVector;
         try {
-            queryVector = llmRouter.embed(queryText);
+            queryVector = embeddingRouter.embed(queryText, EmbeddingUseCase.MEMORY, null, null);
         } catch (Exception e) {
             log.warn("向量检索: embed 调用失败, error={}", e.getMessage());
             return List.of();
@@ -158,7 +159,7 @@ public class VectorSearcher {
             return;
         }
         try {
-            float[] vector = llmRouter.embed(text);
+            float[] vector = embeddingRouter.embed(text, EmbeddingUseCase.MEMORY, null, null);
             byte[] vectorBytes = floatArrayToBytes(vector);
             // vec0 虚拟表不支持 INSERT OR REPLACE，需先 DELETE 再 INSERT
             vectorJdbcTemplate.update(

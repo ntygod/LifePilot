@@ -1,8 +1,8 @@
 package com.lifepilot.skill.generation;
 
-import com.lifepilot.llm.LlmRequest;
-import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmScene;
+import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.skill.config.SkillConfigProperties;
 import com.lifepilot.skill.markdown.MarkdownSkillParser;
@@ -44,7 +44,7 @@ public class SkillGenerator {
     /** 生成 Prompt 中包含的最大示例数。 */
     private static final int MAX_EXAMPLES = 3;
 
-    private final LlmRouter llmRouter;
+    private final GenerationRouter generationRouter;
     private final SkillValidationPipeline validationPipeline;
     private final MarkdownSkillParser markdownParser;
     private final MarkdownSkillSerializer markdownSerializer;
@@ -55,7 +55,7 @@ public class SkillGenerator {
     private final SkillTemplateLibrary templateLibrary;
     private final Path autoSkillsDirectory;
 
-    public SkillGenerator(LlmRouter llmRouter,
+    public SkillGenerator(GenerationRouter generationRouter,
                           SkillValidationPipeline validationPipeline,
                           MarkdownSkillParser markdownParser,
                           MarkdownSkillSerializer markdownSerializer,
@@ -64,7 +64,7 @@ public class SkillGenerator {
                           PromptRegistry promptRegistry,
                           ToolCapabilityManifest toolCapabilityManifest,
                           SkillTemplateLibrary templateLibrary) {
-        this.llmRouter = llmRouter;
+        this.generationRouter = generationRouter;
         this.validationPipeline = validationPipeline;
         this.markdownParser = markdownParser;
         this.markdownSerializer = markdownSerializer;
@@ -100,7 +100,14 @@ public class SkillGenerator {
         // 4. 调用 LLM 生成 SKILL.md
         String markdownContent;
         try {
-            var response = llmRouter.call(LlmRequest.of(LlmScene.SKILL_GENERATION, prompt));
+            var response = generationRouter.call(
+                    LlmScene.SKILL_GENERATION,
+                    prompt,
+                    null,
+                    null,
+                    null,
+                    GenerationCapability.CHAT,
+                    null);
             markdownContent = extractMarkdown(response.content());
         } catch (Exception e) {
             log.error("LLM 调用失败，Skill 生成终止: gap={}, error={}", gap.suggestedId(), e.getMessage());
@@ -122,7 +129,14 @@ public class SkillGenerator {
 
             // 调用 LLM 修正
             try {
-                var fixResponse = llmRouter.call(LlmRequest.of(LlmScene.SKILL_GENERATION, fixPrompt));
+                var fixResponse = generationRouter.call(
+                        LlmScene.SKILL_GENERATION,
+                        fixPrompt,
+                        null,
+                        null,
+                        null,
+                        GenerationCapability.CHAT,
+                        null);
                 markdownContent = extractMarkdown(fixResponse.content());
                 validationResult = validationPipeline.validate(markdownContent);
             } catch (Exception e) {

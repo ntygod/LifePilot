@@ -2,11 +2,10 @@ package com.lifepilot.memory.experience;
 
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.model.ReactStep;
-import com.lifepilot.llm.LlmRequest;
-import com.lifepilot.llm.LlmRouter;
-import com.lifepilot.llm.LlmScene;
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.retrieval.VectorSearcher;
+import com.lifepilot.llm.LlmScene;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
@@ -33,19 +32,19 @@ public class SubtaskReflector {
 
     private final SemanticMemory semanticMemory;
     private final VectorSearcher vectorSearcher;
-    private final LlmRouter llmRouter;
+    private final GenerationRouter generationRouter;
     private final PromptRegistry promptRegistry;
     private final MemoryProperties.Experience.Subtask config;
     private final float dedupThreshold;
 
     public SubtaskReflector(SemanticMemory semanticMemory,
                             VectorSearcher vectorSearcher,
-                            LlmRouter llmRouter,
+                            GenerationRouter generationRouter,
                             PromptRegistry promptRegistry,
                             MemoryProperties memoryProperties) {
         this.semanticMemory = semanticMemory;
         this.vectorSearcher = vectorSearcher;
-        this.llmRouter = llmRouter;
+        this.generationRouter = generationRouter;
         this.promptRegistry = promptRegistry;
         this.config = memoryProperties.getExperience().getSubtask();
         this.dedupThreshold = memoryProperties.getExperience().getDedupSimilarityThreshold();
@@ -94,9 +93,13 @@ public class SubtaskReflector {
             // 调用 LLM
             ExperienceRecord record;
             try {
-                record = llmRouter.callEntity(
-                        LlmRequest.of(LlmScene.CHAT, prompt),
-                        ExperienceRecord.class);
+            record = generationRouter.callEntity(
+                        LlmScene.CHAT,
+                        prompt,
+                        ExperienceRecord.class,
+                        null,
+                        null,
+                        null);
             } catch (Exception e) {
                 log.warn("子任务反思: LLM 调用失败, error={}", e.getMessage());
                 return;

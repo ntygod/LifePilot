@@ -2,9 +2,9 @@ package com.lifepilot.skill.generation;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lifepilot.llm.LlmRequest;
-import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmScene;
+import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.skill.config.SkillConfigProperties;
 import com.lifepilot.skill.registry.SkillRegistry;
@@ -37,17 +37,17 @@ public class SkillGapDetector {
     private static final double EMPTY_REGISTRY_CONFIDENCE = 0.9;
 
     private final SkillRegistry skillRegistry;
-    private final LlmRouter llmRouter;
+    private final GenerationRouter generationRouter;
     private final SkillConfigProperties config;
     private final ObjectMapper objectMapper;
     private final PromptRegistry promptRegistry;
 
     public SkillGapDetector(SkillRegistry skillRegistry,
-                            LlmRouter llmRouter,
+                            GenerationRouter generationRouter,
                             SkillConfigProperties config,
                             PromptRegistry promptRegistry) {
         this.skillRegistry = skillRegistry;
-        this.llmRouter = llmRouter;
+        this.generationRouter = generationRouter;
         this.config = config;
         this.objectMapper = new ObjectMapper();
         this.promptRegistry = promptRegistry;
@@ -94,7 +94,14 @@ public class SkillGapDetector {
     private Optional<SkillGap> analyzeGapWithLlm(String userRequest) {
         String prompt = buildGapAnalysisPrompt(userRequest);
         try {
-            var response = llmRouter.call(LlmRequest.of(LlmScene.SKILL_GENERATION, prompt));
+            var response = generationRouter.call(
+                    LlmScene.SKILL_GENERATION,
+                    prompt,
+                    null,
+                    null,
+                    null,
+                    GenerationCapability.CHAT,
+                    null);
             return parseGapFromLlmResponse(response.content(), userRequest);
         } catch (Exception e) {
             log.warn("LLM 缺口分析调用失败，降级返回空结果: request={}, error={}", userRequest, e.getMessage());

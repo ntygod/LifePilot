@@ -1,6 +1,7 @@
 package com.lifepilot.skill.registry;
 
-import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.embedding.router.EmbeddingRouter;
+import com.lifepilot.embedding.router.EmbeddingUseCase;
 import com.lifepilot.llm.LlmUnavailableException;
 import com.lifepilot.skill.model.SkillDefinition;
 import org.slf4j.Logger;
@@ -14,11 +15,10 @@ import java.util.Locale;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Skill 语义搜索索引 — 基于 Embedding 向量的语义匹配。
+ * Skill 语义搜索索引。
  *
- * <p>使用 {@link ConcurrentHashMap} 缓存每个 Skill 的 Embedding 向量，
- * 通过余弦相似度进行语义搜索。LLM 不可用时降级为关键词匹配模式，
- * 基于 Skill 名称和描述进行简单文本匹配。</p>
+ * <p>优先使用向量相似度匹配技能；当向量服务不可用或返回空向量时，
+ * 自动降级为关键词匹配。</p>
  *
  * @author zsg
  * @since 2026-07-28
@@ -28,122 +28,104 @@ public class SkillSearchIndex {
     private static final Logger log = LoggerFactory.getLogger(SkillSearchIndex.class);
 
     private final ConcurrentHashMap<String, float[]> embeddings = new ConcurrentHashMap<>();
-    /** 关键词降级模式使用：缓存每个 Skill 的名称+描述文本（小写） */
     private final ConcurrentHashMap<String, String> skillTexts = new ConcurrentHashMap<>();
     @Nullable
-    private final LlmRouter llmRouter;
+    private final EmbeddingRouter embeddingRouter;
 
-    public SkillSearchIndex(@Nullable LlmRouter llmRouter) {
-        this.llmRouter = llmRouter;
+    public SkillSearchIndex(@Nullable EmbeddingRouter embeddingRouter) {
+        this.embeddingRouter = embeddingRouter;
     }
 
-    /**
-     * 为 Skill 生成 Embedding 并缓存。
-     *
-     * <p>使用 Skill 的 name + description 生成 Embedding 向量。
-     * LLM 不可用时降级为缓存文本用于关键词匹配。</p>
-     *
-     * @param definition Skill 定义
-     */
     public void index(SkillDefinition definition) {
         String text = definition.name() + " " + definition.description();
-        // 始终缓存文本，供关键词降级模式使用
         skillTexts.put(definition.id(), text.toLowerCase(Locale.ROOT));
 
-        if (llmRouter == null) {
-            log.debug("Skill 关键词索引成功（降级模式）: skillId={}", definition.id());
+        if (embeddingRouter == null) {
+            log.debug("Skill 关键词索引完成（降级模式）: skillId={}", definition.id());
             return;
         }
+
         try {
-            float[] vector = llmRouter.embed(text);
+            float[] vector = embeddingRouter.embed(text, EmbeddingUseCase.DEFAULT, null, null);
+            if (isEmptyVector(vector)) {
+                log.warn("Skill 向量索引返回空向量，降级为关键词模式: skillId={}", definition.id());
+                return;
+            }
             embeddings.put(definition.id(), vector);
-            log.debug("Skill Embedding 索引成功: skillId={}", definition.id());
+            log.debug("Skill 向量索引完成: skillId={}", definition.id());
         } catch (LlmUnavailableException e) {
-            log.warn("Embedding 生成失败，降级为关键词索引: skillId={}, 原因={}", definition.id(), e.getMessage());
+            log.warn("Skill 向量索引失败，降级为关键词模式: skillId={}, error={}",
+                    definition.id(), e.getMessage());
         }
     }
 
-    /**
-     * 移除索引缓存。
-     *
-     * @param skillId Skill ID
-     */
     public void remove(String skillId) {
         embeddings.remove(skillId);
         skillTexts.remove(skillId);
         log.debug("Skill 索引已移除: skillId={}", skillId);
     }
 
-    /**
-     * 重建所有已索引 Skill 的 Embedding 向量。
-     *
-     * <p>在 LLM Provider 就绪后调用，将之前降级为关键词索引的 Skill
-     * 重新生成 Embedding 向量。仅对尚未拥有 Embedding 的 Skill 执行。</p>
-     *
-     * @return 成功重建的 Skill 数量
-     */
     public int reindexAll() {
-        if (llmRouter == null) {
-            log.debug("LlmRouter 不可用，跳过 Embedding 重建");
+        if (embeddingRouter == null) {
+            log.debug("EmbeddingRouter 不可用，跳过 Skill 向量重建");
             return 0;
         }
+
         int rebuilt = 0;
         for (var entry : skillTexts.entrySet()) {
             String skillId = entry.getKey();
             if (embeddings.containsKey(skillId)) {
-                continue; // 已有 Embedding，跳过
+                continue;
             }
             try {
-                float[] vector = llmRouter.embed(entry.getValue());
+                float[] vector = embeddingRouter.embed(entry.getValue(), EmbeddingUseCase.DEFAULT, null, null);
+                if (isEmptyVector(vector)) {
+                    log.debug("Skill 向量重建返回空向量，跳过: skillId={}", skillId);
+                    continue;
+                }
                 embeddings.put(skillId, vector);
                 rebuilt++;
-                log.debug("Skill Embedding 重建成功: skillId={}", skillId);
+                log.debug("Skill 向量重建成功: skillId={}", skillId);
             } catch (LlmUnavailableException e) {
-                log.debug("Skill Embedding 重建失败: skillId={}, 原因={}", skillId, e.getMessage());
+                log.debug("Skill 向量重建失败: skillId={}, error={}", skillId, e.getMessage());
             }
         }
         if (rebuilt > 0) {
-            log.info("Skill Embedding 重建完成: 成功={}, 总数={}", rebuilt, skillTexts.size());
+            log.info("Skill 向量重建完成: success={}, total={}", rebuilt, skillTexts.size());
         }
         return rebuilt;
     }
 
-    /**
-     * 搜索 Skill，返回 Top-K 结果。
-     *
-     * <p>当 LlmRouter 可用时，使用向量语义搜索（余弦相似度 &gt; 0.5）。
-     * 当 LlmRouter 不可用时，降级为关键词匹配模式，基于查询词在
-     * Skill 名称和描述中的命中率计算相关度。</p>
-     *
-     * @param query 查询文本
-     * @param topK  最大返回数量
-     * @return 搜索结果列表，按相关度降序排列
-     */
     public List<SearchResult> search(String query, int topK) {
-        if (llmRouter == null) {
+        if (embeddingRouter == null) {
             return keywordSearch(query, topK);
         }
         return vectorSearch(query, topK);
     }
 
-    /**
-     * 向量语义搜索（LlmRouter 可用时使用）。
-     */
     private List<SearchResult> vectorSearch(String query, int topK) {
-        LlmRouter router = this.llmRouter;
+        EmbeddingRouter router = this.embeddingRouter;
         if (router == null) {
             return keywordSearch(query, topK);
         }
+
         float[] queryVector;
         try {
-            queryVector = router.embed(query);
+            queryVector = router.embed(query, EmbeddingUseCase.DEFAULT, null, null);
         } catch (LlmUnavailableException e) {
-            log.warn("查询 Embedding 生成失败，降级为关键词搜索: query={}, 原因={}", query, e.getMessage());
+            log.warn("Skill 查询向量生成失败，降级为关键词搜索: query={}, error={}", query, e.getMessage());
+            return keywordSearch(query, topK);
+        }
+        if (isEmptyVector(queryVector)) {
+            log.warn("Skill 查询向量为空，降级为关键词搜索: query={}", query);
             return keywordSearch(query, topK);
         }
 
         List<SearchResult> results = new ArrayList<>();
         embeddings.forEach((skillId, vector) -> {
+            if (isEmptyVector(vector)) {
+                return;
+            }
             double similarity = cosineSimilarity(queryVector, vector);
             if (similarity > 0.5) {
                 results.add(new SearchResult(skillId, similarity));
@@ -151,19 +133,12 @@ public class SkillSearchIndex {
         });
 
         results.sort(Comparator.comparingDouble(SearchResult::similarity).reversed());
-
         if (results.size() > topK) {
             return List.copyOf(results.subList(0, topK));
         }
         return List.copyOf(results);
     }
 
-    /**
-     * 关键词匹配搜索（降级模式）。
-     *
-     * <p>将查询文本按空格分词，计算每个 Skill 文本中命中的关键词比例作为相关度。
-     * 过滤相关度 &gt; 0 的结果，按相关度降序排列。</p>
-     */
     private List<SearchResult> keywordSearch(String query, int topK) {
         if (query == null || query.isBlank()) {
             return List.of();
@@ -186,22 +161,12 @@ public class SkillSearchIndex {
         });
 
         results.sort(Comparator.comparingDouble(SearchResult::similarity).reversed());
-
         if (results.size() > topK) {
             return List.copyOf(results.subList(0, topK));
         }
         return List.copyOf(results);
     }
 
-    /**
-     * 计算两个向量的余弦相似度。
-     *
-     * <p>公式：dot(a, b) / (norm(a) * norm(b))</p>
-     *
-     * @param a 向量 a
-     * @param b 向量 b
-     * @return 余弦相似度，范围 [-1, 1]
-     */
     static double cosineSimilarity(float[] a, float[] b) {
         if (a.length != b.length || a.length == 0) {
             return 0.0;
@@ -224,11 +189,10 @@ public class SkillSearchIndex {
         return dot / denominator;
     }
 
-    /**
-     * 语义搜索结果。
-     *
-     * @param skillId    匹配的 Skill ID
-     * @param similarity 余弦相似度
-     */
-    public record SearchResult(String skillId, double similarity) {}
+    private static boolean isEmptyVector(@Nullable float[] vector) {
+        return vector == null || vector.length == 0;
+    }
+
+    public record SearchResult(String skillId, double similarity) {
+    }
 }

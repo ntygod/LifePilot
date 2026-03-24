@@ -5,7 +5,8 @@ import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
 import com.lifepilot.knowledge.exception.IndexingException;
 import com.lifepilot.knowledge.model.DocumentSearchResult;
 import com.lifepilot.knowledge.model.IndexingResult;
-import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.embedding.router.EmbeddingRouter;
+import com.lifepilot.embedding.router.EmbeddingUseCase;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -29,7 +30,7 @@ public class VectorIndexer {
 
     private static final Logger log = LoggerFactory.getLogger(VectorIndexer.class);
 
-    private final LlmRouter llmRouter;
+    private final EmbeddingRouter embeddingRouter;
     /** 向量数据库 JdbcTemplate（vectors.db，已加载 sqlite-vec 扩展） */
     private final JdbcTemplate vectorJdbcTemplate;
     /** 主数据库 JdbcTemplate（zhiwei.db，存储 document_chunks 等业务表） */
@@ -39,16 +40,16 @@ public class VectorIndexer {
     /**
      * 构造向量索引服务。
      *
-     * @param llmRouter          LLM 路由器（用于 Embedding）
+     * @param embeddingRouter    向量路由器
      * @param vectorJdbcTemplate 向量数据库 JdbcTemplate（vectors.db）
      * @param mainJdbcTemplate   主数据库 JdbcTemplate（zhiwei.db）
      * @param config             向量索引配置
      */
-    public VectorIndexer(LlmRouter llmRouter,
+    public VectorIndexer(EmbeddingRouter embeddingRouter,
                          JdbcTemplate vectorJdbcTemplate,
                          JdbcTemplate mainJdbcTemplate,
                          KnowledgeBaseProperties.VectorIndexer config) {
-        this.llmRouter = llmRouter;
+        this.embeddingRouter = embeddingRouter;
         this.vectorJdbcTemplate = vectorJdbcTemplate;
         this.mainJdbcTemplate = mainJdbcTemplate;
         this.config = config;
@@ -184,7 +185,7 @@ public class VectorIndexer {
      */
     public List<DocumentSearchResult> searchSimilar(String query, List<String> kbIds, int topK,
                                                      @Nullable String embeddingModel) {
-        float[] queryVector = llmRouter.embed(query, embeddingModel);
+        float[] queryVector = embeddingRouter.embed(query, EmbeddingUseCase.KNOWLEDGE_BASE, null, embeddingModel);
         return searchByEmbedding(queryVector, kbIds, topK);
     }
 
@@ -296,7 +297,8 @@ public class VectorIndexer {
     private void indexBatch(List<DocumentChunk> batch, @Nullable String embeddingModel) {
         var sql = "INSERT INTO chunk_embeddings (chunk_id, embedding) VALUES (?, ?)";
         for (var chunk : batch) {
-            float[] embedding = llmRouter.embed(chunk.embeddingText(), embeddingModel);
+            float[] embedding = embeddingRouter.embed(
+                    chunk.embeddingText(), EmbeddingUseCase.KNOWLEDGE_BASE, null, embeddingModel);
             var vectorStr = vectorToString(embedding);
             vectorJdbcTemplate.update(sql, chunk.id(), vectorStr);
         }

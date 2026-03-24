@@ -1,11 +1,10 @@
 package com.lifepilot.memory.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.embedding.router.EmbeddingRouter;
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.web.repository.MessageFeedbackRepository;
 import com.lifepilot.knowledge.extract.KnowledgeExtractionPipeline;
-import com.lifepilot.knowledge.rerank.Reranker;
-import com.lifepilot.knowledge.rerank.RerankerConfigProvider;
-import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.memory.compression.CompressionService;
 import com.lifepilot.memory.consolidation.ConsolidationPipeline;
 import com.lifepilot.memory.consolidation.EntityDeduplicator;
@@ -40,6 +39,7 @@ import com.lifepilot.memory.workspace.SessionWorkspaceService;
 import com.lifepilot.memory.workspace.WorkspaceCleanupJob;
 import com.lifepilot.memory.workspace.WorkspaceProperties;
 import com.lifepilot.prompt.PromptRegistry;
+import com.lifepilot.rerank.router.RerankRouter;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -107,13 +107,14 @@ public class MemoryAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean(LlmRouter.class)
-    public QueryRewriter queryRewriter(LlmRouter llmRouter,
+    @ConditionalOnBean({GenerationRouter.class, EmbeddingRouter.class})
+    public QueryRewriter queryRewriter(GenerationRouter generationRouter,
+                                       EmbeddingRouter embeddingRouter,
                                        MemoryProperties properties,
                                        PromptRegistry promptRegistry) {
         log.info("记忆模块: 注册 QueryRewriter, mode={}",
                 properties.getRetrieval().getQueryRewriteMode());
-        return new QueryRewriter(llmRouter, properties, promptRegistry);
+        return new QueryRewriter(generationRouter, embeddingRouter, properties, promptRegistry);
     }
 
     @Bean
@@ -146,13 +147,13 @@ public class MemoryAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean(EpisodicMemory.class)
+    @ConditionalOnBean({EpisodicMemory.class, GenerationRouter.class})
     public CompressionService compressionService(EpisodicMemory episodicMemory,
-                                                 LlmRouter llmRouter,
+                                                 GenerationRouter generationRouter,
                                                  PromptRegistry promptRegistry,
                                                  MemoryProperties memoryProperties) {
         log.info("记忆模块: 注册 CompressionService");
-        return new CompressionService(llmRouter, episodicMemory, promptRegistry, memoryProperties);
+        return new CompressionService(generationRouter, episodicMemory, promptRegistry, memoryProperties);
     }
 
     @Scheduled(fixedDelayString = "PT1M")
@@ -262,12 +263,12 @@ public class MemoryAutoConfiguration {
     @ConditionalOnMissingBean
     public VectorSearcher vectorSearcher(
             @Qualifier("vectorJdbcTemplate") JdbcTemplate vectorJdbcTemplate,
-            LlmRouter llmRouter,
+            EmbeddingRouter embeddingRouter,
             MemoryProperties properties) {
         boolean vecLoaded = isVecExtensionLoaded(vectorJdbcTemplate);
         log.info("记忆模块: 注册 VectorSearcher, vecExtensionLoaded={}, dimensions={}",
                 vecLoaded, properties.getEmbeddingDimensions());
-        return new VectorSearcher(vectorJdbcTemplate, llmRouter,
+        return new VectorSearcher(vectorJdbcTemplate, embeddingRouter,
                 vecLoaded, properties.getEmbeddingDimensions());
     }
 
@@ -277,12 +278,12 @@ public class MemoryAutoConfiguration {
     public ConflictDetector conflictDetector(
             JdbcTemplate jdbcTemplate,
             VectorSearcher vectorSearcher,
-            @Nullable LlmRouter llmRouter,
+            @Nullable GenerationRouter generationRouter,
             MemoryProperties properties,
             PromptRegistry promptRegistry) {
         log.info("记忆模块: 注册 ConflictDetector, semanticMatchThreshold={}",
                 properties.getSemanticMatchThreshold());
-        return new ConflictDetector(jdbcTemplate, vectorSearcher, llmRouter,
+        return new ConflictDetector(jdbcTemplate, vectorSearcher, generationRouter,
                 properties.getSemanticMatchThreshold(), promptRegistry);
     }
 
@@ -307,14 +308,14 @@ public class MemoryAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean({SemanticMemory.class, ExtractionValidator.class})
-    public RealtimeExtractor realtimeExtractor(LlmRouter llmRouter,
+    @ConditionalOnBean({SemanticMemory.class, ExtractionValidator.class, GenerationRouter.class})
+    public RealtimeExtractor realtimeExtractor(GenerationRouter generationRouter,
                                                SemanticMemory semanticMemory,
                                                ExtractionValidator extractionValidator,
                                                JdbcTemplate jdbcTemplate,
                                                PromptRegistry promptRegistry) {
         log.info("记忆模块: 注册 RealtimeExtractor");
-        return new RealtimeExtractor(llmRouter, semanticMemory, properties, extractionValidator, jdbcTemplate, promptRegistry);
+        return new RealtimeExtractor(generationRouter, semanticMemory, properties, extractionValidator, jdbcTemplate, promptRegistry);
     }
 
     // 检索
@@ -343,14 +344,13 @@ public class MemoryAutoConfiguration {
             SemanticMemory semanticMemory,
             EpisodicMemory episodicMemory,
             @Nullable IntentMatcher intentMatcher,
-            @Nullable Reranker reranker,
-            @Nullable RerankerConfigProvider rerankerConfigProvider,
+            @Nullable RerankRouter rerankRouter,
             JdbcTemplate jdbcTemplate) {
         log.info("记忆模块: 注册 HybridRetriever, intentMatcher={}, reranker={}",
                 intentMatcher != null ? "enabled" : "disabled",
-                reranker != null ? "enabled" : "disabled");
+                rerankRouter != null ? "enabled" : "disabled");
         var retriever = new HybridRetriever(vectorSearcher, ftsSearcher, graphTraverser,
-                semanticMemory, intentMatcher, properties, jdbcTemplate, reranker, rerankerConfigProvider);
+                semanticMemory, intentMatcher, properties, jdbcTemplate, rerankRouter);
         semanticMemory.setWriteCallback(retriever::resetEmptyFlag);
         episodicMemory.setWriteCallback(retriever::resetEmptyFlag);
         return retriever;
@@ -376,10 +376,9 @@ public class MemoryAutoConfiguration {
             ProceduralMemory proceduralMemory,
             VectorSearcher vectorSearcher,
             JdbcTemplate jdbcTemplate,
-            LlmRouter llmRouter,
             MemoryProperties properties) {
         log.info("记忆模块: 注册 IntentMatcher");
-        return new IntentMatcher(proceduralMemory, vectorSearcher, jdbcTemplate, llmRouter, properties);
+        return new IntentMatcher(proceduralMemory, vectorSearcher, jdbcTemplate, properties);
     }
 
     // 巩固
@@ -400,16 +399,17 @@ public class MemoryAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean(ProceduralMemory.class)
+    @ConditionalOnBean({ProceduralMemory.class, GenerationRouter.class, EmbeddingRouter.class})
     public EpisodicToProceduralConsolidator episodicToProceduralConsolidator(
             JdbcTemplate jdbcTemplate,
             ProceduralMemory proceduralMemory,
-            LlmRouter llmRouter,
+            GenerationRouter generationRouter,
+            EmbeddingRouter embeddingRouter,
             MemoryProperties properties,
             PromptRegistry promptRegistry) {
         log.info("记忆模块: 注册 EpisodicToProceduralConsolidator");
         return new EpisodicToProceduralConsolidator(jdbcTemplate, proceduralMemory,
-                llmRouter, properties, promptRegistry);
+                generationRouter, embeddingRouter, properties, promptRegistry);
     }
 
     @Bean
@@ -461,13 +461,13 @@ public class MemoryAutoConfiguration {
     @ConditionalOnBean(SemanticMemory.class)
     public ForgettingEngine forgettingEngine(
             SemanticMemory semanticMemory,
-            @Nullable LlmRouter llmRouter,
+            @Nullable GenerationRouter generationRouter,
             JdbcTemplate jdbcTemplate,
             MemoryProperties properties,
             PromptRegistry promptRegistry) {
-        log.info("记忆模块: 注册 ForgettingEngine, llmAvailable={}",
-                llmRouter != null ? "yes" : "no");
-        return new ForgettingEngine(semanticMemory, llmRouter, jdbcTemplate, properties, promptRegistry);
+        log.info("记忆模块: 注册 ForgettingEngine, generationRouterAvailable={}",
+                generationRouter != null ? "yes" : "no");
+        return new ForgettingEngine(semanticMemory, generationRouter, jdbcTemplate, properties, promptRegistry);
     }
 
     @Bean
@@ -526,12 +526,12 @@ public class MemoryAutoConfiguration {
     public ExperienceSummarizer experienceSummarizer(
             SemanticMemory semanticMemory,
             VectorSearcher vectorSearcher,
-            LlmRouter llmRouter,
+            GenerationRouter generationRouter,
             PromptRegistry promptRegistry,
             MemoryProperties properties,
             TrajectoryQualityAssessor qualityAssessor) {
         log.info("记忆模块: 注册 ExperienceSummarizer");
-        return new ExperienceSummarizer(semanticMemory, vectorSearcher, llmRouter,
+        return new ExperienceSummarizer(semanticMemory, vectorSearcher, generationRouter,
                 promptRegistry, properties, qualityAssessor);
     }
 
@@ -553,12 +553,12 @@ public class MemoryAutoConfiguration {
     public com.lifepilot.memory.experience.ContrastiveLearner contrastiveLearner(
             SemanticMemory semanticMemory,
             VectorSearcher vectorSearcher,
-            LlmRouter llmRouter,
+            GenerationRouter generationRouter,
             PromptRegistry promptRegistry,
             MemoryProperties properties) {
         log.info("记忆模块: 注册 ContrastiveLearner");
         return new com.lifepilot.memory.experience.ContrastiveLearner(
-                semanticMemory, vectorSearcher, llmRouter, promptRegistry, properties);
+                semanticMemory, vectorSearcher, generationRouter, promptRegistry, properties);
     }
 
     @Bean
@@ -567,12 +567,12 @@ public class MemoryAutoConfiguration {
     public com.lifepilot.memory.experience.SubtaskReflector subtaskReflector(
             SemanticMemory semanticMemory,
             VectorSearcher vectorSearcher,
-            LlmRouter llmRouter,
+            GenerationRouter generationRouter,
             PromptRegistry promptRegistry,
             MemoryProperties properties) {
         log.info("记忆模块: 注册 SubtaskReflector");
         return new com.lifepilot.memory.experience.SubtaskReflector(
-                semanticMemory, vectorSearcher, llmRouter, promptRegistry, properties);
+                semanticMemory, vectorSearcher, generationRouter, promptRegistry, properties);
     }
 
     @Bean
@@ -581,12 +581,12 @@ public class MemoryAutoConfiguration {
     public com.lifepilot.memory.consolidation.ExperienceMerger experienceMerger(
             SemanticMemory semanticMemory,
             VectorSearcher vectorSearcher,
-            LlmRouter llmRouter,
+            GenerationRouter generationRouter,
             PromptRegistry promptRegistry,
             MemoryProperties properties) {
         log.info("记忆模块: 注册 ExperienceMerger");
         return new com.lifepilot.memory.consolidation.ExperienceMerger(
-                semanticMemory, vectorSearcher, llmRouter, promptRegistry, properties);
+                semanticMemory, vectorSearcher, generationRouter, promptRegistry, properties);
     }
 
     private boolean isVecExtensionLoaded(JdbcTemplate vectorJdbcTemplate) {

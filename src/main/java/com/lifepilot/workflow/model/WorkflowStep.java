@@ -116,7 +116,7 @@ public sealed interface WorkflowStep permits
                     @Nullable String fileName) {}
 
     /**
-     * LLM 步骤，调用 LlmRouter 生成内容。
+     * LLM 步骤，调用生成路由生成内容。
      *
      * @param id             步骤唯一标识
      * @param name           步骤名称
