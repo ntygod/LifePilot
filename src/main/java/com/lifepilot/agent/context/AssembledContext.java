@@ -1,6 +1,7 @@
 package com.lifepilot.agent.context;
 
 import com.lifepilot.llm.multimodal.MediaContent;
+import org.springframework.ai.chat.messages.Message;
 import org.springframework.lang.Nullable;
 
 import java.util.List;
@@ -9,6 +10,7 @@ import java.util.List;
  * 增强版上下文快照 — 携带检索元数据与多模态媒体内容。
  *
  * @param systemPrompt        System Prompt 文本
+ * @param historyMessages     历史 transcript 构造出的有序消息流
  * @param userPrompt          User Prompt 文本
  * @param retrievedMemories   格式化后的记忆检索结果
  * @param tokenBudget         Token 预算分配与消耗
@@ -24,6 +26,8 @@ import java.util.List;
  */
 public record AssembledContext(
         String systemPrompt,
+        List<Message> contextMessages,
+        List<Message> historyMessages,
         String userPrompt,
         List<String> retrievedMemories,
         TokenBudget tokenBudget,
@@ -36,6 +40,8 @@ public record AssembledContext(
 ) {
     /** 紧凑构造器 — 防御性拷贝。 */
     public AssembledContext {
+        contextMessages = List.copyOf(contextMessages);
+        historyMessages = List.copyOf(historyMessages);
         retrievedMemories = List.copyOf(retrievedMemories);
         injectedEntityIds = List.copyOf(injectedEntityIds);
         if (mediaContents != null) {
@@ -52,6 +58,8 @@ public record AssembledContext(
     public AssembledContext withSystemPrompt(String newSystemPrompt) {
         return new AssembledContext(
                 newSystemPrompt,
+                contextMessages(),
+                historyMessages(),
                 userPrompt(),
                 retrievedMemories(),
                 tokenBudget(),
@@ -68,6 +76,8 @@ public record AssembledContext(
     public AssembledContext withMediaContents(@Nullable List<MediaContent> newMediaContents) {
         return new AssembledContext(
                 systemPrompt(),
+                contextMessages(),
+                historyMessages(),
                 userPrompt(),
                 retrievedMemories(),
                 tokenBudget(),

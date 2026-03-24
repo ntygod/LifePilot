@@ -3,23 +3,16 @@ package com.lifepilot.interaction.web.controller;
 import com.lifepilot.agent.CancellationToken;
 import com.lifepilot.agent.orchestration.AgentOrchestrator;
 import com.lifepilot.agent.context.AssembledContext;
+import com.lifepilot.agent.context.ContextMessageFormatter;
 import com.lifepilot.agent.context.ContextAssembler;
 import com.lifepilot.agent.context.TokenBudget;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.agent.model.AgentResponse;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.interaction.model.TokenUsage;
-import com.lifepilot.interaction.web.model.AgentDetail;
-import com.lifepilot.interaction.web.model.AgentSummary;
-import com.lifepilot.interaction.web.model.ChatResponse;
-import com.lifepilot.interaction.web.model.ContextPreviewRequest;
-import com.lifepilot.interaction.web.model.ContextPreviewResponse;
+import com.lifepilot.interaction.web.model.*;
 import com.lifepilot.interaction.web.model.ContextPreviewResponse.SegmentInfo;
 import com.lifepilot.interaction.web.model.ContextPreviewResponse.TokenBudgetInfo;
-import com.lifepilot.interaction.web.model.CreateAgentRequest;
-import com.lifepilot.interaction.web.model.ErrorResponse;
-import com.lifepilot.interaction.web.model.TestChatRequest;
-import com.lifepilot.interaction.web.model.UpdateAgentRequest;
 import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.knowledge.KnowledgeBaseManager;
@@ -52,13 +45,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -317,7 +304,7 @@ public class AgentController {
 
         // 检查 summary 的标签是否包含任一过滤标签
         List<String> summaryTags = summary.tags() != null
-                ? summary.tags().stream().map(String::toLowerCase).collect(Collectors.toList())
+                ? summary.tags().stream().map(String::toLowerCase).toList()
                 : List.of();
 
         return filterTags.stream().anyMatch(summaryTags::contains);
@@ -554,11 +541,18 @@ public class AgentController {
             // 4. 映射为响应 DTO
             TokenBudget tb = assembled.tokenBudget();
             var segments = new LinkedHashMap<String, SegmentInfo>();
-            segments.put("systemPrompt", new SegmentInfo(assembled.systemPrompt(), tb.systemPromptUsed()));
-            segments.put("conversationHistory", new SegmentInfo("", tb.historyUsed()));
-            segments.put("memoryRetrieval", new SegmentInfo(
-                    String.join("\n", assembled.retrievedMemories()), tb.memoryUsed()));
-            segments.put("toolResults", new SegmentInfo("", tb.toolResultUsed()));
+            segments.put(ContextPreviewResponse.SEGMENT_SYSTEM_PROMPT,
+                    new SegmentInfo(assembled.systemPrompt(), tb.systemPromptUsed()));
+            segments.put(ContextPreviewResponse.SEGMENT_CONTEXT_MESSAGES,
+                    new SegmentInfo(
+                            ContextMessageFormatter.serializeForPreview(assembled.contextMessages()),
+                            tb.memoryUsed()));
+            segments.put(ContextPreviewResponse.SEGMENT_HISTORY_MESSAGES,
+                    new SegmentInfo(
+                            ContextMessageFormatter.serializeForPreview(assembled.historyMessages()),
+                            tb.historyUsed() + tb.toolResultUsed()));
+            segments.put(ContextPreviewResponse.SEGMENT_CURRENT_USER_PROMPT,
+                    new SegmentInfo(assembled.userPrompt(), estimateTokens(assembled.userPrompt())));
 
             var tokenBudgetInfo = new TokenBudgetInfo(
                     tb.systemPromptBudget(), tb.historyBudget(), tb.memoryBudget(),
@@ -591,6 +585,13 @@ public class AgentController {
      * @param id Agent ID
      * @return Agent 详情
      */
+    private int estimateTokens(String text) {
+        if (text == null || text.isBlank()) {
+            return 0;
+        }
+        return Math.max(1, text.length() / 4);
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<?> getAgent(@PathVariable String id) {
         log.debug("查询 Agent 详情: id={}", id);
@@ -870,7 +871,7 @@ public class AgentController {
                     }
                     return null;
                 })
-                .filter(kb -> kb != null)
+                .filter(Objects::nonNull)
                 .collect(Collectors.toList());
 
         // 模型配置
@@ -1101,12 +1102,7 @@ public class AgentController {
 
     @Nullable
     private String normalizeOptionalText(@Nullable String value) {
-        if (value == null) {
-            return null;
-        }
-
-        String normalized = value.strip();
-        return normalized.isEmpty() ? null : normalized;
+        return SessionConfigKeys.normalizeString(value);
     }
 
     @Nullable

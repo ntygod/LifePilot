@@ -95,7 +95,7 @@ class EpisodicMemorySessionReadModelTest {
                            new.session_id,
                            COALESCE(new.role, ''),
                            json_extract(new.payload_json, '$.content')
-                    WHERE new.entry_type = 'message'
+                    WHERE new.entry_type IN ('user_message', 'assistant_message')
                       AND new.visible_to_user = 1
                       AND trim(COALESCE(json_extract(new.payload_json, '$.content'), '')) <> '';
                 END
@@ -118,7 +118,7 @@ class EpisodicMemorySessionReadModelTest {
                            old.session_id,
                            COALESCE(old.role, ''),
                            json_extract(old.payload_json, '$.content')
-                    WHERE old.entry_type = 'message'
+                    WHERE old.entry_type IN ('user_message', 'assistant_message')
                       AND old.visible_to_user = 1
                       AND trim(COALESCE(json_extract(old.payload_json, '$.content'), '')) <> '';
                 END
@@ -141,7 +141,7 @@ class EpisodicMemorySessionReadModelTest {
                            old.session_id,
                            COALESCE(old.role, ''),
                            json_extract(old.payload_json, '$.content')
-                    WHERE old.entry_type = 'message'
+                    WHERE old.entry_type IN ('user_message', 'assistant_message')
                       AND old.visible_to_user = 1
                       AND trim(COALESCE(json_extract(old.payload_json, '$.content'), '')) <> '';
 
@@ -151,7 +151,7 @@ class EpisodicMemorySessionReadModelTest {
                            new.session_id,
                            COALESCE(new.role, ''),
                            json_extract(new.payload_json, '$.content')
-                    WHERE new.entry_type = 'message'
+                    WHERE new.entry_type IN ('user_message', 'assistant_message')
                       AND new.visible_to_user = 1
                       AND trim(COALESCE(json_extract(new.payload_json, '$.content'), '')) <> '';
                 END
@@ -244,9 +244,10 @@ class EpisodicMemorySessionReadModelTest {
                         INSERT INTO session_transcript_entries (
                             id, session_id, branch_id, entry_type, role, visible_to_model,
                             visible_to_user, payload_json, token_estimate, created_at
-                        ) VALUES (?, ?, 'main', 'message', ?, 1, 1, ?, 0, ?)
+                        ) VALUES (?, ?, 'main', ?, ?, 1, 1, ?, 0, ?)
                         """,
-                messageId, sessionId, role, payloadJson, createdAt.toString());
+                messageId, sessionId, "user".equals(role) ? "user_message" : "assistant_message",
+                role, payloadJson, createdAt.toString());
         jdbcTemplate.update("""
                         UPDATE session_store
                         SET message_count = message_count + 1,

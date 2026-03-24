@@ -1,5 +1,6 @@
 package com.lifepilot.memory.episodic;
 
+import com.lifepilot.conversation.transcript.TranscriptEntryType;
 import com.lifepilot.memory.config.MemoryProperties;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
@@ -86,10 +87,11 @@ public class EpisodicMemory {
                             INSERT INTO session_transcript_entries (
                                 id, session_id, branch_id, entry_type, role, turn_id, trace_id,
                                 visible_to_model, visible_to_user, payload_json, token_estimate, created_at
-                            ) VALUES (?, ?, 'main', 'message', ?, NULL, NULL, 1, 1, ?, ?, ?)
+                            ) VALUES (?, ?, 'main', ?, ?, NULL, NULL, 1, 1, ?, ?, ?)
                             """,
                     msg.id(),
                     sessionId,
+                    TranscriptEntryType.fromLegacyRole(msg.role()).value(),
                     msg.role(),
                     payloadJson,
                     Math.max(0, msg.tokenCount()),
@@ -377,7 +379,7 @@ public class EpisodicMemory {
                 FROM session_transcript_entries e
                 LEFT JOIN session_transcript_compressions c ON c.entry_id = e.id
                 WHERE e.session_id = ?
-                  AND e.entry_type = 'message'
+                  AND e.entry_type IN ('user_message', 'assistant_message')
                   AND e.visible_to_user = 1
                   AND trim(COALESCE(json_extract(e.payload_json, '$.content'), '')) <> ''
                 ORDER BY e.created_at, e.rowid
@@ -409,7 +411,7 @@ public class EpisodicMemory {
                         FROM session_transcript_entries
                         WHERE id = ?
                           AND session_id = ?
-                          AND entry_type = 'message'
+                          AND entry_type IN ('user_message', 'assistant_message')
                           AND visible_to_user = 1
                         ON CONFLICT(entry_id) DO UPDATE SET
                             session_id = excluded.session_id,
@@ -440,7 +442,7 @@ public class EpisodicMemory {
                        created_at
                 FROM session_transcript_entries
                 WHERE session_id = ?
-                  AND entry_type = 'message'
+                  AND entry_type IN ('user_message', 'assistant_message')
                   AND visible_to_user = 1
                   AND trim(COALESCE(json_extract(payload_json, '$.content'), '')) <> ''
                 ORDER BY created_at, rowid

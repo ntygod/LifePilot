@@ -1360,7 +1360,7 @@ BEGIN
            old.session_id,
            COALESCE(old.role, ''),
            json_extract(old.payload_json, '$.content')
-    WHERE old.entry_type = 'message'
+    WHERE old.entry_type IN ('user_message', 'assistant_message')
       AND old.visible_to_user = 1
       AND trim(COALESCE(json_extract(old.payload_json, '$.content'), '')) <> '';
 END;
@@ -1374,7 +1374,7 @@ BEGIN
            new.session_id,
            COALESCE(new.role, ''),
            json_extract(new.payload_json, '$.content')
-    WHERE new.entry_type = 'message'
+    WHERE new.entry_type IN ('user_message', 'assistant_message')
       AND new.visible_to_user = 1
       AND trim(COALESCE(json_extract(new.payload_json, '$.content'), '')) <> '';
 END;
@@ -1396,7 +1396,7 @@ BEGIN
            old.session_id,
            COALESCE(old.role, ''),
            json_extract(old.payload_json, '$.content')
-    WHERE old.entry_type = 'message'
+    WHERE old.entry_type IN ('user_message', 'assistant_message')
       AND old.visible_to_user = 1
       AND trim(COALESCE(json_extract(old.payload_json, '$.content'), '')) <> '';
 
@@ -1406,7 +1406,7 @@ BEGIN
            new.session_id,
            COALESCE(new.role, ''),
            json_extract(new.payload_json, '$.content')
-    WHERE new.entry_type = 'message'
+    WHERE new.entry_type IN ('user_message', 'assistant_message')
       AND new.visible_to_user = 1
       AND trim(COALESCE(json_extract(new.payload_json, '$.content'), '')) <> '';
 END;
@@ -1416,7 +1416,7 @@ FOR EACH ROW BEGIN
     UPDATE user_behavior SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE user_id = NEW.user_id;
 END;
 
--- ??????
+-- 预置 LLM Provider
 
 INSERT INTO llm_providers (
     id, type, api_url, api_key, model_name, timeout_seconds, priority,
@@ -1427,45 +1427,45 @@ INSERT INTO llm_providers (
 ('ollama-qwen2.5', 'OLLAMA', 'http://localhost:11434', NULL, 'qwen3:8b', 120, 0,
  '["intent_understanding","task_planning","knowledge_extraction","chat","memory_compression","proactive_reasoning","code_generation","agent_reasoning","agent_tool_calling","agent_generation","knowledge_rerank","document_summary","skill_generation"]',
  '["CHAT","STRUCTURED_OUTPUT","FUNCTION_CALLING","STREAMING"]', 0, 0, 0, 131072, NULL, 1, 1,
- 'Ollama Qwen3 8B', '????? Qwen3 8B ????? API Key', datetime('now'), datetime('now')),
+ 'Ollama Qwen3 8B', '本地 Ollama Qwen3 8B 模型，无需单独配置 API Key', datetime('now'), datetime('now')),
 ('ollama-nomic-embed', 'OLLAMA', 'http://localhost:11434', NULL, 'nomic-embed-text:v1.5', 30, 0,
  '["embedding"]', '["EMBEDDING"]', 0, 0, 0, 8192, 1024, 0, 1,
- 'Ollama Nomic Embed', '????? Nomic Embed ????', datetime('now'), datetime('now')),
+ 'Ollama Nomic Embed', '本地 Ollama Nomic Embed 向量模型', datetime('now'), datetime('now')),
 ('tei-embedding', 'TEI', 'http://localhost:8080/v1', NULL, 'bge-base-en-v1.5', 30, 0,
  '["embedding"]', '["EMBEDDING"]', 0, 0, 0, 8192, 1024, 0, 1,
- 'TEI Embedding (??)', '????? Text Embeddings Inference ??', datetime('now'), datetime('now')),
+ 'TEI Embedding (本地)', '本地部署的 Text Embeddings Inference 服务', datetime('now'), datetime('now')),
 ('deepseek-chat', 'DEEPSEEK', 'https://api.deepseek.com', NULL, 'deepseek-v3', 60, 1,
  '["intent_understanding","task_planning","knowledge_extraction","chat","code_generation","agent_reasoning","agent_tool_calling","agent_generation","knowledge_rerank","document_summary","skill_generation","memory_compression"]',
  '["CHAT","STRUCTURED_OUTPUT","FUNCTION_CALLING","STREAMING","VISION"]', 0, 2, 8, 131072, NULL, 1, 1,
- 'DeepSeek V3', 'DeepSeek V3 ?????128K ???????? API Key', datetime('now'), datetime('now')),
+ 'DeepSeek V3', 'DeepSeek V3，支持 128K 上下文窗口，需要配置 API Key', datetime('now'), datetime('now')),
 ('deepseek-r1', 'DEEPSEEK', 'https://api.deepseek.com', NULL, 'deepseek-reasoner', 120, 1,
  '["task_planning","code_generation","agent_reasoning"]',
  '["CHAT","STRUCTURED_OUTPUT","STREAMING"]', 0, 4, 16, 131072, NULL, 1, 1,
- 'DeepSeek R1', 'DeepSeek R1 ?????????????????? API Key', datetime('now'), datetime('now')),
+ 'DeepSeek R1', 'DeepSeek R1，偏推理与复杂分析场景，需要配置 API Key', datetime('now'), datetime('now')),
 ('glm-4', 'GLM', 'https://open.bigmodel.cn/api/paas/v4', NULL, 'glm-4-plus', 60, 1,
  '["intent_understanding","task_planning","knowledge_extraction","chat","code_generation","agent_reasoning","agent_tool_calling","agent_generation","knowledge_rerank","document_summary","skill_generation","memory_compression"]',
  '["CHAT","STRUCTURED_OUTPUT","FUNCTION_CALLING","STREAMING","VISION"]', 0, 50, 50, 131072, NULL, 1, 1,
- '?? GLM-4-Plus', '?? AI GLM-4-Plus ???128K ???????? API Key', datetime('now'), datetime('now')),
-('qwen-plus', 'QWEN', 'https://dashscope.aliyuncs.com/compatible-mode/v1', NULL, 'qwen3-plus', 60, 1,
+ '智谱 GLM-4-Plus', '智谱 AI GLM-4-Plus，支持 128K 上下文窗口，需要配置 API Key', datetime('now'), datetime('now')),
+('qwen-plus', 'QWEN', 'https://dashscope.aliyuncs.com/compatible-mode', NULL, 'qwen3-plus', 60, 1,
  '["intent_understanding","task_planning","knowledge_extraction","chat","code_generation","agent_reasoning","agent_tool_calling","agent_generation","knowledge_rerank","document_summary","skill_generation","memory_compression"]',
  '["CHAT","STRUCTURED_OUTPUT","FUNCTION_CALLING","STREAMING","VISION"]', 0, 8, 8, 131072, NULL, 1, 1,
- '????3 Plus', '???????3 ?????128K ???????? API Key', datetime('now'), datetime('now')),
+ '通义千问 3 Plus', '阿里云通义千问 3 Plus，支持 128K 上下文窗口，需要配置 API Key', datetime('now'), datetime('now')),
 ('wenxin-ernie', 'WENXIN', 'https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat', NULL, 'ernie-4.5-turbo-128k', 60, 1,
  '["intent_understanding","task_planning","knowledge_extraction","chat","agent_reasoning","agent_tool_calling","agent_generation","knowledge_rerank","document_summary","skill_generation","memory_compression"]',
  '["CHAT","STRUCTURED_OUTPUT","FUNCTION_CALLING","STREAMING","VISION"]', 0, 4, 8, 131072, NULL, 1, 1,
- '???? 4.5 Turbo', '?????? 4.5 Turbo ???128K ???????? API Key', datetime('now'), datetime('now')),
+ '文心一言 4.5 Turbo', '百度文心一言 4.5 Turbo，支持 128K 上下文窗口，需要配置 API Key', datetime('now'), datetime('now')),
 ('anthropic-claude', 'OPENAI_COMPATIBLE', 'https://api.anthropic.com/v1', NULL, 'claude-sonnet-4-6', 60, 2,
  '["intent_understanding","task_planning","knowledge_extraction","chat","code_generation","agent_reasoning","agent_tool_calling","agent_generation","knowledge_rerank","document_summary","skill_generation","memory_compression"]',
  '["CHAT","STRUCTURED_OUTPUT","FUNCTION_CALLING","STREAMING","VISION"]', 0, 300, 1500, 204800, NULL, 1, 1,
- 'Anthropic Claude Sonnet 4.6', 'Anthropic Claude Sonnet 4.6 ???200K ???????? API Key', datetime('now'), datetime('now')),
+ 'Anthropic Claude Sonnet 4.6', 'Anthropic Claude Sonnet 4.6，支持 200K 上下文窗口，需要配置 API Key', datetime('now'), datetime('now')),
 ('openai-gpt-4', 'OPENAI_COMPATIBLE', 'https://api.openai.com/v1', NULL, 'gpt-4.1', 60, 2,
  '["intent_understanding","task_planning","knowledge_extraction","chat","code_generation","agent_reasoning","agent_tool_calling","agent_generation","knowledge_rerank","document_summary","skill_generation","memory_compression"]',
  '["CHAT","STRUCTURED_OUTPUT","FUNCTION_CALLING","STREAMING","VISION"]', 0, 200, 800, 1048576, NULL, 1, 1,
- 'OpenAI GPT-4.1', 'OpenAI GPT-4.1 ???1M ???????? API Key', datetime('now'), datetime('now')),
+ 'OpenAI GPT-4.1', 'OpenAI GPT-4.1，支持 1M 上下文窗口，需要配置 API Key', datetime('now'), datetime('now')),
 ('openai-gpt-4o-mini', 'OPENAI_COMPATIBLE', 'https://api.openai.com/v1', NULL, 'gpt-4o-mini', 30, 2,
  '["chat","knowledge_extraction","memory_compression","knowledge_rerank","document_summary"]',
  '["CHAT","STRUCTURED_OUTPUT","FUNCTION_CALLING","STREAMING","VISION"]', 0, 15, 60, 131072, NULL, 1, 1,
- 'OpenAI GPT-4o Mini', 'OpenAI GPT-4o Mini ?????128K ???????? API Key', datetime('now'), datetime('now'));
+ 'OpenAI GPT-4o Mini', 'OpenAI GPT-4o Mini，支持 128K 上下文窗口，需要配置 API Key', datetime('now'), datetime('now'));
 
 INSERT INTO user_settings (
     id, theme, language, llm_provider,

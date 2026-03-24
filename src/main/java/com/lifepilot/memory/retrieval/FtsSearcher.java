@@ -50,7 +50,7 @@ public class FtsSearcher {
                         FROM session_transcript_entries_fts
                         JOIN session_transcript_entries e ON session_transcript_entries_fts.rowid = e.rowid
                         WHERE session_transcript_entries_fts MATCH ?
-                          AND e.entry_type = 'message'
+                          AND e.entry_type IN ('user_message', 'assistant_message')
                           AND e.visible_to_user = 1
                         GROUP BY e.session_id
                     )

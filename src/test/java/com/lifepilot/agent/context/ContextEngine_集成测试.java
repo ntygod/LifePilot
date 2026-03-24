@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.model.Budget;
 import com.lifepilot.agent.model.ReactAgentState;
-import com.lifepilot.conversation.ConversationTurnView;
 import com.lifepilot.conversation.artifact.SessionArtifactRepository;
 import com.lifepilot.conversation.transcript.SessionStoreRepository;
 import com.lifepilot.conversation.transcript.SessionTranscriptRepository;
@@ -15,6 +14,10 @@ import com.lifepilot.observability.context.ContextReportRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.ToolResponseMessage;
+import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
@@ -166,13 +169,16 @@ class ContextEngine_集成测试 {
         appendMessage("user", "第一轮问题", "turn-1", Instant.parse("2026-03-23T10:00:00Z"));
         appendMessage("assistant", "第一轮回答", "turn-1", Instant.parse("2026-03-23T10:00:05Z"));
         String turn2UserEntryId = appendMessage("user", "第二轮问题", "turn-2", Instant.parse("2026-03-23T10:01:00Z"));
+        appendToolCall("turn-2", "tool.beta", "call-b", Instant.parse("2026-03-23T10:01:01Z"));
+        appendToolResult("turn-2", "tool.beta", "call-b", "{\"summary\":\"中间结果 beta\"}", Instant.parse("2026-03-23T10:01:03Z"));
         appendMessage("assistant", "第二轮回答", "turn-2", Instant.parse("2026-03-23T10:01:05Z"));
         appendMessage("user", "第三轮问题", "turn-3", Instant.parse("2026-03-23T10:02:00Z"));
+        appendToolCall("turn-3", "tool.gamma", "call-c", Instant.parse("2026-03-23T10:02:01Z"));
+        appendToolResult("turn-3", "tool.gamma", "call-c", "{\"summary\":\"最新结果 gamma\"}", Instant.parse("2026-03-23T10:02:03Z"));
         appendMessage("assistant", "第三轮回答", "turn-3", Instant.parse("2026-03-23T10:02:05Z"));
 
-        appendToolResult("tool.alpha", "call-a", "{\"summary\":\"旧结果 alpha\"}", Instant.parse("2026-03-23T10:00:10Z"));
-        appendToolResult("tool.beta", "call-b", "{\"summary\":\"中间结果 beta\"}", Instant.parse("2026-03-23T10:01:10Z"));
-        appendToolResult("tool.gamma", "call-c", "{\"summary\":\"最新结果 gamma\"}", Instant.parse("2026-03-23T10:02:10Z"));
+        appendToolCall("turn-1", "tool.alpha", "call-a", Instant.parse("2026-03-23T10:00:01Z"));
+        appendToolResult("turn-1", "tool.alpha", "call-a", "{\"summary\":\"旧结果 alpha\"}", Instant.parse("2026-03-23T10:00:03Z"));
 
         transcriptRepository.appendEntry(
                 SESSION_ID,
@@ -224,24 +230,29 @@ class ContextEngine_集成测试 {
         );
 
         ContextEngine.ContextSnapshot snapshot = contextEngine.load(buildState(), 320);
+        String history = serializeMessages(snapshot.historyMessages());
 
-        assertThat(snapshot.recentTurns())
-                .extracting(ConversationTurnView::content)
-                .containsExactly("第二轮问题", "第二轮回答", "第三轮问题", "第三轮回答")
-                .doesNotContain("第一轮问题", "第一轮回答");
-        assertThat(snapshot.toolResultsSection())
+        assertThat(history)
+                .contains("历史压缩摘要")
+                .contains("[user] 第二轮问题")
+                .contains("[tool_call] tool.beta")
                 .contains("tool.beta")
+                .contains("[assistant] 第二轮回答")
+                .contains("[user] 第三轮问题")
+                .contains("[tool_call] tool.gamma")
                 .contains("tool.gamma")
-                .doesNotContain("tool.alpha");
+                .contains("[assistant] 第三轮回答")
+                .doesNotContain("tool.alpha")
+                .doesNotContain("第一轮问题")
+                .doesNotContain("第一轮回答");
         assertThat(snapshot.pruningApplied()).isFalse();
         assertThat(snapshot.compactionApplied()).isTrue();
-        assertThat(snapshot.compactionSection()).contains("已压缩更早轮次");
         assertThat(snapshot.artifactSection())
                 .contains("结果三")
                 .contains("结果二")
                 .doesNotContain("结果一");
         assertThat(snapshot.debugPayload())
-                .containsEntry("recentTurnCount", 4)
+                .containsEntry("historyMessageCount", 9)
                 .containsEntry("toolResultCount", 2)
                 .containsEntry("toolResultTotalCount", 2)
                 .containsEntry("artifactCount", 2)
@@ -252,7 +263,7 @@ class ContextEngine_集成测试 {
     void recordReport_会保存工具结果Token与调试载荷() {
         appendMessage("user", "查询最近状态", "turn-1", Instant.parse("2026-03-23T11:00:00Z"));
         appendMessage("assistant", "已经整理好了", "turn-1", Instant.parse("2026-03-23T11:00:05Z"));
-        appendToolResult("tool.status", "call-status", "{\"summary\":\"状态正常\"}", Instant.parse("2026-03-23T11:00:10Z"));
+        appendToolResult("turn-1", "tool.status", "call-status", "{\"summary\":\"状态正常\"}", Instant.parse("2026-03-23T11:00:10Z"));
         artifactRepository.save(
                 SESSION_ID,
                 null,
@@ -268,6 +279,8 @@ class ContextEngine_集成测试 {
         ContextEngine.ContextSnapshot snapshot = contextEngine.load(buildState(), 256);
         AssembledContext context = new AssembledContext(
                 "system",
+                List.of(),
+                snapshot.historyMessages(),
                 "user",
                 List.of(),
                 new TokenBudget(80, 90, 70, 20, 30, 10, 12, 34, 21, 7, 18),
@@ -293,8 +306,7 @@ class ContextEngine_集成测试 {
         assertThat(row.toolResultTokens()).isEqualTo(18);
         assertThat(row.pruningApplied()).isEqualTo(snapshot.pruningApplied());
         assertThat(contextReportRepository.readPayload(row.id()))
-                .containsKey("compactionSection")
-                .containsKey("toolResultsSection")
+                .containsKey("historyPreview")
                 .containsEntry("workingMemoryTokens", 21);
     }
 
@@ -313,12 +325,30 @@ class ContextEngine_集成测试 {
         );
     }
 
-    private void appendToolResult(String toolId, String callId, String outputJson, Instant createdAt) {
+    private void appendToolCall(String turnId, String toolId, String callId, Instant createdAt) {
+        transcriptRepository.appendEntry(
+                SESSION_ID,
+                TranscriptEntryType.TOOL_CALL,
+                "tool",
+                turnId,
+                "trace-context",
+                true,
+                false,
+                Map.of(
+                        "toolId", toolId,
+                        "callId", callId,
+                        "inputJson", "{\"q\":\"context\"}"
+                ),
+                createdAt
+        );
+    }
+
+    private void appendToolResult(String turnId, String toolId, String callId, String outputJson, Instant createdAt) {
         transcriptRepository.appendEntry(
                 SESSION_ID,
                 TranscriptEntryType.TOOL_RESULT,
                 "tool",
-                "turn-tool",
+                turnId,
                 "trace-context",
                 true,
                 false,
@@ -330,6 +360,34 @@ class ContextEngine_集成测试 {
                 ),
                 createdAt
         );
+    }
+
+    private String serializeMessages(List<Message> messages) {
+        StringBuilder buffer = new StringBuilder();
+        for (Message message : messages) {
+            switch (message) {
+                case UserMessage userMessage -> buffer.append("[user] ").append(userMessage.getText()).append('\n');
+                case AssistantMessage assistantMessage -> {
+                    if (assistantMessage.hasToolCalls()) {
+                        assistantMessage.getToolCalls().forEach(toolCall -> buffer
+                                .append("[tool_call] ")
+                                .append(toolCall.name())
+                                .append('\n'));
+                    }
+                    if (assistantMessage.getText() != null && !assistantMessage.getText().isBlank()) {
+                        buffer.append("[assistant] ").append(assistantMessage.getText()).append('\n');
+                    }
+                }
+                case ToolResponseMessage toolResponseMessage -> toolResponseMessage.getResponses().forEach(response ->
+                        buffer.append("[tool_result] ")
+                                .append(response.name())
+                                .append(' ')
+                                .append(response.responseData())
+                                .append('\n'));
+                default -> { }
+            }
+        }
+        return buffer.toString();
     }
 
     private ReactAgentState buildState() {

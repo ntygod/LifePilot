@@ -108,10 +108,8 @@ public class CompactionEngine {
                 return false;
             }
 
-            List<SessionTranscriptRepository.TranscriptMessageViewRow> activeMessageRows =
-                    filterActiveMessageRows(transcriptRepository.findModelConversationRowsBySessionId(sessionId), activeRows);
-            List<List<SessionTranscriptRepository.TranscriptMessageViewRow>> completeTurns =
-                    groupCompleteTurns(activeMessageRows);
+            List<List<SessionTranscriptRepository.SessionTranscriptEntryRow>> completeTurns =
+                    groupCompleteTurns(activeRows);
             if (completeTurns.size() < resolveMinTurnCount()) {
                 return false;
             }
@@ -120,9 +118,9 @@ public class CompactionEngine {
             if (completeTurns.size() <= keepRecentTurns) {
                 return false;
             }
-            List<List<SessionTranscriptRepository.TranscriptMessageViewRow>> keptTurns =
+            List<List<SessionTranscriptRepository.SessionTranscriptEntryRow>> keptTurns =
                     completeTurns.subList(Math.max(0, completeTurns.size() - keepRecentTurns), completeTurns.size());
-            String firstKeptEntryId = keptTurns.getFirst().getFirst().entryId();
+            String firstKeptEntryId = keptTurns.getFirst().getFirst().id();
 
             List<SessionTranscriptRepository.SessionTranscriptEntryRow> compactableRows =
                     selectCompactableRows(activeRows, firstKeptEntryId);
@@ -197,31 +195,25 @@ public class CompactionEngine {
         return tokenEstimate >= triggerThresholdTokens;
     }
 
-    private List<SessionTranscriptRepository.TranscriptMessageViewRow> filterActiveMessageRows(
-            List<SessionTranscriptRepository.TranscriptMessageViewRow> rows,
-            List<SessionTranscriptRepository.SessionTranscriptEntryRow> activeRows
+    private List<List<SessionTranscriptRepository.SessionTranscriptEntryRow>> groupCompleteTurns(
+            List<SessionTranscriptRepository.SessionTranscriptEntryRow> rows
     ) {
-        if (rows.isEmpty() || activeRows.isEmpty()) {
+        List<SessionTranscriptRepository.SessionTranscriptEntryRow> visibleRows = rows.stream()
+                .filter(SessionTranscriptRepository.SessionTranscriptEntryRow::visibleToModel)
+                .filter(row -> !TranscriptEntryType.COMPACTION_SUMMARY.value().equals(row.entryType()))
+                .sorted(java.util.Comparator.comparing(SessionTranscriptRepository.SessionTranscriptEntryRow::createdAt))
+                .toList();
+        if (visibleRows.isEmpty()) {
             return List.of();
         }
-        List<String> activeEntryIds = activeRows.stream()
-                .map(SessionTranscriptRepository.SessionTranscriptEntryRow::id)
-                .toList();
-        return rows.stream()
-                .filter(row -> activeEntryIds.contains(row.entryId()))
-                .toList();
-    }
 
-    private List<List<SessionTranscriptRepository.TranscriptMessageViewRow>> groupCompleteTurns(
-            List<SessionTranscriptRepository.TranscriptMessageViewRow> rows
-    ) {
-        List<List<SessionTranscriptRepository.TranscriptMessageViewRow>> turns = new ArrayList<>();
-        List<SessionTranscriptRepository.TranscriptMessageViewRow> current = new ArrayList<>();
+        List<List<SessionTranscriptRepository.SessionTranscriptEntryRow>> turns = new ArrayList<>();
+        List<SessionTranscriptRepository.SessionTranscriptEntryRow> current = new ArrayList<>();
         boolean hasReply = false;
 
-        for (SessionTranscriptRepository.TranscriptMessageViewRow row : rows) {
-            String role = normalizeRole(row.role());
-            if ("user".equals(role)) {
+        for (SessionTranscriptRepository.SessionTranscriptEntryRow row : visibleRows) {
+            TranscriptEntryType entryType = TranscriptEntryType.fromValue(row.entryType());
+            if (entryType == TranscriptEntryType.USER_MESSAGE) {
                 if (!current.isEmpty() && hasReply) {
                     turns.add(List.copyOf(current));
                 }
@@ -235,7 +227,9 @@ public class CompactionEngine {
                 continue;
             }
             current.add(row);
-            hasReply = true;
+            if (entryType == TranscriptEntryType.ASSISTANT_MESSAGE) {
+                hasReply = true;
+            }
         }
 
         if (!current.isEmpty() && hasReply) {

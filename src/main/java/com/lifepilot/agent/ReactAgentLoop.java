@@ -5,17 +5,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.callback.CallbackHelper;
 import com.lifepilot.agent.callback.IterationCallback;
 import com.lifepilot.agent.config.AgentConfigProperties;
-import com.lifepilot.agent.context.AgentLoopContext;
-import com.lifepilot.agent.context.AssembledContext;
-import com.lifepilot.agent.context.ContextAssembler;
-import com.lifepilot.agent.context.ProviderMessageBuilder;
+import com.lifepilot.agent.context.*;
 import com.lifepilot.agent.media.MediaDataExtractor;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.model.ReactStep;
 import com.lifepilot.agent.model.SuspendReason;
-import com.lifepilot.agent.suspend.model.ResumePayload;
 import com.lifepilot.agent.suspend.event.ScheduledWakeupEvent;
+import com.lifepilot.agent.suspend.model.ResumePayload;
+import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.conversation.transcript.TranscriptStore;
 import com.lifepilot.interaction.web.a2ui.A2uiPayloadSupport;
 import com.lifepilot.interaction.web.config.A2uiProperties;
@@ -34,19 +32,20 @@ import com.lifepilot.observability.trace.TraceContext;
 import com.lifepilot.observability.trace.TraceRecorder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.ai.chat.messages.*;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
-import org.springframework.ai.content.Media;
 import org.springframework.ai.tool.ToolCallback;
-import org.springframework.core.io.ByteArrayResource;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.core.io.Resource;
 import org.springframework.lang.Nullable;
-import org.springframework.util.MimeTypeUtils;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.stream.Collectors;
 
 /**
@@ -86,8 +85,8 @@ public class ReactAgentLoop implements CallbackHelper {
     @Nullable private final MediaDataExtractor mediaDataExtractor;
 
     // ===== 可选依赖（挂起-恢复） =====
-    @Nullable private final org.springframework.context.ApplicationEventPublisher eventPublisher;
-    private final java.util.concurrent.ScheduledExecutorService suspendScheduler;
+    @Nullable private final ApplicationEventPublisher eventPublisher;
+    private final ScheduledExecutorService suspendScheduler;
 
     // ===== 可选依赖（L4 反馈闭环） =====
     @Nullable private final ProceduralMemory proceduralMemory;
@@ -104,10 +103,10 @@ public class ReactAgentLoop implements CallbackHelper {
             @Nullable TranscriptStore transcriptStore,
             @Nullable MultimodalRouter multimodalRouter,
             @Nullable MediaDataExtractor mediaDataExtractor,
-            @Nullable org.springframework.context.ApplicationEventPublisher eventPublisher,
+            @Nullable ApplicationEventPublisher eventPublisher,
             @Nullable ProceduralMemory proceduralMemory,
             @Nullable IntentMatcher intentMatcher,
-            com.lifepilot.config.threadpool.SharedScheduler sharedScheduler) {
+            SharedScheduler sharedScheduler) {
         this.contextAssembler = contextAssembler;
         this.providerMessageBuilder = providerMessageBuilder;
         this.agentToolProvider = agentToolProvider;
@@ -128,74 +127,6 @@ public class ReactAgentLoop implements CallbackHelper {
     @Nullable
     public MultimodalRouter getMultimodalRouter() {
         return multimodalRouter;
-    }
-
-    /**
-     * 构建 Spring AI 消息列表。
-     *
-     * <p>将 AssembledContext 的 systemPrompt / userPrompt 和历史 ReactStep
-     * 转换为 Spring AI Message 序列。工具调用历史使用 Spring AI 原生的
-     * AssistantMessage（含 toolCalls）+ ToolResponseMessage 格式，
-     * 确保 LLM 能正确理解多轮 tool calling 上下文。</p>
-     */
-    List<Message> buildMessages(AssembledContext ctx, ReactAgentState state) {
-        var messages = new ArrayList<Message>();
-        messages.add(new SystemMessage(ctx.systemPrompt()));
-
-        // 有媒体内容时（用户上传或工具产生），将 MediaContent 转换为 Spring AI Media 嵌入 UserMessage
-        if (ctx.mediaContents() != null && !ctx.mediaContents().isEmpty()) {
-            var builder = UserMessage.builder().text(ctx.userPrompt());
-            for (var mc : ctx.mediaContents()) {
-                builder.media(new Media(
-                        MimeTypeUtils.parseMimeType(mc.mimeType()),
-                        new ByteArrayResource(mc.data())));
-            }
-            messages.add(builder.build());
-        } else {
-            messages.add(new UserMessage(ctx.userPrompt()));
-        }
-
-        // 历史 ReactStep 转换为 Spring AI 消息
-        for (var step : state.steps()) {
-            switch (step) {
-                case ReactStep.Thought t ->
-                        messages.add(new AssistantMessage(t.content()));
-                case ReactStep.ToolCall tc -> {
-                    // 构建 AssistantMessage 携带 tool call 元数据（使用 Builder API）
-                    var toolCall = new AssistantMessage.ToolCall(
-                            tc.toolId(), "function", tc.toolId(), tc.inputJson());
-                    messages.add(AssistantMessage.builder()
-                            .content("")
-                            .toolCalls(List.of(toolCall))
-                            .build());
-                }
-                case ReactStep.Observation obs -> {
-                    // 使用 ToolResponseMessage 传递工具执行结果（使用 Builder API）
-                    var toolResponse = ToolResponseMessage.builder()
-                            .responses(List.of(new ToolResponseMessage.ToolResponse(
-                                    obs.toolId(), obs.toolId(), obs.output())))
-                            .build();
-                    messages.add(toolResponse);
-                }
-                case ReactStep.Answer a ->
-                        messages.add(new AssistantMessage(a.content()));
-                case ReactStep.Suspend s ->
-                        messages.add(new AssistantMessage(
-                                "Agent 已挂起，等待恢复信号。挂起原因: " + formatSuspendReason(s.reason())));
-                case ReactStep.Resume r -> {
-                    // 恢复步骤转换为 ToolResponseMessage，使 LLM 能看到恢复载荷作为工具结果
-                    var resumeToolId = "resume:" + r.payload().getClass().getSimpleName();
-                    var toolResponse = ToolResponseMessage.builder()
-                            .responses(List.of(new ToolResponseMessage.ToolResponse(
-                                    resumeToolId, resumeToolId,
-                                    "Agent 已从挂起态恢复，挂起时长: " + r.suspendDuration()
-                                            + "，恢复载荷: " + r.payload())))
-                            .build();
-                    messages.add(toolResponse);
-                }
-            }
-        }
-        return messages;
     }
 
     ProviderMessageBuilder.BuildResult buildProviderMessages(AssembledContext ctx, ReactAgentState state) {
@@ -1021,75 +952,17 @@ public class ReactAgentLoop implements CallbackHelper {
     }
 
     /**
-     * 从消息列表中提取第一个 UserMessage 的文本内容。
-     *
-     * <p>用于构造 MultimodalRequest 时提取用户提示词文本。</p>
-     *
-     * @param messages Spring AI 消息列表
-     * @return 用户消息文本，未找到时返回空字符串
-     */
-    private String extractUserText(List<Message> messages) {
-        return messages.stream()
-                .filter(m -> m instanceof UserMessage)
-                .map(m -> ((UserMessage) m).getText())
-                .findFirst()
-                .orElse("");
-    }
-
-    /**
      * 将完整消息列表序列化为文本，供多模态路由使用。
      *
-     * <p>多模态路由最终调用 adapter.callWithMedia(text, images)，只接受单个 text 参数。
-     * 当存在工具调用历史时，仅传递用户原始文本会导致 LLM 丢失上下文。
-     * 此方法将 SystemMessage、UserMessage（纯文本部分）、AssistantMessage（含 tool call）
-     * 和 ToolResponseMessage 序列化为结构化文本，确保视觉模型拥有完整推理上下文。</p>
+     * <p>当前统一委托给 {@link ProviderMessageBuilder#serializeForMultimodal(List)}，
+     * 不再保留 ReactAgentLoop 内部的旧版 fallback 串行化逻辑。</p>
      *
      * @param messages Spring AI 消息列表
      * @return 包含完整对话上下文的文本
      */
     @Override
     public String buildConversationContextText(List<Message> messages) {
-        if (providerMessageBuilder != null) {
-            return providerMessageBuilder.serializeForMultimodal(messages);
-        }
-
-        // 如果没有工具调用历史，直接返回用户文本即可
-        boolean hasToolHistory = messages.stream().anyMatch(m -> m instanceof ToolResponseMessage);
-        if (!hasToolHistory) {
-            return extractUserText(messages);
-        }
-
-        var sb = new StringBuilder();
-        for (var msg : messages) {
-            switch (msg) {
-                case SystemMessage sm -> {
-                    sb.append("[系统指令]\n").append(sm.getText()).append("\n\n");
-                }
-                case UserMessage um -> {
-                    sb.append("[用户消息]\n").append(um.getText()).append("\n\n");
-                }
-                case AssistantMessage am -> {
-                    if (am.hasToolCalls()) {
-                        for (var tc : am.getToolCalls()) {
-                            sb.append("[工具调用] ").append(tc.name())
-                                    .append("\n参数: ").append(tc.arguments()).append("\n\n");
-                        }
-                    }
-                    String text = am.getText();
-                    if (text != null && !text.isBlank()) {
-                        sb.append("[助手思考]\n").append(text).append("\n\n");
-                    }
-                }
-                case ToolResponseMessage trm -> {
-                    for (var resp : trm.getResponses()) {
-                        sb.append("[工具结果] ").append(resp.name())
-                                .append("\n").append(resp.responseData()).append("\n\n");
-                    }
-                }
-                default -> { /* 忽略其他消息类型 */ }
-            }
-        }
-        return sb.toString().strip();
+        return providerMessageBuilder.serializeForMultimodal(messages);
     }
 
     // ===== 流式 LLM Trace 记录 =====
@@ -1323,24 +1196,7 @@ public class ReactAgentLoop implements CallbackHelper {
                     .collect(Collectors.toList());
         }
         var sb = new StringBuilder();
-        for (int i = 0; i < messages.size(); i++) {
-            var msg = messages.get(i);
-            String type = msg.getClass().getSimpleName();
-            String content = switch (msg) {
-                case SystemMessage sm -> sm.getText();
-                case UserMessage um -> um.getText();
-                case AssistantMessage am -> {
-                    String text = am.getText() != null ? am.getText() : "";
-                    if (am.hasToolCalls()) {
-                        text += " [tool_calls=" + am.getToolCalls().size() + "]";
-                    }
-                    yield text;
-                }
-                default -> msg.toString();
-            };
-            sb.append("  [").append(i).append("] ").append(type).append(": ")
-                    .append(content != null ? content : "").append("\n");
-        }
+        sb.append(ContextMessageFormatter.serializeForDebug(messages));
         log.info("""
                 ========== LLM PROMPT ==========
                 scene={} traceId=react

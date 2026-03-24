@@ -61,7 +61,7 @@ class FtsSearcher_集成测试 {
                            new.session_id,
                            COALESCE(new.role, ''),
                            json_extract(new.payload_json, '$.content')
-                    WHERE new.entry_type = 'message'
+                    WHERE new.entry_type IN ('user_message', 'assistant_message')
                       AND new.visible_to_user = 1
                       AND trim(COALESCE(json_extract(new.payload_json, '$.content'), '')) <> '';
                 END
@@ -97,7 +97,7 @@ class FtsSearcher_集成测试 {
                         INSERT INTO session_transcript_entries (
                             id, session_id, branch_id, entry_type, role, visible_to_model,
                             visible_to_user, payload_json, token_estimate, created_at
-                        ) VALUES (?, ?, 'main', 'message', ?, 1, 1, ?, 0, ?)
+                        ) VALUES (?, ?, 'main', 'user_message', ?, 1, 1, ?, 0, ?)
                         """,
                 "msg-1", "session-1", "user",
                 "{\"content\":\"I prefer oolong tea and want to remember this preference.\"}",

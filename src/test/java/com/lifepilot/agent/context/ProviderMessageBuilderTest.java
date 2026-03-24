@@ -7,9 +7,9 @@ import com.lifepilot.agent.model.ReactStep;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.ToolResponseMessage;
+import org.springframework.ai.chat.messages.UserMessage;
 
 import java.time.Duration;
-import java.time.Instant;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -23,12 +23,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ProviderMessageBuilderTest {
 
     @Test
-    void build_会把步骤构造成经过卫生化的provider消息() {
+    void build_会按最终消息模型构造Provider消息() {
         var builder = new ProviderMessageBuilder(
                 new TranscriptHygieneEngine(new AgentConfigProperties())
         );
         var context = new AssembledContext(
                 "system prompt",
+                List.of(new AssistantMessage("<synthetic_context type=\"workspace_context\">workspace</synthetic_context>")),
+                List.of(new UserMessage("上一轮历史")),
                 "user prompt",
                 List.of(),
                 TokenBudget.allocateDefault(4096),
@@ -77,9 +79,11 @@ class ProviderMessageBuilderTest {
 
         var result = builder.build(context, state);
 
-        assertThat(result.messages()).hasSize(5);
-        assertThat(result.messages().get(2)).isInstanceOf(AssistantMessage.class);
-        assertThat(result.messages().get(3)).isInstanceOf(ToolResponseMessage.class);
+        assertThat(result.messages()).hasSize(7);
+        assertThat(result.messages().get(1)).isInstanceOf(AssistantMessage.class);
+        assertThat(result.messages().get(2)).isInstanceOf(UserMessage.class);
+        assertThat(result.messages().get(4)).isInstanceOf(AssistantMessage.class);
+        assertThat(result.messages().get(5)).isInstanceOf(ToolResponseMessage.class);
         assertThat(result.messages().getLast()).isInstanceOf(AssistantMessage.class);
         assertThat(result.hygieneReport().droppedEmptyAssistantMessages()).isEqualTo(1);
     }
@@ -98,7 +102,8 @@ class ProviderMessageBuilderTest {
 
         String serialized = builder.serializeForMultimodal(List.of(
                 new org.springframework.ai.chat.messages.SystemMessage("system"),
-                new org.springframework.ai.chat.messages.UserMessage("user"),
+                new AssistantMessage("<synthetic_context type=\"user_profile_context\">profile</synthetic_context>"),
+                new UserMessage("user"),
                 AssistantMessage.builder().content("thinking").toolCalls(List.of(toolCall)).build(),
                 ToolResponseMessage.builder()
                         .responses(List.of(new ToolResponseMessage.ToolResponse(
@@ -107,9 +112,11 @@ class ProviderMessageBuilderTest {
         ));
 
         assertThat(serialized)
-                .contains("[系统指令]")
-                .contains("[用户消息]")
-                .contains("[工具调用] tool.search")
-                .contains("[工具结果] tool.search");
+                .contains("[system]")
+                .contains("[context:user_profile_context]")
+                .contains("[user]")
+                .contains("[tool_call:tool.search]")
+                .contains("[assistant]")
+                .contains("[tool_result:tool.search]");
     }
 }

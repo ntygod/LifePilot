@@ -19,7 +19,7 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * ProviderMessageBuilder 负责把 Agent 上下文和 ReAct 步骤构造成 provider 消息序列。
+ * ProviderMessageBuilder 负责把 Agent 上下文与 ReAct 步骤组装成 provider 消息序列。
  *
  * @author zsg
  * @since 2026-03-23
@@ -44,6 +44,8 @@ public class ProviderMessageBuilder {
     public BuildResult build(AssembledContext context, ReactAgentState state) {
         List<Message> rawMessages = new ArrayList<>();
         rawMessages.add(new SystemMessage(context.systemPrompt()));
+        rawMessages.addAll(context.contextMessages());
+        rawMessages.addAll(context.historyMessages());
         rawMessages.add(buildUserMessage(context.userPrompt(), context.mediaContents()));
 
         for (ReactStep step : state.steps()) {
@@ -57,53 +59,57 @@ public class ProviderMessageBuilder {
         return new BuildResult(hygieneResult.messages(), hygieneResult.report());
     }
 
-    public String serializeForMultimodal(List<Message> messages) {
+    public String serializeForMultimodal(@Nullable List<Message> messages) {
         if (messages == null || messages.isEmpty()) {
             return "";
-        }
-        boolean hasToolHistory = messages.stream().anyMatch(message -> message instanceof ToolResponseMessage);
-        if (!hasToolHistory) {
-            return messages.stream()
-                    .filter(message -> message instanceof UserMessage)
-                    .map(message -> ((UserMessage) message).getText())
-                    .findFirst()
-                    .orElse("");
         }
 
         StringBuilder buffer = new StringBuilder();
         for (Message message : messages) {
             switch (message) {
-                case SystemMessage systemMessage -> appendSection(buffer, "系统指令", systemMessage.getText());
-                case UserMessage userMessage -> appendSection(buffer, "用户消息", userMessage.getText());
-                case AssistantMessage assistantMessage -> {
-                    if (assistantMessage.hasToolCalls()) {
-                        for (AssistantMessage.ToolCall toolCall : assistantMessage.getToolCalls()) {
-                            buffer.append("[工具调用] ")
-                                    .append(toolCall.name())
-                                    .append("\n参数: ")
-                                    .append(toolCall.arguments())
-                                    .append("\n\n");
-                        }
-                    }
-                    if (assistantMessage.getText() != null && !assistantMessage.getText().isBlank()) {
-                        appendSection(buffer, "助手思考", assistantMessage.getText());
-                    }
-                }
+                case SystemMessage systemMessage ->
+                        appendSection(buffer, "system", systemMessage.getText());
+                case UserMessage userMessage ->
+                        appendSection(buffer, "user", userMessage.getText());
+                case AssistantMessage assistantMessage -> appendAssistantSection(buffer, assistantMessage);
                 case ToolResponseMessage toolResponseMessage -> {
                     for (ToolResponseMessage.ToolResponse response : toolResponseMessage.getResponses()) {
-                        buffer.append("[工具结果] ")
-                                .append(response.name())
-                                .append("\n")
-                                .append(response.responseData())
-                                .append("\n\n");
+                        appendSection(
+                                buffer,
+                                "tool_result:" + response.name(),
+                                response.responseData()
+                        );
                     }
                 }
                 default -> {
-                    // 忽略其他消息类型
+                    // 忽略当前未使用的消息类型
                 }
             }
         }
         return buffer.toString().strip();
+    }
+
+    private void appendAssistantSection(StringBuilder buffer, AssistantMessage assistantMessage) {
+        ContextMessageFormatter.SyntheticContext syntheticContext =
+                ContextMessageFormatter.parseSyntheticContext(assistantMessage.getText());
+        if (syntheticContext != null) {
+            appendSection(buffer, "context:" + syntheticContext.type(), syntheticContext.content());
+            return;
+        }
+
+        if (assistantMessage.hasToolCalls()) {
+            for (AssistantMessage.ToolCall toolCall : assistantMessage.getToolCalls()) {
+                appendSection(
+                        buffer,
+                        "tool_call:" + toolCall.name(),
+                        toolCall.arguments()
+                );
+            }
+        }
+
+        if (assistantMessage.getText() != null && !assistantMessage.getText().isBlank()) {
+            appendSection(buffer, "assistant", assistantMessage.getText());
+        }
     }
 
     private UserMessage buildUserMessage(String userPrompt, @Nullable List<MediaContent> mediaContents) {
@@ -158,7 +164,9 @@ public class ProviderMessageBuilder {
         if (content == null || content.isBlank()) {
             return;
         }
-        buffer.append('[').append(title).append("]\n")
+        buffer.append('[')
+                .append(title)
+                .append("]\n")
                 .append(content)
                 .append("\n\n");
     }

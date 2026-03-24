@@ -21,6 +21,12 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+/**
+ * ContextAssembler Skill Catalog 测试。
+ *
+ * @author zsg
+ * @since 2026-03-24
+ */
 class ContextAssemblerSkillCatalogTest {
 
     @Test
@@ -36,9 +42,15 @@ class ContextAssemblerSkillCatalogTest {
                 .thenReturn("<skill_catalog>\n- todo: task management\n</skill_catalog>");
 
         var skill = SkillDefinition.builder()
-                .id("todo").name("task management").description("manage tasks")
-                .version("1.0").instructions("instructions").suggestedTools(List.of())
-                .source(new SkillSource.UserDefined("/test", null)).metadata(Map.of()).build();
+                .id("todo")
+                .name("task management")
+                .description("manage tasks")
+                .version("1.0")
+                .instructions("instructions")
+                .suggestedTools(List.of())
+                .source(new SkillSource.UserDefined("/test", null))
+                .metadata(Map.of())
+                .build();
         when(skillRegistry.listAll()).thenReturn(List.of(skill));
 
         var assembler = new ContextAssembler(config, promptRegistry,
@@ -100,9 +112,15 @@ class ContextAssemblerSkillCatalogTest {
         when(promptRegistry.render(eq("agent/react-system"), anyMap())).thenReturn("system prompt");
 
         var skill = SkillDefinition.builder()
-                .id("test").name("test").description("test")
-                .version("1.0").instructions("instructions").suggestedTools(List.of())
-                .source(new SkillSource.UserDefined("/test", null)).metadata(Map.of()).build();
+                .id("test")
+                .name("test")
+                .description("test")
+                .version("1.0")
+                .instructions("instructions")
+                .suggestedTools(List.of())
+                .source(new SkillSource.UserDefined("/test", null))
+                .metadata(Map.of())
+                .build();
         when(skillRegistry.listAll()).thenReturn(List.of(skill));
         when(promptRegistry.render(eq("agent/skill-catalog"), anyMap()))
                 .thenThrow(new RuntimeException("missing template"));
@@ -135,14 +153,14 @@ class ContextAssemblerSkillCatalogTest {
     }
 
     @Test
-    void buildUserPrompt_withTimeConstraint_injectsHint() {
+    void buildUserPrompt_onlyKeepsCurrentUserRequest() {
         var config = buildConfig();
         var promptRegistry = mock(PromptRegistry.class);
 
-        when(promptRegistry.render(eq("agent/react-user-prompt-basic"), anyMap())).thenAnswer(invocation -> {
+        when(promptRegistry.render(eq("agent/react-user-prompt"), anyMap())).thenAnswer(invocation -> {
             @SuppressWarnings("unchecked")
             Map<String, Object> vars = invocation.getArgument(1, Map.class);
-            return vars.get("timeConstraintSection") + "\nrequest: " + vars.get("userGoal");
+            return vars.get("userGoal").toString();
         });
 
         var assembler = new ContextAssembler(config, promptRegistry,
@@ -150,9 +168,52 @@ class ContextAssemblerSkillCatalogTest {
 
         String result = assembler.buildUserPrompt(buildState("web", "analyze logs after 2026-03-21 00:00"));
 
+        assertThat(result).isEqualTo("analyze logs after 2026-03-21 00:00");
+    }
+
+    @Test
+    void buildAugmentedSystemPrompt_putsTimeConstraintIntoSystemPrompt() {
+        var config = buildConfig();
+        var promptRegistry = mock(PromptRegistry.class);
+
+        when(promptRegistry.render(eq("agent/role-definition"))).thenReturn("role");
+        when(promptRegistry.render(eq("agent/context-guide"))).thenReturn("guide");
+        when(promptRegistry.render(eq("agent/react-system"), anyMap())).thenReturn("system prompt");
+        when(promptRegistry.render(eq("memory/agentic-tool-guide"))).thenReturn("");
+
+        var assembler = new ContextAssembler(config, promptRegistry,
+                null, null, null, null, null, null, null);
+
+        String result = assembler.buildAugmentedSystemPrompt(
+                buildState("web", "分析 2026-03-21 00:00 之后的日志")
+        );
+
+        assertThat(result).contains("system prompt");
+        assertThat(result).contains("<runtime_context>");
         assertThat(result).contains("<time_constraints>");
         assertThat(result).contains("startTime/endTime");
         assertThat(result).contains("2026-03-21 00:00");
+    }
+
+    @Test
+    void buildContextMessages_putsInjectedContextIntoSyntheticMessages() {
+        var assembler = new ContextAssembler(buildConfig(), mock(PromptRegistry.class),
+                null, null, null, null, null, null, null);
+
+        var messages = assembler.buildContextMessages(
+                "用户画像",
+                "",
+                "工作区",
+                "产物摘要",
+                "经验片段"
+        );
+
+        assertThat(messages).hasSize(4);
+        assertThat(messages.getFirst().getText()).contains("synthetic_context");
+        assertThat(messages.getFirst().getText()).contains("用户画像");
+        assertThat(messages.get(1).getText()).contains("工作区");
+        assertThat(messages.get(2).getText()).contains("产物摘要");
+        assertThat(messages.getLast().getText()).contains("经验片段");
     }
 
     private AgentConfigProperties buildConfig() {

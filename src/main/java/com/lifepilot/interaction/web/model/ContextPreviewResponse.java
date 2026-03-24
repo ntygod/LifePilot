@@ -21,6 +21,11 @@ public record ContextPreviewResponse(
         boolean degraded
 ) {
 
+    public static final String SEGMENT_SYSTEM_PROMPT = "systemPrompt";
+    public static final String SEGMENT_CONTEXT_MESSAGES = "contextMessages";
+    public static final String SEGMENT_HISTORY_MESSAGES = "historyMessages";
+    public static final String SEGMENT_CURRENT_USER_PROMPT = "currentUserPrompt";
+
     /**
      * 上下文段落信息。
      *
@@ -33,13 +38,13 @@ public record ContextPreviewResponse(
      * Token 预算分配信息（解耦内部 TokenBudget 领域模型）。
      *
      * @param systemPromptBudget System Prompt 预算
-     * @param historyBudget      对话历史预算
+     * @param historyBudget      历史消息预算
      * @param memoryBudget       记忆检索预算
      * @param toolSchemaBudget   工具 Schema 预算
      * @param toolResultBudget   工具结果预算
      * @param reservedBuffer     预留缓冲区
      * @param systemPromptUsed   System Prompt 实际使用量
-     * @param historyUsed        对话历史实际使用量
+     * @param historyUsed        历史消息实际使用量
      * @param memoryUsed         记忆检索实际使用量
      * @param toolSchemaUsed     工具 Schema 实际使用量
      * @param toolResultUsed     工具结果实际使用量

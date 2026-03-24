@@ -21,7 +21,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.ai.chat.messages.AssistantMessage;
-import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.tool.ToolCallback;
@@ -37,9 +36,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
-import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -92,7 +90,7 @@ class ReactAgentLoop_预算控制测试 {
     }
 
     @Test
-    void 时间预算耗尽时_立即返回降级响应() {
+    void 时间预算耗尽时应立即返回降级响应() {
         var budget = Budget.builder()
                 .maxTokens(32000).tokensUsed(0).tokensReserved(0)
                 .maxSteps(10).stepsUsed(0)
@@ -120,10 +118,12 @@ class ReactAgentLoop_预算控制测试 {
     }
 
     @Test
-    void 步骤预算耗尽时_生成统一降级终止响应() {
+    void 步骤预算耗尽时应生成统一降级终止响应() {
         when(agentToolProvider.getToolCallbacks(any(), nullable(String.class))).thenReturn(List.of());
         when(contextAssembler.assemble(any())).thenReturn(new AssembledContext(
                 "你是测试助手",
+                List.of(),
+                List.of(),
                 "请执行测试任务",
                 List.of(),
                 TokenBudget.allocateDefault(4096),
@@ -173,9 +173,11 @@ class ReactAgentLoop_预算控制测试 {
     }
 
     @Test
-    void 工具调用执行后_写入TranscriptToolCall与ToolResult() {
+    void 工具调用执行后应写入Transcript的ToolCall与ToolResult() {
         when(contextAssembler.assemble(any())).thenReturn(new AssembledContext(
                 "你是测试助手",
+                List.of(),
+                List.of(),
                 "请执行测试任务",
                 List.of(),
                 TokenBudget.allocateDefault(4096),

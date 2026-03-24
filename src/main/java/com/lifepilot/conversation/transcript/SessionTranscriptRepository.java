@@ -219,14 +219,6 @@ public class SessionTranscriptRepository {
         );
     }
 
-    public List<TranscriptMessageViewRow> findModelConversationRowsBySessionId(String sessionId) {
-        return findBySessionId(sessionId).stream()
-                .filter(SessionTranscriptEntryRow::visibleToModel)
-                .map(this::toTranscriptMessageView)
-                .filter(Objects::nonNull)
-                .toList();
-    }
-
     public List<TranscriptMessageViewRow> findUserConversationRowsBySessionId(String sessionId) {
         return findBySessionId(sessionId).stream()
                 .filter(SessionTranscriptEntryRow::visibleToUser)

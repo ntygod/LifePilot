@@ -3,12 +3,14 @@ package com.lifepilot.agent.context;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.model.Budget;
 import com.lifepilot.agent.model.ReactAgentState;
-import com.lifepilot.conversation.ConversationTurnView;
 import com.lifepilot.memory.workspace.WorkspaceItem;
 import com.lifepilot.memory.workspace.WorkspaceItemKind;
 import com.lifepilot.memory.workspace.WorkspaceStatus;
 import com.lifepilot.prompt.PromptRegistry;
 import org.junit.jupiter.api.Test;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.ToolResponseMessage;
+import org.springframework.ai.chat.messages.UserMessage;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -16,24 +18,24 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * ContextAssembler 与 ContextEngine 集成点测试。
+ * ContextAssembler 与 ContextEngine 集成测试。
  *
  * @author zsg
- * @since 2026-03-23
+ * @since 2026-03-24
  */
 class ContextAssembler_ContextEngine测试 {
 
     @Test
-    void assemble_会把artifact与toolResult片段注入用户提示词() {
+    void assemble_会形成system_context_history_user四段结构() {
         var config = buildConfig();
         var promptRegistry = mock(PromptRegistry.class);
         var contextEngine = mock(ContextEngine.class);
@@ -45,18 +47,30 @@ class ContextAssembler_ContextEngine测试 {
         when(promptRegistry.render(eq("agent/react-user-prompt"), anyMap())).thenAnswer(invocation -> {
             @SuppressWarnings("unchecked")
             Map<String, Object> vars = invocation.getArgument(1, Map.class);
-            return String.join("\n",
-                    vars.get("compactionSection").toString(),
-                    vars.get("conversationHistorySection").toString(),
-                    vars.get("workspaceSection").toString(),
-                    vars.get("artifactSection").toString(),
-                    vars.get("toolResultsSection").toString());
+            return vars.get("userGoal").toString();
         });
 
         when(contextEngine.load(any(ReactAgentState.class), anyInt())).thenReturn(new ContextEngine.ContextSnapshot(
                 List.of(
-                        new ConversationTurnView("session-1", "user", "上一轮用户消息", Instant.parse("2026-03-23T12:00:00Z"), null),
-                        new ConversationTurnView("session-1", "assistant", "上一轮助手回复", Instant.parse("2026-03-23T12:00:03Z"), null)
+                        new AssistantMessage("历史压缩摘要:\n之前已确认需求范围与约束。"),
+                        new UserMessage("上一轮用户消息"),
+                        AssistantMessage.builder()
+                                .content("")
+                                .toolCalls(List.of(new AssistantMessage.ToolCall(
+                                        "call-search",
+                                        "function",
+                                        "tool.search",
+                                        "{\"q\":\"方案\"}"
+                                )))
+                                .build(),
+                        ToolResponseMessage.builder()
+                                .responses(List.of(new ToolResponseMessage.ToolResponse(
+                                        "tool.search",
+                                        "tool.search",
+                                        "命中 3 条结果"
+                                )))
+                                .build(),
+                        new AssistantMessage("上一轮助手回复")
                 ),
                 List.of(new WorkspaceItem(
                         "workspace-1",
@@ -73,13 +87,12 @@ class ContextAssembler_ContextEngine测试 {
                         Instant.parse("2026-03-23T12:00:04Z"),
                         Instant.parse("2026-03-23T12:00:04Z")
                 )),
-                "\n历史压缩摘要:\n之前已确认需求范围与约束。\n",
-                "\n最近产物:\n- [report] 方案摘要: 这是最新摘要\n",
-                "\n最近工具结果:\n- [tool.search] 成功: 命中 3 条结果\n",
+                "\n最近产物\n- [report] 方案摘要: 这是最新摘要\n",
                 true,
                 false,
-                15,
+                42,
                 12,
+                15,
                 Map.of("source", "test")
         ));
 
@@ -99,15 +112,27 @@ class ContextAssembler_ContextEngine测试 {
 
         AssembledContext context = assembler.assemble(buildState());
 
-        assertThat(context.userPrompt())
-                .contains("历史压缩摘要")
-                .contains("上一轮用户消息")
-                .contains("草稿卡片")
-                .contains("最近产物")
-                .contains("方案摘要")
-                .contains("最近工具结果")
-                .contains("tool.search");
-        assertThat(context.tokenBudget().toolResultUsed()).isPositive();
+        assertThat(context.userPrompt()).isEqualTo("请整理一下方案");
+        assertThat(context.systemPrompt())
+                .contains("system prompt")
+                .contains("<runtime_context>")
+                .doesNotContain("上一轮用户消息")
+                .doesNotContain("tool.search")
+                .doesNotContain("草稿卡片")
+                .doesNotContain("方案摘要");
+        assertThat(context.contextMessages()).hasSize(2);
+        assertThat(context.contextMessages().getFirst().getText())
+                .contains("synthetic_context")
+                .contains("草稿卡片");
+        assertThat(context.contextMessages().getLast().getText())
+                .contains("方案摘要");
+        assertThat(context.historyMessages()).hasSize(5);
+        assertThat(context.historyMessages().get(1)).isInstanceOf(UserMessage.class);
+        assertThat(context.historyMessages().get(2)).isInstanceOf(AssistantMessage.class);
+        assertThat(context.historyMessages().get(3)).isInstanceOf(ToolResponseMessage.class);
+        assertThat(context.tokenBudget().historyUsed()).isEqualTo(42);
+        assertThat(context.tokenBudget().toolResultUsed()).isEqualTo(15);
+        assertThat(context.tokenBudget().memoryUsed()).isPositive();
         verify(contextEngine).load(any(ReactAgentState.class), anyInt());
         verify(contextEngine).recordReport(any(), any(), any(), anyInt(), anyInt());
     }

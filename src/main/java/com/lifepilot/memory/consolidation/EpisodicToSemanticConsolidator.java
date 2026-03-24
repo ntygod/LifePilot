@@ -309,14 +309,6 @@ public class EpisodicToSemanticConsolidator {
      * 纯英文名称使用词边界正则匹配，中文/混合名称使用子串匹配。
      * 正则编译失败时降级为子串匹配。
      */
-    int countMentions(String text, String name) {
-        if (name == null || name.isEmpty()) return 0;
-        if (isLatinName(name)) {
-            return countWithWordBoundary(text, name);
-        }
-        return countSubstring(text, name);
-    }
-
     /**
      * 判断名称是否为纯英文（仅含 ASCII 字母、数字、空格、连字符）。
      */

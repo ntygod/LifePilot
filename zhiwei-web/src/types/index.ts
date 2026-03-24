@@ -1180,9 +1180,9 @@ export interface PagedResult<T> {
 export interface ContextPreviewResponse {
   segments: {
     systemPrompt: { content: string; tokens: number }
-    conversationHistory: { content: string; tokens: number }
-    memoryRetrieval: { content: string; tokens: number }
-    toolResults: { content: string; tokens: number }
+    contextMessages: { content: string; tokens: number }
+    historyMessages: { content: string; tokens: number }
+    currentUserPrompt: { content: string; tokens: number }
   }
   tokenBudget: TokenBudgetData
   totalTokens: number

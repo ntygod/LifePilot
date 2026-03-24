@@ -2,7 +2,6 @@ package com.lifepilot.agent.context;
 
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.model.ReactAgentState;
-import com.lifepilot.conversation.ConversationTurnView;
 import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.config.ProviderCapability;
 import com.lifepilot.memory.config.MemoryProperties;
@@ -19,6 +18,8 @@ import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.skill.registry.SkillRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.Message;
 import org.springframework.lang.Nullable;
 
 import java.time.Duration;
@@ -42,7 +43,6 @@ public class ContextAssembler {
 
     private static final Logger log = LoggerFactory.getLogger(ContextAssembler.class);
 
-    private static final int DEFAULT_RECENT_TURN_LIMIT = 6;
     private static final int DEFAULT_WORKSPACE_PROMPT_LIMIT = 3;
     private static final Pattern TIME_HINT_PATTERN = Pattern.compile(
             "\u4eca\u5929|\u6628\u65e5|\u6628\u5929|\u6700\u8fd1\\s*\\d+|\u8fc7\u53bb\\s*\\d+|\u8fd1\\s*\\d+|\u5f53\u5929|\u672c\u5468|\u4e0a\u5468|\u672c\u6708|\u4e0a\u6708|\u5c0f\u65f6|\u5206\u949f|\u5929|\u5468|\u6708|\u5e74|\\d{4}-\\d{2}-\\d{2}|\\d{1,2}:\\d{2}");
@@ -138,48 +138,39 @@ public class ContextAssembler {
                     1024,
                     contextWindow - Math.max(0, config.getContext().getOutputReservedTokens()));
             ContextEngine.ContextSnapshot contextSnapshot = safeLoadContextSnapshot(state, totalContextTokens);
-            List<ConversationTurnView> recentTurns = contextSnapshot.recentTurns();
             List<WorkspaceItem> workspaceItems = contextSnapshot.workspaceItems();
             String userProfile = mediaPlaceholder ? "" : safeGetUserProfile(state.goal());
             List<TemporalEntity> experiences = mediaPlaceholder ? List.of() : safeRetrieveExperiences(state.goal());
             List<String> injectedIds = recordExperienceInjection(state, experiences);
-            String experienceSection = formatExperienceSection(experiences);
-            String notificationSection = formatPassiveNotificationsSection();
+            String profileSection = safeRedact(formatUserProfileSection(userProfile));
+            String notificationSection = safeRedact(formatPassiveNotificationsSection());
+            String workspaceSection = safeRedact(formatWorkspaceSection(workspaceItems));
+            String artifactSection = safeRedact(contextSnapshot.artifactSection());
+            String experienceSection = safeRedact(formatExperienceSection(experiences));
 
-            String systemPrompt = safeReactSystemPrompt(state);
-            String toolGuide = safeRenderToolGuide();
-            if (!toolGuide.isBlank()) {
-                systemPrompt = systemPrompt + "\n" + toolGuide;
-            }
-
-            String userPrompt = buildEnhancedUserPrompt(
-                    state,
-                    recentTurns,
-                    workspaceItems,
-                    contextSnapshot.compactionSection(),
-                    contextSnapshot.artifactSection(),
+            String systemPrompt = buildAugmentedSystemPrompt(state);
+            List<Message> contextMessages = buildContextMessages(
+                    profileSection,
                     notificationSection,
-                    userProfile,
-                    experienceSection,
-                    contextSnapshot.toolResultsSection()
+                    workspaceSection,
+                    artifactSection,
+                    experienceSection
             );
+            String userPrompt = buildUserPrompt(state);
 
             TokenBudget tokenBudget = buildTokenBudget(
                     totalContextTokens,
                     systemPrompt,
-                    recentTurns,
-                    workspaceItems,
-                    contextSnapshot.compactionSection(),
-                    contextSnapshot.artifactSection(),
-                    notificationSection,
-                    userProfile,
-                    experienceSection,
-                    contextSnapshot.toolResultsSection()
+                    contextSnapshot.historyTokens(),
+                    estimateContextMessageTokens(contextMessages),
+                    contextSnapshot.toolResultTokens()
             );
 
-            int workspaceTokens = estimateTokens(formatWorkspaceSection(workspaceItems));
+            int workspaceTokens = estimateTokens(workspaceSection);
             AssembledContext context = new AssembledContext(
                     systemPrompt,
+                    contextMessages,
+                    contextSnapshot.historyMessages(),
                     userPrompt,
                     List.of(),
                     tokenBudget,
@@ -202,21 +193,18 @@ public class ContextAssembler {
     }
 
     private AssembledContext buildFallbackContext(ReactAgentState state) {
-        String systemPrompt = safeReactSystemPrompt(state);
+        String systemPrompt = buildAugmentedSystemPrompt(state);
         String userPrompt = buildUserPrompt(state);
         TokenBudget budget = buildTokenBudget(
                 resolveContextBudgetTokens(state),
                 systemPrompt,
-                List.of(),
-                List.of(),
-                "",
-                "",
-                "",
-                "",
-                "",
-                "");
+                0,
+                0,
+                0);
         return new AssembledContext(
                 systemPrompt,
+                List.of(),
+                List.of(),
                 userPrompt,
                 List.of(),
                 budget,
@@ -351,52 +339,114 @@ public class ContextAssembler {
         return sb.toString();
     }
 
+    String buildAugmentedSystemPrompt(ReactAgentState state) {
+        String baseSystemPrompt = safeReactSystemPrompt(state);
+        String toolGuide = safeRenderToolGuide();
+        String runtimeSection = buildRuntimeContextSection(state);
+        return joinNonBlankSections(
+                baseSystemPrompt,
+                toolGuide,
+                runtimeSection
+        );
+    }
+
     String buildUserPrompt(ReactAgentState state) {
-        ZonedDateTime now = ZonedDateTime.now();
-        return promptRegistry.render("agent/react-user-prompt-basic", Map.of(
-                "currentDateTime", now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
-                "timezone", ZoneId.systemDefault().getId(),
-                "locale", Locale.getDefault().toLanguageTag(),
-                "userGoal", state.goal() != null ? state.goal() : "",
-                "tokensRemaining", String.valueOf(state.budget().tokensRemaining()),
-                "stepCount", String.valueOf(state.stepCount()),
-                "timeConstraintSection", buildTimeConstraintSection(state.goal(), now)
+        return promptRegistry.render("agent/react-user-prompt", Map.of(
+                "userGoal", state.goal() != null ? state.goal() : ""
         ));
     }
 
-    String buildEnhancedUserPrompt(ReactAgentState state,
-                                   List<ConversationTurnView> recentTurns,
-                                   List<WorkspaceItem> workspaceItems,
-                                   @Nullable String compactionSection,
-                                   @Nullable String artifactSection,
-                                   @Nullable String notificationSection,
-                                   @Nullable String userProfile,
-                                   @Nullable String experienceSection,
-                                   @Nullable String toolResultsSection) {
+    private String buildRuntimeContextSection(ReactAgentState state) {
         ZonedDateTime now = ZonedDateTime.now();
-        Map<String, Object> vars = new java.util.HashMap<>();
-        vars.put("currentDateTime", now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
-        vars.put("timezone", ZoneId.systemDefault().getId());
-        vars.put("locale", Locale.getDefault().toLanguageTag());
-        vars.put("userGoal", state.goal() != null ? state.goal() : "");
-        vars.put("tokensRemaining", String.valueOf(state.budget().tokensRemaining()));
-        vars.put("stepCount", String.valueOf(state.stepCount()));
+        String timeConstraintSection = buildTimeConstraintSection(state.goal(), now);
+        StringBuilder sb = new StringBuilder("""
+                <runtime_context>
+                以下是本轮运行时约束，不是新的用户消息：
+                """);
+        sb.append("\n- 当前会话: ").append(state.sessionId());
+        sb.append("\n- 当前通道: ").append(state.channel() != null ? state.channel() : "unknown");
+        sb.append("\n- Token 预算剩余: ").append(state.budget().tokensRemaining());
+        sb.append("\n- 步骤预算剩余: ").append(state.budget().stepsRemaining());
+        sb.append("\n- 时间预算剩余(秒): ").append(state.budget().durationRemaining().toSeconds());
+        sb.append("\n- 当前已执行步骤数: ").append(state.stepCount());
+        sb.append("\n</runtime_context>");
+        if (timeConstraintSection != null && !timeConstraintSection.isBlank()) {
+            sb.append("\n").append(timeConstraintSection);
+        }
+        return sb.toString();
+    }
 
-        vars.put("userProfileSection", safeRedact(formatUserProfileSection(userProfile)));
-        vars.put("passiveNotificationsSection", safeRedact(notificationSection != null ? notificationSection : ""));
-        vars.put("compactionSection", safeRedact(compactionSection != null ? compactionSection : ""));
-        vars.put("conversationHistorySection", safeRedact(formatConversationHistorySection(recentTurns)));
-        vars.put("workspaceSection", safeRedact(formatWorkspaceSection(workspaceItems)));
-        vars.put("artifactSection", safeRedact(artifactSection != null ? artifactSection : ""));
-        vars.put("memoriesSection", "");
-        vars.put("knowledgeBaseSection", "");
-        vars.put("crossSessionSection", "");
-        vars.put("toolResultsSection", safeRedact(toolResultsSection != null ? toolResultsSection : ""));
-        vars.put("reasoningContextSection", "");
-        vars.put("experienceSection", safeRedact(experienceSection != null ? experienceSection : ""));
-        vars.put("timeConstraintSection", buildTimeConstraintSection(state.goal(), now));
+    private String buildInjectedContextSection(@Nullable String profileSection,
+                                               @Nullable String notificationSection,
+                                               @Nullable String workspaceSection,
+                                               @Nullable String artifactSection,
+                                               @Nullable String experienceSection) {
+        String combinedSections = joinNonBlankSections(
+                profileSection,
+                notificationSection,
+                workspaceSection,
+                artifactSection,
+                experienceSection
+        );
+        if (combinedSections.isBlank()) {
+            return "";
+        }
+        return """
+                <injected_context>
+                以下内容由系统在当前调用前注入，用于辅助回答当前请求：
+                - 它们不是新的用户消息
+                - 仅在与当前请求相关时引用
+                - 若与最新 transcript、工具结果或当前用户请求冲突，以后者为准
+                </injected_context>
+                """.strip()
+                + "\n"
+                + combinedSections;
+    }
 
-        return promptRegistry.render("agent/react-user-prompt", vars);
+    List<Message> buildContextMessages(@Nullable String profileSection,
+                                       @Nullable String notificationSection,
+                                       @Nullable String workspaceSection,
+                                       @Nullable String artifactSection,
+                                       @Nullable String experienceSection) {
+        List<Message> messages = new ArrayList<>();
+        addContextMessage(messages, "user_profile_context", profileSection);
+        addContextMessage(messages, "notification_context", notificationSection);
+        addContextMessage(messages, "workspace_context", workspaceSection);
+        addContextMessage(messages, "artifact_context", artifactSection);
+        addContextMessage(messages, "experience_context", experienceSection);
+        return List.copyOf(messages);
+    }
+
+    private void addContextMessage(List<Message> messages,
+                                   String contextType,
+                                   @Nullable String sectionContent) {
+        if (sectionContent == null || sectionContent.isBlank()) {
+            return;
+        }
+        messages.add(new AssistantMessage("""
+                <synthetic_context type="%s">
+                以下内容由系统在当前调用前准备，用于辅助回答当前请求：
+                - 这不是新的用户消息
+                - 仅在与当前请求相关时引用
+                - 若与 transcript、工具结果或当前用户请求冲突，以后者为准
+
+                %s
+                </synthetic_context>
+                """.formatted(contextType, sectionContent.strip()).strip()));
+    }
+
+    private String joinNonBlankSections(String... sections) {
+        StringBuilder sb = new StringBuilder();
+        for (String section : sections) {
+            if (section == null || section.isBlank()) {
+                continue;
+            }
+            if (!sb.isEmpty()) {
+                sb.append("\n\n");
+            }
+            sb.append(section.strip());
+        }
+        return sb.toString();
     }
 
     private String resolveTaskMode(@Nullable ReactAgentState state) {
@@ -608,32 +658,14 @@ public class ContextAssembler {
 
     private TokenBudget buildTokenBudget(int totalTokens,
                                          String systemPrompt,
-                                         List<ConversationTurnView> recentTurns,
-                                         List<WorkspaceItem> workspaceItems,
-                                         @Nullable String compactionSection,
-                                         @Nullable String artifactSection,
-                                         @Nullable String notificationSection,
-                                         @Nullable String userProfile,
-                                         @Nullable String experienceSection,
-                                         @Nullable String toolResultsSection) {
+                                         int historyTokens,
+                                         int contextMessageTokens,
+                                         int toolResultTokens) {
         TokenBudget base = TokenBudget.allocateDefault(totalTokens, config.getContext().getTokenAllocation());
-        String conversationSection = formatConversationHistorySection(recentTurns);
-        String workspaceSection = formatWorkspaceSection(workspaceItems);
-        String profileSection = formatUserProfileSection(userProfile);
-        String compactedHistorySection = compactionSection != null ? compactionSection : "";
-        String passiveNotificationSection = notificationSection != null ? notificationSection : "";
-        String artifacts = artifactSection != null ? artifactSection : "";
-        String experiences = experienceSection != null ? experienceSection : "";
-        String toolResults = toolResultsSection != null ? toolResultsSection : "";
-
-        int systemPromptUsed = estimateTokens(systemPrompt);
-        int historyUsed = estimateTokens(conversationSection) + estimateTokens(compactedHistorySection);
-        int memoryUsed = estimateTokens(workspaceSection)
-                + estimateTokens(profileSection)
-                + estimateTokens(passiveNotificationSection)
-                + estimateTokens(artifacts)
-                + estimateTokens(experiences);
-        int toolResultUsed = estimateTokens(toolResults);
+        int systemPromptUsed = Math.max(0, estimateTokens(systemPrompt));
+        int historyUsed = historyTokens;
+        int memoryUsed = Math.max(0, contextMessageTokens);
+        int toolResultUsed = toolResultTokens;
 
         return new TokenBudget(
                 base.systemPromptBudget(),
@@ -648,6 +680,15 @@ public class ContextAssembler {
                 0,
                 toolResultUsed
         );
+    }
+
+    private int estimateContextMessageTokens(List<Message> contextMessages) {
+        if (contextMessages == null || contextMessages.isEmpty()) {
+            return 0;
+        }
+        return contextMessages.stream()
+                .mapToInt(message -> estimateTokens(message.getText()))
+                .sum();
     }
 
     private int resolveContextBudgetTokens(@Nullable ReactAgentState state) {
@@ -693,23 +734,6 @@ public class ContextAssembler {
         StringBuilder sb = new StringBuilder("\n待处理通知:\n");
         for (String line : notifications) {
             sb.append("- ").append(line).append('\n');
-        }
-        return sb.toString();
-    }
-
-    private String formatConversationHistorySection(List<ConversationTurnView> turns) {
-        if (turns == null || turns.isEmpty()) {
-            return "";
-        }
-        StringBuilder sb = new StringBuilder("\n最近对话:\n");
-        for (ConversationTurnView turn : turns.stream()
-                .sorted(Comparator.comparing(ConversationTurnView::createdAt))
-                .toList()) {
-            sb.append("[")
-                    .append(turn.role())
-                    .append("] ")
-                    .append(turn.content())
-                    .append('\n');
         }
         return sb.toString();
     }
