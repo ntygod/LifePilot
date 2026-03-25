@@ -2,11 +2,11 @@
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { CheckCircle, Clock, ShieldCheck, ShieldX, XCircle } from 'lucide-vue-next'
 import { chatApi } from '@/api/client'
-import type { ToolConfirmationRequest } from '@/types'
+import type { PermissionApprovalRequest } from '@/types'
 import { Button } from '@/components/ui/button'
 
 const props = defineProps<{
-  request: ToolConfirmationRequest
+  request: PermissionApprovalRequest
   resolved: boolean
   resolution?: 'approved' | 'rejected' | 'expired'
 }>()
@@ -16,9 +16,9 @@ const emit = defineEmits<{
 }>()
 
 const countdown = ref(60)
-const awaitingSecondConfirm = ref(false)
 const submitting = ref(false)
 const errorMessage = ref<string | null>(null)
+const selectedSubjectType = ref<string>('')
 
 let timer: ReturnType<typeof setInterval> | null = null
 
@@ -26,6 +26,16 @@ const isCritical = computed(() => props.request.riskLevel === 'CRITICAL')
 const accentColor = computed(() =>
   isCritical.value ? 'border-l-red-500' : 'border-l-orange-400',
 )
+const subjectTypeOptions = computed(() => props.request.availableSubjectTypes ?? [])
+const currentSubjectType = computed(() =>
+  selectedSubjectType.value || props.request.recommendedSubjectType || subjectTypeOptions.value[0] || 'SESSION',
+)
+const subjectTypeLabelMap: Record<string, string> = {
+  SESSION: '本会话',
+  WORKSPACE: '当前工作区',
+  TASK: '当前任务',
+  USER: '当前账号',
+}
 
 const resolutionLabel = computed(() => {
   switch (props.resolution) {
@@ -74,6 +84,7 @@ function stopCountdown() {
 function startCountdown() {
   stopCountdown()
   countdown.value = 60
+  selectedSubjectType.value = props.request.recommendedSubjectType || props.request.availableSubjectTypes?.[0] || 'SESSION'
   timer = setInterval(() => {
     countdown.value -= 1
     if (countdown.value <= 0) {
@@ -98,21 +109,20 @@ watch(
 onUnmounted(stopCountdown)
 
 async function handleConfirm() {
-  if (isCritical.value && !awaitingSecondConfirm.value) {
-    awaitingSecondConfirm.value = true
-    return
-  }
-
   submitting.value = true
   errorMessage.value = null
 
   try {
-    await chatApi.respondToolConfirmation(props.request.requestId, true)
+    await chatApi.respondPermissionApproval(
+      props.request.requestId,
+      true,
+      currentSubjectType.value,
+    )
     stopCountdown()
     emit('resolve', 'approved')
   } catch (error) {
     if (error && typeof error === 'object' && 'code' in error && (error as { code: number }).code === 404) {
-      errorMessage.value = '确认请求已失效'
+      errorMessage.value = '授权请求已失效'
       setTimeout(() => emit('resolve', 'expired'), 1500)
     } else {
       errorMessage.value = '网络异常，请稍后重试'
@@ -127,12 +137,16 @@ async function handleReject() {
   errorMessage.value = null
 
   try {
-    await chatApi.respondToolConfirmation(props.request.requestId, false)
+    await chatApi.respondPermissionApproval(
+      props.request.requestId,
+      false,
+      currentSubjectType.value,
+    )
     stopCountdown()
     emit('resolve', 'rejected')
   } catch (error) {
     if (error && typeof error === 'object' && 'code' in error && (error as { code: number }).code === 404) {
-      errorMessage.value = '确认请求已失效'
+      errorMessage.value = '授权请求已失效'
       setTimeout(() => emit('resolve', 'expired'), 1500)
     } else {
       errorMessage.value = '网络异常，请稍后重试'
@@ -154,7 +168,7 @@ async function handleReject() {
         :class="['size-4 shrink-0', resolved ? 'text-muted-foreground' : (isCritical ? 'text-red-500' : 'text-orange-500')]"
       />
       <span class="font-medium">{{ request.toolName }}</span>
-      <span class="text-[11px] text-muted-foreground">需要确认</span>
+      <span class="text-[11px] text-muted-foreground">需要授权</span>
 
       <div v-if="resolved" class="ml-auto flex items-center gap-1 text-xs" :class="resolutionColor">
         <component :is="resolutionIcon" class="size-3" />
@@ -166,11 +180,8 @@ async function handleReject() {
       </div>
     </div>
 
-    <div
-      v-if="awaitingSecondConfirm && !resolved"
-      class="mt-2 text-xs text-red-600 dark:text-red-400"
-    >
-      高风险操作，请再次点击确认。
+    <div class="mt-2 text-xs text-muted-foreground">
+      {{ request.message }}
     </div>
 
     <div
@@ -178,6 +189,24 @@ async function handleReject() {
       class="mt-2 text-xs text-destructive"
     >
       {{ errorMessage }}
+    </div>
+
+    <div
+      v-if="!resolved && subjectTypeOptions.length > 0"
+      class="mt-3 flex flex-wrap gap-2"
+    >
+      <Button
+        v-for="subjectType in subjectTypeOptions"
+        :key="subjectType"
+        type="button"
+        size="sm"
+        :variant="currentSubjectType === subjectType ? 'default' : 'outline'"
+        class="h-7 px-2.5 text-xs"
+        :disabled="submitting"
+        @click="selectedSubjectType = subjectType"
+      >
+        {{ subjectTypeLabelMap[subjectType] ?? subjectType }}
+      </Button>
     </div>
 
     <div v-if="!resolved" class="mt-2 flex items-center gap-2">
@@ -197,7 +226,7 @@ async function handleReject() {
         :disabled="submitting"
         @click="handleConfirm"
       >
-        {{ awaitingSecondConfirm ? '再次确认' : '允许执行' }}
+        允许执行
       </Button>
     </div>
   </div>

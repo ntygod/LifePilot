@@ -12,7 +12,7 @@ interface BackendAttachment {
 type BackendMessageLike = {
   id: string
   turnId?: string | null
-  role: 'user' | 'assistant' | 'tool-confirmation'
+  role: 'user' | 'assistant' | 'permission-approval'
   content: string
   a2uiComponents?: unknown
   timestamp: string | number
@@ -83,24 +83,36 @@ export function mapBackendMessage(message: BackendMessageLike): Message {
       }))
     : undefined
 
-  // 工具确认消息的 content 是 JSON，需要解析成前端可消费的确认结构。
-  if (message.role === 'tool-confirmation') {
+  // 权限审批消息的 content 是 JSON，需要解析成前端可消费的审批结构。
+  if (message.role === 'permission-approval') {
     try {
       const parsed = JSON.parse(message.content) as {
         requestId: string
         toolId: string
         toolName: string
+        actionType?: string
         riskLevel: string
-        message: string
-        resolution: string
+        approved?: boolean
+        subjectType?: string | null
+        reason?: string | null
+        resourceScope?: Record<string, unknown> | null
       }
-      const toolConfirmation = {
+      const resolution = parsed.approved === true
+        ? 'approved'
+        : (parsed.reason === '审批超时' ? 'expired' : 'rejected')
+      const approvalMessage = parsed.approved === true
+        ? `已授权 ${parsed.toolName} 执行 ${parsed.actionType ?? '操作'}`
+        : `未授权 ${parsed.toolName} 执行 ${parsed.actionType ?? '操作'}`
+      const permissionApproval = {
         requestId: parsed.requestId,
         toolId: parsed.toolId,
         toolName: parsed.toolName,
+        actionType: parsed.actionType ?? 'GENERIC_TOOL_OPERATION',
         riskLevel: parsed.riskLevel as 'HIGH' | 'CRITICAL',
-        approvalMode: '',
-        message: parsed.message,
+        message: approvalMessage,
+        availableSubjectTypes: parsed.subjectType ? [parsed.subjectType] : [],
+        recommendedSubjectType: parsed.subjectType ?? 'SESSION',
+        resourceScope: parsed.resourceScope ?? undefined,
         timestamp: typeof message.timestamp === 'string'
           ? message.timestamp
           : new Date(message.timestamp).toISOString(),
@@ -108,13 +120,11 @@ export function mapBackendMessage(message: BackendMessageLike): Message {
       return {
         id: message.id,
         turnId: message.turnId ?? undefined,
-        role: 'tool-confirmation',
-        content: parsed.message || '该工具需要你的确认后才能执行。',
+        role: 'permission-approval',
+        content: approvalMessage,
         timestamp: parseMessageTimestamp(message.timestamp),
-        toolConfirmations: { [parsed.requestId]: toolConfirmation },
-        toolConfirmationResolutions: parsed.resolution
-          ? { [parsed.requestId]: parsed.resolution as 'approved' | 'rejected' | 'expired' }
-          : undefined,
+        permissionApprovals: { [parsed.requestId]: permissionApproval },
+        permissionApprovalResolutions: { [parsed.requestId]: resolution },
       }
     } catch {
       // JSON 解析失败时，回退为普通消息展示。

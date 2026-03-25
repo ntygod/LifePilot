@@ -48,9 +48,9 @@ const {
   streamingReactSteps,
   streamingA2uiComponents,
   activeInteraction,
-  pendingToolConfirmations,
-  pendingToolConfirmationResolutions,
-  resolveToolConfirmation,
+  pendingPermissionApprovals,
+  pendingPermissionApprovalResolutions,
+  resolvePermissionApproval,
 } = useChat()
 
 const scrollContainer = ref<HTMLElement | null>(null)
@@ -547,8 +547,8 @@ function togglePanel(panel: 'config' | 'sidebar' | 'debug') {
             :streaming-reasoning-events="reasoningEvents"
             :streaming-react-steps="streamingReactSteps"
             :streaming-a2ui-components="streamingA2uiComponents"
-            :streaming-tool-confirmations="pendingToolConfirmations"
-            :streaming-tool-confirmation-resolutions="pendingToolConfirmationResolutions"
+            :streaming-permission-approvals="pendingPermissionApprovals"
+            :streaming-permission-approval-resolutions="pendingPermissionApprovalResolutions"
             :query="searchQuery"
             @retry="handleRetry"
             @like="handleLike"
@@ -558,7 +558,7 @@ function togglePanel(panel: 'config' | 'sidebar' | 'debug') {
             @resume="handleResume"
             @restart="handleRestart"
             @copy="handleCopy"
-            @tool-confirm-resolve="resolveToolConfirmation"
+            @permission-approval-resolve="resolvePermissionApproval"
           />
         </div>
       </div>

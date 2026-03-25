@@ -17,7 +17,7 @@ import type {
   SseMediaEvent,
   SseTokenEvent,
   TokenUsage,
-  ToolConfirmationRequest,
+  PermissionApprovalRequest,
 } from '@/types'
 
 type SessionConfig = {
@@ -50,8 +50,8 @@ export function useChat() {
   const reasoningStatusText = ref<string | null>(null)
   const streamingReactSteps = ref<ReactStepDto[]>([])
   const streamingMedia = ref<SseMediaEvent[]>([])
-  const pendingToolConfirmations = ref<Map<string, ToolConfirmationRequest>>(new Map())
-  const pendingToolConfirmationResolutions = ref<Map<string, 'approved' | 'rejected' | 'expired'>>(new Map())
+  const pendingPermissionApprovals = ref<Map<string, PermissionApprovalRequest>>(new Map())
+  const pendingPermissionApprovalResolutions = ref<Map<string, 'approved' | 'rejected' | 'expired'>>(new Map())
   const activeInteraction = ref<SseInteractionEvent | null>(null)
   const interactionSubmitting = ref(false)
   const interactionError = ref<string | null>(null)
@@ -247,8 +247,8 @@ export function useChat() {
     reasoningStatusText.value = null
     streamingReactSteps.value = []
     streamingMedia.value = []
-    pendingToolConfirmations.value = new Map()
-    pendingToolConfirmationResolutions.value = new Map()
+    pendingPermissionApprovals.value = new Map()
+    pendingPermissionApprovalResolutions.value = new Map()
     activeInteraction.value = null
     interactionSubmitting.value = false
     interactionError.value = null
@@ -400,11 +400,11 @@ export function useChat() {
             reactSteps: event.reactSteps?.length
               ? event.reactSteps
               : (streamingReactSteps.value.length > 0 ? [...streamingReactSteps.value] : undefined),
-            toolConfirmations: pendingToolConfirmations.value.size > 0
-              ? Object.fromEntries(pendingToolConfirmations.value)
+            permissionApprovals: pendingPermissionApprovals.value.size > 0
+              ? Object.fromEntries(pendingPermissionApprovals.value)
               : undefined,
-            toolConfirmationResolutions: pendingToolConfirmationResolutions.value.size > 0
-              ? Object.fromEntries(pendingToolConfirmationResolutions.value)
+            permissionApprovalResolutions: pendingPermissionApprovalResolutions.value.size > 0
+              ? Object.fromEntries(pendingPermissionApprovalResolutions.value)
               : undefined,
           }
 
@@ -490,9 +490,9 @@ export function useChat() {
         }
         case SSE_EVENT_TYPES.HEARTBEAT:
           break
-        case SSE_EVENT_TYPES.TOOL_CONFIRMATION_REQUEST: {
-          const payload: ToolConfirmationRequest = JSON.parse(data)
-          pendingToolConfirmations.value.set(payload.requestId, payload)
+        case SSE_EVENT_TYPES.PERMISSION_APPROVAL_REQUEST: {
+          const payload: PermissionApprovalRequest = JSON.parse(data)
+          pendingPermissionApprovals.value.set(payload.requestId, payload)
           break
         }
         case SSE_EVENT_TYPES.INTERACTION: {
@@ -755,11 +755,11 @@ export function useChat() {
         const attachments = buildStreamingAttachments(undefined)
         return attachments.length > 0 ? attachments : undefined
       })(),
-      toolConfirmations: pendingToolConfirmations.value.size > 0
-        ? Object.fromEntries(pendingToolConfirmations.value)
+      permissionApprovals: pendingPermissionApprovals.value.size > 0
+        ? Object.fromEntries(pendingPermissionApprovals.value)
         : undefined,
-      toolConfirmationResolutions: pendingToolConfirmationResolutions.value.size > 0
-        ? Object.fromEntries(pendingToolConfirmationResolutions.value)
+      permissionApprovalResolutions: pendingPermissionApprovalResolutions.value.size > 0
+        ? Object.fromEntries(pendingPermissionApprovalResolutions.value)
         : undefined,
       errorMessage: options.terminationReason,
       suspendReasonType: options.suspendReasonType,
@@ -1042,9 +1042,9 @@ export function useChat() {
     a2uiStore.clearComponents()
   }
 
-  function resolveToolConfirmation(requestId: string, resolution: 'approved' | 'rejected' | 'expired') {
-    pendingToolConfirmationResolutions.value.set(requestId, resolution)
-    pendingToolConfirmations.value.delete(requestId)
+  function resolvePermissionApproval(requestId: string, resolution: 'approved' | 'rejected' | 'expired') {
+    pendingPermissionApprovalResolutions.value.set(requestId, resolution)
+    pendingPermissionApprovals.value.delete(requestId)
   }
 
   function mapToRecord<K, V>(map: Map<K, V>): Record<string, V> {
@@ -1074,8 +1074,8 @@ export function useChat() {
     interactionError,
     submitInteraction,
     cancelInteraction,
-    pendingToolConfirmations: computed(() => mapToRecord(pendingToolConfirmations.value)),
-    pendingToolConfirmationResolutions: computed(() => mapToRecord(pendingToolConfirmationResolutions.value)),
-    resolveToolConfirmation,
+    pendingPermissionApprovals: computed(() => mapToRecord(pendingPermissionApprovals.value)),
+    pendingPermissionApprovalResolutions: computed(() => mapToRecord(pendingPermissionApprovalResolutions.value)),
+    resolvePermissionApproval,
   }
 }

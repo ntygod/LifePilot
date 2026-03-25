@@ -170,6 +170,11 @@ const router = createRouter({
       name: 'settingsChannels',
       component: () => import('@/views/SettingsView.vue')
     },
+    {
+      path: '/settings/permissions',
+      name: 'settingsPermissions',
+      component: () => import('@/views/SettingsView.vue')
+    },
 
     /**
      * Eval / 评估

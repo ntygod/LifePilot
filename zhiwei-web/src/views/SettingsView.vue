@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Cpu, Database, Palette, Radio } from 'lucide-vue-next'
+import { Cpu, Database, Palette, Radio, ShieldCheck } from 'lucide-vue-next'
 import MetricCard from '@/components/common/MetricCard.vue'
 import PageContainer from '@/components/layout/PageContainer.vue'
 import PageHeader from '@/components/layout/PageHeader.vue'
@@ -15,6 +15,7 @@ import SettingsChannelsView from '@/views/SettingsChannelsView.vue'
 import SettingsGeneralView from '@/views/SettingsGeneralView.vue'
 import SettingsKnowledgeView from '@/views/SettingsKnowledgeView.vue'
 import SettingsModelsView from '@/views/SettingsModelsView.vue'
+import SettingsPermissionsView from '@/views/SettingsPermissionsView.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -26,6 +27,7 @@ const viewMap: Record<string, Component> = {
   '/settings/models': SettingsModelsView,
   '/settings/knowledge': SettingsKnowledgeView,
   '/settings/channels': SettingsChannelsView,
+  '/settings/permissions': SettingsPermissionsView,
 }
 
 const navigationItems = [
@@ -52,6 +54,12 @@ const navigationItems = [
     label: '集成渠道',
     description: '飞书、企微、钉钉等渠道的凭据与开关配置。',
     icon: Radio,
+  },
+  {
+    path: '/settings/permissions',
+    label: '授权与自动执行',
+    description: '管理工具授权、无人值守范围和高风险操作审批记录。',
+    icon: ShieldCheck,
   },
 ] as const
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { FileText, Mic } from 'lucide-vue-next'
-import type { A2uiComponent, Message, ReasoningEvent, ReactStepDto, ToolConfirmationRequest } from '@/types'
+import type { A2uiComponent, Message, ReasoningEvent, ReactStepDto, PermissionApprovalRequest } from '@/types'
 import A2uiRenderer from '@/components/a2ui/A2uiRenderer.vue'
 import {
   Dialog,
@@ -16,7 +16,7 @@ import ReasoningTimeline from './ReasoningTimeline.vue'
 import ReactStepTimeline from './ReactStepTimeline.vue'
 import StreamingText from './StreamingText.vue'
 import ToolCallCard from './ToolCallCard.vue'
-import ToolConfirmationBubble from './ToolConfirmationBubble.vue'
+import PermissionApprovalBubble from './PermissionApprovalBubble.vue'
 
 const props = defineProps<{
   message: Message
@@ -26,8 +26,8 @@ const props = defineProps<{
   streamingReactSteps?: ReactStepDto[]
   isLastAssistant?: boolean
   streamingA2uiComponents?: A2uiComponent[]
-  streamingToolConfirmations?: Record<string, ToolConfirmationRequest>
-  streamingToolConfirmationResolutions?: Record<string, 'approved' | 'rejected' | 'expired'>
+  streamingPermissionApprovals?: Record<string, PermissionApprovalRequest>
+  streamingPermissionApprovalResolutions?: Record<string, 'approved' | 'rejected' | 'expired'>
 }>()
 
 const emit = defineEmits<{
@@ -39,7 +39,7 @@ const emit = defineEmits<{
   (e: 'resume', message: Message): void
   (e: 'restart', message: Message): void
   (e: 'copy', content: string): void
-  (e: 'tool-confirm-resolve', requestId: string, resolution: 'approved' | 'rejected' | 'expired'): void
+  (e: 'permission-approval-resolve', requestId: string, resolution: 'approved' | 'rejected' | 'expired'): void
 }>()
 
 const collapsed = ref(props.message.collapsed ?? shouldCollapse(props.message.content))
@@ -127,17 +127,17 @@ const activeReasoningEvents = computed<ReasoningEvent[]>(() => {
   return props.message.reasoningEvents ?? []
 })
 
-const activeToolConfirmations = computed<Record<string, ToolConfirmationRequest>>(() => ({
-  ...(props.message.toolConfirmations ?? {}),
-  ...(props.streamingToolConfirmations ?? {}),
+const activePermissionApprovals = computed<Record<string, PermissionApprovalRequest>>(() => ({
+  ...(props.message.permissionApprovals ?? {}),
+  ...(props.streamingPermissionApprovals ?? {}),
 }))
 
-const activeToolConfirmationResolutions = computed<Record<string, 'approved' | 'rejected' | 'expired'>>(() => ({
-  ...(props.message.toolConfirmationResolutions ?? {}),
-  ...(props.streamingToolConfirmationResolutions ?? {}),
+const activePermissionApprovalResolutions = computed<Record<string, 'approved' | 'rejected' | 'expired'>>(() => ({
+  ...(props.message.permissionApprovalResolutions ?? {}),
+  ...(props.streamingPermissionApprovalResolutions ?? {}),
 }))
 
-const pendingConfirmations = computed(() => Object.entries(activeToolConfirmations.value))
+const pendingApprovals = computed(() => Object.entries(activePermissionApprovals.value))
 </script>
 
 <template>
@@ -199,16 +199,16 @@ const pendingConfirmations = computed(() => Object.entries(activeToolConfirmatio
 
           <template v-else>
             <div
-              v-if="pendingConfirmations.length > 0"
+              v-if="pendingApprovals.length > 0"
               class="mb-2 flex flex-col gap-2"
             >
-              <ToolConfirmationBubble
-                v-for="[requestId, request] in pendingConfirmations"
+              <PermissionApprovalBubble
+                v-for="[requestId, request] in pendingApprovals"
                 :key="requestId"
                 :request="request"
-                :resolved="!!activeToolConfirmationResolutions[requestId]"
-                :resolution="activeToolConfirmationResolutions[requestId]"
-                @resolve="(resolution: 'approved' | 'rejected' | 'expired') => emit('tool-confirm-resolve', requestId, resolution)"
+                :resolved="!!activePermissionApprovalResolutions[requestId]"
+                :resolution="activePermissionApprovalResolutions[requestId]"
+                @resolve="(resolution: 'approved' | 'rejected' | 'expired') => emit('permission-approval-resolve', requestId, resolution)"
               />
             </div>
 

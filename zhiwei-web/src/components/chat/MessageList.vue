@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { A2uiComponent, Message, ReasoningEvent, ReactStepDto, ToolConfirmationRequest } from '@/types'
+import type { A2uiComponent, Message, ReasoningEvent, ReactStepDto, PermissionApprovalRequest } from '@/types'
 import MessageBubble from './MessageBubble.vue'
 import { motion } from 'motion-v'
 
@@ -16,10 +16,10 @@ const props = defineProps<{
   streamingReactSteps?: ReactStepDto[]
   /** 流式阶段中的 A2UI 组件树。 */
   streamingA2uiComponents?: A2uiComponent[]
-  /** 流式阶段中的工具确认请求。 */
-  streamingToolConfirmations?: Record<string, ToolConfirmationRequest>
-  /** 流式阶段中的工具确认结果。 */
-  streamingToolConfirmationResolutions?: Record<string, 'approved' | 'rejected' | 'expired'>
+  /** 流式阶段中的权限审批请求。 */
+  streamingPermissionApprovals?: Record<string, PermissionApprovalRequest>
+  /** 流式阶段中的权限审批结果。 */
+  streamingPermissionApprovalResolutions?: Record<string, 'approved' | 'rejected' | 'expired'>
   /** 文本搜索关键字，用于高亮匹配内容。 */
   query?: string
 }>()
@@ -33,19 +33,19 @@ const emit = defineEmits<{
   (e: 'resume', message: Message): void
   (e: 'restart', message: Message): void
   (e: 'copy', content: string): void
-  (e: 'tool-confirm-resolve', requestId: string, resolution: 'approved' | 'rejected' | 'expired'): void
+  (e: 'permission-approval-resolve', requestId: string, resolution: 'approved' | 'rejected' | 'expired'): void
 }>()
 
 /**
  * 合并后的消息列表。
- * `tool-confirmation` 条目会并入上一条 assistant 消息，避免单独渲染成独立气泡。
+ * `permission-approval` 条目会并入上一条 assistant 消息，避免单独渲染成独立气泡。
  */
 const mergedMessages = computed(() => {
   const sorted = [...props.messages].sort((a, b) => a.timestamp - b.timestamp)
   const result: Message[] = []
 
   for (const msg of sorted) {
-    if (msg.role === 'tool-confirmation' && msg.toolConfirmations) {
+    if (msg.role === 'permission-approval' && msg.permissionApprovals) {
       const assistantIndex = [...result].reverse().findIndex(item =>
         item.role === 'assistant' && item.turnId && item.turnId === msg.turnId,
       )
@@ -54,13 +54,13 @@ const mergedMessages = computed(() => {
         const targetIndex = result.length - 1 - assistantIndex
         result[targetIndex] = {
           ...result[targetIndex],
-          toolConfirmations: {
-            ...(result[targetIndex].toolConfirmations ?? {}),
-            ...msg.toolConfirmations,
+          permissionApprovals: {
+            ...(result[targetIndex].permissionApprovals ?? {}),
+            ...msg.permissionApprovals,
           },
-          toolConfirmationResolutions: {
-            ...(result[targetIndex].toolConfirmationResolutions ?? {}),
-            ...(msg.toolConfirmationResolutions ?? {}),
+          permissionApprovalResolutions: {
+            ...(result[targetIndex].permissionApprovalResolutions ?? {}),
+            ...(msg.permissionApprovalResolutions ?? {}),
           },
         }
         continue
@@ -129,8 +129,8 @@ function highlight(text: string): string {
           :streaming-reasoning-events="(isStreaming && index === mergedMessages.length - 1 && msg.role === 'assistant') ? streamingReasoningEvents : undefined"
           :streaming-react-steps="(isStreaming && index === mergedMessages.length - 1 && msg.role === 'assistant') ? streamingReactSteps : undefined"
           :streaming-a2ui-components="(isStreaming && index === mergedMessages.length - 1 && msg.role === 'assistant') ? streamingA2uiComponents : undefined"
-          :streaming-tool-confirmations="(isStreaming && index === mergedMessages.length - 1 && msg.role === 'assistant') ? streamingToolConfirmations : undefined"
-          :streaming-tool-confirmation-resolutions="(isStreaming && index === mergedMessages.length - 1 && msg.role === 'assistant') ? streamingToolConfirmationResolutions : undefined"
+          :streaming-permission-approvals="(isStreaming && index === mergedMessages.length - 1 && msg.role === 'assistant') ? streamingPermissionApprovals : undefined"
+          :streaming-permission-approval-resolutions="(isStreaming && index === mergedMessages.length - 1 && msg.role === 'assistant') ? streamingPermissionApprovalResolutions : undefined"
           :is-last-assistant="msg.id === lastAssistantId"
           @retry="(m: Message) => emit('retry', m)"
           @like="(m: Message) => emit('like', m)"
@@ -140,7 +140,7 @@ function highlight(text: string): string {
           @resume="(m: Message) => emit('resume', m)"
           @restart="(m: Message) => emit('restart', m)"
           @copy="(c: string) => emit('copy', c)"
-          @tool-confirm-resolve="(requestId: string, r: 'approved' | 'rejected' | 'expired') => emit('tool-confirm-resolve', requestId, r)"
+          @permission-approval-resolve="(requestId: string, r: 'approved' | 'rejected' | 'expired') => emit('permission-approval-resolve', requestId, r)"
         />
       </MotionDiv>
     </template>
@@ -158,9 +158,9 @@ function highlight(text: string): string {
         :streaming-reasoning-events="streamingReasoningEvents"
         :streaming-react-steps="streamingReactSteps"
         :streaming-a2ui-components="streamingA2uiComponents"
-        :streaming-tool-confirmations="streamingToolConfirmations"
-        :streaming-tool-confirmation-resolutions="streamingToolConfirmationResolutions"
-        @tool-confirm-resolve="(requestId: string, r: 'approved' | 'rejected' | 'expired') => emit('tool-confirm-resolve', requestId, r)"
+        :streaming-permission-approvals="streamingPermissionApprovals"
+        :streaming-permission-approval-resolutions="streamingPermissionApprovalResolutions"
+        @permission-approval-resolve="(requestId: string, r: 'approved' | 'rejected' | 'expired') => emit('permission-approval-resolve', requestId, r)"
       />
     </MotionDiv>
   </div>

@@ -56,7 +56,7 @@
   ToolAnalyticsResponse,
   ErrorTrendDaily,
   McpConnectionLog,
-  // 宸ヤ綔娴佹垚鐔熷寲鏂板绫诲瀷
+  // 工作流成熟化新增类型
   WorkflowStats,
   StepStats,
   DailyTrend,
@@ -70,10 +70,10 @@
   StepTypeSchema,
   ParamSchema,
   OptionItem,
-  // 閫氱煡涓績绫诲瀷
+  // 通知中心类型
   NotificationItem,
   SseInteractionEvent,
-  // 璁板繂绠＄悊绫诲瀷
+  // 记忆管理类型
   MemoryStats,
   MemorySearchResult,
   EntitySummary,
@@ -90,14 +90,16 @@
   TemplateListParams,
   PreferenceRule,
   ForgettingLog,
-  ForgettingLogListParams
+  ForgettingLogListParams,
+  PermissionGrant,
+  PermissionGrantCreateRequest
 } from '@/types'
 import { mapBackendMessage } from '@/utils/a2ui'
 
-// API 鍩虹璺緞锛堝紑鍙戠幆澧冮€氳繃 Vite proxy 杞彂锛?
+// API 基础路径（开发环境通过 Vite proxy 转发）
 const BASE = '/api'
 
-/** 缃戠粶閿欒绫?*/
+/** 网络错误类 */
 export class NetworkError extends Error {
   constructor(message = '网络连接失败') {
     super(message)
@@ -105,7 +107,7 @@ export class NetworkError extends Error {
   }
 }
 
-/** 瓒呮椂閿欒绫?*/
+/** 超时错误类 */
 export class TimeoutError extends Error {
   constructor(message = '请求超时') {
     super(message)
@@ -113,7 +115,7 @@ export class TimeoutError extends Error {
   }
 }
 
-/** 缁熶竴 HTTP 璇锋眰灏佽锛岄潪 2xx 鎶涘嚭鍖呭惈 ErrorResponse 鐨勫紓甯?*/
+/** 统一 HTTP 请求封装，非 2xx 抛出包含 ErrorResponse 的异常 */
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   try {
     const res = await fetch(`${BASE}${url}`, {
@@ -129,17 +131,17 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
       }
       throw error
     }
-    // 204 No Content 鏃犲搷搴斾綋
+    // 204 No Content 无响应体
     if (res.status === 204) return undefined as T
-    // 妫€鏌ュ搷搴斾綋鏄惁涓虹┖
+    // 检查响应体是否为空
     const contentType = res.headers.get('content-type')
     if (!contentType || !contentType.includes('application/json')) {
-      // 濡傛灉涓嶆槸 JSON锛屽皾璇曡鍙栨枃鏈?
+      // 如果不是 JSON，尝试读取文本
       const text = await res.text()
       if (!text || text.trim() === '') {
         return undefined as T
       }
-      // 灏濊瘯瑙ｆ瀽涓?JSON
+      // 尝试解析为 JSON
       try {
         return JSON.parse(text) as T
       } catch {
@@ -164,9 +166,9 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   }
 }
 
-/** 瀵硅瘽鐩稿叧 API */
+/** 对话相关 API */
 export const chatApi = {
-  /** 闈炴祦寮忓彂閫佹秷鎭?*/
+  /** 非流式发送消息 */
   sendMessage(
     content: string,
     sessionId?: string,
@@ -181,8 +183,8 @@ export const chatApi = {
   },
 
   /**
-   * 娴佸紡鍙戦€佹秷鎭紝杩斿洖 ReadableStream 鐢ㄤ簬 SSE 瑙ｆ瀽銆?
-   * 璋冪敤鏂归€氳繃 ReadableStream 閫愯璇诲彇 SSE 浜嬩欢銆?
+   * 流式发送消息，返回 ReadableStream 用于 SSE 解析。
+   * 调用方通过 ReadableStream 逐行读取 SSE 事件。
    */
   async sendMessageStream(
     content: string,
@@ -204,7 +206,7 @@ export const chatApi = {
     return res.body
   },
 
-  /** 鍒涘缓浼氳瘽 */
+  /** 创建会话 */
   createSession(title?: string): Promise<ChatSession> {
     return request('/chat/sessions', {
       method: 'POST',
@@ -212,17 +214,17 @@ export const chatApi = {
     })
   },
 
-  /** 鑾峰彇浼氳瘽鍒楄〃 */
+  /** 获取会话列表 */
   listSessions(): Promise<ChatSession[]> {
     return request('/chat/sessions')
   },
 
-  /** 鑾峰彇浼氳瘽鍘嗗彶娑堟伅 */
+  /** 获取会话历史消息 */
   async getSessionMessages(sessionId: string): Promise<Message[]> {
     const messages = await request<Array<{
       id: string
       turnId?: string | null
-      role: 'user' | 'assistant' | 'tool-confirmation'
+      role: 'user' | 'assistant' | 'permission-approval'
       content: string
       a2uiComponents?: unknown
       timestamp: string | number
@@ -240,12 +242,12 @@ export const chatApi = {
     return messages.map(mapBackendMessage)
   },
 
-  /** 鑾峰彇浼氳瘽璇︽儏 */
+  /** 获取会话详情 */
   getSession(sessionId: string): Promise<ChatSessionDetail> {
     return request(`/chat/sessions/${sessionId}`)
   },
 
-  /** 鏇存柊浼氳瘽锛堟爣棰樸€佺疆椤躲€佸綊妗ｇ瓑锛?*/
+  /** 更新会话（标题、置顶、归档等） */
   updateSession(sessionId: string, updates: { title?: string; pinned?: boolean; archived?: boolean }): Promise<ChatSession> {
     return request(`/chat/sessions/${sessionId}`, {
       method: 'PATCH',
@@ -254,9 +256,9 @@ export const chatApi = {
   },
 
   /**
-   * 鏇存柊浼氳瘽閰嶇疆锛堟ā鍨?娓╁害/涓夌淮棰勭畻/鍏宠仈鐭ヨ瘑搴擄級銆?
+   * 更新会话配置（模型/温度/三维预算/关联知识库）。
    *
-   * 娉ㄦ剰锛氱煡璇嗗簱鍏宠仈浼氬奖鍝嶅悗绔湪鐢熸垚鍥炵瓟鍓嶇殑妫€绱笂涓嬫枃娉ㄥ叆锛堣嫢宸插惎鐢級銆?
+   * 注意：知识库关联会影响后端在生成回答前的检索上下文注入（若已启用）。
    */
   updateSessionConfig(
     sessionId: string,
@@ -275,17 +277,17 @@ export const chatApi = {
     })
   },
 
-  /** 鍒犻櫎浼氳瘽 */
+  /** 删除会话 */
   deleteSession(sessionId: string): Promise<void> {
     return request(`/chat/sessions/${sessionId}`, { method: 'DELETE' })
   },
 
-  /** 娓呯┖浼氳瘽娑堟伅 */
+  /** 清空会话消息 */
   clearSessionMessages(sessionId: string): Promise<void> {
     return request(`/chat/sessions/${sessionId}/clear`, { method: 'POST' })
   },
 
-  /** 鎻愪氦鏉＄洰鍙嶉锛堢偣璧?鐐硅俯锛?*/
+  /** 提交条目反馈（点赞/点踩） */
   submitFeedback(
     entryId: string,
     type: 'like' | 'dislike',
@@ -297,7 +299,7 @@ export const chatApi = {
     })
   },
 
-  /** 鍒嗗弶浼氳瘽锛堜粠鎸囧畾鏉＄洰澶勫垱寤烘柊浼氳瘽锛?*/
+  /** 分叉会话（从指定条目处创建新会话） */
   forkSession(
     sessionId: string,
     fromEntryId?: string
@@ -308,7 +310,7 @@ export const chatApi = {
     })
   },
 
-  /** A2UI 淇″彿鍥炰紶 */
+  /** A2UI 信号回传 */
   sendSignal(name: string, payload: Record<string, unknown>, sessionId: string): Promise<ChatResponse> {
     return request('/chat/signals', {
       method: 'POST',
@@ -316,11 +318,16 @@ export const chatApi = {
     })
   },
 
-  /** 宸ュ叿纭鍝嶅簲 */
-  respondToolConfirmation(requestId: string, confirmed: boolean, reason?: string): Promise<void> {
-    return request(`/chat/tool-confirmations/${requestId}`, {
+  /** 权限审批响应 */
+  respondPermissionApproval(
+    requestId: string,
+    approved: boolean,
+    subjectType: string,
+    reason?: string,
+  ): Promise<void> {
+    return request(`/permissions/approvals/${requestId}`, {
       method: 'POST',
-      body: JSON.stringify({ requestId, confirmed, reason })
+      body: JSON.stringify({ requestId, approved, subjectType, reason })
     })
   },
 
@@ -340,9 +347,9 @@ export const chatApi = {
   },
 
   /**
-   * 涓婁紶鍗曚釜娑堟伅闄勪欢锛堝浘鐗?鏂囦欢锛夈€?
+   * 上传单个消息附件（图片/文件）。
    *
-   * 浣跨敤 multipart/form-data锛屽皢鏂囦欢浜岃繘鍒朵氦缁欏悗绔瓨鍌紝杩斿洖鏂囦欢 ID 鍜岃闂?URL 绛変俊鎭€?
+   * 使用 multipart/form-data，将文件二进制交给后端存储，返回文件 ID 和访问 URL 等信息。
    */
   async uploadAttachment(file: File, sessionId?: string): Promise<ChatAttachment> {
     const form = new FormData()
@@ -384,6 +391,49 @@ export const chatApi = {
       type: data.type,
       isImage
     }
+  }
+}
+
+/** 权限授权相关 API */
+export const permissionApi = {
+  listGrants(params?: {
+    activeOnly?: boolean
+    subjectType?: 'SESSION' | 'WORKSPACE' | 'TASK' | 'USER'
+    subjectId?: string
+  }): Promise<PermissionGrant[]> {
+    const search = new URLSearchParams()
+    if (params?.activeOnly != null) {
+      search.set('activeOnly', String(params.activeOnly))
+    }
+    if (params?.subjectType) {
+      search.set('subjectType', params.subjectType)
+    }
+    if (params?.subjectId) {
+      search.set('subjectId', params.subjectId)
+    }
+    const query = search.toString()
+    return request(`/permissions/grants${query ? `?${query}` : ''}`)
+  },
+
+  createGrant(payload: PermissionGrantCreateRequest): Promise<PermissionGrant> {
+    return request('/permissions/grants', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  },
+
+  revokeGrant(grantId: string, options?: { revokedBy?: string; reason?: string }): Promise<void> {
+    const search = new URLSearchParams()
+    if (options?.revokedBy) {
+      search.set('revokedBy', options.revokedBy)
+    }
+    if (options?.reason) {
+      search.set('reason', options.reason)
+    }
+    const query = search.toString()
+    return request(`/permissions/grants/${grantId}${query ? `?${query}` : ''}`, {
+      method: 'DELETE'
+    })
   }
 }
 
@@ -454,26 +504,26 @@ export interface RerankRoutingSettingsRequest {
   memoryTopK?: number
 }
 
-/** 璁剧疆鐩稿叧 API */
+/** 设置相关 API */
 export const settingsApi = {
-  /** 鑾峰彇鐢ㄦ埛璁剧疆 */
+  /** 获取用户设置 */
   getSettings(): Promise<UserSettings> {
     return request('/settings')
   },
 
-  /** 鏇存柊鐢ㄦ埛璁剧疆 */
+  /** 更新用户设置 */
   updateSettings(settings: UserSettings): Promise<UserSettings> {
     return request('/settings', {
       method: 'PUT',
       body: JSON.stringify(settings)
     })
   },
-  /** 鑾峰彇鐭ヨ瘑搴撳叏灞€閰嶇疆 */
+  /** 获取知识库全局配置 */
   getKnowledgeSettings(): Promise<KnowledgeSettings> {
     return request('/settings/knowledge')
   },
 
-  /** 鏇存柊鐭ヨ瘑搴撳叏灞€閰嶇疆 */
+  /** 更新知识库全局配置 */
   updateKnowledgeSettings(settings: Record<string, unknown>): Promise<KnowledgeSettings> {
     return request('/settings/knowledge', {
       method: 'PUT',
@@ -481,12 +531,12 @@ export const settingsApi = {
     })
   },
 
-  /** 鑾峰彇鑱旂綉鎼滅储閰嶇疆 */
+  /** 获取联网搜索配置 */
   getSearchSettings(): Promise<SearchSettings> {
     return request('/settings/search')
   },
 
-  /** 鏇存柊鑱旂綉鎼滅储閰嶇疆 */
+  /** 更新联网搜索配置 */
   updateSearchSettings(settings: SearchSettingsRequest): Promise<SearchSettings> {
     return request('/settings/search', {
       method: 'PUT',
@@ -494,12 +544,12 @@ export const settingsApi = {
     })
   },
 
-  /** 鑾峰彇娓犻亾閰嶇疆锛堟晱鎰熷瓧娈靛凡 mask锛?*/
+  /** 获取渠道配置（敏感字段已 mask） */
   getChannelConfig(): Promise<ChannelConfig> {
     return request('/settings/channels')
   },
 
-  /** 鏇存柊娓犻亾閰嶇疆 */
+  /** 更新渠道配置 */
   updateChannelConfig(config: ChannelConfig): Promise<ChannelConfig> {
     return request('/settings/channels', {
       method: 'PUT',
@@ -508,9 +558,9 @@ export const settingsApi = {
   }
 }
 
-/** Reranker 閰嶇疆鍝嶅簲 */
-/** Reranker 閰嶇疆璇锋眰 */
-/** 鐭ヨ瘑搴撳叏灞€閰嶇疆鍝嶅簲 */
+/** Reranker 配置响应 */
+/** Reranker 配置请求 */
+/** 知识库全局配置响应 */
 export interface KnowledgeSettings {
   enabled: boolean
   maxFileSize: number
@@ -532,7 +582,7 @@ export interface KnowledgeSettings {
   }
 }
 
-/** 鑱旂綉鎼滅储閰嶇疆鍝嶅簲 */
+/** 联网搜索配置响应 */
 export interface SearchSettings {
   provider: string
   apiKey: string
@@ -544,7 +594,7 @@ export interface SearchSettings {
   readTimeoutSeconds: number
 }
 
-/** 鑱旂綉鎼滅储閰嶇疆璇锋眰 */
+/** 联网搜索配置请求 */
 export interface SearchSettingsRequest {
   provider?: string
   apiKey?: string
@@ -556,13 +606,13 @@ export interface SearchSettingsRequest {
   readTimeoutSeconds?: number
 }
 
-/** 鍗曚釜娓犻亾閰嶇疆 */
+/** 单个渠道配置 */
 export interface SingleChannelConfig {
   enabled?: boolean
   [key: string]: unknown
 }
 
-/** 娓犻亾閰嶇疆锛堟寜娓犻亾鍚嶅垎缁勶級 */
+/** 渠道配置（按渠道名分组） */
 export interface ChannelConfig {
   feishu?: SingleChannelConfig
   wecom?: SingleChannelConfig
@@ -691,9 +741,9 @@ export interface UpdateModelServiceRequest {
   description?: string
 }
 
-// ========== 妯″潡 19: 鍔熻兘椤甸潰 API ==========
+// ========== 模块 19: 功能页面 API ==========
 
-/** 鐭ヨ瘑搴撶鐞?API */
+/** 知识库管理 API */
 export const knowledgeBaseApi = {
   list(): Promise<KnowledgeBase[]> {
     return request('/knowledge-bases')
@@ -719,7 +769,7 @@ export const knowledgeBaseApi = {
   listDocuments(kbId: string): Promise<KbDocument[]> {
     return request(`/knowledge-bases/${kbId}/documents`)
   },
-  // 鏂囦欢涓婁紶浣跨敤 FormData锛屼笉璁剧疆 Content-Type
+  // 文件上传使用 FormData，不设置 Content-Type
   async uploadDocument(kbId: string, file: File): Promise<KbDocument> {
     const formData = new FormData()
     formData.append('file', file)
@@ -755,14 +805,14 @@ export const knowledgeBaseApi = {
   },
   downloadDocument(kbId: string, docId: string): Promise<Blob> {
     return fetch(`${BASE}/knowledge-bases/${kbId}/documents/${docId}/download`).then(res => {
-      if (!res.ok) throw new Error('涓嬭浇澶辫触')
+      if (!res.ok) throw new Error('下载失败')
       return res.blob()
     })
   },
   getStats(kbId: string): Promise<KbStats> {
     return request(`/knowledge-bases/${kbId}/stats`)
   },
-  // 浠ヤ笅鎺ュ彛寰呭悗绔疄鐜?
+  // 以下接口待后端实现
   getDocumentLogs(kbId: string, docId: string): Promise<ProcessingLog[]> {
     return request<{ logs: Array<{ timestamp: string; level: string; message: string; details?: Record<string, unknown> }> }>(
       `/knowledge-bases/${kbId}/documents/${docId}/logs`
@@ -786,7 +836,7 @@ export const knowledgeBaseApi = {
   }
 }
 
-/** Skill 绠＄悊 API */
+/** Skill 管理 API */
 export const skillApi = {
   list(): Promise<SkillSummary[]> {
     return request('/skills')
@@ -821,14 +871,14 @@ export const skillApi = {
       body: JSON.stringify(data)
     })
   },
-  /** 鑾峰彇 Skill Markdown 瀹氫箟 */
+  /** 获取 Skill Markdown 定义 */
   getSkillMarkdown(skillId: string): Promise<string> {
     return fetch(`${BASE}/skills/${skillId}/markdown`).then(res => {
-      if (!res.ok) throw { code: res.status, message: '鑾峰彇澶辫触', timestamp: new Date().toISOString() }
+      if (!res.ok) throw { code: res.status, message: '获取失败', timestamp: new Date().toISOString() }
       return res.text()
     })
   },
-  /** 鏇存柊 Skill Markdown 瀹氫箟 */
+  /** 更新 Skill Markdown 定义 */
   updateSkillMarkdown(skillId: string, content: string): Promise<void> {
     return request(`/skills/${skillId}/markdown`, {
       method: 'PUT',
@@ -838,9 +888,9 @@ export const skillApi = {
   }
 }
 
-/** MCP Server 绠＄悊 API */
+/** MCP Server 管理 API */
 export const mcpApi = {
-  /** 鑾峰彇 MCP 鐜鐘舵€侊紙npx 鍙敤鎬х瓑锛?*/
+  /** 获取 MCP 环境状态（npx 可用性等） */
   getStatus(): Promise<{ npxAvailable: boolean }> {
     return request('/mcp/status')
   },
@@ -871,52 +921,52 @@ export const mcpApi = {
   listTools(name: string): Promise<McpTool[]> {
     return request(`/mcp/servers/${name}/tools`)
   },
-  /** 鑾峰彇 MCP Server 杩炴帴鏃ュ織 */
+  /** 获取 MCP Server 连接日志 */
   getConnectionLogs(serverName: string): Promise<McpConnectionLog[]> {
     return request(`/mcp/servers/${serverName}/connection-logs`)
   }
 }
 
-/** 杞ㄨ抗鏌ヨ API */
+/** 轨迹查询 API */
 export const traceApi = {
   /**
-   * 鍒嗛〉鑾峰彇杞ㄨ抗鍒楄〃
+   * 分页获取轨迹列表
    */
   list(page = 0, size = 20): Promise<PageResult<TraceItem>> {
     return request(`/traces?page=${page}&size=${size}`)
   },
   /**
-   * 鑾峰彇鍗曟潯杞ㄨ抗璇︽儏
+   * 获取单条轨迹详情
    */
   get(id: string): Promise<TraceDetail> {
     return request(`/traces/${id}`)
   },
   /**
-   * 鑾峰彇杞ㄨ抗姝ラ鍒楄〃
+   * 获取轨迹步骤列表
    */
   getSteps(id: string): Promise<TraceStep[]> {
     return request(`/traces/${id}/steps`)
   },
   /**
-   * 鑾峰彇杞ㄨ抗姒傝缁熻淇℃伅
+   * 获取轨迹概览统计信息
    *
-   * 鐢ㄤ簬缁熻鍗＄墖鍖哄煙锛堟€绘暟銆佹垚鍔熺巼銆佸钩鍧囨楠ゆ暟绛夛級銆?
+   * 用于统计卡片区域（总数、成功率、平均步骤数等）。
    */
   getOverviewStats(window: '24h' | '7d' | '30d' = '7d'): Promise<OverviewStats> {
     return request(`/traces/stats/overview?window=${window}`)
   },
   /**
-   * 鑾峰彇宸ュ叿浣跨敤缁熻淇℃伅
+   * 获取工具使用统计信息
    *
-   * 杩斿洖鍚勫伐鍏风殑璋冪敤娆℃暟銆佹垚鍔熺巼鍜屽钩鍧囪€楁椂绛夈€?
+   * 返回各工具的调用次数、成功率和平均耗时等。
    */
   getToolStats(): Promise<ToolUsageStats[]> {
     return request('/traces/stats/tools')
   },
   /**
-   * 鎼滅储杞ㄨ抗
+   * 搜索轨迹
    *
-   * 浣跨敤鍏抽敭瀛楁悳绱㈡渶杩戠殑杞ㄨ抗璁板綍銆?
+   * 使用关键字搜索最近的轨迹记录。
    */
   search(keyword: string, limit = 20): Promise<TraceItem[]> {
     const params = new URLSearchParams()
@@ -926,17 +976,17 @@ export const traceApi = {
     return request(`/traces/search?${query}`)
   },
   /**
-   * 瀵煎嚭杞ㄨ抗涓?JSON 瀛楃涓?
+   * 导出轨迹为 JSON 字符串
    *
-   * 杩斿洖鍗曟潯杞ㄨ抗鐨勫畬鏁?JSON 鏂囨湰锛屼緵鍓嶇涓嬭浇淇濆瓨銆?
+   * 返回单条轨迹的完整 JSON 文本，供前端下载保存。
    */
   export(id: string): Promise<string> {
     return request(`/traces/${id}/export`)
   },
   /**
-   * 鑾峰彇 Token 娑堣€楃粺璁?
+   * 获取 Token 消耗统计
    *
-   * 鍙€夌殑璧锋鏃堕棿鐢ㄤ簬闄愬畾缁熻绐楀彛銆?
+   * 可选的起止时间用于限定统计窗口。
    */
   getTokenStats(start?: string, end?: string): Promise<TokenConsumptionStats> {
     const params = new URLSearchParams()
@@ -946,16 +996,16 @@ export const traceApi = {
     return request(`/traces/stats/tokens${query ? `?${query}` : ''}`)
   },
   /**
-   * 鑾峰彇杞ㄨ抗璇勪及缁撴灉
+   * 获取轨迹评估结果
    *
-   * 杩斿洖鍗曟潯杞ㄨ抗鐨勭绾胯瘎浼板垎鏁颁笌杩濊/寤鸿淇℃伅銆?
+   * 返回单条轨迹的离线评估分数与违规/建议信息。
    */
   getEvaluation(id: string): Promise<EvaluationResult> {
     return request(`/traces/${id}/evaluation`)
   }
 }
 
-/** 宸ヤ綔娴佺鐞?API */
+/** 工作流管理 API */
 export const workflowApi = {
   list(): Promise<WorkflowItem[]> {
     return request('/workflows')
@@ -998,62 +1048,62 @@ export const workflowApi = {
   listExecutions(id: string): Promise<WorkflowExecution[]> {
     return request(`/workflows/${id}/executions`)
   },
-  /** 鑾峰彇宸ヤ綔娴?YAML 鍐呭锛堜究鎹锋柟娉曪級 */
+  /** 获取工作流 YAML 内容（便捷方法） */
   getWorkflowYaml(workflowId: string): Promise<string> {
     return this.getYaml(workflowId).then(res => res.yamlContent)
   },
-  /** 鏇存柊宸ヤ綔娴?YAML 鍐呭锛堜究鎹锋柟娉曪級 */
+  /** 更新工作流 YAML 内容（便捷方法） */
   updateWorkflowYaml(workflowId: string, content: string): Promise<WorkflowDetail> {
     return this.update(workflowId, { yamlContent: content })
   },
-  /** 鑾峰彇鍗曚釜鎵ц瀹炰緥璇︽儏 */
+  /** 获取单个执行实例详情 */
   getInstance(instanceId: string): Promise<WorkflowExecution> {
     return request(`/workflows/executions/${instanceId}`)
   },
-  /** 鎻愪氦瀹℃壒鍐崇瓥 */
+  /** 提交审批决策 */
   approve(instanceId: string, stepId: string, req: ApprovalRequest): Promise<WorkflowExecution> {
     return request(`/workflows/executions/${instanceId}/steps/${stepId}/approve`, {
       method: 'POST',
       body: JSON.stringify(req)
     })
   },
-  /** 鑾峰彇瀹炰緥浜嬩欢鏃堕棿绾?*/
+  /** 获取实例事件时间线 */
   getEventTimeline(instanceId: string): Promise<WorkflowEvent[]> {
     return request(`/workflows/executions/${instanceId}/events`)
   },
-  /** 鑾峰彇瀹炰緥姝ラ鎵ц鏃ュ織 */
+  /** 获取实例步骤执行日志 */
   getStepLogs(instanceId: string): Promise<StepLog[]> {
     return request(`/workflows/executions/${instanceId}/step-logs`)
   },
 
-  // ========== 鏂板 API锛氬伐浣滄祦鎴愮啛鍖栭渶姹?==========
+  // ========== 新增 API：工作流成熟化需求 ==========
 
-  /** 鑾峰彇宸ヤ綔娴佹墽琛岀粺璁?*/
+  /** 获取工作流执行统计 */
   getStats(id: string): Promise<WorkflowStats> {
     return request(`/workflows/${id}/stats`)
   },
 
-  /** 鑾峰彇宸ヤ綔娴佹楠ょ粺璁?*/
+  /** 获取工作流步骤统计 */
   getStepStats(id: string): Promise<StepStats[]> {
     return request(`/workflows/${id}/step-stats`)
   },
 
-  /** 鑾峰彇鎵ц瀹炰緥鐨勫畬鏁翠笂涓嬫枃 */
+  /** 获取执行实例的完整上下文 */
   getExecutionContext(instanceId: string): Promise<Record<string, unknown>> {
     return request(`/workflows/executions/${instanceId}/context`)
   },
 
-  /** 鑾峰彇鎸囧畾姝ラ鐨勮緭鍑?*/
+  /** 获取指定步骤的输出 */
   getStepOutput(instanceId: string, stepId: string): Promise<StepOutput> {
     return request(`/workflows/executions/${instanceId}/steps/${stepId}/output`)
   },
 
-  /** 鑾峰彇宸ヤ綔娴?DAG 渚濊禆鍥炬暟鎹?*/
+  /** 获取工作流 DAG 依赖图数据 */
   getDag(id: string): Promise<DagData> {
     return request(`/workflows/${id}/dag`)
   },
 
-  /** 璇曡繍琛屽伐浣滄祦 */
+  /** 试运行工作流 */
   dryRun(id: string, inputs?: Record<string, unknown>): Promise<DryRunResult> {
     return request(`/workflows/${id}/dry-run`, {
       method: 'POST',
@@ -1061,7 +1111,7 @@ export const workflowApi = {
     })
   },
 
-  /** 鏍￠獙 YAML 璇硶鍜岃涔?*/
+  /** 校验 YAML 语法和语义 */
   validateYaml(yaml: string): Promise<ValidationResponse> {
     return request('/workflows/validate', {
       method: 'POST',
@@ -1069,7 +1119,7 @@ export const workflowApi = {
     })
   },
 
-  /** 瑙﹀彂 Webhook */
+  /** 触发 Webhook */
   triggerWebhook(id: string, body: Record<string, unknown>, signature?: string): Promise<WorkflowExecution> {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' }
     if (signature) {
@@ -1082,17 +1132,17 @@ export const workflowApi = {
     })
   },
 
-  /** 瀵煎嚭鍗曚釜宸ヤ綔娴?*/
+  /** 导出单个工作流 */
   exportWorkflow(id: string): Promise<{ id: string; yamlContent: string }> {
     return request(`/workflows/${id}/export`)
   },
 
-  /** 鎵归噺瀵煎嚭宸ヤ綔娴?*/
+  /** 批量导出工作流 */
   exportWorkflows(ids: string[]): Promise<Array<{ id: string; yamlContent: string }>> {
     return request(`/workflows/export?ids=${ids.join(',')}`)
   },
 
-  /** 瀵煎叆宸ヤ綔娴?*/
+  /** 导入工作流 */
   importWorkflow(yamlContent: string): Promise<WorkflowDetail> {
     return request('/workflows/import', {
       method: 'POST',
@@ -1100,18 +1150,18 @@ export const workflowApi = {
     })
   },
 
-  /** 鑾峰彇姝ラ绫诲瀷鍙傛暟 Schema */
+  /** 获取步骤类型参数 Schema */
   getStepTypes(): Promise<StepTypeSchema[]> {
     return request('/workflows/step-types')
   },
 
-  /** 鎸夋爣绛剧瓫閫夊伐浣滄祦鍒楄〃 */
+  /** 按标签筛选工作流列表 */
   listByTag(tag: string): Promise<WorkflowItem[]> {
     return request(`/workflows?tag=${encodeURIComponent(tag)}`)
   }
 }
 
-/** Tool 绠＄悊 API */
+/** Tool 管理 API */
 export const toolApi = {
   list(params?: { source?: string; status?: string; name?: string }): Promise<ToolSummary[]> {
     const query = new URLSearchParams()
@@ -1173,7 +1223,7 @@ export const toolApi = {
     return request(`/tools/${id}/disable`, { method: 'POST' })
   },
   test(req: ToolTestRequest): Promise<ToolTestResponse> {
-    // 鍚庣浣跨敤 /tools/{id}/test锛屽弬鏁板瓧娈靛悕涓?arguments
+    // 后端使用 /tools/{id}/test，参数字段名为 arguments
     const args = req.input ?? {}
     return request(`/tools/${req.toolId}/test`, {
       method: 'POST',
@@ -1185,14 +1235,14 @@ export const toolApi = {
   getUsage(id: string): Promise<any> {
     return request(`/tools/${id}/usage`)
   },
-  /** 鑾峰彇 Tool YAML 瀹氫箟 */
+  /** 获取 Tool YAML 定义 */
   getToolYaml(toolId: string): Promise<string> {
     return fetch(`${BASE}/tools/${toolId}/yaml`).then(res => {
-      if (!res.ok) throw { code: res.status, message: '鑾峰彇澶辫触', timestamp: new Date().toISOString() }
+      if (!res.ok) throw { code: res.status, message: '获取失败', timestamp: new Date().toISOString() }
       return res.text()
     })
   },
-  /** 鏇存柊 Tool YAML 瀹氫箟 */
+  /** 更新 Tool YAML 定义 */
   updateToolYaml(toolId: string, content: string): Promise<void> {
     return request(`/tools/${toolId}/yaml`, {
       method: 'PUT',
@@ -1202,7 +1252,7 @@ export const toolApi = {
   }
 }
 
-/** Agent 绠＄悊 API */
+/** Agent 管理 API */
 export const agentApi = {
   list(params?: { q?: string; type?: string; status?: string; tags?: string[] }): Promise<AgentSummary[]> {
     const query = new URLSearchParams()
@@ -1245,7 +1295,7 @@ export const agentApi = {
       body: JSON.stringify({ message })
     })
   },
-  /** 娴佸紡娴嬭瘯鑱婂ぉ */
+  /** 流式测试聊天 */
   async testChatStream(id: string, message: string, signal?: AbortSignal): Promise<ReadableStream<Uint8Array>> {
     const res = await fetch(`${BASE}/agents/${id}/test-chat/stream`, {
       method: 'POST',
@@ -1258,21 +1308,21 @@ export const agentApi = {
     }
     return res.body
   },
-  /** 涓婁笅鏂囩粍瑁呴瑙?*/
+  /** 上下文组装预览 */
   contextPreview(agentId: string, message: string, sessionId?: string): Promise<ContextPreviewResponse> {
     return request(`/agents/${agentId}/context-preview`, {
       method: 'POST',
       body: JSON.stringify({ message, sessionId })
     })
   },
-  /** 鑾峰彇 Agent Markdown 瀹氫箟 */
+  /** 获取 Agent Markdown 定义 */
   getAgentMarkdown(agentId: string): Promise<string> {
     return fetch(`${BASE}/agents/${agentId}/markdown`).then(res => {
-      if (!res.ok) throw { code: res.status, message: '鑾峰彇澶辫触', timestamp: new Date().toISOString() }
+      if (!res.ok) throw { code: res.status, message: '获取失败', timestamp: new Date().toISOString() }
       return res.text()
     })
   },
-  /** 鏇存柊 Agent Markdown 瀹氫箟 */
+  /** 更新 Agent Markdown 定义 */
   updateAgentMarkdown(agentId: string, content: string): Promise<void> {
     return request(`/agents/${agentId}/markdown`, {
       method: 'PUT',
@@ -1306,14 +1356,14 @@ export const analyticsApi = {
     }
     return request(`/analytics/knowledge-bases?${query.toString()}`)
   },
-  /** 鑾峰彇 Tool 璋冪敤缁熻 */
+  /** 获取 Tool 调用统计 */
   getToolAnalytics(timeRange: { from: string; to: string }): Promise<ToolAnalyticsResponse> {
     const query = new URLSearchParams()
     query.append('from', timeRange.from)
     query.append('to', timeRange.to)
     return request(`/analytics/tools?${query.toString()}`)
   },
-  /** 鑾峰彇閿欒瓒嬪娍 */
+  /** 获取错误趋势 */
   getErrorTrend(timeRange: { from: string; to: string }): Promise<ErrorTrendDaily[]> {
     const query = new URLSearchParams()
     query.append('from', timeRange.from)
@@ -1322,17 +1372,17 @@ export const analyticsApi = {
   }
 }
 
-/** 渚濊禆鍏崇郴鍥?API */
+/** 依赖关系图 API */
 export const dependencyApi = {
-  /** 鑾峰彇渚濊禆鍏崇郴鍥?*/
+  /** 获取依赖关系图 */
   getGraph(): Promise<DependencyGraphResponse> {
     return request('/dependencies/graph')
   }
 }
 
-/** 閫氱煡绠＄悊 API */
+/** 通知管理 API */
 export const notificationApi = {
-  /** 鑾峰彇閫氱煡鍒楄〃锛堝垎椤碉級 */
+  /** 获取通知列表（分页） */
   listNotifications(userId: string, page?: number, size?: number, urgency?: string): Promise<PageResult<NotificationItem>> {
     const params = new URLSearchParams()
     params.append('userId', userId)
@@ -1342,21 +1392,21 @@ export const notificationApi = {
     return request(`/notifications?${params.toString()}`)
   },
 
-  /** 鏍囪鍗曟潯閫氱煡宸茶 */
+  /** 标记单条通知已读 */
   markAsRead(id: string): Promise<NotificationItem> {
     return request(`/notifications/${id}/read`, { method: 'PUT' })
   },
 
-  /** 鏍囪鎵€鏈夐€氱煡宸茶 */
+  /** 标记所有通知已读 */
   markAllAsRead(userId: string): Promise<{ updatedCount: number }> {
     return request(`/notifications/read-all?userId=${encodeURIComponent(userId)}`, { method: 'PUT' })
   }
 }
 
-// ========== 璁板繂绠＄悊 API ==========
+// ========== 记忆管理 API ==========
 
 
-/** 灏嗗弬鏁板璞¤浆涓?URL 鏌ヨ瀛楃涓诧紝璺宠繃 undefined 鍜岀┖瀛楃涓?*/
+/** 将参数对象转为 URL 查询字符串，跳过 undefined 和空字符 */
 function toQueryString(params: Record<string, unknown>): string {
   const query = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
@@ -1366,20 +1416,20 @@ function toQueryString(params: Record<string, unknown>): string {
   return query.toString()
 }
 
-/** 璁板繂绠＄悊 API */
+/** 记忆管理 API */
 export const memoryApi = {
-  /** 缁熻姒傝 */
+  /** 统计概览 */
   getStats: () => request<MemoryStats>('/memories/stats'),
 
-  /** 缁熶竴鎼滅储 */
+  /** 统一搜索 */
   search: (q: string, topK = 10) =>
     request<MemorySearchResult[]>(`/memories/search?q=${encodeURIComponent(q)}&topK=${topK}`),
 
-  /** 鎵嬪姩宸╁浐 */
+  /** 手动巩固 */
   triggerConsolidation: () =>
     request<{ status: string; message: string }>('/memories/consolidate', { method: 'POST' }),
 
-  // L3 瀹炰綋
+  // L3 实体
   listEntities: (params: EntityListParams) =>
     request<PageResult<EntitySummary>>(`/memories/entities?${toQueryString(params as unknown as Record<string, unknown>)}`),
   getEntity: (id: string) => request<EntityDetail>(`/memories/entities/${id}`),
@@ -1393,25 +1443,25 @@ export const memoryApi = {
   deleteEntity: (id: string) =>
     request<void>(`/memories/entities/${id}`, { method: 'DELETE' }),
 
-  // L3 鍏崇郴
+  // L3 关系
   listRelations: (params: RelationListParams) =>
     request<PageResult<RelationItem>>(`/memories/relations?${toQueryString(params as unknown as Record<string, unknown>)}`),
 
-  // L2 瀵硅瘽
+  // L2 对话
   listConversations: (params: ConversationListParams) =>
     request<PageResult<ConversationSummary>>(`/memories/conversations?${toQueryString(params as unknown as Record<string, unknown>)}`),
   getConversation: (id: string) => request<ConversationDetail>(`/memories/conversations/${id}`),
   deleteConversation: (id: string) =>
     request<void>(`/memories/conversations/${id}`, { method: 'DELETE' }),
 
-  // L4 妯℃澘
+  // L4 模板
   listTemplates: (params: TemplateListParams) =>
     request<PageResult<ProcedureTemplate>>(`/memories/templates?${toQueryString(params as unknown as Record<string, unknown>)}`),
   getTemplate: (id: string) => request<ProcedureTemplate>(`/memories/templates/${id}`),
   deleteTemplate: (id: string) =>
     request<void>(`/memories/templates/${id}`, { method: 'DELETE' }),
 
-  // L4 鍋忓ソ
+  // L4 偏好
   listPreferences: (category?: string) =>
     request<PreferenceRule[]>(
       `/memories/preferences${category ? `?category=${encodeURIComponent(category)}` : ''}`
@@ -1419,7 +1469,7 @@ export const memoryApi = {
   deletePreference: (id: string) =>
     request<void>(`/memories/preferences/${id}`, { method: 'DELETE' }),
 
-  // 閬楀繕鏃ュ織
+  // 遗忘日志
   listForgettingLogs: (params: ForgettingLogListParams) =>
     request<PageResult<ForgettingLog>>(`/memories/forgetting-logs?${toQueryString(params as unknown as Record<string, unknown>)}`),
 }
