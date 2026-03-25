@@ -11,6 +11,7 @@ interface BackendAttachment {
 
 type BackendMessageLike = {
   id: string
+  turnId?: string | null
   role: 'user' | 'assistant' | 'tool-confirmation'
   content: string
   a2uiComponents?: unknown
@@ -21,6 +22,10 @@ type BackendMessageLike = {
   reactSteps?: ReactStepDto[] | null
   completionMode?: Message['completionMode'] | null
   resumedFromTraceId?: string | null
+  turnStatus?: Message['turnStatus'] | null
+  errorMessage?: string | null
+  suspendReasonType?: string | null
+  suspendReasonSourceId?: string | null
 }
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
@@ -102,6 +107,7 @@ export function mapBackendMessage(message: BackendMessageLike): Message {
       }
       return {
         id: message.id,
+        turnId: message.turnId ?? undefined,
         role: 'tool-confirmation',
         content: parsed.message || '该工具需要你的确认后才能执行。',
         timestamp: parseMessageTimestamp(message.timestamp),
@@ -117,6 +123,7 @@ export function mapBackendMessage(message: BackendMessageLike): Message {
 
   return {
     id: message.id,
+    turnId: message.turnId ?? undefined,
     role: message.role,
     content: message.content ?? '',
     a2uiComponents: components ?? undefined,
@@ -127,5 +134,9 @@ export function mapBackendMessage(message: BackendMessageLike): Message {
     reactSteps: message.reactSteps?.length ? message.reactSteps : undefined,
     completionMode: message.completionMode ?? undefined,
     resumedFromTraceId: message.resumedFromTraceId ?? undefined,
+    turnStatus: message.turnStatus ?? undefined,
+    errorMessage: message.errorMessage ?? undefined,
+    suspendReasonType: message.suspendReasonType ?? undefined,
+    suspendReasonSourceId: message.suspendReasonSourceId ?? undefined,
   }
 }

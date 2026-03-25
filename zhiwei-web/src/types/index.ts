@@ -43,12 +43,16 @@ export interface ChatAttachment {
 }
 
 export type CompletionMode = 'NORMAL' | 'DEGRADED' | 'SUSPENDED'
+export type OutputContentRole = 'FINAL' | 'PROGRESS' | 'SUSPEND_PROMPT' | 'BLOCKED'
 
-export type ResumePolicy = 'AUTO' | 'FRESH'
+export type ChatTurnAction = 'SEND' | 'RETRY' | 'RESUME' | 'RESTART'
+
+export type ChatTurnStatus = 'PENDING' | 'SUCCESS' | 'FAILED' | 'DEGRADED' | 'SUSPENDED'
 
 /** 濞戝牊浼?*/
 export interface Message {
   id: string
+  turnId?: string
   role: 'user' | 'assistant' | 'tool-confirmation'
   content: string
   a2uiComponents?: A2uiComponent[]
@@ -60,8 +64,11 @@ export interface Message {
   reasoningEvents?: ReasoningEvent[]
   /** 閸撳秶顏笟褏娈戦崣鎴︹偓?/ 婢跺嫮鎮婇悩鑸碘偓浣圭垼鐠佸府绱濋悽銊ょ艾鐏炴洜銇?閸欐垿鈧椒鑵?/ 婢惰精瑙?/ 閸欘垶鍣哥拠? */
   status?: 'pending' | 'success' | 'error'
+  turnStatus?: ChatTurnStatus
   /** 娑撳孩婀伴弶鈩冪Х閹垳娴夐崗宕囨畱闁挎瑨顕ょ拠瀛樻閿涘牅绮庨崷?status === 'error' 閺冭泛鐫嶇粈鐚寸礆 */
   errorMessage?: string
+  suspendReasonType?: string
+  suspendReasonSourceId?: string
   /** 閸氬海顏幍褑顢戞潪銊ㄦ姉 ID閿涘牆顩х€涙ê婀敍澶涚礉閻劋绨捄瀹犳祮閸?Trace 鐠囷附鍎?*/
   traceId?: string
   /** 閺堫剝鐤嗙€瑰本鍨氶幀?*/
@@ -161,9 +168,19 @@ export interface SseTokenEvent {
   index: number
 }
 
+export interface SseInteractionEvent {
+  interactionId: string
+  type: 'INPUT' | 'CHOOSE' | 'CONFIRM' | 'NOTIFY'
+  sessionId: string
+  streamId?: string | null
+  message: string
+  options?: string[] | null
+}
+
 /** 閹恒劎鎮婃潻鍥┾柤娴滃娆㈢猾璇茬€?閳?娑撳骸鎮楃粩?pushReactStepEvent 鐎靛綊缍?*/
 export type ReasoningEventType =
   | 'AGENT_START'
+  | 'PROGRESS'
   | 'THOUGHT'
   | 'TOOL_CALL'
   | 'OBSERVATION'
@@ -186,12 +203,17 @@ export interface ReasoningEvent {
 // ===== ReactStep 缁鐎风€规矮绠?閳?娑撳骸鎮楃粩?ReactStepSerializer 鐎靛綊缍?=====
 
 /** ReactStep 濮濄儵顎冪猾璇茬€?*/
-export type ReactStepType = 'THOUGHT' | 'TOOL_CALL' | 'OBSERVATION' | 'ANSWER' | 'SUSPEND' | 'RESUME'
+export type ReactStepType = 'PROGRESS' | 'THOUGHT' | 'TOOL_CALL' | 'OBSERVATION' | 'ANSWER' | 'SUSPEND' | 'RESUME'
 
 /** ReactStep 閸╄櫣顢呯€涙顔?*/
 interface ReactStepBase {
   type: ReactStepType
   index: number
+}
+
+export interface ProgressStep extends ReactStepBase {
+  type: 'PROGRESS'
+  content: string
 }
 
 /** 閹恒劎鎮婇幀婵娾偓鍐╊劄妤?*/
@@ -242,11 +264,15 @@ export interface ResumeStep extends ReactStepBase {
 }
 
 /** ReactStep 閼辨柨鎮庣猾璇茬€?*/
-export type ReactStepDto = ThoughtStep | ToolCallStep | ObservationStep | AnswerStep | SuspendStep | ResumeStep
+export type ReactStepDto = ProgressStep | ThoughtStep | ToolCallStep | ObservationStep | AnswerStep | SuspendStep | ResumeStep
 
 /** SSE 鐎瑰本鍨氭禍瀣╂ */
 export interface SseDoneEvent {
   entryId: string
+  turnId?: string
+  turnStatus?: ChatTurnStatus
+  terminationReason?: string
+  contentRole?: OutputContentRole
   /** 閸欘垶鈧绱扮€瑰本鏆ｅ☉鍫熶紖閸愬懎顔愰敍鍫ユ姜濞翠礁绱￠崫宥呯安閺冨墎鏁遍崥搴ｎ伂閻╁瓨甯存潻鏂挎礀閿?*/
   content?: string
   /** 閸欘垶鈧绱伴張顒冪枂閸ョ偟鐡熼梽鍕敨閻?A2UI 缂佸嫪娆㈤弽鎴濇彥閻?*/
@@ -289,8 +315,25 @@ export interface SseDoneEvent {
 export interface SseErrorEvent {
   code: number
   message: string
+  turnId?: string
+  turnStatus?: ChatTurnStatus
   /** 閸欘垶鈧绱伴柨娆掝嚖鐎电懓绨查惃?Trace Id閿涘奔绌舵禍搴″缁旑垵鐑︽潪顒冪殶鐠?*/
   traceId?: string
+}
+
+export interface SseAgentSuspendedEvent {
+  traceId?: string
+  sessionId?: string
+  turnId?: string
+  completionMode?: CompletionMode
+  turnStatus?: ChatTurnStatus
+  contentRole?: OutputContentRole
+  reasonType?: string
+  reasonSourceId?: string
+  reasonDetail?: string
+  terminationReason?: string
+  content?: string
+  suspendedAt?: string
 }
 
 /** 瀹搞儱鍙跨涵顔款吇鐠囬攱鐪伴敍鍦玈E 娴滃娆?payload閿?*/
@@ -323,6 +366,7 @@ export interface SseTranscriptionEvent {
 
 export interface ChatResponse {
   entryId: string
+  turnId?: string
   content: string
   a2uiComponents?: A2uiComponent[]
   tokenUsage?: TokenUsage
@@ -330,6 +374,7 @@ export interface ChatResponse {
   /** 閺堫剝鐤嗙€电鐦芥稉顓濆▏閻劌鍩岄惃鍕叀鐠囧棗绨?/ 閺傚洦銆傞弶銉︾爱缁涘绱欓悽鍗炴倵缁旑垵绻戦崶鐑囩礉閸撳秶顏崣顏勪粵鏉炲鍣虹仦鏇犮仛閿?*/
   completionMode?: CompletionMode
   resumedFromTraceId?: string
+  turnStatus?: ChatTurnStatus
   sources?: SourceSummary[]
 }
 

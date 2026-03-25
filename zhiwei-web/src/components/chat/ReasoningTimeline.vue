@@ -63,6 +63,11 @@ const triggerLabel = computed(() => {
 function getEventBrief(ev: ReasoningEvent): string {
   switch (ev.type) {
     case 'AGENT_START': return '准备上下文与预算…'
+    case 'PROGRESS': {
+      const text = ev.description ?? ev.title ?? ''
+      if (text.length <= 40) return text || '处理中…'
+      return text.substring(0, 40) + '…'
+    }
     case 'THOUGHT': {
       const text = ev.description ?? ev.title ?? ''
       if (text.length <= 40) return text || '推理中…'
@@ -82,6 +87,7 @@ function getEventBrief(ev: ReasoningEvent): string {
 function getEventIcon(type: string) {
   switch (type) {
     case 'AGENT_START': return Play
+    case 'PROGRESS': return Loader2
     case 'THOUGHT': return Lightbulb
     case 'TOOL_CALL': return Wrench
     case 'OBSERVATION': return CheckCircle2
@@ -97,6 +103,7 @@ function getEventIcon(type: string) {
 function getEventColor(type: string) {
   switch (type) {
     case 'AGENT_START': return 'text-blue-500'
+    case 'PROGRESS': return 'text-primary'
     case 'THOUGHT': return 'text-violet-500'
     case 'TOOL_CALL': return 'text-amber-500'
     case 'OBSERVATION': return 'text-blue-500'

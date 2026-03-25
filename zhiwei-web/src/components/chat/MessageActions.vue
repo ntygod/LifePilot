@@ -21,7 +21,18 @@ const emit = defineEmits<{
 
 const copyLabel = ref('复制')
 const ttsError = ref<string | null>(null)
-const isDegraded = computed(() => props.message.completionMode === 'DEGRADED')
+const isResumable = computed(() =>
+  props.message.turnStatus === 'DEGRADED'
+  || props.message.turnStatus === 'SUSPENDED'
+  || props.message.completionMode === 'DEGRADED'
+  || props.message.completionMode === 'SUSPENDED',
+)
+const waitsForUserReply = computed(() =>
+  props.message.suspendReasonSourceId === '__await_user_input__',
+)
+const showResumeAction = computed(() =>
+  isResumable.value && !waitsForUserReply.value,
+)
 
 const { playTts, stopTts, isPlaying, playbackProgress, isLoadingTts } = useVoice()
 
@@ -87,14 +98,16 @@ async function handleTts(entryId: string) {
       <span>分叉</span>
     </button>
 
-    <template v-if="isLastAssistant && isDegraded">
+    <template v-if="isLastAssistant && isResumable">
       <button
+        v-if="showResumeAction"
         type="button"
         class="surface-chip surface-chip-strong transition-colors hover:opacity-90"
+        title="从当前挂起进度继续执行，不会把整轮任务从头再跑一遍。"
         @click="emit('resume', message)"
       >
         <Play class="size-3.5" />
-        <span>缁х画鎵ц</span>
+        <span>继续执行</span>
       </button>
       <button
         type="button"
@@ -102,7 +115,7 @@ async function handleTts(entryId: string) {
         @click="emit('restart', message)"
       >
         <RefreshCw class="size-3.5" />
-        <span>閲嶆柊寮€濮?</span>
+        <span>重新开始</span>
       </button>
     </template>
 

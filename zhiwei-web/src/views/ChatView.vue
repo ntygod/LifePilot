@@ -10,7 +10,7 @@ import {
 } from 'lucide-vue-next'
 import { chatApi, modelServiceApi } from '@/api/client'
 import type { ModelService } from '@/api/client'
-import type { ChatAttachment, Message, ResumePolicy, SessionConfig } from '@/types'
+import type { ChatAttachment, ChatTurnAction, Message, SessionConfig } from '@/types'
 import StatePanel from '@/components/common/StatePanel.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -36,6 +36,7 @@ const uiStore = useUiStore()
 
 const {
   sendMessage,
+  executeTurn,
   isStreaming,
   error,
   abort,
@@ -46,6 +47,7 @@ const {
   reasoningEvents,
   streamingReactSteps,
   streamingA2uiComponents,
+  activeInteraction,
   pendingToolConfirmations,
   pendingToolConfirmationResolutions,
   resolveToolConfirmation,
@@ -91,9 +93,7 @@ const chatProviders = computed(() =>
 )
 
 const currentSession = computed(() => {
-  if (!chatStore.activeSessionId) {
-    return null
-  }
+  if (!chatStore.activeSessionId) return null
   return chatStore.sessions.find(session => session.id === chatStore.activeSessionId) || null
 })
 
@@ -115,9 +115,7 @@ async function loadActiveSessionConfig(sessionId: string | null) {
 
   try {
     const detail = await chatApi.getSession(sessionId)
-    if (chatStore.activeSessionId !== sessionId) {
-      return
-    }
+    if (chatStore.activeSessionId !== sessionId) return
 
     activeSessionConfig.value = {
       preferredProviderId: detail.preferredProviderId ?? undefined,
@@ -139,27 +137,68 @@ const hasMessageSearch = computed(() => searchQuery.value.trim().length > 0)
 
 const matchedMessageCount = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
-  if (!query) {
-    return chatStore.messages.length
-  }
+  if (!query) return chatStore.messages.length
 
   return chatStore.messages.filter(message => message.content.toLowerCase().includes(query)).length
 })
 
 const lastAssistantMessage = computed(() => {
   for (let index = chatStore.messages.length - 1; index >= 0; index -= 1) {
-    if (chatStore.messages[index].role === 'assistant') {
-      return chatStore.messages[index]
-    }
+    if (chatStore.messages[index].role === 'assistant') return chatStore.messages[index]
   }
   return null
 })
 
+const latestSuspendedAssistant = computed<Message | null>(() => {
+  const message = lastAssistantMessage.value
+  if (!message) return null
+  if (message.turnStatus === 'SUSPENDED' || message.completionMode === 'SUSPENDED') {
+    return message
+  }
+  return null
+})
+
+function resolveContinuationDetail(message: Message | null) {
+  if (!message) {
+    return null
+  }
+
+  if (message.suspendReasonSourceId === '__await_user_input__') {
+    return '你这次回复会直接接到刚才那轮任务上，我会沿着当前进度继续处理。'
+  }
+
+  const detail = message.errorMessage?.trim()
+  if (!detail || detail === message.suspendReasonSourceId || detail === 'await_user_input' || detail === 'suspended' || detail.startsWith('__')) {
+    return '你这次回复会直接接到刚才那轮任务上，我会沿着当前进度继续处理。'
+  }
+
+  return `当前卡住点：${detail}`
+}
+
+const continuationTitle = computed(() => {
+  if (!latestSuspendedAssistant.value || isStreaming.value) {
+    return null
+  }
+  return '正在继续上一轮任务'
+})
+
+const continuationDetail = computed(() => {
+  if (!latestSuspendedAssistant.value || isStreaming.value) {
+    return null
+  }
+  return resolveContinuationDetail(latestSuspendedAssistant.value)
+})
+
+const inputPlaceholder = computed(() => {
+  if (continuationTitle.value) {
+    return '回复补充信息，继续刚才的任务…'
+  }
+  return '输入问题，或粘贴资料继续往下处理…'
+})
+
 const latestTraceMessage = computed(() => {
   for (let index = chatStore.messages.length - 1; index >= 0; index -= 1) {
-    if (chatStore.messages[index].traceId) {
-      return chatStore.messages[index]
-    }
+    if (chatStore.messages[index].traceId) return chatStore.messages[index]
   }
   return null
 })
@@ -167,9 +206,7 @@ const latestTraceMessage = computed(() => {
 const latestUserErrorMessage = computed(() => {
   for (let index = chatStore.messages.length - 1; index >= 0; index -= 1) {
     const message = chatStore.messages[index]
-    if (message.role === 'user' && message.status === 'error') {
-      return message
-    }
+    if (message.role === 'user' && message.status === 'error') return message
   }
   return null
 })
@@ -182,7 +219,6 @@ const showGlobalErrorPanel = computed(() => (
 const lastToolsSummary = computed(() => lastAssistantMessage.value?.toolsSummary ?? [])
 const lastSources = computed(() => lastAssistantMessage.value?.sources ?? [])
 const lastKbSources = computed(() => lastSources.value.filter(source => source.type === 'knowledgeBase'))
-
 const lastTraceTarget = computed(() => (
   latestTraceMessage.value?.traceId
     ? { name: 'traces', query: { id: latestTraceMessage.value.traceId } }
@@ -210,13 +246,13 @@ onMounted(async () => {
   try {
     providers.value = await modelServiceApi.listEnabledServices('GENERATION')
   } catch {
-    // Provider 列表加载失败不阻塞页面。
+    // Provider 列表拉取失败不阻塞页面。
   }
 })
 
 watch(
   () => route.params.sessionId as string | undefined,
-  async sessionId => {
+  async (sessionId) => {
     if (!sessionId) {
       chatStore.activeSessionId = null
       try {
@@ -270,81 +306,56 @@ function getAttachmentIds(message: Message): string[] | undefined {
   return attachmentIds && attachmentIds.length > 0 ? attachmentIds : undefined
 }
 
-function findUserMessageForAssistant(assistantMessage: Message): Message | null {
-  const sorted = [...chatStore.messages].sort((left, right) => left.timestamp - right.timestamp)
-  const assistantIndex = sorted.findIndex(message => message.id === assistantMessage.id)
-  if (assistantIndex < 0) {
-    return null
-  }
-
-  for (let index = assistantIndex - 1; index >= 0; index -= 1) {
-    if (sorted[index].role === 'user') {
-      return sorted[index]
-    }
+function findUserMessageByTurnId(turnId: string): Message | null {
+  for (let index = chatStore.messages.length - 1; index >= 0; index -= 1) {
+    const message = chatStore.messages[index]
+    if (message.role === 'user' && message.turnId === turnId) return message
   }
   return null
 }
 
-async function resendUserMessage(message: Message, resumePolicy?: ResumePolicy) {
-  await sendMessage(
-    message.content,
-    getAttachmentIds(message),
-    message.attachments,
-    undefined,
-    resumePolicy,
-  )
+async function handleTurnAction(message: Message, action: ChatTurnAction) {
+  if (!message.turnId) {
+    if (action === 'SEND' || action === 'RETRY') {
+      await sendMessage(
+        message.content,
+        getAttachmentIds(message),
+        message.attachments,
+      )
+    }
+    return
+  }
+
+  const userMessage = message.role === 'assistant'
+    ? findUserMessageByTurnId(message.turnId)
+    : message
+
+  await executeTurn(message.turnId, action, {
+    content: action === 'RESUME' ? undefined : userMessage?.content,
+    attachmentIds: userMessage ? getAttachmentIds(userMessage) : undefined,
+    attachments: userMessage?.attachments,
+    userMessageId: userMessage?.id,
+  })
 }
 
 async function handleRetry(message: Message) {
-  if (message.status === 'error') {
-    const index = chatStore.messages.findIndex(item => item.id === message.id)
-    if (index !== -1) {
-      chatStore.messages.splice(index, 1)
-      if (message.role === 'user') {
-        const nextMessage = chatStore.messages[index]
-        if (nextMessage && nextMessage.role === 'assistant') {
-          chatStore.messages.splice(index, 1)
-        }
-      }
-    }
-  }
-  await resendUserMessage(message)
+  await handleTurnAction(message, message.turnId ? 'RETRY' : 'SEND')
 }
 
 async function handleRegenerate(assistantMessage: Message) {
-  const userMessage = findUserMessageForAssistant(assistantMessage)
-  if (!userMessage) {
-    return
-  }
-
-  const removeIndex = chatStore.messages.findIndex(message => message.id === assistantMessage.id)
-  if (removeIndex !== -1) {
-    chatStore.messages.splice(removeIndex, 1)
-  }
-
-  await resendUserMessage(userMessage, 'FRESH')
+  await handleTurnAction(assistantMessage, 'RESTART')
 }
 
 async function handleResume(assistantMessage: Message) {
-  const userMessage = findUserMessageForAssistant(assistantMessage)
-  if (!userMessage) {
-    return
-  }
-  await resendUserMessage(userMessage, 'AUTO')
+  await handleTurnAction(assistantMessage, 'RESUME')
 }
 
 async function handleRestart(assistantMessage: Message) {
-  const userMessage = findUserMessageForAssistant(assistantMessage)
-  if (!userMessage) {
-    return
-  }
-  await resendUserMessage(userMessage, 'FRESH')
+  await handleTurnAction(assistantMessage, 'RESTART')
 }
 
 async function handleFork(message: Message) {
-  if (!chatStore.activeSessionId) {
-    return
-  }
+  if (!chatStore.activeSessionId) return
   try {
     const newSession = await chatApi.forkSession(chatStore.activeSessionId, message.id)
     uiStore.showToast('success', '会话分叉成功')
@@ -381,9 +392,7 @@ async function handleClearSession() {
 }
 
 async function handleConfigUpdate(config: SessionConfig) {
-  if (!chatStore.activeSessionId) {
-    return
-  }
+  if (!chatStore.activeSessionId) return
 
   try {
     await chatApi.updateSessionConfig(chatStore.activeSessionId, config)
@@ -402,9 +411,7 @@ async function handleConfigUpdate(config: SessionConfig) {
 }
 
 async function handleUpdateSessionTitle(title: string) {
-  if (!chatStore.activeSessionId || !title.trim()) {
-    return
-  }
+  if (!chatStore.activeSessionId || !title.trim()) return
 
   try {
     await chatApi.updateSession(chatStore.activeSessionId, { title: title.trim() })
@@ -428,12 +435,6 @@ function togglePanel(panel: 'config' | 'sidebar' | 'debug') {
     showConfigPanel.value = false
     showSessionSidebar.value = false
   }
-}
-
-function closeInspectorPanels() {
-  showSessionSidebar.value = false
-  showDebugDrawer.value = false
-  showConfigPanel.value = false
 }
 </script>
 
@@ -496,13 +497,18 @@ function closeInspectorPanels() {
             <Input
               v-model="searchQuery"
               type="search"
-              placeholder="搜索消息..."
+              placeholder="搜索消息…"
               class="h-7 pl-8 text-xs focus-visible:ring-1"
             />
           </div>
           <span class="surface-chip px-2 py-0.5 text-xs">工具 {{ lastToolsSummary.length }}</span>
           <span class="surface-chip px-2 py-0.5 text-xs">知识库 {{ lastKbSources.length }}</span>
-          <span v-if="hasMessageSearch" class="surface-chip surface-chip-strong px-2 py-0.5 text-xs">命中 {{ matchedMessageCount }}</span>
+          <span
+            v-if="hasMessageSearch"
+            class="surface-chip surface-chip-strong px-2 py-0.5 text-xs"
+          >
+            命中 {{ matchedMessageCount }}
+          </span>
           <div class="ml-auto flex items-center gap-1.5">
             <RouterLink
               :to="lastTraceTarget"
@@ -622,7 +628,13 @@ function closeInspectorPanels() {
             </Button>
           </template>
         </StatePanel>
-        <ChatInput :disabled="isStreaming" @send="handleSend" />
+        <ChatInput
+          :disabled="isStreaming && !activeInteraction"
+          :placeholder="inputPlaceholder"
+          :continuation-title="continuationTitle"
+          :continuation-detail="continuationDetail"
+          @send="handleSend"
+        />
       </div>
     </div>
   </div>
