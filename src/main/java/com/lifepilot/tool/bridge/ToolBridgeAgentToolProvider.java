@@ -99,7 +99,7 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
      * 将 ToolContract 转换为 Spring AI ToolCallback。
      *
      * @param tool 工具契约
-     * @param streamId SSE 流标识（用于精确推送确认请求，可选）
+     * @param streamId SSE 流标识（用于精确推送授权审批请求，可选）
      * @return Spring AI ToolCallback
      */
     private ToolCallback toToolCallback(ToolContract tool, @Nullable String streamId, ReactAgentState state) {

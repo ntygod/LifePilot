@@ -1,6 +1,5 @@
 package com.lifepilot.tool.registry;
 
-import com.lifepilot.observability.guardrail.GuardrailEngine;
 import com.lifepilot.tool.ToolContract;
 import com.lifepilot.tool.event.ToolRegistryEvent.*;
 import com.lifepilot.tool.model.ToolCategory;
@@ -39,17 +38,13 @@ public class DynamicToolRegistry {
     /** 分组索引：category → 工具 ID 集合。 */
     private final ConcurrentHashMap<ToolCategory, Set<String>> categoryIndex = new ConcurrentHashMap<>();
 
-    private final GuardrailEngine guardrailEngine;
     private final ApplicationEventPublisher eventPublisher;
 
     /** 快照缓存锁。 */
     private final ReadWriteLock snapshotLock = new ReentrantReadWriteLock();
     private volatile List<ToolContract> cachedSnapshot = List.of();
 
-    public DynamicToolRegistry(
-            GuardrailEngine guardrailEngine,
-            ApplicationEventPublisher eventPublisher) {
-        this.guardrailEngine = guardrailEngine;
+    public DynamicToolRegistry(ApplicationEventPublisher eventPublisher) {
         this.eventPublisher = eventPublisher;
     }
 
@@ -64,7 +59,6 @@ public class DynamicToolRegistry {
      */
     public void registerBuiltinTool(ToolContract tool) {
         if (registerWithPriority(tool, ToolLayer.JAVA_NATIVE, "builtin")) {
-            guardrailEngine.addAllowedTools(List.of(tool.id()));
             invalidateSnapshot();
             eventPublisher.publishEvent(new ToolsRegistered(
                     List.of(tool.id()), ToolLayer.JAVA_NATIVE, "builtin"));
@@ -86,7 +80,6 @@ public class DynamicToolRegistry {
         }
         serverToolIndex.put(serverName, List.copyOf(registeredIds));
         if (!registeredIds.isEmpty()) {
-            guardrailEngine.addAllowedTools(registeredIds);
             invalidateSnapshot();
             eventPublisher.publishEvent(new ToolsRegistered(
                     List.copyOf(registeredIds), ToolLayer.MCP_EXTERNAL, serverName));
@@ -148,7 +141,6 @@ public class DynamicToolRegistry {
         if (removed != null) {
             toolLayers.remove(toolId);
             removeCategoryIndex(removed.category(), toolId);
-            guardrailEngine.removeAllowedTools(List.of(toolId));
             invalidateSnapshot();
             eventPublisher.publishEvent(new ToolsUnregistered(
                     List.of(toolId), "builtin"));
@@ -173,7 +165,6 @@ public class DynamicToolRegistry {
                 }
                 toolLayers.remove(id);
             });
-            guardrailEngine.removeAllowedTools(toolIds);
             invalidateSnapshot();
             eventPublisher.publishEvent(new ToolsUnregistered(
                     List.copyOf(toolIds), serverName));

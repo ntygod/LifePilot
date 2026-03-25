@@ -6,8 +6,6 @@ import com.lifepilot.observability.evaluation.TrajectoryEvaluator;
 import com.lifepilot.observability.guardrail.GuardrailAdvisor;
 import com.lifepilot.observability.guardrail.GuardrailEngine;
 import com.lifepilot.observability.guardrail.GuardrailPolicy;
-import com.lifepilot.observability.guardrail.RiskLevel;
-import com.lifepilot.tool.config.ToolConfigProperties;
 import com.lifepilot.observability.redactor.DataRedactor;
 import com.lifepilot.observability.trace.*;
 import org.slf4j.Logger;
@@ -23,8 +21,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
-import java.util.Map;
-import java.util.stream.Collectors;
 
 /**
  * 可观测性模块 Spring Boot 自动配置。
@@ -110,10 +106,9 @@ public class ObservabilityAutoConfiguration {
             havingValue = "true", matchIfMissing = true)
     public GuardrailEngine guardrailEngine(JdbcTemplate jdbcTemplate,
                                             TraceContextPropagator propagator,
-                                            ObservabilityProperties properties,
-                                            ToolConfigProperties toolConfigProperties) {
+                                            ObservabilityProperties properties) {
         log.info("可观测性: 注册 GuardrailEngine 护栏引擎");
-        return new GuardrailEngine(jdbcTemplate, propagator, properties, toolConfigProperties);
+        return new GuardrailEngine(jdbcTemplate, propagator, properties);
     }
 
     @Bean
@@ -123,25 +118,6 @@ public class ObservabilityAutoConfiguration {
     public GuardrailAdvisor guardrailAdvisor(GuardrailEngine guardrailEngine) {
         log.info("可观测性: 注册 GuardrailAdvisor（Spring AI Advisor）");
         return new GuardrailAdvisor(guardrailEngine);
-    }
-
-    @Bean
-    @ConditionalOnProperty(prefix = "lifepilot.observability.guardrail", name = "enabled",
-            havingValue = "true", matchIfMissing = true)
-    public GuardrailPolicy defaultToolRiskPolicy(GuardrailEngine guardrailEngine,
-                                                  ObservabilityProperties properties) {
-        var guardrailConfig = properties.getGuardrail();
-        var toolRiskConfig = guardrailConfig.getToolRisk();
-
-        // 解析配置中的工具 ID → 风险等级映射
-        Map<String, RiskLevel> mapping = toolRiskConfig.getToolRiskMapping().entrySet().stream()
-                .collect(Collectors.toMap(Map.Entry::getKey, e -> RiskLevel.valueOf(e.getValue())));
-        RiskLevel defaultLevel = RiskLevel.valueOf(toolRiskConfig.getDefaultRiskLevel());
-
-        var policy = GuardrailPolicy.toolRiskPolicy("default-tool-risk", true, 10, mapping, defaultLevel);
-        guardrailEngine.registerPolicy(policy);
-        log.info("可观测性: 注册默认 ToolRiskPolicy: defaultRiskLevel={}", defaultLevel);
-        return policy;
     }
 
     @Bean

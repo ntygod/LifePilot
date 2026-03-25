@@ -40,9 +40,8 @@ import static org.mockito.Mockito.mock;
 public class SkillTestSupport {
 
     @Bean
-    DynamicToolRegistry dynamicToolRegistry(GuardrailEngine guardrailEngine,
-                                            ApplicationEventPublisher eventPublisher) {
-        return new DynamicToolRegistry(guardrailEngine, eventPublisher);
+    DynamicToolRegistry dynamicToolRegistry(ApplicationEventPublisher eventPublisher) {
+        return new DynamicToolRegistry(eventPublisher);
     }
 
     @Bean

@@ -102,8 +102,8 @@ public final class SseEventType {
     public static final String TRANSCRIPTION = "transcription";
 
     // 护栏模块事件类型
-    /** 工具确认请求事件 */
-    public static final String TOOL_CONFIRMATION_REQUEST = "tool-confirmation-request";
+    /** 权限审批请求事件 */
+    public static final String PERMISSION_APPROVAL_REQUEST = "permission-approval-request";
 
     // Agent 挂起-恢复事件类型
     /** Agent 挂起事件 */

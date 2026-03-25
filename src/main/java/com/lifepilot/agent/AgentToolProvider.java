@@ -21,7 +21,7 @@ public interface AgentToolProvider {
      * 获取工具回调列表。
      *
      * @param state 当前 ReAct Agent 状态
-     * @param streamId SSE 流标识（用于精确推送确认请求，CLI 场景为 null）
+     * @param streamId SSE 流标识（用于精确推送授权审批请求，CLI 场景为 null）
      * @return 工具回调列表（Spring AI ToolCallback）
      */
     List<ToolCallback> getToolCallbacks(ReactAgentState state, @Nullable String streamId);

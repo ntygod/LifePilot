@@ -11,7 +11,6 @@ import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.repository.MessageFeedbackRepository;
 import com.lifepilot.interaction.web.service.ChatSessionService;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
-import com.lifepilot.interaction.web.service.WebUserConfirmationService;
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
 import com.lifepilot.media.config.MediaProperties;
 import org.junit.jupiter.api.BeforeEach;
@@ -56,8 +55,6 @@ class ChatController_A2uiContract_测试 {
     AttachmentRepository attachmentRepository;
     @Mock
     KnowledgeBaseProperties knowledgeBaseProperties;
-    @Mock
-    WebUserConfirmationService confirmationService;
 
     @BeforeEach
     void setUp() {
@@ -69,7 +66,6 @@ class ChatController_A2uiContract_测试 {
                 messageFeedbackRepository,
                 attachmentRepository,
                 knowledgeBaseProperties,
-                confirmationService,
                 null,
                 null,
                 null,

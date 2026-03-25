@@ -8,9 +8,10 @@ import com.lifepilot.interaction.web.adapter.WebChannelAdapter;
 import com.lifepilot.interaction.web.controller.WebExceptionHandler;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.service.ChatTurnService;
-import com.lifepilot.interaction.web.service.WebUserConfirmationService;
+import com.lifepilot.interaction.web.service.WebPermissionApprovalService;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.observability.config.ObservabilityProperties;
+import com.lifepilot.permission.service.PermissionService;
 import com.lifepilot.media.audio.AudioTranscriber;
 import com.lifepilot.media.config.MediaProperties;
 import org.slf4j.Logger;
@@ -20,6 +21,7 @@ import org.springframework.lang.Nullable;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.annotation.Primary;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.event.EventListener;
 import org.springframework.lang.NonNull;
@@ -76,15 +78,17 @@ public class WebAutoConfiguration {
     }
 
     @Bean
-    public WebUserConfirmationService webUserConfirmationService(
+    @Primary
+    public WebPermissionApprovalService webPermissionApprovalService(
             SseSessionManager sseSessionManager,
             TranscriptStore transcriptStore,
+            PermissionService permissionService,
             com.fasterxml.jackson.databind.ObjectMapper objectMapper,
             ObservabilityProperties observabilityProperties) {
-        long timeout = observabilityProperties.getGuardrail().getConfirmationTimeoutSeconds();
-        log.info("注册 WebUserConfirmationService: timeout={}s", timeout);
-        return new WebUserConfirmationService(sseSessionManager, transcriptStore,
-                objectMapper, timeout);
+        long timeout = observabilityProperties.getGuardrail().getApprovalTimeoutSeconds();
+        log.info("注册 WebPermissionApprovalService: timeout={}s", timeout);
+        return new WebPermissionApprovalService(sseSessionManager, transcriptStore,
+                permissionService, objectMapper, timeout);
     }
 
     // 注意：ChatController、SettingsController、KnowledgeBaseController、SkillController、

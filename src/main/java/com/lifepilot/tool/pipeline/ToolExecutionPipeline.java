@@ -2,7 +2,13 @@ package com.lifepilot.tool.pipeline;
 
 import com.lifepilot.observability.guardrail.GuardrailEngine;
 import com.lifepilot.observability.guardrail.GuardrailResult;
-import com.lifepilot.interaction.UserConfirmationService;
+import com.lifepilot.permission.model.ExecutionGrant;
+import com.lifepilot.permission.model.PermissionDecisionEntry;
+import com.lifepilot.permission.model.PermissionDecisionType;
+import com.lifepilot.permission.model.PermissionRequest;
+import com.lifepilot.permission.service.PermissionApprovalService;
+import com.lifepilot.permission.service.PermissionRequestFactory;
+import com.lifepilot.permission.service.PermissionService;
 import com.lifepilot.tool.ToolContract;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
@@ -35,7 +41,9 @@ public class ToolExecutionPipeline implements java.io.Closeable {
     private final DynamicToolRegistry toolRegistry;
     private final GuardrailEngine guardrailEngine;
     private final IdempotencyManager idempotencyManager;
-    private final UserConfirmationService confirmationService;
+    private final PermissionService permissionService;
+    private final PermissionRequestFactory permissionRequestFactory;
+    private final PermissionApprovalService permissionApprovalService;
     private final long retryInitialDelayMs;
     private final double retryMultiplier;
     private final long retryMaxDelayMs;
@@ -45,14 +53,18 @@ public class ToolExecutionPipeline implements java.io.Closeable {
             DynamicToolRegistry toolRegistry,
             GuardrailEngine guardrailEngine,
             IdempotencyManager idempotencyManager,
-            UserConfirmationService confirmationService,
+            PermissionService permissionService,
+            PermissionRequestFactory permissionRequestFactory,
+            PermissionApprovalService permissionApprovalService,
             long retryInitialDelayMs,
             double retryMultiplier,
             long retryMaxDelayMs) {
         this.toolRegistry = toolRegistry;
         this.guardrailEngine = guardrailEngine;
         this.idempotencyManager = idempotencyManager;
-        this.confirmationService = confirmationService;
+        this.permissionService = permissionService;
+        this.permissionRequestFactory = permissionRequestFactory;
+        this.permissionApprovalService = permissionApprovalService;
         this.retryInitialDelayMs = retryInitialDelayMs;
         this.retryMultiplier = retryMultiplier;
         this.retryMaxDelayMs = retryMaxDelayMs;
@@ -103,7 +115,7 @@ public class ToolExecutionPipeline implements java.io.Closeable {
      * @param parameters 调用参数
      * @param traceId 轨迹 ID（用于日志关联）
      * @param idempotencyKey 幂等键（可选）
-     * @param streamId SSE 流标识（用于精确推送确认请求，可选）
+     * @param streamId SSE 流标识（用于精确推送授权审批请求，可选）
      * @param context 请求级上下文（传递 sessionId 等非 LLM 参数，可选）
      * @return 结构化执行结果
      */
@@ -132,7 +144,25 @@ public class ToolExecutionPipeline implements java.io.Closeable {
                     buildMeta(toolId, start, 0, false, idempotencyKey));
         }
 
-        // 3. 护栏检查
+        // 3. 权限判定
+        PermissionRequest permissionRequest = permissionRequestFactory.create(tool, input, traceId);
+        PermissionDecisionEntry permissionDecision = permissionService.evaluateAndRecord(permissionRequest);
+        if (permissionDecision.decisionType() == PermissionDecisionType.BLOCKED) {
+            log.warn("权限阻断: toolId={}, actionType={}, reason={}",
+                    toolId, permissionRequest.actionType(), permissionDecision.reason());
+            return ToolResult.error("权限阻断: " + permissionDecision.reason(),
+                    buildMeta(toolId, start, 0, false, idempotencyKey));
+        }
+        if (permissionDecision.decisionType() == PermissionDecisionType.NEEDS_APPROVAL) {
+            ExecutionGrant grant = permissionApprovalService.requestApproval(tool, permissionRequest, streamId);
+            if (grant == null) {
+                log.info("工具授权未获批准: toolId={}, actionType={}", toolId, permissionRequest.actionType());
+                return ToolResult.error("未获得执行授权",
+                        buildMeta(toolId, start, 0, false, idempotencyKey));
+            }
+        }
+
+        // 4. 护栏检查
         GuardrailResult guardrail = guardrailEngine.checkToolCall(tool, input);
         switch (guardrail) {
             case GuardrailResult.Blocked blocked -> {
@@ -140,19 +170,12 @@ public class ToolExecutionPipeline implements java.io.Closeable {
                 return ToolResult.error("护栏拦截: " + blocked.reason(),
                         buildMeta(toolId, start, 0, false, idempotencyKey));
             }
-            case GuardrailResult.NeedsConfirmation confirm -> {
-                boolean confirmed = confirmationService.requestConfirmation(
-                        tool, input, confirm.message(), streamId);
-                if (!confirmed) {
-                    log.info("用户拒绝执行: toolId={}", toolId);
-                    return ToolResult.error("用户拒绝执行",
-                            buildMeta(toolId, start, 0, false, idempotencyKey));
-                }
-            }
+            case GuardrailResult.NeedsConfirmation _ ->
+                    throw new IllegalStateException("护栏层不应再返回确认结果");
             case GuardrailResult.Passed _ -> { /* 通过 */ }
         }
 
-        // 4. 幂等检查
+        // 5. 幂等检查
         if (idempotencyKey != null && tool.idempotent()) {
             var cached = idempotencyManager.checkDuplicate(idempotencyKey);
             if (cached.isPresent()) {
@@ -163,16 +186,16 @@ public class ToolExecutionPipeline implements java.io.Closeable {
             }
         }
 
-        // 5. 执行（含超时 + 重试）
+        // 6. 执行（含超时 + 重试）
         int maxRetries = tool.budget().maxRetries();
         ToolResult result = executeWithRetry(tool, input, maxRetries);
 
-        // 6. 记录幂等缓存
+        // 7. 记录幂等缓存
         if (idempotencyKey != null && tool.idempotent() && result.ok()) {
             idempotencyManager.recordExecution(idempotencyKey, result);
         }
 
-        // 7. 补充元信息
+        // 8. 补充元信息
         Duration duration = Duration.between(start, Instant.now());
         ToolResultMeta meta = result.meta().toBuilder()
                 .toolId(toolId)

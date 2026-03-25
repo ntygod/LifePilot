@@ -12,7 +12,7 @@ import java.util.Map;
  *
  * @param id 消息 ID
  * @param turnId 关联 turnId
- * @param role 角色（user / assistant / tool-confirmation）
+ * @param role 角色（user / assistant / permission-approval）
  * @param content 文本内容
  * @param a2uiComponents A2UI 组件树
  * @param timestamp 消息时间戳

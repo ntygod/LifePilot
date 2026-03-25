@@ -101,18 +101,33 @@ class LifePilotApplicationTest {
     void Flyway迁移_成功执行() {
         // 验证 V1 迁移创建的核心表存在
         var count = jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN ('model_services', 'generation_settings', 'embedding_settings', 'rerank_settings')",
+                """
+                SELECT count(*) FROM sqlite_master
+                WHERE type='table'
+                  AND name IN (
+                    'model_services',
+                    'generation_settings',
+                    'embedding_settings',
+                    'rerank_settings',
+                    'execution_grants',
+                    'permission_decisions'
+                  )
+                """,
                 Integer.class);
-        assertThat(count).isEqualTo(4);
+        assertThat(count).isEqualTo(6);
 
         var modelServiceCount = jdbcTemplate.queryForObject("SELECT count(*) FROM model_services", Integer.class);
         var generationSettingsCount = jdbcTemplate.queryForObject("SELECT count(*) FROM generation_settings", Integer.class);
         var embeddingSettingsCount = jdbcTemplate.queryForObject("SELECT count(*) FROM embedding_settings", Integer.class);
         var rerankSettingsCount = jdbcTemplate.queryForObject("SELECT count(*) FROM rerank_settings", Integer.class);
+        var executionGrantCount = jdbcTemplate.queryForObject("SELECT count(*) FROM execution_grants", Integer.class);
+        var permissionDecisionCount = jdbcTemplate.queryForObject("SELECT count(*) FROM permission_decisions", Integer.class);
         assertThat(modelServiceCount).isGreaterThanOrEqualTo(10);
         assertThat(generationSettingsCount).isEqualTo(1);
         assertThat(embeddingSettingsCount).isEqualTo(1);
         assertThat(rerankSettingsCount).isEqualTo(1);
+        assertThat(executionGrantCount).isEqualTo(0);
+        assertThat(permissionDecisionCount).isEqualTo(0);
     }
 
     @Test

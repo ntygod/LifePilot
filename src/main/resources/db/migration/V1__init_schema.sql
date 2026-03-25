@@ -339,6 +339,36 @@ CREATE TABLE guardrail_logs (
     created_at      TEXT NOT NULL
 );
 
+CREATE TABLE execution_grants (
+    id                 TEXT PRIMARY KEY,
+    subject_type       TEXT NOT NULL,
+    subject_id         TEXT NOT NULL,
+    action_type        TEXT NOT NULL,
+    risk_ceiling       TEXT NOT NULL,
+    scope_json         TEXT NOT NULL DEFAULT '{}',
+    channels_json      TEXT NOT NULL DEFAULT '[]',
+    autonomous_allowed INTEGER NOT NULL DEFAULT 0,
+    expires_at         TEXT,
+    revoked_at         TEXT,
+    revoked_by         TEXT,
+    revoked_reason     TEXT,
+    created_by         TEXT,
+    source_entry_id    TEXT,
+    reason             TEXT,
+    metadata_json      TEXT NOT NULL DEFAULT '{}',
+    created_at         TEXT NOT NULL,
+    updated_at         TEXT NOT NULL
+);
+
+CREATE INDEX idx_execution_grants_subject
+    ON execution_grants(subject_type, subject_id);
+
+CREATE INDEX idx_execution_grants_action
+    ON execution_grants(action_type);
+
+CREATE INDEX idx_execution_grants_active
+    ON execution_grants(action_type, revoked_at, expires_at);
+
 CREATE TABLE installed_extensions (
     id                   TEXT PRIMARY KEY,
     package_id           TEXT NOT NULL UNIQUE,
@@ -715,6 +745,35 @@ CREATE TABLE session_artifacts (
     FOREIGN KEY (session_id) REFERENCES session_store(session_id) ON DELETE CASCADE,
     FOREIGN KEY (source_entry_id) REFERENCES session_transcript_entries(id) ON DELETE SET NULL
 );
+
+CREATE TABLE permission_decisions (
+    id                  TEXT PRIMARY KEY,
+    session_id          TEXT,
+    trace_id            TEXT,
+    workspace_id        TEXT,
+    task_id             TEXT,
+    user_id             TEXT,
+    tool_id             TEXT NOT NULL,
+    action_type         TEXT NOT NULL,
+    risk_level          TEXT NOT NULL,
+    channel             TEXT NOT NULL,
+    resource_scope_json TEXT NOT NULL DEFAULT '{}',
+    decision_type       TEXT NOT NULL,
+    matched_grant_id    TEXT,
+    matched_subject_type TEXT,
+    matched_subject_id  TEXT,
+    reason              TEXT,
+    created_at          TEXT NOT NULL
+);
+
+CREATE INDEX idx_permission_decisions_session
+    ON permission_decisions(session_id, created_at);
+
+CREATE INDEX idx_permission_decisions_trace
+    ON permission_decisions(trace_id, created_at);
+
+CREATE INDEX idx_permission_decisions_task
+    ON permission_decisions(task_id, created_at);
 
 CREATE TABLE session_knowledge_bases (
         session_id        TEXT NOT NULL,

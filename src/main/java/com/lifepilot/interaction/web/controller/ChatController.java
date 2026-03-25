@@ -9,7 +9,6 @@ import com.lifepilot.interaction.web.adapter.WebChannelAdapter;
 import com.lifepilot.interaction.web.model.*;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.repository.MessageFeedbackRepository;
-import com.lifepilot.interaction.web.service.WebUserConfirmationService;
 import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
@@ -84,8 +83,6 @@ public class ChatController {
     private final AttachmentRepository attachmentRepository;
     private final KnowledgeBaseProperties knowledgeBaseProperties;
     @Nullable
-    private final WebUserConfirmationService confirmationService;
-    @Nullable
     private final InteractionBridge interactionBridge;
     @Nullable
     private final FeedbackProcessor feedbackProcessor;
@@ -98,7 +95,6 @@ public class ChatController {
                           MessageFeedbackRepository feedbackRepository,
                           AttachmentRepository attachmentRepository,
                           KnowledgeBaseProperties knowledgeBaseProperties,
-                          @Nullable WebUserConfirmationService confirmationService,
                           @Nullable InteractionBridge interactionBridge,
                           @Nullable FeedbackProcessor feedbackProcessor,
                           @Nullable SpeechSynthesizer speechSynthesizer,
@@ -109,7 +105,6 @@ public class ChatController {
         this.feedbackRepository = feedbackRepository;
         this.attachmentRepository = attachmentRepository;
         this.knowledgeBaseProperties = knowledgeBaseProperties;
-        this.confirmationService = confirmationService;
         this.interactionBridge = interactionBridge;
         this.feedbackProcessor = feedbackProcessor;
         this.speechSynthesizer = speechSynthesizer;
@@ -477,30 +472,6 @@ public class ChatController {
             return ResponseEntity.internalServerError().body(
                     new ErrorResponse(500, "分叉会话失败: " + e.getMessage(), Instant.now()));
         }
-    }
-
-    /**
-     * 工具确认响应端点。
-     *
-     * <p>前端确认对话框提交确认/拒绝结果，解除 {@link WebUserConfirmationService} 的阻塞等待。</p>
-     *
-     * @param requestId 确认请求 ID
-     * @param response  确认响应（confirmed + 可选 reason）
-     * @return 200 成功，404 requestId 不存在或已过期
-     */
-    @PostMapping("/tool-confirmations/{requestId}")
-    public ResponseEntity<?> handleToolConfirmation(
-            @PathVariable String requestId,
-            @RequestBody ConfirmationResponse response) {
-        if (confirmationService == null) {
-            log.debug("WebUserConfirmationService 未注入，确认端点不可用");
-            return ResponseEntity.notFound().build();
-        }
-        boolean resolved = confirmationService.resolveConfirmation(requestId, response.confirmed());
-        if (!resolved) {
-            return ResponseEntity.notFound().build();
-        }
-        return ResponseEntity.ok().build();
     }
 
     @PostMapping("/interactions/{interactionId}")

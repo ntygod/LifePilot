@@ -1,6 +1,5 @@
 package com.lifepilot.tool.registry;
 
-import com.lifepilot.observability.guardrail.GuardrailEngine;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.McpTool;
 import com.lifepilot.tool.ToolContract;
@@ -27,14 +26,12 @@ import static org.mockito.Mockito.*;
 class DynamicToolRegistryTest {
 
     private DynamicToolRegistry registry;
-    private GuardrailEngine guardrailEngine;
     private ApplicationEventPublisher eventPublisher;
 
     @BeforeEach
     void setUp() {
-        guardrailEngine = mock(GuardrailEngine.class);
         eventPublisher = mock(ApplicationEventPublisher.class);
-        registry = new DynamicToolRegistry(guardrailEngine, eventPublisher);
+        registry = new DynamicToolRegistry(eventPublisher);
     }
 
     @Test
@@ -107,24 +104,6 @@ class DynamicToolRegistryTest {
         var counts = registry.getToolCountByLayer();
         assertEquals(1, counts.getOrDefault(ToolLayer.JAVA_NATIVE, 0));
         assertEquals(1, counts.getOrDefault(ToolLayer.MCP_EXTERNAL, 0));
-    }
-
-    @Test
-    void 注册工具自动加入白名单() {
-        BuiltinTool tool = createBuiltinTool("test.echo", "Echo");
-        registry.registerBuiltinTool(tool);
-        // 验证 GuardrailEngine.addAllowedTools 被调用
-        verify(guardrailEngine).addAllowedTools(List.of("test.echo"));
-    }
-
-    @Test
-    void 注销工具自动移出白名单() {
-        McpTool tool = createMcpTool("mcp.tool", "Tool");
-        registry.registerMcpTools("server1", List.of(tool));
-        verify(guardrailEngine).addAllowedTools(List.of("mcp.tool"));
-
-        registry.unregisterMcpTools("server1");
-        verify(guardrailEngine).removeAllowedTools(List.of("mcp.tool"));
     }
 
     // ─── 辅助方法 ───

@@ -2,7 +2,6 @@ package com.lifepilot.observability.guardrail;
 
 import com.lifepilot.observability.config.ObservabilityProperties;
 import com.lifepilot.observability.trace.TraceContextPropagator;
-import com.lifepilot.tool.config.ToolConfigProperties;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -41,7 +40,7 @@ class GuardrailEngine_审计日志_集成测试 {
 
         var propagator = new TraceContextPropagator(false);
         var properties = new ObservabilityProperties();
-        engine = new GuardrailEngine(jdbcTemplate, propagator, properties, new ToolConfigProperties());
+        engine = new GuardrailEngine(jdbcTemplate, propagator, properties);
     }
 
     @AfterEach

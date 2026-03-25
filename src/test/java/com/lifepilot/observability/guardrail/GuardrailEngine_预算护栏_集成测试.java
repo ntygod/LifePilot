@@ -5,7 +5,6 @@ import com.lifepilot.observability.trace.LlmCallStep;
 import com.lifepilot.observability.trace.TraceContext;
 import com.lifepilot.observability.trace.TraceContextPropagator;
 import com.lifepilot.tool.BuiltinTool;
-import com.lifepilot.tool.config.ToolConfigProperties;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.schema.JsonSchema;
@@ -18,7 +17,6 @@ import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -64,9 +62,8 @@ class GuardrailEngine_预算护栏_集成测试 {
                 )""");
 
         propagator = new TraceContextPropagator(false);
-        engine = new GuardrailEngine(jdbcTemplate, propagator, new ObservabilityProperties(), new ToolConfigProperties());
+        engine = new GuardrailEngine(jdbcTemplate, propagator, new ObservabilityProperties());
         engine.registerPolicy(GuardrailPolicy.budgetLimitPolicy("daily-budget", true, 20, 1000));
-        engine.addAllowedTools(List.of("test.echo"));
     }
 
     @AfterEach

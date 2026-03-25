@@ -1,13 +1,5 @@
 package com.lifepilot.interaction.channel.feishu;
 
-import java.nio.charset.StandardCharsets;
-import java.time.Instant;
-import java.util.Base64;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.config.threadpool.SharedScheduler;
@@ -15,15 +7,18 @@ import com.lifepilot.interaction.channel.AbstractChannelAdapter;
 import com.lifepilot.interaction.config.ChannelConfigProvider;
 import com.lifepilot.interaction.config.GatewayProperties;
 import com.lifepilot.interaction.gateway.MessageGateway;
-import com.lifepilot.interaction.model.ChannelMetadata;
-import com.lifepilot.interaction.model.ChannelType;
-import com.lifepilot.interaction.model.GatewayMessage;
-import com.lifepilot.interaction.model.GatewayResponse;
-import com.lifepilot.interaction.model.MessageContent;
-import com.lifepilot.interaction.model.ResponseContent;
+import com.lifepilot.interaction.model.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
+
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.util.Base64;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 飞书通道适配器，处理飞书事件订阅 Webhook 回调。
@@ -135,7 +130,6 @@ public class FeishuChannelAdapter extends AbstractChannelAdapter {
      *   <li>明文事件</li>
      * </ol>
      *
-     * @param jsonBody JSON 事件体
      * @return 飞书响应 JSON Map
      */
     public Map<String, Object> handleEvent(byte[] rawBody) {

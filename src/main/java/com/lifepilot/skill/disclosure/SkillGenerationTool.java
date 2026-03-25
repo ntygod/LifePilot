@@ -19,7 +19,7 @@ import java.util.Map;
  * Skill 生成工具 — 注册独立的 generate_skill 工具到 DynamicToolRegistry。
  *
  * <p>允许 LLM 主动根据需求描述生成新 Skill。风险等级为 HIGH，
- * 护栏系统会在执行前自动向用户发起确认请求。</p>
+ * 权限系统会在执行前自动向用户发起授权审批。</p>
  *
  * @author zsg
  * @since 2026-03-19
@@ -80,8 +80,9 @@ public class SkillGenerationTool {
     /**
      * 处理 generate_skill 工具调用 — 主动生成新 Skill。
      *
-     * <p>此工具风险等级为 HIGH，护栏系统会在执行前自动向用户发起确认。
-     * 用户确认后才会进入此方法，生成成功即持久化注册。</p>     */
+     * <p>此工具风险等级为 HIGH，权限系统会在执行前自动向用户发起授权审批。
+     * 审批通过后才会进入此方法，生成成功即持久化注册。</p>
+     */
     @SuppressWarnings("unchecked")
     private ToolResult handleGenerateSkill(ToolInput input) {
         String description = input.getParam("description", String.class);
