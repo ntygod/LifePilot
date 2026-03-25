@@ -25,6 +25,7 @@ import com.lifepilot.multiagent.config.MultiAgentProperties;
 import com.lifepilot.multiagent.loader.AgentMarkdownLoader;
 import com.lifepilot.multiagent.loader.AgentMarkdownParser;
 import com.lifepilot.multiagent.loader.AgentMarkdownSerializer;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
@@ -58,6 +59,7 @@ import java.util.stream.Collectors;
  */
 @RestController
 @RequestMapping("/api/agents")
+@ConditionalOnProperty(name = "lifepilot.gateway.channels.web.enabled", havingValue = "true")
 public class AgentController {
 
     private static final Logger log = LoggerFactory.getLogger(AgentController.class);
@@ -352,6 +354,7 @@ public class AgentController {
                     request.message(),
                     testSessionId,
                     "web-test",
+                    null,
                     agent.systemPrompt(),
                     agent.budget().toAgentBudget(),
                     null, // 无父 traceId
@@ -376,6 +379,7 @@ public class AgentController {
 
             ChatResponse chatResponse = new ChatResponse(
                     entryId,
+                    agentResponse.turnId(),
                     agentResponse.content(),
                     null, // a2ui（测试对话暂不支持）
                     tokenUsage,
@@ -462,6 +466,7 @@ public class AgentController {
                 request.message(),
                 testSessionId,
                 "web-test",
+                null,
                 agent.systemPrompt(),
                 agent.budget().toAgentBudget(),
                 null, 0,
@@ -525,6 +530,7 @@ public class AgentController {
                     request.message(),
                     sessionId,
                     "web-preview",
+                    null,
                     agent.systemPrompt(),
                     agent.budget().toAgentBudget(),
                     null, 0,

@@ -1,7 +1,8 @@
 ﻿import type {
   ChatAttachment,
   ChatResponse,
-  ResumePolicy,
+  ChatTurnAction,
+  ChatTurnStatus,
   ChatSession,
   ChatSessionDetail,
   CreateKbRequest,
@@ -71,6 +72,7 @@
   OptionItem,
   // 閫氱煡涓績绫诲瀷
   NotificationItem,
+  SseInteractionEvent,
   // 璁板繂绠＄悊绫诲瀷
   MemoryStats,
   MemorySearchResult,
@@ -169,11 +171,12 @@ export const chatApi = {
     content: string,
     sessionId?: string,
     attachmentIds?: string[],
-    resumePolicy?: ResumePolicy
+    turnId?: string,
+    action: ChatTurnAction = 'SEND'
   ): Promise<ChatResponse> {
     return request('/chat/messages', {
       method: 'POST',
-      body: JSON.stringify({ content, sessionId, attachmentIds, resumePolicy })
+      body: JSON.stringify({ content, sessionId, attachmentIds, turnId, action })
     })
   },
 
@@ -185,13 +188,14 @@ export const chatApi = {
     content: string,
     sessionId?: string,
     attachmentIds?: string[],
-    resumePolicy?: ResumePolicy,
+    turnId?: string,
+    action: ChatTurnAction = 'SEND',
     signal?: AbortSignal
   ): Promise<ReadableStream<Uint8Array>> {
     const res = await fetch(`${BASE}/chat/messages/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content, sessionId, attachmentIds, resumePolicy }),
+      body: JSON.stringify({ content, sessionId, attachmentIds, turnId, action }),
       signal
     })
     if (!res.ok || !res.body) {
@@ -217,6 +221,7 @@ export const chatApi = {
   async getSessionMessages(sessionId: string): Promise<Message[]> {
     const messages = await request<Array<{
       id: string
+      turnId?: string | null
       role: 'user' | 'assistant' | 'tool-confirmation'
       content: string
       a2uiComponents?: unknown
@@ -227,6 +232,10 @@ export const chatApi = {
       reactSteps?: ReactStepDto[] | null
       completionMode?: 'NORMAL' | 'DEGRADED' | 'SUSPENDED' | null
       resumedFromTraceId?: string | null
+      turnStatus?: ChatTurnStatus | null
+      errorMessage?: string | null
+      suspendReasonType?: string | null
+      suspendReasonSourceId?: string | null
     }>>(`/chat/sessions/${sessionId}/messages`)
     return messages.map(mapBackendMessage)
   },
@@ -312,6 +321,21 @@ export const chatApi = {
     return request(`/chat/tool-confirmations/${requestId}`, {
       method: 'POST',
       body: JSON.stringify({ requestId, confirmed, reason })
+    })
+  },
+
+  /** 用户交互回传 */
+  respondInteraction(
+    interactionId: string,
+    payload: Pick<SseInteractionEvent, 'type'> & { value?: string | null; confirmed: boolean; timedOut?: boolean }
+  ): Promise<void> {
+    return request(`/chat/interactions/${interactionId}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        value: payload.value ?? null,
+        confirmed: payload.confirmed,
+        timedOut: payload.timedOut ?? false,
+      })
     })
   },
 

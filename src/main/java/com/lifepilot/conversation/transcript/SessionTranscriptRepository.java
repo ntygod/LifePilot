@@ -96,6 +96,7 @@ public class SessionTranscriptRepository {
                                      String role,
                                      String content,
                                      @Nullable String reasoningSummary,
+                                     @Nullable String turnId,
                                      @Nullable String traceId,
                                      @Nullable String a2uiComponentsJson,
                                      @Nullable String reactStepsJson,
@@ -123,12 +124,38 @@ public class SessionTranscriptRepository {
                 sessionId,
                 TranscriptEntryType.fromLegacyRole(role),
                 role,
-                normalizeBlank(traceId),
+                normalizeBlank(turnId),
                 normalizeBlank(traceId),
                 true,
                 true,
                 payload,
                 createdAt
+        );
+    }
+
+    public String appendMessageEntry(String sessionId,
+                                     String role,
+                                     String content,
+                                     @Nullable String reasoningSummary,
+                                     @Nullable String traceId,
+                                     @Nullable String a2uiComponentsJson,
+                                     @Nullable String reactStepsJson,
+                                     @Nullable CompletionMode completionMode,
+                                     @Nullable String resumedFromTraceId,
+                                     Instant createdAt) {
+        return appendMessageEntry(sessionId, role, content, reasoningSummary, null, traceId,
+                a2uiComponentsJson, reactStepsJson, completionMode, resumedFromTraceId, createdAt);
+    }
+
+    public void updateVisibility(String entryId, boolean visibleToModel, boolean visibleToUser) {
+        jdbcTemplate.update("""
+                UPDATE session_transcript_entries
+                SET visible_to_model = ?, visible_to_user = ?
+                WHERE id = ?
+                """,
+                visibleToModel ? 1 : 0,
+                visibleToUser ? 1 : 0,
+                entryId
         );
     }
 

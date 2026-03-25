@@ -7,8 +7,6 @@ import com.lifepilot.knowledge.model.ScoreBreakdown;
 import com.lifepilot.knowledge.rerank.RerankCandidate;
 import com.lifepilot.prompt.PromptRegistry;
 import org.springframework.lang.Nullable;
-import org.springframework.stereotype.Component;
-
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -21,7 +19,6 @@ import java.util.Map;
  * @author zsg
  * @since 2026-03-24
  */
-@Component
 public class LlmListwiseRerankStrategy {
 
     private static final String SCENE = "knowledge_rerank";

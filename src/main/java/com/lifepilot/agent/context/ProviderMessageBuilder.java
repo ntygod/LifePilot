@@ -44,9 +44,7 @@ public class ProviderMessageBuilder {
     public BuildResult build(AssembledContext context, ReactAgentState state) {
         List<Message> rawMessages = new ArrayList<>();
         rawMessages.add(new SystemMessage(context.systemPrompt()));
-        rawMessages.addAll(context.contextMessages());
-        rawMessages.addAll(context.historyMessages());
-        rawMessages.add(buildUserMessage(context.userPrompt(), context.mediaContents()));
+        rawMessages.add(buildUserMessage(buildStructuredPrompt(context), context.mediaContents()));
 
         for (ReactStep step : state.steps()) {
             Message message = toMessage(step);
@@ -69,8 +67,14 @@ public class ProviderMessageBuilder {
             switch (message) {
                 case SystemMessage systemMessage ->
                         appendSection(buffer, "system", systemMessage.getText());
-                case UserMessage userMessage ->
+                case UserMessage userMessage -> {
+                    var taggedBlocks = ContextMessageFormatter.parseTaggedBlocks(userMessage.getText());
+                    if (!taggedBlocks.isEmpty()) {
+                        taggedBlocks.forEach(block -> buffer.append(block.rawText()).append("\n\n"));
+                    } else {
                         appendSection(buffer, "user", userMessage.getText());
+                    }
+                }
                 case AssistantMessage assistantMessage -> appendAssistantSection(buffer, assistantMessage);
                 case ToolResponseMessage toolResponseMessage -> {
                     for (ToolResponseMessage.ToolResponse response : toolResponseMessage.getResponses()) {
@@ -126,9 +130,69 @@ public class ProviderMessageBuilder {
         return builder.build();
     }
 
+    private String buildStructuredPrompt(AssembledContext context) {
+        List<ContextMessageFormatter.TaggedBlock> promptBlocks =
+                ContextMessageFormatter.parseTaggedBlocks(context.userPrompt());
+        String runtimeBlock = findTaggedBlock(promptBlocks, "runtime_context");
+        String currentRequestBlock = findTaggedBlock(promptBlocks, "current_request");
+
+        List<String> sections = new ArrayList<>();
+        appendSectionIfPresent(sections, runtimeBlock);
+        context.contextMessages().stream()
+                .map(this::extractRawTaggedContext)
+                .filter(Objects::nonNull)
+                .forEach(sections::add);
+        promptBlocks.stream()
+                .map(ContextMessageFormatter.TaggedBlock::rawText)
+                .filter(raw -> !raw.equals(runtimeBlock) && !raw.equals(currentRequestBlock))
+                .forEach(sections::add);
+
+        String historyTranscript = ContextMessageFormatter.serializeHistoryTranscript(context.historyMessages()).strip();
+        if (!historyTranscript.isBlank()) {
+            sections.add("""
+                    <history_transcript>
+                    %s
+                    </history_transcript>
+                    """.formatted(historyTranscript).strip());
+        }
+        appendSectionIfPresent(sections, currentRequestBlock.isBlank() ? context.userPrompt().strip() : currentRequestBlock);
+        return String.join("\n\n", sections);
+    }
+
+    @Nullable
+    private String extractRawTaggedContext(Message message) {
+        return switch (message) {
+            case AssistantMessage assistantMessage -> {
+                var taggedBlock = ContextMessageFormatter.parseTaggedBlock(assistantMessage.getText());
+                yield taggedBlock != null ? taggedBlock.rawText() : null;
+            }
+            case UserMessage userMessage -> ContextMessageFormatter.parseTaggedBlocks(userMessage.getText()).stream()
+                    .map(ContextMessageFormatter.TaggedBlock::rawText)
+                    .reduce((left, right) -> left + "\n\n" + right)
+                    .orElse(null);
+            default -> null;
+        };
+    }
+
+    @Nullable
+    private String findTaggedBlock(List<ContextMessageFormatter.TaggedBlock> blocks, String tagName) {
+        return blocks.stream()
+                .filter(block -> tagName.equals(block.tagName()))
+                .map(ContextMessageFormatter.TaggedBlock::rawText)
+                .findFirst()
+                .orElse("");
+    }
+
+    private void appendSectionIfPresent(List<String> sections, @Nullable String text) {
+        if (text != null && !text.isBlank()) {
+            sections.add(text);
+        }
+    }
+
     @Nullable
     private Message toMessage(ReactStep step) {
         return switch (step) {
+            case ReactStep.Progress ignored -> null;
             case ReactStep.Thought thought -> new AssistantMessage(thought.content());
             case ReactStep.ToolCall toolCall -> AssistantMessage.builder()
                     .content("")

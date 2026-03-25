@@ -15,8 +15,6 @@ import com.lifepilot.rerank.client.RerankServiceClient;
 import com.lifepilot.rerank.strategy.LlmListwiseRerankStrategy;
 import com.lifepilot.rerank.strategy.LlmPointwiseRerankStrategy;
 import org.springframework.lang.Nullable;
-import org.springframework.stereotype.Component;
-
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -31,7 +29,6 @@ import java.util.Optional;
  * @author zsg
  * @since 2026-03-24
  */
-@Component
 public class RerankRouter {
 
     private final ModelServiceRegistry registry;

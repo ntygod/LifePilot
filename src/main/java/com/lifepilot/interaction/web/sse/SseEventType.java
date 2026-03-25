@@ -63,6 +63,8 @@ public final class SseEventType {
     /** 主动通知事件 */
     public static final String NOTIFICATION = "notification";
 
+    public static final String INTERACTION = "interaction";
+
     // MCP 模块事件类型
     /** MCP Server 状态初始快照事件 */
     public static final String MCP_STATUS_SNAPSHOT = "mcp-status-snapshot";

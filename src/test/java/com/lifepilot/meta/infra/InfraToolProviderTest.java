@@ -53,7 +53,7 @@ class InfraToolProviderTest {
         provider.registerTools(registry);
 
         ArgumentCaptor<BuiltinTool> captor = ArgumentCaptor.forClass(BuiltinTool.class);
-        verify(registry, times(31)).registerBuiltinTool(captor.capture());
+        verify(registry, times(34)).registerBuiltinTool(captor.capture());
 
         var tools = captor.getAllValues();
         assertThat(tools).extracting(BuiltinTool::id)
@@ -65,6 +65,7 @@ class InfraToolProviderTest {
                         // 信息获取（2）
                         "builtin.web.search",
                         "builtin.web.fetch",
+                        "builtin.http.request",
                         // 推理辅助（1）
                         "builtin.reason.calculate",
                         // Shell 执行（1）
@@ -83,6 +84,7 @@ class InfraToolProviderTest {
                         "builtin.browser.accessibility",
                         "builtin.browser.tab",
                         "builtin.browser.storage",
+                        "builtin.browser.close",
                         // 代码执行（1）
                         "builtin.code.execute",
                         // 文件系统（10）
@@ -90,12 +92,13 @@ class InfraToolProviderTest {
                         "builtin.file.write",
                         "builtin.file.list",
                         "builtin.file.search",
-                        "builtin.file.append",
                         "builtin.file.delete",
                         "builtin.file.copy",
                         "builtin.file.move",
                         "builtin.file.info",
-                        "builtin.file.patch"
+                        "builtin.file.patch",
+                        "builtin.file.grep",
+                        "builtin.file.find"
                 );
     }
 

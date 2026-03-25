@@ -63,6 +63,11 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
     @Override
     public List<ToolCallback> getToolCallbacks(ReactAgentState state, @Nullable String streamId) {
         List<ToolContract> tools = toolRegistry.getToolSnapshot();
+        if (isWebConversation(state)) {
+            tools = tools.stream()
+                    .filter(tool -> !isUserPromptInteractionTool(tool.id()))
+                    .toList();
+        }
         var allowedToolIds = state.allowedToolIds();
         if (allowedToolIds != null && !allowedToolIds.isEmpty()) {
             int totalCount = tools.size();
@@ -79,6 +84,17 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
                 .toList();
     }
 
+    /** Web 对话里改用自然语言挂起追问，不再暴露弹窗式输入工具。 */
+    private boolean isWebConversation(ReactAgentState state) {
+        return state.channel() != null && "web".equalsIgnoreCase(state.channel());
+    }
+
+    /** 这两类工具会触发前端交互控件，Web 普通对话模式下直接屏蔽。 */
+    private boolean isUserPromptInteractionTool(String toolId) {
+        return "builtin.interact.input".equals(toolId)
+                || "builtin.interact.choose".equals(toolId);
+    }
+
     /**
      * 将 ToolContract 转换为 Spring AI ToolCallback。
      *
@@ -91,6 +107,15 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
         Map<String, Object> context = new LinkedHashMap<>();
         if (state.sessionId() != null) {
             context.put(ToolContextKeys.SESSION_ID, state.sessionId());
+        }
+        if (state.userId() != null && !state.userId().isBlank()) {
+            context.put(ToolContextKeys.USER_ID, state.userId());
+        }
+        if (state.channel() != null && !state.channel().isBlank()) {
+            context.put(ToolContextKeys.CHANNEL_TYPE, state.channel());
+        }
+        if (streamId != null && !streamId.isBlank()) {
+            context.put(ToolContextKeys.STREAM_ID, streamId);
         }
         context.put(ToolContextKeys.CALLER_TRACE_ID, state.traceId());
         context.put(ToolContextKeys.CALLER_DEPTH, state.depth());

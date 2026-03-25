@@ -80,6 +80,7 @@ public class A2aAgentExecutor {
                 }
                 // 使用 AgentExecutor 执行子 Agent（A2A 目前不携带多模态媒体）
                 var subRequest = new AgentRequest(textContent, taskId, "a2a",
+                        null,
                         definition.get().systemPrompt(), definition.get().budget().toAgentBudget(),
                         null, 0, definition.get().preferredProvider(), null, null, null);
                 var subResult = agentExecutor.execute(definition.get(), subRequest);
@@ -142,6 +143,7 @@ public class A2aAgentExecutor {
                         return;
                     }
                     var subRequest = new AgentRequest(textContent, taskId, "a2a",
+                            null,
                             definition.get().systemPrompt(), definition.get().budget().toAgentBudget(),
                             null, 0, definition.get().preferredProvider(), null, null, null);
                     var subResult = agentExecutor.execute(definition.get(), subRequest);

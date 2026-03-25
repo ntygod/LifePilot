@@ -11,6 +11,8 @@ import com.lifepilot.eval.report.ReportSummary;
 import com.lifepilot.eval.scenario.BenchmarkScenario;
 import com.lifepilot.eval.scenario.ScenarioLoader;
 import com.lifepilot.eval.store.EvalStore;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
@@ -31,6 +33,8 @@ import java.util.UUID;
  */
 @RestController
 @RequestMapping("/api/eval")
+@ConditionalOnProperty(prefix = "lifepilot.eval", name = "enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnBean(ScenarioLoader.class)
 public class EvalController {
 
     private static final Logger log = LoggerFactory.getLogger(EvalController.class);

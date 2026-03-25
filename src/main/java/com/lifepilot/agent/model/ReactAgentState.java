@@ -21,8 +21,11 @@ import java.util.UUID;
 public record ReactAgentState(
         String traceId,
         String sessionId,
+        @Nullable String turnId,
         String goal,
         String channel,
+        @Nullable String userId,
+        AgentTaskMode taskMode,
         List<ReactStep> steps,
         int stepCount,
         List<String> shortTermMemory,
@@ -35,15 +38,18 @@ public record ReactAgentState(
         boolean done,
         @Nullable String finalOutput,
         @Nullable String terminationReason,
+        @Nullable CompletionReason completionReason,
         @Nullable String reasoningSummary,
         CompletionMode completionMode,
         @Nullable List<String> allowedToolIds,
         @Nullable List<MediaContent> pendingMedia,
+        int earlyStopRejectCount,
         boolean suspended,
         @Nullable SuspendReason suspendReason
 ) {
 
     public ReactAgentState {
+        taskMode = taskMode != null ? taskMode : AgentTaskMode.AUTO;
         steps = List.copyOf(steps);
         shortTermMemory = List.copyOf(shortTermMemory);
         mentionedEntities = List.copyOf(mentionedEntities);
@@ -62,8 +68,11 @@ public record ReactAgentState(
         return ReactAgentState.builder()
                 .traceId(UUID.randomUUID().toString())
                 .sessionId(request.sessionId())
+                .turnId(request.turnId())
                 .goal(request.message())
                 .channel(request.channel())
+                .userId(request.userId())
+                .taskMode(request.taskMode())
                 .steps(List.of())
                 .stepCount(0)
                 .shortTermMemory(List.of())
@@ -76,9 +85,11 @@ public record ReactAgentState(
                 .done(false)
                 .finalOutput(null)
                 .terminationReason(null)
+                .completionReason(null)
                 .completionMode(CompletionMode.NORMAL)
                 .allowedToolIds(request.allowedToolIds())
                 .pendingMedia(null)
+                .earlyStopRejectCount(0)
                 .suspended(false)
                 .suspendReason(null)
                 .build();

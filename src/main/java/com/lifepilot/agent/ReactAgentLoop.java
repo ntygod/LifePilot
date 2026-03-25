@@ -6,8 +6,12 @@ import com.lifepilot.agent.callback.CallbackHelper;
 import com.lifepilot.agent.callback.IterationCallback;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.context.*;
+import com.lifepilot.agent.execution.ExecutionCompletionPolicy;
+import com.lifepilot.agent.execution.ToolExecutionCoordinator;
 import com.lifepilot.agent.media.MediaDataExtractor;
 import com.lifepilot.agent.model.AgentRequest;
+import com.lifepilot.agent.model.CompletionMode;
+import com.lifepilot.agent.model.CompletionReason;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.model.ReactStep;
 import com.lifepilot.agent.model.SuspendReason;
@@ -76,13 +80,13 @@ public class ReactAgentLoop implements CallbackHelper {
     private final AgentToolProvider agentToolProvider;
     private final AgentConfigProperties config;
     private final ObjectMapper objectMapper;
+    private final ExecutionCompletionPolicy completionPolicy;
+    private final ToolExecutionCoordinator toolExecutionCoordinator;
     @Nullable private final TraceRecorder traceRecorder;
     @Nullable private final A2uiProperties a2uiProperties;
-    @Nullable private final TranscriptStore transcriptStore;
 
     // ===== 可选依赖（多模态） =====
     @Nullable private final MultimodalRouter multimodalRouter;
-    @Nullable private final MediaDataExtractor mediaDataExtractor;
 
     // ===== 可选依赖（挂起-恢复） =====
     @Nullable private final ApplicationEventPublisher eventPublisher;
@@ -112,11 +116,19 @@ public class ReactAgentLoop implements CallbackHelper {
         this.agentToolProvider = agentToolProvider;
         this.config = config;
         this.objectMapper = objectMapper;
+        this.completionPolicy = new ExecutionCompletionPolicy();
+        this.toolExecutionCoordinator = new ToolExecutionCoordinator(
+                agentToolProvider,
+                objectMapper,
+                traceRecorder,
+                transcriptStore,
+                mediaDataExtractor,
+                proceduralMemory,
+                intentMatcher
+        );
         this.traceRecorder = traceRecorder;
         this.a2uiProperties = a2uiProperties;
-        this.transcriptStore = transcriptStore;
         this.multimodalRouter = multimodalRouter;
-        this.mediaDataExtractor = mediaDataExtractor;
         this.eventPublisher = eventPublisher;
         this.proceduralMemory = proceduralMemory;
         this.intentMatcher = intentMatcher;
@@ -200,7 +212,7 @@ public class ReactAgentLoop implements CallbackHelper {
             // 首轮组装完整上下文，后续迭代复用缓存（记忆检索和预算分配不变）
             if (cachedContext == null) {
                 // 首轮迭代：推送上下文组装 Thought 步骤
-                state = state.appendStep(new ReactStep.Thought("正在检索相关记忆和知识…"));
+                state = state.appendStep(new ReactStep.Progress("正在检索相关记忆和知识…"));
                 pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
 
                 cachedContext = contextAssembler.assemble(state);
@@ -237,15 +249,17 @@ public class ReactAgentLoop implements CallbackHelper {
 
             // 5. 调用 LLM（不自动执行 tool call）
             // 推送思考中 Thought 步骤
-            state = state.appendStep(new ReactStep.Thought("正在思考回答…"));
+            state = state.appendStep(new ReactStep.Progress("正在思考回答…"));
             pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
 
             // 构造有效请求：将当前迭代的媒体内容传递给 callLlm
             var effectiveRequest = assembledContext.mediaContents() != null && !assembledContext.mediaContents().isEmpty()
                     ? new AgentRequest(request.message(), request.sessionId(), request.channel(),
+                        request.userId(),
+                        request.turnId(), request.action(), request.taskMode(),
                         request.systemPrompt(), request.budget(), request.parentTraceId(),
                         request.depth(), request.preferredProvider(), request.allowedToolIds(),
-                        assembledContext.mediaContents(), request.temperature())
+                        assembledContext.mediaContents(), request.temperature(), request.resumePolicy())
                     : request;
             var iterationStart = Instant.now();
             ChatResponse chatResponse;
@@ -298,8 +312,14 @@ public class ReactAgentLoop implements CallbackHelper {
 
                 // 逐个执行 tool call
                 for (var tc : toolCalls) {
-                    state = executeToolCall(state, tc, toolCallbacks, traceContext,
-                            cancellationToken, loopContext);
+                    state = toolExecutionCoordinator.execute(
+                            state,
+                            tc,
+                            toolCallbacks,
+                            traceContext,
+                            cancellationToken,
+                            loopContext,
+                            this::appendAndPublishStep);
 
                     // ★ 通用挂起检测 — 仅检查 suspended 布尔标志，不引用具体工具名或 SuspendReason 子类型
                     if (state.suspended()) {
@@ -330,18 +350,89 @@ public class ReactAgentLoop implements CallbackHelper {
                 // === ReAct: Answer 阶段 — 纯文本响应 ===
                 String content = assistantMessage.getText();
                 if (content != null && !content.isBlank()) {
-                    state = state.appendStep(new ReactStep.Answer(content));
-                    pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
-                    state = state.toBuilder()
-                            .done(true)
-                            .finalOutput(content)
-                            .budget(state.budget().deductTokens(responseTokens))
-                            .build();
-                    consecutiveFailures = 0;
+                    var completionEvaluation = completionPolicy.evaluate(request, state, content);
+                    if (completionEvaluation.disposition() == ExecutionCompletionPolicy.CompletionDisposition.EXPLICIT_TERMINAL) {
+                        String visibleContent = completionEvaluation.userVisibleContent() != null
+                                ? completionEvaluation.userVisibleContent()
+                                : content;
+                        CompletionReason completionReason = completionEvaluation.completionReason();
+                        state = appendAndPublishStep(state, new ReactStep.Answer(visibleContent), loopContext);
+                        state = state.toBuilder()
+                                .done(true)
+                                .finalOutput(visibleContent)
+                                .terminationReason(completionEvaluation.terminationReason())
+                                .completionReason(completionReason)
+                                .budget(state.budget().deductTokens(responseTokens))
+                                .build();
+                        consecutiveFailures = 0;
 
-                    log.info("ReAct 循环完成: traceId={}, iterations={}, stepCount={}, tokensUsed={}",
-                            state.traceId(), iteration + 1, state.stepCount(),
-                            state.budget().tokensUsed());
+                        log.info("ReAct 循环完成: traceId={}, iterations={}, stepCount={}, tokensUsed={}, taskMode={}, completionReason={}, preview={}",
+                                state.traceId(), iteration + 1, state.stepCount(),
+                                state.budget().tokensUsed(), state.taskMode(), completionReason,
+                                previewForLog(visibleContent));
+                    } else if (completionEvaluation.disposition() == ExecutionCompletionPolicy.CompletionDisposition.SUSPEND_FOR_USER_INPUT) {
+                        String visibleContent = completionEvaluation.userVisibleContent() != null
+                                ? completionEvaluation.userVisibleContent()
+                                : content;
+                        String suspendPrompt = completionEvaluation.suspendPrompt() != null
+                                ? completionEvaluation.suspendPrompt()
+                                : visibleContent;
+                        state = appendAndPublishStep(state, new ReactStep.Answer(visibleContent), loopContext);
+                        state = state.toBuilder()
+                                .finalOutput(visibleContent)
+                                .terminationReason(completionEvaluation.terminationReason())
+                                .completionReason(CompletionReason.SUSPENDED)
+                                .completionMode(CompletionMode.SUSPENDED)
+                                .budget(state.budget().deductTokens(responseTokens))
+                                .build()
+                                .suspend(new SuspendReason.ExternalDataWait("__await_user_input__", suspendPrompt));
+                        state = appendAndPublishStep(state, new ReactStep.Suspend(
+                                state.suspendReason(), Instant.now(), state.stepCount()), loopContext);
+                        consecutiveFailures = 0;
+
+                        log.info("ReAct 循环挂起等待用户补充: traceId={}, iterations={}, stepCount={}, preview={}",
+                                state.traceId(), iteration + 1, state.stepCount(), previewForLog(visibleContent));
+                        break;
+                    } else if (completionEvaluation.disposition() == ExecutionCompletionPolicy.CompletionDisposition.REJECT_IMPLICIT_TERMINATION) {
+                        int rejectCount = state.earlyStopRejectCount() + 1;
+                        log.warn("疑似提前结束已拒绝: traceId={}, iteration={}, rejectCount={}, preview={}",
+                                state.traceId(), iteration, rejectCount, previewForLog(content));
+                        if (rejectCount >= config.getLoop().getMaxEarlyStopRejects()) {
+                            state = DegradedResponseBuilder.terminateWithReason(
+                                    state.toBuilder()
+                                            .finalOutput(content)
+                                            .build(),
+                                    "多步执行任务未满足结束协议，系统已拒绝提前结束",
+                                    CompletionReason.EARLY_STOP_REJECTED);
+                            break;
+                        }
+                        state = state.appendStep(new ReactStep.Thought(
+                                "当前回复缺少终态控制信息。如果任务已经完成，请在自然语言正文后追加 `<completion_control>done</completion_control>`；如果明确阻塞，请追加 `<completion_control>blocked</completion_control>`；如果还要继续，就直接调用下一步工具。"));
+                        pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
+                        state = state.toBuilder()
+                                .earlyStopRejectCount(rejectCount)
+                                .budget(state.budget().deductTokens(responseTokens))
+                                .build();
+                        consecutiveFailures = 0;
+                        cachedContext = null;
+                    } else {
+                        String visibleContent = completionEvaluation.userVisibleContent() != null
+                                ? completionEvaluation.userVisibleContent()
+                                : content;
+                        state = appendAndPublishStep(state, new ReactStep.Answer(visibleContent), loopContext);
+                        state = state.toBuilder()
+                                .done(true)
+                                .finalOutput(visibleContent)
+                                .completionReason(CompletionReason.DIRECT_ANSWER)
+                                .budget(state.budget().deductTokens(responseTokens))
+                                .build();
+                        consecutiveFailures = 0;
+
+                        log.info("ReAct 循环完成: traceId={}, iterations={}, stepCount={}, tokensUsed={}, taskMode={}, completionReason={}, preview={}",
+                                state.traceId(), iteration + 1, state.stepCount(),
+                                state.budget().tokensUsed(), state.taskMode(), CompletionReason.DIRECT_ANSWER,
+                                previewForLog(visibleContent));
+                    }
                 } else {
                     // LLM 返回空内容
                     log.warn("LLM 返回空内容: traceId={}, iteration={}", state.traceId(), iteration);
@@ -371,6 +462,11 @@ public class ReactAgentLoop implements CallbackHelper {
         return state;
     }
 
+    /**
+     * 刷新预算状态，并在达到渐进式降级阈值时通知上层丢弃缓存上下文。
+     *
+     * <p>这样下一轮重新 assemble 时才能应用压缩历史、裁剪工具或跳过记忆等预算策略。
+     */
     private BudgetCheckResult checkBudgetAndInvalidateCacheIfNeeded(
             ReactAgentState state, Instant loopStart, boolean hasCachedContext) {
         state = refreshBudgetElapsed(state, loopStart);
@@ -394,18 +490,30 @@ public class ReactAgentLoop implements CallbackHelper {
         return new BudgetCheckResult(state, invalidateCachedContext);
     }
 
+    /** 在每轮迭代结束后推进一步预算计数。 */
     private ReactAgentState advanceBudgetStep(ReactAgentState state) {
         return state.toBuilder()
                 .budget(state.budget().incrementStep())
                 .build();
     }
 
+    /** 用当前时间刷新预算中的 elapsed 值。 */
     private ReactAgentState refreshBudgetElapsed(ReactAgentState state, Instant loopStart) {
         return state.toBuilder()
                 .budget(state.budget().withElapsed(Duration.between(loopStart, Instant.now())))
                 .build();
     }
 
+    /** 统一追加步骤并同步推送对应的 REASONING SSE 事件。 */
+    private ReactAgentState appendAndPublishStep(ReactAgentState state,
+                                                 ReactStep step,
+                                                 AgentLoopContext loopContext) {
+        state = state.appendStep(step);
+        pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
+        return state;
+    }
+
+    /** 预算检查结果：同时返回新 state 以及是否需要丢弃缓存上下文。 */
     private record BudgetCheckResult(
             ReactAgentState state,
             boolean invalidateCachedContext
@@ -431,275 +539,6 @@ public class ReactAgentLoop implements CallbackHelper {
      * @param traceContext      追踪上下文
      * @param cancellationToken 取消信号
      * @return 更新后的状态
-     */
-    private ReactAgentState executeToolCall(
-            ReactAgentState state,
-            AssistantMessage.ToolCall tc,
-            List<ToolCallback> toolCallbacks,
-            @Nullable TraceContext traceContext,
-            CancellationToken cancellationToken,
-            AgentLoopContext loopContext) {
-
-        // 取消信号检查 — 避免在已取消的情况下继续执行工具
-        if (cancellationToken.isCancelled()) {
-            log.info("工具执行前检测到取消信号: toolId={}", tc.name());
-            return state;
-        }
-
-        String toolId = tc.name();
-        String inputJson = tc.arguments();
-        // 解析工具显示名称
-        String toolDisplayName = agentToolProvider.resolveToolDisplayName(toolId);
-
-        // 记录 ToolCall 步骤
-        var toolCallStart = Instant.now();
-        state = state.appendStep(new ReactStep.ToolCall(toolId, toolDisplayName, inputJson, 0));
-        pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
-        persistTranscriptToolCall(state, tc, toolId, toolDisplayName, inputJson, toolCallStart);
-
-        // 查找匹配的 ToolCallback
-        ToolCallback matchedCallback = toolCallbacks.stream()
-                .filter(Objects::nonNull)
-                .filter(cb -> cb.getToolDefinition().name().equals(toolId))
-                .findFirst()
-                .orElse(null);
-
-        if (matchedCallback == null) {
-            log.warn("未找到工具回调: toolId={}", toolId);
-            state = state.appendStep(new ReactStep.Observation(
-                    toolId, toolDisplayName, false, "工具未注册: " + toolId, 0));
-            pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
-            persistTranscriptToolResult(state, tc, toolId, false,
-                    "工具未注册: " + toolId, null, toolCallStart);
-            recordToolCallStep(traceContext, state.stepCount() - 1, toolCallStart,
-                    toolId, inputJson, "工具未注册: " + toolId, false);
-            return state;
-        }
-
-        // 执行工具
-        String rawOutput;
-        boolean success;
-        try {
-            rawOutput = matchedCallback.call(inputJson);
-            success = true;
-        } catch (Exception e) {
-            log.warn("工具执行失败: toolId={}, error={}", toolId, e.getMessage());
-            rawOutput = "工具执行异常: " + e.getMessage();
-            success = false;
-        }
-        var toolCallDuration = Duration.between(toolCallStart, Instant.now());
-
-        // ★ 挂起信号检测 — 工具执行成功后解析返回 JSON 中的 _suspend 标记
-        if (success) {
-            var suspendReason = parseSuspendReasonFromOutput(rawOutput);
-            if (suspendReason != null) {
-                log.info("工具请求挂起: toolId={}, reason={}", toolId, suspendReason);
-                state = state.suspend(suspendReason);
-                state = state.appendStep(new ReactStep.Observation(
-                        toolId, toolDisplayName, true, "工具请求挂起: " + suspendReason, 0));
-                pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
-                persistTranscriptToolResult(state, tc, toolId, true, rawOutput, null, toolCallStart);
-                recordToolCallStep(traceContext, state.stepCount() - 1, toolCallStart,
-                        toolId, inputJson, rawOutput, true);
-                return state;
-            }
-        }
-
-        // 媒体数据提取
-        String observationOutput = rawOutput;
-        if (success && mediaDataExtractor != null) {
-            var extraction = mediaDataExtractor.extract(toolId, rawOutput);
-            observationOutput = extraction.sanitizedOutput();
-
-            // 流式模式下发送 MEDIA 事件（字段名对齐前端 SseMediaEvent 类型定义）
-            if (loopContext.getSseManager() != null && loopContext.getStreamId() != null && !extraction.mediaItems().isEmpty()) {
-                for (var mediaItem : extraction.mediaItems()) {
-                    var mediaData = new HashMap<String, Object>();
-                    mediaData.put("toolId", toolId);
-                    mediaData.put("mimeType", mediaItem.mediaType());
-                    mediaData.put("encoding", mediaItem.encoding());
-                    mediaData.put("data", mediaItem.data());
-                    mediaData.put("field", mediaItem.fieldName());
-                    mediaData.put("metadata", mediaItem.metadata());
-                    loopContext.getSseManager().sendEvent(loopContext.getStreamId(), SseEventType.MEDIA, mediaData);
-                }
-            }
-
-            // 将图片类型的媒体写入 pendingMedia 缓冲区，供下一次迭代 LLM 视觉分析
-            if (!extraction.mediaItems().isEmpty()) {
-                // 收集到请求作用域上下文，用于流式完成后持久化到附件表
-                loopContext.addAllToolMedia(extraction.mediaItems());
-
-                for (var mediaItem : extraction.mediaItems()) {
-                    if (mediaItem.mediaType().startsWith("image/")) {
-                        try {
-                            byte[] decoded = Base64.getDecoder().decode(mediaItem.data());
-                            var mediaContent = new MediaContent(
-                                    UUID.randomUUID().toString(),
-                                    mediaItem.mediaType(),
-                                    decoded,
-                                    toolId + "_" + mediaItem.fieldName(),
-                                    decoded.length,
-                                    Map.of("toolId", toolId, "fieldName", mediaItem.fieldName())
-                            );
-                            state = state.appendPendingMedia(mediaContent);
-                        } catch (IllegalArgumentException e) {
-                            log.warn("Base64 解码失败，跳过媒体数据: toolId={}, field={}",
-                                    toolId, mediaItem.fieldName());
-                        }
-                    }
-                }
-            }
-        }
-
-        // 记录 Observation 步骤
-        int obsTokens = estimateTextTokens(observationOutput != null ? observationOutput : "");
-        state = state.appendStep(new ReactStep.Observation(
-                toolId, toolDisplayName, success, observationOutput != null ? observationOutput : "", obsTokens));
-        pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
-        persistTranscriptToolResult(state, tc, toolId, success, rawOutput, null, toolCallStart);
-
-        // L4 反馈闭环 — 工具执行成功后记录操作模板执行结果
-        if (success && proceduralMemory != null && intentMatcher != null) {
-            try {
-                var match = intentMatcher.match(toolId + " " + inputJson);
-                match.ifPresent(m -> proceduralMemory.recordExecution(
-                        m.template().templateId(), true));
-            } catch (Exception e) {
-                log.warn("L4 执行结果记录失败: toolId={}, error={}", toolId, e.getMessage());
-            }
-        }
-
-        // 记录 ToolCallStep 到 Trace
-        recordToolCallStep(traceContext, state.stepCount() - 1, toolCallStart,
-                toolId, inputJson, rawOutput, success);
-
-        log.debug("工具执行完成: toolId={}, success={}, latencyMs={}",
-                toolId, success, toolCallDuration.toMillis());
-
-        return state;
-    }
-
-    private void persistTranscriptToolCall(ReactAgentState state,
-                                           AssistantMessage.ToolCall toolCall,
-                                           String toolId,
-                                           @Nullable String toolDisplayName,
-                                           String inputJson,
-                                           Instant createdAt) {
-        if (transcriptStore == null) {
-            return;
-        }
-        try {
-            transcriptStore.appendToolCall(
-                    state.sessionId(),
-                    state.traceId(),
-                    state.traceId(),
-                    toolId,
-                    toolCall.id(),
-                    toolDisplayName,
-                    inputJson,
-                    createdAt
-            );
-        } catch (Exception e) {
-            log.warn("写入 transcript tool_call 失败: sessionId={}, toolId={}, error={}",
-                    state.sessionId(), toolId, e.getMessage());
-        }
-    }
-
-    private void persistTranscriptToolResult(ReactAgentState state,
-                                             AssistantMessage.ToolCall toolCall,
-                                             String toolId,
-                                             boolean success,
-                                             @Nullable String outputJson,
-                                             @Nullable String artifactId,
-                                             Instant createdAt) {
-        if (transcriptStore == null) {
-            return;
-        }
-        try {
-            transcriptStore.appendToolResult(
-                    state.sessionId(),
-                    state.traceId(),
-                    state.traceId(),
-                    toolId,
-                    toolCall.id(),
-                    success,
-                    outputJson != null ? outputJson : "",
-                    artifactId,
-                    true,
-                    false,
-                    createdAt
-            );
-        } catch (Exception e) {
-            log.warn("写入 transcript tool_result 失败: sessionId={}, toolId={}, error={}",
-                    state.sessionId(), toolId, e.getMessage());
-        }
-    }
-
-    // ===== 辅助方法 =====
-
-    /**
-     * 从工具返回的 JSON 字符串中解析挂起原因。
-     *
-     * <p>工具通过在返回 JSON 中包含 {@code "_suspend": true} 和
-     * {@code "_suspendReason": {...}} 字段来请求 Agent 挂起。
-     * {@code _suspendReason} 的 {@code "type"} 字段对应 SuspendReason 子类型名。</p>
-     *
-     * @param output 工具返回的原始 JSON 字符串
-     * @return 解析出的 SuspendReason，若不包含挂起标记则返回 null
-     */
-    @Nullable
-    private SuspendReason parseSuspendReasonFromOutput(String output) {
-        if (output == null || output.isBlank()) return null;
-        try {
-            JsonNode root = objectMapper.readTree(output);
-            if (!root.isObject()) return null;
-            JsonNode suspendNode = root.get("_suspend");
-            if (suspendNode == null || !suspendNode.asBoolean(false)) return null;
-
-            JsonNode reasonNode = root.get("_suspendReason");
-            if (reasonNode == null || !reasonNode.isObject()) {
-                log.warn("工具返回 _suspend=true 但缺少 _suspendReason 对象");
-                return null;
-            }
-
-            String type = reasonNode.has("type") ? reasonNode.get("type").asText() : "";
-            return switch (type) {
-                case "WorkflowWait" -> new SuspendReason.WorkflowWait(
-                        reasonNode.path("executionId").asText(""),
-                        reasonNode.path("workflowId").asText(""),
-                        reasonNode.path("workflowName").asText(""));
-                case "UserConfirmation" -> new SuspendReason.UserConfirmation(
-                        reasonNode.path("toolId").asText(""),
-                        reasonNode.path("inputJson").asText(""),
-                        reasonNode.path("riskLevel").asText(""),
-                        reasonNode.path("confirmationId").asText(""));
-                case "RemoteDelegation" -> new SuspendReason.RemoteDelegation(
-                        reasonNode.path("remoteTaskId").asText(""),
-                        reasonNode.path("remoteAgentUrl").asText(""),
-                        reasonNode.path("delegatedGoal").asText(""));
-                case "ScheduledWakeup" -> new SuspendReason.ScheduledWakeup(
-                        Instant.parse(reasonNode.path("wakeupAt").asText(Instant.now().toString())),
-                        reasonNode.path("reason").asText(""));
-                case "ExternalDataWait" -> new SuspendReason.ExternalDataWait(
-                        reasonNode.path("dataSourceId").asText(""),
-                        reasonNode.path("description").asText(""));
-                default -> {
-                    log.warn("未知的 SuspendReason 类型: type={}", type);
-                    yield null;
-                }
-            };
-        } catch (Exception e) {
-            // 非 JSON 格式或解析失败 — 不是挂起信号，正常返回 null
-            log.debug("工具输出非挂起信号 JSON: error={}", e.getMessage());
-            return null;
-        }
-    }
-
-    /**
-     * 若挂起原因为 ScheduledWakeup，注册延迟任务到时发布 ScheduledWakeupEvent。
-     *
-     * @param state 当前挂起状态
      */
     public void scheduleWakeupIfNeeded(ReactAgentState state) {
         if (state.suspendReason() instanceof SuspendReason.ScheduledWakeup sw && eventPublisher != null) {
@@ -794,6 +633,7 @@ public class ReactAgentLoop implements CallbackHelper {
     }
 
     /** 从 ChatResponse 估算 Token 消耗。 */
+    /** 从 ChatResponse 中提取 prompt + completion token 总量。 */
     private int estimateTokens(ChatResponse chatResponse) {
         if (chatResponse == null) return 0;
         var usage = chatResponse.getMetadata().getUsage();
@@ -814,6 +654,11 @@ public class ReactAgentLoop implements CallbackHelper {
      * @param chatResponse LLM 原始响应（用于提取 Token 用量和完成原因）
      * @param providerId   LLM 提供商 ID
      * @param modelId      模型 ID
+     */
+    /**
+     * 把一次非流式 LLM 调用补记到 Trace。
+     *
+     * <p>优先读取 provider 返回的真实 usage，缺失时再根据输出文本做近似估算。
      */
     private void recordLlmStep(@Nullable TraceContext traceContext, int stepIndex,
                                Instant timestamp, Duration duration,
@@ -863,25 +708,7 @@ public class ReactAgentLoop implements CallbackHelper {
     }
 
     /** 记录工具调用步骤到 Trace。 */
-    private void recordToolCallStep(@Nullable TraceContext traceContext, int stepIndex,
-                                    Instant startTime, String toolId, String inputJson,
-                                    @Nullable String outputJson, boolean success) {
-        if (traceContext == null || traceRecorder == null) return;
-        try {
-            var duration = Duration.between(startTime, Instant.now());
-            var step = new ToolCallStep(
-                    stepIndex, Instant.now(), duration,
-                    toolId, "execute", inputJson,
-                    outputJson != null ? outputJson : "",
-                    success, success ? null : outputJson,
-                    RiskLevel.LOW);
-            traceRecorder.recordStep(traceContext, step);
-        } catch (Exception e) {
-            log.debug("Trace 工具步骤记录失败: error={}", e.getMessage());
-        }
-    }
-
-    /** 估算文本 Token 数（中文按 1 字 1 Token，英文按 4 字符 1 Token）。 */
+    /** 对纯文本做轻量 token 估算，主要用于日志和预算兜底。 */
     private int estimateTextTokens(String text) {
         if (text == null || text.isEmpty()) return 0;
         long cjkChars = text.chars()
@@ -892,6 +719,16 @@ public class ReactAgentLoop implements CallbackHelper {
     }
 
     /** 判断请求是否包含多模态内容。 */
+    /** 生成日志预览文本，避免把长回答整段打到日志里。 */
+    private String previewForLog(@Nullable String content) {
+        if (content == null || content.isBlank()) {
+            return "";
+        }
+        String normalized = content.replace('\r', ' ').replace('\n', ' ').trim();
+        return normalized.length() > 120 ? normalized.substring(0, 120) + "..." : normalized;
+    }
+
+    /** 判断当前请求是否带有多模态媒体输入。 */
     private boolean hasMultimodalContent(AgentRequest request) {
         return request.mediaContents() != null && !request.mediaContents().isEmpty();
     }
@@ -1055,6 +892,11 @@ public class ReactAgentLoop implements CallbackHelper {
         if (sseManager == null || streamId == null || turnId == null) return;
 
         var info = switch (step) {
+            case ReactStep.Progress(var content) -> new String[]{
+                    "PROGRESS", "执行进度",
+                    content.length() > 100 ? content.substring(0, 100) + "..." : content,
+                    null
+            };
             case ReactStep.Thought(var content) -> new String[]{
                     "THOUGHT", "推理思考",
                     content.length() > 100 ? content.substring(0, 100) + "..." : content,

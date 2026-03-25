@@ -17,11 +17,13 @@ import java.time.Instant;
 public interface TranscriptStore {
 
     String appendUserMessage(String sessionId,
+                             @Nullable String turnId,
                              String content,
                              @Nullable String traceId,
                              @Nullable Instant createdAt);
 
     String appendAssistantMessage(String sessionId,
+                                  @Nullable String turnId,
                                   String content,
                                   @Nullable String reasoningSummary,
                                   @Nullable String traceId,
@@ -37,12 +39,32 @@ public interface TranscriptStore {
                             @Nullable String reasoningSummary,
                             @Nullable String traceId) {
         if (userMessage != null && !userMessage.isBlank()) {
-            appendUserMessage(sessionId, userMessage, traceId, null);
+            appendUserMessage(sessionId, null, userMessage, traceId, null);
         }
         if (assistantMessage != null && !assistantMessage.isBlank()) {
-            appendAssistantMessage(sessionId, assistantMessage, reasoningSummary, traceId,
+            appendAssistantMessage(sessionId, null, assistantMessage, reasoningSummary, traceId,
                     null, null, CompletionMode.NORMAL, null, null);
         }
+    }
+
+    default String appendUserMessage(String sessionId,
+                                     String content,
+                                     @Nullable String traceId,
+                                     @Nullable Instant createdAt) {
+        return appendUserMessage(sessionId, null, content, traceId, createdAt);
+    }
+
+    default String appendAssistantMessage(String sessionId,
+                                          String content,
+                                          @Nullable String reasoningSummary,
+                                          @Nullable String traceId,
+                                          @Nullable String a2uiComponentsJson,
+                                          @Nullable String reactStepsJson,
+                                          @Nullable CompletionMode completionMode,
+                                          @Nullable String resumedFromTraceId,
+                                          @Nullable Instant createdAt) {
+        return appendAssistantMessage(sessionId, null, content, reasoningSummary, traceId,
+                a2uiComponentsJson, reactStepsJson, completionMode, resumedFromTraceId, createdAt);
     }
 
     String appendSystemMessage(String sessionId,

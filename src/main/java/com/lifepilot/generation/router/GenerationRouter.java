@@ -17,7 +17,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.lang.Nullable;
-import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 
 import java.nio.charset.StandardCharsets;
@@ -38,7 +37,6 @@ import java.util.Map;
  * @author zsg
  * @since 2026-03-24
  */
-@Component
 public class GenerationRouter {
 
     private static final Logger log = LoggerFactory.getLogger(GenerationRouter.class);

@@ -28,6 +28,8 @@ public class SseSessionManager {
 
     private final ConcurrentHashMap<String, SseEmitter> emitters = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, CancellationToken> cancellationTokens = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, String> chatSessionStreams = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, String> streamSessions = new ConcurrentHashMap<>();
     private final WebProperties properties;
     private final SharedScheduler sharedScheduler;
 
@@ -61,16 +63,19 @@ public class SseSessionManager {
         emitter.onCompletion(() -> {
             emitters.remove(streamId);
             cancelToken(streamId);
+            clearChatStreamBinding(streamId);
             log.debug("SseEmitter 完成: streamId={}", streamId);
         });
         emitter.onTimeout(() -> {
             emitters.remove(streamId);
             cancelToken(streamId);
+            clearChatStreamBinding(streamId);
             log.info("SseEmitter 超时: streamId={}", streamId);
         });
         emitter.onError(ex -> {
             emitters.remove(streamId);
             cancelToken(streamId);
+            clearChatStreamBinding(streamId);
             log.warn("SseEmitter 异常: streamId={}", streamId, ex);
         });
 
@@ -166,6 +171,47 @@ public class SseSessionManager {
     }
 
     /**
+     * 绑定聊天会话到当前活动的 SSE 流。
+     *
+     * @param sessionId 会话 ID
+     * @param streamId  当前活动流 ID
+     */
+    public void bindChatSession(String sessionId, String streamId) {
+        if (sessionId == null || sessionId.isBlank() || streamId == null || streamId.isBlank()) {
+            return;
+        }
+
+        String previousStreamId = chatSessionStreams.put(sessionId, streamId);
+        streamSessions.put(streamId, sessionId);
+        if (previousStreamId != null && !previousStreamId.equals(streamId)) {
+            streamSessions.remove(previousStreamId, sessionId);
+        }
+        log.debug("聊天会话已绑定 SSE 流: sessionId={}, streamId={}", sessionId, streamId);
+    }
+
+    /**
+     * 查找指定聊天会话当前活动的 SSE 流 ID。
+     *
+     * @param sessionId 会话 ID
+     * @return 活动流 ID；不存在时返回 null
+     */
+    public String findChatStreamId(String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return null;
+        }
+        String streamId = chatSessionStreams.get(sessionId);
+        if (streamId == null) {
+            return null;
+        }
+        if (!emitters.containsKey(streamId)) {
+            chatSessionStreams.remove(sessionId, streamId);
+            streamSessions.remove(streamId, sessionId);
+            return null;
+        }
+        return streamId;
+    }
+
+    /**
      * 向指定 SseEmitter 发送事件。
      *
      * @param streamId  流式传输标识
@@ -211,6 +257,7 @@ public class SseSessionManager {
     public void closeEmitter(String streamId) {
         var emitter = emitters.remove(streamId);
         cancelToken(streamId);
+        clearChatStreamBinding(streamId);
         if (emitter != null) {
             emitter.complete();
             log.debug("SseEmitter 已关闭: streamId={}", streamId);
@@ -269,6 +316,8 @@ public class SseSessionManager {
         });
         emitters.clear();
         cancellationTokens.clear();
+        chatSessionStreams.clear();
+        streamSessions.clear();
         log.info("SseSessionManager 已关闭，清理 {} 个连接", count);
     }
 
@@ -279,5 +328,13 @@ public class SseSessionManager {
      */
     public int activeCount() {
         return emitters.size();
+    }
+
+    private void clearChatStreamBinding(String streamId) {
+        String sessionId = streamSessions.remove(streamId);
+        if (sessionId != null) {
+            chatSessionStreams.remove(sessionId, streamId);
+            log.debug("聊天会话 SSE 绑定已清理: sessionId={}, streamId={}", sessionId, streamId);
+        }
     }
 }

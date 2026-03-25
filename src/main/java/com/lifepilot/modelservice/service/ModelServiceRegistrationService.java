@@ -8,6 +8,7 @@ import com.lifepilot.modelservice.repository.ModelServiceRepository;
 import com.lifepilot.modelservice.support.ModelServiceProviderConfigMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.stereotype.Service;
 
 import java.util.HashSet;
@@ -24,6 +25,7 @@ import java.util.Set;
  * @since 2026-03-24
  */
 @Service
+@ConditionalOnBean(ProviderRegistry.class)
 public class ModelServiceRegistrationService {
 
     private static final Logger log = LoggerFactory.getLogger(ModelServiceRegistrationService.class);

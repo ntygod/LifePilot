@@ -46,23 +46,25 @@ const mergedMessages = computed(() => {
 
   for (const msg of sorted) {
     if (msg.role === 'tool-confirmation' && msg.toolConfirmations) {
-      for (let i = result.length - 1; i >= 0; i--) {
-        if (result[i].role === 'assistant') {
-          result[i] = {
-            ...result[i],
-            toolConfirmations: {
-              ...(result[i].toolConfirmations ?? {}),
-              ...msg.toolConfirmations,
-            },
-            toolConfirmationResolutions: {
-              ...(result[i].toolConfirmationResolutions ?? {}),
-              ...(msg.toolConfirmationResolutions ?? {}),
-            },
-          }
-          break
+      const assistantIndex = [...result].reverse().findIndex(item =>
+        item.role === 'assistant' && item.turnId && item.turnId === msg.turnId,
+      )
+
+      if (assistantIndex !== -1) {
+        const targetIndex = result.length - 1 - assistantIndex
+        result[targetIndex] = {
+          ...result[targetIndex],
+          toolConfirmations: {
+            ...(result[targetIndex].toolConfirmations ?? {}),
+            ...msg.toolConfirmations,
+          },
+          toolConfirmationResolutions: {
+            ...(result[targetIndex].toolConfirmationResolutions ?? {}),
+            ...(msg.toolConfirmationResolutions ?? {}),
+          },
         }
+        continue
       }
-      continue
     }
 
     result.push({ ...msg })

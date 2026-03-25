@@ -9,6 +9,9 @@ package com.lifepilot.tool.model;
 public final class ToolContextKeys {
 
     public static final String SESSION_ID = "sessionId";
+    public static final String STREAM_ID = "streamId";
+    public static final String USER_ID = "userId";
+    public static final String CHANNEL_TYPE = "channelType";
     public static final String CALLER_TRACE_ID = "callerTraceId";
     public static final String CALLER_DEPTH = "callerDepth";
     public static final String CALLER_BUDGET = "callerBudget";

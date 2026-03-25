@@ -14,6 +14,7 @@ import com.lifepilot.interaction.middleware.security.SecurityMiddleware;
 import com.lifepilot.interaction.middleware.security.SensitiveDataDetector;
 import com.lifepilot.interaction.middleware.security.TrustScoreCalculator;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;
+import com.lifepilot.interaction.web.service.ChatTurnService;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.observability.redactor.DataRedactor;
 import org.slf4j.Logger;
@@ -83,13 +84,15 @@ public class GatewayMiddlewareAutoConfiguration {
                                                    AgentConfigProperties agentConfigProperties,
                                                    GatewayProperties properties,
                                                    ObjectProvider<SseSessionManager> sseSessionManagerProvider,
-                                                   ChatSessionRepository chatSessionRepository) {
+                                                   ChatSessionRepository chatSessionRepository,
+                                                   ChatTurnService chatTurnService) {
         log.info("注册 ExecutionMiddleware");
         return new ExecutionMiddleware(
                 agentOrchestrator,
                 agentConfigProperties,
                 properties,
                 chatSessionRepository,
+                chatTurnService,
                 sseSessionManagerProvider.getIfAvailable()
         );
     }

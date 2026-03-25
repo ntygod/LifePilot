@@ -6,6 +6,8 @@ import com.lifepilot.conversation.transcript.SessionTranscriptRepository;
 import com.lifepilot.interaction.web.a2ui.A2uiPayloadSupport;
 import com.lifepilot.interaction.web.model.AttachmentInfo;
 import com.lifepilot.interaction.web.model.ChatSession;
+import com.lifepilot.interaction.web.model.ChatTurnRecord;
+import com.lifepilot.interaction.web.model.ChatTurnStatus;
 import com.lifepilot.interaction.web.model.MessageInfo;
 import com.lifepilot.interaction.web.model.SessionConfigKeys;
 import com.lifepilot.interaction.web.model.SessionConfigRequest;
@@ -37,17 +39,21 @@ public class ChatSessionService {
     private final AttachmentRepository attachmentRepository;
     private final ObjectMapper objectMapper;
     private final SessionTranscriptRepository transcriptRepository;
+    @Nullable
+    private final ChatTurnService chatTurnService;
 
     public ChatSessionService(ChatSessionRepository sessionRepository,
                               SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
                               AttachmentRepository attachmentRepository,
                               ObjectMapper objectMapper,
-                              SessionTranscriptRepository transcriptRepository) {
+                              SessionTranscriptRepository transcriptRepository,
+                              @Nullable ChatTurnService chatTurnService) {
         this.sessionRepository = sessionRepository;
         this.sessionKnowledgeBaseRepository = sessionKnowledgeBaseRepository;
         this.attachmentRepository = attachmentRepository;
         this.objectMapper = objectMapper;
         this.transcriptRepository = transcriptRepository;
+        this.chatTurnService = chatTurnService;
     }
 
     @Transactional
@@ -227,15 +233,28 @@ public class ChatSessionService {
     }
 
     private List<MessageInfo> loadTranscriptMessages(String sessionId) {
+        Map<String, ChatTurnRecord> turnsByTurnId = new HashMap<>();
+        if (chatTurnService != null) {
+            for (ChatTurnRecord turn : chatTurnService.findBySessionId(sessionId)) {
+                turnsByTurnId.put(turn.turnId(), turn);
+            }
+        }
         return transcriptRepository.findUserConversationRowsBySessionId(sessionId).stream()
-                .map(this::toMessageInfo)
+                .map(row -> toMessageInfo(row, turnsByTurnId))
                 .toList();
     }
 
-    private MessageInfo toMessageInfo(SessionTranscriptRepository.TranscriptMessageViewRow row) {
+    private MessageInfo toMessageInfo(SessionTranscriptRepository.TranscriptMessageViewRow row,
+                                      Map<String, ChatTurnRecord> turnsByTurnId) {
         var tree = A2uiPayloadSupport.deserializeStoredTree(row.a2uiComponentsJson(), objectMapper);
+        ChatTurnRecord turn = row.turnId() != null ? turnsByTurnId.get(row.turnId()) : null;
+        var rowCompletionMode = parseCompletionMode(row.completionMode());
+        var effectiveCompletionMode = parseCompletionMode(
+                turn != null && turn.completionMode() != null ? turn.completionMode() : row.completionMode());
+        ChatTurnStatus effectiveTurnStatus = resolveMessageTurnStatus(turn, rowCompletionMode);
         return new MessageInfo(
                 row.entryId(),
+                row.turnId(),
                 row.role(),
                 row.content(),
                 tree != null ? tree.components() : null,
@@ -244,9 +263,32 @@ public class ChatSessionService {
                 row.traceId(),
                 null,
                 deserializeReactSteps(row.reactStepsJson()),
-                parseCompletionMode(row.completionMode()),
-                row.resumedFromTraceId()
+                effectiveCompletionMode,
+                turn != null && turn.resumedFromTraceId() != null ? turn.resumedFromTraceId() : row.resumedFromTraceId(),
+                effectiveTurnStatus,
+                resolveMessageErrorMessage(turn, rowCompletionMode)
         );
+    }
+
+    @Nullable
+    private ChatTurnStatus resolveMessageTurnStatus(@Nullable ChatTurnRecord turn,
+                                                    @Nullable com.lifepilot.agent.model.CompletionMode rowCompletionMode) {
+        if (rowCompletionMode == com.lifepilot.agent.model.CompletionMode.SUSPENDED) {
+            return ChatTurnStatus.SUSPENDED;
+        }
+        if (rowCompletionMode == com.lifepilot.agent.model.CompletionMode.DEGRADED) {
+            return ChatTurnStatus.DEGRADED;
+        }
+        return turn != null ? turn.status() : null;
+    }
+
+    @Nullable
+    private String resolveMessageErrorMessage(@Nullable ChatTurnRecord turn,
+                                              @Nullable com.lifepilot.agent.model.CompletionMode rowCompletionMode) {
+        if (rowCompletionMode == com.lifepilot.agent.model.CompletionMode.SUSPENDED) {
+            return null;
+        }
+        return turn != null ? turn.lastErrorMessage() : null;
     }
 
     private List<MessageInfo> withAttachments(List<MessageInfo> messages) {
@@ -268,6 +310,7 @@ public class ChatSessionService {
                     .toList();
             return new MessageInfo(
                     msg.id(),
+                    msg.turnId(),
                     msg.role(),
                     msg.content(),
                     msg.a2uiComponents(),
@@ -277,7 +320,9 @@ public class ChatSessionService {
                     attachments,
                     msg.reactSteps(),
                     msg.completionMode(),
-                    msg.resumedFromTraceId()
+                    msg.resumedFromTraceId(),
+                    msg.turnStatus(),
+                    msg.errorMessage()
             );
         }).toList();
     }

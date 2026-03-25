@@ -5,11 +5,14 @@ import com.lifepilot.interaction.model.TokenUsage;
 import com.lifepilot.interaction.web.a2ui.A2uiPayloadSupport;
 import com.lifepilot.interaction.web.config.A2uiProperties;
 import com.lifepilot.interaction.web.model.A2uiComponentTree;
+import com.lifepilot.interaction.web.model.ChatTurnStatus;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
 import com.lifepilot.agent.model.AgentRequest;
+import com.lifepilot.agent.model.CompletionReason;
+import com.lifepilot.agent.model.OutputContentRole;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.model.ReactStep;
 import com.lifepilot.agent.model.ReactStepSerializer;
@@ -53,12 +56,21 @@ public class StreamingEventHandler {
 
     /** 发送 SSE ERROR 事件并关闭连接。 */
     public void sendStreamError(SseSessionManager sseManager, String streamId,
-                                int code, String message, @Nullable String traceId) {
+                                int code, String message,
+                                @Nullable String traceId,
+                                @Nullable String turnId,
+                                @Nullable ChatTurnStatus turnStatus) {
         var errorData = new HashMap<String, Object>();
         errorData.put("code", code);
         errorData.put("message", message);
         if (traceId != null) {
             errorData.put("traceId", traceId);
+        }
+        if (turnId != null && !turnId.isBlank()) {
+            errorData.put("turnId", turnId);
+        }
+        if (turnStatus != null) {
+            errorData.put("turnStatus", turnStatus.name());
         }
         sseManager.sendEvent(streamId, SseEventType.ERROR, errorData);
         sseManager.closeEmitter(streamId);
@@ -119,7 +131,16 @@ public class StreamingEventHandler {
         if (state.traceId() != null) {
             doneData.put("traceId", state.traceId());
         }
+        doneData.put("taskMode", state.taskMode().name());
         doneData.put("completionMode", state.completionMode().name());
+        doneData.put("contentRole", resolveContentRole(state, steps, finalContent).name());
+        if (state.completionReason() != null) {
+            doneData.put("completionReason", state.completionReason().name());
+        }
+        if (state.terminationReason() != null && !state.terminationReason().isBlank()) {
+            doneData.put("terminationReason", state.terminationReason());
+        }
+        doneData.put("turnStatus", resolveTurnStatus(state).name());
         if (state.resumedFromTraceId() != null && !state.resumedFromTraceId().isBlank()) {
             doneData.put("resumedFromTraceId", state.resumedFromTraceId());
         }
@@ -139,6 +160,41 @@ public class StreamingEventHandler {
         }
         doneData.put("contents", contents);
         return doneData;
+    }
+
+    private OutputContentRole resolveContentRole(ReactAgentState state,
+                                                 @Nullable List<ReactStep> steps,
+                                                 @Nullable String finalContent) {
+        if (state.suspended()) {
+            return OutputContentRole.SUSPEND_PROMPT;
+        }
+        if (state.completionReason() == CompletionReason.EXPLICIT_BLOCKED) {
+            return OutputContentRole.BLOCKED;
+        }
+        if (finalContent != null && steps != null) {
+            for (int index = steps.size() - 1; index >= 0; index--) {
+                ReactStep step = steps.get(index);
+                if (step instanceof ReactStep.Progress progress
+                        && finalContent.strip().equals(progress.content().strip())) {
+                    return OutputContentRole.PROGRESS;
+                }
+                if (step instanceof ReactStep.Answer || step instanceof ReactStep.Thought) {
+                    break;
+                }
+            }
+        }
+        return OutputContentRole.FINAL;
+    }
+
+    private ChatTurnStatus resolveTurnStatus(ReactAgentState state) {
+        if (state.suspended()) {
+            return ChatTurnStatus.SUSPENDED;
+        }
+        if (state.completionMode() == com.lifepilot.agent.model.CompletionMode.DEGRADED
+                || (state.terminationReason() != null && !state.terminationReason().isBlank())) {
+            return ChatTurnStatus.DEGRADED;
+        }
+        return ChatTurnStatus.SUCCESS;
     }
 
     // ===== 知识库来源 =====

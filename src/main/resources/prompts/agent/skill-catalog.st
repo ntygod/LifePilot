@@ -1,5 +1,5 @@
 <skill_catalog>
-## 可用技能（mandatory — 每次回复前必须扫描）
+## 可用技能
 
 <available_skills>
 {skillEntries}

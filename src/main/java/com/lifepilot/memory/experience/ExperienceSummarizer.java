@@ -181,6 +181,7 @@ public class ExperienceSummarizer {
 
         for (var step : state.steps()) {
             switch (step) {
+                case ReactStep.Progress p -> sb.append("[进度] ").append(p.content()).append("\n");
                 case ReactStep.Thought t -> sb.append("[思考] ").append(t.content()).append("\n");
                 case ReactStep.ToolCall tc -> sb.append("[工具调用] ").append(tc.toolId())
                         .append(" 输入: ").append(tc.inputJson()).append("\n");

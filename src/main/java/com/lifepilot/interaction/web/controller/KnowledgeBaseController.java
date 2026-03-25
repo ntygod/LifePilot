@@ -11,6 +11,7 @@ import com.lifepilot.knowledge.model.DocumentStatus;
 import com.lifepilot.knowledge.model.KnowledgeBase;
 import com.lifepilot.knowledge.repository.DocumentRepository;
 import com.lifepilot.knowledge.retrieve.DocumentRetriever;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -37,6 +38,7 @@ import java.util.stream.Collectors;
  */
 @RestController
 @RequestMapping("/api/knowledge-bases")
+@ConditionalOnProperty(name = "lifepilot.gateway.channels.web.enabled", havingValue = "true")
 public class KnowledgeBaseController {
 
     private static final Logger log = LoggerFactory.getLogger(KnowledgeBaseController.class);

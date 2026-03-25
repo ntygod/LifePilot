@@ -70,6 +70,11 @@ const triggerLabel = computed(() => {
 // 步骤简短描述（用于触发器区域，控制在 40 字符内）
 function getStepBrief(step: ReactStepDto): string {
   switch (step.type) {
+    case 'PROGRESS': {
+      const text = step.content ?? ''
+      if (text.length <= 40) return text || '处理中…'
+      return text.substring(0, 40) + '…'
+    }
     case 'THOUGHT': {
       const text = step.content ?? ''
       if (text.length <= 40) return text || '推理中…'
@@ -96,6 +101,7 @@ function toggleStep(index: number) {
 // 步骤图标映射
 function getStepIcon(type: string) {
   switch (type) {
+    case 'PROGRESS': return Loader2
     case 'THOUGHT': return Lightbulb
     case 'TOOL_CALL': return Wrench
     case 'OBSERVATION': return Eye
@@ -109,6 +115,7 @@ function getStepIcon(type: string) {
 // 步骤颜色映射
 function getStepColor(type: string) {
   switch (type) {
+    case 'PROGRESS': return 'text-primary'
     case 'THOUGHT': return 'text-violet-500'
     case 'TOOL_CALL': return 'text-amber-500'
     case 'OBSERVATION': return 'text-blue-500'
@@ -122,6 +129,10 @@ function getStepColor(type: string) {
 // 步骤标题（Thought 类型显示内容摘要而非固定文案）
 function getStepTitle(step: ReactStepDto): string {
   switch (step.type) {
+    case 'PROGRESS': {
+      if (step.content && step.content.length <= 30) return step.content
+      return '执行进度'
+    }
     case 'THOUGHT': {
       // 短内容直接作为标题，长内容用固定标题 + 内联预览
       if (step.content && step.content.length <= 30) return step.content
@@ -138,6 +149,7 @@ function getStepTitle(step: ReactStepDto): string {
 // 步骤完整内容（点击展开时显示）
 function getStepContent(step: ReactStepDto): string | null {
   switch (step.type) {
+    case 'PROGRESS': return step.content
     case 'THOUGHT': return step.content
     case 'TOOL_CALL': return step.inputSummary || null
     case 'OBSERVATION': return step.outputSummary || null
@@ -149,8 +161,8 @@ function getStepContent(step: ReactStepDto): string | null {
 
 // 步骤内联预览（始终可见的一行摘要，截断到 80 字符）
 function getStepPreview(step: ReactStepDto): string | null {
-  // Thought 短内容已作为标题显示，不重复
-  if (step.type === 'THOUGHT' && step.content && step.content.length <= 30) return null
+  // Progress / Thought 的短内容已作为标题显示，不重复
+  if ((step.type === 'THOUGHT' || step.type === 'PROGRESS') && step.content && step.content.length <= 30) return null
   const content = getStepContent(step)
   if (!content) return null
   const firstLine = content.split('\n')[0]
@@ -160,8 +172,8 @@ function getStepPreview(step: ReactStepDto): string | null {
 
 // 内容是否超出预览长度（决定是否显示展开按钮）
 function hasExpandableContent(step: ReactStepDto): boolean {
-  // Thought 短内容已作为标题，无需展开
-  if (step.type === 'THOUGHT' && step.content && step.content.length <= 30) return false
+  // Progress / Thought 的短内容已作为标题，无需展开
+  if ((step.type === 'THOUGHT' || step.type === 'PROGRESS') && step.content && step.content.length <= 30) return false
   const content = getStepContent(step)
   if (!content) return false
   return content.length > 80 || content.includes('\n')

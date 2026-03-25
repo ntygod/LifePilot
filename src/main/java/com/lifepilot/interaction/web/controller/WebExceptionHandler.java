@@ -8,6 +8,7 @@ import com.lifepilot.interaction.web.model.ErrorResponse;
 import com.lifepilot.knowledge.exception.DocumentNotFoundException;
 import com.lifepilot.knowledge.exception.KnowledgeBaseNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -26,6 +27,7 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
  * @since 2026-02-26
  */
 @RestControllerAdvice
+@ConditionalOnProperty(name = "lifepilot.gateway.channels.web.enabled", havingValue = "true")
 public class WebExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(WebExceptionHandler.class);

@@ -3,6 +3,7 @@ package com.lifepilot.interaction.web.controller;
 import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.notification.NotificationRepository;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -27,6 +28,7 @@ import java.util.UUID;
  */
 @RestController
 @RequestMapping("/api/notifications")
+@ConditionalOnProperty(name = "lifepilot.gateway.channels.web.enabled", havingValue = "true")
 public class NotificationSseController {
 
     private static final Logger log = LoggerFactory.getLogger(NotificationSseController.class);

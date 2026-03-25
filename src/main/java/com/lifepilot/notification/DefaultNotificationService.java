@@ -4,12 +4,14 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.interaction.channel.ChannelAdapter;
 import com.lifepilot.interaction.channel.converter.MessageConverter;
+import com.lifepilot.interaction.config.ChannelConfigProvider;
 import com.lifepilot.interaction.model.ChannelType;
 import com.lifepilot.interaction.model.GatewayResponse;
 import com.lifepilot.interaction.model.ResponseContent;
 import com.lifepilot.notification.config.NotificationProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.lang.Nullable;
 
 import java.time.Instant;
 import java.util.*;
@@ -19,7 +21,7 @@ import java.util.stream.Collectors;
  * 默认通知服务实现。
  *
  * <p>根据 {@link Urgency} 路由通知：HIGH / MEDIUM 通过 {@link ChannelAdapter} 实时推送，
- * LOW 入队 {@link PassiveNotificationQueue}。遍历所有已注册的 ChannelAdapter 广播，
+ * LOW 入队 {@link PassiveNotificationQueue}。若请求显式指定渠道则定向发送，否则仅在已启用渠道内路由。
  * 单渠道失败记录 WARN 日志，不中断其他渠道。
  *
  * @author zsg
@@ -35,12 +37,23 @@ public class DefaultNotificationService implements NotificationService {
     private final NotificationRepository notificationRepository;
     private final PassiveNotificationQueue passiveNotificationQueue;
     private final NotificationProperties properties;
+    @Nullable
+    private final ChannelConfigProvider channelConfigProvider;
 
     public DefaultNotificationService(List<ChannelAdapter> channelAdapters,
                                       List<MessageConverter> messageConverters,
                                       NotificationRepository notificationRepository,
                                       PassiveNotificationQueue passiveNotificationQueue,
                                       NotificationProperties properties) {
+        this(channelAdapters, messageConverters, notificationRepository, passiveNotificationQueue, properties, null);
+    }
+
+    public DefaultNotificationService(List<ChannelAdapter> channelAdapters,
+                                      List<MessageConverter> messageConverters,
+                                      NotificationRepository notificationRepository,
+                                      PassiveNotificationQueue passiveNotificationQueue,
+                                      NotificationProperties properties,
+                                      @Nullable ChannelConfigProvider channelConfigProvider) {
         this.adapterMap = channelAdapters.stream()
                 .collect(Collectors.toMap(ChannelAdapter::channelType, a -> a, (a, b) -> a));
         this.converterMap = messageConverters.stream()
@@ -48,6 +61,7 @@ public class DefaultNotificationService implements NotificationService {
         this.notificationRepository = notificationRepository;
         this.passiveNotificationQueue = passiveNotificationQueue;
         this.properties = properties;
+        this.channelConfigProvider = channelConfigProvider;
     }
 
     @Override
@@ -161,8 +175,7 @@ public class DefaultNotificationService implements NotificationService {
     /**
      * 解析目标渠道适配器列表。
      *
-     * <p>如果 request 指定了 channel，只发送到该渠道；否则广播所有渠道。
-     * 结合用户设置过滤渠道。
+     * <p>如果 request 指定了 channel，只发送到该渠道；否则在已启用渠道内按用户设置过滤。
      */
     private List<ChannelAdapter> resolveTargetAdapters(NotificationRequest request,
                                                         NotificationSettingRecord setting) {
@@ -171,19 +184,29 @@ public class DefaultNotificationService implements NotificationService {
             try {
                 var channelType = ChannelType.valueOf(request.channel());
                 var adapter = adapterMap.get(channelType);
-                return adapter != null ? List.of(adapter) : List.of();
+                return adapter != null && isChannelEnabled(channelType) ? List.of(adapter) : List.of();
             } catch (IllegalArgumentException e) {
                 log.warn("未知的渠道类型: channel={}", request.channel());
                 return List.of();
             }
         }
 
-        // 广播所有渠道，结合用户设置过滤
+        // 未显式指定时，仅在已启用渠道内结合用户设置路由
         var enabledChannels = setting != null ? setting.channels() : null;
         return adapterMap.values().stream()
+                .filter(adapter -> isChannelEnabled(adapter.channelType()))
                 .filter(adapter -> enabledChannels == null || enabledChannels.isEmpty()
                         || enabledChannels.contains(adapter.channelType().name()))
                 .toList();
+    }
+
+    private boolean isChannelEnabled(ChannelType channelType) {
+        return switch (channelType) {
+            case WEB -> true;
+            case FEISHU -> channelConfigProvider == null || channelConfigProvider.getFeishuConfig().enabled();
+            case DINGTALK -> channelConfigProvider == null || channelConfigProvider.getDingtalkConfig().enabled();
+            case WECOM -> channelConfigProvider == null || channelConfigProvider.getWecomConfig().enabled();
+        };
     }
 
     private void persistRecord(NotificationRecord record) {

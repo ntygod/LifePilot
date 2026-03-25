@@ -13,6 +13,7 @@ import com.lifepilot.interaction.web.model.ChatRequest;
 import com.lifepilot.interaction.web.model.NotificationSseEvent;
 import com.lifepilot.interaction.web.model.SignalRequest;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
+import com.lifepilot.interaction.web.service.ChatTurnService;
 import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.media.audio.AudioTranscriber;
@@ -34,28 +35,19 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Web 通道适配器，桥接 REST 请求与 MessageGateway 中间件管道。
- *
- * <p>将 {@link ChatRequest} 和 {@link SignalRequest} 标准化为 {@link GatewayMessage}，
- * 再通过 {@link MessageGateway#process} 推入中间件管道处理。Controller 负责 HTTP 协议层，
- * 本适配器负责 GatewayMessage 转换和 Gateway 调用，职责分离。</p>
- *
- * <p>同时负责加载附件二进制数据，并在需要时执行音频转录，为多模态路由提供统一输入。</p>
+ * Web 通道适配器。
  *
  * @author zsg
- * @since 2026-02-27
+ * @since 2026-03-25
  */
 public class WebChannelAdapter extends AbstractChannelAdapter {
 
     private static final Logger log = LoggerFactory.getLogger(WebChannelAdapter.class);
-
-    /** A2UI 信号事件类型常量。 */
     private static final String A2UI_SIGNAL_EVENT_TYPE = "a2ui_signal";
-
-    /** Web 通道默认用户标识。 */
     private static final String DEFAULT_WEB_USER = "web-user";
 
     private final AttachmentRepository attachmentRepository;
+    private final ChatTurnService chatTurnService;
     @Nullable private final SseSessionManager sseSessionManager;
     @Nullable private final AudioTranscriber audioTranscriber;
     private final MediaProperties mediaProperties;
@@ -63,12 +55,14 @@ public class WebChannelAdapter extends AbstractChannelAdapter {
     public WebChannelAdapter(MessageGateway gateway,
                              GatewayProperties properties,
                              AttachmentRepository attachmentRepository,
+                             ChatTurnService chatTurnService,
                              @Nullable SseSessionManager sseSessionManager,
                              @Nullable AudioTranscriber audioTranscriber,
                              MediaProperties mediaProperties,
                              SharedScheduler sharedScheduler) {
         super(gateway, properties, sharedScheduler);
         this.attachmentRepository = attachmentRepository;
+        this.chatTurnService = chatTurnService;
         this.sseSessionManager = sseSessionManager;
         this.audioTranscriber = audioTranscriber;
         this.mediaProperties = mediaProperties;
@@ -91,19 +85,16 @@ public class WebChannelAdapter extends AbstractChannelAdapter {
 
     @Override
     protected void doStart() {
-        // Web 通道由 Spring MVC 托管，无需额外启动逻辑。
         log.info("Web 通道适配器已启动");
     }
 
     @Override
     protected void doStop() {
-        // SseEmitter 的生命周期由 SseSessionManager 统一管理。
-        log.info("Web 通道适配器停止中，SseEmitter 清理委托给 SseSessionManager");
+        log.info("Web 通道适配器停止中，SseEmitter 清理由 SseSessionManager 接管");
     }
 
     @Override
     protected void doSendResponse(String userId, GatewayResponse response) {
-        // 主动通知通过 notification SSE 广播，其余响应仍由 Controller 直接返回。
         var metadata = response.metadata();
         if (metadata != null && metadata.containsKey("notificationType") && sseSessionManager != null) {
             try {
@@ -114,10 +105,8 @@ public class WebChannelAdapter extends AbstractChannelAdapter {
                 var notificationId = metadata.containsKey("notificationId")
                         ? String.valueOf(metadata.get("notificationId")) : UUID.randomUUID().toString();
                 var content = response.content() != null ? response.content().toPlainText() : "";
-
                 var event = new NotificationSseEvent(
-                        notificationId, typeId, urgency, content,
-                        Instant.now().toString());
+                        notificationId, typeId, urgency, content, Instant.now().toString());
                 sseSessionManager.broadcastNotification(event);
                 log.debug("通知 SSE 广播完成: typeId={}, urgency={}", typeId, urgency);
                 return;
@@ -125,89 +114,56 @@ public class WebChannelAdapter extends AbstractChannelAdapter {
                 log.warn("通知 SSE 广播失败，降级为默认处理: userId={}, error={}", userId, e.getMessage());
             }
         }
-
         log.debug("Web 通道异步响应: userId={}, statusCode={}", userId, response.statusCode());
     }
 
-    /**
-     * 同步处理消息，供非流式聊天端点调用。
-     *
-     * @param request 聊天请求
-     * @param httpRequest HTTP 请求
-     * @return 网关响应
-     */
     public GatewayResponse processMessage(ChatRequest request, HttpServletRequest httpRequest) {
-        var message = buildChatGatewayMessage(request, httpRequest, false);
-        return submitSync(message);
+        return submitSync(buildChatGatewayMessage(request, httpRequest, false));
     }
 
-    /**
-     * 流式处理消息，供 SSE 聊天端点调用。
-     *
-     * @param request 聊天请求
-     * @param httpRequest HTTP 请求
-     * @return 网关响应
-     */
     public GatewayResponse processMessageStreaming(ChatRequest request, HttpServletRequest httpRequest) {
-        var message = buildChatGatewayMessage(request, httpRequest, true);
-        return submitSync(message);
+        return submitSync(buildChatGatewayMessage(request, httpRequest, true));
     }
 
-    /**
-     * 处理 A2UI 信号回传。
-     *
-     * @param request 信号请求
-     * @param httpRequest HTTP 请求
-     * @return 网关响应
-     */
     public GatewayResponse processSignal(SignalRequest request, HttpServletRequest httpRequest) {
-        var message = buildSignalGatewayMessage(request, httpRequest);
-        return submitSync(message);
+        return submitSync(buildSignalGatewayMessage(request, httpRequest));
     }
 
-    // ===== 内部构建方法 =====
-
-    /**
-     * 从 ChatRequest 构建 GatewayMessage。
-     *
-     * @param request 聊天请求
-     * @param httpRequest HTTP 请求，可为空
-     * @param acceptsSse 是否接受 SSE 流式响应
-     * @return 标准化后的网关消息
-     */
     private GatewayMessage buildChatGatewayMessage(ChatRequest request,
                                                    HttpServletRequest httpRequest,
                                                    boolean acceptsSse) {
-        var sessionId = request.sessionId() != null ? request.sessionId() : UUID.randomUUID().toString();
+        String sessionId = request.sessionId() != null ? request.sessionId() : UUID.randomUUID().toString();
+        ChatTurnService.ResolvedTurnRequest resolved = chatTurnService.prepare(sessionId, request);
+        ChatRequest normalizedRequest = new ChatRequest(
+                resolved.turnId(),
+                resolved.action(),
+                resolved.content(),
+                sessionId,
+                resolved.attachmentIds(),
+                resolved.preferredProvider()
+        );
 
-        // 根据 attachmentIds 加载附件的二进制数据与 MIME 信息。
-        List<GatewayMessage.Attachment> attachments = loadAttachments(request, sessionId);
-
-        // 对音频附件做转录，得到可进入主 Agent 的文本内容。
-        String messageContent = request.content();
-        messageContent = transcribeAudioAttachments(attachments, messageContent, sessionId);
-
+        List<GatewayMessage.Attachment> attachments = loadAttachments(normalizedRequest, sessionId);
+        String messageContent = transcribeAudioAttachments(attachments, normalizedRequest.content(), sessionId);
         var content = new MessageContent.TextMessage(messageContent);
 
         return GatewayMessage.builder()
+                .messageId(resolved.turnId())
                 .channelType(ChannelType.WEB)
                 .userId(DEFAULT_WEB_USER)
                 .sessionId(sessionId)
                 .content(content)
                 .attachments(attachments)
-                .channelMetadata(buildWebMetadata(httpRequest, acceptsSse,
-                        request.preferredProvider(), request.resumePolicy()))
+                .channelMetadata(buildWebMetadata(
+                        httpRequest,
+                        acceptsSse,
+                        resolved.preferredProvider(),
+                        resolved.turnId(),
+                        resolved.action()))
                 .timestamp(Instant.now())
                 .build();
     }
 
-    /**
-     * 从 SignalRequest 构建 GatewayMessage。
-     *
-     * @param request 信号请求
-     * @param httpRequest HTTP 请求，可为空
-     * @return 标准化后的网关消息
-     */
     private GatewayMessage buildSignalGatewayMessage(SignalRequest request,
                                                      HttpServletRequest httpRequest) {
         var payload = Map.<String, Object>of(
@@ -220,27 +176,19 @@ public class WebChannelAdapter extends AbstractChannelAdapter {
                 .userId(DEFAULT_WEB_USER)
                 .sessionId(request.sessionId())
                 .content(content)
-                .channelMetadata(buildWebMetadata(httpRequest, false, null, null))
+                .channelMetadata(buildWebMetadata(httpRequest, false, null, null, null))
                 .timestamp(Instant.now())
                 .build();
     }
 
-    /**
-     * 从 HttpServletRequest 构建 WebMetadata。
-     *
-     * @param httpRequest HTTP 请求，可为空
-     * @param acceptsSse 是否接受 SSE 流式响应
-     * @param preferredProvider 会话级偏好 Provider
-     * @param resumePolicy 恢复策略
-     * @return Web 通道元数据
-     */
     private ChannelMetadata.WebMetadata buildWebMetadata(HttpServletRequest httpRequest,
                                                          boolean acceptsSse,
-                                                         String preferredProvider,
-                                                         @Nullable com.lifepilot.agent.model.ResumePolicy resumePolicy) {
+                                                         @Nullable String preferredProvider,
+                                                         @Nullable String turnId,
+                                                         @Nullable com.lifepilot.interaction.web.model.ChatTurnAction action) {
         if (httpRequest == null) {
             return new ChannelMetadata.WebMetadata(
-                    "unknown", "unknown", null, acceptsSse, preferredProvider, resumePolicy);
+                    "unknown", "unknown", null, acceptsSse, preferredProvider, turnId, action);
         }
         var userAgent = httpRequest.getHeader("User-Agent");
         return new ChannelMetadata.WebMetadata(
@@ -249,29 +197,17 @@ public class WebChannelAdapter extends AbstractChannelAdapter {
                 null,
                 acceptsSse,
                 preferredProvider,
-                resumePolicy
+                turnId,
+                action
         );
     }
 
-    /**
-     * 检测音频附件并自动转录为文本。
-     *
-     * <p>当附件 MIME 类型以 {@code audio/} 开头且转录器可用时，
-     * 会将音频转为文本，并通过通知 SSE 推送转录结果。</p>
-     *
-     * @param attachments 附件列表
-     * @param originalContent 原始消息内容
-     * @param sessionId 会话 ID
-     * @return 转录后的消息内容；无音频附件时返回原始内容
-     */
     private String transcribeAudioAttachments(List<GatewayMessage.Attachment> attachments,
                                               String originalContent,
                                               String sessionId) {
         if (attachments.isEmpty()) {
             return originalContent;
         }
-
-        // 原生音频路由启用时，不再执行 STT，音频直接交给支持 NATIVE_AUDIO 的 Provider。
         if (mediaProperties.getNativeAudio().isEnabled()) {
             boolean hasAudio = attachments.stream()
                     .anyMatch(att -> att.mimeType() != null && att.mimeType().startsWith("audio/"));
@@ -280,7 +216,6 @@ public class WebChannelAdapter extends AbstractChannelAdapter {
                 return originalContent;
             }
         }
-
         if (audioTranscriber == null) {
             return originalContent;
         }
@@ -289,18 +224,13 @@ public class WebChannelAdapter extends AbstractChannelAdapter {
             if (attachment.mimeType() == null || !attachment.mimeType().startsWith("audio/")) {
                 continue;
             }
-
             try {
                 log.debug("检测到音频附件，开始转录: fileName={}, mimeType={}",
                         attachment.fileName(), attachment.mimeType());
                 String transcribedText = audioTranscriber.transcribe(attachment.data(), attachment.mimeType());
-                log.info("音频转录成功: fileName={}, 转录文本长度={}",
+                log.info("音频转录成功: fileName={}, textLength={}",
                         attachment.fileName(), transcribedText.length());
-
-                // 通过通知 SSE 广播转录结果。
                 pushTranscriptionEvent(sessionId, transcribedText);
-
-                // 无显式文本时直接替换；否则将转录文本附加到用户输入后。
                 if (originalContent == null || originalContent.isBlank() || "[语音消息]".equals(originalContent)) {
                     return transcribedText;
                 }
@@ -309,19 +239,9 @@ public class WebChannelAdapter extends AbstractChannelAdapter {
                 log.warn("音频转录失败: fileName={}, error={}", attachment.fileName(), e.getMessage());
             }
         }
-
         return originalContent;
     }
 
-    /**
-     * 通过通知 SSE 广播语音转录结果。
-     *
-     * <p>转录发生在消息构建阶段，此时还没有 streamId，
-     * 因此通过 notification SSE 连接将结果推送给前端。</p>
-     *
-     * @param sessionId 会话 ID
-     * @param transcribedText 转录文本
-     */
     private void pushTranscriptionEvent(String sessionId, String transcribedText) {
         if (sseSessionManager == null) {
             return;
@@ -335,13 +255,6 @@ public class WebChannelAdapter extends AbstractChannelAdapter {
         }
     }
 
-    /**
-     * 根据 ChatRequest 中的附件 ID 列表加载附件记录与二进制数据。
-     *
-     * @param request 聊天请求
-     * @param sessionId 会话 ID
-     * @return GatewayMessage 附件列表
-     */
     private List<GatewayMessage.Attachment> loadAttachments(ChatRequest request, String sessionId) {
         var ids = request.attachmentIds();
         if (ids == null || ids.isEmpty()) {
@@ -358,14 +271,13 @@ public class WebChannelAdapter extends AbstractChannelAdapter {
                 }
                 Path path = Path.of(record.filePath());
                 byte[] data = Files.readAllBytes(path);
-                var attachment = new GatewayMessage.Attachment(
+                results.add(new GatewayMessage.Attachment(
                         record.id(),
                         record.fileName(),
                         record.mimeType(),
                         data,
                         record.fileSize()
-                );
-                results.add(attachment);
+                ));
             } catch (IOException e) {
                 log.warn("WebChannelAdapter: 读取附件失败, id={}, sessionId={}, error={}",
                         id, sessionId, e.getMessage());

@@ -7,6 +7,7 @@ import org.springframework.ai.chat.messages.ToolResponseMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.lang.Nullable;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -21,6 +22,10 @@ public final class ContextMessageFormatter {
 
     private static final Pattern TAGGED_BLOCK_PATTERN = Pattern.compile(
             "^<([a-z][a-z0-9_]*)>\\s*(.*?)\\s*</\\1>$",
+            Pattern.DOTALL
+    );
+    private static final Pattern MULTI_TAGGED_BLOCK_PATTERN = Pattern.compile(
+            "<([a-z][a-z0-9_]*)>\\s*(.*?)\\s*</\\1>",
             Pattern.DOTALL
     );
 
@@ -48,8 +53,17 @@ public final class ContextMessageFormatter {
             if (message instanceof AssistantMessage assistantMessage) {
                 TaggedBlock taggedBlock = parseTaggedBlock(assistantMessage.getText());
                 if (taggedBlock != null) {
-                    buffer.append("  [").append(i).append("] ")
-                            .append(taggedBlock.rawText())
+                    buffer.append(taggedBlock.rawText()).append('\n');
+                    continue;
+                }
+            }
+            if (message instanceof UserMessage userMessage) {
+                var taggedBlocks = parseTaggedBlocks(userMessage.getText());
+                if (!taggedBlocks.isEmpty()) {
+                    buffer.append(taggedBlocks.stream()
+                            .map(TaggedBlock::rawText)
+                            .reduce((left, right) -> left + "\n\n" + right)
+                            .orElse(""))
                             .append('\n');
                     continue;
                 }
@@ -67,8 +81,14 @@ public final class ContextMessageFormatter {
         switch (message) {
             case SystemMessage systemMessage ->
                     buffer.append("[system] ").append(safeText(systemMessage.getText())).append('\n');
-            case UserMessage userMessage ->
+            case UserMessage userMessage -> {
+                var taggedBlocks = parseTaggedBlocks(userMessage.getText());
+                if (!taggedBlocks.isEmpty()) {
+                    taggedBlocks.forEach(block -> buffer.append(block.rawText()).append('\n'));
+                } else {
                     buffer.append("[user] ").append(safeText(userMessage.getText())).append('\n');
+                }
+            }
             case AssistantMessage assistantMessage -> appendAssistantPreview(buffer, assistantMessage);
             case ToolResponseMessage toolResponseMessage -> toolResponseMessage.getResponses().forEach(response ->
                     buffer.append("[tool_result] ")
@@ -144,6 +164,53 @@ public final class ContextMessageFormatter {
                 matcher.group(2).strip(),
                 text.strip()
         );
+    }
+
+    public static List<TaggedBlock> parseTaggedBlocks(@Nullable String text) {
+        if (text == null || text.isBlank()) {
+            return List.of();
+        }
+        String stripped = text.strip();
+        Matcher matcher = MULTI_TAGGED_BLOCK_PATTERN.matcher(stripped);
+        List<TaggedBlock> blocks = new ArrayList<>();
+        int cursor = 0;
+        while (matcher.find()) {
+            String gap = stripped.substring(cursor, matcher.start());
+            if (!gap.isBlank()) {
+                return List.of();
+            }
+            blocks.add(new TaggedBlock(
+                    matcher.group(1),
+                    matcher.group(2).strip(),
+                    matcher.group().strip()
+            ));
+            cursor = matcher.end();
+        }
+        if (blocks.isEmpty()) {
+            return List.of();
+        }
+        if (!stripped.substring(cursor).isBlank()) {
+            return List.of();
+        }
+        return List.copyOf(blocks);
+    }
+
+    public static String serializeHistoryTranscript(@Nullable List<Message> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return "";
+        }
+        List<Message> filteredMessages = messages.stream()
+                .filter(message -> !isHistoryTranscriptMarker(message))
+                .toList();
+        return serializeForPreview(filteredMessages);
+    }
+
+    private static boolean isHistoryTranscriptMarker(Message message) {
+        if (!(message instanceof AssistantMessage assistantMessage)) {
+            return false;
+        }
+        TaggedBlock taggedBlock = parseTaggedBlock(assistantMessage.getText());
+        return taggedBlock != null && "history_transcript".equals(taggedBlock.tagName());
     }
 
     private static String safeText(@Nullable String text) {

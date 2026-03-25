@@ -3,6 +3,7 @@ package com.lifepilot.notification.config;
 import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.interaction.channel.ChannelAdapter;
 import com.lifepilot.interaction.channel.converter.MessageConverter;
+import com.lifepilot.interaction.config.ChannelConfigProvider;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.notification.DefaultNotificationService;
 import com.lifepilot.notification.NotificationRepository;
@@ -61,10 +62,11 @@ public class NotificationAutoConfiguration {
                                                     List<MessageConverter> messageConverters,
                                                     NotificationRepository notificationRepository,
                                                     PassiveNotificationQueue passiveNotificationQueue,
-                                                    NotificationProperties properties) {
+                                                    NotificationProperties properties,
+                                                    @Nullable ChannelConfigProvider channelConfigProvider) {
         log.info("通知模块: 注册 DefaultNotificationService");
         return new DefaultNotificationService(channelAdapters, messageConverters,
-                notificationRepository, passiveNotificationQueue, properties);
+                notificationRepository, passiveNotificationQueue, properties, channelConfigProvider);
     }
 
     @Bean

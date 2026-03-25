@@ -41,6 +41,7 @@ public class JdbcTranscriptStore implements TranscriptStore {
 
     @Override
     public String appendUserMessage(String sessionId,
+                                    @Nullable String turnId,
                                     String content,
                                     @Nullable String traceId,
                                     @Nullable Instant createdAt) {
@@ -51,6 +52,7 @@ public class JdbcTranscriptStore implements TranscriptStore {
                 "user",
                 content,
                 null,
+                turnId,
                 traceId,
                 null,
                 null,
@@ -64,6 +66,7 @@ public class JdbcTranscriptStore implements TranscriptStore {
 
     @Override
     public String appendAssistantMessage(String sessionId,
+                                         @Nullable String turnId,
                                          String content,
                                          @Nullable String reasoningSummary,
                                          @Nullable String traceId,
@@ -79,6 +82,7 @@ public class JdbcTranscriptStore implements TranscriptStore {
                 "assistant",
                 content,
                 reasoningSummary,
+                turnId,
                 traceId,
                 a2uiComponentsJson,
                 reactStepsJson,
@@ -101,6 +105,7 @@ public class JdbcTranscriptStore implements TranscriptStore {
                 sessionId,
                 "system",
                 content,
+                null,
                 null,
                 traceId,
                 null,
@@ -129,7 +134,7 @@ public class JdbcTranscriptStore implements TranscriptStore {
                 sessionId,
                 TranscriptEntryType.fromLegacyRole(role),
                 role,
-                normalizeBlank(traceId),
+                null,
                 normalizeBlank(traceId),
                 visibleToModel,
                 visibleToUser,

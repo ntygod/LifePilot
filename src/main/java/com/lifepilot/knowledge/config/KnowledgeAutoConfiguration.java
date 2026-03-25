@@ -34,6 +34,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -139,6 +140,7 @@ public class KnowledgeAutoConfiguration {
     @ConditionalOnMissingBean
     @ConditionalOnProperty(prefix = "lifepilot.knowledge.chunking.semantic-chunking", name = "enabled",
             havingValue = "true")
+    @ConditionalOnBean(EmbeddingRouter.class)
     public SemanticChunker semanticChunker(EmbeddingRouter embeddingRouter,
                                            RecursiveChunker recursiveChunker,
                                            KnowledgeBaseProperties props) {
@@ -188,6 +190,7 @@ public class KnowledgeAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnBean(value = EmbeddingRouter.class, name = "vectorJdbcTemplate")
     public VectorIndexer vectorIndexer(EmbeddingRouter embeddingRouter,
                                        @Qualifier("vectorJdbcTemplate") JdbcTemplate vectorJdbcTemplate,
                                        JdbcTemplate jdbcTemplate,
@@ -213,6 +216,7 @@ public class KnowledgeAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnBean(value = {GenerationRouter.class, PromptRegistry.class})
     public ChunkContextEnricher chunkContextEnricher(GenerationRouter generationRouter,
                                                      KnowledgeBaseProperties props,
                                                      PromptRegistry promptRegistry) {
@@ -223,6 +227,7 @@ public class KnowledgeAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnBean(value = {GenerationRouter.class, SemanticMemory.class, PromptRegistry.class})
     public KnowledgeExtractionPipeline knowledgeExtractionPipeline(GenerationRouter generationRouter,
                                                                    SemanticMemory semanticMemory,
                                                                    KnowledgeBaseProperties props,
@@ -236,6 +241,7 @@ public class KnowledgeAutoConfiguration {
     @ConditionalOnMissingBean
     @ConditionalOnProperty(prefix = "lifepilot.knowledge.query-enhancer", name = "mode",
             matchIfMissing = false)
+    @ConditionalOnBean(value = {GenerationRouter.class, EmbeddingRouter.class, PromptRegistry.class})
     public QueryEnhancer queryEnhancer(GenerationRouter generationRouter,
                                        EmbeddingRouter embeddingRouter,
                                        KnowledgeBaseProperties props,

@@ -8,6 +8,7 @@ import com.lifepilot.interaction.web.model.UserSettings;
 import com.lifepilot.interaction.web.repository.UserSettingsRepository;
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
 import com.lifepilot.meta.config.MetaProperties;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
@@ -30,6 +31,7 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/api/settings")
+@ConditionalOnProperty(name = "lifepilot.gateway.channels.web.enabled", havingValue = "true")
 public class SettingsController {
 
     private static final Logger log = LoggerFactory.getLogger(SettingsController.class);

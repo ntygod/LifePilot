@@ -177,6 +177,7 @@ public class SpawnWorkersToolFactory {
                         message,
                         workerSessionId,
                         "internal",
+                        null,
                         workerPrompt,
                         perWorkerBudget,
                         callerTraceId,

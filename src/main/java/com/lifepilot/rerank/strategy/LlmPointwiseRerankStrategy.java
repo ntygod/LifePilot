@@ -10,8 +10,6 @@ import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
-import org.springframework.stereotype.Component;
-
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -25,7 +23,6 @@ import java.util.concurrent.Executors;
  * @author zsg
  * @since 2026-03-24
  */
-@Component
 public class LlmPointwiseRerankStrategy {
 
     private static final Logger log = LoggerFactory.getLogger(LlmPointwiseRerankStrategy.class);

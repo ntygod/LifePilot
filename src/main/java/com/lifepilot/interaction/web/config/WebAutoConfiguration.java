@@ -7,6 +7,7 @@ import com.lifepilot.interaction.gateway.MessageGateway;
 import com.lifepilot.interaction.web.adapter.WebChannelAdapter;
 import com.lifepilot.interaction.web.controller.WebExceptionHandler;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
+import com.lifepilot.interaction.web.service.ChatTurnService;
 import com.lifepilot.interaction.web.service.WebUserConfirmationService;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.observability.config.ObservabilityProperties;
@@ -52,13 +53,14 @@ public class WebAutoConfiguration {
     public WebChannelAdapter webChannelAdapter(MessageGateway gateway,
                                                 GatewayProperties gatewayProperties,
                                                 AttachmentRepository attachmentRepository,
+                                                ChatTurnService chatTurnService,
                                                 SseSessionManager sseSessionManager,
                                                 @Nullable AudioTranscriber audioTranscriber,
                                                 MediaProperties mediaProperties,
                                                 SharedScheduler sharedScheduler) {
         log.info("注册 WebChannelAdapter");
         return new WebChannelAdapter(gateway, gatewayProperties, attachmentRepository,
-                sseSessionManager, audioTranscriber, mediaProperties, sharedScheduler);
+                chatTurnService, sseSessionManager, audioTranscriber, mediaProperties, sharedScheduler);
     }
 
     @Bean

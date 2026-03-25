@@ -306,11 +306,6 @@ public class ContextEngine {
 
         List<SessionTranscriptRepository.SessionTranscriptEntryRow> historyRows =
                 selectHistoryRows(rows, selectedToolResultEntryIds, totalContextTokens);
-        if (compactionMessage != null || !historyRows.isEmpty()) {
-            Message historyMarker = buildHistoryMarkerMessage();
-            messages.add(historyMarker);
-            historyTokens += estimateMessageTokens(historyMarker);
-        }
         for (SessionTranscriptRepository.SessionTranscriptEntryRow row : historyRows) {
             TranscriptEntryType entryType = TranscriptEntryType.fromValue(row.entryType());
             if (entryType == TranscriptEntryType.TOOL_RESULT

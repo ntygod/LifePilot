@@ -131,6 +131,7 @@ public class EvalEngine {
                 // 1. 构造 AgentRequest 并执行 Agent（带超时控制）
                 String systemPrompt = buildSystemPrompt(scenario);
                 var request = new AgentRequest(scenario.userInput(), "eval-" + scenario.id(), "eval",
+                        null,
                         systemPrompt, null, null, 0, null, null, null, null);
 
                 int timeout = scenario.timeoutSeconds() > 0

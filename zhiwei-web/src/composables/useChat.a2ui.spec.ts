@@ -13,6 +13,7 @@ vi.mock('@/api/client', () => ({
     sendMessageStream: vi.fn(),
     getSessionMessages: vi.fn(),
     updateSessionConfig: vi.fn(),
+    respondInteraction: vi.fn(),
   },
 }))
 
@@ -39,6 +40,28 @@ function createSseStream(events: Array<{ type: string; payload: unknown }>): Rea
   })
 }
 
+function createDeferredSseStream(events: Array<{ type: string; payload: unknown }>) {
+  const encoder = new TextEncoder()
+  let close: (() => void) | null = null
+
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const body = events
+        .map(({ type, payload }) => `event: ${type}\ndata: ${JSON.stringify(payload)}\n\n`)
+        .join('')
+      controller.enqueue(encoder.encode(body))
+      close = () => controller.close()
+    },
+  })
+
+  return {
+    stream,
+    close() {
+      close?.()
+    },
+  }
+}
+
 async function flushUi() {
   await Promise.resolve()
   await nextTick()
@@ -51,6 +74,7 @@ describe('useChat A2UI integration', () => {
     vi.clearAllMocks()
     vi.mocked(chatApi.getSessionMessages).mockResolvedValue([])
     vi.mocked(chatApi.updateSessionConfig).mockResolvedValue(undefined)
+    vi.mocked(chatApi.respondInteraction).mockResolvedValue(undefined)
   })
 
   it('persists A2UI from the DONE event payload into the final assistant message', async () => {
@@ -158,10 +182,413 @@ describe('useChat A2UI integration', () => {
       '',
       'session-1',
       ['file-1'],
-      undefined,
+      expect.any(String),
+      'SEND',
       expect.any(AbortSignal),
     )
     expect(chatStore.messages.find(message => message.id === 'assistant-attachment')?.content).toBe('已处理附件')
+  })
+
+  it('preserves streamed assistant text when a degraded DONE arrives', async () => {
+    vi.mocked(chatApi.sendMessageStream).mockResolvedValue(
+      createSseStream([
+        { type: SSE_EVENT_TYPES.TOKEN, payload: { content: '我先说明当前的质量保障逻辑。' } },
+        {
+          type: SSE_EVENT_TYPES.DONE,
+          payload: {
+            entryId: 'assistant-degraded',
+            sessionId: 'session-1',
+            content: '本轮处理已中断。\n\n原因：文件读取失败',
+            traceId: 'trace-degraded',
+            completionMode: 'DEGRADED',
+            turnStatus: 'DEGRADED',
+            terminationReason: '文件读取失败',
+            timestamp: 1_741_683_320_000,
+          },
+        },
+      ]),
+    )
+
+    const chatStore = useChatStore()
+    chatStore.activeSessionId = 'session-1'
+    await flushUi()
+
+    const { sendMessage } = useChat()
+    await sendMessage('解释质量保障')
+
+    const assistant = chatStore.messages.find(message => message.id === 'assistant-degraded')
+    expect(assistant?.content).toContain('我先说明当前的质量保障逻辑。')
+    expect(assistant?.content).toContain('原因：文件读取失败')
+    expect(assistant?.turnStatus).toBe('DEGRADED')
+  })
+
+  it('keeps streamed assistant text when DONE only carries a progress placeholder', async () => {
+    vi.mocked(chatApi.sendMessageStream).mockResolvedValue(
+      createSseStream([
+        { type: SSE_EVENT_TYPES.TOKEN, payload: { content: '长篇创作会依赖章节摘要和世界观卡片来续写。' } },
+        {
+          type: SSE_EVENT_TYPES.DONE,
+          payload: {
+            entryId: 'assistant-progress-only',
+            sessionId: 'session-1',
+            content: '正在思考回答…',
+            contentRole: 'PROGRESS',
+            traceId: 'trace-progress-only',
+            turnStatus: 'SUCCESS',
+            timestamp: 1_741_683_321_000,
+          },
+        },
+      ]),
+    )
+
+    const chatStore = useChatStore()
+    chatStore.activeSessionId = 'session-1'
+    await flushUi()
+
+    const { sendMessage } = useChat()
+    await sendMessage('继续解释长篇上下文管理')
+
+    const assistant = chatStore.messages.find(message => message.id === 'assistant-progress-only')
+    expect(assistant?.content).toBe('长篇创作会依赖章节摘要和世界观卡片来续写。')
+  })
+
+  it('keeps streamed assistant text instead of collapsing to a user error on SSE ERROR', async () => {
+    vi.mocked(chatApi.sendMessageStream).mockResolvedValue(
+      createSseStream([
+        { type: SSE_EVENT_TYPES.TOKEN, payload: { content: '我已经完成前半段分析，接下来准备继续验证。' } },
+        {
+          type: SSE_EVENT_TYPES.ERROR,
+          payload: {
+            code: 500,
+            message: '处理失败: 模型服务暂时不可用',
+            traceId: 'trace-error',
+            turnStatus: 'FAILED',
+          },
+        },
+      ]),
+    )
+
+    const chatStore = useChatStore()
+    chatStore.activeSessionId = 'session-1'
+    await flushUi()
+
+    const { sendMessage, error } = useChat()
+    await sendMessage('继续执行')
+
+    const assistant = chatStore.messages.find(message => message.id === 'trace-error')
+    const user = chatStore.messages.find(message => message.role === 'user')
+
+    expect(assistant?.content).toContain('我已经完成前半段分析')
+    expect(assistant?.content).toContain('模型服务暂时不可用')
+    expect(user?.status).toBe('success')
+    expect(error.value).toBeNull()
+  })
+
+  it('turns agent-suspended into a resumable assistant message without wiping streamed text', async () => {
+    vi.mocked(chatApi.sendMessageStream).mockResolvedValue(
+      createSseStream([
+        { type: SSE_EVENT_TYPES.TOKEN, payload: { content: '我需要你补充仓库地址后再继续。' } },
+        {
+          type: SSE_EVENT_TYPES.AGENT_SUSPENDED,
+          payload: {
+            traceId: 'trace-suspended',
+            sessionId: 'session-1',
+            turnId: 'turn-suspended',
+            completionMode: 'SUSPENDED',
+            turnStatus: 'SUSPENDED',
+            reasonDetail: '等待你提供仓库地址',
+            terminationReason: '等待你提供仓库地址',
+            suspendedAt: '2026-03-25T12:00:00Z',
+          },
+        },
+      ]),
+    )
+
+    const chatStore = useChatStore()
+    chatStore.activeSessionId = 'session-1'
+    await flushUi()
+
+    const { sendMessage } = useChat()
+    await sendMessage('继续执行自动化链路')
+
+    const assistant = chatStore.messages.find(message => message.id === 'trace-suspended')
+    const user = chatStore.messages.find(message => message.role === 'user')
+
+    expect(assistant?.content).toContain('我需要你补充仓库地址后再继续。')
+    expect(assistant?.content).toContain('等待你提供仓库地址')
+    expect(assistant?.turnStatus).toBe('SUSPENDED')
+    expect(assistant?.completionMode).toBe('SUSPENDED')
+    expect(user?.status).toBe('success')
+  })
+
+  it('stores interaction SSE events locally and submits through the interaction API', async () => {
+    vi.mocked(chatApi.sendMessageStream).mockResolvedValue(
+      createSseStream([
+        {
+          type: SSE_EVENT_TYPES.INTERACTION,
+          payload: {
+            interactionId: 'interaction-1',
+            type: 'INPUT',
+            sessionId: 'session-1',
+            streamId: 'stream-1',
+            message: '请输入仓库地址',
+          },
+        },
+      ]),
+    )
+
+    const chatStore = useChatStore()
+    chatStore.activeSessionId = 'session-1'
+    await flushUi()
+
+    const { sendMessage, activeInteraction, interactionError, submitInteraction } = useChat()
+    await sendMessage('继续执行')
+
+    expect(activeInteraction.value).toMatchObject({
+      interactionId: 'interaction-1',
+      type: 'INPUT',
+      message: '请输入仓库地址',
+    })
+
+    await submitInteraction('https://github.com/acme/demo.git')
+
+    expect(vi.mocked(chatApi.respondInteraction)).toHaveBeenCalledWith('interaction-1', {
+      type: 'INPUT',
+      value: 'https://github.com/acme/demo.git',
+      confirmed: true,
+      timedOut: false,
+    })
+    expect(activeInteraction.value).toBeNull()
+    expect(interactionError.value).toBeNull()
+  })
+
+  it('routes the next plain user reply to the pending interaction without opening a new turn', async () => {
+    vi.mocked(chatApi.sendMessageStream).mockResolvedValue(
+      createSseStream([
+        {
+          type: SSE_EVENT_TYPES.INTERACTION,
+          payload: {
+            interactionId: 'interaction-inline',
+            type: 'INPUT',
+            sessionId: 'session-1',
+            streamId: 'stream-1',
+            message: '请补充仓库地址，我收到后继续处理',
+          },
+        },
+      ]),
+    )
+
+    const chatStore = useChatStore()
+    chatStore.activeSessionId = 'session-1'
+    await flushUi()
+
+    const { sendMessage, activeInteraction } = useChat()
+    await sendMessage('继续执行')
+
+    expect(activeInteraction.value?.interactionId).toBe('interaction-inline')
+
+    await sendMessage('https://github.com/acme/demo.git')
+
+    expect(vi.mocked(chatApi.sendMessageStream)).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(chatApi.respondInteraction)).toHaveBeenCalledWith('interaction-inline', {
+      type: 'INPUT',
+      value: 'https://github.com/acme/demo.git',
+      confirmed: true,
+      timedOut: false,
+    })
+
+    const userReplies = chatStore.messages.filter(message =>
+      message.role === 'user' && message.content === 'https://github.com/acme/demo.git')
+    expect(userReplies).toHaveLength(1)
+    expect(userReplies[0]?.status).toBe('success')
+  })
+
+  it('allows canceling an interaction dialog and reports timeout to the backend', async () => {
+    vi.mocked(chatApi.sendMessageStream).mockResolvedValue(
+      createSseStream([
+        {
+          type: SSE_EVENT_TYPES.INTERACTION,
+          payload: {
+            interactionId: 'interaction-cancel',
+            type: 'CONFIRM',
+            sessionId: 'session-1',
+            streamId: 'stream-2',
+            message: '是否继续执行？',
+          },
+        },
+      ]),
+    )
+
+    const chatStore = useChatStore()
+    chatStore.activeSessionId = 'session-1'
+    await flushUi()
+
+    const { sendMessage, activeInteraction, cancelInteraction } = useChat()
+    await sendMessage('继续执行')
+
+    expect(activeInteraction.value?.interactionId).toBe('interaction-cancel')
+
+    await cancelInteraction()
+
+    expect(vi.mocked(chatApi.respondInteraction)).toHaveBeenCalledWith('interaction-cancel', {
+      type: 'CONFIRM',
+      value: null,
+      confirmed: false,
+      timedOut: true,
+    })
+    expect(activeInteraction.value).toBeNull()
+  })
+
+  it('still shows a suspended assistant message when no streamed text has arrived yet', async () => {
+    vi.mocked(chatApi.sendMessageStream).mockResolvedValue(
+      createSseStream([
+        {
+          type: SSE_EVENT_TYPES.AGENT_SUSPENDED,
+          payload: {
+            traceId: 'trace-suspended-empty',
+            sessionId: 'session-1',
+            turnId: 'turn-suspended-empty',
+            completionMode: 'SUSPENDED',
+            turnStatus: 'SUSPENDED',
+            reasonDetail: '等待你补充仓库地址',
+            terminationReason: '等待你补充仓库地址',
+            suspendedAt: '2026-03-25T12:00:00Z',
+          },
+        },
+      ]),
+    )
+
+    const chatStore = useChatStore()
+    chatStore.activeSessionId = 'session-1'
+    await flushUi()
+
+    const { sendMessage } = useChat()
+    await sendMessage('继续执行自动化链路')
+
+    const assistant = chatStore.messages.find(message => message.id === 'trace-suspended-empty')
+
+    expect(assistant?.content).toContain('我先停在这里等你补充。')
+    expect(assistant?.content).toContain('等待你补充仓库地址')
+    expect(assistant?.content).toContain('你直接回复就行')
+    expect(assistant?.turnStatus).toBe('SUSPENDED')
+    expect(assistant?.completionMode).toBe('SUSPENDED')
+  })
+
+  it('auto-resumes the latest suspended turn when the user provides follow-up information', async () => {
+    vi.mocked(chatApi.sendMessageStream).mockResolvedValue(
+      createSseStream([
+        {
+          type: SSE_EVENT_TYPES.DONE,
+          payload: {
+            entryId: 'assistant-resumed',
+            sessionId: 'session-1',
+            turnId: 'turn-suspended',
+            content: '已完成：我已根据你补充的仓库地址继续执行。',
+            traceId: 'trace-resumed',
+            turnStatus: 'SUCCESS',
+            timestamp: 1_741_683_360_000,
+          },
+        },
+      ]),
+    )
+
+    const chatStore = useChatStore()
+    chatStore.activeSessionId = 'session-1'
+    await flushUi()
+    chatStore.addMessage({
+      id: 'assistant-suspended-existing',
+      turnId: 'turn-suspended',
+      role: 'assistant',
+      content: '本轮处理已挂起，请补充仓库地址。',
+      timestamp: 1_741_683_350_000,
+      turnStatus: 'SUSPENDED',
+      completionMode: 'SUSPENDED',
+    })
+
+    const { sendMessage } = useChat()
+    await sendMessage('仓库地址是 https://github.com/acme/demo.git')
+
+    expect(vi.mocked(chatApi.sendMessageStream)).toHaveBeenCalledWith(
+      '仓库地址是 https://github.com/acme/demo.git',
+      'session-1',
+      undefined,
+      'turn-suspended',
+      'RESUME',
+      expect.any(AbortSignal),
+    )
+
+    const resumedUser = chatStore.messages.find(message =>
+      message.role === 'user' && message.content === '仓库地址是 https://github.com/acme/demo.git')
+    expect(resumedUser?.turnId).toBe('turn-suspended')
+  })
+
+  it('restores natural input immediately after agent-suspended, even before the old stream fully closes', async () => {
+    const suspendedStream = createDeferredSseStream([
+      {
+        type: SSE_EVENT_TYPES.AGENT_SUSPENDED,
+        payload: {
+          traceId: 'trace-suspended-live',
+          sessionId: 'session-1',
+          turnId: 'turn-suspended-live',
+          completionMode: 'SUSPENDED',
+          turnStatus: 'SUSPENDED',
+          content: '我还缺仓库地址。你直接回复后，我会接着刚才的进度继续处理。',
+          reasonDetail: '等待你补充仓库地址',
+          terminationReason: '等待你补充仓库地址',
+          suspendedAt: '2026-03-25T18:40:00Z',
+        },
+      },
+    ])
+
+    vi.mocked(chatApi.sendMessageStream)
+      .mockResolvedValueOnce(suspendedStream.stream)
+      .mockResolvedValueOnce(
+        createSseStream([
+          {
+            type: SSE_EVENT_TYPES.DONE,
+            payload: {
+              entryId: 'assistant-after-resume',
+              sessionId: 'session-1',
+              turnId: 'turn-suspended-live',
+              content: '已完成：我已根据你补充的仓库地址继续处理。',
+              traceId: 'trace-after-resume',
+              turnStatus: 'SUCCESS',
+              timestamp: 1_741_683_380_000,
+            },
+          },
+        ]),
+      )
+
+    const chatStore = useChatStore()
+    chatStore.activeSessionId = 'session-1'
+    await flushUi()
+
+    const { sendMessage, isStreaming } = useChat()
+    const firstSend = sendMessage('继续执行')
+    await flushUi()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    await flushUi()
+
+    expect(isStreaming.value).toBe(false)
+
+    await sendMessage('仓库地址是 https://github.com/acme/demo.git')
+
+    expect(vi.mocked(chatApi.sendMessageStream)).toHaveBeenNthCalledWith(
+      2,
+      '仓库地址是 https://github.com/acme/demo.git',
+      'session-1',
+      undefined,
+      'turn-suspended-live',
+      'RESUME',
+      expect.any(AbortSignal),
+    )
+
+    suspendedStream.close()
+    await firstSend
+    await flushUi()
+
+    const resumedAssistant = chatStore.messages.find(message => message.id === 'assistant-after-resume')
+    expect(resumedAssistant?.content).toContain('已完成：我已根据你补充的仓库地址继续处理。')
   })
 
   it('skips sending when both content and attachmentIds are empty', async () => {

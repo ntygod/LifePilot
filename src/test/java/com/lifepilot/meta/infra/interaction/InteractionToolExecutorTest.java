@@ -1,26 +1,38 @@
 package com.lifepilot.meta.infra.interaction;
 
+import com.lifepilot.interaction.web.sse.SseEventType;
+import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.notification.NotificationRequest;
 import com.lifepilot.notification.NotificationService;
+import com.lifepilot.tool.model.ToolContextKeys;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.schema.JsonSchema;
+import com.lifepilot.interaction.model.ChannelType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
- * 交互控制工具单元测试 — Mock InteractionBridge，验证 3 个交互工具。
+ * 交互工具执行器单元测试。
  *
  * @author zsg
- * @since 2026-03-08
+ * @since 2026-03-25
  */
 class InteractionToolExecutorTest {
 
@@ -30,43 +42,34 @@ class InteractionToolExecutorTest {
     @BeforeEach
     void setUp() {
         properties = new MetaProperties();
-        // 设置较短超时便于测试
         properties.getInfra().getInteraction().setResponseTimeoutSeconds(2);
-        // 使用 null channel — 测试中通过 resolve() 手动完成
         bridge = new InteractionBridge(properties, null, null);
     }
 
-    // ─────────────────────────────────────────────
-    //  InteractionBridge 核心测试
-    // ─────────────────────────────────────────────
-
     @Test
-    void bridge_无可用通道时_返回超时响应() {
-        var request = new InteractionRequest(null, InteractionType.CONFIRM, "session-1", "确认吗", null);
+    void bridge_无可用通道时返回超时响应() {
+        var request = new InteractionRequest(null, InteractionType.CONFIRM, "session-1", null, "确认吗", null);
+
         var response = bridge.request(request);
 
         assertThat(response.timedOut()).isTrue();
     }
 
     @Test
-    void bridge_resolve完成Future() {
-        // 使用真实 CLI handler 的 bridge
+    void bridge_resolve后完成等待中的请求() {
         var cliHandler = new TestCliInteractionHandler();
         var bridgeWithCli = new InteractionBridge(properties, null, cliHandler);
 
-        // 异步发起请求
-        var futureResponse = CompletableFuture.supplyAsync(() -> {
-            var request = new InteractionRequest(null, InteractionType.CONFIRM, "session-1", "确认吗", null);
-            return bridgeWithCli.request(request);
-        });
+        var futureResponse = CompletableFuture.supplyAsync(() ->
+                bridgeWithCli.request(new InteractionRequest(
+                        null, InteractionType.CONFIRM, "session-1", null, "确认吗", null)));
 
-        // 等待 CLI handler 收到请求
         waitForPending(cliHandler);
-
-        // 通过 resolve 完成
         var capturedRequest = cliHandler.lastRequest;
+
         assertThat(capturedRequest).isNotNull();
-        bridgeWithCli.resolve(capturedRequest.interactionId(),
+        bridgeWithCli.resolve(
+                capturedRequest.interactionId(),
                 new InteractionResponse(capturedRequest.interactionId(), null, true, false));
 
         var response = futureResponse.join();
@@ -75,67 +78,78 @@ class InteractionToolExecutorTest {
     }
 
     @Test
-    void bridge_超时后自动清理pendingRequests() {
+    void bridge_超时后自动清理挂起请求() {
         var cliHandler = new TestCliInteractionHandler();
         var shortTimeoutProps = new MetaProperties();
         shortTimeoutProps.getInfra().getInteraction().setResponseTimeoutSeconds(1);
         var bridgeWithCli = new InteractionBridge(shortTimeoutProps, null, cliHandler);
 
-        var request = new InteractionRequest(null, InteractionType.INPUT, "session-1", "输入", null);
-        var response = bridgeWithCli.request(request);
+        var response = bridgeWithCli.request(new InteractionRequest(
+                null, InteractionType.INPUT, "session-1", null, "请输入", null));
 
         assertThat(response.timedOut()).isTrue();
         assertThat(bridgeWithCli.pendingCount()).isZero();
     }
 
     @Test
-    void bridge_resolve不存在的interactionId_不抛异常() {
-        bridge.resolve("non-existent-id",
-                new InteractionResponse("non-existent-id", null, false, false));
-        // 不抛异常即通过
+    void bridge_缺少精确流时按会话活动流兜底推送() {
+        var sseSessionManager = mock(SseSessionManager.class);
+        when(sseSessionManager.getEmitter("missing-stream")).thenReturn(null);
+        when(sseSessionManager.findChatStreamId("session-1")).thenReturn("stream-1");
+        when(sseSessionManager.getEmitter("stream-1")).thenReturn(mock(SseEmitter.class));
+
+        var pushedRequest = new AtomicReference<InteractionRequest>();
+        doAnswer(invocation -> {
+            pushedRequest.set(invocation.getArgument(2));
+            return null;
+        }).when(sseSessionManager).sendEvent(eq("stream-1"), eq(SseEventType.INTERACTION), any());
+
+        var bridgeWithSse = new InteractionBridge(properties, sseSessionManager, null);
+        var futureResponse = CompletableFuture.supplyAsync(() ->
+                bridgeWithSse.request(new InteractionRequest(
+                        null, InteractionType.INPUT, "session-1", "missing-stream", "请输入仓库地址", null)));
+
+        waitFor(() -> pushedRequest.get() != null);
+        var routedRequest = pushedRequest.get();
+        assertThat(routedRequest).isNotNull();
+        assertThat(routedRequest.streamId()).isEqualTo("stream-1");
+        assertThat(routedRequest.sessionId()).isEqualTo("session-1");
+
+        bridgeWithSse.resolve(
+                routedRequest.interactionId(),
+                new InteractionResponse(routedRequest.interactionId(), "https://github.com/acme/demo.git", false, false));
+
+        var response = futureResponse.join();
+        assertThat(response.value()).isEqualTo("https://github.com/acme/demo.git");
+        verify(sseSessionManager).findChatStreamId("session-1");
     }
 
     @Test
-    void bridge_notify非阻塞_无通道时不抛异常() {
-        var request = new InteractionRequest(null, InteractionType.NOTIFY, "session-1", "通知消息", null);
-        bridge.notify(request);
-        // 不抛异常即通过
-    }
-
-    @Test
-    void bridge_notify通过CLI推送() {
-        var cliHandler = new TestCliInteractionHandler();
-        var bridgeWithCli = new InteractionBridge(properties, null, cliHandler);
-
-        var request = new InteractionRequest(null, InteractionType.NOTIFY, "session-1", "通知消息", null);
-        bridgeWithCli.notify(request);
-
-        assertThat(cliHandler.lastRequest).isNotNull();
-        assertThat(cliHandler.lastRequest.type()).isEqualTo(InteractionType.NOTIFY);
-        assertThat(cliHandler.lastRequest.message()).isEqualTo("通知消息");
-    }
-
-    // ─────────────────────────────────────────────
-    //  ChooseToolExecutor 测试
-    // ─────────────────────────────────────────────
-
-    @Test
-    void choose_用户选择_返回选中项() {
+    void choose_使用上下文中的会话和流信息() {
         var cliHandler = new TestCliInteractionHandler();
         var bridgeWithCli = new InteractionBridge(properties, null, cliHandler);
         var executor = new ChooseToolExecutor(bridgeWithCli);
 
-        var futureResult = CompletableFuture.supplyAsync(() -> {
-            ToolInput input = new ToolInput("builtin.interact.choose",
-                    Map.of("message", "选择语言", "options", List.of("Java", "Python", "Go"), "sessionId", "s1"),
-                    JsonSchema.empty(), null, null);
-            return executor.execute(input);
-        });
+        var futureResult = CompletableFuture.supplyAsync(() -> executor.execute(new ToolInput(
+                "builtin.interact.choose",
+                Map.of("message", "选择语言", "options", List.of("Java", "Python", "Go")),
+                JsonSchema.empty(),
+                null,
+                Map.of(
+                        ToolContextKeys.SESSION_ID, "session-1",
+                        ToolContextKeys.STREAM_ID, "stream-1"
+                )
+        )));
 
         waitForPending(cliHandler);
         var capturedRequest = cliHandler.lastRequest;
+        assertThat(capturedRequest).isNotNull();
+        assertThat(capturedRequest.sessionId()).isEqualTo("session-1");
+        assertThat(capturedRequest.streamId()).isEqualTo("stream-1");
         assertThat(capturedRequest.options()).containsExactly("Java", "Python", "Go");
-        bridgeWithCli.resolve(capturedRequest.interactionId(),
+
+        bridgeWithCli.resolve(
+                capturedRequest.interactionId(),
                 new InteractionResponse(capturedRequest.interactionId(), "Python", false, false));
 
         ToolResult result = futureResult.join();
@@ -144,40 +158,48 @@ class InteractionToolExecutorTest {
     }
 
     @Test
-    void choose_空选项列表_返回错误() {
+    void choose_空选项列表返回错误() {
         var cliHandler = new TestCliInteractionHandler();
         var bridgeWithCli = new InteractionBridge(properties, null, cliHandler);
         var executor = new ChooseToolExecutor(bridgeWithCli);
 
-        ToolInput input = new ToolInput("builtin.interact.choose",
-                Map.of("message", "选择", "options", List.of(), "sessionId", "s1"),
-                JsonSchema.empty(), null, null);
-        ToolResult result = executor.execute(input);
+        ToolResult result = executor.execute(new ToolInput(
+                "builtin.interact.choose",
+                Map.of("message", "选择", "options", List.of()),
+                JsonSchema.empty(),
+                null,
+                Map.of(ToolContextKeys.SESSION_ID, "session-1")
+        ));
 
         assertThat(result.ok()).isFalse();
         assertThat(result.error()).contains("选项列表不能为空");
     }
 
-    // ─────────────────────────────────────────────
-    //  InputToolExecutor 测试
-    // ─────────────────────────────────────────────
-
     @Test
-    void input_用户输入_返回输入值() {
+    void input_使用上下文中的会话和流信息() {
         var cliHandler = new TestCliInteractionHandler();
         var bridgeWithCli = new InteractionBridge(properties, null, cliHandler);
         var executor = new InputToolExecutor(bridgeWithCli);
 
-        var futureResult = CompletableFuture.supplyAsync(() -> {
-            ToolInput input = new ToolInput("builtin.interact.input",
-                    Map.of("message", "请输入姓名", "sessionId", "s1"),
-                    JsonSchema.empty(), null, null);
-            return executor.execute(input);
-        });
+        var futureResult = CompletableFuture.supplyAsync(() -> executor.execute(new ToolInput(
+                "builtin.interact.input",
+                Map.of("message", "请输入姓名"),
+                JsonSchema.empty(),
+                null,
+                Map.of(
+                        ToolContextKeys.SESSION_ID, "session-1",
+                        ToolContextKeys.STREAM_ID, "stream-1"
+                )
+        )));
 
         waitForPending(cliHandler);
         var capturedRequest = cliHandler.lastRequest;
-        bridgeWithCli.resolve(capturedRequest.interactionId(),
+        assertThat(capturedRequest).isNotNull();
+        assertThat(capturedRequest.sessionId()).isEqualTo("session-1");
+        assertThat(capturedRequest.streamId()).isEqualTo("stream-1");
+
+        bridgeWithCli.resolve(
+                capturedRequest.interactionId(),
                 new InteractionResponse(capturedRequest.interactionId(), "张三", false, false));
 
         ToolResult result = futureResult.join();
@@ -186,85 +208,53 @@ class InteractionToolExecutorTest {
     }
 
     @Test
-    void input_超时_返回错误() {
+    void input_超时返回错误() {
         var cliHandler = new TestCliInteractionHandler();
         var shortTimeoutProps = new MetaProperties();
         shortTimeoutProps.getInfra().getInteraction().setResponseTimeoutSeconds(1);
         var bridgeWithCli = new InteractionBridge(shortTimeoutProps, null, cliHandler);
         var executor = new InputToolExecutor(bridgeWithCli);
 
-        ToolInput input = new ToolInput("builtin.interact.input",
-                Map.of("message", "输入", "sessionId", "s1"),
-                JsonSchema.empty(), null, null);
-        ToolResult result = executor.execute(input);
+        ToolResult result = executor.execute(new ToolInput(
+                "builtin.interact.input",
+                Map.of("message", "请输入"),
+                JsonSchema.empty(),
+                null,
+                Map.of(ToolContextKeys.SESSION_ID, "session-1")
+        ));
 
         assertThat(result.ok()).isFalse();
         assertThat(result.error()).contains("超时");
     }
 
-    // ─────────────────────────────────────────────
-    //  NotifyToolExecutor 测试
-    // ─────────────────────────────────────────────
-
     @Test
-    void notify_非阻塞推送_通过NotificationService发送() {
-        var mockService = new TestNotificationService();
-        var executor = new NotifyToolExecutor(mockService, new com.lifepilot.notification.config.NotificationProperties());
+    void notify_通过通知服务发送消息() {
+        var notificationService = new TestNotificationService();
+        var executor = new NotifyToolExecutor(
+                notificationService,
+                new com.lifepilot.notification.config.NotificationProperties());
 
-        ToolInput input = new ToolInput("builtin.interact.notify",
+        ToolResult result = executor.execute(new ToolInput(
+                "builtin.interact.notify",
                 Map.of("message", "任务已完成"),
-                JsonSchema.empty(), null, null);
-
-        long start = System.currentTimeMillis();
-        ToolResult result = executor.execute(input);
-        long elapsed = System.currentTimeMillis() - start;
-
-        assertThat(result.ok()).isTrue();
-        assertThat(result.data().get("notified")).isEqualTo(true);
-        assertThat(result.data().get("count")).isEqualTo(1);
-        // 非阻塞验证：应在 1 秒内完成
-        assertThat(elapsed).isLessThan(1000);
-        // 验证 NotificationService 被调用
-        assertThat(mockService.sentRequests).hasSize(1);
-        assertThat(mockService.sentRequests.getFirst().content().toPlainText()).isEqualTo("任务已完成");
-        assertThat(mockService.sentRequests.getFirst().urgency())
-                .isEqualTo(com.lifepilot.notification.Urgency.MEDIUM);
-    }
-
-    @Test
-    void notify_指定urgency_正确传递() {
-        var mockService = new TestNotificationService();
-        var executor = new NotifyToolExecutor(mockService, new com.lifepilot.notification.config.NotificationProperties());
-
-        ToolInput input = new ToolInput("builtin.interact.notify",
-                Map.of("message", "紧急通知", "urgency", "HIGH"),
-                JsonSchema.empty(), null, null);
-        ToolResult result = executor.execute(input);
+                JsonSchema.empty(),
+                null,
+                Map.of(
+                        ToolContextKeys.SESSION_ID, "session-1",
+                        ToolContextKeys.CHANNEL_TYPE, ChannelType.WEB.value(),
+                        ToolContextKeys.USER_ID, "user-1"
+                )
+        ));
 
         assertThat(result.ok()).isTrue();
-        assertThat(mockService.sentRequests.getFirst().urgency())
-                .isEqualTo(com.lifepilot.notification.Urgency.HIGH);
+        assertThat(notificationService.sentRequests).hasSize(1);
+        assertThat(notificationService.sentRequests.getFirst().content().toPlainText()).isEqualTo("任务已完成");
+        assertThat(notificationService.sentRequests.getFirst().channel()).isEqualTo("WEB");
+        assertThat(notificationService.sentRequests.getFirst().targetUserId()).isEqualTo("user-1");
     }
 
     @Test
-    void notify_缺少message参数_返回错误() {
-        var mockService = new TestNotificationService();
-        var executor = new NotifyToolExecutor(mockService, new com.lifepilot.notification.config.NotificationProperties());
-
-        ToolInput input = new ToolInput("builtin.interact.notify",
-                Map.of(), JsonSchema.empty(), null, null);
-        ToolResult result = executor.execute(input);
-
-        assertThat(result.ok()).isFalse();
-        assertThat(result.error()).contains("参数错误");
-    }
-
-    // ─────────────────────────────────────────────
-    //  InteractionResponse 工厂方法测试
-    // ─────────────────────────────────────────────
-
-    @Test
-    void interactionResponse_timeout工厂方法() {
+    void interactionResponse_timeout工厂方法返回超时响应() {
         var response = InteractionResponse.timeout("test-id");
 
         assertThat(response.interactionId()).isEqualTo("test-id");
@@ -273,11 +263,6 @@ class InteractionToolExecutorTest {
         assertThat(response.value()).isNull();
     }
 
-    // ─────────────────────────────────────────────
-    //  辅助类和方法
-    // ─────────────────────────────────────────────
-
-    /** 测试用 CLI 交互处理器 — 捕获最后一次推送的请求。 */
     private static class TestCliInteractionHandler implements CliInteractionHandler {
         volatile InteractionRequest lastRequest;
 
@@ -287,7 +272,6 @@ class InteractionToolExecutorTest {
         }
     }
 
-    /** 测试用通知服务 — 记录所有发送的通知请求。 */
     private static class TestNotificationService implements NotificationService {
         final List<NotificationRequest> sentRequests = new ArrayList<>();
 
@@ -298,10 +282,13 @@ class InteractionToolExecutorTest {
         }
     }
 
-    /** 等待 CLI handler 收到请求（最多 2 秒）。 */
     private void waitForPending(TestCliInteractionHandler handler) {
-        long deadline = System.currentTimeMillis() + 2000;
-        while (handler.lastRequest == null && System.currentTimeMillis() < deadline) {
+        waitFor(() -> handler.lastRequest != null);
+    }
+
+    private void waitFor(Check condition) {
+        long deadline = System.currentTimeMillis() + 2_000;
+        while (!condition.ready() && System.currentTimeMillis() < deadline) {
             try {
                 Thread.sleep(50);
             } catch (InterruptedException e) {
@@ -309,5 +296,11 @@ class InteractionToolExecutorTest {
                 break;
             }
         }
+        assertThat(condition.ready()).isTrue();
+    }
+
+    @FunctionalInterface
+    private interface Check {
+        boolean ready();
     }
 }

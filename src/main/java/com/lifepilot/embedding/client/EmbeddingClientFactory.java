@@ -4,8 +4,6 @@ import com.lifepilot.llm.adapter.ProviderAdapterFactory;
 import com.lifepilot.llm.adapter.SpringAiProviderAdapter;
 import com.lifepilot.modelservice.model.ModelServiceEntity;
 import com.lifepilot.modelservice.support.ModelServiceProviderConfigMapper;
-import org.springframework.stereotype.Component;
-
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -14,7 +12,6 @@ import java.util.concurrent.ConcurrentHashMap;
  * @author zsg
  * @since 2026-03-24
  */
-@Component
 public class EmbeddingClientFactory {
 
     private final ProviderAdapterFactory providerAdapterFactory;

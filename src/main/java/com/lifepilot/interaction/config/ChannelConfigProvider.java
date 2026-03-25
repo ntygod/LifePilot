@@ -3,6 +3,7 @@ package com.lifepilot.interaction.config;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.interaction.web.repository.UserSettingsRepository;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
@@ -21,6 +22,7 @@ import java.util.Map;
  * @since 2026-03-19
  */
 @Component
+@ConditionalOnProperty(name = "lifepilot.gateway.enabled", havingValue = "true", matchIfMissing = true)
 public class ChannelConfigProvider {
 
     private static final Logger log = LoggerFactory.getLogger(ChannelConfigProvider.class);

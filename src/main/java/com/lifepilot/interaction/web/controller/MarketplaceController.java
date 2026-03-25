@@ -4,6 +4,7 @@ import com.lifepilot.marketplace.MarketplaceService;
 import com.lifepilot.marketplace.model.ExtensionPackage;
 import com.lifepilot.marketplace.model.ExtensionType;
 import com.lifepilot.marketplace.model.InstallResult;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
@@ -23,6 +24,7 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/api/marketplace")
+@ConditionalOnProperty(name = "lifepilot.gateway.channels.web.enabled", havingValue = "true")
 public class MarketplaceController {
 
     private static final Logger log = LoggerFactory.getLogger(MarketplaceController.class);
