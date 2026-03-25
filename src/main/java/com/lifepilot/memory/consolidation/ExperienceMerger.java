@@ -1,16 +1,20 @@
 package com.lifepilot.memory.consolidation;
 
 import com.lifepilot.generation.router.GenerationRouter;
+import com.lifepilot.generation.support.JsonOutputParser;
+import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.experience.ExperienceRecord;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 
@@ -166,16 +170,21 @@ public class ExperienceMerger {
                     "experienceB_tools", String.valueOf(entityB.properties().getOrDefault("toolsUsed", List.of()))
             );
             String prompt = promptRegistry.render(PROMPT_KEY, vars);
-            return generationRouter.callEntity(
+            Duration timeout = Duration.ofSeconds(Math.max(1, config.getLlmTimeoutSeconds()));
+            log.debug("经验合并: 发起 JSON 合并调用, timeoutSeconds={}, promptChars={}, entityA={}, entityB={}",
+                    timeout.toSeconds(), prompt.length(), entityA.id(), entityB.id());
+            LlmResponse response = generationRouter.call(
                     "experience-merge",
                     prompt,
-                    ExperienceRecord.class,
                     null,
                     null,
-                    null);
+                    null,
+                    GenerationCapability.CHAT,
+                    timeout);
+            return JsonOutputParser.parse(response.content(), ExperienceRecord.class);
         } catch (Exception e) {
-            log.warn("经验合并: LLM 调用失败, entityA={}, entityB={}, error={}",
-                    entityA.id(), entityB.id(), e.getMessage());
+            log.warn("经验合并: JSON 合并失败, entityA={}, entityB={}, errorType={}, error={}",
+                    entityA.id(), entityB.id(), e.getClass().getSimpleName(), e.getMessage());
             return null;
         }
     }

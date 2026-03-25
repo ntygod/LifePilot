@@ -93,8 +93,13 @@ public class GenerationRouter {
         for (ModelServiceEntity candidate : candidates) {
             attemptedServices.add(candidate.id());
             if (!circuitBreakerManager.isCallPermitted(candidate.id(), requiredCapability.name())) {
+                log.debug("生成调用跳过熔断服务: scene={}, serviceId={}, model={}, capability={}",
+                        scene, candidate.id(), candidate.modelName(), requiredCapability);
                 continue;
             }
+            Duration effectiveTimeout = timeoutOverride != null
+                    ? timeoutOverride
+                    : Duration.ofSeconds(candidate.timeoutSeconds());
             try {
                 LlmResponse response = clientFactory.getOrCreate(candidate)
                         .call(prompt, outputSchema, timeoutOverride);
@@ -106,8 +111,17 @@ public class GenerationRouter {
             } catch (Exception e) {
                 circuitBreakerManager.recordFailure(candidate.id(), requiredCapability.name());
                 lastException = e;
-                log.warn("生成调用失败: scene={}, serviceId={}, capability={}, error={}",
-                        scene, candidate.id(), requiredCapability, e.getMessage());
+                Throwable root = rootCause(e);
+                log.warn("生成调用失败: scene={}, serviceId={}, model={}, capability={}, timeoutSeconds={}, promptChars={}, errorType={}, rootType={}, error={}",
+                        scene,
+                        candidate.id(),
+                        candidate.modelName(),
+                        requiredCapability,
+                        effectiveTimeout.toSeconds(),
+                        prompt.length(),
+                        e.getClass().getSimpleName(),
+                        root.getClass().getSimpleName(),
+                        e.getMessage());
             }
         }
         throw new LlmUnavailableException(
@@ -134,8 +148,13 @@ public class GenerationRouter {
         for (ModelServiceEntity candidate : candidates) {
             attemptedServices.add(candidate.id());
             if (!circuitBreakerManager.isCallPermitted(candidate.id(), GenerationCapability.STRUCTURED_OUTPUT.name())) {
+                log.debug("结构化生成跳过熔断服务: scene={}, serviceId={}, model={}",
+                        scene, candidate.id(), candidate.modelName());
                 continue;
             }
+            Duration effectiveTimeout = timeoutOverride != null
+                    ? timeoutOverride
+                    : Duration.ofSeconds(candidate.timeoutSeconds());
             try {
                 T result = clientFactory.getOrCreate(candidate).callEntity(prompt, responseType, timeoutOverride);
                 circuitBreakerManager.recordSuccess(candidate.id(), GenerationCapability.STRUCTURED_OUTPUT.name());
@@ -143,7 +162,16 @@ public class GenerationRouter {
             } catch (Exception e) {
                 circuitBreakerManager.recordFailure(candidate.id(), GenerationCapability.STRUCTURED_OUTPUT.name());
                 lastException = e;
-                log.warn("结构化生成失败: scene={}, serviceId={}, error={}", scene, candidate.id(), e.getMessage());
+                Throwable root = rootCause(e);
+                log.warn("结构化生成失败: scene={}, serviceId={}, model={}, timeoutSeconds={}, promptChars={}, errorType={}, rootType={}, error={}",
+                        scene,
+                        candidate.id(),
+                        candidate.modelName(),
+                        effectiveTimeout.toSeconds(),
+                        prompt.length(),
+                        e.getClass().getSimpleName(),
+                        root.getClass().getSimpleName(),
+                        e.getMessage());
             }
         }
         throw new LlmUnavailableException(
@@ -292,6 +320,14 @@ public class GenerationRouter {
 
     private static String normalizeScene(String scene) {
         return scene == null ? "" : scene.trim();
+    }
+
+    private static Throwable rootCause(Throwable throwable) {
+        Throwable current = throwable;
+        while (current.getCause() != null && current.getCause() != current) {
+            current = current.getCause();
+        }
+        return current;
     }
 
     /**

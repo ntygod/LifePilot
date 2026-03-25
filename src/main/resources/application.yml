@@ -289,7 +289,7 @@ lifepilot:
       max-injection-count: 3
       injection-token-budget: 500
       max-retention-days: 90
-      llm-timeout-seconds: 30
+      llm-timeout-seconds: 120
       min-tool-success-ratio: 0.3
       eval-integration-enabled: true
       eval-improvement-threshold: 0.05
@@ -322,6 +322,7 @@ lifepilot:
         min-tool-sequence: 3
         initial-importance: 0.4
         max-input-tokens: 2000
+        llm-timeout-seconds: 120
   skills:
     # ===== Skill 系统配置 =====
     # 支持 Java 原生 Skill、Markdown 声明式 Skill、MCP 外部工具
@@ -680,7 +681,7 @@ lifepilot:
     max-output-bytes: 65536
     # 语言运行时路径
     runtime-paths:
-      python: "python3"
+      python: "python"
       javascript: "node"
       shell: "bash"
     # 会话配置

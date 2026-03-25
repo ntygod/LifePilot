@@ -3,16 +3,20 @@ package com.lifepilot.memory.experience;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.model.ReactStep;
 import com.lifepilot.generation.router.GenerationRouter;
+import com.lifepilot.generation.support.JsonOutputParser;
+import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 
@@ -93,15 +97,27 @@ public class SubtaskReflector {
             // 调用 LLM
             ExperienceRecord record;
             try {
-            record = generationRouter.callEntity(
+                Duration timeout = Duration.ofSeconds(Math.max(1, config.getLlmTimeoutSeconds()));
+                log.debug("子任务反思: 发起 JSON 反思调用, sessionId={}, timeoutSeconds={}, promptChars={}, sequenceSize={}",
+                        state.sessionId(), timeout.toSeconds(), prompt.length(), pairs.size());
+                LlmResponse response = generationRouter.call(
                         LlmScene.CHAT,
                         prompt,
-                        ExperienceRecord.class,
                         null,
                         null,
-                        null);
+                        null,
+                        GenerationCapability.CHAT,
+                        timeout);
+                log.debug("子任务反思: JSON 反思响应返回, sessionId={}, providerId={}, model={}, latencyMs={}, outputChars={}",
+                        state.sessionId(),
+                        response.providerId(),
+                        response.modelName(),
+                        response.latencyMs(),
+                        response.content() != null ? response.content().length() : 0);
+                record = JsonOutputParser.parse(response.content(), ExperienceRecord.class);
             } catch (Exception e) {
-                log.warn("子任务反思: LLM 调用失败, error={}", e.getMessage());
+                log.warn("子任务反思: JSON 反思失败, sessionId={}, timeoutSeconds={}, errorType={}, error={}",
+                        state.sessionId(), config.getLlmTimeoutSeconds(), e.getClass().getSimpleName(), e.getMessage());
                 return;
             }
 

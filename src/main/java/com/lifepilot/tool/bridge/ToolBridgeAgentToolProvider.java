@@ -108,6 +108,9 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
         if (state.sessionId() != null) {
             context.put(ToolContextKeys.SESSION_ID, state.sessionId());
         }
+        if (state.turnId() != null && !state.turnId().isBlank()) {
+            context.put(ToolContextKeys.TURN_ID, state.turnId());
+        }
         if (state.userId() != null && !state.userId().isBlank()) {
             context.put(ToolContextKeys.USER_ID, state.userId());
         }
@@ -195,7 +198,7 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
         } else if (result.ok()) {
             output = toJsonValue(result.data());
         } else {
-            output = "{\"error\":\"" + escapeJson(result.error()) + "\"}";
+            output = "{\"error\":\"" + escapeJson(result.error()) + "\",\"status\":\"ERROR\"}";
         }
         // 全局字符数上限截断
         // 注意：包含已知媒体字段（如 screenshot）的输出跳过截断，

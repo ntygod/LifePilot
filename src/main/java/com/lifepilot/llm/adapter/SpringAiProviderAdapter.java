@@ -4,6 +4,7 @@ import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.config.ProviderCapability;
 import com.lifepilot.llm.config.ProviderConfig;
 import com.lifepilot.llm.multimodal.MediaContent;
+import com.lifepilot.generation.support.JsonOutputParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
@@ -127,16 +128,7 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
                 .prompt(prompt)
                 .call()
                 .content();
-        if (rawText == null || rawText.isBlank()) {
-            throw new RuntimeException("JSON 修复降级: LLM 返回空内容");
-        }
-        String repaired = repairJson(rawText);
-        try {
-            var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-            return mapper.readValue(repaired, responseType);
-        } catch (Exception ex) {
-            throw new RuntimeException("JSON 修复后仍无法解析: " + ex.getMessage(), ex);
-        }
+        return JsonOutputParser.parse(rawText, responseType);
     }
 
     /**
@@ -145,69 +137,7 @@ public final class SpringAiProviderAdapter implements ProviderAdapter {
      * <p>处理：字符串值内未转义的双引号、Markdown 代码块包裹、尾部逗号等。
      */
     static String repairJson(String raw) {
-        if (raw == null) return null;
-        String text = raw.strip();
-        // 去除 Markdown 代码块包裹
-        if (text.startsWith("```json")) {
-            text = text.substring(7);
-        } else if (text.startsWith("```")) {
-            text = text.substring(3);
-        }
-        if (text.endsWith("```")) {
-            text = text.substring(0, text.length() - 3);
-        }
-        text = text.strip();
-
-        // 逐字符扫描修复字符串值内的未转义双引号
-        var sb = new StringBuilder(text.length());
-        boolean inString = false;
-        boolean escaped = false;
-        for (int i = 0; i < text.length(); i++) {
-            char c = text.charAt(i);
-            if (escaped) {
-                sb.append(c);
-                escaped = false;
-                continue;
-            }
-            if (c == '\\' && inString) {
-                sb.append(c);
-                escaped = true;
-                continue;
-            }
-            if (c == '"') {
-                if (!inString) {
-                    inString = true;
-                    sb.append(c);
-                } else {
-                    // 判断这个引号是字符串结束还是未转义的内嵌引号
-                    if (isStringTerminator(text, i)) {
-                        inString = false;
-                        sb.append(c);
-                    } else {
-                        // 未转义的内嵌引号，添加转义
-                        sb.append('\\').append(c);
-                    }
-                }
-                continue;
-            }
-            sb.append(c);
-        }
-        return sb.toString();
-    }
-
-    /**
-     * 判断位置 i 处的双引号是否为字符串终止符。
-     *
-     * <p>向后看第一个非空白字符：如果是 JSON 结构字符（, : ] } ）则认为是终止符。
-     */
-    private static boolean isStringTerminator(String text, int i) {
-        for (int j = i + 1; j < text.length(); j++) {
-            char next = text.charAt(j);
-            if (next == ' ' || next == '\t' || next == '\r' || next == '\n') continue;
-            return next == ',' || next == ':' || next == ']' || next == '}';
-        }
-        // 到达末尾，认为是终止符
-        return true;
+        return JsonOutputParser.repairJson(raw);
     }
 
     @Override

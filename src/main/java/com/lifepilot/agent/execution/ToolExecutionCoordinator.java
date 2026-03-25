@@ -122,7 +122,7 @@ public class ToolExecutionCoordinator {
         boolean success;
         try {
             rawOutput = matchedCallback.call(inputJson);
-            success = true;
+            success = inferToolExecutionSuccess(rawOutput);
         } catch (Exception e) {
             log.warn("工具执行失败: toolId={}, error={}", toolId, e.getMessage());
             rawOutput = "工具执行异常: " + e.getMessage();
@@ -206,6 +206,35 @@ public class ToolExecutionCoordinator {
         recordToolCallStep(traceContext, state.stepCount() - 1, toolCallStart, toolId, inputJson, rawOutput, success);
         log.debug("工具执行完成: toolId={}, success={}, latencyMs={}", toolId, success, toolCallDuration.toMillis());
         return state;
+    }
+
+    /**
+     * 从工具输出中推断业务执行是否成功。
+     *
+     * <p>ToolCallback 只返回字符串，无法直接携带 {@code ToolResult.ok()}。
+     * 对于桥接层返回的 JSON envelope，这里根据 {@code status} / {@code error} 字段恢复真实执行状态，
+     * 避免“调用未抛异常但业务已失败”被误记为成功。</p>
+     */
+    private boolean inferToolExecutionSuccess(@Nullable String output) {
+        if (output == null || output.isBlank()) {
+            return true;
+        }
+        try {
+            JsonNode root = objectMapper.readTree(output);
+            if (!root.isObject()) {
+                return true;
+            }
+            String status = root.path("status").asText("");
+            if ("ERROR".equalsIgnoreCase(status)) {
+                return false;
+            }
+            if (root.has("error") && !root.has("data")) {
+                return false;
+            }
+            return true;
+        } catch (Exception e) {
+            return true;
+        }
     }
 
     /**

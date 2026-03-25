@@ -1,7 +1,10 @@
 package com.lifepilot.memory.semantic;
 
 import com.lifepilot.generation.router.GenerationRouter;
+import com.lifepilot.generation.support.JsonOutputParser;
+import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -134,15 +137,17 @@ public class RealtimeExtractor {
             // 使用 Virtual Thread 执行器避免阻塞 ForkJoinPool.commonPool()
             var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
             var result = CompletableFuture.supplyAsync(() ->
-                            generationRouter.callEntity(
+                            generationRouter.call(
                                     "knowledge_extraction",
                                     prompt,
-                                    AudnDecisionList.class,
                                     null,
                                     null,
+                                    null,
+                                    GenerationCapability.CHAT,
                                     Duration.ofSeconds(extractionTimeoutSeconds)),
                             executor)
                     .orTimeout(extractionTimeoutSeconds, TimeUnit.SECONDS)
+                    .thenApply(response -> JsonOutputParser.parse(response.content(), AudnDecisionList.class))
                     .join();
             return result != null ? result.decisions() : List.of();
         } catch (Exception e) {

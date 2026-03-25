@@ -1,14 +1,17 @@
 package com.lifepilot.memory.consolidation;
 
 import com.lifepilot.llm.LlmScene;
+import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.LlmUnavailableException;
 import com.lifepilot.embedding.router.EmbeddingRouter;
 import com.lifepilot.embedding.router.EmbeddingUseCase;
 import com.lifepilot.generation.router.GenerationRouter;
+import com.lifepilot.generation.support.JsonOutputParser;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.procedural.ProcedureTemplate;
 import com.lifepilot.memory.procedural.ProceduralMemory;
 import com.lifepilot.memory.procedural.TemplateStep;
+import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -295,13 +298,17 @@ public class EpisodicToProceduralConsolidator {
         String prompt = promptRegistry.render("memory/procedural-extraction",
                 Map.of("combinedSequences", combinedSequences));
 
-        var extraction = generationRouter.callEntity(
+        log.debug("程序巩固: 发起 JSON 模板提炼调用, promptChars={}, clusterSize={}",
+                prompt.length(), cluster.size());
+        LlmResponse response = generationRouter.call(
                 LlmScene.KNOWLEDGE_EXTRACTION,
                 prompt,
-                TemplateExtraction.class,
                 null,
                 null,
+                null,
+                GenerationCapability.CHAT,
                 null);
+        var extraction = JsonOutputParser.parse(response.content(), TemplateExtraction.class);
 
         if (extraction == null || extraction.name() == null || extraction.name().isBlank()) {
             log.warn("程序巩固: LLM 返回空模板, clusterSize={}", cluster.size());
