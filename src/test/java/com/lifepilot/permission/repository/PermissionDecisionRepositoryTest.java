@@ -86,6 +86,7 @@ class PermissionDecisionRepositoryTest {
                 "workspace-1",
                 null,
                 "user-1",
+                null,
                 "trace-1"
         );
         var grant = new ExecutionGrant(
@@ -132,6 +133,7 @@ class PermissionDecisionRepositoryTest {
                 "workspace-1",
                 "task-1",
                 "user-1",
+                null,
                 "trace-2"
         );
 

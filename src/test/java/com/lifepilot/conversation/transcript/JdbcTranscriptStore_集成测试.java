@@ -224,6 +224,47 @@ class JdbcTranscriptStore_集成测试 {
     }
 
     @Test
+    void appendCustomMessage_保留turnId并可见给用户() {
+        transcriptStore.appendAssistantMessage(
+                "web:permission-session",
+                "turn-permission-1",
+                "我来检查 gh CLI 是否可用。",
+                null,
+                "trace-permission",
+                null,
+                null,
+                CompletionMode.NORMAL,
+                null,
+                Instant.parse("2026-03-25T13:00:00Z")
+        );
+        transcriptStore.appendCustomMessage(
+                "web:permission-session",
+                "turn-permission-1",
+                "permission-approval",
+                "{\"requestId\":\"req-1\",\"toolId\":\"builtin.shell.exec\"}",
+                "trace-permission",
+                false,
+                true,
+                Instant.parse("2026-03-25T13:00:01Z")
+        );
+
+        var transcriptRows = sessionTranscriptRepository.findUserConversationRowsBySessionId("web:permission-session");
+
+        assertThat(transcriptRows).hasSize(2);
+        assertThat(transcriptRows.get(1))
+                .extracting(
+                        SessionTranscriptRepository.TranscriptMessageViewRow::role,
+                        SessionTranscriptRepository.TranscriptMessageViewRow::turnId,
+                        SessionTranscriptRepository.TranscriptMessageViewRow::content
+                )
+                .containsExactly(
+                        "permission-approval",
+                        "turn-permission-1",
+                        "{\"requestId\":\"req-1\",\"toolId\":\"builtin.shell.exec\"}"
+                );
+    }
+
+    @Test
     void deleteBySessionId_会同步移除TranscriptFts索引() {
         transcriptStore.appendUserMessage(
                 "web:delete-session",

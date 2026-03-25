@@ -44,6 +44,7 @@ public class PermissionRequestFactory {
         String channel = input.getContextValue(ToolContextKeys.CHANNEL_TYPE, String.class).orElse("unknown");
         String sessionId = input.getContextValue(ToolContextKeys.SESSION_ID, String.class).orElse(null);
         String userId = input.getContextValue(ToolContextKeys.USER_ID, String.class).orElse(null);
+        String turnId = input.getContextValue(ToolContextKeys.TURN_ID, String.class).orElse(null);
         String traceId = input.getContextValue(ToolContextKeys.CALLER_TRACE_ID, String.class)
                 .orElse(fallbackTraceId);
         String taskId = input.getContextValue(ToolContextKeys.TASK_ID, String.class)
@@ -61,6 +62,7 @@ public class PermissionRequestFactory {
                 workspaceId,
                 taskId,
                 userId,
+                turnId,
                 traceId
         );
     }

@@ -73,6 +73,7 @@ public interface TranscriptStore {
                                @Nullable Instant createdAt);
 
     String appendCustomMessage(String sessionId,
+                               @Nullable String turnId,
                                String role,
                                String content,
                                @Nullable String traceId,

@@ -216,6 +216,7 @@ class ToolExecutionPipelineTest {
                 null,
                 null,
                 "user-1",
+                null,
                 "trace-1"
         );
     }

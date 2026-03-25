@@ -374,7 +374,7 @@ onMounted(() => {
         <div class="rounded-[calc(var(--radius)+6px)] border border-border/70 bg-background/70 px-4 py-4">
           <div class="text-sm font-medium text-foreground">聊天内授权</div>
           <div class="mt-1 text-sm leading-6 text-muted-foreground">
-            适合当前会话或当前项目，授权一次后，同类操作不再反复审批。
+            适合当前会话或当前工作目录，授权一次后，同类操作不再反复审批。
           </div>
         </div>
         <div class="rounded-[calc(var(--radius)+6px)] border border-border/70 bg-background/70 px-4 py-4">
@@ -469,7 +469,7 @@ onMounted(() => {
             v-model="form.reason"
             rows="3"
             class="max-w-[680px] resize-none"
-            placeholder="例如：允许当前项目自动修改前端代码并执行构建命令。"
+            placeholder="例如：允许当前工作目录自动修改前端代码并执行构建命令。"
           />
         </SettingItem>
 

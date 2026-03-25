@@ -197,23 +197,40 @@ public class WebPermissionApprovalService implements PermissionApprovalService {
     }
 
     private String buildApprovalMessage(ToolContract tool, PermissionRequest request) {
-        String actionText = switch (request.actionType()) {
+        String intentText = describeToolIntent(tool);
+        String actionFamily = describeActionFamily(request);
+        if (request.taskId() != null && !request.taskId().isBlank()) {
+            return "%s。授权后仅会覆盖“%s”，并可直接复用到当前任务的 Cron、心跳和工作流。"
+                    .formatted(intentText, actionFamily);
+        }
+        return "%s。授权后仅会覆盖“%s”，不会自动放开其他高风险操作。"
+                .formatted(intentText, actionFamily);
+    }
+
+    private String describeToolIntent(ToolContract tool) {
+        return switch (tool.id()) {
+            case "builtin.code.execute" -> "本次需要运行本地代码";
+            case "builtin.shell.exec" -> "本次需要执行本地命令";
+            case "builtin.file.write", "builtin.file.patch", "builtin.file.copy", "builtin.file.move" -> "本次需要修改文件";
+            case "builtin.file.delete" -> "本次需要删除文件";
+            case "builtin.http.request", "builtin.web.fetch", "builtin.web.search" -> "本次需要访问外部网络";
+            default -> "本次需要%s".formatted(tool.name());
+        };
+    }
+
+    private String describeActionFamily(PermissionRequest request) {
+        return switch (request.actionType()) {
             case READ_FILE -> "读取文件";
             case WRITE_FILE -> "修改文件";
             case DELETE_FILE -> "删除文件";
-            case EXECUTE_SHELL -> "执行 Shell 命令";
-            case BROWSER_AUTOMATION -> "执行浏览器自动化操作";
-            case HTTP_REQUEST -> "访问外部网络";
-            case WRITE_MEMORY -> "写入长期记忆";
-            case MODIFY_DATASTORE -> "修改数据存储";
-            case CREATE_SCHEDULE -> "创建或修改定时任务";
-            case GENERIC_TOOL_OPERATION -> "执行工具操作";
+            case EXECUTE_SHELL -> "命令 / 代码执行";
+            case BROWSER_AUTOMATION -> "浏览器自动化";
+            case HTTP_REQUEST -> "外部网络访问";
+            case WRITE_MEMORY -> "长期记忆写入";
+            case MODIFY_DATASTORE -> "数据存储修改";
+            case CREATE_SCHEDULE -> "定时任务创建或修改";
+            case GENERIC_TOOL_OPERATION -> "工具操作";
         };
-        if (request.taskId() != null && !request.taskId().isBlank()) {
-            return "微微想使用 %s 执行%s。你可以直接授权给当前任务，后续 Cron、心跳和工作流会复用这条授权。"
-                    .formatted(tool.name(), actionText);
-        }
-        return "微微想使用 %s 执行%s，请选择授权范围。".formatted(tool.name(), actionText);
     }
 
     private void persistApprovalRecord(String requestId,
@@ -238,6 +255,7 @@ public class WebPermissionApprovalService implements PermissionApprovalService {
             payload.put("resourceScope", request.resourceScope().values());
             transcriptStore.appendCustomMessage(
                     request.sessionId(),
+                    request.turnId(),
                     "permission-approval",
                     objectMapper.writeValueAsString(payload),
                     request.traceId(),

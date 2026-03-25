@@ -1042,9 +1042,19 @@ export function useChat() {
     a2uiStore.clearComponents()
   }
 
-  function resolvePermissionApproval(requestId: string, resolution: 'approved' | 'rejected' | 'expired') {
+  function resolvePermissionApproval(
+    requestId: string,
+    resolution: 'approved' | 'rejected' | 'expired',
+    subjectType?: string,
+  ) {
+    const request = pendingPermissionApprovals.value.get(requestId)
+    if (request && subjectType) {
+      pendingPermissionApprovals.value.set(requestId, {
+        ...request,
+        recommendedSubjectType: subjectType,
+      })
+    }
     pendingPermissionApprovalResolutions.value.set(requestId, resolution)
-    pendingPermissionApprovals.value.delete(requestId)
   }
 
   function mapToRecord<K, V>(map: Map<K, V>): Record<string, V> {

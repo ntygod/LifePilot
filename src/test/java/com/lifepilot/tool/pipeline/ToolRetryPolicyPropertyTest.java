@@ -176,6 +176,7 @@ class ToolRetryPolicyPropertyTest {
                 null,
                 null,
                 "user-1",
+                null,
                 "trace-pbt"
         );
     }

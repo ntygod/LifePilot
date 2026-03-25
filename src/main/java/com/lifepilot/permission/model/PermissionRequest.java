@@ -21,6 +21,7 @@ public record PermissionRequest(
         @Nullable String workspaceId,
         @Nullable String taskId,
         @Nullable String userId,
+        @Nullable String turnId,
         @Nullable String traceId
 ) {
 

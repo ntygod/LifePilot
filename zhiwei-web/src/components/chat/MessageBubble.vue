@@ -1,8 +1,16 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { FileText, Mic } from 'lucide-vue-next'
-import type { A2uiComponent, Message, ReasoningEvent, ReactStepDto, PermissionApprovalRequest } from '@/types'
+import type {
+  A2uiComponent,
+  Message,
+  PermissionApprovalLog,
+  PermissionApprovalRequest,
+  ReasoningEvent,
+  ReactStepDto,
+} from '@/types'
 import A2uiRenderer from '@/components/a2ui/A2uiRenderer.vue'
+import { buildPermissionApprovalLog } from '@/utils/permissionApproval'
 import {
   Dialog,
   DialogContent,
@@ -39,7 +47,7 @@ const emit = defineEmits<{
   (e: 'resume', message: Message): void
   (e: 'restart', message: Message): void
   (e: 'copy', content: string): void
-  (e: 'permission-approval-resolve', requestId: string, resolution: 'approved' | 'rejected' | 'expired'): void
+  (e: 'permission-approval-resolve', requestId: string, resolution: 'approved' | 'rejected' | 'expired', subjectType?: string): void
 }>()
 
 const collapsed = ref(props.message.collapsed ?? shouldCollapse(props.message.content))
@@ -137,7 +145,69 @@ const activePermissionApprovalResolutions = computed<Record<string, 'approved' |
   ...(props.streamingPermissionApprovalResolutions ?? {}),
 }))
 
-const pendingApprovals = computed(() => Object.entries(activePermissionApprovals.value))
+const pendingApprovals = computed(() =>
+  Object.entries(activePermissionApprovals.value)
+    .filter(([requestId]) => !activePermissionApprovalResolutions.value[requestId]),
+)
+
+const approvalLogs = computed<PermissionApprovalLog[]>(() => {
+  const logs = [...(props.message.permissionApprovalLogs ?? [])]
+
+  for (const [requestId, request] of Object.entries(activePermissionApprovals.value)) {
+    const resolution = activePermissionApprovalResolutions.value[requestId]
+    if (!resolution) {
+      continue
+    }
+    logs.push({
+      requestId,
+      toolId: request.toolId,
+      toolName: request.toolName,
+      actionType: request.actionType,
+      resolution,
+      subjectType: request.recommendedSubjectType ?? undefined,
+      reason: null,
+      timestamp: request.timestamp,
+    })
+  }
+
+  return logs
+})
+
+const hasNonApprovalAssistantBody = computed(() => (
+  !!displayContent.value
+  || imageAttachments.value.length > 0
+  || fileAttachments.value.length > 0
+  || audioAttachments.value.length > 0
+  || visibleA2uiComponents.value.length > 0
+  || !!props.message.toolsSummary?.length
+  || kbSources.value.length > 0
+  || activeReasoningEvents.value.length > 0
+  || activeReactSteps.value.length > 0
+))
+
+const isApprovalOnlyAssistant = computed(() => (
+  props.message.role === 'assistant'
+  && !hasNonApprovalAssistantBody.value
+  && (pendingApprovals.value.length > 0 || approvalLogs.value.length > 0)
+))
+
+const assistantBubbleClass = computed(() => {
+  if (isApprovalOnlyAssistant.value) {
+    return 'w-fit max-w-full rounded-none border-none bg-transparent px-0 py-0 text-foreground shadow-none'
+  }
+
+  return 'assistant-bubble rounded-tl-sm border border-border bg-card p-md text-foreground group-hover/message:-translate-y-0.5 group-hover/message:shadow-[0_18px_36px_-28px_hsl(var(--shadow-color)/0.38)]'
+})
+
+function approvalLogTone(log: PermissionApprovalLog) {
+  if (log.resolution === 'approved') {
+    return 'border-emerald-200/80 bg-emerald-50/90 text-emerald-700'
+  }
+  if (log.resolution === 'expired') {
+    return 'border-amber-200/80 bg-amber-50/90 text-amber-700'
+  }
+  return 'border-slate-200 bg-slate-50 text-slate-600'
+}
 </script>
 
 <template>
@@ -183,7 +253,7 @@ const pendingApprovals = computed(() => Object.entries(activePermissionApprovals
         class="relative max-w-full rounded-2xl shadow-sm transition-all duration-200 md:max-w-[85%]"
         :class="message.role === 'user'
           ? 'rounded-tr-sm bg-primary p-md text-primary-foreground shadow-md group-hover/message:-translate-y-0.5 group-hover/message:shadow-lg'
-          : 'assistant-bubble rounded-tl-sm border border-border bg-card p-md text-foreground group-hover/message:-translate-y-0.5 group-hover/message:shadow-[0_18px_36px_-28px_hsl(var(--shadow-color)/0.38)]'"
+          : assistantBubbleClass"
       >
         <div
           v-if="streaming && message.role === 'assistant'"
@@ -208,11 +278,32 @@ const pendingApprovals = computed(() => Object.entries(activePermissionApprovals
                 :request="request"
                 :resolved="!!activePermissionApprovalResolutions[requestId]"
                 :resolution="activePermissionApprovalResolutions[requestId]"
-                @resolve="(resolution: 'approved' | 'rejected' | 'expired') => emit('permission-approval-resolve', requestId, resolution)"
+                @resolve="(resolution: 'approved' | 'rejected' | 'expired', subjectType?: string) => emit('permission-approval-resolve', requestId, resolution, subjectType)"
               />
             </div>
 
+            <div
+              v-if="approvalLogs.length > 0"
+              class="mb-2 flex max-w-full flex-wrap gap-1.5"
+            >
+              <div
+                v-for="log in approvalLogs"
+                :key="`${log.requestId}-${log.resolution}`"
+                class="inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium shadow-sm"
+                :class="approvalLogTone(log)"
+              >
+                <span
+                  class="size-1.5 shrink-0 rounded-full"
+                  :class="log.resolution === 'approved'
+                    ? 'bg-emerald-500'
+                    : (log.resolution === 'expired' ? 'bg-amber-500' : 'bg-slate-400')"
+                />
+                <span class="truncate">{{ buildPermissionApprovalLog(log) }}</span>
+              </div>
+            </div>
+
             <StreamingText
+              v-if="displayContent"
               :content="displayContent"
               :streaming="streaming"
             />

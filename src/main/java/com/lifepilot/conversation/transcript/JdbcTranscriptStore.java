@@ -120,6 +120,7 @@ public class JdbcTranscriptStore implements TranscriptStore {
 
     @Override
     public String appendCustomMessage(String sessionId,
+                                      @Nullable String turnId,
                                       String role,
                                       String content,
                                       @Nullable String traceId,
@@ -134,7 +135,7 @@ public class JdbcTranscriptStore implements TranscriptStore {
                 sessionId,
                 TranscriptEntryType.fromLegacyRole(role),
                 role,
-                null,
+                turnId,
                 normalizeBlank(traceId),
                 visibleToModel,
                 visibleToUser,

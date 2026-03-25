@@ -54,6 +54,7 @@ class PermissionEvaluatorTest {
                 "workspace-1",
                 null,
                 "user-1",
+                null,
                 "trace-1"
         );
 
@@ -75,6 +76,7 @@ class PermissionEvaluatorTest {
                 "workspace-1",
                 null,
                 "user-1",
+                null,
                 "trace-1"
         );
         var grant = new ExecutionGrant(
@@ -119,6 +121,7 @@ class PermissionEvaluatorTest {
                 "workspace-1",
                 "task-1",
                 "user-1",
+                null,
                 "trace-2"
         );
 
@@ -141,6 +144,7 @@ class PermissionEvaluatorTest {
                 null,
                 "task-1",
                 "user-1",
+                null,
                 "trace-3"
         );
         when(executionGrantRepository.findActiveByActionType(eq(PermissionActionType.HTTP_REQUEST), any()))
@@ -164,6 +168,7 @@ class PermissionEvaluatorTest {
                 null,
                 null,
                 "user-1",
+                null,
                 "trace-4"
         );
         when(executionGrantRepository.findActiveByActionType(eq(PermissionActionType.BROWSER_AUTOMATION), any()))

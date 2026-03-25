@@ -4,6 +4,10 @@ import { CheckCircle, Clock, ShieldCheck, ShieldX, XCircle } from 'lucide-vue-ne
 import { chatApi } from '@/api/client'
 import type { PermissionApprovalRequest } from '@/types'
 import { Button } from '@/components/ui/button'
+import {
+  buildPermissionCoverageHint,
+  formatPermissionToolLabel,
+} from '@/utils/permissionApproval'
 
 const props = defineProps<{
   request: PermissionApprovalRequest
@@ -12,7 +16,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  resolve: [resolution: 'approved' | 'rejected' | 'expired']
+  resolve: [resolution: 'approved' | 'rejected' | 'expired', subjectType?: string]
 }>()
 
 const countdown = ref(60)
@@ -24,7 +28,7 @@ let timer: ReturnType<typeof setInterval> | null = null
 
 const isCritical = computed(() => props.request.riskLevel === 'CRITICAL')
 const accentColor = computed(() =>
-  isCritical.value ? 'border-l-red-500' : 'border-l-orange-400',
+  isCritical.value ? 'border-red-200/70 bg-red-50/50' : 'border-amber-200/70 bg-amber-50/45',
 )
 const subjectTypeOptions = computed(() => props.request.availableSubjectTypes ?? [])
 const currentSubjectType = computed(() =>
@@ -32,24 +36,24 @@ const currentSubjectType = computed(() =>
 )
 const subjectTypeUiMap: Record<string, { label: string; description: string; confirmLabel: string }> = {
   SESSION: {
-    label: '本会话内都允许',
-    description: '当前会话里的同类高风险操作不再重复审批。',
-    confirmLabel: '允许本会话复用',
+    label: '本会话',
+    description: '本会话里的同类操作不再重复询问。',
+    confirmLabel: '允许本会话',
   },
   WORKSPACE: {
-    label: '当前项目内都允许',
-    description: '适合改文件、执行命令、构建和项目内自动化操作。',
-    confirmLabel: '允许当前项目复用',
+    label: '当前工作目录',
+    description: '适合当前目录下的改文件、构建和自动化操作。',
+    confirmLabel: '允许当前工作目录',
   },
   TASK: {
-    label: '当前任务自动执行',
-    description: '后续 Cron、心跳和工作流会直接复用这条任务级授权。',
-    confirmLabel: '允许任务自动执行',
+    label: '当前任务',
+    description: '后续 Cron、心跳和工作流会复用这条任务授权。',
+    confirmLabel: '允许当前任务',
   },
   USER: {
-    label: '当前账号长期允许',
-    description: '跨会话复用，适合稳定且长期需要的高频操作。',
-    confirmLabel: '允许长期复用',
+    label: '长期',
+    description: '后续会话也复用，适合稳定的高频操作。',
+    confirmLabel: '长期允许',
   },
 }
 const currentSubjectOption = computed(() =>
@@ -59,11 +63,18 @@ const currentSubjectOption = computed(() =>
     confirmLabel: '允许并记住',
   },
 )
+const toolLabel = computed(() =>
+  formatPermissionToolLabel(props.request.toolId, props.request.toolName),
+)
+const coverageHint = computed(() =>
+  buildPermissionCoverageHint(props.request.actionType, props.request.toolName),
+)
+const primaryMessage = computed(() => `本次需要${toolLabel.value}。请选择授权范围。`)
 
 const resolutionLabel = computed(() => {
   switch (props.resolution) {
     case 'approved':
-      return '已允许'
+      return '已授权'
     case 'rejected':
       return '已拒绝'
     case 'expired':
@@ -142,7 +153,7 @@ async function handleConfirm() {
       currentSubjectType.value,
     )
     stopCountdown()
-    emit('resolve', 'approved')
+    emit('resolve', 'approved', currentSubjectType.value)
   } catch (error) {
     if (error && typeof error === 'object' && 'code' in error && (error as { code: number }).code === 404) {
       errorMessage.value = '授权请求已失效'
@@ -166,7 +177,7 @@ async function handleReject() {
       currentSubjectType.value,
     )
     stopCountdown()
-    emit('resolve', 'rejected')
+    emit('resolve', 'rejected', currentSubjectType.value)
   } catch (error) {
     if (error && typeof error === 'object' && 'code' in error && (error as { code: number }).code === 404) {
       errorMessage.value = '授权请求已失效'
@@ -182,29 +193,37 @@ async function handleReject() {
 
 <template>
   <div
-    class="rounded-md border-l-[3px] bg-muted/40 px-3 py-2.5"
+    class="w-fit max-w-full rounded-2xl border px-3 py-2 shadow-[0_12px_24px_-24px_hsl(var(--shadow-color)/0.28)] backdrop-blur-sm"
     :class="[accentColor, resolved ? 'opacity-70' : '']"
   >
-    <div class="flex items-center gap-2 text-sm">
+    <div class="flex items-start gap-2">
       <component
         :is="isCritical ? ShieldX : ShieldCheck"
-        :class="['size-4 shrink-0', resolved ? 'text-muted-foreground' : (isCritical ? 'text-red-500' : 'text-orange-500')]"
+        :class="['mt-0.5 size-4 shrink-0', resolved ? 'text-muted-foreground' : (isCritical ? 'text-red-500' : 'text-amber-500')]"
       />
-      <span class="font-medium">{{ request.toolName }}</span>
-      <span class="text-[11px] text-muted-foreground">需要授权</span>
+      <div class="min-w-0 flex-1">
+        <div class="flex flex-wrap items-center gap-1.5 text-sm">
+          <span class="font-medium text-foreground">{{ toolLabel }}</span>
+          <span class="rounded-full border border-border/60 bg-background/85 px-2 py-0.5 text-[10px] text-muted-foreground">
+            需授权
+          </span>
+          <div v-if="resolved" class="ml-auto flex items-center gap-1 text-xs" :class="resolutionColor">
+            <component :is="resolutionIcon" class="size-3" />
+            <span>{{ resolutionLabel }}</span>
+          </div>
+          <div v-else class="ml-auto flex items-center gap-1 text-[11px] text-muted-foreground">
+            <Clock class="size-3" />
+            <span>{{ countdown }}s</span>
+          </div>
+        </div>
 
-      <div v-if="resolved" class="ml-auto flex items-center gap-1 text-xs" :class="resolutionColor">
-        <component :is="resolutionIcon" class="size-3" />
-        <span>{{ resolutionLabel }}</span>
+        <div class="mt-1 text-xs leading-5 text-muted-foreground">
+          {{ primaryMessage }}
+        </div>
+        <div class="mt-0.5 text-[11px] leading-4 text-muted-foreground/85">
+          {{ coverageHint }}
+        </div>
       </div>
-      <div v-else class="ml-auto flex items-center gap-1 text-[11px] text-muted-foreground">
-        <Clock class="size-3" />
-        <span>{{ countdown }}s</span>
-      </div>
-    </div>
-
-    <div class="mt-2 text-xs text-muted-foreground">
-      {{ request.message }}
     </div>
 
     <div
@@ -216,16 +235,16 @@ async function handleReject() {
 
     <div
       v-if="!resolved && subjectTypeOptions.length > 0"
-      class="mt-3 space-y-2"
+      class="mt-2.5 space-y-1.5"
     >
-      <div class="flex flex-wrap gap-2">
+      <div class="flex flex-wrap gap-1.5">
         <Button
           v-for="subjectType in subjectTypeOptions"
           :key="subjectType"
           type="button"
           size="sm"
           :variant="currentSubjectType === subjectType ? 'default' : 'outline'"
-          class="h-7 px-2.5 text-xs"
+          class="h-7 rounded-full px-2.5 text-xs shadow-none"
           :disabled="submitting"
           @click="selectedSubjectType = subjectType"
         >
@@ -233,16 +252,16 @@ async function handleReject() {
         </Button>
       </div>
 
-      <div class="rounded-md border border-dashed border-border/60 bg-background/70 px-3 py-2 text-xs text-muted-foreground">
+      <div class="text-[11px] text-muted-foreground">
         {{ currentSubjectOption.description }}
       </div>
     </div>
 
-    <div v-if="!resolved" class="mt-2 flex items-center gap-2">
+    <div v-if="!resolved" class="mt-2.5 flex items-center justify-end gap-2">
       <Button
         variant="ghost"
         size="sm"
-        class="h-6 px-2.5 text-xs text-muted-foreground hover:text-foreground"
+        class="h-7 rounded-full px-2.5 text-xs text-muted-foreground hover:text-foreground"
         :disabled="submitting"
         @click="handleReject"
       >
@@ -251,7 +270,7 @@ async function handleReject() {
       <Button
         :variant="isCritical ? 'destructive' : 'default'"
         size="sm"
-        class="h-6 px-2.5 text-xs"
+        class="h-7 rounded-full px-2.5 text-xs shadow-none"
         :disabled="submitting"
         @click="handleConfirm"
       >

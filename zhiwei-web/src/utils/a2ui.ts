@@ -1,4 +1,6 @@
 import type { A2uiComponent, ChatAttachment, Message, ReactStepDto } from '@/types'
+import type { PermissionApprovalLog } from '@/types'
+import { formatPermissionActionLabel } from '@/utils/permissionApproval'
 
 /** 后端附件数据结构，对应 AttachmentInfo record。 */
 interface BackendAttachment {
@@ -100,19 +102,14 @@ export function mapBackendMessage(message: BackendMessageLike): Message {
       const resolution = parsed.approved === true
         ? 'approved'
         : (parsed.reason === '审批超时' ? 'expired' : 'rejected')
-      const approvalMessage = parsed.approved === true
-        ? `已授权 ${parsed.toolName} 执行 ${parsed.actionType ?? '操作'}`
-        : `未授权 ${parsed.toolName} 执行 ${parsed.actionType ?? '操作'}`
-      const permissionApproval = {
+      const approvalLog: PermissionApprovalLog = {
         requestId: parsed.requestId,
         toolId: parsed.toolId,
         toolName: parsed.toolName,
         actionType: parsed.actionType ?? 'GENERIC_TOOL_OPERATION',
-        riskLevel: parsed.riskLevel as 'HIGH' | 'CRITICAL',
-        message: approvalMessage,
-        availableSubjectTypes: parsed.subjectType ? [parsed.subjectType] : [],
-        recommendedSubjectType: parsed.subjectType ?? 'SESSION',
-        resourceScope: parsed.resourceScope ?? undefined,
+        resolution,
+        subjectType: parsed.subjectType ?? null,
+        reason: parsed.reason ?? null,
         timestamp: typeof message.timestamp === 'string'
           ? message.timestamp
           : new Date(message.timestamp).toISOString(),
@@ -121,10 +118,9 @@ export function mapBackendMessage(message: BackendMessageLike): Message {
         id: message.id,
         turnId: message.turnId ?? undefined,
         role: 'permission-approval',
-        content: approvalMessage,
+        content: formatPermissionActionLabel(parsed.actionType, parsed.toolName),
         timestamp: parseMessageTimestamp(message.timestamp),
-        permissionApprovals: { [parsed.requestId]: permissionApproval },
-        permissionApprovalResolutions: { [parsed.requestId]: resolution },
+        permissionApprovalLogs: [approvalLog],
       }
     } catch {
       // JSON 解析失败时，回退为普通消息展示。

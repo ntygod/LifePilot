@@ -33,8 +33,45 @@ const emit = defineEmits<{
   (e: 'resume', message: Message): void
   (e: 'restart', message: Message): void
   (e: 'copy', content: string): void
-  (e: 'permission-approval-resolve', requestId: string, resolution: 'approved' | 'rejected' | 'expired'): void
+  (e: 'permission-approval-resolve', requestId: string, resolution: 'approved' | 'rejected' | 'expired', subjectType?: string): void
 }>()
+
+function hasStructuredApprovalPayload(message: Message) {
+  return !!(
+    message.permissionApprovals
+    || message.permissionApprovalLogs?.length
+    || message.permissionApprovalResolutions
+  )
+}
+
+function findAssistantIndexByTurnId(messages: Message[], turnId?: string) {
+  if (!turnId) {
+    return -1
+  }
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const item = messages[index]
+    if (item.role === 'assistant' && item.turnId === turnId) {
+      return index
+    }
+  }
+  return -1
+}
+
+function findPreviousAssistantIndex(messages: Message[], timestamp: number) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const candidate = messages[index]
+    if (candidate.timestamp > timestamp) {
+      continue
+    }
+    if (candidate.role === 'assistant') {
+      return index
+    }
+    if (candidate.role === 'user') {
+      break
+    }
+  }
+  return -1
+}
 
 /**
  * 合并后的消息列表。
@@ -42,32 +79,55 @@ const emit = defineEmits<{
  */
 const mergedMessages = computed(() => {
   const sorted = [...props.messages].sort((a, b) => a.timestamp - b.timestamp)
-  const result: Message[] = []
+  const result: Message[] = sorted
+    .filter(msg => !(msg.role === 'permission-approval' && hasStructuredApprovalPayload(msg)))
+    .map(msg => (msg.role === 'permission-approval'
+      ? {
+          ...msg,
+          role: 'assistant',
+        }
+      : { ...msg }))
 
   for (const msg of sorted) {
-    if (msg.role === 'permission-approval' && msg.permissionApprovals) {
-      const assistantIndex = [...result].reverse().findIndex(item =>
-        item.role === 'assistant' && item.turnId && item.turnId === msg.turnId,
-      )
-
-      if (assistantIndex !== -1) {
-        const targetIndex = result.length - 1 - assistantIndex
-        result[targetIndex] = {
-          ...result[targetIndex],
-          permissionApprovals: {
-            ...(result[targetIndex].permissionApprovals ?? {}),
-            ...msg.permissionApprovals,
-          },
-          permissionApprovalResolutions: {
-            ...(result[targetIndex].permissionApprovalResolutions ?? {}),
-            ...(msg.permissionApprovalResolutions ?? {}),
-          },
-        }
-        continue
-      }
+    if (!(msg.role === 'permission-approval' && hasStructuredApprovalPayload(msg))) {
+      continue
     }
 
-    result.push({ ...msg })
+    let targetIndex = findAssistantIndexByTurnId(result, msg.turnId)
+    if (targetIndex === -1) {
+      targetIndex = findPreviousAssistantIndex(result, msg.timestamp)
+    }
+
+    if (targetIndex !== -1) {
+      result[targetIndex] = {
+        ...result[targetIndex],
+        permissionApprovals: {
+          ...(result[targetIndex].permissionApprovals ?? {}),
+          ...(msg.permissionApprovals ?? {}),
+        },
+        permissionApprovalResolutions: {
+          ...(result[targetIndex].permissionApprovalResolutions ?? {}),
+          ...(msg.permissionApprovalResolutions ?? {}),
+        },
+        permissionApprovalLogs: [
+          ...(result[targetIndex].permissionApprovalLogs ?? []),
+          ...(msg.permissionApprovalLogs ?? []),
+        ],
+      }
+      continue
+    }
+
+    const standaloneApproval: Message = {
+      ...msg,
+      role: 'assistant',
+      content: '',
+    }
+    const insertIndex = result.findIndex(item => item.timestamp > msg.timestamp)
+    if (insertIndex === -1) {
+      result.push(standaloneApproval)
+    } else {
+      result.splice(insertIndex, 0, standaloneApproval)
+    }
   }
 
   return result
@@ -140,7 +200,7 @@ function highlight(text: string): string {
           @resume="(m: Message) => emit('resume', m)"
           @restart="(m: Message) => emit('restart', m)"
           @copy="(c: string) => emit('copy', c)"
-          @permission-approval-resolve="(requestId: string, r: 'approved' | 'rejected' | 'expired') => emit('permission-approval-resolve', requestId, r)"
+          @permission-approval-resolve="(requestId: string, r: 'approved' | 'rejected' | 'expired', subjectType?: string) => emit('permission-approval-resolve', requestId, r, subjectType)"
         />
       </MotionDiv>
     </template>
@@ -160,7 +220,7 @@ function highlight(text: string): string {
         :streaming-a2ui-components="streamingA2uiComponents"
         :streaming-permission-approvals="streamingPermissionApprovals"
         :streaming-permission-approval-resolutions="streamingPermissionApprovalResolutions"
-        @permission-approval-resolve="(requestId: string, r: 'approved' | 'rejected' | 'expired') => emit('permission-approval-resolve', requestId, r)"
+        @permission-approval-resolve="(requestId: string, r: 'approved' | 'rejected' | 'expired', subjectType?: string) => emit('permission-approval-resolve', requestId, r, subjectType)"
       />
     </MotionDiv>
   </div>

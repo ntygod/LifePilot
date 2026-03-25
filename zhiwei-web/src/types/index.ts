@@ -101,6 +101,8 @@ export interface Message {
   permissionApprovals?: Record<string, PermissionApprovalRequest>
   /** 权限审批决议 */
   permissionApprovalResolutions?: Record<string, 'approved' | 'rejected' | 'expired'>
+  /** 历史权限审批记录 */
+  permissionApprovalLogs?: PermissionApprovalLog[]
 }
 
 /** A2UI 组件 */
@@ -350,6 +352,18 @@ export interface PermissionApprovalRequest {
   availableSubjectTypes: string[]
   recommendedSubjectType: string
   resourceScope?: Record<string, unknown>
+  timestamp: string
+}
+
+/** 权限审批记录 */
+export interface PermissionApprovalLog {
+  requestId: string
+  toolId: string
+  toolName: string
+  actionType: string
+  resolution: 'approved' | 'rejected' | 'expired'
+  subjectType?: string | null
+  reason?: string | null
   timestamp: string
 }
 

@@ -61,6 +61,34 @@ describe('mapBackendMessage', () => {
     expect(message.a2uiComponents?.[0]?.id).toBe('card-1')
     expect(message.traceId).toBe('trace-1')
   })
+
+  it('maps persisted permission approval into compact history logs', () => {
+    const message = mapBackendMessage({
+      id: 'm-approval-1',
+      turnId: 'turn-1',
+      role: 'permission-approval',
+      content: JSON.stringify({
+        requestId: 'req-1',
+        toolId: 'builtin.shell.exec',
+        toolName: '执行 Shell 命令',
+        actionType: 'EXECUTE_SHELL',
+        riskLevel: 'HIGH',
+        approved: true,
+        subjectType: 'SESSION',
+      }),
+      timestamp: '2026-03-25T13:00:00Z',
+    })
+
+    expect(message.role).toBe('permission-approval')
+    expect(message.permissionApprovals).toBeUndefined()
+    expect(message.permissionApprovalLogs).toHaveLength(1)
+    expect(message.permissionApprovalLogs?.[0]).toMatchObject({
+      requestId: 'req-1',
+      resolution: 'approved',
+      subjectType: 'SESSION',
+      actionType: 'EXECUTE_SHELL',
+    })
+  })
 })
 
 describe('useA2uiSignal', () => {
