@@ -28,6 +28,12 @@ public record DocumentChunk(
         Map<String, String> metadata
 ) {
 
+    public DocumentChunk {
+        contextPrefix = contextPrefix != null ? contextPrefix : Optional.empty();
+        headingHierarchy = headingHierarchy != null ? List.copyOf(headingHierarchy) : List.of();
+        metadata = metadata != null ? Map.copyOf(metadata) : Map.of();
+    }
+
     /**
      * 生成用于 Embedding 的文本。
      *

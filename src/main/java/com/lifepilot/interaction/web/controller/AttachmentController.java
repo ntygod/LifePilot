@@ -2,6 +2,7 @@ package com.lifepilot.interaction.web.controller;
 
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.repository.AttachmentRepository.AttachmentRecord;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.ByteArrayResource;
@@ -28,6 +29,7 @@ import java.nio.file.Paths;
  */
 @RestController
 @RequestMapping("/api/attachments")
+@ConditionalOnProperty(name = "lifepilot.gateway.channels.web.enabled", havingValue = "true")
 public class AttachmentController {
 
     private static final Logger log = LoggerFactory.getLogger(AttachmentController.class);
@@ -75,4 +77,3 @@ public class AttachmentController {
         }
     }
 }
-

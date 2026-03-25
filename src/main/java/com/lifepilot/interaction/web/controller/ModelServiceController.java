@@ -15,6 +15,7 @@ import com.lifepilot.modelservice.repository.ModelServiceRepository;
 import com.lifepilot.modelservice.repository.RerankSettingsRepository;
 import com.lifepilot.modelservice.service.ModelServiceRegistrationService;
 import com.lifepilot.llm.config.ProviderType;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -40,6 +41,7 @@ import java.util.stream.Collectors;
  */
 @RestController
 @RequestMapping("/api/model-services")
+@ConditionalOnProperty(name = "lifepilot.gateway.channels.web.enabled", havingValue = "true")
 public class ModelServiceController {
 
     private static final Logger log = LoggerFactory.getLogger(ModelServiceController.class);

@@ -4,6 +4,7 @@ import com.lifepilot.interaction.web.model.NotificationSettingDto;
 import com.lifepilot.interaction.web.model.UpdateNotificationSettingRequest;
 import com.lifepilot.notification.NotificationRepository;
 import com.lifepilot.notification.NotificationSettingRecord;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
@@ -21,6 +22,7 @@ import java.util.UUID;
  */
 @RestController
 @RequestMapping("/api/notification-settings")
+@ConditionalOnProperty(name = "lifepilot.gateway.channels.web.enabled", havingValue = "true")
 public class NotificationSettingsController {
 
     private static final Logger log = LoggerFactory.getLogger(NotificationSettingsController.class);

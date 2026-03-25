@@ -10,8 +10,6 @@ import com.lifepilot.modelservice.model.ModelServiceKind;
 import com.lifepilot.modelservice.registry.ModelServiceRegistry;
 import com.lifepilot.modelservice.repository.EmbeddingSettingsRepository;
 import org.springframework.lang.Nullable;
-import org.springframework.stereotype.Component;
-
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -22,7 +20,6 @@ import java.util.List;
  * @author zsg
  * @since 2026-03-24
  */
-@Component
 public class EmbeddingRouter {
 
     private final ModelServiceRegistry registry;

@@ -7,6 +7,7 @@ import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.mcp.registry.McpServerRegistry;
 import com.lifepilot.mcp.registry.McpServerStateChangedEvent;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
@@ -29,6 +30,7 @@ import java.util.UUID;
  */
 @RestController
 @RequestMapping("/api/mcp/servers")
+@ConditionalOnProperty(name = "lifepilot.gateway.channels.web.enabled", havingValue = "true")
 public class McpStatusSseController {
 
     private static final Logger log = LoggerFactory.getLogger(McpStatusSseController.class);

@@ -3,8 +3,6 @@ package com.lifepilot.rerank.client;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.llm.config.ProviderType;
 import com.lifepilot.modelservice.model.ModelServiceEntity;
-import org.springframework.stereotype.Component;
-
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -13,7 +11,6 @@ import java.util.concurrent.ConcurrentHashMap;
  * @author zsg
  * @since 2026-03-24
  */
-@Component
 public class RerankClientFactory {
 
     private final ObjectMapper objectMapper;

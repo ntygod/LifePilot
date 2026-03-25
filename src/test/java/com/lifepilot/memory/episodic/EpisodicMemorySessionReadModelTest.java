@@ -104,21 +104,9 @@ class EpisodicMemorySessionReadModelTest {
                 CREATE TRIGGER trg_session_transcript_entries_fts_ad
                 AFTER DELETE ON session_transcript_entries
                 BEGIN
-                    INSERT INTO session_transcript_entries_fts(
-                        session_transcript_entries_fts,
-                        rowid,
-                        entry_id,
-                        session_id,
-                        role,
-                        content
-                    )
-                    SELECT 'delete',
-                           old.rowid,
-                           old.id,
-                           old.session_id,
-                           COALESCE(old.role, ''),
-                           json_extract(old.payload_json, '$.content')
-                    WHERE old.entry_type IN ('user_message', 'assistant_message')
+                    DELETE FROM session_transcript_entries_fts
+                    WHERE rowid = old.rowid
+                      AND old.entry_type IN ('user_message', 'assistant_message')
                       AND old.visible_to_user = 1
                       AND trim(COALESCE(json_extract(old.payload_json, '$.content'), '')) <> '';
                 END
@@ -127,21 +115,9 @@ class EpisodicMemorySessionReadModelTest {
                 CREATE TRIGGER trg_session_transcript_entries_fts_au
                 AFTER UPDATE ON session_transcript_entries
                 BEGIN
-                    INSERT INTO session_transcript_entries_fts(
-                        session_transcript_entries_fts,
-                        rowid,
-                        entry_id,
-                        session_id,
-                        role,
-                        content
-                    )
-                    SELECT 'delete',
-                           old.rowid,
-                           old.id,
-                           old.session_id,
-                           COALESCE(old.role, ''),
-                           json_extract(old.payload_json, '$.content')
-                    WHERE old.entry_type IN ('user_message', 'assistant_message')
+                    DELETE FROM session_transcript_entries_fts
+                    WHERE rowid = old.rowid
+                      AND old.entry_type IN ('user_message', 'assistant_message')
                       AND old.visible_to_user = 1
                       AND trim(COALESCE(json_extract(old.payload_json, '$.content'), '')) <> '';
 

@@ -6,6 +6,7 @@ import com.lifepilot.interaction.channel.dingtalk.DingtalkChannelAdapter;
 import com.lifepilot.interaction.channel.feishu.FeishuChannelAdapter;
 import com.lifepilot.interaction.channel.wecom.WecomChannelAdapter;
 import com.lifepilot.interaction.config.ChannelConfigProvider;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -28,6 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/webhook")
+@ConditionalOnProperty(name = "lifepilot.gateway.enabled", havingValue = "true", matchIfMissing = true)
 public class WebhookController {
 
     private static final Logger log = LoggerFactory.getLogger(WebhookController.class);

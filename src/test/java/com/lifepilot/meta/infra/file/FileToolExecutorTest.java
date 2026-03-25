@@ -123,7 +123,7 @@ class FileToolExecutorTest {
         @Test
         void execute_大文件被截断() throws IOException {
             // 设置极小的 maxReadSize
-            properties.getInfra().getFile().setMaxReadSize(10);
+            properties.getInfra().getFile().setDefaultMaxChars(10);
             executor = new FileReadToolExecutor(properties);
 
             Path file = tempDir.resolve("large.txt");

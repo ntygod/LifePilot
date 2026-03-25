@@ -70,6 +70,12 @@ lifepilot:
       max-age: 7d
       # 检查点清理定时任务间隔
       cleanup-interval-ms: 3600000
+    execution-retry:
+      enabled: true
+      max-attempts: 2
+      initial-delay-ms: 500
+      multiplier: 2.0
+      max-delay-ms: 5000
     session:
       timeout-minutes: 30
       max-recent-turns: 10
@@ -499,7 +505,7 @@ lifepilot:
         app-secret: ${DINGTALK_APP_SECRET:}
         robot-code: ${DINGTALK_ROBOT_CODE:}
       feishu:
-        enabled: ${FEISHU_ENABLED:true}
+        enabled: ${FEISHU_ENABLED:false}
         app-id: ${FEISHU_APP_ID:}
         app-secret: ${FEISHU_APP_SECRET:}
         verification-token: ${FEISHU_VERIFICATION_TOKEN:}

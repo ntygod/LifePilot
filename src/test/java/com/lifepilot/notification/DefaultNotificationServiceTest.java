@@ -2,6 +2,7 @@ package com.lifepilot.notification;
 
 import com.lifepilot.interaction.channel.ChannelAdapter;
 import com.lifepilot.interaction.channel.converter.MessageConverter;
+import com.lifepilot.interaction.config.ChannelConfigProvider;
 import com.lifepilot.interaction.model.ChannelType;
 import com.lifepilot.interaction.model.GatewayResponse;
 import com.lifepilot.interaction.model.ResponseContent;
@@ -38,6 +39,7 @@ class DefaultNotificationServiceTest {
     @Mock private ChannelAdapter feishuAdapter;
     @Mock private MessageConverter webConverter;
     @Mock private MessageConverter feishuConverter;
+    @Mock private ChannelConfigProvider channelConfigProvider;
 
     private NotificationProperties properties;
     private DefaultNotificationService service;
@@ -53,13 +55,26 @@ class DefaultNotificationServiceTest {
         lenient().when(feishuConverter.channelType()).thenReturn(ChannelType.FEISHU);
         lenient().when(webConverter.convert(any())).thenReturn("converted-web");
         lenient().when(feishuConverter.convert(any())).thenReturn("converted-feishu");
+        lenient().when(channelConfigProvider.getFeishuConfig())
+                .thenReturn(new com.lifepilot.interaction.config.GatewayProperties.ChannelsProperties.FeishuChannelProperties(
+                        false, null, null, null, null, 10_000
+                ));
+        lenient().when(channelConfigProvider.getDingtalkConfig())
+                .thenReturn(new com.lifepilot.interaction.config.GatewayProperties.ChannelsProperties.DingtalkChannelProperties(
+                        false, null, null, null
+                ));
+        lenient().when(channelConfigProvider.getWecomConfig())
+                .thenReturn(new com.lifepilot.interaction.config.GatewayProperties.ChannelsProperties.WecomChannelProperties(
+                        false, null, null, null, null, null
+                ));
 
         service = new DefaultNotificationService(
                 List.of(webAdapter, feishuAdapter),
                 List.of(webConverter, feishuConverter),
                 notificationRepository,
                 passiveNotificationQueue,
-                properties
+                properties,
+                channelConfigProvider
         );
     }
 
@@ -69,7 +84,7 @@ class DefaultNotificationServiceTest {
     class Urgency路由 {
 
         @Test
-        void urgency为HIGH时_通过ChannelAdapter广播() {
+        void urgency为HIGH时_通过已启用渠道发送() {
             var request = new NotificationRequest("user-1",
                     new ResponseContent.TextContent("紧急通知"), Urgency.HIGH,
                     null, null, Map.of());
@@ -78,12 +93,12 @@ class DefaultNotificationServiceTest {
 
             assertFalse(ids.isEmpty());
             verify(webAdapter).sendResponse(eq("user-1"), any(GatewayResponse.class));
-            verify(feishuAdapter).sendResponse(eq("user-1"), any(GatewayResponse.class));
+            verify(feishuAdapter, never()).sendResponse(eq("user-1"), any(GatewayResponse.class));
             verify(passiveNotificationQueue, never()).enqueue(any());
         }
 
         @Test
-        void urgency为MEDIUM时_通过ChannelAdapter广播() {
+        void urgency为MEDIUM时_通过已启用渠道发送() {
             var request = new NotificationRequest("user-1",
                     new ResponseContent.TextContent("中等通知"), Urgency.MEDIUM,
                     null, null, Map.of());
@@ -92,7 +107,7 @@ class DefaultNotificationServiceTest {
 
             assertFalse(ids.isEmpty());
             verify(webAdapter).sendResponse(eq("user-1"), any(GatewayResponse.class));
-            verify(feishuAdapter).sendResponse(eq("user-1"), any(GatewayResponse.class));
+            verify(feishuAdapter, never()).sendResponse(eq("user-1"), any(GatewayResponse.class));
             verify(passiveNotificationQueue, never()).enqueue(any());
         }
 
@@ -114,18 +129,18 @@ class DefaultNotificationServiceTest {
     // ── 广播逻辑 ──────────────────────────────────────────
 
     @Nested
-    class 广播逻辑 {
+    class 路由逻辑 {
 
         @Test
-        void 遍历所有ChannelAdapter广播() {
+        void 指定渠道时只发送到该渠道() {
             var request = new NotificationRequest("user-1",
-                    new ResponseContent.TextContent("广播测试"), Urgency.HIGH,
-                    null, null, Map.of());
+                    new ResponseContent.TextContent("定向测试"), Urgency.HIGH,
+                    "WEB", null, Map.of());
 
             service.send(request);
 
             verify(webAdapter, times(1)).sendResponse(eq("user-1"), any());
-            verify(feishuAdapter, times(1)).sendResponse(eq("user-1"), any());
+            verify(feishuAdapter, never()).sendResponse(eq("user-1"), any());
         }
     }
 
@@ -180,6 +195,10 @@ class DefaultNotificationServiceTest {
         void 一个渠道失败_其他渠道继续发送() {
             doThrow(new RuntimeException("飞书发送失败"))
                     .when(feishuAdapter).sendResponse(any(), any());
+            when(channelConfigProvider.getFeishuConfig())
+                    .thenReturn(new com.lifepilot.interaction.config.GatewayProperties.ChannelsProperties.FeishuChannelProperties(
+                            true, "app", "secret", null, null, 10_000
+                    ));
 
             var request = new NotificationRequest("user-1",
                     new ResponseContent.TextContent("部分失败"), Urgency.HIGH,

@@ -13,6 +13,7 @@ import com.lifepilot.skill.markdown.MarkdownSkillParser;
 import com.lifepilot.skill.markdown.MarkdownSkillSerializer;
 import com.lifepilot.tool.ToolContract;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -41,6 +42,7 @@ import java.util.Optional;
  */
 @RestController
 @RequestMapping("/api")
+@ConditionalOnProperty(name = "lifepilot.gateway.channels.web.enabled", havingValue = "true")
 public class SkillController {
 
     private static final Logger log = LoggerFactory.getLogger(SkillController.class);
