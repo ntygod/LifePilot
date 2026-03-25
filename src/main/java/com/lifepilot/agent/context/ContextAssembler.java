@@ -15,6 +15,7 @@ import com.lifepilot.notification.PassiveNotificationQueue;
 import com.lifepilot.observability.redactor.DataRedactor;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.skill.registry.SkillRegistry;
+import lombok.Setter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -26,12 +27,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -108,17 +104,12 @@ public class ContextAssembler {
     }
     /**
      * 运行时传入的模型上下文窗口，0 表示使用配置值和 Provider 默认值。
-     */
-    private volatile int modelContextWindow = 0;
-
-    /**
-     * 设置运行时传入的模型上下文窗口。
+     * -- SETTER --
+     *  设置运行时传入的模型上下文窗口。
      *
-     * @param windowSize 模型上下文窗口（Token 数）
      */
-    public void setModelContextWindow(int windowSize) {
-        this.modelContextWindow = windowSize;
-    }
+    @Setter
+    private volatile int modelContextWindow = 0;
 
     public AssembledContext assemble(ReactAgentState state) {
         Instant startTime = Instant.now();
@@ -333,15 +324,17 @@ public class ContextAssembler {
     String buildAugmentedSystemPrompt(ReactAgentState state) {
         String baseSystemPrompt = safeReactSystemPrompt(state);
         String toolGuide = safeRenderToolGuide();
+        String executionGuard = buildExecutionGuardPrompt(state);
         return joinNonBlankSections(
                 baseSystemPrompt,
-                toolGuide
+                toolGuide,
+                executionGuard
         );
     }
 
     String buildUserPrompt(ReactAgentState state) {
         ZonedDateTime now = ZonedDateTime.now();
-        return promptRegistry.render("agent/react-user-prompt", Map.of(
+        String userPrompt = promptRegistry.render("agent/react-user-prompt", Map.of(
                 "currentDateTime", now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
                 "timezone", now.getZone().getId(),
                 "osName", System.getProperty("os.name", "unknown"),
@@ -349,6 +342,16 @@ public class ContextAssembler {
                 "channel", state.channel() != null ? state.channel() : "unknown",
                 "userGoal", state.goal() != null ? state.goal() : ""
         ));
+        if (state.goal() != null && state.goal().contains("<resume_user_input>")) {
+            userPrompt = userPrompt + """
+
+                    <resume_instruction>
+                - 当前请求包含 <resume_user_input>，表示这是同一轮任务的补充信息，不是新的独立任务
+                - 继续沿用已有进度处理，并优先利用这段补充信息解决挂起点
+                </resume_instruction>
+                """;
+        }
+        return userPrompt;
     }
 
 
@@ -430,6 +433,34 @@ public class ContextAssembler {
                     - 一次性分析或执行任务时，直接执行，不创建长期任务
                     """.trim();
         };
+    }
+
+    private String buildExecutionGuardPrompt(ReactAgentState state) {
+        if (isTaskMode(state)) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder("""
+                <execution_completion_contract>
+                - 你需要根据当前请求自行判断这是普通问答，还是需要持续执行的多步任务
+                - 普通问答、解释、分析、总结类请求：可以直接正常回答并结束，不需要任何特殊前缀
+                - 多步执行类请求：如果还有必要步骤未完成，不要用阶段性总结、计划说明或“接下来继续执行”之类的话结束本轮，应该继续调用工具
+                - 如果只是缺少用户补充的信息、确认结果或外部回传结果，不要把这种可恢复阻塞包装成已经失败或已经完成
+                - 在 Web 对话中，需要用户补充信息时，直接把整段面向用户的追问包在 <await_user_input>...</await_user_input> 中
+                - <await_user_input> 标签内的文本会直接显示给用户，所以要明确说明缺什么、为什么缺，以及补充后会继续做什么
+                - 如果这轮没有调用工具、但你已经能够给出终态文本，请在自然语言正文后追加一个隐藏控制标签：
+                  1. `<completion_control>done</completion_control>` 表示任务已完成
+                  2. `<completion_control>blocked</completion_control>` 表示任务明确阻塞
+                  3. `<completion_control>continue</completion_control>` 表示这段文字只是阶段说明，不是终态
+                - `completion_control` 只给系统判断使用，不会展示给用户；用户看到的仍应是自然语言正文
+                - 如果用户明确要求“就到这里”“输出一个 OK 即可”“这样结束吧”，且当前目标已经满足，可以直接自然收尾，不必为了格式再解释系统状态
+                - 不要再额外输出“我先挂起”“等待恢复”之类的系统说明，直接向用户追问即可
+                - “创建了目录”“了解了流程”“下一步将继续执行”“现在让我继续处理”都不算完成
+                """);
+        if (state.earlyStopRejectCount() > 0) {
+            sb.append("- 系统已经拒绝过你的一次疑似提前结束；如果这轮要结束，请补上正确的 `<completion_control>` 标签；如果任务还没做完，就继续调用工具\n");
+        }
+        sb.append("</execution_completion_contract>");
+        return sb.toString();
     }
 
     private ContextEngine.ContextSnapshot safeLoadContextSnapshot(ReactAgentState state, int totalContextTokens) {

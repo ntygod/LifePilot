@@ -25,13 +25,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 class JdbcTranscriptStore_集成测试 {
 
     private JdbcTranscriptStore transcriptStore;
+    private JdbcTemplate jdbcTemplate;
     private SessionStoreRepository sessionStoreRepository;
     private SessionTranscriptRepository sessionTranscriptRepository;
 
     @BeforeEach
     void setUp() {
         var dataSource = new SingleConnectionDataSource("jdbc:sqlite::memory:", true);
-        var jdbcTemplate = new JdbcTemplate(dataSource);
+        jdbcTemplate = new JdbcTemplate(dataSource);
         jdbcTemplate.execute("PRAGMA foreign_keys = ON");
 
         jdbcTemplate.execute("""
@@ -79,6 +80,62 @@ class JdbcTranscriptStore_集成测试 {
                     created_at TEXT NOT NULL,
                     FOREIGN KEY (session_id) REFERENCES session_store(session_id) ON DELETE CASCADE
                 )
+                """);
+        jdbcTemplate.execute("""
+                CREATE VIRTUAL TABLE session_transcript_entries_fts USING fts5(
+                    entry_id UNINDEXED,
+                    session_id UNINDEXED,
+                    role UNINDEXED,
+                    content,
+                    tokenize='unicode61 remove_diacritics 2'
+                )
+                """);
+        jdbcTemplate.execute("""
+                CREATE TRIGGER trg_session_transcript_entries_fts_ai
+                AFTER INSERT ON session_transcript_entries
+                BEGIN
+                    INSERT INTO session_transcript_entries_fts(rowid, entry_id, session_id, role, content)
+                    SELECT new.rowid,
+                           new.id,
+                           new.session_id,
+                           COALESCE(new.role, ''),
+                           json_extract(new.payload_json, '$.content')
+                    WHERE new.entry_type IN ('user_message', 'assistant_message')
+                      AND new.visible_to_user = 1
+                      AND trim(COALESCE(json_extract(new.payload_json, '$.content'), '')) <> '';
+                END
+                """);
+        jdbcTemplate.execute("""
+                CREATE TRIGGER trg_session_transcript_entries_fts_ad
+                AFTER DELETE ON session_transcript_entries
+                BEGIN
+                    DELETE FROM session_transcript_entries_fts
+                    WHERE rowid = old.rowid
+                      AND old.entry_type IN ('user_message', 'assistant_message')
+                      AND old.visible_to_user = 1
+                      AND trim(COALESCE(json_extract(old.payload_json, '$.content'), '')) <> '';
+                END
+                """);
+        jdbcTemplate.execute("""
+                CREATE TRIGGER trg_session_transcript_entries_fts_au
+                AFTER UPDATE ON session_transcript_entries
+                BEGIN
+                    DELETE FROM session_transcript_entries_fts
+                    WHERE rowid = old.rowid
+                      AND old.entry_type IN ('user_message', 'assistant_message')
+                      AND old.visible_to_user = 1
+                      AND trim(COALESCE(json_extract(old.payload_json, '$.content'), '')) <> '';
+
+                    INSERT INTO session_transcript_entries_fts(rowid, entry_id, session_id, role, content)
+                    SELECT new.rowid,
+                           new.id,
+                           new.session_id,
+                           COALESCE(new.role, ''),
+                           json_extract(new.payload_json, '$.content')
+                    WHERE new.entry_type IN ('user_message', 'assistant_message')
+                      AND new.visible_to_user = 1
+                      AND trim(COALESCE(json_extract(new.payload_json, '$.content'), '')) <> '';
+                END
                 """);
 
         var objectMapper = new ObjectMapper();
@@ -164,6 +221,35 @@ class JdbcTranscriptStore_集成测试 {
         assertThat(transcriptRows).extracting(SessionTranscriptRepository.SessionTranscriptEntryRow::entryType)
                 .containsExactly("tool_call", "tool_result");
         assertThat(transcriptRows.get(1).visibleToUser()).isFalse();
+    }
+
+    @Test
+    void deleteBySessionId_会同步移除TranscriptFts索引() {
+        transcriptStore.appendUserMessage(
+                "web:delete-session",
+                "记录一条会被删除的用户消息",
+                "trace-delete",
+                Instant.parse("2026-03-23T12:10:00Z")
+        );
+        transcriptStore.appendAssistantMessage(
+                "web:delete-session",
+                "这条助手消息也应一起清理",
+                null,
+                "trace-delete",
+                null,
+                null,
+                CompletionMode.NORMAL,
+                null,
+                Instant.parse("2026-03-23T12:10:01Z")
+        );
+
+        assertThat(sessionTranscriptRepository.deleteBySessionId("web:delete-session")).isEqualTo(2);
+        Integer ftsCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM session_transcript_entries_fts WHERE session_id = ?",
+                Integer.class,
+                "web:delete-session"
+        );
+        assertThat(ftsCount).isZero();
     }
 
     private static final class NoopMemoryEventBus implements MemoryEventBus {

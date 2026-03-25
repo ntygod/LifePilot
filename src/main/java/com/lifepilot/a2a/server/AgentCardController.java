@@ -1,6 +1,7 @@
 package com.lifepilot.a2a.server;
 
 import com.lifepilot.a2a.model.A2aAgentCard;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
  * @since 2026-02-28
  */
 @RestController
+@ConditionalOnProperty(prefix = "lifepilot.a2a.server", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class AgentCardController {
 
     private final AgentCardGenerator agentCardGenerator;

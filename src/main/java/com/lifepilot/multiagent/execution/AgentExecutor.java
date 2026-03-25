@@ -69,6 +69,7 @@ public class AgentExecutor {
                     request.message(),
                     request.sessionId(),
                     request.channel(),
+                    request.userId(),
                     request.systemPrompt(),
                     request.budget(),
                     request.parentTraceId(),

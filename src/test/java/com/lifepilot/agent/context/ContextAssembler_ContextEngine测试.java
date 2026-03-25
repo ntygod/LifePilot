@@ -36,7 +36,7 @@ import static org.mockito.Mockito.when;
 class ContextAssembler_ContextEngine测试 {
 
     @Test
-    void assemble_会形成带运行时上下文和当前请求边界的消息结构() {
+    void assemble_应保留运行时上下文与当前请求边界且历史消息不再包含重复包装标签() {
         var config = buildConfig();
         var promptRegistry = mock(PromptRegistry.class);
         var contextEngine = mock(ContextEngine.class);
@@ -72,7 +72,6 @@ class ContextAssembler_ContextEngine测试 {
         when(contextEngine.load(any(ReactAgentState.class), anyInt())).thenReturn(new ContextEngine.ContextSnapshot(
                 List.of(
                         new AssistantMessage("<history_summary>\n之前已确认需求范围与约束。\n</history_summary>"),
-                        new AssistantMessage("<history_transcript>\n以下消息为历史 transcript，按时间顺序排列。\n</history_transcript>"),
                         new UserMessage("上一轮用户消息"),
                         AssistantMessage.builder()
                                 .content("")
@@ -107,7 +106,7 @@ class ContextAssembler_ContextEngine测试 {
                         Instant.parse("2026-03-23T12:00:04Z"),
                         Instant.parse("2026-03-23T12:00:04Z")
                 )),
-                "\n最近产物\n- [report] 方案摘要: 这是最新摘要\n",
+                "\n最近产物:\n- [report] 方案摘要: 这是最新摘要\n",
                 true,
                 false,
                 42,
@@ -153,12 +152,14 @@ class ContextAssembler_ContextEngine测试 {
         assertThat(context.contextMessages().getLast().getText())
                 .contains("<artifact_context>")
                 .contains("方案摘要");
-        assertThat(context.historyMessages()).hasSize(6);
+        assertThat(context.historyMessages()).hasSize(5);
         assertThat(context.historyMessages().get(0).getText()).contains("<history_summary>");
-        assertThat(context.historyMessages().get(1).getText()).contains("<history_transcript>");
-        assertThat(context.historyMessages().get(2)).isInstanceOf(UserMessage.class);
-        assertThat(context.historyMessages().get(3)).isInstanceOf(AssistantMessage.class);
-        assertThat(context.historyMessages().get(4)).isInstanceOf(ToolResponseMessage.class);
+        assertThat(context.historyMessages().get(1)).isInstanceOf(UserMessage.class);
+        assertThat(context.historyMessages().get(2)).isInstanceOf(AssistantMessage.class);
+        assertThat(context.historyMessages().get(3)).isInstanceOf(ToolResponseMessage.class);
+        assertThat(context.historyMessages().get(4)).isInstanceOf(AssistantMessage.class);
+        assertThat(context.historyMessages()).allSatisfy(message ->
+                assertThat(message.getText()).doesNotContain("<history_transcript>"));
         assertThat(context.tokenBudget().historyUsed()).isEqualTo(42);
         assertThat(context.tokenBudget().toolResultUsed()).isEqualTo(15);
         assertThat(context.tokenBudget().memoryUsed()).isPositive();

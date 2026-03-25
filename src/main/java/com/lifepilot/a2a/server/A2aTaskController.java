@@ -3,6 +3,7 @@ package com.lifepilot.a2a.server;
 import com.lifepilot.a2a.model.A2aTask;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -23,6 +24,7 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/api/a2a/tasks")
+@ConditionalOnProperty(prefix = "lifepilot.a2a.server", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class A2aTaskController {
 
     private static final Logger log = LoggerFactory.getLogger(A2aTaskController.class);

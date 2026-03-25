@@ -3,10 +3,10 @@ package com.lifepilot.agent.model;
 import java.time.Instant;
 
 /**
- * 挂起原因 sealed interface — 定义 5 种挂起场景。
+ * 挂起原因 sealed interface，定义可恢复的挂起场景。
  *
- * <p>sealed interface 保证 switch 穷举，新增场景编译器强制处理。
- * 每个 permit 只携带恢复时必需的最小上下文，所有字段不可变。</p>
+ * <p>sealed interface 保证 switch 穷尽，新场景加入后编译器会强制补齐处理逻辑。
+ * 每个子类型只携带恢复时必需的最小上下文。</p>
  *
  * @author zsg
  * @since 2026-03-17
@@ -30,11 +30,11 @@ public sealed interface SuspendReason permits
     record RemoteDelegation(String remoteTaskId, String remoteAgentUrl, String delegatedGoal)
             implements SuspendReason {}
 
-    /** 定时恢复 — Agent 主动设置延迟。 */
+    /** 定时唤醒，Agent 主动设置延迟恢复。 */
     record ScheduledWakeup(Instant wakeupAt, String reason)
             implements SuspendReason {}
 
-    /** 等待外部数据就绪（爬虫/ETL/文件上传等）。 */
+    /** 等待外部数据就绪，如爬虫、ETL 或文件上传。 */
     record ExternalDataWait(String dataSourceId, String description)
             implements SuspendReason {}
 }

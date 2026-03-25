@@ -5,12 +5,14 @@ import org.springframework.lang.Nullable;
 import java.time.Instant;
 
 /**
- * 恢复载荷 sealed interface — 与 SuspendReason 一一对应。
+ * 恢复载荷 sealed interface，与 SuspendReason 一一对应。
  *
  * <p>恢复时通过类型匹配校验配对正确性：
- * WorkflowWait ↔ WorkflowResult, UserConfirmation ↔ UserDecision,
- * RemoteDelegation ↔ RemoteResult, ScheduledWakeup ↔ WakeupSignal,
- * ExternalDataWait ↔ DataReady。</p>
+ * WorkflowWait -> WorkflowResult，
+ * UserConfirmation -> UserDecision，
+ * RemoteDelegation -> RemoteResult，
+ * ScheduledWakeup -> WakeupSignal，
+ * ExternalDataWait -> DataReady。</p>
  *
  * @author zsg
  * @since 2026-03-17

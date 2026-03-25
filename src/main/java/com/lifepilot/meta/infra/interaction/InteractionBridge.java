@@ -1,5 +1,6 @@
 package com.lifepilot.meta.infra.interaction;
 
+import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.meta.config.MetaProperties;
 import jakarta.annotation.Nullable;
@@ -14,16 +15,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 /**
- * 交互桥接器 — 管理 Agent 与用户之间的交互请求/响应生命周期。
- *
- * <p>核心机制：</p>
- * <ol>
- *   <li>工具 Executor 调用 {@link #request(InteractionRequest)} 发起交互请求</li>
- *   <li>根据可用 Channel 推送交互请求（SSE / CLI）</li>
- *   <li>通过 {@link CompletableFuture#get(long, TimeUnit)} 阻塞等待用户响应</li>
- *   <li>外部调用 {@link #resolve(String, InteractionResponse)} 完成 Future</li>
- *   <li>超时未响应时返回超时响应并清理</li>
- * </ol>
+ * 交互桥接器，管理 Agent 与用户之间的交互请求和响应。
  *
  * @author zsg
  * @since 2026-03-08
@@ -49,15 +41,6 @@ public class InteractionBridge {
         this.cliInteractionHandler = cliInteractionHandler;
     }
 
-    /**
-     * 发起交互请求并阻塞等待用户响应。
-     *
-     * <p>生成 interactionId，创建 CompletableFuture，通过可用 Channel 推送请求，
-     * 然后阻塞等待用户响应或超时。</p>
-     *
-     * @param request 交互请求（interactionId 字段将被忽略，由本方法生成）
-     * @return 用户响应或超时响应
-     */
     public InteractionResponse request(InteractionRequest request) {
         if (sseSessionManager == null && cliInteractionHandler == null) {
             log.error("无可用交互通道: sseSessionManager 和 cliInteractionHandler 均为 null");
@@ -72,6 +55,7 @@ public class InteractionBridge {
                 interactionId,
                 request.type(),
                 request.sessionId(),
+                request.streamId(),
                 request.message(),
                 request.options()
         );
@@ -80,14 +64,11 @@ public class InteractionBridge {
         pendingRequests.put(interactionId, future);
 
         try {
-            // 通过可用 Channel 推送交互请求
             boolean pushed = pushToChannel(enrichedRequest);
             if (!pushed) {
-                // SSE 连接不存在或无可达 Channel，立即返回失败而不是傻等超时
                 return InteractionResponse.timeout(interactionId);
             }
 
-            // 阻塞等待用户响应
             int timeoutSeconds = properties.getInfra().getInteraction().getResponseTimeoutSeconds();
             return future.get(timeoutSeconds, TimeUnit.SECONDS);
         } catch (TimeoutException e) {
@@ -105,14 +86,6 @@ public class InteractionBridge {
         }
     }
 
-    /**
-     * 完成待处理的交互请求。
-     *
-     * <p>由外部调用（如 REST 信号回传端点）来完成 CompletableFuture。</p>
-     *
-     * @param interactionId 交互唯一标识
-     * @param response      用户响应
-     */
     public void resolve(String interactionId, InteractionResponse response) {
         var future = pendingRequests.remove(interactionId);
         if (future != null) {
@@ -123,11 +96,6 @@ public class InteractionBridge {
         }
     }
 
-    /**
-     * 推送通知（非阻塞）— 仅推送消息，不等待响应。
-     *
-     * @param request 通知请求（type 必须为 NOTIFY）
-     */
     public void notify(InteractionRequest request) {
         if (sseSessionManager == null && cliInteractionHandler == null) {
             log.warn("无可用交互通道，通知推送失败: message={}", request.message());
@@ -139,45 +107,64 @@ public class InteractionBridge {
                 interactionId,
                 InteractionType.NOTIFY,
                 request.sessionId(),
+                request.streamId(),
                 request.message(),
                 null
         );
 
         pushToChannel(enrichedRequest);
-        log.debug("通知已推送: interactionId={}, sessionId={}", interactionId, request.sessionId());
+        log.debug("通知已推送: interactionId={}, sessionId={}, streamId={}",
+                interactionId, request.sessionId(), request.streamId());
     }
 
-    /**
-     * 获取当前待处理请求数量（用于监控和测试）。
-     *
-     * @return 待处理请求数
-     */
     public int pendingCount() {
         return pendingRequests.size();
     }
 
-    /**
-     * 通过可用 Channel 推送交互请求。
-     *
-     * @param request 交互请求
-     * @return true 表示推送成功（Channel 可达），false 表示推送失败（无可达 Channel）
-     */
     private boolean pushToChannel(InteractionRequest request) {
-        // 优先使用 SSE Channel（Web）
         if (sseSessionManager != null) {
-            // 先检查目标 emitter 是否存在，避免推送到不存在的连接后傻等超时
-            if (sseSessionManager.getEmitter(request.sessionId()) == null) {
-                log.warn("SSE 连接不存在，交互请求无法送达: interactionId={}, sessionId={}",
-                        request.interactionId(), request.sessionId());
-                return false;
+            if (request.streamId() != null && !request.streamId().isBlank()) {
+                if (sseSessionManager.getEmitter(request.streamId()) == null) {
+                    log.warn("SSE 流不存在，尝试按会话兜底路由交互请求: interactionId={}, streamId={}, sessionId={}",
+                            request.interactionId(), request.streamId(), request.sessionId());
+                } else {
+                    sseSessionManager.sendEvent(request.streamId(), SseEventType.INTERACTION, request);
+                    log.debug("交互请求已通过 SSE 精确推送: interactionId={}, streamId={}, sessionId={}",
+                            request.interactionId(), request.streamId(), request.sessionId());
+                    return true;
+                }
             }
-            sseSessionManager.sendEvent(request.sessionId(), "interaction", request);
-            log.debug("交互请求已通过 SSE 推送: interactionId={}, sessionId={}",
-                    request.interactionId(), request.sessionId());
-            return true;
+
+            if (request.sessionId() != null && !request.sessionId().isBlank()) {
+                String mappedStreamId = sseSessionManager.findChatStreamId(request.sessionId());
+                if (mappedStreamId != null) {
+                    var routedRequest = new InteractionRequest(
+                            request.interactionId(),
+                            request.type(),
+                            request.sessionId(),
+                            mappedStreamId,
+                            request.message(),
+                            request.options()
+                    );
+                    sseSessionManager.sendEvent(mappedStreamId, SseEventType.INTERACTION, routedRequest);
+                    log.debug("交互请求已按会话兜底推送到活动流: interactionId={}, sessionId={}, streamId={}",
+                            request.interactionId(), request.sessionId(), mappedStreamId);
+                    return true;
+                }
+
+                if (sseSessionManager.getEmitter(request.sessionId()) != null) {
+                    sseSessionManager.sendEvent(request.sessionId(), SseEventType.INTERACTION, request);
+                    log.debug("交互请求已通过 SSE 会话推送: interactionId={}, sessionId={}",
+                            request.interactionId(), request.sessionId());
+                    return true;
+                }
+            }
+
+            log.warn("SSE 连接不存在，交互请求无法送达: interactionId={}, streamId={}, sessionId={}",
+                    request.interactionId(), request.streamId(), request.sessionId());
+            return false;
         }
 
-        // 降级到 CLI Channel
         if (cliInteractionHandler != null) {
             cliInteractionHandler.pushInteraction(request);
             log.debug("交互请求已通过 CLI 推送: interactionId={}", request.interactionId());

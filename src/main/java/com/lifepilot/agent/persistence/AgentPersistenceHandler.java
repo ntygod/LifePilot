@@ -7,7 +7,9 @@ import com.lifepilot.agent.media.MediaDataExtractor;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.model.SuspendReason;
 import com.lifepilot.conversation.transcript.TranscriptStore;
+import com.lifepilot.interaction.web.model.ChatTurnAction;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
+import com.lifepilot.interaction.web.service.ChatTurnService;
 import com.lifepilot.llm.multimodal.MediaContent;
 import com.lifepilot.memory.experience.ContrastiveLearner;
 import com.lifepilot.memory.experience.EffectivenessTracker;
@@ -26,6 +28,8 @@ import org.springframework.lang.Nullable;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Agent \u6301\u4e45\u5316\u5904\u7406\u5668\u3002
@@ -36,6 +40,10 @@ import java.util.Map;
  */
 public class AgentPersistenceHandler {
     private static final Logger log = LoggerFactory.getLogger(AgentPersistenceHandler.class);
+    private static final Pattern RESUME_INPUT_PATTERN = Pattern.compile(
+            "<resume_user_input>\\s*(.*?)\\s*</resume_user_input>",
+            Pattern.DOTALL
+    );
 
     @SuppressWarnings("unused")
     private final AgentConfigProperties config;
@@ -58,6 +66,8 @@ public class AgentPersistenceHandler {
     private final SubtaskReflector subtaskReflector;
     @Nullable
     private final CompactionEngine compactionEngine;
+    @Nullable
+    private final ChatTurnService chatTurnService;
 
     public AgentPersistenceHandler(
             AgentConfigProperties config,
@@ -70,7 +80,8 @@ public class AgentPersistenceHandler {
             @Nullable EffectivenessTracker effectivenessTracker,
             @Nullable ContrastiveLearner contrastiveLearner,
             @Nullable SubtaskReflector subtaskReflector,
-            @Nullable CompactionEngine compactionEngine) {
+            @Nullable CompactionEngine compactionEngine,
+            @Nullable ChatTurnService chatTurnService) {
         this.config = config;
         this.workspaceService = workspaceService;
         this.transcriptStore = transcriptStore;
@@ -82,6 +93,7 @@ public class AgentPersistenceHandler {
         this.contrastiveLearner = contrastiveLearner;
         this.subtaskReflector = subtaskReflector;
         this.compactionEngine = compactionEngine;
+        this.chatTurnService = chatTurnService;
     }
 
     public void saveWorkspaceForSuspend(ReactAgentState state) {
@@ -132,7 +144,7 @@ public class AgentPersistenceHandler {
             return;
         }
         try {
-            transcriptStore.appendUserMessage(state.sessionId(), state.goal(), state.traceId(), null);
+            transcriptStore.appendUserMessage(state.sessionId(), state.turnId(), state.goal(), state.traceId(), null);
         } catch (Exception e) {
             log.warn("\u5199\u5165\u7528\u6237\u6d88\u606f\u5931\u8d25: sessionId={}, error={}", state.sessionId(), e.getMessage());
         }
@@ -140,15 +152,66 @@ public class AgentPersistenceHandler {
 
     @Nullable
     public String persistUserMessageReturningId(ReactAgentState state) {
+        return persistUserMessageReturningId(state, ChatTurnAction.SEND);
+    }
+
+    @Nullable
+    public String persistUserMessageReturningId(ReactAgentState state, ChatTurnAction action) {
         if (state.goal() == null || state.goal().isBlank()) {
             return null;
         }
         try {
-            return transcriptStore.appendUserMessage(state.sessionId(), state.goal(), state.traceId(), null);
+            String resumeInput = action == ChatTurnAction.RESUME
+                    ? extractResumeUserInput(state.goal())
+                    : null;
+            if (resumeInput != null && !resumeInput.isBlank()) {
+                String entryId = transcriptStore.appendUserMessage(
+                        state.sessionId(),
+                        state.turnId(),
+                        resumeInput,
+                        state.traceId(),
+                        null
+                );
+                if (chatTurnService != null && state.turnId() != null && entryId != null) {
+                    chatTurnService.bindUserEntry(state.sessionId(), state.turnId(), entryId);
+                }
+                return entryId;
+            }
+            if (chatTurnService != null && state.turnId() != null) {
+                var existingTurn = chatTurnService.findBySessionIdAndTurnId(state.sessionId(), state.turnId());
+                if (existingTurn.isPresent() && existingTurn.get().userEntryId() != null
+                        && !existingTurn.get().userEntryId().isBlank()) {
+                    return existingTurn.get().userEntryId();
+                }
+            }
+            String entryId = transcriptStore.appendUserMessage(
+                    state.sessionId(),
+                    state.turnId(),
+                    state.goal(),
+                    state.traceId(),
+                    null
+            );
+            if (chatTurnService != null && state.turnId() != null && entryId != null) {
+                chatTurnService.bindUserEntry(state.sessionId(), state.turnId(), entryId);
+            }
+            return entryId;
         } catch (Exception e) {
             log.warn("\u5199\u5165\u7528\u6237\u6d88\u606f\u5931\u8d25: sessionId={}, error={}", state.sessionId(), e.getMessage());
             return null;
         }
+    }
+
+    @Nullable
+    private String extractResumeUserInput(@Nullable String goal) {
+        if (goal == null || goal.isBlank()) {
+            return null;
+        }
+        Matcher matcher = RESUME_INPUT_PATTERN.matcher(goal);
+        if (!matcher.find()) {
+            return null;
+        }
+        String resumeInput = matcher.group(1);
+        return resumeInput != null ? resumeInput.strip() : null;
     }
 
     @Nullable
@@ -161,6 +224,7 @@ public class AgentPersistenceHandler {
         try {
             return transcriptStore.appendAssistantMessage(
                     state.sessionId(),
+                    state.turnId(),
                     output,
                     state.reasoningSummary(),
                     state.traceId(),
@@ -188,6 +252,7 @@ public class AgentPersistenceHandler {
         try {
             return transcriptStore.appendAssistantMessage(
                     state.sessionId(),
+                    state.turnId(),
                     finalContent != null ? finalContent : "",
                     reasoningSummary,
                     state.traceId(),

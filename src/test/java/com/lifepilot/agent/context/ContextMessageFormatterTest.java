@@ -18,10 +18,22 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ContextMessageFormatterTest {
 
     @Test
-    void serializeForDebug_注入上下文显示为原始Xml而不是ContextMessage前缀() {
+    void serializeForDebug_非消息标签应保持原始块顺序且不带序号或消息前缀() {
         String debug = ContextMessageFormatter.serializeForDebug(List.of(
                 new AssistantMessage("<user_profile_context>profile</user_profile_context>"),
-                new UserMessage("<current_request>hello</current_request>"),
+                new UserMessage("""
+                        <runtime_context>
+                        - 当前时间: 2026-03-25T11:00:00+08:00
+                        </runtime_context>
+
+                        <history_transcript>
+                        [user] 历史消息
+                        </history_transcript>
+
+                        <current_request>
+                        hello
+                        </current_request>
+                        """),
                 ToolResponseMessage.builder()
                         .responses(List.of(new ToolResponseMessage.ToolResponse(
                                 "builtin.memory.create",
@@ -32,10 +44,13 @@ class ContextMessageFormatterTest {
         ));
 
         assertThat(debug)
-                .contains("[0] <user_profile_context>profile</user_profile_context>")
-                .contains("UserMessage: <current_request>hello</current_request>")
+                .contains("<user_profile_context>profile</user_profile_context>")
+                .contains("<runtime_context>")
+                .contains("<history_transcript>")
+                .contains("<current_request>")
                 .contains("ToolResultMessage: builtin.memory.create: {\"summary\":\"ok\"}")
-                .doesNotContain("ContextMessage[")
+                .doesNotContain("[0] <user_profile_context>")
+                .doesNotContain("UserMessage: <runtime_context>")
                 .doesNotContain("AssistantMessage: <user_profile_context>");
     }
 }

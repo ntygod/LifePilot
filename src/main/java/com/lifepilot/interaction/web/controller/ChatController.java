@@ -1,6 +1,8 @@
 package com.lifepilot.interaction.web.controller;
 
+import com.lifepilot.agent.model.AgentTaskMode;
 import com.lifepilot.agent.model.CompletionMode;
+import com.lifepilot.agent.model.CompletionReason;
 import com.lifepilot.interaction.model.GatewayResponse;
 import com.lifepilot.interaction.model.ResponseContent;
 import com.lifepilot.interaction.web.adapter.WebChannelAdapter;
@@ -14,7 +16,10 @@ import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
 import com.lifepilot.media.audio.SpeechSynthesizer;
 import com.lifepilot.media.config.MediaProperties;
 import com.lifepilot.memory.feedback.FeedbackProcessor;
+import com.lifepilot.meta.infra.interaction.InteractionBridge;
+import com.lifepilot.meta.infra.interaction.InteractionResponse;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -47,6 +52,7 @@ import java.util.concurrent.CompletableFuture;
  */
 @RestController
 @RequestMapping("/api/chat")
+@ConditionalOnProperty(name = "lifepilot.gateway.channels.web.enabled", havingValue = "true")
 public class ChatController {
 
     private static final Logger log = LoggerFactory.getLogger(ChatController.class);
@@ -80,6 +86,8 @@ public class ChatController {
     @Nullable
     private final WebUserConfirmationService confirmationService;
     @Nullable
+    private final InteractionBridge interactionBridge;
+    @Nullable
     private final FeedbackProcessor feedbackProcessor;
     @Nullable
     private final SpeechSynthesizer speechSynthesizer;
@@ -91,6 +99,7 @@ public class ChatController {
                           AttachmentRepository attachmentRepository,
                           KnowledgeBaseProperties knowledgeBaseProperties,
                           @Nullable WebUserConfirmationService confirmationService,
+                          @Nullable InteractionBridge interactionBridge,
                           @Nullable FeedbackProcessor feedbackProcessor,
                           @Nullable SpeechSynthesizer speechSynthesizer,
                           MediaProperties mediaProperties) {
@@ -101,13 +110,14 @@ public class ChatController {
         this.attachmentRepository = attachmentRepository;
         this.knowledgeBaseProperties = knowledgeBaseProperties;
         this.confirmationService = confirmationService;
+        this.interactionBridge = interactionBridge;
         this.feedbackProcessor = feedbackProcessor;
         this.speechSynthesizer = speechSynthesizer;
         this.mediaProperties = mediaProperties;
     }
 
     private boolean hasContentOrAttachments(ChatRequest request) {
-        return request.hasMessagePayload();
+        return request.action() != ChatTurnAction.SEND || request.hasMessagePayload();
     }
 
     /**
@@ -203,6 +213,9 @@ public class ChatController {
                 var doneDataBuilder = new java.util.HashMap<String, Object>();
                 doneDataBuilder.put("entryId", chatResponse.entryId());
                 doneDataBuilder.put("content", chatResponse.content());
+                if (chatResponse.turnId() != null) {
+                    doneDataBuilder.put("turnId", chatResponse.turnId());
+                }
                 if (request.sessionId() != null) {
                     doneDataBuilder.put("sessionId", request.sessionId());
                 }
@@ -213,6 +226,9 @@ public class ChatController {
                     doneDataBuilder.put("traceId", chatResponse.traceId());
                 }
                 doneDataBuilder.put("completionMode", chatResponse.completionMode().name());
+                if (chatResponse.turnStatus() != null) {
+                    doneDataBuilder.put("turnStatus", chatResponse.turnStatus().name());
+                }
                 if (chatResponse.resumedFromTraceId() != null) {
                     doneDataBuilder.put("resumedFromTraceId", chatResponse.resumedFromTraceId());
                 }
@@ -484,6 +500,23 @@ public class ChatController {
         if (!resolved) {
             return ResponseEntity.notFound().build();
         }
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/interactions/{interactionId}")
+    public ResponseEntity<?> handleInteractionResponse(
+            @PathVariable String interactionId,
+            @RequestBody InteractionResponseRequest request) {
+        if (interactionBridge == null) {
+            log.debug("InteractionBridge 未注入，交互回传端点不可用");
+            return ResponseEntity.notFound().build();
+        }
+        interactionBridge.resolve(interactionId, new InteractionResponse(
+                interactionId,
+                request.value(),
+                request.confirmed(),
+                request.timedOut()
+        ));
         return ResponseEntity.ok().build();
     }
 
@@ -861,21 +894,51 @@ public class ChatController {
         String traceId = response.metadata() != null
                 ? (String) response.metadata().get("traceId")
                 : null;
+        String turnId = response.metadata() != null
+                ? (String) response.metadata().get("turnId")
+                : null;
+        AgentTaskMode taskMode = response.metadata() != null
+                ? parseTaskMode(response.metadata().get("taskMode"))
+                : AgentTaskMode.AUTO;
         CompletionMode completionMode = response.metadata() != null
                 ? parseCompletionMode(response.metadata().get("completionMode"))
                 : CompletionMode.NORMAL;
+        CompletionReason completionReason = response.metadata() != null
+                ? parseCompletionReason(response.metadata().get("completionReason"))
+                : null;
+        ChatTurnStatus turnStatus = response.metadata() != null
+                ? parseTurnStatus(response.metadata().get("turnStatus"))
+                : ChatTurnStatus.SUCCESS;
         String resumedFromTraceId = response.metadata() != null
                 ? (String) response.metadata().get("resumedFromTraceId")
                 : null;
         return new ChatResponse(
                 response.responseId(),
+                turnId,
+                taskMode,
                 text,
                 a2uiComponents,
                 response.tokenUsage(),
                 traceId,
                 completionMode,
-                resumedFromTraceId
+                completionReason,
+                resumedFromTraceId,
+                turnStatus
         );
+    }
+
+    private AgentTaskMode parseTaskMode(@Nullable Object rawValue) {
+        if (rawValue instanceof AgentTaskMode taskMode) {
+            return taskMode;
+        }
+        if (rawValue instanceof String rawText) {
+            try {
+                return AgentTaskMode.valueOf(rawText);
+            } catch (IllegalArgumentException ignored) {
+                return AgentTaskMode.AUTO;
+            }
+        }
+        return AgentTaskMode.AUTO;
     }
 
     private CompletionMode parseCompletionMode(@Nullable Object rawValue) {
@@ -890,5 +953,33 @@ public class ChatController {
             }
         }
         return CompletionMode.NORMAL;
+    }
+
+    private @Nullable CompletionReason parseCompletionReason(@Nullable Object rawValue) {
+        if (rawValue instanceof CompletionReason completionReason) {
+            return completionReason;
+        }
+        if (rawValue instanceof String rawText) {
+            try {
+                return CompletionReason.valueOf(rawText);
+            } catch (IllegalArgumentException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private ChatTurnStatus parseTurnStatus(@Nullable Object rawValue) {
+        if (rawValue instanceof ChatTurnStatus turnStatus) {
+            return turnStatus;
+        }
+        if (rawValue instanceof String rawText) {
+            try {
+                return ChatTurnStatus.valueOf(rawText);
+            } catch (IllegalArgumentException ignored) {
+                return ChatTurnStatus.SUCCESS;
+            }
+        }
+        return ChatTurnStatus.SUCCESS;
     }
 }

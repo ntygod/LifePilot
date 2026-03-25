@@ -332,9 +332,10 @@ public class StreamingCallback implements IterationCallback {
                 ? Duration.between(callStart, firstTokenTime[0]).toMillis() : -1;
         long totalMs = Duration.between(callStart, callEnd).toMillis();
         log.info("流式调用完成: scene={}, provider={}, model={}, ttft={}ms, total={}ms, " +
-                        "promptTokens={}, completionTokens={}",
+                        "promptTokens={}, completionTokens={}, toolCallCount={}, contentLength={}",
                 scene2, chatModelInfo.serviceId(), chatModelInfo.modelName(), ttftMs, totalMs,
-                accumulatedPromptTokens[0], accumulatedCompletionTokens[0]);
+                accumulatedPromptTokens[0], accumulatedCompletionTokens[0],
+                toolCallCollector.size(), collectedContent.length());
 
         helper.recordStreamingLlmStep(traceContext, callStart, providerId, modelId,
                 scene2, chatResponse, null);
@@ -446,6 +447,7 @@ public class StreamingCallback implements IterationCallback {
                 switch (segment) {
                     case StreamingA2uiParser.Segment.TextSegment(var text) -> {
                         if (!text.isEmpty()) {
+                            markVisibleOutputEmitted();
                             sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
                                     "sessionId", sessionId, "turnId", turnId,
                                     "content", text, "index", tokenIndex++));
@@ -457,6 +459,7 @@ public class StreamingCallback implements IterationCallback {
                             if (loopContext != null) {
                                 loopContext.setLastCollectedA2uiTree(tree);
                             }
+                            markVisibleOutputEmitted();
                             sseManager.sendEvent(streamId, SseEventType.UI, Map.of(
                                     "sessionId", sessionId, "turnId", turnId,
                                     "components", tree.components()));
@@ -468,12 +471,14 @@ public class StreamingCallback implements IterationCallback {
             for (var seg : remaining) {
                 if (seg instanceof StreamingA2uiParser.Segment.TextSegment(var text)
                         && !text.isEmpty()) {
+                    markVisibleOutputEmitted();
                     sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
                             "sessionId", sessionId, "turnId", turnId,
                             "content", text, "index", tokenIndex++));
                 }
             }
         } else {
+            markVisibleOutputEmitted();
             sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
                     "sessionId", sessionId, "turnId", turnId,
                     "content", content, "index", 0));
@@ -494,6 +499,7 @@ public class StreamingCallback implements IterationCallback {
                 switch (segment) {
                     case StreamingA2uiParser.Segment.TextSegment(var text) -> {
                         if (!text.isEmpty()) {
+                            markVisibleOutputEmitted();
                             sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
                                     "sessionId", sessionId, "turnId", turnId,
                                     "content", text, "index", 0));
@@ -505,6 +511,7 @@ public class StreamingCallback implements IterationCallback {
                             if (loopContext != null) {
                                 loopContext.setLastCollectedA2uiTree(tree);
                             }
+                            markVisibleOutputEmitted();
                             sseManager.sendEvent(streamId, SseEventType.UI, Map.of(
                                     "sessionId", sessionId, "turnId", turnId,
                                     "components", tree.components()));
@@ -513,6 +520,7 @@ public class StreamingCallback implements IterationCallback {
                 }
             }
         } else {
+            markVisibleOutputEmitted();
             sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
                     "sessionId", sessionId, "turnId", turnId,
                     "content", token, "index", 0));
@@ -530,10 +538,17 @@ public class StreamingCallback implements IterationCallback {
         for (var seg : remaining) {
             if (seg instanceof StreamingA2uiParser.Segment.TextSegment(var text)
                     && !text.isEmpty()) {
+                markVisibleOutputEmitted();
                 sseManager.sendEvent(streamId, SseEventType.TOKEN, Map.of(
                         "sessionId", sessionId, "turnId", turnId,
                         "content", text, "index", 0));
             }
+        }
+    }
+
+    private void markVisibleOutputEmitted() {
+        if (loopContext != null) {
+            loopContext.markVisibleOutputEmitted();
         }
     }
 

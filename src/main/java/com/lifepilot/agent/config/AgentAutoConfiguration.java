@@ -5,15 +5,11 @@ import com.lifepilot.agent.AgentToolProvider;
 import com.lifepilot.agent.ReactAgentLoop;
 import com.lifepilot.agent.checkpoint.AgentCheckpointStore;
 import com.lifepilot.agent.checkpoint.SqliteAgentCheckpointStore;
-import com.lifepilot.agent.context.CompactionEngine;
-import com.lifepilot.agent.context.ContextAssembler;
-import com.lifepilot.agent.context.ContextEngine;
-import com.lifepilot.agent.context.PreCompactionMemoryFlushEngine;
-import com.lifepilot.agent.context.ProviderMessageBuilder;
-import com.lifepilot.agent.context.SessionPruningEngine;
-import com.lifepilot.agent.context.TranscriptCompactionBoundaryResolver;
-import com.lifepilot.agent.context.TranscriptHygieneEngine;
+import com.lifepilot.agent.context.*;
 import com.lifepilot.agent.media.MediaDataExtractor;
+import com.lifepilot.agent.orchestration.AgentOrchestrator;
+import com.lifepilot.agent.persistence.AgentPersistenceHandler;
+import com.lifepilot.agent.streaming.StreamingEventHandler;
 import com.lifepilot.agent.suspend.store.SuspendStore;
 import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.conversation.artifact.SessionArtifactRepository;
@@ -22,13 +18,22 @@ import com.lifepilot.conversation.transcript.SessionTranscriptRepository;
 import com.lifepilot.conversation.transcript.TranscriptStore;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.web.config.A2uiProperties;
+import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
+import com.lifepilot.interaction.web.service.ChatTurnService;
 import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
 import com.lifepilot.llm.config.LlmAutoConfiguration;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.media.MediaProcessor;
 import com.lifepilot.media.MediaValidator;
+import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.document.MemoryDocumentRepository;
+import com.lifepilot.memory.experience.ContrastiveLearner;
+import com.lifepilot.memory.experience.EffectivenessTracker;
+import com.lifepilot.memory.experience.ExperienceSummarizer;
+import com.lifepilot.memory.experience.SubtaskReflector;
+import com.lifepilot.memory.procedural.IntentMatcher;
+import com.lifepilot.memory.procedural.ProceduralMemory;
 import com.lifepilot.memory.retrieval.InjectionRecordRepository;
 import com.lifepilot.memory.semantic.RealtimeExtractor;
 import com.lifepilot.memory.semantic.SemanticMemory;
@@ -39,6 +44,7 @@ import com.lifepilot.observability.context.ContextReportRepository;
 import com.lifepilot.observability.redactor.DataRedactor;
 import com.lifepilot.observability.trace.TraceRecorder;
 import com.lifepilot.prompt.PromptRegistry;
+import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.tool.config.ToolAutoConfiguration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,6 +53,7 @@ import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.JdbcTemplate;
 
@@ -163,13 +170,13 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) DataRedactor dataRedactor,
             @Autowired(required = false) SemanticMemory semanticMemory,
             @Autowired(required = false) PassiveNotificationQueue passiveNotificationQueue,
-            @Autowired(required = false) com.lifepilot.memory.config.MemoryProperties memoryProperties,
-            @Autowired(required = false) com.lifepilot.memory.procedural.ProceduralMemory proceduralMemory,
-            @Autowired(required = false) com.lifepilot.memory.experience.EffectivenessTracker effectivenessTracker,
-            @Autowired(required = false) com.lifepilot.skill.registry.SkillRegistry skillRegistry,
+            @Autowired(required = false) MemoryProperties memoryProperties,
+            @Autowired(required = false) ProceduralMemory proceduralMemory,
+            @Autowired(required = false) EffectivenessTracker effectivenessTracker,
+            @Autowired(required = false) SkillRegistry skillRegistry,
             @Autowired(required = false) GenerationRouter generationRouter,
             @Autowired(required = false) ContextEngine contextEngine) {
-        log.info("Agent \u5f15\u64ce: \u6ce8\u518c ContextAssembler\uff0ccontextEngine={}\uff0cL3={}\uff0cL4={}",
+        log.info("Agent 引擎：注册 ContextAssembler，contextEngine={}，L3={}，L4={}",
                 contextEngine != null ? "enabled" : "disabled",
                 semanticMemory != null ? "enabled" : "disabled",
                 proceduralMemory != null ? "enabled" : "disabled");
@@ -199,7 +206,7 @@ public class AgentAutoConfiguration {
         sharedScheduler.cleanup().scheduleAtFixedRate(
                 () -> store.cleanExpired(config.getCheckpoint().getMaxAge()),
                 intervalMs, intervalMs, TimeUnit.MILLISECONDS);
-        log.info("Agent \u68c0\u67e5\u70b9\u6e05\u7406\u4efb\u52a1\u5df2\u6ce8\u518c: interval={}ms, maxAge={}",
+        log.info("Agent 检查点清理任务已注册：interval={}ms, maxAge={}",
                 intervalMs, config.getCheckpoint().getMaxAge());
         return store;
     }
@@ -212,19 +219,20 @@ public class AgentAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public com.lifepilot.agent.persistence.AgentPersistenceHandler agentPersistenceHandler(
+    public AgentPersistenceHandler agentPersistenceHandler(
             AgentConfigProperties config,
             @Autowired(required = false) SessionWorkspaceService workspaceService,
             TranscriptStore transcriptStore,
             @Autowired(required = false) RealtimeExtractor realtimeExtractor,
             @Autowired(required = false) InjectionRecordRepository injectionRecordRepository,
-            @Autowired(required = false) com.lifepilot.interaction.web.repository.AttachmentRepository attachmentRepository,
-            @Autowired(required = false) com.lifepilot.memory.experience.ExperienceSummarizer experienceSummarizer,
-            @Autowired(required = false) com.lifepilot.memory.experience.EffectivenessTracker effectivenessTracker,
-            @Autowired(required = false) com.lifepilot.memory.experience.ContrastiveLearner contrastiveLearner,
-            @Autowired(required = false) com.lifepilot.memory.experience.SubtaskReflector subtaskReflector,
-            @Autowired(required = false) CompactionEngine compactionEngine) {
-        return new com.lifepilot.agent.persistence.AgentPersistenceHandler(
+            @Autowired(required = false) AttachmentRepository attachmentRepository,
+            @Autowired(required = false) ExperienceSummarizer experienceSummarizer,
+            @Autowired(required = false) EffectivenessTracker effectivenessTracker,
+            @Autowired(required = false) ContrastiveLearner contrastiveLearner,
+            @Autowired(required = false) SubtaskReflector subtaskReflector,
+            @Autowired(required = false) CompactionEngine compactionEngine,
+            @Autowired(required = false) ChatTurnService chatTurnService) {
+        return new AgentPersistenceHandler(
                 config,
                 workspaceService,
                 transcriptStore,
@@ -235,17 +243,18 @@ public class AgentAutoConfiguration {
                 effectivenessTracker,
                 contrastiveLearner,
                 subtaskReflector,
-                compactionEngine);
+                compactionEngine,
+                chatTurnService);
     }
 
     @Bean
     @ConditionalOnMissingBean
-    public com.lifepilot.agent.streaming.StreamingEventHandler streamingEventHandler(
+    public StreamingEventHandler streamingEventHandler(
             ObjectMapper objectMapper,
             @Autowired(required = false) A2uiProperties a2uiProperties,
             @Autowired(required = false) SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
             @Autowired(required = false) KnowledgeBaseRepository knowledgeBaseRepository) {
-        return new com.lifepilot.agent.streaming.StreamingEventHandler(
+        return new StreamingEventHandler(
                 objectMapper, a2uiProperties, sessionKnowledgeBaseRepository, knowledgeBaseRepository);
     }
 
@@ -262,9 +271,9 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) TranscriptStore transcriptStore,
             @Autowired(required = false) MultimodalRouter multimodalRouter,
             @Autowired(required = false) MediaDataExtractor mediaDataExtractor,
-            @Autowired(required = false) org.springframework.context.ApplicationEventPublisher eventPublisher,
-            @Autowired(required = false) com.lifepilot.memory.procedural.ProceduralMemory proceduralMemory,
-            @Autowired(required = false) com.lifepilot.memory.procedural.IntentMatcher intentMatcher,
+            @Autowired(required = false) ApplicationEventPublisher eventPublisher,
+            @Autowired(required = false) ProceduralMemory proceduralMemory,
+            @Autowired(required = false) IntentMatcher intentMatcher,
             SharedScheduler sharedScheduler) {
         return new ReactAgentLoop(
                 contextAssembler,
@@ -285,10 +294,10 @@ public class AgentAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public com.lifepilot.agent.orchestration.AgentOrchestrator agentOrchestrator(
+    public AgentOrchestrator agentOrchestrator(
             ReactAgentLoop reactAgentLoop,
-            com.lifepilot.agent.persistence.AgentPersistenceHandler persistenceHandler,
-            com.lifepilot.agent.streaming.StreamingEventHandler streamingEventHandler,
+            AgentPersistenceHandler persistenceHandler,
+            StreamingEventHandler streamingEventHandler,
             AgentConfigProperties config,
             ObjectMapper objectMapper,
             GenerationRouter generationRouter,
@@ -298,9 +307,8 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) MediaProcessor mediaProcessor,
             @Autowired(required = false) AgentCheckpointStore checkpointStore,
             @Autowired(required = false) SuspendStore suspendStore,
-            @Autowired(required = false) org.springframework.context.ApplicationEventPublisher eventPublisher,
-            SharedScheduler sharedScheduler) {
-        return new com.lifepilot.agent.orchestration.AgentOrchestrator(
+            @Autowired(required = false) ChatTurnService chatTurnService) {
+        return new AgentOrchestrator(
                 reactAgentLoop,
                 persistenceHandler,
                 streamingEventHandler,
@@ -313,7 +321,6 @@ public class AgentAutoConfiguration {
                 mediaProcessor,
                 checkpointStore,
                 suspendStore,
-                eventPublisher,
-                sharedScheduler);
+                chatTurnService);
     }
 }

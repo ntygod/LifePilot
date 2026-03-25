@@ -3,6 +3,8 @@ package com.lifepilot.interaction.middleware.execution;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.agent.model.AgentResponse;
+import com.lifepilot.agent.model.AgentTaskMode;
+import com.lifepilot.agent.orchestration.AgentOrchestrator;
 import com.lifepilot.interaction.config.GatewayProperties;
 import com.lifepilot.interaction.middleware.MiddlewareChain;
 import com.lifepilot.interaction.middleware.MiddlewareContext;
@@ -10,9 +12,9 @@ import com.lifepilot.interaction.model.ChannelMetadata;
 import com.lifepilot.interaction.model.ChannelType;
 import com.lifepilot.interaction.model.GatewayMessage;
 import com.lifepilot.interaction.model.MessageContent;
+import com.lifepilot.interaction.web.model.ChatTurnAction;
 import com.lifepilot.interaction.web.model.SessionConfigKeys;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;
-import com.lifepilot.agent.orchestration.AgentOrchestrator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -26,6 +28,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -33,7 +36,7 @@ import static org.mockito.Mockito.when;
  * ExecutionMiddleware 单元测试。
  *
  * @author zsg
- * @since 2026-03-23
+ * @since 2026-03-25
  */
 @ExtendWith(MockitoExtension.class)
 class ExecutionMiddleware_单元测试 {
@@ -53,6 +56,9 @@ class ExecutionMiddleware_单元测试 {
         agentConfigProperties.getBudget().setDefaultMaxTokens(32000);
         agentConfigProperties.getBudget().setDefaultMaxSteps(77);
         agentConfigProperties.getBudget().setDefaultMaxDurationSeconds(444);
+        agentConfigProperties.getExecutionRetry().setEnabled(true);
+        agentConfigProperties.getExecutionRetry().setMaxAttempts(2);
+        agentConfigProperties.getExecutionRetry().setInitialDelayMs(0);
 
         executionMiddleware = new ExecutionMiddleware(
                 agentOrchestrator,
@@ -64,7 +70,7 @@ class ExecutionMiddleware_单元测试 {
     }
 
     @Test
-    void 会话仅覆盖maxTokens时_步骤和时长继承全局预算() {
+    void 会话仅覆盖maxTokens时应继承全局步骤与时长预算() {
         when(chatSessionRepository.getConfig("session-1"))
                 .thenReturn(Map.of(SessionConfigKeys.MAX_TOKENS, 4096));
         when(agentOrchestrator.run(any()))
@@ -87,7 +93,7 @@ class ExecutionMiddleware_单元测试 {
     }
 
     @Test
-    void 会话覆盖三维预算时_运行态Budget完整生效() {
+    void 会话覆盖三维预算时应完整生效() {
         when(chatSessionRepository.getConfig("session-2"))
                 .thenReturn(Map.of(
                         SessionConfigKeys.MAX_TOKENS, 8192,
@@ -111,14 +117,67 @@ class ExecutionMiddleware_单元测试 {
         assertThat(budget.maxDuration()).isEqualTo(Duration.ofSeconds(42));
     }
 
+    @Test
+    void 同步瞬时失败时主执行链路会自动重试一次() {
+        when(chatSessionRepository.getConfig("session-3")).thenReturn(Map.of());
+        when(agentOrchestrator.run(any()))
+                .thenReturn(new AgentResponse("trace-fail", "session-3", "LLM 调用超时: 30s", 0, 0, "异常终止"))
+                .thenReturn(new AgentResponse("trace-ok", "session-3", "最终回答", 18, 1, null));
+
+        var response = executionMiddleware.process(
+                buildMessage("session-3"),
+                new MiddlewareChain(List.of(), new MiddlewareContext())
+        );
+
+        assertThat(response.isSuccess()).isTrue();
+        verify(agentOrchestrator, times(2)).run(any());
+    }
+
+    @Test
+    void 普通发送请求不应在网关层预判任务模式() {
+        when(chatSessionRepository.getConfig("session-4")).thenReturn(Map.of());
+        when(agentOrchestrator.run(any()))
+                .thenReturn(new AgentResponse("trace-4", "session-4", "ok", 8, 1, null));
+
+        executionMiddleware.process(
+                buildMessage("session-4", "请读取目录需求并自动写代码后提交 GitHub", ChatTurnAction.SEND),
+                new MiddlewareChain(List.of(), new MiddlewareContext())
+        );
+
+        var requestCaptor = ArgumentCaptor.forClass(AgentRequest.class);
+        verify(agentOrchestrator).run(requestCaptor.capture());
+        assertThat(requestCaptor.getValue().taskMode()).isEqualTo(AgentTaskMode.AUTO);
+    }
+
+    @Test
+    void 恢复重试类系统动作也不应在网关层硬编码任务模式() {
+        when(chatSessionRepository.getConfig("session-5")).thenReturn(Map.of());
+        when(agentOrchestrator.run(any()))
+                .thenReturn(new AgentResponse("trace-5", "session-5", "ok", 8, 1, null));
+
+        executionMiddleware.process(
+                buildMessage("session-5", "继续刚才那轮执行", ChatTurnAction.RETRY),
+                new MiddlewareChain(List.of(), new MiddlewareContext())
+        );
+
+        var requestCaptor = ArgumentCaptor.forClass(AgentRequest.class);
+        verify(agentOrchestrator).run(requestCaptor.capture());
+        assertThat(requestCaptor.getValue().taskMode()).isEqualTo(AgentTaskMode.AUTO);
+    }
+
     private GatewayMessage buildMessage(String sessionId) {
+        return buildMessage(sessionId, "测试消息", ChatTurnAction.SEND);
+    }
+
+    private GatewayMessage buildMessage(String sessionId, String text, ChatTurnAction action) {
         return GatewayMessage.builder()
+                .messageId("turn-" + sessionId)
                 .channelType(ChannelType.WEB)
                 .userId("web-user")
                 .sessionId(sessionId)
-                .content(new MessageContent.TextMessage("测试消息"))
+                .content(new MessageContent.TextMessage(text))
                 .channelMetadata(new ChannelMetadata.WebMetadata(
-                        "JUnit", "127.0.0.1", null, false, null))
+                        "JUnit", "127.0.0.1", null, false, null, null, action))
                 .build();
     }
 

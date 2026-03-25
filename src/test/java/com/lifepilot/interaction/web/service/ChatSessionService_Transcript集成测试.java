@@ -5,10 +5,14 @@ import com.lifepilot.agent.model.CompletionMode;
 import com.lifepilot.conversation.transcript.JdbcTranscriptStore;
 import com.lifepilot.conversation.transcript.SessionStoreRepository;
 import com.lifepilot.conversation.transcript.SessionTranscriptRepository;
+import com.lifepilot.interaction.web.model.ChatRequest;
 import com.lifepilot.interaction.web.model.ChatSession;
+import com.lifepilot.interaction.web.model.ChatTurnAction;
+import com.lifepilot.interaction.web.model.ChatTurnStatus;
 import com.lifepilot.interaction.web.model.SessionInfo;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;
+import com.lifepilot.interaction.web.repository.ChatTurnRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.memory.event.MemoryEvent;
 import com.lifepilot.memory.event.MemoryEventBus;
@@ -40,6 +44,7 @@ class ChatSessionService_Transcript集成测试 {
     private AttachmentRepository attachmentRepository;
     private SessionTranscriptRepository transcriptRepository;
     private JdbcTranscriptStore transcriptStore;
+    private ChatTurnService chatTurnService;
     private JdbcTemplate jdbcTemplate;
 
     @BeforeEach
@@ -109,6 +114,25 @@ class ChatSessionService_Transcript集成测试 {
                     FOREIGN KEY (session_id) REFERENCES session_store(session_id) ON DELETE CASCADE
                 )
                 """);
+        jdbcTemplate.execute("""
+                CREATE TABLE chat_turns (
+                    turn_id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL REFERENCES session_store(session_id) ON DELETE CASCADE,
+                    last_action TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    request_payload_json TEXT NOT NULL,
+                    user_entry_id TEXT,
+                    assistant_entry_id TEXT,
+                    latest_trace_id TEXT,
+                    resumed_from_trace_id TEXT,
+                    completion_mode TEXT,
+                    last_error_code INTEGER,
+                    last_error_message TEXT,
+                    attempt_count INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """);
 
         var objectMapper = new ObjectMapper();
         var eventBus = new NoopMemoryEventBus();
@@ -118,6 +142,11 @@ class ChatSessionService_Transcript集成测试 {
         chatSessionRepository = new ChatSessionRepository(sessionStoreRepository);
         attachmentRepository = new AttachmentRepository(jdbcTemplate);
         transcriptStore = new JdbcTranscriptStore(sessionStoreRepository, transcriptRepository, chatSessionRepository);
+        chatTurnService = new ChatTurnService(
+                new ChatTurnRepository(jdbcTemplate),
+                transcriptRepository,
+                objectMapper
+        );
 
         SessionKnowledgeBaseRepository knowledgeBaseRepository = mock(SessionKnowledgeBaseRepository.class);
         when(knowledgeBaseRepository.findKnowledgeBaseIdsBySessionId(org.mockito.ArgumentMatchers.anyString()))
@@ -128,7 +157,8 @@ class ChatSessionService_Transcript集成测试 {
                 knowledgeBaseRepository,
                 attachmentRepository,
                 objectMapper,
-                transcriptRepository
+                transcriptRepository,
+                chatTurnService
         );
     }
 
@@ -289,6 +319,70 @@ class ChatSessionService_Transcript集成测试 {
         assertThat(chatSessionRepository.findById(session.id())).get()
                 .extracting(ChatSession::title, ChatSession::summary, ChatSession::messageCount)
                 .containsExactly("source-title", "source-summary", 3);
+    }
+
+    @Test
+    void getSessionMessages_刷新后保留Turn状态与错误信息() {
+        ChatSession session = ChatSession.createWithId("session-transcript-turn-state", "turn 状态测试");
+        chatSessionRepository.save(session);
+
+        var request = new ChatRequest(
+                "turn-history-1",
+                ChatTurnAction.SEND,
+                "请总结重试机制",
+                session.id(),
+                List.of(),
+                "provider-turn"
+        );
+        chatTurnService.prepare(session.id(), request);
+
+        String assistantEntryId = transcriptStore.appendAssistantMessage(
+                session.id(),
+                "turn-history-1",
+                "这是一条降级回复",
+                null,
+                "trace-turn-2",
+                null,
+                null,
+                CompletionMode.DEGRADED,
+                null,
+                Instant.parse("2026-03-25T01:00:00Z")
+        );
+        chatTurnService.markCompleted(
+                session.id(),
+                "turn-history-1",
+                ChatTurnStatus.DEGRADED,
+                assistantEntryId,
+                "trace-turn-2",
+                "trace-turn-1",
+                CompletionMode.DEGRADED
+        );
+        chatTurnService.markFailed(
+                session.id(),
+                "turn-history-1",
+                "trace-turn-2",
+                504,
+                "模型调用超时"
+        );
+
+        var messages = chatSessionService.getSessionMessages(session.id());
+
+        assertThat(messages).hasSize(1);
+        assertThat(messages.getFirst())
+                .extracting(
+                        com.lifepilot.interaction.web.model.MessageInfo::turnId,
+                        com.lifepilot.interaction.web.model.MessageInfo::turnStatus,
+                        com.lifepilot.interaction.web.model.MessageInfo::errorMessage,
+                        com.lifepilot.interaction.web.model.MessageInfo::resumedFromTraceId,
+                        com.lifepilot.interaction.web.model.MessageInfo::completionMode
+                )
+                .containsExactly(
+                        "turn-history-1",
+                        ChatTurnStatus.FAILED,
+                        "模型调用超时",
+                        "trace-turn-1",
+                        CompletionMode.DEGRADED
+                );
     }
 
     private static final class NoopMemoryEventBus implements MemoryEventBus {

@@ -1,5 +1,6 @@
 package com.lifepilot.meta.infra.interaction;
 
+import com.lifepilot.tool.model.ToolContextKeys;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
 import org.slf4j.Logger;
@@ -34,14 +35,17 @@ public class ChooseToolExecutor {
     public ToolResult execute(ToolInput input) {
         try {
             String message = input.getParam("message", String.class);
-            String sessionId = input.getParam("sessionId", String.class);
+            String sessionId = input.getContextValue(ToolContextKeys.SESSION_ID, String.class)
+                    .or(() -> input.getOptionalParam("sessionId", String.class))
+                    .orElseThrow(() -> new IllegalArgumentException("缺少会话上下文 sessionId"));
+            String streamId = input.getContextValue(ToolContextKeys.STREAM_ID, String.class).orElse(null);
             List<String> options = input.getParam("options", List.class);
 
             if (options == null || options.isEmpty()) {
                 return ToolResult.error("选项列表不能为空");
             }
 
-            var request = new InteractionRequest(null, InteractionType.CHOOSE, sessionId, message, options);
+            var request = new InteractionRequest(null, InteractionType.CHOOSE, sessionId, streamId, message, options);
             var response = interactionBridge.request(request);
 
             if (response.timedOut()) {

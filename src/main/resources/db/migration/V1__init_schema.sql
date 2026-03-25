@@ -760,6 +760,26 @@ CREATE TABLE session_transcript_compressions (
     FOREIGN KEY (session_id) REFERENCES session_store(session_id) ON DELETE CASCADE
 );
 
+CREATE TABLE chat_turns (
+    turn_id               TEXT PRIMARY KEY,
+    session_id            TEXT NOT NULL REFERENCES session_store(session_id) ON DELETE CASCADE,
+    last_action           TEXT NOT NULL,
+    status                TEXT NOT NULL,
+    request_payload_json  TEXT NOT NULL,
+    user_entry_id         TEXT,
+    assistant_entry_id    TEXT,
+    latest_trace_id       TEXT,
+    resumed_from_trace_id TEXT,
+    completion_mode       TEXT,
+    last_error_code       INTEGER,
+    last_error_message    TEXT,
+    attempt_count         INTEGER NOT NULL DEFAULT 0,
+    created_at            TEXT NOT NULL,
+    updated_at            TEXT NOT NULL
+);
+
+CREATE INDEX idx_chat_turns_session ON chat_turns(session_id, updated_at DESC);
+
 CREATE TABLE session_transcript_entries (
     id                TEXT PRIMARY KEY,
     session_id        TEXT NOT NULL,
@@ -1375,21 +1395,9 @@ END;
 CREATE TRIGGER trg_session_transcript_entries_fts_ad
 AFTER DELETE ON session_transcript_entries
 BEGIN
-    INSERT INTO session_transcript_entries_fts(
-        session_transcript_entries_fts,
-        rowid,
-        entry_id,
-        session_id,
-        role,
-        content
-    )
-    SELECT 'delete',
-           old.rowid,
-           old.id,
-           old.session_id,
-           COALESCE(old.role, ''),
-           json_extract(old.payload_json, '$.content')
-    WHERE old.entry_type IN ('user_message', 'assistant_message')
+    DELETE FROM session_transcript_entries_fts
+    WHERE rowid = old.rowid
+      AND old.entry_type IN ('user_message', 'assistant_message')
       AND old.visible_to_user = 1
       AND trim(COALESCE(json_extract(old.payload_json, '$.content'), '')) <> '';
 END;
@@ -1411,21 +1419,9 @@ END;
 CREATE TRIGGER trg_session_transcript_entries_fts_au
 AFTER UPDATE ON session_transcript_entries
 BEGIN
-    INSERT INTO session_transcript_entries_fts(
-        session_transcript_entries_fts,
-        rowid,
-        entry_id,
-        session_id,
-        role,
-        content
-    )
-    SELECT 'delete',
-           old.rowid,
-           old.id,
-           old.session_id,
-           COALESCE(old.role, ''),
-           json_extract(old.payload_json, '$.content')
-    WHERE old.entry_type IN ('user_message', 'assistant_message')
+    DELETE FROM session_transcript_entries_fts
+    WHERE rowid = old.rowid
+      AND old.entry_type IN ('user_message', 'assistant_message')
       AND old.visible_to_user = 1
       AND trim(COALESCE(json_extract(old.payload_json, '$.content'), '')) <> '';
 

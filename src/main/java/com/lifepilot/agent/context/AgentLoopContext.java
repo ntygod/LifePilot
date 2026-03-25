@@ -22,6 +22,7 @@ public class AgentLoopContext {
     private final List<MediaDataExtractor.MediaItem> collectedToolMedia = new ArrayList<>();
     private final List<String> injectedEntityIds = new ArrayList<>();
     private volatile @Nullable A2uiComponentTree lastCollectedA2uiTree;
+    private volatile boolean visibleOutputEmitted;
 
     // 流式模式下的 SSE 上下文（非流式模式为 null）
     @Nullable private final SseSessionManager sseManager;
@@ -108,5 +109,15 @@ public class AgentLoopContext {
     /** 设置最近收集的 A2UI 组件树。 */
     public void setLastCollectedA2uiTree(@Nullable A2uiComponentTree tree) {
         this.lastCollectedA2uiTree = tree;
+    }
+
+    /** 标记已向前端发出用户可见输出。 */
+    public void markVisibleOutputEmitted() {
+        this.visibleOutputEmitted = true;
+    }
+
+    /** 是否已经向前端发出用户可见输出。 */
+    public boolean hasVisibleOutputEmitted() {
+        return visibleOutputEmitted;
     }
 }

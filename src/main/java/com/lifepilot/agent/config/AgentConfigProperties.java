@@ -26,6 +26,7 @@ public class AgentConfigProperties {
     private ContextConfig context = new ContextConfig();
     private SessionConfig session = new SessionConfig();
     private CheckpointConfig checkpoint = new CheckpointConfig();
+    private ExecutionRetryConfig executionRetry = new ExecutionRetryConfig();
     private DebugConfig debug = new DebugConfig();
     private TaskConfig task = new TaskConfig();
 
@@ -35,6 +36,7 @@ public class AgentConfigProperties {
         private int maxIterations = 25;
         /** 连续工具调用失败最大次数。 */
         private int maxConsecutiveFailures = 3;
+        private int maxEarlyStopRejects = 2;
         /** LLM 调用场景标识。 */
         private String llmScene = "agent_react";
 
@@ -42,6 +44,8 @@ public class AgentConfigProperties {
         public void setMaxIterations(int maxIterations) { this.maxIterations = maxIterations; }
         public int getMaxConsecutiveFailures() { return maxConsecutiveFailures; }
         public void setMaxConsecutiveFailures(int maxConsecutiveFailures) { this.maxConsecutiveFailures = maxConsecutiveFailures; }
+        public int getMaxEarlyStopRejects() { return maxEarlyStopRejects; }
+        public void setMaxEarlyStopRejects(int maxEarlyStopRejects) { this.maxEarlyStopRejects = maxEarlyStopRejects; }
         public String getLlmScene() { return llmScene; }
         public void setLlmScene(String llmScene) { this.llmScene = llmScene; }
     }
@@ -181,6 +185,22 @@ public class AgentConfigProperties {
         private Duration maxAge = Duration.ofDays(7);
         private long cleanupIntervalMs = Duration.ofHours(1).toMillis();
 
+    }
+
+    /** 主执行链路自动重试配置。 */
+    @Setter
+    @Getter
+    public static class ExecutionRetryConfig {
+        /** 是否启用主执行链路安全自动重试。 */
+        private boolean enabled = true;
+        /** 单次请求的最大尝试次数，包含首次执行。 */
+        private int maxAttempts = 2;
+        /** 首次重试前的退避时间（毫秒）。 */
+        private long initialDelayMs = 500;
+        /** 指数退避倍率。 */
+        private double multiplier = 2.0;
+        /** 最大退避时间（毫秒）。 */
+        private long maxDelayMs = 5000;
     }
 
     /**
