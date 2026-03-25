@@ -30,12 +30,35 @@ const subjectTypeOptions = computed(() => props.request.availableSubjectTypes ??
 const currentSubjectType = computed(() =>
   selectedSubjectType.value || props.request.recommendedSubjectType || subjectTypeOptions.value[0] || 'SESSION',
 )
-const subjectTypeLabelMap: Record<string, string> = {
-  SESSION: '本会话',
-  WORKSPACE: '当前工作区',
-  TASK: '当前任务',
-  USER: '当前账号',
+const subjectTypeUiMap: Record<string, { label: string; description: string; confirmLabel: string }> = {
+  SESSION: {
+    label: '本会话内都允许',
+    description: '当前会话里的同类高风险操作不再重复审批。',
+    confirmLabel: '允许本会话复用',
+  },
+  WORKSPACE: {
+    label: '当前项目内都允许',
+    description: '适合改文件、执行命令、构建和项目内自动化操作。',
+    confirmLabel: '允许当前项目复用',
+  },
+  TASK: {
+    label: '当前任务自动执行',
+    description: '后续 Cron、心跳和工作流会直接复用这条任务级授权。',
+    confirmLabel: '允许任务自动执行',
+  },
+  USER: {
+    label: '当前账号长期允许',
+    description: '跨会话复用，适合稳定且长期需要的高频操作。',
+    confirmLabel: '允许长期复用',
+  },
 }
+const currentSubjectOption = computed(() =>
+  subjectTypeUiMap[currentSubjectType.value] ?? {
+    label: currentSubjectType.value,
+    description: '按当前所选授权范围保存。',
+    confirmLabel: '允许并记住',
+  },
+)
 
 const resolutionLabel = computed(() => {
   switch (props.resolution) {
@@ -193,20 +216,26 @@ async function handleReject() {
 
     <div
       v-if="!resolved && subjectTypeOptions.length > 0"
-      class="mt-3 flex flex-wrap gap-2"
+      class="mt-3 space-y-2"
     >
-      <Button
-        v-for="subjectType in subjectTypeOptions"
-        :key="subjectType"
-        type="button"
-        size="sm"
-        :variant="currentSubjectType === subjectType ? 'default' : 'outline'"
-        class="h-7 px-2.5 text-xs"
-        :disabled="submitting"
-        @click="selectedSubjectType = subjectType"
-      >
-        {{ subjectTypeLabelMap[subjectType] ?? subjectType }}
-      </Button>
+      <div class="flex flex-wrap gap-2">
+        <Button
+          v-for="subjectType in subjectTypeOptions"
+          :key="subjectType"
+          type="button"
+          size="sm"
+          :variant="currentSubjectType === subjectType ? 'default' : 'outline'"
+          class="h-7 px-2.5 text-xs"
+          :disabled="submitting"
+          @click="selectedSubjectType = subjectType"
+        >
+          {{ subjectTypeUiMap[subjectType]?.label ?? subjectType }}
+        </Button>
+      </div>
+
+      <div class="rounded-md border border-dashed border-border/60 bg-background/70 px-3 py-2 text-xs text-muted-foreground">
+        {{ currentSubjectOption.description }}
+      </div>
     </div>
 
     <div v-if="!resolved" class="mt-2 flex items-center gap-2">
@@ -226,7 +255,7 @@ async function handleReject() {
         :disabled="submitting"
         @click="handleConfirm"
       >
-        允许执行
+        {{ currentSubjectOption.confirmLabel }}
       </Button>
     </div>
   </div>

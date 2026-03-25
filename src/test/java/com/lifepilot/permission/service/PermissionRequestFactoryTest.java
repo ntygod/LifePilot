@@ -53,4 +53,31 @@ class PermissionRequestFactoryTest {
         assertThat(request.taskId()).isEqualTo("task-explicit");
         assertThat(request.workspaceId()).isEqualTo("workspace-explicit");
     }
+
+    @Test
+    void 创建定时任务时_任务级主体可从作用域回退解析() {
+        var factory = new PermissionRequestFactory(new ObservabilityProperties(), new ToolConfigProperties());
+        var tool = BuiltinTool.builder()
+                .id("builtin.cron.create")
+                .name("创建定时任务")
+                .description("创建任务")
+                .inputSchema(JsonSchema.empty())
+                .riskLevel(RiskLevel.HIGH)
+                .budget(ToolBudget.DEFAULT)
+                .executor(_ -> ToolResult.success(Map.of()))
+                .build();
+        var input = new ToolInput(
+                tool.id(),
+                Map.of("name", "daily-report"),
+                JsonSchema.empty(),
+                null,
+                Map.of(ToolContextKeys.CHANNEL_TYPE, "web")
+        );
+
+        var request = factory.create(tool, input, "trace-2");
+
+        assertThat(request.taskId()).isNull();
+        assertThat(request.subjectId(com.lifepilot.permission.model.PermissionSubjectType.TASK))
+                .isEqualTo("daily-report");
+    }
 }

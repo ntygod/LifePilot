@@ -101,7 +101,7 @@ const summaryItems = computed(() => {
   })
   return [
     { label: '有效授权', value: String(activeGrants.length), hint: '当前仍可命中的授权记录。' },
-    { label: '自主执行', value: String(autonomousGrants.length), hint: '允许 cron、心跳或工作流直接执行。' },
+    { label: '任务预授权', value: String(autonomousGrants.length), hint: '允许 Cron、心跳或工作流直接执行。' },
     { label: '24 小时内到期', value: String(expiringSoon.length), hint: '建议提前续期，避免无人值守任务中断。' },
   ]
 })
@@ -337,7 +337,7 @@ onMounted(() => {
   <div class="space-y-6">
     <StatePanel
       title="授权与自动执行"
-      description="默认工具可用，但高风险操作会落在授权模型上。这里集中管理会话、工作区、任务和账号级授权。"
+      description="默认工具可用，高风险动作改成授权模型控制。聊天里授权是主入口，这里主要负责查看、撤销和少量高级手动创建。"
     >
       <template #icon>
         <ShieldCheck class="size-5" />
@@ -362,10 +362,40 @@ onMounted(() => {
       </div>
     </StatePanel>
 
+    <StatePanel
+      title="推荐用法"
+      description="大多数情况下，直接在对话里授权就够了。只有需要提前为项目、任务或账号批量放权时，才需要在这里手动创建授权。"
+    >
+      <template #icon>
+        <ShieldAlert class="size-5" />
+      </template>
+
+      <div class="grid gap-3 md:grid-cols-3">
+        <div class="rounded-[calc(var(--radius)+6px)] border border-border/70 bg-background/70 px-4 py-4">
+          <div class="text-sm font-medium text-foreground">聊天内授权</div>
+          <div class="mt-1 text-sm leading-6 text-muted-foreground">
+            适合当前会话或当前项目，授权一次后，同类操作不再反复审批。
+          </div>
+        </div>
+        <div class="rounded-[calc(var(--radius)+6px)] border border-border/70 bg-background/70 px-4 py-4">
+          <div class="text-sm font-medium text-foreground">任务级预授权</div>
+          <div class="mt-1 text-sm leading-6 text-muted-foreground">
+            适合 Cron、心跳和工作流。任务创建时授权一次，后续自动执行直接复用。
+          </div>
+        </div>
+        <div class="rounded-[calc(var(--radius)+6px)] border border-border/70 bg-background/70 px-4 py-4">
+          <div class="text-sm font-medium text-foreground">设置页管理</div>
+          <div class="mt-1 text-sm leading-6 text-muted-foreground">
+            适合续期、撤销、排查范围，或者手动补一条长期授权记录。
+          </div>
+        </div>
+      </div>
+    </StatePanel>
+
     <section class="detail-card p-5">
       <SettingSection
-        title="手动创建授权"
-        description="为高风险动作预先授予可复用的执行范围，避免复杂任务中反复审批。"
+        title="高级手动创建授权"
+        description="只有在需要提前批量放权时才建议使用。日常优先通过聊天内授权完成。"
       >
         <template #header-actions>
           <Badge variant="outline">{{ currentSubjectOption.label }}</Badge>
@@ -420,51 +450,6 @@ onMounted(() => {
         </SettingItem>
 
         <SettingItem
-          label="风险上限"
-          :description="currentRiskOption.description"
-        >
-          <Select :model-value="form.riskCeiling" @update:model-value="updateRiskCeiling">
-            <SelectTrigger class="w-[220px]">
-              <SelectValue placeholder="选择风险上限" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem v-for="option in riskOptions" :key="option.value" :value="option.value">
-                {{ option.label }}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </SettingItem>
-
-        <SettingItem
-          label="自主执行"
-          description="开启后，cron、心跳和工作流等无人值守场景可以直接复用该授权。"
-        >
-          <Switch
-            :model-value="form.autonomousAllowed"
-            @update:model-value="value => form.autonomousAllowed = value === true"
-          />
-        </SettingItem>
-
-        <SettingItem
-          label="生效渠道"
-          description="控制哪些渠道可以命中这条授权。任务级授权默认绑定 cron、心跳和工作流。"
-        >
-          <div class="flex flex-wrap gap-2">
-            <Button
-              v-for="channel in channelOptions"
-              :key="channel.value"
-              type="button"
-              size="sm"
-              :variant="form.channels.includes(channel.value) ? 'default' : 'outline'"
-              class="h-8 px-3 text-xs"
-              @click="toggleChannel(channel.value)"
-            >
-              {{ channel.label }}
-            </Button>
-          </div>
-        </SettingItem>
-
-        <SettingItem
           label="到期时间"
           description="留空表示长期有效；建议给高风险授权设置过期时间。"
         >
@@ -488,17 +473,72 @@ onMounted(() => {
           />
         </SettingItem>
 
-        <SettingItem
-          label="作用域 JSON"
-          description="可选。用于进一步限制资源范围，例如工作区路径、Origin、集合名或任务 ID。"
-        >
-          <Textarea
-            v-model="form.scopeJson"
-            rows="5"
-            class="max-w-[680px] font-mono text-xs"
-            :placeholder="scopePlaceholder"
-          />
-        </SettingItem>
+        <div class="pt-2">
+          <details class="rounded-[calc(var(--radius)+6px)] border border-border/70 bg-muted/20 px-4 py-3">
+            <summary class="cursor-pointer select-none text-sm font-medium text-foreground">
+              高级选项
+            </summary>
+
+            <div class="mt-4 space-y-4">
+              <SettingItem
+                label="风险上限"
+                :description="currentRiskOption.description"
+              >
+                <Select :model-value="form.riskCeiling" @update:model-value="updateRiskCeiling">
+                  <SelectTrigger class="w-[220px]">
+                    <SelectValue placeholder="选择风险上限" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem v-for="option in riskOptions" :key="option.value" :value="option.value">
+                      {{ option.label }}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </SettingItem>
+
+              <SettingItem
+                label="自主执行"
+                description="开启后，Cron、心跳和工作流等无人值守场景可以直接复用该授权。"
+              >
+                <Switch
+                  :model-value="form.autonomousAllowed"
+                  @update:model-value="value => form.autonomousAllowed = value === true"
+                />
+              </SettingItem>
+
+              <SettingItem
+                label="生效渠道"
+                description="任务级授权默认绑定 Cron、心跳和工作流；其他授权默认只对当前渠道生效。"
+              >
+                <div class="flex flex-wrap gap-2">
+                  <Button
+                    v-for="channel in channelOptions"
+                    :key="channel.value"
+                    type="button"
+                    size="sm"
+                    :variant="form.channels.includes(channel.value) ? 'default' : 'outline'"
+                    class="h-8 px-3 text-xs"
+                    @click="toggleChannel(channel.value)"
+                  >
+                    {{ channel.label }}
+                  </Button>
+                </div>
+              </SettingItem>
+
+              <SettingItem
+                label="作用域 JSON"
+                description="可选。用于进一步限制资源范围，例如工作区路径、Origin、集合名或任务 ID。"
+              >
+                <Textarea
+                  v-model="form.scopeJson"
+                  rows="5"
+                  class="max-w-[680px] font-mono text-xs"
+                  :placeholder="scopePlaceholder"
+                />
+              </SettingItem>
+            </div>
+          </details>
+        </div>
       </SettingSection>
     </section>
 

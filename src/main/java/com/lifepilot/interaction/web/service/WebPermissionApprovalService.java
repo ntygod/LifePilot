@@ -167,22 +167,26 @@ public class WebPermissionApprovalService implements PermissionApprovalService {
 
     private List<String> resolveAvailableSubjectTypes(PermissionRequest request) {
         List<String> subjectTypes = new ArrayList<>();
-        if (request.sessionId() != null && !request.sessionId().isBlank()) {
-            subjectTypes.add(PermissionSubjectType.SESSION.name());
+        if (request.taskId() != null && !request.taskId().isBlank()) {
+            subjectTypes.add(PermissionSubjectType.TASK.name());
         }
         if (request.workspaceId() != null && !request.workspaceId().isBlank()) {
             subjectTypes.add(PermissionSubjectType.WORKSPACE.name());
         }
+        if (request.sessionId() != null && !request.sessionId().isBlank()) {
+            subjectTypes.add(PermissionSubjectType.SESSION.name());
+        }
         if (request.userId() != null && !request.userId().isBlank()) {
             subjectTypes.add(PermissionSubjectType.USER.name());
-        }
-        if (request.taskId() != null && !request.taskId().isBlank()) {
-            subjectTypes.add(PermissionSubjectType.TASK.name());
         }
         return List.copyOf(subjectTypes);
     }
 
     private PermissionSubjectType resolveRecommendedSubjectType(PermissionRequest request) {
+        if (request.taskId() != null && !request.taskId().isBlank()
+                && request.actionType() == com.lifepilot.permission.model.PermissionActionType.CREATE_SCHEDULE) {
+            return PermissionSubjectType.TASK;
+        }
         if (request.workspaceId() != null && !request.workspaceId().isBlank()) {
             return PermissionSubjectType.WORKSPACE;
         }
@@ -205,6 +209,10 @@ public class WebPermissionApprovalService implements PermissionApprovalService {
             case CREATE_SCHEDULE -> "创建或修改定时任务";
             case GENERIC_TOOL_OPERATION -> "执行工具操作";
         };
+        if (request.taskId() != null && !request.taskId().isBlank()) {
+            return "微微想使用 %s 执行%s。你可以直接授权给当前任务，后续 Cron、心跳和工作流会复用这条授权。"
+                    .formatted(tool.name(), actionText);
+        }
         return "微微想使用 %s 执行%s，请选择授权范围。".formatted(tool.name(), actionText);
     }
 

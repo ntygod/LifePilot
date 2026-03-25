@@ -40,7 +40,9 @@ public record PermissionRequest(
         return switch (subjectType) {
             case SESSION -> sessionId;
             case WORKSPACE -> workspaceId;
-            case TASK -> taskId;
+            case TASK -> taskId != null && !taskId.isBlank()
+                    ? taskId
+                    : resourceScope.get("taskId") != null ? String.valueOf(resourceScope.get("taskId")) : null;
             case USER -> userId;
         };
     }
