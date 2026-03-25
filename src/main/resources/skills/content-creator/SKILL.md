@@ -1,7 +1,7 @@
 ---
 id: content-creator
 name: "内容创作"
-description: "内容创作助手：文章撰写、报告生成、邮件起草、文案优化。支持需求理解→素材收集→大纲→初稿→润色的完整流程"
+description: "内容创作助手：文章撰写、报告生成、邮件起草、文案优化。"
 version: "1.0.0"
 suggested-tools:
   - builtin.web.search

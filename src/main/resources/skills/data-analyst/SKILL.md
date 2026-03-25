@@ -1,7 +1,7 @@
 ---
 id: data-analyst
 name: "数据分析"
-description: "数据分析助手：数据加载、探索性分析（EDA）、清洗转换、统计分析、可视化图表生成。支持 CSV/JSON/Excel 等格式"
+description: "数据分析助手：数据加载、探索性分析（EDA）、清洗转换、统计分析、可视化图表生成。"
 version: "1.0.0"
 suggested-tools:
   - builtin.code.execute

@@ -1,7 +1,7 @@
 ---
 id: desktop-automation
 name: "桌面自动化"
-description: "Windows 桌面自动化：UI 元素操作、窗口管理、对话框处理、键鼠模拟、屏幕截图分析。仅支持 Windows 平台"
+description: "Windows 桌面自动化：UI 元素操作、窗口管理、对话框处理、键鼠模拟、屏幕截图分析。"
 version: "1.0.0"
 suggested-tools:
   - builtin.shell.exec

@@ -1,7 +1,7 @@
 ---
 id: dingtalk
 name: "钉钉集成"
-description: "钉钉操作：发送消息、工作通知、创建任务。通过钉钉开放 API 实现"
+description: "钉钉操作：发送消息、工作通知、创建任务。"
 version: "1.0.0"
 suggested-tools:
   - builtin.http.request

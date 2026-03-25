@@ -1,7 +1,7 @@
 ---
 id: research-assistant
 name: "信息调研"
-description: "多源信息调研：Web 搜索、网页抓取、交叉验证、结构化输出。适用于需要从互联网收集、整理和验证信息的场景"
+description: "多源信息调研：Web 搜索、网页抓取、交叉验证、结构化输出。"
 version: "1.0.0"
 suggested-tools:
   - builtin.web.search

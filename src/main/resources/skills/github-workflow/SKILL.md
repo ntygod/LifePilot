@@ -1,7 +1,7 @@
 ---
 id: github-workflow
 name: "GitHub 协作"
-description: "GitHub 协作流程：PR 管理、Issue 处理、代码审查、CI/CD 诊断。统一通过 gh CLI、REST API 和 GraphQL 与 GitHub 交互"
+description: "GitHub 协作流程：PR 管理、Issue 处理、代码审查、CI/CD 诊断。"
 version: "1.1.0"
 suggested-tools:
   - builtin.shell.exec

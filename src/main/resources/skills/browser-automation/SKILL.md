@@ -1,7 +1,7 @@
 ---
 id: browser-automation
 name: "浏览器自动化"
-description: "浏览器自动化操作：网页导航、表单填写、信息抓取、截图验证、无障碍树分析。适用于需要与网页交互的自动化任务"
+description: "浏览器自动化操作：网页导航、表单填写、信息抓取、截图验证、无障碍树分析。"
 version: "1.0.0"
 suggested-tools:
   - builtin.browser.navigate

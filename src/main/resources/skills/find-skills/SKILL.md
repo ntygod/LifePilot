@@ -1,7 +1,7 @@
 ---
 id: find-skills
 name: "Skill 发现与安装"
-description: "搜索和安装 Skill 扩展包。优先使用 SkillHub CLI（中文加速），回退到 npx skills"
+description: "搜索和安装 Skill 扩展包。"
 version: "1.2.0"
 suggested-tools:
   - builtin.shell.exec

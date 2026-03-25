@@ -1,7 +1,7 @@
 ---
 id: teaching-assistant
 name: "教学辅助"
-description: "教学辅助：概念解释、代码示例演示、学习路径规划、练习题生成、知识点回顾。适用于学习编程和技术概念的场景"
+description: "教学辅助：概念解释、代码示例演示、学习路径规划、练习题生成、知识点回顾。"
 version: "1.0.0"
 suggested-tools:
   - builtin.web.search

@@ -1,7 +1,7 @@
 ---
 id: email-manager
 name: "邮件管理"
-description: "邮件收发、模板管理、批量发送。通过 CLI 工具（curl/sendmail）或 SMTP API 处理邮件"
+description: "邮件收发、模板管理、批量发送。"
 version: "1.0.0"
 suggested-tools:
   - builtin.shell.exec

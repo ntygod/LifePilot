@@ -1,7 +1,7 @@
 ---
 id: database-query
 name: "数据库查询"
-description: "连接数据库执行 SQL 查询、生成 SQL、导出数据。支持 SQLite/MySQL/PostgreSQL"
+description: "连接数据库执行 SQL 查询、生成 SQL、导出数据。"
 version: "1.0.0"
 suggested-tools:
   - builtin.shell.exec
