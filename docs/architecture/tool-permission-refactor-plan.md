@@ -23,6 +23,25 @@
 
 这套模型更符合个人助手定位，也更适合长期演进。
 
+### 实施约束
+
+本次实施明确采用“最终态直改”原则：
+
+- 不考虑向后兼容
+- 不保留过渡态接口
+- 不保留双链路判定
+- 不引入长期适配层
+- 以最终效果和代码整洁为第一目标
+
+因此，后续实施中如果出现：
+
+- 旧白名单与新权限模型并存
+- 旧确认服务与新授权服务并存
+- 旧事件名和新事件名双写
+- 旧 API 和新 API 双维护
+
+都应视为不符合本方案约束，除非只是同一提交中的极短暂编辑过程，且在提交前已清理干净。
+
 ---
 
 ## 当前实现问题定位
@@ -314,6 +333,144 @@
 
 ---
 
+## 渠道适配策略
+
+权限核心逻辑必须对所有渠道统一生效，但不同渠道的交互能力不同，因此只允许在“授权交互方式”上做适配，不允许在“权限判断规则”上分叉。
+
+### 渠道分类
+
+建议将渠道划分为三类：
+
+- `interactive-rich`
+  - `web`
+- `interactive-lite`
+  - `feishu`
+  - `wecom`
+  - `dingtalk`
+- `autonomous`
+  - `cron`
+  - `heartbeat`
+  - 后台 workflow
+
+### 统一规则
+
+所有渠道都必须共用：
+
+- 同一套 `PermissionRequest`
+- 同一套 `ExecutionGrant`
+- 同一套风险等级与审计模型
+- 同一套 `PermissionEvaluator`
+
+不能出现：
+
+- Web 走新权限模型
+- 飞书 / 企微继续走旧确认模型
+- cron 单独走另一套降级逻辑
+
+这会重新制造权限语义分裂。
+
+### 1. Web
+
+`web` 是完整交互渠道，应作为权限交互的主实现。
+
+支持：
+
+- 本次授权
+- 当前会话授权
+- 当前工作区 / 当前项目授权
+- 当前任务授权
+- 查看、撤销既有授权
+
+因此：
+
+- Web 负责完整授权管理页
+- Web 负责最完整的授权弹窗
+- 其他渠道在需要复杂授权时可以引导回 Web
+
+### 2. 飞书 / 企微 / 钉钉
+
+这些渠道也必须执行同样的权限判断，但交互上应做轻量化。
+
+建议支持：
+
+- 本次授权
+- 当前会话授权
+
+不建议在 IM 渠道中直接支持：
+
+- 复杂工作区选择
+- 大范围长期授权编辑
+- 授权列表管理
+
+这些操作更适合回到 Web。
+
+因此：
+
+- 三方渠道收到高风险请求时，先检查 grant
+- 无授权时，可在消息中发起轻量批准动作
+- 若需要复杂授权范围，则返回“请到 Web 完成授权”
+
+### 3. cron / heartbeat
+
+这些渠道不允许进入交互式授权。
+
+执行规则固定为：
+
+- `LOW / MEDIUM`：直接执行
+- `HIGH`：仅命中预授权时执行
+- `CRITICAL`：默认拒绝
+
+没有授权时：
+
+- 本轮任务失败
+- 写清晰日志
+- 生成可追踪的权限缺失事件
+- 可通知用户去 Web 补授权
+
+### 4. workflow
+
+workflow 不单独发明新规则，而是跟随运行方式：
+
+- 前台交互式 workflow
+  - 继承当前会话授权
+- 后台 / 定时 / 无人值守 workflow
+  - 视为 `autonomous`
+
+如果 workflow 的执行环境切换了，授权模式也随之切换，不允许保持旧授权语义。
+
+### 5. 渠道实现边界
+
+建议新增一个轻量抽象：
+
+- `PermissionInteractionAdapter`
+
+按渠道提供不同实现：
+
+- `WebPermissionInteractionAdapter`
+- `FeishuPermissionInteractionAdapter`
+- `WecomPermissionInteractionAdapter`
+- `DingtalkPermissionInteractionAdapter`
+- `NoopAutonomousPermissionInteractionAdapter`
+
+它们只负责：
+
+- 如何向用户发起授权请求
+- 如何接收授权结果
+- 如何提示用户去 Web 完成复杂授权
+
+它们不负责权限判定本身。
+
+### 6. 最终约束
+
+最终必须满足：
+
+1. 任意渠道触发同一高风险操作，风险判断结果一致。
+2. 不同渠道只允许授权交互能力不同，不允许授权语义不同。
+3. `cron / heartbeat` 永远不等待即时确认。
+4. Web 是唯一完整授权管理入口。
+
+---
+
 ## 前端与用户体验
 
 ### 1. 删除白名单式工具设置
@@ -562,6 +719,259 @@ Web 端现有 `WebUserConfirmationService` 应重构为：
 5. 打通任务预授权
 6. 重做前端权限设置和授权弹窗
 7. 清理旧确认接口、旧白名单配置、旧文案
+
+---
+
+## 实施计划
+
+以下实施计划按“先打权限主链，再收 UI 和任务授权”的顺序执行。每个阶段都要求代码可运行、测试可回归，不保留长期兼容层。
+
+### 阶段 1：权限领域建模
+
+目标：
+
+- 新建权限领域模型与存储
+- 不接主执行链
+- 先把数据结构和判定抽象建立起来
+
+改动范围：
+
+- 新增 `permission/model`
+- 新增 `permission/repository`
+- 新增 `permission/service`
+- 新增数据库表：
+  - `execution_grants`
+  - `permission_decisions`
+
+建议新增类：
+
+- `PermissionRequest`
+- `ExecutionGrant`
+- `ExecutionGrantScope`
+- `PermissionDecision`
+- `PermissionService`
+- `PermissionEvaluator`
+
+完成标准：
+
+- 可以创建、查询、撤销 grant
+- 可以对一条 `PermissionRequest` 做纯内存 / 数据库判定
+- 不影响现有工具执行链
+
+测试：
+
+- repository 集成测试
+- `PermissionEvaluator` 单元测试
+- grant 匹配规则测试
+
+### 阶段 2：接入工具执行主链
+
+目标：
+
+- 在 `ToolExecutionPipeline` 中引入权限判定
+- 直接替换旧确认判定主链
+
+改动范围：
+
+- `ToolExecutionPipeline`
+- `GuardrailEngine`
+- `ToolBridgeAgentToolProvider`
+
+实施方式：
+
+1. 工具解析后构造 `PermissionRequest`
+2. 由 `PermissionEvaluator` 返回：
+   - `PASSED`
+   - `NEEDS_APPROVAL`
+   - `BLOCKED`
+3. 删除旧的逐次确认主语义，主链只保留新的权限决策
+
+完成标准：
+
+- `LOW / MEDIUM` 能直接执行
+- `HIGH / CRITICAL` 可以命中已有 grant 后执行
+- 主链中不再保留旧确认语义分支
+
+测试：
+
+- `ToolExecutionPipeline` 集成测试
+- 风险等级到权限决策映射测试
+- 带 context 的工具执行测试
+
+### 阶段 3：替换确认服务为授权服务
+
+目标：
+
+- 正式淘汰“每次确认”语义
+- 改为“授权请求 / 授权结果”
+
+改动范围：
+
+- `UserConfirmationService`
+- `WebUserConfirmationService`
+- 相关 controller / SSE 事件
+- 前端确认弹窗与 signal
+
+重构方向：
+
+- `UserConfirmationService` 替换为 `PermissionApprovalService`
+- `WebUserConfirmationService` 替换为 `WebPermissionApprovalService`
+- transcript 中记录 `permission-approval` 事件，而不是 `tool-confirmation`
+
+完成标准：
+
+- Web 可以对高风险操作创建授权
+- 授权可以按作用域保存
+- 工具执行命中授权后不再重复弹窗
+- 主代码中不再存在旧 `tool-confirmation` 主语义
+
+测试：
+
+- 授权请求/批准/拒绝链路测试
+- transcript 持久化测试
+- 前端授权交互测试
+
+### 阶段 4：删除白名单访问控制
+
+目标：
+
+- 移除面向用户的工具白名单模型
+- 工具默认可见
+
+改动范围：
+
+- `GuardrailEngine.allowedTools`
+- `addAllowedTools(...)`
+- `removeAllowedTools(...)`
+- `checkToolCall(...)` 中白名单拦截分支
+
+同时收口：
+
+- `AgentRequest.allowedToolIds`
+- `ToolBridgeAgentToolProvider` 的过滤逻辑
+
+处理原则：
+
+- 用户侧白名单删除
+- 内部 `allowedToolIds` 仅保留给受限执行场景
+
+完成标准：
+
+- 普通会话不再因未配置白名单而阻止工具调用
+- 子 Agent / 测试 Agent 仍可内部限制工具可见范围
+
+测试：
+
+- 默认全工具可见测试
+- 内部受限工具范围测试
+- 白名单逻辑删除后的回归测试
+
+### 阶段 5：定时任务预授权
+
+目标：
+
+- `cron / heartbeat / autonomous workflow` 只认预授权
+- 运行时不再等待确认
+
+改动范围：
+
+- `cron.create / cron.update`
+- 任务存储与任务执行链
+- 权限匹配逻辑
+
+实施方式：
+
+1. 创建/编辑任务时写入 `task-scoped grant`
+2. 任务执行时带 `taskId` 构造 `PermissionRequest`
+3. `PermissionEvaluator` 只认 `autonomousAllowed=true`
+
+完成标准：
+
+- `HIGH` 风险任务在有预授权时自动执行
+- 无授权时明确失败并记录原因
+- `CRITICAL` 风险默认拒绝
+
+测试：
+
+- cron 授权创建测试
+- cron 运行时命中 grant 测试
+- 缺失授权失败测试
+
+### 阶段 6：渠道适配
+
+目标：
+
+- Web、飞书、企微、钉钉、自主渠道全部接入同一套权限主链
+
+改动范围：
+
+- 新增 `PermissionInteractionAdapter`
+- 各渠道 adapter 实现
+
+建议实现：
+
+- `WebPermissionInteractionAdapter`
+- `FeishuPermissionInteractionAdapter`
+- `WecomPermissionInteractionAdapter`
+- `DingtalkPermissionInteractionAdapter`
+- `NoopAutonomousPermissionInteractionAdapter`
+
+完成标准：
+
+- 各渠道风险判定一致
+- 非 Web 渠道仅做轻量授权
+- 自主渠道不发起交互授权
+
+测试：
+
+- 渠道适配单元测试
+- 不同渠道同一请求权限结果一致性测试
+
+### 阶段 7：前端权限管理与清理
+
+目标：
+
+- 完成新权限 UI
+- 删除旧白名单 / 旧确认遗留
+
+改动范围：
+
+- 设置页
+- 聊天授权弹窗
+- 三方渠道授权回调前端约定
+- 类型定义与 API client
+
+完成标准：
+
+- 设置页只展示“能力与范围”，不展示工具 ID 白名单
+- 高风险请求可选择授权范围
+- 不再出现旧的 `tool-confirmation` 用户概念
+
+测试：
+
+- 前端权限管理测试
+- API 合约测试
+- 构建与端到端主链回归
+
+### 阶段 8：最终清理
+
+目标：
+
+- 删除所有旧权限模型残留
+- 文案、事件名、表字段统一到新模型
+
+需要清理：
+
+- `tool-confirmation`
+- `UserConfirmationService`
+- 用户工具白名单相关设置
+- 逐次确认旧文案
+
+完成标准：
+
+- 主代码中不再保留旧权限模型残留
+- 权限主链只有一套实现
+- 不存在兼容分支、双写逻辑或双接口维护
 
 ---
 
