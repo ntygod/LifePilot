@@ -43,7 +43,7 @@
     "@types/d3-zoom": "^3.0.8",
     "@types/node": "^22.15.18",
     "@vitejs/plugin-vue": "^6.0.5",
-    "@vue/test-utils": "^2.4.0",
+    "@vue/test-utils": "^2.4.6",
     "fast-check": "^4.1.1",
     "jsdom": "^29.0.1",
     "tailwindcss": "^4.1.7",
