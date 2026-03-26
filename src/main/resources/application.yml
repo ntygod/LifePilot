@@ -50,6 +50,7 @@ lifepilot:
       # ReAct 循环配置
       max-iterations: 45
       max-consecutive-failures: 35
+      max-parallel-tool-calls: 4
       llm-scene: agent_react
     budget:
       default-max-tokens: 131072
@@ -102,6 +103,7 @@ lifepilot:
         default-max-steps: 15
         default-timeout-seconds: 180
       parallel-worker:
+        enabled: false
         max-parallel-workers: 5
         worker-budget-ratio: 0.7
   a2a:

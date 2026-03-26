@@ -104,6 +104,8 @@ public class MultiAgentAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnProperty(prefix = "lifepilot.agent.multi-agent.parallel-worker", name = "enabled",
+            havingValue = "true")
     public SpawnWorkersToolFactory spawnWorkersToolFactory(AgentOrchestrator agentOrchestrator,
                                                            DynamicToolRegistry toolRegistry,
                                                            MultiAgentProperties config) {
@@ -115,6 +117,8 @@ public class MultiAgentAutoConfiguration {
 
     @Bean("spawnWorkersTool")
     @ConditionalOnMissingBean(name = "spawnWorkersTool")
+    @ConditionalOnProperty(prefix = "lifepilot.agent.multi-agent.parallel-worker", name = "enabled",
+            havingValue = "true")
     public com.lifepilot.tool.BuiltinTool spawnWorkersTool(SpawnWorkersToolFactory factory) {
         log.info("多 Agent 协作: 注册 spawn_workers 工具");
         return factory.createSpawnWorkersTool();

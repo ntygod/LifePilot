@@ -9,8 +9,10 @@ import com.lifepilot.tool.model.ToolBudget;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolLayer;
 import com.lifepilot.tool.model.ToolResult;
+import com.lifepilot.tool.model.ToolSchedulingMode;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.tool.schema.JsonSchema;
+import com.lifepilot.tool.semantics.ToolExecutionSemantics;
 import com.lifepilot.workflow.model.WorkflowDefinition;
 import com.lifepilot.workflow.model.WorkflowStep;
 import com.lifepilot.workflow.registry.WorkflowRegistry;
@@ -240,6 +242,7 @@ public class ToolController {
                     .outputSchema(outputSchema)
                     .riskLevel(riskLevel)
                     .idempotent(idempotent)
+                    .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.SEQUENTIAL))
                     .budget(budget)
                     .tags(tags != null ? tags : List.of())
                     .executor(input -> ToolResult.success(Map.of("message", "用户自定义工具，暂无执行逻辑")))
@@ -315,6 +318,7 @@ public class ToolController {
                     .outputSchema(outputSchema)
                     .riskLevel(riskLevel)
                     .idempotent(idempotent)
+                    .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.SEQUENTIAL))
                     .budget(budget)
                     .tags(tags != null ? tags : List.of())
                     .executor(input -> ToolResult.success(Map.of("message", "用户自定义工具，暂无执行逻辑")))
@@ -419,6 +423,8 @@ public class ToolController {
         summary.put("source", getSourceString(tool.layer()));
         summary.put("layer", tool.layer().name());
         summary.put("riskLevel", tool.riskLevel().name());
+        summary.put("actionType", tool.executionSemantics().actionType().name());
+        summary.put("schedulingMode", tool.schedulingMode().name());
         summary.put("idempotent", tool.idempotent());
         summary.put("tags", tool.tags());
 

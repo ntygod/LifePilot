@@ -83,12 +83,17 @@ public class MultiAgentProperties {
      * 并行 Worker 配置。
      */
     public static class ParallelWorker {
+        /** 是否启用 spawn_workers 工具暴露。 */
+        private boolean enabled = false;
         /** 最大并行 Worker 数量。 */
         private int maxParallelWorkers = 5;
         /** Worker 预算占比（剩余预算中分配给 Worker 池的比例）。 */
         private double workerBudgetRatio = 0.7;
         /** Worker System Prompt 覆盖（null 时使用默认通用 Worker 提示词）。 */
         private String workerSystemPrompt;
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
 
         public int getMaxParallelWorkers() { return maxParallelWorkers; }
         public void setMaxParallelWorkers(int maxParallelWorkers) { this.maxParallelWorkers = maxParallelWorkers; }

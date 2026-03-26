@@ -8,7 +8,9 @@ import com.lifepilot.mcp.registry.McpServerRegistry;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.model.ToolBudget;
 import com.lifepilot.tool.model.ToolInput;
+import com.lifepilot.tool.model.ToolSchedulingMode;
 import com.lifepilot.tool.schema.JsonSchema;
+import com.lifepilot.tool.semantics.ToolExecutionSemantics;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -50,7 +52,7 @@ class McpToolTest {
         return new McpTool(
                 "mcp.test.read_file", "read_file", "读取文件",
                 JsonSchema.empty(), JsonSchema.empty(),
-                RiskLevel.LOW, true, ToolBudget.MCP_DEFAULT,
+                RiskLevel.LOW, true, ToolExecutionSemantics.generic(ToolSchedulingMode.SEQUENTIAL), ToolBudget.MCP_DEFAULT,
                 List.of("mcp"), "test", "read_file",
                 "test"
         );

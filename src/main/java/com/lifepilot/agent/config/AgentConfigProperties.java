@@ -37,6 +37,8 @@ public class AgentConfigProperties {
         /** 连续工具调用失败最大次数。 */
         private int maxConsecutiveFailures = 3;
         private int maxEarlyStopRejects = 2;
+        /** 单个工具波次允许的最大并发数。 */
+        private int maxParallelToolCalls = 4;
         /** LLM 调用场景标识。 */
         private String llmScene = "agent_react";
 
@@ -46,6 +48,8 @@ public class AgentConfigProperties {
         public void setMaxConsecutiveFailures(int maxConsecutiveFailures) { this.maxConsecutiveFailures = maxConsecutiveFailures; }
         public int getMaxEarlyStopRejects() { return maxEarlyStopRejects; }
         public void setMaxEarlyStopRejects(int maxEarlyStopRejects) { this.maxEarlyStopRejects = maxEarlyStopRejects; }
+        public int getMaxParallelToolCalls() { return maxParallelToolCalls; }
+        public void setMaxParallelToolCalls(int maxParallelToolCalls) { this.maxParallelToolCalls = maxParallelToolCalls; }
         public String getLlmScene() { return llmScene; }
         public void setLlmScene(String llmScene) { this.llmScene = llmScene; }
     }

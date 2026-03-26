@@ -153,6 +153,8 @@ class IntrospectionToolProviderTest {
                 .description("获取当前日期时间")
                 .riskLevel(RiskLevel.LOW)
                 .tags(List.of("infrastructure"))
+                .executionSemantics(com.lifepilot.tool.semantics.ToolExecutionSemantics.generic(
+                        com.lifepilot.tool.model.ToolSchedulingMode.PARALLEL_SAFE))
                 .executor(input -> ToolResult.success(Map.of()))
                 .build();
         when(toolRegistry.resolve("builtin.env.datetime")).thenReturn(Optional.of(tool));

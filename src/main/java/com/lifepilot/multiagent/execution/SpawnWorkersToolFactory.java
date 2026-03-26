@@ -11,8 +11,10 @@ import com.lifepilot.tool.ToolContract;
 import com.lifepilot.tool.model.ToolContextKeys;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
+import com.lifepilot.tool.model.ToolSchedulingMode;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.tool.schema.JsonSchema;
+import com.lifepilot.tool.semantics.ToolExecutionSemantics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -103,6 +105,7 @@ public class SpawnWorkersToolFactory {
                 .inputSchema(inputSchema)
                 .riskLevel(RiskLevel.MEDIUM)
                 .idempotent(false)
+                .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.SEQUENTIAL))
                 .tags(List.of("multi-agent", "parallel", "worker"))
                 .executor(this::executeSpawnWorkers)
                 .build();

@@ -21,6 +21,7 @@ import com.lifepilot.meta.infra.web.WebSearchToolExecutor;
 import com.lifepilot.notification.NotificationService;
 import com.lifepilot.notification.config.NotificationProperties;
 import com.lifepilot.observability.guardrail.RiskLevel;
+import com.lifepilot.permission.model.PermissionActionType;
 import com.lifepilot.workflow.engine.WorkflowCommandService;
 import com.lifepilot.workflow.registry.WorkflowRegistry;
 import com.lifepilot.workflow.tool.WorkflowToolProvider;
@@ -33,8 +34,11 @@ import com.lifepilot.sandbox.session.SandboxSessionManager;
 import com.lifepilot.sandbox.validator.CodeValidator;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.model.ToolCategory;
+import com.lifepilot.tool.model.ToolSchedulingMode;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.tool.schema.JsonSchema;
+import com.lifepilot.tool.semantics.ToolExecutionSemantics;
+import com.lifepilot.tool.semantics.ToolScopeResolvers;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -230,6 +234,7 @@ public class InfraToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
@@ -244,6 +249,7 @@ public class InfraToolProvider {
                 .description("获取用户偏好配置，包括时区、缓存 TTL 等信息")
                 .inputSchema(JsonSchema.empty())
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
@@ -258,6 +264,7 @@ public class InfraToolProvider {
                 .description("获取操作系统、JVM 版本、可用内存和磁盘空间等系统信息")
                 .inputSchema(JsonSchema.empty())
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
@@ -289,6 +296,11 @@ public class InfraToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        PermissionActionType.HTTP_REQUEST,
+                        ToolSchedulingMode.PARALLEL_SAFE,
+                        ToolScopeResolvers.none()
+                ))
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
@@ -312,6 +324,11 @@ public class InfraToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        PermissionActionType.HTTP_REQUEST,
+                        ToolSchedulingMode.PARALLEL_SAFE,
+                        ToolScopeResolvers.origins("url")
+                ))
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
@@ -334,6 +351,7 @@ public class InfraToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
@@ -370,6 +388,11 @@ public class InfraToolProvider {
                 )))
                 .riskLevel(RiskLevel.HIGH)
                 .idempotent(false)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        PermissionActionType.EXECUTE_SHELL,
+                        ToolSchedulingMode.SEQUENTIAL,
+                        ToolScopeResolvers.workspacePaths("workingDirectory", "cwd")
+                ))
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
@@ -403,6 +426,11 @@ public class InfraToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.MEDIUM)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        PermissionActionType.HTTP_REQUEST,
+                        ToolSchedulingMode.SEQUENTIAL,
+                        ToolScopeResolvers.origins("url")
+                ))
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
@@ -433,6 +461,11 @@ public class InfraToolProvider {
                 )))
                 .riskLevel(RiskLevel.HIGH)
                 .idempotent(false)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        PermissionActionType.EXECUTE_SHELL,
+                        ToolSchedulingMode.SEQUENTIAL,
+                        ToolScopeResolvers.none()
+                ))
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();

@@ -100,7 +100,8 @@ public class ToolAutoConfiguration {
             ObjectMapper objectMapper,
             MetaProperties metaProperties) {
         log.info("工具桥接层初始化: 注册 ToolBridge 实现的 AgentToolProvider");
-        return new ToolBridgeAgentToolProvider(toolRegistry, pipeline, objectMapper, metaProperties);
+        return new ToolBridgeAgentToolProvider(
+                toolRegistry, pipeline, objectMapper, metaProperties);
     }
 
     /**

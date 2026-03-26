@@ -7,7 +7,9 @@ import com.lifepilot.tool.McpTool;
 import com.lifepilot.tool.ToolContract;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.model.ToolBudget;
+import com.lifepilot.tool.model.ToolSchedulingMode;
 import com.lifepilot.tool.schema.JsonSchema;
+import com.lifepilot.tool.semantics.ToolExecutionSemantics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -99,6 +101,10 @@ public class McpToolAdapter {
                 MCP_OUTPUT_SCHEMA,
                 riskLevel,
                 idempotent,
+                ToolExecutionSemantics.generic(Boolean.TRUE.equals(schema.annotations() != null
+                        ? schema.annotations().readOnlyHint() : null)
+                        ? ToolSchedulingMode.PARALLEL_SAFE
+                        : ToolSchedulingMode.SEQUENTIAL),
                 budget,
                 tags,
                 serverName,

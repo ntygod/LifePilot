@@ -198,6 +198,8 @@ class SpawnWorkersToolFactoryTest {
                 .riskLevel(RiskLevel.LOW)
                 .idempotent(true)
                 .tags(List.of())
+                .executionSemantics(com.lifepilot.tool.semantics.ToolExecutionSemantics.generic(
+                        com.lifepilot.tool.model.ToolSchedulingMode.PARALLEL_SAFE))
                 .executor(input -> ToolResult.success(Map.of()))
                 .build();
         BuiltinTool spawnTool = BuiltinTool.builder()
@@ -208,6 +210,7 @@ class SpawnWorkersToolFactoryTest {
                 .riskLevel(RiskLevel.MEDIUM)
                 .idempotent(false)
                 .tags(List.of())
+                .executionSemantics(com.lifepilot.tool.semantics.ToolExecutionSemantics.generic())
                 .executor(input -> ToolResult.success(Map.of()))
                 .build();
 

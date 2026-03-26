@@ -65,7 +65,7 @@ public record PermissionRequest(
             case WORKSPACE -> workspaceId;
             case TASK -> taskId != null && !taskId.isBlank()
                     ? taskId
-                    : resourceScope.get("taskId") != null ? String.valueOf(resourceScope.get("taskId")) : null;
+                    : resourceScope.firstValue("taskIds", "taskId");
             case USER -> userId;
         };
     }

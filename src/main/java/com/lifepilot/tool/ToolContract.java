@@ -6,7 +6,9 @@ import com.lifepilot.tool.model.ToolCategory;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolLayer;
 import com.lifepilot.tool.model.ToolResult;
+import com.lifepilot.tool.model.ToolSchedulingMode;
 import com.lifepilot.tool.schema.JsonSchema;
+import com.lifepilot.tool.semantics.ToolExecutionSemantics;
 
 import java.util.List;
 
@@ -41,6 +43,14 @@ public sealed interface ToolContract permits BuiltinTool, McpTool {
 
     /** 是否幂等。 */
     boolean idempotent();
+
+    /** 工具执行语义。 */
+    ToolExecutionSemantics executionSemantics();
+
+    /** 调度模式。默认串行。 */
+    default ToolSchedulingMode schedulingMode() {
+        return executionSemantics().schedulingMode();
+    }
 
     /** 执行预算。 */
     ToolBudget budget();

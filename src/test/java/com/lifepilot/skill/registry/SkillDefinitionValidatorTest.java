@@ -37,6 +37,7 @@ class SkillDefinitionValidatorTest {
         // 默认所有工具都存在，返回一个真实的 BuiltinTool 实例
         var dummyTool = BuiltinTool.builder()
                 .id("dummy").name("dummy").description("dummy")
+                .executionSemantics(com.lifepilot.tool.semantics.ToolExecutionSemantics.generic())
                 .executor(input -> null)
                 .build();
         when(toolRegistry.resolve(anyString())).thenReturn(Optional.of(dummyTool));

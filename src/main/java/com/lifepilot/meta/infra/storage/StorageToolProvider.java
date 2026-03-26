@@ -13,11 +13,15 @@ import com.lifepilot.datastore.model.QueryRequest;
 import com.lifepilot.datastore.model.SortDirection;
 import com.lifepilot.datastore.model.TimeGranularity;
 import com.lifepilot.observability.guardrail.RiskLevel;
+import com.lifepilot.permission.model.PermissionActionType;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.model.ToolCategory;
 import com.lifepilot.tool.model.ToolResult;
+import com.lifepilot.tool.model.ToolSchedulingMode;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.tool.schema.JsonSchema;
+import com.lifepilot.tool.semantics.ToolExecutionSemantics;
+import com.lifepilot.tool.semantics.ToolScopeResolvers;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -84,6 +88,11 @@ public class StorageToolProvider {
                 )))
                 .riskLevel(RiskLevel.LOW)
                 .idempotent(false)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        PermissionActionType.MODIFY_DATASTORE,
+                        ToolSchedulingMode.RESOURCE_SERIALIZED,
+                        ToolScopeResolvers.exactValues("collections", "name")
+                ))
                 .executor(input -> {
                     try {
                         String name = input.getParam("name", String.class);
@@ -124,6 +133,7 @@ public class StorageToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))
                 .executor(input -> {
                     try {
                         String typeStr = input.getOptionalParam("type", String.class).orElse(null);
@@ -161,6 +171,11 @@ public class StorageToolProvider {
                 )))
                 .riskLevel(RiskLevel.LOW)
                 .idempotent(false)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        PermissionActionType.MODIFY_DATASTORE,
+                        ToolSchedulingMode.RESOURCE_SERIALIZED,
+                        ToolScopeResolvers.exactValues("collections", "collectionName")
+                ))
                 .executor(input -> {
                     try {
                         String collectionName = input.getParam("collectionName", String.class);
@@ -203,6 +218,11 @@ public class StorageToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        PermissionActionType.GENERIC_TOOL_OPERATION,
+                        ToolSchedulingMode.PARALLEL_SAFE,
+                        ToolScopeResolvers.exactValues("collections", "collectionName")
+                ))
                 .executor(input -> {
                     try {
                         String collectionName = input.getParam("collectionName", String.class);
@@ -266,6 +286,11 @@ public class StorageToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.MEDIUM)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        PermissionActionType.MODIFY_DATASTORE,
+                        ToolSchedulingMode.RESOURCE_SERIALIZED,
+                        ToolScopeResolvers.exactValues("documentIds", "documentId")
+                ))
                 .executor(input -> {
                     try {
                         String documentId = input.getParam("documentId", String.class);
@@ -297,6 +322,11 @@ public class StorageToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.MEDIUM)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        PermissionActionType.MODIFY_DATASTORE,
+                        ToolSchedulingMode.RESOURCE_SERIALIZED,
+                        ToolScopeResolvers.exactValues("documentIds", "documentId")
+                ))
                 .executor(input -> {
                     try {
                         String documentId = input.getParam("documentId", String.class);
@@ -332,6 +362,11 @@ public class StorageToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        PermissionActionType.GENERIC_TOOL_OPERATION,
+                        ToolSchedulingMode.PARALLEL_SAFE,
+                        ToolScopeResolvers.exactValues("collections", "collectionName")
+                ))
                 .executor(input -> {
                     try {
                         String collectionName = input.getParam("collectionName", String.class);

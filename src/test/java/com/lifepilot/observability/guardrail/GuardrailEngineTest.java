@@ -79,6 +79,7 @@ class GuardrailEngineTest {
                 .inputSchema(JsonSchema.empty())
                 .riskLevel(RiskLevel.LOW)
                 .tags(List.of("business"))
+                .executionSemantics(com.lifepilot.tool.semantics.ToolExecutionSemantics.generic())
                 .executor(input -> ToolResult.success(Map.of()))
                 .build();
     }

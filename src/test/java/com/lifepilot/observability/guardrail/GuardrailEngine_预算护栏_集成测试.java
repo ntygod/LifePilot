@@ -96,6 +96,7 @@ class GuardrailEngine_预算护栏_集成测试 {
                 .name("test.echo")
                 .description("测试工具")
                 .inputSchema(JsonSchema.empty())
+                .executionSemantics(com.lifepilot.tool.semantics.ToolExecutionSemantics.generic())
                 .executor(input -> ToolResult.success(Map.of("ok", true)))
                 .build();
 
