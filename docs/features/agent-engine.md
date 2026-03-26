@@ -83,7 +83,7 @@ public class ReactAgentLoop {
 `ContextAssembler` 当前采用更明确的分层组装方式：
 
 - 系统 Prompt（通过 `PromptRegistry`）
-- 当前 session 最近完整轮次（通过 `ConversationViewService` 读取）
+- 当前 session 最近完整轮次（通过 `ContextEngine` 从 transcript 读取）
 - L1 临时工作区摘要（通过 `SessionWorkspaceService` 读取）
 - L3 用户画像与经验实体
 - 其他段落按需预留

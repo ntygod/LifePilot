@@ -17,12 +17,12 @@
 
 ### 2.1 当前会话最近轮次读取
 
-- `ContextAssembler` 通过 `ConversationViewService.getRecentTurns()` 获取最近完整轮次
+- `ContextAssembler` 通过 `ContextEngine` 获取最近完整轮次
 - 返回结果已经按完整 turn 裁剪，适合直接拼进 Prompt
 
 ### 2.2 完整时间线展示
 
-- Web UI 通过 `getFullTimeline()` 读取会话完整消息流
+- Web UI 通过 `ChatSessionService` 读取会话完整消息流
 - 返回值按时间正序排列，适合直接渲染聊天记录
 
 ### 2.3 对话真源单一化
@@ -40,15 +40,15 @@
 
 ### 3.1 Agent 组装上下文
 
-`ContextAssembler` 每轮调用前读取最近完整轮次，把当前 session 的真实上下文拼进 Prompt。
+`ContextAssembler` 每轮调用前从 transcript 条目中读取最近完整轮次，把当前 session 的真实上下文拼进 Prompt。
 
 ### 3.2 Web UI 展示历史
 
-前端打开某个会话时，通过 `getFullTimeline()` 直接渲染完整聊天历史。
+前端打开某个会话时，通过 `ChatSessionService.getSessionMessages(...)` 直接渲染完整聊天历史。
 
 ### 3.3 评估与回放
 
-评估组件可以复用统一的视图接口读取消息时间线，避免直接绑定数据库表结构。
+评估组件可以复用 transcript 读模型读取消息时间线，避免直接绑定数据库表结构。
 
 ## 4. 当前限制
 

@@ -8,7 +8,7 @@
 
 当前记忆系统采用“会话层 + L1 临时工作区 + L2 情景记忆 + L3 语义记忆 + L4 程序记忆”的分层模型：
 
-- **会话层（L0）**：`chat_sessions / chat_messages`，是原始对话的唯一真源
+- **会话层（L0）**：`session_store / session_transcript_entries`，是原始对话的唯一真源
 - **L1 临时工作区**：`session_workspace_items`，保存跨轮但临时的任务状态
 - **L2 情景记忆**：基于会话层和 `chat_messages_fts` 提供跨会话片段回忆
 - **L3 语义记忆**：维护时序知识图谱，存放稳定事实、画像和经验实体
@@ -22,10 +22,10 @@
 graph TB
     subgraph "会话层（L0）"
         CHS["ConversationHistoryStore<br/>写入原始对话"]
-        CVS["ConversationViewService<br/>读取最近完整轮次"]
-        CMS["chat_sessions / chat_messages"]
+        CE["ContextEngine<br/>读取最近完整轮次"]
+        CMS["session_store / session_transcript_entries"]
         CHS --> CMS
-        CVS --> CMS
+        CE --> CMS
     end
 
     subgraph "L1 临时工作区"
@@ -88,8 +88,8 @@ graph TB
 
 ### 3.1 会话层（L0）
 
-- 原始对话统一写入 `chat_messages`，由 `ConversationHistoryStore` 承担写入抽象
-- 当前会话的最近完整轮次由 `ConversationViewService` 直接从会话层读取
+- 原始对话统一写入 `session_transcript_entries`，由 `ConversationHistoryStore` 承担写入抽象
+- 当前会话的最近完整轮次由 `ContextEngine` 直接从会话层读取
 - `ContextAssembler` 组装当前上下文时只使用会话层，不再依赖 L1 或 L2 的对话副本
 
 ### 3.2 SessionWorkspaceService（L1 临时工作区）
@@ -163,16 +163,16 @@ graph TB
 sequenceDiagram
     participant U as 用户
     participant CHS as ConversationHistoryStore
-    participant DB as chat_messages
-    participant CVS as ConversationViewService
+    participant DB as session_transcript_entries
+    participant CE as ContextEngine
     participant SWS as SessionWorkspaceService
     participant SM as SemanticMemory
     participant CA as ContextAssembler
 
     U->>CHS: 发送消息
     CHS->>DB: 写入 user/assistant 原始消息
-    CA->>CVS: getRecentTurns(sessionId, limit)
-    CVS->>DB: 读取最近完整轮次
+    CA->>CE: load(sessionId, budget)
+    CE->>DB: 读取最近完整轮次
     CA->>SWS: listActive(sessionId)
     CA->>SM: 读取用户画像与经验
     CA-->>U: 组装后的 Prompt
@@ -238,7 +238,7 @@ sequenceDiagram
 | 集成模块 | 方向 | 说明 |
 |---------|------|------|
 | Agent 引擎（`com.lifepilot.agent`） | Agent → Memory | `ContextAssembler` 读取最近轮次、工作区、用户画像和经验 |
-| 对话系统（`com.lifepilot.conversation`） | Memory → Conversation | L0 对话真源来自 `ConversationHistoryStore` 与 `ConversationViewService` |
+| 对话系统（`com.lifepilot.conversation`） | Memory → Conversation | L0 对话真源来自 `ConversationHistoryStore` 与 transcript 读模型 |
 | 元能力工具（`com.lifepilot.meta.infra.memory`） | Tool → Memory | `MemoryToolProvider`（完整路径：`com.lifepilot.meta.infra.memory.MemoryToolProvider`）暴露 recall/search/create/update 等工具 |
 | 知识库（`com.lifepilot.knowledge`） | Memory → Knowledge | `search-docs` 工具通过知识库检索补充外部文档片段 |
 

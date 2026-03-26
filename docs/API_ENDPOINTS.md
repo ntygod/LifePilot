@@ -11,6 +11,7 @@
 - [Memories（记忆管理）](#memories记忆管理)
 - [Signals / Notifications（A2UI 信号 + 通知）](#signals--notifications)
 - [Notifications（通知管理）](#notifications通知管理)
+- [Permissions（工具授权）](#permissions工具授权)
 - [Agents（多 Agent 管理）](#agents多-agent-管理)
 - [Tools（工具管理）](#tools工具管理)
 - [Skills（技能管理）](#skills技能管理)
@@ -132,6 +133,19 @@
 | GET | `/api/notifications` | `listNotifications` | 通知历史分页查询（page/size，按 sentAt 降序） |
 | PUT | `/api/notifications/{id}/read` | `markAsRead` | 标记单条通知已读（404 if 不存在） |
 | PUT | `/api/notifications/read-all` | `markAllAsRead` | 批量标记所有通知已读，返回更新数量 |
+
+---
+
+## Permissions（工具授权）
+
+来源：`PermissionController`，Base Path: `/api/permissions`
+
+| Method | Path | Handler | 备注 |
+|--------|------|---------|------|
+| GET | `/api/permissions/grants` | `listGrants` | 查询授权记录（支持 `activeOnly/subjectType/subjectId` 过滤） |
+| POST | `/api/permissions/grants` | `createGrant` | 手动创建授权 |
+| POST | `/api/permissions/approvals/{requestId}` | `resolveApproval` | 回传聊天内授权结果 |
+| DELETE | `/api/permissions/grants/{grantId}` | `revokeGrant` | 撤销授权（支持 `revokedBy/reason`） |
 
 ---
 
