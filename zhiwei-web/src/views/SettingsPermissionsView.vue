@@ -58,7 +58,7 @@ const subjectOptions: Option[] = [
   { value: 'SESSION', label: '本会话', description: '仅当前会话内的相似操作可复用授权。' },
   { value: 'WORKSPACE', label: '当前工作区', description: '适合文件修改、Shell、构建等项目内操作。' },
   { value: 'TASK', label: '当前任务', description: '适合定时任务、心跳巡检和无人值守工作流。' },
-  { value: 'USER', label: '当前账号', description: '适合跨会话复用的个人长期授权。' },
+  { value: 'USER', label: '长期', description: '适合跨会话复用的个人长期授权。' },
 ]
 
 const actionOptions: Option[] = [
@@ -71,7 +71,7 @@ const actionOptions: Option[] = [
   { value: 'WRITE_MEMORY', label: '写入记忆', description: '写入长期记忆、偏好和经验条目。' },
   { value: 'MODIFY_DATASTORE', label: '修改数据存储', description: '更新集合、文档和结构化数据。' },
   { value: 'CREATE_SCHEDULE', label: '管理定时任务', description: '创建、修改或取消 Cron / 心跳任务。' },
-  { value: 'GENERIC_TOOL_OPERATION', label: '通用工具操作', description: '未归类时的兜底授权动作。' },
+  { value: 'GENERIC_TOOL_OPERATION', label: '任务级高风险操作', description: '适合 Cron、心跳和工作流复用的统一高风险授权。' },
 ]
 
 const riskOptions: Option[] = [
@@ -173,6 +173,9 @@ function riskBadgeVariant(risk: string) {
 }
 
 function actionLabel(actionType: string) {
+  if (actionType === 'GENERIC_TOOL_OPERATION') {
+    return '任务级高风险操作'
+  }
   return actionOptions.find(option => option.value === actionType)?.label ?? actionType
 }
 

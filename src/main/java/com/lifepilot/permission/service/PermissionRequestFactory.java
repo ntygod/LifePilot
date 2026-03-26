@@ -11,12 +11,9 @@ import com.lifepilot.tool.model.ToolContextKeys;
 import com.lifepilot.tool.model.ToolInput;
 import org.springframework.stereotype.Service;
 
-import java.net.URI;
-import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Optional;
 
 /**
  * 权限请求构造器。
@@ -31,11 +28,17 @@ public class PermissionRequestFactory {
 
     private final ObservabilityProperties observabilityProperties;
     private final ToolConfigProperties toolConfigProperties;
+    private final AutonomousTaskApprovalAdvisor autonomousTaskApprovalAdvisor;
+    private final PermissionScopeResolver permissionScopeResolver;
 
     public PermissionRequestFactory(ObservabilityProperties observabilityProperties,
-                                    ToolConfigProperties toolConfigProperties) {
+                                    ToolConfigProperties toolConfigProperties,
+                                    AutonomousTaskApprovalAdvisor autonomousTaskApprovalAdvisor,
+                                    PermissionScopeResolver permissionScopeResolver) {
         this.observabilityProperties = observabilityProperties;
         this.toolConfigProperties = toolConfigProperties;
+        this.autonomousTaskApprovalAdvisor = autonomousTaskApprovalAdvisor;
+        this.permissionScopeResolver = permissionScopeResolver;
     }
 
     public PermissionRequest create(ToolContract tool, ToolInput input, String fallbackTraceId) {
@@ -51,6 +54,8 @@ public class PermissionRequestFactory {
                 .orElseGet(() -> resolveTaskId(channel, sessionId));
         String workspaceId = input.getContextValue(ToolContextKeys.WORKSPACE_ID, String.class)
                 .orElseGet(() -> resolveWorkspaceId(resourceScope));
+        boolean autonomousTaskGrantRequired = actionType == PermissionActionType.CREATE_SCHEDULE
+                && autonomousTaskApprovalAdvisor.requiresApproval(firstNonBlankParam(input, "instruction"));
 
         return new PermissionRequest(
                 tool.id(),
@@ -63,7 +68,8 @@ public class PermissionRequestFactory {
                 taskId,
                 userId,
                 turnId,
-                traceId
+                traceId,
+                autonomousTaskGrantRequired
         );
     }
 
@@ -105,54 +111,12 @@ public class PermissionRequestFactory {
                                                      PermissionActionType actionType,
                                                      ToolInput input) {
         return switch (actionType) {
-            case READ_FILE, WRITE_FILE, DELETE_FILE -> resolveFileScope(input);
-            case EXECUTE_SHELL -> resolveShellScope(input);
-            case BROWSER_AUTOMATION -> resolveBrowserScope(input);
-            case HTTP_REQUEST -> resolveHttpScope(input);
-            case MODIFY_DATASTORE -> resolveDatastoreScope(input);
+            case READ_FILE, WRITE_FILE, DELETE_FILE, EXECUTE_SHELL,
+                    BROWSER_AUTOMATION, HTTP_REQUEST, MODIFY_DATASTORE ->
+                    permissionScopeResolver.resolveRuntimeScope(actionType, input);
             case CREATE_SCHEDULE -> resolveScheduleScope(toolId, input);
             case WRITE_MEMORY, GENERIC_TOOL_OPERATION -> ExecutionGrantScope.EMPTY;
         };
-    }
-
-    private ExecutionGrantScope resolveFileScope(ToolInput input) {
-        String path = firstNonBlankParam(input,
-                "path", "targetPath", "sourcePath", "fromPath", "toPath", "filePath");
-        if (path == null) {
-            return ExecutionGrantScope.EMPTY;
-        }
-        String normalizedPath = normalizePath(path);
-        Map<String, Object> values = new LinkedHashMap<>();
-        values.put("path", normalizedPath);
-        String workspacePath = resolveWorkspacePath(normalizedPath);
-        if (workspacePath != null) {
-            values.put("workspacePath", workspacePath);
-        }
-        return ExecutionGrantScope.of(values);
-    }
-
-    private ExecutionGrantScope resolveShellScope(ToolInput input) {
-        String workspacePath = firstNonBlankParam(input, "workingDirectory", "cwd");
-        if (workspacePath == null) {
-            return ExecutionGrantScope.EMPTY;
-        }
-        return ExecutionGrantScope.of(Map.of("workspacePath", normalizePath(workspacePath)));
-    }
-
-    private ExecutionGrantScope resolveBrowserScope(ToolInput input) {
-        return resolveOriginScope(firstNonBlankParam(input, "url", "origin"));
-    }
-
-    private ExecutionGrantScope resolveHttpScope(ToolInput input) {
-        return resolveOriginScope(firstNonBlankParam(input, "url", "origin", "endpoint"));
-    }
-
-    private ExecutionGrantScope resolveDatastoreScope(ToolInput input) {
-        String collection = firstNonBlankParam(input, "collection", "collectionName", "name");
-        if (collection == null) {
-            return ExecutionGrantScope.EMPTY;
-        }
-        return ExecutionGrantScope.of(Map.of("collection", collection));
     }
 
     private ExecutionGrantScope resolveScheduleScope(String toolId, ToolInput input) {
@@ -160,25 +124,11 @@ public class PermissionRequestFactory {
         if (taskId == null && "builtin.cron.create".equals(toolId)) {
             taskId = firstNonBlankParam(input, "name");
         }
-        return taskId != null
-                ? ExecutionGrantScope.of(Map.of("taskId", taskId))
-                : ExecutionGrantScope.EMPTY;
-    }
-
-    private ExecutionGrantScope resolveOriginScope(String urlOrOrigin) {
-        if (urlOrOrigin == null) {
-            return ExecutionGrantScope.EMPTY;
-        }
-        String origin = normalizeOrigin(urlOrOrigin);
-        String host = extractHost(urlOrOrigin);
         Map<String, Object> values = new LinkedHashMap<>();
-        if (origin != null) {
-            values.put("origin", origin);
+        if (taskId != null && !taskId.isBlank()) {
+            values.put("taskId", taskId);
         }
-        if (host != null) {
-            values.put("host", host);
-        }
-        return values.isEmpty() ? ExecutionGrantScope.EMPTY : ExecutionGrantScope.of(values);
+        return ExecutionGrantScope.of(values);
     }
 
     private RiskLevel resolveRiskLevel(ToolContract tool, ToolInput input) {
@@ -208,9 +158,9 @@ public class PermissionRequestFactory {
         if (execPath == null || toolConfigProperties.getTrustedWorkspace().getPaths().isEmpty()) {
             return originalLevel;
         }
-        String normalizedExecPath = normalizePath(execPath);
+        String normalizedExecPath = permissionScopeResolver.normalizePath(execPath);
         boolean trusted = toolConfigProperties.getTrustedWorkspace().getPaths().stream()
-                .map(this::normalizePath)
+                .map(permissionScopeResolver::normalizePath)
                 .anyMatch(normalizedExecPath::startsWith);
         if (!trusted) {
             return originalLevel;
@@ -234,13 +184,7 @@ public class PermissionRequestFactory {
     }
 
     private String resolveWorkspaceId(ExecutionGrantScope scope) {
-        if (scope == null || scope.isEmpty()) {
-            return null;
-        }
-        return Optional.ofNullable(scope.get("workspacePath"))
-                .or(() -> Optional.ofNullable(scope.get("path")))
-                .map(String::valueOf)
-                .orElse(null);
+        return permissionScopeResolver.resolveWorkspaceId(scope);
     }
 
     private String firstNonBlankParam(ToolInput input, String... names) {
@@ -253,48 +197,4 @@ public class PermissionRequestFactory {
         return null;
     }
 
-    private String normalizePath(String rawPath) {
-        try {
-            return Path.of(rawPath).toAbsolutePath().normalize().toString().replace("\\", "/");
-        } catch (Exception ignored) {
-            return rawPath.replace("\\", "/").trim();
-        }
-    }
-
-    private String resolveWorkspacePath(String normalizedPath) {
-        try {
-            Path path = Path.of(normalizedPath);
-            String fileName = path.getFileName() != null ? path.getFileName().toString() : "";
-            if (fileName.contains(".") && path.getParent() != null) {
-                return path.getParent().toString().replace("\\", "/");
-            }
-            return path.toString().replace("\\", "/");
-        } catch (Exception ignored) {
-            int slash = normalizedPath.lastIndexOf('/');
-            return slash > 0 ? normalizedPath.substring(0, slash) : normalizedPath;
-        }
-    }
-
-    private String normalizeOrigin(String rawValue) {
-        try {
-            URI uri = URI.create(rawValue);
-            if (uri.getScheme() == null || uri.getHost() == null) {
-                return null;
-            }
-            return uri.getPort() > 0
-                    ? "%s://%s:%d".formatted(uri.getScheme(), uri.getHost(), uri.getPort())
-                    : "%s://%s".formatted(uri.getScheme(), uri.getHost());
-        } catch (Exception ignored) {
-            return null;
-        }
-    }
-
-    private String extractHost(String rawValue) {
-        try {
-            URI uri = URI.create(rawValue);
-            return uri.getHost();
-        } catch (Exception ignored) {
-            return null;
-        }
-    }
 }

@@ -22,6 +22,7 @@ import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.*;
 
@@ -134,8 +135,9 @@ public class ToolExecutionPipeline implements java.io.Closeable {
                     buildMeta(toolId, start, 0, false, idempotencyKey));
         }
 
-        // 2. 参数校验
-        ToolInput input = new ToolInput(toolId, parameters, tool.inputSchema(), idempotencyKey, context);
+        // 2. 参数预处理与校验
+        Map<String, Object> effectiveParameters = prepareParameters(toolId, parameters);
+        ToolInput input = new ToolInput(toolId, effectiveParameters, tool.inputSchema(), idempotencyKey, context);
         ValidationResult validation = input.validate();
         if (!validation.isValid()) {
             String errorMsg = ((ValidationResult.Failed) validation).formatForLlm();
@@ -259,6 +261,15 @@ public class ToolExecutionPipeline implements java.io.Closeable {
                     .meta(lastResult.meta().toBuilder().retryCount(maxRetries).build())
                     .build()
                 : ToolResult.error("执行失败，重试耗尽");
+    }
+
+    private Map<String, Object> prepareParameters(String toolId, Map<String, Object> parameters) {
+        if (!"builtin.cron.create".equals(toolId) || parameters.containsKey("taskId")) {
+            return parameters;
+        }
+        Map<String, Object> enriched = new LinkedHashMap<>(parameters);
+        enriched.put("taskId", java.util.UUID.randomUUID().toString());
+        return Map.copyOf(enriched);
     }
 
     /**

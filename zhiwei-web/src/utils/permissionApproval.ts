@@ -10,7 +10,7 @@ const actionTypeLabels: Record<string, string> = {
   WRITE_MEMORY: '写入长期记忆',
   MODIFY_DATASTORE: '修改数据存储',
   CREATE_SCHEDULE: '创建或修改定时任务',
-  GENERIC_TOOL_OPERATION: '执行工具操作',
+  GENERIC_TOOL_OPERATION: '任务级高风险操作',
 }
 
 const toolLabels: Record<string, string> = {
@@ -32,7 +32,7 @@ export function formatPermissionActionLabel(actionType?: string | null, toolName
   if (toolName && toolName.trim()) {
     return toolName.trim()
   }
-  return '执行工具操作'
+  return '任务级高风险操作'
 }
 
 export function formatPermissionToolLabel(toolId?: string | null, toolName?: string | null) {
@@ -46,6 +46,9 @@ export function formatPermissionToolLabel(toolId?: string | null, toolName?: str
 }
 
 export function buildPermissionCoverageHint(actionType?: string | null, toolName?: string | null) {
+  if (actionType === 'CREATE_SCHEDULE') {
+    return '授权后，这个任务后续自动运行时可直接执行高风险操作；不影响其他任务。'
+  }
   const actionLabel = formatPermissionActionLabel(actionType, toolName)
   return `仅覆盖“${actionLabel}”这一类操作，不会自动放开其他高风险能力。`
 }

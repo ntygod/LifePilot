@@ -3,10 +3,7 @@ package com.lifepilot.permission.service;
 import com.lifepilot.permission.model.ExecutionGrantScope;
 import org.springframework.lang.Nullable;
 
-import java.net.URI;
-import java.nio.file.Path;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -65,25 +62,10 @@ final class PermissionScopeMatcher {
     }
 
     private static boolean pathStartsWith(String requestPath, String grantPath) {
-        try {
-            String normalizedRequest = Path.of(requestPath).toAbsolutePath().normalize().toString().toLowerCase(Locale.ROOT);
-            String normalizedGrant = Path.of(grantPath).toAbsolutePath().normalize().toString().toLowerCase(Locale.ROOT);
-            return normalizedRequest.startsWith(normalizedGrant);
-        } catch (Exception ignored) {
-            return requestPath.equalsIgnoreCase(grantPath)
-                    || requestPath.toLowerCase(Locale.ROOT).startsWith(grantPath.toLowerCase(Locale.ROOT));
-        }
+        return PermissionScopeNormalizer.pathStartsWith(requestPath, grantPath);
     }
 
     private static String normalizeOrigin(String value) {
-        try {
-            URI uri = URI.create(value);
-            int port = uri.getPort();
-            return port > 0
-                    ? "%s://%s:%d".formatted(uri.getScheme(), uri.getHost(), port)
-                    : "%s://%s".formatted(uri.getScheme(), uri.getHost());
-        } catch (Exception ignored) {
-            return value.trim();
-        }
+        return PermissionScopeNormalizer.normalizeOrigin(value);
     }
 }

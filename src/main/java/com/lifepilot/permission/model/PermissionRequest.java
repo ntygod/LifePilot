@@ -22,7 +22,8 @@ public record PermissionRequest(
         @Nullable String taskId,
         @Nullable String userId,
         @Nullable String turnId,
-        @Nullable String traceId
+        @Nullable String traceId,
+        boolean autonomousTaskGrantRequired
 ) {
 
     private static final Set<String> AUTONOMOUS_CHANNEL_PREFIXES = Set.of("cron", "heartbeat", "workflow");
@@ -32,8 +33,29 @@ public record PermissionRequest(
         resourceScope = resourceScope != null ? resourceScope : ExecutionGrantScope.EMPTY;
     }
 
+    public PermissionRequest(
+            String toolId,
+            PermissionActionType actionType,
+            RiskLevel riskLevel,
+            String channel,
+            ExecutionGrantScope resourceScope,
+            @Nullable String sessionId,
+            @Nullable String workspaceId,
+            @Nullable String taskId,
+            @Nullable String userId,
+            @Nullable String turnId,
+            @Nullable String traceId
+    ) {
+        this(toolId, actionType, riskLevel, channel, resourceScope, sessionId, workspaceId,
+                taskId, userId, turnId, traceId, false);
+    }
+
     public boolean isAutonomousChannel() {
         return AUTONOMOUS_CHANNEL_PREFIXES.stream().anyMatch(channel::startsWith);
+    }
+
+    public boolean requiresAutonomousPreAuthorization() {
+        return actionType == PermissionActionType.CREATE_SCHEDULE && autonomousTaskGrantRequired;
     }
 
     @Nullable

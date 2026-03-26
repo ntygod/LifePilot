@@ -61,18 +61,27 @@ public class ExecutionGrantRepository {
     }
 
     public List<ExecutionGrant> findActiveByActionType(PermissionActionType actionType, Instant now) {
-        return jdbcTemplate.query(
-                """
+        return findActiveByActionTypes(List.of(actionType), now);
+    }
+
+    public List<ExecutionGrant> findActiveByActionTypes(List<PermissionActionType> actionTypes, Instant now) {
+        if (actionTypes == null || actionTypes.isEmpty()) {
+            return List.of();
+        }
+        String placeholders = String.join(", ", java.util.Collections.nCopies(actionTypes.size(), "?"));
+        String sql = """
                 SELECT * FROM execution_grants
-                WHERE action_type = ?
+                WHERE action_type IN (%s)
                   AND revoked_at IS NULL
                   AND (expires_at IS NULL OR expires_at > ?)
                 ORDER BY created_at DESC
-                """,
-                this::mapRow,
-                actionType.name(),
-                now.toString()
-        );
+                """.formatted(placeholders);
+        Object[] params = new Object[actionTypes.size() + 1];
+        for (int i = 0; i < actionTypes.size(); i++) {
+            params[i] = actionTypes.get(i).name();
+        }
+        params[actionTypes.size()] = now.toString();
+        return jdbcTemplate.query(sql, this::mapRow, params);
     }
 
     public List<ExecutionGrant> findBySubject(PermissionSubjectType subjectType, String subjectId) {

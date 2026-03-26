@@ -110,7 +110,7 @@ class PermissionEvaluatorTest {
     }
 
     @Test
-    void autonomousCritical_默认阻断() {
+    void autonomousCritical_无预授权时阻断() {
         var request = new PermissionRequest(
                 "builtin.shell.exec",
                 PermissionActionType.EXECUTE_SHELL,
@@ -124,12 +124,15 @@ class PermissionEvaluatorTest {
                 null,
                 "trace-2"
         );
+        when(executionGrantRepository.findActiveByActionTypes(
+                eq(List.of(PermissionActionType.EXECUTE_SHELL, PermissionActionType.GENERIC_TOOL_OPERATION)),
+                any()))
+                .thenReturn(List.of());
 
         var decision = permissionEvaluator.evaluate(request);
 
         assertThat(decision.type()).isEqualTo(PermissionDecisionType.BLOCKED);
-        assertThat(decision.reason()).isEqualTo("CRITICAL 风险操作默认禁止自主执行");
-        verify(executionGrantRepository, never()).findActiveByActionType(any(), any());
+        assertThat(decision.reason()).isEqualTo("自主执行缺少有效预授权");
     }
 
     @Test
@@ -147,13 +150,107 @@ class PermissionEvaluatorTest {
                 null,
                 "trace-3"
         );
-        when(executionGrantRepository.findActiveByActionType(eq(PermissionActionType.HTTP_REQUEST), any()))
+        when(executionGrantRepository.findActiveByActionTypes(
+                eq(List.of(PermissionActionType.HTTP_REQUEST, PermissionActionType.GENERIC_TOOL_OPERATION)),
+                any()))
                 .thenReturn(List.of());
 
         var decision = permissionEvaluator.evaluate(request);
 
         assertThat(decision.type()).isEqualTo(PermissionDecisionType.BLOCKED);
         assertThat(decision.reason()).isEqualTo("自主执行缺少有效预授权");
+    }
+
+    @Test
+    void autonomousHigh_命中任务级自主授权时放行() {
+        var request = new PermissionRequest(
+                "builtin.code.execute",
+                PermissionActionType.EXECUTE_SHELL,
+                RiskLevel.HIGH,
+                "cron",
+                ExecutionGrantScope.EMPTY,
+                "cron:task-1",
+                null,
+                "task-1",
+                "user-1",
+                null,
+                "trace-3"
+        );
+        var grant = new ExecutionGrant(
+                "grant-" + UUID.randomUUID(),
+                PermissionSubjectType.TASK,
+                "task-1",
+                PermissionActionType.GENERIC_TOOL_OPERATION,
+                RiskLevel.HIGH,
+                ExecutionGrantScope.EMPTY,
+                List.of("cron", "heartbeat", "workflow"),
+                true,
+                Instant.now().plus(1, ChronoUnit.DAYS),
+                null,
+                null,
+                null,
+                "user-1",
+                null,
+                "允许任务执行高风险工具",
+                Map.of(),
+                Instant.now(),
+                Instant.now()
+        );
+        when(executionGrantRepository.findActiveByActionTypes(
+                eq(List.of(PermissionActionType.EXECUTE_SHELL, PermissionActionType.GENERIC_TOOL_OPERATION)),
+                any()))
+                .thenReturn(List.of(grant));
+
+        var decision = permissionEvaluator.evaluate(request);
+
+        assertThat(decision.type()).isEqualTo(PermissionDecisionType.PASSED);
+        assertThat(decision.matchedGrantId()).isEqualTo(grant.id());
+    }
+
+    @Test
+    void autonomousCritical_命中任务级自主授权时放行() {
+        var request = new PermissionRequest(
+                "builtin.shell.exec",
+                PermissionActionType.EXECUTE_SHELL,
+                RiskLevel.CRITICAL,
+                "workflow",
+                ExecutionGrantScope.EMPTY,
+                "workflow:task-1",
+                null,
+                "task-1",
+                "user-1",
+                null,
+                "trace-3"
+        );
+        var grant = new ExecutionGrant(
+                "grant-" + UUID.randomUUID(),
+                PermissionSubjectType.TASK,
+                "task-1",
+                PermissionActionType.GENERIC_TOOL_OPERATION,
+                RiskLevel.CRITICAL,
+                ExecutionGrantScope.EMPTY,
+                List.of("cron", "heartbeat", "workflow"),
+                true,
+                Instant.now().plus(1, ChronoUnit.DAYS),
+                null,
+                null,
+                null,
+                "user-1",
+                null,
+                "允许任务执行高风险工具",
+                Map.of(),
+                Instant.now(),
+                Instant.now()
+        );
+        when(executionGrantRepository.findActiveByActionTypes(
+                eq(List.of(PermissionActionType.EXECUTE_SHELL, PermissionActionType.GENERIC_TOOL_OPERATION)),
+                any()))
+                .thenReturn(List.of(grant));
+
+        var decision = permissionEvaluator.evaluate(request);
+
+        assertThat(decision.type()).isEqualTo(PermissionDecisionType.PASSED);
+        assertThat(decision.matchedGrantId()).isEqualTo(grant.id());
     }
 
     @Test
@@ -173,6 +270,29 @@ class PermissionEvaluatorTest {
         );
         when(executionGrantRepository.findActiveByActionType(eq(PermissionActionType.BROWSER_AUTOMATION), any()))
                 .thenReturn(List.of());
+
+        var decision = permissionEvaluator.evaluate(request);
+
+        assertThat(decision.type()).isEqualTo(PermissionDecisionType.NEEDS_APPROVAL);
+        assertThat(decision.reason()).isEqualTo("高风险操作需要用户授权");
+    }
+
+    @Test
+    void interactiveScheduleWithAutonomousGrantRequirement_应要求审批() {
+        var request = new PermissionRequest(
+                "builtin.cron.create",
+                PermissionActionType.CREATE_SCHEDULE,
+                RiskLevel.LOW,
+                "web",
+                ExecutionGrantScope.of(Map.of("taskId", "task-1")),
+                "session-1",
+                null,
+                "task-1",
+                "user-1",
+                null,
+                "trace-5",
+                true
+        );
 
         var decision = permissionEvaluator.evaluate(request);
 

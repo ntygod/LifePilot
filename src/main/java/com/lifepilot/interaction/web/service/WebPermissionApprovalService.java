@@ -9,9 +9,12 @@ import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.permission.model.ExecutionGrant;
 import com.lifepilot.permission.model.PermissionRequest;
 import com.lifepilot.permission.model.PermissionSubjectType;
+import com.lifepilot.permission.model.PermissionActionType;
+import com.lifepilot.permission.model.ExecutionGrantScope;
 import com.lifepilot.permission.service.PermissionApprovalService;
 import com.lifepilot.permission.service.PermissionService;
 import com.lifepilot.tool.ToolContract;
+import com.lifepilot.observability.guardrail.RiskLevel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
@@ -131,6 +134,10 @@ public class WebPermissionApprovalService implements PermissionApprovalService {
             throw new IllegalArgumentException("所选授权范围缺少主体标识: " + subjectType);
         }
 
+        if (request.actionType() == PermissionActionType.CREATE_SCHEDULE) {
+            return createTaskPreAuthorization(requestId, request, tool, response, now, subjectType, subjectId);
+        }
+
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("toolId", tool.id());
         metadata.put("toolName", tool.name());
@@ -158,6 +165,47 @@ public class WebPermissionApprovalService implements PermissionApprovalService {
         ));
     }
 
+    private ExecutionGrant createTaskPreAuthorization(String requestId,
+                                                      PermissionRequest request,
+                                                      ToolContract tool,
+                                                      PermissionApprovalResponse response,
+                                                      Instant now,
+                                                      PermissionSubjectType subjectType,
+                                                      String subjectId) {
+        if (subjectType != PermissionSubjectType.TASK) {
+            throw new IllegalArgumentException("定时任务预授权仅支持任务范围");
+        }
+        if (!request.requiresAutonomousPreAuthorization()) {
+            throw new IllegalArgumentException("定时任务未标记高风险预授权，无法创建预授权");
+        }
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("toolId", tool.id());
+        metadata.put("toolName", tool.name());
+        metadata.put("requestId", requestId);
+        metadata.put("grantKind", "AUTONOMOUS_TASK");
+
+        return permissionService.saveGrant(new ExecutionGrant(
+                null,
+                PermissionSubjectType.TASK,
+                subjectId,
+                PermissionActionType.GENERIC_TOOL_OPERATION,
+                RiskLevel.CRITICAL,
+                ExecutionGrantScope.EMPTY,
+                List.of("cron", "heartbeat", "workflow"),
+                true,
+                null,
+                null,
+                null,
+                null,
+                request.userId(),
+                null,
+                response.reason(),
+                metadata,
+                now,
+                now
+        ));
+    }
+
     private List<String> resolveGrantChannels(PermissionRequest request, PermissionSubjectType subjectType) {
         if (subjectType == PermissionSubjectType.TASK) {
             return List.of("cron", "heartbeat", "workflow");
@@ -166,6 +214,10 @@ public class WebPermissionApprovalService implements PermissionApprovalService {
     }
 
     private List<String> resolveAvailableSubjectTypes(PermissionRequest request) {
+        if (request.actionType() == PermissionActionType.CREATE_SCHEDULE
+                && request.requiresAutonomousPreAuthorization()) {
+            return List.of(PermissionSubjectType.TASK.name());
+        }
         List<String> subjectTypes = new ArrayList<>();
         if (request.taskId() != null && !request.taskId().isBlank()) {
             subjectTypes.add(PermissionSubjectType.TASK.name());
@@ -184,7 +236,7 @@ public class WebPermissionApprovalService implements PermissionApprovalService {
 
     private PermissionSubjectType resolveRecommendedSubjectType(PermissionRequest request) {
         if (request.taskId() != null && !request.taskId().isBlank()
-                && request.actionType() == com.lifepilot.permission.model.PermissionActionType.CREATE_SCHEDULE) {
+                && request.actionType() == PermissionActionType.CREATE_SCHEDULE) {
             return PermissionSubjectType.TASK;
         }
         if (request.workspaceId() != null && !request.workspaceId().isBlank()) {
@@ -197,6 +249,10 @@ public class WebPermissionApprovalService implements PermissionApprovalService {
     }
 
     private String buildApprovalMessage(ToolContract tool, PermissionRequest request) {
+        if (request.actionType() == PermissionActionType.CREATE_SCHEDULE
+                && request.requiresAutonomousPreAuthorization()) {
+            return "这个定时任务后续会自主执行高风险操作。若允许，本任务后续运行时将不再重复弹出审批。";
+        }
         String intentText = describeToolIntent(tool);
         String actionFamily = describeActionFamily(request);
         if (request.taskId() != null && !request.taskId().isBlank()) {
