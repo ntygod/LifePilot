@@ -97,10 +97,14 @@ steps:                   # 至少一个步骤（必填）
 | condition | 条件分支 | condition, then, else |
 | loop | 循环遍历 | items, loopVar, body |
 | parallel | 并行执行 | branches（双层列表） |
-| notify | 发送通知 | targetUserId, content, urgency |
+| notify | 发送通知 | targetUserId, content |
 | approval | 人工审批 | message, approvers, timeoutSeconds |
 | wait | 等待 | durationSeconds |
 | sub-workflow | 调用子工作流 | workflowId, params |
+
+`notify` 的使用约定：
+- 有结果需要告知用户时才使用 `notify`
+- 没有结果时优先用 `condition + noop` 静默结束，不要设计“低优先级通知”或额外通知等级字段
 
 ## 触发方式
 

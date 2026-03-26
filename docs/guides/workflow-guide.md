@@ -486,7 +486,7 @@ steps:
 
 ### 通知步骤（notify）
 
-发送通知给指定用户。支持多种内容格式和紧急程度。
+发送通知给指定用户。适合“有结果需要告知用户”的场景。
 
 ```yaml
 - id: send-notification
@@ -495,7 +495,6 @@ steps:
   targetUserId: "${inputs.userId}"    # 目标用户ID（可选）
   content: "任务已完成"                # 通知内容（必填）
   contentType: CARD                   # 内容类型：TEXT / MARKDOWN / CARD
-  urgency: NORMAL                     # 紧急程度：LOW / NORMAL / HIGH
 ```
 
 || 字段 | 必填 | 说明 |
@@ -503,7 +502,6 @@ steps:
 || targetUserId | ❌ | 目标用户ID，默认发送给当前用户 |
 || content | ✅ | 通知内容 |
 || contentType | ❌ | 内容类型：TEXT（纯文本）、MARKDOWN（Markdown格式）、CARD（卡片样式） |
-|| urgency | ❌ | 紧急程度：LOW（低）、NORMAL（普通）、HIGH（高） |
 
 **contentType 说明：**
 
@@ -511,11 +509,11 @@ steps:
 - `MARKDOWN`：支持 Markdown 格式渲染
 - `CARD`：卡片样式，包含标题、正文、底部按钮，适合需要用户操作的场景
 
-**urgency 说明：**
+**使用约定：**
 
-- `LOW`：低优先级，通知静默展示
-- `NORMAL`：普通优先级，正常通知
-- `HIGH`：高优先级，强制提醒用户
+- 有明确结果、异常或结论要告知用户时使用 `notify`
+- 没有结果时优先用 `condition + noop` 静默结束
+- 不再区分通知等级
 
 **实际案例 — 内置「每日任务提醒」工作流中的通知：**
 
@@ -531,7 +529,6 @@ steps:
 
     ${steps.format.output.result}
   contentType: MARKDOWN
-  urgency: HIGH
 ```
 
 ---
@@ -1011,20 +1008,20 @@ errorStrategy:
 
 **触发方式：** 每天早上 8:00 自动执行
 
-**功能：** 汇总今日记忆和任务提醒，根据是否有紧急事项调整通知级别，一条消息掌握全天计划。
+**功能：** 汇总今日记忆和任务提醒，根据是否有紧急事项选择不同的晨报内容，一条消息掌握全天计划。
 
 **步骤流程：**
 ```
 [SkillStep(记忆搜索) ∥ SkillStep(任务列表)]（DAG 并行）
   → LlmStep(生成晨报) + LlmStep(检查紧急事项)
   → ConditionStep(紧急判定)
-    → then: NotifyStep(紧急晨报, HIGH)
-    → else: NotifyStep(普通晨报, LOW)
+    → then: NotifyStep(重点晨报)
+    → else: NotifyStep(常规晨报)
 ```
 
 **涉及的步骤类型：** skill、llm（结构化输出）、condition、notify
 
-**适合学习：** DAG 并行数据获取、条件分支、通知级别控制。
+**适合学习：** DAG 并行数据获取、条件分支、按结果分流通知内容。
 
 ### 2. 周报生成（weekly-summary.yml）⭐ 入门
 

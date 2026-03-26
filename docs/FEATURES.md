@@ -57,8 +57,8 @@
 | 消息网关 | 统一消息入口，6 层中间件管道（Auth→RateLimit→Security→Router→Execution→Audit） | [特性](features/gateway-channels.md) |
 | Channel 适配器 | 企业微信 / 钉钉 / 飞书 / Webhook 四个渠道适配 | [特性](features/gateway-channels.md) |
 | 对话管理 | 对话历史存储、会话视图查询 | [特性](features/conversation.md) |
-| 自主任务执行 | cron 定时 + 条件触发，TASKS.md 文件管理，静默执行 + 通知 | — |
-| 通知系统 | 统一通知服务、Urgency 路由、多渠道广播、富媒体支持、被动队列持久化 | [特性](features/notification.md) |
+| 自主任务执行 | cron 定时 + 条件触发，TASKS.md 文件管理，无结果静默，有结果直接通知 | — |
+| 通知系统 | 统一通知服务、直接通知、多渠道广播、富媒体支持、通知历史管理 | [特性](features/notification.md) |
 
 ### 3.4 高级能力
 

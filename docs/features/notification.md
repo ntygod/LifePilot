@@ -6,118 +6,110 @@
 
 ## 1. 功能概述
 
-通知系统为知微提供统一的通知投递能力。工作流引擎、自主任务执行以及未来扩展模块均可通过 `NotificationService` 接口发送通知，支持多渠道广播（Web SSE / 企微 / 飞书 / 钉钉）、富媒体内容（文本 / Markdown / 交互式卡片 / 图片）、紧急度路由、被动队列持久化和用户通知偏好管理。
+通知系统负责把“需要用户看到的结果”直接投递到用户当前或指定渠道，并把结果写入通知历史。当前实现不再区分 `HIGH / MEDIUM / LOW`，也不再维护被动队列和通知偏好设置。
 
-通知系统作为独立基础设施，解决了被动队列重启丢失、channel 字段硬编码等问题。
+对 cron、heartbeat 这类自主任务，推荐协议是：
+- 没有结果时静默
+- 有结果时直接通知
 
 ## 2. 核心特性
 
 ### 2.1 统一通知服务
 
-`NotificationService` 提供标准化的通知发送入口，任意模块通过构造函数注入即可使用。发送通知只需构造 `NotificationRequest`（目标用户、内容、紧急度），无需关心渠道路由和格式转换细节。
+所有模块都通过 `NotificationService.send(NotificationRequest)` 发送通知。调用方只需要提供：
+- `targetUserId`
+- `content`
+- 可选 `channel`
+- 可选 `typeId`
+- 可选 `metadata`
 
-### 2.2 Urgency 路由策略
+### 2.2 直接发送策略
 
-通知根据紧急程度自动路由：
+通知服务收到请求后直接执行投递：
+- 指定 `channel` 时，定向发送到该渠道
+- 未指定 `channel` 时，按默认路由选择可用渠道
+- Web 渠道会通过 SSE 立即推送到前端
 
-| Urgency | 行为 |
-|---------|------|
-| HIGH | 实时推送到所有已注册渠道 |
-| MEDIUM | 实时推送到所有已注册渠道 |
-| LOW | 入队被动通知队列，由定时调度器批量推送 |
+系统不再做“低优先级入队稍后推送”的分流。
 
 ### 2.3 多渠道广播
 
-通知默认广播到所有已注册的 `ChannelAdapter`：
-- Web — 通过 SSE 实时推送到浏览器
-- 企业微信 — 通过 WecomApiClient 发送
-- 飞书 — 通过 FeishuApiClient 发送
-- 钉钉 — 通过 DingtalkChannelAdapter 发送
+通知默认可投递到所有已注册的 `ChannelAdapter`：
+- Web SSE
+- 企业微信
+- 飞书
+- 钉钉
 
-单渠道发送失败不影响其他渠道，确保通知投递的可靠性。
+单个渠道失败不会中断其他渠道，失败会记录到通知历史中。
 
 ### 2.4 富媒体内容支持
 
-通知内容使用 `ResponseContent` sealed interface，支持四种格式：
+通知内容基于 `ResponseContent`，可承载：
+- `TextContent`
+- `MarkdownContent`
+- `CardContent`
+- `ImageContent`
 
-| 格式 | 说明 | 企微渲染 | 飞书渲染 |
-|------|------|---------|---------|
-| TextContent | 纯文本 | 文本消息 | 文本消息 |
-| MarkdownContent | Markdown 格式 | 企微 Markdown | 富文本 post（链接转 `{tag:"a"}` 标签） |
-| CardContent | 交互式卡片（标题 + 正文 + 操作按钮） | Markdown 降级（标题加粗 + `[label](url)` 链接） | 交互式消息卡片（button 元素 + multi_url 跳转） |
-| ImageContent | 图片（URL + 替代文本 + 说明） | 图文消息（news 类型） | 图片消息 |
+不同渠道通过各自的 `MessageConverter` 做格式适配；不支持的格式会自动降级。
 
-不支持的格式自动降级：ImageContent → 包含图片链接的文本，CardContent 按钮 → `[label](url)` 链接。
+### 2.5 通知历史与已读管理
 
-### 2.5 被动通知队列持久化
+所有发送结果都会持久化到 `notification_history`，支持：
+- 分页查询通知历史
+- 查询未读数
+- 标记单条已读
+- 批量标记全部已读
 
-LOW 紧急度通知入队 `PassiveNotificationQueue`，同时写入 SQLite 和内存队列。系统重启时自动从数据库加载未投递的通知，确保不丢失。`NotificationScheduler` 按配置间隔（默认 30 秒）定时 drain 队列，通过 SSE 广播给对应用户。
+### 2.6 工作流 NotifyStep
 
-### 2.6 用户通知设置
+工作流里的 `NotifyStep` 专门用于“有结果就通知”的场景，当前只保留三个核心字段：
+- `targetUserId`
+- `content`
+- `contentType`
 
-用户可通过 REST API 管理通知偏好：
-- 按通知类型启用/禁用
-- 按渠道启用/禁用（如仅接收 Web 和飞书通知）
-- 设置最低紧急度阈值（如仅接收 MEDIUM 以上通知）
+没有结果需要告知时，推荐用 `condition + noop` 静默结束，而不是再发一条“低优先级通知”。
 
-未配置时使用系统默认：所有类型启用、所有渠道启用、最低紧急度 LOW。
+### 2.7 Web 实时推送
 
-### 2.7 工作流 NotifyStep
-
-工作流引擎新增 `NotifyStep` 步骤类型，支持在工作流任意节点声明式发送通知：
-- `targetUserId` 和 `content` 支持 `${}` 表达式引用前置步骤输出
-- `contentType` 支持 TEXT / MARKDOWN / CARD 三种格式
-- 通过 `NotificationService` 统一投递，享受完整的路由和渠道能力
-
-### 2.8 通知历史与已读管理
-
-所有通知持久化到 `notification_history` 表，支持：
-- 分页查询通知历史（按 sentAt 降序）
-- 按 urgency 过滤
-- 单条标记已读 / 批量标记所有已读
+Web 端通过 `/api/notifications/stream` 建立通知专用 SSE 连接：
+- 建连后先推送一次未读数快照
+- 后续新通知实时广播
+- 前端通知中心直接消费同一条数据流
 
 ## 3. 使用场景
 
-### 场景 1：自主任务通知
+### 场景 1：自主任务结果通知
 
-自主任务执行引擎检测到 cron 任务触发，执行完成后通过 `NotificationService` 发送 MEDIUM 紧急度通知。通知自动广播到用户的 Web 浏览器（SSE）和企微，内容为任务执行结果摘要。
+cron 任务执行后，如果产生了新的摘要、异常或结论，直接把正文发送给用户；如果没有新结果，则返回 `TASK_SILENT`，不生成通知。
 
-### 场景 2：工作流通知
+### 场景 2：工作流完成通知
 
-用户定义了一个数据同步工作流，在同步完成后通过 `NotifyStep` 发送通知。工作流表达式引擎解析 `${sync.result.count}` 变量，生成"同步完成，共更新 42 条记录"的通知内容，通过所有渠道推送。
+工作流在关键节点或执行结束后，通过 `NotifyStep` 把最终结果直接推送给用户，例如“周报已生成”“同步完成，共更新 42 条记录”。
 
-### 场景 3：低优先级通知
+### 场景 3：Agent 主动结果告知
 
-系统生成一条 LOW 紧急度的每日总结通知。通知入队被动队列，不立即打扰用户。30 秒后 NotificationScheduler 定时 drain，通过 SSE 推送到用户浏览器。
+`builtin.interact.notify` 工具用于 Agent 在非阻塞场景下向用户告知结果，默认优先回到当前会话渠道，避免额外的跨渠道广播噪声。
 
 ## 4. REST API
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/api/notifications` | 分页查询通知历史（支持 urgency 过滤） |
+| GET | `/api/notifications` | 分页查询通知历史 |
+| GET | `/api/notifications/stream` | 建立通知 SSE 流 |
 | PUT | `/api/notifications/{id}/read` | 标记单条通知已读 |
 | PUT | `/api/notifications/read-all` | 批量标记所有通知已读 |
-| GET | `/api/notification-settings` | 查询用户通知设置 |
-| PUT | `/api/notification-settings/{typeId}` | 更新通知设置（UPSERT） |
 
 ## 5. 配置项
 
 | 配置键 | 默认值 | 说明 |
 |--------|--------|------|
 | `lifepilot.notification.enabled` | `true` | 是否启用通知系统 |
-| `lifepilot.notification.passive-drain-interval` | `30` | 被动队列 drain 间隔（秒） |
 | `lifepilot.notification.history-page-size` | `20` | 通知历史默认分页大小 |
 | `lifepilot.notification.max-history-page-size` | `100` | 通知历史最大分页大小 |
+| `lifepilot.notification.default-user-id` | `default` | 内部通知默认目标用户 |
 
-## 6. 限制与未来方向
+## 6. 当前约束
 
-当前限制：
-- 通知设置仅支持 REST API 管理，前端通知设置页面尚未实现
-- 被动队列 drain 通过 SSE 推送，用户未在线时通知等待下次连接
-- 通知模板为硬编码格式，未来可支持用户自定义模板
-
-未来方向：
-- 前端通知中心页面（通知列表、未读角标、设置面板）
-- 通知模板引擎（支持用户自定义通知格式）
-- 通知聚合（同类型通知合并，避免信息过载）
-- 推送通道扩展（邮件、Telegram、Webhook）
+- 通知系统当前只负责“结果投递”，不再负责通知等级、偏好过滤或被动队列聚合
+- “无结果静默”由上游任务协议保证，例如 cron 的 `TASK_SILENT`、heartbeat 的 `HEARTBEAT_OK`
+- 通知模板仍以调用方拼装内容为主，后续如需统一样式，可再引入模板层

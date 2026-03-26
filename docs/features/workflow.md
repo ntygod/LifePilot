@@ -28,7 +28,7 @@
 | WaitStep | 等待指定时长，持久化 wakeUpAt 到数据库，由 WakeupScheduler 到时自动唤醒恢复执行 |
 | ApprovalStep | 人工审批，暂停工作流等待决策；支持运行时超时检测，超时后根据配置自动批准或标记失败 |
 | NoopStep | 空操作，直接跳过 |
-| **NotifyStep** | **通过 NotificationService 发送通知，支持 TEXT/MARKDOWN/CARD 三种内容类型和紧急程度配置** |
+| **NotifyStep** | **通过 NotificationService 发送通知，支持 TEXT/MARKDOWN/CARD 三种内容类型** |
 
 ### 2.3 三种触发方式
 
@@ -58,7 +58,7 @@ ApprovalStep 暂停工作流等待审批决策。支持配置审批人列表、�
 
 ### 2.8 NotifyStep 通知步骤
 
-NotifyStep 是工作流内置的通知步骤，通过 NotificationService 发送通知。与旧的 `builtin.interact.notify` 工具相比，NotifyStep 更简洁且支持紧急程度路由。
+NotifyStep 是工作流内置的通知步骤，通过 NotificationService 发送通知。与旧的 `builtin.interact.notify` 工具相比，NotifyStep 更适合工作流里的“有结果就通知”场景。
 
 ```yaml
 - id: send-notification
@@ -69,14 +69,13 @@ NotifyStep 是工作流内置的通知步骤，通过 NotificationService 发送
     工作流执行完成！
     结果：${steps.previous.output.result}
   contentType: MARKDOWN
-  urgency: MEDIUM
 ```
 
 **参数说明**：
 - `targetUserId`：目标用户 ID，支持 `${}` 表达式
 - `content`：通知内容模板，支持变量替换
 - `contentType`：内容类型，可选 TEXT / MARKDOWN / CARD
-- `urgency`：紧急程度，可选 HIGH / MEDIUM / LOW
+- 没有结果需要告知时，推荐用 `condition + noop` 静默结束，而不是额外发送“低优先级通知”
 
 ### 2.8 异步非阻塞执行
 
