@@ -45,7 +45,7 @@
     "@vitejs/plugin-vue": "^5.2.3",
     "@vue/test-utils": "^2.4.0",
     "fast-check": "^4.1.1",
-    "jsdom": "^26.1.0",
+    "jsdom": "^29.0.1",
     "tailwindcss": "^4.1.7",
     "typescript": "~5.7.3",
     "vite": "^6.3.5",
