@@ -1,6 +1,7 @@
 package com.lifepilot.memory.procedural;
 
 import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.retrieval.SQLiteFtsQueryNormalizer;
 import com.lifepilot.memory.retrieval.VectorSearchResult;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import org.slf4j.Logger;
@@ -112,8 +113,8 @@ public class IntentMatcher {
 
     private List<FtsResult> searchFts(String query, int topK) {
         try {
-            String escaped = escapeFts5Query(query);
-            if (escaped.isBlank()) {
+            String normalizedQuery = SQLiteFtsQueryNormalizer.normalize(query);
+            if (normalizedQuery.isBlank()) {
                 return List.of();
             }
             return jdbcTemplate.query(
@@ -128,63 +129,12 @@ public class IntentMatcher {
                     (rs, rowNum) -> new FtsResult(
                             rs.getString("template_id"),
                             rs.getFloat("score")),
-                    escaped,
+                    normalizedQuery,
                     topK);
         } catch (Exception e) {
             log.warn("意图匹配 FTS 检索失败: query={}, error={}", query, e.getMessage());
             return List.of();
         }
-    }
-
-    private String escapeFts5Query(String query) {
-        String cleaned = query
-                .replace("\"", " ")
-                .replace("*", " ")
-                .replace("^", " ")
-                .replace("(", " ")
-                .replace(")", " ")
-                .replace("{", " ")
-                .replace("}", " ")
-                .replace("[", " ")
-                .replace("]", " ")
-                .replace(":", " ")
-                .replace(",", " ")
-                .replace(";", " ")
-                .replace("!", " ")
-                .replace("?", " ")
-                .replace("+", " ")
-                .replace("-", " ")
-                .replace("~", " ")
-                .replace("@", " ")
-                .replace("#", " ")
-                .replace("$", " ")
-                .replace("%", " ")
-                .replace("&", " ")
-                .replace("=", " ")
-                .replace("<", " ")
-                .replace(">", " ")
-                .replace("/", " ")
-                .replace("\\", " ")
-                .replace("|", " ")
-                .replace("'", " ")
-                .replace(".", " ");
-
-        String[] tokens = cleaned.split("\\s+");
-        StringBuilder builder = new StringBuilder();
-        for (String token : tokens) {
-            String upper = token.toUpperCase();
-            if (upper.equals("AND") || upper.equals("OR")
-                    || upper.equals("NOT") || upper.equals("NEAR")) {
-                continue;
-            }
-            if (!token.isBlank()) {
-                if (!builder.isEmpty()) {
-                    builder.append(" ");
-                }
-                builder.append(token);
-            }
-        }
-        return builder.toString().trim();
     }
 
     private <T> List<T> safeGet(CompletableFuture<List<T>> future, String label) {

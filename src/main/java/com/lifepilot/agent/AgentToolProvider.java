@@ -1,6 +1,7 @@
 package com.lifepilot.agent;
 
 import com.lifepilot.agent.model.ReactAgentState;
+import com.lifepilot.observability.guardrail.RiskLevel;
 import jakarta.annotation.Nullable;
 import org.springframework.ai.tool.ToolCallback;
 
@@ -38,5 +39,17 @@ public interface AgentToolProvider {
     @Nullable
     default String resolveToolDisplayName(String toolId) {
         return null;
+    }
+
+    /**
+     * 根据工具 ID 解析风险等级。
+     *
+     * <p>用于 Trace 记录，避免工具步骤被一律记成低风险。</p>
+     *
+     * @param toolId 工具技术标识
+     * @return 工具风险等级，未找到时回退为 LOW
+     */
+    default RiskLevel resolveToolRiskLevel(String toolId) {
+        return RiskLevel.LOW;
     }
 }

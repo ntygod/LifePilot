@@ -38,8 +38,8 @@ public class FtsSearcher {
             return List.of();
         }
         try {
-            String escapedQuery = escapeFts5Query(query);
-            if (escapedQuery.isBlank()) {
+            String normalizedQuery = SQLiteFtsQueryNormalizer.normalize(query);
+            if (normalizedQuery.isBlank()) {
                 return List.of();
             }
             return jdbcTemplate.query(
@@ -80,64 +80,10 @@ public class FtsSearcher {
                                 validToStr != null ? Instant.parse(validToStr) : null,
                                 updatedAtStr != null ? Instant.parse(updatedAtStr) : null);
                     },
-                    escapedQuery, topK);
+                    normalizedQuery, topK);
         } catch (Exception e) {
             log.warn("全文搜索: 查询失败, query={}, error={}", query, e.getMessage());
             return List.of();
         }
-    }
-
-    /**
-     * 转义 FTS5 特殊字符，防止语法错误。
-     * 将查询文本中的特殊字符移除或转义，保留有效的搜索词。
-     */
-    private String escapeFts5Query(String query) {
-        // 移除 FTS5 特殊字符和操作符
-        String cleaned = query
-                .replace("\"", " ")
-                .replace("*", " ")
-                .replace("^", " ")
-                .replace("(", " ")
-                .replace(")", " ")
-                .replace("{", " ")
-                .replace("}", " ")
-                .replace("[", " ")
-                .replace("]", " ")
-                .replace(":", " ")
-                .replace(",", " ")
-                .replace(";", " ")
-                .replace("!", " ")
-                .replace("?", " ")
-                .replace("+", " ")
-                .replace("-", " ")
-                .replace("~", " ")
-                .replace("@", " ")
-                .replace("#", " ")
-                .replace("$", " ")
-                .replace("%", " ")
-                .replace("&", " ")
-                .replace("=", " ")
-                .replace("<", " ")
-                .replace(">", " ")
-                .replace("/", " ")
-                .replace("\\", " ")
-                .replace("|", " ")
-                .replace("'", " ")
-                .replace(".", " ");
-
-        // 移除 FTS5 布尔操作符（作为独立词出现时）
-        String[] tokens = cleaned.split("\\s+");
-        var sb = new StringBuilder();
-        for (String token : tokens) {
-            String upper = token.toUpperCase();
-            if (upper.equals("AND") || upper.equals("OR") || upper.equals("NOT") || upper.equals("NEAR")) {
-                continue;
-            }
-            if (!token.isBlank()) {
-                if (!sb.isEmpty()) sb.append(" ");
-                sb.append(token);
-            }
-        }
-        return sb.toString().trim();
     }
 }

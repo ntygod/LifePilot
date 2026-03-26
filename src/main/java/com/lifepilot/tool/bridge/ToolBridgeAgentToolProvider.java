@@ -3,6 +3,7 @@ package com.lifepilot.tool.bridge;
 import com.lifepilot.agent.AgentToolProvider;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.meta.config.MetaProperties;
+import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.ToolContract;
 import com.lifepilot.tool.model.ToolContextKeys;
 import com.lifepilot.tool.model.ToolResult;
@@ -58,6 +59,13 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
         return toolRegistry.resolve(toolId)
                 .map(ToolContract::name)
                 .orElse(null);
+    }
+
+    @Override
+    public RiskLevel resolveToolRiskLevel(String toolId) {
+        return toolRegistry.resolve(toolId)
+                .map(ToolContract::riskLevel)
+                .orElse(RiskLevel.LOW);
     }
 
     @Override

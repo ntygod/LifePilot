@@ -28,6 +28,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -96,6 +97,7 @@ public class ToolExecutionCoordinator {
         String toolId = toolCall.name();
         String inputJson = toolCall.arguments();
         String toolDisplayName = agentToolProvider.resolveToolDisplayName(toolId);
+        RiskLevel toolRiskLevel = agentToolProvider.resolveToolRiskLevel(toolId);
 
         Instant toolCallStart = Instant.now();
         state = stepAppender.append(state, new ReactStep.ToolCall(toolId, toolDisplayName, inputJson, 0), loopContext);
@@ -114,7 +116,7 @@ public class ToolExecutionCoordinator {
                     toolId, toolDisplayName, false, errorOutput, 0), loopContext);
             persistTranscriptToolResult(state, toolCall, toolId, false, errorOutput, null, toolCallStart);
             recordToolCallStep(traceContext, state.stepCount() - 1, toolCallStart,
-                    toolId, inputJson, errorOutput, false);
+                    toolId, inputJson, errorOutput, false, toolRiskLevel);
             return state;
         }
 
@@ -139,7 +141,7 @@ public class ToolExecutionCoordinator {
                         toolId, toolDisplayName, true, "工具请求挂起: " + suspendReason, 0), loopContext);
                 persistTranscriptToolResult(state, toolCall, toolId, true, rawOutput, null, toolCallStart);
                 recordToolCallStep(traceContext, state.stepCount() - 1, toolCallStart,
-                        toolId, inputJson, rawOutput, true);
+                        toolId, inputJson, rawOutput, true, toolRiskLevel);
                 return state;
             }
         }
@@ -196,14 +198,15 @@ public class ToolExecutionCoordinator {
 
         if (success && proceduralMemory != null && intentMatcher != null) {
             try {
-                var match = intentMatcher.match(toolId + " " + inputJson);
+                var match = intentMatcher.match(buildIntentMatchQuery(toolId, inputJson));
                 match.ifPresent(m -> proceduralMemory.recordExecution(m.template().templateId(), true));
             } catch (Exception e) {
                 log.warn("L4 执行结果记录失败: toolId={}, error={}", toolId, e.getMessage());
             }
         }
 
-        recordToolCallStep(traceContext, state.stepCount() - 1, toolCallStart, toolId, inputJson, rawOutput, success);
+        recordToolCallStep(traceContext, state.stepCount() - 1, toolCallStart,
+                toolId, inputJson, rawOutput, success, toolRiskLevel);
         log.debug("工具执行完成: toolId={}, success={}, latencyMs={}", toolId, success, toolCallDuration.toMillis());
         return state;
     }
@@ -235,6 +238,65 @@ public class ToolExecutionCoordinator {
         } catch (Exception e) {
             return true;
         }
+    }
+
+    /**
+     * 为程序记忆构造稳定的意图匹配查询。
+     *
+     * <p>避免将完整 JSON 参数、Markdown 正文或大段代码直接送入 FTS；
+     * 这里只保留工具 ID、参数名以及少量稳定的短文本值。</p>
+     */
+    private String buildIntentMatchQuery(String toolId, String inputJson) {
+        StringBuilder builder = new StringBuilder(toolId.replace('.', ' '));
+        try {
+            JsonNode root = objectMapper.readTree(inputJson);
+            if (!root.isObject()) {
+                return builder.toString();
+            }
+
+            Iterator<String> fieldNames = root.fieldNames();
+            while (fieldNames.hasNext()) {
+                appendIntentTerm(builder, fieldNames.next());
+            }
+
+            appendIntentValue(builder, root.get("path"), 120);
+            appendIntentValue(builder, root.get("command"), 120);
+            appendIntentValue(builder, root.get("url"), 160);
+            appendIntentValue(builder, root.get("query"), 120);
+            appendIntentValue(builder, root.get("language"), 40);
+            appendIntentValue(builder, root.get("collectionId"), 80);
+            appendIntentValue(builder, root.get("workflowId"), 80);
+        } catch (Exception e) {
+            log.debug("构造意图匹配查询失败，回退为 toolId: toolId={}, error={}", toolId, e.getMessage());
+        }
+        return builder.toString();
+    }
+
+    private void appendIntentTerm(StringBuilder builder, @Nullable String term) {
+        if (term == null || term.isBlank()) {
+            return;
+        }
+        builder.append(' ').append(term);
+    }
+
+    private void appendIntentValue(StringBuilder builder, @Nullable JsonNode node, int maxChars) {
+        if (node == null || !node.isTextual()) {
+            return;
+        }
+        String text = node.asText();
+        if (text == null || text.isBlank()) {
+            return;
+        }
+        String normalized = text.replace('\r', ' ')
+                .replace('\n', ' ')
+                .trim();
+        if (normalized.isBlank()) {
+            return;
+        }
+        if (normalized.length() > maxChars) {
+            normalized = normalized.substring(0, maxChars);
+        }
+        builder.append(' ').append(normalized);
     }
 
     /**
@@ -359,7 +421,8 @@ public class ToolExecutionCoordinator {
                                     String toolId,
                                     String inputJson,
                                     @Nullable String outputJson,
-                                    boolean success) {
+                                    boolean success,
+                                    RiskLevel riskLevel) {
         if (traceContext == null || traceRecorder == null) {
             return;
         }
@@ -370,7 +433,7 @@ public class ToolExecutionCoordinator {
                     toolId, "execute", inputJson,
                     outputJson != null ? outputJson : "",
                     success, success ? null : outputJson,
-                    RiskLevel.LOW);
+                    riskLevel);
             traceRecorder.recordStep(traceContext, step);
         } catch (Exception e) {
             log.debug("Trace 工具步骤记录失败: error={}", e.getMessage());
