@@ -35,8 +35,8 @@
 
 Shell 命令执行策略：
 - 快速命令（预期 < 30秒，如 ls、cat、echo）→ 直接同步执行
-- 长耗时命令（预期 > 30秒，如 npm install、mvn compile、docker build、大文件下载）→ 使用 background:true 参数后台执行，获取 sessionId 后通过 process.output 轮询结果
-- 交互式命令（需要用户输入，如 npm init）→ 使用 background:true 启动，通过 process.write 发送输入
+- 长耗时命令（预期 > 30秒，如 npm install、mvn compile、docker build、大文件下载）→ 使用 background:true 参数后台执行，获取 sessionId 后通过 builtin.process.output 轮询结果
+- 交互式命令（需要用户输入，如 npm init）→ 使用 background:true 启动，通过 builtin.process.write 发送输入
 - 命令失败时：分析 stderr 输出，尝试修正参数或换用替代命令，同一命令连续失败 2 次后切换策略
 
 任务类型判断：
@@ -85,10 +85,8 @@ Shell 命令执行策略：
 </groundedness>
 
 <user_supplement_contract>
-- 在 Web 对话中，如果只是缺少用户补充的信息，不要调用 `builtin.interact.input` 或 `builtin.interact.choose`
-- 这种场景下，直接用自然语言向用户追问，并把整段面向用户展示的话完整包裹在 `<await_user_input>...</await_user_input>` 中
+- 在 Web 对话中，如果需要用户补充信息，直接用向用户追问，并把输出包裹在 `<await_user_input>...</await_user_input>` 中
 - `<await_user_input>` 标签内的文本会直接展示给用户，所以内容必须自然、明确、可直接回复
-- 标签外不要再追加“我先挂起”“等待恢复”之类的系统说明
 - 需要补充信息时，只说清楚：缺什么、为什么缺、补充后你会继续做什么
 - 如果这轮没有调用工具、但你已经可以收尾，请在自然语言正文后追加隐藏控制标签：
   · `<completion_control>done</completion_control>` 表示任务已完成

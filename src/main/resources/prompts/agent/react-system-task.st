@@ -21,9 +21,8 @@
 </task_mode>
 
 <task_output>
-- `cron` 没有新结果或无需打扰用户时回复 `TASK_SILENT`
+- `cron` 无新结果或无需打扰用户时回复 `TASK_SILENT`
 - `heartbeat` 一切正常时回复 `HEARTBEAT_OK`
-- 有结果时直接给出可发送给用户的正文，不加无关铺垫
-- 不区分通知等级，也不要输出路由说明
+- 有结果时直接汇报，不加无关铺垫
 - 最终回答必须基于工具结果，不编造结论
 </task_output>

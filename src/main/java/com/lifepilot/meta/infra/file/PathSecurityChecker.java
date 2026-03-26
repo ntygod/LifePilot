@@ -4,7 +4,6 @@ import com.lifepilot.meta.config.MetaProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
@@ -19,7 +18,7 @@ import java.util.Optional;
  *   <li>规范化路径（已存在文件用 {@code toRealPath()}，不存在文件用 {@code toAbsolutePath().normalize()}）</li>
  *   <li>如果白名单非空，检查路径是否在白名单目录下</li>
  *   <li>检查路径是否在黑名单目录下</li>
- *   <li>如果白名单为空，默认允许用户 home 下所有目录</li>
+ *   <li>如果白名单为空，仅保留黑名单约束，不再额外限制到用户 home</li>
  * </ol>
  *
  * @author zsg
@@ -30,11 +29,10 @@ public class PathSecurityChecker {
     private static final Logger log = LoggerFactory.getLogger(PathSecurityChecker.class);
 
     /** Windows 平台标识，用于路径大小写不敏感比较。 */
-    private static final boolean IS_WINDOWS = File.separatorChar == '\\';
+    private static final boolean IS_WINDOWS = java.io.File.separatorChar == '\\';
 
     private final List<Path> allowedPaths;
     private final List<Path> deniedPaths;
-    private final Path userHome;
 
     public PathSecurityChecker(MetaProperties.Infra.FileAccess config) {
         this.allowedPaths = config.getAllowedDirectories().stream()
@@ -43,7 +41,6 @@ public class PathSecurityChecker {
         this.deniedPaths = config.getDeniedDirectories().stream()
                 .map(s -> Path.of(s).toAbsolutePath().normalize())
                 .toList();
-        this.userHome = Path.of(System.getProperty("user.home")).toAbsolutePath().normalize();
     }
 
     /**
@@ -102,12 +99,6 @@ public class PathSecurityChecker {
                 return Optional.of("路径被安全策略拒绝: 不在允许的目录列表中");
             }
             return Optional.empty();
-        }
-
-        // 白名单为空时，默认允许用户 home 下所有目录
-        if (!pathStartsWith(normalized, userHome)) {
-            log.warn("路径不在用户 home 目录下: path={}, userHome={}", normalized, userHome);
-            return Optional.of("路径被安全策略拒绝: 不在用户 home 目录下 [" + userHome + "]");
         }
 
         return Optional.empty();
