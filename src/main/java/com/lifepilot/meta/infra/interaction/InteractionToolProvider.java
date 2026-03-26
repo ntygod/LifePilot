@@ -5,7 +5,9 @@ import com.lifepilot.notification.config.NotificationProperties;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.model.ToolCategory;
+import com.lifepilot.tool.model.ToolSchedulingMode;
 import com.lifepilot.tool.schema.JsonSchema;
+import com.lifepilot.tool.semantics.ToolExecutionSemantics;
 
 import java.util.List;
 import java.util.Map;
@@ -69,6 +71,7 @@ public class InteractionToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.SEQUENTIAL))
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
@@ -92,6 +95,7 @@ public class InteractionToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.SEQUENTIAL))
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
@@ -116,6 +120,7 @@ public class InteractionToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();

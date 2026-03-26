@@ -1,30 +1,42 @@
-package com.lifepilot.permission.service;
+package com.lifepilot.tool.semantics;
+
+import org.springframework.lang.Nullable;
 
 import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.Deque;
-import java.nio.file.Path;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
 /**
- * 权限作用域正规化工具。
+ * 工具资源正规化工具。
+ *
+ * <p>统一处理路径、Origin 与工作区路径的标准化，避免权限与调度各自实现一套规则。</p>
  *
  * @author zsg
  * @since 2026-03-26
  */
-final class PermissionScopeNormalizer {
+public final class ToolScopeNormalizer {
 
     private static final boolean WINDOWS =
             System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
     private static final Pattern WINDOWS_ABSOLUTE_PATH = Pattern.compile("^[A-Za-z]:[\\\\/].*");
 
-    private PermissionScopeNormalizer() {
+    private ToolScopeNormalizer() {
     }
 
-    static String normalizeOrigin(String value) {
+    @Nullable
+    public static String normalizeOrigin(@Nullable String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
         try {
             URI uri = URI.create(value);
+            if (uri.getScheme() == null || uri.getHost() == null) {
+                return value.trim();
+            }
             int port = uri.getPort();
             return port > 0
                     ? "%s://%s:%d".formatted(uri.getScheme(), uri.getHost(), port)
@@ -34,7 +46,24 @@ final class PermissionScopeNormalizer {
         }
     }
 
-    static String normalizePath(String value) {
+    @Nullable
+    public static String extractHost(@Nullable String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            URI uri = URI.create(value);
+            return uri.getHost();
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    @Nullable
+    public static String normalizePath(@Nullable String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
         String sanitized = value.replace("\\", "/").trim();
         if (WINDOWS_ABSOLUTE_PATH.matcher(sanitized).matches()) {
             return normalizeSegmentPath(sanitized.substring(0, 3), sanitized.substring(3));
@@ -48,9 +77,12 @@ final class PermissionScopeNormalizer {
         }
     }
 
-    static boolean pathStartsWith(String requestPath, String grantPath) {
+    public static boolean pathStartsWith(String requestPath, String grantPath) {
         String normalizedRequest = normalizePath(requestPath);
         String normalizedGrant = normalizePath(grantPath);
+        if (normalizedRequest == null || normalizedGrant == null) {
+            return false;
+        }
         boolean ignoreCase = WINDOWS
                 || WINDOWS_ABSOLUTE_PATH.matcher(normalizedRequest).matches()
                 || WINDOWS_ABSOLUTE_PATH.matcher(normalizedGrant).matches();
@@ -65,6 +97,31 @@ final class PermissionScopeNormalizer {
             return comparableRequest.startsWith(comparableGrant);
         }
         return comparableRequest.startsWith(grantWithoutTrailingSlash + "/");
+    }
+
+    @Nullable
+    public static String resolveWorkspacePath(@Nullable String normalizedPath) {
+        if (normalizedPath == null || normalizedPath.isBlank()) {
+            return null;
+        }
+        try {
+            Path path = Path.of(normalizedPath);
+            if (Files.exists(path)) {
+                if (Files.isRegularFile(path) && path.getParent() != null) {
+                    return path.getParent().toString().replace("\\", "/");
+                }
+                return path.toString().replace("\\", "/");
+            }
+            String fileName = path.getFileName() != null ? path.getFileName().toString() : "";
+            boolean looksLikeFile = fileName.contains(".") && !fileName.startsWith(".");
+            if (looksLikeFile && path.getParent() != null) {
+                return path.getParent().toString().replace("\\", "/");
+            }
+            return path.toString().replace("\\", "/");
+        } catch (Exception ignored) {
+            int slash = normalizedPath.lastIndexOf('/');
+            return slash > 0 ? normalizedPath.substring(0, slash) : normalizedPath;
+        }
     }
 
     private static String normalizeSegmentPath(String root, String rawSegments) {

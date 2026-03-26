@@ -4,6 +4,7 @@ import com.lifepilot.mcp.adapter.McpToolExecutor;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.model.*;
 import com.lifepilot.tool.schema.JsonSchema;
+import com.lifepilot.tool.semantics.ToolExecutionSemantics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -24,6 +25,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * @param outputSchema 输出类型 JSON Schema
  * @param riskLevel 风险等级
  * @param idempotent 是否幂等
+ * @param executionSemantics 执行语义
  * @param budget 执行预算
  * @param tags 工具标签
  * @param serverName MCP 服务器名称
@@ -40,6 +42,7 @@ public record McpTool(
         JsonSchema outputSchema,
         RiskLevel riskLevel,
         boolean idempotent,
+        ToolExecutionSemantics executionSemantics,
         ToolBudget budget,
         List<String> tags,
         String serverName,

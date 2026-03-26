@@ -2,10 +2,12 @@ package com.lifepilot.agent;
 
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.observability.guardrail.RiskLevel;
+import com.lifepilot.tool.model.ToolSchedulingMode;
 import jakarta.annotation.Nullable;
 import org.springframework.ai.tool.ToolCallback;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * 工具桥接层接口。
@@ -51,5 +53,50 @@ public interface AgentToolProvider {
      */
     default RiskLevel resolveToolRiskLevel(String toolId) {
         return RiskLevel.LOW;
+    }
+
+    /**
+     * 根据工具 ID 和输入 JSON 解析调度提示。
+     *
+     * <p>授权与调度完全解耦：这里仅决定工具能否并行、是否需要按资源串行，
+     * 不参与风险评估与审批决策。</p>
+     *
+     * @param toolId 工具技术标识
+     * @param inputJson 工具输入 JSON
+     * @return 调度提示，默认串行
+     */
+    default ToolSchedulingHint resolveSchedulingHint(String toolId, String inputJson) {
+        return ToolSchedulingHint.sequential();
+    }
+
+    /**
+     * 工具调度提示。
+     *
+     * @param mode 调度模式
+     * @param resourceKeys 资源集合，RESOURCE_SERIALIZED 模式下用于冲突检测
+     */
+    record ToolSchedulingHint(
+            ToolSchedulingMode mode,
+            List<String> resourceKeys
+    ) {
+        public ToolSchedulingHint {
+            mode = mode != null ? mode : ToolSchedulingMode.SEQUENTIAL;
+            resourceKeys = resourceKeys == null ? List.of() : resourceKeys.stream()
+                    .filter(key -> key != null && !key.isBlank())
+                    .distinct()
+                    .collect(Collectors.toUnmodifiableList());
+        }
+
+        public static ToolSchedulingHint sequential() {
+            return new ToolSchedulingHint(ToolSchedulingMode.SEQUENTIAL, List.of());
+        }
+
+        public static ToolSchedulingHint parallelSafe() {
+            return new ToolSchedulingHint(ToolSchedulingMode.PARALLEL_SAFE, List.of());
+        }
+
+        public static ToolSchedulingHint resourceSerialized(List<String> resourceKeys) {
+            return new ToolSchedulingHint(ToolSchedulingMode.RESOURCE_SERIALIZED, resourceKeys);
+        }
     }
 }

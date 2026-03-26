@@ -7,8 +7,10 @@ import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
+import com.lifepilot.tool.model.ToolSchedulingMode;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.tool.schema.JsonSchema;
+import com.lifepilot.tool.semantics.ToolExecutionSemantics;
 import com.lifepilot.workflow.model.WorkflowInstance;
 import com.lifepilot.workflow.model.WorkflowState;
 import com.lifepilot.workflow.registry.WorkflowRegistry;
@@ -97,6 +99,7 @@ public class IntrospectionToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))
                 .tags(INFRA_TAGS)
                 .executor(this::executeListCapabilities)
                 .build();
@@ -159,6 +162,7 @@ public class IntrospectionToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))
                 .tags(INFRA_TAGS)
                 .executor(this::executeExplain)
                 .build();
@@ -211,7 +215,9 @@ public class IntrospectionToolProvider {
             data.put("description", tool.description());
             data.put("type", "tool");
             data.put("riskLevel", tool.riskLevel().name());
+            data.put("actionType", tool.executionSemantics().actionType().name());
             data.put("layer", tool.layer().name());
+            data.put("schedulingMode", tool.schedulingMode().name());
             data.put("tags", tool.tags());
             data.put("idempotent", tool.idempotent());
             return ToolResult.success(Map.copyOf(data));
@@ -273,6 +279,7 @@ public class IntrospectionToolProvider {
                 .description("查看系统当前状态概览，包括各注册中心的能力计数和工具层次分布")
                 .inputSchema(JsonSchema.empty())
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))
                 .tags(INFRA_TAGS)
                 .executor(this::executeStatus)
                 .build();
@@ -324,6 +331,7 @@ public class IntrospectionToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))
                 .tags(INFRA_TAGS)
                 .executor(this::executeSuggest)
                 .build();
@@ -411,6 +419,7 @@ public class IntrospectionToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))
                 .tags(INFRA_TAGS)
                 .executor(this::executeRuntime)
                 .build();

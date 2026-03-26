@@ -4,6 +4,7 @@ import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.meta.infra.web.WebSearchConfig;
 import com.lifepilot.meta.infra.web.WebSearchConfigProvider;
 import com.lifepilot.tool.BuiltinTool;
+import com.lifepilot.tool.model.ToolSchedulingMode;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -147,5 +148,26 @@ class InfraToolProviderTest {
         assertThat(toolMap.get("builtin.browser.click")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.MEDIUM);
         assertThat(toolMap.get("builtin.browser.input")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.MEDIUM);
         assertThat(toolMap.get("builtin.browser.screenshot")).isEqualTo(com.lifepilot.observability.guardrail.RiskLevel.LOW);
+    }
+
+    @Test
+    void registerTools_文件工具应启用资源串行调度() {
+        DynamicToolRegistry registry = mock(DynamicToolRegistry.class);
+
+        provider.registerTools(registry);
+
+        ArgumentCaptor<BuiltinTool> captor = ArgumentCaptor.forClass(BuiltinTool.class);
+        verify(registry, atLeastOnce()).registerBuiltinTool(captor.capture());
+
+        var toolMap = new java.util.HashMap<String, BuiltinTool>();
+        for (BuiltinTool tool : captor.getAllValues()) {
+            toolMap.put(tool.id(), tool);
+        }
+
+        assertThat(toolMap.get("builtin.file.read").schedulingMode()).isEqualTo(ToolSchedulingMode.RESOURCE_SERIALIZED);
+        assertThat(toolMap.get("builtin.file.write").schedulingMode()).isEqualTo(ToolSchedulingMode.RESOURCE_SERIALIZED);
+        assertThat(toolMap.get("builtin.file.search").schedulingMode()).isEqualTo(ToolSchedulingMode.RESOURCE_SERIALIZED);
+        assertThat(toolMap.get("builtin.file.patch").schedulingMode()).isEqualTo(ToolSchedulingMode.RESOURCE_SERIALIZED);
+        assertThat(toolMap.get("builtin.file.find").schedulingMode()).isEqualTo(ToolSchedulingMode.RESOURCE_SERIALIZED);
     }
 }

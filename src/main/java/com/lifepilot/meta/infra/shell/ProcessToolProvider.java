@@ -5,7 +5,10 @@ import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.model.ToolCategory;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
+import com.lifepilot.tool.model.ToolSchedulingMode;
 import com.lifepilot.tool.schema.JsonSchema;
+import com.lifepilot.tool.semantics.ToolExecutionSemantics;
+import com.lifepilot.tool.semantics.ToolScopeResolvers;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -62,6 +65,7 @@ public class ProcessToolProvider {
                 .description("列出所有后台进程的 sessionId、命令、状态和启动时间")
                 .inputSchema(JsonSchema.empty())
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))
                 .tags(INFRA_TAGS)
                 .executor(this::executeList)
                 .build();
@@ -83,6 +87,11 @@ public class ProcessToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        com.lifepilot.permission.model.PermissionActionType.GENERIC_TOOL_OPERATION,
+                        ToolSchedulingMode.PARALLEL_SAFE,
+                        ToolScopeResolvers.exactValues("sessionIds", "sessionId")
+                ))
                 .tags(INFRA_TAGS)
                 .executor(this::executeOutput)
                 .build();
@@ -107,6 +116,11 @@ public class ProcessToolProvider {
                 )))
                 .riskLevel(RiskLevel.MEDIUM)
                 .idempotent(false)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        com.lifepilot.permission.model.PermissionActionType.GENERIC_TOOL_OPERATION,
+                        ToolSchedulingMode.SEQUENTIAL,
+                        ToolScopeResolvers.exactValues("sessionIds", "sessionId")
+                ))
                 .tags(INFRA_TAGS)
                 .executor(this::executeWrite)
                 .build();
@@ -129,6 +143,11 @@ public class ProcessToolProvider {
                 )))
                 .riskLevel(RiskLevel.HIGH)
                 .idempotent(false)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        com.lifepilot.permission.model.PermissionActionType.GENERIC_TOOL_OPERATION,
+                        ToolSchedulingMode.SEQUENTIAL,
+                        ToolScopeResolvers.exactValues("sessionIds", "sessionId")
+                ))
                 .tags(INFRA_TAGS)
                 .executor(this::executeKill)
                 .build();

@@ -2,9 +2,13 @@ package com.lifepilot.meta.infra.file;
 
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.observability.guardrail.RiskLevel;
+import com.lifepilot.permission.model.PermissionActionType;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.model.ToolCategory;
+import com.lifepilot.tool.model.ToolSchedulingMode;
 import com.lifepilot.tool.schema.JsonSchema;
+import com.lifepilot.tool.semantics.ToolExecutionSemantics;
+import com.lifepilot.tool.semantics.ToolScopeResolvers;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -79,6 +83,11 @@ public class FileToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        PermissionActionType.READ_FILE,
+                        ToolSchedulingMode.RESOURCE_SERIALIZED,
+                        ToolScopeResolvers.pathTrees("path")
+                ))
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
@@ -107,6 +116,11 @@ public class FileToolProvider {
                 )))
                 .riskLevel(RiskLevel.MEDIUM)
                 .idempotent(false)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        PermissionActionType.WRITE_FILE,
+                        ToolSchedulingMode.RESOURCE_SERIALIZED,
+                        ToolScopeResolvers.pathTrees("path")
+                ))
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
@@ -134,6 +148,11 @@ public class FileToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        PermissionActionType.READ_FILE,
+                        ToolSchedulingMode.RESOURCE_SERIALIZED,
+                        ToolScopeResolvers.pathTrees("path")
+                ))
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
@@ -167,6 +186,11 @@ public class FileToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        PermissionActionType.READ_FILE,
+                        ToolSchedulingMode.RESOURCE_SERIALIZED,
+                        ToolScopeResolvers.pathTrees("path")
+                ))
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
@@ -208,6 +232,11 @@ public class FileToolProvider {
                 )))
                 .riskLevel(RiskLevel.MEDIUM)
                 .idempotent(false)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        PermissionActionType.WRITE_FILE,
+                        ToolSchedulingMode.RESOURCE_SERIALIZED,
+                        ToolScopeResolvers.pathTrees("path")
+                ))
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
@@ -230,6 +259,11 @@ public class FileToolProvider {
                 )))
                 .riskLevel(RiskLevel.LOW)
                 .idempotent(true)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        PermissionActionType.READ_FILE,
+                        ToolSchedulingMode.RESOURCE_SERIALIZED,
+                        ToolScopeResolvers.pathTrees("path")
+                ))
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
@@ -256,6 +290,11 @@ public class FileToolProvider {
                 )))
                 .riskLevel(RiskLevel.HIGH)
                 .idempotent(false)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        PermissionActionType.WRITE_FILE,
+                        ToolSchedulingMode.RESOURCE_SERIALIZED,
+                        ToolScopeResolvers.pathTrees("source", "destination")
+                ))
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
@@ -282,6 +321,11 @@ public class FileToolProvider {
                 )))
                 .riskLevel(RiskLevel.MEDIUM)
                 .idempotent(false)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        PermissionActionType.WRITE_FILE,
+                        ToolSchedulingMode.RESOURCE_SERIALIZED,
+                        ToolScopeResolvers.pathTrees("source", "destination")
+                ))
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
@@ -306,6 +350,11 @@ public class FileToolProvider {
                 )))
                 .riskLevel(RiskLevel.HIGH)
                 .idempotent(false)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        PermissionActionType.DELETE_FILE,
+                        ToolSchedulingMode.RESOURCE_SERIALIZED,
+                        ToolScopeResolvers.pathTrees("path")
+                ))
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
@@ -335,6 +384,11 @@ public class FileToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        PermissionActionType.READ_FILE,
+                        ToolSchedulingMode.RESOURCE_SERIALIZED,
+                        ToolScopeResolvers.pathTrees("path")
+                ))
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
@@ -362,6 +416,11 @@ public class FileToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        PermissionActionType.READ_FILE,
+                        ToolSchedulingMode.RESOURCE_SERIALIZED,
+                        ToolScopeResolvers.pathTrees("path")
+                ))
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();

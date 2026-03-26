@@ -428,6 +428,7 @@ class SecurityScannerTest {
                 .id(id)
                 .name("Dummy tool")
                 .description("虚拟工具")
+                .executionSemantics(com.lifepilot.tool.semantics.ToolExecutionSemantics.generic())
                 .executor(input -> ToolResult.success(Map.of()))
                 .build();
     }

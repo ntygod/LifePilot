@@ -113,6 +113,8 @@ class CapabilityAggregatorTest {
                 .description("测试描述")
                 .riskLevel(RiskLevel.LOW)
                 .tags(List.of("infrastructure"))
+                .executionSemantics(com.lifepilot.tool.semantics.ToolExecutionSemantics.generic(
+                        com.lifepilot.tool.model.ToolSchedulingMode.PARALLEL_SAFE))
                 .executor(input -> ToolResult.success(Map.of()))
                 .build();
         when(toolRegistry.getToolSnapshot()).thenReturn(List.of(tool));

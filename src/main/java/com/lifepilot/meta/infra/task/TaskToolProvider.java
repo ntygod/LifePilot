@@ -5,10 +5,16 @@ import com.lifepilot.agent.task.CronScheduler;
 import com.lifepilot.agent.task.CronTaskEntry;
 import com.lifepilot.agent.task.CronTaskRepository;
 import com.lifepilot.observability.guardrail.RiskLevel;
+import com.lifepilot.permission.model.PermissionActionType;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.model.ToolCategory;
 import com.lifepilot.tool.model.ToolResult;
+import com.lifepilot.tool.model.ToolSchedulingMode;
 import com.lifepilot.tool.schema.JsonSchema;
+import com.lifepilot.tool.semantics.ToolExecutionSemantics;
+import com.lifepilot.tool.semantics.ToolScopeNormalizer;
+import com.lifepilot.tool.semantics.ToolScopeResolution;
+import com.lifepilot.tool.semantics.ToolScopeResolvers;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -87,6 +93,11 @@ public class TaskToolProvider {
                 )))
                 .riskLevel(RiskLevel.LOW)
                 .idempotent(false)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        PermissionActionType.CREATE_SCHEDULE,
+                        ToolSchedulingMode.SEQUENTIAL,
+                        ToolScopeResolvers.exactValues("taskIds", "taskId", "name")
+                ))
                 .tags(TASK_TAGS)
                 .executor(input -> {
                     try {
@@ -139,6 +150,7 @@ public class TaskToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))
                 .tags(TASK_TAGS)
                 .executor(input -> {
                     try {
@@ -190,6 +202,11 @@ public class TaskToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        PermissionActionType.CREATE_SCHEDULE,
+                        ToolSchedulingMode.SEQUENTIAL,
+                        ToolScopeResolvers.exactValues("taskIds", "taskId")
+                ))
                 .tags(TASK_TAGS)
                 .executor(input -> {
                     try {
@@ -260,6 +277,11 @@ public class TaskToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.MEDIUM)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        PermissionActionType.CREATE_SCHEDULE,
+                        ToolSchedulingMode.SEQUENTIAL,
+                        ToolScopeResolvers.exactValues("taskIds", "taskId")
+                ))
                 .tags(TASK_TAGS)
                 .executor(input -> {
                     try {
@@ -302,6 +324,11 @@ public class TaskToolProvider {
                 .description("读取 HEARTBEAT.md 文件内容，返回当前的心跳巡检 checklist")
                 .inputSchema(JsonSchema.empty())
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        PermissionActionType.READ_FILE,
+                        ToolSchedulingMode.PARALLEL_SAFE,
+                        input -> heartbeatScopeResolution()
+                ))
                 .tags(TASK_TAGS)
                 .executor(input -> {
                     try {
@@ -343,6 +370,11 @@ public class TaskToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        PermissionActionType.WRITE_FILE,
+                        ToolSchedulingMode.RESOURCE_SERIALIZED,
+                        input -> heartbeatScopeResolution()
+                ))
                 .tags(TASK_TAGS)
                 .executor(input -> {
                     try {
@@ -376,5 +408,19 @@ public class TaskToolProvider {
             filePath = System.getProperty("user.home") + filePath.substring(1);
         }
         return Path.of(filePath);
+    }
+
+    private ToolScopeResolution heartbeatScopeResolution() {
+        String normalizedPath = ToolScopeNormalizer.normalizePath(resolveHeartbeatPath().toString());
+        if (normalizedPath == null) {
+            return ToolScopeResolution.EMPTY;
+        }
+        return ToolScopeResolvers.paths("path").resolve(new com.lifepilot.tool.model.ToolInput(
+                "builtin.heartbeat",
+                Map.of("path", normalizedPath),
+                JsonSchema.empty(),
+                null,
+                null
+        ));
     }
 }
