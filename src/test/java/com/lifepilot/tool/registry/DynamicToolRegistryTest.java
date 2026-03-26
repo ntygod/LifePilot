@@ -7,7 +7,9 @@ import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.model.ToolBudget;
 import com.lifepilot.tool.model.ToolLayer;
 import com.lifepilot.tool.model.ToolResult;
+import com.lifepilot.tool.model.ToolSchedulingMode;
 import com.lifepilot.tool.schema.JsonSchema;
+import com.lifepilot.tool.semantics.ToolExecutionSemantics;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
@@ -113,6 +115,7 @@ class DynamicToolRegistryTest {
                 .id(id).name(name).description("测试工具")
                 .inputSchema(JsonSchema.empty()).outputSchema(JsonSchema.empty())
                 .riskLevel(RiskLevel.LOW).idempotent(true)
+                .executionSemantics(ToolExecutionSemantics.generic())
                 .budget(ToolBudget.DEFAULT).tags(List.of())
                 .executor(input -> ToolResult.success(java.util.Map.of("echo", "ok")))
                 .build();
@@ -121,7 +124,7 @@ class DynamicToolRegistryTest {
     private McpTool createMcpTool(String id, String name) {
         return new McpTool(id, name, "测试 MCP 工具",
                 JsonSchema.empty(), JsonSchema.empty(),
-                RiskLevel.LOW, true, ToolBudget.MCP_DEFAULT,
+                RiskLevel.LOW, true, ToolExecutionSemantics.generic(ToolSchedulingMode.SEQUENTIAL), ToolBudget.MCP_DEFAULT,
                 List.of(), "test-server", id, "test-server");
     }
 }

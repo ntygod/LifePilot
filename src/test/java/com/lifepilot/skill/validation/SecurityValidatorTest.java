@@ -54,6 +54,7 @@ class SecurityValidatorTest {
                 .name(id)
                 .description("测试工具")
                 .riskLevel(riskLevel)
+                .executionSemantics(com.lifepilot.tool.semantics.ToolExecutionSemantics.generic())
                 .executor(input -> null)
                 .build();
     }

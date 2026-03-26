@@ -7,8 +7,10 @@ import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.model.ToolCategory;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
+import com.lifepilot.tool.model.ToolSchedulingMode;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.tool.schema.JsonSchema;
+import com.lifepilot.tool.semantics.ToolExecutionSemantics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -68,6 +70,7 @@ public class SkillGenerationTool {
                 .inputSchema(inputSchema)
                 .riskLevel(RiskLevel.HIGH)
                 .idempotent(false)
+                .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.SEQUENTIAL))
                 .category(ToolCategory.EXTENSION)
                 .tags(List.of("skill", "generation"))
                 .executor(this::handleGenerateSkill)

@@ -4,7 +4,10 @@ import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.model.ToolCategory;
 import com.lifepilot.tool.model.ToolResult;
+import com.lifepilot.tool.model.ToolSchedulingMode;
 import com.lifepilot.tool.schema.JsonSchema;
+import com.lifepilot.tool.semantics.ToolExecutionSemantics;
+import com.lifepilot.tool.semantics.ToolScopeResolvers;
 import com.lifepilot.workflow.engine.WorkflowCommandService;
 import com.lifepilot.workflow.model.WorkflowDefinition;
 import com.lifepilot.workflow.model.WorkflowInstance;
@@ -63,6 +66,7 @@ public class WorkflowToolProvider {
                 .category(ToolCategory.PERCEPTION)
                 .inputSchema(JsonSchema.of(Map.of("type", "object", "properties", Map.of())))
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))
                 .executor(input -> {
                     try {
                         List<WorkflowDefinition> enabled = registry.listEnabled();
@@ -94,6 +98,11 @@ public class WorkflowToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.MEDIUM)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        com.lifepilot.permission.model.PermissionActionType.GENERIC_TOOL_OPERATION,
+                        ToolSchedulingMode.SEQUENTIAL,
+                        ToolScopeResolvers.exactValues("workflowIds", false, "workflowId")
+                ))
                 .executor(input -> {
                     try {
                         String workflowId = input.getParam("workflowId", String.class);
@@ -128,6 +137,11 @@ public class WorkflowToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        com.lifepilot.permission.model.PermissionActionType.GENERIC_TOOL_OPERATION,
+                        ToolSchedulingMode.PARALLEL_SAFE,
+                        ToolScopeResolvers.exactValues("workflowInstanceIds", "instanceId")
+                ))
                 .executor(input -> {
                     try {
                         String instanceId = input.getParam("instanceId", String.class);
@@ -158,6 +172,11 @@ public class WorkflowToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.MEDIUM)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        com.lifepilot.permission.model.PermissionActionType.GENERIC_TOOL_OPERATION,
+                        ToolSchedulingMode.SEQUENTIAL,
+                        ToolScopeResolvers.exactValues("workflowInstanceIds", "instanceId")
+                ))
                 .executor(input -> {
                     try {
                         String instanceId = input.getParam("instanceId", String.class);
@@ -188,6 +207,11 @@ public class WorkflowToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.MEDIUM)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        com.lifepilot.permission.model.PermissionActionType.GENERIC_TOOL_OPERATION,
+                        ToolSchedulingMode.SEQUENTIAL,
+                        ToolScopeResolvers.exactValues("workflowInstanceIds", "instanceId")
+                ))
                 .executor(input -> {
                     try {
                         String instanceId = input.getParam("instanceId", String.class);

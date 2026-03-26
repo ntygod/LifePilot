@@ -9,6 +9,9 @@ import com.lifepilot.tool.ToolContract;
 import com.lifepilot.tool.config.ToolConfigProperties;
 import com.lifepilot.tool.model.ToolContextKeys;
 import com.lifepilot.tool.model.ToolInput;
+import com.lifepilot.tool.semantics.ToolExecutionSemantics;
+import com.lifepilot.tool.semantics.ToolScopeNormalizer;
+import com.lifepilot.tool.semantics.ToolScopeResolution;
 import org.springframework.stereotype.Service;
 
 import java.util.LinkedHashMap;
@@ -29,21 +32,20 @@ public class PermissionRequestFactory {
     private final ObservabilityProperties observabilityProperties;
     private final ToolConfigProperties toolConfigProperties;
     private final AutonomousTaskApprovalAdvisor autonomousTaskApprovalAdvisor;
-    private final PermissionScopeResolver permissionScopeResolver;
 
     public PermissionRequestFactory(ObservabilityProperties observabilityProperties,
                                     ToolConfigProperties toolConfigProperties,
-                                    AutonomousTaskApprovalAdvisor autonomousTaskApprovalAdvisor,
-                                    PermissionScopeResolver permissionScopeResolver) {
+                                    AutonomousTaskApprovalAdvisor autonomousTaskApprovalAdvisor) {
         this.observabilityProperties = observabilityProperties;
         this.toolConfigProperties = toolConfigProperties;
         this.autonomousTaskApprovalAdvisor = autonomousTaskApprovalAdvisor;
-        this.permissionScopeResolver = permissionScopeResolver;
     }
 
     public PermissionRequest create(ToolContract tool, ToolInput input, String fallbackTraceId) {
-        PermissionActionType actionType = resolveActionType(tool.id());
-        ExecutionGrantScope resourceScope = resolveResourceScope(tool.id(), actionType, input);
+        ToolExecutionSemantics semantics = tool.executionSemantics();
+        PermissionActionType actionType = semantics.actionType();
+        ToolScopeResolution scopeResolution = semantics.scopeResolver().resolve(input);
+        ExecutionGrantScope resourceScope = scopeResolution.scope();
         String channel = input.getContextValue(ToolContextKeys.CHANNEL_TYPE, String.class).orElse("unknown");
         String sessionId = input.getContextValue(ToolContextKeys.SESSION_ID, String.class).orElse(null);
         String userId = input.getContextValue(ToolContextKeys.USER_ID, String.class).orElse(null);
@@ -53,7 +55,7 @@ public class PermissionRequestFactory {
         String taskId = input.getContextValue(ToolContextKeys.TASK_ID, String.class)
                 .orElseGet(() -> resolveTaskId(channel, sessionId));
         String workspaceId = input.getContextValue(ToolContextKeys.WORKSPACE_ID, String.class)
-                .orElseGet(() -> resolveWorkspaceId(resourceScope));
+                .orElse(scopeResolution.workspaceId());
         boolean autonomousTaskGrantRequired = actionType == PermissionActionType.CREATE_SCHEDULE
                 && autonomousTaskApprovalAdvisor.requiresApproval(firstNonBlankParam(input, "instruction"));
 
@@ -71,64 +73,6 @@ public class PermissionRequestFactory {
                 traceId,
                 autonomousTaskGrantRequired
         );
-    }
-
-    private PermissionActionType resolveActionType(String toolId) {
-        if (toolId.startsWith("builtin.file.")) {
-            return switch (toolId) {
-                case "builtin.file.write", "builtin.file.patch", "builtin.file.copy", "builtin.file.move"
-                        -> PermissionActionType.WRITE_FILE;
-                case "builtin.file.delete" -> PermissionActionType.DELETE_FILE;
-                default -> PermissionActionType.READ_FILE;
-            };
-        }
-        if ("builtin.shell.exec".equals(toolId) || "builtin.code.execute".equals(toolId)) {
-            return PermissionActionType.EXECUTE_SHELL;
-        }
-        if (toolId.startsWith("builtin.browser.")) {
-            return PermissionActionType.BROWSER_AUTOMATION;
-        }
-        if ("builtin.http.request".equals(toolId) || "builtin.web.fetch".equals(toolId)
-                || "builtin.web.search".equals(toolId)) {
-            return PermissionActionType.HTTP_REQUEST;
-        }
-        if (toolId.startsWith("builtin.memory.")
-                && !toolId.startsWith("builtin.memory.search")
-                && !toolId.startsWith("builtin.memory.recall")
-                && !"builtin.memory.query-at-time".equals(toolId)) {
-            return PermissionActionType.WRITE_MEMORY;
-        }
-        if (toolId.startsWith("builtin.datastore.")) {
-            return PermissionActionType.MODIFY_DATASTORE;
-        }
-        if (toolId.startsWith("builtin.cron.")) {
-            return PermissionActionType.CREATE_SCHEDULE;
-        }
-        return PermissionActionType.GENERIC_TOOL_OPERATION;
-    }
-
-    private ExecutionGrantScope resolveResourceScope(String toolId,
-                                                     PermissionActionType actionType,
-                                                     ToolInput input) {
-        return switch (actionType) {
-            case READ_FILE, WRITE_FILE, DELETE_FILE, EXECUTE_SHELL,
-                    BROWSER_AUTOMATION, HTTP_REQUEST, MODIFY_DATASTORE ->
-                    permissionScopeResolver.resolveRuntimeScope(actionType, input);
-            case CREATE_SCHEDULE -> resolveScheduleScope(toolId, input);
-            case WRITE_MEMORY, GENERIC_TOOL_OPERATION -> ExecutionGrantScope.EMPTY;
-        };
-    }
-
-    private ExecutionGrantScope resolveScheduleScope(String toolId, ToolInput input) {
-        String taskId = firstNonBlankParam(input, "id", "taskId");
-        if (taskId == null && "builtin.cron.create".equals(toolId)) {
-            taskId = firstNonBlankParam(input, "name");
-        }
-        Map<String, Object> values = new LinkedHashMap<>();
-        if (taskId != null && !taskId.isBlank()) {
-            values.put("taskId", taskId);
-        }
-        return ExecutionGrantScope.of(values);
     }
 
     private RiskLevel resolveRiskLevel(ToolContract tool, ToolInput input) {
@@ -158,9 +102,10 @@ public class PermissionRequestFactory {
         if (execPath == null || toolConfigProperties.getTrustedWorkspace().getPaths().isEmpty()) {
             return originalLevel;
         }
-        String normalizedExecPath = permissionScopeResolver.normalizePath(execPath);
+        String normalizedExecPath = ToolScopeNormalizer.normalizePath(execPath);
         boolean trusted = toolConfigProperties.getTrustedWorkspace().getPaths().stream()
-                .map(permissionScopeResolver::normalizePath)
+                .map(ToolScopeNormalizer::normalizePath)
+                .filter(java.util.Objects::nonNull)
                 .anyMatch(normalizedExecPath::startsWith);
         if (!trusted) {
             return originalLevel;
@@ -181,10 +126,6 @@ public class PermissionRequestFactory {
                     : sessionId;
         }
         return null;
-    }
-
-    private String resolveWorkspaceId(ExecutionGrantScope scope) {
-        return permissionScopeResolver.resolveWorkspaceId(scope);
     }
 
     private String firstNonBlankParam(ToolInput input, String... names) {

@@ -165,6 +165,7 @@ class ToolExecutionPipelineTest {
                 .id("test.slow").name("Slow").description("慢工具")
                 .inputSchema(JsonSchema.empty()).outputSchema(JsonSchema.empty())
                 .riskLevel(RiskLevel.LOW).idempotent(false)
+                .executionSemantics(com.lifepilot.tool.semantics.ToolExecutionSemantics.generic())
                 .budget(ToolBudget.of(Duration.ofMillis(100), 0, Integer.MAX_VALUE))
                 .tags(List.of())
                 .executor(input -> {
@@ -189,6 +190,7 @@ class ToolExecutionPipelineTest {
                 .id(id).name(id).description("测试工具")
                 .inputSchema(inputSchema).outputSchema(JsonSchema.empty())
                 .riskLevel(RiskLevel.LOW).idempotent(false)
+                .executionSemantics(com.lifepilot.tool.semantics.ToolExecutionSemantics.generic())
                 .budget(ToolBudget.DEFAULT).tags(List.of())
                 .executor(executor).build();
         registry.registerBuiltinTool(tool);
@@ -200,6 +202,7 @@ class ToolExecutionPipelineTest {
                 .id(id).name(id).description("测试幂等工具")
                 .inputSchema(inputSchema).outputSchema(JsonSchema.empty())
                 .riskLevel(RiskLevel.LOW).idempotent(true)
+                .executionSemantics(com.lifepilot.tool.semantics.ToolExecutionSemantics.generic())
                 .budget(ToolBudget.DEFAULT).tags(List.of())
                 .executor(executor).build();
         registry.registerBuiltinTool(tool);

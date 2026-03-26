@@ -3,8 +3,10 @@ package com.lifepilot.a2a.client;
 import com.lifepilot.a2a.model.*;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.BuiltinTool;
+import com.lifepilot.tool.model.ToolSchedulingMode;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.tool.schema.JsonSchema;
+import com.lifepilot.tool.semantics.ToolExecutionSemantics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -63,6 +65,7 @@ public class RemoteAgentToolFactory {
                 .inputSchema(inputSchema)
                 .riskLevel(RiskLevel.MEDIUM)
                 .idempotent(false)
+                .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.SEQUENTIAL))
                 .tags(List.of("a2a", "remote"))
                 .executor(input -> {
                     String task = input.getParam("task", String.class);
