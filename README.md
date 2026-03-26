@@ -283,9 +283,9 @@ Docker Compose 使用 `.env` 文件管理环境变量，参考 `.env.example` �
 | 状态管理 | Pinia | 3.x | Vue 3 状态管理 |
 | UI 组件 | Reka UI + Tailwind CSS | 2.x / 4.x | 无头组件 + 原子化 CSS |
 | 图表 | ECharts + vue-echarts | 6.x / 8.x | 数据可视化 |
-| 浏览器自动化 | Playwright | 1.49 | 可选依赖，运行时检测 |
-| 多媒体 | JavaCV + FFmpeg | 1.5.10 / 6.1.1 | 视频帧提取 / 音轨分离 |
-| 文档解析 | PDFBox + POI | 3.0.4 / 5.3.0 | PDF / Word 文档解析 |
+| 浏览器自动化 | Playwright | 1.58 | 可选依赖，运行时检测 |
+| 多媒体 | JavaCV + FFmpeg | 1.5.13 / 6.1.1 | 视频帧提取 / 音轨分离 |
+| 文档与内容解析 | PDFBox + POI + Tika + Jsoup | 3.0.7 / 5.3.0 / 3.3.0 / 1.22.1 | PDF / Word / MIME / HTML 解析 |
 | 测试 | JUnit 5 + jqwik | 5.11+ / 1.9.2 | 单元测试 + 属性测试 |
 | 前端测试 | Vitest + fast-check | 3.x / 4.x | 前端单元测试 + 属性测试 |
 
