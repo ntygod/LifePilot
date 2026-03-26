@@ -1,10 +1,9 @@
 package com.lifepilot.observability.guardrail;
 
 import java.util.List;
-import java.util.Map;
 
 /**
- * 护栏策略 sealed interface — 定义五种策略类型。
+ * 护栏策略 sealed interface — 定义四种策略类型。
  *
  * <p>每种策略通过 {@link #priority()} 确定执行顺序（数值越小优先级越高），
  * 通过 {@link #enabled()} 控制是否启用。</p>
@@ -13,8 +12,7 @@ import java.util.Map;
  * @since 2026-02-27
  */
 public sealed interface GuardrailPolicy
-        permits ToolRiskPolicy, BudgetLimitPolicy, ContentSafetyPolicy,
-                RateLimitPolicy, DataRedactionPolicy {
+        permits BudgetLimitPolicy, ContentSafetyPolicy, RateLimitPolicy, DataRedactionPolicy {
 
     /**
      * 策略 ID。
@@ -32,46 +30,17 @@ public sealed interface GuardrailPolicy
     int priority();
 
     /**
-     * 创建工具风险策略实例。
+     * 创建预算限制策略实例。
      *
-     * @param policyId         策略 ID
-     * @param enabled          是否启用
-     * @param priority         优先级
-     * @param toolRiskMapping  工具 ID → 风险等级映射
-     * @param defaultRiskLevel 默认风险等级
-     * @return 工具风险策略
+     * @param policyId        策略 ID
+     * @param enabled         是否启用
+     * @param priority        优先级
+     * @param dailyTokenLimit 每日 Token 上限
+     * @return 预算限制策略
      */
-    static GuardrailPolicy toolRiskPolicy(String policyId, boolean enabled, int priority,
-                                           Map<String, RiskLevel> toolRiskMapping,
-                                           RiskLevel defaultRiskLevel) {
-        return new ToolRiskPolicy(policyId, enabled, priority, toolRiskMapping, defaultRiskLevel);
-    }
-}
-
-/**
- * 工具风险策略 — 根据工具风险等级决定审批模式。
- *
- * @param policyId         策略 ID
- * @param enabled          是否启用
- * @param priority         优先级
- * @param toolRiskMapping  工具 ID → 风险等级映射
- * @param defaultRiskLevel 默认风险等级
- * @author zsg
- * @since 2026-02-27
- */
-record ToolRiskPolicy(
-        String policyId,
-        boolean enabled,
-        int priority,
-        Map<String, RiskLevel> toolRiskMapping,
-        RiskLevel defaultRiskLevel
-) implements GuardrailPolicy {
-
-    /**
-     * 紧凑构造函数 — 使用 Map.copyOf() 保证不可变性。
-     */
-    ToolRiskPolicy {
-        toolRiskMapping = Map.copyOf(toolRiskMapping);
+    static GuardrailPolicy budgetLimitPolicy(String policyId, boolean enabled, int priority,
+                                             int dailyTokenLimit) {
+        return new BudgetLimitPolicy(policyId, enabled, priority, dailyTokenLimit);
     }
 }
 

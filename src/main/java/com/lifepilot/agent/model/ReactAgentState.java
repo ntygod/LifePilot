@@ -1,6 +1,5 @@
 package com.lifepilot.agent.model;
 
-import com.lifepilot.agent.session.SessionSnapshot;
 import com.lifepilot.llm.multimodal.MediaContent;
 import lombok.Builder;
 import org.springframework.lang.Nullable;
@@ -12,9 +11,8 @@ import java.util.UUID;
 /**
  * ReAct Agent 不可变状态快照。
  *
- * <p>替代原 {@code AgentState}，移除 {@code phase} / {@code plan} /
- * {@code planStepIndex} / {@code revisionCount} 等六阶段专属字段。
- * 每次状态变更通过 {@code toBuilder()} 生成新实例，保证不可变性。</p>
+ * <p>替代旧 {@code AgentState}，通过 {@code toBuilder()} 派生新实例，
+ * 避免在循环过程中直接修改共享状态。</p>
  *
  * @author zsg
  * @since 2026-03-14
@@ -23,8 +21,11 @@ import java.util.UUID;
 public record ReactAgentState(
         String traceId,
         String sessionId,
+        @Nullable String turnId,
         String goal,
         String channel,
+        @Nullable String userId,
+        AgentTaskMode taskMode,
         List<ReactStep> steps,
         int stepCount,
         List<String> shortTermMemory,
@@ -37,16 +38,18 @@ public record ReactAgentState(
         boolean done,
         @Nullable String finalOutput,
         @Nullable String terminationReason,
+        @Nullable CompletionReason completionReason,
         @Nullable String reasoningSummary,
         CompletionMode completionMode,
         @Nullable List<String> allowedToolIds,
         @Nullable List<MediaContent> pendingMedia,
+        int earlyStopRejectCount,
         boolean suspended,
         @Nullable SuspendReason suspendReason
 ) {
 
-    /** 紧凑构造器 — 防御性拷贝。 */
     public ReactAgentState {
+        taskMode = taskMode != null ? taskMode : AgentTaskMode.AUTO;
         steps = List.copyOf(steps);
         shortTermMemory = List.copyOf(shortTermMemory);
         mentionedEntities = List.copyOf(mentionedEntities);
@@ -55,18 +58,21 @@ public record ReactAgentState(
     }
 
     /**
-     * 从 AgentRequest 初始化新状态。
+     * 基于请求创建新的运行状态。
      *
-     * @param request       Agent 请求
-     * @param defaultBudget 请求未指定预算时的默认预算
+     * @param request Agent 请求
+     * @param defaultBudget 未指定预算时的默认预算
      * @return 初始状态
      */
     public static ReactAgentState init(AgentRequest request, Budget defaultBudget) {
         return ReactAgentState.builder()
                 .traceId(UUID.randomUUID().toString())
                 .sessionId(request.sessionId())
+                .turnId(request.turnId())
                 .goal(request.message())
                 .channel(request.channel())
+                .userId(request.userId())
+                .taskMode(request.taskMode())
                 .steps(List.of())
                 .stepCount(0)
                 .shortTermMemory(List.of())
@@ -79,58 +85,25 @@ public record ReactAgentState(
                 .done(false)
                 .finalOutput(null)
                 .terminationReason(null)
+                .completionReason(null)
                 .completionMode(CompletionMode.NORMAL)
                 .allowedToolIds(request.allowedToolIds())
                 .pendingMedia(null)
+                .earlyStopRejectCount(0)
                 .suspended(false)
                 .suspendReason(null)
                 .build();
     }
 
-    /**
-     * 从已有会话快照恢复状态。
-     *
-     * @param session       会话快照
-     * @param request       当前请求
-     * @param defaultBudget 请求未指定预算时的默认预算
-     * @return 恢复后的状态
-     */
-    public static ReactAgentState fromSession(SessionSnapshot session, AgentRequest request, Budget defaultBudget) {
-        return ReactAgentState.builder()
-                .traceId(UUID.randomUUID().toString())
-                .sessionId(session.sessionId())
-                .goal(request.message())
-                .channel(session.channelId())
-                .steps(List.of())
-                .stepCount(0)
-                .shortTermMemory(List.of())
-                .mentionedEntities(session.mentionedEntities())
-                .budget(request.budget() != null ? request.budget() : defaultBudget)
-                .parentTraceId(request.parentTraceId())
-                .resumedFromTraceId(null)
-                .depth(request.depth())
-                .preferredProvider(request.preferredProvider())
-                .done(false)
-                .finalOutput(null)
-                .terminationReason(null)
-                .completionMode(CompletionMode.NORMAL)
-                .allowedToolIds(request.allowedToolIds())
-                .pendingMedia(null)
-                .suspended(false)
-                .suspendReason(null)
-                .build();
-    }
-
-    /** 检查是否已完成。 */
     public boolean isDone() {
         return done;
     }
 
     /**
-     * 进入挂起态，返回新实例。
+     * 进入挂起态。
      *
      * @param reason 挂起原因
-     * @return suspended=true 且 suspendReason 已设置的新状态实例
+     * @return 新状态
      */
     public ReactAgentState suspend(SuspendReason reason) {
         return this.toBuilder()
@@ -140,9 +113,9 @@ public record ReactAgentState(
     }
 
     /**
-     * 从挂起态恢复，返回新实例。
+     * 从挂起态恢复。
      *
-     * @return suspended=false 且 suspendReason=null 的新状态实例
+     * @return 新状态
      */
     public ReactAgentState resume() {
         return this.toBuilder()
@@ -152,10 +125,10 @@ public record ReactAgentState(
     }
 
     /**
-     * 追加步骤，返回新实例。
+     * 追加一步运行步骤。
      *
-     * @param step 要追加的步骤
-     * @return 包含新步骤的新状态实例
+     * @param step 运行步骤
+     * @return 新状态
      */
     public ReactAgentState appendStep(ReactStep step) {
         var newSteps = new ArrayList<>(steps);
@@ -167,10 +140,10 @@ public record ReactAgentState(
     }
 
     /**
-     * 追加待注入媒体内容，返回新实例。
+     * 追加待注入媒体。
      *
-     * @param media 要追加的媒体内容
-     * @return 包含新媒体的新状态实例
+     * @param media 媒体内容
+     * @return 新状态
      */
     public ReactAgentState appendPendingMedia(MediaContent media) {
         var newMedia = pendingMedia != null ? new ArrayList<>(pendingMedia) : new ArrayList<MediaContent>();
@@ -181,9 +154,9 @@ public record ReactAgentState(
     }
 
     /**
-     * 清除待注入媒体缓冲区，返回新实例。
+     * 清空待注入媒体缓存。
      *
-     * @return pendingMedia 为 null 的新状态实例
+     * @return 新状态
      */
     public ReactAgentState clearPendingMedia() {
         return this.toBuilder()

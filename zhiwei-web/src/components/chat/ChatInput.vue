@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { ArrowUp, FileAudio2, FileText, FileVideo, Image, Mic, Paperclip, Square, X } from 'lucide-vue-next'
+import { ArrowUp, CornerDownLeft, FileAudio2, FileText, FileVideo, Image, Mic, Paperclip, Square, X } from 'lucide-vue-next'
 import { chatApi } from '@/api/client'
 import { useChatStore } from '@/stores/chat'
 import { Textarea } from '@/components/ui/textarea'
@@ -10,6 +10,9 @@ import type { ChatAttachment } from '@/types'
 
 const props = defineProps<{
   disabled?: boolean
+  placeholder?: string
+  continuationTitle?: string | null
+  continuationDetail?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -263,13 +266,36 @@ defineExpose({
         @dragleave="handleDragLeave"
         @drop.prevent="handleDrop"
       >
+        <div
+          v-if="continuationTitle"
+          class="flex items-start gap-3 border-b border-border/60 bg-gradient-to-r from-primary/[0.07] via-primary/[0.04] to-transparent px-4 py-3"
+        >
+          <div class="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-background/95 text-primary shadow-sm">
+            <CornerDownLeft class="size-3.5" />
+          </div>
+          <div class="min-w-0">
+            <div class="flex items-center gap-2">
+              <span class="rounded-full bg-background/90 px-2 py-0.5 text-[10px] font-semibold tracking-[0.08em] text-primary">
+                接续中
+              </span>
+              <span class="text-sm font-medium text-foreground">{{ continuationTitle }}</span>
+            </div>
+            <p
+              v-if="continuationDetail"
+              class="mt-1 text-xs leading-5 text-muted-foreground"
+            >
+              {{ continuationDetail }}
+            </p>
+          </div>
+        </div>
+
         <!-- 输入区 -->
         <div class="relative px-4 pt-3 pb-1">
           <Textarea
             v-model="input"
             :disabled="disabled"
             :maxlength="maxLength"
-            placeholder="输入问题，或粘贴资料继续往下处理…"
+            :placeholder="placeholder || '输入问题，或粘贴资料继续往下处理…'"
             rows="1"
             class="min-h-[88px] max-h-[200px] resize-none border-0 bg-transparent px-0 text-[15px] leading-relaxed shadow-none placeholder:text-muted-foreground/50 focus-visible:ring-0"
             @keydown="handleKeydown"

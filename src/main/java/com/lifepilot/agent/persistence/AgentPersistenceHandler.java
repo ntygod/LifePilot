@@ -2,12 +2,14 @@ package com.lifepilot.agent.persistence;
 
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.context.AgentLoopContext;
+import com.lifepilot.agent.context.CompactionEngine;
 import com.lifepilot.agent.media.MediaDataExtractor;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.model.SuspendReason;
-import com.lifepilot.agent.session.SessionManager;
-import com.lifepilot.conversation.ConversationHistoryStore;
+import com.lifepilot.conversation.transcript.TranscriptStore;
+import com.lifepilot.interaction.web.model.ChatTurnAction;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
+import com.lifepilot.interaction.web.service.ChatTurnService;
 import com.lifepilot.llm.multimodal.MediaContent;
 import com.lifepilot.memory.experience.ContrastiveLearner;
 import com.lifepilot.memory.experience.EffectivenessTracker;
@@ -23,53 +25,66 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
 
-import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Agent 持久化处理器。
- *
- * <p>聚合会话持久化、附件落库、工作区写入和异步后处理。</p>
+ * <p>负责将主对话链路中的 transcript、附件、注入记录、工作状态和异步记忆后处理统一落盘。</p>
  *
  * @author zsg
  * @since 2026-03-20
  */
 public class AgentPersistenceHandler {
-
     private static final Logger log = LoggerFactory.getLogger(AgentPersistenceHandler.class);
+    private static final Pattern RESUME_INPUT_PATTERN = Pattern.compile(
+            "<resume_user_input>\\s*(.*?)\\s*</resume_user_input>",
+            Pattern.DOTALL
+    );
 
+    @SuppressWarnings("unused")
     private final AgentConfigProperties config;
-    private final SessionManager sessionManager;
-
-    @Nullable private final SessionWorkspaceService workspaceService;
-    @Nullable private final ConversationHistoryStore conversationHistoryStore;
-    @Nullable private final RealtimeExtractor realtimeExtractor;
-    @Nullable private final InjectionRecordRepository injectionRecordRepository;
-    @Nullable private final AttachmentRepository attachmentRepository;
-    @Nullable private final ExperienceSummarizer experienceSummarizer;
-    @Nullable private final EffectivenessTracker effectivenessTracker;
-    @Nullable private final ContrastiveLearner contrastiveLearner;
-    @Nullable private final SubtaskReflector subtaskReflector;
+    @Nullable
+    private final SessionWorkspaceService workspaceService;
+    private final TranscriptStore transcriptStore;
+    @Nullable
+    private final RealtimeExtractor realtimeExtractor;
+    @Nullable
+    private final InjectionRecordRepository injectionRecordRepository;
+    @Nullable
+    private final AttachmentRepository attachmentRepository;
+    @Nullable
+    private final ExperienceSummarizer experienceSummarizer;
+    @Nullable
+    private final EffectivenessTracker effectivenessTracker;
+    @Nullable
+    private final ContrastiveLearner contrastiveLearner;
+    @Nullable
+    private final SubtaskReflector subtaskReflector;
+    @Nullable
+    private final CompactionEngine compactionEngine;
+    @Nullable
+    private final ChatTurnService chatTurnService;
 
     public AgentPersistenceHandler(
             AgentConfigProperties config,
-            SessionManager sessionManager,
             @Nullable SessionWorkspaceService workspaceService,
-            @Nullable ConversationHistoryStore conversationHistoryStore,
+            TranscriptStore transcriptStore,
             @Nullable RealtimeExtractor realtimeExtractor,
             @Nullable InjectionRecordRepository injectionRecordRepository,
             @Nullable AttachmentRepository attachmentRepository,
             @Nullable ExperienceSummarizer experienceSummarizer,
             @Nullable EffectivenessTracker effectivenessTracker,
             @Nullable ContrastiveLearner contrastiveLearner,
-            @Nullable SubtaskReflector subtaskReflector) {
+            @Nullable SubtaskReflector subtaskReflector,
+            @Nullable CompactionEngine compactionEngine,
+            @Nullable ChatTurnService chatTurnService) {
         this.config = config;
-        this.sessionManager = sessionManager;
         this.workspaceService = workspaceService;
-        this.conversationHistoryStore = conversationHistoryStore;
+        this.transcriptStore = transcriptStore;
         this.realtimeExtractor = realtimeExtractor;
         this.injectionRecordRepository = injectionRecordRepository;
         this.attachmentRepository = attachmentRepository;
@@ -77,6 +92,8 @@ public class AgentPersistenceHandler {
         this.effectivenessTracker = effectivenessTracker;
         this.contrastiveLearner = contrastiveLearner;
         this.subtaskReflector = subtaskReflector;
+        this.compactionEngine = compactionEngine;
+        this.chatTurnService = chatTurnService;
     }
 
     public void saveWorkspaceForSuspend(ReactAgentState state) {
@@ -87,8 +104,8 @@ public class AgentPersistenceHandler {
             switch (state.suspendReason()) {
                 case SuspendReason.UserConfirmation confirmation ->
                         workspaceService.savePendingDecision(state.sessionId(), new PendingDecisionItem(
-                                "等待用户确认",
-                                "等待用户确认执行高风险工具 " + confirmation.toolId(),
+                                "等待确认",
+                                "工具调用等待用户确认：" + confirmation.toolId(),
                                 buildSuspendPayload(state.suspendReason()),
                                 100,
                                 state.traceId(),
@@ -96,7 +113,7 @@ public class AgentPersistenceHandler {
                                 null));
                 default ->
                         workspaceService.saveTaskState(state.sessionId(), new TaskStateItem(
-                                "任务已挂起",
+                                "任务已暂停",
                                 formatSuspendSummary(state.suspendReason()),
                                 buildSuspendPayload(state.suspendReason()),
                                 60,
@@ -105,7 +122,7 @@ public class AgentPersistenceHandler {
                                 null));
             }
         } catch (Exception e) {
-            log.warn("挂起工作区写入失败: sessionId={}, error={}", state.sessionId(), e.getMessage());
+            log.warn("保存暂停工作区失败：sessionId={}, error={}", state.sessionId(), e.getMessage());
         }
     }
 
@@ -117,59 +134,108 @@ public class AgentPersistenceHandler {
             workspaceService.resolveByTaskId(sessionId, traceId);
             workspaceService.resolveBySourceTraceId(sessionId, traceId);
         } catch (Exception e) {
-            log.warn("工作区状态关闭失败: sessionId={}, traceId={}, error={}",
+            log.warn("解析工作区轨迹引用失败：sessionId={}, traceId={}, error={}",
                     sessionId, traceId, e.getMessage());
         }
     }
 
     public void persistUserMessage(ReactAgentState state) {
-        if (conversationHistoryStore == null
-                || state.goal() == null || state.goal().isBlank()) {
+        if (state.goal() == null || state.goal().isBlank()) {
             return;
         }
         try {
-            conversationHistoryStore.appendUserMessage(
-                    state.sessionId(), state.goal(), state.traceId());
+            transcriptStore.appendUserMessage(state.sessionId(), state.turnId(), state.goal(), state.traceId(), null);
         } catch (Exception e) {
-            log.warn("用户消息同步写入失败: sessionId={}, error={}",
-                    state.sessionId(), e.getMessage());
+            log.warn("写入用户消息失败：sessionId={}, error={}", state.sessionId(), e.getMessage());
         }
     }
 
     @Nullable
     public String persistUserMessageReturningId(ReactAgentState state) {
-        if (conversationHistoryStore == null
-                || state.goal() == null || state.goal().isBlank()) {
+        return persistUserMessageReturningId(state, ChatTurnAction.SEND);
+    }
+
+    @Nullable
+    public String persistUserMessageReturningId(ReactAgentState state, ChatTurnAction action) {
+        if (state.goal() == null || state.goal().isBlank()) {
             return null;
         }
         try {
-            return conversationHistoryStore.appendUserMessage(
-                    state.sessionId(), state.goal(), state.traceId());
+            String resumeInput = action == ChatTurnAction.RESUME
+                    ? extractResumeUserInput(state.goal())
+                    : null;
+            if (resumeInput != null && !resumeInput.isBlank()) {
+                String entryId = transcriptStore.appendUserMessage(
+                        state.sessionId(),
+                        state.turnId(),
+                        resumeInput,
+                        state.traceId(),
+                        null
+                );
+                if (chatTurnService != null && state.turnId() != null && entryId != null) {
+                    chatTurnService.bindUserEntry(state.sessionId(), state.turnId(), entryId);
+                }
+                return entryId;
+            }
+            if (chatTurnService != null && state.turnId() != null) {
+                var existingTurn = chatTurnService.findBySessionIdAndTurnId(state.sessionId(), state.turnId());
+                if (existingTurn.isPresent() && existingTurn.get().userEntryId() != null
+                        && !existingTurn.get().userEntryId().isBlank()) {
+                    return existingTurn.get().userEntryId();
+                }
+            }
+            String entryId = transcriptStore.appendUserMessage(
+                    state.sessionId(),
+                    state.turnId(),
+                    state.goal(),
+                    state.traceId(),
+                    null
+            );
+            if (chatTurnService != null && state.turnId() != null && entryId != null) {
+                chatTurnService.bindUserEntry(state.sessionId(), state.turnId(), entryId);
+            }
+            return entryId;
         } catch (Exception e) {
-            log.warn("用户消息同步写入失败: sessionId={}, error={}",
-                    state.sessionId(), e.getMessage());
+            log.warn("写入用户消息失败：sessionId={}, error={}", state.sessionId(), e.getMessage());
             return null;
         }
     }
 
     @Nullable
-    public String persistAssistantMessage(ReactAgentState state,
-                                          @Nullable String reactStepsJson) {
-        if (conversationHistoryStore == null) {
+    private String extractResumeUserInput(@Nullable String goal) {
+        if (goal == null || goal.isBlank()) {
             return null;
         }
+        Matcher matcher = RESUME_INPUT_PATTERN.matcher(goal);
+        if (!matcher.find()) {
+            return null;
+        }
+        String resumeInput = matcher.group(1);
+        return resumeInput != null ? resumeInput.strip() : null;
+    }
+
+    @Nullable
+    public String persistAssistantMessage(ReactAgentState state,
+                                          @Nullable String reactStepsJson) {
         String output = state.finalOutput();
         if (output == null || output.isBlank()) {
             return null;
         }
         try {
-            return conversationHistoryStore.appendAssistantMessage(
-                    state.sessionId(), output, state.reasoningSummary(),
-                    state.traceId(), null, reactStepsJson,
-                    state.completionMode(), state.resumedFromTraceId());
+            return transcriptStore.appendAssistantMessage(
+                    state.sessionId(),
+                    state.turnId(),
+                    output,
+                    state.reasoningSummary(),
+                    state.traceId(),
+                    null,
+                    reactStepsJson,
+                    state.completionMode(),
+                    state.resumedFromTraceId(),
+                    null
+            );
         } catch (Exception e) {
-            log.warn("助手消息同步写入失败: sessionId={}, error={}",
-                    state.sessionId(), e.getMessage());
+            log.warn("写入助手消息失败：sessionId={}, error={}", state.sessionId(), e.getMessage());
             return null;
         }
     }
@@ -180,86 +246,84 @@ public class AgentPersistenceHandler {
                                                   @Nullable String reasoningSummary,
                                                   @Nullable String a2uiJson,
                                                   @Nullable String reactStepsJson) {
-        if (conversationHistoryStore == null) {
-            return null;
-        }
         if ((finalContent == null || finalContent.isBlank()) && a2uiJson == null) {
             return null;
         }
         try {
-            return conversationHistoryStore.appendAssistantMessage(
+            return transcriptStore.appendAssistantMessage(
                     state.sessionId(),
+                    state.turnId(),
                     finalContent != null ? finalContent : "",
                     reasoningSummary,
                     state.traceId(),
                     a2uiJson,
                     reactStepsJson,
                     state.completionMode(),
-                    state.resumedFromTraceId());
+                    state.resumedFromTraceId(),
+                    null
+            );
         } catch (Exception e) {
-            log.warn("助手消息同步写入失败: sessionId={}, error={}",
-                    state.sessionId(), e.getMessage());
+            log.warn("写入助手消息失败：sessionId={}, error={}", state.sessionId(), e.getMessage());
             return null;
         }
     }
 
-    public void persistInjectionRecord(@Nullable String messageId,
+    public void persistInjectionRecord(@Nullable String sourceEntryId,
                                        @Nullable String sessionId,
+                                       @Nullable String sourceTraceId,
                                        @Nullable AgentLoopContext loopContext) {
-        List<String> entityIds = loopContext != null
-                ? loopContext.getInjectedEntityIds()
-                : List.of();
+        List<String> entityIds = loopContext != null ? loopContext.getInjectedEntityIds() : List.of();
         if (injectionRecordRepository == null || entityIds.isEmpty()
-                || messageId == null || messageId.isBlank()) {
+                || sourceEntryId == null || sourceEntryId.isBlank()) {
             return;
         }
         try {
-            injectionRecordRepository.save(messageId, sessionId, entityIds);
-            log.debug("注入记录已持久化: messageId={}, entityCount={}", messageId, entityIds.size());
+            injectionRecordRepository.save(sourceEntryId, sessionId, sourceTraceId, entityIds);
+            log.debug("注入记录已持久化：sourceEntryId={}, entityCount={}", sourceEntryId, entityIds.size());
         } catch (Exception e) {
-            log.warn("注入记录持久化失败: messageId={}, error={}", messageId, e.getMessage());
+            log.warn("持久化注入记录失败：sourceEntryId={}, error={}", sourceEntryId, e.getMessage());
         }
     }
 
-    public void persistToolMediaAttachments(@Nullable String assistantMessageId,
+    public void persistToolMediaAttachments(@Nullable String assistantEntryId,
                                             @Nullable String sessionId,
                                             List<MediaDataExtractor.MediaItem> toolMediaItems) {
-        if (attachmentRepository == null || assistantMessageId == null || toolMediaItems.isEmpty()) {
+        if (attachmentRepository == null || assistantEntryId == null || toolMediaItems.isEmpty()) {
             return;
         }
-        for (var mediaItem : toolMediaItems) {
+        for (MediaDataExtractor.MediaItem mediaItem : toolMediaItems) {
             try {
                 String ext = guessExtension(mediaItem.mediaType());
                 String fileName = mediaItem.fieldName() + "." + ext;
                 String dataUri = "data:" + mediaItem.mediaType() + ";base64," + mediaItem.data();
                 long sizeBytes = Math.round(mediaItem.data().length() * 0.75);
-                attachmentRepository.save(assistantMessageId, sessionId,
+                attachmentRepository.saveForEntry(assistantEntryId, sessionId,
                         fileName, "", sizeBytes, mediaItem.mediaType(), dataUri);
             } catch (Exception e) {
-                log.warn("工具媒体附件持久化失败: field={}, error={}",
+                log.warn("保存工具媒体附件失败：field={}, error={}",
                         mediaItem.fieldName(), e.getMessage());
             }
         }
     }
 
-    public void persistUserMediaAttachments(@Nullable String userMessageId,
+    public void persistUserMediaAttachments(@Nullable String userEntryId,
                                             @Nullable String sessionId,
                                             @Nullable List<MediaContent> mediaContents) {
-        if (attachmentRepository == null || userMessageId == null
+        if (attachmentRepository == null || userEntryId == null
                 || mediaContents == null || mediaContents.isEmpty()) {
             return;
         }
-        for (var mc : mediaContents) {
+        for (MediaContent mediaContent : mediaContents) {
             try {
-                String fileName = mc.fileName() != null ? mc.fileName()
+                String fileName = mediaContent.fileName() != null ? mediaContent.fileName()
                         : "media-" + java.util.UUID.randomUUID().toString().substring(0, 8)
-                        + "." + guessExtension(mc.mimeType());
-                String dataUri = "data:" + mc.mimeType() + ";base64,"
-                        + java.util.Base64.getEncoder().encodeToString(mc.data());
-                attachmentRepository.save(userMessageId, sessionId,
-                        fileName, "", mc.sizeBytes(), mc.mimeType(), dataUri);
+                        + "." + guessExtension(mediaContent.mimeType());
+                String dataUri = "data:" + mediaContent.mimeType() + ";base64,"
+                        + java.util.Base64.getEncoder().encodeToString(mediaContent.data());
+                attachmentRepository.saveForEntry(userEntryId, sessionId,
+                        fileName, "", mediaContent.sizeBytes(), mediaContent.mimeType(), dataUri);
             } catch (Exception e) {
-                log.warn("用户媒体附件持久化失败: sessionId={}, error={}",
+                log.warn("保存用户媒体附件失败：sessionId={}, error={}",
                         sessionId, e.getMessage());
             }
         }
@@ -268,11 +332,14 @@ public class AgentPersistenceHandler {
     public void asyncPostProcess(ReactAgentState finalState) {
         Thread.startVirtualThread(() -> {
             try {
-                sessionManager.saveSession(finalState);
+                if (compactionEngine != null) {
+                    compactionEngine.compactIfNeeded(finalState.sessionId(), finalState.traceId());
+                }
             } catch (Exception e) {
-                log.warn("会话快照持久化失败: sessionId={}, error={}",
+                log.warn("会话压缩后处理失败：sessionId={}, error={}",
                         finalState.sessionId(), e.getMessage());
             }
+
             try {
                 if (realtimeExtractor != null && finalState.finalOutput() != null) {
                     realtimeExtractor.extractAsync(
@@ -281,7 +348,7 @@ public class AgentPersistenceHandler {
                             finalState.finalOutput());
                 }
             } catch (Exception e) {
-                log.warn("实时实体提取失败: sessionId={}, error={}",
+                log.warn("实时记忆抽取失败：sessionId={}, error={}",
                         finalState.sessionId(), e.getMessage());
             }
 
@@ -291,7 +358,7 @@ public class AgentPersistenceHandler {
                     newExperience = experienceSummarizer.summarize(finalState);
                 }
             } catch (Exception e) {
-                log.warn("经验提炼失败: sessionId={}, error={}",
+                log.warn("经验总结失败：sessionId={}, error={}",
                         finalState.sessionId(), e.getMessage());
             }
 
@@ -300,7 +367,7 @@ public class AgentPersistenceHandler {
                     effectivenessTracker.evaluate(finalState, finalState.traceId());
                 }
             } catch (Exception e) {
-                log.warn("效果评估失败: sessionId={}, error={}",
+                log.warn("效果评估失败：sessionId={}, error={}",
                         finalState.sessionId(), e.getMessage());
             }
 
@@ -309,7 +376,7 @@ public class AgentPersistenceHandler {
                     contrastiveLearner.learn(newExperience);
                 }
             } catch (Exception e) {
-                log.warn("对比学习失败: sessionId={}, error={}",
+                log.warn("对比学习失败：sessionId={}, error={}",
                         finalState.sessionId(), e.getMessage());
             }
 
@@ -318,27 +385,10 @@ public class AgentPersistenceHandler {
                     subtaskReflector.reflect(finalState);
                 }
             } catch (Exception e) {
-                log.warn("子任务反思失败: sessionId={}, error={}",
+                log.warn("子任务反思失败：sessionId={}, error={}",
                         finalState.sessionId(), e.getMessage());
             }
         });
-    }
-
-    public void persistStreamingSystemError(@Nullable String sessionId,
-                                            @Nullable String traceId,
-                                            @Nullable Exception e) {
-        try {
-            if (sessionId == null || sessionId.isBlank()) {
-                return;
-            }
-            String detail = e != null ? e.getMessage() : "unknown";
-            String content = "系统提示：模型服务暂时不可用，请稍后重试。\n（错误信息）" + detail;
-            if (conversationHistoryStore != null) {
-                conversationHistoryStore.appendSystemMessage(sessionId, content, traceId);
-            }
-        } catch (Exception ignore) {
-            // 不影响主流程
-        }
     }
 
     static int estimateTextTokens(String text) {
@@ -368,7 +418,7 @@ public class AgentPersistenceHandler {
     }
 
     private Map<String, Object> buildSuspendPayload(SuspendReason reason) {
-        var payload = new LinkedHashMap<String, Object>();
+        LinkedHashMap<String, Object> payload = new LinkedHashMap<>();
         switch (reason) {
             case SuspendReason.WorkflowWait workflowWait -> {
                 payload.put("type", "WORKFLOW_WAIT");
@@ -406,15 +456,15 @@ public class AgentPersistenceHandler {
     private String formatSuspendSummary(SuspendReason reason) {
         return switch (reason) {
             case SuspendReason.WorkflowWait workflowWait ->
-                    "等待工作流 " + workflowWait.workflowName() + " 完成";
+                    "工作流等待：" + workflowWait.workflowName();
             case SuspendReason.UserConfirmation confirmation ->
-                    "等待用户确认高风险工具 " + confirmation.toolId();
+                    "用户确认等待：" + confirmation.toolId();
             case SuspendReason.RemoteDelegation remoteDelegation ->
-                    "等待远端代理返回任务结果: " + remoteDelegation.delegatedGoal();
+                    "远程委派等待：" + remoteDelegation.delegatedGoal();
             case SuspendReason.ScheduledWakeup scheduledWakeup ->
-                    "等待定时唤醒: " + scheduledWakeup.reason();
+                    "定时唤醒等待：" + scheduledWakeup.reason();
             case SuspendReason.ExternalDataWait externalDataWait ->
-                    "等待外部数据就绪: " + externalDataWait.description();
+                    "外部数据等待：" + externalDataWait.description();
         };
     }
 }

@@ -63,7 +63,7 @@ class FileToolExecutorTest {
 
         @Test
         void check_黑名单路径被拒绝() {
-            // 配置白名单为空（默认用户 home），黑名单包含 tempDir
+            // 配置白名单为空，仅依赖黑名单
             properties.getInfra().getFile().setAllowedDirectories(List.of());
             properties.getInfra().getFile().setDeniedDirectories(
                     List.of(tempDir.toAbsolutePath().toString()));
@@ -82,13 +82,13 @@ class FileToolExecutorTest {
         }
 
         @Test
-        void check_白名单为空时_用户home下路径通过() {
+        void check_白名单为空时_非黑名单路径通过() {
             properties.getInfra().getFile().setAllowedDirectories(List.of());
             properties.getInfra().getFile().setDeniedDirectories(List.of());
             var checker = new PathSecurityChecker(properties.getInfra().getFile());
 
-            Path userHomePath = Path.of(System.getProperty("user.home"), "test.txt");
-            var result = checker.check(userHomePath);
+            Path arbitraryPath = tempDir.resolveSibling("outside-whitelist.txt");
+            var result = checker.check(arbitraryPath);
             assertThat(result).isEmpty();
         }
     }
@@ -123,7 +123,7 @@ class FileToolExecutorTest {
         @Test
         void execute_大文件被截断() throws IOException {
             // 设置极小的 maxReadSize
-            properties.getInfra().getFile().setMaxReadSize(10);
+            properties.getInfra().getFile().setDefaultMaxChars(10);
             executor = new FileReadToolExecutor(properties);
 
             Path file = tempDir.resolve("large.txt");

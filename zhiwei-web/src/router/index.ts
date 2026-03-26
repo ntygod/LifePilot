@@ -4,7 +4,7 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     /**
-     * 根路径：产品介绍页（登录前）
+     * 根路由：产品介绍页（登录前）
      */
     {
       path: '/',
@@ -14,9 +14,6 @@ const router = createRouter({
 
     /**
      * 对话 / 会话模块
-     * - `/conversations`：会话列表页（占位）
-     * - `/conversations/:sessionId`：会话详情页（当前复用 ChatView）
-     * - `/chat/:sessionId?`：兼容旧链接，重定向到新路由
      */
     {
       path: '/conversations',
@@ -27,16 +24,6 @@ const router = createRouter({
       path: '/conversations/:sessionId',
       name: 'conversationDetail',
       component: () => import('@/views/ChatView.vue')
-    },
-    {
-      path: '/chat/:sessionId?',
-      name: 'chat',
-      redirect: (to) => {
-        const sessionId = to.params.sessionId as string | undefined
-        return sessionId
-          ? { name: 'conversationDetail', params: { sessionId } }
-          : { name: 'conversations' }
-      }
     },
 
     /**
@@ -68,7 +55,7 @@ const router = createRouter({
     },
 
     /**
-     * Agent & 工作流 / 扩展
+     * Agent、工作流与扩展
      */
     {
       path: '/agents',
@@ -156,8 +143,7 @@ const router = createRouter({
 
     /**
      * 设置与偏好
-     * 使用 Tabs 导航，所有设置子页面通过 Tab 切换，
-     * 子路由重定向到主设置页（保留路径以支持 Sidebar 导航和 Tab 映射）。
+     * 使用 Tabs 导航，所有设置子页面通过 Tab 切换。
      */
     {
       path: '/settings',
@@ -184,18 +170,10 @@ const router = createRouter({
       name: 'settingsChannels',
       component: () => import('@/views/SettingsView.vue')
     },
-    // 兼容旧路径，重定向到新分区
     {
-      path: '/settings/preferences',
-      redirect: '/settings/general'
-    },
-    {
-      path: '/settings/shortcuts',
-      redirect: '/settings/general'
-    },
-    {
-      path: '/settings/reranker',
-      redirect: '/settings/models'
+      path: '/settings/permissions',
+      name: 'settingsPermissions',
+      component: () => import('@/views/SettingsView.vue')
     },
 
     /**
@@ -214,7 +192,6 @@ const router = createRouter({
 
     /**
      * Trace / 轨迹
-     * 仍保留现有实现
      */
     {
       path: '/traces',

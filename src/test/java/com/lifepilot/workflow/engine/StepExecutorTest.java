@@ -1,8 +1,7 @@
 package com.lifepilot.workflow.engine;
 
-import com.lifepilot.llm.LlmRequest;
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
-import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.config.ProviderCapability;
 import com.lifepilot.llm.multimodal.MultimodalRequest;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
@@ -38,6 +37,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -57,7 +57,7 @@ class StepExecutorTest {
     private DynamicToolRegistry toolRegistry;
 
     @Mock
-    private LlmRouter llmRouter;
+    private GenerationRouter generationRouter;
 
     @Mock
     private NotificationService notificationService;
@@ -78,7 +78,7 @@ class StepExecutorTest {
                 mock(VideoProcessor.class),
                 null,
                 new MediaProperties(),
-                llmRouter
+                generationRouter
         ) {
             @Override
             public LlmResponse call(MultimodalRequest request, Duration timeoutOverride) {
@@ -90,7 +90,7 @@ class StepExecutorTest {
                 skillRegistry,
                 skillActivator,
                 toolRegistry,
-                llmRouter,
+                generationRouter,
                 multimodalRouter,
                 new WorkflowConfigProperties(),
                 notificationService
@@ -121,7 +121,9 @@ class StepExecutorTest {
         );
 
         LlmResponse response = new LlmResponse("{\"answer\":\"ok\"}", 12, 6, "provider-1", "model-x", 18, false);
-        when(llmRouter.call(any(LlmRequest.class))).thenReturn(response);
+        when(generationRouter.call(
+                anyString(), anyString(), any(), any(), any(), any(), any(Duration.class)))
+                .thenReturn(response);
 
         Map<String, Object> result = executor.execute(step, context, expressionEngine);
 
@@ -162,7 +164,7 @@ class StepExecutorTest {
         assertEquals("provider-vision", request.preferredProviderId());
         assertInstanceOf(Map.class, result.get("result"));
         assertEquals("cat", ((Map<?, ?>) result.get("result")).get("label"));
-        verifyNoInteractions(llmRouter);
+        verifyNoInteractions(generationRouter);
     }
 
     @Test
@@ -193,7 +195,9 @@ class StepExecutorTest {
                 12,
                 false
         );
-        when(llmRouter.call(any(LlmRequest.class))).thenReturn(response);
+        when(generationRouter.call(
+                anyString(), anyString(), any(), any(), any(), any(), any(Duration.class)))
+                .thenReturn(response);
 
         Map<String, Object> result = executor.execute(step, context, expressionEngine);
 
@@ -229,7 +233,9 @@ class StepExecutorTest {
                 12,
                 false
         );
-        when(llmRouter.call(any(LlmRequest.class))).thenReturn(response);
+        when(generationRouter.call(
+                anyString(), anyString(), any(), any(), any(), any(), any(Duration.class)))
+                .thenReturn(response);
 
         StepExecutor.WorkflowStepException exception = assertThrows(
                 StepExecutor.WorkflowStepException.class,

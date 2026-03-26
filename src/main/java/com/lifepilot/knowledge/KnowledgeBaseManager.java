@@ -165,9 +165,6 @@ public class KnowledgeBaseManager {
         }
 
         // 3. 逐文档清理 FTS5 索引（显式清理，不依赖 CASCADE 触发器的可靠性）
-        for (Document doc : docs) {
-            ftsIndexer.removeByDocumentId(doc.id());
-        }
 
         // 4. 删除知识库（CASCADE 自动删除 documents 和 document_chunks）
         kbRepository.deleteById(id);

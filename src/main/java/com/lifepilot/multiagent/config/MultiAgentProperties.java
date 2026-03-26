@@ -20,9 +20,6 @@ public class MultiAgentProperties {
     /** Agent Markdown 定义文件目录。 */
     private String agentDefinitionsPath = "~/.zhiwei/agents/";
 
-    /** 是否自动注册 HandoffTool。 */
-    private boolean registerHandoffTools = true;
-
     /** 热加载配置。 */
     private HotReload hotReload = new HotReload();
 
@@ -40,9 +37,6 @@ public class MultiAgentProperties {
 
     public String getAgentDefinitionsPath() { return agentDefinitionsPath; }
     public void setAgentDefinitionsPath(String agentDefinitionsPath) { this.agentDefinitionsPath = agentDefinitionsPath; }
-
-    public boolean isRegisterHandoffTools() { return registerHandoffTools; }
-    public void setRegisterHandoffTools(boolean registerHandoffTools) { this.registerHandoffTools = registerHandoffTools; }
 
     public HotReload getHotReload() { return hotReload; }
     public void setHotReload(HotReload hotReload) { this.hotReload = hotReload; }

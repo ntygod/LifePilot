@@ -49,7 +49,7 @@ function createDefaultConfig(type: StepType): StepConfig {
     case 'noop': return {}
     case 'wait': return { durationSeconds: 60 }
     case 'approval': return { message: '', approvers: [], timeoutSeconds: 3600, autoApproveOnTimeout: false }
-    case 'notify': return { targetUserId: '', content: '', contentType: 'TEXT', urgency: 'NORMAL' }
+    case 'notify': return { targetUserId: '', content: '', contentType: 'TEXT' }
   }
 }
 

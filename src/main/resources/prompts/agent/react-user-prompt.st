@@ -1,15 +1,10 @@
-当前时间: {currentDateTime}, 时区: {timezone}, 区域: {locale}
-{userProfileSection}
-{passiveNotificationsSection}
-{conversationHistorySection}
-{workspaceSection}
-{experienceSection}
-{memoriesSection}
-{knowledgeBaseSection}
-{crossSessionSection}
-{toolResultsSection}
-{reasoningContextSection}
-{timeConstraintSection}
-用户请求: {userGoal}
+<runtime_context>
+- 当前时间: {currentDateTime}
+- 当前时区: {timezone}
+- 当前操作系统: {osName} {osVersion}
+- 当前通道: {channel}
+</runtime_context>
 
-预算剩余: Token={tokensRemaining}, 已用步骤={stepCount}
+<current_request>
+{userGoal}
+</current_request>

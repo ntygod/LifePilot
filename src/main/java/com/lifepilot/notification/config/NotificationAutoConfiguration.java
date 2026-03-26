@@ -1,14 +1,12 @@
 package com.lifepilot.notification.config;
 
-import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.interaction.channel.ChannelAdapter;
 import com.lifepilot.interaction.channel.converter.MessageConverter;
+import com.lifepilot.interaction.config.ChannelConfigProvider;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.notification.DefaultNotificationService;
 import com.lifepilot.notification.NotificationRepository;
-import com.lifepilot.notification.NotificationScheduler;
 import com.lifepilot.notification.NotificationService;
-import com.lifepilot.notification.PassiveNotificationQueue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -24,8 +22,7 @@ import java.util.List;
 /**
  * 通知模块自动配置。
  *
- * <p>注册通知模块所有核心 Bean：NotificationRepository、PassiveNotificationQueue、
- * NotificationService、NotificationScheduler。
+ * <p>注册通知模块核心 Bean：NotificationRepository、NotificationService。
  * 通过 {@code lifepilot.notification.enabled} 控制总开关，默认启用。
  *
  * @author zsg
@@ -48,32 +45,14 @@ public class NotificationAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public PassiveNotificationQueue passiveNotificationQueue(NotificationRepository notificationRepository) {
-        log.info("通知模块: 注册 PassiveNotificationQueue");
-        var queue = new PassiveNotificationQueue(notificationRepository);
-        queue.loadUndelivered();
-        return queue;
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
     public NotificationService notificationService(List<ChannelAdapter> channelAdapters,
                                                     List<MessageConverter> messageConverters,
                                                     NotificationRepository notificationRepository,
-                                                    PassiveNotificationQueue passiveNotificationQueue,
-                                                    NotificationProperties properties) {
+                                                    NotificationProperties properties,
+                                                    @Nullable ChannelConfigProvider channelConfigProvider,
+                                                    @Nullable SseSessionManager sseSessionManager) {
         log.info("通知模块: 注册 DefaultNotificationService");
         return new DefaultNotificationService(channelAdapters, messageConverters,
-                notificationRepository, passiveNotificationQueue, properties);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public NotificationScheduler notificationScheduler(PassiveNotificationQueue passiveNotificationQueue,
-                                                        @Nullable SseSessionManager sseSessionManager,
-                                                        NotificationProperties properties,
-                                                        SharedScheduler sharedScheduler) {
-        log.info("通知模块: 注册 NotificationScheduler");
-        return new NotificationScheduler(passiveNotificationQueue, sseSessionManager, properties, sharedScheduler);
+                notificationRepository, properties, channelConfigProvider, sseSessionManager);
     }
 }

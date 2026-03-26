@@ -2,7 +2,7 @@
 import { ref, watch } from 'vue'
 import { X } from 'lucide-vue-next'
 import type { SessionConfig, KnowledgeBase } from '@/types'
-import type { LlmProvider } from '@/api/client'
+import type { ModelService } from '@/api/client'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
@@ -14,8 +14,10 @@ const props = defineProps<{
   preferredProviderId?: string
   temperature?: number
   maxTokens?: number
+  maxSteps?: number
+  maxDurationSeconds?: number
   knowledgeBaseIds?: string[]
-  providers: LlmProvider[]
+  providers: ModelService[]
   knowledgeBases: KnowledgeBase[]
 }>()
 
@@ -24,21 +26,37 @@ const emit = defineEmits<{
   (e: 'close'): void
 }>()
 
+const DEFAULT_MAX_TOKENS = 131072
+const DEFAULT_MAX_STEPS = 60
+const DEFAULT_MAX_DURATION_SECONDS = 300
+
 const localPreferredProviderId = ref(props.preferredProviderId ?? '')
 const localTemperature = ref(props.temperature ?? 0.7)
-const localMaxTokens = ref(props.maxTokens ?? 2000)
+const localMaxTokens = ref(props.maxTokens ?? DEFAULT_MAX_TOKENS)
+const localMaxSteps = ref(props.maxSteps ?? DEFAULT_MAX_STEPS)
+const localMaxDurationSeconds = ref(props.maxDurationSeconds ?? DEFAULT_MAX_DURATION_SECONDS)
 const localKbIds = ref<string[]>(props.knowledgeBaseIds ?? [])
 
 watch(() => props.preferredProviderId, v => { localPreferredProviderId.value = v ?? '' })
 watch(() => props.temperature, v => { localTemperature.value = v ?? 0.7 })
-watch(() => props.maxTokens, v => { localMaxTokens.value = v ?? 2000 })
+watch(() => props.maxTokens, v => { localMaxTokens.value = v ?? DEFAULT_MAX_TOKENS })
+watch(() => props.maxSteps, v => { localMaxSteps.value = v ?? DEFAULT_MAX_STEPS })
+watch(() => props.maxDurationSeconds, v => { localMaxDurationSeconds.value = v ?? DEFAULT_MAX_DURATION_SECONDS })
 watch(() => props.knowledgeBaseIds, v => { localKbIds.value = v ?? [] })
+
+function clampInteger(value: unknown, fallback: number, min: number, max: number) {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.min(max, Math.max(min, Math.round(parsed)))
+}
 
 function emitUpdate() {
   emit('update', {
     preferredProviderId: localPreferredProviderId.value || undefined,
     temperature: Math.min(2, Math.max(0, localTemperature.value)),
-    maxTokens: Math.min(1000000, Math.max(100, localMaxTokens.value)),
+    maxTokens: clampInteger(localMaxTokens.value, DEFAULT_MAX_TOKENS, 256, 1000000),
+    maxSteps: clampInteger(localMaxSteps.value, DEFAULT_MAX_STEPS, 1, 500),
+    maxDurationSeconds: clampInteger(localMaxDurationSeconds.value, DEFAULT_MAX_DURATION_SECONDS, 5, 86400),
     knowledgeBaseIds: localKbIds.value.length > 0 ? localKbIds.value : undefined,
   })
 }
@@ -55,7 +73,17 @@ function onTemperatureChange(value: number[] | undefined) {
 }
 
 function onMaxTokensChange(value: string | number) {
-  localMaxTokens.value = Number(value)
+  localMaxTokens.value = clampInteger(value, DEFAULT_MAX_TOKENS, 256, 1000000)
+  emitUpdate()
+}
+
+function onMaxStepsChange(value: string | number) {
+  localMaxSteps.value = clampInteger(value, DEFAULT_MAX_STEPS, 1, 500)
+  emitUpdate()
+}
+
+function onMaxDurationChange(value: string | number) {
+  localMaxDurationSeconds.value = clampInteger(value, DEFAULT_MAX_DURATION_SECONDS, 5, 86400)
   emitUpdate()
 }
 
@@ -115,15 +143,37 @@ function toggleKb(id: string, checked: boolean | 'indeterminate') {
       </div>
     </section>
 
-    <!-- 最大长度 -->
+    <!-- Token 预算 -->
     <section class="space-y-1.5">
-      <Label class="text-xs text-muted-foreground">最大回答长度</Label>
+      <Label class="text-xs text-muted-foreground">总 Token 预算</Label>
       <Input
         type="number"
         class="bg-background/80"
         :model-value="localMaxTokens"
-        :min="100" :max="1000000" :step="100"
+        :min="256" :max="1000000" :step="256"
         @update:model-value="onMaxTokensChange"
+      />
+    </section>
+
+    <section class="space-y-1.5">
+      <Label class="text-xs text-muted-foreground">最大迭代步数</Label>
+      <Input
+        type="number"
+        class="bg-background/80"
+        :model-value="localMaxSteps"
+        :min="1" :max="500" :step="1"
+        @update:model-value="onMaxStepsChange"
+      />
+    </section>
+
+    <section class="space-y-1.5">
+      <Label class="text-xs text-muted-foreground">最大执行时长（秒）</Label>
+      <Input
+        type="number"
+        class="bg-background/80"
+        :model-value="localMaxDurationSeconds"
+        :min="5" :max="86400" :step="5"
+        @update:model-value="onMaxDurationChange"
       />
     </section>
 

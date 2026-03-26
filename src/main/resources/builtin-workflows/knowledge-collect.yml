@@ -101,7 +101,6 @@ steps:
 
       已采集主题：${inputs.topics}
     contentType: TEXT
-    urgency: LOW
     dependsOn:
       - collect-each-topic
     errorStrategy:

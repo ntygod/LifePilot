@@ -105,26 +105,13 @@ class SkillRegistry属性测试 {
     /** Stub DynamicToolRegistry — resolve() 始终返回 empty（suggestedTools 校验跳过）。 */
     private static class StubDynamicToolRegistry extends DynamicToolRegistry {
         StubDynamicToolRegistry() {
-            super(new StubGuardrailEngine(), new NoOpEventPublisher());
+            super(new NoOpEventPublisher());
         }
 
         @Override
         public Optional<com.lifepilot.tool.ToolContract> resolve(String toolId) {
             return Optional.empty();
         }
-    }
-
-    /** Stub GuardrailEngine — 空操作。 */
-    private static class StubGuardrailEngine extends com.lifepilot.observability.guardrail.GuardrailEngine {
-        StubGuardrailEngine() {
-            super(null, null, null, null);
-        }
-
-        @Override
-        public void addAllowedTools(List<String> toolIds) {}
-
-        @Override
-        public void removeAllowedTools(List<String> toolIds) {}
     }
 
     /** Stub SkillSearchIndex — 空操作。 */

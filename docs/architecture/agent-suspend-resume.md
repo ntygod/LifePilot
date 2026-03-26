@@ -14,7 +14,7 @@ ReactAgentLoop 当前是「一次性执行到底」的模型 — 从 `run()` / `
 |------|--------|---------|---------|
 | 长时间工作流 | trigger_workflow(async=true) | 工作流到达终态 | WorkflowCompletedEvent |
 | 用户确认 | HIGH/CRITICAL 风险工具执行前 | 用户点击「确认」或「拒绝」 | UserConfirmationEvent |
-| A2A 远程委托 | handoff 工具调用远程 Agent | 远程 Agent 返回结果 | A2aTaskCompletedEvent |
+| A2A 远程执行 | A2A 请求路由到远程 Agent | 远程 Agent 返回结果 | A2aTaskCompletedEvent |
 | 定时恢复 | Agent 主动设置 "30 分钟后继续" | 到达指定时间 | ScheduledWakeupEvent |
 | 外部数据就绪 | 等待爬虫/ETL 完成 | 数据写入完成 | ExternalDataReadyEvent |
 

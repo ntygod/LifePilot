@@ -57,6 +57,7 @@ function makeStepLog(id: string, instanceId: string): StepLog {
     stepType: 'tool',
     state: 'FAILED',
     attempt: 1,
+    retryCount: 0,
     inputJson: '{"foo":"bar"}',
     outputJson: undefined,
     errorMessage: 'boom',

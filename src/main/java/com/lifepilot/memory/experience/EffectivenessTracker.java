@@ -57,7 +57,7 @@ public class EffectivenessTracker {
     public void evaluate(ReactAgentState state, String traceId) {
         try {
             // 查询本次注入的经验 ID
-            var injectedIds = injectionRecordRepository.findEntityIdsByTraceIdAndType(traceId, "EXPERIENCE");
+            var injectedIds = injectionRecordRepository.findEntityIdsBySourceTraceIdAndType(traceId, "EXPERIENCE");
             if (injectedIds.isEmpty()) {
                 log.debug("效果评估: 无注入记录，跳过, traceId={}", traceId);
                 return;

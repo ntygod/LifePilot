@@ -12,10 +12,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 反馈处理器 — 消费 message_feedback 数据，调整关联记忆实体的 importanceScore。
+ * 反馈处理器，消费消息反馈并调整关联记忆实体的 importanceScore。
  *
- * <p>处理流程：查注入记录 → 幂等性检查 → 计算 delta → 批量更新 importanceScore。
- * 支持反馈类型切换时的回滚 + 重新调整。</p>
+ * <p>当前反馈对象是助手 transcript 条目。处理流程为：
+ * 查询注入 provenance、检查历史反馈、计算 delta、批量更新 importanceScore。</p>
  *
  * @author zsg
  * @since 2026-03-13
@@ -40,48 +40,44 @@ public class FeedbackProcessor {
     }
 
     /**
-     * 处理用户反馈，调整关联实体的 importanceScore。
+     * 处理针对助手 transcript 条目的用户反馈。
      *
-     * @param messageId    AI 回复消息 ID
-     * @param feedbackType 反馈类型（'like' 或 'dislike'）
+     * @param assistantEntryId 助手 transcript 条目 ID
+     * @param feedbackType 反馈类型，'like' 或 'dislike'
      */
-    public void processFeedback(String messageId, String feedbackType) {
-        // 1. 查注入记录
-        List<String> entityIds = injectionRecordRepository.findEntityIdsByMessageId(messageId);
+    public void processFeedbackForEntry(String assistantEntryId, String feedbackType) {
+        List<String> entityIds = injectionRecordRepository.findEntityIdsBySourceEntryId(assistantEntryId);
         if (entityIds.isEmpty()) {
-            log.debug("无注入记录，跳过反馈处理: messageId={}", messageId);
+            log.debug("无注入记录，跳过反馈处理: assistantEntryId={}", assistantEntryId);
             return;
         }
 
-        // 2. 幂等性检查 — 查询已有反馈记录
-        var existingFeedbacks = feedbackRepository.findByMessageId(messageId);
+        var existingFeedbacks = feedbackRepository.findByEntryId(assistantEntryId);
         if (existingFeedbacks.size() > 1) {
-            // 存在历史反馈（当前反馈已保存，所以 >1 表示有旧反馈）
             var previousFeedback = existingFeedbacks.get(existingFeedbacks.size() - 2);
             String previousType = (String) previousFeedback.get("type");
             if (feedbackType.equals(previousType)) {
-                log.debug("同类型重复反馈，跳过调整: messageId={}, type={}", messageId, feedbackType);
+                log.debug("同类型重复反馈，跳过调整: assistantEntryId={}, type={}", assistantEntryId, feedbackType);
                 return;
             }
-            // 不同类型 → 先回滚上次调整
             float rollbackDelta = computeDelta(previousType) * -1;
-            applyDelta(entityIds, rollbackDelta, messageId, "回滚(" + previousType + ")");
+            applyDelta(entityIds, rollbackDelta, assistantEntryId, "回滚(" + previousType + ")");
         }
 
-        // 3. 应用当前反馈调整
         float delta = computeDelta(feedbackType);
-        applyDelta(entityIds, delta, messageId, feedbackType);
+        applyDelta(entityIds, delta, assistantEntryId, feedbackType);
     }
 
-    /** 根据反馈类型计算 delta。 */
     private float computeDelta(String feedbackType) {
         return "like".equals(feedbackType)
                 ? feedbackConfig.getLikeBoost()
                 : -feedbackConfig.getDislikePenalty();
     }
 
-    /** 批量应用 delta 到实体的 importanceScore，裁剪到 [0.0, 1.0]。 */
-    private void applyDelta(List<String> entityIds, float delta, String messageId, String reason) {
+    private void applyDelta(List<String> entityIds,
+                            float delta,
+                            String assistantEntryId,
+                            String reason) {
         Map<String, TemporalEntity> entities = semanticMemory.findByIds(entityIds);
         for (String entityId : entityIds) {
             TemporalEntity entity = entities.get(entityId);
@@ -92,8 +88,8 @@ public class FeedbackProcessor {
             float oldScore = entity.importanceScore();
             float newScore = Math.max(0.0f, Math.min(1.0f, oldScore + delta));
             semanticMemory.updateImportanceScore(entityId, newScore);
-            log.debug("importanceScore 调整: entityId={}, messageId={}, reason={}, {} -> {}",
-                    entityId, messageId, reason, oldScore, newScore);
+            log.debug("importanceScore 调整: entityId={}, assistantEntryId={}, reason={}, {} -> {}",
+                    entityId, assistantEntryId, reason, oldScore, newScore);
         }
     }
 }

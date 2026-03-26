@@ -1,6 +1,6 @@
 <!--
   通知步骤配置组件。
-  配置通知的目标用户、内容和紧急程度。
+  配置通知的目标用户和内容。
 -->
 <script setup lang="ts">
 import type { NotifyStepConfig } from '@/composables/useWorkflowModel'
@@ -60,30 +60,14 @@ function updateField<K extends keyof NotifyStepConfig>(field: K, value: NotifySt
     <!-- 内容格式 -->
     <div class="space-y-1.5">
       <Label class="text-xs">内容格式</Label>
-      <Select :model-value="modelValue.contentType" @update:model-value="updateField('contentType', $event as 'TEXT' | 'MARKDOWN' | 'HTML')">
+      <Select :model-value="modelValue.contentType" @update:model-value="updateField('contentType', $event as 'TEXT' | 'MARKDOWN' | 'CARD')">
         <SelectTrigger class="h-8 text-sm">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="TEXT">纯文本</SelectItem>
           <SelectItem value="MARKDOWN">Markdown</SelectItem>
-          <SelectItem value="HTML">HTML</SelectItem>
-        </SelectContent>
-      </Select>
-    </div>
-
-    <!-- 紧急程度 -->
-    <div class="space-y-1.5">
-      <Label class="text-xs">紧急程度</Label>
-      <Select :model-value="modelValue.urgency" @update:model-value="updateField('urgency', $event as 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT')">
-        <SelectTrigger class="h-8 text-sm">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="LOW">低</SelectItem>
-          <SelectItem value="NORMAL">普通</SelectItem>
-          <SelectItem value="HIGH">高</SelectItem>
-          <SelectItem value="URGENT">紧急</SelectItem>
+          <SelectItem value="CARD">卡片</SelectItem>
         </SelectContent>
       </Select>
     </div>

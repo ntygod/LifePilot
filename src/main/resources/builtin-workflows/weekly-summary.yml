@@ -93,7 +93,6 @@ steps:
 
       ${steps.generate-report.output.result}
     contentType: MARKDOWN
-    urgency: LOW
     dependsOn:
       - save-to-memory
     errorStrategy:

@@ -22,6 +22,7 @@ export const SSE_EVENT_TYPES = {
   TASK_COMPLETE: 'task-complete',
 
   NOTIFICATION: 'notification',
+  INTERACTION: 'interaction',
 
   MCP_STATUS_SNAPSHOT: 'mcp-status-snapshot',
   MCP_STATUS_CHANGE: 'mcp-status-change',
@@ -34,7 +35,8 @@ export const SSE_EVENT_TYPES = {
   WORKFLOW_STEP_LOGS_SNAPSHOT: 'workflow-step-logs-snapshot',
   WORKFLOW_STEP_LOG_CREATED: 'workflow-step-log-created',
 
-  TOOL_CONFIRMATION_REQUEST: 'tool-confirmation-request',
+  PERMISSION_APPROVAL_REQUEST: 'permission-approval-request',
+  AGENT_SUSPENDED: 'agent-suspended',
 
   TRANSCRIPTION: 'transcription',
 } as const

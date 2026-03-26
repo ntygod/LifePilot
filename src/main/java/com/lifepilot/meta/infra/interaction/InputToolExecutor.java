@@ -1,5 +1,6 @@
 package com.lifepilot.meta.infra.interaction;
 
+import com.lifepilot.tool.model.ToolContextKeys;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
 import org.slf4j.Logger;
@@ -32,9 +33,12 @@ public class InputToolExecutor {
     public ToolResult execute(ToolInput input) {
         try {
             String message = input.getParam("message", String.class);
-            String sessionId = input.getParam("sessionId", String.class);
+            String sessionId = input.getContextValue(ToolContextKeys.SESSION_ID, String.class)
+                    .or(() -> input.getOptionalParam("sessionId", String.class))
+                    .orElseThrow(() -> new IllegalArgumentException("缺少会话上下文 sessionId"));
+            String streamId = input.getContextValue(ToolContextKeys.STREAM_ID, String.class).orElse(null);
 
-            var request = new InteractionRequest(null, InteractionType.INPUT, sessionId, message, null);
+            var request = new InteractionRequest(null, InteractionType.INPUT, sessionId, streamId, message, null);
             var response = interactionBridge.request(request);
 
             if (response.timedOut()) {

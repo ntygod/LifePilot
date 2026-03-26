@@ -1,7 +1,7 @@
 ---
 id: doc-processor
 name: "文档处理"
-description: "文档处理：PDF 解析提取、格式转换（Markdown/HTML/DOCX）、文档合并、元数据提取。依赖 pandoc/pdftotext 等外部工具"
+description: "文档处理：PDF 解析提取、格式转换（Markdown/HTML/DOCX）、文档合并、元数据提取。"
 version: "1.0.0"
 suggested-tools:
   - builtin.shell.exec

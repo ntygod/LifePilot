@@ -1,7 +1,7 @@
 ---
 id: gitee
 name: "Gitee 代码托管"
-description: "Gitee 操作：管理仓库、PR、Issue、CI/CD。通过 Gitee OpenAPI 实现"
+description: "Gitee 操作：管理仓库、PR、Issue、CI/CD。"
 version: "1.0.0"
 suggested-tools:
   - builtin.http.request

@@ -1,8 +1,16 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { FileText, Mic } from 'lucide-vue-next'
-import type { A2uiComponent, Message, ReasoningEvent, ReactStepDto, ToolConfirmationRequest } from '@/types'
+import type {
+  A2uiComponent,
+  Message,
+  PermissionApprovalLog,
+  PermissionApprovalRequest,
+  ReasoningEvent,
+  ReactStepDto,
+} from '@/types'
 import A2uiRenderer from '@/components/a2ui/A2uiRenderer.vue'
+import { buildPermissionApprovalLog } from '@/utils/permissionApproval'
 import {
   Dialog,
   DialogContent,
@@ -16,7 +24,7 @@ import ReasoningTimeline from './ReasoningTimeline.vue'
 import ReactStepTimeline from './ReactStepTimeline.vue'
 import StreamingText from './StreamingText.vue'
 import ToolCallCard from './ToolCallCard.vue'
-import ToolConfirmationBubble from './ToolConfirmationBubble.vue'
+import PermissionApprovalBubble from './PermissionApprovalBubble.vue'
 
 const props = defineProps<{
   message: Message
@@ -26,10 +34,8 @@ const props = defineProps<{
   streamingReactSteps?: ReactStepDto[]
   isLastAssistant?: boolean
   streamingA2uiComponents?: A2uiComponent[]
-  /** 流式阶段的工具确认请求队列（从 useChat.pendingToolConfirmations 传入） */
-  streamingToolConfirmations?: Record<string, ToolConfirmationRequest>
-  /** 流式阶段的工具确认解决结果映射 */
-  streamingToolConfirmationResolutions?: Record<string, 'approved' | 'rejected' | 'expired'>
+  streamingPermissionApprovals?: Record<string, PermissionApprovalRequest>
+  streamingPermissionApprovalResolutions?: Record<string, 'approved' | 'rejected' | 'expired'>
 }>()
 
 const emit = defineEmits<{
@@ -41,7 +47,7 @@ const emit = defineEmits<{
   (e: 'resume', message: Message): void
   (e: 'restart', message: Message): void
   (e: 'copy', content: string): void
-  (e: 'tool-confirm-resolve', requestId: string, resolution: 'approved' | 'rejected' | 'expired'): void
+  (e: 'permission-approval-resolve', requestId: string, resolution: 'approved' | 'rejected' | 'expired', subjectType?: string): void
 }>()
 
 const collapsed = ref(props.message.collapsed ?? shouldCollapse(props.message.content))
@@ -115,7 +121,6 @@ const isCollapsible = computed(() =>
   props.message.role === 'assistant' && !props.streaming && shouldCollapse(props.message.content),
 )
 
-// 当前展示的 ReactStep 列表：流式时用 streamingReactSteps，否则用 message.reactSteps
 const activeReactSteps = computed<ReactStepDto[]>(() => {
   if (props.streaming && props.streamingReactSteps?.length) {
     return props.streamingReactSteps
@@ -123,7 +128,6 @@ const activeReactSteps = computed<ReactStepDto[]>(() => {
   return props.message.reactSteps ?? []
 })
 
-// 当前展示的 ReasoningEvent 列表：流式时用 streamingReasoningEvents，否则用 message.reasoningEvents
 const activeReasoningEvents = computed<ReasoningEvent[]>(() => {
   if (props.streaming && props.streamingReasoningEvents?.length) {
     return props.streamingReasoningEvents
@@ -131,13 +135,79 @@ const activeReasoningEvents = computed<ReasoningEvent[]>(() => {
   return props.message.reasoningEvents ?? []
 })
 
-// 流式阶段待确认队列
-const pendingConfirmations = computed(() => {
-  if (props.streaming && props.streamingToolConfirmations) {
-    return Object.entries(props.streamingToolConfirmations)
+const activePermissionApprovals = computed<Record<string, PermissionApprovalRequest>>(() => ({
+  ...(props.message.permissionApprovals ?? {}),
+  ...(props.streamingPermissionApprovals ?? {}),
+}))
+
+const activePermissionApprovalResolutions = computed<Record<string, 'approved' | 'rejected' | 'expired'>>(() => ({
+  ...(props.message.permissionApprovalResolutions ?? {}),
+  ...(props.streamingPermissionApprovalResolutions ?? {}),
+}))
+
+const pendingApprovals = computed(() =>
+  Object.entries(activePermissionApprovals.value)
+    .filter(([requestId]) => !activePermissionApprovalResolutions.value[requestId]),
+)
+
+const approvalLogs = computed<PermissionApprovalLog[]>(() => {
+  const logs = [...(props.message.permissionApprovalLogs ?? [])]
+
+  for (const [requestId, request] of Object.entries(activePermissionApprovals.value)) {
+    const resolution = activePermissionApprovalResolutions.value[requestId]
+    if (!resolution) {
+      continue
+    }
+    logs.push({
+      requestId,
+      toolId: request.toolId,
+      toolName: request.toolName,
+      actionType: request.actionType,
+      resolution,
+      subjectType: request.recommendedSubjectType ?? undefined,
+      reason: null,
+      timestamp: request.timestamp,
+    })
   }
-  return []
+
+  return logs
 })
+
+const hasNonApprovalAssistantBody = computed(() => (
+  !!displayContent.value
+  || imageAttachments.value.length > 0
+  || fileAttachments.value.length > 0
+  || audioAttachments.value.length > 0
+  || visibleA2uiComponents.value.length > 0
+  || !!props.message.toolsSummary?.length
+  || kbSources.value.length > 0
+  || activeReasoningEvents.value.length > 0
+  || activeReactSteps.value.length > 0
+))
+
+const isApprovalOnlyAssistant = computed(() => (
+  props.message.role === 'assistant'
+  && !hasNonApprovalAssistantBody.value
+  && (pendingApprovals.value.length > 0 || approvalLogs.value.length > 0)
+))
+
+const assistantBubbleClass = computed(() => {
+  if (isApprovalOnlyAssistant.value) {
+    return 'w-fit max-w-full rounded-none border-none bg-transparent px-0 py-0 text-foreground shadow-none'
+  }
+
+  return 'assistant-bubble rounded-tl-sm border border-border bg-card p-md text-foreground group-hover/message:-translate-y-0.5 group-hover/message:shadow-[0_18px_36px_-28px_hsl(var(--shadow-color)/0.38)]'
+})
+
+function approvalLogTone(log: PermissionApprovalLog) {
+  if (log.resolution === 'approved') {
+    return 'border-emerald-200/80 bg-emerald-50/90 text-emerald-700'
+  }
+  if (log.resolution === 'expired') {
+    return 'border-amber-200/80 bg-amber-50/90 text-amber-700'
+  }
+  return 'border-slate-200 bg-slate-50 text-slate-600'
+}
 </script>
 
 <template>
@@ -150,7 +220,7 @@ const pendingConfirmations = computed(() => {
       class="mt-xs flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"
       aria-label="知微回复"
     >
-      <span class="text-xs font-semibold">微</span>
+      <span class="text-xs font-semibold">知微</span>
     </div>
 
     <div
@@ -183,7 +253,7 @@ const pendingConfirmations = computed(() => {
         class="relative max-w-full rounded-2xl shadow-sm transition-all duration-200 md:max-w-[85%]"
         :class="message.role === 'user'
           ? 'rounded-tr-sm bg-primary p-md text-primary-foreground shadow-md group-hover/message:-translate-y-0.5 group-hover/message:shadow-lg'
-          : 'assistant-bubble rounded-tl-sm border border-border bg-card p-md text-foreground group-hover/message:-translate-y-0.5 group-hover/message:shadow-[0_18px_36px_-28px_hsl(var(--shadow-color)/0.38)]'"
+          : assistantBubbleClass"
       >
         <div
           v-if="streaming && message.role === 'assistant'"
@@ -198,23 +268,42 @@ const pendingConfirmations = computed(() => {
           />
 
           <template v-else>
-            <!-- 工具确认卡片队列（支持多个并发确认） -->
             <div
-              v-if="pendingConfirmations.length > 0"
+              v-if="pendingApprovals.length > 0"
               class="mb-2 flex flex-col gap-2"
             >
-              <ToolConfirmationBubble
-                v-for="[requestId, request] in pendingConfirmations"
+              <PermissionApprovalBubble
+                v-for="[requestId, request] in pendingApprovals"
                 :key="requestId"
                 :request="request"
-                :resolved="!!streamingToolConfirmationResolutions?.[requestId]"
-                :resolution="streamingToolConfirmationResolutions?.[requestId]"
-                @resolve="(r: 'approved' | 'rejected' | 'expired') => emit('tool-confirm-resolve', requestId, r)"
+                :resolved="!!activePermissionApprovalResolutions[requestId]"
+                :resolution="activePermissionApprovalResolutions[requestId]"
+                @resolve="(resolution: 'approved' | 'rejected' | 'expired', subjectType?: string) => emit('permission-approval-resolve', requestId, resolution, subjectType)"
               />
             </div>
 
-            <!-- 普通 assistant 文本内容 -->
+            <div
+              v-if="approvalLogs.length > 0"
+              class="mb-2 flex max-w-full flex-wrap gap-1.5"
+            >
+              <div
+                v-for="log in approvalLogs"
+                :key="`${log.requestId}-${log.resolution}`"
+                class="inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium shadow-sm"
+                :class="approvalLogTone(log)"
+              >
+                <span
+                  class="size-1.5 shrink-0 rounded-full"
+                  :class="log.resolution === 'approved'
+                    ? 'bg-emerald-500'
+                    : (log.resolution === 'expired' ? 'bg-amber-500' : 'bg-slate-400')"
+                />
+                <span class="truncate">{{ buildPermissionApprovalLog(log) }}</span>
+              </div>
+            </div>
+
             <StreamingText
+              v-if="displayContent"
               :content="displayContent"
               :streaming="streaming"
             />
@@ -228,7 +317,6 @@ const pendingConfirmations = computed(() => {
               {{ collapsed ? '展开全文' : '收起' }}
             </button>
 
-            <!-- P3 修复：assistant 图片附件内联渲染（在消息文本之后、A2UI 面板之前） -->
             <div v-if="imageAttachments.length > 0" class="mt-3 grid grid-cols-2 gap-sm">
               <button
                 v-for="attachment in imageAttachments"
@@ -274,7 +362,6 @@ const pendingConfirmations = computed(() => {
               />
             </div>
 
-            <!-- 推理时间线（优先使用 ReasoningEvents，数据更完整） -->
             <ReasoningTimeline
               v-if="activeReasoningEvents.length > 0"
               :summary="message.reasoningSummary"
@@ -282,7 +369,6 @@ const pendingConfirmations = computed(() => {
               :streaming="streaming"
             />
 
-            <!-- ReactStep 时间线兜底（无 reasoningEvents 时回退到 reactSteps） -->
             <ReactStepTimeline
               v-else-if="activeReactSteps.length > 0"
               :steps="activeReactSteps"
@@ -291,38 +377,36 @@ const pendingConfirmations = computed(() => {
             />
           </template>
 
-            <!-- 用户消息的图片附件（保持原位置） -->
-            <div v-if="message.role === 'user' && imageAttachments.length > 0" class="mt-3 grid grid-cols-2 gap-sm">
-              <button
-                v-for="attachment in imageAttachments"
-                :key="attachment.fileId"
-                type="button"
-                class="list-card relative w-full overflow-hidden rounded-lg focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-none"
-                @click="previewImageUrl = attachment.url; showImagePreview = true"
-              >
-                <img :src="attachment.url" :alt="attachment.filename" class="block h-32 w-full object-cover" loading="lazy" />
-              </button>
-            </div>
+          <div v-if="message.role === 'user' && imageAttachments.length > 0" class="mt-3 grid grid-cols-2 gap-sm">
+            <button
+              v-for="attachment in imageAttachments"
+              :key="attachment.fileId"
+              type="button"
+              class="list-card relative w-full overflow-hidden rounded-lg focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-none"
+              @click="previewImageUrl = attachment.url; showImagePreview = true"
+            >
+              <img :src="attachment.url" :alt="attachment.filename" class="block h-32 w-full object-cover" loading="lazy" />
+            </button>
+          </div>
 
-            <!-- 音频附件内联播放器 -->
-            <div v-if="audioAttachments.length > 0" class="mt-3 flex flex-col gap-sm">
-              <div
-                v-for="attachment in audioAttachments"
-                :key="attachment.fileId"
-                class="list-card flex items-center gap-2 px-3 py-2 text-xs text-foreground"
-              >
-                <Mic class="size-3.5 shrink-0 text-muted-foreground" />
-                <span class="shrink-0 text-muted-foreground">语音</span>
-                <audio :src="attachment.url" controls class="h-8 w-full min-w-0" />
-              </div>
+          <div v-if="audioAttachments.length > 0" class="mt-3 flex flex-col gap-sm">
+            <div
+              v-for="attachment in audioAttachments"
+              :key="attachment.fileId"
+              class="list-card flex items-center gap-2 px-3 py-2 text-xs text-foreground"
+            >
+              <Mic class="size-3.5 shrink-0 text-muted-foreground" />
+              <span class="shrink-0 text-muted-foreground">语音</span>
+              <audio :src="attachment.url" controls class="h-8 w-full min-w-0" />
             </div>
+          </div>
 
-            <div v-if="fileAttachments.length > 0" class="mt-3 flex flex-col gap-sm">
-              <div
-                v-for="attachment in fileAttachments"
-                :key="attachment.fileId"
-                class="list-card flex flex-col gap-2 px-3 py-3 text-xs text-foreground"
-              >
+          <div v-if="fileAttachments.length > 0" class="mt-3 flex flex-col gap-sm">
+            <div
+              v-for="attachment in fileAttachments"
+              :key="attachment.fileId"
+              class="list-card flex flex-col gap-2 px-3 py-3 text-xs text-foreground"
+            >
               <div class="flex items-center justify-between gap-2">
                 <span class="truncate">{{ attachment.filename }}</span>
                 <span class="shrink-0 text-[11px] text-muted-foreground">

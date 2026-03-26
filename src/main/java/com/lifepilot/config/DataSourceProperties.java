@@ -1,5 +1,7 @@
 package com.lifepilot.config;
 
+import lombok.Getter;
+import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
@@ -8,17 +10,12 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @author zsg
  * @since 2026-02-25
  */
+@Setter
+@Getter
 @ConfigurationProperties(prefix = "lifepilot.datasource")
 public class DataSourceProperties {
 
     /** SQLite busy_timeout（毫秒），默认 5000。 */
     private int busyTimeout = 5000;
 
-    public int getBusyTimeout() {
-        return busyTimeout;
-    }
-
-    public void setBusyTimeout(int busyTimeout) {
-        this.busyTimeout = busyTimeout;
-    }
 }

@@ -1,6 +1,7 @@
 package com.lifepilot.agent;
 
 import com.lifepilot.agent.model.ReactAgentState;
+import com.lifepilot.observability.guardrail.RiskLevel;
 import jakarta.annotation.Nullable;
 import org.springframework.ai.tool.ToolCallback;
 
@@ -21,7 +22,7 @@ public interface AgentToolProvider {
      * 获取工具回调列表。
      *
      * @param state 当前 ReAct Agent 状态
-     * @param streamId SSE 流标识（用于精确推送确认请求，CLI 场景为 null）
+     * @param streamId SSE 流标识（用于精确推送授权审批请求，CLI 场景为 null）
      * @return 工具回调列表（Spring AI ToolCallback）
      */
     List<ToolCallback> getToolCallbacks(ReactAgentState state, @Nullable String streamId);
@@ -38,5 +39,17 @@ public interface AgentToolProvider {
     @Nullable
     default String resolveToolDisplayName(String toolId) {
         return null;
+    }
+
+    /**
+     * 根据工具 ID 解析风险等级。
+     *
+     * <p>用于 Trace 记录，避免工具步骤被一律记成低风险。</p>
+     *
+     * @param toolId 工具技术标识
+     * @return 工具风险等级，未找到时回退为 LOW
+     */
+    default RiskLevel resolveToolRiskLevel(String toolId) {
+        return RiskLevel.LOW;
     }
 }

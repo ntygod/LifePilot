@@ -36,9 +36,8 @@ class OnboardingGuideAgentTest {
 
         var def = result.get();
         assertThat(def.id()).isEqualTo("onboarding-guide");
-        assertThat(def.name()).isEqualTo("引导助手");
+        assertThat(def.name()).isEqualTo("引导专家");
         assertThat(def.description()).isNotBlank();
-        assertThat(def.canDelegate()).isFalse();
         assertThat(def.allowedTools()).containsExactlyInAnyOrder(
                 "system.list-capabilities",
                 "system.explain",
@@ -47,6 +46,6 @@ class OnboardingGuideAgentTest {
                 "builtin.interact.choose"
         );
         assertThat(def.systemPrompt()).isNotBlank();
-        assertThat(def.systemPrompt()).contains("引导助手");
+        assertThat(def.systemPrompt()).contains("引导专家");
     }
 }

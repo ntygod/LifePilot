@@ -75,6 +75,8 @@ public class TaskToolProvider {
                         "type", "object",
                         "required", List.of("name", "schedule", "instruction"),
                         "properties", Map.of(
+                                "taskId", Map.of("type", "string",
+                                        "description", "任务 ID；通常由系统预先生成"),
                                 "name", Map.of("type", "string",
                                         "description", "任务名称"),
                                 "schedule", Map.of("type", "string",
@@ -88,6 +90,8 @@ public class TaskToolProvider {
                 .tags(TASK_TAGS)
                 .executor(input -> {
                     try {
+                        String taskId = input.getOptionalParam("taskId", String.class)
+                                .orElse(UUID.randomUUID().toString());
                         String name = input.getParam("name", String.class);
                         String schedule = input.getParam("schedule", String.class);
                         String instruction = input.getParam("instruction", String.class);
@@ -97,7 +101,7 @@ public class TaskToolProvider {
 
                         String now = Instant.now().toString();
                         var entry = new CronTaskEntry(
-                                UUID.randomUUID().toString(), name, schedule, instruction,
+                                taskId, name, schedule, instruction,
                                 "active", now, now
                         );
                         cronTaskRepository.save(entry);

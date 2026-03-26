@@ -22,6 +22,7 @@ import com.lifepilot.observability.trace.StateTransitionStep;
 import com.lifepilot.observability.trace.GuardrailStep;
 import com.lifepilot.observability.trace.EvaluationStep;
 import com.lifepilot.observability.evaluation.EvaluationResult;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -52,6 +53,7 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/api/traces")
+@ConditionalOnProperty(name = "lifepilot.gateway.channels.web.enabled", havingValue = "true")
 public class TraceController {
 
     private static final Logger log = LoggerFactory.getLogger(TraceController.class);

@@ -31,7 +31,6 @@ public class AgentMarkdownSerializer {
         if (definition.preferredProvider() != null && !definition.preferredProvider().isBlank()) {
             sb.append("preferred-provider: ").append(definition.preferredProvider()).append('\n');
         }
-        sb.append("can-delegate: ").append(definition.canDelegate()).append('\n');
 
         // allowed-tools
         List<String> tools = definition.allowedTools();

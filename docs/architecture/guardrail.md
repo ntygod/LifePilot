@@ -6,7 +6,7 @@
 
 ## 1. 模块概述
 
-安全护栏系统负责在 LLM 之外强制执行工具调用的安全策略。`guardrail` 包定义策略标记和职责边界，实际引擎实现位于 `observability.guardrail` 包中。通过四级风险分级和可插拔策略机制，确保高风险操作经过审批和审计。
+安全护栏系统负责在 LLM 之外强制执行工具调用的安全策略。`guardrail` 包定义策略标记和职责边界，实际引擎实现位于 `observability.guardrail` 包中。当前它主要负责风险分级、内容安全、预算限制和阻断决策；交互式授权与自主任务预授权已经下沉到 `permission` 模块。
 
 ## 2. 架构图
 
@@ -25,13 +25,12 @@ graph TB
     subgraph "策略模型"
         POLICY["GuardrailPolicy（interface）<br/>可插拔策略"]
         RISK["RiskLevel（enum）<br/>LOW/MEDIUM/HIGH/CRITICAL"]
-        APPROVAL["ApprovalMode（enum）<br/>审批模式"]
+        APPROVAL["ApprovalMode（enum）<br/>风险语义映射"]
         RESULT["GuardrailResult（sealed interface）<br/>检查结果"]
     end
 
     subgraph "异常"
         BLOCKED["GuardrailBlockedException"]
-        CONFIRM["GuardrailConfirmationRequiredException"]
     end
 
     AGENT --> PIPE --> ENGINE
@@ -41,7 +40,6 @@ graph TB
     RISK --> APPROVAL
     ENGINE --> RESULT
     ENGINE --> BLOCKED
-    ENGINE --> CONFIRM
 ```
 
 ## 3. 核心组件
@@ -58,7 +56,7 @@ graph TB
 
 ### 3.3 RiskLevel（enum）
 
-- 四级风险：`LOW`（自动执行）→ `MEDIUM`（自动 + 审计）→ `HIGH`（用户确认）→ `CRITICAL`（确认 + 二次验证）
+- 四级风险：`LOW`（自动执行）→ `MEDIUM`（自动 + 审计）→ `HIGH`（高风险授权）→ `CRITICAL`（关键风险授权）
 - 关键方法：`requiresConfirmation()`、`requiresAudit()`、`requiresSecondaryVerification()`
 
 ### 3.4 GuardrailAdvisor
@@ -70,23 +68,18 @@ graph TB
 ```mermaid
 sequenceDiagram
     participant P as ToolExecutionPipeline
+    participant PM as PermissionService
     participant E as GuardrailEngine
     participant PO as GuardrailPolicy
-    participant U as 用户
 
+    P->>PM: 先完成权限判定 / 授权
     P->>E: 检查工具调用安全性
     loop 按优先级遍历策略
         E->>PO: evaluate(toolId, params)
         PO-->>E: GuardrailResult
     end
-    alt 风险 = LOW/MEDIUM
-        E-->>P: 允许执行（MEDIUM 记录审计）
-    else 风险 = HIGH
-        E->>U: 请求用户确认
-        U-->>E: 确认/拒绝
-    else 风险 = CRITICAL
-        E->>U: 请求确认 + 二次验证
-        U-->>E: 确认/拒绝
+    alt 护栏通过
+        E-->>P: 允许执行 / 记录审计
     else 策略阻断
         E-->>P: 抛出 GuardrailBlockedException
     end
@@ -97,13 +90,14 @@ sequenceDiagram
 | 决策 | 选择 | 理由 |
 |------|------|------|
 | 策略模式 | 可插拔 GuardrailPolicy 接口 | 支持运行时动态注册/注销策略，不同场景可定制 |
-| 风险分级 | 四级枚举 | 覆盖从自动执行到严格审批的完整安全光谱 |
+| 风险分级 | 四级枚举 | 为权限系统和护栏阻断提供统一风险语义 |
 | 注入方式 | Spring AI Advisor | 复用 Spring AI 生态，无侵入式横切注入 |
 | 包分离 | guardrail 包（标记）+ observability.guardrail（实现） | 策略定义与执行引擎解耦 |
 
 ## 6. 集成点
 
-- **工具系统**（`tool`）：ToolExecutionPipeline 在执行前调用 GuardrailEngine
+- **工具系统**（`tool`）：ToolExecutionPipeline 在权限判定之后调用 GuardrailEngine
+- **权限系统**（`permission`）：高风险工具先经授权链路，再进入护栏检查
 - **Agent 引擎**（`agent`）：GuardrailAdvisor 注入 ChatClient 调用链
 - **可观测性**（`observability`）：审计记录写入轨迹系统
 

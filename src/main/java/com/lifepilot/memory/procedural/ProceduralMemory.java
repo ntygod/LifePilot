@@ -328,7 +328,7 @@ public class ProceduralMemory {
      * 按情境文本检索策略模式 — 基于 SQL LIKE 模糊匹配 + 成功率排序。
      *
      * <p>当前使用文本模糊匹配作为基础实现，完整的向量语义检索将在
-     * IntentMatcher（任务 5.1）中通过 LlmRouter 实现。</p>
+     * IntentMatcher（任务 5.1）中通过 GenerationRouter 实现。</p>
      *
      * @param situationText 情境描述文本
      * @param topK          返回前 K 个结果

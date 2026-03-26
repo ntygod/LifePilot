@@ -42,8 +42,8 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
-import { llmProviderApi } from '@/api/client'
-import type { LlmProvider } from '@/api/client'
+import { modelServiceApi } from '@/api/client'
+import type { ModelService } from '@/api/client'
 import type { KnowledgeBase } from '@/types'
 
 const store = useKnowledgeBaseStore()
@@ -58,7 +58,7 @@ const createForm = ref({
 })
 
 // Provider 列表（用于向量模型下拉选择）
-const providers = ref<LlmProvider[]>([])
+const providers = ref<ModelService[]>([])
 const embeddingProviders = computed(() =>
   providers.value.filter(p => p.capabilities?.includes('EMBEDDING'))
 )
@@ -148,7 +148,7 @@ const showDeleteConfirm = computed({
 
 onMounted(() => {
   void store.fetchList()
-  llmProviderApi.listEnabledProviders().then(list => { providers.value = list }).catch(() => {})
+  modelServiceApi.listEnabledServices('EMBEDDING').then(list => { providers.value = list }).catch(() => {})
 })
 
 function formatDate(dateStr: string) {

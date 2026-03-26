@@ -84,12 +84,17 @@ class ConfigExternalizationCompletenessTest {
     @Test
     void Shell默认值正确() {
         var shell = props.getInfra().getShell();
-        assertThat(shell.getTimeoutSeconds()).isEqualTo(30);
+        assertThat(shell.getTimeoutSeconds()).isEqualTo(120);
         assertThat(shell.getMaxOutputLength()).isEqualTo(50000);
-        assertThat(shell.getCommandBlacklist()).hasSize(6);
+        assertThat(shell.getCommandBlacklist()).hasSize(8);
         assertThat(shell.getCommandBlacklist()).containsExactly(
-                "rm\\s+-rf\\s+/", "format\\s+[a-zA-Z]:",
-                "shutdown", "reboot", "mkfs", "dd\\s+if="
+                "rm\\s+-rf\\s+/(?!\\S)", "\\bformat\\s+[a-zA-Z]:",
+                "(?:^|[;&|])\\s*shutdown\\b",
+                "(?:^|[;&|])\\s*reboot\\b",
+                "\\bmkfs\\b",
+                "\\bdd\\s+if=",
+                ":\\(\\)\\{\\s*:|:&\\s*\\};:",
+                "\\bchmod\\s+-R\\s+777\\s+/"
         );
     }
 

@@ -289,7 +289,6 @@ public class WorkflowYamlPrinter {
                 map.put("targetUserId", s.targetUserId());
                 map.put("content", s.content());
                 map.put("contentType", s.contentType());
-                map.put("urgency", s.urgency().name());
             }
         }
 

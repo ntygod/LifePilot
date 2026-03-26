@@ -3,7 +3,9 @@ package com.lifepilot.tool.bridge;
 import com.lifepilot.agent.AgentToolProvider;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.meta.config.MetaProperties;
+import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.ToolContract;
+import com.lifepilot.tool.model.ToolContextKeys;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.pipeline.ToolExecutionPipeline;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
@@ -17,6 +19,7 @@ import org.springframework.ai.tool.definition.ToolDefinition;
 import org.springframework.lang.NonNull;
 import org.springframework.lang.Nullable;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -59,8 +62,20 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
     }
 
     @Override
+    public RiskLevel resolveToolRiskLevel(String toolId) {
+        return toolRegistry.resolve(toolId)
+                .map(ToolContract::riskLevel)
+                .orElse(RiskLevel.LOW);
+    }
+
+    @Override
     public List<ToolCallback> getToolCallbacks(ReactAgentState state, @Nullable String streamId) {
         List<ToolContract> tools = toolRegistry.getToolSnapshot();
+        if (isWebConversation(state)) {
+            tools = tools.stream()
+                    .filter(tool -> !isUserPromptInteractionTool(tool.id()))
+                    .toList();
+        }
         var allowedToolIds = state.allowedToolIds();
         if (allowedToolIds != null && !allowedToolIds.isEmpty()) {
             int totalCount = tools.size();
@@ -77,18 +92,45 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
                 .toList();
     }
 
+    /** Web 对话里改用自然语言挂起追问，不再暴露弹窗式输入工具。 */
+    private boolean isWebConversation(ReactAgentState state) {
+        return state.channel() != null && "web".equalsIgnoreCase(state.channel());
+    }
+
+    /** 这两类工具会触发前端交互控件，Web 普通对话模式下直接屏蔽。 */
+    private boolean isUserPromptInteractionTool(String toolId) {
+        return "builtin.interact.input".equals(toolId)
+                || "builtin.interact.choose".equals(toolId);
+    }
+
     /**
      * 将 ToolContract 转换为 Spring AI ToolCallback。
      *
      * @param tool 工具契约
-     * @param streamId SSE 流标识（用于精确推送确认请求，可选）
+     * @param streamId SSE 流标识（用于精确推送授权审批请求，可选）
      * @return Spring AI ToolCallback
      */
     private ToolCallback toToolCallback(ToolContract tool, @Nullable String streamId, ReactAgentState state) {
-        // 构建请求级上下文，传递 sessionId 给 tool executor
-        Map<String, Object> context = state.sessionId() != null
-                ? Map.of("sessionId", state.sessionId())
-                : Map.of();
+        // 构建请求级上下文，传递会话、预算和委托链元数据给工具执行器
+        Map<String, Object> context = new LinkedHashMap<>();
+        if (state.sessionId() != null) {
+            context.put(ToolContextKeys.SESSION_ID, state.sessionId());
+        }
+        if (state.turnId() != null && !state.turnId().isBlank()) {
+            context.put(ToolContextKeys.TURN_ID, state.turnId());
+        }
+        if (state.userId() != null && !state.userId().isBlank()) {
+            context.put(ToolContextKeys.USER_ID, state.userId());
+        }
+        if (state.channel() != null && !state.channel().isBlank()) {
+            context.put(ToolContextKeys.CHANNEL_TYPE, state.channel());
+        }
+        if (streamId != null && !streamId.isBlank()) {
+            context.put(ToolContextKeys.STREAM_ID, streamId);
+        }
+        context.put(ToolContextKeys.CALLER_TRACE_ID, state.traceId());
+        context.put(ToolContextKeys.CALLER_DEPTH, state.depth());
+        context.put(ToolContextKeys.CALLER_BUDGET, state.budget());
 
         ToolDefinition definition = DefaultToolDefinition.builder()
                 .name(tool.id())
@@ -108,7 +150,7 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
             public String call(@NonNull String toolInput) {
                 Map<String, Object> params = parseInput(toolInput);
                 String traceId = UUID.randomUUID().toString();
-                ToolResult result = pipeline.execute(tool.id(), params, traceId, null, streamId, context);
+                ToolResult result = pipeline.execute(tool.id(), params, traceId, null, streamId, Map.copyOf(context));
                 String output = formatOutput(result);
 
                 return output;
@@ -164,7 +206,7 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
         } else if (result.ok()) {
             output = toJsonValue(result.data());
         } else {
-            output = "{\"error\":\"" + escapeJson(result.error()) + "\"}";
+            output = "{\"error\":\"" + escapeJson(result.error()) + "\",\"status\":\"ERROR\"}";
         }
         // 全局字符数上限截断
         // 注意：包含已知媒体字段（如 screenshot）的输出跳过截断，

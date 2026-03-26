@@ -8,9 +8,9 @@ import {
   SlidersHorizontal,
   Square,
 } from 'lucide-vue-next'
-import { chatApi, llmProviderApi } from '@/api/client'
-import type { LlmProvider } from '@/api/client'
-import type { ChatAttachment, Message, ResumePolicy, SessionConfig } from '@/types'
+import { chatApi, modelServiceApi } from '@/api/client'
+import type { ModelService } from '@/api/client'
+import type { ChatAttachment, ChatTurnAction, Message, SessionConfig } from '@/types'
 import StatePanel from '@/components/common/StatePanel.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -33,8 +33,10 @@ const chatStore = useChatStore()
 const kbStore = useKnowledgeBaseStore()
 const skillStore = useSkillStore()
 const uiStore = useUiStore()
+
 const {
   sendMessage,
+  executeTurn,
   isStreaming,
   error,
   abort,
@@ -45,9 +47,10 @@ const {
   reasoningEvents,
   streamingReactSteps,
   streamingA2uiComponents,
-  pendingToolConfirmations,
-  pendingToolConfirmationResolutions,
-  resolveToolConfirmation,
+  activeInteraction,
+  pendingPermissionApprovals,
+  pendingPermissionApprovalResolutions,
+  resolvePermissionApproval,
 } = useChat()
 
 const scrollContainer = ref<HTMLElement | null>(null)
@@ -55,10 +58,18 @@ const searchQuery = ref('')
 const showDebugDrawer = ref(false)
 const showSessionSidebar = ref(false)
 const showConfigPanel = ref(false)
-const providers = ref<LlmProvider[]>([])
+const providers = ref<ModelService[]>([])
+
+const DEFAULT_SESSION_TEMPERATURE = 0.7
+const DEFAULT_SESSION_MAX_TOKENS = 131072
+const DEFAULT_SESSION_MAX_STEPS = 60
+const DEFAULT_SESSION_MAX_DURATION_SECONDS = 300
+
 const activeSessionConfig = ref<SessionConfig>({
-  temperature: 0.7,
-  maxTokens: 2000,
+  temperature: DEFAULT_SESSION_TEMPERATURE,
+  maxTokens: DEFAULT_SESSION_MAX_TOKENS,
+  maxSteps: DEFAULT_SESSION_MAX_STEPS,
+  maxDurationSeconds: DEFAULT_SESSION_MAX_DURATION_SECONDS,
   knowledgeBaseIds: [],
 })
 
@@ -88,8 +99,10 @@ const currentSession = computed(() => {
 
 function resetActiveSessionConfig() {
   activeSessionConfig.value = {
-    temperature: 0.7,
-    maxTokens: 2000,
+    temperature: DEFAULT_SESSION_TEMPERATURE,
+    maxTokens: DEFAULT_SESSION_MAX_TOKENS,
+    maxSteps: DEFAULT_SESSION_MAX_STEPS,
+    maxDurationSeconds: DEFAULT_SESSION_MAX_DURATION_SECONDS,
     knowledgeBaseIds: [],
   }
 }
@@ -106,8 +119,10 @@ async function loadActiveSessionConfig(sessionId: string | null) {
 
     activeSessionConfig.value = {
       preferredProviderId: detail.preferredProviderId ?? undefined,
-      temperature: detail.temperature ?? 0.7,
-      maxTokens: detail.maxTokens ?? 2000,
+      temperature: detail.temperature ?? DEFAULT_SESSION_TEMPERATURE,
+      maxTokens: detail.maxTokens ?? DEFAULT_SESSION_MAX_TOKENS,
+      maxSteps: detail.maxSteps ?? DEFAULT_SESSION_MAX_STEPS,
+      maxDurationSeconds: detail.maxDurationSeconds ?? DEFAULT_SESSION_MAX_DURATION_SECONDS,
       knowledgeBaseIds: detail.knowledgeBaseIds ?? [],
     }
   } catch (event) {
@@ -119,6 +134,7 @@ async function loadActiveSessionConfig(sessionId: string | null) {
 }
 
 const hasMessageSearch = computed(() => searchQuery.value.trim().length > 0)
+
 const matchedMessageCount = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
   if (!query) return chatStore.messages.length
@@ -131,6 +147,53 @@ const lastAssistantMessage = computed(() => {
     if (chatStore.messages[index].role === 'assistant') return chatStore.messages[index]
   }
   return null
+})
+
+const latestSuspendedAssistant = computed<Message | null>(() => {
+  const message = lastAssistantMessage.value
+  if (!message) return null
+  if (message.turnStatus === 'SUSPENDED' || message.completionMode === 'SUSPENDED') {
+    return message
+  }
+  return null
+})
+
+function resolveContinuationDetail(message: Message | null) {
+  if (!message) {
+    return null
+  }
+
+  if (message.suspendReasonSourceId === '__await_user_input__') {
+    return '你这次回复会直接接到刚才那轮任务上，我会沿着当前进度继续处理。'
+  }
+
+  const detail = message.errorMessage?.trim()
+  if (!detail || detail === message.suspendReasonSourceId || detail === 'await_user_input' || detail === 'suspended' || detail.startsWith('__')) {
+    return '你这次回复会直接接到刚才那轮任务上，我会沿着当前进度继续处理。'
+  }
+
+  return `当前卡住点：${detail}`
+}
+
+const continuationTitle = computed(() => {
+  if (!latestSuspendedAssistant.value || isStreaming.value) {
+    return null
+  }
+  return '正在继续上一轮任务'
+})
+
+const continuationDetail = computed(() => {
+  if (!latestSuspendedAssistant.value || isStreaming.value) {
+    return null
+  }
+  return resolveContinuationDetail(latestSuspendedAssistant.value)
+})
+
+const inputPlaceholder = computed(() => {
+  if (continuationTitle.value) {
+    return '回复补充信息，继续刚才的任务…'
+  }
+  return '输入问题，或粘贴资料继续往下处理…'
 })
 
 const latestTraceMessage = computed(() => {
@@ -179,8 +242,9 @@ onMounted(async () => {
 
   void kbStore.fetchList()
   void skillStore.fetchSkills()
+
   try {
-    providers.value = await llmProviderApi.listEnabledProviders()
+    providers.value = await modelServiceApi.listEnabledServices('GENERATION')
   } catch {
     // Provider 列表拉取失败不阻塞页面。
   }
@@ -228,12 +292,7 @@ async function handleSend(payload: {
   content: string
   attachmentIds?: string[]
   attachments?: ChatAttachment[]
-  sessionConfig?: {
-    preferredProviderId?: string
-    temperature?: number
-    maxTokens?: number
-    knowledgeBaseIds?: string[]
-  }
+  sessionConfig?: SessionConfig
 }) {
   await sendMessage(payload.content, payload.attachmentIds, payload.attachments, payload.sessionConfig)
 }
@@ -247,67 +306,52 @@ function getAttachmentIds(message: Message): string[] | undefined {
   return attachmentIds && attachmentIds.length > 0 ? attachmentIds : undefined
 }
 
-function findUserMessageForAssistant(assistantMessage: Message): Message | null {
-  const sorted = [...chatStore.messages].sort((left, right) => left.timestamp - right.timestamp)
-  const assistantIndex = sorted.findIndex(message => message.id === assistantMessage.id)
-  if (assistantIndex < 0) return null
-
-  for (let index = assistantIndex - 1; index >= 0; index -= 1) {
-    if (sorted[index].role === 'user') {
-      return sorted[index]
-    }
+function findUserMessageByTurnId(turnId: string): Message | null {
+  for (let index = chatStore.messages.length - 1; index >= 0; index -= 1) {
+    const message = chatStore.messages[index]
+    if (message.role === 'user' && message.turnId === turnId) return message
   }
   return null
 }
 
-async function resendUserMessage(message: Message, resumePolicy?: ResumePolicy) {
-  await sendMessage(
-    message.content,
-    getAttachmentIds(message),
-    message.attachments,
-    undefined,
-    resumePolicy,
-  )
+async function handleTurnAction(message: Message, action: ChatTurnAction) {
+  if (!message.turnId) {
+    if (action === 'SEND' || action === 'RETRY') {
+      await sendMessage(
+        message.content,
+        getAttachmentIds(message),
+        message.attachments,
+      )
+    }
+    return
+  }
+
+  const userMessage = message.role === 'assistant'
+    ? findUserMessageByTurnId(message.turnId)
+    : message
+
+  await executeTurn(message.turnId, action, {
+    content: action === 'RESUME' ? undefined : userMessage?.content,
+    attachmentIds: userMessage ? getAttachmentIds(userMessage) : undefined,
+    attachments: userMessage?.attachments,
+    userMessageId: userMessage?.id,
+  })
 }
 
 async function handleRetry(message: Message) {
-  if (message.status === 'error') {
-    const index = chatStore.messages.findIndex(item => item.id === message.id)
-    if (index !== -1) {
-      chatStore.messages.splice(index, 1)
-      if (message.role === 'user') {
-        const nextMessage = chatStore.messages[index]
-        if (nextMessage && nextMessage.role === 'assistant') {
-          chatStore.messages.splice(index, 1)
-        }
-      }
-    }
-  }
-  await resendUserMessage(message)
+  await handleTurnAction(message, message.turnId ? 'RETRY' : 'SEND')
 }
 
 async function handleRegenerate(assistantMessage: Message) {
-  const userMessage = findUserMessageForAssistant(assistantMessage)
-  if (!userMessage) return
-
-  const removeIndex = chatStore.messages.findIndex(message => message.id === assistantMessage.id)
-  if (removeIndex !== -1) {
-    chatStore.messages.splice(removeIndex, 1)
-  }
-
-  await resendUserMessage(userMessage, 'FRESH')
+  await handleTurnAction(assistantMessage, 'RESTART')
 }
 
 async function handleResume(assistantMessage: Message) {
-  const userMessage = findUserMessageForAssistant(assistantMessage)
-  if (!userMessage) return
-  await resendUserMessage(userMessage, 'AUTO')
+  await handleTurnAction(assistantMessage, 'RESUME')
 }
 
 async function handleRestart(assistantMessage: Message) {
-  const userMessage = findUserMessageForAssistant(assistantMessage)
-  if (!userMessage) return
-  await resendUserMessage(userMessage, 'FRESH')
+  await handleTurnAction(assistantMessage, 'RESTART')
 }
 
 async function handleFork(message: Message) {
@@ -349,12 +393,15 @@ async function handleClearSession() {
 
 async function handleConfigUpdate(config: SessionConfig) {
   if (!chatStore.activeSessionId) return
+
   try {
     await chatApi.updateSessionConfig(chatStore.activeSessionId, config)
     activeSessionConfig.value = {
       preferredProviderId: config.preferredProviderId,
       temperature: config.temperature ?? activeSessionConfig.value.temperature,
       maxTokens: config.maxTokens ?? activeSessionConfig.value.maxTokens,
+      maxSteps: config.maxSteps ?? activeSessionConfig.value.maxSteps,
+      maxDurationSeconds: config.maxDurationSeconds ?? activeSessionConfig.value.maxDurationSeconds,
       knowledgeBaseIds: config.knowledgeBaseIds ?? [],
     }
     uiStore.showToast('success', '配置已更新')
@@ -365,6 +412,7 @@ async function handleConfigUpdate(config: SessionConfig) {
 
 async function handleUpdateSessionTitle(title: string) {
   if (!chatStore.activeSessionId || !title.trim()) return
+
   try {
     await chatApi.updateSession(chatStore.activeSessionId, { title: title.trim() })
     await chatStore.loadSessions()
@@ -388,17 +436,10 @@ function togglePanel(panel: 'config' | 'sidebar' | 'debug') {
     showSessionSidebar.value = false
   }
 }
-
-function closeInspectorPanels() {
-  showSessionSidebar.value = false
-  showDebugDrawer.value = false
-  showConfigPanel.value = false
-}
 </script>
 
 <template>
   <div class="flex h-full flex-col overflow-hidden">
-    <!-- 头部：标题 + 操作按钮 + 搜索栏 -->
     <header class="shrink-0 border-b border-border/60 bg-background px-4 py-3 sm:px-6">
       <div class="mx-auto max-w-[1460px]">
         <div class="flex items-center justify-between gap-4">
@@ -413,7 +454,9 @@ function closeInspectorPanels() {
           </div>
           <div class="flex items-center gap-2">
             <Button
-              type="button" variant="outline" size="sm"
+              type="button"
+              variant="outline"
+              size="sm"
               :class="showConfigPanel && 'status-btn-active'"
               @click="togglePanel('config')"
             >
@@ -422,7 +465,9 @@ function closeInspectorPanels() {
             </Button>
             <Button
               v-if="chatStore.activeSessionId"
-              type="button" variant="outline" size="sm"
+              type="button"
+              variant="outline"
+              size="sm"
               :class="showSessionSidebar && 'status-btn-active'"
               @click="togglePanel('sidebar')"
             >
@@ -430,7 +475,9 @@ function closeInspectorPanels() {
               信息
             </Button>
             <Button
-              type="button" variant="outline" size="sm"
+              type="button"
+              variant="outline"
+              size="sm"
               :class="showDebugDrawer && 'status-btn-active'"
               @click="togglePanel('debug')"
             >
@@ -443,7 +490,7 @@ function closeInspectorPanels() {
             </Button>
           </div>
         </div>
-        <!-- 搜索工具栏：搜索框 + pills + 操作合并为一行 -->
+
         <div class="mt-2 flex items-center gap-2 border-t border-border/30 pt-2">
           <div class="relative w-48 shrink-0">
             <Search class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -456,7 +503,12 @@ function closeInspectorPanels() {
           </div>
           <span class="surface-chip px-2 py-0.5 text-xs">工具 {{ lastToolsSummary.length }}</span>
           <span class="surface-chip px-2 py-0.5 text-xs">知识库 {{ lastKbSources.length }}</span>
-          <span v-if="hasMessageSearch" class="surface-chip surface-chip-strong px-2 py-0.5 text-xs">命中 {{ matchedMessageCount }}</span>
+          <span
+            v-if="hasMessageSearch"
+            class="surface-chip surface-chip-strong px-2 py-0.5 text-xs"
+          >
+            命中 {{ matchedMessageCount }}
+          </span>
           <div class="ml-auto flex items-center gap-1.5">
             <RouterLink
               :to="lastTraceTarget"
@@ -466,7 +518,10 @@ function closeInspectorPanels() {
             </RouterLink>
             <Button
               v-if="chatStore.activeSessionId && chatStore.messages.length > 0"
-              type="button" variant="ghost" size="sm" class="h-7 text-xs"
+              type="button"
+              variant="ghost"
+              size="sm"
+              class="h-7 text-xs"
               @click="handleClearSession"
             >
               清空
@@ -476,7 +531,6 @@ function closeInspectorPanels() {
       </div>
     </header>
 
-    <!-- 中间：消息滚动区 -->
     <div class="relative min-h-0 flex-1 overflow-hidden">
       <div
         ref="scrollContainer"
@@ -493,8 +547,8 @@ function closeInspectorPanels() {
             :streaming-reasoning-events="reasoningEvents"
             :streaming-react-steps="streamingReactSteps"
             :streaming-a2ui-components="streamingA2uiComponents"
-            :streaming-tool-confirmations="pendingToolConfirmations"
-            :streaming-tool-confirmation-resolutions="pendingToolConfirmationResolutions"
+            :streaming-permission-approvals="pendingPermissionApprovals"
+            :streaming-permission-approval-resolutions="pendingPermissionApprovalResolutions"
             :query="searchQuery"
             @retry="handleRetry"
             @like="handleLike"
@@ -504,12 +558,11 @@ function closeInspectorPanels() {
             @resume="handleResume"
             @restart="handleRestart"
             @copy="handleCopy"
-            @tool-confirm-resolve="resolveToolConfirmation"
+            @permission-approval-resolve="resolvePermissionApproval"
           />
         </div>
       </div>
 
-      <!-- 侧边栏浮层（覆盖在消息区右侧，不挤占布局） -->
       <Transition
         enter-active-class="transition-all duration-250 ease-out"
         enter-from-class="opacity-0 translate-x-4"
@@ -528,6 +581,8 @@ function closeInspectorPanels() {
               :preferred-provider-id="activeSessionConfig.preferredProviderId"
               :temperature="activeSessionConfig.temperature"
               :max-tokens="activeSessionConfig.maxTokens"
+              :max-steps="activeSessionConfig.maxSteps"
+              :max-duration-seconds="activeSessionConfig.maxDurationSeconds"
               :knowledge-base-ids="activeSessionConfig.knowledgeBaseIds"
               :providers="chatProviders"
               :knowledge-bases="kbStore.list"
@@ -558,7 +613,6 @@ function closeInspectorPanels() {
       </Transition>
     </div>
 
-    <!-- 底部固定：错误/流式状态 + 输入框 -->
     <div class="shrink-0 border-t border-border/60 bg-background px-4 pb-3 pt-2 sm:px-6">
       <div class="mx-auto max-w-[1460px]">
         <StatePanel
@@ -574,9 +628,14 @@ function closeInspectorPanels() {
             </Button>
           </template>
         </StatePanel>
-        <ChatInput :disabled="isStreaming" @send="handleSend" />
+        <ChatInput
+          :disabled="isStreaming && !activeInteraction"
+          :placeholder="inputPlaceholder"
+          :continuation-title="continuationTitle"
+          :continuation-detail="continuationDetail"
+          @send="handleSend"
+        />
       </div>
     </div>
-
   </div>
 </template>

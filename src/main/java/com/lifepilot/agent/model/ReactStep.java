@@ -10,6 +10,7 @@ import java.time.Instant;
  *
  * <p>替代原 {@code Action} 的 9 种类型，简化为 6 种步骤类型：
  * <ul>
+ *   <li>{@link Progress} — 面向用户展示的执行进度提示，不参与模型上下文回放</li>
  *   <li>{@link Thought} — LLM 的推理思考</li>
  *   <li>{@link ToolCall} — 工具调用记录（由 Spring AI function calling 触发）</li>
  *   <li>{@link Observation} — 工具调用结果观察</li>
@@ -22,12 +23,16 @@ import java.time.Instant;
  * @since 2026-03-14
  */
 public sealed interface ReactStep permits
+        ReactStep.Progress,
         ReactStep.Thought,
         ReactStep.ToolCall,
         ReactStep.Observation,
         ReactStep.Answer,
         ReactStep.Suspend,
         ReactStep.Resume {
+
+    /** 面向用户的阶段进度提示，不应重新喂给模型。 */
+    record Progress(String content) implements ReactStep {}
 
     /** LLM 的推理思考。 */
     record Thought(String content) implements ReactStep {}

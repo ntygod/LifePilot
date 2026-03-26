@@ -9,7 +9,8 @@
 
 核心差异化：
 - **多层记忆系统**：L1 工作记忆 → L2 情景记忆 → L3 语义记忆 + 时序知识图谱 → L4 程序记忆，模拟人类认知记忆层次
-- **自主任务执行**：支持 cron 定时和条件触发的自主任务，基于 TASKS.md 文件管理
+- **自主任务执行**：支持 cron 定时、heartbeat 巡检和自主工作流，任务定义持久化在 SQLite 中
+- **权限与自动执行**：高风险工具改为作用域授权模型，自主任务支持任务级预授权
 - **Skill 自扩展**：Agent 可检测能力缺口并自动生成新 Skill（YAML 声明式）
 - **单 JAR 部署**：后端 + SQLite + sqlite-vec 打包为单个可执行 JAR，零外部依赖
 
@@ -52,6 +53,7 @@ graph TB
     subgraph "能力层"
         SKILL["Skill 系统<br/>注册/激活/自扩展"]
         TOOL["工具系统<br/>ToolContract + 护栏"]
+        PERM["权限系统<br/>授权 / 预授权"]
         MCP["MCP 协议<br/>外部工具桥接"]
         WF["工作流引擎<br/>YAML 声明式编排"]
         SANDBOX["代码沙箱<br/>安全执行环境"]
@@ -92,6 +94,7 @@ graph TB
     AGENT --> MULTI
     AGENT --> SKILL
     AGENT --> TOOL
+    TOOL --> PERM
     TOOL --> MCP
     SKILL --> WF
     SKILL --> SANDBOX
@@ -115,20 +118,21 @@ graph TB
 
 ## 4. 模块职责总览
 
-系统后端由 22 个 Java 包组成（`com.lifepilot.*`，含规划中模块），按职责分为以下层次：
+系统后端按 `com.lifepilot.*` 领域包拆分，按职责分为以下层次：
 
 | 模块包 | 职责 | 详细文档 |
 |--------|------|---------|
 | `llm` | 多模型路由、熔断器、故障转移、流式响应 | [架构](architecture/llm-router.md) · [特性](features/llm-router.md) |
 | `agent` | Agent 控制循环、状态机、上下文组装、自主任务执行 | [架构](architecture/agent-engine.md) · [特性](features/agent-engine.md) |
 | `tool` | 工具契约、动态注册、执行管道、YAML 工具 | [架构](architecture/tool-ecosystem.md) · [特性](features/tool-ecosystem.md) |
+| `permission` | 工具授权、作用域匹配、任务级预授权、授权记录管理 | [架构](architecture/permission.md) · [特性](features/permission.md) |
 | `guardrail` | 安全护栏策略定义（已合并至 `observability.guardrail`，不再独立存在，详见 [guardrail.md](architecture/guardrail.md)） | [架构](architecture/guardrail.md) · [特性](features/guardrail.md) |
 | `mcp` | Model Context Protocol 客户端、工具桥接、传输层 | [架构](architecture/mcp-support.md) · [特性](features/mcp-support.md) |
 | `memory` | 四层记忆（工作/情景/语义/程序）、向量检索、知识图谱、遗忘策略 | [架构](architecture/memory-system.md) · [特性](features/memory-system.md) |
 | `knowledge` | 文档摄入、多格式解析、分块策略、多知识库管理、Reranker | [架构](architecture/knowledge-base.md) · [特性](features/knowledge-base.md) |
 | `skill` | Skill 注册/激活/热加载、内置 Skill、自扩展（Gap 检测 + YAML 生成） | [架构](architecture/skill-system.md) · [特性](features/skill-system.md) |
 | `interaction` | CLI 交互、MessageGateway、中间件管道、Channel 适配器、Web 端点 | [架构](architecture/cli-interaction.md) · [架构](architecture/gateway-middleware.md) · [特性](features/gateway-channels.md) |
-| `conversation` | 对话历史存储、会话视图查询 | [架构](architecture/conversation.md) · [特性](features/conversation.md) |
+| `conversation` | 对话历史存储、基于 transcript 条目读模型的最近轮次与时间线读取 | [架构](architecture/conversation.md) · [特性](features/conversation.md) |
 | `datastore` | 通用数据存储（Schema-Free JSON 文档、全文搜索、时序聚合、7 个 Agent 工具） | [架构](architecture/generic-data-store.md) · [特性](features/generic-data-store.md) |
 | `workflow` | YAML 声明式工作流、触发器（manual / cron / event）、状态持久化 | [架构](architecture/workflow.md) · [特性](features/workflow.md) |
 | `sandbox` | 代码执行沙箱（Process/Docker）、会话复用、危险操作预检 | [架构](architecture/sandbox.md) · [特性](features/sandbox.md) |
@@ -140,7 +144,7 @@ graph TB
 | `marketplace` | 插件市场、Skill 发布/发现/安装、安全审核 | [架构](architecture/skill-marketplace.md) · [特性](features/skill-marketplace.md) |
 | `meta` | 元能力（便捷指令、基础设施工具） | [架构](architecture/meta-capabilities.md) · [特性](features/meta-capabilities.md) |
 | `prompt` | Prompt 模板注册与管理 | [架构](architecture/prompt-management.md) · [特性](features/prompt-management.md) |
-| `notification` | 统一通知服务、Urgency 路由、多渠道广播、被动队列持久化、通知管理 API | [架构](architecture/notification.md) · [特性](features/notification.md) |
+| `notification` | 统一通知服务、直接投递、多渠道广播、通知历史与 SSE 推送 API | [架构](architecture/notification.md) · [特性](features/notification.md) |
 | `observability` | 轨迹记录/查询、GuardrailAdvisor、数据脱敏、轨迹评估 | [架构](architecture/observability.md) · [特性](features/observability.md) |
 | `config` | 全局数据源配置、Flyway 迁移（纯基础设施，不单独出模块文档） | — |
 
@@ -227,7 +231,8 @@ graph TB
 |------|------|
 | 记忆进阶（巩固/遗忘/混合检索） | [架构](architecture/memory-advanced.md) · [特性](features/memory-advanced.md) |
 | 内置 Skill（Memory / Task） | [架构](architecture/builtin-skills.md) · [特性](features/builtin-skills.md) |
-| 自主任务执行 | — |
+| 工具权限与自动执行 | [架构](architecture/permission.md) · [特性](features/permission.md) |
+| 自主任务执行 | 见 [架构](architecture/agent-engine.md) 与 [工作流指南](guides/workflow-guide.md) |
 | 通知系统 | [架构](architecture/notification.md) · [特性](features/notification.md) |
 | 部署与运维 | [架构](architecture/deployment.md) · [特性](features/deployment.md) |
 | 性能优化 | [架构](architecture/performance-optimization.md) · [特性](features/performance-optimization.md) |

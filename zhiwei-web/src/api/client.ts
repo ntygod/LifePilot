@@ -1,7 +1,8 @@
-import type {
+﻿import type {
   ChatAttachment,
   ChatResponse,
-  ResumePolicy,
+  ChatTurnAction,
+  ChatTurnStatus,
   ChatSession,
   ChatSessionDetail,
   CreateKbRequest,
@@ -71,6 +72,7 @@ import type {
   OptionItem,
   // 通知中心类型
   NotificationItem,
+  SseInteractionEvent,
   // 记忆管理类型
   MemoryStats,
   MemorySearchResult,
@@ -88,7 +90,9 @@ import type {
   TemplateListParams,
   PreferenceRule,
   ForgettingLog,
-  ForgettingLogListParams
+  ForgettingLogListParams,
+  PermissionGrant,
+  PermissionGrantCreateRequest
 } from '@/types'
 import { mapBackendMessage } from '@/utils/a2ui'
 
@@ -169,11 +173,12 @@ export const chatApi = {
     content: string,
     sessionId?: string,
     attachmentIds?: string[],
-    resumePolicy?: ResumePolicy
+    turnId?: string,
+    action: ChatTurnAction = 'SEND'
   ): Promise<ChatResponse> {
     return request('/chat/messages', {
       method: 'POST',
-      body: JSON.stringify({ content, sessionId, attachmentIds, resumePolicy })
+      body: JSON.stringify({ content, sessionId, attachmentIds, turnId, action })
     })
   },
 
@@ -185,13 +190,14 @@ export const chatApi = {
     content: string,
     sessionId?: string,
     attachmentIds?: string[],
-    resumePolicy?: ResumePolicy,
+    turnId?: string,
+    action: ChatTurnAction = 'SEND',
     signal?: AbortSignal
   ): Promise<ReadableStream<Uint8Array>> {
     const res = await fetch(`${BASE}/chat/messages/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content, sessionId, attachmentIds, resumePolicy }),
+      body: JSON.stringify({ content, sessionId, attachmentIds, turnId, action }),
       signal
     })
     if (!res.ok || !res.body) {
@@ -217,7 +223,8 @@ export const chatApi = {
   async getSessionMessages(sessionId: string): Promise<Message[]> {
     const messages = await request<Array<{
       id: string
-      role: 'user' | 'assistant' | 'tool-confirmation'
+      turnId?: string | null
+      role: 'user' | 'assistant' | 'permission-approval'
       content: string
       a2uiComponents?: unknown
       timestamp: string | number
@@ -227,11 +234,15 @@ export const chatApi = {
       reactSteps?: ReactStepDto[] | null
       completionMode?: 'NORMAL' | 'DEGRADED' | 'SUSPENDED' | null
       resumedFromTraceId?: string | null
+      turnStatus?: ChatTurnStatus | null
+      errorMessage?: string | null
+      suspendReasonType?: string | null
+      suspendReasonSourceId?: string | null
     }>>(`/chat/sessions/${sessionId}/messages`)
     return messages.map(mapBackendMessage)
   },
 
-  /** 鑾峰彇浼氳瘽璇︽儏 */
+  /** 获取会话详情 */
   getSession(sessionId: string): Promise<ChatSessionDetail> {
     return request(`/chat/sessions/${sessionId}`)
   },
@@ -245,7 +256,7 @@ export const chatApi = {
   },
 
   /**
-   * 更新会话配置（模型/温度/最大Tokens/关联知识库）。
+   * 更新会话配置（模型/温度/三维预算/关联知识库）。
    *
    * 注意：知识库关联会影响后端在生成回答前的检索上下文注入（若已启用）。
    */
@@ -255,6 +266,8 @@ export const chatApi = {
       preferredProviderId?: string
       temperature?: number
       maxTokens?: number
+      maxSteps?: number
+      maxDurationSeconds?: number
       knowledgeBaseIds?: string[]
     }
   ): Promise<void> {
@@ -274,26 +287,26 @@ export const chatApi = {
     return request(`/chat/sessions/${sessionId}/clear`, { method: 'POST' })
   },
 
-  /** 提交消息反馈（点赞/点踩） */
+  /** 提交条目反馈（点赞/点踩） */
   submitFeedback(
-    messageId: string,
+    entryId: string,
     type: 'like' | 'dislike',
     feedback?: string
   ): Promise<void> {
-    return request(`/chat/messages/${messageId}/feedback`, {
+    return request(`/chat/entries/${entryId}/feedback`, {
       method: 'POST',
       body: JSON.stringify({ type, feedback })
     })
   },
 
-  /** 分叉会话（从指定消息处创建新会话） */
+  /** 分叉会话（从指定条目处创建新会话） */
   forkSession(
     sessionId: string,
-    fromMessageId?: string
+    fromEntryId?: string
   ): Promise<ChatSession> {
     return request(`/chat/sessions/${sessionId}/fork`, {
       method: 'POST',
-      body: JSON.stringify({ fromMessageId })
+      body: JSON.stringify({ fromEntryId })
     })
   },
 
@@ -305,11 +318,31 @@ export const chatApi = {
     })
   },
 
-  /** 工具确认响应 */
-  respondToolConfirmation(requestId: string, confirmed: boolean, reason?: string): Promise<void> {
-    return request(`/chat/tool-confirmations/${requestId}`, {
+  /** 权限审批响应 */
+  respondPermissionApproval(
+    requestId: string,
+    approved: boolean,
+    subjectType: string,
+    reason?: string,
+  ): Promise<void> {
+    return request(`/permissions/approvals/${requestId}`, {
       method: 'POST',
-      body: JSON.stringify({ requestId, confirmed, reason })
+      body: JSON.stringify({ requestId, approved, subjectType, reason })
+    })
+  },
+
+  /** 用户交互回传 */
+  respondInteraction(
+    interactionId: string,
+    payload: Pick<SseInteractionEvent, 'type'> & { value?: string | null; confirmed: boolean; timedOut?: boolean }
+  ): Promise<void> {
+    return request(`/chat/interactions/${interactionId}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        value: payload.value ?? null,
+        confirmed: payload.confirmed,
+        timedOut: payload.timedOut ?? false,
+      })
     })
   },
 
@@ -361,16 +394,53 @@ export const chatApi = {
   }
 }
 
-import type {
-  LlmProviderDetail
-} from '@/types'
+/** 权限授权相关 API */
+export const permissionApi = {
+  listGrants(params?: {
+    activeOnly?: boolean
+    subjectType?: 'SESSION' | 'WORKSPACE' | 'TASK' | 'USER'
+    subjectId?: string
+  }): Promise<PermissionGrant[]> {
+    const search = new URLSearchParams()
+    if (params?.activeOnly != null) {
+      search.set('activeOnly', String(params.activeOnly))
+    }
+    if (params?.subjectType) {
+      search.set('subjectType', params.subjectType)
+    }
+    if (params?.subjectId) {
+      search.set('subjectId', params.subjectId)
+    }
+    const query = search.toString()
+    return request(`/permissions/grants${query ? `?${query}` : ''}`)
+  },
 
-// 导出 LlmProviderDetail 类型（向后兼容）
-export type { LlmProviderDetail }
+  createGrant(payload: PermissionGrantCreateRequest): Promise<PermissionGrant> {
+    return request('/permissions/grants', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  },
 
-/** LLM Provider 信息（兼容旧接口） */
-export interface LlmProvider {
+  revokeGrant(grantId: string, options?: { revokedBy?: string; reason?: string }): Promise<void> {
+    const search = new URLSearchParams()
+    if (options?.revokedBy) {
+      search.set('revokedBy', options.revokedBy)
+    }
+    if (options?.reason) {
+      search.set('reason', options.reason)
+    }
+    const query = search.toString()
+    return request(`/permissions/grants/${grantId}${query ? `?${query}` : ''}`, {
+      method: 'DELETE'
+    })
+  }
+}
+
+/** 模型服务定义。 */
+export interface ModelService {
   id: string
+  kind: string
   type: string
   modelName: string
   displayName?: string
@@ -390,6 +460,50 @@ export interface LlmProvider {
   embeddingDimension?: number
 }
 
+export type ModelServiceDetail = ModelService
+
+export interface GenerationRoutingSettings {
+  defaultServiceId?: string
+  sceneServiceBindings: Record<string, string>
+}
+
+export interface GenerationRoutingSettingsRequest {
+  defaultServiceId?: string
+  sceneServiceBindings?: Record<string, string>
+}
+
+export interface EmbeddingRoutingSettings {
+  defaultServiceId?: string
+  knowledgeBaseServiceId?: string
+  memoryServiceId?: string
+}
+
+export interface EmbeddingRoutingSettingsRequest {
+  defaultServiceId?: string
+  knowledgeBaseServiceId?: string
+  memoryServiceId?: string
+}
+
+export interface RerankRoutingSettings {
+  enabled: boolean
+  mode: string
+  nativeServiceId?: string
+  llmServiceId?: string
+  knowledgeTopK: number
+  memoryEnabled: boolean
+  memoryTopK: number
+}
+
+export interface RerankRoutingSettingsRequest {
+  enabled?: boolean
+  mode?: string
+  nativeServiceId?: string
+  llmServiceId?: string
+  knowledgeTopK?: number
+  memoryEnabled?: boolean
+  memoryTopK?: number
+}
+
 /** 设置相关 API */
 export const settingsApi = {
   /** 获取用户设置 */
@@ -404,35 +518,6 @@ export const settingsApi = {
       body: JSON.stringify(settings)
     })
   },
-
-  /** 获取可用的 LLM Provider 列表（包含详细信息） */
-  getProviders(): Promise<LlmProvider[]> {
-    return request('/settings/providers')
-  },
-
-  /** 获取指定 Provider 的详细信息 */
-  getProviderDetail(providerId: string): Promise<LlmProviderDetail> {
-    return request(`/settings/providers/${providerId}`)
-  },
-
-  /** 获取所有 Provider 的健康状态 */
-  getProviderHealth(): Promise<Record<string, boolean>> {
-    return request('/settings/providers/health')
-  },
-
-  /** 获取全局 Reranker 配置 */
-  getRerankerSettings(): Promise<RerankerSettings> {
-    return request('/settings/reranker')
-  },
-
-  /** 更新全局 Reranker 配置 */
-  updateRerankerSettings(settings: RerankerSettingsRequest): Promise<RerankerSettings> {
-    return request('/settings/reranker', {
-      method: 'PUT',
-      body: JSON.stringify(settings)
-    })
-  },
-
   /** 获取知识库全局配置 */
   getKnowledgeSettings(): Promise<KnowledgeSettings> {
     return request('/settings/knowledge')
@@ -474,35 +559,7 @@ export const settingsApi = {
 }
 
 /** Reranker 配置响应 */
-export interface RerankerSettings {
-  enabled: boolean
-  type: string
-  model: string
-  topK: number
-  llmMode: string
-  apiProvider: string
-  apiKey: string
-  apiEndpoint: string
-  apiTimeoutMs: number
-  memoryRerankEnabled: boolean
-  memoryRerankTopK: number
-}
-
 /** Reranker 配置请求 */
-export interface RerankerSettingsRequest {
-  enabled?: boolean
-  type?: string
-  model?: string
-  topK?: number
-  llmMode?: string
-  apiProvider?: string
-  apiKey?: string
-  apiEndpoint?: string
-  apiTimeoutMs?: number
-  memoryRerankEnabled?: boolean
-  memoryRerankTopK?: number
-}
-
 /** 知识库全局配置响应 */
 export interface KnowledgeSettings {
   enabled: boolean
@@ -563,60 +620,88 @@ export interface ChannelConfig {
   [key: string]: SingleChannelConfig | undefined
 }
 
-/** LLM Provider 管理 API */
-export const llmProviderApi = {
-  /** 获取所有 Provider（包括已禁用） */
-  listProviders(): Promise<LlmProvider[]> {
-    return request('/llm-providers')
+export const modelRoutingApi = {
+  getGenerationSettings(): Promise<GenerationRoutingSettings> {
+    return request('/model-routing/generation')
   },
 
-  /** 获取所有已启用的 Provider */
-  listEnabledProviders(): Promise<LlmProvider[]> {
-    return request('/llm-providers/enabled')
+  updateGenerationSettings(settings: GenerationRoutingSettingsRequest): Promise<GenerationRoutingSettings> {
+    return request('/model-routing/generation', {
+      method: 'PUT',
+      body: JSON.stringify(settings)
+    })
   },
 
-  /** 获取所有预设置的 Provider */
-  listPresets(): Promise<LlmProvider[]> {
-    return request('/llm-providers/presets')
+  getEmbeddingSettings(): Promise<EmbeddingRoutingSettings> {
+    return request('/model-routing/embedding')
   },
 
-  /** 根据 ID 获取 Provider */
-  getProvider(id: string): Promise<LlmProvider> {
-    return request(`/llm-providers/${id}`)
+  updateEmbeddingSettings(settings: EmbeddingRoutingSettingsRequest): Promise<EmbeddingRoutingSettings> {
+    return request('/model-routing/embedding', {
+      method: 'PUT',
+      body: JSON.stringify(settings)
+    })
   },
 
-  /** 创建或更新 Provider */
-  saveProvider(provider: CreateProviderRequest): Promise<LlmProvider> {
-    return request('/llm-providers', {
+  getRerankSettings(): Promise<RerankRoutingSettings> {
+    return request('/model-routing/rerank')
+  },
+
+  updateRerankSettings(settings: RerankRoutingSettingsRequest): Promise<RerankRoutingSettings> {
+    return request('/model-routing/rerank', {
+      method: 'PUT',
+      body: JSON.stringify(settings)
+    })
+  }
+}
+
+/** 模型服务管理 API */
+export const modelServiceApi = {
+  /** 获取所有模型服务（包含已禁用项）。 */
+  listServices(kind?: string): Promise<ModelService[]> {
+    const query = kind ? `?kind=${encodeURIComponent(kind)}` : ''
+    return request(`/model-services${query}`)
+  },
+
+  /** 获取所有已启用的模型服务。 */
+  listEnabledServices(kind?: string): Promise<ModelService[]> {
+    const query = kind ? `?kind=${encodeURIComponent(kind)}` : ''
+    return request(`/model-services/enabled${query}`)
+  },
+
+  /** 根据 ID 获取模型服务详情。 */
+  getService(id: string): Promise<ModelServiceDetail> {
+    return request(`/model-services/${id}`)
+  },
+
+  /** 创建模型服务。 */
+  createService(provider: CreateModelServiceRequest): Promise<ModelService> {
+    return request('/model-services', {
       method: 'POST',
       body: JSON.stringify(provider)
     })
   },
 
-  /** 更新 Provider（部分更新） */
-  updateProvider(id: string, provider: UpdateProviderRequest): Promise<LlmProvider> {
-    return request(`/llm-providers/${id}`, {
+  /** 更新模型服务。 */
+  updateService(id: string, provider: UpdateModelServiceRequest): Promise<ModelService> {
+    return request(`/model-services/${id}`, {
       method: 'PUT',
       body: JSON.stringify(provider)
     })
   },
 
-  /** 删除 Provider（仅删除非预设置的） */
-  deleteProvider(id: string): Promise<void> {
-    return request(`/llm-providers/${id}`, {
+  /** 删除模型服务。 */
+  deleteService(id: string): Promise<void> {
+    return request(`/model-services/${id}`, {
       method: 'DELETE'
     })
-  },
-
-  /** 获取 Provider 健康状态 */
-  getProviderHealth(id: string): Promise<{ healthy: boolean }> {
-    return request(`/llm-providers/${id}/health`)
   }
 }
 
-/** 创建 Provider 请求 */
-export interface CreateProviderRequest {
+/** 创建模型服务请求。 */
+export interface CreateModelServiceRequest {
   id: string
+  kind: string
   type: string
   apiUrl: string
   apiKey?: string
@@ -635,8 +720,9 @@ export interface CreateProviderRequest {
   description?: string
 }
 
-/** 更新 Provider 请求（所有字段可选） */
-export interface UpdateProviderRequest {
+/** 更新模型服务请求。 */
+export interface UpdateModelServiceRequest {
+  kind?: string
   type?: string
   apiUrl?: string
   apiKey?: string
@@ -1138,7 +1224,7 @@ export const toolApi = {
   },
   test(req: ToolTestRequest): Promise<ToolTestResponse> {
     // 后端使用 /tools/{id}/test，参数字段名为 arguments
-    const args = req.input ?? req.arguments ?? {}
+    const args = req.input ?? {}
     return request(`/tools/${req.toolId}/test`, {
       method: 'POST',
       body: JSON.stringify({
@@ -1297,12 +1383,11 @@ export const dependencyApi = {
 /** 通知管理 API */
 export const notificationApi = {
   /** 获取通知列表（分页） */
-  listNotifications(userId: string, page?: number, size?: number, urgency?: string): Promise<PageResult<NotificationItem>> {
+  listNotifications(userId: string, page?: number, size?: number): Promise<PageResult<NotificationItem>> {
     const params = new URLSearchParams()
     params.append('userId', userId)
     if (page !== undefined) params.append('page', String(page))
     if (size !== undefined) params.append('size', String(size))
-    if (urgency) params.append('urgency', urgency)
     return request(`/notifications?${params.toString()}`)
   },
 
@@ -1320,7 +1405,7 @@ export const notificationApi = {
 // ========== 记忆管理 API ==========
 
 
-/** 将参数对象转为 URL 查询字符串，跳过 undefined 和空字符串 */
+/** 将参数对象转为 URL 查询字符串，跳过 undefined 和空字符 */
 function toQueryString(params: Record<string, unknown>): string {
   const query = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {

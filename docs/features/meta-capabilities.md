@@ -35,7 +35,7 @@ Agent 的通用执行基础设施，按功能域分为 8 类：
 | 文件系统 | `builtin.file.search` | 搜索文件 |
 | 交互控制 | `builtin.interact.choose` | 请求用户选择（多选项） |
 | 交互控制 | `builtin.interact.input` | 请求用户输入文本 |
-| 交互控制 | `builtin.interact.notify` | 向用户推送通知（非阻塞） |
+| 交互控制 | `builtin.interact.notify` | 向用户推送结果通知（非阻塞，默认回到当前会话渠道） |
 
 ### 2.2 系统自省（4 个工具）
 

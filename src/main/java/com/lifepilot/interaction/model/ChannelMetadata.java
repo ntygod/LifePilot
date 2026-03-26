@@ -1,6 +1,6 @@
 package com.lifepilot.interaction.model;
 
-import com.lifepilot.agent.model.ResumePolicy;
+import com.lifepilot.interaction.web.model.ChatTurnAction;
 import org.springframework.lang.Nullable;
 
 /**
@@ -39,13 +39,14 @@ public sealed interface ChannelMetadata
     record WebMetadata(String userAgent, String remoteAddr,
                        @Nullable String sessionToken, boolean acceptsSse,
                        @Nullable String preferredProvider,
-                       @Nullable ResumePolicy resumePolicy)
+                       @Nullable String turnId,
+                       @Nullable ChatTurnAction action)
             implements ChannelMetadata {
 
         public WebMetadata(String userAgent, String remoteAddr,
                            @Nullable String sessionToken, boolean acceptsSse,
                            @Nullable String preferredProvider) {
-            this(userAgent, remoteAddr, sessionToken, acceptsSse, preferredProvider, null);
+            this(userAgent, remoteAddr, sessionToken, acceptsSse, preferredProvider, null, ChatTurnAction.SEND);
         }
 
         @Override

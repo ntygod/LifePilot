@@ -1,8 +1,7 @@
 package com.lifepilot.llm.multimodal;
 
-import com.lifepilot.llm.LlmRequest;
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
-import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.LlmUnavailableException;
 import com.lifepilot.llm.circuit.CircuitBreakerManager;
 import com.lifepilot.llm.config.ProviderCapability;
@@ -57,7 +56,7 @@ class MultimodalRouterTest {
     private VideoProcessor videoProcessor;
 
     @Mock
-    private LlmRouter llmRouter;
+    private GenerationRouter generationRouter;
 
     private MultimodalRouter router;
 
@@ -71,7 +70,7 @@ class MultimodalRouterTest {
                 videoProcessor,
                 null,
                 new MediaProperties(),
-                llmRouter
+                generationRouter
         );
     }
 
@@ -85,12 +84,13 @@ class MultimodalRouterTest {
         );
 
         LlmResponse expected = new LlmResponse("hi", 1, 1, "p1", "m", 10, false);
-        when(llmRouter.call(any(LlmRequest.class))).thenReturn(expected);
+        when(generationRouter.call(anyString(), anyString(), any(), any(), any(), any(), any()))
+                .thenReturn(expected);
 
         LlmResponse actual = router.call(request);
 
         assertSame(expected, actual);
-        verify(llmRouter).call(any(LlmRequest.class));
+        verify(generationRouter).call(anyString(), anyString(), any(), any(), any(), any(), any());
         verifyNoInteractions(providerRegistry);
     }
 
@@ -210,12 +210,13 @@ class MultimodalRouterTest {
                 null
         );
 
-        when(llmRouter.stream("chat", "hello")).thenReturn(Flux.just("a", "b"));
+        when(generationRouter.streamWithInfo("chat", "hello", null, null))
+                .thenReturn(new GenerationRouter.StreamingGenerationResponse(Flux.just("a", "b"), "p1", "m1"));
 
         Flux<String> flux = router.stream(request);
 
         assertEquals(List.of("a", "b"), flux.collectList().block());
-        verify(llmRouter).stream("chat", "hello");
+        verify(generationRouter).streamWithInfo("chat", "hello", null, null);
         verifyNoInteractions(providerRegistry);
     }
 
@@ -280,4 +281,3 @@ class MultimodalRouterTest {
         assertTrue(prompt.contains("这是转录"));
     }
 }
-

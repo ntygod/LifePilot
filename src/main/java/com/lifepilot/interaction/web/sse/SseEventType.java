@@ -50,9 +50,6 @@ public final class SseEventType {
     /** Trace 结束事件 */
     public static final String TRACE_END = "trace-end";
     
-    /** Agent 委托事件（handoff 工具调用前发送） */
-    public static final String AGENT_DELEGATED = "agent-delegated";
-
     // A2A 模块事件类型
     /** 任务状态更新事件 */
     public static final String TASK_STATUS_UPDATE = "task-status-update";
@@ -65,6 +62,8 @@ public final class SseEventType {
 
     /** 主动通知事件 */
     public static final String NOTIFICATION = "notification";
+
+    public static final String INTERACTION = "interaction";
 
     // MCP 模块事件类型
     /** MCP Server 状态初始快照事件 */
@@ -103,8 +102,8 @@ public final class SseEventType {
     public static final String TRANSCRIPTION = "transcription";
 
     // 护栏模块事件类型
-    /** 工具确认请求事件 */
-    public static final String TOOL_CONFIRMATION_REQUEST = "tool-confirmation-request";
+    /** 权限审批请求事件 */
+    public static final String PERMISSION_APPROVAL_REQUEST = "permission-approval-request";
 
     // Agent 挂起-恢复事件类型
     /** Agent 挂起事件 */

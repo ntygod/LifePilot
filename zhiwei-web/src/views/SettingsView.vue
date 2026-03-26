@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Cpu, Database, Palette, Radio } from 'lucide-vue-next'
+import { Cpu, Database, Palette, Radio, ShieldCheck } from 'lucide-vue-next'
 import MetricCard from '@/components/common/MetricCard.vue'
 import PageContainer from '@/components/layout/PageContainer.vue'
 import PageHeader from '@/components/layout/PageHeader.vue'
@@ -11,10 +11,11 @@ import {
   getFontSizeDisplayLabel,
   getThemeDisplayLabel,
 } from '@/lib/settingsDisplay'
-import SettingsModelsView from '@/views/SettingsModelsView.vue'
+import SettingsChannelsView from '@/views/SettingsChannelsView.vue'
 import SettingsGeneralView from '@/views/SettingsGeneralView.vue'
 import SettingsKnowledgeView from '@/views/SettingsKnowledgeView.vue'
-import SettingsChannelsView from '@/views/SettingsChannelsView.vue'
+import SettingsModelsView from '@/views/SettingsModelsView.vue'
+import SettingsPermissionsView from '@/views/SettingsPermissionsView.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -26,43 +27,46 @@ const viewMap: Record<string, Component> = {
   '/settings/models': SettingsModelsView,
   '/settings/knowledge': SettingsKnowledgeView,
   '/settings/channels': SettingsChannelsView,
+  '/settings/permissions': SettingsPermissionsView,
 }
 
 const navigationItems = [
   {
     path: '/settings/general',
     label: '通用',
-    description: '主题、语言、字号、阅读习惯和快捷键。',
+    description: '主题、语言、字号、阅读偏好和基础交互设置。',
     icon: Palette,
   },
   {
     path: '/settings/models',
-    label: '模型与推理',
-    description: '默认模型、场景路由、健康检查和精排配置。',
+    label: '模型与路由',
+    description: '模型服务、生成路由、向量路由和精排路由的独立配置。',
     icon: Cpu,
   },
   {
     path: '/settings/knowledge',
     label: '知识与检索',
-    description: '分块策略、检索参数、向量索引和 Tavily 联网搜索配置。',
+    description: '分块策略、检索参数、向量索引和联网搜索设置。',
     icon: Database,
   },
   {
     path: '/settings/channels',
     label: '集成渠道',
-    description: '飞书、企微、钉钉渠道凭证配置。',
+    description: '飞书、企微、钉钉等渠道的凭据与开关配置。',
     icon: Radio,
+  },
+  {
+    path: '/settings/permissions',
+    label: '授权与自动执行',
+    description: '管理工具授权、无人值守范围和高风险操作审批记录。',
+    icon: ShieldCheck,
   },
 ] as const
 
 const activeView = computed(() => viewMap[route.path] ?? SettingsGeneralView)
-const currentPath = computed(() => {
-  // 兼容旧路径
-  if (route.path === '/settings' || route.path === '/settings/preferences') return '/settings/general'
-  if (route.path === '/settings/reranker') return '/settings/models'
-  if (route.path === '/settings/shortcuts') return '/settings/general'
-  return route.path
-})
+const currentPath = computed(() => (
+  navigationItems.some(item => item.path === route.path) ? route.path : '/settings/general'
+))
 const currentNavigationItem = computed(() => (
   navigationItems.find(item => item.path === currentPath.value) ?? navigationItems[0]
 ))
@@ -73,22 +77,22 @@ const quickSummary = computed(() => [
   {
     label: '主题',
     value: themeDisplayValue.value,
-    hint: '当前界面的外观与色彩方案。',
+    hint: '当前界面的外观风格与色彩方案。',
   },
   {
     label: '密度',
     value: densityDisplayValue.value,
-    hint: '导航与内容区的空间松紧。',
+    hint: '导航与内容区块的空间紧凑程度。',
   },
   {
     label: '字号',
     value: fontSizeDisplayValue.value,
-    hint: '全局阅读节奏与基础字级。',
+    hint: '全局阅读节奏与基础字级设置。',
   },
   {
-    label: '默认模型',
-    value: settingsStore.llmProvider || '未设置',
-    hint: '没有单独指定时优先使用的提供商。',
+    label: '模型路由',
+    value: '独立配置',
+    hint: '生成、向量和精排服务已经迁移到模型与路由页单独管理。',
   },
 ])
 
@@ -104,7 +108,7 @@ function isActiveItem(path: string) {
         <PageHeader
           eyebrow="设置"
           title="偏好设置"
-          description="把常用设置收在一起，优先处理界面、模型和快捷键。"
+          description="把常用设置收在一起，优先处理界面、模型与知识能力。"
         >
           <template #meta>
             <MetricCard
@@ -123,9 +127,9 @@ function isActiveItem(path: string) {
             <section class="detail-card p-5">
               <div class="space-y-1">
                 <div class="surface-label">设置分区</div>
-                <h2 class="section-title text-foreground">场景设置</h2>
+                <h2 class="section-title text-foreground">场景导航</h2>
                 <p class="text-sm leading-6 text-muted-foreground">
-                  选择一个场景来调整设置。
+                  选择一个分区来调整对应设置。
                 </p>
               </div>
 

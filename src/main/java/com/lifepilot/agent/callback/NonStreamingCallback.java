@@ -2,8 +2,8 @@ package com.lifepilot.agent.callback;
 
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.model.AgentRequest;
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
-import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.multimodal.MultimodalRequest;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.observability.trace.TraceContext;
@@ -34,7 +34,7 @@ public class NonStreamingCallback implements IterationCallback {
     private static final Logger log = LoggerFactory.getLogger(NonStreamingCallback.class);
 
     private final AgentConfigProperties config;
-    private final LlmRouter llmRouter;
+    private final GenerationRouter generationRouter;
     @Nullable private final MultimodalRouter multimodalRouter;
     private final AgentRequest request;
     private final CallbackHelper helper;
@@ -43,12 +43,12 @@ public class NonStreamingCallback implements IterationCallback {
     private String modelId = IterationCallback.DEFAULT_MODEL_ID;
 
     public NonStreamingCallback(AgentConfigProperties config,
-                                LlmRouter llmRouter,
+                                GenerationRouter generationRouter,
                                 @Nullable MultimodalRouter multimodalRouter,
                                 AgentRequest request,
                                 CallbackHelper helper) {
         this.config = config;
-        this.llmRouter = llmRouter;
+        this.generationRouter = generationRouter;
         this.multimodalRouter = multimodalRouter;
         this.request = request;
         this.helper = helper;
@@ -93,10 +93,11 @@ public class NonStreamingCallback implements IterationCallback {
             log.warn("消息包含媒体内容但 MultimodalRouter 不可用，回退到纯文本路由");
         }
 
-        // 纯文本路由：原有 LlmRouter 路径
-        var chatModelInfo = llmRouter.getChatModelWithInfo(scene, request.preferredProvider());
-        this.providerId = chatModelInfo.providerId();
-        this.modelId = chatModelInfo.modelId();
+        // 纯文本路由：通过 GenerationRouter 获取 ChatModel
+        var chatModelInfo = generationRouter.getChatModelWithInfo(
+                scene, request.preferredProvider(), null);
+        this.providerId = chatModelInfo.serviceId();
+        this.modelId = chatModelInfo.modelName();
 
         // 构建 ChatOptions：注入工具定义但禁用自动执行
         var optionsBuilder = DefaultToolCallingChatOptions.builder()

@@ -1,12 +1,12 @@
 package com.lifepilot.memory.compression;
 
-import com.lifepilot.llm.LlmRequest;
-import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.episodic.CompressionLevel;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.memory.episodic.MessageRecord;
+import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,16 +32,16 @@ public class CompressionService {
 
     private static final Logger log = LoggerFactory.getLogger(CompressionService.class);
 
-    private final LlmRouter llmRouter;
+    private final GenerationRouter generationRouter;
     private final EpisodicMemory episodicMemory;
     private final PromptRegistry promptRegistry;
     private final MemoryProperties properties;
 
-    public CompressionService(LlmRouter llmRouter,
+    public CompressionService(GenerationRouter generationRouter,
                               EpisodicMemory episodicMemory,
                               PromptRegistry promptRegistry,
                               MemoryProperties properties) {
-        this.llmRouter = llmRouter;
+        this.generationRouter = generationRouter;
         this.episodicMemory = episodicMemory;
         this.promptRegistry = promptRegistry;
         this.properties = properties;
@@ -112,7 +112,14 @@ public class CompressionService {
             try {
                 String prompt = promptRegistry.render("memory/compression-summary",
                         Map.of("conversation", formatMessages(window)));
-                var response = llmRouter.call(LlmRequest.of(LlmScene.MEMORY_COMPRESSION, prompt));
+                var response = generationRouter.call(
+                        LlmScene.MEMORY_COMPRESSION,
+                        prompt,
+                        null,
+                        null,
+                        null,
+                        GenerationCapability.CHAT,
+                        null);
                 String compressed = response.content();
                 int compressedTokens = TokenEstimator.estimate(compressed);
 
@@ -152,7 +159,14 @@ public class CompressionService {
                 try {
                     String prompt = promptRegistry.render("memory/compression-keypoints",
                             Map.of("summary", formatMessages(window)));
-                    var response = llmRouter.call(LlmRequest.of(LlmScene.MEMORY_COMPRESSION, prompt));
+                    var response = generationRouter.call(
+                            LlmScene.MEMORY_COMPRESSION,
+                            prompt,
+                            null,
+                            null,
+                            null,
+                            GenerationCapability.CHAT,
+                            null);
                     String compressed = response.content();
 
                     Map<String, String> compressedTexts = new HashMap<>();
@@ -232,7 +246,14 @@ public class CompressionService {
                 return;
             }
 
-            var response = llmRouter.call(LlmRequest.of(LlmScene.MEMORY_COMPRESSION, prompt));
+            var response = generationRouter.call(
+                    LlmScene.MEMORY_COMPRESSION,
+                    prompt,
+                    null,
+                    null,
+                    null,
+                    GenerationCapability.CHAT,
+                    null);
             String compressed = response.content();
             Map<String, String> compressedTexts = new HashMap<>();
             for (var msg : compressible) {
@@ -260,4 +281,3 @@ public class CompressionService {
         return sb.toString();
     }
 }
-

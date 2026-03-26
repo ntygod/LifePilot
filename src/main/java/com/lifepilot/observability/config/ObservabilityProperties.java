@@ -78,8 +78,8 @@ public class ObservabilityProperties {
         /** 速率限制配置。 */
         private RateLimit rateLimit = new RateLimit();
 
-        /** 工具确认等待超时时间（秒），默认 60。 */
-        private int confirmationTimeoutSeconds = 60;
+        /** 权限审批等待超时时间（秒），默认 60。 */
+        private int approvalTimeoutSeconds = 60;
 
         /**
          * 工具风险配置。
@@ -117,15 +117,6 @@ public class ObservabilityProperties {
         @Setter
         @Getter
         public static class BudgetLimit {
-
-            /** 单次请求最大 Token 数，默认 10000。 */
-            private int maxTokensPerRequest = 10000;
-
-            /** 单次请求最大步骤数，默认 20。 */
-            private int maxStepsPerRequest = 20;
-
-            /** 单次请求最大时长（秒），默认 120。 */
-            private int maxDurationSeconds = 120;
 
             /** 每日 Token 上限，默认 1000000。 */
             private int dailyTokenLimit = 1000000;

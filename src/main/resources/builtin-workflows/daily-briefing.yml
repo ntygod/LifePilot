@@ -99,8 +99,8 @@ steps:
       - fetch-todos
       - fetch-schedule
 
-  - id: decide-urgency
-    name: 设置通知级别
+  - id: route-briefing
+    name: 按结果发送晨报
     type: condition
     condition: "${steps.check-urgent.output.result.hasUrgent} == true"
     dependsOn:
@@ -108,7 +108,7 @@ steps:
       - generate-briefing
     then:
       - id: send-urgent
-        name: 发送紧急晨报
+        name: 发送重点晨报
         type: notify
         targetUserId: owner
         content: |
@@ -116,10 +116,9 @@ steps:
 
           ${steps.generate-briefing.output.result}
         contentType: MARKDOWN
-        urgency: HIGH
     else:
       - id: send-normal
-        name: 发送普通晨报
+        name: 发送常规晨报
         type: notify
         targetUserId: owner
         content: |
@@ -127,4 +126,3 @@ steps:
 
           ${steps.generate-briefing.output.result}
         contentType: MARKDOWN
-        urgency: LOW

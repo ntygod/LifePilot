@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { A2uiComponent, Message, ReasoningEvent, ReactStepDto, ToolConfirmationRequest } from '@/types'
+import type { A2uiComponent, Message, ReasoningEvent, ReactStepDto, PermissionApprovalRequest } from '@/types'
 import MessageBubble from './MessageBubble.vue'
-import { useChatStore } from '@/stores/chat'
 import { motion } from 'motion-v'
 
 const MotionDiv = motion.div
@@ -11,17 +10,17 @@ const props = defineProps<{
   messages: Message[]
   isStreaming?: boolean
   streamingContent?: string
-  /** 流式推理中的实时推理事件（可选） */
+  /** 流式推理中的实时推理事件。 */
   streamingReasoningEvents?: ReasoningEvent[]
-  /** 流式推理中的实时 ReAct 步骤（可选） */
+  /** 流式推理中的实时 ReAct 步骤。 */
   streamingReactSteps?: ReactStepDto[]
-  /** 流式阶段中的 A2UI 组件树（可选） */
+  /** 流式阶段中的 A2UI 组件树。 */
   streamingA2uiComponents?: A2uiComponent[]
-  /** 流式阶段的工具确认请求队列 */
-  streamingToolConfirmations?: Record<string, ToolConfirmationRequest>
-  /** 流式阶段的工具确认解决结果映射 */
-  streamingToolConfirmationResolutions?: Record<string, 'approved' | 'rejected' | 'expired'>
-  /** 文本搜索关键字（可选），用于高亮匹配内容 */
+  /** 流式阶段中的权限审批请求。 */
+  streamingPermissionApprovals?: Record<string, PermissionApprovalRequest>
+  /** 流式阶段中的权限审批结果。 */
+  streamingPermissionApprovalResolutions?: Record<string, 'approved' | 'rejected' | 'expired'>
+  /** 文本搜索关键字，用于高亮匹配内容。 */
   query?: string
 }>()
 
@@ -34,42 +33,107 @@ const emit = defineEmits<{
   (e: 'resume', message: Message): void
   (e: 'restart', message: Message): void
   (e: 'copy', content: string): void
-  (e: 'tool-confirm-resolve', requestId: string, resolution: 'approved' | 'rejected' | 'expired'): void
+  (e: 'permission-approval-resolve', requestId: string, resolution: 'approved' | 'rejected' | 'expired', subjectType?: string): void
 }>()
 
-const chatStore = useChatStore()
+function hasStructuredApprovalPayload(message: Message) {
+  return !!(
+    message.permissionApprovals
+    || message.permissionApprovalLogs?.length
+    || message.permissionApprovalResolutions
+  )
+}
+
+function findAssistantIndexByTurnId(messages: Message[], turnId?: string) {
+  if (!turnId) {
+    return -1
+  }
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const item = messages[index]
+    if (item.role === 'assistant' && item.turnId === turnId) {
+      return index
+    }
+  }
+  return -1
+}
+
+function findPreviousAssistantIndex(messages: Message[], timestamp: number) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const candidate = messages[index]
+    if (candidate.timestamp > timestamp) {
+      continue
+    }
+    if (candidate.role === 'assistant') {
+      return index
+    }
+    if (candidate.role === 'user') {
+      break
+    }
+  }
+  return -1
+}
 
 /**
- * 合并后的消息列表：将 tool-confirmation 消息合并到前一条 assistant 消息中，
- * 使确认卡片内嵌在同一个 assistant 气泡内部。
+ * 合并后的消息列表。
+ * `permission-approval` 条目会并入上一条 assistant 消息，避免单独渲染成独立气泡。
  */
 const mergedMessages = computed(() => {
   const sorted = [...props.messages].sort((a, b) => a.timestamp - b.timestamp)
-  const result: Message[] = []
+  const result: Message[] = sorted
+    .filter(msg => !(msg.role === 'permission-approval' && hasStructuredApprovalPayload(msg)))
+    .map(msg => (msg.role === 'permission-approval'
+      ? {
+          ...msg,
+          role: 'assistant',
+        }
+      : { ...msg }))
 
   for (const msg of sorted) {
-    if (msg.role === 'tool-confirmation' && msg.toolConfirmation) {
-      // 找到前一条 assistant 消息，将确认数据合并进去
-      for (let i = result.length - 1; i >= 0; i--) {
-        if (result[i].role === 'assistant') {
-          result[i] = {
-            ...result[i],
-            toolConfirmation: msg.toolConfirmation,
-            toolConfirmationResolution: msg.toolConfirmationResolution,
-          }
-          break
-        }
-      }
-      // tool-confirmation 消息本身不再作为独立消息渲染
+    if (!(msg.role === 'permission-approval' && hasStructuredApprovalPayload(msg))) {
       continue
     }
-    result.push({ ...msg })
+
+    let targetIndex = findAssistantIndexByTurnId(result, msg.turnId)
+    if (targetIndex === -1) {
+      targetIndex = findPreviousAssistantIndex(result, msg.timestamp)
+    }
+
+    if (targetIndex !== -1) {
+      result[targetIndex] = {
+        ...result[targetIndex],
+        permissionApprovals: {
+          ...(result[targetIndex].permissionApprovals ?? {}),
+          ...(msg.permissionApprovals ?? {}),
+        },
+        permissionApprovalResolutions: {
+          ...(result[targetIndex].permissionApprovalResolutions ?? {}),
+          ...(msg.permissionApprovalResolutions ?? {}),
+        },
+        permissionApprovalLogs: [
+          ...(result[targetIndex].permissionApprovalLogs ?? []),
+          ...(msg.permissionApprovalLogs ?? []),
+        ],
+      }
+      continue
+    }
+
+    const standaloneApproval: Message = {
+      ...msg,
+      role: 'assistant',
+      content: '',
+    }
+    const insertIndex = result.findIndex(item => item.timestamp > msg.timestamp)
+    if (insertIndex === -1) {
+      result.push(standaloneApproval)
+    } else {
+      result.splice(insertIndex, 0, standaloneApproval)
+    }
   }
 
   return result
 })
 
-// 最后一条 assistant 消息的 ID，用于控制"重新生成"按钮仅在最后一条 AI 消息上显示
+/** 最后一条 assistant 消息的 ID，用于控制“重新生成”按钮只显示在最后一条回复上。 */
 const lastAssistantId = computed(() => {
   for (let i = mergedMessages.value.length - 1; i >= 0; i--) {
     if (mergedMessages.value[i].role === 'assistant') return mergedMessages.value[i].id
@@ -77,7 +141,7 @@ const lastAssistantId = computed(() => {
   return null
 })
 
-// 简单的日期标签：今天 / 昨天 / 更早
+/** 简单日期标签：今天 / 昨天 / 更早。 */
 function getDateLabel(timestamp: number): string {
   const date = new Date(timestamp)
   const today = new Date()
@@ -100,12 +164,11 @@ function highlight(text: string): string {
 <template>
   <div class="flex flex-col">
     <template v-for="(msg, index) in mergedMessages" :key="msg.id">
-      <!-- 日期分组标签 -->
       <div
         v-if="index === 0 || getDateLabel(msg.timestamp) !== getDateLabel(mergedMessages[index - 1]?.timestamp)"
         class="my-4 flex items-center justify-center text-xs text-muted-foreground"
       >
-        <span class="px-3 py-1 rounded-full bg-muted/70 text-xs font-medium">
+        <span class="rounded-full bg-muted/70 px-3 py-1 text-xs font-medium">
           {{ getDateLabel(msg.timestamp) }}
         </span>
       </div>
@@ -126,8 +189,8 @@ function highlight(text: string): string {
           :streaming-reasoning-events="(isStreaming && index === mergedMessages.length - 1 && msg.role === 'assistant') ? streamingReasoningEvents : undefined"
           :streaming-react-steps="(isStreaming && index === mergedMessages.length - 1 && msg.role === 'assistant') ? streamingReactSteps : undefined"
           :streaming-a2ui-components="(isStreaming && index === mergedMessages.length - 1 && msg.role === 'assistant') ? streamingA2uiComponents : undefined"
-          :streaming-tool-confirmations="(isStreaming && index === mergedMessages.length - 1 && msg.role === 'assistant') ? streamingToolConfirmations : undefined"
-          :streaming-tool-confirmation-resolutions="(isStreaming && index === mergedMessages.length - 1 && msg.role === 'assistant') ? streamingToolConfirmationResolutions : undefined"
+          :streaming-permission-approvals="(isStreaming && index === mergedMessages.length - 1 && msg.role === 'assistant') ? streamingPermissionApprovals : undefined"
+          :streaming-permission-approval-resolutions="(isStreaming && index === mergedMessages.length - 1 && msg.role === 'assistant') ? streamingPermissionApprovalResolutions : undefined"
           :is-last-assistant="msg.id === lastAssistantId"
           @retry="(m: Message) => emit('retry', m)"
           @like="(m: Message) => emit('like', m)"
@@ -137,12 +200,11 @@ function highlight(text: string): string {
           @resume="(m: Message) => emit('resume', m)"
           @restart="(m: Message) => emit('restart', m)"
           @copy="(c: string) => emit('copy', c)"
-          @tool-confirm-resolve="(requestId: string, r: 'approved' | 'rejected' | 'expired') => emit('tool-confirm-resolve', requestId, r)"
+          @permission-approval-resolve="(requestId: string, r: 'approved' | 'rejected' | 'expired', subjectType?: string) => emit('permission-approval-resolve', requestId, r, subjectType)"
         />
       </MotionDiv>
     </template>
 
-    <!-- 流式进行中但尚未有 assistant 消息时，显示占位 -->
     <MotionDiv
       v-if="isStreaming && (mergedMessages.length === 0 || mergedMessages[mergedMessages.length - 1]?.role === 'user')"
       :initial="{ y: 16, opacity: 0 }"
@@ -156,9 +218,9 @@ function highlight(text: string): string {
         :streaming-reasoning-events="streamingReasoningEvents"
         :streaming-react-steps="streamingReactSteps"
         :streaming-a2ui-components="streamingA2uiComponents"
-        :streaming-tool-confirmations="streamingToolConfirmations"
-        :streaming-tool-confirmation-resolutions="streamingToolConfirmationResolutions"
-        @tool-confirm-resolve="(requestId: string, r: 'approved' | 'rejected' | 'expired') => emit('tool-confirm-resolve', requestId, r)"
+        :streaming-permission-approvals="streamingPermissionApprovals"
+        :streaming-permission-approval-resolutions="streamingPermissionApprovalResolutions"
+        @permission-approval-resolve="(requestId: string, r: 'approved' | 'rejected' | 'expired', subjectType?: string) => emit('permission-approval-resolve', requestId, r, subjectType)"
       />
     </MotionDiv>
   </div>

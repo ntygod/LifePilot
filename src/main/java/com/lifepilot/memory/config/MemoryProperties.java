@@ -786,8 +786,8 @@ public static class Retrieval {
         private int injectionTokenBudget = 500;
         /** 经验最大保留天数，默认 90。 */
         private int maxRetentionDays = 90;
-        /** LLM 调用超时（秒），默认 30。 */
-        private int llmTimeoutSeconds = 30;
+        /** LLM 调用超时（秒），默认 120。 */
+        private int llmTimeoutSeconds = 120;
         /** 工具调用有效率门控阈值 [0.0, 1.0]，默认 0.3。 */
         private float minToolSuccessRatio = 0.3f;
         /** Eval 集成开关，默认 true。 */
@@ -977,6 +977,8 @@ public static class Retrieval {
             private float initialImportance = 0.4f;
             /** LLM 输入截断上限（Token），默认 2000。 */
             private int maxInputTokens = 2000;
+            /** LLM 调用超时（秒），默认 120。 */
+            private int llmTimeoutSeconds = 120;
 
             public boolean isEnabled() { return enabled; }
             public void setEnabled(boolean enabled) { this.enabled = enabled; }
@@ -989,6 +991,9 @@ public static class Retrieval {
 
             public int getMaxInputTokens() { return maxInputTokens; }
             public void setMaxInputTokens(int maxInputTokens) { this.maxInputTokens = maxInputTokens; }
+
+            public int getLlmTimeoutSeconds() { return llmTimeoutSeconds; }
+            public void setLlmTimeoutSeconds(int llmTimeoutSeconds) { this.llmTimeoutSeconds = llmTimeoutSeconds; }
         }
     }
 }

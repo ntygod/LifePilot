@@ -19,6 +19,8 @@ public record SessionDetailInfo(
         String preferredProviderId,
         Double temperature,
         Integer maxTokens,
+        Integer maxSteps,
+        Integer maxDurationSeconds,
         List<String> knowledgeBaseIds,
         Integer messageCount,
         Long totalTokens,

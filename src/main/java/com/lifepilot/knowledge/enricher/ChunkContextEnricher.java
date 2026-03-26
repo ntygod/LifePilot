@@ -2,9 +2,9 @@ package com.lifepilot.knowledge.enricher;
 
 import com.lifepilot.knowledge.chunking.DocumentChunk;
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
-import com.lifepilot.llm.LlmRequest;
-import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmUnavailableException;
+import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,7 +32,7 @@ public class ChunkContextEnricher {
     /** LLM 调用场景名称 */
     private static final String SCENE = "knowledge_extraction";
 
-    private final LlmRouter llmRouter;
+    private final GenerationRouter generationRouter;
     private final KnowledgeBaseProperties.ContextEnricher config;
     private final PromptRegistry promptRegistry;
 
@@ -43,10 +43,10 @@ public class ChunkContextEnricher {
      * @param config         上下文增强配置
      * @param promptRegistry 提示词注册中心
      */
-    public ChunkContextEnricher(LlmRouter llmRouter,
+    public ChunkContextEnricher(GenerationRouter generationRouter,
                                 KnowledgeBaseProperties.ContextEnricher config,
                                 PromptRegistry promptRegistry) {
-        this.llmRouter = llmRouter;
+        this.generationRouter = generationRouter;
         this.config = config;
         this.promptRegistry = promptRegistry;
         log.info("ChunkContextEnricher 初始化完成: enabled={}, maxPrefixTokens={}",
@@ -134,7 +134,14 @@ public class ChunkContextEnricher {
 
                 for (var subBatch : subBatches) {
                     var prompt = buildBatchPrompt(subBatch, documentSummary);
-                    LlmResponse response = llmRouter.call(LlmRequest.of(SCENE, prompt));
+                    LlmResponse response = generationRouter.call(
+                            SCENE,
+                            prompt,
+                            null,
+                            null,
+                            null,
+                            GenerationCapability.CHAT,
+                            null);
                     llmCallCount++;
 
                     List<String> prefixes = parseBatchResponse(response.content());
@@ -300,7 +307,14 @@ public class ChunkContextEnricher {
      */
     private String generatePrefix(DocumentChunk chunk, String documentSummary) {
         var prompt = buildPrompt(chunk, documentSummary);
-        var response = llmRouter.call(LlmRequest.of(SCENE, prompt));
+        var response = generationRouter.call(
+                SCENE,
+                prompt,
+                null,
+                null,
+                null,
+                GenerationCapability.CHAT,
+                null);
         var prefix = response.content().trim();
 
         // 截断超长前缀（按字符粗略限制，实际 Token 数由 LLM 控制）

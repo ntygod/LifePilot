@@ -2,6 +2,7 @@ package com.lifepilot.interaction.web.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.knowledge.KnowledgeBaseManager;
+import com.lifepilot.multiagent.registry.AgentRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -39,13 +40,22 @@ class AnalyticsController_ToolStats_测试 {
     @Mock
     private com.lifepilot.tool.registry.DynamicToolRegistry toolRegistry;
 
+    @Mock
+    private AgentRegistry agentRegistry;
+
     private MockMvc mockMvc;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @BeforeEach
     void setUp() {
-        var controller = new AnalyticsController(jdbcTemplate, knowledgeBaseManager, objectMapper, toolRegistry);
+        var controller = new AnalyticsController(
+                jdbcTemplate,
+                knowledgeBaseManager,
+                objectMapper,
+                toolRegistry,
+                agentRegistry
+        );
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 

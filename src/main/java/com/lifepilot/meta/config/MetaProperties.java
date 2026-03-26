@@ -255,7 +255,7 @@ public class MetaProperties {
             /** file-list 默认最大返回条目数，默认 200。 */
             private int defaultMaxEntries = 200;
 
-            /** 允许访问的目录白名单，空列表表示用户 home 下所有目录。 */
+            /** 允许访问的目录白名单，空列表表示不额外限制目录范围。 */
             private List<String> allowedDirectories = List.of();
 
             /** 拒绝访问的目录黑名单。 */

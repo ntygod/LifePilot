@@ -1,0 +1,38 @@
+name: 功能建议
+description: 提出一个希望新增或调整的能力
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请尽量先描述问题，再描述方案，这样更容易判断优先级。
+  - type: textarea
+    id: problem
+    attributes:
+      label: 你想解决的问题
+      placeholder: 当前使用中哪里不顺手，或哪里存在能力缺口
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 你期望的方案
+      placeholder: 你理想中的行为是什么
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 当前替代方案
+      placeholder: 现在是怎么绕过去的，为什么不够好
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: 补充上下文
+      placeholder: 使用场景、截图、参考项目、草图都可以放这里
+    validations:
+      required: false

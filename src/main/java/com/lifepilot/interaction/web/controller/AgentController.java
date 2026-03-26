@@ -3,23 +3,16 @@ package com.lifepilot.interaction.web.controller;
 import com.lifepilot.agent.CancellationToken;
 import com.lifepilot.agent.orchestration.AgentOrchestrator;
 import com.lifepilot.agent.context.AssembledContext;
+import com.lifepilot.agent.context.ContextMessageFormatter;
 import com.lifepilot.agent.context.ContextAssembler;
 import com.lifepilot.agent.context.TokenBudget;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.agent.model.AgentResponse;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.interaction.model.TokenUsage;
-import com.lifepilot.interaction.web.model.AgentDetail;
-import com.lifepilot.interaction.web.model.AgentSummary;
-import com.lifepilot.interaction.web.model.ChatResponse;
-import com.lifepilot.interaction.web.model.ContextPreviewRequest;
-import com.lifepilot.interaction.web.model.ContextPreviewResponse;
+import com.lifepilot.interaction.web.model.*;
 import com.lifepilot.interaction.web.model.ContextPreviewResponse.SegmentInfo;
 import com.lifepilot.interaction.web.model.ContextPreviewResponse.TokenBudgetInfo;
-import com.lifepilot.interaction.web.model.CreateAgentRequest;
-import com.lifepilot.interaction.web.model.ErrorResponse;
-import com.lifepilot.interaction.web.model.TestChatRequest;
-import com.lifepilot.interaction.web.model.UpdateAgentRequest;
 import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.knowledge.KnowledgeBaseManager;
@@ -32,6 +25,7 @@ import com.lifepilot.multiagent.config.MultiAgentProperties;
 import com.lifepilot.multiagent.loader.AgentMarkdownLoader;
 import com.lifepilot.multiagent.loader.AgentMarkdownParser;
 import com.lifepilot.multiagent.loader.AgentMarkdownSerializer;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
@@ -52,13 +46,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -71,6 +59,7 @@ import java.util.stream.Collectors;
  */
 @RestController
 @RequestMapping("/api/agents")
+@ConditionalOnProperty(name = "lifepilot.gateway.channels.web.enabled", havingValue = "true")
 public class AgentController {
 
     private static final Logger log = LoggerFactory.getLogger(AgentController.class);
@@ -317,7 +306,7 @@ public class AgentController {
 
         // 检查 summary 的标签是否包含任一过滤标签
         List<String> summaryTags = summary.tags() != null
-                ? summary.tags().stream().map(String::toLowerCase).collect(Collectors.toList())
+                ? summary.tags().stream().map(String::toLowerCase).toList()
                 : List.of();
 
         return filterTags.stream().anyMatch(summaryTags::contains);
@@ -365,6 +354,7 @@ public class AgentController {
                     request.message(),
                     testSessionId,
                     "web-test",
+                    null,
                     agent.systemPrompt(),
                     agent.budget().toAgentBudget(),
                     null, // 无父 traceId
@@ -379,7 +369,7 @@ public class AgentController {
             AgentResponse agentResponse = agentOrchestrator.run(agentRequest);
 
             // 5. 构建 ChatResponse
-            String messageId = UUID.randomUUID().toString();
+            String entryId = UUID.randomUUID().toString();
             TokenUsage tokenUsage = agentResponse.tokenUsage() != null ? agentResponse.tokenUsage() : new TokenUsage(
                     0, // promptTokens（AgentResponse 中没有详细分解）
                     0, // completionTokens
@@ -388,15 +378,16 @@ public class AgentController {
             );
 
             ChatResponse chatResponse = new ChatResponse(
-                    messageId,
+                    entryId,
+                    agentResponse.turnId(),
                     agentResponse.content(),
                     null, // a2ui（测试对话暂不支持）
                     tokenUsage,
                     agentResponse.traceId()
             );
 
-            log.info("Agent 测试对话完成: agentId={}, messageId={}, tokensUsed={}, steps={}",
-                    id, messageId, agentResponse.tokensUsed(), agentResponse.stepCount());
+            log.info("Agent 测试对话完成: agentId={}, entryId={}, tokensUsed={}, steps={}",
+                    id, entryId, agentResponse.tokensUsed(), agentResponse.stepCount());
 
             return ResponseEntity.ok(chatResponse);
 
@@ -475,6 +466,7 @@ public class AgentController {
                 request.message(),
                 testSessionId,
                 "web-test",
+                null,
                 agent.systemPrompt(),
                 agent.budget().toAgentBudget(),
                 null, 0,
@@ -538,6 +530,7 @@ public class AgentController {
                     request.message(),
                     sessionId,
                     "web-preview",
+                    null,
                     agent.systemPrompt(),
                     agent.budget().toAgentBudget(),
                     null, 0,
@@ -554,11 +547,18 @@ public class AgentController {
             // 4. 映射为响应 DTO
             TokenBudget tb = assembled.tokenBudget();
             var segments = new LinkedHashMap<String, SegmentInfo>();
-            segments.put("systemPrompt", new SegmentInfo(assembled.systemPrompt(), tb.systemPromptUsed()));
-            segments.put("conversationHistory", new SegmentInfo("", tb.historyUsed()));
-            segments.put("memoryRetrieval", new SegmentInfo(
-                    String.join("\n", assembled.retrievedMemories()), tb.memoryUsed()));
-            segments.put("toolResults", new SegmentInfo("", tb.toolResultUsed()));
+            segments.put(ContextPreviewResponse.SEGMENT_SYSTEM_PROMPT,
+                    new SegmentInfo(assembled.systemPrompt(), tb.systemPromptUsed()));
+            segments.put(ContextPreviewResponse.SEGMENT_CONTEXT_MESSAGES,
+                    new SegmentInfo(
+                            ContextMessageFormatter.serializeForPreview(assembled.contextMessages()),
+                            tb.memoryUsed()));
+            segments.put(ContextPreviewResponse.SEGMENT_HISTORY_MESSAGES,
+                    new SegmentInfo(
+                            ContextMessageFormatter.serializeForPreview(assembled.historyMessages()),
+                            tb.historyUsed() + tb.toolResultUsed()));
+            segments.put(ContextPreviewResponse.SEGMENT_CURRENT_USER_PROMPT,
+                    new SegmentInfo(assembled.userPrompt(), estimateTokens(assembled.userPrompt())));
 
             var tokenBudgetInfo = new TokenBudgetInfo(
                     tb.systemPromptBudget(), tb.historyBudget(), tb.memoryBudget(),
@@ -588,9 +588,16 @@ public class AgentController {
     /**
      * 获取 Agent 详情。
      *
-     * @param id Agent ID
+     * @param text Agent ID
      * @return Agent 详情
      */
+    private int estimateTokens(String text) {
+        if (text == null || text.isBlank()) {
+            return 0;
+        }
+        return Math.max(1, text.length() / 4);
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<?> getAgent(@PathVariable String id) {
         log.debug("查询 Agent 详情: id={}", id);
@@ -644,7 +651,6 @@ public class AgentController {
                 .description(description != null ? description : "")
                 .systemPrompt(resolveSystemPrompt(agentName, description, request.systemPrompt()))
                 .allowedTools(request.toolIds() != null ? request.toolIds() : List.of())
-                .canDelegate(false) // 自定义 Agent 默认不允许委托
                 .budget(AgentBudget.DEFAULT)
                 .preferredProvider(normalizeOptionalText(request.preferredProviderId()))
                 .source(new AgentSource.MarkdownDefined(null, now))
@@ -713,7 +719,6 @@ public class AgentController {
                 .description(nextDescription)
                 .systemPrompt(nextSystemPrompt)
                 .allowedTools(request.toolIds() != null ? request.toolIds() : existing.allowedTools())
-                .canDelegate(existing.canDelegate())
                 .budget(existing.budget())
                 .preferredProvider(preferredProviderId)
                 .source(existing.source())
@@ -767,7 +772,7 @@ public class AgentController {
                     new ErrorResponse(403, "不允许删除内置 Agent", Instant.now()));
         }
 
-        // 3. TODO: 检查是否被使用（会话、工作流等）
+        // 3. 当前未维护 Agent 的反向引用索引；删除只影响后续新请求，不影响历史 trace。
 
         // 4. 注销 Agent
         boolean unregistered = agentRegistry.unregister(id);
@@ -872,7 +877,7 @@ public class AgentController {
                     }
                     return null;
                 })
-                .filter(kb -> kb != null)
+                .filter(Objects::nonNull)
                 .collect(Collectors.toList());
 
         // 模型配置
@@ -1103,12 +1108,7 @@ public class AgentController {
 
     @Nullable
     private String normalizeOptionalText(@Nullable String value) {
-        if (value == null) {
-            return null;
-        }
-
-        String normalized = value.strip();
-        return normalized.isEmpty() ? null : normalized;
+        return SessionConfigKeys.normalizeString(value);
     }
 
     @Nullable

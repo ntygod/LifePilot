@@ -357,7 +357,7 @@ public class InfraToolProvider {
                                 "command", Map.of("type", "string",
                                         "description", "要执行的 Shell 命令"),
                                 "workingDirectory", Map.of("type", "string",
-                                        "description", "工作目录路径，默认用户 home 目录"),
+                                        "description", "工作目录路径，默认使用当前进程工作目录"),
                                 "timeoutSeconds", Map.of("type", "integer",
                                         "description", "命令超时时间（秒），默认 120"),
                                 "background", Map.of("type", "boolean",

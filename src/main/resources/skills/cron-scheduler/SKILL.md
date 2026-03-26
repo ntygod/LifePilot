@@ -39,9 +39,13 @@ triggers:
 ### 创建定时任务
 
 使用 `builtin.cron.create` 创建任务：
+- `taskId`：任务 ID，通常由系统自动注入
 - `name`：任务名称（中文）
 - `schedule`：Spring 6 位 Cron 表达式（秒 分 时 日 月 周）
 - `instruction`：Agent 执行时的 prompt 指令
+
+如果任务后续会自主执行高风险操作（如删文件、改文件、执行命令、联网请求、浏览器自动化），
+创建任务时要让系统触发一次性预授权，避免任务运行时因缺少授权而失败。
 
 ### 常用 Cron 表达式
 

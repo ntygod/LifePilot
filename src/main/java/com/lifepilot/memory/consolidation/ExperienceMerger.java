@@ -1,17 +1,20 @@
 package com.lifepilot.memory.consolidation;
 
-import com.lifepilot.llm.LlmRequest;
-import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.generation.router.GenerationRouter;
+import com.lifepilot.generation.support.JsonOutputParser;
+import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.experience.ExperienceRecord;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 
@@ -32,18 +35,18 @@ public class ExperienceMerger {
 
     private final SemanticMemory semanticMemory;
     private final VectorSearcher vectorSearcher;
-    private final LlmRouter llmRouter;
+    private final GenerationRouter generationRouter;
     private final PromptRegistry promptRegistry;
     private final MemoryProperties.Experience.Merge config;
 
     public ExperienceMerger(SemanticMemory semanticMemory,
                             VectorSearcher vectorSearcher,
-                            LlmRouter llmRouter,
+                            GenerationRouter generationRouter,
                             PromptRegistry promptRegistry,
                             MemoryProperties memoryProperties) {
         this.semanticMemory = semanticMemory;
         this.vectorSearcher = vectorSearcher;
-        this.llmRouter = llmRouter;
+        this.generationRouter = generationRouter;
         this.promptRegistry = promptRegistry;
         this.config = memoryProperties.getExperience().getMerge();
     }
@@ -167,11 +170,21 @@ public class ExperienceMerger {
                     "experienceB_tools", String.valueOf(entityB.properties().getOrDefault("toolsUsed", List.of()))
             );
             String prompt = promptRegistry.render(PROMPT_KEY, vars);
-            var request = LlmRequest.of("experience-merge", prompt);
-            return llmRouter.callEntity(request, ExperienceRecord.class);
+            Duration timeout = Duration.ofSeconds(Math.max(1, config.getLlmTimeoutSeconds()));
+            log.debug("经验合并: 发起 JSON 合并调用, timeoutSeconds={}, promptChars={}, entityA={}, entityB={}",
+                    timeout.toSeconds(), prompt.length(), entityA.id(), entityB.id());
+            LlmResponse response = generationRouter.call(
+                    "experience-merge",
+                    prompt,
+                    null,
+                    null,
+                    null,
+                    GenerationCapability.CHAT,
+                    timeout);
+            return JsonOutputParser.parse(response.content(), ExperienceRecord.class);
         } catch (Exception e) {
-            log.warn("经验合并: LLM 调用失败, entityA={}, entityB={}, error={}",
-                    entityA.id(), entityB.id(), e.getMessage());
+            log.warn("经验合并: JSON 合并失败, entityA={}, entityB={}, errorType={}, error={}",
+                    entityA.id(), entityB.id(), e.getClass().getSimpleName(), e.getMessage());
             return null;
         }
     }

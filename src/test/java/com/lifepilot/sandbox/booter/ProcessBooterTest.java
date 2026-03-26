@@ -64,6 +64,15 @@ class ProcessBooterTest {
     }
 
     @Test
+    void 构建命令应直接调用运行时避免Shell包装() {
+        var scriptFile = tempDir.resolve("direct-run.js");
+
+        var command = booter.buildCommand("node", scriptFile);
+
+        assertThat(command).containsExactly("node", scriptFile.toString());
+    }
+
+    @Test
     void 执行Node脚本_正常输出() {
         var request = new ExecutionRequest(
                 Language.JAVASCRIPT,

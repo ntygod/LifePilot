@@ -53,9 +53,8 @@ lifepilot:
       llm-scene: agent_react
     budget:
       default-max-tokens: 131072
-      default-max-steps: 30
+      default-max-steps: 60
       default-max-duration-seconds: 300
-      sub-agent-budget-ratio: 0.3
     context:
       max-context-tokens: 131072
       output-reserved-tokens: 8192
@@ -71,6 +70,12 @@ lifepilot:
       max-age: 7d
       # 检查点清理定时任务间隔
       cleanup-interval-ms: 3600000
+    execution-retry:
+      enabled: true
+      max-attempts: 2
+      initial-delay-ms: 500
+      multiplier: 2.0
+      max-delay-ms: 5000
     session:
       timeout-minutes: 30
       max-recent-turns: 10
@@ -89,7 +94,6 @@ lifepilot:
       enabled: true
       max-delegation-depth: 2
       agent-definitions-path: "${user.home}/.zhiwei/agents/"
-      register-handoff-tools: true
       hot-reload:
         enabled: true
         scan-interval-seconds: 5
@@ -121,9 +125,9 @@ lifepilot:
       max-history-length: 50
   llm:
     # ===== LLM 路由配置 =====
-    # Provider 配置已迁移到数据库（llm_providers 表），通过 Web UI 设置页面管理
-    # 首次启动后请访问 Web UI 配置至少一个 LLM 服务商（如 DeepSeek、OpenAI、Ollama 等）
-    # 如果未配置任何 Provider，系统仍可启动，但对话功能不可用
+    # 生成与向量服务都从 model_services 表加载，通过 Web UI 的“模型与路由”页面统一管理
+    # 首次启动后请至少配置一个生成服务；如需知识检索或精排，再分别补充向量与精排服务
+    # 如果未配置任何生成服务，系统仍可启动，但对话与推理功能不可用
     enabled: true
     circuit-breaker:
       failure-threshold: 3
@@ -285,7 +289,7 @@ lifepilot:
       max-injection-count: 3
       injection-token-budget: 500
       max-retention-days: 90
-      llm-timeout-seconds: 30
+      llm-timeout-seconds: 120
       min-tool-success-ratio: 0.3
       eval-integration-enabled: true
       eval-improvement-threshold: 0.05
@@ -318,6 +322,7 @@ lifepilot:
         min-tool-sequence: 3
         initial-importance: 0.4
         max-input-tokens: 2000
+        llm-timeout-seconds: 120
   skills:
     # ===== Skill 系统配置 =====
     # 支持 Java 原生 Skill、Markdown 声明式 Skill、MCP 外部工具
@@ -501,7 +506,7 @@ lifepilot:
         app-secret: ${DINGTALK_APP_SECRET:}
         robot-code: ${DINGTALK_ROBOT_CODE:}
       feishu:
-        enabled: ${FEISHU_ENABLED:true}
+        enabled: ${FEISHU_ENABLED:false}
         app-id: ${FEISHU_APP_ID:}
         app-secret: ${FEISHU_APP_SECRET:}
         verification-token: ${FEISHU_VERIFICATION_TOKEN:}
@@ -608,7 +613,6 @@ lifepilot:
     # ===== 通知模块配置 =====
     enabled: true
     default-user-id: default
-    passive-drain-interval: 60
     history-page-size: 20
     max-history-page-size: 100
   workflow:
@@ -676,7 +680,7 @@ lifepilot:
     max-output-bytes: 65536
     # 语言运行时路径
     runtime-paths:
-      python: "python3"
+      python: "python"
       javascript: "node"
       shell: "bash"
     # 会话配置
@@ -714,7 +718,7 @@ lifepilot:
       use-scoped-value: true
     guardrail:
       enabled: true
-      confirmation-timeout-seconds: 60
+      approval-timeout-seconds: 60
       tool-risk:
         default-risk-level: LOW
         tool-risk-mapping: {}
@@ -722,9 +726,6 @@ lifepilot:
         blocked-patterns: []
         sensitive-topics: []
       budget-limit:
-        max-tokens-per-request: 10000
-        max-steps-per-request: 20
-        max-duration-seconds: 120
         daily-token-limit: 1000000
       rate-limit:
         max-calls-per-minute: 60

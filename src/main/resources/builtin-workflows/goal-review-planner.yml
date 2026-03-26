@@ -325,7 +325,6 @@ steps:
 
       ${steps.synthesize-report.output.result}
     contentType: MARKDOWN
-    urgency: MEDIUM
     dependsOn:
       - save-report
     errorStrategy:

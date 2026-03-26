@@ -1,5 +1,7 @@
 package com.lifepilot.agent.suspend;
 
+import lombok.Getter;
+import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.time.Duration;
@@ -13,6 +15,8 @@ import java.time.Duration;
  * @author zsg
  * @since 2026-03-17
  */
+@Setter
+@Getter
 @ConfigurationProperties(prefix = "lifepilot.agent.suspend")
 public class SuspendProperties {
 
@@ -22,19 +26,4 @@ public class SuspendProperties {
     /** 过期清理定时任务间隔，默认 1 小时。 */
     private Duration cleanupInterval = Duration.ofHours(1);
 
-    public Duration getMaxAge() {
-        return maxAge;
-    }
-
-    public void setMaxAge(Duration maxAge) {
-        this.maxAge = maxAge;
-    }
-
-    public Duration getCleanupInterval() {
-        return cleanupInterval;
-    }
-
-    public void setCleanupInterval(Duration cleanupInterval) {
-        this.cleanupInterval = cleanupInterval;
-    }
 }

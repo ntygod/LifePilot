@@ -3,6 +3,7 @@ package com.lifepilot.observability.config;
 import com.lifepilot.observability.evaluation.TrajectoryEvaluator;
 import com.lifepilot.observability.guardrail.GuardrailAdvisor;
 import com.lifepilot.observability.guardrail.GuardrailEngine;
+import com.lifepilot.observability.guardrail.GuardrailPolicy;
 import com.lifepilot.observability.redactor.DataRedactor;
 import com.lifepilot.observability.trace.*;
 import org.junit.jupiter.api.Test;
@@ -44,6 +45,7 @@ class ObservabilityAutoConfiguration_集成测试 {
             assertThat(context).hasSingleBean(GuardrailEngine.class);
             assertThat(context).hasSingleBean(GuardrailAdvisor.class);
             assertThat(context).hasSingleBean(TrajectoryEvaluator.class);
+            assertThat(context.getBeansOfType(GuardrailPolicy.class)).hasSize(1);
         });
     }
 

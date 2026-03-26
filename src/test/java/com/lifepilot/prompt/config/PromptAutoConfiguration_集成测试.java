@@ -7,10 +7,10 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 import java.util.Set;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class PromptAutoConfiguration_集成测试 {
 
@@ -27,34 +27,54 @@ class PromptAutoConfiguration_集成测试 {
     }
 
     @Test
-    void 注册33个模板() {
+    void 注册36个模板() {
         contextRunner.run(context -> {
             var registry = context.getBean(PromptRegistry.class);
-            assertEquals(33, registry.size(), "unexpected template keys: " + registry.keys());
+            assertEquals(36, registry.size(), "unexpected template keys: " + registry.keys());
         });
     }
 
     @Test
-    void 注册预期模板键_不含旧版A2UI提示词() {
+    void 注册预期模板键且不含旧版A2UI提示词() {
         contextRunner.run(context -> {
             var registry = context.getBean(PromptRegistry.class);
             var expectedKeys = Set.of(
-                    "agent/role-definition", "agent/understanding",
                     "agent/context-guide",
-                    "agent/streaming-constraint", "agent/react-system",
-                    "agent/react-user-prompt", "agent/react-user-prompt-basic",
-                    "skill/todo", "skill/schedule", "skill/habit", "skill/memory",
-                    "skill/datastore", "skill/gap-analysis",
-                    "memory/compression-summary", "memory/compression-keypoints", "memory/entity-compression",
+                    "agent/react-system",
+                    "agent/react-system-task",
+                    "agent/react-user-prompt",
+                    "agent/role-definition",
+                    "agent/skill-catalog",
+                    "agent/streaming-constraint",
+                    "agent/understanding",
+                    "eval/judge-full",
+                    "eval/judge-simplified",
+                    "generation/skill-fix",
+                    "generation/skill-generation",
+                    "generation/skill-generation-enhanced",
+                    "knowledge/chunk-context",
+                    "knowledge/chunk-context-single",
+                    "knowledge/entity-extraction",
+                    "knowledge/hyde-generation",
+                    "knowledge/query-rewrite",
+                    "knowledge/rerank-listwise",
+                    "knowledge/rerank-pointwise",
+                    "memory/agentic-tool-guide",
+                    "memory/compression-keypoints",
+                    "memory/compression-summary",
+                    "memory/contrastive-learning",
+                    "memory/entity-compression",
+                    "memory/experience-extraction",
+                    "memory/experience-merge",
+                    "memory/hyde-generation",
                     "memory/procedural-extraction",
-                    "knowledge/chunk-context", "knowledge/rerank-pointwise", "knowledge/rerank-listwise",
-                    "knowledge/query-rewrite", "knowledge/hyde-generation",
-                    "knowledge/entity-extraction", "knowledge/chunk-context-single",
-                    "eval/judge-full", "eval/judge-simplified",
+                    "memory/query-rewrite",
+                    "memory/subtask-reflection",
+                    "semantic/entity-disambiguation",
                     "semantic/entity-extraction",
-                    "proactive/evaluation", "proactive/high-urgency/deadline_reminder",
-                    "proactive/high-urgency/schedule_reminder",
-                    "generation/skill-generation", "semantic/entity-disambiguation"
+                    "skill/datastore",
+                    "skill/gap-analysis",
+                    "skill/memory"
             );
 
             var actualKeys = registry.keys();

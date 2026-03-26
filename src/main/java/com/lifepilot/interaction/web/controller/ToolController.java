@@ -14,6 +14,7 @@ import com.lifepilot.tool.schema.JsonSchema;
 import com.lifepilot.workflow.model.WorkflowDefinition;
 import com.lifepilot.workflow.model.WorkflowStep;
 import com.lifepilot.workflow.registry.WorkflowRegistry;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -46,6 +47,7 @@ import java.util.stream.Collectors;
  */
 @RestController
 @RequestMapping("/api")
+@ConditionalOnProperty(name = "lifepilot.gateway.channels.web.enabled", havingValue = "true")
 public class ToolController {
 
     private static final Logger log = LoggerFactory.getLogger(ToolController.class);

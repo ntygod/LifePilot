@@ -1,7 +1,7 @@
 ---
 id: project-scaffolder
 name: "项目脚手架"
-description: "新项目初始化：模板生成、目录结构搭建、依赖配置、开发环境设置。支持 Java/Python/Node.js/Go 等主流技术栈"
+description: "新项目初始化：模板生成、目录结构搭建、依赖配置、开发环境设置。"
 version: "1.0.0"
 suggested-tools:
   - builtin.shell.exec

@@ -1,7 +1,7 @@
 ---
 id: translator
 name: "翻译助手"
-description: "多语言翻译：文本翻译、文档本地化、术语一致性管理、国际化支持。支持中英日韩等主流语言"
+description: "多语言翻译：文本翻译、文档本地化、术语一致性管理、国际化支持。"
 version: "1.0.0"
 suggested-tools:
   - builtin.file.read

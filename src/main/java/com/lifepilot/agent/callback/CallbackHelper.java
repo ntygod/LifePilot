@@ -1,12 +1,13 @@
 package com.lifepilot.agent.callback;
 
+import com.lifepilot.interaction.web.model.A2uiComponentTree;
+import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.multimodal.MediaContent;
 import com.lifepilot.observability.trace.TraceContext;
-import com.lifepilot.interaction.web.model.A2uiComponentTree;
-import com.lifepilot.interaction.web.sse.SseSessionManager;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.tool.ToolCallback;
 import org.springframework.lang.Nullable;
 
 import java.time.Instant;
@@ -61,5 +62,5 @@ public interface CallbackHelper {
 
     /** 调试日志 — 打印发送给 LLM 的完整消息列表。 */
     void logLlmPromptIfEnabled(String scene, List<Message> messages,
-                               @Nullable List<org.springframework.ai.tool.ToolCallback> toolCallbacks);
+                               @Nullable List<ToolCallback> toolCallbacks);
 }

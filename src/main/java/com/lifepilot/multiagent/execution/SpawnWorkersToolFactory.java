@@ -8,6 +8,7 @@ import com.lifepilot.multiagent.config.MultiAgentProperties;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.ToolContract;
+import com.lifepilot.tool.model.ToolContextKeys;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
@@ -131,10 +132,11 @@ public class SpawnWorkersToolFactory {
         }
 
         // 3. 读取调用方上下文
-        int callerDepth = input.getOptionalParam("_callerDepth", Integer.class).orElse(0);
-        String callerTraceId = input.getOptionalParam("_callerTraceId", String.class).orElse(null);
-        String callerSessionId = input.getOptionalParam("_callerSessionId", String.class)
+        int callerDepth = input.getContextValue(ToolContextKeys.CALLER_DEPTH, Integer.class).orElse(0);
+        String callerTraceId = input.getContextValue(ToolContextKeys.CALLER_TRACE_ID, String.class).orElse(null);
+        String callerSessionId = input.getContextValue(ToolContextKeys.SESSION_ID, String.class)
                 .orElse("worker-" + UUID.randomUUID().toString().substring(0, 8));
+        Budget callerBudget = input.getContextValue(ToolContextKeys.CALLER_BUDGET, Budget.class).orElse(null);
 
         // 4. 深度校验
         int workerDepth = callerDepth + 1;
@@ -144,7 +146,7 @@ public class SpawnWorkersToolFactory {
         }
 
         // 5. 预算分配
-        Budget workerPoolBudget = resolveWorkerPoolBudget();
+        Budget workerPoolBudget = resolveWorkerPoolBudget(callerBudget);
         int workerCount = tasks.size();
 
         // 6. 构建 Worker 工具白名单
@@ -175,6 +177,7 @@ public class SpawnWorkersToolFactory {
                         message,
                         workerSessionId,
                         "internal",
+                        null,
                         workerPrompt,
                         perWorkerBudget,
                         callerTraceId,
@@ -229,7 +232,7 @@ public class SpawnWorkersToolFactory {
     /**
      * 解析 Worker 池预算 — 取配置默认预算的 workerBudgetRatio 比例。
      */
-    private Budget resolveWorkerPoolBudget() {
+    private Budget resolveWorkerPoolBudget(@org.springframework.lang.Nullable Budget callerBudget) {
         var budgetDefaults = config.getBudget();
         var fullBudget = Budget.builder()
                 .maxTokens(budgetDefaults.getDefaultMaxTokens())
@@ -239,35 +242,18 @@ public class SpawnWorkersToolFactory {
                 .maxDuration(Duration.ofSeconds(budgetDefaults.getDefaultTimeoutSeconds()))
                 .elapsed(Duration.ZERO)
                 .build();
-        return fullBudget.allocateForSubAgent(config.getParallelWorker().getWorkerBudgetRatio());
+        return SubAgentBudgetAllocator.allocateWorkerPoolBudget(
+                callerBudget,
+                fullBudget,
+                config.getParallelWorker().getWorkerBudgetRatio()
+        );
     }
 
     /**
      * 为单个 Worker 分配预算，支持 per-task budget override。
      */
-    @SuppressWarnings("unchecked")
     private Budget allocatePerWorkerBudget(Budget poolBudget, int workerCount, Map<String, Object> taskDef) {
-        Budget perWorker = poolBudget.allocateForSubAgent(1.0 / workerCount);
-
-        // per-task budget override
-        Object budgetOverride = taskDef.get("budget");
-        if (budgetOverride instanceof Map<?, ?> overrideMap) {
-            var override = (Map<String, Object>) overrideMap;
-            int maxTokens = override.containsKey("max_tokens")
-                    ? ((Number) override.get("max_tokens")).intValue() : perWorker.maxTokens();
-            int maxSteps = override.containsKey("max_steps")
-                    ? ((Number) override.get("max_steps")).intValue() : perWorker.maxSteps();
-            int timeoutSeconds = override.containsKey("timeout_seconds")
-                    ? ((Number) override.get("timeout_seconds")).intValue()
-                    : (int) perWorker.maxDuration().toSeconds();
-            perWorker = Budget.builder()
-                    .maxTokens(maxTokens).tokensUsed(0).tokensReserved(0)
-                    .maxSteps(maxSteps).stepsUsed(0)
-                    .maxDuration(Duration.ofSeconds(timeoutSeconds))
-                    .elapsed(Duration.ZERO)
-                    .build();
-        }
-        return perWorker;
+        return SubAgentBudgetAllocator.allocateWorkerBudget(poolBudget, workerCount, taskDef);
     }
 
     /**

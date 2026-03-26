@@ -1,10 +1,13 @@
 package com.lifepilot.tool.config;
 
 import com.lifepilot.agent.AgentToolProvider;
-import com.lifepilot.interaction.UserConfirmationService;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.observability.guardrail.GuardrailEngine;
 import com.lifepilot.mcp.adapter.McpToolExecutor;
+import com.lifepilot.permission.service.NoopPermissionApprovalService;
+import com.lifepilot.permission.service.PermissionApprovalService;
+import com.lifepilot.permission.service.PermissionRequestFactory;
+import com.lifepilot.permission.service.PermissionService;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.McpTool;
 import com.lifepilot.tool.bridge.ToolBridgeAgentToolProvider;
@@ -52,9 +55,14 @@ public class ToolAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public DynamicToolRegistry dynamicToolRegistry(
-            GuardrailEngine guardrailEngine,
             ApplicationEventPublisher eventPublisher) {
-        return new DynamicToolRegistry(guardrailEngine, eventPublisher);
+        return new DynamicToolRegistry(eventPublisher);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public PermissionApprovalService permissionApprovalService() {
+        return new NoopPermissionApprovalService();
     }
 
     @Bean
@@ -63,13 +71,16 @@ public class ToolAutoConfiguration {
             DynamicToolRegistry toolRegistry,
             GuardrailEngine guardrailEngine,
             IdempotencyManager idempotencyManager,
-            UserConfirmationService confirmationService,
+            PermissionService permissionService,
+            PermissionRequestFactory permissionRequestFactory,
+            PermissionApprovalService permissionApprovalService,
             ToolConfigProperties config) {
         var p = config.getPipeline();
         log.info("工具执行管线初始化: timeout={}s, maxRetries={}, retryDelay={}ms",
                 p.getDefaultTimeoutSeconds(), p.getDefaultMaxRetries(), p.getRetryInitialDelayMs());
         return new ToolExecutionPipeline(
-                toolRegistry, guardrailEngine, idempotencyManager, confirmationService,
+                toolRegistry, guardrailEngine, idempotencyManager,
+                permissionService, permissionRequestFactory, permissionApprovalService,
                 p.getRetryInitialDelayMs(), p.getRetryMultiplier(), p.getRetryMaxDelayMs());
     }
 

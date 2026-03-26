@@ -6,6 +6,7 @@ import com.lifepilot.interaction.web.model.DependencyGraphResponse.NodeInfo;
 import com.lifepilot.multiagent.registry.AgentRegistry;
 import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
@@ -29,6 +30,7 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/api/dependencies")
+@ConditionalOnProperty(name = "lifepilot.gateway.channels.web.enabled", havingValue = "true")
 public class DependencyController {
 
     private static final Logger log = LoggerFactory.getLogger(DependencyController.class);

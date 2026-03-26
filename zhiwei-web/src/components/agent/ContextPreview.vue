@@ -2,7 +2,7 @@
   上下文组装预览组件。
 
   输入测试消息后调用后端 ContextAssembler 预览 API，
-  分段展示 System Prompt / 对话历史 / 记忆检索 / 工具结果，
+  分段展示 System Prompt / 历史消息流 / 当前用户提示词，
   每段标注 token 数和占比百分比，支持折叠/展开。
   集成 TokenBudgetChart 展示 token 预算分配环形图。
 
@@ -37,9 +37,9 @@ const expandedSegments = ref<Set<string>>(new Set())
 // ─── 段落配置 ───
 const SEGMENTS = [
   { key: 'systemPrompt', label: 'System Prompt', color: '#3b82f6' },
-  { key: 'conversationHistory', label: '对话历史', color: '#10b981' },
-  { key: 'memoryRetrieval', label: '记忆检索', color: '#f59e0b' },
-  { key: 'toolResults', label: '工具结果', color: '#ef4444' },
+  { key: 'contextMessages', label: 'Context Messages', color: '#8b5cf6' },
+  { key: 'historyMessages', label: '历史消息流', color: '#10b981' },
+  { key: 'currentUserPrompt', label: '当前用户提示词', color: '#f59e0b' },
 ] as const
 
 // ─── 计算属性 ───

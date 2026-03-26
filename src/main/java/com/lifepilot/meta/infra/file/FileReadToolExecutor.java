@@ -111,6 +111,12 @@ public class FileReadToolExecutor {
             for (int i = start - 1; i < end; i++) {
                 String line = allLines.get(i);
                 int lineLen = line.length() + 1; // +1 for newline
+                if (sb.length() == 0 && line.length() > maxChars) {
+                    sb.append(line, 0, maxChars);
+                    truncated = true;
+                    actualEnd = i + 1;
+                    break;
+                }
                 if (sb.length() + lineLen > maxChars && sb.length() > 0) {
                     truncated = true;
                     break;
@@ -124,6 +130,7 @@ public class FileReadToolExecutor {
 
             String content = sb.toString();
             if (truncated) {
+                content += "[文件已截断]";
                 content += "\n...[内容已截断，maxChars=" + maxChars
                         + "，显示行 " + start + "-" + actualEnd + "/" + totalLines + "]";
             }

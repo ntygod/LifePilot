@@ -10,7 +10,6 @@ import com.lifepilot.interaction.gateway.MessageGateway;
 import com.lifepilot.interaction.model.ChannelType;
 import com.lifepilot.interaction.model.GatewayResponse;
 import com.lifepilot.interaction.model.ResponseContent;
-import com.lifepilot.interaction.web.service.WebUserConfirmationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -37,8 +36,6 @@ class FeishuChannelAdapter_单元测试 {
     @Mock private MessageGateway gateway;
     @Mock private FeishuApiClient apiClient;
     @Mock private ChannelConfigProvider configProvider;
-    @Mock private WebUserConfirmationService confirmationService;
-
     private FeishuCrypto crypto;
     private FeishuMessageConverter converter;
     private FeishuChannelAdapter adapter;
@@ -58,7 +55,7 @@ class FeishuChannelAdapter_单元测试 {
         lenient().when(configProvider.getFeishuConfig()).thenReturn(feishuConfig);
 
         adapter = new FeishuChannelAdapter(gateway, properties, crypto, apiClient, converter,
-                mock(SharedScheduler.class), configProvider, confirmationService);
+                mock(SharedScheduler.class), configProvider);
     }
 
     // ── channelType ──────────────────────────────────────────

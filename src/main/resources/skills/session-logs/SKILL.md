@@ -1,7 +1,7 @@
 ---
 id: session-logs
 name: "会话日志分析"
-description: "回顾和分析历史会话日志，提取关键决策、未完成事项和模式。适用于'回顾之前的对话'、'上次讨论了什么'等场景"
+description: "回顾和分析历史会话日志，提取关键决策、未完成事项和模式。"
 version: "1.0.0"
 suggested-tools:
   - builtin.memory.recall

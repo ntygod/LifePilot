@@ -1,7 +1,7 @@
 ---
 id: feishu
 name: "飞书集成"
-description: "飞书操作：发送消息、创建任务、管理文档、查询日程。通过飞书开放 API 实现"
+description: "飞书操作：发送消息、创建任务、管理文档、查询日程。"
 version: "1.0.0"
 suggested-tools:
   - builtin.http.request

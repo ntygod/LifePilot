@@ -62,6 +62,30 @@ public record Budget(
         return Math.max(0, maxTokens - tokensUsed - tokensReserved);
     }
 
+    /** 剩余可用步骤数。 */
+    public int stepsRemaining() {
+        return Math.max(0, maxSteps - stepsUsed);
+    }
+
+    /** 剩余可用时长。 */
+    public Duration durationRemaining() {
+        var remaining = maxDuration.minus(elapsed);
+        return remaining.isNegative() ? Duration.ZERO : remaining;
+    }
+
+    /** 返回只包含剩余额度的新预算实例。 */
+    public Budget remainingBudget() {
+        return Budget.builder()
+                .maxTokens(tokensRemaining())
+                .tokensUsed(0)
+                .tokensReserved(0)
+                .maxSteps(stepsRemaining())
+                .stepsUsed(0)
+                .maxDuration(durationRemaining())
+                .elapsed(Duration.ZERO)
+                .build();
+    }
+
     /** 扣减 Token，返回新实例。 */
     public Budget deductTokens(int tokens) {
         return this.toBuilder().tokensUsed(this.tokensUsed + tokens).build();
@@ -79,9 +103,11 @@ public record Budget(
 
     /** 为 SubAgent 分配预算。 */
     public Budget allocateForSubAgent(double ratio) {
-        int subTokens = (int) (tokensRemaining() * ratio);
-        int subSteps = (int) (maxSteps * ratio);
-        Duration subDuration = maxDuration.multipliedBy((long) (ratio * 100)).dividedBy(100);
+        double normalizedRatio = Math.max(0.0, Math.min(1.0, ratio));
+        Budget remaining = remainingBudget();
+        int subTokens = scaleByRatio(remaining.maxTokens(), normalizedRatio);
+        int subSteps = scaleByRatio(remaining.maxSteps(), normalizedRatio);
+        Duration subDuration = scaleDuration(remaining.maxDuration(), normalizedRatio);
         return Budget.builder()
                 .maxTokens(subTokens).tokensUsed(0).tokensReserved(0)
                 .maxSteps(subSteps).stepsUsed(0)
@@ -153,5 +179,19 @@ public record Budget(
         SKIP_MEMORY,
         /** 终止并生成摘要。 */
         TERMINATE
+    }
+
+    private static int scaleByRatio(int value, double ratio) {
+        if (value <= 0 || ratio <= 0.0) {
+            return 0;
+        }
+        return (int) Math.floor(value * ratio);
+    }
+
+    private static Duration scaleDuration(Duration value, double ratio) {
+        if (value.isZero() || value.isNegative() || ratio <= 0.0) {
+            return Duration.ZERO;
+        }
+        return Duration.ofMillis((long) Math.floor(value.toMillis() * ratio));
     }
 }

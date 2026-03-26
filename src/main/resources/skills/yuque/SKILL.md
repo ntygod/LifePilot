@@ -1,7 +1,7 @@
 ---
 id: yuque
 name: "语雀知识库"
-description: "语雀操作：创建文档、管理知识库、搜索内容。通过语雀 OpenAPI 实现"
+description: "语雀操作：创建文档、管理知识库、搜索内容。"
 version: "1.0.0"
 suggested-tools:
   - builtin.http.request

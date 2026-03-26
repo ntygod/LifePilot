@@ -50,6 +50,11 @@ public final class ReactStepSerializer {
      */
     static Map<String, Object> serializeStep(ReactStep step, int index) {
         return switch (step) {
+            case ReactStep.Progress(var content) -> Map.of(
+                    "type", "PROGRESS",
+                    "index", index,
+                    "content", truncate(content, THOUGHT_MAX_LENGTH)
+            );
             case ReactStep.Thought(var content) -> Map.of(
                     "type", "THOUGHT",
                     "index", index,

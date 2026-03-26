@@ -63,3 +63,49 @@ describe('MessageBubble 视频附件渲染（Property 14）', () => {
   })
 })
 
+describe('MessageBubble 权限审批状态展示', () => {
+  it('确认后会立即展示紧凑授权记录，不需要刷新页面', () => {
+    const message: Message = {
+      id: 'assistant-permission',
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now()
+    } as any
+
+    const wrapper = mount(MessageBubble, {
+      props: {
+        message,
+        streaming: true,
+        streamingPermissionApprovals: {
+          'req-1': {
+            requestId: 'req-1',
+            toolId: 'builtin.code.execute',
+            toolName: '执行代码',
+            actionType: 'EXECUTE_SHELL',
+            riskLevel: 'HIGH',
+            message: '本次需要运行本地代码。请选择授权范围。',
+            availableSubjectTypes: ['SESSION', 'USER'],
+            recommendedSubjectType: 'SESSION',
+            timestamp: new Date().toISOString()
+          }
+        },
+        streamingPermissionApprovalResolutions: {
+          'req-1': 'approved'
+        }
+      },
+      global: {
+        plugins: [pinia],
+        stubs: {
+          RouterLink: {
+            template: '<a><slot /></a>'
+          }
+        }
+      }
+    })
+
+    expect(wrapper.text()).toContain('已授权')
+    expect(wrapper.text()).toContain('本会话')
+    expect(wrapper.text()).toContain('命令 / 代码执行')
+    expect(wrapper.text()).not.toContain('请选择授权范围')
+  })
+})

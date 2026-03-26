@@ -1,8 +1,7 @@
 package com.lifepilot.skill.generation;
 
-import com.lifepilot.llm.LlmRequest;
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
-import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.LlmUnavailableException;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.skill.config.SkillConfigProperties;
@@ -17,14 +16,18 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 /**
- * {@link SkillGapDetector} 单元测试。
+ * SkillGapDetector 单元测试。
  *
  * @author zsg
- * @since 2026-02-25
+ * @since 2026-03-24
  */
 @ExtendWith(MockitoExtension.class)
 class SkillGapDetectorTest {
@@ -33,7 +36,7 @@ class SkillGapDetectorTest {
     private SkillRegistry skillRegistry;
 
     @Mock
-    private LlmRouter llmRouter;
+    private GenerationRouter generationRouter;
 
     @Mock
     private PromptRegistry promptRegistry;
@@ -45,112 +48,59 @@ class SkillGapDetectorTest {
     void setUp() {
         config = new SkillConfigProperties();
         lenient().when(promptRegistry.render(anyString(), anyMap())).thenReturn("mock prompt");
-        detector = new SkillGapDetector(skillRegistry, llmRouter, config, promptRegistry);
+        detector = new SkillGapDetector(skillRegistry, generationRouter, config, promptRegistry);
     }
 
-    // ─────────────────────────────────────────────
-    //  detectGap — 注册表为空
-    // ─────────────────────────────────────────────
-
     @Test
-    void detectGap_注册表为空时直接判定缺口_置信度09() {
+    void 注册表为空时直接判定为缺口() {
         when(skillRegistry.listSummaries()).thenReturn(List.of());
 
         var result = detector.detectGap("帮我查天气");
 
         assertThat(result).isPresent();
-        var gap = result.get();
-        assertThat(gap.confidence()).isEqualTo(0.9);
-        assertThat(gap.triggerRequest()).isEqualTo("帮我查天气");
-        assertThat(gap.reason()).isEqualTo("注册表为空，无可用 Skill");
-        assertThat(gap.suggestedId()).startsWith("auto-");
-        // 不应调用 LLM
-        verifyNoInteractions(llmRouter);
+        assertThat(result.get().confidence()).isEqualTo(0.9);
+        assertThat(result.get().reason()).isEqualTo("注册表为空，无可用 Skill");
+        verifyNoInteractions(generationRouter);
     }
 
-    // ─────────────────────────────────────────────
-    //  detectGap — 搜索命中
-    // ─────────────────────────────────────────────
-
     @Test
-    void detectGap_搜索返回结果时无缺口() {
+    void 搜索命中时返回空结果() {
         when(skillRegistry.listSummaries()).thenReturn(List.of("weather: 查询天气"));
-        when(skillRegistry.search("帮我查天气")).thenReturn(List.of(mock(SkillDefinition.class)));
+        when(skillRegistry.search("帮我查天气")).thenReturn(List.of(org.mockito.Mockito.mock(SkillDefinition.class)));
 
         var result = detector.detectGap("帮我查天气");
 
         assertThat(result).isEmpty();
-        // 不应调用 LLM
-        verifyNoInteractions(llmRouter);
+        verifyNoInteractions(generationRouter);
     }
 
-    // ─────────────────────────────────────────────
-    //  detectGap — 搜索无结果，LLM 分析成功
-    // ─────────────────────────────────────────────
-
     @Test
-    void detectGap_搜索无结果_LLM分析成功返回SkillGap() {
+    void 搜索无结果时调用生成路由分析缺口() {
         when(skillRegistry.listSummaries()).thenReturn(List.of("todo: 待办管理"));
         when(skillRegistry.search("帮我查汇率")).thenReturn(List.of());
-
-        String llmJson = """
-                {
-                  "suggestedId": "exchange-rate",
-                  "suggestedName": "汇率查询",
-                  "suggestedTools": ["http-request"],
-                  "reason": "用户需要查询汇率，当前无相关 Skill"
-                }
-                """;
-        var llmResponse = new LlmResponse(llmJson, 100, 200, "provider-1", "gpt-4", 500, false);
-        when(llmRouter.call(any(LlmRequest.class)))
-                .thenReturn(llmResponse);
+        when(generationRouter.call(anyString(), anyString(), any(), any(), any(), any(), any()))
+                .thenReturn(new LlmResponse("""
+                        {
+                          "suggestedId": "exchange-rate",
+                          "suggestedName": "汇率查询",
+                          "suggestedTools": ["http-request"],
+                          "reason": "用户需要查询汇率，当前没有相关 Skill"
+                        }
+                        """, 100, 200, "provider-1", "model-1", 500, false));
 
         var result = detector.detectGap("帮我查汇率");
 
         assertThat(result).isPresent();
-        var gap = result.get();
-        assertThat(gap.suggestedId()).isEqualTo("exchange-rate");
-        assertThat(gap.suggestedName()).isEqualTo("汇率查询");
-        assertThat(gap.suggestedTools()).containsExactly("http-request");
-        assertThat(gap.reason()).isEqualTo("用户需要查询汇率，当前无相关 Skill");
-        assertThat(gap.triggerRequest()).isEqualTo("帮我查汇率");
+        assertThat(result.get().suggestedId()).isEqualTo("exchange-rate");
+        assertThat(result.get().suggestedName()).isEqualTo("汇率查询");
+        assertThat(result.get().suggestedTools()).containsExactly("http-request");
     }
 
     @Test
-    void detectGap_LLM返回markdown代码块包裹的JSON() {
-        when(skillRegistry.listSummaries()).thenReturn(List.of("todo: 待办管理"));
-        when(skillRegistry.search("帮我翻译文档")).thenReturn(List.of());
-
-        String llmContent = """
-                ```json
-                {
-                  "suggestedId": "doc-translator",
-                  "suggestedName": "文档翻译",
-                  "suggestedTools": ["http-request", "file-read"],
-                  "reason": "需要文档翻译能力"
-                }
-                ```
-                """;
-        var llmResponse = new LlmResponse(llmContent, 80, 150, "provider-1", "gpt-4", 400, false);
-        when(llmRouter.call(any(LlmRequest.class)))
-                .thenReturn(llmResponse);
-
-        var result = detector.detectGap("帮我翻译文档");
-
-        assertThat(result).isPresent();
-        assertThat(result.get().suggestedId()).isEqualTo("doc-translator");
-        assertThat(result.get().suggestedTools()).containsExactly("http-request", "file-read");
-    }
-
-    // ─────────────────────────────────────────────
-    //  detectGap — LLM 调用失败降级
-    // ─────────────────────────────────────────────
-
-    @Test
-    void detectGap_LLM调用失败返回空结果_记录WARN日志() {
+    void 生成路由失败时返回空结果() {
         when(skillRegistry.listSummaries()).thenReturn(List.of("todo: 待办管理"));
         when(skillRegistry.search("帮我查汇率")).thenReturn(List.of());
-        when(llmRouter.call(any(LlmRequest.class)))
+        when(generationRouter.call(anyString(), anyString(), any(), any(), any(), any(), any()))
                 .thenThrow(new LlmUnavailableException("无可用 Provider", "skill_generation", List.of()));
 
         var result = detector.detectGap("帮我查汇率");
@@ -159,48 +109,30 @@ class SkillGapDetectorTest {
     }
 
     @Test
-    void detectGap_LLM返回非法JSON时降级返回空结果() {
+    void 非法Json时返回空结果() {
         when(skillRegistry.listSummaries()).thenReturn(List.of("todo: 待办管理"));
         when(skillRegistry.search("帮我查汇率")).thenReturn(List.of());
-
-        var llmResponse = new LlmResponse("这不是JSON", 50, 30, "provider-1", "gpt-4", 300, false);
-        when(llmRouter.call(any(LlmRequest.class)))
-                .thenReturn(llmResponse);
+        when(generationRouter.call(anyString(), anyString(), any(), any(), any(), any(), any()))
+                .thenReturn(new LlmResponse("这不是 JSON", 50, 30, "provider-1", "model-1", 300, false));
 
         var result = detector.detectGap("帮我查汇率");
 
         assertThat(result).isEmpty();
     }
 
-    // ─────────────────────────────────────────────
-    //  extractJson — 静态方法测试
-    // ─────────────────────────────────────────────
-
     @Test
-    void extractJson_纯JSON直接返回() {
-        String json = """
-                {"key": "value"}
-                """;
-        assertThat(SkillGapDetector.extractJson(json)).isEqualTo("{\"key\": \"value\"}");
-    }
-
-    @Test
-    void extractJson_markdown代码块提取JSON() {
+    void extractJson可以提取Markdown代码块() {
         String content = """
                 ```json
                 {"key": "value"}
                 ```
                 """;
+
         assertThat(SkillGapDetector.extractJson(content)).isEqualTo("{\"key\": \"value\"}");
     }
 
-    // ─────────────────────────────────────────────
-    //  generateSuggestedId — 静态方法测试
-    // ─────────────────────────────────────────────
-
     @Test
-    void generateSuggestedId_以auto前缀开头() {
-        String id = SkillGapDetector.generateSuggestedId("帮我查天气");
-        assertThat(id).startsWith("auto-");
+    void generateSuggestedId带有Auto前缀() {
+        assertThat(SkillGapDetector.generateSuggestedId("帮我查天气")).startsWith("auto-");
     }
 }

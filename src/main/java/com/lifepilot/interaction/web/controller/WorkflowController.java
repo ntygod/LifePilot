@@ -26,6 +26,7 @@ import com.lifepilot.workflow.parser.WorkflowYamlParser;
 import com.lifepilot.workflow.parser.WorkflowYamlPrinter;
 import com.lifepilot.workflow.registry.WorkflowRegistry;
 import com.lifepilot.workflow.repository.WorkflowRepository;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -60,6 +61,7 @@ import javax.crypto.spec.SecretKeySpec;
  */
 @RestController
 @RequestMapping("/api/workflows")
+@ConditionalOnProperty(name = "lifepilot.gateway.channels.web.enabled", havingValue = "true")
 public class WorkflowController {
 
     private static final Logger log = LoggerFactory.getLogger(WorkflowController.class);
@@ -966,8 +968,7 @@ public class WorkflowController {
         types.add(stepType("notify", "通知", "通过 NotificationService 发送通知", List.of(
                 param("targetUserId", "string", true, "目标用户 ID（支持 ${} 表达式）"),
                 param("content", "string", true, "通知内容模板（支持 ${} 表达式）"),
-                param("contentType", "string", true, "内容类型：TEXT / MARKDOWN / CARD"),
-                param("urgency", "string", true, "紧急程度：LOW / NORMAL / HIGH / URGENT")
+                param("contentType", "string", true, "内容类型：TEXT / MARKDOWN / CARD")
         )));
 
         return types;

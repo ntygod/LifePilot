@@ -4,19 +4,22 @@ import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.model.ReactStep;
 import com.lifepilot.eval.model.EvalResult;
 import com.lifepilot.eval.scenario.BenchmarkScenario;
-import com.lifepilot.llm.LlmRequest;
-import com.lifepilot.llm.LlmRouter;
-import com.lifepilot.llm.LlmScene;
+import com.lifepilot.generation.router.GenerationRouter;
+import com.lifepilot.generation.support.JsonOutputParser;
+import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.semantic.EntityType;
+import com.lifepilot.llm.LlmScene;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 
@@ -36,20 +39,20 @@ public class ExperienceSummarizer {
 
     private final SemanticMemory semanticMemory;
     private final VectorSearcher vectorSearcher;
-    private final LlmRouter llmRouter;
+    private final GenerationRouter generationRouter;
     private final PromptRegistry promptRegistry;
     private final MemoryProperties.Experience config;
     private final TrajectoryQualityAssessor qualityAssessor;
 
     public ExperienceSummarizer(SemanticMemory semanticMemory,
                                 VectorSearcher vectorSearcher,
-                                LlmRouter llmRouter,
+                                GenerationRouter generationRouter,
                                 PromptRegistry promptRegistry,
                                 MemoryProperties properties,
                                 TrajectoryQualityAssessor qualityAssessor) {
         this.semanticMemory = semanticMemory;
         this.vectorSearcher = vectorSearcher;
-        this.llmRouter = llmRouter;
+        this.generationRouter = generationRouter;
         this.promptRegistry = promptRegistry;
         this.config = properties.getExperience();
         this.qualityAssessor = qualityAssessor;
@@ -182,6 +185,7 @@ public class ExperienceSummarizer {
 
         for (var step : state.steps()) {
             switch (step) {
+                case ReactStep.Progress p -> sb.append("[进度] ").append(p.content()).append("\n");
                 case ReactStep.Thought t -> sb.append("[思考] ").append(t.content()).append("\n");
                 case ReactStep.ToolCall tc -> sb.append("[工具调用] ").append(tc.toolId())
                         .append(" 输入: ").append(tc.inputJson()).append("\n");
@@ -219,8 +223,24 @@ public class ExperienceSummarizer {
                     "taskSuccess", String.valueOf(report.taskSuccess())
             );
             String prompt = promptRegistry.render(PROMPT_KEY, vars);
-            var request = LlmRequest.of(LlmScene.CHAT, prompt);
-            var record = llmRouter.callEntity(request, ExperienceRecord.class);
+            Duration timeout = Duration.ofSeconds(Math.max(1, config.getLlmTimeoutSeconds()));
+            log.debug("经验提炼: 发起 JSON 提炼调用, sessionId={}, timeoutSeconds={}, promptChars={}, stepCount={}",
+                    state.sessionId(), timeout.toSeconds(), prompt.length(), state.stepCount());
+            LlmResponse response = generationRouter.call(
+                    LlmScene.CHAT,
+                    prompt,
+                    null,
+                    null,
+                    null,
+                    GenerationCapability.CHAT,
+                    timeout);
+            log.debug("经验提炼: JSON 提炼响应返回, sessionId={}, providerId={}, model={}, latencyMs={}, outputChars={}",
+                    state.sessionId(),
+                    response.providerId(),
+                    response.modelName(),
+                    response.latencyMs(),
+                    response.content() != null ? response.content().length() : 0);
+            var record = JsonOutputParser.parse(response.content(), ExperienceRecord.class);
 
             // 校验返回结果
             if (record == null || record.scenario() == null || record.scenario().isBlank()
@@ -230,8 +250,8 @@ public class ExperienceSummarizer {
             }
             return record;
         } catch (Exception e) {
-            log.warn("经验提炼: LLM 调用失败, sessionId={}, error={}",
-                    state.sessionId(), e.getMessage());
+            log.warn("经验提炼: JSON 提炼失败, sessionId={}, timeoutSeconds={}, errorType={}, error={}",
+                    state.sessionId(), config.getLlmTimeoutSeconds(), e.getClass().getSimpleName(), e.getMessage());
             return null;
         }
     }

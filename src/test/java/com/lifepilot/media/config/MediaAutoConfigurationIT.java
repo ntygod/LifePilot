@@ -1,6 +1,6 @@
 package com.lifepilot.media.config;
 
-import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.circuit.CircuitBreakerManager;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.llm.registry.ProviderRegistry;
@@ -55,10 +55,10 @@ class MediaAutoConfigurationIT {
 
     @Test
     void 多模态路由器及依赖链可用() {
-        // ProviderRegistry / CircuitBreakerManager / LlmRouter 在主配置中已提供
+        // ProviderRegistry / CircuitBreakerManager / GenerationRouter 在主配置中已提供
         assertNotNull(applicationContext.getBean(ProviderRegistry.class));
         assertNotNull(applicationContext.getBean(CircuitBreakerManager.class));
-        assertNotNull(applicationContext.getBean(LlmRouter.class));
+        assertNotNull(applicationContext.getBean(GenerationRouter.class));
 
         MultimodalRouter multimodalRouter = applicationContext.getBean(MultimodalRouter.class);
         assertNotNull(multimodalRouter);

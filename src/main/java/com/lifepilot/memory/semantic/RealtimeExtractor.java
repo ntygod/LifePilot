@@ -1,8 +1,10 @@
 package com.lifepilot.memory.semantic;
 
-import com.lifepilot.llm.LlmRequest;
-import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.generation.router.GenerationRouter;
+import com.lifepilot.generation.support.JsonOutputParser;
+import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,6 +16,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -34,7 +37,7 @@ public class RealtimeExtractor {
 
     private static final Logger log = LoggerFactory.getLogger(RealtimeExtractor.class);
 
-    private final LlmRouter llmRouter;
+    private final GenerationRouter generationRouter;
     private final SemanticMemory semanticMemory;
     private final ExtractionValidator extractionValidator;
     private final int extractionTimeoutSeconds;
@@ -42,13 +45,13 @@ public class RealtimeExtractor {
     private final JdbcTemplate jdbcTemplate;
     private final PromptRegistry promptRegistry;
 
-    public RealtimeExtractor(LlmRouter llmRouter,
+    public RealtimeExtractor(GenerationRouter generationRouter,
                              SemanticMemory semanticMemory,
                              MemoryProperties properties,
                              ExtractionValidator extractionValidator,
                              JdbcTemplate jdbcTemplate,
                              PromptRegistry promptRegistry) {
-        this.llmRouter = llmRouter;
+        this.generationRouter = generationRouter;
         this.semanticMemory = semanticMemory;
         this.extractionValidator = extractionValidator;
         this.extractionTimeoutSeconds = properties.getExtraction().getTimeoutSeconds();
@@ -134,9 +137,17 @@ public class RealtimeExtractor {
             // 使用 Virtual Thread 执行器避免阻塞 ForkJoinPool.commonPool()
             var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
             var result = CompletableFuture.supplyAsync(() ->
-                            llmRouter.callEntity(LlmRequest.of("knowledge_extraction", prompt), AudnDecisionList.class),
+                            generationRouter.call(
+                                    "knowledge_extraction",
+                                    prompt,
+                                    null,
+                                    null,
+                                    null,
+                                    GenerationCapability.CHAT,
+                                    Duration.ofSeconds(extractionTimeoutSeconds)),
                             executor)
                     .orTimeout(extractionTimeoutSeconds, TimeUnit.SECONDS)
+                    .thenApply(response -> JsonOutputParser.parse(response.content(), AudnDecisionList.class))
                     .join();
             return result != null ? result.decisions() : List.of();
         } catch (Exception e) {

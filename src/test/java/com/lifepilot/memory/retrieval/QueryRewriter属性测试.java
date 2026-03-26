@@ -1,98 +1,77 @@
 package com.lifepilot.memory.retrieval;
 
-import com.lifepilot.llm.LlmRequest;
-import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.embedding.router.EmbeddingRouter;
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmUnavailableException;
 import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
-import net.jqwik.api.*;
+import net.jqwik.api.Arbitraries;
+import net.jqwik.api.Arbitrary;
+import net.jqwik.api.ForAll;
+import net.jqwik.api.Property;
+import net.jqwik.api.Provide;
 
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
- * QueryRewriter 属性测试 — 验证降级不变量。
- *
- * <p><b>Validates: Requirements 1.4</b></p>
+ * QueryRewriter 属性测试，验证降级不变量。
  *
  * @author zsg
  * @since 2026-03-17
  */
 class QueryRewriter属性测试 {
 
-    // ─────────────────────────────────────────────
-    //  Property P3 — QueryRewriter 降级不变量
-    // ─────────────────────────────────────────────
-
-    /**
-     * <b>Validates: Requirements 1.4</b>
-     *
-     * <p>对任意 refinedQuery 字符串，当 LlmRouter.call() 抛出异常时，
-     * QueryRewriter.rewrite() 应降级返回：
-     * <ul>
-     *   <li>result.primaryQuery() == refinedQuery</li>
-     *   <li>result.rewrittenQueries().isEmpty()</li>
-     *   <li>result.hydeEmbedding().isEmpty()</li>
-     * </ul></p>
-     */
     @Property(tries = 100)
-    void LLM异常时降级返回原始查询(@ForAll("refinedQueries") String refinedQuery) {
-        // 构建 Mock：LlmRouter.call() 抛出 LlmUnavailableException
-        var llmRouter = mock(LlmRouter.class);
-        when(llmRouter.call(any(LlmRequest.class)))
-                .thenThrow(new LlmUnavailableException("模拟 LLM 不可用", "test", List.of()));
+    void rewrite模式异常时降级返回原始查询(@ForAll("refinedQueries") String refinedQuery) {
+        var generationRouter = mock(GenerationRouter.class);
+        var embeddingRouter = mock(EmbeddingRouter.class);
+        when(generationRouter.call(anyString(), anyString(), isNull(), isNull(), isNull(),
+                eq(GenerationCapability.CHAT), any()))
+                .thenThrow(new LlmUnavailableException("模拟生成服务不可用", "memory_query_rewrite", List.of()));
 
         var promptRegistry = mock(PromptRegistry.class);
         when(promptRegistry.render(anyString(), anyMap())).thenReturn("mock prompt");
 
-        // 测试 rewrite 模式
         var rewriteProps = buildProperties("rewrite");
-        var rewriter = new QueryRewriter(llmRouter, rewriteProps, promptRegistry);
+        var rewriter = new QueryRewriter(generationRouter, embeddingRouter, rewriteProps, promptRegistry);
         var result = rewriter.rewrite(refinedQuery);
 
-        assertEquals(refinedQuery, result.primaryQuery(),
-                "降级时 primaryQuery 应等于输入的 refinedQuery");
-        assertTrue(result.rewrittenQueries().isEmpty(),
-                "降级时 rewrittenQueries 应为空");
-        assertTrue(result.hydeEmbedding().isEmpty(),
-                "降级时 hydeEmbedding 应为空");
+        assertEquals(refinedQuery, result.primaryQuery());
+        assertTrue(result.rewrittenQueries().isEmpty());
+        assertTrue(result.hydeEmbedding().isEmpty());
     }
 
-    /**
-     * <b>Validates: Requirements 1.4</b>
-     *
-     * <p>对任意 refinedQuery 字符串，当 LlmRouter.call() 抛出异常时，
-     * hyde 模式同样应降级返回原始查询。</p>
-     */
     @Property(tries = 100)
-    void hyde模式LLM异常时降级返回原始查询(@ForAll("refinedQueries") String refinedQuery) {
-        var llmRouter = mock(LlmRouter.class);
-        when(llmRouter.call(any(LlmRequest.class)))
-                .thenThrow(new LlmUnavailableException("模拟 LLM 不可用", "test", List.of()));
+    void hyde模式异常时降级返回原始查询(@ForAll("refinedQueries") String refinedQuery) {
+        var generationRouter = mock(GenerationRouter.class);
+        var embeddingRouter = mock(EmbeddingRouter.class);
+        when(generationRouter.call(anyString(), anyString(), isNull(), isNull(), isNull(),
+                eq(GenerationCapability.CHAT), any()))
+                .thenThrow(new LlmUnavailableException("模拟生成服务不可用", "memory_query_rewrite", List.of()));
 
         var promptRegistry = mock(PromptRegistry.class);
         when(promptRegistry.render(anyString(), anyMap())).thenReturn("mock prompt");
 
         var hydeProps = buildProperties("hyde");
-        var rewriter = new QueryRewriter(llmRouter, hydeProps, promptRegistry);
+        var rewriter = new QueryRewriter(generationRouter, embeddingRouter, hydeProps, promptRegistry);
         var result = rewriter.rewrite(refinedQuery);
 
-        assertEquals(refinedQuery, result.primaryQuery(),
-                "hyde 降级时 primaryQuery 应等于输入的 refinedQuery");
-        assertTrue(result.rewrittenQueries().isEmpty(),
-                "hyde 降级时 rewrittenQueries 应为空");
-        assertTrue(result.hydeEmbedding().isEmpty(),
-                "hyde 降级时 hydeEmbedding 应为空");
+        assertEquals(refinedQuery, result.primaryQuery());
+        assertTrue(result.rewrittenQueries().isEmpty());
+        assertTrue(result.hydeEmbedding().isEmpty());
     }
 
-    // ─────────────────────────────────────────────
-    //  数据生成器
-    // ─────────────────────────────────────────────
-
-    /** 生成随机查询字符串：包含中文、英文和混合字符。 */
     @Provide
     Arbitrary<String> refinedQueries() {
         return Arbitraries.strings()
@@ -102,11 +81,6 @@ class QueryRewriter属性测试 {
                 .filter(s -> !s.isBlank());
     }
 
-    // ─────────────────────────────────────────────
-    //  辅助方法
-    // ─────────────────────────────────────────────
-
-    /** 构建指定改写模式的 MemoryProperties。 */
     private MemoryProperties buildProperties(String mode) {
         var properties = new MemoryProperties();
         properties.getRetrieval().setQueryRewriteMode(mode);

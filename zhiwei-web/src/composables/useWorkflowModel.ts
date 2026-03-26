@@ -88,8 +88,7 @@ export interface ApprovalStepConfig {
 export interface NotifyStepConfig {
   targetUserId: string
   content: string
-  contentType: 'TEXT' | 'MARKDOWN' | 'HTML'
-  urgency: 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT'
+  contentType: 'TEXT' | 'MARKDOWN' | 'CARD'
 }
 
 /** 空操作步骤配置 */
@@ -207,7 +206,7 @@ function createDefaultConfig(type: StepType): StepConfig {
     case 'approval':
       return { message: '', approvers: [], timeoutSeconds: 3600, autoApproveOnTimeout: false }
     case 'notify':
-      return { targetUserId: '', content: '', contentType: 'TEXT', urgency: 'NORMAL' }
+      return { targetUserId: '', content: '', contentType: 'TEXT' }
   }
 }
 

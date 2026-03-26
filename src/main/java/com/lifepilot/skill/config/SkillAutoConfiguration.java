@@ -1,7 +1,8 @@
 package com.lifepilot.skill.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.embedding.router.EmbeddingRouter;
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.skill.activation.SkillActivator;
@@ -79,13 +80,13 @@ public class SkillAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public SkillSearchIndex skillSearchIndex(@Autowired(required = false) LlmRouter llmRouter) {
-        if (llmRouter == null) {
-            log.warn("Skill 系统: LlmRouter 不可用，SkillSearchIndex 降级为关键词匹配模式");
+    public SkillSearchIndex skillSearchIndex(@Autowired(required = false) EmbeddingRouter embeddingRouter) {
+        if (embeddingRouter == null) {
+            log.warn("Skill 系统: EmbeddingRouter 不可用，SkillSearchIndex 降级为关键词匹配模式");
         } else {
             log.info("Skill 系统: 注册 SkillSearchIndex（向量搜索模式）");
         }
-        return new SkillSearchIndex(llmRouter);
+        return new SkillSearchIndex(embeddingRouter);
     }
 
     @Bean
@@ -199,12 +200,12 @@ public class SkillAutoConfiguration {
     @ConditionalOnProperty(prefix = "lifepilot.skills.auto-generation",
             name = "enabled", havingValue = "true", matchIfMissing = true)
     public SkillGapDetector skillGapDetector(SkillRegistry registry,
-                                            LlmRouter llmRouter,
+                                            GenerationRouter generationRouter,
                                             SkillConfigProperties config,
                                             PromptRegistry promptRegistry) {
         log.info("Skill 系统: 注册 SkillGapDetector, gapThreshold={}",
                 config.getAutoGeneration().getGapThreshold());
-        return new SkillGapDetector(registry, llmRouter, config, promptRegistry);
+        return new SkillGapDetector(registry, generationRouter, config, promptRegistry);
     }
 
     @Bean
@@ -229,7 +230,7 @@ public class SkillAutoConfiguration {
     @ConditionalOnMissingBean
     @ConditionalOnProperty(prefix = "lifepilot.skills.auto-generation",
             name = "enabled", havingValue = "true", matchIfMissing = true)
-    public SkillGenerator skillGenerator(LlmRouter llmRouter,
+    public SkillGenerator skillGenerator(GenerationRouter generationRouter,
                                          SkillValidationPipeline pipeline,
                                          MarkdownSkillParser markdownParser,
                                          MarkdownSkillSerializer markdownSerializer,
@@ -239,7 +240,7 @@ public class SkillAutoConfiguration {
                                          ToolCapabilityManifest toolCapabilityManifest,
                                          SkillTemplateLibrary skillTemplateLibrary) {
         log.info("Skill 系统: 注册 SkillGenerator（增强模式）");
-        return new SkillGenerator(llmRouter, pipeline, markdownParser, markdownSerializer,
+        return new SkillGenerator(generationRouter, pipeline, markdownParser, markdownSerializer,
                 registry, config, promptRegistry, toolCapabilityManifest, skillTemplateLibrary);
     }
 

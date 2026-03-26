@@ -2,12 +2,12 @@ package com.lifepilot.workflow.engine;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lifepilot.llm.LlmRequest;
-import com.lifepilot.llm.LlmRouter;
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.config.ProviderCapability;
 import com.lifepilot.llm.multimodal.MediaContent;
 import com.lifepilot.llm.multimodal.MultimodalRequest;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
+import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.notification.NotificationRequest;
 import com.lifepilot.notification.NotificationService;
 import com.lifepilot.interaction.model.ResponseContent;
@@ -42,7 +42,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * <ul>
  *   <li>{@link SkillStep} → {@link SkillActivator#activate}</li>
  *   <li>{@link ToolStep} → {@link DynamicToolRegistry} + {@link ToolContract#execute}</li>
- *   <li>{@link LlmStep} → {@link LlmRouter#call}</li>
+ *   <li>{@link LlmStep} → {@link GenerationRouter#call}</li>
  *   <li>{@link ConditionStep} → 条件求值 + 递归执行分支</li>
  *   <li>{@link LoopStep} → 遍历集合 + 递归执行 body</li>
  *   <li>{@link ParallelStep} → Virtual Thread 并发执行分支</li>
@@ -64,7 +64,7 @@ public class StepExecutor {
     private final SkillRegistry skillRegistry;
     private final SkillActivator skillActivator;
     private final DynamicToolRegistry toolRegistry;
-    private final LlmRouter llmRouter;
+    private final GenerationRouter generationRouter;
     private final MultimodalRouter multimodalRouter;
     private final WorkflowConfigProperties config;
     private final NotificationService notificationService;
@@ -83,14 +83,14 @@ public class StepExecutor {
     public StepExecutor(SkillRegistry skillRegistry,
                         SkillActivator skillActivator,
                         DynamicToolRegistry toolRegistry,
-                        LlmRouter llmRouter,
+                        GenerationRouter generationRouter,
                         MultimodalRouter multimodalRouter,
                         WorkflowConfigProperties config,
                         NotificationService notificationService) {
         this.skillRegistry = skillRegistry;
         this.skillActivator = skillActivator;
         this.toolRegistry = toolRegistry;
-        this.llmRouter = llmRouter;
+        this.generationRouter = generationRouter;
         this.multimodalRouter = multimodalRouter;
         this.config = config;
         this.notificationService = notificationService;
@@ -201,7 +201,7 @@ public class StepExecutor {
     }
 
     /**
-     * 执行 LlmStep — 通过 LlmRouter 调用 LLM 生成内容。
+     * 执行 LlmStep — 通过 GenerationRouter 调用 LLM 生成内容。
      */
     private Map<String, Object> executeLlm(LlmStep step,
                                            WorkflowContext context,
@@ -220,13 +220,14 @@ public class StepExecutor {
         List<MediaContent> resolvedMedia = resolveMedia(step, context, expressionEngine);
         Duration timeout = Duration.ofSeconds(config.getDefaultStepTimeoutSeconds());
         var llmResponse = resolvedMedia.isEmpty()
-                ? llmRouter.call(LlmRequest.builder(step.scene(), resolvedPrompt)
-                    .requiredCapability(step.capability())
-                    .outputSchema(resolvedSchema)
-                    .modelName(step.modelName())
-                    .preferredProviderId(step.preferredProviderId())
-                    .timeoutOverride(timeout)
-                    .build())
+                ? generationRouter.call(
+                    step.scene(),
+                    resolvedPrompt,
+                    resolvedSchema,
+                    step.preferredProviderId(),
+                    step.modelName(),
+                    toGenerationCapability(step.capability()),
+                    timeout)
                 : multimodalRouter.call(new MultimodalRequest(
                     step.scene(),
                     resolvedPrompt,
@@ -256,6 +257,19 @@ public class StepExecutor {
     /**
      * 执行 ConditionStep — 求值条件表达式，递归执行 then/else 分支。
      */
+    private GenerationCapability toGenerationCapability(ProviderCapability capability) {
+        return switch (capability) {
+            case CHAT -> GenerationCapability.CHAT;
+            case STRUCTURED_OUTPUT -> GenerationCapability.STRUCTURED_OUTPUT;
+            case FUNCTION_CALLING -> GenerationCapability.FUNCTION_CALLING;
+            case STREAMING -> GenerationCapability.STREAMING;
+            case VISION -> GenerationCapability.VISION;
+            case NATIVE_AUDIO -> GenerationCapability.NATIVE_AUDIO;
+            case NATIVE_VIDEO -> GenerationCapability.NATIVE_VIDEO;
+            default -> throw new WorkflowStepException("unknown", "LlmStep 不支持的能力类型: " + capability);
+        };
+    }
+
     private Map<String, Object> executeCondition(ConditionStep step,
                                                  WorkflowContext context,
                                                  ExpressionEngine expressionEngine) {
@@ -480,7 +494,6 @@ public class StepExecutor {
         var request = new NotificationRequest(
                 resolvedUserId,
                 responseContent,
-                step.urgency(),
                 null,
                 null,
                 Map.of("workflowStepId", step.id())

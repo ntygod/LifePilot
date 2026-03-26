@@ -1,20 +1,24 @@
 package com.lifepilot.interaction.web.controller;
 
+import com.lifepilot.agent.model.AgentTaskMode;
 import com.lifepilot.agent.model.CompletionMode;
+import com.lifepilot.agent.model.CompletionReason;
 import com.lifepilot.interaction.model.GatewayResponse;
 import com.lifepilot.interaction.model.ResponseContent;
 import com.lifepilot.interaction.web.adapter.WebChannelAdapter;
 import com.lifepilot.interaction.web.model.*;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.repository.MessageFeedbackRepository;
-import com.lifepilot.interaction.web.service.WebUserConfirmationService;
 import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
 import com.lifepilot.media.audio.SpeechSynthesizer;
 import com.lifepilot.media.config.MediaProperties;
 import com.lifepilot.memory.feedback.FeedbackProcessor;
+import com.lifepilot.meta.infra.interaction.InteractionBridge;
+import com.lifepilot.meta.infra.interaction.InteractionResponse;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -47,6 +51,7 @@ import java.util.concurrent.CompletableFuture;
  */
 @RestController
 @RequestMapping("/api/chat")
+@ConditionalOnProperty(name = "lifepilot.gateway.channels.web.enabled", havingValue = "true")
 public class ChatController {
 
     private static final Logger log = LoggerFactory.getLogger(ChatController.class);
@@ -78,7 +83,7 @@ public class ChatController {
     private final AttachmentRepository attachmentRepository;
     private final KnowledgeBaseProperties knowledgeBaseProperties;
     @Nullable
-    private final WebUserConfirmationService confirmationService;
+    private final InteractionBridge interactionBridge;
     @Nullable
     private final FeedbackProcessor feedbackProcessor;
     @Nullable
@@ -90,7 +95,7 @@ public class ChatController {
                           MessageFeedbackRepository feedbackRepository,
                           AttachmentRepository attachmentRepository,
                           KnowledgeBaseProperties knowledgeBaseProperties,
-                          @Nullable WebUserConfirmationService confirmationService,
+                          @Nullable InteractionBridge interactionBridge,
                           @Nullable FeedbackProcessor feedbackProcessor,
                           @Nullable SpeechSynthesizer speechSynthesizer,
                           MediaProperties mediaProperties) {
@@ -100,14 +105,14 @@ public class ChatController {
         this.feedbackRepository = feedbackRepository;
         this.attachmentRepository = attachmentRepository;
         this.knowledgeBaseProperties = knowledgeBaseProperties;
-        this.confirmationService = confirmationService;
+        this.interactionBridge = interactionBridge;
         this.feedbackProcessor = feedbackProcessor;
         this.speechSynthesizer = speechSynthesizer;
         this.mediaProperties = mediaProperties;
     }
 
     private boolean hasContentOrAttachments(ChatRequest request) {
-        return request.hasMessagePayload();
+        return request.action() != ChatTurnAction.SEND || request.hasMessagePayload();
     }
 
     /**
@@ -117,7 +122,7 @@ public class ChatController {
      *
      * @param request     聊天请求（消息内容和附件至少一项存在）
      * @param httpRequest HTTP 请求
-     * @return 包含 messageId、content、a2ui、tokenUsage 的响应
+     * @return 包含 entryId、content、a2ui、tokenUsage 的响应
      */
     @PostMapping("/messages")
     public ResponseEntity<?> sendMessage(@RequestBody ChatRequest request,
@@ -201,8 +206,11 @@ public class ChatController {
                 log.debug("流式端点收到非流式响应，发送 done 事件后关闭");
                 var chatResponse = toChatResponse(response);
                 var doneDataBuilder = new java.util.HashMap<String, Object>();
-                doneDataBuilder.put("messageId", chatResponse.messageId());
+                doneDataBuilder.put("entryId", chatResponse.entryId());
                 doneDataBuilder.put("content", chatResponse.content());
+                if (chatResponse.turnId() != null) {
+                    doneDataBuilder.put("turnId", chatResponse.turnId());
+                }
                 if (request.sessionId() != null) {
                     doneDataBuilder.put("sessionId", request.sessionId());
                 }
@@ -213,6 +221,9 @@ public class ChatController {
                     doneDataBuilder.put("traceId", chatResponse.traceId());
                 }
                 doneDataBuilder.put("completionMode", chatResponse.completionMode().name());
+                if (chatResponse.turnStatus() != null) {
+                    doneDataBuilder.put("turnStatus", chatResponse.turnStatus().name());
+                }
                 if (chatResponse.resumedFromTraceId() != null) {
                     doneDataBuilder.put("resumedFromTraceId", chatResponse.resumedFromTraceId());
                 }
@@ -432,24 +443,24 @@ public class ChatController {
      * <p>从指定消息开始，复制该消息及其之前的所有消息到新会话中。</p>
      *
      * @param id      原会话 ID
-     * @param request 分叉请求（fromMessageId 必填，title 可选）
+     * @param request 分叉请求（fromEntryId 必填，title 可选）
      * @return 新创建的会话信息
      */
     @PostMapping("/sessions/{id}/fork")
     public ResponseEntity<?> forkSession(
             @PathVariable String id,
             @RequestBody ForkSessionRequest request) {
-        log.debug("分叉会话: sessionId={}, fromMessageId={}, title={}", 
-                id, request.fromMessageId(), request.title());
+        log.debug("分叉会话: sessionId={}, fromEntryId={}, title={}",
+                id, request.fromEntryId(), request.title());
         
-        if (request.fromMessageId() == null || request.fromMessageId().isBlank()) {
+        if (request.fromEntryId() == null || request.fromEntryId().isBlank()) {
             log.warn("分叉会话失败: 起始消息 ID 为空");
             return ResponseEntity.badRequest().body(
                     new ErrorResponse(400, "起始消息 ID 不能为空", Instant.now()));
         }
 
         try {
-            SessionInfo newSession = sessionService.forkSession(id, request.fromMessageId(), request.title());
+            SessionInfo newSession = sessionService.forkSession(id, request.fromEntryId(), request.title());
             log.info("会话分叉成功: originalSessionId={}, newSessionId={}", id, newSession.id());
             return ResponseEntity.ok(newSession);
         } catch (IllegalArgumentException e) {
@@ -463,27 +474,20 @@ public class ChatController {
         }
     }
 
-    /**
-     * 工具确认响应端点。
-     *
-     * <p>前端确认对话框提交确认/拒绝结果，解除 {@link WebUserConfirmationService} 的阻塞等待。</p>
-     *
-     * @param requestId 确认请求 ID
-     * @param response  确认响应（confirmed + 可选 reason）
-     * @return 200 成功，404 requestId 不存在或已过期
-     */
-    @PostMapping("/tool-confirmations/{requestId}")
-    public ResponseEntity<?> handleToolConfirmation(
-            @PathVariable String requestId,
-            @RequestBody ConfirmationResponse response) {
-        if (confirmationService == null) {
-            log.debug("WebUserConfirmationService 未注入，确认端点不可用");
+    @PostMapping("/interactions/{interactionId}")
+    public ResponseEntity<?> handleInteractionResponse(
+            @PathVariable String interactionId,
+            @RequestBody InteractionResponseRequest request) {
+        if (interactionBridge == null) {
+            log.debug("InteractionBridge 未注入，交互回传端点不可用");
             return ResponseEntity.notFound().build();
         }
-        boolean resolved = confirmationService.resolveConfirmation(requestId, response.confirmed());
-        if (!resolved) {
-            return ResponseEntity.notFound().build();
-        }
+        interactionBridge.resolve(interactionId, new InteractionResponse(
+                interactionId,
+                request.value(),
+                request.confirmed(),
+                request.timedOut()
+        ));
         return ResponseEntity.ok().build();
     }
 
@@ -599,8 +603,8 @@ public class ChatController {
             }
 
             // 生成文件访问 URL（使用数据库附件 ID，与 AttachmentController 查询一致）
-            String attachmentId = attachmentRepository.save(
-                    null,  // messageId
+            String attachmentId = attachmentRepository.saveForEntry(
+                    null,  // entryId
                     sessionId,
                     originalName,
                     filePath.toString(),
@@ -637,7 +641,7 @@ public class ChatController {
     /**
      * 更新会话配置。
      *
-     * <p>支持更新模型ID、温度参数、最大Tokens和关联的知识库列表。</p>
+     * <p>支持更新模型、温度、三维预算和关联的知识库列表。</p>
      *
      * @param id      会话 ID
      * @param request 配置更新请求
@@ -647,8 +651,9 @@ public class ChatController {
     public ResponseEntity<?> updateSessionConfig(
             @PathVariable String id,
             @RequestBody SessionConfigRequest request) {
-        log.debug("更新会话配置: sessionId={}, preferredProviderId={}, temperature={}, maxTokens={}, knowledgeBaseIds={}",
-                id, request.preferredProviderId(), request.temperature(), request.maxTokens(), request.knowledgeBaseIds());
+        log.debug("更新会话配置: sessionId={}, preferredProviderId={}, temperature={}, maxTokens={}, maxSteps={}, maxDurationSeconds={}, knowledgeBaseIds={}",
+                id, request.preferredProviderId(), request.temperature(), request.maxTokens(),
+                request.maxSteps(), request.maxDurationSeconds(), request.knowledgeBaseIds());
         
         try {
             sessionService.updateSessionConfig(id, request);
@@ -668,15 +673,15 @@ public class ChatController {
      *
      * <p>支持对消息进行点赞或点踩反馈。点踩时需要提供反馈内容。</p>
      *
-     * @param messageId 消息 ID
+     * @param entryId transcript 条目 ID
      * @param request   反馈请求（type 必填，feedback 在 type='dislike' 时必填）
      * @return 204 No Content
      */
-    @PostMapping("/messages/{messageId}/feedback")
+    @PostMapping("/entries/{entryId}/feedback")
     public ResponseEntity<?> submitFeedback(
-            @PathVariable String messageId,
+            @PathVariable String entryId,
             @RequestBody FeedbackRequest request) {
-        log.debug("提交消息反馈: messageId={}, type={}", messageId, request.type());
+        log.debug("提交条目反馈: entryId={}, type={}", entryId, request.type());
 
         // 验证反馈类型
         if (request.type() == null || request.type().isBlank()) {
@@ -691,33 +696,33 @@ public class ChatController {
                     new ErrorResponse(400, "反馈类型必须是 'like' 或 'dislike'", Instant.now()));
         }
 
-        // 从 chat_messages 获取会话 ID（消息已同步持久化，无需降级逻辑）
-        String sessionId = feedbackRepository.getSessionIdByMessageId(messageId);
+        // 从 transcript 读模型获取会话 ID
+        String sessionId = feedbackRepository.getSessionIdByEntryId(entryId);
         if (sessionId == null) {
-            log.warn("消息反馈失败: 消息不存在: messageId={}", messageId);
+            log.warn("条目反馈失败: 条目不存在: entryId={}", entryId);
             return ResponseEntity.badRequest().body(
                     new ErrorResponse(400, "消息不存在", Instant.now()));
         }
 
         try {
             // 保存反馈
-            feedbackRepository.save(messageId, sessionId, request.type(), request.feedback());
-            log.info("消息反馈保存成功: messageId={}, type={}", messageId, request.type());
+            feedbackRepository.saveForEntry(entryId, sessionId, request.type(), request.feedback());
+            log.info("条目反馈保存成功: entryId={}, type={}", entryId, request.type());
 
             // 异步调用 FeedbackProcessor 调整关联实体 importanceScore
             if (feedbackProcessor != null) {
                 CompletableFuture.runAsync(() -> {
                     try {
-                        feedbackProcessor.processFeedback(messageId, request.type());
+                        feedbackProcessor.processFeedbackForEntry(entryId, request.type());
                     } catch (Exception ex) {
-                        log.warn("反馈处理失败: messageId={}, error={}", messageId, ex.getMessage());
+                        log.warn("反馈处理失败: entryId={}, error={}", entryId, ex.getMessage());
                     }
                 });
             }
 
             return ResponseEntity.noContent().build();
         } catch (Exception e) {
-            log.error("保存消息反馈时发生错误: messageId={}", messageId, e);
+            log.error("保存条目反馈时发生错误: entryId={}", entryId, e);
             return ResponseEntity.internalServerError().body(
                     new ErrorResponse(500, "保存反馈失败: " + e.getMessage(), Instant.now()));
         }
@@ -731,14 +736,14 @@ public class ChatController {
      * <p>将指定消息的文本内容通过 {@link SpeechSynthesizer} 合成为音频，
      * 返回 {@code audio/mpeg} 格式的二进制流。支持通过查询参数覆盖默认语音风格和语速。</p>
      *
-     * @param messageId 消息 ID
+     * @param entryId transcript 条目 ID
      * @param voice     语音风格（可选，覆盖默认配置）
      * @param speed     语速倍率（可选，覆盖默认配置）
      * @return 音频二进制流
      */
-    @PostMapping("/messages/{messageId}/tts")
+    @PostMapping("/entries/{entryId}/tts")
     public ResponseEntity<?> synthesizeSpeech(
-            @PathVariable String messageId,
+            @PathVariable String entryId,
             @RequestParam(required = false) String voice,
             @RequestParam(required = false) Double speed) {
 
@@ -757,20 +762,20 @@ public class ChatController {
         }
 
         // 获取消息文本
-        String content = feedbackRepository.getMessageContentById(messageId);
+        String content = feedbackRepository.getEntryContentById(entryId);
         if (content == null || content.isBlank()) {
-            log.warn("TTS 合成失败: 消息不存在或内容为空: messageId={}", messageId);
+            log.warn("TTS 合成失败: 条目不存在或内容为空: entryId={}", entryId);
             return ResponseEntity.notFound().build();
         }
 
         try {
             byte[] audioData = speechSynthesizer.synthesize(content);
-            log.info("TTS 合成成功: messageId={}, audioSize={}", messageId, audioData.length);
+            log.info("TTS 合成成功: entryId={}, audioSize={}", entryId, audioData.length);
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_TYPE, "audio/mpeg")
                     .body(audioData);
         } catch (Exception e) {
-            log.error("TTS 合成失败: messageId={}", messageId, e);
+            log.error("TTS 合成失败: entryId={}", entryId, e);
             return ResponseEntity.internalServerError().body(
                     new ErrorResponse(500, "语音合成失败: " + e.getMessage(), Instant.now()));
         }
@@ -860,21 +865,51 @@ public class ChatController {
         String traceId = response.metadata() != null
                 ? (String) response.metadata().get("traceId")
                 : null;
+        String turnId = response.metadata() != null
+                ? (String) response.metadata().get("turnId")
+                : null;
+        AgentTaskMode taskMode = response.metadata() != null
+                ? parseTaskMode(response.metadata().get("taskMode"))
+                : AgentTaskMode.AUTO;
         CompletionMode completionMode = response.metadata() != null
                 ? parseCompletionMode(response.metadata().get("completionMode"))
                 : CompletionMode.NORMAL;
+        CompletionReason completionReason = response.metadata() != null
+                ? parseCompletionReason(response.metadata().get("completionReason"))
+                : null;
+        ChatTurnStatus turnStatus = response.metadata() != null
+                ? parseTurnStatus(response.metadata().get("turnStatus"))
+                : ChatTurnStatus.SUCCESS;
         String resumedFromTraceId = response.metadata() != null
                 ? (String) response.metadata().get("resumedFromTraceId")
                 : null;
         return new ChatResponse(
                 response.responseId(),
+                turnId,
+                taskMode,
                 text,
                 a2uiComponents,
                 response.tokenUsage(),
                 traceId,
                 completionMode,
-                resumedFromTraceId
+                completionReason,
+                resumedFromTraceId,
+                turnStatus
         );
+    }
+
+    private AgentTaskMode parseTaskMode(@Nullable Object rawValue) {
+        if (rawValue instanceof AgentTaskMode taskMode) {
+            return taskMode;
+        }
+        if (rawValue instanceof String rawText) {
+            try {
+                return AgentTaskMode.valueOf(rawText);
+            } catch (IllegalArgumentException ignored) {
+                return AgentTaskMode.AUTO;
+            }
+        }
+        return AgentTaskMode.AUTO;
     }
 
     private CompletionMode parseCompletionMode(@Nullable Object rawValue) {
@@ -889,5 +924,33 @@ public class ChatController {
             }
         }
         return CompletionMode.NORMAL;
+    }
+
+    private @Nullable CompletionReason parseCompletionReason(@Nullable Object rawValue) {
+        if (rawValue instanceof CompletionReason completionReason) {
+            return completionReason;
+        }
+        if (rawValue instanceof String rawText) {
+            try {
+                return CompletionReason.valueOf(rawText);
+            } catch (IllegalArgumentException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private ChatTurnStatus parseTurnStatus(@Nullable Object rawValue) {
+        if (rawValue instanceof ChatTurnStatus turnStatus) {
+            return turnStatus;
+        }
+        if (rawValue instanceof String rawText) {
+            try {
+                return ChatTurnStatus.valueOf(rawText);
+            } catch (IllegalArgumentException ignored) {
+                return ChatTurnStatus.SUCCESS;
+            }
+        }
+        return ChatTurnStatus.SUCCESS;
     }
 }

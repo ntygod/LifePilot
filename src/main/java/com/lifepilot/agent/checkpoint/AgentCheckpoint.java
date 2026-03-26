@@ -54,6 +54,7 @@ public record AgentCheckpoint(
             return restored.toBuilder()
                     .traceId(UUID.randomUUID().toString())
                     .sessionId(request.sessionId())
+                    .turnId(request.turnId())
                     .goal(request.message())
                     .channel(request.channel())
                     .parentTraceId(sourceTraceId)

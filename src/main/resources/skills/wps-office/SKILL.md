@@ -1,7 +1,7 @@
 ---
 id: wps-office
 name: "WPS 办公"
-description: "WPS 文档操作：创建文档、编辑表格、格式转换。通过 WPS 开放 API 或本地 CLI 实现"
+description: "WPS 文档操作：创建文档、编辑表格、格式转换。"
 version: "1.0.0"
 suggested-tools:
   - builtin.shell.exec

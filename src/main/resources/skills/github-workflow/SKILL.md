@@ -1,7 +1,7 @@
 ---
 id: github-workflow
 name: "GitHub 协作"
-description: "GitHub 协作流程：PR 管理、Issue 处理、代码审查、CI/CD 诊断。统一通过 gh CLI、REST API 和 GraphQL 与 GitHub 交互"
+description: "GitHub 协作流程：PR 管理、Issue 处理、代码审查、CI/CD 诊断。"
 version: "1.1.0"
 suggested-tools:
   - builtin.shell.exec
@@ -23,8 +23,8 @@ triggers:
 
 ## 前置条件
 
-- 已安装 `gh` CLI（`gh --version`）
-- 已认证（`gh auth status`）
+- 需要 `gh` CLI 已安装且已认证
+- 不要在每次操作前主动检查 `gh --version` 和 `gh auth status`，直接执行目标命令即可；仅在命令报错提示未安装或未认证时才做诊断检查
 
 
 ## When NOT to Use

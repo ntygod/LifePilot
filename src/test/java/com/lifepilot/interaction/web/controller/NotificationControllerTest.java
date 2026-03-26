@@ -2,7 +2,6 @@ package com.lifepilot.interaction.web.controller;
 
 import com.lifepilot.notification.NotificationRecord;
 import com.lifepilot.notification.NotificationRepository;
-import com.lifepilot.notification.Urgency;
 import com.lifepilot.notification.config.NotificationProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
@@ -47,8 +46,8 @@ class NotificationControllerTest {
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
-    private NotificationRecord testRecord(String id, Urgency urgency) {
-        return new NotificationRecord(id, "user-1", "alert", urgency,
+    private NotificationRecord testRecord(String id) {
+        return new NotificationRecord(id, "user-1", "alert",
                 "{\"text\":\"test\"}", "WEB", "UNREAD", "SENT",
                 null, NOW, NOW, NOW);
     }
@@ -60,7 +59,7 @@ class NotificationControllerTest {
 
         @Test
         void 分页查询通知历史() throws Exception {
-            var records = List.of(testRecord("n-1", Urgency.HIGH), testRecord("n-2", Urgency.MEDIUM));
+            var records = List.of(testRecord("n-1"), testRecord("n-2"));
             when(notificationRepository.findByUserId(eq("user-1"), eq(0), anyInt()))
                     .thenReturn(records);
             when(notificationRepository.countByUserId("user-1")).thenReturn(2L);
@@ -73,29 +72,6 @@ class NotificationControllerTest {
                     .andExpect(jsonPath("$.total", is(2)))
                     .andExpect(jsonPath("$.page", is(0)));
         }
-
-        @Test
-        void urgency过滤查询() throws Exception {
-            var records = List.of(testRecord("n-1", Urgency.HIGH));
-            when(notificationRepository.findByUserIdAndUrgency(eq("user-1"), eq("HIGH"), eq(0), anyInt()))
-                    .thenReturn(records);
-            when(notificationRepository.countByUserIdAndUrgency("user-1", "HIGH")).thenReturn(1L);
-
-            mockMvc.perform(get("/api/notifications")
-                            .param("userId", "user-1")
-                            .param("urgency", "HIGH"))
-                    .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.items", hasSize(1)))
-                    .andExpect(jsonPath("$.items[0].urgency", is("HIGH")));
-        }
-
-        @Test
-        void 无效urgency返回400() throws Exception {
-            mockMvc.perform(get("/api/notifications")
-                            .param("userId", "user-1")
-                            .param("urgency", "INVALID"))
-                    .andExpect(status().isBadRequest());
-        }
     }
 
     // ── PUT /api/notifications/{id}/read ──────────────────
@@ -105,7 +81,7 @@ class NotificationControllerTest {
 
         @Test
         void 标记单条通知已读() throws Exception {
-            var record = testRecord("n-1", Urgency.HIGH);
+            var record = testRecord("n-1");
             when(notificationRepository.findById("n-1")).thenReturn(Optional.of(record));
 
             mockMvc.perform(put("/api/notifications/n-1/read"))

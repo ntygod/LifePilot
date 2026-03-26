@@ -16,8 +16,7 @@ public interface NotificationService {
     /**
      * 发送通知。
      *
-     * <p>根据 {@link NotificationRequest#urgency()} 路由通知：
-     * HIGH / MEDIUM 通过 ChannelAdapter 实时推送，LOW 入队被动通知队列。
+     * <p>通知统一采用直接发送策略。
      * 每个成功发送的渠道生成独立的通知记录。
      *
      * @param request 通知请求

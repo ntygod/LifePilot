@@ -1,5 +1,7 @@
 package com.lifepilot.agent.config;
 
+import lombok.Getter;
+import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.time.Duration;
@@ -13,6 +15,8 @@ import java.time.Duration;
  * @author zsg
  * @since 2026-07-20
  */
+@Setter
+@Getter
 @ConfigurationProperties(prefix = "lifepilot.agent")
 public class AgentConfigProperties {
 
@@ -22,25 +26,9 @@ public class AgentConfigProperties {
     private ContextConfig context = new ContextConfig();
     private SessionConfig session = new SessionConfig();
     private CheckpointConfig checkpoint = new CheckpointConfig();
+    private ExecutionRetryConfig executionRetry = new ExecutionRetryConfig();
     private DebugConfig debug = new DebugConfig();
     private TaskConfig task = new TaskConfig();
-
-    public boolean isEnabled() { return enabled; }
-    public void setEnabled(boolean enabled) { this.enabled = enabled; }
-    public LoopConfig getLoop() { return loop; }
-    public void setLoop(LoopConfig loop) { this.loop = loop; }
-    public BudgetConfig getBudget() { return budget; }
-    public void setBudget(BudgetConfig budget) { this.budget = budget; }
-    public ContextConfig getContext() { return context; }
-    public void setContext(ContextConfig context) { this.context = context; }
-    public SessionConfig getSession() { return session; }
-    public void setSession(SessionConfig session) { this.session = session; }
-    public CheckpointConfig getCheckpoint() { return checkpoint; }
-    public void setCheckpoint(CheckpointConfig checkpoint) { this.checkpoint = checkpoint; }
-    public DebugConfig getDebug() { return debug; }
-    public void setDebug(DebugConfig debug) { this.debug = debug; }
-    public TaskConfig getTask() { return task; }
-    public void setTask(TaskConfig task) { this.task = task; }
 
     /** ReAct 循环配置（替代原 LoopConfig）。 */
     public static class LoopConfig {
@@ -48,6 +36,7 @@ public class AgentConfigProperties {
         private int maxIterations = 25;
         /** 连续工具调用失败最大次数。 */
         private int maxConsecutiveFailures = 3;
+        private int maxEarlyStopRejects = 2;
         /** LLM 调用场景标识。 */
         private String llmScene = "agent_react";
 
@@ -55,106 +44,163 @@ public class AgentConfigProperties {
         public void setMaxIterations(int maxIterations) { this.maxIterations = maxIterations; }
         public int getMaxConsecutiveFailures() { return maxConsecutiveFailures; }
         public void setMaxConsecutiveFailures(int maxConsecutiveFailures) { this.maxConsecutiveFailures = maxConsecutiveFailures; }
+        public int getMaxEarlyStopRejects() { return maxEarlyStopRejects; }
+        public void setMaxEarlyStopRejects(int maxEarlyStopRejects) { this.maxEarlyStopRejects = maxEarlyStopRejects; }
         public String getLlmScene() { return llmScene; }
         public void setLlmScene(String llmScene) { this.llmScene = llmScene; }
     }
 
     /** 预算配置。 */
+    @Setter
+    @Getter
     public static class BudgetConfig {
         /** 对话总 Token 预算（整个对话允许消耗的总 Token）。 */
         private int defaultMaxTokens = 131072;
         private int defaultMaxSteps = 30;
         private int defaultMaxDurationSeconds = 300;
-        private double subAgentBudgetRatio = 0.3;
 
-        public int getDefaultMaxTokens() { return defaultMaxTokens; }
-        public void setDefaultMaxTokens(int defaultMaxTokens) { this.defaultMaxTokens = defaultMaxTokens; }
-        public int getDefaultMaxSteps() { return defaultMaxSteps; }
-        public void setDefaultMaxSteps(int defaultMaxSteps) { this.defaultMaxSteps = defaultMaxSteps; }
-        public int getDefaultMaxDurationSeconds() { return defaultMaxDurationSeconds; }
-        public void setDefaultMaxDurationSeconds(int defaultMaxDurationSeconds) { this.defaultMaxDurationSeconds = defaultMaxDurationSeconds; }
-        public double getSubAgentBudgetRatio() { return subAgentBudgetRatio; }
-        public void setSubAgentBudgetRatio(double subAgentBudgetRatio) { this.subAgentBudgetRatio = subAgentBudgetRatio; }
     }
 
     /** 上下文配置。 */
+    @Getter
     public static class ContextConfig {
         /**
          * 单次 LLM 调用的最大上下文 Token 数。
          * <p>实际使用时取 min(此值, 模型的 maxContextWindow)。</p>
          */
+        @Setter
         private int maxContextTokens = 131072;
+        @Setter
         private int outputReservedTokens = 8192;
         /** 成功步骤输出截断长度。 */
+        @Setter
         private int successStepMaxLength = 200;
         /** 失败步骤输出截断长度。 */
+        @Setter
         private int failedStepMaxLength = 80;
         /** Token 分配比例。 */
         private TokenAllocation tokenAllocation = new TokenAllocation();
+        private SliceConfig slice = new SliceConfig();
+        private PruningConfig pruning = new PruningConfig();
+        private CompactionConfig compaction = new CompactionConfig();
+        private MessageBuildConfig messageBuild = new MessageBuildConfig();
+        private ReportConfig report = new ReportConfig();
 
-        public int getMaxContextTokens() { return maxContextTokens; }
-        public void setMaxContextTokens(int maxContextTokens) { this.maxContextTokens = maxContextTokens; }
-        public int getOutputReservedTokens() { return outputReservedTokens; }
-        public void setOutputReservedTokens(int outputReservedTokens) { this.outputReservedTokens = outputReservedTokens; }
-        public int getSuccessStepMaxLength() { return successStepMaxLength; }
-        public void setSuccessStepMaxLength(int successStepMaxLength) { this.successStepMaxLength = successStepMaxLength; }
-        public int getFailedStepMaxLength() { return failedStepMaxLength; }
-        public void setFailedStepMaxLength(int failedStepMaxLength) { this.failedStepMaxLength = failedStepMaxLength; }
-        public TokenAllocation getTokenAllocation() { return tokenAllocation; }
         public void setTokenAllocation(TokenAllocation tokenAllocation) {
             this.tokenAllocation = tokenAllocation != null ? tokenAllocation : new TokenAllocation();
         }
 
+        public void setSlice(SliceConfig slice) {
+            this.slice = slice != null ? slice : new SliceConfig();
+        }
+
+        public void setPruning(PruningConfig pruning) {
+            this.pruning = pruning != null ? pruning : new PruningConfig();
+        }
+
+        public void setCompaction(CompactionConfig compaction) {
+            this.compaction = compaction != null ? compaction : new CompactionConfig();
+        }
+
+        public void setMessageBuild(MessageBuildConfig messageBuild) {
+            this.messageBuild = messageBuild != null ? messageBuild : new MessageBuildConfig();
+        }
+
+        public void setReport(ReportConfig report) {
+            this.report = report != null ? report : new ReportConfig();
+        }
+
         /** Token 分配比例。 */
+        @Setter
+        @Getter
         public static class TokenAllocation {
             private int systemPromptPercent = 15;
             private int historyPercent = 30;
-            private int memoryPercent = 35;
+            private int memoryPercent = 25;
             private int toolSchemaPercent = 10;
-            private int toolResultPercent = 0;
+            private int toolResultPercent = 10;
             private int reservedBufferPercent = 10;
 
-            public int getSystemPromptPercent() { return systemPromptPercent; }
-            public void setSystemPromptPercent(int systemPromptPercent) { this.systemPromptPercent = systemPromptPercent; }
-            public int getHistoryPercent() { return historyPercent; }
-            public void setHistoryPercent(int historyPercent) { this.historyPercent = historyPercent; }
-            public int getMemoryPercent() { return memoryPercent; }
-            public void setMemoryPercent(int memoryPercent) { this.memoryPercent = memoryPercent; }
-            public int getToolSchemaPercent() { return toolSchemaPercent; }
-            public void setToolSchemaPercent(int toolSchemaPercent) { this.toolSchemaPercent = toolSchemaPercent; }
-            public int getToolResultPercent() { return toolResultPercent; }
-            public void setToolResultPercent(int toolResultPercent) { this.toolResultPercent = toolResultPercent; }
-            public int getReservedBufferPercent() { return reservedBufferPercent; }
-            public void setReservedBufferPercent(int reservedBufferPercent) { this.reservedBufferPercent = reservedBufferPercent; }
+        }
+
+        @Setter
+        @Getter
+        public static class SliceConfig {
+            private int recentTurnLimit = 6;
+            private int recentArtifactLimit = 3;
+        }
+
+        @Setter
+        @Getter
+        public static class PruningConfig {
+            private boolean enabled = true;
+            private String toolResultMode = "recent_only";
+            private int recentToolResultLimit = 4;
+            private int toolResultPreviewChars = 240;
+        }
+
+        @Setter
+        @Getter
+        public static class CompactionConfig {
+            private boolean enabled = true;
+            private int triggerThresholdPercent = 75;
+            private int keepRecentTurns = 2;
+            private int minTurnCount = 6;
+            private int maxSourceEntries = 80;
+            private int summaryMaxChars = 500;
+        }
+
+        @Setter
+        @Getter
+        public static class MessageBuildConfig {
+            private boolean hygieneEnabled = true;
+            private boolean dropEmptyAssistantMessages = true;
+            private boolean dropOrphanToolResponses = true;
+            private boolean keepOnlyFirstSystemMessage = true;
+        }
+
+        @Setter
+        @Getter
+        public static class ReportConfig {
+            private boolean contextReportEnabled = true;
+
         }
     }
 
     /** 会话配置。 */
+    @Setter
+    @Getter
     public static class SessionConfig {
         private int timeoutMinutes = 30;
         private int maxRecentTurns = 10;
         private long cleanupIntervalMs = 300000;
 
-        public int getTimeoutMinutes() { return timeoutMinutes; }
-        public void setTimeoutMinutes(int timeoutMinutes) { this.timeoutMinutes = timeoutMinutes; }
-        public int getMaxRecentTurns() { return maxRecentTurns; }
-        public void setMaxRecentTurns(int maxRecentTurns) { this.maxRecentTurns = maxRecentTurns; }
-        public long getCleanupIntervalMs() { return cleanupIntervalMs; }
-        public void setCleanupIntervalMs(long cleanupIntervalMs) { this.cleanupIntervalMs = cleanupIntervalMs; }
     }
 
     /** 检查点配置。 */
+    @Setter
+    @Getter
     public static class CheckpointConfig {
         private boolean enabled = true;
         private Duration maxAge = Duration.ofDays(7);
         private long cleanupIntervalMs = Duration.ofHours(1).toMillis();
 
-        public boolean isEnabled() { return enabled; }
-        public void setEnabled(boolean enabled) { this.enabled = enabled; }
-        public Duration getMaxAge() { return maxAge; }
-        public void setMaxAge(Duration maxAge) { this.maxAge = maxAge; }
-        public long getCleanupIntervalMs() { return cleanupIntervalMs; }
-        public void setCleanupIntervalMs(long cleanupIntervalMs) { this.cleanupIntervalMs = cleanupIntervalMs; }
+    }
+
+    /** 主执行链路自动重试配置。 */
+    @Setter
+    @Getter
+    public static class ExecutionRetryConfig {
+        /** 是否启用主执行链路安全自动重试。 */
+        private boolean enabled = true;
+        /** 单次请求的最大尝试次数，包含首次执行。 */
+        private int maxAttempts = 2;
+        /** 首次重试前的退避时间（毫秒）。 */
+        private long initialDelayMs = 500;
+        /** 指数退避倍率。 */
+        private double multiplier = 2.0;
+        /** 最大退避时间（毫秒）。 */
+        private long maxDelayMs = 5000;
     }
 
     /**
@@ -162,15 +208,17 @@ public class AgentConfigProperties {
      *
      * <p>注意：开启完整提示词日志可能泄漏隐私/密钥，仅建议在本地或受控环境使用。</p>
      */
+    @Setter
+    @Getter
     public static class DebugConfig {
         /** 是否打印每次调用 LLM 时发送的完整 system/user 提示词。默认关闭。 */
         private boolean logLlmPrompts = false;
 
-        public boolean isLogLlmPrompts() { return logLlmPrompts; }
-        public void setLogLlmPrompts(boolean logLlmPrompts) { this.logLlmPrompts = logLlmPrompts; }
     }
 
     /** 自主任务配置（Cron + Heartbeat 双轨）。 */
+    @Setter
+    @Getter
     public static class TaskConfig {
         /** 任务系统总开关。 */
         private boolean enabled = true;
@@ -189,21 +237,5 @@ public class AgentConfigProperties {
         /** 每个 cron 任务保留的最大执行日志数。 */
         private int maxLogsPerTask = 50;
 
-        public boolean isEnabled() { return enabled; }
-        public void setEnabled(boolean enabled) { this.enabled = enabled; }
-        public boolean isHeartbeatEnabled() { return heartbeatEnabled; }
-        public void setHeartbeatEnabled(boolean heartbeatEnabled) { this.heartbeatEnabled = heartbeatEnabled; }
-        public int getHeartbeatIntervalSeconds() { return heartbeatIntervalSeconds; }
-        public void setHeartbeatIntervalSeconds(int heartbeatIntervalSeconds) { this.heartbeatIntervalSeconds = heartbeatIntervalSeconds; }
-        public String getHeartbeatFile() { return heartbeatFile; }
-        public void setHeartbeatFile(String heartbeatFile) { this.heartbeatFile = heartbeatFile; }
-        public int getExecutionTimeoutSeconds() { return executionTimeoutSeconds; }
-        public void setExecutionTimeoutSeconds(int executionTimeoutSeconds) { this.executionTimeoutSeconds = executionTimeoutSeconds; }
-        public String getActiveHoursStart() { return activeHoursStart; }
-        public void setActiveHoursStart(String activeHoursStart) { this.activeHoursStart = activeHoursStart; }
-        public String getActiveHoursEnd() { return activeHoursEnd; }
-        public void setActiveHoursEnd(String activeHoursEnd) { this.activeHoursEnd = activeHoursEnd; }
-        public int getMaxLogsPerTask() { return maxLogsPerTask; }
-        public void setMaxLogsPerTask(int maxLogsPerTask) { this.maxLogsPerTask = maxLogsPerTask; }
     }
 }

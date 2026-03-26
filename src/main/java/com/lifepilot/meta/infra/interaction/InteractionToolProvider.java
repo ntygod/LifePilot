@@ -57,7 +57,7 @@ public class InteractionToolProvider {
                 .description("向用户展示选项列表并请求选择，阻塞等待用户响应")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
-                        "required", List.of("message", "options", "sessionId"),
+                        "required", List.of("message", "options"),
                         "properties", Map.of(
                                 "message", Map.of("type", "string",
                                         "description", "选择提示消息"),
@@ -83,7 +83,7 @@ public class InteractionToolProvider {
                 .description("向用户展示输入提示并请求自由文本输入，阻塞等待用户响应")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
-                        "required", List.of("message", "sessionId"),
+                        "required", List.of("message"),
                         "properties", Map.of(
                                 "message", Map.of("type", "string",
                                         "description", "输入提示消息"),
@@ -97,22 +97,22 @@ public class InteractionToolProvider {
                 .build();
     }
 
-    /** 构建通知工具 — 非阻塞推送通知消息，LOW 风险。通过 NotificationService 统一路由。 */
+    /** 构建通知工具 — 非阻塞推送通知消息，LOW 风险。默认定向到当前会话渠道。 */
     private BuiltinTool buildNotifyTool(NotifyToolExecutor executor) {
         return BuiltinTool.builder()
                 .id("builtin.interact.notify")
                 .category(ToolCategory.INTERACTION)
                 .name("推送通知")
-                .description("向用户推送通知消息，非阻塞（不等待用户响应）。支持设置紧急程度，通过统一通知服务路由到所有已注册渠道")
+                .description("向用户推送通知消息，非阻塞（不等待用户响应）。默认定向到当前会话渠道，也可显式指定 channel")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
                         "required", List.of("message"),
                         "properties", Map.of(
                                 "message", Map.of("type", "string",
                                         "description", "通知消息内容"),
-                                "urgency", Map.of("type", "string",
-                                        "enum", List.of("HIGH", "MEDIUM", "LOW"),
-                                        "description", "紧急程度：HIGH（立即推送）、MEDIUM（默认，正常推送）、LOW（入队稍后处理）")
+                                "channel", Map.of("type", "string",
+                                        "enum", List.of("WEB", "WECOM", "DINGTALK", "FEISHU"),
+                                        "description", "可选，显式指定通知渠道；不传则默认使用当前会话渠道")
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)

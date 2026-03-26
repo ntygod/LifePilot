@@ -1,6 +1,7 @@
 com.lifepilot.config.threadpool.ThreadPoolAutoConfiguration
 com.lifepilot.prompt.config.PromptAutoConfiguration
 com.lifepilot.llm.config.LlmAutoConfiguration
+com.lifepilot.modelservice.config.ModelRoutingAutoConfiguration
 com.lifepilot.memory.config.MemoryAutoConfiguration
 com.lifepilot.tool.config.ToolAutoConfiguration
 com.lifepilot.agent.config.AgentAutoConfiguration

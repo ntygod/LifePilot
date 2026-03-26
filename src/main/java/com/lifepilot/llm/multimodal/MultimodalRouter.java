@@ -1,9 +1,8 @@
 package com.lifepilot.llm.multimodal;
 
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.ExponentialBackoff;
-import com.lifepilot.llm.LlmRequest;
 import com.lifepilot.llm.LlmResponse;
-import com.lifepilot.llm.LlmRouter;
 import com.lifepilot.llm.LlmUnavailableException;
 import com.lifepilot.llm.StreamingLlmResponse;
 import com.lifepilot.llm.circuit.CircuitBreakerManager;
@@ -36,7 +35,7 @@ import java.util.stream.Stream;
  * 多模态路由入口。
  *
  * <p>处理包含图片或视频的 LLM 调用请求。当请求不包含图片时，
- * 委托给 {@link LlmRouter} 处理纯文本请求。当请求包含图片时，
+ * 委托给 {@link GenerationRouter} 处理纯文本请求。当请求包含图片时，
  * 自行执行 VISION 能力过滤、熔断器过滤、优先级排序和故障转移。</p>
  *
  * @author zsg
@@ -53,7 +52,7 @@ public class MultimodalRouter {
     private final @Nullable VideoProcessor videoProcessor;
     private final @Nullable GeminiFileApiClient geminiFileApiClient;
     private final MediaProperties mediaProperties;
-    private final LlmRouter llmRouter;
+    private final GenerationRouter generationRouter;
     private final ExponentialBackoff backoff;
 
     /** LRU 缓存容量上限。 */
@@ -90,7 +89,7 @@ public class MultimodalRouter {
                             @Nullable VideoProcessor videoProcessor,
                             @Nullable GeminiFileApiClient geminiFileApiClient,
                             MediaProperties mediaProperties,
-                            LlmRouter llmRouter) {
+                            GenerationRouter generationRouter) {
         this.providerRegistry = providerRegistry;
         this.circuitBreakerManager = circuitBreakerManager;
         this.mediaProcessor = mediaProcessor;
@@ -98,7 +97,7 @@ public class MultimodalRouter {
         this.videoProcessor = videoProcessor;
         this.geminiFileApiClient = geminiFileApiClient;
         this.mediaProperties = mediaProperties;
-        this.llmRouter = llmRouter;
+        this.generationRouter = generationRouter;
         this.backoff = ExponentialBackoff.defaults();
         log.info("MultimodalRouter 初始化完成, 视频处理={}, 原生视频={}, 原生音频={}",
                 videoProcessor != null ? "已启用" : "未启用",
@@ -123,14 +122,15 @@ public class MultimodalRouter {
 
         boolean hasImages = mediaList.stream().anyMatch(mc -> mc.mimeType().startsWith("image/"));
         if (!hasImages) {
-            log.debug("无图片附件，委托 LlmRouter: scene={}", request.scene());
-            var llmRequest = LlmRequest.builder(request.scene(), text)
-                    .outputSchema(request.outputSchema())
-                    .modelName(request.modelName())
-                    .preferredProviderId(request.preferredProviderId())
-                    .timeoutOverride(timeoutOverride)
-                    .build();
-            return llmRouter.call(llmRequest);
+            log.debug("无图片附件，委托 GenerationRouter: scene={}", request.scene());
+            return generationRouter.call(
+                    request.scene(),
+                    text,
+                    request.outputSchema(),
+                    request.preferredProviderId(),
+                    request.modelName(),
+                    com.lifepilot.modelservice.model.GenerationCapability.CHAT,
+                    timeoutOverride);
         }
 
         List<MediaContent> processedImages = getProcessedImages(mediaList);
@@ -197,11 +197,10 @@ public class MultimodalRouter {
 
         boolean hasImages = mediaList.stream().anyMatch(mc -> mc.mimeType().startsWith("image/"));
         if (!hasImages) {
-            log.debug("无图片附件，委托 LlmRouter.stream: scene={}", request.scene());
-            if (request.modelName() != null && !request.modelName().isBlank()) {
-                return llmRouter.streamWithInfo(request.scene(), text);
-            }
-            return llmRouter.streamWithInfo(request.scene(), text, request.preferredProviderId());
+            log.debug("无图片附件，委托 GenerationRouter.stream: scene={}", request.scene());
+            var response = generationRouter.streamWithInfo(
+                    request.scene(), text, request.preferredProviderId(), request.modelName());
+            return new StreamingLlmResponse(response.stream(), response.serviceId(), response.modelName());
         }
 
         // 使用缓存获取预处理后的图片
@@ -259,7 +258,7 @@ public class MultimodalRouter {
                     log.info("原生视频调用成功: provider={}, latency={}ms",
                             config.id(), videoResponse.latencyMs());
 
-                    // 返回空媒体列表的请求，call() 方法会检测无图片后委托 LlmRouter，
+                    // 返回空媒体列表的请求，call() 方法会检测无图片后委托 GenerationRouter，
                     // 但此处已获得结果，需要直接返回。通过移除视频内容使后续流程跳过多模态调用。
                     List<MediaContent> nonVideoItems = request.mediaList().stream()
                             .filter(mc -> !mc.mimeType().startsWith("video/"))
@@ -392,11 +391,42 @@ public class MultimodalRouter {
                     .filter(config -> circuitBreakerManager.isCallPermitted(config.id(), "VISION"))
                     .toList();
         }
-        return llmRouter.getAvailableCandidates(
-                request.scene(),
-                ProviderCapability.VISION,
-                request.preferredProviderId()
-        );
+        return selectVisionCandidates(request.scene(), request.preferredProviderId());
+    }
+
+    private List<ProviderConfig> selectVisionCandidates(String scene,
+                                                        @Nullable String preferredProviderId) {
+        List<ProviderConfig> matched = providerRegistry.findByScene(scene).stream()
+                .filter(config -> config.hasCapability(ProviderCapability.VISION))
+                .filter(config -> circuitBreakerManager.isCallPermitted(config.id(), "VISION"))
+                .toList();
+        List<ProviderConfig> ordered = prioritizePreferredProvider(matched, preferredProviderId);
+        if (!ordered.isEmpty()) {
+            return ordered;
+        }
+        List<ProviderConfig> fallback = providerRegistry.findByCapability(ProviderCapability.VISION).stream()
+                .filter(config -> circuitBreakerManager.isCallPermitted(config.id(), "VISION"))
+                .toList();
+        return prioritizePreferredProvider(fallback, preferredProviderId);
+    }
+
+    private List<ProviderConfig> prioritizePreferredProvider(List<ProviderConfig> candidates,
+                                                             @Nullable String preferredProviderId) {
+        if (preferredProviderId == null || preferredProviderId.isBlank()) {
+            return candidates;
+        }
+        var preferred = providerRegistry.getConfig(preferredProviderId)
+                .filter(config -> config.hasCapability(ProviderCapability.VISION))
+                .filter(config -> circuitBreakerManager.isCallPermitted(config.id(), "VISION"));
+        if (preferred.isEmpty()) {
+            return candidates;
+        }
+        var ordered = new ArrayList<ProviderConfig>();
+        ordered.add(preferred.get());
+        candidates.stream()
+                .filter(config -> !config.id().equals(preferredProviderId))
+                .forEach(ordered::add);
+        return ordered;
     }
 
     private Duration effectiveTimeout(ProviderConfig config, @Nullable Duration timeoutOverride) {

@@ -5,6 +5,7 @@ import com.lifepilot.llm.config.ProviderCapability;
 import com.lifepilot.llm.config.ProviderConfig;
 import com.lifepilot.llm.config.ProviderType;
 import com.lifepilot.llm.multimodal.MediaContent;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -16,8 +17,10 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeoutException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -81,7 +84,47 @@ class SpringAiProviderAdapterTest {
 
         RuntimeException exception = assertThrows(RuntimeException.class, () ->
                 adapter.call("slow", null, Duration.ofMillis(50)));
-        assertTrue(exception.getMessage().contains("timed out"));
+        assertNotNull(exception.getCause());
+        assertTrue(exception.getCause() instanceof TimeoutException);
+    }
+
+    @Test
+    void repairJson_shouldEscapeEmbeddedChineseQuotes() throws Exception {
+        String raw = """
+                {
+                  "decisions": [
+                    {
+                      "description": "用户希望被称呼为"老板"，用户称呼 AI 为"微微"",
+                      "entityName": "用户称呼偏好",
+                      "entityType": "PREFERENCE",
+                      "operation": "UPDATE",
+                      "properties": {}
+                    }
+                  ]
+                }
+                """;
+
+        String repaired = SpringAiProviderAdapter.repairJson(raw);
+        var root = new ObjectMapper().readTree(repaired);
+
+        assertEquals("用户希望被称呼为\"老板\"，用户称呼 AI 为\"微微\"",
+                root.at("/decisions/0/description").asText());
+    }
+
+    @Test
+    void repairJson_shouldStripMarkdownFence() throws Exception {
+        String raw = """
+                ```json
+                {
+                  "decisions": []
+                }
+                ```
+                """;
+
+        String repaired = SpringAiProviderAdapter.repairJson(raw);
+        var root = new ObjectMapper().readTree(repaired);
+
+        assertTrue(root.path("decisions").isArray());
     }
 
     private ProviderConfig providerConfig(Set<ProviderCapability> capabilities, String modelName) {

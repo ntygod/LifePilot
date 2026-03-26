@@ -16,6 +16,7 @@ import type {
   SubWorkflowStepConfig,
   WaitStepConfig,
   ApprovalStepConfig,
+  NotifyStepConfig,
 } from './useWorkflowModel'
 
 // ========== 类型定义 ==========
@@ -148,7 +149,6 @@ function serializeStep(step: StepModel): Record<string, unknown> {
       obj.targetUserId = c.targetUserId
       obj.content = c.content
       obj.contentType = c.contentType
-      obj.urgency = c.urgency
       break
     }
     case 'noop':
@@ -293,8 +293,7 @@ function deserializeConfig(type: StepType, obj: Record<string, unknown>): StepCo
       return {
         targetUserId: String(obj.targetUserId ?? ''),
         content: String(obj.content ?? ''),
-        contentType: String(obj.contentType ?? 'TEXT'),
-        urgency: String(obj.urgency ?? 'NORMAL'),
+        contentType: String(obj.contentType ?? 'TEXT') as NotifyStepConfig['contentType'],
       }
     case 'noop':
     default:

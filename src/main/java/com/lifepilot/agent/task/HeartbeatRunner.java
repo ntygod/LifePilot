@@ -6,7 +6,6 @@ import com.lifepilot.agent.orchestration.AgentOrchestrator;
 import com.lifepilot.interaction.model.ResponseContent;
 import com.lifepilot.notification.NotificationRequest;
 import com.lifepilot.notification.NotificationService;
-import com.lifepilot.notification.Urgency;
 import com.lifepilot.notification.config.NotificationProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -94,12 +93,11 @@ public class HeartbeatRunner {
             // HEARTBEAT_OK 协议
             boolean ok = CronScheduler.isSilentResponse(response.content(), "HEARTBEAT_OK");
 
-            if (!ok && response.content() != null && !response.content().isBlank()
-                    && response.terminationReason() == null) {
+            if (!ok && !response.content().isBlank() && response.terminationReason() == null) {
                 notificationService.send(new NotificationRequest(
                         notificationProperties.getDefaultUserId(),
                         new ResponseContent.TextContent("【心跳巡检】\n" + response.content()),
-                        Urgency.LOW, null, "heartbeat", Map.of()
+                        null, "heartbeat", Map.of()
                 ));
             }
         } catch (Exception e) {

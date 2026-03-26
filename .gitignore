@@ -6,6 +6,7 @@
 .kiro/
 .codex/
 .codex-edge/
+.plans/
 
 # === OS ===
 .DS_Store

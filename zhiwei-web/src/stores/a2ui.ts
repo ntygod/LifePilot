@@ -30,7 +30,7 @@ export const useA2uiStore = defineStore('a2ui', () => {
 
   function buildSignalKey(context: A2uiSignalContext) {
     return [
-      context.messageId ?? 'transient',
+      context.entryId ?? 'transient',
       context.componentId ?? 'component',
       context.signalName ?? 'signal',
     ].join(':')
@@ -62,9 +62,9 @@ export const useA2uiStore = defineStore('a2ui', () => {
     signalStates.value = nextStates
   }
 
-  function clearSignalStatesForMessage(messageId: string) {
+  function clearSignalStatesForEntry(entryId: string) {
     const nextStates = Object.fromEntries(
-      Object.entries(signalStates.value).filter(([key]) => !key.startsWith(`${messageId}:`)),
+      Object.entries(signalStates.value).filter(([key]) => !key.startsWith(`${entryId}:`)),
     )
     signalStates.value = nextStates
   }
@@ -80,6 +80,6 @@ export const useA2uiStore = defineStore('a2ui', () => {
     getSignalState,
     setSignalState,
     clearSignalState,
-    clearSignalStatesForMessage,
+    clearSignalStatesForEntry,
   }
 })

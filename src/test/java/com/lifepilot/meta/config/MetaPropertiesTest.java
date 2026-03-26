@@ -66,9 +66,14 @@ class MetaPropertiesTest {
         contextRunner.run(context -> {
             var props = context.getBean(MetaProperties.class);
             var shell = props.getInfra().getShell();
-            assertThat(shell.getCommandBlacklist()).hasSize(6);
-            assertThat(shell.getCommandBlacklist()).contains("shutdown", "reboot", "mkfs");
-            assertThat(shell.getTimeoutSeconds()).isEqualTo(30);
+            assertThat(shell.getCommandBlacklist()).hasSize(8);
+            assertThat(shell.getCommandBlacklist()).contains(
+                    "(?:^|[;&|])\\s*shutdown\\b",
+                    "(?:^|[;&|])\\s*reboot\\b",
+                    "\\bmkfs\\b",
+                    ":\\(\\)\\{\\s*:|:&\\s*\\};:"
+            );
+            assertThat(shell.getTimeoutSeconds()).isEqualTo(120);
             assertThat(shell.getMaxOutputLength()).isEqualTo(50000);
         });
     }

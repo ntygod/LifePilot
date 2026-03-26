@@ -1,6 +1,8 @@
 import type { A2uiComponent, ChatAttachment, Message, ReactStepDto } from '@/types'
+import type { PermissionApprovalLog } from '@/types'
+import { formatPermissionActionLabel } from '@/utils/permissionApproval'
 
-/** 后端附件数据结构（对应 AttachmentInfo record） */
+/** 后端附件数据结构，对应 AttachmentInfo record。 */
 interface BackendAttachment {
   id: string
   fileName: string
@@ -11,7 +13,8 @@ interface BackendAttachment {
 
 type BackendMessageLike = {
   id: string
-  role: 'user' | 'assistant' | 'tool-confirmation'
+  turnId?: string | null
+  role: 'user' | 'assistant' | 'permission-approval'
   content: string
   a2uiComponents?: unknown
   timestamp: string | number
@@ -21,6 +24,10 @@ type BackendMessageLike = {
   reactSteps?: ReactStepDto[] | null
   completionMode?: Message['completionMode'] | null
   resumedFromTraceId?: string | null
+  turnStatus?: Message['turnStatus'] | null
+  errorMessage?: string | null
+  suspendReasonType?: string | null
+  suspendReasonSourceId?: string | null
 }
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
@@ -78,45 +85,51 @@ export function mapBackendMessage(message: BackendMessageLike): Message {
       }))
     : undefined
 
-  // 工具确认消息：content 是 JSON，需要解析还原 toolConfirmation 和 resolution
-  if (message.role === 'tool-confirmation') {
+  // 权限审批消息的 content 是 JSON，需要解析成前端可消费的审批结构。
+  if (message.role === 'permission-approval') {
     try {
       const parsed = JSON.parse(message.content) as {
         requestId: string
         toolId: string
         toolName: string
+        actionType?: string
         riskLevel: string
-        message: string
-        resolution: string
+        approved?: boolean
+        subjectType?: string | null
+        reason?: string | null
+        resourceScope?: Record<string, unknown> | null
       }
-      const toolConfirmation = {
+      const resolution = parsed.approved === true
+        ? 'approved'
+        : (parsed.reason === '审批超时' ? 'expired' : 'rejected')
+      const approvalLog: PermissionApprovalLog = {
         requestId: parsed.requestId,
         toolId: parsed.toolId,
         toolName: parsed.toolName,
-        riskLevel: parsed.riskLevel as 'HIGH' | 'CRITICAL',
-        approvalMode: '',
-        message: parsed.message,
-        timestamp: typeof message.timestamp === 'string' ? message.timestamp : new Date(message.timestamp).toISOString(),
+        actionType: parsed.actionType ?? 'GENERIC_TOOL_OPERATION',
+        resolution,
+        subjectType: parsed.subjectType ?? null,
+        reason: parsed.reason ?? null,
+        timestamp: typeof message.timestamp === 'string'
+          ? message.timestamp
+          : new Date(message.timestamp).toISOString(),
       }
       return {
         id: message.id,
-        role: 'tool-confirmation',
-        content: parsed.message || '该工具需要您的确认才能执行。',
+        turnId: message.turnId ?? undefined,
+        role: 'permission-approval',
+        content: formatPermissionActionLabel(parsed.actionType, parsed.toolName),
         timestamp: parseMessageTimestamp(message.timestamp),
-        // 新格式：多个确认
-        toolConfirmations: { [parsed.requestId]: toolConfirmation },
-        toolConfirmationResolutions: parsed.resolution ? { [parsed.requestId]: parsed.resolution as 'approved' | 'rejected' | 'expired' } : undefined,
-        // 兼容旧格式
-        toolConfirmation,
-        toolConfirmationResolution: parsed.resolution as 'approved' | 'rejected' | 'expired',
+        permissionApprovalLogs: [approvalLog],
       }
     } catch {
-      // JSON 解析失败，回退为普通消息
+      // JSON 解析失败时，回退为普通消息展示。
     }
   }
 
   return {
     id: message.id,
+    turnId: message.turnId ?? undefined,
     role: message.role,
     content: message.content ?? '',
     a2uiComponents: components ?? undefined,
@@ -127,5 +140,9 @@ export function mapBackendMessage(message: BackendMessageLike): Message {
     reactSteps: message.reactSteps?.length ? message.reactSteps : undefined,
     completionMode: message.completionMode ?? undefined,
     resumedFromTraceId: message.resumedFromTraceId ?? undefined,
+    turnStatus: message.turnStatus ?? undefined,
+    errorMessage: message.errorMessage ?? undefined,
+    suspendReasonType: message.suspendReasonType ?? undefined,
+    suspendReasonSourceId: message.suspendReasonSourceId ?? undefined,
   }
 }

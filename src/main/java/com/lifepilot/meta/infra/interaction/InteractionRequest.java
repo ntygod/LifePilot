@@ -19,6 +19,7 @@ public record InteractionRequest(
         String interactionId,
         InteractionType type,
         String sessionId,
+        @Nullable String streamId,
         String message,
         @Nullable List<String> options
 ) {}

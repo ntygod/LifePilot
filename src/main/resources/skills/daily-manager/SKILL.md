@@ -1,7 +1,7 @@
 ---
 id: daily-manager
 name: "日常管理"
-description: "日常事务管理：多 Skill 协调、任务分解与优先级排序、日程提醒、信息汇总。适用于需要协调多个能力完成复杂日常任务的场景"
+description: "日常事务管理：多 Skill 协调、任务分解与优先级排序、日程提醒、信息汇总。"
 version: "1.0.0"
 suggested-tools:
   - builtin.memory.search

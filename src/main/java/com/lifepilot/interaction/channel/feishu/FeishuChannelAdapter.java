@@ -1,13 +1,5 @@
 package com.lifepilot.interaction.channel.feishu;
 
-import java.nio.charset.StandardCharsets;
-import java.time.Instant;
-import java.util.Base64;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.config.threadpool.SharedScheduler;
@@ -15,16 +7,18 @@ import com.lifepilot.interaction.channel.AbstractChannelAdapter;
 import com.lifepilot.interaction.config.ChannelConfigProvider;
 import com.lifepilot.interaction.config.GatewayProperties;
 import com.lifepilot.interaction.gateway.MessageGateway;
-import com.lifepilot.interaction.model.ChannelMetadata;
-import com.lifepilot.interaction.model.ChannelType;
-import com.lifepilot.interaction.model.GatewayMessage;
-import com.lifepilot.interaction.model.GatewayResponse;
-import com.lifepilot.interaction.model.MessageContent;
-import com.lifepilot.interaction.model.ResponseContent;
-import com.lifepilot.interaction.web.service.WebUserConfirmationService;
+import com.lifepilot.interaction.model.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
+
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.util.Base64;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 飞书通道适配器，处理飞书事件订阅 Webhook 回调。
@@ -45,7 +39,6 @@ public class FeishuChannelAdapter extends AbstractChannelAdapter {
     private final FeishuMessageConverter converter;
     private final ChannelConfigProvider configProvider;
     private final int eventCacheMaxSize;
-    @Nullable private final WebUserConfirmationService confirmationService;
 
     /** 事件去重缓存：eventId → 处理时间戳 */
     private final ConcurrentHashMap<String, Long> eventCache = new ConcurrentHashMap<>();
@@ -55,22 +48,12 @@ public class FeishuChannelAdapter extends AbstractChannelAdapter {
                                 FeishuMessageConverter converter,
                                 SharedScheduler sharedScheduler,
                                 ChannelConfigProvider configProvider) {
-        this(gateway, properties, crypto, apiClient, converter, sharedScheduler, configProvider, null);
-    }
-
-    public FeishuChannelAdapter(MessageGateway gateway, GatewayProperties properties,
-                                FeishuCrypto crypto, FeishuApiClient apiClient,
-                                FeishuMessageConverter converter,
-                                SharedScheduler sharedScheduler,
-                                ChannelConfigProvider configProvider,
-                                @Nullable WebUserConfirmationService confirmationService) {
         super(gateway, properties, sharedScheduler);
         this.crypto = crypto;
         this.apiClient = apiClient;
         this.converter = converter;
         this.configProvider = configProvider;
         this.eventCacheMaxSize = properties.channels().feishu().eventCacheMaxSize();
-        this.confirmationService = confirmationService;
     }
 
     @Override
@@ -147,7 +130,6 @@ public class FeishuChannelAdapter extends AbstractChannelAdapter {
      *   <li>明文事件</li>
      * </ol>
      *
-     * @param jsonBody JSON 事件体
      * @return 飞书响应 JSON Map
      */
     public Map<String, Object> handleEvent(byte[] rawBody) {
@@ -288,45 +270,6 @@ public class FeishuChannelAdapter extends AbstractChannelAdapter {
                                 channelType(), message.userId(), e);
                     }
                 });
-    }
-
-    /**
-     * 将原始消息中的飞书 chatId 和 open_id 注入到 response metadata。
-     */
-    private boolean isCardActionEvent(Map<String, Object> body) {
-        var header = getMapField(body, "header");
-        return header != null && "card.action.trigger".equals(getStringField(header, "event_type", ""));
-    }
-
-    private void handleCardAction(Map<String, Object> body) {
-        if (confirmationService == null) {
-            log.warn("飞书确认回调未注入 WebUserConfirmationService，已跳过");
-            return;
-        }
-        var event = getMapField(body, "event");
-        var action = getMapField(event, "action");
-        var value = getMapField(action, "value");
-        String requestId = firstNonBlank(
-                getStringField(value, "requestId", ""),
-                getStringField(value, "request_id", ""),
-                getStringField(event, "requestId", ""),
-                getStringField(event, "request_id", ""));
-        Boolean confirmed = firstNonNull(
-                parseConfirmationFlag(value != null ? value.get("confirmed") : null),
-                parseConfirmationFlag(value != null ? value.get("approve") : null),
-                parseConfirmationFlag(value != null ? value.get("action") : null),
-                parseConfirmationFlag(action != null ? action.get("tag") : null),
-                parseConfirmationFlag(action != null ? action.get("name") : null));
-        if (requestId.isBlank() || confirmed == null) {
-            log.warn("飞书确认回调缺少必要参数: requestId={}, confirmed={}", requestId, confirmed);
-            return;
-        }
-        boolean resolved = confirmationService.resolveConfirmation(requestId, confirmed);
-        if (resolved) {
-            log.info("飞书确认回调处理完成: requestId={}, confirmed={}", requestId, confirmed);
-        } else {
-            log.info("飞书确认回调未命中待确认请求: requestId={}, confirmed={}", requestId, confirmed);
-        }
     }
 
     private GatewayResponse enrichResponseWithFeishuMetadata(GatewayMessage message, GatewayResponse response) {

@@ -149,15 +149,6 @@ public non-sealed class SmartChunker implements ChunkingStrategy {
     /**
      * 统计文本中的 Markdown 围栏代码块数量。
      */
-    private int countCodeBlocks(String text) {
-        int count = 0;
-        Matcher matcher = CODE_BLOCK_PATTERN.matcher(text);
-        while (matcher.find()) {
-            count++;
-        }
-        return count;
-    }
-
     /**
      * 计算代码块字符数占总字符数的比例。
      */

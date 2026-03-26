@@ -1,6 +1,6 @@
-// ZhiWei 前端类型定义
+﻿// ZhiWei 前端类型定义
 
-/** 会话摘要 */
+/** 聊天会话 */
 export interface ChatSession {
   id: string
   title: string
@@ -10,9 +10,9 @@ export interface ChatSession {
   pinned?: boolean
   /** 是否归档 */
   archived?: boolean
-  /** 最近一条消息摘要（截断显示） */
+  /** 最后一条消息预览 */
   lastMessagePreview?: string
-  /** 会话类型标记（可选） */
+  /** 会话类型标识 */
   type?: string
 }
 
@@ -21,84 +21,91 @@ export interface ChatSessionDetail extends ChatSession {
   preferredProviderId?: string
   temperature?: number
   maxTokens?: number
+  maxSteps?: number
+  maxDurationSeconds?: number
   messageCount: number
   totalTokens: number
 }
 
-/** 聊天消息附件（前端展示用） */
+/** 聊天附件/文件上传 */
 export interface ChatAttachment {
-  /** 后端返回的文件 ID（用于后续多模态路由与检索） */
+  /** 文件 ID */
   fileId: string
-  /** 可访问的文件 URL（通常为后端提供的相对路径，经网关 / CDN 代理） */
+  /** 文件 URL / CDN 链接 */
   url: string
-  /** 原始文件名 */
+  /** 文件名 */
   filename: string
   /** 文件大小（字节） */
   size: number
   /** MIME 类型 */
   type: string
-  /** 是否为图片类型，便于前端按图片样式渲染缩略图 */
+  /** 是否为图片 */
   isImage: boolean
 }
 
 export type CompletionMode = 'NORMAL' | 'DEGRADED' | 'SUSPENDED'
+export type OutputContentRole = 'FINAL' | 'PROGRESS' | 'SUSPEND_PROMPT' | 'BLOCKED'
 
-export type ResumePolicy = 'AUTO' | 'FRESH'
+export type ChatTurnAction = 'SEND' | 'RETRY' | 'RESUME' | 'RESTART'
+
+export type ChatTurnStatus = 'PENDING' | 'SUCCESS' | 'FAILED' | 'DEGRADED' | 'SUSPENDED'
 
 /** 消息 */
 export interface Message {
   id: string
-  role: 'user' | 'assistant' | 'tool-confirmation'
+  turnId?: string
+  role: 'user' | 'assistant' | 'permission-approval'
   content: string
   a2uiComponents?: A2uiComponent[]
   timestamp: number
   /**
-   * 本条消息对应的一轮推理概要摘要。
-   * 由后端在 SSE DONE 事件中通过 reasoningSummary 字段返回。
+   * 推理摘要
+   * 从 SSE DONE 事件中获取的 reasoningSummary
    */
   reasoningSummary?: string
-  /** 本条消息对应的推理事件时间线（由前端在 SSE 流结束时从 useChat 快照保存） */
+  /** 推理过程事件列表（从 useChat 中收集） */
   reasoningEvents?: ReasoningEvent[]
-  /** 前端侧的发送 / 处理状态标记，用于展示"发送中 / 失败 / 可重试" */
+  /** 消息状态：pending / success / error（对应 blocked） */
   status?: 'pending' | 'success' | 'error'
-  /** 与本条消息相关的错误说明（仅在 status === 'error' 时展示） */
+  turnStatus?: ChatTurnStatus
+  /** 错误信息（status === 'error' 时存在） */
   errorMessage?: string
-  /** 后端执行轨迹 ID（如存在），用于跳转到 Trace 详情 */
+  suspendReasonType?: string
+  suspendReasonSourceId?: string
+  /** 关联 Trace ID */
   traceId?: string
-  /** 本轮完成态 */
+  /** 完成模式 */
   completionMode?: CompletionMode
-  /** 断点恢复来源 traceId */
+  /** 恢复自 traceId */
   resumedFromTraceId?: string
-  /** 高亮后的 HTML 内容（用于搜索高亮） */
+  /** 高亮 HTML 片段 */
   highlightedContent?: string
-  /** 附件列表（图片/文件等），用于前端展示缩略图与下载入口 */
+  /** 附件列表 */
   attachments?: ChatAttachment[]
-  /** 可选：本条消息对应的 Token 使用统计（如后端在 DONE 事件中返回） */
+  /** Token 使用情况（从 DONE 事件中获取） */
   tokenUsage?: TokenUsage
   modelId?: string
-  /** 可选：本条消息对应的模型 ID（如可用），用于消息级调试展示 */
+  /** 首选 Provider ID */
   preferredProviderId?: string
-  /** 可选：本轮执行涉及到的知识库 / 文档等来源摘要 */
+  /** 来源列表：知识库 / 工具调用结果 */
   sources?: SourceSummary[]
-  /** 可选：本轮执行涉及到的工具调用摘要列表 */
+  /** 工具调用摘要 */
   toolsSummary?: ToolCallSummary[]
-  /** 可选：本轮 ReAct 步骤序列（替代 toolsSummary，结构化展示推理过程） */
+  /** ReAct 步骤列表（toolsSummary 的详细版本） */
   reactSteps?: ReactStepDto[]
-  /** 消息是否已折叠（长消息场景，前端本地状态） */
+  /** 是否折叠 */
   collapsed?: boolean
-  /** 用户反馈状态（前端本地状态，不持久化到后端） */
+  /** 反馈状态 */
   feedbackStatus?: 'liked' | 'disliked' | null
-  /** 工具确认请求数据（支持多个并发确认） */
-  toolConfirmations?: Record<string, ToolConfirmationRequest>
-  /** 工具确认解决结果映射 */
-  toolConfirmationResolutions?: Record<string, 'approved' | 'rejected' | 'expired'>
-  /** @deprecated 使用 toolConfirmations 替代 */
-  toolConfirmation?: ToolConfirmationRequest
-  /** @deprecated 使用 toolConfirmationResolutions 替代 */
-  toolConfirmationResolution?: 'approved' | 'rejected' | 'expired'
+  /** 权限审批请求 */
+  permissionApprovals?: Record<string, PermissionApprovalRequest>
+  /** 权限审批决议 */
+  permissionApprovalResolutions?: Record<string, 'approved' | 'rejected' | 'expired'>
+  /** 历史权限审批记录 */
+  permissionApprovalLogs?: PermissionApprovalLog[]
 }
 
-/** A2UI 组件节点（邻接表） */
+/** A2UI 组件 */
 export interface A2uiComponent {
   id: string
   type: string
@@ -113,28 +120,28 @@ export interface A2uiSignal {
   payload: Record<string, unknown>
 }
 
-/** A2UI 信号上下文（前端本地与回传时附带） */
+/** A2UI 信号上下文 */
 export interface A2uiSignalContext {
   componentId?: string
-  messageId?: string
+  entryId?: string
   traceId?: string
   signalName?: string
 }
 
-/** A2UI 交互运行时状态 */
+/** A2UI 信号运行时状态 */
 export interface A2uiSignalRuntime {
   status: 'idle' | 'sending' | 'success' | 'error'
   error?: string | null
   updatedAt: number
 }
 
-/** Token 消耗统计 */
+/** Token 使用统计 */
 export interface TokenUsage {
   promptTokens: number
   completionTokens: number
   totalTokens: number
   modelId: string
-  /** 可选：底层 Provider 标识（用于调试与计费对账） */
+  /** Provider ID */
   providerId?: string
 }
 
@@ -142,8 +149,6 @@ export interface TokenUsage {
 export interface UserSettings {
   theme: 'light' | 'dark' | 'system'
   language: string
-  llmProvider: string
-  sceneProviders?: Record<string, string>
   layoutDensity?: 'compact' | 'standard'
   fontSize?: 'small' | 'medium' | 'large'
   timeFormat?: '12h' | '24h'
@@ -168,9 +173,19 @@ export interface SseTokenEvent {
   index: number
 }
 
-/** 推理过程事件类型 — 与后端 pushReactStepEvent 对齐 */
+export interface SseInteractionEvent {
+  interactionId: string
+  type: 'INPUT' | 'CHOOSE' | 'CONFIRM' | 'NOTIFY'
+  sessionId: string
+  streamId?: string | null
+  message: string
+  options?: string[] | null
+}
+
+/** 推理过程事件类型：对应后端 pushReactStepEvent */
 export type ReasoningEventType =
   | 'AGENT_START'
+  | 'PROGRESS'
   | 'THOUGHT'
   | 'TOOL_CALL'
   | 'OBSERVATION'
@@ -179,7 +194,7 @@ export type ReasoningEventType =
   | 'RESUME'
   | 'ANSWER_FINALIZED'
 
-/** 推理过程事件（Reasoning Timeline） */
+/** 推理过程事件 (Reasoning Timeline) */
 export interface ReasoningEvent {
   id: string
   type: ReasoningEventType
@@ -190,18 +205,23 @@ export interface ReasoningEvent {
   extra?: Record<string, any>
 }
 
-// ===== ReactStep 类型定义 — 与后端 ReactStepSerializer 对齐 =====
+// ===== ReactStep 类型定义（对应后端 ReactStepSerializer） =====
 
-/** ReactStep 步骤类型 */
-export type ReactStepType = 'THOUGHT' | 'TOOL_CALL' | 'OBSERVATION' | 'ANSWER' | 'SUSPEND' | 'RESUME'
+/** ReactStep 类型 */
+export type ReactStepType = 'PROGRESS' | 'THOUGHT' | 'TOOL_CALL' | 'OBSERVATION' | 'ANSWER' | 'SUSPEND' | 'RESUME'
 
-/** ReactStep 基础字段 */
+/** ReactStep 基础接口 */
 interface ReactStepBase {
   type: ReactStepType
   index: number
 }
 
-/** 推理思考步骤 */
+export interface ProgressStep extends ReactStepBase {
+  type: 'PROGRESS'
+  content: string
+}
+
+/** 思考步骤 */
 export interface ThoughtStep extends ReactStepBase {
   type: 'THOUGHT'
   content: string
@@ -211,7 +231,7 @@ export interface ThoughtStep extends ReactStepBase {
 export interface ToolCallStep extends ReactStepBase {
   type: 'TOOL_CALL'
   toolId: string
-  /** 工具显示名称（用户可读，如 "创建待办"），为空时回退到 toolId */
+  /** 工具名称（可选） */
   toolName?: string
   inputSummary: string
   latencyMs: number
@@ -221,14 +241,14 @@ export interface ToolCallStep extends ReactStepBase {
 export interface ObservationStep extends ReactStepBase {
   type: 'OBSERVATION'
   toolId: string
-  /** 工具显示名称（用户可读），为空时回退到 toolId */
+  /** 工具名称（可选） */
   toolName?: string
   success: boolean
   outputSummary: string
   tokensUsed: number
 }
 
-/** 最终回答步骤 */
+/** 回答步骤 */
 export interface AnswerStep extends ReactStepBase {
   type: 'ANSWER'
   content: string
@@ -248,35 +268,39 @@ export interface ResumeStep extends ReactStepBase {
   suspendDurationMs: number
 }
 
-/** ReactStep 联合类型 */
-export type ReactStepDto = ThoughtStep | ToolCallStep | ObservationStep | AnswerStep | SuspendStep | ResumeStep
+/** ReactStep DTO 联合类型 */
+export type ReactStepDto = ProgressStep | ThoughtStep | ToolCallStep | ObservationStep | AnswerStep | SuspendStep | ResumeStep
 
-/** SSE 完成事件 */
+/** SSE done 事件 */
 export interface SseDoneEvent {
-  messageId: string
-  /** 可选：完整消息内容（非流式响应时由后端直接返回） */
+  entryId: string
+  turnId?: string
+  turnStatus?: ChatTurnStatus
+  terminationReason?: string
+  contentRole?: OutputContentRole
+  /** 内容 */
   content?: string
-  /** 可选：本轮回答附带的 A2UI 组件树快照 */
+  /** A2UI 组件列表 */
   a2uiComponents?: A2uiComponent[]
-  /** 可选：Token 使用统计 */
+  /** Token 使用统计 */
   tokenUsage?: TokenUsage
-  /** 可选：聚合后的 Token 使用概要（input/output/total），与后端 doneData.usage 对齐 */
+  /** usage（兼容旧版） */
   usage?: {
     inputTokens: number
     outputTokens: number
     totalTokens: number
   }
-  /** 可选：本轮执行对应的 Trace Id（如后端有返回） */
+  /** Trace Id */
   traceId?: string
-  /** 可选：会话 ID（后端返回，用于前端同步） */
+  /** 完成模式 */
   completionMode?: CompletionMode
   resumedFromTraceId?: string
   sessionId?: string
-  /** 可选：消息完成时间戳（毫秒，后端返回） */
+  /** 时间戳 */
   timestamp?: number
-  /** 可选：本轮推理概要（已检索记忆/工具调用等） */
+  /** 推理摘要 */
   reasoningSummary?: string
-  /** 可选：按多模态结构返回的完整内容列表（兼容未来拓展） */
+  /** contents（多模态） */
   contents?: Array<{
     type: 'TEXT' | 'IMAGE' | 'AUDIO' | 'VIDEO' | 'FILE'
     text?: string
@@ -284,57 +308,135 @@ export interface SseDoneEvent {
     mimeType?: string
     metadata?: Record<string, any>
   }>
-  /** 可选：知识库 / 文档 / 工具等来源摘要（用于轻量 UI 展示） */
+  /** sources（知识库 / 工具） */
   sources?: SourceSummary[]
-  /** 可选：本轮工具调用摘要列表（来自 Trace ToolCallStep 聚合） */
+  /** toolsSummary */
   toolsSummary?: ToolCallSummary[]
-  /** 可选：本轮 ReAct 步骤序列（结构化推理过程） */
+  /** reactSteps */
   reactSteps?: ReactStepDto[]
 }
 
-/** SSE 错误事件 */
+/** SSE error 事件 */
 export interface SseErrorEvent {
   code: number
   message: string
-  /** 可选：错误对应的 Trace Id，便于前端跳转调试 */
+  turnId?: string
+  turnStatus?: ChatTurnStatus
+  /** Trace Id */
   traceId?: string
 }
 
-/** 工具确认请求（SSE 事件 payload） */
-export interface ToolConfirmationRequest {
+export interface SseAgentSuspendedEvent {
+  traceId?: string
+  sessionId?: string
+  turnId?: string
+  completionMode?: CompletionMode
+  turnStatus?: ChatTurnStatus
+  contentRole?: OutputContentRole
+  reasonType?: string
+  reasonSourceId?: string
+  reasonDetail?: string
+  terminationReason?: string
+  content?: string
+  suspendedAt?: string
+}
+
+/** 权限审批请求 SSE 事件 payload */
+export interface PermissionApprovalRequest {
   requestId: string
   toolId: string
   toolName: string
+  actionType: string
   riskLevel: 'HIGH' | 'CRITICAL'
-  approvalMode: string
   message: string
+  availableSubjectTypes: string[]
+  recommendedSubjectType: string
+  resourceScope?: Record<string, unknown>
   timestamp: string
 }
 
-/** SSE 媒体数据事件（截图等二进制数据通过独立事件传输，避免被截断） */
+/** 权限审批记录 */
+export interface PermissionApprovalLog {
+  requestId: string
+  toolId: string
+  toolName: string
+  actionType: string
+  resolution: 'approved' | 'rejected' | 'expired'
+  subjectType?: string | null
+  reason?: string | null
+  timestamp: string
+}
+
+/** 授权记录 */
+export interface PermissionGrant {
+  id: string
+  subjectType: 'SESSION' | 'WORKSPACE' | 'TASK' | 'USER'
+  subjectId: string
+  actionType: string
+  riskCeiling: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
+  scope: Record<string, unknown>
+  channels: string[]
+  autonomousAllowed: boolean
+  expiresAt?: string | null
+  revokedAt?: string | null
+  revokedBy?: string | null
+  revokedReason?: string | null
+  createdBy?: string | null
+  sourceEntryId?: string | null
+  reason?: string | null
+  metadata: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
+}
+
+/** 手动创建授权请求 */
+export interface PermissionGrantCreateRequest {
+  subjectType: 'SESSION' | 'WORKSPACE' | 'TASK' | 'USER'
+  subjectId: string
+  actionType: string
+  riskCeiling: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
+  scope?: Record<string, unknown>
+  channels?: string[]
+  autonomousAllowed: boolean
+  expiresAt?: string | null
+  createdBy?: string | null
+  sourceEntryId?: string | null
+  reason?: string | null
+  metadata?: Record<string, unknown>
+}
+
+/** SSE 媒体事件 payload */
 export interface SseMediaEvent {
-  /** 媒体字段名（如 screenshot） */
+  /** field */
   field: string
-  /** MIME 类型（如 image/png） */
+  /** mimeType */
   mimeType: string
-  /** Base64 编码的媒体数据 */
+  /** Base64 数据 */
   data: string
 }
 
-/** 非流式聊天响应 */
+/** 音频转写事件 */
+export interface SseTranscriptionEvent {
+  sessionId: string
+  text: string
+  entryId?: string
+}
+
 export interface ChatResponse {
-  messageId: string
+  entryId: string
+  turnId?: string
   content: string
   a2uiComponents?: A2uiComponent[]
   tokenUsage?: TokenUsage
   traceId?: string
-  /** 本轮对话中使用到的知识库 / 文档来源等（由后端返回，前端只做轻量展示） */
+  /** 完成模式 */
   completionMode?: CompletionMode
   resumedFromTraceId?: string
+  turnStatus?: ChatTurnStatus
   sources?: SourceSummary[]
 }
 
-/** 执行来源摘要（知识库 / 文档 / 工具 / 工作流） */
+/** 来源摘要：知识库 / 文档 / 工具 / 工作流 */
 export interface SourceSummary {
   type: 'knowledgeBase' | 'document' | 'tool' | 'workflow'
   id: string
@@ -342,35 +444,37 @@ export interface SourceSummary {
   extra?: Record<string, unknown>
 }
 
-/** 工具调用摘要（用于单轮执行概要与调试视图） */
+/** 工具调用摘要 */
 export interface ToolCallSummary {
   toolId: string
   action?: string
   success: boolean
   latencyMs: number
   hasMoreSteps?: boolean
-  /** 工具调用的输入参数摘要（截断展示，由后端 done 事件返回） */
+  /** 输入摘要 */
   inputSummary?: string
-  /** 工具调用的输出结果摘要（截断展示，由后端 done 事件返回） */
+  /** 输出摘要 */
   outputSummary?: string
 }
 
-/** 统一错误响应 */
+/** 错误响应 */
 export interface ErrorResponse {
   code: number
   message: string
   timestamp: string
 }
 
-/** 会话配置（模型/温度/最大 Token/知识库选择） */
+/** 会话配置：温度/最大 tokens/知识库绑定 */
 export interface SessionConfig {
   preferredProviderId?: string
   temperature?: number
   maxTokens?: number
+  maxSteps?: number
+  maxDurationSeconds?: number
   knowledgeBaseIds?: string[]
 }
 
-// ========== 模块 19: Web UI 功能页面类型 ==========
+// ========== 第一部分 19: Web UI 相关类型定义 ==========
 
 /** 知识库 */
 export interface KnowledgeBase {
@@ -437,7 +541,7 @@ export interface DocumentChunk {
   createdAt: string
 }
 
-/** 知识库统计信息 */
+/** 知识库统计 */
 export interface KbStats {
   documentCount: number
   totalChunks: number
@@ -471,7 +575,7 @@ export interface TestRetrievalResult {
   answer?: string
 }
 
-/** Skill 摘要 */
+/** Skill 概要 */
 export interface SkillSummary {
   id: string
   name: string
@@ -528,11 +632,11 @@ export interface McpTool {
   id: string
   name: string
   description: string
-  /** 输入参数 JSON Schema（可选，后端 ToolContract 序列化返回） */
+  /** JSON Schema */
   inputSchema?: Record<string, any>
 }
 
-/** 轨迹列表项 */
+/** Trace 列表项 */
 export interface TraceItem {
   id: string
   sessionId: string
@@ -544,7 +648,7 @@ export interface TraceItem {
   createdAt: string
 }
 
-/** 轨迹详情 */
+/** Trace 详情 */
 export interface TraceDetail extends TraceItem {
   finalOutput?: string
   errorMessage?: string
@@ -552,7 +656,7 @@ export interface TraceDetail extends TraceItem {
   modelId?: string
 }
 
-/** 轨迹步骤 */
+/** Trace 步骤 */
 export interface TraceStep {
   id: string
   stepIndex: number
@@ -590,7 +694,7 @@ export interface WorkflowItem {
   tags?: string[]
 }
 
-/** 工作流输入参数定义（对齐后端 WorkflowInputParam record） */
+/** 工作流输入参数 */
 export interface WorkflowInputParam {
   name: string
   type: 'string' | 'number' | 'boolean' | 'list' | 'map'
@@ -608,7 +712,7 @@ export interface WorkflowDetail extends WorkflowItem {
   yaml?: string
 }
 
-/** 工作流执行记录 */
+/** 工作流执行实例 */
 export interface WorkflowExecution {
   id: string
   workflowId: string
@@ -626,7 +730,7 @@ export interface WorkflowExecutionsSnapshot {
   executions: WorkflowExecution[]
 }
 
-/** 工作流审计事件类型 */
+/** 工作流事件类型 */
 export type WorkflowEventType =
   | 'INSTANCE_CREATED'
   | 'INSTANCE_STATE_CHANGED'
@@ -637,7 +741,7 @@ export type WorkflowEventType =
   | 'APPROVAL_REQUESTED'
   | 'APPROVAL_DECIDED'
 
-/** 工作流审计事件 */
+/** 工作流事件 */
 export interface WorkflowEvent {
   id: string
   instanceId: string
@@ -659,7 +763,7 @@ export interface ApprovalRequest {
   reason?: string
 }
 
-/** 工作流步骤执行日志 */
+/** 工作流步骤日志 */
 export interface StepLog {
   id: string
   instanceId: string
@@ -681,9 +785,9 @@ export interface WorkflowStepLogsSnapshot {
   stepLogs: StepLog[]
 }
 
-// ========== 工作流成熟化需求类型定义 ==========
+// ========== 工作流统计相关类型定义 ==========
 
-/** 工作流执行统计 */
+/** 工作流统计 */
 export interface WorkflowStats {
   workflowId: string
   totalExecutions: number
@@ -693,14 +797,14 @@ export interface WorkflowStats {
   recentTrend: DailyTrend[]
 }
 
-/** 每日执行趋势 */
+/** 每日趋势 */
 export interface DailyTrend {
   date: string
   count: number
   successCount: number
 }
 
-/** 步骤执行统计 */
+/** 步骤统计 */
 export interface StepStats {
   stepId: string
   stepType: string
@@ -711,7 +815,7 @@ export interface StepStats {
   totalRetries: number
 }
 
-/** 步骤输出详情 */
+/** 步骤输出 */
 export interface StepOutput {
   stepId: string
   output: unknown
@@ -721,7 +825,7 @@ export interface StepOutput {
   state: string
 }
 
-/** DAG 数据 */
+/** DAG 图数据 */
 export interface DagData {
   nodes: DagNode[]
   edges: DagEdge[]
@@ -742,14 +846,14 @@ export interface DagEdge {
   to: string
 }
 
-/** 试运行结果 */
+/** 预运行结果 */
 export interface DryRunResult {
   steps: DryRunStepTrace[]
   dagOrder: string[]
   warnings: string[]
 }
 
-/** 试运行步骤轨迹 */
+/** 预运行步骤跟踪 */
 export interface DryRunStepTrace {
   stepId: string
   stepName: string
@@ -760,7 +864,7 @@ export interface DryRunStepTrace {
   loopIterations?: number
 }
 
-/** YAML 校验响应 */
+/** YAML 验证响应 */
 export interface ValidationResponse {
   valid: boolean
   errors: string[]
@@ -798,7 +902,7 @@ export interface OptionItem {
   label: string
 }
 
-/** Agent 列表项 */
+/** Agent 类型 */
 export type AgentType = 'default' | 'custom' | 'workflow' | 'marketplace'
 
 export interface AgentLlmConfig {
@@ -828,7 +932,7 @@ export interface AgentSummary {
   createdAt: string
   tags?: string[]
   avatar?: string
-  /** Agent 来源类型（MarkdownDefined / Builtin 等） */
+  /** 来源 */
   source?: string
 }
 
@@ -869,7 +973,7 @@ export interface UpdateAgentRequest {
   metadata?: Record<string, unknown>
 }
 
-/** Tool 摘要 */
+/** Tool 概要 */
 export interface ToolSummary {
   id: string
   name: string
@@ -901,7 +1005,6 @@ export interface ToolDetail extends ToolSummary {
 export interface ToolTestRequest {
   toolId: string
   input?: Record<string, any>
-  arguments?: Record<string, any> // 兼容旧字段名
 }
 
 /** Tool 测试响应 */
@@ -917,7 +1020,7 @@ export interface ToolTestResponse {
   }
 }
 
-/** Analytics 用量统计 */
+/** Analytics 统计 */
 export interface UsageStats {
   totalRequests: number
   totalTokens: number
@@ -939,26 +1042,26 @@ export interface UsageStats {
 }
 
 /**
- * Token 消耗统计（Trace 维度）
+ * Token 消耗统计（Trace 级别）
  *
- * 对指定时间范围内的 Trace 进行聚合统计，用于 Trace 页面 Token 分析。
+ * 用于 Trace 详情页展示 Token 使用情况
  */
 export interface TokenConsumptionStats {
-  /** 统计时间范围内的 Trace 数量 */
+  /** Trace 数量 */
   traceCount: number
-  /** 所有 Trace 的总 Token 数 */
+  /** 总 Token 数 */
   totalTokens: number
-  /** 所有 Trace 的总输入 Token 数 */
+  /** 总输入 Token 数 */
   totalInputTokens: number
-  /** 所有 Trace 的总输出 Token 数 */
+  /** 总输出 Token 数 */
   totalOutputTokens: number
-  /** 每条 Trace 平均 Token 数 */
+  /** 平均每个 Trace 的 Token 数 */
   avgTokensPerTrace: number
-  /** 单条 Trace 的最大 Token 数 */
+  /** 最大 Token 数 */
   maxTokens: number
-  /** 成功的 Trace 数量 */
+  /** 成功 Trace 数量 */
   successCount: number
-  /** 平均耗时（毫秒） */
+  /** 平均耗时 */
   avgDurationMs: number
 }
 
@@ -991,134 +1094,114 @@ export interface ToolStats {
   avgLatency: number
 }
 
-/** LLM Provider 详情 */
-export interface LlmProviderDetail {
-  id: string
-  type: string
-  modelName: string
-  displayName?: string
-  capabilities?: string[]
-  priority?: number
-  costPerInputToken?: number
-  costPerOutputToken?: number
-  scenes?: string[]
-  maxContextWindow?: number
-  supportsStreaming?: boolean
-  enabled?: boolean
-  healthy?: boolean
-  apiUrl?: string
-  timeoutSeconds?: number
-  isPreset?: boolean
-  description?: string
-  embeddingDimension?: number
-}
 
 /** Provider 能力类型 */
 export type ProviderCapability = 'STREAMING' | 'FUNCTION_CALLING' | 'EMBEDDING' | 'VISION' | 'AUDIO' | 'RERANK'
 
-// ========== 模块 20: Observability 统计与评估 ==========
+// ========== 第二部分 20: Observability 可观测性相关 ==========
 
 /**
- * 轨迹概览统计数据
+ * 概览统计
  *
- * 用于 Trace 列表页顶部的统计卡片区域，展示整体运行情况。
+ * 用于 Trace 列表页顶部统计卡片展示
  */
 export interface OverviewStats {
-  /** 轨迹总数 */
+  /** 总 Trace 数 */
   totalTraces: number
-  /** 成功轨迹数量 */
+  /** 成功 Trace 数 */
   successCount: number
-  /** 失败轨迹数量 */
+  /** 失败 Trace 数 */
   failureCount: number
-  /** 成功率（0-1 小数） */
+  /** 成功率 (0-1) */
   successRate: number
   /** 平均步骤数 */
   avgSteps: number
-  /** 平均耗时（毫秒） */
+  /** 平均耗时 */
   avgDurationMs: number
-  /** 总 Token 消耗 */
+  /** 总 Token 数 */
   totalTokens: number
-  /** 平均每条轨迹 Token 消耗 */
+  /** 平均每个 Trace 的 Token 数 */
   avgTokens: number
 }
 
 /**
- * 工具调用使用统计
+ * 工具调用统计
  *
- * 用于工具统计列表，展示各工具的调用与成功情况。
+ * 用于工具使用频率排行等场景
  */
 export interface ToolUsageStats {
-  /** 工具唯一标识 */
+  /** 工具 ID */
   toolId: string
-  /** 总调用次数 */
+  /** 调用次数 */
   callCount: number
-  /** 成功调用次数 */
+  /** 成功次数 */
   successCount: number
-  /** 失败调用次数 */
+  /** 失败次数 */
   failureCount: number
-  /** 成功率（0-1 小数） */
+  /** 成功率 (0-1) */
   successRate: number
-  /** 平均调用耗时（毫秒） */
+  /** 平均耗时 */
   avgDurationMs: number
 }
 
 /**
- * 轨迹离线评估结果
+ * Trace 评估结果
  *
- * 对单条 Trace 的多维度质量评估，用于详情页展示。
+ * 用于 Agentic Evals 质量评估
  */
 export interface EvaluationResult {
-  /** 被评估的轨迹 ID */
+  /** Trace ID */
   traceId: string
-  /** 评估时间（ISO 8601） */
+  /** 评估时间 */
   evaluatedAt: string
-  /** 工具选择合理性评分（0-1） */
+  /** 工具选择得分 (0-1) */
   toolSelectionScore: number
-  /** 参数合法性与幂等性评分（0-1） */
+  /** 参数有效性得分 (0-1) */
   parameterValidityScore: number
-  /** 步骤数量与结构效率评分（0-1） */
+  /** 步骤效率得分 (0-1) */
   stepEfficiencyScore: number
-  /** 策略与护栏合规性评分（0-1） */
+  /** 策略合规得分 (0-1) */
   policyComplianceScore: number
-  /** Token 使用效率评分（0-1） */
+  /** Token 效率得分 (-1 到 1) */
   tokenEfficiencyScore: number
-  /** 综合评分（0-1） */
+  /** 综合得分 (-1 到 1) */
   overallScore: number
-  /** 实际执行步骤数 */
+  /** 实际步骤数 */
   actualSteps: number
-  /** 实际消耗 Token 数 */
+  /** 实际 Token 数 */
   actualTokens: number
-  /** 违规说明列表（如存在问题） */
+  /** 违规项列表 */
   violations: string[]
-  /** 优化建议列表 */
+  /** 改进建议 */
   suggestions: string[]
 }
 
-// ========== 知识库拖拽上传：前端本地类型 ==========
+// ========== 知识库文档上传相关类型定义 ==========
 
 /**
- * 上传文件条目（UploadProgress 组件使用，纯前端状态）
+ * 上传文件项
+ * 用于 uploadProgress 事件
  */
 export interface UploadFileItem {
-  /** 前端生成的唯一 ID（用于列表 key） */
+  /** 文件 ID */
   id: string
-  /** 原始 File 对象引用（用于重试） */
+  /** File 对象 */
   file: File
   /** 文件名 */
   fileName: string
-  /** 上传状态 */
+  /** 状态 */
   status: 'waiting' | 'uploading' | 'success' | 'error'
-  /** 错误信息（仅 status === 'error' 时有值） */
+  /** 错误信息 */
   errorMessage?: string
 }
 
 
-// ========== 模块 25: 扩展市场类型 ==========
+// ========== 第三部分 25: 扩展市场相关 ==========
 
-/** 扩展类型枚举（对齐后端 ExtensionType） */
+/** 扩展类型 */
 export type ExtensionType = 'SKILL' | 'AGENT' | 'WORKFLOW'
 
-/** 扩展包元数据（对齐后端 ExtensionPackage record） */
+/** 扩展包 */
 export interface ExtensionPackage {
   id: string
   name: string
@@ -1135,29 +1218,29 @@ export interface ExtensionPackage {
   updatedAt: string
   downloads: number
   verified: boolean
-  /** 已安装的版本（未安装时为 undefined） */
+  /** 已安装版本 */
   installedVersion?: string
   /** 是否已安装 */
   installed: boolean
 }
 
-/** 向后兼容别名 */
+/** Skill 包 */
 export type SkillPackage = ExtensionPackage
 
-/** 安全发现条目 */
+/** 安全报告 */
 export interface SecurityFinding {
   level: 'LOW' | 'MEDIUM' | 'HIGH'
   category: string
   description: string
 }
 
-/** 安全扫描报告 */
+/** 安全审计报告 */
 export interface SecurityReport {
   findings: SecurityFinding[]
   overallRisk: 'LOW' | 'MEDIUM' | 'HIGH'
 }
 
-/** 安装结果（对齐后端 InstallResult record） */
+/** 安装结果 */
 export interface InstallResult {
   success: boolean
   extensionId?: string
@@ -1168,7 +1251,7 @@ export interface InstallResult {
   requiresConfirmation: boolean
 }
 
-/** 后端分页结果（对齐 MarketplaceService.PagedResult） */
+/** 分页结果 */
 export interface PagedResult<T> {
   content: T[]
   page: number
@@ -1178,15 +1261,15 @@ export interface PagedResult<T> {
 }
 
 
-// ========== Web UI 深度调试与配置：新增类型 ==========
+// ========== Web UI 辅助类型定义 ==========
 
-/** 上下文组装预览响应 */
+/** 上下文预览响应 */
 export interface ContextPreviewResponse {
   segments: {
     systemPrompt: { content: string; tokens: number }
-    conversationHistory: { content: string; tokens: number }
-    memoryRetrieval: { content: string; tokens: number }
-    toolResults: { content: string; tokens: number }
+    contextMessages: { content: string; tokens: number }
+    historyMessages: { content: string; tokens: number }
+    currentUserPrompt: { content: string; tokens: number }
   }
   tokenBudget: TokenBudgetData
   totalTokens: number
@@ -1194,7 +1277,7 @@ export interface ContextPreviewResponse {
   degraded: boolean
 }
 
-/** Token 预算数据（对齐后端 TokenBudget record） */
+/** Token Budget 数据 */
 export interface TokenBudgetData {
   systemPromptBudget: number
   historyBudget: number
@@ -1209,7 +1292,7 @@ export interface TokenBudgetData {
   toolResultUsed: number
 }
 
-/** 依赖图节点 */
+/** 依赖节点 */
 export interface DependencyNode {
   id: string
   name: string
@@ -1217,7 +1300,7 @@ export interface DependencyNode {
   enabled: boolean
 }
 
-/** 依赖图边 */
+/** 依赖边 */
 export interface DependencyEdge {
   source: string
   target: string
@@ -1230,7 +1313,7 @@ export interface DependencyGraphResponse {
   edges: DependencyEdge[]
 }
 
-/** Tool 调用统计项 */
+/** Tool 调用统计 */
 export interface ToolCallStats {
   toolId: string
   toolName: string
@@ -1240,7 +1323,7 @@ export interface ToolCallStats {
   avgLatencyMs: number
 }
 
-/** Tool 调用每日趋势 */
+/** Tool 每日趋势 */
 export interface ToolDailyTrend {
   date: string
   callCount: number
@@ -1248,13 +1331,13 @@ export interface ToolDailyTrend {
   failureCount: number
 }
 
-/** Tool 统计 API 响应 */
+/** Tool 分析响应 */
 export interface ToolAnalyticsResponse {
   toolStats: ToolCallStats[]
   dailyTrend: ToolDailyTrend[]
 }
 
-/** 错误趋势每日数据 */
+/** 错误趋势每日统计 */
 export interface ErrorTrendDaily {
   date: string
   agentErrors: number
@@ -1262,14 +1345,14 @@ export interface ErrorTrendDaily {
   totalErrors: number
 }
 
-/** MCP 连接日志条目 */
+/** MCP 连接日志 */
 export interface McpConnectionLog {
   timestamp: string
   eventType: 'CONNECT' | 'DISCONNECT' | 'ERROR' | 'RECONNECT'
   description: string
 }
 
-/** Tool 测试历史记录 */
+/** Tool 测试历史项 */
 export interface ToolTestHistoryItem {
   id: string
   timestamp: number
@@ -1278,9 +1361,9 @@ export interface ToolTestHistoryItem {
 }
 
 
-// ========== MCP Server 状态 SSE 推送类型 ==========
+// ========== MCP Server 连接状态 SSE 事件 ==========
 
-/** MCP Server 状态快照（SSE mcp-status-snapshot 事件数据） */
+/** MCP Server 状态快照 SSE mcp-status-snapshot 事件 */
 export interface McpStatusSnapshot {
   servers: Array<{
     serverName: string
@@ -1290,7 +1373,7 @@ export interface McpStatusSnapshot {
   }>
 }
 
-/** MCP Server 状态变化（SSE mcp-status-change 事件数据） */
+/** MCP Server 状态变更 SSE mcp-status-change 事件 */
 export interface McpStatusChange {
   serverName: string
   oldState: McpServer['state']
@@ -1299,20 +1382,16 @@ export interface McpStatusChange {
   error?: string
 }
 
-// ========== 通知中心类型定义 ==========
+// ========== 通知系统相关类型定义 ==========
 
-/** 通知紧急程度 */
-export type NotificationUrgency = 'HIGH' | 'MEDIUM' | 'LOW'
-
-/** 通知已读状态 */
+/** 通知阅读状态 */
 export type NotificationReadStatus = 'UNREAD' | 'READ'
 
-/** 通知条目（对齐后端 NotificationDto） */
+/** 通知项 */
 export interface NotificationItem {
   id: string
   userId: string
   typeId?: string
-  urgency: NotificationUrgency
   contentJson: string
   channel: string
   readStatus: NotificationReadStatus
@@ -1321,10 +1400,10 @@ export interface NotificationItem {
   sentAt: string  // ISO 8601
 }
 
-/** 详情解析结果 */
+/** 解析后的详情 */
 export interface ParsedDetail {
   type: 'TEXT' | 'MARKDOWN' | 'CARD' | 'UNKNOWN'
-  /** TEXT: 完整文本; MARKDOWN: 原始 markdown; CARD: 无 */
+  /** TEXT: 纯文本; MARKDOWN: markdown; CARD: 卡片 */
   text?: string
   /** MARKDOWN: 渲染后的 HTML */
   html?: string
@@ -1332,15 +1411,15 @@ export interface ParsedDetail {
   title?: string
   /** CARD: 正文 */
   body?: string
-  /** CARD: 操作按钮列表 */
+  /** CARD: 操作按钮 */
   actions?: Array<{ label: string; url?: string }>
 }
 
 
 
-// ========== 记忆管理类型定义 ==========
+// ========== 记忆系统相关类型定义 ==========
 
-/** 记忆统计概览（对应 MemoryStatsDto） */
+/** 记忆统计 */
 export interface MemoryStats {
   conversationCount: number
   entityCount: number
@@ -1352,7 +1431,7 @@ export interface MemoryStats {
   lastForgettingTime: string | null
 }
 
-/** 统一搜索结果（对应 MemorySearchResultDto） */
+/** 记忆搜索结果 */
 export interface MemorySearchResult {
   entityId: string
   entityType: string
@@ -1361,7 +1440,7 @@ export interface MemorySearchResult {
   relevanceScore: number
 }
 
-/** 实体列表项（对应 EntitySummaryDto） */
+/** 实体摘要 */
 export interface EntitySummary {
   id: string
   type: string
@@ -1375,7 +1454,7 @@ export interface EntitySummary {
   updatedAt: string
 }
 
-/** 实体详情（对应 EntityDetailDto） */
+/** 实体详情 */
 export interface EntityDetail {
   id: string
   type: string
@@ -1396,7 +1475,7 @@ export interface EntityDetail {
   updatedAt: string
 }
 
-/** 实体创建请求（对应 EntityCreateRequest） */
+/** 实体创建请求 */
 export interface EntityCreateRequest {
   name: string
   type: string
@@ -1405,14 +1484,14 @@ export interface EntityCreateRequest {
   importanceScore?: number
 }
 
-/** 实体更新请求（对应 EntityUpdateRequest） */
+/** 实体更新请求 */
 export interface EntityUpdateRequest {
   description?: string
   properties?: Record<string, unknown>
   importanceScore?: number
 }
 
-/** 实体列表查询参数 */
+/** 实体列表参数 */
 export interface EntityListParams {
   page?: number
   size?: number
@@ -1424,7 +1503,7 @@ export interface EntityListParams {
   order?: string
 }
 
-/** 关系列表项（对应 RelationDto） */
+/** 关系项 */
 export interface RelationItem {
   id: string
   sourceEntityId: string
@@ -1440,7 +1519,7 @@ export interface RelationItem {
   createdAt: string
 }
 
-/** 关系列表查询参数 */
+/** 关系列表参数 */
 export interface RelationListParams {
   page?: number
   size?: number
@@ -1448,7 +1527,7 @@ export interface RelationListParams {
   relationType?: string
 }
 
-/** 对话列表项（对应 ConversationSummaryDto） */
+/** 对话摘要 */
 export interface ConversationSummary {
   id: string
   sessionId: string
@@ -1458,7 +1537,7 @@ export interface ConversationSummary {
   createdAt: string
 }
 
-/** 对话详情（对应 ConversationRecord） */
+/** 对话详情 */
 export interface ConversationDetail {
   id: string
   sessionId: string
@@ -1469,7 +1548,7 @@ export interface ConversationDetail {
   updatedAt: string
 }
 
-/** 消息记录（对应 MessageRecord） */
+/** 消息记录 */
 export interface MessageRecord {
   id: string
   conversationId: string
@@ -1483,7 +1562,7 @@ export interface MessageRecord {
   createdAt: string
 }
 
-/** 对话列表查询参数 */
+/** 对话列表参数 */
 export interface ConversationListParams {
   page?: number
   size?: number
@@ -1492,7 +1571,7 @@ export interface ConversationListParams {
   timeTo?: string
 }
 
-/** 操作模板（对应 ProcedureTemplate） */
+/** 程序模板 */
 export interface ProcedureTemplate {
   templateId: string
   name: string
@@ -1517,7 +1596,7 @@ export interface TemplateStep {
   expectedOutcome: string | null
 }
 
-/** 偏好规则（对应 PreferenceRule） */
+/** 偏好规则 */
 export interface PreferenceRule {
   ruleId: string
   category: string
@@ -1530,7 +1609,7 @@ export interface PreferenceRule {
   updatedAt: string
 }
 
-/** 模板列表查询参数 */
+/** 模板列表参数 */
 export interface TemplateListParams {
   page?: number
   size?: number
@@ -1539,7 +1618,7 @@ export interface TemplateListParams {
   order?: string
 }
 
-/** 遗忘日志（对应 ForgettingLogDto） */
+/** 遗忘日志 */
 export interface ForgettingLog {
   id: string
   entityId: string
@@ -1551,7 +1630,7 @@ export interface ForgettingLog {
   createdAt: string
 }
 
-/** 遗忘日志查询参数 */
+/** 遗忘日志列表参数 */
 export interface ForgettingLogListParams {
   page?: number
   size?: number
@@ -1560,14 +1639,14 @@ export interface ForgettingLogListParams {
   strategy?: string
 }
 
-/** 实体类型枚举映射（用于筛选下拉框） */
+/** 实体类型常量 */
 export const ENTITY_TYPES = [
   { value: 'PERSON', label: '人物' },
   { value: 'ORGANIZATION', label: '组织' },
   { value: 'PLACE', label: '地点' },
   { value: 'EVENT', label: '事件' },
   { value: 'PROJECT', label: '项目' },
-  { value: 'TOPIC', label: '话题' },
+  { value: 'TOPIC', label: '主题' },
   { value: 'PREFERENCE', label: '偏好' },
   { value: 'HABIT', label: '习惯' },
   { value: 'GOAL', label: '目标' },
@@ -1575,7 +1654,7 @@ export const ENTITY_TYPES = [
   { value: 'CUSTOM', label: '自定义' },
 ] as const
 
-// ========== Eval 评估模块类型 ==========
+// ========== Eval 评估相关 ==========
 
 /** Benchmark 场景 */
 export interface BenchmarkScenario {
@@ -1598,14 +1677,14 @@ export interface BenchmarkScenario {
   description?: string | null
 }
 
-/** 智能 Mock 工具定义 */
+/** Mock 工具规格 */
 export interface MockToolSpec {
   toolId: string
   behaviors: MockBehavior[]
   defaultResponse: string
 }
 
-/** Mock 行为定义 */
+/** Mock 行为 */
 export interface MockBehavior {
   parameterPattern?: string | null
   response: string
@@ -1613,7 +1692,7 @@ export interface MockBehavior {
   delayMs: number
 }
 
-/** 评估结果 */
+/** 评估结果项 */
 export interface EvalResultItem {
   evalId: string
   traceId: string
@@ -1685,7 +1764,7 @@ export interface ComparisonReport {
   baselineMetadata?: RunMetadata | null
 }
 
-/** 场景级对比 */
+/** 场景对比 */
 export interface ScenarioComparison {
   scenarioId: string
   currentScore: number

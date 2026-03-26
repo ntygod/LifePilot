@@ -1,7 +1,7 @@
 ---
 id: datastore
 name: "数据存储"
-description: "通用数据存储管理：创建集合、添加/查询/更新/删除文档、聚合查询，支持 DOCUMENT/NOTE/METRIC 三种集合类型"
+description: "通用数据存储管理：创建集合、添加/查询/更新/删除文档、聚合查询。"
 version: "1.0.0"
 suggested-tools:
   - builtin.datastore.create_collection

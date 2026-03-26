@@ -1,0 +1,59 @@
+name: Bug 反馈
+description: 报告一个可以复现的问题
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。请尽量提供最小可复现信息，方便快速定位。
+  - type: input
+    id: version
+    attributes:
+      label: 版本 / 提交
+      description: 如果知道，请填写版本号或 commit hash
+      placeholder: 例如 0.2.0 / a1b2c3d
+    validations:
+      required: false
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境信息
+      description: 操作系统、Java、Node、浏览器等
+      placeholder: |
+        Windows 11
+        Java 22
+        Node 22
+        Chrome 136
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 打开 ...
+        2. 点击 ...
+        3. 看到 ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望结果
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际结果
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志 / 截图 / 补充信息
+      render: shell
+    validations:
+      required: false

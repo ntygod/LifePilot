@@ -8,7 +8,7 @@
 知微是一个 AI 驱动的个人生活助手，通过自然语言交互帮助用户管理日常事务。与通用 AI 助手不同，知微专注于：
 
 - **长期记忆**：多层记忆系统让助手真正"记住"用户的偏好、习惯和历史
-- **自主任务**：支持 cron 定时和条件触发的自主任务执行，基于 TASKS.md 文件管理
+- **自主任务**：支持 cron 定时、heartbeat 巡检和自主工作流，遵循“无结果静默，有结果直接通知”
 - **本地优先**：单 JAR 部署 + SQLite 存储，数据完全在用户本地，隐私友好
 - **可扩展**：YAML 声明式 Skill 系统 + MCP 协议，能力可按需扩展
 
@@ -34,6 +34,7 @@
 | LLM 多模型路由 | 支持多 LLM Provider 动态路由，内置熔断器和故障转移 | [特性](features/llm-router.md) |
 | Agent 控制循环 | 基于 StateReducer 的不可变状态机，支持预算控制和取消 | [特性](features/agent-engine.md) |
 | 工具系统 | ToolContract 统一契约，支持内置工具、YAML 工具、MCP 工具 | [特性](features/tool-ecosystem.md) |
+| 工具授权 | 高风险工具按会话 / 工作区 / 任务 / 长期授权，自主任务支持任务级预授权 | [特性](features/permission.md) |
 | 安全护栏 | 四级风险分级（LOW/MEDIUM/HIGH/CRITICAL），工具执行前自动检查 | [特性](features/guardrail.md) |
 | MCP 协议支持 | Model Context Protocol 客户端，桥接外部工具生态 | [特性](features/mcp-support.md) |
 
@@ -56,9 +57,9 @@
 | CLI 交互 | JLine 3 交互式对话，快捷命令（llm/mcp/skill） | [特性](features/gateway-channels.md) |
 | 消息网关 | 统一消息入口，6 层中间件管道（Auth→RateLimit→Security→Router→Execution→Audit） | [特性](features/gateway-channels.md) |
 | Channel 适配器 | 企业微信 / 钉钉 / 飞书 / Webhook 四个渠道适配 | [特性](features/gateway-channels.md) |
-| 对话管理 | 对话历史存储、会话视图查询 | [特性](features/conversation.md) |
-| 自主任务执行 | cron 定时 + 条件触发，TASKS.md 文件管理，静默执行 + 通知 | — |
-| 通知系统 | 统一通知服务、Urgency 路由、多渠道广播、富媒体支持、被动队列持久化 | [特性](features/notification.md) |
+| 对话管理 | 对话历史存储、最近完整轮次读取、完整时间线展示 | [特性](features/conversation.md) |
+| 自主任务执行 | cron 定时 + heartbeat 巡检 + 自主工作流，无结果静默，有结果直接通知 | — |
+| 通知系统 | 统一通知服务、直接通知、多渠道广播、富媒体支持、通知历史管理 | [特性](features/notification.md) |
 
 ### 3.4 高级能力
 
