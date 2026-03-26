@@ -20,7 +20,7 @@
 
     <properties>
         <java.version>22</java.version>
-        <spring-ai.version>1.1.2</spring-ai.version>
+        <spring-ai.version>1.1.3</spring-ai.version>
         <sqlite-jdbc.version>3.49.1.0</sqlite-jdbc.version>
         <lombok.version>1.18.34</lombok.version>
     </properties>
