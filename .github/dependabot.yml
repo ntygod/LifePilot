@@ -1,19 +1,66 @@
 version: 2
+
 updates:
   - package-ecosystem: "maven"
     directory: "/"
     schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 5
+      interval: "monthly"
+      day: "monday"
+      time: "03:00"
+      timezone: "Asia/Shanghai"
+    open-pull-requests-limit: 2
     commit-message:
       prefix: "chore"
       include: "scope"
+    groups:
+      backend-build-tools:
+        patterns:
+          - "org.apache.maven.plugins:*"
+          - "org.projectlombok:lombok"
+        update-types:
+          - "minor"
+          - "patch"
+      backend-libraries:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "org.apache.maven.plugins:*"
+          - "org.projectlombok:lombok"
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
 
   - package-ecosystem: "npm"
     directory: "/zhiwei-web"
     schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 5
+      interval: "monthly"
+      day: "monday"
+      time: "03:30"
+      timezone: "Asia/Shanghai"
+    open-pull-requests-limit: 2
     commit-message:
       prefix: "chore"
       include: "scope"
+    groups:
+      frontend-runtime:
+        dependency-type: "production"
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+      frontend-dev-tools:
+        dependency-type: "development"
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
