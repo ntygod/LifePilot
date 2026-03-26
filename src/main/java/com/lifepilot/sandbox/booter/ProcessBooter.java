@@ -4,7 +4,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -30,7 +29,7 @@ import com.lifepilot.sandbox.util.SandboxUtils;
  * <p>安全措施：</p>
  * <ul>
  *   <li>环境变量清洗：仅保留 PATH</li>
- *   <li>Linux 下通过 ulimit 限制虚拟内存（256MB）、CPU 时间、文件大小（64MB）、进程数（64）</li>
+ *   <li>超时强制终止：超过限制立即销毁子进程</li>
  *   <li>输出截断防止内存溢出</li>
  * </ul>
  *
@@ -43,7 +42,6 @@ import com.lifepilot.sandbox.util.SandboxUtils;
 public final class ProcessBooter implements SandboxBooter {
 
     private static final Logger log = LoggerFactory.getLogger(ProcessBooter.class);
-    private static final boolean IS_LINUX = System.getProperty("os.name", "").toLowerCase().contains("linux");
 
     private final SandboxConfigProperties config;
     private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
@@ -81,8 +79,8 @@ public final class ProcessBooter implements SandboxBooter {
             String runtimeCommand = config.getRuntimePaths()
                     .getOrDefault(request.language().name().toLowerCase(), request.language().runtimeCommand());
 
-            // 3. 构建命令（Linux 下包裹 ulimit 限制）
-            List<String> command = buildCommand(runtimeCommand, scriptFile, request);
+            // 3. 构建执行命令
+            List<String> command = buildCommand(runtimeCommand, scriptFile);
 
             // 4. 构建 ProcessBuilder
             var pb = new ProcessBuilder(command);
@@ -177,31 +175,16 @@ public final class ProcessBooter implements SandboxBooter {
     }
 
     /**
-     * 构建执行命令。Linux 下通过 bash + ulimit 包裹资源限制。
+     * 构建执行命令。
      *
-     * <p>ulimit 限制项：</p>
-     * <ul>
-     *   <li>{@code -v 262144} — 虚拟内存 256MB</li>
-     *   <li>{@code -t <timeout>} — CPU 时间等于执行超时</li>
-     *   <li>{@code -f 65536} — 单文件最大 64MB</li>
-     *   <li>{@code -u 64} — 最大进程数 64（防 fork bomb）</li>
-     * </ul>
+     * <p>直接调用运行时，避免 Linux 共享环境下的 ulimit 差异导致 Node / Python 在启动阶段异常退出。
+     * 超时仍由外层 {@link Process#waitFor(long, TimeUnit)} 和强制销毁保证。</p>
      *
      * @param runtimeCommand 运行时命令
      * @param scriptFile     脚本文件路径
-     * @param request        执行请求
      * @return 完整命令列表
      */
-    List<String> buildCommand(String runtimeCommand, Path scriptFile, ExecutionRequest request) {
-        if (!IS_LINUX) {
-            // 非 Linux 平台不支持 ulimit，直接执行
-            return List.of(runtimeCommand, scriptFile.toString());
-        }
-
-        // Linux: bash -c 'ulimit -v 262144 -t <timeout> -f 65536 -u 64; <runtime> <script>'
-        String ulimitCmd = "ulimit -v 262144 -t %d -f 65536 -u 64; %s %s".formatted(
-                request.timeoutSeconds(), runtimeCommand, scriptFile.toString());
-
-        return List.of("bash", "-c", ulimitCmd);
+    List<String> buildCommand(String runtimeCommand, Path scriptFile) {
+        return List.of(runtimeCommand, scriptFile.toString());
     }
 }
