@@ -23,7 +23,7 @@
     "echarts": "^6.0.0",
     "highlight.js": "^11.11.1",
     "lucide-vue-next": "^0.475.0",
-    "marked": "^15.0.6",
+    "marked": "^17.0.5",
     "marked-highlight": "^2.2.3",
     "monaco-editor": "^0.55.1",
     "motion-v": "^2.0.0",
