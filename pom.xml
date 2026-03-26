@@ -146,7 +146,7 @@
         <dependency>
             <groupId>org.bytedeco</groupId>
             <artifactId>javacv</artifactId>
-            <version>1.5.10</version>
+            <version>1.5.13</version>
             <exclusions>
                 <exclusion><groupId>org.bytedeco</groupId><artifactId>opencv</artifactId></exclusion>
                 <exclusion><groupId>org.bytedeco</groupId><artifactId>openblas</artifactId></exclusion>
