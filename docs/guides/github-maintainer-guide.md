@@ -2,6 +2,8 @@
 
 > 适合第一次维护个人开源项目时作为检查清单使用。
 
+配套的日常命令与 PR 流程可参考：[Git 与 GitHub CLI 速查表](./git-gh-guide.md)
+
 ## 1. 基础信息
 
 先在仓库首页补齐这些信息：
@@ -60,6 +62,14 @@
 
 - 到 Actions 页面确认工作流第一次运行成功
 - 到 Insights / Dependency graph 里确认 Dependabot 已生效
+- 确认受保护分支要求的检查名与工作流里的固定 job 名一致
+
+当前仓库的做法是：
+
+- 对外固定要求 `Backend Test` 和 `Frontend Test and Build`
+- 对内按路径分流，文档类改动快速跳过，代码类改动再跑完整测试
+
+这样既能保留严格的分支保护，也能避免文档 PR 每次都跑全量回归
 
 ## 6. Release 与版本
 

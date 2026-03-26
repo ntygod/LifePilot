@@ -1,11 +1,26 @@
 name: CI
 
 on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
   push:
     branches:
       - main
       - develop
-  pull_request:
+  workflow_dispatch:
+    inputs:
+      full_run:
+        description: "是否强制执行前后端完整 CI"
+        required: false
+        type: boolean
+        default: true
+  schedule:
+    # 北京时间周一 04:00，做一次全量回归，尽早发现依赖漂移或环境问题
+    - cron: "0 20 * * 0"
 
 permissions:
   contents: read
@@ -14,48 +29,240 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  JAVA_VERSION: "22"
+  NODE_VERSION: "22"
+
 jobs:
-  backend:
-    name: Backend Test
+  changes:
+    name: Detect Changes
     runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.detect.outputs.backend }}
+      frontend: ${{ steps.detect.outputs.frontend }}
+      docs_only: ${{ steps.detect.outputs.docs_only }}
+      reason: ${{ steps.detect.outputs.reason }}
+      changed_count: ${{ steps.detect.outputs.changed_count }}
+      files: ${{ steps.detect.outputs.files }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed areas
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          backend=false
+          frontend=false
+          docs_only=true
+          reason="docs_only"
+
+          event_name="${{ github.event_name }}"
+          force_full="${{ github.event_name == 'workflow_dispatch' && inputs.full_run || false }}"
+
+          if [[ "$event_name" == "workflow_dispatch" && "$force_full" == "true" ]]; then
+            backend=true
+            frontend=true
+            docs_only=false
+            reason="manual_full_run"
+            : > changed_files.txt
+          elif [[ "$event_name" == "schedule" ]]; then
+            backend=true
+            frontend=true
+            docs_only=false
+            reason="scheduled_full_run"
+            : > changed_files.txt
+          else
+            if [[ "$event_name" == "pull_request" ]]; then
+              base_sha="${{ github.event.pull_request.base.sha }}"
+              head_sha="${{ github.event.pull_request.head.sha }}"
+            else
+              base_sha="${{ github.event.before }}"
+              head_sha="${{ github.sha }}"
+            fi
+
+            if [[ -z "$base_sha" || "$base_sha" == "0000000000000000000000000000000000000000" ]]; then
+              git ls-tree -r --name-only "$head_sha" > changed_files.txt
+            else
+              git diff --name-only "$base_sha" "$head_sha" > changed_files.txt
+            fi
+
+            if [[ ! -s changed_files.txt ]]; then
+              backend=true
+              frontend=true
+              docs_only=false
+              reason="empty_diff_fallback_full_run"
+            else
+              while IFS= read -r file; do
+                [[ -z "$file" ]] && continue
+
+                case "$file" in
+                  .github/workflows/*)
+                    backend=true
+                    frontend=true
+                    docs_only=false
+                    reason="workflow_changed"
+                    ;;
+                  src/*|pom.xml|Dockerfile|start.sh|start.bat)
+                    backend=true
+                    docs_only=false
+                    [[ "$reason" == "docs_only" ]] && reason="backend_changed"
+                    ;;
+                  zhiwei-web/*)
+                    frontend=true
+                    docs_only=false
+                    [[ "$reason" == "docs_only" ]] && reason="frontend_changed"
+                    ;;
+                  docs/*|README.md|CONTRIBUTING.md|CODE_OF_CONDUCT.md|SUPPORT.md|SECURITY.md|LICENSE|.github/ISSUE_TEMPLATE/*|.github/PULL_REQUEST_TEMPLATE.md|.github/release.yml|.github/dependabot.yml)
+                    ;;
+                  *)
+                    backend=true
+                    frontend=true
+                    docs_only=false
+                    reason="shared_or_unknown_changed"
+                    ;;
+                esac
+              done < changed_files.txt
+            fi
+          fi
+
+          if [[ "$backend" == "false" && "$frontend" == "false" && "$docs_only" == "false" ]]; then
+            backend=true
+            frontend=true
+            reason="fallback_full_run"
+          fi
+
+          changed_count="$(grep -cve '^[[:space:]]*$' changed_files.txt 2>/dev/null || true)"
+
+          {
+            echo "backend=$backend"
+            echo "frontend=$frontend"
+            echo "docs_only=$docs_only"
+            echo "reason=$reason"
+            echo "changed_count=$changed_count"
+            echo "files<<EOF"
+            cat changed_files.txt
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+  backend:
+    name: Backend Test
+    runs-on: ubuntu-latest
+    needs: changes
+    timeout-minutes: 25
+
+    steps:
+      - name: Skip backend test
+        if: needs.changes.outputs.backend != 'true'
+        run: |
+          echo "未检测到后端相关改动，跳过后端测试。"
+          echo "判定原因: ${{ needs.changes.outputs.reason }}"
+
+      - name: Checkout
+        if: needs.changes.outputs.backend == 'true'
+        uses: actions/checkout@v5
 
       - name: Set up Java 22
-        uses: actions/setup-java@v4
+        if: needs.changes.outputs.backend == 'true'
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: "22"
+          java-version: ${{ env.JAVA_VERSION }}
           cache: maven
 
       - name: Run backend tests
+        if: needs.changes.outputs.backend == 'true'
         run: mvn -B -ntp test
+
+      - name: Upload backend reports on failure
+        if: failure() && needs.changes.outputs.backend == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-surefire-reports-${{ github.run_id }}
+          path: |
+            target/surefire-reports/**
+            target/failsafe-reports/**
+          if-no-files-found: ignore
+          retention-days: 7
 
   frontend:
     name: Frontend Test and Build
     runs-on: ubuntu-latest
+    needs: changes
+    timeout-minutes: 20
 
     steps:
+      - name: Skip frontend test
+        if: needs.changes.outputs.frontend != 'true'
+        run: |
+          echo "未检测到前端相关改动，跳过前端测试与构建。"
+          echo "判定原因: ${{ needs.changes.outputs.reason }}"
+
       - name: Checkout
-        uses: actions/checkout@v4
+        if: needs.changes.outputs.frontend == 'true'
+        uses: actions/checkout@v5
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        if: needs.changes.outputs.frontend == 'true'
+        uses: actions/setup-node@v5
         with:
-          node-version: "22"
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: zhiwei-web/package-lock.json
 
       - name: Install frontend dependencies
+        if: needs.changes.outputs.frontend == 'true'
         working-directory: zhiwei-web
         run: npm ci
 
+      - name: Run frontend lint
+        if: needs.changes.outputs.frontend == 'true'
+        working-directory: zhiwei-web
+        run: npm run lint
+
       - name: Run frontend tests
+        if: needs.changes.outputs.frontend == 'true'
         working-directory: zhiwei-web
         run: npm run test:run
 
       - name: Build frontend
+        if: needs.changes.outputs.frontend == 'true'
         working-directory: zhiwei-web
         run: npm run build
+
+  summary:
+    name: CI Summary
+    runs-on: ubuntu-latest
+    needs:
+      - changes
+      - backend
+      - frontend
+    if: always()
+
+    steps:
+      - name: Write CI summary
+        shell: bash
+        run: |
+          {
+            echo "## CI 摘要"
+            echo
+            echo "- 触发事件：${{ github.event_name }}"
+            echo "- 变更判定：${{ needs.changes.outputs.reason }}"
+            echo "- 变更文件数：${{ needs.changes.outputs.changed_count }}"
+            echo "- 后端结果：${{ needs.backend.result }}"
+            echo "- 前端结果：${{ needs.frontend.result }}"
+            echo
+            echo "### 变更文件"
+            if [[ -n "${{ needs.changes.outputs.files }}" ]]; then
+              echo '```text'
+              echo "${{ needs.changes.outputs.files }}"
+              echo '```'
+            else
+              echo "本次为手动或定时全量运行，未使用 diff 判定。"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
