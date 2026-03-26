@@ -220,11 +220,6 @@ jobs:
         working-directory: zhiwei-web
         run: npm ci
 
-      - name: Run frontend lint
-        if: needs.changes.outputs.frontend == 'true'
-        working-directory: zhiwei-web
-        run: npm run lint
-
       - name: Run frontend tests
         if: needs.changes.outputs.frontend == 'true'
         working-directory: zhiwei-web

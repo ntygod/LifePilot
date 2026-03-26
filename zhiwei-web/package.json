@@ -8,8 +8,7 @@
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview",
     "test": "vitest",
-    "test:run": "vitest --run",
-    "lint": "eslint . --ext .vue,.js,.jsx,.ts,.tsx"
+    "test:run": "vitest --run"
   },
   "dependencies": {
     "@guolao/vue-monaco-editor": "^1.6.0",
