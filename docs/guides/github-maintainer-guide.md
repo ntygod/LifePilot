@@ -71,6 +71,11 @@
    - 破坏性变更
    - 升级步骤
 
+仓库里建议继续保持：
+
+- 用 `.github/release.yml` 统一自动生成 Release Notes 的分类
+- 按 [Release 发布指南](./release-guide.md) 的最小流程先发草稿再发布
+
 ## 7. 安全与反馈
 
 建议开启：

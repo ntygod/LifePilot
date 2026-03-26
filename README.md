@@ -443,6 +443,7 @@ npm run build
 - 使用问题与反馈入口请看 [SUPPORT.md](SUPPORT.md)
 - 安全问题请通过 [SECURITY.md](SECURITY.md) 指定方式反馈
 - 第一次维护开源仓库可参考 [GitHub 仓库维护指南](docs/guides/github-maintainer-guide.md)
+- 日常版本发布可参考 [Release 发布指南](docs/guides/release-guide.md)
 - 仓库已补齐 GitHub Actions、Issue/PR 模板和 Dependabot，适合作为个人开源项目的基础骨架继续维护
 
 ## 🤝 贡献指南

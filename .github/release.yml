@@ -1,0 +1,30 @@
+changelog:
+  exclude:
+    labels:
+      - duplicate
+      - invalid
+      - question
+      - wontfix
+  categories:
+    - title: 重大变更
+      labels:
+        - breaking-change
+    - title: 新功能与改进
+      labels:
+        - enhancement
+        - backend
+        - frontend
+    - title: 文档
+      labels:
+        - docs
+        - documentation
+    - title: 持续集成与工程维护
+      labels:
+        - ci
+        - maintenance
+    - title: 安全
+      labels:
+        - security
+    - title: 其他变更
+      labels:
+        - "*"
