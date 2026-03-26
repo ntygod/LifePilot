@@ -2,9 +2,12 @@ package com.lifepilot.meta.infra.browser;
 
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.observability.guardrail.RiskLevel;
+import com.lifepilot.permission.model.PermissionActionType;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.model.ToolCategory;
 import com.lifepilot.tool.schema.JsonSchema;
+import com.lifepilot.tool.semantics.ToolExecutionSemantics;
+import com.lifepilot.tool.semantics.ToolScopeResolvers;
 import jakarta.annotation.Nullable;
 
 import java.util.ArrayList;
@@ -23,6 +26,11 @@ import java.util.Map;
 public class BrowserToolProvider {
 
     private static final List<String> INFRA_TAGS = List.of("infrastructure");
+    private static final ToolExecutionSemantics BROWSER_SESSION_SEMANTICS = ToolExecutionSemantics.of(
+            PermissionActionType.BROWSER_AUTOMATION,
+            com.lifepilot.tool.model.ToolSchedulingMode.SEQUENTIAL,
+            ToolScopeResolvers.exactValues("sessionIds", "sessionId")
+    );
 
     @Nullable
     private final BrowserSessionManager browserSessionManager;
@@ -88,6 +96,14 @@ public class BrowserToolProvider {
                 )))
                 .riskLevel(RiskLevel.MEDIUM)
                 .idempotent(false)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        PermissionActionType.BROWSER_AUTOMATION,
+                        com.lifepilot.tool.model.ToolSchedulingMode.SEQUENTIAL,
+                        ToolScopeResolvers.composite(
+                                ToolScopeResolvers.origins("url"),
+                                ToolScopeResolvers.exactValues("sessionIds", "sessionId")
+                        )
+                ))
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
@@ -112,6 +128,7 @@ public class BrowserToolProvider {
                 )))
                 .riskLevel(RiskLevel.MEDIUM)
                 .idempotent(false)
+                .executionSemantics(BROWSER_SESSION_SEMANTICS)
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
@@ -138,6 +155,7 @@ public class BrowserToolProvider {
                 )))
                 .riskLevel(RiskLevel.MEDIUM)
                 .idempotent(false)
+                .executionSemantics(BROWSER_SESSION_SEMANTICS)
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
@@ -160,6 +178,7 @@ public class BrowserToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(BROWSER_SESSION_SEMANTICS)
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
@@ -191,6 +210,7 @@ public class BrowserToolProvider {
                 )))
                 .riskLevel(RiskLevel.MEDIUM)
                 .idempotent(false)
+                .executionSemantics(BROWSER_SESSION_SEMANTICS)
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
@@ -219,6 +239,7 @@ public class BrowserToolProvider {
                 )))
                 .riskLevel(RiskLevel.LOW)
                 .idempotent(true)
+                .executionSemantics(BROWSER_SESSION_SEMANTICS)
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
@@ -243,6 +264,7 @@ public class BrowserToolProvider {
                 )))
                 .riskLevel(RiskLevel.MEDIUM)
                 .idempotent(false)
+                .executionSemantics(BROWSER_SESSION_SEMANTICS)
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
@@ -271,6 +293,7 @@ public class BrowserToolProvider {
                 )))
                 .riskLevel(RiskLevel.MEDIUM)
                 .idempotent(false)
+                .executionSemantics(BROWSER_SESSION_SEMANTICS)
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
@@ -298,6 +321,7 @@ public class BrowserToolProvider {
                 )))
                 .riskLevel(RiskLevel.MEDIUM)
                 .idempotent(false)
+                .executionSemantics(BROWSER_SESSION_SEMANTICS)
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
@@ -322,6 +346,7 @@ public class BrowserToolProvider {
                 )))
                 .riskLevel(RiskLevel.HIGH)
                 .idempotent(false)
+                .executionSemantics(BROWSER_SESSION_SEMANTICS)
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
@@ -347,6 +372,7 @@ public class BrowserToolProvider {
                 )))
                 .riskLevel(RiskLevel.LOW)
                 .idempotent(true)
+                .executionSemantics(BROWSER_SESSION_SEMANTICS)
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
@@ -375,6 +401,7 @@ public class BrowserToolProvider {
                 )))
                 .riskLevel(RiskLevel.MEDIUM)
                 .idempotent(false)
+                .executionSemantics(BROWSER_SESSION_SEMANTICS)
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
@@ -403,6 +430,7 @@ public class BrowserToolProvider {
                 )))
                 .riskLevel(RiskLevel.MEDIUM)
                 .idempotent(false)
+                .executionSemantics(BROWSER_SESSION_SEMANTICS)
                 .tags(INFRA_TAGS)
                 .executor(executor::execute)
                 .build();
@@ -423,6 +451,7 @@ public class BrowserToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(BROWSER_SESSION_SEMANTICS)
                 .tags(INFRA_TAGS)
                 .executor(input -> {
                     try {

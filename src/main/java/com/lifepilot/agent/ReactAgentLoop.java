@@ -124,7 +124,8 @@ public class ReactAgentLoop implements CallbackHelper {
                 transcriptStore,
                 mediaDataExtractor,
                 proceduralMemory,
-                intentMatcher
+                intentMatcher,
+                config.getLoop().getMaxParallelToolCalls()
         );
         this.traceRecorder = traceRecorder;
         this.a2uiProperties = a2uiProperties;
@@ -310,35 +311,30 @@ public class ReactAgentLoop implements CallbackHelper {
                     pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
                 }
 
-                // 逐个执行 tool call
-                for (var tc : toolCalls) {
-                    state = toolExecutionCoordinator.execute(
-                            state,
-                            tc,
-                            toolCallbacks,
-                            traceContext,
-                            cancellationToken,
-                            loopContext,
-                            this::appendAndPublishStep);
+                state = toolExecutionCoordinator.executeBatch(
+                        state,
+                        toolCalls,
+                        toolCallbacks,
+                        traceContext,
+                        cancellationToken,
+                        loopContext,
+                        this::appendAndPublishStep);
 
-                    // ★ 通用挂起检测 — 仅检查 suspended 布尔标志，不引用具体工具名或 SuspendReason 子类型
-                    if (state.suspended()) {
-                        log.info("Agent 进入挂起态: traceId={}, reason={}", state.traceId(), state.suspendReason());
-                        state = state.appendStep(new ReactStep.Suspend(
-                                state.suspendReason(), Instant.now(), state.stepCount()));
-                        pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
-                        // 冻结 Budget elapsed 到当前时间点
-                        state = state.toBuilder()
-                                .budget(state.budget().withElapsed(Duration.between(loopStart, Instant.now())))
-                                .build();
-                        break;
-                    }
-
-                    if (cancellationToken.isCancelled()) break;
+                // ★ 通用挂起检测 — 仅检查 suspended 布尔标志，不引用具体工具名或 SuspendReason 子类型
+                if (state.suspended()) {
+                    log.info("Agent 进入挂起态: traceId={}, reason={}", state.traceId(), state.suspendReason());
+                    state = state.appendStep(new ReactStep.Suspend(
+                            state.suspendReason(), Instant.now(), state.stepCount()));
+                    pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
+                    // 冻结 Budget elapsed 到当前时间点
+                    state = state.toBuilder()
+                            .budget(state.budget().withElapsed(Duration.between(loopStart, Instant.now())))
+                            .build();
                 }
 
                 // ★ 外层循环挂起检测 — 挂起后跳出主迭代循环
                 if (state.suspended()) break;
+                if (cancellationToken.isCancelled()) break;
 
                 // 扣减 Token 预算
                 state = state.toBuilder()

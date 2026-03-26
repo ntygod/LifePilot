@@ -23,10 +23,12 @@ import com.lifepilot.eval.scenario.MockToolSpec;
 import com.lifepilot.eval.scenario.ScenarioLoader;
 import com.lifepilot.eval.store.EvalStore;
 import com.lifepilot.tool.BuiltinTool;
+import com.lifepilot.tool.model.ToolSchedulingMode;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.tool.semantics.ToolExecutionSemantics;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -375,6 +377,7 @@ public class EvalEngine {
                             .id(namespacedId)
                             .name("mock-" + spec.toolId())
                             .description("Mock 工具: " + spec.toolId())
+                            .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))
                             .executor(input -> executeMockBehavior(spec, input))
                             .build();
                     toolRegistry.registerBuiltinTool(mockTool);
@@ -405,6 +408,7 @@ public class EvalEngine {
                         .id(namespacedId)
                         .name("mock-" + toolId)
                         .description("Mock 工具: " + toolId)
+                        .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))
                         .executor(input -> ToolResult.success(Map.of("response", responseJson)))
                         .build();
                 toolRegistry.registerBuiltinTool(mockTool);

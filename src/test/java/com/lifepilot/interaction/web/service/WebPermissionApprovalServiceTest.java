@@ -75,6 +75,11 @@ class WebPermissionApprovalServiceTest {
                 .description("创建 Cron 定时任务")
                 .inputSchema(JsonSchema.empty())
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(com.lifepilot.tool.semantics.ToolExecutionSemantics.of(
+                        com.lifepilot.permission.model.PermissionActionType.CREATE_SCHEDULE,
+                        com.lifepilot.tool.model.ToolSchedulingMode.SEQUENTIAL,
+                        com.lifepilot.tool.semantics.ToolScopeResolvers.exactValues("taskIds", "taskId", "name")
+                ))
                 .budget(ToolBudget.DEFAULT)
                 .executor(_ -> ToolResult.success(Map.of()))
                 .build();

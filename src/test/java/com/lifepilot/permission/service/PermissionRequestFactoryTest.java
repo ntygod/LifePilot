@@ -2,6 +2,7 @@ package com.lifepilot.permission.service;
 
 import com.lifepilot.observability.config.ObservabilityProperties;
 import com.lifepilot.observability.guardrail.RiskLevel;
+import com.lifepilot.permission.model.PermissionActionType;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.config.ToolConfigProperties;
 import com.lifepilot.tool.model.ToolBudget;
@@ -10,6 +11,8 @@ import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.tool.schema.JsonSchema;
+import com.lifepilot.tool.semantics.ToolExecutionSemantics;
+import com.lifepilot.tool.semantics.ToolScopeResolvers;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -24,7 +27,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class PermissionRequestFactoryTest {
 
-    private final PermissionScopeResolver permissionScopeResolver = new PermissionScopeResolver();
     private final DynamicToolRegistry toolRegistry = new DynamicToolRegistry(_ -> {});
     private final AutonomousTaskApprovalAdvisor autonomousTaskApprovalAdvisor =
             new AutonomousTaskApprovalAdvisor(toolRegistry);
@@ -36,6 +38,11 @@ class PermissionRequestFactoryTest {
                 .description("删除文件或目录，支持递归删除非空目录")
                 .inputSchema(JsonSchema.empty())
                 .riskLevel(RiskLevel.HIGH)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        PermissionActionType.DELETE_FILE,
+                        com.lifepilot.tool.model.ToolSchedulingMode.RESOURCE_SERIALIZED,
+                        ToolScopeResolvers.paths("path")
+                ))
                 .budget(ToolBudget.DEFAULT)
                 .executor(_ -> ToolResult.success(Map.of()))
                 .build());
@@ -45,6 +52,11 @@ class PermissionRequestFactoryTest {
                 .description("在沙箱环境中执行代码，支持 Python/JavaScript/Shell")
                 .inputSchema(JsonSchema.empty())
                 .riskLevel(RiskLevel.HIGH)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        PermissionActionType.EXECUTE_SHELL,
+                        com.lifepilot.tool.model.ToolSchedulingMode.SEQUENTIAL,
+                        ToolScopeResolvers.none()
+                ))
                 .budget(ToolBudget.DEFAULT)
                 .executor(_ -> ToolResult.success(Map.of()))
                 .build());
@@ -55,8 +67,7 @@ class PermissionRequestFactoryTest {
         var factory = new PermissionRequestFactory(
                 new ObservabilityProperties(),
                 new ToolConfigProperties(),
-                autonomousTaskApprovalAdvisor,
-                permissionScopeResolver
+                autonomousTaskApprovalAdvisor
         );
         var tool = BuiltinTool.builder()
                 .id("builtin.shell.exec")
@@ -64,6 +75,11 @@ class PermissionRequestFactoryTest {
                 .description("执行命令")
                 .inputSchema(JsonSchema.empty())
                 .riskLevel(RiskLevel.HIGH)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        PermissionActionType.EXECUTE_SHELL,
+                        com.lifepilot.tool.model.ToolSchedulingMode.SEQUENTIAL,
+                        ToolScopeResolvers.workspacePaths("cwd")
+                ))
                 .budget(ToolBudget.DEFAULT)
                 .executor(_ -> ToolResult.success(Map.of()))
                 .build();
@@ -91,8 +107,7 @@ class PermissionRequestFactoryTest {
         var factory = new PermissionRequestFactory(
                 new ObservabilityProperties(),
                 new ToolConfigProperties(),
-                autonomousTaskApprovalAdvisor,
-                permissionScopeResolver
+                autonomousTaskApprovalAdvisor
         );
         var tool = BuiltinTool.builder()
                 .id("builtin.cron.create")
@@ -100,6 +115,11 @@ class PermissionRequestFactoryTest {
                 .description("创建任务")
                 .inputSchema(JsonSchema.empty())
                 .riskLevel(RiskLevel.HIGH)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        PermissionActionType.CREATE_SCHEDULE,
+                        com.lifepilot.tool.model.ToolSchedulingMode.SEQUENTIAL,
+                        ToolScopeResolvers.exactValues("taskIds", "taskId", "name")
+                ))
                 .budget(ToolBudget.DEFAULT)
                 .executor(_ -> ToolResult.success(Map.of()))
                 .build();
@@ -123,8 +143,7 @@ class PermissionRequestFactoryTest {
         var factory = new PermissionRequestFactory(
                 new ObservabilityProperties(),
                 new ToolConfigProperties(),
-                autonomousTaskApprovalAdvisor,
-                permissionScopeResolver
+                autonomousTaskApprovalAdvisor
         );
         var tool = BuiltinTool.builder()
                 .id("builtin.file.write")
@@ -132,6 +151,11 @@ class PermissionRequestFactoryTest {
                 .description("写入文件")
                 .inputSchema(JsonSchema.empty())
                 .riskLevel(RiskLevel.HIGH)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        PermissionActionType.WRITE_FILE,
+                        com.lifepilot.tool.model.ToolSchedulingMode.RESOURCE_SERIALIZED,
+                        ToolScopeResolvers.paths("path")
+                ))
                 .budget(ToolBudget.DEFAULT)
                 .executor(_ -> ToolResult.success(Map.of()))
                 .build();
@@ -146,7 +170,7 @@ class PermissionRequestFactoryTest {
         var request = factory.create(tool, input, "trace-3");
 
         assertThat(request.taskId()).isEqualTo("task-1");
-        assertThat(request.resourceScope().get("workspacePath")).isEqualTo("D:/WorkSpace/Project/work");
+        assertThat(request.resourceScope().firstValue("workspacePaths")).isEqualTo("D:/WorkSpace/Project/work");
     }
 
     @Test
@@ -154,8 +178,7 @@ class PermissionRequestFactoryTest {
         var factory = new PermissionRequestFactory(
                 new ObservabilityProperties(),
                 new ToolConfigProperties(),
-                autonomousTaskApprovalAdvisor,
-                permissionScopeResolver
+                autonomousTaskApprovalAdvisor
         );
         var tool = BuiltinTool.builder()
                 .id("builtin.cron.create")
@@ -163,6 +186,11 @@ class PermissionRequestFactoryTest {
                 .description("创建任务")
                 .inputSchema(JsonSchema.empty())
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        PermissionActionType.CREATE_SCHEDULE,
+                        com.lifepilot.tool.model.ToolSchedulingMode.SEQUENTIAL,
+                        ToolScopeResolvers.exactValues("taskIds", "taskId", "name")
+                ))
                 .budget(ToolBudget.DEFAULT)
                 .executor(_ -> ToolResult.success(Map.of()))
                 .build();
@@ -180,6 +208,6 @@ class PermissionRequestFactoryTest {
         var request = factory.create(tool, input, "trace-4");
 
         assertThat(request.requiresAutonomousPreAuthorization()).isTrue();
-        assertThat(request.resourceScope().get("taskId")).isEqualTo("task-risk-1");
+        assertThat(request.resourceScope().firstValue("taskIds")).isEqualTo("task-risk-1");
     }
 }

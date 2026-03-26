@@ -50,6 +50,8 @@ class SkillToMcpBridgeTest {
                 .riskLevel(RiskLevel.LOW)
                 .idempotent(true)
                 .exportable(true)
+                .executionSemantics(com.lifepilot.tool.semantics.ToolExecutionSemantics.generic(
+                        com.lifepilot.tool.model.ToolSchedulingMode.PARALLEL_SAFE))
                 .executor(input -> ToolResult.success(Map.of("temp", "25°C")))
                 .build();
 
@@ -59,6 +61,7 @@ class SkillToMcpBridgeTest {
                 .description("内部工具")
                 .riskLevel(RiskLevel.HIGH)
                 .exportable(false)
+                .executionSemantics(com.lifepilot.tool.semantics.ToolExecutionSemantics.generic())
                 .executor(input -> ToolResult.success(Map.of()))
                 .build();
     }
@@ -97,6 +100,8 @@ class SkillToMcpBridgeTest {
         var lowTool = BuiltinTool.builder()
                 .id("builtin.read").name("read-tool").description("只读")
                 .riskLevel(RiskLevel.LOW).exportable(true)
+                .executionSemantics(com.lifepilot.tool.semantics.ToolExecutionSemantics.generic(
+                        com.lifepilot.tool.model.ToolSchedulingMode.PARALLEL_SAFE))
                 .executor(input -> ToolResult.success(Map.of()))
                 .build();
         when(mockRegistry.getAllTools()).thenReturn(List.of(lowTool));
@@ -113,6 +118,7 @@ class SkillToMcpBridgeTest {
         var medTool = BuiltinTool.builder()
                 .id("builtin.med").name("med-tool").description("中风险")
                 .riskLevel(RiskLevel.MEDIUM).exportable(true)
+                .executionSemantics(com.lifepilot.tool.semantics.ToolExecutionSemantics.generic())
                 .executor(input -> ToolResult.success(Map.of()))
                 .build();
         when(mockRegistry.getAllTools()).thenReturn(List.of(medTool));
@@ -129,6 +135,7 @@ class SkillToMcpBridgeTest {
         var highTool = BuiltinTool.builder()
                 .id("builtin.high").name("high-tool").description("高风险")
                 .riskLevel(RiskLevel.HIGH).exportable(true)
+                .executionSemantics(com.lifepilot.tool.semantics.ToolExecutionSemantics.generic())
                 .executor(input -> ToolResult.success(Map.of()))
                 .build();
         when(mockRegistry.getAllTools()).thenReturn(List.of(highTool));
@@ -145,6 +152,7 @@ class SkillToMcpBridgeTest {
         var critTool = BuiltinTool.builder()
                 .id("builtin.crit").name("crit-tool").description("关键风险")
                 .riskLevel(RiskLevel.CRITICAL).exportable(true)
+                .executionSemantics(com.lifepilot.tool.semantics.ToolExecutionSemantics.generic())
                 .executor(input -> ToolResult.success(Map.of()))
                 .build();
         when(mockRegistry.getAllTools()).thenReturn(List.of(critTool));
@@ -206,6 +214,7 @@ class SkillToMcpBridgeTest {
         var failTool = BuiltinTool.builder()
                 .id("builtin.fail").name("fail-tool").description("会失败的工具")
                 .riskLevel(RiskLevel.LOW).exportable(true)
+                .executionSemantics(com.lifepilot.tool.semantics.ToolExecutionSemantics.generic())
                 .executor(input -> ToolResult.error("执行失败"))
                 .build();
         when(mockRegistry.getAllTools()).thenReturn(List.of(failTool));
@@ -221,6 +230,7 @@ class SkillToMcpBridgeTest {
         var exTool = BuiltinTool.builder()
                 .id("builtin.ex").name("ex-tool").description("抛异常的工具")
                 .riskLevel(RiskLevel.LOW).exportable(true)
+                .executionSemantics(com.lifepilot.tool.semantics.ToolExecutionSemantics.generic())
                 .executor(input -> { throw new RuntimeException("意外错误"); })
                 .build();
         when(mockRegistry.getAllTools()).thenReturn(List.of(exTool));

@@ -57,6 +57,7 @@ class AutonomousTaskApprovalAdvisorTest {
                 .description(description)
                 .inputSchema(JsonSchema.empty())
                 .riskLevel(riskLevel)
+                .executionSemantics(com.lifepilot.tool.semantics.ToolExecutionSemantics.generic())
                 .budget(ToolBudget.DEFAULT)
                 .executor(_ -> ToolResult.success(Map.of()))
                 .build());

@@ -15,10 +15,14 @@ import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
 import com.lifepilot.memory.semantic.TemporalRelation;
 import com.lifepilot.observability.guardrail.RiskLevel;
+import com.lifepilot.permission.model.PermissionActionType;
 import com.lifepilot.tool.BuiltinTool;
+import com.lifepilot.tool.model.ToolSchedulingMode;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.tool.schema.JsonSchema;
+import com.lifepilot.tool.semantics.ToolExecutionSemantics;
+import com.lifepilot.tool.semantics.ToolScopeResolvers;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -108,6 +112,7 @@ public class MemoryToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))
                 .executor(input -> {
                     try {
                         String query = input.getParam("query", String.class);
@@ -147,6 +152,7 @@ public class MemoryToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))
                 .executor(input -> {
                     try {
                         String query = input.getParam("query", String.class);
@@ -188,6 +194,7 @@ public class MemoryToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))
                 .executor(input -> {
                     try {
                         String query = input.getParam("query", String.class);
@@ -234,6 +241,11 @@ public class MemoryToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        PermissionActionType.WRITE_MEMORY,
+                        ToolSchedulingMode.SEQUENTIAL,
+                        ToolScopeResolvers.exactValues("entityNames", false, "name")
+                ))
                 .executor(input -> {
                     try {
                         String name = input.getParam("name", String.class);
@@ -280,6 +292,11 @@ public class MemoryToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        PermissionActionType.WRITE_MEMORY,
+                        ToolSchedulingMode.SEQUENTIAL,
+                        ToolScopeResolvers.exactValues("entityIds", "entityId")
+                ))
                 .executor(input -> {
                     try {
                         String entityId = input.getParam("entityId", String.class);
@@ -332,6 +349,11 @@ public class MemoryToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.MEDIUM)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        PermissionActionType.WRITE_MEMORY,
+                        ToolSchedulingMode.SEQUENTIAL,
+                        ToolScopeResolvers.exactValues("entityIds", "entityId")
+                ))
                 .executor(input -> {
                     try {
                         String entityId = input.getParam("entityId", String.class);
@@ -372,6 +394,11 @@ public class MemoryToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(ToolExecutionSemantics.of(
+                        PermissionActionType.WRITE_MEMORY,
+                        ToolSchedulingMode.SEQUENTIAL,
+                        ToolScopeResolvers.exactValues("entityIds", "sourceEntityId", "targetEntityId")
+                ))
                 .executor(input -> {
                     try {
                         String sourceId = input.getParam("sourceEntityId", String.class);
@@ -417,6 +444,7 @@ public class MemoryToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))
                 .executor(input -> {
                     try {
                         String timestampStr = input.getParam("timestamp", String.class);
@@ -482,6 +510,7 @@ public class MemoryToolProvider {
                         )
                 )))
                 .riskLevel(RiskLevel.LOW)
+                .executionSemantics(ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE))
                 .executor(input -> {
                     try {
                         String query = input.getParam("query", String.class);

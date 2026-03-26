@@ -65,6 +65,7 @@ class ToolRetryPolicyPropertyTest {
                 .description("测试普通工具")
                 .tags(tags)
                 .idempotent(false)
+                .executionSemantics(com.lifepilot.tool.semantics.ToolExecutionSemantics.generic())
                 .budget(ToolBudget.of(Duration.ofSeconds(5), maxRetries, Integer.MAX_VALUE))
                 .executor(input -> {
                     callCount.incrementAndGet();
@@ -96,6 +97,7 @@ class ToolRetryPolicyPropertyTest {
                 .description("测试不可重试错误")
                 .tags(tags)
                 .idempotent(false)
+                .executionSemantics(com.lifepilot.tool.semantics.ToolExecutionSemantics.generic())
                 .budget(ToolBudget.of(Duration.ofSeconds(5), 2, Integer.MAX_VALUE))
                 .executor(input -> {
                     callCount.incrementAndGet();

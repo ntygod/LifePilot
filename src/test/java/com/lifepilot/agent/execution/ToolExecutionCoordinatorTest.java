@@ -12,6 +12,8 @@ import com.lifepilot.conversation.transcript.TranscriptStore;
 import com.lifepilot.memory.procedural.IntentMatcher;
 import com.lifepilot.memory.procedural.ProcedureTemplate;
 import com.lifepilot.memory.procedural.ProceduralMemory;
+import com.lifepilot.observability.guardrail.RiskLevel;
+import com.lifepilot.tool.model.ToolSchedulingMode;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.tool.ToolCallback;
@@ -22,8 +24,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.nullable;
@@ -224,5 +229,329 @@ class ToolExecutionCoordinatorTest {
                         && !query.contains("`")));
         verify(proceduralMemory).recordExecution("tpl-file-write", true);
         verify(proceduralMemory, never()).recordExecution("tpl-file-write", false);
+    }
+
+    @Test
+    void 并行安全工具应并发执行且按原始顺序回放() {
+        AgentToolProvider agentToolProvider = mock(AgentToolProvider.class);
+        when(agentToolProvider.resolveToolRiskLevel(anyString())).thenReturn(RiskLevel.LOW);
+        when(agentToolProvider.resolveSchedulingHint(eq("tool.alpha"), anyString()))
+                .thenReturn(AgentToolProvider.ToolSchedulingHint.parallelSafe());
+        when(agentToolProvider.resolveSchedulingHint(eq("tool.beta"), anyString()))
+                .thenReturn(AgentToolProvider.ToolSchedulingHint.parallelSafe());
+
+        var coordinator = new ToolExecutionCoordinator(
+                agentToolProvider,
+                new ObjectMapper(),
+                null,
+                null,
+                null,
+                null,
+                null,
+                4
+        );
+
+        AtomicInteger activeCalls = new AtomicInteger();
+        AtomicInteger maxConcurrent = new AtomicInteger();
+        ToolCallback alpha = callback("tool.alpha", 250, activeCalls, maxConcurrent, "{\"tool\":\"alpha\"}");
+        ToolCallback beta = callback("tool.beta", 80, activeCalls, maxConcurrent, "{\"tool\":\"beta\"}");
+
+        ReactAgentState result = coordinator.executeBatch(
+                baseState(),
+                List.of(
+                        new AssistantMessage.ToolCall("call-a", "function", "tool.alpha", "{\"q\":1}"),
+                        new AssistantMessage.ToolCall("call-b", "function", "tool.beta", "{\"q\":2}")
+                ),
+                List.of(alpha, beta),
+                null,
+                new CancellationToken(),
+                new AgentLoopContext(),
+                (currentState, step, loopContext) -> currentState.appendStep(step)
+        );
+
+        assertThat(maxConcurrent.get()).isGreaterThanOrEqualTo(2);
+        assertThat(result.steps()).hasSize(4);
+        assertThat(result.steps().get(0)).isEqualTo(new ReactStep.ToolCall("tool.alpha", null, "{\"q\":1}", 0));
+        assertThat(result.steps().get(1)).isEqualTo(new ReactStep.ToolCall("tool.beta", null, "{\"q\":2}", 0));
+        assertThat(result.steps().get(2)).isInstanceOf(ReactStep.Observation.class);
+        assertThat(result.steps().get(3)).isInstanceOf(ReactStep.Observation.class);
+        var firstObservation = (ReactStep.Observation) result.steps().get(2);
+        var secondObservation = (ReactStep.Observation) result.steps().get(3);
+        assertThat(firstObservation.toolId()).isEqualTo("tool.alpha");
+        assertThat(firstObservation.success()).isTrue();
+        assertThat(firstObservation.output()).isEqualTo("{\"tool\":\"alpha\"}");
+        assertThat(secondObservation.toolId()).isEqualTo("tool.beta");
+        assertThat(secondObservation.success()).isTrue();
+        assertThat(secondObservation.output()).isEqualTo("{\"tool\":\"beta\"}");
+    }
+
+    @Test
+    void 同资源ResourceSerialized工具应串行执行() {
+        AgentToolProvider agentToolProvider = mock(AgentToolProvider.class);
+        when(agentToolProvider.resolveToolRiskLevel(anyString())).thenReturn(RiskLevel.LOW);
+        when(agentToolProvider.resolveSchedulingHint(anyString(), anyString()))
+                .thenReturn(AgentToolProvider.ToolSchedulingHint.resourceSerialized(
+                        List.of("tree:/tmp/shared.txt")
+                ));
+
+        var coordinator = new ToolExecutionCoordinator(
+                agentToolProvider,
+                new ObjectMapper(),
+                null,
+                null,
+                null,
+                null,
+                null,
+                4
+        );
+
+        AtomicInteger activeCalls = new AtomicInteger();
+        AtomicInteger maxConcurrent = new AtomicInteger();
+        ToolCallback first = callback("tool.write.one", 120, activeCalls, maxConcurrent, "{\"ok\":1}");
+        ToolCallback second = callback("tool.write.two", 120, activeCalls, maxConcurrent, "{\"ok\":2}");
+
+        coordinator.executeBatch(
+                baseState(),
+                List.of(
+                        new AssistantMessage.ToolCall("call-1", "function", "tool.write.one", "{\"path\":\"a\"}"),
+                        new AssistantMessage.ToolCall("call-2", "function", "tool.write.two", "{\"path\":\"b\"}")
+                ),
+                List.of(first, second),
+                null,
+                new CancellationToken(),
+                new AgentLoopContext(),
+                (currentState, step, loopContext) -> currentState.appendStep(step)
+        );
+
+        assertThat(maxConcurrent.get()).isEqualTo(1);
+    }
+
+    @Test
+    void 不同资源ResourceSerialized工具应允许并发执行() {
+        AgentToolProvider agentToolProvider = mock(AgentToolProvider.class);
+        when(agentToolProvider.resolveToolRiskLevel(anyString())).thenReturn(RiskLevel.LOW);
+        when(agentToolProvider.resolveSchedulingHint(eq("tool.write.left"), anyString()))
+                .thenReturn(AgentToolProvider.ToolSchedulingHint.resourceSerialized(
+                        List.of("tree:/tmp/left.txt")
+                ));
+        when(agentToolProvider.resolveSchedulingHint(eq("tool.write.right"), anyString()))
+                .thenReturn(AgentToolProvider.ToolSchedulingHint.resourceSerialized(
+                        List.of("tree:/tmp/right.txt")
+                ));
+
+        var coordinator = new ToolExecutionCoordinator(
+                agentToolProvider,
+                new ObjectMapper(),
+                null,
+                null,
+                null,
+                null,
+                null,
+                4
+        );
+
+        AtomicInteger activeCalls = new AtomicInteger();
+        AtomicInteger maxConcurrent = new AtomicInteger();
+        ToolCallback left = callback("tool.write.left", 120, activeCalls, maxConcurrent, "{\"ok\":\"left\"}");
+        ToolCallback right = callback("tool.write.right", 120, activeCalls, maxConcurrent, "{\"ok\":\"right\"}");
+
+        coordinator.executeBatch(
+                baseState(),
+                List.of(
+                        new AssistantMessage.ToolCall("call-l", "function", "tool.write.left", "{\"path\":\"left\"}"),
+                        new AssistantMessage.ToolCall("call-r", "function", "tool.write.right", "{\"path\":\"right\"}")
+                ),
+                List.of(left, right),
+                null,
+                new CancellationToken(),
+                new AgentLoopContext(),
+                (currentState, step, loopContext) -> currentState.appendStep(step)
+        );
+
+        assertThat(maxConcurrent.get()).isGreaterThanOrEqualTo(2);
+    }
+
+    @Test
+    void 同文件读写工具应串行执行() {
+        AgentToolProvider agentToolProvider = mock(AgentToolProvider.class);
+        when(agentToolProvider.resolveToolRiskLevel(anyString())).thenReturn(RiskLevel.LOW);
+        when(agentToolProvider.resolveSchedulingHint(eq("tool.file.read"), anyString()))
+                .thenReturn(AgentToolProvider.ToolSchedulingHint.resourceSerialized(
+                        List.of("tree:/tmp/project/readme.md")
+                ));
+        when(agentToolProvider.resolveSchedulingHint(eq("tool.file.write"), anyString()))
+                .thenReturn(AgentToolProvider.ToolSchedulingHint.resourceSerialized(
+                        List.of("tree:/tmp/project/readme.md")
+                ));
+
+        var coordinator = new ToolExecutionCoordinator(
+                agentToolProvider,
+                new ObjectMapper(),
+                null,
+                null,
+                null,
+                null,
+                null,
+                4
+        );
+
+        AtomicInteger activeCalls = new AtomicInteger();
+        AtomicInteger maxConcurrent = new AtomicInteger();
+        ToolCallback read = callback("tool.file.read", 120, activeCalls, maxConcurrent, "{\"ok\":\"read\"}");
+        ToolCallback write = callback("tool.file.write", 120, activeCalls, maxConcurrent, "{\"ok\":\"write\"}");
+
+        coordinator.executeBatch(
+                baseState(),
+                List.of(
+                        new AssistantMessage.ToolCall("call-read", "function", "tool.file.read", "{\"path\":\"/tmp/project/readme.md\"}"),
+                        new AssistantMessage.ToolCall("call-write", "function", "tool.file.write", "{\"path\":\"/tmp/project/readme.md\"}")
+                ),
+                List.of(read, write),
+                null,
+                new CancellationToken(),
+                new AgentLoopContext(),
+                (currentState, step, loopContext) -> currentState.appendStep(step)
+        );
+
+        assertThat(maxConcurrent.get()).isEqualTo(1);
+    }
+
+    @Test
+    void 目录树扫描与子文件写入应串行执行() {
+        AgentToolProvider agentToolProvider = mock(AgentToolProvider.class);
+        when(agentToolProvider.resolveToolRiskLevel(anyString())).thenReturn(RiskLevel.LOW);
+        when(agentToolProvider.resolveSchedulingHint(eq("tool.file.search"), anyString()))
+                .thenReturn(AgentToolProvider.ToolSchedulingHint.resourceSerialized(
+                        List.of("tree:/tmp/project")
+                ));
+        when(agentToolProvider.resolveSchedulingHint(eq("tool.file.write"), anyString()))
+                .thenReturn(AgentToolProvider.ToolSchedulingHint.resourceSerialized(
+                        List.of("tree:/tmp/project/src/App.java")
+                ));
+
+        var coordinator = new ToolExecutionCoordinator(
+                agentToolProvider,
+                new ObjectMapper(),
+                null,
+                null,
+                null,
+                null,
+                null,
+                4
+        );
+
+        AtomicInteger activeCalls = new AtomicInteger();
+        AtomicInteger maxConcurrent = new AtomicInteger();
+        ToolCallback search = callback("tool.file.search", 120, activeCalls, maxConcurrent, "{\"ok\":\"search\"}");
+        ToolCallback write = callback("tool.file.write", 120, activeCalls, maxConcurrent, "{\"ok\":\"write\"}");
+
+        coordinator.executeBatch(
+                baseState(),
+                List.of(
+                        new AssistantMessage.ToolCall("call-search", "function", "tool.file.search", "{\"path\":\"/tmp/project\"}"),
+                        new AssistantMessage.ToolCall("call-write", "function", "tool.file.write", "{\"path\":\"/tmp/project/src/App.java\"}")
+                ),
+                List.of(search, write),
+                null,
+                new CancellationToken(),
+                new AgentLoopContext(),
+                (currentState, step, loopContext) -> currentState.appendStep(step)
+        );
+
+        assertThat(maxConcurrent.get()).isEqualTo(1);
+    }
+
+    @Test
+    void 不同文件资源应允许并发执行() {
+        AgentToolProvider agentToolProvider = mock(AgentToolProvider.class);
+        when(agentToolProvider.resolveToolRiskLevel(anyString())).thenReturn(RiskLevel.LOW);
+        when(agentToolProvider.resolveSchedulingHint(eq("tool.file.read"), anyString()))
+                .thenReturn(AgentToolProvider.ToolSchedulingHint.resourceSerialized(
+                        List.of("tree:/tmp/project/a.txt")
+                ));
+        when(agentToolProvider.resolveSchedulingHint(eq("tool.file.write"), anyString()))
+                .thenReturn(AgentToolProvider.ToolSchedulingHint.resourceSerialized(
+                        List.of("tree:/tmp/project/b.txt")
+                ));
+
+        var coordinator = new ToolExecutionCoordinator(
+                agentToolProvider,
+                new ObjectMapper(),
+                null,
+                null,
+                null,
+                null,
+                null,
+                4
+        );
+
+        AtomicInteger activeCalls = new AtomicInteger();
+        AtomicInteger maxConcurrent = new AtomicInteger();
+        ToolCallback read = callback("tool.file.read", 120, activeCalls, maxConcurrent, "{\"ok\":\"read\"}");
+        ToolCallback write = callback("tool.file.write", 120, activeCalls, maxConcurrent, "{\"ok\":\"write\"}");
+
+        coordinator.executeBatch(
+                baseState(),
+                List.of(
+                        new AssistantMessage.ToolCall("call-read", "function", "tool.file.read", "{\"path\":\"/tmp/project/a.txt\"}"),
+                        new AssistantMessage.ToolCall("call-write", "function", "tool.file.write", "{\"path\":\"/tmp/project/b.txt\"}")
+                ),
+                List.of(read, write),
+                null,
+                new CancellationToken(),
+                new AgentLoopContext(),
+                (currentState, step, loopContext) -> currentState.appendStep(step)
+        );
+
+        assertThat(maxConcurrent.get()).isGreaterThanOrEqualTo(2);
+    }
+
+    private ReactAgentState baseState() {
+        var budget = Budget.builder()
+                .maxTokens(4096)
+                .tokensUsed(0)
+                .tokensReserved(0)
+                .maxSteps(20)
+                .stepsUsed(0)
+                .maxDuration(Duration.ofMinutes(5))
+                .elapsed(Duration.ZERO)
+                .build();
+        var request = new AgentRequest("测试工具批次执行", "session-batch", "web", null, null,
+                budget, null, 0, null, null, null, null);
+        return ReactAgentState.init(request, budget);
+    }
+
+    private ToolCallback callback(String toolName,
+                                  long sleepMillis,
+                                  AtomicInteger activeCalls,
+                                  AtomicInteger maxConcurrent,
+                                  String output) {
+        return new ToolCallback() {
+            private final ToolDefinition definition = DefaultToolDefinition.builder()
+                    .name(toolName)
+                    .description(toolName)
+                    .inputSchema("{}")
+                    .build();
+
+            @Override
+            public ToolDefinition getToolDefinition() {
+                return definition;
+            }
+
+            @Override
+            public String call(String toolInput) {
+                int current = activeCalls.incrementAndGet();
+                maxConcurrent.accumulateAndGet(current, Math::max);
+                try {
+                    Thread.sleep(sleepMillis);
+                    return output;
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return "{\"error\":\"interrupted\",\"status\":\"ERROR\"}";
+                } finally {
+                    activeCalls.decrementAndGet();
+                }
+            }
+        };
     }
 }

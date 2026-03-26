@@ -6,7 +6,9 @@ import com.lifepilot.tool.model.ToolCategory;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolLayer;
 import com.lifepilot.tool.model.ToolResult;
+import com.lifepilot.tool.model.ToolSchedulingMode;
 import com.lifepilot.tool.schema.JsonSchema;
+import com.lifepilot.tool.semantics.ToolExecutionSemantics;
 
 import java.util.List;
 
@@ -23,6 +25,7 @@ import java.util.List;
  * @param outputSchema 输出类型 JSON Schema
  * @param riskLevel 风险等级
  * @param idempotent 是否幂等
+ * @param executionSemantics 执行语义
  * @param budget 执行预算
  * @param tags 工具标签
  * @param exportable 是否可导出为 MCP 工具
@@ -39,6 +42,7 @@ public record BuiltinTool(
         JsonSchema outputSchema,
         RiskLevel riskLevel,
         boolean idempotent,
+        ToolExecutionSemantics executionSemantics,
         ToolBudget budget,
         List<String> tags,
         boolean exportable,
@@ -75,6 +79,7 @@ public record BuiltinTool(
         private JsonSchema outputSchema = JsonSchema.empty();
         private RiskLevel riskLevel = RiskLevel.LOW;
         private boolean idempotent = true;
+        private ToolExecutionSemantics executionSemantics;
         private ToolBudget budget = ToolBudget.DEFAULT;
         private List<String> tags = List.of();
         private boolean exportable = false;
@@ -88,6 +93,10 @@ public record BuiltinTool(
         public Builder outputSchema(JsonSchema outputSchema) { this.outputSchema = outputSchema; return this; }
         public Builder riskLevel(RiskLevel riskLevel) { this.riskLevel = riskLevel; return this; }
         public Builder idempotent(boolean idempotent) { this.idempotent = idempotent; return this; }
+        public Builder executionSemantics(ToolExecutionSemantics executionSemantics) {
+            this.executionSemantics = executionSemantics;
+            return this;
+        }
         public Builder budget(ToolBudget budget) { this.budget = budget; return this; }
         public Builder tags(List<String> tags) { this.tags = List.copyOf(tags); return this; }
         public Builder exportable(boolean exportable) { this.exportable = exportable; return this; }
@@ -95,8 +104,12 @@ public record BuiltinTool(
         public Builder executor(ToolExecutor executor) { this.executor = executor; return this; }
 
         public BuiltinTool build() {
+            if (executionSemantics == null) {
+                throw new IllegalStateException("BuiltinTool 必须显式声明 executionSemantics");
+            }
             return new BuiltinTool(id, name, description, inputSchema, outputSchema,
-                    riskLevel, idempotent, budget, List.copyOf(tags), exportable, category, executor);
+                    riskLevel, idempotent, executionSemantics, budget, List.copyOf(tags),
+                    exportable, category, executor);
         }
     }
 }

@@ -148,7 +148,10 @@ class DimensionEvaluatorTest {
 
         private ToolContract buildTool(String id, JsonSchema schema) {
             return BuiltinTool.builder().id(id).name(id).description("测试工具")
-                    .inputSchema(schema).executor(input -> null).build();
+                    .inputSchema(schema)
+                    .executionSemantics(com.lifepilot.tool.semantics.ToolExecutionSemantics.generic(
+                            com.lifepilot.tool.model.ToolSchedulingMode.PARALLEL_SAFE))
+                    .executor(input -> null).build();
         }
 
         @Test

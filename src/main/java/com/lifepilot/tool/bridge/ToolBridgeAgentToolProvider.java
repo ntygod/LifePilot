@@ -7,8 +7,11 @@ import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.tool.ToolContract;
 import com.lifepilot.tool.model.ToolContextKeys;
 import com.lifepilot.tool.model.ToolResult;
+import com.lifepilot.tool.model.ToolInput;
+import com.lifepilot.tool.model.ToolSchedulingMode;
 import com.lifepilot.tool.pipeline.ToolExecutionPipeline;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
+import com.lifepilot.tool.semantics.ToolScopeResolution;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -66,6 +69,35 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
         return toolRegistry.resolve(toolId)
                 .map(ToolContract::riskLevel)
                 .orElse(RiskLevel.LOW);
+    }
+
+    @Override
+    public ToolSchedulingHint resolveSchedulingHint(String toolId, String inputJson) {
+        ToolContract tool = toolRegistry.resolve(toolId).orElse(null);
+        if (tool == null) {
+            return ToolSchedulingHint.sequential();
+        }
+
+        ToolSchedulingMode mode = tool.schedulingMode();
+        if (mode == ToolSchedulingMode.SEQUENTIAL) {
+            return ToolSchedulingHint.sequential();
+        }
+        if (mode == ToolSchedulingMode.PARALLEL_SAFE) {
+            return ToolSchedulingHint.parallelSafe();
+        }
+
+        var parsedInput = parseInputSafely(inputJson);
+        if (!parsedInput.success()) {
+            log.debug("RESOURCE_SERIALIZED 工具输入解析失败，回退串行: toolId={}", toolId);
+            return ToolSchedulingHint.sequential();
+        }
+
+        List<String> resourceKeys = resolveResourceKeys(tool, parsedInput.envelope());
+        if (resourceKeys.isEmpty()) {
+            log.debug("RESOURCE_SERIALIZED 工具资源解析失败，回退串行: toolId={}", toolId);
+            return ToolSchedulingHint.sequential();
+        }
+        return ToolSchedulingHint.resourceSerialized(resourceKeys);
     }
 
     @Override
@@ -180,14 +212,19 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
     /** 解析 Spring AI 传入的 JSON 字符串为参数 Map。 */
     @SuppressWarnings("unchecked")
     private Map<String, Object> parseInput(String toolInput) {
+        return parseInputSafely(toolInput).envelope().parameters();
+    }
+
+    @SuppressWarnings("unchecked")
+    private ParsedToolInput parseInputSafely(String toolInput) {
         if (toolInput == null || toolInput.isBlank() || "{}".equals(toolInput.trim())) {
-            return Map.of();
+            return new ParsedToolInput(true, new ToolInputEnvelope(Map.of()));
         }
         try {
-            return objectMapper.readValue(toolInput, Map.class);
+            return new ParsedToolInput(true, new ToolInputEnvelope(objectMapper.readValue(toolInput, Map.class)));
         } catch (Exception e) {
             log.warn("工具输入解析失败: input={}", toolInput, e);
-            return Map.of();
+            return new ParsedToolInput(false, new ToolInputEnvelope(Map.of()));
         }
     }
 
@@ -265,5 +302,30 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
                 .replace("\n", "\\n")
                 .replace("\r", "\\r")
                 .replace("\t", "\\t");
+    }
+
+    @Nullable
+    private List<String> resolveResourceKeys(ToolContract tool,
+                                             ToolInputEnvelope input) {
+        ToolInput toolInput = new ToolInput(
+                tool.id(),
+                input.parameters(),
+                tool.inputSchema(),
+                null,
+                null
+        );
+        ToolScopeResolution resolution = tool.executionSemantics().scopeResolver().resolve(toolInput);
+        if (resolution.normalizedResources().isEmpty()) {
+            return List.of();
+        }
+        return resolution.normalizedResources();
+    }
+
+    private record ParsedToolInput(boolean success, ToolInputEnvelope envelope) {}
+
+    private record ToolInputEnvelope(Map<String, Object> parameters) {
+        private ToolInputEnvelope {
+            parameters = parameters != null ? Map.copyOf(parameters) : Map.of();
+        }
     }
 }

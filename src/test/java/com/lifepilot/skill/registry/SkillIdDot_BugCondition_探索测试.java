@@ -42,6 +42,7 @@ class SkillIdDot_BugCondition_探索测试 {
         // 默认所有工具都存在
         var dummyTool = BuiltinTool.builder()
                 .id("dummy").name("dummy").description("dummy")
+                .executionSemantics(com.lifepilot.tool.semantics.ToolExecutionSemantics.generic())
                 .executor(input -> null)
                 .build();
         when(toolRegistry.resolve(anyString())).thenReturn(Optional.of(dummyTool));

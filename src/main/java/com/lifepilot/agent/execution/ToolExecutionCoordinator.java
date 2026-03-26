@@ -18,6 +18,8 @@ import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.observability.trace.ToolCallStep;
 import com.lifepilot.observability.trace.TraceContext;
 import com.lifepilot.observability.trace.TraceRecorder;
+import com.lifepilot.tool.model.ToolSchedulingMode;
+import com.lifepilot.tool.semantics.ToolSchedulingResources;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -26,19 +28,15 @@ import org.springframework.lang.Nullable;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Base64;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.UUID;
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
 
 /**
  * 工具执行协调器。
  *
- * <p>负责单次 tool call 的执行、媒体提取、挂起解析、transcript 持久化和 trace 记录，
- * 将 ReAct 主循环中的工具执行细节收敛到独立组件。
+ * <p>负责单轮 tool call 的规划、波次执行、媒体提取、挂起解析、transcript 持久化和 trace 记录，
+ * 将 ReAct 主循环中的工具执行细节收敛到独立组件。</p>
  *
  * @author zsg
  * @since 2026-03-25
@@ -59,6 +57,7 @@ public class ToolExecutionCoordinator {
     private final ProceduralMemory proceduralMemory;
     @Nullable
     private final IntentMatcher intentMatcher;
+    private final int maxParallelToolCalls;
 
     public ToolExecutionCoordinator(AgentToolProvider agentToolProvider,
                                     ObjectMapper objectMapper,
@@ -67,6 +66,18 @@ public class ToolExecutionCoordinator {
                                     @Nullable MediaDataExtractor mediaDataExtractor,
                                     @Nullable ProceduralMemory proceduralMemory,
                                     @Nullable IntentMatcher intentMatcher) {
+        this(agentToolProvider, objectMapper, traceRecorder, transcriptStore,
+                mediaDataExtractor, proceduralMemory, intentMatcher, 4);
+    }
+
+    public ToolExecutionCoordinator(AgentToolProvider agentToolProvider,
+                                    ObjectMapper objectMapper,
+                                    @Nullable TraceRecorder traceRecorder,
+                                    @Nullable TranscriptStore transcriptStore,
+                                    @Nullable MediaDataExtractor mediaDataExtractor,
+                                    @Nullable ProceduralMemory proceduralMemory,
+                                    @Nullable IntentMatcher intentMatcher,
+                                    int maxParallelToolCalls) {
         this.agentToolProvider = agentToolProvider;
         this.objectMapper = objectMapper;
         this.traceRecorder = traceRecorder;
@@ -74,13 +85,13 @@ public class ToolExecutionCoordinator {
         this.mediaDataExtractor = mediaDataExtractor;
         this.proceduralMemory = proceduralMemory;
         this.intentMatcher = intentMatcher;
+        this.maxParallelToolCalls = Math.max(1, maxParallelToolCalls);
     }
 
     /**
      * 执行单次 tool call，并将其副作用统一回写到 state、trace 和 transcript。
      *
-     * <p>方法内部同时负责工具匹配、异常兜底、挂起信号识别、媒体提取和观察结果落步，
-     * 让主循环只保留“拿到 tool call 后交给协调器处理”的骨架。
+     * <p>兼容旧入口，内部统一走批次执行路径。</p>
      */
     public ReactAgentState execute(ReactAgentState state,
                                    AssistantMessage.ToolCall toolCall,
@@ -89,125 +100,457 @@ public class ToolExecutionCoordinator {
                                    CancellationToken cancellationToken,
                                    AgentLoopContext loopContext,
                                    StepAppender stepAppender) {
+        return executeBatch(
+                state,
+                List.of(toolCall),
+                toolCallbacks,
+                traceContext,
+                cancellationToken,
+                loopContext,
+                stepAppender
+        );
+    }
+
+    /**
+     * 执行一轮 tool call 批次。
+     *
+     * <p>先按调度提示切分为稳定波次，再逐波次执行。波次内可并发，波次间保持串行，
+     * 并且所有结果都按模型原始 tool call 顺序回放到 state。</p>
+     */
+    public ReactAgentState executeBatch(ReactAgentState state,
+                                        List<AssistantMessage.ToolCall> toolCalls,
+                                        List<ToolCallback> toolCallbacks,
+                                        @Nullable TraceContext traceContext,
+                                        CancellationToken cancellationToken,
+                                        AgentLoopContext loopContext,
+                                        StepAppender stepAppender) {
+        if (toolCalls == null || toolCalls.isEmpty()) {
+            return state;
+        }
         if (cancellationToken.isCancelled()) {
-            log.info("工具执行前检测到取消信号: toolId={}", toolCall.name());
+            log.info("工具批次执行前检测到取消信号: count={}", toolCalls.size());
             return state;
         }
 
-        String toolId = toolCall.name();
-        String inputJson = toolCall.arguments();
-        String toolDisplayName = agentToolProvider.resolveToolDisplayName(toolId);
-        RiskLevel toolRiskLevel = agentToolProvider.resolveToolRiskLevel(toolId);
+        Map<String, ToolCallback> callbackIndex = indexToolCallbacks(toolCallbacks);
+        List<PlannedToolCall> plannedToolCalls = planToolCalls(toolCalls, callbackIndex);
+        List<ToolExecutionWave> waves = planWaves(plannedToolCalls);
+        log.debug("工具波次规划完成: totalCalls={}, waveCount={}, waves={}",
+                plannedToolCalls.size(), waves.size(), summarizeWaves(waves));
 
+        for (int waveIndex = 0; waveIndex < waves.size(); waveIndex++) {
+            ToolExecutionWave wave = waves.get(waveIndex);
+            if (cancellationToken.isCancelled()) {
+                log.info("工具波次执行前检测到取消信号: index={}, size={}", waveIndex, wave.toolCalls().size());
+                break;
+            }
+
+            log.debug("开始执行工具波次: index={}, size={}, tools={}",
+                    waveIndex, wave.toolCalls().size(), summarizeWave(wave));
+            state = appendWaveToolCalls(state, wave, loopContext, stepAppender);
+            List<ToolExecutionOutcome> outcomes = executeWave(wave);
+            state = replayWaveResults(state, outcomes, traceContext, loopContext, stepAppender);
+
+            if (state.suspended()) {
+                break;
+            }
+        }
+        return state;
+    }
+
+    private Map<String, ToolCallback> indexToolCallbacks(List<ToolCallback> toolCallbacks) {
+        var index = new LinkedHashMap<String, ToolCallback>();
+        for (ToolCallback callback : toolCallbacks) {
+            if (callback == null) {
+                continue;
+            } else {
+                callback.getToolDefinition();
+            }
+            index.putIfAbsent(callback.getToolDefinition().name(), callback);
+        }
+        return Map.copyOf(index);
+    }
+
+    private List<PlannedToolCall> planToolCalls(List<AssistantMessage.ToolCall> toolCalls,
+                                                Map<String, ToolCallback> callbackIndex) {
+        var planned = new ArrayList<PlannedToolCall>(toolCalls.size());
+        for (int i = 0; i < toolCalls.size(); i++) {
+            AssistantMessage.ToolCall toolCall = toolCalls.get(i);
+            String toolId = toolCall.name();
+            String inputJson = toolCall.arguments();
+            String toolDisplayName = agentToolProvider.resolveToolDisplayName(toolId);
+            RiskLevel toolRiskLevel = agentToolProvider.resolveToolRiskLevel(toolId);
+            AgentToolProvider.ToolSchedulingHint schedulingHint =
+                    normalizeSchedulingHint(agentToolProvider.resolveSchedulingHint(toolId, inputJson));
+            ToolCallback matchedCallback = callbackIndex.get(toolId);
+            if (matchedCallback == null) {
+                schedulingHint = AgentToolProvider.ToolSchedulingHint.sequential();
+            }
+            planned.add(new PlannedToolCall(
+                    i,
+                    toolCall,
+                    toolId,
+                    inputJson,
+                    toolDisplayName,
+                    toolRiskLevel,
+                    schedulingHint.mode(),
+                    schedulingHint.resourceKeys(),
+                    matchedCallback
+            ));
+        }
+        return List.copyOf(planned);
+    }
+
+    private AgentToolProvider.ToolSchedulingHint normalizeSchedulingHint(
+            @Nullable AgentToolProvider.ToolSchedulingHint schedulingHint) {
+        if (schedulingHint == null || schedulingHint.mode() == null) {
+            return AgentToolProvider.ToolSchedulingHint.sequential();
+        }
+        if (schedulingHint.mode() == ToolSchedulingMode.RESOURCE_SERIALIZED
+                && schedulingHint.resourceKeys().isEmpty()) {
+            return AgentToolProvider.ToolSchedulingHint.sequential();
+        }
+        return schedulingHint;
+    }
+
+    private List<ToolExecutionWave> planWaves(List<PlannedToolCall> plannedToolCalls) {
+        var waves = new ArrayList<ToolExecutionWave>();
+        var currentWaveCalls = new ArrayList<PlannedToolCall>();
+
+        for (PlannedToolCall planned : plannedToolCalls) {
+            if (planned.schedulingMode() == ToolSchedulingMode.SEQUENTIAL) {
+                flushWave(waves, currentWaveCalls);
+                waves.add(new ToolExecutionWave(List.of(planned)));
+                continue;
+            }
+
+            if (!currentWaveCalls.isEmpty() && shouldSplitWave(currentWaveCalls, planned)) {
+                flushWave(waves, currentWaveCalls);
+            }
+
+            currentWaveCalls.add(planned);
+        }
+
+        flushWave(waves, currentWaveCalls);
+        return List.copyOf(waves);
+    }
+
+    private boolean shouldSplitWave(List<PlannedToolCall> currentWaveCalls,
+                                    PlannedToolCall nextCall) {
+        if (currentWaveCalls.size() >= maxParallelToolCalls) {
+            return true;
+        }
+        return hasResourceConflict(currentWaveCalls, nextCall);
+    }
+
+    private void flushWave(List<ToolExecutionWave> waves, List<PlannedToolCall> currentWaveCalls) {
+        if (currentWaveCalls.isEmpty()) {
+            return;
+        }
+        waves.add(new ToolExecutionWave(List.copyOf(currentWaveCalls)));
+        currentWaveCalls.clear();
+    }
+
+    private boolean hasResourceConflict(List<PlannedToolCall> currentWaveCalls, PlannedToolCall nextCall) {
+        if (nextCall.schedulingMode() != ToolSchedulingMode.RESOURCE_SERIALIZED || nextCall.resourceKeys().isEmpty()) {
+            return false;
+        }
+        for (PlannedToolCall current : currentWaveCalls) {
+            if (current.schedulingMode() != ToolSchedulingMode.RESOURCE_SERIALIZED || current.resourceKeys().isEmpty()) {
+                continue;
+            }
+            if (resourceSetsConflict(current.resourceKeys(), nextCall.resourceKeys())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean resourceSetsConflict(List<String> currentResources, List<String> nextResources) {
+        for (String currentResource : currentResources) {
+            for (String nextResource : nextResources) {
+                if (ToolSchedulingResources.conflicts(currentResource, nextResource)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private String summarizeWaves(List<ToolExecutionWave> waves) {
+        if (waves.isEmpty()) {
+            return "[]";
+        }
+        var parts = new ArrayList<String>(waves.size());
+        for (int i = 0; i < waves.size(); i++) {
+            parts.add("wave[" + i + "]=" + summarizeWave(waves.get(i)));
+        }
+        return parts.toString();
+    }
+
+    private String summarizeWave(ToolExecutionWave wave) {
+        return "[" + String.join(", ", wave.toolCalls().stream()
+                .map(this::summarizePlannedToolCall)
+                .toList()) + "]";
+    }
+
+    private String summarizePlannedToolCall(PlannedToolCall planned) {
+        return switch (planned.schedulingMode()) {
+            case SEQUENTIAL -> planned.toolId() + "[seq]";
+            case PARALLEL_SAFE -> planned.toolId() + "[parallel]";
+            case RESOURCE_SERIALIZED -> planned.toolId() + "[resource:" + summarizeResources(planned.resourceKeys()) + "]";
+        };
+    }
+
+    private String summarizeResources(List<String> resourceKeys) {
+        if (resourceKeys == null || resourceKeys.isEmpty()) {
+            return "?";
+        }
+        return resourceKeys.stream()
+                .map(this::summarizeResourceKey)
+                .collect(java.util.stream.Collectors.joining(", "));
+    }
+
+    private String summarizeResourceKey(String resourceKey) {
+        if (resourceKey == null || resourceKey.isBlank()) {
+            return "?";
+        }
+        int separator = resourceKey.indexOf(':');
+        if (separator <= 0 || separator == resourceKey.length() - 1) {
+            return resourceKey;
+        }
+        String type = resourceKey.substring(0, separator);
+        String value = resourceKey.substring(separator + 1);
+        return switch (type) {
+            case "path" -> "path=" + value;
+            case "tree" -> "tree=" + value;
+            case "workspace" -> "workspace=" + value;
+            case "origin" -> "origin=" + value;
+            default -> type + "=" + value;
+        };
+    }
+
+    private ReactAgentState appendWaveToolCalls(ReactAgentState state,
+                                                ToolExecutionWave wave,
+                                                AgentLoopContext loopContext,
+                                                StepAppender stepAppender) {
+        for (PlannedToolCall planned : wave.toolCalls()) {
+            Instant toolCallCreatedAt = Instant.now();
+            state = stepAppender.append(state, new ReactStep.ToolCall(
+                    planned.toolId(),
+                    planned.toolDisplayName(),
+                    planned.inputJson(),
+                    0
+            ), loopContext);
+            persistTranscriptToolCall(
+                    state,
+                    planned.toolCall(),
+                    planned.toolId(),
+                    planned.toolDisplayName(),
+                    planned.inputJson(),
+                    toolCallCreatedAt
+            );
+        }
+        return state;
+    }
+
+    private List<ToolExecutionOutcome> executeWave(ToolExecutionWave wave) {
+        if (wave.toolCalls().size() == 1) {
+            return List.of(executePlannedCall(wave.toolCalls().get(0)));
+        }
+
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            List<CompletableFuture<ToolExecutionOutcome>> futures = wave.toolCalls().stream()
+                    .map(planned -> CompletableFuture.supplyAsync(() -> executePlannedCall(planned), executor))
+                    .toList();
+            return futures.stream()
+                    .map(CompletableFuture::join)
+                    .toList();
+        }
+    }
+
+    private ToolExecutionOutcome executePlannedCall(PlannedToolCall planned) {
         Instant toolCallStart = Instant.now();
-        state = stepAppender.append(state, new ReactStep.ToolCall(toolId, toolDisplayName, inputJson, 0), loopContext);
-        persistTranscriptToolCall(state, toolCall, toolId, toolDisplayName, inputJson, toolCallStart);
 
-        ToolCallback matchedCallback = toolCallbacks.stream()
-                .filter(Objects::nonNull)
-                .filter(cb -> cb.getToolDefinition().name().equals(toolId))
-                .findFirst()
-                .orElse(null);
-
-        if (matchedCallback == null) {
-            log.warn("未找到工具回调: toolId={}", toolId);
-            String errorOutput = "工具未注册: " + toolId;
-            state = stepAppender.append(state, new ReactStep.Observation(
-                    toolId, toolDisplayName, false, errorOutput, 0), loopContext);
-            persistTranscriptToolResult(state, toolCall, toolId, false, errorOutput, null, toolCallStart);
-            recordToolCallStep(traceContext, state.stepCount() - 1, toolCallStart,
-                    toolId, inputJson, errorOutput, false, toolRiskLevel);
-            return state;
+        if (planned.matchedCallback() == null) {
+            String errorOutput = "工具未注册: " + planned.toolId();
+            return new ToolExecutionOutcome(
+                    planned,
+                    toolCallStart,
+                    toolCallStart,
+                    Duration.ZERO,
+                    false,
+                    errorOutput,
+                    errorOutput,
+                    estimateTextTokens(errorOutput),
+                    null,
+                    List.of()
+            );
         }
 
         String rawOutput;
         boolean success;
         try {
-            rawOutput = matchedCallback.call(inputJson);
+            rawOutput = planned.matchedCallback().call(planned.inputJson());
             success = inferToolExecutionSuccess(rawOutput);
         } catch (Exception e) {
-            log.warn("工具执行失败: toolId={}, error={}", toolId, e.getMessage());
+            log.warn("工具执行失败: toolId={}, error={}", planned.toolId(), e.getMessage());
             rawOutput = "工具执行异常: " + e.getMessage();
             success = false;
         }
-        Duration toolCallDuration = Duration.between(toolCallStart, Instant.now());
+
+        Instant completedAt = Instant.now();
+        Duration toolCallDuration = Duration.between(toolCallStart, completedAt);
 
         if (success) {
             SuspendReason suspendReason = parseSuspendReasonFromOutput(rawOutput);
             if (suspendReason != null) {
-                log.info("工具请求挂起: toolId={}, reason={}", toolId, suspendReason);
-                state = state.suspend(suspendReason);
-                state = stepAppender.append(state, new ReactStep.Observation(
-                        toolId, toolDisplayName, true, "工具请求挂起: " + suspendReason, 0), loopContext);
-                persistTranscriptToolResult(state, toolCall, toolId, true, rawOutput, null, toolCallStart);
-                recordToolCallStep(traceContext, state.stepCount() - 1, toolCallStart,
-                        toolId, inputJson, rawOutput, true, toolRiskLevel);
-                return state;
+                return new ToolExecutionOutcome(
+                        planned,
+                        toolCallStart,
+                        completedAt,
+                        toolCallDuration,
+                        true,
+                        rawOutput,
+                        "工具请求挂起: " + suspendReason,
+                        0,
+                        suspendReason,
+                        List.of()
+                );
             }
         }
 
         String observationOutput = rawOutput;
+        List<MediaDataExtractor.MediaItem> mediaItems = List.of();
         if (success && mediaDataExtractor != null) {
-            var extraction = mediaDataExtractor.extract(toolId, rawOutput);
+            var extraction = mediaDataExtractor.extract(planned.toolId(), rawOutput);
             observationOutput = extraction.sanitizedOutput();
-
-            if (loopContext.getSseManager() != null
-                    && loopContext.getStreamId() != null
-                    && !extraction.mediaItems().isEmpty()) {
-                for (var mediaItem : extraction.mediaItems()) {
-                    Map<String, Object> mediaData = new HashMap<>();
-                    mediaData.put("toolId", toolId);
-                    mediaData.put("mimeType", mediaItem.mediaType());
-                    mediaData.put("encoding", mediaItem.encoding());
-                    mediaData.put("data", mediaItem.data());
-                    mediaData.put("field", mediaItem.fieldName());
-                    mediaData.put("metadata", mediaItem.metadata());
-                    loopContext.getSseManager().sendEvent(loopContext.getStreamId(), SseEventType.MEDIA, mediaData);
-                }
-            }
-
-            if (!extraction.mediaItems().isEmpty()) {
-                loopContext.addAllToolMedia(extraction.mediaItems());
-                for (var mediaItem : extraction.mediaItems()) {
-                    if (!mediaItem.mediaType().startsWith("image/")) {
-                        continue;
-                    }
-                    try {
-                        byte[] decoded = Base64.getDecoder().decode(mediaItem.data());
-                        var mediaContent = new MediaContent(
-                                UUID.randomUUID().toString(),
-                                mediaItem.mediaType(),
-                                decoded,
-                                toolId + "_" + mediaItem.fieldName(),
-                                decoded.length,
-                                Map.of("toolId", toolId, "fieldName", mediaItem.fieldName())
-                        );
-                        state = state.appendPendingMedia(mediaContent);
-                    } catch (IllegalArgumentException e) {
-                        log.warn("Base64 解码失败，跳过媒体数据: toolId={}, field={}",
-                                toolId, mediaItem.fieldName());
-                    }
-                }
-            }
+            mediaItems = extraction.mediaItems();
         }
 
-        int observationTokens = estimateTextTokens(observationOutput != null ? observationOutput : "");
-        state = stepAppender.append(state, new ReactStep.Observation(
-                toolId, toolDisplayName, success, observationOutput != null ? observationOutput : "", observationTokens), loopContext);
-        persistTranscriptToolResult(state, toolCall, toolId, success, rawOutput, null, toolCallStart);
+        return new ToolExecutionOutcome(
+                planned,
+                toolCallStart,
+                completedAt,
+                toolCallDuration,
+                success,
+                rawOutput,
+                observationOutput != null ? observationOutput : "",
+                estimateTextTokens(observationOutput != null ? observationOutput : ""),
+                null,
+                mediaItems != null ? List.copyOf(mediaItems) : List.of()
+        );
+    }
 
-        if (success && proceduralMemory != null && intentMatcher != null) {
+    private ReactAgentState replayWaveResults(ReactAgentState state,
+                                              List<ToolExecutionOutcome> outcomes,
+                                              @Nullable TraceContext traceContext,
+                                              AgentLoopContext loopContext,
+                                              StepAppender stepAppender) {
+        for (ToolExecutionOutcome outcome : outcomes) {
+            state = replayOutcome(state, outcome, traceContext, loopContext, stepAppender);
+        }
+        return state;
+    }
+
+    private ReactAgentState replayOutcome(ReactAgentState state,
+                                          ToolExecutionOutcome outcome,
+                                          @Nullable TraceContext traceContext,
+                                          AgentLoopContext loopContext,
+                                          StepAppender stepAppender) {
+        PlannedToolCall planned = outcome.planned();
+
+        if (outcome.success() && outcome.suspendReason() != null) {
+            log.info("工具请求挂起: toolId={}, reason={}", planned.toolId(), outcome.suspendReason());
+            if (!state.suspended()) {
+                state = state.suspend(outcome.suspendReason());
+            }
+            state = stepAppender.append(state, new ReactStep.Observation(
+                    planned.toolId(),
+                    planned.toolDisplayName(),
+                    true,
+                    outcome.observationOutput(),
+                    0
+            ), loopContext);
+            persistTranscriptToolResult(state, planned.toolCall(), planned.toolId(),
+                    true, outcome.rawOutput(), null, outcome.startedAt());
+            recordToolCallStep(traceContext, state.stepCount() - 1, outcome.startedAt(),
+                    outcome.completedAt(), outcome.duration(), planned.toolId(),
+                    planned.inputJson(), outcome.rawOutput(), true, planned.toolRiskLevel());
+            log.debug("工具执行完成: toolId={}, success={}, latencyMs={}",
+                    planned.toolId(), true, outcome.duration().toMillis());
+            return state;
+        }
+
+        if (outcome.success() && !outcome.mediaItems().isEmpty()) {
+            state = replayExtractedMedia(state, planned.toolId(), outcome.mediaItems(), loopContext);
+        }
+
+        state = stepAppender.append(state, new ReactStep.Observation(
+                planned.toolId(),
+                planned.toolDisplayName(),
+                outcome.success(),
+                outcome.observationOutput(),
+                outcome.observationTokens()
+        ), loopContext);
+        persistTranscriptToolResult(state, planned.toolCall(), planned.toolId(),
+                outcome.success(), outcome.rawOutput(), null, outcome.startedAt());
+
+        if (outcome.success() && proceduralMemory != null && intentMatcher != null) {
             try {
-                var match = intentMatcher.match(buildIntentMatchQuery(toolId, inputJson));
+                var match = intentMatcher.match(buildIntentMatchQuery(planned.toolId(), planned.inputJson()));
                 match.ifPresent(m -> proceduralMemory.recordExecution(m.template().templateId(), true));
             } catch (Exception e) {
-                log.warn("L4 执行结果记录失败: toolId={}, error={}", toolId, e.getMessage());
+                log.warn("L4 执行结果记录失败: toolId={}, error={}", planned.toolId(), e.getMessage());
             }
         }
 
-        recordToolCallStep(traceContext, state.stepCount() - 1, toolCallStart,
-                toolId, inputJson, rawOutput, success, toolRiskLevel);
-        log.debug("工具执行完成: toolId={}, success={}, latencyMs={}", toolId, success, toolCallDuration.toMillis());
+        recordToolCallStep(traceContext, state.stepCount() - 1, outcome.startedAt(),
+                outcome.completedAt(), outcome.duration(), planned.toolId(),
+                planned.inputJson(), outcome.rawOutput(), outcome.success(), planned.toolRiskLevel());
+        log.debug("工具执行完成: toolId={}, success={}, latencyMs={}",
+                planned.toolId(), outcome.success(), outcome.duration().toMillis());
+        return state;
+    }
+
+    private ReactAgentState replayExtractedMedia(ReactAgentState state,
+                                                 String toolId,
+                                                 List<MediaDataExtractor.MediaItem> mediaItems,
+                                                 AgentLoopContext loopContext) {
+        if (loopContext.getSseManager() != null && loopContext.getStreamId() != null) {
+            for (var mediaItem : mediaItems) {
+                Map<String, Object> mediaData = new HashMap<>();
+                mediaData.put("toolId", toolId);
+                mediaData.put("mimeType", mediaItem.mediaType());
+                mediaData.put("encoding", mediaItem.encoding());
+                mediaData.put("data", mediaItem.data());
+                mediaData.put("field", mediaItem.fieldName());
+                mediaData.put("metadata", mediaItem.metadata());
+                loopContext.getSseManager().sendEvent(loopContext.getStreamId(), SseEventType.MEDIA, mediaData);
+            }
+        }
+
+        loopContext.addAllToolMedia(mediaItems);
+        for (var mediaItem : mediaItems) {
+            if (!mediaItem.mediaType().startsWith("image/")) {
+                continue;
+            }
+            try {
+                byte[] decoded = Base64.getDecoder().decode(mediaItem.data());
+                var mediaContent = new MediaContent(
+                        UUID.randomUUID().toString(),
+                        mediaItem.mediaType(),
+                        decoded,
+                        toolId + "_" + mediaItem.fieldName(),
+                        decoded.length,
+                        Map.of("toolId", toolId, "fieldName", mediaItem.fieldName())
+                );
+                state = state.appendPendingMedia(mediaContent);
+            } catch (IllegalArgumentException e) {
+                log.warn("Base64 解码失败，跳过媒体数据: toolId={}, field={}",
+                        toolId, mediaItem.fieldName());
+            }
+        }
         return state;
     }
 
@@ -231,10 +574,7 @@ public class ToolExecutionCoordinator {
             if ("ERROR".equalsIgnoreCase(status)) {
                 return false;
             }
-            if (root.has("error") && !root.has("data")) {
-                return false;
-            }
-            return true;
+            return !root.has("error") || root.has("data");
         } catch (Exception e) {
             return true;
         }
@@ -418,6 +758,8 @@ public class ToolExecutionCoordinator {
     private void recordToolCallStep(@Nullable TraceContext traceContext,
                                     int stepIndex,
                                     Instant startTime,
+                                    Instant completedAt,
+                                    Duration duration,
                                     String toolId,
                                     String inputJson,
                                     @Nullable String outputJson,
@@ -427,16 +769,22 @@ public class ToolExecutionCoordinator {
             return;
         }
         try {
-            Duration duration = Duration.between(startTime, Instant.now());
             var step = new ToolCallStep(
-                    stepIndex, Instant.now(), duration,
-                    toolId, "execute", inputJson,
+                    stepIndex,
+                    completedAt,
+                    duration,
+                    toolId,
+                    "execute",
+                    inputJson,
                     outputJson != null ? outputJson : "",
-                    success, success ? null : outputJson,
-                    riskLevel);
+                    success,
+                    success ? null : outputJson,
+                    riskLevel
+            );
             traceRecorder.recordStep(traceContext, step);
         } catch (Exception e) {
-            log.debug("Trace 工具步骤记录失败: error={}", e.getMessage());
+            log.debug("Trace 工具步骤记录失败: toolId={}, startedAt={}, error={}",
+                    toolId, startTime, e.getMessage());
         }
     }
 
@@ -456,5 +804,41 @@ public class ToolExecutionCoordinator {
     @FunctionalInterface
     public interface StepAppender {
         ReactAgentState append(ReactAgentState state, ReactStep step, AgentLoopContext loopContext);
+    }
+
+    private record PlannedToolCall(
+            int index,
+            AssistantMessage.ToolCall toolCall,
+            String toolId,
+            String inputJson,
+            @Nullable String toolDisplayName,
+            RiskLevel toolRiskLevel,
+            ToolSchedulingMode schedulingMode,
+            List<String> resourceKeys,
+            @Nullable ToolCallback matchedCallback
+    ) {
+        private PlannedToolCall {
+            resourceKeys = resourceKeys == null ? List.of() : List.copyOf(resourceKeys);
+        }
+    }
+
+    private record ToolExecutionWave(List<PlannedToolCall> toolCalls) {}
+
+    private record ToolExecutionOutcome(
+            PlannedToolCall planned,
+            Instant startedAt,
+            Instant completedAt,
+            Duration duration,
+            boolean success,
+            @Nullable String rawOutput,
+            String observationOutput,
+            int observationTokens,
+            @Nullable SuspendReason suspendReason,
+            List<MediaDataExtractor.MediaItem> mediaItems
+    ) {
+        private ToolExecutionOutcome {
+            observationOutput = observationOutput != null ? observationOutput : "";
+            mediaItems = mediaItems != null ? List.copyOf(mediaItems) : List.of();
+        }
     }
 }
