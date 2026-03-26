@@ -32,8 +32,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Agent \u6301\u4e45\u5316\u5904\u7406\u5668\u3002
- * <p>\u8d1f\u8d23\u5c06\u4e3b\u5bf9\u8bdd\u94fe\u8def\u4e2d\u7684 transcript\u3001\u9644\u4ef6\u3001\u6ce8\u5165\u8bb0\u5f55\u3001\u5de5\u4f5c\u533a\u72b6\u6001\u548c\u5f02\u6b65\u8bb0\u5fc6\u540e\u5904\u7406\u7edf\u4e00\u843d\u76d8\u3002</p>
+ * Agent 持久化处理器。
+ * <p>负责将主对话链路中的 transcript、附件、注入记录、工作状态和异步记忆后处理统一落盘。</p>
  *
  * @author zsg
  * @since 2026-03-20
@@ -104,8 +104,8 @@ public class AgentPersistenceHandler {
             switch (state.suspendReason()) {
                 case SuspendReason.UserConfirmation confirmation ->
                         workspaceService.savePendingDecision(state.sessionId(), new PendingDecisionItem(
-                                "\u7b49\u5f85\u786e\u8ba4",
-                                "\u5de5\u5177\u8c03\u7528\u7b49\u5f85\u7528\u6237\u786e\u8ba4: " + confirmation.toolId(),
+                                "等待确认",
+                                "工具调用等待用户确认：" + confirmation.toolId(),
                                 buildSuspendPayload(state.suspendReason()),
                                 100,
                                 state.traceId(),
@@ -113,7 +113,7 @@ public class AgentPersistenceHandler {
                                 null));
                 default ->
                         workspaceService.saveTaskState(state.sessionId(), new TaskStateItem(
-                                "\u4efb\u52a1\u5df2\u6682\u505c",
+                                "任务已暂停",
                                 formatSuspendSummary(state.suspendReason()),
                                 buildSuspendPayload(state.suspendReason()),
                                 60,
@@ -122,7 +122,7 @@ public class AgentPersistenceHandler {
                                 null));
             }
         } catch (Exception e) {
-            log.warn("\u4fdd\u5b58\u6682\u505c\u5de5\u4f5c\u533a\u5931\u8d25: sessionId={}, error={}", state.sessionId(), e.getMessage());
+            log.warn("保存暂停工作区失败：sessionId={}, error={}", state.sessionId(), e.getMessage());
         }
     }
 
@@ -134,7 +134,7 @@ public class AgentPersistenceHandler {
             workspaceService.resolveByTaskId(sessionId, traceId);
             workspaceService.resolveBySourceTraceId(sessionId, traceId);
         } catch (Exception e) {
-            log.warn("\u89e3\u6790\u5de5\u4f5c\u533a\u8f68\u8ff9\u5f15\u7528\u5931\u8d25: sessionId={}, traceId={}, error={}",
+            log.warn("解析工作区轨迹引用失败：sessionId={}, traceId={}, error={}",
                     sessionId, traceId, e.getMessage());
         }
     }
@@ -146,7 +146,7 @@ public class AgentPersistenceHandler {
         try {
             transcriptStore.appendUserMessage(state.sessionId(), state.turnId(), state.goal(), state.traceId(), null);
         } catch (Exception e) {
-            log.warn("\u5199\u5165\u7528\u6237\u6d88\u606f\u5931\u8d25: sessionId={}, error={}", state.sessionId(), e.getMessage());
+            log.warn("写入用户消息失败：sessionId={}, error={}", state.sessionId(), e.getMessage());
         }
     }
 
@@ -196,7 +196,7 @@ public class AgentPersistenceHandler {
             }
             return entryId;
         } catch (Exception e) {
-            log.warn("\u5199\u5165\u7528\u6237\u6d88\u606f\u5931\u8d25: sessionId={}, error={}", state.sessionId(), e.getMessage());
+            log.warn("写入用户消息失败：sessionId={}, error={}", state.sessionId(), e.getMessage());
             return null;
         }
     }
@@ -235,7 +235,7 @@ public class AgentPersistenceHandler {
                     null
             );
         } catch (Exception e) {
-            log.warn("\u5199\u5165\u52a9\u624b\u6d88\u606f\u5931\u8d25: sessionId={}, error={}", state.sessionId(), e.getMessage());
+            log.warn("写入助手消息失败：sessionId={}, error={}", state.sessionId(), e.getMessage());
             return null;
         }
     }
@@ -263,7 +263,7 @@ public class AgentPersistenceHandler {
                     null
             );
         } catch (Exception e) {
-            log.warn("\u5199\u5165\u52a9\u624b\u6d88\u606f\u5931\u8d25: sessionId={}, error={}", state.sessionId(), e.getMessage());
+            log.warn("写入助手消息失败：sessionId={}, error={}", state.sessionId(), e.getMessage());
             return null;
         }
     }
@@ -279,9 +279,9 @@ public class AgentPersistenceHandler {
         }
         try {
             injectionRecordRepository.save(sourceEntryId, sessionId, sourceTraceId, entityIds);
-            log.debug("\u6ce8\u5165\u8bb0\u5f55\u5df2\u6301\u4e45\u5316: sourceEntryId={}, entityCount={}", sourceEntryId, entityIds.size());
+            log.debug("注入记录已持久化：sourceEntryId={}, entityCount={}", sourceEntryId, entityIds.size());
         } catch (Exception e) {
-            log.warn("\u6301\u4e45\u5316\u6ce8\u5165\u8bb0\u5f55\u5931\u8d25: sourceEntryId={}, error={}", sourceEntryId, e.getMessage());
+            log.warn("持久化注入记录失败：sourceEntryId={}, error={}", sourceEntryId, e.getMessage());
         }
     }
 
@@ -300,7 +300,7 @@ public class AgentPersistenceHandler {
                 attachmentRepository.saveForEntry(assistantEntryId, sessionId,
                         fileName, "", sizeBytes, mediaItem.mediaType(), dataUri);
             } catch (Exception e) {
-                log.warn("\u4fdd\u5b58\u5de5\u5177\u5a92\u4f53\u9644\u4ef6\u5931\u8d25: field={}, error={}",
+                log.warn("保存工具媒体附件失败：field={}, error={}",
                         mediaItem.fieldName(), e.getMessage());
             }
         }
@@ -323,7 +323,7 @@ public class AgentPersistenceHandler {
                 attachmentRepository.saveForEntry(userEntryId, sessionId,
                         fileName, "", mediaContent.sizeBytes(), mediaContent.mimeType(), dataUri);
             } catch (Exception e) {
-                log.warn("\u4fdd\u5b58\u7528\u6237\u5a92\u4f53\u9644\u4ef6\u5931\u8d25: sessionId={}, error={}",
+                log.warn("保存用户媒体附件失败：sessionId={}, error={}",
                         sessionId, e.getMessage());
             }
         }
@@ -336,7 +336,7 @@ public class AgentPersistenceHandler {
                     compactionEngine.compactIfNeeded(finalState.sessionId(), finalState.traceId());
                 }
             } catch (Exception e) {
-                log.warn("\u4f1a\u8bdd\u538b\u7f29\u540e\u5904\u7406\u5931\u8d25: sessionId={}, error={}",
+                log.warn("会话压缩后处理失败：sessionId={}, error={}",
                         finalState.sessionId(), e.getMessage());
             }
 
@@ -348,7 +348,7 @@ public class AgentPersistenceHandler {
                             finalState.finalOutput());
                 }
             } catch (Exception e) {
-                log.warn("\u5b9e\u65f6\u8bb0\u5fc6\u62bd\u53d6\u5931\u8d25: sessionId={}, error={}",
+                log.warn("实时记忆抽取失败：sessionId={}, error={}",
                         finalState.sessionId(), e.getMessage());
             }
 
@@ -358,7 +358,7 @@ public class AgentPersistenceHandler {
                     newExperience = experienceSummarizer.summarize(finalState);
                 }
             } catch (Exception e) {
-                log.warn("\u7ecf\u9a8c\u603b\u7ed3\u5931\u8d25: sessionId={}, error={}",
+                log.warn("经验总结失败：sessionId={}, error={}",
                         finalState.sessionId(), e.getMessage());
             }
 
@@ -367,7 +367,7 @@ public class AgentPersistenceHandler {
                     effectivenessTracker.evaluate(finalState, finalState.traceId());
                 }
             } catch (Exception e) {
-                log.warn("\u6548\u679c\u8bc4\u4f30\u5931\u8d25: sessionId={}, error={}",
+                log.warn("效果评估失败：sessionId={}, error={}",
                         finalState.sessionId(), e.getMessage());
             }
 
@@ -376,7 +376,7 @@ public class AgentPersistenceHandler {
                     contrastiveLearner.learn(newExperience);
                 }
             } catch (Exception e) {
-                log.warn("\u5bf9\u6bd4\u5b66\u4e60\u5931\u8d25: sessionId={}, error={}",
+                log.warn("对比学习失败：sessionId={}, error={}",
                         finalState.sessionId(), e.getMessage());
             }
 
@@ -385,7 +385,7 @@ public class AgentPersistenceHandler {
                     subtaskReflector.reflect(finalState);
                 }
             } catch (Exception e) {
-                log.warn("\u5b50\u4efb\u52a1\u53cd\u601d\u5931\u8d25: sessionId={}, error={}",
+                log.warn("子任务反思失败：sessionId={}, error={}",
                         finalState.sessionId(), e.getMessage());
             }
         });
@@ -456,15 +456,15 @@ public class AgentPersistenceHandler {
     private String formatSuspendSummary(SuspendReason reason) {
         return switch (reason) {
             case SuspendReason.WorkflowWait workflowWait ->
-                    "\u5de5\u4f5c\u6d41\u7b49\u5f85: " + workflowWait.workflowName();
+                    "工作流等待：" + workflowWait.workflowName();
             case SuspendReason.UserConfirmation confirmation ->
-                    "\u7528\u6237\u786e\u8ba4\u7b49\u5f85: " + confirmation.toolId();
+                    "用户确认等待：" + confirmation.toolId();
             case SuspendReason.RemoteDelegation remoteDelegation ->
-                    "\u8fdc\u7a0b\u59d4\u6d3e\u7b49\u5f85: " + remoteDelegation.delegatedGoal();
+                    "远程委派等待：" + remoteDelegation.delegatedGoal();
             case SuspendReason.ScheduledWakeup scheduledWakeup ->
-                    "\u5b9a\u65f6\u5524\u9192\u7b49\u5f85: " + scheduledWakeup.reason();
+                    "定时唤醒等待：" + scheduledWakeup.reason();
             case SuspendReason.ExternalDataWait externalDataWait ->
-                    "\u5916\u90e8\u6570\u636e\u7b49\u5f85: " + externalDataWait.description();
+                    "外部数据等待：" + externalDataWait.description();
         };
     }
 }

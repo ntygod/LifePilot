@@ -28,7 +28,7 @@ flowchart TD
     subgraph "读取链路 conversation"
         CVS["ConversationViewService"]
         DCS["DefaultConversationViewService"]
-        CTV["ConversationTurnView"]
+        CTV["transcript entry rows"]
         CSV["ConversationSessionView"]
         CVS --> DCS
         DCS --> CTV
@@ -71,11 +71,11 @@ flowchart TD
 - 主要负责把原始消息写入会话层
 - 该层是记忆系统之外的“对话事实源”
 
-### 3.3 ConversationTurnView
+### 3.3 transcript entry rows
 
-- 统一的消息视图模型
-- 字段包括：`sessionId`、`role`、`content`、`createdAt`、`reasoningSummary`
-- `ContextAssembler` 会基于它拼接最近完整轮次
+- 当前历史消息读取基于 transcript 条目读模型
+- 最近完整轮次由 `ContextEngine / CompactionEngine` 内部按顺序分组
+- 不再依赖独立的 `ConversationTurnView` 视图类型
 
 ### 3.4 ConversationSessionView
 
@@ -90,15 +90,13 @@ flowchart TD
 ```mermaid
 sequenceDiagram
     participant CA as ContextAssembler
-    participant CVS as ConversationViewService
-    participant DCS as DefaultConversationViewService
-    participant Repo as ChatMessageRepository
+    participant CE as ContextEngine
+    participant Repo as SessionTranscriptRepository
 
-    CA->>CVS: getRecentTurns(sessionId, limit)
-    CVS->>DCS: 委托实现
-    DCS->>Repo: findRowsBySessionId(sessionId)
-    DCS->>DCS: flattenRecentCompleteTurns(rows, limit)
-    DCS-->>CA: List<ConversationTurnView>
+    CA->>CE: load(sessionId, budget)
+    CE->>Repo: findVisibleEntries(sessionId)
+    CE->>CE: groupCompleteTurns(entries)
+    CE-->>CA: transcript 切片与上下文片段
 ```
 
 ### 4.2 读取完整时间线
@@ -113,7 +111,7 @@ sequenceDiagram
     UI->>CVS: getFullTimeline(sessionId)
     CVS->>DCS: 委托实现
     DCS->>Repo: findRowsBySessionId(sessionId)
-    DCS-->>UI: 按时间正序的 ConversationTurnView 列表
+    DCS-->>UI: 按时间正序的 transcript 列表
 ```
 
 ## 5. 设计决策
@@ -136,5 +134,5 @@ sequenceDiagram
 ## 7. 当前限制
 
 - 当前读模型以“会话层正确性”优先，不再做 L2 回退兜底
-- 最近轮次裁剪依赖 `ConversationTurnGrouper` 的完整轮次分组规则
+- 最近轮次裁剪依赖 `ContextEngine / CompactionEngine` 内部的完整轮次分组规则
 - 对话系统本身不负责跨会话 recall，那部分职责已明确交给记忆工具

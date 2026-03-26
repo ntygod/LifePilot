@@ -9,6 +9,7 @@ import com.lifepilot.interaction.web.model.ToolAnalyticsResponse;
 import com.lifepilot.interaction.web.model.UsageStats;
 import com.lifepilot.knowledge.KnowledgeBaseManager;
 import com.lifepilot.knowledge.model.KnowledgeBase;
+import com.lifepilot.multiagent.registry.AgentRegistry;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
@@ -46,6 +47,7 @@ public class AnalyticsController {
     private final KnowledgeBaseManager knowledgeBaseManager;
     private final ObjectMapper objectMapper;
     private final DynamicToolRegistry toolRegistry;
+    private final AgentRegistry agentRegistry;
 
     // Token 成本估算：约 $2 / 1M tokens = $0.000002 per token
     private static final double COST_PER_TOKEN = 0.000002;
@@ -53,11 +55,13 @@ public class AnalyticsController {
     public AnalyticsController(JdbcTemplate jdbcTemplate,
                                 KnowledgeBaseManager knowledgeBaseManager,
                                 ObjectMapper objectMapper,
-                                DynamicToolRegistry toolRegistry) {
+                                DynamicToolRegistry toolRegistry,
+                                AgentRegistry agentRegistry) {
         this.jdbcTemplate = jdbcTemplate;
         this.knowledgeBaseManager = knowledgeBaseManager;
         this.objectMapper = objectMapper;
         this.toolRegistry = toolRegistry;
+        this.agentRegistry = agentRegistry;
     }
 
     /**
@@ -533,9 +537,9 @@ public class AnalyticsController {
         if ("unknown".equals(agentId)) {
             return "未知 Agent";
         }
-        // TODO: 从 Agent 定义中获取名称
-        // 目前返回默认名称
-        return "Agent " + agentId;
+        return agentRegistry.find(agentId)
+                .map(agent -> agent.name() != null && !agent.name().isBlank() ? agent.name() : agent.id())
+                .orElse("Agent " + agentId);
     }
 
     /**

@@ -1,5 +1,7 @@
 package com.lifepilot.config.threadpool;
 
+import lombok.Getter;
+import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
@@ -8,6 +10,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @author zsg
  * @since 2026-03-18
  */
+@Setter
+@Getter
 @ConfigurationProperties(prefix = "lifepilot.thread-pool")
 public class ThreadPoolProperties {
 
@@ -17,25 +21,11 @@ public class ThreadPoolProperties {
     /** 优雅关闭超时时间（秒）。 */
     private int shutdownTimeoutSeconds = 10;
 
-    public Shared getShared() {
-        return shared;
-    }
-
-    public void setShared(Shared shared) {
-        this.shared = shared;
-    }
-
-    public int getShutdownTimeoutSeconds() {
-        return shutdownTimeoutSeconds;
-    }
-
-    public void setShutdownTimeoutSeconds(int shutdownTimeoutSeconds) {
-        this.shutdownTimeoutSeconds = shutdownTimeoutSeconds;
-    }
-
     /**
      * 共享调度器分组配置。
      */
+    @Setter
+    @Getter
     public static class Shared {
 
         /** cleanup 分组 corePoolSize。 */
@@ -47,28 +37,5 @@ public class ThreadPoolProperties {
         /** heartbeat 分组 corePoolSize。 */
         private int heartbeatCorePoolSize = 1;
 
-        public int getCleanupCorePoolSize() {
-            return cleanupCorePoolSize;
-        }
-
-        public void setCleanupCorePoolSize(int cleanupCorePoolSize) {
-            this.cleanupCorePoolSize = cleanupCorePoolSize;
-        }
-
-        public int getDebounceCorePoolSize() {
-            return debounceCorePoolSize;
-        }
-
-        public void setDebounceCorePoolSize(int debounceCorePoolSize) {
-            this.debounceCorePoolSize = debounceCorePoolSize;
-        }
-
-        public int getHeartbeatCorePoolSize() {
-            return heartbeatCorePoolSize;
-        }
-
-        public void setHeartbeatCorePoolSize(int heartbeatCorePoolSize) {
-            this.heartbeatCorePoolSize = heartbeatCorePoolSize;
-        }
     }
 }

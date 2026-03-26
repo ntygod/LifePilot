@@ -144,7 +144,7 @@
 
 1. [ContextAssembler](../../src/main/java/com/lifepilot/agent/context/ContextAssembler.java) 调用 `safeGetRecentTurns(sessionId)`
 2. [DefaultConversationViewService](../../src/main/java/com/lifepilot/conversation/DefaultConversationViewService.java) 从 [ChatMessageRepository](../../src/main/java/com/lifepilot/interaction/web/repository/ChatMessageRepository.java) 取整段会话消息
-3. [ConversationTurnGrouper](../../src/main/java/com/lifepilot/conversation/ConversationTurnGrouper.java) 只保留最近 N 个“完整轮次”
+3. [ContextEngine](../../src/main/java/com/lifepilot/agent/context/ContextEngine.java) 在 transcript 切片阶段只保留最近 N 个“完整轮次”
 4. [ContextAssembler.formatConversationHistorySection()](../../src/main/java/com/lifepilot/agent/context/ContextAssembler.java) 把它们转成：
 
 ```text
@@ -187,7 +187,7 @@
 
 - [JdbcConversationHistoryStore.appendSystemMessage()](../../src/main/java/com/lifepilot/interaction/web/service/JdbcConversationHistoryStore.java)
 - [WebUserConfirmationService](../../src/main/java/com/lifepilot/interaction/web/service/WebUserConfirmationService.java)
-- [ConversationTurnGrouper](../../src/main/java/com/lifepilot/conversation/ConversationTurnGrouper.java)
+- [ContextEngine](../../src/main/java/com/lifepilot/agent/context/ContextEngine.java)
 
 这说明当前项目的“历史重建”更接近“Web 聊天消息视图拼接”，而不是“严格 transcript 语义重建”。
 
@@ -384,7 +384,7 @@ OpenClaw 在真正发送请求前，还会做 provider-specific transcript hygie
 - [ReactAgentLoop](../../src/main/java/com/lifepilot/agent/ReactAgentLoop.java)
 - [ConversationHistoryStore](../../src/main/java/com/lifepilot/conversation/ConversationHistoryStore.java)
 - [DefaultConversationViewService](../../src/main/java/com/lifepilot/conversation/DefaultConversationViewService.java)
-- [ConversationTurnGrouper](../../src/main/java/com/lifepilot/conversation/ConversationTurnGrouper.java)
+- [ContextEngine](../../src/main/java/com/lifepilot/agent/context/ContextEngine.java)
 - [SessionManager](../../src/main/java/com/lifepilot/agent/session/SessionManager.java)
 - [ChatMessageRepository](../../src/main/java/com/lifepilot/interaction/web/repository/ChatMessageRepository.java)
 - [AgentPersistenceHandler](../../src/main/java/com/lifepilot/agent/persistence/AgentPersistenceHandler.java)

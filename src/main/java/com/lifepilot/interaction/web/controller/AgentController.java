@@ -588,7 +588,7 @@ public class AgentController {
     /**
      * 获取 Agent 详情。
      *
-     * @param id Agent ID
+     * @param text Agent ID
      * @return Agent 详情
      */
     private int estimateTokens(String text) {
@@ -772,7 +772,7 @@ public class AgentController {
                     new ErrorResponse(403, "不允许删除内置 Agent", Instant.now()));
         }
 
-        // 3. TODO: 检查是否被使用（会话、工作流等）
+        // 3. 当前未维护 Agent 的反向引用索引；删除只影响后续新请求，不影响历史 trace。
 
         // 4. 注销 Agent
         boolean unregistered = agentRegistry.unregister(id);
