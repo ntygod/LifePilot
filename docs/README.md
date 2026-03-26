@@ -11,6 +11,13 @@
 - `guides/`：使用、集成和运维指南
 - `images/`：README 和文档所用截图
 
+## 常用指南
+
+- [guides/git-gh-guide.md](guides/git-gh-guide.md)：本仓库的 Git / GitHub CLI 日常操作速查表
+- [guides/github-maintainer-guide.md](guides/github-maintainer-guide.md)：个人开源仓库维护检查清单
+- [guides/release-guide.md](guides/release-guide.md)：发布版本时的最小操作流程
+- [guides/workflow-guide.md](guides/workflow-guide.md)：工作流定义与调试说明
+
 ## 维护约定
 
 - `docs/architecture/` 只放正式架构文档，不再混入任务拆解、重构草案、实施计划
