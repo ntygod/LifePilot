@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Sheet, SheetContent } from '@/components/ui/sheet'
-import SidebarContent from './SidebarContent.vue'
+import AppRail from './AppRail.vue'
+import WorkspaceSidebar from './WorkspaceSidebar.vue'
 
 interface Props {
   isMobile?: boolean
@@ -21,13 +22,17 @@ const emit = defineEmits<{
   <Sheet v-if="isMobile" :open="isOpen" @update:open="(value: boolean) => { if (!value) emit('close') }">
     <SheetContent
       side="left"
-      class="w-[var(--sidebar-width)] border-none bg-transparent p-0 shadow-none [&>button]:hidden"
+      class="w-[calc(var(--app-rail-width)+var(--sidebar-width))] max-w-[92vw] border-none bg-transparent p-0 shadow-none [&>button]:hidden"
     >
-      <SidebarContent is-mobile @close="emit('close')" />
+      <div class="app-nav-shell h-full">
+        <AppRail is-mobile @navigate="emit('close')" />
+        <WorkspaceSidebar is-mobile @close="emit('close')" />
+      </div>
     </SheetContent>
   </Sheet>
 
-  <aside v-else class="h-full w-[var(--sidebar-width)] shrink-0">
-    <SidebarContent />
+  <aside v-else class="app-nav-shell h-full w-[calc(var(--app-rail-width)+var(--sidebar-width))] shrink-0">
+    <AppRail />
+    <WorkspaceSidebar />
   </aside>
 </template>

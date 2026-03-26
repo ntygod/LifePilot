@@ -472,7 +472,7 @@ function togglePanel(panel: 'config' | 'sidebar' | 'debug') {
               @click="togglePanel('sidebar')"
             >
               <LibraryBig class="size-4" />
-              信息
+              详情
             </Button>
             <Button
               type="button"
@@ -539,7 +539,7 @@ function togglePanel(panel: 'config' | 'sidebar' | 'debug') {
         <div v-if="chatStore.messages.length === 0 && !isStreaming" class="flex h-full items-center justify-center p-6">
           <EmptyState @send="handleEmptyStateSend" />
         </div>
-        <div v-else class="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 xl:px-8">
+        <div v-else class="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 xl:px-8">
           <MessageList
             :messages="chatStore.messages"
             :is-streaming="isStreaming"

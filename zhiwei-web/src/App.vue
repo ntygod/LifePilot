@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, watch } from 'vue'
+import { computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import type { ThemeMode } from '@/composables/useTheme'
 import AppLayout from '@/components/layout/AppLayout.vue'
@@ -11,6 +11,8 @@ const route = useRoute()
 const settingsStore = useSettingsStore()
 
 const showAppLayout = computed(() => route.path !== '/')
+
+settingsStore.hydrate()
 
 function resolveDarkTheme(mode: ThemeMode) {
   return mode === 'dark'
@@ -29,16 +31,13 @@ function applyTheme(mode: ThemeMode) {
 
 function applyDisplayPreferences() {
   const root = document.documentElement
-  root.lang = settingsStore.language
   root.dataset.uiDensity = settingsStore.layoutDensity
   root.dataset.fontSize = settingsStore.fontSize
-  root.dataset.timeFormat = settingsStore.timeFormat
   root.dataset.showTokenUsage = String(settingsStore.showTokenUsage)
 
   localStorage.setItem(DISPLAY_PREFERENCES_KEY, JSON.stringify({
     layoutDensity: settingsStore.layoutDensity,
     fontSize: settingsStore.fontSize,
-    timeFormat: settingsStore.timeFormat,
     showTokenUsage: settingsStore.showTokenUsage,
   }))
 }
@@ -48,20 +47,12 @@ watch(() => settingsStore.theme, mode => {
 }, { immediate: true })
 
 watch(
-  () => [settingsStore.language, settingsStore.layoutDensity, settingsStore.fontSize, settingsStore.timeFormat, settingsStore.showTokenUsage],
+  () => [settingsStore.layoutDensity, settingsStore.fontSize, settingsStore.showTokenUsage],
   () => {
     applyDisplayPreferences()
   },
   { immediate: true },
 )
-
-onMounted(async () => {
-  try {
-    await settingsStore.load()
-  } catch {
-    applyDisplayPreferences()
-  }
-})
 </script>
 
 <template>

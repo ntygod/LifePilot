@@ -1,16 +1,7 @@
 <script setup lang="ts">
 import { computed, type Component } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { Cpu, Database, Palette, Radio, ShieldCheck } from 'lucide-vue-next'
-import MetricCard from '@/components/common/MetricCard.vue'
+import { useRoute } from 'vue-router'
 import PageContainer from '@/components/layout/PageContainer.vue'
-import PageHeader from '@/components/layout/PageHeader.vue'
-import { useSettingsStore } from '@/stores/settings'
-import {
-  getDensityDisplayLabel,
-  getFontSizeDisplayLabel,
-  getThemeDisplayLabel,
-} from '@/lib/settingsDisplay'
 import SettingsChannelsView from '@/views/SettingsChannelsView.vue'
 import SettingsGeneralView from '@/views/SettingsGeneralView.vue'
 import SettingsKnowledgeView from '@/views/SettingsKnowledgeView.vue'
@@ -18,8 +9,6 @@ import SettingsModelsView from '@/views/SettingsModelsView.vue'
 import SettingsPermissionsView from '@/views/SettingsPermissionsView.vue'
 
 const route = useRoute()
-const router = useRouter()
-const settingsStore = useSettingsStore()
 
 const viewMap: Record<string, Component> = {
   '/settings': SettingsGeneralView,
@@ -34,32 +23,27 @@ const navigationItems = [
   {
     path: '/settings/general',
     label: '通用',
-    description: '主题、语言、字号、阅读偏好和基础交互设置。',
-    icon: Palette,
+    description: '主题、密度、字号与本地显示偏好。',
   },
   {
     path: '/settings/models',
     label: '模型与路由',
     description: '模型服务、生成路由、向量路由和精排路由的独立配置。',
-    icon: Cpu,
   },
   {
     path: '/settings/knowledge',
     label: '知识与检索',
     description: '分块策略、检索参数、向量索引和联网搜索设置。',
-    icon: Database,
   },
   {
     path: '/settings/channels',
     label: '集成渠道',
     description: '飞书、企微、钉钉等渠道的凭据与开关配置。',
-    icon: Radio,
   },
   {
     path: '/settings/permissions',
     label: '授权与自动执行',
     description: '管理工具授权、无人值守范围和高风险操作审批记录。',
-    icon: ShieldCheck,
   },
 ] as const
 
@@ -70,113 +54,21 @@ const currentPath = computed(() => (
 const currentNavigationItem = computed(() => (
   navigationItems.find(item => item.path === currentPath.value) ?? navigationItems[0]
 ))
-const themeDisplayValue = computed(() => getThemeDisplayLabel(settingsStore.theme))
-const densityDisplayValue = computed(() => getDensityDisplayLabel(settingsStore.layoutDensity))
-const fontSizeDisplayValue = computed(() => getFontSizeDisplayLabel(settingsStore.fontSize))
-const quickSummary = computed(() => [
-  {
-    label: '主题',
-    value: themeDisplayValue.value,
-    hint: '当前界面的外观风格与色彩方案。',
-  },
-  {
-    label: '密度',
-    value: densityDisplayValue.value,
-    hint: '导航与内容区块的空间紧凑程度。',
-  },
-  {
-    label: '字号',
-    value: fontSizeDisplayValue.value,
-    hint: '全局阅读节奏与基础字级设置。',
-  },
-  {
-    label: '模型路由',
-    value: '独立配置',
-    hint: '生成、向量和精排服务已经迁移到模型与路由页单独管理。',
-  },
-])
-
-function isActiveItem(path: string) {
-  return currentPath.value === path
-}
 </script>
 
 <template>
   <div class="h-full overflow-y-auto">
     <PageContainer size="wide" class="py-6 sm:py-8">
-      <div class="page-stack mx-auto max-w-[1180px]">
-        <PageHeader
-          eyebrow="设置"
-          title="偏好设置"
-          description="把常用设置收在一起，优先处理界面、模型与知识能力。"
-        >
-          <template #meta>
-            <MetricCard
-              v-for="item in quickSummary"
-              :key="item.label"
-              :label="item.label"
-              :value="item.value"
-              :hint="item.hint"
-              class="h-full"
-            />
-          </template>
-        </PageHeader>
-
-        <div class="grid gap-6 lg:grid-cols-[260px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)]">
-          <aside class="lg:sticky lg:top-6 lg:self-start">
-            <section class="detail-card p-5">
-              <div class="space-y-1">
-                <div class="surface-label">设置分区</div>
-                <h2 class="section-title text-foreground">场景导航</h2>
-                <p class="text-sm leading-6 text-muted-foreground">
-                  选择一个分区来调整对应设置。
-                </p>
-              </div>
-
-              <nav class="mt-4 space-y-3">
-                <button
-                  v-for="item in navigationItems"
-                  :key="item.path"
-                  type="button"
-                  class="list-card w-full px-4 py-3 text-left"
-                  :class="isActiveItem(item.path) ? 'border-primary/30 bg-primary/6' : ''"
-                  @click="router.push(item.path)"
-                >
-                  <div class="flex items-start gap-3">
-                    <div
-                      class="flex size-9 shrink-0 items-center justify-center rounded-2xl border border-border/70 bg-background/80 text-muted-foreground"
-                      :class="isActiveItem(item.path) ? 'text-primary' : ''"
-                    >
-                      <component :is="item.icon" class="size-4" />
-                    </div>
-                    <div class="min-w-0">
-                      <div class="text-sm font-medium text-foreground">
-                        {{ item.label }}
-                      </div>
-                      <p class="mt-1 text-sm leading-6 text-muted-foreground">
-                        {{ item.description }}
-                      </p>
-                    </div>
-                  </div>
-                </button>
-              </nav>
-
-              <div class="mt-4 rounded-[calc(var(--radius)+6px)] border border-dashed border-border/60 bg-background/55 px-4 py-4">
-                <div class="surface-label mb-2 text-[0.68rem]">当前分区</div>
-                <div class="text-sm font-medium text-foreground">
-                  {{ currentNavigationItem.label }}
-                </div>
-                <p class="mt-1 text-sm leading-6 text-muted-foreground">
-                  {{ currentNavigationItem.description }}
-                </p>
-              </div>
-            </section>
-          </aside>
-
-          <main class="min-w-0">
-            <component :is="activeView" />
-          </main>
+      <div class="mx-auto max-w-[1080px] space-y-4">
+        <div class="space-y-1 px-1">
+          <div class="surface-label">设置</div>
+          <h1 class="text-2xl font-semibold text-foreground">{{ currentNavigationItem.label }}</h1>
+          <p class="text-sm leading-6 text-muted-foreground">
+            {{ currentNavigationItem.description }}
+          </p>
         </div>
+
+        <component :is="activeView" />
       </div>
     </PageContainer>
   </div>

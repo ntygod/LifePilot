@@ -25,7 +25,6 @@ const DISPLAY_PREFERENCES_KEY = 'zhiwei_display_preferences'
   root.lang = 'zh-CN'
   root.dataset.uiDensity = 'standard'
   root.dataset.fontSize = 'medium'
-  root.dataset.timeFormat = '24h'
   root.dataset.showTokenUsage = 'true'
 
   const stored = localStorage.getItem(DISPLAY_PREFERENCES_KEY)
@@ -35,13 +34,11 @@ const DISPLAY_PREFERENCES_KEY = 'zhiwei_display_preferences'
     const preferences = JSON.parse(stored) as {
       layoutDensity?: 'compact' | 'standard'
       fontSize?: 'small' | 'medium' | 'large'
-      timeFormat?: '12h' | '24h'
       showTokenUsage?: boolean
     }
 
     root.dataset.uiDensity = preferences.layoutDensity ?? 'standard'
     root.dataset.fontSize = preferences.fontSize ?? 'medium'
-    root.dataset.timeFormat = preferences.timeFormat ?? '24h'
     root.dataset.showTokenUsage = String(preferences.showTokenUsage ?? true)
   } catch {
     localStorage.removeItem(DISPLAY_PREFERENCES_KEY)

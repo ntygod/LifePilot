@@ -143,12 +143,12 @@ const router = createRouter({
 
     /**
      * 设置与偏好
-     * 使用 Tabs 导航，所有设置子页面通过 Tab 切换。
+     * 统一使用设置页壳子承载不同子配置。
      */
     {
       path: '/settings',
       name: 'settings',
-      component: () => import('@/views/SettingsView.vue')
+      redirect: '/settings/general'
     },
     {
       path: '/settings/general',

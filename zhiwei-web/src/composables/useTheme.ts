@@ -1,4 +1,4 @@
-import { computed, ref, type ComputedRef, type Ref } from 'vue'
+import { computed, ref, watch, type ComputedRef, type Ref } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 
 /** 主题模式类型 */
@@ -11,7 +11,11 @@ const STORAGE_KEY = 'zhiwei_theme'
 const CYCLE_ORDER: ThemeMode[] = ['light', 'dark', 'system']
 
 /** 全局单例状态（跨组件共享） */
-const mode = ref<ThemeMode>('system')
+const mode = ref<ThemeMode>(
+  typeof window !== 'undefined'
+    ? ((localStorage.getItem(STORAGE_KEY) as ThemeMode | null) ?? 'system')
+    : 'system',
+)
 
 /** matchMedia 监听器引用，用于 cleanup */
 let mediaQuery: MediaQueryList | null = null
@@ -52,6 +56,12 @@ export function useTheme(): {
 } {
   const settingsStore = useSettingsStore()
 
+  watch(() => settingsStore.theme, newMode => {
+    if (mode.value !== newMode) {
+      mode.value = newMode
+    }
+  }, { immediate: true })
+
   /** 解析后的实际主题（light 或 dark） */
   const resolvedTheme = computed<'light' | 'dark'>(() =>
     isDarkResolved(mode.value) ? 'dark' : 'light'
@@ -59,14 +69,14 @@ export function useTheme(): {
 
   /**
    * 设置主题模式。
-   * 同时更新 localStorage、DOM dark class、useSettingsStore.theme，异步 save 不阻塞。
+   * 同时更新 localStorage、DOM dark class 和全局设置状态。
    */
   function setTheme(newMode: ThemeMode): void {
     mode.value = newMode
     localStorage.setItem(STORAGE_KEY, newMode)
     applyTheme(newMode)
     settingsStore.theme = newMode
-    settingsStore.save().catch(() => {})
+    settingsStore.saveDisplayPreferences()
   }
 
   /**

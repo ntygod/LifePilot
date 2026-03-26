@@ -1,225 +1,148 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
-import {
-  ArrowRight,
-  BookOpen,
-  Bot,
-  MessageSquare,
-  ShieldCheck,
-  Workflow,
-  Wrench,
-} from 'lucide-vue-next'
-import MetricCard from '@/components/common/MetricCard.vue'
+import { ArrowRight } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
+import { useChatStore } from '@/stores/chat'
 
 const router = useRouter()
+const chatStore = useChatStore()
 
-function startUsing() {
-  router.push({ name: 'conversations' })
+async function startUsing() {
+  if (chatStore.sessions.length === 0) {
+    await chatStore.loadSessions()
+  }
+
+  if (chatStore.activeSessionId) {
+    router.push({ name: 'conversationDetail', params: { sessionId: chatStore.activeSessionId } })
+    return
+  }
+
+  const session = await chatStore.startNewSession()
+  router.push({ name: 'conversationDetail', params: { sessionId: session.id } })
 }
 
-const workspaceModules = [
+const features = [
   {
-    title: '对话',
-    description: '追问、澄清和回看都留在同一条上下文里。',
-    icon: MessageSquare,
+    key: '隐',
+    eyebrow: '隐私安全',
+    title: '数据归藏，安如磐石',
+    description: '本地优先，重要数据尽量留在自己手中。',
   },
   {
-    title: '知识库',
-    description: '把规范、文档和资料接进来，让回答有出处。',
-    icon: BookOpen,
+    key: '驭',
+    eyebrow: '工具丰富',
+    title: '善假于物，袖里乾坤',
+    description: '技能、工具与模型汇于一处，调用切换更顺手。',
   },
   {
-    title: '智能体与工具',
-    description: '把常用规则、工具和模型整理成能复用的配置。',
-    icon: Bot,
+    key: '忆',
+    eyebrow: '记忆模块',
+    title: '过目不忘，心有灵犀',
+    description: '上下文与偏好持续沉淀，越用越懂你。',
   },
   {
-    title: '工作流',
-    description: '把会重复发生的步骤沉淀成可执行流程。',
-    icon: Workflow,
-  },
-] as const
-
-const useCases = [
-  {
-    title: '需求调研与归纳',
-    description: '边看资料边记录判断，最后直接收成结论和待办。',
-  },
-  {
-    title: '开发排障与回放',
-    description: '把日志、代码片段、工具调用和上下文放在同一处处理。',
-  },
-  {
-    title: '团队交接与复核',
-    description: '同事下次接手时，不需要再从零还原过程。',
-  },
-] as const
-
-const principles = [
-  {
-    title: '本地优先',
-    description: '数据来源和运行边界更清楚，不靠空泛话术来解释价值。',
-    icon: ShieldCheck,
-  },
-  {
-    title: '过程可查',
-    description: '工具调用、知识引用和轨迹都能追到细节，而不是只看最终答案。',
-    icon: Wrench,
-  },
-  {
-    title: '能力可组合',
-    description: '对话、智能体、工具和工作流不是分开的孤岛，可以按工作方式拼起来。',
-    icon: Workflow,
+    key: '谋',
+    eyebrow: '自主任务',
+    title: '谋定后动，次第成章',
+    description: '围绕目标拆解步骤，接续执行，让任务持续向前。',
   },
 ] as const
 </script>
 
 <template>
-  <div class="min-h-screen bg-background text-foreground">
-    <div class="mx-auto flex min-h-screen max-w-[1200px] flex-col px-6 py-8 sm:px-8 lg:px-10">
-      <header class="flex items-center justify-between gap-4 border-b border-border/70 pb-5">
-        <div class="space-y-1">
-          <div class="text-sm font-semibold tracking-[0.18em] text-muted-foreground">ZHIWEI</div>
-          <div class="text-sm text-muted-foreground">本地优先的协作工作台</div>
-        </div>
+  <div class="relative min-h-screen overflow-hidden bg-[#f5efe4] text-slate-950">
+    <div class="absolute inset-0 bg-[linear-gradient(135deg,#f7f2e8_0%,#edf5ef_42%,#f7f2e8_100%)]" />
+    <div class="absolute inset-0 opacity-35" style="background-image: radial-gradient(circle, rgba(15, 23, 42, 0.08) 1px, transparent 1.3px); background-size: 28px 28px;" />
+    <div class="absolute inset-x-0 top-[-24%] h-[36rem] bg-[radial-gradient(circle_at_top,rgba(15,118,110,0.14),transparent_52%)]" />
+    <div class="absolute left-[-8%] top-[18%] h-[26rem] w-[26rem] rounded-full bg-[radial-gradient(circle,rgba(15,23,42,0.06),transparent_64%)] blur-3xl" />
+    <div class="absolute right-[-6%] bottom-[-12%] h-[24rem] w-[24rem] rounded-full bg-[radial-gradient(circle,rgba(14,165,233,0.1),transparent_65%)] blur-3xl" />
+    <div class="absolute left-[8%] top-0 h-full w-px bg-[linear-gradient(180deg,transparent,rgba(148,163,184,0.22),transparent)]" />
+    <div class="absolute right-[14%] top-[18%] h-2 w-2 rounded-full bg-emerald-600/60 shadow-[0_0_18px_rgba(13,148,136,0.24)]" />
+    <div class="absolute right-[19%] top-[26%] h-1.5 w-1.5 rounded-full bg-slate-900/24" />
+    <div class="absolute right-[10%] top-[33%] h-1.5 w-1.5 rounded-full bg-sky-700/28" />
+    <div class="absolute left-[18%] bottom-[20%] h-2 w-2 rounded-full bg-slate-900/14" />
 
-        <Button @click="startUsing">
-          开始使用
-        </Button>
+    <div class="relative mx-auto flex min-h-screen max-w-[1480px] flex-col px-6 py-6 sm:px-8 lg:px-10">
+      <header class="flex items-center justify-center">
+        <div class="inline-flex items-center gap-3 rounded-full border border-slate-900/7 bg-white/68 px-4 py-2 shadow-[0_16px_34px_-34px_rgba(15,23,42,0.18)] backdrop-blur-xl">
+          <div class="flex size-10 items-center justify-center rounded-2xl bg-slate-950 text-white">
+            <svg viewBox="0 0 48 48" class="size-5" fill="none" aria-hidden="true">
+              <rect x="11" y="11" width="26" height="26" rx="8" stroke="currentColor" stroke-width="2.4" />
+              <path d="M17 29c2.8-6 10.2-6 14 0" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" />
+              <path d="M19 20.5c2.5 3 7.5 3 10 0" stroke="#6ee7b7" stroke-width="2.4" stroke-linecap="round" />
+              <circle cx="24" cy="24" r="2.2" fill="#6ee7b7" />
+            </svg>
+          </div>
+          <div>
+            <div class="text-[0.72rem] font-semibold tracking-[0.22em] text-slate-500">ZHIWEI</div>
+            <div class="text-sm text-slate-700">见微知著的个人助手</div>
+          </div>
+        </div>
       </header>
 
-      <main class="flex-1 space-y-16 py-10 lg:space-y-20 lg:py-14">
-        <section class="grid gap-10 lg:grid-cols-[minmax(0,1.2fr)_360px] xl:gap-14">
-          <div class="space-y-7">
-            <div class="space-y-4">
-              <div class="surface-label text-primary">给需要持续推进的工作</div>
-              <h1 class="max-w-[12ch] text-5xl font-semibold leading-[1.02] tracking-[-0.055em] sm:text-6xl">
-                把资料、对话和操作，放进一个能继续接手的工作台。
-              </h1>
-              <p class="max-w-[38rem] text-base leading-8 text-muted-foreground">
-                知微更在意一次处理过的上下文、调用和结果能不能留下来，
-                下次回来还能接着做，而不是重新开一张白纸。
-              </p>
+      <main class="flex flex-1 items-center justify-center">
+        <section class="flex w-full max-w-[1180px] flex-col items-center space-y-16 py-16 text-center lg:py-24">
+          <div class="flex max-w-[760px] flex-col items-center space-y-10">
+            <div class="inline-flex items-center gap-2 rounded-full border border-emerald-600/9 bg-white/66 px-3 py-1.5 text-sm text-emerald-700 shadow-[0_14px_28px_-24px_rgba(13,148,136,0.14)] backdrop-blur-xl">
+              <span class="inline-block h-2 w-2 rounded-full bg-emerald-500" />
+              见微知著的个人助手工作台
             </div>
 
-            <div class="flex flex-col gap-3 sm:flex-row">
-              <Button size="lg" class="h-12 px-6 text-base" @click="startUsing">
-                进入工作台
+            <div class="space-y-8">
+              <div class="font-brand-serif text-5xl text-slate-900 sm:text-6xl lg:text-[5.4rem]">
+                知微
+              </div>
+              <h1 class="font-brand-serif text-4xl leading-[1.08] tracking-[-0.06em] text-slate-950 sm:text-5xl lg:text-[3.7rem]">
+                知微见著，
+                胸有成竹。
+              </h1>
+              <p class="max-w-[40rem] text-base leading-8 text-slate-700/82 sm:text-lg">
+                守住数据，记住语境，调度工具，
+                让复杂事务在一处稳步推进。
+              </p>
+            </div>
+            
+            <div class="flex flex-col items-center gap-4">
+              <Button size="lg" class="h-13 min-w-[190px] rounded-full bg-slate-950 px-6 text-base font-semibold text-white shadow-[0_26px_50px_-26px_rgba(15,23,42,0.42)] hover:bg-slate-900" @click="startUsing">
+                启卷知微
                 <ArrowRight class="size-4" />
               </Button>
-              <Button size="lg" variant="outline" class="h-12 px-6 text-base" @click="startUsing">
-                看最近会话
-              </Button>
-            </div>
-
-            <div class="grid gap-3 sm:grid-cols-3">
-              <MetricCard label="工作方式" value="边处理边留痕" hint="结果、来源和操作放在同一处。">
-                <template #icon>
-                  <MessageSquare class="size-5" />
-                </template>
-              </MetricCard>
-              <MetricCard label="接手成本" value="下次回来能继续" hint="上下文不会只停留在一条回答里。">
-                <template #icon>
-                  <BookOpen class="size-5" />
-                </template>
-              </MetricCard>
-              <MetricCard label="适用场景" value="高频工具型工作" hint="调研、排障、整理、交接都适合。">
-                <template #icon>
-                  <Workflow class="size-5" />
-                </template>
-              </MetricCard>
+              <div class="text-sm text-slate-600/76">
+                隐私安全、工具丰富、记忆模块、自主任务
+              </div>
             </div>
           </div>
 
-          <aside class="detail-card p-5">
-            <div class="space-y-2 border-b border-border/70 pb-4">
-              <div class="surface-label">今天就能开始</div>
-              <h2 class="text-lg font-semibold text-foreground">先从常用入口开始，不必一次配全</h2>
-              <p class="text-sm leading-6 text-muted-foreground">
-                对话、资料、工具和流程可以边用边补，先把最常见的一步走通就够了。
-              </p>
-            </div>
-
-            <div class="mt-1 space-y-2">
-              <div
-                v-for="item in workspaceModules"
-                :key="item.title"
-                class="list-card group flex items-start gap-3 p-4"
-              >
-                <div class="flex size-10 shrink-0 items-center justify-center rounded-xl border border-border/70 bg-background/85 text-primary transition-transform duration-200 group-hover:-translate-y-0.5">
-                  <component :is="item.icon" class="size-4" />
+          <div class="grid w-full max-w-[1140px] gap-5 md:grid-cols-2 xl:grid-cols-4">
+            <article
+              v-for="item in features"
+              :key="item.key"
+              class="relative overflow-hidden rounded-[30px] bg-white/30 px-5 py-6 shadow-[0_22px_42px_-38px_rgba(15,23,42,0.16)] backdrop-blur-xl"
+            >
+              <div class="absolute inset-0 rounded-[30px] bg-[linear-gradient(180deg,rgba(255,255,255,0.2),rgba(255,255,255,0.04))]" />
+              <div class="absolute right-3 top-3 h-24 w-24 rounded-full bg-[radial-gradient(circle,rgba(15,118,110,0.08),transparent_68%)] blur-2xl" />
+              <div class="relative flex flex-col items-center gap-4 text-center">
+                <div class="relative flex size-[3.25rem] shrink-0 items-center justify-center overflow-hidden rounded-[1.15rem] bg-[linear-gradient(180deg,rgba(255,255,255,0.78),rgba(255,255,255,0.36))] text-slate-950 shadow-[0_14px_24px_-24px_rgba(15,23,42,0.18)]">
+                  <svg viewBox="0 0 48 48" class="absolute inset-[6px] text-slate-500/18" fill="none" aria-hidden="true">
+                    <path d="M10 31c3-6 8-9 14-9s11 3 14 9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                    <path d="M14 18.5h20" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+                    <path d="M17 14.5h14" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" />
+                    <path d="M17 35.5h14" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" />
+                  </svg>
+                  <span class="relative font-brand-serif text-[1.35rem]">{{ item.key }}</span>
                 </div>
-                <div class="min-w-0 flex-1 space-y-1">
-                  <div class="flex items-center justify-between gap-3">
-                    <div class="text-sm font-medium text-foreground">{{ item.title }}</div>
-                    <span class="surface-chip">直接可用</span>
-                  </div>
-                  <p class="text-sm leading-6 text-muted-foreground">{{ item.description }}</p>
-                </div>
-              </div>
-            </div>
-          </aside>
-        </section>
-
-        <section class="grid gap-6 lg:grid-cols-2">
-          <article class="detail-card p-6">
-            <div class="space-y-2 border-b border-border/70 pb-4">
-              <div class="surface-label text-primary">更像这样的工作</div>
-              <h2 class="text-2xl font-semibold text-foreground">不是一次性提问，而是要持续往前推</h2>
-            </div>
-
-            <div class="mt-4 grid gap-3">
-              <div
-                v-for="item in useCases"
-                :key="item.title"
-                class="list-card p-4"
-              >
-                <div class="text-base font-semibold text-foreground">{{ item.title }}</div>
-                <p class="mt-1 text-sm leading-6 text-muted-foreground">{{ item.description }}</p>
-              </div>
-            </div>
-          </article>
-
-          <article class="detail-card p-6">
-            <div class="space-y-2 border-b border-border/70 pb-4">
-              <div class="surface-label text-primary">为什么界面这么收</div>
-              <h2 class="text-2xl font-semibold text-foreground">重点是可控、可查、可继续，而不是堆一堆听起来很厉害的概念</h2>
-            </div>
-
-            <div class="mt-4 grid gap-3">
-              <div
-                v-for="item in principles"
-                :key="item.title"
-                class="list-card flex items-start gap-3 p-4"
-              >
-                <div class="flex size-10 shrink-0 items-center justify-center rounded-xl border border-border/70 bg-background/85 text-primary">
-                  <component :is="item.icon" class="size-4" />
-                </div>
-                <div>
-                  <div class="text-base font-semibold text-foreground">{{ item.title }}</div>
-                  <p class="mt-1 text-sm leading-6 text-muted-foreground">{{ item.description }}</p>
+                <div class="min-w-0 flex-1 space-y-2">
+                  <div class="font-brand-serif text-sm tracking-[0.08em] text-slate-500">{{ item.eyebrow }}</div>
+                  <h2 class="font-brand-serif text-xl text-slate-950">{{ item.title }}</h2>
+                  <p class="text-sm leading-7 text-slate-600/92">
+                    {{ item.description }}
+                  </p>
                 </div>
               </div>
-            </div>
-          </article>
+            </article>
+          </div>
         </section>
       </main>
-
-      <footer class="border-t border-border/70 pt-6">
-        <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <div class="text-lg font-semibold text-foreground">先从一段对话开始，也完全够用。</div>
-            <p class="mt-1 text-sm text-muted-foreground">
-              后面要不要接知识库、工具和工作流，等真正需要的时候再补进去。
-            </p>
-          </div>
-          <Button size="lg" class="h-12 px-6 text-base" @click="startUsing">
-            进入工作台
-            <ArrowRight class="size-4" />
-          </Button>
-        </div>
-      </footer>
     </div>
   </div>
 </template>

@@ -1,36 +1,35 @@
 import { computed, ref } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
-import type { UserSettings } from '@/types'
+
+export interface GeneralDisplaySettings {
+  theme: 'light' | 'dark' | 'system'
+  layoutDensity: 'compact' | 'standard'
+  fontSize: 'small' | 'medium' | 'large'
+  showTokenUsage: boolean
+}
 
 /**
  * 通用设置读写封装。
+ *
+ * 当前仅保留能在前端立即生效的本地显示偏好。
  */
 export function useSettings() {
   const store = useSettingsStore()
   const loading = ref(false)
   const error = ref<string | null>(null)
 
-  const settings = computed<UserSettings>(() => ({
+  const settings = computed<GeneralDisplaySettings>(() => ({
     theme: store.theme,
-    language: store.language,
     layoutDensity: store.layoutDensity,
     fontSize: store.fontSize,
-    timeFormat: store.timeFormat,
     showTokenUsage: store.showTokenUsage,
-    autoExpandCodeBlocks: store.autoExpandCodeBlocks,
-    collapseLongReplies: store.collapseLongReplies,
-    collapseThreshold: store.collapseThreshold,
-    enableStreaming: store.enableStreaming,
-    enableFunctionCall: store.enableFunctionCall,
-    enableKnowledgeBase: store.enableKnowledgeBase,
-    enableToolCall: store.enableToolCall,
   }))
 
   async function loadSettings() {
     loading.value = true
     error.value = null
     try {
-      await store.load()
+      store.hydrate()
     } catch (cause: unknown) {
       error.value = cause instanceof Error ? cause.message : '加载设置失败'
     } finally {
@@ -38,23 +37,15 @@ export function useSettings() {
     }
   }
 
-  async function saveSettings(newSettings: UserSettings) {
+  async function saveSettings(newSettings: GeneralDisplaySettings) {
     error.value = null
     store.theme = newSettings.theme
-    store.language = newSettings.language
-    if (newSettings.layoutDensity) store.layoutDensity = newSettings.layoutDensity
-    if (newSettings.fontSize) store.fontSize = newSettings.fontSize
-    if (newSettings.timeFormat) store.timeFormat = newSettings.timeFormat
-    if (newSettings.showTokenUsage !== undefined) store.showTokenUsage = newSettings.showTokenUsage
-    if (newSettings.autoExpandCodeBlocks !== undefined) store.autoExpandCodeBlocks = newSettings.autoExpandCodeBlocks
-    if (newSettings.collapseLongReplies !== undefined) store.collapseLongReplies = newSettings.collapseLongReplies
-    if (newSettings.collapseThreshold !== undefined) store.collapseThreshold = newSettings.collapseThreshold
-    if (newSettings.enableStreaming !== undefined) store.enableStreaming = newSettings.enableStreaming
-    if (newSettings.enableFunctionCall !== undefined) store.enableFunctionCall = newSettings.enableFunctionCall
-    if (newSettings.enableKnowledgeBase !== undefined) store.enableKnowledgeBase = newSettings.enableKnowledgeBase
-    if (newSettings.enableToolCall !== undefined) store.enableToolCall = newSettings.enableToolCall
+    store.layoutDensity = newSettings.layoutDensity
+    store.fontSize = newSettings.fontSize
+    store.showTokenUsage = newSettings.showTokenUsage
+
     try {
-      await store.save()
+      store.saveDisplayPreferences()
     } catch (cause: unknown) {
       error.value = cause instanceof Error ? cause.message : '保存设置失败'
       throw cause
