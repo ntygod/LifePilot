@@ -186,7 +186,6 @@ steps:
 
       类型：${inputs.contentType} | 风格：${inputs.style}
     contentType: MARKDOWN
-    urgency: LOW
     dependsOn:
       - save-content
     errorStrategy:

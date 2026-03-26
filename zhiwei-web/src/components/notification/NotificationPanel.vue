@@ -3,12 +3,11 @@ import { ref, onMounted, type Component } from 'vue'
 import { storeToRefs } from 'pinia'
 import { Lightbulb, GitBranch, Settings, Bell, Loader2, AlertCircle } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { useNotificationStore } from '@/stores/notification'
 import { parseNotificationContent } from '@/utils/notificationContent'
 import { formatRelativeTime } from '@/utils/relativeTime'
 import NotificationDetail from '@/components/notification/NotificationDetail.vue'
-import type { NotificationItem, NotificationUrgency } from '@/types'
+import type { NotificationItem } from '@/types'
 
 const notificationStore = useNotificationStore()
 const { notifications, loading, unreadCount } = storeToRefs(notificationStore)
@@ -23,24 +22,6 @@ const error = ref<string | null>(null)
 
 /** 当前展开的通知 ID */
 const expandedId = ref<string | null>(null)
-
-/** 紧急程度筛选标签定义 */
-const urgencyFilters = [
-  { label: '全部', value: undefined },
-  { label: '紧急', value: 'HIGH' },
-  { label: '中等', value: 'MEDIUM' },
-  { label: '低', value: 'LOW' },
-] as const
-
-/** 当前激活的筛选值 */
-const activeFilter = ref<string | undefined>(undefined)
-
-/** 紧急程度 badge 样式映射 */
-const urgencyConfig: Record<NotificationUrgency, { label: string; variant: 'destructive' | 'default' | 'secondary' }> = {
-  HIGH: { label: '紧急', variant: 'destructive' },
-  MEDIUM: { label: '中等', variant: 'default' },
-  LOW: { label: '低', variant: 'secondary' },
-}
 
 /** 通知类型图标映射 */
 const typeIconMap: Record<string, Component> = {
@@ -72,20 +53,6 @@ function handleMarkAllAsRead() {
   notificationStore.markAllAsRead()
 }
 
-/** 切换紧急程度筛选 */
-async function handleFilterChange(value: string | undefined) {
-  activeFilter.value = value
-  currentPage.value = 0
-  hasMore.value = true
-  expandedId.value = null
-  error.value = null
-  try {
-    await notificationStore.fetchNotifications(0, activeFilter.value)
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : '加载通知列表失败'
-  }
-}
-
 /** 滚动到底部加载更多 */
 function handleScroll(event: Event) {
   if (loading.value || !hasMore.value) return
@@ -102,7 +69,7 @@ async function loadMore() {
   const nextPage = currentPage.value + 1
   const prevLength = notifications.value.length
   try {
-    await notificationStore.fetchNotifications(nextPage, activeFilter.value)
+    await notificationStore.fetchNotifications(nextPage)
     if (notifications.value.length === prevLength) {
       hasMore.value = false
     } else {
@@ -117,7 +84,7 @@ async function loadMore() {
 async function handleRetry() {
   error.value = null
   try {
-    await notificationStore.fetchNotifications(currentPage.value, activeFilter.value)
+    await notificationStore.fetchNotifications(currentPage.value)
   } catch (err) {
     error.value = err instanceof Error ? err.message : '加载通知列表失败'
   }
@@ -126,7 +93,7 @@ async function handleRetry() {
 // 组件挂载时加载初始数据
 onMounted(async () => {
   try {
-    await notificationStore.fetchNotifications(0, activeFilter.value)
+    await notificationStore.fetchNotifications(0)
   } catch (err) {
     error.value = err instanceof Error ? err.message : '加载通知列表失败'
   }
@@ -147,21 +114,6 @@ onMounted(async () => {
       >
         全部已读
       </Button>
-    </div>
-
-    <!-- 紧急程度筛选标签栏 -->
-    <div class="flex items-center gap-1 border-b px-4 py-2">
-      <button
-        v-for="filter in urgencyFilters"
-        :key="filter.label"
-        class="rounded-md px-2.5 py-1 text-xs transition-colors"
-        :class="activeFilter === filter.value
-          ? 'border-b-2 border-primary font-medium text-primary'
-          : 'text-muted-foreground hover:text-foreground'"
-        @click="handleFilterChange(filter.value)"
-      >
-        {{ filter.label }}
-      </button>
     </div>
 
     <!-- 通知列表 -->
@@ -195,7 +147,7 @@ onMounted(async () => {
         v-else-if="notifications.length === 0"
         class="flex items-center justify-center py-8 text-sm text-muted-foreground"
       >
-        {{ activeFilter ? '该分类下暂无通知' : '暂无通知' }}
+        暂无通知
       </div>
 
       <!-- 通知条目列表 -->
@@ -223,16 +175,9 @@ onMounted(async () => {
             <!-- 通知内容 -->
             <div class="flex min-w-0 flex-1 flex-col gap-1">
               <p class="truncate text-sm">{{ getSummary(item) }}</p>
-              <div class="flex items-center gap-2">
-                <Badge
-                  :variant="urgencyConfig[item.urgency].variant"
-                  class="px-1.5 py-0 text-[10px]"
-                >
-                  {{ urgencyConfig[item.urgency].label }}
-                </Badge>
-                <span class="text-xs text-muted-foreground">
-                  {{ formatRelativeTime(item.sentAt) }}
-                </span>
+              <div class="flex items-center gap-2 text-xs text-muted-foreground">
+                <span v-if="item.typeId">{{ item.typeId }}</span>
+                <span>{{ formatRelativeTime(item.sentAt) }}</span>
               </div>
             </div>
           </div>

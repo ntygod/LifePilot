@@ -494,7 +494,6 @@ public class StepExecutor {
         var request = new NotificationRequest(
                 resolvedUserId,
                 responseContent,
-                step.urgency(),
                 null,
                 null,
                 Map.of("workflowStepId", step.id())

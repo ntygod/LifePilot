@@ -110,9 +110,6 @@ public class InteractionToolProvider {
                         "properties", Map.of(
                                 "message", Map.of("type", "string",
                                         "description", "通知消息内容"),
-                                "urgency", Map.of("type", "string",
-                                        "enum", List.of("HIGH", "MEDIUM", "LOW"),
-                                        "description", "紧急程度：HIGH（立即推送）、MEDIUM（默认，正常推送）、LOW（入队稍后处理）"),
                                 "channel", Map.of("type", "string",
                                         "enum", List.of("WEB", "WECOM", "DINGTALK", "FEISHU"),
                                         "description", "可选，显式指定通知渠道；不传则默认使用当前会话渠道")

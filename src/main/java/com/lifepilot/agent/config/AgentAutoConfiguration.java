@@ -39,7 +39,6 @@ import com.lifepilot.memory.semantic.RealtimeExtractor;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.workspace.SessionWorkspaceService;
 import com.lifepilot.memory.workspace.WorkspaceProperties;
-import com.lifepilot.notification.PassiveNotificationQueue;
 import com.lifepilot.observability.context.ContextReportRepository;
 import com.lifepilot.observability.redactor.DataRedactor;
 import com.lifepilot.observability.trace.TraceRecorder;
@@ -60,7 +59,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Agent \u81ea\u52a8\u914d\u7f6e\u3002
+ * Agent 自动配置。
  *
  * @author zsg
  * @since 2026-03-20
@@ -169,7 +168,6 @@ public class AgentAutoConfiguration {
             PromptRegistry promptRegistry,
             @Autowired(required = false) DataRedactor dataRedactor,
             @Autowired(required = false) SemanticMemory semanticMemory,
-            @Autowired(required = false) PassiveNotificationQueue passiveNotificationQueue,
             @Autowired(required = false) MemoryProperties memoryProperties,
             @Autowired(required = false) ProceduralMemory proceduralMemory,
             @Autowired(required = false) EffectivenessTracker effectivenessTracker,
@@ -185,7 +183,6 @@ public class AgentAutoConfiguration {
                 promptRegistry,
                 dataRedactor,
                 semanticMemory,
-                passiveNotificationQueue,
                 memoryProperties,
                 proceduralMemory,
                 effectivenessTracker,

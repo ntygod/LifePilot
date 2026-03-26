@@ -11,7 +11,6 @@ import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
 import com.lifepilot.memory.workspace.WorkspaceItem;
-import com.lifepilot.notification.PassiveNotificationQueue;
 import com.lifepilot.observability.redactor.DataRedactor;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.skill.registry.SkillRegistry;
@@ -42,7 +41,6 @@ public class ContextAssembler {
     private final PromptRegistry promptRegistry;
     @Nullable private final DataRedactor dataRedactor;
     @Nullable private final SemanticMemory semanticMemory;
-    @Nullable private final PassiveNotificationQueue passiveNotificationQueue;
     @Nullable private final MemoryProperties memoryProperties;
     @Nullable private final ProceduralMemory proceduralMemory;
     @Nullable private final EffectivenessTracker effectivenessTracker;
@@ -54,13 +52,12 @@ public class ContextAssembler {
                             PromptRegistry promptRegistry,
                             @Nullable DataRedactor dataRedactor,
                             @Nullable SemanticMemory semanticMemory,
-                            @Nullable PassiveNotificationQueue passiveNotificationQueue,
                             @Nullable MemoryProperties memoryProperties,
                             @Nullable ProceduralMemory proceduralMemory,
                             @Nullable EffectivenessTracker effectivenessTracker,
                             @Nullable SkillRegistry skillRegistry) {
         this(config, promptRegistry,
-                dataRedactor, semanticMemory, passiveNotificationQueue, memoryProperties,
+                dataRedactor, semanticMemory, memoryProperties,
                 proceduralMemory, effectivenessTracker, skillRegistry, null, null);
     }
 
@@ -68,14 +65,13 @@ public class ContextAssembler {
                             PromptRegistry promptRegistry,
                             @Nullable DataRedactor dataRedactor,
                             @Nullable SemanticMemory semanticMemory,
-                            @Nullable PassiveNotificationQueue passiveNotificationQueue,
                             @Nullable MemoryProperties memoryProperties,
                             @Nullable ProceduralMemory proceduralMemory,
                             @Nullable EffectivenessTracker effectivenessTracker,
                             @Nullable SkillRegistry skillRegistry,
                             @Nullable GenerationRouter generationRouter) {
         this(config, promptRegistry,
-                dataRedactor, semanticMemory, passiveNotificationQueue, memoryProperties,
+                dataRedactor, semanticMemory, memoryProperties,
                 proceduralMemory, effectivenessTracker, skillRegistry, generationRouter, null);
     }
 
@@ -83,7 +79,6 @@ public class ContextAssembler {
                             PromptRegistry promptRegistry,
                             @Nullable DataRedactor dataRedactor,
                             @Nullable SemanticMemory semanticMemory,
-                            @Nullable PassiveNotificationQueue passiveNotificationQueue,
                             @Nullable MemoryProperties memoryProperties,
                             @Nullable ProceduralMemory proceduralMemory,
                             @Nullable EffectivenessTracker effectivenessTracker,
@@ -94,7 +89,6 @@ public class ContextAssembler {
         this.promptRegistry = promptRegistry;
         this.dataRedactor = dataRedactor;
         this.semanticMemory = semanticMemory;
-        this.passiveNotificationQueue = passiveNotificationQueue;
         this.memoryProperties = memoryProperties;
         this.proceduralMemory = proceduralMemory;
         this.effectivenessTracker = effectivenessTracker;
@@ -125,7 +119,6 @@ public class ContextAssembler {
             List<TemporalEntity> experiences = mediaPlaceholder ? List.of() : safeRetrieveExperiences(state.goal());
             List<String> injectedIds = recordExperienceInjection(state, experiences);
             String profileSection = safeRedact(formatUserProfileSection(userProfile));
-            String notificationSection = safeRedact(formatPassiveNotificationsSection());
             String workspaceSection = safeRedact(formatWorkspaceSection(workspaceItems));
             String artifactSection = safeRedact(contextSnapshot.artifactSection());
             String experienceSection = safeRedact(formatExperienceSection(experiences));
@@ -133,7 +126,6 @@ public class ContextAssembler {
             String systemPrompt = buildAugmentedSystemPrompt(state);
             List<Message> contextMessages = buildContextMessages(
                     profileSection,
-                    notificationSection,
                     workspaceSection,
                     artifactSection,
                     experienceSection
@@ -356,13 +348,11 @@ public class ContextAssembler {
 
 
     List<Message> buildContextMessages(@Nullable String profileSection,
-                                       @Nullable String notificationSection,
                                        @Nullable String workspaceSection,
                                        @Nullable String artifactSection,
                                        @Nullable String experienceSection) {
         List<Message> messages = new ArrayList<>();
         addTaggedContextMessage(messages, "user_profile_context", profileSection);
-        addTaggedContextMessage(messages, "notification_context", notificationSection);
         addTaggedContextMessage(messages, "workspace_context", workspaceSection);
         addTaggedContextMessage(messages, "artifact_context", artifactSection);
         addTaggedContextMessage(messages, "experience_context", experienceSection);
@@ -701,18 +691,6 @@ public class ContextAssembler {
         return "\n用户画像:\n" + userProfile;
     }
 
-    private String formatPassiveNotificationsSection() {
-        List<String> notifications = safeDrainPassiveNotifications();
-        if (notifications.isEmpty()) {
-            return "";
-        }
-        StringBuilder sb = new StringBuilder("\n待处理通知:\n");
-        for (String line : notifications) {
-            sb.append("- ").append(line).append('\n');
-        }
-        return sb.toString();
-    }
-
     private String formatWorkspaceSection(List<WorkspaceItem> workspaceItems) {
         if (workspaceItems == null || workspaceItems.isEmpty()) {
             return "";
@@ -729,22 +707,6 @@ public class ContextAssembler {
             sb.append('\n');
         }
         return sb.toString();
-    }
-
-    private List<String> safeDrainPassiveNotifications() {
-        if (passiveNotificationQueue == null) {
-            return List.of();
-        }
-        try {
-            return passiveNotificationQueue.drainAll().stream()
-                    .map(entry -> "[%s] %s".formatted(
-                            entry.typeId() != null ? entry.typeId() : "notification",
-                            entry.contentJson()))
-                    .toList();
-        } catch (Exception e) {
-            log.warn("读取被动通知失败: error={}", e.getMessage());
-            return List.of();
-        }
     }
 
     int estimateTokens(@Nullable String text) {

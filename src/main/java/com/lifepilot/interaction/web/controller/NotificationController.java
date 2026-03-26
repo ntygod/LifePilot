@@ -4,7 +4,6 @@ import com.lifepilot.interaction.web.model.NotificationDto;
 import com.lifepilot.interaction.web.model.PageResult;
 import com.lifepilot.notification.NotificationRecord;
 import com.lifepilot.notification.NotificationRepository;
-import com.lifepilot.notification.Urgency;
 import com.lifepilot.notification.config.NotificationProperties;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
@@ -40,46 +39,28 @@ public class NotificationController {
     }
 
     /**
-     * 分页查询通知历史，支持 urgency 过滤。
+     * 分页查询通知历史。
      *
      * @param userId  用户 ID（必填）
      * @param page    页码（从 0 开始，默认 0）
      * @param size    每页大小（默认取配置 historyPageSize，上限 maxHistoryPageSize）
-     * @param urgency 紧急程度过滤（可选）
      * @return 分页通知列表
      */
     @GetMapping
     public ResponseEntity<PageResult<NotificationDto>> listNotifications(
             @RequestParam String userId,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(required = false) Integer size,
-            @RequestParam(required = false) String urgency) {
+            @RequestParam(required = false) Integer size) {
 
         int effectiveSize = size != null ? size : notificationProperties.getHistoryPageSize();
         effectiveSize = Math.clamp(effectiveSize, 1, notificationProperties.getMaxHistoryPageSize());
 
-        List<NotificationRecord> records;
-        long total;
-
-        if (urgency != null && !urgency.isBlank()) {
-            // 校验 urgency 值
-            try {
-                Urgency.valueOf(urgency.toUpperCase());
-            } catch (IllegalArgumentException e) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "无效的 urgency 值: " + urgency + "，有效值: HIGH, MEDIUM, LOW");
-            }
-            String normalizedUrgency = urgency.toUpperCase();
-            records = notificationRepository.findByUserIdAndUrgency(userId, normalizedUrgency, page, effectiveSize);
-            total = notificationRepository.countByUserIdAndUrgency(userId, normalizedUrgency);
-        } else {
-            records = notificationRepository.findByUserId(userId, page, effectiveSize);
-            total = notificationRepository.countByUserId(userId);
-        }
+        List<NotificationRecord> records = notificationRepository.findByUserId(userId, page, effectiveSize);
+        long total = notificationRepository.countByUserId(userId);
 
         var dtos = records.stream().map(NotificationDto::from).toList();
-        log.debug("查询通知历史: userId={}, page={}, size={}, urgency={}, total={}",
-                userId, page, effectiveSize, urgency, total);
+        log.debug("查询通知历史: userId={}, page={}, size={}, total={}",
+                userId, page, effectiveSize, total);
 
         return ResponseEntity.ok(new PageResult<>(dtos, page, effectiveSize, total));
     }

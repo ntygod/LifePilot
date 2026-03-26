@@ -1384,9 +1384,6 @@ export interface McpStatusChange {
 
 // ========== 通知系统相关类型定义 ==========
 
-/** 通知紧急程度 */
-export type NotificationUrgency = 'HIGH' | 'MEDIUM' | 'LOW'
-
 /** 通知阅读状态 */
 export type NotificationReadStatus = 'UNREAD' | 'READ'
 
@@ -1395,7 +1392,6 @@ export interface NotificationItem {
   id: string
   userId: string
   typeId?: string
-  urgency: NotificationUrgency
   contentJson: string
   channel: string
   readStatus: NotificationReadStatus

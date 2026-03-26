@@ -125,7 +125,6 @@ class ContextAssembler_ContextEngine测试 {
                 null,
                 null,
                 null,
-                null,
                 contextEngine
         );
 

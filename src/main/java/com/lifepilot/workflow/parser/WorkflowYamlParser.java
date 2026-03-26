@@ -1,7 +1,6 @@
 package com.lifepilot.workflow.parser;
 
 import com.lifepilot.llm.config.ProviderCapability;
-import com.lifepilot.notification.Urgency;
 import com.lifepilot.workflow.config.WorkflowConfigProperties;
 import com.lifepilot.workflow.model.ErrorStrategy;
 import com.lifepilot.workflow.model.OptionItem;
@@ -576,15 +575,7 @@ public class WorkflowYamlParser {
         if (contentType == null || contentType.isBlank()) {
             contentType = "TEXT";
         }
-        String urgencyStr = getString(map, "urgency");
-        Urgency urgency;
-        try {
-            urgency = urgencyStr != null ? Urgency.valueOf(urgencyStr.trim().toUpperCase()) : Urgency.MEDIUM;
-        } catch (IllegalArgumentException e) {
-            errors.add("步骤 '%s' (notify) urgency 非法: %s".formatted(id, urgencyStr));
-            return null;
-        }
-        return new NotifyStep(id, name, targetUserId, content, contentType, urgency,
+        return new NotifyStep(id, name, targetUserId, content, contentType,
                 dependsOn, errorStrategy, timeoutSeconds);
     }
 

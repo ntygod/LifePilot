@@ -16,9 +16,6 @@ public class NotificationProperties {
     /** 通知模块总开关。 */
     private boolean enabled = true;
 
-    /** 被动通知队列 drain 间隔（秒）。 */
-    private long passiveDrainInterval = 60;
-
     /** 通知历史默认分页大小。 */
     private int historyPageSize = 20;
 
@@ -34,14 +31,6 @@ public class NotificationProperties {
 
     public void setEnabled(boolean enabled) {
         this.enabled = enabled;
-    }
-
-    public long getPassiveDrainInterval() {
-        return passiveDrainInterval;
-    }
-
-    public void setPassiveDrainInterval(long passiveDrainInterval) {
-        this.passiveDrainInterval = passiveDrainInterval;
     }
 
     public int getHistoryPageSize() {

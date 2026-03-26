@@ -968,8 +968,7 @@ public class WorkflowController {
         types.add(stepType("notify", "通知", "通过 NotificationService 发送通知", List.of(
                 param("targetUserId", "string", true, "目标用户 ID（支持 ${} 表达式）"),
                 param("content", "string", true, "通知内容模板（支持 ${} 表达式）"),
-                param("contentType", "string", true, "内容类型：TEXT / MARKDOWN / CARD"),
-                param("urgency", "string", true, "紧急程度：LOW / NORMAL / HIGH / URGENT")
+                param("contentType", "string", true, "内容类型：TEXT / MARKDOWN / CARD")
         )));
 
         return types;

@@ -12,9 +12,8 @@ import java.time.Instant;
  * @param id           通知唯一标识
  * @param userId       目标用户标识
  * @param typeId       通知类型标识（可选）
- * @param urgency      紧急程度
  * @param contentJson  通知内容 JSON 序列化
- * @param channel      发送渠道（WEB / WECOM / FEISHU / DINGTALK / passive）
+ * @param channel      发送渠道（WEB / WECOM / FEISHU / DINGTALK）
  * @param readStatus   已读状态（UNREAD / READ）
  * @param status       发送状态（SENT / FAILED）
  * @param metadataJson 扩展元数据 JSON（可选）
@@ -28,7 +27,6 @@ public record NotificationRecord(
         String id,
         String userId,
         @Nullable String typeId,
-        Urgency urgency,
         String contentJson,
         String channel,
         String readStatus,

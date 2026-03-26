@@ -10,7 +10,6 @@ import com.lifepilot.interaction.model.GatewayMessage;
 import com.lifepilot.interaction.model.GatewayResponse;
 import com.lifepilot.interaction.model.MessageContent;
 import com.lifepilot.interaction.web.model.ChatRequest;
-import com.lifepilot.interaction.web.model.NotificationSseEvent;
 import com.lifepilot.interaction.web.model.SignalRequest;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.service.ChatTurnService;
@@ -19,7 +18,6 @@ import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.media.audio.AudioTranscriber;
 import com.lifepilot.media.audio.AudioTranscriptionException;
 import com.lifepilot.media.config.MediaProperties;
-import com.lifepilot.notification.Urgency;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -95,25 +93,6 @@ public class WebChannelAdapter extends AbstractChannelAdapter {
 
     @Override
     protected void doSendResponse(String userId, GatewayResponse response) {
-        var metadata = response.metadata();
-        if (metadata != null && metadata.containsKey("notificationType") && sseSessionManager != null) {
-            try {
-                var typeId = String.valueOf(metadata.get("notificationType"));
-                var urgencyStr = metadata.containsKey("urgency")
-                        ? String.valueOf(metadata.get("urgency")) : "LOW";
-                var urgency = Urgency.valueOf(urgencyStr);
-                var notificationId = metadata.containsKey("notificationId")
-                        ? String.valueOf(metadata.get("notificationId")) : UUID.randomUUID().toString();
-                var content = response.content() != null ? response.content().toPlainText() : "";
-                var event = new NotificationSseEvent(
-                        notificationId, typeId, urgency, content, Instant.now().toString());
-                sseSessionManager.broadcastNotification(event);
-                log.debug("通知 SSE 广播完成: typeId={}, urgency={}", typeId, urgency);
-                return;
-            } catch (Exception e) {
-                log.warn("通知 SSE 广播失败，降级为默认处理: userId={}, error={}", userId, e.getMessage());
-            }
-        }
         log.debug("Web 通道异步响应: userId={}, statusCode={}", userId, response.statusCode());
     }
 

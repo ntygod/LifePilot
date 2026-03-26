@@ -1383,12 +1383,11 @@ export const dependencyApi = {
 /** 通知管理 API */
 export const notificationApi = {
   /** 获取通知列表（分页） */
-  listNotifications(userId: string, page?: number, size?: number, urgency?: string): Promise<PageResult<NotificationItem>> {
+  listNotifications(userId: string, page?: number, size?: number): Promise<PageResult<NotificationItem>> {
     const params = new URLSearchParams()
     params.append('userId', userId)
     if (page !== undefined) params.append('page', String(page))
     if (size !== undefined) params.append('size', String(size))
-    if (urgency) params.append('urgency', urgency)
     return request(`/notifications?${params.toString()}`)
   },
 

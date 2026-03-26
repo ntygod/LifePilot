@@ -6,7 +6,6 @@ import com.lifepilot.agent.orchestration.AgentOrchestrator;
 import com.lifepilot.interaction.model.ResponseContent;
 import com.lifepilot.notification.NotificationRequest;
 import com.lifepilot.notification.NotificationService;
-import com.lifepilot.notification.Urgency;
 import com.lifepilot.notification.config.NotificationProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -147,7 +146,7 @@ public class CronScheduler {
                 notificationService.send(new NotificationRequest(
                         notificationProperties.getDefaultUserId(),
                         new ResponseContent.TextContent("【%s】\n%s".formatted(task.name(), response.content())),
-                        Urgency.LOW, null, "cron_task",
+                        null, "cron_task",
                         Map.of("taskId", task.id(), "taskName", task.name())
                 ));
             }

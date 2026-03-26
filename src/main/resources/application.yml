@@ -613,7 +613,6 @@ lifepilot:
     # ===== 通知模块配置 =====
     enabled: true
     default-user-id: default
-    passive-drain-interval: 60
     history-page-size: 20
     max-history-page-size: 100
   workflow:
@@ -816,7 +815,7 @@ lifepilot:
         max-read-size: 1048576
         default-max-chars: 30000
         default-max-entries: 200
-        allowed-directories: ["D:"]
+        allowed-directories: []
         denied-directories:
           - "/etc"
           - "/var"

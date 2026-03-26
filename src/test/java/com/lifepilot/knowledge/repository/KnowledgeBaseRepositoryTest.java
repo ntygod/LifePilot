@@ -2,10 +2,12 @@ package com.lifepilot.knowledge.repository;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.knowledge.model.KnowledgeBase;
+import com.lifepilot.tool.config.ToolConfigProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -30,6 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @SpringBootTest
 @ActiveProfiles("test")
+@EnableConfigurationProperties(ToolConfigProperties.class)
 class KnowledgeBaseRepositoryTest {
 
     private static final String DB_ID = UUID.randomUUID().toString().substring(0, 8);

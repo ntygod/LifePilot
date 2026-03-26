@@ -134,7 +134,6 @@ steps:
 
       ${steps.deep-analysis.output.result}
     contentType: MARKDOWN
-    urgency: LOW
     dependsOn:
       - save-result
     errorStrategy:
