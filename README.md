@@ -5,6 +5,7 @@
 [![Java](https://img.shields.io/badge/Java-22-orange.svg)](https://adoptium.net/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.3-brightgreen.svg)](https://spring.io/projects/spring-boot)
 [![Spring AI](https://img.shields.io/badge/Spring%20AI-1.1.2-blue.svg)](https://spring.io/projects/spring-ai)
+[![CI](https://github.com/ntygod/ZhiWei/actions/workflows/ci.yml/badge.svg)](https://github.com/ntygod/ZhiWei/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ZhiWei 是一个本地运行的个人 AI Agent 助手。它不只是被动执行用户命令，而是具备自主任务执行能力——支持 cron 定时和条件触发的自主任务。所有数据存储在本地，隐私完全由你掌控。
@@ -20,6 +21,7 @@ ZhiWei 是一个本地运行的个人 AI Agent 助手。它不只是被动执行
 - [已知限制](#-已知限制)
 - [后续计划](#-后续计划)
 - [开发指南](#-开发指南)
+- [开源协作](#-开源协作)
 - [贡献指南](#-贡献指南)
 - [FAQ](#-faq)
 - [故障排查](#-故障排查)
@@ -78,12 +80,18 @@ ZhiWei 是一个本地运行的个人 AI Agent 助手。它不只是被动执行
 - 多种触发器：manual / cron / event
 - 工作流状态持久化 + 崩溃恢复
 
+### 🔐 权限与自动执行
+- `PermissionRequestFactory + PermissionEvaluator + ExecutionGrant` 统一工具授权链路
+- 授权范围支持：本会话 / 当前工作区 / 当前任务 / 长期
+- 高风险交互执行走 Web 授权，自主执行只认预授权
+- Cron / Heartbeat / 自主工作流支持任务级高风险预授权
+
 ### 🔔 统一通知系统
 - NotificationService 统一接口，工作流 / 各模块统一调用
-- Urgency 路由：HIGH/MEDIUM 实时多渠道广播，LOW 入队被动队列定时推送
+- 无结果静默，有结果直接通知
 - 富媒体支持：文本 / Markdown / 交互式卡片 / 图片，各渠道自动适配
-- 被动队列 SQLite 持久化，重启不丢失
-- 通知管理 API：历史查询、已读标记、用户通知偏好设置
+- 通知历史管理：分页查询、未读统计、已读标记
+- Web SSE 实时推送，通知中心直接消费同一条数据流
 
 ### 🌐 Gateway 中间件
 - 6 层可插拔中间件管道（Auth=100 → RateLimit=200 → Security=300 → Router=400 → Execution=500 → Audit=600）
@@ -98,7 +106,8 @@ ZhiWei 是一个本地运行的个人 AI Agent 助手。它不只是被动执行
 ### 🛡️ 护栏与安全
 - GuardrailEngine 护栏引擎：5 种策略类型（ToolRiskPolicy / BudgetLimitPolicy / ContentSafetyPolicy / RateLimitPolicy / DataRedactionPolicy）
 - GuardrailResult 三态决策：Passed / Blocked / NeedsConfirmation
-- RiskLevel 四级风险分级（LOW → MEDIUM → HIGH → CRITICAL）→ ApprovalMode 审批模式映射
+- RiskLevel 四级风险分级（LOW → MEDIUM → HIGH → CRITICAL）
+- 高风险工具改为作用域授权模型，Web 聊天可授权，Cron / Heartbeat / 自主工作流只认预授权
 - DataRedactor 敏感信息脱敏：6 条内置规则（API 密钥 / 手机号 / 身份证 / 银行卡 / 邮箱 / IP）+ 自定义规则扩展
 - 代码执行沙箱：Process / Docker 双模式 + CodeValidator 危险操作预检
 
@@ -181,8 +190,8 @@ MCP 服务器发现与管理，一键接入外部工具生态：
 ### 方式一：Docker Compose（推荐）
 
 ```bash
-git clone https://github.com/your-username/zhiwei.git
-cd zhiwei
+git clone https://github.com/ntygod/ZhiWei.git
+cd ZhiWei
 
 # 配置环境变量（至少填入一个 LLM API Key）
 cp .env.example .env
@@ -199,8 +208,8 @@ docker compose up -d
 前置条件：Java 22+（[下载地址](https://adoptium.net/)）
 
 ```bash
-git clone https://github.com/your-username/zhiwei.git
-cd zhiwei
+git clone https://github.com/ntygod/ZhiWei.git
+cd ZhiWei
 
 # 1. 构建后端
 mvn clean package -DskipTests
@@ -283,8 +292,9 @@ Docker Compose 使用 `.env` 文件管理环境变量，参考 `.env.example` �
 ## 📁 项目结构
 
 ```
-zhiwei/
-├── src/main/java/com/lifepilot/     # 24 个后端模块
+ZhiWei/
+├── .github/                         # GitHub Actions、Issue/PR 模板、Dependabot
+├── src/main/java/com/lifepilot/     # 按领域拆分的后端模块
 │   ├── a2a/             # A2A 协议（Agent-to-Agent 互操作）
 │   ├── agent/           # Agent 引擎（ReactAgentLoop / ContextAssembler / 挂起恢复）
 │   ├── config/          # 全局配置
@@ -300,36 +310,42 @@ zhiwei/
 │   ├── memory/          # 四层记忆系统（Working / Episodic / Semantic / Procedural / 经验学习）
 │   ├── meta/            # 元能力（文件工具 / 浏览器工具 / 基础设施工具 / 交互工具）
 │   ├── multiagent/      # 多 Agent 协作（Handoff / SubAgent）
-│   ├── notification/    # 统一通知系统（Urgency 路由 / 多渠道广播）
+│   ├── notification/    # 统一通知系统（直接投递 / 历史 / SSE）
 │   ├── observability/   # 可观测性（TraceRecorder / GuardrailEngine / DataRedactor）
+│   ├── permission/      # 工具授权（作用域匹配 / 预授权 / 授权记录）
 │   ├── prompt/          # Prompt 模板管理
 │   ├── sandbox/         # 代码执行沙箱（Process / Docker 双模式）
 │   ├── scheduler/       # 定时任务（ScheduledTaskService / TaskScheduler）
 │   ├── skill/           # Skill 系统（注册 / 验证 / 激活 / 生成 / SkillToToolBridge）
-│   ├── sync/            # 外部数据源同步
 │   ├── tool/            # 工具系统（ToolContract / DynamicToolRegistry / ToolBridge）
 │   └── workflow/        # 工作流引擎（DAG 调度 / 表达式）
 ├── src/main/resources/
 │   ├── application.yml          # 主配置
 │   ├── application-docker.yml   # Docker 环境配置
 │   ├── db/migration/            # Flyway 迁移脚本
-│   ├── builtin-skills/          # 内置 Skill 定义（YAML Markdown）
-│   └── eval-scenarios/          # 评估场景定义（YAML）
+│   ├── builtin-workflows/       # 内置工作流
+│   ├── prompts/                 # Prompt 模板
+│   ├── skills/                  # 内置 Skill 定义
+│   └── eval-scenarios/          # 评估场景定义
 ├── zhiwei-web/                  # 前端项目（Vue 3 + Vite + Pinia）
 │   ├── src/views/               # 30+ 页面视图
 │   ├── src/components/          # Vue 组件
 │   ├── src/stores/              # Pinia 状态管理
 │   ├── src/composables/         # 组合式函数
-│   └── Dockerfile               # 前端 Docker 构建（Nginx）
+│   └── src/api/                 # 前端 API 客户端
 ├── docker-compose.yml           # Docker Compose 编排
 ├── Dockerfile                   # 后端 Docker 构建（多阶段）
 ├── start.sh / start.bat         # 一键启动脚本
 ├── .env.example                 # 环境变量模板
+├── CONTRIBUTING.md              # 贡献指南
+├── CODE_OF_CONDUCT.md           # 社区行为准则
+├── SUPPORT.md                   # 提问与支持说明
 ├── SECURITY.md                  # 安全策略
 ├── ARCHITECTURE-DIAGRAMS.md     # 架构可视化（14 节 Mermaid 图）
 └── docs/                        # 项目文档
     ├── ARCHITECTURE.md          # 架构总览
     ├── FEATURES.md              # 特性总览
+    ├── README.md                # 文档目录说明
     ├── API_ENDPOINTS.md         # API 端点文档
     ├── API_STANDARD.md          # API 设计规范
     ├── architecture/            # 各模块架构设计文档
@@ -371,8 +387,8 @@ zhiwei/
 
 ```bash
 # 克隆项目
-git clone https://github.com/your-username/zhiwei.git
-cd zhiwei
+git clone https://github.com/ntygod/ZhiWei.git
+cd ZhiWei
 
 # 后端（Maven 自动下载依赖）
 mvn clean install -DskipTests
@@ -420,13 +436,22 @@ npm run build
 - 业务可调参数通过 `@ConfigurationProperties` 外部化，禁止硬编码
 - 提交前运行 `mvn clean test` 确保测试通过
 
+## 🌱 开源协作
+
+- 贡献流程请看 [CONTRIBUTING.md](CONTRIBUTING.md)
+- 行为准则请看 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+- 使用问题与反馈入口请看 [SUPPORT.md](SUPPORT.md)
+- 安全问题请通过 [SECURITY.md](SECURITY.md) 指定方式反馈
+- 第一次维护开源仓库可参考 [GitHub 仓库维护指南](docs/guides/github-maintainer-guide.md)
+- 仓库已补齐 GitHub Actions、Issue/PR 模板和 Dependabot，适合作为个人开源项目的基础骨架继续维护
+
 ## 🤝 贡献指南
 
 1. Fork 本仓库
-2. 创建特性分支 (`git checkout -b feature/your-feature`)
-3. 提交更改 (`git commit -m 'feat: 添加某功能'`)
-4. 推送到分支 (`git push origin feature/your-feature`)
-5. 开启 Pull Request
+2. 创建分支（推荐 `feature/{name}` 或 `bugfix/{name}`）
+3. 提交更改（提交格式：`<type>(<scope>): 中文描述`）
+4. 推送分支并发起 Pull Request
+5. 按模板补齐验证步骤、截图和影响说明
 
 ## ❓ FAQ
 
