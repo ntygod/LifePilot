@@ -315,18 +315,44 @@ public class MemoryController {
      * 实体来源明细。
      */
     @GetMapping("/entities/{id}/provenances")
-    public List<EntityProvenanceDto> getEntityProvenances(@PathVariable String id) {
+    public List<EntityProvenanceDto> getEntityProvenances(
+            @PathVariable String id,
+            @RequestParam(required = false) @Nullable String originType,
+            @RequestParam(required = false) @Nullable String sourceKnowledgeBaseId,
+            @RequestParam(required = false) @Nullable String sourceDatastoreId,
+            @RequestParam(required = false) @Nullable String sourceDocumentId) {
         requireMemoryEnabled();
         semanticMemory.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "实体不存在: " + id));
-        return jdbcTemplate.query("""
+        var conditions = new ArrayList<String>();
+        var params = new ArrayList<Object>();
+        conditions.add("entity_id = ?");
+        params.add(id);
+        if (originType != null && !originType.isBlank()) {
+            conditions.add("origin_type = ?");
+            params.add(originType.trim());
+        }
+        if (sourceKnowledgeBaseId != null && !sourceKnowledgeBaseId.isBlank()) {
+            conditions.add("source_knowledge_base_id = ?");
+            params.add(sourceKnowledgeBaseId.trim());
+        }
+        if (sourceDatastoreId != null && !sourceDatastoreId.isBlank()) {
+            conditions.add("source_datastore_id = ?");
+            params.add(sourceDatastoreId.trim());
+        }
+        if (sourceDocumentId != null && !sourceDocumentId.isBlank()) {
+            conditions.add("source_document_id = ?");
+            params.add(sourceDocumentId.trim());
+        }
+        String sql = """
                 SELECT origin_type, source_reference, source_conversation_id, source_session_id,
                        source_turn_id, source_entry_id, source_document_id, source_knowledge_base_id,
                        source_datastore_id, source_collection_id, confidence, created_at
                 FROM memory_entity_provenances
-                WHERE entity_id = ?
+                WHERE %s
                 ORDER BY created_at DESC
-                """, (rs, rowNum) -> new EntityProvenanceDto(
+                """.formatted(String.join(" AND ", conditions));
+        return jdbcTemplate.query(sql, (rs, rowNum) -> new EntityProvenanceDto(
                 rs.getString("origin_type"),
                 rs.getString("source_reference"),
                 rs.getString("source_conversation_id"),
@@ -339,7 +365,7 @@ public class MemoryController {
                 rs.getString("source_collection_id"),
                 rs.getFloat("confidence"),
                 Instant.parse(rs.getString("created_at"))
-        ), id);
+        ), params.toArray());
     }
 
     /**

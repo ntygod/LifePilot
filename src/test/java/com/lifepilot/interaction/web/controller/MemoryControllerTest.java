@@ -341,6 +341,45 @@ class MemoryControllerTest {
                     .andExpect(jsonPath("$[0].originType").value("CHAT"))
                     .andExpect(jsonPath("$[0].sourceSessionId").value("session-1"));
         }
+
+        @Test
+        void 实体来源明细_按来源字段过滤() throws Exception {
+            when(semanticMemory.findById("e1")).thenReturn(Optional.of(
+                    testEntity("e1", "张三", EntityType.PERSON)));
+            when(jdbcTemplate.query(
+                    contains("origin_type = ?"),
+                    any(RowMapper.class),
+                    eq("e1"),
+                    eq("KNOWLEDGE_BASE"),
+                    eq("kb-1"),
+                    eq("ds-1"),
+                    eq("doc-1")))
+                    .thenReturn(List.of(new com.lifepilot.interaction.web.model.EntityProvenanceDto(
+                            "KNOWLEDGE_BASE",
+                            "人物设定集",
+                            null,
+                            null,
+                            null,
+                            null,
+                            "doc-1",
+                            "kb-1",
+                            "ds-1",
+                            null,
+                            0.95f,
+                            NOW
+                    )));
+
+            mockMvc.perform(get("/api/memories/entities/e1/provenances")
+                            .param("originType", "KNOWLEDGE_BASE")
+                            .param("sourceKnowledgeBaseId", "kb-1")
+                            .param("sourceDatastoreId", "ds-1")
+                            .param("sourceDocumentId", "doc-1"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0].originType").value("KNOWLEDGE_BASE"))
+                    .andExpect(jsonPath("$[0].sourceKnowledgeBaseId").value("kb-1"))
+                    .andExpect(jsonPath("$[0].sourceDatastoreId").value("ds-1"))
+                    .andExpect(jsonPath("$[0].sourceDocumentId").value("doc-1"));
+        }
     }
 
     // ── L2 对话 ──────────────────────────────────────────

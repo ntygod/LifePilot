@@ -12,6 +12,7 @@ import type {
   EntitySummary,
   EntityDetail,
   EntityProvenance,
+  EntityProvenanceParams,
   EntityListParams,
   EntityCreateRequest,
   EntityUpdateRequest,
@@ -70,6 +71,14 @@ const ORIGIN_TYPE_LABELS: Record<string, string> = {
   TOOL: '工具写入',
 }
 
+const ORIGIN_TYPE_OPTIONS = [
+  { value: 'CHAT', label: '对话抽取' },
+  { value: 'KNOWLEDGE_BASE', label: '知识库导入' },
+  { value: 'DATASTORE', label: 'Datastore 同步' },
+  { value: 'MANUAL', label: '手动维护' },
+  { value: 'TOOL', label: '工具写入' },
+] as const
+
 // ── 筛选状态 ──
 const filterQ = ref('')
 const filterType = ref<string>('')
@@ -98,6 +107,11 @@ const detailEntity = ref<EntityDetail | null>(null)
 const detailTab = ref('info')
 const provenanceItems = ref<EntityProvenance[]>([])
 const provenanceLoading = ref(false)
+const provenanceOriginType = ref<string>('')
+const provenanceKnowledgeBaseId = ref('')
+const provenanceDatastoreId = ref('')
+const provenanceDocumentId = ref('')
+const loadedProvenanceKey = ref('')
 
 // 版本历史
 const historyItems = ref<EntityDetail[]>([])
@@ -237,10 +251,15 @@ async function openDetailById(entityId: string) {
   historyItems.value = []
   relatedItems.value = []
   provenanceItems.value = []
+  provenanceOriginType.value = ''
+  provenanceKnowledgeBaseId.value = ''
+  provenanceDatastoreId.value = ''
+  provenanceDocumentId.value = ''
+  loadedProvenanceKey.value = ''
 
   try {
     detailEntity.value = await memoryApi.getEntity(entityId)
-    void loadProvenances()
+    void fetchProvenances(true)
   } catch (e: any) {
     console.error('加载实体详情失败:', e)
   } finally {
@@ -273,10 +292,17 @@ async function loadRelated() {
 }
 
 async function loadProvenances() {
-  if (!detailEntity.value || provenanceItems.value.length > 0) return
+  return fetchProvenances(false)
+}
+
+async function fetchProvenances(force: boolean) {
+  if (!detailEntity.value) return
+  const currentFilterKey = buildProvenanceFilterKey()
+  if (!force && loadedProvenanceKey.value === currentFilterKey) return
   provenanceLoading.value = true
   try {
-    provenanceItems.value = await memoryApi.getEntityProvenances(detailEntity.value.id)
+    provenanceItems.value = await memoryApi.getEntityProvenances(detailEntity.value.id, buildProvenanceParams())
+    loadedProvenanceKey.value = currentFilterKey
   } catch (e: any) {
     console.error('加载来源明细失败:', e)
   } finally {
@@ -289,7 +315,7 @@ function handleDetailTabChange(tab: string | number) {
   detailTab.value = nextTab
   if (nextTab === 'history') loadHistory()
   if (nextTab === 'related') loadRelated()
-  if (nextTab === 'provenance') loadProvenances()
+  if (nextTab === 'provenance') fetchProvenances(false)
 }
 
 // ── 新建实体 ──
@@ -417,6 +443,34 @@ function formatOriginType(originType?: string | null) {
 function formatSpaceId(spaceId?: string | null) {
   if (!spaceId) return '默认空间'
   return spaceId
+}
+
+function buildProvenanceParams(): EntityProvenanceParams {
+  const params: EntityProvenanceParams = {}
+  if (provenanceOriginType.value) params.originType = provenanceOriginType.value
+  if (provenanceKnowledgeBaseId.value.trim()) params.sourceKnowledgeBaseId = provenanceKnowledgeBaseId.value.trim()
+  if (provenanceDatastoreId.value.trim()) params.sourceDatastoreId = provenanceDatastoreId.value.trim()
+  if (provenanceDocumentId.value.trim()) params.sourceDocumentId = provenanceDocumentId.value.trim()
+  return params
+}
+
+function buildProvenanceFilterKey() {
+  const params = buildProvenanceParams()
+  return JSON.stringify(params)
+}
+
+function applyProvenanceFilters() {
+  loadedProvenanceKey.value = ''
+  void fetchProvenances(true)
+}
+
+function resetProvenanceFilters() {
+  provenanceOriginType.value = ''
+  provenanceKnowledgeBaseId.value = ''
+  provenanceDatastoreId.value = ''
+  provenanceDocumentId.value = ''
+  loadedProvenanceKey.value = ''
+  void fetchProvenances(true)
 }
 
 function buildProvenanceDetails(item: EntityProvenance) {
@@ -754,6 +808,60 @@ function buildProvenanceDetails(item: EntityProvenance) {
 
             <!-- 来源明细 -->
             <TabsContent value="provenance" class="mt-4">
+              <div class="mb-4 rounded-md border border-border/60 p-3">
+                <div class="grid gap-3 lg:grid-cols-[12rem_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto_auto]">
+                  <div>
+                    <label class="mb-1 block text-xs text-muted-foreground">来源类型</label>
+                    <Select
+                      :model-value="provenanceOriginType || '__all__'"
+                      @update:model-value="(value) => provenanceOriginType = String(value ?? '') === '__all__' ? '' : String(value ?? '')"
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="全部来源" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__all__">全部来源</SelectItem>
+                        <SelectItem v-for="origin in ORIGIN_TYPE_OPTIONS" :key="origin.value" :value="origin.value">
+                          {{ origin.label }}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label class="mb-1 block text-xs text-muted-foreground">知识库 ID</label>
+                    <Input
+                      v-model="provenanceKnowledgeBaseId"
+                      data-test="provenance-kb-id"
+                      placeholder="可选"
+                      @keydown.enter="applyProvenanceFilters"
+                    />
+                  </div>
+                  <div>
+                    <label class="mb-1 block text-xs text-muted-foreground">Datastore ID</label>
+                    <Input
+                      v-model="provenanceDatastoreId"
+                      data-test="provenance-datastore-id"
+                      placeholder="可选"
+                      @keydown.enter="applyProvenanceFilters"
+                    />
+                  </div>
+                  <div>
+                    <label class="mb-1 block text-xs text-muted-foreground">文档 ID</label>
+                    <Input
+                      v-model="provenanceDocumentId"
+                      data-test="provenance-document-id"
+                      placeholder="可选"
+                      @keydown.enter="applyProvenanceFilters"
+                    />
+                  </div>
+                  <div class="flex items-end">
+                    <Button data-test="apply-provenance-filters" size="sm" @click="applyProvenanceFilters">筛选</Button>
+                  </div>
+                  <div class="flex items-end">
+                    <Button data-test="reset-provenance-filters" size="sm" variant="outline" @click="resetProvenanceFilters">重置</Button>
+                  </div>
+                </div>
+              </div>
               <div v-if="provenanceLoading" class="space-y-2">
                 <Skeleton v-for="i in 3" :key="i" class="h-20 w-full" />
               </div>

@@ -164,7 +164,7 @@ describe('EntityPanel 记忆元数据展示', () => {
     await flushPromises()
 
     expect(mocks.getEntity).toHaveBeenCalledWith('entity-1')
-    expect(mocks.getEntityProvenances).toHaveBeenCalledWith('entity-1')
+    expect(mocks.getEntityProvenances).toHaveBeenCalledWith('entity-1', {})
     expect(wrapper.text()).toContain('领域记忆')
     expect(wrapper.text()).toContain('虚构')
     expect(wrapper.text()).toContain('datastore:novel-workspace')
@@ -183,8 +183,28 @@ describe('EntityPanel 记忆元数据展示', () => {
     await flushPromises()
 
     expect(mocks.getEntity).toHaveBeenCalledWith('entity-1')
-    expect(mocks.getEntityProvenances).toHaveBeenCalledWith('entity-1')
+    expect(mocks.getEntityProvenances).toHaveBeenCalledWith('entity-1', {})
     expect(mocks.memoryStore.clearEntityDetailRequest).toHaveBeenCalled()
     expect(wrapper.text()).toContain('林夜')
+  })
+
+  it('来源明细支持按知识库、Datastore 和文档 ID 过滤', async () => {
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    await wrapper.get('tbody tr').trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-test="provenance-kb-id"]').setValue('kb-42')
+    await wrapper.get('[data-test="provenance-datastore-id"]').setValue('ds-42')
+    await wrapper.get('[data-test="provenance-document-id"]').setValue('doc-42')
+    await wrapper.get('[data-test="apply-provenance-filters"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.getEntityProvenances).toHaveBeenLastCalledWith('entity-1', {
+      sourceKnowledgeBaseId: 'kb-42',
+      sourceDatastoreId: 'ds-42',
+      sourceDocumentId: 'doc-42',
+    })
   })
 })

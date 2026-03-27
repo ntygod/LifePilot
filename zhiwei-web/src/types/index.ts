@@ -1526,6 +1526,14 @@ export interface EntityProvenance {
   createdAt: string
 }
 
+/** 实体来源筛选参数 */
+export interface EntityProvenanceParams {
+  originType?: string
+  sourceKnowledgeBaseId?: string
+  sourceDatastoreId?: string
+  sourceDocumentId?: string
+}
+
 /** 实体创建请求 */
 export interface EntityCreateRequest {
   name: string
