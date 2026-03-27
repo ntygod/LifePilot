@@ -22,6 +22,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import java.sql.ResultSet;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -218,6 +219,43 @@ class MemoryControllerTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.items", hasSize(1)))
                     .andExpect(jsonPath("$.items[0].type").value("PERSON"));
+        }
+
+        @Test
+        @SuppressWarnings("unchecked")
+        void 实体列表_按记忆元数据过滤() throws Exception {
+            when(semanticMemory.findAllCurrent()).thenReturn(List.of(
+                    testEntity("e1", "林夜", EntityType.PERSON),
+                    testEntity("e2", "项目A", EntityType.PROJECT)));
+            when(jdbcTemplate.query(
+                    contains("FROM temporal_entities"),
+                    any(RowMapper.class),
+                    any(Object[].class)))
+                    .thenAnswer(invocation -> {
+                        RowMapper<Object> mapper = (RowMapper<Object>) invocation.getArgument(1);
+                        ResultSet first = mock(ResultSet.class);
+                        when(first.getString("id")).thenReturn("e1");
+                        when(first.getString("space_id")).thenReturn("datastore:novel");
+                        when(first.getString("memory_scope")).thenReturn("DOMAIN_MEMORY");
+                        when(first.getString("reality_type")).thenReturn("FICTIONAL");
+
+                        ResultSet second = mock(ResultSet.class);
+                        when(second.getString("id")).thenReturn("e2");
+                        when(second.getString("space_id")).thenReturn("user:default");
+                        when(second.getString("memory_scope")).thenReturn("USER_FACT");
+                        when(second.getString("reality_type")).thenReturn("REAL");
+                        return List.of(mapper.mapRow(first, 0), mapper.mapRow(second, 1));
+                    });
+
+            mockMvc.perform(get("/api/memories/entities")
+                            .param("memoryScope", "DOMAIN_MEMORY")
+                            .param("realityType", "FICTIONAL"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.items", hasSize(1)))
+                    .andExpect(jsonPath("$.items[0].id").value("e1"))
+                    .andExpect(jsonPath("$.items[0].spaceId").value("datastore:novel"))
+                    .andExpect(jsonPath("$.items[0].memoryScope").value("DOMAIN_MEMORY"))
+                    .andExpect(jsonPath("$.items[0].realityType").value("FICTIONAL"));
         }
 
         @Test

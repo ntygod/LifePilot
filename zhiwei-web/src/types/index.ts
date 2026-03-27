@@ -1545,6 +1545,9 @@ export interface EntityListParams {
   size?: number
   type?: string
   q?: string
+  spaceId?: string
+  memoryScope?: string
+  realityType?: string
   timeFrom?: string
   timeTo?: string
   sortBy?: string

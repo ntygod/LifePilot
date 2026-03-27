@@ -151,6 +151,9 @@ public class MemoryController {
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) @Nullable String type,
             @RequestParam(required = false) @Nullable String q,
+            @RequestParam(required = false) @Nullable String spaceId,
+            @RequestParam(required = false) @Nullable String memoryScope,
+            @RequestParam(required = false) @Nullable String realityType,
             @RequestParam(required = false) @Nullable String timeFrom,
             @RequestParam(required = false) @Nullable String timeTo,
             @RequestParam(defaultValue = "createdAt") String sortBy,
@@ -188,6 +191,41 @@ public class MemoryController {
             entities = entities.stream().filter(e -> !e.createdAt().isAfter(to)).toList();
         }
 
+        boolean requiresMetadataFiltering =
+                (spaceId != null && !spaceId.isBlank())
+                        || (memoryScope != null && !memoryScope.isBlank())
+                        || (realityType != null && !realityType.isBlank());
+        Map<String, EntityMetadata> filteredMetadataById = requiresMetadataFiltering
+                ? loadEntityMetadata(entities.stream().map(TemporalEntity::id).toList())
+                : Map.of();
+        if (spaceId != null && !spaceId.isBlank()) {
+            String normalizedSpaceId = spaceId.trim();
+            entities = entities.stream()
+                    .filter(entity -> {
+                        var metadata = filteredMetadataById.get(entity.id());
+                        return metadata != null && normalizedSpaceId.equalsIgnoreCase(metadata.spaceId());
+                    })
+                    .toList();
+        }
+        if (memoryScope != null && !memoryScope.isBlank()) {
+            String normalizedMemoryScope = memoryScope.trim();
+            entities = entities.stream()
+                    .filter(entity -> {
+                        var metadata = filteredMetadataById.get(entity.id());
+                        return metadata != null && normalizedMemoryScope.equalsIgnoreCase(metadata.memoryScope());
+                    })
+                    .toList();
+        }
+        if (realityType != null && !realityType.isBlank()) {
+            String normalizedRealityType = realityType.trim();
+            entities = entities.stream()
+                    .filter(entity -> {
+                        var metadata = filteredMetadataById.get(entity.id());
+                        return metadata != null && normalizedRealityType.equalsIgnoreCase(metadata.realityType());
+                    })
+                    .toList();
+        }
+
         // 排序
         Comparator<TemporalEntity> comparator = switch (sortBy) {
             case "name" -> Comparator.comparing(TemporalEntity::name);
@@ -205,11 +243,11 @@ public class MemoryController {
         int fromIndex = Math.min(page * size, entities.size());
         int toIndex = Math.min(fromIndex + size, entities.size());
         var pageEntities = entities.subList(fromIndex, toIndex);
-        Map<String, EntityMetadata> metadataById = loadEntityMetadata(
-                pageEntities.stream().map(TemporalEntity::id).toList()
-        );
+        Map<String, EntityMetadata> pageMetadataById = requiresMetadataFiltering
+                ? filteredMetadataById
+                : loadEntityMetadata(pageEntities.stream().map(TemporalEntity::id).toList());
         var pageItems = pageEntities.stream()
-                .map(e -> toEntitySummary(e, metadataById.get(e.id())))
+                .map(e -> toEntitySummary(e, pageMetadataById.get(e.id())))
                 .toList();
 
         return new PageResult<>(pageItems, page, size, total);

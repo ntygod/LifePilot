@@ -72,6 +72,9 @@ const ORIGIN_TYPE_LABELS: Record<string, string> = {
 // ── 筛选状态 ──
 const filterQ = ref('')
 const filterType = ref<string>('')
+const filterSpaceId = ref('')
+const filterMemoryScope = ref<string>('')
+const filterRealityType = ref<string>('')
 const filterTimeFrom = ref('')
 const filterTimeTo = ref('')
 const filterSortBy = ref('createdAt')
@@ -145,6 +148,20 @@ const ORDER_OPTIONS = [
   { value: 'asc', label: '升序' },
 ] as const
 
+const MEMORY_SCOPE_OPTIONS = [
+  { value: 'USER_PROFILE', label: '用户画像' },
+  { value: 'USER_FACT', label: '用户事实' },
+  { value: 'AGENT_EXPERIENCE', label: '执行经验' },
+  { value: 'DOMAIN_MEMORY', label: '领域记忆' },
+] as const
+
+const REALITY_TYPE_OPTIONS = [
+  { value: 'REAL', label: '真实' },
+  { value: 'FICTIONAL', label: '虚构' },
+  { value: 'SIMULATED', label: '模拟' },
+  { value: 'UNKNOWN', label: '未标注' },
+] as const
+
 // ── 数据加载 ──
 async function loadEntities() {
   loading.value = true
@@ -158,6 +175,9 @@ async function loadEntities() {
     }
     if (filterQ.value.trim()) params.q = filterQ.value.trim()
     if (filterType.value) params.type = filterType.value
+    if (filterSpaceId.value.trim()) params.spaceId = filterSpaceId.value.trim()
+    if (filterMemoryScope.value) params.memoryScope = filterMemoryScope.value
+    if (filterRealityType.value) params.realityType = filterRealityType.value
     if (filterTimeFrom.value) params.timeFrom = filterTimeFrom.value
     if (filterTimeTo.value) params.timeTo = filterTimeTo.value
 
@@ -183,7 +203,7 @@ function handlePageChange(page: number) {
 }
 
 // 筛选条件变化时重新加载
-watch([filterType, filterSortBy, filterOrder, filterTimeFrom, filterTimeTo], () => {
+watch([filterType, filterMemoryScope, filterRealityType, filterSortBy, filterOrder, filterTimeFrom, filterTimeTo], () => {
   currentPage.value = 0
   loadEntities()
 })
@@ -415,6 +435,16 @@ function buildProvenanceDetails(item: EntityProvenance) {
           </div>
         </div>
 
+        <!-- 空间标识 -->
+        <div class="min-w-[220px] flex-1">
+          <label class="text-xs text-muted-foreground mb-1 block">空间标识</label>
+          <Input
+            v-model="filterSpaceId"
+            placeholder="如 datastore:novel-workspace"
+            @keydown.enter="handleSearch"
+          />
+        </div>
+
         <!-- 实体类型 -->
         <div class="w-36">
           <label class="text-xs text-muted-foreground mb-1 block">实体类型</label>
@@ -429,6 +459,44 @@ function buildProvenanceDetails(item: EntityProvenance) {
               <SelectItem value="__all__">全部类型</SelectItem>
               <SelectItem v-for="t in ENTITY_TYPES" :key="t.value" :value="t.value">
                 {{ t.label }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <!-- 记忆范围 -->
+        <div class="w-36">
+          <label class="text-xs text-muted-foreground mb-1 block">记忆范围</label>
+          <Select
+            :model-value="filterMemoryScope || '__all__'"
+            @update:model-value="(value) => filterMemoryScope = String(value ?? '') === '__all__' ? '' : String(value ?? '')"
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="全部范围" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">全部范围</SelectItem>
+              <SelectItem v-for="scope in MEMORY_SCOPE_OPTIONS" :key="scope.value" :value="scope.value">
+                {{ scope.label }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <!-- 现实性 -->
+        <div class="w-36">
+          <label class="text-xs text-muted-foreground mb-1 block">现实性</label>
+          <Select
+            :model-value="filterRealityType || '__all__'"
+            @update:model-value="(value) => filterRealityType = String(value ?? '') === '__all__' ? '' : String(value ?? '')"
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="全部现实性" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">全部现实性</SelectItem>
+              <SelectItem v-for="reality in REALITY_TYPE_OPTIONS" :key="reality.value" :value="reality.value">
+                {{ reality.label }}
               </SelectItem>
             </SelectContent>
           </Select>
