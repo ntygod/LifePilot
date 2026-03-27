@@ -71,6 +71,10 @@ function clearSearch() {
   searchResults.value = []
 }
 
+function openSearchResult(item: MemorySearchResult) {
+  store.requestEntityDetail(item.entityId)
+}
+
 function formatMemoryScope(scope?: string | null) {
   if (!scope) return '未分配'
   return MEMORY_SCOPE_LABELS[scope] || scope
@@ -194,7 +198,8 @@ function formatSpaceId(spaceId?: string | null) {
               <div
                 v-for="item in searchResults"
                 :key="item.entityId"
-                class="list-card px-4 py-3"
+                class="list-card cursor-pointer px-4 py-3 transition-colors hover:bg-muted/50"
+                @click="openSearchResult(item)"
               >
                 <div class="flex items-start justify-between gap-4">
                   <div class="min-w-0 flex-1">

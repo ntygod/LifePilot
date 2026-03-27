@@ -46,6 +46,7 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { DatePicker } from '@/components/ui/date-picker'
 import Pagination from '@/components/common/Pagination.vue'
+import { useMemoryStore } from '@/stores/memory'
 
 const MEMORY_SCOPE_LABELS: Record<string, string> = {
   USER_PROFILE: '用户画像',
@@ -162,6 +163,8 @@ const REALITY_TYPE_OPTIONS = [
   { value: 'UNKNOWN', label: '未标注' },
 ] as const
 
+const store = useMemoryStore()
+
 // ── 数据加载 ──
 async function loadEntities() {
   loading.value = true
@@ -210,8 +213,23 @@ watch([filterType, filterMemoryScope, filterRealityType, filterSortBy, filterOrd
 
 onMounted(() => loadEntities())
 
+watch(
+  () => store.entityDetailRequest,
+  (request) => {
+    if (!request?.id) return
+    void openDetailById(request.id).finally(() => {
+      store.clearEntityDetailRequest()
+    })
+  },
+  { immediate: true }
+)
+
 // ── 详情面板 ──
 async function openDetail(entity: EntitySummary) {
+  await openDetailById(entity.id)
+}
+
+async function openDetailById(entityId: string) {
   detailOpen.value = true
   detailLoading.value = true
   detailTab.value = 'info'
@@ -221,7 +239,7 @@ async function openDetail(entity: EntitySummary) {
   provenanceItems.value = []
 
   try {
-    detailEntity.value = await memoryApi.getEntity(entity.id)
+    detailEntity.value = await memoryApi.getEntity(entityId)
     void loadProvenances()
   } catch (e: any) {
     console.error('加载实体详情失败:', e)

@@ -13,15 +13,25 @@ const mocks = vi.hoisted(() => ({
     activeTab: 'entities',
     consolidating: false,
     memoryDisabled: false,
+    entityDetailRequest: null as { id: string; requestedAt: number } | null,
     loadStats: undefined as unknown,
     search: undefined as unknown,
     triggerConsolidation: undefined as unknown,
+    requestEntityDetail: undefined as unknown,
+    clearEntityDetailRequest: undefined as unknown,
   },
 }))
 
 mocks.store.loadStats = mocks.loadStats
 mocks.store.search = mocks.search
 mocks.store.triggerConsolidation = mocks.triggerConsolidation
+mocks.store.requestEntityDetail = (id: string) => {
+  mocks.store.activeTab = 'entities'
+  mocks.store.entityDetailRequest = { id, requestedAt: Date.now() }
+}
+mocks.store.clearEntityDetailRequest = () => {
+  mocks.store.entityDetailRequest = null
+}
 
 vi.mock('@/stores/memory', () => ({
   useMemoryStore: () => mocks.store,
@@ -67,6 +77,7 @@ beforeEach(() => {
   mocks.store.statsLoading = false
   mocks.store.memoryDisabled = false
   mocks.store.activeTab = 'entities'
+  mocks.store.entityDetailRequest = null
   mocks.search.mockResolvedValue([
     {
       entityId: 'entity-1',
@@ -82,7 +93,7 @@ beforeEach(() => {
 })
 
 describe('MemoryView 搜索结果展示', () => {
-  it('会展示结果的记忆范围、现实性与空间标识', async () => {
+  it('会展示结果的记忆范围、现实性与空间标识，并支持直达实体详情', async () => {
     const wrapper = mountView()
     const input = wrapper.get('input')
 
@@ -96,5 +107,11 @@ describe('MemoryView 搜索结果展示', () => {
     expect(wrapper.text()).toContain('领域记忆')
     expect(wrapper.text()).toContain('虚构')
     expect(wrapper.text()).toContain('datastore:novel-workspace')
+
+    const resultCard = wrapper.find('.list-card')
+    await resultCard.trigger('click')
+
+    expect(mocks.store.activeTab).toBe('entities')
+    expect(mocks.store.entityDetailRequest?.id).toBe('entity-1')
   })
 })

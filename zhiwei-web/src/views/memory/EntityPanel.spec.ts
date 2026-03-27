@@ -11,6 +11,10 @@ const mocks = vi.hoisted(() => ({
   createEntity: vi.fn(),
   updateEntity: vi.fn(),
   deleteEntity: vi.fn(),
+  memoryStore: {
+    entityDetailRequest: null as { id: string; requestedAt: number } | null,
+    clearEntityDetailRequest: vi.fn(),
+  },
 }))
 
 vi.mock('@/api/client', () => ({
@@ -24,6 +28,10 @@ vi.mock('@/api/client', () => ({
     updateEntity: mocks.updateEntity,
     deleteEntity: mocks.deleteEntity,
   },
+}))
+
+vi.mock('@/stores/memory', () => ({
+  useMemoryStore: () => mocks.memoryStore,
 }))
 
 function mountPanel() {
@@ -79,6 +87,8 @@ beforeEach(() => {
   mocks.createEntity.mockReset()
   mocks.updateEntity.mockReset()
   mocks.deleteEntity.mockReset()
+  mocks.memoryStore.entityDetailRequest = null
+  mocks.memoryStore.clearEntityDetailRequest.mockReset()
 
   mocks.listEntities.mockResolvedValue({
     items: [
@@ -161,5 +171,20 @@ describe('EntityPanel 记忆元数据展示', () => {
     expect(wrapper.text()).toContain('知识库导入')
     expect(wrapper.text()).toContain('章节设定手册')
     expect(wrapper.text()).toContain('kb-1')
+  })
+
+  it('接收到跨面板详情请求后会自动拉起实体详情', async () => {
+    mocks.memoryStore.entityDetailRequest = {
+      id: 'entity-1',
+      requestedAt: Date.now(),
+    }
+
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    expect(mocks.getEntity).toHaveBeenCalledWith('entity-1')
+    expect(mocks.getEntityProvenances).toHaveBeenCalledWith('entity-1')
+    expect(mocks.memoryStore.clearEntityDetailRequest).toHaveBeenCalled()
+    expect(wrapper.text()).toContain('林夜')
   })
 })
