@@ -6,6 +6,9 @@ const mocks = vi.hoisted(() => ({
   datastoreApi: {
     get: vi.fn(),
   },
+  knowledgeBaseApi: {
+    list: vi.fn(),
+  },
   route: {
     params: { id: 'ds-1' as string },
   },
@@ -16,6 +19,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/api/client', () => ({
   datastoreApi: mocks.datastoreApi,
+  knowledgeBaseApi: mocks.knowledgeBaseApi,
 }))
 
 vi.mock('vue-router', async () => {
@@ -53,6 +57,7 @@ function mountView() {
 
 beforeEach(() => {
   mocks.datastoreApi.get.mockReset()
+  mocks.knowledgeBaseApi.list.mockReset()
   mocks.router.push.mockReset()
   mocks.route.params.id = 'ds-1'
   mocks.datastoreApi.get.mockResolvedValue({
@@ -70,14 +75,45 @@ beforeEach(() => {
     createdAt: '2026-03-27T00:00:00Z',
     updatedAt: '2026-03-27T01:00:00Z',
   })
+  mocks.knowledgeBaseApi.list.mockResolvedValue([
+    {
+      id: 'kb-1',
+      name: '世界观资料库',
+      description: '小说设定与人物资料',
+      embeddingModel: 'bge-m3',
+      rerankerModel: null,
+      chunkingStrategy: 'smart',
+      tags: [],
+      documentCount: 12,
+      totalChunks: 220,
+      createdAt: '2026-03-27T00:00:00Z',
+      updatedAt: '2026-03-27T02:00:00Z',
+      datastoreIds: ['ds-1'],
+    },
+    {
+      id: 'kb-2',
+      name: '无关知识库',
+      description: '不应出现在当前详情页',
+      embeddingModel: 'bge-m3',
+      rerankerModel: null,
+      chunkingStrategy: 'smart',
+      tags: [],
+      documentCount: 1,
+      totalChunks: 10,
+      createdAt: '2026-03-27T00:00:00Z',
+      updatedAt: '2026-03-27T02:00:00Z',
+      datastoreIds: ['ds-other'],
+    },
+  ])
 })
 
 describe('DatastoreDetailView', () => {
-  it('加载并展示 Datastore 结构与配置', async () => {
+  it('加载并展示 Datastore 结构、配置与关联知识库', async () => {
     const wrapper = mountView()
     await flushPromises()
 
     expect(mocks.datastoreApi.get).toHaveBeenCalledWith('ds-1')
+    expect(mocks.knowledgeBaseApi.list).toHaveBeenCalled()
     expect(wrapper.text()).toContain('novel-workspace')
     expect(wrapper.text()).toContain('DOCUMENT')
     expect(wrapper.text()).toContain('title')
@@ -85,5 +121,13 @@ describe('DatastoreDetailView', () => {
     expect(wrapper.text()).toContain('tester')
     expect(wrapper.text()).toContain('scalarPaths')
     expect(wrapper.text()).toContain('owner')
+    expect(wrapper.text()).toContain('世界观资料库')
+    expect(wrapper.text()).not.toContain('无关知识库')
+
+    await wrapper.get('article').trigger('click')
+    expect(mocks.router.push).toHaveBeenCalledWith({
+      name: 'knowledgeBaseDetail',
+      params: { id: 'kb-1' },
+    })
   })
 })

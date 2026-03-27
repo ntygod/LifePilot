@@ -3,13 +3,14 @@ import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowLeft,
+  ArrowUpRight,
   Database,
   FileJson2,
   RefreshCw,
   Settings2,
 } from 'lucide-vue-next'
-import { datastoreApi } from '@/api/client'
-import type { Datastore } from '@/types'
+import { datastoreApi, knowledgeBaseApi } from '@/api/client'
+import type { Datastore, KnowledgeBase } from '@/types'
 import Breadcrumb from '@/components/global/Breadcrumb.vue'
 import type { BreadcrumbItem } from '@/components/global/Breadcrumb.vue'
 import MetricCard from '@/components/common/MetricCard.vue'
@@ -32,6 +33,7 @@ const router = useRouter()
 
 const datastoreId = computed(() => route.params.id as string)
 const datastore = ref<Datastore | null>(null)
+const relatedKnowledgeBases = ref<KnowledgeBase[]>([])
 const loading = ref(false)
 const error = ref<string | null>(null)
 
@@ -60,10 +62,18 @@ async function loadDatastore() {
   loading.value = true
   error.value = null
   try {
-    datastore.value = await datastoreApi.get(datastoreId.value)
+    const [datastoreDetail, knowledgeBases] = await Promise.all([
+      datastoreApi.get(datastoreId.value),
+      knowledgeBaseApi.list(),
+    ])
+    datastore.value = datastoreDetail
+    relatedKnowledgeBases.value = knowledgeBases.filter(knowledgeBase =>
+      (knowledgeBase.datastoreIds ?? []).includes(datastoreId.value),
+    )
   } catch (requestError: any) {
     error.value = requestError?.message ?? '加载 Datastore 详情失败。'
     datastore.value = null
+    relatedKnowledgeBases.value = []
   } finally {
     loading.value = false
   }
@@ -83,6 +93,13 @@ function formatJson(raw?: string | null) {
 function formatDate(value?: string | null) {
   if (!value) return '—'
   return new Date(value).toLocaleString('zh-CN')
+}
+
+function openKnowledgeBase(knowledgeBaseId: string) {
+  void router.push({
+    name: 'knowledgeBaseDetail',
+    params: { id: knowledgeBaseId },
+  })
 }
 
 watch(
@@ -236,6 +253,48 @@ watch(
               <div v-else class="text-sm text-muted-foreground">
                 当前没有元数据。
               </div>
+            </div>
+          </PageSection>
+
+          <PageSection title="关联知识库" description="这些知识库当前挂载了该 Datastore，可直接跳转查看领域资料与文档。">
+            <div v-if="relatedKnowledgeBases.length === 0" class="detail-card p-5 text-sm text-muted-foreground">
+              当前还没有知识库挂载这个 Datastore。
+            </div>
+            <div v-else class="grid gap-4 md:grid-cols-2">
+              <article
+                v-for="knowledgeBase in relatedKnowledgeBases"
+                :key="knowledgeBase.id"
+                class="detail-card cursor-pointer p-5 transition-colors hover:border-primary/35 hover:bg-muted/20"
+                @click="openKnowledgeBase(knowledgeBase.id)"
+              >
+                <div class="flex items-start justify-between gap-3">
+                  <div class="min-w-0">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <h3 class="truncate text-base font-semibold text-foreground">{{ knowledgeBase.name }}</h3>
+                      <Badge variant="outline">{{ knowledgeBase.documentCount }} 文档</Badge>
+                    </div>
+                    <p class="mt-2 line-clamp-2 text-sm leading-6 text-muted-foreground">
+                      {{ knowledgeBase.description || '暂无描述。' }}
+                    </p>
+                  </div>
+                  <ArrowUpRight class="mt-1 size-4 shrink-0 text-muted-foreground" />
+                </div>
+
+                <div class="mt-4 grid gap-3 text-sm">
+                  <div class="flex items-center justify-between gap-3">
+                    <span class="text-muted-foreground">向量模型</span>
+                    <span class="text-right font-medium text-foreground">{{ knowledgeBase.embeddingModel || '未设置' }}</span>
+                  </div>
+                  <div class="flex items-center justify-between gap-3">
+                    <span class="text-muted-foreground">分块数</span>
+                    <span class="text-right font-medium text-foreground">{{ knowledgeBase.totalChunks }}</span>
+                  </div>
+                  <div class="flex items-center justify-between gap-3">
+                    <span class="text-muted-foreground">更新时间</span>
+                    <span class="text-right font-medium text-foreground">{{ formatDate(knowledgeBase.updatedAt) }}</span>
+                  </div>
+                </div>
+              </article>
             </div>
           </PageSection>
         </template>
