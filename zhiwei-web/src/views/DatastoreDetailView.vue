@@ -9,8 +9,8 @@ import {
   RefreshCw,
   Settings2,
 } from 'lucide-vue-next'
-import { datastoreApi, knowledgeBaseApi } from '@/api/client'
-import type { Datastore, KnowledgeBase } from '@/types'
+import { datastoreApi, knowledgeBaseApi, memoryApi } from '@/api/client'
+import type { Datastore, EntitySummary, KnowledgeBase } from '@/types'
 import Breadcrumb from '@/components/global/Breadcrumb.vue'
 import type { BreadcrumbItem } from '@/components/global/Breadcrumb.vue'
 import MetricCard from '@/components/common/MetricCard.vue'
@@ -34,8 +34,12 @@ const router = useRouter()
 const datastoreId = computed(() => route.params.id as string)
 const datastore = ref<Datastore | null>(null)
 const relatedKnowledgeBases = ref<KnowledgeBase[]>([])
+const relatedMemoryEntities = ref<EntitySummary[]>([])
+const relatedMemoryTotal = ref(0)
 const loading = ref(false)
 const error = ref<string | null>(null)
+const relatedMemoryLoading = ref(false)
+const relatedMemoryError = ref<string | null>(null)
 
 const breadcrumbItems = computed<BreadcrumbItem[]>(() => [
   { label: 'Datastore', to: { name: 'datastores' } },
@@ -57,6 +61,20 @@ const propertyDefinitions = computed(() => {
 const formattedProjectionConfig = computed(() => formatJson(datastore.value?.projectionConfigJson))
 const formattedMetadata = computed(() => formatJson(datastore.value?.metadataJson))
 
+const MEMORY_SCOPE_LABELS: Record<string, string> = {
+  USER_PROFILE: '用户画像',
+  USER_FACT: '用户事实',
+  AGENT_EXPERIENCE: '执行经验',
+  DOMAIN_MEMORY: '领域记忆',
+}
+
+const REALITY_TYPE_LABELS: Record<string, string> = {
+  REAL: '真实',
+  FICTIONAL: '虚构',
+  SIMULATED: '模拟',
+  UNKNOWN: '未标注',
+}
+
 async function loadDatastore() {
   if (!datastoreId.value) return
   loading.value = true
@@ -70,12 +88,39 @@ async function loadDatastore() {
     relatedKnowledgeBases.value = knowledgeBases.filter(knowledgeBase =>
       (knowledgeBase.datastoreIds ?? []).includes(datastoreId.value),
     )
+    await loadRelatedMemories()
   } catch (requestError: any) {
     error.value = requestError?.message ?? '加载 Datastore 详情失败。'
     datastore.value = null
     relatedKnowledgeBases.value = []
+    relatedMemoryEntities.value = []
+    relatedMemoryTotal.value = 0
+    relatedMemoryError.value = null
   } finally {
     loading.value = false
+  }
+}
+
+async function loadRelatedMemories() {
+  if (!datastoreId.value) return
+  relatedMemoryLoading.value = true
+  relatedMemoryError.value = null
+  try {
+    const result = await memoryApi.listEntities({
+      page: 0,
+      size: 6,
+      sourceDatastoreId: datastoreId.value,
+      sortBy: 'importanceScore',
+      order: 'desc',
+    })
+    relatedMemoryEntities.value = result.items
+    relatedMemoryTotal.value = result.total
+  } catch (requestError: any) {
+    relatedMemoryEntities.value = []
+    relatedMemoryTotal.value = 0
+    relatedMemoryError.value = requestError?.message ?? '加载关联记忆失败。'
+  } finally {
+    relatedMemoryLoading.value = false
   }
 }
 
@@ -111,6 +156,28 @@ function openDatastoreMemories() {
       sourceDatastoreId: datastoreId.value,
     },
   })
+}
+
+function openMemoryEntity(entityId: string) {
+  if (!datastoreId.value) return
+  void router.push({
+    name: 'memories',
+    query: {
+      tab: 'entities',
+      sourceDatastoreId: datastoreId.value,
+      entityId,
+    },
+  })
+}
+
+function formatMemoryScope(value?: string | null) {
+  if (!value) return '未分配'
+  return MEMORY_SCOPE_LABELS[value] || value
+}
+
+function formatRealityType(value?: string | null) {
+  if (!value) return '未标注'
+  return REALITY_TYPE_LABELS[value] || value
 }
 
 watch(
@@ -271,6 +338,61 @@ watch(
             </div>
           </PageSection>
 
+          <PageSection title="关联记忆" description="这些实体来自当前 Datastore，可直接跳到记忆页继续排查来源或查看详情。">
+            <div class="space-y-4">
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <div class="text-sm text-muted-foreground">
+                  当前共关联 {{ relatedMemoryTotal }} 条记忆实体，按重要性优先展示前 6 条。
+                </div>
+                <Button type="button" variant="outline" size="sm" data-test="open-all-related-memories" @click="openDatastoreMemories">
+                  <ArrowUpRight class="size-4" />
+                  查看全部
+                </Button>
+              </div>
+
+              <div v-if="relatedMemoryLoading" class="grid gap-4 md:grid-cols-2">
+                <Skeleton v-for="index in 4" :key="index" class="h-36 rounded-[calc(var(--radius)+6px)]" />
+              </div>
+              <div v-else-if="relatedMemoryError" class="detail-card p-5 text-sm text-muted-foreground">
+                {{ relatedMemoryError }}
+              </div>
+              <div v-else-if="relatedMemoryEntities.length === 0" class="detail-card p-5 text-sm text-muted-foreground">
+                当前还没有关联到这个 Datastore 的记忆实体。
+              </div>
+              <div v-else class="grid gap-4 md:grid-cols-2">
+                <article
+                  v-for="entity in relatedMemoryEntities"
+                  :key="entity.id"
+                  class="detail-card cursor-pointer p-5 transition-colors hover:border-primary/35 hover:bg-muted/20"
+                  data-test="related-memory-card"
+                  @click="openMemoryEntity(entity.id)"
+                >
+                  <div class="flex items-start justify-between gap-3">
+                    <div class="min-w-0">
+                      <div class="flex flex-wrap items-center gap-2">
+                        <h3 class="truncate text-base font-semibold text-foreground">{{ entity.name }}</h3>
+                        <Badge variant="outline">{{ entity.typeLabel }}</Badge>
+                      </div>
+                      <p v-if="entity.description" class="mt-2 line-clamp-2 text-sm leading-6 text-muted-foreground">
+                        {{ entity.description }}
+                      </p>
+                    </div>
+                    <ArrowUpRight class="mt-1 size-4 shrink-0 text-muted-foreground" />
+                  </div>
+
+                  <div class="mt-4 flex flex-wrap items-center gap-2 text-xs">
+                    <Badge variant="outline">{{ formatMemoryScope(entity.memoryScope) }}</Badge>
+                    <Badge variant="secondary">{{ formatRealityType(entity.realityType) }}</Badge>
+                    <span class="text-muted-foreground">重要性 {{ entity.importanceScore.toFixed(2) }}</span>
+                  </div>
+                  <div class="mt-3 text-xs text-muted-foreground">
+                    更新时间 {{ formatDate(entity.updatedAt) }}
+                  </div>
+                </article>
+              </div>
+            </div>
+          </PageSection>
+
           <PageSection title="关联知识库" description="这些知识库当前挂载了该 Datastore，可直接跳转查看领域资料与文档。">
             <div v-if="relatedKnowledgeBases.length === 0" class="detail-card p-5 text-sm text-muted-foreground">
               当前还没有知识库挂载这个 Datastore。
@@ -280,6 +402,7 @@ watch(
                 v-for="knowledgeBase in relatedKnowledgeBases"
                 :key="knowledgeBase.id"
                 class="detail-card cursor-pointer p-5 transition-colors hover:border-primary/35 hover:bg-muted/20"
+                data-test="related-kb-card"
                 @click="openKnowledgeBase(knowledgeBase.id)"
               >
                 <div class="flex items-start justify-between gap-3">

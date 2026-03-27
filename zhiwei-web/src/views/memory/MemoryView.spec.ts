@@ -114,6 +114,16 @@ describe('MemoryView 搜索结果展示', () => {
     expect(mocks.store.activeTab).toBe('relations')
   })
 
+  it('会根据路由 query 直接请求打开指定实体详情', async () => {
+    mocks.route.query = { tab: 'entities', entityId: 'entity-9' }
+
+    mountView()
+    await flushPromises()
+
+    expect(mocks.store.activeTab).toBe('entities')
+    expect(mocks.store.entityDetailRequest?.id).toBe('entity-9')
+  })
+
   it('会展示结果的记忆范围、现实性与空间标识，并支持直达实体详情', async () => {
     const wrapper = mountView()
     const input = wrapper.get('input')

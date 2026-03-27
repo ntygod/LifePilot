@@ -66,6 +66,17 @@ watch(
   { immediate: true }
 )
 
+watch(
+  () => route.query.entityId,
+  (entityId) => {
+    const nextEntityId = Array.isArray(entityId) ? entityId[0] : entityId
+    if (typeof nextEntityId === 'string' && nextEntityId.trim()) {
+      store.requestEntityDetail(nextEntityId.trim())
+    }
+  },
+  { immediate: true }
+)
+
 async function handleSearch() {
   const q = searchQuery.value.trim()
   if (!q) {

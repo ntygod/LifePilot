@@ -9,6 +9,9 @@ const mocks = vi.hoisted(() => ({
   knowledgeBaseApi: {
     list: vi.fn(),
   },
+  memoryApi: {
+    listEntities: vi.fn(),
+  },
   route: {
     params: { id: 'ds-1' as string },
   },
@@ -20,6 +23,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/api/client', () => ({
   datastoreApi: mocks.datastoreApi,
   knowledgeBaseApi: mocks.knowledgeBaseApi,
+  memoryApi: mocks.memoryApi,
 }))
 
 vi.mock('vue-router', async () => {
@@ -58,6 +62,7 @@ function mountView() {
 beforeEach(() => {
   mocks.datastoreApi.get.mockReset()
   mocks.knowledgeBaseApi.list.mockReset()
+  mocks.memoryApi.listEntities.mockReset()
   mocks.router.push.mockReset()
   mocks.route.params.id = 'ds-1'
   mocks.datastoreApi.get.mockResolvedValue({
@@ -105,6 +110,28 @@ beforeEach(() => {
       datastoreIds: ['ds-other'],
     },
   ])
+  mocks.memoryApi.listEntities.mockResolvedValue({
+    items: [
+      {
+        id: 'entity-1',
+        type: 'PERSON',
+        typeLabel: '人物',
+        name: '林夜',
+        description: '主角设定',
+        importanceScore: 0.95,
+        accessCount: 18,
+        version: 2,
+        spaceId: 'datastore:ds-1',
+        memoryScope: 'DOMAIN_MEMORY',
+        realityType: 'FICTIONAL',
+        createdAt: '2026-03-27T00:00:00Z',
+        updatedAt: '2026-03-27T02:30:00Z',
+      },
+    ],
+    page: 0,
+    size: 6,
+    total: 1,
+  })
 })
 
 describe('DatastoreDetailView', () => {
@@ -114,6 +141,13 @@ describe('DatastoreDetailView', () => {
 
     expect(mocks.datastoreApi.get).toHaveBeenCalledWith('ds-1')
     expect(mocks.knowledgeBaseApi.list).toHaveBeenCalled()
+    expect(mocks.memoryApi.listEntities).toHaveBeenCalledWith({
+      page: 0,
+      size: 6,
+      sourceDatastoreId: 'ds-1',
+      sortBy: 'importanceScore',
+      order: 'desc',
+    })
     expect(wrapper.text()).toContain('novel-workspace')
     expect(wrapper.text()).toContain('DOCUMENT')
     expect(wrapper.text()).toContain('title')
@@ -124,11 +158,13 @@ describe('DatastoreDetailView', () => {
     expect(wrapper.text()).toContain('世界观资料库')
     expect(wrapper.text()).not.toContain('无关知识库')
 
-    await wrapper.get('article').trigger('click')
+    await wrapper.get('[data-test="related-kb-card"]').trigger('click')
     expect(mocks.router.push).toHaveBeenCalledWith({
       name: 'knowledgeBaseDetail',
       params: { id: 'kb-1' },
     })
+    expect(wrapper.text()).toContain('林夜')
+    expect(wrapper.text()).toContain('领域记忆')
   })
 
   it('支持跳转到按 Datastore 来源筛选的记忆列表', async () => {
@@ -142,6 +178,22 @@ describe('DatastoreDetailView', () => {
       query: {
         tab: 'entities',
         sourceDatastoreId: 'ds-1',
+      },
+    })
+  })
+
+  it('支持从关联记忆预览直接打开实体详情', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.get('[data-test="related-memory-card"]').trigger('click')
+
+    expect(mocks.router.push).toHaveBeenCalledWith({
+      name: 'memories',
+      query: {
+        tab: 'entities',
+        sourceDatastoreId: 'ds-1',
+        entityId: 'entity-1',
       },
     })
   })
