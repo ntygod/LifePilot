@@ -169,6 +169,7 @@ class MemoryControllerTest {
     class 统一搜索 {
 
         @Test
+        @SuppressWarnings("unchecked")
         void 搜索返回结果() throws Exception {
             var result = new RetrievalResult(
                     "e1", "PERSON", "张三", "描述", 0.85f,
@@ -176,12 +177,28 @@ class MemoryControllerTest {
                     "vector+fts", NOW, 0.5f, null);
             when(hybridRetriever.retrieve(eq("张三"), eq(10), any(RetrievalWeights.class), any()))
                     .thenReturn(List.of(result));
+            when(jdbcTemplate.query(
+                    contains("FROM temporal_entities"),
+                    any(RowMapper.class),
+                    any(Object[].class)))
+                    .thenAnswer(invocation -> {
+                        RowMapper<Object> mapper = (RowMapper<Object>) invocation.getArgument(1);
+                        ResultSet rs = mock(ResultSet.class);
+                        when(rs.getString("id")).thenReturn("e1");
+                        when(rs.getString("space_id")).thenReturn("user:default");
+                        when(rs.getString("memory_scope")).thenReturn("USER_FACT");
+                        when(rs.getString("reality_type")).thenReturn("REAL");
+                        return List.of(mapper.mapRow(rs, 0));
+                    });
 
             mockMvc.perform(get("/api/memories/search").param("q", "张三"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$", hasSize(1)))
                     .andExpect(jsonPath("$[0].entityId").value("e1"))
-                    .andExpect(jsonPath("$[0].name").value("张三"));
+                    .andExpect(jsonPath("$[0].name").value("张三"))
+                    .andExpect(jsonPath("$[0].spaceId").value("user:default"))
+                    .andExpect(jsonPath("$[0].memoryScope").value("USER_FACT"))
+                    .andExpect(jsonPath("$[0].realityType").value("REAL"));
         }
 
         @Test

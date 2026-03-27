@@ -13,5 +13,8 @@ public record MemorySearchResultDto(
         String entityType,
         String name,
         @Nullable String description,
-        float relevanceScore
+        float relevanceScore,
+        @Nullable String spaceId,
+        @Nullable String memoryScope,
+        @Nullable String realityType
 ) {}

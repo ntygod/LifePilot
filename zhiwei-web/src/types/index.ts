@@ -1464,6 +1464,9 @@ export interface MemorySearchResult {
   name: string
   description: string | null
   relevanceScore: number
+  spaceId: string | null
+  memoryScope: string | null
+  realityType: string | null
 }
 
 /** 实体摘要 */

@@ -134,9 +134,23 @@ public class MemoryController {
             return List.of();
         }
         var results = hybridRetriever.retrieve(q, topK, RetrievalWeights.DEFAULT, MemoryReadFilter.userMemory());
+        Map<String, EntityMetadata> metadataById = loadEntityMetadata(
+                results.stream().map(r -> r.entityId()).toList()
+        );
         return results.stream()
-                .map(r -> new MemorySearchResultDto(
-                        r.entityId(), r.entityType(), r.name(), r.description(), r.fusedScore()))
+                .map(r -> {
+                    var metadata = metadataById.get(r.entityId());
+                    return new MemorySearchResultDto(
+                            r.entityId(),
+                            r.entityType(),
+                            r.name(),
+                            r.description(),
+                            r.fusedScore(),
+                            metadata != null ? metadata.spaceId() : null,
+                            metadata != null ? metadata.memoryScope() : null,
+                            metadata != null ? metadata.realityType() : null
+                    );
+                })
                 .toList();
     }
 
